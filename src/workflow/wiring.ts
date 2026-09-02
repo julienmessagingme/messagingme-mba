@@ -23,6 +23,10 @@ import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
 import { waIdOfTarget } from '../crm/identity';
 import { PgRcsAgentStore } from '../rcs/store.pg';
+import { PgTrackedLinkStore } from '../links/tracked-links.pg';
+import { TraceurLiensRcs } from '../links/traceur-rcs';
+import { fabriquerJeton } from '../links/jeton-contact';
+import { newTrackingCode } from '../ids/code';
 import { decryptSecret } from '../crypto/secretbox';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
 import { AGENT_TURN_QUEUE, type AgentTurnJob } from '../agent/turn-job';
@@ -82,6 +86,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
   const agentsRcs = new PgRcsAgentStore(pool);
+  const trackedLinks = new PgTrackedLinkStore(pool);
   const rcsStack = buildRcsStack(pool, rcsProvider, dryRun, {
     apiKey: config.SMSMODE_RCS_API_KEY,
     // Clé PROPRE au workspace, déchiffrée à la volée. C'est elle qui prime : la clé d'environnement n'est
@@ -100,6 +105,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // Variables `{{champ}}` d'une CAMPAGNE RCS. `waIdOfTarget` et pas le E.164 brut : un contact se résout sur
   // son wa_id (chiffres nus), et un « + » en tête ne trouverait jamais personne.
   async (tenant, e164) => contactVars(await contactStore.getResolvableByPhone(tenant, waIdOfTarget(e164)) ?? {}),
+  // Traçage des liens des messages RCS (migration 0107), monté ICI et une seule fois : son cache
+  // adresse -> code doit être partagé par les campagnes et les scénarios, sinon chaque chemin refait les
+  // mêmes allocations. Branché au point d'envoi unique, il couvre les quatre chemins d'un coup.
+  new TraceurLiensRcs(trackedLinks, config.APP_URL, newTrackingCode),
   );
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
@@ -294,6 +303,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // porte son canal (`channel: 'rcs'`), c'est ce que l'Inbox dessine en vert RCS.
       recordOutbound: (tenant, waId, msg) =>
         inboxStore.recordOutboundByWaId(tenant, waId, { ...msg, type: 'rcs', channel: 'rcs', origine: 'scenario' }),
+      // QUI a cliqué : le jeton public du contact, écrit dans les liens tracés du message. Lecture UNITAIRE
+      // parce qu'un scénario écrit à une personne à la fois, et déclenchée seulement si le message porte un
+      // lien (c'est l'exécuteur qui tranche, cf. `jetonRcs`).
+      jetonPour: (tenant, waId) => trackedLinks.jetonPourE164(tenant, waId, fabriquerJeton),
     },
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).

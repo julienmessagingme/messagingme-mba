@@ -6,6 +6,7 @@ import { Reachability } from './reachability';
 import { PgReachabilityStore } from './reachability.pg';
 import { PgRcsAgentStore, PgRcsOptoutStore } from './store.pg';
 import { RcsSender } from './sender';
+import type { TraceurLiens } from './sender';
 import type { RcsProvider, RcsOutbound } from './types';
 import { aDesVariables } from './variables';
 import { makeCampaignSender } from '../campaign/sender';
@@ -68,11 +69,17 @@ export function buildRcsStack(
   smsmode?: SmsmodeCredentials,
   /** Variables `{{champ}}` d'un contact, par numéro. Absente -> les messages partent avec leurs accolades. */
   varsFor?: (tenantId: string, e164: string) => Promise<Record<string, string | null>>,
+  /**
+   * Traçage des liens du message (migration 0107). Absent -> les messages partent avec les adresses saisies
+   * et aucun clic n'est mesuré, ce qui est le comportement d'avant. Injecté plutôt que construit ici : ce
+   * module ne lit pas la config, et l'adresse publique de la console y est nécessaire.
+   */
+  traceur?: TraceurLiens,
 ): RcsStack {
   const provider = providerFor(providerName, dryRun, smsmode);
   const agents = new PgRcsAgentStore(pool);
   const optout = new PgRcsOptoutStore(pool);
-  const sender = new RcsSender(provider, new Reachability(provider, new PgReachabilityStore(pool)), optout);
+  const sender = new RcsSender(provider, new Reachability(provider, new PgReachabilityStore(pool)), optout, traceur);
 
   return {
     sender,

@@ -71,6 +71,26 @@ describe.skipIf(!url)('historique d’un contact : l’indicateur « engagé » 
     );
   }
 
+  /**
+   * Un lien tracé de la FAMILLE RCS (migration 0107) : ni nom de template, ni index de bouton, la maille
+   * étant l'adresse. L'insertion elle-même vaut vérification de la contrainte de famille.
+   */
+  async function lien(code: string, destination: string): Promise<void> {
+    await pool.query(
+      `insert into tracked_links (code, tenant_id, destination, avec_jeton, confirmed_at)
+       values ($1, $2, $3, true, now())`,
+      [code, tenantId, destination],
+    );
+  }
+
+  /** Un clic. `attribue` faux = clic ANONYME (URL sans jeton), le cas des templates approuvés avant 0106. */
+  async function clic(code: string, at: string, attribue = true): Promise<void> {
+    await pool.query(
+      `insert into tracked_link_clicks (code, tenant_id, contact_id, at) values ($1, $2, $3, $4::timestamptz)`,
+      [code, tenantId, attribue ? contactId : null, at],
+    );
+  }
+
   /** L'historique, indexé par nom de campagne : les tests parlent de campagnes, pas de rangs. */
   async function engagements(): Promise<Record<string, boolean>> {
     const h = await store.getContactHistory(tenantId, contactId);
@@ -81,6 +101,9 @@ describe.skipIf(!url)('historique d’un contact : l’indicateur « engagé » 
   async function reset(): Promise<void> {
     await pool.query('delete from campaigns where tenant_id = $1', [tenantId]);
     await pool.query('delete from conversation_messages where conversation_id = $1', [conversationId]);
+    // Les liens d'abord effacés par cascade sur les clics : `tracked_link_clicks.code` référence
+    // `tracked_links(code)`, un delete sur les liens emporte donc les clics du cas précédent.
+    await pool.query('delete from tracked_links where tenant_id = $1', [tenantId]);
   }
 
   it('une RÉPONSE dans les 24 h après l’envoi vaut engagement', async () => {
@@ -148,6 +171,77 @@ describe.skipIf(!url)('historique d’un contact : l’indicateur « engagé » 
     );
     await message('in', '2026-09-01T10:05:00Z', 'coucou');
     expect(await engagements()).toEqual({ A: false });
+  });
+
+  /**
+   * LE CLIC SUR UN LIEN (migrations 0106 et 0107).
+   *
+   * 🔴 C'ÉTAIT UN TROU, PAS UN BONUS. Un bouton URL fait SORTIR le contact de la conversation : il n'en
+   * revient aucun message entrant. La personne la PLUS engagée de la campagne, celle qui a ouvert le lien,
+   * s'affichait donc comme n'ayant pas réagi. C'est aussi la seule chose qui rende visible l'attribution :
+   * sans elle, on saurait qui a cliqué sans jamais le montrer.
+   */
+  describe('le clic sur un lien tracé', () => {
+    it('🔴 vaut engagement, alors qu’il ne produit AUCUN message entrant', async () => {
+      await reset();
+      await envoi('A', '2026-09-01T10:00:00Z');
+      await lien('aaaaaaaaaaaa', 'https://exemple.fr/offre');
+      await clic('aaaaaaaaaaaa', '2026-09-01T10:05:00Z');
+      expect(await engagements()).toEqual({ A: true });
+    });
+
+    it('🔴 un clic ANONYME ne crédite personne', async () => {
+      // Les templates approuvés avant le 2026-09-02 portent une adresse figée chez Meta, sans jeton : leurs
+      // clics arrivent sans contact. Les compter ici crediterait le contact ouvert d'un geste qui pourrait
+      // être celui de n'importe qui, ce qui est pire que de ne rien dire.
+      await reset();
+      await envoi('A', '2026-09-01T10:00:00Z');
+      await lien('bbbbbbbbbbbb', 'https://exemple.fr/offre');
+      await clic('bbbbbbbbbbbb', '2026-09-01T10:05:00Z', false);
+      expect(await engagements()).toEqual({ A: false });
+    });
+
+    it('🔴 un clic arrivé APRÈS le prochain envoi ne crédite pas le premier', async () => {
+      // Les MÊMES bornes que la réponse écrite. Sans elles, deux campagnes du même jour se créditeraient
+      // l'une l'autre sur un seul clic.
+      await reset();
+      await envoi('A', '2026-09-01T10:00:00Z');
+      await envoi('B', '2026-09-01T14:00:00Z');
+      await lien('cccccccccccc', 'https://exemple.fr/offre');
+      await clic('cccccccccccc', '2026-09-01T15:00:00Z');
+      expect(await engagements()).toEqual({ A: false, B: true });
+    });
+
+    it('un clic TROIS JOURS plus tard n’est pas une réaction à cet envoi', async () => {
+      await reset();
+      await envoi('A', '2026-09-01T10:00:00Z');
+      await lien('dddddddddddd', 'https://exemple.fr/offre');
+      await clic('dddddddddddd', '2026-09-04T10:00:00Z');
+      expect(await engagements()).toEqual({ A: false });
+    });
+
+    it('🔴 un clic d’un AUTRE espace ne peut pas déclarer un engagement', async () => {
+      // Le pooler est superuser, la RLS est bypassée : le `tc.tenant_id` de la sous-requête est le seul
+      // contrôle. Le jeton étant unique GLOBALEMENT, un identifiant de contact peut circuler entre espaces.
+      await reset();
+      await envoi('A', '2026-09-01T10:00:00Z');
+      const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-engage-3') returning id`)).rows[0]!.id;
+      try {
+        await pool.query(
+          `insert into tracked_links (code, tenant_id, destination, avec_jeton, confirmed_at)
+           values ('eeeeeeeeeeee', $1, 'https://exemple.fr/offre', true, now())`,
+          [autre],
+        );
+        await pool.query(
+          `insert into tracked_link_clicks (code, tenant_id, contact_id, at)
+           values ('eeeeeeeeeeee', $1, $2, '2026-09-01T10:05:00Z'::timestamptz)`,
+          [autre, contactId],
+        );
+        expect(await engagements()).toEqual({ A: false });
+      } finally {
+        await pool.query('delete from tenants where id = $1', [autre]).catch(() => {});
+      }
+    });
   });
 
   it('🔴 le fil d’un AUTRE espace ne peut pas déclarer un engagement', async () => {

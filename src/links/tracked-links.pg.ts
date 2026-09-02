@@ -70,6 +70,33 @@ export class PgTrackedLinkStore {
   }
 
   /**
+   * Réserve (ou retrouve) le code d'une ADRESSE tracée en RCS. Rend le code à mettre dans l'URL envoyée.
+   *
+   * 🔴 CLÉ SUR LA DESTINATION, PAS SUR UN BOUTON (migration 0107). Un message RCS n'est soumis à personne : il
+   * est composé à l'envoi, donc il n'y a aucune réservation à rendre idempotente, seulement un code stable par
+   * adresse. Le raisonnement complet est en tête de la 0107.
+   *
+   * `confirmed_at` posé TOUT DE SUITE, contrairement au chemin WhatsApp : là-bas la confirmation attend
+   * l'accord de Meta, parce qu'un template refusé ne portera jamais notre lien. Ici il n'y a personne à
+   * attendre : le lien part dans le message qui suit immédiatement cet appel.
+   *
+   * `do update` sur un conflit plutôt que `do nothing` : c'est ce qui garantit le `returning code` dans les
+   * deux cas. Sans lui, un envoi sur une adresse déjà connue ne rendrait aucune ligne, et le message partirait
+   * avec son adresse d'origine, non mesuré, sans que rien ne le dise.
+   */
+  async allocateRcs(tenantId: string, code: string, destination: string): Promise<string> {
+    const res = await this.pool.query<{ code: string }>(
+      `insert into tracked_links (code, tenant_id, template_name, template_language, card_index, button_index, destination, avec_jeton, confirmed_at)
+       values ($1, $2, null, null, null, null, $3, true, now())
+       on conflict (tenant_id, destination) where template_name is null
+         do update set confirmed_at = coalesce(tracked_links.confirmed_at, now())
+       returning code`,
+      [code, tenantId, destination],
+    );
+    return res.rows[0]!.code;
+  }
+
+  /**
    * Confirme les liens d'un template : Meta l'a accepté, il porte donc bien nos adresses. Tant que ce n'est
    * pas fait, les mesures ignorent ces liens (cf. le commentaire de `confirmed_at` dans la migration 0066).
    */
@@ -169,6 +196,50 @@ export class PgTrackedLinkStore {
     );
     for (const r of res.rows) if (r.jeton_public) out.set(r.id, r.jeton_public);
     return out;
+  }
+
+  /**
+   * Le jeton public du contact qui porte CE numéro, fabriqué s'il n'en a pas encore.
+   *
+   * Le pendant UNITAIRE de `jetonsPourContacts`, pour les chemins qui envoient à une personne à la fois (un
+   * bloc de scénario, une réponse depuis l'inbox) et qui connaissent un numéro, pas un identifiant de contact.
+   * Le chemin de MASSE garde son chargement en un seul énoncé : une requête par destinataire y ferait de
+   * l'attribution un coût proportionnel à la taille de la campagne.
+   *
+   * ⚠️ Les deux formes de stockage du numéro sont couvertes par une liste de valeurs (`in ($2, $3)`) et non
+   * par une fonction sur la colonne : `regexp_replace(phone_e164, …)` rendrait inutilisable l'index unique
+   * (tenant_id, phone_e164), donc un balayage complet des contacts par envoi. Même leçon que `isOptedOut`.
+   *
+   * `null` = numéro inconnu de la base. Le lien part alors sans jeton, donc anonyme : dégrader la mesure vaut
+   * mieux que faire échouer un envoi.
+   */
+  async jetonPourE164(tenantId: string, e164: string, fabriquer: () => string): Promise<string | null> {
+    const nu = e164.replace(/[^0-9]/g, '');
+    const lire = async (): Promise<{ id: string; jeton: string | null } | null> => {
+      const res = await this.pool.query<{ id: string; jeton_public: string | null }>(
+        `select id, jeton_public from contacts where tenant_id = $1 and phone_e164 in ($2, $3) limit 1`,
+        [tenantId, `+${nu}`, nu],
+      );
+      const r = res.rows[0];
+      return r ? { id: r.id, jeton: r.jeton_public } : null;
+    };
+
+    const contact = await lire();
+    if (!contact) return null;
+    if (contact.jeton) return contact.jeton;
+
+    // `jeton_public is null` dans le WHERE : deux envois simultanés au même contact tirent deux jetons, un
+    // seul entre, et la relecture rend celui du gagnant. Sans cette garde, le second écraserait le premier,
+    // ce qui rendrait anonymes les clics des messages déjà partis avec l'ancien.
+    const pose = await this.pool.query<{ jeton_public: string }>(
+      `update contacts set jeton_public = $3
+        where id = $2 and tenant_id = $1 and jeton_public is null
+       returning jeton_public`,
+      [tenantId, contact.id, fabriquer()],
+    ).catch(() => null); // collision d'unicité globale : la relecture ci-dessous tranche
+    const gagne = pose?.rows[0]?.jeton_public;
+    if (gagne) return gagne;
+    return (await lire())?.jeton ?? null;
   }
 
   /**

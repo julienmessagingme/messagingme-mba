@@ -32,6 +32,8 @@ import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
 import { noeudsTemplate, compteursDeClics } from './links/mesures';
+import { aDesLiensTracables } from './links/rcs-liens';
+import { fabriquerJeton } from './links/jeton-contact';
 import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
@@ -445,7 +447,12 @@ async function main(): Promise<void> {
           : aDesVariables(brut)
             ? appliquerVariables(brut, contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}))
             : brut;
-        const issue = await workflowRuntime.rcsStack.sender.sendTo(tenant, agentId, waId, message, randomUUID());
+        // QUI a cliqué : le jeton du contact ouvert, écrit dans les liens tracés du message. Lu SEULEMENT si
+        // le message porte un lien, et jamais bloquant : sans jeton, le lien part tracé mais anonyme.
+        const jeton = aDesLiensTracables(message)
+          ? (await trackedLinkStore.jetonPourE164(tenant, waId, fabriquerJeton).catch(() => null)) ?? undefined
+          : undefined;
+        const issue = await workflowRuntime.rcsStack.sender.sendTo(tenant, agentId, waId, message, randomUUID(), jeton);
         if ('skipped' in issue) {
           return {
             refus: issue.skipped === 'rcs_optout'

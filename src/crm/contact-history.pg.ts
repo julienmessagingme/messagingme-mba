@@ -41,11 +41,17 @@ export interface ContactSend {
   deliveryStatus: string | null;
   deliveryUpdatedAt: string | null;
   /**
-   * La personne a-t-elle RÉAGI à cet envoi : répondu, ou appuyé sur un bouton du template.
+   * La personne a-t-elle RÉAGI à cet envoi : répondu, appuyé sur un bouton, ou CLIQUÉ sur un lien du message.
    *
    * 🔴 Ce n'est PAS « lu ». « Lu » dit que Meta a affiché le message ; « engagé » dit qu'un humain a fait
    * quelque chose. Un message peut être lu par milliers sans qu'une seule personne ne réagisse, et c'est
    * précisément l'écart que cet indicateur rend visible.
+   *
+   * ⚠️ LE CLIC A ÉTÉ AJOUTÉ LE 2026-09-02, ET IL COMBLAIT UN TROU RÉEL. Un bouton URL fait SORTIR le contact
+   * de la conversation : il n'en revient aucun message entrant, donc la personne la plus engagée de la
+   * campagne, celle qui a ouvert le lien, s'affichait comme n'ayant pas réagi. C'est aussi ce qui rend enfin
+   * VISIBLE l'attribution des clics (migrations 0106 et 0107) : sans elle, on saurait qui a cliqué sans
+   * jamais le montrer nulle part.
    *
    * Bornes : après l'envoi, avant le prochain envoi à ce contact, et dans les 24 h. La première borne évite
    * que deux campagnes du même jour se créditent l'une l'autre ; la seconde évite de compter une réponse de
@@ -160,6 +166,16 @@ export class PgContactHistoryStore {
       // Tout message ENTRANT compte, texte comme appui de bouton : un appui arrive comme un entrant portant
       // son `button_payload`, et exiger un payload exclurait « oui » écrit à la main, qui est pourtant la
       // même réaction.
+      //
+      // 🔴 ET LE CLIC SUR UN LIEN, depuis le 2026-09-02. Un bouton URL fait SORTIR le contact de la
+      // conversation : il n'en revient aucun entrant, donc sans ce second test la personne qui a ouvert le
+      // lien, la plus engagée de la campagne, s'affichait comme n'ayant pas réagi. Les MÊMES bornes que la
+      // réponse, et pour les mêmes raisons.
+      //
+      // ⚠️ Ne remontent ici que les clics ATTRIBUÉS (`contact_id` non nul), c'est-à-dire ceux dont l'URL
+      // portait le jeton du destinataire. Les liens des templates approuvés avant le 2026-09-02 ont une
+      // adresse figée chez Meta, sans jeton : leurs clics restent anonymes et ne peuvent créditer personne.
+      // C'est une limite physique, pas un oubli, et Julien l'a arbitrée : « on s'en fout des vieux templates ».
       `with envois as (
          select r.contact_id, r.status, r.sent_at, r.error, r.delivery_status, r.delivery_updated_at,
                 c.id as campaign_id, c.name, c.category, c.template_name, c.template_language, c.created_at,
@@ -172,7 +188,7 @@ export class PgContactHistoryStore {
        )
        select e.campaign_id, e.name, e.category, e.template_name, e.template_language, e.workflow_name,
               e.status, e.sent_at, e.error, e.delivery_status, e.delivery_updated_at,
-              (e.sent_at is not null and exists (
+              (e.sent_at is not null and (exists (
                  select 1
                    from conversation_messages m
                    join conversations cv on cv.id = m.conversation_id
@@ -181,7 +197,14 @@ export class PgContactHistoryStore {
                     and m.created_at > e.sent_at
                     and m.created_at < least(coalesce(e.prochain_envoi, 'infinity'::timestamptz),
                                              e.sent_at + interval '24 hours')
-              )) as engage
+              ) or exists (
+                 select 1
+                   from tracked_link_clicks tc
+                  where tc.tenant_id = $1 and tc.contact_id = e.contact_id
+                    and tc.at > e.sent_at
+                    and tc.at < least(coalesce(e.prochain_envoi, 'infinity'::timestamptz),
+                                      e.sent_at + interval '24 hours')
+              ))) as engage
          from envois e
         order by e.sent_at desc nulls last, e.created_at desc
         limit ${limit}`,

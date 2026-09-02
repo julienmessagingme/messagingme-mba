@@ -9,6 +9,7 @@ import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
+import { aDesLiensTracables } from '../links/rcs-liens';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
 
 /**
@@ -166,6 +167,14 @@ export interface WorkflowExecutorDeps {
      * Best-effort chez l'appelant : un échec de journal ne doit jamais faire échouer un envoi déjà parti.
      */
     recordOutbound?(tenantId: string, waId: string, msg: { body: string; messageId: string }): Promise<void>;
+    /**
+     * Jeton public du contact qui porte ce numéro, pour savoir QUI a cliqué sur un lien du message.
+     *
+     * OPTIONNELLE, et sans elle les liens partent tracés mais anonymes : c'est exactement l'état d'avant le
+     * 2026-09-02. Un scénario envoie à UNE personne à la fois, donc une lecture unitaire est ici le bon
+     * geste ; le chargement en un seul énoncé reste réservé au chemin de masse (les campagnes).
+     */
+    jetonPour?(tenantId: string, waId: string): Promise<string | null>;
   };
   /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
   now?: () => number;
@@ -404,7 +413,7 @@ export class WorkflowExecutor {
       : { kind: 'text', text: a.body, ...(suggestions.length ? { suggestions } : {}) };
     // Variables résolues comme pour un bloc RCS : le contact doit lire son prénom, pas des accolades.
     const msg = rcs.varsFor && aDesVariables(brut) ? appliquerVariables(brut, await rcs.varsFor(tenantId, waId)) : brut;
-    const out = await rcs.sender.sendTo(tenantId, agentId, waId, msg, randomUUID());
+    const out = await rcs.sender.sendTo(tenantId, agentId, waId, msg, randomUUID(), await this.jetonRcs(tenantId, waId, msg));
     if (!('skipped' in out)) await this.journaliserRcs(tenantId, waId, msg, out.messageId);
     if ('skipped' in out) {
       return out.skipped === 'rcs_optout'
@@ -419,6 +428,19 @@ export class WorkflowExecutor {
    * l'opérateur télécom quand on arrive ici, un incident de journal ne doit donc jamais le faire passer pour
    * un échec.
    */
+  /**
+   * Le jeton public du destinataire, pour attribuer les clics des liens de CE message.
+   *
+   * Lu SEULEMENT si le message porte un lien traçable : un bloc RCS sans lien, qui est le cas courant, ne
+   * paie aucune requête, et surtout on ne fabrique pas d'identifiant public pour quelqu'un à qui on n'envoie
+   * rien à cliquer. Best-effort : un échec de lecture rend un lien anonyme, jamais un envoi raté.
+   */
+  private async jetonRcs(tenantId: string, waId: string, msg: RcsOutbound): Promise<string | undefined> {
+    const lire = this.deps.rcs?.jetonPour;
+    if (!lire || !aDesLiensTracables(msg)) return undefined;
+    return (await lire(tenantId, waId).catch(() => null)) ?? undefined;
+  }
+
   private async journaliserRcs(tenantId: string, waId: string, msg: RcsOutbound, messageId: string): Promise<void> {
     if (!this.deps.rcs?.recordOutbound) return;
     try {
@@ -842,7 +864,8 @@ export class WorkflowExecutor {
         const msg = this.deps.rcs.varsFor && aDesVariables(brut)
           ? appliquerVariables(brut, await this.deps.rcs.varsFor(tenantId, waId))
           : brut;
-        const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`);
+        const jeton = await this.jetonRcs(tenantId, waId, msg);
+        const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`, jeton);
         envoye = !('skipped' in out);
         if (!('skipped' in out)) await this.journaliserRcs(tenantId, waId, msg, out.messageId);
       }

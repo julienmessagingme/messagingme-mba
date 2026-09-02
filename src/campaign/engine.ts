@@ -332,17 +332,32 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
    */
   let boutonsAJeton: number[] = [];
   let jetons = new Map<string, string>();
+  const idsDesContacts = (): string[] =>
+    [...new Set(pending.map((r) => r.contactId).filter((v): v is string => typeof v === 'string' && v !== ''))];
   if (!campaign.workflowId && !deps.channelSender && deps.boutonsTraces && deps.jetonsPourContacts) {
     try {
       boutonsAJeton = await deps.boutonsTraces(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
-      if (boutonsAJeton.length > 0) {
-        const ids = [...new Set(pending.map((r) => r.contactId).filter((v): v is string => typeof v === 'string' && v !== ''))];
-        jetons = await deps.jetonsPourContacts(campaign.tenantId, ids);
-      }
+      if (boutonsAJeton.length > 0) jetons = await deps.jetonsPourContacts(campaign.tenantId, idsDesContacts());
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('attribution des clics ignorée pour cette campagne:', err instanceof Error ? err.message : err);
       boutonsAJeton = [];
+    }
+  } else if (deps.channelSender?.aBesoinDeJeton && deps.jetonsPourContacts) {
+    /**
+     * Le MÊME chargement pour une campagne RCS, à une différence près : il n'y a pas de `boutonsTraces` à lire.
+     *
+     * 🔴 Côté WhatsApp, cette lecture est OBLIGATOIRE et décide de l'envoi : l'URL soumise à Meta porte (ou
+     * non) un `{{1}}`, et fournir un composant à contretemps fait échouer l'appel avec un 132000. Côté RCS,
+     * l'URL est écrite à l'envoi : il n'y a rien à accorder, donc rien à relire. C'est le message lui-même qui
+     * dit s'il porte un lien traçable, et le sender de canal l'a calculé une fois pour toutes
+     * (`aBesoinDeJeton`) plutôt que de le recalculer par destinataire.
+     */
+    try {
+      jetons = await deps.jetonsPourContacts(campaign.tenantId, idsDesContacts());
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('attribution des clics ignorée pour cette campagne RCS:', err instanceof Error ? err.message : err);
     }
   }
 
@@ -445,7 +460,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     let skipped: string | null = null;
     try {
       if (deps.channelSender) {
-        const out = await deps.channelSender.sendTo(r);
+        // Le jeton de CE destinataire, pour que le clic sur un lien du message dise QUI a réagi. Absent
+        // (contact inconnu, chargement en échec) : le lien part tracé mais anonyme, jamais cassé.
+        const out = await deps.channelSender.sendTo(r, r.contactId ? jetons.get(r.contactId) : undefined);
         if ('skipped' in out) {
           skipped = out.skipped;
           res = { messageId: '' };

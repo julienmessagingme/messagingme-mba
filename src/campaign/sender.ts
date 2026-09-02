@@ -3,6 +3,7 @@ import type { SendResult } from '../meta/types';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound } from '../rcs/types';
 import { appliquerVariables } from '../rcs/variables';
+import { aDesLiensTracables } from '../links/rcs-liens';
 
 /**
  * Seam d'envoi du moteur de campagne.
@@ -15,7 +16,17 @@ import { appliquerVariables } from '../rcs/variables';
  * l'idempotence côté opérateur en plus du claim atomique côté base.
  */
 export interface CampaignSender {
-  sendTo(recipient: Pick<Recipient, 'id' | 'toE164'>): Promise<SendResult | { skipped: string }>;
+  /** `jeton` = le jeton public du destinataire, écrit dans les liens tracés du message pour savoir QUI a
+   *  cliqué. Absent = lien tracé mais anonyme. */
+  sendTo(recipient: Pick<Recipient, 'id' | 'toE164'>, jeton?: string): Promise<SendResult | { skipped: string }>;
+  /**
+   * Ce sender a-t-il besoin qu'on lui fournisse un jeton par destinataire ?
+   *
+   * Calculé UNE fois sur le message de la campagne, pas par destinataire : c'est ce qui évite au moteur de
+   * fabriquer des jetons pour toute une liste quand le message ne porte aucun lien. On ne crée pas
+   * d'identifiants pour des gens à qui on n'envoie rien à cliquer.
+   */
+  readonly aBesoinDeJeton?: boolean;
 }
 
 export interface RcsCampaignSenderOpts {
@@ -39,11 +50,14 @@ export interface RcsCampaignSenderOpts {
 
 export function makeCampaignSender(o: RcsCampaignSenderOpts): CampaignSender {
   return {
-    async sendTo(recipient) {
+    // Lu sur le message FIGÉ de la campagne : la résolution des variables par destinataire ne touche pas les
+    // URL (règle de `src/rcs/variables.ts`), donc la réponse est la même pour tout le monde.
+    aBesoinDeJeton: aDesLiensTracables(o.message),
+    async sendTo(recipient, jeton) {
       const message = o.varsFor
         ? appliquerVariables(o.message, await o.varsFor(o.tenantId, recipient.toE164))
         : o.message;
-      return o.rcs.sendTo(o.tenantId, o.agentId, recipient.toE164, message, recipient.id);
+      return o.rcs.sendTo(o.tenantId, o.agentId, recipient.toE164, message, recipient.id, jeton);
     },
   };
 }

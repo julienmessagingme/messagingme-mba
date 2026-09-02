@@ -38,6 +38,20 @@ export const lienDe = (base: string, code: string): string => `${base.replace(/\
 export const lienTraceAvecJeton = (base: string, code: string): string => `${lienDe(base, code)}/{{1}}`;
 
 /**
+ * L'adresse d'un code avec le jeton D'UN DESTINATAIRE écrit dedans, celle des messages RCS.
+ *
+ * 🔴 La différence avec `lienTraceAvecJeton` n'est pas cosmétique, c'est toute la différence entre les deux
+ * canaux. Un template WhatsApp est soumis puis figé : son URL ne peut porter qu'un `{{1}}`, rempli à chaque
+ * envoi par un composant de bouton, et se tromper fait échouer l'appel (132000). Un message RCS est composé À
+ * L'ENVOI : on y écrit le jeton lui-même, sans variable, sans resoumission, sans risque de rejet.
+ *
+ * Sans jeton (contact inconnu de la base, lecture en échec), on rend l'adresse nue : le lien fonctionne et le
+ * clic est compté, il n'est simplement rattaché à personne. Dégrader la mesure, jamais l'envoi.
+ */
+export const lienPourContact = (base: string, code: string, jeton?: string): string =>
+  (jeton ? `${lienDe(base, code)}/${jeton}` : lienDe(base, code));
+
+/**
  * Les boutons URL qu'on sait tracer, dans l'ordre du template puis des cartes.
  *
  * Deux exclusions, chacune pour une raison précise :
