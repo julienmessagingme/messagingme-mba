@@ -53,6 +53,22 @@ const EPREUVES = [
   { question: 'elle tient combien de kilometres sans recharger ?', attendu: 'electrique' },
 ];
 
+/**
+ * 🔴 LES QUESTIONS HORS SUJET, ET C'EST LE TEST QUI DECIDE DE TOUT. La garde anti-hallucination du produit
+ * repose sur une propriete : quand aucune fiche ne repond, l'agent doit SORTIR par « sans source » plutot que
+ * de repondre de memoire. Le plein texte l'obtient gratuitement (aucun mot commun, aucune ligne remontee).
+ *
+ * Le vectoriel, lui, rend TOUJOURS un classement : il y a toujours une fiche « la moins loin ». Si une
+ * question sans reponse produit quand meme un premier bien detache, alors AUCUNE regle semantique n'est sure,
+ * et il faudra en tirer les consequences plutot que d'ecrire une regle qui rassure.
+ */
+const HORS_SUJET = [
+  'vous vendez des velos electriques ?',
+  'quelle est la recette de la tarte tatin ?',
+  'je cherche un emploi chez vous, vous recrutez ?',
+  'combien coute un billet de train pour Marseille ?',
+];
+
 interface ReponseEmbeddings {
   data?: Array<{ embedding?: number[] }>;
   usage?: { prompt_tokens?: number; total_tokens?: number; cost?: number };
@@ -89,6 +105,7 @@ for (const modele of MODELES) {
     const details: string[] = [];
     const bonnes: number[] = [];
     const mauvaises: number[] = [];
+    const ecarts: number[] = [];
     for (let i = 0; i < EPREUVES.length; i += 1) {
       const q = questions.vecteurs[i]!;
       const classement = FICHES
@@ -104,7 +121,7 @@ for (const modele of MODELES) {
       // l'est pas. Un seuil pose a l'intuition serait soit inerte, soit un filtre qui coupe les bonnes fiches.
       const bonne = classement.find((c) => c.id === EPREUVES[i]!.attendu)!.score;
       const pireMeilleure = classement.filter((c) => c.id !== EPREUVES[i]!.attendu)[0]!.score;
-      bonnes.push(bonne); mauvaises.push(pireMeilleure);
+      bonnes.push(bonne); mauvaises.push(pireMeilleure); ecarts.push(ecart);
       details.push(`rang=${rang} bonne=${bonne.toFixed(3)} meilleure_mauvaise=${pireMeilleure.toFixed(3)} ecart=${ecart.toFixed(3)} « ${EPREUVES[i]!.question.slice(0, 30)} »`);
     }
     console.log(`\n=== ${modele} ===`);
@@ -113,6 +130,20 @@ for (const modele of MODELES) {
     // La SEPARATION des deux nuages : c'est elle qui dit si un seuil est posable, et ou.
     console.log(`  -> bonnes: min=${Math.min(...bonnes).toFixed(3)} max=${Math.max(...bonnes).toFixed(3)} | mauvaises: min=${Math.min(...mauvaises).toFixed(3)} max=${Math.max(...mauvaises).toFixed(3)}`);
     console.log(`  -> seuil posable : ${Math.min(...bonnes) > Math.max(...mauvaises) ? `OUI, entre ${Math.max(...mauvaises).toFixed(3)} et ${Math.min(...bonnes).toFixed(3)}` : 'NON, les nuages se chevauchent'}`);
+
+    // Le test qui decide : une question SANS reponse dans le corpus doit se distinguer d'une question qui en a
+    // une. On regarde le score du premier et son ecart au deuxieme, exactement ce qu'une regle observerait.
+    const hs = await embarquer(modele, HORS_SUJET);
+    const scoresHs: Array<{ premier: number; ecart: number }> = [];
+    for (let i = 0; i < HORS_SUJET.length; i += 1) {
+      const c = FICHES.map((f, j) => cosinus(hs.vecteurs[i]!, fiches.vecteurs[j]!)).sort((a, b) => b - a);
+      scoresHs.push({ premier: c[0]!, ecart: c[0]! - c[1]! });
+      console.log(`  HORS SUJET premier=${c[0]!.toFixed(3)} ecart=${(c[0]! - c[1]!).toFixed(3)} « ${HORS_SUJET[i]!.slice(0, 30)} »`);
+    }
+    const pireHs = Math.max(...scoresHs.map((x) => x.premier));
+    const pireEcartHs = Math.max(...scoresHs.map((x) => x.ecart));
+    console.log(`  -> un SCORE separe-t-il le hors-sujet ? ${Math.min(...bonnes) > pireHs ? `OUI (> ${pireHs.toFixed(3)})` : `NON (hors-sujet monte a ${pireHs.toFixed(3)}, une bonne descend a ${Math.min(...bonnes).toFixed(3)})`}`);
+    console.log(`  -> un ECART separe-t-il le hors-sujet ? ${Math.min(...ecarts) > pireEcartHs ? `OUI (> ${pireEcartHs.toFixed(3)})` : `NON (hors-sujet atteint ${pireEcartHs.toFixed(3)}, un bon descend a ${Math.min(...ecarts).toFixed(3)})`}`);
   } catch (err) {
     console.log(`\n=== ${modele} ===\nINDISPONIBLE : ${err instanceof Error ? err.message : String(err)}`);
   }
