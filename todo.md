@@ -1,11 +1,17 @@
 # todo.md : backlog
 
-## 🔴 Ce qu'on exécute est dans `PLAN.md`, section « LE PROGRAMME » (arrêtée le 2026-08-31)
+## 🔴 Ce qu'on exécute est dans [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md)
 
-Sept lots dans l'ordre : (1) codes de plafond Meta, claim atomique de l'avance, recherche de connaissance
-mutualisée, refus du 2e numéro · (2) rétention des conversations, 12 mois · (3) registre de tâches du worker ·
-(4) throttle partagé par numéro · (5) campagnes en lots courts puis concurrence · (6) `CampaignCreateForm` puis
-files webhook séparées · (7) `WorkflowBuilder` puis versions publiées de scénarios.
+Sept lots arrêtés le 2026-09-02, **aucun commencé**, et son POINT DE REPRISE en tête porte l'état exact :
+(1) fermer le bail du tour d'avance · (2) le défilement du fil d'inbox · (3) un plafond serveur de taille de
+campagne · (4) une panne d'avance cesse d'être invisible · (5) retirer deux affirmations qui mentent ·
+(6) six files traitent UN job à la fois pour toute la flotte · (7) rendre le pool de connexions visible.
+Ordre recommandé : le 1 d'abord (seul qui puisse encore envoyer un message en trop à un client), puis le 6.
+Décision qui manque : le chiffre du plafond du lot 3 (proposition faite, 5 000).
+
+⚠️ **Le programme de `PLAN.md` est TERMINÉ depuis le 2026-09-01**, il ne dit plus ce qu'on fait. Cet en-tête
+l'a annoncé un jour de trop : le nouveau plan a vécu quelques heures sans être référencé de nulle part, donc
+introuvable depuis les points d'entrée. Un plan qu'aucun fichier lu au démarrage ne nomme n'existe pas.
 
 Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
 ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.

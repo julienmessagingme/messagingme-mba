@@ -151,7 +151,14 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Les DEUX programmes sont terminés le
+- 🔴 **[docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) : CE QU'ON EXÉCUTE
+  MAINTENANT, à lire AVANT `PLAN.md`.** Sept lots arbitrés le 2026-09-02, aucun commencé. Son **POINT DE
+  REPRISE** en tête dit l'état exact, l'ordre recommandé (lot 1 le bail, puis lot 6 la concurrence) et la
+  seule décision qui manque (le plafond de campagne du lot 3). Les lots : (1) fermer le bail du tour
+  d'avance · (2) le défilement du fil d'inbox · (3) un plafond serveur de taille de campagne · (4) une panne
+  d'avance cesse d'être invisible · (5) retirer deux affirmations qui mentent · (6) six files traitent UN job
+  à la fois pour toute la flotte · (7) rendre le pool de connexions visible.
+- **[PLAN.md](PLAN.md) : l'HISTORIQUE des programmes, plus aucune liste en cours.** Les DEUX sont terminés le
   2026-09-01 : le I (sept lots) et le II (huit lots, dont le 8e volontairement incomplet, arbitré item par
   item). Le fichier reste la référence de séquencement et porte le piège de chaque lot ; il n'y a plus de
   liste en cours. Ce qui reste ouvert est listé dans `todo.md` et dans la §7 de l'audit du 25 août.
