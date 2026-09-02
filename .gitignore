@@ -10,6 +10,10 @@ dist/
 !.env.prod.example
 *.log
 coverage/
+# Artefacts de Playwright. Non ignores jusqu au 2026-09-02, donc a un `git add -A` pres d etre committes :
+# ce sont des captures et des traces d echec, parfois lourdes, et toujours sans interet dans l historique.
+test-results/
+playwright-report/
 .DS_Store
 .vitest/
 
