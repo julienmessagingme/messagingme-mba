@@ -351,6 +351,38 @@ export const schema = z.object({
    *  Vide -> la route de lien d'install répond 503 (le front garde son bouton mais l'action indique l'indisponibilité). */
   HUBSPOT_CONNECTOR_PUBLIC_URL: z.string().default(''),
 }).superRefine((c, ctx) => {
+  /**
+   * 🔴 LES DEUX CHAÎNES DE CONNEXION DOIVENT DÉSIGNER LA MÊME BASE.
+   *
+   * `DATABASE_URL` (session, DDL, pg-boss) et `APP_DATABASE_URL` (transaction, pool applicatif) sont deux
+   * MODES d'accès à une seule base : en production, le même hôte Supabase sur deux ports. Si leurs hôtes
+   * diffèrent, l'une des deux est fausse, et le processus tourne alors à cheval sur DEUX bases sans le dire.
+   *
+   * Ce n'est pas une hypothèse : c'est arrivé le 2026-09-02, en montant un banc de charge. Le worker a été
+   * lancé avec `DATABASE_URL` sur une base jetable, mais `APP_DATABASE_URL` est resté sur la PRODUCTION par
+   * héritage du fichier d'environnement. Ses files tapaient donc la base jetable pendant que ses balayages
+   * lisaient et écrivaient en production. Aucun dégât ce jour-là, par chance : il n'y avait aucune campagne
+   * vivante à reprendre. Avec une campagne en cours, le balayage de reprise l'aurait relancée en `DRY_RUN`
+   * et aurait marqué de VRAIS destinataires comme envoyés, sans qu'aucun message ne parte.
+   *
+   * La garde est volontairement sur l'HÔTE seul : le port et le mode diffèrent légitimement (5432 session,
+   * 6543 transaction), l'hôte jamais.
+   */
+  if (c.DATABASE_URL !== '' && c.APP_DATABASE_URL !== '') {
+    const hote = (url: string): string | null => {
+      try { return new URL(url).hostname; } catch { return null; }
+    };
+    const a = hote(c.DATABASE_URL);
+    const b = hote(c.APP_DATABASE_URL);
+    if (a !== null && b !== null && a !== b) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['APP_DATABASE_URL'],
+        message: `DATABASE_URL et APP_DATABASE_URL désignent des hôtes DIFFÉRENTS (${a} vs ${b}). Ce sont deux modes d'accès à UNE base : des hôtes différents veulent dire que le process tournerait à cheval sur deux bases, ses files d'un côté et ses balayages de l'autre.`,
+      });
+    }
+  }
+
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
   // cross-tenant. En dev/test on tolère le défaut pour l'ergonomie.

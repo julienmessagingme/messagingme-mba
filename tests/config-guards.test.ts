@@ -169,3 +169,37 @@ describe('maintenanceOptions (bruit de l’instance pg-boss sur la base)', () =>
     });
   });
 });
+
+
+describe('les deux chaînes de connexion désignent la MÊME base', () => {
+  /**
+   * 🔴 Cette garde vient d'un incident réel du 2026-09-02. Un banc de charge a été monté en surchargeant
+   * `DATABASE_URL` vers une base jetable, mais `APP_DATABASE_URL` est resté sur la PRODUCTION par héritage du
+   * fichier d'environnement. Le worker a donc tourné à cheval sur DEUX bases : ses files d'un côté, ses
+   * balayages de l'autre. Aucun dégât ce jour-là, par chance : aucune campagne vivante à reprendre. Avec une
+   * campagne en cours, le balayage de reprise l'aurait relancée en `DRY_RUN` et aurait marqué de VRAIS
+   * destinataires comme envoyés, sans qu'aucun message ne parte.
+   */
+  it('🔴 des hôtes DIFFÉRENTS sont refusés, quel que soit l’environnement', () => {
+    const r = schema.safeParse({
+      DATABASE_URL: 'postgres://u:p@banc-pg:5432/banc',
+      APP_DATABASE_URL: 'postgres://u:p@aws-1-eu-west-2.pooler.supabase.com:6543/postgres',
+    });
+    expect(errPaths(r)).toContain('APP_DATABASE_URL');
+  });
+
+  it('🔴 le même hôte sur des PORTS différents est ACCEPTÉ : c’est le montage de production', () => {
+    // L'autre sens, et il compte autant : session en 5432, transaction en 6543. Une garde qui refuserait ça
+    // empêcherait la production de démarrer, ce qui serait pire que le défaut qu'elle corrige.
+    const r = schema.safeParse({
+      DATABASE_URL: 'postgres://u:p@aws-1-eu-west-2.pooler.supabase.com:5432/postgres',
+      APP_DATABASE_URL: 'postgres://u:p@aws-1-eu-west-2.pooler.supabase.com:6543/postgres',
+    });
+    expect(errPaths(r)).not.toContain('APP_DATABASE_URL');
+  });
+
+  it('`APP_DATABASE_URL` vide reste accepté : c’est le repli documenté sur DATABASE_URL', () => {
+    const r = schema.safeParse({ DATABASE_URL: 'postgres://u:p@host:5432/db', APP_DATABASE_URL: '' });
+    expect(errPaths(r)).not.toContain('APP_DATABASE_URL');
+  });
+});
