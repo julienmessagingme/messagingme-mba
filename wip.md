@@ -12,6 +12,25 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
+## LIVRÉ ET DÉPLOYÉ le 2026-09-02 au soir : les sept lots du plan post-audit, le chantier IA, la vectorisation
+
+**Rien n'est en cours.** Tout ce qui suit est en production. Le détail technique et les pièges sont dans
+[documentation.md](documentation.md) § Journal des lots livrés, le fonctionnel dans
+[features.md](features.md), et ce qui reste dans [todo.md](todo.md).
+
+Trois blocs dans la soirée :
+
+1. **Les sept lots du plan post-audit** (bail d'avance renouvelé, défilement de l'inbox, plafond de campagne à
+   20 000, panne d'avance visible, deux affirmations retirées, concurrence des files, pool visible).
+2. **Le chantier IA** : lecture du champ de cache, mesure d'un tour réel (2 allers-retours, 3 s, ~0,00026 $),
+   et mesure de la limite du Gateway (aucun 429 jusqu'à 1,2 M tokens/minute).
+3. **La vectorisation de la base de connaissance** (migrations 0110-0111), puis les six corrections du lot
+   immédiat de l'audit externe qui a suivi.
+
+🔴 **Ce qui reste ouvert est dans `todo.md`, et deux points touchent le chemin IA** : les effets ne sont pas
+arrêtés à la perte du bail, et un tour d'agent tué par un crash est perdu pour toujours. Les deux viennent de
+l'audit externe et sont prévus pour demain matin.
+
 ## LIVRÉ le 2026-09-02 : le lot UX demandé par Julien (dix items), attribution des clics comprise
 
 Julien a demandé dix choses d'un coup, plus deux questions. **Tout est livré.** Déployé par lots : le

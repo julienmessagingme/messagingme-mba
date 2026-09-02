@@ -2058,6 +2058,78 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-02 au soir : la recherche de connaissance apprend le SENS (migrations 0110-0111)
+
+Julien : « en bornant à 3 fiches sur 500, tu renvoies potentiellement 1 % du contenu... faut vectoriser ! ».
+Il avait raison, et mon objection (« le coût est déjà borné ») était l'argument INVERSE du bon : plafonner à
+trois fiches rend la qualité du tri PLUS critique, pas moins.
+
+**Le défaut que le code documentait déjà.** `ficheEstPertinente` n'accepte une fiche que sur des motifs
+LEXICAUX, et son commentaire disait : « une question sans le moindre mot commun ne fait remonter AUCUNE fiche,
+donc la sortie tombe de toute façon ». Présenté comme une garantie de sûreté, et c'en est une. Mais « c'est
+combien pour résilier » et « Conditions de sortie de contrat » n'ont aucun mot en commun.
+
+🔴 **CE QUE LA MESURE A INTERDIT, et ce n'est pas ce que j'allais écrire.** J'allais ajouter une quatrième
+règle « similarité >= X ». Impossible : une question HORS SUJET remonte une fiche à **0,361** quand une vraie
+question descend à **0,299**. Les deux populations se chevauchent, aucun seuil n'est posable, et en écrire un
+aurait fait sauter la garde anti-hallucination, qui est la propriété la plus importante du produit.
+
+**La raison est structurelle.** Un embedding est un **bi-encodeur** : il encode la question et la fiche
+SÉPARÉMENT puis compare. Son cosinus répond à « ces deux textes se ressemblent », pas à « cette fiche RÉPOND à
+cette question ». Et il rend TOUJOURS un classement : il y a toujours une fiche « la moins loin ».
+
+**Un reranker, lui, sépare.** Cross-encodeur : il lit la question ET la fiche ensemble, et rend un score
+calibré. `cohere/rerank-v3.5` place les vraies questions au-dessus de **0,0817** et le hors-sujet sous
+**0,0409**. ⚠️ Et le modèle le plus RÉCENT est le moins bon pour notre usage : `rerank-v4-fast` laisse le
+hors-sujet monter au-dessus des vraies questions. Prendre la dernière version par réflexe aurait reproduit le
+défaut qu'on corrigeait.
+
+**L'architecture, trois étages, chacun faisant ce qu'il sait faire :**
+
+1. **RAPPEL** large et pas cher : l'union du plein texte + trigramme (imbattable sur une référence produit ou
+   un numéro de contrat) et du vectoriel (imbattable sur l'intention). On ne cherche pas la précision ici, on
+   cherche à ne rien manquer. `AGENT_RAPPEL_CANDIDATS = 12`.
+2. **VERDICT** calibré : le reranker note, le seuil décide (`AGENT_RERANK_SEUIL = 0,06`, milieu de
+   l'intervalle mesuré). C'est LUI qui porte la garde anti-hallucination désormais.
+3. **BORNE** inchangée : les 3 meilleures, tronquées à 2 000 caractères. **Le contexte envoyé au modèle ne
+   bouge pas d'un octet** ; ce qui change, c'est LESQUELLES.
+
+🔴 **LE BALAYAGE EST LE SEUL ENDROIT QUI CALCULE UN VECTEUR**, et c'est délibéré. Il y a TROIS chemins
+d'écriture de fiche, donc trois occasions d'oublier ; le dépôt a payé ce prix le jour même avec le 131008. Ici,
+un quatrième chemin est vectorisé sans que personne y pense. Deux bénéfices de plus : une panne du Gateway
+n'empêche pas d'enregistrer une fiche, et le rattrapage des fiches existantes est gratuit (même cas que « pas
+encore vectorisée »). Le prix, assumé : une fiche créée il y a dix secondes n'est trouvable que par les MOTS.
+
+⚠️ **L'édition d'une fiche EFFACE son vecteur.** Un vecteur qui décrit l'ANCIEN texte est pire qu'une absence
+de vecteur : il fait remonter la fiche sur des questions qu'elle ne traite plus.
+
+**Les replis perdent le gain, jamais la garde.** Vectoriseur en panne -> plein texte seul. Reranker en panne ->
+retour à la règle lexicale, et une fiche venue du seul rappel vectoriel (couverture zéro) est alors écartée.
+
+⚠️ **La dimension 1536 est figée par le modèle** (`cohere/embed-v4.0`, choisi parce qu'il place la bonne fiche
+en premier 6 fois sur 6 en FRANÇAIS, là où deux concurrents la placent deuxième à 0,009 près). En changer
+oblige à recalculer les vecteurs de tous les clients : c'est un balayage, pas un drame, mais ça se décide une
+fois. `embedding_modele` existe pour le faire progressivement plutôt que de vider la colonne d'un coup.
+
+Bancs reproductibles : `scripts/mesure-embedding.mts` (choix du modèle, épreuve hors-sujet, reranker) et
+`scripts/mesure-tour-agent.mts` (tour réel, concurrence). Détail des mesures :
+`docs/MESURE-RECHERCHE-CONNAISSANCE-2026-09-02.md` et `docs/MESURE-TOUR-AGENT-2026-09-02.md`.
+
+### ⚠️ Deux défauts de MESURE trouvés par l'audit externe, et corrigés le soir même (migration 0111)
+
+Ils ne cassaient rien, ils **mentaient**, ce qui est pire pour un écran d'exploitation.
+
+1. **La carte du pool colorait sur le mauvais chiffre.** Rouge dès `max_ms >= 50`, or `max_ms` inclut
+   l'ouverture normale d'une connexion neuve (TCP + TLS), parfaitement normale et massive au démarrage. Une
+   barre rouge pouvait donc s'afficher avec ZÉRO attente sur pool saturé. Le seau retient désormais DEUX
+   maximums (`max_ms` et `max_attente_ms`), et **seul le second colore**.
+2. **La télémétrie se mesurait elle-même.** Le vidage écrit son seau PAR LE POOL INSTRUMENTÉ : cette écriture
+   devenait le premier échantillon de la minute suivante, la télémétrie s'auto-alimentait, et la promesse
+   « aucune ligne sur un process au repos » était fausse dès la première activité. `sansSeMesurer` suspend la
+   mesure pendant l'écriture, avec un COMPTEUR (deux suspensions imbriquées ne se désactivent pas) et un
+   `finally` (une panne de base ne doit pas rendre la mesure sourde à vie).
+
+---
 ## DEPLOYE le 2026-09-02 : tracer et attribuer les liens des messages RCS (migration 0107)
 
 Julien : « il faut aussi que ça marche si j'envoie un RCS hein ? ». Le pendant RCS de l'attribution des clics

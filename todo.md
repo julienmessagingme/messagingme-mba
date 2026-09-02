@@ -1,24 +1,38 @@
 # todo.md : backlog
 
-## 🔴 Ce qu'on exécute est dans [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md)
+## 🔴 Ce qu'on exécute est le POINT 2 de l'audit externe du 2026-09-02
 
-Sept lots arrêtés le 2026-09-02, **aucun commencé**, et son POINT DE REPRISE en tête porte l'état exact :
-(1) fermer le bail du tour d'avance · (2) le défilement du fil d'inbox · (3) un plafond serveur de taille de
-campagne · (4) une panne d'avance cesse d'être invisible · (5) retirer deux affirmations qui mentent ·
-(6) six files traitent UN job à la fois pour toute la flotte · (7) rendre le pool de connexions visible.
-Ordre recommandé : le 1 d'abord (seul qui puisse encore envoyer un message en trop à un client), puis le 6.
-Décision qui manque : le chiffre du plafond du lot 3 (proposition faite, 5 000).
+Les sept lots de [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) sont **livrés et
+déployés** (2026-09-02 au soir), ainsi que le point 1 de l'audit qui a suivi. Ce qui reste, dans cet ordre :
 
-⚠️ **Le programme de `PLAN.md` est TERMINÉ depuis le 2026-09-01**, il ne dit plus ce qu'on fait. Cet en-tête
-l'a annoncé un jour de trop : le nouveau plan a vécu quelques heures sans être référencé de nulle part, donc
-introuvable depuis les points d'entrée. Un plan qu'aucun fichier lu au démarrage ne nomme n'existe pas.
+**A2 — arrêter les EFFETS à la perte du bail d'avance.** Le battement empêche qu'un autre reprenne le tour,
+et le jeton empêche l'ancien porteur d'écrire l'état. Il ne l'empêche PAS de continuer ses envois : `perdu()`
+ne fait qu'écrire une ligne de log. Il faut un état `perdu` consultable, un `AbortSignal` propagé aux
+transports, une vérification avant chaque groupe d'effets irréversibles, et une durée totale maximale.
 
-**Ajouté le 2026-09-02 (lot 5) : écrire le profil `equite` du banc de charge**, et le faire APRÈS le lot 6.
+**A1 — rattraper un tour d'agent tué par un crash.** `prendreLeTour` incrémente `tours` AVANT le travail :
+si le worker meurt entre les deux, pg-boss rejoue avec l'ancien numéro, la réservation rend `null`, le rejeu
+est classé « doublon », et le tour est perdu pour toujours avec la session bloquée en `en_cours`. Le choix le
+plus prudent pour une première fermeture : un watchdog qui CLÔT la session en échec et suit la branche d'échec
+du scénario, plutôt que de rejouer (ce qui exigerait de maîtriser l'idempotence des effets).
+
+**A3 — les deux bornes de sécurité des connecteurs HTTP.** Résolution DNS contrôlée (un domaine public peut
+résoudre vers le réseau Docker ou vers une adresse de métadonnées) et lecture en FLUX bornée : `maxBytes` est
+aujourd'hui vérifié APRÈS `res.text()`, donc la réponse entière est déjà en mémoire, et `.length` compte des
+unités UTF-16 et non des octets.
+
+**A4 — la preuve de capacité.** Le SLO entrant confond encore l'âge du plus vieux job PRÊT avec un p95 de bout
+en bout : un job déjà actif peut être bloqué pendant que cet âge revient à zéro. Il faut horodater création,
+début et fin métier, et rejouer le banc agent sur plusieurs MINUTES, pas sur des rafales de dix secondes.
+
+Puis les B et C de l'audit : rendre les échecs d'avance acquittables, imbriquer les capacités au lieu de
+recopier les `Pick`, fermer la course du plafond « tous les contacts », découper `CampaignCreateForm`.
+
+**Ajouté le 2026-09-02 (lot 5) : écrire le profil `equite` du banc de charge**, après le lot 6.
 `docs/SLO-2026-09-01.md` l'annonçait comme une commande existante alors que `scripts/banc-charge.mts` ne la
-contient pas ; la promesse est retirée du document. L'écrire avant que la concurrence par groupe ne change
-n'aurait mesuré que la configuration d'avant. Il faut : deux espaces sur la même file à groupe, l'un bavard et
-l'autre discret, et la mesure de l'attente du DISCRET, seuil 5 minutes. ⚠️ Il exige un Postgres jetable ET un
-worker en face, sinon il mesure une file morte.
+contient pas ; la promesse est retirée du document. Il faut : deux espaces sur la même file à groupe, l'un
+bavard et l'autre discret, et la mesure de l'attente du DISCRET, seuil 5 minutes. ⚠️ Il exige un Postgres
+jetable ET un worker en face, sinon il mesure une file morte.
 
 Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
 ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.

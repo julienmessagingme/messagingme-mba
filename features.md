@@ -1286,6 +1286,20 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - ✅ **La provenance est sous chaque fiche** : « écrite à la main », ou « lue sur <adresse> le <date> (N
   jours) ». Une fiche que personne n'a touchée depuis plus de **90 jours** porte une pastille « À relire ».
   C'est la parade au défaut le plus courant du marché, le contenu périmé.
+- ✅ **L'agent trouve désormais une fiche même quand la question n'en partage AUCUN mot** (2026-09-02). Avant,
+  la recherche ne connaissait que les mots : « c'est combien pour résilier » ne trouvait pas « Conditions de
+  sortie de contrat », et l'agent répondait « je ne sais pas » alors que la réponse était dans la base. Julien :
+  « en bornant à 3 fiches sur 500, tu renvoies 1 % du contenu ». La recherche comprend maintenant le SENS en
+  plus des mots, et garde les deux : le sens pour l'intention, les mots pour une référence produit, un numéro
+  de contrat ou un prix exact, où le sens est mauvais.
+- ✅ **Et l'agent ne s'est PAS mis à inventer pour autant.** C'est le point délicat, et il a été mesuré : une
+  question hors sujet (« vous vendez des vélos ? ») fait toujours remonter la fiche « la moins loin », donc la
+  ressemblance seule ne peut pas servir de juge. Un second modèle note la pertinence de chaque fiche candidate,
+  et sous le seuil l'agent sort toujours par « Aucune source ». **Rien ne change dans ce qu'il reçoit** : trois
+  fiches, tronquées comme avant. Ce qui change, c'est LESQUELLES.
+- ⚠️ **Une fiche tout juste créée est trouvable par les MOTS à la seconde, par le SENS au bout d'une minute** :
+  sa compréhension se calcule en tâche de fond. Éditer une fiche remet ce calcul à zéro, pour que sa
+  compréhension ne décrive jamais un texte qu'elle n'a plus.
 
 ### Les outils : ce que l'agent a le droit de FAIRE
 
