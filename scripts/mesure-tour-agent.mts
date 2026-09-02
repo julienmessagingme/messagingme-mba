@@ -70,10 +70,27 @@ const systeme = promptSysteme({
   contactConnu: false,
 });
 
-/** Les outils REELS du produit, pas une liste inventee : leur schema pese dans chaque appel. */
+/**
+ * Les outils REELS du produit, pas une liste inventee : leur schema pese dans CHAQUE appel, donc il fait
+ * partie de ce qu on mesure. On construit ici la ligne `agent_tools` que la console ecrirait quand un client
+ * active un outil maison, en reprenant les libelles francais du catalogue.
+ *
+ * `envoyer_bloc` est ecarte : il n a de sens qu attache a un bloc de scenario reel.
+ */
 const outils = outilsExposes(
-  OUTILS_MAISON.filter((o) => o.handler !== 'envoyer_bloc').map((o) => ({
-    nom: o.handler, description: o.description, params: o.params, binding: { handler: o.handler },
+  OUTILS_MAISON.filter((o) => o.handler !== 'envoyer_bloc').map((o, i) => ({
+    id: `banc-${i}`,
+    tenantId: 'banc',
+    agentId: 'banc',
+    origin: 'mba',
+    name: o.nomDefaut,
+    description: o.description.fr,
+    nePasUtiliser: o.nePasUtiliser.fr,
+    params: o.params.map((p) => ({ name: p.name, description: p.description })),
+    binding: { handler: o.handler },
+    sourceId: null,
+    requestId: null,
+    extraction: [],
   })) as never,
   [],
 );
