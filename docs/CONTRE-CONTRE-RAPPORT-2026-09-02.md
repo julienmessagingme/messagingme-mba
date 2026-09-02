@@ -233,19 +233,46 @@ message toutes les 90 s font 6,7 tours en vol, toutes les 60 s en font 10, toute
 est donc le bon ordre de grandeur à cadence humaine et devient court si les échanges s'accélèrent**, ce qui
 est exactement pourquoi c'est une variable d'environnement.
 
-🔴 **Et le vrai plafond est ailleurs : 600 000 tokens par minute** vers le Gateway dans l'hypothèse à 200
-conversations et 60 s. Les limites d'un gateway s'expriment en tokens par minute : c'est ce chiffre-là qu'il
-faut confronter au plan Vercel, pas le nombre de requêtes simultanées.
+### 🔴 LA LIMITE DU GATEWAY : cherchée, introuvable dans la spec, donc MESURÉE
+
+**Ce que Vercel publie : rien sur un débit.** La documentation de l'AI Gateway ne parle que de **budgets de
+dépense** ; l'API de quotas interrogée avec notre vraie clé rend une liste **vide** ; et une vraie réponse ne
+porte **aucun en-tête de débit** (ni `x-ratelimit-*`, ni `retry-after`). La spécification est muette, donc on
+mesure. Quatre passages, N tours joués EN MÊME TEMPS :
+
+| Tours en parallèle | Tokens/minute obtenus | Tour au pire | 429 |
+|---|---|---|---|
+| 12 (notre réglage) | 553 000 | 5,9 s | **0** |
+| 20 | 1 199 000 | 4,5 s | **0** |
+| 40, 1er passage | 188 000 | **59,3 s** | 0 |
+| 40, 2e passage | 1 090 000 | 6,9 s | **0** |
+
+**Aucun 429, à aucun niveau, jusqu'à 1,2 million de tokens par minute.** Le Gateway n'est donc **pas** le
+prochain plafond, contrairement à ce que ce rapport annonçait avant de mesurer, et notre réglage de 12 est très
+conservateur (l'hypothèse à 200 conversations demandait 600 000 tokens/minute, soit la moitié de ce qui passe).
+
+⚠️ **Un passage sur deux à 40 a montré une queue sévère** (un tour à 59 s, débit divisé par six), qui ne s'est
+**pas reproduite**. J'ai failli conclure « à 40, le débit s'effondre » sur un seul échantillon. La conclusion
+honnête est qu'une **queue rare et sévère existe**, pas qu'elle est systématique, et c'est elle qu'il faut
+craindre : elle immobilise une place de file **sans jamais lever d'erreur**.
+
+🔴 **La production est protégée là où le banc ne l'était pas** : chaque appel y porte une échéance de tour de
+**30 secondes** en `AbortSignal`, que le banc ne passe pas. C'est pour ça que le tour à 59 s a pu aller au bout
+ici. Une place de file est donc immobilisée au plus 30 s, jamais les 120 s du plafond HTTP.
+
+**On ne monte pas 12 à 20 pour autant**, et c'est un choix : la marge est mesurée, elle existera le jour où
+elle servira, mais cette file n'a **jamais traité un seul job en production**. Monter un nombre pour un
+embouteillage qui n'existe pas ajoute du risque sans rien résoudre.
 
 **Ce qui reste honnêtement non résolu :**
 
-1. **Le tuyau externe.** Les limites de débit réelles du Gateway ne sont **toujours pas** connues. On sait
-   maintenant quoi leur comparer (600 000 tokens/minute), ce qui est un progrès, mais pas la réponse.
-2. **Aucune mesure sous CONCURRENCE.** Les tours du banc sont joués les uns après les autres : il donne la
-   durée d'un tour seul, c'est-à-dire l'entrée de la loi de Little, pas sa vérification.
-3. **Cette file n'a jamais tourné en production.** Zéro job dans tout l'historique.
-4. **Le corpus mesuré est petit** (17 fiches). Un client avec 500 fiches verrait des résultats d'outils bien
-   plus gros, donc des tours plus chers.
+1. **Aucune mesure ne dure plus de dix secondes.** Un quota exprimé par heure ou par jour ne se verrait pas sur
+   des rafales aussi courtes : ce qui est établi, c'est l'absence de plafond **instantané** sous 1,2 M
+   tokens/minute, pas l'absence de quota sur une fenêtre longue.
+2. **Cette file n'a jamais tourné en production.** Zéro job dans tout l'historique.
+3. **Le corpus mesuré est petit** (17 fiches). Un client avec 500 fiches verrait des résultats d'outils bien
+   plus gros, donc des tours plus chers, et le calcul de tokens/minute serait à refaire.
+4. **La queue rare à 40 n'est pas expliquée.** Deux passages ne suffisent pas à en établir la fréquence.
 
 ## Ce qui n'est PAS prouvé (liste exhaustive à ma connaissance)
 
@@ -271,8 +298,9 @@ faut confronter au plan Vercel, pas le nombre de requêtes simultanées.
 
 1. **Les chiffres 12 et 4 sur la file d'agent, maintenant qu'un tour est MESURÉ à 3 secondes.** Little donne
    10 tours en vol pour 200 conversations à un message toutes les 60 s, donc 12 tient de justesse et 20
-   seraient nécessaires à 30 s. Est-ce que l'hypothèse de cadence est la bonne ? Et surtout : est-ce que
-   quelque chose sature avant nous, à 600 000 tokens/minute vers le Gateway ?
+   seraient nécessaires à 30 s. Le Gateway, lui, encaisse 1,2 M tokens/minute sans un seul 429, donc il n'est
+   pas le plafond. Est-ce que l'hypothèse de cadence est la bonne ? Et qu'est-ce qui sature avant nous, si ce
+   n'est ni le pool, ni la boucle Node, ni le Gateway ?
 2. **Le plafond de 1 par client sur les files de fond.** Il garantit l'équité mais plafonne aussi le débit d'un
    client seul à ce qu'il était. Est-ce le bon arbitrage pour un déploiement où un client pèse 90 % du trafic ?
 3. **Le renouvellement du bail à un tiers.** Suffisant contre une boucle d'événements bloquée, un décalage
