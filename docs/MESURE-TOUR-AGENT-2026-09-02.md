@@ -65,19 +65,61 @@ Loi de Little, avec la durée MESURÉE de 3 secondes :
 échanges s'accélèrent. C'est exactement pourquoi ce nombre est une variable d'environnement : le relever ne
 demande pas de redéployer du code.
 
-🔴 **Et le vrai plafond n'est pas là.** À 200 conversations avec un message toutes les 60 s, on est à
-3,3 tours/s x 3 000 tokens, soit environ **600 000 tokens par minute** vers le Gateway. Les limites d'un
-gateway s'expriment presque toujours en tokens par minute : **c'est ce chiffre-là qu'il faut confronter à
-notre plan Vercel**, pas le nombre de requêtes simultanées. C'est la prochaine mesure à faire, et elle demande
-soit la documentation du plan, soit d'aller chercher un 429.
+**Faut-il le monter à 20 tout de suite ?** Non, et c'est un choix, pas une hésitation. La mesure montre que 20
+passe sans dégradation, donc la marge existe le jour où elle servira. Mais cette file **n'a jamais traité un
+seul job en production** : monter un nombre pour un embouteillage qui n'existe pas ajoute du risque sans rien
+résoudre. Ce qui justifierait de le relever est un signal, pas une intuition : des tours qui attendent leur
+tour dans `/ops`. Le chiffre est en configuration précisément pour que ce jour-là ce soit une variable
+d'environnement à changer, pas un déploiement.
+
+## 🔴 LA LIMITE DU GATEWAY : cherchée dans la doc, introuvable, donc MESURÉE
+
+**Ce que Vercel publie.** Rien sur un débit. La documentation de l'AI Gateway ne parle que de **budgets de
+dépense**, et l'API de quotas interrogée avec notre vraie clé rend une liste **vide** : aucun budget n'est
+configuré. Et une vraie réponse du Gateway ne porte **aucun en-tête de débit** (ni `x-ratelimit-*`, ni
+`retry-after`), vérifié le 2026-09-02.
+
+La spécification étant muette, on mesure. Quatre passages, en faisant tourner N tours EN MÊME TEMPS :
+
+| Tours en parallèle | Tokens/minute obtenus | Tour moyen | Tour au PIRE | Échecs (429) |
+|---|---|---|---|---|
+| 1 (séquentiel) | ~60 000 | 3,0 s | 4,2 s | 0 |
+| 12 (notre réglage) | **553 000** | 3,1 s | 5,9 s | **0** |
+| 20 | **1 199 000** | 2,3 s | 4,5 s | **0** |
+| 40, 1er passage | 188 000 | 3,9 s | **59,3 s** | 0 |
+| 40, 2e passage | **1 090 000** | 3,3 s | 6,9 s | **0** |
+
+**Ce que ça établit.**
+
+1. 🔴 **Aucun 429, à aucun niveau, jusqu'à 40 tours simultanés et ~1,2 million de tokens par minute.** La
+   limite du Gateway, s'il y en a une, est **au-dessus** de tout ce qu'on peut produire à 25 clients. Elle
+   n'est donc pas le prochain plafond, contrairement à ce que ce document annonçait avant de mesurer.
+2. **La latence ne se dégrade pas** en montant de 12 à 40. À 20, elle est même meilleure qu'à 12, ce qui dit
+   surtout que le bruit entre deux passages dépasse l'effet de la concurrence dans cette plage.
+3. **Notre réglage de 12 est très conservateur.** 20 est mesuré propre, et 40 aussi.
+
+⚠️ **UN PASSAGE SUR DEUX À 40 A MONTRÉ UNE QUEUE SÉVÈRE** : un tour à 59 secondes, et un débit divisé par six
+sur ce passage. Il ne s'est **pas reproduit** au second passage. J'ai failli en conclure « à 40, le débit
+s'effondre » sur un seul échantillon, ce qui aurait été faux. **La conclusion honnête est qu'une queue rare et
+sévère existe, pas qu'elle est systématique**, et c'est elle qu'il faut craindre : elle immobiliserait une
+place de la file sans jamais lever d'erreur.
+
+🔴 **La production est protégée là où ce banc ne l'était pas.** Chaque appel de production porte une échéance
+de tour de **30 secondes** (`DEADLINE_MS`, passée en `AbortSignal`), que le banc ne passe pas : c'est pour ça
+que le tour à 59 s a pu aller au bout ici. En production, il aurait été coupé à 30 s. Une place de file est
+donc immobilisée **au plus 30 secondes**, jamais les 120 s du plafond HTTP.
 
 ## Ce que ces mesures ne disent PAS
 
 - **Elles portent sur des questions courtes et un corpus de 17 fiches.** Un client avec 500 fiches de
   connaissance verrait des résultats d'outils bien plus gros, donc des tours plus chers. Le banc prend le
   corpus par chemin : le rejouer avec un gros corpus est une commande, pas un développement.
-- **Elles ne mesurent aucune concurrence.** Les tours sont joués les uns après les autres. Elles donnent la
-  durée d'un tour SEUL, ce qui est l'entrée de la loi de Little, pas sa vérification.
+- **Le banc ne passe pas l'échéance de tour de la production** (30 s en `AbortSignal`). C'est ce qui a laissé
+  le tour à 59 s aller au bout. En production il aurait été coupé, donc le banc est ici PLUS pessimiste que
+  la réalité, ce qui est le bon sens de l'écart.
+- **Aucune mesure ne dure plus de dix secondes.** Une limite exprimée par minute ou par heure ne se verrait
+  pas sur des rafales aussi courtes : ce qu'on a établi, c'est qu'il n'y a pas de plafond INSTANTANÉ sous
+  1,2 million de tokens/minute, pas qu'aucun quota n'existe sur une fenêtre longue.
 - **Zéro pour `cached_tokens` peut vouloir dire « pas de cache » ou « champ non rendu ».** On ne peut pas
   distinguer les deux depuis notre côté, et la conséquence pratique est la même aujourd'hui.
 
