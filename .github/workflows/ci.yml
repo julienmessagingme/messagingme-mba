@@ -23,7 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # 🔴 pgvector, PAS `postgres:16` nu. La migration 0110 pose `create extension vector`, et une CI qui
+        # ne peut pas la jouer ne prouve plus rien du schema de production : elle s'arreterait a la 0109 et
+        # les tests d'integration tourneraient sur une base a laquelle il manque une colonne. Vu le
+        # 2026-09-02, `extension "vector" is not available` sur l'image nue. La production (Supabase) a
+        # l'extension DISPONIBLE (`vector` 0.8.2, verifie en base) : c'est la CI qu'on aligne sur elle.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
