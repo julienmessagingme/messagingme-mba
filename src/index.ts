@@ -278,6 +278,10 @@ async function main(): Promise<void> {
       // destinataires comme le mini-CRM désigne les siens, donc par l'intention et non par une liste
       // d'identifiants qui ne tiendrait pas dans le corps de la requête.
       contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
+      // Le plafond de taille. Le compte se fait EN BASE, filtres vides, donc sans charger un seul contact :
+      // c'est le chemin « tous les contacts » qui n'était borné par rien.
+      compterContacts: (tenant) => contactStore.count(tenant, {}),
+      plafondDestinataires: config.CAMPAIGN_MAX_RECIPIENTS,
       // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
       rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),

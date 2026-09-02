@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PLAFOND_DESTINATAIRES_DEFAUT } from './campaign/plafond';
 
 /** Exporté pour les tests : `config` est parsé À L'IMPORT, donc inutilisable pour vérifier les fail-fast
  *  (il faudrait réimporter le module avec un autre environnement). Le schéma, lui, se parse à la demande. */
@@ -194,6 +195,14 @@ export const schema = z.object({
    * quelques minutes ajoutées sur une campagne de plusieurs heures. `0` retire le découpage.
    */
   CAMPAIGN_RUN_MAX_MS: z.coerce.number().default(2 * 60 * 1000),
+  /**
+   * Plafond de destinataires d'une campagne (lot 3 du plan post-audit, 2026-09-02). Chiffre de Julien.
+   *
+   * Un garde-fou, pas un objectif : il empêche le serveur d'ACCEPTER PAR ACCIDENT ce qu'on a décidé de ne pas
+   * faire. En configuration pour qu'il se relève sans redéploiement le jour d'un vrai gros client. La règle et
+   * le message de refus vivent dans `src/campaign/plafond.ts`.
+   */
+  CAMPAIGN_MAX_RECIPIENTS: z.coerce.number().default(PLAFOND_DESTINATAIRES_DEFAUT),
   /**
    * Nombre de runs de campagne traités EN PARALLÈLE par le worker, et plafond par ESPACE (lot 5).
    *

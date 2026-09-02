@@ -8,6 +8,7 @@ import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberR
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
 import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
+import { PLAFOND_DESTINATAIRES_DEFAUT, refusDePlafond } from '../campaign/plafond';
 import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
@@ -51,6 +52,17 @@ export interface CampaignRouteDeps {
    * Optionnelle : absente, seule la liste explicite d'identifiants reste acceptée (comportement d'avant).
    */
   contactIdsForTarget?(tenantId: string, target: BulkTarget): Promise<string[]>;
+  /**
+   * Nombre de contacts de l'espace, pour appliquer le plafond au chemin « TOUS les contacts » (celui qui
+   * n'était borné par rien). Compté en base, jamais en chargeant les contacts : le plafond doit se prononcer
+   * AVANT le chargement, sinon il ne protège plus de grand-chose.
+   *
+   * Absente du câblage -> ce chemin-là n'est pas plafonné, comme avant. Les deux autres le restent, leur
+   * nombre étant connu sans requête.
+   */
+  compterContacts?(tenantId: string): Promise<number>;
+  /** Plafond de destinataires. Absent -> le défaut de `src/campaign/plafond.ts` (20 000). */
+  plafondDestinataires?: number;
   /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
    *  sous la marque d'un autre. Absente du câblage -> aucune campagne RCS ne peut être créée. */
   rcsAgentBelongsToTenant?(agentId: string, tenantId: string): Promise<boolean>;
@@ -380,6 +392,22 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (contactIds.length === 0) {
         return reply.code(422).send({ error: 'Aucun contact ne correspond à cette sélection.' });
       }
+    }
+
+    /**
+     * 🔴 LE PLAFOND DE TAILLE (lot 3 du plan post-audit). Placé ICI parce que c'est le seul point où les
+     * trois façons de désigner des destinataires se rejoignent : liste explicite, cible par filtres, et
+     * « tous les contacts ». Trois vérifications séparées auraient fini par diverger, et c'est justement le
+     * troisième chemin, le plus dangereux, qui n'était borné par rien.
+     *
+     * Une campagne au fil de l'eau est EXCLUE : elle naît vide, ses destinataires arrivent un par un par le
+     * webhook, il n'y a rien à compter et le compte de l'espace n'aurait aucun rapport.
+     */
+    if (!webhookId) {
+      const plafond = deps.plafondDestinataires ?? PLAFOND_DESTINATAIRES_DEFAUT;
+      const vises = contactIds ? contactIds.length : (deps.compterContacts ? await deps.compterContacts(effectiveTenant) : 0);
+      const refus = refusDePlafond(vises, plafond);
+      if (refus) return reply.code(422).send({ error: refus });
     }
 
     // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client). Sur RCS, c'est

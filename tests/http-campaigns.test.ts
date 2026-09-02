@@ -94,6 +94,12 @@ interface Deps {
   ciblesVues?: unknown[];
   /** Ne câble PAS la résolution de cible : reproduit une instance qui ne connaît que les listes d'ids. */
   sansCible?: boolean;
+  /** Ce que compte l'espace, pour le chemin « tous les contacts ». Défaut : le nombre de contacts du faux repo. */
+  nbContacts?: number;
+  /** Plafond de destinataires. Absent -> celui du module (20 000). */
+  plafond?: number;
+  /** Ne câble PAS le compteur : reproduit une instance où le chemin « tous les contacts » n'est pas plafonné. */
+  sansCompteur?: boolean;
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -111,6 +117,10 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
           return d.ciblesResolues ?? ['c1'];
         },
       }),
+      // Le plafond de taille : compté en base en production, ici rendu tel quel. Câblé PAR DÉFAUT, comme en
+      // production, sinon les tests jugeraient une instance qui n'existe pas.
+      ...(d.sansCompteur ? {} : { compterContacts: async () => d.nbContacts ?? contacts.length }),
+      ...(d.plafond !== undefined ? { plafondDestinataires: d.plafond } : {}),
       ...(d.sansWebhook ? {} : {
         webhookUsableByTenant: async () => d.webhookOk ?? true,
         stopWebhookCampaign: async (id: string, tenant: string) => { d.stopCalls?.push({ id, tenant }); return d.stopOk ?? true; },
@@ -962,6 +972,89 @@ describe('reprise après pause : POST /run lève la pause AVANT d’enfiler', ()
     expect(q.enqueued).toHaveLength(1);
     // Et la route de pause n'est alors qu'un refus net, jamais un « suspendu » mensonger.
     expect((await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...auth() })).statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+/**
+ * 🔴 LE PLAFOND DE TAILLE D'UNE CAMPAGNE (lot 3 du plan post-audit, 2026-09-02, chiffre de Julien : 20 000).
+ *
+ * Ce n'est pas un chantier de montée en charge, c'est empêcher le serveur d'ACCEPTER PAR ACCIDENT ce qu'on a
+ * décidé de ne pas faire. Avant : le chemin par filtres était borné à 100 000 par un cap technique enfoui dans
+ * le store, la liste explicite ne l'était que par la taille du corps HTTP, et le chemin « tous les contacts »
+ * ne l'était par RIEN. Les trois passent maintenant par la même garde, au seul point où ils se rejoignent.
+ */
+describe('POST /campaigns : le plafond de destinataires', () => {
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `c${i}`);
+
+  it('🔴 liste EXPLICITE au-dessus du plafond -> 422, avec les deux nombres', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { plafond: 10 });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactIds: ids(11) } });
+    expect(res.statusCode).toBe(422);
+    // 422 et JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur.
+    const erreur = res.json().error as string;
+    expect(erreur).toContain('11');
+    expect(erreur).toContain('10');
+    // Et surtout : RIEN n'a été créé.
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('🔴 cible par FILTRES au-dessus du plafond -> 422, sans rien créer', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { plafond: 10, ciblesResolues: ids(50) });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactTarget: { filters: {} } } });
+    expect(res.statusCode).toBe(422);
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('🔴 TOUS les contacts au-dessus du plafond -> 422 : c’est le chemin qui n’était borné par rien', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { plafond: 10, nbContacts: 30_000 });
+    // Ni contactIds ni contactTarget : « tous les contacts de l'espace ».
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(res.statusCode).toBe(422);
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('sous le plafond, les trois chemins passent', async () => {
+    const app = appWith(new FakeRepo(contacts), { plafond: 10 });
+    const parIds = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactIds: ['c1'] } });
+    const parCible = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactTarget: { filters: {} } } });
+    const tous = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect([parIds.statusCode, parCible.statusCode, tous.statusCode]).toEqual([201, 201, 201]);
+    await app.close();
+  });
+
+  it('le plafond par DÉFAUT est celui du module : 20 000 passe, 20 001 non', async () => {
+    // La borne exacte, dans les deux sens. Sans ce test, une inégalité stricte inversée passerait inaperçue.
+    const app = appWith(new FakeRepo(contacts));
+    const pile = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactIds: ids(20_000) } });
+    const unDeTrop = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactIds: ids(20_001) } });
+    expect(pile.statusCode).toBe(201);
+    expect(unDeTrop.statusCode).toBe(422);
+    await app.close();
+  });
+
+  it('une campagne AU FIL DE L’EAU n’est jamais plafonnée : elle naît vide', async () => {
+    // Ses destinataires arrivent un par un par le webhook. Compter l'espace ici n'aurait aucun rapport, et
+    // refuserait une campagne qui ne vise personne.
+    const app = appWith(new FakeRepo(contacts), { plafond: 1, nbContacts: 30_000 });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, webhookId: 'w1' } });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('instance sans compteur câblé : les deux autres chemins restent plafonnés', async () => {
+    // Le compteur est optionnel, donc son absence ne doit pas ouvrir en grand ce qui se compte sans requête.
+    const app = appWith(new FakeRepo(contacts), { plafond: 10, sansCompteur: true });
+    const tous = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    const parIds = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactIds: ids(11) } });
+    expect(tous.statusCode).toBe(201);
+    expect(parIds.statusCode).toBe(422);
     await app.close();
   });
 });
