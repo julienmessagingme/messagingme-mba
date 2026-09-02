@@ -87,6 +87,8 @@ for (const modele of MODELES) {
 
     let premiers = 0;
     const details: string[] = [];
+    const bonnes: number[] = [];
+    const mauvaises: number[] = [];
     for (let i = 0; i < EPREUVES.length; i += 1) {
       const q = questions.vecteurs[i]!;
       const classement = FICHES
@@ -97,11 +99,20 @@ for (const modele of MODELES) {
       // L'ECART au deuxieme compte autant que le rang : un premier a 0,001 pres n'est pas un choix, c'est
       // un hasard, et il basculera sur la question suivante.
       const ecart = classement[0]!.score - classement[1]!.score;
-      details.push(`rang=${rang} ecart=${ecart.toFixed(3)} « ${EPREUVES[i]!.question.slice(0, 38)} »`);
+      // 🔴 Le score ABSOLU de la bonne fiche, et celui de la meilleure MAUVAISE. C'est de ces deux nuages que
+      // se lit un seuil : au-dessus duquel une fiche est « vraiment » pertinente, en dessous duquel elle ne
+      // l'est pas. Un seuil pose a l'intuition serait soit inerte, soit un filtre qui coupe les bonnes fiches.
+      const bonne = classement.find((c) => c.id === EPREUVES[i]!.attendu)!.score;
+      const pireMeilleure = classement.filter((c) => c.id !== EPREUVES[i]!.attendu)[0]!.score;
+      bonnes.push(bonne); mauvaises.push(pireMeilleure);
+      details.push(`rang=${rang} bonne=${bonne.toFixed(3)} meilleure_mauvaise=${pireMeilleure.toFixed(3)} ecart=${ecart.toFixed(3)} « ${EPREUVES[i]!.question.slice(0, 30)} »`);
     }
     console.log(`\n=== ${modele} ===`);
     console.log(`dimension=${dimension} bonnes_reponses_en_1er=${premiers}/${EPREUVES.length} tokens=${fiches.tokens + questions.tokens} cout=$${(fiches.cout + questions.cout).toFixed(6)}`);
     for (const d of details) console.log('  ' + d);
+    // La SEPARATION des deux nuages : c'est elle qui dit si un seuil est posable, et ou.
+    console.log(`  -> bonnes: min=${Math.min(...bonnes).toFixed(3)} max=${Math.max(...bonnes).toFixed(3)} | mauvaises: min=${Math.min(...mauvaises).toFixed(3)} max=${Math.max(...mauvaises).toFixed(3)}`);
+    console.log(`  -> seuil posable : ${Math.min(...bonnes) > Math.max(...mauvaises) ? `OUI, entre ${Math.max(...mauvaises).toFixed(3)} et ${Math.min(...bonnes).toFixed(3)}` : 'NON, les nuages se chevauchent'}`);
   } catch (err) {
     console.log(`\n=== ${modele} ===\nINDISPONIBLE : ${err instanceof Error ? err.message : String(err)}`);
   }
