@@ -80,27 +80,57 @@ function substituer(noeud: unknown, valeurs: Readonly<Record<string, ValeurVaria
   return noeud;
 }
 
+/** Une ligne du mode « liste de champs » : une clé, et un gabarit de valeur. */
+export interface ChampCorps {
+  cle: string;
+  /** Du texte, éventuellement à variables (`{{ville}}`), exactement comme une valeur de paramètre d'URL. */
+  valeur: string;
+}
+
+/**
+ * COMMENT le corps est saisi. Deux façons, et c'est une demande explicite de Julien le 2026-09-02 : « du json
+ * brut pour les mecs habitués et une liste de champs ».
+ *
+ * 🔴 DEUX SAISIES, UN SEUL MOTEUR. Le mode `champs` est COMPILÉ vers le même arbre que le mode `json`, puis
+ * les deux passent par `substituer`. C'est ce qui garantit qu'ils ne divergeront pas : deux chemins de
+ * substitution tenus en parallèle finiraient par ne plus produire la même chose au premier ajustement, et
+ * personne ne le verrait avant qu'un client ne s'en plaigne. La liste de champs n'est donc pas un second
+ * moteur, c'est une autre porte d'entrée du même.
+ */
+export type GabaritCorps =
+  | { mode: 'aucun' }
+  | { mode: 'json'; gabarit: string }
+  | { mode: 'champs'; champs: readonly ChampCorps[] };
+
 /**
  * Construit le corps d'un appel.
- *
- * `gabarit` est le JSON tel que le client l'a écrit dans la console. Vide ou absent = pas de corps, ce qui
- * est le cas normal d'un `GET`.
  *
  * Un gabarit ILLISIBLE est un refus, jamais un corps vide envoyé quand même : partir avec un corps que
  * personne n'a voulu est pire que ne pas partir, et le client peut corriger son gabarit dans sa console.
  */
 export function construireCorps(
-  gabarit: string | null | undefined,
+  gabarit: GabaritCorps,
   valeurs: Readonly<Record<string, ValeurVariable>>,
 ): CorpsConstruit | CorpsRefuse {
-  const brut = (gabarit ?? '').trim();
-  if (brut === '') return { ok: true, corps: null };
-
   let arbre: unknown;
-  try {
-    arbre = JSON.parse(brut);
-  } catch {
-    return { ok: false, raison: 'le corps de la requête n’est pas du JSON valide' };
+
+  if (gabarit.mode === 'aucun') return { ok: true, corps: null };
+
+  if (gabarit.mode === 'champs') {
+    // Une ligne sans clé est une ligne pas remplie, pas une erreur : même règle que les paramètres d'URL.
+    const lignes = gabarit.champs.filter((c) => c.cle.trim() !== '');
+    if (lignes.length === 0) return { ok: true, corps: null };
+    const objet: Record<string, unknown> = {};
+    for (const c of lignes) objet[c.cle.trim()] = c.valeur;
+    arbre = objet;
+  } else {
+    const brut = gabarit.gabarit.trim();
+    if (brut === '') return { ok: true, corps: null };
+    try {
+      arbre = JSON.parse(brut);
+    } catch {
+      return { ok: false, raison: 'le corps de la requête n’est pas du JSON valide' };
+    }
   }
 
   const manquantes = new Set<string>();
@@ -111,6 +141,23 @@ export function construireCorps(
     return { ok: false, raison: `variable(s) sans valeur dans le corps : ${[...manquantes].sort().join(', ')}` };
   }
   return { ok: true, corps: JSON.stringify(rempli) };
+}
+
+/**
+ * Traduit une liste de champs en gabarit JSON, pour que l'écran puisse proposer « passer en JSON brut » sans
+ * faire recommencer la saisie.
+ *
+ * ⚠️ SENS UNIQUE, et l'écran doit le dire. Tout JSON n'est pas représentable en liste de champs (un objet
+ * imbriqué, un tableau), donc la bascule inverse ferait perdre du travail en silence. Proposer un aller sans
+ * retour, en le disant, vaut mieux qu'un aller-retour qui ampute.
+ */
+export function champsVersJson(champs: readonly ChampCorps[]): string {
+  const objet: Record<string, unknown> = {};
+  for (const c of champs) {
+    const cle = c.cle.trim();
+    if (cle !== '') objet[cle] = c.valeur;
+  }
+  return JSON.stringify(objet, null, 2);
 }
 
 export interface ParametreUrl {
@@ -164,14 +211,17 @@ export function construireParametres(
  * Balaye le corps ET les paramètres d'URL : les deux portent des variables, et n'en lire qu'un ferait mentir
  * la liste à moitié.
  */
-export function variablesUtilisees(gabaritCorps: string | null | undefined, parametres: readonly ParametreUrl[] | null | undefined, chemin?: string): string[] {
+export function variablesUtilisees(corps: GabaritCorps, parametres: readonly ParametreUrl[] | null | undefined, chemin?: string): string[] {
   const vues = new Set<string>();
   const balayer = (s: string): void => {
     VARIABLE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = VARIABLE.exec(s)) !== null) vues.add(m[1]!);
   };
-  balayer(gabaritCorps ?? '');
+  // Les DEUX modes de saisie portent des variables : n'en lire qu'un ferait mentir la liste selon la façon
+  // dont le client a rempli son corps, ce qui est exactement le genre d'écart que personne ne soupçonne.
+  if (corps.mode === 'json') balayer(corps.gabarit);
+  if (corps.mode === 'champs') for (const c of corps.champs) balayer(c.valeur);
   for (const p of parametres ?? []) balayer(p.valeur);
   // Le CHEMIN utilise la notation `{nom}` (une seule accolade), héritée de `http-cible.ts` : on la lit aussi,
   // sinon la liste annoncée au client oublierait les variables de l'URL elle-même.
