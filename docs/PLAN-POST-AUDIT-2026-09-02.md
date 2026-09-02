@@ -174,14 +174,51 @@ option par file** : monter la concurrence et poser le **client** comme clé de g
 « À 25 clients il y aura 100 ou 200 conversations IA en même temps. » L'inquiétude est FONDÉE, et le chiffre
 qui sert à dimensionner n'est pas le nombre de conversations ouvertes : c'est **le débit d'arrivée multiplié
 par la durée d'un tour** (loi de Little). 200 personnes écrivant chacune toutes les 30 s font 6,7 messages/s ;
-à 5 s par tour, cela fait **~33 appels en vol**, pas 200.
+à 5 s par tour, cela fait **~33 tours en vol**, pas 200.
 
 | | Aujourd'hui | Cible du scénario 25 clients |
 |---|---|---|
-| Appels au modèle en parallèle | **1** | ~33 |
+| Tours en parallèle | **1** | ~33 |
 | Tours par minute | **12** | ~400 |
 
 Soit un facteur **33**. Tenir de l'IA conversationnelle multi-clients est impossible en l'état.
+
+### 🔴 UN TOUR N'EST PAS UN APPEL, et c'est ce qui change le dimensionnement
+
+Relevé le 2026-09-02 après une remarque de Julien (« si on envoie à chaque fois tout le contexte, ça bouche les
+toilettes plus vite »). Son intuition est juste, et la réalité est pire. Voici ce qui part au modèle :
+
+| Élément | Renvoyé à chaque appel ? | Borné ? |
+|---|---|---|
+| Prompt système (dont le brief de l'agent du client) | **oui** | non borné |
+| Historique de conversation | **oui** | **oui, 30 messages** (`MESSAGES_DE_CONTEXTE`) |
+| Définitions des outils exposés | **oui** | selon l'agent |
+| Résultats des outils déjà appelés dans le tour | **oui, cumulés** | non |
+
+Et surtout : `MAX_ALLERS_RETOURS = 6` (`src/agent/brain.gateway.ts:44`). Chaque appel d'outil relance une
+requête COMPLÈTE avec le contexte **grossi** du résultat précédent. **Un tour peut donc valoir jusqu'à six
+appels, chacun plus gros que le précédent.**
+
+**Aucune mise en cache nulle part** : `cache_control` est absent de tout le dépôt. Le prompt système et les
+définitions d'outils, rigoureusement identiques d'un aller-retour à l'autre ET d'un tour à l'autre, sont
+repayés intégralement à chaque fois.
+
+**Conséquence de méthode : mesurer les TOKENS PAR MINUTE, pas les requêtes.** Les limites d'un gateway
+s'expriment presque toujours en tokens/minute. Compter les requêtes reviendrait à compter les passages sans
+regarder ce qui s'y passe.
+
+### L'ordre de ce lot, et il commence par une mesure
+
+1. **Mesurer un tour RÉEL** sur une dizaine de conversations que Julien fait depuis le bac à sable ou son
+   numéro de test. ⚠️ **Rien à construire pour ça** : le code compte déjà `tokensIn`, `tokensOut` et le coût en
+   micro-euros à chaque appel, et les débite du solde du workspace. Ce qu'on cherche : tokens par tour, nombre
+   d'allers-retours réels, durée.
+2. **Éprouver la mise en cache de prompt** en un appel : est-ce que le Gateway Vercel laisse passer les
+   instructions de cache, et est-ce que le modèle en service les honore ? Si oui, la plus grosse part
+   CONSTANTE de chaque appel cesse d'être repayée, ce qui change à la fois le débit tenable et le coût.
+   ⚠️ À vérifier, pas à supposer : les deux réponses dépendent du couple gateway/modèle.
+3. **Alors seulement choisir les chiffres** de concurrence et de plafond par client, exprimés en
+   tokens/minute autant qu'en tours simultanés.
 
 ### Pourquoi la boucle Node n'est PAS le sujet
 
@@ -223,6 +260,47 @@ propre clé (`src/analysis/llm-client.ts:33`). Les deux chemins sont indépendan
 profil de requêtes d'un tour RÉEL avant de choisir les chiffres** : cette file n'a jamais tourné en production,
 poser 40 plutôt que 20 sans cette mesure serait deviner. C'est aussi là que le profil d'équité manquant du banc
 de charge (lot 5) sert enfin à quelque chose.
+
+---
+
+## Lot 7 : rendre le pool de connexions VISIBLE (et ne rien faire d'autre)
+
+Question de Julien, 2026-09-02 : « les 16 connexions, on fait quoi ? on serre les fesses, on prend une marge,
+on autoscale, on met des alertes ? »
+
+### Le calcul qui tranche entre ces quatre options
+
+Le commentaire de `DB_POOL_MAX` porte la mesure : à 11 ms d'aller-retour, **8 connexions tiennent environ
+700 requêtes/s par process**. Le scénario à 25 clients demande :
+
+| Consommateur | Requêtes/s |
+|---|---|
+| 25 clients x 2 opérateurs, inbox sondée toutes les 4 s | ~12 |
+| Une campagne de 10 000 à 80/min (~1,3 envoi/s x ~3 requêtes) | ~4 |
+| 33 tours d'agent en vol | rafales courtes, aucune connexion tenue pendant l'attente du modèle |
+
+**Quelques pour cent de la capacité.** Le pool n'est PAS ce qui cassera à 25 clients ; la file IA à 1 l'est.
+Donc : pas de marge à prendre sur ce qui n'est pas serré.
+
+### Pourquoi l'autoscaling est la MAUVAISE réponse ici
+
+Ajouter des instances **aggrave** le problème au lieu de le résoudre : chaque instance arrive avec **son propre
+pool de 8**. Autoscaler l'application multiplie la pression sur la seule ressource qui, elle, ne scale pas avec
+elle. La base est précisément ce qu'on ne règle pas en ajoutant des serveurs applicatifs.
+
+### Le vrai défaut n'est pas le chiffre, c'est l'aveuglement
+
+Vérifié : **`/ops` n'expose RIEN du pool.** Or le comportement à saturation est déjà correct : chaque requête
+attend, puis échoue proprement au bout de `DB_CONN_TIMEOUT_MS` (8 s) avec une erreur journalisée. On ne meurt
+pas en silence. Mais personne ne regarde, donc on l'apprendrait par un client qui appelle.
+
+**Le geste, et il est unique :** exposer les trois compteurs que le pool `pg` fournit déjà gratuitement
+(`totalCount`, `idleCount`, `waitingCount`) dans `/ops`, et alerter sur `waitingCount` durablement supérieur à
+zéro. Ce compteur dit littéralement « combien de tâches font la queue pour une connexion » : à zéro tout va
+bien, au-dessus on sait AVANT que les timeouts commencent.
+
+⚠️ **La marge viendra du plan payant**, et il faudra la **re-mesurer** comme les 16 l'ont été le 2026-08-25,
+jamais la supposer : ce nombre venait d'une mesure, pas d'une documentation.
 
 ---
 
