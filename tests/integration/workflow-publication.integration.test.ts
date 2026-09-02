@@ -88,6 +88,47 @@ describe.skipIf(!url)('publication des scénarios (Postgres)', () => {
     expect((await store.getById(id, tenantId))!.draftGraph).toBeNull();
   });
 
+  /**
+   * 🔴 PLAINTE DE PRODUCTION DU 2026-09-02. Un scénario publié par un collègue réaffichait « brouillon non
+   * publié » chez l'autre, et publier ne l'éteignait pas : le badge revenait dans les secondes qui suivaient.
+   * Mesuré sur la base : les publications avaient bien eu lieu, et la SEULE différence entre le publié et le
+   * brouillon était la position de trois blocs sur le canevas.
+   *
+   * Le moteur ne lit jamais `position` (vérifié : seul `parseGraph` la valide) : déplacer un bloc ne change
+   * rien pour un contact. À deux sur un même scénario, l'ancienne règle rendait le badge ineffaçable.
+   */
+  const grapheEn = (tag: string, x: number, y: number): WorkflowGraph => ({
+    nodes: [{ id: 'n1', type: 'tag', position: { x, y }, data: { tag } }],
+    edges: [],
+  });
+
+  it('🔴 DÉPLACER un bloc ne pose aucun brouillon, et la disposition n’est pas perdue', async () => {
+    const { id } = await store.insert(tenantId, 'deplacement', grapheEn('v1', 0, 0));
+    await store.publish(id, tenantId);
+
+    const maj = await store.update(id, tenantId, { graph: grapheEn('v1', -25, -89) });
+    expect(maj).toEqual({ trouve: true, brouillon: false });
+
+    // Le rangement est conservé : c'est le PUBLIÉ qui porte la nouvelle position, sinon elle disparaîtrait au
+    // rechargement et l'opérateur rangerait son canevas pour rien.
+    const apres = (await store.getById(id, tenantId))!;
+    expect(apres.draftGraph).toBeNull();
+    expect(apres.graph.nodes[0]!.position).toEqual({ x: -25, y: -89 });
+  });
+
+  it('🔴 mais changer le CONTENU en déplaçant reste un brouillon', async () => {
+    // La garde symétrique. Sans elle, le cas précédent publierait en continu tout ce que l'éditeur écrit.
+    const { id } = await store.insert(tenantId, 'deplacement-et-contenu', grapheEn('v1', 0, 0));
+    await store.publish(id, tenantId);
+
+    expect(await store.update(id, tenantId, { graph: grapheEn('v2', 400, 400) }))
+      .toEqual({ trouve: true, brouillon: true });
+    const apres = (await store.getById(id, tenantId))!;
+    expect(apres.graph.nodes[0]!.data.tag).toBe('v1');            // en ligne : intact
+    expect(apres.graph.nodes[0]!.position).toEqual({ x: 0, y: 0 });
+    expect(apres.draftGraph!.nodes[0]!.data.tag).toBe('v2');
+  });
+
   it('un scénario d’un AUTRE espace ne se met à jour ni ne se publie', async () => {
     const { id } = await store.insert(tenantId, 'isolation', graphe('v1'));
     const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-publication-autre') returning id`)).rows[0]!.id;

@@ -182,20 +182,46 @@ export class PgWorkflowStore {
    *  atteindre les contacts en cours de parcours. */
   async update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario> {
     const res = await this.pool.query<{ brouillon: boolean }>(
-      `update workflows set
+      // `forme` : le graphe débarrassé de ce qui ne change RIEN pour un contact, c'est-à-dire la POSITION des
+      // blocs sur le canevas. Le moteur ne lit jamais `position` (seul `parseGraph` la valide) : déplacer un
+      // bloc est du rangement, pas une modification à publier.
+      `with sans_positions as (
+         select jsonb_build_object(
+           'edges', w.graph->'edges',
+           'nodes', (select coalesce(jsonb_agg(n - 'position' order by ord), '[]'::jsonb)
+                       from jsonb_array_elements(coalesce(w.graph->'nodes', '[]'::jsonb)) with ordinality as t(n, ord))
+         ) as forme
+         from workflows w where w.id = $1 and w.tenant_id = $2
+       ),
+       neuf as (
+         select $4::jsonb as g, jsonb_build_object(
+           'edges', $4::jsonb->'edges',
+           'nodes', (select coalesce(jsonb_agg(n - 'position' order by ord), '[]'::jsonb)
+                       from jsonb_array_elements(coalesce($4::jsonb->'nodes', '[]'::jsonb)) with ordinality as t(n, ord))
+         ) as forme
+       )
+       update workflows w set
          name = coalesce($3, name),
-         -- Un brouillon IDENTIQUE au publié n'en est pas un : on le ramène à null, et l'écran cesse
-         -- d'annoncer « modifications non publiées ». Sans ce cas, la simple OUVERTURE d'un scénario
-         -- suffisait à en poser un (React Flow mesure les blocs au montage, ce qui déclenche l'auto-save),
-         -- et tout scénario seulement consulté aurait porté le badge à vie.
+         -- MÊME SCÉNARIO, blocs déplacés : la nouvelle disposition va DANS le publié. Le rangement est
+         -- conservé (il serait perdu au rechargement) sans demander à personne de publier une mise en page.
+         graph = case when n.g is not null and n.forme = c.forme then n.g else w.graph end,
+         -- Un brouillon IDENTIQUE au publié, AUX POSITIONS PRÈS, n'en est pas un : on le ramène à null, et
+         -- l'écran cesse d'annoncer « modifications non publiées ». Sans ce cas, la simple OUVERTURE d'un
+         -- scénario suffisait à en poser un (React Flow mesure les blocs au montage, ce qui déclenche
+         -- l'auto-save), et tout scénario seulement consulté aurait porté le badge à vie.
+         --
+         -- ⚠️ Sans le cas des POSITIONS, le badge revenait indéfiniment (constaté le 2026-09-02) : publier,
+         -- puis pousser un bloc de 40 px, et l'écran réclame de publier à nouveau. À deux sur un même
+         -- scénario, plus personne ne pouvait le voir « en ligne ».
          draft_graph = case
-           when $4::jsonb is null then draft_graph
-           when $4::jsonb = graph then null
-           else $4::jsonb
+           when n.g is null then w.draft_graph
+           when n.forme = c.forme then null
+           else n.g
          end,
          updated_at = now()
-       where id = $1 and tenant_id = $2
-       returning draft_graph is not null as brouillon`,
+       from sans_positions c, neuf n
+       where w.id = $1 and w.tenant_id = $2
+       returning w.draft_graph is not null as brouillon`,
       [id, tenantId, patch.name ?? null, patch.graph ? JSON.stringify(patch.graph) : null],
     );
     const r = res.rows[0];
