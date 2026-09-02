@@ -270,8 +270,10 @@ embouteillage qui n'existe pas ajoute du risque sans rien résoudre.
    des rafales aussi courtes : ce qui est établi, c'est l'absence de plafond **instantané** sous 1,2 M
    tokens/minute, pas l'absence de quota sur une fenêtre longue.
 2. **Cette file n'a jamais tourné en production.** Zéro job dans tout l'historique.
-3. **Le corpus mesuré est petit** (17 fiches). Un client avec 500 fiches verrait des résultats d'outils bien
-   plus gros, donc des tours plus chers, et le calcul de tokens/minute serait à refaire.
+3. ~~Le corpus mesuré est petit~~ **CORRIGÉ** : j'avais écrit qu'un client avec 500 fiches paierait des tours
+   plus chers. C'est faux, et le code le disait déjà : la recherche rend au plus **3 fiches** tronquées à
+   **2 000 caractères** chacune, donc ~6 Ko **quelle que soit la taille de la base**. Le coût d'un tour ne
+   grandit PAS avec le corpus. C'est une propriété délibérée du produit, que j'ai contredite sans la vérifier.
 4. **La queue rare à 40 n'est pas expliquée.** Deux passages ne suffisent pas à en établir la fréquence.
 
 ## Ce qui n'est PAS prouvé (liste exhaustive à ma connaissance)

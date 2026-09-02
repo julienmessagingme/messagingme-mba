@@ -111,9 +111,16 @@ donc immobilisée **au plus 30 secondes**, jamais les 120 s du plafond HTTP.
 
 ## Ce que ces mesures ne disent PAS
 
-- **Elles portent sur des questions courtes et un corpus de 17 fiches.** Un client avec 500 fiches de
-  connaissance verrait des résultats d'outils bien plus gros, donc des tours plus chers. Le banc prend le
-  corpus par chemin : le rejouer avec un gros corpus est une commande, pas un développement.
+- **Elles portent sur des questions courtes.** Un échange plus long fait grossir l'historique, borné à
+  30 messages, ce que le banc ne joue pas.
+
+🔴 **CORRECTION d'une affirmation de la première version de ce document.** J'y écrivais qu'« un client avec
+500 fiches verrait des résultats d'outils bien plus gros, donc des tours plus chers ». **C'est faux, et le code
+le disait déjà** : la recherche de connaissance rend au plus **3 fiches** (`FICHES_RENDUES`), chacune tronquée
+à **2 000 caractères** (`CORPS_MAX`), et la requête est bornée à 512 caractères. Ce qui atteint le modèle est
+donc plafonné à ~6 Ko **quelle que soit la taille de la base**. Un client avec 500 fiches paie exactement le
+même contexte qu'un client avec 17. Le coût d'un tour ne grandit pas avec le corpus : c'est une propriété
+délibérée du produit, et je l'ai contredite sans la vérifier.
 - **Le banc ne passe pas l'échéance de tour de la production** (30 s en `AbortSignal`). C'est ce qui a laissé
   le tour à 59 s aller au bout. En production il aurait été coupé, donc le banc est ici PLUS pessimiste que
   la réalité, ce qui est le bon sens de l'écart.
