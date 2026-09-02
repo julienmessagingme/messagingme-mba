@@ -72,3 +72,63 @@ describe('processWorkflowAdvance', () => {
     expect(calls).toEqual([]); // le message est vu par l'inbox (processInbound), mais le scénario n'avance pas
   });
 });
+
+/**
+ * 🔴 UNE PANNE D'AVANCE CESSE D'ÊTRE INVISIBLE (lot 4 du plan post-audit, 2026-09-02, migration 0108).
+ *
+ * Avant : l'exception était attrapée par message, un `console.error` était écrit, et le job webhook se
+ * terminait EN SUCCÈS. Donc aucun rejeu, aucune DLQ, aucune trace consultable. Le contact restait bloqué sur
+ * son bloc et personne ne l'apprenait jamais.
+ *
+ * ⚠️ L'isolation par message NE CHANGE PAS et reste testée juste au-dessus : une erreur sur un contact ne doit
+ * pas emporter les autres messages du même webhook. C'est l'acquittement SILENCIEUX qu'on ferme, pas l'isolation.
+ */
+describe('processWorkflowAdvance : l’échec est journalisé', () => {
+  it('🔴 une avance en échec est CONSIGNÉE, avec de quoi retrouver le fil', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const journal: Array<{ tenantId: string; waId: string; messageId: string; erreur: string }> = [];
+    await processWorkflowAdvance(payload, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('Meta indisponible'); },
+      journaliserEchec: async (e) => { journal.push(e); },
+    });
+    spy.mockRestore();
+    expect(journal).toEqual([{ tenantId: 't1', waId: '33600', messageId: 'm1', erreur: 'Meta indisponible' }]);
+  });
+
+  it('🔴 un journal en PANNE ne casse rien : les autres messages avancent quand même', async () => {
+    // Un journal d'échec qui ferait échouer le traitement qu'il observe serait une très mauvaise idée.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const done: string[] = [];
+    await processWorkflowAdvance(payload, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
+      journaliserEchec: async () => { throw new Error('table absente'); },
+    });
+    spy.mockRestore();
+    expect(done).toEqual(['m2']);
+  });
+
+  it('sans numéro rattaché à un espace, on ne journalise PAS : la ligne n’aurait nulle part où aller', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const journal: unknown[] = [];
+    await processWorkflowAdvance(payload, {
+      phoneNumberTenant: async () => { throw new Error('base injoignable'); },
+      advance: async () => {},
+      journaliserEchec: async (e) => { journal.push(e); },
+    });
+    spy.mockRestore();
+    expect(journal).toEqual([]);
+  });
+
+  it('une instance SANS journal câblé garde le comportement d’avant', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const done: string[] = [];
+    await processWorkflowAdvance(payload, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
+    });
+    spy.mockRestore();
+    expect(done).toEqual(['m2']);
+  });
+});

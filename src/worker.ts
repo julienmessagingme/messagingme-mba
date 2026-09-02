@@ -81,6 +81,7 @@ import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
+import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { MetaClientFactory } from './meta/factory';
 import { arbitreDeDebit } from './meta/arbitre-debit';
@@ -177,6 +178,9 @@ async function main(): Promise<void> {
   const eventStore = new PgEventStore(pool);
   const recipientStore = new PgRecipientStore(pool);
   const inboxStore = new PgInboxStore(pool);
+  // Le journal des erreurs. Le worker n'en LIT jamais : il y écrit les échecs d'avance de scénario, qui
+  // n'avaient aucun domicile et disparaissaient dans un `console.error` (lot 4 du plan post-audit).
+  const erreursLivraison = new PgErreursLivraisonStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
   const contactStore = new PgContactStore(pool);
@@ -341,7 +345,14 @@ async function main(): Promise<void> {
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
       // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
-      workflowAdvance: { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp) },
+      workflowAdvance: {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp),
+        // 🔴 Une avance qui échoue était acquittée en SILENCE (lot 4 du plan post-audit) : le job se terminait
+        // en succès, donc aucun rejeu, aucune DLQ, aucune trace, et le contact restait bloqué sur son bloc.
+        // Elle atterrit désormais dans le journal des erreurs, celui que l'écran montre déjà.
+        journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),
+      },
       // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
       // Le résultat ('created') est le signal « 1er message d'un contact inconnu » : le handler le capture
@@ -1048,6 +1059,10 @@ async function main(): Promise<void> {
       () => trackedLinkStore.purgeClicsOlderThan(config.TRACKED_CLICKS_RETENTION_DAYS));
     await etape('audit', `entrée(s) de journal effacée(s) (au-delà de ${config.AUDIT_LOG_RETENTION_DAYS} j)`,
       () => auditStore.purgeOlderThan(config.AUDIT_LOG_RETENTION_DAYS));
+    // Les échecs d'avance sont de l'EXPLOITATION, pas une preuve : ils se purgent, contrairement au journal
+    // d'audit qui, lui, est immuable par construction.
+    await etape('avances', `échec(s) d’avance effacé(s) (au-delà de ${config.AVANCE_ECHECS_RETENTION_DAYS} j)`,
+      () => erreursLivraison.purgeEchecsAvanceOlderThan(config.AVANCE_ECHECS_RETENTION_DAYS));
   };
   void retentionSweep();
   taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep);

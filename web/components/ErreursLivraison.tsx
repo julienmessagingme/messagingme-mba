@@ -59,7 +59,7 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
 
   function exporter(): void {
     const entetes = [t('Date (ISO)', 'Date (ISO)'), t('Campagne', 'Campaign'), t('Numéro', 'Number'), t('Code', 'Code'), t('Message', 'Message'), t('Origine', 'Source')];
-    const lignes = (erreurs ?? []).map((e) => [e.at ?? '', e.campaignName, e.telephone, e.code === null ? '' : String(e.code), e.message ?? '', e.origine]);
+    const lignes = (erreurs ?? []).map((e) => [e.at ?? '', e.campaignName ?? '', e.telephone, e.code === null ? '' : String(e.code), e.message ?? '', e.origine]);
     downloadCsv(t('erreurs-de-livraison.csv', 'delivery-errors.csv'), toCsv(entetes, lignes));
   }
 
@@ -130,10 +130,14 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
               </span>
               <span className="font-mono text-xs text-ink-600">{e.telephone}</span>
               <span className="text-xs text-ink-500">{e.campaignName}</span>
-              {/* L'ORIGINE distingue deux pannes très différentes : un refus à l'envoi vient de notre appel,
-                  un échec de livraison vient du téléphone d'en face. Chercher au mauvais endroit coûte cher. */}
+              {/* L'ORIGINE distingue trois pannes très différentes : un refus à l'envoi vient de notre appel,
+                  un échec de livraison vient du téléphone d'en face, et un échec de scénario ne vient d'aucun
+                  des deux, c'est notre traitement du message ENTRANT qui n'a pas abouti. Chercher au mauvais
+                  endroit coûte cher. */}
               <span className="text-[11px] text-ink-400">
-                {e.origine === 'envoi' ? t('jamais parti', 'never sent') : t('parti, non délivré', 'sent, not delivered')}
+                {e.origine === 'envoi' && t('jamais parti', 'never sent')}
+                {e.origine === 'livraison' && t('parti, non délivré', 'sent, not delivered')}
+                {e.origine === 'scenario' && t('scénario bloqué sur une réponse', 'scenario stuck on a reply')}
               </span>
               <span className="w-full text-xs text-ink-600">
                 {sens(e.code) || e.message || t('sans détail', 'no detail')}

@@ -54,7 +54,11 @@ recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette li
 **Dernière appliquée : 0107** (les liens tracés des messages RCS, clés sur leur DESTINATION), passée le
 2026-09-02 avec la séquence complète (build de l'image, vérification que la migration est DEDANS, `migrate`,
 vérification en base).
-**Prochaine libre = 0108.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+🔴 **0108 est ÉCRITE et PAS APPLIQUÉE** (le journal des échecs d'avance de scénario, lot 4 du plan
+post-audit). Elle n'est **pas bloquante** : l'écriture est best-effort et la lecture rend une liste vide si la
+table manque, donc le code déployé sans elle se comporte exactement comme avant, en écrivant dans les logs.
+À passer avec la séquence complète au prochain déploiement.
+**Prochaine libre = 0109.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
 rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message

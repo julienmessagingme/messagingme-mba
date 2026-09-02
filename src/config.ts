@@ -171,6 +171,11 @@ export const schema = z.object({
   /** Suppression des entrées du journal d'audit. LONGUE : c'est la preuve qu'une purge a eu lieu. */
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().default(730),
   /**
+   * Suppression des échecs d'avance de scénario (migration 0108). COURTE, à l'opposé du journal d'audit :
+   * c'est de l'exploitation, on s'en sert dans les jours qui suivent la panne ou jamais.
+   */
+  AVANCE_ECHECS_RETENTION_DAYS: z.coerce.number().default(90),
+  /**
    * Plafond d'envois par minute et PAR NUMÉRO, tous chemins confondus (campagne, scénario, automation,
    * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
    *

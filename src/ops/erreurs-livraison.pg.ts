@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { matchWaIdPredicat } from '../crm/contact-store.pg';
 
 /**
  * LE JOURNAL DES ERREURS DE LIVRAISON : ce que Meta nous a répondu quand un message n'est pas parti, ou n'est
@@ -18,14 +19,22 @@ import type { Pool } from 'pg';
  *    répond à rien. Il n'a rien d'immuable, il se lit depuis `campaign_recipients`, et il DISPARAÎT avec le
  *    contact quand on le purge, ce qui est exactement le comportement voulu.
  *
- * Store de LECTURE seule : rien n'est écrit ici, les erreurs sont déjà posées par l'envoi et par le webhook de
- * statut. Une table de plus qui recopierait ces lignes serait une seconde vérité à tenir à jour.
+ * Store de LECTURE pour les erreurs de CAMPAGNE : rien n'y est écrit, elles sont déjà posées par l'envoi et
+ * par le webhook de statut. Une table de plus qui recopierait ces lignes serait une seconde vérité à tenir à
+ * jour.
+ *
+ * 🔴 Depuis le lot 4 du plan post-audit (2026-09-02), il lit AUSSI les échecs d'avance de scénario, et cette
+ * source-là a bien une table (migration 0108). Ce n'est pas une entorse à la règle du dessus : ces échecs
+ * n'étaient écrits NULLE PART, la table est leur seul domicile et ne double aucune ligne existante. Une avance
+ * qui échouait était acquittée en silence, le contact restait bloqué à son bloc, et personne ne l'apprenait.
  */
 
 export interface ErreurLivraison {
+  /** Identifiant de LIGNE, quelle qu'en soit la source : destinataire de campagne, ou échec d'avance. */
   recipientId: string;
-  campaignId: string;
-  campaignName: string;
+  /** `null` pour un échec de scénario : il n'y a pas de campagne derrière. */
+  campaignId: string | null;
+  campaignName: string | null;
   /** Le numéro tel qu'il a été appelé. Figé à la construction de la campagne, comme `to_e164`. */
   telephone: string;
   contactId: string | null;
@@ -37,9 +46,12 @@ export interface ErreurLivraison {
   /**
    * D'où vient l'échec, et la distinction compte pour diagnostiquer :
    *  - `envoi` : Meta a refusé l'appel lui-même (`status = 'failed'`), donc le message n'est jamais parti ;
-   *  - `livraison` : l'appel a réussi, et c'est le webhook de statut qui a ensuite signalé l'échec.
+   *  - `livraison` : l'appel a réussi, et c'est le webhook de statut qui a ensuite signalé l'échec ;
+   *  - `scenario` : l'avance d'un parcours a échoué sur un message ENTRANT. Ni l'un ni l'autre des deux
+   *    précédents : rien n'a été refusé ni perdu en route, c'est notre traitement qui n'a pas abouti, et le
+   *    contact reste posé sur son bloc en attendant.
    */
-  origine: 'envoi' | 'livraison';
+  origine: 'envoi' | 'livraison' | 'scenario';
   at: string | null;
 }
 
@@ -107,7 +119,7 @@ export class PgErreursLivraisonStore {
       params,
     );
 
-    return res.rows.map((r) => ({
+    const campagnes: ErreurLivraison[] = res.rows.map((r) => ({
       recipientId: r.recipient_id,
       campaignId: r.campaign_id,
       campaignName: r.campaign_name,
@@ -121,5 +133,114 @@ export class PgErreursLivraisonStore {
       origine: r.status === 'failed' ? 'envoi' : 'livraison',
       at: r.at ? r.at.toISOString() : null,
     }));
+
+    const avances = await this.listerEchecsAvance(tenantId, filtre, limit);
+
+    /**
+     * Fusion en MÉMOIRE plutôt qu'en `union` SQL, et c'est un choix. Les deux sources n'ont ni les mêmes
+     * colonnes ni les mêmes filtres (un échec d'avance n'a pas de code Meta), donc une union aurait fait
+     * cohabiter deux jeux de fragments de WHERE dans une seule requête, à tenir alignés pour toujours. Les
+     * deux lectures étant déjà bornées par `limit`, on tient au plus deux fois `limit` lignes le temps du tri.
+     */
+    return [...campagnes, ...avances]
+      .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+      .slice(0, limit);
+  }
+
+  /**
+   * Les échecs d'avance de scénario (migration 0108).
+   *
+   * ⚠️ DÉGRADE PROPREMENT : si la table n'existe pas encore (migration pas passée), on rend une liste vide au
+   * lieu de faire échouer tout l'écran. Le journal des erreurs de campagne, lui, doit continuer de s'afficher.
+   */
+  private async listerEchecsAvance(tenantId: string, filtre: FiltreErreurs, limit: number): Promise<ErreurLivraison[]> {
+    // Un échec d'avance ne porte AUCUN code Meta : filtrer par code, c'est demander des erreurs de Meta, donc
+    // cette source n'a rien à répondre. Rendre ses lignes quand même serait un filtre qui ne filtre pas.
+    if (filtre.code !== undefined) return [];
+
+    const where = ['f.tenant_id = $1'];
+    const params: unknown[] = [tenantId];
+    const ajouter = (fragment: (n: number) => string, valeur: unknown): void => {
+      params.push(valeur);
+      where.push(fragment(params.length));
+    };
+    if (filtre.telephone) ajouter((n) => `f.wa_id ilike '%' || $${n} || '%'`, filtre.telephone);
+    if (filtre.q) ajouter((n) => `(f.erreur ilike '%' || $${n} || '%' or f.wa_id ilike '%' || $${n} || '%')`, filtre.q);
+    params.push(limit);
+
+    try {
+      const res = await this.pool.query<{
+        id: string; wa_id: string; erreur: string; at: Date;
+        contact_id: string | null; contact_nom: string | null; workflow_nom: string | null;
+      }>(
+        // Mêmes gardes de tenant que ci-dessus sur les jointures : le pooler est superuser, la RLS ne joue pas.
+        //
+        // Le rattachement du contact passe par `matchWaIdPredicat`, la règle de routage des entrants du CRM
+        // (E.164 exact, puis chiffres nus, puis BSUID) : il n'existe pas de colonne `wa_id` sur `contacts`, et
+        // réécrire une correspondance approchante ici en ferait une dixième copie d'une règle déjà partagée.
+        `select f.id, f.wa_id, f.erreur, f.at,
+                ct.id as contact_id, ct.profile_name as contact_nom, w.name as workflow_nom
+           from workflow_advance_failures f
+             left join lateral (
+               select c2.id, c2.profile_name
+                 from contacts c2
+                where c2.tenant_id = f.tenant_id and c2.deleted_at is null
+                  and ${matchWaIdPredicat('c2.', 'f.wa_id')}
+                order by (c2.phone_e164 = '+' || f.wa_id) desc
+                limit 1
+             ) ct on true
+             left join workflows w on w.id = f.workflow_id and w.tenant_id = f.tenant_id
+          where ${where.join(' and ')}
+          order by f.at desc
+          limit $${params.length}`,
+        params,
+      );
+      return res.rows.map((r) => ({
+        recipientId: r.id,
+        campaignId: null,
+        campaignName: r.workflow_nom,
+        telephone: r.wa_id,
+        contactId: r.contact_id,
+        contactNom: r.contact_nom,
+        code: null,
+        message: r.erreur.slice(0, 500),
+        origine: 'scenario' as const,
+        at: r.at ? r.at.toISOString() : null,
+      }));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('erreurs-livraison: lecture des échecs d’avance impossible (migration 0108 passée ?):', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  /**
+   * ENREGISTRE un échec d'avance de scénario. Le seul chemin d'écriture de ce fichier.
+   *
+   * 🔴 BEST-EFFORT, et l'appelant ne doit surtout pas attendre autre chose : un journal d'échec qui ferait
+   * échouer le traitement qu'il observe serait une très mauvaise idée. Sans la table, on retombe exactement
+   * sur le comportement d'avant, un message dans les logs.
+   */
+  async enregistrerEchecAvance(e: {
+    tenantId: string; waId: string; erreur: string;
+    messageId?: string | null; workflowId?: string | null; runId?: string | null; canal?: string | null;
+  }): Promise<void> {
+    await this.pool.query(
+      `insert into workflow_advance_failures (tenant_id, wa_id, message_id, workflow_id, run_id, canal, erreur)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [e.tenantId, e.waId, e.messageId ?? null, e.workflowId ?? null, e.runId ?? null, e.canal ?? null, e.erreur.slice(0, 2000)],
+    );
+  }
+
+  /**
+   * Purge les échecs d'avance trop vieux. C'est de l'EXPLOITATION, pas une preuve : ça ne se garde pas
+   * indéfiniment, contrairement au journal d'audit. Appelée par le balayage de rétention général du worker.
+   */
+  async purgeEchecsAvanceOlderThan(jours: number): Promise<number> {
+    const res = await this.pool.query(
+      `delete from workflow_advance_failures where at < now() - make_interval(days => $1::int)`,
+      [Math.max(1, Math.floor(jours))],
+    );
+    return res.rowCount ?? 0;
   }
 }

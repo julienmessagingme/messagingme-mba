@@ -185,8 +185,9 @@ export function listAudit(
 /** Une erreur de livraison, telle que le journal des erreurs la rend. */
 export interface ErreurLivraison {
   recipientId: string;
-  campaignId: string;
-  campaignName: string;
+  /** `null` pour un échec de scénario : il n'y a pas de campagne derrière. */
+  campaignId: string | null;
+  campaignName: string | null;
   /** Le numéro appelé. Ce journal-ci les porte : « quel message n'est pas arrivé » sans dire « à qui » ne
    *  répond à rien. C'est ce qui le distingue du journal des actions, qui n'en porte jamais. */
   telephone: string;
@@ -194,8 +195,12 @@ export interface ErreurLivraison {
   contactNom: string | null;
   code: number | null;
   message: string | null;
-  /** `envoi` = Meta a refusé l'appel, le message n'est jamais parti. `livraison` = il est parti puis a échoué. */
-  origine: 'envoi' | 'livraison';
+  /**
+   * `envoi` = Meta a refusé l'appel, le message n'est jamais parti. `livraison` = il est parti puis a échoué.
+   * `scenario` = l'avance d'un parcours a échoué sur un message ENTRANT : rien n'a été refusé ni perdu en
+   * route, c'est notre traitement qui n'a pas abouti, et le contact reste posé sur son bloc.
+   */
+  origine: 'envoi' | 'livraison' | 'scenario';
   at: string | null;
 }
 
