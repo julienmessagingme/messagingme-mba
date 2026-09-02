@@ -64,6 +64,22 @@ const fiche = {
   sorties: [] as Array<{ code: string; libelle: string }>,
 };
 
+/**
+ * MODE « PREFIXE LONG » (troisieme argument, `long`).
+ *
+ * 🔴 Pourquoi ce mode existe. La premiere mesure a donne `cached_tokens = 0` sur cinq tours portant un
+ * prefixe IDENTIQUE. Deux explications tiennent, et elles n appellent pas la meme suite : soit le fournisseur
+ * ne cache pas (ou ne le rapporte pas), soit notre prefixe est trop COURT pour son seuil, la plupart des
+ * fournisseurs ne cachant qu au-dela d environ 1 024 tokens, et le notre en fait a peine 1 090.
+ *
+ * Conclure « pas de cache » sans avoir ecarte la seconde serait exactement l erreur que ce chantier corrige :
+ * affirmer sans mesurer. Ce mode verse le catalogue DANS le prompt systeme, ce qui le porte a plusieurs
+ * milliers de tokens, tres au-dessus de tout seuil plausible.
+ */
+const PREFIXE_LONG = (process.argv[4] ?? '') === 'long';
+const catalogueTexte = vehicules.map((v) => `- ${v.nom} : ${v.description}`).join('\n');
+if (PREFIXE_LONG) fiche.objectif = `${fiche.objectif}\n\nCatalogue complet, a citer sans jamais l inventer :\n${catalogueTexte}`;
+
 const systeme = promptSysteme({
   mentionIa: 'Bonjour, je suis un assistant automatique.',
   contenu: fiche as never,
