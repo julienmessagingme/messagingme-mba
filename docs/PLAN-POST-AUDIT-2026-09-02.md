@@ -12,10 +12,17 @@ Un commit par lot sur `main`, CI verte. Dans l'ordre : `6a4a83c` (bail), `1140e3
 (plafond 20 000), `39018b0` (panne d'avance visible), `e78d719` (affirmations qui mentent), `1c664a1`
 (concurrence des files), `bd9225e` (pool visible).
 
-🔴 **Ce qui reste à faire, et qui n'est pas un détail** :
-- **déployer** (rien n'est en production) ;
-- **appliquer 0108 et 0109** avec la séquence complète (build de l'image AVANT `migrate`). Les deux sont
-  volontairement NON bloquantes, donc un déploiement sans elles ne casse rien et perd seulement la mesure ;
+✅ **DÉPLOYÉ le 2026-09-02 à 21h55**, commit `7cdab86`, migrations 0108 et 0109 appliquées et vérifiées en
+base (les deux tables existent). Séquence complète respectée : build de l'image AVANT `migrate`, parce que les
+migrations vivent DANS l'image.
+
+🔴 **Ce qui reste devant, et le premier point est une faute de méthode de ma part** :
+- **le chantier IA a été fait dans le DÉSORDRE.** Le plan (§ « L'ordre de ce lot, et il commence par une
+  mesure ») fait commencer par lire `cached_tokens`, et j'ai commencé par choisir les chiffres. Le geste 1 est
+  fait depuis (`7cdab86`), mais **les gestes 4 et 5 restent** : mesurer un tour RÉEL (tokens, allers-retours,
+  durée) puis ajuster les chiffres, et demander le cache explicitement si la trace montre qu'il n'y en a pas ;
+- **importer le corpus Hyundai** pour avoir un agent réel à faire converser, faute de quoi la mesure du geste
+  4 demande à Julien de mener dix conversations à la main ;
 - le compte rendu pour l'audit externe est dans `docs/CONTRE-CONTRE-RAPPORT-2026-09-02.md`, avec la liste
   exhaustive de ce qui N'EST PAS prouvé.
 

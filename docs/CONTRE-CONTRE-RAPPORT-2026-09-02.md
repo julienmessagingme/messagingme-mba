@@ -16,14 +16,38 @@ charge d'aujourd'hui.
 Les sept lots viennent d'un plan écrit le matin même, lui-même issu d'un contre-audit externe et d'une
 re-vérification de chaque constat dans le code.
 
-## 🔴 État de déploiement : RIEN N'EST DÉPLOYÉ
+## État de déploiement : DÉPLOYÉ le 2026-09-02 à 21h55
 
-Les sept lots sont commités et poussés sur `main`, CI verte (unitaires + intégration sur un Postgres jetable).
-**Aucun n'est en production.** Deux migrations sont écrites et **non appliquées** (0108, 0109). Les deux sont
-volontairement **non bloquantes** : sans elles, le code se comporte exactement comme avant (écriture
-best-effort, lecture qui rend une liste vide).
+Les sept lots, plus le geste 1 du chantier IA, sont en production. Commit déployé : **`7cdab86`**. Le
+précédent était `7073b8b`.
 
-C'est un point à charge autant qu'à décharge : rien de ce qui suit n'a été éprouvé par du trafic réel.
+**La séquence suivie, et pourquoi elle est dans cet ordre.**
+
+1. `gh run list` : CI verte sur les sept commits (trois jobs chacun, dont un `integration` sur un Postgres
+   jetable où les migrations sont rejouées à neuf).
+2. `git log 7073b8b..HEAD` avant de pousser quoi que ce soit : plusieurs sessions écrivent sur `main`, on ne
+   déploie pas que son propre travail. Douze commits, tous identifiés.
+3. `git pull` puis **`docker compose build mba-api` AVANT `migrate`**. 🔴 Ce n'est pas un détail de confort :
+   les migrations vivent DANS l'image (`COPY db ./db`), donc un `git pull` suivi d'un `migrate` rejouerait les
+   anciennes et répondrait « à jour » sans rien appliquer. Erreur déjà vécue le 2026-08-21.
+4. **Vérification que les deux migrations sont dans l'image** avant de les jouer (`ls db/migrations` dans le
+   conteneur fraîchement construit).
+5. `migrate` : `0108 ... ok`, `0109 ... ok`, « 2 migration(s) appliquée(s) ».
+6. `up -d --build`, les trois conteneurs recréés.
+
+**Vérifications faites APRÈS, et pas seulement les logs de démarrage.**
+
+- Les deux tables existent réellement en base (`information_schema`, requête directe) : `pool_attentes` et
+  `workflow_advance_failures`.
+- `migrate` rejoué : « à jour, rien à appliquer », donc les deux sont bien enregistrées.
+- Les trois conteneurs sont `Up`, l'API `healthy`, et le worker annonce ses huit files.
+- Zéro erreur `pool-attentes` dans les logs, donc la table est écrivable par le worker.
+- **Sur le chemin PUBLIC et pas depuis le conteneur** : `https://mba.messagingme.app/` répond 200. La
+  distinction a de l'importance ici : un appel interne réussit précisément là où le proxy est le coupable,
+  et c'est ainsi qu'un défaut de rewrite est passé en production le matin même.
+
+**Ce que le déploiement ne prouve pas.** Il prouve que le code démarre et que le schéma est en place. Il ne
+prouve **rien** sur le comportement sous charge : le trafic réel de cette instance est proche de zéro.
 
 ## Ce qui a été livré
 
@@ -162,22 +186,46 @@ conversations, c'est **taux d'arrivée x durée**. Deux cents conversations où 
 avec un tour de 5 s, font environ **33 tours en vol**, pas 200. C'est ce qui rend 12 en vol défendable comme
 point de départ, et absurde comme point d'arrivée.
 
-**Ce qui est honnêtement non résolu, et que le lot 6 ne prétend pas résoudre :**
+🔴 **UN TOUR N'EST PAS UN APPEL, et c'est ce qui change tout le dimensionnement.** Chaque tour fait jusqu'à
+**six allers-retours** (`MAX_ALLERS_RETOURS = 6`), et chacun renvoie l'intégralité du prompt système, des
+définitions d'outils et des résultats d'outils déjà accumulés. La partie **constante** de cette charge est donc
+payée jusqu'à six fois par tour. Ce qui nous plafonnera n'est pas notre concurrence, c'est le **débit en tokens
+par minute** de la passerelle, et la facture.
+
+**Le geste qui décide de la suite est fait : on LIT enfin `prompt_tokens_details.cached_tokens`.** Ce champ
+arrivait déjà dans chaque réponse et personne ne le lisait. On n'envoie aucune instruction de cache, ce qui est
+vrai ; en conclure que rien n'est caché serait faux, certains fournisseurs cachant les préfixes longs sans
+qu'on demande. Une ligne de trace est écrite **par aller-retour** (`agent-cache: agent=… ar=… in=… caches=…
+part=…%`), et non par tour : ce qu'on cherche à voir est justement si la part cachée grimpe au deuxième
+aller-retour, le préfixe étant alors déjà connu du fournisseur. Un total par tour moyennerait l'information
+utile.
+
+⚠️ **Ce que ce geste ne peut pas trancher tout seul** : zéro veut dire soit « pas de cache », soit « champ non
+rendu par ce fournisseur ». Les distinguer demande de regarder si le nombre reste nul sur un préfixe long
+**répété**, donc de faire tourner de vraies conversations.
+
+**Ce qui reste honnêtement non résolu :**
 
 1. **Le tuyau externe.** Tous les appels partent par une clé unique vers une passerelle de modèles. Ses limites
    de débit réelles ne sont **pas mesurées**. Monter la concurrence côté worker peut donc déplacer la file
-   d'attente de chez nous vers chez eux, où elle est muette.
-2. **Le cache de prompt.** Vérifié : on n'envoie jamais de directive de cache **et** on ne lit jamais le champ
-   qui dirait si le cache opère. On ne sait donc pas s'il opère déjà. L'affirmation « on ne cache pas » n'était
-   pas fausse, elle était **non fondée**.
-3. **Cette file n'a jamais tourné en production.** Zéro job dans tout l'historique. La durée réelle d'un tour
-   est donc inconnue, et c'est elle qui décide de tout le dimensionnement.
+   d'attente de chez nous vers chez eux, où elle est muette. ⚠️ Elle ne pouvait de toute façon PAS être
+   atteinte tant qu'un seul appel était en vol : la question « faut-il plusieurs comptes ? » ne se posait pas
+   avant d'avoir ouvert notre propre robinet, ce que le lot 6 vient de faire.
+2. **Aucune conversation réelle n'a encore été mesurée.** C'est le geste suivant, et il est le seul qui puisse
+   transformer 12 et 4 en chiffres plutôt qu'en raisonnement.
+3. **Cette file n'a jamais tourné en production.** Zéro job dans tout l'historique.
 
 ## Ce qui n'est PAS prouvé (liste exhaustive à ma connaissance)
 
-- **Rien n'est déployé.** Les sept lots sont sur `main`, CI verte, et pas en production.
-- **Les migrations 0108 et 0109 ne sont pas appliquées.** Non bloquantes par construction.
+- **Le déploiement prouve que ça démarre, pas que ça tient.** Le trafic réel de l'instance est proche de zéro :
+  aucun des sept lots n'a été éprouvé par de la charge.
 - **`agent-turn` n'a jamais tourné en production.** Les valeurs 12 et 4 sont un raisonnement, pas une mesure.
+- **On ne sait toujours pas si le cache de prompt opère.** Le champ est désormais lu et tracé, mais il faut de
+  vraies conversations pour que la trace dise quelque chose.
+- 🔴 **J'ai sauté l'ordre du plan et Julien l'a relevé.** Le plan faisait commencer le chantier IA par la
+  lecture du champ de cache (une ligne, et elle peut annuler le geste le plus coûteux) ; j'étais allé
+  directement choisir les chiffres de concurrence. Le geste est fait depuis, mais la méthode a failli, pas
+  seulement le contenu : c'est le genre d'écart qu'un audit doit chercher ailleurs dans ce rapport.
 - **Aucun banc de charge n'a tourné contre les seuils depuis le 2026-09-02 au matin**, et le profil d'équité
   n'existe pas (il est au backlog, rattaché au lot 6 : l'écrire avant aurait mesuré la configuration d'avant).
 - **L'attribution des clics n'est pas prouvée de bout en bout** : aucun clic réel depuis un envoi réel.
@@ -203,6 +251,25 @@ point de départ, et absurde comme point d'arrivée.
    Est-ce que la distinction « connexion neuve » contre « pool saturé » tient dans tous les cas de `pg` ?
 6. **Ce que ce rapport ne voit pas.** La question la plus utile : quel angle mort ce document a-t-il, du fait
    même de son auteur, qui est aussi celui du code ?
+
+## Ce qu'il faut surveiller maintenant que c'est en production
+
+Trois signaux, dans l'ordre où ils diraient quelque chose :
+
+1. **`agent-cache:` dans les logs du worker.** Dès la première vraie conversation d'agent, cette ligne dit si
+   le cache opère. `part=0%` sur plusieurs allers-retours consécutifs d'un même tour signifie qu'il n'y en a
+   pas, et ouvre le geste « demander le cache explicitement ».
+2. **La carte « Pool de connexions » dans `/ops`.** Le chiffre qui alarme est `en attente`, jamais le nombre de
+   connexions utilisées. Une barre rouge dans la courbe par minute veut dire qu'une acquisition a dépassé
+   50 ms sur un pool saturé.
+3. **L'origine `scenario` dans le journal des erreurs.** Elle était jusqu'ici invisible par construction : une
+   panne d'avance était acquittée en silence. Si des lignes y apparaissent, ce sont des pannes qui existaient
+   déjà et que personne ne voyait, pas des pannes nouvelles.
+
+**Retour arrière.** Les deux migrations sont ADDITIVES (deux tables neuves, aucune colonne existante touchée),
+donc un retour du code sur `7073b8b` ne demande aucune annulation de schéma : le code d'avant ignore ces tables.
+Les valeurs de concurrence sont des variables d'environnement, donc revenir à `1` se fait sans redéployer de
+code, par une recréation de conteneur.
 
 ## Comment vérifier ces affirmations
 
