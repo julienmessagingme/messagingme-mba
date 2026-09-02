@@ -135,8 +135,10 @@ const client = new GatewayChatClient(cle);
 
 interface Mesure { tour: number; ar: number; tokensIn: number; tokensCaches: number; tokensOut: number; ms: number; coutDollars: number }
 const mesures: Mesure[] = [];
+const echecs: string[] = [];
 
-for (let tour = 0; tour < TOURS; tour += 1) {
+/** Un tour complet, exactement comme la boucle de production le joue. */
+async function jouerUnTour(tour: number): Promise<void> {
   const messages: ChatMessage[] = [
     { role: 'system', content: systeme },
     { role: 'user', content: QUESTIONS[tour % QUESTIONS.length]! },
@@ -144,7 +146,17 @@ for (let tour = 0; tour < TOURS; tour += 1) {
   // Meme borne que la production : un tour ne fait pas plus de six allers-retours.
   for (let ar = 0; ar < 6; ar += 1) {
     const debut = Date.now();
-    const r = await client.completer({ modele, messages, ...(outils.length > 0 ? { outils } : {}) });
+    let r;
+    try {
+      r = await client.completer({ modele, messages, ...(outils.length > 0 ? { outils } : {}) });
+    } catch (err) {
+      // 🔴 UN ECHEC EST UNE MESURE, PAS UN ACCIDENT. C'est meme LA mesure qu'on cherche sous concurrence :
+      // un 429 dit ou est la limite du Gateway, et l'avaler reviendrait a ne pas voir la reponse.
+      const message = err instanceof Error ? err.message : String(err);
+      echecs.push(`tour=${tour} ar=${ar} ${message}`);
+      console.log(`tour=${tour} ar=${ar} ECHEC ${message}`);
+      return;
+    }
     const ms = Date.now() - debut;
     mesures.push({ tour, ar, tokensIn: r.usage.tokensIn, tokensCaches: r.usage.tokensCaches, tokensOut: r.usage.tokensOut, ms, coutDollars: r.usage.coutDollars });
     console.log(`tour=${tour} ar=${ar} in=${r.usage.tokensIn} caches=${r.usage.tokensCaches} out=${r.usage.tokensOut} ${ms}ms outils=${r.appelsOutils.length} finish=${r.finish}`);
@@ -161,6 +173,37 @@ for (let tour = 0; tour < TOURS; tour += 1) {
     }
   }
 }
+
+/**
+ * MODE CONCURRENCE (cinquieme argument). Sans lui, les tours sont joues l un apres l autre et le banc mesure
+ * la duree d un tour SEUL, c est-a-dire l entree de la loi de Little et pas sa verification.
+ *
+ * 🔴 Ce mode-ci repond a la question qui restait ouverte : le Gateway ne publie AUCUNE limite en tokens par
+ * minute, ni dans sa documentation ni dans ses en-tetes de reponse (verifie le 2026-09-02). Quand la
+ * specification est muette, on mesure : on lance N tours EN MEME TEMPS et on regarde si des 429 arrivent et
+ * si la duree par tour se degrade.
+ */
+const PARALLELES = Math.max(1, Number(process.argv[5] ?? 1));
+const debutBanc = Date.now();
+
+if (PARALLELES === 1) {
+  for (let tour = 0; tour < TOURS; tour += 1) await jouerUnTour(tour);
+} else {
+  // Une vague de `PARALLELES` tours a la fois, jusqu'a epuisement : c'est le comportement d'une file dont la
+  // concurrence est plafonnee, donc celui du worker.
+  let prochain = 0;
+  const fil = async (): Promise<void> => {
+    for (;;) {
+      const tour = prochain;
+      prochain += 1;
+      if (tour >= TOURS) return;
+      await jouerUnTour(tour);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLELES, TOURS) }, () => fil()));
+}
+
+const dureeBancMs = Date.now() - debutBanc;
 
 const parTour = new Map<number, Mesure[]>();
 for (const m of mesures) parTour.set(m.tour, [...(parTour.get(m.tour) ?? []), m]);
@@ -183,6 +226,15 @@ console.log(JSON.stringify({
   duree_moyenne_tour_ms: Math.round([...parTour.values()].reduce((n, l) => n + l.reduce((s, m) => s + m.ms, 0), 0) / TOURS),
   duree_max_tour_ms: Math.max(...[...parTour.values()].map((l) => l.reduce((s, m) => s + m.ms, 0))),
   cout_total_dollars: Number(somme((m) => m.coutDollars).toFixed(6)),
+  // === Ce que seul le mode concurrence renseigne ===
+  tours_en_parallele: PARALLELES,
+  duree_totale_banc_ms: dureeBancMs,
+  // 🔴 LE chiffre a confronter au plan Vercel : les limites d un gateway s expriment en tokens par minute,
+  // pas en requetes simultanees. Extrapole du debit REELLEMENT obtenu pendant ce banc.
+  tokens_par_minute_obtenus: Math.round(((somme((m) => m.tokensIn) + somme((m) => m.tokensOut)) / dureeBancMs) * 60_000),
+  // Un echec sous concurrence est une MESURE : un 429 dit ou est la limite.
+  echecs: echecs.length,
+  detail_echecs: echecs.slice(0, 5),
   // 🔴 LA question du cache : le PREMIER aller-retour de chaque tour porte le meme prefixe constant. Si le
   // cache opere, sa part cachee doit grimper des le deuxieme TOUR, pas seulement au deuxieme aller-retour.
   premiers_allers_retours: premiers.map((m) => ({ tour: m.tour, in: m.tokensIn, caches: m.tokensCaches })),
