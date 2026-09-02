@@ -12,6 +12,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import { repeterAvecGigue } from '@/lib/poll';
+import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
 import { estAnnulation } from '@/lib/http';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
@@ -536,6 +537,13 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   const bottomRef = useRef<HTMLDivElement>(null);
   /** Le conteneur défilant du fil. Sert à savoir si l'opérateur est REMONTÉ dans l'historique. */
   const filRef = useRef<HTMLDivElement>(null);
+  /**
+   * « L'opérateur était-il en bas ? », mesuré AVANT que le contenu ne bouge (cf `lib/defilement-fil.ts`).
+   * Vrai au départ : à l'ouverture, la seule position qui a du sens est le message le plus récent.
+   */
+  const etaitEnBasRef = useRef(true);
+  /** Le fil n'a pas encore été peuplé : le premier chargement descend, sans consulter la géométrie. */
+  const premierChargementRef = useRef(true);
 
   // Dernier message DÉJÀ vu dans ce fil : sert à ne marquer « lu » qu'au vrai changement, et pas à chacun
   // des rafraîchissements de 4 s. Remis à zéro par le remontage du composant à chaque conversation.
@@ -633,15 +641,26 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
    * La seconde est ici : même sur un vrai nouveau message, on ne descend que si l'opérateur était DÉJÀ en
    * bas. S'il est remonté pour relire, le fil reste où il l'a laissé.
    *
-   * Le premier rendu n'a pas encore de conteneur mesurable (`filRef` vient d'être posé) : on descend, ce qui
-   * est le comportement voulu à l'ouverture d'une conversation.
+   * 🔴 La mesure est prise AVANT que le contenu ne bouge, sur l'événement de défilement, et JAMAIS ici. La
+   * mesurer dans cet effet (ce que faisait le code jusqu'au 2026-09-02) donne une réponse fausse deux fois :
+   * à l'ouverture d'un fil long (`scrollTop` à 0, donc « pas en bas », donc on n'y descend pas) et à l'arrivée
+   * d'un message plus haut que la tolérance (on était en bas avant l'ajout, plus après). Cf `lib/defilement-fil.ts`.
    */
   useEffect(() => {
     const fil = filRef.current;
-    // 80 px de tolérance : personne ne pose son fil au pixel près, et un fil « presque en bas » est un fil
-    // qu'on suit. Plus haut que ça, l'opérateur lit, on ne le dérange pas.
-    const enBas = !fil || fil.scrollHeight - fil.scrollTop - fil.clientHeight < 80;
-    if (enBas) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!fil) return;
+    const auDefilement = () => { etaitEnBasRef.current = estEnBas(fil); };
+    fil.addEventListener('scroll', auDefilement, { passive: true });
+    return () => fil.removeEventListener('scroll', auDefilement);
+  }, []);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const premierChargement = premierChargementRef.current;
+    if (!doitDescendre({ premierChargement, etaitEnBas: etaitEnBasRef.current })) return;
+    premierChargementRef.current = false;
+    // À l'ouverture on descend SEC : animer la traversée de tout l'historique n'aide personne et se voit.
+    bottomRef.current?.scrollIntoView(premierChargement ? undefined : { behavior: 'smooth' });
   }, [messages]);
 
   async function send() {
@@ -751,7 +770,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
         </div>
       </div>
 
-      <div ref={filRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+      <div ref={filRef} data-testid="fil-messages" className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {messages.map((m, i) => {
           // Séparateur de jour (fuseau Paris) quand le jour change vs le message précédent.
           const showSep = i === 0 || dayKey(m.createdAt) !== dayKey(messages[i - 1]!.createdAt);
