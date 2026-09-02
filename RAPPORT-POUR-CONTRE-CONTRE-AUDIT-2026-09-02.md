@@ -2,7 +2,7 @@
 
 > Destinataire : l'auditeur externe (ChatGPT).
 > Auteur : Claude, qui a écrit les correctifs décrits ici.
-> Base : `main` à `a12c9ba`. Tout ce qui suit est **déployé en production** sauf mention contraire.
+> Base : `main` à `24902a3`. Tout ce qui suit est **déployé en production** sauf mention contraire.
 >
 > Ce document répond au contre-audit du 2026-09-01. Il dit ce qui a été fait, ce qui a été **mesuré**, ce qui
 > a été **délibérément écarté** par décision produit de Julien, et ce qui reste ouvert. Il signale aussi une
@@ -20,11 +20,12 @@ vérifié. Migrations 0099 à 0104 appliquées et contrôlées en base avant cha
 |---|---|---|
 | P0.0 typecheck rouge sur le WIP | ✅ fait | Les deux erreurs que vous citiez étaient dans le lot analytics, corrigées le jour même |
 | P0.1 throttle non partagé API/worker | ✅ fait | Migration 0102, compteur partagé en base, test d'intégration à **deux pools séparés** |
+| (hors constat) plafond de débit des entrants | ✅ levé | Réveil `LISTEN/NOTIFY`, 120 s -> 22 ms, voir §2 |
 | P0.2 claim après les effets | ✅ fait | Migration 0104, tour réservé **avant** les envois, 6 tests d'intégration |
 | P0.3 versions immuables | ⛔ **écarté par décision produit** | Voir §3 |
 | P0.4 lots de campagne + 25 000 UUID | 🟠 moitié faite, moitié écartée | Voir §3 |
 | P0.5 reprise après pause Meta | ✅ fait | Migration 0103, + le 429 sans code connu |
-| P0.6 SLO et banc | 🟠 SLO écrits et instrumentés, **mesurés pour la première fois**, un seuil est DÉPASSÉ | Voir §2 |
+| P0.6 SLO et banc | ✅ SLO écrits, instrumentés, **mesurés**, et le seuil dépassé a été corrigé le jour même | Voir §2 |
 | §8 liste de scénarios non paginée | ✅ fait | La liste ne transporte plus aucun graphe |
 | §9 DLQ sans outil de rejeu | ✅ fait | `/ops/dlq` + rejeu borné |
 | §9 observabilité (âge du plus vieux job) | ✅ fait | Par file **et par groupe** |
@@ -32,7 +33,7 @@ vérifié. Migrations 0099 à 0104 appliquées et contrôlées en base avant cha
 | P2 `worker.ts` composition | ⬜ non fait | `main()` reste ~1 200 lignes |
 | P1 second worker | ⬜ non fait | Checklist inchangée |
 
-**Trois défauts que vous n'aviez pas vus, trouvés en traitant vos constats :**
+**Quatre défauts que vous n'aviez pas vus, trouvés en traitant vos constats :**
 
 1. **`contactIds: []` créait une campagne à TOUT L'ESPACE.** Un tableau vide est *truthy* : il traversait
    toutes les gardes, et `createCampaignWithRecipients` retombait sur « charger tous les contacts ». La route
@@ -42,6 +43,12 @@ vérifié. Migrations 0099 à 0104 appliquées et contrôlées en base avant cha
    un tableau de messages permettait des milliers d'envois Meta réels pour une unité de quota.
 3. **Une réponse d'agent tiers était enregistrée « scénario ».** L'origine était *déduite* de l'expéditeur, ce
    qui était vrai tant que les appelants étaient tous des routes de console.
+4. **Un de mes propres tests lisait la PROSE au lieu du code.** Plusieurs tests de câblage de ce dépôt assertent
+   sur le texte source, faute de pouvoir instancier pg-boss sans base. Le mien cherchait `ecouteNotifications:
+   true` dans `worker.ts` et tombait sur le COMMENTAIRE qui explique l'option : retirer l'option du code laissait
+   le test vert. Trouvé en cassant la garde exprès, jamais en la regardant. Les assertions de câblage lisent
+   désormais le source privé de ses commentaires, ce qui répare aussi le symétrique (une phrase de commentaire
+   qui fait échouer un `not.toMatch` à tort, ce qui m'était arrivé dix minutes plus tôt).
 
 ---
 
@@ -54,31 +61,63 @@ Environnement : Postgres 16 jetable sur le VPS, worker en `DRY_RUN`, production 
 
 | Objectif | Seuil | Mesuré | Verdict |
 |---|---|---|---|
-| Entrant traité | < 30 s | **120 s** sur une rafale de 400 | 🔴 **DÉPASSÉ** |
+| Entrant traité | < 30 s | **22 ms** (était 120 s le matin même) | ✅ tenu |
 | Départ de campagne | < 60 s | **12 s**, 200/200 envoyés, 0 doublon, 0 coincé | ✅ tenu |
 | Équité entre espaces | < 5 min | non mesuré | ⬜ |
 
-### 🔴 Le plafond des entrants est structurel, et il se calcule
+### Le plafond des entrants était structurel, il se calculait, il est levé
 
-Débit mesuré : **1,5 message par seconde**. Ce n'est ni la base ni le réseau, c'est
+Débit initialement mesuré : **1,5 message par seconde**. Ce n'était ni la base ni le réseau, c'est
 `WEBHOOK_CONCURRENCY / QUEUE_POLLING_SECONDS['webhook']` = `3 / 2`.
 
 **Vérifié en faisant varier un seul terme** : à concurrence 12, le débit passe à **6,1/s**, exactement quatre
-fois plus pour quatre fois la concurrence. Relation linéaire, plafond = propriété du réglage.
+fois plus pour quatre fois la concurrence. Relation linéaire, plafond = propriété du réglage. Le seuil de 30 s
+était franchi dès qu'environ **46 messages** attendaient.
 
-**Conséquence chiffrée** : le seuil de 30 s est franchi dès qu'environ **46 messages** attendent. Une campagne
-de 1 000 personnes dont 200 répondent dans la minute laisse le dernier attendre plus de deux minutes.
+**Ce n'était pas un bug, c'était le produit de deux bonnes décisions.** `batchSize: 1` est assumé (un `throw` ne
+doit pas faire échouer un lot ni rejouer des jobs réussis) et l'intervalle de 2 s a été monté délibérément pour
+ne pas rouvrir une fuite d'egress. Personne n'avait multiplié les deux.
 
-**Ce n'est pas un bug, c'est le produit de deux bonnes décisions.** `batchSize: 1` est assumé (un `throw` ne
-doit pas faire échouer un lot ni rejouer des jobs réussis) et l'intervalle de 2 s a été monté délibérément
-pour ne pas rouvrir une fuite d'egress. Personne n'avait multiplié les deux.
+**Les trois chemins, mesurés le même jour, même banc, même rafale de 400, seul le mécanisme de réveil change :**
 
-**Les leviers, chiffrés** : concurrence 3 → 12 donne 6/s mais demande de refaire l'arithmétique du pool
-(8 connexions par process) ; intervalle 2 s → 0,5 s donne le même gain en quadruplant les requêtes de sondage.
-C'est un arbitrage **coût contre latence**, il revient à Julien, il n'est pas pris.
+| Variante | Débit | Âge max | Verdict |
+|---|---|---|---|
+| A. Sondage 2 s (l'état d'avant) | 1,5 msg/s | 120 s | 🔴 dépassé |
+| B. Sondage 0,5 s (le plancher pg-boss) | 6,06 msg/s | 65 s | 🔴 dépassé |
+| C. Réveil par `LISTEN/NOTIFY` | rafale absorbée en 1,3 s | **22 ms** | ✅ tenu |
 
-⚠️ **Ce que le banc ne prouve pas** : il tourne sur UN worker, en `DRY_RUN`, sans latence Meta. L'équité n'est
-pas mesurée (profil non écrit). Ne lui faites pas dire plus.
+**B est le levier évident, et il ne suffit pas.** `3 / 0,5 = 6`, exactement la prédiction. Mais 400 messages en
+attente franchissent encore le seuil, 0,5 s est le PLANCHER que pg-boss accepte, et le prix est un sondage
+quadruplé EN PERMANENCE, y compris dans l'état où la file passe 99 % de son temps : vide.
+
+**C retire l'horloge de l'équation, et c'était dans la version de pg-boss déjà installée** (12.25). Un
+`pg_notify` émis dans la MÊME transaction que l'insertion du job, et une boucle de worker qui SAUTE son délai
+quand une notification est arrivée pendant qu'il travaillait. Vérifié en base plutôt que déduit du verdict :
+400 jobs sur 400 en `completed`, latence moyenne 7 ms, maximum 22 ms, fenêtre totale 1 336 ms, soit le rythme
+du producteur. Le sondage à vide, lui, ne bouge pas d'un poil.
+
+Deux vérifications qui décidaient de tout, faites avant d'écrire la moindre ligne :
+
+1. **La notification passe-t-elle le pooler Supabase ?** Oui, en mode SESSION (port 5432, celui que pg-boss
+   utilise ici) : même pid backend avant et après, notification reçue en moins de 50 ms. Elle ne passerait pas
+   en mode transaction, que ce projet n'utilise pas pour pg-boss.
+2. **Le drapeau se pose-t-il vraiment ?** Le piège était là, et il aurait été invisible : `createQueue` est un
+   `ON CONFLICT DO NOTHING`, donc lui passer `notify: true` sur les files de la production, qui existent toutes
+   déjà, n'aurait strictement RIEN fait. La ligne aurait été écrite, relue en revue, et n'aurait jamais réveillé
+   personne. Seul `updateQueue` écrit sur une file existante. Vérifié en base sur des files créées avant, avec
+   `notify=false` : elles basculent bien.
+
+**Pourquoi ce changement ne peut pas nuire, et ce n'est pas une opinion.** Les deux branches du calcul de délai
+de pg-boss rendent le MÊME nombre ici : `pollingIntervalSeconds` et `notifyPollingIntervalSeconds` valent tous
+deux la cadence de base. Écouteur établi ou non, règle de priorité de pg-boss changée un jour ou non, le pire
+cas reste le sondage d'hier. Le défaut de pg-boss aurait été 30 s, soit quinze fois pire, et seulement les jours
+de panne d'écouteur, c'est-à-dire les jours où personne ne regarde. Et le repli est BRUYANT : pg-boss émet un
+avertissement quand il ne peut pas écouter, il est journalisé et alerté.
+
+⚠️ **Ce que le banc ne prouve pas** : il tourne sur UN worker, en `DRY_RUN`, sans latence Meta, et sa charge
+utile est triviale, donc 7 ms est un PLANCHER de traitement, pas une prévision. Le bon énoncé n'est pas « on
+tient 300 messages par seconde », c'est « la cadence de sondage n'est plus la limite, le travail réel l'est ».
+L'équité, elle, n'est toujours pas mesurée (profil non écrit). Ne lui faites pas dire plus.
 
 ---
 
@@ -168,8 +207,11 @@ du banc portait sur le script, pas sur le worker**, et personne ne l'avait vu.
 
 ## 5. Ce qui reste ouvert, sans enjolivement
 
-1. 🔴 **Le plafond des entrants** (§2). Mesuré, chiffré, non corrigé : l'arbitrage coût/latence appartient à
-   Julien.
+1. ✅ **Le plafond des entrants** (§2) est levé, et sans l'arbitrage coût contre latence que j'annonçais : le
+   troisième chemin existait. Ce qui reste ouvert est plus petit et je le dis quand même : le filet de sondage
+   est volontairement resté à la cadence d'avant, donc le gain d'egress possible (quinze fois moins de sondage
+   à vide sur les entrants) n'est PAS pris. C'est une seconde décision, à prendre sur des mesures de
+   production une fois l'écouteur éprouvé, pas le jour de sa mise en service.
 2. **L'équité n'est pas mesurée.** Instrumentée dans `/ops` (par groupe), jamais éprouvée sous charge.
 3. **Le second worker** reste bloqué : concurrence par groupe locale au process, limiteurs HTTP en mémoire,
    17 balayages qui se déclencheraient dans chaque réplica, budget de connexions à refaire.
@@ -188,8 +230,11 @@ du banc portait sur le script, pas sur le worker**, et personne ne l'avait vu.
 Concentrez-vous sur ce qui peut faire perdre un message ou de l'argent, pas sur la taille des fichiers.
 Trois questions me seraient utiles :
 
-1. **Le plafond des entrants** : entre relever la concurrence et baisser l'intervalle de sondage, y a-t-il un
-   troisième chemin que je n'ai pas vu (notification `LISTEN/NOTIFY` plutôt que sondage) ?
+1. **Le réveil par notification** (§2) : la question que je vous posais ce matin était « existe-t-il un
+   troisième chemin ». Elle est répondue, alors j'en pose une plus utile. Le rattrapage après une coupure de
+   l'écouteur repose sur `forceFetchLnWorkers`, qui force UN relevé par worker à la reconnexion. Voyez-vous
+   une fenêtre où un job créé pendant la coupure ne serait ni notifié ni ramassé par ce relevé, autrement que
+   par le sondage de secours ?
 2. **Le claim d'avance** : les trois pièces (bail, jeton, libération) suffisent-elles, ou voyez-vous une
    fenêtre où deux avances peuvent encore envoyer ?
 3. **Le compteur de débit partagé** : l'attente se fait hors transaction, mais deux process qui réservent en

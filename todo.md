@@ -95,6 +95,20 @@ entre espaces, la rafale d'accuses, la concurrence API + worker sur un meme nume
 preuve de capacite. Trois suffisent pour commencer : delai d'un entrant, delai avant premier envoi de
 campagne, age du plus vieux job par espace.
 
+**5bis. ✅ FAIT le 2026-09-02 : le plafond de debit des entrants est leve.** La premiere mesure contre les
+seuils avait donne 120 s sur une rafale de 400, soit 1,5 message/s, et j'avais conclu a un arbitrage cout
+contre latence a soumettre a Julien (relever la concurrence, ou baisser la cadence de sondage). C'etait une
+fausse alternative : pg-boss 12.25, DEJA installe, sait reveiller ses workers par `LISTEN/NOTIFY`. Mesure sur
+le meme banc, meme rafale : 22 ms d'age maximum, 400 jobs sur 400 traites, latence moyenne 7 ms. Le levier que
+Julien demandait (sondage a 0,5 s) a ete mesure aussi, honnetement : 6,06 msg/s, exactement la prediction de la
+formule, et le seuil de 30 s reste DEPASSE (65 s). Detail et preuves : `docs/SLO-2026-09-01.md`.
+
+⚠️ **Ce qui reste ouvert la-dessus, et qui est petit.** Le filet de sondage a ete pose EGAL a la cadence
+d'avant, pour que le pire cas du changement soit exactement le comportement d'hier. Le defaut pg-boss serait de
+30 s. Le relacher vaudrait quinze fois moins de sondage a vide sur les entrants, donc autant d'egress : c'est
+une SECONDE decision, a prendre sur des mesures de production une fois l'ecouteur eprouve, jamais le jour de sa
+mise en service.
+
 **6. Non retenu, et pourquoi.** Le VERSIONNAGE IMMUABLE des scenarios (`workflow_versions`) : Julien a
 tranche le 2026-09-01, « on s'encombre pas de l'ancienne version » et « tant pis on assume que le user tombe
 dans le vide ». Ce n'est donc pas une dette, c'est un arbitrage. Ce qui reste utile et pas cher : **dire au
