@@ -199,9 +199,21 @@ Et surtout : `MAX_ALLERS_RETOURS = 6` (`src/agent/brain.gateway.ts:44`). Chaque 
 requête COMPLÈTE avec le contexte **grossi** du résultat précédent. **Un tour peut donc valoir jusqu'à six
 appels, chacun plus gros que le précédent.**
 
-**Aucune mise en cache nulle part** : `cache_control` est absent de tout le dépôt. Le prompt système et les
-définitions d'outils, rigoureusement identiques d'un aller-retour à l'autre ET d'un tour à l'autre, sont
-repayés intégralement à chaque fois.
+🔴 **SUR LE CACHE, LA FORMULATION EXACTE COMPTE** (corrigé le 2026-09-02 après une objection de Julien, « bizarre
+qu'on puisse pas cacher, c'est la base »).
+
+Ce qui est vrai : **on n'envoie AUCUNE instruction de cache** (`cache_control` absent de tout le dépôt).
+Ce qui serait FAUX de conclure : que rien n'est mis en cache. Certains fournisseurs cachent **automatiquement**
+les préfixes longs, sans qu'on demande, et le rapportent dans leur réponse.
+
+Or `src/agent/llm/chat-client.ts` ne lit que `prompt_tokens`, `completion_tokens` et `cost`. Le champ qui
+dirait combien de tokens ont été servis depuis un cache (`prompt_tokens_details.cached_tokens` dans le format
+OpenAI-compatible du Gateway) **n'est jamais lu**. Donc **on ne sait pas si on cache déjà**, et le prompt
+système plus les définitions d'outils, rigoureusement identiques d'un aller-retour à l'autre et d'un tour à
+l'autre, sont peut-être déjà servis depuis un cache sans qu'on le voie.
+
+⚠️ Le modèle d'agent en production est `zai/glm-4.7-flash` via le Gateway Vercel. Son comportement de cache
+**se mesure, ne se suppose pas**.
 
 **Conséquence de méthode : mesurer les TOKENS PAR MINUTE, pas les requêtes.** Les limites d'un gateway
 s'expriment presque toujours en tokens/minute. Compter les requêtes reviendrait à compter les passages sans
@@ -213,11 +225,13 @@ regarder ce qui s'y passe.
    numéro de test. ⚠️ **Rien à construire pour ça** : le code compte déjà `tokensIn`, `tokensOut` et le coût en
    micro-euros à chaque appel, et les débite du solde du workspace. Ce qu'on cherche : tokens par tour, nombre
    d'allers-retours réels, durée.
-2. **Éprouver la mise en cache de prompt** en un appel : est-ce que le Gateway Vercel laisse passer les
-   instructions de cache, et est-ce que le modèle en service les honore ? Si oui, la plus grosse part
-   CONSTANTE de chaque appel cesse d'être repayée, ce qui change à la fois le débit tenable et le coût.
-   ⚠️ À vérifier, pas à supposer : les deux réponses dépendent du couple gateway/modèle.
-3. **Alors seulement choisir les chiffres** de concurrence et de plafond par client, exprimés en
+2. **LIRE LE CHAMP DE CACHE QU'ON REÇOIT DÉJÀ.** Une ligne : ajouter `prompt_tokens_details.cached_tokens` à
+   ce qu'on parse, et le journaliser. S'il revient non nul, **le cache tourne déjà** et il n'y a rien à
+   construire. C'est le premier geste parce que c'est le moins cher et qu'il peut annuler le suivant.
+3. **Si et seulement si ce champ est nul** : demander explicitement le cache et vérifier que le Gateway le
+   transmet au fournisseur. Si ça marche, la plus grosse part CONSTANTE de chaque appel cesse d'être repayée,
+   ce qui change à la fois le débit tenable et le coût.
+4. **Alors seulement choisir les chiffres** de concurrence et de plafond par client, exprimés en
    tokens/minute autant qu'en tours simultanés.
 
 ### Pourquoi la boucle Node n'est PAS le sujet
@@ -294,10 +308,26 @@ Vérifié : **`/ops` n'expose RIEN du pool.** Or le comportement à saturation e
 attend, puis échoue proprement au bout de `DB_CONN_TIMEOUT_MS` (8 s) avec une erreur journalisée. On ne meurt
 pas en silence. Mais personne ne regarde, donc on l'apprendrait par un client qui appelle.
 
-**Le geste, et il est unique :** exposer les trois compteurs que le pool `pg` fournit déjà gratuitement
-(`totalCount`, `idleCount`, `waitingCount`) dans `/ops`, et alerter sur `waitingCount` durablement supérieur à
-zéro. Ce compteur dit littéralement « combien de tâches font la queue pour une connexion » : à zéro tout va
-bien, au-dessus on sait AVANT que les timeouts commencent.
+### Mesurer, et pas échantillonner (objection de Julien, 2026-09-02)
+
+« Il faudrait un outil qui produise une courbe en temps réel, parce qu'il peut y avoir un pic de quelques
+secondes puis plus rien. » Exact : une jauge lue au moment où l'on ouvre `/ops` affichera zéro presque toujours
+et **ratera le pic**, qui est justement ce qu'on cherche. Et échantillonner à la seconde raterait encore un pic
+de 200 ms.
+
+**Il y a mieux, et c'est moins cher : mesurer le temps d'OBTENTION d'une connexion.** Zéro, il n'y a pas eu
+d'attente ; non nul, on a attendu et on sait combien. Cette mesure **ne peut rater aucun pic**, puisque chaque
+requête est mesurée et non échantillonnée. Elle se branche à **un seul endroit** (`src/db/pool.ts:26`, point
+unique de création du pool applicatif) : tous les stores en héritent, aucun autre fichier ne bouge.
+
+🔴 **Le bon indicateur n'est PAS « à combien du plafond on est ».** C'est **« quelqu'un a-t-il attendu, et
+combien de temps ». 15 connexions sur 16 sans une seule attente, tout va bien. Des attentes à 8 sur 16, c'est
+autre chose qui cloche, et c'est ça qu'il faut voir.
+
+**La courbe** vient ensuite gratuitement : agréger par minute (maximum, p95, nombre d'attentes) dans une petite
+table, ~1440 lignes par jour et par process, dessinée avec les graphes SVG qui existent déjà dans Analytics.
+Les compteurs bruts du pool `pg` (`totalCount`, `idleCount`, `waitingCount`) restent exposés dans `/ops` comme
+photo d'instant, mais ce sont les attentes agrégées qui font foi.
 
 ⚠️ **La marge viendra du plan payant**, et il faudra la **re-mesurer** comme les 16 l'ont été le 2026-08-25,
 jamais la supposer : ce nombre venait d'une mesure, pas d'une documentation.
