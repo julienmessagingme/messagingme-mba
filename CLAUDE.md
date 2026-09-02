@@ -51,9 +51,15 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0104** (`workflow_runs.avance_token` + `avance_jusqu_a`, le tour d'avance réservé AVANT
-les envois), passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration
-est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0105.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Dernière appliquée : 0105** (`connector_requests` + `agent_tools.request_id`, les appels de connecteur rangés
+dans la bibliothèque du workspace au lieu d'être redécrits par agent), passée le 2026-09-02 avec la séquence
+complète (build de l'image, vérification que la migration est DEDANS, `migrate`, vérification en base).
+**Prochaine libre = 0106.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+
+⚠️ **0105 n'était PAS bloquante**, et c'est ce qui a permis de l'écrire trois commits avant de l'appliquer :
+aucun code ne l'écrivait tant que les routes n'étaient pas livrées, et sa forme pouvait encore bouger en les
+construisant. L'appliquer tôt aurait obligé à une 0106 corrective au premier ajustement. La règle « migrer
+avant de déployer » vaut pour les migrations que le code ÉCRIT, pas pour celles qu'il ignore encore.
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un

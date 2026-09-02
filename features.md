@@ -14,7 +14,8 @@ mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas 
 
 Admin : **Accueil · Inbox · mini-CRM · Campagnes · Scénario · Automation · AI Agent (MBA [MBA, guide /
 MBA, paramètres] / Other AI agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
-d'email / Messages RCS / Blocs / Tags / Champs) · Tools (Webhooks / Connecteurs API) · Analytics
+d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
+RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API) · Analytics
 (Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers
 (Documentation API / Clés d'API / Serveur MCP)** collé **en bas** de la barre.
 - ✅ **La barre a TROIS niveaux depuis le 2026-09-01**, et « MBA » est le seul groupe de deuxième niveau :
@@ -1093,16 +1094,36 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Éprouver la connexion** : un bouton, un chemin, et le verdict avec sa date. C'est le seul endroit où un
   jeton expiré se voit AVANT qu'un contact ne le découvre : un jeton mort ne produit aucune erreur visible
   côté client, l'agent se contenterait de ne plus savoir répondre.
-- ✅ **Dans CHAQUE agent** (onglet Outils), poser les appels qu'il a le droit de faire sur ces systèmes : une
-  méthode, un chemin (`/commandes/{ref}`), les mots qui disent quand l'appeler et quand ne pas l'appeler, et
-  **les champs que l'agent aura le droit de lire**. Deux agents peuvent interroger le même système avec des
-  consignes différentes. Ces champs sont
-  obligatoires : la réponse de votre système ne part chez le fournisseur du modèle que par cette liste.
-- ✅ **Dire qui remplit chaque paramètre** : l'agent, le contact (son numéro, authentifié par WhatsApp), ou une
-  valeur fixe. **L'agent ne peut pas fabriquer un identifiant de client** : c'est ce qui empêche quelqu'un de
-  demander à votre agent la commande d'un autre.
+- ✅ **Mettre au point un APPEL, dans la même page** (2026-09-02), et non plus dans chaque agent. Un appel est
+  décrit une fois, éprouvé, puis ouvert aux agents qui en ont besoin. L'écran suit l'ordre du raisonnement :
+  quelles données on envoie, où on les envoie, on essaie, on coche ce qu'on garde.
+- ✅ **Choisir la méthode** (GET, POST, PUT, PATCH, DELETE) et le chemin, avec des variables (`/commandes/{ref}`).
+- ✅ **Envoyer des données**, ce qui manquait : des **paramètres d'URL**, et surtout un **corps de requête**,
+  saisissable de deux façons au choix : une **liste de champs** (aucune accolade à écrire) ou du **JSON brut**
+  (collez l'exemple de votre documentation et remplacez les valeurs par des variables). La bascule de la liste
+  vers le JSON reprend le travail déjà fait ; elle est à sens unique et le bouton le dit.
+- ✅ **Dire d'où vient chaque donnée envoyée** : décidée par l'agent, le **numéro ou le nom du contact**, un
+  **champ personnalisé** de sa fiche, une **valeur système**, ou une constante. Une donnée peut être marquée
+  « sans elle, on n'appelle pas ». **L'agent ne peut pas fabriquer un identifiant de client** : c'est ce qui
+  empêche quelqu'un de demander à votre agent la commande d'un autre.
+- ✅ **Deux valeurs système** : la **date et l'heure courantes** (au format international, avec le décalage de
+  votre fuseau) et le **dernier message écrit par le contact**, ce qui permet de transmettre à votre système
+  ce que la personne vient de demander, mot pour mot.
+- ✅ **Essayer l'appel** avec des valeurs de test, et voir la vraie réponse : le statut, la durée, ce qui est
+  parti, et le contenu reçu.
+- ✅ **Cocher les champs à garder** dans la réponse reçue, au lieu d'écrire des chemins de mémoire. Ces champs
+  sont obligatoires : la réponse de votre système ne part chez le fournisseur du modèle que par cette liste.
+- ✅ **Dans CHAQUE agent** (onglet Outils), choisir un appel de la bibliothèque et lui donner SES mots : le nom
+  vu par l'agent, à quoi ça sert, quand ne pas l'appeler. Deux agents peuvent utiliser le même appel avec des
+  consignes différentes, et le corriger une fois le corrige partout.
+- ✅ **L'écran vous fait confirmer ce qui partira** avant de brancher l'appel sur un agent : la liste des
+  données envoyées, en français, et ce qui sera lu en retour. La case à cocher est obligatoire.
 - ✅ Un outil de connecteur naît **inactif**, comme un outil maison : c'est un administrateur qui l'active
   après l'avoir relu.
+- ✅ **Un appel utilisé par un agent ne se supprime pas** : l'écran dit combien d'agents s'en servent et refuse,
+  plutôt que de les rendre muets en silence.
+- ⛔ **L'authentification ne se règle pas sur un appel** : elle vit sur le système, où le secret est chiffré. Un
+  en-tête `authorization` saisi sur un appel est refusé, en vous disant où le déclarer.
 - ⛔ **Pas encore : MCP** (les serveurs d'outils standardisés). La console les acceptera, aucun code ne les
   sert aujourd'hui.
 

@@ -12,6 +12,59 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
+## EN COURS le 2026-09-02 : le lot UX demandé par Julien (dix items)
+
+Julien a demandé dix choses d'un coup, plus deux questions. **Déployé** (`74cd217`) : le connecteur API
+refondu (le gros morceau), le bug de défilement de l'inbox, le menu Contenu rangé par canal et « tag »
+devenu « étiquette ».
+
+**Ce qui reste de sa liste, dans l'ordre où je le prends :**
+
+1. **La « dernière saisie » comme valeur de scénario.** Elle est atteignable depuis un connecteur ; Julien
+   veut aussi pouvoir la copier dans un champ personnalisé depuis un bloc de scénario. Le lecteur existe
+   déjà (`derniereSaisieDuContact`), il reste à l'ouvrir au bloc « poser un champ ».
+2. **Corriger « maintenant » dans le bloc de scénario.** Le connecteur sort désormais l'heure avec le
+   décalage du fuseau (`formatMaintenant`) ; `src/workflow/engine.ts` écrit encore `toISOString()`, donc de
+   l'UTC. Un seul appel à remplacer, mais les conditions datetime lisent ces valeurs : à vérifier.
+3. **Supprimer le contenu d'une conversation**, tracé au Journal des actions.
+4. **Le journal des erreurs** (retours Meta avec code) au même endroit que le Journal des actions, et la
+   **recherche** dans les deux (mot-clé, utilisateur, numéro). ⚠️ Le journal d'actions ne porte AUCUN numéro,
+   par conception RGPD : la recherche par numéro devra le résoudre vers l'identifiant interne, et ne trouvera
+   rien pour un contact anonymisé. L'écran doit le DIRE au lieu de rendre une liste vide.
+5. **« Engagé » dans l'historique du mini-CRM**, sur les appuis de bouton.
+6. 🔴 **L'attribution des clics**, qui est un chantier à part et pas une case à cocher. Le lien tracé est
+   aujourd'hui le MÊME pour tous les destinataires (`/r/<code>` est figé dans le template approuvé par Meta),
+   donc l'information « qui » n'existe nulle part au moment du clic. Il faut un jeton par destinataire dans
+   l'URL (`/r/<code>/{{1}}`, rempli à l'envoi), ce que Meta supporte. **Les templates DÉJÀ approuvés ne
+   pourront jamais être attribués** : leur URL est gelée. Et cela rend les clics personnels, donc à purger
+   avec le contact, ce que la migration 0066 avait justement évité.
+
+**Deux questions de Julien, répondues** : la relance automatique des échecs fonctionne toujours (elle traite
+131049 et 131026, elle est gatée par le toggle ET par `HUBSPOT_SERVICE_URL`, et le verrou de run l'a même
+améliorée) ; l'identifiant unique de contact existe déjà (`contacts.id`), il est meilleur que le téléphone
+(qui change, et qui peut être absent), et le journal d'audit s'en sert déjà.
+
+## LIVRÉ ET DÉPLOYÉ le 2026-09-02 : le connecteur API digne de ce nom
+
+Constat de Julien : « selon les doc API que le user aura pour setuper ce connecteur tool, il ne pourra pas
+faire grand chose avec ce qu'on lui propose là ». Vérifié dans le code, il avait raison sur toute la ligne :
+`fetch(url, { method, headers })` **sans corps**, les paramètres ne remplissant qu'un gabarit de chemin, et
+les variables limitées à `wa_id` et `nom` alors que dix champs personnalisés sont déclarés en production.
+
+Six commits, migration 0105, 3386 tests + 417 e2e. Le détail technique et les pièges dans
+[documentation.md](documentation.md) ; le fonctionnel dans [features.md](features.md).
+
+**Trois défauts trouvés en construisant, dont deux par des tests qui visaient autre chose :**
+- `.partial()` de zod ne retire pas les `.default()` : renommer une requête aurait **effacé toutes ses
+  variables**, en silence ;
+- une réponse mal formée **blanchissait** tout l'onglet Outils d'un agent (un `.map` sur `undefined`), y
+  compris la liste des outils maison qui n'a rien à voir ;
+- `requis` ne servait à rien : une variable dont la valeur est inconnue partait en `null` sans distinction.
+
+**Et une erreur de méthode à moi** : j'ai poussé `deb71ed` après n'avoir lancé que le spec e2e des
+connecteurs, alors que je touchais un onglet partagé. La CI est restée rouge une heure et quart sur huit
+tests que la suite complète aurait montrés tout de suite.
+
 ## LIVRÉ ET DÉPLOYÉ dans la nuit du 2026-09-01 au 02 : les quatre items du contre-audit, puis trois de plus
 
 Julien a demandé les quatre items retenus du contre-audit d'affilée, puis « le top 3 suivant de ce qui me
