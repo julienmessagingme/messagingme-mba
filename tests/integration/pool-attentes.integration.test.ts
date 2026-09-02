@@ -32,8 +32,8 @@ describe.skipIf(!url)('attentes du pool (Postgres)', () => {
   it('🔴 deux vidages dans la MÊME minute s’additionnent, et les pics se combinent par le maximum', async () => {
     const minute = new Date();
     minute.setSeconds(0, 0);
-    await store.enregistrer(processus, minute, { echantillons: 10, attentes: 2, maxMs: 40, sommeMs: 100 });
-    await store.enregistrer(processus, minute, { echantillons: 5, attentes: 1, maxMs: 900, sommeMs: 950 });
+    await store.enregistrer(processus, minute, { echantillons: 10, attentes: 2, maxMs: 40, maxAttenteMs: 40, sommeMs: 100 });
+    await store.enregistrer(processus, minute, { echantillons: 5, attentes: 1, maxMs: 900, maxAttenteMs: 900, sommeMs: 950 });
     const point = (await store.lireDernieresMinutes(10)).find((p) => p.process === processus);
     expect(point).toBeDefined();
     expect(point!.echantillons).toBe(15); // additionné, pas remplacé
@@ -46,7 +46,7 @@ describe.skipIf(!url)('attentes du pool (Postgres)', () => {
     // La garder en base serait une seconde vérité à recalculer à chaque fusion, donc à faire diverger.
     const minute = new Date(Date.now() - 60_000);
     minute.setSeconds(0, 0);
-    await store.enregistrer(`${processus}-b`, minute, { echantillons: 4, attentes: 0, maxMs: 12, sommeMs: 40 });
+    await store.enregistrer(`${processus}-b`, minute, { echantillons: 4, attentes: 0, maxMs: 12, maxAttenteMs: 0, sommeMs: 40 });
     const point = (await store.lireDernieresMinutes(10)).find((p) => p.process === `${processus}-b`);
     expect(point!.moyenneMs).toBe(10);
   });

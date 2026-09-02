@@ -174,12 +174,12 @@ export const schema = z.object({
    * Suppression des échecs d'avance de scénario (migration 0108). COURTE, à l'opposé du journal d'audit :
    * c'est de l'exploitation, on s'en sert dans les jours qui suivent la panne ou jamais.
    */
-  AVANCE_ECHECS_RETENTION_DAYS: z.coerce.number().default(90),
+  AVANCE_ECHECS_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
   /**
    * Suppression des agregats d'attente du pool (migration 0109). Courte : une ligne par minute et par process,
    * et on regarde une courbe de quelques heures, jamais de quelques mois.
    */
-  POOL_ATTENTES_RETENTION_DAYS: z.coerce.number().default(7),
+  POOL_ATTENTES_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   /**
    * Plafond d'envois par minute et PAR NUMÉRO, tous chemins confondus (campagne, scénario, automation,
    * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
@@ -212,7 +212,7 @@ export const schema = z.object({
    * faire. En configuration pour qu'il se relève sans redéploiement le jour d'un vrai gros client. La règle et
    * le message de refus vivent dans `src/campaign/plafond.ts`.
    */
-  CAMPAIGN_MAX_RECIPIENTS: z.coerce.number().default(PLAFOND_DESTINATAIRES_DEFAUT),
+  CAMPAIGN_MAX_RECIPIENTS: z.coerce.number().int().min(1).default(PLAFOND_DESTINATAIRES_DEFAUT),
   /**
    * Nombre de runs de campagne traités EN PARALLÈLE par le worker, et plafond par ESPACE (lot 5).
    *
@@ -223,7 +223,7 @@ export const schema = z.object({
    * de ses campagnes en parallèle ne gagneraient rien et se disputeraient le même budget. La concurrence sert
    * à ce qu'un client n'attende pas la campagne d'un AUTRE.
    */
-  CAMPAIGN_RUN_CONCURRENCY: z.coerce.number().default(4),
+  CAMPAIGN_RUN_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   /**
    * Concurrence de la file des messages ENTRANTS (lot 3 du programme II). Elle valait 1, donc un seul message
    * entrant était traité à la fois, TOUS clients confondus : un envoi Meta lent, un appel HubSpot qui traîne,
@@ -239,7 +239,7 @@ export const schema = z.object({
    * pool vers celle de Supavisor, où elle est muette. Relever ce nombre demande donc de refaire cette
    * arithmétique-là, pas seulement de changer la variable.
    */
-  WEBHOOK_CONCURRENCY: z.coerce.number().default(3),
+  WEBHOOK_CONCURRENCY: z.coerce.number().int().min(1).default(3),
   /**
    * TOURS D'AGENT EN VOL, et plafond par ESPACE (lot 6 du plan post-audit, 2026-09-02).
    *
@@ -259,8 +259,8 @@ export const schema = z.object({
    * Point de départ PRUDENT, pas une mesure. En configuration pour être ajusté après le lot 7 (la mesure de
    * l'attente du pool) sans redéployer de code.
    */
-  AGENT_TURN_CONCURRENCY: z.coerce.number().default(12),
-  AGENT_TURN_GROUP_CONCURRENCY: z.coerce.number().default(4),
+  AGENT_TURN_CONCURRENCY: z.coerce.number().int().min(1).default(12),
+  AGENT_TURN_GROUP_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   /**
    * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker.
    *
@@ -268,12 +268,12 @@ export const schema = z.object({
    * débit ; ce qui change tout, c'est qu'un client qui importe dix mille contacts déclenche dix mille analyses
    * et ne puisse plus les faire passer AVANT la première analyse de tous les autres.
    */
-  ANALYZE_CONVERSATION_CONCURRENCY: z.coerce.number().default(3),
+  ANALYZE_CONVERSATION_CONCURRENCY: z.coerce.number().int().min(1).default(3),
   /**
    * Événements d'automation en vol. Même raison et même plafond par espace de 1 : une rafale d'un client
    * gelait tous les autres, cette file traitant un job à la fois pour la flotte entière.
    */
-  AUTOMATION_EVENT_CONCURRENCY: z.coerce.number().default(3),
+  AUTOMATION_EVENT_CONCURRENCY: z.coerce.number().int().min(1).default(3),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :
@@ -414,12 +414,12 @@ export const schema = z.object({
    * 0,0817 a 0,3662 et le hors-sujet plafonne a 0,0409. 0,06 est le milieu de cet intervalle. C est un point
    * de depart mesure, pas une loi, et il est en configuration pour etre re-mesure sur de vraies bases.
    */
-  AGENT_RERANK_SEUIL: z.coerce.number().default(0.06),
+  AGENT_RERANK_SEUIL: z.coerce.number().min(0).max(1).default(0.06),
   /**
    * Combien de fiches le RAPPEL remonte avant le verdict. Plus large que les 3 rendues au modele, et c est
    * tout l interet : on donne au reranker de quoi choisir. Trop large le ferait payer pour rien.
    */
-  AGENT_RAPPEL_CANDIDATS: z.coerce.number().default(12),
+  AGENT_RAPPEL_CANDIDATS: z.coerce.number().int().min(1).default(12),
   /**
    * Taux euros par dollar, pour convertir ce que le Gateway facture (en DOLLARS) vers nos compteurs, qui
    * sont tous en micro-euros. C est un parametre COMMERCIAL, pas un cours en temps reel : le client charge
@@ -443,6 +443,25 @@ export const schema = z.object({
    *  Vide -> la route de lien d'install répond 503 (le front garde son bouton mais l'action indique l'indisponibilité). */
   HUBSPOT_CONNECTOR_PUBLIC_URL: z.string().default(''),
 }).superRefine((c, ctx) => {
+  /**
+   * 🔴 UN PLAFOND PAR GROUPE PLUS GRAND QUE LE TOTAL NE PLAFONNE RIEN, et se relit comme une garantie.
+   *
+   * `groupConcurrency` borne le nombre de jobs en vol POUR UN MEME espace ; `concurrency` borne le total. Un
+   * groupe >= total laisse donc un seul client prendre toutes les places, ce qui est exactement l'inverse de
+   * ce que ces deux reglages existent pour empecher. Le piege est silencieux : pg-boss ne se plaint pas, la
+   * ligne de configuration a l'air pensee, et l'equite a disparu.
+   *
+   * ⚠️ La contrainte est STRICTE (`>=` refuse) et pas seulement `>` : a egalite, un client peut deja occuper
+   * toutes les places, donc le groupe ne sert a rien.
+   */
+  if (c.AGENT_TURN_GROUP_CONCURRENCY >= c.AGENT_TURN_CONCURRENCY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AGENT_TURN_GROUP_CONCURRENCY'],
+      message: `le plafond par espace (${c.AGENT_TURN_GROUP_CONCURRENCY}) doit etre STRICTEMENT inferieur au total en vol (${c.AGENT_TURN_CONCURRENCY}), sinon un seul client peut prendre toutes les places`,
+    });
+  }
+
   /**
    * 🔴 LES DEUX CHAÎNES DE CONNEXION DOIVENT DÉSIGNER LA MÊME BASE.
    *

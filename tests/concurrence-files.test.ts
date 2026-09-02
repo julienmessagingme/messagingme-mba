@@ -124,3 +124,50 @@ describe('les valeurs par défaut sont celles qu’on a arrêtées', () => {
     expect(c.AGENT_TURN_GROUP_CONCURRENCY).toBe(6);
   });
 });
+
+/**
+ * 🔴 LA VALIDATION DES RÉGLAGES (constat de l'audit externe du 2026-09-02).
+ *
+ * Les valeurs de concurrence acceptaient zéro, un négatif et un décimal. Aucune ne se voit à l'exécution :
+ * une concurrence à zéro ARRÊTE la file en silence, un décimal est tronqué par pg-boss sans le dire, et un
+ * plafond de campagne à zéro refuserait toutes les campagnes avec un message parfaitement formé.
+ */
+describe('les réglages numériques refusent l’absurde', () => {
+  const refuse = (env: Record<string, string>) => expect(() => schema.parse(env)).toThrow();
+
+  it('🔴 une concurrence à ZÉRO est refusée : elle arrêterait la file en silence', () => {
+    refuse({ AGENT_TURN_CONCURRENCY: '0' });
+    refuse({ WEBHOOK_CONCURRENCY: '0' });
+    refuse({ CAMPAIGN_RUN_CONCURRENCY: '0' });
+  });
+
+  it('un négatif et un décimal sont refusés aussi', () => {
+    refuse({ AGENT_TURN_CONCURRENCY: '-1' });
+    refuse({ AGENT_TURN_CONCURRENCY: '2.5' });
+  });
+
+  it('le plafond de campagne refuse zéro et le négatif', () => {
+    refuse({ CAMPAIGN_MAX_RECIPIENTS: '0' });
+    refuse({ CAMPAIGN_MAX_RECIPIENTS: '-5' });
+  });
+
+  it('🔴 un plafond PAR ESPACE >= au total est refusé : il ne plafonnerait rien', () => {
+    // À égalité, un seul client peut déjà occuper toutes les places : le groupe ne sert alors à rien, et la
+    // ligne de configuration se relit pourtant comme une garantie d'équité.
+    refuse({ AGENT_TURN_CONCURRENCY: '12', AGENT_TURN_GROUP_CONCURRENCY: '12' });
+    refuse({ AGENT_TURN_CONCURRENCY: '12', AGENT_TURN_GROUP_CONCURRENCY: '20' });
+  });
+
+  it('et la combinaison légitime passe', () => {
+    const c = schema.parse({ AGENT_TURN_CONCURRENCY: '20', AGENT_TURN_GROUP_CONCURRENCY: '6' });
+    expect(c.AGENT_TURN_CONCURRENCY).toBe(20);
+    expect(c.AGENT_TURN_GROUP_CONCURRENCY).toBe(6);
+  });
+
+  it('le seuil du reranker est un SCORE, borné dans [0, 1]', () => {
+    // Ce n'est pas un compte : zéro est légitime (il vaudrait « ne filtre rien »), 1,5 ne l'est pas.
+    expect(schema.parse({ AGENT_RERANK_SEUIL: '0' }).AGENT_RERANK_SEUIL).toBe(0);
+    refuse({ AGENT_RERANK_SEUIL: '1.5' });
+    refuse({ AGENT_RERANK_SEUIL: '-0.1' });
+  });
+});

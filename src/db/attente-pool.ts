@@ -31,8 +31,15 @@ export interface SeauAttente {
   echantillons: number;
   /** Parmi elles, celles faites alors que le pool était SATURÉ. C'est le signal. */
   attentes: number;
-  /** La plus longue acquisition de la minute, en millisecondes. */
+  /** La plus longue acquisition de la minute, en millisecondes, TOUTES causes confondues. */
   maxMs: number;
+  /**
+   * 🔴 La plus longue acquisition faite sur un pool SATURE. C'est LE signal, et il est distinct du precedent :
+   * `maxMs` inclut l'ouverture normale d'une connexion neuve (TCP + TLS), qui coute des dizaines de
+   * millisecondes et n'a rien d'anormal. Les confondre faisait crier au loup un ecran d'exploitation, et un
+   * indicateur qui crie au loup se fait ignorer le jour ou il a raison. Releve par l'audit du 2026-09-02.
+   */
+  maxAttenteMs: number;
   /** Somme des durées, pour une moyenne lisible sans garder les échantillons. */
   sommeMs: number;
 }
@@ -44,7 +51,7 @@ export interface SeauAttente {
  */
 export const SEUIL_ATTENTE_MS = 1;
 
-const seauVide = (): SeauAttente => ({ echantillons: 0, attentes: 0, maxMs: 0, sommeMs: 0 });
+const seauVide = (): SeauAttente => ({ echantillons: 0, attentes: 0, maxMs: 0, maxAttenteMs: 0, sommeMs: 0 });
 
 /**
  * L'accumulateur. Une instance par process : l'API et le worker ont chacun LEUR pool, donc chacun sa mesure.
@@ -52,15 +59,39 @@ const seauVide = (): SeauAttente => ({ echantillons: 0, attentes: 0, maxMs: 0, s
 export class MesureAttentePool {
   private seau: SeauAttente = seauVide();
   private maxDepuisDemarrageMs = 0;
+  /** Profondeur de suspension. Un compteur et pas un booleen : deux suspensions imbriquees ne doivent pas
+   *  se desactiver l'une l'autre. */
+  private suspendu = 0;
+
+  /**
+   * 🔴 SUSPENDRE LA MESURE PENDANT QU'ELLE S'ECRIT ELLE-MEME (constat de l'audit du 2026-09-02).
+   *
+   * Le vidage ecrit son seau en base PAR LE POOL INSTRUMENTE. Sans cette suspension, cette ecriture devient
+   * le premier echantillon de la minute suivante : la telemetrie s'auto-alimente, une ligne apparait chaque
+   * minute meme sur un process au repos, et la promesse « aucune ligne quand il ne se passe rien » devient
+   * fausse des la premiere activite. Une mesure qui modifie ce qu'elle mesure ne mesure plus rien.
+   */
+  async sansSeMesurer<T>(faire: () => Promise<T>): Promise<T> {
+    this.suspendu += 1;
+    try {
+      return await faire();
+    } finally {
+      this.suspendu -= 1;
+    }
+  }
 
   /** `sature` = le pool était au maximum sans connexion libre au moment de la demande. */
   enregistrer(ms: number, sature: boolean): void {
+    if (this.suspendu > 0) return;
     const duree = Number.isFinite(ms) && ms > 0 ? ms : 0;
     this.seau.echantillons += 1;
     this.seau.sommeMs += duree;
     if (duree > this.seau.maxMs) this.seau.maxMs = duree;
     if (duree > this.maxDepuisDemarrageMs) this.maxDepuisDemarrageMs = duree;
-    if (sature && duree >= SEUIL_ATTENTE_MS) this.seau.attentes += 1;
+    if (sature && duree >= SEUIL_ATTENTE_MS) {
+      this.seau.attentes += 1;
+      if (duree > this.seau.maxAttenteMs) this.seau.maxAttenteMs = duree;
+    }
   }
 
   /**
@@ -87,6 +118,7 @@ export class MesureAttentePool {
     this.seau.attentes += seau.attentes;
     this.seau.sommeMs += seau.sommeMs;
     if (seau.maxMs > this.seau.maxMs) this.seau.maxMs = seau.maxMs;
+    if (seau.maxAttenteMs > this.seau.maxAttenteMs) this.seau.maxAttenteMs = seau.maxAttenteMs;
   }
 
   /** Le pic depuis le démarrage du process, JAMAIS remis à zéro : c'est la mémoire longue de l'écran. */

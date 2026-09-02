@@ -2570,7 +2570,7 @@ d'écriture ouverte aux tiers :
    ne bouge pas, et une liste d'appelants bouge toujours.**
 
 ⚠️ **`control_owner` reste `app_human` pour un agent tiers**, et c'est un choix. `ControlOwner` n'a que trois
-valeurs ; ce qui compte est que le scénario cesse d'avancer et qu'une campagne saute le contact, ce que
+valeurs ; ce qui compte est que le scénario cesse d'avancer TOUT SEUL et que MBA cesse de répondre, ce que
 `app_human` produit exactement. La distinction « qui a parlé » est portée là où elle sert et où elle ne coûte
 pas de migration du chemin chaud : l'origine du message.
 

@@ -114,9 +114,9 @@ describe('MesureAttentePool', () => {
     // réinjecter un seau comme s'il était UNE acquisition perdrait le nombre d'échantillons et d'attentes.
     const m = new MesureAttentePool();
     m.enregistrer(5, false);
-    const perdu: SeauAttente = { echantillons: 40, attentes: 7, maxMs: 900, sommeMs: 1200 };
+    const perdu: SeauAttente = { echantillons: 40, attentes: 7, maxMs: 900, maxAttenteMs: 900, sommeMs: 1200 };
     m.reinjecter(perdu);
-    expect(m.vider()).toEqual({ echantillons: 41, attentes: 7, maxMs: 900, sommeMs: 1205 });
+    expect(m.vider()).toEqual({ echantillons: 41, attentes: 7, maxMs: 900, maxAttenteMs: 900, sommeMs: 1205 });
   });
 });
 
@@ -158,5 +158,60 @@ describe('viderVersLaBase', () => {
     expect(erreurs).toHaveLength(1);
     // Tout est encore là, échantillons et attentes compris.
     expect(m.vider()).toMatchObject({ echantillons: 2, attentes: 1, maxMs: 200 });
+  });
+});
+
+/**
+ * 🔴 CE QUE L'AUDIT EXTERNE DU 2026-09-02 A TROUVÉ, et que ces tests interdisent de revenir.
+ *
+ * Deux défauts de MESURE, c'est-à-dire les pires : ils ne cassent rien, ils mentent. Un indicateur
+ * d'exploitation qui crie au loup se fait ignorer le jour où il a raison.
+ */
+describe('les deux défauts de mesure trouvés par l’audit', () => {
+  it('🔴 une acquisition LENTE sur pool NON saturé ne gonfle pas le maximum d’ATTENTE', () => {
+    // Le défaut : la carte colorait sa barre en rouge sur `maxMs`, qui inclut l'ouverture normale d'une
+    // connexion neuve (TCP + TLS, des dizaines de millisecondes, parfaitement normal au démarrage). Une barre
+    // rouge pouvait donc s'afficher avec ZÉRO attente sur pool saturé.
+    const m = new MesureAttentePool();
+    m.enregistrer(300, false); // longue, mais pool non saturé : ouverture d'une connexion neuve
+    const seau = m.vider();
+    expect(seau.maxMs).toBe(300); // la latence est bien vue...
+    expect(seau.maxAttenteMs).toBe(0); // ...mais ce n'est PAS une attente, donc rien ne doit alarmer
+    expect(seau.attentes).toBe(0);
+  });
+
+  it('les deux maximums coexistent et ne se confondent pas', () => {
+    const m = new MesureAttentePool();
+    m.enregistrer(300, false); // lente, non saturée
+    m.enregistrer(80, true); // plus courte, mais SATURÉE : c'est elle le signal
+    const seau = m.vider();
+    expect(seau.maxMs).toBe(300);
+    expect(seau.maxAttenteMs).toBe(80);
+  });
+
+  it('🔴 la télémétrie ne se MESURE PAS elle-même', async () => {
+    // Le défaut : le vidage écrit son seau en base PAR LE POOL INSTRUMENTÉ, donc cette écriture devenait le
+    // premier échantillon de la minute suivante. La télémétrie s'auto-alimentait, une ligne apparaissait
+    // chaque minute même au repos, et la promesse « aucune ligne quand il ne se passe rien » devenait fausse
+    // dès la première activité. Une mesure qui modifie ce qu'elle mesure ne mesure plus rien.
+    const m = new MesureAttentePool();
+    m.enregistrer(10, false);
+    await viderVersLaBase(
+      // L'écriture simule ce que fait le vrai store : elle passe par le pool, donc elle s'enregistrerait.
+      { enregistrer: async () => { m.enregistrer(25, true); } },
+      m, 'api', new Date(),
+    );
+    // Le seau suivant doit être VIDE : l'écriture de la minute précédente ne s'y est pas comptée.
+    expect(m.vider()).toMatchObject({ echantillons: 0, attentes: 0, maxMs: 0, maxAttenteMs: 0 });
+  });
+
+  it('la suspension se REFERME même si l’écriture jette', async () => {
+    // Sinon une seule panne de base rendrait la mesure sourde pour toujours, ce qui est exactement le genre
+    // de panne qu'on ne remarque pas.
+    const m = new MesureAttentePool();
+    m.enregistrer(10, false);
+    await viderVersLaBase({ enregistrer: async () => { throw new Error('KO'); } }, m, 'api', new Date(), () => {});
+    m.enregistrer(50, true);
+    expect(m.vider().maxAttenteMs).toBe(50);
   });
 });

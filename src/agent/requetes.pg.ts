@@ -112,6 +112,16 @@ function traduire(label: string) {
     if (code === '23505') throw new LabelRequeteDejaPris(label);
     // 23503 = clé étrangère : la seule qui puisse échouer ici est `source_id`.
     if (code === '23503') throw new SourceIntrouvable();
+    /**
+     * 🔴 23502 = NOT NULL, et il arrive AVANT le 23503 sur ce chemin. La sous-requête qui résout la source
+     * rend `null` quand elle n'appartient pas à l'espace, donc Postgres lève une violation de NOT NULL, pas
+     * de clé étrangère. Sans cette ligne, une simple erreur de configuration ressortait en 500, c'est-à-dire
+     * en page d'erreur Cloudflare, sans aucun message pour l'utilisateur.
+     *
+     * ⚠️ On vérifie la COLONNE et pas seulement le code : un autre NOT NULL violé un jour ne doit pas être
+     * traduit en « source introuvable », ce qui enverrait chercher au mauvais endroit.
+     */
+    if (code === '23502' && (err as { column?: string }).column === 'source_id') throw new SourceIntrouvable();
     throw err;
   };
 }
@@ -163,8 +173,12 @@ export class PgRequeteStore implements RequeteStore {
         JSON.stringify(input.variables), input.outputPaths, JSON.stringify(input.valeursTest),
       ],
     ).catch(traduire(input.label));
-    // La sous-requête rend `null` si la source n'est pas de cet espace : la contrainte `not null` lève alors
-    // un 23502, que `traduire` ne connaît pas. On le devance par un message clair.
+    /**
+     * ⚠️ CE FILET-CI N'A JAMAIS SERVI, et son commentaire d'origine l'affirmait pourtant : il disait
+     * « devancer » le 23502, alors qu'il est situé APRÈS l'`await` d'une promesse qui a déjà rejeté. Le
+     * vrai traitement est dans `traduire`. On le garde comme ceinture, pour le jour où la requête cesserait
+     * de lever (une colonne rendue nullable, par exemple), mais il n'est plus présenté comme la garde.
+     */
     const id = res.rows[0]?.id;
     if (!id) throw new SourceIntrouvable();
     return (await this.parId(tenantId, id))!;

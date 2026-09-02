@@ -18,6 +18,8 @@ export interface PointAttente {
   echantillons: number;
   attentes: number;
   maxMs: number;
+  /** 🔴 Le maximum des seules acquisitions faites sur un pool SATURE. C'est LUI qui alarme, jamais `maxMs`. */
+  maxAttenteMs: number;
   /** Moyenne dérivée de la somme : la garder en base serait une seconde vérité à recalculer. */
   moyenneMs: number;
 }
@@ -32,23 +34,24 @@ export class PgPoolAttentesStore {
    */
   async enregistrer(processus: string, minute: Date, seau: SeauAttente): Promise<void> {
     await this.pool.query(
-      `insert into pool_attentes (process, minute, echantillons, attentes, max_ms, somme_ms)
-       values ($1, $2, $3, $4, $5, $6)
+      `insert into pool_attentes (process, minute, echantillons, attentes, max_ms, max_attente_ms, somme_ms)
+       values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (process, minute) do update set
          echantillons = pool_attentes.echantillons + excluded.echantillons,
          attentes = pool_attentes.attentes + excluded.attentes,
          max_ms = greatest(pool_attentes.max_ms, excluded.max_ms),
+         max_attente_ms = greatest(pool_attentes.max_attente_ms, excluded.max_attente_ms),
          somme_ms = pool_attentes.somme_ms + excluded.somme_ms`,
-      [processus, minute, seau.echantillons, seau.attentes, Math.round(seau.maxMs), Math.round(seau.sommeMs)],
+      [processus, minute, seau.echantillons, seau.attentes, Math.round(seau.maxMs), Math.round(seau.maxAttenteMs), Math.round(seau.sommeMs)],
     );
   }
 
   /** Les dernières minutes, du plus ancien au plus récent (l'ordre où une courbe se dessine). */
   async lireDernieresMinutes(minutes = 180): Promise<PointAttente[]> {
     const res = await this.pool.query<{
-      process: string; minute: Date; echantillons: string; attentes: string; max_ms: string; somme_ms: string;
+      process: string; minute: Date; echantillons: string; attentes: string; max_ms: string; max_attente_ms: string; somme_ms: string;
     }>(
-      `select process, minute, echantillons::text, attentes::text, max_ms::text, somme_ms::text
+      `select process, minute, echantillons::text, attentes::text, max_ms::text, max_attente_ms::text, somme_ms::text
          from pool_attentes
         where minute > now() - make_interval(mins => $1::int)
         order by minute asc`,
@@ -62,6 +65,7 @@ export class PgPoolAttentesStore {
         echantillons,
         attentes: Number(r.attentes),
         maxMs: Number(r.max_ms),
+        maxAttenteMs: Number(r.max_attente_ms),
         moyenneMs: echantillons === 0 ? 0 : Number(r.somme_ms) / echantillons,
       };
     });
@@ -96,7 +100,9 @@ export async function viderVersLaBase(
   const minute = new Date(maintenant);
   minute.setSeconds(0, 0);
   try {
-    await store.enregistrer(processus, minute, seau);
+    // 🔴 SANS SE MESURER : cette ecriture passe par le pool instrumente, elle deviendrait sinon le premier
+    // echantillon de la minute suivante et la telemetrie s'auto-alimenterait.
+    await mesure.sansSeMesurer(() => store.enregistrer(processus, minute, seau));
     return true;
   } catch (err) {
     onErreur?.(err);

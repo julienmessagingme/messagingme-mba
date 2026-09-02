@@ -65,7 +65,7 @@ l'écriture est best-effort et la lecture rend une liste vide si la table manque
 elles se comporte exactement comme avant. Une mesure ne doit jamais faire tomber ce qu'elle mesure, et un
 journal d'échec ne doit jamais faire échouer le traitement qu'il observe. À passer avec la séquence complète
 au prochain déploiement.
-**Prochaine libre = 0111.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Prochaine libre = 0112.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
 rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message

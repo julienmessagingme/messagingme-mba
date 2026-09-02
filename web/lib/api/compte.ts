@@ -209,7 +209,10 @@ export interface PoolAttentePoint {
   minute: string;
   echantillons: number;
   attentes: number;
+  /** Maximum de TOUTES les acquisitions, y compris l'ouverture normale d'une connexion neuve. N'alarme PAS. */
   maxMs: number;
+  /** 🔴 Maximum des seules acquisitions faites sur un pool SATURÉ. C'est LUI le signal, et lui seul colore. */
+  maxAttenteMs: number;
   moyenneMs: number;
 }
 

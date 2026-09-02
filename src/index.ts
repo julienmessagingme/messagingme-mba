@@ -472,7 +472,8 @@ async function main(): Promise<void> {
         }
         return { messageId: issue.messageId, apercu: apercuRcsSortant(message) };
       },
-      // Un opérateur qui écrit prend le fil : le scénario se gèle sur ce contact, les campagnes le sautent.
+      // Un opérateur qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre. 
+      // ⚠️ Une CAMPAGNE, elle, part quand même : elle est déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil (`ignoreHumanControl`). Le contraire a été écrit ici pendant des semaines, cf. `tests/campagne-controle-humain.test.ts`.
       takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
       // Surcharge de reprise d'un fil (C.4) : dit au sweep de handback s'il faut, pour CE fil, le rendre au
@@ -1352,7 +1353,7 @@ async function main(): Promise<void> {
         },
         recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal),
         // ⚠️ `app_human` pour un agent TIERS, et c'est un choix : `ControlOwner` n'a que trois valeurs, et ce
-        // qui compte ici est que le scénario cesse d'avancer et qu'une campagne saute le contact, ce que
+        // qui compte ici est que le scénario cesse d'avancer TOUT SEUL et que MBA cesse de répondre, ce que
         // `app_human` produit exactement. La distinction « qui a parlé » est portée là où elle sert et où
         // elle ne coûte pas de migration du chemin chaud : l'ORIGINE du message (`mcp`, migration 0101).
         takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },

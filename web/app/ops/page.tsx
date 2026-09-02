@@ -310,15 +310,19 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
             <div className="mb-1 flex items-baseline justify-between text-xs">
               <span className="font-mono text-ink-600">{processus}</span>
               <span className="text-ink-400">
-                {t('attente max par minute', 'max wait per minute')} · {fmtNum(liste.reduce((n, p) => n + p.attentes, 0), locale)} {t('attente(s) sur pool saturé', 'wait(s) on a saturated pool')}
+                {t('acquisition max par minute, rouge = attente sur pool saturé', 'max acquisition per minute, red = wait on a saturated pool')} · {fmtNum(liste.reduce((n, p) => n + p.attentes, 0), locale)} {t('attente(s) sur pool saturé', 'wait(s) on a saturated pool')}
               </span>
             </div>
             <div className="flex h-16 items-end gap-px overflow-x-auto">
               {liste.map((p) => (
                 <span
                   key={p.minute}
-                  title={`${p.minute} · ${p.maxMs} ms · ${p.echantillons} acquisitions`}
-                  className={`w-1 shrink-0 rounded-t ${p.maxMs >= SEUIL_ATTENTE_MS ? 'bg-coral' : 'bg-ink-300'}`}
+                  title={`${p.minute} · ${p.maxMs} ms au total, dont ${p.maxAttenteMs} ms sur pool saturé · ${p.echantillons} acquisitions`}
+                  /* 🔴 La couleur suit l'attente SATURÉE, jamais le maximum global. Avant le 2026-09-02 elle
+                     suivait `maxMs`, qui inclut l'ouverture normale d'une connexion neuve : une barre rouge
+                     pouvait donc s'afficher avec ZÉRO attente. Un indicateur qui crie au loup se fait ignorer
+                     le jour où il a raison. Relevé par l'audit externe. */
+                  className={`w-1 shrink-0 rounded-t ${p.maxAttenteMs >= SEUIL_ATTENTE_MS ? 'bg-coral' : 'bg-ink-300'}`}
                   style={{ height: `${Math.max(2, Math.round((p.maxMs / maxCourbe) * 100))}%` }}
                 />
               ))}
