@@ -162,8 +162,51 @@ export interface AuditEntry {
 }
 
 /** Historique des actions sensibles de l'espace, du plus récent au plus ancien (admin). */
-export function listAudit(tenantId: string, limit = 100): Promise<{ entries: AuditEntry[] }> {
-  return request<{ entries: AuditEntry[] }>(`/tenants/${tenantId}/audit?limit=${limit}`);
+/**
+ * Le journal des actions, avec sa recherche.
+ *
+ * ⚠️ `telephone` n'est PAS cherché dans le journal, qui ne porte aucun numéro : le serveur le RÉSOUT vers les
+ * contacts correspondants et cherche leur identifiant. Deux conséquences que l'écran doit dire plutôt que de
+ * rendre une liste vide : un numéro inconnu ne trouve rien, et un contact ANONYMISÉ ne se retrouve plus par
+ * son numéro, puisque celui-ci a été détruit.
+ */
+export function listAudit(
+  tenantId: string,
+  limit = 100,
+  filtre: { q?: string; acteur?: string; telephone?: string } = {},
+): Promise<{ entries: AuditEntry[] }> {
+  const p = new URLSearchParams({ limit: String(limit) });
+  // Un filtre vide n'est PAS envoyé : « contient la chaîne vide » est vrai partout, donc ne filtre rien, mais
+  // il ferait croire à l'écran qu'une recherche est en cours.
+  for (const [k, v] of Object.entries(filtre)) if (v && v.trim() !== '') p.set(k, v.trim());
+  return request<{ entries: AuditEntry[] }>(`/tenants/${tenantId}/audit?${p.toString()}`);
+}
+
+/** Une erreur de livraison, telle que le journal des erreurs la rend. */
+export interface ErreurLivraison {
+  recipientId: string;
+  campaignId: string;
+  campaignName: string;
+  /** Le numéro appelé. Ce journal-ci les porte : « quel message n'est pas arrivé » sans dire « à qui » ne
+   *  répond à rien. C'est ce qui le distingue du journal des actions, qui n'en porte jamais. */
+  telephone: string;
+  contactId: string | null;
+  contactNom: string | null;
+  code: number | null;
+  message: string | null;
+  /** `envoi` = Meta a refusé l'appel, le message n'est jamais parti. `livraison` = il est parti puis a échoué. */
+  origine: 'envoi' | 'livraison';
+  at: string | null;
+}
+
+export function listErreursLivraison(
+  tenantId: string,
+  limit = 100,
+  filtre: { q?: string; telephone?: string; code?: string } = {},
+): Promise<{ erreurs: ErreurLivraison[] }> {
+  const p = new URLSearchParams({ limit: String(limit) });
+  for (const [k, v] of Object.entries(filtre)) if (v && v.trim() !== '') p.set(k, v.trim());
+  return request<{ erreurs: ErreurLivraison[] }>(`/tenants/${tenantId}/erreurs-livraison?${p.toString()}`);
 }
 
 // `listAllContacts` a vécu ici sans appelant : elle paginait correctement, avec un commentaire promettant de

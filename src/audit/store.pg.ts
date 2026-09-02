@@ -69,23 +69,51 @@ export class PgAuditStore {
     );
   }
 
-  /** Historique d'un espace, du plus récent au plus ancien. Filtre optionnel sur une cible précise. */
+  /**
+   * Historique d'un espace, du plus récent au plus ancien, avec une RECHERCHE.
+   *
+   * 🔴 CE QU'ON PEUT CHERCHER, ET CE QU'ON NE PEUT PAS. Le journal ne porte AUCUNE donnée personnelle : ni
+   * numéro, ni nom, ni texte (migration 0061). Chercher « par numéro de client », comme Julien l'a demandé,
+   * n'est donc pas une recherche dans ce journal mais une RÉSOLUTION préalable : le numéro désigne un contact,
+   * et c'est son identifiant interne qu'on cherche ici. Deux conséquences que l'écran doit dire plutôt que de
+   * rendre une liste vide :
+   *  - un numéro inconnu ne trouve rien, parce qu'aucun contact ne lui correspond ;
+   *  - un contact ANONYMISÉ ne se retrouve plus par son numéro, puisque celui-ci a été détruit. C'est le
+   *    comportement voulu du droit à l'effacement, pas un défaut de la recherche.
+   *
+   * `q` cherche dans ce qui est NON personnel : l'action, l'email de l'acteur, et l'identifiant de la cible.
+   * `ilike` et non `to_tsvector` : la table est petite, les valeurs sont des identifiants et des mots-clés
+   * techniques, et un index de texte intégral y serait de la mécanique pour rien.
+   */
   async list(
     tenantId: string,
-    opts: { limit?: number; targetId?: string } = {},
+    opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string } = {},
   ): Promise<AuditEntry[]> {
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 1000);
-    const res = opts.targetId
-      ? await this.pool.query<Ligne>(
-          `select id, at, actor_email, action, target_kind, target_id, detail
-             from audit_log where tenant_id = $1 and target_id = $2 order by at desc limit $3`,
-          [tenantId, opts.targetId, limit],
-        )
-      : await this.pool.query<Ligne>(
-          `select id, at, actor_email, action, target_kind, target_id, detail
-             from audit_log where tenant_id = $1 order by at desc limit $2`,
-          [tenantId, limit],
-        );
+    const where = ['tenant_id = $1'];
+    const params: unknown[] = [tenantId];
+    const ajouter = (fragment: (n: number) => string, valeur: unknown): void => {
+      params.push(valeur);
+      where.push(fragment(params.length));
+    };
+    if (opts.targetId) ajouter((n) => `target_id = $${n}`, opts.targetId);
+    if (opts.acteur) ajouter((n) => `actor_email ilike '%' || $${n} || '%'`, opts.acteur);
+    if (opts.q) ajouter((n) => `(action ilike '%' || $${n} || '%' or actor_email ilike '%' || $${n} || '%' or target_id ilike '%' || $${n} || '%')`, opts.q);
+    // Le NUMÉRO se résout en identifiants de contacts, dans la même requête : un aller-retour préalable
+    // laisserait une fenêtre où le contact disparaît entre la résolution et la lecture.
+    if (opts.telephone) {
+      ajouter(
+        (n) => `target_id in (select c.id::text from contacts c where c.tenant_id = $1
+                   and (c.phone_e164 ilike '%' || $${n} || '%' or c.bsuid ilike '%' || $${n} || '%'))`,
+        opts.telephone,
+      );
+    }
+    params.push(limit);
+    const res = await this.pool.query<Ligne>(
+      `select id, at, actor_email, action, target_kind, target_id, detail
+         from audit_log where ${where.join(' and ')} order by at desc limit $${params.length}`,
+      params,
+    );
     return res.rows.map((r) => ({
       id: r.id,
       at: r.at.toISOString(),

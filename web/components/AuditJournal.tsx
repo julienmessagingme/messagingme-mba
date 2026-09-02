@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { listAudit, type AuditEntry } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
-import { cardCls } from '@/lib/ui';
+import { cardCls, inputCls } from '@/lib/ui';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { ACTIONS_JOURNAL, resumeDetail, lignesJournalCsv } from '@/lib/journal';
 
@@ -36,16 +36,21 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportEnCours, setExportEnCours] = useState(false);
+  /** Ce qui est TAPÉ, et ce qui est APPLIQUÉ. Séparés pour ne pas relancer une requête à chaque frappe. */
+  const [saisie, setSaisie] = useState({ q: '', acteur: '', telephone: '' });
+  const [filtre, setFiltre] = useState({ q: '', acteur: '', telephone: '' });
+  const cherche = filtre.q !== '' || filtre.acteur !== '' || filtre.telephone !== '';
 
   const libelleAction = (action: string): string => (ACTIONS_JOURNAL[action] ? t(...ACTIONS_JOURNAL[action]!) : action);
 
   useEffect(() => {
     let alive = true;
-    listAudit(tenantId)
-      .then((r) => { if (alive) setEntries(r.entries); })
+    setEntries(null);
+    listAudit(tenantId, 100, filtre)
+      .then((r) => { if (alive) setEntries(Array.isArray(r?.entries) ? r.entries : []); })
       .catch((err: unknown) => { if (alive) setError(err instanceof Error ? err.message : t('Journal illisible', 'Journal unreadable')); });
     return () => { alive = false; };
-  }, [tenantId, t]);
+  }, [tenantId, t, filtre]);
 
   /**
    * Export CSV. Il RELIT le journal jusqu'au plafond serveur au lieu de reprendre les lignes affichées :
@@ -97,10 +102,57 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
         </button>
       </div>
 
+      {/* La recherche. Trois champs plutôt qu'un seul, parce que ce sont trois questions différentes : « quoi »,
+          « qui a fait » et « sur quel client ». Un champ unique obligerait à deviner ce qu'on a tapé. */}
+      <form
+        className="mb-3 flex flex-wrap items-end gap-2"
+        onSubmit={(ev) => { ev.preventDefault(); setFiltre({ ...saisie }); }}
+      >
+        <input
+          className={`${inputCls} w-40`} data-testid="journal-q" value={saisie.q}
+          onChange={(e) => setSaisie({ ...saisie, q: e.target.value })} placeholder={t('mot-clé', 'keyword')}
+        />
+        <input
+          className={`${inputCls} w-40`} data-testid="journal-acteur" value={saisie.acteur}
+          onChange={(e) => setSaisie({ ...saisie, acteur: e.target.value })} placeholder={t('utilisateur', 'user')}
+        />
+        <input
+          className={`${inputCls} w-40`} data-testid="journal-telephone" value={saisie.telephone}
+          onChange={(e) => setSaisie({ ...saisie, telephone: e.target.value })} placeholder={t('numéro du client', 'client number')}
+        />
+        <button type="submit" data-testid="journal-chercher" className="rounded-lg border border-ink-300 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+          {t('Chercher', 'Search')}
+        </button>
+        {cherche && (
+          <button
+            type="button" data-testid="journal-effacer-filtre"
+            onClick={() => { setSaisie({ q: '', acteur: '', telephone: '' }); setFiltre({ q: '', acteur: '', telephone: '' }); }}
+            className="text-xs text-ink-500 hover:underline"
+          >
+            {t('tout afficher', 'show all')}
+          </button>
+        )}
+      </form>
+
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {!error && entries === null && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
       {!error && entries?.length === 0 && (
-        <p className="text-sm text-ink-400">{t('Aucune action enregistrée pour le moment.', 'No action recorded yet.')}</p>
+        <p className="text-sm text-ink-400" data-testid="journal-vide">
+          {cherche
+            ? t('Aucune action ne correspond.', 'No action matches.')
+            : t('Aucune action enregistrée pour le moment.', 'No action recorded yet.')}
+          {/* 🔴 DIRE POURQUOI on ne trouve rien. Ce journal ne porte aucun numéro : chercher par numéro le
+              résout d'abord vers un contact. Sans cette phrase, une recherche sur un contact effacé rendrait
+              une liste vide qu'on prendrait pour « il ne s'est rien passé », alors que la trace existe. */}
+          {cherche && filtre.telephone !== '' && (
+            <span className="mt-1 block text-xs text-ink-400">
+              {t(
+                'Ce journal ne contient aucun numéro : la recherche par numéro passe par la fiche du contact. Un contact effacé ne s’y retrouve donc plus, même si ses actions y figurent toujours.',
+                'This log contains no phone numbers: searching by number goes through the contact record. An erased contact can no longer be found this way, even though its actions are still logged.',
+              )}
+            </span>
+          )}
+        </p>
       )}
 
       {entries && entries.length > 0 && (

@@ -1102,7 +1102,15 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## Bugs connus
 
-(aucun pour l'instant)
+- 🟡 **`web/e2e/inbox-envoi-scenario.spec.ts` est INSTABLE sous charge parallèle** (constaté deux fois le
+  2026-09-02, sur deux tests DIFFÉRENTS du même fichier). Il passe 10 sur 10 en isolation et 5 sur 5 en
+  répétition ciblée ; il tombe environ une fois sur trois quand les 417 e2e tournent à quatre workers.
+  Son helper `ouvrirPanneau` porte déjà un `toPass({ timeout: 20_000 })`, donc son auteur le savait fragile :
+  le panneau met parfois plus de 20 s à s'ouvrir quand la machine est chargée.
+  ⚠️ **Ne PAS le rendre plus tolérant pour le faire taire** : il finirait par ne plus rien prouver. La bonne
+  piste est de comprendre CE QUI met 20 s (probablement une attente réseau simulée qui n'est pas encore
+  installée quand le clic part), pas de relever le délai. En attendant, une CI rouge sur ce fichier seul se
+  relance.
 
 ## Plus tard (V2+)
 

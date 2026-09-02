@@ -46,7 +46,14 @@ export interface ContactsRouteDeps {
    * laisser croire qu'une entrée se modifie. Optionnelle -> la route répond 503 plutôt qu'une liste vide,
    * qui se lirait comme « il ne s'est rien passé ».
    */
-  listAudit?(tenantId: string, opts: { limit?: number; targetId?: string }): Promise<AuditEntry[]>;
+  listAudit?(tenantId: string, opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string }): Promise<AuditEntry[]>;
+  /**
+   * Le journal des ERREURS DE LIVRAISON. Séparé du journal d'actions, et pas par commodité : celui-ci porte
+   * les numéros (sans eux il ne répond à rien), celui-là n'en porte jamais (y écrire un numéro annulerait la
+   * purge d'un contact). Optionnel : absent -> 503, plutôt qu'une liste vide qui ferait croire qu'il n'y a
+   * aucune erreur.
+   */
+  listErreursLivraison?(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /**
@@ -402,11 +409,46 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     if (!deps.listAudit) return reply.code(503).send({ error: 'journal indisponible sur cette instance' });
-    const q = (req.query ?? {}) as { limit?: unknown; targetId?: unknown };
+    const q = (req.query ?? {}) as { limit?: unknown; targetId?: unknown; q?: unknown; acteur?: unknown; telephone?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
-    const targetId = typeof q.targetId === 'string' && q.targetId.trim() !== '' ? q.targetId.trim() : undefined;
-    const entries = await deps.listAudit(tenant, { ...(limit !== undefined ? { limit } : {}), ...(targetId ? { targetId } : {}) });
+    const texte = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, 120) : undefined);
+    const targetId = texte(q.targetId);
+    const entries = await deps.listAudit(tenant, {
+      ...(limit !== undefined ? { limit } : {}),
+      ...(targetId ? { targetId } : {}),
+      ...(texte(q.q) ? { q: texte(q.q)! } : {}),
+      ...(texte(q.acteur) ? { acteur: texte(q.acteur)! } : {}),
+      ...(texte(q.telephone) ? { telephone: texte(q.telephone)! } : {}),
+    });
     return reply.code(200).send({ entries });
+  });
+
+  /**
+   * LE JOURNAL DES ERREURS DE LIVRAISON : ce que Meta a répondu quand un message n'est pas parti, ou n'est pas
+   * arrivé. Lecture seule, admin-only, au même endroit que le journal des actions.
+   *
+   * ⚠️ Il porte les NUMÉROS, contrairement au journal des actions, et c'est délibéré : « quel message n'est pas
+   * arrivé » sans dire « à qui » ne répond à rien. Il n'a rien d'immuable, il se lit depuis les destinataires
+   * de campagne, et il disparaît avec le contact quand on le purge.
+   */
+  app.get('/tenants/:tenantId/erreurs-livraison', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.listErreursLivraison) return reply.code(503).send({ error: 'journal des erreurs indisponible sur cette instance' });
+    const q = (req.query ?? {}) as { limit?: unknown; q?: unknown; telephone?: unknown; code?: unknown };
+    const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
+    const texte = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, 120) : undefined);
+    // Un code non numérique est IGNORÉ plutôt que refusé : il vient d'un champ de recherche, où l'on tape ce
+    // qu'on a sous la main. `q` couvre déjà la recherche libre.
+    const code = Number.isInteger(Number(q.code)) && String(q.code).trim() !== '' ? Number(q.code) : undefined;
+    const erreurs = await deps.listErreursLivraison(tenant, {
+      ...(limit !== undefined ? { limit } : {}),
+      ...(texte(q.q) ? { q: texte(q.q)! } : {}),
+      ...(texte(q.telephone) ? { telephone: texte(q.telephone)! } : {}),
+      ...(code !== undefined ? { code } : {}),
+    });
+    return reply.code(200).send({ erreurs });
   });
 
   /**

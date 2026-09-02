@@ -26,6 +26,7 @@ import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgAuditStore } from './audit/store.pg';
+import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
@@ -136,6 +137,7 @@ async function main(): Promise<void> {
   const apiKeyStore = new PgApiKeyStore(pool);
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const auditStore = new PgAuditStore(pool);
+  const erreursLivraison = new PgErreursLivraisonStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
   const webhookStore = new PgWebhookStore(pool);
@@ -903,6 +905,9 @@ async function main(): Promise<void> {
       contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
       audit: auditSink,
       listAudit: (tenant, o) => auditStore.list(tenant, o),
+      // Le journal des ERREURS de livraison. Separe du journal d actions : celui-ci porte les numeros (sans
+      // eux il ne repond a rien), celui-la n en porte jamais (y ecrire un numero annulerait une purge).
+      listErreursLivraison: (tenant, f) => erreursLivraison.lister(tenant, f),
       listUserFields: (tenant) => fieldStore.list(tenant),
       // Champ socle absent -> on le crée au premier usage (idempotent). Aucun chemin d'inscription ne les
       // créait, donc un espace neuf refusait « Prénom » alors que l'écran le propose.

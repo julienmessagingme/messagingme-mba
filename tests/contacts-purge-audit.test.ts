@@ -27,15 +27,24 @@ interface Trace { action: string; target: { kind: string; id: string }; detail: 
 
 function app(over: Partial<ContactsRouteDeps> = {}) {
   const journal: Trace[] = [];
+  const filtresAudit: Array<Record<string, unknown>> = [];
+  const filtresErreurs: Array<Record<string, unknown>> = [];
   const purges: string[][] = [];
   const editsRecus: unknown[] = [];
   const deps = {
     applyEdits: async () => null,
     applyEditsMany: async (_t: string, _target: unknown, edits: unknown) => { editsRecus.push(edits); return 4; },
     createOneContact: async () => ({ status: 'created' as const, contactId: 'c-neuf' }),
-    listAudit: async () => [
-      { id: 'a1', at: '2026-08-18T10:00:00.000Z', actorEmail: 'julien@messagingme.fr', action: 'contact.purged' as const, targetKind: 'contact', targetId: 'c1', detail: { lot: 1 } },
-    ],
+    listAudit: async (_t: string, o: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string } = {}) => {
+      filtresAudit.push(o);
+      return [
+        { id: 'a1', at: '2026-08-18T10:00:00.000Z', actorEmail: 'julien@messagingme.fr', action: 'contact.purged' as const, targetKind: 'contact', targetId: 'c1', detail: { lot: 1 } },
+      ];
+    },
+    listErreursLivraison: async (_t: string, f: { limit?: number; q?: string; telephone?: string; code?: number } = {}) => {
+      filtresErreurs.push(f);
+      return [{ recipientId: 'r1', campaignId: 'camp1', campaignName: 'Promo', telephone: '+33611', contactId: 'c1', contactNom: 'Julie', code: 131026, message: 'Receiver is unable to receive message', origine: 'livraison', at: '2026-09-01T10:00:00.000Z' }];
+    },
     listUserFields: async () => [],
     contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
     purgeMany: async (_t: string, ids: readonly string[]) => {
@@ -47,7 +56,7 @@ function app(over: Partial<ContactsRouteDeps> = {}) {
     },
     ...over,
   } as unknown as ContactsRouteDeps;
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs };
 }
 
 const url = '/tenants/t1/contacts/purge';
@@ -327,6 +336,70 @@ describe('consentement posé à la main sur la fiche', () => {
     const { server, edits } = avecFiche();
     expect((await server.inject({ method: 'PATCH', url, ...h(agentTok), payload: { optInStatus: 'opted_in' } })).statusCode).toBe(403);
     expect(edits).toEqual([]);
+    await server.close();
+  });
+});
+
+/**
+ * LA RECHERCHE dans les deux journaux (2026-09-02).
+ *
+ * 🔴 Ce que ces tests gardent, et qui n'est pas une question d'ergonomie : les DEUX journaux ne portent pas la
+ * même chose. Le journal des ACTIONS n'a aucune donnée personnelle, donc chercher « par numéro » y est une
+ * RÉSOLUTION préalable (le numéro désigne un contact, on cherche son identifiant), et un contact anonymisé ne
+ * s'y retrouve plus. Le journal des ERREURS porte les numéros, parce que « quel message n'est pas arrivé »
+ * sans dire « à qui » ne répond à rien.
+ */
+describe('recherche dans les journaux', () => {
+  it('le journal des actions transmet mot-clé, utilisateur et numéro au magasin', async () => {
+    const { server, filtresAudit } = app();
+    const res = await server.inject({
+      method: 'GET', url: '/tenants/t1/audit?q=purge&acteur=julien&telephone=%2B33611&limit=50', ...h(adminTok),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(filtresAudit[0]).toMatchObject({ q: 'purge', acteur: 'julien', telephone: '+33611', limit: 50 });
+    await server.close();
+  });
+
+  it('un filtre VIDE n’est pas transmis : une chaîne vide chercherait « contient rien », donc tout', async () => {
+    const { server, filtresAudit } = app();
+    await server.inject({ method: 'GET', url: '/tenants/t1/audit?q=&acteur=%20%20', ...h(adminTok) });
+    expect(filtresAudit[0]).not.toHaveProperty('q');
+    expect(filtresAudit[0]).not.toHaveProperty('acteur');
+    await server.close();
+  });
+
+  it('le journal des erreurs rend les lignes, avec leur code et leur origine', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-livraison', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().erreurs[0]).toMatchObject({ code: 131026, origine: 'livraison', telephone: '+33611' });
+    await server.close();
+  });
+
+  it('un CODE non numérique est ignoré plutôt que refusé', async () => {
+    // Il vient d'un champ de recherche, où l'on tape ce qu'on a sous la main. Refuser la requête ferait un
+    // écran qui rougit parce qu'on a écrit un mot ; `q` couvre déjà la recherche libre.
+    const { server, filtresErreurs } = app();
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-livraison?code=injoignable', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(filtresErreurs[0]).not.toHaveProperty('code');
+    await server.close();
+  });
+
+  it('🔴 les deux journaux sont réservés aux ADMINISTRATEURS', async () => {
+    const { server } = app();
+    for (const url of ['/tenants/t1/audit', '/tenants/t1/erreurs-livraison']) {
+      expect((await server.inject({ method: 'GET', url, ...h(agentTok) })).statusCode, url).toBe(403);
+    }
+    await server.close();
+  });
+
+  it('sans la dépendance, le journal des erreurs le DIT (503) au lieu de rendre une liste vide', async () => {
+    // Une liste vide ferait croire qu'il n'y a aucune erreur, ce qui est exactement l'inverse de ce que cet
+    // écran doit permettre de constater.
+    const { server } = app({ listErreursLivraison: undefined } as never);
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-livraison', ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
     await server.close();
   });
 });
