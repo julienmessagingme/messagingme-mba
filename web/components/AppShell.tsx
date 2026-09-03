@@ -281,7 +281,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     <div className="flex h-full flex-col">
       <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title={t('Accueil', 'Home')} onClick={() => setDrawerOpen(false)}>
         <Logo className="h-8 w-8" />
-        <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
+        <span className="text-sm font-semibold tracking-tight text-ink-900">Engage Me</span>
       </Link>
       {/* flex-1 pousse le bloc bas vers le bas ; overflow-y-auto fait scroller le CORPS de la nav sur un écran
           court, au lieu de faire déborder la colonne et de rendre le bloc bas inatteignable. */}

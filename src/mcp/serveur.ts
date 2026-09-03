@@ -24,7 +24,7 @@ export const VERSION_PROTOCOLE = '2025-06-18';
 /** Versions connues : on ÉCHO celle du client si on la connaît, c'est ce que la négociation demande. */
 const VERSIONS_CONNUES = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
 
-export const SERVEUR_INFO = { name: 'messagingme-mba', title: 'MM Business Agent', version: '1.0.0' } as const;
+export const SERVEUR_INFO = { name: 'messagingme-mba', title: 'Engage Me', version: '1.0.0' } as const;
 
 /** Codes d'erreur JSON-RPC 2.0. Les seuls dont ce serveur a besoin. */
 const ERREUR = { PARSE: -32700, REQUETE_INVALIDE: -32600, METHODE_INCONNUE: -32601, PARAMS_INVALIDES: -32602, INTERNE: -32603 } as const;
@@ -88,7 +88,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVEUR_INFO,
         instructions:
-          'Outils de la console MM Business Agent (WhatsApp). Commence par list_conversations, puis '
+          'Outils de la console Engage Me (WhatsApp). Commence par list_conversations, puis '
           + 'get_conversation pour savoir si la fenêtre de 24 h est ouverte avant toute tentative de réponse.',
       });
     }

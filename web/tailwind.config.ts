@@ -1,6 +1,6 @@
 import type { Config } from 'tailwindcss';
 
-// Design system MM Business Agent (tokens colors_and_type.css). `brand` = bleu MM (accent
+// Design system Engage Me (tokens colors_and_type.css). `brand` = bleu MM (accent
 // primaire), `ink` = neutres navy-tintés, `navy` = marque foncée, + accents sémantiques.
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],

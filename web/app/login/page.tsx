@@ -74,7 +74,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />
-          <h1 className="text-xl font-semibold tracking-tight text-ink-900">MM Business Agent</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-ink-900">Engage Me</h1>
           <p className="mt-1 text-sm text-ink-400">{t('Connecte-toi pour gérer tes contacts et campagnes.', 'Sign in to manage your contacts and campaigns.')}</p>
         </div>
 
