@@ -53,6 +53,17 @@ class RunsConditionnels {
     this.bailJusqua = this.maintenant + bailSecondes * 1000;
     return true;
   }
+  /**
+   * Un AUTRE traitement prend le tour pendant qu'on travaille. C'est ce qui arrive en production quand le bail
+   * a expiré (porteur trop lent) ou que la base a été rejouée : le porteur en cours n'en sait rien tant qu'il
+   * n'a pas battu. Test-only, mais fidèle : le jeton du porteur en place cesse d'être le bon.
+   */
+  volerLeTour(bailSecondes = 60): string {
+    this.tenuPar = 'jeton-voleur';
+    this.bailJusqua = this.maintenant + bailSecondes * 1000;
+    return this.tenuPar;
+  }
+
   async libererAvance(_id: string, token: string): Promise<void> {
     // Le JETON dans la garde : un porteur périmé ne libère pas le verrou de celui qui l'a repris.
     if (this.tenuPar === token) this.tenuPar = null;
@@ -341,5 +352,245 @@ describe('avance concurrente : le bail est RENOUVELÉ tant qu’on travaille', (
     await expect(ex.advance('t1', '33600', 'msg1')).rejects.toThrow('Meta indisponible');
     await vi.advanceTimersByTimeAsync(120_000);
     expect(prolongations).toBe(0);
+  });
+});
+
+/**
+ * 🔴 LES EFFETS S'ARRÊTENT QUAND LE TOUR EST PERDU (lot A2 du plan du 2026-09-02).
+ *
+ * Ce que le lot 1 avait laissé ouvert, et l'audit externe l'a vu : le battement RENDAIT VISIBLE la perte du
+ * tour (un `console.warn`) sans rien arrêter. Le jeton clôture l'écriture d'ÉTAT, il n'a jamais rien pu contre
+ * un message déjà remis à Meta. Un porteur déchu finissait donc sa liste d'envois pendant que le nouveau
+ * porteur faisait la sienne, et le contact recevait les deux.
+ *
+ * La garde se pose donc entre CHAQUE effet, pas une fois à l'entrée : une liste d'envois peut durer plusieurs
+ * minutes, et ce qui est vrai au premier envoi ne dit rien du dixième.
+ */
+describe('avance concurrente : les effets CESSENT dès que le tour est perdu', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** b -> c -> d : trois messages rapides d'affilée, donc trois effets dans UNE seule avance. */
+  const grapheLong: WorkflowGraph = {
+    nodes: [
+      n('a', 'quick_message', { body: 'A' }),
+      n('b', 'quick_message', { body: 'B' }),
+      n('c', 'quick_message', { body: 'C' }),
+      n('d', 'quick_message', { body: 'D' }),
+    ],
+    edges: [e('e1', 'a', 'b'), e('e2', 'b', 'c'), e('e3', 'c', 'd')],
+  };
+
+  /** Un exécuteur sur le graphe long, dont le PREMIER envoi reste suspendu jusqu'à `debloquer()`. */
+  function avanceLongueEtLente(runs: RunsConditionnels) {
+    const calls: string[] = [];
+    let debloquer: () => void = () => {};
+    const suspendu = new Promise<void>((r) => { debloquer = r; });
+    let premier = true;
+    const { ex } = exec(runs, {
+      getGraph: async () => grapheLong,
+      sendQuickMessage: async (_t, _w, body) => {
+        calls.push(`qm:${body}`);
+        if (premier) { premier = false; await suspendu; }
+      },
+    });
+    return { ex, calls, debloquer: () => debloquer() };
+  }
+
+  it('témoin : sans perte de tour, les TROIS messages partent', async () => {
+    // Le contrôle positif. Sans lui, un test qui n'observe qu'un seul message ne prouverait rien : il
+    // passerait aussi si le graphe n'en produisait qu'un.
+    const runs = new RunsConditionnels();
+    const { ex, calls, debloquer } = avanceLongueEtLente(runs);
+    const p = ex.advance('t1', '33600', 'msg1');
+    debloquer();
+    await p;
+    expect(calls).toEqual(['qm:B', 'qm:C', 'qm:D']);
+  });
+
+  it('🔴 tour volé PENDANT le premier envoi : les deux suivants NE PARTENT PAS', async () => {
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    const { ex, calls, debloquer } = avanceLongueEtLente(runs);
+
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual(['qm:B']); // le premier est parti, l'avance est suspendue dedans
+
+    // Un autre traitement prend le tour, et un battement le CONSTATE.
+    runs.volerLeTour();
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { avertissements.push(String(m)); });
+    try {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      debloquer();
+      await lente;
+    } finally {
+      spy.mockRestore();
+    }
+
+    // LE POINT DU LOT : le premier envoi était déjà en vol, on ne peut pas le rappeler ; les DEUX SUIVANTS
+    // n'ont aucune raison de partir, et ne partent pas.
+    expect(calls).toEqual(['qm:B']);
+    // Et on le DIT, avec la raison : un arrêt silencieux serait indistinguable d'un parcours qui s'est
+    // terminé normalement.
+    expect(avertissements.some((a) => a.includes('effets INTERROMPUS'))).toBe(true);
+    // L'état n'est pas écrit non plus : la clôture par jeton refuse le porteur déchu.
+    expect(runs.run).toMatchObject({ currentNode: 'a' });
+  });
+
+  it('🔴 le tour perdu se voit AUSSI comme un refus, pas seulement dans les logs', async () => {
+    // L'appelant doit pouvoir distinguer « tout est parti » de « on s'est arrêté en route ». Sans ce signal,
+    // `advance` ne saurait pas qu'il n'a pas fini son travail.
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    const { ex, calls, debloquer } = avanceLongueEtLente(runs);
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    runs.volerLeTour();
+    const erreurs: string[] = [];
+    const spyW = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const spyE = vi.spyOn(console, 'error').mockImplementation((m: unknown) => { erreurs.push(String(m)); });
+    try {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+      debloquer();
+      await lente;
+    } finally {
+      spyW.mockRestore();
+      spyE.mockRestore();
+    }
+    expect(calls).toEqual(['qm:B']);
+    expect(erreurs.some((m) => m.includes('envoi refusé') && m.includes('tour perdu'))).toBe(true);
+  });
+});
+
+/**
+ * 🔴 LE CHEMIN RCS A SON PROPRE ENVOI, DONC SA PROPRE GARDE.
+ *
+ * `walkResolved` n'est pas qu'un calcul de parcours : il ENVOIE le RCS en ligne, avant que `apply` ne voie
+ * quoi que ce soit. Une garde posée uniquement dans `apply` aurait donc laissé passer exactement le message
+ * qui part le premier. Le point de suspension du test est la recherche de l'agent RCS, qui est une requête
+ * réelle placée juste avant l'envoi.
+ */
+describe('avance concurrente : le chemin RCS est gardé lui aussi', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  const grapheRcs: WorkflowGraph = {
+    nodes: [n('a', 'quick_message', { body: 'A' }), n('r', 'rcs_message', { text: 'Bonjour en RCS' })],
+    edges: [e('e1', 'a', 'r')],
+  };
+
+  function avanceRcsLente(runs: RunsConditionnels) {
+    const envois: string[] = [];
+    let debloquer: () => void = () => {};
+    const suspendu = new Promise<void>((r) => { debloquer = r; });
+    const { ex } = exec(runs, {
+      getGraph: async () => grapheRcs,
+      rcs: {
+        // La recherche de l'agent est une requête comme une autre : elle peut être lente, et c'est pendant
+        // ce temps-là qu'un autre traitement prend le tour.
+        agentIdFor: async () => { await suspendu; return 'agent-1'; },
+        sender: {
+          sendTo: async () => { envois.push('rcs'); return { messageId: 'm-rcs' }; },
+        },
+      } as unknown as WorkflowExecutorDeps['rcs'],
+    });
+    return { ex, envois, debloquer: () => debloquer() };
+  }
+
+  it('témoin : sans perte de tour, le message RCS part', async () => {
+    const runs = new RunsConditionnels();
+    const { ex, envois, debloquer } = avanceRcsLente(runs);
+    const p = ex.advance('t1', '33600', 'msg1');
+    debloquer();
+    await p;
+    expect(envois).toEqual(['rcs']);
+  });
+
+  it('🔴 tour volé avant l’envoi RCS : le message NE PART PAS', async () => {
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    const { ex, envois, debloquer } = avanceRcsLente(runs);
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(envois).toEqual([]); // suspendu dans la recherche d'agent
+
+    runs.volerLeTour();
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { avertissements.push(String(m)); });
+    try {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+      debloquer();
+      await lente;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(envois).toEqual([]);
+    expect(avertissements.some((a) => a.includes('envoi INTERROMPU'))).toBe(true);
+  });
+});
+
+/**
+ * 🔴 ENFILER UN TOUR D'AGENT EST UN EFFET, ET UN EFFET FACTURÉ.
+ *
+ * Ce chemin ne passe ni par `apply` ni par `walkResolved` : il sort de `advance` directement. Sans garde
+ * propre, un porteur déchu commandait un appel modèle sur le message que le nouveau porteur venait de
+ * commander lui aussi : deux tours, deux factures, et deux réponses au même message du contact.
+ */
+describe('avance concurrente : le tour d’agent n’est pas enfilé par un porteur déchu', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  const grapheAgent: WorkflowGraph = { nodes: [n('a', 'agent', { agentPrompt: 'aide' })], edges: [] };
+
+  function avanceAgentLente(runs: RunsConditionnels) {
+    const enfiles: string[] = [];
+    let debloquer: () => void = () => {};
+    const suspendu = new Promise<void>((r) => { debloquer = r; });
+    const { ex } = exec(runs, {
+      getGraph: async () => grapheAgent,
+      // La lecture de la session est une requête réelle, placée juste avant l'enfilement.
+      agentSessions: {
+        byRun: async () => { await suspendu; return { id: 's1', status: 'en_cours', tours: 0 }; },
+      } as unknown as WorkflowExecutorDeps['agentSessions'],
+      enqueueAgentTurn: async (job) => { enfiles.push(job.sessionId); },
+    });
+    return { ex, enfiles, debloquer: () => debloquer() };
+  }
+
+  it('témoin : sans perte de tour, le tour d’agent est enfilé', async () => {
+    const runs = new RunsConditionnels();
+    const { ex, enfiles, debloquer } = avanceAgentLente(runs);
+    const p = ex.advance('t1', '33600', 'msg1');
+    debloquer();
+    await p;
+    expect(enfiles).toEqual(['s1']);
+  });
+
+  it('🔴 tour volé pendant la lecture de session : AUCUN tour d’agent n’est enfilé', async () => {
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    const { ex, enfiles, debloquer } = avanceAgentLente(runs);
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enfiles).toEqual([]);
+
+    runs.volerLeTour();
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { avertissements.push(String(m)); });
+    try {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+      debloquer();
+      await lente;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(enfiles).toEqual([]);
+    expect(avertissements.some((a) => a.includes("tour d'agent NON enfilé"))).toBe(true);
+    // Et le message n'est pas marqué consommé : c'est au porteur légitime de le faire.
+    expect(runs.run).toMatchObject({ lastMessageId: null });
   });
 });

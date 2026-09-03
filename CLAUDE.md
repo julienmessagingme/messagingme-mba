@@ -51,20 +51,15 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0107** (les liens tracés des messages RCS, clés sur leur DESTINATION), passée le
-2026-09-02 avec la séquence complète (build de l'image, vérification que la migration est DEDANS, `migrate`,
-vérification en base).
-🔴 **0110 est ÉCRITE et PAS APPLIQUÉE** (la recherche vectorielle de connaissance). **Non bloquante** : la
-colonne est nullable, le code sait chercher sans elle (c'est le comportement d'avant), et une fiche créée reste
-trouvable par les MOTS à la seconde même si son vecteur n'arrive qu'au balayage suivant. ⚠️ Elle pose
-`create extension vector` : c'est la première du dépôt à ajouter une EXTENSION, donc le seul point qui puisse
-échouer pour une raison de droits. À surveiller au passage.
-🔴 **0108 et 0109 sont ÉCRITES et PAS APPLIQUÉES** (le journal des échecs d'avance de scénario, lot 4 ; les
-agrégats d'attente du pool, lot 7). **Aucune des deux n'est bloquante**, et c'est délibéré dans les deux cas :
-l'écriture est best-effort et la lecture rend une liste vide si la table manque, donc le code déployé sans
-elles se comporte exactement comme avant. Une mesure ne doit jamais faire tomber ce qu'elle mesure, et un
-journal d'échec ne doit jamais faire échouer le traitement qu'il observe. À passer avec la séquence complète
-au prochain déploiement.
+**Dernière appliquée : 0111** (le pic d'attente du pool de connexions), passée le 2026-09-02 avec la séquence
+complète, comme 0108 (journal des échecs d'avance), 0109 (agrégats d'attente du pool) et 0110 (recherche
+vectorielle de connaissance). **Aucune n'est en attente.** ⚠️ Vérifié EN BASE le 2026-09-03
+(`select name from public.schema_migrations order by name desc`) parce que cette ligne annonçait encore 0107 :
+un compteur tenu à la main dérive dès qu'un déploiement se fait sans repasser par ici. **En cas de doute, la
+base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS schémas de cette base : la
+requête doit être qualifiée `public.`, sinon elle lit la table d'un autre outil et rend des colonnes inconnues.
+⚠️ 0110 posait `create extension vector`, la première du dépôt à ajouter une EXTENSION, donc le seul point qui
+pouvait échouer pour une raison de droits : il est passé sans incident.
 **Prochaine libre = 0112.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
@@ -111,6 +106,19 @@ seul un signe de vie PÉRIODIQUE distingue un porteur mort d'un porteur lent (`s
 cadence à un tiers du bail). Même lot, même famille : l'écriture d'état est désormais clôturée par le JETON,
 un porteur périmé ne pouvant plus écrire par-dessus celui qui a repris le tour. Aucune migration, les deux
 colonnes de la 0104 suffisaient.
+⚠️ **Et battre ne suffisait pas non plus : ça rendait la perte VISIBLE sans rien ARRÊTER** (lot A2 de l'audit
+externe, 2026-09-03). Le jeton clôture l'écriture d'ÉTAT ; il n'a jamais rien pu contre un message déjà remis
+à Meta. Un porteur déchu finissait donc sa liste d'envois pendant que le nouveau faisait la sienne. Le
+battement expose désormais `perduPourquoi()`, **consulté avant CHAQUE effet** (`apply`), avant l'envoi RCS de
+`walkResolved` et avant l'enfilement d'un tour d'agent, qui est un appel modèle facturé. **La règle générale :
+une garde de concurrence posée à l'ENTRÉE d'une liste d'effets ne prouve rien sur le dixième ; elle se pose
+ENTRE les effets.** Même lot : une durée totale maximale de dix minutes (`DUREE_MAX_AVANCE_MS`) abandonne une
+avance PENDUE, le seul mode de panne qu'un battement ne distingue pas d'un travail lent, puisqu'un minuteur
+renouvelle un bail aussi fidèlement pour une promesse morte que pour un envoi en cours.
+⚠️ **L'`AbortSignal` du battement n'est écouté par AUCUN transport, et c'est un choix, pas un oubli.** Un
+envoi Meta ne porte pas de clé d'idempotence : couper la connexion en vol échangerait « un message de trop »
+contre « un message parti que nous n'avons pas enregistré », donc invisible dans le fil. On laisse finir
+l'effet en vol, on ne lance pas le suivant.
 🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
 pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
 seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un

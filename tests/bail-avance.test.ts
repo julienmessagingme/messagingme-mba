@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renouvelerLeBail, BAIL_AVANCE_S, PERIODE_RENOUVELLEMENT_MS } from '../src/workflow/bail-avance';
+import { renouvelerLeBail, BAIL_AVANCE_S, PERIODE_RENOUVELLEMENT_MS, DUREE_MAX_AVANCE_MS } from '../src/workflow/bail-avance';
 
 /**
  * LE BATTEMENT QUI GARDE LE BAIL D'AVANCE VIVANT (lot 1 du plan post-audit, 2026-09-02).
@@ -83,5 +83,73 @@ describe('renouvellement du bail d’avance', () => {
     });
     await vi.advanceTimersByTimeAsync(PERIODE_RENOUVELLEMENT_MS * 6);
     expect(maxEnVol).toBe(1);
+  });
+});
+
+/**
+ * 🔴 CE QUE LE BATTEMENT DIT AU TRAVAIL (lot A2 du plan du 2026-09-02).
+ *
+ * Le lot 1 rendait la perte du tour VISIBLE (un `perdu()` qui journalise) sans rien arrêter : l'ancien porteur
+ * finissait tranquillement sa liste d'envois pendant que le nouveau faisait la sienne. Le battement doit donc
+ * exposer un ÉTAT consultable, et pas seulement notifier une fois.
+ */
+describe('bail d’avance : l’état de perte est consultable, et la durée est bornée', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('tant que le bail tient, rien n’est perdu et le signal n’est pas abattu', async () => {
+    vi.useFakeTimers();
+    const b = renouvelerLeBail({ prolonger: async () => true, perdu: () => {} });
+    await vi.advanceTimersByTimeAsync(PERIODE_RENOUVELLEMENT_MS * 3);
+    expect(b.perduPourquoi()).toBeNull();
+    expect(b.signal.aborted).toBe(false);
+    b.arreter();
+  });
+
+  it('🔴 bail repris : la RAISON est lisible et le signal est abattu', async () => {
+    // La raison, pas un booléen : c'est elle qui part dans le journal et dans le message d'interruption. Un
+    // `true` ne dirait pas quoi chercher le jour où l'on cherche pourquoi un contact n'a pas eu sa suite.
+    vi.useFakeTimers();
+    const b = renouvelerLeBail({ prolonger: async () => false, perdu: () => {} });
+    await vi.advanceTimersByTimeAsync(PERIODE_RENOUVELLEMENT_MS);
+    expect(b.perduPourquoi()).toContain('repris');
+    expect(b.signal.aborted).toBe(true);
+  });
+
+  it('🔴 une avance PENDUE est abandonnée au bout de la durée maximale, bail vivant ou non', async () => {
+    // Le mode de panne que le battement seul ne couvre PAS : une promesse qui ne se résout jamais fait
+    // renouveler le bail indéfiniment, donc le tour reste tenu à vie et le contact n'a plus jamais de suite.
+    // `prolonger` rend TOUJOURS `true` ici : c'est bien la durée, et rien d'autre, qui doit trancher.
+    vi.useFakeTimers();
+    let horloge = 0;
+    let perdus = 0;
+    const b = renouvelerLeBail({
+      prolonger: async () => true,
+      perdu: () => { perdus += 1; },
+      maintenant: () => horloge,
+      dureeMaxMs: 90_000,
+    });
+    // Cinq battements de 20 s : le cinquième voit 100 s écoulées, donc au-delà des 90 s permises.
+    for (let i = 0; i < 5; i += 1) {
+      horloge += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+    }
+    expect(b.perduPourquoi()).toContain('durée maximale');
+    expect(b.signal.aborted).toBe(true);
+    expect(perdus).toBe(1);
+
+    // Et on cesse VRAIMENT de battre : le tour doit se libérer tout seul, pas être tenu par un minuteur
+    // increvable.
+    const avant = perdus;
+    horloge += 60_000;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(perdus).toBe(avant);
+  });
+
+  it('la durée maximale par défaut laisse largement passer une avance normale', () => {
+    // Un envoi Meta au pire ~154 s, une avance en enchaîne quelques-uns : la borne doit être un garde-fou
+    // d'anomalie, jamais une limite qu'un parcours sain rencontre.
+    expect(DUREE_MAX_AVANCE_MS).toBeGreaterThan(5 * 60 * 1000);
   });
 });

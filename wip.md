@@ -27,9 +27,26 @@ Trois blocs dans la soirée :
 3. **La vectorisation de la base de connaissance** (migrations 0110-0111), puis les six corrections du lot
    immédiat de l'audit externe qui a suivi.
 
-🔴 **Ce qui reste ouvert est dans `todo.md`, et deux points touchent le chemin IA** : les effets ne sont pas
-arrêtés à la perte du bail, et un tour d'agent tué par un crash est perdu pour toujours. Les deux viennent de
-l'audit externe et sont prévus pour demain matin.
+🔴 **Ce qui reste ouvert est dans `todo.md`.** Le premier des deux points IA est FAIT (voir ci-dessous) ;
+reste **A1**, le tour d'agent tué par un crash, perdu pour toujours avec sa session bloquée en `en_cours`.
+
+## LIVRÉ le 2026-09-03 : A2, les effets s'arrêtent quand le tour d'avance est perdu
+
+Le lot 1 de la veille rendait la perte du tour VISIBLE sans rien ARRÊTER : `perdu()` n'écrivait qu'une ligne
+de log, et le porteur déchu finissait sa liste d'envois pendant que le nouveau faisait la sienne. Le jeton
+clôture l'écriture d'ÉTAT, il n'a jamais rien pu contre un message déjà remis à Meta.
+
+Trois points de contrôle, parce qu'il y a trois chemins d'effets et pas un seul : `apply` (avant CHAQUE
+effet, pas une fois à l'entrée), l'envoi RCS en ligne de `walkResolved` (qui part AVANT que `apply` ne voie
+quoi que ce soit), et l'enfilement d'un tour d'agent, qui commande un appel modèle facturé. Plus une durée
+totale maximale de dix minutes, pour l'avance PENDUE : un minuteur renouvelle un bail aussi fidèlement pour
+une promesse morte que pour un envoi en cours.
+
+Chacune des trois gardes a été vérifiée DANS LES DEUX SENS (neutralisée, test rouge, restaurée, test vert) :
+sans elles, trois messages au lieu d'un, un RCS de trop, un tour d'agent de trop.
+
+⚠️ **Volontairement non fait** : l'`AbortSignal` est exposé mais aucun transport ne l'écoute. Détail et raison
+dans `todo.md`.
 
 ## LIVRÉ le 2026-09-02 : le lot UX demandé par Julien (dix items), attribution des clics comprise
 

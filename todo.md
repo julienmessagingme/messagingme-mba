@@ -5,10 +5,14 @@
 Les sept lots de [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) sont **livrés et
 déployés** (2026-09-02 au soir), ainsi que le point 1 de l'audit qui a suivi. Ce qui reste, dans cet ordre :
 
-**A2 — arrêter les EFFETS à la perte du bail d'avance.** Le battement empêche qu'un autre reprenne le tour,
-et le jeton empêche l'ancien porteur d'écrire l'état. Il ne l'empêche PAS de continuer ses envois : `perdu()`
-ne fait qu'écrire une ligne de log. Il faut un état `perdu` consultable, un `AbortSignal` propagé aux
-transports, une vérification avant chaque groupe d'effets irréversibles, et une durée totale maximale.
+~~**A2 — arrêter les EFFETS à la perte du bail d'avance.**~~ **LIVRÉ le 2026-09-03.** Le battement expose
+désormais `perduPourquoi()`, consulté avant CHAQUE effet dans `apply`, avant l'envoi RCS de `walkResolved` et
+avant l'enfilement d'un tour d'agent ; une durée totale maximale de dix minutes abandonne une avance PENDUE
+(le seul mode de panne que battre ne distinguait pas). ⚠️ **Un point de la demande a été volontairement NON
+fait** : l'`AbortSignal` est exposé mais AUCUN transport ne l'écoute. Couper un envoi Meta en plein vol
+échangerait « un message de trop » contre « un message parti que nous n'avons pas enregistré », qui est pire.
+La garde se pose donc ENTRE deux effets. Le signal servira aux travaux réellement annulables (recherche de
+connaissance, reranker, lecture de connecteur).
 
 **A1 — rattraper un tour d'agent tué par un crash.** `prendreLeTour` incrémente `tours` AVANT le travail :
 si le worker meurt entre les deux, pg-boss rejoue avec l'ancien numéro, la réservation rend `null`, le rejeu

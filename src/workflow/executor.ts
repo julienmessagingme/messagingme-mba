@@ -12,7 +12,7 @@ import { aDesVariables, appliquerVariables } from '../rcs/variables';
 import { aDesLiensTracables } from '../links/rcs-liens';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
 
-import { BAIL_AVANCE_S, renouvelerLeBail } from './bail-avance';
+import { BAIL_AVANCE_S, renouvelerLeBail, type GardeDuTour } from './bail-avance';
 import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 
@@ -463,6 +463,12 @@ export class WorkflowExecutor {
     workflowId?: string,
     /** Canal courant du parcours. Décide où part un message rapide, et évolue avec les envois. */
     canalEntrant: RunChannel = 'whatsapp',
+    /**
+     * 🔴 LE TOUR EST-IL ENCORE À NOUS ? Posée avant CHAQUE effet, pas une fois à l'entrée (lot A2 du plan du
+     * 2026-09-02). Une liste d'effets peut durer plusieurs minutes : vérifier au départ ne dit rien de ce qui
+     * est vrai au dixième envoi. Absente pour les chemins qui ne réservent pas de tour (`start`, `runFrom`).
+     */
+    garde?: GardeDuTour,
   ): Promise<{ refus: string | null; partis: number; canal: RunChannel }> {
     let canal: RunChannel = canalEntrant;
     const posedTags: string[] = [];
@@ -472,6 +478,18 @@ export class WorkflowExecutor {
     let refus: string | null = null;
     let partis = 0;
     for (const { nodeId, action: a } of steps) {
+      // 🔴 On s'ARRÊTE si le tour n'est plus à nous, et on s'arrête ICI, entre deux effets. Le jeton clôture
+      // l'écriture d'état, il n'a jamais rien pu contre un message déjà remis à Meta : sans ce point de
+      // contrôle, un porteur déchu finissait tranquillement sa liste d'envois pendant que le nouveau porteur
+      // faisait la sienne, et le contact recevait les deux. C'est exactement le trou que le battement du lot 1
+      // avait rendu VISIBLE sans le fermer.
+      const perdu = garde?.perduPourquoi() ?? null;
+      if (perdu !== null) {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow ${workflowId ?? '?'}: effets INTERROMPUS pour ${waId} au bloc ${nodeId} (${perdu}), ${partis} envoi(s) déjà partis`);
+        refus ??= `tour perdu pendant les effets (${perdu})`;
+        break;
+      }
       if (a.kind === 'tag') {
         const nouveau = await this.deps.applyTag(tenantId, waId, a.tag);
         // `false` = le contact portait déjà ce tag : rien n'a changé, donc rien à annoncer.
@@ -848,6 +866,8 @@ export class WorkflowExecutor {
     sendKey: string,
     /** Canal courant à l'entrée. Un envoi RCS réussi bascule le parcours sur `rcs` pour la suite. */
     canalEntrant: RunChannel = 'whatsapp',
+    /** Même garde que dans `apply` : ce parcours ENVOIE du RCS en ligne, il n'est pas qu'un calcul. */
+    garde?: GardeDuTour,
   ): Promise<{ actions: WalkStep[]; rest: WalkRest; canal: RunChannel }> {
     const actions: WalkStep[] = [];
     let canal: RunChannel = canalEntrant;
@@ -861,6 +881,15 @@ export class WorkflowExecutor {
       const brut = rcsOutboundOf(graph.nodes.find((n) => n.id === nodeId));
       const agentId = this.deps.rcs ? await this.deps.rcs.agentIdFor(tenantId) : null;
       let envoye = false;
+      // 🔴 Ce parcours n'est pas qu'un calcul : il ENVOIE, jusqu'à `MAX_RCS_ENCHAINES` messages d'affilée. Une
+      // garde posée uniquement dans `apply` aurait donc laissé passer le chemin RCS, qui est justement celui
+      // qui peut enchaîner sans repasser par l'appelant.
+      const perduAvantRcs = garde?.perduPourquoi() ?? null;
+      if (perduAvantRcs !== null) {
+        // eslint-disable-next-line no-console
+        console.warn(`rcs: envoi INTERROMPU pour ${waId} au bloc ${nodeId} (${perduAvantRcs})`);
+        return { actions, rest: r.rest, canal };
+      }
       if (this.deps.rcs && agentId && brut) {
         // Variables `{{prenom}}` du contact. La fiche n'est lue QUE si le message en porte : un bloc sans
         // variable, qui est le cas courant, ne déclenche aucune requête supplémentaire.
@@ -1355,6 +1384,17 @@ export class WorkflowExecutor {
       // dédupliquée, et le tour ne serait JAMAIS enfilé (conversation bloquée jusqu'à ce que le contact
       // réécrive). Dans ce sens-ci, si l'enfilage réussit mais que `setState` échoue, un rejeu réémet un job
       // portant le MÊME `tours` attendu, que le verrou optimiste de `prendreLeTour` absorbe sans effet.
+      //
+      // 🔴 Même garde que devant un envoi, pour la même raison : enfiler un tour, c'est commander un appel
+      // modèle FACTURÉ, et le nouveau porteur du tour vient de commander le sien sur le même message. Un
+      // `return` sec suffit : on n'écrit pas `lastMessageId`, donc rien n'est marqué consommé par un porteur
+      // qui n'a plus le droit de le faire.
+      const perduAvantTour = battement?.perduPourquoi() ?? null;
+      if (perduAvantTour !== null) {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow ${run.workflowId}: tour d'agent NON enfilé pour ${waId} (run ${run.id}) : ${perduAvantTour}`);
+        return;
+      }
       await this.deps.enqueueAgentTurn?.({
         tenantId,
         runId: run.id,
@@ -1423,9 +1463,9 @@ export class WorkflowExecutor {
       return;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id, run.channel ?? 'whatsapp');
+    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id, run.channel ?? 'whatsapp', battement ?? undefined);
     // Un contact qui répond est unitaire par nature : ses tags publient.
-    const { refus, partis, canal } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId, apresWalk);
+    const { refus, partis, canal } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId, apresWalk, battement ?? undefined);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant
     // `lastMessageId`, sinon le même message serait re-traité) et on remonte la conversation à un humain.
     if (refus !== null) {
