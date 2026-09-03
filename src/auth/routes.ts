@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { verifyPassword, hashPassword, hashPasswordSync } from './password';
 import { signSession, signChoice, verifyChoice } from './token';
@@ -80,18 +80,52 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
  * transverse. NB : borner trustProxy pour récupérer la vraie IP client est un chantier séparé (chaîne XFF à vérifier
  * en prod avant de risquer un spoofing) ; ce discriminant ferme le trou sans en dépendre.
  */
+/**
+ * ⚠️ LE DISCRIMINANT EST BORNÉ EN TAILLE, et ce n'est pas cosmétique. `/auth/google` passait le jeton Google
+ * ENTIER comme discriminant, soit environ un kilo-octet PAR CLÉ, dans une table en mémoire qu'un robot peut
+ * remplir à volonté pendant toute la fenêtre. Au-delà d'une longueur raisonnable, on remplace la valeur par
+ * son empreinte : elle discrimine tout aussi bien (deux jetons différents donnent deux empreintes
+ * différentes) et elle occupe 64 caractères, quoi qu'on lui donne.
+ *
+ * Posé ICI et non chez l'appelant : c'est le seul point par lequel toutes les clés passent, donc le seul
+ * endroit où la garantie tient encore au septième limiteur.
+ */
+const MAX_DISCRIMINANT = 100;
 function rateKey(req: { ip: string }, discriminant: string): string {
-  return `${req.ip}::${discriminant}`;
+  const d = discriminant.length <= MAX_DISCRIMINANT
+    ? discriminant
+    : createHash('sha256').update(discriminant).digest('hex');
+  return `${req.ip}::${d}`;
 }
 
+/**
+ * Plafond de clés VIVANTES par limiteur.
+ *
+ * 🔴 Le module `rate-limit.ts` prescrit lui-même ce plafond « dès que la clé est choisie par l'APPELANT », et
+ * les six limiteurs ci-dessous étaient construits sans. Or leurs clés viennent toutes de l'appelant (un
+ * e-mail, un jeton de réinitialisation, un jeton Google) : sous flot soutenu, `prune()` ne retire rien
+ * (il ne supprime que les entrées EXPIRÉES, et dans la fenêtre rien n'expire), donc la table grossit pendant
+ * toute la minute.
+ *
+ * Dix mille est très large pour l'usage légitime, où les clés distinctes se comptent en dizaines par minute,
+ * et borne la mémoire à quelques centaines de kilo-octets par limiteur. Au-delà, une clé NEUVE est refusée et
+ * les clés déjà connues continuent d'être servies : sous attaque, les utilisateurs en cours ne sont pas pris
+ * en otage.
+ */
+const MAX_CLES = 10_000;
+
 export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireAuth?: Guard): void {
+  // ⚠️ Le 3e argument est l'horloge, le 4e le plafond de clés : il faut passer le défaut de l'horloge pour
+  // atteindre le plafond. Les six limiteurs le portent, aucune exception, parce que les six ont une clé
+  // choisie par l'appelant.
+  const horloge = (): number => Date.now();
   const cfg = deps.loginRateLimit ?? { max: 10, windowMs: 60_000 };
-  const limiter = new RateLimiter(cfg.max, cfg.windowMs);
-  const signupLimiter = new RateLimiter(10, 60_000);
-  const forgotLimiter = new RateLimiter(5, 60_000);
-  const resetLimiter = new RateLimiter(10, 60_000);
-  const acceptLimiter = new RateLimiter(10, 60_000);
-  const googleLimiter = new RateLimiter(20, 60_000);
+  const limiter = new RateLimiter(cfg.max, cfg.windowMs, horloge, MAX_CLES);
+  const signupLimiter = new RateLimiter(10, 60_000, horloge, MAX_CLES);
+  const forgotLimiter = new RateLimiter(5, 60_000, horloge, MAX_CLES);
+  const resetLimiter = new RateLimiter(10, 60_000, horloge, MAX_CLES);
+  const acceptLimiter = new RateLimiter(10, 60_000, horloge, MAX_CLES);
+  const googleLimiter = new RateLimiter(20, 60_000, horloge, MAX_CLES);
 
   app.post('/auth/login', async (req, reply) => {
     const b = (req.body ?? {}) as { email?: unknown; password?: unknown };

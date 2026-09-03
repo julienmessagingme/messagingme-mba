@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
@@ -98,6 +99,12 @@ import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
+  /**
+   * Origines autorisées à appeler cette API depuis un navigateur. Vide ou absent -> AUCUN en-tête CORS n'est
+   * posé, ce qui est le comportement d'avant la bascule et le bon défaut : le front servi par le même hôte
+   * n'en a aucun besoin.
+   */
+  corsOrigins?: readonly string[];
   queue: Queue;
   /** Sonde de readiness (DB joignable ?). OPTIONNEL pour préserver le design DB-free de buildServer : absent
    *  (tests) -> /health répond 200 inconditionnel. Fourni (prod) -> /health = readiness (503 si rejette). */
@@ -203,12 +210,58 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport || deps.hubspotInstall || deps.hubspotPipelines || deps.mba || deps.email || deps.webhooksAdmin) && !deps.auth) {
-    // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
-    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
+  /**
+   * 🔴 AUCUNE ROUTE PORTANT `:tenantId` NE SE MONTE SANS AUTHENTIFICATION. La liste couvrait 18 modules sur
+   * 36 (audit de surface publique du 2026-09-03) : les 18 autres se seraient montés sans garde, en silence,
+   * et `scopeTenant` aurait alors distribué à chacun l'espace qu'il demandait dans l'URL.
+   *
+   * ⚠️ Ce garde-fou et la fermeture de `scopeTenant` (`src/http/scope.ts`) sont les DEUX moitiés du même
+   * correctif, et il faut les deux. Sans le garde-fou, l'oubli passe au démarrage et se voit en 403 partout,
+   * c'est-à-dire trop tard. Sans la fermeture, le garde-fou ne couvre que les modules qu'on a pensé à y
+   * inscrire, et il faudra y penser encore au 37e. `tests/scope-tenant.test.ts` garde la liste complète.
+   */
+  const modulesTenant = [
+    deps.import, deps.campaigns, deps.admin, deps.flows, deps.templates, deps.support, deps.contacts,
+    deps.account, deps.me, deps.workflows, deps.embeddedSignup, deps.apiKeys, deps.hubspotImport,
+    deps.hubspotInstall, deps.hubspotPipelines, deps.mba, deps.email, deps.webhooksAdmin,
+    deps.inbox, deps.stats, deps.settings, deps.rcsMessages, deps.rcsChannel, deps.rcsMedia, deps.media,
+    deps.tags, deps.fields, deps.workflowReports, deps.automations, deps.agents, deps.agentKnowledge,
+    deps.agentTools, deps.agentSources, deps.agentRequetes, deps.agentSetup, deps.agentTest,
+  ];
+  if (modulesTenant.some((m) => m !== undefined) && !deps.auth) {
+    // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant refuse tout et le service est mort
+    // en silence. Mieux vaut refuser de démarrer que servir 403 sur tout un espace.
+    throw new Error('buildServer: `auth` est requis dès qu’un module exposant des routes `:tenantId` est monté');
   }
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
+
+  /**
+   * 🔴 LE CORS, ET SES DEUX RÈGLES NON NÉGOCIABLES (préparation de la bascule Vercel, 2026-09-03).
+   *
+   * Il n'existe QUE parce que le front part sur son propre nom : tant que le navigateur appelait la même
+   * origine, le CORS n'avait aucun rôle. Il n'est donc posé QUE si une origine est explicitement inscrite,
+   * et il est absent sinon. Une porte qu'on n'ouvre pas est une porte qu'on n'a pas à surveiller.
+   *
+   * 1. LISTE BLANCHE, jamais `*`. Le refus de l'étoile est dans `src/config.ts`, au chargement, parce qu'un
+   *    réglage qui ouvre tout doit échouer au démarrage et pas se découvrir en lisant les logs.
+   * 2. AUCUN `credentials`. La session de cette console voyage dans un en-tête `Authorization`, jamais dans
+   *    un cookie : il n'y a donc AUCUN CSRF possible aujourd'hui. Activer les credentials en créerait un de
+   *    toutes pièces, pour un besoin qui n'existe pas. C'est le piège classique de cette migration.
+   *
+   * `x-ops-token` est dans les en-têtes autorisés parce que l'écran d'exploitation le pose lui-même : sans
+   * lui, la requête préalable du navigateur échouerait et `/ops` serait muet depuis le nouveau front.
+   */
+  const origines = deps.corsOrigins?.map((o) => o.trim()).filter((o) => o !== '') ?? [];
+  if (origines.length > 0) {
+    void app.register(cors, {
+      origin: origines,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['authorization', 'content-type', 'x-ops-token'],
+      credentials: false,
+      maxAge: 600,
+    });
+  }
 
   // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {

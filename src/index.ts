@@ -247,6 +247,9 @@ async function main(): Promise<void> {
       }
     : undefined;
   const app = buildServer({
+    // Origines autorisées à appeler l'API depuis un navigateur. Vide (le cas d'aujourd'hui) -> aucun en-tête
+    // CORS n'est posé du tout. Voir `src/server.ts` pour les deux règles qui la rendent sûre.
+    corsOrigins: config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter((o) => o !== ''),
     queue,
     // Readiness : `select 1` (timeout court 2 s) -> /health 503 si la DB est injoignable. /live reste trivial.
     checkReadiness: makeDbReadinessCheck(pool, 2000),

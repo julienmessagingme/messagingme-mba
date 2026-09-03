@@ -304,6 +304,26 @@ export const schema = z.object({
    * une mauvaise variable, surtout sur des adresses qui partent dans des messages qu'on ne peut plus corriger.
    */
   PUBLIC_API_URL: z.string().default(''),
+  /**
+   * Origines autorisées à appeler cette API depuis un NAVIGATEUR, séparées par des virgules.
+   * Ex. `https://engageme.messagingme.app,https://mba.messagingme.app`.
+   *
+   * 🔴 VIDE = AUCUN CORS DU TOUT, et c'est le défaut voulu. Tant que le front est servi par le même hôte que
+   * l'API (le proxy Next), le navigateur ne fait aucune requête d'origine croisée : poser des en-têtes CORS
+   * n'apporterait rien et ouvrirait une porte pour rien. Ils n'apparaissent qu'à partir du moment où une
+   * origine est explicitement inscrite ici.
+   *
+   * ⚠️ JAMAIS `*`, et la valeur est refusée si on l'essaie. Une liste blanche est le seul CORS qui protège :
+   * l'étoile autorise n'importe quel site à faire faire des requêtes au navigateur d'un client connecté.
+   *
+   * ⚠️ ET JAMAIS `credentials: true` (cf. `src/server.ts`). La session de cette console voyage dans un en-tête
+   * `Authorization`, jamais dans un cookie : il n'y a donc AUCUN CSRF possible aujourd'hui. Activer les
+   * credentials en créerait un de toutes pièces, pour un besoin qui n'existe pas.
+   */
+  CORS_ORIGINS: z.string().default('').refine(
+    (v) => !v.split(',').map((o) => o.trim()).includes('*'),
+    { message: 'CORS_ORIGINS: `*` est refusé, il faut une liste blanche d’origines' },
+  ),
   /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
   INVITE_TOKEN_TTL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
   /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */
