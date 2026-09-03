@@ -1,8 +1,13 @@
 # CLAUDE.md : messagingme-mba
 
-**Produit :** console SaaS plug-and-play qui déploie et pilote la stack native Meta pour
-WhatsApp (Cloud API + Marketing Messages API/MM Lite + Meta Business Agent) pour des clients.
-Pitch : « Envoie des campagnes WhatsApp qui se répondent toutes seules. »
+**Produit : « Engage Me »** (renommé le 2026-09-03 ; le dépôt garde son nom technique
+`messagingme-mba`, comme l'identifiant du serveur MCP, qui ne doit PAS changer sous peine de casser
+les connexions déjà configurées). Console SaaS plug-and-play qui déploie et pilote la stack native
+Meta pour WhatsApp (Cloud API + Marketing Messages API/MM Lite + Meta Business Agent) pour des clients.
+Accroche du produit : « La plateforme conversationnelle qui comprend chaque conversation. »
+
+⚠️ **« Meta Business Agent » et « MBA » restent tels quels PARTOUT** : c'est le nom du produit de META,
+pas le nôtre. Notre console le configure, elle ne le porte pas.
 
 **Cadrage produit (source de vérité) :** `messagingme-pilot/docs/PROJET-MBA-CONSOLE.md`
 (+ `META-BUSINESS-AGENT-API.md` pour la référence API). Ce repo = l'implémentation.
@@ -38,8 +43,27 @@ Bundler` sans extensions). `npm run build` (tsc) n'est pas le chemin de déploie
 
 ## Déploiement
 
-Déployé sur **`mba.messagingme.app`** (VPS Docker : `mba-api` + `mba-worker` + `mba-web`).
-Runbook complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
+🔴 **TROIS NOMS DEPUIS LE 2026-09-03, et ils n'ont pas le même hébergeur.** Détail et journal d'exécution :
+[docs/PLAN-BASCULE-VERCEL-2026-09-03.md](docs/PLAN-BASCULE-VERCEL-2026-09-03.md).
+
+| Nom | Sert | Où | Comment on déploie |
+|---|---|---|---|
+| `engageme.messagingme.app` | la console | **Vercel** (projet `messagingme-mba`, Root Directory `web`) | automatique à chaque `git push` |
+| `api.messagingme.app` | l'API et le worker | VPS Docker (`mba-api`, `mba-worker`) | `git pull` + `compose up -d --build` |
+| `mba.messagingme.app` | l'ANCIENNE console, plus toutes les adresses historiques | VPS (`mba-web` + routage NPM) | idem |
+
+⚠️ **`mba.messagingme.app` porte un routage par CHEMIN dans NPM** (`advanced_config` du proxy host 21), et
+c'est ce qui rend la migration sans risque : `/api/backend/*` va à `mba-api` **avec le préfixe retiré par
+nginx**, `/r/`, `/m/` et `/mcp` y vont directement, tout le reste va à `mba-web`. Conséquences :
+- **le webhook Meta répond à son adresse ACTUELLE, pour toujours**, sans rien reconfigurer chez Meta ;
+- les liens tracés et visuels RCS déjà envoyés continuent de résoudre ;
+- 🔴 **un conteneur de FRONT n'est plus sur le chemin critique de réception des messages clients**. Avant,
+  le webhook de Meta traversait `mba-web` : si le site tombait, plus aucun message entrant n'arrivait.
+
+⚠️ **`NEXT_PUBLIC_API_URL` est FIGÉE AU BUILD** côté Vercel : la changer sans redéployer ne fait rien, en
+silence. Même piège que `BACKEND_URL` sur l'image Docker.
+
+Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
@@ -292,6 +316,29 @@ qu'avant le premier envoi tracé.
 
 ### Sécurité (deltas projet)
 
+🔴 **`scopeTenant` ÉCHOUE FERMÉ** (2026-09-03). C'est LE contrôle d'isolation entre clients, pour 235 routes,
+et la RLS est contournée (pooler superuser). Elle rendait auparavant le tenant PRIS DANS L'URL quand
+`req.auth` était absent : elle n'était donc un contrôle que tant que la garde d'authentification avait été
+posée au montage, dans un autre fichier, chaque module la recevant en paramètre OPTIONNEL et la dégradant en
+silence. Ce n'était pas un trou vivant, mais la panne aurait été MUETTE. Le garde-fou de `buildServer` couvre
+désormais les 36 modules à routes `:tenantId` (il en énumérait 18), gardé par `tests/scope-tenant.test.ts`.
+
+🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
+CHARGEMENT de la configuration. Et jamais `credentials: true` : la session voyage dans un en-tête
+`Authorization`, jamais dans un cookie, donc **il n'y a aucun CSRF aujourd'hui** ; l'activer en créerait un de
+toutes pièces. Vide = aucun en-tête CORS n'est posé du tout, ce qui est le bon défaut.
+
+⚠️ **`/ops` n'est pas durci, il est SURVEILLÉ** (choix de Julien, 2026-09-03). Une liste blanche d'IP aurait
+coupé l'accès dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre de 5 minutes, une
+alerte Telegram part, throttlée à une par demi-heure. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une
+tentative est presque toujours un secret voisin du vrai. Chaque refus est journalisé même quand l'alerte est
+étouffée.
+
+⚠️ **L'API était DÉJÀ joignable depuis Internet avant `api.messagingme.app`** : le rewrite Next
+`/api/backend/:path*` est un ATTRAPE-TOUT, `/ops` compris. Le nouveau nom n'ouvre rien, il rend les adresses
+DEVINABLES. Corollaire : toute règle posée sur l'hôte `mba.` doit être redupliquée sur le nouveau, sinon elle
+est simplement contournée.
+
 🔴 **Toute URL saisie par un client se vérifie DEUX fois : sur son texte, ET sur ce vers quoi elle RÉSOUT**
 (lot A3, 2026-09-03). `urlRecuperable` lit le texte de l'hôte et refuse `localhost`, les littéraux privés et
 toutes leurs formes exotiques (hexadécimale, entière, IPv6, IPv4 mappée : vérifié). Elle ne peut RIEN contre
@@ -310,6 +357,23 @@ l'écrivait à trois endroits. Point de passage unique : `lireCorpsBorne` (`src/
 le flux à l'octet qui dépasse. ⚠️ Les clients de NOS API (Meta, Zadarma) n'y passent pas volontairement :
 hôtes fixes et de confiance, le risque n'est pas le même.
 
+
+🔴 **CHANGER LE NOM DU FRONT CASSE TOUT TIERS QUI VÉRIFIE L'ORIGINE**, pas seulement ceux à qui on donne une
+URL (2026-09-03). Un webhook se reconfigure parce qu'on lui a donné une adresse ; une liste d'origines se
+reconfigure parce que le tiers vérifie D'OÙ VIENT L'APPEL. On pense au premier, on oublie le second. Découvert
+par un `origin_mismatch` de Google à la première connexion depuis `engageme`. Les deux concernés, à compléter
+SANS retirer l'ancienne origine : **Google Sign-In** (Cloud Console, « Origines JavaScript autorisées ») et
+**Meta Embedded Signup** (Connexion Facebook, « Valid OAuth Redirect URIs » ET « Allowed Domains for the
+JavaScript SDK », au format complet `https://.../`). HubSpot n'est PAS concerné, vérifié : son lien
+d'installation se construit sur l'adresse du connecteur.
+
+⚠️ **`APP_URL` NE FAIT PLUS DEUX MÉTIERS.** Elle servait à la fois de base aux liens d'e-mail (des pages du
+FRONT) et aux adresses que le produit DISTRIBUE et qui sont servies par l'API (`/r/`, `/m/`, `/w/`). Depuis la
+séparation du front et de l'API, `PUBLIC_API_URL` porte les secondes. Point de passage unique :
+`src/lib/adresses-publiques.ts`, qui porte le cas particulier facile à recopier de travers (`/r/` et `/m/`
+sont servis à la RACINE, `/w/` vit sous le préfixe du proxy). Les deux variables sont VIDES par défaut et tout
+retombe alors sur l'ancien comportement : une variable dont l'oubli casse la production serait une mauvaise
+variable, surtout sur des adresses déjà parties dans des messages.
 
 Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse` sur webhooks + JSON LLM, signature de webhook entrant, entrée LLM délimitée) : section « Conventions de code » du CLAUDE.md global. Spécifique à MBA :
 

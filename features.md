@@ -5,6 +5,19 @@ d'invitation le dit noir sur blanc.
 
 Statut : 🔲 pas commencé · 🚧 en cours · ✅ live
 
+✅ **La plateforme s'appelle « Engage Me »** (2026-09-03). Le nom s'affiche à l'onglet du navigateur, sur
+l'écran de connexion, dans l'en-tête à côté du logo (le logo lui-même n'a pas changé) et comme titre du
+serveur MCP. Accroche : « La plateforme conversationnelle qui comprend chaque conversation. »
+⚠️ « Meta Business Agent » et « MBA » restent tels quels : c'est le produit de Meta, pas le nôtre.
+
+✅ **La console est servie depuis `engageme.messagingme.app`** (2026-09-03). `mba.messagingme.app` continue de
+répondre en parallèle, comme secours et pour toutes les adresses déjà distribuées (liens tracés, visuels RCS,
+webhook Meta, MCP). Rien de ce qui a été envoyé à un client ne cesse de fonctionner.
+
+✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
+part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton
+présenté n'est jamais écrit nulle part.
+
 `mba.messagingme.app` est **en prod LIVE** (`DRY_RUN=false`, numéro Zadarma réel). Console de gestion
 WhatsApp/Meta, 3 rôles : **admin** (tout), **manager** et **agent** (inbox seule).
 ⚠️ **Manager est un STATUT, pas encore des droits** (2026-08-20) : il s'attribue, mais il donne exactement les

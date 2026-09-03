@@ -1,5 +1,41 @@
 # documentation.md : technique
 
+## Où tourne quoi (depuis la bascule du 2026-09-03)
+
+Trois noms, deux hébergeurs. Journal d'exécution complet et raisons de chaque choix :
+[docs/PLAN-BASCULE-VERCEL-2026-09-03.md](docs/PLAN-BASCULE-VERCEL-2026-09-03.md).
+
+```
+   navigateur, Meta, contacts, opérateur télécom
+                      |
+                  Cloudflare
+            /                        engageme.messagingme.app     api.messagingme.app        mba.messagingme.app
+      (Vercel, la console)     (un NOM, pas une machine)   (ancienne console + legacy)
+                                        |                          |
+                                  VPS OVH aujourd'hui        mba-web + routage NPM
+                                  (mba-api + mba-worker)
+                                        |
+                                    Supabase
+```
+
+🔴 **`api.messagingme.app` est un NOM, pas une machine, et c'est tout l'intérêt.** Le front, Meta, les
+contacts qui cliquent et l'opérateur télécom ne connaissent que cette étiquette. Le jour du déménagement vers
+Scaleway : monter l'API et le worker là-bas, changer UN enregistrement DNS, éteindre OVH. Le front ne bouge
+pas, le webhook Meta ne bouge pas, les liens déjà envoyés continuent d'ouvrir, rien à redéployer.
+
+**Le worker n'a aucune adresse et personne ne l'appelle** : il lit la base et travaille. Il voyage avec l'API.
+
+**Le routage par chemin de `mba.messagingme.app`** (`advanced_config` du proxy host NPM 21) :
+`/api/backend/*` → `mba-api` avec le préfixe RETIRÉ par nginx (`proxy_pass` à barre finale), `/r/`, `/m/` et
+`/mcp` → `mba-api` directement, tout le reste → `mba-web`. C'est ce qui a permis de faire cette migration
+**sans jamais toucher à la configuration du webhook chez Meta**, et ce qui a retiré un conteneur de front du
+chemin critique de réception des messages clients.
+
+**Comment le navigateur trouve l'API** : `web/lib/http.ts` lit `NEXT_PUBLIC_API_URL`, avec repli sur
+`/api/backend` (le proxy de même origine, donc zéro CORS). Côté API, `CORS_ORIGINS` est une liste blanche,
+sans `credentials`, vide par défaut. La session voyage en `Authorization`, jamais en cookie : c'est ce qui
+rend ce cross-origine sans piège et ce qui interdit d'activer les credentials.
+
 ## Architecture (async découplé, 3 étages)
 
 Le traitement synchrone est exclu (timeout Meta au moindre pic). Flux entrant :

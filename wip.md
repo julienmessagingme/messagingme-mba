@@ -12,6 +12,29 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
+## LIVRÉ le 2026-09-03 : le renommage en Engage Me et la bascule du front sur Vercel
+
+**Rien n'est en cours.** L'architecture et les règles vivent dans [documentation.md](documentation.md) et
+[CLAUDE.md](CLAUDE.md) ; le journal d'exécution pas à pas est dans
+[docs/PLAN-BASCULE-VERCEL-2026-09-03.md](docs/PLAN-BASCULE-VERCEL-2026-09-03.md).
+
+Ce qui a été fait : le produit s'appelle Engage Me ; la console est servie par Vercel sur
+`engageme.messagingme.app` ; l'API répond sous son propre nom `api.messagingme.app`, ce qui rendra le
+déménagement vers Scaleway gratuit ; `mba.messagingme.app` garde toutes les adresses déjà distribuées.
+
+Trois choses trouvées en chemin et qui valaient le détour :
+- l'API était **déjà** joignable depuis Internet (le rewrite Next est un attrape-tout) : le nouveau nom
+  n'ouvre rien, il rend les adresses devinables. D'où les durcissements faits avant d'ouvrir ;
+- un conteneur de **front** était sur le chemin critique de réception des messages clients ;
+- `APP_URL` faisait deux métiers et n'était en fait **posée nulle part**, le code vivait sur son défaut.
+
+**Ce qui reste, et c'est facultatif** : éteindre `mba-web` et faire de `mba.messagingme.app/` une redirection
+vers `engageme`. Rien ne presse, le laisser tourner ne coûte presque rien et garde une porte de sortie.
+
+⚠️ **À faire par Julien quand il y pensera** : ajouter `engageme.messagingme.app` aux domaines autorisés de
+l'app Meta (Connexion Facebook). Ça ne bloque que l'écran qui connecte un NOUVEAU numéro WhatsApp. Google est
+déjà fait.
+
 ## LIVRÉ ET DÉPLOYÉ le 2026-09-02 au soir : les sept lots du plan post-audit, le chantier IA, la vectorisation
 
 **Rien n'est en cours.** Tout ce qui suit est en production. Le détail technique et les pièges sont dans

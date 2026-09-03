@@ -2,6 +2,12 @@
 
 ## 🔴 Ce qu'on exécute est le POINT 2 de l'audit externe du 2026-09-02
 
+> **Au 2026-09-03 au soir : A1 à A4, B et C sont livrés et déployés.** Ne restent de ce point que le profil
+> `equite` du banc de charge (plus bas) et, facultatif, éteindre `mba-web`. Un CONTRE-RAPPORT de ChatGPT sur
+> ces livraisons est arrivé le 2026-09-03 : ses constats seront triés et ajoutés ici après vérification dans
+> le code, comme les précédents.
+
+
 Les sept lots de [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) sont **livrés et
 déployés** (2026-09-02 au soir), ainsi que le point 1 de l'audit qui a suivi. Ce qui reste, dans cet ordre :
 
