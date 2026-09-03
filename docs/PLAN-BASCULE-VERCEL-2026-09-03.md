@@ -218,3 +218,42 @@ question.
   on attend le premier client. Même règle ici, mais **il faut le savoir avant de mettre un client dessus**.
 - **Le temps de coupure à l'étape 6.** Je ne l'ai pas mesuré. Il dépend surtout de la reconfiguration Meta.
 - **Est-ce qu'on garde Cloudflare devant Vercel.** À décider à l'étape 5, sur ce qu'on observe.
+
+---
+
+## Journal d'exécution
+
+**2026-09-03, étapes 1 à 4 faites. Rien de visible n'a changé pour les utilisateurs de `mba.`**
+
+- **Étape 1** (`3b791d9`) : `APP_URL` scindée. `PUBLIC_API_URL` ajoutée, vide, donc sans effet.
+- **Durcissements avant d'ouvrir** (`3e99437`, `f1e3776`), issus d'un audit des 235 routes : `scopeTenant`
+  échoue fermé et le garde-fou du démarrage couvre les 36 modules ; le CORS existe, en liste blanche, sans
+  credentials ; les limiteurs d'authentification sont bornés en nombre ET en taille de clé ; les refus sur
+  `/ops` sont journalisés et alertés. Au passage, Fastify 5.10.0 vers 5.12.1 (deux vulnérabilités connues,
+  dont une sur l'usurpation de `X-Forwarded`).
+  🔴 **L'audit a corrigé la prémisse de ce plan** : le rewrite Next est un ATTRAPE-TOUT, donc l'API était
+  DÉJÀ joignable depuis Internet, `/ops` compris. `api.messagingme.app` n'ouvre rien de neuf, il rend les
+  adresses devinables. C'est ce qui a rendu ces durcissements urgents plutôt que confortables.
+- **Étape 2** : `api.messagingme.app` ouvert dans NPM (proxy host 24, certificat 26), aligné sur `mba.`
+  (HTTPS forcé, HSTS, HTTP/2). Toutes les routes publiques vérifiées sous le nouveau nom.
+- **Étape 3** : `CORS_ORIGINS=https://engageme.messagingme.app` posé sur le VPS. Vérifié en production :
+  l'origine inscrite reçoit ses en-têtes, une autre n'en reçoit aucun.
+- **Étape 4** (`28cc4b8`) : le front lit `NEXT_PUBLIC_API_URL`, la page Développeurs dérive son adresse de la
+  même source. Variable posée sur Vercel, redéployée.
+
+**Preuve de bout en bout**, faite depuis la page réelle et non par un test :
+
+```
+fetch('https://api.messagingme.app/auth/config') depuis https://engageme.messagingme.app
+-> 200, {"googleClientId":"...","googleEnabled":true}
+```
+
+**Le filet tient** : `mba.messagingme.app` sert toujours la console (200), l'API (200) et les liens tracés
+(302). Deux consoles vivantes sur la même base, ce qui est l'état voulu.
+
+⚠️ **`engageme.messagingme.app` n'est PAS un environnement de test** : même base, mêmes contacts, même numéro.
+Une campagne lancée depuis là envoie de vrais messages.
+
+**Reste l'étape 6**, à faire à un moment creux : `APP_URL` et `PUBLIC_API_URL` sur le VPS, puis l'URL du
+webhook chez Meta, qui est le seul geste pendant lequel un message entrant peut se perdre.
+
