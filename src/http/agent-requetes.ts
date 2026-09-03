@@ -40,6 +40,16 @@ export interface AgentRequetesRouteDeps {
   fetchImpl?: typeof fetch;
   /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
   verifierResolution?: (url: string) => Promise<VerdictResolution>;
+  /**
+   * Plafond de temps de l'appel de test. Défaut : `DELAI_TEST_MS`.
+   *
+   * ⚠️ **Cette couture existe parce qu'une garde qu'on ne peut pas éprouver n'est pas une garde.** Les faux
+   * minuteurs de vitest ne pilotent PAS `AbortSignal.timeout` (vérifié, pas supposé : après onze secondes de
+   * faux temps, le signal n'est toujours pas abandonné), donc sans elle le seul test possible serait « un
+   * signal est passé », qui passe aussi sur un plafond de dix minutes. C'est exactement ce que le premier
+   * jet de ces tests faisait, et le second était pire : il passait AUSSI sans la garde qu'il prétendait tenir.
+   */
+  delaiTestMs?: number;
 }
 
 const LABEL = z.string().trim().min(1).max(80);
@@ -304,7 +314,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
      * arbitraire dont la lenteur est choisie par autrui. C'est ce qui distingue ce chemin des clients Meta,
      * RCS et Zadarma, qui tapent des hôtes fixes et de confiance.
      */
-    const echeance = AbortSignal.timeout(DELAI_TEST_MS);
+    const echeance = AbortSignal.timeout(deps.delaiTestMs ?? DELAI_TEST_MS);
     try {
       res = await appeler(appel.url, {
         method: appel.methode,

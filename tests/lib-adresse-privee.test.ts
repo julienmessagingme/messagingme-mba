@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { estAdressePrivee, resolutionPublique } from '../src/lib/adresse-privee';
 import { lireCorpsBorne } from '../src/lib/corps-borne';
 
@@ -124,6 +124,35 @@ describe('résolution d’un nom avant un appel sortant', () => {
 
   it('une URL illisible est refusée', async () => {
     expect((await resolutionPublique('pas une url')).ok).toBe(false);
+  });
+
+  it('🔴 une résolution qui TRAÎNE est refusée comme une résolution qui échoue', async () => {
+    // `dns.lookup` passe par le résolveur du système et n'accepte aucun signal d'abandon : sans ce plafond,
+    // un nom dont le serveur faisant autorité ne répond pas immobilise la requête AVANT que le plafond de
+    // l'appel HTTP ait commencé à courir. Les deux budgets s'additionnaient au lieu de se recouvrir.
+    vi.useFakeTimers();
+    try {
+      const jamais = (): Promise<string[]> => new Promise(() => {});
+      const p = resolutionPublique('https://lent.exemple.fr/x', jamais);
+      await vi.advanceTimersByTimeAsync(3_500);
+      const v = await p;
+      expect(v.ok).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('une résolution NORMALE n’est pas coupée par ce plafond', async () => {
+    // Le témoin : sans lui, un plafond réglé à zéro passerait le test précédent.
+    vi.useFakeTimers();
+    try {
+      const rapide = async (): Promise<string[]> => ['93.184.216.34'];
+      const p = resolutionPublique('https://ok.exemple.fr/x', rapide);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await p).toEqual({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

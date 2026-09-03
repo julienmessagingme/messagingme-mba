@@ -41,6 +41,7 @@ function app(
   fetchImpl?: typeof fetch,
   champs = ['ville', 'points'],
   resolution?: (url: string) => Promise<{ ok: boolean; raison?: string }>,
+  delaiTestMs?: number,
 ) {
   const cap = {
     creations: [] as Array<Record<string, unknown>>,
@@ -65,6 +66,7 @@ function app(
     // pour un domaine d'exemple. Elle a ses tests dédiés dans `tests/lib-adresse-privee.test.ts`, et son
     // effet sur CE bouton est éprouvé plus bas.
     verifierResolution: resolution ?? (async () => ({ ok: true })),
+    ...(delaiTestMs === undefined ? {} : { delaiTestMs }),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentRequetes: deps }) };
 }
@@ -275,38 +277,70 @@ describe('requêtes : le bouton Test', () => {
     expect(String(b.erreur)).toContain('ref');
   });
 
-  it('🔴 l’appel porte un PLAFOND DE TEMPS, et il est de dix secondes comme le bouton jumeau', async () => {
+  /**
+   * 🔴 LE PLAFOND DE TEMPS, ET POURQUOI CES TESTS ONT ÉTÉ RÉÉCRITS.
+   *
+   * Le premier jet de ces deux tests était mauvais, et le contre-contre-rapport du 2026-09-03 a eu raison de
+   * le dire. Le premier n'assertait que « un signal est passé », ce qui passe aussi bien avec un plafond de
+   * dix minutes qu'avec dix secondes : son titre promettait une valeur qu'il ne vérifiait pas. Le second
+   * était pire : **il passait AUSSI sans la garde qu'il prétendait tenir** (vérifié par mutation), parce que
+   * son faux flux échouait sans que l'échéance soit jamais atteinte. Deux tests verts qui ne prouvaient rien,
+   * exactement ce que la règle du dépôt interdit.
+   *
+   * ⚠️ Ce qui rendait la chose facile à rater : les faux minuteurs de vitest **ne pilotent PAS**
+   * `AbortSignal.timeout` (mesuré : onze secondes de faux temps, signal toujours pas abandonné). Le seul
+   * moyen honnête d'éprouver la valeur est donc un délai RÉEL très court, injecté par `delaiTestMs`.
+   */
+  const lent = (ms: number, corpsLent = false) => (async () => {
+    if (!corpsLent) { await new Promise((r) => setTimeout(r, ms)); return new Response('{"a":1}', { status: 200 }); }
+    // En-têtes rendus TOUT DE SUITE, corps distillé : c'est le cas qui atteint l'échéance PENDANT la lecture,
+    // et donc celui que la seconde garde existe pour attraper.
+    return new Response(new ReadableStream<Uint8Array>({
+      async start(c) { await new Promise((r) => setTimeout(r, ms)); c.enqueue(new Uint8Array([123, 125])); c.close(); },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+
+  it('🔴 l’échéance passée au fetch porte bien la DURÉE configurée, pas seulement un signal', async () => {
     // Sans `signal`, ce n'était pas illimité mais borné au défaut d'undici, mesuré à 309 s : trente fois le
     // plafond du bouton voisin, sur une adresse que le client saisit lui-même. C'est ce qui distingue ce
     // chemin des clients Meta ou Zadarma, dont les hôtes sont fixes et de confiance.
     let vu: AbortSignal | undefined;
     const capte = (async (_u: string, init?: RequestInit) => {
       vu = init?.signal ?? undefined;
-      return new Response('{"a":1}', { status: 200, headers: { 'content-type': 'application/json' } });
+      await new Promise((r) => setTimeout(r, 60));
+      return new Response('{"a":1}', { status: 200 });
     }) as unknown as typeof fetch;
-    const { srv } = app({}, capte);
+    const { srv } = app({}, capte, undefined, undefined, 20);
     await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
     expect(vu, 'le fetch doit recevoir une échéance').toBeInstanceOf(AbortSignal);
+    // Et elle doit avoir EXPIRÉ au bout des 20 ms configurés, pas rester ouverte : c'est la seule assertion
+    // qui distingue un vrai plafond d'un `AbortSignal` décoratif.
+    expect(vu?.aborted, 'l’échéance doit avoir expiré après la durée configurée').toBe(true);
+  });
+
+  it('l’échéance ne se déclenche PAS quand le système répond dans les temps', async () => {
+    // Le témoin. Sans lui, le test précédent serait satisfait par un signal abandonné d'entrée de jeu.
+    let vu: AbortSignal | undefined;
+    const capte = (async (_u: string, init?: RequestInit) => {
+      vu = init?.signal ?? undefined;
+      return new Response('{"a":1}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const { srv } = app({}, capte, undefined, undefined, 5_000);
+    const b = (await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} })).json();
     expect(vu?.aborted).toBe(false);
+    expect(b.ok).toBe(true);
   });
 
   it('🔴 une échéance atteinte PENDANT la lecture du corps ne rend pas un faux succès', async () => {
-    // Le piège que le dépôt a déjà payé une fois : `lireCorpsBorne` avale l'abandon et rend un texte vide, donc
-    // sans cette garde la route répondrait `ok: true`, `httpStatus: 200`, aperçu vide et aucun chemin. Un
-    // succès au corps vide fait chercher longtemps du mauvais côté.
-    const expire = (async () => {
-      const ctrl = new AbortController();
-      ctrl.abort();
-      // Le corps s'interrompt comme le ferait un serveur qui distille sa réponse jusqu'à l'échéance.
-      return new Response(new ReadableStream({ start(c) { c.error(new Error('aborted')); } }), {
-        status: 200, headers: { 'content-type': 'application/json' },
-      });
-    }) as unknown as typeof fetch;
-    const { srv } = app({}, expire);
+    // Le piège que le dépôt a déjà payé une fois : `lireCorpsBorne` avale l'abandon et rend un texte vide,
+    // donc sans cette garde la route répondrait `ok: true`, `httpStatus: 200`, aperçu vide et aucun chemin.
+    // Un succès au corps vide fait chercher longtemps du côté du système du client.
+    const { srv } = app({}, lent(60, true), undefined, undefined, 20);
     const b = (await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} })).json();
-    // Corps illisible : la route ne doit en aucun cas annoncer des chemins qu'elle n'a pas vus.
-    expect(b.chemins ?? []).toEqual([]);
-    expect(b.apercu ?? '').toBe('');
+    expect(b.ok, 'un corps lu au-delà de l’échéance n’est PAS un succès').toBe(false);
+    expect(String(b.erreur)).toContain('temps');
+    // Et jamais un 5xx : Cloudflare en remplacerait le corps par sa page d'erreur.
+    expect(b.httpStatus).toBeUndefined();
   });
 
   it('une source DÉSACTIVÉE ne se teste pas : elle a été coupée exprès', async () => {

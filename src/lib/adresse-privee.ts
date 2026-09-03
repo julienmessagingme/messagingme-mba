@@ -140,6 +140,20 @@ export interface VerdictResolution {
 }
 
 /**
+ * Plafond de la résolution elle-même.
+ *
+ * 🔴 **Une résolution DNS n'est bornée par rien de ce que nous écrivons** : `dns.lookup` passe par le
+ * résolveur du système, dont le délai dépend de `resolv.conf` et qui n'accepte aucun signal d'abandon. Un nom
+ * dont le serveur faisant autorité ne répond pas immobilise donc la requête AVANT même que le plafond de
+ * l'appel HTTP ait commencé à courir : les deux budgets s'ADDITIONNAIENT au lieu de se recouvrir. Signalé par
+ * le contre-contre-rapport du 2026-09-03.
+ *
+ * Trois secondes suffisent très largement à un DNS qui marche, et un DNS qui n'a pas répondu en trois
+ * secondes n'aurait de toute façon rien donné d'exploitable.
+ */
+const DELAI_RESOLUTION_MS = 3_000;
+
+/**
  * L'hôte de cette URL résout-il UNIQUEMENT vers des adresses publiques ?
  *
  * 🔴 UNIQUEMENT, et pas « au moins une » : un nom qui rend une adresse publique ET une adresse privée
@@ -164,7 +178,17 @@ export async function resolutionPublique(url: string, resoudre: Resolveur = reso
 
   let adresses: string[];
   try {
-    adresses = await resoudre(hote);
+    // ⚠️ Le plafond est posé ICI plutôt que chez les appelants, pour la même raison que le reste de cette
+    // fonction : elle est appelée depuis plusieurs chemins, et une garde qui dépend d'un appelant finit par
+    // être appelée sans elle. Une résolution trop lente est traitée comme une résolution qui ÉCHOUE, donc par
+    // un REFUS : on n'autorise que ce qu'on a pu vérifier.
+    //
+    // Le minuteur est `unref` : c'est une garde, elle ne doit pas retenir le process.
+    adresses = await new Promise<string[]>((tenir, rejeter) => {
+      const t = setTimeout(() => rejeter(new Error('resolution trop lente')), DELAI_RESOLUTION_MS);
+      if (typeof t.unref === 'function') t.unref();
+      resoudre(hote).then(tenir, rejeter).finally(() => { clearTimeout(t); });
+    });
   } catch {
     return { ok: false, raison: 'nom introuvable' };
   }
