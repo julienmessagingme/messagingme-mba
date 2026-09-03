@@ -2094,6 +2094,56 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## COMMITÉ le 2026-09-03 (pas encore déployé) : le contre-rapport de ChatGPT, huit constats vérifiés
+
+Cinq confirmés, trois à moitié. Le tri complet est dans `todo.md` ; ce qui suit est ce qu'aucun autre document
+ne consignerait, c'est-à-dire les gotchas et les raisons.
+
+**Le correctif évident de la transition terminale était FAUX, et c'est le détour le plus instructif du lot.**
+Une sortie terminale de tour d'agent est deux écritures : clore la session, faire sortir le parcours du bloc.
+Un crash entre les deux tuait le parcours pour toujours. Le réflexe est d'inverser l'ordre, pour qu'une panne
+laisse une session vivante plutôt qu'un parcours orphelin. Ça ne marche pas ici : `sortirDuBlocAgent` fait
+AVANCER le parcours, qui peut retomber sur un autre bloc agent DANS LE MÊME APPEL, et `demarrerTourAgent`
+réutilise alors la session encore vivante (`byRun ?? open`) avec ses tours et son budget déjà consommés, donc
+le nouvel agent serait muet dès son premier tour. La fenêtre n'est pas de quelques millisecondes comme on
+l'imagine, elle couvre tout l'appel. **La réparation passe par la marque, pas par l'ordre** : on clôt d'abord,
+la clôture LAISSE `tour_commence_le` tant que la sortie reste due, et `sortieAppliquee` l'efface après coup.
+
+**Et le réparateur portait le même défaut que ce qu'il réparait.** `reclamerToursBloques` posait
+`status = 'erreur'` ET `tour_commence_le = null` dans la même requête, alors que son propre prédicat exigeait
+les deux inverses : la ligne devenait inatteignable pour DEUX raisons indépendantes, donc un échec de SA
+seconde écriture condamnait aussi le parcours. Son commentaire le concédait à demi-mot (« récupérable à la
+main »). La réclamation POSE désormais un bail (`tour_commence_le = now()`) au lieu d'effacer, et son prédicat
+a perdu sa condition de statut pour ramasser aussi les sessions closes dont la sortie est restée due.
+
+**Deux gardes MIROIR pour un seul marqueur.** `finirLeTour` (`status = 'en_cours'`) sert le chemin qui laisse
+la session vivante, `sortieAppliquee` (`status <> 'en_cours'`) celui qui l'a close. Réutiliser la première
+pour les deux aurait été tentant et aurait retiré son fencing : un porteur de tour périmé aurait pu effacer la
+marque posée par le balayage qui venait de reprendre sa session.
+
+**La classification IPv6 : cinq cas sur huit ratés, mesurés.** `startsWith('fe80:')` ne décrit pas
+`fe80::/10`, qui fait dix bits et va jusqu'à `febf`. Et `::ffff:ac12:1` EST `172.18.0.1`, la passerelle du
+réseau Docker du VPS : la regex d'IPv4 mappée n'acceptait que la notation décimale. **Une plage d'adresses se
+compare en arithmétique, jamais en préfixe de chaîne** : un préfixe de texte décrit ce qu'on a en tête, pas ce
+que la norme définit, et l'écart ne se voit sur aucun exemple qu'on pense à écrire.
+
+**Un filtre en mémoire ne rattrape jamais ce qu'un filtre en base a coupé.** La résolution d'une cible de
+campagne tranchait à `limite` en SQL puis retirait les exclus ensuite : elle sous-envoyait, en silence, le
+nombre affiché à l'opérateur étant celui qu'on venait de calculer.
+
+**Ce qui a été mesuré plutôt que supposé, et qui a changé la réponse :** le bouton « Test » sans `signal`
+n'était pas illimité mais borné au défaut d'undici, **309 s** contre un serveur qui accepte et ne répond
+jamais ; et il n'immobilisait PAS une connexion du pool, les lectures en base étant terminées avant l'appel.
+Le constat restait vrai (trente fois le plafond du bouton jumeau, sur un hôte que le client choisit), mais
+deux de ses trois arguments étaient faux.
+
+**Et un réglage peut trancher une question avant tout banc de charge.** `attente = N × T / C − T` : avec une
+tranche de 2 min et 4 runs simultanés, le SLO d'équité tient jusqu'à environ 13 campagnes longues
+simultanées, pas 25. Aucun banc n'aurait pu faire mieux que constater l'échec. **Rien n'a été touché en
+production pour autant** : les deux leviers ont un coût non mesuré (un `listPending` non borné d'un côté, un
+pool de 8 connexions de l'autre) et la charge d'aujourd'hui est de six jobs sur sept jours.
+
+---
 ## DEPLOYE le 2026-09-02 au soir : la recherche de connaissance apprend le SENS (migrations 0110-0111)
 
 Julien : « en bornant à 3 fiches sur 500, tu renvoies potentiellement 1 % du contenu... faut vectoriser ! ».

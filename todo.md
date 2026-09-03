@@ -3,9 +3,59 @@
 ## 🔴 Ce qu'on exécute est le POINT 2 de l'audit externe du 2026-09-02
 
 > **Au 2026-09-03 au soir : A1 à A4, B et C sont livrés et déployés.** Ne restent de ce point que le profil
-> `equite` du banc de charge (plus bas) et, facultatif, éteindre `mba-web`. Un CONTRE-RAPPORT de ChatGPT sur
-> ces livraisons est arrivé le 2026-09-03 : ses constats seront triés et ajoutés ici après vérification dans
-> le code, comme les précédents.
+> `equite` du banc de charge (plus bas) et, facultatif, éteindre `mba-web`.
+
+### Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un par un
+
+Vérifiés DANS LE CODE avant d'être acceptés, jamais sur leur formulation. **Cinq confirmés, trois à moitié**,
+et les trois moitiés fausses valaient d'être établies, parce qu'elles auraient fait travailler pour rien.
+**Tous les points confirmés sont corrigés**, sauf ceux listés comme ouverts en fin de section.
+
+- ~~**A3-ipv6** : la classification IPv6 laissait passer cinq cas sur huit.~~ **CORRIGÉ.** C'était le plus
+  grave, et il était à moi. La garde testait des PRÉFIXES DE TEXTE : `fe80::/10` fait dix bits et va jusqu'à
+  `febf`, donc trois adresses lien-local sur quatre passaient ; et une IPv4 mappée s'écrit aussi en
+  hexadécimal, donc `::ffff:ac12:1`, qui EST `172.18.0.1`, la passerelle du réseau Docker du VPS, passait.
+  C'est l'adresse même que cette garde existe pour bloquer, et l'en-tête du module affirmait qu'elle était
+  rejetée, « vérifié ». L'adresse est désormais DÉVELOPPÉE en huit groupes de seize bits et comparée en
+  nombres. ⚠️ La vérification a aussi trouvé quatre cas que le contre-rapport ne voyait pas : forme non
+  compressée, `::/96` déprécié, et `0:0:0:0:0:0:0:1` classé public. Non retenus en revanche : `fec0::/10`,
+  `2002::/16` et `::ffff:0:0:0/96`, aucun n'étant joignable depuis ce VPS.
+- ~~**A1-transition** : la sortie terminale d'un tour était une double écriture non atomique.~~ **CORRIGÉ.**
+  Clore la session puis faire sortir le parcours : une panne entre les deux laissait un parcours mort POUR
+  TOUJOURS, la clôture ayant effacé le marqueur qui l'aurait désigné au balayage. ⚠️ **Et le correctif évident
+  était faux** : inverser l'ordre paraît plus sûr, mais `sortirDuBlocAgent` fait AVANCER le parcours, qui peut
+  retomber sur un autre bloc agent dans le même appel et réutiliser la session encore vivante avec ses tours
+  consommés. La réparation passe donc par la MARQUE, pas par l'ordre.
+- ~~**B4-exclusions** : les exclusions de cible étaient appliquées APRÈS le `LIMIT` SQL.~~ **CORRIGÉ.** Sur
+  30 000 contacts, un plafond de 20 000 et 5 000 exclus dans la fenêtre, la campagne partait vers 15 000
+  destinataires. **Elle sous-envoyait en silence** : le nombre affiché est celui qu'on vient de calculer.
+- ~~**A2-garde-rcs** : une fenêtre subsistait entre la garde et l'envoi RCS.~~ **CORRIGÉ.** Exactement deux
+  attentes séparaient le contrôle du `sendTo`. La règle du lot A2 se précise : « entre les effets » veut dire
+  immédiatement avant l'effet, pas avant le travail qui le précède.
+- ~~**A3-timeout** : le bouton « Test » n'avait aucun plafond de temps.~~ **CORRIGÉ.** Seul des trois boutons
+  de la même famille à ne pas en avoir. ⚠️ Deux moitiés du constat étaient fausses : ce n'était pas illimité
+  mais borné au défaut d'undici, **mesuré à 309 s** ; et ça n'immobilisait PAS une place du pool, les lectures
+  en base étant terminées avant l'appel. Rien à faire non plus sur `page-distante.ts`, dont le plafond par
+  saut est explicite et borne le pire cas.
+- ~~**A4-sli** : le SLO d'entrée alarmait sur la mauvaise mesure.~~ **CORRIGÉ.** Le rouge ne se posait que sur
+  l'ATTENTE quand le SLO promet un message TRAITÉ en 30 s. `agent-turn` étant un appel modèle, cette file
+  serait restée verte quelle que soit la lenteur du modèle. Le p99 promis se lit maintenant sur le pire cas
+  bout en bout, qui était calculé et transporté depuis toujours et affiché nulle part.
+- ~~**C1-spread** : un commentaire affirmait une garantie du compilateur qui est fausse.~~ **CORRIGÉ.**
+  Mesuré, pas raisonné : une propriété en trop dans un littéral DIRECT est refusée (TS2353), la même
+  introduite par un SPREAD passe en silence, et un `satisfies` sur le littéral EXTÉRIEUR n'y change rien.
+  Seul un `satisfies` sur l'objet INTÉRIEUR du spread la voit. C'est précisément là que vivaient les deux
+  capacités de la panne du 2026-09-02.
+- **A4-equite** : le réglage rend le SLO 3 arithmétiquement intenable à la cible annoncée. **DOCUMENTÉ, pas
+  corrigé, et c'est délibéré.** L'enveloppe manquait à tout le monde : `attente = N × T / C − T`, donc avec les
+  valeurs par défaut (tranche de 2 min, 4 runs) le seuil de 5 min tient jusqu'à **environ 13 campagnes longues
+  simultanées**, et vaut 10,5 min à 25. ⚠️ **Ne PAS retoucher les deux réglages avant de mesurer** : baisser la
+  tranche multiplie un `listPending` non borné (jusqu'à 20 000 lignes), monter la concurrence mange un pool de
+  8 connexions déjà partagé. L'ordre des mesures est écrit dans `docs/SLO-2026-09-01.md`. Ce n'est pas une
+  panne d'aujourd'hui : 6 jobs `campaign-run` sur sept jours, attente p95 de 0,11 s.
+
+**Ce qui reste ouvert de ce contre-rapport**, et pourquoi : le « DNS rebinding » (déjà listé sous A3), et le
+retriage des deux réglages de campagne, qui attend le profil de banc `equite` du lot 6, plus bas.
 
 
 Les sept lots de [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) sont **livrés et

@@ -86,7 +86,14 @@ base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS 
 requête doit être qualifiée `public.`, sinon elle lit la table d'un autre outil et rend des colonnes inconnues.
 ⚠️ 0110 posait `create extension vector`, la première du dépôt à ajouter une EXTENSION, donc le seul point qui
 pouvait échouer pour une raison de droits : il est passé sans incident.
-**Prochaine libre = 0112.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Prochaine libre = 0113** (la ligne disait 0112, qui est le fichier DÉJÀ appliqué : écrire une migration
+sous ce numéro l'aurait écrasée. Corrigé le 2026-09-03). En pratique on applique aussi via `npm run migrate`
+en local (même Supabase prod).
+
+⚠️ **Le correctif de la transition terminale du 2026-09-03 n'a demandé AUCUNE migration**, et ça valait d'être
+vérifié plutôt que supposé : il ne change que le MOMENT où `tour_commence_le` est effacée, pas le schéma. Une
+colonne dont on change le sens sans changer le type ne se voit pas dans `db/migrations/`, elle se voit dans le
+contrat, et c'est là qu'elle est documentée (`src/agent/session-store.ts`).
 
 🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
 rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message
@@ -273,6 +280,12 @@ qu'avant le premier envoi tracé.
   dépendances par spread n'a donc aucune garde. Même famille : une flèche à deux paramètres est assignable à un
   contrat qui en déclare trois, et le troisième est avalé en silence (vu le 2026-09-03 sur
   `contactIdsForTarget`, gardé depuis par `tests/campagne-cablage.test.ts`).
+  🔴 **La garde qui marche est un `satisfies` sur l'objet INTÉRIEUR du spread**, et il a fallu la mesurer pour
+  la trouver : un `satisfies` posé sur le littéral EXTÉRIEUR n'y change rien, et le code a affirmé le
+  contraire pendant un jour. Quatre formes, quatre résultats : littéral direct → TS2353 ; spread → rien ;
+  `satisfies` extérieur → rien ; `satisfies` intérieur → TS2561. Posée sur le seul spread conditionnel du
+  câblage de campagne (`src/worker.ts`), qui est exactement là où vivaient `boutonsTraces` et
+  `jetonsPourContacts` le jour de la panne, et tenue par `tests/campagne-cablage.test.ts`.
 - **Avant d'écrire un helper, regarder s'il existe déjà.** L'audit du 2026-08-18 a supprimé une centaine de
   copies de fonctions que le repo possédait déjà (dont `scopeTenant`, le contrôle d'accès tenant, présent dans
   22 fichiers de routes). Les points de passage obligés sont listés dans `documentation.md` (« Modules
@@ -311,6 +324,18 @@ qu'avant le premier envoi tracé.
   **jeton de garde** (sinon le porteur d'un bail périmé supprime le verrou de celui qui l'a repris), et un
   **drapeau de relance** (sinon le travail arrivé pendant le run est perdu). Réécrire le même verrou ailleurs
   se fait sur ces trois pièces, pas sur deux.
+- 🔴 **UNE TRANSITION TERMINALE FAITE DE DEUX ÉCRITURES DOIT LAISSER, ENTRE LES DEUX, L'ÉTAT QUE SON
+  RÉPARATEUR SAIT RECONNAÎTRE** (contre-audit du 2026-09-03). La sortie d'un tour d'agent clôturait la session
+  PUIS faisait sortir le parcours : une panne au milieu laissait un parcours mort pour toujours, la clôture
+  ayant effacé le marqueur qui l'aurait désigné au balayage. Pas besoin d'un crash, une panne passagère de la
+  seconde écriture suffisait. **La réparation passe par la MARQUE, pas par l'ordre**, et c'est le piège : ici
+  inverser l'ordre est FAUX, parce que faire sortir le parcours le fait AVANCER, qu'il peut retomber sur un
+  autre bloc agent dans le même appel, et que `demarrerTourAgent` réutiliserait alors la session encore
+  vivante avec ses tours et son budget consommés. Donc : on clôt d'abord, on laisse la marque tant que la
+  suite reste due, on l'efface une fois la suite passée. Corollaire : **la réclamation d'un balayage POSE UN
+  BAIL, elle n'efface pas la marque** ; sinon un échec de sa propre seconde écriture reproduit le défaut chez
+  le réparateur. Et l'effaceur de chaque chemin porte une garde MIROIR (`status = 'en_cours'` d'un côté,
+  `<>` de l'autre) pour que deux chemins concurrents ne s'effacent pas la marque l'un de l'autre.
 - **Une garde de validation se calcule sur l'état EFFECTIF après écriture** (`patch ?? courant`), jamais sur le
   corps de la requête : sinon elle ne ferme qu'un sens (cf. la garde anti-boucle de « conversation analysée »).
 
