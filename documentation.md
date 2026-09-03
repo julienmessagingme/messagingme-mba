@@ -2094,7 +2094,7 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
-## COMMITÉ le 2026-09-03 au soir : le contre-CONTRE-rapport, et ce qu'il dit de mes propres correctifs
+## DÉPLOYÉ le 2026-09-03 au soir : le contre-CONTRE-rapport, et ce qu'il dit de mes propres correctifs (migration 0113)
 
 Quatre constats, trois confirmés. Mais l'intérêt du lot n'est pas là : **quatre des six défauts fermés ce
 soir avaient été introduits le matin même**, par les correctifs du lot précédent. Ce qui suit est la

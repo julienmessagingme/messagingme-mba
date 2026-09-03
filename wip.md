@@ -12,19 +12,18 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS le 2026-09-03 au soir : le contre-CONTRE-rapport, sur les correctifs du jour
+## LIVRÉ ET DÉPLOYÉ le 2026-09-03 au soir : le contre-CONTRE-rapport, sur les correctifs du jour
 
-**Le code est écrit, commité et poussé ; il n'est PAS ENCORE DÉPLOYÉ.** Commits `a191a44` et `39bdb82`.
-Le tri des quatre constats (plus deux angles morts trouvés en propre) est dans [todo.md](todo.md).
+**Rien n'est en cours.** Commits `a191a44`, `39bdb82`, `9ffc19c`, CI verte sur les trois jobs. La migration
+**0113 est appliquée** (image construite d'abord, index vérifié en base : l'ancien retiré, le nouveau couvre
+le prédicat réel). Le tri des quatre constats, plus les deux angles morts trouvés en propre, est dans
+[todo.md](todo.md) ; les généralisations sont dans [documentation.md](documentation.md) et
+[CLAUDE.md](CLAUDE.md).
 
-Ce qui reste à faire, dans l'ordre :
-
-1. **Regarder le run CI.**
-2. 🔴 **Appliquer la migration 0113 AVANT le déploiement**, en construisant l'image d'abord (les migrations
-   vivent dans l'image, pas sur le disque du VPS). Elle n'est PAS bloquante (aucun code ne l'écrit ni ne la
-   lit) mais elle est **hors transaction**, donc sans filet.
-3. **Déployer** : `git log <déployé>..HEAD`, puis `compose up -d --build`, puis recharger nginx si l'API rend
-   un 502 (le conteneur change d'IP, cf. [DEPLOY.md](DEPLOY.md)).
+🔴 **Ce que ce lot dit de la veille : quatre des six défauts fermés ce soir avaient été introduits le matin
+même.** Le motif commun est écrit dans le CLAUDE.md sous « élargir le domaine d'une réparation sans élargir
+ce qu'elle transporte ». Le corollaire de méthode compte autant : pour la troisième fois de la semaine, ce
+qui traverse un câblage échappait aux tests.
 
 ⚠️ **Ce que ce lot ne corrige PAS, et c'est un arbitrage** : l'escalade humaine garde son ancienne transition.
 Poser la marque y dégraderait le cas le plus probable. La raison est écrite dans `src/agent/escalade.ts`.

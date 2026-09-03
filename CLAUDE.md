@@ -75,7 +75,7 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-🔴 **0113 EST EN ATTENTE (index), et elle N'EST PAS BLOQUANTE** : aucun code ne l'écrit ni ne la lit, le
+✅ **0113 APPLIQUÉE le 2026-09-03 au soir** (index), et elle N'ÉTAIT PAS BLOQUANTE : aucun code ne l'écrit ni ne la lit, le
 balayage rend les mêmes lignes sans elle, un peu plus lentement. Elle rattrape un index PARTIEL de la 0112
 (`where status = 'en_cours'`) devenu inutilisable le 2026-09-03, quand la requête du balayage a perdu sa
 condition de statut. **Un index partiel est un CONTRAT avec une requête précise** : élargir le domaine de la
@@ -84,7 +84,7 @@ démarrage. Le seul symptôme est un plan d'exécution qui change. 🔴 Elle est
 (`CREATE INDEX CONCURRENTLY`), donc sans filet.
 
 **Dernière appliquée : 0112** (la marque de tour d'agent en vol), passée le 2026-09-03, après 0108 à 0111.
-**0113 est écrite et EN ATTENTE** (cf. ci-dessus).
+**Dernière appliquée : 0113** (l'index du balayage, cf. ci-dessus). **Aucune n'est en attente.**
 🔴 **0112 est BLOQUANTE** : `prendreLeTour` écrit `tour_commence_le` à chaque tour, et c'est le chemin chaud du
 bloc agent. Déployer sans migrer ferait échouer TOUS les tours. Appliquée AVANT, colonne et index vérifiés en
 base, et le SQL du balayage joué à blanc contre la vraie table (0 ligne). ⚠️ Vérifié EN BASE le 2026-09-03
