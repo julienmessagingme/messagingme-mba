@@ -254,6 +254,29 @@ fetch('https://api.messagingme.app/auth/config') depuis https://engageme.messagi
 ⚠️ **`engageme.messagingme.app` n'est PAS un environnement de test** : même base, mêmes contacts, même numéro.
 Une campagne lancée depuis là envoie de vrais messages.
 
+🔴 **UN TROU DU PLAN, TROUVÉ EN PRODUCTION LE 2026-09-03.** Ce plan listait le webhook Meta comme le seul
+tiers à reconfigurer. C'était faux : **tout tiers qui authentifie par le NAVIGATEUR tient sa propre liste
+d'origines autorisées**, et une origine nouvelle y est inconnue. Découvert par un `origin_mismatch` de Google
+à la première tentative de connexion depuis `engageme`.
+
+La règle générale à retenir, elle vaut au-delà de cette bascule : **changer le nom du front casse tout tiers
+qui vérifie l'ORIGINE, pas seulement ceux à qui on donne une URL.** Un webhook se reconfigure parce qu'on lui
+a donné une adresse ; une liste d'origines se reconfigure parce que le tiers vérifie d'où vient l'appel. On
+pense au premier, on oublie le second.
+
+Les deux concernés, à ajouter SANS retirer l'ancienne origine (le filet doit tenir) :
+
+| Tiers | Où | Quoi ajouter |
+|---|---|---|
+| Google Sign-In | Google Cloud, Identifiants, client OAuth 2.0 | `https://engageme.messagingme.app` dans « Origines JavaScript autorisées » |
+| Meta Embedded Signup | developers.facebook.com, Connexion Facebook, Paramètres | `engageme.messagingme.app` dans « Domaines autorisés pour le SDK JavaScript » |
+
+**HubSpot n'est PAS concerné**, vérifié : son lien d'installation se construit sur l'adresse du connecteur
+(`HUBSPOT_CONNECTOR_PUBLIC_URL`), pas sur celle de la console.
+
+⚠️ La connexion par e-mail et mot de passe, elle, ne passe par aucun tiers : elle fonctionne dès l'étape 4,
+sans attendre aucune de ces deux reconfigurations.
+
 **Reste l'étape 6**, à faire à un moment creux : `APP_URL` et `PUBLIC_API_URL` sur le VPS, puis l'URL du
 webhook chez Meta, qui est le seul geste pendant lequel un message entrant peut se perdre.
 
