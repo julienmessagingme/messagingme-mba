@@ -31,12 +31,16 @@ de fournir son PROPRE résolveur à la couche HTTP (`undici`, `connect.lookup`),
 plus. Le scénario suppose un administrateur client hostile, qui a déjà son compte : le rapport ne le justifie
 pas aujourd'hui. Le cas réaliste, un nom public qui pointe vers l'intérieur, est fermé.
 
-**A4 — la preuve de capacité.** ⚠️ **Partiellement livré le 2026-09-03.** Fait : la photo compte désormais
+~~**A4 — la preuve de capacité.**~~ **LIVRÉ le 2026-09-03.** La photo compte désormais
 les jobs `active` (elle retombait à zéro sur un job coincé), un VRAI p95 par file est calculé sur 24 h depuis
 les horodatages que pg-boss écrit déjà (aucune instrumentation ajoutée, elle existait et personne ne la
 lisait) et affiché dans `/ops`, l'affirmation fausse du document de SLO est retirée, et le banc agent a
-désormais un mode DURÉE avec découpe par minute. **Reste** : lancer ce banc plusieurs minutes sur le VPS (la
-clé du Gateway n'existe que là), et écrire le profil `equite`.
+désormais un mode DURÉE avec découpe par minute, et **il a tourné six minutes sur le VPS** : 1 406 tours,
+738 000 tokens/minute, **zéro refus**, et aucune dérive (la durée moyenne DESCEND de 1 445 à 1 217 ms d'une
+minute à l'autre). Le Gateway n'est pas le prochain plafond, et ce n'est plus une extrapolation. La mesure
+longue a aussi montré une QUEUE que les rafales cachaient : 113 s pour le tour le plus lent contre 2,4 s de
+médiane, soit 0,14 % des tours au-dessus de 30 s, c'est-à-dire exactement ce que `DEADLINE_MS` protège.
+**Reste seulement** le profil `equite` du banc de charge, déjà listé plus bas.
 
 🔴 **Ce que la mesure a trouvé au passage, et qui n'était dans aucun audit** : `webhook-status` se vidait à
 DEUX jobs par minute (sondage 30 s, un job par sondage, travail de 0,05 s), soit 125 heures pour absorber les

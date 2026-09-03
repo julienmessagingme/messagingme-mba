@@ -155,3 +155,57 @@ sudo docker compose run --rm --no-deps \
 
 Troisième argument `long` pour verser le corpus dans le prompt système. ⚠️ Le banc appelle le vrai Gateway :
 il coûte quelques centimes.
+
+## MESURE du 2026-09-03 : SIX MINUTES de charge soutenue, et pas dix secondes
+
+Constat A4 de l'audit externe : les mesures du 2026-09-02 étaient des rafales de quelques dizaines de
+secondes. **Une rafale plus courte que la fenêtre d'un plafond tient toujours**, quelle que soit la limite :
+elle mesure la capacité d'un seau plein, pas le débit auquel il se remplit. Un plafond « par minute » ne peut
+donc pas se voir en dix secondes.
+
+Rejoué avec le mode DURÉE (`DUREE_S`), sur le VPS, dans le conteneur `mba-api` (la clé du Gateway n'existe
+que là), douze tours en parallèle, modèle `zai/glm-4.7-flash`.
+
+| | |
+|---|---|
+| Durée tenue | **361 s** (6 min) |
+| Tours joués | **1 406** |
+| Allers-retours | 2 827, soit **2,01 par tour** |
+| Débit | **737 942 tokens / minute** |
+| **Refus (429 ou autre)** | **0** |
+| Coût total | 0,376 $ |
+
+**Durée d'un tour** : p50 **2,4 s**, p95 **6,9 s**, p99 **11,7 s**.
+
+### Ce que les six minutes montrent, et qu'une rafale ne montrait pas
+
+| Minute | Allers-retours | Durée moyenne | Tokens | Refus |
+|---|---|---|---|---|
+| 0 | 425 | 1 445 ms | 661 418 | 0 |
+| 1 | 338 | 2 422 ms | 541 493 | 0 |
+| 2 | 358 | 1 831 ms | 564 114 | 0 |
+| 3 | 563 | 1 389 ms | 882 418 | 0 |
+| 4 | 534 | 1 340 ms | 836 972 | 0 |
+| 5 | 596 | 1 217 ms | 937 069 | 0 |
+
+**Aucune dérive.** La durée moyenne ne monte pas, elle DESCEND (1 445 ms à la première minute, 1 217 ms à la
+sixième), et le débit monte au lieu de tomber. C'est le contraire exact de la signature d'un seau qui se vide :
+un plafond par fenêtre se serait vu à la deuxième ou troisième minute, en refus ou en ralentissement. Il n'y
+en a pas. **La conclusion du 2026-09-02 tient donc pour de bon** : à cette échelle, le Gateway n'est pas le
+prochain plafond, et ce n'est plus une extrapolation depuis une rafale.
+
+### Ce que la mesure longue a révélé en plus : la QUEUE
+
+Le tour le plus long a duré **113 secondes**, contre 2,4 s de médiane. C'est un facteur 47, et il n'apparaît
+pas dans une rafale courte. **0,14 % des tours** (2 sur 1 406) dépassent 30 secondes.
+
+🔴 **C'est exactement ce que l'échéance de production protège.** `DEADLINE_MS = 30 000` dans `run-turn.ts`
+n'est pas une précaution théorique : sans elle, deux conversations sur mille auraient pendu près de deux
+minutes, en tenant leur place dans la file pendant tout ce temps. Le banc, lui, appelle le transport SANS
+échéance, ce qui est précisément pourquoi il peut la mesurer. La queue existe, elle est rare, elle est bornée
+par une garde qui était déjà là.
+
+⚠️ **Le cache reste à zéro** (`part_cachee_pourcent: 0`) sur 2 827 allers-retours, ce qui confirme la mesure
+du 2026-09-02 sur un échantillon cinquante fois plus grand. Le prompt système fait 1 398 caractères, soit un
+préfixe trop court pour tout seuil de cache plausible.
+

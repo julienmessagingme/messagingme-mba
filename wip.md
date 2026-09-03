@@ -30,7 +30,7 @@ Trois blocs dans la soirée :
 🔴 **Ce qui reste ouvert est dans `todo.md`.** Les DEUX points IA sont faits (A2 puis A1, ci-dessous) ;
 reste A3 (les bornes de sécurité des connecteurs HTTP) et A4 (la preuve de capacité).
 
-## EN COURS le 2026-09-03 : A4, la preuve de capacité
+## LIVRÉ le 2026-09-03 : A4, la preuve de capacité
 
 **Fait** : la photo de `/ops` compte les jobs `active` (elle retombait à zéro sur un job coincé, ce qui rendait
 fausse l'affirmation « plus sévère que le p95 » du document de SLO) ; un VRAI p95 par file sur 24 h, calculé
@@ -42,7 +42,15 @@ courte que la fenêtre d'un plafond tient toujours.
 soit 125 heures pour les 15 000 accusés d'une campagne de 5 000. Corrigé (`burstWhenReadyExceeds`). Et le
 premier chiffre réel du SLO entrant : **p95 de 8,7 s** contre 30 s visés.
 
-**Reste** : lancer le banc agent plusieurs minutes sur le VPS (la clé du Gateway n'existe que là).
+**Le banc a tourné six minutes** sur le VPS : 1 406 tours, 738 000 tokens/minute, **zéro refus**, et aucune
+dérive (la durée moyenne DESCEND, 1 445 ms à la première minute contre 1 217 ms à la sixième). Une rafale de
+dix secondes ne pouvait pas le dire : plus courte que la fenêtre d'un plafond, elle tient toujours. La mesure
+longue a aussi montré la QUEUE : 113 s pour le tour le plus lent contre 2,4 s de médiane, soit 0,14 % des
+tours au-dessus de 30 s, c'est-à-dire exactement ce que l'échéance de production coupe.
+
+**Reste du point 2** : les B et C de l'audit (échecs d'avance acquittables, capacités imbriquées au lieu de
+`Pick` recopiés, course du plafond « tous les contacts », profil `equite` du banc, découpe de
+`CampaignCreateForm`).
 
 ## LIVRÉ le 2026-09-03 : A3, les deux bornes de sécurité des appels sortants
 
