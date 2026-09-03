@@ -24,6 +24,39 @@ describe('adresses interdites à un appel sortant', () => {
     }
   });
 
+  it('🔴 UN PRÉFIXE DE TEXTE N’EST PAS UNE PLAGE : fe80::/10 va jusqu’à febf', () => {
+    // Le défaut trouvé par le contre-audit du 2026-09-03, et il était à moi. Le code testait
+    // `startsWith('fe80:')`, ce qui décrit ce qu'on a en tête et non ce que la norme définit : le préfixe
+    // fait DIX bits, donc le bloc va de fe80:: à febf::. Trois adresses link-local sur quatre passaient.
+    for (const ip of ['fe80::1', 'fe90::1', 'fea0::1', 'feb0::1', 'febf:ffff::1']) {
+      expect(estAdressePrivee(ip), ip).toBe(true);
+    }
+    // Et la borne compte dans l'autre sens : juste après le bloc, l'adresse est routable.
+    expect(estAdressePrivee('fec0::1')).toBe(false);
+    // Même raisonnement sur fc00::/7.
+    expect(estAdressePrivee('fc00::1')).toBe(true);
+    expect(estAdressePrivee('fdff::1')).toBe(true);
+  });
+
+  it('🔴 une IPv4 mappée s’écrit AUSSI en hexadécimal, et c’est le cas qui faisait mal', () => {
+    // `::ffff:ac12:1` EST `172.18.0.1`, la passerelle du réseau Docker du VPS : exactement l'adresse que
+    // cette garde existe pour bloquer, et elle passait. La forme décimale, elle, était couverte : c'est le
+    // piège d'une règle écrite sur les exemples qu'on pense à écrire.
+    expect(estAdressePrivee('::ffff:a9fe:a9fe'), '169.254.169.254 en hexa').toBe(true);
+    expect(estAdressePrivee('::ffff:ac12:1'), '172.18.0.1 en hexa').toBe(true);
+    expect(estAdressePrivee('::ffff:0a00:1'), '10.0.0.1 en hexa').toBe(true);
+    // Et une IPv4 mappée PUBLIQUE reste publique : la règle ne doit pas devenir « tout ce qui est mappé ».
+    expect(estAdressePrivee('::ffff:5db8:d822'), '93.184.216.34 en hexa').toBe(false);
+  });
+
+  it('les formes compressées et illisibles sont traitées correctement', () => {
+    expect(estAdressePrivee('64:ff9b::a9fe:a9fe'), 'NAT64 vers les métadonnées').toBe(true);
+    expect(estAdressePrivee('2a01:e0a:11af:9ea0::1'), 'une vraie adresse résidentielle').toBe(false);
+    // Une adresse qu'on ne sait pas lire ne se laisse pas joindre : le sens de la garde.
+    expect(estAdressePrivee('pas-une-adresse')).toBe(true);
+    expect(estAdressePrivee('fe80::1::2'), 'deux compressions = illisible').toBe(true);
+  });
+
   it('🔴 la famille IPv6 aussi : en laisser une passer suffit à rendre la garde inutile', () => {
     // Une machine à double pile résout souvent les deux, et la pile réseau choisit. Ne contrôler que l'IPv4
     // revient à ne rien contrôler sur un hôte moderne.

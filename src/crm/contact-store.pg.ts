@@ -777,11 +777,28 @@ export class PgContactStore implements ContactStore {
       );
       return res.rows.map((r) => r.id);
     }
-    const ids = limite === undefined
-      ? await this.idsForFilters(tenantId, target.filters)
-      : await this.idsForFilters(tenantId, target.filters, limite);
-    const exclus = new Set(target.excludeIds ?? []);
-    return ids.filter((id) => !exclus.has(id));
+    /**
+     * 🔴 LES EXCLUSIONS SONT DANS LE `WHERE`, DONC AVANT LE `LIMIT` (contre-audit du 2026-09-03).
+     *
+     * Le code retirait `excludeIds` EN MÉMOIRE, après que SQL avait déjà tranché à `limite`. Une campagne
+     * qui vise plus que le plafond avec des exclusions SOUS-ENVOYAIT donc en silence : sur 30 000 contacts
+     * correspondants, un plafond de 20 000 et 5 000 exclus parmi les 20 001 premiers, la fonction rendait
+     * ~15 001 identifiants, la campagne était acceptée, et les 10 000 contacts éligibles situés APRÈS la
+     * fenêtre n'étaient jamais atteints. Personne n'aurait vu la différence : le nombre affiché est celui
+     * qu'on vient de calculer.
+     *
+     * `buildBulkSelector` pousse les exclusions dans le prédicat SQL, et il existait DÉJÀ dans ce fichier,
+     * utilisé par les actions en masse du mini-CRM. La leçon : quand une opération se fait en deux temps,
+     * un filtre en base puis un filtre en mémoire, **l'ordre décide du résultat**, et le second ne peut
+     * jamais rattraper ce que le premier a coupé.
+     */
+    const sel = buildBulkSelector(tenantId, target);
+    const cap = Math.max(1, Math.min(100_000, Math.round(limite ?? 100_000)));
+    const res = await this.pool.query<{ id: string }>(
+      `select id from contacts where ${sel.where} order by created_at desc limit $${sel.params.length + 1}`,
+      [...sel.params, cap],
+    );
+    return res.rows.map((r) => r.id);
   }
 
   async purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {

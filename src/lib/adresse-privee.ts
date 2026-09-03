@@ -52,14 +52,77 @@ export function estAdressePrivee(ip: string): boolean {
     );
   }
 
-  // IPv6. Les formes compressées se comparent sur leur préfixe, ce qui suffit ici : on ne cherche pas à
-  // valider une adresse, seulement à reconnaître les espaces interdits.
-  if (cible === '::' || cible === '::1') return true;
-  if (cible.startsWith('fe80:')) return true;                       // lien-local
-  if (/^f[cd]/.test(cible)) return true;                            // unique-local (fc00::/7)
-  if (cible.startsWith('ff')) return true;                          // multicast
-  if (cible.startsWith('64:ff9b:')) return true;                    // NAT64 vers de l'IPv4 quelconque
+  // IPv6 : on DÉVELOPPE l'adresse et on compare des NOMBRES, jamais des préfixes de texte.
+  //
+  // 🔴 Les tests de préfixe étaient faux, et le contre-audit du 2026-09-03 l'a démontré. `fe80::/10` ne
+  // couvre pas seulement ce qui commence par « fe80 » : le préfixe fait DIX bits, donc il va de `fe80::` à
+  // `febf::`. `fe90::1`, `fea0::1` et `feb0::1` sont link-local et passaient. Pire, une IPv4 mappée s'écrit
+  // aussi en HEXADÉCIMAL : `::ffff:ac12:1` est exactement `172.18.0.1`, la passerelle du réseau Docker du
+  // VPS, et il passait. Mesuré : cinq cas sur huit ratés, dont l'adresse même que cette garde existe pour
+  // bloquer.
+  //
+  // La leçon, et elle vaut pour toute frontière de sécurité : **une plage d'adresses se compare en
+  // arithmétique, jamais en préfixe de chaîne.** Un préfixe de texte décrit ce qu'on a en tête, pas ce que
+  // la norme définit, et l'écart ne se voit sur aucun exemple qu'on pense à écrire.
+  const groupes = developperIPv6(cible);
+  if (groupes === null) return true; // illisible = on ne s'y connecte pas
+
+  // IPv4 mappée (::ffff:0:0/96) ou compatible (::/96, dépréciée) : les 32 derniers bits SONT une IPv4, quelle
+  // que soit la façon dont on les a écrits. On la reconstitue et on applique les règles v4.
+  const prefixeNul = groupes.slice(0, 5).every((g) => g === 0);
+  if (prefixeNul && (groupes[5] === 0xffff || groupes[5] === 0)) {
+    const v4 = `${groupes[6]! >> 8}.${groupes[6]! & 0xff}.${groupes[7]! >> 8}.${groupes[7]! & 0xff}`;
+    // `::` et `::1` retombent naturellement sur 0.0.0.0 et 0.0.0.1, tous deux dans l'espace `0.0.0.0/8`.
+    return estAdressePrivee(v4);
+  }
+
+  const t = groupes[0]!;
+  if (t >= 0xfe80 && t <= 0xfebf) return true; // lien-local, fe80::/10
+  if (t >= 0xfc00 && t <= 0xfdff) return true; // unique-local, fc00::/7
+  if (t >= 0xff00) return true;                // multicast, ff00::/8
+  if (t === 0x0064 && groupes[1] === 0xff9b) return true; // NAT64, 64:ff9b::/96
+  if (t === 0x2001 && (groupes[1]! & 0xfffe) === 0x0000) return true; // Teredo/documentation 2001::/23
+  if (t === 0x2001 && groupes[1] === 0x0db8) return true; // documentation, 2001:db8::/32
   return false;
+}
+
+/**
+ * Développe une adresse IPv6 en ses HUIT groupes de 16 bits. `null` si elle n'est pas lisible.
+ *
+ * Écrit à la main plutôt qu'importé : le dépôt n'ajoute pas une dépendance pour trente lignes, et cette
+ * fonction n'a qu'un seul appelant. Elle gère les deux formes que la norme autorise et qu'on rencontre : la
+ * compression `::` (au plus une fois) et la queue en notation décimale pointée (`::ffff:1.2.3.4`).
+ */
+function developperIPv6(brut: string): number[] | null {
+  let s = brut;
+  // Queue en décimal pointé : on la convertit en deux groupes hexadécimaux avant tout le reste.
+  const queue = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (queue) {
+    const o = [queue[2], queue[3], queue[4], queue[5]].map(Number);
+    if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    s = `${queue[1]}${((o[0]! << 8) | o[1]!).toString(16)}:${((o[2]! << 8) | o[3]!).toString(16)}`;
+  }
+
+  const morceaux = s.split('::');
+  if (morceaux.length > 2) return null; // `::` ne peut apparaître qu'une fois
+  const lire = (bout: string): number[] | null => {
+    if (bout === '') return [];
+    const gs = bout.split(':');
+    const out: number[] = [];
+    for (const g of gs) {
+      if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+  const gauche = lire(morceaux[0]!);
+  const droite = morceaux.length === 2 ? lire(morceaux[1]!) : [];
+  if (gauche === null || droite === null) return null;
+
+  if (morceaux.length === 1) return gauche.length === 8 ? gauche : null;
+  const manquants = 8 - gauche.length - droite.length;
+  if (manquants < 1) return null; // `::` doit remplacer AU MOINS un groupe
+  return [...gauche, ...Array<number>(manquants).fill(0), ...droite];
 }
 
 /** Le résolveur, injectable pour tester sans DNS. Rend les adresses associées au nom. */
