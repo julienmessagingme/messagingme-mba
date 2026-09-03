@@ -83,8 +83,8 @@ requête la fait sortir du contrat, et rien ne le signale, ni le compilateur, ni
 démarrage. Le seul symptôme est un plan d'exécution qui change. 🔴 Elle est HORS TRANSACTION
 (`CREATE INDEX CONCURRENTLY`), donc sans filet.
 
-**Dernière appliquée : 0112** (la marque de tour d'agent en vol), passée le 2026-09-03, après 0108 à 0111.
-**Dernière appliquée : 0113** (l'index du balayage, cf. ci-dessus). **Aucune n'est en attente.**
+**Dernière appliquée : 0113** (l'index du balayage, cf. juste au-dessus), le 2026-09-03 au soir, après 0108
+à 0112. **Aucune n'est en attente. Prochaine libre = 0114.**
 🔴 **0112 est BLOQUANTE** : `prendreLeTour` écrit `tour_commence_le` à chaque tour, et c'est le chemin chaud du
 bloc agent. Déployer sans migrer ferait échouer TOUS les tours. Appliquée AVANT, colonne et index vérifiés en
 base, et le SQL du balayage joué à blanc contre la vraie table (0 ligne). ⚠️ Vérifié EN BASE le 2026-09-03
@@ -94,9 +94,11 @@ base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS 
 requête doit être qualifiée `public.`, sinon elle lit la table d'un autre outil et rend des colonnes inconnues.
 ⚠️ 0110 posait `create extension vector`, la première du dépôt à ajouter une EXTENSION, donc le seul point qui
 pouvait échouer pour une raison de droits : il est passé sans incident.
-**Prochaine libre = 0114** (0113 est écrite, non appliquée. La ligne a dit 0112, qui était le fichier DÉJÀ appliqué : écrire une migration
-sous ce numéro l'aurait écrasée. Corrigé le 2026-09-03). En pratique on applique aussi via `npm run migrate`
-en local (même Supabase prod).
+⚠️ **Ce compteur a dérivé DEUX fois le 2026-09-03**, et dans les deux sens : il a annoncé 0107 quand la base
+était à 0111, puis « prochaine libre = 0112 » alors que 0112 était le fichier déjà appliqué, ce qui aurait fait
+écrire par-dessus. Il porte maintenant UNE seule ligne « dernière appliquée » et UN seul « prochaine libre » :
+deux lignes qui disent la même chose finissent toujours par se contredire. En pratique on applique aussi via
+`npm run migrate` en local (même Supabase prod).
 
 ⚠️ **Le correctif de la transition terminale du 2026-09-03 n'a demandé AUCUNE migration**, et ça valait d'être
 vérifié plutôt que supposé : il ne change que le MOMENT où `tour_commence_le` est effacée, pas le schéma. Une
