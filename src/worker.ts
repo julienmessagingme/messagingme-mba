@@ -511,9 +511,6 @@ async function main(): Promise<void> {
       senderFor,
       recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
-      arretDemande: () => arretDemande,
-      // Le run rend la main au bout de ce délai et se réenfile : la file reste équitable entre clients.
-      dureeMaxMs: config.CAMPAIGN_RUN_MAX_MS,
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
       // Frein par défaut des campagnes sans ratePerMinute (0 = opt-out). Injecté ICI seulement : les tests de
@@ -539,6 +536,23 @@ async function main(): Promise<void> {
           await enqueueCampaignRun(queue, { campaignId: id, tenantId: sizing.tenantId, pendingCount: sizing.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) });
         },
       },
+      /**
+       * 🔴 LES CAPACITÉS DU MOTEUR, EN UN SEUL BLOC (constat C1 de l'audit externe du 2026-09-02).
+       *
+       * Elles étaient à plat, et `run-job` les recopiait une par une dans les options du moteur : deux
+       * listes à tenir alignées à la main, dont l'oubli ne produisait aucune erreur. C'est ce qui a fait
+       * échouer toutes les campagnes à lien tracé le 2026-09-02 (131008), `boutonsTraces` étant câblée ici
+       * et absente du contrat. Elles voyagent maintenant ensemble, transmises d'un seul geste.
+       *
+       * ⚠️ Ce que ça change POUR CE FICHIER : `moteur` est un type FERMÉ, donc une capacité mal orthographiée
+       * ne compile plus, même à l'intérieur du spread conditionnel `...(dryRun ? {} : {...})` ci-dessous.
+       * C'était exactement le trou : un spread échappe au contrôle des propriétés en trop, mais seulement
+       * quand sa CIBLE est un type qui l'accepte.
+       */
+      moteur: {
+      arretDemande: () => arretDemande,
+      // Le run rend la main au bout de ce délai et se réenfile : la file reste équitable entre clients.
+      dureeMaxMs: config.CAMPAIGN_RUN_MAX_MS,
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
       // firstTemplateParams = variables du 1er template déjà résolues par contact (paramMapping de la campagne).
       // Renvoie false si le run n'a pas démarré (scénario supprimé entre-temps, fil détenu par un humain/MBA,
@@ -590,7 +604,9 @@ async function main(): Promise<void> {
         },
       }),
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
-      recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
+      recordOutbound: (tenant: string, waId: string, msg: Parameters<typeof inboxStore.recordOutboundByWaId>[2]) =>
+        inboxStore.recordOutboundByWaId(tenant, waId, msg),
+      },
     });
   }, { concurrency: config.CAMPAIGN_RUN_CONCURRENCY, groupConcurrency: 1 });
 

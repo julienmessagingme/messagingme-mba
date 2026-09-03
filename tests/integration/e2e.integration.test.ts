@@ -130,12 +130,12 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
 
       // Campagne 1 -> envoyé (sent_at récent en base).
       const c1 = await createCampaignWithRecipients({ ...base, name: 'Freq-1' }, repo);
-      const r1 = await campaignRunJob({ campaignId: c1.campaignId }, { ...runDeps, thresholds: window });
+      const r1 = await campaignRunJob({ campaignId: c1.campaignId }, { ...runDeps, moteur: { thresholds: window } });
       expect(r1.sent).toBe(1);
 
       // Campagne 2, même numéro, fenêtre 24h -> skippé par PgFrequencyStore.lastSentAt (JOIN réel).
       const c2 = await createCampaignWithRecipients({ ...base, name: 'Freq-2' }, repo);
-      const r2 = await campaignRunJob({ campaignId: c2.campaignId }, { ...runDeps, thresholds: window });
+      const r2 = await campaignRunJob({ campaignId: c2.campaignId }, { ...runDeps, moteur: { thresholds: window } });
       expect(r2).toMatchObject({ sent: 0, skipped: 1 });
     } finally {
       await pool.query('delete from tenants where id = $1', [t2]);

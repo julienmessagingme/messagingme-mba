@@ -17,18 +17,38 @@ import type { Campaign, GuardrailThresholds, RunReport } from './types';
 import type { CampaignSender } from './sender';
 
 /**
- * ⚠️ CETTE LISTE EST UN PASSE-PLAT, ET C'EST SON DANGER. Le worker construit ses dépendances puis les passe
- * ici ; tout ce qui n'est pas nommé dans ce `Pick` est ACCEPTÉ par le compilateur (les propriétés arrivent
- * dans un spread, qui échappe au contrôle des propriétés en trop) puis JETÉ à la construction d'`optionsMoteur`
- * plus bas. C'est exactement ce qui est arrivé le 2026-09-02 à `boutonsTraces` / `jetonsPourContacts` : câblés
- * dans le worker, absents d'ici, donc jamais vus par le moteur, et toutes les campagnes portant un template à
- * lien tracé échouaient en 131008. Ajouter une dépendance au moteur = l'ajouter ICI **et** dans `optionsMoteur`.
+ * 🔴 LES CAPACITÉS DU MOTEUR SONT IMBRIQUÉES, PLUS RECOPIÉES (constat C1 de l'audit externe du 2026-09-02).
+ *
+ * Ce contrat portait un `Pick<EngineDeps, ...>` de huit noms, plus trois membres déclarés à côté, et les onze
+ * étaient RECOPIÉS un par un dans `optionsMoteur` plus bas. Deux listes à tenir alignées à la main, dont
+ * l'oubli ne produisait AUCUNE erreur de compilation : ajouter une dépendance au moteur et oublier de la
+ * recopier donnait un moteur privé de cette capacité, en silence.
+ *
+ * Ce n'était pas théorique, c'est arrivé en production le 2026-09-02 : `boutonsTraces` et `jetonsPourContacts`
+ * étaient câblés dans le worker, absents de ce contrat, donc jamais vus par le moteur, et TOUTES les campagnes
+ * portant un template à lien tracé échouaient en 131008.
+ *
+ * Désormais les capacités voyagent dans UN objet, `moteur`, transmis d'un seul geste (`...deps.moteur`). Il
+ * n'y a plus de liste à tenir : une capacité ajoutée à `EngineDeps` traverse toute seule, et une capacité
+ * mal orthographiée côté appelant est refusée par le compilateur, `moteur` étant un type fermé.
+ *
+ * ⚠️ Ce qui reste PLAT, et pourquoi. Les quatre stores (`recipients`, `campaigns`, `frequency`, `quality`)
+ * sont REQUIS : les oublier est déjà une erreur de compilation, les imbriquer n'ajouterait rien. Et
+ * `sender`, `channelSender`, `rateLimiter`, `renouvelerVerrou` ne viennent pas de l'appelant du tout : c'est
+ * ce job qui les CALCULE. Les exclure du type est ce qui empêche un appelant de croire qu'il peut les poser.
  */
-export interface RunJobDeps extends Pick<
+export type CapacitesMoteur = Omit<
   EngineDeps,
-  'startWorkflow' | 'startWorkflowFromNode' | 'getTemplateCarousel' | 'getTemplateHeaderMedia' | 'recordOutbound' | 'thresholds'
-  | 'boutonsTraces' | 'jetonsPourContacts'
-> {
+  'sender' | 'channelSender' | 'rateLimiter' | 'renouvelerVerrou'
+  | 'recipients' | 'campaigns' | 'frequency' | 'quality'
+>;
+
+export interface RunJobDeps {
+  /**
+   * Les capacités OPTIONNELLES du moteur, en bloc. Absent = aucune capacité, ce qui est exactement le
+   * comportement des câblages de test qui n'en fournissent pas.
+   */
+  moteur?: CapacitesMoteur;
   getCampaign(id: string): Promise<Campaign | null>;
   /** Construit le sender pour la campagne (MetaClient sur le token du tenant en prod, fake en test). Async : la
    *  résolution du token par tenant (B1) lit la base + déchiffre. */
@@ -177,6 +197,14 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   }
 
   const optionsMoteur: EngineDeps = {
+    // 🔴 UN SEUL SPREAD, et c'est tout l'intérêt : il n'y a plus de liste de noms à tenir alignée avec le
+    // contrat. Une capacité ajoutée à `EngineDeps` arrive ici sans qu'on y pense, et une capacité oubliée
+    // par l'appelant reste `undefined`, ce qui est le défaut documenté de chacune. C'est ce qui a manqué le
+    // 2026-09-02, quand deux capacités câblées dans le worker n'ont jamais atteint le moteur.
+    ...deps.moteur,
+    // Ce qui suit vient de CE job, pas de l'appelant : il les calcule juste au-dessus. Écrits APRÈS le
+    // spread, donc ils gagnent, ce qui est la bonne priorité (un appelant ne peut pas les usurper, le type
+    // les lui interdit déjà).
     sender,
     ...(channelSender ? { channelSender } : {}),
     recipients: deps.recipients,
@@ -184,19 +212,6 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     frequency: deps.frequency,
     quality: deps.quality,
     ...(rateLimiter ? { rateLimiter } : {}),
-    ...(deps.startWorkflow ? { startWorkflow: deps.startWorkflow } : {}),
-    ...(deps.startWorkflowFromNode ? { startWorkflowFromNode: deps.startWorkflowFromNode } : {}),
-    ...(deps.getTemplateCarousel ? { getTemplateCarousel: deps.getTemplateCarousel } : {}),
-    ...(deps.getTemplateHeaderMedia ? { getTemplateHeaderMedia: deps.getTemplateHeaderMedia } : {}),
-    // Attribution des clics : sans ces deux-là, aucun composant `sub_type: url` n'est produit et Meta refuse
-    // tout template dont un bouton porte `{{1}}` (131008). Elles étaient câblées dans le worker et perdues ici.
-    ...(deps.boutonsTraces ? { boutonsTraces: deps.boutonsTraces } : {}),
-    ...(deps.jetonsPourContacts ? { jetonsPourContacts: deps.jetonsPourContacts } : {}),
-    ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
-    ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
-    ...(deps.arretDemande ? { arretDemande: deps.arretDemande } : {}),
-    ...(deps.dureeMaxMs !== undefined ? { dureeMaxMs: deps.dureeMaxMs } : {}),
-    ...(deps.now ? { now: deps.now } : {}),
   };
 
   const serialisation = deps.serialisation;

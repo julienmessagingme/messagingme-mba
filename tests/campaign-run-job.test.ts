@@ -137,7 +137,9 @@ describe('campaignRunJob', () => {
       deps({
         getCampaign: async () => wf,
         recipients,
-        startWorkflow: async (_t, _w, _waId, _cid, params) => { captured.push(params); },
+        // Les capacités du moteur voyagent en BLOC depuis le constat C1 : le job les transmet d'un seul
+        // spread, il ne les recopie plus une par une.
+        moteur: { startWorkflow: async (_t, _w, _waId, _cid, params) => { captured.push(params); } },
       }),
     );
     expect(report.sent).toBe(1);
@@ -157,8 +159,10 @@ describe('campaignRunJob', () => {
       deps({
         getCampaign: async () => node,
         recipients,
-        startWorkflow: async () => { throw new Error('ne doit pas être appelé sur une cible node'); },
-        startWorkflowFromNode: async (_t, wf, nodeId, waId, cid) => { captured.push(`${wf}:${nodeId}:${waId}:${cid}`); },
+        moteur: {
+          startWorkflow: async () => { throw new Error('ne doit pas être appelé sur une cible node'); },
+          startWorkflowFromNode: async (_t, wf, nodeId, waId, cid) => { captured.push(`${wf}:${nodeId}:${waId}:${cid}`); },
+        },
       }),
     );
     expect(report).toMatchObject({ sent: 1, failed: 0 });
@@ -594,8 +598,11 @@ describe('campaignRunJob : un lot qui rend la main se réenfile', () => {
           { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
           { id: 'r2', contactId: 'y', toE164: '+33622', resolvedParams: [], status: 'pending' },
         ]),
-        dureeMaxMs: 1,
-        now: (() => { let t = 1_000; return () => { t += 10_000; return t; }; })(),
+        // Idem : la durée maximale et l'horloge sont des capacités du MOTEUR, elles voyagent avec les autres.
+        moteur: {
+          dureeMaxMs: 1,
+          now: (() => { let t = 1_000; return () => { t += 10_000; return t; }; })(),
+        },
       }, relances),
     );
     expect(rapport.reste).toBe(true);

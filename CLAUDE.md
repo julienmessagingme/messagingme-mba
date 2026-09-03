@@ -235,6 +235,20 @@ qu'avant le premier envoi tracé.
   Supabase), pas contre le Meta live tant qu'on n'a pas de numéro branché. La chaîne tourne
   déjà end-to-end en **DRY_RUN** sur le déploiement ; l'envoi Meta réel se valide en live plus tard.
 - **Pas de tirets longs** dans la doc (« : » / « : » interdits).
+- 🔴 **Un `Pick<T, ...>` recopié pour être RETRANSMIS est une liste à tenir alignée à la main, et elle dérive.**
+  Le contrat nomme les membres, le corps les recopie un par un : deux listes, dont le désalignement ne produit
+  AUCUNE erreur de compilation. Vécu en production le 2026-09-02 : `boutonsTraces` et `jetonsPourContacts`
+  étaient câblées dans le worker, absentes du contrat de `run-job`, donc jamais vues par le moteur, et toutes
+  les campagnes à lien tracé échouaient en 131008. Depuis le lot C1 (2026-09-03), les capacités voyagent dans
+  un objet IMBRIQUÉ transmis d'un seul spread (`moteur` dans `src/campaign/run-job.ts`) : il n'y a plus de
+  liste. ⚠️ **Un `Pick` reste bon** quand ses membres sont CONSOMMÉS sur place (l'oubli est alors une erreur au
+  point d'usage) : inventaire fait, 13 des 14 `Pick` du dépôt sont dans ce cas. Le critère n'est pas le `Pick`,
+  c'est « est-ce recopié pour être retransmis ? ».
+  ⚠️ **Et le compilateur ne voit qu'une moitié du problème** : une propriété en trop écrite DIRECTEMENT dans un
+  littéral est refusée (TS2353), mais la même dans un SPREAD passe sans un mot. Un câblage qui construit ses
+  dépendances par spread n'a donc aucune garde. Même famille : une flèche à deux paramètres est assignable à un
+  contrat qui en déclare trois, et le troisième est avalé en silence (vu le 2026-09-03 sur
+  `contactIdsForTarget`, gardé depuis par `tests/campagne-cablage.test.ts`).
 - **Avant d'écrire un helper, regarder s'il existe déjà.** L'audit du 2026-08-18 a supprimé une centaine de
   copies de fonctions que le repo possédait déjà (dont `scopeTenant`, le contrôle d'accès tenant, présent dans
   22 fichiers de routes). Les points de passage obligés sont listés dans `documentation.md` (« Modules

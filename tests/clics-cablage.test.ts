@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { campaignRunJob } from '../src/campaign/run-job';
 import type { RunJobDeps } from '../src/campaign/run-job';
 import type { MessageSender, RecipientStore, CampaignStore, FrequencyStore, QualityProvider } from '../src/campaign/engine';
@@ -83,8 +84,12 @@ describe('attribution des clics : du worker jusqu’à l’appel Meta', () => {
     // par bouton tracé. Sans le passe-plat de `run-job`, cette liste est vide et Meta répond 131008.
     const sender = new SenderQuiCapture();
     await lancer({
-      boutonsTraces: async () => [0, 1],
-      jetonsPourContacts: async () => new Map([['ct-1', 'jetonducontact']]),
+      // En BLOC depuis le constat C1 : c'est précisément l'oubli de ces deux capacités dans la recopie
+      // manuelle qui a fait échouer toutes les campagnes à lien tracé le 2026-09-02.
+      moteur: {
+        boutonsTraces: async () => [0, 1],
+        jetonsPourContacts: async () => new Map([['ct-1', 'jetonducontact']]),
+      },
     }, sender);
 
     expect(boutonsUrl(sender.envois[0])).toEqual([
@@ -98,8 +103,10 @@ describe('attribution des clics : du worker jusqu’à l’appel Meta', () => {
     // ça fait refuser le message entier. On préfère un clic non attribué à un message qui ne part pas.
     const sender = new SenderQuiCapture();
     await lancer({
-      boutonsTraces: async () => [0],
-      jetonsPourContacts: async () => new Map(),
+      moteur: {
+        boutonsTraces: async () => [0],
+        jetonsPourContacts: async () => new Map(),
+      },
     }, sender);
 
     const boutons = boutonsUrl(sender.envois[0]);
@@ -112,10 +119,50 @@ describe('attribution des clics : du worker jusqu’à l’appel Meta', () => {
     // tous échouer d'un coup.
     const sender = new SenderQuiCapture();
     await lancer({
-      boutonsTraces: async () => [],
-      jetonsPourContacts: async () => new Map([['ct-1', 'jetonducontact']]),
+      moteur: {
+        boutonsTraces: async () => [],
+        jetonsPourContacts: async () => new Map([['ct-1', 'jetonducontact']]),
+      },
     }, sender);
 
     expect(boutonsUrl(sender.envois[0])).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LA CAUSE, PAS LE SYMPTÔME (constat C1 de l'audit externe du 2026-09-02).
+ *
+ * Les tests ci-dessus prouvent que DEUX capacités précises traversent. Ils ne prouvent rien de la TROISIÈME
+ * qu'on ajoutera un jour : c'est exactement ce qui a fait la panne, un contrat et une recopie tenus alignés à
+ * la main, dont le désalignement ne produisait aucune erreur de compilation.
+ *
+ * Ce test-ci garde la FORME qui rend l'oubli impossible : un seul spread, aucune énumération. Il est lu dans
+ * la source parce qu'aucun type ne peut exprimer « ne recopie pas les membres un par un ».
+ */
+describe('run-job : les capacités du moteur voyagent en bloc, elles ne se recopient pas', () => {
+  const source = readFileSync(new URL('../src/campaign/run-job.ts', import.meta.url), 'utf8');
+  const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('🔴 les options du moteur reçoivent `...deps.moteur`, d’un seul geste', () => {
+    expect(sansCommentaires, 'sans ce spread, chaque capacité redevient une ligne à ne pas oublier')
+      .toMatch(/^\s{4}\.\.\.deps\.moteur,$/m);
+  });
+
+  it('🔴 AUCUNE capacité n’est recopiée nommément : c’est la recopie qui était le défaut', () => {
+    // La liste des onze qui l'étaient. En rajouter une ici reviendrait à rouvrir la porte, et le jour où
+    // quelqu'un le fera, ce test le lui dira.
+    const recopiees = [
+      'startWorkflow', 'startWorkflowFromNode', 'getTemplateCarousel', 'getTemplateHeaderMedia',
+      'recordOutbound', 'thresholds', 'boutonsTraces', 'jetonsPourContacts',
+      'arretDemande', 'dureeMaxMs', 'now',
+    ];
+    const fautives = recopiees.filter((nom) => sansCommentaires.includes(`deps.${nom}`));
+    expect(fautives, `ces capacités sont de nouveau recopiées à la main : ${fautives.join(', ')}`).toEqual([]);
+  });
+
+  it('le contrat ne les nomme plus non plus : c’était la SECONDE liste à tenir alignée', () => {
+    expect(sansCommentaires, 'le contrat doit exposer un bloc de capacités, pas une énumération')
+      .toMatch(/moteur\?: CapacitesMoteur;/);
+    expect(sansCommentaires, 'plus aucun Pick d’EngineDeps dans ce contrat').not.toMatch(/Pick<\s*EngineDeps/);
   });
 });

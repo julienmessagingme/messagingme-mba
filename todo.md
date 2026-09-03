@@ -75,11 +75,13 @@ endroits) :
   ⚠️ Et une fausse piste à ne pas suivre : passer `alreadySeen` à l'avance pour dédupliquer CASSERAIT la
   reprise, `insertEvent` marquant l'événement dès la première tentative, donc un rejeu pg-boss trouverait tous
   ses messages « déjà vus » et n'avancerait plus rien.
-- **C1** capacités imbriquées : l'audit généralisait à tort (« recopiés de fichier en fichier »). Inventaire
-  fait : **14 `Pick<` dans `src/`, 13 sont des contrats étroits légitimes, UN SEUL est un passe-plat**,
-  `src/campaign/run-job.ts`. Le vrai défaut y est réel : ajouter une dépendance au type sans la recopier dans
-  `optionsMoteur` ne produit AUCUNE erreur. `thresholds`, un de ses huit membres, n'est d'ailleurs câblé nulle
-  part.
+- ~~**C1** capacités imbriquées~~ : **livré le 2026-09-03**, et l'audit généralisait à tort (« recopiés de
+  fichier en fichier »). Inventaire fait : **14 `Pick<` dans `src/`, 13 sont des contrats étroits légitimes,
+  UN SEUL était un passe-plat**, `src/campaign/run-job.ts`, et c'est celui qui avait déjà cassé la production.
+  Ses onze capacités voyagent maintenant dans un objet `moteur` transmis d'un seul spread : il n'y a plus de
+  liste à tenir alignée. Gardé par trois tests de forme (`tests/clics-cablage.test.ts`), vérifiés dans les deux
+  sens. Les 13 autres `Pick` n'ont pas été touchés : leurs membres sont consommés sur place, donc un oubli y
+  est déjà une erreur de compilation.
 - ~~**C4** découpage des gros fichiers~~ : **refusé, et la contre-vérification a tranché**. Les mesures
   (`worker.ts` 877 lignes de code, `executor.ts` 680, `CampaignCreateForm` 1 319) ne justifient pas un
   découpage, et le dépôt l'avait déjà refusé nommément le 2026-08-31 avec un meilleur argument. Le seul défaut
