@@ -144,8 +144,17 @@ function parseBody(body: unknown, actuel: WebhookRow | null, payload: unknown): 
 }
 
 /** URL publique complète à coller chez le tiers. */
+/**
+ * L'adresse qu'on donne AU TIERS pour qu'il nous appelle.
+ *
+ * ⚠️ Le préfixe `/api/backend` n'est plus écrit ici, et c'est un correctif, pas un déplacement : il
+ * appartient au PROXY (le rewrite Next), pas à cette route. Le jour où l'API répond sous son propre nom, ce
+ * préfixe n'existe plus, et le laisser en dur aurait produit une adresse morte donnée à un tiers. `baseUrl`
+ * porte donc désormais la base COMPLÈTE, préfixe compris quand il y en a un, résolue une seule fois par
+ * `adressesPubliques` (`src/lib/adresses-publiques.ts`).
+ */
 function urlPublique(baseUrl: string, code: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/api/backend/w/${code}`;
+  return `${baseUrl.replace(/\/+$/, '')}/w/${code}`;
 }
 
 export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminRouteDeps, guard?: Guard): void {

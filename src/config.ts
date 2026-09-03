@@ -283,8 +283,27 @@ export const schema = z.object({
   SUPPORT_TO: z.string().default(''),
   /** Client OAuth Google (public) pour « se connecter avec Google ». Vide -> bouton Google masqué (pas de crash). */
   GOOGLE_CLIENT_ID: z.string().default(''),
-  /** URL publique du front (base des liens dans les emails invitation/reset), ex. https://mba.messagingme.app. */
+  /**
+   * URL publique du FRONT. Base des liens envoyés par e-mail (invitation `/invite/<jeton>`, réinitialisation
+   * `/reset/<jeton>`), qui sont des pages de la console, pas des routes d'API.
+   */
   APP_URL: z.string().default('https://mba.messagingme.app'),
+  /**
+   * URL publique de l'API, quand elle est servie sous SON PROPRE nom (bascule Vercel, cf.
+   * `docs/PLAN-BASCULE-VERCEL-2026-09-03.md`).
+   *
+   * 🔴 POURQUOI CETTE VARIABLE EXISTE. `APP_URL` faisait DEUX métiers à la fois : la base des liens d'e-mail
+   * (des pages du FRONT) et la base des adresses que le produit DISTRIBUE et qui sont servies par l'API, à
+   * savoir les liens tracés `/r/<code>`, les visuels RCS `/m/<fichier>` et l'URL d'un webhook entrant
+   * `/w/<code>`. Tant que le front et l'API vivaient sur le même hôte, une seule variable suffisait. Dès
+   * qu'ils se séparent, en garder une seule casse forcément un des deux côtés : soit les e-mails envoient
+   * les gens vers l'API, soit les liens tracés font un détour par le front.
+   *
+   * ⚠️ VIDE PAR DÉFAUT, ET C'EST LE POINT : tant qu'elle n'est pas posée, tout retombe sur `APP_URL` et le
+   * comportement est celui d'avant, au caractère près. Une variable dont l'oubli casse la production serait
+   * une mauvaise variable, surtout sur des adresses qui partent dans des messages qu'on ne peut plus corriger.
+   */
+  PUBLIC_API_URL: z.string().default(''),
   /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
   INVITE_TOKEN_TTL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
   /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */

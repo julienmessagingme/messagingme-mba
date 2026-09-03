@@ -1,3 +1,4 @@
+import { adressesPubliques } from '../src/lib/adresses-publiques';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -52,7 +53,10 @@ function app(over: Partial<WebhooksAdminRouteDeps> = {}) {
     clearSecret: async (_t, id) => { if (id !== 'wh1') return false; cap.secretPose = false; return true; },
     forgetPayload: async (_t, id) => id === 'wh1',
     workflowBelongsToTenant: async (wfId) => wfId === 'wf-du-tenant',
-    baseUrl: 'https://mba.messagingme.app',
+    // La base COMPLÈTE, résolue par le même module que la production : le préfixe `/api/backend` appartient
+    // au proxy Next, pas à cette route. Écrire la chaîne en dur ici ferait un test qui continue de passer le
+    // jour où la production, elle, change de forme.
+    baseUrl: adressesPubliques('https://mba.messagingme.app', '').avecPrefixe,
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, webhooksAdmin: deps }), cap };

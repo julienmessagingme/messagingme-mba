@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { buildServer } from './server';
 import { config } from './config';
+import { adressesPubliques } from './lib/adresses-publiques';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
@@ -102,6 +103,13 @@ import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
 async function main(): Promise<void> {
+  /**
+   * Les deux bases d'adresses publiques, résolues UNE fois. `PUBLIC_API_URL` vide (le cas d'aujourd'hui) rend
+   * exactement ce que `APP_URL` rendait avant : ce câblage est donc sans effet tant qu'on ne pose pas la
+   * variable. Détail de la règle et de son cas particulier dans `src/lib/adresses-publiques.ts`.
+   */
+  const adressesApi = adressesPubliques(config.APP_URL, config.PUBLIC_API_URL);
+
   // `supervise: false` : l'API ne fait qu'EMPILER des jobs, elle n'en dépile aucun. Superviser (récupération des
   // jobs expirés, monitoring, flow) est le travail du worker. Laisser l'API superviser doublait la maintenance
   // sur la base pour zéro bénéfice : mesuré le 2026-08-17, c'était la moitié des ~55 000 requêtes/jour de
@@ -371,7 +379,7 @@ async function main(): Promise<void> {
       forgetPayload: (tenant, id) => webhookStore.forgetPayload(tenant, id),
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
       campagneVivante: (tenant, id) => repo.webhookFeedsLiveCampaign(tenant, id),
-      baseUrl: config.APP_URL,
+      baseUrl: adressesApi.avecPrefixe,
     },
     templates: {
       templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
@@ -381,15 +389,16 @@ async function main(): Promise<void> {
       saveParamHints: (tenant, name, language, hints) => templateHintStore.save(tenant, name, language, hints),
       getParamHints: (tenant, name, language) => templateHintStore.get(tenant, name, language),
       removeParamHints: (tenant, name) => templateHintStore.removeByName(tenant, name),
-      // Traçage des liens : l'adresse publique est celle de la console (APP_URL), servie par le rewrite
-      // `/r/:code` du front vers cette API.
+      // Traçage des liens : l'adresse publique est celle qui part DANS LES MESSAGES. Elle vient de
+      // `adressesPubliques` et non plus d'`APP_URL` en direct, parce que le front et l'API se séparent :
+      // cette adresse-là doit suivre l'API, pas la console.
       tracking: {
         allocate: (tenant, cible, destination, avecJeton) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination, avecJeton),
         confirm: (tenant, codes) => trackedLinkStore.confirm(tenant, codes),
         // 🔴 Le lien SOUMIS porte desormais son suffixe variable : c est lui qui fera voyager le jeton du
         // destinataire, donc qui permettra de savoir QUI a clique. Les templates deja approuves gardent
         // l ancienne forme, leur URL etant figee chez Meta.
-        lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(config.APP_URL, code) : lienDe(config.APP_URL, code)),
+        lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(adressesApi.racine, code) : lienDe(adressesApi.racine, code)),
         // `adresse de redirection -> destination d'origine` : c'est ce qui permet de remontrer à
         // l'utilisateur le lien qu'il a saisi, partout où la console liste des templates.
         // ⚠️ Les DEUX formes sont dans la map, et il le faut : les templates approuves AVANT le 2026-09-02
@@ -398,8 +407,8 @@ async function main(): Promise<void> {
         // templates, dans les quatre ecrans qui les listent.
         destinations: async (tenant, noms) => new Map(
           (await trackedLinkStore.listByTemplates(tenant, noms)).flatMap((l) => [
-            [lienDe(config.APP_URL, l.code), l.destination] as [string, string],
-            [lienTraceAvecJeton(config.APP_URL, l.code), l.destination] as [string, string],
+            [lienDe(adressesApi.racine, l.code), l.destination] as [string, string],
+            [lienTraceAvecJeton(adressesApi.racine, l.code), l.destination] as [string, string],
           ]),
         ),
       },
@@ -1185,7 +1194,7 @@ async function main(): Promise<void> {
       create: async (tenant, input) => {
         const code = newMediaCode();
         const media = await rcsMediaStore.create(tenant, { ...input, code });
-        return { media, url: urlImageRcs(config.APP_URL, code, input.mime) };
+        return { media, url: urlImageRcs(adressesApi.racine, code, input.mime) };
       },
       remove: (tenant, id) => rcsMediaStore.remove(tenant, id),
       getByCode: (code) => rcsMediaStore.getByCode(code),
