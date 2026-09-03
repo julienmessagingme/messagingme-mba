@@ -6,6 +6,8 @@ import { construireCible, risqueSelonMethode } from '../agent/http-cible';
 import { assemblerAppel, cheminsDeLaReponse, estEnTeteReserve, variablesUtilisees, EN_TETES_RESERVES, type ValeurVariable } from '../agent/requete-http';
 import { CHAMPS_CONTACT_AUTORISES, CLES_SYSTEME } from '../agent/variables';
 import { scopeTenant, estUuid } from './scope';
+import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
+import { lireCorpsBorne } from '../lib/corps-borne';
 
 /**
  * Les REQUÊTES d'un connecteur : décrire un appel, l'éprouver, puis l'ouvrir aux agents (migration 0105).
@@ -36,6 +38,8 @@ export interface AgentRequetesRouteDeps {
   /** Les clés des champs personnalisés DÉCLARÉS par l'espace : une variable `champ` doit en désigner une. */
   clesDeChamps(tenantId: string): Promise<string[]>;
   fetchImpl?: typeof fetch;
+  /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
+  verifierResolution?: (url: string) => Promise<VerdictResolution>;
 }
 
 const LABEL = z.string().trim().min(1).max(80);
@@ -159,6 +163,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   const opts = guard ? { preHandler: guard } : {};
   const base = '/tenants/:tenantId/agent-requetes';
   const appeler = deps.fetchImpl ?? fetch;
+  const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
   /** Ce que la console propose : les origines de variable, pour que l'écran ne recopie pas une liste serveur. */
   const CATALOGUE = {
@@ -271,6 +276,15 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     // Cloudflare remplace le corps et il ne sait même pas ce qui a échoué (cf. CLAUDE.md).
     if (!appel.ok) return reply.code(200).send({ ok: false, erreur: appel.raison });
 
+    // 🔴 OÙ CE NOM MÈNE-T-IL VRAIMENT ? Ce bouton appelle une URL que le client vient de saisir, depuis notre
+    // réseau, exactement comme le connecteur en conversation. `construireCible` refuse les hôtes internes sur
+    // leur TEXTE ; elle ne peut rien contre un nom public qui pointe vers le réseau Docker ou vers les
+    // métadonnées du fournisseur. Même garde ici, sinon le chemin le plus facile à atteindre resterait ouvert.
+    const resolution = await estPublique(appel.url);
+    if (!resolution.ok) {
+      return reply.code(200).send({ ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' });
+    }
+
     const debut = Date.now();
     let res: Response;
     try {
@@ -284,7 +298,11 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
       return reply.code(200).send({ ok: false, erreur: `appel impossible : ${err instanceof Error ? err.message : 'erreur réseau'}` });
     }
 
-    const brut = (await res.text().catch(() => '')).slice(0, MAX_APERCU);
+    // Lecture bornée EN FLUX : `res.text()` chargeait tout en mémoire avant de couper à `MAX_APERCU`, donc un
+    // système client bavard remplissait le process pour un aperçu de quelques kilo-octets. On lit un peu plus
+    // que l'aperçu (pour savoir qu'il est tronqué) et pas un octet de plus.
+    const lu = await lireCorpsBorne(res, MAX_APERCU * 2);
+    const brut = lu.texte.slice(0, MAX_APERCU);
     let json: unknown;
     try { json = JSON.parse(brut); } catch { json = undefined; }
     return reply.code(200).send({

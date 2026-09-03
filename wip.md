@@ -30,6 +30,20 @@ Trois blocs dans la soirée :
 🔴 **Ce qui reste ouvert est dans `todo.md`.** Les DEUX points IA sont faits (A2 puis A1, ci-dessous) ;
 reste A3 (les bornes de sécurité des connecteurs HTTP) et A4 (la preuve de capacité).
 
+## LIVRÉ le 2026-09-03 : A3, les deux bornes de sécurité des appels sortants
+
+Une URL saisie par un client était contrôlée sur son TEXTE seulement : `crm.exemple.fr` dont l'enregistrement
+A pointe vers le réseau Docker du VPS passait toutes les gardes. Et le corps de la réponse était chargé
+entièrement en mémoire avant d'être mesuré, en unités UTF-16 plutôt qu'en octets.
+
+Les deux bornes sont posées sur les TROIS chemins qui appellent une adresse client : le connecteur en
+conversation, le bouton « Test » de la console (le plus facile à atteindre, il était oublié dans l'énoncé), et
+la lecture de page distante, à chaque saut de redirection.
+
+⚠️ **Le « DNS rebinding » n'est PAS fermé** et c'est écrit noir sur blanc dans `todo.md` : `fetch` refait sa
+propre résolution après la nôtre. Le fermer demande un résolveur maison via une dépendance de plus, pour un
+scénario qui suppose un administrateur client hostile. Le cas réaliste est fermé.
+
 ## LIVRÉ le 2026-09-03 : A1, un tour d'agent tué par un crash ne se perd plus
 
 `prendreLeTour` incrémente `tours` avant le travail (c'est ce qui rend le verrou optimiste atomique). Un

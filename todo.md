@@ -21,10 +21,15 @@ pas, comme arbitré : le worker a pu mourir APRÈS l'envoi au contact. ⚠️ Il
 (`tour_commence_le`) : « session en cours + run en attente + aucune échéance » décrit aussi un tour qui vient
 d'être enfilé, et un balayage bâti là-dessus aurait tué des conversations vivantes.
 
-**A3 — les deux bornes de sécurité des connecteurs HTTP.** Résolution DNS contrôlée (un domaine public peut
-résoudre vers le réseau Docker ou vers une adresse de métadonnées) et lecture en FLUX bornée : `maxBytes` est
-aujourd'hui vérifié APRÈS `res.text()`, donc la réponse entière est déjà en mémoire, et `.length` compte des
-unités UTF-16 et non des octets.
+~~**A3 — les deux bornes de sécurité des connecteurs HTTP.**~~ **LIVRÉ le 2026-09-03.** Résolution DNS
+contrôlée (`src/lib/adresse-privee.ts`) sur les TROIS chemins qui appellent une URL saisie par un client : le
+connecteur en conversation, le bouton « Test » de la console, et la lecture de page distante (à chaque saut de
+redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les mêmes, en OCTETS et non en unités
+UTF-16. ⚠️ **Ce qui reste ouvert, et il faut le dire** : la vérification a lieu AVANT l'appel et `fetch` refait
+sa propre résolution, donc le « DNS rebinding » (répondre public puis privé) n'est pas fermé. Le fermer exige
+de fournir son PROPRE résolveur à la couche HTTP (`undici`, `connect.lookup`), donc une dépendance directe de
+plus. Le scénario suppose un administrateur client hostile, qui a déjà son compte : le rapport ne le justifie
+pas aujourd'hui. Le cas réaliste, un nom public qui pointe vers l'intérieur, est fermé.
 
 **A4 — la preuve de capacité.** Le SLO entrant confond encore l'âge du plus vieux job PRÊT avec un p95 de bout
 en bout : un job déjà actif peut être bloqué pendant que cet âge revient à zéro. Il faut horodater création,

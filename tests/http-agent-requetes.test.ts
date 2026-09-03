@@ -36,7 +36,12 @@ const REQUETE: RequeteConnecteur = {
   updatedAt: '2026-09-02T00:00:00.000Z',
 };
 
-function app(over: Partial<RequeteConnecteur> = {}, fetchImpl?: typeof fetch, champs = ['ville', 'points']) {
+function app(
+  over: Partial<RequeteConnecteur> = {},
+  fetchImpl?: typeof fetch,
+  champs = ['ville', 'points'],
+  resolution?: (url: string) => Promise<{ ok: boolean; raison?: string }>,
+) {
   const cap = {
     creations: [] as Array<Record<string, unknown>>,
     patches: [] as Array<Record<string, unknown>>,
@@ -56,6 +61,10 @@ function app(over: Partial<RequeteConnecteur> = {}, fetchImpl?: typeof fetch, ch
     sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { authorization: 'Bearer SECRET-42' }, status: 'active' }),
     clesDeChamps: async () => champs,
     ...(fetchImpl ? { fetchImpl } : {}),
+    // La garde de RÉSOLUTION est injectée comme `fetch` : sans elle, ces tests partiraient interroger le DNS
+    // pour un domaine d'exemple. Elle a ses tests dédiés dans `tests/lib-adresse-privee.test.ts`, et son
+    // effet sur CE bouton est éprouvé plus bas.
+    verifierResolution: resolution ?? (async () => ({ ok: true })),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentRequetes: deps }) };
 }
@@ -215,6 +224,22 @@ describe('requêtes : le bouton Test', () => {
     // cochable qui ne rendrait jamais rien.
     expect(b.chemins).toEqual(['statut', 'livraison.date', 'lignes']);
     expect(b.envoye.url).toBe('https://api.client.fr/v1/commandes/CMD-1');
+  });
+
+  it('🔴 un nom qui résout vers l’intérieur : le test REFUSE, et aucun appel ne part', async () => {
+    // Ce bouton appelle une URL que le client vient de saisir, depuis notre réseau. C'est le chemin le plus
+    // facile à atteindre du produit : il devait porter la même garde que le connecteur en conversation.
+    let appels = 0;
+    const compte = (async () => { appels += 1; return new Response('{}'); }) as unknown as typeof fetch;
+    const { srv } = app({}, compte, ['ville', 'points'], async () => ({ ok: false, raison: 'adresse interne' }));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    // 200 avec `ok: false` et pas un 5xx : Cloudflare remplacerait le corps d'une 5xx et le client ne saurait
+    // même pas ce qui a échoué (cf. CLAUDE.md).
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(false);
+    expect(appels).toBe(0);
+    // Et le message ne décrit pas notre réseau.
+    expect(JSON.stringify(res.json())).not.toMatch(/172\.|169\.254|docker|localhost/i);
   });
 
   it('🔴 le secret de la source n’apparaît nulle part dans la réponse du test', async () => {

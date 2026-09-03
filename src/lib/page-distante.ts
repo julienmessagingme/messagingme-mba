@@ -1,4 +1,6 @@
 import { isSendableButtonUrl } from '../meta/button-url';
+import { lireCorpsBorne } from './corps-borne';
+import { resolutionPublique, type VerdictResolution } from './adresse-privee';
 
 /**
  * Lecture d'une page publique depuis le serveur, et la garde qui la rend acceptable.
@@ -48,10 +50,21 @@ export function urlRecuperable(raw: string): boolean {
  * d'origine, qui ne porte que sur l'URL saisie, serait alors contourné en une ligne de configuration côté
  * attaquant.
  */
-export function fetchUrlBorne(timeoutMs = 10_000, fetchImpl: typeof fetch = fetch): (url: string) => Promise<PageDistante> {
+export function fetchUrlBorne(
+  timeoutMs = 10_000,
+  fetchImpl: typeof fetch = fetch,
+  /** Injectée pour tester sans DNS. Défaut : la vraie résolution. */
+  verifierResolution: (url: string) => Promise<VerdictResolution> = resolutionPublique,
+): (url: string) => Promise<PageDistante> {
   return async (url: string) => {
     let courante = url;
     for (let saut = 0; saut <= 3; saut += 1) {
+      // 🔴 OÙ CE NOM MÈNE-T-IL VRAIMENT ? `urlRecuperable` lit le TEXTE de l'hôte : elle ne peut rien contre
+      // un nom public dont l'enregistrement A pointe vers le réseau Docker ou vers les métadonnées du
+      // fournisseur. Vérifié à CHAQUE saut, pour la même raison que la revalidation d'origine juste en
+      // dessous : c'est la redirection qui porte le contournement, pas l'adresse saisie.
+      const resolution = await verifierResolution(courante);
+      if (!resolution.ok) throw new Error(`hôte non autorisé (${resolution.raison ?? 'adresse interne'})`);
       const res = await fetchImpl(courante, {
         redirect: 'manual',
         signal: AbortSignal.timeout(timeoutMs),
@@ -67,9 +80,13 @@ export function fetchUrlBorne(timeoutMs = 10_000, fetchImpl: typeof fetch = fetc
       }
       const annonce = Number(res.headers.get('content-length') ?? '0');
       if (annonce > MAX_PAGE_OCTETS) throw new Error('page trop lourde');
-      const body = await res.text();
-      if (Buffer.byteLength(body) > MAX_PAGE_OCTETS) throw new Error('page trop lourde');
-      return { status: res.status, contentType: res.headers.get('content-type') ?? '', body };
+      // ⚠️ Le plafond était vérifié APRÈS `res.text()`, donc une page de deux gigaoctets entrait entièrement
+      // en mémoire avant d'être jetée. La lecture est bornée EN FLUX : on coupe à l'octet qui dépasse. Le
+      // `content-length` reste vérifié au-dessus, il évite d'ouvrir le flux quand le serveur annonce la
+      // couleur, mais il ne peut pas servir de garde à lui seul : un serveur ment.
+      const corps = await lireCorpsBorne(res, MAX_PAGE_OCTETS);
+      if (corps.trop_gros) throw new Error('page trop lourde');
+      return { status: res.status, contentType: res.headers.get('content-type') ?? '', body: corps.texte };
     }
     throw new Error('trop de redirections');
   };

@@ -2,6 +2,8 @@ import type { EntreeResolveur, ResolveurOutil, SortieResolveur } from '../execut
 import type { SourceStore } from '../sources';
 import type { RequeteStore } from '../requetes';
 import { construireCible, enTetesAuthSource } from '../http-cible';
+import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-privee';
+import { lireCorpsBorne } from '../../lib/corps-borne';
 import { assemblerAppel } from '../requete-http';
 import { resoudreVariable, type ValeurResolue } from '../variables';
 
@@ -42,6 +44,8 @@ export interface DepsResolveurHttp {
   fetchImpl?: typeof fetch;
   /** Injectée pour que la valeur système « maintenant » soit reproductible en test. */
   now?: () => Date;
+  /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
+  verifierResolution?: (url: string) => Promise<VerdictResolution>;
 }
 
 /** Ce qu'on dit au modèle quand ça ne va pas. Volontairement pauvre : il n'a pas à savoir POURQUOI le système
@@ -52,6 +56,7 @@ const MESSAGES: Record<string, string> = {
   illisible: 'le système du client a répondu dans un format inattendu',
   trop_gros: 'la réponse du système du client est trop volumineuse',
   redirige: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur',
+  interne: 'l’adresse de ce connecteur n’est pas joignable depuis notre infrastructure',
 };
 
 /**
@@ -71,6 +76,7 @@ function extraire(source: unknown, chemin: string): unknown {
 
 export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
   const appeler = deps.fetchImpl ?? fetch;
+  const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
   return async (entree: EntreeResolveur): Promise<SortieResolveur> => {
     const { outil, args, ctx, signal } = entree;
@@ -148,6 +154,18 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     });
     if (!appel.ok) return { ok: false, contenu: { erreur: 'ce connecteur est mal configuré' }, erreur: appel.raison };
 
+    // 5bis. OÙ CE NOM MÈNE-T-IL VRAIMENT ? `construireCible` a déjà refusé les hôtes internes et tous les
+    // littéraux d'adresse, y compris leurs formes exotiques. Elle lit le TEXTE, donc elle ne peut rien contre
+    // `crm.exemple.fr` dont l'enregistrement A pointe sur `169.254.169.254` (les métadonnées du fournisseur)
+    // ou sur `172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les autres conteneurs).
+    // Placée ICI, après l'assemblage et avant l'appel : c'est l'URL FINALE qu'il faut vérifier, pas l'adresse
+    // de base, puisque le gabarit peut en changer l'hôte si une garde d'assemblage venait à tomber.
+    const resolution = await estPublique(appel.url);
+    if (!resolution.ok) {
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
+      return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: `resolution_interne: ${resolution.raison ?? '?'}` };
+    }
+
     // 6. L'APPEL. Le secret n'existe que dans cet objet d'en-têtes, et n'en sort pas. ⚠️ L'authentification
     // est superposée EN DERNIER : aucun en-tête saisi dans la requête ne peut la recouvrir, même si la garde
     // de saisie venait à tomber.
@@ -182,10 +200,14 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     // 7. LE CORPS, BORNÉ. Le plafond est vérifié sur ce qu'on a LU, pas sur `content-length` : un serveur peut
     // mentir. Au-delà, on refuse plutôt que de tronquer : un JSON tronqué est illisible de toute façon, et
     // remplirait le contexte du modèle pour rien.
-    const brut = await res.text().catch(() => '');
-    if (brut.length > outil.maxBytes) {
+    // ⚠️ Le plafond était vérifié APRÈS `res.text()`, donc après avoir tout chargé en mémoire, et il comptait
+    // des unités UTF-16 et non des octets (un corps d'idéogrammes passait à deux ou trois fois sa taille
+    // réelle). La lecture est désormais bornée EN FLUX : on coupe à l'octet qui dépasse.
+    const corps = await lireCorpsBorne(res, outil.maxBytes);
+    if (corps.trop_gros) {
       return { ok: false, contenu: { erreur: MESSAGES.trop_gros }, erreur: 'trop_gros', httpStatus: res.status };
     }
+    const brut = corps.texte;
 
     // 8. LE STATUT. Un 4xx/5xx est un échec MÉTIER : le modèle doit le savoir, sans le corps brut de l'erreur
     // (une trace de 500 porte des chemins internes, parfois des identifiants).

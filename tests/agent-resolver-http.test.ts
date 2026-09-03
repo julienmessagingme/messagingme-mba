@@ -57,6 +57,8 @@ function harnais(over: {
   ctx?: Partial<typeof CTX>;
   derniereSaisie?: string | null;
   lance?: Error;
+  /** Verdict de la garde de résolution. Absent = « publique », le cas nominal. */
+  resolution?: (url: string) => Promise<{ ok: boolean; raison?: string }>;
 } = {}) {
   const appels: Array<{ url: string; init: RequestInit }> = [];
   const epreuves: Array<{ ok: boolean; erreur?: string }> = [];
@@ -78,6 +80,10 @@ function harnais(over: {
     // Horloge figee : la valeur systeme « maintenant » doit etre reproductible.
     now: () => new Date('2026-09-02T09:45:00.000Z'),
     fetchImpl,
+    // La garde de RÉSOLUTION est injectée, comme `fetch` : sans ça, chaque test partirait interroger le DNS
+    // pour un domaine de test qui n'existe pas, et la garde refuserait tout. Elle a ses tests dédiés plus bas
+    // et dans `tests/lib-adresse-privee.test.ts` ; ici on veut éprouver le reste du chemin.
+    verifierResolution: over.resolution ?? (async () => ({ ok: true })),
   });
 
   const entree: EntreeResolveur = {
@@ -335,5 +341,43 @@ describe('résolveur http : le corps et les variables', () => {
     });
     await resolveur(entree);
     expect((appels[0]!.init.headers as Record<string, string>).authorization).toBe('Bearer JETON-SECRET-42');
+  });
+});
+
+
+/**
+ * 🔴 LA GARDE DE RÉSOLUTION, VUE DEPUIS LE CONNECTEUR (constat A3, 2026-09-02).
+ *
+ * `construireCible` refuse déjà tous les hôtes internes écrits en clair et tous les littéraux d'adresse. Elle
+ * lit le TEXTE : elle ne peut rien contre `crm.exemple.fr` dont l'enregistrement A pointe vers le réseau
+ * Docker du VPS ou vers le service de métadonnées du fournisseur. Le contrôle du NOM RÉSOLU est ici.
+ */
+describe('résolveur http : où le nom mène vraiment', () => {
+  it('🔴 un nom qui résout vers l’intérieur : AUCUN appel ne part', async () => {
+    // Le point du lot. « Aucun appel » et pas seulement « une erreur rendue » : la requête ne doit jamais
+    // toucher le réseau interne, même pour en recevoir un refus.
+    const h = harnais({ resolution: async () => ({ ok: false, raison: 'ce nom pointe vers une adresse interne' }) });
+    const res = await h.resolveur(h.entree);
+    expect(res.ok).toBe(false);
+    expect(h.appels).toEqual([]);
+    expect(String(res.erreur)).toContain('resolution_interne');
+  });
+
+  it('le refus est noté SUR LA SOURCE, et ce qu’on dit au modèle ne décrit pas notre réseau', async () => {
+    const h = harnais({ resolution: async () => ({ ok: false, raison: 'ce nom pointe vers une adresse interne' }) });
+    const res = await h.resolveur(h.entree);
+    // Visible dans la console du client : un connecteur mal pointé doit se voir avant qu'un contact ne le
+    // découvre.
+    expect(h.epreuves.some((e) => e.ok === false && e.erreur === 'adresse interne')).toBe(true);
+    // Et le modèle ne reçoit ni l'adresse, ni le mot « Docker », ni rien qui renseigne sur la topologie.
+    const dit = JSON.stringify(res.contenu);
+    expect(dit).not.toMatch(/172\.|169\.254|docker|localhost/i);
+  });
+
+  it('un nom public laisse l’appel partir normalement', async () => {
+    const h = harnais();
+    const res = await h.resolveur(h.entree);
+    expect(res.ok).not.toBe(false);
+    expect(h.appels).toHaveLength(1);
   });
 });

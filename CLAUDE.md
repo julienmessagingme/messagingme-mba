@@ -278,6 +278,25 @@ qu'avant le premier envoi tracé.
 
 ### Sécurité (deltas projet)
 
+🔴 **Toute URL saisie par un client se vérifie DEUX fois : sur son texte, ET sur ce vers quoi elle RÉSOUT**
+(lot A3, 2026-09-03). `urlRecuperable` lit le texte de l'hôte et refuse `localhost`, les littéraux privés et
+toutes leurs formes exotiques (hexadécimale, entière, IPv6, IPv4 mappée : vérifié). Elle ne peut RIEN contre
+`crm.exemple.fr` dont l'enregistrement A pointe sur `169.254.169.254` (métadonnées du fournisseur) ou sur
+`172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les conteneurs). `resolutionPublique`
+(`src/lib/adresse-privee.ts`) ferme ça, sur les TROIS chemins concernés : connecteur en conversation, bouton
+« Test » de la console, lecture de page distante (à chaque saut de redirection). Règles qui la rendent juste :
+UNE seule adresse interdite condamne le nom, et une résolution qui ÉCHOUE est un REFUS. ⚠️ Le « DNS rebinding »
+reste ouvert (`fetch` refait sa propre résolution) : le fermer demande un résolveur maison via `undici`, cf.
+`todo.md`.
+
+🔴 **Un corps de réponse distante se lit EN FLUX, jamais avec `res.text()` suivi d'un test de taille.** Deux
+défauts dans la même ligne : le corps entier entre en mémoire avant d'être jeté, et `.length` compte des
+unités UTF-16, donc un corps d'idéogrammes passe un plafond « en octets » à trois fois sa taille. Le repo
+l'écrivait à trois endroits. Point de passage unique : `lireCorpsBorne` (`src/lib/corps-borne.ts`), qui coupe
+le flux à l'octet qui dépasse. ⚠️ Les clients de NOS API (Meta, Zadarma) n'y passent pas volontairement :
+hôtes fixes et de confiance, le risque n'est pas le même.
+
+
 Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse` sur webhooks + JSON LLM, signature de webhook entrant, entrée LLM délimitée) : section « Conventions de code » du CLAUDE.md global. Spécifique à MBA :
 
 - **Isolation tenant = cas « accès médié par un serveur » du global** : `tenant_id=$1` sur CHAQUE requête. La connexion pooler est un rôle superuser, donc la RLS serait bypassée, le filtrage en code est le seul contrôle. IDOR = leçon convanalyzer.
