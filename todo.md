@@ -57,6 +57,48 @@ et les trois moitiés fausses valaient d'être établies, parce qu'elles auraien
 **Ce qui reste ouvert de ce contre-rapport**, et pourquoi : le « DNS rebinding » (déjà listé sous A3), et le
 retriage des deux réglages de campagne, qui attend le profil de banc `equite` du lot 6, plus bas.
 
+### Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir)
+
+Quatre nouveaux constats, vérifiés dans le code avec passe adverse : **trois confirmés, un réfuté**. Plus un
+cinquième point hors tableau, sur mes propres tests, et **deux angles morts trouvés en propre**. Les deux
+angles morts et deux des trois confirmés sont des **régressions que j'avais introduites la veille**.
+
+- ~~**P1c, l'épreuve d'une SOURCE sans résolution DNS.**~~ **CORRIGÉ**, et c'était le plus grave. Elle
+  appelait `construireCible` puis `fetch` : elle ne voyait donc pas qu'un nom public pointe vers le réseau
+  Docker du VPS. C'était le **quatrième** chemin de ce genre, alors que le `CLAUDE.md` affirmait qu'il y en
+  avait trois et qu'ils étaient tous gardés. Ce qui l'a fait rater : les deux boutons « Test » se ressemblent
+  beaucoup, et l'autre appelait bien la garde. L'inventaire est désormais tenu par un test.
+- ~~**P1a, le balayage sortait par « échec » en dur.**~~ **CORRIGÉ.** Juste tant qu'il ne réclamait que des
+  sessions `en_cours` ; faux depuis qu'il ramasse aussi les closes dont la sortie est due. Le contact
+  repartait par le repli technique au lieu de la branche prévue, et c'est le cas le plus fréquent. ⚠️ Le test
+  unitaire du balayage ne voyait PAS le câblage du worker : une garde qui lit la source a été ajoutée, comme
+  pour le plafond de campagne. Troisième fois que ce piège se présente.
+- ~~**P2, l'index partiel de la 0112.**~~ **CORRIGÉ** (migration 0113, non bloquante, en attente).
+- **P1b, l'escalade humaine : RÉFUSÉ, et c'est un arbitrage.** Les faits sont vrais, c'est le seul couple
+  « clore puis sortir » qui ne préserve pas la marque. Mais poser la marque **dégrade le cas le plus
+  probable** : le rattrapage existant (le message suivant du contact remonte le fil en inbox ET escalade) est
+  meilleur que le balayage, et un contact qui vient de réclamer un humain face à un silence total réécrit
+  presque toujours. Le refus est écrit dans `src/agent/escalade.ts` avec sa raison.
+- ~~**Point 5, mes deux tests du plafond de temps ne prouvaient rien.**~~ **CORRIGÉ.** Le premier n'assertait
+  qu'un signal, le second passait AUSSI sans la garde qu'il tenait. Les faux minuteurs de vitest ne pilotent
+  pas `AbortSignal.timeout`, d'où une couture `delaiTestMs`. Même lot : la résolution DNS n'était dans aucun
+  budget, les deux s'additionnaient au lieu de se recouvrir.
+- ~~**Angle mort 1 : un `Math.min(100_000)` écrasait en silence une limite de cible plus grande.**~~
+  **CORRIGÉ.** Le plafond de campagne vit en configuration pour se relever le jour d'un gros client : le geste
+  que le produit a prévu était exactement celui qui armait le défaut. C'est le sous-envoi silencieux de la
+  veille, transposé du filtre d'exclusion au filtre de taille, trois lignes plus bas.
+- ~~**Angle mort 2 : `AGE_TOUR_MORT_S` valait exactement `DUREE_MAX_AVANCE_MS`.**~~ **CORRIGÉ** (15 min).
+  Marge nulle : une avance qui va au bout de son temps rend sa ligne réclamable à l'instant où elle abandonne.
+  Ferme au passage la course sur `sortieAppliquee`, qui n'a pas de jeton de garde. Deux constantes qui doivent
+  être ordonnées se règlent par une valeur, pas par une architecture ; le lien est tenu par un test, parce
+  qu'il ne se voit dans aucun des deux fichiers pris séparément.
+
+**Ce qui reste ouvert :** un jeton de garde sur `sortieAppliquee` (la course est devenue inatteignable par
+la constante, mais la pièce manque toujours ; elle coûterait de faire remonter l'instant de marque à travers
+deux signatures) ; et le compte jugé par le plafond de campagne inclut les contacts **bloqués**, alors que le
+chargement des destinataires les filtre. Ce dernier **sur-compte** au lieu de sous-envoyer, donc le sens est
+le bon, et il est préexistant.
+
 
 Les sept lots de [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) sont **livrés et
 déployés** (2026-09-02 au soir), ainsi que le point 1 de l'audit qui a suivi. Ce qui reste, dans cet ordre :

@@ -2094,7 +2094,58 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
-## COMMITÉ le 2026-09-03 (pas encore déployé) : le contre-rapport de ChatGPT, huit constats vérifiés
+## COMMITÉ le 2026-09-03 au soir : le contre-CONTRE-rapport, et ce qu'il dit de mes propres correctifs
+
+Quatre constats, trois confirmés. Mais l'intérêt du lot n'est pas là : **quatre des six défauts fermés ce
+soir avaient été introduits le matin même**, par les correctifs du lot précédent. Ce qui suit est la
+généralisation, parce qu'elle vaut plus que les lignes.
+
+**ÉLARGIR LE DOMAINE D'UNE RÉPARATION SANS ÉLARGIR CE QU'ELLE TRANSPORTE.** Le balayage des tours bloqués
+sortait le parcours par `sortie:echec` en dur. C'était exact tant qu'il ne réclamait que des sessions
+`en_cours`, qui n'ont par construction aucune sortie enregistrée : `echec` était alors le seul code possible.
+Le matin, on lui a fait ramasser aussi les sessions closes dont la sortie est restée due. La valeur en dur est
+devenue fausse **le jour même**, et rien ne l'a signalé, ni le compilateur, ni les tests, ni la production.
+Même famille, même jour : l'index PARTIEL de la 0112 portait `where status = 'en_cours'`, condition que la
+requête venait de perdre. **Un index partiel est un contrat avec une requête précise**, et en sortir ne
+produit aucune erreur, seulement un plan d'exécution qui change.
+
+**LE SOUS-ENVOI SILENCIEUX, REFERMÉ TROIS LIGNES PLUS BAS.** En corrigeant le filtre d'exclusion des cibles de
+campagne, j'avais écrit `Math.min(100_000, limite ?? 100_000)`. Il écrase en silence une limite plus grande.
+Le plafond de campagne vit en configuration précisément pour se relever le jour d'un gros client : **le geste
+que le produit a prévu était exactement celui qui armait le défaut**, et aucun schéma ne le refuse au
+chargement. C'est le défaut que le commentaire d'à côté décrivait, transposé du filtre d'exclusion au filtre
+de taille.
+
+**DEUX CONSTANTES QUI DOIVENT ÊTRE ORDONNÉES SE RÈGLENT PAR UNE VALEUR.** `AGE_TOUR_MORT_S` valait
+exactement `DUREE_MAX_AVANCE_MS`, dix minutes chacune. Lu séparément, chaque fichier a raison ; ensemble, la
+marge est nulle et une avance qui va au bout de son temps rend sa ligne réclamable à l'instant où elle
+abandonne. Le passage à quinze minutes rend aussi **inatteignable** une course réelle : `sortieAppliquee` n'a
+pas de jeton de garde, donc un porteur en retard pouvait effacer le bail du balayage qui avait repris sa
+session. Le jeton coûterait deux signatures ; la constante coûte cinq minutes de détection.
+
+**UN INVENTAIRE DE CHEMINS SENSIBLES ÉCRIT À LA MAIN DÉRIVE.** Le `CLAUDE.md` affirmait qu'il y avait trois
+chemins où une URL saisie par un client finit dans un `fetch`. Il y en avait quatre : l'épreuve d'une source
+appelait `construireCible` puis `fetch`, sans résoudre. Ce qui l'a fait rater est instructif : les deux
+boutons « Test » se ressemblent beaucoup, et **l'autre appelait bien la garde**. L'inventaire est passé d'un
+paragraphe à un test. ⚠️ Dont la première version était creuse : elle cherchait l'identifiant sans retirer les
+lignes d'`import`, donc elle passait alors même que l'appel avait été supprimé. Trouvé par mutation.
+
+**ET DEUX TESTS QUI NE PROUVAIENT PAS CE QU'ILS ANNONÇAIENT.** Le pire du lot, parce que c'est la faute que ce
+dépôt interdit nommément. Le premier n'assertait que « un signal est passé », ce qui vaut pour un plafond de
+dix minutes comme de dix secondes ; le second passait AUSSI sans la garde qu'il prétendait tenir. Ce qui rend
+le piège facile : **les faux minuteurs de vitest ne pilotent pas `AbortSignal.timeout`** (mesuré : onze
+secondes de faux temps, signal toujours pas abandonné), donc sans durée injectable, le seul test possible
+était le test creux.
+
+**CE QU'ON A REFUSÉ, ET POURQUOI ÇA COMPTE AUTANT.** L'escalade humaine est le seul couple « clore puis
+sortir » qui ne préserve pas la marque. Les faits du constat sont vrais. On ne l'aligne pas : le rattrapage
+existant (au message suivant du contact, `advance` remonte le fil en inbox ET escalade) produit un MEILLEUR
+état final que le balayage, et le contact qui vient de réclamer un humain face à un silence total réécrit
+presque toujours. **Une reprise automatique ne vaut mieux qu'une reprise existante que si elle produit le même
+état final** ; ici l'uniformité aurait été une régression déguisée en cohérence.
+
+---
+## COMMITÉ le 2026-09-03 (déployé le jour même) : le contre-rapport de ChatGPT, huit constats vérifiés
 
 Cinq confirmés, trois à moitié. Le tri complet est dans `todo.md` ; ce qui suit est ce qu'aucun autre document
 ne consignerait, c'est-à-dire les gotchas et les raisons.
