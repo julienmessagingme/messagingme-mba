@@ -3,6 +3,20 @@
 import { AppShell } from '@/components/AppShell';
 import Link from 'next/link';
 import { useT } from '@/lib/i18n';
+import { BASE } from '@/lib/http';
+
+/**
+ * L'adresse PUBLIQUE de l'API, telle qu'un intégrateur doit la taper.
+ *
+ * ⚠️ Dérivée de la MÊME source que les appels de la console (`BASE`), et surtout pas réécrite à la main : ces
+ * deux lignes portaient `https://mba.messagingme.app/api/backend/v1` en dur. Un intégrateur qui aurait copié
+ * cette adresse après la bascule aurait construit son intégration sur un chemin mort, et l'aurait découvert
+ * en production, chez lui.
+ *
+ * Le repli conserve l'adresse historique tant que la variable n'est pas posée : le préfixe `/api/backend` est
+ * alors juste, puisque c'est bien le proxy qui sert l'API.
+ */
+const ADRESSE_API = BASE.startsWith('http') ? BASE : 'https://mba.messagingme.app/api/backend';
 
 /**
  * Documentation de l'API publique /v1.
@@ -55,7 +69,7 @@ function DocsInner() {
 
       <Section title={t('Adresse et authentification', 'Base URL and authentication')}>
         <p>{t('Toutes les routes sont sous :', 'All routes live under:')}</p>
-        <pre className={codeCls}>https://mba.messagingme.app/api/backend/v1</pre>
+        <pre className={codeCls}>{`${ADRESSE_API}/v1`}</pre>
         <p>
           {t(
             'Chaque appel porte sa clé dans l\'en-tête Authorization. Le compte est déduit de la clé : il n\'y a jamais d\'identifiant de compte dans l\'URL.',
@@ -205,7 +219,7 @@ Idempotency-Key: commande-8412
       </Section>
 
       <Section title={t('Exemple complet', 'Full example')}>
-        <pre className={codeCls}>{`curl -X POST https://mba.messagingme.app/api/backend/v1/sends \\
+        <pre className={codeCls}>{`curl -X POST ${ADRESSE_API}/v1/sends \\
   -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \\
   -H "Idempotency-Key: commande-8412" \\
   -H "Content-Type: application/json" \\

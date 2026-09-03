@@ -11,8 +11,23 @@
 import { getSession, clearSession } from './session';
 import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 
-/** Préfixe du proxy Next vers l'API. Exporté pour `/ops`, qui appelle sans session (autorité séparée). */
-export const BASE = '/api/backend';
+/**
+ * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle sans session (autorité séparée).
+ *
+ * 🔴 DEUX MONDES, ET UN SEUL ENDROIT QUI LE SAIT (bascule Vercel, `docs/PLAN-BASCULE-VERCEL-2026-09-03.md`).
+ *
+ * Sans `NEXT_PUBLIC_API_URL`, on garde `/api/backend` : le navigateur appelle la MÊME origine que la page, le
+ * serveur Next relaie vers l'API, et il n'y a aucune requête d'origine croisée, donc aucun CORS. C'est le
+ * montage du VPS, et il reste juste tant qu'il tourne.
+ *
+ * Avec la variable, le navigateur parle DIRECTEMENT à l'API, sous son propre nom. Le préfixe disparaît :
+ * il appartenait au proxy, pas aux routes. L'API doit alors inscrire cette origine dans son `CORS_ORIGINS`,
+ * sans quoi le navigateur refusera chaque appel.
+ *
+ * ⚠️ `NEXT_PUBLIC_*` est FIGÉ AU BUILD. Changer cette variable sur Vercel n'a d'effet qu'au déploiement
+ * suivant : la modifier sans redéployer ne fait rien du tout, en silence.
+ */
+export const BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '') || '/api/backend';
 
 /**
  * Langue de la console, lue à la SOURCE persistée plutôt que par le contexte React.
