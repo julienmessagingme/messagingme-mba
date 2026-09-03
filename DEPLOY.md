@@ -109,6 +109,32 @@ sudo docker compose up -d --build                                # 1) deploy le 
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
 
+## 🔴 502 public juste après un `up --build`, alors que le conteneur est sain : NPM tient l'ANCIENNE IP
+
+Constaté le 2026-09-03. Après `up -d --build`, `mba-api` est `healthy`, mais `https://api.messagingme.app/health`
+rend **502**. Ce n'est pas l'application, c'est nginx : recréer un conteneur lui donne une **nouvelle IP** sur
+`mcp-robot_default`, et NPM a résolu son amont **au chargement de sa configuration**. Il tape donc une adresse
+qui n'existe plus.
+
+⚠️ **Le réflexe documenté ailleurs (`docker network connect`) ne suffit PAS ici**, et c'est ce qui fait perdre
+du temps : le conteneur est DÉJÀ sur le bon réseau (`docker inspect` le montre), la commande ne fait rien, et
+on cherche du côté de l'application. Ce qu'il faut, c'est recharger nginx :
+
+```bash
+sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload
+```
+
+**Le diagnostic en deux commandes**, et c'est le geste à retenir bien au-delà de ce cas : comparer l'appel
+INTERNE et l'appel PUBLIC isole la couche coupable d'un coup.
+
+```bash
+sudo docker run --rm --network mcp-robot_default curlimages/curl -s -o /dev/null -w '%{http_code}\n' http://mba-api:8095/health
+curl -s -o /dev/null -w '%{http_code}\n' https://api.messagingme.app/health
+```
+
+Interne 200 + public 502 = le proxy. Interne 502 = l'application. (Rappel : Cloudflare remplace le corps de
+toute réponse 5xx par sa page d'erreur, donc le corps public n'apprend rien.)
+
 ## ⚠️ Crash-loop transitoire au redéploiement (EMAXCONNSESSION) — normal, s'auto-résout
 
 Juste après `up -d --build`, `mba-api` peut apparaître `Restarting (1)` pendant ~30-60 s. Deux symptômes

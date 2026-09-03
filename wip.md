@@ -12,21 +12,18 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS le 2026-09-03 au soir : le contre-rapport de ChatGPT sur les livraisons du jour
+## LIVRÉ ET DÉPLOYÉ le 2026-09-03 au soir : le contre-rapport de ChatGPT sur les livraisons du jour
 
-**Le code est écrit, commité et poussé ; il n'est PAS ENCORE DÉPLOYÉ.** Deux commits (`c3938ad`, `d59a184`).
-Le tri complet des huit constats, avec ce qui a été retenu et ce qui a été écarté, est dans
-[todo.md](todo.md).
+**Rien n'est en cours.** Trois commits déployés (`c3938ad`, `d59a184`, `2300a1b`), CI verte sur les trois jobs
+(`integration` compris, ce qui comptait : ce lot modifie du SQL brut qui n'avait aucune couverture avant).
+**Aucune migration**, vérifié : il change le moment où `tour_commence_le` est effacée, pas le schéma.
 
-Ce qui reste à faire, dans l'ordre :
+Le tri des huit constats est dans [todo.md](todo.md), les gotchas dans
+[documentation.md](documentation.md), et les deux règles générales dans [CLAUDE.md](CLAUDE.md).
 
-1. **Regarder le run CI** avant tout déploiement, et particulièrement le job `integration` : ce lot modifie du
-   SQL brut (la requête de réclamation des tours bloqués, qui n'avait AUCUNE couverture avant aujourd'hui et
-   qui en a maintenant six cas). Un `npm test` vert en local ne prouve rien sur ce point, le `DATABASE_URL`
-   local visant la production.
-2. **Déployer** : `git log <déployé>..HEAD` d'abord, puis `git pull && sudo docker compose up -d --build` sur
-   le VPS. **Aucune migration** dans ce lot, vérifié : il change le moment où `tour_commence_le` est effacée,
-   pas le schéma. Vercel redéploiera la console tout seul au push (la carte de latence de `/ops` change).
+⚠️ **Un 502 public d'une minute au redéploiement**, et il valait sa leçon : NPM tenait l'ANCIENNE IP du
+conteneur recréé. `docker network connect` ne répare pas ça, il faut recharger nginx. Le diagnostic
+(comparer l'appel interne et l'appel public) est dans [DEPLOY.md](DEPLOY.md).
 
 ⚠️ **Ce qui n'est PAS dans ce lot, et qui est un choix** : les deux réglages de campagne
 (`CAMPAIGN_RUN_CONCURRENCY`, `CAMPAIGN_RUN_MAX_MS`) ne sont pas touchés. L'arithmétique dit qu'ils rendent le
