@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import type { SurveillanceOps } from './ops/tentatives';
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
@@ -105,6 +106,11 @@ export interface ServerDeps {
    * n'en a aucun besoin.
    */
   corsOrigins?: readonly string[];
+  /**
+   * Surveillance des refus sur `/ops`. Absente -> un 401 part sans laisser de trace, ce qui est le
+   * comportement d'avant. Câblée par `src/index.ts` quand Telegram est configuré.
+   */
+  surveillanceOps?: SurveillanceOps;
   queue: Queue;
   /** Sonde de readiness (DB joignable ?). OPTIONNEL pour préserver le design DB-free de buildServer : absent
    *  (tests) -> /health répond 200 inconditionnel. Fourni (prod) -> /health = readiness (503 si rejette). */
@@ -330,7 +336,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
   // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
-  if (deps.ops) registerOps(app, deps.ops, deps.opsToken ?? config.OPS_TOKEN);
+  if (deps.ops) registerOps(app, deps.ops, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps);
 
   // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
   // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).

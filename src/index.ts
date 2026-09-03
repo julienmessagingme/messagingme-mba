@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { buildServer } from './server';
 import { config } from './config';
 import { adressesPubliques } from './lib/adresses-publiques';
+import { surveillerOps } from './ops/tentatives';
+import { sendTelegram } from './ops/telegram';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
@@ -247,6 +249,20 @@ async function main(): Promise<void> {
       }
     : undefined;
   const app = buildServer({
+    /**
+     * 🔴 SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03). `/ops` ouvre la lecture de toutes les
+     * conversations de tous les clients, et Fastify tourne sans journal d'accès : jusqu'ici, quelqu'un qui
+     * cherchait le jeton ne laissait AUCUNE trace. On n'a pas durci l'accès (une liste blanche d'IP couperait
+     * Julien dès que son IP change), on l'a rendu VISIBLE.
+     *
+     * `sendTelegram` est un no-op silencieux si Telegram n'est pas configuré : cette surveillance journalise
+     * alors, sans alerter, ce qui reste mieux que rien.
+     */
+    surveillanceOps: surveillerOps({
+      alerter: (m) => { void sendTelegram(`[mba-api] ${m}`); },
+      // eslint-disable-next-line no-console
+      journaliser: (m) => { console.warn(m); },
+    }),
     // Origines autorisées à appeler l'API depuis un navigateur. Vide (le cas d'aujourd'hui) -> aucun en-tête
     // CORS n'est posé du tout. Voir `src/server.ts` pour les deux règles qui la rendent sûre.
     corsOrigins: config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter((o) => o !== ''),

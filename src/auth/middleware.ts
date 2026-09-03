@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifySession } from './token';
 import type { Session } from './token';
 import { timingSafeEqualStr } from '../lib/signature';
+import { ipIndicative, type SurveillanceOps } from '../ops/tentatives';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -57,11 +58,17 @@ export function makeRequireRole(roles: readonly string[]): PreHandler {
  * désactivée par défaut), absent, ou incorrect. N'utilise PAS `req.auth` : c'est une autorité
  * distincte du JWT tenant (un admin de tenant ne peut donc PAS atteindre /ops, et réciproquement).
  */
-export function makeRequireOps(opsToken: string): PreHandler {
+export function makeRequireOps(opsToken: string, surveillance?: SurveillanceOps): PreHandler {
   return async function requireOps(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const raw = req.headers['x-ops-token'];
     const provided = Array.isArray(raw) ? raw[0] : raw;
     if (!opsToken || !provided || !timingSafeEqualStr(provided, opsToken)) {
+      // 🔴 SIGNALER AVANT DE RÉPONDRE, et sans jamais rien attendre. `/ops` ouvre la lecture de toutes les
+      // conversations de tous les clients : jusqu'ici, quelqu'un qui cherchait le jeton ne laissait AUCUNE
+      // trace (Fastify tourne en `logger: false`). Le jour où l'adresse devient devinable, cet aveuglement
+      // coûte cher. ⚠️ Le jeton PRÉSENTÉ n'est jamais transmis : une tentative est presque toujours un secret
+      // voisin du vrai, l'écrire quelque part reviendrait à publier ce qu'on protège.
+      surveillance?.refus({ chemin: req.url, ip: ipIndicative(req) });
       await reply.code(401).send({ error: 'ops: non autorisé' });
       return;
     }

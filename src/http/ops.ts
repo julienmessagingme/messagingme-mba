@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { makeRequireOps } from '../auth/middleware';
+import type { SurveillanceOps } from '../ops/tentatives';
 import { estUuid } from './scope';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
@@ -95,8 +96,18 @@ const MIN_NOTE = 3;
  *  refaire mille fois la même erreur : on borne pour forcer à regarder entre deux lots. */
 const MAX_REJEU = 100;
 
-export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: string): void {
-  const guard = { preHandler: makeRequireOps(opsToken) };
+export function registerOps(
+  app: FastifyInstance,
+  deps: OpsRouteDeps,
+  opsToken: string,
+  /**
+   * Surveillance des refus. ABSENTE -> comportement d'avant : le 401 part sans laisser de trace. Optionnelle
+   * parce que les tests montent `/ops` sans avoir de canal d'alerte, et qu'une surveillance manquante ne doit
+   * jamais empêcher la garde de fonctionner.
+   */
+  surveillance?: SurveillanceOps,
+): void {
+  const guard = { preHandler: makeRequireOps(opsToken, surveillance) };
 
   app.get('/ops/overview', guard, async (_req, reply) => {
     const [tenants, daily, queues, worker, queuesParGroupe, attentesPool, latences] = await Promise.all([
