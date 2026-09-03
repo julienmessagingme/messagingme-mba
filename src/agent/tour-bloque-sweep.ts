@@ -27,7 +27,24 @@ import type { TourBloque } from './session-store';
  * faut à une base lente ou à un connecteur qui traîne. Même ordre de grandeur que la durée maximale d'une
  * avance de scénario, pour la même raison : c'est un garde-fou d'anomalie, pas une limite de fonctionnement.
  */
-export const AGE_TOUR_MORT_S = 10 * 60;
+export const AGE_TOUR_MORT_S = 15 * 60;
+
+/**
+ * 🔴 QUINZE MINUTES, ET PAS DIX : IL FAUT QUE CE SEUIL DÉPASSE `DUREE_MAX_AVANCE_MS` (2026-09-03).
+ *
+ * Il valait dix minutes, soit EXACTEMENT la durée maximale d'une avance de scénario. La marge était donc
+ * nulle : une avance qui va au bout de son temps rend sa ligne réclamable à l'instant précis où elle
+ * abandonne, et un deuxième porteur démarre pendant que le premier finit. Deux constantes qui doivent être
+ * ordonnées se règlent par une valeur, pas par une architecture.
+ *
+ * Ce que ça ferme aussi, et c'est la vraie raison : `sortieAppliquee` n'a PAS de jeton de garde, elle efface
+ * la marque quelle que soit sa valeur. Un porteur en retard pouvait donc effacer le BAIL du balayage qui
+ * venait de reprendre sa session, et si la sortie du balayage échouait ensuite, la ligne n'était plus
+ * réclamable par personne. C'est la troisième pièce de verrou que le CLAUDE.md exige, absente ici. Un jeton
+ * coûterait de faire remonter l'instant de marque à travers `clore` puis `cloreEtSortir`, donc deux
+ * signatures ; une constante ordonnée rend la course INATTEIGNABLE pour rien. Le prix est cinq minutes de
+ * plus avant qu'un tour vraiment mort ne soit ramassé, ce qui ne coûte à personne.
+ */
 
 /** Nombre de sessions traitées par passage. Volontairement petit : c'est un filet, pas un traitement de masse. */
 export const LOT_TOURS_BLOQUES = 20;
@@ -50,6 +67,8 @@ export interface TourBloqueSweepDeps {
    * run resterait en attente sur le bloc : on aurait rangé la table sans rien rendre au contact.
    */
   sortir(tour: TourBloque): Promise<void>;
+  // ⚠️ L'implémentation DOIT utiliser `tour.sortie`, pas un code en dur : c'est ce champ qui porte la branche
+  // réellement due, et le passer de travers change le sens métier du scénario pour le contact.
   /**
    * La sortie est appliquée : la marque tombe, et la ligne cesse d'être réclamable.
    *

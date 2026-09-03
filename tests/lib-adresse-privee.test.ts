@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { estAdressePrivee, resolutionPublique } from '../src/lib/adresse-privee';
 import { lireCorpsBorne } from '../src/lib/corps-borne';
 
@@ -207,5 +208,53 @@ describe('lecture bornée du corps d’une réponse', () => {
   it('un corps vide n’est pas « trop gros »', async () => {
     const r = await lireCorpsBorne(new Response(''), 10);
     expect(r).toEqual({ texte: '', octets: 0, trop_gros: false });
+  });
+});
+
+/**
+ * L'INVENTAIRE DES CHEMINS SORTANTS, TENU PAR UN TEST ET PLUS PAR UN COMMENTAIRE.
+ *
+ * 🔴 POURQUOI. Le `CLAUDE.md` affirmait qu'il y avait TROIS chemins où une URL saisie par un client finit
+ * dans un `fetch`, et qu'ils étaient tous gardés. Il y en avait QUATRE : le bouton « éprouver une source »,
+ * câblé dans `src/index.ts`, appelait `construireCible` puis `fetch` sans jamais résoudre. Or
+ * `construireCible` ne lit que le TEXTE de l'hôte, donc elle ne peut rien contre un nom public dont
+ * l'enregistrement A pointe vers le réseau Docker du VPS.
+ *
+ * Ce qui a fait rater l'inventaire : les deux boutons « Test » se ressemblent beaucoup, et l'AUTRE appelait
+ * bien la garde. **Un inventaire de chemins sensibles écrit à la main dérive dès qu'on ajoute un bouton.**
+ * Celui-ci est vérifié à chaque exécution de la suite.
+ *
+ * ⚠️ Ce test lit la SOURCE : il prouve que l'appel est écrit, pas qu'il est atteint sur toutes les branches.
+ * C'est très en dessous d'une preuve, et très au-dessus d'un commentaire qui vieillit.
+ */
+describe('inventaire des appels sortants vers une URL saisie par un client', () => {
+  const CHEMINS = [
+    ['src/agent/resolvers/http.ts', 'le connecteur, en pleine conversation'],
+    ['src/http/agent-requetes.ts', 'le bouton Test d’une REQUÊTE'],
+    ['src/lib/page-distante.ts', 'la lecture d’une page distante, à chaque saut de redirection'],
+    ['src/index.ts', 'le bouton éprouver une SOURCE, oublié jusqu’au 2026-09-03'],
+  ] as const;
+
+  for (const [fichier, quoi] of CHEMINS) {
+    it(`🔴 ${quoi} passe par la résolution`, () => {
+      const src = readFileSync(new URL(`../${fichier}`, import.meta.url), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '')
+        // 🔴 LES IMPORTS SONT RETIRÉS, et cette ligne est le test lui-même. Sans elle, l'assertion tombait sur
+        // la ligne d'import et passait alors même que l'appel avait été supprimé : vérifié par mutation, elle
+        // était CREUSE. C'est la troisième fois que ce piège se présente dans la même semaine.
+        .replace(/^\s*import .*$/gm, '');
+      // ⚠️ On accepte les DEUX formes de câblage, parce que les deux existent et sont justes : l'appel direct,
+      // et la valeur par défaut d'une dépendance injectable (`page-distante.ts`), qui est la forme que prend
+      // une garde qu'on veut pouvoir éprouver sans DNS. Exiger l'appel refuserait la seconde, à tort.
+      expect(src, `${fichier} doit CÂBLER resolutionPublique, pas seulement l'importer`)
+        .toMatch(/resolutionPublique/);
+    });
+  }
+
+  it('et le compte est de QUATRE, pas de trois', () => {
+    // Si un cinquième apparaît sans être ajouté ici, ce test ne le verra pas : c'est sa limite, et elle est
+    // dite. Ce qu'il empêche, c'est qu'un des quatre PERDE sa garde sans que personne ne s'en aperçoive.
+    expect(CHEMINS).toHaveLength(4);
   });
 });

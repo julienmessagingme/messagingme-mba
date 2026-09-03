@@ -98,6 +98,7 @@ import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
+import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
@@ -909,6 +910,25 @@ async function main(): Promise<void> {
         if (!src) return { ok: false, erreur: 'source introuvable' };
         const cible = construireCible({ baseUrl: src.baseUrl, binding: { methode: 'GET', chemin }, args: {} });
         if (!cible.ok) return { ok: false, erreur: cible.raison };
+        /**
+         * 🔴 OU CE NOM MENE-T-IL VRAIMENT ? (contre-contre-rapport du 2026-09-03, et le constat etait juste.)
+         *
+         * `construireCible` lit le TEXTE de l hote : elle refuse `localhost` et les litteraux prives, et elle
+         * ne peut RIEN contre `crm.exemple.fr` dont l enregistrement A pointe sur `169.254.169.254` (les
+         * metadonnees du fournisseur) ou sur `172.18.x.x` (le reseau Docker du VPS, ou vivent l admin NPM et
+         * tous les conteneurs du parc).
+         *
+         * ⚠️ Ce bouton etait le QUATRIEME chemin de ce genre, et le CLAUDE.md affirmait qu il n y en avait que
+         * TROIS et qu ils etaient tous gardes. L inventaire etait faux, pas la regle. La lecon : un inventaire
+         * de chemins sensibles ecrit a la main derive des qu on ajoute un bouton. Ce qui l a fait rater ici,
+         * c est que les deux boutons « Test » se ressemblent beaucoup et que l AUTRE appelait bien la garde.
+         * L inventaire est desormais tenu par un test (`tests/lib-adresse-privee.test.ts`).
+         */
+        const resolution = await resolutionPublique(cible.url);
+        if (!resolution.ok) {
+          await agentSources.marquerEpreuve(tenant, id, false, 'adresse non joignable');
+          return { ok: false, erreur: 'cette adresse n est pas joignable depuis notre infrastructure' };
+        }
         // MEME construction d en-tetes que l appel reel : une epreuve qui authentifierait autrement dirait
         // « ca repond » d une source que les appels ne savent pas authentifier.
         const headers = enTetesAuthSource(src);

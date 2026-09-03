@@ -793,7 +793,25 @@ export class PgContactStore implements ContactStore {
      * jamais rattraper ce que le premier a coupé.
      */
     const sel = buildBulkSelector(tenantId, target);
-    const cap = Math.max(1, Math.min(100_000, Math.round(limite ?? 100_000)));
+    /**
+     * 🔴 PAS DE BORNE HAUTE SUR UNE LIMITE DEMANDÉE, et ce `Math.min` était à moi (2026-09-03).
+     *
+     * En réécrivant ce chemin j'avais écrit `Math.min(100_000, limite ?? 100_000)`, ce qui écrase EN SILENCE
+     * une limite plus grande. Le plafond de campagne vit en configuration, précisément pour se relever sans
+     * redéploiement le jour d'un gros client : le geste que le produit a prévu est donc exactement celui qui
+     * arme le défaut. Au-delà de 100 000, la route demande `plafond + 1` pour distinguer « pile au plafond »
+     * de « au-dessus », reçoit 100 000, et la garde de plafond conclut que ça passe. La campagne partirait
+     * avec 100 000 destinataires au lieu des 150 000 visés, **et le nombre affiché à l'opérateur serait celui
+     * qu'on vient de calculer**, donc rien ne clocherait à l'écran.
+     *
+     * C'est mot pour mot le sous-envoi silencieux décrit juste au-dessus, transposé du filtre d'exclusion au
+     * filtre de taille : j'ai fermé un défaut en en rouvrant un de la même famille, trois lignes plus bas.
+     *
+     * Les 100 000 restent le garde-fou de l'appel NON borné (la purge), là où il a un sens : personne n'a
+     * demandé de taille, donc on refuse de matérialiser la table entière. Un appelant qui demande une taille
+     * l'obtient, ce qui était le comportement d'avant.
+     */
+    const cap = limite === undefined ? 100_000 : Math.max(1, Math.round(limite));
     const res = await this.pool.query<{ id: string }>(
       `select id from contacts where ${sel.where} order by created_at desc limit $${sel.params.length + 1}`,
       [...sel.params, cap],

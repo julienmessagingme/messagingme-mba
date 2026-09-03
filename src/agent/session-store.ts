@@ -142,4 +142,21 @@ export interface TourBloque {
   runId: string;
   waId: string;
   nodeId: string;
+  /**
+   * 🔴 LA SORTIE RÉELLEMENT DUE, et elle n'était pas transportée (contre-contre-rapport du 2026-09-03).
+   *
+   * Le balayage sortait le parcours par `sortie:echec` EN DUR. C'était juste tant qu'il ne réclamait que des
+   * sessions `en_cours`, qui n'ont par construction aucune sortie enregistrée. Depuis qu'il ramasse aussi les
+   * sessions closes dont la sortie est restée due, c'est faux : deux des cinq sorties de `runTurn` écrivent
+   * autre chose (le plafond, et surtout la sortie DÉCIDÉE par l'agent, qui est un code déclaré par le client).
+   * Le contact repartait donc par le repli technique au lieu de la branche prévue, et c'est le cas le plus
+   * fréquent, une conversation d'agent se terminant normalement bien plus souvent qu'elle n'échoue.
+   *
+   * ⚠️ **Elle rétablit aussi l'idempotence**, ce qui n'est pas un bonus mais la raison qui tranche : la
+   * déduplication d'`advance` porte sur `agent:<session>:<sortie>`, donc un code différent DÉFAIT la
+   * protection contre le rejeu. Reprendre avec le bon code, c'est reprendre avec la clé qui déduplique.
+   *
+   * Jamais nulle : la requête met la sortie forcée à la place quand la session était encore `en_cours`.
+   */
+  sortie: string;
 }

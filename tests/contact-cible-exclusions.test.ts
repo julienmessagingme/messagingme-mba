@@ -57,6 +57,17 @@ describe('cible de campagne : exclusions et plafond', () => {
     expect(params).toContain(500);
   });
 
+  it('🔴 une limite DEMANDÉE n’est jamais rabotée en silence, même très grande', async () => {
+    // Le défaut que ma propre réécriture avait introduit : un `Math.min(100_000, ...)` écrasait une limite
+    // plus grande sans rien dire. Or le plafond de campagne vit en configuration pour se relever le jour d'un
+    // gros client, donc le geste prévu par le produit était exactement celui qui armait le défaut. La route
+    // demande `plafond + 1` pour distinguer « pile au plafond » de « au-dessus » : rabotée, elle conclut que
+    // ça passe, et la campagne part amputée sans que rien ne cloche à l'écran.
+    const { pool, requetes } = poolQuiCapture();
+    await new PgContactStore(pool).contactIdsForTarget('t1', { filters: {} }, 150_001);
+    expect(requetes[0]!.params, 'la limite demandée doit arriver intacte au SQL').toContain(150_001);
+  });
+
   it('sans limite, le plafond technique du store s’applique quand même', async () => {
     // Une cible non bornée ne doit pas pouvoir matérialiser la table entière : c'était déjà le cas avant, et
     // la réécriture ne devait pas le perdre.

@@ -189,7 +189,7 @@ export class PgAgentSessionStore implements AgentSessionStore {
    * contact ; clore fait au pire répéter la branche d'échec du scénario, qui est prévue pour ça.
    */
   async reclamerToursBloques(ageSecondes: number, limite: number, sortie: string): Promise<TourBloque[]> {
-    const res = await this.pool.query<{ id: string; tenant_id: string; run_id: string; wa_id: string; node_id: string }>(
+    const res = await this.pool.query<{ id: string; tenant_id: string; run_id: string; wa_id: string; node_id: string; sortie: string }>(
       `update agent_sessions s
           set status = case when s.status = 'en_cours' then 'erreur' else s.status end,
               sortie = case when s.status = 'en_cours' then $3::text else s.sortie end,
@@ -203,7 +203,7 @@ export class PgAgentSessionStore implements AgentSessionStore {
            limit $2
            for update skip locked
         )
-      returning s.id, s.tenant_id, s.run_id, s.wa_id, s.node_id`,
+      returning s.id, s.tenant_id, s.run_id, s.wa_id, s.node_id, coalesce(s.sortie, $3::text) as sortie`,
       // Bornés des DEUX côtés : `make_interval(secs => $1::int)` refuse tout ce qui dépasse un entier signé
       // 32 bits (`value out of range for type integer`, vérifié contre la base le 2026-09-03 en passant un
       // âge de cent ans). Aucun appelant sain n'en approche, mais une fonction qui lève sur son argument est
@@ -212,6 +212,10 @@ export class PgAgentSessionStore implements AgentSessionStore {
     );
     return res.rows.map((r) => ({
       sessionId: r.id, tenantId: r.tenant_id, runId: r.run_id, waId: r.wa_id, nodeId: r.node_id,
+      // `coalesce` côté SQL plutôt qu'un repli côté TypeScript : le `returning` d'un UPDATE rend la valeur
+      // d'APRÈS écriture, donc une session encore `en_cours` relit exactement la sortie forcée qu'on vient de
+      // lui poser, et une session déjà close rend la sienne. Un point de décision en moins à tenir ici.
+      sortie: r.sortie,
     }));
   }
 }

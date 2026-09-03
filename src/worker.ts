@@ -921,7 +921,7 @@ async function main(): Promise<void> {
         // Le parcours reprend par la branche d'échec du bloc agent, celle que le client a rédigée. La session
         // est DÉJÀ close par la réclamation (ou l'était avant elle, quand la sortie est restée due) :
         // `sortirDuBlocAgent` ne fait plus que faire avancer le run, et ne fait rien s'il a déjà avancé.
-        sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, SORTIE_ECHEC).then(() => {}),
+        sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, t.sortie).then(() => {}),
         // La sortie est passée : la marque tombe, et la ligne cesse d'être réclamable. Sans ce câblage, la
         // même session reviendrait à chaque passage, la sortie n'y ferait rien de plus, mais le balayage
         // travaillerait pour rien et son compte annoncerait des parcours remis en route qui l'étaient déjà.

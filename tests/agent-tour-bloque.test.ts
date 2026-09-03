@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { runTourBloqueSweep, AGE_TOUR_MORT_S, LOT_TOURS_BLOQUES } from '../src/agent/tour-bloque-sweep';
+import { DUREE_MAX_AVANCE_MS } from '../src/workflow/bail-avance';
 import type { TourBloque } from '../src/agent/session-store';
 import { runTurn } from '../src/agent/run-turn';
 import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
@@ -19,8 +21,8 @@ import type { DecisionAgent } from '../src/agent/brain';
  * du tour, qui n'est jamais arrivée), et le contact n'a jamais de réponse.
  */
 
-const tour = (id: string): TourBloque => ({
-  sessionId: id, tenantId: 't1', runId: `r-${id}`, waId: '33600', nodeId: 'a',
+const tour = (id: string, sortie = 'sortie:echec'): TourBloque => ({
+  sessionId: id, tenantId: 't1', runId: `r-${id}`, waId: '33600', nodeId: 'a', sortie,
 });
 
 describe('balayage des tours d’agent morts en vol', () => {
@@ -79,6 +81,19 @@ describe('balayage des tours d’agent morts en vol', () => {
     expect(appliquees, 's2 doit rester marquée pour le passage suivant').toEqual(['s1', 's3']);
   });
 
+  it('🔴 la sortie RÉELLEMENT DUE est celle qui repart, pas « échec » en dur', async () => {
+    // Le balayage ramasse désormais aussi des sessions déjà closes, dont la sortie était décidée avant la
+    // panne : un plafond franchi, ou la sortie que l'agent a choisie dans la liste du client. Les faire
+    // repartir par le repli technique changerait le sens métier du scénario, et c'est le cas le plus
+    // fréquent, une conversation d'agent se terminant normalement bien plus souvent qu'elle n'échoue.
+    const vues: string[] = [];
+    await runTourBloqueSweep({
+      reclamer: async () => [tour('s1', 'termine'), tour('s2', 'sortie:plafond'), tour('s3')],
+      sortir: async (t) => { vues.push(t.sortie); },
+    });
+    expect(vues).toEqual(['termine', 'sortie:plafond', 'sortie:echec']);
+  });
+
   it('un câblage SANS `sortieAppliquee` garde le comportement d’avant', async () => {
     // Optionnelle comme partout ailleurs sur ce marqueur : les fixtures ne doivent pas cesser de tourner.
     const n = await runTourBloqueSweep({
@@ -98,6 +113,13 @@ describe('balayage des tours d’agent morts en vol', () => {
     // Dix minutes : un tour vivant est borné par l'échéance du cerveau (30 s) plus ses appels d'outils, il ne
     // s'en approche jamais. C'est un garde-fou d'anomalie, pas une limite de fonctionnement.
     expect(AGE_TOUR_MORT_S).toBeGreaterThanOrEqual(5 * 60);
+    // 🔴 ET IL DOIT DÉPASSER LA DURÉE MAXIMALE D'UNE AVANCE, sinon la marge est nulle : une avance qui va au
+    // bout de son temps rend sa ligne réclamable à l'instant précis où elle abandonne, donc un second porteur
+    // démarre pendant que le premier finit. Les deux constantes valaient dix minutes, ce qui se lisait comme
+    // une coïncidence et était en fait une course. Le lien est tenu ici parce qu'il ne se voit dans aucun des
+    // deux fichiers pris séparément.
+    expect(AGE_TOUR_MORT_S * 1000, 'un tour n’est mort qu’APRÈS qu’une avance ait abandonné')
+      .toBeGreaterThan(DUREE_MAX_AVANCE_MS);
   });
 });
 
@@ -222,5 +244,34 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     };
     const res = await runTurn(JOB, deps);
     expect(res.fait).toBe('repondu');
+  });
+});
+
+/**
+ * LE CÂBLAGE DU BALAYAGE, LU DANS LA SOURCE.
+ *
+ * 🔴 POURQUOI CE TEST EXISTE, ET C'EST LA TROISIÈME FOIS. Les tests ci-dessus montent un FAUX câblage : ils
+ * prouvent que le balayage transmet `tour.sortie` à sa dépendance, et RIEN du câblage réel de `src/worker.ts`.
+ * Vérifié par mutation : remettre `SORTIE_ECHEC` en dur dans le worker laisse les quatorze tests VERTS. C'est
+ * exactement le même angle mort que le plafond de campagne (`tests/campagne-cablage.test.ts`) et que les
+ * capacités du moteur : **ce qui traverse un câblage ne se vérifie pas au type, il se vérifie en le regardant.**
+ */
+const sourceWorker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+describe('câblage du balayage des tours bloqués', () => {
+  it('🔴 le worker passe la sortie RÉCLAMÉE, plus un code en dur', () => {
+    expect(sourceWorker, 'la sortie du parcours doit venir de la ligne réclamée')
+      .toMatch(/sortir: \(t\) => workflowExecutor\.sortirDuBlocAgent\(t\.tenantId, t\.waId, t\.sessionId, t\.sortie\)/);
+  });
+
+  it('la sortie FORCÉE reste passée à la réclamation, et c’est un autre métier', () => {
+    // Elle sert à remplir la colonne des sessions encore `en_cours`, qui n'en ont pas. La confondre avec la
+    // précédente ferait repartir toutes les sessions closes par le repli technique.
+    expect(sourceWorker).toMatch(/reclamer: \(age, limite\) => agentSessions\.reclamerToursBloques\(age, limite, SORTIE_ECHEC\)/);
+  });
+
+  it('la marque n’est effacée qu’après la sortie', () => {
+    expect(sourceWorker).toMatch(/sortieAppliquee: \(t\) => agentSessions\.sortieAppliquee\(t\.tenantId, t\.sessionId\)/);
   });
 });

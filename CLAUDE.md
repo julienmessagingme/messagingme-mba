@@ -75,8 +75,16 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
+🔴 **0113 EST EN ATTENTE (index), et elle N'EST PAS BLOQUANTE** : aucun code ne l'écrit ni ne la lit, le
+balayage rend les mêmes lignes sans elle, un peu plus lentement. Elle rattrape un index PARTIEL de la 0112
+(`where status = 'en_cours'`) devenu inutilisable le 2026-09-03, quand la requête du balayage a perdu sa
+condition de statut. **Un index partiel est un CONTRAT avec une requête précise** : élargir le domaine de la
+requête la fait sortir du contrat, et rien ne le signale, ni le compilateur, ni les tests, ni une erreur au
+démarrage. Le seul symptôme est un plan d'exécution qui change. 🔴 Elle est HORS TRANSACTION
+(`CREATE INDEX CONCURRENTLY`), donc sans filet.
+
 **Dernière appliquée : 0112** (la marque de tour d'agent en vol), passée le 2026-09-03, après 0108 à 0111.
-**Aucune n'est en attente.**
+**0113 est écrite et EN ATTENTE** (cf. ci-dessus).
 🔴 **0112 est BLOQUANTE** : `prendreLeTour` écrit `tour_commence_le` à chaque tour, et c'est le chemin chaud du
 bloc agent. Déployer sans migrer ferait échouer TOUS les tours. Appliquée AVANT, colonne et index vérifiés en
 base, et le SQL du balayage joué à blanc contre la vraie table (0 ligne). ⚠️ Vérifié EN BASE le 2026-09-03
@@ -86,7 +94,7 @@ base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS 
 requête doit être qualifiée `public.`, sinon elle lit la table d'un autre outil et rend des colonnes inconnues.
 ⚠️ 0110 posait `create extension vector`, la première du dépôt à ajouter une EXTENSION, donc le seul point qui
 pouvait échouer pour une raison de droits : il est passé sans incident.
-**Prochaine libre = 0113** (la ligne disait 0112, qui est le fichier DÉJÀ appliqué : écrire une migration
+**Prochaine libre = 0114** (0113 est écrite, non appliquée. La ligne a dit 0112, qui était le fichier DÉJÀ appliqué : écrire une migration
 sous ce numéro l'aurait écrasée. Corrigé le 2026-09-03). En pratique on applique aussi via `npm run migrate`
 en local (même Supabase prod).
 
@@ -324,6 +332,20 @@ qu'avant le premier envoi tracé.
   **jeton de garde** (sinon le porteur d'un bail périmé supprime le verrou de celui qui l'a repris), et un
   **drapeau de relance** (sinon le travail arrivé pendant le run est perdu). Réécrire le même verrou ailleurs
   se fait sur ces trois pièces, pas sur deux.
+- 🔴 **ÉLARGIR LE DOMAINE D'UNE RÉPARATION SANS ÉLARGIR CE QU'ELLE TRANSPORTE** (2026-09-03). Le corollaire du
+  point suivant, trouvé le lendemain, et il est plus général que lui. Le balayage des tours bloqués sortait le
+  parcours par `sortie:echec` EN DUR : c'était juste tant qu'il ne réclamait que des sessions `en_cours`, qui
+  n'ont par construction aucune sortie enregistrée. Le jour où on lui a fait ramasser aussi les sessions closes
+  dont la sortie était due, la valeur en dur est devenue fausse, et **rien ne l'a signalé**. Même famille, même
+  jour : un **index PARTIEL est un contrat avec une requête précise**, et élargir la requête la fait sortir du
+  contrat sans erreur, le seul symptôme étant un plan d'exécution qui change. La règle : quand on élargit ce
+  qu'une réparation ramasse, on relit tout ce qu'elle suppose de ce qu'elle ramassait.
+- 🔴 **UNE REPRISE AUTOMATIQUE NE VAUT MIEUX QU'UNE REPRISE EXISTANTE QUE SI ELLE PRODUIT LE MÊME ÉTAT FINAL**
+  (2026-09-03). `escalade.ts` est le seul couple « clore puis sortir » qui ne préserve pas la marque, et on ne
+  l'aligne PAS : le rattrapage existant (le message suivant du contact remonte le fil en inbox ET escalade) est
+  meilleur que le balayage, et le contact qui vient de réclamer un humain face à un silence total réécrit
+  presque toujours. Poser la marque ferait sortir le parcours à la 15e minute par une branche qui, elle, ne
+  rappelle pas forcément l'escalade. L'uniformité aurait été une régression déguisée en cohérence.
 - 🔴 **UNE TRANSITION TERMINALE FAITE DE DEUX ÉCRITURES DOIT LAISSER, ENTRE LES DEUX, L'ÉTAT QUE SON
   RÉPARATEUR SAIT RECONNAÎTRE** (contre-audit du 2026-09-03). La sortie d'un tour d'agent clôturait la session
   PUIS faisait sortir le parcours : une panne au milieu laissait un parcours mort pour toujours, la clôture
@@ -363,6 +385,17 @@ tentative est presque toujours un secret voisin du vrai. Chaque refus est journa
 `/api/backend/:path*` est un ATTRAPE-TOUT, `/ops` compris. Le nouveau nom n'ouvre rien, il rend les adresses
 DEVINABLES. Corollaire : toute règle posée sur l'hôte `mba.` doit être redupliquée sur le nouveau, sinon elle
 est simplement contournée.
+
+🔴 **L'INVENTAIRE DES CHEMINS SORTANTS EST TENU PAR UN TEST, plus par cette page** (2026-09-03). Ce fichier a
+affirmé qu'il y avait TROIS chemins où une URL saisie par un client finit dans un `fetch`, et qu'ils étaient
+tous gardés. Il y en avait **QUATRE** : le bouton « éprouver une SOURCE » (`src/index.ts`) appelait
+`construireCible` puis `fetch`, sans jamais résoudre. Ce qui l'a fait rater : les deux boutons « Test » se
+ressemblent beaucoup et l'AUTRE appelait bien la garde. **Un inventaire de chemins sensibles écrit à la main
+dérive dès qu'on ajoute un bouton** ; celui-ci est désormais vérifié à chaque exécution de la suite
+(`tests/lib-adresse-privee.test.ts`). ⚠️ Sa garde accepte les DEUX formes de câblage, l'appel direct et la
+valeur par défaut d'une dépendance injectable, parce que les deux existent et sont justes. Et elle retire les
+lignes d'`import` avant de chercher : sans ça elle passait alors même que l'appel avait été supprimé, ce qui
+a été vérifié par mutation.
 
 🔴 **Toute URL saisie par un client se vérifie DEUX fois : sur son texte, ET sur ce vers quoi elle RÉSOUT**
 (lot A3, 2026-09-03). `urlRecuperable` lit le texte de l'hôte et refuse `localhost`, les littéraux privés et
