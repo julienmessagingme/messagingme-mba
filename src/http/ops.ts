@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { makeRequireOps } from '../auth/middleware';
 import { estUuid } from './scope';
-import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
+import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
 
 /**
@@ -35,6 +35,12 @@ export interface OpsRouteDeps {
    * confort d'exploitation, pas une garantie : elle ne doit rien faire échouer.
    */
   getQueueLoadParGroupe?(): Promise<QueueGroupLoadRow[]>;
+  /**
+   * La latence RÉELLE par file sur une fenêtre : le p95 que le document de SLO croyait lire dans la jauge
+   * d'âge (constat A4 de l'audit externe du 2026-09-02). Optionnelle et best-effort, comme l'équité : elle
+   * sert à VOIR, elle ne garantit rien, et un écran d'exploitation ne tombe pas parce qu'une mesure manque.
+   */
+  getQueueLatence?(fenetreHeures: number): Promise<QueueLatenceRow[]>;
   /**
    * Les jobs MORTS (file d'échec), les plus anciens d'abord. Lecture pure. Absente -> route non montée.
    *
@@ -93,7 +99,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: 
   const guard = { preHandler: makeRequireOps(opsToken) };
 
   app.get('/ops/overview', guard, async (_req, reply) => {
-    const [tenants, daily, queues, worker, queuesParGroupe, attentesPool] = await Promise.all([
+    const [tenants, daily, queues, worker, queuesParGroupe, attentesPool, latences] = await Promise.all([
       deps.getTenantOverview(),
       deps.getGlobalDaily(14),
       deps.getQueueLoad(),
@@ -104,9 +110,12 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: 
       // Même doctrine, et elle compte doublement ici : la table de la migration 0109 peut ne pas exister
       // encore, et un écran d'exploitation qui tombe le jour d'un déploiement est exactement ce qu'on ne veut pas.
       deps.lireAttentesPool ? deps.lireAttentesPool(180).catch(() => []) : Promise.resolve([]),
+      // Fenêtre de 24 h : assez longue pour que le p95 ait un sens, assez courte pour qu'il décrive
+      // AUJOURD'HUI. Sur sept jours, un incident d'il y a six jours tiendrait encore le chiffre.
+      deps.getQueueLatence ? deps.getQueueLatence(24).catch(() => []) : Promise.resolve([]),
     ]);
     const poolInstantane = deps.etatPoolInstantane ? deps.etatPoolInstantane() : null;
-    return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool });
+    return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool, latences });
   });
 
   /**

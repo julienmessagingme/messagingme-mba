@@ -1204,6 +1204,7 @@ async function main(): Promise<void> {
       getQueueLoad: () => opsStore.getQueueLoad(),
       // L'équité : quels GROUPES attendent le plus. Vide = tout le monde est servi.
       getQueueLoadParGroupe: () => opsStore.getQueueLoadParGroupe(),
+      getQueueLatence: (h) => opsStore.getQueueLatence(h),
       // Les jobs MORTS et leur rejeu. Deuxième écriture métier de la surface d'exploitation, assumée pour la
       // même raison que le rechargement de solde : rejouer un traitement mort est un geste d'exploitation,
       // cross-espace, qui suppose qu'on ait corrigé la cause de l'échec.

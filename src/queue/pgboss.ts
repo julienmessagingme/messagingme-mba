@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import type { ConstructorOptions, MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
-import { dlqName, notifieePour, pollingSecondsFor } from './names';
+import { dlqName, notifieePour, pollingSecondsFor, SEUIL_RAFALE } from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -255,6 +255,12 @@ export class PgBossQueue implements Queue {
         batchSize: 1,
         pollingIntervalSeconds: pollingSecondsFor(name),
         notifyPollingIntervalSeconds: pollingSecondsFor(name),
+        // 🔴 LA RAFALE. Sans elle, le débit d'une file valait `1 / cadence de sondage` : deux jobs par minute
+        // sur `webhook-status`, MESURÉ en production, quand une campagne de 5 000 destinataires en produit
+        // quinze mille. La cadence lente reste juste au REPOS et devient absurde sous retard. Détail et
+        // chiffres dans `names.ts` (`SEUIL_RAFALE`). S'applique à toutes les files : celles qui n'ont jamais
+        // vingt jobs en attente ne la déclenchent simplement jamais.
+        burstWhenReadyExceeds: SEUIL_RAFALE,
         ...workConcurrencyOptions(opts ?? {}),
       },
       async (jobs) => {

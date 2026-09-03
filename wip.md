@@ -30,6 +30,20 @@ Trois blocs dans la soirée :
 🔴 **Ce qui reste ouvert est dans `todo.md`.** Les DEUX points IA sont faits (A2 puis A1, ci-dessous) ;
 reste A3 (les bornes de sécurité des connecteurs HTTP) et A4 (la preuve de capacité).
 
+## EN COURS le 2026-09-03 : A4, la preuve de capacité
+
+**Fait** : la photo de `/ops` compte les jobs `active` (elle retombait à zéro sur un job coincé, ce qui rendait
+fausse l'affirmation « plus sévère que le p95 » du document de SLO) ; un VRAI p95 par file sur 24 h, calculé
+depuis les horodatages que pg-boss écrivait déjà, affiché dans une carte séparée pour qu'on cesse de confondre
+la photo et l'historique ; le banc agent a un mode DURÉE avec découpe par minute, parce qu'une rafale plus
+courte que la fenêtre d'un plafond tient toujours.
+
+🔴 **La mesure a trouvé un mur que personne n'avait vu** : `webhook-status` se vidait à DEUX jobs par minute,
+soit 125 heures pour les 15 000 accusés d'une campagne de 5 000. Corrigé (`burstWhenReadyExceeds`). Et le
+premier chiffre réel du SLO entrant : **p95 de 8,7 s** contre 30 s visés.
+
+**Reste** : lancer le banc agent plusieurs minutes sur le VPS (la clé du Gateway n'existe que là).
+
 ## LIVRÉ le 2026-09-03 : A3, les deux bornes de sécurité des appels sortants
 
 Une URL saisie par un client était contrôlée sur son TEXTE seulement : `crm.exemple.fr` dont l'enregistrement

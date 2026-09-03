@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BASE_QUEUES, ALL_QUEUES, dlqName, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS } from '../src/queue/names';
+import { BASE_QUEUES, ALL_QUEUES, dlqName, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE } from '../src/queue/names';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -145,7 +145,10 @@ describe('cadence de polling par file', () => {
     expect(api, 'l’API doit démarrer pg-boss sans supervision (elle empile, elle ne dépile pas)').toMatch(/supervise:\s*false/);
     expect(worker, 'le worker doit rester le SEUL à superviser : pas de supervise: false ici').not.toMatch(/supervise:\s*false/);
     expect(worker, 'le worker doit espacer la maintenance flow').toMatch(/flowIntervalSeconds:\s*60/);
-    expect(wrapper, 'la cadence par file doit réellement atteindre boss.work').toMatch(/pollingIntervalSeconds:\s*pollingSecondsFor\(name\)/);
+    // Ancrée sur la ligne entière, comme le seuil de rafale plus bas : un `toMatch` sur le seul nom de
+    // l'option passe aussi quand l'option est enfermée dans une condition morte. Vérifié.
+    expect(wrapper, 'la cadence par file doit être une propriété DIRECTE des options de boss.work')
+      .toMatch(/^\s{8}pollingIntervalSeconds: pollingSecondsFor\(name\),$/m);
   });
 
   it('🔴 le REVEIL par notification est branche, et pose la ou il fait quelque chose', () => {
@@ -165,8 +168,36 @@ describe('cadence de polling par file', () => {
     // entrants, et seulement les jours ou l'ecouteur est casse, donc invisible en test.
     const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));
     expect(wrapper, 'le filet doit valoir la cadence de base, jamais le defaut de 30 s').toMatch(
-      /notifyPollingIntervalSeconds:\s*pollingSecondsFor\(name\)/,
+      /^\s{8}notifyPollingIntervalSeconds: pollingSecondsFor\(name\),$/m,
     );
+  });
+
+  it('🔴 la RAFALE est branchée : sans elle, le débit d’une file vaut 1 / cadence de sondage', () => {
+    // Mesuré en production le 2026-09-03, pas supposé : `webhook-status` sonde toutes les 30 s, prend UN job
+    // par sondage et le traite en 0,05 s, soit DEUX jobs par minute. Une campagne de 5 000 destinataires
+    // produit environ 15 000 accusés : 125 heures pour les absorber, avec des compteurs faux pendant des
+    // jours. La cadence lente est juste au repos et absurde sous retard.
+    const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));
+    // ⚠️ La ligne ENTIÈRE, ancrée, et pas un simple `toMatch` sur le nom de l'option. Vérifié dans les deux
+    // sens : une version neutralisée en `...(false ? { burstWhenReadyExceeds: SEUIL_RAFALE } : {})` passait
+    // le `toMatch` sans rien brancher. Un test de câblage qui survit à la neutralisation du câblage ne
+    // prouve rien.
+    expect(wrapper, 'le seuil de rafale doit être une propriété DIRECTE des options de boss.work')
+      .toMatch(/^\s{8}burstWhenReadyExceeds: SEUIL_RAFALE,$/m);
+    // Un seuil qui vaut zéro ferait tourner la file en continu même à vide : c'est l'egress que la cadence
+    // par file avait justement supprimé.
+    expect(SEUIL_RAFALE).toBeGreaterThan(0);
+  });
+
+  it('🔴 la rafale ne touche PAS la concurrence : c’est elle qui protège les entrants', () => {
+    // La distinction qui rend le réglage sûr. La cadence décide de la VITESSE de vidage, la concurrence
+    // décide de combien de jobs tournent ENSEMBLE. Accélérer une rafale d'accusés n'autorise pas à en
+    // traiter deux en même temps, sinon on rouvre exactement ce que le lot 6 avait fermé.
+    const worker = sansCommentaires(readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8'));
+    const debut = worker.indexOf("queue.work('webhook-status'");
+    const registration = debut === -1 ? '' : worker.slice(debut, debut + 600);
+    expect(registration, 'la registration de webhook-status doit être trouvée').not.toBe('');
+    expect(registration, 'webhook-status ne doit toujours traiter qu’un accusé à la fois').not.toMatch(/concurrency:/);
   });
 
   it('🔴 seul le worker ECOUTE : l’API empile, un ecouteur y prendrait une connexion pour rien', () => {

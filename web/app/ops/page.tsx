@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, observerTenant, type OpsOverview, type TenantOverviewRow, type QueueLoadRow,
-  type QueueGroupLoadRow, type WorkerHeartbeat, type PoolInstantane, type PoolAttentePoint } from '@/lib/api';
+  type QueueGroupLoadRow, type QueueLatenceRow, type WorkerHeartbeat, type PoolInstantane, type PoolAttentePoint } from '@/lib/api';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
@@ -135,6 +135,7 @@ export default function OpsPage() {
             <WorkerCard worker={data.worker} />
 
             <QueueCard queues={data.queues} />
+            <LatenceCard lignes={data.latences ?? []} />
             <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
@@ -368,6 +369,71 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
       </div>
     </div>
   );
+}
+
+/**
+ * LA LATENCE REELLE, sur 24 h, calculee sur les jobs TERMINES (constat A4 de l'audit externe du 2026-09-02).
+ *
+ * 🔴 Pourquoi elle est SEPAREE de la carte des files : ce ne sont pas deux vues du meme chiffre. La carte du
+ * dessus est une PHOTO (« qui attend en ce moment »), celle-ci est un HISTORIQUE (« a quoi ressemblaient les
+ * dernieres 24 h »). Le document de SLO confondait les deux et en tirait un p95 que la photo ne pouvait pas
+ * donner. Les mettre l'une sous l'autre, avec leurs noms, est ce qui empeche de refaire l'amalgame.
+ *
+ * Vide = aucun job termine sur la fenetre, ce qui est l'etat normal d'une installation au repos. On le DIT,
+ * plutot que d'afficher des zeros qui se liraient « tout va vite ».
+ */
+function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const utiles = lignes.filter((l) => l.echantillons > 0).sort((a, b) => b.attenteP95Secondes - a.attenteP95Secondes);
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
+      <p className="mb-3 mt-1 text-xs text-ink-500">
+        {t(
+          'Calculée sur les jobs terminés. À ne pas confondre avec l’âge ci-dessus, qui est une photo de l’instant.',
+          'Computed over completed jobs. Not to be confused with the age above, which is a snapshot.',
+        )}
+      </p>
+      {utiles.length === 0 ? (
+        <p className="text-xs text-ink-400">{t('Aucun job terminé sur la fenêtre.', 'No job completed in this window.')}</p>
+      ) : (
+        <div className="grid gap-2">
+          {utiles.map((l) => (
+            <div key={l.queue} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
+              <span className="font-mono text-xs text-ink-700">{l.queue}</span>
+              <span className="flex gap-3 text-xs tabular-nums">
+                {/* L'effectif EN PREMIER : un p95 sur trois jobs ne veut rien dire. */}
+                <span className="text-ink-400" title={t('jobs terminés sur la fenêtre', 'jobs completed in window')}>
+                  {fmtNum(l.echantillons, locale)} {t('jobs', 'jobs')}
+                </span>
+                <span className="text-ink-600" title={t('attente médiane avant prise', 'median wait before pickup')}>
+                  p50 {fmtSecondes(l.attenteP50Secondes)}
+                </span>
+                <span
+                  data-testid={`latence-p95-${l.queue}`}
+                  className={l.attenteP95Secondes >= 30 ? 'font-medium text-coral' : 'text-ink-600'}
+                  title={t('attente au 95e centile', '95th percentile wait')}
+                >
+                  p95 {fmtSecondes(l.attenteP95Secondes)}
+                </span>
+                <span className="text-ink-500" title={t('bout en bout au 95e centile (attente + traitement)', 'end-to-end 95th percentile')}>
+                  {t('bout en bout', 'end to end')} {fmtSecondes(l.boutEnBoutP95Secondes)}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Secondes lisibles : un « 505,652 s » ne se lit pas, un « 8 min » se lit. */
+function fmtSecondes(s: number): string {
+  if (s < 1) return `${Math.round(s * 1000)} ms`;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
+  return `${Math.round(s / 60)} min`;
 }
 
 function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; onObserver: (id: string, nom: string) => void }) {

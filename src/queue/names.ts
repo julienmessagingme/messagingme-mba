@@ -88,6 +88,32 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
 };
 
 /**
+ * SEUIL DE RAFALE : au-delà de ce nombre de jobs prêts, la file cesse d'attendre entre deux prises et se vide
+ * à plein régime. Constat A4 de l'audit externe du 2026-09-02, mesuré en PRODUCTION le 2026-09-03.
+ *
+ * 🔴 CE QU'ON A MESURÉ, ET QUI N'ÉTAIT PAS UNE HYPOTHÈSE. `webhook-status` sonde toutes les 30 s, prend UN
+ * job par sondage (`batchSize: 1`, concurrence 1) et le traite en 0,05 s. Débit réel : DEUX jobs par minute,
+ * lisible tel quel dans `pgboss.job` (deux prises par minute, minute après minute, de 18:05 à 18:11 le
+ * 2026-09-02). Or une campagne de 5 000 destinataires produit environ 15 000 accusés de livraison : à deux
+ * par minute, il faut CENT VINGT-CINQ HEURES pour les absorber. Les compteurs de la campagne resteraient
+ * faux pendant des jours, et le client verrait « 5 000 envoyés, 12 délivrés ».
+ *
+ * La cadence lente était un bon choix pour le REPOS (l'egress d'un sondage à vide est du pur gaspillage, cf.
+ * `QUEUE_POLLING_SECONDS`). Elle était un mauvais choix pour la RAFALE, et c'est exactement ce que ce
+ * réglage sépare : pg-boss remet le délai à zéro tant que la file a du retard ET que la prise précédente a
+ * ramené quelque chose. Dès qu'elle se vide, une prise revient bredouille et le sondage lent reprend. Aucun
+ * tour à vide, donc aucun egress ajouté au repos.
+ *
+ * ⚠️ La concurrence, elle, ne bouge PAS. C'est elle qui protège les entrants (un seul accusé traité à la
+ * fois), pas la cadence. Rendre une rafale rapide n'autorise pas à en traiter deux ensemble.
+ *
+ * ⚠️ Le compte de jobs prêts que pg-boss consulte est mis en cache et rafraîchi toutes les 60 s (lu dans sa
+ * source, `queueCacheIntervalSeconds`), donc une rafale peut mettre jusqu'à une minute à s'engager. Sans
+ * conséquence sur une file de fond, et c'est ce décalage qui justifie un seuil bas plutôt que zéro.
+ */
+export const SEUIL_RAFALE = 20;
+
+/**
  * Une file est-elle réveillée par notification ? Une DLQ ne l'est jamais (personne ne la travaille), et une
  * file inconnue non plus : le défaut est « sondage seul », c'est-à-dire le comportement d'avant. Se tromper
  * ici doit coûter de la latence, jamais un réveil non voulu sur un chemin de fond.

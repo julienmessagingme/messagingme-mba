@@ -31,9 +31,17 @@ de fournir son PROPRE résolveur à la couche HTTP (`undici`, `connect.lookup`),
 plus. Le scénario suppose un administrateur client hostile, qui a déjà son compte : le rapport ne le justifie
 pas aujourd'hui. Le cas réaliste, un nom public qui pointe vers l'intérieur, est fermé.
 
-**A4 — la preuve de capacité.** Le SLO entrant confond encore l'âge du plus vieux job PRÊT avec un p95 de bout
-en bout : un job déjà actif peut être bloqué pendant que cet âge revient à zéro. Il faut horodater création,
-début et fin métier, et rejouer le banc agent sur plusieurs MINUTES, pas sur des rafales de dix secondes.
+**A4 — la preuve de capacité.** ⚠️ **Partiellement livré le 2026-09-03.** Fait : la photo compte désormais
+les jobs `active` (elle retombait à zéro sur un job coincé), un VRAI p95 par file est calculé sur 24 h depuis
+les horodatages que pg-boss écrit déjà (aucune instrumentation ajoutée, elle existait et personne ne la
+lisait) et affiché dans `/ops`, l'affirmation fausse du document de SLO est retirée, et le banc agent a
+désormais un mode DURÉE avec découpe par minute. **Reste** : lancer ce banc plusieurs minutes sur le VPS (la
+clé du Gateway n'existe que là), et écrire le profil `equite`.
+
+🔴 **Ce que la mesure a trouvé au passage, et qui n'était dans aucun audit** : `webhook-status` se vidait à
+DEUX jobs par minute (sondage 30 s, un job par sondage, travail de 0,05 s), soit 125 heures pour absorber les
+15 000 accusés d'une campagne de 5 000 destinataires. Corrigé par `burstWhenReadyExceeds`. Chiffres et leçon
+dans `docs/SLO-2026-09-01.md`.
 
 Puis les B et C de l'audit : rendre les échecs d'avance acquittables, imbriquer les capacités au lieu de
 recopier les `Pick`, fermer la course du plafond « tous les contacts », découper `CampaignCreateForm`.

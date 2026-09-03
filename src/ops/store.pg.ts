@@ -50,6 +50,23 @@ export interface QueueLoadRow {
  *   - `webhook` : le CONTACT (`<numéro>:<wa_id>`), donc « quel contact attend le plus », ce qui sert le SLO 1 ;
  *   - les autres files n'ont pas de groupe : elles n'apparaissent pas ici.
  */
+/**
+ * La latence RÉELLE d'une file sur une fenêtre, calculée sur les jobs terminés.
+ *
+ * `echantillons` est la première chose à regarder : un p95 sur trois jobs ne veut rien dire, et la rétention
+ * de pg-boss décide de ce qui reste lisible. Un p95 sans son effectif est un chiffre qui trompe.
+ */
+export interface QueueLatenceRow {
+  queue: string;
+  echantillons: number;
+  /** Temps pendant lequel PERSONNE ne s'occupait du job (cadence de sondage, concurrence saturée). */
+  attenteP50Secondes: number;
+  attenteP95Secondes: number;
+  /** Attente PLUS traitement : ce que l'utilisateur ressent réellement. */
+  boutEnBoutP95Secondes: number;
+  boutEnBoutMaxSecondes: number;
+}
+
 export interface QueueGroupLoadRow {
   queue: string;
   groupe: string;
@@ -255,12 +272,18 @@ export class PgOpsStore {
     const zero = (): QueueLoadRow[] => ALL_QUEUES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }));
     try {
       const res = await this.pool.query<{ name: string; state: string; count: string; age_max: string | null }>(
-        // `age_max` n'est calculé que sur les jobs PRÊTS et en attente : un job programmé pour plus tard
-        // (`start_after` futur) n'est pas en retard. Le `filter` le fait dans le même passage, donc sans
-        // second balayage de la table des jobs.
+        // `age_max` ne compte QUE les jobs prêts : un job programmé pour plus tard (`start_after` futur) n'est
+        // pas en retard. Le `filter` le fait dans le même passage, donc sans second balayage de la table.
+        //
+        // 🔴 `active` EST COMPTÉ, et c'était le défaut (constat A4 de l'audit externe du 2026-09-02). En
+        // n'écoutant que `created` et `retry`, la mesure retombait à ZÉRO à l'instant où un job était PRIS,
+        // même s'il restait bloqué dix minutes dedans. Le document de SLO affirmait de cette jauge qu'elle
+        // était « le pire cas instantané, donc plus sévère : s'il tient, le p95 tient ». C'était faux dans
+        // le seul cas qui compte, celui où quelque chose est coincé. Un job pris et jamais fini est
+        // exactement ce qu'un indicateur de retard doit montrer.
         `select name, state, count(*)::int as count,
                 max(extract(epoch from (now() - start_after)))
-                  filter (where state in ('created', 'retry') and start_after <= now()) as age_max
+                  filter (where state in ('created', 'retry', 'active') and start_after <= now()) as age_max
          from ${this.schema}.job
          where name = any($1) and state in ('created', 'retry', 'active', 'failed')
          group by name, state`,
@@ -274,8 +297,8 @@ export class PgOpsStore {
         if (row.state === 'created' || row.state === 'retry') q.backlog += c;
         else if (row.state === 'active') q.active += c;
         else if (row.state === 'failed') q.failed += c;
-        // Le `max` porte sur UN état à la fois (le group by inclut `state`) : on garde le plus grand des deux
-        // lignes possibles, `created` et `retry`.
+        // Le `max` porte sur UN état à la fois (le group by inclut `state`) : on garde le plus grand des trois
+        // lignes possibles, `created`, `retry` et `active`.
         const age = row.age_max === null ? 0 : Math.max(0, Math.round(Number(row.age_max)));
         if (age > q.ageMaxSecondes) q.ageMaxSecondes = age;
       }
@@ -283,6 +306,63 @@ export class PgOpsStore {
     } catch (err) {
       // 42P01 = undefined_table (schéma/table pgboss absent) -> pas d'erreur, juste des zéros.
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return zero();
+      throw err;
+    }
+  }
+
+  /**
+   * LE VRAI p95 D'ATTENTE, PAR FILE, SUR UNE FENÊTRE (constat A4 de l'audit externe du 2026-09-02).
+   *
+   * 🔴 POURQUOI IL FALLAIT AUTRE CHOSE QUE LA JAUGE. `ageMaxSecondes` est une photo : elle dit ce qui attend
+   * MAINTENANT. Le document de SLO s'en servait comme d'un p95 (« plus sévère : s'il tient, le p95 tient »),
+   * ce qui est faux dans les deux sens : elle ne voit rien d'une lenteur passée qui s'est résorbée, et elle
+   * ne voyait pas non plus un job coincé en traitement. Un objectif de service se vérifie sur une DURÉE.
+   *
+   * ⚠️ AUCUNE INSTRUMENTATION NOUVELLE. pg-boss horodate déjà `start_after` (le moment où le job devient
+   * exigible), `started_on` (sa prise) et `completed_on` (sa fin), et garde les jobs terminés dans la même
+   * table le temps de sa rétention. Ajouter nos propres colonnes aurait dupliqué ce que la base sait déjà.
+   *
+   * ⚠️ CE QUE LA FENÊTRE INCLUT, ELLE LE MESURE. Une fenêtre qui contient un redémarrage de worker mesure
+   * le redémarrage : les jobs qui l'ont traversé portent une attente énorme et parfaitement normale. C'est
+   * une force autant qu'un piège, parce que c'est précisément ce que la jauge ne pouvait pas montrer.
+   */
+  async getQueueLatence(fenetreHeures = 24): Promise<QueueLatenceRow[]> {
+    const heures = Math.min(24 * 30, Math.max(1, Math.round(fenetreHeures)));
+    try {
+      const res = await this.pool.query<{
+        name: string; n: string; p50: string | null; p95: string | null; p95_total: string | null; max_total: string | null;
+      }>(
+        // `started_on - start_after` = l'ATTENTE (le temps où personne ne s'occupait du job).
+        // `completed_on - start_after` = le BOUT EN BOUT, qui est ce que l'utilisateur ressent.
+        // Les deux, parce qu'ils ne se corrigent pas au même endroit : l'attente est un problème de cadence
+        // ou de concurrence, le bout en bout peut être un traitement lent.
+        `select name,
+                count(*)::int as n,
+                percentile_cont(0.5) within group (order by extract(epoch from (started_on - start_after))) as p50,
+                percentile_cont(0.95) within group (order by extract(epoch from (started_on - start_after))) as p95,
+                percentile_cont(0.95) within group (order by extract(epoch from (completed_on - start_after))) as p95_total,
+                max(extract(epoch from (completed_on - start_after))) as max_total
+           from ${this.schema}.job
+          where name = any($1)
+            and state = 'completed'
+            and started_on is not null and completed_on is not null
+            and completed_on > now() - make_interval(hours => $2::int)
+          group by name`,
+        [ALL_QUEUES, heures],
+      );
+      const nombre = (v: string | null): number => (v === null ? 0 : Math.max(0, Math.round(Number(v) * 1000) / 1000));
+      return res.rows.map((r) => ({
+        queue: r.name,
+        echantillons: Number(r.n),
+        attenteP50Secondes: nombre(r.p50),
+        attenteP95Secondes: nombre(r.p95),
+        boutEnBoutP95Secondes: nombre(r.p95_total),
+        boutEnBoutMaxSecondes: nombre(r.max_total),
+      }));
+    } catch (err) {
+      // Même traitement que `getQueueLoad` : un schéma pgboss absent n'est pas une panne, c'est une absence
+      // de mesure. Une carte vide vaut mieux qu'une page d'exploitation qui refuse de s'afficher.
+      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return [];
       throw err;
     }
   }

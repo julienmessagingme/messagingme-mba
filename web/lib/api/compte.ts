@@ -190,6 +190,32 @@ export interface OpsOverview {
   poolInstantane?: PoolInstantane | null;
   /** La courbe par minute, tous process confondus. Vide tant que la migration 0109 n'est pas passée. */
   attentesPool?: PoolAttentePoint[];
+  /**
+   * La latence REELLE par file sur 24 h. Optionnelle : une API d'avant ne l'envoie pas.
+   *
+   * 🔴 A ne pas confondre avec `ageMaxSecondes`, qui est une PHOTO de ce qui attend maintenant. Le document
+   * de SLO prenait la photo pour un p95 (« plus severe : s'il tient, le p95 tient ») : c'est faux dans les
+   * deux sens, elle ne voit rien d'une lenteur passee et resorbee, et elle ne voyait pas un job coince en
+   * traitement. Un objectif de service se verifie sur une DUREE.
+   */
+  latences?: QueueLatenceRow[];
+}
+
+/**
+ * La latence d'une file sur une fenetre, calculee sur les jobs terminés.
+ *
+ * `echantillons` se lit EN PREMIER : un p95 sur trois jobs ne veut rien dire, et la retention de pg-boss
+ * decide de ce qui reste lisible. Un p95 sans son effectif est un chiffre qui trompe.
+ */
+export interface QueueLatenceRow {
+  queue: string;
+  echantillons: number;
+  /** Temps ou PERSONNE ne s'occupait du job : cadence de sondage, ou concurrence saturee. */
+  attenteP50Secondes: number;
+  attenteP95Secondes: number;
+  /** Attente PLUS traitement : ce que l'utilisateur ressent. */
+  boutEnBoutP95Secondes: number;
+  boutEnBoutMaxSecondes: number;
 }
 
 export interface PoolInstantane {

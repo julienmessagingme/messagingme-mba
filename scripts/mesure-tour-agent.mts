@@ -133,7 +133,10 @@ const QUESTIONS = [
 
 const client = new GatewayChatClient(cle);
 
-interface Mesure { tour: number; ar: number; tokensIn: number; tokensCaches: number; tokensOut: number; ms: number; coutDollars: number }
+interface Mesure { tour: number; ar: number; tokensIn: number; tokensCaches: number; tokensOut: number; ms: number; coutDollars: number; fin: number }
+/** L instant de chaque echec, pour savoir A QUELLE MINUTE il est arrive : un refus qui n arrive qu apres la
+ *  troisieme minute est la signature d un plafond par fenetre, et un total ne le dirait pas. */
+const instantsEchecs: number[] = [];
 const mesures: Mesure[] = [];
 const echecs: string[] = [];
 
@@ -154,11 +157,12 @@ async function jouerUnTour(tour: number): Promise<void> {
       // un 429 dit ou est la limite du Gateway, et l'avaler reviendrait a ne pas voir la reponse.
       const message = err instanceof Error ? err.message : String(err);
       echecs.push(`tour=${tour} ar=${ar} ${message}`);
+      instantsEchecs.push(Date.now());
       console.log(`tour=${tour} ar=${ar} ECHEC ${message}`);
       return;
     }
     const ms = Date.now() - debut;
-    mesures.push({ tour, ar, tokensIn: r.usage.tokensIn, tokensCaches: r.usage.tokensCaches, tokensOut: r.usage.tokensOut, ms, coutDollars: r.usage.coutDollars });
+    mesures.push({ tour, ar, tokensIn: r.usage.tokensIn, tokensCaches: r.usage.tokensCaches, tokensOut: r.usage.tokensOut, ms, coutDollars: r.usage.coutDollars, fin: Date.now() });
     console.log(`tour=${tour} ar=${ar} in=${r.usage.tokensIn} caches=${r.usage.tokensCaches} out=${r.usage.tokensOut} ${ms}ms outils=${r.appelsOutils.length} finish=${r.finish}`);
     if (r.appelsOutils.length === 0) break;
     // On rejoue exactement ce que fait la boucle de production : le message assistant qui porte les appels,
@@ -184,9 +188,26 @@ async function jouerUnTour(tour: number): Promise<void> {
  * si la duree par tour se degrade.
  */
 const PARALLELES = Math.max(1, Number(process.argv[5] ?? 1));
-const debutBanc = Date.now();
 
-if (PARALLELES === 1) {
+/**
+ * MODE DUREE (`DUREE_S`), et c est le constat A4 de l audit externe du 2026-09-02.
+ *
+ * 🔴 CE QU UNE RAFALE DE DIX SECONDES NE PEUT PAS VOIR. Un plafond de debit s applique presque toujours sur
+ * une FENETRE (tokens par minute, requetes par minute). Une rafale plus courte que la fenetre tient toujours,
+ * quelle que soit la limite : elle mesure la capacite d un seau plein, pas le debit auquel il se remplit. Le
+ * seul moyen de distinguer les deux est de tenir la charge PLUS LONGTEMPS que la fenetre, donc plusieurs
+ * minutes, et de regarder si la duree par tour derive ou si des refus apparaissent en cours de route.
+ *
+ * Pose en variable d environnement et non en sixieme argument positionnel : la signature en compte deja cinq,
+ * et un sixieme se serait lu de travers un jour ou l autre.
+ */
+const DUREE_S = Math.max(0, Number(process.env.DUREE_S ?? 0));
+const debutBanc = Date.now();
+const finPrevue = DUREE_S > 0 ? debutBanc + DUREE_S * 1000 : 0;
+/** Le banc continue-t-il ? En mode duree c est l horloge qui decide, sinon c est le compteur de tours. */
+const encore = (tour: number): boolean => (DUREE_S > 0 ? Date.now() < finPrevue : tour < TOURS);
+
+if (PARALLELES === 1 && DUREE_S === 0) {
   for (let tour = 0; tour < TOURS; tour += 1) await jouerUnTour(tour);
 } else {
   // Une vague de `PARALLELES` tours a la fois, jusqu'a epuisement : c'est le comportement d'une file dont la
@@ -196,11 +217,11 @@ if (PARALLELES === 1) {
     for (;;) {
       const tour = prochain;
       prochain += 1;
-      if (tour >= TOURS) return;
+      if (!encore(tour)) return;
       await jouerUnTour(tour);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(PARALLELES, TOURS) }, () => fil()));
+  await Promise.all(Array.from({ length: PARALLELES }, () => fil()));
 }
 
 const dureeBancMs = Date.now() - debutBanc;
@@ -211,19 +232,41 @@ for (const m of mesures) parTour.set(m.tour, [...(parTour.get(m.tour) ?? []), m]
 const somme = (f: (m: Mesure) => number): number => mesures.reduce((n, m) => n + f(m), 0);
 const premiers = mesures.filter((m) => m.ar === 0);
 
+/**
+ * Le banc DECOUPE PAR MINUTE. Sans ce decoupage, un banc de dix minutes ne vaut pas mieux qu un banc de dix
+ * secondes : il rend une moyenne, et une moyenne noie exactement la degradation qu on cherche.
+ */
+interface Minute { minute: number; n: number; msTotal: number; tokens: number; echecs: number }
+const minutes: Minute[] = [];
+const bucket = (t: number): Minute => {
+  const i = Math.floor((t - debutBanc) / 60_000);
+  let m = minutes.find((x) => x.minute === i);
+  if (!m) { m = { minute: i, n: 0, msTotal: 0, tokens: 0, echecs: 0 }; minutes.push(m); }
+  return m;
+};
+for (const m of mesures) {
+  const b = bucket(m.fin);
+  b.n += 1;
+  b.msTotal += m.ms;
+  b.tokens += m.tokensIn + m.tokensOut;
+}
+for (const t of instantsEchecs) bucket(t).echecs += 1;
+minutes.sort((a, b2) => a.minute - b2.minute);
+
 console.log('\n=== SYNTHESE ===');
 console.log(JSON.stringify({
   modele,
   taille_prompt_systeme_caracteres: systeme.length,
   outils_exposes: outils.length,
-  tours: TOURS,
+  tours: DUREE_S > 0 ? parTour.size : TOURS,
+  mode: DUREE_S > 0 ? `duree ${DUREE_S} s` : `${TOURS} tours`,
   allers_retours_total: mesures.length,
-  allers_retours_par_tour_moyen: Number((mesures.length / TOURS).toFixed(2)),
+  allers_retours_par_tour_moyen: parTour.size === 0 ? 0 : Number((mesures.length / parTour.size).toFixed(2)),
   tokens_in_total: somme((m) => m.tokensIn),
   tokens_caches_total: somme((m) => m.tokensCaches),
   part_cachee_pourcent: somme((m) => m.tokensIn) === 0 ? 0 : Math.round((somme((m) => m.tokensCaches) / somme((m) => m.tokensIn)) * 100),
   tokens_out_total: somme((m) => m.tokensOut),
-  duree_moyenne_tour_ms: Math.round([...parTour.values()].reduce((n, l) => n + l.reduce((s, m) => s + m.ms, 0), 0) / TOURS),
+  duree_moyenne_tour_ms: parTour.size === 0 ? 0 : Math.round([...parTour.values()].reduce((n, l) => n + l.reduce((s, m) => s + m.ms, 0), 0) / parTour.size),
   duree_max_tour_ms: Math.max(...[...parTour.values()].map((l) => l.reduce((s, m) => s + m.ms, 0))),
   cout_total_dollars: Number(somme((m) => m.coutDollars).toFixed(6)),
   // === Ce que seul le mode concurrence renseigne ===
@@ -237,5 +280,15 @@ console.log(JSON.stringify({
   detail_echecs: echecs.slice(0, 5),
   // 🔴 LA question du cache : le PREMIER aller-retour de chaque tour porte le meme prefixe constant. Si le
   // cache opere, sa part cachee doit grimper des le deuxieme TOUR, pas seulement au deuxieme aller-retour.
-  premiers_allers_retours: premiers.map((m) => ({ tour: m.tour, in: m.tokensIn, caches: m.tokensCaches })),
+  premiers_allers_retours: premiers.slice(0, 20).map((m) => ({ tour: m.tour, in: m.tokensIn, caches: m.tokensCaches })),
+  // 🔴 LA DERIVE, minute par minute, et c est POUR CA que le banc doit tenir plusieurs minutes (constat A4).
+  // Une rafale courte rend une moyenne et une moyenne cache une pente : si un plafond par fenetre existe, il
+  // se voit ici, en duree qui monte ou en debit qui tombe apres la premiere minute, jamais dans un total.
+  par_minute: minutes.map((m) => ({
+    minute: m.minute,
+    allers_retours: m.n,
+    duree_moyenne_ar_ms: Math.round(m.msTotal / m.n),
+    tokens: m.tokens,
+    echecs: m.echecs,
+  })),
 }, null, 2));
