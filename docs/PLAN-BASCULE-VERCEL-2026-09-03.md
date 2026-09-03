@@ -280,3 +280,34 @@ sans attendre aucune de ces deux reconfigurations.
 **Reste l'étape 6**, à faire à un moment creux : `APP_URL` et `PUBLIC_API_URL` sur le VPS, puis l'URL du
 webhook chez Meta, qui est le seul geste pendant lequel un message entrant peut se perdre.
 
+### 2026-09-03, étape 6.1 et une étape 7 FAITE AUTREMENT, en mieux
+
+**6.1** : `APP_URL=https://engageme.messagingme.app` et `PUBLIC_API_URL=https://api.messagingme.app` posées
+sur le VPS. ⚠️ `APP_URL` n'était en fait posée NULLE PART : le code retombait sur son défaut codé en dur.
+Les nouveaux liens tracés, visuels RCS et URL de webhook entrant portent désormais `api.messagingme.app`, et
+les liens d'e-mail renvoient vers `engageme`.
+
+🔴 **L'ÉTAPE 7 N'A PAS ÉTÉ FAITE COMME ÉCRITE, ET C'EST UNE AMÉLIORATION.** Le plan prévoyait de reconfigurer
+l'URL du webhook chez Meta (étape 6.2), présentée comme « le seul geste vraiment sensible ». **Ce geste n'a
+plus lieu d'être.**
+
+`mba.messagingme.app` porte maintenant un routage par CHEMIN dans NPM :
+
+| Chemin | Va vers | Effet |
+|---|---|---|
+| `/api/backend/*` | `mba-api`, préfixe RETIRÉ par nginx | le webhook Meta répond à son adresse ACTUELLE, pour toujours |
+| `/r/`, `/m/`, `/mcp` | `mba-api` directement | les liens et visuels déjà envoyés continuent de résoudre |
+| tout le reste | `mba-web` | **la console reste debout : le filet est intact** |
+
+**Ce que ça achète, et qui dépasse la migration.** Jusqu'ici, le webhook de Meta traversait `mba-web` pour
+atteindre l'API : **un conteneur de FRONT était sur le chemin critique de la réception des messages clients.**
+Si le site tombait, plus aucun message entrant n'arrivait. Ce n'est plus le cas. C'est un gain de robustesse
+qui aurait valu d'être fait même sans bascule.
+
+Vérifié chemin par chemin sur les DEUX noms : console 200, `/api/backend/health` 200, webhook Meta 403 sur un
+POST réel (donc la route travaille et refuse la signature), `/r/` 302 vers la bonne destination, `/m/` 200 en
+`image/png` de 121 065 octets à l'identique, `/mcp` 401.
+
+**Ce qui reste est facultatif** : un jour, éteindre `mba-web` et faire de `mba.messagingme.app/` une
+redirection vers `engageme`. Rien ne presse, et le laisser tourner ne coûte presque rien.
+
