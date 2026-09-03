@@ -897,6 +897,17 @@ export class WorkflowExecutor {
           ? appliquerVariables(brut, await this.deps.rcs.varsFor(tenantId, waId))
           : brut;
         const jeton = await this.jetonRcs(tenantId, waId, msg);
+        // 🔴 ON REVÉRIFIE ICI, et ce n'est pas une redondance. Entre le contrôle ci-dessus et cette ligne, il
+        // y a DEUX attentes (`varsFor`, `jetonRcs`), donc deux requêtes en base : le bail a pu expirer
+        // pendant, et un autre porteur avoir repris le tour. C'est la même règle que le lot A2, appliquée un
+        // cran plus fin : une garde se pose entre les EFFETS, et « entre » veut dire immédiatement avant
+        // l'effet, pas avant le travail qui le précède.
+        const perduAvantEnvoi = garde?.perduPourquoi() ?? null;
+        if (perduAvantEnvoi !== null) {
+          // eslint-disable-next-line no-console
+          console.warn(`rcs: envoi INTERROMPU pour ${waId} au bloc ${nodeId} (${perduAvantEnvoi})`);
+          return { actions, rest: r.rest, canal };
+        }
         const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`, jeton);
         envoye = !('skipped' in out);
         if (!('skipped' in out)) await this.journaliserRcs(tenantId, waId, msg, out.messageId);

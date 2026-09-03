@@ -546,6 +546,56 @@ describe('avance concurrente : le chemin RCS est gardé lui aussi', () => {
     expect(envois).toEqual([]);
     expect(avertissements.some((a) => a.includes('envoi INTERROMPU'))).toBe(true);
   });
+
+  /**
+   * 🔴 LA MÊME PERTE, MAIS APRÈS LA GARDE : le contre-audit du 2026-09-03 avait raison sur ce point.
+   *
+   * Le contrôle initial était posé avant la résolution des variables et la fabrication du jeton, c'est-à-dire
+   * avant DEUX requêtes en base. Un bail de quelques secondes peut expirer pendant ces deux attentes, et le
+   * message partait quand même : la garde était juste avant le TRAVAIL, pas juste avant l'EFFET.
+   *
+   * La règle, une nuance de plus que celle du lot A2 : « entre les effets » veut dire immédiatement avant
+   * l'effet. Tout ce qui s'attend entre le contrôle et l'envoi rouvre la fenêtre qu'on croyait fermée.
+   */
+  it('🔴 tour volé APRÈS la garde, pendant la résolution des variables : le message NE PART PAS non plus', async () => {
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    const envois: string[] = [];
+    let debloquer: () => void = () => {};
+    const suspendu = new Promise<void>((r) => { debloquer = r; });
+    const { ex } = exec(runs, {
+      getGraph: async () => ({
+        nodes: [n('a', 'quick_message', { body: 'A' }), n('r', 'rcs_message', { text: 'Bonjour {{prenom}}' })],
+        edges: [e('e1', 'a', 'r')],
+      }),
+      rcs: {
+        agentIdFor: async () => 'agent-1',
+        // La fiche du contact se lit APRÈS le contrôle de garde : c'est cette attente-là qui rouvrait la
+        // fenêtre. Elle est aussi ordinaire que la précédente, une requête en base parmi d'autres.
+        varsFor: async () => { await suspendu; return { prenom: 'Léa' }; },
+        sender: {
+          sendTo: async () => { envois.push('rcs'); return { messageId: 'm-rcs' }; },
+        },
+      } as unknown as WorkflowExecutorDeps['rcs'],
+    });
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(envois, 'suspendu dans la lecture de la fiche, donc APRÈS la garde d’entrée').toEqual([]);
+
+    runs.volerLeTour();
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { avertissements.push(String(m)); });
+    try {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+      debloquer();
+      await lente;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(envois, 'le porteur déchu ne doit rien remettre à l’opérateur RCS').toEqual([]);
+    expect(avertissements.some((a) => a.includes('envoi INTERROMPU'))).toBe(true);
+  });
 });
 
 /**

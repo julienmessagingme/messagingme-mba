@@ -66,6 +66,28 @@ describe('balayage des tours d’agent morts en vol', () => {
     expect(journal.some((m) => m.includes('s2') && m.includes('parcours introuvable'))).toBe(true);
   });
 
+  it('🔴 la marque ne tombe QUE sur les sorties réussies : celle qui échoue reste réclamable', async () => {
+    // Le défaut que ce balayage portait lui-même : sa réclamation effaçait la marque, donc une sortie qui
+    // échouait laissait un parcours que plus aucun passage ne pouvait retrouver. Le commentaire du module le
+    // concédait en disant « récupérable à la main ». La marque tombe maintenant APRÈS la sortie, jamais avant.
+    const appliquees: string[] = [];
+    await runTourBloqueSweep({
+      reclamer: async () => [tour('s1'), tour('s2'), tour('s3')],
+      sortir: async (t) => { if (t.sessionId === 's2') throw new Error('parcours introuvable'); },
+      sortieAppliquee: async (t) => { appliquees.push(t.sessionId); },
+    });
+    expect(appliquees, 's2 doit rester marquée pour le passage suivant').toEqual(['s1', 's3']);
+  });
+
+  it('un câblage SANS `sortieAppliquee` garde le comportement d’avant', async () => {
+    // Optionnelle comme partout ailleurs sur ce marqueur : les fixtures ne doivent pas cesser de tourner.
+    const n = await runTourBloqueSweep({
+      reclamer: async () => [tour('s1')],
+      sortir: async () => {},
+    });
+    expect(n).toBe(1);
+  });
+
   it('l’âge et le lot par défaut sont ceux du module, et ils sont passés au store', async () => {
     let vus: [number, number] | null = null;
     await runTourBloqueSweep({
@@ -105,22 +127,29 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
   function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
     const finis: string[] = [];
     const clotures: string[] = [];
+    const appliquees: string[] = [];
+    /** L'ORDRE des écritures, qui est tout l'objet du correctif de la transition terminale. */
+    const journal: string[] = [];
     const deps: RunTurnDeps = {
       sessions: {
         prendreLeTour: async () => SESSION,
-        clore: async (_t: string, id: string) => { clotures.push(id); },
+        clore: async (_t: string, id: string, _st: string, _so?: string, opts?: { sortieDue?: boolean }) => {
+          clotures.push(id);
+          journal.push(opts?.sortieDue === true ? 'clore(sortie due)' : 'clore');
+        },
         ajouterAuTranscript: async () => {},
         ajouterCout: async () => {},
-        finirLeTour: async (_t: string, id: string) => { finis.push(id); },
+        finirLeTour: async (_t: string, id: string) => { finis.push(id); journal.push('finirLeTour'); },
+        sortieAppliquee: async (_t: string, id: string) => { appliquees.push(id); journal.push('sortieAppliquee'); },
       } as unknown as RunTurnDeps['sessions'],
       brain: new FakeAgentBrain(decision ?? { texte: 'Bonjour', sortie: null }),
       lireRun: async () => RUN_VIVANT,
       lireFiche: async () => FICHE,
       envoyer: async () => {},
-      sortir: async () => {},
+      sortir: async () => { journal.push('sortir'); },
       ...over,
     };
-    return { deps, finis, clotures };
+    return { deps, finis, clotures, appliquees, journal };
   }
 
   it('🔴 l’agent a répondu et attend : la marque est RETIRÉE', async () => {
@@ -139,14 +168,40 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     expect(finis).toEqual(['s1']);
   });
 
-  it('une sortie qui CLÔT ne passe pas par là : `clore` efface la marque en même temps', async () => {
-    // Pas de double écriture : la clôture porte déjà l'effacement en base, l'ajouter ici serait une requête
-    // de plus sur le chemin chaud pour rien.
-    const { deps, finis, clotures } = make({}, { texte: null, sortie: 'termine' });
+  it('🔴 une sortie qui CLÔT laisse la marque, fait sortir, PUIS l’efface', async () => {
+    // C'est la séquence entière du correctif de la transition terminale, et l'ordre EST le correctif : clore
+    // d'abord (sinon `sortirDuBlocAgent` fait avancer le parcours pendant que la session est encore vivante,
+    // et un bloc agent suivant la réutiliserait avec ses tours consommés), mais clore SANS effacer la marque
+    // (sinon une panne juste après condamne le parcours, plus rien ne pouvant le désigner).
+    const { deps, finis, clotures, appliquees, journal } = make({}, { texte: null, sortie: 'termine' });
     const res = await runTurn(JOB, deps);
     expect(res.fait).toBe('sorti');
     expect(clotures).toEqual(['s1']);
-    expect(finis).toEqual([]);
+    expect(appliquees).toEqual(['s1']);
+    expect(finis, 'ce chemin ne passe pas par la sortie des sessions VIVANTES').toEqual([]);
+    expect(journal).toEqual(['clore(sortie due)', 'sortir', 'sortieAppliquee']);
+  });
+
+  it('🔴 la sortie échoue : la marque RESTE, donc le balayage retrouvera le parcours', async () => {
+    // Le cœur du défaut : avant, `clore` effaçait la marque, la sortie échouait, et le parcours était mort
+    // pour toujours. Il n'y avait même pas besoin d'un crash : une panne passagère de `sortir` suffisait.
+    const { deps, clotures, appliquees, journal } = make(
+      { sortir: async () => { journal.push('sortir'); throw new Error('parcours introuvable'); } },
+      { texte: null, sortie: 'termine' },
+    );
+    await expect(runTurn(JOB, deps)).rejects.toThrow('parcours introuvable');
+    expect(clotures).toEqual(['s1']);
+    expect(appliquees, 'la marque ne doit PAS tomber quand la sortie n’a pas eu lieu').toEqual([]);
+    expect(journal).toEqual(['clore(sortie due)', 'sortir']);
+  });
+
+  it('sans `sortir` câblé, la marque ne reste pas : personne ne viendrait la dénouer', async () => {
+    // Un câblage sans sortie (fixtures, tests) doit garder le comportement d'avant. Laisser la marque y ferait
+    // repasser le balayage indéfiniment sur une ligne que rien ne fera avancer.
+    const { deps, journal } = make({ sortir: undefined }, { texte: null, sortie: 'termine' });
+    const res = await runTurn(JOB, deps);
+    expect(res.fait).toBe('sorti');
+    expect(journal).toEqual(['clore']);
   });
 
   it('un store SANS `finirLeTour` garde le comportement d’avant', async () => {

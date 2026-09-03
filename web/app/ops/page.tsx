@@ -386,13 +386,26 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
   const t = useT();
   const { locale } = useLocale();
   const utiles = lignes.filter((l) => l.echantillons > 0).sort((a, b) => b.attenteP95Secondes - a.attenteP95Secondes);
+  /**
+   * 🔴 LE SEUIL DU SLO 1, ET IL S'APPLIQUE AUX DEUX MESURES (contre-audit du 2026-09-03).
+   *
+   * Il n'était posé que sur l'ATTENTE. Or le SLO promet qu'un message entrant est TRAITÉ en moins de trente
+   * secondes, c'est-à-dire l'attente PLUS le traitement : une file prise en une seconde et traitée en
+   * quarante-cinq restait donc verte alors que l'objectif était violé. Le cas n'a rien de théorique, la file
+   * `agent-turn` est un appel modèle, sa durée vit presque entièrement dans le traitement, et cette couleur
+   * est la SEULE alarme du produit sur la latence.
+   *
+   * Chaque chiffre garde son propre seuil plutôt qu'un seuil commun : les deux ne se corrigent pas au même
+   * endroit (une attente longue est un problème de capacité, un traitement long un problème de dépendance).
+   */
+  const SEUIL_S = 30;
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
       <p className="mb-3 mt-1 text-xs text-ink-500">
         {t(
-          'Calculée sur les jobs terminés. À ne pas confondre avec l’âge ci-dessus, qui est une photo de l’instant.',
-          'Computed over completed jobs. Not to be confused with the age above, which is a snapshot.',
+          'Calculée sur les jobs terminés : les jobs échoués n’y figurent pas, ils se lisent sur la carte ci-dessus. À ne pas confondre avec l’âge, qui est une photo de l’instant.',
+          'Computed over completed jobs: failed jobs are absent here, read them on the card above. Not to be confused with the age, which is a snapshot.',
         )}
       </p>
       {utiles.length === 0 ? (
@@ -412,13 +425,30 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
                 </span>
                 <span
                   data-testid={`latence-p95-${l.queue}`}
-                  className={l.attenteP95Secondes >= 30 ? 'font-medium text-coral' : 'text-ink-600'}
+                  className={l.attenteP95Secondes >= SEUIL_S ? 'font-medium text-coral' : 'text-ink-600'}
                   title={t('attente au 95e centile', '95th percentile wait')}
                 >
                   p95 {fmtSecondes(l.attenteP95Secondes)}
                 </span>
-                <span className="text-ink-500" title={t('bout en bout au 95e centile (attente + traitement)', 'end-to-end 95th percentile')}>
+                <span
+                  data-testid={`latence-bout-en-bout-${l.queue}`}
+                  className={l.boutEnBoutP95Secondes >= SEUIL_S ? 'font-medium text-coral' : 'text-ink-500'}
+                  title={t('bout en bout au 95e centile (attente + traitement)', 'end-to-end 95th percentile')}
+                >
                   {t('bout en bout', 'end to end')} {fmtSecondes(l.boutEnBoutP95Secondes)}
+                </span>
+                {/*
+                  Le PIRE cas, déjà calculé et déjà transporté jusqu'ici, et affiché nulle part jusqu'à
+                  aujourd'hui. Il tient lieu de p99 : sur les effectifs réels du produit (quelques dizaines de
+                  jobs par file et par jour) un p99 vaudrait le maximum, donc le calculer serait du travail
+                  pour le même chiffre, et le maximum majore le p99 dans tous les cas.
+                */}
+                <span
+                  data-testid={`latence-max-${l.queue}`}
+                  className={l.boutEnBoutMaxSecondes >= 120 ? 'font-medium text-coral' : 'text-ink-400'}
+                  title={t('pire cas bout en bout sur la fenêtre', 'worst end-to-end case in window')}
+                >
+                  {t('pire', 'worst')} {fmtSecondes(l.boutEnBoutMaxSecondes)}
                 </span>
               </span>
             </div>

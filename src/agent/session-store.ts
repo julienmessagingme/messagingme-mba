@@ -94,11 +94,45 @@ export interface AgentSessionStore {
    * OPTIONNELLE : un store de test qui ne la câble pas garde le comportement d'avant. Appelée sur les sorties
    * qui laissent la session VIVANTE (l'agent a répondu et attend, ou un humain a pris la main), donc les
    * seules que le balayage des tours bloqués pourrait confondre avec un crash.
+   *
+   * ⚠️ Sa garde `status = 'en_cours'` n'est pas décorative : elle FENCE un tour périmé. Un porteur déchu qui
+   * finit en retard ne peut pas effacer la marque posée par le balayage qui a repris sa session, puisque
+   * celui-ci l'a d'abord close. C'est pour ça que la sortie due a sa propre méthode plutôt que de réutiliser
+   * celle-ci : la garde qui protège l'une trahirait l'autre.
    */
   finirLeTour?(tenantId: string, sessionId: string): Promise<void>;
 
-  /** Clôt la session. `sortie` porte le handle emprunté quand il y en a un. */
-  clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void>;
+  /**
+   * Efface la marque de tour en vol d'une session DÉJÀ CLOSE, une fois sa sortie appliquée au parcours.
+   *
+   * OPTIONNELLE, comme `finirLeTour` : un store de test qui ne la câble pas garde le comportement d'avant.
+   *
+   * Garde miroir de celle de `finirLeTour` : elle ne touche QUE les sessions closes. Un tour vivant ne peut
+   * donc pas effacer par mégarde une marque qui désigne du travail restant.
+   */
+  sortieAppliquee?(tenantId: string, sessionId: string): Promise<void>;
+
+  /**
+   * Clôt la session. `sortie` porte le handle emprunté quand il y en a un.
+   *
+   * 🔴 `sortieDue` LAISSE LA MARQUE DE TOUR EN VOL, et c'est ce qui rend la transition terminale
+   * réparable (contre-audit du 2026-09-03). Clore et faire sortir le parcours sont DEUX écritures : entre
+   * elles, un crash laissait une session close et un parcours en attente pour toujours sur son bloc agent,
+   * qu'aucun balayage ne pouvait plus voir, puisque la clôture effaçait justement le marqueur qui l'aurait
+   * désigné. Avec `sortieDue`, l'état laissé par la panne est exactement celui que le balayage réclame.
+   *
+   * ⚠️ On clôt quand même AVANT de faire sortir, et l'ordre inverse serait un bug : `sortirDuBlocAgent`
+   * fait AVANCER le parcours, qui peut retomber sur un autre bloc agent dans le même appel. `demarrerTourAgent`
+   * réutilise alors la session vivante trouvée par `byRun`, avec ses tours et son budget déjà consommés, et
+   * le nouvel agent serait muet dès son premier tour. La marque, elle, ne se réutilise pas : elle se répare.
+   */
+  clore(
+    tenantId: string,
+    sessionId: string,
+    status: AgentSessionStatus,
+    sortie?: string,
+    options?: { sortieDue?: boolean },
+  ): Promise<void>;
 }
 
 /** Une session dont le tour est mort en vol, réclamée et close par le balayage. */

@@ -29,8 +29,16 @@ import type { CampaignSender } from './sender';
  * portant un template à lien tracé échouaient en 131008.
  *
  * Désormais les capacités voyagent dans UN objet, `moteur`, transmis d'un seul geste (`...deps.moteur`). Il
- * n'y a plus de liste à tenir : une capacité ajoutée à `EngineDeps` traverse toute seule, et une capacité
- * mal orthographiée côté appelant est refusée par le compilateur, `moteur` étant un type fermé.
+ * n'y a plus de liste à tenir : une capacité ajoutée à `EngineDeps` traverse toute seule.
+ *
+ * ⚠️ MAIS LE TYPE FERMÉ NE SUFFIT PAS À ATTRAPER LA FAUTE DE FRAPPE, et ce commentaire a affirmé le
+ * contraire pendant un jour. Mesuré au compilateur : une propriété en trop écrite DIRECTEMENT dans le
+ * littéral `moteur: { ... }` est refusée (TS2353), mais la même introduite par un SPREAD passe en silence, et
+ * un `satisfies` posé sur le littéral EXTÉRIEUR n'y change rien. Or le câblage du worker construit une partie
+ * de ses capacités par spread conditionnel (`...(dryRun ? {} : { ... })`), c'est-à-dire exactement là où
+ * vivaient `boutonsTraces` et `jetonsPourContacts` le jour de la panne. La garde qui marche est un
+ * `satisfies Partial<CapacitesMoteur>` SUR l'objet intérieur du spread : elle est posée dans `src/worker.ts`,
+ * et `tests/campagne-cablage.test.ts` la tient.
  *
  * ⚠️ Ce qui reste PLAT, et pourquoi. Les quatre stores (`recipients`, `campaigns`, `frequency`, `quality`)
  * sont REQUIS : les oublier est déjà une erreur de compilation, les imbriquer n'ajouterait rien. Et

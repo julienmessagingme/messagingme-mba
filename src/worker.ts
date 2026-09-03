@@ -15,7 +15,7 @@ import {
   PgFrequencyStore,
   PgQualityProvider,
 } from './campaign/store.pg';
-import { campaignRunJob } from './campaign/run-job';
+import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
 import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runCampaignRepriseSweep } from './campaign/reprise-sweep';
@@ -544,10 +544,16 @@ async function main(): Promise<void> {
        * échouer toutes les campagnes à lien tracé le 2026-09-02 (131008), `boutonsTraces` étant câblée ici
        * et absente du contrat. Elles voyagent maintenant ensemble, transmises d'un seul geste.
        *
-       * ⚠️ Ce que ça change POUR CE FICHIER : `moteur` est un type FERMÉ, donc une capacité mal orthographiée
-       * ne compile plus, même à l'intérieur du spread conditionnel `...(dryRun ? {} : {...})` ci-dessous.
-       * C'était exactement le trou : un spread échappe au contrôle des propriétés en trop, mais seulement
-       * quand sa CIBLE est un type qui l'accepte.
+       * ⚠️ ET LE TYPE FERMÉ NE SUFFISAIT PAS, contrairement à ce que ce commentaire a affirmé pendant un jour.
+       * Mesuré au compilateur, pas raisonné : une propriété en trop écrite DIRECTEMENT dans ce littéral est
+       * refusée (TS2353), mais la même introduite par un SPREAD passe sans un mot, et un `satisfies` posé sur
+       * le littéral EXTÉRIEUR n'y change rien. Seul un `satisfies` sur l'objet INTÉRIEUR du spread la voit,
+       * d'où celui du bloc `...(dryRun ? {} : (...))` ci-dessous. C'est précisément là que vivaient
+       * `boutonsTraces` et `jetonsPourContacts` le jour de la panne : la garde manquait à l'endroit exact où
+       * le trou s'était ouvert.
+       *
+       * La règle générale : **le contrôle des propriétés en trop ne traverse pas un spread.** Un câblage qui
+       * construit ses dépendances par spread n'a aucune garde tant qu'on ne la pose pas SUR le spread.
        */
       moteur: {
       arretDemande: () => arretDemande,
@@ -574,7 +580,7 @@ async function main(): Promise<void> {
       // Cartes du carousel du template (image + boutons de chaque carte), relues UNE fois par run et servies
       // par le même cache court que les variables. null = template sans carousel -> envoi inchangé.
       // Absente en DRY_RUN : la dep est optionnelle et ce mode ne doit déclencher AUCUN appel Meta.
-      ...(dryRun ? {} : {
+      ...(dryRun ? {} : ({
         getTemplateCarousel: async (tenant: string, name: string, language: string) => {
           const lu = (await templateVarInfo(tenant, name, language))?.carousel;
           // Visuels préparés UNE fois par run : ils sont identiques pour tous les destinataires.
@@ -602,7 +608,7 @@ async function main(): Promise<void> {
           const mediaId = info.headerMediaUrl ? await prepareHeaderMedia(tenant, info.headerMediaUrl) : null;
           return { headerFormat: info.headerFormat, mediaId };
         },
-      }),
+      } satisfies Partial<CapacitesMoteur>)),
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant: string, waId: string, msg: Parameters<typeof inboxStore.recordOutboundByWaId>[2]) =>
         inboxStore.recordOutboundByWaId(tenant, waId, msg),
@@ -913,8 +919,13 @@ async function main(): Promise<void> {
       await runTourBloqueSweep({
         reclamer: (age, limite) => agentSessions.reclamerToursBloques(age, limite, SORTIE_ECHEC),
         // Le parcours reprend par la branche d'échec du bloc agent, celle que le client a rédigée. La session
-        // est DÉJÀ close par la réclamation : `sortirDuBlocAgent` ne fait plus que faire avancer le run.
+        // est DÉJÀ close par la réclamation (ou l'était avant elle, quand la sortie est restée due) :
+        // `sortirDuBlocAgent` ne fait plus que faire avancer le run, et ne fait rien s'il a déjà avancé.
         sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, SORTIE_ECHEC).then(() => {}),
+        // La sortie est passée : la marque tombe, et la ligne cesse d'être réclamable. Sans ce câblage, la
+        // même session reviendrait à chaque passage, la sortie n'y ferait rien de plus, mais le balayage
+        // travaillerait pour rien et son compte annoncerait des parcours remis en route qui l'étaient déjà.
+        sortieAppliquee: (t) => agentSessions.sortieAppliquee(t.tenantId, t.sessionId),
         // eslint-disable-next-line no-console
         log: (m) => console.warn(m),
       });

@@ -132,15 +132,37 @@ export class PgAgentSessionStore implements AgentSessionStore {
     );
   }
 
-  async clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void> {
+  /**
+   * La sortie due a été appliquée au parcours : la marque peut tomber.
+   *
+   * `status <> 'en_cours'` est la garde MIROIR de celle de `finirLeTour`, et elle a la même fonction : un
+   * tour encore vivant ne doit pas pouvoir effacer une marque qui désigne du travail restant. Les deux
+   * méthodes se partagent ainsi le marqueur sans jamais pouvoir se marcher dessus.
+   */
+  async sortieAppliquee(tenantId: string, sessionId: string): Promise<void> {
+    await this.pool.query(
+      `update agent_sessions set tour_commence_le = null
+        where id = $1 and tenant_id = $2 and status <> 'en_cours'`,
+      [sessionId, tenantId],
+    );
+  }
+
+  async clore(
+    tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string,
+    options?: { sortieDue?: boolean },
+  ): Promise<void> {
     // `status = 'en_cours'` dans le WHERE : clore une session déjà close est sans effet plutôt que d'écraser
     // la cause de sa fin (un rejeu ne doit pas transformer une `sortie` en `erreur`).
-    // `tour_commence_le` retombe à null : une session close ne tient aucun tour, et la laisser marquée
-    // ferait tourner le balayage sur des lignes qu'il ne peut de toute façon plus réclamer.
+    //
+    // `tour_commence_le` retombe à null SAUF quand une sortie reste due : la marque est alors ce qui permet
+    // au balayage de retrouver la ligne si l'appelant meurt entre la clôture et la sortie du parcours. Elle
+    // est effacée par `finirLeTour`, une fois la sortie appliquée. Cf. le contrat, qui porte le raisonnement.
     await this.pool.query(
-      `update agent_sessions set status = $3, sortie = $4, derniere_activite = now(), tour_commence_le = null
+      `update agent_sessions
+          set status = $3, sortie = $4, derniere_activite = now(),
+              tour_commence_le = case when $5::boolean then tour_commence_le else null end
         where id = $1 and tenant_id = $2 and status = 'en_cours'`,
-      [sessionId, tenantId, status, sortie ?? null],
+      [sessionId, tenantId, status, sortie ?? null, options?.sortieDue === true],
     );
   }
 
@@ -151,6 +173,17 @@ export class PgAgentSessionStore implements AgentSessionStore {
    * balaient en même temps ne peuvent pas sortir la même session deux fois, donc le scénario ne prend pas
    * deux fois sa branche d'échec. Le `returning` rend de quoi faire sortir le parcours, ce qui suit.
    *
+   * 🔴 LA MARQUE EST REPOUSSÉE, PAS EFFACÉE (contre-audit du 2026-09-03). Elle l'était, et la ligne devenait
+   * alors inatteignable pour DEUX raisons à la fois : plus `en_cours`, et plus de marqueur. Si la sortie du
+   * parcours échouait juste après, plus rien au monde ne rattrapait ce parcours. `tour_commence_le = now()`
+   * fait donc les deux à la fois : un BAIL de dix minutes qui empêche un autre passage de reprendre la même
+   * ligne, et la trace qu'il reste une sortie à appliquer. Le prochain passage la reprendra tant que
+   * `finirLeTour` ne l'a pas effacée.
+   *
+   * ⚠️ D'où le prédicat SANS `status` : le balayage réclame aussi des sessions DÉJÀ closes, celles dont la
+   * sortie est restée due. Le `case` ne clôt que celles qui sont encore `en_cours`, pour ne pas réécrire la
+   * cause de fin d'une session close proprement (un rejeu ne transforme pas une `sortie` en `erreur`).
+   *
    * On ne REJOUE PAS le tour, et c'est un choix tranché : le worker a pu mourir APRÈS avoir envoyé le
    * message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le
    * contact ; clore fait au pire répéter la branche d'échec du scénario, qui est prévue pour ça.
@@ -158,11 +191,13 @@ export class PgAgentSessionStore implements AgentSessionStore {
   async reclamerToursBloques(ageSecondes: number, limite: number, sortie: string): Promise<TourBloque[]> {
     const res = await this.pool.query<{ id: string; tenant_id: string; run_id: string; wa_id: string; node_id: string }>(
       `update agent_sessions s
-          set status = 'erreur', sortie = $3, derniere_activite = now(), tour_commence_le = null
+          set status = case when s.status = 'en_cours' then 'erreur' else s.status end,
+              sortie = case when s.status = 'en_cours' then $3::text else s.sortie end,
+              derniere_activite = now(),
+              tour_commence_le = now()
         where s.id in (
           select id from agent_sessions
-           where status = 'en_cours'
-             and tour_commence_le is not null
+           where tour_commence_le is not null
              and tour_commence_le < now() - make_interval(secs => $1::int)
            order by tour_commence_le
            limit $2

@@ -38,6 +38,11 @@ export interface TourBloqueSweepDeps {
    *
    * La réclamation et la clôture ne se séparent pas : entre les deux, un second worker verrait la même
    * session et ferait sortir le parcours une seconde fois par sa branche d'échec.
+   *
+   * ⚠️ La réclamation POSE UN BAIL, elle n'efface pas la marque (contre-audit du 2026-09-03) : tant que la
+   * sortie n'a pas été appliquée, la ligne doit rester réclamable par le passage suivant. Elle ramasse donc
+   * aussi les sessions déjà closes dont la sortie est restée due, celles qu'un `runTurn` interrompu entre sa
+   * clôture et sa sortie a laissées derrière lui.
    */
   reclamer(ageSecondes: number, limite: number): Promise<TourBloque[]>;
   /**
@@ -45,6 +50,14 @@ export interface TourBloqueSweepDeps {
    * run resterait en attente sur le bloc : on aurait rangé la table sans rien rendre au contact.
    */
   sortir(tour: TourBloque): Promise<void>;
+  /**
+   * La sortie est appliquée : la marque tombe, et la ligne cesse d'être réclamable.
+   *
+   * OPTIONNELLE, comme partout ailleurs sur ce marqueur : un câblage de test qui ne la fournit pas garde le
+   * comportement d'avant, à ceci près qu'il fera repasser le balayage sur la même session. Sans dommage, la
+   * sortie étant idempotente.
+   */
+  sortieAppliquee?(tour: TourBloque): Promise<void>;
   ageSecondes?: number;
   limite?: number;
   /** Journalisation. Absente -> silence, ce que veulent les tests. */
@@ -56,7 +69,13 @@ export interface TourBloqueSweepDeps {
  *
  * ⚠️ L'échec d'UNE sortie n'arrête pas les autres : les sessions sont déjà closes en base à ce stade, donc
  * s'arrêter au premier échec laisserait les suivantes closes ET bloquées, ce qui est pire que l'état de
- * départ. Chaque échec est journalisé, et le parcours concerné reste récupérable à la main.
+ * départ. Chaque échec est journalisé.
+ *
+ * 🔴 ET IL EST DÉSORMAIS RATTRAPÉ TOUT SEUL (contre-audit du 2026-09-03). Ce commentaire disait « récupérable
+ * à la main », ce qui était l'aveu du défaut : une sortie qui échouait condamnait le parcours, la réclamation
+ * ayant effacé la marque qui l'aurait désigné au passage suivant. La marque n'est plus effacée que par
+ * `sortieAppliquee`, une fois la sortie réellement passée : un échec laisse donc la ligne réclamable, et le
+ * balayage suivant réessaie. La sortie étant idempotente, réessayer ne coûte rien au contact.
  */
 export async function runTourBloqueSweep(deps: TourBloqueSweepDeps): Promise<number> {
   const tours = await deps.reclamer(deps.ageSecondes ?? AGE_TOUR_MORT_S, deps.limite ?? LOT_TOURS_BLOQUES);
@@ -66,6 +85,8 @@ export async function runTourBloqueSweep(deps: TourBloqueSweepDeps): Promise<num
   for (const tour of tours) {
     try {
       await deps.sortir(tour);
+      // La marque tombe SEULEMENT ici : c'est ce qui distingue une sortie appliquée d'une sortie due.
+      await deps.sortieAppliquee?.(tour);
       sortis += 1;
     } catch (err) {
       deps.log?.(

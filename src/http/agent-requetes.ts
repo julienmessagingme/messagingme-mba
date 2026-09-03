@@ -114,6 +114,13 @@ const testSchema = z.object({
 const MAX_APERCU = 20_000;
 
 /**
+ * Plafond de temps du bouton « Test ». Recopié du bouton jumeau (l'épreuve d'une source, `src/index.ts`)
+ * plutôt qu'inventé : deux boutons voisins qui appellent le système du même client n'ont aucune raison
+ * d'attendre des durées différentes, et une troisième valeur serait une décision de plus à tenir.
+ */
+const DELAI_TEST_MS = 10_000;
+
+/**
  * Ce qui cloche dans une requête, ou `null`. Rejoué à la création ET au patch, sur l'état EFFECTIF après
  * écriture : une garde calculée sur le seul corps de la requête ne fermerait qu'un sens (règle du CLAUDE.md).
  */
@@ -287,12 +294,24 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
 
     const debut = Date.now();
     let res: Response;
+    /**
+     * 🔴 LE SEUL DES TROIS BOUTONS « TEST » QUI N'AVAIT PAS DE PLAFOND (contre-audit du 2026-09-03).
+     *
+     * L'épreuve d'une source en pose un de 10 s, l'embarquement d'agent un de 45 s ; celui-ci, écrit par la
+     * même main sur le même motif, n'en avait aucun. Sans `signal`, ce n'est pas illimité pour autant : c'est
+     * le défaut d'undici qui coupe, MESURÉ à 309 s contre un serveur qui accepte et ne répond jamais. Trente
+     * fois le plafond du bouton voisin, sur une adresse que le client SAISIT lui-même, donc sur un hôte
+     * arbitraire dont la lenteur est choisie par autrui. C'est ce qui distingue ce chemin des clients Meta,
+     * RCS et Zadarma, qui tapent des hôtes fixes et de confiance.
+     */
+    const echeance = AbortSignal.timeout(DELAI_TEST_MS);
     try {
       res = await appeler(appel.url, {
         method: appel.methode,
         headers: { ...appel.entetes, ...source.entetes },
         ...(appel.corps !== null ? { body: appel.corps } : {}),
         redirect: 'error',
+        signal: echeance,
       });
     } catch (err) {
       return reply.code(200).send({ ok: false, erreur: `appel impossible : ${err instanceof Error ? err.message : 'erreur réseau'}` });
@@ -302,6 +321,14 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     // système client bavard remplissait le process pour un aperçu de quelques kilo-octets. On lit un peu plus
     // que l'aperçu (pour savoir qu'il est tronqué) et pas un octet de plus.
     const lu = await lireCorpsBorne(res, MAX_APERCU * 2);
+    // 🔴 ET LE PLAFOND DOIT COUVRIR LA LECTURE DU CORPS, pas seulement l'établissement de la réponse. Un
+    // serveur qui rend ses en-têtes vite puis distille son corps épuise l'échéance ICI, et `lireCorpsBorne`
+    // avale l'abandon en rendant un texte vide : la route répondrait alors `ok: true`, `httpStatus: 200`,
+    // aperçu vide et aucun chemin, c'est-à-dire un SUCCÈS AU CORPS VIDE qui ferait chercher longtemps du
+    // mauvais côté. C'est le piège que `src/meta/http.ts` documente depuis le 2026-08-31.
+    if (echeance.aborted) {
+      return reply.code(200).send({ ok: false, erreur: 'le système n’a pas répondu dans le temps imparti' });
+    }
     const brut = lu.texte.slice(0, MAX_APERCU);
     let json: unknown;
     try { json = JSON.parse(brut); } catch { json = undefined; }

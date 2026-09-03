@@ -1,7 +1,7 @@
 import type { AgentBrain } from './brain';
 import { TourInterrompu } from './brain';
 import type { FicheAgent } from './agent-store';
-import type { AgentSession, AgentSessionStore } from './session-store';
+import type { AgentSession, AgentSessionStatus, AgentSessionStore } from './session-store';
 import type { AgentTurnJob } from './turn-job';
 import { SORTIE_ECHEC, SORTIE_PLAFOND } from './sorties';
 import { restToState } from '../workflow/executor';
@@ -25,7 +25,7 @@ export interface EtatRun {
 export type ResultatEnvoi = SendRefusal;
 
 export interface RunTurnDeps {
-  sessions: Pick<AgentSessionStore, 'prendreLeTour' | 'clore' | 'ajouterAuTranscript' | 'ajouterCout' | 'finirLeTour'>;
+  sessions: Pick<AgentSessionStore, 'prendreLeTour' | 'clore' | 'ajouterAuTranscript' | 'ajouterCout' | 'finirLeTour' | 'sortieAppliquee'>;
   brain: AgentBrain;
   /** Relit le run par son id. `null` = introuvable, donc traité comme un run mort. */
   lireRun(tenantId: string, runId: string): Promise<EtatRun | null>;
@@ -213,6 +213,43 @@ async function enregistrerCout(
  * les commentaires de chaque étape. La fonction ne lève jamais sur un cas métier : elle rend ce qu'elle a
  * fait, pour que l'appelant (le job) journalise sans transformer un cas nominal en échec de file.
  */
+/**
+ * 🔴 CLORE PUIS FAIRE SORTIR : LA SEULE SÉQUENCE QUI CONVERGE (contre-audit du 2026-09-03).
+ *
+ * Ces deux écritures étaient recopiées aux cinq sorties terminales du tour, et un crash entre elles laissait
+ * un parcours mort POUR TOUJOURS : la session close, le run en attente sur son bloc agent sans échéance, et
+ * la clôture avait justement effacé le marqueur qui aurait permis au balayage de le retrouver. Le rejeu de
+ * pg-boss ne rattrapait rien non plus, `prendreLeTour` exigeant `en_cours`. Seule une réécriture du contact
+ * réveillait la conversation, c'est-à-dire le cas le moins probable : l'agent vient de se taire sur son
+ * message. Et ce n'est pas qu'un scénario de crash, `deps.sortir` peut simplement ÉCHOUER (lecture du graphe,
+ * pose de tag, pool épuisé) : toute panne passagère condamnait le parcours.
+ *
+ * ⚠️ L'ORDRE NE S'INVERSE PAS, et c'est le piège de ce correctif. Sortir avant de clore paraît plus sûr,
+ * puisqu'un échec laisserait alors une session vivante. Mais `sortirDuBlocAgent` fait AVANCER le parcours,
+ * qui peut retomber sur un autre bloc agent DANS LE MÊME APPEL : `demarrerTourAgent` réutilise alors la
+ * session encore vivante (`byRun ?? open`), avec ses tours et son budget déjà consommés, et le nouvel agent
+ * est muet dès son premier tour. La fenêtre n'est pas de quelques millisecondes, elle couvre tout l'appel.
+ *
+ * La réparation passe donc par la MARQUE, pas par l'ordre : on clôt en laissant `tour_commence_le` en place,
+ * on fait sortir, puis on efface la marque. Une panne au milieu laisse exactement l'état que le balayage des
+ * tours bloqués sait déjà réclamer, et `sortirDuBlocAgent` est idempotente (identifiant synthétique porté par
+ * la session, déduplication `lastMessageId` à l'entrée d'`advance`).
+ */
+async function cloreEtSortir(
+  job: AgentTurnJob,
+  sessionId: string,
+  statut: AgentSessionStatus,
+  sortie: string,
+  deps: RunTurnDeps,
+): Promise<void> {
+  // `sortieDue` seulement s'il y a quelqu'un pour l'appliquer : sans `sortir` câblé, laisser la marque
+  // ferait tourner le balayage sur une ligne que personne ne dénouera jamais.
+  await deps.sessions.clore(job.tenantId, sessionId, statut, sortie, { sortieDue: deps.sortir !== undefined });
+  if (!deps.sortir) return;
+  await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId, sortie });
+  await deps.sessions.sortieAppliquee?.(job.tenantId, sessionId);
+}
+
 export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<ResultatTour> {
   const maintenant = deps.now ? deps.now() : Date.now();
 
@@ -243,10 +280,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     // cascade`), mais l'incohérence n'a pas de raison d'être.
     // eslint-disable-next-line no-console
     console.error(`agent: fiche introuvable pour l'agent ${session.agentId}, session ${session.id} close`);
-    await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
-    if (deps.sortir) {
-      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_ECHEC });
-    }
+    await cloreEtSortir(job, session.id, 'erreur', SORTIE_ECHEC, deps);
     return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }
   // 🔴 LE SOLDE PRÉPAYÉ DU WORKSPACE, lu ICI et pas ailleurs : avec les autres plafonds, donc AVANT l'appel
@@ -258,10 +292,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     || session.tours > fiche.plafonds.maxTours
     || session.appelsOutils > fiche.plafonds.maxAppelsOutils
     || session.coutMicroEur >= fiche.plafonds.budgetMicroEur) {
-    await deps.sessions.clore(job.tenantId, session.id, 'plafond', SORTIE_PLAFOND);
-    if (deps.sortir) {
-      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_PLAFOND });
-    }
+    await cloreEtSortir(job, session.id, 'plafond', SORTIE_PLAFOND, deps);
     return { fait: 'plafond', sortie: SORTIE_PLAFOND };
   }
 
@@ -306,10 +337,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     if (err instanceof TourInterrompu) await enregistrerCout(job, session.id, err.usage.coutMicroEur, deps);
     // eslint-disable-next-line no-console
     console.error(`agent: le tour a échoué pour la session ${session.id}`, err instanceof Error ? err.message : err);
-    await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
-    if (deps.sortir) {
-      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_ECHEC });
-    }
+    await cloreEtSortir(job, session.id, 'erreur', SORTIE_ECHEC, deps);
     return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }
 
@@ -348,10 +376,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
       // d'échec pour que le scénario reprenne avec le message de repli du client.
       // eslint-disable-next-line no-console
       console.error(`agent: envoi refusé pour ${job.waId} : ${res}`);
-      await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
-      if (deps.sortir) {
-        await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_ECHEC });
-      }
+      await cloreEtSortir(job, session.id, 'erreur', SORTIE_ECHEC, deps);
       return { fait: 'erreur', sortie: SORTIE_ECHEC };
     }
     await deps.sessions.ajouterAuTranscript(job.tenantId, session.id, { role: 'agent', texte: decision.texte });
@@ -369,9 +394,6 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     await finirLeTour(job, session.id, deps);
     return { fait: 'repondu', repos };
   }
-  await deps.sessions.clore(job.tenantId, session.id, 'sortie', decision.sortie);
-  if (deps.sortir) {
-    await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: decision.sortie });
-  }
+  await cloreEtSortir(job, session.id, 'sortie', decision.sortie, deps);
   return { fait: 'sorti', sortie: decision.sortie };
 }

@@ -275,6 +275,40 @@ describe('requêtes : le bouton Test', () => {
     expect(String(b.erreur)).toContain('ref');
   });
 
+  it('🔴 l’appel porte un PLAFOND DE TEMPS, et il est de dix secondes comme le bouton jumeau', async () => {
+    // Sans `signal`, ce n'était pas illimité mais borné au défaut d'undici, mesuré à 309 s : trente fois le
+    // plafond du bouton voisin, sur une adresse que le client saisit lui-même. C'est ce qui distingue ce
+    // chemin des clients Meta ou Zadarma, dont les hôtes sont fixes et de confiance.
+    let vu: AbortSignal | undefined;
+    const capte = (async (_u: string, init?: RequestInit) => {
+      vu = init?.signal ?? undefined;
+      return new Response('{"a":1}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const { srv } = app({}, capte);
+    await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    expect(vu, 'le fetch doit recevoir une échéance').toBeInstanceOf(AbortSignal);
+    expect(vu?.aborted).toBe(false);
+  });
+
+  it('🔴 une échéance atteinte PENDANT la lecture du corps ne rend pas un faux succès', async () => {
+    // Le piège que le dépôt a déjà payé une fois : `lireCorpsBorne` avale l'abandon et rend un texte vide, donc
+    // sans cette garde la route répondrait `ok: true`, `httpStatus: 200`, aperçu vide et aucun chemin. Un
+    // succès au corps vide fait chercher longtemps du mauvais côté.
+    const expire = (async () => {
+      const ctrl = new AbortController();
+      ctrl.abort();
+      // Le corps s'interrompt comme le ferait un serveur qui distille sa réponse jusqu'à l'échéance.
+      return new Response(new ReadableStream({ start(c) { c.error(new Error('aborted')); } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    const { srv } = app({}, expire);
+    const b = (await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} })).json();
+    // Corps illisible : la route ne doit en aucun cas annoncer des chemins qu'elle n'a pas vus.
+    expect(b.chemins ?? []).toEqual([]);
+    expect(b.apercu ?? '').toBe('');
+  });
+
   it('une source DÉSACTIVÉE ne se teste pas : elle a été coupée exprès', async () => {
     const deps = { sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: {}, status: 'disabled' }) };
     const { srv } = app();
