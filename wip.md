@@ -48,9 +48,28 @@ dix secondes ne pouvait pas le dire : plus courte que la fenêtre d'un plafond, 
 longue a aussi montré la QUEUE : 113 s pour le tour le plus lent contre 2,4 s de médiane, soit 0,14 % des
 tours au-dessus de 30 s, c'est-à-dire exactement ce que l'échéance de production coupe.
 
-**Reste du point 2** : les B et C de l'audit (échecs d'avance acquittables, capacités imbriquées au lieu de
-`Pick` recopiés, course du plafond « tous les contacts », profil `equite` du banc, découpe de
-`CampaignCreateForm`).
+**Reste du point 2** : le profil `equite` du banc de charge, seul item encore ouvert (il exige un Postgres
+jetable ET un worker en face, sinon il mesure une file morte).
+
+## LIVRÉ le 2026-09-03 : les lots B et C de l'audit externe
+
+Vérifiés un par un DANS LE CODE avec contre-vérification adverse, parce que le lot immédiat de la veille en
+avait déjà fermé une partie : **B2, B3 et B5 étaient clos**, et **C4 est refusé** (les mesures ne justifient
+pas le découpage, et le dépôt l'avait déjà refusé nommément le 2026-08-31).
+
+- **B4** : le chemin « tous les contacts » résout et FIGE son jeu d'identifiants, borné, au lieu de compter
+  puis recharger sans borne. ⚠️ La contre-vérification a trouvé le trou que mon propre correctif laissait :
+  le câblage relayait deux paramètres vers un contrat qui en déclare trois, donc la borne était avalée en
+  silence. Le compilateur ne peut pas le voir. Gardé par un test qui lit la source.
+- **C2** : l'infobulle « vous avez la main » promettait à l'opérateur, **dans le produit**, que les campagnes
+  n'enverraient pas. C'est l'inverse du code, qui reprend la main délibérément.
+- **C3** : deux textes faux sur l'attribution des clics, dont un dans l'en-tête d'une migration.
+- **B1** : le contexte (parcours, run, canal) traverse enfin jusqu'au journal des échecs. Trois autres points
+  de B1 restent ouverts par CHOIX, avec la raison écrite dans `todo.md`.
+- **C1** : les onze capacités du moteur de campagne voyagent en bloc au lieu d'être recopiées une par une.
+  C'est ce désalignement qui avait cassé toutes les campagnes à lien tracé le 2026-09-02.
+- Au passage, le seul défaut vivant que C4 recouvrait : deux balayages sur vingt-deux journalisaient leur
+  échec sans ALERTER, donc une panne y restait invisible.
 
 ## LIVRÉ le 2026-09-03 : A3, les deux bornes de sécurité des appels sortants
 
