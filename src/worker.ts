@@ -20,6 +20,8 @@ import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runCampaignRepriseSweep } from './campaign/reprise-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
+import { runTourBloqueSweep } from './agent/tour-bloque-sweep';
+import { SORTIE_ECHEC } from './agent/sorties';
 import { runRetrySweep } from './campaign/retry-sweep';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
 import { enqueueCampaignRun } from './campaign/enqueue';
@@ -870,6 +872,40 @@ async function main(): Promise<void> {
   };
   void wakeSweep();
   taches.programmer('reveil-parcours', config.WORKFLOW_WAKE_SWEEP_INTERVAL_MS, wakeSweep);
+
+  /**
+   * BALAYAGE DES TOURS D'AGENT MORTS EN VOL (constat A1 de l'audit externe du 2026-09-02).
+   *
+   * 🔴 Monté ICI, HORS du bloc `if (gatewayAgent)`, et c'est délibéré : ce balayage existe précisément pour
+   * nettoyer quand le chemin de l'agent est cassé. Le suspendre à la présence d'une clé de Gateway reviendrait
+   * à éteindre le filet le jour d'une rotation de clé ratée, c'est-à-dire exactement quand des tours meurent
+   * en vol. Il est de toute façon INERTE sans agent : aucune session ne porte alors de tour en vol.
+   *
+   * Garde de ré-entrance comme les autres balayages : `setInterval` n'attend pas la passe précédente.
+   */
+  let toursBloquesEnCours = false;
+  const toursBloquesSweep = async (): Promise<void> => {
+    if (toursBloquesEnCours) return;
+    toursBloquesEnCours = true;
+    try {
+      await runTourBloqueSweep({
+        reclamer: (age, limite) => agentSessions.reclamerToursBloques(age, limite, SORTIE_ECHEC),
+        // Le parcours reprend par la branche d'échec du bloc agent, celle que le client a rédigée. La session
+        // est DÉJÀ close par la réclamation : `sortirDuBlocAgent` ne fait plus que faire avancer le run.
+        sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, SORTIE_ECHEC).then(() => {}),
+        // eslint-disable-next-line no-console
+        log: (m) => console.warn(m),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('tours-bloques-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:tours-bloques', `tours-bloques-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    } finally {
+      toursBloquesEnCours = false;
+    }
+  };
+  void toursBloquesSweep();
+  taches.programmer('tours-agent-bloques', 60_000, toursBloquesSweep);
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
   // injoignable dans HubSpot au 2e échec). Gaté par le canal service (le flag injoignable en dépend) : monté seulement

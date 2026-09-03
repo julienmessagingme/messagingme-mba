@@ -14,11 +14,12 @@ fait** : l'`AbortSignal` est exposé mais AUCUN transport ne l'écoute. Couper u
 La garde se pose donc ENTRE deux effets. Le signal servira aux travaux réellement annulables (recherche de
 connaissance, reranker, lecture de connecteur).
 
-**A1 — rattraper un tour d'agent tué par un crash.** `prendreLeTour` incrémente `tours` AVANT le travail :
-si le worker meurt entre les deux, pg-boss rejoue avec l'ancien numéro, la réservation rend `null`, le rejeu
-est classé « doublon », et le tour est perdu pour toujours avec la session bloquée en `en_cours`. Le choix le
-plus prudent pour une première fermeture : un watchdog qui CLÔT la session en échec et suit la branche d'échec
-du scénario, plutôt que de rejouer (ce qui exigerait de maîtriser l'idempotence des effets).
+~~**A1 — rattraper un tour d'agent tué par un crash.**~~ **LIVRÉ le 2026-09-03** (migration 0112). Le
+watchdog prévu : `src/agent/tour-bloque-sweep.ts`, passage à la minute, réclame et clôt en UNE requête les
+tours en vol depuis plus de dix minutes, puis fait sortir le parcours par la branche d'échec. On ne rejoue
+pas, comme arbitré : le worker a pu mourir APRÈS l'envoi au contact. ⚠️ Il a fallu une COLONNE
+(`tour_commence_le`) : « session en cours + run en attente + aucune échéance » décrit aussi un tour qui vient
+d'être enfilé, et un balayage bâti là-dessus aurait tué des conversations vivantes.
 
 **A3 — les deux bornes de sécurité des connecteurs HTTP.** Résolution DNS contrôlée (un domaine public peut
 résoudre vers le réseau Docker ou vers une adresse de métadonnées) et lecture en FLUX bornée : `maxBytes` est

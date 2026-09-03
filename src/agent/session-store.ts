@@ -88,6 +88,24 @@ export interface AgentSessionStore {
    */
   ajouterCout(tenantId: string, sessionId: string, montantMicroEur: number): Promise<void>;
 
+  /**
+   * Efface la marque de tour en vol posée par `prendreLeTour` (migration 0112).
+   *
+   * OPTIONNELLE : un store de test qui ne la câble pas garde le comportement d'avant. Appelée sur les sorties
+   * qui laissent la session VIVANTE (l'agent a répondu et attend, ou un humain a pris la main), donc les
+   * seules que le balayage des tours bloqués pourrait confondre avec un crash.
+   */
+  finirLeTour?(tenantId: string, sessionId: string): Promise<void>;
+
   /** Clôt la session. `sortie` porte le handle emprunté quand il y en a un. */
   clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void>;
+}
+
+/** Une session dont le tour est mort en vol, réclamée et close par le balayage. */
+export interface TourBloque {
+  sessionId: string;
+  tenantId: string;
+  runId: string;
+  waId: string;
+  nodeId: string;
 }

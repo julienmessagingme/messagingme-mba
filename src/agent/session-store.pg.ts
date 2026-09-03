@@ -1,5 +1,8 @@
 import type { Pool } from 'pg';
-import type { AgentSession, AgentSessionStatus, AgentSessionStore } from './session-store';
+import type { AgentSession, AgentSessionStatus, AgentSessionStore, TourBloque } from './session-store';
+
+/** Un entier positif qui tient dans un `integer` Postgres. */
+const borner = (n: number): number => Math.min(2_147_483_647, Math.max(1, Math.round(n)));
 
 /** Colonnes lues par toutes les requêtes de ce store. `cout_micro_eur` est un `bigint`, donc rendu en `string`. */
 const COLONNES = 'id, tenant_id, run_id, agent_id, node_id, wa_id, tours, appels_outils, cout_micro_eur, status, created_at';
@@ -69,8 +72,11 @@ export class PgAgentSessionStore implements AgentSessionStore {
   async prendreLeTour(tenantId: string, sessionId: string, toursAttendus: number): Promise<AgentSession | null> {
     // UNE seule requête : le test et l'incrément sont atomiques, donc deux jobs concurrents ne peuvent pas
     // prendre le même tour. Zéro ligne rendue vaut REJEU, l'appelant doit sortir sans rien faire.
+    // `tour_commence_le` est posé ICI, dans la MÊME requête que l'incrément (migration 0112) : c'est ce qui
+    // rend le marqueur fiable. Posé après, un crash entre les deux laisserait un tour incrémenté sans marque,
+    // donc invisible du balayage, exactement le cas qu'on vient fermer.
     const res = await this.pool.query<Ligne>(
-      `update agent_sessions set tours = tours + 1, derniere_activite = now()
+      `update agent_sessions set tours = tours + 1, derniere_activite = now(), tour_commence_le = now()
        where id = $1 and tenant_id = $2 and status = 'en_cours' and tours = $3
        returning ${COLONNES}`,
       [sessionId, tenantId, toursAttendus],
@@ -114,13 +120,63 @@ export class PgAgentSessionStore implements AgentSessionStore {
     );
   }
 
+  async finirLeTour(tenantId: string, sessionId: string): Promise<void> {
+    // Le pendant de `prendreLeTour`. Appelé sur les sorties qui laissent la session VIVANTE (l'agent a
+    // répondu et attend, ou la main est passée à un humain) : sans lui, une session parfaitement saine
+    // porterait une marque de tour en vol jusqu'à ce que le balayage la tue.
+    // `status = 'en_cours'` dans le WHERE pour la même raison que `clore` : on n'exhume pas une session close.
+    await this.pool.query(
+      `update agent_sessions set tour_commence_le = null
+        where id = $1 and tenant_id = $2 and status = 'en_cours'`,
+      [sessionId, tenantId],
+    );
+  }
+
   async clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void> {
     // `status = 'en_cours'` dans le WHERE : clore une session déjà close est sans effet plutôt que d'écraser
     // la cause de sa fin (un rejeu ne doit pas transformer une `sortie` en `erreur`).
+    // `tour_commence_le` retombe à null : une session close ne tient aucun tour, et la laisser marquée
+    // ferait tourner le balayage sur des lignes qu'il ne peut de toute façon plus réclamer.
     await this.pool.query(
-      `update agent_sessions set status = $3, sortie = $4, derniere_activite = now()
+      `update agent_sessions set status = $3, sortie = $4, derniere_activite = now(), tour_commence_le = null
         where id = $1 and tenant_id = $2 and status = 'en_cours'`,
       [sessionId, tenantId, status, sortie ?? null],
     );
+  }
+
+  /**
+   * RÉCLAME les tours en vol depuis trop longtemps, et les clôt dans le même mouvement.
+   *
+   * 🔴 Réclamation et clôture en UNE requête, comme le claim du balayage de réveil : deux workers qui
+   * balaient en même temps ne peuvent pas sortir la même session deux fois, donc le scénario ne prend pas
+   * deux fois sa branche d'échec. Le `returning` rend de quoi faire sortir le parcours, ce qui suit.
+   *
+   * On ne REJOUE PAS le tour, et c'est un choix tranché : le worker a pu mourir APRÈS avoir envoyé le
+   * message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le
+   * contact ; clore fait au pire répéter la branche d'échec du scénario, qui est prévue pour ça.
+   */
+  async reclamerToursBloques(ageSecondes: number, limite: number, sortie: string): Promise<TourBloque[]> {
+    const res = await this.pool.query<{ id: string; tenant_id: string; run_id: string; wa_id: string; node_id: string }>(
+      `update agent_sessions s
+          set status = 'erreur', sortie = $3, derniere_activite = now(), tour_commence_le = null
+        where s.id in (
+          select id from agent_sessions
+           where status = 'en_cours'
+             and tour_commence_le is not null
+             and tour_commence_le < now() - make_interval(secs => $1::int)
+           order by tour_commence_le
+           limit $2
+           for update skip locked
+        )
+      returning s.id, s.tenant_id, s.run_id, s.wa_id, s.node_id`,
+      // Bornés des DEUX côtés : `make_interval(secs => $1::int)` refuse tout ce qui dépasse un entier signé
+      // 32 bits (`value out of range for type integer`, vérifié contre la base le 2026-09-03 en passant un
+      // âge de cent ans). Aucun appelant sain n'en approche, mais une fonction qui lève sur son argument est
+      // une fonction qu'on ne peut pas régler sans la relire.
+      [borner(ageSecondes), borner(limite), sortie],
+    );
+    return res.rows.map((r) => ({
+      sessionId: r.id, tenantId: r.tenant_id, runId: r.run_id, waId: r.wa_id, nodeId: r.node_id,
+    }));
   }
 }

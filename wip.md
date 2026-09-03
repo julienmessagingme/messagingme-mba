@@ -27,8 +27,25 @@ Trois blocs dans la soirée :
 3. **La vectorisation de la base de connaissance** (migrations 0110-0111), puis les six corrections du lot
    immédiat de l'audit externe qui a suivi.
 
-🔴 **Ce qui reste ouvert est dans `todo.md`.** Le premier des deux points IA est FAIT (voir ci-dessous) ;
-reste **A1**, le tour d'agent tué par un crash, perdu pour toujours avec sa session bloquée en `en_cours`.
+🔴 **Ce qui reste ouvert est dans `todo.md`.** Les DEUX points IA sont faits (A2 puis A1, ci-dessous) ;
+reste A3 (les bornes de sécurité des connecteurs HTTP) et A4 (la preuve de capacité).
+
+## LIVRÉ le 2026-09-03 : A1, un tour d'agent tué par un crash ne se perd plus
+
+`prendreLeTour` incrémente `tours` avant le travail (c'est ce qui rend le verrou optimiste atomique). Un
+worker qui meurt entre les deux faisait rejouer le job avec l'ancien numéro : la réservation rendait `null`,
+le rejeu était classé « doublon », et le tour disparaissait avec la session bloquée en `en_cours` et le run
+en attente sans échéance. Le contact n'avait jamais de réponse, et rien au monde ne le réveillait.
+
+Un balayage à la minute réclame et clôt en UNE requête les tours en vol depuis plus de dix minutes, puis fait
+sortir le parcours par la branche d'échec du bloc, celle que le client a rédigée. **On ne rejoue pas** : le
+worker a pu mourir APRÈS l'envoi, et rien en base ne permet de le savoir.
+
+⚠️ **Le piège était le faux positif.** « Session en cours + run en attente + aucune échéance » décrit aussi,
+mot pour mot, un tour qui vient d'être enfilé et attend son passage dans la file. Il a donc fallu dater le
+début du tour (migration 0112, colonne `tour_commence_le`), et surtout l'EFFACER sur les deux sorties qui
+laissent la session vivante, sans quoi le balayage aurait tué des conversations parfaitement saines dix
+minutes après une réponse réussie. Les deux sens sont testés.
 
 ## LIVRÉ le 2026-09-03 : A2, les effets s'arrêtent quand le tour d'avance est perdu
 

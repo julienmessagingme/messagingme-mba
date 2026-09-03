@@ -51,9 +51,11 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0111** (le pic d'attente du pool de connexions), passée le 2026-09-02 avec la séquence
-complète, comme 0108 (journal des échecs d'avance), 0109 (agrégats d'attente du pool) et 0110 (recherche
-vectorielle de connaissance). **Aucune n'est en attente.** ⚠️ Vérifié EN BASE le 2026-09-03
+**Dernière appliquée : 0112** (la marque de tour d'agent en vol), passée le 2026-09-03, après 0108 à 0111.
+**Aucune n'est en attente.**
+🔴 **0112 est BLOQUANTE** : `prendreLeTour` écrit `tour_commence_le` à chaque tour, et c'est le chemin chaud du
+bloc agent. Déployer sans migrer ferait échouer TOUS les tours. Appliquée AVANT, colonne et index vérifiés en
+base, et le SQL du balayage joué à blanc contre la vraie table (0 ligne). ⚠️ Vérifié EN BASE le 2026-09-03
 (`select name from public.schema_migrations order by name desc`) parce que cette ligne annonçait encore 0107 :
 un compteur tenu à la main dérive dès qu'un déploiement se fait sans repasser par ici. **En cas de doute, la
 base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS schémas de cette base : la
@@ -119,6 +121,21 @@ renouvelle un bail aussi fidèlement pour une promesse morte que pour un envoi e
 envoi Meta ne porte pas de clé d'idempotence : couper la connexion en vol échangerait « un message de trop »
 contre « un message parti que nous n'avons pas enregistré », donc invisible dans le fil. On laisse finir
 l'effet en vol, on ne lance pas le suivant.
+🔴 **Un tour d'agent tué par un crash était perdu POUR TOUJOURS** (lot A1, 2026-09-03). `prendreLeTour`
+incrémente `tours` AVANT le travail, ce qui est ce qui rend le verrou optimiste atomique : un worker qui meurt
+entre les deux fait rejouer le job par pg-boss avec l'ANCIEN numéro, la réservation rend `null`, le rejeu est
+classé « doublon », la session reste `en_cours` et le run reste en attente SANS échéance (elle se pose à la fin
+du tour, qui n'est jamais arrivée). Un balayage minute (`src/agent/tour-bloque-sweep.ts`) réclame les tours en
+vol depuis plus de dix minutes, les clôt et fait sortir le parcours par la branche d'échec du bloc.
+⚠️ **On ne REJOUE PAS le tour, on le clôt**, et c'est tranché : le worker a pu mourir APRÈS avoir envoyé le
+message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le contact ;
+clore fait au pire emprunter une branche que le client a rédigée.
+⚠️ **Et il fallait une COLONNE, pas une déduction.** « Session `en_cours` + run en attente + aucune échéance »
+semble reconnaître un tour mort : c'est EXACTEMENT l'état d'un tour qui vient d'être enfilé et attend son
+passage dans la file, et `derniere_activite` ne les départage pas (elle porte l'instant du tour PRÉCÉDENT,
+qui peut remonter à des heures). Un balayage bâti sur cette déduction aurait tué des conversations vivantes.
+Le pendant : `tour_commence_le` DOIT être effacé sur les deux sorties qui laissent la session vivante
+(l'agent a répondu, un humain a pris la main) ; `clore` s'en charge pour toutes les autres.
 🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
 pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
 seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un

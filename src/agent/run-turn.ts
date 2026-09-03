@@ -25,7 +25,7 @@ export interface EtatRun {
 export type ResultatEnvoi = SendRefusal;
 
 export interface RunTurnDeps {
-  sessions: Pick<AgentSessionStore, 'prendreLeTour' | 'clore' | 'ajouterAuTranscript' | 'ajouterCout'>;
+  sessions: Pick<AgentSessionStore, 'prendreLeTour' | 'clore' | 'ajouterAuTranscript' | 'ajouterCout' | 'finirLeTour'>;
   brain: AgentBrain;
   /** Relit le run par son id. `null` = introuvable, donc traité comme un run mort. */
   lireRun(tenantId: string, runId: string): Promise<EtatRun | null>;
@@ -144,6 +144,28 @@ async function poserEcheance(
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`agent: échéance d'inactivité non posée sur le run ${job.runId}`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Le tour est fini et la session reste VIVANTE : on retire la marque de tour en vol (migration 0112).
+ *
+ * 🔴 Les deux seules sorties concernées sont « l'agent a répondu et attend » et « un humain a pris la main » :
+ * toutes les autres passent par `clore`, qui efface la marque en même temps qu'il change le statut. Oublier
+ * l'une de ces deux ferait tuer par le balayage une conversation parfaitement saine, une dizaine de minutes
+ * après une réponse réussie.
+ *
+ * BEST-EFFORT, comme `poserEcheance` et pour la même raison : l'agent a déjà parlé au contact quand on arrive
+ * ici. Faire échouer le tour renverrait le job en file, donc renverrait le message. Le pire d'un échec ici est
+ * une sortie par la branche d'échec au prochain balayage, jamais un doublon.
+ */
+async function finirLeTour(job: AgentTurnJob, sessionId: string, deps: RunTurnDeps): Promise<void> {
+  if (!deps.sessions.finirLeTour) return;
+  try {
+    await deps.sessions.finirLeTour(job.tenantId, sessionId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`agent: marque de tour non effacée sur la session ${sessionId}`, err instanceof Error ? err.message : err);
   }
 }
 
@@ -306,6 +328,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   if (deps.mayAct && !(await deps.mayAct(job.tenantId, job.waId))) {
     const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
     await poserEcheance(job, repos, maintenant, deps);
+    await finirLeTour(job, session.id, deps);
     return { fait: 'main_perdue', repos };
   }
 
@@ -343,6 +366,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   if (decision.sortie === null) {
     const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
     await poserEcheance(job, repos, maintenant, deps);
+    await finirLeTour(job, session.id, deps);
     return { fait: 'repondu', repos };
   }
   await deps.sessions.clore(job.tenantId, session.id, 'sortie', decision.sortie);
