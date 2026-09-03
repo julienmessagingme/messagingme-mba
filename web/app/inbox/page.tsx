@@ -1261,9 +1261,14 @@ function ControlBadge({ owner }: { owner: ControlOwner }) {
     app_human: {
       label: t('vous avez la main', 'you have the hand'),
       cls: 'bg-brand-50 text-brand-700',
+      // 🔴 Cette infobulle a promis pendant des semaines que « les campagnes ne l'enverront pas ». C'est FAUX,
+      // et l'inverse exact de ce que fait le code : une campagne passe `ignoreHumanControl` et REPREND la main
+      // (src/workflow/executor.ts, `runFrom`), parce qu'un opérateur la déclenche, donc c'est un humain qui a
+      // la main. C'est un choix délibéré et testé côté serveur. Le mensonge était donc ici, pas dans le
+      // comportement, et il est affiché à l'opérateur sur chaque conversation qu'il détient.
       title: t(
-        'Un opérateur s’occupe de cette conversation : le scénario est en pause et les campagnes ne l’enverront pas.',
-        'An operator is handling this conversation: the scenario is paused and campaigns will skip it.',
+        'Un opérateur a la main : ni le scénario ni l’agent n’écrivent. Une campagne, si : elle part et reprend la main.',
+        'An operator has the hand: neither the scenario nor the agent writes. A campaign does: it goes out and takes the hand back.',
       ),
     },
     mba: {

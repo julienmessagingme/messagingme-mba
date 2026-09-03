@@ -714,8 +714,14 @@ async function main(): Promise<void> {
         batch: config.CONVERSATION_ANALYSIS_BATCH,
         // eslint-disable-next-line no-console
         log: (m) => console.log(m),
-        // eslint-disable-next-line no-console
-        onError: (m, err) => console.error(`${m}:`, err instanceof Error ? err.message : err),
+        onError: (m, err) => {
+          // eslint-disable-next-line no-console
+          console.error(`${m}:`, err instanceof Error ? err.message : err);
+          // Comme tous les autres balayages : un echec qui ne vit que dans les logs est un echec que
+          // personne ne lira. L'alerte est throttlee a cinq minutes par cle, donc une panne persistante
+          // n'inonde rien.
+          alert('sweeper:analyse-conversations', `analyse de conversations en echec : ${err instanceof Error ? err.message : err}`);
+        },
       });
     void analysisSweep();
     taches.programmer('analyse-conversations', config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS, analysisSweep);
@@ -1264,7 +1270,14 @@ async function main(): Promise<void> {
           if (n > 0) console.log(`vectorisation: ${n} fiche(s) vectorisee(s)`);
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error('vectorisation: lot ignore (migration 0110 passee ?):', err instanceof Error ? err.message : err);
+          console.error('vectorisation: lot ignore :', err instanceof Error ? err.message : err);
+          // 🔴 ALERTE, comme les dix-neuf autres balayages. Ce catch etait le SEUL a ne journaliser que dans
+          // les logs, parce qu'il a ete ecrit alors que la migration 0110 n'etait pas encore passee : un
+          // echec etait ALORS attendu, et alerter aurait fait du bruit. Elle est passee le 2026-09-02, donc
+          // un echec veut desormais dire que la base de connaissance CESSE d'etre vectorisee : l'agent
+          // retombe sur la recherche par mots, en silence, et personne ne l'apprend. L'alerte est throttlee
+          // a cinq minutes, un echec persistant n'inonde donc rien.
+          alert('sweeper:vectorisation', `vectorisation en echec : ${err instanceof Error ? err.message : err}`);
         }
       };
       void vectoriser();

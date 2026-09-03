@@ -16,7 +16,37 @@ export interface WorkflowAdvanceDeps {
    *
    * OPTIONNELLE et best-effort : absente ou en échec -> on retombe sur le message de log, comme avant.
    */
-  journaliserEchec?(e: { tenantId: string; waId: string; messageId: string; erreur: string }): Promise<void>;
+  journaliserEchec?(e: {
+    tenantId: string; waId: string; messageId: string; erreur: string;
+    /** Le parcours et le canal, quand l'erreur les portait. Voir `contexteDeLAvance` plus bas. */
+    workflowId?: string | null; runId?: string | null; canal?: string | null;
+  }): Promise<void>;
+}
+
+/**
+ * Le contexte que `executor.advance` attache à l'erreur qu'il ré-émet (constat B1 de l'audit externe du
+ * 2026-09-02).
+ *
+ * 🔴 Pourquoi il vient de LÀ et pas d'ici. Le journal (migration 0108) porte `workflow_id`, `run_id` et
+ * `canal`, trois colonnes que personne ne remplissait : ce point de journalisation est un handler de webhook,
+ * il ne connaît que le numéro et le message. Le parcours, lui, n'est connu que dans l'exécuteur. Sans ce
+ * relais, la jointure qui cherche le nom du scénario ne rendait JAMAIS rien et l'exploitant lisait « ce
+ * contact est bloqué » sans savoir dans quel parcours ni sur quel canal.
+ *
+ * Lecture DÉFENSIVE : une erreur qui ne le porte pas (panne avant que le run soit trouvé, appelant de test,
+ * version d'exécuteur plus ancienne) rend simplement des colonnes nulles, comme avant. Un journal d'échec ne
+ * doit jamais échouer à cause de la forme de l'échec qu'il journalise.
+ */
+function contexteDeLAvance(err: unknown): { workflowId?: string; runId?: string; canal?: string } {
+  if (err === null || typeof err !== 'object') return {};
+  const c = (err as { contexteAvance?: unknown }).contexteAvance;
+  if (c === null || typeof c !== 'object') return {};
+  const { workflowId, runId, canal } = c as Record<string, unknown>;
+  return {
+    ...(typeof workflowId === 'string' ? { workflowId } : {}),
+    ...(typeof runId === 'string' ? { runId } : {}),
+    ...(typeof canal === 'string' ? { canal } : {}),
+  };
 }
 
 /**
@@ -48,7 +78,10 @@ export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdv
       // Best-effort, et à la fin : un journal d'échec qui ferait échouer le traitement qu'il observe serait
       // une très mauvaise idée. Sans tenant, le log reste le seul canal possible.
       if (tenantId && deps.journaliserEchec) {
-        await deps.journaliserEchec({ tenantId, waId: m.waId, messageId: m.messageId, erreur }).catch((e: unknown) => {
+        // Le canal est CONNU ici sans rien demander à personne : ce chemin est le webhook Meta, donc WhatsApp.
+        // Il ne sert de repli que si l'erreur n'a pas porté le sien.
+        const contexte = { canal: 'whatsapp', ...contexteDeLAvance(err) };
+        await deps.journaliserEchec({ tenantId, waId: m.waId, messageId: m.messageId, erreur, ...contexte }).catch((e: unknown) => {
           // eslint-disable-next-line no-console
           console.error('processWorkflowAdvance: échec NON journalisé:', e instanceof Error ? e.message : e);
         });

@@ -83,17 +83,65 @@ describe('processWorkflowAdvance', () => {
  * ⚠️ L'isolation par message NE CHANGE PAS et reste testée juste au-dessus : une erreur sur un contact ne doit
  * pas emporter les autres messages du même webhook. C'est l'acquittement SILENCIEUX qu'on ferme, pas l'isolation.
  */
+type LigneJournal = {
+  tenantId: string; waId: string; messageId: string; erreur: string;
+  workflowId?: string | null; runId?: string | null; canal?: string | null;
+};
+
 describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('🔴 une avance en échec est CONSIGNÉE, avec de quoi retrouver le fil', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const journal: Array<{ tenantId: string; waId: string; messageId: string; erreur: string }> = [];
+    const journal: LigneJournal[] = [];
     await processWorkflowAdvance(payload, {
       phoneNumberTenant: async () => 't1',
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('Meta indisponible'); },
       journaliserEchec: async (e) => { journal.push(e); },
     });
     spy.mockRestore();
-    expect(journal).toEqual([{ tenantId: 't1', waId: '33600', messageId: 'm1', erreur: 'Meta indisponible' }]);
+    // Le CANAL est connu de ce point d'appel sans rien demander : c'est le webhook Meta, donc WhatsApp. Il
+    // était pourtant laissé nul, comme les deux autres colonnes de contexte de la migration 0108.
+    expect(journal).toEqual([{ tenantId: 't1', waId: '33600', messageId: 'm1', erreur: 'Meta indisponible', canal: 'whatsapp' }]);
+  });
+
+  it('🔴 le PARCOURS et le RUN traversent, quand l’erreur les porte (constat B1)', async () => {
+    // Les trois colonnes de contexte de la migration 0108 étaient NULLES sur 100 % des lignes : la jointure
+    // qui cherche le nom du scénario ne rendait donc jamais rien, et l'exploitant lisait « ce contact est
+    // bloqué » sans savoir dans quel parcours. Le contexte n'existe que dans l'exécuteur, il le rattache
+    // désormais à l'erreur qu'il ré-émet.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const journal: LigneJournal[] = [];
+    await processWorkflowAdvance(payload, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, _w, m) => {
+        if (m !== 'm1') return;
+        throw Object.assign(new Error('Meta indisponible'), {
+          contexteAvance: { workflowId: 'wf-9', runId: 'run-7', canal: 'rcs' },
+        });
+      },
+      journaliserEchec: async (e) => { journal.push(e); },
+    });
+    spy.mockRestore();
+    expect(journal[0]).toMatchObject({ workflowId: 'wf-9', runId: 'run-7' });
+    // Le canal PORTÉ par l'erreur gagne sur le repli du point d'appel : un bloc RCS échoue en RCS, même si
+    // c'est un webhook WhatsApp qui a déclenché l'avance.
+    expect(journal[0]?.canal).toBe('rcs');
+  });
+
+  it('une erreur SANS contexte rend des colonnes nulles, elle ne casse rien', async () => {
+    // Panne avant que le run soit trouvé, appelant de test, exécuteur plus ancien : la lecture est défensive
+    // par construction. Un journal d'échec ne doit jamais échouer à cause de la FORME de l'échec qu'il observe.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const journal: LigneJournal[] = [];
+    await processWorkflowAdvance(payload, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, _w, m) => {
+        if (m === 'm1') throw Object.assign(new Error('boum'), { contexteAvance: 'pas un objet' });
+      },
+      journaliserEchec: async (e) => { journal.push(e); },
+    });
+    spy.mockRestore();
+    expect(journal[0]).toMatchObject({ erreur: 'boum', canal: 'whatsapp' });
+    expect(journal[0]?.workflowId).toBeUndefined();
   });
 
   it('🔴 un journal en PANNE ne casse rien : les autres messages avancent quand même', async () => {

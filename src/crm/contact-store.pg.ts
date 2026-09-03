@@ -756,8 +756,19 @@ export class PgContactStore implements ContactStore {
    * TRANSACTIONNEL : une purge à moitié faite laisserait des messages orphelins d'un contact déjà anonymisé,
    * c'est-à-dire le contenu sans le moyen de le retrouver pour finir le travail.
    */
-  /** Résout une cible de masse (identifiants explicites OU filtres) en liste d'identifiants. */
-  async contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]> {
+  /**
+   * Résout une cible de masse (identifiants explicites OU filtres) en liste d'identifiants.
+   *
+   * `limite` borne la sélection PAR FILTRES (constat B4 de l'audit externe du 2026-09-02) : sans elle, le
+   * chemin par filtres matérialisait jusqu'à 100 000 identifiants avant de se faire refuser par un plafond de
+   * campagne à 20 000, soit quatre-vingt mille lignes chargées pour rien. L'appelant passe `plafond + 1`, le
+   * `+ 1` étant ce qui distingue « pile au plafond » de « au-dessus ».
+   *
+   * ⚠️ La branche par IDENTIFIANTS EXPLICITES n'est volontairement PAS bornée : l'appelant a déjà la liste en
+   * main, la tronquer ici ferait partir une campagne vers un sous-ensemble silencieux de ce qu'il a demandé.
+   * Son plafond est le refus qui suit, pas une troncature.
+   */
+  async contactIdsForTarget(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]> {
     if ('ids' in target) {
       if (target.ids.length === 0) return [];
       const res = await this.pool.query<{ id: string }>(
@@ -766,7 +777,9 @@ export class PgContactStore implements ContactStore {
       );
       return res.rows.map((r) => r.id);
     }
-    const ids = await this.idsForFilters(tenantId, target.filters);
+    const ids = limite === undefined
+      ? await this.idsForFilters(tenantId, target.filters)
+      : await this.idsForFilters(tenantId, target.filters, limite);
     const exclus = new Set(target.excludeIds ?? []);
     return ids.filter((id) => !exclus.has(id));
   }

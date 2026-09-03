@@ -51,16 +51,27 @@ export interface CampaignRouteDeps {
    *
    * Optionnelle : absente, seule la liste explicite d'identifiants reste acceptée (comportement d'avant).
    */
-  contactIdsForTarget?(tenantId: string, target: BulkTarget): Promise<string[]>;
+  contactIdsForTarget?(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]>;
   /**
-   * Nombre de contacts de l'espace, pour appliquer le plafond au chemin « TOUS les contacts » (celui qui
-   * n'était borné par rien). Compté en base, jamais en chargeant les contacts : le plafond doit se prononcer
-   * AVANT le chargement, sinon il ne protège plus de grand-chose.
+   * Les identifiants de TOUS les contacts de l'espace, BORNÉS (constat B4 de l'audit externe du 2026-09-02).
+   *
+   * 🔴 Pourquoi ce n'est plus un COMPTE. Le chemin « tous les contacts » comptait d'abord, validait le
+   * plafond sur ce compte, puis chargeait les contacts PLUS TARD, dans une seconde requête. Entre les deux,
+   * un import concurrent pouvait faire passer l'espace au-dessus du plafond : la campagne partait avec plus
+   * de destinataires que ce que la validation avait autorisé, et personne ne le voyait. Un compte ne peut pas
+   * fermer cette course, parce que ce n'est pas lui qu'on utilise ensuite.
+   *
+   * On résout donc les identifiants UNE fois, bornés à `plafond + 1`, et ce sont EXACTEMENT ceux-là que la
+   * campagne emporte. Le `+ 1` est ce qui distingue « pile au plafond » de « au-dessus », sans jamais
+   * matérialiser plus d'une ligne de trop.
+   *
+   * ⚠️ Cela borne aussi la MÉMOIRE : ce chemin chargeait l'intégralité du CRM dans le process à chaque
+   * création de campagne, sans aucune limite.
    *
    * Absente du câblage -> ce chemin-là n'est pas plafonné, comme avant. Les deux autres le restent, leur
    * nombre étant connu sans requête.
    */
-  compterContacts?(tenantId: string): Promise<number>;
+  identifiantsDeTousLesContacts?(tenantId: string, limite: number): Promise<string[]>;
   /** Plafond de destinataires. Absent -> le défaut de `src/campaign/plafond.ts` (20 000). */
   plafondDestinataires?: number;
   /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
@@ -346,6 +357,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
 
     // Sélection de contacts optionnelle : tableau de chaînes non vides. Absent -> tous les contacts.
     let contactIds: string[] | undefined;
+    // Le plafond est lu ICI, avant toute résolution de cible : il sert de BORNE aux requêtes de sélection,
+    // pas seulement de verdict après coup. Une garde qui arrive après le chargement ne protège que la suite.
+    const plafond = deps.plafondDestinataires ?? PLAFOND_DESTINATAIRES_DEFAUT;
     if (b.contactIds !== undefined) {
       if (!Array.isArray(b.contactIds) || !b.contactIds.every((x) => nonEmpty(x))) {
         return reply.code(400).send({ error: 'contactIds invalide (tableau d\'ids)' });
@@ -386,7 +400,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       // `null` = aucune cible exploitable. On REFUSE plutôt que de retomber sur « tous les contacts » : une
       // cible mal formée qui viserait tout l'espace est exactement l'accident qu'on ne veut jamais.
       if (target === null) return reply.code(400).send({ error: 'contactTarget invalide (ids non vides, ou filters)' });
-      contactIds = await deps.contactIdsForTarget(effectiveTenant, target);
+      // Borné à `plafond + 1` : ce chemin matérialisait jusqu'à 100 000 identifiants avant de se faire
+      // refuser à 20 000 par le plafond, c'est-à-dire quatre-vingt mille lignes chargées pour rien.
+      contactIds = await deps.contactIdsForTarget(effectiveTenant, target, plafond + 1);
       // Une cible qui ne résout personne est une erreur de l'appelant, pas une campagne à tout le monde :
       // sans ce refus, `contactIds` vide retomberait sur « tous les contacts » un peu plus bas.
       if (contactIds.length === 0) {
@@ -404,8 +420,21 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
      * webhook, il n'y a rien à compter et le compte de l'espace n'aurait aucun rapport.
      */
     if (!webhookId) {
-      const plafond = deps.plafondDestinataires ?? PLAFOND_DESTINATAIRES_DEFAUT;
-      const vises = contactIds ? contactIds.length : (deps.compterContacts ? await deps.compterContacts(effectiveTenant) : 0);
+      /**
+       * 🔴 « TOUS LES CONTACTS » RÉSOUT SES IDENTIFIANTS ICI, il ne les compte plus (constat B4 de l'audit
+       * externe du 2026-09-02). Le compte et le chargement étaient deux requêtes séparées : un import
+       * concurrent entre les deux faisait partir une campagne au-dessus du plafond qu'on venait de valider.
+       * Ce n'est pas un défaut de la garde, c'est un défaut de ce qu'elle regardait : elle jugeait un nombre
+       * que personne n'utilisait ensuite.
+       *
+       * En figeant le jeu d'identifiants, la garde juge EXACTEMENT ce que la campagne emportera. Conséquence
+       * assumée et voulue : un contact créé après la validation n'entre plus dans la campagne. L'opérateur a
+       * confirmé un nombre, il obtient ce nombre.
+       */
+      if (contactIds === undefined && deps.identifiantsDeTousLesContacts) {
+        contactIds = await deps.identifiantsDeTousLesContacts(effectiveTenant, plafond + 1);
+      }
+      const vises = contactIds ? contactIds.length : 0;
       const refus = refusDePlafond(vises, plafond);
       if (refus) return reply.code(422).send({ error: refus });
     }

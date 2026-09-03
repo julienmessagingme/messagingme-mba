@@ -778,8 +778,12 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Écrire depuis l'inbox met le scénario en pause** sur cette conversation, que ce soit une réponse texte ou
   l'envoi manuel d'un template : les deux sont des actes d'opérateur. Avant, l'opérateur et le scénario pouvaient
   écrire au client en même temps, et le client recevait deux messages sans rapport. Tant qu'un opérateur détient
-  le fil, **aucun scénario n'y écrit**, y compris une campagne qui essaierait d'en démarrer un. Le scénario n'est
-  pas abandonné, il reprend là où il en était.
+  le fil, **aucun scénario ne CONTINUE tout seul** et l'agent ne répond pas. Le scénario n'est pas abandonné, il
+  reprend là où il en était.
+  ⚠️ **Une CAMPAGNE, elle, part quand même, et elle reprend la main.** C'est délibéré : c'est un opérateur qui
+  la déclenche, donc c'est un humain qui décide. Cette ligne a affirmé le contraire (« y compris une campagne
+  qui essaierait d'en démarrer un »), ce qui laissait croire qu'avoir la main protégeait le contact d'un envoi
+  de masse. Ce n'est pas le cas, et c'est exactement ce qu'un opérateur doit savoir avant de lancer.
 - ✅ **Un scénario qui arrive au bout passe la main** : quand un parcours atteint son bloc « passer à un humain »,
   la conversation bascule côté opérateur. Le badge le dit tout de suite et la conversation apparaît dans
   « À traiter ». Avant, le scénario s'arrêtait en silence pendant que le badge affichait encore « scénario », et

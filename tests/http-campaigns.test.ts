@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput, RetryReset } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
+import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
 
@@ -23,7 +24,9 @@ const asAgent = () => ({ headers: { 'content-type': 'application/json', authoriz
 class FakeRepo implements CampaignRepoLike {
   readonly created: CreateCampaignInput[] = [];
   lastRecipients: BuiltRecipient[] = [];
-  constructor(private readonly contacts: BuildContact[]) {}
+  // Publique : la résolution « tous les contacts » du faux câblage doit rendre LES IDENTIFIANTS DE CE DÉPÔT,
+  // pas ceux d'une fixture voisine, sinon la campagne se construirait sur des identifiants inexistants.
+  constructor(readonly contacts: BuildContact[]) {}
   async listContactsForBuild(): Promise<BuildContact[]> {
     return this.contacts;
   }
@@ -94,11 +97,13 @@ interface Deps {
   ciblesVues?: unknown[];
   /** Ne câble PAS la résolution de cible : reproduit une instance qui ne connaît que les listes d'ids. */
   sansCible?: boolean;
-  /** Ce que compte l'espace, pour le chemin « tous les contacts ». Défaut : le nombre de contacts du faux repo. */
+  /** Combien l'espace contient de contacts, pour le chemin « tous les contacts ». Défaut : ceux du faux repo. */
   nbContacts?: number;
+  /** Ce que la route a demandé au chemin « tous les contacts », borne comprise. */
+  tousVus?: Array<{ tenant: string; limite: number }>;
   /** Plafond de destinataires. Absent -> celui du module (20 000). */
   plafond?: number;
-  /** Ne câble PAS le compteur : reproduit une instance où le chemin « tous les contacts » n'est pas plafonné. */
+  /** Ne câble PAS la résolution « tous les contacts » : instance où ce chemin n'est pas plafonné. */
   sansCompteur?: boolean;
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
@@ -112,14 +117,32 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       ...(d.drafts ? { drafts: d.drafts } : {}),
       phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
       ...(d.sansCible ? {} : {
-        contactIdsForTarget: async (tenant: string, target: unknown) => {
-          d.ciblesVues?.push({ tenant, target });
-          return d.ciblesResolues ?? ['c1'];
+        contactIdsForTarget: async (tenant: string, target: unknown, limite?: number) => {
+          d.ciblesVues?.push({ tenant, target, ...(limite === undefined ? {} : { limite }) });
+          const resolues = d.ciblesResolues ?? ['c1'];
+          // Le vrai store BORNE la sélection par filtres : le faux doit le faire aussi, sinon il rendrait
+          // possible un test qui passe alors que la production tronque.
+          return limite === undefined ? resolues : resolues.slice(0, limite);
         },
       }),
-      // Le plafond de taille : compté en base en production, ici rendu tel quel. Câblé PAR DÉFAUT, comme en
-      // production, sinon les tests jugeraient une instance qui n'existe pas.
-      ...(d.sansCompteur ? {} : { compterContacts: async () => d.nbContacts ?? contacts.length }),
+      // Le plafond de taille. ⚠️ Ce n'est plus un COMPTE : le chemin « tous les contacts » résout ses
+      // identifiants, bornés à `limite`, et la campagne emporte EXACTEMENT ceux-là (constat B4). Le faux
+      // reproduit cette borne, sans quoi il ne modéliserait pas la garde qu'on veut éprouver.
+      ...(d.sansCompteur ? {} : {
+        identifiantsDeTousLesContacts: async (tenant: string, limite: number) => {
+          d.tousVus?.push({ tenant, limite });
+          const total = d.nbContacts ?? repo.contacts.length;
+          // Les identifiants RÉELS du faux dépôt d'abord : la campagne les emporte maintenant vraiment, donc
+          // rendre des identifiants inventés ferait construire zéro destinataire et le test mentirait sur ce
+          // que la route produit. Le remplissage synthétique ne sert qu'aux scénarios AU-DESSUS du plafond,
+          // où la requête est refusée avant toute construction.
+          const reels = repo.contacts.map((c) => c.id);
+          const tous = total <= reels.length
+            ? reels.slice(0, total)
+            : [...reels, ...Array.from({ length: total - reels.length }, (_, i) => `sup-${i}`)];
+          return tous.slice(0, limite);
+        },
+      }),
       ...(d.plafond !== undefined ? { plafondDestinataires: d.plafond } : {}),
       ...(d.sansWebhook ? {} : {
         webhookUsableByTenant: async () => d.webhookOk ?? true,
@@ -750,8 +773,14 @@ describe('POST /tenants/:tenantId/campaigns : au fil de l eau', () => {
       payload: { ...validBody, contactTarget: { filters: { tags: ['vip'] }, excludeIds: ['c3'] } },
     });
     expect(res.statusCode).toBe(201);
-    // La cible part au store TELLE QUELLE, scopée au tenant du jeton.
-    expect(ciblesVues).toEqual([{ tenant: 't1', target: { filters: expect.objectContaining({ tags: ['vip'] }), excludeIds: ['c3'] } }]);
+    // La cible part au store TELLE QUELLE, scopée au tenant du jeton, ET BORNÉE au plafond plus un (constat
+    // B4) : sans cette borne, ce chemin matérialisait jusqu'à 100 000 identifiants avant de se faire refuser
+    // à 20 000. Le « plus un » est ce qui distingue « pile au plafond » de « au-dessus ».
+    expect(ciblesVues).toEqual([{
+      tenant: 't1',
+      target: { filters: expect.objectContaining({ tags: ['vip'] }), excludeIds: ['c3'] },
+      limite: PLAFOND_DESTINATAIRES_DEFAUT + 1,
+    }]);
     // Et ce sont les identifiants RÉSOLUS qui deviennent les destinataires.
     expect(repo.created[0]?.contactIds).toEqual(['c1', 'c2']);
     await app.close();
@@ -1017,6 +1046,33 @@ describe('POST /campaigns : le plafond de destinataires', () => {
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
     expect(res.statusCode).toBe(422);
     expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('🔴 « TOUS les contacts » FIGE son jeu d’identifiants : la campagne emporte ce que la garde a jugé', async () => {
+    // Le constat B4 de l'audit externe. Avant, ce chemin COMPTAIT (une requête), validait le plafond sur ce
+    // compte, puis CHARGEAIT les contacts plus tard (une autre requête). Un import concurrent entre les deux
+    // faisait partir une campagne au-dessus du plafond qu'on venait d'autoriser. La garde ne jugeait pas ce
+    // que la campagne allait emporter, donc elle ne garantissait rien.
+    const repo = new FakeRepo(contacts);
+    const tousVus: Array<{ tenant: string; limite: number }> = [];
+    const app = appWith(repo, { plafond: 10, tousVus });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(res.statusCode).toBe(201);
+    // La preuve que la course est fermée : ce que la campagne emporte est EXACTEMENT ce que la résolution a
+    // rendu, et non le résultat d'un second chargement fait plus tard.
+    expect(repo.created[0]?.contactIds).toEqual(['c1', 'c2']);
+    await app.close();
+  });
+
+  it('🔴 la résolution « tous les contacts » est BORNÉE au plafond plus un', async () => {
+    // Elle ne borne pas que le verdict, elle borne la MÉMOIRE : ce chemin chargeait l'intégralité du CRM dans
+    // le process à chaque création de campagne. Le « plus un » sert à distinguer « pile au plafond » de
+    // « au-dessus » sans jamais matérialiser plus d'une ligne de trop.
+    const tousVus: Array<{ tenant: string; limite: number }> = [];
+    const app = appWith(new FakeRepo(contacts), { plafond: 10, tousVus });
+    await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(tousVus).toEqual([{ tenant: 't1', limite: 11 }]);
     await app.close();
   });
 

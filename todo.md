@@ -47,8 +47,44 @@ DEUX jobs par minute (sondage 30 s, un job par sondage, travail de 0,05 s), soit
 15 000 accusés d'une campagne de 5 000 destinataires. Corrigé par `burstWhenReadyExceeds`. Chiffres et leçon
 dans `docs/SLO-2026-09-01.md`.
 
-Puis les B et C de l'audit : rendre les échecs d'avance acquittables, imbriquer les capacités au lieu de
-recopier les `Pick`, fermer la course du plafond « tous les contacts », découper `CampaignCreateForm`.
+**B et C de l'audit, état au 2026-09-03** (vérifiés un par un DANS LE CODE, avec contre-vérification adverse,
+parce que le « lot immédiat » du 2026-09-02 en avait déjà fermé une partie et que l'audit est donc périmé par
+endroits) :
+
+- ~~**B2** sémantique de la télémétrie du pool~~, ~~**B3** validation stricte des concurrences et plafonds~~,
+  ~~**B5** faux 500 sur une source absente~~ : **livrés le 2026-09-02** (lot immédiat, `f711743`).
+- ~~**B4** course du plafond « tous les contacts »~~ : **livré le 2026-09-03**. Le chemin résout et FIGE son
+  jeu d'identifiants, borné à `plafond + 1`, au lieu de compter puis recharger. ⚠️ La contre-vérification a
+  trouvé le trou que mon propre correctif avait laissé : le câblage relayait `(tenant, target)` vers un
+  contrat à trois paramètres, donc la borne était avalée EN SILENCE et le compilateur ne pouvait pas le voir
+  (une flèche plus courte est assignable). Gardé par `tests/campagne-cablage.test.ts`.
+- ~~**C2** contradictions documentaires~~ : **livré le 2026-09-03**, et le pire des trois n'était pas un
+  document : l'infobulle « vous avez la main » promettait à l'opérateur, dans le produit, que les campagnes
+  n'enverraient pas. C'est l'inverse du code, qui passe `ignoreHumanControl` et REPREND la main, délibérément.
+- ~~**C3** attribution RCS~~ : **livré le 2026-09-03** (textuel). La phrase « le détail par campagne reste
+  reconstructible » de la 0107 était fausse, et l'entrée de backlog décrivait un manque déjà comblé.
+- **B1** échecs d'avance : **partiellement livré le 2026-09-03**. Le contexte (parcours, run, canal) traverse
+  désormais, donc la jointure sur le nom du scénario sert enfin à quelque chose. ⚠️ **Trois points restent
+  OUVERTS, et c'est un choix**, pas un oubli :
+  (b) aucune déduplication (un rejeu Meta peut écrire deux lignes pour le même message) : demanderait une
+  migration avec index unique `concurrently`, pour un journal d'exploitation dont les doublons se lisent ;
+  (c) aucun état acquitté/résolu : demanderait une migration, une route d'écriture et un bouton, alors que
+  personne n'a encore eu à exploiter cette table ;
+  (d) purge globale sans index sur `at` : la table est petite par construction (une ligne par ÉCHEC, 90 jours
+  de rétention), un balayage séquentiel quotidien n'y coûte rien.
+  ⚠️ Et une fausse piste à ne pas suivre : passer `alreadySeen` à l'avance pour dédupliquer CASSERAIT la
+  reprise, `insertEvent` marquant l'événement dès la première tentative, donc un rejeu pg-boss trouverait tous
+  ses messages « déjà vus » et n'avancerait plus rien.
+- **C1** capacités imbriquées : l'audit généralisait à tort (« recopiés de fichier en fichier »). Inventaire
+  fait : **14 `Pick<` dans `src/`, 13 sont des contrats étroits légitimes, UN SEUL est un passe-plat**,
+  `src/campaign/run-job.ts`. Le vrai défaut y est réel : ajouter une dépendance au type sans la recopier dans
+  `optionsMoteur` ne produit AUCUNE erreur. `thresholds`, un de ses huit membres, n'est d'ailleurs câblé nulle
+  part.
+- ~~**C4** découpage des gros fichiers~~ : **refusé, et la contre-vérification a tranché**. Les mesures
+  (`worker.ts` 877 lignes de code, `executor.ts` 680, `CampaignCreateForm` 1 319) ne justifient pas un
+  découpage, et le dépôt l'avait déjà refusé nommément le 2026-08-31 avec un meilleur argument. Le seul défaut
+  VIVANT que cet item recouvrait a été corrigé au passage : deux balayages sur vingt-deux journalisaient leur
+  échec sans ALERTER (`vectorisation` et `analyse-conversations`), donc une panne y restait invisible.
 
 **Ajouté le 2026-09-02 (lot 5) : écrire le profil `equite` du banc de charge**, après le lot 6.
 `docs/SLO-2026-09-01.md` l'annonçait comme une commande existante alors que `scripts/banc-charge.mts` ne la
@@ -163,12 +199,24 @@ tranche le 2026-09-01, « on s'encombre pas de l'ancienne version » et « tant 
 dans le vide ». Ce n'est donc pas une dette, c'est un arbitrage. Ce qui reste utile et pas cher : **dire au
 moment de publier combien de parcours vivants vont etre affectes**. Ne plus le faire les yeux fermes.
 
-## Les clics ne se voient PAS sur le rapport d'une campagne (relevé au lot RCS, 2026-09-02)
+## L'attribution des clics par campagne est APPROCHÉE, pas exacte (relevé au lot RCS, 2026-09-02)
 
-Constat fait en câblant l'attribution : les clics sur les liens tracés ne s'affichent qu'à **deux** endroits,
-et aucun des deux n'est le rapport de campagne.
+⚠️ **Le titre de cette entrée était faux et il est corrigé le 2026-09-03** : il disait « les clics ne se
+voient PAS sur le rapport d'une campagne », ce qui n'est plus vrai depuis `e77434d` (2026-08-22). Le rapport
+de campagne PORTE un compteur de clics (`urlClicks`, `src/stats/store.pg.ts`). Une entrée de backlog qui
+décrit un manque déjà comblé fait chercher un travail qui n'existe plus.
+
+Les clics s'affichent donc à **trois** endroits :
+- le rapport de campagne (funnel), depuis le 2026-08-22 ;
 - Analytics > Mes tableaux, par BLOC DE SCÉNARIO (templates depuis le 2026-08-20, blocs RCS depuis le 2026-09-02) ;
 - la fiche du mini-CRM, indirectement, via l'indicateur « Engagé » qui compte désormais un clic.
+
+**Ce qui reste vraiment ouvert est l'EXACTITUDE, pas l'affichage.** Un lien tracé n'existe qu'une fois par
+(tenant, destination) : deux campagnes qui envoient la même adresse au même contact dans une fenêtre
+rapprochée partagent le compteur, et rien en base ne dit laquelle a produit le clic. Le rapprochement par
+proximité de temps tranche par convention. C'est acceptable tant qu'on ne VEND pas d'analytique détaillée ;
+le jour où on la vend, il faudra une dimension de plus sur le lien, donc une porte à sens unique (les liens
+déjà envoyés continuent de circuler).
 
 Une campagne DIRECTE (sans scénario) n'a donc aucun compteur de clics, sur aucun des deux canaux. Ce n'est pas
 un manque de donnée : `tracked_link_clicks` porte le contact et la date depuis la 0106, et

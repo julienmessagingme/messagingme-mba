@@ -26,9 +26,16 @@
 --
 -- ⚠️ CE QU ON PERD, ET POURQUOI C EST ACCEPTE : deux campagnes RCS qui pointent la MEME adresse partagent un
 -- code, donc un compteur. C est exactement l approximation que le cote WhatsApp documente deja depuis la 0066
--- (« si le meme template sert dans deux blocs, les deux affichent le meme total »). Et depuis la 0106 chaque
--- clic porte SON contact et SA date : le detail par campagne reste reconstructible, il n est simplement pas
--- pre-agrege.
+-- (« si le meme template sert dans deux blocs, les deux affichent le meme total »).
+--
+-- 🔴 CORRECTION DU 2026-09-03 (contre-verification de l audit externe). Cet en-tete affirmait que « le detail
+-- par campagne reste RECONSTRUCTIBLE, il n est simplement pas pre-agrege ». C est FAUX au cas qui compte. Un
+-- clic porte (code, tenant, contact, date) et le code n existe qu une fois par (tenant, destination) : quand
+-- DEUX campagnes envoient la meme adresse au MEME contact dans une fenetre rapprochee, rien en base ne dit
+-- laquelle a produit le clic. Le rapprochement par PROXIMITE DE TEMPS, celui que fait deja l indicateur
+-- « engage », est une approximation qui tranche par convention, pas une reconstruction. Le dire autrement
+-- laissait croire qu une attribution exacte dormait dans les donnees en attendant une requete : elle n y est
+-- pas, et la promettre serait vendre une analytique qu on ne sait pas rendre.
 --
 -- ⚠️ CE QU ON GAGNE, ET C EST LE POINT DECISIF : les quatre chemins d envoi RCS convergent deja sur UN SEUL
 -- point de passage (`RcsSender.sendTo`), dont le commentaire dit pourquoi les mises en forme vivent la : « y

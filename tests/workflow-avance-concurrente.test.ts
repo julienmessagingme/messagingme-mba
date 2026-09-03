@@ -225,6 +225,21 @@ describe('avance concurrente : le tour est RÉSERVÉ avant tout envoi', () => {
     expect(await runs.reserverAvance('t1', 'r1', 'a')).not.toBeNull();
   });
 
+  it('🔴 une avance qui JETTE emporte son contexte : parcours, run et canal (constat B1)', async () => {
+    // Le journal des échecs (migration 0108) porte trois colonnes de contexte que personne ne remplissait :
+    // le point de journalisation est un handler de webhook, il ne connaît que le numéro et le message. Le
+    // parcours n'est connu QU'ICI. Sans ce relais, la jointure qui cherche le nom du scénario ne rendait
+    // jamais rien, et l'exploitant lisait « ce contact est bloqué » sans savoir dans quel parcours.
+    const runs = new RunsConditionnels();
+    const { ex } = exec(runs, { sendQuickMessage: async () => { throw new Error('Meta indisponible'); } });
+    const err = await ex.advance('t1', '33600', 'msg1').then(() => null, (e: unknown) => e);
+    // La MÊME erreur remonte, avec son message : on annote, on ne remplace pas.
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe('Meta indisponible');
+    expect((err as { contexteAvance?: unknown }).contexteAvance)
+      .toEqual({ workflowId: 'wf1', runId: 'r1', canal: 'whatsapp' });
+  });
+
   it('🔴 le jeton du tour est PASSÉ à la garde d’écriture', async () => {
     // Le câblage que la garde SQL attend. Sans lui, la clôture par jeton existerait en base et ne servirait
     // à rien, l'appelant ne la renseignant jamais.

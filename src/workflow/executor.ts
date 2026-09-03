@@ -1494,6 +1494,21 @@ export class WorkflowExecutor {
     if (rest.status === 'agent_turn') {
       await this.demarrerTourAgent(tenantId, waId, { id: run.id, workflowId: run.workflowId }, graph, rest.nodeId);
     }
+    } catch (err) {
+      /**
+       * 🔴 L'ERREUR EMPORTE SON CONTEXTE (constat B1 de l'audit externe du 2026-09-02). Le journal des échecs
+       * d'avance (migration 0108) a trois colonnes `workflow_id`, `run_id` et `canal` que PERSONNE ne
+       * remplissait : le point de journalisation est le handler de webhook, qui ne connaît que le contact et
+       * le message. Résultat, la jointure qui cherche le nom du scénario ne rendait jamais rien, et
+       * l'exploitant lisait « ce contact est bloqué » sans jamais savoir DANS QUEL parcours.
+       *
+       * Le contexte, lui, est ici, et seulement ici. On l'attache donc à l'erreur qui remonte, sans changer
+       * quoi que ce soit au flux : on ré-émet la MÊME erreur, avec sa pile. Pas de classe d'erreur nouvelle,
+       * pas de valeur de retour transformée, rien qu'un appelant puisse casser en l'ignorant.
+       */
+      throw Object.assign(err instanceof Error ? err : new Error(String(err)), {
+        contexteAvance: { workflowId: run.workflowId, runId: run.id, canal: canalRetour },
+      });
     } finally {
       // Le battement s'arrête AVANT la libération, et dans tous les cas : un renouvellement qui survit à son
       // avance tiendrait un tour que plus personne ne travaille, donc gèlerait le contact jusqu'au bail.

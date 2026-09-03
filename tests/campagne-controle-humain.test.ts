@@ -113,4 +113,19 @@ describe('les trois chemins déclenchés par un opérateur passent bien ignoreHu
     // L'opérateur y détient presque toujours le fil, puisqu'il vient d'y écrire.
     expect(lire('src', 'index.ts')).toContain('ignoreHumanControl: true');
   });
+
+  it('🔴 et l’ÉCRAN ne promet pas le contraire à l’opérateur', () => {
+    // Le dernier endroit où le mensonge avait survécu, et le pire des trois : ce n'est pas un commentaire de
+    // code, c'est l'infobulle du badge « vous avez la main », affichée à l'opérateur sur CHAQUE conversation
+    // qu'il détient, en français et en anglais. Elle affirmait que les campagnes ne l'enverraient pas. Un
+    // opérateur qui la croit pense le contact protégé d'un envoi de masse : il ne l'est pas, et c'est
+    // exactement ce qu'il doit savoir avant de lancer.
+    const ui = lire('web', 'app', 'inbox', 'page.tsx');
+    expect(ui, 'l’infobulle ne doit plus promettre que les campagnes sautent le contact')
+      .not.toContain('les campagnes ne l’enverront pas');
+    expect(ui, 'idem en anglais').not.toContain('campaigns will skip it');
+    // Et elle doit DIRE ce qui se passe vraiment, pas seulement se taire : un texte muet laisserait l'ancienne
+    // croyance intacte dans la tête de qui l'a déjà lu.
+    expect(ui, 'l’infobulle doit dire qu’une campagne part quand même').toMatch(/Une campagne, si/);
+  });
 });

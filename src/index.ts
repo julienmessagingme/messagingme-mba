@@ -283,10 +283,18 @@ async function main(): Promise<void> {
       // La MÊME résolution de cible que les actions en masse du mini-CRM : une campagne désigne ses
       // destinataires comme le mini-CRM désigne les siens, donc par l'intention et non par une liste
       // d'identifiants qui ne tiendrait pas dans le corps de la requête.
-      contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
-      // Le plafond de taille. Le compte se fait EN BASE, filtres vides, donc sans charger un seul contact :
-      // c'est le chemin « tous les contacts » qui n'était borné par rien.
-      compterContacts: (tenant) => contactStore.count(tenant, {}),
+      // 🔴 `limite` DOIT ÊTRE RELAYÉE. Une flèche à DEUX paramètres est parfaitement assignable à un contrat
+      // qui en déclare TROIS : le troisième est avalé EN SILENCE, le typecheck ne dit rien, et la route qui
+      // passe soigneusement `plafond + 1` retombe sur le plafond technique de 100 000 du store. C'est le
+      // défaut même que ce lot ferme, reproduit dans son propre câblage. Trouvé par la contre-vérification
+      // du 2026-09-03, pas par le compilateur, qui ne peut pas le voir.
+      contactIdsForTarget: (tenant, target, limite) => contactStore.contactIdsForTarget(tenant, target, limite),
+      // Le plafond de taille, sur le chemin « tous les contacts », celui qui n'était borné par rien.
+      // Bornée à `limite` : le chemin « tous les contacts » ne compte plus, il FIGE son jeu d'identifiants
+      // (constat B4). `{ filters: {} }` sélectionne l'espace entier, exactement comme le comptage d'avant,
+      // et les contacts bloqués qu'il ramène sont écartés au chargement (`listContactsForBuildByIds`), donc
+      // la liste finale de destinataires est identique.
+      identifiantsDeTousLesContacts: (tenant: string, limite: number) => contactStore.contactIdsForTarget(tenant, { filters: {} }, limite),
       plafondDestinataires: config.CAMPAIGN_MAX_RECIPIENTS,
       // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
