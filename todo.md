@@ -93,6 +93,39 @@ angles morts et deux des trois confirmés sont des **régressions que j'avais in
   être ordonnées se règlent par une valeur, pas par une architecture ; le lien est tenu par un test, parce
   qu'il ne se voit dans aucun des deux fichiers pris séparément.
 
+### Audit de RAYON DE SOUFFLE du lot précédent (2026-09-04) : ce que mes propres correctifs avaient cassé
+
+Nouvelle discipline, née de la question de Julien (« qu'est-ce qui me fait croire que ce que tu as fait n'a
+pas détruit autre chose ? »). Pour chacun des six changements du lot, **tous les dépendants ont été énumérés
+et vérifiés un par un** : 102 au total, puis un réfuteur par changement chargé de trouver celui qui manquait.
+**Aucun comportement cassé, trois risques réels, tous corrigés.**
+
+- ~~**Des tests faisaient un VRAI appel DNS.**~~ **CORRIGÉ.** `tests/page-distante.test.ts` appelait
+  `fetchUrlBorne(1000, impl)` à deux arguments, donc la vraie résolution, sur `www.exemple.fr`, un domaine que
+  personne ici ne contrôle. Un des tests **passait aussi quand le nom ne résolvait pas** (« hôte non autorisé
+  (nom introuvable) » contient bien « hôte non autorisé ») : vert par le chemin du refus, sans jamais
+  atteindre la redirection qu'il prétend refuser. Le plafond DNS ajouté la veille avait en plus resserré leur
+  marge en CI. **Un test unitaire qui touche le réseau n'est pas un test unitaire**, c'est un test dont le
+  verdict appartient à quelqu'un d'autre. Prouvé corrigé en coupant le résolveur par défaut : 7 tests verts.
+- ~~**Ma réécriture avait supprimé un cas de test sans le remplacer.**~~ **CORRIGÉ.** L'ancien test exerçait
+  « le système coupe la connexion en plein corps », mal asserté mais exercé ; sa réécriture l'a remplacé par
+  un cas piloté par l'échéance. Le chemin vivait toujours dans le code et produisait le même faux succès.
+  `lireCorpsBorne` distingue désormais un flux CASSÉ d'un corps vide (les deux rendaient `{texte:''}`), et la
+  route refuse aussi le corps **trop gros**, qu'elle ignorait alors que ses deux routes sœurs le refusent.
+- ~~**Six endroits disaient encore « dix minutes ».**~~ **CORRIGÉ.** Dont le docbloc juste au-dessus de la
+  constante à quinze, qui affirmait « même ordre de grandeur que la durée maximale d'une avance » alors que
+  tout l'intérêt du changement est de NE PAS l'être ; et `CLAUDE.md`, avec deux affirmations fausses dans une
+  seule phrase. Ma justification était en plus **orpheline**, placée après la constante, donc invisible au
+  survol.
+- ~~**Le `CLAUDE.md` se contredisait sur le compte des chemins sortants.**~~ **CORRIGÉ.** J'avais écrit qu'il
+  y en avait quatre à la ligne 392 et laissé « les TROIS chemins concernés » à la ligne 407, plus les copies
+  dans `todo.md` et `wip.md`. **Corriger un compte à un endroit et le laisser à trois autres, c'est le
+  laisser faux.**
+
+**Vérifié et écarté** : `asIdArray` (`src/http/contacts.ts:91`) tronque les identifiants d'une action en
+masse à 100 000, mais c'est **documenté dans son propre commentaire** et préexistant. Et le plafond DNS de 3 s
+tombe DANS le budget d'outil de 8 s d'un tour d'agent, qu'il RÉDUIT au lieu de l'augmenter.
+
 **Ce qui reste ouvert :** un jeton de garde sur `sortieAppliquee` (la course est devenue inatteignable par
 la constante, mais la pièce manque toujours ; elle coûterait de faire remonter l'instant de marque à travers
 deux signatures) ; et le compte jugé par le plafond de campagne inclut les contacts **bloqués**, alors que le
@@ -114,13 +147,15 @@ connaissance, reranker, lecture de connecteur).
 
 ~~**A1 — rattraper un tour d'agent tué par un crash.**~~ **LIVRÉ le 2026-09-03** (migration 0112). Le
 watchdog prévu : `src/agent/tour-bloque-sweep.ts`, passage à la minute, réclame et clôt en UNE requête les
-tours en vol depuis plus de dix minutes, puis fait sortir le parcours par la branche d'échec. On ne rejoue
+tours en vol depuis plus de QUINZE minutes, puis fait sortir le parcours par la sortie RÉELLEMENT DUE (le
+seuil était de dix, corrigé le 2026-09-03, et la sortie était en dur). On ne rejoue
 pas, comme arbitré : le worker a pu mourir APRÈS l'envoi au contact. ⚠️ Il a fallu une COLONNE
 (`tour_commence_le`) : « session en cours + run en attente + aucune échéance » décrit aussi un tour qui vient
 d'être enfilé, et un balayage bâti là-dessus aurait tué des conversations vivantes.
 
 ~~**A3 — les deux bornes de sécurité des connecteurs HTTP.**~~ **LIVRÉ le 2026-09-03.** Résolution DNS
-contrôlée (`src/lib/adresse-privee.ts`) sur les TROIS chemins qui appellent une URL saisie par un client : le
+contrôlée (`src/lib/adresse-privee.ts`) sur les QUATRE chemins qui appellent une URL saisie par un client (le
+compte a dit trois pendant un jour, l'épreuve d'une SOURCE manquait) : le
 connecteur en conversation, le bouton « Test » de la console, et la lecture de page distante (à chaque saut de
 redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les mêmes, en OCTETS et non en unités
 UTF-16. ⚠️ **Ce qui reste ouvert, et il faut le dire** : la vérification a lieu AVANT l'appel et `fetch` refait

@@ -339,6 +339,18 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     if (echeance.aborted) {
       return reply.code(200).send({ ok: false, erreur: 'le système n’a pas répondu dans le temps imparti' });
     }
+    // 🔴 ET L'ÉCHÉANCE N'EST PAS LE SEUL FAUX SUCCÈS POSSIBLE (audit du 2026-09-04). Un système qui coupe en
+    // plein corps, sans que l'échéance soit atteinte, produisait exactement la même réponse trompeuse :
+    // `ok: true`, `httpStatus: 200`, aperçu vide, aucun chemin. C'est le cas que la réécriture des tests de la
+    // veille avait cessé d'exercer, et il vivait toujours dans le code.
+    if (lu.casse) {
+      return reply.code(200).send({ ok: false, erreur: 'la réponse a été interrompue en cours de lecture' });
+    }
+    // Le corps trop gros était le troisième : la route l'ignorait et rendait un aperçu vide, là où ses deux
+    // routes sœurs refusent. Le plafond n'a de sens que si on le DIT.
+    if (lu.trop_gros) {
+      return reply.code(200).send({ ok: false, erreur: 'réponse trop volumineuse pour l’aperçu' });
+    }
     const brut = lu.texte.slice(0, MAX_APERCU);
     let json: unknown;
     try { json = JSON.parse(brut); } catch { json = undefined; }

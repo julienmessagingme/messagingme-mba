@@ -343,6 +343,32 @@ describe('requêtes : le bouton Test', () => {
     expect(b.httpStatus).toBeUndefined();
   });
 
+  it('🔴 un flux qui CASSE en plein corps, sans échéance atteinte, n’est pas un succès non plus', async () => {
+    // Le cas que ma réécriture de la veille avait CESSÉ d'exercer, et qui vivait toujours dans le code : le
+    // système du client coupe la connexion en plein corps. `lireCorpsBorne` rendait alors un texte vide,
+    // indistinguable d'un corps vide, donc la route répondait `ok: true`, aperçu vide, aucun chemin. Un
+    // succès au corps vide fait chercher longtemps du mauvais côté.
+    const coupe = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(c) { c.enqueue(new Uint8Array([123])); c.error(new Error('connexion coupée')); },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+    const { srv } = app({}, coupe);
+    const b = (await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} })).json();
+    expect(b.ok).toBe(false);
+    expect(String(b.erreur)).toContain('interrompue');
+  });
+
+  it('🔴 un corps qui dépasse le plafond est REFUSÉ, pas rendu vide', async () => {
+    // La route lisait borné, puis ignorait le drapeau : elle annonçait un succès avec un aperçu vide, là où
+    // ses deux routes sœurs refusent. Un plafond qu'on ne dit pas est un plafond qui ment.
+    const enorme = (async () => new Response('x'.repeat(60_000), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch;
+    const { srv } = app({}, enorme);
+    const b = (await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} })).json();
+    expect(b.ok).toBe(false);
+    expect(String(b.erreur)).toContain('volumineuse');
+  });
+
   it('une source DÉSACTIVÉE ne se teste pas : elle a été coupée exprès', async () => {
     const deps = { sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: {}, status: 'disabled' }) };
     const { srv } = app();

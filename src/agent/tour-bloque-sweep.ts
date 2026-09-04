@@ -20,31 +20,29 @@ import type { TourBloque } from './session-store';
  */
 
 /**
- * Âge au-delà duquel un tour en vol est réputé mort.
+ * Âge au-delà duquel un tour en vol est réputé mort. **QUINZE minutes, et la valeur est CONTRAINTE.**
  *
  * Un tour légitime est borné par l'échéance du cerveau (30 s) plus ses appels d'outils, dont chacun porte son
- * propre plafond. Dix minutes ne sont donc jamais atteintes par un tour vivant, et laissent la marge qu'il
- * faut à une base lente ou à un connecteur qui traîne. Même ordre de grandeur que la durée maximale d'une
- * avance de scénario, pour la même raison : c'est un garde-fou d'anomalie, pas une limite de fonctionnement.
- */
-export const AGE_TOUR_MORT_S = 15 * 60;
-
-/**
- * 🔴 QUINZE MINUTES, ET PAS DIX : IL FAUT QUE CE SEUIL DÉPASSE `DUREE_MAX_AVANCE_MS` (2026-09-03).
+ * propre plafond. Un quart d'heure n'est donc jamais atteint par un tour vivant, et laisse la marge qu'il
+ * faut à une base lente ou à un connecteur qui traîne : c'est un garde-fou d'anomalie, pas une limite de
+ * fonctionnement.
  *
- * Il valait dix minutes, soit EXACTEMENT la durée maximale d'une avance de scénario. La marge était donc
- * nulle : une avance qui va au bout de son temps rend sa ligne réclamable à l'instant précis où elle
- * abandonne, et un deuxième porteur démarre pendant que le premier finit. Deux constantes qui doivent être
- * ordonnées se règlent par une valeur, pas par une architecture.
+ * 🔴 IL DOIT DÉPASSER `DUREE_MAX_AVANCE_MS`, ET IL VALAIT EXACTEMENT SA VALEUR (corrigé le 2026-09-03). Les
+ * deux faisaient dix minutes, ce qui se lisait comme une coïncidence et était en fait une COURSE : une avance
+ * qui va au bout de son temps rend sa ligne réclamable à l'instant précis où elle abandonne, donc un deuxième
+ * porteur démarre pendant que le premier finit. **Deux constantes qui doivent être ordonnées se règlent par
+ * une valeur, pas par une architecture.** Le lien est tenu par `tests/agent-tour-bloque.test.ts`, parce qu'il
+ * n'est visible dans aucun des deux fichiers pris séparément.
  *
- * Ce que ça ferme aussi, et c'est la vraie raison : `sortieAppliquee` n'a PAS de jeton de garde, elle efface
- * la marque quelle que soit sa valeur. Un porteur en retard pouvait donc effacer le BAIL du balayage qui
- * venait de reprendre sa session, et si la sortie du balayage échouait ensuite, la ligne n'était plus
+ * Ce que l'écart ferme aussi, et c'est la vraie raison : `sortieAppliquee` n'a PAS de jeton de garde, elle
+ * efface la marque quelle que soit sa valeur. Un porteur en retard pouvait donc effacer le BAIL du balayage
+ * qui venait de reprendre sa session, et si la sortie du balayage échouait ensuite, la ligne n'était plus
  * réclamable par personne. C'est la troisième pièce de verrou que le CLAUDE.md exige, absente ici. Un jeton
  * coûterait de faire remonter l'instant de marque à travers `clore` puis `cloreEtSortir`, donc deux
- * signatures ; une constante ordonnée rend la course INATTEIGNABLE pour rien. Le prix est cinq minutes de
- * plus avant qu'un tour vraiment mort ne soit ramassé, ce qui ne coûte à personne.
+ * signatures ; l'écart entre les deux constantes rend la course INATTEIGNABLE pour rien. Le prix est cinq
+ * minutes de plus avant qu'un tour vraiment mort ne soit ramassé, ce qui ne coûte à personne.
  */
+export const AGE_TOUR_MORT_S = 15 * 60;
 
 /** Nombre de sessions traitées par passage. Volontairement petit : c'est un filet, pas un traitement de masse. */
 export const LOT_TOURS_BLOQUES = 20;

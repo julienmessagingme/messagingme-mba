@@ -18,6 +18,16 @@ export interface CorpsBorne {
   octets: number;
   /** Le plafond a-t-il été dépassé ? Le texte est alors sans valeur : on refuse, on ne tronque pas. */
   trop_gros: boolean;
+  /**
+   * Le flux a-t-il CASSÉ en cours de lecture ?
+   *
+   * 🔴 SANS CE DRAPEAU, UN CORPS ILLISIBLE ÉTAIT INDISTINGUABLE D'UN CORPS VIDE (audit du 2026-09-04), et les
+   * deux rendaient `{ texte: '', trop_gros: false }`. Un appelant qui annonce « ça répond » après une lecture
+   * ratée envoie donc son utilisateur chercher du mauvais côté : le système du client a l'air d'avoir répondu
+   * un corps vide, alors que c'est la connexion qui a lâché. Le cas est réel, c'est ce que fait un serveur qui
+   * coupe en plein corps.
+   */
+  casse: boolean;
 }
 
 /**
@@ -37,7 +47,7 @@ export async function lireCorpsBorne(res: Response, maxOctets: number): Promise<
   if (!flux || typeof flux.getReader !== 'function') {
     const texte = await res.text().catch(() => '');
     const octets = Buffer.byteLength(texte, 'utf8');
-    return { texte, octets, trop_gros: octets > plafond };
+    return { texte, octets, trop_gros: octets > plafond, casse: false };
   }
 
   const lecteur = flux.getReader();
@@ -53,17 +63,17 @@ export async function lireCorpsBorne(res: Response, maxOctets: number): Promise<
         // On coupe la connexion : sans ce `cancel`, le serveur continuerait d'émettre et nous continuerions
         // de payer la bande passante d'une réponse qu'on vient de refuser.
         await lecteur.cancel().catch(() => {});
-        return { texte: '', octets, trop_gros: true };
+        return { texte: '', octets, trop_gros: true, casse: false };
       }
       morceaux.push(value);
     }
   } catch {
-    // Un flux qui casse en cours de route ne rend rien d'exploitable. L'appelant traite ça comme un corps
-    // illisible, ce qu'il est.
-    return { texte: '', octets, trop_gros: false };
+    // Un flux qui casse en cours de route ne rend rien d'exploitable, et il le DIT désormais : sans le
+    // drapeau, l'appelant ne pouvait pas le distinguer d'un corps vide, et annonçait donc un succès.
+    return { texte: '', octets, trop_gros: false, casse: true };
   } finally {
     lecteur.releaseLock?.();
   }
 
-  return { texte: Buffer.concat(morceaux).toString('utf8'), octets, trop_gros: false };
+  return { texte: Buffer.concat(morceaux).toString('utf8'), octets, trop_gros: false, casse: false };
 }

@@ -7,6 +7,13 @@
 > 🔴 **Règle que je m'impose et qu'on peut me reprocher de violer** : ce qui est MESURÉ et ce qui est RAISONNÉ
 > sont marqués différemment. Un rapport qui confond les deux ne vaut pas d'être audité. Quand j'écris un
 > chiffre, il vient d'une exécution, jamais d'une estimation.
+>
+> ⚠️ **AJOUT DU 2026-09-04, et le document n'est PAS réécrit pour autant.** Deux valeurs citées plus bas ont
+> changé depuis, dans le lot du soir : le seuil du balayage des tours bloqués est passé de dix à **quinze**
+> minutes (il valait exactement `DUREE_MAX_AVANCE_MS`, donc la marge était nulle), et ce balayage sort
+> désormais le parcours par la **sortie réellement due** au lieu de la branche d'échec en dur. Le corps du
+> document décrit l'état au moment où il a été écrit et reste tel quel : un rapport qu'on réécrit après coup
+> ne peut plus servir de trace. Le détail est dans `RAPPORT-CONTRE-CONTRE-RAPPORT-2026-09-03.md`.
 
 ## Contexte en cinq lignes
 

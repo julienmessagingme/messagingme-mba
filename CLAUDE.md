@@ -167,7 +167,8 @@ incrémente `tours` AVANT le travail, ce qui est ce qui rend le verrou optimiste
 entre les deux fait rejouer le job par pg-boss avec l'ANCIEN numéro, la réservation rend `null`, le rejeu est
 classé « doublon », la session reste `en_cours` et le run reste en attente SANS échéance (elle se pose à la fin
 du tour, qui n'est jamais arrivée). Un balayage minute (`src/agent/tour-bloque-sweep.ts`) réclame les tours en
-vol depuis plus de dix minutes, les clôt et fait sortir le parcours par la branche d'échec du bloc.
+vol depuis plus de QUINZE minutes (l'écart avec `DUREE_MAX_AVANCE_MS` est délibéré, cf. la constante), les
+clôt et fait sortir le parcours par la sortie RÉELLEMENT DUE, portée par la ligne réclamée.
 ⚠️ **On ne REJOUE PAS le tour, on le clôt**, et c'est tranché : le worker a pu mourir APRÈS avoir envoyé le
 message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le contact ;
 clore fait au pire emprunter une branche que le client a rédigée.
@@ -334,6 +335,20 @@ qu'avant le premier envoi tracé.
   **jeton de garde** (sinon le porteur d'un bail périmé supprime le verrou de celui qui l'a repris), et un
   **drapeau de relance** (sinon le travail arrivé pendant le run est perdu). Réécrire le même verrou ailleurs
   se fait sur ces trois pièces, pas sur deux.
+- 🔴 **AVANT DE COMMITER UN CHANGEMENT, ÉNUMÉRER SES DÉPENDANTS. C'est la seule des trois disciplines de ce
+  bloc qui soit vérifiable de l'extérieur** (2026-09-04). Sur le lot du 2026-09-03, QUATRE des six défauts
+  fermés le soir avaient été introduits le matin même, en corrigeant autre chose. Aucun n'était visible du
+  compilateur, aucun n'a été attrapé par un test, **parce qu'un test unitaire monte un faux câblage et que le
+  faux bouge avec le code**. Ce qui les aurait vus n'est pas un outil, c'est une liste : pour chaque symbole,
+  constante ou requête touchée, qui la LIT, qui suppose son ancienne valeur, quelle constante d'un AUTRE
+  fichier doit lui rester ordonnée, quel index la sert, quel commentaire l'affirme. Fait après coup le
+  2026-09-04 sur six changements, 102 dépendants suivis : aucun comportement cassé, mais **des tests qui
+  faisaient un vrai appel DNS, un cas de test supprimé sans remplaçant, six textes périmés et un compteur
+  corrigé à un endroit sur quatre**. Corollaires, tous constatés :
+  **(a)** un test qui touche le réseau n'est pas un test unitaire, son verdict appartient à quelqu'un d'autre ;
+  **(b)** réécrire un test doit CONSERVER le cas qu'il exerçait, même s'il l'assertait mal ;
+  **(c)** corriger un compte à un endroit et le laisser à trois autres, c'est le laisser faux ;
+  **(d)** une justification placée APRÈS la déclaration qu'elle justifie est orpheline, donc invisible.
 - 🔴 **ÉLARGIR LE DOMAINE D'UNE RÉPARATION SANS ÉLARGIR CE QU'ELLE TRANSPORTE** (2026-09-03). Le corollaire du
   point suivant, trouvé le lendemain, et il est plus général que lui. Le balayage des tours bloqués sortait le
   parcours par `sortie:echec` EN DUR : c'était juste tant qu'il ne réclamait que des sessions `en_cours`, qui
@@ -404,8 +419,10 @@ a été vérifié par mutation.
 toutes leurs formes exotiques (hexadécimale, entière, IPv6, IPv4 mappée : vérifié). Elle ne peut RIEN contre
 `crm.exemple.fr` dont l'enregistrement A pointe sur `169.254.169.254` (métadonnées du fournisseur) ou sur
 `172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les conteneurs). `resolutionPublique`
-(`src/lib/adresse-privee.ts`) ferme ça, sur les TROIS chemins concernés : connecteur en conversation, bouton
-« Test » de la console, lecture de page distante (à chaque saut de redirection). Règles qui la rendent juste :
+(`src/lib/adresse-privee.ts`) ferme ça, sur les QUATRE chemins concernés (le compte a dit TROIS pendant un
+jour, cf. juste au-dessus, et l'inventaire est désormais tenu par un test) : connecteur en conversation, bouton
+« Test » d'une REQUÊTE, bouton « éprouver » une SOURCE, lecture de page distante (à chaque saut de
+redirection). Règles qui la rendent juste :
 UNE seule adresse interdite condamne le nom, et une résolution qui ÉCHOUE est un REFUS. ⚠️ Le « DNS rebinding »
 reste ouvert (`fetch` refait sa propre résolution) : le fermer demande un résolveur maison via `undici`, cf.
 `todo.md`.

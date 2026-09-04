@@ -176,7 +176,7 @@ export class PgAgentSessionStore implements AgentSessionStore {
    * 🔴 LA MARQUE EST REPOUSSÉE, PAS EFFACÉE (contre-audit du 2026-09-03). Elle l'était, et la ligne devenait
    * alors inatteignable pour DEUX raisons à la fois : plus `en_cours`, et plus de marqueur. Si la sortie du
    * parcours échouait juste après, plus rien au monde ne rattrapait ce parcours. `tour_commence_le = now()`
-   * fait donc les deux à la fois : un BAIL de dix minutes qui empêche un autre passage de reprendre la même
+   * fait donc les deux à la fois : un BAIL de quinze minutes (`AGE_TOUR_MORT_S`) qui empêche un autre passage de reprendre la même
    * ligne, et la trace qu'il reste une sortie à appliquer. Le prochain passage la reprendra tant que
    * `finirLeTour` ne l'a pas effacée.
    *

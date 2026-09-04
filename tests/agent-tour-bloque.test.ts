@@ -127,7 +127,7 @@ describe('balayage des tours d’agent morts en vol', () => {
  * 🔴 LA MOITIÉ DANGEREUSE DU LOT : le balayage ne doit JAMAIS ramasser une conversation vivante.
  *
  * Le marqueur `tour_commence_le` est posé par `prendreLeTour` et doit être effacé sur les DEUX sorties qui
- * laissent la session en vie. En oublier une ferait tuer par le balayage, dix minutes après une réponse
+ * laissent la session en vie. En oublier une ferait tuer par le balayage, un quart d'heure après une réponse
  * parfaitement réussie, un parcours parfaitement sain.
  */
 describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANTES', () => {
@@ -178,7 +178,7 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     const { deps, finis } = make();
     const res = await runTurn(JOB, deps);
     expect(res.fait).toBe('repondu');
-    expect(finis).toEqual(['s1']); // sans ça, le balayage tuerait cette conversation dans dix minutes
+    expect(finis).toEqual(['s1']); // sans ça, le balayage tuerait cette conversation au quart d'heure
   });
 
   it('🔴 un humain a pris la main : la marque est RETIRÉE aussi', async () => {

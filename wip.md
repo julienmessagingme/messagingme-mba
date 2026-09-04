@@ -135,7 +135,8 @@ Une URL saisie par un client était contrôlée sur son TEXTE seulement : `crm.e
 A pointe vers le réseau Docker du VPS passait toutes les gardes. Et le corps de la réponse était chargé
 entièrement en mémoire avant d'être mesuré, en unités UTF-16 plutôt qu'en octets.
 
-Les deux bornes sont posées sur les TROIS chemins qui appellent une adresse client : le connecteur en
+Les deux bornes sont posées sur les QUATRE chemins qui appellent une adresse client (trois à l'origine,
+l'épreuve d'une SOURCE manquait) : le connecteur en
 conversation, le bouton « Test » de la console (le plus facile à atteindre, il était oublié dans l'énoncé), et
 la lecture de page distante, à chaque saut de redirection.
 
@@ -150,7 +151,8 @@ worker qui meurt entre les deux faisait rejouer le job avec l'ancien numéro : l
 le rejeu était classé « doublon », et le tour disparaissait avec la session bloquée en `en_cours` et le run
 en attente sans échéance. Le contact n'avait jamais de réponse, et rien au monde ne le réveillait.
 
-Un balayage à la minute réclame et clôt en UNE requête les tours en vol depuis plus de dix minutes, puis fait
+Un balayage à la minute réclame et clôt en UNE requête les tours en vol depuis plus de QUINZE minutes (dix à
+l'origine, corrigé le 2026-09-03), puis fait
 sortir le parcours par la branche d'échec du bloc, celle que le client a rédigée. **On ne rejoue pas** : le
 worker a pu mourir APRÈS l'envoi, et rien en base ne permet de le savoir.
 

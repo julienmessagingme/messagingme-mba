@@ -202,12 +202,26 @@ describe('lecture bornée du corps d’une réponse', () => {
   it('une réponse SANS flux (faux de test, implémentations exotiques) reste lisible', async () => {
     const sansFlux = { body: null, text: async () => 'bonjour' } as unknown as Response;
     const r = await lireCorpsBorne(sansFlux, 100);
-    expect(r).toEqual({ texte: 'bonjour', octets: 7, trop_gros: false });
+    expect(r).toEqual({ texte: 'bonjour', octets: 7, trop_gros: false, casse: false });
+  });
+
+  it('🔴 un flux CASSÉ se distingue d’un corps vide, et c’est tout l’objet du drapeau', async () => {
+    // Les deux rendaient `{ texte: '', trop_gros: false }`, donc un appelant ne pouvait pas les séparer et
+    // annonçait un succès sur une lecture ratée. Le cas est réel : c'est ce que fait un système qui coupe la
+    // connexion en plein corps.
+    const casse = new Response(new ReadableStream<Uint8Array>({
+      start(c) { c.enqueue(new Uint8Array([1, 2, 3])); c.error(new Error('connexion coupée')); },
+    }));
+    const r = await lireCorpsBorne(casse, 1000);
+    expect(r.casse, 'un flux interrompu doit le DIRE').toBe(true);
+    expect(r.texte).toBe('');
+    // Et le témoin, sans lequel le précédent serait satisfait par un drapeau toujours vrai.
+    expect((await lireCorpsBorne(new Response(''), 10)).casse).toBe(false);
   });
 
   it('un corps vide n’est pas « trop gros »', async () => {
     const r = await lireCorpsBorne(new Response(''), 10);
-    expect(r).toEqual({ texte: '', octets: 0, trop_gros: false });
+    expect(r).toEqual({ texte: '', octets: 0, trop_gros: false, casse: false });
   });
 });
 
