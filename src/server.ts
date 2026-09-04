@@ -36,6 +36,7 @@ import { registerMe } from './http/me';
 import { registerOps } from './http/ops';
 import { registerWorkflows } from './http/workflows';
 import { registerAutomations } from './http/automations';
+import { registerChannelsMeRoutes, type ChannelsMeRouteDeps } from './http/channels-me';
 import { registerEmbeddedSignup } from './http/embedded-signup';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
@@ -208,6 +209,8 @@ export interface ServerDeps {
   webhookEntrant?: WebhookEntrantRouteDeps;
   /** Gestion des webhooks entrants (écran Tools > Webhooks) — réservé aux admins. */
   webhooksAdmin?: WebhooksAdminRouteDeps;
+  /** Chaine WhatsApp (Channels Me) : lecture ouverte aux comptes authentifies, ECRITURES admin-only (garde dans la route). */
+  channelsMe?: ChannelsMeRouteDeps;
 }
 
 /**
@@ -233,6 +236,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     deps.inbox, deps.stats, deps.settings, deps.rcsMessages, deps.rcsChannel, deps.rcsMedia, deps.media,
     deps.tags, deps.fields, deps.workflowReports, deps.automations, deps.agents, deps.agentKnowledge,
     deps.agentTools, deps.agentSources, deps.agentRequetes, deps.agentSetup, deps.agentTest,
+    deps.channelsMe,
   ];
   if (modulesTenant.some((m) => m !== undefined) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant refuse tout et le service est mort
@@ -395,6 +399,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
   if (deps.workflowReports) registerWorkflowReports(app, deps.workflowReports, requireAdmin);
   if (deps.automations) registerAutomations(app, deps.automations, requireAuth);
+  // requireAuth et non requireAdmin : les ecrans de la chaine se LISENT avec un compte agent, et les six
+  // ecritures sont fermees dans la route par `forbidNonAdmin`.
+  if (deps.channelsMe) registerChannelsMeRoutes(app, deps.channelsMe, requireAuth);
   if (deps.embeddedSignup) registerEmbeddedSignup(app, deps.embeddedSignup, requireAdmin);
   if (deps.hubspotImport) registerHubspotImport(app, deps.hubspotImport, requireAdmin);
   if (deps.hubspotInstall) registerHubspotInstall(app, deps.hubspotInstall, requireAdmin);

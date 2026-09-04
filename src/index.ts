@@ -52,6 +52,10 @@ import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
 import { PgAutomationStore } from './automation/store.pg';
+import { PgChannelsMeConnectionStore } from './channels-me/connection-store.pg';
+import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
+import { PgChannelsMePostStore } from './channels-me/post-store.pg';
+import { ChannelsMeClient } from './channels-me/client';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { RateLimiter } from './auth/rate-limit';
@@ -180,6 +184,14 @@ async function main(): Promise<void> {
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
   const gateway = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
   const automationStore = new PgAutomationStore(pool);
+  // Chaine WhatsApp (Channels Me). La cle de chiffrement est INJECTEE au store (contrat du sous-systeme),
+  // elle n'est pas relue depuis la config a l'interieur : les deux secrets sont chiffres la, jamais plus haut.
+  const channelsMeConnections = new PgChannelsMeConnectionStore(pool, config.ENCRYPTION_KEY);
+  const channelsMeLinks = new PgChannelsMeLinkStore(pool);
+  const channelsMePosts = new PgChannelsMePostStore(pool);
+  // Hote FIXE et de confiance : aucune verification d'adresse privee, meme traitement que les clients Meta
+  // et Zadarma.
+  const channelsMeClient = new ChannelsMeClient();
   // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
   const emailAccounts = new PgEmailAccountStore(pool);
@@ -1253,6 +1265,59 @@ async function main(): Promise<void> {
       remove: (id, tenant) => automationStore.remove(id, tenant),
       // Un tenant ne peut cibler QUE ses propres scénarios (même garde que la campagne workflow).
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
+    },
+    // Chaine WhatsApp (Channels Me) : publier un post dont le bouton demarre un scenario.
+    channelsMe: {
+      getConnection: (tenant) => channelsMeConnections.get(tenant),
+      getSecrets: (tenant) => channelsMeConnections.getSecrets(tenant),
+      upsertConnection: (tenant, c) => channelsMeConnections.upsert(tenant, c),
+      markVerified: (tenant) => channelsMeConnections.markVerified(tenant),
+      getOrganisation: (cx) => channelsMeClient.getOrganisation(cx),
+      listChannels: (cx) => channelsMeClient.listChannels(cx),
+      getMessages: (cx) => channelsMeClient.getMessages(cx),
+      // 🔴 `m` DOIT ETRE RELAYE ENTIER. Une fleche a un parametre est parfaitement assignable a un contrat
+      // qui en declare deux : le second serait avale EN SILENCE, l'image du post disparaitrait sans que le
+      // typecheck ne dise rien. Defaut deja paye en production le 2026-09-03.
+      createMessage: (cx, m) => channelsMeClient.createMessage(cx, m),
+      listLinks: (tenant) => channelsMeLinks.list(tenant),
+      createLink: (tenant, l) => channelsMeLinks.create(tenant, l),
+      linkById: (tenant, id) => channelsMeLinks.byId(tenant, id),
+      listPosts: (tenant) => channelsMePosts.list(tenant),
+      createPost: (tenant, p) => channelsMePosts.create(tenant, p),
+      // L'automation compagnon du lien. Trois choses se decident ICI et nulle part ailleurs :
+      //  - `enabled: false`, parce qu'un lien cree mais jamais publie ne doit rien declencher ;
+      //  - `possedePar`, qui met la ligne hors de portee de l'ecran Automation (predicat du store) ;
+      //  - `mode: 'contains'`, qui laisse passer un abonne ayant ajoute un mot devant ou derriere la phrase.
+      creerAutomationCompagnon: (tenant, input) => automationStore.create(tenant, {
+        name: input.nom,
+        triggerKind: 'keyword',
+        triggerConfig: { keywords: [input.jeton], mode: 'contains' },
+        conditionGroup: null,
+        workflowId: input.workflowId,
+        startNodeId: input.startNodeId,
+        cooldownSeconds: input.cooldownSeconds,
+        enabled: false,
+        possedePar: 'channelsme_link',
+        maxFiresPerHour: input.maxParHeure,
+      }),
+      // 🔴 PAR LE STORE DES LIENS, JAMAIS PAR `PgAutomationStore`. Ce dernier exclut de `update`/`remove`
+      // toute ligne `possede_par is not null` : ces deux methodes ecrivent leur PROPRE requete sur
+      // `automations`, garde miroir `possede_par = 'channelsme_link'` comprise.
+      allumerAutomationLien: (tenant, linkId) => channelsMeLinks.allumerAutomation(tenant, linkId),
+      eteindreAutomationLien: (tenant, linkId) => channelsMeLinks.eteindreAutomation(tenant, linkId),
+      scenarioEtat: async (tenant, wfId) => {
+        const wf = await workflowStore.getById(wfId, tenant);
+        if (!wf) return 'inconnu';
+        // « Aucune version publiee » se lit sur le graphe PUBLIE, le seul que l'executeur lise : un scenario
+        // dont il est vide ne demarrerait rien, meme si un brouillon existe a cote.
+        return wf.graph.nodes.length > 0 ? 'ok' : 'vide';
+      },
+      getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
+      // Notification best-effort : `sendTelegram` ne leve jamais et est un no-op si Telegram n'est pas
+      // configure. Le jeton d'un lien n'apparait nulle part dans ce message.
+      demanderActivation: async ({ tenantId, userId, message }) => {
+        await sendTelegram(`[engage-me] demande d’activation Channels Me\nespace ${tenantId}\nutilisateur ${userId ?? 'inconnu'}\n${message.slice(0, 500)}`);
+      },
     },
     ops: {
       getTenantOverview: () => opsStore.getTenantOverview(),
