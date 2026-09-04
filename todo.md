@@ -1379,6 +1379,28 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
   installée quand le clic part), pas de relever le délai. En attendant, une CI rouge sur ce fichier seul se
   relance.
 
+## Chaîne WhatsApp (Channels Me), avant la mise en service
+
+Le lot backend est livré (migration 0114, signeur, jeton, client, trois stores, moteur, routes). Le front
+(écrans Chaîne) n'est PAS fait, et aucune connexion n'est provisionnée : la feature n'est donc pas joignable.
+Ce qui suit doit être traité AVANT qu'elle serve réellement.
+
+- 🔴 **Un échec d'allumage après publication ne réveille personne.**  répond désormais 201 dès
+  que le post est parti (c'est voulu : un 500 aurait poussé à republier vers toute l'audience, et
+   n'a aucune clé d'idempotence). L'échec part dans  et dans le journal
+  (), mais **aucune alerte n'y est branchée** et aucun écran ne lit ce champ. Une panne
+  SYSTÉMATIQUE de l'allumage laisserait donc des posts avec un bouton mort, visible seulement dans les
+  journaux bruts. Deux pistes : afficher  dans l'écran Chaîne, et alerter sur la répétition
+  de  comme on le fait déjà pour les refus .
+- **Régler le plafond horaire propre au lien.** Le mécanisme existe ( sur le lien, le runner
+  lit ), mais personne ne sait combien d'abonnés appuient sur le
+  bouton dans l'heure qui suit une publication. Poser une valeur généreuse pour le pilote, puis la régler sur
+  la mesure du PREMIER vrai post. Sans ça, le plafond global de 200 ignore les suivants en silence.
+- **Mesurer la longueur maximale d'un texte de post** chez le fournisseur. Aujourd'hui la console comptera
+  sans refuser et relaiera le 422 distant, faute de valeur connue.
+- **Provisionner la connexion du tenant pilote** (org, chaîne, clé, secret) via , puis
+  vérifier avec .
+
 ## Plus tard (V2+)
 
 - Sync CRM (audiences entrantes + « zéro saisie » sortant : extraction post-conversation).
