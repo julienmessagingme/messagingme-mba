@@ -115,6 +115,23 @@ devient `and trigger_kind <> 'webhook' and possede_par is null`. **Additif, aucu
 sur les webhooks existants (leur exclusion continue de tenir par `trigger_kind`), et cela se généralise au
 propriétaire suivant.
 
+🔴 **Conséquence qui n'est pas facultative, et qui a failli passer inaperçue.** Ce prédicat est porté par
+`update` (ligne 142) et `remove` (ligne 150), pas seulement par les lectures. Une fois l'automation possédée,
+`PgAutomationStore` **ne peut plus la modifier du tout**, y compris pour l'allumer. La décision 4.1 (allumer
+à la publication) serait donc morte au premier essai. C'est le même problème que les webhooks ont déjà résolu :
+**le propriétaire écrit ses propres requêtes**. `PgChannelsMeLinkStore` porte donc deux méthodes à lui :
+
+```ts
+allumerAutomation(tenantId: string, linkId: string): Promise<void>
+eteindreAutomation(tenantId: string, linkId: string): Promise<void>
+```
+
+Elles écrivent leur propre `update automations set enabled = ...`, bornées par le `tenant_id` **et** par
+`possede_par = 'channelsme_link'`. Cette seconde clause est une **garde miroir** : elle interdit au store des
+liens de toucher une automation qui ne lui appartient pas, exactement comme le prédicat interdit à l'écran
+Automation de toucher les siennes. Les deux gardes se répondent, et c'est ce qui rend la frontière étanche
+dans les deux sens.
+
 **4.3 Un lien référencé par un post publié ne se supprime pas, il s'éteint.** Un post publié circule pour
 toujours. La suppression dure laisserait un bouton mort sans trace. La route de suppression répond donc 409
 tant que `channelsme_posts` référence le lien, et propose l'extinction, qui est réversible. Même raison pour

@@ -119,6 +119,31 @@ ce que la tâche propriétaire a déjà produit.
 **Correction de chemin.** La tâche 11 mentionne `web/lib/api/channels-me.ts`. Ce chemin **n'existe pas**.
 Le seul module d'appel est `web/lib/api-chaine.ts` (créé par la tâche 9), et c'est celui-là qu'on importe.
 
+## 🔴 Correction du contrat gelé : le propriétaire écrit ses propres requêtes
+
+Un défaut de conception a été trouvé pendant la rédaction de ce plan, et le contrat gelé est corrigé ici.
+
+Le prédicat de possession (`and possede_par is null`) est porté par `update` (`src/automation/store.pg.ts`
+ligne 142) et `remove` (ligne 150), **pas seulement par les lectures**. Une fois l'automation compagnon
+possédée, `PgAutomationStore` ne peut donc plus la modifier du tout, **y compris pour l'allumer**. Or le spec
+(section 4.1) exige de l'allumer au moment où la publication réussit. Les deux décisions se contredisaient.
+
+La résolution est celle que les webhooks appliquent déjà : le propriétaire écrit ses propres requêtes.
+`PgChannelsMeLinkStore` gagne deux méthodes, à ajouter au contrat gelé de la **tâche 6**, et que la
+**tâche 8** appelle :
+
+```ts
+allumerAutomation(tenantId: string, linkId: string): Promise<void>
+eteindreAutomation(tenantId: string, linkId: string): Promise<void>
+```
+
+Chacune écrit son propre `update automations set enabled = ...`, bornée par le `tenant_id` **et** par
+`possede_par = 'channelsme_link'`. Cette seconde clause est une **garde miroir** : elle interdit au store des
+liens de toucher une automation qui ne lui appartient pas, comme le prédicat interdit à l'écran Automation de
+toucher les siennes. Les deux gardes se répondent, et c'est ce qui rend la frontière étanche dans les deux
+sens. La tâche 6 doit porter un test qui prouve qu'un `allumerAutomation` visant une automation
+`possede_par is null` ne modifie **aucune** ligne.
+
 **Découpage de la tâche 1.** Elle a été rédigée en absorbant le travail de la tâche 7. Elle se limite à :
 le fichier `db/migrations/0114_channelsme.sql`, et le test `tests/channels-me-migration.test.ts` **réduit
 à ses assertions sur le SQL** (les tables, l'absence de colonne `enabled`, l'unicité globale du jeton,
