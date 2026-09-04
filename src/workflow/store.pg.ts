@@ -79,6 +79,17 @@ export interface MajScenario {
 }
 
 /**
+ * Suppression refusée par la base : un lien de chaîne WhatsApp (Channels Me) référence encore ce scénario
+ * (`channelsme_links.workflow_id ... on delete restrict`, posée par la migration 0114 : la PREMIÈRE clé
+ * étrangère `restrict` de ce dépôt vers `workflows`, les cinq autres étant `cascade` ou `set null`). Sans
+ * cette traduction, la violation Postgres 23503 remonterait telle quelle au gestionnaire d'erreur global, donc
+ * en 500, page d'erreur Cloudflare comprise, sans que l'utilisateur puisse deviner qu'un lien de chaîne bloque.
+ */
+export class WorkflowUtiliseParLienChaine extends Error {
+  constructor() { super('ce scénario est utilisé par un lien de chaîne WhatsApp'); this.name = 'WorkflowUtiliseParLienChaine'; }
+}
+
+/**
  * Store Postgres des workflows (bot builder). Scopé tenant.
  *
  * 🔴 DEUX GRAPHES DEPUIS LE LOT 7 : `graph` est le PUBLIÉ (ce qui tourne), `draft_graph` le brouillon (ce qui
@@ -258,9 +269,19 @@ export class PgWorkflowStore {
     return r ? toRow(r) : null;
   }
 
+  /**
+   * Supprime le scénario. Lève `WorkflowUtiliseParLienChaine` (traduite en 409 par la route) quand un lien de
+   * chaîne WhatsApp le référence encore : `channelsme_links.workflow_id` est en `on delete restrict`, donc
+   * Postgres refuse la suppression (23503) plutôt que de la laisser passer.
+   */
   async remove(id: string, tenantId: string): Promise<boolean> {
-    const res = await this.pool.query(`delete from workflows where id = $1 and tenant_id = $2`, [id, tenantId]);
-    return (res.rowCount ?? 0) > 0;
+    try {
+      const res = await this.pool.query(`delete from workflows where id = $1 and tenant_id = $2`, [id, tenantId]);
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      if ((err as { code?: string } | null)?.code === '23503') throw new WorkflowUtiliseParLienChaine();
+      throw err;
+    }
   }
 
   /**

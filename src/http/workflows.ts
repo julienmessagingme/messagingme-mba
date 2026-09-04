@@ -8,7 +8,7 @@ import type { WorkflowResumeRow } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
 import { collectNodes } from '../workflow/node-list';
 import { newTestToken, waMeTestLink } from '../workflow/test-token';
-import { grapheEditable } from '../workflow/store.pg';
+import { grapheEditable, WorkflowUtiliseParLienChaine } from '../workflow/store.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 
@@ -224,9 +224,19 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
-    const ok = await deps.deleteWorkflow(id, tenant);
-    if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
-    return reply.code(200).send({ ok: true });
+    try {
+      const ok = await deps.deleteWorkflow(id, tenant);
+      if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
+      return reply.code(200).send({ ok: true });
+    } catch (err) {
+      // 🔴 `channelsme_links.workflow_id` est en `on delete restrict` (migration 0114, seule FK `restrict`
+      // de ce dépôt vers `workflows`) : sans cette traduction, la violation Postgres 23503 sortirait en 500,
+      // page d'erreur Cloudflare comprise, sans que l'utilisateur puisse deviner qu'un lien de chaîne bloque.
+      if (err instanceof WorkflowUtiliseParLienChaine) {
+        return reply.code(409).send({ error: 'ce scénario est utilisé par un lien de chaîne WhatsApp : éteins le lien, puis réessaie' });
+      }
+      throw err;
+    }
   });
 
   /**

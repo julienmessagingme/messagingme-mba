@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { WorkflowRouteDeps } from '../src/http/workflows';
 import type { WorkflowRow } from '../src/workflow/store.pg';
+import { WorkflowUtiliseParLienChaine } from '../src/workflow/store.pg';
 
 const SECRET = 'test-secret';
 // Un identifiant qui a la FORME d'un uuid : les routes refusent desormais en 404 ce qui n'en est pas un,
@@ -196,6 +197,17 @@ describe('routes workflows', () => {
     expect(ok.statusCode).toBe(200);
     const miss = await server.inject({ method: 'DELETE', url: '/tenants/t1/workflows/nope', ...h(adminTok) });
     expect(miss.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('🔴 DELETE d’un scénario utilisé par un lien de chaîne WhatsApp : 409 nommé, jamais un 500', async () => {
+    // `channelsme_links.workflow_id` est en `on delete restrict` (migration 0114) : le store lève
+    // `WorkflowUtiliseParLienChaine` (traduite depuis Postgres 23503), et sans cette route la violation
+    // remonterait au gestionnaire d'erreur global, donc en 500, dont Cloudflare remplace le corps.
+    const { server } = app({ deleteWorkflow: async () => { throw new WorkflowUtiliseParLienChaine(); } });
+    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toContain('lien de chaîne WhatsApp');
     await server.close();
   });
 
