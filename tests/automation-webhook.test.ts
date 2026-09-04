@@ -21,7 +21,7 @@ const T = new Date('2026-08-23T12:00:00Z').getTime();
 const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   id: 'a1', tenantId: 't1', name: 'Webhook : commandes', enabled: true,
   triggerKind: 'webhook', triggerConfig: { webhookId: 'wh1' }, conditionGroup: null,
-  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, ...over,
+  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, ...over,
 });
 const EV: AutomationEvent = { kind: 'webhook', waId: '33611', webhookId: 'wh1' };
 

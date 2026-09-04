@@ -13,12 +13,28 @@ export interface AutomationInput {
   startNodeId: string | null;
   cooldownSeconds: number | null;
   enabled: boolean;
+  /**
+   * Proprietaire de cette automation quand elle en a un ('channelsme_link' pour un lien de chaine).
+   * Absent ou null = automation ordinaire, pilotee depuis l'ecran Automation.
+   *
+   * ⚠️ N'est JAMAIS lu du corps d'une requete HTTP : `parseBody` (`src/http/automations.ts`) recopie une
+   * liste FERMEE de champs. Un client qui pourrait le poser se fabriquerait une automation que son propre
+   * ecran ne liste plus, ne modifie plus et ne supprime plus.
+   */
+  possedePar?: string | null;
+  /**
+   * Plafond horaire de declenchements propre a cette automation. Absent ou null = plafond global de
+   * l'instance (`AUTOMATION_MAX_FIRES_PER_HOUR`). Meme remarque que ci-dessus : il ne se regle pas depuis
+   * l'ecran, il desserrerait la garde qui borne des envois factures.
+   */
+  maxFiresPerHour?: number | null;
 }
 
 interface Raw {
   id: string; tenant_id: string; name: string; enabled: boolean;
   trigger_kind: string; trigger_config: unknown; condition_group: unknown;
   workflow_id: string; start_node_id: string | null; cooldown_seconds: number | null;
+  max_fires_per_hour: number | null;
 }
 
 /**
@@ -48,22 +64,38 @@ function toRow(r: Raw): AutomationRow | null {
     workflowId: r.workflow_id,
     startNodeId: r.start_node_id,
     cooldownSeconds: r.cooldown_seconds,
+    maxFiresPerHour: r.max_fires_per_hour,
   };
 }
 
-const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds';
+// ⚠️ Liste tenue A LA MAIN : ajouter une colonne ici oblige a toucher `Raw` ET `toRow`, sinon la valeur
+// arrive de la base et se perd en silence dans le mapping.
+const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds, max_fires_per_hour';
 
 /**
- * Les automations de type `webhook` sont POSSEDEES par leur webhook entrant (migration 0074) : elles se
- * creent, se modifient et se suppriment depuis l'ecran Tools > Webhooks, via `PgWebhookStore`, qui ecrit ses
- * propres requetes.
+ * DEUX familles d'automations sont possedees par autre chose que l'ecran Automation, et ce predicat les met
+ * hors de portee de CE store, donc de cet ecran.
  *
- * Ce predicat les met hors de portee de CE store, donc de l'ecran Automation : sinon un PATCH pourrait
- * reaffecter une de ces lignes a un autre declencheur, ou un DELETE la retirer, en laissant un webhook qui
- * croit encore declencher un scenario. L'invariant tenait jusqu'ici au seul fait que l'identifiant n'est
- * expose nulle part ; il tient maintenant en base.
+ * 1. `trigger_kind = 'webhook'` (migration 0074) : creees, modifiees et supprimees depuis l'ecran
+ *    Tools > Webhooks, via `PgWebhookStore`, qui ecrit ses propres requetes.
+ * 2. `possede_par is not null` (migration 0114) : le proprietaire se nomme dans la colonne,
+ *    'channelsme_link' pour un lien de chaine WhatsApp. Sans ce second terme, une automation `keyword`
+ *    posee par un lien resterait listable, modifiable et supprimable ici : un PATCH la reaffecterait a un
+ *    autre declencheur, un DELETE la retirerait, et le bouton d'un post DEJA PUBLIE cesserait de declencher
+ *    en silence. Un post publie circule pour toujours, il n'y a pas de retour arriere.
+ *
+ * Sans ce predicat, l'invariant ne tiendrait qu'au fait que l'identifiant de ces lignes n'est expose nulle
+ * part : vrai aujourd'hui, faux le jour ou une route le rend pour une raison quelconque.
+ *
+ * ⚠️ `listEnabled` (chemin chaud) ne le porte PAS et ne doit jamais le porter : l'y ajouter rendrait muets
+ * le webhook ET le lien de chaine. `create` non plus, evidemment : c'est par la qu'une automation possedee
+ * naît.
+ *
+ * Le NOM de la constante reste `HORS_WEBHOOK` alors qu'elle couvre desormais deux familles : la renommer
+ * dans le meme commit melerait un renommage a un changement de comportement, et rendrait la relecture du
+ * second impossible.
  */
-const HORS_WEBHOOK = "and trigger_kind <> 'webhook'";
+const HORS_WEBHOOK = "and trigger_kind <> 'webhook' and possede_par is null";
 
 /** Automations d'un tenant + garde-fou anti-rebond. Tout est scopé `tenant_id` sur CHAQUE requête. */
 export class PgAutomationStore {
@@ -112,13 +144,14 @@ export class PgAutomationStore {
 
   async create(tenantId: string, input: AutomationInput): Promise<{ id: string }> {
     const res = await this.pool.query<{ id: string }>(
-      `insert into automations (tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds)
-       values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9) returning id`,
+      `insert into automations (tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds, possede_par, max_fires_per_hour)
+       values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11) returning id`,
       [
         tenantId, input.name, input.enabled, input.triggerKind,
         JSON.stringify(input.triggerConfig),
         input.conditionGroup === null ? null : JSON.stringify(input.conditionGroup),
         input.workflowId, input.startNodeId, input.cooldownSeconds,
+        input.possedePar ?? null, input.maxFiresPerHour ?? null,
       ],
     );
     return { id: res.rows[0]!.id };

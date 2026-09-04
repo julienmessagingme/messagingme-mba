@@ -16,7 +16,7 @@ import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   id: 'a1', tenantId: 't1', name: 'Test', enabled: true,
   triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null,
-  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, ...over,
+  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, ...over,
 });
 const msg = (body: string | null, isNewContact = false): AutomationEvent => ({ kind: 'message', waId: '33611', body, isNewContact, channel: 'whatsapp' });
 
@@ -225,7 +225,7 @@ describe('déclencheur publicité (ctwa_ad)', () => {
   });
   const autoPub = (cfg: Record<string, unknown> = {}): AutomationRow => ({
     id: 'a1', tenantId: 't1', name: 'Pub', enabled: true, triggerKind: 'ctwa_ad', triggerConfig: cfg,
-    workflowId: 'wf1', startNodeId: null, conditionGroup: null, cooldownSeconds: null,
+    workflowId: 'wf1', startNodeId: null, conditionGroup: null, cooldownSeconds: null, maxFiresPerHour: null,
   });
 
   it('config VIDE : n importe quelle pub déclenche', () => {

@@ -57,6 +57,16 @@ export interface AutomationRow {
   startNodeId: string | null;
   /** null = défaut serveur. 0 = aucun anti-rebond. */
   cooldownSeconds: number | null;
+  /**
+   * Plafond horaire de declenchements PROPRE a cette automation. null = plafond global de l'instance
+   * (`AUTOMATION_MAX_FIRES_PER_HOUR`), qui reste la regle pour toutes les automations ordinaires.
+   * 0 = aucun plafond, meme convention que le reglage global.
+   *
+   * Requis et non optionnel a dessein : c'est le compilateur qui doit enumerer tous les endroits qui
+   * fabriquent une ligne d'automation, sinon un cablage muet retomberait sur `undefined` sans que rien ne
+   * le dise, et le plafond global s'appliquerait la ou on croyait l'avoir desserre.
+   */
+  maxFiresPerHour: number | null;
 }
 
 /** L'événement observé, forme normalisée par l'appelant (webhook, file d'événements, hook d'analyse). */

@@ -142,6 +142,7 @@ describe('POST /hubspot/deal-stage', () => {
       id: 'a1', tenantId: 't1', name: 'Relance devis', enabled: true,
       triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's-devis' },
       conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: null,
+      maxFiresPerHour: null,
     };
     // Pipeline configuré côté automation MAIS absent de l'événement : ça doit passer, sinon la règle
     // « le pipeline ne restreint rien » ne vaudrait que dans un sens.

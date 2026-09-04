@@ -38,7 +38,7 @@ function app(over: Partial<AutomationRouteDeps> = {}) {
   const deps: AutomationRouteDeps = {
     list: async () => [],
     // État courant d'UNE automation : c'est lui que la garde anti-boucle relit sur un PATCH partiel.
-    getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600 } : null),
+    getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600, maxFiresPerHour: null } : null),
     create: async (tenant, input) => { cap.created.push({ tenant, input }); return { id: 'a1' }; },
     update: async (id, tenant, patch) => { cap.updated.push({ id, tenant, patch }); return id === 'a1'; },
     remove: async (id, tenant) => { cap.removed.push({ id, tenant }); return id === 'a1'; },
@@ -139,7 +139,7 @@ describe('routes automations', () => {
 
     it('sens 2 : basculer vers « conversation analysée » une automation au délai DÉJÀ court -> refusé', async () => {
       const { server, cap } = app({
-        getById: async () => ({ id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 0 }),
+        getById: async () => ({ id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 0, maxFiresPerHour: null }),
       });
       const res = await server.inject({
         method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok),
@@ -250,6 +250,23 @@ describe('routes automations', () => {
     const ko = await server.inject({ method: 'DELETE', url: '/tenants/t1/automations/zzz', ...h(adminTok) });
     expect([ok.statusCode, ko.statusCode]).toEqual([204, 404]);
     expect(cap.removed).toHaveLength(2); // les deux appels sont scopés tenant, seul l'id connu renvoie true
+    await server.close();
+  });
+
+  it('🔴 le corps ne peut PAS poser `possedePar` ni `maxFiresPerHour`', async () => {
+    // `parseBody` recopie une liste FERMEE de champs, et cette garde dit pourquoi il faut qu'elle le reste.
+    // Un client qui pourrait poser `possedePar` se fabriquerait une automation que son propre ecran ne
+    // liste plus, ne modifie plus et ne supprime plus (le predicat de possession l'exclut des quatre
+    // requetes du store). Un client qui pourrait poser `maxFiresPerHour` desserrerait la garde qui borne
+    // des envois factures.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/automations', ...h(adminTok),
+      payload: { ...VALID, possedePar: 'channelsme_link', maxFiresPerHour: 100_000 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(cap.created[0]!.input).not.toHaveProperty('possedePar');
+    expect(cap.created[0]!.input).not.toHaveProperty('maxFiresPerHour');
     await server.close();
   });
 });

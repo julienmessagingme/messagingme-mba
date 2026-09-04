@@ -71,10 +71,14 @@ export interface AutomationRunnerDeps {
    */
   firedSince?(automationId: string, since: Date): Promise<number>;
   /**
-   * Plafond de déclenchements par automation et par heure. L'anti-rebond est par (automation, CONTACT) : il
-   * n'empêche donc rien à l'échelle d'une population. Or un seul acte d'exploitation peut produire des milliers
-   * d'événements d'un coup (une campagne directe rouvre l'analyse de tous ses destinataires, qui repartent
-   * ensuite en « conversation analysée »). Ce plafond est la seule chose qui borne la facture dans ce cas.
+   * Plafond de declenchements par automation et par heure, PAR DEFAUT pour l'instance. L'anti-rebond est par
+   * (automation, CONTACT) : il n'empeche donc rien a l'echelle d'une population. Or un seul acte
+   * d'exploitation peut produire des milliers d'evenements d'un coup (une campagne directe rouvre l'analyse
+   * de tous ses destinataires, qui repartent ensuite en « conversation analysee »). Ce plafond est la seule
+   * chose qui borne la facture dans ce cas.
+   *
+   * 🔴 Une automation qui porte son PROPRE `maxFiresPerHour` l'emporte sur celui-ci, plus strict comme plus
+   * large (cf. juste en dessous, dans la boucle). Ce reglage-ci reste la regle de toutes les autres.
    */
   maxFiresPerHour?: number;
   now?: () => number;
@@ -140,13 +144,23 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
         if (!ctx || !evaluateConditionGroup(a.conditionGroup, ctx)) continue;
       }
 
-      // Plafond par automation : borne le fan-out d'un événement de masse (analyse rouverte pour toute une
-      // campagne, par exemple). Vérifié APRÈS l'anti-rebond (moins cher) et AVANT tout démarrage.
-      if (deps.firedSince && deps.maxFiresPerHour !== undefined && deps.maxFiresPerHour > 0) {
+      // Plafond par automation : borne le fan-out d'un evenement de masse (analyse rouverte pour toute une
+      // campagne, par exemple). Verifie APRES l'anti-rebond (moins cher) et AVANT tout demarrage.
+      //
+      // 🔴 Le plafond de l'AUTOMATION l'emporte sur celui de l'instance. Un lien de chaine WhatsApp doit
+      // pouvoir accueillir des milliers d'abonnes apres un post qui marche, sans qu'on desserre pour autant
+      // la garde des autres automations, qui elle borne des envois FACTURES. `null` = pas de reglage propre,
+      // donc le plafond de l'instance s'applique, ce qui est le cas de toutes les automations ordinaires.
+      // `0` (ici comme au global) veut dire « aucun plafond », c'est un choix explicite et non un oubli.
+      const plafond = a.maxFiresPerHour ?? deps.maxFiresPerHour;
+      if (deps.firedSince && plafond !== undefined && plafond > 0) {
         const depuis = new Date(now() - 3600_000);
-        if ((await deps.firedSince(a.id, depuis)) >= deps.maxFiresPerHour) {
+        if ((await deps.firedSince(a.id, depuis)) >= plafond) {
+          // Le message porte le plafond REELLEMENT applique : annoncer celui de l'instance alors que celui
+          // de l'automation a tranche enverrait chercher le reglage au mauvais endroit, et une automation
+          // n'a aucun ecran ou cette raison pourrait s'afficher.
           // eslint-disable-next-line no-console
-          console.error(`automation ${a.id} (${a.name}) : plafond de ${deps.maxFiresPerHour} déclenchements/heure atteint, déclenchement ignoré`);
+          console.error(`automation ${a.id} (${a.name}) : plafond de ${plafond} déclenchements/heure atteint, déclenchement ignoré`);
           continue;
         }
       }

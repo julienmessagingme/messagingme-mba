@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
@@ -21,7 +21,7 @@ const T = new Date('2026-08-03T12:00:00Z').getTime();
 const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   id: 'a1', tenantId: 't1', name: 'A', enabled: true,
   triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null,
-  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, ...over,
+  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, ...over,
 });
 const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
   fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
@@ -255,6 +255,52 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
     expect(await runAutomations('t1', MSG, zero.deps)).toBe(1);
     const absent = make([auto()]); // pas de firedSince du tout
     expect(await runAutomations('t1', MSG, absent.deps)).toBe(1);
+  });
+
+  // 🔴 Le plafond de l'AUTOMATION l'emporte sur celui de l'instance, dans les DEUX SENS. Ce reglage existe
+  // pour un cas precis : un lien de chaine WhatsApp, dont un seul post peut faire arriver des milliers
+  // d'abonnes en quelques minutes. Desserrer le plafond GLOBAL pour lui aurait desserre la garde qui borne
+  // la facture de toutes les autres automations, alors que la conversation ouverte par un abonne, elle, ne
+  // coute rien (c'est lui qui ecrit le premier).
+  it('🔴 le plafond de l AUTOMATION l emporte quand il est plus STRICT que celui de l instance', async () => {
+    const { deps, trace } = make([auto({ maxFiresPerHour: 5 })], { firedSince: async () => 5, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, deps)).toBe(0);
+    expect(trace.started).toEqual([]);
+    // Le tir n'est pas consomme : le plafond est verifie AVANT `markFired`, sinon l'anti-rebond avalerait
+    // en silence la prochaine vraie demande du client.
+    expect(trace.fired).toEqual([]);
+  });
+
+  it('🔴 le plafond de l AUTOMATION l emporte quand il est plus LARGE : le cas du lien de chaine', async () => {
+    const { deps, trace } = make([auto({ maxFiresPerHour: 5000 })], { firedSince: async () => 250, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, deps)).toBe(1);
+    expect(trace.started).toHaveLength(1);
+  });
+
+  it('automation SANS plafond propre (null) -> celui de l instance s applique, dans les deux sens', async () => {
+    const bloque = make([auto({ maxFiresPerHour: null })], { firedSince: async () => 200, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, bloque.deps)).toBe(0);
+    const passe = make([auto({ maxFiresPerHour: null })], { firedSince: async () => 199, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, passe.deps)).toBe(1);
+  });
+
+  it('plafond propre a 0 -> aucun plafond pour CETTE automation, meme si l instance en a un', async () => {
+    // Meme convention que le plafond global (« 0 desactive explicitement le garde-fou »). Le `??` ne
+    // retombe pas sur le global, parce que 0 n'est pas null. C'est un choix assume, pas un effet de bord.
+    const { deps } = make([auto({ maxFiresPerHour: 0 })], { firedSince: async () => 10_000, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, deps)).toBe(1);
+  });
+
+  it('le journal annonce le plafond REELLEMENT applique, pas celui de l instance', async () => {
+    // Une automation n'a aucun ecran ou afficher la raison d'un saut : le log est le seul endroit ou elle
+    // vit. Y annoncer 200 alors que 5 a tranche enverrait chercher le reglage au mauvais endroit.
+    const lignes: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { lignes.push(a.map(String).join(' ')); });
+    const { deps } = make([auto({ maxFiresPerHour: 5 })], { firedSince: async () => 5, maxFiresPerHour: 200 });
+    await runAutomations('t1', MSG, deps);
+    spy.mockRestore();
+    expect(lignes.join('\n')).toContain('plafond de 5 déclenchements/heure');
+    expect(lignes.join('\n')).not.toContain('plafond de 200');
   });
 });
 
