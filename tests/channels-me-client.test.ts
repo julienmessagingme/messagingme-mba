@@ -156,6 +156,15 @@ describe('echecs : le corps distant ne se relaie jamais', () => {
     expect((err as ChannelsMeApiError).status).toBe(0);
     expect((err as Error).message).not.toContain('ENOTFOUND');
   });
+
+  it('delai depasse (name TimeoutError) : message distinct d une panne reseau generique', async () => {
+    const abandon = new Error('the operation was aborted due to timeout');
+    abandon.name = 'TimeoutError';
+    const client = new ChannelsMeClient({ fetch: fauxEnPanne(abandon) });
+    const err = await client.getOrganisation(CX).catch((e: unknown) => e);
+    expect((err as ChannelsMeApiError).status).toBe(0);
+    expect((err as ChannelsMeApiError).detail).toBe('delai depasse');
+  });
 });
 
 describe('reponses 200 mal formees', () => {
