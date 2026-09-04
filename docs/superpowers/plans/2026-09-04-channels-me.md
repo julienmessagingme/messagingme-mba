@@ -2762,7 +2762,7 @@ export class ChannelsMeClient {
     corps?: unknown,
   ): Promise<z.infer<S>> {
     const canonique = corps === undefined ? null : corpsCanonique(corps);
-    const entetes: Record<string, string> = { Accept: JSON_MIME, [ENTETE_CLE]: cx.apiKey };
+    const entetes: Record<string, string> = { Accept: JSON_MIME, [ENTETE_AUTORISATION]: `Bearer ${cx.apiKey}` };
     if (canonique !== null) {
       entetes['Content-Type'] = JSON_MIME;
       entetes[ENTETE_SIGNATURE] = signer(canonique, cx.secret);
