@@ -361,10 +361,14 @@ export const schema = z.object({
    *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une
    *  vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou, à ses risques). */
   AUTOMATION_COOLDOWN_SECONDS: z.coerce.number().default(3600),
-  /** Plafond de déclenchements par automation et par heure. L'anti-rebond est par (automation, CONTACT) et ne
-   *  borne rien à l'échelle d'une population : un seul acte d'exploitation (une campagne directe qui rouvre
-   *  l'analyse de tous ses destinataires) peut produire des milliers d'événements. 200/h laisse passer tout
-   *  usage normal et transforme une erreur de configuration en incident borné plutôt qu'en facture. 0 = pas de plafond. */
+  /** Plafond PAR DÉFAUT de déclenchements par heure, pour une automation qui n'a pas son propre
+   *  `maxFiresPerHour` : depuis ce lot, le runner lit d'abord le plafond PROPRE de l'automation
+   *  (`AutomationRow.maxFiresPerHour`, `src/automation/runner.ts`) et ne retombe sur cette valeur globale que
+   *  s'il est absent. Ce n'est donc plus LE plafond effectif de chaque automation, seulement le défaut de
+   *  l'instance. L'anti-rebond est par (automation, CONTACT) et ne borne rien à l'échelle d'une population :
+   *  un seul acte d'exploitation (une campagne directe qui rouvre l'analyse de tous ses destinataires) peut
+   *  produire des milliers d'événements. 200/h laisse passer tout usage normal et transforme une erreur de
+   *  configuration en incident borné plutôt qu'en facture. 0 = pas de plafond. */
   AUTOMATION_MAX_FIRES_PER_HOUR: z.coerce.number().default(200),
   /** Cadence du balayage des échéances (déclencheur « X avant la date d'un champ »). */
   AUTOMATION_DATE_SWEEP_INTERVAL_MS: z.coerce.number().default(60_000),
