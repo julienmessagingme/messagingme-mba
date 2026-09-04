@@ -1,9 +1,27 @@
 name: CI
 
+# 🔴 UN COMMIT DOCS-ONLY NE LANCE PAS LA CI (2026-09-04). En septembre, 36 % des runs venaient de commits
+# `docs:` pur (README, .md dans docs/, audits) qui montaient Postgres et jouaient toute la suite pour ZÉRO
+# ligne de code, soit ~660 min facturées, un tiers du quota mensuel du plan gratuit. `paths-ignore` saute la
+# CI quand un push ne touche QUE des `.md` ; un commit qui mêle doc ET code la relance normalement.
+# ⚠️ Tient parce qu'on n'a pas de branch protection avec check requis (solo sur main, pas de PR) : sinon un
+# run sauté laisserait le check « en attente ».
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
   pull_request:
+    paths-ignore:
+      - '**.md'
+
+# Un push annule le run précédent devenu obsolète sur la même branche, au lieu de tous les jouer. Pendant un
+# cycle d'audit (66 pushs en une journée le 2026-09-02), seul le dernier compte : on ne déploie que HEAD, et
+# le dernier run le couvre. ⚠️ Effet de bord assumé : un commit intermédiaire annulé n'a pas de check vert à
+# lui, ce qui est sans importance ici puisqu'on ne déploie jamais un commit du milieu.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   unit:
