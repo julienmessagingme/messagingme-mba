@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PREFIXE_JETON, nouveauJeton, estJeton, textePreRempli } from '../src/channels-me/jeton';
+import { PREFIXE_JETON, nouveauJeton, estJetonChaine, textePreRempli } from '../src/channels-me/jeton';
 import { normalizeText, keywordsOf } from '../src/automation/match';
 
 /**
@@ -13,7 +13,7 @@ import { normalizeText, keywordsOf } from '../src/automation/match';
  *  2. Aucun caractere ambigu dans la partie tiree. Un abonne peut recopier le texte a la main : un i, un l, un
  *     o ou un u recopie de travers donnerait un message qui ne declenche rien, sans que personne ne comprenne
  *     pourquoi, et le post, lui, est deja parti.
- *  3. `estJeton` est STRICT (chaine entiere). C'est un controle de forme sur NOS jetons, jamais le detecteur
+ *  3. `estJetonChaine` est STRICT (chaine entiere). C'est un controle de forme sur NOS jetons, jamais le detecteur
  *     d'un message entrant : la reconnaissance d'un message passe par `normalizeText` puis `contains` dans
  *     `matchesTrigger`, ce que le second bloc de ce fichier verifie.
  *  4. 🔴 LE JETON SURVIT A `normalizeText`. C'est l'invariant qui porte toute la feature : le corps du message
@@ -44,18 +44,18 @@ describe('forme du jeton de chaine', () => {
     }
   });
 
-  it('estJeton REFUSE tout ce qui n est pas exactement un jeton', () => {
+  it('estJetonChaine REFUSE tout ce qui n est pas exactement un jeton', () => {
     // Jeton FICTIF (aucun secret) : valeur figee pour rendre les assertions lisibles.
-    expect(estJeton('cm-a7k2m9p3')).toBe(true);
-    expect(estJeton(nouveauJeton())).toBe(true);
-    expect(estJeton('Ma newsletter (cm-a7k2m9p3)')).toBe(false); // une phrase qui CONTIENT un jeton
-    expect(estJeton('CM-A7K2M9P3')).toBe(false); // majuscules : nos jetons sont produits et stockes minuscules
-    expect(estJeton('cm-a7k2m9p')).toBe(false); // 7 caracteres tires
-    expect(estJeton('cm-a7k2m9p33')).toBe(false); // 9 caracteres tires
-    expect(estJeton('cm-a7k2m9pi')).toBe(false); // « i » hors alphabet
-    expect(estJeton(' cm-a7k2m9p3 ')).toBe(false); // espaces autour
-    expect(estJeton('')).toBe(false);
-    expect(estJeton('test-a7k2m9p3')).toBe(false); // le jeton de TEST d un scenario, autre prefixe
+    expect(estJetonChaine('cm-a7k2m9p3')).toBe(true);
+    expect(estJetonChaine(nouveauJeton())).toBe(true);
+    expect(estJetonChaine('Ma newsletter (cm-a7k2m9p3)')).toBe(false); // une phrase qui CONTIENT un jeton
+    expect(estJetonChaine('CM-A7K2M9P3')).toBe(false); // majuscules : nos jetons sont produits et stockes minuscules
+    expect(estJetonChaine('cm-a7k2m9p')).toBe(false); // 7 caracteres tires
+    expect(estJetonChaine('cm-a7k2m9p33')).toBe(false); // 9 caracteres tires
+    expect(estJetonChaine('cm-a7k2m9pi')).toBe(false); // « i » hors alphabet
+    expect(estJetonChaine(' cm-a7k2m9p3 ')).toBe(false); // espaces autour
+    expect(estJetonChaine('')).toBe(false);
+    expect(estJetonChaine('test-a7k2m9p3')).toBe(false); // le jeton de TEST d un scenario, autre prefixe
   });
 
   it('200 tirages donnent 200 jetons distincts', () => {

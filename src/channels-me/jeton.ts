@@ -44,9 +44,13 @@ const JETON_RE = new RegExp(`^${PREFIXE_JETON}[0-9a-hjkmnp-tv-z]{${LONGUEUR}}$`)
  *
  * ⚠️ Ce n'est PAS le detecteur d'un message entrant. Un abonne peut ecrire devant, derriere, ou laisser son
  * telephone capitaliser : c'est l'automation `keyword` en mode `contains`, sur le corps normalise, qui
- * reconnait le message. `estJeton` sur un corps de message repondrait presque toujours faux.
+ * reconnait le message. `estJetonChaine` sur un corps de message repondrait presque toujours faux.
+ *
+ * Nommee `estJetonChaine` (et non `estJeton`) pour ne pas se confondre avec `estJeton` de
+ * `src/links/jeton-contact.ts`, qui controle la forme d'un tout autre jeton (celui du suivi de clic) :
+ * meme nom, deux features sans rapport, avant ce renommage du 2026-09-04.
  */
-export function estJeton(v: string): boolean {
+export function estJetonChaine(v: string): boolean {
   return JETON_RE.test(v);
 }
 
