@@ -48,7 +48,7 @@ export class HttpTimeoutError extends Error {
 }
 
 /** Notre plafond a-t-il coupé cet appel ? `AbortSignal.timeout` fait rejeter `fetch` avec un `TimeoutError`. */
-function estAbandon(err: unknown): boolean {
+export function estAbandon(err: unknown): boolean {
   const name = (err as { name?: unknown } | null)?.name;
   return name === 'TimeoutError' || name === 'AbortError';
 }

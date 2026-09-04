@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { corpsCanonique, signer } from './signature';
 import { organisationSchema, messageChannelSchema, messageSchema } from './types';
 import type { Connexion, Organisation, MessageChannel, Message } from './types';
+import { estAbandon } from '../meta/http';
 
 /**
  * Client HTTP de Channels Me.
@@ -60,12 +61,6 @@ const erreurDistanteSchema = z.object({ error: z.object({ message: z.string() })
 function detailDistant(json: unknown): string {
   const p = erreurDistanteSchema.safeParse(json);
   return p.success ? p.data.error.message.slice(0, DETAIL_MAX) : '';
-}
-
-/** Notre plafond a-t-il coupe l'appel ? `AbortSignal.timeout` fait rejeter `fetch` avec un `TimeoutError`. */
-function estAbandon(err: unknown): boolean {
-  const nom = err instanceof Error ? err.name : '';
-  return nom === 'TimeoutError' || nom === 'AbortError';
 }
 
 function cheminOrg(cx: Connexion): string {
