@@ -10,13 +10,21 @@ import type { Connexion, Organisation, MessageChannel, Message } from './types';
  * Meta et Zadarma), le nom ne vient pas d'une saisie client.
  */
 
-/** 🔴 A CONFIRMER contre le journal de mesure avant le premier appel reel. Une seule ligne a changer. */
-const BASE = 'https://api.channels.me/v1';
+/**
+ * Mesure le 2026-09-04 : la spec OpenAPI du fournisseur (https://channels-me.com/api-docs/v1/swagger.yaml)
+ * declare `servers: - url: https://channels-me.com/api/v1`, et un appel reel contre cet hote a rendu 200.
+ * `api.channels.me` existe mais redirige (302) au lieu d'echouer franchement.
+ */
+const BASE = 'https://channels-me.com/api/v1';
 
 const JSON_MIME = 'application/json';
 
-/** L'en-tete qui porte la cle d'API du tenant. 🔴 Nom a confirmer, comme BASE. */
-const ENTETE_CLE = 'X-Api-Key';
+/**
+ * L'en-tete qui porte la cle d'API du tenant, au format standard `Bearer <cle>`. Mesure le 2026-09-04 :
+ * un appel reel avec `Authorization: Bearer <cle>` a rendu 200 sur `/organisations`, et le schema de
+ * securite de la spec OpenAPI du fournisseur nomme `Authorization` comme porteur de la cle.
+ */
+const ENTETE_AUTORISATION = 'Authorization';
 
 /** L'en-tete qui porte la signature. */
 const ENTETE_SIGNATURE = 'X-Signature';
@@ -126,7 +134,7 @@ export class ChannelsMeClient {
     corps?: unknown,
   ): Promise<z.infer<S>> {
     const canonique = corps === undefined ? null : corpsCanonique(corps);
-    const entetes: Record<string, string> = { Accept: JSON_MIME, [ENTETE_CLE]: cx.apiKey };
+    const entetes: Record<string, string> = { Accept: JSON_MIME, [ENTETE_AUTORISATION]: `Bearer ${cx.apiKey}` };
     if (canonique !== null) {
       entetes['Content-Type'] = JSON_MIME;
       entetes[ENTETE_SIGNATURE] = signer(canonique, cx.secret);

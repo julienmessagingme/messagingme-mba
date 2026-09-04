@@ -53,10 +53,11 @@ describe('lectures', () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 7, name: 'Ma chaine' } }) }]);
     const org = await new ChannelsMeClient({ fetch: impl }).getOrganisation(CX);
     expect(org).toEqual({ id: '7', name: 'Ma chaine' });
-    expect(appels[0]!.url).toBe('https://api.channels.me/v1/organisations/org_1');
+    expect(appels[0]!.url).toBe('https://channels-me.com/api/v1/organisations/org_1');
     expect(appels[0]!.method).toBe('GET');
     expect(appels[0]!.headers.Accept).toBe('application/json');
-    expect(appels[0]!.headers['X-Api-Key']).toBe('cle-fictive');
+    expect(appels[0]!.headers.Authorization).toBe('Bearer cle-fictive');
+    expect(appels[0]!.headers['X-Api-Key']).toBeUndefined();
     // La signature n'est pas requise sur les GET : en poser une obligerait a canonicaliser une query string.
     expect(appels[0]!.headers['X-Signature']).toBeUndefined();
     expect(appels[0]!.body).toBeUndefined();
@@ -66,7 +67,7 @@ describe('lectures', () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: [{ id: 1, name: 'A', messages_count: 85 }] }) }]);
     const chaines = await new ChannelsMeClient({ fetch: impl }).listChannels(CX);
     expect(chaines).toEqual([{ id: '1', name: 'A', messages_count: 85 }]);
-    expect(appels[0]!.url).toBe('https://api.channels.me/v1/organisations/org_1/message_channels');
+    expect(appels[0]!.url).toBe('https://channels-me.com/api/v1/organisations/org_1/message_channels');
     expect(appels[0]!.headers.Accept).toBe('application/json');
   });
 
@@ -74,7 +75,22 @@ describe('lectures', () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: [{ id: 'm1' }, { id: 'm2' }] }) }]);
     const msgs = await new ChannelsMeClient({ fetch: impl }).getMessages(CX);
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2']);
-    expect(appels[0]!.url).toBe('https://api.channels.me/v1/organisations/org_1/message_channels/ch_1/messages');
+    expect(appels[0]!.url).toBe('https://channels-me.com/api/v1/organisations/org_1/message_channels/ch_1/messages');
+  });
+});
+
+describe('valeurs mesurees contre l API reelle, figees (2026-09-04)', () => {
+  it('🔴 l URL appelee commence par l hote reel du fournisseur, pas par le domaine qui redirige', async () => {
+    const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 7, name: 'Ma chaine' } }) }]);
+    await new ChannelsMeClient({ fetch: impl }).getOrganisation(CX);
+    expect(appels[0]!.url.startsWith('https://channels-me.com/api/v1')).toBe(true);
+  });
+
+  it('🔴 l authentification est Authorization: Bearer <cle>, jamais X-Api-Key', async () => {
+    const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 7, name: 'Ma chaine' } }) }]);
+    await new ChannelsMeClient({ fetch: impl }).getOrganisation(CX);
+    expect(appels[0]!.headers.Authorization).toBe(`Bearer ${CX.apiKey}`);
+    expect(appels[0]!.headers['X-Api-Key']).toBeUndefined();
   });
 });
 
@@ -85,7 +101,7 @@ describe('ecriture', () => {
     expect(msg.id).toBe('msg_1');
     const a = appels[0]!;
     expect(a.method).toBe('POST');
-    expect(a.url).toBe('https://api.channels.me/v1/organisations/org_1/message_channels/ch_1/messages');
+    expect(a.url).toBe('https://channels-me.com/api/v1/organisations/org_1/message_channels/ch_1/messages');
     expect(a.headers['Content-Type']).toBe('application/json');
     expect(a.headers.Accept).toBe('application/json');
     // La preuve, et elle ne depend d'aucune connaissance de la forme canonique : re-signer le corps
@@ -135,7 +151,7 @@ describe('echecs : le corps distant ne se relaie jamais', () => {
   });
 
   it('panne reseau : statut 0, et le message de l exception ne fuite pas', async () => {
-    const client = new ChannelsMeClient({ fetch: fauxEnPanne(new Error('getaddrinfo ENOTFOUND api.channels.me')) });
+    const client = new ChannelsMeClient({ fetch: fauxEnPanne(new Error('getaddrinfo ENOTFOUND channels-me.com')) });
     const err = await client.getOrganisation(CX).catch((e: unknown) => e);
     expect((err as ChannelsMeApiError).status).toBe(0);
     expect((err as Error).message).not.toContain('ENOTFOUND');
