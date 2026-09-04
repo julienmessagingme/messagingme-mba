@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { chaineAleatoire } from '../lib/jeton-aleatoire';
 
 /**
  * Le jeton de declenchement d'un lien de chaine WhatsApp (Channels Me).
@@ -27,15 +27,13 @@ const LONGUEUR = 8;
 export const PREFIXE_JETON = 'cm-';
 
 /**
- * Jeton neuf : `cm-` + 8 caracteres tires.
+ * Jeton neuf : `cm-` + 8 caracteres tires (`chaineAleatoire`, `src/lib/jeton-aleatoire.ts`).
  *
- * 256 est un multiple EXACT de 32 (la taille de l'alphabet), donc le modulo ne biaise aucun caractere.
- * Changer l'alphabet sans changer cette propriete reintroduirait un biais silencieux.
+ * 256 est un multiple EXACT de 32 (la taille de l'alphabet), donc le modulo de `chaineAleatoire` ne biaise
+ * aucun caractere. Changer l'alphabet sans changer cette propriete reintroduirait un biais silencieux.
  */
 export function nouveauJeton(): string {
-  let out = '';
-  for (const b of randomBytes(LONGUEUR)) out += ALPHABET[b % ALPHABET.length];
-  return PREFIXE_JETON + out;
+  return PREFIXE_JETON + chaineAleatoire(LONGUEUR, ALPHABET);
 }
 
 const JETON_RE = new RegExp(`^${PREFIXE_JETON}[0-9a-hjkmnp-tv-z]{${LONGUEUR}}$`);

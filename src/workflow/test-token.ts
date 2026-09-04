@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { chaineAleatoire } from '../lib/jeton-aleatoire';
 import { lienWaMe } from '../lib/wa-me';
 
 /**
@@ -23,11 +23,13 @@ const CROCKFORD = '0123456789abcdefghjkmnpqrstvwxyz';
 const PREFIX = 'test-';
 const RANDOM_LEN = 8;
 
-/** Jeton neuf : `test-` + 8 caractères aléatoires (40 bits, impossible à deviner par force brute utile). */
+/**
+ * Jeton neuf : `test-` + 8 caractères aléatoires (40 bits, impossible à deviner par force brute utile).
+ * Tirage partagé avec `nouveauJeton` (`src/channels-me/jeton.ts`) via `chaineAleatoire`
+ * (`src/lib/jeton-aleatoire.ts`) : même alphabet, même méthode, seul le préfixe diffère.
+ */
 export function newTestToken(): string {
-  let out = '';
-  for (const b of randomBytes(RANDOM_LEN)) out += CROCKFORD[b % 32];
-  return PREFIX + out;
+  return PREFIX + chaineAleatoire(RANDOM_LEN, CROCKFORD);
 }
 
 /**
