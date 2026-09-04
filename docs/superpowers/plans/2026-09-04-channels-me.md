@@ -54,6 +54,14 @@ Ces contraintes s'appliquent à TOUTES les tâches, implicitement. Valeurs recop
    `application/json` et le multipart sort du sujet.
 4. **`Accept: application/json` est obligatoire**, sinon l'API rend une page HTML d'erreur en 500.
 5. **Les listes ne paginent pas**, l'enveloppe est `{data: ...}`.
+6. 🔴 **L'hôte est `https://channels-me.com/api/v1` et l'authentification est `Authorization: Bearer <clé>`.**
+   Ces deux valeurs sont mesurées (spec OpenAPI du fournisseur, plus un appel réel ayant rendu 200), et elles
+   sont figées par des tests dans `tests/channels-me-client.test.ts`.
+   ⚠️ **Ce plan a d'abord porté deux valeurs FAUSSES ici** (`https://api.channels.me/v1` et un en-tête
+   `X-Api-Key`), inventées par son rédacteur et marquées « à confirmer ». Elles sont parties dans le code
+   avant d'être rattrapées. La leçon vaut au-delà de ce lot : **marquer une valeur « à confirmer » ne la fait
+   pas confirmer**, le marqueur voyage avec la valeur fausse et finit par lui donner l'air d'un choix. Une
+   valeur qu'on ne sait pas se mesure avant d'écrire le plan, ou ne s'écrit pas.
 
 ## Structure des fichiers
 
@@ -2488,10 +2496,10 @@ describe('lectures', () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 7, name: 'Ma chaine' } }) }]);
     const org = await new ChannelsMeClient({ fetch: impl }).getOrganisation(CX);
     expect(org).toEqual({ id: '7', name: 'Ma chaine' });
-    expect(appels[0]!.url).toBe('https://api.channels.me/v1/organisations/org_1');
+    expect(appels[0]!.url).toBe('https://channels-me.com/api/v1/organisations/org_1');
     expect(appels[0]!.method).toBe('GET');
     expect(appels[0]!.headers.Accept).toBe('application/json');
-    expect(appels[0]!.headers['X-Api-Key']).toBe('cle-fictive');
+    expect(appels[0]!.headers['Authorization']).toBe('Bearer cle-fictive');
     // La signature n'est pas requise sur les GET : en poser une obligerait a canonicaliser une query string.
     expect(appels[0]!.headers['X-Signature']).toBeUndefined();
     expect(appels[0]!.body).toBeUndefined();
@@ -2501,7 +2509,7 @@ describe('lectures', () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: [{ id: 1, name: 'A', messages_count: 85 }] }) }]);
     const chaines = await new ChannelsMeClient({ fetch: impl }).listChannels(CX);
     expect(chaines).toEqual([{ id: '1', name: 'A', messages_count: 85 }]);
-    expect(appels[0]!.url).toBe('https://api.channels.me/v1/organisations/org_1/message_channels');
+    expect(appels[0]!.url).toBe('https://channels-me.com/api/v1/organisations/org_1/message_channels');
     expect(appels[0]!.headers.Accept).toBe('application/json');
   });
 
@@ -2509,7 +2517,7 @@ describe('lectures', () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: [{ id: 'm1' }, { id: 'm2' }] }) }]);
     const msgs = await new ChannelsMeClient({ fetch: impl }).getMessages(CX);
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2']);
-    expect(appels[0]!.url).toBe('https://api.channels.me/v1/organisations/org_1/message_channels/ch_1/messages');
+    expect(appels[0]!.url).toBe('https://channels-me.com/api/v1/organisations/org_1/message_channels/ch_1/messages');
   });
 });
 
@@ -2520,7 +2528,7 @@ describe('ecriture', () => {
     expect(msg.id).toBe('msg_1');
     const a = appels[0]!;
     expect(a.method).toBe('POST');
-    expect(a.url).toBe('https://api.channels.me/v1/organisations/org_1/message_channels/ch_1/messages');
+    expect(a.url).toBe('https://channels-me.com/api/v1/organisations/org_1/message_channels/ch_1/messages');
     expect(a.headers['Content-Type']).toBe('application/json');
     expect(a.headers.Accept).toBe('application/json');
     // La preuve, et elle ne depend d'aucune connaissance de la forme canonique : re-signer le corps
@@ -2570,7 +2578,7 @@ describe('echecs : le corps distant ne se relaie jamais', () => {
   });
 
   it('panne reseau : statut 0, et le message de l exception ne fuite pas', async () => {
-    const client = new ChannelsMeClient({ fetch: fauxEnPanne(new Error('getaddrinfo ENOTFOUND api.channels.me')) });
+    const client = new ChannelsMeClient({ fetch: fauxEnPanne(new Error('getaddrinfo ENOTFOUND channels-me.com')) });
     const err = await client.getOrganisation(CX).catch((e: unknown) => e);
     expect((err as ChannelsMeApiError).status).toBe(0);
     expect((err as Error).message).not.toContain('ENOTFOUND');
@@ -2639,12 +2647,12 @@ import type { Connexion, Organisation, MessageChannel, Message } from './types';
  */
 
 /** 🔴 A CONFIRMER contre le journal de mesure avant le premier appel reel. Une seule ligne a changer. */
-const BASE = 'https://api.channels.me/v1';
+const BASE = 'https://channels-me.com/api/v1';
 
 const JSON_MIME = 'application/json';
 
 /** L'en-tete qui porte la cle d'API du tenant. 🔴 Nom a confirmer, comme BASE. */
-const ENTETE_CLE = 'X-Api-Key';
+const ENTETE_AUTORISATION = 'Authorization';
 
 /** L'en-tete qui porte la signature. */
 const ENTETE_SIGNATURE = 'X-Signature';
