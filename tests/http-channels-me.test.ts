@@ -26,6 +26,12 @@ import type { PostRow } from '../src/channels-me/post-store.pg';
  *     jamais par un identifiant d'automation : c'est `PgChannelsMeLinkStore` qui resout et garde
  *     l'automation compagnon (`possede_par`), la route ne connait que le lien. Les assertions ci-dessous
  *     verifient l'id CAPTURE, pas seulement l'appel : passer AUTO_ID au lieu de LINK_ID les ferait echouer.
+ *  6. 🔴 Une panne APRES la publication (allumage ou tracage) ne doit JAMAIS ressembler a un echec de
+ *     publication : le post est reellement parti, `createMessage` n'a aucune cle d'idempotence, donc un
+ *     5xx ferait reessayer et republierait le meme message a toute l'audience. `POST /posts` repond 201
+ *     dans les deux cas, avec un `avertissements` qui dit ce qui a echoue ; les deux pannes sont
+ *     INDEPENDANTES (celle d'un appel ne doit pas empecher l'autre). `POST /links/:id/enable` est la
+ *     contrepartie de `disable` qui ferme le chemin de reparation d'un allumage rate.
  *
  * ⚠️ Le `enabled: false` de la CREATION de l'automation vit dans le cablage (`src/index.ts`), pas dans la
  * route : ce fichier prouve seulement qu'AUCUNE bascule n'a lieu a la creation d'un lien. Le cablage est
@@ -279,6 +285,50 @@ describe('Channels Me : les liens de chaine', () => {
     expect((await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${WF_ID}/disable`, ...h(adminTok) })).statusCode).toBe(404);
     await server.close();
   });
+
+  // La contrepartie de `disable` : sans elle, un lien dont l'allumage automatique a echoue apres une
+  // publication reussie (POST /posts) restait un bouton mort a jamais, sans aucun moyen de le reparer.
+  it('🔴 rallume un lien : appelle allumerAutomationLien avec l id du LIEN, jamais celui de l automation', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(cap.allumees).toEqual([LINK_ID]);
+    expect(cap.eteintes).toEqual([]);
+    await server.close();
+  });
+
+  it('rallumer sans authentification : 401', async () => {
+    const { server } = app();
+    const res = await server.inject({
+      method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`,
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+
+  it('rallumer en AGENT (non admin) : 403, rien n est appele', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`, ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    expect(cap.allumees).toEqual([]);
+    await server.close();
+  });
+
+  it('rallumer un lien deja sans automation compagnon : 409', async () => {
+    const { server, cap } = app({ linkById: async () => ({ ...LIEN, automationId: null }) });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`, ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    expect(cap.allumees).toEqual([]);
+    await server.close();
+  });
+
+  it('rallumer un identifiant mal forme ou un lien d un autre espace : 404', async () => {
+    const { server } = app();
+    expect((await server.inject({ method: 'POST', url: '/tenants/t1/channels-me/links/pas-un-uuid/enable', ...h(adminTok) })).statusCode).toBe(404);
+    expect((await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${WF_ID}/enable`, ...h(adminTok) })).statusCode).toBe(404);
+    await server.close();
+  });
 });
 
 describe('Channels Me : publier', () => {
@@ -344,6 +394,49 @@ describe('Channels Me : publier', () => {
     await server.close();
   });
 
+  // 🔴 Le post est PARTI (createMessage a reussi) : une panne transitoire APRES ce point ne doit jamais
+  // ressembler a un echec de publication, sinon un operateur qui relit « erreur » et reessaie republie le
+  // meme message a toute l'audience (createMessage n'a aucune cle d'idempotence). Avant le correctif, cet
+  // appel n'etait protege par aucun try/catch : la route rejetait, et le gestionnaire d'erreur global
+  // rendait un 500 opaque pour une publication qui avait pourtant reussi.
+  it('🔴 l allumage de l automation echoue apres une publication reussie : 201 quand meme, avertissement, et la trace est ecrite', async () => {
+    const { server, cap } = app({ allumerAutomationLien: async () => { throw new Error('connexion base perdue'); } });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
+      payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
+    });
+    // Le post a reellement ete publie : repondre autre chose qu'un succes ferait reessayer, donc republier.
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ avertissements?: string[] }>().avertissements).toEqual(['automation_non_allumee']);
+    // La trace n'a AUCUNE raison d'echouer parce que l'allumage a echoue : les deux appels sont independants.
+    expect(cap.posts).toEqual([{ cmMessageId: 'cm-msg-1', linkId: LINK_ID }]);
+    await server.close();
+  });
+
+  it('🔴 le tracage du post echoue apres une publication reussie : 201 quand meme (le post est bel et bien parti)', async () => {
+    const { server, cap } = app({ createPost: async () => { throw new Error('connexion base perdue'); } });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
+      payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ avertissements?: string[] }>().avertissements).toEqual(['trace_manquante']);
+    // L'allumage n'a AUCUNE raison d'echouer parce que le tracage a echoue.
+    expect(cap.allumees).toEqual([LINK_ID]);
+    await server.close();
+  });
+
+  it('publication reussie sans aucun incident : pas de champ avertissements du tout', async () => {
+    const { server } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
+      payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
+    });
+    expect(res.statusCode).toBe(201);
+    expect('avertissements' in res.json<Record<string, unknown>>()).toBe(false);
+    await server.close();
+  });
+
   it('mediaUrl non https ou interne : 400, et rien n est publie', async () => {
     const { server, cap } = app();
     for (const mediaUrl of ['http://exemple.fr/a.jpg', 'https://169.254.169.254/a.jpg', 'https://localhost/a.jpg']) {
@@ -398,6 +491,21 @@ describe('Channels Me : publier', () => {
     expect(r.statusCode).toBe(503);
     expect(cap.demandes).toEqual([]);
     await nu.close();
+  });
+
+  it('🔴 trop de demandes d activation : 429 au dela du plafond (3/min, en memoire, sans base ni reseau)', async () => {
+    const { server } = app();
+    const appel = () => server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/activation-request', ...h(adminTok), payload: {},
+    });
+    expect((await appel()).statusCode).toBe(200);
+    expect((await appel()).statusCode).toBe(200);
+    expect((await appel()).statusCode).toBe(200);
+    // La quatrieme demande de ce meme utilisateur, dans la meme fenetre, depasse le plafond.
+    const quatrieme = await appel();
+    expect(quatrieme.statusCode).toBe(429);
+    expect(quatrieme.json<{ error: string }>().error).toContain('trop de demandes');
+    await server.close();
   });
 });
 

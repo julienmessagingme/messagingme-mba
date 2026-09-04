@@ -48,7 +48,9 @@ export interface ChannelsMeRouteDeps {
     cooldownSeconds: number; maxParHeure: number | null;
   }): Promise<{ id: string }>;
   /**
-   * Allume l'automation compagnon d'UN LIEN (chemin : une publication vient de reussir).
+   * Allume l'automation compagnon d'UN LIEN. Deux chemins d'appel : une publication qui vient de reussir
+   * (POST /posts), et la reparation manuelle d'un lien dont l'allumage automatique a echoue
+   * (POST /links/:id/enable, la contrepartie de `disable`).
    *
    * 🔴 PREND UN `linkId`, JAMAIS un `automationId`, et c'est deliberement etroit. L'automation compagnon est
    * POSSEDEE (`possede_par = 'channelsme_link'`), donc hors de portee de `PgAutomationStore` : c'est
@@ -250,6 +252,26 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     return reply.code(200).send({ ok: true });
   });
 
+  // Contrepartie de `disable`, calquee dessus terme a terme (memes gardes, memes codes d'erreur). Elle
+  // existe pour fermer un chemin de reparation : un allumage automatique qui a echoue apres une publication
+  // (POST /posts) laisse un bouton mort, et sans cette route rien ne permettait de le rallumer.
+  app.post(`${base}/links/:id/enable`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'lien inconnu' });
+    const lien = await deps.linkById(tenant, id);
+    if (!lien) return reply.code(404).send({ error: 'lien inconnu' });
+    if (lien.automationId === null) {
+      return reply.code(409).send({ error: 'ce lien n’a plus d’automation compagnon : il ne peut pas etre active' });
+    }
+    // Meme id (celui du LIEN) que `disable`, pour la meme raison : c'est `PgChannelsMeLinkStore` qui resout
+    // et garde l'automation compagnon, cette route ne connait que le lien.
+    await deps.allumerAutomationLien(tenant, lien.id);
+    return reply.code(200).send({ ok: true });
+  });
+
   app.get(`${base}/posts`, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -322,13 +344,38 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       return reply.code(422).send({ error: 'Channels Me a refuse la publication. Verifie le texte et l’image, puis reessaie.' });
     }
 
-    // 🔴 A PARTIR D'ICI LE POST CIRCULE, plus rien n'est annulable. On allume D'ABORD (sinon le bouton du
-    // post est mort des sa diffusion), on trace ENSUITE (la trace n'a aucun effet sur l'abonne). Un echec de
-    // publication AVANT ce point laisse le lien ETEINT : c'est le comportement voulu, meme si le jeton a fuite.
-    if (lien) await deps.allumerAutomationLien(tenant, lien.id);
+    // 🔴 A PARTIR D'ICI LE POST CIRCULE, plus rien n'est annulable : la reponse est un 201 quoi qu'il arrive
+    // ensuite. On allume D'ABORD (sinon le bouton du post est mort des sa diffusion), on trace ENSUITE (la
+    // trace n'a aucun effet sur l'abonne). Un echec de publication AVANT ce point laisse le lien ETEINT :
+    // c'est le comportement voulu, meme si le jeton a fuite. Mais un echec APRES ce point (panne transitoire
+    // de base sur l'un ou l'autre appel) ne doit JAMAIS ressembler a un echec de publication : le post est
+    // reellement parti, et `createMessage` n'a aucune cle d'idempotence, donc faire croire au client qu'il
+    // doit reessayer republierait le meme message a toute l'audience. Les deux appels sont donc dans leur
+    // PROPRE try/catch, independants l'un de l'autre, et chaque echec est journalise avec le mecanisme deja
+    // en place plutot que releve.
+    const avertissements: Array<'automation_non_allumee' | 'trace_manquante'> = [];
+    if (lien) {
+      try {
+        await deps.allumerAutomationLien(tenant, lien.id);
+      } catch (err) {
+        journaliserDistant(tenant, 'post_allumage', err);
+        // Le bouton reste mort, mais la reponse reste un succes : POST /links/:id/enable est la reparation.
+        avertissements.push('automation_non_allumee');
+      }
+    }
     const cmMessageId = String(publie.id);
-    await deps.createPost(tenant, { cmMessageId, linkId: lien?.id ?? null });
-    return reply.code(201).send({ post: { cmMessageId, linkId: lien?.id ?? null } });
+    try {
+      await deps.createPost(tenant, { cmMessageId, linkId: lien?.id ?? null });
+    } catch (err) {
+      journaliserDistant(tenant, 'post_trace', err);
+      // La publication n'apparaitra pas dans GET /posts tant que la trace n'est pas rejouee, mais le post
+      // est bel et bien parti : ce n'est jamais une raison de repondre autre chose qu'un succes.
+      avertissements.push('trace_manquante');
+    }
+    return reply.code(201).send({
+      post: { cmMessageId, linkId: lien?.id ?? null },
+      ...(avertissements.length > 0 ? { avertissements } : {}),
+    });
   });
 
   app.post(`${base}/activation-request`, opts, async (req, reply) => {
