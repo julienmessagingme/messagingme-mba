@@ -48,6 +48,9 @@ describe('lien wa.me', () => {
     expect(waMeTestLink(null, 'test-a7k2m9p3')).toBeNull();
     expect(waMeTestLink('', 'test-a7k2m9p3')).toBeNull();
   });
+  it('jeton vide avec numéro valide -> pas de lien fabriqué', () => {
+    expect(waMeTestLink('+33 5 25 68 02 50', '')).toBeNull();
+  });
 });
 
 describe('processTestTokens', () => {
