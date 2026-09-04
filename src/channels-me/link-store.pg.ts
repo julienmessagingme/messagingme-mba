@@ -128,6 +128,25 @@ export class PgChannelsMeLinkStore {
   }
 
   /**
+   * Defait l automation compagnon qu on vient de creer, quand la creation du LIEN cense la referencer echoue
+   * juste apres (POST /links, `src/http/channels-me.ts`) : sans ce rattrapage, l automation reste, POSSEDEE
+   * (`possede_par = 'channelsme_link'`), donc exclue du predicat de `PgAutomationStore` (invisible et
+   * inaccessible depuis l ecran Automation) SANS qu aucun lien ne la reference jamais. Une orpheline que
+   * personne ne peut plus voir ni supprimer.
+   *
+   * Meme garde miroir que `allumerAutomation`/`eteindreAutomation` : bornee par `tenant_id` ET par
+   * `possede_par = 'channelsme_link'`, pour ne jamais pouvoir toucher une automation qui ne serait pas la
+   * notre. Idempotent et sans effet si l id ne correspond a rien (id deja rattrape, ou jamais possede par un
+   * lien de chaine) : ce n est jamais une raison d echouer davantage.
+   */
+  async supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void> {
+    await this.pool.query(
+      `delete from automations where tenant_id = $1 and id = $2 and possede_par = 'channelsme_link'`,
+      [tenantId, automationId],
+    );
+  }
+
+  /**
    * Partagee par `allumerAutomation` et `eteindreAutomation` : la sous-requete resout l automation compagnon
    * du lien, scopee tenant, et la mise a jour porte ELLE-MEME `tenant_id` ET `possede_par` en garde. Si le
    * lien n existe pas pour ce tenant, ou si son automation compagnon n est pas possedee par channelsme_link

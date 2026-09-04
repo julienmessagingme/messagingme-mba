@@ -6,6 +6,7 @@ import { RateLimiter } from '../auth/rate-limit';
 import { urlRecuperable } from '../lib/page-distante';
 import { lienWaMe } from '../lib/wa-me';
 import { nouveauJeton, textePreRempli } from '../channels-me/jeton';
+import { ChannelsMeApiError } from '../channels-me/client';
 import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Message } from '../channels-me/types';
 import type { LienRow } from '../channels-me/link-store.pg';
 import type { PostRow } from '../channels-me/post-store.pg';
@@ -35,6 +36,12 @@ export interface ChannelsMeRouteDeps {
     automationId: string | null; maxParHeure: number | null;
   }): Promise<LienRow>;
   linkById(tenantId: string, id: string): Promise<LienRow | null>;
+  /**
+   * Rattrapage : defait l'automation compagnon qu'on vient de creer quand `createLink` echoue juste apres
+   * (POST /links). Bornee par `tenantId` ET par `possede_par = 'channelsme_link'` (garde miroir), sans effet
+   * si l'id ne correspond a rien : ce n'est jamais une raison d'echouer davantage.
+   */
+  supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void>;
 
   listPosts(tenantId: string): Promise<PostRow[]>;
   createPost(tenantId: string, p: { cmMessageId: string; linkId: string | null }): Promise<void>;
@@ -226,7 +233,20 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       cooldownSeconds: COOLDOWN_LIEN_SECONDES,
       maxParHeure,
     });
-    const lien = await deps.createLink(tenant, { workflowId, startNodeId, token, phrase, automationId, maxParHeure });
+    let lien: LienRow;
+    try {
+      lien = await deps.createLink(tenant, { workflowId, startNodeId, token, phrase, automationId, maxParHeure });
+    } catch (err) {
+      // 🔴 SANS CE RATTRAPAGE, un `createLink` qui echoue laisse l'automation compagnon POSSEDEE
+      // (`possede_par = 'channelsme_link'`) sans qu'aucun lien ne la reference jamais : exclue du predicat de
+      // `PgAutomationStore`, elle devient invisible et inaccessible depuis l'ecran Automation, orpheline pour
+      // toujours. On defait donc ce qu'on vient de creer avant de laisser l'echec remonter tel quel.
+      await deps.supprimerAutomationCompagnon(tenant, automationId).catch((err2) => {
+        journaliserDistant(tenant, 'link_rattrapage_automation', err2);
+      });
+      journaliserDistant(tenant, 'link_create', err);
+      throw err;
+    }
     const texte = textePreRempli(phrase, token);
     return reply.code(201).send({ link: { ...lien, texteRempli: texte, waMeUrl: lienWaMe(phone, texte) } });
   });
@@ -336,24 +356,47 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       texteDuPost = `${text}\n\n${url}`;
     }
 
-    let publie: Message;
+    // 🔴 CE QUI SORT DU catch DEPEND DU STATUT PORTE PAR `ChannelsMeApiError`, jamais du seul fait qu'une
+    // exception a ete levee. `ChannelsMeClient.appel` leve APRES son test `!res.ok` dans deux cas (enveloppe
+    // `data` absente, corps refuse par le schema attendu) : ces deux jets portent le statut 2xx REELLEMENT
+    // recu, donc le message est REELLEMENT PARTI, meme si on ne sait pas le nommer. Un troisieme cas (statut
+    // 0 : delai depasse ou panne reseau, aucune reponse recue) ne dit RIEN de la delivrance. Seul un statut
+    // 4xx/5xx effectivement recu est un vrai refus, le seul cas ou rien n'est jamais parti.
+    const avertissements: Array<'automation_non_allumee' | 'trace_manquante' | 'reponse_inattendue'> = [];
+    let publie: Message | null = null;
     try {
       publie = await deps.createMessage(cx, { text: texteDuPost, ...(mediaUrl !== undefined ? { mediaUrl } : {}) });
     } catch (err) {
       journaliserDistant(tenant, 'post_create', err);
-      return reply.code(422).send({ error: 'Channels Me a refuse la publication. Verifie le texte et l’image, puis reessaie.' });
+      if (err instanceof ChannelsMeApiError && err.status === 0) {
+        // Aucune reponse recue (delai depasse ou panne reseau) : on NE SAIT PAS si le message est deja parti.
+        // 4xx et jamais 5xx (Cloudflare remplacerait le corps de la reponse), et le message n'invite JAMAIS a
+        // reessayer : un reessai a l'aveugle republierait peut-etre le meme message a toute l'audience.
+        return reply.code(409).send({
+          error: 'Channels Me n’a pas repondu a temps : impossible de savoir si le message est deja parti. Verifie la chaine (l’onglet Publications) avant toute nouvelle tentative.',
+        });
+      }
+      if (!(err instanceof ChannelsMeApiError) || err.status < 200 || err.status >= 300) {
+        // Vrai refus du fournisseur (statut 4xx/5xx recu), ou une erreur qu'on ne sait pas qualifier : dans
+        // les deux cas rien n'est parti, c'est la saisie qu'il faut corriger.
+        return reply.code(422).send({ error: 'Channels Me a refuse la publication. Verifie le texte et l’image, puis reessaie.' });
+      }
+      // Statut 2xx recu : le message est REELLEMENT PARTI, seule l'enveloppe ou le schema attendu n'a pas ete
+      // reconnu. Jamais une raison de faire croire a un echec : republier serait envoyer le meme post une
+      // seconde fois a toute l'audience. `publie` reste null : sans corps exploitable, il n'y a aucun
+      // identifiant Channels Me a tracer.
+      avertissements.push('reponse_inattendue');
     }
 
     // 🔴 A PARTIR D'ICI LE POST CIRCULE, plus rien n'est annulable : la reponse est un 201 quoi qu'il arrive
     // ensuite. On allume D'ABORD (sinon le bouton du post est mort des sa diffusion), on trace ENSUITE (la
     // trace n'a aucun effet sur l'abonne). Un echec de publication AVANT ce point laisse le lien ETEINT :
     // c'est le comportement voulu, meme si le jeton a fuite. Mais un echec APRES ce point (panne transitoire
-    // de base sur l'un ou l'autre appel) ne doit JAMAIS ressembler a un echec de publication : le post est
-    // reellement parti, et `createMessage` n'a aucune cle d'idempotence, donc faire croire au client qu'il
-    // doit reessayer republierait le meme message a toute l'audience. Les deux appels sont donc dans leur
-    // PROPRE try/catch, independants l'un de l'autre, et chaque echec est journalise avec le mecanisme deja
-    // en place plutot que releve.
-    const avertissements: Array<'automation_non_allumee' | 'trace_manquante'> = [];
+    // de base sur l'un ou l'autre appel, ou une reponse 2xx a l'enveloppe inattendue) ne doit JAMAIS ressembler
+    // a un echec de publication : le post est reellement parti, et `createMessage` n'a aucune cle
+    // d'idempotence, donc faire croire au client qu'il doit reessayer republierait le meme message a toute
+    // l'audience. Les appels sont donc dans leur PROPRE try/catch, independants l'un de l'autre, et chaque
+    // echec est journalise avec le mecanisme deja en place plutot que releve.
     if (lien) {
       try {
         await deps.allumerAutomationLien(tenant, lien.id);
@@ -363,14 +406,18 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
         avertissements.push('automation_non_allumee');
       }
     }
-    const cmMessageId = String(publie.id);
-    try {
-      await deps.createPost(tenant, { cmMessageId, linkId: lien?.id ?? null });
-    } catch (err) {
-      journaliserDistant(tenant, 'post_trace', err);
-      // La publication n'apparaitra pas dans GET /posts tant que la trace n'est pas rejouee, mais le post
-      // est bel et bien parti : ce n'est jamais une raison de repondre autre chose qu'un succes.
-      avertissements.push('trace_manquante');
+    // Sans corps exploitable (reponse 2xx a l'enveloppe inattendue), il n'y a AUCUN identifiant Channels Me a
+    // tracer : la trace est alors IMPOSSIBLE, pas seulement ratee, donc `createPost` n'est meme pas tente.
+    const cmMessageId = publie === null ? null : String(publie.id);
+    if (cmMessageId !== null) {
+      try {
+        await deps.createPost(tenant, { cmMessageId, linkId: lien?.id ?? null });
+      } catch (err) {
+        journaliserDistant(tenant, 'post_trace', err);
+        // La publication n'apparaitra pas dans GET /posts tant que la trace n'est pas rejouee, mais le post
+        // est bel et bien parti : ce n'est jamais une raison de repondre autre chose qu'un succes.
+        avertissements.push('trace_manquante');
+      }
     }
     return reply.code(201).send({
       post: { cmMessageId, linkId: lien?.id ?? null },

@@ -8,6 +8,9 @@ import type { ChannelsMeRouteDeps } from '../src/http/channels-me';
 import type { Connexion, Organisation, MessageChannel, Message } from '../src/channels-me/types';
 import type { LienRow } from '../src/channels-me/link-store.pg';
 import type { PostRow } from '../src/channels-me/post-store.pg';
+import { lienWaMe } from '../src/lib/wa-me';
+import { textePreRempli } from '../src/channels-me/jeton';
+import { ChannelsMeClient, ChannelsMeApiError } from '../src/channels-me/client';
 
 /**
  * Les routes de la chaine WhatsApp (Channels Me). Aucune base, aucun reseau : de faux stores et un faux
@@ -84,6 +87,7 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     posts: [] as Array<{ cmMessageId: string; linkId: string | null }>,
     demandes: [] as Array<{ message: string }>,
     ordre: [] as string[],
+    automationsSupprimees: [] as string[],
   };
   const deps: ChannelsMeRouteDeps = {
     getConnection: async () => ({ orgId: 'org-1', channelId: 'chan-1', hasApiKey: true, hasSecret: true, verifiedAt: null }),
@@ -97,6 +101,7 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     listLinks: async () => [LIEN],
     createLink: async (_t, l) => { cap.liens.push(l); return { ...LIEN, ...l }; },
     linkById: async (_t, id) => (id === LINK_ID ? LIEN : null),
+    supprimerAutomationCompagnon: async (_t, id) => { cap.automationsSupprimees.push(id); },
     listPosts: async () => [POST],
     createPost: async (_t, p) => { cap.posts.push(p); cap.ordre.push('trace'); },
     creerAutomationCompagnon: async (_t, input) => { cap.automations.push(input); return { id: AUTO_ID }; },
@@ -234,6 +239,26 @@ describe('Channels Me : les liens de chaine', () => {
     await server.close();
   });
 
+  // 🔴 L'automation compagnon nait AVANT le lien (son id doit deja exister pour etre pose dans la ligne du
+  // lien). Sans rattrapage, un `createLink` qui echoue APRES laisse cette automation POSSEDEE
+  // (`possede_par = 'channelsme_link'`) sans qu'aucun lien ne la reference jamais : exclue du predicat de
+  // `PgAutomationStore`, elle devient invisible et inaccessible depuis l'ecran Automation, orpheline pour
+  // toujours.
+  it('🔴 createLink echoue : l automation compagnon qu on vient de creer est DEFAITE, pas laissee orpheline', async () => {
+    const { server, cap } = app({
+      createLink: async () => { throw new Error('connexion base perdue'); },
+    });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: 'Je veux recevoir la newsletter' },
+    });
+    // L'echec de createLink remonte tel quel : ce test protege le RATTRAPAGE de l'automation, pas le code de
+    // statut d'une panne de base generique (deja opaque en 500 par le gestionnaire d'erreur global).
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
+    expect(cap.automationsSupprimees).toEqual([AUTO_ID]);
+    await server.close();
+  });
+
   it('scenario d un AUTRE tenant : 400, et ni lien ni automation', async () => {
     const { server, cap } = app();
     const res = await server.inject({
@@ -341,8 +366,11 @@ describe('Channels Me : publier', () => {
     expect(res.statusCode).toBe(201);
     // Le lien wa.me est AJOUTE au texte du post par le serveur : c'est lui qui fait apparaitre le bouton
     // que WhatsApp dessine, le client ne le colle pas a la main.
-    expect(cap.publies[0]!.text).toContain('https://wa.me/33525680250?text=');
-    expect(cap.publies[0]!.text.startsWith('Notre newsletter arrive')).toBe(true);
+    // 🔴 Egalite EXACTE du texte complet, composee avec les VRAIES fonctions (lienWaMe, textePreRempli) :
+    // un simple `toContain` d'un prefixe d'URL ne prouve pas que le jeton fait bien partie du texte envoye,
+    // et c'est pourtant lui, et lui seul, qui declenche le scenario quand l'abonne appuie sur le bouton.
+    const urlAttendue = lienWaMe('+33 5 25 68 02 50', textePreRempli(LIEN.phrase, LIEN.token));
+    expect(cap.publies[0]!.text).toBe(`Notre newsletter arrive\n\n${urlAttendue}`);
     // 🔴 Publier d'abord : une automation allumee avant une publication qui echoue laisserait un jeton
     // vivant sans post. Allumer ensuite : sinon le bouton du post est mort. Tracer en dernier.
     expect(cap.ordre).toEqual(['publie', 'allume', 'trace']);
@@ -390,6 +418,68 @@ describe('Channels Me : publier', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(cap.allumees).toEqual([]);
+    expect(cap.posts).toEqual([]);
+    await server.close();
+  });
+
+  // Trois situations, distinguees par le statut porte par `ChannelsMeApiError` (constat de revue du
+  // 2026-09-04) : le catch precedent ne regardait ni le type ni le statut, et repondait 422 avec « reessaie »
+  // meme quand le message etait deja PARTI (statut 2xx recu, seule l'enveloppe attendue etait mal formee) ou
+  // quand on ne savait tout simplement pas (statut 0, delai depasse). Un operateur qui suit ce conseil et
+  // republie ferait recevoir le meme message deux fois a toute l'audience (`createMessage` n'a aucune cle
+  // d'idempotence).
+  it('🔴 vrai refus du fournisseur (ChannelsMeApiError avec un statut 4xx recu) : 422, invite a reessayer', async () => {
+    const { server, cap } = app({ createMessage: async () => { throw new ChannelsMeApiError(422, 'texte trop long'); } });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
+      payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toContain('reessaie');
+    expect(cap.allumees).toEqual([]);
+    expect(cap.posts).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 delai depasse (statut 0) : 4xx qui ne dit JAMAIS de reessayer, rien ne s allume ni ne se trace', async () => {
+    const { server, cap } = app({ createMessage: async () => { throw new ChannelsMeApiError(0, 'delai depasse'); } });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
+      payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
+    });
+    // Jamais 5xx : Cloudflare remplacerait le corps de la reponse par sa propre page d'erreur.
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.statusCode).toBeLessThan(500);
+    // On ne sait PAS si le message est parti : le message ne doit jamais inviter a reessayer a l'aveugle.
+    expect(res.json<{ error: string }>().error).not.toContain('reessaie');
+    expect(cap.allumees).toEqual([]);
+    expect(cap.posts).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 le tiers a REPONDU 2xx avec un corps non enveloppe : le message est PARTI, jamais un echec', async () => {
+    // Le vrai client HTTP, contre un vrai faux `fetch` qui rend 201 avec un corps qui n'a pas la forme
+    // attendue (`{ data: ... }`) : c'est exactement le chemin qui, dans `ChannelsMeClient.appel`, leve
+    // `ChannelsMeApiError` APRES avoir verifie `res.ok`, donc avec le statut 2xx REELLEMENT recu.
+    const fauxFetch = (async () => new Response(JSON.stringify({ id: 'msg-2xx-sans-enveloppe' }), {
+      status: 201,
+      headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch;
+    const clientReel = new ChannelsMeClient({ fetch: fauxFetch });
+    const { server, cap } = app({ createMessage: (cx, m) => clientReel.createMessage(cx, m) });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
+      payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
+    });
+    // Le message est reellement PARTI (201 recu cote fournisseur) : jamais une erreur, meme si l'enveloppe
+    // attendue n'a pas ete reconnue.
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ avertissements?: string[] }>().avertissements).toEqual(['reponse_inattendue']);
+    expect(res.json<{ post: { cmMessageId: unknown } }>().post.cmMessageId).toBeNull();
+    // L'automation s'allume QUAND MEME : `allumerAutomationLien` ne prend qu'un id de LIEN, jamais un id de
+    // message, donc l'absence d'identifiant Channels Me ne l'empeche pas.
+    expect(cap.allumees).toEqual([LINK_ID]);
+    // La trace, elle, est IMPOSSIBLE (aucun `cmMessageId` a ecrire) : `createPost` n'est meme pas tente.
     expect(cap.posts).toEqual([]);
     await server.close();
   });
@@ -517,7 +607,12 @@ describe('Channels Me : le cablage', () => {
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
     const debut = src.indexOf('channelsMe: {');
     expect(debut).toBeGreaterThan(0);
-    const bloc = src.slice(debut, src.indexOf('\n    },', debut));
+    const brut = src.slice(debut, src.indexOf('\n    },', debut));
+    // 🔴 SANS LES COMMENTAIRES : deux des chaines cherchees (`enabled: false`, `mode: 'contains'`) sont deja
+    // citees, entre backticks, dans les commentaires qui EXPLIQUENT ce cablage. Chercher dans le bloc brut
+    // ferait donc passer ce test meme si le CODE perdait ces lignes, tant que le commentaire les citant
+    // resterait. Meme patron que `tests/campagne-cablage.test.ts`.
+    const bloc = brut.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(bloc).toContain('enabled: false');
     expect(bloc).toContain("possedePar: 'channelsme_link'");
     expect(bloc).toContain("triggerKind: 'keyword'");
