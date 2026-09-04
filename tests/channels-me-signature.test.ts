@@ -83,4 +83,12 @@ describe('ce que la chaîne canonique garantit au client', () => {
     // ce qui rend une signature bien formée et systématiquement refusée.
     expect(signer('nimporte quoi', 'secret')).toHaveLength(44);
   });
+
+  it('une fonction ou un Symbol en valeur : la propriété est SUPPRIMÉE, jamais "clé":null', () => {
+    // JSON.stringify natif laisse tomber une propriété dont la valeur est une fonction ou un Symbol,
+    // exactement comme il le fait pour `undefined`. Un tri de surface qui ne filtrerait que `undefined`
+    // rendrait `{"a":1,"b":null}`, une divergence inoffensive aujourd'hui mais un piège pour un appelant
+    // futur qui ferait confiance à cette parité avec JSON.stringify.
+    expect(corpsCanonique({ a: 1, b: () => {} })).toBe('{"a":1}');
+  });
 });

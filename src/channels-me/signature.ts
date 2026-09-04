@@ -38,9 +38,13 @@ export function corpsCanonique(v: unknown): string {
     const objet = v as Record<string, unknown>;
     const membres = Object.keys(objet)
       .sort()
-      // `undefined` ne s'écrit pas en JSON : JSON.stringify laisse tomber la propriété, on fait pareil.
-      // C'est ce qui permet d'écrire `{ media_url: mediaUrl }` sans brancher sur l'absence d'image.
-      .filter((cle) => objet[cle] !== undefined)
+      // `undefined`, une fonction ou un Symbol ne s'écrivent pas en JSON : JSON.stringify laisse tomber la
+      // propriété entière (pas de `"clé":null`), on fait pareil. C'est ce qui permet d'écrire
+      // `{ media_url: mediaUrl }` sans brancher sur l'absence d'image.
+      .filter((cle) => {
+        const valeur = objet[cle];
+        return valeur !== undefined && typeof valeur !== 'function' && typeof valeur !== 'symbol';
+      })
       .map((cle) => `${JSON.stringify(cle)}:${corpsCanonique(objet[cle])}`);
     return `{${membres.join(',')}}`;
   }
