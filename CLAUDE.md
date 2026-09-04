@@ -70,148 +70,33 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
 `sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`).
 
-🔴 **CE FICHIER EST LA SEULE SOURCE DU COMPTEUR. Ne le recopiez nulle part.** Au 2026-08-29, trois autres
-documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 migrations (croire sa ligne
-menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
-recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
-
-✅ **0113 APPLIQUÉE le 2026-09-03 au soir** (index), et elle N'ÉTAIT PAS BLOQUANTE : aucun code ne l'écrit ni ne la lit, le
-balayage rend les mêmes lignes sans elle, un peu plus lentement. Elle rattrape un index PARTIEL de la 0112
-(`where status = 'en_cours'`) devenu inutilisable le 2026-09-03, quand la requête du balayage a perdu sa
-condition de statut. **Un index partiel est un CONTRAT avec une requête précise** : élargir le domaine de la
-requête la fait sortir du contrat, et rien ne le signale, ni le compilateur, ni les tests, ni une erreur au
-démarrage. Le seul symptôme est un plan d'exécution qui change. 🔴 Elle est HORS TRANSACTION
-(`CREATE INDEX CONCURRENTLY`), donc sans filet.
+🔴 **CE FICHIER EST LA SEULE SOURCE DU COMPTEUR. Ne le recopiez nulle part.** Trois documents l'ont fait, les
+trois étaient faux : `PLAN.md` en retard de 43 migrations (croire sa ligne menait à écrire par-dessus une
+migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Il a aussi dérivé DEUX fois dans la seule
+journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base était à 0111, puis « prochaine libre
+= 0112 » alors que 0112 était déjà appliquée. **En cas de doute, la base tranche, jamais ce fichier**
+(`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
+cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
 **Dernière appliquée : 0113** (l'index du balayage, cf. juste au-dessus), le 2026-09-03 au soir, après 0108
 à 0112. **Aucune n'est en attente. Prochaine libre = 0114.**
-🔴 **0112 est BLOQUANTE** : `prendreLeTour` écrit `tour_commence_le` à chaque tour, et c'est le chemin chaud du
-bloc agent. Déployer sans migrer ferait échouer TOUS les tours. Appliquée AVANT, colonne et index vérifiés en
-base, et le SQL du balayage joué à blanc contre la vraie table (0 ligne). ⚠️ Vérifié EN BASE le 2026-09-03
-(`select name from public.schema_migrations order by name desc`) parce que cette ligne annonçait encore 0107 :
-un compteur tenu à la main dérive dès qu'un déploiement se fait sans repasser par ici. **En cas de doute, la
-base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS schémas de cette base : la
-requête doit être qualifiée `public.`, sinon elle lit la table d'un autre outil et rend des colonnes inconnues.
-⚠️ 0110 posait `create extension vector`, la première du dépôt à ajouter une EXTENSION, donc le seul point qui
-pouvait échouer pour une raison de droits : il est passé sans incident.
-⚠️ **Ce compteur a dérivé DEUX fois le 2026-09-03**, et dans les deux sens : il a annoncé 0107 quand la base
-était à 0111, puis « prochaine libre = 0112 » alors que 0112 était le fichier déjà appliqué, ce qui aurait fait
-écrire par-dessus. Il porte maintenant UNE seule ligne « dernière appliquée » et UN seul « prochaine libre » :
-deux lignes qui disent la même chose finissent toujours par se contredire. En pratique on applique aussi via
-`npm run migrate` en local (même Supabase prod).
 
-⚠️ **Le correctif de la transition terminale du 2026-09-03 n'a demandé AUCUNE migration**, et ça valait d'être
-vérifié plutôt que supposé : il ne change que le MOMENT où `tour_commence_le` est effacée, pas le schéma. Une
-colonne dont on change le sens sans changer le type ne se voit pas dans `db/migrations/`, elle se voit dans le
-contrat, et c'est là qu'elle est documentée (`src/agent/session-store.ts`).
+**Le détail de CHAQUE migration (0093 à 0113), ce qu'elle a coûté et ce qu'elle a appris, vit dans**
+**[documentation.md](documentation.md) § « Les migrations, une par une ».** Il occupait un quart de ce
+fichier pour raconter des migrations appliquées depuis des semaines : un point d'entrée qui devient une
+archive cesse d'être un point d'entrée.
 
-🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
-rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message
-EMBARQUÉ, un bloc de scénario aussi, et la réponse rapide convertie en RCS le fabrique à la volée : seul
-l'envoi manuel depuis l'inbox passe par la bibliothèque. Cette clé aurait donc tracé le cas le moins utile et
-laissé sans mesure les deux qui comptent. **La leçon vaut au-delà du RCS : une clé étrangère choisie sur le
-schéma, sans avoir suivi les appelants réels, désigne la table qu'on a sous les yeux, pas celle qui produit la
-donnée.** Corrigée pendant que la colonne était encore vide (0 ligne, vérifié en base) ; une semaine plus tard
-il aurait fallu la migrer au lieu de la retirer.
+🔴 **CE QUI SE DÉCIDE À CHAQUE DÉPLOIEMENT, et qui reste donc ici : une migration qui AJOUTE une colonne**
+**écrite par le code se passe AVANT le déploiement** (sinon le chemin chaud échoue en boucle, `column ... does
+not exist` : vécu le 2026-08-17, 1 h 30 sans enregistrer un seul message entrant) ; **une migration qui RETIRE**
+**une colonne encore lue par l'ancien code se passe APRÈS**. Le TYPE de la migration décide de l'ordre, et la
+question se pose à chaque fois plutôt que de suivre une routine.
 
-⚠️ **0107 se relit comme une règle de canal.** La clé d'un lien WhatsApp (template, langue, carte, bouton) sert
-l'IDEMPOTENCE DE LA RÉSERVATION, parce qu'un template est soumis puis figé. Un message RCS n'est soumis à
-personne, il est composé à l'envoi : il ne reste qu'à ne pas créer une ligne par destinataire, qu'un lien
-d'hier résolve encore, et que les clics s'accumulent. `(tenant_id, destination)` fait les trois. Deux
-conséquences heureuses : aucun `{{1}}`, donc **aucun risque de 132000 ni de « tout ou rien »** côté RCS ; et le
-message STOCKÉ garde l'adresse saisie, donc **rien à ré-habiller à l'affichage**, contrairement aux templates.
-
-⚠️ **0105 n'était PAS bloquante**, et c'est ce qui a permis de l'écrire trois commits avant de l'appliquer :
-aucun code ne l'écrivait tant que les routes n'étaient pas livrées, et sa forme pouvait encore bouger en les
-construisant. L'appliquer tôt aurait obligé à une 0106 corrective au premier ajustement. La règle « migrer
-avant de déployer » vaut pour les migrations que le code ÉCRIT, pas pour celles qu'il ignore encore.
-
-🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
-`-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
-bloc de transaction. Deux conséquences à connaître avant d'en écrire une autre : elle n'a **aucun filet** (un échec à mi-parcours n'annule rien et la
-migration est rejouée depuis le début, donc chaque instruction doit être idempotente), et le runner l'envoie
-**instruction par instruction**, parce qu'une requête simple multi-instructions est exécutée par Postgres dans
-une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
-les deux sens de la règle sur les fichiers réels.
-
-🔴 **0104 est BLOQUANTE, et elle ferme le trou le plus cher du produit.** Deux avances concurrentes
-(l'API traite un retour RCS pendant que le worker traite un webhook du même contact) ENVOYAIENT toutes les deux :
-`setStateSiEncoreSur` protège l'état, mais elle arrive APRÈS les envois. Le contact recevait donc un message
-qu'il ne devait jamais voir. Le tour est désormais RÉSERVÉ avant tout envoi, avec les trois pièces d'un vrai
-verrou (bail, jeton de garde, libération explicite) et **sans drapeau de relance** : le perdant ne doit RIEN
-rejouer, son message a été traité par le gagnant qui lisait le même bloc.
-⚠️ **Et « réservé avant tout envoi » ne fermait QUE la course courte**, celle de deux avances qui démarrent
-ensemble. La course LONGUE, le porteur pas mort mais seulement LENT, est restée ouverte jusqu'au lot 1 du plan
-post-audit (2026-09-02) : un envoi Meta peut durer ~154 s en rejouant ses tentatives et une avance peut en
-enchaîner plusieurs, donc le bail expirait pendant qu'on travaillait, un autre prenait le tour, et les deux
-envoyaient. Aucune valeur de bail ne pouvait fermer ça, le nombre d'envois d'une avance n'étant pas borné :
-seul un signe de vie PÉRIODIQUE distingue un porteur mort d'un porteur lent (`src/workflow/bail-avance.ts`,
-cadence à un tiers du bail). Même lot, même famille : l'écriture d'état est désormais clôturée par le JETON,
-un porteur périmé ne pouvant plus écrire par-dessus celui qui a repris le tour. Aucune migration, les deux
-colonnes de la 0104 suffisaient.
-⚠️ **Et battre ne suffisait pas non plus : ça rendait la perte VISIBLE sans rien ARRÊTER** (lot A2 de l'audit
-externe, 2026-09-03). Le jeton clôture l'écriture d'ÉTAT ; il n'a jamais rien pu contre un message déjà remis
-à Meta. Un porteur déchu finissait donc sa liste d'envois pendant que le nouveau faisait la sienne. Le
-battement expose désormais `perduPourquoi()`, **consulté avant CHAQUE effet** (`apply`), avant l'envoi RCS de
-`walkResolved` et avant l'enfilement d'un tour d'agent, qui est un appel modèle facturé. **La règle générale :
-une garde de concurrence posée à l'ENTRÉE d'une liste d'effets ne prouve rien sur le dixième ; elle se pose
-ENTRE les effets.** Même lot : une durée totale maximale de dix minutes (`DUREE_MAX_AVANCE_MS`) abandonne une
-avance PENDUE, le seul mode de panne qu'un battement ne distingue pas d'un travail lent, puisqu'un minuteur
-renouvelle un bail aussi fidèlement pour une promesse morte que pour un envoi en cours.
-⚠️ **L'`AbortSignal` du battement n'est écouté par AUCUN transport, et c'est un choix, pas un oubli.** Un
-envoi Meta ne porte pas de clé d'idempotence : couper la connexion en vol échangerait « un message de trop »
-contre « un message parti que nous n'avons pas enregistré », donc invisible dans le fil. On laisse finir
-l'effet en vol, on ne lance pas le suivant.
-🔴 **Un tour d'agent tué par un crash était perdu POUR TOUJOURS** (lot A1, 2026-09-03). `prendreLeTour`
-incrémente `tours` AVANT le travail, ce qui est ce qui rend le verrou optimiste atomique : un worker qui meurt
-entre les deux fait rejouer le job par pg-boss avec l'ANCIEN numéro, la réservation rend `null`, le rejeu est
-classé « doublon », la session reste `en_cours` et le run reste en attente SANS échéance (elle se pose à la fin
-du tour, qui n'est jamais arrivée). Un balayage minute (`src/agent/tour-bloque-sweep.ts`) réclame les tours en
-vol depuis plus de QUINZE minutes (l'écart avec `DUREE_MAX_AVANCE_MS` est délibéré, cf. la constante), les
-clôt et fait sortir le parcours par la sortie RÉELLEMENT DUE, portée par la ligne réclamée.
-⚠️ **On ne REJOUE PAS le tour, on le clôt**, et c'est tranché : le worker a pu mourir APRÈS avoir envoyé le
-message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le contact ;
-clore fait au pire emprunter une branche que le client a rédigée.
-⚠️ **Et il fallait une COLONNE, pas une déduction.** « Session `en_cours` + run en attente + aucune échéance »
-semble reconnaître un tour mort : c'est EXACTEMENT l'état d'un tour qui vient d'être enfilé et attend son
-passage dans la file, et `derniere_activite` ne les départage pas (elle porte l'instant du tour PRÉCÉDENT,
-qui peut remonter à des heures). Un balayage bâti sur cette déduction aurait tué des conversations vivantes.
-Le pendant : `tour_commence_le` DOIT être effacé sur les deux sorties qui laissent la session vivante
-(l'agent a répondu, un humain a pris la main) ; `clore` s'en charge pour toutes les autres.
-🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
-pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
-seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un
-jugement de Meta sur le numéro : relancer sans rien changer aggrave le problème et peut coûter le numéro, donc
-`paused_until` reste NUL et **aucune machine ne lève cette pause**. `paused_until` nul veut dire « pas de
-reprise automatique », et c'est le défaut : une pause dont on ne sait pas quoi penser ne repart pas toute seule.
-⚠️ **0102 est bloquante, mais elle DÉGRADE PROPREMENT** : sans la table, chaque envoi retombe sur le frein
-LOCAL du process et le signale dans les logs, c'est-à-dire exactement le comportement d'avant. C'est voulu :
-un frein de débit protège la qualité d'un numéro, il n'AUTORISE pas l'envoi, donc son indisponibilité ne doit
-jamais faire échouer un message. La migrer avant reste la règle, mais l'oublier ne casse rien.
-🔴 **0101 est BLOQUANTE, et sa leçon vaut plus que sa ligne de SQL.** `recordOutbound` DÉDUISAIT l'origine de
-l'expéditeur (« pas d'expéditeur, donc un scénario »), ce qui était vrai tant que ses seuls appelants étaient les
-routes de la console. Le serveur MCP en a ajouté un sans expéditeur humain : chaque réponse d'agent tiers est
-partie marquée « scenario ». Le pire n'était pas l'erreur mais son INVISIBILITÉ, la valeur fausse étant écrite
-explicitement, donc le repli « indéterminée » ne pouvait pas se déclencher. **Une valeur déduite d'un autre champ
-n'est une garde que tant que la liste des appelants ne bouge pas, et une liste d'appelants bouge toujours.** Le
-paramètre est désormais obligatoire, comme sur `recordOutboundByWaId`.
-⚠️ **0100 est BLOQUANTE** (chaque analyse écrit `summary`), donc migrée AVANT le déploiement. Sa colonne
-reste vide pour les analyses d'avant, et elle le restera : reconstruire un résumé voudrait dire rappeler le
-LLM sur tout l'historique. La fiche de conversation le DIT au lieu d'afficher `justification` à la place,
-qui explique le classement et pas le contenu.
-⚠️ **0099 est BLOQUANTE** (les quatre chemins d'envoi écrivent `origin` à chaque message sortant), donc migrée
-AVANT le déploiement. Sa colonne est volontairement NULLABLE : un `not null` aurait fait échouer une insertion
-sur le chemin chaud le jour d'un oubli d'appelant. La garde contre l'oubli est ailleurs, là où elle ne coûte
-rien en production : le paramètre `origine` est OBLIGATOIRE dans la signature TypeScript, donc un chemin
-d'écriture oublié ne compile pas. La lecture de l'historique est bornée dans le temps (`src/inbox/origine.ts`) :
-après la bascule, une origine absente ressort en « indéterminée » À L'ÉCRAN plutôt que d'être versée en silence
-dans le scripté.
-⚠️ **0098 était BLOQUANTE** (`saveStatus` écrit `status_checked_at` à chaque relevé), donc migrée AVANT le
-déploiement. **0095 l'était aussi** (le code écrit `draft_graph` à chaque enregistrement de l'éditeur), donc migrée
-AVANT le déploiement. **0094 n'était qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit
-`phone_number_id` à chaque webhook entrant, et déployer avant de migrer aurait fait échouer TOUS les entrants,
-exactement l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessus : le type de la migration
-décide de l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
+🔴 **Une migration peut être jouée HORS TRANSACTION** (`-- migrate: no-transaction` en tête, obligatoire pour
+`CREATE INDEX CONCURRENTLY`). Elle n'a alors **aucun filet** : un échec à mi-parcours n'annule rien et la
+migration est rejouée depuis le début, donc chaque instruction doit être idempotente. Le runner l'envoie
+instruction par instruction, parce qu'une requête multi-instructions serait exécutée dans une transaction
+implicite. `tests/migration-directives.test.ts` garde les deux sens de la règle sur les fichiers réels.
 
 🔴 **Une seule exécution de `migrate` à la fois** (verrou d'avis Postgres, lot 8). Deux exécutions
 simultanées (le conteneur du VPS et le poste de Julien pointent la MÊME base) rejoueraient la même migration.
@@ -223,14 +108,6 @@ l'exécution, en plein déploiement.
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
 `compose build` AVANT. C'est pour ça que la séquence commence par le build. (Vécu le 2026-08-21.)
 
-⚠️ **`users.password_hash` est un MIROIR transitoire** de `identities.password_hash` (migration 0072), gardé
-comme chemin de retour. Ne pas le retirer tant que la confiance sur le multi-espaces n'est pas acquise, et
-ne jamais l'utiliser comme source : `findIdentity` lit l'identité, pas le compte.
-
-⚠️ **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge** : les `rewrites` sont **gelés au build**
-de l'image web. Un simple `up -d` laisserait le proxy dans son état d'avant, et le chemin public `/r/:code`
-rendrait un 404 Next, donc des liens de templates morts.
-
 🔴 **Les liens tracés sont une porte à SENS UNIQUE.** Dès qu'un template portant un lien `/r/<code>` est
 approuvé et **envoyé**, son adresse circule dans des messages livrés. Retirer la route `/r/:code`, la table
 `tracked_links` ou le rewrite Next les casserait **tous**, sans recours possible. Le retour arrière n'existe
@@ -238,34 +115,23 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-- 🔴 **[docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) : CE QU'ON EXÉCUTE
-  MAINTENANT, à lire AVANT `PLAN.md`.** Sept lots arbitrés le 2026-09-02, aucun commencé. Son **POINT DE
-  REPRISE** en tête dit l'état exact, l'ordre recommandé (lot 1 le bail, puis lot 6 la concurrence) et la
-  seule décision qui manque (le plafond de campagne du lot 3). Les lots : (1) fermer le bail du tour
-  d'avance · (2) le défilement du fil d'inbox · (3) un plafond serveur de taille de campagne · (4) une panne
-  d'avance cesse d'être invisible · (5) retirer deux affirmations qui mentent · (6) six files traitent UN job
-  à la fois pour toute la flotte · (7) rendre le pool de connexions visible.
-- **[PLAN.md](PLAN.md) : l'HISTORIQUE des programmes, plus aucune liste en cours.** Les DEUX sont terminés le
-  2026-09-01 : le I (sept lots) et le II (huit lots, dont le 8e volontairement incomplet, arbitré item par
-  item). Le fichier reste la référence de séquencement et porte le piège de chaque lot ; il n'y a plus de
-  liste en cours. Ce qui reste ouvert est listé dans `todo.md` et dans la §7 de l'audit du 25 août.
-- [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md) :
-  la synthèse des trois audits, source du programme. ⚠️ Ses constats factuels ont été **revérifiés un par un
-  dans le code** le 2026-08-31 (aucun faux, un sous-estimé) ; ses PRIORITÉS, elles, ont été retriées avec
-  Julien. En cas d'écart, c'est `PLAN.md` qui fait foi.
-- [AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md) : plus aucun rouge ni orange (clos le 2026-08-31).
-  ⚠️ Sa **§7, 23 jaunes**, était la dette de performance restante, et elle a structuré le programme II. Au
-  2026-09-01, après les huit lots : une dizaine sont fermés (purge `webhook_events`, `expireInSeconds` du
-  retry-sweep, ré-entrance des balayages, rejet de webhook muet, rétention générale, index des chemins chauds,
-  index des rétentions, delta du fil, `AbortController`, batch de contacts, création de campagne en mémoire,
-  balayage de statut plafonné à 200). **Deux ont été fermés par la MESURE, sans code** : l'index du funnel ne
-  change rien (191 ms avant et après), et l'upload média est déjà borné. Le reste est dans `todo.md`.
-- [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) : le détail de chaque constat de l'audit
-  (référencé par `PLAN.md` sous la forme Bn). Supplanté par celui d'août quand les deux se recouvrent.
-- [documentation.md](documentation.md) : technique : archi, stack, schéma DB, env, patterns
-- [features.md](features.md) : fonctionnel : les features vues utilisateur, statut
-- [wip.md](wip.md) : ce sur quoi on bosse maintenant
-- [todo.md](todo.md) : backlog et historique des lots livrés
+**Les cinq fichiers de doc**, et ce qu'on y met : [documentation.md](documentation.md) la technique (archi,
+stack, schéma DB, env, patterns, et le JOURNAL des lots livrés avec leurs gotchas) · [features.md](features.md)
+le fonctionnel vu utilisateur · [wip.md](wip.md) ce sur quoi on bosse MAINTENANT · [todo.md](todo.md) le
+backlog · et ce fichier, qui reste le point d'entrée LÉGER.
+
+**Les audits et les plans sont tous CLOS**, et ils ne se lisent plus que pour comprendre une décision :
+[PLAN.md](PLAN.md) (les deux programmes, terminés le 2026-09-01),
+[docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) (sept lots, livrés ET déployés le
+2026-09-02 au soir), [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md)
+(la synthèse qui a produit le programme, constats revérifiés un par un dans le code),
+[AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md) (plus aucun rouge ni orange ; sa §7 était la dette de
+perf, une dizaine de jaunes fermés, le reste dans `todo.md`) et
+[AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) (supplanté par celui d'août).
+
+⚠️ **Cette section annonçait « sept lots, aucun commencé » jusqu'au 2026-09-04**, alors qu'ils étaient déployés
+depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui dit seulement OÙ EST QUOI, non.
+Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `todo.md`.
 
 ## Règles spécifiques au projet
 
@@ -273,30 +139,24 @@ qu'avant le premier envoi tracé.
   `todo.md`). Le scaffold + le schéma DB sont posés en direct ; les briques déterministes
   (receiver, wrapper API, contacts, campagnes) passent par des boucles plan → exécute →
   vérifie → reviewer. L'UI (inbox/dashboard) n'est PAS pour feature-loop.
-- **On vérifie contre des mocks des contrats Meta + des tests** (unitaires + intégration
-  Supabase), pas contre le Meta live tant qu'on n'a pas de numéro branché. La chaîne tourne
-  déjà end-to-end en **DRY_RUN** sur le déploiement ; l'envoi Meta réel se valide en live plus tard.
-- **Pas de tirets longs** dans la doc (« : » / « : » interdits).
+- **On vérifie contre des mocks des contrats Meta + des tests** (unitaires + intégration Supabase), jamais
+  contre le Meta live : la production ENVOIE VRAIMENT depuis le 2026-07-06 (`DRY_RUN=false`, numéro Zadarma).
+  ⚠️ Cette ligne a dit « tant qu'on n'a pas de numéro branché » pendant deux mois après la mise en service.
+- **Pas de tirets longs** dans la doc : ni cadratin ni demi-cadratin, on met une virgule, deux-points,
+  des parenthèses ou un point. (Cette règle avait perdu son propre exemple, remplacé par deux `:` identiques
+  qui ne montraient plus rien.)
 - 🔴 **Un `Pick<T, ...>` recopié pour être RETRANSMIS est une liste à tenir alignée à la main, et elle dérive.**
-  Le contrat nomme les membres, le corps les recopie un par un : deux listes, dont le désalignement ne produit
-  AUCUNE erreur de compilation. Vécu en production le 2026-09-02 : `boutonsTraces` et `jetonsPourContacts`
-  étaient câblées dans le worker, absentes du contrat de `run-job`, donc jamais vues par le moteur, et toutes
-  les campagnes à lien tracé échouaient en 131008. Depuis le lot C1 (2026-09-03), les capacités voyagent dans
-  un objet IMBRIQUÉ transmis d'un seul spread (`moteur` dans `src/campaign/run-job.ts`) : il n'y a plus de
-  liste. ⚠️ **Un `Pick` reste bon** quand ses membres sont CONSOMMÉS sur place (l'oubli est alors une erreur au
-  point d'usage) : inventaire fait, 13 des 14 `Pick` du dépôt sont dans ce cas. Le critère n'est pas le `Pick`,
-  c'est « est-ce recopié pour être retransmis ? ».
-  ⚠️ **Et le compilateur ne voit qu'une moitié du problème** : une propriété en trop écrite DIRECTEMENT dans un
-  littéral est refusée (TS2353), mais la même dans un SPREAD passe sans un mot. Un câblage qui construit ses
-  dépendances par spread n'a donc aucune garde. Même famille : une flèche à deux paramètres est assignable à un
-  contrat qui en déclare trois, et le troisième est avalé en silence (vu le 2026-09-03 sur
-  `contactIdsForTarget`, gardé depuis par `tests/campagne-cablage.test.ts`).
-  🔴 **La garde qui marche est un `satisfies` sur l'objet INTÉRIEUR du spread**, et il a fallu la mesurer pour
-  la trouver : un `satisfies` posé sur le littéral EXTÉRIEUR n'y change rien, et le code a affirmé le
-  contraire pendant un jour. Quatre formes, quatre résultats : littéral direct → TS2353 ; spread → rien ;
-  `satisfies` extérieur → rien ; `satisfies` intérieur → TS2561. Posée sur le seul spread conditionnel du
-  câblage de campagne (`src/worker.ts`), qui est exactement là où vivaient `boutonsTraces` et
-  `jetonsPourContacts` le jour de la panne, et tenue par `tests/campagne-cablage.test.ts`.
+  Vécu en production le 2026-09-02 : deux capacités câblées dans le worker, absentes du contrat, donc jamais
+  vues par le moteur, et toutes les campagnes à lien tracé échouaient en 131008. Les capacités voyagent depuis
+  dans un objet IMBRIQUÉ transmis d'un seul spread. ⚠️ Un `Pick` reste bon quand ses membres sont CONSOMMÉS sur
+  place (l'oubli est alors une erreur au point d'usage) : 13 des 14 `Pick` du dépôt sont dans ce cas. Le critère
+  n'est pas le `Pick`, c'est « est-ce recopié pour être retransmis ? ».
+  🔴 **Et le contrôle des propriétés en trop NE TRAVERSE PAS un spread.** Mesuré, quatre formes, quatre
+  résultats : littéral direct → TS2353 ; spread → **rien** ; `satisfies` EXTÉRIEUR → **rien** ; `satisfies` sur
+  l'objet INTÉRIEUR du spread → TS2561. Un câblage qui construit ses dépendances par spread n'a donc AUCUNE
+  garde tant qu'on ne la pose pas sur le spread lui-même (`src/worker.ts`, tenu par
+  `tests/campagne-cablage.test.ts`). Même famille : une flèche à deux paramètres est assignable à un contrat
+  qui en déclare trois, et le troisième est avalé en silence.
 - **Avant d'écrire un helper, regarder s'il existe déjà.** L'audit du 2026-08-18 a supprimé une centaine de
   copies de fonctions que le repo possédait déjà (dont `scopeTenant`, le contrôle d'accès tenant, présent dans
   22 fichiers de routes). Les points de passage obligés sont listés dans `documentation.md` (« Modules
@@ -335,46 +195,32 @@ qu'avant le premier envoi tracé.
   **jeton de garde** (sinon le porteur d'un bail périmé supprime le verrou de celui qui l'a repris), et un
   **drapeau de relance** (sinon le travail arrivé pendant le run est perdu). Réécrire le même verrou ailleurs
   se fait sur ces trois pièces, pas sur deux.
-- 🔴 **AVANT DE COMMITER UN CHANGEMENT, ÉNUMÉRER SES DÉPENDANTS. C'est la seule des trois disciplines de ce
-  bloc qui soit vérifiable de l'extérieur** (2026-09-04). Sur le lot du 2026-09-03, QUATRE des six défauts
-  fermés le soir avaient été introduits le matin même, en corrigeant autre chose. Aucun n'était visible du
-  compilateur, aucun n'a été attrapé par un test, **parce qu'un test unitaire monte un faux câblage et que le
-  faux bouge avec le code**. Ce qui les aurait vus n'est pas un outil, c'est une liste : pour chaque symbole,
-  constante ou requête touchée, qui la LIT, qui suppose son ancienne valeur, quelle constante d'un AUTRE
-  fichier doit lui rester ordonnée, quel index la sert, quel commentaire l'affirme. Fait après coup le
-  2026-09-04 sur six changements, 102 dépendants suivis : aucun comportement cassé, mais **des tests qui
-  faisaient un vrai appel DNS, un cas de test supprimé sans remplaçant, six textes périmés et un compteur
-  corrigé à un endroit sur quatre**. Corollaires, tous constatés :
-  **(a)** un test qui touche le réseau n'est pas un test unitaire, son verdict appartient à quelqu'un d'autre ;
-  **(b)** réécrire un test doit CONSERVER le cas qu'il exerçait, même s'il l'assertait mal ;
-  **(c)** corriger un compte à un endroit et le laisser à trois autres, c'est le laisser faux ;
-  **(d)** une justification placée APRÈS la déclaration qu'elle justifie est orpheline, donc invisible.
-- 🔴 **ÉLARGIR LE DOMAINE D'UNE RÉPARATION SANS ÉLARGIR CE QU'ELLE TRANSPORTE** (2026-09-03). Le corollaire du
-  point suivant, trouvé le lendemain, et il est plus général que lui. Le balayage des tours bloqués sortait le
-  parcours par `sortie:echec` EN DUR : c'était juste tant qu'il ne réclamait que des sessions `en_cours`, qui
-  n'ont par construction aucune sortie enregistrée. Le jour où on lui a fait ramasser aussi les sessions closes
-  dont la sortie était due, la valeur en dur est devenue fausse, et **rien ne l'a signalé**. Même famille, même
-  jour : un **index PARTIEL est un contrat avec une requête précise**, et élargir la requête la fait sortir du
-  contrat sans erreur, le seul symptôme étant un plan d'exécution qui change. La règle : quand on élargit ce
-  qu'une réparation ramasse, on relit tout ce qu'elle suppose de ce qu'elle ramassait.
+- 🔴 **AVANT DE COMMITER, ÉNUMÉRER LES DÉPENDANTS DE CE QU'ON A CHANGÉ** (2026-09-04). La seule des règles de
+  ce bloc qui soit VÉRIFIABLE de l'extérieur : Julien peut réclamer la liste. Pour chaque symbole, constante ou
+  requête touchée : qui la LIT, qui suppose son ancienne valeur, quelle constante d'un AUTRE fichier doit lui
+  rester ordonnée, quel index la sert, quel commentaire l'affirme. Le hook `rayon-de-souffle.js` en calcule la
+  moitié mécanique au `git commit` ; la section « Rayon de souffle » de `/revue` couvre le reste. Quatre
+  corollaires, tous CONSTATÉS : **(a)** un test qui touche le réseau n'est pas un test unitaire ; **(b)**
+  réécrire un test doit CONSERVER le cas qu'il exerçait, même mal asserté ; **(c)** corriger un compte à un
+  endroit et le laisser à trois autres, c'est le laisser faux ; **(d)** une justification placée APRÈS ce
+  qu'elle justifie est orpheline. Le détail : `documentation.md` § lots des 3 et 4 septembre.
+- 🔴 **ÉLARGIR LE DOMAINE D'UNE RÉPARATION SANS ÉLARGIR CE QU'ELLE TRANSPORTE** (2026-09-03). Quand on élargit
+  ce qu'une réparation RAMASSE, on relit tout ce qu'elle SUPPOSAIT de ce qu'elle ramassait : une valeur en dur
+  juste sur l'ancien domaine devient fausse sans que rien ne le signale, et un **index PARTIEL est un contrat
+  avec une requête précise**, dont sortir ne produit qu'un plan d'exécution différent. Trois instances la même
+  semaine, aucune visible du compilateur.
 - 🔴 **UNE REPRISE AUTOMATIQUE NE VAUT MIEUX QU'UNE REPRISE EXISTANTE QUE SI ELLE PRODUIT LE MÊME ÉTAT FINAL**
-  (2026-09-03). `escalade.ts` est le seul couple « clore puis sortir » qui ne préserve pas la marque, et on ne
-  l'aligne PAS : le rattrapage existant (le message suivant du contact remonte le fil en inbox ET escalade) est
-  meilleur que le balayage, et le contact qui vient de réclamer un humain face à un silence total réécrit
-  presque toujours. Poser la marque ferait sortir le parcours à la 15e minute par une branche qui, elle, ne
-  rappelle pas forcément l'escalade. L'uniformité aurait été une régression déguisée en cohérence.
+  (2026-09-03). Avant d'uniformiser un chemin sur ses voisins, comparer les ÉTATS FINAUX, pas les mécanismes.
+  `src/agent/escalade.ts` est le seul couple « clore puis sortir » à ne PAS préserver la marque, et c'est
+  délibéré : la raison est écrite dans le fichier, ne pas l'aligner par réflexe.
 - 🔴 **UNE TRANSITION TERMINALE FAITE DE DEUX ÉCRITURES DOIT LAISSER, ENTRE LES DEUX, L'ÉTAT QUE SON
-  RÉPARATEUR SAIT RECONNAÎTRE** (contre-audit du 2026-09-03). La sortie d'un tour d'agent clôturait la session
-  PUIS faisait sortir le parcours : une panne au milieu laissait un parcours mort pour toujours, la clôture
-  ayant effacé le marqueur qui l'aurait désigné au balayage. Pas besoin d'un crash, une panne passagère de la
-  seconde écriture suffisait. **La réparation passe par la MARQUE, pas par l'ordre**, et c'est le piège : ici
-  inverser l'ordre est FAUX, parce que faire sortir le parcours le fait AVANCER, qu'il peut retomber sur un
-  autre bloc agent dans le même appel, et que `demarrerTourAgent` réutiliserait alors la session encore
-  vivante avec ses tours et son budget consommés. Donc : on clôt d'abord, on laisse la marque tant que la
-  suite reste due, on l'efface une fois la suite passée. Corollaire : **la réclamation d'un balayage POSE UN
-  BAIL, elle n'efface pas la marque** ; sinon un échec de sa propre seconde écriture reproduit le défaut chez
-  le réparateur. Et l'effaceur de chaque chemin porte une garde MIROIR (`status = 'en_cours'` d'un côté,
-  `<>` de l'autre) pour que deux chemins concurrents ne s'effacent pas la marque l'un de l'autre.
+  RÉPARATEUR SAIT RECONNAÎTRE** (2026-09-03). **La réparation passe par la MARQUE, pas par l'ordre**, et c'est
+  le piège : inverser l'ordre paraît plus sûr et peut être FAUX (ici, faire sortir le parcours le fait AVANCER
+  pendant que la session est encore vivante). Donc : on écrit d'abord, on LAISSE la marque tant que la suite
+  reste due, on l'efface une fois la suite passée. Deux corollaires : **la réclamation d'un balayage POSE UN
+  BAIL, elle n'efface pas la marque** (sinon le réparateur reproduit chez lui le défaut qu'il répare) ; et
+  l'effaceur de chaque chemin porte une garde MIROIR, pour que deux chemins concurrents ne s'effacent pas la
+  marque l'un de l'autre. Le récit complet : `documentation.md` § lots des 3 et 4 septembre.
 - **Une garde de validation se calcule sur l'état EFFECTIF après écriture** (`patch ?? courant`), jamais sur le
   corps de la requête : sinon elle ne ferme qu'un sens (cf. la garde anti-boucle de « conversation analysée »).
 
@@ -403,37 +249,29 @@ tentative est presque toujours un secret voisin du vrai. Chaque refus est journa
 DEVINABLES. Corollaire : toute règle posée sur l'hôte `mba.` doit être redupliquée sur le nouveau, sinon elle
 est simplement contournée.
 
-🔴 **L'INVENTAIRE DES CHEMINS SORTANTS EST TENU PAR UN TEST, plus par cette page** (2026-09-03). Ce fichier a
-affirmé qu'il y avait TROIS chemins où une URL saisie par un client finit dans un `fetch`, et qu'ils étaient
-tous gardés. Il y en avait **QUATRE** : le bouton « éprouver une SOURCE » (`src/index.ts`) appelait
-`construireCible` puis `fetch`, sans jamais résoudre. Ce qui l'a fait rater : les deux boutons « Test » se
-ressemblent beaucoup et l'AUTRE appelait bien la garde. **Un inventaire de chemins sensibles écrit à la main
-dérive dès qu'on ajoute un bouton** ; celui-ci est désormais vérifié à chaque exécution de la suite
-(`tests/lib-adresse-privee.test.ts`). ⚠️ Sa garde accepte les DEUX formes de câblage, l'appel direct et la
-valeur par défaut d'une dépendance injectable, parce que les deux existent et sont justes. Et elle retire les
-lignes d'`import` avant de chercher : sans ça elle passait alors même que l'appel avait été supprimé, ce qui
-a été vérifié par mutation.
+🔴 **UNE URL SAISIE PAR UN CLIENT SE VÉRIFIE DEUX FOIS : sur son TEXTE, et sur ce vers quoi elle RÉSOUT.**
+`urlRecuperable` lit le texte de l'hôte (elle refuse `localhost`, les littéraux privés et leurs formes
+hexadécimale, entière, IPv6 et IPv4 mappée) ; `resolutionPublique` (`src/lib/adresse-privee.ts`) ferme ce
+qu'un texte ne peut pas voir, un nom public dont l'enregistrement A pointe sur les métadonnées du fournisseur
+ou sur le réseau Docker du VPS. Trois règles la rendent juste : **une seule adresse interdite condamne le
+nom** ; **une résolution qui ÉCHOUE ou qui TRAÎNE est un REFUS** (plafond de 3 s, `dns.lookup` n'acceptant
+aucun signal d'abandon) ; et une **plage d'adresses se compare en ARITHMÉTIQUE, jamais en préfixe de chaîne**
+(le préfixe `fe80::/10` fait dix bits, pas quatre caractères).
 
-🔴 **Toute URL saisie par un client se vérifie DEUX fois : sur son texte, ET sur ce vers quoi elle RÉSOUT**
-(lot A3, 2026-09-03). `urlRecuperable` lit le texte de l'hôte et refuse `localhost`, les littéraux privés et
-toutes leurs formes exotiques (hexadécimale, entière, IPv6, IPv4 mappée : vérifié). Elle ne peut RIEN contre
-`crm.exemple.fr` dont l'enregistrement A pointe sur `169.254.169.254` (métadonnées du fournisseur) ou sur
-`172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les conteneurs). `resolutionPublique`
-(`src/lib/adresse-privee.ts`) ferme ça, sur les QUATRE chemins concernés (le compte a dit TROIS pendant un
-jour, cf. juste au-dessus, et l'inventaire est désormais tenu par un test) : connecteur en conversation, bouton
-« Test » d'une REQUÊTE, bouton « éprouver » une SOURCE, lecture de page distante (à chaque saut de
-redirection). Règles qui la rendent juste :
-UNE seule adresse interdite condamne le nom, et une résolution qui ÉCHOUE est un REFUS. ⚠️ Le « DNS rebinding »
-reste ouvert (`fetch` refait sa propre résolution) : le fermer demande un résolveur maison via `undici`, cf.
-`todo.md`.
+🔴 **L'INVENTAIRE DE CES CHEMINS EST TENU PAR UN TEST, plus par cette page.** Elle a affirmé qu'il y en avait
+TROIS ; il y en avait QUATRE, et le manquant était le seul non gardé. Un inventaire écrit à la main dérive dès
+qu'on ajoute un bouton : `tests/lib-adresse-privee.test.ts` le vérifie à chaque exécution. ⚠️ Le « DNS
+rebinding » reste ouvert (`fetch` refait sa propre résolution), cf. `todo.md`.
 
-🔴 **Un corps de réponse distante se lit EN FLUX, jamais avec `res.text()` suivi d'un test de taille.** Deux
-défauts dans la même ligne : le corps entier entre en mémoire avant d'être jeté, et `.length` compte des
-unités UTF-16, donc un corps d'idéogrammes passe un plafond « en octets » à trois fois sa taille. Le repo
-l'écrivait à trois endroits. Point de passage unique : `lireCorpsBorne` (`src/lib/corps-borne.ts`), qui coupe
-le flux à l'octet qui dépasse. ⚠️ Les clients de NOS API (Meta, Zadarma) n'y passent pas volontairement :
-hôtes fixes et de confiance, le risque n'est pas le même.
+🔴 **Un corps de réponse distante se lit EN FLUX** (`lireCorpsBorne`, `src/lib/corps-borne.ts`), jamais avec
+`res.text()` suivi d'un test de taille : le corps entier entrerait en mémoire avant d'être jeté, et `.length`
+compte des unités UTF-16, donc un corps d'idéogrammes passe un plafond « en octets » à trois fois sa taille.
+Ses TROIS consommateurs doivent lire ses trois verdicts : `trop_gros`, `casse` (un flux coupé n'est pas un
+corps vide, sans quoi on annonce un succès sur une lecture ratée) et le texte. ⚠️ Les clients de NOS API (Meta,
+Zadarma) n'y passent pas : hôtes fixes et de confiance.
 
+Le détail de ces trois lots, et la mesure qui a montré que cinq cas IPv6 sur huit passaient, sont dans
+[documentation.md](documentation.md).
 
 🔴 **CHANGER LE NOM DU FRONT CASSE TOUT TIERS QUI VÉRIFIE L'ORIGINE**, pas seulement ceux à qui on donne une
 URL (2026-09-03). Un webhook se reconfigure parce qu'on lui a donné une adresse ; une liste d'origines se

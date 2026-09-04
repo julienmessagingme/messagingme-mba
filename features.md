@@ -1137,6 +1137,16 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Éprouver la connexion** : un bouton, un chemin, et le verdict avec sa date. C'est le seul endroit où un
   jeton expiré se voit AVANT qu'un contact ne le découvre : un jeton mort ne produit aucune erreur visible
   côté client, l'agent se contenterait de ne plus savoir répondre.
+- ✅ **Un système injoignable, lent ou bavard le DIT, au lieu de faire semblant** (2026-09-04). Trois réponses
+  qui passaient pour des succès sont désormais refusées avec leur raison : le système **ne répond pas dans les
+  dix secondes** ; il **coupe sa réponse en cours d'envoi** (avant, on affichait « il a répondu, mais vide »,
+  ce qui envoyait chercher du mauvais côté pendant longtemps) ; ou sa réponse est **trop volumineuse** pour
+  l'aperçu. Même exigence pour l'adresse elle-même : un nom qui pointe vers notre infrastructure interne est
+  refusé, et une résolution qui traîne au-delà de trois secondes est traitée comme une résolution qui échoue.
+- ✅ **En pleine conversation, l'agent applique les mêmes règles** : si le système du client coupe sa réponse,
+  l'agent ne conclut rien, il le signale, et **le connecteur passe au rouge dans la console**. Avant, ce cas
+  précis marquait le système comme sain : un connecteur qui mourait restait vert jusqu'à ce qu'un contact le
+  découvre.
 - ✅ **Mettre au point un APPEL, dans la même page** (2026-09-02), et non plus dans chaque agent. Un appel est
   décrit une fois, éprouvé, puis ouvert aux agents qui en ont besoin. L'écran suit l'ordre du raisonnement :
   quelles données on envoie, où on les envoie, on essaie, on coche ce qu'on garde.

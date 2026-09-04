@@ -122,6 +122,24 @@ et vérifiés un par un** : 102 au total, puis un réfuteur par changement charg
   dans `todo.md` et `wip.md`. **Corriger un compte à un endroit et le laisser à trois autres, c'est le
   laisser faux.**
 
+### Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert
+
+Trois lecteurs indépendants, 71 fichiers ouverts, des scripts exécutés contre un vrai serveur local. **Rien de
+cassé.** Quatre défauts trouvés et corrigés (le drapeau câblé sur un consommateur sur trois, une justification
+FAUSSE dans mon propre commentaire, un témoin de test qui n'exerçait pas le cas qu'il nommait, un débris de
+copier-coller). Ce qui reste ouvert, avec sa raison :
+
+- **Le plafond du bouton « Test » n'est pas aligné sur celui de l'appel RÉEL.** Le test coupe à 40 000 octets
+  (`MAX_APERCU * 2`), l'appel réel à `agent_tools.max_bytes` (défaut 16 384, réglable jusqu'à 262 144). Il
+  existe donc des réglages valides où le bouton refuse une réponse que la production accepterait, et
+  l'inverse. **Ce n'est pas une régression** : avant, une réponse de plus de 40 Ko donnait déjà un aperçu vide
+  et zéro chemin, le bouton était donc déjà inutilisable au-delà. L'alignement exact est impossible (le test
+  ne connaît pas l'outil qui utilisera la requête), donc à trancher : soit on affiche la borne à l'écran,
+  soit on la fait remonter du plus permissif des outils qui désignent cette requête.
+- **`sortieAppliquee` n'a toujours pas de jeton de garde.** La course est devenue INATTEIGNABLE en écartant
+  `AGE_TOUR_MORT_S` de `DUREE_MAX_AVANCE_MS`, mais la pièce manque : il faudrait faire remonter l'instant de
+  marque à travers `clore` puis `cloreEtSortir`, donc deux signatures.
+
 **Vérifié et écarté** : `asIdArray` (`src/http/contacts.ts:91`) tronque les identifiants d'une action en
 masse à 100 000, mais c'est **documenté dans son propre commentaire** et préexistant. Et le plafond DNS de 3 s
 tombe DANS le budget d'outil de 8 s d'un tour d'agent, qu'il RÉDUIT au lieu de l'augmenter.

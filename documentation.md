@@ -2094,6 +2094,161 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## LES MIGRATIONS, UNE PAR UNE : ce que chacune a coûté et ce qu'elle a appris (0093 à 0113)
+
+🔴 **CE BLOC VIENT DU `CLAUDE.md`, ET IL EN EST SORTI LE 2026-09-04.** Il y avait grossi jusqu'à 120 lignes,
+soit un quart d'un fichier chargé à CHAQUE session, pour raconter des migrations dont la plupart sont
+appliquées depuis des semaines. C'est le même glissement que `wip.md` a subi deux fois : un point d'entrée qui
+devient une archive cesse d'être un point d'entrée.
+
+⚠️ **LE COMPTEUR N'EST PAS ICI, ET IL NE DOIT JAMAIS Y ÊTRE.** `CLAUDE.md` se déclare sa source unique, et
+trois documents qui l'avaient recopié étaient tous faux (de 43, de 15 et de 5 migrations). Ce qui suit ne
+contient aucun numéro « dernière appliquée » ni « prochaine libre » : c'est vérifié par assertion au moment du
+déplacement, et ça doit le rester.
+
+Ce qui est RESTÉ dans `CLAUDE.md` parce que ça se décide à chaque déploiement : le compteur, la règle qui dit
+si une migration est bloquante ou non (donc l'ordre migrer/déployer), la directive hors-transaction, le verrou
+d'exécution unique, et le fait que les migrations vivent dans l'IMAGE et pas sur le disque du VPS.
+
+Ce qui suit se lit à la demande, quand on se demande pourquoi une migration précise a été écrite comme ça.
+
+✅ **0113 APPLIQUÉE le 2026-09-03 au soir** (index), et elle N'ÉTAIT PAS BLOQUANTE : aucun code ne l'écrit ni ne la lit, le
+balayage rend les mêmes lignes sans elle, un peu plus lentement. Elle rattrape un index PARTIEL de la 0112
+(`where status = 'en_cours'`) devenu inutilisable le 2026-09-03, quand la requête du balayage a perdu sa
+condition de statut. **Un index partiel est un CONTRAT avec une requête précise** : élargir le domaine de la
+requête la fait sortir du contrat, et rien ne le signale, ni le compilateur, ni les tests, ni une erreur au
+démarrage. Le seul symptôme est un plan d'exécution qui change. 🔴 Elle est HORS TRANSACTION
+(`CREATE INDEX CONCURRENTLY`), donc sans filet.
+
+🔴 **0112 est BLOQUANTE** : `prendreLeTour` écrit `tour_commence_le` à chaque tour, et c'est le chemin chaud du
+bloc agent. Déployer sans migrer ferait échouer TOUS les tours. Appliquée AVANT, colonne et index vérifiés en
+base, et le SQL du balayage joué à blanc contre la vraie table (0 ligne). ⚠️ Vérifié EN BASE le 2026-09-03
+(`select name from public.schema_migrations order by name desc`) parce que cette ligne annonçait encore 0107 :
+un compteur tenu à la main dérive dès qu'un déploiement se fait sans repasser par ici. **En cas de doute, la
+base tranche, jamais ce fichier.** Et `schema_migrations` existe dans PLUSIEURS schémas de cette base : la
+requête doit être qualifiée `public.`, sinon elle lit la table d'un autre outil et rend des colonnes inconnues.
+⚠️ 0110 posait `create extension vector`, la première du dépôt à ajouter une EXTENSION, donc le seul point qui
+pouvait échouer pour une raison de droits : il est passé sans incident.
+⚠️ **Ce compteur a dérivé DEUX fois le 2026-09-03**, et dans les deux sens : il a annoncé 0107 quand la base
+était à 0111, puis « prochaine libre = 0112 » alors que 0112 était le fichier déjà appliqué, ce qui aurait fait
+écrire par-dessus. Il porte maintenant UNE seule ligne « dernière appliquée » et UN seul « prochaine libre » :
+deux lignes qui disent la même chose finissent toujours par se contredire. En pratique on applique aussi via
+`npm run migrate` en local (même Supabase prod).
+
+⚠️ **Le correctif de la transition terminale du 2026-09-03 n'a demandé AUCUNE migration**, et ça valait d'être
+vérifié plutôt que supposé : il ne change que le MOMENT où `tour_commence_le` est effacée, pas le schéma. Une
+colonne dont on change le sens sans changer le type ne se voit pas dans `db/migrations/`, elle se voit dans le
+contrat, et c'est là qu'elle est documentée (`src/agent/session-store.ts`).
+
+🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
+rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message
+EMBARQUÉ, un bloc de scénario aussi, et la réponse rapide convertie en RCS le fabrique à la volée : seul
+l'envoi manuel depuis l'inbox passe par la bibliothèque. Cette clé aurait donc tracé le cas le moins utile et
+laissé sans mesure les deux qui comptent. **La leçon vaut au-delà du RCS : une clé étrangère choisie sur le
+schéma, sans avoir suivi les appelants réels, désigne la table qu'on a sous les yeux, pas celle qui produit la
+donnée.** Corrigée pendant que la colonne était encore vide (0 ligne, vérifié en base) ; une semaine plus tard
+il aurait fallu la migrer au lieu de la retirer.
+
+⚠️ **0107 se relit comme une règle de canal.** La clé d'un lien WhatsApp (template, langue, carte, bouton) sert
+l'IDEMPOTENCE DE LA RÉSERVATION, parce qu'un template est soumis puis figé. Un message RCS n'est soumis à
+personne, il est composé à l'envoi : il ne reste qu'à ne pas créer une ligne par destinataire, qu'un lien
+d'hier résolve encore, et que les clics s'accumulent. `(tenant_id, destination)` fait les trois. Deux
+conséquences heureuses : aucun `{{1}}`, donc **aucun risque de 132000 ni de « tout ou rien »** côté RCS ; et le
+message STOCKÉ garde l'adresse saisie, donc **rien à ré-habiller à l'affichage**, contrairement aux templates.
+
+⚠️ **0105 n'était PAS bloquante**, et c'est ce qui a permis de l'écrire trois commits avant de l'appliquer :
+aucun code ne l'écrivait tant que les routes n'étaient pas livrées, et sa forme pouvait encore bouger en les
+construisant. L'appliquer tôt aurait obligé à une 0106 corrective au premier ajustement. La règle « migrer
+avant de déployer » vaut pour les migrations que le code ÉCRIT, pas pour celles qu'il ignore encore.
+
+🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
+`-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
+bloc de transaction. Deux conséquences à connaître avant d'en écrire une autre : elle n'a **aucun filet** (un échec à mi-parcours n'annule rien et la
+migration est rejouée depuis le début, donc chaque instruction doit être idempotente), et le runner l'envoie
+**instruction par instruction**, parce qu'une requête simple multi-instructions est exécutée par Postgres dans
+une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
+les deux sens de la règle sur les fichiers réels.
+
+🔴 **0104 est BLOQUANTE, et elle ferme le trou le plus cher du produit.** Deux avances concurrentes
+(l'API traite un retour RCS pendant que le worker traite un webhook du même contact) ENVOYAIENT toutes les deux :
+`setStateSiEncoreSur` protège l'état, mais elle arrive APRÈS les envois. Le contact recevait donc un message
+qu'il ne devait jamais voir. Le tour est désormais RÉSERVÉ avant tout envoi, avec les trois pièces d'un vrai
+verrou (bail, jeton de garde, libération explicite) et **sans drapeau de relance** : le perdant ne doit RIEN
+rejouer, son message a été traité par le gagnant qui lisait le même bloc.
+⚠️ **Et « réservé avant tout envoi » ne fermait QUE la course courte**, celle de deux avances qui démarrent
+ensemble. La course LONGUE, le porteur pas mort mais seulement LENT, est restée ouverte jusqu'au lot 1 du plan
+post-audit (2026-09-02) : un envoi Meta peut durer ~154 s en rejouant ses tentatives et une avance peut en
+enchaîner plusieurs, donc le bail expirait pendant qu'on travaillait, un autre prenait le tour, et les deux
+envoyaient. Aucune valeur de bail ne pouvait fermer ça, le nombre d'envois d'une avance n'étant pas borné :
+seul un signe de vie PÉRIODIQUE distingue un porteur mort d'un porteur lent (`src/workflow/bail-avance.ts`,
+cadence à un tiers du bail). Même lot, même famille : l'écriture d'état est désormais clôturée par le JETON,
+un porteur périmé ne pouvant plus écrire par-dessus celui qui a repris le tour. Aucune migration, les deux
+colonnes de la 0104 suffisaient.
+⚠️ **Et battre ne suffisait pas non plus : ça rendait la perte VISIBLE sans rien ARRÊTER** (lot A2 de l'audit
+externe, 2026-09-03). Le jeton clôture l'écriture d'ÉTAT ; il n'a jamais rien pu contre un message déjà remis
+à Meta. Un porteur déchu finissait donc sa liste d'envois pendant que le nouveau faisait la sienne. Le
+battement expose désormais `perduPourquoi()`, **consulté avant CHAQUE effet** (`apply`), avant l'envoi RCS de
+`walkResolved` et avant l'enfilement d'un tour d'agent, qui est un appel modèle facturé. **La règle générale :
+une garde de concurrence posée à l'ENTRÉE d'une liste d'effets ne prouve rien sur le dixième ; elle se pose
+ENTRE les effets.** Même lot : une durée totale maximale de dix minutes (`DUREE_MAX_AVANCE_MS`) abandonne une
+avance PENDUE, le seul mode de panne qu'un battement ne distingue pas d'un travail lent, puisqu'un minuteur
+renouvelle un bail aussi fidèlement pour une promesse morte que pour un envoi en cours.
+⚠️ **L'`AbortSignal` du battement n'est écouté par AUCUN transport, et c'est un choix, pas un oubli.** Un
+envoi Meta ne porte pas de clé d'idempotence : couper la connexion en vol échangerait « un message de trop »
+contre « un message parti que nous n'avons pas enregistré », donc invisible dans le fil. On laisse finir
+l'effet en vol, on ne lance pas le suivant.
+🔴 **Un tour d'agent tué par un crash était perdu POUR TOUJOURS** (lot A1, 2026-09-03). `prendreLeTour`
+incrémente `tours` AVANT le travail, ce qui est ce qui rend le verrou optimiste atomique : un worker qui meurt
+entre les deux fait rejouer le job par pg-boss avec l'ANCIEN numéro, la réservation rend `null`, le rejeu est
+classé « doublon », la session reste `en_cours` et le run reste en attente SANS échéance (elle se pose à la fin
+du tour, qui n'est jamais arrivée). Un balayage minute (`src/agent/tour-bloque-sweep.ts`) réclame les tours en
+vol depuis plus de QUINZE minutes (l'écart avec `DUREE_MAX_AVANCE_MS` est délibéré, cf. la constante), les
+clôt et fait sortir le parcours par la sortie RÉELLEMENT DUE, portée par la ligne réclamée.
+⚠️ **On ne REJOUE PAS le tour, on le clôt**, et c'est tranché : le worker a pu mourir APRÈS avoir envoyé le
+message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le contact ;
+clore fait au pire emprunter une branche que le client a rédigée.
+⚠️ **Et il fallait une COLONNE, pas une déduction.** « Session `en_cours` + run en attente + aucune échéance »
+semble reconnaître un tour mort : c'est EXACTEMENT l'état d'un tour qui vient d'être enfilé et attend son
+passage dans la file, et `derniere_activite` ne les départage pas (elle porte l'instant du tour PRÉCÉDENT,
+qui peut remonter à des heures). Un balayage bâti sur cette déduction aurait tué des conversations vivantes.
+Le pendant : `tour_commence_le` DOIT être effacé sur les deux sorties qui laissent la session vivante
+(l'agent a répondu, un humain a pris la main) ; `clore` s'en charge pour toutes les autres.
+🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
+pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
+seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un
+jugement de Meta sur le numéro : relancer sans rien changer aggrave le problème et peut coûter le numéro, donc
+`paused_until` reste NUL et **aucune machine ne lève cette pause**. `paused_until` nul veut dire « pas de
+reprise automatique », et c'est le défaut : une pause dont on ne sait pas quoi penser ne repart pas toute seule.
+⚠️ **0102 est bloquante, mais elle DÉGRADE PROPREMENT** : sans la table, chaque envoi retombe sur le frein
+LOCAL du process et le signale dans les logs, c'est-à-dire exactement le comportement d'avant. C'est voulu :
+un frein de débit protège la qualité d'un numéro, il n'AUTORISE pas l'envoi, donc son indisponibilité ne doit
+jamais faire échouer un message. La migrer avant reste la règle, mais l'oublier ne casse rien.
+🔴 **0101 est BLOQUANTE, et sa leçon vaut plus que sa ligne de SQL.** `recordOutbound` DÉDUISAIT l'origine de
+l'expéditeur (« pas d'expéditeur, donc un scénario »), ce qui était vrai tant que ses seuls appelants étaient les
+routes de la console. Le serveur MCP en a ajouté un sans expéditeur humain : chaque réponse d'agent tiers est
+partie marquée « scenario ». Le pire n'était pas l'erreur mais son INVISIBILITÉ, la valeur fausse étant écrite
+explicitement, donc le repli « indéterminée » ne pouvait pas se déclencher. **Une valeur déduite d'un autre champ
+n'est une garde que tant que la liste des appelants ne bouge pas, et une liste d'appelants bouge toujours.** Le
+paramètre est désormais obligatoire, comme sur `recordOutboundByWaId`.
+⚠️ **0100 est BLOQUANTE** (chaque analyse écrit `summary`), donc migrée AVANT le déploiement. Sa colonne
+reste vide pour les analyses d'avant, et elle le restera : reconstruire un résumé voudrait dire rappeler le
+LLM sur tout l'historique. La fiche de conversation le DIT au lieu d'afficher `justification` à la place,
+qui explique le classement et pas le contenu.
+⚠️ **0099 est BLOQUANTE** (les quatre chemins d'envoi écrivent `origin` à chaque message sortant), donc migrée
+AVANT le déploiement. Sa colonne est volontairement NULLABLE : un `not null` aurait fait échouer une insertion
+sur le chemin chaud le jour d'un oubli d'appelant. La garde contre l'oubli est ailleurs, là où elle ne coûte
+rien en production : le paramètre `origine` est OBLIGATOIRE dans la signature TypeScript, donc un chemin
+d'écriture oublié ne compile pas. La lecture de l'historique est bornée dans le temps (`src/inbox/origine.ts`) :
+après la bascule, une origine absente ressort en « indéterminée » À L'ÉCRAN plutôt que d'être versée en silence
+dans le scripté.
+⚠️ **0098 était BLOQUANTE** (`saveStatus` écrit `status_checked_at` à chaque relevé), donc migrée AVANT le
+déploiement. **0095 l'était aussi** (le code écrit `draft_graph` à chaque enregistrement de l'éditeur), donc migrée
+AVANT le déploiement. **0094 n'était qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit
+`phone_number_id` à chaque webhook entrant, et déployer avant de migrer aurait fait échouer TOUS les entrants,
+exactement l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessus : le type de la migration
+décide de l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
+
+---
 ## DÉPLOYÉ le 2026-09-03 au soir : le contre-CONTRE-rapport, et ce qu'il dit de mes propres correctifs (migration 0113)
 
 Quatre constats, trois confirmés. Mais l'intérêt du lot n'est pas là : **quatre des six défauts fermés ce

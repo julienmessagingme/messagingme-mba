@@ -109,6 +109,16 @@ sudo docker compose up -d --build                                # 1) deploy le 
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
 
+## ⚠️ Deux gestes qu'on oublie, et leur symptôme
+
+**`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge.** Les `rewrites` sont **gelés au build** de
+l'image web : un simple `up -d` laisserait le proxy dans son état d'avant, et le chemin public `/r/:code`
+rendrait un 404 Next, donc des liens de templates MORTS chez des destinataires réels.
+
+**`users.password_hash` est un MIROIR transitoire** de `identities.password_hash` (migration 0072), gardé comme
+chemin de retour. Ne pas le retirer tant que la confiance sur le multi-espaces n'est pas acquise, et ne jamais
+l'utiliser comme source : `findIdentity` lit l'identité, pas le compte.
+
 ## 🔴 502 public juste après un `up --build`, alors que le conteneur est sain : NPM tient l'ANCIENNE IP
 
 Constaté le 2026-09-03. Après `up -d --build`, `mba-api` est `healthy`, mais `https://api.messagingme.app/health`
