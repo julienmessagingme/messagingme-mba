@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { lienWaMe } from '../lib/wa-me';
 
 /**
  * Jeton de TEST d'un scénario (Lot F) : le mot que le testeur envoie sur WhatsApp pour déclencher un scénario
@@ -55,9 +56,13 @@ export function normalizeTestToken(body: string | null): string {
  * Lien WhatsApp qui ouvre une conversation avec le jeton DÉJÀ saisi. `displayPhoneNumber` arrive tel que Meta
  * l'affiche (« +33 5 25 68 02 50 ») : wa.me n'accepte que des chiffres, sans + ni espaces.
  * null si le tenant n'a pas encore de numéro (rien à proposer, on ne fabrique pas un lien cassé).
+ *
+ * La construction de l'URL vit dans `src/lib/wa-me.ts` depuis que la chaîne WhatsApp la fabrique aussi. Ce
+ * qui reste ICI est la seule chose propre au TEST : un jeton VIDE ne donne pas de lien. Ce refus porte sur le
+ * jeton, pas sur l'URL, donc il ne descend pas dans le module partagé, dont l'autre appelant compose toujours
+ * un texte non vide (une phrase suivie du jeton du lien).
  */
 export function waMeTestLink(displayPhoneNumber: string | null, token: string): string | null {
-  const digits = (displayPhoneNumber ?? '').replace(/\D/g, '');
-  if (digits === '' || token === '') return null;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(token)}`;
+  if (token === '') return null;
+  return lienWaMe(displayPhoneNumber, token);
 }

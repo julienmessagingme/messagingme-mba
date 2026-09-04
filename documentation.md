@@ -1690,6 +1690,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/workflow/executor.ts` -> `runEnAttenteSur` | « Le run en attente d'un contact ET le bloc qui l'attend, s'il est du type demandé » | 3 copies (reprises RCS, sortie d'agent, outil d'agent) |
 | `src/lib/cache-court.ts` -> `cacheCourt` | Le micro-cache mémoire à durée de vie courte : durée de vie ET mutualisation des appels EN VOL, plus la garde d'identité qui empêche une valeur périmée de se ranger en cache après une invalidation. Posé en R7 pour les compteurs de l'inbox | posé le 2026-08-31. Un cache de compteur écrit à la main oublie l'un des trois, et devient le bug qu'il évitait |
 | `src/crm/import.ts` -> `ContactStore.upsertManyByPhone` | L'écriture d'un LOT de contacts (import CSV, listes HubSpot). L'upsert unitaire n'est plus le chemin d'import : une requête par ligne dépassait le timeout de Cloudflare | posé en R9. La déduplication du lot est DANS le store, pas chez l'appelant : c'est Postgres qui l'exige |
+| `src/lib/wa-me.ts` -> `lienWaMe` | Le lien `wa.me` pré-rempli : chiffres seuls dans le numéro, texte encodé, null quand aucun numéro n'est connecté | vivait dans `src/workflow/test-token.ts` (`waMeTestLink`), qui n'a rien à voir avec la chaîne WhatsApp mais en portait la seule copie. Une seconde copie enverrait des abonnés sur un lien mort depuis un post DÉJÀ publié |
 
 **Front**
 
