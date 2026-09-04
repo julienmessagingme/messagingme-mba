@@ -918,8 +918,9 @@ async function main(): Promise<void> {
     try {
       await runTourBloqueSweep({
         reclamer: (age, limite) => agentSessions.reclamerToursBloques(age, limite, SORTIE_ECHEC),
-        // Le parcours reprend par la branche d'échec du bloc agent, celle que le client a rédigée. La session
-        // est DÉJÀ close par la réclamation (ou l'était avant elle, quand la sortie est restée due) :
+        // Le parcours reprend par la branche RÉELLEMENT DUE, portée par la ligne réclamée : `sortie:echec`
+        // pour une session encore `en_cours` (elle n'en a pas d'autre), la sortie déjà décidée pour une
+        // session close dont l'application a échoué. La session est DÉJÀ close à ce stade, donc
         // `sortirDuBlocAgent` ne fait plus que faire avancer le run, et ne fait rien s'il a déjà avancé.
         sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, t.sortie).then(() => {}),
         // La sortie est passée : la marque tombe, et la ligne cesse d'être réclamable. Sans ce câblage, la

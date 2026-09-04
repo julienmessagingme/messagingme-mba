@@ -109,6 +109,16 @@ describe('fetchUrlBorne', () => {
     await expect(borne(boucle)('https://www.exemple.fr/faq')).rejects.toThrow('trop de redirections');
   });
 
+  it('🔴 une page dont le FLUX a lâché n’est pas une page vide', async () => {
+    // `lireCorpsBorne` rendait `texte: ''` aussi bien pour un corps vide que pour une connexion coupée. Sans
+    // ce refus, on importerait en base de connaissance un document tronqué que personne ne saurait relire, et
+    // l'agent répondrait ensuite à partir de ce vide.
+    const coupe = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(c) { c.enqueue(new Uint8Array([60, 112, 62])); c.error(new Error('connexion coupée')); },
+    }), { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch;
+    await expect(borne(coupe)('https://www.exemple.fr/faq')).rejects.toThrow('interrompue');
+  });
+
   it('refuse une page qui dépasse le plafond, même si elle ment sur sa taille', async () => {
     const gros = 'x'.repeat(2_000_001);
     const impl = (async () => reponse(200, { 'content-type': 'text/html' }, gros)) as unknown as typeof fetch;

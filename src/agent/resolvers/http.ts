@@ -55,6 +55,7 @@ const MESSAGES: Record<string, string> = {
   indispo: 'le système du client n’a pas répondu',
   illisible: 'le système du client a répondu dans un format inattendu',
   trop_gros: 'la réponse du système du client est trop volumineuse',
+  coupe: 'le système du client a interrompu sa réponse en cours d’envoi',
   redirige: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur',
   interne: 'l’adresse de ce connecteur n’est pas joignable depuis notre infrastructure',
 };
@@ -206,6 +207,30 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     const corps = await lireCorpsBorne(res, outil.maxBytes);
     if (corps.trop_gros) {
       return { ok: false, contenu: { erreur: MESSAGES.trop_gros }, erreur: 'trop_gros', httpStatus: res.status };
+    }
+    /**
+     * 🔴 UN FLUX COUPÉ MARQUAIT LA SOURCE COMME SAINE (2026-09-04), et ce n'est PAS le défaut que ce correctif
+     * a d'abord prétendu fermer. La première version de ce commentaire affirmait que le modèle recevait un
+     * faux succès : c'est faux sur CE chemin, et il a fallu le mesurer pour s'en apercevoir. Un corps vide
+     * fait lever `JSON.parse('')`, donc l'étape 9 attrapait déjà le cas et rendait `ok: false / illisible`.
+     * Le modèle n'a jamais rien conclu de travers ici.
+     *
+     * Ce qui était réellement cassé est plus discret et plus durable : ce même `catch` appelle
+     * `marquerEpreuve(..., true)`, donc une source dont la connexion LÂCHE à chaque appel était marquée SAINE
+     * dans la console, et sa dernière erreur effacée. Le connecteur mourait sans que rien ne devienne rouge,
+     * ce qui est exactement ce que `marquerEpreuve` existe pour empêcher.
+     *
+     * ⚠️ La leçon vaut plus que la ligne : **un correctif juste peut porter une justification fausse**, et une
+     * justification fausse est pire qu'aucune, parce qu'elle sera recopiée. Celle-ci a été trouvée par une
+     * relecture adverse qui a EXÉCUTÉ le chemin, pas par une relecture qui l'a lu.
+     */
+    if (corps.casse) {
+      // Marquée en ÉCHEC, comme ses voisines « injoignable » et « redirection refusée » : c'est ce qui rend un
+      // connecteur mort visible dans la console avant qu'un contact ne le découvre.
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'réponse interrompue').catch(() => {});
+      // Clé de journal DISTINCTE d'`illisible` : sans elle, la seule trace persistante ne séparait toujours
+      // pas une coupure de connexion d'un JSON invalide, qui est pourtant l'objet même de ce drapeau.
+      return { ok: false, contenu: { erreur: MESSAGES.coupe }, erreur: 'coupe', httpStatus: res.status };
     }
     const brut = corps.texte;
 

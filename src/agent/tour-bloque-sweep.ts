@@ -52,7 +52,7 @@ export interface TourBloqueSweepDeps {
    * RÉCLAME et clôt en UNE requête les sessions dont le tour est en vol depuis trop longtemps.
    *
    * La réclamation et la clôture ne se séparent pas : entre les deux, un second worker verrait la même
-   * session et ferait sortir le parcours une seconde fois par sa branche d'échec.
+   * session et ferait sortir le parcours une seconde fois par la branche que porte sa ligne.
    *
    * ⚠️ La réclamation POSE UN BAIL, elle n'efface pas la marque (contre-audit du 2026-09-03) : tant que la
    * sortie n'a pas été appliquée, la ligne doit rester réclamable par le passage suivant. Elle ramasse donc
@@ -61,12 +61,16 @@ export interface TourBloqueSweepDeps {
    */
   reclamer(ageSecondes: number, limite: number): Promise<TourBloque[]>;
   /**
-   * Fait SORTIR le parcours par la branche d'échec du bloc agent. Sans elle, la session serait close mais le
-   * run resterait en attente sur le bloc : on aurait rangé la table sans rien rendre au contact.
+   * Fait SORTIR le parcours par la branche RÉELLEMENT DUE, celle que porte `tour.sortie`. Sans elle, la
+   * session serait close mais le run resterait en attente sur le bloc : on aurait rangé la table sans rien
+   * rendre au contact.
+   *
+   * ⚠️ L'implémentation DOIT utiliser `tour.sortie`, jamais un code en dur. Ce JSDoc a dit « la branche
+   * d'échec » pendant une journée, alors que la ligne juste en dessous disait l'inverse : un lecteur qui
+   * l'aurait cru pouvait recâbler `SORTIE_ECHEC` et réintroduire le défaut de la veille. Un commentaire qui
+   * contredit sa propre note est plus dangereux qu'un commentaire absent.
    */
   sortir(tour: TourBloque): Promise<void>;
-  // ⚠️ L'implémentation DOIT utiliser `tour.sortie`, pas un code en dur : c'est ce champ qui porte la branche
-  // réellement due, et le passer de travers change le sens métier du scénario pour le contact.
   /**
    * La sortie est appliquée : la marque tombe, et la ligne cesse d'être réclamable.
    *

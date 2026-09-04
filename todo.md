@@ -156,9 +156,10 @@ d'être enfilé, et un balayage bâti là-dessus aurait tué des conversations v
 ~~**A3 — les deux bornes de sécurité des connecteurs HTTP.**~~ **LIVRÉ le 2026-09-03.** Résolution DNS
 contrôlée (`src/lib/adresse-privee.ts`) sur les QUATRE chemins qui appellent une URL saisie par un client (le
 compte a dit trois pendant un jour, l'épreuve d'une SOURCE manquait) : le
-connecteur en conversation, le bouton « Test » de la console, et la lecture de page distante (à chaque saut de
-redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les mêmes, en OCTETS et non en unités
-UTF-16. ⚠️ **Ce qui reste ouvert, et il faut le dire** : la vérification a lieu AVANT l'appel et `fetch` refait
+connecteur en conversation, le bouton « Test » d'une REQUÊTE, le bouton « éprouver » une SOURCE, et la lecture
+de page distante (à chaque saut de redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les
+TROIS qui lisent un corps, en OCTETS et non en unités UTF-16 (l'épreuve d'une source ne regarde que le
+statut : dire « sur les mêmes » après avoir monté le compte à quatre serait faux). ⚠️ **Ce qui reste ouvert, et il faut le dire** : la vérification a lieu AVANT l'appel et `fetch` refait
 sa propre résolution, donc le « DNS rebinding » (répondre public puis privé) n'est pas fermé. Le fermer exige
 de fournir son PROPRE résolveur à la couche HTTP (`undici`, `connect.lookup`), donc une dépendance directe de
 plus. Le scénario suppose un administrateur client hostile, qui a déjà son compte : le rapport ne le justifie

@@ -51,7 +51,7 @@ const CTX = {
 
 function harnais(over: {
   source?: SourceAppel | null;
-  reponse?: { status: number; body: string; contentType?: string };
+  reponse?: { status: number; body: string | ReadableStream<Uint8Array>; contentType?: string };
   outil?: OutilDefini;
   requete?: RequeteConnecteur | null;
   ctx?: Partial<typeof CTX>;
@@ -125,6 +125,63 @@ describe('résolveur http : le chemin nominal', () => {
     const { resolveur, entree, epreuves } = harnais();
     await resolveur(entree);
     expect(epreuves).toEqual([{ ok: true }]);
+  });
+});
+
+/**
+ * UNE CONNEXION QUI LÂCHE N'EST PAS UN JSON INVALIDE (2026-09-04).
+ *
+ * ⚠️ Ce bloc a d'abord porté une justification FAUSSE, et elle mérite d'être racontée plutôt qu'effacée. Elle
+ * affirmait que le modèle recevait un faux succès sur ce chemin. C'est vrai du bouton « Test », pas d'ici :
+ * un corps vide fait lever `JSON.parse('')`, donc l'étape 9 attrapait déjà le cas et rendait `ok: false`.
+ *
+ * Ce qui était réellement cassé, c'est que ce même `catch` marque la source comme SAINE. Un connecteur dont
+ * la connexion lâche à chaque appel restait donc VERT dans la console, sa dernière erreur effacée à chaque
+ * fois. C'est ça que ces tests tiennent.
+ */
+describe('résolveur http : une connexion qui lâche n’est pas un JSON invalide', () => {
+  const fluxCasse = () => new ReadableStream<Uint8Array>({
+    start(c) { c.enqueue(new Uint8Array([123, 34, 97])); c.error(new Error('connexion coupée')); },
+  });
+
+  it('🔴 un flux COUPÉ est un échec, et il marque la source en ÉCHEC', async () => {
+    const { resolveur, entree, epreuves } = harnais({ reponse: { status: 200, body: fluxCasse() } });
+    const r = await resolveur(entree);
+    expect(r.ok, 'un corps illisible ne doit jamais passer pour un succès').toBe(false);
+    expect(JSON.stringify(r.contenu)).toContain('interrompu');
+    // 🔴 LE VRAI POINT DU CORRECTIF : avant, ce cas passait par le `catch` du JSON, qui marque la source
+    // SAINE. Un connecteur mort restait vert dans la console jusqu'à ce qu'un contact le découvre.
+    expect(epreuves.at(-1)).toMatchObject({ ok: false });
+  });
+
+  it('🔴 et la trace persistante le DISTINGUE d’un JSON invalide', async () => {
+    // Sans clé de journal distincte, le drapeau n'aurait servi qu'à l'instant de l'appel : la seule trace
+    // qui survit aurait continué de confondre les deux causes, donc l'exploitation aussi.
+    const casse = await (await harnais({ reponse: { status: 200, body: fluxCasse() } })).resolveur(
+      (await harnais({ reponse: { status: 200, body: fluxCasse() } })).entree,
+    );
+    const invalide = await (await harnais({ reponse: { status: 200, body: 'pas du json' } })).resolveur(
+      (await harnais({ reponse: { status: 200, body: 'pas du json' } })).entree,
+    );
+    expect(casse.erreur).toBe('coupe');
+    expect(invalide.erreur).toBe('illisible');
+  });
+
+  it('un corps JSON valide reste un succès : le témoin', async () => {
+    // Sans lui, les deux tests précédents seraient satisfaits par un refus systématique.
+    const { resolveur, entree, epreuves } = harnais({ reponse: { status: 200, body: '{"statut":"ok"}' } });
+    const r = await resolveur(entree);
+    expect(r.ok).not.toBe(false);
+    expect(epreuves.at(-1)).toMatchObject({ ok: true });
+  });
+
+  it('⚠️ un corps VIDE reste traité comme un JSON invalide, PAS comme une coupure', async () => {
+    // La frontière exacte, et elle est contre-intuitive : un serveur qui répond 200 avec zéro octet n'a pas
+    // coupé sa connexion, il a répondu quelque chose d'inexploitable. Les deux cas restent distincts.
+    const { resolveur, entree } = harnais({ reponse: { status: 200, body: '' } });
+    const r = await resolveur(entree);
+    expect(r.ok).toBe(false);
+    expect(r.erreur).toBe('illisible');
   });
 });
 

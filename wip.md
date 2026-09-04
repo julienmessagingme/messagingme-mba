@@ -137,8 +137,9 @@ entièrement en mémoire avant d'être mesuré, en unités UTF-16 plutôt qu'en 
 
 Les deux bornes sont posées sur les QUATRE chemins qui appellent une adresse client (trois à l'origine,
 l'épreuve d'une SOURCE manquait) : le connecteur en
-conversation, le bouton « Test » de la console (le plus facile à atteindre, il était oublié dans l'énoncé), et
-la lecture de page distante, à chaque saut de redirection.
+conversation, le bouton « Test » d'une REQUÊTE, le bouton « éprouver » une SOURCE, et la lecture de page
+distante à chaque saut de redirection. ⚠️ Seule la borne de RÉSOLUTION vaut pour les quatre : l'épreuve d'une
+source ne lit aucun corps, donc la lecture bornée ne concerne que les trois autres.
 
 ⚠️ **Le « DNS rebinding » n'est PAS fermé** et c'est écrit noir sur blanc dans `todo.md` : `fetch` refait sa
 propre résolution après la nôtre. Le fermer demande un résolveur maison via une dépendance de plus, pour un
@@ -153,7 +154,8 @@ en attente sans échéance. Le contact n'avait jamais de réponse, et rien au mo
 
 Un balayage à la minute réclame et clôt en UNE requête les tours en vol depuis plus de QUINZE minutes (dix à
 l'origine, corrigé le 2026-09-03), puis fait
-sortir le parcours par la branche d'échec du bloc, celle que le client a rédigée. **On ne rejoue pas** : le
+sortir le parcours par la sortie RÉELLEMENT DUE (« branche d'échec en dur » jusqu'au 2026-09-03, ce qui était
+juste tant que le balayage ne réclamait que des sessions `en_cours`). **On ne rejoue pas** : le
 worker a pu mourir APRÈS l'envoi, et rien en base ne permet de le savoir.
 
 ⚠️ **Le piège était le faux positif.** « Session en cours + run en attente + aucune échéance » décrit aussi,

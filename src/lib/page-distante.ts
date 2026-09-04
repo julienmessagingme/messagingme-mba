@@ -86,6 +86,9 @@ export function fetchUrlBorne(
       // couleur, mais il ne peut pas servir de garde à lui seul : un serveur ment.
       const corps = await lireCorpsBorne(res, MAX_PAGE_OCTETS);
       if (corps.trop_gros) throw new Error('page trop lourde');
+      // Même raison que le plafond juste au-dessus : une page dont le flux a lâché n'est pas une page vide.
+      // L'importer en base de connaissance ferait entrer un document tronqué que personne ne saurait relire.
+      if (corps.casse) throw new Error('la lecture de la page a été interrompue');
       return { status: res.status, contentType: res.headers.get('content-type') ?? '', body: corps.texte };
     }
     throw new Error('trop de redirections');
