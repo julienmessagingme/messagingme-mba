@@ -259,6 +259,17 @@ async function main(): Promise<void> {
 
   console.log(`Cible : ${CIBLE}`);
   console.log(`${routes.length} routes inventoriées depuis le serveur construit, dont ${gardees.length} devant exiger une session.`);
+  // `--inventaire` imprime ce qui est attaqué et ce qui est tenu pour ouvert, puis sort. Sert à COMPARER deux
+  // environnements : la CI a inventorié une route gardée de MOINS que ce poste (168 contre 169) sans qu'on
+  // ait su laquelle, et un écart d'inventaire est un écart de COUVERTURE, donc une chose à pouvoir trancher.
+  if (args.get('inventaire') === 'true') {
+    for (const r of routes) {
+      const raison = estOuverte(r.chemin);
+      console.log(`${raison === null ? 'GARDEE ' : 'ouverte'} ${r.methodes.join('|').padEnd(18)} ${r.chemin}${raison === null ? '' : `   <- ${raison}`}`);
+    }
+    await app.close();
+    return;
+  }
   if (!LOCAL) {
     const ecartees = gardees.filter((r) => !jouables(r)).length;
     console.log(`${ecartees} routes destructrices ÉCARTÉES (cible distante).`);

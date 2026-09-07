@@ -264,6 +264,14 @@ routes authentifiées, est FERMÉ le jour même. Restent trois choses, par ordre
 `scripts/auto-attaque.mts`, dans la CI. 540 sondes, inventaire pris sur le serveur construit, vérifiée dans
 les deux sens (4 failles plantées, 4 détections). Détail dans `documentation.md`.
 
+**⚠️ Question ouverte, petite mais réelle : la CI inventorie UNE route gardée de moins que ce poste** (168
+contre 169, donc 148 gardées contre 149). Les deux runs sont verts et le run local couvre le sur-ensemble,
+mais un écart d'inventaire est un écart de COUVERTURE : une route qui ne se monte pas en CI est une route que
+la CI n'attaque jamais. Ce n'est PAS le `.env` (vérifié : même table de routes avec et sans), ni les routes
+`/auth` (les 9 sont là), ni la version de Fastify (5.12.1 des deux côtés). Reste la version de Node (24 ici,
+22 en CI). `npx tsx scripts/auto-attaque.mts --inventaire` imprime la liste complète : la comparer avec celle
+d'un run de CI tranche en dix secondes.
+
 **Ce qu'elle ne couvre PAS, et qui reste à faire un jour** : elle n'a jamais tourné contre la PRODUCTION.
 Le mode distant est écrit et gardé, mais la couche NPM / Cloudflare / CORS réel n'a donc pas encore été
 attaquée. Il faut pour ça un compte de test dédié dans un espace jetable. C'est une demi-heure, et c'est le
