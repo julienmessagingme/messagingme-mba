@@ -267,15 +267,24 @@ production : forger un JWT visant un `tenantId` voisin et taper les 36 modules, 
 avec un compte agent, rejouer un webhook Meta signé de travers, poster un `/w/:code` sans secret, marteler
 une route authentifiée pour voir où ça casse maintenant que le plafond existe. Un script, une soirée.
 
-### 🟡 Remonter les dépendances de `web/`
+### ✅ Dépendances de `web/` remontées (2026-09-07)
 
-Le backend est à **zéro vulnérabilité en production**. `web/` en porte douze, mais les lire avant de
-s'alarmer : les deux avis « high » de `next@15.5.20` ne s'appliquent pas ici (aucun `'use server'` dans le
-dépôt, donc pas de Server Actions, et Vercel n'est pas un « custom server »), et `postcss`, `browserslist`,
-`js-yaml`, `brace-expansion`, `vitest` sont des outils de BUILD ou de TEST, absents du runtime déployé.
-Un `npm update` sur `web/` avec build de vérification, une heure. ⚠️ **Ne pas monter `vitest` en 5.0 dans la
-foulée** : saut majeur qui toucherait 297 fichiers de test pour fermer un avis qui vise l'UI Vitest, qu'on
-n'expose pas.
+`npm update` (plages semver respectées, `package.json` inchangé, seul le lock bouge) : **de 12
+vulnérabilités à 7**. Fermées : `sharp`, `nanoid`, `js-yaml`, `browserslist`, `brace-expansion`, et `next`
+15.5.20 -> 15.5.25 qui retombe de « high » à « moderate ». Build compilé, 213 tests web verts.
+
+🔴 **Les 7 restantes ne sont pas ATTEIGNABLES ici, et c'est la seule raison de les laisser.** Ne pas les
+rouvrir sans relire ceci :
+
+- **`postcss`** : le nôtre est en 8.5.28, corrigé. Ce qui reste est le `postcss@8.4.31` que **Next embarque
+  en interne**. Les trois avis portent sur un `sourceMappingURL` attaquant dans un commentaire CSS : notre
+  CSS est le nôtre, compilé sur Vercel, personne d'extérieur n'en fournit à notre build.
+- **`vitest` / `vite` / `esbuild` / `vite-node`** : l'avis critique vise l'**UI de Vitest**
+  (`vitest --ui`), qu'on ne lance jamais, dans une dépendance de DEV qui n'est pas déployée.
+
+Le seul correctif que npm propose pour les deux premiers est **next 16**, une majeure. À traiter comme un
+chantier à part, avec `tailwindcss` 4, `typescript` 7, `eslint` 10 et `vitest` 5, jamais au passage d'un
+`npm update`.
 
 ### 🟡 Trois broutilles relevées au passage
 
