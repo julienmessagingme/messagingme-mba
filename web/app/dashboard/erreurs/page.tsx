@@ -12,9 +12,11 @@ import { presetRange } from '@/lib/range';
 /**
  * Analytics > Quantitatif > **Erreurs** : ce que Meta a refusé, et sur quel template.
  *
- * ⚠️ Le décompte ne couvre aujourd'hui que les CAMPAGNES : la colonne d'erreur n'existe que sur
- * `campaign_recipients`. Un envoi fait depuis un scénario ou depuis l'inbox n'y apparaît donc pas, et un
- * écran vide ne veut pas dire « aucune erreur ». La carte le dit elle-même, plutôt que de laisser conclure.
+ * ⚠️ Le décompte ne couvre que les CAMPAGNES, et c'est MESURÉ, pas supposé (2026-09-07) : `error_code`
+ * n'existe que sur `campaign_recipients` (migration 0020), `conversation_messages` n'a aucune colonne
+ * d'erreur, et le chemin d'envoi d'un scénario ne journalise que le succès. Le seul journal d'échec hors
+ * campagne, `workflow_advance_failures`, enregistre une panne d'AVANCE, pas un refus de livraison. La carte
+ * le dit elle-même, plutôt que de laisser conclure « aucune erreur » d'un écran vide.
  */
 export default function ErreursPage() {
   return <AppShell active="quanti-erreurs">{(session) => <ErreursInner session={session} />}</AppShell>;
@@ -48,7 +50,7 @@ function ErreursInner({ session }: { session: Session }) {
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
       ) : (
-        <ErrorBreakdownCard errors={errors} />
+        <ErrorBreakdownCard errors={errors} tenantId={session.tenantId} range={range} />
       )}
     </div>
   );

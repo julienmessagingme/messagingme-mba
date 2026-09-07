@@ -1,12 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdownRow, CostFilter } from '../stats/store.pg';
+import type { ErreurLivraison } from '../ops/erreurs-livraison.pg';
+import type { FiltreCampagneOuTemplate } from '../stats/store.pg';
 import type { CostSeries } from '../stats/cost';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
 import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter } from '../stats/conversation-stats.pg';
-import { scopeTenant } from './scope';
+import { scopeTenant, estUuid } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
 
@@ -38,6 +40,19 @@ export interface StatsRouteDeps {
   getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
   /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
   getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
+  /**
+   * Les contacts touchés par UN code d'erreur, filtrables par campagnes OU templates.
+   *
+   * 🔴 C'EST LE JOURNAL DES ERREURS DE LIVRAISON QUI RÉPOND (`PgErreursLivraisonStore.lister`), pas une
+   * requête propre à Analytics. Une seconde requête a été écrite puis SUPPRIMÉE le 2026-09-07 : elle
+   * comptait une population voisine mais différente, et les deux écrans (Analytics et Paramètres) portent
+   * le même titre. Un client aurait comparé, et l'un des deux serait passé pour faux.
+   *
+   * OPTIONNELLE : un câblage qui ne la fournit pas rend 503, pas une liste vide. Une liste vide se lirait
+   * « personne n'a été touché », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
+   * Même choix que `getWorkflowNodeCounts` juste en dessous.
+   */
+  getErrorContacts?(tenantId: string, range: DateRange, code: number, filter: FiltreCampagneOuTemplate): Promise<ErreurLivraison[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
   getCostSeries(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostSeries>;
   /** Agrégats d'analyse de conversation (Pièce 1) sur la plage. */
@@ -60,6 +75,29 @@ export interface StatsRouteDeps {
 function csvBorne(v: unknown): string[] {
   if (typeof v !== 'string' || v.trim() === '') return [];
   return [...new Set(v.split(',').map((x) => x.trim()).filter((x) => x !== ''))].slice(0, 200);
+}
+
+/**
+ * Les identifiants de campagne d'un filtre, ou `null` si l'un d'eux n'en est pas un.
+ *
+ * 🔴 CES VALEURS PARTENT DANS UN `$n::uuid[]`, et Postgres refuse la conversion À L'EXÉCUTION : un
+ * identifiant mal formé sortait donc en 500, dont Cloudflare remplace le corps par sa propre page. Le client
+ * ne voyait même pas ce qu'on lui reprochait. On répond 400.
+ *
+ * ⚠️ Et on REFUSE plutôt que de filtrer les mauvaises valeurs : les jeter rendrait la liste vide, or une
+ * liste vide vaut « tout » ici. Un filtre fautif afficherait alors PLUS que ce qui était demandé, en
+ * silence, ce qui est pire qu'une erreur.
+ */
+/**
+ * Plafond de la liste des contacts touches. Un code d'erreur peut frapper une campagne entiere (5 000
+ * destinataires) : sans borne, un clic sur une ligne ramenerait tout, et l'ecran ne sait de toute facon pas
+ * afficher utilement davantage. On demande UNE LIGNE DE PLUS au journal pour savoir qu'on tronque, et le dire.
+ */
+export const PLAFOND_CONTACTS_ERREUR = 200;
+
+function idsCampagnes(v: unknown): string[] | null {
+  const ids = csvBorne(v);
+  return ids.every(estUuid) ? ids : null;
 }
 
 export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requireAuth?: Guard): void {
@@ -106,6 +144,46 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
   });
 
   /**
+   * QUI a été touché par un code d'erreur, sur la plage, filtrable ?campaignIds= / ?templateNames=.
+   *
+   * ⚠️ Le code arrive dans le CHEMIN, donc en texte : il est converti et VALIDÉ ici. Sans ça, un `NaN`
+   * partirait en paramètre de requête et Postgres refuserait la conversion en `int` au moment de
+   * l'exécution, c'est-à-dire en 500 plutôt qu'en 400. Cloudflare remplace le corps d'un 5xx par sa propre
+   * page : l'appelant n'aurait même pas vu le message.
+   *
+   * `tronque` dit que la liste est plafonnée. Le store rend une ligne de plus que le plafond pour qu'on
+   * puisse le savoir ; on la retire avant d'envoyer, sans quoi l'écran afficherait 201 lignes en annonçant
+   * un plafond de 200.
+   */
+  app.get('/tenants/:tenantId/stats/errors/:code/contacts', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getErrorContacts) return reply.code(503).send({ error: 'contacts touches non configures' });
+    const { code } = req.params as { code: string };
+    // `Number.parseInt` s'arrete au premier caractere non chiffre : « 131049abc » passerait. On exige donc
+    // que le segment soit ENTIEREMENT numerique, sinon deux adresses differentes designeraient la meme chose.
+    if (!/^\d{1,9}$/.test(code)) return reply.code(400).send({ error: 'code invalide' });
+    const codeNum = Number.parseInt(code, 10);
+    const q = req.query as Record<string, unknown>;
+    const r = parseRange(q);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    const campaignIds = idsCampagnes(q.campaignIds);
+    if (campaignIds === null) return reply.code(400).send({ error: 'campaignIds invalide' });
+    const templateNames = csvBorne(q.templateNames);
+    const filter: FiltreCampagneOuTemplate = {
+      ...(campaignIds.length ? { campaignIds } : {}),
+      ...(templateNames.length ? { templateNames } : {}),
+    };
+    const rows = await deps.getErrorContacts(tenant, r.range, codeNum, filter);
+    const tronque = rows.length > PLAFOND_CONTACTS_ERREUR;
+    return reply.code(200).send({
+      contacts: tronque ? rows.slice(0, PLAFOND_CONTACTS_ERREUR) : rows,
+      tronque,
+      plafond: PLAFOND_CONTACTS_ERREUR,
+    });
+  });
+
+  /**
    * Mesures d'un scénario BLOC PAR BLOC, sur une plage. C'est la source des tableaux d'Analytics.
    *
    * Rend les compteurs BRUTS (par bloc, par nature, par choix), pas un tableau tout fait : c'est l'écran qui
@@ -132,8 +210,12 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     const q = req.query as Record<string, unknown>;
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
+    // Même garde que la liste des contacts touchés : un identifiant mal formé sortait en 500 (refus de
+    // conversion `::uuid[]` chez Postgres), donc en page d'erreur Cloudflare côté client.
+    const idsCout = idsCampagnes(q.campaignIds);
+    if (idsCout === null) return reply.code(400).send({ error: 'campaignIds invalide' });
     const filter: CostFilter = {
-      ...(csvBorne(q.campaignIds).length > 0 ? { campaignIds: csvBorne(q.campaignIds) } : {}),
+      ...(idsCout.length > 0 ? { campaignIds: idsCout } : {}),
       ...(csvBorne(q.templateNames).length > 0 ? { templateNames: csvBorne(q.templateNames) } : {}),
     };
     return reply.code(200).send(await deps.getCostSeries(tenant, r.range, filter));

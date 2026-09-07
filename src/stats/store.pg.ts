@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE } from '../inbox/origine';
+import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 
 export interface DailyPoint {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
@@ -39,7 +40,18 @@ export interface ErrorBreakdownRow {
   count: number;
   /** Template de la campagne à l'origine des erreurs (null si non renseigné). */
   templateName: string | null;
+  /**
+   * La campagne d'où viennent ces erreurs. Elle n'est JAMAIS nulle : la seule population capable de porter
+   * une erreur est `campaign_recipients`, jointe à sa campagne (voir le docblock de `getErrorBreakdown`).
+   *
+   * ⚠️ Ces deux champs rendent la ligne PLUS FINE qu'avant : une par (code, template, campagne) au lieu
+   * d'une par (code, template). L'écran agrège déjà par code, donc l'affichage sans filtre est inchangé ;
+   * ce qui change, c'est qu'il peut désormais filtrer par campagne sans redemander au serveur.
+   */
+  campaignId: string;
+  campaignName: string;
 }
+
 
 /** Volume d'envois de campagne par (jour, catégorie) — base du graphe de coût estimé. */
 export interface CostVolumeRow {
@@ -55,17 +67,27 @@ export interface CostVolumeRow {
 }
 
 /**
- * Filtre optionnel du graphe de coût : DES campagnes OU DES templates. Plusieurs valeurs -> une série
- * COMPILÉE sur l'ensemble (les volumes s'additionnent jour par jour), pas la première de la liste.
+ * Le filtre commun des écrans d'Analytics : DES campagnes OU DES templates. Plusieurs valeurs -> un résultat
+ * COMPILÉ sur l'ensemble (les volumes s'additionnent jour par jour), pas la première valeur de la liste.
  *
  * Les deux axes restent MUTUELLEMENT EXCLUSIFS côté écran : combiner « campagne A » et « template B » ne
  * décrirait pas une union mais leur intersection, qui ne veut rien dire pour un opérateur. Une liste vide
  * équivaut à « tout », comme l'absence de filtre.
+ *
+ * ⚠️ Les deux axes ne désignent pas exactement la même population selon l'écran : côté coût, l'axe template
+ * ramène AUSSI les envois hors campagne, alors qu'aucune erreur ne peut exister hors campagne. Le filtre est
+ * le même, ce qu'il filtre ne l'est pas.
  */
-export interface CostFilter {
+export interface FiltreCampagneOuTemplate {
   campaignIds?: string[];
   templateNames?: string[];
 }
+/**
+ * Le filtre du graphe de coût. ALIAS et non copie : la liste des contacts touchés filtre sur les deux mêmes
+ * axes, et deux interfaces jumelles auraient divergé au premier axe ajouté. Le nom historique reste, il est
+ * importé par le câblage et par les routes.
+ */
+export type CostFilter = FiltreCampagneOuTemplate;
 
 export interface DashboardStats {
   /** CUMULATIF : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
@@ -105,7 +127,7 @@ export interface DashboardStats {
  * `actu_cin_ma_2` : 0 côté coût, 7 côté détail, et sept autres templates dans le même cas. Le client
  * filtrait sur un template réellement envoyé et obtenait un graphe vide.
  *
- * Même doctrine que `RECIPIENT_FAILED_SQL` (`src/campaign/store.pg.ts`) : un fragment SQL partagé, jamais
+ * Même doctrine que `RECIPIENT_FAILED_SQL` (`src/campaign/echecs-sql.ts`) : un fragment SQL partagé, jamais
  * deux copies, parce que deux copies divergent à la première correction.
  *
  * Rend une ligne PAR ENVOI, avec de quoi agréger des deux façons dont on a besoin :
@@ -226,7 +248,7 @@ const TZ = STATS_TZ;
  *
  * Sorti en fragment parce que le funnel s'en sert DEUX fois, pour « répondu » et pour « a tapé un bouton ».
  * Deux copies divergeraient à la première correction de l'attribution. Même doctrine que
- * `RECIPIENT_FAILED_SQL` (`src/campaign/store.pg.ts`).
+ * `RECIPIENT_FAILED_SQL` (`src/campaign/echecs-sql.ts`).
  *
  * ⚠️ S'utilise UNIQUEMENT dans une requête où `c` est `campaigns` et `r` est `campaign_recipients`.
  * `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
@@ -469,25 +491,39 @@ export class PgStatsStore {
   }
 
   /**
-   * Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant). Ancré sur
-   * coalesce(delivery_updated_at, sent_at, claimed_at) pour capter à la fois les échecs de LIVRAISON
-   * (delivery_updated_at) et d'ENVOI (claimed_at, sent_at null). Trié par occurrences décroissantes.
+   * Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), trié par occurrences décroissantes.
+   *
+   * Population et ancrage viennent de `echecs-sql.ts`, comme le journal d'exploitation et les compteurs de
+   * campagne : c'est ce qui garantit qu'un clic sur « 12 » ouvre exactement 12 lignes dans la liste des
+   * contacts touchés, laquelle est servie par `PgErreursLivraisonStore.lister`.
+   *
+   * 🔴 CE QUE CE BREAKDOWN NE PEUT PAS MONTRER, parce qu'il est PAR CODE : un échec sans code Meta. Il en
+   * existe (`src/campaign/engine.ts` marque `failed` sans code quand un template ou un carrousel est
+   * inenvoyable, et toute panne réseau fait de même) : **2 sur 25** en production, mesurés le 2026-09-07.
+   * Ils vivent dans le journal des erreurs de livraison (Paramètres), et l'écran d'Analytics doit le DIRE
+   * plutôt que de laisser croire à un inventaire complet.
    */
   async getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]> {
     const { from, to } = range;
-    const res = await this.pool.query<{ code: number; template_name: string | null; count: string }>(
+    const res = await this.pool.query<{
+      code: number; template_name: string | null; campaign_id: string; campaign_name: string; count: string;
+    }>(
       `with ${BOUNDS_CTE}
-       select r.error_code as code, c.template_name as template_name, count(*)::int as count
+       select r.error_code as code, c.template_name as template_name,
+              c.id as campaign_id, c.name as campaign_name, count(*)::int as count
        from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
-       where c.tenant_id = $1 and r.error_code is not null
-         and coalesce(r.delivery_updated_at, r.sent_at, r.claimed_at) >= b.start_ts
-         and coalesce(r.delivery_updated_at, r.sent_at, r.claimed_at) < b.end_ts
+       where c.tenant_id = $1 and r.error_code is not null and (${RECIPIENT_FAILED_SQL})
+         and ${INSTANT_ECHEC_SQL} >= b.start_ts
+         and ${INSTANT_ECHEC_SQL} < b.end_ts
          and ($5::text is null or c.template_name = $5::text)
-       group by r.error_code, c.template_name
+       group by r.error_code, c.template_name, c.id, c.name
        order by count desc, code asc`,
       [tenantId, from, to, TZ, templateName ?? null],
     );
-    return res.rows.map((r) => ({ code: Number(r.code), count: Number(r.count), templateName: r.template_name }));
+    return res.rows.map((r) => ({
+      code: Number(r.code), count: Number(r.count), templateName: r.template_name,
+      campaignId: r.campaign_id, campaignName: r.campaign_name,
+    }));
   }
 
   /**

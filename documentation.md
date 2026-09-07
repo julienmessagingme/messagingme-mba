@@ -308,10 +308,22 @@ de `date*86400`). `PgStatsStore` : bornes SQL EXCLUSIVES (`(to+1)@TZ`), `IS DIST
 obligatoire (delivery_status null souvent). Routes (admin-only) : `/stats`, `/stats/templates`,
 `/stats/campaign-funnel?campaignId` (sent/delivered/read/**replied**/failed ; « replied » = inbound après
 sent_at attribué au dernier envoi, join `to_e164`↔`wa_id`), `/stats/errors?templateName` (group by
-`(error_code, template_name)`, filtre template optionnel côté serveur ; l'UI agrège côté client avec un
-dropdown « Tous les templates », ancré `coalesce(delivery_updated_at,sent_at,claimed_at)` ; portée =
-campagnes, aucune colonne d'erreur sur `conversation_messages`), `/stats/cost?campaignId&templateName` (coût/jour
-estimé). `error_code` (0020) alimenté par `extractDelivery` (webhook) + `markResult` (échec d'envoi,
+`(error_code, template_name, campaign_id)` depuis le 2026-09-07 : la CAMPAGNE voyage avec la ligne, ce qui
+permet à l'écran de filtrer par campagne OU par template sans redemander au serveur, axes exclusifs ; filtre
+template optionnel côté serveur, l'UI agrège par code), `/stats/errors/:code/contacts?from&to&campaignIds&templateNames`
+(**QUI** a été touché, plafonné à 200 et le dit quand il tronque), `/stats/cost?campaignId&templateName`
+(coût/jour estimé).
+🔴 **Les contacts touchés sont servis par `PgErreursLivraisonStore.lister`, le journal de `/parametres`, pas
+par une requête propre à Analytics.** Une seconde requête a été écrite puis SUPPRIMÉE le 2026-09-07 : elle
+comptait une population voisine, et les deux écrans portent le même titre. Population et date vivent depuis
+dans **`src/campaign/echecs-sql.ts`** (`RECIPIENT_FAILED_SQL`, `INSTANT_ECHEC_SQL`), importés par les quatre
+lecteurs (compteurs de campagne, auto-relance, journal, statistiques).
+🔴 **`claimed_at` dans l'ancrage n'est pas une précaution** : mesuré en production, **24 échecs sur 25** n'ont
+ni `sent_at` ni `delivery_updated_at` (un refus à l'envoi n'envoie rien). Le journal s'arrêtait à
+`coalesce(delivery_updated_at, sent_at)` et affichait donc une date vide pour la quasi-totalité de ses lignes.
+⚠️ **Deux trous que l'écran d'Analytics DIT** : la portée est celle des campagnes (aucune colonne d'erreur sur
+`conversation_messages`, un envoi de scénario ne journalise que son succès), et un tableau PAR CODE n'a pas de
+ligne pour un échec sans code Meta (2 sur 25 en production : template inenvoyable, panne réseau). `error_code` (0020) alimenté par `extractDelivery` (webhook) + `markResult` (échec d'envoi,
 `MetaApiError.code`). **Coût = backend** : `getCostVolume` (volume/jour/catégorie, filtrable) × tarif Meta
 (`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif). 🔴 Depuis le 2026-09-07, ce qui n'est pas chiffrable est **compté** (`nonChiffrables`) au lieu de disparaître du calcul : un envoi sans catégorie connue produisait un coût nul que l'écran affichait sans rien dire, et 22 envois de scénario du tenant Demo étaient dans ce cas.
 
@@ -1669,7 +1681,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | Résolution d'un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) | 9 copies + 1 dans `inbox/store.pg` |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | CTE des bornes de date, robuste au changement d'heure | 9 copies dans les 2 stores de stats |
 | `src/stats/store.pg.ts` -> `envoisTemplateFacturables()` | Les envois de template facturables d'une période (campagnes + hors campagne), et l'attribution d'un envoi de scénario à sa campagne | 2 requêtes qui comptaient deux populations DIFFÉRENTES : le coût estimé ratait les envois de scénario, le détail par template les comptait. Un template réellement envoyé rendait un graphe vide (mesuré le 2026-09-07). L'attribution est un PARAMÈTRE : elle est corrélée et sans index, le détail par template ne doit pas la payer pour une colonne qu'il jette. |
-| `src/campaign/store.pg.ts` -> `insertCampaignRow`, `summarySelect()`, `RECIPIENT_FAILED_SQL` | L'INSERT d'une campagne, la projection des résumés, la définition d'un échec | 2 INSERT, 2 projections |
+| `src/campaign/store.pg.ts` -> `insertCampaignRow`, `summarySelect()` | L'INSERT d'une campagne et la projection des résumés | 2 INSERT, 2 projections |
+| `src/campaign/echecs-sql.ts` -> `RECIPIENT_FAILED_SQL`, `INSTANT_ECHEC_SQL` | 🔴 La POPULATION d'un échec d'envoi (`status` OU `delivery_status`) et sa DATE. Quatre requêtes répondent à « qu'est-ce qui a échoué ? » : compteurs de campagne, auto-relance, journal d'exploitation, statistiques | le prédicat était écrit dans `campaign/store.pg.ts` et RECOPIÉ dans `ops/erreurs-livraison.pg.ts` ; l'ancrage existait en deux versions, et la plus courte rendait une date nulle pour 24 échecs sur 25 (mesuré en production le 2026-09-07). Écrit une fois, les quatre lecteurs l'importent |
 | `src/crm/contact-filters.ts` | Règles de filtrage des contacts (bornes, opérateurs, plafonds) | query params et corps JSON, alignés à la main |
 | `src/webhooks/json.ts` | `asArray`, `asRecord` (lecture défensive d'un payload Meta) | 3 copies. ⚠️ `str` reste LOCAL (null vs undefined selon le lecteur) |
 | `src/crm/identity.ts` -> `waIdOfTarget` | La règle wa_id pour une cible d'envoi | redérivée dans le moteur de campagne |
@@ -2055,7 +2068,7 @@ Vue chronologique par lot. La vue thématique correspondante est dans les sectio
 - **Scénario : AUTO-SAVE, plus de statut** : debounce ~1,2s sur [nodes,edges], **flush au démontage + beforeunload en `keepalive`** (sinon perte des dernières modifs), skip du rendu initial, planification via `doSaveRef` (le changement de langue ne déclenche pas de save), **saves sérialisés** (un PATCH à la fois, re-save si édité pendant). Colonne `status` droppée (elle était 100 % cosmétique, rien ne la lisait).
 - **Node « message rapide » (quick_message)** : bloquant comme template, action `sendQuickMessage` → `MetaClient.sendInteractive` (interactive/button, cap 3 boutons / 20 car.). **Index de branche préservé** : `reply.id = btn:<slot>` même après filtrage des titres vides (sinon mauvaise branche). Fenêtre 24h garantie par l'archi (jamais node d'entrée : campagne exige entry=template). ⚠️ Le node `flow` reste un no-op silencieux (n'envoie rien, run bloqué) → fix différé au lot Flow avancé (envoi interactif flow = sonde Meta).
 - **⚠️ Closure de wiring et arité TS** : `index.ts` câblait `(tenant, range) => store.getErrorBreakdown(tenant, range)` alors que la route passait un 3e arg → filtre `?templateName=` MORT en prod, tsc muet (arité non vérifiée), test masqué par le fake. À CHAQUE ajout de param à une interface de deps : grep toutes les implémentations (prod + fakes). Cf `brain/LEARNINGS.md`.
-- **Erreurs Meta par template** : `getErrorBreakdown(range, templateName?)` groupe par (code, template_name) ; l'UI agrège CÔTÉ CLIENT (un fetch, dropdown « Tous les templates »). Portée = campagnes (aucune colonne d'erreur sur `conversation_messages` → envois Inbox/Workflow non couverts, cf todo).
+- **Erreurs Meta par template** : `getErrorBreakdown(range, templateName?)` groupe par (code, template_name) ; l'UI agrège CÔTÉ CLIENT (un fetch, dropdown « Tous les templates »). Portée = campagnes (aucune colonne d'erreur sur `conversation_messages` → envois Inbox/Workflow non couverts, cf todo). ⚠️ **Entrée du 2026-07-16, dépassée depuis le 2026-09-07** : la ligne porte désormais aussi la CAMPAGNE, et un second axe de filtre existe. État à jour : § « Stats & analytics » plus haut. On ne réécrit pas un journal, on y pose le pointeur.
 - **Import HubSpot (#14) parké en todo** (multi-repo : scope `crm.lists.read` + re-consentement portail + client lists mm-hubspot + proxy mba).
 
 ### Gotchas / décisions (2026-07-17, Lot 7 : Flow avancé)

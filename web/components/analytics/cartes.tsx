@@ -19,10 +19,11 @@ import { BoutonPdf } from '@/components/BoutonPdf';
 import { useT, useLocale } from '@/lib/i18n';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
 import { metaCodeLabel } from '@/lib/meta-errors';
+import { formatDate } from '@/lib/day';
 import {
-  getCampaignFunnel, getCostSeries,
+  getCampaignFunnel, getCostSeries, getErrorContacts,
   type CampaignFunnel, type CampaignSummary, type CostSeries, type ErrorBreakdownRow,
-  type StatsRange, type TemplateStats,
+  type ErrorContactRow, type StatsRange, type TemplateStats,
 } from '@/lib/api';
 
 /**
@@ -316,25 +317,52 @@ export function OrigineServiceCard({ repartition }: { repartition?: { ia: number
 }
 
 /** Breakdown des codes d'erreur Meta sur la période (avec libellé FR). */
-export function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
+export function ErrorBreakdownCard({ errors, tenantId, range }: {
+  errors: ErrorBreakdownRow[];
+  tenantId: string;
+  range: StatsRange;
+}) {
   const t = useT();
   const { locale } = useLocale();
   const [tpls, setTpls] = useState<string[]>([]);
-  // Templates ayant généré des erreurs (pour le filtre). Les erreurs des envois Inbox/Workflow ne sont pas
-  // trackées (colonne d'erreur seulement sur campaign_recipients) : ce breakdown couvre les CAMPAGNES.
+  const [camps, setCamps] = useState<string[]>([]);
+  const [ouvert, setOuvert] = useState<number | null>(null);
+
+  // Les deux axes se DÉDUISENT des erreurs elles-mêmes, pas d'une liste de campagnes chargée à côté :
+  // proposer une campagne sans erreur ferait choisir un filtre qui vide l'écran sans rien expliquer.
   const templates = [...new Set(errors.map((e) => e.templateName).filter((x): x is string => !!x))].sort();
-  // Plusieurs templates -> breakdown COMPILÉ sur l'ensemble. L'agrégation par code juste en dessous s'en
+  const campagnes = [...new Map(errors.map((e) => [e.campaignId, e.campaignName])).entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  // Plusieurs valeurs -> breakdown COMPILÉ sur l'ensemble. L'agrégation par code juste en dessous s'en
   // charge déjà : elle sommait le cas « tous les templates », donc rien de neuf à écrire pour un sous-ensemble.
-  const filtered = tpls.length > 0 ? errors.filter((e) => e.templateName !== null && tpls.includes(e.templateName)) : errors;
-  // Agrège par code (somme sur les templates de la sélection : plusieurs lignes par code sinon).
+  // Les deux axes sont MUTUELLEMENT EXCLUSIFS (voir les sélecteurs) : au plus un des deux filtre ici.
+  const filtered = tpls.length > 0
+    ? errors.filter((e) => e.templateName !== null && tpls.includes(e.templateName))
+    : camps.length > 0
+      ? errors.filter((e) => camps.includes(e.campaignId))
+      : errors;
+  // Agrège par code (somme sur les lignes de la sélection : plusieurs lignes par code sinon).
   const byCode = new Map<number, number>();
   for (const e of filtered) byCode.set(e.code, (byCode.get(e.code) ?? 0) + e.count);
   const rows = [...byCode.entries()].map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count || a.code - b.code);
   const total = rows.reduce((a, e) => a + e.count, 0);
   const max = rows.reduce((m, e) => Math.max(m, e.count), 0);
+
+  /**
+   * Un filtre qui change pendant qu'une ligne est ouverte laisserait une liste qui ne correspond plus au
+   * chiffre affiché au-dessus. On referme.
+   *
+   * ⚠️ DANS LES `onChange`, PAS DANS UN EFFET. Un effet se joue APRÈS le rendu : la liste serait d'abord
+   * remontée avec les nouveaux filtres, sa requête partirait, et le composant serait démonté juste après.
+   * Le drapeau `alive` empêche l'écriture d'état, pas l'appel réseau.
+   */
+  const refermer = (suivant: string[]): boolean => { setOuvert(null); return suivant.length > 0; };
+
   return (
     <div id="quanti-erreurs" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-start justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
@@ -342,15 +370,27 @@ export function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) 
           </div>
           <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
         </div>
-        {templates.length > 0 && (
-          <SelecteurMultiple
-            libelleTous={t('Tous les templates', 'All templates')}
-            options={templates.map((n) => ({ value: n, label: n }))}
-            selection={tpls}
-            onChange={setTpls}
-            testId="erreurs-templates"
-          />
-        )}
+        {/* Mêmes axes exclusifs qu'au coût : les croiser décrirait leur intersection, pas leur union. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {campagnes.length > 0 && (
+            <SelecteurMultiple
+              libelleTous={t('Toutes campagnes', 'All campaigns')}
+              options={campagnes}
+              selection={camps}
+              onChange={(suivant) => { setCamps(suivant); if (refermer(suivant)) setTpls([]); }}
+              testId="erreurs-campagnes"
+            />
+          )}
+          {templates.length > 0 && (
+            <SelecteurMultiple
+              libelleTous={t('Tous les templates', 'All templates')}
+              options={templates.map((n) => ({ value: n, label: n }))}
+              selection={tpls}
+              onChange={(suivant) => { setTpls(suivant); if (refermer(suivant)) setCamps([]); }}
+              testId="erreurs-templates"
+            />
+          )}
+        </div>
       </div>
       {rows.length === 0 ? (
         <p className="text-sm text-ink-500">{t('Aucune erreur sur la période.', 'No errors over the period.')}</p>
@@ -358,18 +398,132 @@ export function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) 
         <div className="space-y-2.5">
           {rows.map((e) => (
             <div key={e.code}>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-mono text-xs font-medium text-ink-700">{e.code}</span>
-                <span className="text-xs tabular-nums text-ink-500">{fmtNum(e.count, locale)}</span>
-              </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-50">
-                <div className="h-full rounded-full bg-coral" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
-              </div>
-              <p className="mt-0.5 text-[11px] text-ink-400">{metaCodeLabel(e.code, locale)}</p>
+              {/* La ligne ENTIÈRE est le bouton : cliquer sur un code de quatre chiffres demanderait de viser. */}
+              <button
+                type="button"
+                onClick={() => setOuvert((c) => (c === e.code ? null : e.code))}
+                aria-expanded={ouvert === e.code}
+                data-testid={`erreur-ligne-${e.code}`}
+                className="w-full rounded-lg px-1 py-0.5 text-left transition hover:bg-ink-50"
+              >
+                {/* Des `span` en `block` et non des `div`/`p` : un bouton ne peut contenir que du contenu de
+                    phrase. Le rendu est identique, le HTML cesse d'etre invalide. */}
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="font-mono text-xs font-medium text-ink-700">{e.code}</span>
+                  <span className="text-xs tabular-nums text-ink-500">{fmtNum(e.count, locale)}</span>
+                </span>
+                <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-ink-50">
+                  <span className="block h-full rounded-full bg-coral" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
+                </span>
+                <span className="mt-0.5 block text-[11px] text-ink-400">{metaCodeLabel(e.code, locale)}</span>
+              </button>
+              {ouvert === e.code && (
+                <ContactsTouches
+                  tenantId={tenantId}
+                  range={range}
+                  code={e.code}
+                  campaignIds={camps}
+                  templateNames={tpls}
+                />
+              )}
             </div>
           ))}
           <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-700">{fmtNum(total, locale)}</span></p>
         </div>
+      )}
+      {/* 🔴 DIT LES DEUX CHOSES QUE CE DÉCOMPTE NE VOIT PAS, toutes deux mesurées le 2026-09-07 :
+          1. `error_code` n'existe que sur les destinataires de campagne, un envoi de scénario ou d'inbox ne
+             journalise que son succès, son échec n'est écrit nulle part ;
+          2. ce tableau est PAR CODE, donc un échec sans code Meta n'y a pas de ligne (2 sur 25 en
+             production : un template inenvoyable, une panne réseau). Ceux-là sont dans le journal des
+             erreurs de livraison, et l'écran doit y renvoyer plutôt que de laisser croire à un inventaire.
+          Sans ces deux phrases, un écran vide se lirait « aucune erreur ». */}
+      <p className="pt-3 text-[11px] leading-relaxed text-ink-400">
+        {t(
+          'Ce décompte porte sur les envois de CAMPAGNE, et il est classé par code Meta. Un échec sur un envoi de scénario ou depuis l’inbox n’est pas enregistré, et un échec sans code Meta (template inenvoyable, panne réseau) n’a pas de ligne ici : le journal complet est dans Paramètres, « Erreurs de livraison ».',
+          'This count covers CAMPAIGN sends, grouped by Meta code. A failure on a scenario or inbox send is not recorded, and a failure without a Meta code (unsendable template, network outage) has no row here: the full log lives in Settings, "Delivery errors".',
+        )}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * QUI a été touché par un code d'erreur : la liste qui s'ouvre sous une ligne du breakdown.
+ *
+ * Elle reprend les filtres de la carte, sinon elle répondrait à une autre question que celle affichée
+ * au-dessus (« les contacts de ce code », toutes campagnes confondues, sous un chiffre filtré).
+ *
+ * ⚠️ La liste est PLAFONNÉE côté serveur, et elle le dit quand elle est coupée : une liste tronquée en
+ * silence se lit comme une liste complète, donc comme un décompte plus petit que le chiffre juste au-dessus.
+ */
+function ContactsTouches({ tenantId, range, code, campaignIds, templateNames }: {
+  tenantId: string;
+  range: StatsRange;
+  code: number;
+  campaignIds: string[];
+  templateNames: string[];
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [etat, setEtat] = useState<{ contacts: ErrorContactRow[]; tronque: boolean; plafond: number } | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  // Clés SÉRIALISÉES : un tableau recréé à chaque rendu relancerait la requête en boucle.
+  const cleCampagnes = campaignIds.join(',');
+  const cleTemplates = templateNames.join(',');
+  useEffect(() => {
+    let alive = true;
+    setEtat(null);
+    setErreur(null);
+    const filter = {
+      ...(cleCampagnes ? { campaignIds: cleCampagnes.split(',') } : {}),
+      ...(cleTemplates ? { templateNames: cleTemplates.split(',') } : {}),
+    };
+    getErrorContacts(tenantId, code, range, filter)
+      .then((r) => { if (alive) setEtat(r); })
+      .catch((e: unknown) => { if (alive) setErreur(e instanceof Error ? e.message : 'erreur'); });
+    return () => { alive = false; };
+  }, [tenantId, code, range, cleCampagnes, cleTemplates]);
+
+  return (
+    <div className="mt-2 rounded-lg border border-ink-100 bg-ink-50/50 p-2" data-testid={`erreur-contacts-${code}`}>
+      {erreur !== null ? (
+        // Un échec de chargement se DIT : sans ça, il se lirait « personne n'a été touché ».
+        <p className="text-xs text-coral">{t('Liste indisponible :', 'List unavailable:')} {erreur}</p>
+      ) : etat === null ? (
+        <p className="text-xs text-ink-500">{t('Chargement…', 'Loading…')}</p>
+      ) : etat.contacts.length === 0 ? (
+        <p className="text-xs text-ink-500">{t('Aucun contact à afficher.', 'No contact to show.')}</p>
+      ) : (
+        <>
+          <ul className="divide-y divide-ink-100">
+            {etat.contacts.map((c) => (
+              // La clé est l'identifiant de LIGNE du journal : un même contact peut échouer dans deux
+              // campagnes, et sur la même campagne après un renvoi.
+              <li key={c.recipientId} className="py-1">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                  <span className="truncate text-xs font-medium text-ink-800">{c.contactNom ?? c.telephone}</span>
+                  <span className="text-[11px] text-ink-400">
+                    {c.campaignName ?? ''}
+                    {c.at !== null ? ` · ${formatDate(c.at, locale, { day: '2-digit', month: '2-digit' })}` : ''}
+                  </span>
+                </div>
+                {/* Ce que Meta a répondu. C'est le champ le plus utile de la liste : sans lui, on sait QUI a
+                    échoué mais pas ce qu'on peut y faire. */}
+                {c.message !== null && <p className="truncate text-[11px] text-ink-500" title={c.message}>{c.message}</p>}
+              </li>
+            ))}
+          </ul>
+          {etat.tronque && (
+            <p className="pt-1 text-[11px] text-gold" data-testid={`erreur-contacts-tronque-${code}`}>
+              {t(
+                `Liste limitée aux ${etat.plafond} plus récents.`,
+                `List limited to the ${etat.plafond} most recent.`,
+              )}
+            </p>
+          )}
+        </>
       )}
     </div>
   );

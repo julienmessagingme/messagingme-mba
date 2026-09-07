@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
 import { matchWaIdPredicat } from '../crm/contact-store.pg';
+import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
+import { STATS_TZ } from '../stats/range';
 
 /**
  * LE JOURNAL DES ERREURS DE LIVRAISON : ce que Meta nous a répondu quand un message n'est pas parti, ou n'est
@@ -61,6 +63,23 @@ export interface FiltreErreurs {
   q?: string;
   telephone?: string;
   code?: number;
+  /**
+   * Bornes de dates (jour civil `YYYY-MM-DD`, fuseau Europe/Paris), pour l'écran Analytics.
+   *
+   * 🔴 ELLES S'APPLIQUENT SUR `INSTANT_ECHEC_SQL`, et c'est tout l'enjeu. L'ancrage de cette requête
+   * s'arrêtait à `coalesce(delivery_updated_at, sent_at)` : mesuré sur la base de production le 2026-09-07,
+   * **24 échecs sur 25** n'ont ni l'un ni l'autre (un refus à l'envoi n'a jamais rien envoyé), donc leur
+   * date était `null`. Une plage posée sur cet ancrage-là aurait fait disparaître 24 échecs sur 25 de
+   * l'écran, silencieusement. Les deux bornes se donnent ensemble ou pas du tout.
+   */
+  from?: string;
+  to?: string;
+  /**
+   * Restreint à CES campagnes, ou à CES templates. Deux axes que l'écran Analytics tient mutuellement
+   * exclusifs (les croiser décrirait leur intersection). Une liste vide vaut « tout », comme leur absence.
+   */
+  campaignIds?: string[];
+  templateNames?: string[];
 }
 
 interface Ligne {
@@ -76,16 +95,21 @@ export class PgErreursLivraisonStore {
   /**
    * Les échecs d'un espace, du plus récent au plus ancien.
    *
-   * ⚠️ « En échec » a DEUX définitions en base, et n'en prendre qu'une en cacherait la moitié : `status =
-   * 'failed'` est le refus SYNCHRONE à l'envoi, `delivery_status = 'failed'` est l'échec ASYNCHRONE signalé
-   * par le webhook (le `status` reste alors `sent`). C'est la même définition que celle de l'auto-relance et
-   * des statistiques : trois lectures qui divergeraient donneraient trois chiffres différents du même fait.
+   * ⚠️ « En échec » a DEUX définitions en base, et n'en prendre qu'une en cacherait la moitié. Elles ne sont
+   * plus écrites ici : `RECIPIENT_FAILED_SQL` et `INSTANT_ECHEC_SQL` (`src/campaign/echecs-sql.ts`) portent
+   * la population ET la date, et les quatre lecteurs du dépôt les importent. Elles étaient recopiées, ce qui
+   * est exactement la façon dont trois lectures donnent trois chiffres différents du même fait.
+   *
+   * 🔴 L'ancrage a CHANGÉ le 2026-09-07, et c'est une réparation : il s'arrêtait à
+   * `coalesce(delivery_updated_at, sent_at)`, or 24 échecs sur 25 en production n'ont ni l'un ni l'autre
+   * (un refus à l'envoi n'envoie rien). Cet écran affichait donc une date vide pour la quasi-totalité de ses
+   * lignes, et les reléguait toutes en fin de tri.
    */
   async lister(tenantId: string, filtre: FiltreErreurs = {}): Promise<ErreurLivraison[]> {
     const limit = Math.min(Math.max(filtre.limit ?? 200, 1), 1000);
     const where = [
       'c.tenant_id = $1',
-      "(r.status = 'failed' or r.delivery_status = 'failed')",
+      `(${RECIPIENT_FAILED_SQL})`,
     ];
     const params: unknown[] = [tenantId];
     const ajouter = (fragment: (n: number) => string, valeur: unknown): void => {
@@ -94,6 +118,19 @@ export class PgErreursLivraisonStore {
     };
     if (filtre.telephone) ajouter((n) => `r.to_e164 ilike '%' || $${n} || '%'`, filtre.telephone);
     if (filtre.code !== undefined) ajouter((n) => `r.error_code = $${n}`, filtre.code);
+    // Les bornes sont posées sur le MÊME ancrage que le reste de la requête, et dans le fuseau des
+    // statistiques : c'est ce qui permet à un clic sur « 12 » dans Analytics d'ouvrir exactement 12 lignes.
+    if (filtre.from && filtre.to) {
+      // Le fuseau passe en PARAMÈTRE, comme dans `BOUNDS_CTE` : une constante interpolée dans du SQL est
+      // une habitude qui finit par accueillir une valeur qui, elle, ne sera pas constante.
+      params.push(filtre.from, filtre.to, STATS_TZ);
+      const [a, b, tz] = [params.length - 2, params.length - 1, params.length];
+      where.push(`${INSTANT_ECHEC_SQL} >= ($${a}::date)::timestamp at time zone $${tz}`);
+      where.push(`${INSTANT_ECHEC_SQL} < (($${b}::date) + 1)::timestamp at time zone $${tz}`);
+    }
+    // Listes VIDES -> aucun filtre, pas un `= any('{}')` qui ne matcherait rien et viderait l'écran.
+    if (filtre.campaignIds?.length) ajouter((n) => `c.id = any($${n}::uuid[])`, filtre.campaignIds);
+    if (filtre.templateNames?.length) ajouter((n) => `c.template_name = any($${n}::text[])`, filtre.templateNames);
     if (filtre.q) {
       ajouter(
         (n) => `(r.error ilike '%' || $${n} || '%' or r.error_code::text ilike '%' || $${n} || '%'
@@ -109,12 +146,12 @@ export class PgErreursLivraisonStore {
       `select r.id as recipient_id, c.id as campaign_id, c.name as campaign_name, r.to_e164,
               ct.id as contact_id, ct.profile_name as contact_nom,
               r.error_code, r.error, r.status, r.delivery_status,
-              coalesce(r.delivery_updated_at, r.sent_at) as at
+              ${INSTANT_ECHEC_SQL} as at
          from campaign_recipients r
            join campaigns c on c.id = r.campaign_id
            left join contacts ct on ct.id = r.contact_id and ct.tenant_id = c.tenant_id
         where ${where.join(' and ')}
-        order by coalesce(r.delivery_updated_at, r.sent_at) desc nulls last
+        order by ${INSTANT_ECHEC_SQL} desc nulls last
         limit $${params.length}`,
       params,
     );

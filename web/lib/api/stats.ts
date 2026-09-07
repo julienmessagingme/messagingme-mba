@@ -63,15 +63,61 @@ export function getCampaignFunnel(tenantId: string, campaignId: string): Promise
   return request<CampaignFunnel>(`/tenants/${tenantId}/stats/campaign-funnel?campaignId=${encodeURIComponent(campaignId)}`);
 }
 
-/** Une ligne du breakdown d'erreurs Meta : code numérique + template + occurrences. */
+/** Une ligne du breakdown d'erreurs Meta : code numérique + template + campagne + occurrences. */
 export interface ErrorBreakdownRow {
   code: number;
   count: number;
   /** Template de la campagne à l'origine des erreurs (null si non renseigné). */
   templateName: string | null;
+  /**
+   * La campagne d'où viennent ces erreurs, jamais nulle : seules les campagnes peuvent en porter.
+   *
+   * ⚠️ La ligne est plus fine que ce que l'écran affiche : une par (code, template, campagne). La carte
+   * agrège par code, donc l'affichage sans filtre est le même qu'avant ; ce que ces champs apportent, c'est
+   * de pouvoir filtrer par campagne SANS redemander au serveur.
+   */
+  campaignId: string;
+  campaignName: string;
 }
 export function getErrorBreakdown(tenantId: string, range?: StatsRange): Promise<{ errors: ErrorBreakdownRow[] }> {
   return request<{ errors: ErrorBreakdownRow[] }>(`/tenants/${tenantId}/stats/errors${rangeQuery(range)}`);
+}
+
+/**
+ * Un contact touché par un code d'erreur : qui, dans quelle campagne, quand, et ce que Meta a répondu.
+ *
+ * 🔴 C'EST LA LIGNE DU JOURNAL DES ERREURS DE LIVRAISON, celle que sert déjà l'écran de Paramètres. Le
+ * serveur ne construit pas une seconde forme pour Analytics : deux écrans qui portent le même titre et
+ * comptent deux populations voisines finissent par se contredire chez un client.
+ */
+export interface ErrorContactRow {
+  recipientId: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  /** Le numéro tel qu'il a été appelé (E.164, avec le « + »). Toujours présent. */
+  telephone: string;
+  contactId: string | null;
+  contactNom: string | null;
+  code: number | null;
+  /** Ce que Meta a répondu. Affiché tel quel, borné côté serveur. */
+  message: string | null;
+  /** `envoi` = jamais parti, `livraison` = parti puis refusé, `scenario` = panne d'avance de parcours. */
+  origine: 'envoi' | 'livraison' | 'scenario';
+  at: string | null;
+}
+/**
+ * Les contacts touchés par UN code d'erreur, avec les mêmes filtres que le breakdown.
+ *
+ * 🔴 NE COUVRE QUE LES CAMPAGNES, et l'écran doit le dire : `error_code` n'existe que sur
+ * `campaign_recipients`, un envoi de scénario ou d'inbox ne journalise que son succès. Mesuré le
+ * 2026-09-07 avant d'écrire l'écran, plutôt que promis puis découvert vide.
+ */
+export function getErrorContacts(
+  tenantId: string, code: number, range?: StatsRange, filter?: FiltreCampagneOuTemplate,
+): Promise<{ contacts: ErrorContactRow[]; tronque: boolean; plafond: number }> {
+  return request<{ contacts: ErrorContactRow[]; tronque: boolean; plafond: number }>(
+    `/tenants/${tenantId}/stats/errors/${code}/contacts${filtreQuery(range, filter)}`,
+  );
 }
 
 /** Série de coût estimé/jour, par catégorie. `hasRates=false` si Meta n'a fourni aucun tarif. */
@@ -92,14 +138,32 @@ export interface CostSeries {
   /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, on affiche le nombre nu. */
   currency: string | null;
 }
-/** Filtre du graphe de coût. Plusieurs valeurs -> série COMPILÉE. Les deux axes sont mutuellement exclusifs. */
-export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { campaignIds?: string[]; templateNames?: string[] }): Promise<CostSeries> {
+/**
+ * Les deux axes de filtre des écrans d'Analytics : DES campagnes OU DES templates, jamais les deux (les
+ * croiser décrirait leur intersection). Une liste vide vaut « tout ».
+ */
+export interface FiltreCampagneOuTemplate {
+  campaignIds?: string[];
+  templateNames?: string[];
+}
+
+/**
+ * La chaîne de requête « plage + filtres », écrite UNE fois.
+ *
+ * Elle l'était deux fois dans ce fichier, à vingt-cinq lignes d'écart, avec le même piège recopié : le
+ * séparateur dépend de la présence de la plage (`?` sinon `&`).
+ */
+function filtreQuery(range?: StatsRange, filter?: FiltreCampagneOuTemplate): string {
   const parts: string[] = [];
   if (filter?.campaignIds?.length) parts.push(`campaignIds=${encodeURIComponent(filter.campaignIds.join(','))}`);
   if (filter?.templateNames?.length) parts.push(`templateNames=${encodeURIComponent(filter.templateNames.join(','))}`);
   const base = rangeQuery(range);
-  const extra = parts.length ? (base ? `&${parts.join('&')}` : `?${parts.join('&')}`) : '';
-  return request<CostSeries>(`/tenants/${tenantId}/stats/cost${base}${extra}`);
+  return parts.length ? `${base}${base ? '&' : '?'}${parts.join('&')}` : base;
+}
+
+/** Filtre du graphe de coût. Plusieurs valeurs -> série COMPILÉE. Les deux axes sont mutuellement exclusifs. */
+export function getCostSeries(tenantId: string, range?: StatsRange, filter?: FiltreCampagneOuTemplate): Promise<CostSeries> {
+  return request<CostSeries>(`/tenants/${tenantId}/stats/cost${filtreQuery(range, filter)}`);
 }
 
 /** Un tableau ENREGISTRE : une selection (scenario + mesures), jamais des chiffres. */

@@ -34,7 +34,13 @@ async function monter(chemin: string, page: import('@playwright/test').Page) {
     }
     if (url.includes('/stats/templates')) return json(TEMPLATES);
     if (url.includes('/stats/errors')) {
-      return json({ errors: [{ code: 131026, count: 4, templateName: 'tpl-un' }, { code: 131047, count: 2, templateName: 'tpl-deux' }] });
+      // Chaque ligne porte SA campagne depuis le lot des erreurs filtrables : c est ce qui permet a la carte
+      // de filtrer par campagne sans une seconde requete. Les deux templates sont sur deux campagnes
+      // DIFFERENTES, sinon un filtre par campagne ne separerait rien et le test passerait sans rien prouver.
+      return json({ errors: [
+        { code: 131026, count: 4, templateName: 'tpl-un', campaignId: 'camp-a', campaignName: 'Promo A' },
+        { code: 131047, count: 2, templateName: 'tpl-deux', campaignId: 'camp-b', campaignName: 'Promo B' },
+      ] });
     }
     if (url.includes('/stats')) return json({ contacts: [], templates: { utility: [], marketing: [] }, exchanged: [], service: [] });
     if (url.includes('/campaigns')) return json({ campaigns: CAMPAGNES });
@@ -108,5 +114,31 @@ test.describe('Analytics : filtres multiples', () => {
     await page.getByTestId('erreurs-templates').selectOption('tpl-deux');
     await expect(page.getByText('131026')).toBeVisible();
     await expect(page.getByText('131047')).toBeVisible();
+  });
+
+  test('🔴 U7 : la carte Erreurs se filtre AUSSI par campagne', async ({ page }) => {
+    // Demande de Julien : les erreurs se requetent par template OU par campagne. Le filtre est LOCAL (chaque
+    // ligne porte deja sa campagne), donc ce qui se verifie est le contenu affiche, pas une requete.
+    await monter('/dashboard/erreurs', page);
+    await expect(page.getByText('131026')).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId('erreurs-campagnes').selectOption('camp-a');
+    await expect(page.getByText('131026')).toBeVisible();
+    await expect(page.getByText('131047')).toHaveCount(0);
+  });
+
+  test('🔴 U7 : les deux axes des erreurs sont MUTUELLEMENT EXCLUSIFS', async ({ page }) => {
+    // Les croiser decrirait l intersection (campagne A ET template de B), qui ne veut rien dire. Meme regle
+    // qu au cout, et elle se verifie sur la PASTILLE : c est la seule trace de ce qui est retenu.
+    await monter('/dashboard/erreurs', page);
+    await page.getByTestId('erreurs-campagnes').selectOption('camp-a');
+    await expect(page.getByTestId('erreurs-campagnes-retenu')).toHaveText(/Promo A/);
+
+    await page.getByTestId('erreurs-templates').selectOption('tpl-deux');
+    await expect(page.getByTestId('erreurs-templates-retenu')).toHaveText(/tpl-deux/);
+    await expect(page.getByTestId('erreurs-campagnes-retenu')).toHaveCount(0);
+    // Et l inverse, sinon la regle ne serait verifiee que dans un sens.
+    await page.getByTestId('erreurs-campagnes').selectOption('camp-b');
+    await expect(page.getByTestId('erreurs-templates-retenu')).toHaveCount(0);
   });
 });

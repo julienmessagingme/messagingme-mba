@@ -48,6 +48,15 @@ function FunnelInner({ session }: { session: Session }) {
         <p className="text-sm text-ink-500">
           {t('envoyés, délivrés, lus, répondus, et les échecs', 'sent, delivered, read, replied, and failures')}
         </p>
+        {/* DIT l'absence de barre de période au lieu de la laisser passer pour un oubli. Les trois autres
+            sous-onglets en ont une ; ici elle n'aurait rien à filtrer, et découperait l'entonnoir en
+            tranches fausses (des envois d'avant la fenêtre, des réponses d'après). */}
+        <p className="pt-1 text-xs text-ink-400">
+          {t(
+            'Pas de période ici : un funnel porte sur toute la campagne, de son premier envoi à sa dernière réponse.',
+            'No period here: a funnel covers the whole campaign, from its first send to its last reply.',
+          )}
+        </p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {loading ? (

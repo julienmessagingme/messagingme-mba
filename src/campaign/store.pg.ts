@@ -4,6 +4,7 @@ import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } f
 import type { BuildContact, BuiltRecipient } from './build';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
+import { RECIPIENT_FAILED_SQL } from './echecs-sql';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
@@ -148,13 +149,8 @@ export interface PhoneNumberRow {
   verifiedName: string | null;
 }
 
-/**
- * Un destinataire est en ÉCHEC de deux façons : rejet SYNCHRONE à l'envoi (`status`) ou échec ASYNCHRONE
- * signalé plus tard par le webhook de livraison (`delivery_status`). Les deux comptent, sinon les relances
- * et les compteurs affichés ne parlent pas de la même population. Écrit ici seulement : cette définition
- * était recopiée dans les compteurs, la liste des relances, la remise en file et la clôture.
- */
-const RECIPIENT_FAILED_SQL = `r.status = 'failed' or r.delivery_status = 'failed'`;
+// La définition de « en échec » a DÉMÉNAGÉ dans `echecs-sql.ts` : elle était écrite ici et recopiée dans le
+// journal d'exploitation, donc deux écrans pouvaient compter deux populations différentes du même fait.
 
 /**
  * Projection commune de la liste et du détail d'une campagne : l'en-tête, le nom du scénario, et les

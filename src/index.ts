@@ -30,6 +30,7 @@ import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
+import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
@@ -628,6 +629,17 @@ async function main(): Promise<void> {
       },
       getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
       getErrorBreakdown: (tenant, range, templateName) => statsStore.getErrorBreakdown(tenant, range, templateName),
+      // Le MÊME journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre. Une
+      // seconde requête propre à Analytics existait : elle comptait une population voisine, donc les deux
+      // écrans, qui portent le même titre, se seraient contredits chez un client.
+      getErrorContacts: (tenant, range, code, filter) => erreursLivraison.lister(tenant, {
+        code,
+        from: range.from,
+        to: range.to,
+        ...filter,
+        // Une ligne de plus que le plafond : c'est ainsi que la route sait qu'elle tronque, et le dit.
+        limit: PLAFOND_CONTACTS_ERREUR + 1,
+      }),
       getCostSeries: async (tenant, range, filter) => {
         const wabaId = await repo.getTenantWabaId(tenant);
         const { startTs, endTs } = rangeToUnix(range);

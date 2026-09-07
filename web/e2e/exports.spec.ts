@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { zonesDeLaPage } from './support/zones-pdf';
 
 /**
  * E2E des exports : le PDF des tableaux d'Analytics, et le CSV du journal des actions.
@@ -11,7 +12,12 @@ const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', te
 
 const TEMPLATES = { total: 5, breakdown: [{ name: 'tpl-un', category: 'marketing', count: 3 }], pricing: { byCategory: { marketing: { category: 'marketing', cost: 1.42, volume: 10, ratePerMessage: 0.142 } }, totalCost: 1.42, currency: 'EUR' } };
 const COUT = { marketing: [], utility: [], total: 12.5, hasRates: true, currency: 'EUR' };
-const STATS = { contacts: [], templates: { utility: [], marketing: [] }, exchanged: [], service: [] };
+// 🔴 `serviceParOrigine` EST INDISPENSABLE : sans lui `OrigineServiceCard` rend `null`, et la zone
+// `quanti-origine-service` disparait du DOM. L inventaire se disait derive du DOM tout en etant
+// aveugle sur une carte sur neuf, et c est precisement celle que le commentaire cite en exemple
+// de zone ayant deja derive.
+const STATS = { contacts: [], templates: { utility: [], marketing: [] }, exchanged: [], service: [],
+  serviceParOrigine: { ia: 1, scenario: 1, humain: 1, indeterminee: 0 } };
 
 /**
  * `window.print` est remplacé AVANT tout script de page : on enregistre l'id de la zone marquée au moment de
@@ -40,7 +46,9 @@ async function monterDashboard(chemin: string, ancre: string, page: import('@pla
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.includes('/stats/cost')) return json(COUT);
     if (url.includes('/stats/templates')) return json(TEMPLATES);
-    if (url.includes('/stats/errors')) return json({ errors: [{ code: 131026, count: 4, templateName: 'tpl-un' }] });
+    // La campagne fait partie du contrat rendu par l API : une fixture qui l omet ferait passer un ecran qui
+    // ne saurait pas la lire. C est exactement ainsi qu une valeur inventee a franchi la CI ce mois-ci.
+    if (url.includes('/stats/errors')) return json({ errors: [{ code: 131026, count: 4, templateName: 'tpl-un', campaignId: 'camp-a', campaignName: 'Promo A' }] });
     if (url.includes('/stats')) return json(STATS);
     if (url.includes('/campaigns')) return json({ campaigns: [] });
     if (url.includes('/phone-numbers')) return json({ phoneNumbers: [] });
@@ -69,11 +77,6 @@ const SOUS_ONGLETS = [
   { chemin: '/dashboard/funnel', ancre: 'quanti-funnel' },
   { chemin: '/dashboard/erreurs', ancre: 'quanti-erreurs' },
 ];
-
-/** Les identifiants de zone REELLEMENT rendus par la page, lus dans le DOM. */
-async function zonesDeLaPage(page: import('@playwright/test').Page): Promise<string[]> {
-  return page.evaluate(() => [...document.querySelectorAll('[id^="quanti-"]')].map((e) => e.id).sort());
-}
 
 test.describe('Analytics quanti : chaque tableau s’exporte en PDF', () => {
   for (const { chemin, ancre } of SOUS_ONGLETS) {

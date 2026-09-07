@@ -41,7 +41,10 @@ export function RangeBar({ title, range, onChange }: {
     // FIGE en haut au scroll. top-12 = juste sous la barre de compte AppShell (sticky top-0, ~48px) ;
     // z-20 < z-30 (header) pour ne pas la chevaucher ; bg = fond de page, pour masquer les cartes qui
     // defilent dessous.
-    <div className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-[#F7F8FB] py-2">
+    // `data-testid` : une spec exige qu'il n'y ait JAMAIS deux barres de periode dans un meme ecran. Le
+    // decoupage du Quantitatif en sous-onglets rendait la duplication facile (une copie par onglet), et deux
+    // barres divergeraient des le premier ajustement.
+    <div data-testid="range-bar" className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-[#F7F8FB] py-2">
       <h2 className="text-base font-semibold tracking-tight text-ink-900">{title}</h2>
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">

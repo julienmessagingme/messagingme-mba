@@ -15,6 +15,10 @@ beforeAll(async () => {
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
+// De VRAIS uuid : la route des contacts touches refuse desormais un identifiant de campagne mal forme (il
+// partait sinon dans un `::uuid[]` et sortait en 500, donc en page Cloudflare cote client).
+const CAMP_A = '11111111-1111-4111-8111-111111111111';
+const CAMP_B = '22222222-2222-4222-8222-222222222222';
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<SettingsRouteDeps> } = {}) {
@@ -30,7 +34,13 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
     getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 2, urlClicks: 4 }),
-    getErrorBreakdown: async () => [{ code: 131049, count: 4, templateName: 'promo' }, { code: 131047, count: 2, templateName: null }],
+    getErrorBreakdown: async () => [
+      { code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' },
+      { code: 131047, count: 2, templateName: null, campaignId: CAMP_B, campaignName: 'Relance' },
+    ],
+    getErrorContacts: async () => [
+      { recipientId: 'r1', campaignId: CAMP_A, campaignName: 'Promo ete', telephone: '+33600000001', contactId: 'ct1', contactNom: 'Julie', code: 131049, message: 'Re-engagement message', origine: 'envoi' as const, at: '2026-09-05T10:00:00.000Z' },
+    ],
     getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR', nonChiffrables: 0 }),
     getConversationSummary: async () => ({
       enabled: true, retentionDays: 365, total: 3,
@@ -199,17 +209,117 @@ describe('stats route', () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ errors: Array<{ code: number; count: number; templateName: string | null }> }>().errors[0]).toEqual({ code: 131049, count: 4, templateName: 'promo' });
+    expect(res.json<{ errors: Array<{ code: number; count: number; templateName: string | null }> }>().errors[0])
+      .toEqual({ code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' });
+    await a.close();
+  });
+
+  // 🔴 La CAMPAGNE voyage avec la ligne : c'est elle qui rend le filtre par campagne possible cote ecran
+  // sans une seconde requete. Sans ce champ, le filtre ne pourrait porter que sur le template.
+  it('GET /stats/errors -> chaque ligne porte SA campagne', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30', ...h(adminTok) });
+    const errs = res.json<{ errors: Array<{ campaignId: string; campaignName: string }> }>().errors;
+    expect(errs.map((e) => e.campaignId)).toEqual([CAMP_A, CAMP_B]);
+    expect(errs.map((e) => e.campaignName)).toEqual(['Promo ete', 'Relance']);
     await a.close();
   });
 
   it('GET /stats/errors?templateName -> filtre transmis au store + réponse porte templateName', async () => {
     let captured: string | undefined = 'UNSET';
-    const a = app({ stats: { getErrorBreakdown: async (_t, _r, tpl) => { captured = tpl; return [{ code: 131049, count: 4, templateName: 'promo' }]; } } });
+    const a = app({ stats: { getErrorBreakdown: async (_t, _r, tpl) => { captured = tpl; return [{ code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' }]; } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30&templateName=promo', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(captured).toBe('promo');
     expect(res.json<{ errors: Array<{ templateName: string | null }> }>().errors[0]!.templateName).toBe('promo');
+    await a.close();
+  });
+
+  it('GET /stats/errors/:code/contacts -> la liste des contacts touches', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: `/tenants/t1/stats/errors/131049/contacts?days=30`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const b = res.json<{ contacts: Array<{ telephone: string; contactNom: string | null }>; tronque: boolean; plafond: number }>();
+    expect(b.contacts[0]).toMatchObject({ telephone: '+33600000001', contactNom: 'Julie', campaignName: 'Promo ete' });
+    expect(b.tronque).toBe(false);
+    expect(b.plafond).toBe(200);
+    await a.close();
+  });
+
+  it('🔴 GET /stats/errors/:code/contacts : le CODE et les deux filtres arrivent au store', async () => {
+    // Sans cette verification, une route qui ignore ses filtres rendrait quand meme 200 avec une liste :
+    // l ecran afficherait « les contacts touches par 131049 » en montrant ceux de tous les codes.
+    let vu: { code: number; ids?: string[]; tpls?: string[] } | null = null;
+    const a = app({ stats: { getErrorContacts: async (_t, _r, code, f) => { vu = { code, ids: f.campaignIds, tpls: f.templateNames }; return []; } } });
+    const res = await a.inject({
+      method: 'GET',
+      url: `/tenants/t1/stats/errors/131047/contacts?days=30&campaignIds=${CAMP_A},${CAMP_B}&templateNames=promo`,
+      ...h(adminTok),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(vu).toEqual({ code: 131047, ids: [CAMP_A, CAMP_B], tpls: ['promo'] });
+    await a.close();
+  });
+
+  it('🔴 GET /stats/errors/:code/contacts : un code non entier -> 400 (pas 500)', async () => {
+    // Le code arrive du CHEMIN, donc en texte. Sans conversion validee, un `NaN` partait en `::int` et
+    // Postgres refusait la conversion a l execution : 500, dont Cloudflare remplace le corps par sa page.
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors/abc/contacts?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('🔴 un campaignIds mal forme -> 400, et la requete ne part PAS', async () => {
+    // Meme famille : ces valeurs partent dans un `::uuid[]`. Et on REFUSE au lieu de jeter les mauvaises,
+    // sinon le filtre deviendrait vide, c est a dire « tout » : l ecran montrerait PLUS que le demande.
+    let appele = false;
+    const a = app({ stats: { getErrorContacts: async () => { appele = true; return []; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors/131049/contacts?days=30&campaignIds=pas-un-uuid', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    expect(appele).toBe(false);
+    await a.close();
+  });
+
+  it('🔴 le meme garde protege /stats/cost : campaignIds mal forme -> 400', async () => {
+    let appele = false;
+    const a = app({ stats: { getCostSeries: async () => { appele = true; return { marketing: [], utility: [], total: 0, hasRates: true, currency: 'EUR', nonChiffrables: 0 }; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost?days=30&campaignIds=pas-un-uuid', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    expect(appele).toBe(false);
+    await a.close();
+  });
+
+  it('🔴 la liste est PLAFONNEE, et le dit', async () => {
+    // Un code d erreur peut frapper une campagne entiere. Le store rend une ligne de plus que le plafond
+    // pour qu on sache qu on tronque ; l afficher serait annoncer 200 en en montrant 201.
+    const trop = Array.from({ length: 201 }, (_v, i) => ({
+      recipientId: `r${i}`, campaignId: CAMP_A, campaignName: 'Promo ete', telephone: `+3360000${i}`,
+      contactId: `ct${i}`, contactNom: null, code: 131049, message: null,
+      origine: 'envoi' as const, at: '2026-09-05T10:00:00.000Z',
+    }));
+    const a = app({ stats: { getErrorContacts: async () => trop } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors/131049/contacts?days=30', ...h(adminTok) });
+    const b = res.json<{ contacts: unknown[]; tronque: boolean }>();
+    expect(b.contacts).toHaveLength(200);
+    expect(b.tronque).toBe(true);
+    await a.close();
+  });
+
+  it('🔴 sans cablage -> 503, jamais une liste vide', async () => {
+    // Une liste vide se lirait « personne n a ete touche », qui est une affirmation. La verite serait
+    // « rien n est branche ». Meme choix que les mesures de scenario.
+    const a = app({ stats: { getErrorContacts: undefined } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors/131049/contacts?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
+    await a.close();
+  });
+
+  it('GET /stats/errors/:code/contacts agent -> 403 (admin-only)', async () => {
+    // La route est NOUVELLE : elle doit entrer dans le groupe admin comme ses voisines, pas a cote.
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors/131049/contacts?days=30', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
     await a.close();
   });
 
