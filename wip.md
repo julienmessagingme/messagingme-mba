@@ -16,33 +16,39 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
-## 🔴 LE VPS EST SUR UN COMMIT DÉTACHÉ, à remettre sur `main` (2026-09-07, 17 h)
+## Déploiement du 2026-09-07 : TERMINÉ, le VPS est de nouveau sur `main`
 
-**À lire avant tout déploiement de l'API.** `/home/ubuntu/mba` est sur **`97a67fe`**, pas sur `main`
-(`git status` y annonce « HEAD detached »). Un `git pull` n'y fera RIEN d'utile : il faut
-`git checkout main && git pull && sudo docker compose up -d --build`, dès que la CI est verte sur `main`.
+Plus rien à faire côté déploiement. `/home/ubuntu/mba` est sur **`main`** (`f3d514d`), les trois conteneurs
+sont reconstruits, l'API et le worker tournent le code de `main`. Le plafond de débit des routes
+authentifiées est ACTIF en production.
 
-**Pourquoi ce détour.** Au moment de déployer le plafond de débit, `main` était rouge en CI et il fallait
-livrer sans embarquer le lot en cours d'une autre session. `97a67fe` était le dernier commit vert et portait
-tout le travail de sécurité du jour. Le plafond de débit est donc actif en production depuis ce
-déploiement ; le lot analytics, lui, est resté dehors.
+**Vérifié** : appel interne 200, appels publics 200 sur `api.` et sur `mba./api/backend/`, webhook Meta 403
+sur un POST non signé, origine CORS hostile refusée, route authentifiée 401 sans jeton, aucune erreur dans
+les journaux. La preuve que le nouveau code tourne n'est pas ce silence mais l'en-tête
+`access-control-expose-headers: retry-after, x-ratelimit-*`, qui n'existe que depuis `661e2ba`.
 
-🔴 **ET J'AI MAL DIAGNOSTIQUÉ CETTE ROUGEUR, ce qui est la vraie leçon de la journée.** J'ai écrit ici que
-`journal.lister` n'appliquait pas son filtre par code. **C'était faux : le TEST avait tort, pas le code**
-(corrigé par `f470f47`). Le fichier `tests/integration/stores.integration.test.ts` partage UN SEUL tenant
-entre ses 61 tests, celui de l'auto-relance y laisse des échecs 131049, et l'assertion « un autre code ne
-ramène personne » était donc un énoncé sur TOUTE LA SUITE, pas sur la requête examinée. Elle passait par
-hasard et cassait dès qu'un voisin écrivait un échec.
+🔴 **LE 502 EST ARRIVÉ POUR DE VRAI, et le CLAUDE.md l'avait écrit mot pour mot.** Après le second
+`up --build`, l'API répondait 200 en INTERNE et 502 en PUBLIC : NPM tenait l'ancienne IP du conteneur, qui
+change à chaque recréation, parce que nginx résout son amont au CHARGEMENT de sa config. Le diagnostic en
+deux appels (interne puis public) isole la couche coupable d'un coup, et le remède est
+`sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. ⚠️ Il n'était PAS apparu au premier
+déploiement du jour : ce défaut est intermittent, donc **le contrôle public est obligatoire après CHAQUE
+`up --build`**, pas seulement quand on se méfie.
 
-⚠️ **Deux pièges dans ma façon de conclure, à ne pas refaire :** j'ai lu le fichier de test dans mon arbre de
-travail alors que la session parallèle l'avait DÉJÀ corrigé, sans m'en apercevoir, et j'ai quand même conclu
-à un défaut produit. Un échec de CI se lit sur le commit qui a échoué (`git show`), jamais sur un arbre de
-travail que quelqu'un d'autre est en train de modifier. Et **une assertion « la liste est vide » dans un
-fichier à tenant partagé est la forme la plus fragile qui soit** : elle dépend de tout ce qui s'exécute avant
-elle. Les assertions portent désormais sur LEUR ligne, repérée par son numéro.
+⚠️ **Et le contrôle public se fait sur le BON chemin.** `mba.messagingme.app/webhooks/meta` rend 404 : le
+routage par chemin de NPM l'envoie à `mba-web`. Le webhook Meta vit sous `/api/backend/webhooks/meta` (et
+sur `api.messagingme.app/webhooks/meta`). Un 404 sur le mauvais chemin ressemble à une panne du chemin
+critique des messages clients, et n'en est pas une.
 
-⚠️ Ce déploiement-ci n'a eu AUCUNE migration à jouer (base à 0114, dépôt à 0114, vérifié des deux côtés). Ce
-ne sera pas forcément vrai au prochain : la question se repose à chaque fois.
+⚠️ Aucune migration n'était à jouer (base 0114, dépôt 0114, vérifié des deux côtés). La question se repose à
+chaque déploiement.
+
+**Sur la rougeur de CI du jour, et mon erreur de diagnostic** : j'avais écrit ici que `journal.lister`
+n'appliquait pas son filtre par code. C'était FAUX, le TEST avait tort et pas le code (`f470f47`). Deux
+pièges à ne pas refaire : j'ai lu le fichier de test dans mon arbre de travail alors que la session
+parallèle l'avait DÉJÀ corrigé, et j'en ai quand même conclu à un défaut produit. **Un échec de CI se lit
+sur le commit qui a échoué (`git show`), jamais sur un arbre que quelqu'un d'autre modifie.** Et une
+assertion « la liste est vide » dans un fichier à tenant partagé dépend de tout ce qui s'exécute avant elle.
 
 ## Rien n'est en cours au 2026-09-04
 
