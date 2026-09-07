@@ -90,7 +90,12 @@ function Counter({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * Barre horizontale (patron des barres inline de CampaignFunnelCard) : label + piste + valeur à droite.
+ * Barre horizontale : label + piste + valeur à droite.
+ *
+ * ⚠️ Ce commentaire disait « patron des barres inline de CampaignFunnelCard ». Ce n'est plus vrai depuis le
+ * 2026-09-07 : le funnel est passé en barres VERTICALES à la demande de Julien, et n'a donc plus de barre
+ * horizontale à servir de modèle. La référence est retirée plutôt que corrigée vers un autre fichier : ce
+ * composant se suffit, et un pointeur vers un patron qui bouge est un pointeur qui redeviendra faux.
  *
  * `onClick` la rend CLIQUABLE : c'est ce qui ouvre la liste des conversations derrière un chiffre. Une barre
  * dont le compte vaut zéro n'est jamais cliquable, même si `onClick` est fourni : ouvrir une fenêtre vide

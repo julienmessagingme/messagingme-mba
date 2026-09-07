@@ -29,33 +29,77 @@ import {
  * Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus (+ échecs). Remplace le funnel global.
  * « répondu » = message entrant reçu après l'envoi (peut dépasser « lu » si les accusés sont désactivés).
  */
-export function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaigns: CampaignSummary[] }) {
+export interface EtapeFunnel {
+  label: string;
+  value: number;
+  color: string;
+  /** Le pourcentage des envois, ou la chaîne vide quand il n'a pas de sens (étape en CLICS, pas en personnes). */
+  sub: string;
+}
+
+/**
+ * UN funnel, en barres VERTICALES.
+ *
+ * 🔴 VERTICALES ET PAS HORIZONTALES, à la demande de Julien. Ce composant n'existait pas : la carte
+ * dessinait ses barres à l'horizontale (label à gauche, piste à droite), et il n'y avait aucun patron de
+ * barre verticale à reprendre dans le dépôt. Le graphe journalier est en SVG et ses `rect` répondent à une
+ * échelle de dates, pas à un entonnoir ; le seul patron de barre partageable
+ * (`ConversationAnalysisCard`) est horizontal, et son commentaire dit qu'il vient d'ici.
+ *
+ * ⚠️ La hauteur est PLAFONNÉE à 100 % et PLANCHÉE à 2 %, et les deux comptent. Les clics ne sont pas bornés
+ * par le nombre d'envois (une même personne clique dix fois), donc sans plafond la colonne déborderait de
+ * la carte ; et une étape à 1 sur 10 000 doit rester visible, sinon elle se lit comme un zéro.
+ */
+function FunnelVertical({ etapes, sent, locale }: { etapes: EtapeFunnel[]; sent: number; locale: ReturnType<typeof useLocale>['locale'] }) {
+  const hauteur = (n: number) => (sent > 0 ? Math.min(100, Math.max(2, Math.round((n / sent) * 100))) : 0);
+  return (
+    <div className="flex h-56 items-end gap-2" data-testid="funnel-colonnes">
+      {etapes.map((e) => (
+        <div key={e.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+          <div className="text-xs font-semibold tabular-nums text-ink-800">{fmtNum(e.value, locale)}</div>
+          <div
+            className="w-full rounded-t-md"
+            style={{ height: `${hauteur(e.value)}%`, backgroundColor: e.color }}
+            data-testid={`funnel-barre-${e.label}`}
+          />
+          {/* Le libellé SOUS la colonne, sur deux lignes au besoin : les étapes de clic ont des noms longs,
+              et les tronquer ferait perdre l'unité, qui est justement ce qui les distingue. */}
+          <div className="h-8 w-full text-center text-[10px] leading-tight text-ink-500" title={e.label}>{e.label}</div>
+          <div className="h-3 text-[10px] tabular-nums text-ink-400">{e.sub}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Le funnel d'UNE campagne : son chargement, ses étapes, son dessin.
+ *
+ * ⚠️ Ce composant ne porte NI identifiant de zone PDF NI sélecteur. Le comparateur en affiche plusieurs, et
+ * N éléments partageant un même `id` casseraient à la fois l'export PDF (qui marque une zone par son id) et
+ * l'inventaire qui lit les zones dans le DOM. Un seul `quanti-funnel`, posé par le comparateur, autour de
+ * tous.
+ */
+function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: CampaignSummary }) {
   const t = useT();
   const { locale } = useLocale();
-  const [selected, setSelected] = useState<string | null>(null);
   const [funnel, setFunnel] = useState<CampaignFunnel | null>(null);
-  const [loading, setLoading] = useState(false);
-  const current = campaigns.find((c) => c.id === selected) ?? campaigns[0] ?? null;
-  const currentId = current?.id ?? null;
+  const [loading, setLoading] = useState(true);
 
-  // Dépend de l'ID (pas de l'objet `current`) : un rechargement de `campaigns` au changement de plage
-  // recrée le tableau mais le funnel d'une campagne ne dépend pas de la plage -> pas de refetch inutile.
+  // Dépend de l'ID (pas de l'objet) : un rechargement de `campaigns` recrée le tableau, mais le funnel
+  // d'une campagne ne dépend pas de la plage -> pas de rechargement inutile.
   useEffect(() => {
-    if (!currentId) { setFunnel(null); return; }
     let alive = true;
     setLoading(true);
-    getCampaignFunnel(tenantId, currentId)
+    getCampaignFunnel(tenantId, campagne.id)
       .then((f) => { if (alive) setFunnel(f); })
       .catch(() => { if (alive) setFunnel(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [tenantId, currentId]);
+  }, [tenantId, campagne.id]);
 
   const sent = funnel?.sent ?? 0;
-  // Bornée à 100 : les clics ne sont PAS bornés par le nombre d'envois (une même personne peut cliquer dix
-  // fois). Sans ce plafond, la barre déborderait de sa piste et le dessin deviendrait illisible.
-  const pct = (n: number) => (sent > 0 ? Math.min(100, Math.max(2, Math.round((n / sent) * 100))) : 0);
-  const bars = funnel
+  const etapes: EtapeFunnel[] = funnel
     ? [
         { label: t('Envoyés', 'Sent'), value: funnel.sent, color: '#009AFE', sub: '' },
         { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent, locale) },
@@ -78,62 +122,78 @@ export function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; 
     : [];
 
   return (
+    <div className="rounded-xl border border-ink-100 p-3" data-testid={`funnel-campagne-${campagne.id}`}>
+      <h4 className="mb-2 truncate text-sm font-medium text-ink-800" title={campagne.name}>{campagne.name}</h4>
+      {loading ? (
+        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+      ) : !funnel || sent === 0 ? (
+        <p className="text-sm text-ink-500">{t('Aucun envoi sur cette campagne.', 'No sends on this campaign.')}</p>
+      ) : (
+        <>
+          <FunnelVertical etapes={etapes} sent={sent} locale={locale} />
+          {funnel.failed > 0 && (
+            <p className="pt-2 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Le comparateur : plusieurs campagnes côte à côte, pour les lire d'un coup d'œil.
+ *
+ * 🔴 DEUX CAMPAGNES PROPOSÉES D'EMBLÉE quand elles existent. Un comparateur qui s'ouvre sur une seule
+ * colonne ne se lit pas comme un comparateur : personne ne pense à en ajouter une seconde. C'est la demande
+ * de Julien (« au moins 2 tableaux »), et c'est un DÉFAUT d'affichage, pas une contrainte : la sélection
+ * reste libre, y compris à une seule campagne.
+ */
+export function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaigns: CampaignSummary[] }) {
+  const t = useT();
+  const [choisies, setChoisies] = useState<string[]>([]);
+  // `campaigns` arrive APRÈS le premier rendu : un `useState` initialisé sur lui resterait vide pour
+  // toujours. Le défaut se calcule donc au rendu, et disparaît dès que l'utilisateur choisit lui-même.
+  const selection = choisies.length > 0 ? choisies : campaigns.slice(0, 2).map((c) => c.id);
+  const affichees = selection
+    .map((id) => campaigns.find((c) => c.id === id))
+    .filter((c): c is CampaignSummary => c !== undefined);
+
+  return (
     <div id="quanti-funnel" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Funnel par campagne', 'Funnel by campaign')}</h3>
             <BoutonPdf zone="quanti-funnel" />
           </div>
-          <p className="text-xs text-ink-400">{t('envoyés → délivrés → lus → répondus', 'sent → delivered → read → replied')}</p>
+          <p className="text-xs text-ink-400">{t('envoyés, délivrés, lus, répondus', 'sent, delivered, read, replied')}</p>
         </div>
         {campaigns.length > 0 && (
-          <select
-            value={current?.id ?? ''}
-            onChange={(e) => setSelected(e.target.value)}
-            className="max-w-[60%] rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          <SelecteurMultiple
+            libelleTous={t('Choisir des campagnes', 'Pick campaigns')}
+            options={campaigns.map((c) => ({ value: c.id, label: c.name }))}
+            selection={selection}
+            onChange={setChoisies}
+            testId="funnel-campagnes"
+          />
         )}
       </div>
       {campaigns.length === 0 ? (
         <p className="text-sm text-ink-500">{t('Aucune campagne pour le moment.', 'No campaigns yet.')}</p>
-      ) : loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
-      ) : !funnel || sent === 0 ? (
-        <p className="text-sm text-ink-500">{t('Aucun envoi sur cette campagne.', 'No sends on this campaign.')}</p>
       ) : (
-        <div className="space-y-2.5">
-          {bars.map((b) => (
-            <div key={b.label} className="flex items-center gap-3">
-              <div className="w-24 shrink-0 text-xs text-ink-600">{b.label}</div>
-              <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
-                <div className="flex h-full items-center rounded-md px-2 text-[11px] font-medium text-white" style={{ width: `${pct(b.value)}%`, backgroundColor: b.color }}>
-                  {fmtNum(b.value, locale)}
-                </div>
-              </div>
-              <div className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-500">{b.sub}</div>
-            </div>
-          ))}
-          {funnel.failed > 0 && (
-            <p className="pt-1 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
-          )}
-          {funnel.urlClicks !== null && (
-            // Dit la limite au lieu de la taire : un lien ne sait pas quel envoi l'a porté, donc deux
-            // campagnes sur le même template lisent le même compteur. Le taire ferait prendre un chiffre de
-            // template pour un chiffre de campagne.
-            <p className="pt-1 text-[11px] leading-relaxed text-ink-400">
-              {t(
-                'Les clics sur le lien sont comptés sur le lien du template, à partir du premier envoi de cette campagne. Si le même template sert ailleurs, ses clics apparaissent ici aussi.',
-                'Link clicks are counted on the template link, from this campaign’s first send. If the same template is used elsewhere, its clicks show up here too.',
-              )}
-            </p>
-          )}
+        <div className="grid gap-4 md:grid-cols-2">
+          {affichees.map((c) => <FunnelCampagne key={c.id} tenantId={tenantId} campagne={c} />)}
         </div>
       )}
+      {/* Dit la limite au lieu de la taire : un lien ne sait pas quel envoi l'a porté, donc deux campagnes
+          sur le même template lisent le même compteur. Le taire ferait prendre un chiffre de template pour
+          un chiffre de campagne. */}
+      <p className="pt-3 text-[11px] leading-relaxed text-ink-400">
+        {t(
+          'Les clics sur le lien sont comptés sur le lien du template, à partir du premier envoi de la campagne. Si le même template sert ailleurs, ses clics apparaissent ici aussi.',
+          'Link clicks are counted on the template link, from the campaign’s first send. If the same template is used elsewhere, its clicks show up here too.',
+        )}
+      </p>
     </div>
   );
 }

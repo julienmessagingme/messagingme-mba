@@ -6,15 +6,8 @@ import { OrigineServiceCard } from '@/components/analytics/cartes';
 import { DailyChart } from '@/components/DailyChart';
 import { RangeBar } from '@/components/RangeBar';
 import type { Session } from '@/lib/session';
-import {
-  getStats, getTemplateStats, getErrorBreakdown, getCampaignFunnel, getCostSeries, listCampaigns,
-  type DashboardStats, type TemplateStats, type StatsRange, type ErrorBreakdownRow, type CampaignFunnel, type DailyPoint,
-  type CostSeries, type CampaignSummary,
-} from '@/lib/api';
-import { metaCodeLabel } from '@/lib/meta-errors';
-import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
-import { BoutonPdf } from '@/components/BoutonPdf';
-import { useT, useLocale } from '@/lib/i18n';
+import { getStats, type DashboardStats, type StatsRange, type DailyPoint } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
 
 export default function DashboardPage() {
