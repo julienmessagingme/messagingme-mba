@@ -55,7 +55,7 @@ async function monterDashboard(page: import('@playwright/test').Page): Promise<v
 test.describe('Analytics quanti : chaque tableau s’exporte en PDF', () => {
   test('🔴 chaque carte porte son bouton, et n’imprime QUE sa propre zone', async ({ page }) => {
     await monterDashboard(page);
-    for (const zone of ['quanti-contacts', 'quanti-echanges', 'quanti-messages-envoyes', 'quanti-cout', 'quanti-funnel', 'quanti-erreurs', 'quanti-templates']) {
+    for (const zone of ['quanti-contacts', 'quanti-echanges', 'quanti-messages-envoyes', 'quanti-cout', 'quanti-funnel', 'quanti-erreurs', 'quanti-facture', 'quanti-templates']) {
       await expect(page.getByTestId(`pdf-${zone}`)).toBeVisible();
     }
 

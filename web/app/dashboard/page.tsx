@@ -122,6 +122,9 @@ function DashboardInner({ session }: { session: Session }) {
           <CampaignFunnelCard tenantId={session.tenantId} campaigns={campaigns} />
           <ErrorBreakdownCard errors={errors} />
           <div className="lg:col-span-2">
+            <FactureCard data={templateStats} />
+          </div>
+          <div className="lg:col-span-2">
             <TemplateBreakdownCard data={templateStats} />
           </div>
         </div>
@@ -460,6 +463,20 @@ function CostChartCard({
           </div>
           <p className="text-xs text-ink-400">
             {t('par jour, tarif Meta × volume', 'per day, Meta rate × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total, locale, cost.currency)}</span></> : null}
+            {/* 🔴 CE QUE LE COÛT NE COMPTE PAS, DIT PLUTÔT QUE TU. Un envoi sans catégorie connue ne produit
+                aucun coût et disparaissait du calcul en silence : le client lisait zéro là où il avait bien
+                envoyé. Vécu sur 22 envois de scénario, dont la catégorie n'était pas écrite avant le
+                2026-09-07. Un volume non chiffrable est une information, l'escamoter est un mensonge par
+                omission. Ces envois-là ne deviendront pas chiffrables rétroactivement : on ne devine pas
+                une catégorie, elle se facturerait au mauvais tarif. */}
+            {cost && cost.nonChiffrables > 0 ? (
+              <span className="mt-1 block text-gold" data-testid="cout-non-chiffrables">
+                {t(
+                  `${fmtNum(cost.nonChiffrables, locale)} envoi(s) ne sont pas chiffrables : leur catégorie n’a pas été enregistrée. Ils comptent dans les volumes, pas dans ce coût.`,
+                  `${fmtNum(cost.nonChiffrables, locale)} send(s) cannot be priced: their category was not recorded. They count in volumes, not in this cost.`,
+                )}
+              </span>
+            ) : null}
           </p>
         </div>
         {/* Les deux axes restent MUTUELLEMENT EXCLUSIFS : choisir des campagnes vide les templates et
@@ -496,6 +513,51 @@ function CostChartCard({
           ]}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Ce que Meta a REELLEMENT facture sur la periode, et pourquoi ce n est pas le meme nombre que l estimation.
+ *
+ * 🔴 CETTE CARTE EXISTE PARCE QUE LE CHIFFRE ETAIT MAL PLACE, pas mal calcule. `pricing.totalCost` vient de
+ * l API de facturation de Meta (`src/meta/pricing.ts`, « somme des couts factures sur la periode ») : il
+ * est juste, il couvre TOUS les templates, et il vivait sous un selecteur par template ou il se lisait
+ * comme le cout du template choisi.
+ *
+ * 🔴 ET IL NE PEUT PAS EGALER L ESTIMATION, meme apres correction. L un est une facture rendue par Meta,
+ * l autre notre volume multiplie par un tarif moyen par categorie. Les rapprocher serait un faux objectif ;
+ * ne pas dire pourquoi ils different fait reposer la question a chaque lecture.
+ */
+function FactureCard({ data }: { data: TemplateStats | null }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const pricing = data?.pricing ?? null;
+  if (!pricing) return null;
+
+  return (
+    <div id="quanti-facture" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold tracking-tight text-ink-900">
+          {t('Facturé par Meta sur la période', 'Billed by Meta over the period')}
+        </h3>
+        <BoutonPdf zone="quanti-facture" />
+      </div>
+      <div className="text-3xl font-bold tracking-tight text-ink-900">
+        {fmtCost(pricing.totalCost, locale, pricing.currency)}
+      </div>
+      <p className="mt-2 text-xs text-ink-500">
+        {t(
+          'Tous templates confondus, toutes catégories. C’est le montant que Meta a réellement compté, pas une estimation de notre part.',
+          'All templates and categories combined. This is what Meta actually charged, not an estimate of ours.',
+        )}
+      </p>
+      <p className="mt-2 border-t border-ink-100 pt-2 text-xs text-ink-400">
+        {t(
+          'Le « coût estimé » plus haut ne donnera jamais exactement ce chiffre : c’est notre volume multiplié par un tarif moyen par catégorie, pas une facture.',
+          'The "estimated cost" above will never match this exactly: it is our volume times an average per-category rate, not an invoice.',
+        )}
+      </p>
     </div>
   );
 }
@@ -551,11 +613,12 @@ function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
         </div>
       )}
 
-      {pricing && (
-        <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-500">
-          {t('Coût total période (Meta, approx.) :', 'Total period cost (Meta, approx.):')} <span className="font-semibold text-ink-800">{fmtCost(pricing.totalCost, locale, pricing.currency)}</span>
-        </p>
-      )}
+      {/* 🔴 LE TOTAL FACTURE N EST PLUS ICI. Il y etait, sous le selecteur de template et sous une metrique
+          « Prix estime » qui, elle, est bien celle du template choisi : n importe qui le lisait comme le
+          cout de CE template. Le chiffre n a jamais ete faux (il vient de l API de facturation de Meta,
+          `src/meta/pricing.ts`), c est son PLACEMENT qui mentait. Il vit desormais dans `FactureCard`,
+          seul, avec ce qu il faut pour le lire. Vecu le 2026-09-07 : 2,42 EUR pris pour le cout d un
+          template qui en avait genere 7 envois. */}
       {data && !pricing && (
         <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-400">{t("Prix Meta indisponible pour l'instant : volumes affichés seuls.", 'Meta price unavailable right now: volumes shown only.')}</p>
       )}

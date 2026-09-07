@@ -80,6 +80,15 @@ export interface CostSeries {
   utility: DailyPoint[];
   total: number;
   hasRates: boolean;
+  /**
+   * Envois comptés dans les VOLUMES mais absents de ce coût, faute de catégorie connue ou de tarif.
+   *
+   * 🔴 L'écran doit le DIRE. Sans ce champ, ces envois disparaissaient du calcul en silence et le client
+   * lisait un coût nul là où il avait bien envoyé (22 envois de scénario du tenant Demo, dont la catégorie
+   * n'était pas écrite avant le 2026-09-07). Un volume non chiffrable est une information ; l'escamoter en
+   * fait un mensonge par omission.
+   */
+  nonChiffrables: number;
   /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, on affiche le nombre nu. */
   currency: string | null;
 }

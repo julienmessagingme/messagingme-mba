@@ -44,7 +44,13 @@ export interface ErrorBreakdownRow {
 /** Volume d'envois de campagne par (jour, catégorie) — base du graphe de coût estimé. */
 export interface CostVolumeRow {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
-  category: string; // 'marketing' | 'utility'
+  /**
+   * 'marketing' | 'utility' | **null**. Le null est arrivé avec la branche « hors campagne » : un envoi de
+   * scénario historique n'a pas de catégorie (`logTemplateSent` ne l'écrivait pas avant le 2026-09-07), et
+   * `estimateCostSeries` l'ignore alors. Le type le DIT désormais, au lieu de laisser un null atterrir dans
+   * un champ déclaré `string` : c'est précisément la valeur que l'écran doit rendre visible.
+   */
+  category: string | null;
   count: number;
 }
 
@@ -88,6 +94,118 @@ export interface DashboardStats {
    */
   serviceParOrigine: { ia: number; scenario: number; humain: number; indeterminee: number };
 }
+
+/**
+ * 🔴 LES ENVOIS DE TEMPLATE FACTURABLES DE LA PÉRIODE, EN UN SEUL ENDROIT.
+ *
+ * Ce fragment existe parce que deux requêtes décrivaient la même chose et comptaient deux populations
+ * DIFFÉRENTES. `getTemplateBreakdown` portait l'union vers `conversation_messages`, `getCostVolume` non :
+ * un template envoyé par un nœud de scénario (ou depuis l'inbox) était donc compté dans le tableau
+ * « Détail par template » et INVISIBLE du graphe « Coût estimé ». Mesuré le 2026-09-07 en production sur
+ * `actu_cin_ma_2` : 0 côté coût, 7 côté détail, et sept autres templates dans le même cas. Le client
+ * filtrait sur un template réellement envoyé et obtenait un graphe vide.
+ *
+ * Même doctrine que `RECIPIENT_FAILED_SQL` (`src/campaign/store.pg.ts`) : un fragment SQL partagé, jamais
+ * deux copies, parce que deux copies divergent à la première correction.
+ *
+ * Rend une ligne PAR ENVOI, avec de quoi agréger des deux façons dont on a besoin :
+ *  - `sent_at` pour le découpage par jour (le coût), sans découpage pour le volume (le détail) ;
+ *  - `campaign_id` : celui de la campagne pour un envoi de campagne, celui de la campagne SCÉNARIO qui a
+ *    démarré le parcours pour un envoi de scénario (attribution à la lecture, voir la sous-requête), et
+ *    `null` seulement si ce contact n'a JAMAIS été destinataire d'une campagne scénario.
+ *    🔴 **Portée réelle, à connaître avant de lire le chiffre** : l'attribution remonte au dernier
+ *    destinataire réclamé, SANS borne basse. Dès qu'un contact a reçu une campagne scénario, tous ses
+ *    envois de scénario ultérieurs lui sont attribués, quel que soit ce qui les a déclenchés (mot-clé,
+ *    webhook, lien de chaîne). C'est le compromis assumé de l'attribution à la lecture, choisie le
+ *    2026-09-07 pour ne pas traverser le chemin qui reçoit les messages clients. Le seul moyen de faire
+ *    mieux est d'écrire l'attribution à l'envoi.
+ *    🔴 C'est ce `null` qui gouverne le filtre par campagne : `campaign_id = any($5)` vaut alors `NULL`, donc PAS `TRUE`, donc la ligne sort du `where`.
+ *    ⚠️ Écrire « c'est faux » serait une justification fausse, et elle s'inverserait sous une négation
+ *    (`not (...)`, `is distinct from`), où `NULL` ne se comporte pas comme `false`. Filtrer sur une
+ *    campagne exclut donc les envois hors campagne, filtrer sur un template les inclut ; les deux sont
+ *    voulus et tenus par un test.
+ *
+ * ⚠️ S'utilise UNIQUEMENT dans une requête qui déclare `${BOUNDS_CTE}` et passe `$1` = tenantId.
+ *
+ * 🔴 LES DEUX BRANCHES NE TRAITENT PAS L'ÉCHEC DE LA MÊME FAÇON, et le nier serait une justification
+ * fausse. Un message jamais PARTI n'a de ligne dans aucune des deux. Mais un échec de LIVRAISON n'est
+ * suivi que côté campagne (`delivery_status`), la branche 2 n'en a aucune notion : un template de scénario
+ * refusé après coup y reste compté. C'est une asymétrie réelle du modèle, pas un oubli de ce fragment.
+ */
+/**
+ * 🔴 L ATTRIBUTION EST OPTIONNELLE, ET CE N EST PAS UN CONFORT. Cette sous-requete est CORRELEE : elle
+ * s execute une fois PAR LIGNE de la branche 2, et son predicat
+ * `cv.wa_id = regexp_replace(r3.to_e164, ...)` n est servi par AUCUN index (la migration 0096 a
+ * explicitement refuse un index sur `campaign_recipients(to_e164, sent_at)`). Or `getTemplateBreakdown`
+ * groupe sur `name, category` : il paierait ce balayage pour une colonne qu il JETTE, a chaque affichage
+ * du tableau de bord. Le fragment reste UNIQUE, seule l attribution se branche.
+ */
+const ATTRIBUTION_CAMPAGNE_SCENARIO = `(
+           -- 🔴 ATTRIBUTION A LA LECTURE, decidee par Julien le 2026-09-07. Un envoi de template fait DANS
+           -- un scenario n'ecrit nulle part la campagne qui l'a declenche : le parcours n'est enregistre
+           -- qu'APRES son premier envoi ("src/workflow/executor.ts", "apply" puis "runs.start"), donc au
+           -- moment d'ecrire ce message il n'existe encore rien a interroger. On le rattache donc ici.
+           --
+           -- MEME DOCTRINE que le « repondu » du funnel ("entrantAttribue" plus bas) : meme numero,
+           -- posterieur, et le PLUS RECENT avant lui, ce qui exprime « aucun autre depart intercale ».
+           -- La normalisation du numero est celle du depot ("regexp_replace"), pas une variante.
+           --
+           -- 🔴 "c3.workflow_id is not null" est le discriminant qui rend l'heuristique tenable : seule une
+           -- campagne de type SCENARIO peut avoir engendre un envoi de scenario. Une campagne a template
+           -- DIRECT envoie elle-meme, et son envoi est deja compte par la branche du dessus ; l'autoriser
+           -- ici lui attribuerait en plus les envois d'un scenario declenche par tout autre chose.
+           --
+           -- ⚠️ CE QUE CETTE ATTRIBUTION NE SAIT PAS FAIRE, et il faut le savoir en lisant le chiffre :
+           -- deux campagnes scenario visant le MEME contact a peu d'intervalle peuvent se voler un envoi.
+           -- Acceptable ici (c'est deja le compromis retenu pour le funnel), et le seul moyen de faire
+           -- mieux serait d'ecrire l'attribution a l'envoi, ce qui traverse le chemin chaud.
+           select r3.campaign_id
+           from campaign_recipients r3 join campaigns c3 on c3.id = r3.campaign_id
+           where c3.tenant_id = cv.tenant_id
+             and c3.workflow_id is not null
+             and r3.sent_at is not null
+             -- 🔴 ON SE CALE SUR "claimed_at", ET C EST UNE BORNE STRUCTURELLE, PAS UNE CONSTANTE.
+             -- "sent_at" ne convient pas : le moteur journalise le message dans le fil AVANT de marquer
+             -- le destinataire envoye. Mesure sur la campagne reelle « Formation du 3 » du 2026-09-03,
+             -- les quatre messages precedent leur ligne de campagne de 55 a 90 ms. Un predicat
+             -- "r3.sent_at <= m.created_at" excluait donc EXACTEMENT les envois a rattacher, 1 sur 4.
+             --
+             -- ⚠️ Une premiere version compensait par une tolerance de 5 secondes. C etait un nombre
+             -- choisi, pas mesure : l ecart entre l ecriture du message et "sent_at" contient tout le
+             -- reste de la chaine synchrone du scenario, qu aucune borne ne limite. Et une fenetre qui
+             -- deborde vers le futur laisse une campagne partie APRES le message le voler.
+             --
+             -- "claimed_at" est pose par "PgCampaignStore.claim" a la transition pending -> sending,
+             -- donc AVANT que le moteur ne demarre le parcours, et "markResult" ne l efface pas. Tout
+             -- message ecrit par ce parcours lui est posterieur, y compris ceux des etapes suivantes.
+             -- "coalesce" parce que la colonne n existe que depuis la migration 0008.
+             and coalesce(r3.claimed_at, r3.sent_at) <= m.created_at
+             and cv.wa_id = regexp_replace(r3.to_e164, '[^0-9]', '', 'g')
+           order by coalesce(r3.claimed_at, r3.sent_at) desc
+           limit 1
+         )`;
+
+/** Sans attribution : la colonne existe pour aligner les deux branches du `union all`, et vaut null. */
+const SANS_ATTRIBUTION = 'null::uuid';
+
+const envoisTemplateFacturables = (attribution: string): string => `
+  select r.sent_at as sent_at, c.template_name as name, c.category as category, c.id as campaign_id
+  from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+  where c.tenant_id = $1 and nullif(c.template_name, '') is not null and r.status = 'sent'
+    and c.channel = 'whatsapp'
+    and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
+    and (r.delivery_status is null or r.delivery_status <> 'failed')
+  union all
+  select m.created_at as sent_at, m.template_name as name, m.template_category as category,
+         ${attribution} as campaign_id
+  from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
+  where cv.tenant_id = $1 and not cv.is_test and m.direction = 'out' and m.type = 'template'
+    and m.template_name is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
+    -- Anti double-compte : template de campagne directe déjà compté par la branche du dessus (même wamid).
+    and not exists (
+      select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+      where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
+    )`;
 
 /** Un template envoyé sur la période, avec son volume (pour le dropdown + le prix estimé). */
 export interface TemplateBreakdownRow {
@@ -266,26 +384,9 @@ export class PgStatsStore {
     const { from, to } = range;
     const res = await this.pool.query<{ name: string; category: string | null; count: string }>(
       `with ${BOUNDS_CTE}
-       select name, category, sum(cnt)::int as count from (
-         select c.template_name as name, c.category as category, count(*) cnt
-         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
-         where c.tenant_id = $1 and nullif(c.template_name, '') is not null and r.status = 'sent'
-           and c.channel = 'whatsapp'
-           and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
-           and (r.delivery_status is null or r.delivery_status <> 'failed')
-         group by c.template_name, c.category
-         union all
-         select m.template_name as name, m.template_category as category, count(*) cnt
-         from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
-         where cv.tenant_id = $1 and not cv.is_test and m.direction = 'out' and m.type = 'template'
-           and m.template_name is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
-           -- Anti double-compte : template de campagne directe déjà compté via campaign_recipients (même wamid).
-           and not exists (
-             select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
-             where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
-           )
-         group by m.template_name, m.template_category
-       ) x group by name, category order by count desc`,
+       select name, category, count(*)::int as count
+       from (${envoisTemplateFacturables(SANS_ATTRIBUTION)}) envois
+       group by name, category order by count desc`,
       [tenantId, from, to, TZ],
     );
     return res.rows.map((r) => ({ name: r.name, category: r.category, count: Number(r.count) }));
@@ -390,25 +491,33 @@ export class PgStatsStore {
   }
 
   /**
-   * Volume d'envois de campagne par (jour Paris, catégorie) sur la plage, filtrable par campagne OU
-   * template. Base du graphe de coût estimé (multiplié ensuite par le tarif Meta de la catégorie).
-   * N'inclut que les envois réussis (status='sent', livraison non 'failed'), ancrés sur sent_at.
+   * Volume d'envois de template FACTURABLES par (jour Paris, catégorie) sur la plage, filtrable par
+   * campagne OU par template. Base du graphe de coût estimé (multiplié ensuite par le tarif Meta de la
+   * catégorie).
+   *
+   * ⚠️ Ce docblock a décrit la seule branche campagne jusqu'au 2026-09-07, et il est devenu faux le jour où
+   * la requête a gagné les envois HORS campagne. Ce qu'il faut savoir aujourd'hui :
+   *  - la population et ses gardes vivent dans `envoisTemplateFacturables`, pas ici. C'est LUI qui porte
+   *    `c.channel = 'whatsapp'` (le coût est au tarif Meta ; une campagne RCS part chez smsmode et Meta ne
+   *    facture rien, l'y compter affichait un coût WhatsApp inexistant sur l'écran même où le client décide
+   *    de son budget) ;
+   *  - les deux branches ne s'ancrent PAS sur la même colonne : `sent_at` côté campagne, `created_at` côté
+   *    hors campagne, et seule la première connaît `status` et `delivery_status` ;
+   *  - `category` peut être `null` (un envoi de scénario antérieur au 2026-09-07 n'en porte pas), et
+   *    `estimateCostSeries` ignore alors la ligne.
    */
-  // 🔴 `c.channel = 'whatsapp'` : le coût estimé est calculé au tarif de Meta. Une campagne RCS part chez
-  // smsmode et Meta ne facture rien : l'y compter affichait au client un coût WhatsApp qui n'existe pas,
-  // sur l'écran même où il décide de son budget.
   async getCostVolume(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostVolumeRow[]> {
     const { from, to } = range;
-    const res = await this.pool.query<{ date: string; category: string; count: string }>(
+    const res = await this.pool.query<{ date: string; category: string | null; count: string }>(
       `with ${BOUNDS_CTE}
-       select to_char(r.sent_at at time zone $4, 'YYYY-MM-DD') as date, c.category as category, count(*)::int as count
-       from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
-       where c.tenant_id = $1
-         and c.channel = 'whatsapp'
-         and r.status = 'sent' and r.delivery_status is distinct from 'failed'
-         and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
-         and ($5::uuid[] is null or c.id = any($5::uuid[]))
-         and ($6::text[] is null or c.template_name = any($6::text[]))
+       select to_char(envois.sent_at at time zone $4, 'YYYY-MM-DD') as date, envois.category as category,
+              count(*)::int as count
+       from (${envoisTemplateFacturables(ATTRIBUTION_CAMPAGNE_SCENARIO)}) envois
+       -- 🔴 Le filtre par CAMPAGNE exclut les envois hors campagne : leur campaign_id est null, donc
+       --    \`= any(...)\` vaut NULL, donc pas TRUE, donc la ligne sort du where. Le filtre par TEMPLATE
+       --    les inclut. Les deux sont voulus, et tenus par un test.
+       where ($5::uuid[] is null or envois.campaign_id = any($5::uuid[]))
+         and ($6::text[] is null or envois.name = any($6::text[]))
        group by 1, 2`,
       // Liste VIDE -> null, pas un tableau vide : `= any('{}')` ne matche rien, donc un filtre vide effacerait
       // le graphe au lieu de le laisser complet.

@@ -313,7 +313,7 @@ dropdown « Tous les templates », ancré `coalesce(delivery_updated_at,sent_at,
 campagnes, aucune colonne d'erreur sur `conversation_messages`), `/stats/cost?campaignId&templateName` (coût/jour
 estimé). `error_code` (0020) alimenté par `extractDelivery` (webhook) + `markResult` (échec d'envoi,
 `MetaApiError.code`). **Coût = backend** : `getCostVolume` (volume/jour/catégorie, filtrable) × tarif Meta
-(`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif).
+(`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif). 🔴 Depuis le 2026-09-07, ce qui n'est pas chiffrable est **compté** (`nonChiffrables`) au lieu de disparaître du calcul : un envoi sans catégorie connue produisait un coût nul que l'écran affichait sans rien dire, et 22 envois de scénario du tenant Demo étaient dans ce cas.
 
 ## Accueil + statut compte
 
@@ -1668,6 +1668,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/http/scope.ts` | `scopeTenant` (contrôle d'accès tenant) et `nonEmpty` | 22 et 12 copies dans `src/http/` |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | Résolution d'un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) | 9 copies + 1 dans `inbox/store.pg` |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | CTE des bornes de date, robuste au changement d'heure | 9 copies dans les 2 stores de stats |
+| `src/stats/store.pg.ts` -> `envoisTemplateFacturables()` | Les envois de template facturables d'une période (campagnes + hors campagne), et l'attribution d'un envoi de scénario à sa campagne | 2 requêtes qui comptaient deux populations DIFFÉRENTES : le coût estimé ratait les envois de scénario, le détail par template les comptait. Un template réellement envoyé rendait un graphe vide (mesuré le 2026-09-07). L'attribution est un PARAMÈTRE : elle est corrélée et sans index, le détail par template ne doit pas la payer pour une colonne qu'il jette. |
 | `src/campaign/store.pg.ts` -> `insertCampaignRow`, `summarySelect()`, `RECIPIENT_FAILED_SQL` | L'INSERT d'une campagne, la projection des résumés, la définition d'un échec | 2 INSERT, 2 projections |
 | `src/crm/contact-filters.ts` | Règles de filtrage des contacts (bornes, opérateurs, plafonds) | query params et corps JSON, alignés à la main |
 | `src/webhooks/json.ts` | `asArray`, `asRecord` (lecture défensive d'un payload Meta) | 3 copies. ⚠️ `str` reste LOCAL (null vs undefined selon le lecteur) |

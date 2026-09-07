@@ -131,6 +131,14 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     carousel?: { cards: OutboundCarouselCard[] };
     headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
     headerMediaUrl?: string;
+    /**
+     * 🔴 La catégorie Meta, EN MINUSCULES, et elle n'a jamais coûté un appel : `tplClient.list` demande
+     * déjà `category` dans ses `fields` (`src/meta/templates.ts`) et la rend. Ce type la JETAIT, donc un
+     * template envoyé par un scénario partait sans catégorie, donc sans coût calculable, et l'écran
+     * affichait zéro sans le dire. Meta rend 'MARKETING'/'UTILITY' en majuscules, la base stocke en
+     * minuscules côté campagne : on aligne ICI plutôt que dans chaque lecteur.
+     */
+    category?: string;
   };
   const tplVarCache = new Map<string, { at: number } & TplInfo>();
   const TPL_CACHE_MS = 5 * 60_000;
@@ -207,6 +215,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       : undefined;
     const info: TplInfo = {
       count: countTemplateVariables(tpl.body),
+      ...(tpl.category ? { category: tpl.category.toLowerCase() } : {}),
       ...(tpl.carousel ? { carousel: tpl.carousel } : {}),
       ...(media ? { headerFormat: media } : {}),
       ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
@@ -449,7 +458,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
           return `template « ${name} » : valeur manquante pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
         }
         const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
-        await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
+        // ⚠️ La catégorie vient de `luCampagne`, la lecture de CETTE branche, pas de `info` (qui n'existe
+        // que dans la branche hints plus bas). Les deux branches doivent journaliser la MÊME chose : c'est
+        // leur divergence qui a déjà laissé le carousel puis l'en-tête média non branchés côté campagne.
+        // Lecture best-effort : `luCampagne` null (template illisible) -> pas de catégorie, jamais une
+        // catégorie inventée, qui se facturerait au mauvais tarif.
+        await logTemplateSent(inboxStore, tenant, waId, name, res.messageId, { templateCategory: luCampagne?.category ?? null });
         // Remonté pour la mesure par bloc : c'est cet identifiant qui permettra à un accusé de lecture de
         // retrouver le bloc qui a envoyé ce message.
         return { messageId: res.messageId };
@@ -500,7 +514,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       }
       const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
       // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
-      await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
+      // Même contexte que la branche campagne ci-dessus, lu ici dans `info` : sans la catégorie, l'envoi
+      // remonte en volume mais reste à zéro dans le coût, sans que rien ne le signale.
+      await logTemplateSent(inboxStore, tenant, waId, name, res.messageId, { templateCategory: info.category ?? null });
       return { messageId: res.messageId };
     },
     // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Deux chemins d'accès,

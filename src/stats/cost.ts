@@ -9,6 +9,15 @@ export interface CostSeries {
   hasRates: boolean;
   /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, l'écran affiche alors le nombre nu. */
   currency: string | null;
+  /**
+   * Nombre d'envois COMPTÉS dans le volume mais absents du coût, faute de catégorie connue ou de tarif.
+   *
+   * 🔴 Ce champ existe pour que l'écran puisse le DIRE. Sans lui, ces envois disparaissaient du calcul en
+   * silence et le client lisait un coût nul là où il avait bien envoyé : c'est ce qui s'est passé pour
+   * 22 envois de scénario du tenant Demo, dont la catégorie n'était pas écrite avant le 2026-09-07. Un
+   * volume non chiffrable est une information ; l'escamoter en fait un mensonge par omission.
+   */
+  nonChiffrables: number;
 }
 
 /** Tarif Meta par message pour chaque catégorie (null = indisponible -> coût non estimable). */
@@ -41,10 +50,16 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
   const days = enumerateDays(from, to);
   const mktByDay = new Map<string, number>();
   const utilByDay = new Map<string, number>();
+  // 🔴 CE QUI TOMBE DANS LE VIDE, COMPTE PLUTOT QUE JETE EN SILENCE. Une ligne sans catégorie connue (ou
+  // dont le tarif Meta manque) ne produit aucun coût, et jusqu'ici elle disparaissait sans laisser de
+  // trace : l'écran affichait zéro là où il y avait bien eu des envois. C'est ce qui a fait croire à un
+  // coût nul sur 22 envois de scénario du tenant Demo, dont la catégorie n'était pas écrite avant le
+  // 2026-09-07. Un volume non chiffrable est une information, pas un néant : l'écran doit le DIRE.
+  let nonChiffrables = 0;
   for (const r of rows) {
     const bucket = r.category === 'marketing' ? mktByDay : r.category === 'utility' ? utilByDay : null;
     const rate = r.category === 'marketing' ? rates.marketing : r.category === 'utility' ? rates.utility : null;
-    if (!bucket || rate == null) continue;
+    if (!bucket || rate == null) { nonChiffrables += r.count; continue; }
     bucket.set(r.date, (bucket.get(r.date) ?? 0) + r.count * rate);
   }
   const marketing = days.map((d) => ({ date: d, count: round2(mktByDay.get(d) ?? 0) }));
@@ -54,5 +69,6 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
     marketing, utility, total,
     hasRates: rates.marketing != null || rates.utility != null,
     currency: rates.currency ?? null,
+    nonChiffrables,
   };
 }

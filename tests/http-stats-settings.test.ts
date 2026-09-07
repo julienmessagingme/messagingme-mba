@@ -31,7 +31,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
     getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 2, urlClicks: 4 }),
     getErrorBreakdown: async () => [{ code: 131049, count: 4, templateName: 'promo' }, { code: 131047, count: 2, templateName: null }],
-    getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR' }),
+    getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR', nonChiffrables: 0 }),
     getConversationSummary: async () => ({
       enabled: true, retentionDays: 365, total: 3,
       sentiment: { positif: 1, neutre: 1, negatif: 1 },
