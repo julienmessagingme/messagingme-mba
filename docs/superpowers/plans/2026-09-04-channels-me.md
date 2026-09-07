@@ -63,6 +63,17 @@ Ces contraintes s'appliquent à TOUTES les tâches, implicitement. Valeurs recop
    pas confirmer**, le marqueur voyage avec la valeur fausse et finit par lui donner l'air d'un choix. Une
    valeur qu'on ne sait pas se mesure avant d'écrire le plan, ou ne s'écrit pas.
 
+7. 🔴 **TROISIÈME VALEUR INVENTÉE PAR CE PLAN, découverte en production le 2026-09-07.** Il fait envoyer
+   `kind: 'text'` ou `kind: 'image'` selon la présence d'un média (lignes 1370, 1486, 1491, 2538, 2545).
+   **Ces deux valeurs n'existent pas** : l'enum du fournisseur est `text_and_media` ou `poll`. Publier
+   échouait donc en **HTTP 500** (`ArgumentError` levé chez eux), et le message d'erreur accusait le texte
+   et l'image de l'utilisateur. Corrigé dans `src/channels-me/client.ts` ; ces cinq lignes du plan restent
+   fausses, elles ne sont là que pour mémoire.
+   ⚠️ Les deux premières valeurs inventées étaient au moins marquées « à confirmer ». Celle-ci ne l'était
+   pas, et **ses tests la figeaient** : c'est pour ça qu'elle a traversé la revue. Un test qui épingle une
+   valeur inventée ne protège rien, il donne une confiance sans fondement. La garde utile vérifie
+   l'appartenance à l'enum du fournisseur, pas l'égalité à une valeur recopiée à côté du code.
+
 ## Structure des fichiers
 
 **Backend, créés**

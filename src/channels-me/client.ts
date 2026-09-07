@@ -31,6 +31,12 @@ const ENTETE_AUTORISATION = 'Authorization';
 const ENTETE_SIGNATURE = 'X-Signature';
 
 /**
+ * Le seul `kind` que nous publions. Enum du fournisseur : `text_and_media` ou `poll`. Nous ne publions pas
+ * de sondage, donc il n y a rien a choisir, et surtout rien a deduire de la presence d un media.
+ */
+const KIND_TEXTE_ET_MEDIA = 'text_and_media';
+
+/**
  * Delai maximum d'un appel. Sans plafond, un fournisseur qui accepte la connexion et ne repond jamais
  * immobilise le slot d'ou l'appel part, jusqu'au defaut d'undici, de l'ordre de cinq minutes.
  */
@@ -96,10 +102,25 @@ export class ChannelsMeClient {
    * Publie tout de suite. `publish_now` est en dur parce que la V1 ne planifie pas : il n'y a donc pas
    * d'etat brouillon a piloter, et un parametre de plus serait un cas non teste.
    */
+  /**
+   * 🔴 `kind` NE PREND QUE DEUX VALEURS : `text_and_media` ou `poll` (spec OpenAPI du fournisseur,
+   * `#/components/schemas/Message`, enum verifie le 2026-09-07). Ce code a d abord envoye `text` ou
+   * `image` selon la presence d un media : DEUX valeurs qui n existent pas, inventees par le redacteur du
+   * plan et jamais mesurees. Leur API repond alors **HTTP 500** avec la page d erreur generique de Rails,
+   * pas un 422 : rien ne dit quel champ est en cause, et notre message d erreur accusait le texte et
+   * l image de l utilisateur, qui n y etaient pour rien.
+   *
+   * `text_and_media` couvre le texte SEUL comme le texte avec image, et c est exactement pour ca qu il
+   * s appelle ainsi : « either a text or an image or both is required ». C est la presence de `media_url`
+   * qui decide s il y a une image, jamais le `kind`.
+   *
+   * ⚠️ Troisieme valeur inventee de ce lot, apres l hote de l API et l en-tete d authentification. La
+   * lecon ne change pas : une valeur qu on ne sait pas se MESURE avant d ecrire, ou ne s ecrit pas.
+   */
   async createMessage(cx: Connexion, m: { text: string; mediaUrl?: string }): Promise<Message> {
     const corps = {
       message: {
-        kind: m.mediaUrl === undefined ? 'text' : 'image',
+        kind: KIND_TEXTE_ET_MEDIA,
         publish_now: true,
         text: m.text,
         ...(m.mediaUrl === undefined ? {} : { media_url: m.mediaUrl }),

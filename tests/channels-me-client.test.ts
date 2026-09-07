@@ -108,16 +108,49 @@ describe('ecriture', () => {
     // REELLEMENT transmis redonne la signature REELLEMENT posee.
     expect(signer(a.body!, CX.secret)).toBe(a.headers['X-Signature']);
     // Et la signature porte sur la structure IMBRIQUEE, pas sur des cles a plat `message[kind]`.
-    expect(JSON.parse(a.body!)).toEqual({ message: { kind: 'text', publish_now: true, text: 'Bonjour' } });
+    expect(JSON.parse(a.body!)).toEqual({ message: { kind: 'text_and_media', publish_now: true, text: 'Bonjour' } });
   });
 
-  it('avec une image : kind image et media_url, dans le corps signe', async () => {
+  it('avec une image : media_url dans le corps signe, et le MEME kind que sans image', async () => {
     const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 'msg_2' } }) }]);
     await new ChannelsMeClient({ fetch: impl }).createMessage(CX, { text: 'Voir', mediaUrl: 'https://exemple.test/a.jpg' });
     expect(JSON.parse(appels[0]!.body!)).toEqual({
-      message: { kind: 'image', media_url: 'https://exemple.test/a.jpg', publish_now: true, text: 'Voir' },
+      message: { kind: 'text_and_media', media_url: 'https://exemple.test/a.jpg', publish_now: true, text: 'Voir' },
     });
     expect(signer(appels[0]!.body!, CX.secret)).toBe(appels[0]!.headers['X-Signature']);
+  });
+
+  /**
+   * 🔴 LA GARDE QUI MANQUAIT, ET QUI A COUTE UNE PUBLICATION RATEE EN PRODUCTION.
+   *
+   * Les deux tests ci-dessus epinglaient `kind: 'text'` et `kind: 'image'`, deux valeurs qui N EXISTENT PAS
+   * chez le fournisseur : son enum est `text_and_media` ou `poll`. Un test qui fige une valeur inventee ne
+   * protege rien, il donne une confiance qui n a aucun fondement. Le symptome, cote client, etait un
+   * HTTP 500 avec la page d erreur generique de Rails, et notre message accusait le texte et l image de
+   * l utilisateur, qui n y etaient pour rien.
+   *
+   * Cette garde ne verifie donc pas une valeur ecrite a cote du code, mais l APPARTENANCE a l enum du
+   * fournisseur, ecrit ici une seule fois. Ajouter un `kind` hors de cette liste casse.
+   */
+  it('🔴 le kind envoye appartient a l enum du fournisseur, avec ou sans image', async () => {
+    const ENUM_FOURNISSEUR = ['text_and_media', 'poll'];
+    for (const m of [{ text: 'a' }, { text: 'a', mediaUrl: 'https://exemple.test/a.jpg' }]) {
+      const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 'x' } }) }]);
+      await new ChannelsMeClient({ fetch: impl }).createMessage(CX, m);
+      const envoye = JSON.parse(appels[0]!.body!).message.kind as string;
+      expect(ENUM_FOURNISSEUR).toContain(envoye);
+    }
+  });
+
+  it('le kind ne se DEDUIT pas de la presence d une image : c est media_url qui la porte', async () => {
+    // La faute d origine venait de la : « il y a un media donc kind: image ». Le kind dit la NATURE du
+    // message (texte-et-media, ou sondage), pas son contenu.
+    const sans = faux([{ body: JSON.stringify({ data: { id: 'a' } }) }]);
+    await new ChannelsMeClient({ fetch: sans.impl }).createMessage(CX, { text: 'a' });
+    const avec = faux([{ body: JSON.stringify({ data: { id: 'b' } }) }]);
+    await new ChannelsMeClient({ fetch: avec.impl }).createMessage(CX, { text: 'a', mediaUrl: 'https://exemple.test/a.jpg' });
+    expect(JSON.parse(sans.appels[0]!.body!).message.kind)
+      .toBe(JSON.parse(avec.appels[0]!.body!).message.kind);
   });
 });
 

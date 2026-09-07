@@ -26,6 +26,12 @@ qualifiés**, mesurée par le nombre de scénarios démarrés depuis un post.
 
 Tout ce qui suit a été vérifié empiriquement le 2026-09-04 contre l'API réelle, pas lu en diagonale.
 
+> 🔴 **Mesuré le 2026-09-07, après un échec en production.** `kind` ne prend que **deux** valeurs,
+> `text_and_media` ou `poll`. Une valeur hors de cet enum fait lever un `ArgumentError` chez eux et rend un
+> **HTTP 500** générique, jamais un 422 : rien n'indique le champ fautif. `text_and_media` couvre le texte
+> seul comme le texte avec image, c'est `media_url` qui porte l'image. Ne jamais déduire le `kind` de la
+> présence d'un média.
+
 **2.1 Le bouton « Discuter » n'existe dans aucun champ d'API.** Le POST d'un message accepte `kind`, `text`,
 `media_url` (ou `media` + `media_checksum`), `published_at`, `time_zone`, `is_draft`, `publish_now`,
 `apply_utms` et les trois `utm_*`. C'est tout. Le bouton est **dessiné par le client WhatsApp** parce qu'il a
