@@ -115,6 +115,37 @@ test.describe('Chaîne : la connexion', () => {
     await expect(page.getByTestId('chaine-vide')).toHaveCount(0);
   });
 
+  test('🔴 aucune chaîne mais des identifiants en main : l’état vide n’est PAS un cul-de-sac', async ({ page }) => {
+    // La premiere version ne proposait QUE la demande d activation : un client qui a deja sa chaine voyait
+    // un ecran lui demandant de reclamer ce qu il possedait, sans aucun champ ou le saisir. Le formulaire
+    // n existait que DERRIERE une connexion enregistree, donc il fallait deja en avoir une pour en creer une.
+    const appels = await monter(page, { connexion: null });
+    await page.goto('/chaine');
+    await expect(page.getByTestId('chaine-vide')).toBeVisible();
+
+    await page.getByTestId('chaine-saisir-identifiants').click();
+    await page.getByTestId('chaine-org').fill('org-1');
+    await page.getByTestId('chaine-canal').fill('chan-1');
+    await page.getByTestId('chaine-cle').fill('cle-de-test');
+    await page.getByTestId('chaine-secret').fill('secret-de-test');
+    await page.getByTestId('chaine-identifiants-enregistrer').click();
+
+    await expect.poll(() => appels.filter((a) => a.methode === 'PUT').length).toBe(1);
+    const mise = appels.find((a) => a.methode === 'PUT')!;
+    expect(mise.chemin).toBe('/tenants/t-e2e/channels-me/connection');
+    // Les QUATRE champs partent ensemble : la route est un remplacement complet, pas un patch.
+    expect(mise.corps).toEqual({ orgId: 'org-1', channelId: 'chan-1', apiKey: 'cle-de-test', secret: 'secret-de-test' });
+  });
+
+  test('les deux champs secrets sont masqués à la saisie', async ({ page }) => {
+    await monter(page, { connexion: null });
+    await page.goto('/chaine');
+    await page.getByTestId('chaine-saisir-identifiants').click();
+    // Une cle d API saisie en clair a l ecran se lit par-dessus l epaule et part dans les captures.
+    await expect(page.getByTestId('chaine-cle')).toHaveAttribute('type', 'password');
+    await expect(page.getByTestId('chaine-secret')).toHaveAttribute('type', 'password');
+  });
+
   test('aucune chaîne : l’état vide porte la demande d’activation, et rien d’autre ne se charge', async ({ page }) => {
     const appels = await monter(page, { connexion: null });
     await page.goto('/chaine');

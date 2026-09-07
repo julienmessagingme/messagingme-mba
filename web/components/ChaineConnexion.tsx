@@ -51,7 +51,12 @@ export function ChaineConnexion(props: ChaineConnexionProps) {
     );
   }
   if (etat.connection === null) {
-    return <EtatVide onDemanderActivation={props.onDemanderActivation} />;
+    return (
+      <EtatVide
+        onDemanderActivation={props.onDemanderActivation}
+        onEnregistrer={props.onEnregistrer}
+      />
+    );
   }
   return (
     <Connectee
@@ -304,14 +309,23 @@ function Champ({
  * chercher un bouton qui n'existe pas.
  */
 function EtatVide({
-  onDemanderActivation,
+  onDemanderActivation, onEnregistrer,
 }: {
   onDemanderActivation: (message: string) => Promise<void>;
+  onEnregistrer: ChaineConnexionProps['onEnregistrer'];
 }) {
   const t = useT();
   const [message, setMessage] = useState('');
   const [etat, setEtat] = useState<'repos' | 'envoi' | 'envoyee'>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * 🔴 LE SECOND CHEMIN, SANS LEQUEL L ECRAN EST UN CUL-DE-SAC. La premiere version ne proposait QUE la
+   * demande d activation, parce qu elle supposait que toute chaine se provisionne par nous. C est faux des
+   * le premier client qui a deja sa chaine et ses identifiants : il voyait un ecran qui lui demandait de
+   * reclamer ce qu il possedait deja, et aucun champ ou le saisir. Le formulaire n existait que DERRIERE une
+   * connexion enregistree, donc il fallait deja en avoir une pour pouvoir en creer une.
+   */
+  const [saisie, setSaisie] = useState(false);
 
   async function envoyer() {
     setEtat('envoi');
@@ -338,7 +352,19 @@ function EtatVide({
         )}
       </p>
 
-      {etat === 'envoyee' ? (
+      {saisie ? (
+        <div className="mx-auto mt-5 max-w-xl text-left">
+          <FormulaireIdentifiants connexion={{ orgId: '', channelId: '' }} onEnregistrer={onEnregistrer} />
+          <button
+            type="button"
+            onClick={() => setSaisie(false)}
+            className="mt-3 text-sm font-medium text-ink-500 hover:text-ink-700"
+            data-testid="chaine-saisie-annuler"
+          >
+            {t('Annuler', 'Cancel')}
+          </button>
+        </div>
+      ) : etat === 'envoyee' ? (
         <p className="mt-5 rounded-lg bg-mint-50 px-3 py-2 text-sm text-mint-600" data-testid="chaine-demande-envoyee">
           {t('Demande envoyée. Nous revenons vers toi rapidement.', 'Request sent. We will get back to you shortly.')}
         </p>
@@ -362,6 +388,17 @@ function EtatVide({
           >
             {etat === 'envoi' ? t('Envoi…', 'Sending…') : t('Demander l’activation', 'Request activation')}
           </button>
+          <p className="mt-4 border-t border-ink-100 pt-4 text-sm text-ink-500">
+            {t('Ta chaîne existe déjà ?', 'Already have a channel?')}{' '}
+            <button
+              type="button"
+              onClick={() => setSaisie(true)}
+              className="font-medium text-brand-600 hover:text-brand-700"
+              data-testid="chaine-saisir-identifiants"
+            >
+              {t('Saisis ses identifiants', 'Enter its credentials')}
+            </button>
+          </p>
         </div>
       )}
     </div>
