@@ -38,7 +38,11 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
 
   const image = brouillon.imageUrl.trim();
   const imageRefusee = image !== '' && imageAffichable(image) === null;
-  const reste = resteAAfficher(brouillon.texte.length, MAX_TEXTE_POST);
+  // 🔴 La longueur TRIMEE, la meme que celle sur laquelle `pretAPublier` decide (et que le `.trim()` du
+  // schema Zod du serveur applique). Sur la longueur brute, un texte de 4096 caracteres suivi de trois
+  // espaces affichait « 3 caracteres de trop » en rouge pendant que le bouton Publier restait actif : deux
+  // moities de l ecran se contredisaient.
+  const reste = resteAAfficher(brouillon.texte.trim().length, MAX_TEXTE_POST);
 
   return (
     <div className="space-y-4" data-testid="chaine-composeur">
@@ -179,7 +183,8 @@ function CreationLien({
   const choisi = scenarios.find((s) => s.id === workflowId) ?? null;
   const horsLigne = choisi !== null && !estEnLigne(choisi);
   const pret = workflowId !== '' && phraseAcceptable(phrase);
-  const reste = resteAAfficher(phrase.length, MAX_PHRASE);
+  // Meme raison que dans le composeur : `phraseAcceptable` decide sur la longueur trimee.
+  const reste = resteAAfficher(phrase.trim().length, MAX_PHRASE);
 
   async function creer() {
     setErreur(null);
