@@ -60,7 +60,7 @@ async function monter(
     if (chemin.endsWith('/channels-me/connection') && req.method() === 'GET') {
       return json({
         connection: sur.connexion === undefined ? CONNEXION : sur.connexion,
-        organisation: { id: 'org-1', name: 'Messaging Me' },
+        organisation: { id: 'org-1', name: 'Messaging Me', monthly_messages_count: 5, allowed_message_quota: 10000 },
         channels: sur.distantConnexion === 'injoignable' ? [] : [CHAINE],
         distant: sur.distantConnexion ?? 'ok',
       });
@@ -102,6 +102,8 @@ test.describe('Chaîne : la connexion', () => {
     await page.goto('/chaine');
     await expect(page.getByTestId('chaine-nom')).toHaveText('Messaging Me');
     await expect(page.getByTestId('chaine-mesure-publications')).toContainText('59');
+    // Le quota MENSUEL vient de l organisation, pas de la chaine : c est la ou il est reellement mesure.
+    await expect(page.getByTestId('chaine-mesure-quota')).toContainText('10');
     await expect(page.getByTestId('chaine-etat-distant')).toContainText('active');
   });
 

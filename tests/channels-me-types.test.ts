@@ -51,4 +51,25 @@ describe('organisationSchema', () => {
   it('refuse un champ present mais du mauvais type', () => {
     expect(organisationSchema.safeParse({ name: 42 }).success).toBe(false);
   });
+
+  it('🔴 le quota mensuel SURVIT au schema : sans lui il serait retire EN SILENCE', () => {
+    // Ce fichier retire les cles inconnues au lieu de les refuser (point 2 de l en-tete). Un champ oublie
+    // dans le schema ne provoque donc AUCUNE erreur : il disparait, et l ecran affiche un vide sans que
+    // rien ne le signale. C est ce qui est arrive ici, a l envers : le quota avait ete cherche sur
+    // `message_channels`, pas trouve, et declare inexistant. Il vit sur l ORGANISATION.
+    // Valeurs MESUREES le 2026-09-07 sur l organisation reelle.
+    const r = organisationSchema.safeParse({
+      id: '62378369', name: 'Messaging Me Global',
+      monthly_messages_count: 5, allowed_message_quota: 10000,
+    });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.monthly_messages_count).toBe(5);
+    expect(r.success && r.data.allowed_message_quota).toBe(10000);
+  });
+
+  it('un quota absent reste absent : la mesure se masque, elle ne vaut pas zero', () => {
+    const r = organisationSchema.safeParse({ name: 'Sans quota' });
+    expect(r.success && r.data.monthly_messages_count).toBeUndefined();
+    expect(r.success && r.data.allowed_message_quota).toBeUndefined();
+  });
 });

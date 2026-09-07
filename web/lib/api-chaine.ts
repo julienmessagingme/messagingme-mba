@@ -37,18 +37,25 @@ export interface ConnexionPubliqueChaine {
   verifiedAt: string | null;
 }
 
+/**
+ * L organisation, et son quota mensuel de publications.
+ *
+ * ⚠️ Le quota vit ICI, pas sur la chaine : on l avait cherche sur `message_channels`, pas trouve, et conclu
+ * qu il n existait pas. Mesure le 2026-09-07 (5 sur 10000). Les deux champs restent facultatifs.
+ */
 export interface OrganisationChaine {
   id?: string;
   name?: string;
+  monthly_messages_count?: number;
+  allowed_message_quota?: number;
 }
 
 /**
  * Une chaîne WhatsApp chez le fournisseur.
  *
- * ⚠️ `messages_count` est le SEUL compteur mesuré. Il n'y a ni quota mensuel ni plafond : ils n'ont pas été
- * mesurés chez le fournisseur, et les déclarer au hasard les rendrait toujours `undefined`, en silence, ce
- * qui est pire que de ne pas les avoir. Le nom du champ garde la casse du fournisseur, comme le schéma Zod
- * du serveur.
+ * `messages_count` est le total des publications de CETTE chaîne. Le quota mensuel, lui, est porté par
+ * l'organisation (`OrganisationChaine`), pas ici. Les noms gardent la casse du fournisseur, comme les
+ * schémas Zod du serveur.
  */
 export interface ChaineDistante {
   id?: string;

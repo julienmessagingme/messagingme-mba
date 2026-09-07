@@ -54,6 +54,16 @@ const identifiant = z.union([z.string(), z.number()]).transform((v) => String(v)
 export const organisationSchema = z.object({
   id: identifiant.optional(),
   name: z.string().optional(),
+  /**
+   * Le quota MENSUEL, MESURE le 2026-09-07 sur l organisation reelle (5 sur 10000).
+   *
+   * ⚠️ Il vit sur l ORGANISATION, pas sur la chaine, et c est pour ca qu on l avait rate : on l avait
+   * cherche sur `message_channels`, ne l y avait pas trouve, et conclu qu il n etait pas mesurable. Une
+   * valeur absente d un endroit n est pas une valeur qui n existe pas. Les deux restent optionnels : un
+   * champ que le fournisseur retirerait ne doit pas casser l ecran d etat.
+   */
+  monthly_messages_count: z.number().int().nonnegative().optional(),
+  allowed_message_quota: z.number().int().nonnegative().optional(),
 });
 export type Organisation = z.infer<typeof organisationSchema>;
 

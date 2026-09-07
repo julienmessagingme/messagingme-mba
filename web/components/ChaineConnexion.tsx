@@ -139,11 +139,24 @@ function Connectee({
         </p>
       ) : null}
 
-      <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Mesure
           libelle={t('Publications', 'Posts')}
           valeur={chaine?.messages_count === undefined ? null : fmtNum(chaine.messages_count, locale)}
           testid="chaine-mesure-publications"
+        />
+        {/* Le quota MENSUEL de l organisation, pas de la chaine. Masque si le fournisseur ne le donne pas :
+            une mesure absente se masque, elle ne s affiche pas a zero. */}
+        <Mesure
+          libelle={t('Ce mois-ci', 'This month')}
+          valeur={
+            etat.organisation?.monthly_messages_count === undefined
+              ? null
+              : etat.organisation.allowed_message_quota === undefined
+                ? fmtNum(etat.organisation.monthly_messages_count, locale)
+                : `${fmtNum(etat.organisation.monthly_messages_count, locale)} / ${fmtNum(etat.organisation.allowed_message_quota, locale)}`
+          }
+          testid="chaine-mesure-quota"
         />
         <Mesure
           libelle={t('Liens de scénario', 'Scenario links')}
