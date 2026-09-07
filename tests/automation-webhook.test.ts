@@ -83,7 +83,6 @@ describe('déclencheur webhook : le démarrage', () => {
       lastFiredAt: async () => null,
       markFired: async () => true,
       clearFired: async () => {},
-      hasWaitingRun: async () => false,
       evalContext: async () => null,
       startWorkflow: async (_t, _wf, _w, _n, windowOpen) => { trace.started.push({ windowOpen }); return true; },
       defaultCooldownSeconds: 3600,

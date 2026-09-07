@@ -396,10 +396,6 @@ export const schema = z.object({
   /** Fenêtre de rattrapage APRÈS le moment prévu. Elle absorbe un redémarrage du worker, PAS un vrai retard :
    *  au-delà, on n'envoie rien (un rappel « 48 h avant » qui part 12 h avant dit quelque chose de faux). */
   AUTOMATION_DATE_TOLERANCE_MINUTES: z.coerce.number().default(60),
-  /** Au-delà de ce délai sans avancer, un parcours en attente est considéré ABANDONNÉ et ne bloque plus le
-   *  déclenchement d'une automation pour ce contact. Sans cette borne, un contact qui ne répond jamais serait
-   *  définitivement injoignable par une automation. 7 jours : bien au-delà d'un aller-retour normal. */
-  AUTOMATION_WAITING_RUN_MAX_AGE_MS: z.coerce.number().default(7 * 24 * 3600 * 1000),
   /** Provider LLM de l'analyse. UNE seule implémentation existe. `z.enum` et non `z.string` : une valeur
    *  inconnue était acceptée par la config et TUAIT le conteneur worker au premier appel d'analyse, avec une
    *  erreur qui ne nommait pas la variable. Elle est maintenant refusée au boot. */

@@ -78,6 +78,9 @@ class RunsConditionnels {
     this.inconditionnels.push(id);
     if (this.run) this.run = { ...this.run, currentNode: state.currentNode, status: state.status };
   }
+  /** Requis par le contrat : un demarrage remplace le parcours en cours. Ce faux n exerce que l avance. */
+  async closeActiveByWaId(): Promise<string[]> { return []; }
+
   async setStateSiEncoreSur(_t: string, _id: string, nodeId: string | null, state: RunState, token?: string | null): Promise<boolean> {
     this.gardes.push(nodeId);
     this.jetonsEcriture.push(token);
@@ -92,7 +95,9 @@ class RunsConditionnels {
 function exec(runs: RunsConditionnels, over: Partial<WorkflowExecutorDeps> = {}) {
   const calls: string[] = [];
   const ex = new WorkflowExecutor({
-    runs: runs as unknown as WorkflowExecutorDeps['runs'],
+    // Sans transtypage : c est le compilateur qui doit nommer ce faux quand le contrat bouge, pas
+    // l execution. Un `as unknown as` ici avait deja laisse passer une methode manquante.
+    runs,
     getGraph: async () => graphe,
     applyTag: async () => {},
     setField: async () => {},

@@ -1248,15 +1248,59 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await wfStore.remove(wfId, tenantId);
   });
 
-  it('un parcours ENDORMI occupe le contact (sinon une automation en lancerait un 2e en parallèle)', async () => {
+  it('🔴 un parcours ENDORMI est CLOS par le suivant (sinon les deux ecriraient au client a leur reveil)', async () => {
+    // 🔴 MEME CAS QU AVANT, ATTENTE INVERSEE. Ce test verifiait qu un parcours `sleeping` BLOQUAIT le
+    // demarrage suivant (`hasRecentWaitingRun`). Depuis le 2026-09-07, on ne bloque plus personne : le
+    // demarrage suivant CLOT le precedent. Le souci defendu est le meme (deux parcours qui ecrivent au
+    // client), le remede a change, et `sleeping` doit rester couvert : un run endormi porte une echeance,
+    // donc il se reveille tout seul et parlerait par-dessus le nouveau.
     const runStore = new PgWorkflowRunStore(pool);
     const wfStore = new PgWorkflowStore(pool);
     const { id: wfId } = await wfStore.insert(tenantId, 'WF occupe', { nodes: [], edges: [] });
     const wa = '33688888888';
-    await runStore.start(tenantId, wfId, wa, null, { currentNode: 'w', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
-    // Sans cette prise en compte, les deux parcours écriraient au client à leur réveil.
-    expect(await runStore.hasRecentWaitingRun(tenantId, wa, 60_000)).toBe(true);
+    const { id: dormant } = await runStore.start(tenantId, wfId, wa, null, { currentNode: 'w', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
+
+    expect(await runStore.closeActiveByWaId(tenantId, wa)).toBe(1);
+    const apres = await pool.query<{ status: string; resume_at: Date | null }>(
+      'select status, resume_at from workflow_runs where id = $1', [dormant]);
+    expect(apres.rows[0]!.status).toBe('done');
+    // 🔴 L ECHEANCE EST EFFACEE, et ce n est pas cosmetique : un `done` qui garderait son `resume_at` serait
+    // repris par le balayage des reveils et parlerait au client par-dessus le parcours qui l a remplace.
+    expect(apres.rows[0]!.resume_at).toBeNull();
     await wfStore.remove(wfId, tenantId);
+  });
+
+  it('🔴 A4 INVARIANT : deux demarrages de suite laissent UN SEUL parcours actif sur le numero', async () => {
+    // L invariant du lot : quel que soit le chemin, il ne peut jamais y avoir deux parcours vivants pour un
+    // contact, parce que le plus ancien serait invisible de `findWaitingByWaId` (qui ne rend que le plus
+    // recent) tout en restant reveillable par `claimDueQuestions`.
+    //
+    // ⚠️ Assertions portees sur CE numero, jamais sur un compte global : les 61 cas de ce fichier partagent
+    // un seul tenant, et une assertion sur le vide y depend de tout ce qui s execute avant elle.
+    const runStore = new PgWorkflowRunStore(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfA } = await wfStore.insert(tenantId, 'WF premier', { nodes: [], edges: [] });
+    const { id: wfB } = await wfStore.insert(tenantId, 'WF second', { nodes: [], edges: [] });
+    const wa = '33688888899';
+    // `count(*)::int` est un int4 : node-pg rend un NOMBRE. Le typer `string` obligeait a un double
+    // transtypage, c est-a-dire a mentir deux fois pour retomber sur la verite.
+    const actifs = async (): Promise<number> => (await pool.query<{ n: number }>(
+      `select count(*)::int as n from workflow_runs
+        where tenant_id = $1 and wa_id = $2 and status in ('waiting','sleeping')`, [tenantId, wa])).rows[0]!.n;
+
+    await runStore.start(tenantId, wfA, wa, null, { currentNode: 'a', status: 'waiting' });
+    expect(await actifs()).toBe(1);
+    // Ce que fait `runFrom` avant de persister le nouveau parcours.
+    await runStore.closeActiveByWaId(tenantId, wa);
+    await runStore.start(tenantId, wfB, wa, null, { currentNode: 'b', status: 'waiting' });
+    expect(await actifs()).toBe(1);
+    // Et c est bien le SECOND qui a survecu : sans ca, le test passerait avec le mauvais parcours vivant.
+    const vivant = await runStore.findWaitingByWaId(tenantId, wa);
+    expect(vivant?.workflowId).toBe(wfB);
+
+    await pool.query('delete from workflow_runs where tenant_id = $1 and wa_id = $2', [tenantId, wa]);
+    await wfStore.remove(wfA, tenantId);
+    await wfStore.remove(wfB, tenantId);
   });
 
   it('closeStaleSleeping : clôt un parcours dormant trop vieux, épargne un récent (le SQL tourne pour de vrai)', async () => {

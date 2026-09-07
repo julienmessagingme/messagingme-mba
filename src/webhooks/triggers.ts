@@ -20,7 +20,25 @@ export interface TriggerDeps {
   run(tenantId: string, ev: AutomationEvent): Promise<number>;
 }
 
-export async function processTriggers(payload: unknown, deps: TriggerDeps, consumed?: ReadonlySet<string>): Promise<void> {
+/**
+ * Rend les `messageId` qui ont RÉELLEMENT démarré un scénario.
+ *
+ * 🔴 POURQUOI CETTE SORTIE EXISTE, et pourquoi cette étape passe désormais AVANT l'avance de parcours.
+ * Julien, le 2026-09-07 : quand un message est à la fois une réponse attendue par le parcours en cours ET
+ * le déclencheur d'un autre scénario, « le déclencheur gagne, toujours ». Sans consommation, l'ancien
+ * parcours avançait ET envoyait son bloc suivant, puis le nouveau scénario démarrait par-dessus : le client
+ * recevait DEUX messages, dont un hors sujet, et l'ancien parcours était tué juste après l'avoir fait
+ * parler. Fermer le parcours ne suffisait donc pas, il fallait aussi lui retirer le message.
+ *
+ * C'est le motif déjà en place pour le jeton de test, posé pour la même raison : « les messages qu'il
+ * consomme sont écartés des étapes suivantes, sinon un seul message déclencherait deux choses ».
+ *
+ * ⚠️ Seuls les messages qui ont VRAIMENT démarré quelque chose sont consommés. Une automation qui ne
+ * correspond pas, qui est en anti-rebond ou dont la condition échoue ne doit rien retirer à personne : le
+ * message reste une réponse ordinaire au parcours en cours.
+ */
+export async function processTriggers(payload: unknown, deps: TriggerDeps, consumed?: ReadonlySet<string>): Promise<ReadonlySet<string>> {
+  const demarres = new Set<string>();
   for (const m of extractInbound(payload)) {
     if (m.field && m.field !== 'messages') continue; // standby : le MBA tient le fil
     // Message déjà consommé par une étape prioritaire (jeton de test) : il a déjà démarré un scénario, une
@@ -31,10 +49,12 @@ export async function processTriggers(payload: unknown, deps: TriggerDeps, consu
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (!tenantId) continue;
       const isNewContact = await deps.isNewContact(tenantId, m.waId);
-      await deps.run(tenantId, { kind: 'message', waId: m.waId, body: m.body, isNewContact, channel: 'whatsapp', ...(m.referral ? { adId: m.referral.adId } : {}) });
+      const partis = await deps.run(tenantId, { kind: 'message', waId: m.waId, body: m.body, isNewContact, channel: 'whatsapp', ...(m.referral ? { adId: m.referral.adId } : {}) });
+      if (partis > 0) demarres.add(m.messageId);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processTriggers: message ignoré:', err instanceof Error ? err.message : err);
     }
   }
+  return demarres;
 }

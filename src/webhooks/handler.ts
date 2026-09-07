@@ -110,9 +110,12 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
       console.error('handleWebhookJob: mapping flow ignoré:', err instanceof Error ? err.message : err);
     }
   }
-  // Jetons de test d'un scénario (Lot F). AVANT l'avance et les automations, VOLONTAIREMENT : un jeton n'est
-  // ni une réponse à un parcours en cours, ni un mot-clé ordinaire. Les messages qu'il consomme sont écartés
-  // des deux étapes suivantes, sinon un seul message déclencherait deux choses. ISOLÉ comme les autres.
+  // Jetons de test d'un scénario (Lot F). EN PREMIER, VOLONTAIREMENT : un jeton n'est ni une réponse à un
+  // parcours en cours, ni un mot-clé ordinaire. Les messages qu'il consomme sont écartés des étapes
+  // suivantes, sinon un seul message déclencherait deux choses. ISOLÉ comme les autres.
+  //
+  // ⚠️ Il reste avant les automations, qui sont elles-mêmes passées avant l'avance le 2026-09-07 : l'ordre
+  // est désormais jetons -> automations -> avance, et chacune retire à la suivante ce qu'elle a consommé.
   let consumed: ReadonlySet<string> = new Set();
   if (testTokens) {
     try {
@@ -120,6 +123,37 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: jeton de test ignoré:', err instanceof Error ? err.message : err);
+    }
+  }
+  /**
+   * Automations déclenchées par un message (mot-clé, 1er message d'un nouveau contact).
+   *
+   * 🔴 AVANT L'AVANCE DEPUIS LE 2026-09-07, et c'est une décision de Julien : quand un message est à la fois
+   * une réponse attendue par le parcours en cours et le déclencheur d'un autre scénario, « le déclencheur
+   * gagne, toujours ». Cette étape était en DERNIER, au motif que le déclenchement est un effet de bord ;
+   * elle ne l'est plus, parce qu'un message qui démarre un scénario n'est pas une réponse au précédent.
+   *
+   * Sans cette inversion, l'ancien parcours avançait et ENVOYAIT son bloc suivant, puis le nouveau scénario
+   * démarrait et le tuait : le client recevait deux messages, dont un venant d'un parcours qu'on venait
+   * d'abandonner. Fermer le parcours (côté exécuteur) ne suffisait pas, il fallait aussi lui retirer le
+   * message, exactement comme le fait le jeton de test au-dessus.
+   *
+   * ISOLÉ comme les autres étapes : une automation mal configurée ne doit pas DLQ le webhook partagé.
+   */
+  if (triggers) {
+    try {
+      const parAutomation = await processTriggers(raw, {
+        ...triggers,
+        // CONSOMMÉ une seule fois : si Meta batche deux messages du même nouveau contact dans le même webhook,
+        // seul le PREMIER est un « 1er message ». Sans le retrait, le second déclencherait aussi l'accueil.
+        isNewContact: async (tenantId, waId) => createdContacts.delete(`${tenantId}:${waId}`),
+      }, consumed);
+      // Union : un message consommé par un jeton de test l'était déjà, un message qui vient de démarrer un
+      // scénario le devient. L'avance ci-dessous ne verra ni l'un ni l'autre.
+      if (parAutomation.size > 0) consumed = new Set([...consumed, ...parAutomation]);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handleWebhookJob: automations ignorées:', err instanceof Error ? err.message : err);
     }
   }
   // Avance des workflows sur les réponses. ISOLÉ également (même raison : ne pas DLQ le webhook partagé).
@@ -141,22 +175,6 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: handover ignoré:', err instanceof Error ? err.message : err);
-    }
-  }
-  // Automations déclenchées par un message (mot-clé, 1er message d'un nouveau contact). ISOLÉ, comme les
-  // étapes ci-dessus : une automation mal configurée ne doit pas DLQ le webhook partagé. Volontairement en
-  // DERNIER : l'inbox et l'avance de scénario passent d'abord, le déclenchement est un effet de bord.
-  if (triggers) {
-    try {
-      await processTriggers(raw, {
-        ...triggers,
-        // CONSOMMÉ une seule fois : si Meta batche deux messages du même nouveau contact dans le même webhook,
-        // seul le PREMIER est un « 1er message ». Sans le retrait, le second déclencherait aussi l'accueil.
-        isNewContact: async (tenantId, waId) => createdContacts.delete(`${tenantId}:${waId}`),
-      }, consumed);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: automations ignorées:', err instanceof Error ? err.message : err);
     }
   }
 }

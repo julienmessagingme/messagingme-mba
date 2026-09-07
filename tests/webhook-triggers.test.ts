@@ -154,7 +154,6 @@ describe('handleWebhookJob : intégration des automations', () => {
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         mayStart: async () => true,
         markConversationTest: async () => {},
-        endWaitingRun: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
     });
@@ -163,7 +162,8 @@ describe('handleWebhookJob : intégration des automations', () => {
     expect(triggered).toEqual([]);  // les automations non plus
   });
 
-  it('un message ORDINAIRE passe toujours à l’avance et aux automations (le jeton ne bloque rien d’autre)', async () => {
+  /** Monte le handler avec un jeton de test INACTIF, et dit combien de scenarios l automation demarre. */
+  async function ordinaire(demarres: number) {
     const advanced: string[] = [];
     const triggered: string[] = [];
     await handleWebhookJob(inboundPayload('33611', 'je veux un rdv'), {
@@ -171,18 +171,34 @@ describe('handleWebhookJob : intégration des automations', () => {
       inbox,
       workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
-      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
+      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
       testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => null,
         mayStart: async () => true,
         markConversationTest: async () => {},
-        endWaitingRun: async () => {},
         startTestRun: async () => true,
       },
     });
+    return { advanced, triggered };
+  }
+
+  it('un message ORDINAIRE passe toujours à l’avance et aux automations (le jeton ne bloque rien d’autre)', async () => {
+    // LE CAS D ORIGINE, CONSERVE : aucun jeton de test, et l automation ne demarre RIEN (le message ne
+    // correspond a aucun mot-cle, ou elle est en anti-rebond). Le message reste alors une reponse ordinaire
+    // au parcours en cours, qui doit avancer.
+    const { advanced, triggered } = await ordinaire(0);
     expect(advanced).toEqual(['33611']);
     expect(triggered).toEqual(['33611']);
+  });
+
+  it('🔴 un message qui DEMARRE un scenario n’avance PAS le parcours en cours', async () => {
+    // Regle de Julien du 2026-09-07 : « le declencheur gagne, toujours ». Sans cette consommation, l ancien
+    // parcours avancait et ENVOYAIT son bloc suivant, puis le nouveau scenario demarrait et le tuait : le
+    // client recevait deux messages, dont un venant d un parcours qu on venait d abandonner.
+    const { advanced, triggered } = await ordinaire(1);
+    expect(triggered).toEqual(['33611']);
+    expect(advanced, 'le parcours en cours a quand meme avance').toEqual([]);
   });
 
   it('REJEU du webhook : le jeton ne relance PAS le scénario (pas de double envoi facturé)', async () => {
@@ -199,7 +215,6 @@ describe('handleWebhookJob : intégration des automations', () => {
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         mayStart: async () => true,
         markConversationTest: async () => {},
-        endWaitingRun: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
     });
@@ -216,7 +231,6 @@ describe('handleWebhookJob : intégration des automations', () => {
         findByTestToken: async () => null,
         mayStart: async () => true,
         markConversationTest: async () => {},
-        endWaitingRun: async () => {},
         startTestRun: async () => true,
       },
     })).resolves.toBeUndefined();

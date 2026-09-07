@@ -42,6 +42,9 @@ describe('executeur : l’action optIn appelle la dépendance', () => {
       runs: {
         findWaitingByWaId: async () => run,
         setState: async () => {},
+        // Requis par le contrat : un demarrage remplace le parcours en cours. Ce faux n exerce que l avance.
+        closeActiveByWaId: async () => [],
+        start: async () => ({ id: 'r1' }),
       },
       getGraph: async () => graph,
       applyTag: async () => {},

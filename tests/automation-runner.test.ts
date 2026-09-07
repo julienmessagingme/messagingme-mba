@@ -41,7 +41,6 @@ function make(rows: AutomationRow[], over: Partial<AutomationRunnerDeps> = {}): 
     lastFiredAt: async () => null,
     markFired: async (id) => { trace.fired.push(id); return true; },
     clearFired: async (id) => { trace.cleared.push(id); },
-    hasWaitingRun: async () => false,
     evalContext: async () => { trace.ctxCalls += 1; return ctx(); },
     startWorkflow: async (_t, workflowId, _w, startNodeId, windowOpen) => { trace.started.push({ workflowId, startNodeId, windowOpen }); return true; },
     defaultCooldownSeconds: 3600,
@@ -188,14 +187,47 @@ describe('runAutomations', () => {
     });
   });
 
-  describe('un seul parcours actif par contact', () => {
-    it('un run est DÉJÀ en attente -> aucun démarrage, et l’anti-rebond n’est pas consommé', async () => {
-      // Sinon un message qui répond à un scénario en cours ET contient le mot-clé enverrait DEUX messages,
-      // et le premier run deviendrait orphelin (l'avance n'en retrouve qu'un).
-      const { deps, trace } = make([auto()], { hasWaitingRun: async () => true });
+  describe('A7 : ce qui freine un scenario qui repose son propre declencheur', () => {
+    it('🔴 l anti-rebond freine la seconde occurrence, PAS le marquage', async () => {
+      // Le commentaire du runner a longtemps laisse croire que `markFired` protegeait de la boucle. Il ne
+      // protege de rien : sans marqueur il est inconditionnel et rend toujours `true`. Le frein reel est
+      // `lastFiredAt` + `isInCooldown`, et ce test le fige, parce que la garde du parcours actif qui
+      // freinait ce cas par accident a ete retiree.
+      const { deps, trace } = make([auto()], { lastFiredAt: async () => new Date(T - 1_000) });
       expect(await runAutomations('t1', MSG, deps)).toBe(0);
       expect(trace.started).toEqual([]);
-      expect(trace.fired).toEqual([]);
+    });
+
+    it('🔴 anti-rebond a ZERO : plus rien ne freine, et c est une limite CONNUE', async () => {
+      // `isInCooldown` rend false des que le delai vaut 0. Un scenario qui repose son propre tag, sur une
+      // automation reglee a 0 et sans plafond horaire, boucle. Ce test ne valide pas ce comportement, il
+      // l ETABLIT : le jour ou quelqu un ajoute une protection, c est lui qui devra changer, pas la
+      // production qui devra le decouvrir.
+      const { deps, trace } = make([auto({ cooldownSeconds: 0 })], { lastFiredAt: async () => new Date(T - 1) });
+      expect(await runAutomations('t1', MSG, deps)).toBe(1);
+      expect(trace.started).toHaveLength(1);
+    });
+  });
+
+  describe('un parcours en cours ne bloque plus le déclenchement', () => {
+    it('🔴 un run est DÉJÀ en attente -> le scénario démarre QUAND MÊME', async () => {
+      // 🔴 CE TEST EXERCE LE MÊME CAS QU'AVANT ET ATTEND L'INVERSE, parce que la règle a changé le
+      // 2026-09-07 : « on ne bloque personne sur un scénario, surtout quand on lance un nouveau scénario »
+      // (Julien). Avant, le runner sautait le déclenchement quand un parcours attendait ; vécu en
+      // production, un lien de chaîne cliqué pendant qu'un autre parcours attendait n'ouvrait jamais son
+      // scénario, et la fenêtre de la garde étant de sept jours, le numéro restait muet une semaine.
+      //
+      // Le risque que l'ancienne garde défendait (deux parcours vivants, le plus ancien orphelin) est
+      // désormais fermé À LA SOURCE : `runFrom` clôt le parcours actif avant de persister le nouveau. Le
+      // runner n'a donc plus rien à vérifier, et n'a plus AUCUNE dépendance là-dessus, ce qui est le vrai
+      // contenu de ce test : le contrat n'expose plus de quoi bloquer.
+      const { deps, trace } = make([auto()]);
+      expect(await runAutomations('t1', MSG, deps)).toBe(1);
+      expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true }]);
+      expect(trace.fired).toEqual(['a1']);
+      // 🔴 LE VRAI CONTENU DU TEST : le contrat n'expose plus rien qui permette de bloquer. Un `hasWaitingRun`
+      // réintroduit ailleurs redeviendrait invisible ici, alors qu'il rendrait le défaut à l'identique.
+      expect('hasWaitingRun' in deps).toBe(false);
     });
   });
 

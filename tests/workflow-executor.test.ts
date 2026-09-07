@@ -11,6 +11,14 @@ const e = (id: string, source: string, target: string) => ({ id, source, target 
 const eh = (id: string, source: string, target: string, sourceHandle: string) => ({ id, source, target, sourceHandle });
 
 class FakeRuns {
+  /** Les appels a la fermeture du parcours precedent, pour prouver QUAND elle a lieu et quand elle n a pas lieu. */
+  fermetures: string[] = [];
+  /** Requis par le contrat : un demarrage remplace le parcours en cours. Rend le nombre de lignes closes. */
+  async closeActiveByWaId(_tenantId: string, waId: string): Promise<string[]> {
+    this.fermetures.push(waId);
+    return ['run-precedent'];
+  }
+
   run: WorkflowRunRow | null = null;
   async start(tenantId: string, workflowId: string, waId: string, _contactId: string | null, state: RunState): Promise<{ id: string }> {
     this.run = { id: 'r1', workflowId, tenantId, waId, currentNode: state.currentNode, status: state.status, lastMessageId: null };
@@ -51,6 +59,65 @@ describe('WorkflowExecutor', () => {
     nodes: [n('t', 'tag', { tag: 'vip' }), n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
     edges: [e('e1', 't', 'tpl'), e('e2', 'tpl', 'ib')],
   };
+
+  describe('lancer un scenario REMPLACE celui en cours (regle Julien, 2026-09-07)', () => {
+    it('🔴 A1 : un demarrage clot le parcours actif du contact', async () => {
+      // « On ne bloque personne sur un scenario, surtout quand on lance un nouveau scenario. » La fermeture
+      // est posee sur le passage COMMUN (`runFrom`), donc les quatre chemins de demarrage en heritent :
+      // inbox, jeton de test, automation (le lien de chaine) et campagne.
+      const { ex, runs } = make(linear);
+      await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      expect(runs.fermetures).toEqual(['33600']);
+    });
+
+    it('🔴 A1bis : un demarrage AU BLOC (cible node de /v1/sends) ferme aussi', async () => {
+      const { ex, runs } = make(linear);
+      await ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'tpl');
+      expect(runs.fermetures).toEqual(['33600']);
+    });
+
+    it('🔴 A3 : le chemin Inbox / automation (startInWindow) ferme aussi', async () => {
+      // Ce chemin fermait DEJA, mais chez son appelant (`src/index.ts`), pas dans l executeur. La copie a ete
+      // retiree ; sans ce test, plus rien ne garderait le comportement pour l operateur.
+      const { ex, runs } = make(linear);
+      await ex.startInWindow('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      expect(runs.fermetures).toEqual(['33600']);
+    });
+
+    it('🔴 la session d agent du parcours ferme SUIT le parcours', async () => {
+      // Tuer le run sans clore sa session la laisse `en_cours` avec un tour jamais commence : invisible de la
+      // reprise des tours bloques, jusqu a la purge de retention. Rare quand la fermeture etait un geste
+      // d operateur, ordinaire depuis qu elle a lieu par destinataire de campagne.
+      const closes: Array<{ id: string; statut: string }> = [];
+      const { ex } = make(linear, {
+        agentSessions: {
+          byRun: async () => ({ id: 'sess-1' }),
+          clore: async (_t: string, id: string, statut: string) => { closes.push({ id, statut }); },
+        } as unknown as WorkflowExecutorDeps['agentSessions'],
+      });
+      await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      expect(closes).toEqual([{ id: 'sess-1', statut: 'erreur' }]);
+    });
+
+    it('🔴 LE CAS QUI DECIDE DE L EMPLACEMENT : un demarrage REFUSE ne ferme RIEN', async () => {
+      // Trois gardes peuvent refuser AVANT tout envoi (fil tenu par un humain ou MBA, bloc de depart
+      // supprime, ouverture hors fenetre 24 h). Fermer a l entree de `runFrom` aurait tue le parcours en
+      // cours d un contact pour un demarrage qui n a jamais eu lieu, EN SILENCE : le contact se serait
+      // retrouve sans rien, et personne n aurait su pourquoi. On ne remplace que ce qu on a remplace.
+      const { ex, runs, calls } = make(linear, { mayAct: async () => false });
+      const issue = await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      expect(typeof issue).toBe('string');
+      expect(calls).toEqual([]);
+      expect(runs.fermetures).toEqual([]);
+    });
+
+    it('🔴 un bloc de depart disparu ne ferme rien non plus', async () => {
+      const { ex, runs } = make(linear);
+      const issue = await ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'bloc-supprime');
+      expect(typeof issue).toBe('string');
+      expect(runs.fermetures).toEqual([]);
+    });
+  });
 
   it('start : pose le tag, envoie le template, run en attente au template', async () => {
     const { ex, runs, calls } = make(linear);
@@ -475,7 +542,7 @@ describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’
   function exec(over: Partial<WorkflowExecutorDeps> = {}) {
     const emitted: string[] = [];
     const deps: WorkflowExecutorDeps = {
-      runs: { start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {} },
+      runs: { start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {}, closeActiveByWaId: async () => [] },
       getGraph: async () => graphe,
       applyTag: async () => true, // le tag est réellement nouveau
       setField: async () => {}, removeTag: async () => {}, clearField: async () => {},

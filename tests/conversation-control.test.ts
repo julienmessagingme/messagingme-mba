@@ -40,6 +40,9 @@ function executor(mayAct: boolean | undefined, trace: Trace) {
       start: async () => ({ id: 'r1' }),
       findWaitingByWaId: async () => run,
       setState: async (_id, state) => { trace.states.push(state); },
+      // Ferme le parcours precedent : requis par le contrat depuis que « lancer un scenario remplace
+      // celui en cours ». Le compteur sert aux tests qui verifient QUE la fermeture a bien eu lieu.
+      closeActiveByWaId: async () => [],
     },
     getGraph: async () => GRAPH,
     removeTag: async () => {},

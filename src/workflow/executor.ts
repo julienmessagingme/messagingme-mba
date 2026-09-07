@@ -51,6 +51,23 @@ export interface WorkflowExecutorDeps {
     findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null>;
     setState(id: string, state: RunState): Promise<void>;
     /**
+     * Clôt le parcours ACTIF du contact (`waiting` ou `sleeping`), et rend combien de lignes ont bougé.
+     *
+     * 🔴 REQUISE, JAMAIS OPTIONNELLE. C'est elle qui tient l'invariant « au plus un parcours actif par
+     * contact ». Optionnelle, un câblage qui l'oublierait rendrait `undefined`, le démarrage se ferait quand
+     * même, et on obtiendrait exactement le défaut qu'elle répare : deux parcours vivants, dont le plus
+     * ancien invisible de `findWaitingByWaId` (qui ne rend que le plus récent) mais toujours réveillable par
+     * `claimDueQuestions`. Le compilateur doit énumérer les fabriques à compléter, c'est tout son intérêt ici.
+     */
+    closeActiveByWaId(tenantId: string, waId: string): Promise<string[]>;
+    /**
+     * Écrit l'état SEULEMENT si le parcours vit encore. `false` = il a été clos entre-temps, donc l'écriture
+     * l'aurait RESSUSCITÉ avec une échéance, et il aurait parlé au client depuis un scénario abandonné.
+     *
+     * OPTIONNELLE : absente -> `setState` inconditionnel, comportement d'avant (fixtures de test).
+     */
+    setStateSiVivant?(tenantId: string, id: string, state: RunState): Promise<boolean>;
+    /**
      * Écriture CONDITIONNELLE : n'écrit que si le run attend TOUJOURS sur `nodeId`. `false` = il a bougé
      * entre-temps, donc quelqu'un d'autre l'a fait avancer, et notre écriture serait un retour en arrière.
      *
@@ -738,12 +755,16 @@ export class WorkflowExecutor {
       // eslint-disable-next-line no-console
       console.error(`workflow ${run.workflowId}: envoi refusé à la reprise pour ${waId} : ${refus}`);
       if (partis === 0) {
-        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
+        // Garde de VIVACITÉ ici aussi : remonter en `inbox` et escalader à un humain une conversation qui a
+        // déjà été remplacée mettrait un opérateur sur un parcours abandonné.
+        if (!(await this.ecrireSiVivant(tenantId, run.id, { currentNode: null, status: 'inbox' }))) return false;
         if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
         return false;
       }
     }
-    await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), channel: canal });
+    // 🔴 SI LE PARCOURS VIT ENCORE. Un autre chemin a pu le clore pendant nos envois (une campagne le fait
+    // desormais par destinataire) : ecrire sans regarder le ressusciterait AVEC son echeance.
+    if (!(await this.ecrireSiVivant(tenantId, run.id, { ...restToState(rest, this.now()), channel: canal }))) return false;
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
     // Bloc AGENT atteint au réveil : ouvrir la session et enfiler le premier tour. APRÈS les sorties
@@ -928,6 +949,28 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Écrit l'état d'un parcours en REPRISE, et seulement s'il vit encore.
+   *
+   * Point de passage unique des trois écritures de `resume` : elles avaient chacune leur `setState`
+   * inconditionnel, et il aurait fallu poser la garde trois fois, donc l'oublier une fois.
+   *
+   * Repli sur `setState` quand la garde n'est pas câblée (fixtures) : le comportement d'avant, pas une
+   * absence de comportement.
+   */
+  private async ecrireSiVivant(tenantId: string, runId: string, state: RunState): Promise<boolean> {
+    if (!this.deps.runs.setStateSiVivant) {
+      await this.deps.runs.setState(runId, state);
+      return true;
+    }
+    const vivant = await this.deps.runs.setStateSiVivant(tenantId, runId, state);
+    if (!vivant) {
+      // eslint-disable-next-line no-console
+      console.log(`workflow: parcours ${runId} clos pendant sa reprise, etat non reecrit (il a ete remplace)`);
+    }
+    return vivant;
+  }
+
+  /**
    * Corps commun de `start` et `startFromNode` : parcourt depuis `startNodeId`, applique les actions, persiste
    * l'état (sauf 100 % synchrone -> done). `startNodeId` inconnu (bloc supprimé entre-temps) -> `walk` renvoie
    * `done` sans action : aucun envoi, aucun throw.
@@ -1003,9 +1046,45 @@ export class WorkflowExecutor {
       console.error(`workflow ${workflowId}: envoi refusé pour ${contact.waId} : ${refus}`);
       if (partis === 0) return refus;
     }
+    /**
+     * 🔴 LE PARCOURS PRÉCÉDENT EST CLOS ICI, ET NULLE PART AILLEURS.
+     *
+     * Règle posée par Julien le 2026-09-07 : « on ne bloque personne sur un scénario, surtout quand on lance
+     * un nouveau scénario ». Tout démarrage remplace donc le parcours en cours. C'était déjà le comportement
+     * du lancement depuis l'Inbox, mais il vivait CHEZ L'APPELANT, donc sur un chemin sur quatre : les trois
+     * autres divergeaient chacun à sa façon (le jeton de test laissait un orphelin, l'automation ne démarrait
+     * pas du tout, la campagne créait un second run). En le posant sur le passage commun, un cinquième chemin
+     * en hérite sans que personne y pense.
+     *
+     * ⚠️ ET APRÈS `apply`, PAS AU DÉBUT. Trois gardes plus haut peuvent refuser le démarrage (fil tenu par un
+     * humain, bloc de départ supprimé, ouverture hors fenêtre de 24 h) et rendent AVANT d'arriver ici. Fermer
+     * à l'entrée aurait tué le parcours en cours d'un contact pour un démarrage qui n'a jamais eu lieu, en
+     * silence. On ne remplace que ce qu'on a effectivement remplacé.
+     *
+     * 🔴 ET SEULEMENT SI QUELQUE CHOSE REMPLACE VRAIMENT. Un scénario peut n'être fait que d'actions (poser
+     * un tag, écrire un champ) : il n'envoie alors rien et se termine tout de suite, donc `partis === 0` ET
+     * le repos vaut `done`, si bien qu'aucun run n'est persisté. Fermer dans ce cas tuerait une conversation
+     * vivante SANS RIEN METTRE À LA PLACE, ce qui est l'inverse exact de la règle : on ne bloque personne,
+     * mais on ne coupe personne non plus pour un scénario qui n'a pas parlé.
+     *
+     * On ferme en revanche quand le nouveau parcours est synchrone mais a ENVOYÉ (`partis > 0`) : le contact
+     * a reçu autre chose, et laisser l'ancien en attente ferait avancer un parcours abandonné à sa prochaine
+     * réponse.
+     */
     // Le canal du parcours est PERSISTÉ dès sa naissance : un scénario qui ouvre par un bloc RCS naît sur le
     // canal RCS, et son message rapide suivant partira donc en RCS, pas en WhatsApp.
     const state = { ...restToState(rest, this.now()), channel: canal };
+    if (partis > 0 || state.status !== 'done') {
+      const closPrecedent = await this.deps.runs.closeActiveByWaId(tenantId, contact.waId);
+      // 🔴 LA SESSION D'AGENT SUIT SON PARCOURS. Tuer le run sans clore sa session la laisse `en_cours` avec
+      // un tour jamais commencé : invisible de la reprise des tours bloqués, elle ne se referme qu'à la
+      // purge de rétention. Le geste existe déjà (`cloreSessionDuRun`), il manquait seulement ici.
+      for (const runId of closPrecedent) await this.cloreSessionDuRun(tenantId, runId, 'erreur');
+      if (closPrecedent.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`workflow ${workflowId}: ${closPrecedent.length} parcours en cours clos, remplacé pour ${contact.waId}`);
+      }
+    }
     // ⚠️ L'id rendu par `runs.start` est CAPTURÉ (il était jeté jusqu'ici) : `agent_sessions.run_id` est une FK
     // NOT NULL vers `workflow_runs`, donc la session ne peut pas naître avant le run. C'est ce qui interdit
     // d'ouvrir la session plus tôt, dans `walkResolved` par exemple. Ordre obligatoire : apply, puis start en
@@ -1146,9 +1225,10 @@ export class WorkflowExecutor {
    * Déclenche un bloc du scénario COURANT depuis un outil d'agent (`mba_envoyer_bloc`) : `walk` + `apply`
    * bornés, **sans persister de run**.
    *
-   * 🔴 POURQUOI PAS `startFromNode`. Il passe par `runFrom`, qui CRÉE un run dès que le repos n'est pas
-   * `done`. On aurait alors deux runs `waiting` pour le même contact, et comme `findWaitingByWaId` ne rend
-   * que le plus récent, le run de l'agent deviendrait orphelin POUR TOUJOURS : rien ne nettoie un `waiting`.
+   * 🔴 POURQUOI PAS `startFromNode`. Il passe par `runFrom`, et la raison a CHANGÉ le 2026-09-07 : ce ne
+   * serait plus « deux runs `waiting` en parallèle » (`runFrom` clôt désormais le parcours actif avant de
+   * persister le sien), ce serait pire. `runFrom` TUERAIT le run de l'agent qui l'appelle, et clôrait au
+   * passage la session d'où part cet outil. La décision reste la même, sa raison est l'inverse.
    *
    * 🔴 UN SOUS-PARCOURS QUI REND LA MAIN EST REFUSÉ AVANT TOUT ENVOI. Quatre repos sont incompatibles avec le
    * fait que notre session tient déjà le fil, et aucun ne peut être honoré sans run pour le porter :

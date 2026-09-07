@@ -33,11 +33,16 @@ function exec(over: Partial<WorkflowExecutorDeps> = {}) {
   const envois: string[] = [];
   const reprises: string[] = [];
   const ex = new WorkflowExecutor({
+    // 🔴 PAS DE `as unknown as` ICI. Cette fabrique en portait un, et il a fait exactement ce qu un double
+    // transtypage fait : il a efface le contrat. Quand `closeActiveByWaId` y est devenue requise, le
+    // compilateur a nomme les six autres fabriques a completer et a laisse passer celle-ci, qui a plante a
+    // l execution. Un faux qui ment au compilateur retire ce fichier du seul filet qui protege les faux.
     runs: {
       start: async () => ({ id: 'r1' }),
       findWaitingByWaId: async () => null,
       setState: async () => {},
-    } as unknown as WorkflowExecutorDeps['runs'],
+      closeActiveByWaId: async () => [],
+    },
     getGraph: async () => graphe,
     applyTag: async () => {},
     setField: async () => {},

@@ -41,7 +41,8 @@ function executeur(graph: WorkflowGraph, opts: { envoiRate?: boolean; sansDep?: 
   const mesures: Array<Record<string, unknown>> = [];
   const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
   const deps: Record<string, unknown> = {
-    runs: { findWaitingByWaId: async () => run, setState: async () => {} },
+    // Requis par le contrat : un demarrage remplace le parcours en cours. Ce faux n exerce que l avance.
+    runs: { findWaitingByWaId: async () => run, setState: async () => {}, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) },
     getGraph: async () => graph,
     applyTag: async () => {},
     setField: async () => {},
@@ -129,7 +130,7 @@ describe('garde-fous', () => {
     const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
     const envoyes: string[] = [];
     const ex = new WorkflowExecutor({
-      runs: { findWaitingByWaId: async () => run, setState: async (_id: string, st: Record<string, unknown>) => { etats.push(st); } },
+      runs: { findWaitingByWaId: async () => run, setState: async (_id: string, st: Record<string, unknown>) => { etats.push(st); }, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) },
       getGraph: async () => graphe(),
       applyTag: async () => {}, setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
       sendTemplate: async () => {}, sendFlow: async () => {}, escalateToHuman: async () => {},

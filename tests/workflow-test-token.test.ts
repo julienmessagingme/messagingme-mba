@@ -57,7 +57,7 @@ describe('processTestTokens', () => {
   // Jeton FICTIF (aucun secret) : valeur figée pour rendre les assertions lisibles.
   const MOT_TEST = 'test-a7k2m9p3';
   function deps(over: Partial<Parameters<typeof processTestTokens>[1]> = {}) {
-    const trace = { marked: [] as string[], ended: [] as string[], started: [] as string[] };
+    const trace = { marked: [] as string[], started: [] as string[] };
     return {
       trace,
       deps: {
@@ -65,7 +65,6 @@ describe('processTestTokens', () => {
         findByTestToken: async (tok: string) => (tok === MOT_TEST ? { workflowId: 'wf1', tenantId: 't1' } : null),
         mayStart: async () => true,
         markConversationTest: async (_t: string, waId: string) => { trace.marked.push(waId); },
-        endWaitingRun: async (_t: string, waId: string) => { trace.ended.push(waId); },
         startTestRun: async (_t: string, wf: string) => { trace.started.push(wf); return true; },
         ...over,
       },
@@ -75,7 +74,11 @@ describe('processTestTokens', () => {
   it('jeton reconnu -> fil marqué test, parcours en cours clos, scénario démarré, message CONSOMMÉ', async () => {
     const { deps: d, trace } = deps();
     const consumed = await processTestTokens(payload(MOT_TEST), d);
-    expect(trace).toEqual({ marked: ['33611'], ended: ['33611'], started: ['wf1'] });
+    // 🔴 CAS CONSERVE, ATTENTE AJUSTEE. Ce test verifiait que cette etape fermait elle-meme le parcours en
+    // cours (`ended`). Elle ne le fait plus : la fermeture est descendue dans `runFrom`, ou elle couvre AUSSI
+    // les parcours endormis et ne tire qu APRES les gardes. Ce qui est exerce ici reste le meme : le jeton
+    // marque la conversation et demarre le test.
+    expect(trace).toEqual({ marked: ['33611'], started: ['wf1'] });
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
 
@@ -140,7 +143,7 @@ describe('processTestTokens', () => {
       // l'exécuteur), donc un test sur un fil repris par un opérateur clôturait son parcours pour rien.
       const { deps: d, trace } = deps({ mayStart: async () => false });
       const consumed = await processTestTokens(payload(MOT_TEST), d);
-      expect(trace).toEqual({ marked: [], ended: [], started: [] });
+      expect(trace).toEqual({ marked: [], started: [] });
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true); // le message reste un jeton, pas une réponse
     });
   });
@@ -150,7 +153,7 @@ describe('processTestTokens', () => {
       const { deps: d, trace } = deps();
       const seen = new Set([`wamid.${MOT_TEST}`]);
       const consumed = await processTestTokens(payload(MOT_TEST), d, seen);
-      expect(trace).toEqual({ marked: [], ended: [], started: [] });
+      expect(trace).toEqual({ marked: [], started: [] });
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
     });
 

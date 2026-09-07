@@ -55,27 +55,6 @@ export class PgWorkflowRunStore {
     return { id: res.rows[0]!.id };
   }
 
-  /**
-   * Un run est-il en attente pour ce contact ET assez RÉCENT pour qu'on le considère encore vivant ?
-   *
-   * Un run `waiting` n'expire jamais tout seul : seul le contact peut le faire avancer en répondant. Sans borne
-   * d'âge, un contact qui ne répond pas resterait « occupé » à vie, et aucune automation ne pourrait plus jamais
-   * le toucher, en silence. On considère donc qu'au-delà de `maxAgeMs` le parcours est abandonné.
-   */
-  async hasRecentWaitingRun(tenantId: string, waId: string, maxAgeMs: number): Promise<boolean> {
-    // Un parcours ENDORMI occupe le contact autant qu'un parcours en attente : il reprendra tout seul et
-    // écrira au client. L'omettre laissait une automation démarrer un SECOND parcours pendant une attente,
-    // et les deux envoyaient au réveil. Pas de borne d'âge sur le sommeil : son échéance EST sa borne.
-    const res = await this.pool.query<{ n: string }>(
-      `select count(*)::int as n from workflow_runs
-       where tenant_id = $1 and wa_id = $2
-         and ( (status = 'waiting' and updated_at >= now() - make_interval(secs => $3 / 1000.0))
-            or (status = 'sleeping' and resume_at is not null) )`,
-      [tenantId, waId, maxAgeMs],
-    );
-    return Number(res.rows[0]?.n ?? 0) > 0;
-  }
-
   /** LE run en attente d'un contact (par tenant + numéro). Un seul actif à la fois par contact (V1). */
   async findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null> {
     const res = await this.pool.query<{
@@ -127,27 +106,41 @@ export class PgWorkflowRunStore {
    * Clôt TOUS les parcours encore actifs d'un contact (en attente d'une réponse, ou endormis sur un bloc
    * Attente) et rend combien ont été clos.
    *
-   * Sert au lancement MANUEL d'un scénario depuis l'Inbox. Sans ça, un opérateur qui en lance un second crée
-   * deux runs concurrents : `findWaitingByWaId` ne rend que le plus récent (`limit 1`), donc le premier
-   * devient orphelin POUR TOUJOURS (aucun balayage ne nettoie un run `waiting`), invisible, pendant que le
-   * contact reçoit les messages des deux. On tranche dans le sens de l'opérateur : c'est lui qui décide, son
-   * nouveau scénario remplace l'ancien. Même parti pris que le lien de test d'un scénario.
+   * 🔴 APPELÉE PAR `runFrom`, DONC PAR LES QUATRE CHEMINS DE DÉMARRAGE (Inbox, jeton de test, automation,
+   * campagne et cible node), depuis le 2026-09-07. Elle ne servait avant qu'au lancement manuel depuis
+   * l'Inbox, et c'est ce qui a changé son régime : d'un appel occasionnel à UN PAR DESTINATAIRE de campagne.
+   * Deux choses en découlent, et se lisent ailleurs : la migration 0115 (aucun index ne servait sa clause),
+   * et la garde de vivacité de `setStateSiVivant` (une course jusque-là quasi inatteignable).
+   *
+   * Sans elle, un second démarrage crée deux runs concurrents : `findWaitingByWaId` ne rend que le plus
+   * récent (`limit 1`), donc le premier devient orphelin POUR TOUJOURS (aucun balayage ne nettoie un run
+   * `waiting`), invisible, pendant que le contact reçoit les messages des deux.
+   *
+   * Règle posée par Julien : « on ne bloque personne sur un scénario, surtout quand on lance un nouveau
+   * scénario ». Le nouveau remplace l'ancien, sans exception.
    */
-  async closeActiveByWaId(tenantId: string, waId: string): Promise<number> {
-    const res = await this.pool.query(
+  async closeActiveByWaId(tenantId: string, waId: string): Promise<string[]> {
+    // `returning id` : l'appelant doit pouvoir clore les SESSIONS D'AGENT rattachées à ces parcours. Sans
+    // elles, une session reste `en_cours` avec un tour jamais commencé, donc invisible de la reprise des
+    // tours bloqués, jusqu'à la purge de rétention. Rare tant que la fermeture était un geste d'opérateur,
+    // ordinaire depuis qu'elle a lieu par destinataire de campagne.
+    const res = await this.pool.query<{ id: string }>(
       `update workflow_runs set status = 'done', current_node = null, resume_at = null, updated_at = now()
-       where tenant_id = $1 and wa_id = $2 and status in ('waiting', 'sleeping')`,
+       where tenant_id = $1 and wa_id = $2 and status in ('waiting', 'sleeping')
+       returning id`,
       [tenantId, waId],
     );
-    return res.rowCount ?? 0;
+    return res.rows.map((r) => r.id);
   }
 
   /**
    * Écrit l'état d'un run SEULEMENT s'il attend encore sur le bloc qu'on croit. Rend `false` si rien n'a bougé.
    *
    * 🔴 POURQUOI CETTE VARIANTE EXISTE. Un tour d'agent dure 3 à 30 secondes, et il écrit son état à la fin.
-   * Entre-temps, le run peut avoir été TUÉ : un opérateur qui lance un scénario depuis l'Inbox appelle
-   * `closeActiveByWaId`, qui passe le run en `done` et en crée un autre. Un `setState` inconditionnel le
+   * Entre-temps, le run peut avoir été TUÉ : TOUT démarrage de scénario appelle `closeActiveByWaId`, qui
+   * passe le run en `done`, et en crée un autre. ⚠️ Ce n'était le fait que du lancement manuel depuis
+   * l'Inbox jusqu'au 2026-09-07 ; c'est désormais le passage commun des quatre chemins, campagnes comprises,
+   * donc cette course est passée de rare à ordinaire. Un `setState` inconditionnel le
    * ressusciterait en `waiting` AVEC une échéance : invisible de `findWaitingByWaId` (le nouveau run est plus
    * récent), mais parfaitement visible de `claimDueQuestions`, qui déclencherait plus tard la branche
    * « pas de réponse » d'un parcours que quelqu'un avait délibérément fermé, en parallèle du nouveau.
@@ -244,6 +237,36 @@ export class PgWorkflowRunStore {
         where id = $1 and tenant_id = $2 and status = 'waiting' and current_node is not distinct from $3
           and ($9::uuid is null or avance_token = $9::uuid)`,
       [id, tenantId, nodeId, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null, token],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Écrit l'état d'un run SEULEMENT s'il est encore VIVANT (`waiting` ou `sleeping`). Rend `false` s'il a été
+   * clos entre-temps.
+   *
+   * 🔴 CE QUE ÇA FERME, ET POURQUOI SEULEMENT MAINTENANT. `setState` écrit sur `where id = $1`, sans regarder
+   * l'état. La reprise d'un parcours endormi (`resume`) l'appelle À LA FIN, après ses envois, qui prennent du
+   * temps. Entre le moment où le balayage réclame le run et celui où la reprise écrit, un autre chemin peut
+   * avoir appelé `closeActiveByWaId` : la reprise réécrit alors `waiting`/`sleeping` AVEC une échéance sur un
+   * run passé à `done`. Il devient invisible de `findWaitingByWaId` (qui ne rend que le plus récent) mais
+   * reste parfaitement réveillable par les balayages, et parle au client depuis un scénario abandonné.
+   *
+   * ⚠️ Ce n'était pas atteignable en pratique tant que la fermeture n'était appelée que par un lancement
+   * manuel depuis l'Inbox, quelques fois par jour. Depuis le 2026-09-07, elle l'est UNE FOIS PAR DESTINATAIRE
+   * de campagne. C'est le cas d'école du CLAUDE.md : élargir le domaine d'une réparation oblige à relire ce
+   * qu'elle supposait.
+   *
+   * Même famille que `setStateSiEncoreSur`, qui ferme la même course pour `advance` : là-bas la garde porte
+   * sur le BLOC attendu, ici sur le fait que le parcours vive encore, parce qu'une reprise change de bloc par
+   * construction.
+   */
+  async setStateSiVivant(tenantId: string, id: string, state: RunState): Promise<boolean> {
+    const res = await this.pool.query(
+      `update workflow_runs set current_node = $3, status = $4, last_message_id = coalesce($5, last_message_id),
+              resume_at = $6, channel = coalesce($7, channel), updated_at = now()
+       where id = $1 and tenant_id = $2 and status in ('waiting', 'sleeping')`,
+      [id, tenantId, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null],
     );
     return (res.rowCount ?? 0) > 0;
   }

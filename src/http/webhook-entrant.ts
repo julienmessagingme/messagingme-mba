@@ -210,8 +210,10 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
 
     compte.contact = res.statut === 'created' ? 'cree' : 'trouve';
     compte.champs = Object.keys(ex.champs).length;
-    // « publié », pas « lancé » : les six garde-fous de `runAutomations` (contact bloqué, anti-rebond,
-    // condition, plafond horaire, un seul parcours actif) s'appliquent ensuite, et la route ne le sait pas.
+    // « publié », pas « lancé » : les garde-fous de `runAutomations` (contact bloqué, anti-rebond, condition,
+    // plafond horaire) s'appliquent ensuite, et la route ne le sait pas.
+    // ⚠️ « un seul parcours actif » ne fait plus partie de cette liste depuis le 2026-09-07 : un parcours en
+    // cours ne bloque plus rien, il est CLOS par le démarrage suivant (`runFrom`).
     if (hook.automationId !== null) compte.scenario = 'publie';
 
     // Le payload est enregistré AVANT la publication : si la file est indisponible, on veut quand même

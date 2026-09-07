@@ -29,7 +29,6 @@ export interface TestTokenDeps {
    * Termine le parcours éventuellement en attente pour ce contact. Un testeur qui relance son lien veut
    * repartir du début : sans ça, un run resté en attente d'une réponse resterait orphelin à vie.
    */
-  endWaitingRun(tenantId: string, waId: string): Promise<void>;
   /** Démarre le scénario depuis son entrée. Le contact vient d'écrire, la fenêtre 24 h est donc ouverte. */
   /** true = parti ; `false` ou une chaîne (la raison) = pas parti. L'appelant ne consomme que le fait. */
   startTestRun(tenantId: string, workflowId: string, waId: string): Promise<boolean | string>;
@@ -82,7 +81,11 @@ export async function processTestTokens(
       }
 
       await deps.markConversationTest(tenantId, m.waId);
-      await deps.endWaitingRun(tenantId, m.waId);
+      // ⚠️ LA FERMETURE DU PARCOURS EN COURS N'EST PLUS ICI. Elle y était (`endWaitingRun`) et elle avait
+      // deux défauts que le passage par `runFrom` supprime : elle tirait AVANT les gardes de l'exécuteur,
+      // donc elle pouvait tuer un parcours pour un test qui n'allait pas démarrer (scénario vide, fil tenu) ;
+      // et elle ne voyait que `waiting`, laissant vivre un parcours ENDORMI qui se serait réveillé par-dessus
+      // le test. `closeActiveByWaId` couvre les deux statuts et efface l'échéance.
       await deps.startTestRun(tenantId, wf.workflowId, m.waId);
     } catch (err) {
       // eslint-disable-next-line no-console

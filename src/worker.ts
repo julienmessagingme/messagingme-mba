@@ -295,9 +295,6 @@ async function main(): Promise<void> {
     lastFiredAt: (id: string, waId: string) => automationStore.lastFiredAt(id, waId),
     markFired: (id: string, waId: string, marqueur?: string) => automationStore.markFired(id, waId, marqueur),
     clearFired: (id: string, waId: string) => automationStore.clearFired(id, waId),
-    // Un seul parcours actif par contact : sinon un message qui répond à un scénario EN COURS et contient le
-    // mot-clé enverrait deux messages, et laisserait le run précédent orphelin (l'avance n'en retrouve qu'un).
-    hasWaitingRun: (tenant: string, waId: string) => runStore.hasRecentWaitingRun(tenant, waId, config.AUTOMATION_WAITING_RUN_MAX_AGE_MS),
     firedSince: (id: string, since: Date) => automationStore.firedSince(id, since),
     maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
@@ -432,10 +429,6 @@ async function main(): Promise<void> {
         markConversationTest: (tenant, waId) => inboxStore.markConversationTest(tenant, waId),
         // Un testeur qui relance son lien veut repartir du DÉBUT : on clôt le parcours resté en attente,
         // sinon il resterait orphelin (l'avance ne retrouve qu'un run à la fois par contact).
-        endWaitingRun: async (tenant, waId) => {
-          const run = await runStore.findWaitingByWaId(tenant, waId);
-          if (run) await runStore.setState(run.id, { currentNode: run.currentNode, status: 'done' });
-        },
         startTestRun: async (tenant, workflowId, waId) => {
           const wf = await workflowStore.getById(workflowId, tenant);
           if (!wf) return false;

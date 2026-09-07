@@ -438,6 +438,37 @@ un manque de donnée : `tracked_link_clicks` porte le contact et la date depuis 
 ⚠️ À dire honnêtement le jour où on le fera : le compteur sera juste pour les envois ATTRIBUÉS, et muet pour
 les templates approuvés avant le 2026-09-02, dont l'adresse figée chez Meta ne porte pas de jeton.
 
+## Des faux de test mentent encore au compilateur (relevé au lot « le déclencheur gagne », 2026-09-07)
+
+Le lot en a corrigé quatre, qui portaient un `as unknown as WorkflowExecutorDeps['runs']` ou un
+`deps as never`. Ils avaient fait exactement ce qu'un transtypage fait : quand `closeActiveByWaId` est
+devenue requise, le compilateur a nommé les fabriques honnêtes et **a laissé passer les menteuses**, qui ont
+planté à l'exécution.
+
+Il en reste, sur d'AUTRES dépendances : une dizaine de `as unknown as WorkflowExecutorDeps['agentSessions']`
+et `['rcs']` (`tests/workflow-executor.test.ts`, `tests/workflow-avance-concurrente.test.ts`), et deux
+`new WorkflowExecutor(deps as never)` (`tests/workflow-action-optin.test.ts`,
+`tests/workflow-mesure-blocs.test.ts`, dont le `runs` est désormais honnête mais pas l'objet entier).
+
+Le même incident les attend au prochain changement de ces contrats-là. À typer, fichier par fichier, quand
+on touche l'un d'eux : ce n'est pas un chantier à mener d'un bloc.
+
+## `workflow_runs_waiting_idx` est-il devenu redondant ? (relevé au lot « le déclencheur gagne », 2026-09-07)
+
+La migration 0115 ajoute `workflow_runs_actif_idx (tenant_id, wa_id) where status in ('waiting','sleeping')`,
+parce qu'aucun index ne servait la clause de `closeActiveByWaId`, désormais appelée par destinataire de
+campagne.
+
+Il rend PROBABLEMENT `workflow_runs_waiting_idx (tenant_id, wa_id) where status = 'waiting'` redondant :
+une requête `status = 'waiting'` implique `status in ('waiting','sleeping')`, donc Postgres devrait pouvoir
+se servir du nouveau. « Devrait » n'est pas une mesure, et cet index-là sert `findWaitingByWaId`, lu sur le
+chemin chaud de CHAQUE message entrant : on ne le retire pas sur un raisonnement.
+
+**Ce qu'il faut faire, et dans cet ordre** : attendre que 0115 soit appliquée, puis `explain` la requête de
+`findWaitingByWaId` en production et regarder QUEL index elle prend. Si elle prend le nouveau, le retrait de
+l'ancien devient une migration additive de plus (un index en moins, c'est de l'écriture en moins sur une
+table du chemin chaud). Si elle prend l'ancien, on garde les deux et on écrit pourquoi.
+
 ## Une route sans appelant : `GET /tenants/:id/contacts/ids`
 
 Depuis le 2026-09-01, la création de campagne envoie l'INTENTION de sélection (`contactTarget`) et non plus

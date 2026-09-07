@@ -33,6 +33,9 @@ const graph: WorkflowGraph = {
 /** Runs factices minimales : ce graphe 100 % synchrone n'atteint jamais `runs.start` (aucun bloc bloquant, même
  *  contrat que le test « workflow 100% synchrone » de workflow-executor.test.ts), mais l'interface les exige. */
 class FakeRuns {
+  /** Requis par le contrat : un demarrage remplace le parcours en cours. 0 = il n y en avait pas. */
+  async closeActiveByWaId(): Promise<string[]> { return []; }
+
   async start(_tenantId: string, _workflowId: string, _waId: string, _contactId: string | null, _state: RunState): Promise<{ id: string }> {
     return { id: 'r1' };
   }

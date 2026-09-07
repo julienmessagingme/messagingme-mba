@@ -43,12 +43,6 @@ export interface AutomationRunnerDeps {
    */
   clearFired(automationId: string, waId: string): Promise<void>;
   /**
-   * Un run de scénario est-il DÉJÀ en attente pour ce contact ? Un seul parcours actif à la fois par contact :
-   * en démarrer un second enverrait deux messages pour un seul message reçu, et laisserait le premier orphelin
-   * (l'avance ne retrouve qu'un run à la fois).
-   */
-  hasWaitingRun(tenantId: string, waId: string): Promise<boolean>;
-  /**
    * État du contact pour évaluer un `conditionGroup`. null = contact introuvable -> les automations qui ont
    * une condition sont ALORS ignorées (on ne déclenche pas « au cas où » sur un filtre qu'on n'a pas pu vérifier).
    * Non appelé du tout si aucune automation candidate n'a de condition.
@@ -165,21 +159,38 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
         }
       }
 
-      // Un seul parcours actif par contact. Sans cette garde, un contact qui répond à un scénario en cours ET
-      // dont le message contient le mot-clé recevrait DEUX messages, et le premier run resterait orphelin
-      // (`findWaitingByWaId` n'en retrouve qu'un). On ne marque pas le tir : ce n'est pas un déclenchement.
+      // 🔴 IL N'Y A PLUS DE GARDE « UN PARCOURS ATTEND DÉJÀ » ICI, et c'est une décision de Julien du
+      // 2026-09-07 : « on ne bloque personne sur un scénario, surtout quand on lance un nouveau scénario ».
       //
-      // ⚠️ Un run `waiting` n'expire pas tout seul : `hasWaitingRun` doit donc porter une FENÊTRE d'âge côté
-      // câblage, sinon un contact qui ne répond jamais resterait bloqué pour toujours. Le saut est journalisé :
-      // un déclencheur muet sans trace est indébogable.
-      if (await deps.hasWaitingRun(tenantId, ev.waId)) {
-        // eslint-disable-next-line no-console
-        console.log(`automation ${a.id} : un parcours est déjà en attente pour ${ev.waId}, déclenchement ignoré`);
-        continue;
-      }
+      // Ce qu'il y avait avant, et pourquoi ça ne pouvait pas rester : un `hasWaitingRun` qui SAUTAIT le
+      // déclenchement. Il défendait un vrai risque (deux parcours vivants pour un seul message, le plus
+      // ancien devenant orphelin), mais par le mauvais remède : il bloquait au lieu de trancher. Vécu en
+      // production, un lien de chaîne cliqué pendant qu'un autre parcours attendait n'ouvrait jamais son
+      // scénario, et la fenêtre de la garde étant de sept jours, le numéro restait muet une semaine.
+      //
+      // Le risque est désormais fermé à la SOURCE : `runFrom` clôt le parcours actif avant de persister le
+      // nouveau, donc il ne peut plus y en avoir deux. La garde n'avait plus rien à défendre.
+      //
+      // ⚠️ CE QUI FREINE VRAIMENT UN SCÉNARIO QUI REPOSE SON PROPRE DÉCLENCHEUR, et il faut le nommer avec
+      // exactitude : c'est l'ANTI-REBOND (`lastFiredAt` + `isInCooldown`), pas le marquage. `markFired` sans
+      // marqueur est inconditionnel et rend toujours `true` : il ENREGISTRE le tir, il ne le refuse jamais.
+      // Le marquage sert seulement à ce que l'anti-rebond ait quelque chose à lire, même si le démarrage
+      // lève une exception à mi-chemin.
+      //
+      // 🔴 Et l'anti-rebond ne freine QUE s'il est non nul : `isInCooldown` rend `false` dès que le délai
+      // vaut 0 (`src/automation/match.ts`). Une automation réglée à 0, sans plafond horaire, sur un scénario
+      // qui repose son propre tag, boucle. L'ancienne garde du parcours actif freinait ce cas par accident,
+      // quand le scénario laissait un `waiting` derrière lui. Ce n'est pas une raison de la garder (elle
+      // bloquait des cas légitimes bien plus souvent qu'elle n'attrapait celui-là), c'en est une de ne pas
+      // prétendre que la protection est complète : la question est notée dans `todo.md`.
 
-      // Anti-boucle : on marque AVANT de démarrer, pour qu'un scénario qui repose lui-même le déclencheur ne
-      // reboucle pas même si le démarrage lève une exception à mi-chemin (un envoi a pu partir).
+      // On marque AVANT de démarrer, pour que l'anti-rebond ait quelque chose à lire même si le démarrage
+      // lève une exception à mi-chemin (un envoi a pu partir).
+      //
+      // ⚠️ « Anti-boucle » était le mot employé ici, et il promettait trop : ce marquage n'a jamais REFUSÉ
+      // quoi que ce soit. Sans marqueur, `markFired` est inconditionnel et rend toujours `true`. Ce qui
+      // freine est l'anti-rebond juste au-dessus, et seulement s'il est non nul (cf. la note qui précède la
+      // boucle).
       //
       // 🔴 ET C'EST UN CLAIM pour `avant_date` (R10). Le balayage publie tant que le marqueur n'est pas posé ;
       // si la file prend du retard, il republie la MÊME échéance, et sans ce claim les deux événements
