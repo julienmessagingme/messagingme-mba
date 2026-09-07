@@ -138,6 +138,15 @@ tant que `channelsme_posts` référence le lien, et propose l'extinction, qui es
 la clé étrangère `workflow_id` : `on delete restrict`, on ne supprime pas un scénario dont dépend un post en
 ligne.
 
+> ⚠️ **Précision du 2026-09-07, à la mise en service du front.** Ce qui suit reste vrai de la COLONNE, et
+> le devient trop peu de la LECTURE. L'automation compagnon étant possédée, elle est exclue du prédicat de
+> `PgAutomationStore` et absente de `GET /automations` : son état n'était donc lisible nulle part, et la
+> console affichait un bouton « allumer » et un bouton « éteindre » sans savoir lequel avait un sens.
+> `GET /links` rend depuis un champ `enabled` en **lecture seule**, joint depuis `automations` avec la même
+> garde miroir que l'écriture (`tenant_id` ET `possede_par`). Rien ne l'écrit : la règle ci-dessous
+> interdit de COPIER l'état, pas de le LIRE à sa source. `null` y veut dire « plus d'automation
+> compagnon », jamais « éteint ».
+
 🔴 **Le lien n'a PAS de colonne `enabled` à lui.** Son état allumé ou éteint EST le `enabled` de son
 automation compagnon, et c'est la seule source de vérité. Poser un second drapeau sur le lien créerait deux
 copies du même état, qui divergeraient au premier chemin qui n'écrit qu'une des deux. Éteindre un lien veut

@@ -412,6 +412,10 @@ describe.skipIf(!url)('Stores Channels Me (Postgres reel)', () => {
         automationId: auto.rows[0]!.id, maxParHeure: null,
       });
 
+      // 🔴 `create()` LIT deja l etat, il ne le suppose pas : sa sous-requete `returning` interroge
+      // l automation compagnon. Sans elle, POST /links repondait `enabled: null` pour un lien qui vient
+      // d en recevoir une, et `null` veut dire « plus d automation compagnon ».
+      expect(lien.enabled).toBe(false);
       // L automation nait ETEINTE : un lien cree mais jamais publie ne declenche rien.
       expect((await liens.byId(tenantId, lien.id))!.enabled).toBe(false);
 
@@ -439,6 +443,8 @@ describe.skipIf(!url)('Stores Channels Me (Postgres reel)', () => {
         automationId: auto.rows[0]!.id, maxParHeure: null,
       });
 
+      // La garde miroir vaut aussi pour la sous-requete de `create()`, pas seulement pour la jointure.
+      expect(lien.enabled).toBeNull();
       expect((await liens.byId(tenantId, lien.id))!.enabled).toBeNull();
     });
 

@@ -110,11 +110,13 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               data-testid="chaine-lien"
             >
               <option value="">{t('Aucun bouton', 'No button')}</option>
+              {/* ⚠️ L'état allumé du lien ne s'affiche PAS ici, et c'est délibéré : publier rallume le lien
+                  de toute façon (`POST /posts` appelle `allumerAutomationLien`). Marquer « éteint » à la
+                  composition ferait croire que le bouton du futur post ne marchera pas, alors qu'il
+                  marchera. L'état compte dans la liste des publications, où un bouton déjà parti peut
+                  vraiment être mort, pas ici. */}
               {liens.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.phrase}
-                  {l.enabled === false ? t(' (éteint)', ' (off)') : ''}
-                </option>
+                <option key={l.id} value={l.id}>{l.phrase}</option>
               ))}
             </select>
 

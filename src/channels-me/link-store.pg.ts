@@ -75,9 +75,10 @@ function versLien(r: LienRowBrut): LienRow {
     automationId: r.automation_id,
     maxParHeure: r.max_par_heure,
     createdAt: r.created_at.toISOString(),
-    // `?? null` et non `?? false` : a l insertion la colonne n est pas jointe, et un lien tout juste cree
-    // n a pas encore d automation ALLUMEE (elle nait eteinte, et ne s allume qu a la publication reussie).
-    // Rendre `false` la ferait passer pour « eteinte alors qu elle existe », ce qui est une autre affirmation.
+    // `?? null` couvre le seul cas ou la colonne est absente de la ligne brute : aucun aujourd hui, les
+    // trois requetes de ce store la rendent. C est un filet pour une 4e requete qui l oublierait, et il
+    // retombe alors sur `null`, c est-a-dire « on ne sait pas », jamais sur `false`, qui serait une
+    // affirmation. Postgres rend deja `null` quand la sous-requete ou la jointure ne trouve rien.
     enabled: r.enabled ?? null,
   };
 }
@@ -109,10 +110,19 @@ export class PgChannelsMeLinkStore {
       maxParHeure: number | null;
     },
   ): Promise<LienRow> {
+    // 🔴 LE `returning` LIT L ETAT DE L AUTOMATION COMPAGNON, il ne le suppose pas. Sans cette sous-requete,
+    // `enabled` sortait a `null` pour un lien qui vient pourtant d en recevoir une (creee ETEINTE juste
+    // avant par la route) : or `null` veut dire « plus d automation compagnon », donc la reponse de
+    // POST /links affirmait le contraire de la verite, et l ecran ne marquait pas le lien neuf comme eteint.
+    // Meme garde miroir que partout ailleurs dans ce store (tenant_id ET possede_par), et aucune requete de
+    // plus : on ne relit jamais en 2e requete ce que l INSERT peut rendre.
     const { rows } = await this.pool.query<LienRowBrut>(
       `insert into channelsme_links
          (tenant_id, workflow_id, start_node_id, token, phrase, automation_id, max_par_heure)
-       values ($1,$2,$3,$4,$5,$6,$7) returning ${COLS}`,
+       values ($1,$2,$3,$4,$5,$6,$7)
+       returning ${COLS},
+         (select a.enabled from automations a
+           where a.id = $6 and a.tenant_id = $1 and a.possede_par = 'channelsme_link') as enabled`,
       [tenantId, l.workflowId, l.startNodeId, l.token, l.phrase, l.automationId, l.maxParHeure],
     );
     return versLien(rows[0]!);

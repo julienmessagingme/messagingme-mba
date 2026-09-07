@@ -41,13 +41,22 @@ function fauxPool(reponses: Reponse[] = []) {
   return { pool, requetes };
 }
 
-/** Ligne `channelsme_links` telle que Postgres la rend (created_at en Date, comme le driver pg). */
+/**
+ * Une ligne telle que les requetes de ce store la rendent (created_at en Date, comme le driver pg).
+ *
+ * ⚠️ Ce n est PAS une ligne de `channelsme_links` seule : `enabled` vient de `automations`, par la
+ * jointure (list, byId) ou par la sous-requete du `returning` (create). La table, elle, n a pas cette
+ * colonne, et c est ce que la garde plus bas verifie.
+ */
 function ligneLien(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'lnk-1', tenant_id: TENANT, workflow_id: 'wf-1', start_node_id: null,
     // Jeton FICTIF (aucun secret) : valeur figee pour rendre les assertions lisibles.
     token: 'cm-a7k2m9p3', phrase: 'Je veux recevoir la newsletter', automation_id: 'auto-1',
     max_par_heure: 5000, created_at: new Date('2026-09-04T10:00:00.000Z'),
+    // L etat de l automation compagnon, rendu par la sous-requete du `returning` (create) ou par la
+    // jointure (list, byId). `false` est l etat d un lien cree mais pas encore publie.
+    enabled: false,
     ...over,
   };
 }
@@ -62,15 +71,20 @@ describe('PgChannelsMeLinkStore (faux pool, sans base reelle)', () => {
 
     const q = requetes[0]!;
     expect(q.sql).toMatch(/^insert into channelsme_links/i);
+    // 🔴 Le `returning` LIT l etat de l automation compagnon au lieu de le supposer. Sans cette
+    // sous-requete, POST /links renvoyait `enabled: null` pour un lien qui vient d en recevoir une, et
+    // `null` veut dire « plus d automation compagnon » : la reponse affirmait le contraire de la verite.
+    expect(q.sql).toMatch(/select a\.enabled from automations a/i);
+    expect(q.sql).toMatch(/a\.id = \$6 and a\.tenant_id = \$1 and a\.possede_par = 'channelsme_link'/i);
     expect(q.sql).toMatch(/returning/i); // le store ne relit jamais en 2e requete ce que l INSERT peut rendre
     expect(q.params).toEqual([TENANT, 'wf-1', null, 'cm-a7k2m9p3', 'Je veux recevoir la newsletter', 'auto-1', 5000]);
     expect(lien).toEqual({
       id: 'lnk-1', tenantId: TENANT, workflowId: 'wf-1', startNodeId: null,
       token: 'cm-a7k2m9p3', phrase: 'Je veux recevoir la newsletter', automationId: 'auto-1',
       maxParHeure: 5000, createdAt: '2026-09-04T10:00:00.000Z',
-      // null et pas false : a l insertion la colonne n est pas jointe. Rendre `false` ferait passer
-      // l automation pour « eteinte alors qu elle existe », ce qui est une autre affirmation.
-      enabled: null,
+      // L etat vient de la sous-requete du `returning`, pas d une supposition : l automation compagnon
+      // vient d etre creee ETEINTE, et c est ce que la reponse de POST /links doit dire.
+      enabled: false,
     });
   });
 
@@ -131,15 +145,20 @@ describe('PgChannelsMeLinkStore (faux pool, sans base reelle)', () => {
 
     expect(requetes).toHaveLength(3);
 
-    // (a) L INSERT ne connait pas enabled du tout : la colonne n existe pas sur channelsme_links.
-    expect(requetes[0]!.sql).toMatch(/^insert into channelsme_links/i);
-    expect(requetes[0]!.sql).not.toMatch(/enabled/i);
+    // (a) CE QU ON ECRIT ne connait pas enabled : la colonne n existe pas sur channelsme_links. On coupe
+    //     donc l INSERT a son `returning`, parce que tout ce qui suit est une LECTURE, pas une ecriture.
+    const ecriture = requetes[0]!.sql.split(/\breturning\b/i)[0]!;
+    expect(ecriture).toMatch(/^\s*insert into channelsme_links/i);
+    expect(ecriture).not.toMatch(/enabled/i);
 
-    // (b) Les deux LECTURES lisent enabled sur `a` (automations), jamais sur `l` (channelsme_links), et
-    //     jamais en ecriture.
-    for (const q of [requetes[1]!, requetes[2]!]) {
+    // (b) Les TROIS requetes lisent enabled sur `a` (automations), jamais sur `l` (channelsme_links).
+    for (const q of requetes) {
       expect(q.sql).toMatch(/a\.enabled/i);
       expect(q.sql).not.toMatch(/l\.enabled/i);
+    }
+
+    // (b bis) Les deux LECTURES pures n ecrivent rien du tout.
+    for (const q of [requetes[1]!, requetes[2]!]) {
       expect(q.sql).not.toMatch(/(update|insert|set)/i);
     }
 
