@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { cheminDeNav, type NavEntree } from '@/lib/nav';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -23,6 +23,10 @@ const icons = {
   inbox: 'M4 13h4l2 3h4l2-3h4M4 13V6a2 2 0 012-2h12a2 2 0 012 2v7M4 13v5a2 2 0 002 2h12a2 2 0 002-2v-5',
   contacts: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
   campaign: 'M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 11-5.8-1.6',
+  // Chaine : une bulle de diffusion avec ses ondes. Elle ne reprend PAS l icone de Campagnes (le porte-voix)
+  // alors que les deux diffusent : une campagne parle a des contacts connus, une chaine a des abonnes
+  // anonymes, et confondre les deux a l oeil ferait chercher ses contacts dans le mauvais ecran.
+  chaine: 'M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 01-13.2 7.9L3 21l1.1-4.8A9 9 0 1121 12z',
   content: 'M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z',
   analytics: 'M3 3v18h18M8 17V9M13 17V5M18 17v-6',
   flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
@@ -75,6 +79,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
+    // Juste apres Campagnes : les deux repondent a « comment je parle a plusieurs personnes a la fois ».
+    { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), d: icons.chaine },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
     // Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA, son guide et ses réglages,

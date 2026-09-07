@@ -1,0 +1,152 @@
+import { describe, it, expect } from 'vitest';
+import { MAX_TEXTE_POST } from './api-chaine';
+import {
+  LIBELLE_BOUTON_DISCUTER, imageAffichable, morceauxApercu, phraseAcceptable, pretAPublier, resteAAfficher,
+  type BrouillonChaine,
+} from './chaine-apercu';
+
+/**
+ * L'aperçu d'un post de chaîne.
+ *
+ * Ce que ces tests protègent, et qui ne se voit pas à la lecture :
+ *
+ *  1. 🔴 UN POST PUBLIÉ CIRCULE POUR TOUJOURS. L'aperçu est la dernière chose que le client voit avant que
+ *     le message parte à toute une audience, sans retour arrière. S'il montre autre chose que ce qui part,
+ *     l'erreur ne se découvre qu'une fois diffusée.
+ *  2. Pas d'adresse, PAS de bouton. Un bouton dessiné dans l'aperçu alors qu'aucun lien `wa.me` ne part
+ *     promettrait une conversation que le post ne peut pas ouvrir.
+ *  3. Le front ne FABRIQUE aucune adresse : il affiche celle que le serveur lui donne. Ces tests ne
+ *     construisent donc jamais d'URL `wa.me`, ils en reçoivent une.
+ */
+
+const brouillon = (p: Partial<BrouillonChaine> = {}): BrouillonChaine => ({
+  texte: 'Nouvelle collection disponible',
+  imageUrl: '',
+  linkId: '',
+  ...p,
+});
+
+// Une adresse telle que le SERVEUR la rend (composée par `lienWaMe`), jamais fabriquée ici.
+const WA_ME = 'https://wa.me/33525680250?text=Je%20veux%20la%20newsletter%20(cm-a7k2m9p3)';
+
+describe('morceauxApercu : qui écrit quoi, et dans quel ordre', () => {
+  it('sans adresse : le texte seul, et AUCUN bouton', () => {
+    // C'est le cas d'un tenant sans numéro WhatsApp connecté (le serveur rend `waMeUrl: null`) et celui
+    // d'une publication volontairement sans scénario. Les deux montrent un post nu.
+    expect(morceauxApercu('Coucou', null)).toEqual([{ kind: 'texte', contenu: 'Coucou' }]);
+  });
+
+  it('avec adresse : le texte, PUIS le lien, PUIS le bouton, dans cet ordre', () => {
+    // L'ordre est celui du serveur : `texteDuPost = `${text}\n\n${url}``. Un aperçu qui mettrait le lien
+    // avant le texte montrerait un post que personne ne recevra.
+    expect(morceauxApercu('Coucou', WA_ME)).toEqual([
+      { kind: 'texte', contenu: 'Coucou' },
+      { kind: 'lien', contenu: WA_ME },
+      { kind: 'bouton', contenu: LIBELLE_BOUTON_DISCUTER },
+    ]);
+  });
+
+  it('texte vide mais lien présent : le bouton reste, le morceau de texte disparaît', () => {
+    expect(morceauxApercu('   ', WA_ME).map((m) => m.kind)).toEqual(['lien', 'bouton']);
+  });
+
+  it('une adresse VIDE ne vaut pas une adresse : toujours pas de bouton', () => {
+    // Le serveur rend `null`, mais une lecture défensive au bord du réseau peut poser une chaîne vide.
+    // Dessiner un bouton dessus promettrait une conversation impossible.
+    expect(morceauxApercu('Coucou', '')).toEqual([{ kind: 'texte', contenu: 'Coucou' }]);
+  });
+
+  it('le libellé du bouton n’est jamais dérivé du texte du post ni de l’adresse', () => {
+    // 🔴 Mesuré : WhatsApp dessine ce bouton lui-même et son libellé n'est pas modifiable. Le paramètre
+    // `text=` de l'adresse est le message que l'abonné ENVOIE, pas le libellé. Un aperçu qui afficherait
+    // le contenu de `text=` sur le bouton ferait croire à un libellé réglable.
+    const bouton = morceauxApercu('Un texte bien à part', WA_ME).find((m) => m.kind === 'bouton');
+    expect(bouton!.contenu).toBe(LIBELLE_BOUTON_DISCUTER);
+    expect(bouton!.contenu).not.toContain('newsletter');
+  });
+});
+
+describe('imageAffichable : la même exigence que le serveur, dite plus tôt', () => {
+  it('accepte une https publique et rend l’adresse nettoyée', () => {
+    expect(imageAffichable('  https://cdn.exemple.test/photo.jpg  ')).toBe('https://cdn.exemple.test/photo.jpg');
+  });
+
+  it('refuse http : le serveur exige https et répondrait 400', () => {
+    expect(imageAffichable('http://cdn.exemple.test/photo.jpg')).toBeNull();
+  });
+
+  it('refuse localhost et une IP littérale : le serveur les refuse aussi', () => {
+    expect(imageAffichable('https://localhost/photo.jpg')).toBeNull();
+    expect(imageAffichable('https://127.0.0.1/photo.jpg')).toBeNull();
+    expect(imageAffichable('https://169.254.169.254/latest/meta-data')).toBeNull();
+  });
+
+  it('refuse ce qui n’est pas une adresse, et le champ vide', () => {
+    expect(imageAffichable('photo.jpg')).toBeNull();
+    expect(imageAffichable('')).toBeNull();
+    expect(imageAffichable('   ')).toBeNull();
+  });
+
+  it('refuse au-delà de 2000 caractères, la borne du serveur', () => {
+    expect(imageAffichable(`https://ex.test/${'a'.repeat(2000)}`)).toBeNull();
+  });
+});
+
+describe('pretAPublier : ce qui autorise le bouton Publier', () => {
+  it('un texte suffit : un post sans bouton est une publication valable', () => {
+    expect(pretAPublier(brouillon())).toBe(true);
+  });
+
+  it('un texte vide ou blanc ne publie pas', () => {
+    expect(pretAPublier(brouillon({ texte: '' }))).toBe(false);
+    expect(pretAPublier(brouillon({ texte: '   ' }))).toBe(false);
+  });
+
+  it('la borne du texte est celle du serveur, pas une de plus', () => {
+    expect(pretAPublier(brouillon({ texte: 'a'.repeat(MAX_TEXTE_POST) }))).toBe(true);
+    expect(pretAPublier(brouillon({ texte: 'a'.repeat(MAX_TEXTE_POST + 1) }))).toBe(false);
+  });
+
+  it('🔴 une image SAISIE mais invalide bloque la publication', () => {
+    // Ni publier en l'ignorant (l'image ne partirait pas, et l'écran laisserait croire le contraire), ni
+    // partir avec (le serveur répondrait 400 après coup).
+    expect(pretAPublier(brouillon({ imageUrl: 'http://pas-https.test/a.jpg' }))).toBe(false);
+  });
+
+  it('un champ image vide ne bloque rien', () => {
+    expect(pretAPublier(brouillon({ imageUrl: '   ' }))).toBe(true);
+  });
+});
+
+describe('phraseAcceptable : la borne du serveur, 300 et pas 60', () => {
+  it('accepte jusqu’à 300 caractères, la valeur de lienSchema.phrase', () => {
+    // Le plan portait 60 en affirmant que c'était « la même valeur que le serveur ». Un front qui refuse à
+    // 61 ce que le serveur accepte à 300 refuse en son nom propre tout en prétendant citer le serveur.
+    expect(phraseAcceptable('a'.repeat(300))).toBe(true);
+    expect(phraseAcceptable('a'.repeat(301))).toBe(false);
+  });
+
+  it('refuse le vide et le blanc', () => {
+    expect(phraseAcceptable('')).toBe(false);
+    expect(phraseAcceptable('   ')).toBe(false);
+  });
+});
+
+describe('resteAAfficher : le compteur ne sort qu’en approche', () => {
+  it('reste muet loin de la borne : un compteur permanent sur 4096 caractères est du bruit', () => {
+    expect(resteAAfficher(10, MAX_TEXTE_POST)).toBeNull();
+  });
+
+  it('parle en approche, et compte juste', () => {
+    expect(resteAAfficher(MAX_TEXTE_POST - 5, MAX_TEXTE_POST)).toBe(5);
+  });
+
+  it('rend un nombre négatif au-delà : l’écran doit pouvoir dire de combien on dépasse', () => {
+    expect(resteAAfficher(MAX_TEXTE_POST + 3, MAX_TEXTE_POST)).toBe(-3);
+  });
+
+  it('sur un champ court, le seuil reste utilisable (plancher de 20)', () => {
+    expect(resteAAfficher(5, 60)).toBeNull();
+    expect(resteAAfficher(45, 60)).toBe(15);
+  });
+});
