@@ -5174,6 +5174,51 @@ l'exécutant, pas en le supposant).
 sens ont été vérifiés à la main : en remettant le code fautif (route `run` repassée sur la garde ordinaire,
 puis consommation du plafond retirée), 8 tests tombent, dont le structurel qui nomme la route exacte.
 
+## Auto-attaque : on tape sur son propre produit (2026-09-07)
+
+`scripts/auto-attaque.mts`, lancée par `npm run auto-attaque`, **et branchée dans la CI** (job `unit`).
+
+🔴 **Ce qu'elle apporte que les 3853 tests n'apportent pas.** Ceux-ci prouvent que chaque garde, prise UNE
+PAR UNE, se comporte comme son auteur l'a voulu. Ils ne prouvent pas qu'elle est POSÉE sur les 169 routes
+réelles, parce qu'un test unitaire monte son propre câblage et que le faux bouge avec le code. Ici
+**l'inventaire vient du serveur CONSTRUIT** (`printRoutes` aplati), jamais d'une liste écrite à la main :
+une route ajoutée demain sans garde est trouvée sans que personne y pense. 540 sondes.
+
+🔴 **La polarité est « tout est fermé sauf preuve du contraire ».** Les routes publiques sont énumérées dans
+le script, une par une, AVEC la raison de leur ouverture. Une route qui répond sans session sans y figurer
+est une trouvaille. L'inverse (lister les routes à tester) serait une liste à tenir à la main, donc une
+liste qui dérive. `/auth/change-password` est délibérément ABSENTE de la liste des ouvertes, pour que la
+sonde 1 continue de vérifier qu'elle est bien gardée.
+
+⚠️ **Le mode local ne peut pas booter le vrai serveur**, et c'est une contrainte, pas un choix de confort :
+le `DATABASE_URL` du `.env` de ce poste pointe sur la base de PRODUCTION. Un « local » qui démarre
+l'application serait aussi dangereux que la prod, sous un nom rassurant. Il monte donc `buildServer` avec des
+dépendances factices (un `Proxy` qui satisfait n'importe quelle forme, d'où les 40 modules montés sans base
+ni réseau). Ça ne retire rien à ce qui est prouvé : **les gardes s'exécutent AVANT les dépendances**.
+
+Le mode distant (`--cible=<url> --je-sais-ce-que-je-fais --jeton= --tenant=`) existe parce qu'il est le seul
+à voir la couche que rien d'autre ne couvre : routage par chemin de NPM, Cloudflare, CORS de la nouvelle
+origine, config réelle. Il refuse en dur les sondes destructrices, ne joue que les LECTURES pour l'IDOR, et
+exige un compte de test dédié. **Les deux modes partagent le même moteur de sondes** derrière une interface
+de transport à deux implémentations : deux scripts auraient divergé.
+
+**Les dix sondes** : sans authentification · IDOR (espace croisé) · jeton signé d'un autre secret · session
+d'emprunt en écriture · `/ops` avec un jeton de client · webhook Meta sans signature et avec une fausse ·
+CORS depuis une origine hostile · plafond de débit · en-têtes de plafond exposés au front · jeton de choix
+présenté pour un espace non listé.
+
+🔴 **VÉRIFIÉE DANS LES DEUX SENS, et c'est ce qui la rend crédible.** Un script d'attaque toujours vert ne
+prouve rien tant qu'on ne l'a pas vu mordre. Quatre failles plantées à la main, quatre détections précises :
+module monté sans garde -> 10 trouvailles sur les routes exactes ; `scopeTenant` rendu défaillant-ouvert
+(le défaut réellement corrigé le 2026-09-03) -> 205 ; garde de lecture seule des sessions d'observation
+retirée -> 113 ; vérification d'appartenance du jeton de choix retirée -> 1, la bonne.
+
+**Deux faux positifs corrigés à la première exécution, dans le SCRIPT et pas dans le produit** : les points
+d'entrée d'authentification portent d'autres noms que ceux que j'avais supposés (`forgot-password`,
+`reset-password`, `invitations/accept`, `choose-workspace`), et le receveur Meta refuse en **403**, pas en
+401. Vérifiés dans le code avant d'élargir quoi que ce soit : une trouvaille qu'on fait taire en élargissant
+la liste blanche est une faille qu'on s'autorise.
+
 ## Reste (non bloquant) : voir `todo.md`
 
 - TLS pooler en vérif complète (pinner la CA Supabase).

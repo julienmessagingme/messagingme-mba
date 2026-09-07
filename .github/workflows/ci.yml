@@ -36,6 +36,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # 🔴 L'auto-attaque tourne ICI, et c'est la seule chose qui la rend utile. Elle inventorie les routes
+      # sur le SERVEUR CONSTRUIT et attaque chacune : une route ajoutee sans garde est trouvee sans que
+      # personne y pense. Un outil qu'on ne lance qu'a la main est un outil qu'on ne relance jamais apres un
+      # refactor. Elle sort en code 1 sur trouvaille, donc elle casse la CI, ce qui est le but.
+      # Sans argument, elle vise `local` : serveur monte en memoire, aucune base, aucun reseau, aucun effet.
+      - name: Auto-attaque (gardes d'autorisation sur les routes reelles)
+        run: npx tsx scripts/auto-attaque.mts
 
   integration:
     runs-on: ubuntu-latest

@@ -259,13 +259,15 @@ L'audit a trouvé le parc en bon état (secrets, RLS, isolation tenant, injectio
 sessions : tous propres, détail dans `documentation.md`). Le seul trou de code, le plafond de débit des
 routes authentifiées, est FERMÉ le jour même. Restent trois choses, par ordre de valeur.
 
-### 🟠 S'attaquer soi-même, pour de vrai
+### ✅ S'attaquer soi-même : FAIT (2026-09-07)
 
-Le point le plus rentable, et le seul de l'audit qui n'ait pas été traité. Tout ce qui a été vérifié l'a
-été **en lisant le code** : ça prouve que la garde est écrite, pas qu'elle tient. Sur un espace jetable en
-production : forger un JWT visant un `tenantId` voisin et taper les 36 modules, appeler les routes admin
-avec un compte agent, rejouer un webhook Meta signé de travers, poster un `/w/:code` sans secret, marteler
-une route authentifiée pour voir où ça casse maintenant que le plafond existe. Un script, une soirée.
+`scripts/auto-attaque.mts`, dans la CI. 540 sondes, inventaire pris sur le serveur construit, vérifiée dans
+les deux sens (4 failles plantées, 4 détections). Détail dans `documentation.md`.
+
+**Ce qu'elle ne couvre PAS, et qui reste à faire un jour** : elle n'a jamais tourné contre la PRODUCTION.
+Le mode distant est écrit et gardé, mais la couche NPM / Cloudflare / CORS réel n'a donc pas encore été
+attaquée. Il faut pour ça un compte de test dédié dans un espace jetable. C'est une demi-heure, et c'est le
+seul endroit où peuvent vivre des failles que le mode local ne verra jamais.
 
 ### ✅ Dépendances de `web/` remontées (2026-09-07)
 
