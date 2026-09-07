@@ -24,6 +24,7 @@ npm run seed             # compte/tenant démo (SEED_PASSWORD requis, ou SEED_DE
 npm test                 # vitest unitaires (sans DB)
 npm run test:integration # vitest intégration (⚠️ le DATABASE_URL local = la PROD, cf. ci-dessous)
 npm run typecheck        # tsc --noEmit
+npm run auto-attaque     # 540 sondes d'attaque sur les routes REELLES (voir documentation.md)
 
 # Frontend (dans web/)
 npm run dev              # Next.js :3000 (proxifie /api/backend/* -> BACKEND_URL)
@@ -79,7 +80,8 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
 **Dernière appliquée : 0114** (les trois tables Channels Me, plus `possede_par` et `max_fires_per_hour` sur
-`automations`), le 2026-09-07 au matin, avant le déploiement du code qui les lit. **Prochaine libre = 0115.**
+`automations`), le 2026-09-07 au matin. **0115 est ÉCRITE et EN ATTENTE** (l'index qui sert « le parcours
+actif de ce contact », `CREATE INDEX CONCURRENTLY`, donc hors transaction). **Prochaine libre = 0116.**
 
 Elle a suivi l'ordre que la section impose, et c'est le cas d'école : ses deux colonnes sur `automations`
 sont lues par le CHEMIN CHAUD (`PgAutomationStore.listEnabled`, qui sert la correspondance des messages
@@ -171,6 +173,11 @@ Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `t
 - 🔴 **`gh run list` AVANT tout déploiement**, au même titre que `git log <déployé>..HEAD`. Un `npm test`
   vert en local ne prouve que la moitié : les tests d’intégration ne tournent qu’en CI, sur un Postgres
   jetable. Déployer sans avoir regardé le run, c’est déployer sans avoir vu la moitié des tests.
+  🔴 **Et `gh run watch --exit-status` MENT : il a rendu 0 sur un run EN ÉCHEC** (2026-09-07). S'y fier
+  aurait envoyé en production du code dont les tests d'intégration échouaient. Le verdict se lit sur
+  `gh run view <id> --json jobs`, job par job, jamais sur le code de sortie du watch.
+  ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
+  de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)
@@ -243,6 +250,14 @@ désormais les 36 modules à routes `:tenantId` (il en énumérait 18), gardé p
 CHARGEMENT de la configuration. Et jamais `credentials: true` : la session voyage dans un en-tête
 `Authorization`, jamais dans un cookie, donc **il n'y a aucun CSRF aujourd'hui** ; l'activer en créerait un de
 toutes pièces. Vide = aucun en-tête CORS n'est posé du tout, ce qui est le bon défaut.
+
+🔴 **LES ROUTES AUTHENTIFIÉES ONT UN PLAFOND DE DÉBIT, et 0 le désactive** (2026-09-07). Deux plafonds :
+`RATE_LIMIT_USER_PAR_MINUTE` (défaut 300, clé = utilisateur, posé DANS `makeRequireAuth` donc hérité par les
+36 modules gardés) et `RATE_LIMIT_COUTEUX_PAR_MINUTE` (défaut 10, clé = ESPACE) sur import, aperçu, action en
+masse, purge, export d'historique et lancement de campagne. **Mettre l'une à 0 la désactive**, et c'est le
+levier d'urgence : ces plafonds touchent les 235 routes d'un produit en production, un mauvais calibrage
+couperait la console de tous les clients, et un `--force-recreate` va plus vite qu'un déploiement de code.
+⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance, à lever avant le multi-replica.
 
 ⚠️ **`/ops` n'est pas durci, il est SURVEILLÉ** (choix de Julien, 2026-09-03). Une liste blanche d'IP aurait
 coupé l'accès dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre de 5 minutes, une

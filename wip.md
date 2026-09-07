@@ -16,46 +16,42 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
-## Déploiement du 2026-09-07 : TERMINÉ, le VPS est de nouveau sur `main`
+## Lot « lancer un scénario ferme le précédent » (2026-09-07, en cours de déploiement)
 
-Plus rien à faire côté déploiement. `/home/ubuntu/mba` est sur **`main`** (`f3d514d`), les trois conteneurs
-sont reconstruits, l'API et le worker tournent le code de `main`. Le plafond de débit des routes
-authentifiées est ACTIF en production.
+Règle de Julien : « on ne bloque personne sur un scénario, surtout quand on lance un nouveau scénario », et
+son arbitrage du cas ambigu : quand un message est à la fois une réponse attendue et un déclencheur, **le
+déclencheur gagne, toujours**.
 
-**Vérifié** : appel interne 200, appels publics 200 sur `api.` et sur `mba./api/backend/`, webhook Meta 403
-sur un POST non signé, origine CORS hostile refusée, route authentifiée 401 sans jeton, aucune erreur dans
-les journaux. La preuve que le nouveau code tourne n'est pas ce silence mais l'en-tête
-`access-control-expose-headers: retry-after, x-ratelimit-*`, qui n'existe que depuis `661e2ba`.
+**Le défaut vécu.** Un lien de chaîne cliqué pendant qu'un autre parcours attendait n'ouvrait jamais son
+scénario : `hasWaitingRun` sautait le déclenchement, et la fenêtre de cette garde était de SEPT JOURS. Le
+numéro serait resté muet jusqu'au 14 septembre. Diagnostiqué en base, pas supposé.
 
-🔴 **LE 502 EST ARRIVÉ POUR DE VRAI, et le CLAUDE.md l'avait écrit mot pour mot.** Après le second
-`up --build`, l'API répondait 200 en INTERNE et 502 en PUBLIC : NPM tenait l'ancienne IP du conteneur, qui
-change à chaque recréation, parce que nginx résout son amont au CHARGEMENT de sa config. Le diagnostic en
-deux appels (interne puis public) isole la couche coupable d'un coup, et le remède est
-`sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. ⚠️ Il n'était PAS apparu au premier
-déploiement du jour : ce défaut est intermittent, donc **le contrôle public est obligatoire après CHAQUE
-`up --build`**, pas seulement quand on se méfie.
+**Ce qui change.**
+- la fermeture du parcours actif descend dans `runFrom`, passage commun des quatre chemins de démarrage
+  (Inbox, jeton de test, automation, campagne et cible node). Elle vivait chez UN appelant sur quatre ;
+- 🔴 elle est posée APRÈS les gardes et AVANT la persistance, et seulement si quelque chose remplace
+  vraiment (`partis > 0` ou parcours persisté) : un démarrage refusé, ou un scénario d'actions seules qui
+  n'envoie rien, ne doit pas tuer une conversation vivante sans rien mettre à la place ;
+- 🔴 les automations passent AVANT l'avance dans le webhook et CONSOMMENT le message qui a démarré un
+  scénario. Sans ça, l'ancien parcours avançait et envoyait son bloc suivant avant d'être tué : le client
+  recevait deux messages, dont un venant d'un parcours abandonné ;
+- `resume` écrit par `setStateSiVivant` : entre le claim du balayage et son écriture, un autre chemin peut
+  avoir clos le parcours, et une écriture inconditionnelle le RESSUSCITAIT avec son échéance ;
+- la session d'agent suit son parcours quand il est clos (elle restait `en_cours` jusqu'à la purge) ;
+- `hasWaitingRun`, sa config et `endWaitingRun` (le doublon du jeton de test) disparaissent.
 
-⚠️ **Et le contrôle public se fait sur le BON chemin.** `mba.messagingme.app/webhooks/meta` rend 404 : le
-routage par chemin de NPM l'envoie à `mba-web`. Le webhook Meta vit sous `/api/backend/webhooks/meta` (et
-sur `api.messagingme.app/webhooks/meta`). Un 404 sur le mauvais chemin ressemble à une panne du chemin
-critique des messages clients, et n'en est pas une.
+⚠️ **Migration 0115** : l'index qui sert la clause de `closeActiveByWaId`. Mesuré : AUCUN index existant ne
+la servait, et elle passe d'un appel occasionnel à un par destinataire de campagne. `CONCURRENTLY`, donc
+hors transaction. **Vérifier `indisvalid` après le déploiement** : `if not exists` saute un index invalide
+au lieu de le réparer.
 
-⚠️ Aucune migration n'était à jouer (base 0114, dépôt 0114, vérifié des deux côtés). La question se repose à
-chaque déploiement.
+## Rien n'est en cours au 2026-09-07
 
-**Sur la rougeur de CI du jour, et mon erreur de diagnostic** : j'avais écrit ici que `journal.lister`
-n'appliquait pas son filtre par code. C'était FAUX, le TEST avait tort et pas le code (`f470f47`). Deux
-pièges à ne pas refaire : j'ai lu le fichier de test dans mon arbre de travail alors que la session
-parallèle l'avait DÉJÀ corrigé, et j'en ai quand même conclu à un défaut produit. **Un échec de CI se lit
-sur le commit qui a échoué (`git show`), jamais sur un arbre que quelqu'un d'autre modifie.** Et une
-assertion « la liste est vide » dans un fichier à tenant partagé dépend de tout ce qui s'exécute avant elle.
-
-## Rien n'est en cours au 2026-09-04
-
-Tout ce qui a été fait entre le 2026-09-02 et le 2026-09-04 est **livré, déployé et vérifié** : les sept lots
+Tout ce qui a été fait entre le 2026-09-02 et le 2026-09-07 est **livré, déployé et vérifié** : les sept lots
 du plan post-audit, le renommage en Engage Me, la bascule du front sur Vercel, les huit constats du
-contre-rapport, les quatre du contre-contre-rapport (migration 0113 comprise), et l'audit de rayon de souffle
-qui a suivi. Où lire quoi :
+contre-rapport, les quatre du contre-contre-rapport (migration 0113 comprise), l'audit de rayon de souffle
+qui a suivi, puis l'audit sécurité du 2026-09-07 (plafond de débit des routes authentifiées, dépendances
+`web/` remontées, script d'auto-attaque branché dans la CI). Où lire quoi :
 
 | Ce que tu cherches | Où c'est |
 |---|---|

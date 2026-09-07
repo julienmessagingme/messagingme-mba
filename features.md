@@ -591,7 +591,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   conversation** ; un contact pour lequel un **parcours de scénario est déjà en attente**.
 - ✅ **Garde-fous d'envoi** : **anti-rebond d'une heure** par contact et par automation (un client qui répète le
   mot-clé ne relance pas le scénario), **plafond de 200 déclenchements par heure et par automation** (borne la
-  facture quand un seul geste produit des milliers d'événements), et **un seul parcours à la fois par contact**.
+  facture quand un seul geste produit des milliers d'événements). ⚠️ Depuis le 2026-09-07, un parcours en cours
+  ne bloque PLUS un nouveau déclenchement : **le nouveau scénario remplace celui en cours**, et le message qui
+  l'a déclenché ne fait plus avancer l'ancien.
   Si le scénario n'a finalement rien envoyé, l'anti-rebond n'est pas consommé : la prochaine vraie demande du
   client passe quand même.
 - ✅ **Quel scénario peut démarrer sur quel déclencheur** : mot-clé et nouveau contact partent d'un message reçu,
@@ -1034,7 +1036,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Un rendez-vous REPORTÉ redonne un rappel.** On retient pour quelle date on a déjà prévenu, pas
   seulement qu'on a prévenu : la date change, l'occurrence est neuve. Sans ça, un report laisserait le client
   sans rien, en silence.
-- Les garde-fous habituels s'appliquent : contact bloqué, plafond horaire, un seul parcours à la fois.
+- Les garde-fous habituels s'appliquent : contact bloqué, plafond horaire. Un parcours en cours ne bloque
+  rien : il est CLOS et remplacé par le nouveau (2026-09-07).
 - **Si le scénario ne peut pas démarrer** (le fil est tenu par un opérateur à cet instant), le rappel est
   retenté au passage suivant, tant que la courte fenêtre est ouverte. Rien ne part pendant les tentatives.
 
@@ -1062,7 +1065,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   est affiché à côté de la case.
 - ✅ **Déclencher un scénario**, facultatif. Un webhook peut lancer un scénario à chaque appel exploitable. Les
   garde-fous habituels s'appliquent tels quels : contact bloqué, anti-rebond par contact, plafond horaire, un
-  seul parcours à la fois. ⚠️ Le contact n'a pas forcément écrit récemment : le scénario doit donc **commencer
+  parcours en cours, qui est clos et remplacé. ⚠️ Le contact n'a pas forcément écrit récemment : le scénario doit donc **commencer
   par un template approuvé**, sinon il est refusé au démarrage.
 - ✅ **On voit la NATURE de chaque champ, et on peut en créer un sans quitter l'écran** (2026-08-23). Le menu
   des destinations affiche le type entre parenthèses (« Rendez-vous (Date et heure) ») : sans lui, on ne sait
@@ -1631,6 +1634,21 @@ répondre dans une conversation ouverte, poser des tags, confier un fil à un me
 
 ⚠️ **L'accès est une clé, pas un compte.** Le scénario « fenêtre de login, je choisis mon organisation,
 j'approuve l'accès » (OAuth 2.1 délégué) n'est pas encore là : voir `todo.md`.
+
+## Plafonds d'usage (visible seulement si on force)
+
+Rien à régler côté client, mais deux messages peuvent apparaître, et le support doit savoir que ce ne sont
+pas des bugs :
+
+- **« trop de requêtes, patientez un instant »** : un même compte a envoyé plus de 300 appels en une minute.
+  Un usage humain n'y arrive pas (un écran de la console en tire une dizaine à l'ouverture) ; on le voit sur
+  un script, un onglet en boucle, ou une intégration mal réglée. Ça se débloque tout seul en une minute.
+- **« trop d'opérations lourdes sur cet espace, patientez une minute »** : plus de 10 opérations lourdes en
+  une minute POUR L'ESPACE ENTIER, tous comptes confondus. Sont concernés l'import de contacts et son aperçu,
+  l'action en masse du mini-CRM, la purge, l'export d'historique d'un contact et le lancement de campagne.
+  Le compteur est celui de l'espace, donc deux collègues qui importent en même temps le partagent.
+
+Les envois WhatsApp ne sont pas concernés : leur débit se règle campagne par campagne (1 à 80/min).
 
 ## À venir / hors périmètre
 

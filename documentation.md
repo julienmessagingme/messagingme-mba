@@ -634,8 +634,15 @@ touchée, les uuid internes restent la source de vérité des relations.
     exposerait le run à `advance` (un message du contact pendant la reprise rejouerait le même bloc = double
     envoi) et un worker tué laisserait un run figé, ressuscitable par n'importe quel message. Avec le bail, un
     worker tué rend simplement le parcours dû 5 minutes plus tard.
-  - un run endormi OCCUPE le contact (`hasRecentWaitingRun` compte `sleeping`), sinon une automation lancerait
-    un 2e parcours en parallèle et les deux écriraient au réveil.
+  - 🔴 un run endormi est CLOS par le démarrage suivant, pas préservé (`closeActiveByWaId` couvre `waiting`
+    ET `sleeping`, et efface `resume_at`). Sans les deux, une automation lancerait un 2e parcours en parallèle
+    et les deux écriraient au réveil. ⚠️ Jusqu'au 2026-09-07, un run endormi BLOQUAIT le déclenchement
+    (`hasRecentWaitingRun`) : la garde a été retirée, elle bloquait au lieu de trancher, et un lien de chaîne
+    cliqué pendant une attente n'ouvrait jamais son scénario, sept jours durant.
+  - 🔴 `resume` écrit son état par `setStateSiVivant`, pas par `setState` : entre le claim et l'écriture, un
+    autre chemin peut avoir clos le parcours, et une écriture inconditionnelle le RESSUSCITERAIT avec son
+    échéance. Course quasi inatteignable avant que la fermeture ne devienne un appel par destinataire de
+    campagne.
   - `executor.resume` : gardes `mayAct`, bloc suivant existant, puis fenêtre 24 h RELUE en base
     (`getWindowOpenByWaIds`) si la suite envoie un message de session -> sinon on n'envoie pas et on remonte en
     inbox. Un template, lui, part hors fenêtre.
@@ -1539,7 +1546,9 @@ sans base. `automation/runner.ts` compose les filtres avec l'IO injectée. `auto
 
 **Les filtres, dans l'ordre (du moins cher au plus cher).** Correspondance pure (aucune requête) → anti-rebond
 par contact → plafond horaire par automation → `conditionGroup` (contexte contact chargé une seule fois, et
-seulement s'il sert) → un seul parcours actif par contact → gardes de l'exécuteur (fil détenu, fenêtre 24 h).
+seulement s'il sert) → gardes de l'exécuteur (fil détenu, fenêtre 24 h). ⚠️ Le maillon « un seul parcours actif »
+a disparu le 2026-09-07 : il ne BLOQUAIT plus rien, il est remplacé par une fermeture du parcours en cours dans
+`runFrom`, et par la consommation du message côté webhook (le déclencheur gagne sur l'avance).
 
 **Deux voies d'entrée.** Les événements issus d'un message entrant sont traités DANS le job webhook
 (`webhooks/triggers.ts`, isolé comme ses voisins pour ne jamais mettre le job partagé en échec). Les autres
@@ -5231,6 +5240,31 @@ d'entrée d'authentification portent d'autres noms que ceux que j'avais supposé
 `reset-password`, `invitations/accept`, `choose-workspace`), et le receveur Meta refuse en **403**, pas en
 401. Vérifiés dans le code avant d'élargir quoi que ce soit : une trouvaille qu'on fait taire en élargissant
 la liste blanche est une faille qu'on s'autorise.
+
+## Ce que le déploiement du 2026-09-07 a appris
+
+🔴 **LE 502 APRÈS `up --build` EST INTERMITTENT, et c'est ce qui le rend dangereux.** Le CLAUDE.md racine le
+décrit depuis longtemps (NPM tient l'ANCIENNE IP du conteneur, nginx ayant résolu son amont au CHARGEMENT de
+sa config). Le fait NOUVEAU est qu'il n'est pas apparu au PREMIER déploiement de la journée et qu'il est
+apparu au SECOND, sur exactement la même commande. **Le contrôle public devient donc obligatoire après
+CHAQUE reconstruction**, pas seulement quand on se méfie. Diagnostic en deux appels, et il tranche d'un coup :
+interne 200 + public 502 = le proxy ; interne 502 = l'application. Remède :
+`sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`.
+
+⚠️ **Et le contrôle public se fait sur le BON chemin.** `mba.messagingme.app/webhooks/meta` rend **404**,
+parce que le routage par chemin de NPM l'envoie à `mba-web`. Le webhook Meta vit sous
+`/api/backend/webhooks/meta`, et aussi sous `api.messagingme.app/webhooks/meta`. Un 404 sur le mauvais chemin
+ressemble à une panne du chemin critique de réception des messages clients, et n'en est pas une : on croit
+avoir cassé la production alors qu'on s'est trompé d'adresse.
+
+🔴 **La preuve qu'un déploiement a pris ne se lit PAS dans le silence des journaux.** Sans trafic entrant, un
+silence ne prouve rien. Ce jour-là, la preuve était l'en-tête `access-control-expose-headers: retry-after,
+x-ratelimit-*`, qui n'existe que depuis le commit déployé : une réponse qui ne pouvait PAS être produite par
+l'ancienne image. Chercher cette pièce-là à chaque déploiement, plutôt que constater une absence d'erreur.
+
+⚠️ **Un `git checkout` sur le VPS ne reconstruit RIEN.** Les conteneurs continuent de tourner l'image
+précédente : les fichiers changent, le service non. Il faut `up -d --build` derrière, sans quoi on croit
+avoir déployé un commit et on en sert un autre.
 
 ## Reste (non bloquant) : voir `todo.md`
 
