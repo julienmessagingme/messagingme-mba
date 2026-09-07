@@ -1,11 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { estEnLigne, type WorkflowSummary } from '@/lib/api';
 import { inputCls } from '@/lib/ui';
 import { MAX_PHRASE, MAX_TEXTE_POST, type LienChaine } from '@/lib/api-chaine';
+import {
+  entoure, insere, MARQUEURS, type Edition, type Marqueur, type StyleTexte,
+} from '@/lib/chaine-mise-en-forme';
+import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { imageAffichable, phraseAcceptable, pretAPublier, resteAAfficher, type BrouillonChaine } from '@/lib/chaine-apercu';
+
+/** Ce que chaque style MONTRE dans la barre. Le style lui-même vit dans `MARQUEURS`, ici c'est l'habillage. */
+const HABILLAGE: Record<StyleTexte, { fr: string; en: string; lettre: string; classe: string }> = {
+  gras: { fr: 'Gras', en: 'Bold', lettre: 'B', classe: 'font-bold' },
+  italique: { fr: 'Italique', en: 'Italic', lettre: 'I', classe: 'italic' },
+  barre: { fr: 'Barré', en: 'Strikethrough', lettre: 'S', classe: 'line-through' },
+};
 
 /**
  * Le composeur : ce qu'on écrit, l'image, et le lien de scénario qu'on rattache.
@@ -35,6 +46,26 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
   const t = useT();
   const { brouillon, onChange, liens, scenarios, phone, busy } = props;
   const [creation, setCreation] = useState(false);
+  const [emojis, setEmojis] = useState(false);
+  const zoneRef = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * Applique une transformation A LA SELECTION COURANTE, puis repose la selection.
+   *
+   * ⚠️ La position du curseur est REPOSEE apres le rendu (`requestAnimationFrame`) : React reecrit la valeur
+   * du textarea de facon controlee, et une selection posee avant ce rendu serait ecrasee, renvoyant le
+   * curseur a la fin. C'est precisement le defaut qu'on veut eviter.
+   */
+  function appliquer(transforme: (texte: string, debut: number, fin: number) => Edition): void {
+    const zone = zoneRef.current;
+    if (!zone) return;
+    const r = transforme(brouillon.texte, zone.selectionStart, zone.selectionEnd);
+    onChange({ ...brouillon, texte: r.texte });
+    requestAnimationFrame(() => {
+      zone.focus();
+      zone.setSelectionRange(r.debut, r.fin);
+    });
+  }
 
   const image = brouillon.imageUrl.trim();
   const imageRefusee = image !== '' && imageAffichable(image) === null;
@@ -48,7 +79,52 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
     <div className="space-y-4" data-testid="chaine-composeur">
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-ink-600">{t('Message', 'Message')}</span>
+        {/* 🔴 LA BARRE AGIT SUR LA SÉLECTION, et la REPLACE ensuite. Un éditeur qui renvoie le curseur à la
+            fin après chaque clic oblige à re-sélectionner pour enchaîner gras puis italique, c'est-à-dire
+            exactement ce qu'on fait quand on met en forme. La logique vit dans un module pur et testé ;
+            ici il ne reste que le geste sur le DOM. */}
+        <div className="mb-1 flex flex-wrap items-center gap-1" data-testid="chaine-barre-outils">
+          {/* 🔴 LA BARRE EST DÉRIVÉE DE `MARQUEURS`, elle n'en tient pas une copie. Deux listes à aligner à
+              la main dérivent : ajouter un marqueur d'un seul côté donne soit un bouton qui écrit un
+              balisage que l'aperçu ne rend pas, soit un style que rien n'insère. */}
+          {(Object.entries(MARQUEURS) as [Marqueur, StyleTexte][]).map(([marqueur, style]) => (
+            <button
+              key={marqueur}
+              type="button"
+              onClick={() => appliquer((txt, d, f) => entoure(txt, d, f, marqueur))}
+              title={t(HABILLAGE[style].fr, HABILLAGE[style].en)}
+              aria-label={t(HABILLAGE[style].fr, HABILLAGE[style].en)}
+              data-testid={`chaine-format-${style}`}
+              className="rounded-md border border-ink-300 px-2 py-1 text-xs text-ink-700 hover:bg-ink-50"
+            >
+              <span className={HABILLAGE[style].classe}>{HABILLAGE[style].lettre}</span>
+            </button>
+          ))}
+          <span className="mx-1 h-4 w-px bg-ink-200" />
+          {/* 🔴 LE sélecteur d'emojis du produit, pas un troisième. La liste (`lib/emojis.ts`) était déjà
+              partagée ; la grille, elle, était recopiée dans deux composeurs qui avaient divergé. */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setEmojis((v) => !v)}
+              aria-label={t('Smileys', 'Emojis')}
+              data-testid="chaine-emojis"
+              className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-50"
+            >
+              😊
+            </button>
+            {emojis && (
+              <SelecteurEmojis
+                ancrage="haut"
+                alignement="gauche"
+                onClose={() => setEmojis(false)}
+                onPick={(emo) => appliquer((txt, d, f) => insere(txt, d, f, emo))}
+              />
+            )}
+          </div>
+        </div>
         <textarea
+          ref={zoneRef}
           className={`${inputCls} min-h-[130px]`}
           value={brouillon.texte}
           onChange={(e) => onChange({ ...brouillon, texte: e.target.value })}

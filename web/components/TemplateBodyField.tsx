@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/VariableBodyEditor';
 import { listUserFields, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
-import { EMOJIS_MESSAGE } from '@/lib/emojis';
+import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { useT } from '@/lib/i18n';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
 import { inputCls } from '@/lib/ui';
@@ -52,25 +52,6 @@ export function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (
   const sys = SYSTEM_FIELDS.find((f) => f.source.type === source.type && f.source.key === source.key);
   if (sys) return t(...sys.label);
   return fields.find((f) => f.key === source.key)?.label ?? source.key ?? t('Champ', 'Field');
-}
-
-/** Sélecteur d'emojis : insère au curseur, se ferme au clic extérieur. */
-function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
-  const t = useT();
-  return (
-    <>
-      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
-      <div className="absolute bottom-11 right-0 z-50 w-64 rounded-xl border border-ink-200 bg-white p-2 shadow-lg">
-        <div className="grid grid-cols-8 gap-0.5">
-          {EMOJIS_MESSAGE.map((e) => (
-            <button type="button" key={e} onClick={() => onPick(e)} className="rounded p-1 text-lg leading-none hover:bg-ink-100" aria-label={e}>
-              {e}
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
-  );
 }
 
 /** Une option du sélecteur de variable : champ de BASE (group 'base') ou champ perso (group 'custom'). */
@@ -267,7 +248,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
             😊
           </button>
         </div>
-        {emojiOpen && <EmojiPicker onPick={(e) => state.editorRef.current?.insertToken(e)} onClose={() => setEmojiOpen(false)} />}
+        {emojiOpen && <SelecteurEmojis onPick={(e) => state.editorRef.current?.insertToken(e)} onClose={() => setEmojiOpen(false)} />}
         {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
       </div>
       <p className="mt-1 text-xs text-ink-400">

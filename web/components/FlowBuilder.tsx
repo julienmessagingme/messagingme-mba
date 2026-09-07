@@ -21,6 +21,7 @@ import { isDefaultSaveTo, suggestBaseField, BASE_SAVE_FIELDS } from '@/lib/flow-
 import { FlowScreen, conditionText, type FlowScreenElement } from '@/components/FlowScreen';
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
+import { ListeManques } from '@/components/ListeManques';
 
 // Libellés bilingues [FR, EN] résolus au rendu via t(...) (useT est inappelable hors composant).
 const TYPE_LABELS: Record<FlowFieldType, [string, string]> = {
@@ -677,18 +678,18 @@ export function FlowBuilder({
         </button>
         {/* Bouton grisé SANS explication à portée de regard : les avertissements existent mais sont au-dessus,
             et le nom manquant n'en avait aucun. On énumère ici ce qui bloque, sous le bouton qu'on cherche à
-            cliquer. Les champs marqués d'une astérisque rouge sont ceux qui comptent. */}
-        {!canSubmit && !busy && (
-          <p className="text-xs text-coral" data-testid="flow-manquants">
-            {t('Il manque : ', 'Missing: ')}
-            {[
-              name.trim() === '' ? t('le nom du formulaire', 'the form name') : '',
-              !everyScreenFilled ? t('au moins un élément par écran', 'at least one element per screen') : '',
-              fieldCount === 0 ? t('au moins un champ à remplir', 'at least one field to fill in') : '',
-              !labelsUnique ? t('des libellés de champs tous différents', 'field labels that are all different') : '',
-            ].filter((x) => x !== '').join(t(', ', ', '))}
-          </p>
-        )}
+            cliquer. Le bloc est partagé avec les formulaires de template et de carrousel, qui avaient le même
+            cul-de-sac : c'est ICI qu'il avait été écrit en premier. */}
+        <ListeManques
+          testId="flow-manquants"
+          busy={busy}
+          manques={[
+            ...(name.trim() === '' ? [t('le nom du formulaire', 'the form name')] : []),
+            ...(!everyScreenFilled ? [t('au moins un élément par écran', 'at least one element per screen')] : []),
+            ...(fieldCount === 0 ? [t('au moins un champ à remplir', 'at least one field to fill in')] : []),
+            ...(!labelsUnique ? [t('des libellés de champs tous différents', 'field labels that are all different')] : []),
+          ]}
+        />
       </div>
 
       {/* Colonne aperçu (collante) : écran actif + pagination quand il y a plusieurs écrans. */}

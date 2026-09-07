@@ -168,6 +168,55 @@ test.describe('Chaîne : la connexion', () => {
   });
 });
 
+test.describe('Chaîne : mettre en forme le message', () => {
+  test('🔴 C1 : le bouton Gras entoure la SÉLECTION, et l aperçu le rend en gras', async ({ page }) => {
+    // La logique est testée en unite (`lib/chaine-mise-en-forme.test.ts`). Ce qui se prouve ICI est le
+    // geste : la barre agit sur ce qui est selectionne dans le champ, pas sur la fin du texte, et l apercu
+    // MONTRE le style au lieu d afficher des etoiles. Sans ce second point, la fonctionnalite est un
+    // mensonge : le client ecrit `*promo*` et voit `*promo*`.
+    await monter(page);
+    await page.goto('/chaine');
+    const zone = page.getByTestId('chaine-texte');
+    await zone.fill('Grosse promo cette semaine');
+    // Selectionne « promo » (positions 7 a 12).
+    await zone.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(7, 12));
+    await page.getByTestId('chaine-format-gras').click();
+
+    await expect(zone).toHaveValue('Grosse *promo* cette semaine');
+    const apercu = page.getByTestId('chaine-apercu-texte');
+    await expect(apercu.locator('strong')).toHaveText('promo');
+    // 🔴 Les etoiles ne s affichent PAS : c est la difference entre montrer le gras et montrer le balisage.
+    await expect(apercu).not.toContainText('*promo*');
+  });
+
+  test('🔴 le balisage part TEL QUEL au fournisseur : c est WhatsApp qui rend le gras', async ({ page }) => {
+    // Garde contre un « nettoyage » futur. L apercu retranscrit le style pour que le client voie ce qu il
+    // publie, mais le texte ENVOYE doit garder ses marqueurs : c est le client WhatsApp qui les interprete.
+    // Les retirer a l envoi produirait un post sans aucune mise en forme, et l apercu aurait menti.
+    const appels = await monter(page);
+    await page.goto('/chaine');
+    await page.getByTestId('chaine-texte').fill('Grosse *promo* cette semaine');
+    await page.getByTestId('chaine-lien').selectOption('lien-1');
+    await page.getByTestId('chaine-publier').click();
+
+    await expect(page.getByTestId('chaine-publie')).toBeVisible();
+    const publication = appels.find((a) => a.methode === 'POST' && a.chemin.endsWith('/channels-me/posts'));
+    expect(publication?.corps).toEqual({ text: 'Grosse *promo* cette semaine', linkId: 'lien-1' });
+  });
+
+  test('🔴 C3 : un smiley s insere AU CURSEUR, pas a la fin', async ({ page }) => {
+    await monter(page);
+    await page.goto('/chaine');
+    const zone = page.getByTestId('chaine-texte');
+    await zone.fill('Bonjour tout le monde');
+    await zone.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(7, 7));
+    await page.getByTestId('chaine-emojis').click();
+    // LE selecteur du produit, partage avec les composeurs de template : pas une troisieme grille.
+    await page.getByTestId('selecteur-emojis').getByRole('button', { name: '🎉' }).click();
+    await expect(zone).toHaveValue('Bonjour🎉 tout le monde');
+  });
+});
+
 test.describe('Chaîne : publier', () => {
   test('l’aperçu montre le bouton seulement quand un lien est rattaché', async ({ page }) => {
     await monter(page);

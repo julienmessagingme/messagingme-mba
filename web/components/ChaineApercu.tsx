@@ -1,6 +1,7 @@
 'use client';
 
 import { useT } from '@/lib/i18n';
+import { TexteMisEnForme } from '@/components/TexteMisEnForme';
 import { morceauxApercu, imageAffichable } from '@/lib/chaine-apercu';
 
 /**
@@ -62,7 +63,11 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
           if (m.kind === 'texte') {
             return (
               <p key={i} className="whitespace-pre-wrap break-words text-sm text-ink-800" data-testid="chaine-apercu-texte">
-                {m.contenu}
+                {/* 🔴 L'APERÇU MONTRE LE GRAS, il n'affiche pas des étoiles. Sans ça, la mise en forme est un
+                    mensonge : le client écrit `*promo*` et voit `*promo*`, donc il ne peut pas juger de ce
+                    qu'il publie. Le découpage vit dans un module PUR, testé (`chaine-mise-en-forme.ts`) :
+                    ce texte part dans un post irrattrapable. */}
+                <TexteMisEnForme texte={m.contenu} />
               </p>
             );
           }

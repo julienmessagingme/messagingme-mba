@@ -8,6 +8,7 @@ import { useTemplateBody, TemplateBodyField, TemplateVariableExamples, unmappedV
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
+import { ListeManques } from '@/components/ListeManques';
 
 /** Type d'un bouton de carte. Meta n'accepte que ces deux-là dans un carousel. */
 type CardButtonType = 'QUICK_REPLY' | 'URL';
@@ -101,22 +102,45 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         : { type: 'QUICK_REPLY' as const, text: b.text.trim() };
     });
 
-  // Chaque bouton de chaque carte doit être rempli : Meta refuse un libellé vide, et un carousel à moitié
-  // saisi partirait en revue pour revenir refusé.
-  const buttonsComplete = cards.every((c) =>
-    layout.every((type, j) => {
-      const b = c.buttons[j];
-      return !!b && b.text.trim() !== '' && (type !== 'URL' || isSendableButtonUrl(b.url));
-    }),
-  );
   /** Une URL commencée mais pas valide : on le dit sous le champ plutôt que d'attendre le refus de Meta,
    *  dont le message désigne un chemin de tableau JSON, illisible. Champ vide = pas encore saisi, pas d'alerte. */
   const urlKo = (c: Card, j: number): boolean => {
     const v = c.buttons[j]?.url ?? '';
     return v.trim() !== '' && !isSendableButtonUrl(v);
   };
-  const canSubmit =
-    name.trim() !== '' && body.trim() !== '' && cards.length >= 2 && cards.every((c) => c.headerHandle !== '' && !c.uploading) && buttonsComplete && !busy;
+  /**
+   * 🔴 CE QUI MANQUE POUR VALIDER, NOMMÉ, et la CARTE fautive désignée par son rang. Ce bouton se grisait
+   * sur cinq conditions sans en exposer aucune, exactement comme celui des templates : une adresse mal
+   * tapée dans la carte 3 d'un carrousel qui en porte dix laisse chercher longtemps. Meta refuse de toute
+   * façon un carrousel à moitié saisi, mais après un aller-retour de revue.
+   */
+  const manques: string[] = [
+    ...(name.trim() === '' ? [t('le nom du carousel', 'the carousel name')] : []),
+    ...(body.trim() === '' ? [t('le corps du message', 'the message body')] : []),
+    ...(cards.length < 2 ? [t('au moins deux cartes', 'at least two cards')] : []),
+    ...cards.flatMap((c, i) => {
+      const rang = i + 1;
+      const fautes: string[] = [];
+      if (c.uploading) fautes.push(t(`le visuel de la carte ${rang} est encore en cours d’envoi`, `the media of card ${rang} is still uploading`));
+      else if (c.headerHandle === '') fautes.push(t(`le visuel de la carte ${rang}`, `the media of card ${rang}`));
+      layout.forEach((type, j) => {
+        const b = c.buttons[j];
+        const bouton = j + 1;
+        if (!b || b.text.trim() === '') {
+          fautes.push(t(`le libellé du bouton ${bouton} de la carte ${rang}`, `the label of button ${bouton} on card ${rang}`));
+          return;
+        }
+        if (type === 'URL' && !isSendableButtonUrl(b.url)) {
+          fautes.push(t(
+            `l’adresse du bouton ${bouton} de la carte ${rang} (elle doit commencer par https://)`,
+            `the address of button ${bouton} on card ${rang} (it must start with https://)`,
+          ));
+        }
+      });
+      return fautes;
+    }),
+  ];
+  const canSubmit = manques.length === 0 && !busy;
 
   async function submit() {
     setBusy(true);
@@ -292,6 +316,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
       />
 
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
+      <ListeManques manques={manques} testId="carousel-manques" busy={busy} />
       <button onClick={submit} disabled={!canSubmit} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
         {busy ? t('Création…', 'Creating…') : t('Créer le carousel', 'Create carousel')}
       </button>

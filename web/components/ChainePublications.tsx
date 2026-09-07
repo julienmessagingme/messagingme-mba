@@ -5,6 +5,7 @@ import { cardCls } from '@/lib/ui';
 import { formatDate } from '@/lib/day';
 import { classesPastille, etatPublication } from '@/lib/chaine-statut';
 import type { EtatDistant, LienChaine, PostChaine } from '@/lib/api-chaine';
+import { TexteMisEnForme } from '@/components/TexteMisEnForme';
 
 /**
  * Les publications déjà parties, et l'état de leur bouton.
@@ -74,8 +75,13 @@ export function ChainePublications(props: ChainePublicationsProps) {
               <li key={p.id} className="py-3" data-testid={`chaine-publication-${p.id}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
+                    {/* 🔴 LE MÊME RENDU QUE L'APERÇU, juste au-dessus. Cette liste montrait `*promo*` avec
+                        ses étoiles pendant que l'aperçu affichait « promo » en gras : deux moitiés du même
+                        écran qui ne montraient pas la même chose du même post. */}
                     <p className="truncate text-sm text-ink-800">
-                      {p.message?.text?.trim() || t('(sans texte)', '(no text)')}
+                      {(p.message?.text?.trim() ?? '') === ''
+                        ? t('(sans texte)', '(no text)')
+                        : <TexteMisEnForme texte={p.message!.text!.trim()} />}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-400">
                       {formatDate(p.createdAt, locale)}

@@ -2,9 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { VariableBodyEditor, NAMED_VAR_RE, type VariableBodyEditorHandle } from '@/components/VariableBodyEditor';
-import { Flottant } from '@/components/Flottant';
 import { SelecteurVariable } from '@/components/SelecteurVariable';
-import { EMOJIS_MESSAGE } from '@/lib/emojis';
+import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { emailVariableFields } from '@/lib/fields';
 import type { UserFieldDef } from '@/lib/api';
 import { useT } from '@/lib/i18n';
@@ -90,24 +89,10 @@ export function ChampCorpsVariables({
         </div>
 
         {emojisOuverts && (
-          <Flottant onClose={() => setEmojisOuverts(false)} large>
-            <div className="grid grid-cols-8 gap-0.5">
-              {EMOJIS_MESSAGE.map((e) => (
-                <button
-                  type="button"
-                  key={e}
-                  // Le panneau se FERME après un choix. Le laisser ouvert (ce que fait le composeur de
-                  // template) coûte un clic mort : le voile qui capte le clic extérieur avale le suivant, et
-                  // l'utilisateur croit que le bouton d'à côté ne répond pas.
-                  onClick={() => { editorRef.current?.insertToken(e); setEmojisOuverts(false); }}
-                  className="rounded p-1 text-lg leading-none hover:bg-ink-100"
-                  aria-label={e}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </Flottant>
+          <SelecteurEmojis
+            onClose={() => setEmojisOuverts(false)}
+            onPick={(e) => editorRef.current?.insertToken(e)}
+          />
         )}
       </div>
     </div>

@@ -12,6 +12,7 @@ import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
 import { inputCls } from '@/lib/ui';
+import { ListeManques } from '@/components/ListeManques';
 
 /**
  * Formulaire de creation (et d'edition) d'un template Meta.
@@ -194,16 +195,50 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
     }
   }
 
-  // Chaque bouton doit être complet : texte + (URL pour un lien / formulaire choisi pour un FLOW).
-  // L'URL doit être une VRAIE adresse : sinon Meta refuse avec un message qui désigne un chemin de tableau
-  // JSON, illisible. Une URL dynamique (`https://x.fr/{{1}}`) reste valide, le repo pose déjà son exemple.
-  const buttonsComplete = buttons.every((b) => b.text.trim() !== '' && (b.type !== 'URL' || isSendableButtonUrl(b.url ?? '')) && (b.type !== 'FLOW' || (b.flowId ?? '') !== ''));
   const urlKo = (b: { type: string; url?: string }): boolean => b.type === 'URL' && (b.url ?? '').trim() !== '' && !isSendableButtonUrl(b.url ?? '');
   const headerReady =
     headerType === 'none' ||
     (headerType === 'TEXT' && headerText.trim() !== '') ||
     ((headerType === 'IMAGE' || headerType === 'VIDEO') && headerHandle !== '');
-  const canSubmit = name.trim() !== '' && body.trim() !== '' && buttonsComplete && headerReady && !headerUploading && !busy;
+  /**
+   * 🔴 CE QUI MANQUE POUR VALIDER, NOMMÉ. Le bouton se grisait sur CINQ conditions sans en exposer aucune :
+   * Julien a saisi `htpps://` au lieu de `https://` et n'a eu qu'un bouton inerte. La raison EXISTAIT
+   * pourtant, mais elle vivait dans un attribut `title`, c'est-à-dire une infobulle qu'il faut survoler à la
+   * souris et qui n'existe pas au doigt.
+   *
+   * ⚠️ On ne débloque PAS le bouton : il reste grisé tant qu'il manque quelque chose. C'est la RAISON qui
+   * devient visible. Et les cinq conditions sont traitées, pas seulement l'URL : les quatre autres étaient
+   * des culs-de-sac identiques.
+   */
+  const manques: string[] = [
+    ...(name.trim() === '' ? [t('le nom du template', 'the template name')] : []),
+    ...(body.trim() === '' ? [t('le corps du message', 'the message body')] : []),
+    ...(headerUploading ? [t('l’en-tête est encore en cours d’envoi', 'the header is still uploading')] : []),
+    ...(!headerReady && !headerUploading
+      ? [headerType === 'TEXT'
+          ? t('le texte de l’en-tête', 'the header text')
+          : t('le média de l’en-tête', 'the header media')]
+      : []),
+    // Chaque bouton fautif est DÉSIGNÉ par son rang : « un bouton est incomplet » sur un formulaire qui en
+    // porte trois laisse chercher lequel.
+    // ⚠️ On ACCUMULE, on ne sort pas au premier manque : un bouton FLOW neuf n'a ni libellé ni formulaire,
+    // et n'annoncer que le libellé faisait réapparaître le blocage une fois celui-ci saisi. Deux allers
+    // pour une seule cause apparente, c'est le cul-de-sac qu'on est en train de fermer.
+    ...buttons.flatMap((b, i) => {
+      const rang = i + 1;
+      const fautes: string[] = [];
+      if (b.text.trim() === '') fautes.push(t(`le libellé du bouton ${rang}`, `the label of button ${rang}`));
+      if (b.type === 'URL' && !isSendableButtonUrl(b.url ?? '')) {
+        fautes.push(t(
+          `l’adresse du bouton ${rang} (elle doit commencer par https://)`,
+          `the address of button ${rang} (it must start with https://)`,
+        ));
+      }
+      if (b.type === 'FLOW' && (b.flowId ?? '') === '') fautes.push(t(`le formulaire du bouton ${rang}`, `the form of button ${rang}`));
+      return fautes;
+    }),
+  ];
+  const canSubmit = manques.length === 0 && !busy;
 
   return (
     <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6 shadow-sm'}>
@@ -233,7 +268,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
         {/* Colonne formulaire */}
         <div>
           <Field label={isEdit ? t('Nom (non modifiable)', 'Name (not editable)') : t('Nom (minuscules, sans espaces)', 'Name (lowercase, no spaces)')}>
-            <input value={name} onChange={(e) => setName(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="promo_ete" />
+            <input value={name} onChange={(e) => setName(e.target.value)} disabled={isEdit} data-testid="template-nom" className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="promo_ete" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('Catégorie', 'Category')}>
@@ -262,6 +297,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
                 value={headerType}
                 onChange={(e) => { setHeaderType(e.target.value as 'none' | 'TEXT' | 'IMAGE' | 'VIDEO'); clearHeaderMedia(); }}
                 className={`${inputCls} max-w-[150px]`}
+                data-testid="template-entete-type"
               >
                 <option value="none">{t('Aucun', 'None')}</option>
                 <option value="TEXT">{t('Texte', 'Text')}</option>
@@ -309,7 +345,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
                 {!hasFlow && (
                   <>
                     <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
-                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">{t('+ lien', '+ link')}</button>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} data-testid="template-ajouter-lien" className="text-brand-600 hover:underline">{t('+ lien', '+ link')}</button>
                     <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title={t('Un bouton formulaire : créer un formulaire inline ou en choisir un déjà publié', 'A form button: create an inline form or choose an already published one')}>+ Flow</button>
                   </>
                 )}
@@ -349,6 +385,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
                       maxLength={25}
+                      data-testid={`template-bouton-texte-${i}`}
                       className={`${inputCls} flex-1`}
                       placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
                     />
@@ -356,6 +393,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
                       <input
                         value={b.url ?? ''}
                         onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
+                        data-testid={`template-bouton-url-${i}`}
                         className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
                         title={urlKo(b) ? t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://') : undefined}
                         placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
@@ -399,6 +437,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
           {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
 
+          <ListeManques manques={manques} testId="template-manques" busy={busy} />
           <button
             type="button"
             onClick={submit}
