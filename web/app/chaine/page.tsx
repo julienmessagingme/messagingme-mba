@@ -207,6 +207,7 @@ function ChaineInner({ session }: { session: Session }) {
                   setBrouillon((b) => ({ ...b, linkId: link.id }));
                 }}
                 onPublier={publier}
+                tenantId={session.tenantId}
               />
             </div>
 

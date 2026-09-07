@@ -13,7 +13,7 @@ import {
 } from '@/lib/rcs';
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
-import { RcsImageField } from '@/components/RcsImageField';
+import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
@@ -146,7 +146,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image d’en-tête (facultatif)', 'Header image (optional)')}</label>
-              <RcsImageField
+              <ChampImageHebergee
                 tenantId={session.tenantId}
                 valeur={form.imageUrl}
                 onChange={(imageUrl) => setForm((f) => ({ ...f, imageUrl }))}

@@ -77,6 +77,16 @@ async function monter(
     if (chemin.endsWith('/channels-me/posts') && req.method() === 'POST') {
       return json(sur.reponsePublication ?? { post: { cmMessageId: 'cm-9', linkId: 'lien-1' } }, 201);
     }
+    if (chemin.endsWith('/rcs/media') && req.method() === 'POST') {
+      const corps = (req.postDataJSON?.() ?? {}) as { dataUrl?: string; nom?: string };
+      // 🔴 On verifie que le NAVIGATEUR a bien encode le fichier choisi. C'est la moitie de la chaine que ce
+      // test protege ; l'autre moitie, la relecture de la SIGNATURE du fichier, est couverte cote serveur.
+      expect(String(corps.dataUrl ?? '')).toMatch(/^data:image\/png;base64,/);
+      return json({
+        media: { id: 'm1', code: 'abcdefghjkmnpqrstvwxyz0123', mime: 'image/png', taille: 70, nom: corps.nom ?? null, createdAt: '' },
+        url: 'https://mba.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png',
+      }, 201);
+    }
     if (/\/channels-me\/links\/[^/]+\/enable$/.test(chemin)) return json({ ok: true });
     if (chemin.endsWith('/channels-me/activation-request')) return json({ ok: true });
     if (chemin.endsWith('/workflows')) return json({ workflows: [WF] });
@@ -214,6 +224,62 @@ test.describe('Chaîne : mettre en forme le message', () => {
     // LE selecteur du produit, partage avec les composeurs de template : pas une troisieme grille.
     await page.getByTestId('selecteur-emojis').getByRole('button', { name: '🎉' }).click();
     await expect(zone).toHaveValue('Bonjour🎉 tout le monde');
+  });
+});
+
+test.describe('Chaîne : l’image', () => {
+  /**
+   * 🔴 CE QUE CE TEST PROTÈGE, ET POURQUOI IL N'Y A PAS DE MULTIPART ICI. Julien voulait un bouton pour
+   * téléverser une photo depuis son poste au lieu de coller une adresse. Le fournisseur accepte deux
+   * formes : une adresse publique qu'il va CHERCHER (`media_url`), ou le fichier en multipart accompagné
+   * d'un `media_checksum` dont sa spec ne nomme PAS l'algorithme, et qui obligerait à signer autre chose
+   * que ce qu'on transmet. La première suffit, et l'hébergeur existe déjà : c'est celui qui sert les
+   * visuels RCS aux opérateurs. Ce test épingle le chemin retenu, pour qu'on ne le remplace pas par un
+   * multipart deviné.
+   */
+  test('🔴 D : téléverse une photo locale, et c’est l’ADRESSE hébergée qui part au fournisseur', async ({ page }) => {
+    const appels = await monter(page);
+    await page.goto('/chaine');
+    await page.getByTestId('chaine-texte').fill('Notre nouvelle carte');
+
+    // Un vrai PNG minimal (1x1 transparent), pas un fichier au hasard renomme.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    await page.getByTestId('chaine-image-file').setInputFiles({ name: 'carte.png', mimeType: 'image/png', buffer: png });
+
+    const adresse = 'https://mba.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png';
+    // L'adresse se remplit toute seule : c'est exactement ce que le client ne veut pas avoir a fabriquer.
+    await expect(page.getByTestId('chaine-image')).toHaveValue(adresse);
+    // Elle est https et publique, donc le refus AVANT publication ne se declenche pas.
+    await expect(page.getByTestId('chaine-image-refus')).toHaveCount(0);
+    // ⚠️ Et AUCUN avertissement d'extension : cette regle est celle de l'operateur RCS, mesuree chez lui.
+    // La spec de Channels Me ne nomme aucune extension, donc on n'invente pas la contrainte.
+    await expect(page.getByTestId('chaine-image-warn')).toHaveCount(0);
+    await expect(page.getByTestId('chaine-apercu-image')).toHaveAttribute('src', adresse);
+
+    await page.getByTestId('chaine-lien').selectOption('lien-1');
+    await page.getByTestId('chaine-publier').click();
+    await expect(page.getByTestId('chaine-publie')).toBeVisible();
+
+    const publication = appels.find((a) => a.methode === 'POST' && a.chemin.endsWith('/channels-me/posts'));
+    expect(publication?.corps).toEqual({
+      text: 'Notre nouvelle carte',
+      linkId: 'lien-1',
+      mediaUrl: adresse,
+    });
+  });
+
+  test('🔴 D, preuve inverse : coller une adresse reste possible, et une adresse en http est toujours refusée', async ({ page }) => {
+    // Sans ce sens-la, on aurait pu remplacer le champ par un bouton et casser le client qui heberge
+    // deja ses visuels sur son propre CDN. Et la garde d'avant le lot doit tenir a l'identique.
+    await monter(page);
+    await page.goto('/chaine');
+    await page.getByTestId('chaine-image').fill('http://exemple.fr/photo.jpg');
+    await expect(page.getByTestId('chaine-image-refus')).toBeVisible();
+    await page.getByTestId('chaine-image').fill('https://exemple.fr/photo.jpg');
+    await expect(page.getByTestId('chaine-image-refus')).toHaveCount(0);
   });
 });
 

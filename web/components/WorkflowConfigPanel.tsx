@@ -10,7 +10,7 @@ import { carouselOutputs } from '@/lib/carousel-outputs';
 import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonsDepuisNode } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
-import { RcsImageField } from '@/components/RcsImageField';
+import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { ConditionBuilder, type ConditionGroup } from '@/components/ConditionBuilder';
@@ -258,7 +258,7 @@ export function ConfigPanel({
 
             <div className={composeIci ? undefined : 'hidden'}>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image d’en-tête (facultatif)', 'Header image (optional)')}</label>
-              <RcsImageField
+              <ChampImageHebergee
                 tenantId={tenantId}
                 valeur={(d.imageUrl as string) ?? ''}
                 onChange={(imageUrl) => onPatch({ imageUrl })}
@@ -443,7 +443,7 @@ export function ConfigPanel({
                 message interactif ; sur un parcours RCS, la carte du message. */}
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image (facultatif)', 'Image (optional)')}</label>
-              <RcsImageField
+              <ChampImageHebergee
                 tenantId={tenantId}
                 valeur={(d.imageUrl as string) ?? ''}
                 onChange={(imageUrl) => onPatch({ imageUrl })}

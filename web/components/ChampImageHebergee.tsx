@@ -6,31 +6,44 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
 /**
- * Le visuel d'un message RCS : on choisit un fichier, la console l'héberge, et l'adresse se remplit toute
- * seule.
+ * Une image que la console HÉBERGE : on choisit un fichier, et l'adresse publique se remplit toute seule.
  *
- * 🔴 Pourquoi ce champ ne peut pas être un simple sélecteur de fichier. Un message RCS ne TRANSPORTE pas
- * l'image : il transporte son ADRESSE, que l'opérateur télécom va chercher lui-même. Il faut donc une URL
+ * 🔴 POURQUOI CE CHAMP NE PEUT PAS ÊTRE UN SIMPLE SÉLECTEUR DE FICHIER, et pourquoi le même besoin revient
+ * partout. Ni un message RCS ni un post de chaîne WhatsApp ne TRANSPORTENT l'image : ils transportent son
+ * ADRESSE, que l'opérateur télécom ou le fournisseur de chaîne va chercher lui-même. Il faut donc une URL
  * publique, et c'est exactement ce que personne ne veut avoir à fabriquer. Le champ garde malgré tout la
  * saisie d'une adresse, pour le client qui héberge déjà ses visuels ailleurs et veut garder son CDN.
  *
  * Le fichier est envoyé en data URL base64 : le serveur relit sa SIGNATURE (un `.png` renommé est refusé) et
  * c'est le type réel qui décide de l'extension de l'adresse rendue.
+ *
+ * ⚠️ IL S'APPELAIT `RcsImageField`, ET LE RESTE DU CHEMIN GARDE SON NOM RCS : la fonction d'appel est
+ * `uploadRcsMedia`, la route `POST /tenants/:id/rcs/media`, la table `rcs_media`, le service public
+ * `GET /m/:fichier`. Ce n'est pas un demi-renommage oublié, c'est une porte à SENS UNIQUE : `/m/` sert des
+ * adresses parties dans des messages RCS déjà livrés, la renommer les casserait toutes, et renommer une
+ * table n'achète rien. Seul le composant est renommé, parce que c'est le seul des cinq qu'un développeur
+ * lit avant de décider s'il peut s'en servir.
  */
 
-/** Extensions acceptées par l'opérateur. Contrôlé ICI aussi parce qu'un `.webp` passe la validation d'URL et
- *  se fait refuser à l'ENVOI, c'est-à-dire devant un client. */
+/** Extensions acceptées par l'opérateur RCS. Contrôlé ICI aussi parce qu'un `.webp` passe la validation
+ *  d'URL et se fait refuser à l'ENVOI, c'est-à-dire devant un client. */
 const IMAGE_RE = /\.(jpe?g|png|gif)(\?.*)?$/i;
 const TAILLE_MAX = 2 * 1024 * 1024;
 
-export function RcsImageField({
-  tenantId, valeur, onChange, testIdPrefix = 'rcs-message', compact = false,
+export function ChampImageHebergee({
+  tenantId, valeur, onChange, testIdPrefix = 'rcs-message', compact = false, avertirExtension = true,
 }: {
   tenantId: string;
   valeur: string;
   onChange: (url: string) => void;
   testIdPrefix?: string;
   compact?: boolean;
+  /**
+   * L'avertissement « cette adresse ne finit pas par .jpg » est une règle de l'OPÉRATEUR RCS, mesurée chez
+   * lui. 🔴 Le mettre ailleurs serait inventer une contrainte : la spec de Channels Me dit « an image, video
+   * or document » et ne nomme aucune extension. On n'avertit que là où on a mesuré.
+   */
+  avertirExtension?: boolean;
 }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -65,7 +78,7 @@ export function RcsImageField({
     }
   }
 
-  const douteuse = valeur.trim() !== '' && !IMAGE_RE.test(valeur.trim());
+  const douteuse = avertirExtension && valeur.trim() !== '' && !IMAGE_RE.test(valeur.trim());
 
   return (
     <div>

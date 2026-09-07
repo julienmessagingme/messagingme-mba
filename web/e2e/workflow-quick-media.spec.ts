@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
  * Un visuel sur le bloc « message rapide ». Demandé par Julien le 2026-08-25 : le bloc ne savait envoyer que
  * du texte et des boutons, rien d'autre.
  *
- * Le champ est le MÊME que celui du bloc RCS (`imageUrl`, composant `RcsImageField`) : un seul téléversement,
+ * Le champ est le MÊME que celui du bloc RCS (`imageUrl`, composant `ChampImageHebergee`) : un seul téléversement,
  * une seule convention de stockage, et le visuel sert aux deux canaux (en-tête du message interactif en
  * WhatsApp, carte du message en RCS).
  */

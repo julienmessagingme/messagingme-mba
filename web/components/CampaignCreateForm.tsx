@@ -17,7 +17,7 @@ import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
-import { RcsImageField } from '@/components/RcsImageField';
+import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -1270,7 +1270,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             {rcsMessages.filter((m) => versBrouillonRcs(m.content) !== null).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
           <div className="mb-2">
-            <RcsImageField tenantId={tenantId} valeur={rcsImage} onChange={setRcsImage} testIdPrefix="rcs-campagne" />
+            <ChampImageHebergee tenantId={tenantId} valeur={rcsImage} onChange={setRcsImage} testIdPrefix="rcs-campagne" />
           </div>
           <ChampCorpsVariables
             valeur={rcsText}

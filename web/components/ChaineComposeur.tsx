@@ -9,6 +9,7 @@ import {
   entoure, insere, MARQUEURS, type Edition, type Marqueur, type StyleTexte,
 } from '@/lib/chaine-mise-en-forme';
 import { SelecteurEmojis } from '@/components/SelecteurEmojis';
+import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { imageAffichable, phraseAcceptable, pretAPublier, resteAAfficher, type BrouillonChaine } from '@/lib/chaine-apercu';
 
 /** Ce que chaque style MONTRE dans la barre. Le style lui-même vit dans `MARQUEURS`, ici c'est l'habillage. */
@@ -32,6 +33,8 @@ const HABILLAGE: Record<StyleTexte, { fr: string; en: string; lettre: string; cl
 export interface ChaineComposeurProps {
   brouillon: BrouillonChaine;
   onChange: (b: BrouillonChaine) => void;
+  /** L'espace, pour héberger l'image téléversée. */
+  tenantId: string;
   /** Les liens déjà créés, tels que `GET /links` les rend, adresse comprise. */
   liens: LienChaine[];
   scenarios: WorkflowSummary[];
@@ -44,7 +47,7 @@ export interface ChaineComposeurProps {
 
 export function ChaineComposeur(props: ChaineComposeurProps) {
   const t = useT();
-  const { brouillon, onChange, liens, scenarios, phone, busy } = props;
+  const { brouillon, onChange, tenantId, liens, scenarios, phone, busy } = props;
   const [creation, setCreation] = useState(false);
   const [emojis, setEmojis] = useState(false);
   const zoneRef = useRef<HTMLTextAreaElement>(null);
@@ -143,16 +146,24 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
         ) : null}
       </label>
 
-      <label className="block">
+      <div className="block">
         <span className="mb-1 block text-sm font-medium text-ink-600">
-          {t('Image (adresse https, facultatif)', 'Image (https address, optional)')}
+          {t('Image (facultatif)', 'Image (optional)')}
         </span>
-        <input
-          className={inputCls}
-          value={brouillon.imageUrl}
-          onChange={(e) => onChange({ ...brouillon, imageUrl: e.target.value })}
-          placeholder="https://…"
-          data-testid="chaine-image"
+        {/* 🔴 ON HÉBERGE L'IMAGE, ON NE L'ENVOIE PAS AU FOURNISSEUR. Julien voulait un bouton pour
+            téléverser depuis son poste au lieu de coller une adresse. Le fournisseur accepte deux formes :
+            `message[media_url]` (une adresse publique qu'il va CHERCHER) ou `message[media]` en multipart,
+            accompagné d'un `message[media_checksum]` dont sa spec ne nomme PAS l'algorithme de hachage, et
+            qui obligerait à signer autre chose que ce qu'on transmet, cassant l'invariant du client.
+            La première forme suffit, et l'hébergeur existe déjà : c'est celui qui sert les visuels RCS aux
+            opérateurs depuis des mois, `POST /rcs/media` puis `GET /m/<code>.jpg`. Rien de neuf : ni
+            dépendance, ni migration, ni algorithme deviné. */}
+        <ChampImageHebergee
+          tenantId={tenantId}
+          valeur={brouillon.imageUrl}
+          onChange={(url) => onChange({ ...brouillon, imageUrl: url })}
+          testIdPrefix="chaine"
+          avertirExtension={false}
         />
         {imageRefusee ? (
           <span className="mt-1 block text-xs text-coral" data-testid="chaine-image-refus">
@@ -162,7 +173,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
             )}
           </span>
         ) : null}
-      </label>
+      </div>
 
       {/* --- Le bouton Discuter ------------------------------------------------------------------- */}
       <div className="rounded-xl border border-ink-200 p-4">
