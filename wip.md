@@ -16,26 +16,30 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
-## 🔴 LE VPS EST SUR UN COMMIT DÉTACHÉ, EN RETARD SUR `main` (2026-09-07, 17 h)
+## 🔴 LE VPS EST SUR UN COMMIT DÉTACHÉ, à remettre sur `main` (2026-09-07, 17 h)
 
 **À lire avant tout déploiement de l'API.** `/home/ubuntu/mba` est sur **`97a67fe`**, pas sur `main`
-(`git status` y annonce « HEAD detached »). Un `git pull` n'y fera RIEN d'utile : il faudra
-`git checkout main && git pull` une fois que `main` sera verte.
+(`git status` y annonce « HEAD detached »). Un `git pull` n'y fera RIEN d'utile : il faut
+`git checkout main && git pull && sudo docker compose up -d --build`, dès que la CI est verte sur `main`.
 
-**Pourquoi.** `main` est **ROUGE en CI** depuis `c24ae0e` (lot analytics « les erreurs se filtrent par
-campagne et ouvrent les contacts touchés ») : `tests/integration/stores.integration.test.ts:977` échoue, et
-ce qu'il dit est précis : **une ligne enregistrée en 131026 ressort quand on demande 131049**, donc
-`journal.lister` n'applique pas son filtre par code. Le test est formulé sur SON destinataire plutôt que sur
-le vide, justement parce que le tenant est partagé entre les cas.
+**Pourquoi ce détour.** Au moment de déployer le plafond de débit, `main` était rouge en CI et il fallait
+livrer sans embarquer le lot en cours d'une autre session. `97a67fe` était le dernier commit vert et portait
+tout le travail de sécurité du jour. Le plafond de débit est donc actif en production depuis ce
+déploiement ; le lot analytics, lui, est resté dehors.
 
-⚠️ **Ce défaut ne se voit QUE dans le job `integration`** : `npm test` en local reste vert, comme toujours.
+🔴 **ET J'AI MAL DIAGNOSTIQUÉ CETTE ROUGEUR, ce qui est la vraie leçon de la journée.** J'ai écrit ici que
+`journal.lister` n'appliquait pas son filtre par code. **C'était faux : le TEST avait tort, pas le code**
+(corrigé par `f470f47`). Le fichier `tests/integration/stores.integration.test.ts` partage UN SEUL tenant
+entre ses 61 tests, celui de l'auto-relance y laisse des échecs 131049, et l'assertion « un autre code ne
+ramène personne » était donc un énoncé sur TOUTE LA SUITE, pas sur la requête examinée. Elle passait par
+hasard et cassait dès qu'un voisin écrivait un échec.
 
-Il fallait déployer le plafond de débit sans embarquer ce lot. `97a67fe` est le dernier commit vert et il
-porte tout le travail de sécurité du jour. Le lot analytics reste donc DEHORS de la production, c'est
-volontaire, et le plafond de débit est actif en production depuis ce déploiement.
-
-**Ce qu'il reste à faire, dans cet ordre :** corriger le filtre par code, voir la CI verte sur `main`, puis
-`cd /home/ubuntu/mba && git checkout main && git pull && sudo docker compose up -d --build`.
+⚠️ **Deux pièges dans ma façon de conclure, à ne pas refaire :** j'ai lu le fichier de test dans mon arbre de
+travail alors que la session parallèle l'avait DÉJÀ corrigé, sans m'en apercevoir, et j'ai quand même conclu
+à un défaut produit. Un échec de CI se lit sur le commit qui a échoué (`git show`), jamais sur un arbre de
+travail que quelqu'un d'autre est en train de modifier. Et **une assertion « la liste est vide » dans un
+fichier à tenant partagé est la forme la plus fragile qui soit** : elle dépend de tout ce qui s'exécute avant
+elle. Les assertions portent désormais sur LEUR ligne, repérée par son numéro.
 
 ⚠️ Ce déploiement-ci n'a eu AUCUNE migration à jouer (base à 0114, dépôt à 0114, vérifié des deux côtés). Ce
 ne sera pas forcément vrai au prochain : la question se repose à chaque fois.
