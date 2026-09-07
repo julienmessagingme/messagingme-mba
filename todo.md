@@ -253,6 +253,44 @@ ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et c
 multi-numéro sort du plan, remplacé par un refus explicite du second) et **conversations gardées 12 mois**
 (plancher de 3 mois donné par Julien, quadruplé parce que l'effacement est irréversible).
 
+## Reste de l'audit sécurité du 2026-09-07
+
+L'audit a trouvé le parc en bon état (secrets, RLS, isolation tenant, injection SQL, journalisation,
+sessions : tous propres, détail dans `documentation.md`). Le seul trou de code, le plafond de débit des
+routes authentifiées, est FERMÉ le jour même. Restent trois choses, par ordre de valeur.
+
+### 🟠 S'attaquer soi-même, pour de vrai
+
+Le point le plus rentable, et le seul de l'audit qui n'ait pas été traité. Tout ce qui a été vérifié l'a
+été **en lisant le code** : ça prouve que la garde est écrite, pas qu'elle tient. Sur un espace jetable en
+production : forger un JWT visant un `tenantId` voisin et taper les 36 modules, appeler les routes admin
+avec un compte agent, rejouer un webhook Meta signé de travers, poster un `/w/:code` sans secret, marteler
+une route authentifiée pour voir où ça casse maintenant que le plafond existe. Un script, une soirée.
+
+### 🟡 Remonter les dépendances de `web/`
+
+Le backend est à **zéro vulnérabilité en production**. `web/` en porte douze, mais les lire avant de
+s'alarmer : les deux avis « high » de `next@15.5.20` ne s'appliquent pas ici (aucun `'use server'` dans le
+dépôt, donc pas de Server Actions, et Vercel n'est pas un « custom server »), et `postcss`, `browserslist`,
+`js-yaml`, `brace-expansion`, `vitest` sont des outils de BUILD ou de TEST, absents du runtime déployé.
+Un `npm update` sur `web/` avec build de vérification, une heure. ⚠️ **Ne pas monter `vitest` en 5.0 dans la
+foulée** : saut majeur qui toucherait 297 fichiers de test pour fermer un avis qui vise l'UI Vitest, qu'on
+n'expose pas.
+
+### 🟡 Trois broutilles relevées au passage
+
+- **Trois faux positifs gitleaks** (`docs/MBA-API-REFERENCE.md`, `mba documentation/*`) : ce sont des
+  exemples de format PEM recopiés de la doc Meta. Le hook `pre-commit` ne scanne que l'index, donc il ne
+  bloque rien aujourd'hui, mais il bloquera le jour où on retouche un de ces trois fichiers. Un
+  `.gitleaksignore` règle ça.
+- **Un webhook entrant SANS secret** est un chemin d'écriture non authentifié (il crée des contacts et
+  déclenche des automations, donc des envois facturés). Choix documenté et borné (code non devinable,
+  limiteur avant la base), mais l'UI devrait AVERTIR à la création d'un webhook sans secret.
+- **Deux chemins d'upload qui ne se protègent pas pareil** : `src/http/media.ts` fait confiance au type MIME
+  déclaré dans la data URL (allowlist par regex), là où `src/rcs/image.ts` lit les octets magiques. Risque
+  faible aujourd'hui (Meta valide derrière), mais c'est l'écart qui devient une faille quand quelqu'un
+  branche un troisième consommateur sur le premier.
+
 ## Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code
 
 L'audit complet est `AUDIT-COMPARATIF-STRUCTURE-SCALABILITE-2026-09-01.md`. Six de ses constats ont ete

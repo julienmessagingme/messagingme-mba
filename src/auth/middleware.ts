@@ -3,6 +3,7 @@ import { verifySession } from './token';
 import type { Session } from './token';
 import { timingSafeEqualStr } from '../lib/signature';
 import { ipIndicative, type SurveillanceOps } from '../ops/tentatives';
+import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -84,7 +85,7 @@ export function makeRequireOps(opsToken: string, surveillance?: SurveillanceOps)
  * (un changement de rôle prend effet tout de suite). Ferme la fenêtre de staleness du token de 12 h.
  * Sans `loadState` (tests DB-free), on retombe sur la vérification JWT seule.
  */
-export function makeRequireAuth(secret: string, loadState?: UserStateLoader): PreHandler {
+export function makeRequireAuth(secret: string, loadState?: UserStateLoader, limiteur?: RateLimiter): PreHandler {
   return async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
@@ -97,6 +98,18 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader): Pr
       await reply.code(401).send({ error: 'token invalide ou expiré' });
       return;
     }
+    // 🔴 LE PLAFOND SE PREND ICI, et sa place dans la fonction est le fond du sujet.
+    //
+    // APRÈS `verifySession` : la clé est `session.userId`, et il n'y en a pas d'autre. `req.ip` désigne le
+    // conteneur proxy (Fastify est construit sans `trustProxy`, cf. `ops/tentatives.ts`), donc un plafond
+    // clé dessus serait GLOBAL à la plateforme : un seul appelant bruyant couperait tout le monde.
+    //
+    // AVANT `loadState` : un appelant qui martèle ne doit pas coûter une requête SQL par refus. Même
+    // raisonnement que le limiteur de `/w/:code`, posé avant `getByCode` pour la même raison.
+    //
+    // AVANT la branche des sessions d'emprunt, qui sort par un `return` anticipé : la poser après laisserait
+    // cette branche sans plafond, ce qui est exactement le genre d'oubli qu'un test doit tenir.
+    if (limiteur && !(await consommerAvecEntetes(limiteur, session.userId, reply))) return;
     // 🔴 Session d'EMPRUNT : LECTURE SEULE, quelle que soit la route. Une garde ici plutôt que route par
     // route, parce qu'une route oubliée serait exactement la faille : le porteur entre chez un client sans y
     // avoir de compte, et une écriture faite par mégarde serait indiscernable d'une action du client.
@@ -130,4 +143,42 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader): Pr
     }
     req.auth = session;
   };
+}
+
+/**
+ * preHandler des routes COÛTEUSES (import CSV, action en masse, purge, export d'historique, lancement de
+ * campagne), à composer APRÈS `makeRequireAuth` : il suppose `req.auth` déjà posé.
+ *
+ * 🔴 LA CLÉ EST LE TENANT, PAS L'UTILISATEUR, et c'est le seul choix qui distingue cette garde du plafond
+ * général. Sur ces routes-là, ce qu'il faut borner n'est pas la politesse d'un opérateur mais la charge qu'un
+ * ESPACE envoie à Postgres : un espace à dix comptes disposerait sinon de dix fois le plafond, et c'est
+ * précisément le cas où l'import de masse fait mal.
+ *
+ * S'ajoute au plafond général sans le remplacer : les deux limiteurs sont distincts, donc un espace bloqué
+ * ici garde l'usage normal de sa console.
+ */
+export function makeLimiteParTenant(limiteur: RateLimiter, message?: string): PreHandler {
+  return async function limiteParTenant(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+    // 401 défensif, comme `makeRequireRole` : sans `req.auth`, la clé serait vide et TOUS les espaces
+    // partageraient alors le même compteur, ce qui est pire que de refuser.
+    if (!req.auth) {
+      await reply.code(401).send({ error: 'authentification requise' });
+      return;
+    }
+    await consommerAvecEntetes(limiteur, req.auth.tenantId, reply, message);
+  };
+}
+
+/**
+ * Options de route `{ preHandler }` : la garde existante, suivie de `extra` s'il est fourni.
+ *
+ * ⚠️ APLATIT la chaîne. `Guard` est « un preHandler OU un tableau », et `requireAdmin` est déjà un tableau :
+ * écrire `[garde, extra]` produirait un tableau IMBRIQUÉ, que Fastify n'exécute pas. Le bug serait muet, la
+ * garde ajoutée ne tournerait simplement jamais. C'est pour ça que la composition passe par ici plutôt que
+ * d'être recopiée dans chaque module de routes.
+ */
+export function gardeEtendue(garde: Guard | undefined, extra?: PreHandler): { preHandler?: Guard } {
+  const base = garde === undefined ? [] : Array.isArray(garde) ? garde : [garde];
+  const chaine = extra ? [...base, extra] : base;
+  return chaine.length > 0 ? { preHandler: chaine } : {};
 }

@@ -1,6 +1,15 @@
+import type { FastifyReply } from 'fastify';
+
 /**
- * Limiteur de débit en mémoire (fenêtre glissante par clé, ex. IP). Sans dépendance,
- * suffisant pour un process unique : borne le brute-force/credential-stuffing sur /auth/login.
+ * Limiteur de débit en mémoire (fenêtre glissante par clé). Aucune dépendance de RUNTIME : le seul import de
+ * ce fichier est un `import type`, effacé à la compilation. À garder ainsi, pour que le limiteur reste
+ * chargeable depuis n'importe quel contexte, y compris hors du serveur HTTP.
+ *
+ * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :
+ * `ip::discriminant` pour les routes d'authentification (`req.ip` seul désignerait le proxy), le CODE pour
+ * `/w/:code`, l'identifiant de clé pour `/v1`, l'`userId` pour le plafond général des routes authentifiées
+ * et le `tenantId` pour celui des routes coûteuses. Le choix de clé décide de QUI partage un quota avec qui,
+ * et c'est la seule décision qui compte à l'usage.
  *
  * 🔴 EXPLICITEMENT LOCAL AU PROCESS (programme II, lot 8). Le plafond annoncé est celui d'UNE instance : avec
  * deux process d'API derrière le même proxy, un attaquant dispose du DOUBLE, et rien ne le signale. Ce n'est
@@ -59,13 +68,53 @@ export class RateLimiter {
   }
 
   /** État courant SANS consommer de tentative (pour les en-têtes x-ratelimit-*). Une fenêtre expirée ou
-   *  jamais ouverte -> quota plein, reset dans une fenêtre. `limit` = le plafond configuré. */
-  remaining(key: string): { limit: number; remaining: number; resetAt: number } {
+   *  jamais ouverte -> quota plein, reset dans une fenêtre. `limit` = le plafond configuré.
+   *
+   *  🔴 `attenteMs` est rendu ICI, et pas recalculé par l'appelant. `resetAt` est daté de l'horloge de CE
+   *  limiteur, qui est injectable : le soustraire à `Date.now()` ne veut rien dire dès que les deux
+   *  diffèrent, et donne un nombre très négatif que le plancher à 1 seconde masque. L'appelant annonce alors
+   *  « réessayez dans 1 seconde » pour une fenêtre d'une minute. La durée d'attente se lit donc sur la même
+   *  horloge que la date de reset, et il n'y a qu'un endroit où elle se calcule. */
+  remaining(key: string): { limit: number; remaining: number; resetAt: number; attenteMs: number } {
     const t = this.now();
     const entry = this.hits.get(key);
     if (!entry || t >= entry.resetAt) {
-      return { limit: this.max, remaining: this.max, resetAt: t + this.windowMs };
+      return { limit: this.max, remaining: this.max, resetAt: t + this.windowMs, attenteMs: this.windowMs };
     }
-    return { limit: this.max, remaining: Math.max(0, this.max - entry.count), resetAt: entry.resetAt };
+    return {
+      limit: this.max,
+      remaining: Math.max(0, this.max - entry.count),
+      resetAt: entry.resetAt,
+      attenteMs: Math.max(0, entry.resetAt - t),
+    };
   }
+}
+
+/**
+ * Consomme un jeton pour `cle` et pose les en-têtes `x-ratelimit-*` sur la réponse. Rend `true` si l'appel
+ * est autorisé, `false` s'il a été refusé (auquel cas la réponse 429 est DÉJÀ envoyée).
+ *
+ * 🔴 POINT DE PASSAGE UNIQUE des trois consommateurs (clé d'API, plafond général par utilisateur, plafond
+ * par espace des routes coûteuses). La séquence exacte compte et se recopiait de travers : on lit l'état
+ * AVANT de consommer, parce que `remaining()` d'après-consommation ne dit plus quel était le plafond restant
+ * annoncé à l'appelant, et on retire 1 au `remaining` affiché puisque l'appel en cours vient de le prendre.
+ *
+ * ⚠️ Le refus est un **429**, jamais un 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa propre
+ * page d'erreur, et le message ne parviendrait pas à l'appelant.
+ */
+export async function consommerAvecEntetes(
+  limiteur: RateLimiter,
+  cle: string,
+  reply: FastifyReply,
+  message = 'trop de requêtes, patientez un instant',
+): Promise<boolean> {
+  const etat = limiteur.remaining(cle);
+  reply.header('x-ratelimit-limit', String(etat.limit));
+  reply.header('x-ratelimit-remaining', String(Math.max(0, etat.remaining - 1)));
+  reply.header('x-ratelimit-reset', String(Math.ceil(etat.resetAt / 1000)));
+  if (limiteur.take(cle)) return true;
+  reply.header('x-ratelimit-remaining', '0');
+  reply.header('retry-after', String(Math.max(1, Math.ceil(etat.attenteMs / 1000))));
+  await reply.code(429).send({ error: message });
+  return false;
 }

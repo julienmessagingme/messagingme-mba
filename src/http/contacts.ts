@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { forbidNonAdmin } from '../auth/middleware';
-import type { Guard } from '../auth/middleware';
+import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import type { Guard, PreHandler } from '../auth/middleware';
 import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
@@ -153,8 +153,10 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
   return lu();
 }
 
-export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard): void {
+export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard, limiteCouteuse?: PreHandler): void {
   const opts = guard ? { preHandler: guard } : {};
+  // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
+  const couteux = gardeEtendue(guard, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 
   /**
@@ -285,7 +287,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * Envois du contact pour l'EXPORT CSV (F5), non capé. Renvoie du JSON `{ sends: [...] }` (le front construit et
    * télécharge le CSV : le wrapper `request()` fait toujours res.json(), donc pas de CSV brut côté serveur). Admin-only.
    */
-  app.get('/tenants/:tenantId/contacts/:contactId/history/export', opts, async (req, reply) => {
+  app.get('/tenants/:tenantId/contacts/:contactId/history/export', couteux, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { contactId } = req.params as { contactId: string };
@@ -356,7 +358,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     return reply.code(res.status === 'created' ? 201 : 200).send({ status: res.status, contactId: res.contactId });
   });
 
-  app.post('/tenants/:tenantId/contacts/bulk', opts, async (req, reply) => {
+  app.post('/tenants/:tenantId/contacts/bulk', couteux, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -464,7 +466,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * ⚠️ Le journal enregistre l'IDENTIFIANT du contact, jamais son numéro : y écrire le numéro annulerait la
    * purge, en réinscrivant la personne dans une table faite pour ne jamais être modifiée.
    */
-  app.post('/tenants/:tenantId/contacts/purge', opts, async (req, reply) => {
+  app.post('/tenants/:tenantId/contacts/purge', couteux, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

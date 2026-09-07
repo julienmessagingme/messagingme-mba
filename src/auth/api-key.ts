@@ -3,7 +3,7 @@ import type { PreHandler } from './middleware';
 import type { ApiKeyLookup } from './api-key-store.pg';
 import { API_KEY_PREFIX } from './api-key-store.pg';
 import { sha256Hex } from '../lib/signature';
-import type { RateLimiter } from './rate-limit';
+import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -32,16 +32,9 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiter: RateLimiter): Pr
       await reply.code(401).send({ error: 'clé d’API invalide ou révoquée' });
       return;
     }
-    const rl = limiter.remaining(found.id);
-    reply.header('x-ratelimit-limit', String(rl.limit));
-    reply.header('x-ratelimit-remaining', String(Math.max(0, rl.remaining - 1)));
-    reply.header('x-ratelimit-reset', String(Math.ceil(rl.resetAt / 1000)));
-    if (!limiter.take(found.id)) {
-      reply.header('x-ratelimit-remaining', '0');
-      reply.header('retry-after', String(Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000))));
-      await reply.code(429).send({ error: 'trop de requêtes' });
-      return;
-    }
+    // Séquence en-têtes + 429 partagée avec les deux plafonds de `middleware.ts` : elle vit dans
+    // `rate-limit.ts`, elle ne se recopie pas (c'en était la troisième copie).
+    if (!(await consommerAvecEntetes(limiter, found.id, reply, 'trop de requêtes'))) return;
     // Empreinte de dernier usage : best-effort, ne doit jamais bloquer/échouer la requête.
     void store.touchLastUsed(found.id).catch(() => { /* best-effort */ });
     req.auth = { userId: `apikey:${found.id}`, tenantId: found.tenantId, role: 'api' };

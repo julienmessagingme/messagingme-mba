@@ -82,3 +82,27 @@ describe('CORS : la liste blanche', () => {
     await app.close();
   });
 });
+
+describe('CORS : les en-têtes de plafond doivent être LISIBLES par la console', () => {
+  it('🔴 expose retry-after et x-ratelimit-*, sinon le front ne peut pas les lire', async () => {
+    /**
+     * Depuis la bascule, la console est sur `engageme.messagingme.app` et l'API sur `api.messagingme.app` :
+     * les réponses sont CROSS-ORIGIN. Un navigateur ne laisse alors JavaScript lire qu'une petite liste
+     * d'en-têtes sûrs, et `retry-after` n'en fait pas partie. Sans `exposedHeaders`, l'en-tête part bien sur
+     * le réseau, il s'affiche dans l'onglet Réseau, et le code du front ne peut simplement pas le voir.
+     *
+     * Le symptôme serait donc « le plafond marche, mais la console ne sait jamais dire combien de temps
+     * attendre » : le genre de défaut qu'on impute au front alors qu'il vient de l'API.
+     */
+    const app = buildServer({ ...base, corsOrigins: ['https://engageme.messagingme.app'] });
+    const res = await app.inject({
+      method: 'GET', url: '/live',
+      headers: { origin: 'https://engageme.messagingme.app' },
+    });
+    const exposes = String(res.headers['access-control-expose-headers'] ?? '').toLowerCase();
+    for (const h of ['retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset']) {
+      expect(exposes).toContain(h);
+    }
+    await app.close();
+  });
+});

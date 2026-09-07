@@ -5105,6 +5105,75 @@ contact » suppose son email dans un `user_field`. Prochaine étape : plan d'imp
 - **MBA (agent auto-réponse)** : bloqué par les ToS (403 « Meta Business AI Terms »), gating
   vertical. Veille à mettre en place (cron `agent_eligibility`). Parqué.
 
+## Plafond de débit des routes authentifiées (2026-09-07)
+
+Le seul trou de code relevé par l'audit sécurité du 2026-09-07 : `/auth/*`, les clés d'API et `/w/:code`
+avaient chacun leur limiteur, **les 235 routes authentifiées n'en avaient aucun**. Un compte agent légitime
+pouvait marteler `/tenants/:id/contacts` sans plafond. Ce n'est pas un défaut d'accès, c'est un levier de
+déni de service et de coût vers Postgres.
+
+**Deux plafonds, deux clés, et c'est le choix de clé qui porte tout le raisonnement.**
+
+- **Général, par UTILISATEUR** (`RATE_LIMIT_USER_PAR_MINUTE`, défaut 300/min), posé DANS `makeRequireAuth`.
+- **Routes coûteuses, par ESPACE** (`RATE_LIMIT_COUTEUX_PAR_MINUTE`, défaut 10/min), composé sur six routes :
+  import CSV et son aperçu, action en masse, purge, export d'historique, lancement de campagne. Clé
+  `tenantId` parce que ce qu'on borne là est la charge qu'un ESPACE envoie à Postgres : un espace à dix
+  comptes aurait sinon dix fois le plafond.
+
+🔴 **La place du plafond dans `makeRequireAuth` est le fond du sujet, pas un détail.** Il se prend APRÈS
+`verifySession` (la clé n'existe pas avant, et ce ne peut pas être `req.ip` : sans `trustProxy`, derrière
+Cloudflare et NPM, il désigne le conteneur proxy, donc un plafond dessus serait GLOBAL à la plateforme et un
+seul appelant bruyant couperait tout le monde) ; AVANT `loadState` (sinon chaque refus coûte une requête SQL,
+exactement ce que le limiteur de `/w/:code` a appris) ; et AVANT la branche des sessions d'emprunt, **qui
+sort par un `return` anticipé** et serait donc restée sans plafond.
+
+🔴 **Un hook Fastify global ne pouvait pas faire ce travail**, et c'est la raison de fond : les hooks globaux
+tournent AVANT les `preHandler` de route, donc `req.auth` n'existe pas encore. La seule clé disponible aurait
+été `req.ip`, c'est-à-dire la mauvaise. Se greffer dans la garde d'authentification donne en prime la
+propriété du garde-fou `scopeTenant` : les 36 modules l'héritent d'un coup, et un module ajouté demain l'aura
+sans que personne y pense.
+
+🔴 **`gardeEtendue` existe pour un piège MUET.** `Guard` vaut « un preHandler OU un tableau », et
+`requireAdmin` est déjà un tableau : écrire `[garde, extra]` produit un tableau IMBRIQUÉ que Fastify
+n'exécute pas. La garde ajoutée ne tournerait jamais, sans erreur, sans trace.
+
+🔴 **Un défaut trouvé en recopiant l'existant : `retry-after` se calculait sur `Date.now()`** alors que
+`resetAt` est daté de l'horloge INJECTABLE du limiteur. Les deux n'ont aucune raison de coïncider, la
+soustraction donne un grand négatif, et le plancher à 1 seconde le masque : l'appelant s'entend dire
+« réessayez dans 1 seconde » pour une fenêtre d'une minute. Le défaut dormait dans `api-key.ts` depuis sa
+création parce que ses tests utilisent l'horloge réelle. La durée d'attente est désormais rendue par
+`remaining()`, sur la même horloge que la date de reset, et calculée à un seul endroit.
+
+🔴 **Les en-têtes ne servaient à rien sans `exposedHeaders`.** Depuis la bascule, la console (`engageme`) et
+l'API (`api`) sont des origines DIFFÉRENTES : un navigateur ne laisse JavaScript lire qu'une courte liste
+d'en-têtes sûrs, dont `retry-after` ne fait pas partie. Ils seraient partis sur le réseau, visibles dans
+l'onglet Réseau, invisibles au code. Symptôme : « le plafond marche, mais la console ne sait jamais dire
+combien de temps attendre », un défaut qu'on impute au front alors qu'il vient de l'API.
+
+⚠️ **Aucun plafond de CLÉS sur ces deux limiteurs**, contrairement à ceux de `/auth/*` et `/w/:code`. La règle
+de `rate-limit.ts` est « en poser un dès que la clé est choisie par l'APPELANT » : ici elle vient d'un JWT
+VÉRIFIÉ, donc elle n'est pas libre, et un plafond ferait refuser un utilisateur NEUF quand la table est
+pleine, c'est-à-dire punir un client légitime pour la charge des autres.
+
+⚠️ **Les deux limiteurs sont LOCAUX AU PROCESS**, comme tous ceux du dépôt : le plafond annoncé est celui
+d'UNE instance. `AUDIT-ARCHITECTURE-AUTOSCALING-2026-09-03.md` les nomme parmi les trois adhérences à lever
+avant le multi-replica. Les porter en base coûterait une écriture Postgres par requête, ce qui irait contre
+le but de la garde.
+
+**Calibrage MESURÉ, pas deviné** : la console ne porte qu'un seul `setInterval` de 15 s, soit 4 appels/min.
+300/min laisse deux ordres de grandeur de marge. **0 désactive** chacun des deux plafonds, et c'est la trappe
+de secours assumée : ils s'appliquent aux 235 routes d'un produit en production, un `--force-recreate` va
+plus vite qu'un déploiement de code.
+
+**Ce que la revue a écarté après vérification** : `/v1` et `/mcp` passent par `requireApiKey`, qui a son
+propre limiteur et ne traverse pas `requireAuth`, donc aucun double comptage ; et monter les modules coûteux
+sans `auth` est IMPOSSIBLE, le garde-fou `scopeTenant` fait échouer `buildServer` au démarrage (vérifié en
+l'exécutant, pas en le supposant).
+
+**Tests** : `tests/rate-limit-utilisateur.test.ts` (22 cas) et un cas ajouté à `tests/cors.test.ts`. Les deux
+sens ont été vérifiés à la main : en remettant le code fautif (route `run` repassée sur la garde ordinaire,
+puis consommation du plafond retirée), 8 tests tombent, dont le structurel qui nomme la route exacte.
+
 ## Reste (non bloquant) : voir `todo.md`
 
 - TLS pooler en vérif complète (pinner la CA Supabase).

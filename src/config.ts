@@ -51,6 +51,27 @@ export const schema = z.object({
    */
   CAMPAIGN_DEFAULT_RATE_PER_MINUTE: z.coerce.number().int().min(0).max(80).default(30),
   /**
+   * Plafond de débit des routes AUTHENTIFIÉES, par utilisateur et par minute. Clé = `userId`, posée dans
+   * `makeRequireAuth` (cf. le commentaire qui y explique pourquoi ce n'est pas `req.ip`).
+   *
+   * 300 est très large pour un humain : la console tire une dizaine d'appels en rafale à l'ouverture d'un
+   * écran, quelques dizaines par minute en cliquant vite. Le but n'est pas de rationner l'usage normal, c'est
+   * de borner le coût qu'un compte authentifié peut infliger à Postgres.
+   *
+   * 🔴 **0 DÉSACTIVE**, et c'est délibéré : ce plafond s'applique aux 235 routes authentifiées d'un produit en
+   * production. Un mauvais calibrage couperait la console de tous les clients, et remettre la variable à 0
+   * (puis `compose up -d --force-recreate`) va nettement plus vite qu'un déploiement de code.
+   */
+  RATE_LIMIT_USER_PAR_MINUTE: z.coerce.number().int().min(0).default(300),
+  /**
+   * Plafond des routes COÛTEUSES (import CSV, action en masse, purge, export d'historique, lancement de
+   * campagne), par ESPACE et par minute. Clé = `tenantId` et non `userId` : ce qu'on borne ici est la charge
+   * qu'un espace envoie à Postgres, et un espace à dix comptes disposerait sinon de dix fois le plafond.
+   *
+   * S'ajoute au plafond général sans le remplacer. 0 désactive, même raison que ci-dessus.
+   */
+  RATE_LIMIT_COUTEUX_PAR_MINUTE: z.coerce.number().int().min(0).default(10),
+  /**
    * Provider du canal RCS. `fake` = provider factice : le canal est complet de bout en bout (campagne, bloc de
    * scénario, joignabilité, opt-out) mais rien ne part vers un opérateur. `google` (API RBM) arrive au lot 2 et
    * LÈVE au démarrage tant qu'il n'est pas implémenté : un serveur qui croit envoyer du vrai RCS et envoie dans

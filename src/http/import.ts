@@ -5,8 +5,8 @@ import { importContacts } from '../crm/import';
 import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/contact-store.pg';
-import { forbidNonAdmin } from '../auth/middleware';
-import type { Guard } from '../auth/middleware';
+import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import type { Guard, PreHandler } from '../auth/middleware';
 import { scopeTenant } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -72,8 +72,11 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
  * POST /tenants/:tenantId/contacts/import — importe un CSV brut : parse, reconnaît les
  * colonnes (si pas de mapping fourni), upsert les contacts. Retourne un ImportReport.
  */
-export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard): void {
+export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard, limiteCouteuse?: PreHandler): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace. `gardeEtendue` aplatit la
+  // chaîne, parce que `requireAdmin` est déjà un tableau et qu'un tableau imbriqué ne serait pas exécuté.
+  const couteux = gardeEtendue(requireAuth, limiteCouteuse);
   const journal = makeJournal(deps.audit);
   // Le CSV COMPLET transite dans le corps : le plafond global de 1 Mo tombait vers 14 000 lignes, en anglais
   // et sans dire quoi faire. 8 Mo, soit environ 150 000 contacts, très au-delà de tout import réel. Pas plus,
@@ -81,11 +84,11 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   // quelques centaines de ms sur le VPS) et pendant ce temps l'API ne répond à personne d'autre ; et 8 Mo de
   // CSV pèsent ~150 Mo de tas une fois en objets (le conteneur en occupe 130 au repos, sans plafond mémoire,
   // sur un VPS qui a 17 Go libres : ça passe, mais ce n'est pas une marge à dépenser sans compter).
-  const optsImport = { ...guard, bodyLimit: 8 * 1024 * 1024 };
+  const optsImportCouteux = { ...couteux, bodyLimit: 8 * 1024 * 1024 };
   // L'aperçu, lui, ne reçoit plus que la TÊTE du fichier (cf. `TETE_APERCU_CARACTERES` côté console) : il
   // n'en faut pas plus pour les en-têtes et quatre lignes d'exemple. Le plafond reste large devant cette tête
   // (accents = 2 octets, échappement JSON) sans jamais laisser passer un fichier entier.
-  const optsApercu = { ...guard, bodyLimit: 2 * 1024 * 1024 };
+  const optsApercuCouteux = { ...couteux, bodyLimit: 2 * 1024 * 1024 };
 
   app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
@@ -133,7 +136,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
 
   // Aperçu : parse le CSV + propose un mapping (même parseCsv que l'import réel -> en-têtes
   // identiques, pas de désync). Le front affiche l'écran de mapping pré-rempli.
-  app.post('/tenants/:tenantId/contacts/import/preview', optsApercu, async (req, reply) => {
+  app.post('/tenants/:tenantId/contacts/import/preview', optsApercuCouteux, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -151,7 +154,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
     });
   });
 
-  app.post('/tenants/:tenantId/contacts/import', optsImport, async (req, reply) => {
+  app.post('/tenants/:tenantId/contacts/import', optsImportCouteux, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

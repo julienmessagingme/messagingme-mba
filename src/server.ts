@@ -55,7 +55,7 @@ import type { LinksRouteDeps } from './http/links';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
-import { makeRequireAuth, makeRequireRole } from './auth/middleware';
+import { makeRequireAuth, makeRequireRole, makeLimiteParTenant } from './auth/middleware';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
 import { MetaApiError } from './meta/errors';
@@ -122,6 +122,12 @@ export interface ServerDeps {
   appSecret?: string;
   /** Auth (login + secret JWT). OBLIGATOIRE si `import` ou `campaigns` sont exposés. */
   auth?: AuthRouteDeps;
+  /**
+   * Plafonds de débit des routes authentifiées, en appels par minute. Absents -> les valeurs de `config`
+   * (`RATE_LIMIT_USER_PAR_MINUTE`, `RATE_LIMIT_COUTEUX_PAR_MINUTE`). 0 désactive le plafond concerné.
+   * Injectables pour que les tests puissent viser un plafond bas sans dépendre de l'environnement.
+   */
+  plafonds?: { utilisateurParMinute?: number; couteuxParMinute?: number };
   /** Routes CRM/import (enregistrées seulement si fournies -> tests DB-free du receiver). */
   import?: ImportRouteDeps;
   /** Routes campagnes (enregistrées seulement si fournies). */
@@ -268,6 +274,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       origin: origines,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['authorization', 'content-type', 'x-ops-token'],
+      // 🔴 Les en-têtes de plafond de débit, sans quoi la console NE PEUT PAS LES LIRE. Cross-origin, un
+      // navigateur ne laisse JavaScript voir qu'une courte liste d'en-têtes sûrs ; `retry-after` et les
+      // `x-ratelimit-*` n'en font pas partie. Ils partiraient bien sur le réseau, seraient visibles dans
+      // l'onglet Réseau, et resteraient invisibles au code : « on sait qu'on est bloqué, jamais pour
+      // combien de temps ». C'est un défaut qu'on impute au front alors qu'il vient d'ici.
+      exposedHeaders: ['retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset'],
       credentials: false,
       maxAge: 600,
     });
@@ -354,13 +366,41 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // humain). Ce qui l'autorise est le code opaque de l'URL, pas une session ; voir `registerRcsCallback`.
   if (deps.rcsCallback) registerRcsCallback(app, deps.rcsCallback);
 
-  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState) : undefined;
+  /**
+   * LES DEUX PLAFONDS DE DÉBIT DES ROUTES AUTHENTIFIÉES.
+   *
+   * Le général est passé à `makeRequireAuth`, donc les 36 modules gardés en héritent d'un coup et un module
+   * ajouté demain l'aura sans que personne y pense : c'est la même propriété que le garde-fou `scopeTenant`
+   * ci-dessus. Le second est composé route par route sur les seules routes coûteuses.
+   *
+   * ⚠️ Les deux limiteurs sont LOCAUX AU PROCESS, comme tous ceux de ce dépôt. Le plafond annoncé est celui
+   * d'UNE instance : `AUDIT-ARCHITECTURE-AUTOSCALING-2026-09-03.md` les nomme parmi les trois adhérences à
+   * lever avant de passer à plusieurs replicas. Les porter en base coûterait une écriture Postgres par
+   * requête, ce qui irait contre le but même de la garde.
+   *
+   * Un maximum à 0 rend le limiteur `undefined`, donc absent : c'est la trappe de secours si le calibrage se
+   * révèle mauvais en production (cf. `config.ts`).
+   */
+  // ⚠️ AUCUN plafond de clés (4e argument laissé à son défaut), contrairement aux limiteurs de `/auth/*` et
+  // de `/w/:code`. La règle de `rate-limit.ts` est « poser un plafond dès que la clé est choisie par
+  // l'APPELANT » : ici elle vient d'un JWT VÉRIFIÉ, donc elle n'est pas libre, et un plafond ferait refuser
+  // un utilisateur NEUF quand la table est pleine, c'est-à-dire punir un client légitime pour la charge des
+  // autres. La fenêtre d'une minute suffit à borner la table : les entrées expirent et `prune` les retire.
+  const parMinute = (max: number): RateLimiter | undefined =>
+    max > 0 ? new RateLimiter(max, 60_000) : undefined;
+  const plafondUtilisateur = parMinute(deps.plafonds?.utilisateurParMinute ?? config.RATE_LIMIT_USER_PAR_MINUTE);
+  const limiteurCouteux = parMinute(deps.plafonds?.couteuxParMinute ?? config.RATE_LIMIT_COUTEUX_PAR_MINUTE);
+  const limiteCouteuse = limiteurCouteux
+    ? makeLimiteParTenant(limiteurCouteux, 'trop d’opérations lourdes sur cet espace, patientez une minute')
+    : undefined;
+
+  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState, plafondUtilisateur) : undefined;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
   // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
   const requireAdmin = requireAuth ? [requireAuth, makeRequireRole(['admin'])] : undefined;
   if (deps.auth) registerAuth(app, deps.auth, requireAuth);
-  if (deps.import) registerImport(app, deps.import, requireAdmin);
-  if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin);
+  if (deps.import) registerImport(app, deps.import, requireAdmin, limiteCouteuse);
+  if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin, limiteCouteuse);
   // Bibliothèque RCS : montée avec `requireAuth` et non `requireAdmin`, car la LISTE doit être lisible par un
   // agent (le bloc de scénario et l'assistant de campagne la proposent). Les écritures sont gardées dans les
   // handlers par `forbidNonAdmin`, comme pour les templates.
@@ -395,7 +435,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.tags) registerTags(app, deps.tags, requireAdmin);
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);
   if (deps.support) registerSupport(app, deps.support, requireAuth);
-  if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
+  if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin, limiteCouteuse);
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
   if (deps.workflowReports) registerWorkflowReports(app, deps.workflowReports, requireAdmin);
   if (deps.automations) registerAutomations(app, deps.automations, requireAuth);

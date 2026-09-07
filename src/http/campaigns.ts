@@ -11,8 +11,8 @@ import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/paci
 import { PLAFOND_DESTINATAIRES_DEFAUT, refusDePlafond } from '../campaign/plafond';
 import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
-import { forbidNonAdmin } from '../auth/middleware';
-import type { Guard } from '../auth/middleware';
+import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import type { Guard, PreHandler } from '../auth/middleware';
 import { scopeTenant, nonEmpty } from './scope';
 // Le MÊME analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
@@ -131,8 +131,10 @@ function isCategory(v: unknown): v is CampaignCategory {
 }
 
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
-export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: Guard): void {
+export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: Guard, limiteCouteuse?: PreHandler): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
+  const couteux = gardeEtendue(requireAuth, limiteCouteuse);
 
   /**
    * Brouillons de COMPOSITION. Montés seulement si la dépendance est câblée.
@@ -481,7 +483,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     return reply.code(201).send({ ...result, ...(avertissement ? { avertissement } : {}) });
   });
 
-  app.post('/campaigns/:campaignId/run', guard, async (req, reply) => {
+  app.post('/campaigns/:campaignId/run', couteux, async (req, reply) => {
     if (forbidNonAdmin(req, reply)) return;
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
