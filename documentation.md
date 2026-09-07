@@ -1677,6 +1677,42 @@ l ecran affiche une etape qui ment. Ajouter un `group by` sur une colonne de la 
 donne alors zero ligne en sortie. C est exactement ce qui distingue `urlClicks: null` de `urlClicks: 0` dans
 le funnel par campagne.
 
+## Le lien de chaîne WhatsApp : la PHRASE route, plus le jeton (2026-09-07)
+
+Le texte pré-rempli d'un bouton de post passe de `phrase (cm-ab12cd34)` à `phrase`. Demande de Julien (« on
+garde juste le message »), qui répond du même coup à la longueur de l'URL `wa.me` : ce qui l'allongeait était
+le suffixe, pas le domaine, et **c'est le domaine `wa.me` que WhatsApp reconnaît pour dessiner le bouton
+« Discuter »**. Un raccourcisseur tiers l'aurait fait disparaître.
+
+🔴 **CE QUI REND LA BASCULE POSSIBLE, et qui devait être vérifié avant d'écrire une ligne** : un post publié
+ne peut plus être modifié, et il envoie `phrase (cm-xxxx)`. Le mode de comparaison de l'automation compagnon
+est `contains`, donc ce vieux texte CONTIENT la phrase et son bouton continue de déclencher. En `equals`,
+tous les posts en circulation auraient un bouton mort, sans recours. La preuve inverse est dans le test, pas
+dans un commentaire (`tests/channels-me-jeton.test.ts`).
+
+🔴 **LE PIÈGE DU MODE `contains`, trouvé en revue** : la collision n'est pas l'égalité des phrases, c'est
+leur INCLUSION. « Je veux le guide » et « Je veux le guide 2026 » sont distinctes, et pourtant un appui sur
+le second bouton déclenche LES DEUX scénarios, dont l'un clôt l'autre depuis le lot « le déclencheur gagne ».
+La garde de création teste donc l'inclusion dans les deux sens. Ce cas n'existait pas avec le jeton : deux
+jetons tirés ne s'incluent jamais.
+
+⚠️ **Deux contrôles, deux portées, et c'est voulu.** L'index unique de la 0116 porte sur
+`lower(btrim(phrase))` : il ignore la casse et les espaces, pas les accents (`unaccent` n'est pas installé et
+n'est pas immuable, donc inutilisable dans une expression d'index). Il est donc plus PERMISSIF que la garde
+applicative, qui emploie `normalizeText`, celle-là même qui décide de la correspondance. Il n'existe aucune
+fenêtre où l'index refuserait ce que l'application accepte : c'est un filet de course, pas la définition.
+
+**Contre une phrase trop banale, on COMPTE au lieu de deviner** : les messages entrants récents qui la
+contiennent déjà, en écartant ceux qui portent un jeton (ce sont des clics, pas de la conversation). Aucun
+seuil de longueur n'a été inventé ; le danger n'est pas d'être courte, c'est d'apparaître dans la
+conversation ordinaire. ⚠️ La comparaison SQL est un `strpos`, pas un `like` : un `like` prend `%` et `_`
+pour des jokers, et « Je veux mes -20% » aurait fait refuser la phrase d'un client sur un compte faux.
+
+⚠️ **Le champ `token` existe toujours** : identifiant unique du lien, et il vit dans les posts publiés. Il ne
+déclenche plus rien. Le commentaire de `db/migrations/0114_channelsme.sql` qui le décrit comme « ce que
+l'automation cherche en `contains` » est donc devenu faux ; on ne réédite pas une migration appliquée, c'est
+cette entrée-ci qui fait foi.
+
 ## Modules partagés (audit anti-slop du 2026-08-18)
 
 Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrite plusieurs fois et avait commencé

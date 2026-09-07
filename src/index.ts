@@ -55,6 +55,7 @@ import { makeDbReadinessCheck } from './db/readiness';
 import { PgAutomationStore } from './automation/store.pg';
 import { PgChannelsMeConnectionStore } from './channels-me/connection-store.pg';
 import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
+import { normalizeText } from './automation/match';
 import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
@@ -1300,10 +1301,33 @@ async function main(): Promise<void> {
       //  - `enabled: false`, parce qu'un lien cree mais jamais publie ne doit rien declencher ;
       //  - `possedePar`, qui met la ligne hors de portee de l'ecran Automation (predicat du store) ;
       //  - `mode: 'contains'`, qui laisse passer un abonne ayant ajoute un mot devant ou derriere la phrase.
+      // 🔴 LA MEME NORMALISATION QUE LA CORRESPONDANCE. `normalizeText` est celle qu'applique
+      // `matchesTrigger` au corps du message et `keywordsOf` au mot-cle stocke : deux liens que cette
+      // fonction rend egaux matcheraient le meme message, donc c'est exactement elle qui doit trancher
+      // l'unicite. Une comparaison SQL approchee laisserait passer « Ça m'intéresse » et « ca m interesse ».
+      phraseEnConflit: async (tenant, phrase) => {
+        const cible = normalizeText(phrase);
+        const existantes = await channelsMeLinks.phrasesDesLiens(tenant);
+        // 🔴 L'INCLUSION, DANS LES DEUX SENS, PAS L'EGALITE. La comparaison est en mode `contains` : « Je
+        // veux le guide » et « Je veux le guide 2026 » sont deux phrases DIFFERENTES, et pourtant un abonne
+        // qui appuie sur le second bouton envoie un texte qui contient AUSSI la premiere. Les deux
+        // automations matchent, les deux scenarios demarrent, et le second clot le premier : l'abonne voit
+        // un parcours commencer puis disparaitre. Sur un post deja publie, c'est sans recours.
+        // Ce cas n'existait pas avec le jeton : deux jetons tires ne s'incluent jamais.
+        return existantes.some((p) => {
+          const n = normalizeText(p);
+          return n.includes(cible) || cible.includes(n);
+        });
+      },
+      messagesContenantLaPhrase: (tenant, phrase) => channelsMeLinks.messagesContenantLaPhrase(tenant, phrase),
       creerAutomationCompagnon: (tenant, input) => automationStore.create(tenant, {
         name: input.nom,
         triggerKind: 'keyword',
-        triggerConfig: { keywords: [input.jeton], mode: 'contains' },
+        // 🔴 `contains` EST CE QUI SAUVE LES POSTS DEJA PUBLIES. Le mot-cle est la PHRASE depuis le
+        // 2026-09-07 ; un post distribue avant cette date envoie `phrase (cm-xxxx)`, qui la CONTIENT, donc
+        // son bouton continue de declencher. En mode `equals`, tous les posts en circulation seraient morts,
+        // sans aucun recours possible.
+        triggerConfig: { keywords: [input.motCle], mode: 'contains' },
         conditionGroup: null,
         workflowId: input.workflowId,
         startNodeId: input.startNodeId,

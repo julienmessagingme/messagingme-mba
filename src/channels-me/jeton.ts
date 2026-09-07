@@ -36,7 +36,21 @@ export function nouveauJeton(): string {
   return PREFIXE_JETON + chaineAleatoire(LONGUEUR, ALPHABET);
 }
 
-const JETON_RE = new RegExp(`^${PREFIXE_JETON}[0-9a-hjkmnp-tv-z]{${LONGUEUR}}$`);
+/**
+ * La FORME d'un jeton, sans ancrage : `cm-` suivi de huit caracteres de l'alphabet.
+ *
+ * 🔴 EXPORTEE PARCE QU'ELLE EST LUE AILLEURS QU'ICI. `PgChannelsMeLinkStore` doit ecarter, en SQL, les
+ * messages qui portent un jeton (ce sont des CLICS, pas de la conversation ordinaire). Recopier le motif
+ * la-bas en aurait fait une seconde definition de « un jeton » : changer l'alphabet ou la longueur ici
+ * aurait laisse l'autre en arriere, sans erreur, et la mesure de banalite se serait mise a compter les
+ * clics contre le lien. C'est la doctrine des fragments partages du depot.
+ *
+ * ⚠️ Compatible avec la syntaxe des expressions regulieres de Postgres comme avec celle de JavaScript : ni
+ * classe nommee, ni echappement propre a l'un des deux.
+ */
+export const MOTIF_JETON = `${PREFIXE_JETON}[0-9a-hjkmnp-tv-z]{${LONGUEUR}}`;
+
+const JETON_RE = new RegExp(`^${MOTIF_JETON}$`);
 
 /**
  * Cette chaine est-elle EXACTEMENT un jeton ? Controle de forme sur nos propres jetons (validation d'entree,
@@ -55,17 +69,25 @@ export function estJetonChaine(v: string): boolean {
 }
 
 /**
- * Le texte que l'abonne ENVOIE en appuyant sur le bouton : la phrase que le client a choisie, puis le jeton
- * entre parentheses, pour qu'il se lise comme une reference technique anodine.
+ * Le texte que l'abonne ENVOIE en appuyant sur le bouton : la phrase choisie par le client, et RIEN D'AUTRE.
  *
- * ⚠️ Deux textes a ne jamais confondre : le texte du POST est ce que l'abonne LIT (il contient l'URL), celui
- * ci est ce qu'il ENVOIE (il contient le jeton). Seul le second declenche quoi que ce soit.
+ * 🔴 LE JETON N'Y EST PLUS (2026-09-07, demande de Julien : « on garde juste le message »). Le texte etait
+ * `phrase (cm-ab12cd34)`, et c'est ce suffixe qui allongeait l'URL `wa.me`, dont le parametre `text=` porte
+ * tout le message. Le retirer EST le raccourcissement demande, et c'est le seul qui preserve le domaine
+ * `wa.me` : c'est lui que WhatsApp reconnait pour dessiner le bouton « Discuter ». Un raccourcisseur tiers
+ * l'aurait fait disparaitre.
  *
- * La phrase est detouree : une phrase collee telle quelle depuis un traitement de texte laisserait sinon une
- * double espace avant la parenthese. Phrase vide -> le jeton seul, plutot qu'un texte commencant par une
- * espace (la route de creation refuse deja la phrase vide, mais cette fonction reste totale).
+ * 🔴 CE QUI ROUTE DESORMAIS EST LA PHRASE ELLE-MEME, mot-cle de l'automation compagnon, en mode `contains`.
+ * C'est ce mode qui rend le changement possible sans casser l'existant : un post DEJA PUBLIE envoie
+ * `phrase (cm-xxxx)`, qui CONTIENT la phrase, donc son bouton continue de declencher. Un post distribue ne
+ * se rattrape pas ; sans cette propriete, ce lot n'aurait pas pu etre fait.
+ *
+ * ⚠️ Deux textes a ne jamais confondre : le texte du POST est ce que l'abonne LIT (il contient l'URL),
+ * celui-ci est ce qu'il ENVOIE. Seul le second declenche quoi que ce soit.
+ *
+ * La phrase est detouree, et la fonction reste TOTALE : phrase vide -> chaine vide (la route de creation
+ * refuse deja la phrase vide, cette fonction n'a pas a en juger).
  */
-export function textePreRempli(phrase: string, jeton: string): string {
-  const p = phrase.trim();
-  return p === '' ? `(${jeton})` : `${p} (${jeton})`;
+export function textePreRempli(phrase: string): string {
+  return phrase.trim();
 }

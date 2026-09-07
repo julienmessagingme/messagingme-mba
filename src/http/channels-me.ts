@@ -5,6 +5,7 @@ import type { Guard } from '../auth/middleware';
 import { RateLimiter } from '../auth/rate-limit';
 import { urlRecuperable } from '../lib/page-distante';
 import { lienWaMe } from '../lib/wa-me';
+import { normalizeText } from '../automation/match';
 import { nouveauJeton, textePreRempli } from '../channels-me/jeton';
 import { ChannelsMeApiError } from '../channels-me/client';
 import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Message } from '../channels-me/types';
@@ -50,8 +51,44 @@ export interface ChannelsMeRouteDeps {
    * Cree l'automation compagnon du lien. Elle nait ETEINTE et POSSEDEE par le lien : c'est le cablage qui
    * pose `enabled: false` et la marque de possession, la route ne connait pas la forme d'une automation.
    */
+  /**
+   * Cette phrase entre-t-elle en CONFLIT avec celle d'un lien existant de ce tenant ?
+   *
+   * 🔴 CONFLIT VEUT DIRE INCLUSION, PAS EGALITE, parce que la comparaison est en mode `contains`. « Je veux
+   * le guide » et « Je veux le guide 2026 » sont deux phrases distinctes dont l'une contient l'autre : un
+   * abonne qui appuie sur le second bouton declenche LES DEUX scenarios, et le second clot le premier. Il
+   * voit un parcours commencer puis disparaitre, sur un post publie, donc sans recours. Ce cas n'existait
+   * pas tant que le jeton routait : deux jetons tires ne s'incluent jamais.
+   *
+   * ⚠️ Porte sur TOUS les liens, eteints compris. Il n'existe aucune route de suppression de lien : un lien
+   * eteint garde donc sa phrase reservee. C'est assume, et c'est le choix sur : un lien eteint peut etre
+   * rallume (`POST /links/:id/enable`), et son post reste en circulation.
+   */
+  phraseEnConflit(tenantId: string, phrase: string): Promise<boolean>;
+  /**
+   * Combien de messages ENTRANTS du tenant contiennent deja cette phrase, sans porter aucun jeton de lien.
+   *
+   * 🔴 C'est la mesure qui remplace un seuil de longueur INVENTE. Le danger d'une phrase n'est pas d'etre
+   * courte, c'est d'apparaitre dans la conversation ordinaire : « Bonjour » declencherait sur tout, et
+   * « Je veux mon code promo ! » sur rien. On le compte au lieu de le deviner. Mesure du 2026-09-07 sur les
+   * deux liens existants : 4 correspondances, 4 vrais clics, ZERO faux positif.
+   *
+   * OPTIONNELLE : absente -> aucun controle, comportement d'avant. Une mesure indisponible ne doit pas
+   * empecher un client de creer un lien.
+   */
+  messagesContenantLaPhrase?(tenantId: string, phrase: string): Promise<number>;
   creerAutomationCompagnon(tenantId: string, input: {
-    nom: string; jeton: string; workflowId: string; startNodeId: string | null;
+    nom: string;
+    /**
+     * Le MOT-CLE qui declenche le scenario, en mode `contains`. C'est la PHRASE du lien depuis le
+     * 2026-09-07 ; c'etait le jeton avant, et le champ s'appelait `jeton`.
+     *
+     * 🔴 Renomme volontairement plutot qu'affecte en silence : un champ nomme `jeton` qui recevrait une
+     * phrase serait un mensonge que le compilateur ne peut pas voir. Le renommage lui fait au contraire
+     * enumerer les appelants.
+     */
+    motCle: string;
+    workflowId: string; startNodeId: string | null;
     cooldownSeconds: number; maxParHeure: number | null;
   }): Promise<{ id: string }>;
   /**
@@ -194,7 +231,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     const phone = await deps.getDisplayPhoneNumber(tenant);
     return reply.code(200).send({
       links: liens.map((l) => {
-        const texte = textePreRempli(l.phrase, l.token);
+        const texte = textePreRempli(l.phrase);
         return { ...l, texteRempli: texte, waMeUrl: lienWaMe(phone, texte) };
       }),
       phone,
@@ -220,14 +257,40 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (phone === null) {
       return reply.code(409).send({ error: 'aucun numero WhatsApp connecte : connecte un numero avant de creer un lien de chaine' });
     }
-    // Le jeton est tire par le SERVEUR. Il n'est jamais journalise : il circule dans des messages publics,
-    // mais c'est lui qui declenche un scenario.
+    // 🔴 LES DEUX GARDES DE LA PHRASE, ET ELLES PASSENT AVANT TOUTE ECRITURE. Depuis que la phrase route
+    // (le jeton ne le fait plus), elle doit etre a la fois UNIQUE et DISTINCTIVE. Refuser apres avoir cree
+    // l'automation compagnon obligerait a la defaire, ce que le rattrapage plus bas fait deja pour un autre
+    // cas, et qu'il vaut mieux ne pas avoir a declencher.
+    // 🔴 La phrase NORMALISEE ne doit pas etre vide. `trim().min(1)` laisse passer une chaine faite de
+    // diacritiques seuls, que `normalizeText` reduit a rien : l'automation naitrait avec zero mot-cle et ne
+    // declencherait JAMAIS, sur un post publie pour toujours. Refus explicite plutot que bouton mort.
+    if (normalizeText(phrase) === '') {
+      return reply.code(400).send({ error: 'cette phrase ne contient aucun caractere exploitable : choisis une phrase lisible' });
+    }
+    if (await deps.phraseEnConflit(tenant, phrase)) {
+      return reply.code(409).send({
+        error: "cette phrase entre en conflit avec celle d'un autre lien (l'une contient l'autre) : un seul message declencherait les deux scenarios",
+      });
+    }
+    if (deps.messagesContenantLaPhrase) {
+      const dejaVus = await deps.messagesContenantLaPhrase(tenant, phrase);
+      if (dejaVus > 0) {
+        // Le nombre est DIT : « trop banale » sans chiffre laisse le client deviner ce qu'on lui reproche.
+        return reply.code(409).send({
+          error: `cette phrase apparait deja dans ${dejaVus} message(s) recu(s) : elle declencherait le scenario sur des conversations ordinaires. Choisis une phrase plus specifique.`,
+        });
+      }
+    }
+    // Le jeton est tire par le SERVEUR. Il n'est jamais journalise : il circule dans des messages publics.
+    // ⚠️ Il ne DECLENCHE plus rien depuis le 2026-09-07 (c'est la phrase qui route) : il reste l'identifiant
+    // unique du lien, et il vit dans les posts deja publies.
     const token = nouveauJeton();
     // L'automation nait ETEINTE et ne s'allume qu'a la publication reussie : un lien cree mais jamais
     // publie ne declenche rien, donc un jeton qui fuiterait avant publication est inerte.
     const { id: automationId } = await deps.creerAutomationCompagnon(tenant, {
       nom: `Chaine : ${phrase}`.slice(0, 200),
-      jeton: token,
+      // La PHRASE, pas le jeton : c'est elle que l'abonne enverra desormais.
+      motCle: phrase,
       workflowId,
       startNodeId,
       cooldownSeconds: COOLDOWN_LIEN_SECONDES,
@@ -245,9 +308,18 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
         journaliserDistant(tenant, 'link_rattrapage_automation', err2);
       });
       journaliserDistant(tenant, 'link_create', err);
+      // 🔴 UNE COURSE ENTRE DEUX CREATIONS SORT EN 409, PAS EN 500. L'index unique de la 0116 est le filet
+      // quand deux requetes passent la garde applicative en meme temps ; sans ce rattrapage, la violation
+      // remonterait en 5xx, dont Cloudflare remplace le corps par sa propre page : le client verrait une
+      // erreur de plateforme au lieu de la raison, qui est la meme que celle de la garde.
+      if ((err as { code?: unknown }).code === '23505') {
+        return reply.code(409).send({
+          error: "cette phrase entre en conflit avec celle d'un autre lien (l'une contient l'autre) : un seul message declencherait les deux scenarios",
+        });
+      }
       throw err;
     }
-    const texte = textePreRempli(phrase, token);
+    const texte = textePreRempli(phrase);
     return reply.code(201).send({ link: { ...lien, texteRempli: texte, waMeUrl: lienWaMe(phone, texte) } });
   });
 
@@ -349,7 +421,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
             : 'ce scenario n’a aucune version publiee : publie-le avant de publier le post',
         });
       }
-      const url = lienWaMe(await deps.getDisplayPhoneNumber(tenant), textePreRempli(lien.phrase, lien.token));
+      const url = lienWaMe(await deps.getDisplayPhoneNumber(tenant), textePreRempli(lien.phrase));
       if (url === null) {
         return reply.code(409).send({ error: 'aucun numero WhatsApp connecte : impossible de fabriquer le lien du post' });
       }

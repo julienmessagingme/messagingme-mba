@@ -94,7 +94,11 @@ export interface ReponseConnexionChaine {
 }
 
 /**
- * Un lien de chaîne : le jeton caché qui, envoyé par un abonné, démarre un scénario.
+ * Un lien de chaîne : la PHRASE qui, envoyée par un abonné, démarre un scénario.
+ *
+ * ⚠️ C'était le JETON jusqu'au 2026-09-07 (le texte envoyé était `phrase (cm-xxxx)`). Le champ `token`
+ * existe toujours, il reste l'identifiant unique du lien et il vit dans les posts déjà publiés, mais il ne
+ * déclenche plus rien : c'est la phrase qui est le mot-clé, comparée en mode « contient ».
  *
  * 🔴 `texteRempli` et `waMeUrl` sont composés PAR LE SERVEUR, et le front ne les recompose jamais. Une
  * adresse `wa.me` part dans des messages publics irrattrapables ; deux compositions de la même adresse
@@ -111,7 +115,7 @@ export interface LienChaine {
   /** Plafond horaire propre à ce lien. `null` veut dire « plafond global de l'instance », pas « zéro ». */
   maxParHeure: number | null;
   createdAt: string;
-  /** `<phrase> (<jeton>)` : le message que l'abonné enverra en appuyant sur le bouton. */
+  /** La PHRASE seule : le message que l'abonné enverra en appuyant sur le bouton. */
   texteRempli: string;
   /** `null` quand aucun numéro WhatsApp n'est connecté : il n'y a alors aucun bouton possible. */
   waMeUrl: string | null;

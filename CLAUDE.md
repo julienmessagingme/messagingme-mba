@@ -80,8 +80,10 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
 **Dernière appliquée : 0114** (les trois tables Channels Me, plus `possede_par` et `max_fires_per_hour` sur
-`automations`), le 2026-09-07 au matin. **0115 est ÉCRITE et EN ATTENTE** (l'index qui sert « le parcours
-actif de ce contact », `CREATE INDEX CONCURRENTLY`, donc hors transaction). **Prochaine libre = 0116.**
+`automations`), le 2026-09-07 au matin. **0115 appliquée** le 2026-09-07 au soir (l'index qui sert « le parcours actif de ce
+contact », `CREATE INDEX CONCURRENTLY`, hors transaction ; `indisvalid` vérifié après coup, et le
+planificateur la prend). **0116 est ÉCRITE et EN ATTENTE** (la phrase d'un lien de chaîne devient sa clé de
+routage : unicité par espace, et bascule des liens existants). **Prochaine libre = 0117.**
 
 Elle a suivi l'ordre que la section impose, et c'est le cas d'école : ses deux colonnes sur `automations`
 sont lues par le CHEMIN CHAUD (`PgAutomationStore.listEnabled`, qui sert la correspondance des messages

@@ -25,8 +25,11 @@ const LIEN = {
   id: 'lien-1', tenantId: 't-e2e', workflowId: 'wf1', startNodeId: null,
   token: 'cm-a7k2m9p3', phrase: 'Je veux en savoir plus', automationId: 'auto-1',
   maxParHeure: null, createdAt: '2026-09-05T10:00:00.000Z',
-  texteRempli: 'Je veux en savoir plus (cm-a7k2m9p3)',
-  waMeUrl: 'https://wa.me/33525680250?text=Je%20veux%20en%20savoir%20plus%20(cm-a7k2m9p3)',
+  // 🔴 LA PHRASE SEULE : c est ce que l API rend depuis le 2026-09-07. Une fixture qui garderait le jeton
+  // resterait verte (le serveur est simule) tout en affirmant une forme que l API ne peut plus produire.
+  // C est exactement ainsi qu une valeur inventee a franchi la CI ce mois-ci.
+  texteRempli: 'Je veux en savoir plus',
+  waMeUrl: 'https://wa.me/33525680250?text=Je%20veux%20en%20savoir%20plus',
   enabled: true,
 };
 
@@ -178,7 +181,9 @@ test.describe('Chaîne : publier', () => {
     await page.getByTestId('chaine-lien').selectOption('lien-1');
     await expect(page.getByTestId('chaine-apercu-bouton')).toHaveText('Discuter');
     // 🔴 L'adresse affichée est celle du SERVEUR, pas une recomposition : le jeton doit s'y retrouver tel quel.
-    await expect(page.getByTestId('chaine-apercu-lien')).toContainText('cm-a7k2m9p3');
+    // L apercu montre le lien wa.me tel qu il partira. Le jeton n y est plus ; ce qui compte est que
+    // l adresse soit celle du serveur, pas une recomposition du front.
+    await expect(page.getByTestId('chaine-apercu-lien')).toContainText('wa.me/33525680250');
   });
 
   test('publie avec le lien, et le brouillon se vide', async ({ page }) => {

@@ -458,4 +458,64 @@ describe.skipIf(!url)('Stores Channels Me (Postgres reel)', () => {
       expect((await liens.byId(tenantId, lien.id))!.enabled).toBeNull();
     });
   });
+
+  describe('la PHRASE route, donc elle est contrainte en base (lot du 2026-09-07)', () => {
+    it('🔴 B5 : deux liens dont les phrases ne different que par la CASSE sont refuses PAR LA BASE', async () => {
+      // La garde applicative teste l inclusion avec `normalizeText`. Cet index est le FILET de course : deux
+      // creations simultanees passeraient la garde toutes les deux. Il ne couvre que l egalite insensible a
+      // la casse et aux espaces (`unaccent` n est pas installe et n est pas immuable), ce qui est plus
+      // PERMISSIF que la garde : il ne refuse donc que des cas qu elle aurait deja refuses.
+      const store = new PgChannelsMeLinkStore(pool);
+      const base = { workflowId, startNodeId: null, automationId: null, maxParHeure: null };
+      await store.create(tenantId, { ...base, token: 'cm-itestp01', phrase: 'Offre du printemps' });
+      await expect(
+        store.create(tenantId, { ...base, token: 'cm-itestp02', phrase: '  OFFRE DU PRINTEMPS  ' }),
+      ).rejects.toMatchObject({ code: '23505' });
+
+      // Et l unicite est PAR TENANT : le voisin garde le droit d employer la meme phrase.
+      const chezLautre = await store.create(autreTenantId, {
+        ...base, workflowId: autreWorkflowId, token: 'cm-itestp03', phrase: 'Offre du printemps',
+      });
+      expect(chezLautre.id).toBeTruthy();
+    });
+
+    it('🔴 B7 : la bascule de 0116 est IDEMPOTENTE et ne touche pas les automations ordinaires', async () => {
+      // La migration passe le mot-cle des automations compagnons du jeton vers la phrase de leur lien.
+      // « Idempotente » etait une affirmation de commentaire : on la joue DEUX FOIS et on regarde.
+      const store = new PgChannelsMeLinkStore(pool);
+      const compagnon = (await pool.query<{ id: string }>(
+        `insert into automations (tenant_id, name, trigger_kind, trigger_config, workflow_id, enabled, possede_par)
+         values ($1, 'itest compagnon', 'keyword', '{"keywords":["cm-itestm01"],"mode":"contains"}'::jsonb, $2, false, 'channelsme_link')
+         returning id`, [tenantId, workflowId])).rows[0]!.id;
+      // Une automation ORDINAIRE du meme tenant : elle ne doit pas bouger d un iota.
+      const ordinaire = (await pool.query<{ id: string }>(
+        `insert into automations (tenant_id, name, trigger_kind, trigger_config, workflow_id, enabled)
+         values ($1, 'itest ordinaire', 'keyword', '{"keywords":["devis"],"mode":"contains"}'::jsonb, $2, true)
+         returning id`, [tenantId, workflowId])).rows[0]!.id;
+      await store.create(tenantId, {
+        workflowId, startNodeId: null, token: 'cm-itestm01',
+        phrase: 'Je veux le catalogue', automationId: compagnon, maxParHeure: null,
+      });
+
+      const bascule = `update automations a
+           set trigger_config = jsonb_set(a.trigger_config, '{keywords}', to_jsonb(array[l.phrase]))
+          from channelsme_links l
+         where l.automation_id = a.id and l.tenant_id = a.tenant_id and a.possede_par = 'channelsme_link'`;
+      const motsCles = async (id: string): Promise<unknown> => (await pool.query<{ k: unknown }>(
+        `select trigger_config->'keywords' as k from automations where id = $1`, [id])).rows[0]!.k;
+
+      await pool.query(bascule);
+      expect(await motsCles(compagnon)).toEqual(['Je veux le catalogue']);
+      // 🔴 DEUX FOIS : c est tout l objet du test.
+      await pool.query(bascule);
+      expect(await motsCles(compagnon)).toEqual(['Je veux le catalogue']);
+      // Le `mode` survit a `jsonb_set` : l ecraser remettrait la comparaison en `equals` par defaut, et
+      // tuerait le bouton de tous les posts deja publies.
+      const cfg = (await pool.query<{ c: { mode?: string } }>(
+        `select trigger_config as c from automations where id = $1`, [compagnon])).rows[0]!.c;
+      expect(cfg.mode).toBe('contains');
+      // Et l automation ordinaire n a pas bouge.
+      expect(await motsCles(ordinaire)).toEqual(['devis']);
+    });
+  });
 });

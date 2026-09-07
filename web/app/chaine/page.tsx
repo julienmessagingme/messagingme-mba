@@ -24,8 +24,9 @@ import {
  *
  * L'écran marie deux choses que la console tenait séparées : la diffusion un-vers-tous (gratuite, vers des
  * abonnés anonymes) et le conversationnel (nos scénarios). Le lien `wa.me` posé dans le post est la
- * charnière : WhatsApp en dessine un bouton, l'abonné qui appuie envoie un message porteur d'un jeton, et
- * l'automation compagnon de ce jeton démarre le scénario.
+ * charnière : WhatsApp en dessine un bouton, l'abonné qui appuie envoie LA PHRASE du lien, et l'automation
+ * compagnon de ce lien, dont c'est le mot-clé, démarre le scénario. (Le texte portait aussi un jeton
+ * jusqu'au 2026-09-07 ; il allongeait l'URL pour rien.)
  *
  * 🔴 TOUT CE QUI EST IRRÉVERSIBLE EST À DROITE DE L'ÉCRAN, derrière un aperçu. Un post publié circule pour
  * toujours : il n'y a ni modification ni suppression, seulement l'extinction du lien, qui laisse le post en

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { MOTIF_JETON } from './jeton';
 
 /**
  * Une ligne de `channelsme_links`, telle que les routes et la console la lisent.
@@ -91,8 +92,82 @@ function versLien(r: LienRowBrut): LienRow {
  * non plus repointer un lien vers un autre scenario, ce qui est une decision produit et pas une lacune (un
  * autre scenario veut un autre lien, donc un autre jeton, donc une autre mesure de conversion).
  */
+/**
+ * Combien de messages entrants RECENTS on regarde pour juger si une phrase est trop banale.
+ *
+ * ⚠️ C'est une borne de COUT, pas un seuil semantique, et il faut le dire : le controle repond a « cette
+ * phrase apparait-elle dans la conversation ordinaire », et en examiner davantage ne changerait pas la
+ * decision qu'il alimente. Une phrase vue il y a deux ans et jamais depuis n'est pas un risque vivant.
+ *
+ * Mesure du 2026-09-07 : `conversation_messages` contenait 221 lignes, donc le controle est aujourd'hui
+ * gratuit. Cette borne existe pour qu'il le reste quand la table aura grossi, sans avoir a poser un index
+ * trigramme sur le corps des messages du chemin chaud pour une garde qui ne sert qu'a la creation d'un lien.
+ */
+const MESSAGES_EXAMINES = 2000;
+
 export class PgChannelsMeLinkStore {
   constructor(private readonly pool: Pool) {}
+
+  /**
+   * Les phrases des liens de ce tenant, telles qu'elles sont stockees.
+   *
+   * 🔴 LA COMPARAISON SE FAIT EN JS, avec `normalizeText`, exactement celle qui decide de la correspondance
+   * d'un message. La faire en SQL obligerait a la reecrire (`lower(btrim(...))` ne retire pas les accents, et
+   * `unaccent` n'est pas installe ni immuable, donc inutilisable dans un index), et deux definitions de « la
+   * meme phrase » divergeraient au premier accent. La table est petite par nature : quelques liens par
+   * espace, un par post publie.
+   */
+  async phrasesDesLiens(tenantId: string): Promise<string[]> {
+    const res = await this.pool.query<{ phrase: string }>(
+      // Pas de `limit` : un plafond sans `order by` rendrait un sous-ensemble ARBITRAIRE au-dela du
+      // plafond, donc une garde qui se degrade en silence. La table est petite par nature, c'est
+      // precisement l'argument qui autorise la comparaison en JS.
+      'select phrase from channelsme_links where tenant_id = $1',
+      [tenantId],
+    );
+    return res.rows.map((r) => r.phrase);
+  }
+
+  /**
+   * Combien des messages entrants RECENTS de ce tenant contiennent deja cette phrase.
+   *
+   * 🔴 CE CONTROLE REMPLACE UN SEUIL DE LONGUEUR INVENTE. Le danger d'une phrase n'est pas d'etre courte,
+   * c'est d'apparaitre dans la conversation ordinaire : « Bonjour » declencherait sur tout. On le COMPTE au
+   * lieu de le deviner.
+   *
+   * ⚠️ La comparaison SQL est `lower(...) like` : elle ignore la casse, pas les accents. C'est volontairement
+   * plus PERMISSIF que `normalizeText` (elle laissera passer une phrase qui ne differe que par un accent
+   * d'un message existant). Une garde qui rate un cas rare est acceptable ; une garde qui refuse a tort la
+   * phrase d'un client ne l'est pas.
+   */
+  async messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number> {
+    const res = await this.pool.query<{ n: number }>(
+      `select count(*)::int as n from (
+         select m.body from conversation_messages m
+           join conversations c on c.id = m.conversation_id
+          where c.tenant_id = $1 and m.direction = 'in'
+            -- 🔴 UNE FENETRE, EN PLUS DU PLAFOND. Le plafond seul s'applique APRES le tri de tous les
+            -- entrants du tenant : quand la table grossira, le cout sera le TRI, pas la comparaison. La
+            -- fenetre borne ce que le tri doit regarder. Elle borne aussi le SENS de la mesure : une phrase
+            -- vue il y a deux ans et jamais depuis n'est pas un risque vivant.
+            and m.created_at > now() - interval '90 days'
+            -- Et on ecarte les messages qui portent un jeton de lien : ce sont des CLICS, pas de la
+            -- conversation ordinaire. Sans ca, la garde compterait le succes du lien contre lui-meme.
+            and m.body !~ $4
+          order by m.created_at desc
+          limit $3
+       ) recents
+       -- 🔴 strpos, PAS like. Un like traite les caracteres pourcent et souligne comme des JOKERS : la
+       -- phrase « Je veux mes -20% » deviendrait un motif qui matche des messages ne la contenant pas, et
+       -- la garde refuserait alors la phrase d'un client en lui annoncant un nombre FAUX. Une garde qui
+       -- rate un cas rare est acceptable, une garde qui accuse a tort ne l'est pas.
+       -- ⚠️ Aucun accent grave dans ce bloc : il vit dans un litteral de gabarit TypeScript, ou un accent
+       -- grave termine la chaine. Deja rencontre deux fois dans ce depot.
+       where strpos(lower(recents.body), lower($2)) > 0`,
+      [tenantId, phrase, MESSAGES_EXAMINES, MOTIF_JETON],
+    );
+    return res.rows[0]?.n ?? 0;
+  }
 
   /**
    * ⚠️ `automationId` est fourni A LA CREATION, il ne se pose pas apres coup : l automation compagnon se cree

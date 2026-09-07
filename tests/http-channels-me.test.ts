@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { normalizeText } from '../src/automation/match';
 import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -113,6 +114,10 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     scenarioEtat: async (_t, wf) => (wf === WF_ID ? 'ok' : 'inconnu'),
     getDisplayPhoneNumber: async () => '+33 5 25 68 02 50',
     demanderActivation: async ({ message }) => { cap.demandes.push({ message }); },
+    // Depuis que la PHRASE route, elle doit etre unique et distinctive. Par defaut le faux dit « libre » et
+    // « jamais vue » : chaque test qui veut exercer un refus le surcharge, ce qui rend le refus VISIBLE.
+    phraseEnConflit: async () => false,
+    messagesContenantLaPhrase: async () => 0,
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, channelsMe: deps }), cap };
@@ -220,8 +225,92 @@ describe('Channels Me : les liens de chaine', () => {
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/links', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     const lien = res.json<{ links: Array<{ waMeUrl: string; texteRempli: string }> }>().links[0]!;
-    expect(lien.texteRempli).toBe('Je veux recevoir la newsletter (cm-a7k2m9p3)');
-    expect(lien.waMeUrl).toBe('https://wa.me/33525680250?text=Je%20veux%20recevoir%20la%20newsletter%20(cm-a7k2m9p3)');
+    // 🔴 LA PHRASE SEULE depuis le 2026-09-07 : le jeton n est plus dans le texte envoye. Le cas exerce est
+    // le meme (la liste rend le texte pret a l emploi), c est sa valeur qui a change.
+    expect(lien.texteRempli).toBe('Je veux recevoir la newsletter');
+    // 🔴 L URL RACCOURCIE, et c est la reponse a la question de Julien sur la longueur du lien : ce qui
+    // l allongeait etait le suffixe du jeton, pas le domaine. Le domaine `wa.me` est conserve, et c est lui
+    // que WhatsApp reconnait pour dessiner le bouton « Discuter ».
+    expect(lien.waMeUrl).toBe('https://wa.me/33525680250?text=Je%20veux%20recevoir%20la%20newsletter');
+    await server.close();
+  });
+
+  it('🔴 B5 : une phrase EN CONFLIT avec un autre lien est refusee (409), et rien n est ecrit', async () => {
+    // Deux liens de meme phrase, c est deux automations qui matchent un seul message : deux scenarios
+    // demarres, dont un tue l autre depuis le lot « le declencheur gagne ». L abonne verrait un parcours
+    // commencer puis disparaitre. Impossible tant que le jeton routait, il etait unique.
+    const { server, cap } = app({ phraseEnConflit: async () => true });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: 'Je veux recevoir la newsletter' },
+    });
+    expect(res.statusCode).toBe(409);
+    // 🔴 RIEN d ecrit : refuser APRES avoir cree l automation compagnon obligerait a la defaire.
+    expect(cap.automations).toEqual([]);
+    expect(cap.liens).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 le conflit est une INCLUSION, pas une egalite (le vrai cas de collision en mode contains)', async () => {
+    // « Je veux le guide » et « Je veux le guide 2026 » sont deux phrases DIFFERENTES : une garde qui teste
+    // l egalite les accepte toutes les deux. Or l abonne qui appuie sur le second bouton envoie un texte qui
+    // contient AUSSI la premiere : les deux automations matchent, les deux scenarios demarrent, et le second
+    // clot le premier. Sur un post deja publie, c est sans recours.
+    //
+    // Ce test exerce la vraie regle en branchant le VRAI comparateur sur des phrases qui s incluent, plutot
+    // que de faire confiance a un faux qui rendrait `true` sans rien comparer.
+    const existante = 'Je veux le guide';
+    const enConflit = async (_t: string, phrase: string): Promise<boolean> => {
+      const n = normalizeText(existante);
+      const c = normalizeText(phrase);
+      return n.includes(c) || c.includes(n);
+    };
+    const { server, cap } = app({ phraseEnConflit: enConflit });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: 'Je veux le guide 2026' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(cap.liens).toEqual([]);
+    await server.close();
+  });
+
+  it('une phrase reduite a RIEN par la normalisation est refusee (400), pas acceptee muette', async () => {
+    // `trim().min(1)` laisse passer une chaine de diacritiques seuls, que normalizeText reduit a vide :
+    // l automation naitrait avec zero mot-cle et ne declencherait jamais, sur un post publie pour toujours.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: '́̀' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(cap.liens).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 B6 : une phrase deja vue dans des messages ordinaires est refusee, AVEC son compte', async () => {
+    // Le controle qui remplace un seuil de longueur invente : le danger n est pas d etre courte, c est
+    // d apparaitre dans la conversation ordinaire. Le nombre est DIT, sinon le client ne peut pas savoir ce
+    // qu on lui reproche ni comment corriger.
+    const { server, cap } = app({ messagesContenantLaPhrase: async () => 7 });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: 'bonjour' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toContain('7');
+    expect(cap.liens).toEqual([]);
+    await server.close();
+  });
+
+  it('la mesure de banalite est FACULTATIVE : sans elle, la creation passe', async () => {
+    // Une mesure indisponible ne doit pas empecher un client de creer un lien.
+    const { server } = app({ messagesContenantLaPhrase: undefined });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: 'Je veux recevoir la newsletter' },
+    });
+    expect(res.statusCode).toBe(201);
     await server.close();
   });
 
@@ -235,7 +324,11 @@ describe('Channels Me : les liens de chaine', () => {
     expect(cap.automations[0]).toMatchObject({ workflowId: WF_ID, cooldownSeconds: 300, maxParHeure: 2000 });
     // Le jeton est tire par le SERVEUR, jamais fourni par le client, et il est le meme dans l'automation et
     // dans le lien : deux tirages donneraient un bouton qui ne declenche rien.
-    expect(cap.liens[0]!.token).toBe(cap.automations[0]!.jeton);
+    // 🔴 LE MOT-CLE DE L AUTOMATION EST LA PHRASE, plus le jeton. C est ce qui fait router le lien sur ce
+    // que l abonne envoie vraiment. Le lien garde son jeton en base (identifiant unique, et il vit dans les
+    // posts deja publies), il ne declenche simplement plus rien.
+    expect(cap.automations[0]!.motCle).toBe(cap.liens[0]!.phrase);
+    expect(cap.automations[0]!.motCle).not.toBe(cap.liens[0]!.token);
     // 🔴 Rien n'est allume a la creation : un lien cree mais jamais publie doit rester inerte.
     expect(cap.allumees).toEqual([]);
     expect(cap.eteintes).toEqual([]);
@@ -370,9 +463,12 @@ describe('Channels Me : publier', () => {
     // Le lien wa.me est AJOUTE au texte du post par le serveur : c'est lui qui fait apparaitre le bouton
     // que WhatsApp dessine, le client ne le colle pas a la main.
     // 🔴 Egalite EXACTE du texte complet, composee avec les VRAIES fonctions (lienWaMe, textePreRempli) :
-    // un simple `toContain` d'un prefixe d'URL ne prouve pas que le jeton fait bien partie du texte envoye,
-    // et c'est pourtant lui, et lui seul, qui declenche le scenario quand l'abonne appuie sur le bouton.
-    const urlAttendue = lienWaMe('+33 5 25 68 02 50', textePreRempli(LIEN.phrase, LIEN.token));
+    // un simple `toContain` d'un prefixe d'URL ne prouve pas que la PHRASE fait bien partie du texte
+    // envoye, et c'est elle, desormais, qui declenche le scenario quand l'abonne appuie sur le bouton.
+    const urlAttendue = lienWaMe('+33 5 25 68 02 50', textePreRempli(LIEN.phrase));
+    // 🔴 Et le JETON n'y est plus : c'est tout l'objet du lot, et un `toBe` sur le texte complet ne le
+    // dirait pas si la phrase venait a contenir le jeton par accident.
+    expect(cap.publies[0]!.text).not.toContain(LIEN.token);
     expect(cap.publies[0]!.text).toBe(`Notre newsletter arrive\n\n${urlAttendue}`);
     // 🔴 Publier d'abord : une automation allumee avant une publication qui echoue laisserait un jeton
     // vivant sans post. Allumer ensuite : sinon le bouton du post est mort. Tracer en dernier.

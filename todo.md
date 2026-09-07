@@ -464,8 +464,9 @@ une requête `status = 'waiting'` implique `status in ('waiting','sleeping')`, d
 se servir du nouveau. « Devrait » n'est pas une mesure, et cet index-là sert `findWaitingByWaId`, lu sur le
 chemin chaud de CHAQUE message entrant : on ne le retire pas sur un raisonnement.
 
-**Ce qu'il faut faire, et dans cet ordre** : attendre que 0115 soit appliquée, puis `explain` la requête de
-`findWaitingByWaId` en production et regarder QUEL index elle prend. Si elle prend le nouveau, le retrait de
+**0115 est appliquée depuis le 2026-09-07 au soir**, `indisvalid = true`, et le planificateur prend bien le
+nouvel index sur la requête de `closeActiveByWaId` (`Index Scan`, là où c'était un `Seq Scan`). **Ce qu'il
+reste à faire** : `explain` la requête de `findWaitingByWaId` en production et regarder QUEL index elle prend. Si elle prend le nouveau, le retrait de
 l'ancien devient une migration additive de plus (un index en moins, c'est de l'écriture en moins sur une
 table du chemin chaud). Si elle prend l'ancien, on garde les deux et on écrit pourquoi.
 

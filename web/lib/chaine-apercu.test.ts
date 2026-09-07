@@ -27,7 +27,8 @@ const brouillon = (p: Partial<BrouillonChaine> = {}): BrouillonChaine => ({
 });
 
 // Une adresse telle que le SERVEUR la rend (composée par `lienWaMe`), jamais fabriquée ici.
-const WA_ME = 'https://wa.me/33525680250?text=Je%20veux%20la%20newsletter%20(cm-a7k2m9p3)';
+// La PHRASE seule depuis le 2026-09-07 : le jeton n est plus dans le texte envoye.
+const WA_ME = 'https://wa.me/33525680250?text=Je%20veux%20la%20newsletter';
 
 describe('morceauxApercu : qui écrit quoi, et dans quel ordre', () => {
   it('sans adresse : le texte seul, et AUCUN bouton', () => {

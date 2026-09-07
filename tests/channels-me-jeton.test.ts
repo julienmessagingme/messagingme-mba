@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PREFIXE_JETON, nouveauJeton, estJetonChaine, textePreRempli } from '../src/channels-me/jeton';
-import { normalizeText, keywordsOf } from '../src/automation/match';
+import { normalizeText, keywordsOf, matchesTrigger } from '../src/automation/match';
+import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 
 /**
  * Le jeton d'un lien de chaine WhatsApp (Channels Me), et le texte que l'abonne ENVOIE en appuyant sur le
@@ -69,44 +70,67 @@ describe('forme du jeton de chaine', () => {
 });
 
 describe('texte pre-rempli', () => {
-  // Jeton FICTIF (aucun secret) : valeur figee pour rendre les assertions lisibles.
+  // Jeton FICTIF (aucun secret) : il ne route plus rien, mais il vit encore dans les posts DEJA PUBLIES.
   const JETON = 'cm-a7k2m9p3';
 
-  it('rend « <phrase> (<jeton>) »', () => {
-    expect(textePreRempli('Je veux recevoir la newsletter', JETON))
-      .toBe('Je veux recevoir la newsletter (cm-a7k2m9p3)');
+  it('rend la PHRASE SEULE, sans jeton', () => {
+    // 🔴 Le texte etait `phrase (cm-xxxx)` jusqu au 2026-09-07. C est ce suffixe qui allongeait l URL
+    // `wa.me`, dont le parametre `text=` porte tout le message.
+    expect(textePreRempli('Je veux recevoir la newsletter')).toBe('Je veux recevoir la newsletter');
   });
 
-  it('detoure la phrase, et une phrase vide ne laisse pas d espace de tete', () => {
-    expect(textePreRempli('  Je veux la newsletter  ', JETON)).toBe('Je veux la newsletter (cm-a7k2m9p3)');
-    // La route de creation d'un lien refuse deja une phrase vide, mais une fonction pure doit rester totale :
-    // mieux vaut le jeton seul qu'un texte qui commence par une espace.
-    expect(textePreRempli('', JETON)).toBe('(cm-a7k2m9p3)');
-    expect(textePreRempli('   ', JETON)).toBe('(cm-a7k2m9p3)');
+  it('detoure la phrase, et une phrase vide rend une chaine vide', () => {
+    expect(textePreRempli('  Je veux la newsletter  ')).toBe('Je veux la newsletter');
+    // La route de creation refuse deja une phrase vide ; une fonction pure reste totale et n en juge pas.
+    expect(textePreRempli('')).toBe('');
+    expect(textePreRempli('   ')).toBe('');
   });
 
-  it('🔴 le jeton SURVIT a normalizeText : accents, majuscules et espaces multiples', () => {
-    const normalise = normalizeText(textePreRempli('Ça   m INTERESSE, à bientôt !', JETON));
-    // La phrase, elle, est bien rabotee : c'est la preuve que normalizeText a reellement travaille ce texte,
-    // et que le jeton n'est pas passe entre les gouttes d'une normalisation qui n'aurait rien fait.
-    expect(normalise).toBe('ca m interesse, a bientot ! (cm-a7k2m9p3)');
-    expect(normalise).toContain(JETON);
+  it('🔴 la PHRASE survit a normalizeText des DEUX cotes (c est elle qui route desormais)', () => {
+    // Meme souci qu avant, deplace sur la nouvelle cle : la comparaison normalise le CORPS du message ET le
+    // MOT-CLE stocke. Si les deux ne donnaient pas la meme chaine, le bouton ne declencherait jamais rien.
+    const phrase = 'Ça   m INTERESSE, à bientôt !';
+    const corps = normalizeText(textePreRempli(phrase));
+    expect(corps).toBe('ca m interesse, a bientot !');
+    expect(keywordsOf({ keywords: [phrase], mode: 'contains' })).toEqual([corps]);
   });
 
-  it('le jeton reste intact en MOT-CLE d automation (keywordsOf)', () => {
-    // L'autre moitie de la correspondance. `matchesTrigger` normalise le CORPS du message, mais `keywordsOf`
-    // normalise aussi les MOTS CLES stockes : un jeton doit etre invariant des deux cotes, sans quoi la
-    // comparaison porterait sur deux chaines differentes et le bouton ne declencherait jamais rien.
-    expect(keywordsOf({ keywords: [JETON], mode: 'contains' })).toEqual([JETON]);
-    const tire = nouveauJeton();
-    expect(keywordsOf({ keywords: [tire] })).toEqual([tire]);
-  });
-
-  it('200 jetons tires au hasard survivent tous a normalizeText', () => {
+  it('🔴 B1 : un post DEJA PUBLIE continue de declencher, quel que soit le jeton tire', () => {
+    // LE critere qui rend ce lot possible. Un post distribue avant le 2026-09-07 envoie `phrase (cm-xxxx)`,
+    // et le mode de comparaison est `contains` : le corps normalise doit donc CONTENIR la phrase
+    // normalisee, pour les 32^8 jetons possibles et pas seulement pour celui qu on aurait choisi comme
+    // exemple. Un post publie ne peut plus etre modifie : si ceci tombe, tout ce qui circule est mort.
+    const phrase = 'Notre newsletter du mois';
+    const cle = normalizeText(phrase);
     for (let i = 0; i < TIRAGES; i += 1) {
       const jeton = nouveauJeton();
-      const normalise = normalizeText(textePreRempli('Notre newsletter du mois', jeton));
-      expect(normalise, `jeton perdu a la normalisation : ${jeton}`).toContain(jeton);
+      const ancienTexte = `${phrase} (${jeton})`;
+      expect(normalizeText(ancienTexte), `post casse par le jeton ${jeton}`).toContain(cle);
     }
+    // Et le cas figé, pour que l echec soit lisible quand il arrive.
+    expect(normalizeText(`${phrase} (${JETON})`)).toContain(cle);
+  });
+
+  it('🔴 B1, l autre moitie : le VRAI comparateur fait matcher un ancien post, et `equals` le tuerait', () => {
+    // Le test ci-dessus prouve que le texte CONTIENT la phrase. Il ne prouve pas que la comparaison est en
+    // mode `contains` : c'est le cablage qui le decide, et un cablage n'a par construction aucun dependant.
+    // On exerce donc le vrai `matchesTrigger`, avec la vraie automation.
+    const phrase = 'Je veux mon code promo !';
+    const auto = (mode: string): AutomationRow => ({
+      id: 'a1', tenantId: 't1', name: 'Chaine', enabled: true,
+      triggerKind: 'keyword', triggerConfig: { keywords: [phrase], mode }, conditionGroup: null,
+      workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null,
+    });
+    const ancienPost = (b: string): AutomationEvent =>
+      ({ kind: 'message', waId: '33611', body: b, isNewContact: false, channel: 'whatsapp' });
+
+    // Un post publie AVANT la bascule : son bouton envoie la phrase ET le jeton.
+    expect(matchesTrigger(auto('contains'), ancienPost(`${phrase} (${JETON})`))).toBe(true);
+    // Un post publie APRES : la phrase seule.
+    expect(matchesTrigger(auto('contains'), ancienPost(phrase))).toBe(true);
+    // 🔴 LA PREUVE INVERSE, DANS LE TEST : en `equals`, l ancien post ne matche plus. C est-a-dire que tous
+    // les posts deja distribues auraient un bouton mort, sans aucun recours. C est la raison pour laquelle
+    // le mode ne doit jamais changer, et elle est ici plutot que dans un commentaire.
+    expect(matchesTrigger(auto('equals'), ancienPost(`${phrase} (${JETON})`))).toBe(false);
   });
 });
