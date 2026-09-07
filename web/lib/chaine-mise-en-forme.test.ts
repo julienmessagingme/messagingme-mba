@@ -148,6 +148,52 @@ describe('entoure', () => {
     expect(r.texte[r.debut]).toBe('~');
   });
 
+  it('🔴 une sélection MULTILIGNE est entourée LIGNE PAR LIGNE, sinon le balisage est MORT', () => {
+    // Ctrl+A dans la zone, puis Gras. Le rétrécissement ne réglait que le saut de ligne FINAL d'un
+    // triple-clic ; ici il est A L INTERIEUR de la selection. On ecrivait `*ligne1\nligne2*`, qu'aucun
+    // style ne traverse, ni chez nous ni chez WhatsApp : rien ne se mettait en forme, le bouton paraissait
+    // inerte, et DEUX marqueurs orphelins partaient dans un post irrattrapable.
+    const r = entoure('ligne1\nligne2', 0, 13, '*');
+    expect(r.texte).toBe('*ligne1*\n*ligne2*');
+    // Preuve que le balisage produit se REND vraiment, au lieu de rester du texte brut.
+    expect(segmentsMisEnForme(r.texte)).toEqual([
+      { styles: ['gras'], contenu: 'ligne1' },
+      { styles: [], contenu: '\n' },
+      { styles: ['gras'], contenu: 'ligne2' },
+    ]);
+  });
+
+  it('une ligne VIDE au milieu d’une sélection multiligne ne reçoit pas de marqueurs', () => {
+    // Deux marqueurs collés sur une ligne vide ne rendraient rien et resteraient a nettoyer a la main.
+    const r = entoure('a\n\nb', 0, 4, '~');
+    expect(r.texte).toBe('~a~\n\n~b~');
+  });
+
+  it('🔴 recliquer le MÊME bouton RETIRE le marqueur, au lieu d’empiler `**mot**`', () => {
+    // La selection reste posee sur le mot apres le premier clic (c'est voulu, pour enchainer les styles) et
+    // le bouton reste sous le curseur : recliquer est le geste d'annulation le plus naturel qui soit.
+    // Sans bascule il produisait `**mot**`, que l'apercu affiche comme un gras PROPRE (un gras dans un gras
+    // est du gras), donc rien a l'ecran ne trahissait le texte fautif qui partait.
+    const premier = entoure('mot', 0, 3, '*');
+    expect(premier.texte).toBe('*mot*');
+    const second = entoure(premier.texte, premier.debut, premier.fin, '*');
+    expect(second.texte).toBe('mot');
+    expect(second.texte.slice(second.debut, second.fin)).toBe('mot');
+  });
+
+  it('🔴 preuve inverse de la bascule : un marqueur DIFFERENT s’ajoute toujours', () => {
+    // Sans ce sens-la, une bascule trop gourmande retirerait le gras quand on demande l'italique.
+    const gras = entoure('mot', 0, 3, '*');
+    const italique = entoure(gras.texte, gras.debut, gras.fin, '_');
+    expect(italique.texte).toBe('*_mot_*');
+  });
+
+  it('la bascule ne se declenche PAS sur des marqueurs qui n entourent pas la selection', () => {
+    // « a*b » avec « b » selectionne : le `*` est a gauche mais il n y en a pas a droite.
+    const r = entoure('a*b', 2, 3, '*');
+    expect(r.texte).toBe('a**b*');
+  });
+
   it('entourer deux fois donne bien le second marqueur autour du premier', () => {
     const gras = entoure('mot', 0, 3, '*');
     const italique = entoure(gras.texte, gras.debut, gras.fin, '_');

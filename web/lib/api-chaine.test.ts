@@ -35,7 +35,8 @@ vi.mock('./http', () => ({
 import {
   MAX_MEDIA_URL, MAX_PHRASE, MAX_TEXTE_POST,
   allumerLienChaine, creerLienChaine, demanderActivationChaine, enregistrerConnexionChaine,
-  eteindreLienChaine, getConnexionChaine, listerLiensChaine, listerPostsChaine, publierPostChaine,
+  eteindreLienChaine, getConnexionChaine, listerConversationsChaine, listerLiensChaine, listerPostsChaine,
+  publierPostChaine,
   testerConnexionChaine,
 } from './api-chaine';
 
@@ -54,10 +55,10 @@ afterEach(() => {
 /** La méthode telle que `request` la verra : absente veut dire GET, comme dans `web/lib/http.ts`. */
 const methode = (init?: RequestInit): string => (init?.method ?? 'GET').toUpperCase();
 
-describe('api-chaine : les dix chemins gelés', () => {
+describe('api-chaine : les onze chemins gelés', () => {
   /**
    * 🔴 LE TEST CENTRAL. Chaque ligne est recopiée de `src/http/channels-me.ts` : la base y vaut
-   * `/tenants/:tenantId/channels-me`, et les dix `app.<verbe>` suivent. Si une route bouge côté serveur,
+   * `/tenants/:tenantId/channels-me`, et les onze `app.<verbe>` suivent. Si une route bouge côté serveur,
    * c'est ici que ça casse, pas devant un client.
    */
   const CONTRAT: Array<{ nom: string; appel: () => Promise<unknown>; verbe: string; chemin: string }> = [
@@ -81,6 +82,8 @@ describe('api-chaine : les dix chemins gelés', () => {
       appel: () => publierPostChaine(T, { text: 'coucou' }) },
     { nom: 'POST /activation-request', verbe: 'POST', chemin: `/tenants/${T}/channels-me/activation-request`,
       appel: () => demanderActivationChaine(T) },
+    { nom: 'GET /links/conversations', verbe: 'GET', chemin: `/tenants/${T}/channels-me/links/conversations`,
+      appel: () => listerConversationsChaine(T) },
   ];
 
   it.each(CONTRAT)('$nom tape le chemin exact, avec le bon verbe', async ({ appel, verbe, chemin }) => {
@@ -90,9 +93,13 @@ describe('api-chaine : les dix chemins gelés', () => {
     expect(methode(appels[0]!.init)).toBe(verbe);
   });
 
-  it('🔴 il y a DIX routes, pas huit : `enable` est le seul chemin de reparation d un bouton mort', () => {
-    expect(CONTRAT).toHaveLength(10);
+  it('🔴 il y a ONZE routes : `enable` repare un bouton mort, `conversations` mesure ce qu il a produit', () => {
+    // ⚠️ CE COMPTE EST LE MECANISME, pas une decoration : une route ajoutee cote serveur sans sa ligne ici
+    // sort du gel. Le lot du 2026-09-07 a justement ajoute `GET /links/conversations` sans l y inscrire, et
+    // rien n a cassé : le contrat gelait alors dix routes sur onze.
+    expect(CONTRAT).toHaveLength(11);
     expect(CONTRAT.map((c) => c.nom)).toContain('POST /links/:id/enable');
+    expect(CONTRAT.map((c) => c.nom)).toContain('GET /links/conversations');
   });
 
   it('tout part sous /tenants/<tenantId>/channels-me : l isolation tenant est dans CHAQUE chemin', () => {

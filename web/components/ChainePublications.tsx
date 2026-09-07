@@ -4,6 +4,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { cardCls } from '@/lib/ui';
 import { formatDate } from '@/lib/day';
 import { classesPastille, etatPublication } from '@/lib/chaine-statut';
+import { corpsDuPost } from '@/lib/chaine-apercu';
 import type { ConversationsDunLien, EtatDistant, LienChaine, PostChaine } from '@/lib/api-chaine';
 import type { WorkflowSummary } from '@/lib/api';
 import { TexteMisEnForme } from '@/components/TexteMisEnForme';
@@ -51,6 +52,30 @@ export function ChainePublications(props: ChainePublicationsProps) {
     );
   }
 
+  /**
+   * Ce que le chiffre DIT, et il ne dit que ce qu'on mesure.
+   *
+   * 🔴 « CONVERSATIONS DÉMARRÉES » ÉTAIT DÉJÀ UNE INFÉRENCE DE TROP. On compte les personnes dont un message
+   * contient la phrase du bouton. Le moteur, lui, applique trois filtres de plus avant de démarrer un
+   * scénario (automation allumée, anti-rebond, plafond horaire) : un message reçu pendant que le bouton
+   * était éteint entrait donc dans le compte « conversations démarrées », juste au-dessus du bandeau qui
+   * annonce que ce bouton ne démarre rien. On nomme donc l'action qu'on OBSERVE, pas celle qu'on suppose.
+   *
+   * ⚠️ `partiel` PASSE AVANT LE ZÉRO. Le plafond de lecture atteint est le seul cas où la mesure est
+   * officiellement incomplète, et c'était aussi celui où l'écran faisait l'affirmation la plus forte
+   * (« personne n'a envoyé ce message »), c'est-à-dire exactement l'inverse de ce qu'il sait.
+   */
+  const compte = (n: number, partiel: boolean): string => {
+    if (partiel) {
+      return n === 0
+        ? t('aucun envoi dans les messages les plus récents', 'no send among the most recent messages')
+        : t(`au moins ${n} personne${n > 1 ? 's ont' : ' a'} envoyé ce message`, `at least ${n} ${n > 1 ? 'people have' : 'person has'} sent this message`);
+    }
+    return n === 0
+      ? t('personne n’a encore envoyé ce message', 'nobody has sent this message yet')
+      : t(`${n} personne${n > 1 ? 's ont' : ' a'} envoyé ce message`, `${n} ${n > 1 ? 'people have' : 'person has'} sent this message`);
+  };
+
   const parLien = new Map(liens.map((l) => [l.id, l]));
   const parScenario = new Map(scenarios.map((w) => [w.id, w]));
   const parConversations = new Map((conversations?.parLien ?? []).map((c) => [c.linkId, c]));
@@ -65,6 +90,19 @@ export function ChainePublications(props: ChainePublicationsProps) {
           </span>
         ) : null}
       </div>
+
+      {/* 🔴 LA LIMITE EST ÉCRITE, PAS RANGÉE DANS UNE INFOBULLE. Elle vivait dans un attribut `title`,
+          c'est-à-dire au survol de la souris et nulle part au doigt : exactement le défaut que le lot
+          voisin corrige sur le formulaire de template. Une mesure dont les limites ne sont pas lisibles
+          est une mesure qu'on lira de travers. */}
+      {conversations !== null && posts.length > 0 && (
+        <p className="mt-2 text-xs text-ink-400" data-testid="chaine-publications-note-mesure">
+          {t(
+            'Un appui sur le bouton ne nous est pas visible : on compte les personnes qui ont ENVOYÉ le message du bouton, pour ce bouton et tous ses posts. Un message reçu pendant que le bouton était éteint est compté sans avoir démarré de scénario.',
+            'A tap on the button is invisible to us: we count the people who SENT the button message, for this button across all its posts. A message received while the button was off is counted without having started any scenario.',
+          )}
+        </p>
+      )}
 
       {posts.length === 0 ? (
         <p className="mt-4 text-sm text-ink-400" data-testid="chaine-publications-vide">
@@ -81,18 +119,21 @@ export function ChainePublications(props: ChainePublicationsProps) {
             const boutonMort = lien !== null && lien.enabled !== true;
             const reparable = lien !== null && lien.enabled === false;
             const conv = lien === null ? null : parConversations.get(lien.id) ?? null;
+            const corps = corpsDuPost(p.message?.text ?? '', lien?.waMeUrl ?? null);
 
             return (
               <li key={p.id} className="py-3" data-testid={`chaine-publication-${p.id}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    {/* 🔴 LE MÊME RENDU QUE L'APERÇU, juste au-dessus. Cette liste montrait `*promo*` avec
-                        ses étoiles pendant que l'aperçu affichait « promo » en gras : deux moitiés du même
-                        écran qui ne montraient pas la même chose du même post. */}
+                    {/* 🔴 LE MÊME RENDU QUE L'APERÇU, juste au-dessus, ET SUR LA MÊME ENTRÉE. Cette liste
+                        montrait `*promo*` avec ses étoiles pendant que l'aperçu affichait « promo » en
+                        gras. ⚠️ Mais le texte STOCKÉ d'un post vaut corps + adresse wa.me, alors que
+                        l'aperçu ne met en forme que le corps : sans `corpsDuPost`, on donnerait l'adresse
+                        au formateur et sa longueur compterait dans le plafond d'analyse. */}
                     <p className="truncate text-sm text-ink-800">
-                      {(p.message?.text?.trim() ?? '') === ''
+                      {corps === ''
                         ? t('(sans texte)', '(no text)')
-                        : <TexteMisEnForme texte={p.message!.text!.trim()} />}
+                        : <TexteMisEnForme texte={corps} />}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-400">
                       {formatDate(p.createdAt, locale)}
@@ -111,32 +152,8 @@ export function ChainePublications(props: ChainePublicationsProps) {
                             ?? t('scénario introuvable', 'scenario not found')}
                         </span>
                         {conv !== null && (
-                          <span
-                            className="text-ink-500 tabular-nums"
-                            data-testid={`chaine-publication-conversations-${p.id}`}
-                            // ⚠️ Le titre porte les deux limites que le chiffre ne peut pas montrer seul :
-                            // il vaut pour TOUTES les publications de ce bouton, et il compte des messages
-                            // reçus, jamais des appuis (un appui ne nous est pas visible).
-                            title={t(
-                              'Conversations démarrées depuis ce bouton, toutes publications confondues. Un appui sur le lien n’est pas visible de nous : on compte les messages reçus.',
-                              'Conversations started from this button, across all its posts. A tap on the link is invisible to us: we count the messages received.',
-                            )}
-                          >
-                            {conv.contacts === 0
-                              ? t('aucune conversation démarrée', 'no conversation started')
-                              : conversations?.partiel === true
-                                ? t(
-                                    `au moins ${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} démarrée${conv.contacts > 1 ? 's' : ''}`,
-                                    `at least ${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} started`,
-                                  )
-                                : t(
-                                    `${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} démarrée${conv.contacts > 1 ? 's' : ''}`,
-                                    `${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} started`,
-                                  )}
-                            {' '}
-                            <span className="text-ink-300">
-                              {t('(ce bouton, tous posts)', '(this button, all posts)')}
-                            </span>
+                          <span className="text-ink-500 tabular-nums" data-testid={`chaine-publication-conversations-${p.id}`}>
+                            {compte(conv.contacts, conversations?.partiel === true)}
                           </span>
                         )}
                       </p>

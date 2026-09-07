@@ -259,7 +259,6 @@ export interface ConversationsDunLien {
   // main : un champ ajouté d'un seul côté ne se voit d'aucun compilateur.
   /** Contacts DISTINCTS ayant écrit un message contenant la phrase. Des contacts, pas des messages. */
   contacts: number;
-  dernier: string | null;
 }
 
 /**

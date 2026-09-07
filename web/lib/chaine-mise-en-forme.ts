@@ -7,12 +7,17 @@ import { MAX_TEXTE_POST } from './api-chaine';
  * vitest du front n'inclut que les tests de `lib/`, un composant ne s'y teste pas. Or ce module transforme
  * le texte qui partira dans un post PUBLIÉ, donc irrattrapable. Ce qui le transforme se teste avant.
  *
- * ⚠️ LA SYNTAXE EST CELLE DE WHATSAPP, ET ELLE EST MESURÉE, PAS SUPPOSÉE. La spec OpenAPI du fournisseur
+ * ⚠️ CE QUI EST MESURÉ, ET CE QUI NE L'EST PAS. La spec OpenAPI du fournisseur
  * (https://channels-me.com/api-docs/v1/swagger.yaml, champ `text` du schéma `Message`, relue le 2026-09-07)
- * dit mot pour mot : « Text of the message, formated as WhatsApp flavored mardown ». Les marqueurs partent
- * donc TELS QUELS et c'est le client WhatsApp qui les rend. L'aperçu ne promet qu'une chose, et il la
- * tient : ce qu'il montre correspond à ce que le texte contient. Le rendu final se confirme sur un vrai
- * post, sur un vrai téléphone.
+ * dit mot pour mot : « Text of the message, formated as WhatsApp flavored mardown ». Cela établit UNE
+ * chose, et une seule : les marqueurs partent TELS QUELS et c'est le client WhatsApp qui les rend.
+ *
+ * 🔴 Le CONTOUR exact d'un marqueur (où il a le droit d'ouvrir et de fermer), lui, n'est documenté nulle
+ * part et n'est pas mesurable d'ici. Nos règles de bordure sont donc un CHOIX, délibérément plus strict que
+ * ce que WhatsApp accepte peut-être : mieux vaut un aperçu qui montre moins de mise en forme que le
+ * téléphone n'en appliquera, qu'un aperçu qui en promet une que le téléphone n'appliquera pas. L'aperçu ne
+ * promet donc qu'une chose, et il la tient : ce qu'il montre est présent dans le texte. Le rendu final se
+ * confirme sur un vrai post, sur un vrai téléphone.
  */
 
 /** Les trois marqueurs de WhatsApp, et le style qu'ils portent. */
@@ -157,8 +162,46 @@ export function entoure(texte: string, debut: number, fin: number, marqueur: str
   let f = fin;
   while (d < f && /\s/.test(texte[d]!)) d += 1;
   while (f > d && /\s/.test(texte[f - 1]!)) f -= 1;
+
+  // 🔴 BASCULE : re-cliquer RETIRE, au lieu d'empiler un second marqueur. Le bouton reste sous le curseur
+  // et la sélection reste posée sur le mot (c'est voulu, pour enchaîner les styles) : recliquer est donc le
+  // geste d'annulation le plus naturel qui soit, et il produisait `**mot**`. L'aperçu n'y voyait rien, un
+  // gras dans un gras étant du gras, et le texte fautif partait dans un post irrattrapable.
+  if (texte.slice(d - marqueur.length, d) === marqueur && texte.slice(f, f + marqueur.length) === marqueur) {
+    return {
+      texte: `${texte.slice(0, d - marqueur.length)}${texte.slice(d, f)}${texte.slice(f + marqueur.length)}`,
+      debut: d - marqueur.length,
+      fin: f - marqueur.length,
+    };
+  }
+
+  // 🔴 UNE SÉLECTION MULTILIGNE S'ENTOURE LIGNE PAR LIGNE, sinon elle produit un balisage MORT. Un style ne
+  // traverse pas une ligne (ni chez nous, ni chez WhatsApp) : un marqueur ouvert avant un saut de ligne et
+  // fermé après ne met rien en forme, le
+  // bouton paraît inerte, et les deux marqueurs orphelins partent dans le post. Le rétrécissement au-dessus
+  // ne réglait que le saut de ligne FINAL d'un triple-clic ; celui d'un Ctrl+A est à l'INTÉRIEUR.
+  const dedans = texte.slice(d, f);
+  if (dedans.includes('\n')) {
+    const enrobe = dedans
+      .split('\n')
+      .map((ligne) => {
+        // Chaque ligne garde son indentation et ses espaces de fin hors des marqueurs, pour la même raison
+        // que le rétrécissement : un marqueur collé à une espace ne ferme rien.
+        const gauche = /^\s*/.exec(ligne)![0];
+        const droite = /\s*$/.exec(ligne)![0];
+        const noyau = ligne.slice(gauche.length, ligne.length - droite.length);
+        return noyau === '' ? ligne : `${gauche}${marqueur}${noyau}${marqueur}${droite}`;
+      })
+      .join('\n');
+    return {
+      texte: `${texte.slice(0, d)}${enrobe}${texte.slice(f)}`,
+      debut: d,
+      fin: d + enrobe.length,
+    };
+  }
+
   return {
-    texte: `${texte.slice(0, d)}${marqueur}${texte.slice(d, f)}${marqueur}${texte.slice(f)}`,
+    texte: `${texte.slice(0, d)}${marqueur}${dedans}${marqueur}${texte.slice(f)}`,
     debut: d + marqueur.length,
     fin: f + marqueur.length,
   };

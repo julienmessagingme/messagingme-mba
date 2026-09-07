@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { MAX_TEXTE_POST } from './api-chaine';
 import {
-  LIBELLE_BOUTON_DISCUTER, imageAffichable, morceauxApercu, phraseAcceptable, pretAPublier, resteAAfficher,
+  LIBELLE_BOUTON_DISCUTER, corpsDuPost, imageAffichable, morceauxApercu, phraseAcceptable, pretAPublier,
+  resteAAfficher,
   type BrouillonChaine,
 } from './chaine-apercu';
 
@@ -149,5 +150,32 @@ describe('resteAAfficher : le compteur ne sort qu’en approche', () => {
   it('sur un champ court, le seuil reste utilisable (plancher de 20)', () => {
     expect(resteAAfficher(5, 60)).toBeNull();
     expect(resteAAfficher(45, 60)).toBe(15);
+  });
+});
+
+describe('corpsDuPost', () => {
+  const URL = 'https://wa.me/33525680250?text=Je%20veux%20le%20guide';
+
+  it('🔴 retire l’adresse wa.me que le serveur a collée au corps', () => {
+    // Le texte STOCKE d un post vaut corps + deux sauts de ligne + adresse. La liste des publications le
+    // donnait ENTIER au formateur, alors que l apercu ne met en forme que le corps : ce n etait donc pas
+    // « le meme rendu », c etait un autre traitement sur une autre entree.
+    expect(corpsDuPost('Notre *promo*' + '\n\n' + URL, URL)).toBe('Notre *promo*');
+  });
+
+  it('🔴 preuve inverse : la MEME chaine ailleurs qu en fin de texte n est PAS retiree', () => {
+    // Sans ce sens-la, une implementation qui ferait un remplacement global passerait le test precedent en
+    // mutilant le corps d un client qui cite son propre lien.
+    const texte = 'Voir ' + URL + ' pour la suite';
+    expect(corpsDuPost(texte + '\n\n' + URL, URL)).toBe(texte);
+  });
+
+  it('adresse inconnue (lien supprimé, post sans bouton) : le texte est rendu tel quel', () => {
+    expect(corpsDuPost('Un post nu', null)).toBe('Un post nu');
+    expect(corpsDuPost('Un post nu', '')).toBe('Un post nu');
+  });
+
+  it('un post sans texte reste vide', () => {
+    expect(corpsDuPost('', URL)).toBe('');
   });
 });

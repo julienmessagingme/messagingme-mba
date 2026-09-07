@@ -71,7 +71,7 @@ async function monter(
     }
     if (chemin.endsWith('/channels-me/links/conversations') && req.method() === 'GET') {
       if (sur.conversations === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
-      return json(sur.conversations ?? { parLien: [{ linkId: 'lien-1', contacts: 4, dernier: '2026-09-06T08:00:00.000Z' }], partiel: false });
+      return json(sur.conversations ?? { parLien: [{ linkId: 'lien-1', contacts: 4 }], partiel: false });
     }
     if (chemin.endsWith('/channels-me/links') && req.method() === 'GET') {
       return json({ links: sur.liens ?? [LIEN], phone: '33525680250' });
@@ -259,9 +259,14 @@ test.describe('Chaîne : l’image', () => {
     await expect(page.getByTestId('chaine-image')).toHaveValue(adresse);
     // Elle est https et publique, donc le refus AVANT publication ne se declenche pas.
     await expect(page.getByTestId('chaine-image-refus')).toHaveCount(0);
-    // ⚠️ Et AUCUN avertissement d'extension : cette regle est celle de l'operateur RCS, mesuree chez lui.
-    // La spec de Channels Me ne nomme aucune extension, donc on n'invente pas la contrainte.
+    // ⚠️ Et AUCUN avertissement d'extension. La premiere version de cette assertion etait VIDE : l'adresse
+    // rendue par le televersement finit par `.png`, donc l'avertissement se serait tu dans les deux cas,
+    // que le drapeau soit pose ou non. On l'exerce donc sur une adresse qui le DECLENCHERAIT cote RCS :
+    // c'est une regle de l'operateur, mesuree chez lui, et la spec de Channels Me ne nomme aucune
+    // extension. On n'invente pas la contrainte ailleurs.
+    await page.getByTestId('chaine-image').fill('https://exemple.fr/photo.webp');
     await expect(page.getByTestId('chaine-image-warn')).toHaveCount(0);
+    await page.getByTestId('chaine-image').fill(adresse);
     await expect(page.getByTestId('chaine-apercu-image')).toHaveAttribute('src', adresse);
 
     await page.getByTestId('chaine-lien').selectOption('lien-1');
@@ -384,25 +389,41 @@ test.describe('Chaîne : les publications', () => {
     await expect(page.getByTestId('chaine-publication-scenario-p1')).toContainText('Prise de RDV');
   });
 
-  test('🔴 E : le chiffre affiché est « conversations démarrées », JAMAIS « clics »', async ({ page }) => {
-    // 🔴 CE TEST EXISTE POUR EMPECHER UN MOT. Julien a demande « combien de clics sur le bouton ». Ce
-    // nombre n'existe pas et ne peut pas exister : un appui sur un lien wa.me ouvre WhatsApp sur le
-    // telephone de l'abonne sans jamais traverser nos serveurs, et le fournisseur ne le rapporte pas.
-    // Afficher « clics » obligerait a inventer un chiffre, ou a faire passer une mesure pour une autre.
+  test('🔴 E : le chiffre nomme ce qu on OBSERVE, jamais « clics » ni « conversations démarrées »', async ({ page }) => {
+    // 🔴 CE TEST EXISTE POUR EMPECHER DEUX MOTS. « Clics » d'abord : Julien l'a demande, mais ce nombre
+    // n'existe pas et ne peut pas exister, un appui sur un lien wa.me ouvre WhatsApp sur le telephone de
+    // l'abonne sans jamais traverser nos serveurs. « Conversations demarrees » ensuite, et c'est plus
+    // subtil : nous ne reproduisons que la correspondance du mot-cle, alors que le moteur applique trois
+    // filtres de plus avant de demarrer un scenario (automation allumee, anti-rebond, plafond horaire).
+    // Un message recu pendant que le bouton etait ETEINT entrait donc dans un compte de « conversations
+    // demarrees », juste au-dessus du bandeau qui annonce que ce bouton ne demarre rien.
     await monter(page, { posts: [POST_AVEC_LIEN] });
     await page.goto('/chaine');
-    const ligne = page.getByTestId('chaine-publication-conversations-p1');
-    await expect(ligne).toContainText('4 conversations démarrées');
-    // Et l'ecran dit que le chiffre vaut pour le BOUTON, pas pour cette publication : deux posts qui
-    // partagent un lien envoient le meme message, rien ne dit lequel a ete vu.
-    await expect(ligne).toContainText('ce bouton, tous posts');
-    await expect(page.getByTestId('chaine-publications')).not.toContainText(/clic/i);
+    await expect(page.getByTestId('chaine-publication-conversations-p1'))
+      .toContainText('4 personnes ont envoyé ce message');
+    const liste = page.getByTestId('chaine-publications');
+    await expect(liste).not.toContainText(/clic/i);
+    await expect(liste).not.toContainText(/conversations? démarrée/i);
+  });
+
+  test('🔴 E : la limite est ECRITE a l ecran, pas rangee dans une infobulle', async ({ page }) => {
+    // 🔴 C'est exactement le defaut que le lot voisin corrige sur le formulaire de template : le message
+    // vivait dans un attribut `title`, donc au survol de la souris et NULLE PART au doigt. Une premiere
+    // version de cet ecran-ci l'a reproduit.
+    await monter(page, { posts: [POST_AVEC_LIEN] });
+    await page.goto('/chaine');
+    const note = page.getByTestId('chaine-publications-note-mesure');
+    await expect(note).toBeVisible();
+    // Les trois limites que le chiffre seul ne peut pas porter.
+    await expect(note).toContainText(/pas visible|invisible to us/);
+    await expect(note).toContainText(/tous ses posts|all its posts/);
+    await expect(note).toContainText(/éteint|off/);
   });
 
   test('🔴 E : plafond de lecture atteint -> « au moins N », jamais un total qu on n a pas', async ({ page }) => {
     await monter(page, {
       posts: [POST_AVEC_LIEN],
-      conversations: { parLien: [{ linkId: 'lien-1', contacts: 20000, dernier: null }], partiel: true },
+      conversations: { parLien: [{ linkId: 'lien-1', contacts: 20000 }], partiel: true },
     });
     await page.goto('/chaine');
     await expect(page.getByTestId('chaine-publication-conversations-p1')).toContainText('au moins 20000');
@@ -418,13 +439,29 @@ test.describe('Chaîne : les publications', () => {
     await expect(page.getByTestId('chaine-publication-conversations-p1')).toHaveCount(0);
   });
 
-  test('E : zéro conversation se dit en toutes lettres, pas par un blanc', async ({ page }) => {
+  test('E : zéro se dit en toutes lettres, pas par un blanc', async ({ page }) => {
     await monter(page, {
       posts: [POST_AVEC_LIEN],
-      conversations: { parLien: [{ linkId: 'lien-1', contacts: 0, dernier: null }], partiel: false },
+      conversations: { parLien: [{ linkId: 'lien-1', contacts: 0 }], partiel: false },
     });
     await page.goto('/chaine');
-    await expect(page.getByTestId('chaine-publication-conversations-p1')).toContainText('aucune conversation démarrée');
+    await expect(page.getByTestId('chaine-publication-conversations-p1'))
+      .toContainText('personne n’a encore envoyé ce message');
+  });
+
+  test('🔴 E : zéro ET mesure tronquée ne s affirme PAS comme un zéro', async ({ page }) => {
+    // Le plafond de lecture atteint est le seul cas ou la mesure est officiellement incomplete, et c'etait
+    // aussi celui ou l'ecran faisait l'affirmation la plus forte : le test `contacts === 0` passait AVANT
+    // le test `partiel`, donc « personne n'a envoye ce message » s'affichait precisement quand on ne le
+    // savait pas.
+    await monter(page, {
+      posts: [POST_AVEC_LIEN],
+      conversations: { parLien: [{ linkId: 'lien-1', contacts: 0 }], partiel: true },
+    });
+    await page.goto('/chaine');
+    const ligne = page.getByTestId('chaine-publication-conversations-p1');
+    await expect(ligne).toContainText('les plus récents');
+    await expect(ligne).not.toContainText('personne n’a encore envoyé');
   });
 
   test('fournisseur muet : les publications restent affichées, sans statut', async ({ page }) => {

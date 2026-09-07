@@ -152,10 +152,21 @@ export class PgChannelsMeLinkStore {
    * pour declencher. En SQL il aurait fallu la reecrire, et un compteur qui compte autrement que ce qui
    * declenche est pire que pas de compteur.
    *
-   * 🔴 LA LECTURE EST BORNEE PAR LA DATE DU PLUS ANCIEN LIEN. Aucun bouton n'a pu produire de conversation
-   * avant d'exister : cette borne est donc GRATUITE en justesse et retire tout l'historique anterieur.
+   * 🔴 LA LECTURE EST BORNEE PAR LA DATE DU PLUS ANCIEN LIEN DE L'ESPACE. Aucun bouton n'a pu produire de
+   * conversation avant d'exister, donc cette borne ne peut RIEN perdre, et elle retire tout l'historique
+   * anterieur au premier lien.
    *
-   * ⚠️ `not c.is_test` : les conversations de test sont les notres, pas celles d'abonnes.
+   * ⚠️ Elle est volontairement LARGE : c'est le plus ancien lien de l'espace, pas la date de CHAQUE lien.
+   * Un lien recent relit donc des messages anterieurs a sa propre creation. C'est sans effet sur son compte
+   * (ces messages ne peuvent pas contenir sa phrase, l'unicite de phrase etant garantie par la migration
+   * 0116 et par la garde de creation), et une borne par lien couterait une requete par lien.
+   *
+   * ⚠️ `not c.is_test` EXCLUT DEFINITIVEMENT un contact qui a servi une fois de cible de test. Il n'y a
+   * qu'UN fil par contact (unicite `(tenant_id, wa_id)`, migration 0058) et `is_test` n'est jamais remis a
+   * false (migration 0053, qui le dit). Un vrai abonne sur lequel on a testé un scenario est donc absent du
+   * compte, pour toujours. C'est le compromis retenu : compter notre propre trafic de test gonflerait le
+   * chiffre de tous les liens, alors que ce trou-la ne touche que les quelques numeros qui nous servent
+   * d'essai.
    *
    * `partiel` dit que le plafond a ete atteint, donc que les chiffres sont des MINIMUMS. Un ecran qui
    * afficherait un total tronque sans le dire mentirait.
@@ -167,8 +178,8 @@ export class PgChannelsMeLinkStore {
     );
     if (liens.rowCount === 0) return { parLien: [], partiel: false };
 
-    const messages = await this.pool.query<{ wa_id: string; body: string; created_at: Date }>(
-      `select c.wa_id, m.body, m.created_at
+    const messages = await this.pool.query<{ wa_id: string; body: string }>(
+      `select c.wa_id, m.body
          from conversation_messages m
          join conversations c on c.id = m.conversation_id
         where c.tenant_id = $1
@@ -184,7 +195,7 @@ export class PgChannelsMeLinkStore {
     return {
       parLien: compterParLien(
         liens.rows,
-        messages.rows.map((r) => ({ waId: r.wa_id, body: r.body, createdAt: r.created_at.toISOString() })),
+        messages.rows.map((r) => ({ waId: r.wa_id, body: r.body })),
       ),
       partiel: messages.rowCount === MESSAGES_CONVERSIONS,
     };

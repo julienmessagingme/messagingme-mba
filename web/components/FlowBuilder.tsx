@@ -680,14 +680,37 @@ export function FlowBuilder({
             et le nom manquant n'en avait aucun. On énumère ici ce qui bloque, sous le bouton qu'on cherche à
             cliquer. Le bloc est partagé avec les formulaires de template et de carrousel, qui avaient le même
             cul-de-sac : c'est ICI qu'il avait été écrit en premier. */}
+        {/* 🔴 LES SEPT CONDITIONS DE `canSubmit`, PAS QUATRE. La première version de ce bloc partagé n'en
+            nommait que quatre, et le bloc ne s'affiche que si la liste est NON VIDE : trois causes de
+            grisage (trop d'écrans, élément incomplet, condition d'affichage invalide) rendaient donc le
+            bouton muet, dans le composant même où le remède avait été écrit. Toute condition ajoutée à
+            `canSubmit` doit gagner sa ligne ICI, sinon elle ramène le cul-de-sac. */}
         <ListeManques
           testId="flow-manquants"
           busy={busy}
           manques={[
             ...(name.trim() === '' ? [t('le nom du formulaire', 'the form name')] : []),
+            ...(screens.length > 10 ? [t('au plus 10 écrans (retires-en)', 'at most 10 screens (remove some)')] : []),
+            ...(screens.length < 1 ? [t('au moins un écran', 'at least one screen')] : []),
             ...(!everyScreenFilled ? [t('au moins un élément par écran', 'at least one element per screen')] : []),
             ...(fieldCount === 0 ? [t('au moins un champ à remplir', 'at least one field to fill in')] : []),
             ...(!labelsUnique ? [t('des libellés de champs tous différents', 'field labels that are all different')] : []),
+            // L'écran fautif est DÉSIGNÉ par son rang : « un élément est incomplet » sur un formulaire de
+            // six écrans laisse chercher, exactement comme « un bouton est incomplet » sur un template.
+            ...screens.flatMap((s, i) => {
+              const rang = i + 1;
+              const fautes: string[] = [];
+              if (!s.elements.every((e) => elemOk(e))) {
+                fautes.push(t(`un élément incomplet sur l’écran ${rang}`, `an incomplete element on screen ${rang}`));
+              }
+              if (!s.elements.every((e, j) => visOk(s.elements, e, j))) {
+                fautes.push(t(
+                  `une condition d’affichage invalide sur l’écran ${rang}`,
+                  `an invalid display condition on screen ${rang}`,
+                ));
+              }
+              return fautes;
+            }),
           ]}
         />
       </div>

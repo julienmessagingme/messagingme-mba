@@ -22,23 +22,34 @@ import { normalizeText } from '../automation/match';
  * compteur qui affiche un nombre different de ce qui s'est passe, et personne pour s'en apercevoir.
  */
 
-/** Ce qu'un bouton a produit. */
+/**
+ * Ce qu'un bouton a produit.
+ *
+ * ⚠️ LE NOM DIT « conversations », LE CHAMP DIT « contacts », ET C'EST LE CHAMP QUI EST EXACT. Le module
+ * garde ce nom parce que c'est la question posee par l'ecran (« qu'a produit ce bouton ? »), mais ce qu'on
+ * mesure est plus etroit : des personnes qui ont ENVOYE le message. Le mot « conversation demarree » a ete
+ * retire de l'interface le 2026-09-07 pour cette raison exacte.
+ */
 export interface ConversationsDunLien {
   linkId: string;
   /**
-   * Contacts DISTINCTS ayant envoye un message contenant la phrase. Des contacts, pas des messages : un
-   * abonne qui appuie trois fois est une conversation, pas trois.
+   * Contacts DISTINCTS ayant envoye le message du bouton. Des contacts, pas des messages : un abonne qui
+   * appuie trois fois est une personne, pas trois.
    */
   contacts: number;
-  /** Le plus recent de ces messages, ou null. C'est ce qui dit si un bouton vit encore. */
-  dernier: string | null;
 }
+
+/**
+ * ⚠️ IL N'Y A PAS DE CHAMP « dernier ». Une premiere version en portait un (la date du message le plus
+ * recent), calcule, requete, transporte et type des deux cotes du reseau, et lu par personne. Un champ mort
+ * qui traverse toute la pile coute a chaque relecture et finit par etre cru utile. Il se rajoutera le jour
+ * ou un ecran l'affichera.
+ */
 
 /** Un message entrant, reduit a ce que le comptage regarde. */
 export interface MessageEntrant {
   waId: string;
   body: string;
-  createdAt: string;
 }
 
 /**
@@ -54,20 +65,15 @@ export function compterParLien(
   messages: ReadonlyArray<MessageEntrant>,
 ): ConversationsDunLien[] {
   // Normalise UNE fois par message, pas une fois par couple message x lien.
-  const corpus = messages.map((m) => ({ ...m, normalise: normalizeText(m.body) }));
+  const corpus = messages.map((m) => ({ waId: m.waId, normalise: normalizeText(m.body) }));
   return liens.map((l) => {
     const cible = normalizeText(l.phrase);
     const contacts = new Set<string>();
-    let dernier: string | null = null;
     // Une phrase vide ne compte RIEN. Sans cette garde, `includes('')` est vrai partout et le bouton
     // afficherait l'integralite du trafic entrant du client comme etant le sien.
     if (cible !== '') {
-      for (const m of corpus) {
-        if (!m.normalise.includes(cible)) continue;
-        contacts.add(m.waId);
-        if (dernier === null || m.createdAt > dernier) dernier = m.createdAt;
-      }
+      for (const m of corpus) if (m.normalise.includes(cible)) contacts.add(m.waId);
     }
-    return { linkId: l.id, contacts: contacts.size, dernier };
+    return { linkId: l.id, contacts: contacts.size };
   });
 }

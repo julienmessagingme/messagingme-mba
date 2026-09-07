@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { normalizeText } from '../src/automation/match';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
@@ -106,7 +107,7 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     createLink: async (_t, l) => { cap.liens.push(l); return { ...LIEN, ...l }; },
     linkById: async (_t, id) => (id === LINK_ID ? LIEN : null),
     supprimerAutomationCompagnon: async (_t, id) => { cap.automationsSupprimees.push(id); },
-    conversationsParLien: async () => ({ parLien: [{ linkId: LINK_ID, contacts: 3, dernier: '2026-09-06T08:00:00.000Z' }], partiel: false }),
+    conversationsParLien: async () => ({ parLien: [{ linkId: LINK_ID, contacts: 3 }], partiel: false }),
     listPosts: async () => [POST],
     createPost: async (_t, p) => { cap.posts.push(p); cap.ordre.push('trace'); },
     creerAutomationCompagnon: async (_t, input) => { cap.automations.push(input); return { id: AUTO_ID }; },
@@ -244,21 +245,24 @@ describe('Channels Me : les liens de chaine', () => {
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/links/conversations', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      parLien: [{ linkId: LINK_ID, contacts: 3, dernier: '2026-09-06T08:00:00.000Z' }],
+      parLien: [{ linkId: LINK_ID, contacts: 3 }],
       partiel: false,
     });
     await server.close();
   });
 
-  it('🔴 E : le segment `conversations` ne se fait PAS avaler par la route a parametre `/links/:id`', async () => {
-    // Les deux cohabitent dans le meme espace de chemins. Si le routeur prenait « conversations » pour un
-    // identifiant de lien, la mesure repondrait 404 ou, pire, tomberait sur une autre route.
-    const { server } = app();
-    const mesure = await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/links/conversations', ...h(adminTok) });
-    const allumage = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`, ...h(adminTok) });
-    expect(mesure.statusCode).toBe(200);
-    expect(allumage.statusCode).toBe(200);
-    await server.close();
+  it('E : la mesure et l allumage d un lien cohabitent, chacun sur son chemin', () => {
+    // ⚠️ CE TEST NE GARDE PAS UNE COLLISION DE ROUTAGE, et sa premiere version pretendait le faire : elle
+    // s intitulait « le segment conversations ne se fait pas avaler par /links/:id », alors qu il n existe
+    // AUCUNE route `GET /links/:id` dans ce module. La collision annoncee etait impossible, donc le test ne
+    // pouvait pas echouer : il affirmait une garantie qu il n apportait pas.
+    //
+    // Ce qui est vrai et verifiable : les deux chemins sont declares, et ils different par la methode
+    // autant que par la forme. Si quelqu un ajoute un jour un `GET ${base}/links/:id`, c est CE test qu il
+    // faudra renforcer, et ce commentaire lui dit pourquoi.
+    const routes = readFileSync(join(process.cwd(), 'src/http/channels-me.ts'), 'utf8');
+    expect(routes).toContain('app.get(`${base}/links/conversations`');
+    expect(routes).not.toContain('app.get(`${base}/links/:');
   });
 
   it('E : un AGENT peut LIRE la mesure (c est une lecture), et un autre tenant est refuse', async () => {

@@ -45,6 +45,9 @@ export interface BrouillonChaine {
  * seule ligne de séparation) mentirait sur ce qui part, et le client ne s'en apercevrait qu'une fois le post
  * diffusé, donc trop tard.
  */
+/** Ce que le serveur intercale entre le corps et l'adresse, cf. `src/http/channels-me.ts`. */
+const SEPARATEUR_LIEN = '\n\n';
+
 export function morceauxApercu(texte: string, waMeUrl: string | null): MorceauApercu[] {
   const corps = texte.trim();
   const morceaux: MorceauApercu[] = [];
@@ -109,4 +112,25 @@ export function phraseAcceptable(phrase: string): boolean {
 export function resteAAfficher(longueur: number, max: number): number | null {
   const reste = max - longueur;
   return reste <= Math.max(20, Math.floor(max * 0.1)) ? reste : null;
+}
+
+/**
+ * Le CORPS d'un post deja publie, sans l'adresse wa.me que le serveur lui a collee.
+ *
+ * 🔴 POURQUOI CETTE FONCTION EXISTE. Le texte STOCKE d'un post vaut `corps + deux sauts de ligne + adresse`
+ * (composition du serveur, `src/http/channels-me.ts`). L'apercu, lui, ne met en forme que le CORPS : il
+ * recoit le brouillon et l'adresse separement. Donner le texte entier au formateur n'est donc pas « le meme
+ * rendu que l'apercu », c'est un autre traitement sur une autre entree, avec deux consequences reelles :
+ * l'adresse traverse les regles de mise en forme, et sa longueur compte dans le plafond d'analyse, qu'un
+ * post au corps maximal depasse alors qu'il est parfaitement legitime.
+ *
+ * On retire l'adresse EXACTE et seulement si elle est bien en fin de texte : un corps qui contiendrait la
+ * meme chaine ailleurs n'est pas touche. Adresse inconnue (lien supprime, post sans bouton) : on rend le
+ * texte tel quel, ce qui est le comportement honnete.
+ */
+export function corpsDuPost(texte: string, waMeUrl: string | null): string {
+  const t = texte ?? '';
+  if (waMeUrl === null || waMeUrl === '') return t.trim();
+  const suffixe = SEPARATEUR_LIEN + waMeUrl;
+  return (t.endsWith(suffixe) ? t.slice(0, t.length - suffixe.length) : t).trim();
 }

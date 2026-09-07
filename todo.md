@@ -1470,9 +1470,13 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## Chaîne WhatsApp (Channels Me), avant la mise en service
 
-Le lot backend est livré (migration 0114, signeur, jeton, client, trois stores, moteur, routes). Le front
-(écrans Chaîne) n'est PAS fait, et aucune connexion n'est provisionnée : la feature n'est donc pas joignable.
-Ce qui suit doit être traité AVANT qu'elle serve réellement.
+⚠️ **Cette section a affirmé « le front n'est PAS fait » jusqu'au 2026-09-07 au soir**, alors que les écrans
+Chaîne étaient livrés, testés de bout en bout et servis en production. Un paragraphe qui décrit un ÉTAT
+vieillit sans prévenir : il est réécrit ici pour ne dire que ce qui RESTE à faire.
+
+**Livré et en service** (migrations 0114 et 0116, signeur, client, trois stores, moteur, routes, écran Chaîne
+complet : composeur avec mise en forme et smileys, téléversement de photo, liens, publications avec leur
+scénario et leur mesure). Ce qui suit reste ouvert.
 
 - 🔴 **Un échec d'allumage après publication ne réveille personne.** `POST /posts` répond désormais 201 dès
   que le post est parti, et c'est voulu : un 500 aurait poussé à republier vers toute l'audience, alors que

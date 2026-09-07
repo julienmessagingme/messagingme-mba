@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { scopeTenant, estUuid } from './scope';
 import { typeImage, octetsDepuisDataUrl, mimeDeExtension, TAILLE_IMAGE_MAX } from '../rcs/image';
 import type { MimeImage } from '../rcs/image';
 import type { RcsMediaResume, RcsMediaFichier } from '../rcs/media-store.pg';
@@ -58,7 +58,11 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     }
     // La SIGNATURE tranche, jamais le type annoncé. Un PDF renommé en .png est refusé ici.
     const mime = typeImage(bytes);
-    if (!mime) return reply.code(415).send({ error: 'format non accepté : seuls JPEG, PNG et GIF passent chez l’opérateur' });
+    // ⚠️ Le message ne nomme PLUS l'opérateur télécom. Cet hébergeur sert désormais deux chemins (les
+    // visuels RCS et les photos de la chaîne WhatsApp), et un client de la chaîne à qui on parlait d'un
+    // opérateur cherchait une cause qui n'existait pas sur son écran. La contrainte, elle, est bien la
+    // nôtre : c'est ce que cet hébergeur sait relire et servir.
+    if (!mime) return reply.code(415).send({ error: 'format non accepté : seuls JPEG, PNG et GIF sont hébergeables' });
 
     const nom = typeof body.nom === 'string' && body.nom.trim() !== '' ? body.nom.trim().slice(0, 120) : null;
     const { media, url } = await deps.create(tenant, { mime, bytes, nom });
@@ -70,6 +74,10 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
+    // Un identifiant mal formé partait tel quel dans un `where id = $2` sur une colonne `uuid` : Postgres
+    // levait, et la route rendait 500 là où tout le dépôt rend 404. ⚠️ Un 5xx est en plus le pire choix
+    // ici, Cloudflare remplaçant le corps de toute réponse 5xx par sa propre page d'erreur.
+    if (!estUuid(id)) return reply.code(404).send({ error: 'visuel inconnu' });
     const fait = await deps.remove(tenant, id);
     if (!fait) return reply.code(404).send({ error: 'visuel inconnu' });
     return reply.code(200).send({ ok: true });

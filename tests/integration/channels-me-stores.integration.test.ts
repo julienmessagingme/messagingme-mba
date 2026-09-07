@@ -518,4 +518,78 @@ describe.skipIf(!url)('Stores Channels Me (Postgres reel)', () => {
       expect(await motsCles(ordinaire)).toEqual(['devis']);
     });
   });
+
+  describe('conversationsParLien : ce que le SQL decide, et que le test unitaire ne voit pas', () => {
+    /**
+     * 🔴 CE QUI SE TESTE ICI ET NULLE PART AILLEURS. `tests/channels-me-conversions.test.ts` couvre la
+     * COMPARAISON (une fonction pure). Les cinq decisions qui font la justesse du chiffre vivent dans la
+     * requete : le filtre des conversations de test, le sens du message, le canal, la borne de date, et
+     * l isolation entre espaces. Aucune n est visible d un test unitaire, et une seule qui saute donne un
+     * chiffre faux affiche a un client comme une mesure.
+     */
+    const conversation = async (tenant: string, waId: string, test: boolean): Promise<string> => (
+      await pool.query<{ id: string }>(
+        `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, $3) returning id`,
+        [tenant, waId, test],
+      )).rows[0]!.id;
+
+    const message = async (conv: string, body: string, direction: string, canal: string): Promise<void> => {
+      await pool.query(
+        `insert into conversation_messages (conversation_id, direction, type, body, channel)
+         values ($1, $2, 'text', $3, $4)`,
+        [conv, direction, body, canal],
+      );
+    };
+
+    it('compte les entrants WhatsApp, et EUX SEULS', async () => {
+      const liens = new PgChannelsMeLinkStore(pool);
+      const phrase = `itest mesure ${Date.now()}`;
+      const auto = await pool.query<{ id: string }>(
+        `insert into automations (tenant_id, name, trigger_kind, trigger_config, workflow_id, possede_par)
+         values ($1, 'itest-mesure-auto', 'keyword', $2::jsonb, $3, 'channelsme_link') returning id`,
+        [tenantId, JSON.stringify({ keywords: [phrase], mode: 'contains' }), workflowId],
+      );
+      const lien = await liens.create(tenantId, {
+        workflowId, startNodeId: null, token: `cm-mes${Date.now() % 100000}`,
+        phrase, automationId: auto.rows[0]!.id, maxParHeure: null,
+      });
+
+      // Deux contacts distincts qui envoient la phrase : le chiffre attendu est 2, pas 3.
+      const a = await conversation(tenantId, `3360000${Date.now() % 10000}`, false);
+      await message(a, phrase, 'in', 'whatsapp');
+      await message(a, phrase, 'in', 'whatsapp');
+      const b = await conversation(tenantId, `3361111${Date.now() % 10000}`, false);
+      await message(b, `${phrase} svp`, 'in', 'whatsapp');
+
+      // Les quatre cas qui NE DOIVENT PAS compter, chacun pour une raison differente.
+      const test = await conversation(tenantId, `3362222${Date.now() % 10000}`, true);
+      await message(test, phrase, 'in', 'whatsapp'); // conversation de test : la notre, pas un abonne
+      const c = await conversation(tenantId, `3363333${Date.now() % 10000}`, false);
+      await message(c, phrase, 'out', 'whatsapp'); // c est NOUS qui l avons ecrit
+      await message(c, phrase, 'in', 'rcs'); // un autre canal
+      const autre = await conversation(autreTenantId, `3364444${Date.now() % 10000}`, false);
+      await message(autre, phrase, 'in', 'whatsapp'); // 🔴 UN AUTRE ESPACE : le seul controle d isolation
+
+      const r = await liens.conversationsParLien(tenantId);
+      const compte = r.parLien.find((x) => x.linkId === lien.id);
+      expect(compte?.contacts).toBe(2);
+      expect(r.partiel).toBe(false);
+
+      // 🔴 Preuve d isolation dans l autre sens : l espace voisin ne voit pas ce lien du tout.
+      const chezLautre = await liens.conversationsParLien(autreTenantId);
+      expect(chezLautre.parLien.some((x) => x.linkId === lien.id)).toBe(false);
+    });
+
+    it('un espace sans aucun lien ne lit AUCUN message', async () => {
+      // La borne de date est une sous-requete sur les liens : sans lien, elle rend null et la comparaison
+      // serait vraie pour rien. Le raccourci en amont doit sortir avant d interroger les messages.
+      const liens = new PgChannelsMeLinkStore(pool);
+      const vide = await pool.query<{ id: string }>(
+        `insert into tenants (name) values ('itest-channelsme-vide') returning id`,
+      );
+      const r = await liens.conversationsParLien(vide.rows[0]!.id);
+      expect(r).toEqual({ parLien: [], partiel: false });
+      await pool.query('delete from tenants where id = $1', [vide.rows[0]!.id]);
+    });
+  });
 });
