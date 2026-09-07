@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { MOTIF_JETON } from './jeton';
+import { compterParLien, type ConversationsDunLien } from './conversions';
 
 /**
  * Une ligne de `channelsme_links`, telle que les routes et la console la lisent.
@@ -105,6 +106,21 @@ function versLien(r: LienRowBrut): LienRow {
  */
 const MESSAGES_EXAMINES = 2000;
 
+/**
+ * Combien de messages entrants on relit pour COMPTER les conversations demarrees par les boutons.
+ *
+ * ⚠️ CE N'EST PAS `MESSAGES_EXAMINES`, ET LES DEUX BORNES NE REPONDENT PAS A LA MEME QUESTION. Celle-la
+ * borne une GARDE (« cette phrase est-elle banale ? »), a laquelle en regarder plus ne changerait rien.
+ * Celle-ci borne une MESURE affichee a un client : la tronquer rend un chiffre FAUX, pas approximatif.
+ * D'ou le plafond plus haut, et surtout le drapeau `partiel` rendu avec le resultat, pour que l'ecran
+ * puisse dire « au moins N » au lieu d'annoncer un total qu'il n'a pas.
+ *
+ * Mesure du 2026-09-07 sur la base de production : 89 messages entrants WhatsApp au total. Le plafond est
+ * donc tres loin d'etre atteint aujourd'hui ; il existe pour que la lecture reste bornee quand la table
+ * aura grossi.
+ */
+const MESSAGES_CONVERSIONS = 20_000;
+
 export class PgChannelsMeLinkStore {
   constructor(private readonly pool: Pool) {}
 
@@ -126,6 +142,52 @@ export class PgChannelsMeLinkStore {
       [tenantId],
     );
     return res.rows.map((r) => r.phrase);
+  }
+
+  /**
+   * Les conversations demarrees par CHAQUE bouton de chaine de ce tenant.
+   *
+   * 🔴 LE COMPTAGE SE FAIT EN JS, avec `normalizeText`, pour la meme raison que `phrasesDesLiens` : c'est
+   * la seule definition de « ce message correspond a cette phrase », et c'est celle dont le moteur se sert
+   * pour declencher. En SQL il aurait fallu la reecrire, et un compteur qui compte autrement que ce qui
+   * declenche est pire que pas de compteur.
+   *
+   * 🔴 LA LECTURE EST BORNEE PAR LA DATE DU PLUS ANCIEN LIEN. Aucun bouton n'a pu produire de conversation
+   * avant d'exister : cette borne est donc GRATUITE en justesse et retire tout l'historique anterieur.
+   *
+   * ⚠️ `not c.is_test` : les conversations de test sont les notres, pas celles d'abonnes.
+   *
+   * `partiel` dit que le plafond a ete atteint, donc que les chiffres sont des MINIMUMS. Un ecran qui
+   * afficherait un total tronque sans le dire mentirait.
+   */
+  async conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }> {
+    const liens = await this.pool.query<{ id: string; phrase: string }>(
+      'select id, phrase from channelsme_links where tenant_id = $1',
+      [tenantId],
+    );
+    if (liens.rowCount === 0) return { parLien: [], partiel: false };
+
+    const messages = await this.pool.query<{ wa_id: string; body: string; created_at: Date }>(
+      `select c.wa_id, m.body, m.created_at
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1
+          and not c.is_test
+          and m.direction = 'in'
+          and m.channel = 'whatsapp'
+          and m.body is not null
+          and m.created_at >= (select min(created_at) from channelsme_links where tenant_id = $1)
+        order by m.created_at desc
+        limit $2`,
+      [tenantId, MESSAGES_CONVERSIONS],
+    );
+    return {
+      parLien: compterParLien(
+        liens.rows,
+        messages.rows.map((r) => ({ waId: r.wa_id, body: r.body, createdAt: r.created_at.toISOString() })),
+      ),
+      partiel: messages.rowCount === MESSAGES_CONVERSIONS,
+    };
   }
 
   /**

@@ -241,3 +241,37 @@ export function demanderActivationChaine(tenantId: string, message?: string): Pr
 export const MAX_PHRASE = 300;
 export const MAX_TEXTE_POST = 4096;
 export const MAX_MEDIA_URL = 2000;
+
+/**
+ * Ce qu'un BOUTON de chaîne a produit.
+ *
+ * 🔴 CE N'EST PAS UN NOMBRE DE CLICS, et le champ ne s'appelle pas ainsi exprès. Un appui sur un lien
+ * `wa.me` ouvre WhatsApp sur le téléphone de l'abonné sans jamais traverser nos serveurs : ce geste nous
+ * est invisible, et le fournisseur ne le rapporte pas. On compte le message qui arrive ENSUITE.
+ *
+ * 🔴 ET C'EST PAR BOUTON, PAS PAR PUBLICATION. Deux publications qui partagent un lien envoient exactement
+ * le même message : rien de ce qui nous parvient ne dit laquelle a été vue.
+ */
+export interface ConversationsDunLien {
+  linkId: string;
+  // ⚠️ JUMEAU SERVEUR : `src/channels-me/conversions.ts`. Le dépôt sépare volontairement les types des deux
+  // côtés (même paire que `LienRow`/`LienChaine`, `PostRow`/`PostChaine`), donc les deux se tiennent à la
+  // main : un champ ajouté d'un seul côté ne se voit d'aucun compilateur.
+  /** Contacts DISTINCTS ayant écrit un message contenant la phrase. Des contacts, pas des messages. */
+  contacts: number;
+  dernier: string | null;
+}
+
+/**
+ * Les conversations démarrées par chaque bouton.
+ *
+ * `partiel` dit que le plafond de lecture a été atteint : les chiffres sont alors des MINIMUMS, et l'écran
+ * doit le dire au lieu d'annoncer un total qu'il n'a pas.
+ */
+export function listerConversationsChaine(
+  tenantId: string,
+): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }> {
+  return request<{ parLien: ConversationsDunLien[]; partiel: boolean }>(
+    `/tenants/${tenantId}/channels-me/links/conversations`,
+  );
+}

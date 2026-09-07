@@ -1497,3 +1497,24 @@ Ce qui suit doit être traité AVANT qu'elle serve réellement.
 - Recettes événementielles (agent_event vs template selon fenêtre ouverte).
 - Couche pub : wedge CTWA + attribution (referral/ctwa_clid + Conversions API).
 - Coexistence (option d'onboarding app → API).
+
+## Chaîne : le comptage des conversations quand la table des messages aura grossi
+
+`PgChannelsMeLinkStore.conversationsParLien` relit les messages entrants et compte en JS, avec
+`normalizeText`, parce que c'est la SEULE définition de « ce message correspond à cette phrase » et que la
+réécrire en SQL en créerait une seconde (`lower()` ne retire pas les accents, `unaccent` n'est ni installé ni
+immuable sur cette base). La lecture est bornée deux fois : par la date du plus ancien lien, et par
+`MESSAGES_CONVERSIONS = 20 000`, au-delà duquel l'écran dit « au moins N » au lieu d'un total.
+
+**Mesure du 2026-09-07 : 89 messages entrants WhatsApp sur toute la base de production.** Le plafond est donc
+à trois ordres de grandeur du besoin, et cette entrée n'est pas urgente.
+
+⚠️ **Cette route ne porte PAS `limiteCouteuse`, et c'est un choix aligné sur le dépôt, pas un oubli** : aucune
+route de `/stats` n'en porte non plus, alors qu'elles agrègent davantage. Le plafond général (300/minute par
+utilisateur) s'applique. Si le profil de charge change, c'est la première chose à revoir.
+
+**La bonne réparation, le jour venu, et elle préserve la justesse** : préfiltrer en SQL sur le plus long
+segment de la phrase qui ne porte NI accent NI espace (« Réserver ma place » -> `place`). Tout corps qui
+contient la phrase entière contient forcément ce segment, donc le préfiltre ne peut RIEN perdre, et le
+comptage exact reste en JS sur les survivants. Repli quand aucun segment ne qualifie (phrase entièrement
+accentuée) : pas de préfiltre, comportement actuel.

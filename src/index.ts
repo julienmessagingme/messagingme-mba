@@ -1295,6 +1295,7 @@ async function main(): Promise<void> {
       // Rattrapage : defait l'automation compagnon quand `createLink` echoue juste apres l'avoir creee
       // (sinon elle reste POSSEDEE, orpheline, invisible et inaccessible depuis l'ecran Automation).
       supprimerAutomationCompagnon: (tenant, automationId) => channelsMeLinks.supprimerAutomationCompagnon(tenant, automationId),
+      conversationsParLien: (tenant) => channelsMeLinks.conversationsParLien(tenant),
       listPosts: (tenant) => channelsMePosts.list(tenant),
       createPost: (tenant, p) => channelsMePosts.create(tenant, p),
       // L'automation compagnon du lien. Trois choses se decident ICI et nulle part ailleurs :

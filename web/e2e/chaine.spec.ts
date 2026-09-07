@@ -43,6 +43,7 @@ async function monter(
     distantPosts?: string;
     reponsePublication?: unknown;
     connexion?: unknown;
+    conversations?: unknown;
   } = {},
 ) {
   const appels: Array<{ methode: string; chemin: string; corps: unknown }> = [];
@@ -67,6 +68,10 @@ async function monter(
         channels: sur.distantConnexion === 'injoignable' ? [] : [CHAINE],
         distant: sur.distantConnexion ?? 'ok',
       });
+    }
+    if (chemin.endsWith('/channels-me/links/conversations') && req.method() === 'GET') {
+      if (sur.conversations === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      return json(sur.conversations ?? { parLien: [{ linkId: 'lien-1', contacts: 4, dernier: '2026-09-06T08:00:00.000Z' }], partiel: false });
     }
     if (chemin.endsWith('/channels-me/links') && req.method() === 'GET') {
       return json({ links: sur.liens ?? [LIEN], phone: '33525680250' });
@@ -364,6 +369,62 @@ test.describe('Chaîne : les publications', () => {
     });
     await page.goto('/chaine');
     await expect(page.getByTestId('chaine-publication-etat-p2')).toHaveText('moderation_hold');
+  });
+
+  const POST_AVEC_LIEN = {
+    id: 'p1', tenantId: 't-e2e', cmMessageId: 'cm-9', linkId: 'lien-1',
+    createdAt: '2026-09-06T09:00:00.000Z', message: { id: 'cm-9', status: 'published', text: 'Notre *promo*' },
+  };
+
+  test('🔴 E : chaque publication dit vers QUEL scénario elle renvoie', async ({ page }) => {
+    // La donnee etait deja chargee et deja typee : le lien porte `workflowId`, la page charge les scenarios.
+    // Elle ne descendait simplement pas jusqu'ici.
+    await monter(page, { posts: [POST_AVEC_LIEN] });
+    await page.goto('/chaine');
+    await expect(page.getByTestId('chaine-publication-scenario-p1')).toContainText('Prise de RDV');
+  });
+
+  test('🔴 E : le chiffre affiché est « conversations démarrées », JAMAIS « clics »', async ({ page }) => {
+    // 🔴 CE TEST EXISTE POUR EMPECHER UN MOT. Julien a demande « combien de clics sur le bouton ». Ce
+    // nombre n'existe pas et ne peut pas exister : un appui sur un lien wa.me ouvre WhatsApp sur le
+    // telephone de l'abonne sans jamais traverser nos serveurs, et le fournisseur ne le rapporte pas.
+    // Afficher « clics » obligerait a inventer un chiffre, ou a faire passer une mesure pour une autre.
+    await monter(page, { posts: [POST_AVEC_LIEN] });
+    await page.goto('/chaine');
+    const ligne = page.getByTestId('chaine-publication-conversations-p1');
+    await expect(ligne).toContainText('4 conversations démarrées');
+    // Et l'ecran dit que le chiffre vaut pour le BOUTON, pas pour cette publication : deux posts qui
+    // partagent un lien envoient le meme message, rien ne dit lequel a ete vu.
+    await expect(ligne).toContainText('ce bouton, tous posts');
+    await expect(page.getByTestId('chaine-publications')).not.toContainText(/clic/i);
+  });
+
+  test('🔴 E : plafond de lecture atteint -> « au moins N », jamais un total qu on n a pas', async ({ page }) => {
+    await monter(page, {
+      posts: [POST_AVEC_LIEN],
+      conversations: { parLien: [{ linkId: 'lien-1', contacts: 20000, dernier: null }], partiel: true },
+    });
+    await page.goto('/chaine');
+    await expect(page.getByTestId('chaine-publication-conversations-p1')).toContainText('au moins 20000');
+  });
+
+  test('🔴 E : la mesure en panne n affiche RIEN, surtout pas un zéro', async ({ page }) => {
+    // Un zero se lirait « ce bouton n'a rien produit », c'est-a-dire une information FAUSSE presentee comme
+    // une mesure. L'absence est honnete ; le reste de l'ecran, lui, doit continuer de fonctionner.
+    await monter(page, { posts: [POST_AVEC_LIEN], conversations: 'panne' });
+    await page.goto('/chaine');
+    await expect(page.getByTestId('chaine-publication-p1')).toBeVisible();
+    await expect(page.getByTestId('chaine-publication-scenario-p1')).toBeVisible();
+    await expect(page.getByTestId('chaine-publication-conversations-p1')).toHaveCount(0);
+  });
+
+  test('E : zéro conversation se dit en toutes lettres, pas par un blanc', async ({ page }) => {
+    await monter(page, {
+      posts: [POST_AVEC_LIEN],
+      conversations: { parLien: [{ linkId: 'lien-1', contacts: 0, dernier: null }], partiel: false },
+    });
+    await page.goto('/chaine');
+    await expect(page.getByTestId('chaine-publication-conversations-p1')).toContainText('aucune conversation démarrée');
   });
 
   test('fournisseur muet : les publications restent affichées, sans statut', async ({ page }) => {

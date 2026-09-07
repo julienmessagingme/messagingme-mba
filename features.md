@@ -1607,6 +1607,42 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.
 
+## Chaîne WhatsApp (menu Chaîne) : publier, et démarrer des conversations
+
+Une **chaîne WhatsApp** diffuse à des abonnés, en un seul sens : ils reçoivent, ils ne répondent pas. La
+console la pilote via **Channels Me**, et son intérêt ici est de RAMENER l'abonné en conversation : chaque
+publication peut porter un bouton « Discuter » qui, une fois appuyé, ouvre WhatsApp avec un message déjà
+écrit. Ce message déclenche un scénario.
+
+**Écrire le message.** Une zone de texte, un aperçu qui montre le post tel que l'abonné le verra, et une
+barre de mise en forme : **gras**, *italique*, ~barré~, plus une palette de smileys. Le smiley s'insère au
+curseur et la mise en forme s'applique à la sélection, qui reste posée pour enchaîner deux styles.
+⚠️ La mise en forme utilise la syntaxe de WhatsApp (`*gras*`, `_italique_`) et part TELLE QUELLE : c'est le
+téléphone de l'abonné qui la rend. L'aperçu de la console montre le rendu attendu, jamais les étoiles.
+
+**Mettre une photo.** Un bouton « Choisir une image » téléverse depuis le poste : la console héberge le
+fichier et remplit l'adresse toute seule. Le champ d'adresse reste disponible pour qui héberge déjà ses
+visuels ailleurs. 2 Mo maximum, JPEG / PNG / GIF (le type réel est relu, un fichier renommé est refusé).
+
+**Le bouton « Discuter ».** Il se rattache à un **lien**, qui associe une **phrase** à un **scénario**. La
+phrase est ce que l'abonné enverra en appuyant. Deux règles la gouvernent, et elles se voient à la création :
+une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien (sinon un seul appui démarrerait
+deux scénarios), et la console COMPTE combien de messages existants la contiennent déjà, pour éviter une
+phrase trop banale (« Bonjour » déclencherait sur tout).
+
+**La liste des publications** montre, pour chaque post : son texte (mis en forme comme dans l'aperçu), sa
+date, son statut lu en direct chez le fournisseur, **le scénario vers lequel son bouton renvoie**, et
+**combien de conversations il a démarrées**. Un bouton mort (lien éteint) est signalé, avec sa réparation à
+côté.
+
+🔴 **« Combien de clics » n'existe pas, et ce n'est pas une lacune de la console.** Un appui sur le bouton
+ouvre WhatsApp sur le téléphone de l'abonné : ce geste ne traverse aucun de nos serveurs, et Channels Me ne
+le rapporte pas non plus. Ce qui est mesurable, c'est le message qui arrive ENSUITE, et c'est ce que l'écran
+affiche : des **conversations démarrées**, comptées en contacts distincts. Deux limites, écrites à l'écran :
+le chiffre vaut pour le BOUTON, toutes ses publications confondues (deux posts sur le même bouton envoient
+le même message, rien ne dit lequel a été vu) ; et quand la mesure est indisponible, l'écran n'affiche RIEN
+plutôt qu'un zéro, qui se lirait « ce bouton n'a rien produit ».
+
 ## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
 
 **À quoi ça sert.** Un client (ou son prestataire) branche son assistant, Claude ou n'importe quel client

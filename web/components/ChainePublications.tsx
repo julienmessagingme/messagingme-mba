@@ -4,7 +4,8 @@ import { useT, useLocale } from '@/lib/i18n';
 import { cardCls } from '@/lib/ui';
 import { formatDate } from '@/lib/day';
 import { classesPastille, etatPublication } from '@/lib/chaine-statut';
-import type { EtatDistant, LienChaine, PostChaine } from '@/lib/api-chaine';
+import type { ConversationsDunLien, EtatDistant, LienChaine, PostChaine } from '@/lib/api-chaine';
+import type { WorkflowSummary } from '@/lib/api';
 import { TexteMisEnForme } from '@/components/TexteMisEnForme';
 
 /**
@@ -23,6 +24,13 @@ import { TexteMisEnForme } from '@/components/TexteMisEnForme';
 export interface ChainePublicationsProps {
   posts: PostChaine[];
   liens: LienChaine[];
+  /** Pour nommer le scénario vers lequel chaque publication renvoie. */
+  scenarios: WorkflowSummary[];
+  /**
+   * Ce que chaque BOUTON a démarré. `null` = mesure non chargée (elle a échoué, ou elle arrive) : l'écran
+   * n'affiche alors rien du tout, plutôt qu'un zéro qui se lirait comme « ce bouton n'a rien produit ».
+   */
+  conversations: { parLien: ConversationsDunLien[]; partiel: boolean } | null;
   distant: EtatDistant;
   erreur: string | null;
   /** `null` = aucun rallumage en cours. Sinon, l'id du lien qu'on rallume. */
@@ -33,7 +41,7 @@ export interface ChainePublicationsProps {
 export function ChainePublications(props: ChainePublicationsProps) {
   const t = useT();
   const { locale } = useLocale();
-  const { posts, liens, distant, erreur, rallumage } = props;
+  const { posts, liens, scenarios, conversations, distant, erreur, rallumage } = props;
 
   if (erreur !== null) {
     return (
@@ -44,6 +52,8 @@ export function ChainePublications(props: ChainePublicationsProps) {
   }
 
   const parLien = new Map(liens.map((l) => [l.id, l]));
+  const parScenario = new Map(scenarios.map((w) => [w.id, w]));
+  const parConversations = new Map((conversations?.parLien ?? []).map((c) => [c.linkId, c]));
 
   return (
     <div className={cardCls} data-testid="chaine-publications">
@@ -70,6 +80,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
             // réparable : le serveur refuse alors `/enable` en 409.
             const boutonMort = lien !== null && lien.enabled !== true;
             const reparable = lien !== null && lien.enabled === false;
+            const conv = lien === null ? null : parConversations.get(lien.id) ?? null;
 
             return (
               <li key={p.id} className="py-3" data-testid={`chaine-publication-${p.id}`}>
@@ -87,6 +98,49 @@ export function ChainePublications(props: ChainePublicationsProps) {
                       {formatDate(p.createdAt, locale)}
                       {lien !== null ? ` · ${lien.phrase}` : ` · ${t('sans bouton', 'no button')}`}
                     </p>
+                    {/* 🔴 VERS QUEL SCÉNARIO, ET CE QUE LE BOUTON A PRODUIT. Julien demandait « combien de
+                        clics sur le bouton » : ce nombre n'existe pas et ne peut pas exister, un appui sur
+                        un lien wa.me ouvre WhatsApp sur le téléphone de l'abonné sans jamais nous
+                        traverser. On affiche donc ce qu'on VOIT, le message qui arrive ensuite, et on le
+                        NOMME pour ce que c'est. */}
+                    {lien !== null && (
+                      <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className="text-ink-500" data-testid={`chaine-publication-scenario-${p.id}`}>
+                          {'→ '}
+                          {parScenario.get(lien.workflowId)?.name
+                            ?? t('scénario introuvable', 'scenario not found')}
+                        </span>
+                        {conv !== null && (
+                          <span
+                            className="text-ink-500 tabular-nums"
+                            data-testid={`chaine-publication-conversations-${p.id}`}
+                            // ⚠️ Le titre porte les deux limites que le chiffre ne peut pas montrer seul :
+                            // il vaut pour TOUTES les publications de ce bouton, et il compte des messages
+                            // reçus, jamais des appuis (un appui ne nous est pas visible).
+                            title={t(
+                              'Conversations démarrées depuis ce bouton, toutes publications confondues. Un appui sur le lien n’est pas visible de nous : on compte les messages reçus.',
+                              'Conversations started from this button, across all its posts. A tap on the link is invisible to us: we count the messages received.',
+                            )}
+                          >
+                            {conv.contacts === 0
+                              ? t('aucune conversation démarrée', 'no conversation started')
+                              : conversations?.partiel === true
+                                ? t(
+                                    `au moins ${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} démarrée${conv.contacts > 1 ? 's' : ''}`,
+                                    `at least ${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} started`,
+                                  )
+                                : t(
+                                    `${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} démarrée${conv.contacts > 1 ? 's' : ''}`,
+                                    `${conv.contacts} conversation${conv.contacts > 1 ? 's' : ''} started`,
+                                  )}
+                            {' '}
+                            <span className="text-ink-300">
+                              {t('(ce bouton, tous posts)', '(this button, all posts)')}
+                            </span>
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <span
                     className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${classesPastille(etat.ton)}`}

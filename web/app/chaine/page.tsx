@@ -15,8 +15,10 @@ import { texteAvertissement } from '@/lib/chaine-statut';
 import type { BrouillonChaine } from '@/lib/chaine-apercu';
 import {
   allumerLienChaine, creerLienChaine, demanderActivationChaine, enregistrerConnexionChaine,
-  getConnexionChaine, listerLiensChaine, listerPostsChaine, publierPostChaine, testerConnexionChaine,
-  type AvertissementPost, type EtatDistant, type LienChaine, type PostChaine, type ReponseConnexionChaine,
+  getConnexionChaine, listerConversationsChaine, listerLiensChaine, listerPostsChaine, publierPostChaine,
+  testerConnexionChaine,
+  type AvertissementPost, type ConversationsDunLien, type EtatDistant, type LienChaine, type PostChaine,
+  type ReponseConnexionChaine,
 } from '@/lib/api-chaine';
 
 /**
@@ -53,6 +55,7 @@ function ChaineInner({ session }: { session: Session }) {
   const [rallumage, setRallumage] = useState<string | null>(null);
   const [avertissements, setAvertissements] = useState<AvertissementPost[]>([]);
   const [succes, setSucces] = useState(false);
+  const [conversations, setConversations] = useState<{ parLien: ConversationsDunLien[]; partiel: boolean } | null>(null);
 
   const charger = useCallback(async () => {
     setErreur(null);
@@ -62,10 +65,14 @@ function ChaineInner({ session }: { session: Session }) {
       // Rien d'autre à charger tant qu'aucune chaîne n'est branchée : les trois appels suivants ne
       // rendraient que du vide, et le premier coûterait un aller-retour au fournisseur pour rien.
       if (c.connection === null) return;
-      const [l, p, w] = await Promise.all([
+      const [l, p, w, conv] = await Promise.all([
         listerLiensChaine(session.tenantId),
         listerPostsChaine(session.tenantId),
         listWorkflows(session.tenantId),
+        // ⚠️ CETTE MESURE NE PEUT PAS FAIRE TOMBER L'ÉCRAN. Elle relit des messages : c'est le seul des
+        // quatre appels dont l'échec ne prive de rien d'essentiel. Elle rend `null`, et la liste affiche
+        // alors les publications SANS compteur, plutôt qu'un zéro qui se lirait « ce bouton n'a rien fait ».
+        listerConversationsChaine(session.tenantId).catch(() => null),
       ]);
       // Lecture défensive au bord du réseau : une 200 sans le champ attendu poserait `undefined` dans un
       // état typé tableau, et le premier `.map` démonterait la page entière.
@@ -74,6 +81,7 @@ function ChaineInner({ session }: { session: Session }) {
       setPosts(Array.isArray(p?.posts) ? p.posts : []);
       setDistant(p?.distant ?? 'ok');
       setScenarios(Array.isArray(w?.workflows) ? w.workflows : []);
+      setConversations(Array.isArray(conv?.parLien) ? { parLien: conv.parLien, partiel: conv.partiel === true } : null);
     } catch (err) {
       // Quitter l'écran annule ses requêtes : ce n'est pas une panne, et l'afficher en rouge serait un
       // bandeau d'erreur à chaque navigation.
@@ -227,6 +235,8 @@ function ChaineInner({ session }: { session: Session }) {
             <ChainePublications
               posts={posts}
               liens={liens}
+              scenarios={scenarios}
+              conversations={conversations}
               distant={distant}
               erreur={null}
               rallumage={rallumage}

@@ -106,6 +106,7 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     createLink: async (_t, l) => { cap.liens.push(l); return { ...LIEN, ...l }; },
     linkById: async (_t, id) => (id === LINK_ID ? LIEN : null),
     supprimerAutomationCompagnon: async (_t, id) => { cap.automationsSupprimees.push(id); },
+    conversationsParLien: async () => ({ parLien: [{ linkId: LINK_ID, contacts: 3, dernier: '2026-09-06T08:00:00.000Z' }], partiel: false }),
     listPosts: async () => [POST],
     createPost: async (_t, p) => { cap.posts.push(p); cap.ordre.push('trace'); },
     creerAutomationCompagnon: async (_t, input) => { cap.automations.push(input); return { id: AUTO_ID }; },
@@ -232,6 +233,39 @@ describe('Channels Me : les liens de chaine', () => {
     // l allongeait etait le suffixe du jeton, pas le domaine. Le domaine `wa.me` est conserve, et c est lui
     // que WhatsApp reconnait pour dessiner le bouton « Discuter ».
     expect(lien.waMeUrl).toBe('https://wa.me/33525680250?text=Je%20veux%20recevoir%20la%20newsletter');
+    await server.close();
+  });
+
+  it('E : les conversations demarrees se lisent par BOUTON, et la route ne dit jamais « clics »', async () => {
+    // 🔴 Un appui sur un lien wa.me ouvre WhatsApp sur le telephone de l abonne sans traverser nos
+    // serveurs : le clic nous est invisible, et le fournisseur ne le rapporte pas. On compte le message
+    // qui arrive ensuite. Le chemin de la route porte ce nom pour que le premier lecteur ne s y trompe pas.
+    const { server } = app();
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/links/conversations', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      parLien: [{ linkId: LINK_ID, contacts: 3, dernier: '2026-09-06T08:00:00.000Z' }],
+      partiel: false,
+    });
+    await server.close();
+  });
+
+  it('🔴 E : le segment `conversations` ne se fait PAS avaler par la route a parametre `/links/:id`', async () => {
+    // Les deux cohabitent dans le meme espace de chemins. Si le routeur prenait « conversations » pour un
+    // identifiant de lien, la mesure repondrait 404 ou, pire, tomberait sur une autre route.
+    const { server } = app();
+    const mesure = await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/links/conversations', ...h(adminTok) });
+    const allumage = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`, ...h(adminTok) });
+    expect(mesure.statusCode).toBe(200);
+    expect(allumage.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('E : un AGENT peut LIRE la mesure (c est une lecture), et un autre tenant est refuse', async () => {
+    const { server } = app();
+    expect((await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/links/conversations', ...h(agentTok) })).statusCode).toBe(200);
+    // L isolation entre espaces est LE controle de ce produit : la RLS est contournee (pooler superuser).
+    expect((await server.inject({ method: 'GET', url: '/tenants/t2/channels-me/links/conversations', ...h(adminTok) })).statusCode).toBe(403);
     await server.close();
   });
 

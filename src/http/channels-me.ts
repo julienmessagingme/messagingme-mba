@@ -10,6 +10,7 @@ import { nouveauJeton, textePreRempli } from '../channels-me/jeton';
 import { ChannelsMeApiError } from '../channels-me/client';
 import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Message } from '../channels-me/types';
 import type { LienRow } from '../channels-me/link-store.pg';
+import type { ConversationsDunLien } from '../channels-me/conversions';
 import type { PostRow } from '../channels-me/post-store.pg';
 import { scopeTenant, estUuid } from './scope';
 
@@ -43,6 +44,14 @@ export interface ChannelsMeRouteDeps {
    * si l'id ne correspond a rien : ce n'est jamais une raison d'echouer davantage.
    */
   supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void>;
+
+  /**
+   * Les conversations demarrees par chaque bouton de chaine.
+   *
+   * 🔴 REQUISE, pas optionnelle. Une dependance optionnelle se degrade en SILENCE : un cablage qui l'oublie
+   * rend un ecran sans compteur et personne ne l'apprend. Requise, le compilateur enumere tous les faux.
+   */
+  conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }>;
 
   listPosts(tenantId: string): Promise<PostRow[]>;
   createPost(tenantId: string, p: { cmMessageId: string; linkId: string | null }): Promise<void>;
@@ -321,6 +330,24 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     }
     const texte = textePreRempli(phrase);
     return reply.code(201).send({ link: { ...lien, texteRempli: texte, waMeUrl: lienWaMe(phone, texte) } });
+  });
+
+  /**
+   * Combien de conversations chaque bouton a demarrees.
+   *
+   * 🔴 CE N'EST PAS UN NOMBRE DE CLICS, et la route ne s'appelle pas ainsi expres. Un appui sur un lien
+   * `wa.me` ouvre WhatsApp sur le telephone de l'abonne sans jamais traverser nos serveurs : ce geste nous
+   * est invisible, et le fournisseur ne le rapporte pas. Ce qu'on voit, c'est le message qui arrive
+   * ensuite. Nommer la route `/clics` aurait fait croire le contraire au premier lecteur.
+   *
+   * ⚠️ Route SEPAREE de `GET /links`, qui sert aussi le composeur a chaque ouverture de l'ecran : cette
+   * mesure relit des messages, le composeur n'en a pas besoin, et la payer a chaque frappe serait absurde.
+   */
+  app.get(`${base}/links/conversations`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const r = await deps.conversationsParLien(tenant);
+    return reply.code(200).send(r);
   });
 
   app.post(`${base}/links/:id/disable`, opts, async (req, reply) => {
