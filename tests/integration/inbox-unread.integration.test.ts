@@ -139,7 +139,11 @@ describe.skipIf(!url)('PgWorkflowRunStore.closeActiveByWaId (Supabase)', () => {
   it('clôt les parcours en attente ET endormis, et rend leur nombre', async () => {
     await store.start(tenantId, workflowId, '33600000010', null, { currentNode: 'n1', status: 'waiting' });
     await store.start(tenantId, workflowId, '33600000010', null, { currentNode: 'n2', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
-    expect(await store.closeActiveByWaId(tenantId, '33600000010')).toBe(2);
+    // 🔴 REND LES IDENTIFIANTS DES PARCOURS CLOS, plus leur nombre, depuis le 2026-09-07 : l appelant doit
+    // pouvoir clore les SESSIONS D AGENT qui y sont rattachees. Le cas exerce est inchange (deux parcours,
+    // en attente et endormi, tous deux clos), c est sa forme qui a change.
+    // ⚠️ `tsc` ne pouvait pas voir cette rupture : `expect(...).toBe(2)` accepte n importe quel type.
+    expect(await store.closeActiveByWaId(tenantId, '33600000010')).toHaveLength(2);
     expect(await statuts(tenantId, '33600000010')).toEqual(['done', 'done']);
   });
 
@@ -160,11 +164,11 @@ describe.skipIf(!url)('PgWorkflowRunStore.closeActiveByWaId (Supabase)', () => {
     )).rows[0]!.id;
     await store.start(autreTenant, wfVoisin, '33600000012', null, { currentNode: 'n1', status: 'waiting' });
 
-    expect(await store.closeActiveByWaId(tenantId, '33600000012')).toBe(0); // le sien était déjà clos
+    expect(await store.closeActiveByWaId(tenantId, '33600000012')).toEqual([]); // le sien était déjà clos
     expect(await statuts(autreTenant, '33600000012')).toEqual(['waiting']); // le voisin est intact
   });
 
   it('aucun parcours actif -> 0, sans erreur', async () => {
-    expect(await store.closeActiveByWaId(tenantId, '33699999998')).toBe(0);
+    expect(await store.closeActiveByWaId(tenantId, '33699999998')).toEqual([]);
   });
 });

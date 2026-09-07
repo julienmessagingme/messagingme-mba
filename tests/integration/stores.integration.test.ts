@@ -1260,7 +1260,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const wa = '33688888888';
     const { id: dormant } = await runStore.start(tenantId, wfId, wa, null, { currentNode: 'w', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
 
-    expect(await runStore.closeActiveByWaId(tenantId, wa)).toBe(1);
+    expect(await runStore.closeActiveByWaId(tenantId, wa)).toHaveLength(1);
     const apres = await pool.query<{ status: string; resume_at: Date | null }>(
       'select status, resume_at from workflow_runs where id = $1', [dormant]);
     expect(apres.rows[0]!.status).toBe('done');
