@@ -16,6 +16,30 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
+## 🔴 LE VPS EST SUR UN COMMIT DÉTACHÉ, EN RETARD SUR `main` (2026-09-07, 17 h)
+
+**À lire avant tout déploiement de l'API.** `/home/ubuntu/mba` est sur **`97a67fe`**, pas sur `main`
+(`git status` y annonce « HEAD detached »). Un `git pull` n'y fera RIEN d'utile : il faudra
+`git checkout main && git pull` une fois que `main` sera verte.
+
+**Pourquoi.** `main` est **ROUGE en CI** depuis `c24ae0e` (lot analytics « les erreurs se filtrent par
+campagne et ouvrent les contacts touchés ») : `tests/integration/stores.integration.test.ts:977` échoue, et
+ce qu'il dit est précis : **une ligne enregistrée en 131026 ressort quand on demande 131049**, donc
+`journal.lister` n'applique pas son filtre par code. Le test est formulé sur SON destinataire plutôt que sur
+le vide, justement parce que le tenant est partagé entre les cas.
+
+⚠️ **Ce défaut ne se voit QUE dans le job `integration`** : `npm test` en local reste vert, comme toujours.
+
+Il fallait déployer le plafond de débit sans embarquer ce lot. `97a67fe` est le dernier commit vert et il
+porte tout le travail de sécurité du jour. Le lot analytics reste donc DEHORS de la production, c'est
+volontaire, et le plafond de débit est actif en production depuis ce déploiement.
+
+**Ce qu'il reste à faire, dans cet ordre :** corriger le filtre par code, voir la CI verte sur `main`, puis
+`cd /home/ubuntu/mba && git checkout main && git pull && sudo docker compose up -d --build`.
+
+⚠️ Ce déploiement-ci n'a eu AUCUNE migration à jouer (base à 0114, dépôt à 0114, vérifié des deux côtés). Ce
+ne sera pas forcément vrai au prochain : la question se repose à chaque fois.
+
 ## Rien n'est en cours au 2026-09-04
 
 Tout ce qui a été fait entre le 2026-09-02 et le 2026-09-04 est **livré, déployé et vérifié** : les sept lots
