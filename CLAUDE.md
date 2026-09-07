@@ -78,11 +78,14 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0113** (l'index du balayage, cf. juste au-dessus), le 2026-09-03 au soir, après 0108
-à 0112. **0114 est ÉCRITE et EN ATTENTE** (`db/migrations/0114_channelsme.sql`) : elle AJOUTE `possede_par`
-et `max_fires_per_hour` sur `automations`, deux colonnes lues par le CHEMIN CHAUD (`PgAutomationStore`, dont
-`listEnabled`, sert la correspondance des messages entrants), donc elle passe **AVANT** le déploiement du
-code de ce lot, sous peine de rejouer l'incident du 2026-08-17. **Prochaine libre = 0115.**
+**Dernière appliquée : 0114** (les trois tables Channels Me, plus `possede_par` et `max_fires_per_hour` sur
+`automations`), le 2026-09-07 au matin, avant le déploiement du code qui les lit. **Prochaine libre = 0115.**
+
+Elle a suivi l'ordre que la section impose, et c'est le cas d'école : ses deux colonnes sur `automations`
+sont lues par le CHEMIN CHAUD (`PgAutomationStore.listEnabled`, qui sert la correspondance des messages
+entrants), donc image construite, puis `migrate`, puis `up -d --build`. Vérifié après coup en interrogeant
+`information_schema` ET en exécutant la requête du chemin chaud, pas en constatant l'absence d'erreur dans
+les journaux : sans trafic entrant, un silence ne prouve rien.
 
 **Le détail de CHAQUE migration (0093 à 0113), ce qu'elle a coûté et ce qu'elle a appris, vit dans**
 **[documentation.md](documentation.md) § « Les migrations, une par une ».** Il occupait un quart de ce
