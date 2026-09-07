@@ -954,33 +954,40 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // chiffre sur lequel on a clique : les deux lectures partagent desormais leur population
     // (`RECIPIENT_FAILED_SQL`) et leur ancrage (`INSTANT_ECHEC_SQL`), sinon un clic sur « 1 » ouvrirait une
     // liste de 0 sans que rien ne dise laquelle ment.
+    // ⚠️ CE FICHIER PARTAGE UN SEUL TENANT ENTRE TOUS SES TESTS, et celui de l'auto-relance (F6) y laisse
+    // des echecs 131049 et 131026 sur une AUTRE campagne. Les assertions portent donc sur NOTRE ligne,
+    // reperee par son numero, jamais sur le vide ni sur un index : « la liste est vide » aurait ete un
+    // enonce sur toute la suite, que le prochain test ajoute aurait casse sans rien avoir casse.
     const journal = new PgErreursLivraisonStore(pool);
+    const notre = (l: Awaited<ReturnType<typeof journal.lister>>) => l.filter((e) => e.telephone === '+33600000052');
     const touches = await journal.lister(tenantId, { code: 131026, from: today, to: today });
-    expect(touches).toHaveLength(errors.find((e) => e.code === 131026)!.count);
-    expect(touches[0]).toMatchObject({
+    // L'invariant qui compte : autant de lignes DE NOTRE CAMPAGNE que le chiffre sur lequel on a clique.
+    expect(touches.filter((e) => e.campaignId === campaignId)).toHaveLength(errors.find((e) => e.code === 131026)!.count);
+    expect(notre(touches)[0]).toMatchObject({
       contactId: c3, telephone: '+33600000052', contactNom: null, campaignId, campaignName: 'Funnel',
       code: 131026, origine: 'envoi',
     });
     // 🔴 LA DATE N'EST PAS NULLE, alors que ce destinataire n'a NI `sent_at` NI `delivery_updated_at` : c'est
     // le cas de 24 echecs sur 25 en production, et l'ancrage s'arretait avant `claimed_at`. Sans ce
     // troisieme repli, cette ligne sortait de toute plage de dates.
-    expect(touches[0]!.at).not.toBeNull();
+    expect(notre(touches)[0]!.at).not.toBeNull();
     // Le message d'erreur voyage, borne. C'est ce que Meta a repondu, pas un libelle de chez nous.
-    expect(touches[0]!.message).toBe('131026 x');
-    // Un AUTRE code ne ramene personne : sans ca, une requete qui ignore son code passerait ce test.
-    expect(await journal.lister(tenantId, { code: 131049, from: today, to: today })).toHaveLength(0);
-    // Les deux axes de filtre s'appliquent vraiment, dans les deux sens.
+    expect(notre(touches)[0]!.message).toBe('131026 x');
+    // 🔴 Un AUTRE code ne ramene PAS NOTRE ligne : sans ca, une requete qui ignore son code passerait ce
+    // test. Formule sur notre destinataire et non sur le vide, justement parce que le tenant est partage.
+    expect(notre(await journal.lister(tenantId, { code: 131049, from: today, to: today }))).toHaveLength(0);
+    // Les deux axes de filtre s'appliquent vraiment, dans les deux sens, et toujours sur NOTRE ligne.
     const av = { code: 131026, from: today, to: today };
-    expect(await journal.lister(tenantId, { ...av, campaignIds: [campaignId] })).toHaveLength(1);
-    expect(await journal.lister(tenantId, { ...av, campaignIds: [AUTRE_CAMPAGNE] })).toHaveLength(0);
-    expect(await journal.lister(tenantId, { ...av, templateNames: ['te'] })).toHaveLength(1);
-    expect(await journal.lister(tenantId, { ...av, templateNames: ['inconnu'] })).toHaveLength(0);
+    expect(notre(await journal.lister(tenantId, { ...av, campaignIds: [campaignId] }))).toHaveLength(1);
+    expect(notre(await journal.lister(tenantId, { ...av, campaignIds: [AUTRE_CAMPAGNE] }))).toHaveLength(0);
+    expect(notre(await journal.lister(tenantId, { ...av, templateNames: ['te'] }))).toHaveLength(1);
+    expect(notre(await journal.lister(tenantId, { ...av, templateNames: ['inconnu'] }))).toHaveLength(0);
     // Listes VIDES = « tout », comme partout ailleurs : `= any('{}')` ne matche rien, donc un filtre vide
     // effacerait la liste au lieu de la laisser entiere.
-    expect(await journal.lister(tenantId, { ...av, campaignIds: [], templateNames: [] })).toHaveLength(1);
+    expect(notre(await journal.lister(tenantId, { ...av, campaignIds: [], templateNames: [] }))).toHaveLength(1);
     // Et une plage qui ne couvre PAS le jour de l'echec ne ramene rien : sans quoi le filtre de periode de
     // l'ecran ne filtrerait pas.
-    expect(await journal.lister(tenantId, { code: 131026, from: '2020-01-01', to: '2020-01-02' })).toHaveLength(0);
+    expect(notre(await journal.lister(tenantId, { code: 131026, from: '2020-01-01', to: '2020-01-02' }))).toHaveLength(0);
 
     const vol = await stats.getCostVolume(tenantId, range, {});
     expect(vol.find((v) => v.category === 'marketing' && v.date === today)?.count).toBe(2); // r1 + r2 (r3 échec exclu)
