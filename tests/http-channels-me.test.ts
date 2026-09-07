@@ -63,6 +63,9 @@ const LIEN: LienRow = {
   id: LINK_ID, tenantId: 't1', workflowId: WF_ID, startNodeId: null,
   token: 'cm-a7k2m9p3', phrase: 'Je veux recevoir la newsletter',
   automationId: AUTO_ID, maxParHeure: 2000, createdAt: '2026-09-04T00:00:00.000Z',
+  // Lu sur l automation compagnon, jamais ecrit ici. `false` est l etat d un lien cree mais pas encore
+  // publie : l automation nait eteinte et ne s allume qu a la premiere publication reussie.
+  enabled: false,
 };
 const POST: PostRow = {
   id: '44444444-4444-4444-8444-444444444444', tenantId: 't1',

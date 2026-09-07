@@ -18,10 +18,36 @@ export interface LienRow {
   /** Plafond horaire PROPRE a ce lien. null veut dire « plafond global de l instance », pas « zero ». */
   maxParHeure: number | null;
   createdAt: string;
+  /**
+   * L etat ALLUME de l automation compagnon, LU a chaque lecture, jamais ecrit ici.
+   *
+   * 🔴 Ce n est pas le second drapeau que la note ci-dessus interdit. La regle interdit de COPIER l etat
+   * (deux colonnes qui divergent au premier chemin qui n en ecrit qu une) ; elle n interdit pas de le LIRE
+   * a sa source. Sans ce champ, l etat n est lisible NULLE PART : l automation compagnon est possedee
+   * (`possede_par = 'channelsme_link'`), donc exclue du predicat de `PgAutomationStore`, donc absente de
+   * `GET /automations`. La console affichait deux boutons (allumer, eteindre) sans jamais pouvoir dire
+   * lequel des deux avait un sens.
+   *
+   * `null` veut dire « ce lien n a plus d automation compagnon », le cas que `/enable` et `/disable`
+   * refusent deja en 409. Ce n est PAS « eteint ».
+   */
+  enabled: boolean | null;
 }
 
 /** ⚠️ Liste tenue A LA MAIN : ajouter une colonne oblige a toucher aussi `LienRowBrut` et `versLien`. */
 const COLS = 'id, tenant_id, workflow_id, start_node_id, token, phrase, automation_id, max_par_heure, created_at';
+
+/**
+ * Les memes colonnes prefixees `l.`, plus l etat allume lu sur l automation compagnon.
+ *
+ * La jointure porte la MEME garde miroir que `definirEtatAutomation` (`tenant_id` ET
+ * `possede_par = 'channelsme_link'`) : on ne lit pas plus largement qu on n ecrit. Une automation qui ne
+ * nous appartient pas ne joint pas, et `enabled` sort a `null` plutot que de reveler l etat d une ligne
+ * d un autre proprietaire.
+ */
+const COLS_AVEC_ETAT = `${COLS.split(', ').map((c) => `l.${c}`).join(', ')}, a.enabled as enabled`;
+const JOINTURE_ETAT =
+  `left join automations a on a.id = l.automation_id and a.tenant_id = l.tenant_id and a.possede_par = 'channelsme_link'`;
 
 /** Forme brute d une ligne `channelsme_links` (colonnes de COLS) telle que Postgres la rend. */
 interface LienRowBrut {
@@ -34,6 +60,8 @@ interface LienRowBrut {
   automation_id: string | null;
   max_par_heure: number | null;
   created_at: Date;
+  /** Absent des lignes rendues par `create` (aucune jointure a l insertion) : voir `versLien`. */
+  enabled?: boolean | null;
 }
 
 function versLien(r: LienRowBrut): LienRow {
@@ -47,6 +75,10 @@ function versLien(r: LienRowBrut): LienRow {
     automationId: r.automation_id,
     maxParHeure: r.max_par_heure,
     createdAt: r.created_at.toISOString(),
+    // `?? null` et non `?? false` : a l insertion la colonne n est pas jointe, et un lien tout juste cree
+    // n a pas encore d automation ALLUMEE (elle nait eteinte, et ne s allume qu a la publication reussie).
+    // Rendre `false` la ferait passer pour « eteinte alors qu elle existe », ce qui est une autre affirmation.
+    enabled: r.enabled ?? null,
   };
 }
 
@@ -89,7 +121,8 @@ export class PgChannelsMeLinkStore {
   /** 🔴 `order by created_at desc` : c est l ordre de l index channelsme_links_tenant_idx (tenant_id, created_at desc). */
   async list(tenantId: string): Promise<LienRow[]> {
     const { rows } = await this.pool.query<LienRowBrut>(
-      `select ${COLS} from channelsme_links where tenant_id=$1 order by created_at desc`,
+      `select ${COLS_AVEC_ETAT} from channelsme_links l ${JOINTURE_ETAT}
+         where l.tenant_id=$1 order by l.created_at desc`,
       [tenantId],
     );
     return rows.map(versLien);
@@ -97,7 +130,8 @@ export class PgChannelsMeLinkStore {
 
   async byId(tenantId: string, id: string): Promise<LienRow | null> {
     const { rows } = await this.pool.query<LienRowBrut>(
-      `select ${COLS} from channelsme_links where tenant_id=$1 and id=$2`,
+      `select ${COLS_AVEC_ETAT} from channelsme_links l ${JOINTURE_ETAT}
+         where l.tenant_id=$1 and l.id=$2`,
       [tenantId, id],
     );
     return rows[0] ? versLien(rows[0]) : null;

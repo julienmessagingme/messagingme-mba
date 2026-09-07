@@ -68,6 +68,9 @@ describe('PgChannelsMeLinkStore (faux pool, sans base reelle)', () => {
       id: 'lnk-1', tenantId: TENANT, workflowId: 'wf-1', startNodeId: null,
       token: 'cm-a7k2m9p3', phrase: 'Je veux recevoir la newsletter', automationId: 'auto-1',
       maxParHeure: 5000, createdAt: '2026-09-04T10:00:00.000Z',
+      // null et pas false : a l insertion la colonne n est pas jointe. Rendre `false` ferait passer
+      // l automation pour « eteinte alors qu elle existe », ce qui est une autre affirmation.
+      enabled: null,
     });
   });
 
@@ -93,7 +96,7 @@ describe('PgChannelsMeLinkStore (faux pool, sans base reelle)', () => {
     ]);
     const liens = await new PgChannelsMeLinkStore(pool).list(TENANT);
 
-    expect(requetes[0]!.sql).toMatch(/where tenant_id=\$1 order by created_at desc/i);
+    expect(requetes[0]!.sql).toMatch(/where l\.tenant_id=\$1 order by l\.created_at desc/i);
     expect(requetes[0]!.params).toEqual([TENANT]);
     expect(liens.map((l) => l.id)).toEqual(['lnk-1', 'lnk-2']);
     expect(liens[0]!.createdAt).toBe('2026-09-04T10:00:00.000Z');
@@ -103,14 +106,20 @@ describe('PgChannelsMeLinkStore (faux pool, sans base reelle)', () => {
     const trouve = fauxPool([{ rows: [ligneLien()] }]);
     const lien = await new PgChannelsMeLinkStore(trouve.pool).byId(TENANT, 'lnk-1');
     expect(lien?.id).toBe('lnk-1');
-    expect(trouve.requetes[0]!.sql).toMatch(/where tenant_id=\$1 and id=\$2/i);
+    expect(trouve.requetes[0]!.sql).toMatch(/where l\.tenant_id=\$1 and l\.id=\$2/i);
     expect(trouve.requetes[0]!.params).toEqual([TENANT, 'lnk-1']);
 
     const absent = fauxPool([{ rows: [] }]);
     expect(await new PgChannelsMeLinkStore(absent.pool).byId(TENANT, 'lnk-inconnu')).toBeNull();
   });
 
-  it('🔴 aucune requete de ce store ne parle de enabled : l etat du lien EST celui de son automation', async () => {
+  it('🔴 channelsme_links ne porte JAMAIS de enabled : l etat du lien EST celui de son automation', async () => {
+    // ⚠️ CE TEST A ETE PRECISE, PAS AFFAIBLI. Il interdisait le MOT « enabled » dans tout le SQL du store,
+    // ce qui etait un raccourci pour l invariant reel : pas de SECOND drapeau sur `channelsme_links`. Le
+    // raccourci refusait aussi de LIRE l etat a sa source, or sans cette lecture l etat n est visible nulle
+    // part (l automation compagnon est possedee, donc absente de `GET /automations`), et la console
+    // affichait deux boutons sans savoir lequel avait un sens. La regle interdit de COPIER l etat, pas de
+    // le LIRE. On verifie donc les deux moities separement, ce qui est plus strict que l ancienne forme.
     const { pool, requetes } = fauxPool([{ rows: [ligneLien()] }]);
     const store = new PgChannelsMeLinkStore(pool);
     await store.create(TENANT, {
@@ -121,7 +130,27 @@ describe('PgChannelsMeLinkStore (faux pool, sans base reelle)', () => {
     await store.byId(TENANT, 'lnk-1');
 
     expect(requetes).toHaveLength(3);
-    for (const q of requetes) expect(q.sql).not.toMatch(/enabled/i);
+
+    // (a) L INSERT ne connait pas enabled du tout : la colonne n existe pas sur channelsme_links.
+    expect(requetes[0]!.sql).toMatch(/^insert into channelsme_links/i);
+    expect(requetes[0]!.sql).not.toMatch(/enabled/i);
+
+    // (b) Les deux LECTURES lisent enabled sur `a` (automations), jamais sur `l` (channelsme_links), et
+    //     jamais en ecriture.
+    for (const q of [requetes[1]!, requetes[2]!]) {
+      expect(q.sql).toMatch(/a\.enabled/i);
+      expect(q.sql).not.toMatch(/l\.enabled/i);
+      expect(q.sql).not.toMatch(/(update|insert|set)/i);
+    }
+
+    // (c) 🔴 La jointure porte la MEME garde miroir que l ecriture : tenant_id ET possede_par. Sans elle, on
+    //     lirait l etat d une automation d un autre proprietaire, c est-a-dire plus largement qu on n ecrit.
+    for (const q of [requetes[1]!, requetes[2]!]) {
+      expect(q.sql).toMatch(/left join automations a on a\.id = l\.automation_id/i);
+      expect(q.sql).toMatch(/a\.tenant_id = l\.tenant_id/i);
+      expect(q.sql).toMatch(/a\.possede_par = 'channelsme_link'/i);
+    }
+
     // Et toutes portent tenant_id, y compris byId() ou l id primaire suffirait techniquement.
     for (const q of requetes) expect(q.sql).toMatch(/tenant_id/i);
   });

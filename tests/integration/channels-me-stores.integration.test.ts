@@ -389,4 +389,67 @@ describe.skipIf(!url)('Stores Channels Me (Postgres reel)', () => {
       )).rows[0]!.enabled).toBe(false);
     });
   });
+
+  /**
+   * L etat allume, LU par `list()` et `byId()`.
+   *
+   * Ce que ces tests protegent : sans ce champ, l etat n est lisible NULLE PART, parce que l automation
+   * compagnon est possedee, donc exclue du predicat de `PgAutomationStore` et absente de `GET /automations`.
+   * La console proposait deux boutons sans jamais savoir lequel avait un sens. La jointure porte la MEME
+   * garde miroir que l ecriture (`tenant_id` ET `possede_par`) : on ne lit pas plus largement qu on n ecrit.
+   */
+  describe('enabled : l etat allume, lu sur l automation compagnon', () => {
+    it('🔴 suit VRAIMENT l automation : false a la creation, true apres allumage, false apres extinction', async () => {
+      const auto = await pool.query<{ id: string }>(
+        `insert into automations (tenant_id, name, trigger_kind, trigger_config, workflow_id, possede_par)
+         values ($1, 'itest-channelsme-auto-etat', 'keyword', '{"keywords":["cm-itest-etat"],"mode":"contains"}'::jsonb, $2, 'channelsme_link')
+         returning id`,
+        [tenantId, workflowId],
+      );
+      const liens = new PgChannelsMeLinkStore(pool);
+      const lien = await liens.create(tenantId, {
+        workflowId, startNodeId: null, token: 'cm-itest-etat', phrase: 'Etat',
+        automationId: auto.rows[0]!.id, maxParHeure: null,
+      });
+
+      // L automation nait ETEINTE : un lien cree mais jamais publie ne declenche rien.
+      expect((await liens.byId(tenantId, lien.id))!.enabled).toBe(false);
+
+      await liens.allumerAutomation(tenantId, lien.id);
+      expect((await liens.byId(tenantId, lien.id))!.enabled).toBe(true);
+      expect((await liens.list(tenantId)).find((l) => l.id === lien.id)!.enabled).toBe(true);
+
+      await liens.eteindreAutomation(tenantId, lien.id);
+      expect((await liens.byId(tenantId, lien.id))!.enabled).toBe(false);
+    });
+
+    it('🔴 automation NON possedee : `enabled` sort a null, pas a son vrai etat', async () => {
+      // On ne lit pas plus largement qu on n ecrit : une automation dont `possede_par` est null n appartient
+      // pas au lien, donc elle ne joint pas, meme si le lien la reference. Sans la clause `possede_par` dans
+      // la jointure, ce test verrait `true` : l etat d une ligne d un AUTRE proprietaire.
+      const auto = await pool.query<{ id: string }>(
+        `insert into automations (tenant_id, name, trigger_kind, trigger_config, workflow_id, enabled)
+         values ($1, 'itest-channelsme-auto-etrangere', 'keyword', '{"keywords":["cm-itest-etrangere"],"mode":"contains"}'::jsonb, $2, true)
+         returning id`,
+        [tenantId, workflowId],
+      );
+      const liens = new PgChannelsMeLinkStore(pool);
+      const lien = await liens.create(tenantId, {
+        workflowId, startNodeId: null, token: 'cm-itest-etrangere', phrase: 'Etrangere',
+        automationId: auto.rows[0]!.id, maxParHeure: null,
+      });
+
+      expect((await liens.byId(tenantId, lien.id))!.enabled).toBeNull();
+    });
+
+    it('lien SANS automation compagnon : `enabled` vaut null, et null n est pas « eteint »', async () => {
+      const liens = new PgChannelsMeLinkStore(pool);
+      const lien = await liens.create(tenantId, {
+        workflowId, startNodeId: null, token: 'cm-itest-sans-auto', phrase: 'Sans automation',
+        automationId: null, maxParHeure: null,
+      });
+
+      expect((await liens.byId(tenantId, lien.id))!.enabled).toBeNull();
+    });
+  });
 });
