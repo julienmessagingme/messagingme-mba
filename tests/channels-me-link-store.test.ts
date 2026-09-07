@@ -6,11 +6,13 @@ import { PgChannelsMeLinkStore } from '../src/channels-me/link-store.pg';
  * Les liens de chaine, avec un FAUX pool (aucune base reelle).
  *
  * Ce que ces tests protegent, et qui ne se voit pas a la lecture :
- *  1. 🔴 Le lien n a PAS d etat allume ou eteint a lui. Son etat EST le `enabled` de son automation
- *     compagnon, et c est la seule source de verite. Aucune requete de ce store ne doit donc parler de
- *     `enabled` dans SES REQUETES DE LECTURE/CREATION : un second drapeau divergerait au premier chemin qui
- *     n ecrirait qu une des deux copies. `allumerAutomation`/`eteindreAutomation` sont l EXCEPTION assumee :
- *     elles ecrivent `enabled`, mais sur `automations`, jamais sur `channelsme_links`.
+ *  1. 🔴 Le lien n a PAS d etat allume ou eteint A LUI. Son etat EST le `enabled` de son automation
+ *     compagnon, seule source de verite. La regle interdit de le COPIER (un second drapeau divergerait au
+ *     premier chemin qui n ecrirait qu une des deux copies), PAS de le LIRE : les trois requetes le lisent
+ *     sur `automations` (`a.enabled`), jamais sur `channelsme_links` (`l.enabled`), et jamais en ecriture.
+ *     Sans cette lecture l etat n etait visible nulle part, l automation compagnon etant possedee donc
+ *     absente de `GET /automations`. `allumerAutomation`/`eteindreAutomation` sont les seules a ECRIRE, et
+ *     encore sur `automations`, jamais sur `channelsme_links`.
  *  2. list() trie par created_at desc, ordre exact de l index channelsme_links_tenant_idx
  *     (tenant_id, created_at desc) pose par la migration 0114. En sortir ne casse rien de visible, ca ne
  *     produit qu un plan d execution different, donc rien ne le signalerait.
