@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { cheminDeNav, type NavEntree } from '@/lib/nav';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
+type Tab = 'accueil' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -134,7 +134,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
     ] },
     { key: 'analytics', label: t('Analytics', 'Analytics'), d: icons.analytics, children: [
-      { key: 'dashboard', href: '/dashboard', label: t('Quantitatif', 'Quantitative') },
+      // Quantitatif est devenu un GROUPE : il portait huit cartes empilees sans hierarchie, dont trois
+      // parlaient d argent et deux de pannes. Chaque sous-onglet ne charge desormais que ce qu il montre.
+      // ⚠️ `/dashboard` reste l adresse du PREMIER sous-onglet, pas une page d aiguillage : trois specs
+      // Playwright et des liens deja distribues y pointent.
+      { key: 'quantitatif', label: t('Quantitatif', 'Quantitative'), children: [
+        { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
+        { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
+        { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel') },
+        { key: 'quanti-erreurs', href: '/dashboard/erreurs', label: t('Erreurs', 'Errors') },
+      ] },
       { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Qualitatif', 'Qualitative') },
       { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
     ] },

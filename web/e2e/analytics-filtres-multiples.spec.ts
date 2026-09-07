@@ -16,8 +16,13 @@ const CAMPAGNES = [
 const TEMPLATES = { total: 5, breakdown: [{ name: 'tpl-un', category: 'marketing', count: 3 }, { name: 'tpl-deux', category: 'utility', count: 2 }] };
 const COUT = { marketing: [], utility: [], total: 12.5, hasRates: true, currency: 'EUR' };
 
-/** Monte /dashboard et rend les URL de la route de coût, dans l'ordre où elles partent. */
-async function monter(page: import('@playwright/test').Page) {
+/**
+ * Monte le sous-onglet DEMANDÉ et rend les URL de la route de coût, dans l'ordre où elles partent.
+ *
+ * ⚠️ Le chemin est un paramètre depuis le découpage du Quantitatif : les filtres de coût vivent sur
+ * `/dashboard/couts`, la carte des erreurs sur `/dashboard/erreurs`. Les CAS exercés n'ont pas bougé.
+ */
+async function monter(chemin: string, page: import('@playwright/test').Page) {
   const appelsCout: string[] = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -38,14 +43,21 @@ async function monter(page: import('@playwright/test').Page) {
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
-  await page.goto('/dashboard');
-  await expect(page.getByTestId('cout-campagnes')).toBeVisible({ timeout: 15_000 });
+  // ⚠️ Chemin PARAMETRE depuis le decoupage du Quantitatif en quatre sous-onglets : les filtres de cout
+  // vivent sur /dashboard/couts, la carte des erreurs sur /dashboard/erreurs. Les CAS exerces sont
+  // inchanges, seule l adresse ou ils se jouent a bouge.
+  await page.goto(chemin);
+  // L attente de disponibilite suit la PAGE, elle ne peut plus etre celle du graphe de cout : la carte des
+  // erreurs vit desormais sur un autre sous-onglet, ou `cout-campagnes` n existe pas. Attendre un element
+  // d une autre page est le genre d attente qui expire sans rien dire du vrai probleme.
+  const ancre = chemin.endsWith('/erreurs') ? 'erreurs-templates' : 'cout-campagnes';
+  await expect(page.getByTestId(ancre)).toBeVisible({ timeout: 15_000 });
   return { appelsCout };
 }
 
 test.describe('Analytics : filtres multiples', () => {
   test('🔴 deux campagnes choisies partent ENSEMBLE dans la requête (série compilée)', async ({ page }) => {
-    const { appelsCout } = await monter(page);
+    const { appelsCout } = await monter('/dashboard/couts', page);
     await page.getByTestId('cout-campagnes').selectOption('camp-a');
     await page.getByTestId('cout-campagnes').selectOption('camp-b');
 
@@ -57,7 +69,7 @@ test.describe('Analytics : filtres multiples', () => {
 
   test('🔴 les deux axes sont mutuellement exclusifs : choisir un template vide les campagnes', async ({ page }) => {
     // Les croiser produirait l'INTERSECTION (campagne A ET template B), qui ne décrit rien d'utile.
-    const { appelsCout } = await monter(page);
+    const { appelsCout } = await monter('/dashboard/couts', page);
     await page.getByTestId('cout-campagnes').selectOption('camp-a');
     await page.getByTestId('cout-templates').selectOption('tpl-un');
 
@@ -70,7 +82,7 @@ test.describe('Analytics : filtres multiples', () => {
   });
 
   test('une valeur retenue se retire, et le filtre repart à « tout »', async ({ page }) => {
-    const { appelsCout } = await monter(page);
+    const { appelsCout } = await monter('/dashboard/couts', page);
     await page.getByTestId('cout-campagnes').selectOption('camp-a');
     // La pastille du groupe, pas n'importe quel « Promo A » de la page : le nom apparait aussi ailleurs.
     const pastille = page.getByTestId('cout-campagnes-retenu');
@@ -87,7 +99,7 @@ test.describe('Analytics : filtres multiples', () => {
   test('🔴 carte Erreurs : plusieurs templates -> breakdown compilé', async ({ page }) => {
     // Filtre LOCAL (le breakdown est déjà chargé) : ce qui compte est que les deux codes restent visibles
     // quand les deux templates sont retenus, et qu'un seul les réduise.
-    await monter(page);
+    await monter('/dashboard/erreurs', page);
     await expect(page.getByText('131026')).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId('erreurs-templates').selectOption('tpl-un');

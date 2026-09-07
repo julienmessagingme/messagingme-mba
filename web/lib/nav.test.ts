@@ -19,7 +19,14 @@ const NAV: NavEntree[] = [
     { key: 'agents', href: '/agents', label: 'Other AI agent' },
   ] },
   { key: 'analytics', label: 'Analytics', children: [
-    { key: 'dashboard', href: '/dashboard', label: 'Quantitatif' },
+    // Quantitatif est passé de PAGE à GROUPE : quatre sous-onglets, donc un troisième niveau de plus.
+    { key: 'quantitatif', label: 'Quantitatif', children: [
+      { key: 'quanti-messages', href: '/dashboard', label: 'Messages & contacts' },
+      { key: 'quanti-couts', href: '/dashboard/couts', label: 'Coûts' },
+      { key: 'quanti-funnel', href: '/dashboard/funnel', label: 'Funnel' },
+      { key: 'quanti-erreurs', href: '/dashboard/erreurs', label: 'Erreurs' },
+    ] },
+    { key: 'dashboard-quali', href: '/dashboard/quali', label: 'Qualitatif' },
   ] },
 ];
 
@@ -33,7 +40,20 @@ describe('cheminDeNav', () => {
 
   it('une page de DEUXIÈME niveau n’a qu’un ancêtre', () => {
     expect(cheminDeNav(NAV, 'agents')).toEqual(['ia']);
-    expect(cheminDeNav(NAV, 'dashboard')).toEqual(['analytics']);
+    expect(cheminDeNav(NAV, 'dashboard-quali')).toEqual(['analytics']);
+  });
+
+  /**
+   * U1 : les quatre sous-onglets du Quantitatif.
+   *
+   * 🔴 Ce que ce test protège : une chaîne d'ancêtres fausse ne casse RIEN de visible tout de suite, elle
+   * laisse juste la page active invisible dans un menu replié. C'est la raison d'être du module, et le
+   * découpage du Quantitatif en quatre vient d'ajouter quatre pages à ce risque.
+   */
+  it('🔴 les QUATRE sous-onglets du Quantitatif rendent leurs deux ancêtres', () => {
+    for (const cle of ['quanti-messages', 'quanti-couts', 'quanti-funnel', 'quanti-erreurs']) {
+      expect(cheminDeNav(NAV, cle), `chaîne d’ancêtres de ${cle}`).toEqual(['analytics', 'quantitatif']);
+    }
   });
 
   it('une entrée de PREMIER niveau n’a aucun ancêtre (et ce n’est pas un échec)', () => {

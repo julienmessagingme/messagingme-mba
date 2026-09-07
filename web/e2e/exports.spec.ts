@@ -32,7 +32,7 @@ async function espionnerImpression(page: import('@playwright/test').Page): Promi
 const zonesImprimees = (page: import('@playwright/test').Page): Promise<string[]> =>
   page.evaluate(() => (window as unknown as { __zonesImprimees: string[] }).__zonesImprimees);
 
-async function monterDashboard(page: import('@playwright/test').Page): Promise<void> {
+async function monterDashboard(chemin: string, ancre: string, page: import('@playwright/test').Page): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await espionnerImpression(page);
   await page.route('**/api/backend/**', async (route) => {
@@ -48,17 +48,48 @@ async function monterDashboard(page: import('@playwright/test').Page): Promise<v
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
-  await page.goto('/dashboard');
-  await expect(page.getByTestId('pdf-quanti-contacts')).toBeVisible({ timeout: 15_000 });
+  await page.goto(chemin);
+  // Chaque sous-onglet a SON ancre : attendre celle d une autre page expirerait sans rien dire du vrai
+  // probleme. La premiere carte de chaque page suffit a savoir que le rendu a eu lieu.
+  await expect(page.getByTestId(`pdf-${ancre}`)).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * 🔴 LES QUATRE SOUS-ONGLETS ET LEURS ZONES, DERIVEES DU DOM ET NON ENUMEREES A LA MAIN.
+ *
+ * L ancienne version listait les zones dans un tableau ecrit a la main, et c etait une verification de
+ * SOUS-ENSEMBLE : une carte ajoutee n y entrait pas, et le test restait vert en ne la verifiant jamais.
+ * Deux zones ont derive ainsi sans que rien ne le signale (`quanti-facture` ajoutee au lot precedent,
+ * `quanti-origine-service` depuis plus longtemps encore). On lit donc les zones REELLEMENT presentes, et on
+ * exige que chacune porte son bouton : un inventaire tenu a la main derive, un inventaire derive ne peut pas.
+ */
+const SOUS_ONGLETS = [
+  { chemin: '/dashboard', ancre: 'quanti-contacts' },
+  { chemin: '/dashboard/couts', ancre: 'quanti-cout' },
+  { chemin: '/dashboard/funnel', ancre: 'quanti-funnel' },
+  { chemin: '/dashboard/erreurs', ancre: 'quanti-erreurs' },
+];
+
+/** Les identifiants de zone REELLEMENT rendus par la page, lus dans le DOM. */
+async function zonesDeLaPage(page: import('@playwright/test').Page): Promise<string[]> {
+  return page.evaluate(() => [...document.querySelectorAll('[id^="quanti-"]')].map((e) => e.id).sort());
 }
 
 test.describe('Analytics quanti : chaque tableau s’exporte en PDF', () => {
-  test('🔴 chaque carte porte son bouton, et n’imprime QUE sa propre zone', async ({ page }) => {
-    await monterDashboard(page);
-    for (const zone of ['quanti-contacts', 'quanti-echanges', 'quanti-messages-envoyes', 'quanti-cout', 'quanti-funnel', 'quanti-erreurs', 'quanti-facture', 'quanti-templates']) {
-      await expect(page.getByTestId(`pdf-${zone}`)).toBeVisible();
-    }
+  for (const { chemin, ancre } of SOUS_ONGLETS) {
+    test(`🔴 ${chemin} : CHAQUE zone rendue porte son bouton (liste derivee du DOM)`, async ({ page }) => {
+      await monterDashboard(chemin, ancre, page);
+      const zones = await zonesDeLaPage(page);
+      // Une page sans aucune zone serait un faux vert : le test passerait en ne verifiant rien.
+      expect(zones.length, `aucune zone quanti- sur ${chemin}`).toBeGreaterThan(0);
+      for (const zone of zones) {
+        await expect(page.getByTestId(`pdf-${zone}`), `${zone} n a pas de bouton PDF`).toBeVisible();
+      }
+    });
+  }
 
+  test('🔴 un export n’imprime QUE sa propre zone', async ({ page }) => {
+    await monterDashboard('/dashboard/couts', 'quanti-cout', page);
     await page.getByTestId('pdf-quanti-cout').click();
     expect(await zonesImprimees(page)).toEqual(['quanti-cout']);
   });
@@ -66,10 +97,12 @@ test.describe('Analytics quanti : chaque tableau s’exporte en PDF', () => {
   test('🔴 deux exports de suite : la zone précédente est démarquée, jamais imprimée avec la nouvelle', async ({ page }) => {
     // `afterprint` n'est pas garanti (impression annulée, onglet en arrière-plan). Sans nettoyage, la carte
     // d'avant repartirait collée sur la feuille suivante, et personne ne comprendrait d'où elle sort.
-    await monterDashboard(page);
+    // ⚠️ Les deux zones sont prises sur la MEME page depuis le decoupage : le nettoyage se joue dans un
+    // document, pas entre deux navigations, qui remettraient le DOM a zero et rendraient le test creux.
+    await monterDashboard('/dashboard/couts', 'quanti-cout', page);
     await page.getByTestId('pdf-quanti-cout').click();
-    await page.getByTestId('pdf-quanti-erreurs').click();
-    expect(await zonesImprimees(page)).toEqual(['quanti-cout', 'quanti-erreurs']);
+    await page.getByTestId('pdf-quanti-facture').click();
+    expect(await zonesImprimees(page)).toEqual(['quanti-cout', 'quanti-facture']);
   });
 });
 

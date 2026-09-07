@@ -32,7 +32,8 @@ async function monter(page: import('@playwright/test').Page, funnel: Record<stri
     if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
     return json({});
   });
-  await page.goto('/dashboard');
+  // Le funnel a son propre sous-onglet depuis le decoupage du Quantitatif. Cas exerces inchanges.
+  await page.goto('/dashboard/funnel');
   await expect(page.locator('#quanti-funnel')).toBeVisible();
 }
 
