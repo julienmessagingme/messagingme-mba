@@ -59,6 +59,8 @@ export interface ListConversationsOptions {
   before?: { at: string; id: string };
   /** N'garder que les fils dont le scénario ne s'occupe plus (onglet « À traiter »). */
   aTraiter?: boolean;
+  /** Le dossier ARCHIVÉ. Absent ou faux = les dossiers ordinaires, qui excluent les archivées. */
+  archivees?: boolean;
   /**
    * Filtrer sur l'affectation : un identifiant de membre, ou `'aucune'` pour les conversations que personne
    * ne s'est vu confier. Absent = toutes, affectées ou non.
@@ -132,7 +134,23 @@ export class PgInboxStore implements InboxStore {
    * l'inbound (webhook) et les envois sortants automatisés (campagne / workflow) -> même conversation, jamais de
    * doublon.
    */
-  private async upsertConversationByWaId(tenantId: string, waId: string, preview: string): Promise<string> {
+  private async upsertConversationByWaId(
+    tenantId: string,
+    waId: string,
+    preview: string,
+    /**
+     * 🔴 CE MESSAGE DÉSARCHIVE-T-IL LA CONVERSATION ? Gouverné par le CHEMIN APPELANT, jamais deviné ici.
+     *
+     * Cet upsert est partagé par l'INBOUND (un message du contact) et par les ENVOIS SORTANTS AUTOMATISÉS
+     * (campagne, scénario). Décider dans la dépendance partagée ferait remonter dans l'inbox de tout le
+     * monde chaque contact archivé qu'une campagne touche. Le dépôt applique déjà cette règle aux
+     * événements d'automation, mot pour mot et pour la même raison.
+     *
+     * Requis et non optionnel : c'est le compilateur qui doit obliger un futur troisième appelant à
+     * trancher, plutôt qu'un défaut qui le laisserait hériter d'un choix qu'il n'a pas fait.
+     */
+    desarchive: boolean,
+  ): Promise<string> {
     const conv = await this.pool.query<{ id: string }>(
       // UN contact = UNE conversation, quel que soit le canal : c'est le MESSAGE qui porte son canal
       // (`conversation_messages.channel`, migration 0056), pas le fil. L'unique (tenant_id, wa_id) de 0009
@@ -147,9 +165,13 @@ export class PgInboxStore implements InboxStore {
          contact_id = coalesce(conversations.contact_id, excluded.contact_id),
          -- Un nouveau message ROUVRE l'analyse : une conversation déjà analysée (done/failed) qui reçoit un message
          -- redevient 'pending' -> ré-analysée à la prochaine inactivité (sinon un contact qui revient n'est jamais réanalysé).
-         analysis_status = case when conversations.analysis_status in ('done', 'failed') then 'pending' else conversations.analysis_status end
+         analysis_status = case when conversations.analysis_status in ('done', 'failed') then 'pending' else conversations.analysis_status end,
+         -- Un message du CONTACT sort la conversation d'Archive, dans la MEME ecriture que celle qui avance
+         -- last_message_at. Deux ecritures laisseraient une fenetre ou la conversation a un message neuf et
+         -- reste rangee dans Archive : precisement l'etat que personne ne regarde.
+         archived_at = case when $4::boolean then null else conversations.archived_at end
        returning id`,
-      [tenantId, waId, preview],
+      [tenantId, waId, preview, desarchive],
     );
     return conv.rows[0]!.id;
   }
@@ -255,7 +277,8 @@ export class PgInboxStore implements InboxStore {
    *  tous les appelants historiques écrivent exactement ce qu'ils écrivaient. */
   async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
-    const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview);
+    // `true` : un message du CONTACT désarchive. C'est le seul chemin qui le fait.
+    const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true);
     await this.pool.query(
       `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id, channel)
        values ($1, 'in', $2, $3, $4, $5, $6)
@@ -275,7 +298,9 @@ export class PgInboxStore implements InboxStore {
     waId: string,
     msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
   ): Promise<void> {
-    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body);
+    // `false` : un envoi AUTOMATISÉ (campagne, scénario) ne désarchive pas. Une campagne qui touche mille
+    // contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés.
+    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, false);
     await this.pool.query(
       // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,
       // donc tous les appelants historiques écrivent exactement ce qu'ils écrivaient.
@@ -315,6 +340,9 @@ export class PgInboxStore implements InboxStore {
     // restent ENREGISTRÉS et le contact est retrouvable dans l'écran des contacts bloqués, qui est la seule
     // porte de sortie : sans lui, un contact bloqué serait perdu pour de bon.
     where.push(`(ct.blocked_at is null)`);
+    // Les quatre dossiers ordinaires excluent les archivées ; le dossier Archivé ne montre qu'elles. Une
+    // conversation n'est donc jamais comptée dans deux dossiers à la fois.
+    where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
     if (opts.signalees === true) {
       where.push(`exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)`);
     }
@@ -420,6 +448,26 @@ export class PgInboxStore implements InboxStore {
       [tenantId],
     );
     return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Range une conversation dans Archivé, ou l'en sort.
+   *
+   * Rend `false` si la conversation est inconnue DANS CET ESPACE : l'appelant en fait un 404, jamais un
+   * succès silencieux. Le `tenant_id` dans le `where` n'est pas une ceinture de plus, c'est LE contrôle
+   * d'isolation : le pooler est superuser, la RLS est contournée.
+   *
+   * Idempotent : archiver deux fois réécrit l'horodatage, ce qui est sans conséquence. Désarchiver ce qui ne
+   * l'est pas ne fait rien non plus, et rend quand même `true` (la conversation existe, l'état voulu est
+   * atteint) : distinguer les deux obligerait l'écran à expliquer une nuance que personne ne se pose.
+   */
+  async archiverConversation(tenantId: string, conversationId: string, archive: boolean): Promise<boolean> {
+    const res = await this.pool.query(
+      `update conversations set archived_at = ${archive ? 'now()' : 'null'}
+        where id = $1 and tenant_id = $2`,
+      [conversationId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /**

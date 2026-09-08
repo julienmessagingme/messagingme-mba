@@ -110,9 +110,19 @@ function contactPublic(c: ContactRow): Record<string, unknown> {
 export const OUTILS: OutilMcp[] = [
   {
     nom: 'list_conversations',
+    /**
+     * ⚠️ LES CONVERSATIONS ARCHIVÉES SONT EXCLUES, et la description le DIT (2026-09-08).
+     *
+     * L'archivage est arrivé côté console, et `listConversations` l'applique par défaut : cet outil s'est
+     * donc mis à rendre moins de lignes qu'avant, sans que rien ne le signale. Un assistant qui ne lit que
+     * le schéma conclurait que la conversation n'existe pas, au lieu de comprendre qu'elle est rangée. La
+     * cohérence avec l'Inbox est le bon comportement ; le taire ne l'était pas.
+     */
     description:
       'Liste les conversations WhatsApp de l’espace, la plus récemment active en premier. Utilise `a_traiter` '
-      + 'pour ne voir que celles dont le scénario ne s’occupe plus et qui attendent une réponse humaine.',
+      + 'pour ne voir que celles dont le scénario ne s’occupe plus et qui attendent une réponse humaine. '
+      + 'Les conversations ARCHIVÉES depuis l’Inbox ne sont pas listées : elles existent toujours, elles '
+      + 'sont simplement rangées, et un message du contact les fait revenir.',
     scope: 'mcp:read',
     entree: {
       type: 'object',
