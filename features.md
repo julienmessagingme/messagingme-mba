@@ -805,6 +805,12 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   personne ne voyait que le client attendait.
 - ✅ **Bouton « Rendre la main »** dans le fil, quand un opérateur détient la conversation. Le scénario
   repart immédiatement, sans attendre le délai.
+- ✅ **Et « Reprendre la main » quand c'est l'agent de Meta qui tient le fil** (2026-09-08). Le bouton ne
+  sortait que pour un opérateur : un fil passé à l'agent de Meta n'avait aucune sortie depuis la console, il
+  fallait attendre les 24 heures du délai, et pendant tout ce temps **aucun déclencheur automatique n'écrivait
+  dedans**. Concrètement : un abonné qui cliquait un bouton de chaîne ne lançait aucun scénario, sans que rien
+  ne l'explique. Le libellé change de sens (on REND une main qu'on a prise, on la REPREND à l'agent de Meta),
+  l'effet est le même : le fil repart au scénario.
 - ✅ **Délai de reprise réglable** (menu **AI Agent > MBA, paramètres > Activation**, en minutes). Passé ce
   délai sans que personne ne rende la main, la conversation repart toute seule : un onglet fermé ou un
   opérateur parti ne bloquent jamais un client indéfiniment. Vide = 2 heures. `0` = jamais de reprise
