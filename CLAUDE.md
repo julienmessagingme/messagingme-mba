@@ -79,13 +79,24 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0114** (les trois tables Channels Me, plus `possede_par` et `max_fires_per_hour` sur
-`automations`), le 2026-09-07 au matin. **0115 appliquée** le 2026-09-07 au soir (l'index qui sert « le parcours actif de ce
-contact », `CREATE INDEX CONCURRENTLY`, hors transaction ; `indisvalid` vérifié après coup, et le
-planificateur la prend). **0116 est ÉCRITE et EN ATTENTE** (la phrase d'un lien de chaîne devient sa clé de
-routage : unicité par espace, et bascule des liens existants). **Prochaine libre = 0117.**
+**Dernière appliquée : 0116**, le 2026-09-07 au soir (la phrase d'un lien de chaîne devient sa clé de
+routage : index unique par espace, et bascule des mots-clés des liens existants du jeton vers la phrase).
+**Prochaine libre = 0117.**
 
-Elle a suivi l'ordre que la section impose, et c'est le cas d'école : ses deux colonnes sur `automations`
+Rappel des deux précédentes : **0114** le 2026-09-07 au matin (les trois tables Channels Me, plus
+`possede_par` et `max_fires_per_hour` sur `automations`) ; **0115** le même soir (l'index qui sert « le
+parcours actif de ce contact », `CREATE INDEX CONCURRENTLY`, hors transaction, `indisvalid` vérifié après
+coup et le planificateur la prend).
+
+🔴 **CE QUI A ÉTÉ VÉRIFIÉ SUR 0116, ET POURQUOI CE N'ÉTAIT PAS FACULTATIF.** Sa précondition (aucune phrase
+en double) a été REVÉRIFIÉE juste avant de l'appliquer, pas seulement quand elle a été écrite. Puis ses deux
+effets ont été mesurés en base plutôt que déduits de l'absence d'erreur : `indisvalid = true` sur
+`channelsme_links_phrase_key`, et les mots-clés des deux liens réellement basculés. Surtout, le point dont
+dépendait la survie de tous les posts DÉJÀ PUBLIÉS a été lu dans la donnée : leur automation porte bien
+`mode: "contains"`. En `equals`, le texte historique `phrase (cm-xxxx)` aurait cessé de correspondre et tous
+les boutons en circulation seraient morts, sans aucun recours.
+
+**0114** a suivi l'ordre que la section impose, et c'est le cas d'école : ses deux colonnes sur `automations`
 sont lues par le CHEMIN CHAUD (`PgAutomationStore.listEnabled`, qui sert la correspondance des messages
 entrants), donc image construite, puis `migrate`, puis `up -d --build`. Vérifié après coup en interrogeant
 `information_schema` ET en exécutant la requête du chemin chaud, pas en constatant l'absence d'erreur dans

@@ -1768,7 +1768,18 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/components/SelecteurEmojis.tsx` | 🔴 LA grille d'emojis des composeurs de message (liste `lib/emojis.ts`, panneau `Flottant`), et elle se FERME après un choix. La liste était déjà partagée ; la grille, elle, était recopiée dans `TemplateBodyField` et `ChampCorpsVariables`, et les deux copies avaient déjà divergé sur la fermeture, chacune documentant l'autre comme fautive. Le composeur de chaîne allait être la troisième |
 | `web/components/ListeManques.tsx` | 🔴 « Voilà ce qui manque » : pourquoi un bouton de validation reste grisé, À L'ÉCRAN et pas dans une infobulle `title` qu'il faut survoler à la souris. Il ne débloque RIEN, il rend la raison visible. Écrit d'abord pour `FlowBuilder` seul, alors que `TemplateForm` et `CarouselForm` avaient le même cul-de-sac muet |
 | `web/components/ChampImageHebergee.tsx` | 🔴 Une image que la console HÉBERGE, et dont elle rend l'adresse publique (bouton fichier + champ URL conservé pour qui a déjà son CDN). Ni un message RCS ni un post de chaîne ne TRANSPORTENT l'image : ils transportent son adresse, que l'opérateur ou le fournisseur va chercher. Il s'appelait `RcsImageField` ; le reste du chemin garde son nom RCS (`uploadRcsMedia`, `POST /rcs/media`, table `rcs_media`, service public `GET /m/`), parce que `/m/` sert des adresses déjà parties dans des messages livrés, donc c'est une porte à SENS UNIQUE |
+| `web/lib/chaine-apercu.ts` -> `corpsDuPost` | 🔴 Le CORPS d'un post déjà publié, sans l'adresse `wa.me` que le serveur lui a collée (`corps` + deux sauts de ligne + adresse). L'aperçu ne met en forme que le corps, qu'il reçoit séparément : donner le texte STOCKÉ entier au formateur n'est donc pas « le même rendu », c'est un autre traitement sur une autre entrée, et la longueur de l'adresse entre alors dans le plafond d'analyse |
 | `web/components/TexteMisEnForme.tsx` | 🔴 Le texte d'un post de chaîne RENDU (`*gras*`, `_italique_`, `~barré~`), découpage dans le module pur `lib/chaine-mise-en-forme.ts`. L'aperçu le rendait pendant que la liste des publications, juste en dessous, montrait les marqueurs bruts : deux moitiés du même écran qui ne montraient pas la même chose du même post |
+
+🔴 **REMPLACER UN BLOC PAR UN COMPOSANT PARTAGÉ CHANGE SA CONDITION D'AFFICHAGE, et c'est invisible du
+compilateur** (2026-09-07). `FlowBuilder` affichait ses manques sur `!canSubmit && !busy` : le bloc
+apparaissait dès que le bouton était grisé, quelle que soit la cause. `ListeManques` s'affiche sur
+`manques.length > 0`. Porter quatre des SEPT conditions de `canSubmit` dans la nouvelle liste a donc rendu
+le bouton MUET sur les trois autres, dans le composant même où le remède avait été écrit, et aucun test de
+comportement ne pouvait le voir (le bloc s'affichait toujours pour les quatre cas couverts).
+`web/lib/manques-cablage.test.ts` lit la source et compare les identifiants de `canSubmit` à ceux du bloc :
+c'est le seul angle d'où le trou est visible. **Toute condition ajoutée à un `canSubmit` doit gagner sa
+ligne dans les manques**, sinon elle ramène le cul-de-sac que ces écrans existent pour fermer.
 
 ⚠️ **Un composant React se déclare au niveau MODULE, jamais dans le corps d'un autre composant.** Sa fonction
 change alors d'identité à chaque rendu, donc React démonte et remonte le sous-arbre : une modale ouverte perd

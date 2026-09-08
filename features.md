@@ -1637,11 +1637,19 @@ côté.
 
 🔴 **« Combien de clics » n'existe pas, et ce n'est pas une lacune de la console.** Un appui sur le bouton
 ouvre WhatsApp sur le téléphone de l'abonné : ce geste ne traverse aucun de nos serveurs, et Channels Me ne
-le rapporte pas non plus. Ce qui est mesurable, c'est le message qui arrive ENSUITE, et c'est ce que l'écran
-affiche : des **conversations démarrées**, comptées en contacts distincts. Deux limites, écrites à l'écran :
-le chiffre vaut pour le BOUTON, toutes ses publications confondues (deux posts sur le même bouton envoient
-le même message, rien ne dit lequel a été vu) ; et quand la mesure est indisponible, l'écran n'affiche RIEN
-plutôt qu'un zéro, qui se lirait « ce bouton n'a rien produit ».
+le rapporte pas non plus. Ce qui est mesurable, c'est le message qui arrive ENSUITE.
+
+L'écran affiche donc exactement ce qu'il observe : **« N personnes ont envoyé ce message »**, comptées en
+contacts distincts (un abonné qui appuie trois fois est une personne, pas trois). ⚠️ **Il ne dit pas
+« conversations démarrées », et c'est délibéré** : nous ne reconnaissons que la phrase du bouton, alors que
+le moteur applique trois filtres de plus avant de démarrer un scénario (automation allumée, anti-rebond,
+plafond horaire). Un message reçu pendant que le bouton était éteint compterait donc comme une
+« conversation démarrée » juste au-dessus du bandeau annonçant que ce bouton ne démarre rien.
+
+Trois limites, ÉCRITES sous la liste et pas rangées dans une infobulle : le chiffre vaut pour le BOUTON,
+toutes ses publications confondues (deux posts sur le même bouton envoient le même message, rien ne dit
+lequel a été vu) ; un message reçu bouton éteint est compté sans avoir rien démarré ; et quand la mesure est
+indisponible, l'écran n'affiche RIEN plutôt qu'un zéro, qui se lirait « ce bouton n'a rien produit ».
 
 ## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
 
