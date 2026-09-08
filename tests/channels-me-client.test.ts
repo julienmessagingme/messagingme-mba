@@ -106,17 +106,47 @@ describe('ecriture', () => {
     expect(a.headers.Accept).toBe('application/json');
     // La preuve, et elle ne depend d'aucune connaissance de la forme canonique : re-signer le corps
     // REELLEMENT transmis redonne la signature REELLEMENT posee.
+    // ⚠️ Vrai ICI parce que ce corps ne porte aucun champ hors signature. Avec une image, la signature
+    // porte sur le corps PRIVE de `media_url` (regle mesuree, cf. le test dedie plus bas) : cette egalite
+    // n'y vaut donc pas, et c'est exactement ce que l'ancien test de l'image affirmait a tort.
     expect(signer(a.body!, CX.secret)).toBe(a.headers['X-Signature']);
     // Et la signature porte sur la structure IMBRIQUEE, pas sur des cles a plat `message[kind]`.
     expect(JSON.parse(a.body!)).toEqual({ message: { kind: 'text_and_media', publish_now: true, text: 'Bonjour' } });
   });
 
-  it('avec une image : media_url dans le corps signe, et le MEME kind que sans image', async () => {
+  it('🔴 avec une image : media_url est ENVOYE mais la signature porte sur le corps SANS lui', async () => {
+    /**
+     * 🔴 CE TEST AFFIRMAIT L'INVERSE, IL ETAIT VERT, ET IL VERROUILLAIT LE BUG. Il exigeait
+     * `signer(corps_envoye) === X-Signature`, c'est-a-dire l'invariant general du module, jamais MESURE
+     * pour le cas de l'image. Resultat : toute publication avec image recevait
+     * `401 Bad Authorization or X-Signature header`, et l'ecran repondait « verifie le texte et l'image ».
+     * Un test qui recopie l'hypothese du code ne la verifie pas, il l'immunise.
+     *
+     * La regle reelle a ete mesuree le 2026-09-08 contre l'API du fournisseur (trois sondes, brouillons,
+     * rien de cree) : il retire `media_url` avant de verifier. Cf. `CHAMPS_HORS_SIGNATURE`.
+     */
     const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 'msg_2' } }) }]);
     await new ChannelsMeClient({ fetch: impl }).createMessage(CX, { text: 'Voir', mediaUrl: 'https://exemple.test/a.jpg' });
-    expect(JSON.parse(appels[0]!.body!)).toEqual({
+    const a = appels[0]!;
+
+    // Le corps TRANSMIS porte bien l'image : sans elle, le post partirait sans visuel, et il est
+    // irrattrapable.
+    expect(JSON.parse(a.body!)).toEqual({
       message: { kind: 'text_and_media', media_url: 'https://exemple.test/a.jpg', publish_now: true, text: 'Voir' },
     });
+
+    // La signature, elle, porte sur le corps PRIVE de media_url.
+    const attendue = signer('{"message":{"kind":"text_and_media","publish_now":true,"text":"Voir"}}', CX.secret);
+    expect(a.headers['X-Signature']).toBe(attendue);
+    // Preuve inverse, celle qui aurait du echouer des le debut : signer le corps transmis ne donne PAS la
+    // signature posee.
+    expect(signer(a.body!, CX.secret)).not.toBe(a.headers['X-Signature']);
+  });
+
+  it('sans image, la signature porte toujours sur le corps EXACT : la regle generale n a pas bouge', async () => {
+    // L'exception est bornee a media_url. Si elle debordait, tous les autres appels casseraient a leur tour.
+    const { impl, appels } = faux([{ body: JSON.stringify({ data: { id: 'msg_3' } }) }]);
+    await new ChannelsMeClient({ fetch: impl }).createMessage(CX, { text: 'Sans image' });
     expect(signer(appels[0]!.body!, CX.secret)).toBe(appels[0]!.headers['X-Signature']);
   });
 

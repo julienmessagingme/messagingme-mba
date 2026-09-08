@@ -475,9 +475,25 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
           error: 'Channels Me n’a pas repondu a temps : impossible de savoir si le message est deja parti. Verifie la chaine (l’onglet Publications) avant toute nouvelle tentative.',
         });
       }
+      // 🔴 UN 401 N'EST PAS UNE FAUTE DU CLIENT, ET LUI DIRE LE CONTRAIRE LUI FAIT PERDRE SON TEMPS. Le
+      // 2026-09-08, une publication avec image a rendu `401 Bad Authorization or X-Signature header` : notre
+      // signature. L'ecran a repondu « verifie le texte et l'image », donc Julien a cherche dans son texte
+      // et dans sa photo un defaut qui n'existait pas. Un refus d'authentification se dit pour ce qu'il est,
+      // et rien de ce que le client peut changer ne le reglera.
+      // ⚠️ 424 et surtout PAS 502 : Cloudflare remplace le corps de TOUTE reponse 5xx par sa propre page
+      // d'erreur, donc ce message n'atteindrait jamais l'ecran. La regle est ecrite deux lignes plus haut,
+      // et je l'ai quand meme enfreinte en ecrivant ce bloc : elle merite d'etre rappelee ici aussi.
+      if (err instanceof ChannelsMeApiError && (err.status === 401 || err.status === 403)) {
+        return reply.code(424).send({
+          error: 'Channels Me a refuse NOS identifiants (erreur de notre cote, pas de ton message). Rien n’a ete publie. Si ca persiste, previens-nous : ni le texte ni l’image n’y changeront quoi que ce soit.',
+        });
+      }
       if (!(err instanceof ChannelsMeApiError) || err.status < 200 || err.status >= 300) {
         // Vrai refus du fournisseur (statut 4xx/5xx recu), ou une erreur qu'on ne sait pas qualifier : dans
-        // les deux cas rien n'est parti, c'est la saisie qu'il faut corriger.
+        // les deux cas rien n'est parti. ⚠️ Les refus d'AUTHENTIFICATION sont sortis juste au-dessus : ce
+        // qui arrive ici est ce que la saisie peut reellement corriger, et ce message ne vaut que sous
+        // cette condition. Un 500 `Down::NotFound` du fournisseur y tombe aussi, et il est legitime : il
+        // signifie qu'il n'a pas pu recuperer l'image a l'adresse donnee.
         return reply.code(422).send({ error: 'Channels Me a refuse la publication. Verifie le texte et l’image, puis reessaie.' });
       }
       // Statut 2xx recu : le message est REELLEMENT PARTI, seule l'enveloppe ou le schema attendu n'a pas ete

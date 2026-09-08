@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { corpsCanonique, signer } from '../src/channels-me/signature';
+import { corpsASigner, corpsCanonique, signer } from '../src/channels-me/signature';
 
 /**
  * Signature des appels Channels Me (module PUR : ni base, ni réseau).
@@ -90,5 +90,54 @@ describe('ce que la chaîne canonique garantit au client', () => {
     // rendrait `{"a":1,"b":null}`, une divergence inoffensive aujourd'hui mais un piège pour un appelant
     // futur qui ferait confiance à cette parité avec JSON.stringify.
     expect(corpsCanonique({ a: 1, b: () => {} })).toBe('{"a":1}');
+  });
+});
+
+describe('media_url est ENVOYE mais PAS SIGNE', () => {
+  /**
+   * 🔴 CE QUE CES TESTS EMPECHENT DE REVENIR. Toute publication AVEC IMAGE recevait
+   * `401 Bad Authorization or X-Signature header`, et l ecran repondait « verifie le texte et l image » :
+   * on envoyait donc chercher un defaut inexistant dans le contenu du client. Le fournisseur retire
+   * `media_url` de son cote avant de verifier, mesure le 2026-09-08 sur trois sondes (cf. le docblock de
+   * `CHAMPS_HORS_SIGNATURE`).
+   */
+  const CORPS = {
+    message: {
+      kind: 'text_and_media',
+      publish_now: true,
+      text: 'Notre promo',
+      media_url: 'https://api.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png',
+    },
+  };
+
+  it('🔴 la chaine SIGNEE ne porte pas media_url', () => {
+    expect(corpsCanonique(corpsASigner(CORPS))).toBe(
+      '{"message":{"kind":"text_and_media","publish_now":true,"text":"Notre promo"}}',
+    );
+  });
+
+  it('🔴 preuve inverse : la chaine ENVOYEE, elle, le porte toujours', () => {
+    // Sans ce sens-la, une exclusion trop gourmande retirerait l image du corps transmis : le post partirait
+    // sans visuel, et il est irrattrapable.
+    expect(corpsCanonique(CORPS)).toContain('"media_url":"https://api.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png"');
+  });
+
+  it('l exclusion est PROFONDE : le corps reel est imbrique dans `message`', () => {
+    // Un filtre de surface ne verrait rien, `media_url` n etant jamais a la racine.
+    expect(JSON.stringify(corpsASigner({ a: { b: { media_url: 'x', garde: 1 } } }))).toBe('{"a":{"b":{"garde":1}}}');
+  });
+
+  it('media_checksum reste SIGNE, contrairement a media', () => {
+    // Leur spec le dit explicitement : on signe AVEC le checksum et SANS le media. Les confondre casserait
+    // le futur chemin multipart exactement comme media_url cassait celui-ci.
+    const r = corpsASigner({ message: { media: 'binaire', media_checksum: 'abc', text: 't' } }) as {
+      message: Record<string, unknown>;
+    };
+    expect(Object.keys(r.message).sort()).toEqual(['media_checksum', 'text']);
+  });
+
+  it('un corps SANS media n est pas touche : la regle generale vaut partout ailleurs', () => {
+    const simple = { message: { kind: 'text_and_media', text: 'coucou' } };
+    expect(corpsCanonique(corpsASigner(simple))).toBe(corpsCanonique(simple));
   });
 });

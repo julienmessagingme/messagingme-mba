@@ -1809,6 +1809,42 @@ refactor par expression régulière qui n'attend que `
 ?
 `, et vérifier le compte de remplacements.
 
+## Channels Me : `media_url` est ENVOYÉ mais N'EST PAS SIGNÉ (mesuré le 2026-09-08)
+
+🔴 **Toute publication de chaîne AVEC IMAGE échouait, depuis toujours.** Le fournisseur rendait
+`401 Bad Authorization or X-Signature header`, et la console répondait « Channels Me a refusé la publication,
+vérifie le texte et l'image » : on envoyait donc le client chercher un défaut inexistant dans SON contenu,
+alors que le refus portait sur NOTRE signature.
+
+**Ce qui a tranché, ce sont trois sondes**, avec le vrai `kind` et sur des brouillons (invisibles des
+abonnés, et rien n'a été créé), en exploitant la propriété que la spec documente : l'authentification passe
+AVANT la validation, donc une signature fausse rend 401 et une signature juste rend autre chose.
+
+| corps envoyé | signature calculée sur | verdict |
+|---|---|---|
+| texte seul | tout | authentification OK |
+| texte + `media_url` | tout | **401** |
+| texte + `media_url` | tout SAUF `media_url` | authentification OK |
+
+Une sonde de contrôle a montré qu'une clé **inconnue quelconque** casse aussi la signature : leur
+vérification porte sur les paramètres qu'ils RETIENNENT, pas sur le corps brut. Leur documentation ne l'écrit
+que pour le multipart (« the signature should be computed with the `media_checksum` and the `media`
+parameter should be ommited ») ; `media_url` suit la même règle sans que rien ne le dise.
+
+**Le remède** vit dans `CHAMPS_HORS_SIGNATURE` et `corpsASigner` (`src/channels-me/signature.ts`), en UN
+endroit : le corps part entier, la signature porte sur ce corps privé de ces champs. ⚠️ `media_checksum`
+n'y est PAS, leur spec disant explicitement de signer AVEC lui.
+
+🔴 **LA LEÇON, ET ELLE EST PLUS CHÈRE QUE LE BUG : un test vert verrouillait le défaut.**
+`tests/channels-me-client.test.ts` exigeait `signer(corps_envoyé) === X-Signature` pour le cas de l'image.
+Il recopiait l'invariant du module (« ce qu'on signe EST ce qu'on transmet »), invariant juste partout
+ailleurs et jamais MESURÉ pour ce cas-là. Un test qui recopie l'hypothèse du code ne la vérifie pas, il
+l'immunise, et il donne la confiance qui empêche d'aller mesurer.
+
+⚠️ **Autre chose apprise au passage : leur serveur VA CHERCHER `media_url` pendant l'appel.** Une adresse
+qu'il ne peut pas récupérer rend `500 Down::NotFound`. Nos images sont servies par `GET /m/:fichier`, et ce
+chemin doit rester joignable publiquement, sans authentification : vérifié le 2026-09-08 sur les deux hôtes.
+
 ## Le connecteur API d'un client (lot L2, livré le 2026-08-28)
 
 Une **source** (`agent_tool_sources`, migration 0088) porte l'adresse de base du système d'un client, son mode

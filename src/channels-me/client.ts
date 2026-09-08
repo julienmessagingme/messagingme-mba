@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { corpsCanonique, signer } from './signature';
+import { corpsASigner, corpsCanonique, signer } from './signature';
 import { organisationSchema, messageChannelSchema, messageSchema } from './types';
 import type { Connexion, Organisation, MessageChannel, Message } from './types';
 import { estAbandon } from '../meta/http';
@@ -130,11 +130,15 @@ export class ChannelsMeClient {
   }
 
   /**
-   * 🔴 UNE SEULE DERIVATION DE LA CHAINE CANONIQUE. `canonique` est SIGNEE et ENVOYEE comme corps : il
-   * n'existe aucun endroit ou ce qu'on signe pourrait differer de ce qu'on transmet. Deriver deux fois
-   * (signer l'objet, puis `JSON.stringify` le meme objet pour le corps) est le moyen le plus sur de
-   * produire une signature qui ne correspond pas au corps, et l'API repond alors 401 sans dire pourquoi,
-   * ce qui fait accuser les cles alors qu'elles sont bonnes.
+   * 🔴 CE QU'ON ENVOIE ET CE QU'ON SIGNE VIENNENT DU MEME OBJET, et ne different que par une regle
+   * NOMMEE ET MESUREE : `corpsASigner` retire les champs que le fournisseur retire de son cote avant de
+   * verifier (`CHAMPS_HORS_SIGNATURE`, aujourd'hui `media_url` et `media`). C'est la seule difference
+   * possible, elle est declaree en un endroit, et le reste du corps est signe tel qu'il part.
+   *
+   * ⚠️ Sans cette regle, toute publication AVEC IMAGE recevait `401 Bad Authorization or X-Signature
+   * header`. Deriver librement deux fois (signer un objet, serialiser l'autre) reste le moyen le plus sur
+   * de produire une signature qui ne correspond pas au corps, et l'API repond alors 401 sans dire pourquoi,
+   * ce qui fait accuser les cles alors qu'elles sont bonnes. D'ou une fonction, pas deux constructions.
    *
    * Deux autres invariants mesures tiennent dans cette methode :
    *  - `Accept: application/json` sur TOUS les appels, GET compris, sans quoi l'API rend une page HTML
@@ -150,10 +154,11 @@ export class ChannelsMeClient {
     corps?: unknown,
   ): Promise<z.infer<S>> {
     const canonique = corps === undefined ? null : corpsCanonique(corps);
+    const aSigner = corps === undefined ? null : corpsCanonique(corpsASigner(corps));
     const entetes: Record<string, string> = { Accept: JSON_MIME, [ENTETE_AUTORISATION]: `Bearer ${cx.apiKey}` };
     if (canonique !== null) {
       entetes['Content-Type'] = JSON_MIME;
-      entetes[ENTETE_SIGNATURE] = signer(canonique, cx.secret);
+      entetes[ENTETE_SIGNATURE] = signer(aSigner!, cx.secret);
     }
 
     let res: Response;
