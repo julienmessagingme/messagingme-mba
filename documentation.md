@@ -1738,6 +1738,29 @@ déclenche plus rien. Le commentaire de `db/migrations/0114_channelsme.sql` qui 
 l'automation cherche en `contains` » est donc devenu faux ; on ne réédite pas une migration appliquée, c'est
 cette entrée-ci qui fait foi.
 
+## 🔴 Changer la NATURE d'une entrée de nav casse ses appelants, comme un changement de signature (2026-09-08)
+
+« Other AI agent » est passé d'une ENTRÉE-LIEN à un GROUPE dépliable (il porte désormais Agents et Crédit).
+Aucune adresse n'a changé, le menu s'affiche, le typecheck passe, les trois specs de navigation passent. Et
+pourtant `agents-fiche.spec.ts` est tombé en CI : il cliquait `getByRole('link', { name: 'Other AI agent' })`,
+qui n'existe plus, parce qu'un groupe est un BOUTON.
+
+**La règle :** dans `NavEntree`, `href` et `children` s'excluent, donc passer de l'un à l'autre change le
+RÔLE ARIA rendu. Tout ce qui visait l'entrée par son rôle vise désormais le mauvais. Avant de regrouper une
+entrée, chercher son libellé dans `web/e2e/` : c'est le seul endroit où l'ancien rôle est écrit en toutes
+lettres, et rien dans le type ne relie les deux fichiers.
+
+⚠️ Le correctif garde le CAS, jamais seulement l'assertion : le test vérifiait « la nav mène à l'écran », il
+le vérifie toujours, avec un cran de plus dans le chemin.
+
+⚠️ **`inbox-envoi-scenario.spec.ts` est INSTABLE SOUS CHARGE, et il a été quantifié plutôt que soupçonné**
+(2026-09-08). Il est tombé deux fois dans une suite complète à 4 workers pendant que d'autres travaux
+tournaient sur la même machine, toujours sur l'ouverture du panneau (`inbox-open-scenario` ->
+`scenario-select`). Mesure : **15 exécutions isolées, 15 succès** (trois passes de cinq). Le fichier n'est
+donc pas en cause, la contention l'est, et le `workers: 4` de la configuration porte déjà ce commentaire.
+La CI, elle, a `retries: 1` et des ressources dédiées. **À ne pas affaiblir** : le jour où il tombe en CI,
+c'est un vrai défaut.
+
 ## Modules partagés (audit anti-slop du 2026-08-18)
 
 Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrite plusieurs fois et avait commencé
