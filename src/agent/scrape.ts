@@ -35,9 +35,48 @@ const MIN_CORPS = 40;
 /** Balises dont le CONTENU n'est pas du texte de page. Retirées avec leur contenu, pas seulement démarquées :
  *  un `<script>` laissé nu injecterait du JavaScript dans la base de connaissance, donc dans le prompt. */
 const BLOCS_A_JETER = /<(script|style|noscript|template|svg|iframe)\b[^>]*>[\s\S]*?<\/\1>/gi;
-/** Chrome de page : présent sur CHAQUE page d'un site, donc mot commun à toutes les fiches, donc bruit pur
- *  pour une recherche qui compte les mots partagés. */
-const CHROME = /<(nav|header|footer|aside|form)\b[^>]*>[\s\S]*?<\/\1>/gi;
+/**
+ * Chrome de page : présent sur CHAQUE page d'un site, donc mot commun à toutes les fiches, donc bruit pur
+ * pour une recherche qui compte les mots partagés.
+ *
+ * 🔴 `form` EN A ÉTÉ RETIRÉ LE 2026-09-08, APRÈS AVOIR AVALÉ UN SITE ENTIER. Julien importe
+ * `ganprevoyance.fr` : une seule fiche en sort, 71 caractères, le titre de la page. Mesuré sur le HTML réel,
+ * étape par étape : 12 113 caractères bruts, 7 387 après retrait des scripts, et 71 après retrait du chrome.
+ * Le coupable est `<form>`, présent UNE fois et enveloppant tout le corps de page (motif classique
+ * d'ASP.NET WebForms, et de tout site dont une section vit dans un formulaire). `nav` et `header` en
+ * retiraient 2 464 à eux deux, ce qui est exactement leur rôle.
+ *
+ * Un formulaire n'est pas du chrome : c'est un CONTENEUR, et rien ne dit ce qu'il contient.
+ */
+const CHROME = /<(nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi;
+
+/**
+ * Part du texte qu'il faut au MINIMUM conserver après retrait du chrome.
+ *
+ * 🔴 LA GARDE GÉNÉRALE, celle qui vaut mieux que le cas particulier de `form`. Retirer `form` répare CE
+ * site ; rien n'empêche un autre d'envelopper sa page dans un `<header>`, et on perdrait tout de la même
+ * façon, en silence, avec pour seul symptôme un agent qui ne sait rien. Quand le retrait du chrome emporte
+ * l'essentiel de la page, c'est que ce n'en était pas : on garde alors la page entière, quitte à ce qu'elle
+ * porte du bruit. Une fiche bruyante se corrige à l'écran ; une page perdue ne se voit pas.
+ *
+ * ⚠️ Une page qui EST vraiment un sommaire (que de la navigation) tombera sous ce seuil et gardera son
+ * chrome. C'est le bon compromis : un peu de bruit sur une page qui n'avait rien d'autre à offrir.
+ */
+const PART_MIN_APRES_CHROME = 0.2;
+
+/** Longueur du texte NU, pour comparer deux états du même document. */
+function longueurTexte(html: string): number {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
+}
+
+/** Retire le chrome, SAUF quand ce retrait emporte l'essentiel de la page. Interne : `pageEnFiches` est
+ *  le seul chemin, et un export sans lecteur serait une API morte. */
+function retirerChrome(html: string): string {
+  const avant = longueurTexte(html);
+  const apres = html.replace(CHROME, ' ');
+  if (avant === 0) return apres;
+  return longueurTexte(apres) < avant * PART_MIN_APRES_CHROME ? html : apres;
+}
 const COMMENTAIRES = /<!--[\s\S]*?-->/g;
 const TITRES = /<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
 
@@ -104,7 +143,7 @@ function titreDuDocument(html: string, url: string): string {
  * le titre du document. Sans ça, une page dont la réponse est dans son chapeau n'aurait aucune source.
  */
 export function pageEnFiches(html: string, url: string): FicheExtraite[] {
-  const propre = html.replace(COMMENTAIRES, ' ').replace(BLOCS_A_JETER, ' ').replace(CHROME, ' ');
+  const propre = retirerChrome(html.replace(COMMENTAIRES, ' ').replace(BLOCS_A_JETER, ' '));
   const titreDoc = titreDuDocument(html, url);
 
   // `ouverture` est l'endroit où la balise de titre commence, `debut` celui où son contenu commence : la

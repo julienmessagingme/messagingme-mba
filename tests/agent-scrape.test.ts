@@ -99,3 +99,42 @@ describe('pageEnFiches', () => {
     expect(pageEnFiches('<html><body><nav>Accueil</nav></body></html>', 'https://exemple.fr/')).toEqual([]);
   });
 });
+
+describe('le chrome ne doit pas emporter la page', () => {
+  const section = (t: string) => `<h2>${t}</h2><p>${'x'.repeat(120)}</p>`;
+
+  it('🔴 une page entierement enveloppee dans un <form> garde son contenu', () => {
+    /**
+     * 🔴 LE DEFAUT VECU LE 2026-09-08. Julien importe ganprevoyance.fr : UNE fiche en sort, 71 caracteres,
+     * le titre de la page. Mesure sur le HTML reel, etape par etape : 12 113 caracteres bruts, 7 387 apres
+     * retrait des scripts, 71 apres retrait du chrome. Le coupable etait `form`, present une fois et
+     * enveloppant tout le corps (motif classique d ASP.NET WebForms). Son agent n avait donc aucune
+     * connaissance, et repondait a cote sans que rien ne le signale.
+     */
+    const html = `<html><head><title>Assurance</title></head><body><form action="/x">
+      ${section('Prévoyance')}${section('Retraite')}</form></body></html>`;
+    const f = pageEnFiches(html, 'https://exemple.fr/');
+    expect(f.map((x) => x.titre)).toEqual(['Prévoyance', 'Retraite']);
+  });
+
+  it('🔴 preuve inverse : sur une page NORMALE, le chrome est bien retire', () => {
+    // Sans ce sens-la, on aurait pu « reparer » en ne retirant plus rien, et chaque fiche du site porterait
+    // le meme menu, donc les memes mots, donc une recherche qui remonte n importe quoi.
+    const html = `<html><head><title>T</title></head><body>
+      <nav><a href="/a">Accueil</a><a href="/b">Contact</a></nav>
+      ${section('Prévoyance')}${section('Retraite')}${section('Santé')}
+      <footer>Mentions légales</footer></body></html>`;
+    const f = pageEnFiches(html, 'https://exemple.fr/');
+    expect(f.map((x) => x.titre)).toEqual(['Prévoyance', 'Retraite', 'Santé']);
+    expect(f.some((x) => x.corps.includes('Mentions légales'))).toBe(false);
+    expect(f.some((x) => x.corps.includes('Accueil'))).toBe(false);
+  });
+
+  it('🔴 la garde est GENERALE : un <header> qui enveloppe tout ne perd pas la page non plus', () => {
+    // Retirer `form` reparait CE site. La garde couvre la classe entiere : quand le retrait du chrome
+    // emporte l essentiel, c est que ce n en etait pas.
+    const html = `<html><head><title>T</title></head><body><header>
+      ${section('Prévoyance')}${section('Retraite')}</header></body></html>`;
+    expect(pageEnFiches(html, 'https://exemple.fr/').map((x) => x.titre)).toEqual(['Prévoyance', 'Retraite']);
+  });
+});
