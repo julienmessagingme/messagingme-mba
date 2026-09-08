@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Guard, PreHandler } from '../auth/middleware';
-import type { ConversationSummary, ConversationMessage, ListConversationsOptions } from '../inbox/store.pg';
+import type { ConversationSummary, ConversationMessage, ListConversationsOptions, CompteursInbox } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
@@ -9,6 +9,12 @@ import { cacheCourt } from '../lib/cache-court';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
+
+/**
+ * Ce que rend la route des compteurs quand la dépendance n'est pas câblée (suites de tests à deps minimales,
+ * instance partielle). Des ZÉROS et non une erreur : un menu sans chiffres reste un menu.
+ */
+const COMPTEURS_VIDES: CompteursInbox = { tout: 0, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 0, parMembre: [] };
 
 /**
  * Durée de vie du micro-cache des compteurs de l'inbox (AUDIT-SCALE-2026-08-25.md, R7).
@@ -51,6 +57,10 @@ export interface InboxRouteDeps {
   countUnread?(tenantId: string): Promise<number>;
   /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
   countATraiter?(tenantId: string): Promise<number>;
+  /** Les cinq compteurs du menu de dossiers, plus la charge par membre. */
+  compterConversations?(tenantId: string): Promise<CompteursInbox>;
+  /** Range une conversation dans Archivé, ou l'en sort. `false` = inconnue dans cet espace -> 404. */
+  archiverConversation?(tenantId: string, conversationId: string, archive: boolean): Promise<boolean>;
   /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
@@ -170,15 +180,26 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    */
   const gardeAdmin = requireAdmin ? { preHandler: requireAdmin } : guard;
   const journal = makeJournal(deps.audit);
-  // Micro-cache des DEUX compteurs (R7). Instancié ici, donc un par serveur construit : deux instances de
-  // test ne se partagent rien, et il meurt avec le process.
+  // Micro-cache des compteurs (R7). Instancié ici, donc un par serveur construit : deux instances de test ne
+  // se partagent rien, et il meurt avec le process.
+  // ⚠️ Ils sont TROIS depuis le 2026-09-08 (non-lus, à traiter, et le menu de dossiers), d'où la seconde
+  // instance juste en dessous : ce commentaire disait « les DEUX » et l'oublier aurait laissé croire que la
+  // liste d'invalidation était complète alors qu'il lui en manquait un.
   const compteurs = cacheCourt<number>(COMPTEURS_TTL_MS);
   const cleUnread = (tenant: string): string => `unread:${tenant}`;
   const cleATraiter = (tenant: string): string => `todo:${tenant}`;
-  /** Une écriture vient de changer ce que les compteurs disent : les deux repartent en base au prochain appel. */
+  /**
+   * Le MÊME mécanisme, une seconde instance : le menu de dossiers rend un OBJET, pas un nombre, et le cache
+   * est typé. Ce qui compte est qu'il n'y ait qu'UN endroit où l'on invalide, juste en dessous.
+   */
+  const compteursMenu = cacheCourt<CompteursInbox>(COMPTEURS_TTL_MS);
+  const cleMenu = (tenant: string): string => `menu:${tenant}`;
+  /** Une écriture vient de changer ce que les compteurs disent : TOUS repartent en base au prochain appel.
+   *  🔴 Un compteur oublié ici resterait juste assez longtemps pour qu'on le croie. */
   const invaliderCompteurs = (tenant: string): void => {
     compteurs.invalider(cleUnread(tenant));
     compteurs.invalider(cleATraiter(tenant));
+    compteursMenu.invalider(cleMenu(tenant));
   };
 
   app.get('/tenants/:tenantId/conversations', guard, async (req, reply) => {
@@ -186,12 +207,15 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
-    const q = (req.query ?? {}) as { limit?: unknown; beforeAt?: unknown; beforeId?: unknown; aTraiter?: unknown; signalees?: unknown };
+    const q = (req.query ?? {}) as { limit?: unknown; beforeAt?: unknown; beforeId?: unknown; aTraiter?: unknown; signalees?: unknown; archivees?: unknown };
     const opts: ListConversationsOptions = {};
     const limit = Number(q.limit);
     if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
     if (q.aTraiter === '1' || q.aTraiter === 'true') opts.aTraiter = true;
     if (q.signalees === '1' || q.signalees === 'true') opts.signalees = true;
+    // Le dossier ARCHIVÉ. Absent = les dossiers ordinaires, qui excluent les archivées : c'est le défaut,
+    // et c'est celui qu'un appelant qui ne connaît pas ce paramètre doit obtenir.
+    if (q.archivees === '1' || q.archivees === 'true') opts.archivees = true;
     // Le curseur n'a de sens qu'ENTIER : une moitié rendrait une page arbitraire, donc on exige les deux.
     if (typeof q.beforeAt === 'string' && q.beforeAt !== '' && typeof q.beforeId === 'string' && q.beforeId !== '') {
       opts.before = { at: q.beforeAt, id: q.beforeId };
@@ -209,6 +233,47 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   /**
    * Compteur « À traiter ». Route dédiée, même raison que le compteur de non-lus : l'écran le calculait sur
    * les conversations chargées, donc il plafonnait à la taille de la page et affichait moins que la réalité.
+   * Déclarée AVANT `/conversations/:conversationId` : `counts` n'est pas un identifiant.
+   *
+   * ⚠️ Rend un objet à ZÉROS quand la dépendance n'est pas câblée, jamais une erreur : un menu sans chiffres
+   * reste un menu utilisable, alors qu'une 503 rendrait tout l'écran indisponible pour un ornement.
+   */
+  app.get('/tenants/:tenantId/conversations/counts', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.compterConversations) return reply.code(200).send(COMPTEURS_VIDES);
+    // `deps.compterConversations(...)` DANS la fermeture, jamais une référence détachée : même raison que
+    // pour `todo-count` juste en dessous.
+    const compte = await compteursMenu.lire(cleMenu(tenant), () => deps.compterConversations!(tenant));
+    return reply.code(200).send(compte);
+  });
+
+  /**
+   * Archiver / désarchiver une conversation.
+   *
+   * DEUX routes et non un PATCH à drapeau : l'intention se lit dans l'adresse, et un corps mal formé ne peut
+   * pas transformer un archivage en son contraire.
+   *
+   * Ouvert aux OPÉRATEURS comme aux admins (`guard` et non `gardeAdmin`) : ranger sa boîte est le geste de
+   * celui qui la traite, pas une décision d'administration.
+   */
+  for (const [chemin, archive] of [['archive', true], ['unarchive', false]] as const) {
+    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, guard, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      if (!deps.archiverConversation) return reply.code(503).send({ error: 'archivage indisponible sur cette instance' });
+      const { conversationId } = req.params as { conversationId: string };
+      // 404 et non 200 : une conversation inconnue (ou d'un autre espace) doit se voir, sinon l'écran
+      // annoncerait un rangement qui n'a pas eu lieu.
+      if (!(await deps.archiverConversation(tenant, conversationId, archive))) {
+        return reply.code(404).send({ error: 'conversation inconnue' });
+      }
+      invaliderCompteurs(tenant); // deux dossiers viennent de changer de contenu.
+      return reply.code(200).send({ archived: archive });
+    });
+  }
+
+  /**
    * Déclarée AVANT `/conversations/:conversationId` : `todo-count` n'est pas un identifiant.
    */
   app.get('/tenants/:tenantId/conversations/todo-count', guard, async (req, reply) => {

@@ -461,6 +461,9 @@ async function main(): Promise<void> {
       effacerMessages: (tenant, id) => inboxStore.effacerMessages(tenant, id),
       audit: auditSink,
       countATraiter: (tenant) => inboxStore.countATraiter(tenant),
+      // Les cinq compteurs du menu de dossiers, plus la charge par membre, en une lecture.
+      compterConversations: (tenant) => inboxStore.compterConversations(tenant),
+      archiverConversation: (tenant, id, archive) => inboxStore.archiverConversation(tenant, id, archive),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),

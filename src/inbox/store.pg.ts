@@ -49,6 +49,23 @@ export interface ConversationSummary {
  * Options de lecture de l'inbox. Toutes optionnelles : sans elles, on obtient exactement la première page
  * telle qu'elle existait avant la pagination.
  */
+/**
+ * Les chiffres du menu de dossiers de l'Inbox.
+ *
+ * Un seul objet et non cinq nombres épars : ils sont affichés ensemble, ils doivent donc être LUS ensemble.
+ */
+export interface CompteursInbox {
+  /** Toutes les conversations NON archivées de l'espace. */
+  tout: number;
+  aTraiter: number;
+  signalees: number;
+  archivees: number;
+  /** Non archivées et confiées à personne. */
+  nonAffectees: number;
+  /** Tous les membres de l'espace, y compris ceux qui n'ont aucune conversation. */
+  parMembre: Array<{ userId: string; nom: string; n: number }>;
+}
+
 export interface ListConversationsOptions {
   /** Taille de page. Défaut 100, borné à 200 : la valeur vient d'une query string. */
   limit?: number;
@@ -432,6 +449,71 @@ export class PgInboxStore implements InboxStore {
       [tenantId],
     );
     return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Les compteurs du menu de dossiers, en UNE requête pour les cinq dossiers et une seconde pour la charge.
+   *
+   * 🔴 PAS SIX ALLERS-RETOURS, et ce n'est pas de l'optimisation prématurée : six lectures, ce sont six
+   * occasions que deux chiffres pris à deux instants différents ne s'accordent pas, et le menu les affiche
+   * l'un sous l'autre. Un « Tout (12) » au-dessus d'un « À traiter (13) » se remarque tout de suite.
+   *
+   * ⚠️ LES CONTACTS BLOQUÉS SONT EXCLUS PARTOUT, comme dans `listConversations`. L'ancien `countATraiter`
+   * ne le faisait pas : son chiffre pouvait dépasser le nombre de lignes que la liste montrait, sans que
+   * rien ne l'explique. Le compteur unifié ferme cette contradiction, ce qui peut faire BAISSER le nombre
+   * affiché chez un client qui a des contacts bloqués. C'est le bon sens de la correction.
+   *
+   * ⚠️ « Tout » exclut les ARCHIVÉES : sinon deux dossiers compteraient la même conversation, et leur somme
+   * dépasserait le nombre de conversations.
+   */
+  async compterConversations(tenantId: string): Promise<CompteursInbox> {
+    const res = await this.pool.query<{
+      tout: string; a_traiter: string; signalees: string; archivees: string; non_affectees: string;
+    }>(
+      `select
+         count(*) filter (where c.archived_at is null)::text as tout,
+         count(*) filter (where c.archived_at is null and c.control_owner <> 'app_workflow')::text as a_traiter,
+         count(*) filter (where c.archived_at is null and exists (
+           select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive))::text as signalees,
+         count(*) filter (where c.archived_at is not null)::text as archivees,
+         count(*) filter (where c.archived_at is null and c.assigned_to is null)::text as non_affectees
+         from conversations c
+         left join contacts ct on ct.id = c.contact_id
+        where c.tenant_id = $1 and ct.blocked_at is null`,
+      [tenantId],
+    );
+    /**
+     * La charge par membre : TOUS les membres de l'espace, y compris à ZÉRO.
+     *
+     * C'est ce qui répond à la question du manager. Un collaborateur sans conversation est une information,
+     * et ne le montrer que lorsqu'il en a le rendrait invisible au moment précis où on le cherche.
+     *
+     * Tri par nombre décroissant PUIS par nom : sans le second critère, deux membres à égalité
+     * changeraient de place d'un rafraîchissement à l'autre.
+     */
+    const membres = await this.pool.query<{ user_id: string; nom: string | null; email: string; n: string }>(
+      `select u.id as user_id, u.name as nom, u.email,
+              count(c.id) filter (where c.archived_at is null and ct.blocked_at is null)::text as n
+         from users u
+         left join conversations c on c.assigned_to = u.id and c.tenant_id = $1
+         left join contacts ct on ct.id = c.contact_id
+        where u.tenant_id = $1
+        group by u.id, u.name, u.email
+        order by count(c.id) filter (where c.archived_at is null and ct.blocked_at is null) desc,
+                 coalesce(u.name, u.email) asc`,
+      [tenantId],
+    );
+    const r = res.rows[0];
+    return {
+      tout: Number(r?.tout ?? 0),
+      aTraiter: Number(r?.a_traiter ?? 0),
+      signalees: Number(r?.signalees ?? 0),
+      archivees: Number(r?.archivees ?? 0),
+      nonAffectees: Number(r?.non_affectees ?? 0),
+      // Le nom AFFICHABLE, jamais vide : un membre sans nom se reconnaît à son e-mail, et une ligne muette
+      // dans une liste de charge ne désigne personne.
+      parMembre: membres.rows.map((m) => ({ userId: m.user_id, nom: m.nom ?? m.email, n: Number(m.n) })),
+    };
   }
 
   /**
