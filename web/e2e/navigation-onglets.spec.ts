@@ -95,6 +95,29 @@ test.describe('Navigation : les trois onglets', () => {
     await expect(page.getByTestId('onglet-perf')).toHaveCount(0);
   });
 
+  test('🔴 la pastille de non-lus se voit depuis les AUTRES onglets', async ({ page }) => {
+    /**
+     * La pastille vivait sur l'entrée « Inbox » de la barre latérale. L'Inbox étant devenue un onglet, cette
+     * entrée n'existe plus dans aucun menu : la pastille avait DISPARU, et c'est l'E2E qui l'a signalé.
+     *
+     * Remise sur l'onglet, elle y gagne : elle est visible depuis les trois, alors qu'elle ne l'était que
+     * dans la barre. Un opérateur qui lit ses chiffres dans le Performance Lab voit qu'on lui écrit. C'est
+     * cette capacité NEUVE que ce cas garde ; `inbox-unread-carousel.spec.ts` garde la pastille elle-même.
+     */
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), ADMIN);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.includes('/unread-count')) return json({ count: 4 });
+      if (url.endsWith('/me')) return json({ email: ADMIN.email, name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    for (const chemin of ['/accueil', '/dashboard/couts']) {
+      await page.goto(chemin);
+      await expect(page.getByTestId('nav-badge-inbox'), chemin).toHaveText('4');
+    }
+  });
+
   test('cliquer sur un onglet emmène à sa page d’entrée', async ({ page }) => {
     await mock(page, ADMIN);
     await page.goto('/accueil');

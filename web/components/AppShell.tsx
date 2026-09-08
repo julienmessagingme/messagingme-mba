@@ -79,9 +79,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * partagé continue d'ouvrir la même page, qui s'affiche simplement dans son onglet.
    */
   const NAV_CONSOLE: NavEntree[] = [
-    // L'accueil n'était atteignable que par le logo, ce qui ne se devine pas. Il n'apparaît PAS dans
-    // `NAV_AGENT` : `pageDArrivee` envoie un agent sur l'inbox, et cette page montre le statut du compte et
-    // ses réglages, qui ne le concernent pas.
+    // L'accueil n'était atteignable que par le logo, ce qui ne se devine pas. Un agent ne le voit pas :
+    // `pageDArrivee` l'envoie sur l'inbox, et cette page montre le statut du compte et ses réglages, qui ne
+    // le concernent pas.
     { key: 'accueil', href: '/accueil', label: t('Accueil', 'Home'), d: icons.accueil },
     // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
@@ -168,6 +168,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const NAV_PERF: NavEntree[] = [
     // ⚠️ `/dashboard` reste l adresse du PREMIER sous-onglet, pas une page d aiguillage : trois specs
     // Playwright et des liens deja distribues y pointent.
+    // 🔴 Et depuis le 2026-09-08, c est AUSSI la porte d entree de l onglet Performance Lab. La tentation
+    // sera d en faire une page d aiguillage « choisissez un tableau » : ce serait ajouter un clic a tout le
+    // monde et casser les liens existants. La page de synthese des lots E et F prendra sa propre adresse.
     { key: 'quantitatif', label: t('Quantitatif', 'Quantitative'), children: [
       { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
       { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
@@ -178,7 +181,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
   ];
 
-  const NAV_AGENT: NavEntree[] = NAV_INBOX;
+  // ⚠️ IL N'Y A PLUS DE NAV PROPRE A L'AGENT depuis le 2026-09-08, et ce n'est pas un oubli : un compte
+  // agent est toujours sur l'onglet Inbox (toute autre page le renvoie ici), et cet onglet n'a AUCUNE barre
+  // laterale. Le `NAV_AGENT` d'avant serait donc du code que rien ne peut atteindre. Le jour ou une seconde
+  // page s'ouvre aux agents, c'est l'arbre de SON onglet qui la portera, comme pour un admin.
 
   /** Les trois arbres, dans l'ordre de recherche de `ongletDeLaPage`. Le bloc bas appartient à la Console. */
   const ARBRES: Record<Onglet, NavEntree[]> = {
@@ -259,7 +265,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * un sélecteur résolvant à deux éléments.
    */
   const NAV_DU_CORPS: Record<Onglet, NavEntree[]> = { console: NAV_CONSOLE, inbox: NAV_INBOX, perf: NAV_PERF };
-  const nav = session.role === 'admin' ? NAV_DU_CORPS[onglet] : NAV_AGENT;
+  const nav = NAV_DU_CORPS[onglet];
 
   const itemCls = (on: boolean) =>
     `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'}`;
@@ -336,9 +342,18 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * ⚠️ La destination du Performance Lab est `/dashboard`, sa PREMIÈRE entrée, et non une page de synthèse :
    * celle-ci arrive avec les lots E et F, ceux qui lui donnent son contenu. Ce lot ne crée aucune adresse.
    */
-  const ONGLETS_UI: Array<{ cle: Onglet; label: string; href: string }> = [
+  const ONGLETS_UI: Array<{ cle: Onglet; label: string; href: string; badge?: number }> = [
     { cle: 'console', label: t('Console', 'Console'), href: '/accueil' },
-    { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/inbox' },
+    /**
+     * 🔴 LA PASTILLE DE NON-LUS SUIT L'INBOX ICI, et l'oublier était une régression que l'E2E a attrapée.
+     * Elle vivait sur l'entrée « Inbox » de la barre latérale ; l'Inbox étant devenue un ONGLET, cette
+     * entrée n'existe plus dans aucun menu, et la pastille avait disparu avec elle.
+     *
+     * ⚠️ Elle y gagne au passage : elle est désormais visible depuis les TROIS onglets, alors qu'elle ne
+     * l'était que dans la barre. Un opérateur qui lit ses chiffres dans le Performance Lab voit qu'on lui
+     * écrit, ce qui n'était pas le cas avant.
+     */
+    { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/inbox', badge: unread },
     { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/dashboard' },
   ];
   /**
@@ -408,6 +423,17 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               }`}
             >
               {o.label}
+              {o.badge !== undefined && o.badge > 0 && (
+                <span
+                  data-testid={`nav-badge-${o.cle}`}
+                  // `ml-1.5` et non `ml-auto` : dans un onglet, la pastille se colle au libellé. `ml-auto`
+                  // la pousserait au bout d'une largeur que l'onglet n'a pas.
+                  className="ml-1.5 inline-block min-w-[20px] rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white"
+                  aria-label={t(`${o.badge} conversation(s) non lue(s)`, `${o.badge} unread conversation(s)`)}
+                >
+                  {o.badge > 99 ? '99+' : o.badge}
+                </span>
+              )}
             </Link>
           ))}
         </nav>

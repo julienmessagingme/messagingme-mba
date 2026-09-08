@@ -23,14 +23,32 @@ WhatsApp/Meta, 3 rôles : **admin** (tout), **manager** et **agent** (inbox seul
 ⚠️ **Manager est un STATUT, pas encore des droits** (2026-08-20) : il s'attribue, mais il donne exactement les
 mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas été décidé.
 
-## Navigation (sidebar gauche, pleine largeur)
+## Navigation (trois onglets en haut, barre latérale par onglet)
 
-Admin : **Accueil · Inbox · mini-CRM · Campagnes · Scénario · Automation · AI Agent (MBA [MBA, guide /
+- ✅ **TROIS ONGLETS EN HAUT DE LA CONSOLE** (2026-09-08) : **Console**, **Inbox** et **Performance Lab**.
+  Ils rangent trois métiers qui ne se pratiquent ni au même moment ni par les mêmes personnes : configurer
+  et opérer, traiter les conversations, lire les résultats. Avant, une barre unique les mettait sur le même
+  plan, et un opérateur qui passe sa journée dans l'Inbox traversait un menu de quinze entrées dont il n'en
+  utilisait qu'une.
+  🔴 **Aucune adresse n'a changé.** Un favori, un lien partagé ou une page ouverte dans un onglet du
+  navigateur continue d'ouvrir exactement la même page ; elle s'affiche simplement sous son onglet.
+  ⚠️ **Un compte opérateur ne voit qu'un onglet, l'Inbox.** Lui en montrer trois dont deux le renverraient
+  aussitôt à l'Inbox serait lui promettre deux portes fermées.
+
+**Le menu de gauche change avec l'onglet.**
+
+**Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA [MBA, guide /
 MBA, paramètres] / Other AI agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
-RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API) · Analytics
-(Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers
-(Documentation API / Clés d'API / Serveur MCP)** collé **en bas** de la barre.
+RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API) · Paramètres · Support**, plus un bloc
+**Developers (Documentation API / Clés d'API / Serveur MCP)** collé **en bas** de la barre.
+
+**Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel / Erreurs) · Qualitatif ·
+Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.
+Une page de synthèse s'ajoutera en tête (coût par engagement, urgence et satisfaction).
+
+**Inbox** : **aucune barre de navigation**, ni sur ordinateur ni dans le tiroir mobile. L'écran portera son
+propre menu de dossiers, façon boîte mail.
 - ✅ **La barre a TROIS niveaux depuis le 2026-09-01**, et « MBA » est le seul groupe de deuxième niveau :
   ses deux écrans (guide, paramètres) parlent du même agent, alors que « Other AI agent » en est un autre.
   Les mettre au même rang laissait croire à trois agents.
@@ -1142,7 +1160,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   (`unknown_contact`) au lieu d'être créé pour rien.
 - L'espace client est **toujours déduit de la clé** (jamais de l'URL) : une clé ne peut voir/toucher que les
   données de son espace. Débit borné par clé.
-- ✅ **Menu « Developers »** (2026-07-20), en bas de la barre latérale, réservé aux admins. Deux pages :
+- ✅ **Menu « Developers »** (2026-07-20), en bas de la barre latérale de l'onglet **Console**, réservé aux admins. Deux pages :
   **Documentation API** (adresse de base, authentification, débit, chaque endpoint avec son corps de requête,
   ses réponses et ses codes d'erreur, plus un exemple curl complet) et **Clés d'API** (créer avec un nom et des
   périmètres, lister avec date de création et dernier appel, révoquer). La clé en clair s'affiche dans une
