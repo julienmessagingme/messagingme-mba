@@ -47,11 +47,31 @@ async function code(url) {
   }
 }
 
-const resultats = await Promise.all(CONTROLES.map(async (c) => ({ ...c, obtenu: await code(c.url) })));
+/**
+ * ⚠️ UNE SEULE REPRISE, ET ELLE N'EST PAS DE LA COMPLAISANCE. Mesuré deux fois le 2026-09-08 : juste après
+ * un `reload`, nginx met quelques secondes à servir la nouvelle adresse, et le contrôle lancé dans la
+ * foulée rend des 502 qui disparaissent au passage suivant. Un contrôle qui crie au loup finit par être
+ * ignoré, ce qui coûte plus cher que le défaut qu'il cherche. Une reprise, pas dix : au-delà, on ne
+ * mesurerait plus une panne mais notre patience.
+ */
+const REPRISES = 1;
+const ATTENTE_MS = 8000;
+
+async function passe() {
+  return Promise.all(CONTROLES.map(async (c) => ({ ...c, obtenu: await code(c.url) })));
+}
+const acceptable = (r) => typeof r.obtenu === 'number' && r.attendu.includes(r.obtenu);
+
+let resultats = await passe();
+for (let i = 0; i < REPRISES && resultats.some((r) => !acceptable(r)); i += 1) {
+  console.log(`Des chemins ne répondent pas encore, seconde lecture dans ${ATTENTE_MS / 1000} s...`);
+  await new Promise((r) => setTimeout(r, ATTENTE_MS));
+  resultats = await passe();
+}
 
 let echecs = 0;
 for (const r of resultats) {
-  const ok = typeof r.obtenu === 'number' && r.attendu.includes(r.obtenu);
+  const ok = acceptable(r);
   if (!ok) echecs += 1;
   console.log(`${ok ? 'OK  ' : 'KO  '}${String(r.obtenu).padEnd(12)} ${r.url}  (${r.quoi})`);
 }
