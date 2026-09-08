@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { cheminDeNav, contientLaCle, ongletDeLaPage, type NavEntree, type Onglet } from './nav';
+import { cheminDeNav, contientLaCle, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -128,5 +128,61 @@ describe('ongletDeLaPage', () => {
 
   it('un GROUPE est trouvé comme ses enfants : c’est une clé de la nav comme une autre', () => {
     expect(ongletDeLaPage(arbres, 'contenu')).toBe('console');
+  });
+
+  /**
+   * 🔴 CHAQUE PAGE APPARTIENT À UN ONGLET, ET À UN SEUL.
+   *
+   * C'est LE test du lot. Sans lui, une page ajoutée plus tard n'appartient à aucun arbre et retombe
+   * silencieusement sur « console » (le repli de `ongletDeLaPage`), ou pire se trouve dans deux arbres et
+   * change d'onglet selon l'ordre de recherche. Les deux sont invisibles à la compilation, et le symptôme
+   * est lointain : une page qui s'ouvre avec le menu d'un autre métier.
+   *
+   * Il DÉRIVE les clés du fichier source plutôt que de les recopier : une liste recopiée ne ferait que
+   * déplacer la dérive d'un fichier à l'autre. Même idiome que `web/lib/contact-filters.test.ts`.
+   */
+  it('🔴 chaque clé du type Tab appartient à exactement UN arbre de navigation', async () => {
+    const src = await readFile(new URL('../components/AppShell.tsx', import.meta.url), 'utf8');
+
+    const ligneTab = src.slice(src.indexOf('type Tab ='), src.indexOf(';', src.indexOf('type Tab =')));
+    const clesTab = [...ligneTab.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]!);
+    expect(clesTab.length, 'le type Tab n’a pas été lu : ce test ne garde plus rien').toBeGreaterThan(25);
+
+    /**
+     * Les clés déclarées dans un arbre.
+     *
+     * ⚠️ La fin de la déclaration est la PROCHAINE déclaration, pas un `];` en colonne 2. Un arbre qui tient
+     * sur une seule ligne (`NAV_INBOX`) n'a pas ce `];`-là, et chercher le suivant faisait avaler l'arbre
+     * d'après : la clé de la première page du Performance Lab se retrouvait dans deux onglets. Ce test l'a
+     * signalé au premier lancement, ce qui est exactement ce qu'on lui demande.
+     */
+    const arbre = (nom: string): string[] => {
+      const debut = src.indexOf(`const ${nom}: NavEntree[] = [`);
+      expect(debut, `${nom} a disparu de AppShell : ce test ne garde plus rien, il faut le remettre à jour`).toBeGreaterThan(-1);
+      const suivante = src.indexOf('\n  const ', debut + 1);
+      const fin = suivante === -1 ? src.length : suivante;
+      return [...src.slice(debut, fin).matchAll(/key: '([a-z0-9-]+)'/g)].map((m) => m[1]!);
+    };
+    const reels: Record<Onglet, string[]> = {
+      console: [...arbre('NAV_CONSOLE'), ...arbre('NAV_ADMIN_BAS')],
+      inbox: arbre('NAV_INBOX'),
+      perf: arbre('NAV_PERF'),
+    };
+
+    /**
+     * Pages HORS de la barre latérale, volontairement. Chacune porte SA porte d'entrée : sans cette
+     * exigence, cette liste deviendrait l'endroit où l'on range les pages qui font échouer le test, et le
+     * test cesserait de garder quoi que ce soit.
+     *
+     * - `admin` : la surface d'exploitation, atteinte par son adresse et jamais par un menu client. L'y
+     *   ajouter pour faire taire ce test la rendrait visible à tous les clients.
+     * - `email-accounts` : atteinte par le MENU DU COMPTE (`AccountMenu`, « Boîtes email »), en haut à
+     *   droite. Elle règle un compte, pas le produit : sa place n'est pas dans la barre.
+     */
+    const horsNav = new Set(['admin', 'email-accounts']);
+    for (const cle of clesTab.filter((c) => !horsNav.has(c))) {
+      const dedans = ONGLETS.filter((o) => reels[o].includes(cle));
+      expect(dedans, `« ${cle} » est dans ${dedans.length} onglet(s), il en faut exactement un`).toHaveLength(1);
+    }
   });
 });

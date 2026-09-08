@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
-import { cheminDeNav, type NavEntree } from '@/lib/nav';
+import { cheminDeNav, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
 
 type Tab = 'accueil' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
 
@@ -70,12 +70,19 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const [sessionExpiree, setSessionExpiree] = useState(false);
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
-  const NAV_ADMIN: NavEntree[] = [
+  /**
+   * 🔴 TROIS ARBRES DEPUIS LE 2026-09-08, un par onglet. C'était `NAV_ADMIN`, une liste unique qui mettait
+   * sur le même plan trois métiers : configurer, traiter les conversations, lire les résultats.
+   *
+   * ⚠️ Le CONTENU des entrées n'a pas changé, seul leur rangement. Aucune adresse ne bouge : les onglets
+   * sont un niveau de regroupement AU-DESSUS de la nav, pas un nouveau routage. Un favori ou un lien
+   * partagé continue d'ouvrir la même page, qui s'affiche simplement dans son onglet.
+   */
+  const NAV_CONSOLE: NavEntree[] = [
     // L'accueil n'était atteignable que par le logo, ce qui ne se devine pas. Il n'apparaît PAS dans
     // `NAV_AGENT` : `pageDArrivee` envoie un agent sur l'inbox, et cette page montre le statut du compte et
     // ses réglages, qui ne le concernent pas.
     { key: 'accueil', href: '/accueil', label: t('Accueil', 'Home'), d: icons.accueil },
-    { key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread },
     // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
@@ -133,20 +140,6 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
     ] },
-    { key: 'analytics', label: t('Analytics', 'Analytics'), d: icons.analytics, children: [
-      // Quantitatif est devenu un GROUPE : il portait huit cartes empilees sans hierarchie, dont trois
-      // parlaient d argent et deux de pannes. Chaque sous-onglet ne charge desormais que ce qu il montre.
-      // ⚠️ `/dashboard` reste l adresse du PREMIER sous-onglet, pas une page d aiguillage : trois specs
-      // Playwright et des liens deja distribues y pointent.
-      { key: 'quantitatif', label: t('Quantitatif', 'Quantitative'), children: [
-        { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
-        { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
-        { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel') },
-        { key: 'quanti-erreurs', href: '/dashboard/erreurs', label: t('Erreurs', 'Errors') },
-      ] },
-      { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Qualitatif', 'Qualitative') },
-      { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
-    ] },
     { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), d: icons.settings },
     { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
   ];
@@ -159,12 +152,49 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'mcp', href: '/developers/mcp', label: t('Serveur MCP', 'MCP server') },
     ] },
   ];
-  const NAV_AGENT: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];
+  /**
+   * L'onglet Inbox n'a PAS de barre de navigation : cette entrée sert à situer la page, pas à naviguer.
+   * Le menu de dossiers (Tout / À traiter / Signalé / Archivé) vit DANS l'écran, pas dans la barre.
+   */
+  const NAV_INBOX: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];
+
+  /**
+   * Les enfants de l'ancien groupe « Analytics », remontés d'un cran : dans cet onglet, ils SONT le menu.
+   *
+   * ⚠️ Aucune icône, et c'est un choix. Le rendu les accepte sans (`{item.d && <Ico …>}`), elles sont toutes
+   * dans le même onglet donc l'icône ne distingue rien, et n'en donner qu'à certaines les désalignerait.
+   * Le groupe « Quantitatif » n'en avait déjà pas.
+   */
+  const NAV_PERF: NavEntree[] = [
+    // ⚠️ `/dashboard` reste l adresse du PREMIER sous-onglet, pas une page d aiguillage : trois specs
+    // Playwright et des liens deja distribues y pointent.
+    { key: 'quantitatif', label: t('Quantitatif', 'Quantitative'), children: [
+      { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
+      { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
+      { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel') },
+      { key: 'quanti-erreurs', href: '/dashboard/erreurs', label: t('Erreurs', 'Errors') },
+    ] },
+    { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Qualitatif', 'Qualitative') },
+    { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
+  ];
+
+  const NAV_AGENT: NavEntree[] = NAV_INBOX;
+
+  /** Les trois arbres, dans l'ordre de recherche de `ongletDeLaPage`. Le bloc bas appartient à la Console. */
+  const ARBRES: Record<Onglet, NavEntree[]> = {
+    console: [...NAV_CONSOLE, ...NAV_ADMIN_BAS],
+    inbox: NAV_INBOX,
+    perf: NAV_PERF,
+  };
+  const onglet = ongletDeLaPage(ARBRES, active);
 
   // Chaîne des groupes qui mènent à la page active, DÉDUITE de la nav ci-dessus (`lib/nav.ts`). Deux choses
   // en vivent : le groupe de premier niveau à surligner, et les groupes à déplier. Elles étaient écrites à la
   // main ; un groupe oublié dans l'une laissait sa page active invisible, l'autre le gardait replié.
-  const chemin = cheminDeNav([...NAV_ADMIN, ...NAV_ADMIN_BAS], active);
+  //
+  // ⚠️ Calculée dans l'arbre de l'onglet COURANT, pas dans leur union : deux arbres pourraient porter un
+  // groupe de même clé, et l'union ferait déplier celui du mauvais onglet.
+  const chemin = cheminDeNav(ARBRES[onglet], active);
 
   // Groupes repliables : ouverts au départ sur TOUTE la chaîne de la page active (à trois niveaux, n'ouvrir
   // que le premier laisserait la page dans un sous-menu encore replié). `active` est une prop stable, donc
@@ -219,7 +249,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     router.replace('/login');
   }
 
-  const nav = session.role === 'admin' ? NAV_ADMIN : NAV_AGENT;
+  const nav = session.role === 'admin' ? ARBRES[onglet] : NAV_AGENT;
 
   const itemCls = (on: boolean) =>
     `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'}`;
