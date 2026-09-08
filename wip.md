@@ -81,7 +81,7 @@ gauche. `/performance` est aussi devenue la porte d'entrée de l'onglet Performa
 - ⚠️ `satisfaction` et `urgence` ne partent PAS vers HubSpot (`getStored` ne les relit pas, et dit
   pourquoi) : ce serait changer un contrat inter-dépôts que ce lot ne demandait pas.
 
-**Lot E** (livré le 2026-09-08, AUCUNE migration) : le tableau « ce que coûte un engagement » en tête de la
+**Lot E** (livré ET déployé le 2026-09-08, AUCUNE migration) : le tableau « ce que coûte un engagement » en tête de la
 page de synthèse. Une ligne par campagne ayant envoyé sur la période : envoyés, coût estimé, clics, coût par
 clic.
 - 🔴 **Trois cases restent VIDES plutôt que de valoir zéro**, et chacune dit pourquoi au survol : le coût
@@ -97,6 +97,9 @@ clic.
 - ⚠️ **`todo.md` disait l'inverse du code** sur les clics des campagnes directes (il les croyait sans
   compteur, alors que ce sont les campagnes à SCÉNARIO qui n'en ont pas). Corrigé dans ce lot, avec la
   raison : l'entrée décrivait le code de mémoire.
+- Vérifié en production après déploiement, en EXÉCUTANT les deux requêtes (lecture seule) plutôt qu'en
+  lisant des journaux muets : 26 campagnes pour l'espace Demo sur 90 jours, coûts calculés, `clics` à
+  `null` sur les templates sans lien tracé confirmé (le cas « non attribuable », qui est le bon).
 - 🔴 **Défaut trouvé PAR la suite E2E, et il valait le lot** : la carte du coût faisait tomber la PAGE
   ENTIÈRE (donc le nuage d'à côté) si le serveur rendait un corps sans `lignes`. Le type d'une réponse est
   une promesse, pas une preuve. Garde posée sur les deux cartes, testée dans les deux sens.
