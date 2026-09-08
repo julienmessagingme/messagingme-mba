@@ -738,15 +738,30 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
             onChange={onSent}
           />
           <ControlBadge owner={controlOwner} />
-          {/* Rendre la main : sans ce bouton, le seul retour possible serait le délai d'inactivité, donc un
-              opérateur qui règle une question en deux minutes devrait attendre des heures. */}
-          {controlOwner === 'app_human' && (
+          {/*
+            🔴 LE BOUTON S'AFFICHE POUR LES DEUX DÉTENTEURS, PAS SEULEMENT L'HUMAIN (2026-09-08). Il ne
+            sortait que sur `app_human`, alors que la route, elle, rend la main quel que soit le détenteur.
+            Un fil pris par l'agent de Meta n'avait donc AUCUNE sortie depuis la console : il fallait
+            attendre le délai d'inactivité (24 h), et pendant ces 24 h aucun déclencheur automatique
+            n'écrivait dedans. Vécu le 2026-09-08 : un bouton de chaîne cliqué par Julien ne lançait rien,
+            le mot-clé correspondait pourtant et l'automation était bien trouvée.
+
+            ⚠️ Le libellé n'est PAS le même dans les deux sens, et c'est ce qui le rend juste : un opérateur
+            REND une main qu'il a prise ; face à l'agent de Meta, on la lui REPREND. Les deux vont au même
+            endroit (le scénario), par le même appel.
+          */}
+          {controlOwner !== 'app_workflow' && (
             <button
               onClick={() => { void release(); }}
               disabled={releasing}
+              data-testid="inbox-rendre-la-main"
               className="rounded-lg border border-ink-300 px-2 py-0.5 text-[11px] font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
             >
-              {releasing ? t('...', '...') : t('Rendre la main', 'Hand back')}
+              {releasing
+                ? t('...', '...')
+                : controlOwner === 'mba'
+                  ? t('Reprendre la main', 'Take back')
+                  : t('Rendre la main', 'Hand back')}
             </button>
           )}
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
