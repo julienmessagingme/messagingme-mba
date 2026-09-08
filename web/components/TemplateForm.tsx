@@ -25,7 +25,7 @@ import { ListeManques } from '@/components/ListeManques';
 /** Ce qu'un template neuf renvoie a l'appelant. `status` vaut PENDING chez Meta : il n'est PAS envoyable. */
 export interface CreatedTemplate { name: string; language: string; status: string }
 
-export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
+export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEtroite = false }: {
   tenantId: string;
   onCreated: (created?: CreatedTemplate) => void;
   initial?: TemplateSummary;
@@ -35,6 +35,27 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
    * nom et langue), et l'envoi passe par la création. Sans cette distinction, `initial` valait « je modifie ».
    */
   duplique?: boolean;
+  /**
+   * 🔴 CE FORMULAIRE EST RENDU DANS UNE COLONNE, PAS SUR UNE PAGE : l'aperçu passe SOUS les champs au lieu
+   * de se mettre à côté.
+   *
+   * Julien, le 2026-09-08 : « selon la taille de l'écran, la miniature du template passe au-dessus des cases
+   * à remplir, c'est illisible ». MESURÉ dans la campagne, où ce formulaire vit dans une demi-page : l'aperçu
+   * prend 300 px FIXES, et ce qui reste au formulaire est **26 px à 1280, 101 px à 1440, 181 px à 1600,
+   * 341 px à 1920**. Le champ « Nom » y était littéralement inutilisable.
+   *
+   * ⚠️ POURQUOI UN DRAPEAU ET PAS UN POINT DE RUPTURE. Les points de rupture de Tailwind lisent la largeur de
+   * l'ÉCRAN, jamais celle du conteneur : à 1280 px, la page Templates dispose de ~900 px et veut ses deux
+   * colonnes, la campagne de 345 px et n'en veut qu'une. Même écran, besoins opposés : aucune media query ne
+   * peut les distinguer.
+   *
+   * ⚠️ ET PAS UNE REQUÊTE DE CONTENEUR non plus, qui serait pourtant l'outil juste. `container-type` implique
+   * `contain: layout`, ce qui fait du conteneur le bloc de référence des descendants `position: fixed`. Or le
+   * sélecteur de variables (`TemplateBodyField`) pose un voile `fixed inset-0` pour se fermer au clic
+   * extérieur : il cesserait de couvrir la page, et cliquer à côté ne le fermerait plus. Tailwind 3.4 n'a de
+   * toute façon pas le greffon, et l'ajouter pour un besoin ferait dériver la stack.
+   */
+  colonneEtroite?: boolean;
 }) {
   const t = useT();
   const isEdit = !!initial && !duplique;
@@ -264,7 +285,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
         </>
       )}
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className={`mt-4 grid gap-6 ${colonneEtroite ? '' : 'lg:grid-cols-[minmax(0,1fr)_300px]'}`}>
         {/* Colonne formulaire */}
         <div>
           <Field label={isEdit ? t('Nom (non modifiable)', 'Name (not editable)') : t('Nom (minuscules, sans espaces)', 'Name (lowercase, no spaces)')}>
@@ -448,8 +469,8 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
           </button>
         </div>
 
-        {/* Colonne aperçu (collante) */}
-        <div className="lg:sticky lg:top-4 lg:h-fit">
+        {/* Colonne aperçu (collante quand elle est A COTE ; en dessous, il n'y a rien a suivre du regard). */}
+        <div data-testid="apercu-whatsapp" className={colonneEtroite ? '' : 'lg:sticky lg:top-4 lg:h-fit'}>
           <WhatsAppPreview
             body={body}
             examples={bodyState.examples}

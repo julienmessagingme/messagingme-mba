@@ -62,7 +62,23 @@ test.describe('Agents IA : la fiche', () => {
 
     // On tombe directement dans la fiche, et elle est en brouillon.
     await expect(page.getByTestId('agent-statut-draft').first()).toBeVisible();
-    await expect(page.getByTestId('agent-label')).toHaveValue('Conseiller séjours');
+
+    /**
+     * 🔴 ET SUR « CONSTRUIRE EN PARLANT », pas sur le formulaire (2026-09-08).
+     *
+     * Julien : « il faut que la fenêtre s'ouvre sur Construire en parlant ». La règle était écrite dans
+     * `page.tsx` depuis le 2026-08-31 et ce chemin ne la suivait pas : il ouvrait « Identité et ton », c'est
+     * à dire le seul endroit où l'on tombe sur des champs VIDES à remplir seul, et sur un agent qu'on vient
+     * tout juste de créer, donc au moment précis où l'on a le moins d'idée de quoi y écrire.
+     *
+     * ⚠️ Ce test vérifiait ici `agent-label`, un champ de l'onglet Identité : il exerçait donc le mauvais
+     * onglet, et c'est lui qui aurait dû faire échouer le correctif. L'assertion qu'il portait vraiment (« on
+     * tombe dans la fiche du bon agent ») est conservée juste au-dessus par le badge « brouillon », et le
+     * nom se relit ci-dessous, sur l'onglet où l'on arrive.
+     */
+    await expect(page).toHaveURL(/tab=construction/);
+    await expect(page.getByTestId('setup-vide')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Conseiller séjours' })).toBeVisible();
   });
 
   test('🔴 activer est le seul geste qui rend l agent proposable dans un scénario', async ({ page }) => {

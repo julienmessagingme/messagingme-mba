@@ -107,6 +107,15 @@ function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]):
   return customFields.some((f) => f.key === key) ? `field:${key}` : 'sys:name';
 }
 
+/**
+ * Délai avant qu'un changement de l'écran parte dans le brouillon.
+ *
+ * Assez court pour qu'un aller-retour dans un autre onglet ne perde rien, assez long pour que cocher dix
+ * contacts ne fasse pas dix écritures : le plafond de débit des routes authentifiées est partagé avec tout
+ * le reste de la console.
+ */
+const DELAI_SAUVEGARDE_MS = 1200;
+
 export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange, rcsEnabled = false, draft }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void; rcsEnabled?: boolean; draft?: CampaignDraft }) {
   const t = useT();
   const [phoneNumberId, setPhoneNumberId] = useState('');
@@ -203,6 +212,14 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   /** Sauvegarde en vol, pour enchaîner au lieu de doubler (même raison que ci-dessus). */
   const sauvegardeEnCours = useRef<Promise<void> | null>(null);
   const [brouillonEnregistre, setBrouillonEnregistre] = useState(false);
+  /**
+   * 🔴 LE BROUILLON EST ABANDONNÉ : plus aucune sauvegarde, même déjà programmée.
+   *
+   * Sans cette marque, la sauvegarde automatique rejouerait APRÈS la suppression : la campagne est lancée, le
+   * brouillon est retiré, puis une minuterie encore en vol le RECRÉE, sans identifiant, donc en double dans
+   * la liste. Une ref et non un état : la minuterie doit lire la valeur à l'instant même.
+   */
+  const brouillonAbandonne = useRef(false);
 
   // --- Zone Destinataires : source + filtres du mini-CRM ---
   //
@@ -244,6 +261,26 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [importBusy, setImportBusy] = useState(false);
   // Anti-course : n'appliquer qu'une réponse à jour (une plus récente peut la doubler entre-temps).
   const reqSeq = useRef(0);
+  /**
+   * 🔴 UNE SÉLECTION RESTAURÉE NE DOIT PAS ÊTRE ÉCRASÉE PAR LE PREMIER CHARGEMENT. Julien, le 2026-09-08 :
+   * « si je ferme le site et que je reviens, il faut à nouveau que je sélectionne les personnes ».
+   *
+   * Le chargement de la liste RECOCHE tout par défaut (c'est le bon comportement quand les filtres bougent :
+   * on vient de changer d'ensemble). Mais à la reprise d'un brouillon, il tombait juste après la restauration
+   * et effaçait ce qu'on venait de rendre. Ce drapeau ne vaut QUE pour ce premier chargement : dès que
+   * l'utilisateur touche un filtre, le comportement normal reprend.
+   *
+   * ⚠️ Il PORTE les identifiants plutôt que d'être un booléen : le chargement en a besoin pour confronter la
+   * sélection restaurée à ce qui existe encore, et les lire depuis l'état obligerait à mettre `selected` dans
+   * les dépendances de l'effet, qui se relancerait alors à chaque coche.
+   */
+  const selectionRestauree = useRef<Set<string> | null>(null);
+  /**
+   * Combien de contacts de la sélection restaurée ont DISPARU (supprimés, ou sortis des filtres depuis).
+   * `null` = rien à signaler. Se taire ferait revenir l'opérateur sur une campagne qui vise moins de monde
+   * qu'il ne l'a laissée, sans que rien ne l'explique.
+   */
+  const [selectionReduite, setSelectionReduite] = useState<number | null>(null);
 
   useEffect(() => {
     if (!phoneNumberId && numbers[0]) setPhoneNumberId(numbers[0].id);
@@ -342,7 +379,18 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           // l'inconnu. Deduire un total des lignes ramenees inventerait un chiffre plafonne par la limite
           // de la requete, qu'on afficherait comme une verite.
           setTotal(typeof c?.total === 'number' ? c.total : null);
-          setSelected(new Set(liste.map((x) => x.id)));
+          const restauree = selectionRestauree.current;
+          if (restauree) {
+            // Une seule fois : le prochain changement de filtres reprend le comportement « tout coché ».
+            selectionRestauree.current = null;
+            // ⚠️ On BORNE la sélection restaurée à ce qui existe encore. Garder un identifiant disparu
+            // ferait mentir le compteur, et viser quelqu'un qui ne correspond plus aux filtres.
+            const vivants = new Set(liste.filter((x) => restauree.has(x.id)).map((x) => x.id));
+            setSelected(vivants);
+            setSelectionReduite(restauree.size > vivants.size ? restauree.size - vivants.size : null);
+          } else {
+            setSelected(new Set(liste.map((x) => x.id)));
+          }
           // 🔴 Les filtres ont changé, donc les EXCLUSIONS ne veulent plus rien dire : elles désignaient des
           // contacts d'un autre ensemble. Les garder retirerait des gens que l'utilisateur n'a jamais vus
           // dans cette nouvelle sélection, et le compteur afficherait un nombre plus petit sans raison
@@ -665,6 +713,11 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setTiming('now');
     setScheduledLocal('');
     setLaunch({ phase: 'idle' });
+    // 🔴 L'ABANDON EST LEVÉ ICI, et l'oublier coûterait cher : `retirerBrouillon` pose la marque pour qu'une
+    // minuterie en vol ne recrée pas le brouillon qu'on vient de supprimer. Sans cette remise à zéro, un
+    // opérateur qui ENCHAÎNE une seconde campagne (flux prévu, cf. `dernierEnvoi`) n'aurait plus jamais de
+    // brouillon enregistré de toute la session, et sans le moindre signe.
+    brouillonAbandonne.current = false;
   }
 
   /**
@@ -678,6 +731,19 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       phoneNumberId, templateName, templateLanguage, vars,
       workflowId, rcsAgentId, rcsText, rcsImage,
       ratePerMinute, timing, scheduledLocal,
+      /**
+       * 🔴 LES DESTINATAIRES AUSSI (2026-09-08). Ils manquaient, et c'est le travail le plus long de l'écran :
+       * Julien revenait sur son brouillon et devait tout recocher. Les filtres sont indispensables au reste :
+       * sans eux, la reprise recharge « tous les contacts » et la sélection restaurée ne désigne plus rien.
+       *
+       * ⚠️ Les identifiants sont bornés par construction : la liste affichée est plafonnée à 500, et on ne
+       * peut cocher que ce qui est affiché. Le mode « tout ce qui correspond » ne stocke AUCUN identifiant,
+       * c'est justement son intérêt (cf. `toutFiltre`) : il garde l'intention et ses exclusions.
+       */
+      filters,
+      selected: [...selected],
+      toutFiltre,
+      exclus: [...exclus],
     };
   }
 
@@ -690,7 +756,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
    */
   async function enregistrerBrouillon(): Promise<void> {
     const nom = name.trim();
-    if (nom === '') return;
+    if (nom === '' || brouillonAbandonne.current) return;
     const etat = etatDuFormulaire();
     // Sérialisé sur la sauvegarde précédente : sans cette file, deux sorties de champ rapprochées partiraient
     // en parallèle, toutes deux sans identifiant, et créeraient deux brouillons pour une seule campagne.
@@ -710,6 +776,33 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     sauvegardeEnCours.current = suite;
     await suite;
   }
+
+  /**
+   * 🔴 LE BROUILLON SUIT TOUT L'ÉCRAN, PLUS SEULEMENT LE NOM (2026-09-08).
+   *
+   * Julien : « la campagne est enregistrée mais il faut à nouveau que je sélectionne les personnes ». La
+   * cause n'était pas seulement que les destinataires manquaient de l'état enregistré : la sauvegarde ne
+   * partait QU'AU MOMENT où le champ du nom perdait le focus. Or le nom est la PREMIÈRE chose qu'on tape :
+   * le brouillon photographiait donc un écran encore vide, et tout ce qui venait ensuite (le template, les
+   * destinataires, le débit, la programmation) n'était jamais enregistré. Un seul déclencheur, placé au
+   * début, ne pouvait rien capturer d'autre que le début.
+   *
+   * ⚠️ L'état est SÉRIALISÉ à chaque rendu plutôt que suivi champ par champ, et c'est délibéré : une liste de
+   * dépendances tenue à la main dériverait dès qu'on ajoute un champ au formulaire, et la sauvegarde
+   * cesserait de le suivre sans que rien ne le signale. Le coût est une sérialisation par frappe, invisible
+   * devant le rendu lui-même.
+   *
+   * ⚠️ Le délai n'est pas de la coquetterie : sans lui, cocher dix contacts ferait dix écritures, et le
+   * plafond de débit des routes authentifiées est partagé avec tout le reste de la console.
+   */
+  const etatSerialise = JSON.stringify(etatDuFormulaire());
+  useEffect(() => {
+    if (name.trim() === '' || brouillonAbandonne.current) return;
+    const timer = setTimeout(() => { void enregistrerBrouillon(); }, DELAI_SAUVEGARDE_MS);
+    return () => clearTimeout(timer);
+    // `etatSerialise` porte TOUT ce qui est enregistré : c'est la seule dépendance qui ne dérive pas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etatSerialise, name]);
 
   /**
    * Reprise d'un brouillon : on réapplique les choix, en tolérant l'absence de chaque champ. L'état vient de
@@ -736,6 +829,18 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (txt('timing') === 'now' || txt('timing') === 'later') setTiming(txt('timing') as 'now' | 'later');
     if (typeof s.ratePerMinute === 'number') setRatePerMinute(s.ratePerMinute);
     if (Array.isArray(s.vars)) setVars(s.vars as VarRow[]);
+    // Les DESTINATAIRES. `filters` d'abord : c'est lui qui décide quelle liste sera chargée, donc ce à quoi
+    // la sélection restaurée sera confrontée.
+    if (s.filters && typeof s.filters === 'object' && !Array.isArray(s.filters)) setFilters(s.filters as ContactFilters);
+    if (s.toutFiltre === true) setToutFiltre(true);
+    if (Array.isArray(s.exclus)) setExclus(new Set((s.exclus as unknown[]).filter((x): x is string => typeof x === 'string')));
+    if (Array.isArray(s.selected)) {
+      const ids = (s.selected as unknown[]).filter((x): x is string => typeof x === 'string');
+      setSelected(new Set(ids));
+      // La marque est posée même pour une liste VIDE : « je n'ai coché personne » est un choix, et le
+      // chargement qui suit le remplacerait par « tout le monde ».
+      selectionRestauree.current = new Set(ids);
+    }
     // Une seule fois, à l'ouverture : ce sont des valeurs INITIALES, pas une synchronisation continue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -746,6 +851,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
    * qu'une erreur ici masquerait le succès de la campagne.
    */
   async function retirerBrouillon(): Promise<void> {
+    // AVANT d'attendre quoi que ce soit : une minuterie de sauvegarde automatique peut être en vol, et elle
+    // recréerait le brouillon juste après sa suppression.
+    brouillonAbandonne.current = true;
     // On attend la sauvegarde en vol : supprimer pendant une création laisserait le brouillon derrière soi,
     // créé juste après la suppression.
     await (sauvegardeEnCours.current ?? Promise.resolve());
@@ -1154,6 +1262,20 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                 <button type="button" onClick={() => setImportMsg(null)} className="shrink-0 leading-none text-emerald-500 hover:text-emerald-800" aria-label={t('Fermer', 'Close')}>×</button>
               </div>
             )}
+            {/* 🔴 La sélection reprise a MAIGRI depuis. On le DIT : revenir sur un brouillon qui vise moins de
+                monde qu'on ne l'a laissé, sans explication, est pire que de tout recocher, parce qu'on ne
+                s'en aperçoit pas. */}
+            {selectionReduite !== null && (
+              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <span>
+                  {t(
+                    `${selectionReduite} contact(s) de votre sélection ne sont plus là (supprimés, ou sortis de ces filtres depuis). Le reste est bien resté coché.`,
+                    `${selectionReduite} contact(s) from your selection are gone (deleted, or no longer matching these filters). The rest is still selected.`,
+                  )}
+                </span>
+                <button type="button" onClick={() => setSelectionReduite(null)} className="shrink-0 leading-none text-amber-500 hover:text-amber-800" aria-label={t('Fermer', 'Close')}>×</button>
+              </div>
+            )}
             {/* Recherche/filtres : composant PARTAGÉ avec le mini-CRM (une seule implémentation, pas deux moteurs). */}
             <div className="mb-2">
               <ContactFilterPanel
@@ -1396,6 +1518,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                 <TemplateForm
                   tenantId={tenantId}
                   onCreated={(created) => { setCreatingTemplate(false); if (created) setSubmittedTemplate(created); }}
+                  // Cet écran est en DEUX COLONNES : ce formulaire n'a ici qu'une demi-page, et son aperçu
+                  // de 300 px fixes ne laissait que 26 px aux champs à 1280 px de large.
+                  colonneEtroite
                 />
                 <button type="button" onClick={() => setCreatingTemplate(false)} className="mt-2 text-xs text-ink-500 hover:underline">
                   {t('Annuler', 'Cancel')}

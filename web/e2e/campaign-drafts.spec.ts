@@ -9,6 +9,17 @@ import { test, expect } from '@playwright/test';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
+/** Trois contacts : une sélection PARTIELLE est exactement le cas que Julien décrit. */
+const CONTACTS = [
+  { id: 'c1', phoneE164: '+33600000001', profileName: 'Alice', tags: [], fields: {}, optInStatus: 'opted_in' },
+  { id: 'c2', phoneE164: '+33600000002', profileName: 'Bob', tags: [], fields: {}, optInStatus: 'opted_in' },
+  { id: 'c3', phoneE164: '+33600000003', profileName: 'Chloe', tags: [], fields: {}, optInStatus: 'opted_in' },
+];
+
+/** La case d'une ligne de contact. Les lignes sont des `<label>`, pas des lignes de tableau. */
+const caseDe = (page: import('@playwright/test').Page, nom: string) =>
+  page.locator('label').filter({ hasText: nom }).getByRole('checkbox');
+
 /** Faux backend minimal, avec un état MUTABLE : sans état, un écran qui n'affiche jamais ce qu'il vient
  *  d'écrire passerait tous les tests. */
 async function mock(
@@ -42,7 +53,13 @@ async function mock(
       if (method === 'PUT') {
         const id = url.split('/').pop()!.split('?')[0]!;
         const d = drafts.find((x) => x.id === id);
-        if (d) d.name = String((body as { name?: string })?.name ?? d.name);
+        // 🔴 L'ÉTAT AUSSI. Ce faux ne gardait que le nom, donc aucun test ne pouvait voir que le reste de
+        // l'écran se perdait, ce qui est exactement le défaut signalé par Julien le 2026-09-08. Un faux plus
+        // pauvre que le vrai rend vertes des choses qui ne marchent pas.
+        if (d) {
+          d.name = String((body as { name?: string })?.name ?? d.name);
+          d.state = ((body as { state?: Record<string, unknown> })?.state ?? d.state);
+        }
         return json({ updated: !!d }, d ? 200 : 404);
       }
       if (method === 'DELETE') {
@@ -52,6 +69,8 @@ async function mock(
         return json({ deleted: i >= 0 }, i >= 0 ? 200 : 404);
       }
     }
+    if (url.includes('/contacts/count')) return json({ total: CONTACTS.length });
+    if (url.includes('/contacts')) return json({ contacts: CONTACTS });
     if (url.includes('/campaigns')) return json({ campaigns: [] });
     if (url.includes('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33500000000', verifiedName: 'Test' }] });
     if (url.includes('/templates')) return json({ templates: [] });
@@ -135,5 +154,73 @@ test.describe('Campagnes : brouillons de composition', () => {
     await mock(page);
     await page.goto('/campaigns');
     await expect(page.getByTestId('campaign-drafts')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 LES DESTINATAIRES SURVIVENT À LA FERMETURE DE L'ÉCRAN.
+   *
+   * Julien, le 2026-09-08 : « je ne sélectionne que quelques contacts... si je ferme le site et que je
+   * reviens, la campagne est enregistrée mais il faut à nouveau que je sélectionne les personnes ».
+   *
+   * DEUX causes, et il fallait les deux : les destinataires ne faisaient pas partie de l'état enregistré, ET
+   * la sauvegarde ne partait QU'AU MOMENT où le champ du nom perdait le focus. Comme le nom est la première
+   * chose qu'on tape, le brouillon photographiait un écran encore vide et tout le reste était perdu.
+   */
+  test('🔴 une sélection PARTIELLE part dans le brouillon, sans retoucher au nom', async ({ page }) => {
+    const { drafts } = await mock(page);
+    await page.goto('/campaigns');
+    await page.getByRole('button', { name: /Ajouter une campagne/i }).click();
+    await page.getByTestId('campaign-name').fill('Promo ete');
+    await page.getByTestId('campaign-name').blur();
+    await expect(page.getByTestId('draft-saved')).toBeVisible();
+
+    // Tout est coché par défaut : on retire Bob. Le nom n'est plus jamais touché à partir d'ici, et c'est
+    // tout le sujet : rien de ce qui suivait le nom n'était enregistré.
+    await expect(caseDe(page, 'Bob')).toBeChecked();
+    await caseDe(page, 'Bob').click();
+
+    await expect.poll(() => (drafts[0]?.state as { selected?: string[] } | undefined)?.selected, { timeout: 8000 })
+      .toEqual(['c1', 'c3']);
+  });
+
+  test('🔴 à la reprise, la sélection est REMISE, pas re-cochée entièrement', async ({ page }) => {
+    // Le chargement de la liste recoche tout par défaut, et c'est le bon comportement quand les filtres
+    // changent. À la reprise, il tombait juste après la restauration et l'effaçait.
+    await mock(page, [{
+      id: 'd1', name: 'Promo ete', updatedAt: '2026-09-08T10:00:00.000Z',
+      state: { selected: ['c1', 'c3'], filters: {}, toutFiltre: false, exclus: [] },
+    }]);
+    await page.goto('/campaigns');
+    await page.getByTestId('draft-resume-d1').click();
+
+    await expect(caseDe(page, 'Alice')).toBeChecked();
+    await expect(caseDe(page, 'Chloe')).toBeChecked();
+    await expect(caseDe(page, 'Bob')).not.toBeChecked();
+  });
+
+  test('un contact DISPARU de la sélection reprise est retiré, et l’écran le DIT', async ({ page }) => {
+    // Se taire ferait revenir l'opérateur sur une campagne qui vise moins de monde qu'il ne l'a laissée,
+    // sans qu'il puisse s'en apercevoir.
+    await mock(page, [{
+      id: 'd1', name: 'Promo ete', updatedAt: '2026-09-08T10:00:00.000Z',
+      state: { selected: ['c1', 'c3', 'c-efface'], filters: {}, toutFiltre: false, exclus: [] },
+    }]);
+    await page.goto('/campaigns');
+    await page.getByTestId('draft-resume-d1').click();
+    await expect(page.getByTestId('selection-reduite')).toContainText('1');
+    await expect(caseDe(page, 'Alice')).toBeChecked();
+    await expect(caseDe(page, 'Bob')).not.toBeChecked();
+  });
+
+  test('🔴 preuve inverse : SANS brouillon repris, tout reste coché par défaut', async ({ page }) => {
+    // Sans ce cas, ne plus jamais recocher passerait les tests ci-dessus, et une campagne neuve s'ouvrirait
+    // sur une liste entièrement décochée.
+    await mock(page);
+    await page.goto('/campaigns');
+    await page.getByRole('button', { name: /Ajouter une campagne/i }).click();
+    await page.getByTestId('campaign-name').fill('Neuve');
+    await page.getByTestId('campaign-name').blur();
+    for (const nom of ['Alice', 'Bob', 'Chloe']) await expect(caseDe(page, nom)).toBeChecked();
+    await expect(page.getByTestId('selection-reduite')).toHaveCount(0);
   });
 });

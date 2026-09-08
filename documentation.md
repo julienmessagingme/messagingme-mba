@@ -3340,8 +3340,12 @@ n'interagit avec AUCUN état de saisie. Les trois autres découpages proposés n
 ⚠️ `onErreur` est passé en dépendance EXPLICITE au hook, plutôt qu'un `setError` interne : sinon l'écran
 aurait deux endroits où il affiche ses erreurs, dont un invisible depuis le formulaire.
 
-Vérifié par les **18 tests E2E de campagne** (brouillons, contacts dégradés, template créé à la volée avec son
+Vérifié par les tests E2E de campagne (brouillons, contacts dégradés, template créé à la volée avec son
 sondage d'approbation, filtre de scénarios, RCS), tous verts après extraction.
+
+⚠️ **Cette phrase disait « les 18 tests », et le chiffre a vieilli** dès qu'on a ajouté des cas (il en manquait
+neuf le 2026-09-08). Un compte écrit à la main dans une prose ne se tient pas à jour tout seul et ne prouve
+rien de plus que la phrase sans lui : ce qui compte est QUE ces chemins soient couverts, pas combien de fois.
 
 ### Ce qui NE sera PAS fait, et pourquoi
 
@@ -5408,6 +5412,56 @@ le WHERE et interdisait aussi le SELECT. Elle dit maintenant ce qu'elle veut dir
 a changé de FORME plutôt que de gagner un argument : une flèche à cinq paramètres reste assignable à un
 contrat qui en déclare six, et le sixième est avalé en silence (mesuré dans ce dépôt, cf. le CLAUDE.md). Le
 changement de forme a fait nommer par le compilateur les trois implémentations à reprendre.
+
+## Trois défauts d'écran signalés par Julien (2026-09-08)
+
+🔴 **UN SEUL DÉCLENCHEUR D'ENREGISTREMENT, PLACÉ AU DÉBUT, NE PEUT CAPTURER QUE LE DÉBUT.** Le brouillon de
+campagne ne partait qu'au `onBlur` du champ NOM. Comme le nom est la première chose qu'on tape, le brouillon
+photographiait un écran encore vide : ni destinataires, ni template, ni variables, ni débit. Le symptôme
+rapporté ne portait que sur les destinataires parce que c'est le travail le plus long, mais tout se perdait.
+**`features.md` promettait pourtant depuis le 2026-08-21 « rouvre exactement où on l'avait laissé :
+destinataires, message, variables, débit »** : une promesse écrite qu'aucun test n'exerçait, et le faux
+backend des E2E n'aidait pas, son `PUT` ne gardant que le `name` et jetant le `state`. **Un faux plus pauvre
+que le vrai rend vertes des choses qui ne marchent pas.**
+
+La réparation a deux moitiés, et il fallait les deux : l'état enregistré porte désormais les destinataires
+(filtres, sélection, mode « tout ce qui correspond » et ses exclusions), et l'enregistrement suit TOUT
+l'écran, débouncé. ⚠️ L'état est sérialisé à chaque rendu plutôt que suivi champ par champ : une liste de
+dépendances tenue à la main dériverait au premier champ ajouté, et l'enregistrement cesserait de le suivre
+sans que rien ne le signale.
+
+⚠️ **Deux pièges de course, tous deux fermés.** (1) Le chargement de la liste de contacts RECOCHE tout par
+défaut, ce qui est juste quand les filtres changent, et tombait juste après la restauration d'un brouillon :
+une marque portant les identifiants restaurés le neutralise pour ce seul premier chargement. (2) Une
+minuterie d'enregistrement encore en vol RECRÉAIT le brouillon après sa suppression (campagne lancée), en
+double et sans identifiant : une marque d'abandon, posée AVANT toute attente, la neutralise.
+
+🔴 **UN POINT DE RUPTURE TAILWIND LIT LA LARGEUR DE L'ÉCRAN, JAMAIS CELLE DU CONTENEUR.** Le formulaire de
+template est rendu à deux endroits : sur sa propre page (pleine largeur) et dans la colonne « Message » de la
+campagne (une demi-page). Son aperçu prend **300 px fixes**. Mesuré au pixel, largeur restante du champ
+« Nom » dans la campagne :
+
+| écran | 1280 | 1440 | 1600 | 1920 |
+|---|---|---|---|---|
+| champ « Nom » | **26 px** | 101 px | 181 px | 341 px |
+
+À 1280, la page Templates dispose de ~900 px et veut ses deux colonnes ; la campagne de 345 px et n'en veut
+qu'une. **Même écran, besoins opposés : aucune media query ne peut les distinguer.** D'où un drapeau posé par
+l'appelant, qui SAIT dans quoi il rend. ⚠️ Une requête de conteneur (`@container`) serait l'outil juste, et
+elle a été ÉCARTÉE pour une raison mesurable : `container-type` implique `contain: layout`, ce qui fait du
+conteneur le bloc de référence des descendants `position: fixed`. Or le sélecteur de variables pose un voile
+`fixed inset-0` pour se fermer au clic extérieur : il cesserait de couvrir la page. (Tailwind 3.4 n'a pas le
+greffon non plus, et l'ajouter pour un besoin ferait dériver la stack.)
+
+⚠️ Le test qui garde ce point MESURE des largeurs. Une assertion sur une classe CSS passerait au vert le jour
+où la classe existe sans plus rien produire.
+
+⚠️ **ET UNE RÈGLE ÉCRITE DANS UN FICHIER N'EST PAS UNE RÈGLE APPLIQUÉE PAR CE FICHIER.** « Construire en
+parlant » était déclaré onglet par défaut depuis le 2026-08-31, commentaire à l'appui, et le chemin de
+CRÉATION d'un agent ouvrait quand même « Identité et ton » : le seul moment où l'on tombe sur des champs
+vides est celui où l'agent vient de naître, donc où l'on a le moins d'idée de quoi y écrire. Le test qui
+couvrait ce chemin vérifiait un champ de l'onglet Identité : il exerçait le mauvais onglet, et c'est lui qui
+aurait dû faire échouer la règle le jour où elle a été posée.
 
 ## Reste (non bloquant) : voir `todo.md`
 

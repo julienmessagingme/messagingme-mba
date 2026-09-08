@@ -612,14 +612,23 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   colonne **« Envoyé le »** : date et heure d'envoi de chaque destinataire, ou « non envoyé ». Pour une campagne
   scénario, le template exact reçu par un contact donné se lit dans son fil de conversation, qui est la source
   fiable ; la campagne, elle, dit ce qu'elle a réellement fait, à savoir démarrer un scénario.
-- ✅ **Une campagne commencée se retrouve** (2026-08-21) : dès qu'on lui donne un nom, la
-  composition en cours est **enregistrée toute seule** en brouillon. Un bloc **« Brouillons en
-  cours »** apparaît en haut de la liste des campagnes, avec pour chaque ligne **« Reprendre »**
-  (l'écran de création rouvre exactement où on l'avait laissé : destinataires, message,
-  variables, débit) et **« Supprimer »**. Un brouillon n'est **pas** une campagne : il n'a ni
-  destinataire arrêté ni envoi possible, il ne compte dans aucun chiffre, et il n'apparaît pas
-  dans la corbeille des archivées. Un nom vide n'enregistre rien, pour ne pas semer des
-  brouillons fantômes.
+- ✅ **Une campagne commencée se retrouve** (2026-08-21, **réellement depuis le 2026-09-08**) : dès qu'on lui
+  donne un nom, la composition en cours est **enregistrée toute seule** en brouillon. Un bloc **« Brouillons
+  en cours »** apparaît en haut de la liste des campagnes, avec pour chaque ligne **« Reprendre »** et
+  **« Supprimer »**. Un brouillon n'est **pas** une campagne : il n'a ni destinataire arrêté ni envoi
+  possible, il ne compte dans aucun chiffre, et il n'apparaît pas dans la corbeille des archivées. Un nom
+  vide n'enregistre rien, pour ne pas semer des brouillons fantômes.
+  🔴 **Cette ligne promettait « rouvre exactement où on l'avait laissé : destinataires, message, variables,
+  débit », et c'était FAUX.** Signalé par Julien le 2026-09-08 : « je ne sélectionne que quelques contacts,
+  je ferme le site, je reviens, et il faut à nouveau que je sélectionne les personnes ». Deux causes : les
+  **destinataires ne faisaient pas partie** de ce qui était enregistré, et surtout la sauvegarde ne partait
+  **qu'au moment où le champ du nom perdait le focus**. Comme le nom est la première chose qu'on tape, le
+  brouillon photographiait un écran encore vide : le message, les variables et le débit se perdaient eux
+  aussi. Depuis, **l'écran s'enregistre en continu** (à la seconde près après chaque changement) et les
+  destinataires en font partie.
+  ⚠️ **Un contact disparu depuis est retiré de la sélection reprise, et l'écran le dit** (« N contacts de
+  votre sélection ne sont plus là »). Le garder ferait mentir le compteur ; le retirer en silence ferait
+  repartir une campagne vers moins de monde sans que personne ne s'en aperçoive.
 
 - ✅ **Archiver ou supprimer une campagne** (2026-07-20). Une campagne qui n'a **jamais rien envoyé** se
   **supprime** définitivement (confirmation). Toutes les autres s'**archivent** : elles disparaissent de la liste
@@ -1296,6 +1305,10 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - ✅ **Chaque champ s'enregistre à la sortie du champ**, comme les écrans MBA : pas de bouton par champ.
   L'onglet et l'agent ouvert vivent dans l'adresse, donc une fiche se partage par un lien et un
   rafraîchissement retrouve où on en était.
+- ✅ **On arrive TOUJOURS sur « Construire en parlant »**, y compris juste après avoir créé un agent
+  (corrigé le 2026-09-08 : ce chemin-là ouvrait « Identité et ton »). C'est le pire moment pour tomber sur un
+  formulaire : l'agent vient de naître, tout est vide, et on n'a par définition aucune idée de ce qu'il faut
+  y écrire. C'est exactement ce que l'assistant est là pour éviter.
 - ✅ **Identité et ton** : le **nom interne** (le vôtre), le **nom donné au contact** (laissé vide, l'agent ne
   s'en donne aucun), le **ton** (« vouvoiement, phrases courtes, pas d'emoji », écrit comme on le dirait à une
   nouvelle recrue) et la **personnalité**.

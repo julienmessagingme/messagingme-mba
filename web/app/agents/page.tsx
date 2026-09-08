@@ -98,7 +98,11 @@ function Ecran({ tenantId }: { tenantId: string }) {
       setNouveau('');
       await charger();
       setOuvert(agent);
-      aller(agent.id, 'identite');
+      // 🔴 SUR « CONSTRUIRE EN PARLANT », comme partout ailleurs. Ce chemin ouvrait « Identité et ton », et
+      // c'était le pire endroit où le faire : un agent qu'on vient de créer est VIDE, donc on tombait sur des
+      // champs vides à remplir seul, alors que tout l'intérêt de cet écran est qu'on n'a pas à savoir quoi y
+      // écrire. La règle est écrite plus haut depuis le 2026-08-31, ce chemin ne la suivait pas.
+      aller(agent.id, ONGLET_PAR_DEFAUT);
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Création impossible', 'Unable to create'));
     } finally {
