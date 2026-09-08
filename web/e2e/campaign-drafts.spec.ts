@@ -223,4 +223,42 @@ test.describe('Campagnes : brouillons de composition', () => {
     for (const nom of ['Alice', 'Bob', 'Chloe']) await expect(caseDe(page, nom)).toBeChecked();
     await expect(page.getByTestId('selection-reduite')).toHaveCount(0);
   });
+
+  /**
+   * 🔴 LES EXCLUSIONS, RELEVÉES À LA REVUE DU 2026-09-08. Le premier correctif rendait la SÉLECTION et
+   * laissait le chargement vider les EXCLUSIONS, ce qui est la pire moitié : en mode « tout ce qui
+   * correspond », perdre une exclusion fait viser quelqu'un que l'opérateur avait explicitement retiré.
+   * Perdre une sélection envoie à MOINS de monde, perdre une exclusion envoie à PLUS.
+   */
+  test('🔴 en mode « tout ce qui correspond », les EXCLUSIONS reprises tiennent', async ({ page }) => {
+    await mock(page, [{
+      id: 'd1', name: 'Promo ete', updatedAt: '2026-09-08T10:00:00.000Z',
+      state: { selected: [], filters: {}, toutFiltre: true, exclus: ['c2'] },
+    }]);
+    await page.goto('/campaigns');
+    await page.getByTestId('draft-resume-d1').click();
+
+    // Le bandeau du mode « tout ce qui correspond » est rendu : c'est bien ce mode qui a été repris.
+    await expect(page.getByTestId('campagne-cible-filtre')).toBeVisible();
+    // Bob reste EXCLU. Décoché = exclu, dans ce mode.
+    await expect(caseDe(page, 'Bob')).not.toBeChecked();
+    await expect(caseDe(page, 'Alice')).toBeChecked();
+  });
+
+  /**
+   * 🔴 LA MARQUE DE REPRISE MEURT AVEC LA SOURCE, relevé à la même revue. Le chargement de la liste ne tourne
+   * QUE sur la source CRM : un brouillon repris sur « Import fichier » laissait donc sa marque armée, et le
+   * premier passage au CRM appliquait une sélection appartenant à une autre source, en pratique vide.
+   */
+  test('🔴 un brouillon repris sur une AUTRE source ne vide pas le CRM quand on y revient', async ({ page }) => {
+    await mock(page, [{
+      id: 'd1', name: 'Promo ete', updatedAt: '2026-09-08T10:00:00.000Z',
+      state: { source: 'file', selected: [], filters: {}, toutFiltre: false, exclus: [] },
+    }]);
+    await page.goto('/campaigns');
+    await page.getByTestId('draft-resume-d1').click();
+    // On revient sur la liste du CRM : tout doit être coché, comme pour n'importe quelle arrivée sur le CRM.
+    await page.getByRole('button', { name: /Liste de contacts|Contact list/ }).click();
+    for (const nom of ['Alice', 'Bob', 'Chloe']) await expect(caseDe(page, nom)).toBeChecked();
+  });
 });

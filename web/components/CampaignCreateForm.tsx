@@ -60,7 +60,7 @@ import {
   type WorkflowSummary,
 } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample, varCountOf } from '@/lib/fields';
-import { filtersActive } from '@/lib/contact-filters';
+import { filtersActive, filtresRepris } from '@/lib/contact-filters';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
 import { useCampagneReferences } from '@/lib/use-campagne-references';
 /**
@@ -273,8 +273,14 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
    * ⚠️ Il PORTE les identifiants plutôt que d'être un booléen : le chargement en a besoin pour confronter la
    * sélection restaurée à ce qui existe encore, et les lire depuis l'état obligerait à mettre `selected` dans
    * les dépendances de l'effet, qui se relancerait alors à chaque coche.
+   *
+   * 🔴 ET IL PORTE LES EXCLUSIONS, pas seulement la sélection. Le chargement les vide lui aussi, pour la même
+   * bonne raison (des filtres qui changent désignent un autre ensemble), et l'oublier ici serait la PIRE
+   * moitié du défaut : en mode « tout ce qui correspond », perdre une exclusion fait viser quelqu'un que
+   * l'opérateur avait explicitement retiré. Perdre une sélection fait envoyer à MOINS de monde ; perdre une
+   * exclusion fait envoyer à PLUS. Les deux ne se valent pas.
    */
-  const selectionRestauree = useRef<Set<string> | null>(null);
+  const selectionRestauree = useRef<{ selected: Set<string>; exclus: Set<string> } | null>(null);
   /**
    * Combien de contacts de la sélection restaurée ont DISPARU (supprimés, ou sortis des filtres depuis).
    * `null` = rien à signaler. Se taire ferait revenir l'opérateur sur une campagne qui vise moins de monde
@@ -385,17 +391,30 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             selectionRestauree.current = null;
             // ⚠️ On BORNE la sélection restaurée à ce qui existe encore. Garder un identifiant disparu
             // ferait mentir le compteur, et viser quelqu'un qui ne correspond plus aux filtres.
-            const vivants = new Set(liste.filter((x) => restauree.has(x.id)).map((x) => x.id));
+            const vivants = new Set(liste.filter((x) => restauree.selected.has(x.id)).map((x) => x.id));
             setSelected(vivants);
-            setSelectionReduite(restauree.size > vivants.size ? restauree.size - vivants.size : null);
+            setSelectionReduite(restauree.selected.size > vivants.size ? restauree.selected.size - vivants.size : null);
+            /**
+             * 🔴 LES EXCLUSIONS SONT RENDUES TELLES QUELLES, ET SURTOUT PAS ÉLAGUÉES.
+             *
+             * Une exclusion dont le contact a disparu ne coûte qu'un compteur légèrement bas (elle ne retire
+             * plus personne). Élaguer sur les 500 lignes AFFICHÉES coûterait l'inverse : au-delà de 500
+             * correspondances, la fenêtre affichée change d'une session à l'autre, et une exclusion encore
+             * valide en tomberait dehors. Le contact recevrait alors le message dont on l'avait retiré. Les
+             * deux erreurs ne se valent pas, on garde donc tout.
+             */
+            setExclus(restauree.exclus);
           } else {
             setSelected(new Set(liste.map((x) => x.id)));
+            // Le bandeau « N contacts ne sont plus là » appartient au chargement qui l'a produit : le garder
+            // au-delà le rendrait faux, il parlerait d'une sélection qui n'existe plus.
+            setSelectionReduite(null);
+            // 🔴 Les filtres ont changé, donc les EXCLUSIONS ne veulent plus rien dire : elles désignaient des
+            // contacts d'un autre ensemble. Les garder retirerait des gens que l'utilisateur n'a jamais vus
+            // dans cette nouvelle sélection, et le compteur afficherait un nombre plus petit sans raison
+            // visible. Le mode « tout ce qui correspond », lui, RESTE : il suit les filtres, c'est son sens.
+            setExclus(new Set());
           }
-          // 🔴 Les filtres ont changé, donc les EXCLUSIONS ne veulent plus rien dire : elles désignaient des
-          // contacts d'un autre ensemble. Les garder retirerait des gens que l'utilisateur n'a jamais vus
-          // dans cette nouvelle sélection, et le compteur afficherait un nombre plus petit sans raison
-          // visible. Le mode « tout ce qui correspond », lui, RESTE : il suit les filtres, c'est son sens.
-          setExclus(new Set());
           setCountLoading(false);
         } catch {
           if (seq !== reqSeq.current || !mountedRef.current) return;
@@ -579,6 +598,16 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
      */
     setToutFiltre(false);
     setExclus(new Set());
+    /**
+     * 🔴 ET LA REPRISE D'UN BROUILLON EST OUBLIÉE AVEC, pour la même raison que la ligne au-dessus.
+     *
+     * Sans ça : un brouillon repris sur une source « fichier » laisse sa marque ARMÉE (le chargement de la
+     * liste de contacts ne tourne que sur la source CRM, il ne la consomme donc jamais). L'opérateur bascule
+     * ensuite sur « Liste de contacts », le premier chargement trouve la marque et applique une sélection qui
+     * appartenait à une autre source, en pratique VIDE : rien n'est coché là où tout devrait l'être.
+     */
+    selectionRestauree.current = null;
+    setSelectionReduite(null);
     // Quitter la source webhook OUBLIE l'adresse choisie : la laisser posée ferait partir une campagne « au
     // fil de l'eau » alors que l'opérateur a sous les yeux une liste de contacts cochés.
     if (s !== 'webhook') setWebhookId('');
@@ -831,15 +860,20 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (Array.isArray(s.vars)) setVars(s.vars as VarRow[]);
     // Les DESTINATAIRES. `filters` d'abord : c'est lui qui décide quelle liste sera chargée, donc ce à quoi
     // la sélection restaurée sera confrontée.
-    if (s.filters && typeof s.filters === 'object' && !Array.isArray(s.filters)) setFilters(s.filters as ContactFilters);
+    // ⚠️ COERCÉ, jamais casté : cet objet revient d'un `jsonb` que le serveur ne valide pas (c'est « l'état
+    // d'un écran »). `filtersActive` appelle `.trim()` pendant le rendu, une entrée mal formée y jetterait et
+    // emporterait tout l'écran. Voir `filtresRepris`.
+    setFilters(filtresRepris(s.filters));
     if (s.toutFiltre === true) setToutFiltre(true);
-    if (Array.isArray(s.exclus)) setExclus(new Set((s.exclus as unknown[]).filter((x): x is string => typeof x === 'string')));
-    if (Array.isArray(s.selected)) {
-      const ids = (s.selected as unknown[]).filter((x): x is string => typeof x === 'string');
-      setSelected(new Set(ids));
-      // La marque est posée même pour une liste VIDE : « je n'ai coché personne » est un choix, et le
+    const idsDe = (v: unknown): Set<string> =>
+      new Set(Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === 'string') : []);
+    if (Array.isArray(s.selected) || Array.isArray(s.exclus)) {
+      const repris = { selected: idsDe(s.selected), exclus: idsDe(s.exclus) };
+      setSelected(repris.selected);
+      setExclus(repris.exclus);
+      // La marque est posée même pour des listes VIDES : « je n'ai coché personne » est un choix, et le
       // chargement qui suit le remplacerait par « tout le monde ».
-      selectionRestauree.current = new Set(ids);
+      selectionRestauree.current = repris;
     }
     // Une seule fois, à l'ouverture : ce sont des valeurs INITIALES, pas une synchronisation continue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
