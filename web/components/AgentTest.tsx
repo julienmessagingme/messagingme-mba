@@ -1,10 +1,15 @@
 'use client';
 
-import { useState } from 'react';
-import { useT } from '@/lib/i18n';
+import { useCallback, useEffect, useState } from 'react';
+import { useLocale, useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
+import { dayLabel, hourMin } from '@/lib/day';
+import { fmtCost, fmtNum } from '@/lib/format';
 import { MbaNotice } from '@/components/MbaNotice';
-import { essayerAgent, estSimule, type AppelTrace, type TourEssai } from '@/lib/api-agent-test';
+import {
+  essayerAgent, estSimule, listerEssais,
+  type AppelTrace, type EssaiArchive, type TourEssai,
+} from '@/lib/api-agent-test';
 
 /**
  * L'onglet TESTER : parler à son agent avant de l'activer.
@@ -14,6 +19,11 @@ import { essayerAgent, estSimule, type AppelTrace, type TourEssai } from '@/lib/
  * que le texte laisserait le client régler à l'aveugle : il verrait une belle réponse sans savoir si elle
  * vient de sa base de connaissance ou de ce que le modèle a imaginé. Chaque appel est donc montré, avec ses
  * arguments et son issue.
+ *
+ * 🔴 ET IL GARDE LA TRACE. Julien, le 2026-09-08 : « j'ai voulu réappuyer et j'ai plus la trace de ce que
+ * j'ai lu ». Régler un agent, c'est COMPARER : on change une consigne, on repose la MÊME question, et on
+ * regarde si la réponse a bougé. C'est pour ça que « Reprendre » rejoue les messages archivés tels quels
+ * plutôt que de les recopier dans la saisie : une comparaison sur une question retapée ne compare rien.
  *
  * 🔴 ET IL DIT CE QU'IL NE FAIT PAS. Les outils à effet sont simulés : il n'y a ni contact, ni conversation,
  * ni parcours ici. Le taire ferait croire qu'un tag a été posé, et le client réglerait la suite de sa
@@ -27,13 +37,21 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
   const [saisie, setSaisie] = useState('');
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [essais, setEssais] = useState<EssaiArchive[]>([]);
 
-  async function envoyer(texte: string) {
-    const propre = texte.trim();
-    if (propre === '' || busy) return;
-    const suite: TourEssai[] = [...tours, { role: 'user', content: propre }];
+  /**
+   * ⚠️ L'historique est une COMMODITÉ, jamais une condition : son échec ne remonte pas dans le bandeau
+   * d'erreur de l'essai. Un serveur qui ne tient pas de trace rend une liste vide, et l'écran marche.
+   */
+  const recharger = useCallback(() => {
+    void listerEssais(tenantId, agentId).then(setEssais).catch(() => setEssais([]));
+  }, [tenantId, agentId]);
+  useEffect(recharger, [recharger]);
+
+  /** Le POST, partagé par la saisie et par « Reprendre » : les deux doivent produire exactement le même essai. */
+  async function jouer(suite: TourEssai[]) {
+    if (busy) return;
     setTours(suite);
-    setSaisie('');
     setBusy(true);
     setErreur(null);
     setAppels([]);
@@ -48,7 +66,17 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
       setErreur(err instanceof Error ? err.message : t('L’essai a échoué', 'The try failed'));
     } finally {
       setBusy(false);
+      // Relu dans les DEUX cas : un essai qui échoue APRÈS un aller-retour facturé n'est pas archivé, mais
+      // un essai qui a réussi l'est, et ne pas relire ici laisserait la liste en retard d'un essai.
+      recharger();
     }
+  }
+
+  async function envoyer(texte: string) {
+    const propre = texte.trim();
+    if (propre === '' || busy) return;
+    setSaisie('');
+    await jouer([...tours, { role: 'user', content: propre }]);
   }
 
   return (
@@ -116,6 +144,117 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
           {appels.map((a, i) => <Appel key={`${i}-${a.nom}`} appel={a} rang={i} />)}
         </div>
       )}
+
+      <Historique essais={essais} busy={busy} onReprendre={(e) => void jouer(e.messages)} />
+    </div>
+  );
+}
+
+/**
+ * Les essais précédents.
+ *
+ * ⚠️ La RÉTENTION est dite à l'écran, pas seulement en base : un historique qui s'efface sans prévenir fait
+ * croire à une perte. Elle est écrite en clair plutôt que branchée sur la constante du serveur, que le build
+ * du navigateur ne partage pas ; `tests/agent-test-runs.test.ts` ancre la valeur côté serveur.
+ */
+function Historique({ essais, busy, onReprendre }: {
+  essais: EssaiArchive[];
+  busy: boolean;
+  onReprendre: (essai: EssaiArchive) => void;
+}) {
+  const t = useT();
+  if (essais.length === 0) return null;
+  return (
+    <div data-testid="test-historique" className={`${cardCls} flex flex-col gap-2`}>
+      <p className="text-sm font-medium text-ink-700">{t('Vos essais précédents', 'Your previous tries')}</p>
+      <p className="text-xs text-ink-500">
+        {t(
+          'Gardés 14 jours. « Reprendre » repose exactement la même question à l’agent tel qu’il est réglé maintenant : c’est ce qui permet de voir si un changement a servi.',
+          'Kept for 14 days. “Run again” asks the agent the exact same question with its current settings: that is how you see whether a change helped.',
+        )}
+      </p>
+      {essais.map((e) => <LigneEssai key={e.id} essai={e} busy={busy} onReprendre={() => onReprendre(e)} />)}
+    </div>
+  );
+}
+
+function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: boolean; onReprendre: () => void }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [ouvert, setOuvert] = useState(false);
+  // La DERNIÈRE question posée, pas la première : c'est elle qui a produit la réponse qu'on relit.
+  const question = [...essai.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  return (
+    <div data-testid={`test-essai-${essai.id}`} className="flex flex-col gap-1 rounded-lg border border-ink-200 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
+        <span>{`${dayLabel(essai.createdAt, locale)} ${hourMin(essai.createdAt, locale)}`}</span>
+        <span data-testid={`test-essai-cout-${essai.id}`}>
+          {fmtCost(essai.coutMicroEur / 1_000_000, locale, 'EUR')}
+        </span>
+        <span>{`${fmtNum(essai.tokensEntree + essai.tokensSortie, locale)} ${t('jetons', 'tokens')}`}</span>
+        {essai.sortie !== null && (
+          <Etiquette classe="bg-brand-50 text-brand-700">{`${t('sortie', 'exit')} : ${essai.sortie}`}</Etiquette>
+        )}
+        {/* Les outils appelés : c'est ce qui distingue « il n'a pas trouvé » de « il n'a même pas cherché ». */}
+        {essai.appels.length === 0
+          ? <Etiquette classe="bg-ink-100 text-ink-600">{t('aucun outil', 'no tool')}</Etiquette>
+          : essai.appels.map((a, i) => (
+            <Etiquette
+              key={`${i}-${a.nom}`}
+              classe={a.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-800'}
+            >
+              {a.status === 'ok' ? a.nom : `${a.nom} : ${a.status}`}
+            </Etiquette>
+          ))}
+      </div>
+      <p className="truncate text-sm text-ink-800">{question}</p>
+      {!ouvert && essai.reponse !== null && (
+        <p className="line-clamp-2 text-xs text-ink-500">{essai.reponse}</p>
+      )}
+      {ouvert && (
+        <div data-testid={`test-essai-detail-${essai.id}`} className="flex flex-col gap-2 pt-1">
+          {essai.messages.map((m, i) => (
+            <div
+              key={`${i}-${m.content.slice(0, 24)}`}
+              className={m.role === 'user'
+                ? 'self-end max-w-[85%] rounded-2xl bg-brand-600 px-3 py-2 text-sm text-white'
+                : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-800'}
+            >
+              {m.content}
+            </div>
+          ))}
+          {essai.reponse === null
+            ? (
+              <p className="text-xs italic text-ink-500">
+                {t('L’agent n’a rien dit (il est sorti).', 'The agent said nothing (it exited).')}
+              </p>
+            )
+            : (
+              <div className="self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-800">
+                {essai.reponse}
+              </div>
+            )}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3 pt-1">
+        <button
+          type="button"
+          data-testid={`test-essai-ouvrir-${essai.id}`}
+          onClick={() => setOuvert(!ouvert)}
+          className="text-xs text-brand-600 hover:underline"
+        >
+          {ouvert ? t('Masquer', 'Hide') : t('Voir l’échange', 'See the exchange')}
+        </button>
+        <button
+          type="button"
+          data-testid={`test-essai-reprendre-${essai.id}`}
+          disabled={busy}
+          onClick={onReprendre}
+          className="text-xs text-brand-600 hover:underline disabled:opacity-40"
+        >
+          {t('Reprendre', 'Run again')}
+        </button>
+      </div>
     </div>
   );
 }

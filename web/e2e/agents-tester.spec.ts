@@ -40,14 +40,34 @@ const REPONSE = {
   usage: { tokensIn: 1200, tokensOut: 80, coutMicroEur: 40 },
 };
 
+/** Un essai ARCHIVE, tel que la liste le rend. Ses appels sont plus maigres que ceux d'un essai frais :
+ *  le nom et le statut, jamais ce que l'outil a rendu. */
+const ARCHIVE = {
+  id: 'e-1',
+  messages: [{ role: 'user', content: 'Vous avez une piscine ?' }],
+  reponse: 'La piscine est ouverte de 9 h à 20 h.',
+  sortie: null,
+  appels: [{ nom: 'mba_chercher_connaissance', status: 'ok' }],
+  // Un ordre de grandeur REEL : ~1300 jetons sur le modele de production coutent des dixiemes de millieme
+  // d'euro. C'est ce qui rend le format d'affichage decisif (cf. le test du cout).
+  tokensEntree: 1200, tokensSortie: 80, coutMicroEur: 720,
+  createdAt: '2026-09-08T08:30:00.000Z',
+};
+
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], essai?: { status: number; body: unknown }) {
+async function mock(
+  page: import('@playwright/test').Page,
+  appels: Appel[],
+  essai?: { status: number; body: unknown },
+  historique: unknown[] = [],
+) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    if (/\/tests$/.test(url)) return json({ essais: historique });
     if (/\/test$/.test(url)) {
       appels.push({ method: req.method(), url, body: req.postDataJSON() });
       const r = essai ?? { status: 200, body: REPONSE };
@@ -130,6 +150,43 @@ test.describe('Agents IA : tester', () => {
       () => (appels.at(-1)?.body as { messages?: unknown[] })?.messages?.length,
       { timeout: 5000 },
     ).toBe(3); // le premier message, la réponse de l'agent, puis la relance
+  });
+
+  /**
+   * 🔴 L'HISTORIQUE. Julien, le 2026-09-08 : « j'ai voulu réappuyer et j'ai plus la trace de ce que j'ai
+   * lu ». Régler un agent, c'est COMPARER : on repose la MÊME question après avoir changé une consigne.
+   */
+  test('les essais précédents sont relisibles, avec ce que l’agent avait appelé', async ({ page }) => {
+    await mock(page, [], undefined, [ARCHIVE]);
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    const ligne = page.getByTestId(`test-essai-${ARCHIVE.id}`);
+    await expect(ligne).toContainText('Vous avez une piscine ?');
+    // L'outil appelé est visible sans ouvrir : c'est ce qui distingue « il n'a pas trouvé » de « il n'a
+    // même pas cherché », la première question devant une mauvaise réponse.
+    await expect(ligne).toContainText('mba_chercher_connaissance');
+    // 🔴 Le coût d'un essai vaut des DIXIÈMES DE MILLIÈME d'euro. Au format à deux décimales des tableaux
+    // de bord (0,00 €), l'écran laisserait croire que régler son agent est gratuit, et le client ne
+    // pourrait pas voir qu'une consigne l'a rendu dix fois plus cher.
+    await expect(page.getByTestId(`test-essai-cout-${ARCHIVE.id}`)).toContainText('0,0007');
+    await page.getByTestId(`test-essai-ouvrir-${ARCHIVE.id}`).click();
+    await expect(page.getByTestId(`test-essai-detail-${ARCHIVE.id}`)).toContainText('9 h à 20 h');
+  });
+
+  test('🔴 « Reprendre » repose EXACTEMENT la même question, sans la retaper', async ({ page }) => {
+    // Une comparaison sur une question retapée ne compare rien : c'est tout l'intérêt du bouton.
+    const appels: Appel[] = [];
+    await mock(page, appels, undefined, [ARCHIVE]);
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    await page.getByTestId(`test-essai-reprendre-${ARCHIVE.id}`).click();
+    await expect(page.getByTestId('test-tour-assistant')).toContainText('9 h à 20 h');
+    expect(appels.at(-1)?.body).toEqual({ messages: ARCHIVE.messages });
+  });
+
+  test('un historique vide n’encombre pas l’écran', async ({ page }) => {
+    await mock(page, []);
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    await expect(page.getByTestId('test-vide')).toBeVisible();
+    await expect(page.getByTestId('test-historique')).toHaveCount(0);
   });
 
   test('une indisponibilité est ANNONCÉE, pas avalée', async ({ page }) => {

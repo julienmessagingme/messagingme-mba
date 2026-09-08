@@ -39,6 +39,36 @@ export async function essayerAgent(tenantId: string, agentId: string, messages: 
   });
 }
 
+/**
+ * Un essai ARCHIVÉ, tel que l'écran le rejoue.
+ *
+ * ⚠️ Ses `appels` sont plus MAIGRES que ceux d'un essai frais : on garde le nom et le statut, pas les
+ * arguments ni ce que l'outil a rendu. C'est ce qui répond à la question qu'on se pose devant une mauvaise
+ * réponse (« a-t-il seulement cherché ? ») sans stocker le contenu d'une base qu'un site tiers a remplie.
+ */
+export interface EssaiArchive {
+  id: string;
+  messages: TourEssai[];
+  reponse: string | null;
+  sortie: string | null;
+  appels: Array<{ nom: string; status: string }>;
+  tokensEntree: number;
+  tokensSortie: number;
+  coutMicroEur: number;
+  createdAt: string;
+}
+
+/**
+ * Les derniers essais de cet agent, du plus récent au plus ancien. Liste vide = jamais essayé.
+ *
+ * ⚠️ Le tableau est vérifié, pas supposé : ce corps vient du réseau, et un serveur qui ne tient pas de trace
+ * peut très bien rendre autre chose. Un `undefined` ici casserait l'onglet entier pour une commodité.
+ */
+export async function listerEssais(tenantId: string, agentId: string): Promise<EssaiArchive[]> {
+  const r = await request<{ essais?: EssaiArchive[] }>(`/tenants/${tenantId}/agents/${agentId}/tests`);
+  return Array.isArray(r?.essais) ? r.essais : [];
+}
+
 /** L'appel a-t-il été SIMULÉ ? Lu défensivement : `contenu` vient du réseau et peut être n'importe quoi. */
 export function estSimule(appel: AppelTrace): boolean {
   return (appel.contenu as { simule?: unknown } | null)?.simule === true;

@@ -1452,6 +1452,14 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   cette branche qui prendrait la suite ».
 - ⚠️ **Un essai consomme du crédit pour de vrai** : le fournisseur facture un essai comme une conversation.
   Sans crédit, le bac à sable refuse.
+- ✅ **Vos essais précédents sont gardés 14 jours** (2026-09-08), sous la conversation : l'heure, ce que
+  l'essai a coûté, combien de jetons, la sortie prise, et **les outils que l'agent a appelés**. « Voir
+  l'échange » rejoue l'essai entier, question et réponse.
+- ✅ **« Reprendre » repose EXACTEMENT la même question** à l'agent tel qu'il est réglé maintenant. C'est à
+  ça que sert l'historique : régler un agent, c'est changer une consigne puis reposer la même question pour
+  voir si la réponse a bougé, et une comparaison sur une question retapée ne compare rien.
+- ✅ **Les outils appelés sont visibles sans rien ouvrir**, parce que c'est la première question devant une
+  mauvaise réponse : « il n'a pas trouvé » et « il n'a même pas cherché » ne sont pas le même défaut.
 
 ### Le crédit et les plafonds
 

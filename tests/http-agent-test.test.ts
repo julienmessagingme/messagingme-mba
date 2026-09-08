@@ -9,13 +9,15 @@ import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import { ficheVide } from '../src/agent/fiche';
+import { ESSAIS_AFFICHES, RETENTION_ESSAIS_JOURS, type EssaiAEcrire, type EssaiAgent, type TestRunStore } from '../src/agent/test-runs';
 
 /**
  * Le bac à sable : parler à son agent depuis la console.
  *
  * 🔴 CE QU'IL PROUVE. Il fait tourner le VRAI cerveau, avec le vrai prompt et les vrais outils exposés. Ce
  * qu'il ne peut pas faire, il le DIT : les outils à effet sont simulés, parce qu'il n'y a ni contact, ni
- * conversation, ni parcours. Aucune session n'est ouverte, aucun run n'est touché, rien n'est persisté.
+ * conversation, ni parcours. Aucune session n'est ouverte, aucun run n'est touché. Seul l'ESSAI est
+ * persisté, depuis le 2026-09-08, pour qu'on puisse le relire et le rejouer : c'est le dernier `describe`.
  */
 const SECRET = 'test-secret';
 const AG = '11111111-1111-4111-8111-111111111111';
@@ -54,11 +56,33 @@ const appelOutil = (nom: string, args: string): ReponseChat => ({
   usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
 });
 
+/**
+ * Un faux historique. Il RETIENT ce qu'on lui demande d'ecrire (c'est ce que les tests lisent) et note les
+ * arguments de lecture, parce que le tenant et le plafond passes a `lister` sont eux-memes le contrat.
+ */
+function fauxHistorique(opts: { casse?: boolean; contenu?: EssaiAgent[] } = {}) {
+  const ecrits: Array<{ tenant: string; agent: string; essai: EssaiAEcrire }> = [];
+  const lectures: Array<{ tenant: string; agent: string; limite: number }> = [];
+  const store: TestRunStore = {
+    ecrire: async (tenant, agent, essai) => {
+      if (opts.casse) throw new Error('base indisponible');
+      ecrits.push({ tenant, agent, essai });
+    },
+    lister: async (tenant, agent, limite) => { lectures.push({ tenant, agent, limite }); return opts.contenu ?? []; },
+    purger: async () => 0,
+  };
+  return { ecrits, lectures, store };
+}
+
 function app(opts: {
   reponses?: ReponseChat[]; agentConnu?: boolean; sansCerveau?: boolean; indisponible?: boolean;
-  solde?: number;
+  solde?: number; sansHistorique?: boolean; historiqueCasse?: boolean; essais?: EssaiAgent[];
 } = {}) {
-  const cap = { messages: [] as ChatMessage[][], journalises: 0, debits: [] as Array<{ montant: number; note: string }> };
+  const hist = fauxHistorique({ ...(opts.historiqueCasse ? { casse: true } : {}), ...(opts.essais ? { contenu: opts.essais } : {}) });
+  const cap = {
+    messages: [] as ChatMessage[][], journalises: 0, debits: [] as Array<{ montant: number; note: string }>,
+    essaisEcrits: hist.ecrits, lectures: hist.lectures,
+  };
   let i = 0;
   const catalogue: ToolCatalog = {
     byName: async (_t, _a, name) => (name === OUTIL.name ? OUTIL : null),
@@ -88,6 +112,7 @@ function app(opts: {
   };
   const deps: AgentTestRouteDeps = {
     disponible: opts.indisponible !== true,
+    ...(opts.sansHistorique ? {} : { essais: hist.store }),
     ...(opts.sansCerveau ? {} : { cerveau }),
     ...(opts.solde === undefined ? {} : {
       solde: async () => opts.solde!,
@@ -254,6 +279,87 @@ describe('bac à sable de l’agent', () => {
       const { cap, srv } = app();
       expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
       expect(cap.debits).toEqual([]);
+    });
+  });
+
+  /**
+   * 🔴 L'HISTORIQUE DES ESSAIS. Julien, le 2026-09-08 : « j'ai voulu réappuyer et j'ai plus la trace de ce
+   * que j'ai lu ». Régler un agent, c'est COMPARER : on change une consigne, on repose la même question, et
+   * on regarde si la réponse a bougé. Sans trace, la comparaison se fait de mémoire, donc mal.
+   */
+  describe('l’historique des essais', () => {
+    const liste = (tenant: string, agentId = AG) => `/tenants/${tenant}/agents/${agentId}/tests`;
+
+    it('un essai est ARCHIVÉ avec ce qui permet de le comparer', async () => {
+      const { cap, srv } = app({ reponses: [appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')] });
+      expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
+      expect(cap.essaisEcrits).toHaveLength(1);
+      expect(cap.essaisEcrits[0]).toMatchObject({ tenant: 't1', agent: AG });
+      expect(cap.essaisEcrits[0]!.essai).toMatchObject({
+        messages: bonjour.messages,
+        reponse: 'C’est noté.',
+        // Le NOM et le STATUT de chaque outil : c'est ce qui distingue « il n'a pas trouvé » de « il n'a
+        // même pas cherché », la première question qu'on se pose devant une mauvaise réponse.
+        appels: [{ nom: 'mba_poser_tag', status: 'ok' }],
+        // Deux allers-retours à 10/5 jetons : le coût est la MOITIÉ de ce qu'on juge (une réponse deux fois
+        // meilleure qui coûte dix fois plus cher n'est pas un progrès, et ça ne se retrouve pas après coup).
+        tokensEntree: 20, tokensSortie: 10, coutMicroEur: 20,
+      });
+      // Ce que l'outil a RENDU n'est pas gardé : volumineux, et rempli par un site tiers.
+      expect(JSON.stringify(cap.essaisEcrits[0]!.essai.appels)).not.toContain('simule');
+    });
+
+    it('🔴 un historique EN PANNE ne fait pas perdre au client la réponse qu’il vient de payer', async () => {
+      // Le modèle a déjà répondu et le solde est déjà débité : échouer parce que la TRACE n'a pas pu
+      // s'écrire échangerait la fonctionnalité contre la commodité qui la sert.
+      const { cap, srv } = app({ historiqueCasse: true, solde: 5_000_000 });
+      const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().texte).toBe('Bonjour, comment puis-je aider ?');
+      expect(cap.debits).toEqual([{ montant: 10, note: 'essai depuis la console' }]);
+    });
+
+    it('la liste rend les essais de CET agent, plafonnés à ce que l’écran montre', async () => {
+      const archive: EssaiAgent = {
+        id: 'e1', messages: bonjour.messages as EssaiAgent['messages'], reponse: 'Oui, avec sauna.',
+        sortie: null, appels: [{ nom: 'chercher_connaissance', status: 'ok' }],
+        tokensEntree: 10, tokensSortie: 5, coutMicroEur: 10, createdAt: '2026-09-08T10:00:00.000Z',
+      };
+      const { cap, srv } = app({ essais: [archive] });
+      const res = await srv.inject({ method: 'GET', url: liste('t1'), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().essais).toEqual([archive]);
+      expect(cap.lectures).toEqual([{ tenant: 't1', agent: AG, limite: ESSAIS_AFFICHES }]);
+    });
+
+    it('🔴 le tenant de l’URL ne peut pas dépasser celui du jeton, et RIEN n’est lu', async () => {
+      // Le pooler est superuser, la RLS est contournée : ce filtrage est le seul contrôle d'isolation.
+      const { cap, srv } = app();
+      expect((await srv.inject({ method: 'GET', url: liste('t2'), ...h(adminTok) })).statusCode).toBe(403);
+      expect(cap.lectures).toEqual([]);
+    });
+
+    it('sans historique câblé, la liste est VIDE et l’essai marche comme avant', async () => {
+      // 200 avec une liste vide, jamais 404 ni 503 : l'écran doit pouvoir poser la question sans savoir si
+      // le serveur tient une trace, et c'est ce qui permet de le déployer avant la table.
+      const { srv } = app({ sansHistorique: true });
+      const res = await srv.inject({ method: 'GET', url: liste('t1'), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ essais: [] });
+      expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
+    });
+
+    it('un identifiant d’agent mal formé rend 404, et la liste est réservée aux administrateurs', async () => {
+      expect((await app().srv.inject({ method: 'GET', url: liste('t1', 'pas-un-uuid'), ...h(adminTok) })).statusCode).toBe(404);
+      expect((await app().srv.inject({ method: 'GET', url: liste('t1'), ...h(agentTok) })).statusCode).toBe(403);
+    });
+
+    it('la rétention est de 14 jours, et l’écran l’annonce', async () => {
+      // Choisie par Julien : assez pour comparer deux essais dans la journée et revenir le lendemain, assez
+      // court pour ne pas accumuler des mois de brouillons. Le texte de `AgentTest.tsx` dit « 14 jours » ;
+      // les deux builds ne partagent pas cette constante, c'est ici qu'elle est ancrée.
+      expect(RETENTION_ESSAIS_JOURS).toBe(14);
+      expect(ESSAIS_AFFICHES).toBe(20);
     });
   });
 });

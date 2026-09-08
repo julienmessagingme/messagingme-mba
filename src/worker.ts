@@ -5,6 +5,8 @@ import { pool, mesureAttentePool } from './db/pool';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { fabriquerJeton } from './links/jeton-contact';
 import { PgAuditStore } from './audit/store.pg';
+import { PgTestRunStore } from './agent/test-runs.pg';
+import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { handleWebhookJob } from './webhooks/handler';
 import { PgEventStore } from './webhooks/store';
@@ -207,6 +209,7 @@ async function main(): Promise<void> {
   // définition, la valeur serait écrite mais invisible dans le CRM, donc infiltrable et insegmentable.
   const fieldStore = new PgUserFieldStore(pool);
   const auditStore = new PgAuditStore(pool);
+  const essaisStore = new PgTestRunStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   // Instancié ICI pour le seul balayage de rétention des clics (lot 4) : l'API a le sien, et ces stores ne
   // sont que des enveloppes autour du pool partagé.
@@ -1154,6 +1157,10 @@ async function main(): Promise<void> {
       () => erreursLivraison.purgeEchecsAvanceOlderThan(config.AVANCE_ECHECS_RETENTION_DAYS));
     await etape('pool', `minute(s) d’attente du pool effacée(s) (au-delà de ${config.POOL_ATTENTES_RETENTION_DAYS} j)`,
       () => poolAttentes.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
+    // Les essais du bac a sable. Retention COURTE et en dur (14 j) : ce ne sont pas des conversations de
+    // clients, ils ne portent ni contact ni `wa_id`, seulement ce que l'administrateur a tape lui-meme.
+    await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
+      () => essaisStore.purger(RETENTION_ESSAIS_JOURS));
   };
   void retentionSweep();
   taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep);

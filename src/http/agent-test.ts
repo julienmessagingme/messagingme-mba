@@ -5,6 +5,7 @@ import type { ContexteTour, DecisionTracee, GatewayBrainDeps } from '../agent/br
 import { AgentIntrouvable, penserTrace } from '../agent/brain.gateway';
 import { TourInterrompu } from '../agent/brain';
 import { scopeTenant, estUuid } from './scope';
+import { ESSAIS_AFFICHES, type TestRunStore } from '../agent/test-runs';
 
 /**
  * Le BAC À SABLE : parler à son agent depuis la console, avant de l'activer.
@@ -15,13 +16,20 @@ import { scopeTenant, estUuid } from './scope';
  * contact, ni conversation, ni parcours : poser un tag écrirait sur une vraie fiche du mini-CRM, envoyer un
  * bloc partirait chez un vrai numéro. L'écran le dit, appel par appel.
  *
- * 🔴 AUCUNE SESSION N'EST OUVERTE, aucun run n'est touché, rien n'est persisté. Les identifiants du tour sont
+ * 🔴 AUCUNE SESSION N'EST OUVERTE et aucun run n'est touché. Une seule chose est persistée, depuis le
+ * 2026-09-08 : l'ESSAI lui-même, dans `agent_test_runs`, pour qu'on puisse le relire et le rejouer (voir plus
+ * bas). Rien d'autre, et surtout rien qui touche les données d'un contact. Les identifiants du tour sont
  * des valeurs de bac à sable, et le journal d'appels reçoit une session qui n'existe pas : c'est pour ça que
  * le câblage lui donne un journal MUET plutôt que le vrai, sans quoi chaque essai violerait la clé étrangère
  * de `agent_tool_calls`.
  */
 
 export interface AgentTestRouteDeps {
+  /**
+   * L'historique des essais. OPTIONNEL : sans lui, l'essai marche exactement comme avant et l'ecran
+   * n'affiche simplement aucune trace. Une commodite ne doit pas devenir une condition de fonctionnement.
+   */
+  essais?: TestRunStore;
   /** Les deps du cerveau, moins l'appel de modèle quand il n'est pas configuré. */
   cerveau?: GatewayBrainDeps;
   /** Le Gateway est-il configuré ? Le MODÈLE, lui, vient de la fiche de l'agent, pas d'une variable d'env. */
@@ -86,6 +94,22 @@ async function debiterEssai(tenantId: string, coutMicroEur: number, deps: AgentT
 export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
 
+  /**
+   * Les derniers essais de cet agent, du plus recent au plus ancien.
+   *
+   * ⚠️ 200 avec une liste VIDE quand l'historique n'est pas cable, jamais 404 ni 503 : l'ecran doit pouvoir
+   * poser la question sans savoir si le serveur tient une trace, et un agent qu'on n'a jamais essaye rend la
+   * meme chose qu'un serveur sans historique. C'est ce qui permet de deployer l'ecran avant la table.
+   */
+  app.get('/tenants/:tenantId/agents/:agentId/tests', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { agentId } = req.params as { agentId: string };
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
+    if (!deps.essais) return reply.code(200).send({ essais: [] });
+    return reply.code(200).send({ essais: await deps.essais.lister(tenant, agentId, ESSAIS_AFFICHES) });
+  });
+
   app.post('/tenants/:tenantId/agents/:agentId/test', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -132,11 +156,42 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
 
     await debiterEssai(tenant, decision.usage?.coutMicroEur ?? 0, deps);
 
+    const usage = decision.usage ?? { tokensIn: 0, tokensOut: 0, coutMicroEur: 0 };
+    /**
+     * 🔴 L'HISTORIQUE S'ECRIT APRES LA DECISION, ET IL NE PEUT PAS LA FAIRE ECHOUER. Julien, le 2026-09-08 :
+     * « j'ai voulu reappuyer et j'ai plus la trace de ce que j'ai lu ». Regler un agent, c'est comparer :
+     * on change une consigne, on repose la meme question, on regarde si la reponse a bouge.
+     *
+     * 🔴 LA GARDE EST ICI, ET NULLE PART AILLEURS. Le modele a deja repondu et le solde est deja debite :
+     * echouer parce que la TRACE n'a pas pu s'ecrire ferait perdre au client une reponse qu'il vient de
+     * payer, pour une commodite. On journalise et on rend quand meme la reponse.
+     *
+     * ⚠️ L'attente est deliberee : l'ecran relit l'historique juste apres, et doit y voir l'essai qu'il
+     * vient de faire.
+     */
+    if (deps.essais) {
+      try {
+        await deps.essais.ecrire(tenant, agentId, {
+          messages: parse.data.messages,
+          reponse: decision.texte,
+          sortie: decision.sortie,
+          // On garde le NOM et le STATUT, jamais le CONTENU rendu par l'outil : il peut etre volumineux, il vient
+          // d'une base qu'un site tiers a remplie, et ce qu'on vient lire ici est « a-t-il seulement cherche ? ».
+          appels: decision.appels.map((a) => ({ nom: a.nom, status: a.status })),
+          tokensEntree: usage.tokensIn,
+          tokensSortie: usage.tokensOut,
+          coutMicroEur: usage.coutMicroEur,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`agent: ESSAI NON ARCHIVÉ pour le tenant ${tenant}`, err instanceof Error ? err.message : err);
+      }
+    }
     return reply.code(200).send({
       texte: decision.texte,
       sortie: decision.sortie,
       appels: decision.appels,
-      usage: decision.usage ?? { tokensIn: 0, tokensOut: 0, coutMicroEur: 0 },
+      usage,
     });
   });
 }

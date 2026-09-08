@@ -103,6 +103,7 @@ import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
+import { PgTestRunStore } from './agent/test-runs.pg';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
@@ -861,6 +862,9 @@ async function main(): Promise<void> {
     // sont simules : il n y a ni contact, ni conversation, ni parcours, et poser un tag ecrirait sur une
     // vraie fiche du mini-CRM.
     agentTest: {
+      // L HISTORIQUE des essais (14 j). Il ne conditionne rien : sans lui l essai marche comme avant et
+      // l ecran n affiche aucune trace.
+      essais: new PgTestRunStore(pool),
       // Le modele du bac a sable est celui de la FICHE de l agent, pas une variable d env : le seul
       // prerequis est donc la cle du Gateway. Le lier a LLM_MODEL rendrait /test indisponible le jour ou
       // l analyse de conversation serait desactivee, sans aucun rapport.
