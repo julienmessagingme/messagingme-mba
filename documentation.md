@@ -5463,6 +5463,56 @@ vides est celui où l'agent vient de naître, donc où l'on a le moins d'idée d
 couvrait ce chemin vérifiait un champ de l'onglet Identité : il exerçait le mauvais onglet, et c'est lui qui
 aurait dû faire échouer la règle le jour où elle a été posée.
 
+## Vérifier un test d'INTÉGRATION sans attendre la CI (2026-09-08)
+
+🔴 **LE PROBLÈME, ET POURQUOI IL COÛTE CHER.** Le `DATABASE_URL` du `.env` local pointe sur la base de
+PRODUCTION : les tests d'intégration ne se lancent donc pas d'ici, et le dépôt le dit partout. Conséquence
+tue : un test d'intégration neuf partait vers la CI **sans jamais avoir été vérifié dans les deux sens**,
+alors que la règle du dépôt l'exige. On poussait un test dont on ne savait pas s'il échouait sans le
+correctif, ce qui est exactement la garantie qu'il prétend apporter.
+
+**La recette, qui prend deux minutes.** Un Postgres jetable sur le VPS, atteint par un tunnel SSH :
+
+```bash
+# 1. Le conteneur. L'image PGVECTOR, la même que la CI : sur l'image nue, la migration 0110 échoue
+#    (« extension "vector" is not available ») et on s'arrête à mi-chemin sans base utilisable.
+ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252   "sudo docker run -d --name pg-itest -e POSTGRES_PASSWORD=itest -e POSTGRES_DB=itest      -p 127.0.0.1:55432:5432 pgvector/pgvector:pg16"
+
+# 2. Le tunnel, à laisser tourner.
+ssh -i ~/.ssh/id_ed25519 -N -L 55432:127.0.0.1:55432 ubuntu@146.59.233.252
+
+# 3. Les migrations, puis les tests. `DB_SSL=off` est OBLIGATOIRE : sans lui, `pgSsl()` force un objet SSL
+#    et le Postgres local répond « the server does not support SSL connections ».
+DATABASE_URL="postgres://postgres:itest@127.0.0.1:55432/itest" DB_SSL=off npm run migrate
+DATABASE_URL="postgres://postgres:itest@127.0.0.1:55432/itest" DB_SSL=off   ENCRYPTION_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"   npx vitest run --config vitest.integration.config.ts
+
+# 4. Et on le retire quand on a fini.
+ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252 "sudo docker rm -f pg-itest"
+```
+
+⚠️ **`ENCRYPTION_KEY` est nécessaire même pour un test qui ne chiffre rien** : neuf tests des suites
+`agent-sources` et `email-account-store` échouent sans elle, et le message (« ENCRYPTION_KEY invalide ») se
+lit comme une panne du lot qu'on vient d'écrire. La CI en génère une à chaque exécution.
+
+⚠️ **Le port 55432 et non 5432** : la machine de Julien peut avoir un Postgres local, et un tunnel qui
+écraserait son port ferait tourner les tests sur la mauvaise base sans rien dire.
+
+## 🔴 Un test tuyauté dans `tail` perd son code de sortie (2026-09-08)
+
+`npx playwright test --reporter=line | tail -12` rend le code de sortie de **`tail`**, pas celui de
+Playwright : il vaut donc **toujours 0**. Cinq échecs sont passés inaperçus derrière un « 500 passed » qui
+n'était que la dernière ligne visible du flux tronqué.
+
+**La parade :** rediriger dans un fichier et lire le code de sortie, jamais tuyauter.
+
+```bash
+npx playwright test --reporter=line > /tmp/e2e.txt 2>&1; echo "CODE=$?"; tail -6 /tmp/e2e.txt
+```
+
+Même famille que le `gh run watch --exit-status` qui a rendu 0 sur un run en échec (cf. CLAUDE.md) : **le
+verdict d'une suite se lit sur son code de sortie ou sur son compte d'échecs, jamais sur la dernière ligne
+qu'on a sous les yeux.**
+
 ## Reste (non bloquant) : voir `todo.md`
 
 - TLS pooler en vérif complète (pinner la CA Supabase).

@@ -45,30 +45,54 @@ la servait, et elle passe d'un appel occasionnel à un par destinataire de campa
 hors transaction. **Vérifier `indisvalid` après le déploiement** : `if not exists` saute un index invalide
 au lieu de le réparer.
 
-## Refonte des menus : Console / Inbox / Performance Lab (spec écrite le 2026-09-08, pas commencée)
+## Refonte des menus : A, B, C, D LIVRÉS ET DÉPLOYÉS · reste F puis E (2026-09-08)
 
-Trois onglets de premier niveau, l'Inbox en boîte mail (dossiers, compteurs, archivage, charge par
-collaborateur), et un Performance Lab dont la page d'accueil répond à deux questions : ce que coûte un
-engagement, et où se situent les conversations en urgence et en satisfaction.
-
-**Lots A, B, C, D LIVRÉS le 2026-09-08.** A : les trois onglets, la navigation scindée en trois arbres,
-l'onglet déduit de la page active (aucune des 33 pages n'a été touchée), aucune adresse changée. B+C+D :
-l'Inbox en boîte mail (dossiers Tout / À traiter / Signalé / Archivé avec leurs compteurs), l'archivage
-réversible (migration 0120) et la charge par collaborateur. **Reste E et F.**
-
-**Déployé le 2026-09-08 au soir**, migration 0120 appliquée AVANT le code qui l'écrit, colonne et index
-vérifiés en base, les six chemins publics répondent.
-
-**Six lots, dans cet ordre** : A les onglets (seul, il touche les 33 pages sans changer de fonctionnalité),
-puis B+C+D ensemble (un seul écran, une seule idée), puis F (il demande du TEMPS DE COLLECTE : seules les
-conversations analysées après son déploiement portent les deux mesures neuves), puis E.
-
-La spec, avec ce que chaque lot coûte et ce qu'il ne fait pas :
+Trois onglets de premier niveau, l'Inbox en boîte mail, et un Performance Lab dont la page d'accueil répond
+à deux questions : ce que coûte un engagement, et où se situent les conversations en urgence et en
+satisfaction. **La spec des six lots**, avec ce que chacun coûte et ce qu'il ne fait pas :
 [docs/superpowers/specs/2026-09-08-refonte-menus-design.md](docs/superpowers/specs/2026-09-08-refonte-menus-design.md).
 
-⚠️ **Deux migrations en attente dans cette spec** : 0120 (`conversations.archived_at`) et 0121
-(`conversation_analysis.satisfaction` / `urgence`). Le compteur de CLAUDE.md reste à 0119 tant qu'elles ne
-sont pas appliquées.
+### Ce qui est en ligne
+
+**Lot A** (plan : [`plans/2026-09-08-refonte-menus-lot-a.md`](docs/superpowers/plans/2026-09-08-refonte-menus-lot-a.md)) :
+les onglets **Console / Inbox / Performance Lab**. L'onglet se DÉDUIT de la clé `active` que les 33 pages
+passent déjà (`ongletDeLaPage`, `web/lib/nav.ts`) : aucune page n'a été touchée, aucune adresse n'a changé.
+La pastille de non-lus a migré de la barre latérale vers l'onglet Inbox, où elle est visible depuis les trois.
+
+**Lots B+C+D** (plan : [`plans/2026-09-08-refonte-menus-lot-bcd.md`](docs/superpowers/plans/2026-09-08-refonte-menus-lot-bcd.md)) :
+dossiers Tout / À traiter / Signalé / Archivé avec compteurs toujours affichés, archivage réversible par
+sélection (migration **0120**), charge par collaborateur pour admin et manager.
+
+### Ce qui reste, et dans cet ordre
+
+🔴 **F AVANT E, et ce n'est pas interchangeable.** F ajoute `satisfaction` et `urgence` à l'analyse de
+conversation : seules les conversations analysées APRÈS son déploiement les porteront. C'est le seul lot dont
+la valeur dépend du temps écoulé depuis sa mise en ligne, et le nuage de points démarrera vide (il n'y avait
+que 14 analyses en base au 2026-09-08). E, lui, se calcule sur tout l'historique dès le premier jour.
+
+**Lot F** : deux entiers 0-10 dans le prompt et le schéma d'analyse, migration **0121** (`satisfaction` et
+`urgence` en `smallint` NULLABLES), et le nuage de points sur la page de synthèse.
+- ⚠️ Les deux champs sont OPTIONNELS AVEC DÉFAUT dans le schéma Zod, comme `abusive` et `summary` avant eux :
+  un modèle qui les omet ne doit pas invalider TOUTE l'analyse. Le fichier porte déjà cette règle et sa raison.
+- 🔴 `null` doit rester DISTINCT de `0` : une analyse d'avant la migration n'a pas de mesure, et la compter
+  comme zéro placerait tout l'historique dans le coin « client furieux, urgence nulle ». Le graphe ignore les
+  `null` et DIT combien il en a ignorées.
+- Abscisse = satisfaction, ordonnée = urgence (tranché le 2026-09-08 : le coin qui alarme tombe en haut à
+  gauche, là où l'œil va en premier).
+- Hors périmètre, décidé par Julien : réanalyser les 14 conversations existantes.
+
+**Lot E** : coût par campagne rapporté aux engagements, sur la page de synthèse `/performance` (route qui
+n'existe PAS encore : elle a été retirée du lot A, qui ne devait rien changer d'autre que le rangement).
+- Le coût n'est stocké nulle part : il se recalcule (envois × tarif Meta de la catégorie), donc une
+  **estimation** que l'écran doit annoncer comme telle, et une colonne VIDE quand Meta ne rend aucun tarif.
+- 🔴 Les clics existent pour les campagnes à TEMPLATE (`clicsLiensCampagne` filtre sur
+  `template_name is not null`) et PAS pour les campagnes à scénario. ⚠️ `todo.md` affirme l'inverse : sa
+  correction fait partie du lot.
+- Deux réserves à afficher sous le tableau : les templates approuvés avant le 2026-09-02 n'ont pas de jeton
+  dans leur adresse figée chez Meta (aucun clic ne remonte), et deux campagnes qui envoient la même adresse
+  au même contact partagent le compteur.
+
+⚠️ **Migration en attente : 0121 seulement** (0120 est appliquée). Prochaine libre = **0121**.
 
 ## Rien n'est en cours au 2026-09-07
 
