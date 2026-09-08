@@ -999,6 +999,14 @@ export class WorkflowExecutor {
     // opérateur d'envoyer une campagne : c'est LUI qui la déclenche, donc c'est lui qui a la main. Le lancement
     // depuis une campagne passe donc `ignoreHumanControl` et REPREND la main pour l'app, sans quoi le scénario
     // partirait puis se bloquerait à la première réponse.
+    //
+    // 🔴 DEPUIS LE 2026-09-08, UN QUATRIÈME CHEMIN LE PASSE : le clic d'un abonné sur un BOUTON DE CHAÎNE.
+    // Le déclencheur n'est plus un opérateur mais le CONTACT lui-même, et c'est le même raisonnement : il a
+    // fait un geste explicite vers ce scénario. Sans ça, son clic ne lançait rien dès que le fil était tenu,
+    // ce qui est le cas presque à chaque fois au second clic (l'agent de Meta reprend le fil en fin de
+    // parcours, pour 24 h). ⚠️ Réservé aux automations NÉES D'UN LIEN DE CHAÎNE : une automation ordinaire
+    // par mot-clé ne le passe pas, sinon n'importe quel message écraserait l'opérateur qui répond.
+    // Gardé dans les deux sens par `tests/automation-chaine-reprend-la-main.test.ts`.
     if (opts.ignoreHumanControl) {
       if (this.deps.reclaimControl) await this.deps.reclaimControl(tenantId, contact.waId);
     } else if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {

@@ -44,6 +44,38 @@ export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind 
 /** Comment un mot-clé est comparé au message reçu. `equals` sert aussi aux jetons opaques (lien de test wa.me). */
 export type KeywordMode = 'contains' | 'equals';
 
+/**
+ * Le propriétaire d'une automation née d'un lien de chaîne WhatsApp (colonne `automations.possede_par`,
+ * migration 0114).
+ *
+ * ⚠️ LA MÊME CHAÎNE VIT AUSSI EN DUR DANS LES REQUÊTES SQL de `src/channels-me/link-store.pg.ts`, où elle
+ * est une GARDE MIROIR (ce store ne peut toucher QUE ses propres automations). Un littéral SQL ne se
+ * paramètre pas sans transformer une constante en interpolation de chaîne dans une requête, ce qui a la
+ * forme exacte d'une injection à la relecture. Les deux sont donc tenues alignées par un test qui lit la
+ * source (`tests/automation-chaine-reprend-la-main.test.ts`), pas par le compilateur.
+ */
+export const POSSESSEUR_LIEN_CHAINE = 'channelsme_link';
+
+/**
+ * Cette automation vient-elle d'un BOUTON DE CHAÎNE ?
+ *
+ * 🔴 CE QUE CETTE QUESTION DÉCIDE, et pourquoi elle a un nom. Julien, le 2026-09-08 : « quand ça vient d'une
+ * chaîne et que ça pointe vers un scénario, ça reprend la main ». Un abonné qui clique le bouton d'une
+ * publication a fait un geste EXPLICITE vers ce scénario : c'est la même logique qu'une campagne, qui reprend
+ * la main parce que c'est un opérateur qui la déclenche. Ici c'est le contact lui-même.
+ *
+ * Sans ça, le clic ne lançait RIEN dès que le fil était tenu, et il l'est presque toujours au second clic :
+ * l'espace ayant l'agent de Meta allumé, chaque scénario lui rend le fil en arrivant au bout, pour 24 heures.
+ * Vécu le 2026-09-08, et parfaitement muet côté abonné comme côté console.
+ *
+ * ⚠️ CE N'EST VRAI QUE DE LA CHAÎNE, et c'est ce qui rend la règle tenable : une automation ORDINAIRE par
+ * mot-clé ne reprend toujours pas la main, sinon n'importe quel message d'un contact écraserait l'opérateur
+ * qui est en train de lui répondre.
+ */
+export function vientDuneChaine(a: AutomationRow): boolean {
+  return a.possedePar === POSSESSEUR_LIEN_CHAINE;
+}
+
 export interface AutomationRow {
   id: string;
   tenantId: string;
@@ -55,6 +87,15 @@ export interface AutomationRow {
   conditionGroup: ConditionGroup | null;
   workflowId: string;
   startNodeId: string | null;
+  /**
+   * Proprietaire de cette automation, quand elle en a un. `null` = automation ordinaire, creee et pilotee
+   * depuis l'ecran Automation.
+   *
+   * Requis et non optionnel a dessein, comme `maxFiresPerHour` juste en dessous : c'est le compilateur qui
+   * doit enumerer tous les endroits qui fabriquent une ligne d'automation. Un cablage muet retomberait sur
+   * `undefined`, et un lien de chaine cesserait de reprendre la main sans que rien ne le dise.
+   */
+  possedePar: string | null;
   /** null = défaut serveur. 0 = aucun anti-rebond. */
   cooldownSeconds: number | null;
   /**

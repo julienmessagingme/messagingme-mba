@@ -85,6 +85,11 @@ export async function repondreDansLaFenetre(
   // déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil pour
   // pouvoir avancer ensuite. Deux règles écrites en sens contraire valent moins qu'une seule, même imparfaite.
   // Le câblage réel est gardé par `tests/campagne-controle-humain.test.ts`.
+  //
+  // ⚠️ ET DEPUIS LE 2026-09-08, un CLIC SUR UN BOUTON DE CHAÎNE non plus : l'abonné a fait un geste explicite
+  // vers ce scénario, et sans ça son clic ne lançait rien dès que le fil était tenu. Gardé par
+  // `tests/automation-chaine-reprend-la-main.test.ts`. Une automation ordinaire par mot-clé, elle, reste bien
+  // arrêtée par la prise de main.
   await deps.takeControl?.(tenantId, ctx.waId).catch(() => {});
   await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur);
   return { messageId };

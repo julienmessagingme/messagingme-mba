@@ -38,7 +38,7 @@ function app(over: Partial<AutomationRouteDeps> = {}) {
   const deps: AutomationRouteDeps = {
     list: async () => [],
     // État courant d'UNE automation : c'est lui que la garde anti-boucle relit sur un PATCH partiel.
-    getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600, maxFiresPerHour: null } : null),
+    getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600, maxFiresPerHour: null, possedePar: null } : null),
     create: async (tenant, input) => { cap.created.push({ tenant, input }); return { id: 'a1' }; },
     update: async (id, tenant, patch) => { cap.updated.push({ id, tenant, patch }); return id === 'a1'; },
     remove: async (id, tenant) => { cap.removed.push({ id, tenant }); return id === 'a1'; },
@@ -139,7 +139,7 @@ describe('routes automations', () => {
 
     it('sens 2 : basculer vers « conversation analysée » une automation au délai DÉJÀ court -> refusé', async () => {
       const { server, cap } = app({
-        getById: async () => ({ id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 0, maxFiresPerHour: null }),
+        getById: async () => ({ id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 0, maxFiresPerHour: null, possedePar: null }),
       });
       const res = await server.inject({
         method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok),

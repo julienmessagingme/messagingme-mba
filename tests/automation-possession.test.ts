@@ -51,11 +51,21 @@ describe('PgAutomationStore : une automation POSSEDEE est hors de portee de l ec
     }
   });
 
-  it('le chemin CHAUD voit tout : `listEnabled` ne porte PAS le predicat', async () => {
+  it('le chemin CHAUD voit tout : `listEnabled` ne FILTRE pas sur le proprietaire, mais il le LIT', async () => {
+    // ⚠️ CE TEST DISAIT « ne contient pas `possede_par` », et c'etait trop large. Le 2026-09-08 la colonne est
+    // entree dans la liste des champs SELECTIONNES (sa VALEUR decide si un bouton de chaine reprend la main
+    // sur le fil), et le test a casse alors que rien n'etait casse. Ce qu'il protege vraiment, et qui n'a pas
+    // bouge, c'est l'absence du PREDICAT : `possede_par is null` dans le WHERE rendrait muets le webhook ET
+    // le lien de chaine, c'est-a-dire l'inverse du but.
     const { pool, queries } = fakePool();
     await new PgAutomationStore(pool).listEnabled(TENANT, ['keyword']);
     expect(queries).toHaveLength(1);
-    expect(queries[0]!.sql).not.toContain('possede_par');
+    expect(queries[0]!.sql, 'le chemin chaud filtre sur le proprietaire : le webhook et le lien de chaine deviennent muets')
+      .not.toContain('possede_par is null');
+    // Et l'autre moitie, nee le 2026-09-08 : la retirer de la SELECTION ne casserait aucun type, elle rendrait
+    // seulement `possedePar` nul partout, et les boutons de chaine cesseraient de demarrer sur un fil tenu.
+    expect(queries[0]!.sql, 'le chemin chaud ne lit plus le proprietaire : un bouton de chaine ne reprendra plus la main')
+      .toContain('possede_par');
   });
 
   it('`create` pose le proprietaire et le plafond, et met null quand ils sont absents', async () => {

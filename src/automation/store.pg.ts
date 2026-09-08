@@ -34,7 +34,7 @@ interface Raw {
   id: string; tenant_id: string; name: string; enabled: boolean;
   trigger_kind: string; trigger_config: unknown; condition_group: unknown;
   workflow_id: string; start_node_id: string | null; cooldown_seconds: number | null;
-  max_fires_per_hour: number | null;
+  max_fires_per_hour: number | null; possede_par: string | null;
 }
 
 /**
@@ -65,12 +65,15 @@ function toRow(r: Raw): AutomationRow | null {
     startNodeId: r.start_node_id,
     cooldownSeconds: r.cooldown_seconds,
     maxFiresPerHour: r.max_fires_per_hour,
+    // Lu par le CHEMIN CHAUD depuis le 2026-09-08 : c'est lui qui dit si le declenchement vient d'un bouton
+    // de chaine, donc s'il reprend la main sur le fil (`vientDuneChaine`).
+    possedePar: r.possede_par,
   };
 }
 
 // ⚠️ Liste tenue A LA MAIN : ajouter une colonne ici oblige a toucher `Raw` ET `toRow`, sinon la valeur
 // arrive de la base et se perd en silence dans le mapping.
-const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds, max_fires_per_hour';
+const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds, max_fires_per_hour, possede_par';
 
 /**
  * DEUX familles d'automations sont possedees par autre chose que l'ecran Automation, et ce predicat les met
@@ -90,6 +93,12 @@ const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condit
  * ⚠️ `listEnabled` (chemin chaud) ne le porte PAS et ne doit jamais le porter : l'y ajouter rendrait muets
  * le webhook ET le lien de chaine. `create` non plus, evidemment : c'est par la qu'une automation possedee
  * naît.
+ *
+ * ⚠️ Et depuis le 2026-09-08, `possede_par` n'est plus seulement un PREDICAT de portee : sa VALEUR est lue
+ * par le chemin chaud (elle est dans `COLS`), parce qu'une automation nee d'un lien de chaine reprend la
+ * main sur le fil quand une automation ordinaire ne le fait pas. La retirer de `COLS` ne casserait aucun
+ * type, elle rendrait seulement `possedePar` nul partout et les boutons de chaine cesseraient de demarrer
+ * des qu'un fil est tenu.
  *
  * Le NOM de la constante reste `HORS_WEBHOOK` alors qu'elle couvre desormais deux familles : la renommer
  * dans le meme commit melerait un renommage a un changement de comportement, et rendrait la relecture du

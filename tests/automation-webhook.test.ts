@@ -21,7 +21,7 @@ const T = new Date('2026-08-23T12:00:00Z').getTime();
 const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   id: 'a1', tenantId: 't1', name: 'Webhook : commandes', enabled: true,
   triggerKind: 'webhook', triggerConfig: { webhookId: 'wh1' }, conditionGroup: null,
-  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, ...over,
+  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, possedePar: null, ...over,
 });
 const EV: AutomationEvent = { kind: 'webhook', waId: '33611', webhookId: 'wh1' };
 
@@ -84,7 +84,7 @@ describe('déclencheur webhook : le démarrage', () => {
       markFired: async () => true,
       clearFired: async () => {},
       evalContext: async () => null,
-      startWorkflow: async (_t, _wf, _w, _n, windowOpen) => { trace.started.push({ windowOpen }); return true; },
+      startWorkflow: async (_t, _wf, _w, o) => { trace.started.push({ windowOpen: o.windowOpen }); return true; },
       defaultCooldownSeconds: 3600,
       now: () => T,
     };

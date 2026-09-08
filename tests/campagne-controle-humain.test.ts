@@ -105,9 +105,17 @@ describe('les trois chemins déclenchés par un opérateur passent bien ignoreHu
     }
   });
 
-  it('les déclenchements AUTOMATIQUES, eux, ne le passent pas', () => {
-    // La moitié qui compte autant : le drapeau est une exception réservée à ce qu'un opérateur déclenche. Le
-    // poser partout reviendrait à écrire dans le fil d'un client pendant qu'un humain lui parle.
+  it('le LIEN DE TEST d’un scénario, lui, ne le passe pas', () => {
+    // La moitié qui compte autant : le drapeau est une exception, pas un défaut. Le poser partout reviendrait
+    // à écrire dans le fil d'un client pendant qu'un humain lui parle.
+    //
+    // ⚠️ CE TEST S'APPELAIT « les déclenchements AUTOMATIQUES, eux, ne le passent pas », et son titre est
+    // devenu faux le 2026-09-08 : un clic sur un BOUTON DE CHAÎNE est un déclenchement automatique, et il
+    // reprend désormais la main (décision de Julien, gardée dans les deux sens par
+    // `tests/automation-chaine-reprend-la-main.test.ts`). Son ancre, elle, n'a jamais désigné les automations :
+    // elle désigne `startTestRun`, le lien de test. Un titre plus large que ce qu'un test mesure finit par
+    // faire croire à une garantie qu'il n'apporte pas, ce qui est exactement le défaut que ce fichier existe
+    // pour corriger.
     const src = lire('src', 'worker.ts');
     const auto = src.indexOf('startInWindow(tenant, workflowId, grapheEditable(wf)');
     expect(auto).toBeGreaterThan(-1);
@@ -132,5 +140,9 @@ describe('les trois chemins déclenchés par un opérateur passent bien ignoreHu
     // Et elle doit DIRE ce qui se passe vraiment, pas seulement se taire : un texte muet laisserait l'ancienne
     // croyance intacte dans la tête de qui l'a déjà lu.
     expect(ui, 'l’infobulle doit dire qu’une campagne part quand même').toMatch(/Une campagne, si/);
+    // La liste des exceptions a grandi le 2026-09-08. Une infobulle qui en énumère et en oublie une redevient
+    // le demi-mensonge qu'elle a mis des semaines à cesser d'être.
+    expect(ui, 'l’infobulle doit aussi dire qu’un bouton de chaîne cliqué reprend la main')
+      .toMatch(/bouton de chaîne cliqué aussi/);
   });
 });

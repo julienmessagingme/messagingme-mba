@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
+import { POSSESSEUR_LIEN_CHAINE } from '../../src/automation/match';
 import { PgAutomationStore } from '../../src/automation/store.pg';
 
 /**
@@ -44,7 +45,7 @@ describe.skipIf(!url)('automations possedees par un lien de chaine : hors de por
       // Jeton FICTIF (aucun secret) : valeur figee pour rendre les assertions lisibles.
       triggerConfig: { keywords: ['cm-a7k2m9p3'], mode: 'contains' },
       conditionGroup: null, workflowId, startNodeId: null, cooldownSeconds: 300, enabled: true,
-      possedePar: 'channelsme_link', maxFiresPerHour: 2000,
+      possedePar: POSSESSEUR_LIEN_CHAINE, maxFiresPerHour: 2000,
     })).id;
     idNormale = (await store.create(tenantId, {
       name: 'Mot-cle rdv', triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] },
@@ -77,6 +78,13 @@ describe.skipIf(!url)('automations possedees par un lien de chaine : hors de por
     expect(chaud.find((a) => a.id === idPossedee)?.maxFiresPerHour).toBe(2000);
     // L'automation ordinaire n'a pas de plafond propre : c'est celui de l'instance qui s'applique.
     expect(chaud.find((a) => a.id === idNormale)?.maxFiresPerHour).toBeNull();
+    // 🔴 ET SON PROPRIETAIRE FAIT L ALLER-RETOUR, contre un VRAI Postgres (2026-09-08). C'est lui qui decide
+    // qu'un clic sur un bouton de chaine REPREND la main sur le fil (`vientDuneChaine`, puis
+    // `ignoreHumanControl` dans le worker). Un test de texte SQL ne prouve pas qu'une valeur revient : il a
+    // suffi que la colonne manque de `COLS` pour que `possedePar` soit nul partout sans qu'aucun type ne
+    // bouge, et les boutons de chaine auraient cesse de demarrer des qu'un fil est tenu.
+    expect(chaud.find((a) => a.id === idPossedee)?.possedePar).toBe(POSSESSEUR_LIEN_CHAINE);
+    expect(chaud.find((a) => a.id === idNormale)?.possedePar).toBeNull();
   });
 
   it('l automation ordinaire reste pilotable (le second terme n a pas tout verrouille)', async () => {

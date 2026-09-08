@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PREFIXE_JETON, motCleDepuisPhrase, nouveauJeton, estJetonChaine, textePreRempli } from '../src/channels-me/jeton';
 import { normalizeText, keywordsOf, matchesTrigger } from '../src/automation/match';
+import { POSSESSEUR_LIEN_CHAINE } from '../src/automation/match';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 
 /**
@@ -120,6 +121,10 @@ describe('texte pre-rempli', () => {
       id: 'a1', tenantId: 't1', name: 'Chaine', enabled: true,
       triggerKind: 'keyword', triggerConfig: { keywords: [phrase], mode }, conditionGroup: null,
       workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null,
+      // C est bien une automation NEE D UN LIEN DE CHAINE : la fixture le dit, sinon elle cesserait de
+      // representer le cas reel le jour ou ce champ decide de quelque chose. Il decide depuis le
+      // 2026-09-08 de la reprise de main sur le fil.
+      possedePar: POSSESSEUR_LIEN_CHAINE,
     });
     const ancienPost = (b: string): AutomationEvent =>
       ({ kind: 'message', waId: '33611', body: b, isNewContact: false, channel: 'whatsapp' });

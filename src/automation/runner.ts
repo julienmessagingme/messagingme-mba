@@ -1,6 +1,6 @@
 import { evaluateConditionGroup } from '../workflow/conditions';
 import type { EvalContext } from '../workflow/conditions';
-import { matchesTrigger, isInCooldown } from './match';
+import { matchesTrigger, isInCooldown, vientDuneChaine } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 
 /**
@@ -54,9 +54,29 @@ export interface AutomationRunnerDeps {
    * `windowOpen` = la fenêtre de service 24 h est PROUVÉE ouverte (le contact vient d'écrire). Le scénario peut
    * alors ouvrir par un message rapide / formulaire ; sinon la garde de l'exécuteur s'applique.
    */
-  /** true = parti. `false` OU une chaîne (la raison du refus) = pas parti : l'automation ne consomme
-   *  que le fait, pas la raison. */
-  startWorkflow(tenantId: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean): Promise<boolean | string>;
+  /**
+   * true = parti. `false` OU une chaîne (la raison du refus) = pas parti : l'automation ne consomme
+   * que le fait, pas la raison.
+   *
+   * 🔴 LES TROIS DERNIERS ARGUMENTS VOYAGENT DANS UN OBJET, et ce n'est pas de la cosmétique. Une flèche à
+   * cinq paramètres reste assignable à un contrat qui en déclare six, et le sixième est avalé EN SILENCE
+   * (mesuré dans ce dépôt, cf. le CLAUDE.md). Le jour où `reprendLaMain` est né, un câblage écrit pour
+   * l'ancienne signature aurait donc continué de compiler en ignorant la reprise de main. Changer la FORME
+   * force le compilateur à nommer chaque implémentation.
+   */
+  startWorkflow(tenantId: string, workflowId: string, waId: string, opts: {
+    startNodeId: string | null;
+    /** La fenêtre de service 24 h est PROUVÉE ouverte (le contact vient d'écrire). */
+    windowOpen: boolean;
+    /**
+     * Ce démarrage REPREND la conduite du fil, même tenue par un opérateur ou par l'agent de Meta.
+     *
+     * Réservé aux boutons de chaîne (`vientDuneChaine`) : c'est un geste EXPLICITE de l'abonné vers ce
+     * scénario, exactement comme une campagne est un geste explicite d'un opérateur. Une automation
+     * ordinaire vaut `false` et reste bloquée par un fil tenu, ce qui est le bon défaut.
+     */
+    reprendLaMain: boolean;
+  }): Promise<boolean | string>;
   /** Anti-rebond appliqué aux automations qui n'ont rien réglé (`cooldownSeconds` null). */
   defaultCooldownSeconds: number;
   /**
@@ -205,7 +225,15 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
         console.log(`automation ${a.id} : rappel déjà tiré pour cette échéance chez ${ev.waId}, ignoré`);
         continue;
       }
-      const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, a.startNodeId, windowOpen);
+      const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, {
+        startNodeId: a.startNodeId,
+        windowOpen,
+        // 🔴 SEULE LA CHAÎNE REPREND LA MAIN. Julien, le 2026-09-08 : « quand ça vient d'une chaîne et que ça
+        // pointe vers un scénario, ça reprend la main ». Sans ça le clic ne lançait RIEN dès que le fil était
+        // tenu, ce qui est le cas presque à chaque fois au second clic : l'agent de Meta étant allumé, chaque
+        // scénario lui rend le fil en arrivant au bout, pour 24 heures. Et c'était MUET des deux côtés.
+        reprendLaMain: vientDuneChaine(a),
+      });
       // `false` OU une chaîne (la raison du refus) = PAS parti. Tester la simple vérité JS comptait une
       // chaîne comme un succès : le tir restait marqué et l'anti-rebond avalait en silence la prochaine
       // vraie demande du client. Tout le reste (`true`, câblage muet) = parti, comme le moteur de campagne.
@@ -217,7 +245,12 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
         // scénario supprimé) : rien n'est parti, donc rien à protéger. Garder le tir ferait taire la
         // prochaine vraie demande du client pendant toute la durée de l'anti-rebond.
         if (typeof issue === 'string') {
-          // Une automation n'a aucun écran où afficher la raison : le log est le seul endroit où elle vit.
+          // 🔴 Une automation n'a aucun écran où afficher la raison : ce log est le SEUL endroit où elle vit,
+          // et c'est un vrai trou. Le 2026-09-08, un bouton de chaîne refusé ici (« la conversation est tenue
+          // par un opérateur ») était parfaitement muet pour l'abonné comme pour la console, pendant que
+          // l'écran des chaînes affichait « N personnes ont envoyé ce message » juste à côté : le refus était
+          // indiscernable d'une panne, et on a cherché trois heures du côté du bouton. Rendre cette raison à
+          // un écran est noté dans `todo.md`.
           // eslint-disable-next-line no-console
           console.log(`automation ${a.id} : scénario non démarré pour ${ev.waId} : ${issue}`);
         }

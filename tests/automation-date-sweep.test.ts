@@ -14,7 +14,7 @@ const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   id: 'a1', tenantId: 't1', name: 'Rappel rendez-vous', enabled: true,
   triggerKind: 'avant_date', triggerConfig: { fieldKey: 'rdv', delai: 2, unite: 'heures' },
   conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: null,
-  maxFiresPerHour: null, ...over,
+  maxFiresPerHour: null, possedePar: null, ...over,
 });
 
 interface Trace {

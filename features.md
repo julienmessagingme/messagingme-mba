@@ -799,12 +799,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   la déclenche, donc c'est un humain qui décide. Cette ligne a affirmé le contraire (« y compris une campagne
   qui essaierait d'en démarrer un »), ce qui laissait croire qu'avoir la main protégeait le contact d'un envoi
   de masse. Ce n'est pas le cas, et c'est exactement ce qu'un opérateur doit savoir avant de lancer.
+  ⚠️ **Depuis le 2026-09-08, un appui sur un bouton de CHAÎNE non plus.** L'infobulle du badge le dit, et cette
+  liste doit grandir avec les exceptions : une énumération à laquelle il manque un cas est un demi-mensonge.
 - ✅ **Un scénario qui arrive au bout passe la main** : quand un parcours atteint son bloc « passer à un humain »,
   la conversation bascule côté opérateur. Le badge le dit tout de suite et la conversation apparaît dans
   « À traiter ». Avant, le scénario s'arrêtait en silence pendant que le badge affichait encore « scénario », et
   personne ne voyait que le client attendait.
 - ✅ **Bouton « Rendre la main »** dans le fil, quand un opérateur détient la conversation. Le scénario
   repart immédiatement, sans attendre le délai.
+- ✅ **Un bouton de chaîne cliqué reprend la main lui aussi** (2026-09-08), pour la même raison qu'une
+  campagne : c'est un geste explicite, celui de l'abonné qui appuie. Le détail est dans la section Chaînes.
+  ⚠️ Ce sont les DEUX seules exceptions. Un mot-clé ordinaire, une analyse de conversation, un tag posé : rien
+  de tout ça n'écrit dans un fil tenu.
 - ✅ **Et « Reprendre la main » quand c'est l'agent de Meta qui tient le fil** (2026-09-08). Le bouton ne
   sortait que pour un opérateur : un fil passé à l'agent de Meta n'avait aucune sortie depuis la console, il
   fallait attendre les 24 heures du délai, et pendant tout ce temps **aucun déclencheur automatique n'écrivait
@@ -1643,6 +1649,16 @@ phrase est ce que l'abonné enverra en appuyant. Deux règles la gouvernent, et 
 une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien (sinon un seul appui démarrerait
 deux scénarios), et la console COMPTE combien de messages existants la contiennent déjà, pour éviter une
 phrase trop banale (« Bonjour » déclencherait sur tout).
+
+- ✅ **Un appui REPREND la conduite du fil** (2026-09-08). Si la conversation était tenue par un opérateur ou
+  par l'agent de Meta, le scénario du bouton part quand même et la conduite revient à l'app. C'est le même
+  principe qu'une campagne : quelqu'un a fait un geste explicite, ici l'abonné lui-même en appuyant sur le
+  bouton d'une publication.
+  🔴 **Sans ça, le bouton était muet une fois sur deux, sans que rien ne le dise.** Quand l'agent de Meta est
+  allumé, chaque scénario lui rend le fil en arrivant au bout, et il le garde 24 heures : le SECOND appui d'un
+  même abonné tombait donc toujours dans cette fenêtre et ne lançait rien. Vécu le 2026-09-08.
+  ⚠️ **Un mot-clé ordinaire, lui, ne reprend toujours pas la main** : un opérateur en train de répondre à un
+  client ne doit pas se faire couper la parole par un scénario sur un simple message.
 
 **La liste des publications** montre, pour chaque post : son texte (mis en forme comme dans l'aperçu), sa
 date, son statut lu en direct chez le fournisseur, **le scénario vers lequel son bouton renvoie**, et

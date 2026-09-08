@@ -5369,6 +5369,46 @@ l'ancienne image. Chercher cette pièce-là à chaque déploiement, plutôt que 
 précédente : les fichiers changent, le service non. Il faut `up -d --build` derrière, sans quoi on croit
 avoir déployé un commit et on en sert un autre.
 
+## Le bouton de chaîne qui ne lançait rien (2026-09-08)
+
+🔴 **UNE GARDE QUI REFUSE EN SILENCE SUR UN CHEMIN DÉCLENCHÉ PAR L'UTILISATEUR FINAL EST INDISCERNABLE D'UNE
+PANNE.** Julien : « le message qu'on clique n'aboutit pas au lancement du scénario ». Tout fonctionnait : le
+message arrivait, le mot-clé correspondait, l'automation était trouvée et évaluée. Le refus venait du
+DÉMARRAGE, `runFrom` ayant vu que le fil appartenait à l'agent de Meta. Le seul endroit où cette raison
+existait était une ligne du journal du worker. Ni l'abonné, ni la console, ni l'écran des chaînes n'en
+disaient un mot, et l'écran des chaînes affichait même « N personnes ont envoyé ce message » juste à côté,
+ce qui donnait l'impression que le clic marchait.
+
+🔴 **CE N'ÉTAIT PAS UN CAS RARE, C'ÉTAIT LE CAS NORMAL, et c'est ce qui a fait chercher ailleurs.** L'espace
+a l'agent de Meta allumé, donc chaque scénario lui REND le fil en arrivant au bout (`releaseToMba`), et il le
+garde 24 heures (`CONTROL_MBA_TIMEOUT_MS`). Le SECOND appui d'un même abonné tombait donc toujours dans cette
+fenêtre. La fonctionnalité marchait une fois par abonné et par jour, ce qui ressemble davantage à un bug
+intermittent qu'à une règle. La leçon générale : **quand une garde dépend d'un état que le produit repose
+lui-même en fin de parcours, cet état est le cas NORMAL, pas l'exception.**
+
+🔴 **ET L'ÉCRAN QUI GÈRE UN ÉTAT DOIT OFFRIR LA SORTIE POUR TOUS SES ÉTATS.** `control_owner` en a trois ;
+le bouton « Rendre la main » de l'Inbox ne sortait que sur `app_human`, alors que la route serveur, elle,
+rend la main quel que soit le détenteur. Un fil passé à l'agent de Meta n'avait donc AUCUNE sortie depuis la
+console : seul le délai de 24 h le libérait. La capacité existait, elle n'était simplement pas atteignable,
+ce qu'aucun test ne pouvait voir puisque le serveur, lui, était complet.
+
+**Le correctif, en deux morceaux.** (1) Le bouton s'affiche pour tout détenteur, avec un libellé qui change
+de sens (on REND une main qu'on a prise, on la REPREND à l'agent de Meta). (2) Décision de Julien : un clic
+sur un bouton de chaîne REPREND la main, comme une campagne, parce que c'est un geste explicite, celui de
+l'abonné. ⚠️ **Seulement la chaîne** : une automation ordinaire par mot-clé qui reprendrait la main ferait
+écrire un scénario par-dessus l'opérateur en train de répondre, sur n'importe quel message.
+
+⚠️ **`possede_par` a changé de nature au passage**, et c'est le genre de glissement qui se paie plus tard si
+on ne l'écrit pas : elle était un PRÉDICAT de portée (quelles automations l'écran Automation peut piloter),
+elle est aussi devenue une VALEUR lue par le chemin chaud. `tests/automation-possession.test.ts` affirmait
+« `listEnabled` ne contient pas `possede_par` » et a cassé alors que rien n'était cassé : l'assertion visait
+le WHERE et interdisait aussi le SELECT. Elle dit maintenant ce qu'elle veut dire, dans les deux sens.
+
+⚠️ **La capacité voyage dans un OBJET, pas dans un sixième paramètre.** `AutomationRunnerDeps.startWorkflow`
+a changé de FORME plutôt que de gagner un argument : une flèche à cinq paramètres reste assignable à un
+contrat qui en déclare six, et le sixième est avalé en silence (mesuré dans ce dépôt, cf. le CLAUDE.md). Le
+changement de forme a fait nommer par le compilateur les trois implémentations à reprendre.
+
 ## Reste (non bloquant) : voir `todo.md`
 
 - TLS pooler en vérif complète (pinner la CA Supabase).

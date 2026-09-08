@@ -253,6 +253,26 @@ ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et c
 multi-numéro sort du plan, remplacé par un refus explicite du second) et **conversations gardées 12 mois**
 (plancher de 3 mois donné par Julien, quadruplé parce que l'effacement est irréversible).
 
+## Un refus d'automation n'a AUCUN écran (relevé au lot « la chaîne reprend la main », 2026-09-08)
+
+🟠 **Le symptôme, vécu.** Un bouton de chaîne cliqué ne lançait pas son scénario. Le refus était légitime (le
+fil appartenait à l'agent de Meta) et il était écrit, mot pour mot, dans le journal du worker. Nulle part
+ailleurs : ni pour l'abonné, ni dans la console, ni sur l'écran des chaînes, qui affichait au même moment
+« N personnes ont envoyé ce message » juste à côté. Trois heures de recherche du côté du bouton, de l'URL et
+du mot-clé, pour des composants qui n'avaient rien.
+
+**Ce lot a fermé LA cause dominante** (un clic de chaîne reprend désormais la main), mais pas la classe : les
+trois autres refus de `runAutomations` restent aussi muets (anti-rebond, condition non satisfaite, plafond
+horaire), et le prochain refus se diagnostiquera de la même façon, c'est-à-dire mal.
+
+**La piste, sans alourdir.** Il existe déjà une table de journal d'exploitation purgée à intervalle
+(`erreursLivraison`, les échecs d'avance, avec sa rétention et son écran). Y écrire les refus d'automation
+avec leur raison, leur automation et leur contact donnerait l'endroit qui manque, sans nouvelle mécanique ni
+nouvelle migration de structure. ⚠️ **À borner d'abord** : un refus par anti-rebond peut se produire des
+milliers de fois par heure sur une chaîne qui marche, donc soit on n'écrit que les refus RARES (fil tenu,
+condition, plafond), soit on agrège. Écrire tous les refus tels quels remplirait la table plus vite que les
+envois eux-mêmes.
+
 ## Reste de l'audit sécurité du 2026-09-07
 
 L'audit a trouvé le parc en bon état (secrets, RLS, isolation tenant, injection SQL, journalisation,

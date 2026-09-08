@@ -21,7 +21,7 @@ const T = new Date('2026-08-03T12:00:00Z').getTime();
 const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   id: 'a1', tenantId: 't1', name: 'A', enabled: true,
   triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null,
-  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, ...over,
+  workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, possedePar: null, ...over,
 });
 const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
   fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
@@ -30,7 +30,7 @@ const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
 const MSG: AutomationEvent = { kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: false, channel: 'whatsapp' };
 
 interface Trace {
-  started: Array<{ workflowId: string; startNodeId: string | null; windowOpen: boolean }>;
+  started: Array<{ workflowId: string; startNodeId: string | null; windowOpen: boolean; reprendLaMain: boolean }>;
   fired: string[]; cleared: string[]; ctxCalls: number;
 }
 
@@ -42,7 +42,7 @@ function make(rows: AutomationRow[], over: Partial<AutomationRunnerDeps> = {}): 
     markFired: async (id) => { trace.fired.push(id); return true; },
     clearFired: async (id) => { trace.cleared.push(id); },
     evalContext: async () => { trace.ctxCalls += 1; return ctx(); },
-    startWorkflow: async (_t, workflowId, _w, startNodeId, windowOpen) => { trace.started.push({ workflowId, startNodeId, windowOpen }); return true; },
+    startWorkflow: async (_t, workflowId, _w, o) => { trace.started.push({ workflowId, ...o }); return true; },
     defaultCooldownSeconds: 3600,
     now: () => T,
     ...over,
@@ -54,7 +54,7 @@ describe('runAutomations', () => {
   it('déclencheur qui correspond -> démarre le scénario et enregistre le tir', async () => {
     const { deps, trace } = make([auto()]);
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
-    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true }]);
+    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true, reprendLaMain: false }]);
     expect(trace.fired).toEqual(['a1']);
   });
 
@@ -85,7 +85,7 @@ describe('runAutomations', () => {
   it('démarre à un BLOC PRÉCIS quand l’automation en cible un', async () => {
     const { deps, trace } = make([auto({ startNodeId: 'n5' })]);
     await runAutomations('t1', MSG, deps);
-    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: 'n5', windowOpen: true }]);
+    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: 'n5', windowOpen: true, reprendLaMain: false }]);
   });
 
   describe('filtre de condition', () => {
@@ -223,7 +223,7 @@ describe('runAutomations', () => {
       // contenu de ce test : le contrat n'expose plus de quoi bloquer.
       const { deps, trace } = make([auto()]);
       expect(await runAutomations('t1', MSG, deps)).toBe(1);
-      expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true }]);
+      expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true, reprendLaMain: false }]);
       expect(trace.fired).toEqual(['a1']);
       // 🔴 LE VRAI CONTENU DU TEST : le contrat n'expose plus rien qui permette de bloquer. Un `hasWaitingRun`
       // réintroduit ailleurs redeviendrait invisible ici, alors qu'il rendrait le défaut à l'identique.

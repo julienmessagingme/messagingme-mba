@@ -301,7 +301,9 @@ async function main(): Promise<void> {
     firedSince: (id: string, since: Date) => automationStore.firedSince(id, since),
     maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
-    startWorkflow: async (tenant: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean) => {
+    startWorkflow: async (tenant: string, workflowId: string, waId: string, opts: {
+      startNodeId: string | null; windowOpen: boolean; reprendLaMain: boolean;
+    }) => {
       const wf = await workflowStore.getById(workflowId, tenant);
       if (!wf) return false;
       // Le contact existe déjà (l'upsert d'inbound a tourné juste avant) : on relie le run à sa fiche si on la trouve.
@@ -309,11 +311,16 @@ async function main(): Promise<void> {
       const contact = { waId, contactId };
       // Démarrage UNITAIRE (un contact, sur un événement) : les tags posés par ce parcours publient à leur
       // tour, contrairement à une campagne. L'anti-rebond du runner borne l'enchaînement.
-      const unitaire = { emitEvents: true };
-      if (startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, startNodeId, unitaire);
+      //
+      // 🔴 `ignoreHumanControl` N'EST PAS POSÉ POUR TOUTES LES AUTOMATIONS, seulement pour celles qui
+      // viennent d'un BOUTON DE CHAÎNE, et le runner a déjà tranché (`vientDuneChaine`). Le poser partout
+      // ferait écrire un scénario dans le fil d'un client pendant qu'un opérateur lui répond, sur n'importe
+      // quel mot-clé. `tests/campagne-controle-humain.test.ts` garde les DEUX sens de cette distinction.
+      const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain };
+      if (opts.startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, opts.startNodeId, unitaire);
       // Fenêtre PROUVÉE ouverte (le contact vient d'écrire) -> le scénario peut ouvrir par un message rapide ou
       // un formulaire, ce que le Lot D a rendu possible et que l'écran Automation annonce. Sinon, garde normale.
-      return windowOpen
+      return opts.windowOpen
         ? workflowExecutor.startInWindow(tenant, workflowId, wf.graph, contact, unitaire)
         : workflowExecutor.start(tenant, workflowId, wf.graph, contact, undefined, unitaire);
     },

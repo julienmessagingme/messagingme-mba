@@ -1281,9 +1281,13 @@ function ControlBadge({ owner }: { owner: ControlOwner }) {
       // (src/workflow/executor.ts, `runFrom`), parce qu'un opérateur la déclenche, donc c'est un humain qui a
       // la main. C'est un choix délibéré et testé côté serveur. Le mensonge était donc ici, pas dans le
       // comportement, et il est affiché à l'opérateur sur chaque conversation qu'il détient.
+      //
+      // ⚠️ La liste des exceptions a GRANDI le 2026-09-08 : un abonné qui clique un bouton de chaîne reprend
+      // aussi la main. Une infobulle qui énumère ce qui passe outre doit être complétée à chaque exception,
+      // sinon elle redevient exactement le demi-mensonge qu'elle a mis des semaines à cesser d'être.
       title: t(
-        'Un opérateur a la main : ni le scénario ni l’agent n’écrivent. Une campagne, si : elle part et reprend la main.',
-        'An operator has the hand: neither the scenario nor the agent writes. A campaign does: it goes out and takes the hand back.',
+        'Un opérateur a la main : ni le scénario ni l’agent n’écrivent. Une campagne, si : elle part et reprend la main. Un bouton de chaîne cliqué aussi.',
+        'An operator has the hand: neither the scenario nor the agent writes. A campaign does: it goes out and takes the hand back. So does a clicked channel button.',
       ),
     },
     mba: {
