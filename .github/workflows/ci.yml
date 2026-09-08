@@ -125,3 +125,21 @@ jobs:
         run: npm run test:e2e
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+      # 🔴 LA TOPOLOGIE REELLEMENT LIVREE, QUE RIEN NE VERIFIAIT. Tout ce qui precede construit et exerce la
+      # console en mode PROXY : le build ci-dessus n'a pas `NEXT_PUBLIC_API_URL`, et les specs Playwright
+      # interceptent `/api/backend/**`, le chemin du proxy Next. Depuis la bascule Vercel, le navigateur
+      # appelle `api.messagingme.app` en DIRECT et ne traverse plus ce proxy : la console livree n'etait donc
+      # couverte par aucun test.
+      #
+      # ⚠️ EN DERNIER, et ce n'est pas cosmetique : `npm run build` ecrase `.next`, et le serveur de
+      # Playwright reutilise ce repertoire. Construire en mode Vercel AVANT les E2E ferait appeler `api.` par
+      # la console, donc plus aucune interception, donc toutes les specs rouges.
+      - name: Build dans la topologie Vercel
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_API_URL: https://api.messagingme.app
+      # Un build qui passe ne prouve QUE la compilation. La variable est figee AU BUILD : la changer sans
+      # reconstruire ne fait rien, en silence. On verifie donc qu'elle est bien SCELLEE dans le bundle client.
+      - name: La base d API est scellee dans le bundle
+        run: node scripts/verifier-base-api.mjs https://api.messagingme.app

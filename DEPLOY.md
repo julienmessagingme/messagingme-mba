@@ -109,6 +109,21 @@ sudo docker compose up -d --build                                # 1) deploy le 
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
 
+## 🔴 Dernière étape OBLIGATOIRE : le contrôle de fumée public
+
+```bash
+node scripts/fumee.mjs
+```
+
+Depuis le poste, PAS depuis le VPS : ce qu'on veut savoir, c'est ce que voit un client, à travers Cloudflare
+et NPM. Il vérifie les six chemins qui portent vraiment quelque chose, dont **le webhook Meta à l'adresse que
+Meta appelle réellement** (`mba.messagingme.app/api/backend/webhooks/meta`, pas `api.`).
+
+⚠️ **Ce n'est pas une formalité.** Le 502 par IP périmée est INTERMITTENT : absent au premier déploiement de
+la journée, présent au second, sur exactement la même commande. Un conteneur `healthy` et un appel interne en
+200 ne disent RIEN de ce que voit un client. Le script sort en code non nul et rappelle le remède
+(`nginx -s reload`), qui n'est pas `docker network connect`.
+
 ## ⚠️ Deux gestes qu'on oublie, et leur symptôme
 
 **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge.** Les `rewrites` sont **gelés au build** de

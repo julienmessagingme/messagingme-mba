@@ -18,10 +18,26 @@ Trois noms, deux hébergeurs. Journal d'exécution complet et raisons de chaque 
                                     Supabase
 ```
 
-🔴 **`api.messagingme.app` est un NOM, pas une machine, et c'est tout l'intérêt.** Le front, Meta, les
-contacts qui cliquent et l'opérateur télécom ne connaissent que cette étiquette. Le jour du déménagement vers
-Scaleway : monter l'API et le worker là-bas, changer UN enregistrement DNS, éteindre OVH. Le front ne bouge
-pas, le webhook Meta ne bouge pas, les liens déjà envoyés continuent d'ouvrir, rien à redéployer.
+🔴 **`api.messagingme.app` est un NOM, pas une machine, et c'est tout l'intérêt.** Le front, les contacts qui
+cliquent et l'opérateur télécom ne connaissent que cette étiquette. Le jour du déménagement vers Scaleway :
+monter l'API et le worker là-bas, changer l'enregistrement DNS de `api.`. Le front ne bouge pas, les liens
+DÉJÀ ENVOYÉS qui pointent sur `api.` continuent d'ouvrir, rien à redéployer.
+
+🔴 **MAIS ÉTEINDRE OVH NE SE RÉSUME PAS À CE CHANGEMENT DE DNS, et cette page a affirmé le contraire.** Elle
+écrivait « changer UN enregistrement DNS, éteindre OVH... le webhook Meta ne bouge pas ». C'est faux, et la
+raison est deux paragraphes plus bas : **Meta appelle toujours `mba.messagingme.app/api/backend/webhooks/meta`**,
+et `mba.` est le VPS. Les anciens `/r/`, `/m/` et `/mcp` y vivent aussi. Éteindre OVH après avoir seulement
+repointé `api.` couperait donc le webhook entrant et toutes les adresses historiques déjà distribuées.
+
+⚠️ **C'est le même angle mort que celui du changement de nom du front** (§ sécurité de `CLAUDE.md`) : on
+pense à ce qu'on a DONNÉ comme adresse, on oublie ce qui pointe encore sur l'ANCIENNE. Ici c'est le routage
+par chemin de `mba.` qui a rendu la bascule Vercel indolore, et c'est exactement lui qui retient le VPS.
+
+**Ce qu'il faut faire AVANT d'éteindre OVH**, et dans cet ordre : déplacer le routage de compatibilité de
+`mba.` vers un point d'entrée indépendant du VPS (règle Cloudflare ou équivalent) qui retire le préfixe
+`/api/backend/` vers `api.`, y route `/r/`, `/m/` et `/mcp`, et redirige le reste vers `engageme.`. Cette
+voie a un RETOUR ARRIÈRE et ne demande aucun geste chez Meta. Reconfigurer le webhook chez Meta est possible
+mais se fait sans filet : le temps que Meta reprenne l'adresse, les messages entrants tombent.
 
 **Le worker n'a aucune adresse et personne ne l'appelle** : il lit la base et travaille. Il voyage avec l'API.
 

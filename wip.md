@@ -63,10 +63,12 @@ qui a suivi, puis l'audit sécurité du 2026-09-07 (plafond de débit des routes
 
 ## Ce qui attend une action de Julien
 
-- ⚠️ **Ajouter `engageme.messagingme.app` aux domaines autorisés de l'app Meta** (Connexion Facebook, « Valid
-  OAuth Redirect URIs » ET « Allowed Domains for the JavaScript SDK », au format complet avec la barre
-  finale). Ça ne bloque QUE l'écran qui connecte un NOUVEAU numéro WhatsApp, donc rien d'urgent. Google est
-  déjà fait.
+- ~~Ajouter `engageme.messagingme.app` aux domaines autorisés de l'app Meta.~~ **FAIT le 2026-09-08**
+  (Facebook Login for Business > Settings) : « Valid OAuth Redirect URIs » ET « Allowed Domains for the
+  JavaScript SDK » portent chacun `https://mba.messagingme.app/` ET `https://engageme.messagingme.app/`.
+  ⚠️ L'ancien domaine a été CONSERVÉ, pas remplacé : `mba.` sert encore la console historique, et l'y
+  retirer casserait son parcours de connexion. Google Sign-In était déjà fait. Les deux tiers qui
+  vérifient l'ORIGINE sont donc à jour, cf. la règle du CLAUDE.md sur le changement de nom du front.
 - **Facultatif : éteindre `mba-web`** et faire de `mba.messagingme.app/` une redirection vers `engageme`.
   Rien ne presse : le laisser tourner ne coûte presque rien et garde une porte de sortie.
 
