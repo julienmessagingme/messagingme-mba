@@ -6,7 +6,7 @@ import { RateLimiter } from '../auth/rate-limit';
 import { urlRecuperable } from '../lib/page-distante';
 import { lienWaMe } from '../lib/wa-me';
 import { normalizeText } from '../automation/match';
-import { nouveauJeton, textePreRempli } from '../channels-me/jeton';
+import { motCleDepuisPhrase, nouveauJeton, textePreRempli } from '../channels-me/jeton';
 import { ChannelsMeApiError } from '../channels-me/client';
 import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Message } from '../channels-me/types';
 import type { LienRow } from '../channels-me/link-store.pg';
@@ -298,8 +298,11 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     // publie ne declenche rien, donc un jeton qui fuiterait avant publication est inerte.
     const { id: automationId } = await deps.creerAutomationCompagnon(tenant, {
       nom: `Chaine : ${phrase}`.slice(0, 200),
-      // La PHRASE, pas le jeton : c'est elle que l'abonne enverra desormais.
-      motCle: phrase,
+      // 🔴 LA PHRASE (plus le jeton, depuis le 2026-09-07), PRIVEE DE SA PONCTUATION FINALE. Un post DEJA PUBLIE envoie un message ampute de sa
+      // ponctuation de fin (l'auto-detection de liens de WhatsApp l'exclut de l'adresse qu'elle ouvre), et
+      // en mode `contains` un message plus COURT que le mot-cle ne correspond a rien. Cf. le docblock de
+      // `motCleDepuisPhrase` : c'est la seule moitie du remede qui repare les posts deja distribues.
+      motCle: motCleDepuisPhrase(phrase),
       workflowId,
       startNodeId,
       cooldownSeconds: COOLDOWN_LIEN_SECONDES,

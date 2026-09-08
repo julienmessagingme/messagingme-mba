@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PREFIXE_JETON, nouveauJeton, estJetonChaine, textePreRempli } from '../src/channels-me/jeton';
+import { PREFIXE_JETON, motCleDepuisPhrase, nouveauJeton, estJetonChaine, textePreRempli } from '../src/channels-me/jeton';
 import { normalizeText, keywordsOf, matchesTrigger } from '../src/automation/match';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 
@@ -132,5 +132,39 @@ describe('texte pre-rempli', () => {
     // les posts deja distribues auraient un bouton mort, sans aucun recours. C est la raison pour laquelle
     // le mode ne doit jamais changer, et elle est ici plutot que dans un commentaire.
     expect(matchesTrigger(auto('equals'), ancienPost(`${phrase} (${JETON})`))).toBe(false);
+  });
+});
+
+describe('motCleDepuisPhrase', () => {
+  /**
+   * 🔴 LE DEFAUT VECU LE 2026-09-08 : un bouton dont la phrase finissait par « ! » ne demarrait AUCUN
+   * scenario. Le message recu etait ampute de sa ponctuation finale (l auto-detection de liens de WhatsApp
+   * l exclut de l adresse qu elle ouvre), et en mode `contains` un message plus COURT que le mot-cle ne
+   * correspond a rien.
+   */
+  it('🔴 retire la ponctuation FINALE, celle que le lien perd en route', () => {
+    expect(motCleDepuisPhrase('je veux mon de code promo!')).toBe('je veux mon de code promo');
+    expect(motCleDepuisPhrase('Je veux mon code promo !')).toBe('Je veux mon code promo');
+    expect(motCleDepuisPhrase('Deja pret ?')).toBe('Deja pret');
+  });
+
+  it('🔴 preuve inverse : la ponctuation du MILIEU est du texte, elle reste', () => {
+    // La retirer changerait le sens de la correspondance.
+    expect(motCleDepuisPhrase('-20%, c est maintenant')).toBe('-20%, c est maintenant');
+    expect(motCleDepuisPhrase('Je veux en savoir plus')).toBe('Je veux en savoir plus');
+  });
+
+  it('les DEUX formes du message correspondent alors, l ancienne comme la nouvelle', () => {
+    // C est tout l objet de la regle : un post DEJA PUBLIE envoie la forme amputee et ne peut plus etre
+    // modifie, un post neuf enverra la forme complete. Le mot-cle doit attraper les deux, en mode contains.
+    const cle = motCleDepuisPhrase('je veux mon de code promo!');
+    expect('je veux mon de code promo'.includes(cle)).toBe(true);
+    expect('je veux mon de code promo!'.includes(cle)).toBe(true);
+  });
+
+  it('une phrase faite QUE de ponctuation rend une chaine vide, pas un mot-cle attrape-tout', () => {
+    // Un mot-cle vide est ecarte par `keywordsOf` : l automation ne declenche JAMAIS, au lieu de declencher
+    // sur TOUT, ce qui serait le pire des deux.
+    expect(motCleDepuisPhrase('!!!')).toBe('');
   });
 });

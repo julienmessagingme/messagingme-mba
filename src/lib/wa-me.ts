@@ -32,5 +32,25 @@
 export function lienWaMe(displayPhoneNumber: string | null, texte: string): string | null {
   const chiffres = (displayPhoneNumber ?? '').replace(/\D/g, '');
   if (chiffres === '') return null;
-  return `https://wa.me/${chiffres}?text=${encodeURIComponent(texte)}`;
+  return `https://wa.me/${chiffres}?text=${encodeTexteWaMe(texte)}`;
+}
+
+/**
+ * L'encodage du paramètre `text`, plus strict que `encodeURIComponent`.
+ *
+ * 🔴 MESURÉ LE 2026-09-08, SUR UN BOUTON QUI NE DÉMARRAIT AUCUN SCÉNARIO. La phrase du lien était
+ * « je veux mon de code promo! » ; le message REÇU était « je veux mon de code promo », sans le point
+ * d'exclamation. La correspondance étant en mode `contains`, un message plus COURT que le mot-clé ne
+ * correspond à rien, et le scénario ne partait jamais.
+ *
+ * La cause : `encodeURIComponent` laisse `!`, `'`, `(`, `)` et `*` TELS QUELS (ce sont des sous-délimiteurs
+ * licites dans une URL). L'adresse finissait donc par `...promo!`, et l'auto-détection de liens de WhatsApp
+ * traite une ponctuation finale comme la ponctuation de la PHRASE, pas comme une partie du lien : elle
+ * l'exclut de ce qui est ouvert. Le `!` ne partait donc jamais dans le message.
+ *
+ * ⚠️ Ce n'est pas réparable en aval : ces adresses vivent dans des posts DÉJÀ DISTRIBUÉS. D'où la seconde
+ * moitié du remède, côté mot-clé (`motCleDepuisPhrase`, src/channels-me/jeton.ts), qui rattrape ceux-là.
+ */
+export function encodeTexteWaMe(texte: string): string {
+  return encodeURIComponent(texte).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }

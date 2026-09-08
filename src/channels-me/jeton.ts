@@ -91,3 +91,31 @@ export function estJetonChaine(v: string): boolean {
 export function textePreRempli(phrase: string): string {
   return phrase.trim();
 }
+
+/**
+ * Le MOT-CLE de l'automation compagnon : la phrase, privee de sa ponctuation FINALE.
+ *
+ * 🔴 CE N'EST PAS UN CONFORT, C'EST LE RATTRAPAGE DES POSTS DEJA DISTRIBUES. Le 2026-09-08, un bouton dont
+ * la phrase etait « je veux mon de code promo! » n'a demarre aucun scenario : le message REÇU etait
+ * « je veux mon de code promo », sans le point d'exclamation. L'auto-detection de liens de WhatsApp exclut
+ * une ponctuation finale de l'adresse qu'elle ouvre, donc ce caractere ne partait jamais. En mode
+ * `contains`, un message plus COURT que le mot-cle ne correspond a rien.
+ *
+ * `encodeTexteWaMe` corrige les adresses A VENIR. Mais les posts deja publies portent l'ancienne adresse et
+ * ne sont plus modifiables : eux enverront toujours le message ampute. Retirer la ponctuation finale du
+ * MOT-CLE fait correspondre les DEUX formes, et c'est la seule moitie du remede qui les repare.
+ *
+ *   phrase stockee : « je veux mon de code promo! »   (inchangee : c'est ce que le client a ecrit et ce que
+ *                                                      l'abonne enverra)
+ *   mot-cle        : « je veux mon de code promo »    (ce qui declenche, en mode `contains`)
+ *
+ * ⚠️ Seule la ponctuation de FIN part. Celle du milieu est du texte (« -20%, c'est maintenant »), et la
+ * retirer changerait le sens de la correspondance.
+ *
+ * ⚠️ Une phrase entierement faite de ponctuation rend la chaine vide. La route de creation refuse deja une
+ * phrase dont la forme normalisee est vide, et `keywordsOf` ecarte un mot-cle vide : une automation au
+ * mot-cle vide ne declenche JAMAIS, elle ne declenche pas sur tout.
+ */
+export function motCleDepuisPhrase(phrase: string): string {
+  return phrase.trim().replace(/[!.,;:?)\]"'*»]+$/u, '').trim();
+}
