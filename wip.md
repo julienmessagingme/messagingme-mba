@@ -45,7 +45,7 @@ la servait, et elle passe d'un appel occasionnel à un par destinataire de campa
 hors transaction. **Vérifier `indisvalid` après le déploiement** : `if not exists` saute un index invalide
 au lieu de le réparer.
 
-## Refonte des menus : A, B, C, D LIVRÉS ET DÉPLOYÉS · reste F puis E (2026-09-08)
+## Refonte des menus : A, B, C, D et F LIVRÉS ET DÉPLOYÉS · reste E (2026-09-08)
 
 Trois onglets de premier niveau, l'Inbox en boîte mail, et un Performance Lab dont la page d'accueil répond
 à deux questions : ce que coûte un engagement, et où se situent les conversations en urgence et en
@@ -63,36 +63,37 @@ La pastille de non-lus a migré de la barre latérale vers l'onglet Inbox, où e
 dossiers Tout / À traiter / Signalé / Archivé avec compteurs toujours affichés, archivage réversible par
 sélection (migration **0120**), charge par collaborateur pour admin et manager.
 
-### Ce qui reste, et dans cet ordre
-
-🔴 **F AVANT E, et ce n'est pas interchangeable.** F ajoute `satisfaction` et `urgence` à l'analyse de
-conversation : seules les conversations analysées APRÈS son déploiement les porteront. C'est le seul lot dont
-la valeur dépend du temps écoulé depuis sa mise en ligne, et le nuage de points démarrera vide (il n'y avait
-que 14 analyses en base au 2026-09-08). E, lui, se calcule sur tout l'historique dès le premier jour.
-
-**Lot F** : deux entiers 0-10 dans le prompt et le schéma d'analyse, migration **0121** (`satisfaction` et
-`urgence` en `smallint` NULLABLES), et le nuage de points sur la page de synthèse.
-- ⚠️ Les deux champs sont OPTIONNELS AVEC DÉFAUT dans le schéma Zod, comme `abusive` et `summary` avant eux :
-  un modèle qui les omet ne doit pas invalider TOUTE l'analyse. Le fichier porte déjà cette règle et sa raison.
-- 🔴 `null` doit rester DISTINCT de `0` : une analyse d'avant la migration n'a pas de mesure, et la compter
-  comme zéro placerait tout l'historique dans le coin « client furieux, urgence nulle ». Le graphe ignore les
-  `null` et DIT combien il en a ignorées.
-- Abscisse = satisfaction, ordonnée = urgence (tranché le 2026-09-08 : le coin qui alarme tombe en haut à
-  gauche, là où l'œil va en premier).
+**Lot F** (livré ET déployé le 2026-09-08, migration **0121**) : l'analyse rend deux notes de 0 à 10, la
+satisfaction et l'urgence, et la page **`/performance`** (adresse NEUVE, la seule de toute la refonte) en
+fait un nuage de points. Abscisse satisfaction, ordonnée urgence : le coin qui alarme tombe en haut à
+gauche. `/performance` est aussi devenue la porte d'entrée de l'onglet Performance Lab, à la place de
+`/dashboard`, qui n'a pas bougé pour autant.
+- 🔴 **`null` n'est pas `0`, et c'est tout le lot.** Une analyse d'avant la migration n'a pas de mesure (14
+  en base ce jour-là, toutes à null) ; la compter comme zéro rangerait l'historique entier dans le coin
+  « client furieux, urgence nulle ». Et une satisfaction de 0 est une mesure valide, celle qui alarme : un
+  `if (!satisfaction)` la ferait disparaître de l'écran. Les deux sens sont gardés par des tests
+  d'intégration vérifiés par MUTATION contre une vraie base.
+- Le schéma tolère l'à-peu-près du modèle et ne perd JAMAIS l'analyse pour une note (absente, décimale, en
+  texte ou hors échelle : seule la mesure manque). Mesuré sur zod 4.4 avant d'être écrit.
+- Le nuage DIT qu'il démarre vide, et compte à part les analyses sans mesure. Il se remplira au fil des
+  analyses : c'est la raison pour laquelle ce lot est passé avant E.
 - Hors périmètre, décidé par Julien : réanalyser les 14 conversations existantes.
+- ⚠️ `satisfaction` et `urgence` ne partent PAS vers HubSpot (`getStored` ne les relit pas, et dit
+  pourquoi) : ce serait changer un contrat inter-dépôts que ce lot ne demandait pas.
 
-**Lot E** : coût par campagne rapporté aux engagements, sur la page de synthèse `/performance` (route qui
-n'existe PAS encore : elle a été retirée du lot A, qui ne devait rien changer d'autre que le rangement).
+### Ce qui reste
+
+**Lot E** : coût par campagne rapporté aux engagements, sur la page de synthèse `/performance` (qui existe
+maintenant, avec le nuage du lot F).
 - Le coût n'est stocké nulle part : il se recalcule (envois × tarif Meta de la catégorie), donc une
   **estimation** que l'écran doit annoncer comme telle, et une colonne VIDE quand Meta ne rend aucun tarif.
-- 🔴 Les clics existent pour les campagnes à TEMPLATE (`clicsLiensCampagne` filtre sur
-  `template_name is not null`) et PAS pour les campagnes à scénario. ⚠️ `todo.md` affirme l'inverse : sa
-  correction fait partie du lot.
+- 🔴 Les clics existent pour les campagnes à TEMPLATE (le comptage filtre sur `template_name is not null`)
+  et PAS pour les campagnes à scénario. ⚠️ `todo.md` affirme l'inverse : sa correction fait partie du lot.
 - Deux réserves à afficher sous le tableau : les templates approuvés avant le 2026-09-02 n'ont pas de jeton
   dans leur adresse figée chez Meta (aucun clic ne remonte), et deux campagnes qui envoient la même adresse
   au même contact partagent le compteur.
 
-⚠️ **Migration en attente : 0121 seulement** (0120 est appliquée). Prochaine libre = **0121**.
+⚠️ **Aucune migration en attente.** Dernière appliquée : **0121** (CLAUDE.md porte le compteur, et lui seul).
 
 ## Rien n'est en cours au 2026-09-07
 

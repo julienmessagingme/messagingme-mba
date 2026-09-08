@@ -24,7 +24,7 @@ npm run seed             # compte/tenant démo (SEED_PASSWORD requis, ou SEED_DE
 npm test                 # vitest unitaires (sans DB)
 npm run test:integration # vitest intégration (⚠️ le DATABASE_URL local = la PROD, cf. ci-dessous)
 npm run typecheck        # tsc --noEmit
-npm run auto-attaque     # 540 sondes d'attaque sur les routes REELLES (voir documentation.md)
+npm run auto-attaque     # sondes d'attaque sur les routes REELLES, inventoriees depuis le serveur (voir documentation.md)
 
 # Frontend (dans web/)
 npm run dev              # Next.js :3000 (proxifie /api/backend/* -> BACKEND_URL)
@@ -79,8 +79,23 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0120**, le 2026-09-08 (`conversations.archived_at` et son index PARTIEL : ranger une
-conversation finie sans rien effacer, l'Inbox étant passée en boîte mail). **Prochaine libre = 0121.**
+**Dernière appliquée : 0121**, le 2026-09-08 (`conversation_analysis.satisfaction` et `.urgence`, deux
+`smallint` NULLABLES bornés 0-10 par un CHECK : l'analyse note désormais où en est le client et à quel point
+ça presse, et la page de synthèse en fait un nuage de points). **Prochaine libre = 0122.**
+
+🔴 **`null` N'EST PAS `0`, ET C'EST TOUTE LA MIGRATION.** Les analyses d'avant n'ont aucune mesure (14 en
+base au moment de l'appliquer, toutes à null, vérifié) et n'en auront jamais : on ne réanalyse pas. Les
+compter comme zéro rangerait tout l'historique dans le coin « client furieux, urgence nulle ». À l'inverse,
+une satisfaction de 0 est une mesure PARFAITEMENT valide, celle qui alarme : un `if (!satisfaction)` la
+ferait disparaître de l'écran, qui resterait crédible sans elle. Les deux sens sont tenus par des tests
+d'intégration, vérifiés par MUTATION contre une vraie base.
+
+Vérifiée EN BASE après coup, comme la 0120 : `information_schema` pour les deux colonnes, `pg_constraint`
+pour les deux CHECK, et la requête du chemin chaud exécutée pour de vrai (elle rend bien 13 lignes à
+`(null, null)` sur le premier espace, donc « sans mesure », et aucune à `(0, 0)`).
+
+Avant elle : **0120** le 2026-09-08 (`conversations.archived_at` et son index PARTIEL : ranger une
+conversation finie sans rien effacer, l'Inbox étant passée en boîte mail).
 
 Vérifiée AVANT le déploiement du code qui l'écrit, et vérifiée EN BASE plutôt que par l'absence d'erreur :
 `information_schema` pour la colonne, `pg_indexes` pour l'index partiel, et la requête du chemin chaud
