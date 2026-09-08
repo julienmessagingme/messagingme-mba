@@ -1632,7 +1632,7 @@ phrase trop banale (« Bonjour » déclencherait sur tout).
 
 **La liste des publications** montre, pour chaque post : son texte (mis en forme comme dans l'aperçu), sa
 date, son statut lu en direct chez le fournisseur, **le scénario vers lequel son bouton renvoie**, et
-**combien de conversations il a démarrées**. Un bouton mort (lien éteint) est signalé, avec sa réparation à
+**combien de personnes ont envoyé le message de son bouton**. Un bouton mort (lien éteint) est signalé, avec sa réparation à
 côté.
 
 🔴 **« Combien de clics » n'existe pas, et ce n'est pas une lacune de la console.** Un appui sur le bouton

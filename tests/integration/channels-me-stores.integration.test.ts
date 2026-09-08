@@ -580,16 +580,39 @@ describe.skipIf(!url)('Stores Channels Me (Postgres reel)', () => {
       expect(chezLautre.parLien.some((x) => x.linkId === lien.id)).toBe(false);
     });
 
-    it('un espace sans aucun lien ne lit AUCUN message', async () => {
-      // La borne de date est une sous-requete sur les liens : sans lien, elle rend null et la comparaison
-      // serait vraie pour rien. Le raccourci en amont doit sortir avant d interroger les messages.
+    it('🔴 la borne de date exclut ce qui precede le PLUS ANCIEN lien de l espace', async () => {
+      // C est la seule des cinq decisions du SQL qui n avait aucun cas de test, et c est celle qui borne le
+      // cout de la lecture. Sans elle, tout l historique du client serait relu a chaque ouverture d ecran.
       const liens = new PgChannelsMeLinkStore(pool);
-      const vide = await pool.query<{ id: string }>(
-        `insert into tenants (name) values ('itest-channelsme-vide') returning id`,
+      const phrase = `itest borne ${Date.now()}`;
+      const auto = await pool.query<{ id: string }>(
+        `insert into automations (tenant_id, name, trigger_kind, trigger_config, workflow_id, possede_par)
+         values ($1, 'itest-borne-auto', 'keyword', $2::jsonb, $3, 'channelsme_link') returning id`,
+        [tenantId, JSON.stringify({ keywords: [phrase], mode: 'contains' }), workflowId],
       );
-      const r = await liens.conversationsParLien(vide.rows[0]!.id);
-      expect(r).toEqual({ parLien: [], partiel: false });
-      await pool.query('delete from tenants where id = $1', [vide.rows[0]!.id]);
+      const lien = await liens.create(tenantId, {
+        workflowId, startNodeId: null, token: `cm-brn${Date.now() % 100000}`,
+        phrase, automationId: auto.rows[0]!.id, maxParHeure: null,
+      });
+
+      // Un message ANTERIEUR au plus ancien lien de cet espace : il porte la phrase, et il ne doit pas
+      // compter. On date explicitement, sans quoi le test ne prouverait rien.
+      const vieux = await conversation(tenantId, `3365555${Date.now() % 10000}`, false);
+      await pool.query(
+        `insert into conversation_messages (conversation_id, direction, type, body, channel, created_at)
+         values ($1, 'in', 'text', $2, 'whatsapp',
+                 (select min(created_at) from channelsme_links where tenant_id = $3) - interval '1 day')`,
+        [vieux, phrase, tenantId],
+      );
+      const avant = await liens.conversationsParLien(tenantId);
+      expect(avant.parLien.find((x) => x.linkId === lien.id)?.contacts).toBe(0);
+
+      // 🔴 Preuve inverse : le MEME message, date APRES la borne, compte bien. Sans ce sens-la, un filtre
+      // qui rejetterait tout passerait le test precedent.
+      const recent = await conversation(tenantId, `3366666${Date.now() % 10000}`, false);
+      await message(recent, phrase, 'in', 'whatsapp');
+      const apres = await liens.conversationsParLien(tenantId);
+      expect(apres.parLien.find((x) => x.linkId === lien.id)?.contacts).toBe(1);
     });
   });
 });

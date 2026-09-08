@@ -170,6 +170,20 @@ describe('corpsDuPost', () => {
     expect(corpsDuPost(texte + '\n\n' + URL, URL)).toBe(texte);
   });
 
+  it('🔴 retire aussi l’adresse des posts d’AVANT la bascule du jeton', () => {
+    // Leur texte pre-rempli portait le jeton, donc leur adresse encodee n est PLUS celle que le serveur
+    // recompose aujourd hui a partir de la phrase seule. Une comparaison exacte ne les reconnaissait pas :
+    // ces posts affichaient leur adresse entiere dans la liste. Ils circulent pour toujours.
+    const ancienne = 'https://wa.me/33525680250?text=Je%20veux%20le%20guide%20(cm-a7k2m9p3)';
+    expect(corpsDuPost('Notre offre\n\n' + ancienne, URL)).toBe('Notre offre');
+  });
+
+  it('🔴 preuve inverse : une adresse wa.me au MILIEU du texte n est pas touchee', () => {
+    // La regle est ancree en fin de texte. Un client qui cite sa propre adresse ne doit rien perdre.
+    const texte = 'Ecris-moi sur https://wa.me/33123456789 quand tu veux';
+    expect(corpsDuPost(texte, null)).toBe(texte);
+  });
+
   it('adresse inconnue (lien supprimé, post sans bouton) : le texte est rendu tel quel', () => {
     expect(corpsDuPost('Un post nu', null)).toBe('Un post nu');
     expect(corpsDuPost('Un post nu', '')).toBe('Un post nu');

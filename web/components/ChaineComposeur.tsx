@@ -6,14 +6,14 @@ import { estEnLigne, type WorkflowSummary } from '@/lib/api';
 import { inputCls } from '@/lib/ui';
 import { MAX_PHRASE, MAX_TEXTE_POST, type LienChaine } from '@/lib/api-chaine';
 import {
-  entoure, insere, MARQUEURS, type Edition, type Marqueur, type StyleTexte,
+  entoure, insere, MARQUEURS, type Edition, type Marqueur, type StyleBarre,
 } from '@/lib/chaine-mise-en-forme';
 import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { imageAffichable, phraseAcceptable, pretAPublier, resteAAfficher, type BrouillonChaine } from '@/lib/chaine-apercu';
 
 /** Ce que chaque style MONTRE dans la barre. Le style lui-même vit dans `MARQUEURS`, ici c'est l'habillage. */
-const HABILLAGE: Record<StyleTexte, { fr: string; en: string; lettre: string; classe: string }> = {
+const HABILLAGE: Record<StyleBarre, { fr: string; en: string; lettre: string; classe: string }> = {
   gras: { fr: 'Gras', en: 'Bold', lettre: 'B', classe: 'font-bold' },
   italique: { fr: 'Italique', en: 'Italic', lettre: 'I', classe: 'italic' },
   barre: { fr: 'Barré', en: 'Strikethrough', lettre: 'S', classe: 'line-through' },
@@ -80,8 +80,14 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
 
   return (
     <div className="space-y-4" data-testid="chaine-composeur">
-      <label className="block">
-        <span className="mb-1 block text-sm font-medium text-ink-600">{t('Message', 'Message')}</span>
+      {/* 🔴 UN `div`, PAS UN `label`, ET LE LIBELLÉ POINTE LA ZONE DE TEXTE PAR SON `id`. Un `label` sans
+          `for` s'associe à son PREMIER descendant labelable : depuis que la barre d'outils vit à l'intérieur,
+          ce n'était plus le `textarea` mais le bouton Gras. Cliquer sur le mot « Message » mettait donc du
+          gras au lieu de placer le curseur, et un lecteur d'écran annonçait « Message » sur ce bouton. */}
+      <div className="block">
+        <label htmlFor="chaine-texte" className="mb-1 block text-sm font-medium text-ink-600">
+          {t('Message', 'Message')}
+        </label>
         {/* 🔴 LA BARRE AGIT SUR LA SÉLECTION, et la REPLACE ensuite. Un éditeur qui renvoie le curseur à la
             fin après chaque clic oblige à re-sélectionner pour enchaîner gras puis italique, c'est-à-dire
             exactement ce qu'on fait quand on met en forme. La logique vit dans un module pur et testé ;
@@ -90,7 +96,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
           {/* 🔴 LA BARRE EST DÉRIVÉE DE `MARQUEURS`, elle n'en tient pas une copie. Deux listes à aligner à
               la main dérivent : ajouter un marqueur d'un seul côté donne soit un bouton qui écrit un
               balisage que l'aperçu ne rend pas, soit un style que rien n'insère. */}
-          {(Object.entries(MARQUEURS) as [Marqueur, StyleTexte][]).map(([marqueur, style]) => (
+          {(Object.entries(MARQUEURS) as [Marqueur, StyleBarre][]).map(([marqueur, style]) => (
             <button
               key={marqueur}
               type="button"
@@ -128,6 +134,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
         </div>
         <textarea
           ref={zoneRef}
+          id="chaine-texte"
           className={`${inputCls} min-h-[130px]`}
           value={brouillon.texte}
           onChange={(e) => onChange({ ...brouillon, texte: e.target.value })}
@@ -144,7 +151,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               : t(`${reste} caractères restants`, `${reste} characters left`)}
           </span>
         ) : null}
-      </label>
+      </div>
 
       <div className="block">
         <span className="mb-1 block text-sm font-medium text-ink-600">

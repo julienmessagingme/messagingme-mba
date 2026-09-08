@@ -103,6 +103,29 @@ describe('segmentsMisEnForme', () => {
   });
 });
 
+describe('le monospace, réservé à l’aperçu des templates', () => {
+  it('🔴 n’est PAS reconnu par défaut : la chaîne ne doit pas promettre un style de plus', () => {
+    // La syntaxe monospace de WhatsApp est le TRIPLE accent grave, pas le simple. L activer partout
+    // ajouterait un style que le telephone n appliquera peut-etre pas.
+    expect(segmentsMisEnForme('du `code` ici')).toEqual([brut('du `code` ici')]);
+  });
+
+  it('est reconnu sur demande, pour ne rien retirer à l’écran qui le rendait déjà', () => {
+    expect(segmentsMisEnForme('du `code` ici', { mono: true })).toEqual([
+      brut('du '),
+      { styles: ['mono'], contenu: 'code' },
+      brut(' ici'),
+    ]);
+  });
+
+  it('🔴 et l’aperçu des templates gagne la règle de bordure qui lui manquait', () => {
+    // Son ancien analyseur etait une expression reguliere sans bordure de mot : elle italisait le milieu
+    // d une adresse, dans l apercu meme d un corps de template qui part chez Meta.
+    const texte = 'Voir https://x.fr/mon_super_lien pour la suite';
+    expect(segmentsMisEnForme(texte, { mono: true })).toEqual([brut(texte)]);
+  });
+});
+
 describe('entoure', () => {
   it('🔴 C1 : entoure la sélection ET la rend, pour pouvoir enchaîner gras puis italique', () => {
     const r = entoure('un mot gras', 3, 6, '*');
@@ -179,6 +202,54 @@ describe('entoure', () => {
     const second = entoure(premier.texte, premier.debut, premier.fin, '*');
     expect(second.texte).toBe('mot');
     expect(second.texte.slice(second.debut, second.fin)).toBe('mot');
+  });
+
+  it('🔴 la bascule part aussi quand les marqueurs sont DANS la sélection (Ctrl+A)', () => {
+    // Le test de bascule d origine ne regardait que les caracteres ENTOURANT la selection. Un Ctrl+A, ou
+    // une selection souris qui deborde d un caractere, la rendait aveugle : on empilait `**promo**`, que
+    // l apercu affiche comme un gras propre.
+    expect(entoure('*promo*', 0, 7, '*').texte).toBe('promo');
+    expect(entoure('a *promo* b', 2, 9, '*').texte).toBe('a promo b');
+    // Le va-et-vient est stable dans les deux formes de selection.
+    const enleve = entoure('*promo*', 0, 7, '*');
+    expect(entoure(enleve.texte, enleve.debut, enleve.fin, '*').texte).toBe('*promo*');
+  });
+
+  it('🔴 la bascule ne retire QUE des marqueurs qui forment vraiment un style', () => {
+    // « 5 * 3 = 15 * 2 » : les deux etoiles sont du texte ordinaire, l apercu les affiche telles quelles
+    // (elles ne ferment rien, cf. C4). Une bascule qui ne testait que leur PRESENCE en retirait deux, et le
+    // client voyait disparaitre des caracteres qu il avait tapes.
+    expect(entoure('5 * 3 = 15 * 2', 2, 12, '*').texte).toBe('5 ** 3 = 15 ** 2');
+    // Espace collee a l interieur : ce n est pas un style non plus, ni pour nous ni pour WhatsApp.
+    expect(entoure('*a *', 0, 4, '*').texte).toBe('**a **');
+  });
+
+  it('🔴 preuve inverse : un marqueur DIFFERENT dans la sélection ne debascule rien', () => {
+    // Sans ce sens-la, la bascule mangerait deux caracteres du texte du client des que sa selection commence
+    // et finit par le meme caractere, quel qu il soit.
+    expect(entoure('_promo_', 0, 7, '*').texte).toBe('*_promo_*');
+    expect(entoure('promo', 0, 5, '*').texte).toBe('*promo*');
+  });
+
+  it('🔴 la bascule vaut AUSSI pour une sélection multiligne', () => {
+    // Le defaut que ce test empeche de revenir, et qui venait de la correction multiligne elle-meme :
+    // apres le premier clic la selection rendue ENGLOBE les marqueurs (un par ligne, donc a l INTERIEUR),
+    // si bien que le test de bascule, qui les cherche AUTOUR, ne pouvait plus les voir. Recliquer empilait
+    // alors deux marqueurs par ligne, que l apercu affiche comme un gras propre.
+    const premier = entoure('ligne1\nligne2', 0, 13, '*');
+    expect(premier.texte).toBe('*ligne1*\n*ligne2*');
+    const second = entoure(premier.texte, premier.debut, premier.fin, '*');
+    expect(second.texte).toBe('ligne1\nligne2');
+    // Et on peut re-basculer : le va-et-vient est stable, il ne derive pas.
+    const troisieme = entoure(second.texte, second.debut, second.fin, '*');
+    expect(troisieme.texte).toBe('*ligne1*\n*ligne2*');
+  });
+
+  it('🔴 preuve inverse : une seule ligne deja entouree sur DEUX ne debascule pas tout', () => {
+    // Sans ce sens-la, une bascule trop gourmande retirerait le marqueur d une ligne qui n en a pas, et
+    // mangerait un caractere du texte du client.
+    const r = entoure('*ligne1*\nligne2', 0, 16, '*');
+    expect(r.texte).toBe('**ligne1**\n*ligne2*');
   });
 
   it('🔴 preuve inverse de la bascule : un marqueur DIFFERENT s’ajoute toujours', () => {

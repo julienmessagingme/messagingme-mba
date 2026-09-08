@@ -156,10 +156,16 @@ export class PgChannelsMeLinkStore {
    * conversation avant d'exister, donc cette borne ne peut RIEN perdre, et elle retire tout l'historique
    * anterieur au premier lien.
    *
-   * ⚠️ Elle est volontairement LARGE : c'est le plus ancien lien de l'espace, pas la date de CHAQUE lien.
-   * Un lien recent relit donc des messages anterieurs a sa propre creation. C'est sans effet sur son compte
-   * (ces messages ne peuvent pas contenir sa phrase, l'unicite de phrase etant garantie par la migration
-   * 0116 et par la garde de creation), et une borne par lien couterait une requete par lien.
+   * 🔴 ELLE EST LARGE, ET LE COMPTE PEUT DONC INCLURE DES MESSAGES ANTERIEURS A LA CREATION DU BOUTON.
+   * C'est le plus ancien lien de l'ESPACE, pas la date de chaque lien. Une premiere version de ce
+   * commentaire affirmait que c'etait sans effet, au motif que l'unicite de phrase empeche un autre message
+   * de contenir celle-ci : c'est FAUX, et le raisonnement confondait deux choses. L'unicite porte sur les
+   * phrases des LIENS entre elles ; elle n'empeche pas un abonne d'avoir ecrit spontanement « Je veux le
+   * guide » avant que ce bouton existe. La garde de creation MESURE d'ailleurs exactement ce risque
+   * (`messagesContenantLaPhrase`) au lieu de le nier.
+   *
+   * On garde la borne large plutot qu'une borne par lien, qui couterait une requete par lien, et l'ecart
+   * est DIT a l'utilisateur : l'ecran annonce qu'on compte des messages recus, pas des demarrages.
    *
    * ⚠️ `not c.is_test` EXCLUT DEFINITIVEMENT un contact qui a servi une fois de cible de test. Il n'y a
    * qu'UN fil par contact (unicite `(tenant_id, wa_id)`, migration 0058) et `is_test` n'est jamais remis a

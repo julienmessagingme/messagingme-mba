@@ -20,10 +20,23 @@ import { MAX_TEXTE_POST } from './api-chaine';
  * confirme sur un vrai post, sur un vrai téléphone.
  */
 
-/** Les trois marqueurs de WhatsApp, et le style qu'ils portent. */
+/** Les trois marqueurs que la BARRE D'OUTILS propose. */
 export const MARQUEURS = { '*': 'gras', _: 'italique', '~': 'barre' } as const;
 export type Marqueur = keyof typeof MARQUEURS;
-export type StyleTexte = (typeof MARQUEURS)[Marqueur];
+export type StyleBarre = (typeof MARQUEURS)[Marqueur];
+
+/**
+ * Les marqueurs que l'analyse RECONNAIT, qui ne sont pas les memes.
+ *
+ * ⚠️ Le monospace n'est PAS dans la barre et n'est reconnu que sur demande (`mono`). Il existait dans
+ * l'apercu des templates (`WhatsAppPreview`, avec son propre analyseur), et unifier les deux ne doit rien
+ * retirer a cet ecran-la. Il reste hors de la chaine parce que rien ne l'y a jamais rendu, et parce que la
+ * syntaxe monospace de WhatsApp est le triple accent grave, pas le simple : l'activer partout ajouterait un
+ * style que le telephone n'appliquera peut-etre pas, c'est-a-dire exactement le genre de promesse que cet
+ * apercu existe pour ne pas faire.
+ */
+const MARQUEURS_RENDU = { ...MARQUEURS, '`': 'mono' } as const;
+export type StyleTexte = (typeof MARQUEURS_RENDU)[keyof typeof MARQUEURS_RENDU];
 
 /**
  * Un morceau de texte et les styles qui le portent, du plus EXTÉRIEUR au plus intérieur.
@@ -78,13 +91,16 @@ const PLAFOND_MISE_EN_FORME = MAX_TEXTE_POST;
  * fichier _brouillon » doit voir ce qu'il a tapé : une mise en forme qui avale un caractère isolé fait
  * douter de tout le reste.
  */
-export function segmentsMisEnForme(texte: string): SegmentTexte[] {
+export function segmentsMisEnForme(texte: string, options?: { mono?: boolean }): SegmentTexte[] {
   if (texte === '') return [];
   if (texte.length > PLAFOND_MISE_EN_FORME) return [{ styles: [], contenu: texte }];
-  return decoupe(texte);
+  const table: Record<string, StyleTexte | undefined> = options?.mono === true
+    ? MARQUEURS_RENDU
+    : MARQUEURS;
+  return decoupe(texte, table);
 }
 
-function decoupe(texte: string): SegmentTexte[] {
+function decoupe(texte: string, table: Record<string, StyleTexte | undefined>): SegmentTexte[] {
   const segments: SegmentTexte[] = [];
   let brut = '';
   let i = 0;
@@ -95,7 +111,7 @@ function decoupe(texte: string): SegmentTexte[] {
 
   while (i < texte.length) {
     const c = texte[i]!;
-    const style = (MARQUEURS as Record<string, StyleTexte | undefined>)[c];
+    const style = table[c];
     // Ouverture possible : marqueur connu, en bordure de mot, et NON suivi d'une espace (`* 3` n'ouvre rien).
     if (style !== undefined && EST_BORDURE(texte[i - 1]) && texte[i + 1] !== undefined && !/\s/.test(texte[i + 1]!)) {
       const fin = fermeture(texte, i, c);
@@ -103,7 +119,7 @@ function decoupe(texte: string): SegmentTexte[] {
         pousserBrut();
         // Le contenu est REDÉCOUPÉ : `*_mot_*` porte les deux styles, comme chez WhatsApp. Chaque niveau
         // retire au moins les deux marqueurs, donc la récursion est bornée par la longueur du texte.
-        for (const interne of decoupe(texte.slice(i + 1, fin))) {
+        for (const interne of decoupe(texte.slice(i + 1, fin), table)) {
           segments.push({ styles: [style, ...interne.styles], contenu: interne.contenu });
         }
         i = fin + 1;
@@ -132,6 +148,19 @@ function fermeture(texte: string, debut: number, marqueur: string): number {
     return j;
   }
   return -1;
+}
+
+/**
+ * Ces deux marqueurs formeraient-ils VRAIMENT un style autour de ce noyau ?
+ *
+ * 🔴 SANS CETTE GARDE, LA BASCULE MANGE DES CARACTERES ORDINAIRES. Elle ne testait que la PRESENCE du
+ * marqueur de part et d'autre : sur « 5 * 3 = 15 * 2 », une sélection allant d'une étoile à l'autre en
+ * retirait deux, alors que l'aperçu les affiche comme du texte ordinaire (elles ne ferment rien). Le client
+ * voyait disparaître des caractères qu'il avait tapés. On applique donc les mêmes conditions que
+ * `fermeture` : un noyau non vide, et pas d'espace collée à l'intérieur des marqueurs.
+ */
+function formeUnStyle(noyau: string): boolean {
+  return noyau !== '' && !/^\s/.test(noyau) && !/\s$/.test(noyau);
 }
 
 /** Le texte, et où laisser la sélection ensuite. */
@@ -167,7 +196,11 @@ export function entoure(texte: string, debut: number, fin: number, marqueur: str
   // et la sélection reste posée sur le mot (c'est voulu, pour enchaîner les styles) : recliquer est donc le
   // geste d'annulation le plus naturel qui soit, et il produisait `**mot**`. L'aperçu n'y voyait rien, un
   // gras dans un gras étant du gras, et le texte fautif partait dans un post irrattrapable.
-  if (texte.slice(d - marqueur.length, d) === marqueur && texte.slice(f, f + marqueur.length) === marqueur) {
+  if (
+    texte.slice(d - marqueur.length, d) === marqueur
+    && texte.slice(f, f + marqueur.length) === marqueur
+    && formeUnStyle(texte.slice(d, f))
+  ) {
     return {
       texte: `${texte.slice(0, d - marqueur.length)}${texte.slice(d, f)}${texte.slice(f + marqueur.length)}`,
       debut: d - marqueur.length,
@@ -177,26 +210,56 @@ export function entoure(texte: string, debut: number, fin: number, marqueur: str
 
   // 🔴 UNE SÉLECTION MULTILIGNE S'ENTOURE LIGNE PAR LIGNE, sinon elle produit un balisage MORT. Un style ne
   // traverse pas une ligne (ni chez nous, ni chez WhatsApp) : un marqueur ouvert avant un saut de ligne et
-  // fermé après ne met rien en forme, le
-  // bouton paraît inerte, et les deux marqueurs orphelins partent dans le post. Le rétrécissement au-dessus
-  // ne réglait que le saut de ligne FINAL d'un triple-clic ; celui d'un Ctrl+A est à l'INTÉRIEUR.
+  // fermé après ne met rien en forme, le bouton paraît inerte, et les deux marqueurs orphelins partent dans
+  // le post. Le rétrécissement au-dessus ne réglait que le saut de ligne FINAL d'un triple-clic ; celui
+  // d'un Ctrl+A est à l'INTÉRIEUR.
   const dedans = texte.slice(d, f);
   if (dedans.includes('\n')) {
-    const enrobe = dedans
-      .split('\n')
+    const lignes = dedans.split('\n');
+    const utiles = lignes.filter((l) => l.trim() !== '');
+    // 🔴 LA BASCULE VAUT AUSSI POUR LE MULTILIGNE, et l'oublier a rouvert le défaut qu'elle ferme. Après le
+    // premier clic, la sélection rendue englobe les marqueurs (ils sont désormais À L'INTÉRIEUR, un par
+    // ligne) : le test de bascule d'en haut, qui les cherche AUTOUR, ne pouvait donc plus les voir, et un
+    // second clic empilait `**ligne**` que l'aperçu affiche comme un gras propre.
+    const toutesEntourees = utiles.length > 0 && utiles.every((l) => {
+      const n = l.trim();
+      return n.length > 2 * marqueur.length && n.startsWith(marqueur) && n.endsWith(marqueur)
+        && formeUnStyle(n.slice(marqueur.length, n.length - marqueur.length));
+    });
+    const enrobe = lignes
       .map((ligne) => {
         // Chaque ligne garde son indentation et ses espaces de fin hors des marqueurs, pour la même raison
         // que le rétrécissement : un marqueur collé à une espace ne ferme rien.
         const gauche = /^\s*/.exec(ligne)![0];
         const droite = /\s*$/.exec(ligne)![0];
         const noyau = ligne.slice(gauche.length, ligne.length - droite.length);
-        return noyau === '' ? ligne : `${gauche}${marqueur}${noyau}${marqueur}${droite}`;
+        if (noyau === '') return ligne;
+        return toutesEntourees
+          ? `${gauche}${noyau.slice(marqueur.length, noyau.length - marqueur.length)}${droite}`
+          : `${gauche}${marqueur}${noyau}${marqueur}${droite}`;
       })
       .join('\n');
     return {
       texte: `${texte.slice(0, d)}${enrobe}${texte.slice(f)}`,
       debut: d,
       fin: d + enrobe.length,
+    };
+  }
+
+  // 🔴 LA BASCULE VAUT AUSSI QUAND LES MARQUEURS SONT DANS LA SÉLECTION. Le test d'en haut ne regarde que
+  // les caractères qui l'ENTOURENT : il suffit d'un Ctrl+A (ou d'une sélection à la souris qui déborde d'un
+  // caractère) pour qu'il ne voie rien, et le clic empilait alors une seconde paire. L'aperçu ne pouvait pas
+  // le trahir, un gras dans un gras étant du gras, et le texte fautif partait dans un post irrattrapable.
+  if (
+    f - d >= 2 * marqueur.length
+    && texte.slice(d, d + marqueur.length) === marqueur
+    && texte.slice(f - marqueur.length, f) === marqueur
+    && formeUnStyle(texte.slice(d + marqueur.length, f - marqueur.length))
+  ) {
+    return {
+      texte: `${texte.slice(0, d)}${texte.slice(d + marqueur.length, f - marqueur.length)}${texte.slice(f)}`,
+      debut: d,
+      fin: f - 2 * marqueur.length,
     };
   }
 

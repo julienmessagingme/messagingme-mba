@@ -37,6 +37,16 @@ export interface BrouillonChaine {
   linkId: string;
 }
 
+/** Ce que le serveur intercale entre le corps et l'adresse, cf. `src/http/channels-me.ts`. */
+const SEPARATEUR_LIEN = '\n\n';
+
+/**
+ * Une adresse `wa.me` EN FIN de texte, precedee du separateur du serveur. Ancree a la fin (`$`) : un client
+ * qui cite sa propre adresse au milieu de son texte ne doit rien perdre.
+ */
+const FIN_LIEN_WA_ME = new RegExp(SEPARATEUR_LIEN + 'https://wa\\.me/\\S*$');
+
+
 /**
  * Ce que l'abonné verra, dans l'ordre.
  *
@@ -45,9 +55,6 @@ export interface BrouillonChaine {
  * seule ligne de séparation) mentirait sur ce qui part, et le client ne s'en apercevrait qu'une fois le post
  * diffusé, donc trop tard.
  */
-/** Ce que le serveur intercale entre le corps et l'adresse, cf. `src/http/channels-me.ts`. */
-const SEPARATEUR_LIEN = '\n\n';
-
 export function morceauxApercu(texte: string, waMeUrl: string | null): MorceauApercu[] {
   const corps = texte.trim();
   const morceaux: MorceauApercu[] = [];
@@ -130,7 +137,16 @@ export function resteAAfficher(longueur: number, max: number): number | null {
  */
 export function corpsDuPost(texte: string, waMeUrl: string | null): string {
   const t = texte ?? '';
-  if (waMeUrl === null || waMeUrl === '') return t.trim();
-  const suffixe = SEPARATEUR_LIEN + waMeUrl;
-  return (t.endsWith(suffixe) ? t.slice(0, t.length - suffixe.length) : t).trim();
+  // Le cas courant : l'adresse actuelle du lien, retiree a l'identique.
+  if (waMeUrl !== null && waMeUrl !== '') {
+    const suffixe = SEPARATEUR_LIEN + waMeUrl;
+    if (t.endsWith(suffixe)) return t.slice(0, t.length - suffixe.length).trim();
+  }
+  // 🔴 ET LES POSTS D'AVANT LE 2026-09-07, dont l'adresse n'est PLUS celle que le serveur recompose. Leur
+  // texte pre-rempli portait le jeton (`phrase (cm-xxxx)`), donc leur adresse encodee differe de celle
+  // d'aujourd'hui, qui ne porte que la phrase. Une comparaison exacte ne les reconnaissait pas : ces posts
+  // affichaient leur adresse entiere dans la liste, elle passait dans le formateur, et sa longueur entrait
+  // dans le plafond d'analyse. Ils circulent pour toujours et ne peuvent plus etre modifies, donc c'est
+  // l'affichage qui doit savoir les lire.
+  return t.replace(FIN_LIEN_WA_ME, '').trim();
 }

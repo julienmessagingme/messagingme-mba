@@ -4,26 +4,22 @@ import { Fragment } from 'react';
 import type { TemplateButtonInput } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { PhoneFrame } from '@/components/PhoneFrame';
+import { TexteMisEnForme } from '@/components/TexteMisEnForme';
 
-/** Rendu du formatage WhatsApp (*gras*, _italique_, ~barré~, `mono`) en noeuds React. */
-function formatInline(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
-  const regex = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
-  let last = 0;
-  let key = 0;
-  let m: RegExpExecArray | null;
-  while ((m = regex.exec(text)) !== null) {
-    if (m.index > last) nodes.push(text.slice(last, m.index));
-    const tok = m[0];
-    const inner = tok.slice(1, -1);
-    if (tok.startsWith('*')) nodes.push(<strong key={key++}>{inner}</strong>);
-    else if (tok.startsWith('_')) nodes.push(<em key={key++}>{inner}</em>);
-    else if (tok.startsWith('~')) nodes.push(<s key={key++}>{inner}</s>);
-    else nodes.push(<code key={key++} className="font-mono text-[12px]">{inner}</code>);
-    last = m.index + tok.length;
-  }
-  if (last < text.length) nodes.push(text.slice(last));
-  return nodes;
+/**
+ * Rendu du formatage WhatsApp (gras, italique, barré, monospace).
+ *
+ * 🔴 IL Y AVAIT DEUX ANALYSEURS DU MÊME BALISAGE, ET ILS NE DISAIENT PAS LA MÊME CHOSE. Celui-ci était une
+ * expression régulière sans règle de bordure de mot : elle prenait le souligné du MILIEU d'une adresse pour
+ * une intention de style, donc `https://x.fr/mon_super_lien` s'affichait avec « super » en italique, dans
+ * l'aperçu même d'un corps de template qui part chez Meta. L'autre, `lib/chaine-mise-en-forme.ts`, porte
+ * cette règle et elle est testée. On garde le seul qui a raison.
+ *
+ * ⚠️ `mono` est passé ICI et nulle part ailleurs : cet écran rendait déjà le monospace, l'unification ne
+ * doit rien lui retirer. La chaîne ne l'active pas, cf. le docblock de `TexteMisEnForme`.
+ */
+function formatInline(text: string): React.ReactNode {
+  return <TexteMisEnForme texte={text} mono />;
 }
 
 const UrlIcon = () => (
