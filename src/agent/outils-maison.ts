@@ -188,6 +188,17 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
 const PAR_HANDLER = new Map(OUTILS_MAISON.map((o) => [o.handler, o]));
 
 /** Le modèle d'outil correspondant à ce handler, ou `undefined`. Sert à refuser un handler inventé. */
+/**
+ * Le `handler` d'un outil MAISON, ou la chaîne vide pour un outil qui n'en est pas un.
+ *
+ * ⚠️ La règle « le handler vit dans `binding.handler` » était recopiée à chaque lecture. Elle n'est pas
+ * évidente (`binding` est un jsonb opaque) et une lecture de travers rend simplement une chaîne vide, donc
+ * un outil qu'on croit absent. C'est exactement le genre de silence qui a coûté un agent muet.
+ */
+export function handlerMaison(outil: { origin: string; binding: Record<string, unknown> }): string {
+  return outil.origin === 'mba' ? String(outil.binding.handler ?? '').trim() : '';
+}
+
 export function outilMaison(handler: string): OutilCatalogue | undefined {
   return PAR_HANDLER.get(handler.trim());
 }

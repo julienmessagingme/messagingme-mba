@@ -24,7 +24,7 @@ const COMPLET_LINT = (): EtatPourLint => ({
     sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }],
   },
   fichesConnaissance: 3,
-  outilsActifs: 2,
+  outilsActifs: 2, handlersActifs: ['chercher_connaissance'],
 });
 
 describe('manquesAvantActivation', () => {
@@ -38,7 +38,7 @@ describe('manquesAvantActivation', () => {
       [{ fiche: { reglesTransfert: '' } }, 'objectif'],
       [{ fiche: { sorties: [] } }, 'objectif'],
       [{ fichesConnaissance: 0 }, 'connaissance'],
-      [{ outilsActifs: 0 }, 'outils'],
+      [{ outilsActifs: 0, handlersActifs: [] }, 'outils'],
     ];
     for (const [patch, onglet] of cas) {
       const etat = { ...COMPLET_LINT(), ...patch, fiche: { ...COMPLET_LINT().fiche, ...(patch.fiche ?? {}) } };
@@ -51,13 +51,13 @@ describe('manquesAvantActivation', () => {
   });
 
   it('un agent tout neuf accumule les cinq manques', () => {
-    expect(manquesAvantActivation({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0 })).toHaveLength(5);
+    expect(manquesAvantActivation({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] })).toHaveLength(5);
   });
 
   it('🔴 un outil POSÉ mais inactif ne compte pas', () => {
     // Le modèle ne voit que les outils actifs : compter les autres promettrait un agent capable d'agir alors
     // qu'il ne peut rien faire, pas même terminer.
-    expect(manquesAvantActivation({ ...COMPLET_LINT(), outilsActifs: 0 }).map((m) => m.onglet)).toEqual(['outils']);
+    expect(manquesAvantActivation({ ...COMPLET_LINT(), outilsActifs: 0, handlersActifs: [] }).map((m) => m.onglet)).toEqual(['outils']);
   });
 });
 
@@ -94,7 +94,7 @@ function app(etat: EtatPourLint | null) {
 
 describe('le lint BLOQUE l activation', () => {
   it('🔴 un agent incomplet ne peut pas être activé, et rien n’est écrit', async () => {
-    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0 });
+    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] });
     const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok), payload: { status: 'active' } });
     // 422 et non 500 : c'est une chose que le client doit lire et corriger, et Cloudflare remplace le corps
     // d'une 5xx par sa propre page d'erreur.
@@ -141,7 +141,7 @@ describe('le lint BLOQUE l activation', () => {
   it('🔴 le lint ne bloque QUE l’activation, jamais l’écriture d’un champ', async () => {
     // Un brouillon se remplit dans n'importe quel ordre, et la conversation de construction procède par
     // petites touches : bloquer l'écriture ferait un formulaire impossible à remplir.
-    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0 });
+    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] });
     for (const payload of [
       { contenu: { objectif: 'Cerner le besoin.' }, ficheVersionAttendue: 1 },
       { label: 'Nouveau nom' },
@@ -158,5 +158,26 @@ describe('le lint BLOQUE l activation', () => {
     const { srv } = app(null);
     const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok), payload: { status: 'active' } });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('🔴 une base REMPLIE que l’agent ne peut pas LIRE est un manque, et l’écran doit le dire', () => {
+    // Le defaut vecu le 2026-09-08 : l entretien avait bien note « les reponses viennent du site », Julien
+    // avait rempli la base a la main, mais l outil de recherche n avait jamais ete ajoute. L agent
+    // transferait TOUTES les questions de fond, avec une base bien remplie sous les yeux.
+    const m = manquesAvantActivation({ ...COMPLET_LINT(), fichesConnaissance: 4, outilsActifs: 2, handlersActifs: ['escalader', 'terminer'] });
+    expect(m.map((x) => x.onglet)).toEqual(['outils']);
+    expect(m[0]!.message).toMatch(/ne peut pas la lire|n’est pas actif/);
+  });
+
+  it('preuve inverse : l’outil de recherche ACTIF ne produit aucun manque', () => {
+    const m = manquesAvantActivation({ ...COMPLET_LINT(), fichesConnaissance: 4, outilsActifs: 2, handlersActifs: ['escalader', 'chercher_connaissance'] });
+    expect(m).toEqual([]);
+  });
+
+  it('sans AUCUN outil, un seul message : « aucun outil actif » le dit déjà, et plus fondamentalement', () => {
+    // Deux messages pour un meme geste transforment une liste utile en bruit.
+    const m = manquesAvantActivation({ ...COMPLET_LINT(), fichesConnaissance: 4, outilsActifs: 0, handlersActifs: [] });
+    expect(m.map((x) => x.onglet)).toEqual(['outils']);
+    expect(m[0]!.message).toMatch(/Aucun outil actif/);
   });
 });

@@ -147,8 +147,16 @@ export const AGENDA: Point[] = [
   {
     code: 'connaissance',
     question: 'D’où viendront ses réponses de fond : des pages de votre site, un document que vous me joignez, des fiches que vous écrirez, ou rien pour l’instant ?',
+    /**
+     * 🔴 « MON SITE » N'EST PAS UNE RÉPONSE SUFFISANTE, ET S'EN CONTENTER A COÛTÉ UN AGENT MUET. Le
+     * 2026-09-08, Julien a répondu « les réponses viennent du site internet ». L'entretien l'a noté, n'a
+     * jamais demandé LEQUEL, et l'onglet Base de connaissance est resté vide : il a fallu y coller l'adresse
+     * à la main. Une source qu'on ne sait pas nommer n'est pas une source, c'est une intention.
+     */
     aObtenir: 'D’OÙ viennent ses réponses de fond : une base de connaissance à remplir, des pages de son site '
-      + 'à importer, un document qu’il va joindre, ou rien du tout (et alors l’agent transfère toute question de fond)',
+      + 'à importer, un document qu’il va joindre, ou rien du tout (et alors l’agent transfère toute question de fond). '
+      + 'S’il dit « mon site », DEMANDE-LUI L’ADRESSE EXACTE avant de passer au point suivant : sans elle, '
+      + 'personne ne peut remplir sa base, et son agent transférera toutes les questions de fond',
     pistes: ['des pages de mon site', 'un document que je vous donne', 'je remplirai les fiches à la main', 'rien pour l’instant'],
   },
   {

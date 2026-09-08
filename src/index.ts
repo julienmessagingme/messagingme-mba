@@ -110,6 +110,7 @@ import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
+import { handlerMaison } from './agent/outils-maison';
 
 async function main(): Promise<void> {
   /**
@@ -788,7 +789,9 @@ async function main(): Promise<void> {
       modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
       // LECTURE seule : le client voit ce qui lui reste, il ne se recharge pas lui-meme (cf. /ops).
       soldeAgent: (tenant) => credits.solde(tenant),
-      // Le blocage dur avant activation : il lit les TROIS sources (fiche, connaissance, outils actifs),
+      // Le blocage dur avant activation : il lit la fiche, la connaissance, et les outils actifs AVEC leurs
+      // handlers (le COMPTE seul ne peut pas dire QUEL outil manque, et c'est l'absence d'un outil PRECIS,
+      // celui qui lit la base, qui a rendu un agent muet en production le 2026-09-08),
       // parce qu un agent active est proposable dans un scenario, donc il finira par ecrire a de vrais clients.
       etatPourLint: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
@@ -797,7 +800,12 @@ async function main(): Promise<void> {
           knowledgeStore.lister(tenant, agentId),
           toolCatalog.listActifs(tenant, agentId),
         ]);
-        return { fiche: fiche.contenu, fichesConnaissance: fiches.length, outilsActifs: outils.length };
+        return {
+          fiche: fiche.contenu,
+          fichesConnaissance: fiches.length,
+          outilsActifs: outils.length,
+          handlersActifs: outils.map(handlerMaison).filter((h) => h !== ''),
+        };
       },
     },
     // L assistant de construction. Il ne peut ecrire NI la mention legale d IA, NI les plafonds, NI le

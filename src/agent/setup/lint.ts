@@ -35,6 +35,11 @@ export interface EtatPourLint {
   fichesConnaissance: number;
   /** Nombre d'outils ACTIFS. Un outil posé mais inactif ne compte pas : le modèle ne le voit pas. */
   outilsActifs: number;
+  /**
+   * Les `handler` des outils ACTIFS. Le compte seul ne suffisait pas : il ne peut pas dire QUEL outil
+   * manque, et c'est précisément l'absence d'un outil PRÉCIS qui a rendu un agent muet en production.
+   */
+  handlersActifs: string[];
 }
 
 export function manquesAvantActivation(etat: EtatPourLint): ManqueFiche[] {
@@ -50,6 +55,23 @@ export function manquesAvantActivation(etat: EtatPourLint): ManqueFiche[] {
   }
   if (etat.fichesConnaissance === 0) {
     out.push({ onglet: 'connaissance', message: 'La base de connaissance est vide : l’agent transférerait toutes les questions de fond.' });
+  }
+  /**
+   * 🔴 UNE BASE REMPLIE QUE L'AGENT NE PEUT PAS LIRE, et c'est le défaut vécu le 2026-09-08. Les deux
+   * contrôles voisins regardent chacun un côté (la base est-elle vide ? y a-t-il des outils ?) et laissaient
+   * passer exactement la combinaison qui casse tout : des fiches d'un côté, aucun moyen d'y accéder de
+   * l'autre. L'agent transfère alors TOUTES les questions de fond, et l'écran affiche une base bien remplie
+   * qui donne l'impression que tout va bien. C'est le pire des deux mondes : le travail est fait ET inutile.
+   *
+   * ⚠️ Seulement quand il Y A des outils : sans aucun outil, le contrôle voisin le dit déjà, et plus
+   * fondamentalement. Deux messages pour un même geste transforment une liste utile en bruit.
+   */
+  if (etat.fichesConnaissance > 0 && etat.outilsActifs > 0 && !etat.handlersActifs.includes('chercher_connaissance')) {
+    out.push({
+      onglet: 'outils',
+      message: 'La base de connaissance est remplie mais l’outil « Chercher dans la base de connaissance » '
+        + 'n’est pas actif : l’agent ne peut pas la lire, et transférera toutes les questions de fond.',
+    });
   }
   if (etat.outilsActifs === 0) {
     out.push({ onglet: 'outils', message: 'Aucun outil actif : l’agent peut parler mais ne peut rien faire, pas même terminer.' });

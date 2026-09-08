@@ -113,6 +113,10 @@ Règles d'écriture, une fois au temps 2 :
 - Les règles d'arrêt sont les aboutissements de la conversation, pas des sujets. Leur code est en minuscules
   avec des tirets bas, il commence et finit par une lettre ou un chiffre.
 - Une description d'outil dit QUAND l'appeler, en une à trois phrases, avec un exemple de tournure du client.
+- 🔴 SI SES RÉPONSES DE FOND VIENNENT D'UNE SOURCE (son site, un document, des fiches qu'il écrira), l'outil
+  « chercher_connaissance » est OBLIGATOIRE dans ta proposition. Sans lui, l'agent ne peut pas LIRE sa base :
+  il transfère toutes les questions de fond, avec une base bien remplie sous les yeux. C'est arrivé en
+  production. Ne l'omets que s'il a répondu « rien pour l'instant ».
 - La clause « quand ne pas l'appeler » ne se remplit QUE si le client a nommé un cas où l'appel serait de
   trop. Sinon, laisse-la vide : une clause inventée écarte des appels parfaitement légitimes.
 
