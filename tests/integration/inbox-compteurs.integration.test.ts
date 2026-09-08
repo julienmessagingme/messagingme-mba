@@ -134,6 +134,48 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     expect(c.parMembre.find((m) => m.userId === jean)?.n).toBe(2);
   });
 
+  /**
+   * 🔴 LA PASTILLE DE NON-LUS COMPTE CE QUE L'ÉCRAN MONTRE, relevé à la revue du 2026-09-08.
+   *
+   * `countUnread` ne retirait NI les archivées (défaut introduit par ce lot) NI les contacts bloqués
+   * (défaut antérieur, même famille que celui de `countATraiter`). Une pastille qui annonce des messages
+   * que l'Inbox ne montre plus est un compteur qui ment : on clique, on cherche, on ne trouve pas, et
+   * ranger une conversation non lue la laissait annoncée pour toujours sans moyen de faire descendre le
+   * chiffre.
+   */
+  it('🔴 la pastille de non-lus exclut les ARCHIVÉES et les BLOQUÉS', async () => {
+    // Une conversation neuve, non lue, dans un espace à part pour ne pas déranger les compteurs ci-dessus.
+    const t2 = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-inbox-unread') returning id`,
+    )).rows[0]!.id;
+    try {
+      const store2 = new PgInboxStore(pool);
+      const poser = async (waId: string, opts: { archivee?: boolean; bloque?: boolean }): Promise<void> => {
+        const ct = (await pool.query<{ id: string }>(
+          `insert into contacts (tenant_id, phone_e164, blocked_at) values ($1, $2, ${opts.bloque ? 'now()' : 'null'}) returning id`,
+          [t2, `+${waId}`],
+        )).rows[0]!.id;
+        const conv = (await pool.query<{ id: string }>(
+          `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, archived_at)
+           values ($1, $2, $3, now(), ${opts.archivee ? 'now()' : 'null'}) returning id`,
+          [t2, waId, ct],
+        )).rows[0]!.id;
+        // Un message ENTRANT jamais lu (`last_read_at` reste null) : c'est ce que compte la pastille.
+        await pool.query(
+          `insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'in', 'text', 'coucou')`,
+          [conv],
+        );
+      };
+      await poser('33700000001', {});                  // visible et non lue -> compte
+      await poser('33700000002', { archivee: true });  // rangée -> ne compte pas
+      await poser('33700000003', { bloque: true });    // bloquée -> ne compte pas
+
+      expect(await store2.countUnread(t2)).toBe(1);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t2]);
+    }
+  });
+
   it('🔴 un AUTRE espace ne voit rien de celui-ci', async () => {
     // Le pooler est superuser, la RLS est contournée : le `tenant_id` de chaque requête est LE contrôle.
     const autre = (await pool.query<{ id: string }>(

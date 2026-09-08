@@ -801,6 +801,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   mille contacts viderait le dossier Archivé d'un coup.
   ⚠️ **Une conversation archivée n'est pas listée par le serveur MCP** non plus (un assistant branché voit la
   même chose que l'Inbox), et sa description le dit.
+  ⚠️ **Elle ne compte plus dans la pastille de non-lus** non plus. Sans ça, ranger une conversation non lue
+  l'aurait laissée annoncée par la pastille pour toujours, sans aucun moyen de faire descendre le chiffre :
+  on aurait cliqué, cherché, et rien trouvé. 🔴 **Cette pastille comptait aussi les contacts BLOQUÉS**, qui
+  n'apparaissent pourtant nulle part depuis le 2026-08-21 : c'est corrigé au passage, et son chiffre peut
+  donc avoir baissé.
 - ✅ **LA CHARGE PAR COLLABORATEUR** (2026-09-08), sous le menu : **Non affecté (N)** puis un membre par
   ligne avec son nombre de conversations. Cliquer sur un nom montre ses conversations.
   ⚠️ **Tous les membres sont listés, y compris ceux à zéro** : c'est ce qui répond à la question du manager,

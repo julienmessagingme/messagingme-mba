@@ -441,11 +441,22 @@ export class PgInboxStore implements InboxStore {
     return res.rowCount ?? 0;
   }
 
-  /** Nombre de conversations NON LUES du tenant (pastille du menu). Requête dédiée : le menu est monté sur
-   *  toutes les pages, il ne doit pas rapatrier 100 conversations pour afficher un nombre. */
+  /** Nombre de conversations NON LUES du tenant (pastille de l'ONGLET Inbox, depuis le lot du 2026-09-08 ;
+   *  elle vivait dans la barre latérale avant). Requête dédiée : la pastille est affichée sur toutes les
+   *  pages, elle ne doit pas rapatrier 100 conversations pour afficher un nombre. */
   async countUnread(tenantId: string): Promise<number> {
     const res = await this.pool.query<{ n: string }>(
-      `select count(*)::text as n from conversations c where c.tenant_id = $1 and ${UNREAD_SQL}`,
+      // 🔴 LES MÊMES EXCLUSIONS QUE LA LISTE, et les deux ont été ajoutées le 2026-09-08 pour la même
+      // raison : une pastille qui compte ce que l'écran ne montre pas est un compteur qui ment, et on le
+      // croit. On clique, on cherche, on ne trouve pas.
+      //  - ARCHIVÉES : elles ne sont plus dans « Tout ». Sans ce filtre, ranger une conversation non lue
+      //    laissait la pastille l'annoncer pour toujours, sans aucun moyen de la faire descendre.
+      //  - BLOQUÉES : elles n'apparaissent nulle part depuis le 2026-08-21, et la pastille les comptait
+      //    quand même. Défaut ANTÉRIEUR à ce lot, de la même famille que celui de `countATraiter`.
+      `select count(*)::text as n
+         from conversations c
+         left join contacts ct on ct.id = c.contact_id
+        where c.tenant_id = $1 and c.archived_at is null and ct.blocked_at is null and ${UNREAD_SQL}`,
       [tenantId],
     );
     return Number(res.rows[0]?.n ?? 0);
@@ -545,9 +556,12 @@ export class PgInboxStore implements InboxStore {
    */
   async archiverConversation(tenantId: string, conversationId: string, archive: boolean): Promise<boolean> {
     const res = await this.pool.query(
-      `update conversations set archived_at = ${archive ? 'now()' : 'null'}
+      // Le drapeau passe en PARAMÈTRE plutôt que d'être concaténé dans la requête. Il vient d'un booléen,
+      // donc rien n'était injectable, mais une requête construite par concaténation demande à chaque
+      // relecture de vérifier d'où vient le morceau. Celle-ci ne le demande plus.
+      `update conversations set archived_at = case when $3::boolean then now() else null end
         where id = $1 and tenant_id = $2`,
-      [conversationId, tenantId],
+      [conversationId, tenantId, archive],
     );
     return (res.rowCount ?? 0) > 0;
   }
