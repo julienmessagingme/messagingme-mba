@@ -18,6 +18,7 @@ import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, type CategoryRates } from './stats/cost';
 import { rangeToUnix } from './stats/range';
+import { cacheCourt } from './lib/cache-court';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
@@ -291,6 +292,9 @@ async function main(): Promise<void> {
       currency: pricing?.currency ?? null,
     };
   };
+
+  /** Micro-cache de la pastille du numéro : dix minutes, très en deçà de la durée de vie de l'URL signée. */
+  const photoNumeroCache = cacheCourt<string | null>(10 * 60_000);
 
   const app = buildServer({
     /**
@@ -1131,6 +1135,21 @@ async function main(): Promise<void> {
     })(),
     account: {
       getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
+      /**
+       * La pastille du numéro (demande de Julien, 2026-09-08).
+       *
+       * 🔴 RELUE, JAMAIS STOCKÉE : l'URL que Meta rend est signée et expire. En base, elle donnerait une
+       * image qui marche quelques heures puis casse, sans que personne ne sache pourquoi.
+       *
+       * ⚠️ DERRIÈRE UN MICRO-CACHE (`cacheCourt`, la brique du dépôt) : l'Accueil est la page la plus
+       * ouverte de la console, et un appel Graph par affichage la ferait dépendre du temps de réponse de
+       * Meta pour une décoration. Dix minutes sont très en deçà de la durée de vie de l'URL.
+       */
+      photoNumero: (tenant, phoneNumberId) => photoNumeroCache.lire(`${tenant}:${phoneNumberId}`, async () => {
+        if (!config.META_ACCESS_TOKEN) return null;
+        const client = await metaFactory.phoneClientForTenant(tenant);
+        return client.photoDeProfil(phoneNumberId);
+      }),
       pullStatus: async (phoneNumberId, tenant) => {
         if (!config.META_ACCESS_TOKEN) return null; // pas de token global -> pas de pull live (statut sur le dernier connu)
         try {

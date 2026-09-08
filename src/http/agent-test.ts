@@ -190,6 +190,9 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
     return reply.code(200).send({
       texte: decision.texte,
       sortie: decision.sortie,
+      // Le MOTIF n'existe que quand la sortie ne se suffit pas à elle-même (cf. `MotifArret`). Il ne part
+      // que vers le bac à sable : la production, elle, ne lit que la sortie, qui n'a pas bougé.
+      ...(decision.motif ? { motif: decision.motif } : {}),
       appels: decision.appels,
       usage,
     });

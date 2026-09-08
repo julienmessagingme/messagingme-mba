@@ -67,6 +67,31 @@ export class MetaPhoneNumberClient {
   }
 
   /**
+   * La PHOTO DE PROFIL WhatsApp du numéro (`GET /{phone_number_id}/whatsapp_business_profile`).
+   *
+   * C'est la pastille que Meta affiche à côté du numéro dans le Business Manager, et celle que voient les
+   * destinataires dans WhatsApp. Demande de Julien du 2026-09-08 : la montrer sur l'Accueil, à côté du
+   * numéro.
+   *
+   * 🔴 L'URL RENDUE EST SIGNÉE ET EXPIRE. Elle ne se STOCKE pas : on la relit à l'affichage. La ranger en
+   * base donnerait une pastille qui marche quelques heures puis casse, et personne ne saurait pourquoi.
+   *
+   * ⚠️ `null` quand le numéro n'a PAS de photo, et c'est le cas le plus courant au début : Meta répond
+   * alors `{"data":[{"messaging_product":"whatsapp"}]}`, sans le champ (mesuré sur les deux numéros du parc
+   * le 2026-09-08). L'écran doit donc savoir se passer d'elle, pas l'attendre.
+   */
+  async photoDeProfil(phoneNumberId: string): Promise<string | null> {
+    const url = `${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}/whatsapp_business_profile?fields=profile_picture_url`;
+    const res = await this.fetchImpl(url, { method: 'GET', headers: { authorization: `Bearer ${this.token}` } });
+    const json = (await res.json().catch(() => null)) as
+      | { data?: Array<{ profile_picture_url?: string }>; error?: MetaErrorBody }
+      | null;
+    if (!res.ok) throw new MetaApiError(res.status, json?.error ?? null);
+    const u = json?.data?.[0]?.profile_picture_url;
+    return typeof u === 'string' && u.trim() !== '' ? u : null;
+  }
+
+  /**
    * `GET /{waba_id}?fields=health_status,account_review_status,business_verification_status,
    * marketing_messages_lite_api_status,owner_business_info`. Santé globale du WABA + statut MM Lite + business
    * propriétaire (panneau statut du dashboard). `health_status` est un OBJET côté Graph -> on extrait

@@ -181,3 +181,60 @@ describe('le lint BLOQUE l activation', () => {
     expect(m[0]!.message).toMatch(/Aucun outil actif/);
   });
 });
+
+describe('les manques se LISENT, sans rien tenter', () => {
+  /**
+   * 🔴 LE DÉFAUT QUE CETTE ROUTE FERME (2026-09-08). Le lint existait, mais il ne parlait que dans le corps
+   * d'un 422, donc seulement si on cliquait « activer ». L'agent de Julien était en BROUILLON, avec dix
+   * fiches de connaissance et l'outil de recherche désactivé : il l'essayait dans le bac à sable, rien ne
+   * trouvait rien, et la réponse était déjà calculée quelque part sans que personne ne la lui dise.
+   */
+  it('🔴 GET /manques rend la MÊME liste que la garde d’activation', async () => {
+    // La même fonction des deux côtés : deux inventaires de ce qui manque finiraient par diverger, et le
+    // client croirait avoir fini sur un écran et pas sur l'autre.
+    const etat = { ...COMPLET_LINT(), fichesConnaissance: 10, outilsActifs: 2, handlersActifs: ['terminer'] };
+    const { srv } = app(etat);
+    const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const manques = res.json<{ manques: Array<{ onglet: string; message: string }> }>().manques;
+    expect(manques.map((m) => m.onglet)).toEqual(['outils']);
+    expect(manques[0]!.message).toContain('Chercher dans la base de connaissance');
+    expect(manques).toEqual(manquesAvantActivation(etat));
+  });
+
+  it('un agent complet ne manque de rien', async () => {
+    // Preuve inverse : sans elle, une route qui rendrait toujours une liste passerait le cas ci-dessus.
+    const { srv } = app(COMPLET_LINT());
+    const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) });
+    expect(res.json().manques).toEqual([]);
+  });
+
+  it('🔴 elle NE MODIFIE RIEN : aucun patch n’est écrit', async () => {
+    // Une route de lecture qui écrirait serait le pire des deux mondes : l'écran l'appelle à chaque
+    // ouverture de fiche.
+    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] });
+    await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) });
+    expect(cap.patches).toHaveLength(0);
+  });
+
+  it('agent inconnu -> 404, câblage absent -> 503, jamais une liste vide qui dirait « tout va bien »', async () => {
+    const { srv } = app(null);
+    expect((await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) })).statusCode).toBe(404);
+
+    const sansLint = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      agents: {
+        listActifs: async (): Promise<AgentResume[]> => [], listToutes: async (): Promise<AgentResume[]> => [],
+        complet: async () => COMPLET, create: async () => COMPLET, patch: async () => COMPLET, remove: async () => true,
+        modeleParDefaut: 'modele-config',
+      },
+    });
+    expect((await sansLint.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) })).statusCode).toBe(503);
+  });
+
+  it('tenant croisé -> 403', async () => {
+    const { srv } = app(COMPLET_LINT());
+    expect((await srv.inject({ method: 'GET', url: `/tenants/AUTRE/agents/${AG}/manques`, ...h(adminTok) })).statusCode).toBe(403);
+  });
+});

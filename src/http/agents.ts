@@ -167,6 +167,30 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     }
   });
 
+  /**
+   * CE QUI MANQUE À CET AGENT, en lecture.
+   *
+   * 🔴 POURQUOI CETTE ROUTE EXISTE ALORS QUE LE LINT ÉTAIT DÉJÀ LÀ. Il ne parlait qu'à l'ACTIVATION, dans
+   * le corps d'un 422. Un agent en BROUILLON qu'on essaie dans le bac à sable ne l'a donc jamais vu :
+   * Julien, le 2026-09-08, a passé un moment à chercher pourquoi son agent ne trouvait rien, alors que la
+   * réponse (« l'outil de recherche est inactif ») était déjà écrite dans le code, mais derrière un geste
+   * qu'il n'avait pas fait.
+   *
+   * ⚠️ MÊME FONCTION que la garde d'activation (`manquesAvantActivation`), jamais une seconde liste : deux
+   * inventaires de ce qui manque finiraient par ne pas dire la même chose, et le client croirait avoir fini
+   * sur un écran et pas sur l'autre.
+   */
+  app.get('/tenants/:tenantId/agents/:agentId/manques', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { agentId } = req.params as { agentId: string };
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
+    if (!deps.etatPourLint) return reply.code(503).send({ error: 'lint non configure' });
+    const etat = await deps.etatPourLint(tenant, agentId);
+    if (!etat) return reply.code(404).send({ error: 'agent introuvable' });
+    return reply.code(200).send({ manques: manquesAvantActivation(etat) });
+  });
+
   app.patch('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });

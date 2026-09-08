@@ -32,6 +32,23 @@ test.describe('Accueil : panneau statut WhatsApp Business (F2)', () => {
     await expect(link).toHaveAttribute('href', /business\.facebook\.com\/billing_hub/);
   });
 
+  test('🔴 la pastille du numéro s’affiche quand Meta en rend une', async ({ page }) => {
+    // Demande de Julien du 2026-09-08 : montrer sur l'Accueil la pastille que Meta affiche dans le Business
+    // Manager, à côté du numéro.
+    await mockAccueil(page, { account: { ...defaultAccount, photoProfilUrl: 'https://exemple.test/pastille.png' } });
+    const pastille = page.getByTestId('numero-pastille');
+    await expect(pastille).toBeVisible();
+    await expect(pastille).toHaveAttribute('src', 'https://exemple.test/pastille.png');
+  });
+
+  test('🔴 sans photo, AUCUN cadre vide : le numéro s’affiche seul', async ({ page }) => {
+    // C'est le cas ORDINAIRE : les deux numéros du parc n'avaient pas de photo le 2026-09-08. Un cadre gris
+    // ou une icône de repli se lirait comme un chargement en échec, et on chercherait une panne inexistante.
+    await mockAccueil(page, { account: { ...defaultAccount, photoProfilUrl: null } });
+    await expect(page.getByTestId('numero-card')).toBeVisible();
+    await expect(page.getByTestId('numero-pastille')).toHaveCount(0);
+  });
+
   test('palier non évalué -> repli honnête (pas de faux chiffre)', async ({ page }) => {
     await mockAccueil(page, { account: { ...defaultAccount, tier: null } });
     await expect(page.getByTestId('numero-card').getByText('Pas encore évalué par Meta')).toBeVisible();

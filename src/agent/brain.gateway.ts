@@ -104,8 +104,24 @@ export interface TraceAppel {
   contenu: unknown;
 }
 
+/**
+ * Pourquoi le tour s'est arrêté, quand la SORTIE seule ne suffit pas à le dire.
+ *
+ * 🔴 CE N'EST PAS UNE SORTIE DE PLUS, ET C'EST TOUT L'INTÉRÊT. La sortie `plafond` est CÂBLÉE dans les
+ * scénarios des clients : en inventer une seconde obligerait chacun à la relier, et un handle que personne
+ * n'a câblé fait partir le parcours par la première arête venue. Le motif voyage donc À COTÉ, il ne
+ * remplace rien, et seul le bac à sable le lit.
+ *
+ * Julien, le 2026-09-08 : « pas une sortie plafond, je ne comprends pas ». Il avait raison de ne pas
+ * comprendre : aucun plafond n'était atteint. Le modèle avait imité un bloc de résultat d'outil, et le
+ * garde-fou l'avait refusé, ce qui est juste ; c'est le MOT qui l'a envoyé chercher un réglage inexistant.
+ */
+export type MotifArret = 'plafond_allers_retours' | 'reponse_non_conforme';
+
 export interface DecisionTracee extends DecisionAgent {
   appels: TraceAppel[];
+  /** Absent quand la sortie se suffit à elle-même (l'agent a répondu, ou emprunté une sortie du client). */
+  motif?: MotifArret;
 }
 
 /** Le transcript, tel que la session le porte : un rôle et un texte. Lu défensivement, c'est du jsonb. */
@@ -215,7 +231,7 @@ async function boucler(
        */
       if (ressembleAUnBlocOutil(texte)) {
         deps.alerter?.(`agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil au lieu d’une réponse`);
-        return { texte: null, sortie: SORTIE_PLAFOND, usage, appels };
+        return { texte: null, sortie: SORTIE_PLAFOND, usage, appels, motif: 'reponse_non_conforme' };
       }
       return { texte, sortie: null, usage, appels };
     }
@@ -271,7 +287,7 @@ async function boucler(
 
   // Plafond d'allers-retours atteint : on sort proprement plutôt que de continuer à payer un modèle qui
   // tourne en rond. C'est la même sortie que le plafond de tours, et le client la câble une seule fois.
-  return { texte: null, sortie: SORTIE_PLAFOND, usage, appels };
+  return { texte: null, sortie: SORTIE_PLAFOND, usage, appels, motif: 'plafond_allers_retours' };
 }
 
 /**

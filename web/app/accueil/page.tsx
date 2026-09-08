@@ -351,10 +351,33 @@ function AccueilInner({ session }: { session: Session }) {
                   </span>
                 )}
               </div>
-              <div className="font-mono text-lg font-semibold text-ink-900">
-                {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : t('Aucun numéro', 'No number')}
+              <div className="flex items-center gap-3">
+                {/**
+                  * La pastille du numéro, telle que Meta la montre dans le Business Manager et telle que la
+                  * voient les destinataires (demande de Julien, 2026-09-08).
+                  *
+                  * ⚠️ ELLE MANQUE SOUVENT, et ce n'est pas une panne : un numéro sans photo de profil est le
+                  * cas ordinaire tant que personne n'en a posé une (les deux numéros du parc étaient dans ce
+                  * cas le 2026-09-08). On n'affiche alors RIEN, pas un cadre vide ni une icône grise qui
+                  * ferait croire à un chargement en échec.
+                  */}
+                {account?.photoProfilUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element -- l'URL est SIGNÉE par Meta et
+                     expire : le composant Image de Next optimiserait et cacherait une adresse éphémère. */
+                  <img
+                    src={account.photoProfilUrl}
+                    alt=""
+                    data-testid="numero-pastille"
+                    className="h-10 w-10 shrink-0 rounded-full border border-ink-200 object-cover"
+                  />
+                )}
+                <div>
+                  <div className="font-mono text-lg font-semibold text-ink-900">
+                    {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : t('Aucun numéro', 'No number')}
+                  </div>
+                  {account?.verifiedName && <div className="mt-0.5 text-xs text-ink-500">{account.verifiedName}</div>}
+                </div>
               </div>
-              {account?.verifiedName && <div className="mt-0.5 text-xs text-ink-500">{account.verifiedName}</div>}
               {account && <p className="mt-1 text-xs text-ink-500">{account.status.reason}</p>}
               {account?.hasNumber && (
                 <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink-100 pt-3 text-xs">

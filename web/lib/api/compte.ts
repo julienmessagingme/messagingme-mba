@@ -44,6 +44,14 @@ export interface AccountStatusResponse {
   marketingMessagesLiteApiStatus: string | null;
   /** Business propriétaire du WABA (owner_business_info.name). null = inconnu. */
   ownerBusinessName: string | null;
+  /**
+   * Photo de profil WhatsApp du numero (la pastille du Business Manager). `null` = aucune photo posee, ou
+   * lecture impossible. Optionnel a la lecture : une API plus ancienne que ce champ ne l'envoie pas.
+   *
+   * ⚠️ L'URL est SIGNEE et EXPIRE : elle vient du serveur a chaque affichage, elle ne se met pas en cache
+   * cote navigateur au-dela de la page.
+   */
+  photoProfilUrl?: string | null;
   hubspotConnected: boolean;
   /** Instant de pause de la synchro (F3-a). null = jamais activé OU actif ; non-null + hubspotConnected=false = en pause. */
   hubspotPausedAt: string | null;

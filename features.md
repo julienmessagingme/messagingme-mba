@@ -1088,6 +1088,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Accueil (1re entrée du menu)
 
+- ✅ **La pastille du numéro** (2026-09-08) : la photo de profil WhatsApp du numéro s'affiche à côté de lui, celle que Meta montre dans le Business Manager et que voient vos destinataires. ⚠️ **Rien ne s'affiche tant qu'aucune photo n'est posée** sur le profil WhatsApp du numéro, et c'est le cas ordinaire au début : un cadre vide se lirait comme un chargement en échec.
 - ✅ **Page d'accueil** `/accueil` (clic sur le logo, admin ; c'est aussi l'écran d'arrivée après connexion) :
   « Bonjour {prénom} », une **rangée de 4 chiffres sur 30 jours** (contacts, messages échangés, templates envoyés,
   coût estimé, exactement les mêmes chiffres qu'Analytics ; un tiret plutôt qu'un faux 0 quand Meta n'a fourni
@@ -1565,6 +1566,15 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   le modèle : on lui ordonnait de déduire plutôt que de demander, et on lui imposait de remplir « quand ne pas
   l'appeler » même quand personne n'en avait parlé. Corrigé dans les deux sens.
 
+### Ce qui manque à l'agent, dit dès l'ouverture (2026-09-08)
+
+- ✅ **Un bandeau en tête de la fiche liste ce qui manque**, sans attendre qu'on clique « activer », et
+  chaque ligne est un lien vers l'onglet où ça se corrige. Le contrôle existait déjà, mais il ne parlait
+  qu'au moment de l'activation : un agent en brouillon qu'on essaie dans le bac à sable ne le voyait jamais.
+- 🔴 **Le cas qui coûte le plus cher est couvert** : une base de connaissance REMPLIE avec l'outil de
+  recherche DÉSACTIVÉ. L'agent transfère alors toutes les questions de fond, et l'écran d'une base bien
+  garnie donne l'impression que tout va bien. C'est le pire des deux mondes : le travail est fait et inutile.
+
 ### Le bac à sable : lui parler avant de l'activer
 
 - ✅ **Vous parlez au VRAI agent** : son objectif, son ton, ses outils, sa vraie base de connaissance. Ce qu'il
@@ -1576,6 +1586,11 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   envoyer un bloc, passer la main. Il n'y a ni contact, ni conversation, ni parcours dans un test.
 - ✅ **La sortie est annoncée** quand l'agent en prend une : « l'agent est SORTI par X, dans un scénario c'est
   cette branche qui prendrait la suite ».
+- 🔴 **« Plafond atteint » ne veut pas toujours dire qu'un plafond est atteint, et l'écran le dit désormais**
+  (2026-09-08). Quand le modèle rend une réponse NON CONFORME (il imite un résultat d'outil au lieu d'en
+  appeler un, et le garde-fou anti-hallucination la refuse parce que son contenu est inventé), le bac à sable
+  l'explique en clair au lieu d'afficher « plafond », qui envoyait chercher un réglage inexistant. La sortie
+  du scénario, elle, n'a pas changé : ce que vous avez câblé continue de fonctionner à l'identique.
 - ⚠️ **Un essai consomme du crédit pour de vrai** : le fournisseur facture un essai comme une conversation.
   Sans crédit, le bac à sable refuse.
 - ✅ **Vos essais précédents sont gardés 14 jours** (2026-09-08), sous la conversation : l'heure, ce que

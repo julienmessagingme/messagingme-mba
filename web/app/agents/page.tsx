@@ -17,7 +17,7 @@ import { AgentConnaissance } from '@/components/AgentConnaissance';
 import { AgentOutils } from '@/components/AgentOutils';
 import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
-import { appliquerProposition, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
+import { appliquerProposition, lireManques, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 import { consommationAgent, type ConsommationAgent } from '@/lib/api-agent';
 
@@ -87,6 +87,27 @@ function Ecran({ tenantId }: { tenantId: string }) {
       .catch((err: unknown) => { if (vivant) setErreur(err instanceof Error ? err.message : t('Ouverture impossible', 'Unable to open')); });
     return () => { vivant = false; };
   }, [idOuvert, ouvert?.id, tenantId, t]);
+
+  /**
+   * Relit ce qui manque à cet agent, SANS rien tenter.
+   *
+   * 🔴 BEST-EFFORT, jamais bloquant : c'est une aide au réglage, pas une condition. Un serveur plus ancien
+   * que cette route rend 404, et l'écran doit marcher exactement comme avant. On efface alors la liste
+   * plutôt que de laisser à l'écran un avertissement qu'on ne sait plus vérifier.
+   */
+  const rafraichirManques = useCallback((agentId: string) => {
+    void lireManques(tenantId, agentId).then(setManques).catch(() => setManques([]));
+  }, [tenantId]);
+
+  /**
+   * ⚠️ LES MANQUES SE LISENT À L'OUVERTURE, pas seulement au refus d'activation. C'est tout le correctif du
+   * 2026-09-08 : ils existaient déjà, mais derrière un clic sur « activer » que personne ne fait avant
+   * d'avoir essayé son agent. Julien a cherché un réglage pendant que la réponse était calculée et tue.
+   */
+  useEffect(() => {
+    if (ouvert === null) { setManques([]); return; }
+    rafraichirManques(ouvert.id);
+  }, [ouvert?.id, rafraichirManques]);
 
   async function creer() {
     const label = nouveau.trim();
@@ -162,6 +183,9 @@ function Ecran({ tenantId }: { tenantId: string }) {
       const avecVerrou = patch.contenu ? { ...patch, ficheVersionAttendue: ouvert.ficheVersion } : patch;
       setOuvert(await patchAgent(tenantId, ouvert.id, avecVerrou));
       await charger();
+      // Relu après CHAQUE écriture : activer un outil doit faire disparaître son manque tout de suite,
+      // sinon l'avertissement devient du bruit qu'on apprend à ignorer.
+      void rafraichirManques(ouvert.id);
     } catch (err) {
       // 422 sur une activation : l'agent est incomplet. On montre la LISTE, pas « agent incomplet », qui
       // serait un refus sans mode d'emploi.
@@ -200,7 +224,11 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}
         {manques.length > 0 && (
           <MbaNotice kind="warning" testid="agent-manques">
-            <span className="font-medium">{t('Cet agent ne peut pas encore être activé :', 'This agent cannot be activated yet:')}</span>
+            {/* ⚠️ Le titre parle d'ACTIVATION parce que c'est ce que ces manques bloquent, mais ils s'affichent
+                désormais DÈS L'OUVERTURE de la fiche : le plus utile d'entre eux (« la base est remplie mais
+                l'outil de recherche est inactif ») explique aussi pourquoi un essai ne trouve rien, et c'est
+                dans le bac à sable qu'on s'en rend compte, pas au moment d'activer. */}
+            <span className="font-medium">{t('Ce qui manque à cet agent (et bloque son activation) :', 'What this agent is missing (and what blocks activation):')}</span>
             <span className="mt-1 block">
               {manques.map((m) => (
                 <button

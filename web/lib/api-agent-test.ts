@@ -28,6 +28,18 @@ export interface ReponseEssai {
   texte: string | null;
   /** La règle d'arrêt empruntée, ou `null` s'il attend une réponse. */
   sortie: string | null;
+  /**
+   * Pourquoi le tour s'est arrêté, quand la SORTIE seule ne le dit pas.
+   *
+   * 🔴 `plafond` couvre deux choses très différentes : les allers-retours épuisés, et un modèle qui a rendu
+   * une réponse non conforme (il a imité un résultat d'outil au lieu d'en appeler un, et le garde-fou
+   * anti-hallucination l'a refusé). Le premier se règle avec un plafond, le second jamais : afficher le
+   * même mot dans les deux cas envoie chercher un réglage qui n'existe pas. Vécu par Julien le 2026-09-08.
+   *
+   * Optionnel : une API plus ancienne que ce champ ne l'envoie pas, et l'écran retombe alors sur la sortie
+   * seule plutôt que d'inventer un motif.
+   */
+  motif?: 'plafond_allers_retours' | 'reponse_non_conforme';
   appels: AppelTrace[];
   usage: { tokensIn: number; tokensOut: number; coutMicroEur: number };
 }

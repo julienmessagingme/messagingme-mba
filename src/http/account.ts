@@ -12,6 +12,14 @@ export type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
 export interface AccountRouteDeps {
   /** Numéro principal du tenant (avec statut persisté). null si le tenant n'a aucun numéro. */
   getPhoneNumber(tenantId: string): Promise<PhoneNumberRecord | null>;
+  /**
+   * La photo de profil WhatsApp du numéro, relue à l'affichage (l'URL de Meta est signée et expire).
+   *
+   * OPTIONNELLE, et son échec ne fait JAMAIS échouer la route : une pastille absente n'empêche personne de
+   * travailler, alors qu'un Accueil en erreur parce que Meta traîne, si. C'est une décoration honnête, pas
+   * une information de statut.
+   */
+  photoNumero?(tenantId: string, phoneNumberId: string): Promise<string | null>;
   /** Pull Graph live du statut (numéro + santé WABA du tenant). null = pas de tentative (pas de token). Ne throw jamais. */
   pullStatus(phoneNumberId: string, tenantId: string): Promise<PullResult | null>;
   /** Persiste le statut fraîchement pull (coalesce : n'écrase pas un connu par un undefined). */
@@ -56,6 +64,14 @@ export interface AccountStatusResponse {
   marketingMessagesLiteApiStatus: string | null;
   /** Nom du business propriétaire du WABA (owner_business_info.name). null = inconnu. */
   ownerBusinessName: string | null;
+  /**
+   * Photo de profil WhatsApp du numéro (la pastille que Meta montre dans le Business Manager, et que voient
+   * les destinataires). `null` = aucune photo posée sur ce numéro, ou lecture impossible.
+   *
+   * 🔴 L'URL EST SIGNÉE ET EXPIRE : elle n'est jamais stockée, elle se relit. Et `null` est le cas COURANT
+   * au début (mesuré sur les deux numéros du parc le 2026-09-08) : l'écran doit savoir s'en passer.
+   */
+  photoProfilUrl: string | null;
   /** Synchro HubSpot active pour le numéro principal (pastille + toggle). */
   hubspotConnected: boolean;
   /** Instant de pause (F3-a) : non-null + hubspotConnected=false -> « en pause » (vs « jamais activé » si null). */
@@ -99,6 +115,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
         businessVerificationStatus: null,
         marketingMessagesLiteApiStatus: null,
         ownerBusinessName: null,
+        photoProfilUrl: null,
         hubspotConnected: false,
         hubspotPausedAt: null,
         hubspotPortal,
@@ -107,7 +124,12 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
       return reply.code(200).send(body);
     }
 
-    const pull = await deps.pullStatus(pn.id, tenant);
+    // La pastille, en même temps que le pull (deux appels Meta indépendants, on ne les met pas en file).
+    // `catch(() => null)` : voir la dépendance, une photo manquante ne vaut pas un Accueil en erreur.
+    const [pull, photo] = await Promise.all([
+      deps.pullStatus(pn.id, tenant),
+      deps.photoNumero ? deps.photoNumero(tenant, pn.id).catch(() => null) : Promise.resolve(null),
+    ]);
     // Valeurs affichées : le pull frais prime, sinon on retombe sur le dernier connu (persisté).
     let quality = normalizeQuality(pn.qualityRating);
     let numberStatus = pn.status ?? undefined;
@@ -176,6 +198,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
       businessVerificationStatus: businessVerificationStatus ?? null,
       marketingMessagesLiteApiStatus: marketingMessagesLiteApiStatus ?? null,
       ownerBusinessName: ownerBusinessName ?? null,
+      photoProfilUrl: photo,
       hubspotConnected: pn.hubspotConnected,
       hubspotPausedAt: pn.hubspotPausedAt,
       hubspotPortal,

@@ -8,7 +8,7 @@ import { fmtCost, fmtNum } from '@/lib/format';
 import { MbaNotice } from '@/components/MbaNotice';
 import {
   essayerAgent, estSimule, listerEssais,
-  type AppelTrace, type EssaiArchive, type TourEssai,
+  type AppelTrace, type EssaiArchive, type ReponseEssai, type TourEssai,
 } from '@/lib/api-agent-test';
 
 /**
@@ -34,6 +34,7 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
   const [tours, setTours] = useState<TourEssai[]>([]);
   const [appels, setAppels] = useState<AppelTrace[]>([]);
   const [sortie, setSortie] = useState<string | null>(null);
+  const [motif, setMotif] = useState<ReponseEssai['motif']>(undefined);
   const [saisie, setSaisie] = useState('');
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -56,10 +57,12 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
     setErreur(null);
     setAppels([]);
     setSortie(null);
+    setMotif(undefined);
     try {
       const r = await essayerAgent(tenantId, agentId, suite);
       setAppels(r.appels);
       setSortie(r.sortie);
+      setMotif(r.motif);
       // `texte: null` est un cas nominal : l'agent sort sans rien dire, c'est le bloc aval qui parlera.
       if (r.texte !== null && r.texte !== '') setTours([...suite, { role: 'assistant', content: r.texte }]);
     } catch (err) {
@@ -130,11 +133,23 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
       </div>
 
       {sortie !== null && (
-        <MbaNotice kind="success" testid="test-sortie">
-          {t(
-            `L’agent est SORTI par « ${sortie} ». Dans un scénario, c’est cette branche du bloc qui prendrait la suite.`,
-            `The agent LEFT through “${sortie}”. In a scenario, that branch of the block would take over.`,
-          )}
+        /**
+         * 🔴 LE MOTIF PASSE AVANT LA SORTIE quand il existe, et il change le TON du bandeau. « Sorti par
+         * plafond » se lit comme un réglage à monter ; or dans un cas sur deux, aucun plafond n'était
+         * atteint : le modèle a imité un résultat d'outil et le garde-fou a refusé sa réponse. Aucun
+         * réglage ne corrige ça, et laisser le mot « plafond » seul envoie chercher pendant dix minutes.
+         * Vécu par Julien le 2026-09-08.
+         */
+        <MbaNotice kind={motif === 'reponse_non_conforme' ? 'warning' : 'success'} testid="test-sortie">
+          {motif === 'reponse_non_conforme'
+            ? t(
+              'Le modèle a rendu une réponse NON CONFORME : il a imité un résultat d’outil au lieu d’en appeler un, et le garde-fou l’a refusée (son contenu était inventé). Ce n’est pas un plafond à monter. Vérifiez que les outils de cet agent sont ACTIFS, et si le problème persiste, changez son modèle.',
+              'The model returned a NON-COMPLIANT answer: it imitated a tool result instead of calling one, and the guard refused it (its content was made up). This is not a cap to raise. Check that this agent’s tools are ACTIVE, and if it persists, change its model.',
+            )
+            : t(
+              `L’agent est SORTI par « ${sortie} ». Dans un scénario, c’est cette branche du bloc qui prendrait la suite.`,
+              `The agent LEFT through “${sortie}”. In a scenario, that branch of the block would take over.`,
+            )}
         </MbaNotice>
       )}
 

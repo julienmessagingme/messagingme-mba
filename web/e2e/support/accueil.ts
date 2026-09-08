@@ -28,6 +28,9 @@ export const defaultAccount: AccountFixture = {
   businessVerificationStatus: 'verified',
   marketingMessagesLiteApiStatus: 'ONBOARDED',
   ownerBusinessName: 'Messaging Me',
+  // Aucune photo par DÉFAUT : c'est l'état réel des numéros du parc, et un faux qui en poserait une ferait
+  // passer le cas ordinaire (pas de pastille) pour l'exception.
+  photoProfilUrl: null,
   hubspotConnected: false,
   hubspotPausedAt: null,
   hubspotPortal: { connected: false },

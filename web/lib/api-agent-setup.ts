@@ -244,6 +244,23 @@ export interface ManqueFiche {
   message: string;
 }
 
+/**
+ * Ce qui manque à cet agent, LU sans rien tenter.
+ *
+ * 🔴 POURQUOI CET APPEL EXISTE. Les manques étaient déjà calculés côté serveur, mais ils ne sortaient que
+ * dans le corps d'un 422, c'est-à-dire APRÈS avoir cliqué « activer ». Un agent en brouillon qu'on essaie
+ * dans le bac à sable ne les voyait donc jamais : Julien, le 2026-09-08, a cherché pourquoi son agent ne
+ * trouvait rien alors que la réponse (« l'outil de recherche est inactif ») était déjà écrite, derrière un
+ * geste qu'il n'avait pas fait.
+ *
+ * BEST-EFFORT chez l'appelant : c'est une aide, pas une condition. Un serveur qui ne sait pas répondre rend
+ * une liste vide et l'écran marche.
+ */
+export async function lireManques(tenantId: string, agentId: string): Promise<ManqueFiche[]> {
+  const r = await request<{ manques?: unknown }>(`/tenants/${tenantId}/agents/${agentId}/manques`);
+  return manquesDe(r);
+}
+
 /** Lit la liste des manques d'une erreur 422 d'activation. Défensif : le corps vient du réseau. */
 export function manquesDe(corps: unknown): ManqueFiche[] {
   const liste = (corps as { manques?: unknown } | null)?.manques;

@@ -33,7 +33,7 @@ const PROPOSITION = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown } = {}) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown; manques?: unknown[] } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -60,6 +60,9 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], opts
       return json({ outil: { id: 'o1' } }, method === 'POST' ? 201 : 200);
     }
     if (/\/knowledge/.test(url)) return json({ fiches: [] });
+    // Les manques se LISENT désormais à l'ouverture de la fiche (2026-09-08), sans attendre un refus
+    // d'activation : un faux qui ignorerait cette route laisserait l'écran croire qu'il ne manque rien.
+    if (/\/manques$/.test(url)) return json({ manques: opts.manques ?? [] });
     if (new RegExp(`/agents/${AG}$`).test(url)) {
       if (method === 'DELETE') { appels.push({ method, url, body: null }); return json({ supprime: true }); }
       if (method === 'PATCH') {
@@ -244,6 +247,33 @@ test.describe('Agents IA : construire en parlant', () => {
     // Le lien mène à l'onglet où ça se corrige.
     await page.getByTestId('agent-manque-outils').click();
     await expect(page).toHaveURL(/tab=outils/);
+  });
+
+  test('🔴 ce qui manque s’affiche À L’OUVERTURE, sans avoir cliqué « activer »', async ({ page }) => {
+    /**
+     * Le défaut vécu par Julien le 2026-09-08 : son agent avait 10 fiches de connaissance et l'outil de
+     * recherche DÉSACTIVÉ. Le contrôle existait déjà, mais il ne parlait que dans le corps d'un 422, donc
+     * seulement si on cliquait « activer ». Lui essayait son agent dans le bac à sable, où rien ne trouvait
+     * rien, et la réponse était calculée et tue.
+     */
+    await mock(page, [], {
+      manques: [{
+        onglet: 'outils',
+        message: 'La base de connaissance est remplie mais l’outil « Chercher dans la base de connaissance » n’est pas actif : l’agent ne peut pas la lire.',
+      }],
+    });
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    // Aucun clic sur « activer » : le bandeau est là dès l'ouverture, et sur l'onglet où l'on constate le
+    // symptôme.
+    await expect(page.getByTestId('agent-manques')).toBeVisible();
+    await expect(page.getByTestId('agent-manque-outils')).toContainText(/Chercher dans la base/);
+  });
+
+  test('sans manque, aucun bandeau : preuve inverse', async ({ page }) => {
+    // Sans ce cas, un bandeau affiché en permanence passerait le test ci-dessus.
+    await mock(page, [], { manques: [] });
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    await expect(page.getByTestId('agent-manques')).toHaveCount(0);
   });
 
   test('🔴 l entretien est PERSISTANT : on rouvre l onglet et la conversation est là', async ({ page }) => {
