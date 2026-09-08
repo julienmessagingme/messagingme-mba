@@ -45,6 +45,23 @@ la servait, et elle passe d'un appel occasionnel à un par destinataire de campa
 hors transaction. **Vérifier `indisvalid` après le déploiement** : `if not exists` saute un index invalide
 au lieu de le réparer.
 
+## Refonte des menus : Console / Inbox / Performance Lab (spec écrite le 2026-09-08, pas commencée)
+
+Trois onglets de premier niveau, l'Inbox en boîte mail (dossiers, compteurs, archivage, charge par
+collaborateur), et un Performance Lab dont la page d'accueil répond à deux questions : ce que coûte un
+engagement, et où se situent les conversations en urgence et en satisfaction.
+
+**Six lots, dans cet ordre** : A les onglets (seul, il touche les 33 pages sans changer de fonctionnalité),
+puis B+C+D ensemble (un seul écran, une seule idée), puis F (il demande du TEMPS DE COLLECTE : seules les
+conversations analysées après son déploiement portent les deux mesures neuves), puis E.
+
+La spec, avec ce que chaque lot coûte et ce qu'il ne fait pas :
+[docs/superpowers/specs/2026-09-08-refonte-menus-design.md](docs/superpowers/specs/2026-09-08-refonte-menus-design.md).
+
+⚠️ **Deux migrations en attente dans cette spec** : 0120 (`conversations.archived_at`) et 0121
+(`conversation_analysis.satisfaction` / `urgence`). Le compteur de CLAUDE.md reste à 0119 tant qu'elles ne
+sont pas appliquées.
+
 ## Rien n'est en cours au 2026-09-07
 
 Tout ce qui a été fait entre le 2026-09-02 et le 2026-09-07 est **livré, déployé et vérifié** : les sept lots
