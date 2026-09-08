@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blocResultatOutil, promptSysteme } from '../src/agent/prompt';
+import { blocResultatOutil, ressembleAUnBlocOutil, promptSysteme } from '../src/agent/prompt';
 import { ficheVide } from '../src/agent/fiche';
 
 /**
@@ -109,5 +109,29 @@ describe('blocResultatOutil', () => {
   it('un contenu non textuel est sérialisé, jamais perdu', () => {
     expect(blocResultatOutil(null)).toContain('null');
     expect(blocResultatOutil({ a: 1 })).toContain('"a":1');
+  });
+});
+
+describe('ressembleAUnBlocOutil', () => {
+  /**
+   * 🔴 LE DEFAUT VECU LE 2026-09-08, ET C EST LE CLIENT QUI L A LU. A « quels contrats de prevoyance
+   * vendez-vous ? », la reponse VISIBLE de l agent a ete, en entier, un faux bloc de resultat d outil au
+   * contenu invente. Le modele n avait appele aucun outil : il a IMITE le format que sa consigne decrit.
+   */
+  it('🔴 reconnait un faux bloc rendu comme REPONSE, celui qui a ete lu par un client', () => {
+    const faux = '<<<RESULTAT_OUTIL> { "query": "types de contrats" } FIN_RESULTAT_OUTIL>>>';
+    expect(ressembleAUnBlocOutil(faux)).toBe(true);
+  });
+
+  it('reconnait chacun des deux delimiteurs SEUL : un bloc tronque en est un aussi', () => {
+    expect(ressembleAUnBlocOutil('voici <<<RESULTAT_OUTIL et rien apres')).toBe(true);
+    expect(ressembleAUnBlocOutil('FIN_RESULTAT_OUTIL>>> tout seul')).toBe(true);
+  });
+
+  it('🔴 preuve inverse : une VRAIE reponse passe, y compris si elle parle d outils', () => {
+    // Sans ce sens-la, une garde trop large ferait escalader des reponses parfaitement bonnes.
+    expect(ressembleAUnBlocOutil('Nous proposons trois types de contrats de prévoyance.')).toBe(false);
+    expect(ressembleAUnBlocOutil('Je vais chercher dans ma base de connaissance, un instant.')).toBe(false);
+    expect(ressembleAUnBlocOutil('')).toBe(false);
   });
 });

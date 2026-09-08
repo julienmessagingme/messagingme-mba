@@ -95,3 +95,27 @@ export async function patchAgent(tenantId: string, agentId: string, patch: Patch
   });
   return r.agent;
 }
+
+/**
+ * Ce que l'agent a CONSOMMÉ, sur une fenêtre décidée par le serveur.
+ *
+ * 🔴 UNE MESURE, PAS UN PLAFOND. Le plafond par conversation existe toujours et protège toujours d'une
+ * boucle qui s'emballe ; il n'a rien à faire dans l'écran où l'on vient voir ce que l'agent a coûté.
+ *
+ * `null` = la console n'a pas de store de sessions : on n'affiche alors RIEN, plutôt qu'un zéro qui se
+ * lirait « cet agent n'a rien consommé ».
+ */
+export interface ConsommationAgent {
+  sessions: number;
+  tokensEntree: number;
+  tokensSortie: number;
+  coutMicroEur: number;
+  jours: number;
+}
+
+export async function consommationAgent(tenantId: string, agentId: string): Promise<ConsommationAgent | null> {
+  const r = await request<{ consommation: ConsommationAgent | null }>(
+    `/tenants/${tenantId}/agents/${agentId}/consommation`,
+  );
+  return r.consommation ?? null;
+}

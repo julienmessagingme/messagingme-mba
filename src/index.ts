@@ -99,6 +99,7 @@ import { creerRechercheSemantique } from './agent/recherche';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
+import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
@@ -182,6 +183,9 @@ async function main(): Promise<void> {
   const rechercheSemantique = creerRechercheSemantique();
   const toolCatalog = new PgToolCatalog(pool);
   const credits = new PgCreditStore(pool);
+  // Lecture SEULE, pour le suivi de consommation d'un agent. Le store d'ECRITURE des sessions vit dans le
+  // cablage du worker (`src/workflow/wiring.ts`) : c'est lui qui les fait avancer, l'API ne fait qu'agreger.
+  const agentSessions = new PgAgentSessionStore(pool);
   const agentSources = new PgSourceStore(pool);
   const agentRequetes = new PgRequeteStore(pool);
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
@@ -789,6 +793,7 @@ async function main(): Promise<void> {
       modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
       // LECTURE seule : le client voit ce qui lui reste, il ne se recharge pas lui-meme (cf. /ops).
       soldeAgent: (tenant) => credits.solde(tenant),
+      consommationAgent: (tenant, agentId, jours) => agentSessions.consommation!(tenant, agentId, jours),
       // Le blocage dur avant activation : il lit la fiche, la connaissance, et les outils actifs AVEC leurs
       // handlers (le COMPTE seul ne peut pas dire QUEL outil manque, et c'est l'absence d'un outil PRECIS,
       // celui qui lit la base, qui a rendu un agent muet en production le 2026-09-08),

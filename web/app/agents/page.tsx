@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { MbaNotice } from '@/components/MbaNotice';
 import { MbaTabs } from '@/components/MbaTabs';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import {
   createAgent, deleteAgent, getAgent, getSoldeAgent, listAgents, patchAgent,
@@ -19,6 +19,7 @@ import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
 import { appliquerProposition, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
+import { consommationAgent, type ConsommationAgent } from '@/lib/api-agent';
 
 /**
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
@@ -252,7 +253,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             non plus par `enregistrer`, qui n'ecrit que la fiche. */}
         {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} />}
         {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
-        {onglet === 'modele' && <OngletModele agent={ouvert} busy={busy} onSave={enregistrer} />}
+        {onglet === 'modele' && <OngletModele agent={ouvert} tenantId={tenantId} busy={busy} onSave={enregistrer} />}
         {/* Le bac a sable fait tourner le VRAI cerveau, sans session ni run : il n ecrit rien, il ne passe
             donc pas non plus par `enregistrer`. */}
         {onglet === 'tester' && <AgentTest tenantId={tenantId} agentId={ouvert.id} />}
@@ -536,8 +537,28 @@ function OngletPerimetre({ agent, busy, onSave }: { agent: AgentComplet; busy: b
   );
 }
 
-function OngletModele({ agent, busy, onSave }: { agent: AgentComplet; busy: boolean; onSave: (p: PatchAgent) => void }) {
+function OngletModele({ agent, tenantId, busy, onSave }: {
+  agent: AgentComplet; tenantId: string; busy: boolean; onSave: (p: PatchAgent) => void;
+}) {
   const t = useT();
+  const { locale } = useLocale();
+  const [conso, setConso] = useState<ConsommationAgent | null>(null);
+  const [consoLue, setConsoLue] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    // ⚠️ La mesure ne peut pas faire tomber l'écran de réglage : en cas d'échec on la laisse à `null`, et le
+    // bloc ne s'affiche pas. Un zéro se lirait « cet agent n'a rien consommé », ce qui est une information
+    // FAUSSE présentée comme une mesure.
+    void consommationAgent(tenantId, agent.id)
+      .then((c) => { if (vivant) setConso(c); })
+      .catch(() => { if (vivant) setConso(null); })
+      .finally(() => { if (vivant) setConsoLue(true); });
+    return () => { vivant = false; };
+  }, [tenantId, agent.id]);
+
+  const nb = (n: number): string => n.toLocaleString(locale === 'en' ? 'en-US' : 'fr-FR');
+
   return (
     <div className={`${cardCls} flex flex-col gap-4`}>
       <Champ
@@ -545,11 +566,38 @@ function OngletModele({ agent, busy, onSave }: { agent: AgentComplet; busy: bool
         aide={t('Le moteur qui fait parler l’agent. À changer seulement si vous savez pourquoi.', 'The engine that makes the agent talk. Change it only if you know why.')}
         valeur={agent.modele} onSave={(v) => onSave({ modele: v })}
       />
-      <Nombre
-        testId="agent-budget" busy={busy} label={t('Budget par conversation, en micro-euros', 'Budget per conversation, in micro-euros')} min={1} max={100_000_000}
-        aide={t('Épuisé, l’agent sort par « Plafond atteint ». 30 000 micro-euros valent 3 centimes.', 'Once spent, the agent leaves through “Cap reached”. 30,000 micro-euros is 3 cents.')}
-        valeur={agent.budgetMicroEur} onSave={(v) => onSave({ budgetMicroEur: v })}
-      />
+
+      {/* 🔴 CE QUE L'AGENT A CONSOMMÉ, PAS UN BUDGET À RÉGLER. Cet onglet portait un champ « budget par
+          conversation en micro-euros » : un plafond, là où on vient voir ce que le robot a coûté. Le
+          plafond existe toujours et protège toujours d'une boucle qui s'emballe, il n'est simplement plus
+          proposé au réglage ici. */}
+      {consoLue && conso !== null && (
+        <div className="rounded-xl border border-ink-200 p-4" data-testid="agent-consommation">
+          <p className="text-sm font-medium text-ink-700">
+            {t(`Consommation sur ${conso.jours} jours`, `Usage over ${conso.jours} days`)}
+          </p>
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { k: 'conversations', v: nb(conso.sessions), l: t('conversations', 'conversations') },
+              { k: 'entree', v: nb(conso.tokensEntree), l: t('tokens en entrée', 'input tokens') },
+              { k: 'sortie', v: nb(conso.tokensSortie), l: t('tokens en sortie', 'output tokens') },
+              // Les micro-euros sont l'unité de STOCKAGE, pas une unité de lecture : on montre des euros.
+              { k: 'cout', v: `${(conso.coutMicroEur / 1_000_000).toFixed(2)} €`, l: t('coût estimé', 'estimated cost') },
+            ].map((x) => (
+              <div key={x.k} data-testid={`agent-conso-${x.k}`}>
+                <dd className="text-lg font-semibold tabular-nums text-ink-800">{x.v}</dd>
+                <dt className="text-xs text-ink-400">{x.l}</dt>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-ink-400">
+            {t(
+              'Compté sur les conversations de cet agent. Une conversation encore en cours y figure déjà, avec ce qu’elle a consommé jusqu’ici.',
+              'Counted over this agent’s conversations. An ongoing conversation already appears, with what it has used so far.',
+            )}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

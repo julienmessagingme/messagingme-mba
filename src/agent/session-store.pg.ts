@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
-import type { AgentSession, AgentSessionStatus, AgentSessionStore, TourBloque } from './session-store';
+import type {
+  AgentSession, AgentSessionStatus, AgentSessionStore, ConsommationAgent, TourBloque,
+} from './session-store';
 
 /** Un entier positif qui tient dans un `integer` Postgres. */
 const borner = (n: number): number => Math.min(2_147_483_647, Math.max(1, Math.round(n)));
@@ -217,5 +219,40 @@ export class PgAgentSessionStore implements AgentSessionStore {
       // lui poser, et une session déjà close rend la sienne. Un point de décision en moins à tenir ici.
       sortie: r.sortie,
     }));
+  }
+
+  /**
+   * La consommation de cet agent sur une fenetre glissante.
+   *
+   * ⚠️ Elle est bornee dans le TEMPS et jamais depuis toujours : `agent_sessions_tenant_idx` porte
+   * `(tenant_id, created_at desc)`, donc une fenetre sert l'index. Un total « depuis le debut » obligerait a
+   * relire toutes les sessions de l'espace a chaque ouverture d'ecran, pour un chiffre qui ne dit rien de
+   * l'usage courant.
+   *
+   * ⚠️ `agent_id` est dans le `where` mais PAS dans l'index : la fenetre borne deja le balayage, et poser un
+   * index par agent pour un ecran d'administration serait payer une ecriture sur le chemin chaud pour une
+   * lecture rare. A revoir le jour ou un espace aura des dizaines de milliers de sessions par mois.
+   */
+  async consommation(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent> {
+    const { rows } = await this.pool.query<{
+      sessions: string; tokens_in: string; tokens_out: string; cout: string;
+    }>(
+      `select count(*)::text as sessions,
+              coalesce(sum(tokens_in), 0)::text as tokens_in,
+              coalesce(sum(tokens_out), 0)::text as tokens_out,
+              coalesce(sum(cout_micro_eur), 0)::text as cout
+         from agent_sessions
+        where tenant_id = $1 and agent_id = $2
+          and created_at > now() - make_interval(days => $3)`,
+      [tenantId, agentId, jours],
+    );
+    const r = rows[0];
+    return {
+      sessions: Number(r?.sessions ?? 0),
+      tokensEntree: Number(r?.tokens_in ?? 0),
+      tokensSortie: Number(r?.tokens_out ?? 0),
+      coutMicroEur: Number(r?.cout ?? 0),
+      jours,
+    };
   }
 }

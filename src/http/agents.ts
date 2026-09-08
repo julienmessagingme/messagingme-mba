@@ -6,6 +6,11 @@ import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
 import { fichePatchSchema } from '../agent/fiche';
 import { manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
+import type { ConsommationAgent } from '../agent/session-store';
+
+/** La fenetre du suivi de consommation. Trente jours : assez pour voir une tendance, assez court pour que
+ *  l'index `(tenant_id, created_at desc)` serve la requete. */
+const JOURS_CONSOMMATION = 30;
 
 export interface AgentsRouteDeps {
   listActifs(tenantId: string): Promise<AgentResume[]>;
@@ -22,6 +27,12 @@ export interface AgentsRouteDeps {
    * séparée. Absente -> l'écran n'affiche pas de solde.
    */
   soldeAgent?(tenantId: string): Promise<number>;
+  /**
+   * Ce que cet agent a consomme sur une fenetre. OPTIONNELLE : une console sans store de sessions rend
+   * simplement `null`, et l'ecran n'affiche pas le bloc. Une mesure indisponible ne doit pas casser un
+   * ecran de reglage.
+   */
+  consommationAgent?(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
   /**
    * L'état à opposer au lint d'ACTIVATION. Absent, l'activation n'est pas contrôlée : c'est le montage des
    * tests de routes voisins, jamais la production.
@@ -90,6 +101,26 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.soldeAgent) return reply.code(200).send({ soldeMicroEur: null });
     return reply.code(200).send({ soldeMicroEur: await deps.soldeAgent(tenant) });
+  });
+
+  /**
+   * Ce que l'agent a consomme, en tokens et en cout.
+   *
+   * 🔴 UNE MESURE, PAS UN PLAFOND. Julien, le 2026-09-08 : « ce qu'on veut, c'est un suivi du budget
+   * consomme au total en tokens pour le robot, et pas mettre un budget ». Le plafond par conversation
+   * existe toujours et protege toujours d'une boucle qui s'emballe ; il n'a simplement rien a faire dans
+   * l'ecran ou l'on vient voir ce que l'agent a coute.
+   */
+  app.get('/tenants/:tenantId/agents/:agentId/consommation', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { agentId } = req.params as { agentId: string };
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
+    if (!deps.consommationAgent) return reply.code(200).send({ consommation: null });
+    // La fenetre est fixee ICI et pas prise dans la requete : un parametre libre laisserait demander
+    // « depuis toujours », qui relit toutes les sessions de l'espace pour un chiffre qui ne dit rien de
+    // l'usage courant.
+    return reply.code(200).send({ consommation: await deps.consommationAgent(tenant, agentId, JOURS_CONSOMMATION) });
   });
 
   app.get('/tenants/:tenantId/agents', opts, async (req, reply) => {

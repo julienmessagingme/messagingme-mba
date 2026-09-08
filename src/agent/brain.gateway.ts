@@ -6,7 +6,7 @@ import { executeTool } from './executor';
 import type { OutilDefini } from './catalog';
 import type { SortieAgent } from './agent-store';
 import { outilsExposes } from './outils-maison';
-import { blocResultatOutil, promptSysteme, type ContexteAgent } from './prompt';
+import { blocResultatOutil, ressembleAUnBlocOutil, promptSysteme, type ContexteAgent } from './prompt';
 import { SORTIE_PLAFOND } from './sorties';
 import { microEurosDepuisDollars } from './devise';
 
@@ -16,6 +16,10 @@ import { microEurosDepuisDollars } from './devise';
  * 🔴 C'EST L'APPELANT QUI MANQUAIT à `executeTool` (dette D3), et les trois responsabilités que sa JSDoc lui
  * assignait sont ici, chacune commentée là où elle se joue : alerter sur une erreur de protocole, calculer
  * les plafonds restants, et encadrer le résultat d'outil en bloc délimité avant de le remettre au modèle.
+ *
+ * 🔴 UNE QUATRIÈME S'Y EST AJOUTÉE LE 2026-09-08, et elle regarde dans l'autre sens : GARDER LA SORTIE. Le
+ * modèle a rendu un faux bloc de résultat d'outil comme réponse, contenu inventé compris, et un client l'a
+ * lu. Encadrer ce qui ENTRE ne suffit pas quand la consigne apprend au modèle à écrire ce format.
  *
  * 🔴 CE QUI ARRÊTE LA BOUCLE, et il n'y a que trois façons. Le modèle rend du TEXTE (il a fini de parler,
  * c'est le cas nominal) ; un outil demande une SORTIE (`mba_terminer`, ou la recherche de connaissance qui
@@ -197,7 +201,23 @@ async function boucler(
     usage.coutMicroEur += microEurosDepuisDollars(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1);
 
     if (reponse.appelsOutils.length === 0) {
-      return { texte: reponse.texte ?? '', sortie: null, usage, appels };
+      const texte = reponse.texte ?? '';
+      /**
+       * 🔴 UN TEXTE QUI PORTE NOS DÉLIMITEURS N'EST PAS UNE RÉPONSE, et il ne sort pas d'ici. Vu en
+       * production le 2026-09-08 : le modèle a rendu un faux bloc de résultat d'outil, contenu inventé
+       * compris, et le client l'a lu à la place d'une réponse. On ne le renvoie donc pas ; on le signale
+       * comme une erreur de protocole, exactement comme les autres, et l'appelant décide (le tour de
+       * production escalade, le bac à sable l'affiche).
+       *
+       * ⚠️ On ne « nettoie » PAS le texte pour le rendre quand même : ce qui reste après retrait des
+       * délimiteurs est du JSON inventé, donc une réponse fausse présentée comme une vraie. Mieux vaut
+       * passer la main que répondre n'importe quoi sur un contrat d'assurance.
+       */
+      if (ressembleAUnBlocOutil(texte)) {
+        deps.alerter?.(`agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil au lieu d’une réponse`);
+        return { texte: null, sortie: SORTIE_PLAFOND, usage, appels };
+      }
+      return { texte, sortie: null, usage, appels };
     }
 
     // 🔴 LE MESSAGE `assistant` QUI PORTE `tool_calls` EST OBLIGATOIRE, et il porte TOUS les appels de CETTE

@@ -43,6 +43,8 @@ export interface AgentSession {
  * SEUL contrôle d'isolation. L'appelant l'a toujours sous la main (il vient du job), ça ne coûte rien.
  */
 export interface AgentSessionStore {
+  /** Ce que cet agent a consomme sur les `jours` derniers jours. */
+  consommation?(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
   /**
    * Ouvre une session sur un parcours. LÈVE si ce parcours en a déjà une vivante : l'invariant « une seule
    * session par run » est un index partiel en base (migration 0086), pas une convention de code.
@@ -159,4 +161,22 @@ export interface TourBloque {
    * Jamais nulle : la requête met la sortie forcée à la place quand la session était encore `en_cours`.
    */
   sortie: string;
+}
+
+/**
+ * Ce qu'un agent a REELLEMENT consomme, sur une fenetre.
+ *
+ * 🔴 UNE MESURE, PAS UN PLAFOND, et c'est toute la difference que Julien a demandee le 2026-09-08 : « ce
+ * qu'on veut, c'est un suivi du budget consomme au total en tokens pour le robot, et pas mettre un budget ».
+ * Le plafond par conversation existe toujours et protege toujours (une boucle qui s'emballe s'arrete), il
+ * n'a simplement rien a faire dans l'ecran ou l'on vient voir ce que l'agent a coute.
+ */
+export interface ConsommationAgent {
+  /** Sessions comptees sur la fenetre. Une session est une conversation avec l'agent. */
+  sessions: number;
+  tokensEntree: number;
+  tokensSortie: number;
+  coutMicroEur: number;
+  /** Le nombre de jours sur lesquels porte le compte, pour que l'ecran ne l'invente pas. */
+  jours: number;
 }
