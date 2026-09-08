@@ -89,13 +89,15 @@ export interface InboxMessage {
  */
 export function listConversations(
   tenantId: string,
-  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean } = {},
+  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean } = {},
 ): Promise<{ conversations: Conversation[] }> {
   const p = new URLSearchParams();
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
   if (opts.aTraiter) p.set('aTraiter', '1');
   if (opts.affectee !== undefined) p.set('affectee', opts.affectee);
   if (opts.signalees) p.set('signalees', '1');
+  // Le dossier ARCHIVÉ. Absent = les dossiers ordinaires, qui excluent les archivées.
+  if (opts.archivees) p.set('archivees', '1');
   // Le curseur part ENTIER ou pas du tout : le serveur ignore une moitié, autant ne pas l'envoyer.
   if (opts.before) { p.set('beforeAt', opts.before.at); p.set('beforeId', opts.before.id); }
   const qs = p.toString();
@@ -128,10 +130,38 @@ export interface BlockedContact { id: string; profileName: string | null; phoneE
 export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
   return request(`/tenants/${tenantId}/contacts/blocked`);
 }
-/** Nombre de conversations « À traiter », compté par le serveur sur TOUTE la base (pas sur la page affichée). */
-export function countConversationsATraiter(tenantId: string): Promise<{ count: number }> {
-  return request<{ count: number }>(`/tenants/${tenantId}/conversations/todo-count`);
+/**
+ * Les chiffres du menu de dossiers, en UNE lecture.
+ *
+ * ⚠️ Lus ENSEMBLE parce qu'ils sont AFFICHÉS ensemble : six routes, ce seraient six instants différents, et
+ * un « Tout (12) » au-dessus d'un « À traiter (13) » se remarque tout de suite.
+ */
+export interface CompteursInbox {
+  tout: number;
+  aTraiter: number;
+  signalees: number;
+  archivees: number;
+  nonAffectees: number;
+  parMembre: Array<{ userId: string; nom: string; n: number }>;
 }
+
+/** Les compteurs du menu. Une réponse mal formée rend des zéros : un menu sans chiffres reste un menu. */
+export async function countConversationsParDossier(tenantId: string): Promise<CompteursInbox> {
+  const r = await request<Partial<CompteursInbox>>(`/tenants/${tenantId}/conversations/counts`);
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    tout: n(r?.tout), aTraiter: n(r?.aTraiter), signalees: n(r?.signalees),
+    archivees: n(r?.archivees), nonAffectees: n(r?.nonAffectees),
+    // Vérifié et non casté : ce tableau vient du réseau, et l'écran fait `.map` dessus pendant le rendu.
+    parMembre: Array.isArray(r?.parMembre) ? r.parMembre : [],
+  };
+}
+
+/** Range une conversation dans Archivé, ou l'en sort. */
+export function archiverConversation(tenantId: string, conversationId: string, archive: boolean): Promise<{ archived: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/${archive ? 'archive' : 'unarchive'}`, { method: 'POST' });
+}
+
 /**
  * Lance un SCÉNARIO sur cette conversation. Le serveur tranche sur l'état RÉEL de la fenêtre de 24 h et
  * renvoie 422 avec la raison si le scénario ne peut pas partir (la liste affichée est filtrée, mais un fil

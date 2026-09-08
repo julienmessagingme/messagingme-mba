@@ -3673,7 +3673,7 @@ La pastille de non-lus est montée sur TOUTES les pages et pour tous les rôles,
 `countUnread` compte avec un `exists` corrélé sur TOUTES les conversations de l'espace. Vingt-cinq
 utilisateurs d'un même client posaient vingt-cinq fois la même question, pour un nombre qui n'a pas bougé.
 
-**Micro-cache par espace, 5 secondes** (`src/lib/cache-court.ts`, câblé sur `unread-count` et `todo-count`).
+**Micro-cache par espace, 5 secondes** (`src/lib/cache-court.ts`, câblé sur `unread-count`, `todo-count` et, depuis le 2026-09-08, les compteurs du menu de dossiers de l'Inbox).
 Deux mécanismes, et les deux comptent : la durée de vie absorbe le polling étalé, la mutualisation des appels
 EN VOL absorbe les arrivées simultanées, c'est-à-dire le rechargement collectif après un déploiement, qui est
 exactement le moment où ça fait mal.

@@ -51,8 +51,13 @@ Trois onglets de premier niveau, l'Inbox en boîte mail (dossiers, compteurs, ar
 collaborateur), et un Performance Lab dont la page d'accueil répond à deux questions : ce que coûte un
 engagement, et où se situent les conversations en urgence et en satisfaction.
 
-**Lot A LIVRÉ le 2026-09-08** : les trois onglets, la navigation scindée en trois arbres, l'onglet déduit de
-la page active (aucune des 33 pages n'a été touchée), et aucune adresse changée. Reste B, C, D, E, F.
+**Lots A, B, C, D LIVRÉS le 2026-09-08.** A : les trois onglets, la navigation scindée en trois arbres,
+l'onglet déduit de la page active (aucune des 33 pages n'a été touchée), aucune adresse changée. B+C+D :
+l'Inbox en boîte mail (dossiers Tout / À traiter / Signalé / Archivé avec leurs compteurs), l'archivage
+réversible (migration 0120) et la charge par collaborateur. **Reste E et F.**
+
+⚠️ **La migration 0120 attend d'être appliquée en production** : elle ajoute une colonne que le code écrit,
+donc elle passe AVANT le déploiement (`compose build mba-api`, puis `migrate`, puis `up -d --build`).
 
 **Six lots, dans cet ordre** : A les onglets (seul, il touche les 33 pages sans changer de fonctionnalité),
 puis B+C+D ensemble (un seul écran, une seule idée), puis F (il demande du TEMPS DE COLLECTE : seules les

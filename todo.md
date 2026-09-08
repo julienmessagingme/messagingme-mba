@@ -490,6 +490,17 @@ reste à faire** : `explain` la requête de `findWaitingByWaId` en production et
 l'ancien devient une migration additive de plus (un index en moins, c'est de l'écriture en moins sur une
 table du chemin chaud). Si elle prend l'ancien, on garde les deux et on écrit pourquoi.
 
+## Une SECONDE route sans appelant : `GET /tenants/:id/conversations/todo-count` (2026-09-08)
+
+Le menu de dossiers de l'Inbox rend les cinq compteurs en une lecture (`/conversations/counts`), et il a
+remplacé le seul appelant de `todo-count`. La route existe toujours, elle marche, et plus personne ne la
+demande. Sa fonction côté front a été retirée (du code mort avéré) ; la ROUTE est laissée en place et notée
+ici, exactement comme sa sœur ci-dessous : retirer une adresse est une porte à sens unique, et rien ne presse.
+
+⚠️ Si on la retire un jour, retirer AUSSI la dépendance `countATraiter` et son câblage, sinon il restera une
+requête que rien n'appelle. Et vérifier d'abord qu'aucun client n'a bricolé dessus : elle n'est pas dans la
+documentation d'API publique (`/v1/*`), mais elle est joignable.
+
 ## Une route sans appelant : `GET /tenants/:id/contacts/ids`
 
 Depuis le 2026-09-01, la création de campagne envoie l'INTENTION de sélection (`contactTarget`) et non plus

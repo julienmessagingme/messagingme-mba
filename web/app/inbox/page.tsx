@@ -16,9 +16,12 @@ import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
 import { estAnnulation } from '@/lib/http';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
+import { InboxDossiers, type DossierInbox } from '@/components/InboxDossiers';
 import {
   listConversations,
-  countConversationsATraiter,
+  countConversationsParDossier,
+  archiverConversation,
+  type CompteursInbox,
   getSettings,
   listUsers,
   setConversationAssignee,
@@ -63,12 +66,15 @@ export default function InboxPage() {
 const TAILLE_PAGE = 50;
 
 /**
- * Traduit le filtre de l'écran en paramètres de requête. Un seul endroit : la liste et « charger plus »
+ * Traduit le DOSSIER de l'écran en paramètres de requête. Un seul endroit : la liste et « charger plus »
  * doivent demander EXACTEMENT le même filtre, sinon la page suivante ne serait pas la suite de la première.
  */
-function filtreEnParams(filtre: 'toutes' | 'aTraiter' | 'signalees'): { aTraiter?: boolean; signalees?: boolean } {
-  if (filtre === 'aTraiter') return { aTraiter: true };
-  if (filtre === 'signalees') return { signalees: true };
+function dossierEnParams(d: DossierInbox): { aTraiter?: boolean; signalees?: boolean; archivees?: boolean; affectee?: string | 'aucune' } {
+  if (typeof d === 'object') return { affectee: d.membre };
+  if (d === 'aTraiter') return { aTraiter: true };
+  if (d === 'signalees') return { signalees: true };
+  if (d === 'archivees') return { archivees: true };
+  if (d === 'nonAffectees') return { affectee: 'aucune' };
   return {};
 }
 
@@ -145,13 +151,24 @@ function InboxInner({ session }: { session: Session }) {
    * Filtre de la liste, à TROIS valeurs exclusives plutôt que deux booléens indépendants : « à traiter » et
    * « signalées » ne se combinent pas à l'écran, et deux drapeaux auraient permis un état que rien n'affiche.
    */
-  const [filtre, setFiltre] = useState<'toutes' | 'aTraiter' | 'signalees'>('toutes');
-  const onlyTodo = filtre === 'aTraiter';
+  const [dossier, setDossier] = useState<DossierInbox>('toutes');
+  /**
+   * Les conversations COCHÉES, pour l'archivage en lot. Vidée à chaque changement de dossier : garder une
+   * sélection faite dans un autre dossier ferait archiver des lignes qu'on ne voit plus.
+   */
+  const [cochees, setCochees] = useState<Set<string>>(new Set());
+  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 0, parMembre: [] });
+  const [archivageEnCours, setArchivageEnCours] = useState(false);
+  /**
+   * Qui voit la charge par collaborateur.
+   *
+   * ⚠️ La MÊME règle que celle qui autorise à AFFECTER une conversation (`AffectationControl`) : montrer le
+   * geste sans montrer la charge serait incohérent, et c'est le manager que cette section sert.
+   */
+  const peutAffecter = session.role === 'admin' || session.role === 'manager';
   /** Une page de plus est peut-être disponible (la dernière était pleine). */
   const [peutCharger, setPeutCharger] = useState(false);
   const [chargementPage, setChargementPage] = useState(false);
-  /** Compté par le SERVEUR sur toute la base : l'ancien calcul portait sur les conversations chargées. */
-  const [todoCount, setTodoCount] = useState(0);
   /** Fiche contact ouverte, par `waId`. `null` = fermée, et la conversation reprend toute la largeur. */
   const [ficheWaId, setFicheWaId] = useState<string | null>(null);
 
@@ -162,7 +179,7 @@ function InboxInner({ session }: { session: Session }) {
   const reload = useCallback(async () => {
     setError(null);
     try {
-      const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...filtreEnParams(filtre) });
+      const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...dossierEnParams(dossier) });
       const liste = Array.isArray(r?.conversations) ? r.conversations : [];
       setConversations(liste);
       // Page pleine = il y a peut-être une suite. Pas de compteur total : il coûterait un décompte complet
@@ -173,7 +190,7 @@ function InboxInner({ session }: { session: Session }) {
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId, t, filtre]);
+  }, [session.tenantId, t, dossier]);
 
   /** Page SUIVANTE, à la suite de la dernière conversation affichée. */
   const chargerPlus = useCallback(async () => {
@@ -189,7 +206,7 @@ function InboxInner({ session }: { session: Session }) {
         // ci-dessous n'y pouvait rien : il protège des doublons, pas des absences. Repli sur `lastMessageAt`
         // si le champ manque : c'est exactement le comportement d'avant, jamais pire.
         before: { at: dernier.curseur ?? dernier.lastMessageAt, id: dernier.id },
-        ...filtreEnParams(filtre),
+        ...dossierEnParams(dossier),
       });
       const suite = Array.isArray(r?.conversations) ? r.conversations : [];
       // Dédup par identifiant : entre deux pages, un message peut arriver et faire remonter une conversation
@@ -204,14 +221,19 @@ function InboxInner({ session }: { session: Session }) {
     } finally {
       setChargementPage(false);
     }
-  }, [session.tenantId, conversations, filtre, chargementPage]);
+  }, [session.tenantId, conversations, dossier, chargementPage]);
 
-  /** Compteur « À traiter » : compté par le serveur sur TOUTE la base, pas sur la page affichée. */
+  /**
+   * Les compteurs du menu, comptés par le SERVEUR sur toute la base (pas sur la page affichée).
+   *
+   * ⚠️ Une seule lecture pour les cinq dossiers et la charge : six appels, ce seraient six instants
+   * différents, et le menu affiche les chiffres les uns sous les autres.
+   */
   const rechargerCompteur = useCallback(async () => {
     try {
-      setTodoCount((await countConversationsATraiter(session.tenantId)).count);
+      setCompteurs(await countConversationsParDossier(session.tenantId));
     } catch {
-      /* le compteur est un confort : son absence ne doit pas masquer la liste */
+      /* les compteurs sont un confort : leur absence ne doit pas masquer la liste */
     }
   }, [session.tenantId]);
   useEffect(() => { void rechargerCompteur(); }, [rechargerCompteur, conversations]);
@@ -219,6 +241,44 @@ function InboxInner({ session }: { session: Session }) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Changer de dossier VIDE la sélection : garder des lignes cochées dans un dossier qu'on ne regarde plus
+  // ferait archiver des conversations qu'on ne voit pas.
+  useEffect(() => { setCochees(new Set()); }, [dossier]);
+
+  /** Coche ou décoche une ligne. */
+  function basculerCoche(id: string): void {
+    setCochees((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+
+  /**
+   * Range (ou sort) les conversations cochées.
+   *
+   * ⚠️ SÉQUENTIEL et non en parallèle : l'archivage invalide les compteurs à chaque appel, et vingt requêtes
+   * simultanées feraient vingt recalculs pour un seul résultat. Vingt lignes cochées restent vingt appels,
+   * ce qui est le prix d'un geste rare fait sur ce que l'écran affiche.
+   *
+   * ⚠️ Une conversation qui échoue n'arrête pas les autres : on range ce qui peut l'être, et la liste
+   * rechargée montre ce qui reste. Un échec partiel qui annulerait tout serait pire.
+   */
+  async function archiverLesCochees(archive: boolean): Promise<void> {
+    if (archivageEnCours || cochees.size === 0) return;
+    setArchivageEnCours(true);
+    try {
+      for (const id of cochees) {
+        try {
+          await archiverConversation(session.tenantId, id, archive);
+        } catch {
+          /* une conversation disparue entre l'affichage et le clic ne doit pas bloquer les autres */
+        }
+      }
+      setCochees(new Set());
+      await reload();
+      await rechargerCompteur();
+    } finally {
+      setArchivageEnCours(false);
+    }
+  }
 
   // Deep-link ?c=<id> : quand la liste est chargée, pré-sélectionne la conversation correspondante (une seule
   // fois, pour ne pas ré-écraser un choix manuel aux refresh suivants). Conv absente de la liste -> ignorée.
@@ -252,27 +312,47 @@ function InboxInner({ session }: { session: Session }) {
           <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Conversations', 'Conversations')} ({conversations.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
         </div>
-        <div className="mb-3 flex gap-1 text-xs">
-          <button onClick={() => setFiltre('toutes')} className={`rounded-md px-2 py-1 ${filtre === 'toutes' ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>{t('Toutes', 'All')}</button>
-          <button onClick={() => setFiltre('aTraiter')} data-testid="inbox-filter-todo" className={`rounded-md px-2 py-1 ${filtre === 'aTraiter' ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>
-            {t('À traiter', 'To handle')}{todoCount > 0 ? ` (${todoCount})` : ''}
-          </button>
-          {/* Modération : les conversations où l'analyse a relevé des injures. Le constat arrive 15 à 20 min
-              après coup, c'est donc une liste à relire, pas une alerte. */}
-          <button onClick={() => setFiltre('signalees')} data-testid="inbox-filter-flagged" className={`rounded-md px-2 py-1 ${filtre === 'signalees' ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>
-            {t('Signalées', 'Flagged')}
-          </button>
+        {/* 🔴 LE MENU DE DOSSIERS REMPLACE LES TROIS BOUTONS DE FILTRE, il ne s'y ajoute pas. Deux endroits
+            pour le même choix, c'est deux états qui divergent : le dépôt l'a déjà payé sur le contrôle du
+            fil. Modération comprise : « Signalé » est l'ancien bouton, au même endroit que les autres. */}
+        <div className="mb-3">
+          <InboxDossiers
+            dossier={dossier}
+            compteurs={compteurs}
+            peutVoirAffectation={peutAffecter}
+            onChange={setDossier}
+          />
         </div>
+        {/* Archivage en LOT : la barre n'apparaît qu'avec au moins une ligne cochée, pour ne pas occuper une
+            place permanente au-dessus de la liste. */}
+        {cochees.size > 0 && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs">
+            <span className="text-brand-800">{t(`${cochees.size} sélectionnée(s)`, `${cochees.size} selected`)}</span>
+            <button
+              type="button"
+              data-testid="inbox-archiver"
+              disabled={archivageEnCours}
+              onClick={() => { void archiverLesCochees(dossier !== 'archivees'); }}
+              className="ml-auto rounded-md bg-brand-600 px-2 py-1 font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+            >
+              {dossier === 'archivees' ? t('Désarchiver', 'Unarchive') : t('Archiver', 'Archive')}
+            </button>
+          </div>
+        )}
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading ? (
           <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            {filtre === 'aTraiter'
+            {dossier === 'aTraiter'
               ? t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')
-              : filtre === 'signalees'
+              : dossier === 'signalees'
                 ? t('Aucune conversation signalée. L’analyse relève les injures environ 15 min après le dernier message.', 'No flagged conversation. The analysis spots abuse about 15 min after the last message.')
-                : t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
+                : dossier === 'archivees'
+                  ? t('Aucune conversation archivée. Cochez une conversation et rangez-la ici quand elle est finie.', 'No archived conversation. Tick one and file it here when it is done.')
+                  : typeof dossier === 'object' || dossier === 'nonAffectees'
+                    ? t('Aucune conversation dans ce dossier.', 'No conversation in this folder.')
+                    : t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
           </div>
         ) : (
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
@@ -299,7 +379,25 @@ function InboxInner({ session }: { session: Session }) {
                   {/* `pointer-events-none` sur le contenu, `auto` sur le seul bouton du nom : sans ça le
                       contenu recouvre le bouton de fond, et un clic au milieu de la vignette n'ouvrirait
                       RIEN. Le geste de tous les jours doit marcher partout sur la ligne. */}
-                  <div className="pointer-events-none relative flex items-baseline justify-between gap-2">
+                  {/*
+                    🔴 LA CASE EST HORS DU FLUX, posée en absolu sur le bord gauche, et le contenu prend une
+                    marge à gauche. Mise DANS la ligne de contenu, elle décalait le nom du contact jusqu'au
+                    CENTRE de la vignette : le nom y interceptait le clic destiné au bouton de fond, et un
+                    clic au milieu de la ligne ouvrait la fiche au lieu de la conversation. Attrapé par
+                    `inbox-fiche-contact.spec.ts`, qui garde exactement ce geste.
+
+                    `pointer-events-auto` et `z-10` : le bouton de fond couvre toute la vignette en absolu,
+                    donc sans eux un clic sur la case ouvrirait la conversation au lieu de cocher.
+                  */}
+                  <input
+                    type="checkbox"
+                    data-testid={`cocher-${c.id}`}
+                    checked={cochees.has(c.id)}
+                    onChange={() => basculerCoche(c.id)}
+                    aria-label={t('Sélectionner cette conversation', 'Select this conversation')}
+                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 accent-brand-500"
+                  />
+                  <div className="pointer-events-none relative ml-5 flex items-baseline justify-between gap-2">
                     <span className={`flex min-w-0 items-baseline text-sm ${c.unread ? 'font-semibold text-ink-900' : 'font-medium'}`}>
                       {/* Point de non-lu : le compteur du menu doit pouvoir se traduire en action, sinon il dit
                           « 3 » sans dire lesquelles. */}

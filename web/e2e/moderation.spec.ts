@@ -40,6 +40,7 @@ async function mock(
       if (!signalees) return json({ conversations: [] });
       return json({ conversations: signaleesRendues ?? [{ id: 'c9', waId: '33699', profileName: 'Client Injurieux', lastMessageAt: '2026-08-21T10:00:00Z', controlOwner: 'app_human' }] });
     }
+    if (chemin.endsWith('/conversations/counts')) return json({ tout: 1, aTraiter: 1, signalees: 1, archivees: 0, nonAffectees: 1, parMembre: [] });
     if (chemin.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (chemin.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
     if (chemin.endsWith('/audit')) return json({ entries: [] });
@@ -49,22 +50,27 @@ async function mock(
 }
 
 test.describe('Modération', () => {
-  test('l’onglet « Signalées » demande le filtre au SERVEUR', async ({ page }) => {
+  /**
+   * ⚠️ L'ONGLET EST DEVENU UN DOSSIER le 2026-09-08 (l'Inbox est passée en boîte mail). Ce que ces deux cas
+   * gardent n'a pas bougé : le filtre est DEMANDÉ au serveur, et l'état vide EXPLIQUE le délai au lieu de
+   * laisser croire à une panne. Seul le sélecteur change.
+   */
+  test('le dossier « Signalé » demande le filtre au SERVEUR', async ({ page }) => {
     // Le constat vient de l'analyse, en base : le navigateur ne peut pas le déduire des conversations
     // chargées. S'il filtrait localement, l'onglet serait vide en permanence.
     const { urls } = await mock(page);
     await page.goto('/inbox');
-    await page.getByTestId('inbox-filter-flagged').click();
+    await page.getByTestId('dossier-signalees').click();
     await expect.poll(() => urls.some((u) => u.includes('signalees=1')), { timeout: 15_000 }).toBe(true);
     await expect(page.getByText('Client Injurieux')).toBeVisible();
   });
 
-  test('l’onglet VIDE explique le délai, au lieu de laisser croire à une erreur', async ({ page }) => {
+  test('le dossier VIDE explique le délai, au lieu de laisser croire à une erreur', async ({ page }) => {
     // Rien à signaler est le cas NORMAL. Sans explication, on croirait la fonctionnalité cassée, alors que
     // l'analyse tourne simplement 15 min après le dernier message.
     await mock(page, [], []);
     await page.goto('/inbox');
-    await page.getByTestId('inbox-filter-flagged').click();
+    await page.getByTestId('dossier-signalees').click();
     await expect(page.getByText(/Aucune conversation signalée|No flagged conversation/)).toBeVisible();
     await expect(page.getByText(/15 min/)).toBeVisible();
   });

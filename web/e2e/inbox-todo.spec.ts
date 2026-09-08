@@ -8,6 +8,11 @@ import { test, expect } from '@playwright/test';
  * conversations chargées : au-delà d'une page il ignorait le reste sans rien signaler, et le compteur
  * affichait moins que la réalité. Ces tests vérifient donc que l'écran DEMANDE le bon filtre, et non plus
  * qu'il trie lui-même : c'est le fond du changement.
+ *
+ * ⚠️ LE BOUTON EST DEVENU UN DOSSIER le 2026-09-08 (l'Inbox est passée en boîte mail), mais ce que ces tests
+ * gardent n'a pas bougé d'un pouce : le filtre est DEMANDÉ au serveur, et le compteur vient du serveur donc
+ * il compte au-delà de la page affichée. Seul le sélecteur change, `inbox-filter-todo` devient
+ * `dossier-aTraiter`. Un test réécrit doit conserver le cas qu'il exerçait.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 const CONVERSATIONS = [
@@ -24,8 +29,15 @@ async function mock(page: import('@playwright/test').Page, totalATraiter?: numbe
     urls.push(url);
     const chemin = url.split('?')[0]!;
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    const nATraiter = totalATraiter ?? CONVERSATIONS.filter((c) => c.controlOwner !== 'app_workflow').length;
+    if (chemin.endsWith('/conversations/counts')) {
+      return json({
+        tout: CONVERSATIONS.length, aTraiter: nATraiter, signalees: 0, archivees: 0,
+        nonAffectees: CONVERSATIONS.length, parMembre: [],
+      });
+    }
     if (chemin.endsWith('/conversations/todo-count')) {
-      return json({ count: totalATraiter ?? CONVERSATIONS.filter((c) => c.controlOwner !== 'app_workflow').length });
+      return json({ count: nATraiter });
     }
     if (chemin.endsWith('/conversations')) {
       const aTraiter = new URL(url).searchParams.get('aTraiter') === '1';
@@ -46,8 +58,8 @@ test.describe('Inbox : filtre « À traiter »', () => {
     await expect(page.getByText('Alice Auto')).toBeVisible();
     await expect(page.getByText('Bob ATraiter')).toBeVisible();
 
-    // Filtre « À traiter » -> seule Bob (app_human) reste ; Alice (app_workflow) disparaît.
-    await page.getByTestId('inbox-filter-todo').click();
+    // Dossier « À traiter » -> seule Bob (app_human) reste ; Alice (app_workflow) disparaît.
+    await page.getByTestId('dossier-aTraiter').click();
     await expect(page.getByText('Bob ATraiter')).toBeVisible();
     await expect(page.getByText('Alice Auto')).toHaveCount(0);
   });
@@ -58,7 +70,7 @@ test.describe('Inbox : filtre « À traiter »', () => {
     const urls = await mock(page);
     await page.goto('/inbox');
     await expect(page.getByText('Alice Auto')).toBeVisible();
-    await page.getByTestId('inbox-filter-todo').click();
+    await page.getByTestId('dossier-aTraiter').click();
     await expect.poll(() => urls.some((u) => u.includes('aTraiter=1')), { timeout: 15_000 }).toBe(true);
   });
 
@@ -67,6 +79,6 @@ test.describe('Inbox : filtre « À traiter »', () => {
     // Ici le serveur en annonce 137 alors que deux conversations seulement sont affichées.
     await mock(page, 137);
     await page.goto('/inbox');
-    await expect(page.getByTestId('inbox-filter-todo')).toContainText('137');
+    await expect(page.getByTestId('dossier-n-aTraiter')).toHaveText('(137)');
   });
 });

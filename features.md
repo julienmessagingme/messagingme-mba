@@ -780,6 +780,36 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
+- ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08). À gauche de la liste : **Tout**, **À traiter**,
+  **Signalé**, **Archivé**, chacun avec son nombre entre parenthèses. Il remplace les trois boutons de filtre
+  d'avant, qui ne portaient qu'un compteur sur trois.
+  ⚠️ **Le nombre est affiché même à zéro.** « Signalé (0) » est une information (« rien à relire ») ; un
+  libellé nu laisse croire que le chiffre n'a pas chargé, et on va vérifier pour rien.
+  ⚠️ **Les compteurs portent sur TOUT l'espace, pas sur la page affichée** : ils ne descendent pas quand vous
+  faites défiler la liste.
+  🔴 **Le compteur « À traiter » peut avoir BAISSÉ** chez un espace qui a des contacts bloqués : il les
+  comptait alors que la liste ne les montre pas, donc il pouvait annoncer plus de conversations qu'il n'y en
+  avait à l'écran. C'est corrigé, le compteur et la liste disent enfin la même chose.
+- ✅ **ARCHIVER une conversation** (2026-09-08). Cochez une ou plusieurs conversations, un bouton
+  **« Archiver »** apparaît, et elles rejoignent le dossier **Archivé**. Dans ce dossier, le même bouton les
+  **désarchive**.
+  ⚠️ **Rien n'est effacé** : les messages restent lisibles, le contact reste joignable, et aucun chiffre
+  d'analytics ne bouge. C'est un rangement.
+  🔴 **Un message du contact la fait REVENIR** dans « Tout ». Une conversation archivée puis relancée par le
+  client est exactement le cas où l'oublier coûte cher : l'archivage range ce qui est fini, il ne réduit
+  personne au silence. ⚠️ Un envoi de campagne, lui, ne la fait pas revenir : sinon une campagne qui touche
+  mille contacts viderait le dossier Archivé d'un coup.
+  ⚠️ **Une conversation archivée n'est pas listée par le serveur MCP** non plus (un assistant branché voit la
+  même chose que l'Inbox), et sa description le dit.
+- ✅ **LA CHARGE PAR COLLABORATEUR** (2026-09-08), sous le menu : **Non affecté (N)** puis un membre par
+  ligne avec son nombre de conversations. Cliquer sur un nom montre ses conversations.
+  ⚠️ **Tous les membres sont listés, y compris ceux à zéro** : c'est ce qui répond à la question du manager,
+  et ne montrer que ceux qui ont du travail rendrait invisible celui qu'on cherche précisément parce qu'il
+  n'en a pas. Une conversation archivée ne compte dans la charge de personne.
+  ⚠️ **Section réservée aux administrateurs et aux managers**, c'est-à-dire à ceux qui peuvent déjà affecter
+  une conversation. Un opérateur ne voit pas la charge de ses collègues.
+- ⏳ **Le glisser-déposer vers Archivé n'existe pas**, et c'est un choix : la case à cocher rend déjà le
+  geste. Il s'ajoutera si l'usage le réclame.
 - ✅ **Effacer le contenu d'une conversation** (2026-09-02), réservé aux administrateurs. Ce sont les messages
   qui partent, pas la conversation : son affectation, son détenteur et son analyse restent.
   🔴 **La confirmation vous prévient d'une conséquence que personne ne devine** : la fenêtre de 24 h se calcule
