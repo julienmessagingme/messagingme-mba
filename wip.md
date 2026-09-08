@@ -45,6 +45,80 @@ la servait, et elle passe d'un appel occasionnel à un par destinataire de campa
 hors transaction. **Vérifier `indisvalid` après le déploiement** : `if not exists` saute un index invalide
 au lieu de le réparer.
 
+## Demandes de Julien du 2026-09-08 au soir : 6 LIVRÉES, 3 RESTENT (point de reprise)
+
+Julien a donné une liste de huit évolutions plus une correction, le 2026-09-08 vers 22 h. Ce qui suit est
+l'état exact au moment de compacter la session.
+
+### Livré, poussé, et DÉPLOYÉ
+
+- **Rangement de la barre** (`3daaffe`) : Paramètres et Support descendus dans le bloc bas au-dessus de
+  Developers ; « Other AI agent » devenu un GROUPE (Agents + Crédit) ; onglets détachés du logo et passés en
+  capitales espacées. ⚠️ Le regroupement a cassé un test qui cliquait un LIEN devenu bouton (`0a7229c`) :
+  la leçon est dans `documentation.md`, § « Changer la NATURE d'une entrée de nav ».
+- **Écran Crédit** (`/agents/credit`) : il ne recharge pas (Stripe et Vercel pro d'abord, décision de
+  Julien), il MONTRE le solde réel et annonce ce qui manque. Une entrée de menu qui ne mène nulle part
+  serait un cul-de-sac.
+- **Automation « un délai AVANT ou APRÈS une date enregistrée »** (`2cbcc8d`). Décisions prises :
+  `avant` reste le défaut (les configs existantes n'ont pas le champ), et **« après » ne rattrape PAS le
+  passé** (choix de Julien : sinon toute la base concernée partirait d'un coup, et ce serait facturé).
+
+### Livré et poussé, CI à vérifier puis à DÉPLOYER
+
+- **`d743847`** : la brique `prochaineOuverture` (`src/lib/heures-ouvrees.ts`), 10 cas testés dont le
+  changement d'heure d'octobre à l'instant UTC près. AUCUN consommateur encore : c'est la moitié basse du
+  lot qui reste.
+- **`0262839`** : les deux correctifs de l'agent IA et la pastille du numéro sur l'Accueil.
+
+🔴 **À FAIRE EN PREMIER À LA REPRISE** : `gh run list`, lire le verdict JOB PAR JOB, puis déployer le VPS
+(`git pull` + `compose up -d --build` + `nginx -s reload` + `scripts/fumee.mjs`). Aucune migration dans ces
+deux commits.
+
+### Ce qui RESTE de la liste, et tout ce qu'il faut pour le faire
+
+**1. Bloc Attente : une DATE FIXE** (au lieu du seul délai en minutes/heures/jours).
+Décision déjà prise avec Julien : **une date fixe saisie dans le bloc**, PAS un champ du contact (ce serait
+recouvrir l'automation « délai avant/après une date », et poser la question du champ vide).
+
+**2. Bloc Attente : attendre les PROCHAINES HEURES OUVRÉES** (« s'il est 01:00, le message ne part qu'à
+9:00 », les heures d'ouverture de Paramètres).
+
+**3. Campagne > envoi : un toggle « envoyer uniquement pendant les heures ouvrées »**, valable pour
+« maintenant » comme pour « plus tard ». Coché à 23 h avec « lancer maintenant » -> repoussé à la prochaine
+ouverture. Un envoi non terminé à la fermeture REPREND au créneau suivant. Migration **0122** (une colonne
+sur `campaigns`), donc à passer AVANT le déploiement du code qui l'écrit.
+
+🔴 **L'ARBITRAGE QUI BLOQUAIT EST LEVÉ, et c'est le point le plus important de ce mémo.** Le calcul qui
+décide si un template sera nécessaire après une attente (la fenêtre de 24 h de Meta) lit la durée du bloc
+**statiquement**, à la publication (`src/workflow/engine.ts`, autour de la ligne 308, via `waitDurationMs`).
+Une attente « jusqu'aux heures ouvrées » ou « jusqu'à une date » n'a pas de durée connue d'avance. Le parti
+retenu : **les compter comme une attente LONGUE** (donc `FENETRE_MS`, donc « il faudra un template après »).
+Ce n'est pas un choix par défaut, c'est déjà ce que le panneau du bloc AFFICHE au client (« Après une
+attente, seul un envoi de TEMPLATE peut encore partir »). ⚠️ Si `waitDurationMs` rendait 0 pour ces modes,
+l'analyse croirait la fenêtre encore ouverte et autoriserait un message rapide derrière : c'est le défaut à
+ne pas laisser passer.
+
+**Ce qui est déjà en place pour ces trois points :**
+- `prochaineOuverture(depuis, timeZone, hours)` rend l'instant courant si on est déjà ouvert, l'ouverture
+  suivante sinon, et **`null` si toute la semaine est fermée** (l'appelant décide, et doit le dire à
+  l'écran) ;
+- le bloc Attente rend déjà `{ status: 'sleeping', resumeInMs }` : les deux modes neufs n'ont qu'à calculer
+  ce `resumeInMs` autrement, le reste du moteur ne bouge pas ;
+- le contexte d'évaluation (`EvalContext`) porte déjà `now`, `timeZone` et `businessHours`, mais il est
+  construit PARESSEUSEMENT : il faudra que le bloc Attente le demande, comme le fait le bloc Condition.
+
+### Ce qui est resté ouvert côté Julien
+
+- Activer les deux outils de l'agent « Conseiller IA Gan Prevoyance » (`mba_chercher_connaissance` et
+  `mba_escalader_humain` sont INACTIFS : c'est la cause de son essai raté du 2026-09-08).
+- Changer son modèle si le français le gêne (onglet Modèle de la fiche) : il est figé PAR AGENT à la
+  création, changer `AGENT_MODEL` ne touchera que les futurs. Recommandation : `anthropic/claude-haiku-4.5`.
+- Poser une photo de profil sur le numéro WhatsApp pour que la pastille de l'Accueil ait quelque chose à
+  montrer (aucun des deux numéros du parc n'en a).
+
+⚠️ **`inbox-envoi-scenario.spec.ts` tombe sous CHARGE** et seulement sous charge (quantifié : 15 exécutions
+isolées, 15 succès ; vert en CI). Ne pas le « réparer » : voir `documentation.md`.
+
 ## Refonte des menus : LES SIX LOTS SONT LIVRÉS (2026-09-08)
 
 Trois onglets de premier niveau, l'Inbox en boîte mail, et un Performance Lab dont la page d'accueil répond
