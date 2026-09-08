@@ -276,6 +276,27 @@ export interface AnalyzedConversation {
   /** Infos extraites par l'analyse (produit, budget, quantite...). `{}` si rien. */
   entities?: Record<string, unknown>;
 }
+/**
+ * Le damier « satisfaction x urgence » (lot F du 2026-09-08, migration 0121).
+ *
+ * Un point par CASE occupee du damier (les deux notes sont des entiers de 0 a 10 : 121 positions au plus),
+ * pas un point par conversation. `n` porte le nombre de conversations de la case.
+ */
+export interface NuageQualitatif {
+  points: Array<{ satisfaction: number; urgence: number; n: number }>;
+  /** Moyenne des conversations MESUREES. `null` si la periode n'en compte aucune. */
+  moyenne: { satisfaction: number; urgence: number } | null;
+  mesurees: number;
+  /**
+   * Analyses de la periode SANS les deux mesures : celles d'avant la migration, et celles ou le modele a
+   * omis les notes. L'ecran l'affiche : sans ce compte, un nuage clairseme se lirait comme une periode
+   * calme, et les analyses anciennes passeraient pour inexistantes.
+   */
+  sansMesure: number;
+}
+export function getNuageQualitatif(tenantId: string, range?: StatsRange): Promise<NuageQualitatif> {
+  return request<NuageQualitatif>(`/tenants/${tenantId}/stats/conversations/nuage${rangeQuery(range)}`);
+}
 export function getConversationAnalysisSummary(tenantId: string, range?: StatsRange): Promise<ConversationAnalysisSummary> {
   return request<ConversationAnalysisSummary>(`/tenants/${tenantId}/stats/conversations${rangeQuery(range)}`);
 }

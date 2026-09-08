@@ -28,6 +28,17 @@ export function fmtNum(n: number, locale: Locale): string {
   return n.toLocaleString(locale === 'en' ? 'en-GB' : 'fr-FR');
 }
 
+/**
+ * Note de 0 a 10 avec UNE decimale : « 6,8 » (fr) / « 6.8 » (en).
+ *
+ * Elle existe pour la moyenne du nuage qualitatif, qui est la seule valeur decimale de la console a ne pas
+ * etre un cout. `toFixed(1)` rendrait un point decimal dans les deux langues, a cote de nombres formates
+ * par `fmtNum` : deux conventions dans la meme phrase.
+ */
+export function fmtNote(n: number, locale: Locale): string {
+  return n.toLocaleString(locale === 'en' ? 'en-GB' : 'fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
 /** Pourcentage borné (num/den) sans décimale : « 42 % » (fr, espace) / « 42% » (en) ; '—' si dénominateur nul. */
 export function fmtPct(num: number, den: number, locale: Locale): string {
   if (den <= 0) return '—';

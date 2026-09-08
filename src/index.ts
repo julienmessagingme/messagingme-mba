@@ -703,6 +703,7 @@ async function main(): Promise<void> {
       },
       getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
       listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
+      getNuageQualitatif: (tenant, range) => conversationStatsStore.getNuageQualitatif(tenant, range),
     },
     workflowReports: {
       listReports: (tenant) => reportStore.list(tenant),

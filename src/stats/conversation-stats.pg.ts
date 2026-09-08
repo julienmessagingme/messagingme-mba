@@ -36,6 +36,33 @@ export interface ConversationAnalysisSummary {
   confidence: { lt50: number; from50to70: number; from70to90: number; gte90: number };
 }
 
+/**
+ * Le nuage « satisfaction x urgence » de la page de synthèse (lot F, migration 0121).
+ *
+ * 🔴 CE N'EST PAS UNE LISTE DE CONVERSATIONS, c'est un DAMIER. Les deux notes sont des entiers de 0 à 10 :
+ * il n'existe donc que 121 positions possibles, et une conversation de plus ne fait que grossir un point
+ * existant. On agrège en base plutôt que de descendre une ligne par conversation, ce qui borne la réponse
+ * quoi qu'il arrive (144 lignes au pire, cases incomplètes comprises) au lieu de la faire croître avec le
+ * trafic du client.
+ */
+export interface NuageQualitatif {
+  /** Une case occupée du damier : `n` conversations portent ce couple de notes. */
+  points: Array<{ satisfaction: number; urgence: number; n: number }>;
+  /** Moyenne des deux notes sur les conversations MESURÉES uniquement. `null` si aucune. */
+  moyenne: { satisfaction: number; urgence: number } | null;
+  /** Combien de conversations analysées de la plage portent les DEUX mesures. */
+  mesurees: number;
+  /**
+   * ...et combien n'en portent pas.
+   *
+   * 🔴 Ce compte est la raison d'être du reste. Les analyses d'avant la migration 0121 n'ont pas de mesure,
+   * et il n'y en aura jamais (on ne réanalyse pas). Un nuage qui les tairait laisserait croire que la
+   * période ne contient que ce qu'il montre ; un nuage qui les placerait en (0,0) affirmerait que ces
+   * clients étaient furieux et sans urgence. Il les compte à part, et l'écran le dit.
+   */
+  sansMesure: number;
+}
+
 export interface AnalyzedConversationsFilter {
   sentiment?: string;
   intent?: string;
@@ -160,6 +187,59 @@ export class PgConversationStatsStore {
       },
       topTopics: topics.rows.map((t) => ({ topic: t.topic, count: Number(t.n) })),
       confidence: { lt50: Number(r.c_lt50), from50to70: Number(r.c_50_70), from70to90: Number(r.c_70_90), gte90: Number(r.c_gte90) },
+    };
+  }
+
+  /**
+   * Le damier « satisfaction x urgence » de la plage, plus ce qu'il ne peut pas montrer.
+   *
+   * ⚠️ UNE SEULE REQUÊTE, et la moyenne se calcule ICI à partir de ses lignes, pas dans un second `avg()`.
+   * Deux requêtes verraient deux instants différents (une analyse peut s'écrire entre les deux) et
+   * afficheraient une moyenne qui ne tombe pas dans son propre nuage, ce qui se remarque à l'œil et ne
+   * s'explique pas. Le regroupement rend au plus 144 lignes, la somme pondérée est donc exacte et gratuite.
+   *
+   * Les fils de TEST sont écartés comme dans `getSummary` : même population, sinon les deux écrans du même
+   * onglet compteraient des choses différentes sous le même mot.
+   */
+  async getNuageQualitatif(tenantId: string, range: DateRange): Promise<NuageQualitatif> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ satisfaction: number | null; urgence: number | null; n: string }>(
+      `with ${BOUNDS_CTE}
+       select ca.satisfaction, ca.urgence, count(*)::int as n
+       from conversation_analysis ca, bounds b
+       where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
+         and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)
+       group by 1, 2`,
+      [tenantId, from, to, TZ],
+    );
+
+    const points: NuageQualitatif['points'] = [];
+    let mesurees = 0;
+    let sansMesure = 0;
+    let sommeSat = 0;
+    let sommeUrg = 0;
+    for (const r of res.rows) {
+      const n = Number(r.n);
+      // 🔴 Le test porte sur `null`, pas sur la fausseté : `0` est une mesure PARFAITEMENT valide (client
+      // très mécontent, ou aucune urgence). Un `if (!r.satisfaction)` rangerait ces conversations parmi les
+      // non mesurées, c'est-à-dire ferait disparaître du nuage exactement les points qui alarment.
+      if (r.satisfaction === null || r.urgence === null) {
+        sansMesure += n;
+        continue;
+      }
+      points.push({ satisfaction: r.satisfaction, urgence: r.urgence, n });
+      mesurees += n;
+      sommeSat += r.satisfaction * n;
+      sommeUrg += r.urgence * n;
+    }
+    // Ordre stable (ligne puis colonne) : le SQL n'en promet aucun sans `order by`, et une réponse dont
+    // l'ordre bouge d'un appel à l'autre ferait clignoter les clés React du nuage.
+    points.sort((a, b) => a.urgence - b.urgence || a.satisfaction - b.satisfaction);
+    return {
+      points,
+      moyenne: mesurees > 0 ? { satisfaction: sommeSat / mesurees, urgence: sommeUrg / mesurees } : null,
+      mesurees,
+      sansMesure,
     };
   }
 

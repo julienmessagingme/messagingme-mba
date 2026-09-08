@@ -53,6 +53,12 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       topTopics: [{ topic: 'devis', count: 2 }],
       confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
     }),
+    getNuageQualitatif: async () => ({
+      points: [{ satisfaction: 0, urgence: 9, n: 2 }, { satisfaction: 8, urgence: 1, n: 1 }],
+      moyenne: { satisfaction: 8 / 3, urgence: 19 / 3 },
+      mesurees: 3,
+      sansMesure: 11,
+    }),
     listAnalyzedConversations: async (_t, _r, f) => [
       { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: 'Le client demande un devis pour 50 unites.', entities: { quantite: 50 } },
     ],
@@ -140,6 +146,38 @@ describe('stats route', () => {
     // Exactement la borne : accepté. Sinon la borne refuserait un sujet que la base sait stocker.
     await a.inject({ method: 'GET', url: url(`topic=${'x'.repeat(120)}`), ...h(adminTok) });
     expect(captured[3]).toEqual({ topic: 'x'.repeat(120) });
+    await a.close();
+  });
+
+  it('GET /stats/conversations/nuage -> le damier + la moyenne + ce qui n’est pas mesuré', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/nuage?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const b = res.json<{ points: Array<{ satisfaction: number; urgence: number; n: number }>; mesurees: number; sansMesure: number }>();
+    expect(b.points).toHaveLength(2);
+    // 🔴 Le zéro survit au transport. Une satisfaction de 0 est une MESURE (client très mécontent), pas une
+    // absence : un `?? null` ou un `|| undefined` posé quelque part sur ce chemin ferait disparaître de
+    // l'écran exactement les conversations qui alarment.
+    expect(b.points[0]).toEqual({ satisfaction: 0, urgence: 9, n: 2 });
+    expect(b.sansMesure).toBe(11);
+    await a.close();
+  });
+
+  it('🔴 nuage sans câblage -> 503, jamais un nuage vide', async () => {
+    // Un nuage vide se lirait « aucune conversation mesurée sur la période », qui est une affirmation.
+    // La vérité serait « rien n'est branché ». Même choix que les contacts touchés.
+    const a = app({ stats: { getNuageQualitatif: undefined } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/nuage?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
+    await a.close();
+  });
+
+  it('GET /stats/conversations/nuage : agent -> 403, tenant croisé -> 403, plage invalide -> 400', async () => {
+    // La route est NEUVE : elle doit hériter des mêmes gardes que ses voisines, pas s'ouvrir à côté.
+    const a = app();
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/nuage?days=30', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/conversations/nuage?days=30', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/nuage?from=2026-01-10&to=2026-01-01', ...h(adminTok) })).statusCode).toBe(400);
     await a.close();
   });
 

@@ -6,6 +6,32 @@ export const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'auc
 export const HANDLED_BY = ['humain', 'automatise', 'mba'] as const;
 export type HandledBy = (typeof HANDLED_BY)[number];
 
+/** Bornes de l'échelle des deux notes (satisfaction, urgence). Le CHECK de la migration 0121 porte les mêmes. */
+export const NOTE_MIN = 0;
+export const NOTE_MAX = 10;
+
+/**
+ * Une note de 0 à 10 rendue par le modèle, TOLÉRANTE, parce qu'elle ne vaut pas une analyse perdue.
+ *
+ * `.catch(undefined)` et non une simple validation : sans lui, un modèle qui rend `12` ou `"8"` ferait
+ * échouer `safeParse` sur l'objet ENTIER, donc perdrait le sentiment, l'intention, le résumé et le reste
+ * pour une note. Même arbitrage qu'`abusive` et `summary`, écrit ici pour la même raison : une analyse
+ * perdue coûte plus cher qu'une mesure manquée.
+ *
+ * ⚠️ Ce qui est TOLÉRÉ et ce qui ne l'est pas, et pourquoi la frontière est là (mesuré sur zod 4.4) :
+ * - `8.5` devient `9` et `"9"` devient `9` : le modèle a bien rendu une mesure, la jeter perdrait ce qu'il
+ *   a dit alors qu'on sait le lire ;
+ * - `12`, `-1`, `"huit"`, `null` deviennent ABSENTS : ramener une valeur hors échelle à la borne
+ *   inventerait une donnée, et l'absence a déjà un sens exact ici, « pas de mesure ».
+ */
+const note0a10 = z
+  .preprocess((v) => {
+    const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+    return typeof n === 'number' && Number.isFinite(n) ? Math.round(n) : v;
+  }, z.number().int().min(NOTE_MIN).max(NOTE_MAX))
+  .optional()
+  .catch(undefined);
+
 /**
  * Sortie ATTENDUE du LLM (validée). `handled_by` et `exchanges_count` NE sont PAS demandés au LLM : ce sont des
  * FAITS déterministes calculés en code (moins de coût, jamais faux). Générique/agnostique du CRM : `action_suggestion`
@@ -40,6 +66,16 @@ export const llmOutputSchema = z.object({
    * Bloquer un client reste une décision humaine, prise depuis l'écran.
    */
   abusive: z.boolean().default(false),
+  /**
+   * Où en est le client (0 = très mécontent, 10 = très satisfait) et à quel point ça presse (0 = aucune
+   * attente particulière, 10 = il attend une réponse immédiate). Migration 0121, lot F du 2026-09-08.
+   *
+   * 🔴 `undefined` VEUT DIRE « PAS DE MESURE », ET JAMAIS `0`. La colonne est nullable pour la même raison :
+   * les analyses d'avant la migration n'en ont pas, et les compter comme zéro rangerait tout l'historique
+   * dans le coin « client furieux, urgence nulle ». Le nuage de points ignore ces lignes et dit combien.
+   */
+  satisfaction: note0a10,
+  urgence: note0a10,
 });
 export type LlmOutput = z.infer<typeof llmOutputSchema>;
 

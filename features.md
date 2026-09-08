@@ -45,7 +45,8 @@ RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API) · Paramètre
 
 **Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel / Erreurs) · Qualitatif ·
 Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.
-Une page de synthèse s'ajoutera en tête (coût par engagement, urgence et satisfaction).
+**Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte le nuage
+« urgence et satisfaction », et bientôt le coût par engagement.
 
 **Inbox** : **aucune barre de navigation**, ni sur ordinateur ni dans le tiroir mobile. L'écran portera son
 propre menu de dossiers, façon boîte mail.
@@ -937,6 +938,23 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Analytics (menu Analytics)
 
+- ✅ **Page de synthèse « Synthèse », en tête du Performance Lab** (2026-09-08) : la première page de
+  l'onglet, à l'adresse `/performance`. Elle répond à des questions que les autres écrans ne posent pas :
+  où en sont les conversations, et (bientôt) ce que coûte un engagement.
+- ✅ **Nuage « urgence et satisfaction »** (2026-09-08, sur la page de synthèse). L'analyse de conversation
+  note désormais **deux mesures de plus, de 0 à 10** : la **satisfaction** (0 = client très mécontent,
+  10 = très satisfait) et l'**urgence** (0 = aucune attente particulière, 10 = il attend une réponse
+  immédiate). Le graphe place une conversation par point, **satisfaction en abscisse, urgence en
+  ordonnée** : le coin qui alarme, « très urgent et très mécontent », tombe donc **en haut à gauche**, là
+  où l'œil va en premier, et il est teinté. Un point empile les conversations de même note (il grossit), et
+  une **croix cerclée** marque la moyenne.
+  🔴 **Le graphe démarre VIDE, et il le dit.** Les deux notes n'existent que depuis le 2026-09-08 : seules
+  les conversations analysées APRÈS cette date en portent. L'historique n'est pas réanalysé (réanalyser
+  changerait des analyses que des humains ont peut-être déjà lues, pour quatorze points sur un nuage qui se
+  remplit tout seul). Le nuage se garnit donc au fil des jours.
+  ⚠️ **Les analyses sans ces notes sont comptées à part, sous le graphe, et ne valent PAS zéro.** Les
+  placer en (0,0) rangerait tout l'historique dans le coin « client furieux, urgence nulle » et ferait
+  mentir la moyenne.
 - ✅ **Trois pages** : **Quantitatif** (volumes, coûts, erreurs, funnels), **Qualitatif** (ce que les
   conversations disent) et **Mes tableaux** (2026-08-19, ci-dessous). Les deux premières ont le **même bandeau
   de période** et la **même

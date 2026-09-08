@@ -7,7 +7,7 @@ import type { CostSeries } from '../stats/cost';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
-import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter } from '../stats/conversation-stats.pg';
+import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter, NuageQualitatif } from '../stats/conversation-stats.pg';
 import { scopeTenant, estUuid } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
@@ -59,6 +59,14 @@ export interface StatsRouteDeps {
   getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
   /** Liste des dernières conversations analysées (quali), filtrable. */
   listAnalyzedConversations(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]>;
+  /**
+   * Le damier « satisfaction x urgence » de la page de synthèse (lot F).
+   *
+   * OPTIONNELLE, et 503 quand elle manque, comme `getWorkflowNodeCounts` juste en dessous : un nuage vide
+   * se lirait « aucune conversation mesurée sur la période », qui est une affirmation, alors que la vérité
+   * serait « rien n'est branché ». L'écran, lui, distingue déjà « vide » de « pas encore de mesures ».
+   */
+  getNuageQualitatif?(tenantId: string, range: DateRange): Promise<NuageQualitatif>;
   /**
    * Mesures d'un SCÉNARIO, bloc par bloc (« Mes tableaux »). Optionnelle : absente -> 503 plutôt qu'une liste
    * vide, qui se lirait « ce scénario n'a rien produit » alors que rien n'est branché.
@@ -228,6 +236,22 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getConversationSummary(tenant, r.range));
+  });
+
+  /**
+   * Le damier « satisfaction x urgence » de la page de synthèse (lot F).
+   *
+   * ⚠️ Route À PART de `/stats/conversations`, alors qu'elle lit la même table sur la même plage : la page
+   * de synthèse n'a besoin QUE de ce damier, et le résumé quali transporte une vingtaine de compteurs plus
+   * les dix sujets fréquents. Les fondre ferait payer à chaque écran ce dont l'autre a besoin.
+   */
+  app.get('/tenants/:tenantId/stats/conversations/nuage', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getNuageQualitatif) return reply.code(503).send({ error: 'nuage qualitatif non configure' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getNuageQualitatif(tenant, r.range));
   });
 
   // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&topic=&limit=.

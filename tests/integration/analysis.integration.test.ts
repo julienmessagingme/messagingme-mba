@@ -136,6 +136,38 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(await lire()).toBeNull();
   });
 
+  it('🔴 save : les deux NOTES font l’aller-retour, et 0 ne se confond pas avec l’absence (migration 0121)', async () => {
+    // Même exigence que le résumé juste au-dessus, et pour une raison plus grave : ici l'absence et le zéro
+    // sont deux valeurs LÉGITIMES qui se ressemblent. `0` veut dire « client très mécontent » (le coin du
+    // nuage qui alarme), `null` veut dire « cette analyse n'a pas de mesure ». Un `?? 0` posé n'importe où
+    // sur ce chemin ferait apparaître tout l'historique dans ce coin ; un `|| null` ferait disparaître les
+    // vrais zéros. Seul un aller-retour contre une vraie base sépare les deux, et prouve au passage que les
+    // deux paramètres tombent dans les BONNES colonnes d'un INSERT qui en compte désormais dix-huit.
+    const store = new PgConversationAnalysisStore(pool);
+    const conv = await insertConv('33600100098', { status: 'queued' });
+    const base: ConversationAnalysis = {
+      sentiment: 'negatif', intent: 'reclamation', topic: 'retard', resolved: false, entities: {},
+      action_suggestion: 'escalader', confidence: 0.8, justification: 'client presse', handled_by: 'humain', exchanges_count: 4, abusive: false,
+    };
+    const lire = async (): Promise<{ satisfaction: number | null; urgence: number | null }> =>
+      (await pool.query<{ satisfaction: number | null; urgence: number | null }>(
+        `select satisfaction, urgence from conversation_analysis where conversation_id = $1`, [conv])).rows[0]!;
+
+    await store.save(conv, tenantId, { ...base, satisfaction: 0, urgence: 10 }, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    expect(await lire()).toEqual({ satisfaction: 0, urgence: 10 });
+
+    // Le modèle ne les a pas rendues (le schéma le tolère exprès) -> NULL, et l'upsert doit EFFACER les
+    // valeurs précédentes, sinon une réanalyse muette laisserait en place des notes qui ne sont plus dites.
+    await store.save(conv, tenantId, base, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    expect(await lire()).toEqual({ satisfaction: null, urgence: null });
+
+    // La borne haute est tenue EN BASE aussi (CHECK de la 0121), pas seulement par le schéma Zod : une
+    // écriture par un autre chemin ne pourrait pas y glisser une note hors échelle.
+    await expect(
+      pool.query(`update conversation_analysis set satisfaction = 11 where conversation_id = $1`, [conv]),
+    ).rejects.toThrow();
+  });
+
   it('save : un message postérieur à la borne repasse la conversation en pending (course d\'analyse)', async () => {
     const store = new PgConversationAnalysisStore(pool);
     const conv = await insertConv('33600100035', { status: 'queued' });

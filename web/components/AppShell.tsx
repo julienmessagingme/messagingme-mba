@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { cheminDeNav, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
+type Tab = 'accueil' | 'perf-synthese' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -166,11 +166,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * Le groupe « Quantitatif » n'en avait déjà pas.
    */
   const NAV_PERF: NavEntree[] = [
-    // ⚠️ `/dashboard` reste l adresse du PREMIER sous-onglet, pas une page d aiguillage : trois specs
-    // Playwright et des liens deja distribues y pointent.
-    // 🔴 Et depuis le 2026-09-08, c est AUSSI la porte d entree de l onglet Performance Lab. La tentation
-    // sera d en faire une page d aiguillage « choisissez un tableau » : ce serait ajouter un clic a tout le
-    // monde et casser les liens existants. La page de synthese des lots E et F prendra sa propre adresse.
+    /**
+     * La synthese, PREMIERE entree et porte d entree de l onglet depuis le lot F (2026-09-08).
+     *
+     * ⚠️ `/dashboard` reste l adresse du premier sous-onglet quantitatif et n a PAS bouge : trois specs
+     * Playwright et des liens deja distribues y pointent. Ce qui change, c est ou l onglet emmene par
+     * defaut, et c est exactement ce que le lot A avait annonce (« la page de synthese des lots E et F
+     * prendra sa propre adresse »). Elle ne fait pas d aiguillage : elle porte ce que les sous-onglets ne
+     * montrent nulle part, donc elle n ajoute un clic a personne.
+     */
+    { key: 'perf-synthese', href: '/performance', label: t('Synthèse', 'Summary') },
     { key: 'quantitatif', label: t('Quantitatif', 'Quantitative'), children: [
       { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
       { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
@@ -339,8 +344,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   /**
    * Les trois onglets et leur point d'entrée.
    *
-   * ⚠️ La destination du Performance Lab est `/dashboard`, sa PREMIÈRE entrée, et non une page de synthèse :
-   * celle-ci arrive avec les lots E et F, ceux qui lui donnent son contenu. Ce lot ne crée aucune adresse.
+   * ⚠️ La destination du Performance Lab est passée de `/dashboard` à `/performance` le 2026-09-08, quand
+   * le lot F a donné son premier contenu à la page de synthèse. C'était le plan écrit du lot A, qui avait
+   * refusé de créer l'adresse tant qu'elle n'aurait rien à montrer. `/dashboard` n'a pas bougé et reste la
+   * première entrée du bloc Quantitatif.
    */
   const ONGLETS_UI: Array<{ cle: Onglet; label: string; href: string; badge?: number }> = [
     { cle: 'console', label: t('Console', 'Console'), href: '/accueil' },
@@ -354,7 +361,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
      * écrit, ce qui n'était pas le cas avant.
      */
     { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/inbox', badge: unread },
-    { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/dashboard' },
+    { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/performance' },
   ];
   /**
    * 🔴 Un compte `agent` n'a accès QU'À l'inbox (`adminOnly` plus haut, et le serveur derrière lui). Lui

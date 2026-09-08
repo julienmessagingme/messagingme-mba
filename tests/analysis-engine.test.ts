@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTranscript, deduceHandledBy, countExchanges, parseLlmOutput, type AnalysisMessage } from '../src/analysis/engine';
+import { buildTranscript, buildPrompt, deduceHandledBy, countExchanges, parseLlmOutput, type AnalysisMessage } from '../src/analysis/engine';
 
 const valid = {
   sentiment: 'positif', intent: 'demande_devis', topic: 'devis 50 licences', resolved: false,
@@ -86,5 +86,55 @@ describe('engine — parseLlmOutput', () => {
   });
   it('confidence hors [0,1] -> null', () => {
     expect(parseLlmOutput(JSON.stringify({ ...valid, confidence: 1.5 }))).toBeNull();
+  });
+});
+
+/**
+ * Les deux notes du lot F (migration 0121). Ce bloc garde une seule idée, déclinée : une note ne vaut
+ * JAMAIS une analyse. Le modèle peut l'omettre, la rendre en texte, la rendre décimale ou hors échelle ;
+ * dans tous les cas l'analyse doit survivre, et c'est la MESURE qui manque, pas le reste.
+ */
+describe('engine — satisfaction et urgence (lot F)', () => {
+  it('🔴 absentes -> analyse valide, et les deux champs restent INDÉFINIS (jamais 0)', () => {
+    // C'est le cœur du lot : `undefined` veut dire « pas de mesure », `0` veut dire « client très
+    // mécontent ». Les confondre rangerait tout l'historique dans le coin qui alarme.
+    const sortie = parseLlmOutput(JSON.stringify(valid));
+    expect(sortie).not.toBeNull();
+    expect(sortie?.satisfaction).toBeUndefined();
+    expect(sortie?.urgence).toBeUndefined();
+  });
+
+  it('présentes et valides -> conservées, 0 compris', () => {
+    const sortie = parseLlmOutput(JSON.stringify({ ...valid, satisfaction: 0, urgence: 10 }));
+    expect(sortie?.satisfaction).toBe(0);
+    expect(sortie?.urgence).toBe(10);
+  });
+
+  it('décimale ou numérique en texte -> arrondie, parce que le modèle a bien rendu une mesure', () => {
+    expect(parseLlmOutput(JSON.stringify({ ...valid, satisfaction: 8.5 }))?.satisfaction).toBe(9);
+    expect(parseLlmOutput(JSON.stringify({ ...valid, urgence: '7' }))?.urgence).toBe(7);
+  });
+
+  it('🔴 note ABERRANTE -> la note est perdue, PAS l’analyse', () => {
+    // Sans le `.catch(undefined)` du schéma, `safeParse` échouerait sur l'objet entier : on perdrait le
+    // sentiment, l'intention, le résumé et le reste pour une note hors échelle. Une analyse coûte un
+    // appel LLM ; une mesure manquée ne coûte qu'un point de moins sur le nuage.
+    for (const aberrante of [12, -1, 'huit', null]) {
+      const sortie = parseLlmOutput(JSON.stringify({ ...valid, satisfaction: aberrante, urgence: aberrante }));
+      expect(sortie, `satisfaction=${JSON.stringify(aberrante)}`).not.toBeNull();
+      expect(sortie?.sentiment).toBe('positif');
+      expect(sortie?.satisfaction).toBeUndefined();
+      expect(sortie?.urgence).toBeUndefined();
+    }
+  });
+
+  it('le PROMPT demande les deux notes avec leurs bornes', () => {
+    // Une échelle sans ses extrémités se lit dans les deux sens : « 0 » voudrait dire « aucune urgence »
+    // pour un modèle et « urgence maximale » pour un autre, et le nuage entier basculerait sans un mot.
+    const { system } = buildPrompt('Client: bonjour');
+    expect(system).toContain('satisfaction');
+    expect(system).toContain('urgence');
+    expect(system).toMatch(/0 = client très mécontent/);
+    expect(system).toMatch(/10 = le client attend une réponse immédiate/);
   });
 });

@@ -621,6 +621,72 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('🔴 PgConversationStatsStore.getNuageQualitatif : 0 est une MESURE, null n’en est pas une (lot F)', async () => {
+    // C'est le test du lot F. Les deux notes sont arrivées avec la migration 0121, donc l'écrasante
+    // majorité des analyses de la base n'en a pas et n'en aura jamais. Deux façons de se tromper, toutes
+    // deux invisibles à la compilation et plausibles à la lecture :
+    //   - traiter `null` comme `0` : tout l'historique se range dans le coin « client furieux, urgence
+    //     nulle », et la moyenne du nuage devient fausse dans le sens le plus alarmant ;
+    //   - traiter `0` comme une absence (un `if (!satisfaction)` suffit) : les conversations qui alarment
+    //     VRAIMENT disparaissent du graphe, et l'écran a l'air sain parce qu'il ne montre plus rien.
+    // Une base réelle est le seul endroit où la distinction se prouve : un `null` de Postgres traverse le
+    // pilote, la conversion de type et l'agrégat.
+    const { PgConversationStatsStore } = await import('../../src/stats/conversation-stats.pg');
+    const store = new PgConversationStatsStore(pool, true, 365);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const range = { from: iso(new Date(Date.now() - 86_400_000)), to: iso(new Date(Date.now() + 86_400_000)) };
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-nuage') returning id`)).rows[0]!.id;
+    try {
+      const mkConv = async (wa: string, estTest = false) => (await pool.query<{ id: string }>(
+        `insert into conversations (tenant_id, wa_id, last_message_at, is_test) values ($1,$2, now(), $3) returning id`,
+        [t, wa, estTest],
+      )).rows[0]!.id;
+      const insAna = (convId: string, satisfaction: number | null, urgence: number | null) =>
+        pool.query(
+          `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by,
+             exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model, satisfaction, urgence)
+           values ($1,$2,'neutre','autre','sujet',false,'humain',2,'aucune',0.8,'test','anthropic','m',$3,$4)`,
+          [convId, t, satisfaction, urgence],
+        );
+
+      // Deux conversations sur la MÊME case (le damier les empile), une dans le coin qui alarme, une sans
+      // mesure du tout, une à moitié mesurée, et une conversation de TEST qui ne doit peser sur rien.
+      await insAna(await mkConv('33690000001'), 8, 2);
+      await insAna(await mkConv('33690000002'), 8, 2);
+      await insAna(await mkConv('33690000003'), 0, 10);
+      await insAna(await mkConv('33690000004'), null, null);
+      await insAna(await mkConv('33690000005'), 7, null);
+      await insAna(await mkConv('33690000006', true), 9, 9);
+
+      const n = await store.getNuageQualitatif(t, range);
+
+      // Le zéro est là, avec sa vraie position. C'est le point qui alarme : le perdre est le pire des
+      // deux défauts possibles, parce que l'écran reste crédible sans lui.
+      expect(n.points).toEqual([
+        { satisfaction: 8, urgence: 2, n: 2 },
+        { satisfaction: 0, urgence: 10, n: 1 },
+      ]);
+      expect(n.mesurees).toBe(3);
+      // Les DEUX lignes incomplètes comptent comme « sans mesure » : un point a besoin de ses deux
+      // coordonnées, une note seule ne se place nulle part.
+      expect(n.sansMesure).toBe(2);
+      // Moyenne pondérée par le nombre de conversations, pas par le nombre de cases : (8+8+0)/3 et
+      // (2+2+10)/3. Une moyenne par case rendrait 4 et 6, ce qui tomberait à côté du nuage qu'elle résume.
+      expect(n.moyenne!.satisfaction).toBeCloseTo(16 / 3);
+      expect(n.moyenne!.urgence).toBeCloseTo(14 / 3);
+      // La conversation de TEST est exclue, comme dans `getSummary` : deux écrans du même onglet qui
+      // comptent des populations différentes sous le même mot, c'est un client qui compare et l'un des
+      // deux qui passe pour faux.
+      expect(n.points.some((p) => p.satisfaction === 9 && p.urgence === 9)).toBe(false);
+
+      // Scope tenant : rien de ce jeu ne fuit chez le voisin.
+      const voisin = await store.getNuageQualitatif(tenantId, range);
+      expect(voisin.points.some((p) => p.satisfaction === 0 && p.urgence === 10)).toBe(false);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
   it('PgContactStore.query/count/idsForFilters : filtres composables (Lot 8), scopés tenant', async () => {
     const store = new PgContactStore(pool);
     // Tenant DÉDIÉ à ce test (jeu de données isolé, pas de collision avec les autres tests contacts).

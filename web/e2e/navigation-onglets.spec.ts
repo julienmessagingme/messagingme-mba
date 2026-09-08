@@ -43,6 +43,9 @@ test.describe('Navigation : les trois onglets', () => {
     ['/inbox', 'inbox'],
     ['/dashboard', 'perf'],
     ['/dashboard/couts', 'perf'],
+    // La synthese, adresse NEUVE du lot F (2026-09-08). C'est la seule que la refonte des menus ait
+    // creee, donc la seule qui pouvait n'appartenir a aucun arbre : elle est ici pour cette raison.
+    ['/performance', 'perf'],
   ] as const) {
     test(`arriver sur ${chemin} active l’onglet « ${attendu} »`, async ({ page }) => {
       await mock(page, ADMIN);
@@ -119,10 +122,16 @@ test.describe('Navigation : les trois onglets', () => {
   });
 
   test('cliquer sur un onglet emmène à sa page d’entrée', async ({ page }) => {
+    /**
+     * ⚠️ LA DESTINATION A CHANGÉ LE 2026-09-08, LE CAS NON. Le Performance Lab ouvrait `/dashboard` faute
+     * de mieux : le lot A avait refusé de créer la page de synthèse tant qu'elle n'aurait rien à montrer.
+     * Le lot F lui donne son premier contenu, donc l'onglet ouvre `/performance`. Ce que ce test garde est
+     * inchangé : un onglet emmène à SA page d'entrée, et s'y marque courant.
+     */
     await mock(page, ADMIN);
     await page.goto('/accueil');
     await page.getByTestId('onglet-perf').click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page).toHaveURL(/\/performance$/);
     await expect(page.getByTestId('onglet-perf')).toHaveAttribute('aria-current', 'page');
   });
 });

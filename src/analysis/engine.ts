@@ -1,4 +1,4 @@
-import { llmOutputSchema, type LlmOutput, type HandledBy } from './schema';
+import { llmOutputSchema, NOTE_MIN, NOTE_MAX, type LlmOutput, type HandledBy } from './schema';
 
 /** Un message de conversation, forme minimale utilisée par l'analyse (pur, agnostique du stockage). */
 export interface AnalysisMessage {
@@ -67,6 +67,13 @@ const SYSTEM_INSTRUCTIONS = [
   // ne plus la lire du tout.
   '- abusive : true UNIQUEMENT si le client insulte ou agresse verbalement l\'entreprise ou ses employés',
   '  (grossièretés dirigées, menaces, propos haineux). Un simple mécontentement, même vif, reste false.',
+  // Deux ENTIERS et non deux adjectifs : ces deux notes sont les axes d'un nuage de points, donc elles
+  // doivent se comparer entre conversations. Les bornes sont RÉPÉTÉES au modèle (0 = ..., 10 = ...) parce
+  // qu'une échelle sans ses extrémités se lit dans les deux sens : « 0 » voudrait dire « aucune urgence »
+  // pour l'un et « urgence maximale » pour l'autre, et le nuage entier basculerait sans rien signaler.
+  `- satisfaction : entier de ${NOTE_MIN} à ${NOTE_MAX}. ${NOTE_MIN} = client très mécontent, ${NOTE_MAX} = client très satisfait.`,
+  `- urgence : entier de ${NOTE_MIN} à ${NOTE_MAX}. ${NOTE_MIN} = aucune attente particulière, ${NOTE_MAX} = le client attend une réponse immédiate.`,
+  '  Ces deux notes portent sur le CLIENT, pas sur la qualité de la réponse de l\'entreprise.',
 ].join('\n');
 
 /** Construit le prompt (system + user) pour le LLM à partir du transcript. */

@@ -106,20 +106,28 @@ export class PgConversationAnalysisStore {
       await client.query(
         `insert into conversation_analysis
            (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, entities,
-            action_suggestion, confidence, justification, llm_provider, llm_model, abusive, summary)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16)
+            action_suggestion, confidence, justification, llm_provider, llm_model, abusive, summary,
+            satisfaction, urgence)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18)
          on conflict (conversation_id) do update set
            tenant_id = excluded.tenant_id, sentiment = excluded.sentiment, intent = excluded.intent,
            topic = excluded.topic, resolved = excluded.resolved, handled_by = excluded.handled_by,
            exchanges_count = excluded.exchanges_count, entities = excluded.entities,
            action_suggestion = excluded.action_suggestion, confidence = excluded.confidence,
            justification = excluded.justification, llm_provider = excluded.llm_provider, llm_model = excluded.llm_model,
-           abusive = excluded.abusive, summary = excluded.summary, created_at = now()`,
+           abusive = excluded.abusive, summary = excluded.summary,
+           satisfaction = excluded.satisfaction, urgence = excluded.urgence, created_at = now()`,
         // `summary` : une chaîne vide vaut absence. Le modèle peut rendre le champ vide plutôt que de
         // l'omettre, et un résumé vide affiché comme un résumé serait pire qu'un repli assumé.
+        //
+        // 🔴 `satisfaction` et `urgence` : `?? null`, JAMAIS `?? 0`. Le modèle peut les omettre (le schéma
+        // le tolère exprès pour ne pas perdre l'analyse entière), et un zéro écrit à sa place se lirait
+        // « client furieux, aucune urgence », c'est-à-dire l'inverse d'une absence de mesure. La colonne
+        // est nullable pour porter cette différence, et le nuage de points en dépend.
         [conversationId, tenantId, a.sentiment, a.intent, a.topic, a.resolved, a.handled_by, a.exchanges_count,
           JSON.stringify(a.entities), a.action_suggestion, a.confidence, a.justification, model.provider, model.model,
-          a.abusive === true, a.summary !== undefined && a.summary.trim() !== '' ? a.summary : null],
+          a.abusive === true, a.summary !== undefined && a.summary.trim() !== '' ? a.summary : null,
+          a.satisfaction ?? null, a.urgence ?? null],
       );
       await client.query(
         `update conversations set
@@ -168,6 +176,13 @@ export class PgConversationAnalysisStore {
    * {conversationId, tenantId} et refetch l'état frais ICI : sans ça, un rattrapage rejouerait un snapshot figé
    * qui, si la conversation a été réanalysée entre-temps (analyzed_at avancé -> eventId neuf), s'ingérerait comme
    * "nouveau" côté mm-hubspot avec un contenu périmé. null si l'analyse a disparu. `entities` (jsonb) est déjà parsé.
+   */
+  /**
+   * ⚠️ `satisfaction` et `urgence` (migration 0121) ne sont VOLONTAIREMENT pas relues ici. Ce que rend cette
+   * methode part vers le connecteur HubSpot (`buildEvent` etale l'objet dans le champ `analysis`) : les
+   * ajouter changerait un contrat inter-depots que rien de ce lot ne demande de changer. Elles vivent pour
+   * l'instant dans le seul ecran qui les montre, la page de synthese. Le jour ou HubSpot doit les recevoir,
+   * c'est ici qu'on les ajoute, et cote connecteur qu'on les accueille.
    */
   async getStored(conversationId: string): Promise<StoredConversationAnalysis | null> {
     const res = await this.pool.query<{
