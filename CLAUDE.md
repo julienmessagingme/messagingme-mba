@@ -79,14 +79,18 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0118**, le 2026-09-08 (la PROVENANCE d'une fiche de connaissance, `source_type` et
-`source_nom` : une fiche issue d'un PDF était jusque-là indiscernable d'une fiche tapée à la main, les deux
-ayant `source_url` à null, et l'écran ne peut pas montrer ce qu'il ne sait pas). **0119 est ÉCRITE et EN
-ATTENTE** (`agent_test_runs`, l'historique des essais du bac à sable, gardé 14 jours). **Prochaine libre = 0120.**
+**Dernière appliquée : 0119**, le 2026-09-08 (`agent_test_runs`, l'historique des essais du bac à sable,
+gardé 14 jours). **Prochaine libre = 0120.**
 
-0119 est le cas d'école de l'ordre : elle CRÉE une table que le code écrit, donc elle passe AVANT le
-déploiement. La route, elle, tient sans : son dépôt d'essais est OPTIONNEL et la liste rend `{essais: []}`
-quand il manque, ce qui permet de déployer l'écran avant la table sans que rien ne casse.
+0119 est le cas d'école de l'ordre : elle CRÉE une table que le code écrit, donc elle est passée AVANT le
+déploiement (image construite, `migrate`, puis `up -d --build`). La route, elle, tient sans : son dépôt
+d'essais est OPTIONNEL et la liste rend `{essais: []}` quand il manque, ce qui permet de déployer l'écran
+avant la table sans que rien ne casse. Vérifiée après coup en interrogeant `pg_indexes` et
+`schema_migrations`, pas en constatant l'absence d'erreur dans les journaux.
+
+Avant elle : **0118** le 2026-09-08 (la PROVENANCE d'une fiche de connaissance, `source_type` et
+`source_nom` : une fiche issue d'un PDF était jusque-là indiscernable d'une fiche tapée à la main, les deux
+ayant `source_url` à null, et l'écran ne peut pas montrer ce qu'il ne sait pas).
 
 ⚠️ **CETTE LIGNE A DÉRIVÉ UNE FOIS DE PLUS LE 2026-09-08, ET DE MON FAIT.** Elle annonçait encore 0116 alors
 que 0117 était appliquée : l'édition qui devait la mettre à jour n'a pas pris, et je ne l'ai pas relue. Le
