@@ -56,8 +56,8 @@ l'onglet déduit de la page active (aucune des 33 pages n'a été touchée), auc
 l'Inbox en boîte mail (dossiers Tout / À traiter / Signalé / Archivé avec leurs compteurs), l'archivage
 réversible (migration 0120) et la charge par collaborateur. **Reste E et F.**
 
-⚠️ **La migration 0120 attend d'être appliquée en production** : elle ajoute une colonne que le code écrit,
-donc elle passe AVANT le déploiement (`compose build mba-api`, puis `migrate`, puis `up -d --build`).
+**Déployé le 2026-09-08 au soir**, migration 0120 appliquée AVANT le code qui l'écrit, colonne et index
+vérifiés en base, les six chemins publics répondent.
 
 **Six lots, dans cet ordre** : A les onglets (seul, il touche les 33 pages sans changer de fonctionnalité),
 puis B+C+D ensemble (un seul écran, une seule idée), puis F (il demande du TEMPS DE COLLECTE : seules les

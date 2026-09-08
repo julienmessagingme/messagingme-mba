@@ -79,8 +79,15 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0119**, le 2026-09-08 (`agent_test_runs`, l'historique des essais du bac à sable,
-gardé 14 jours). **Prochaine libre = 0120.**
+**Dernière appliquée : 0120**, le 2026-09-08 (`conversations.archived_at` et son index PARTIEL : ranger une
+conversation finie sans rien effacer, l'Inbox étant passée en boîte mail). **Prochaine libre = 0121.**
+
+Vérifiée AVANT le déploiement du code qui l'écrit, et vérifiée EN BASE plutôt que par l'absence d'erreur :
+`information_schema` pour la colonne, `pg_indexes` pour l'index partiel, et la requête du chemin chaud
+exécutée pour de vrai. Sans trafic, un silence dans les journaux ne prouve rien.
+
+Avant elle : **0119** le 2026-09-08 (`agent_test_runs`, l'historique des essais du bac à sable, gardé
+14 jours).
 
 0119 est le cas d'école de l'ordre : elle CRÉE une table que le code écrit, donc elle est passée AVANT le
 déploiement (image construite, `migrate`, puis `up -d --build`). La route, elle, tient sans : son dépôt
