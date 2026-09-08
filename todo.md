@@ -73,7 +73,7 @@ angles morts et deux des trois confirmés sont des **régressions que j'avais in
   repartait par le repli technique au lieu de la branche prévue, et c'est le cas le plus fréquent. ⚠️ Le test
   unitaire du balayage ne voyait PAS le câblage du worker : une garde qui lit la source a été ajoutée, comme
   pour le plafond de campagne. Troisième fois que ce piège se présente.
-- ~~**P2, l'index partiel de la 0112.**~~ **CORRIGÉ** (migration 0113, non bloquante, en attente).
+- ~~**P2, l'index partiel de la 0112.**~~ **CORRIGÉ** (migration 0113, appliquée ; la base est à 0116, cf. le compteur de CLAUDE.md, seule source).
 - **P1b, l'escalade humaine : RÉFUSÉ, et c'est un arbitrage.** Les faits sont vrais, c'est le seul couple
   « clore puis sortir » qui ne préserve pas la marque. Mais poser la marque **dégrade le cas le plus
   probable** : le rattrapage existant (le message suivant du contact remonte le fil en inbox ET escalade) est
