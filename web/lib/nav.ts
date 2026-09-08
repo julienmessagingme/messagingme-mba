@@ -39,3 +39,36 @@ export function cheminDeNav(items: NavEntree[], key: string): string[] {
   }
   return [];
 }
+
+/**
+ * Les trois onglets de premier niveau (2026-09-08).
+ *
+ * `console` = configurer et opérer · `inbox` = traiter les conversations · `perf` = lire les résultats.
+ * Trois métiers qui ne se pratiquent ni au même moment ni par les mêmes personnes, et que la barre unique
+ * mettait sur le même plan : un opérateur qui passe sa journée dans l'Inbox traversait un menu de quinze
+ * entrées dont il n'en utilisait qu'une.
+ */
+export const ONGLETS = ['console', 'inbox', 'perf'] as const;
+export type Onglet = (typeof ONGLETS)[number];
+
+/** Cette clé est-elle quelque part dans cet arbre, à n'importe quelle profondeur ? */
+export function contientLaCle(items: NavEntree[], key: string): boolean {
+  return items.some((item) => item.key === key || (item.children ? contientLaCle(item.children, key) : false));
+}
+
+/**
+ * L'onglet qui contient cette page.
+ *
+ * 🔴 POURQUOI C'EST UNE DÉDUCTION ET PAS UNE PROPRIÉTÉ. Trente-trois pages passent déjà leur clé à
+ * `AppShell`. Leur faire passer AUSSI leur onglet, ce serait trente-trois occasions d'écrire le mauvais, et
+ * une page ajoutée plus tard n'en aurait aucun. La nav sait déjà où vit chaque page : on le lui demande,
+ * exactement comme `cheminDeNav` juste au-dessus lui demande les groupes à déplier.
+ *
+ * ⚠️ Une clé INCONNUE rend `console`, elle ne jette pas. Même parti pris que `cheminDeNav` : une page dont
+ * l'onglet n'a pas été déclaré doit s'afficher dans un onglet plausible, pas faire disparaître la barre
+ * entière. Ce qui empêche ce cas d'exister n'est pas ce repli, c'est le test de couverture du type `Tab`
+ * (`web/lib/nav.test.ts`), qui exige que chaque page appartienne à un arbre et à un seul.
+ */
+export function ongletDeLaPage(arbres: Record<Onglet, NavEntree[]>, key: string): Onglet {
+  return ONGLETS.find((o) => contientLaCle(arbres[o], key)) ?? 'console';
+}

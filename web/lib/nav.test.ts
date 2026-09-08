@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { cheminDeNav, type NavEntree } from './nav';
+import { readFile } from 'node:fs/promises';
+import { cheminDeNav, contientLaCle, ongletDeLaPage, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -72,5 +73,60 @@ describe('cheminDeNav', () => {
     // pour le refermer le rouvrirait au rendu suivant.
     expect(cheminDeNav(NAV, 'ia')).toEqual([]);
     expect(cheminDeNav(NAV, 'mba')).toEqual(['ia']);
+  });
+});
+
+describe('contientLaCle', () => {
+  const items: NavEntree[] = [{ key: 'a', label: 'A', children: [{ key: 'b', label: 'B', children: [{ key: 'c', href: '/c', label: 'C' }] }] }];
+
+  it('descend à toutes les profondeurs', () => {
+    for (const k of ['a', 'b', 'c']) expect(contientLaCle(items, k), k).toBe(true);
+  });
+
+  it('ne trouve pas ce qui n’y est pas', () => {
+    expect(contientLaCle(items, 'z')).toBe(false);
+    expect(contientLaCle([], 'a')).toBe(false);
+  });
+});
+
+/**
+ * L'onglet qui contient une page.
+ *
+ * Ce qu'on garde ici, ce n'est pas « la fonction rend une chaîne », c'est ce qu'une déduction fausse produit
+ * à l'écran : la page s'affiche sous le mauvais onglet, donc avec le mauvais menu, et l'utilisateur ne
+ * retrouve plus l'entrée par laquelle il vient d'arriver.
+ */
+describe('ongletDeLaPage', () => {
+  const arbres: Record<Onglet, NavEntree[]> = {
+    console: [
+      { key: 'accueil', href: '/accueil', label: 'Accueil' },
+      { key: 'contenu', label: 'Contenu', children: [{ key: 'templates', href: '/templates', label: 'Templates' }] },
+    ],
+    inbox: [{ key: 'inbox', href: '/inbox', label: 'Inbox' }],
+    perf: [
+      { key: 'quantitatif', label: 'Quantitatif', children: [{ key: 'quanti-couts', href: '/dashboard/couts', label: 'Coûts' }] },
+    ],
+  };
+
+  it('trouve une page de PREMIER niveau', () => {
+    expect(ongletDeLaPage(arbres, 'accueil')).toBe('console');
+    expect(ongletDeLaPage(arbres, 'inbox')).toBe('inbox');
+  });
+
+  it('🔴 trouve une page ENFOUIE dans un groupe, à n’importe quelle profondeur', () => {
+    // C'est le cas qui compte : la moitié des pages de la console vivent sous deux niveaux de groupe, et
+    // c'est là qu'une recherche naïve « sur le premier niveau » les perdrait toutes.
+    expect(ongletDeLaPage(arbres, 'templates')).toBe('console');
+    expect(ongletDeLaPage(arbres, 'quanti-couts')).toBe('perf');
+  });
+
+  it('🔴 une clé INCONNUE tombe sur « console », elle ne fait pas disparaître la barre', () => {
+    // Même parti pris que `cheminDeNav`, qui rend une chaîne vide plutôt que de jeter : une page dont
+    // l'onglet n'a pas été déclaré doit s'afficher dans un onglet plausible.
+    expect(ongletDeLaPage(arbres, 'page-inventee')).toBe('console');
+  });
+
+  it('un GROUPE est trouvé comme ses enfants : c’est une clé de la nav comme une autre', () => {
+    expect(ongletDeLaPage(arbres, 'contenu')).toBe('console');
   });
 });
