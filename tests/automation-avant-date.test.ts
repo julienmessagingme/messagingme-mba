@@ -47,8 +47,10 @@ describe('le délai', () => {
   });
 
   it('accepte une config valide', () => {
+    // `sens` est ajouté par la coercition depuis le 2026-09-08 : une config qui ne le porte pas vaut
+    // « avant », et c'est le cas de TOUTES celles écrites avant ce jour.
     expect(coerceConfigAvantDate({ fieldKey: ' rdv ', delai: 2, unite: 'heures' }))
-      .toEqual({ fieldKey: 'rdv', delai: 2, unite: 'heures' });
+      .toEqual({ fieldKey: 'rdv', delai: 2, unite: 'heures', sens: 'avant' });
   });
 });
 
@@ -105,5 +107,55 @@ describe('les dates qu’on ne sait pas lire', () => {
     for (const v of ['', 'demain', '03/04/2026', '2026-02-30T10:00', '2026-08-23']) {
       expect(estDu({ ...base, valeur: v }), v).toEqual({ du: false, raison: 'date_illisible' });
     }
+  });
+});
+
+/**
+ * AVANT ou APRÈS la date (demande de Julien, 2026-09-08).
+ *
+ * 🔴 CE QUE CE BLOC PROTÈGE, et qui touche des automations DÉJÀ EN PRODUCTION : le défaut. Le champ `sens`
+ * n'existe pas dans les configs écrites avant ce jour ; si son absence valait « après », tous les rappels
+ * existants basculeraient de l'autre côté de leur date, en silence, et personne ne le verrait avant qu'un
+ * client ne reçoive « votre rendez-vous est demain » le lendemain.
+ */
+describe('le sens : avant ou après la date', () => {
+  it('🔴 config SANS `sens` -> `avant`, ce que ces automations ont toujours fait', () => {
+    expect(coerceConfigAvantDate({ fieldKey: 'rdv', delai: 2, unite: 'heures' })?.sens).toBe('avant');
+  });
+
+  it('une valeur ABERRANTE retombe sur `avant` sans invalider la config', () => {
+    // Refuser toute la config pour un champ arrivé après ferait taire une automation qui marchait.
+    const c = coerceConfigAvantDate({ fieldKey: 'rdv', delai: 2, unite: 'heures', sens: 'pendant' });
+    expect(c).not.toBeNull();
+    expect(c?.sens).toBe('avant');
+  });
+
+  it('`apres` est conservé quand il est demandé', () => {
+    expect(coerceConfigAvantDate({ fieldKey: 'rdv', delai: 3, unite: 'jours', sens: 'apres' })?.sens).toBe('apres');
+  });
+
+  it('🔴 `apres` déclenche APRÈS la date, pas avant : les deux sens sont testés sur la MÊME date', () => {
+    // 12:00 Paris = maintenant. Avec 2 h de délai :
+    //  - « avant » est dû pour une date à 14:00 (14:00 - 2 h = maintenant) ;
+    //  - « après » est dû pour une date à 10:00 (10:00 + 2 h = maintenant).
+    // Le même couple (date, délai) ne doit JAMAIS être dû des deux côtés : c'est ce qui prouve que le signe
+    // agit, plutôt qu'un test qui passerait avec un décalage nul.
+    expect(estDu({ ...base, valeur: '2026-08-23T14:00', sens: 'avant' }).du).toBe(true);
+    expect(estDu({ ...base, valeur: '2026-08-23T14:00', sens: 'apres' }).du).toBe(false);
+    expect(estDu({ ...base, valeur: '2026-08-23T10:00', sens: 'apres' }).du).toBe(true);
+    expect(estDu({ ...base, valeur: '2026-08-23T10:00', sens: 'avant' }).du).toBe(false);
+  });
+
+  it('🔴 `apres` NE RATTRAPE PAS le passé : une date vieille de trois jours n’envoie rien', () => {
+    // Décision de Julien du 2026-09-08. Sans cette règle, activer « 2 h après » ferait partir d'un coup tous
+    // les contacts dont la date est passée : un envoi de masse involontaire, et facturé.
+    const r = estDu({ ...base, valeur: '2026-08-20T10:00', sens: 'apres' });
+    expect(r.du).toBe(false);
+    expect(r.du === false && r.raison).toBe('trop_tard');
+  });
+
+  it('sens ABSENT dans l’entrée -> se comporte comme `avant`', () => {
+    // L'appelant historique (le balayage d'avant ce lot) ne passait pas ce champ.
+    expect(estDu({ ...base, valeur: '2026-08-23T14:00' }).du).toBe(true);
   });
 });

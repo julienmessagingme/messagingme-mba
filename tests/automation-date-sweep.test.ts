@@ -51,6 +51,34 @@ describe('balayage des échéances', () => {
     expect(trace.publies).toEqual([{ waId: '33611', automationId: 'a1', valeur: '2026-08-23T14:00' }]);
   });
 
+  it('🔴 sens « après » : la FENÊTRE cherchée bascule de l’autre côté du présent', async () => {
+    /**
+     * C'est le piège de ce lot, et il est muet : la fenêtre SQL est centrée sur `maintenant + délai` pour
+     * « avant ». Pour « après », les dates dues sont dans le PASSÉ (`maintenant - délai`). Garder le même
+     * centre ramènerait une population qui ne contient jamais les bons contacts : l'automation ne publierait
+     * rien, sans erreur, sans journal, et on chercherait le défaut dans la décision par contact, qui est
+     * juste. On compare donc les deux centres, qui doivent être de part et d'autre de maintenant.
+     */
+    const dateDue = '2026-08-23T10:00'; // 10 h Paris, soit 2 h avant maintenant (12 h Paris)
+    const { deps, trace } = make(
+      [auto({ triggerConfig: { fieldKey: 'rdv', delai: 2, unite: 'heures', sens: 'apres' } })],
+      [{ waId: '33611', valeur: dateDue, dejaTirePour: null }],
+    );
+    expect(await runDateSweep(deps)).toBe(1);
+    expect(trace.publies).toEqual([{ waId: '33611', automationId: 'a1', valeur: dateDue }]);
+
+    // Preuve inverse sur la FENÊTRE elle-même : son centre est AVANT maintenant pour « après », APRÈS pour
+    // « avant ». Sans cette assertion, un centre resté du mauvais côté passerait tant que la marge de 24 h
+    // du SQL le rattrape, et casserait au premier délai supérieur à un jour.
+    const centreApres = new Date(trace.fenetres[0]!.basse).getTime() + 24 * 3600_000;
+    expect(centreApres).toBeLessThan(MAINTENANT);
+
+    const { deps: d2, trace: t2 } = make([auto()], []);
+    await runDateSweep(d2);
+    const centreAvant = new Date(t2.fenetres[0]!.basse).getTime() + 24 * 3600_000;
+    expect(centreAvant).toBeGreaterThan(MAINTENANT);
+  });
+
   it('🔴 ne publie PAS pour une échéance passée depuis longtemps', async () => {
     const { deps, trace } = make([auto()], [{ waId: '33611', valeur: '2026-08-22T09:00', dejaTirePour: null }]);
     expect(await runDateSweep(deps)).toBe(0);

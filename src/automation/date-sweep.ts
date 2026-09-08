@@ -82,9 +82,13 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
         }
         const offsetMinutes = minutesDuDelai(cfg.delai, cfg.unite);
         const t = now();
-        // Les dates cherchées sont celles dont l'échéance tombe maintenant : elles valent donc environ
-        // `maintenant + délai`. La marge d'un jour absorbe les écarts de fuseau entre valeurs stockées.
-        const centre = t + offsetMinutes * 60_000;
+        // Les dates cherchées sont celles dont l'échéance tombe maintenant. La marge d'un jour absorbe les
+        // écarts de fuseau entre valeurs stockées.
+        // ⚠️ LE CENTRE CHANGE DE CoTÉ AVEC LE SENS. Pour « avant », l'échéance tombe maintenant quand la date
+        // vaut `maintenant + délai` ; pour « après », quand elle vaut `maintenant - délai`. Chercher du même
+        // côté dans les deux cas ramènerait une fenêtre de contacts qui ne contient jamais les bons, et
+        // l'automation serait muette sans aucune erreur.
+        const centre = t + (cfg.sens === 'apres' ? -1 : 1) * offsetMinutes * 60_000;
         const borneBasse = new Date(centre - MARGE_MS).toISOString();
         const borneHaute = new Date(centre + MARGE_MS).toISOString();
 
@@ -93,6 +97,7 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
           const r = estDu({
             valeur: c.valeur,
             offsetMinutes,
+            sens: cfg.sens,
             now: t,
             toleranceMinutes: deps.toleranceMinutes,
             timeZone,

@@ -50,6 +50,9 @@ function AutomationsInner({ session }: { session: Session }) {
   const [dateField, setDateField] = useState('');
   const [delai, setDelai] = useState(2);
   const [unite, setUnite] = useState<'minutes' | 'heures' | 'jours'>('heures');
+  // `avant` au départ : c'est ce que ce déclencheur a toujours fait, et une automation existante rouverte
+  // sans `sens` doit se réafficher telle qu'elle est, pas telle qu'on la préférerait aujourd'hui.
+  const [sensDate, setSensDate] = useState<'avant' | 'apres'>('avant');
 
   const load = useCallback(async () => {
     setError(null);
@@ -112,7 +115,7 @@ function AutomationsInner({ session }: { session: Session }) {
     if (triggerKind === 'tag_added') return { tag: tag.trim() };
     if (triggerKind === 'ctwa_ad') return adId.trim() !== '' ? { adId: adId.trim() } : {};
     if (triggerKind === 'conversation_analyzed') return { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) };
-    if (triggerKind === 'avant_date') return { fieldKey: dateField, delai, unite };
+    if (triggerKind === 'avant_date') return { fieldKey: dateField, delai, unite, sens: sensDate };
     if (triggerKind === 'hubspot_deal_stage') {
       const [pipelineId = '', stageId = ''] = dealStageKey.split('::');
       return { pipelineId, stageId, ...(etapeChoisie ? { stageLabel: etapeChoisie.label } : {}) };
@@ -193,9 +196,11 @@ function AutomationsInner({ session }: { session: Session }) {
       return parts.join(', ');
     }
     if (a.triggerKind === 'avant_date') {
-      const c = a.triggerConfig as { fieldKey?: string; delai?: number; unite?: string };
+      const c = a.triggerConfig as { fieldKey?: string; delai?: number; unite?: string; sens?: string };
       const champ = champsDate.find((f) => f.key === c.fieldKey)?.label ?? String(c.fieldKey ?? '');
-      return `${String(c.delai ?? '')} ${String(c.unite ?? '')} ${t('avant', 'before')} « ${champ} »`;
+      // Une automation d'avant le 2026-09-08 n'a pas de `sens` : elle se lit « avant », ce qu'elle fait.
+      const sens = c.sens === 'apres' ? t('après', 'after') : t('avant', 'before');
+      return `${String(c.delai ?? '')} ${String(c.unite ?? '')} ${sens} « ${champ} »`;
     }
     if (a.triggerKind === 'hubspot_deal_stage') {
       // Le libellé n'est qu'un souvenir de ce qui a été choisi : s'il manque (automation créée par API), on
@@ -262,7 +267,7 @@ function AutomationsInner({ session }: { session: Session }) {
                   ? t('un deal HubSpot atteint une étape (HubSpot non connecté)', 'a HubSpot deal reaches a stage (HubSpot not connected)')
                   : t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}
               </option>
-              <option value="avant_date">{t('un délai avant une date du contact', 'a delay before a date on the contact')}</option>
+              <option value="avant_date">{t('un délai avant ou après une date enregistrée', 'a delay before or after a stored date')}</option>
               <option value="ctwa_ad">{t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')}</option>
             </select>
           </div>
@@ -288,7 +293,7 @@ function AutomationsInner({ session }: { session: Session }) {
           )}
           {triggerKind === 'avant_date' && (
             <div data-testid="config-avant-date">
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Combien de temps avant', 'How long before')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Combien de temps, et de quel côté', 'How long, and which side')}</label>
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="number"
@@ -303,7 +308,15 @@ function AutomationsInner({ session }: { session: Session }) {
                   <option value="heures">{t('heures', 'hours')}</option>
                   <option value="jours">{t('jours', 'days')}</option>
                 </select>
-                <span className="text-sm text-ink-500">{t('avant', 'before')}</span>
+                <select
+                  value={sensDate}
+                  onChange={(e) => setSensDate(e.target.value as 'avant' | 'apres')}
+                  className={`${inputCls} w-32`}
+                  data-testid="avant-date-sens"
+                >
+                  <option value="avant">{t('avant', 'before')}</option>
+                  <option value="apres">{t('après', 'after')}</option>
+                </select>
                 <select value={dateField} onChange={(e) => setDateField(e.target.value)} className={`${inputCls} flex-1`} data-testid="avant-date-champ">
                   <option value="">{t('choisir un champ…', 'pick a field…')}</option>
                   {champsDate.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
@@ -319,8 +332,8 @@ function AutomationsInner({ session }: { session: Session }) {
               ) : (
                 <p className="mt-2 text-sm text-ink-500">
                   {t(
-                    'Une échéance déjà passée n’envoie rien : un rappel qui part en retard dit quelque chose de faux au client. Si la date change, le rappel repart sur la nouvelle.',
-                    'A due date already past sends nothing: a late reminder tells the customer something untrue. If the date changes, the reminder runs again on the new one.',
+                    'Une échéance déjà passée n’envoie rien : un rappel qui part en retard dit quelque chose de faux au client. Si la date change, le rappel repart sur la nouvelle. Cela vaut aussi pour « après » : activer cette automation ne rattrape pas les dates déjà dépassées, sinon tous vos contacts concernés partiraient d’un coup.',
+                    'A due date already past sends nothing: a late reminder tells the customer something untrue. If the date changes, the reminder runs again on the new one. This also holds for “after”: turning this automation on does not catch up on dates already gone, otherwise every matching contact would go out at once.',
                   )}
                 </p>
               )}

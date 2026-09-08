@@ -207,6 +207,32 @@ test.describe('Automation : un délai avant une date', () => {
     });
   });
 
+  test('🔴 le SENS part dans la configuration, et « avant » reste le défaut', async ({ page }) => {
+    // Demande de Julien du 2026-09-08. Le défaut compte autant que le choix : les automations déjà en
+    // production n'ont pas ce champ, elles valent « avant », et l'écran ne doit pas proposer autre chose
+    // au départ, sinon on crée des rappels du mauvais côté sans que personne ne l'ait demandé.
+    const posted = await monter(page, [{ key: 'rdv', label: 'Rendez-vous', type: 'datetime' }]);
+    await expect(page.getByTestId('avant-date-sens')).toHaveValue('avant');
+
+    await page.getByTestId('automation-name').fill('Relance 3 jours après');
+    await page.getByTestId('avant-date-sens').selectOption('apres');
+    await page.getByTestId('avant-date-delai').fill('3');
+    await page.getByTestId('avant-date-unite').selectOption('jours');
+    await page.getByTestId('avant-date-champ').selectOption('rdv');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await page.getByTestId('automation-submit').click();
+    await expect.poll(() => posted.length).toBeGreaterThan(0);
+    expect(posted[0]).toMatchObject({
+      triggerKind: 'avant_date',
+      triggerConfig: { fieldKey: 'rdv', delai: 3, unite: 'jours', sens: 'apres' },
+    });
+  });
+
+  test('le déclencheur s’annonce « avant ou après », pas seulement « avant »', async ({ page }) => {
+    await monter(page, [{ key: 'rdv', label: 'Rendez-vous', type: 'datetime' }]);
+    await expect(page.getByTestId('automation-trigger')).toContainText(/avant ou après|before or after/);
+  });
+
   test('sans champ choisi, l’enregistrement reste impossible', async ({ page }) => {
     await monter(page, [{ key: 'rdv', label: 'Rendez-vous', type: 'datetime' }]);
     await page.getByTestId('automation-name').fill('Incomplet');

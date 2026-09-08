@@ -85,7 +85,9 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
   if (kind === 'avant_date') {
     // Un champ et un délai, sinon l'automation ne saurait ni QUOI regarder ni QUAND partir. La coercition
     // est la MÊME que celle du balayage : une config acceptée ici est forcément exploitable là-bas.
-    if (!nonEmpty(cfg.fieldKey)) return 'fieldKey requis pour un déclencheur « avant une date »';
+    // ⚠️ `sens` (avant / après, 2026-09-08) n'a rien à valider de plus : la coercition le tolère absent ou
+    // aberrant et retombe sur « avant ». Le refuser ici rejetterait des configurations déjà en base.
+    if (!nonEmpty(cfg.fieldKey)) return 'fieldKey requis pour un déclencheur « avant ou après une date »';
     if (!coerceConfigAvantDate(cfg)) {
       return `délai invalide : un entier positif et une unité parmi ${UNITES_DELAI.join(' | ')}, sans dépasser ${DELAI_MAX_MINUTES / (24 * 60)} jours`;
     }

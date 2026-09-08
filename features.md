@@ -1138,11 +1138,17 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   (code expiré, compte non partagé, plusieurs numéros à départager) au lieu d'un « Erreur 502 » opaque.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
-## Rappels avant une date (menu Automation)
+## Rappels avant ou après une date (menu Automation)
 
-- ✅ **Lancer un scénario X minutes, heures ou jours AVANT une date du contact** (2026-08-23). On choisit un
-  champ de type « date et heure », un nombre et une unité : « 48 heures avant Rendez-vous ». C'est le seul
+- ✅ **Lancer un scénario X minutes, heures ou jours AVANT OU APRÈS une date enregistrée** (2026-08-23,
+  élargi au sens « après » le 2026-09-08). On choisit un champ de type « date et heure », un côté, un nombre
+  et une unité : « 48 heures **avant** Rendez-vous », ou « 3 jours **après** Fin de contrat ». C'est le seul
   déclencheur qui ne répond pas à un événement mais au temps qui passe.
+  ⚠️ **Vos automations existantes n'ont pas bougé** : sans choix explicite, le déclencheur reste « avant »,
+  ce qu'il a toujours fait.
+  🔴 **« Après » ne rattrape PAS le passé non plus.** Activer « 3 jours après » ne déclenche rien pour les
+  contacts dont la date est déjà dépassée : sinon toute votre base concernée partirait d'un coup, et ce
+  serait facturé. Seules les échéances à venir déclenchent.
 - **Seuls les champs date et heure sont proposés.** Un champ texte accepterait la configuration et ne
   partirait jamais : l'automation aurait l'air réglée. S'il n'y en a aucun, l'écran dit où en créer un.
 - ✅ **Une échéance déjà passée n'envoie RIEN.** Un webhook reçu en retard, ou un import de vieux
