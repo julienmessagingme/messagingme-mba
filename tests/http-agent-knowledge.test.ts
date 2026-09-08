@@ -232,3 +232,106 @@ describe('base de connaissance : import d’une page', () => {
     expect(res.statusCode).toBe(503);
   });
 });
+
+describe('base de connaissance : parcourir un site (crawl)', () => {
+  /**
+   * 🔴 CE QUE CES ROUTES REPARENT. L'import ne prenait qu'UNE page. Julien a donné `ganprevoyance.fr`, on a
+   * importé la vitrine, et son agent ne savait rien. La portée se DEDUIT desormais de l'adresse : racine du
+   * domaine -> le site, adresse avec un chemin -> cette page.
+   */
+  const LIEN = '<html><head><title>Accueil</title></head><body><h1>Bienvenue</h1>'
+    + '<p>Nous accompagnons nos clients depuis 1970 dans toute la France, partout.</p>'
+    + '<a href="/contrats">contrats</a><a href="https://autre.fr/x">tiers</a></body></html>';
+
+  /** Un faux site : chaque adresse rend son propre HTML. */
+  function siteApp(pages: Record<string, string>) {
+    const lues: string[] = [];
+    const remplacements: string[] = [];
+    const deps: AgentKnowledgeRouteDeps = {
+      lister: async () => [FICHE],
+      creer: async () => FICHE,
+      modifier: async () => FICHE,
+      supprimer: async () => true,
+      remplacerSource: async (_t, _a, url, fiches) => { remplacements.push(url); return { retirees: 0, ecrites: fiches.length }; },
+      fetchUrl: async (u) => {
+        lues.push(u);
+        const html = pages[u];
+        if (html === undefined) throw new Error('404');
+        return { status: 200, contentType: 'text/html', body: html };
+      },
+    };
+    return {
+      lues, remplacements,
+      srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentKnowledge: deps }),
+    };
+  }
+
+  const SITE = {
+    'https://exemple.fr/': LIEN,
+    'https://exemple.fr/contrats': PAGE_HTML,
+  };
+
+  it('🔴 l’aperçu N’ÉCRIT RIEN, et dit ce qu’il ramènerait', async () => {
+    // Un import est difficile a defaire : cinquante pages ecrites d un coup, ce sont cinquante jeux de
+    // fiches a relire ou supprimer une par une si la portee etait mauvaise.
+    const { srv, remplacements } = siteApp(SITE);
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/' },
+    });
+    expect(res.statusCode).toBe(200);
+    const corps = res.json<{ portee: string; pages: Array<{ url: string }>; plafondAtteint: boolean }>();
+    expect(corps.portee).toBe('site');
+    expect(corps.pages.map((p) => p.url)).toEqual(['https://exemple.fr/', 'https://exemple.fr/contrats']);
+    expect(corps.plafondAtteint).toBe(false);
+    // LA propriete de l apercu : rien n a ete ecrit.
+    expect(remplacements).toEqual([]);
+    await srv.close();
+  });
+
+  it('🔴 une adresse PRECISE reste une seule page, elle ne declenche aucun parcours', async () => {
+    const { srv, lues } = siteApp(SITE);
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/contrats' },
+    });
+    expect(res.json<{ portee: string }>().portee).toBe('page');
+    expect(lues).toEqual(['https://exemple.fr/contrats']);
+    await srv.close();
+  });
+
+  it('l’import ecrit CHAQUE page de la liste rendue par l’apercu', async () => {
+    const { srv, remplacements } = siteApp(SITE);
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok),
+      payload: { url: 'https://exemple.fr/', pages: ['https://exemple.fr/', 'https://exemple.fr/contrats'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(remplacements).toEqual(['https://exemple.fr/', 'https://exemple.fr/contrats']);
+    await srv.close();
+  });
+
+  it('🔴 une adresse d’un AUTRE domaine dans la liste est ecartee, meme si on l a demandee', async () => {
+    // La liste arrive par le reseau : s y fier parce que c est nous qui l avons produite serait exactement
+    // la faute qu une garde SSRF existe pour empecher. Et importer le site d un tiers sous le nom du client
+    // mettrait son contenu dans les reponses faites a ses contacts.
+    const { srv, remplacements, lues } = siteApp(SITE);
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok),
+      payload: { url: 'https://exemple.fr/', pages: ['https://exemple.fr/', 'https://autre.fr/vole'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(remplacements).toEqual(['https://exemple.fr/']);
+    expect(lues).not.toContain('https://autre.fr/vole');
+    await srv.close();
+  });
+
+  it('🔴 aucune page retenue -> 422 qui PORTE la raison, jamais un 200 a vide', async () => {
+    // Un 200 avec zero fiche laisserait croire a un import reussi sur une base restee vide.
+    const { srv } = siteApp({});
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toMatch(/injoignable|aucun contenu/);
+    await srv.close();
+  });
+});
