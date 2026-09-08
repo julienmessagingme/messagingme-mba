@@ -41,7 +41,18 @@ export interface AgentSetupRouteDeps {
    * Écrit une fiche de connaissance. Sert aux PIÈCES JOINTES : un document joint devient des fiches, c'est
    * tout l'intérêt de pouvoir en joindre un. Absente, la route de pièce jointe n'est pas montée.
    */
-  creerFiche?(tenantId: string, agentId: string, fiche: { titre: string; corps: string }): Promise<unknown>;
+  /**
+   * Ecrit les fiches d'une piece jointe, EN REMPLACANT celles que le meme fichier avait deja produites.
+   *
+   * 🔴 REMPLACE, ET PORTE LA PROVENANCE, alors que cette route creait des fiches ANONYMES une par une.
+   * Deux consequences vecues : redeposer le meme PDF doublait la base (et la recherche remontait deux fois
+   * la meme reponse), et une fiche issue d'un document etait INDISCERNABLE d'une fiche tapee a la main,
+   * donc l'ecran ne pouvait pas dire d'ou elle venait. C'est la coherence que Julien demandait le
+   * 2026-09-08 : le fichier joint en parlant au robot, et la fiche qui en decoule, doivent se retrouver.
+   */
+  ecrireFichesDocument?(
+    tenantId: string, agentId: string, nom: string, fiches: Array<{ titre: string; corps: string }>,
+  ): Promise<{ retirees: number; ecrites: number } | null>;
   /** L'entretien persisté. ABSENT : la route répond 503 plutôt que de retomber sur un entretien sans mémoire,
    *  qui redeviendrait non déterministe sans que personne ne le voie. */
   entretiens?: EntretienStore;
@@ -176,7 +187,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
   app.post('/tenants/:tenantId/agents/:agentId/setup/piece-jointe', optsPiece, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
-    if (!deps.creerFiche) return reply.code(503).send({ error: 'pièces jointes indisponibles sur ce serveur' });
+    if (!deps.ecrireFichesDocument) return reply.code(503).send({ error: 'pièces jointes indisponibles sur ce serveur' });
     const parse = pieceSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'nom et dataUrl requis' });
 
@@ -218,10 +229,12 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     const fiches = texteEnFiches(texte, parse.data.nom);
     if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
-    for (const f of fiches) await deps.creerFiche(ctx.tenant, ctx.agentId, f);
+    const bilan = await deps.ecrireFichesDocument(ctx.tenant, ctx.agentId, parse.data.nom, fiches);
+    if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
 
     return reply.code(201).send({
-      fiches: fiches.length,
+      fiches: bilan.ecrites,
+      remplacees: bilan.retirees,
       titres: fiches.map((f) => f.titre),
       nature: reconnu.nature,
     });

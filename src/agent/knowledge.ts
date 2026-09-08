@@ -48,10 +48,24 @@ export interface KnowledgeStore {
 }
 
 /** Une fiche telle que l'écran de réglage la montre et l'édite. */
+/**
+ * D'ou vient une fiche.
+ *
+ * 🔴 NOMMEE, JAMAIS DEVINEE DE LA PRESENCE D'UNE URL. Avant le 2026-09-08, une fiche issue d'un PDF joint a
+ * la conversation etait ecrite par le meme chemin qu'une fiche tapee a la main : les deux avaient
+ * `sourceUrl` a null, et rien ne les distinguait. L'ecran ne peut pas montrer ce qu'il ne sait pas.
+ */
+export type SourceFiche =
+  | { type: 'page'; url: string }
+  | { type: 'document'; nom: string }
+  | { type: 'manuel' };
+
 export interface FicheConnaissance {
   id: string;
   titre: string;
   corps: string;
+  /** D'ou vient cette fiche, pour que l'ecran puisse le DIRE. */
+  source: SourceFiche;
   sourceUrl: string | null;
   /** Quand la source a été lue pour la dernière fois. `null` pour une fiche écrite à la main. Visible dans
    *  l'écran : le cadrage en fait la parade au défaut le plus courant du marché, le contenu périmé. */
@@ -59,7 +73,7 @@ export interface FicheConnaissance {
   updatedAt: string;
 }
 
-/** Ce qu'un import de page produit avant écriture. */
+/** Ce qu'un import produit avant écriture, qu'il vienne d'une page web ou d'un document. */
 export interface FicheAEcrire {
   titre: string;
   corps: string;
@@ -107,7 +121,7 @@ export interface KnowledgeAdminStore {
    * elles la rendent deux fois plus probable qu'une autre. Le prix est dit au client dans l'écran : ses
    * corrections sur les fiches de cette adresse partent avec.
    */
-  remplacerSource(tenantId: string, agentId: string, sourceUrl: string, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
+  remplacerSource(tenantId: string, agentId: string, source: SourceFiche, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
 }
 
 /**

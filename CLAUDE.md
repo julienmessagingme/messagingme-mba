@@ -79,11 +79,20 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0116**, le 2026-09-07 au soir (la phrase d'un lien de chaîne devient sa clé de
-routage : index unique par espace, et bascule des mots-clés des liens existants du jeton vers la phrase).
-**Prochaine libre = 0117.**
+**Dernière appliquée : 0118**, le 2026-09-08 (la PROVENANCE d'une fiche de connaissance, `source_type` et
+`source_nom` : une fiche issue d'un PDF était jusque-là indiscernable d'une fiche tapée à la main, les deux
+ayant `source_url` à null, et l'écran ne peut pas montrer ce qu'il ne sait pas). **Prochaine libre = 0119.**
 
-Rappel des deux précédentes : **0114** le 2026-09-07 au matin (les trois tables Channels Me, plus
+⚠️ **CETTE LIGNE A DÉRIVÉ UNE FOIS DE PLUS LE 2026-09-08, ET DE MON FAIT.** Elle annonçait encore 0116 alors
+que 0117 était appliquée : l'édition qui devait la mettre à jour n'a pas pris, et je ne l'ai pas relue. Le
+fichier se déclare seule source du compteur et prévient qu'il dérive ; la parade n'est pas d'y faire
+attention, c'est de RELIRE la ligne après l'avoir changée, ou de demander à la base.
+
+Avant elle : **0117** le 2026-09-08 (le mot-clé d'un lien de chaîne perd la ponctuation FINALE de sa phrase :
+sans ça, un bouton dont la phrase finit par « ! » ne démarrait aucun scénario, l'auto-détection de liens de
+WhatsApp excluant cette ponctuation de l'adresse qu'elle ouvre) ; **0116** le 2026-09-07 au soir (la phrase
+d'un lien de chaîne devient sa clé de routage : index unique par espace, et bascule des mots-clés des liens
+existants du jeton vers la phrase) ; **0114** le 2026-09-07 au matin (les trois tables Channels Me, plus
 `possede_par` et `max_fires_per_hour` sur `automations`) ; **0115** le même soir (l'index qui sert « le
 parcours actif de ce contact », `CREATE INDEX CONCURRENTLY`, hors transaction, `indisvalid` vérifié après
 coup et le planificateur la prend).

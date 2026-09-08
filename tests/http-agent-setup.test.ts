@@ -82,7 +82,13 @@ function app(opts: {
       : null),
     ...(opts.sansEntretiens ? {} : { entretiens }),
     ...(opts.sansFiches ? {} : {
-      creerFiche: async (_t: string, _a: string, f: { titre: string; corps: string }) => { opts.fiches?.push(f); return f; },
+      // 🔴 Le faux ECRIT PAR SOURCE, comme le vrai : une piece jointe REMPLACE les fiches que le meme
+      // fichier avait produites, et elles portent sa provenance. Un faux qui creerait des fiches anonymes
+      // une par une n'exercerait plus le chemin reel.
+      ecrireFichesDocument: async (_t: string, _a: string, _nom: string, fiches: Array<{ titre: string; corps: string }>) => {
+        for (const f of fiches) opts.fiches?.push(f);
+        return { retirees: 0, ecrites: fiches.length };
+      },
     }),
     ...(opts.sansClient ? {} : {
       completer: async (i) => {

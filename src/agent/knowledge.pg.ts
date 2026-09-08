@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import {
   PROXIMITE_TITRE_MIN, termesDeRecherche,
   type FicheAEcrire, type FicheConnaissance, type FicheTrouvee, type KnowledgeAdminStore, type KnowledgeStore,
+  type SourceFiche,
 } from './knowledge';
 
 interface Ligne {
@@ -211,27 +212,43 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
    * sans que la nouvelle soit là. Un client qui relit son site pendant qu'un contact discute ne le laisse
    * donc pas sans source, même une fraction de seconde.
    */
+  /**
+   * ⚠️ LA CLE DE REMPLACEMENT EST LA SOURCE ENTIERE, pas une URL. Un document se reimporte comme une page se
+   * relit (decision de Julien, 2026-09-08) : ses fiches d'avant partent, les nouvelles arrivent. Sur une URL
+   * seule, deux documents de meme contenu se seraient ecrases l'un l'autre, ou n'auraient jamais pu etre
+   * remplaces du tout.
+   */
   async remplacerSource(
-    tenantId: string, agentId: string, sourceUrl: string, fiches: FicheAEcrire[],
+    tenantId: string, agentId: string, source: SourceFiche, fiches: FicheAEcrire[],
   ): Promise<{ retirees: number; ecrites: number } | null> {
+    // 'manuel' n'a pas de cle : rien a remplacer, et un `where` sur deux null retirerait TOUTES les fiches
+    // ecrites a la main. Le refuser ici plutot que de s'en remettre a la vigilance des appelants.
+    if (source.type === 'manuel') return { retirees: 0, ecrites: 0 };
+    const url = source.type === 'page' ? source.url : null;
+    const nom = source.type === 'document' ? source.nom : null;
     const res = await this.pool.query<{ retirees: number; ecrites: number; agent_connu: number }>(
       `with cible as (select 1 from agents where id = $2 and tenant_id = $1),
             retirees as (
               delete from agent_knowledge
-               where tenant_id = $1 and agent_id = $2 and source_url = $3 and exists (select 1 from cible)
+               where tenant_id = $1 and agent_id = $2 and exists (select 1 from cible)
+                 and source_type = $3
+                 and source_url is not distinct from $4
+                 and source_nom is not distinct from $5
               returning 1
             ),
             ecrites as (
-              insert into agent_knowledge (tenant_id, agent_id, titre, corps, source_url, derniere_lecture_at)
-              select $1, $2, f.titre, f.corps, $3, now()
-                from jsonb_to_recordset($4::jsonb) as f(titre text, corps text)
+              insert into agent_knowledge
+                     (tenant_id, agent_id, titre, corps, source_type, source_url, source_nom, derniere_lecture_at)
+              select $1, $2, f.titre, f.corps, $3, $4, $5, now()
+                from jsonb_to_recordset($6::jsonb) as f(titre text, corps text)
                where exists (select 1 from cible)
               returning 1
             )
        select (select count(*) from retirees)::int as retirees,
               (select count(*) from ecrites)::int as ecrites,
               (select count(*) from cible)::int as agent_connu`,
-      [tenantId, agentId, sourceUrl, JSON.stringify(fiches.map((f) => ({ titre: f.titre, corps: f.corps })))],
+      [tenantId, agentId, source.type, url, nom,
+        JSON.stringify(fiches.map((f) => ({ titre: f.titre, corps: f.corps })))],
     );
     const r = res.rows[0];
     if (!r || r.agent_connu === 0) return null;
@@ -239,13 +256,27 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
   }
 }
 
-const COLONNES_FICHE = 'id, titre, corps, source_url, derniere_lecture_at, updated_at';
+const COLONNES_FICHE = 'id, titre, corps, source_url, source_type, source_nom, derniere_lecture_at, updated_at';
+
+/**
+ * La provenance, telle que l'ecran doit la lire.
+ *
+ * ⚠️ Defensive sur `source_type` : la colonne est arrivee avec un defaut, mais une ligne ecrite par un
+ * chemin qu'on aurait oublie de mettre a jour ne doit pas faire lever la lecture de tout l'ecran.
+ */
+function sourceDeLaLigne(r: { source_type: string | null; source_url: string | null; source_nom: string | null }): SourceFiche {
+  if (r.source_type === 'page' && r.source_url !== null) return { type: 'page', url: r.source_url };
+  if (r.source_type === 'document' && r.source_nom !== null) return { type: 'document', nom: r.source_nom };
+  return { type: 'manuel' };
+}
 
 interface LigneFiche {
   id: string;
   titre: string;
   corps: string;
   source_url: string | null;
+  source_type: string | null;
+  source_nom: string | null;
   derniere_lecture_at: Date | null;
   updated_at: Date;
 }
@@ -255,6 +286,7 @@ function versFiche(r: LigneFiche): FicheConnaissance {
     id: r.id,
     titre: r.titre,
     corps: r.corps,
+    source: sourceDeLaLigne(r),
     sourceUrl: r.source_url,
     derniereLectureAt: r.derniere_lecture_at ? r.derniere_lecture_at.toISOString() : null,
     updatedAt: r.updated_at.toISOString(),

@@ -9,7 +9,20 @@ import { request } from './http';
  * client croit avoir mal réglé son agent.
  */
 
+/**
+ * D'où vient une fiche.
+ *
+ * 🔴 Elle est NOMMÉE, jamais devinée de la présence d'une URL : avant le 2026-09-08, une fiche issue d'un
+ * PDF et une fiche tapée à la main avaient toutes deux `sourceUrl` à null, donc l'écran ne pouvait pas les
+ * distinguer. Jumeau serveur : `src/agent/knowledge.ts`.
+ */
+export type SourceFiche =
+  | { type: 'page'; url: string }
+  | { type: 'document'; nom: string }
+  | { type: 'manuel' };
+
 export interface FicheConnaissance {
+  source: SourceFiche;
   id: string;
   titre: string;
   corps: string;

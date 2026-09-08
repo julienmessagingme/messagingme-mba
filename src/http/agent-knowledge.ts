@@ -1,10 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
-import type { FicheAEcrire, FicheConnaissance } from '../agent/knowledge';
+import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../agent/knowledge';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFiches } from '../agent/scrape';
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
 import { PAGES_MAX, dansLaPortee, normaliserUrl, porteeParDefaut, visiter } from '../agent/crawl';
+import {
+  TAILLE_DOCUMENT_MAX, extraireTexte, reconnaitre, texteEnFiches,
+} from '../agent/setup/piece-jointe';
+import { octetsDepuisDataUrl } from '../rcs/image';
 import { scopeTenant, estUuid } from './scope';
 
 /**
@@ -27,7 +31,7 @@ export interface AgentKnowledgeRouteDeps {
   creer(tenantId: string, agentId: string, fiche: FicheAEcrire): Promise<FicheConnaissance | null>;
   modifier(tenantId: string, agentId: string, ficheId: string, patch: { titre?: string; corps?: string }): Promise<FicheConnaissance | null>;
   supprimer(tenantId: string, agentId: string, ficheId: string): Promise<boolean>;
-  remplacerSource(tenantId: string, agentId: string, sourceUrl: string, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
+  remplacerSource(tenantId: string, agentId: string, source: SourceFiche, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
   /** Lecture d'une page distante. Injectée pour rester testable sans réseau ; absente, l'import ET
    *  l'aperçu répondent 503. */
   fetchUrl?(url: string): Promise<PageDistante>;
@@ -39,6 +43,12 @@ const TITRE = z.string().trim().min(1).max(MAX_TITRE);
 const CORPS = z.string().trim().min(1).max(MAX_CORPS);
 const creationSchema = z.object({ titre: TITRE, corps: CORPS });
 const patchSchema = z.object({ titre: TITRE.optional(), corps: CORPS.optional() });
+const documentSchema = z.object({
+  nom: z.string().trim().min(1).max(MAX_TITRE),
+  /** Le fichier, en data URL base64. Même transport que le téléversement d'image, déjà éprouvé. */
+  dataUrl: z.string().min(1),
+});
+
 const PORTEE = z.enum(['page', 'sous-arbre', 'site']);
 const importSchema = z.object({
   url: z.string().trim().min(1).max(2000),
@@ -134,6 +144,58 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
   });
 
   /**
+   * Importe un DOCUMENT (texte, CSV, PDF, Word) en fiches de connaissance.
+   *
+   * 🔴 RIEN N'EST RÉÉCRIT ICI : la reconnaissance, l'extraction et le découpage vivent déjà dans
+   * `src/agent/setup/piece-jointe.ts`, écrits pour la conversation de construction. Ils n'étaient
+   * simplement joignables que de là. Le même moteur sert donc les deux chemins, et un client qui joint son
+   * PDF en parlant au robot obtient EXACTEMENT les mêmes fiches que s'il l'avait déposé ici.
+   *
+   * 🔴 LE TYPE EST DÉCIDÉ PAR LA SIGNATURE DU FICHIER, jamais par son extension : ce texte finit dans le
+   * prompt d'un agent qui parle à de vrais contacts.
+   *
+   * ⚠️ Les IMAGES ne passent pas par ici. Les lire demande un modèle de vision, que cette route n'a pas :
+   * le dire est plus honnête que de traîner un client LLM dans un module d'administration, et la
+   * conversation de construction, elle, l'a déjà.
+   */
+  app.post(`${base}/document`, opts, async (req, reply) => {
+    const ctx = contexte(req);
+    if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
+    const parse = documentSchema.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'nom et dataUrl requis' });
+
+    const bytes = octetsDepuisDataUrl(parse.data.dataUrl);
+    if (!bytes) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendu)' });
+    const reconnu = reconnaitre(bytes);
+    // 415 et pas 400 : le corps est bien formé, c'est le TYPE du contenu qu'on refuse.
+    if (!reconnu) return reply.code(415).send({ error: 'format non accepté (texte, CSV, PDF ou Word)' });
+    if (reconnu.nature === 'image') {
+      return reply.code(415).send({
+        error: 'une image se dépose dans la conversation de construction, qui sait la lire ; ici on attend un document texte, CSV, PDF ou Word',
+      });
+    }
+    if (bytes.length > TAILLE_DOCUMENT_MAX) {
+      return reply.code(413).send({ error: `fichier trop lourd (${Math.round(TAILLE_DOCUMENT_MAX / 1024 / 1024)} Mo maximum)` });
+    }
+
+    const texte = await extraireTexte(bytes, reconnu.nature);
+    // 422 : le type est accepté mais le fichier ne porte aucun texte. Le dire vaut mieux qu'un succès à zéro
+    // fiche, que le client lirait comme un import réussi.
+    if (texte === null || texte.trim() === '') {
+      return reply.code(422).send({ error: 'aucun texte lisible dans ce fichier (un PDF scanné, par exemple, n’en contient pas)' });
+    }
+    const fiches = texteEnFiches(texte, parse.data.nom);
+    if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
+
+    // 🔴 REMPLACE, comme une page relue (décision de Julien, 2026-09-08) : redéposer le même fichier retire
+    // ses fiches d'avant. Sans ça, deux dépôts du même document doubleraient la base, et la recherche
+    // remonterait deux fois la même réponse.
+    const bilan = await deps.remplacerSource(ctx.tenant, ctx.agentId, { type: 'document', nom: parse.data.nom }, fiches);
+    if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
+    return reply.code(200).send({ nom: parse.data.nom, nature: reconnu.nature, ...bilan, plafond: MAX_FICHES_PAR_PAGE });
+  });
+
+  /**
    * L'APERÇU : ce que l'import ramènerait, sans rien écrire.
    *
    * 🔴 IL EXISTE PARCE QU'UN IMPORT EST DIFFICILE À DÉFAIRE. Cinquante pages écrites d'un coup dans une base
@@ -226,7 +288,7 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
       if ('erreur' in lu) { ecartees.push({ url: cible, raison: lu.erreur }); continue; }
       const fiches = pageEnFiches(lu.html, cible);
       if (fiches.length === 0) { ecartees.push({ url: cible, raison: 'aucun contenu exploitable' }); continue; }
-      const bilan = await deps.remplacerSource(ctx.tenant, ctx.agentId, cible, fiches);
+      const bilan = await deps.remplacerSource(ctx.tenant, ctx.agentId, { type: 'page', url: cible }, fiches);
       // `null` = l'agent n'existe pas : inutile de continuer les 49 pages suivantes.
       if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
       ecrites += bilan.ecrites;

@@ -843,7 +843,8 @@ async function main(): Promise<void> {
       },
       // Les PIECES JOINTES ecrivent des fiches de connaissance, par le MEME store que l onglet Connaissance :
       // ce que le client joint est ensuite relisible et modifiable la-bas, comme une page importee.
-      creerFiche: (tenant, agentId, fiche) => knowledgeStore.creer(tenant, agentId, fiche),
+      ecrireFichesDocument: (tenant, agentId, nom, fiches) =>
+        knowledgeStore.remplacerSource(tenant, agentId, { type: 'document', nom }, fiches),
       // L entretien est TENU PAR LE SERVEUR : c est lui qui rend la conversation persistante entre deux
       // visites de l onglet, et surtout qui rend la sequence des questions deterministe (la couverture
       // cesse d etre une declaration du modele pour devenir un fait).
@@ -900,7 +901,7 @@ async function main(): Promise<void> {
       creer: (tenant, agentId, fiche) => knowledgeStore.creer(tenant, agentId, fiche),
       modifier: (tenant, agentId, ficheId, patch) => knowledgeStore.modifier(tenant, agentId, ficheId, patch),
       supprimer: (tenant, agentId, ficheId) => knowledgeStore.supprimer(tenant, agentId, ficheId),
-      remplacerSource: (tenant, agentId, url, fiches) => knowledgeStore.remplacerSource(tenant, agentId, url, fiches),
+      remplacerSource: (tenant, agentId, source, fiches) => knowledgeStore.remplacerSource(tenant, agentId, source, fiches),
       fetchUrl: fetchUrlBorne(),
     },
     // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posees : la migration 0086

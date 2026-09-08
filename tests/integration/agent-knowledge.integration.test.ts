@@ -236,13 +236,13 @@ describe.skipIf(!url)('écriture de la base de connaissance (Postgres)', () => {
 
   it('🔴 relire une source REMPLACE ses fiches au lieu de les dupliquer', async () => {
     const source = 'https://exemple.test/residence';
-    const un = await store.remplacerSource(tenantId, agentId, source, [
+    const un = await store.remplacerSource(tenantId, agentId, { type: 'page', url: source }, [
       { titre: 'La piscine', corps: 'Ouverte de 9 h à 20 h.' },
       { titre: 'Le parking', corps: 'Gratuit pour les résidents.' },
     ]);
     expect(un).toEqual({ retirees: 0, ecrites: 2 });
 
-    const deux = await store.remplacerSource(tenantId, agentId, source, [{ titre: 'La piscine', corps: 'Ouverte de 8 h à 21 h.' }]);
+    const deux = await store.remplacerSource(tenantId, agentId, { type: 'page', url: source }, [{ titre: 'La piscine', corps: 'Ouverte de 8 h à 21 h.' }]);
     expect(deux).toEqual({ retirees: 2, ecrites: 1 });
 
     const fiches = await store.lister(tenantId, agentId);
@@ -255,18 +255,18 @@ describe.skipIf(!url)('écriture de la base de connaissance (Postgres)', () => {
   });
 
   it('une relecture ne touche QUE la source relue', async () => {
-    await store.remplacerSource(tenantId, agentId, 'https://exemple.test/a', [{ titre: 'A', corps: 'Contenu A.' }]);
-    await store.remplacerSource(tenantId, agentId, 'https://exemple.test/b', [{ titre: 'B', corps: 'Contenu B.' }]);
+    await store.remplacerSource(tenantId, agentId, { type: 'page', url: 'https://exemple.test/a' }, [{ titre: 'A', corps: 'Contenu A.' }]);
+    await store.remplacerSource(tenantId, agentId, { type: 'page', url: 'https://exemple.test/b' }, [{ titre: 'B', corps: 'Contenu B.' }]);
     const main = await store.creer(tenantId, agentId, { titre: 'Écrite à la main', corps: 'Sans source.' });
 
-    await store.remplacerSource(tenantId, agentId, 'https://exemple.test/a', [{ titre: 'A2', corps: 'Contenu A revu.' }]);
+    await store.remplacerSource(tenantId, agentId, { type: 'page', url: 'https://exemple.test/a' }, [{ titre: 'A2', corps: 'Contenu A revu.' }]);
     const titres = (await store.lister(tenantId, agentId)).map((f) => f.titre).sort();
     expect(titres).toEqual(['A2', 'B', 'Écrite à la main']);
     expect(main).not.toBeNull();
   });
 
   it('🔴 relire pour un agent d’un autre tenant ne retire ni n’écrit rien', async () => {
-    expect(await store.remplacerSource(tenantId, agentDeLAutre, 'https://exemple.test/x', [{ titre: 'X', corps: 'Y' }])).toBeNull();
+    expect(await store.remplacerSource(tenantId, agentDeLAutre, { type: 'page', url: 'https://exemple.test/x' }, [{ titre: 'X', corps: 'Y' }])).toBeNull();
     const compte = await pool.query<{ n: string }>('select count(*) as n from agent_knowledge where agent_id = $1', [agentDeLAutre]);
     expect(Number(compte.rows[0]!.n)).toBe(0);
   });

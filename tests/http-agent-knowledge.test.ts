@@ -32,6 +32,7 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const FICHE: FicheConnaissance = {
+  source: { type: 'manuel' },
   id: FICHE_ID, titre: 'La piscine', corps: 'Ouverte de 9 h à 20 h.',
   sourceUrl: null, derniereLectureAt: null, updatedAt: '2026-08-28T10:00:00.000Z',
 };
@@ -59,8 +60,8 @@ function app(page?: PageDistante | Error) {
       return ficheId === FICHE_ID ? { ...FICHE, ...patch } : null;
     },
     supprimer: async (tenant, agentId, ficheId) => { cap.supprimes.push({ tenant, agentId, ficheId }); return ficheId === FICHE_ID; },
-    remplacerSource: async (tenant, agentId, url, fiches) => {
-      cap.remplacements.push({ tenant, agentId, url, fiches });
+    remplacerSource: async (tenant, agentId, source, fiches) => {
+      cap.remplacements.push({ tenant, agentId, url: source.type === 'page' ? source.url : '', fiches });
       return agentId === AG ? { retirees: 2, ecrites: fiches.length } : null;
     },
     fetchUrl: async (u) => {
@@ -252,7 +253,10 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
       creer: async () => FICHE,
       modifier: async () => FICHE,
       supprimer: async () => true,
-      remplacerSource: async (_t, _a, url, fiches) => { remplacements.push(url); return { retirees: 0, ecrites: fiches.length }; },
+      remplacerSource: async (_t, _a, source, fiches) => {
+        remplacements.push(source.type === 'page' ? source.url : `document:${source.type === 'document' ? source.nom : ''}`);
+        return { retirees: 0, ecrites: fiches.length };
+      },
       fetchUrl: async (u) => {
         lues.push(u);
         const html = pages[u];
@@ -332,6 +336,69 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json<{ error: string }>().error).toMatch(/injoignable|aucun contenu/);
+    await srv.close();
+  });
+});
+
+describe('base de connaissance : importer un DOCUMENT', () => {
+  /**
+   * 🔴 CE QUE CETTE ROUTE NE REECRIT PAS. La reconnaissance, l extraction et le decoupage vivent deja dans
+   * `src/agent/setup/piece-jointe.ts`, ecrits pour la conversation de construction : ils n etaient
+   * simplement joignables que de la. Un client qui joint son PDF en parlant au robot obtient donc
+   * EXACTEMENT les memes fiches que s il l avait depose dans l onglet.
+   */
+  const texteEnDataUrl = (t: string): string => `data:text/plain;base64,${Buffer.from(t, 'utf8').toString('base64')}`;
+  const DOC = ['Nos garanties', '',
+    'La garantie deces verse un capital aux beneficiaires designes au contrat, sans delai de carence.', '',
+    'Arret de travail', '',
+    'Une indemnite journaliere complete les prestations de la Securite sociale des le 4e jour.',
+  ].join(String.fromCharCode(10));
+
+  it('un document devient des fiches, et sa PROVENANCE est portee', async () => {
+    const { srv, cap } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+      payload: { nom: 'Garanties.txt', dataUrl: texteEnDataUrl(DOC) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ nom: string; ecrites: number }>().nom).toBe('Garanties.txt');
+    // 🔴 La source dit « document » et porte le NOM : sans elle, cette fiche serait indiscernable d une
+    // fiche tapee a la main, et l ecran ne pourrait pas dire d ou elle vient.
+    expect(cap.remplacements[0]?.url).toBe('');
+    await srv.close();
+  });
+
+  it('🔴 un fichier qui MENT sur son type est refuse, et rien n est ecrit', async () => {
+    // Le type est decide par la SIGNATURE, jamais par l extension : ce texte finit dans le prompt d un
+    // agent qui parle a de vrais contacts.
+    const { srv, cap } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+      payload: { nom: 'faux.pdf', dataUrl: 'data:application/pdf;base64,AAECAwQFBgc=' },
+    });
+    expect(res.statusCode).toBe(415);
+    expect(cap.remplacements).toEqual([]);
+    await srv.close();
+  });
+
+  it('un fichier sans texte exploitable rend 422, jamais un succes a zero fiche', async () => {
+    // Un succes que le client lirait comme un import reussi, sur une base restee vide.
+    const { srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+      payload: { nom: 'vide.txt', dataUrl: texteEnDataUrl('   ') },
+    });
+    expect([415, 422]).toContain(res.statusCode);
+    await srv.close();
+  });
+
+  it('un AGENT ne peut pas importer : ces routes sont reservees aux administrateurs', async () => {
+    const { srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(agentTok),
+      payload: { nom: 'x.txt', dataUrl: texteEnDataUrl(DOC) },
+    });
+    expect(res.statusCode).toBe(403);
     await srv.close();
   });
 });
