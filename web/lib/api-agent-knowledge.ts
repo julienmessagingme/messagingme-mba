@@ -53,6 +53,37 @@ export async function deleteFiche(tenantId: string, agentId: string, ficheId: st
 }
 
 /** Relit une adresse : REMPLACE les fiches que cette même adresse avait déjà produites. */
-export async function importerSource(tenantId: string, agentId: string, url: string): Promise<BilanImport> {
-  return request<BilanImport>(`${base(tenantId, agentId)}/import`, { method: 'POST', body: JSON.stringify({ url }) });
+export async function importerSource(
+  tenantId: string, agentId: string, url: string, pages?: string[],
+): Promise<BilanImport> {
+  return request<BilanImport>(`${base(tenantId, agentId)}/import`, {
+    method: 'POST',
+    body: JSON.stringify(pages === undefined ? { url } : { url, pages }),
+  });
+}
+
+/** Ce que l'import RAMÈNERAIT, sans rien écrire. */
+export interface ApercuImport {
+  url: string;
+  /** `site` (racine d'un domaine), `page` (adresse précise), ou `sous-arbre` (choix explicite). */
+  portee: 'page' | 'sous-arbre' | 'site';
+  /** ⚠️ VRAI veut dire « il en manque » : 50 pages n'est pas « tout le site ». */
+  plafondAtteint: boolean;
+  pages: Array<{ url: string; fiches: number; caracteres: number }>;
+  ecartees: Array<{ url: string; raison: string }>;
+}
+
+/**
+ * Ce que l'import ramènerait, SANS ÉCRIRE.
+ *
+ * 🔴 Il existe parce qu'un import est difficile à défaire : cinquante pages écrites d'un coup, ce sont
+ * cinquante jeux de fiches à relire ou supprimer une par une si la portée était mauvaise.
+ */
+export async function apercuImport(
+  tenantId: string, agentId: string, url: string, portee?: ApercuImport['portee'],
+): Promise<ApercuImport> {
+  return request<ApercuImport>(`${base(tenantId, agentId)}/apercu`, {
+    method: 'POST',
+    body: JSON.stringify(portee === undefined ? { url } : { url, portee }),
+  });
 }

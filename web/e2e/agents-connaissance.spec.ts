@@ -44,13 +44,22 @@ const AGENT = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], fiches: unknown[], importe?: { status: number; body: unknown }) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], fiches: unknown[], importe?: { status: number; body: unknown }, apercuKo?: { status: number; body: unknown }) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    // 🔴 L'APERÇU, qui precede desormais toute ecriture : il rend ce que l'import RAMENERAIT.
+    if (/\/knowledge\/apercu$/.test(url)) {
+      appels.push({ method, url, body: req.postDataJSON() });
+      if (apercuKo) return json(apercuKo.body, apercuKo.status);
+      return json({
+        url: 'https://exemple.fr/residence', portee: 'page', plafondAtteint: false, ecartees: [],
+        pages: [{ url: 'https://exemple.fr/residence', fiches: 3, caracteres: 1200 }],
+      });
+    }
     if (/\/knowledge\/import$/.test(url)) {
       appels.push({ method, url, body: req.postDataJSON() });
       const r = importe ?? { status: 200, body: { url: 'https://exemple.fr/residence', retirees: 2, ecrites: 3, plafond: 40 } };
@@ -109,9 +118,18 @@ test.describe('Agents IA : la base de connaissance', () => {
     await expect(page.getByText('REMPLACE les fiches qu’elle avait déjà produites')).toBeVisible();
 
     await page.getByTestId('kb-url').fill('https://exemple.fr/residence');
+    // 🔴 VOIR AVANT D'ECRIRE. Ce bouton ne lit plus la page pour l'ecrire : il montre ce qui serait
+    // importe. Un import est difficile a defaire, et cinquante pages ecrites d'un coup sont cinquante jeux
+    // de fiches a relire ou supprimer une par une si la portee etait mauvaise.
     await page.getByTestId('kb-importer').click();
+    await expect(page.getByTestId('kb-apercu')).toBeVisible();
+    // La propriete de l'apercu : RIEN n'a encore ete ecrit.
+    expect(appels.some((a) => /import$/.test(a.url))).toBe(false);
+
+    await page.getByTestId('kb-confirmer').click();
     await expect(page.getByTestId('kb-bilan')).toContainText('3 fiche(s) écrite(s), 2 remplacée(s)');
-    expect(appels.find((a) => /import$/.test(a.url))?.body).toEqual({ url: 'https://exemple.fr/residence' });
+    expect(appels.find((a) => /import$/.test(a.url))?.body)
+      .toEqual({ url: 'https://exemple.fr/residence', pages: ['https://exemple.fr/residence'] });
   });
 
   test('🔴 une source vieille de plus de trois mois est SIGNALÉE', async ({ page }) => {
@@ -136,14 +154,29 @@ test.describe('Agents IA : la base de connaissance', () => {
     await page.goto(`/agents?id=${AG}&tab=connaissance`);
     await page.getByTestId('kb-url').fill('https://exemple.fr/tout');
     await page.getByTestId('kb-importer').click();
+    await page.getByTestId('kb-confirmer').click();
     await expect(page.getByTestId('kb-bilan')).toContainText('plafond de 40 fiches par page est atteint');
   });
 
-  test('une erreur d import est ANNONCÉE, pas avalée', async ({ page }) => {
+  test('une erreur d APERÇU est ANNONCÉE, pas avalée', async ({ page }) => {
+    // 🔴 C'est desormais le PREMIER endroit ou ca peut echouer : l'apercu va chercher la page. Une erreur
+    // avalee ici laisserait l'ecran muet apres un clic, sans rien a corriger.
+    await mock(page, [], [], undefined, { status: 422, body: { error: 'rien à importer : injoignable' } });
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await page.getByTestId('kb-url').fill('https://exemple.invalide/p');
+    await page.getByTestId('kb-importer').click();
+    await expect(page.getByTestId('kb-erreur')).toContainText('injoignable');
+    // Et aucun apercu ne s'affiche : on ne propose pas d'importer ce qu'on n'a pas pu lire.
+    await expect(page.getByTestId('kb-apercu')).toHaveCount(0);
+  });
+
+  test('une erreur d IMPORT est ANNONCÉE, pas avalée', async ({ page }) => {
+    // Le cas d'origine, conserve : l'apercu passe, et c'est l'ecriture qui echoue.
     await mock(page, [], [], { status: 422, body: { error: 'page injoignable : getaddrinfo ENOTFOUND' } });
     await page.goto(`/agents?id=${AG}&tab=connaissance`);
     await page.getByTestId('kb-url').fill('https://exemple.invalide/p');
     await page.getByTestId('kb-importer').click();
+    await page.getByTestId('kb-confirmer').click();
     await expect(page.getByTestId('kb-erreur')).toContainText('injoignable');
   });
 });

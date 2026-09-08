@@ -7,7 +7,8 @@ import { formatDate } from '@/lib/day';
 import { JOURS_AVANT_ALERTE, MAX_CORPS_FICHE, MAX_TITRE_FICHE, joursDepuis, sourcePerimee } from '@/lib/agent-connaissance';
 import { MbaNotice } from '@/components/MbaNotice';
 import {
-  createFiche, deleteFiche, importerSource, listFiches, patchFiche, type FicheConnaissance,
+  apercuImport, createFiche, deleteFiche, importerSource, listFiches, patchFiche,
+  type ApercuImport, type FicheConnaissance,
 } from '@/lib/api-agent-knowledge';
 
 /**
@@ -65,8 +66,13 @@ export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; age
       {erreur && <MbaNotice kind="error" testid="kb-erreur">{erreur}</MbaNotice>}
       {bilan && <MbaNotice kind="success" testid="kb-bilan">{bilan}</MbaNotice>}
 
-      <ImportSource busy={busy} onImport={(url) => agir(async () => {
-        const r = await importerSource(tenantId, agentId, url);
+      <ImportSource
+        tenantId={tenantId}
+        agentId={agentId}
+        busy={busy}
+        onErreur={setErreur}
+        onImport={(url, pages) => agir(async () => {
+        const r = await importerSource(tenantId, agentId, url, pages);
         const ecrites = r.retirees > 0
           ? t(
             `${r.ecrites} fiche(s) écrite(s), ${r.retirees} remplacée(s) pour cette adresse.`,
@@ -110,10 +116,29 @@ export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; age
 }
 
 /** Lecture d'une page du site du client. Le prix de la relecture est DIT avant le clic, pas après. */
-function ImportSource({ busy, onImport }: { busy: boolean; onImport: (url: string) => void }) {
+function ImportSource({ tenantId, agentId, busy, onImport, onErreur }: {
+  tenantId: string; agentId: string; busy: boolean;
+  onImport: (url: string, pages: string[]) => void;
+  onErreur: (message: string) => void;
+}) {
   const t = useT();
   const [url, setUrl] = useState('');
+  const [apercu, setApercu] = useState<ApercuImport | null>(null);
+  const [occupe, setOccupe] = useState(false);
   const propre = url.trim();
+
+  async function voir(): Promise<void> {
+    if (propre === '') return;
+    setOccupe(true);
+    setApercu(null);
+    try {
+      setApercu(await apercuImport(tenantId, agentId, propre));
+    } catch (e) {
+      onErreur(e instanceof Error ? e.message : t('Lecture impossible', 'Read failed'));
+    } finally {
+      setOccupe(false);
+    }
+  }
   return (
     <div className={`${cardCls} flex flex-col gap-3`}>
       <div>
@@ -130,20 +155,66 @@ function ImportSource({ busy, onImport }: { busy: boolean; onImport: (url: strin
           data-testid="kb-url"
           className={`${inputCls} max-w-md`}
           value={url}
-          disabled={busy}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && propre !== '') { onImport(propre); setUrl(''); } }}
+          disabled={busy || occupe}
+          onChange={(e) => { setUrl(e.target.value); setApercu(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && propre !== '') void voir(); }}
           placeholder="https://votre-site.fr/tarifs"
         />
         <button
           data-testid="kb-importer"
-          disabled={busy || propre === ''}
-          onClick={() => { onImport(propre); setUrl(''); }}
+          disabled={busy || occupe || propre === ''}
+          onClick={() => void voir()}
           className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
         >
-          {t('Lire cette page', 'Read this page')}
+          {occupe ? t('Lecture…', 'Reading…') : t('Voir ce qui sera importé', 'See what will be imported')}
         </button>
       </div>
+
+      {/* 🔴 L'APERÇU N'ÉCRIT RIEN, et c'est tout son intérêt. Cinquante pages écrites d'un coup, ce sont
+          cinquante jeux de fiches à relire ou supprimer une par une si la portée était mauvaise. */}
+      {apercu !== null && (
+        <div className="rounded-xl border border-ink-200 p-3" data-testid="kb-apercu">
+          <p className="text-sm font-medium text-ink-700">
+            {apercu.portee === 'page'
+              ? t('Cette page seule', 'This page only')
+              : t(`Ce site : ${apercu.pages.length} page(s) lisible(s)`, `This site: ${apercu.pages.length} readable page(s)`)}
+          </p>
+          {/* ⚠️ Le plafond est DIT quand il mord : « 50 pages » n'est pas « tout le site », et le taire
+              laisserait croire à une base complète alors qu'il en manque la moitié. */}
+          {apercu.plafondAtteint && (
+            <p className="mt-1 text-xs text-amber-800" data-testid="kb-apercu-plafond">
+              {t(
+                'Le plafond de pages est atteint : il en manque. Importez d’abord celles-ci, puis donnez une adresse plus précise pour le reste.',
+                'The page cap was reached: some are missing. Import these first, then give a more precise address for the rest.',
+              )}
+            </p>
+          )}
+          <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto text-xs">
+            {apercu.pages.map((p) => (
+              <li key={p.url} className="flex justify-between gap-3">
+                <span className="truncate text-ink-600">{p.url}</span>
+                <span className="shrink-0 tabular-nums text-ink-400">
+                  {t(`${p.fiches} fiche(s), ${p.caracteres} car.`, `${p.fiches} entry(ies), ${p.caracteres} chars`)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {apercu.ecartees.length > 0 && (
+            <p className="mt-2 text-xs text-ink-400" data-testid="kb-apercu-ecartees">
+              {t(`${apercu.ecartees.length} adresse(s) écartée(s) : `, `${apercu.ecartees.length} address(es) skipped: `)}
+              {apercu.ecartees.slice(0, 3).map((e) => e.raison).join(', ')}
+            </p>
+          )}
+          <button
+            data-testid="kb-confirmer"
+            disabled={busy || apercu.pages.length === 0}
+            onClick={() => { onImport(apercu.url, apercu.pages.map((p) => p.url)); setApercu(null); setUrl(''); }}
+            className="mt-3 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+          >
+            {t(`Importer ces ${apercu.pages.length} page(s)`, `Import these ${apercu.pages.length} page(s)`)}
+          </button>
+        </div>
+      )}
       <p className="text-xs leading-relaxed text-amber-800">
         {t(
           'Relire la même adresse REMPLACE les fiches qu’elle avait déjà produites : vos corrections sur celles-là seront perdues. Les fiches venues d’ailleurs, et celles que vous avez écrites à la main, ne bougent pas.',
