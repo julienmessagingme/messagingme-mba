@@ -449,11 +449,23 @@ proximité de temps tranche par convention. C'est acceptable tant qu'on ne VEND 
 le jour où on la vend, il faudra une dimension de plus sur le lien, donc une porte à sens unique (les liens
 déjà envoyés continuent de circuler).
 
-Une campagne DIRECTE (sans scénario) n'a donc aucun compteur de clics, sur aucun des deux canaux. Ce n'est pas
-un manque de donnée : `tracked_link_clicks` porte le contact et la date depuis la 0106, et
-`campaign_recipients` porte l'envoi et son instant. Le rapprochement se fait exactement comme l'indicateur
-« engagé » le fait déjà (clic après l'envoi, avant l'envoi suivant, dans les 24 h). C'est donc une lecture à
-écrire et un écran à compléter, pas un chantier de fond.
+🔴 **CETTE ENTRÉE S'EST TROMPÉE UNE SECONDE FOIS, ET DANS L'AUTRE SENS. Corrigé le 2026-09-08.** Elle
+affirmait : « une campagne DIRECTE (sans scénario) n'a donc aucun compteur de clics, sur aucun des deux
+canaux ». C'est l'INVERSE. Le comptage filtre sur `template_name is not null` : il sert donc les campagnes
+à TEMPLATE, c'est-à-dire précisément les campagnes directes, et rend `null` pour les campagnes à SCÉNARIO,
+dont `template_name` est nul. Vérifié dans `src/stats/store.pg.ts` en écrivant le lot E, et gardé par un
+test d'intégration qui exerce les deux cas.
+
+Ce qui reste ouvert, une fois la phrase remise à l'endroit : une campagne à SCÉNARIO n'a pas de compteur de
+clics AU NIVEAU DE LA CAMPAGNE. Ses clics existent et s'affichent, mais par BLOC, dans Analytics > Mes
+tableaux. Les rattacher à la campagne qui a démarré le parcours est faisable (l'attribution à la lecture
+existe déjà, elle sert au coût depuis le 2026-09-07), ce n'est pas un chantier de fond, et la page de
+synthèse dit « non attribuable » en attendant plutôt que d'afficher un zéro qui se lirait « personne n'a
+cliqué ».
+
+⚠️ Deux entrées de backlog fausses sur le même sujet, à un jour d'intervalle, dans les deux sens : ce qui
+les a produites n'est pas l'inattention, c'est d'avoir décrit le code de mémoire. Une affirmation sur ce que
+le code fait se relit DANS le code avant d'être écrite ici, ou ne s'écrit pas.
 
 ⚠️ À dire honnêtement le jour où on le fera : le compteur sera juste pour les envois ATTRIBUÉS, et muet pour
 les templates approuvés avant le 2026-09-02, dont l'adresse figée chez Meta ne porte pas de jeton.

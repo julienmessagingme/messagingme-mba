@@ -53,6 +53,15 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       topTopics: [{ topic: 'devis', count: 2 }],
       confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
     }),
+    getCoutParCampagne: async () => ({
+      lignes: [
+        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, cout: 1.43, nonChiffrables: 0, clics: 4, coutParClic: 0.3575 },
+        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, cout: null, nonChiffrables: 5, clics: null, coutParClic: null },
+      ],
+      currency: 'EUR',
+      hasRates: true,
+      tronque: false,
+    }),
     getNuageQualitatif: async () => ({
       points: [{ satisfaction: 0, urgence: 9, n: 2 }, { satisfaction: 8, urgence: 1, n: 1 }],
       moyenne: { satisfaction: 8 / 3, urgence: 19 / 3 },
@@ -146,6 +155,38 @@ describe('stats route', () => {
     // Exactement la borne : accepté. Sinon la borne refuserait un sujet que la base sait stocker.
     await a.inject({ method: 'GET', url: url(`topic=${'x'.repeat(120)}`), ...h(adminTok) });
     expect(captured[3]).toEqual({ topic: 'x'.repeat(120) });
+    await a.close();
+  });
+
+  it('GET /stats/cost/campaigns -> une ligne par campagne, avec ses cases VIDES', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const b = res.json<{ lignes: Array<{ cout: number | null; clics: number | null; coutParClic: number | null }>; currency: string; hasRates: boolean }>();
+    expect(b.lignes).toHaveLength(2);
+    expect(b.lignes[0]).toMatchObject({ cout: 1.43, clics: 4 });
+    // 🔴 Les `null` traversent le transport tels quels. Une campagne à scénario n'a PAS zéro clic : elle
+    // n'a rien de mesurable, et un zéro se lirait « personne n'a cliqué ». Un JSON qui remplacerait ces
+    // absences par des zéros ferait mentir l'écran sans qu'aucune erreur ne se voie.
+    expect(b.lignes[1]).toMatchObject({ cout: null, clics: null, coutParClic: null });
+    expect(b.currency).toBe('EUR');
+    await a.close();
+  });
+
+  it('🔴 coût par campagne sans câblage -> 503, jamais un tableau vide', async () => {
+    // Un tableau vide se lirait « aucune campagne n'a envoyé sur la période ». La vérité serait « rien
+    // n'est branché ». Même choix que ses voisines.
+    const a = app({ stats: { getCoutParCampagne: undefined } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
+    await a.close();
+  });
+
+  it('GET /stats/cost/campaigns : agent -> 403, tenant croisé -> 403, plage invalide -> 400', async () => {
+    const a = app();
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/cost/campaigns?days=30', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?from=2026-01-10&to=2026-01-01', ...h(adminTok) })).statusCode).toBe(400);
     await a.close();
   });
 

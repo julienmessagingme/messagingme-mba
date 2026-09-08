@@ -1,6 +1,12 @@
 import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
+// Type SEUL : `cost.ts` importe deja des types d'ici, et un import de VALEUR dans l'autre sens ferait un
+// cycle a l'execution. Le calcul du cout vit dans le cablage (`src/index.ts`), comme pour la serie.
+import type { VolumeCampagneRow } from './cost';
+// Valeur SEULE, pas un type : le plafond doit etre le meme des deux cotes (le SQL en garde une de plus, la
+// fonction pure tranche et l'annonce). Deux nombres ecrits separement divergeraient au premier reglage.
+import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 
@@ -446,48 +452,100 @@ export class PgStatsStore {
       replied: Number(row?.replied ?? 0),
       failed: Number(row?.failed ?? 0),
       buttonReplies: Number(row?.button_replies ?? 0),
-      urlClicks: await this.clicsLiensCampagne(tenantId, campaignId),
+      urlClicks: (await this.clicsParCampagne(tenantId, [campaignId])).get(campaignId) ?? null,
     };
   }
 
   /**
-   * Clics sur les liens tracés du template de CETTE campagne, à partir de son PREMIER envoi.
+   * Clics sur les liens tracés des templates de PLUSIEURS campagnes, à partir du premier envoi de chacune.
    *
-   * `null` quand le template ne porte aucun lien tracé confirmé (ou quand la campagne est un scénario, dont
-   * `template_name` est nul) : il n'y a alors rien à afficher, et une barre à zéro mentirait.
+   * 🔴 UNE SEULE DÉFINITION DE « LES CLICS D'UNE CAMPAGNE », pour le funnel (une campagne) et pour le
+   * tableau de la synthèse (toutes celles de la période). La version par campagne unique existait déjà ;
+   * en écrire une seconde pour le tableau aurait donné deux chiffres sous le même mot, sur deux écrans du
+   * même onglet, et c'est exactement ce que le dépôt a déjà payé sur les erreurs de livraison. Le funnel
+   * appelle donc celle-ci avec un seul identifiant.
    *
-   * Le seuil au premier envoi n'est pas cosmétique : Meta explore puis fait cliquer chaque bouton URL pendant
-   * la revue du template, donc AVANT le moindre envoi. Sans lui, une campagne démarre avec des dizaines de
-   * clics qui ne viennent de personne. Le filtre d'agent (`src/links/clic-automatique.ts`) attrape la même
-   * chose à l'écriture ; ce seuil couvre en plus tout ce qui a été enregistré avant qu'il n'existe.
+   * Une campagne ABSENTE de la réponse n'a pas zéro clic : elle n'a rien de mesurable (campagne à scénario,
+   * dont `template_name` est nul, ou template sans lien tracé confirmé). L'appelant en fait `null`, et
+   * l'écran le DIT. Un zéro se lirait « personne n'a cliqué », ce qui est une affirmation.
+   *
+   * Le seuil au premier envoi n'est pas cosmétique : Meta explore puis fait cliquer chaque bouton URL
+   * pendant la revue du template, donc AVANT le moindre envoi.
+   *
+   * ⚠️ L'absence d'une campagne à SCÉNARIO est garantie DEUX fois, et le savoir évite de croire l'une
+   * suffisante : la jointure sur `l.template_name = b.template_name` ne peut pas trouver un nom `null`, et
+   * le `where` le dit en toutes lettres. Retirer le `where` ne change donc rien aujourd'hui ; le garder
+   * couvre le jour où la jointure deviendrait externe. Le test d'intégration, lui, fige le RÉSULTAT (une
+   * campagne sans template est absente), pas le mécanisme.
    */
-  private async clicsLiensCampagne(tenantId: string, campaignId: string): Promise<number | null> {
-    const res = await this.pool.query<{ n: string | null }>(
+  async clicsParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
+    if (campaignIds.length === 0) return new Map();
+    const res = await this.pool.query<{ campaign_id: string; n: string | null }>(
       `with borne as (
-         select c.template_name, c.template_language, min(r.sent_at) as premier_envoi
+         select c.id as campaign_id, c.template_name, c.template_language, min(r.sent_at) as premier_envoi
            from campaigns c join campaign_recipients r on r.campaign_id = c.id
-          where c.id = $1 and c.tenant_id = $2 and r.sent_at is not null
-          group by c.template_name, c.template_language
+          where c.tenant_id = $1 and c.id = any($2::uuid[]) and r.sent_at is not null
+          group by c.id, c.template_name, c.template_language
        )
-       select count(k.id)::int as n
+       select b.campaign_id, count(k.id)::int as n
          from borne b
          join tracked_links l
-           on l.tenant_id = $2
+           on l.tenant_id = $1
           and l.template_name = b.template_name
           and l.template_language = b.template_language
           and l.confirmed_at is not null
          left join tracked_link_clicks k
-           on k.code = l.code and k.tenant_id = $2 and k.at >= b.premier_envoi
+           on k.code = l.code and k.tenant_id = $1 and k.at >= b.premier_envoi
         where b.template_name is not null
         -- GROUP BY indispensable : un count d agregat SANS group by rend TOUJOURS une ligne (a zero),
         -- donc 'aucun lien trace' serait devenu '0 clic', et l ecran afficherait une etape qui ment.
-        -- Avec lui, zero ligne en entree = zero ligne en sortie = null cote appelant.
-        group by b.template_name`,
-      [campaignId, tenantId],
+        -- Avec lui, zero ligne en entree = zero ligne en sortie = absence cote appelant.
+        group by b.campaign_id`,
+      [tenantId, campaignIds],
     );
-    // Aucune ligne = pas de lien tracé confirmé sur ce template (ou campagne jamais envoyée) -> non affichable.
-    const row = res.rows[0];
-    return row ? Number(row.n ?? 0) : null;
+    return new Map(res.rows.map((r) => [r.campaign_id, Number(r.n ?? 0)]));
+  }
+
+  /**
+   * Le VOLUME d'envois facturables de la période, par campagne et par catégorie.
+   *
+   * ⚠️ Même population que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) : c'est ce
+   * qui garantit que le total du tableau et le total du graphe disent la même chose. Le coût lui-même ne se
+   * calcule pas ici : il se calcule dans `estimateCoutParCampagne`, avec les mêmes règles que la série
+   * (une catégorie inconnue ou sans tarif ne produit aucun coût et se COMPTE à part).
+   *
+   * Les envois HORS campagne sont écartés (`campaign_id is not null`) : ce tableau a une ligne par
+   * campagne, et il n'y a pas de ligne « le reste » à laquelle les rattacher. Le graphe de coût, lui, les
+   * porte, ce qui explique qu'il puisse totaliser davantage.
+   */
+  async getVolumeParCampagne(tenantId: string, range: DateRange): Promise<VolumeCampagneRow[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ campaign_id: string; nom: string; template: string | null; category: string | null; count: string }>(
+      `with ${BOUNDS_CTE},
+       v as (
+         select envois.campaign_id as campaign_id, envois.category as category, count(*)::int as n
+         from (${envoisTemplateFacturables(ATTRIBUTION_CAMPAGNE_SCENARIO)}) envois
+         where envois.campaign_id is not null
+         group by 1, 2
+       ),
+       -- Les campagnes qui ont le PLUS envoye, plafonnees. Une de plus que le plafond : c'est ainsi que
+       -- l'appelant sait qu'il tronque, et le dit. Le tri final se fait au COUT, que le SQL ne connait pas
+       -- encore (il ne voit pas les tarifs Meta) : la ligne ecartee est donc la moins envoyee.
+       garde as (
+         select campaign_id from v group by campaign_id
+         order by sum(n) desc, campaign_id asc limit $5
+       )
+       select v.campaign_id as campaign_id, c.name as nom, c.template_name as template,
+              v.category as category, v.n as count
+       from v
+       join garde g on g.campaign_id = v.campaign_id
+       join campaigns c on c.id = v.campaign_id and c.tenant_id = $1`,
+      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1],
+    );
+    return res.rows.map((r) => ({
+      campaignId: r.campaign_id, nom: r.nom, template: r.template,
+      category: r.category, count: Number(r.count),
+    }));
   }
 
   /**

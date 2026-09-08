@@ -46,7 +46,13 @@ export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; ran
     setNuage(null);
     setErreur(false);
     getNuageQualitatif(tenantId, range)
-      .then((n) => { if (vivant) setNuage(n); })
+      .then((n) => {
+        if (!vivant) return;
+        // Même garde que la carte du coût, et pour la même raison : le type est une promesse, pas une
+        // preuve. Un corps sans `points` ferait jeter le rendu, et emporterait la page entière.
+        if (!n || !Array.isArray(n.points)) { setErreur(true); return; }
+        setNuage(n);
+      })
       .catch(() => { if (vivant) setErreur(true); });
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);

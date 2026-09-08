@@ -16,7 +16,7 @@ import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
-import { estimateCostSeries } from './stats/cost';
+import { estimateCostSeries, estimateCoutParCampagne, type CategoryRates } from './stats/cost';
 import { rangeToUnix } from './stats/range';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
@@ -269,6 +269,29 @@ async function main(): Promise<void> {
         await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, to, subject, text, ...(html ? { html } : {}) });
       }
     : undefined;
+  /**
+   * Les TARIFS Meta de la période (par catégorie, plus la devise), pour un espace donné.
+   *
+   * 🔴 UN SEUL LECTEUR DE `pricing_analytics`, parce que DEUX écrans du même onglet en dépendent : le
+   * graphe de coût estimé et le tableau « coût par engagement » de la synthèse. Deux lectures écrites
+   * séparément finiraient par diverger (une qui lit la devise, l'autre non ; une qui retombe sur zéro,
+   * l'autre sur null), et le client comparerait deux totaux qui devraient être le même.
+   *
+   * ⚠️ `null` partout quand l'espace n'a pas de WABA ou que Meta ne rend rien : c'est cette absence qui
+   * fait dire aux deux écrans « tarif indisponible » au lieu d'afficher un coût inventé.
+   */
+  const tarifsMeta = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
+    const wabaId = await repo.getTenantWabaId(tenant);
+    const { startTs, endTs } = rangeToUnix(range);
+    const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
+    const pricing = pricingClientT && wabaId ? await pricingClientT.getPricingAnalytics(wabaId, startTs, endTs) : null;
+    return {
+      marketing: pricing?.byCategory['marketing']?.ratePerMessage ?? null,
+      utility: pricing?.byCategory['utility']?.ratePerMessage ?? null,
+      currency: pricing?.currency ?? null,
+    };
+  };
+
   const app = buildServer({
     /**
      * 🔴 SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03). `/ops` ouvre la lecture de toutes les
@@ -648,19 +671,26 @@ async function main(): Promise<void> {
         limit: PLAFOND_CONTACTS_ERREUR + 1,
       }),
       getCostSeries: async (tenant, range, filter) => {
-        const wabaId = await repo.getTenantWabaId(tenant);
-        const { startTs, endTs } = rangeToUnix(range);
-        const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
-        const [rows, pricing] = await Promise.all([
+        const [rows, rates] = await Promise.all([
           statsStore.getCostVolume(tenant, range, filter),
-          pricingClientT && wabaId ? pricingClientT.getPricingAnalytics(wabaId, startTs, endTs) : Promise.resolve(null),
+          tarifsMeta(tenant, range),
         ]);
-        const rates = {
-          marketing: pricing?.byCategory['marketing']?.ratePerMessage ?? null,
-          utility: pricing?.byCategory['utility']?.ratePerMessage ?? null,
-          currency: pricing?.currency ?? null,
-        };
         return estimateCostSeries(range.from, range.to, rows, rates);
+      },
+      /**
+       * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E).
+       *
+       * ⚠️ Les tarifs Meta viennent du MÊME appel que le graphe de coût (`tarifsMeta`) : deux façons de les
+       * lire donneraient deux coûts sur deux écrans du même onglet, et le client comparerait. Le calcul,
+       * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
+       */
+      getCoutParCampagne: async (tenant, range) => {
+        const [volumes, rates] = await Promise.all([
+          statsStore.getVolumeParCampagne(tenant, range),
+          tarifsMeta(tenant, range),
+        ]);
+        const clics = await statsStore.clicsParCampagne(tenant, [...new Set(volumes.map((v) => v.campaignId))]);
+        return estimateCoutParCampagne(volumes, rates, clics);
       },
       /**
        * Mesures d'un scénario : les événements de blocs, PLUS les clics sur les liens tracés des templates

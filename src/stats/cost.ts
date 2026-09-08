@@ -72,3 +72,131 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
     nonChiffrables,
   };
 }
+
+/** Un volume d'envois facturables d'UNE campagne, pour UNE catégorie Meta (marketing / utility / inconnue). */
+export interface VolumeCampagneRow {
+  campaignId: string;
+  nom: string;
+  /** Le template de la campagne, `null` pour une campagne à scénario. C'est ce qui décide si un clic existe. */
+  template: string | null;
+  category: string | null;
+  count: number;
+}
+
+/**
+ * Combien de campagnes le tableau de la synthèse montre au plus.
+ *
+ * 🔴 UNE LISTE SANS BORNE EST UN DÉFAUT, PAS UN CONFORT. La plage accepte jusqu'à 366 jours : un client qui
+ * lance quelques campagnes par semaine en a des centaines sur un an, et l'écran les rendrait toutes, dans une
+ * page qu'on ouvre pour se faire une idée. Le dépôt a déjà posé cette règle sur les contacts touchés par une
+ * erreur (`PLAFOND_CONTACTS_ERREUR`) et sur la liste quali. Ici, on garde les campagnes qui ont le PLUS
+ * ENVOYÉ, et le tableau DIT qu'il tronque : une troncature muette se lit comme un inventaire complet.
+ *
+ * ⚠️ Le SQL en demande une de plus (`+ 1`) : c'est ainsi qu'on sait qu'on tronque sans compter à part.
+ */
+export const PLAFOND_CAMPAGNES_SYNTHESE = 50;
+
+/** Une ligne du tableau « ce que coûte un engagement » (page de synthèse). */
+export interface LigneCoutCampagne {
+  campaignId: string;
+  nom: string;
+  template: string | null;
+  /** Envois facturables de la période, chiffrables ou non. */
+  envoyes: number;
+  /**
+   * Coût ESTIMÉ (envois × tarif Meta de la catégorie). `null` quand AUCUN des envois de la campagne n'a pu
+   * être chiffré : la case reste vide et le dit, plutôt que d'afficher un zéro qui se lirait « gratuit ».
+   */
+  cout: number | null;
+  /** Envois comptés dans `envoyes` mais absents du coût (catégorie inconnue, ou tarif Meta indisponible). */
+  nonChiffrables: number;
+  /**
+   * Clics sur les liens tracés, depuis le premier envoi. `null` = rien de mesurable ici, ce qui n'est PAS
+   * zéro : campagne à scénario (elle n'a pas de template, donc pas de lien tracé) ou template sans lien.
+   */
+  clics: number | null;
+  /**
+   * Coût par clic. `null` dès qu'un des deux termes manque OU que les clics valent zéro : un « ∞ » ou un
+   * « 0 € » serait une réponse à une question qu'on n'a pas pu poser.
+   */
+  coutParClic: number | null;
+}
+
+export interface CoutParCampagne {
+  lignes: LigneCoutCampagne[];
+  /**
+   * La période comptait PLUS de campagnes que le plafond, et le tableau n'en montre qu'une partie (les plus
+   * grosses). L'écran le dit : sans ça, la liste se lirait comme l'inventaire complet de la période.
+   */
+  tronque: boolean;
+  /** Devise rendue par Meta ; `null` = inconnue, l'écran affiche alors le nombre nu. */
+  currency: string | null;
+  /** Meta n'a rendu AUCUN tarif : toute la colonne coût est vide, et l'écran doit dire pourquoi. */
+  hasRates: boolean;
+}
+
+/**
+ * Le tableau « coût par engagement », à partir des volumes par campagne, des tarifs Meta et des clics.
+ *
+ * 🔴 LES MÊMES RÈGLES QUE `estimateCostSeries`, ET POUR LA MÊME RAISON : une catégorie inconnue ou sans
+ * tarif ne produit AUCUN coût et se COMPTE à part (`nonChiffrables`). Deux définitions de « chiffrable »
+ * donneraient deux totaux sur deux écrans du même onglet, et le client comparerait.
+ *
+ * Pur (aucune DB, aucun réseau) : c'est ici que se décident les trois cases vides, et elles se testent sans
+ * base. Tri par coût décroissant, puis par envois : la question posée est « ce que ça coûte ».
+ */
+export function estimateCoutParCampagne(
+  rows: VolumeCampagneRow[],
+  rates: CategoryRates,
+  clics: Map<string, number>,
+): CoutParCampagne {
+  const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
+  for (const r of rows) {
+    const ligne = par.get(r.campaignId) ?? {
+      campaignId: r.campaignId, nom: r.nom, template: r.template,
+      envoyes: 0, cout: 0, nonChiffrables: 0, clics: null, coutParClic: null, chiffres: 0,
+    };
+    const rate = r.category === 'marketing' ? rates.marketing : r.category === 'utility' ? rates.utility : null;
+    ligne.envoyes += r.count;
+    if (rate == null) ligne.nonChiffrables += r.count;
+    else {
+      ligne.chiffres += r.count;
+      ligne.cout = (ligne.cout ?? 0) + r.count * rate;
+    }
+    par.set(r.campaignId, ligne);
+  }
+
+  const lignes = [...par.values()].map((l) => {
+    // Aucun envoi chiffré -> la case COÛT est vide, pas à zéro. Un zéro se lirait « cette campagne n'a rien
+    // coûté », alors que la vérité est « on ne sait pas ce qu'elle a coûté ».
+    const cout = l.chiffres > 0 ? Math.round((l.cout ?? 0) * 100) / 100 : null;
+    const n = clics.get(l.campaignId);
+    const nbClics = n === undefined ? null : n;
+    // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
+    const coutParClic = cout !== null && nbClics !== null && nbClics > 0 ? Math.round((cout / nbClics) * 10000) / 10000 : null;
+    return { campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, cout, nonChiffrables: l.nonChiffrables, clics: nbClics, coutParClic };
+  });
+  /**
+   * 🔴 ON TRONQUE SUR LE VOLUME, ON AFFICHE SUR LE COÛT, ET L'ORDRE DES DEUX COMPTE.
+   *
+   * Le SQL ne connaît pas les tarifs Meta : il garde les N+1 campagnes qui ont le PLUS ENVOYÉ (le `+1` est
+   * ce qui permet de savoir qu'on tronque). Si on triait ici au coût avant de couper, la campagne écartée
+   * serait la moins chère des survivantes, et l'ensemble affiché ne serait plus « les N qui ont le plus
+   * envoyé » : ce serait un mélange des deux critères, que la phrase de l'écran décrirait de travers.
+   *
+   * On rejoue donc EXACTEMENT le critère du SQL (volume décroissant, identifiant en départage), on coupe,
+   * puis on trie au coût pour l'affichage.
+   */
+  const tronque = lignes.length > PLAFOND_CAMPAGNES_SYNTHESE;
+  const gardees = tronque
+    ? [...lignes].sort((a, b) => b.envoyes - a.envoyes || a.campaignId.localeCompare(b.campaignId)).slice(0, PLAFOND_CAMPAGNES_SYNTHESE)
+    : lignes;
+  gardees.sort((a, b) => (b.cout ?? -1) - (a.cout ?? -1) || b.envoyes - a.envoyes || a.nom.localeCompare(b.nom));
+
+  return {
+    lignes: gardees,
+    tronque,
+    currency: rates.currency ?? null,
+    hasRates: rates.marketing != null || rates.utility != null,
+  };
+}

@@ -190,6 +190,96 @@ describe.skipIf(!url)('Cout : les deux lectures comptent la MEME population (Pos
   });
 
   /**
+   * LE TABLEAU « CE QUE COUTE UN ENGAGEMENT » (lot E du 2026-09-08), contre la meme base.
+   *
+   * 🔴 CE QUE CES DEUX TESTS PROTEGENT, et qu aucun test unitaire ne peut voir : la POPULATION du tableau
+   * (elle doit etre celle du graphe de cout, sinon deux ecrans du meme onglet se contredisent) et la
+   * distinction ABSENCE / ZERO sur les clics, qui est du SQL pur (zero ligne en sortie vaut « rien a
+   * mesurer », pas « personne n a clique »).
+   */
+  it('E1 🔴 le volume PAR CAMPAGNE compte la meme chose que le graphe, et jette ce qui n a pas de campagne', async () => {
+    const lignes = await store.getVolumeParCampagne(tenantId, RANGE);
+    const mienne = lignes.filter((l) => l.campaignId === campaignId);
+    // Les trois envois reussis de la campagne (camp1, camp2, direct-voisin) ; celui en ECHEC de livraison
+    // est exclu, comme partout ailleurs.
+    expect(mienne.reduce((a, l) => a + l.count, 0)).toBe(3);
+    expect(mienne[0]).toMatchObject({ nom: 'itest-cout-campagne', template: TPL_CAMPAGNE, category: 'marketing' });
+
+    // 🔴 L INVARIANT AVEC LE GRAPHE : filtrer le cout sur cette campagne doit rendre EXACTEMENT le meme
+    // total. C est leur ECART qui porterait le defaut, et il ne se voit dans aucun des deux fichiers.
+    const parCampagne = await store.getCostVolume(tenantId, RANGE, { campaignIds: [campaignId] });
+    expect(mienne.reduce((a, l) => a + l.count, 0)).toBe(total(parCampagne));
+
+    // L envoi de scenario NON rattache (aucune campagne scenario ne le reclame ici) n a pas de ligne : le
+    // tableau a une ligne par campagne, il n a pas de ligne « le reste » ou le ranger.
+    expect(lignes.some((l) => l.template === TPL_SCENARIO)).toBe(false);
+  });
+
+  it('E2 🔴 les clics : une campagne SANS lien trace est ABSENTE de la reponse, elle n a pas zero clic', async () => {
+    // Un zero se lirait « personne n a clique », qui est une affirmation. La verite est « il n y a rien a
+    // mesurer ici » : campagne a scenario (pas de template) ou template sans lien trace.
+    const sansLien = await store.clicsParCampagne(tenantId, [campaignId]);
+    expect(sansLien.has(campaignId)).toBe(false);
+
+    // 🔴 ET LE CAS QUE L ECRAN NOMME : une campagne a SCENARIO, donc SANS template (`template_name` est
+    // nullable depuis la 0024). C est celui que `todo.md` decrivait a l envers. Il vaut d etre exerce a
+    // part : la campagne ci-dessus est absente pour une AUTRE raison (aucun lien trace confirme), et un
+    // test qui ne couvrirait qu elle annoncerait une garantie qu il n apporte pas.
+    const scenario = (await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, name, category, template_name, channel)
+       values ($1, 'itest-scenario-sans-template', 'marketing', null, 'whatsapp') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const contactScn = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000032') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+       values ($1, $2, '33600000032', '{}'::jsonb, 'sent', timestamptz '2026-09-05 10:00:00+00', 'wamid.scn1')`,
+      [scenario, contactScn],
+    );
+    expect((await store.clicsParCampagne(tenantId, [scenario])).has(scenario)).toBe(false);
+
+    // Une campagne AVEC un lien trace confirme, et deux clics dont UN avant son premier envoi.
+    const avecLien = (await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, name, category, template_name, template_language, channel)
+       values ($1, 'itest-clics', 'marketing', 'itest_tpl_clics', 'fr', 'whatsapp') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const contact = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000031') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+       values ($1, $2, '33600000031', '{}'::jsonb, 'sent', timestamptz '2026-09-05 10:00:00+00', 'wamid.clics1')`,
+      [avecLien, contact],
+    );
+    await pool.query(
+      `insert into tracked_links (code, tenant_id, template_name, template_language, button_index, destination, confirmed_at)
+       values ('itestclic', $1, 'itest_tpl_clics', 'fr', 0, 'https://exemple.fr', now())`,
+      [tenantId],
+    );
+    await pool.query(
+      `insert into tracked_link_clicks (code, tenant_id, at) values
+         ('itestclic', $1, timestamptz '2026-09-04 09:00:00+00'),
+         ('itestclic', $1, timestamptz '2026-09-05 11:00:00+00'),
+         ('itestclic', $1, timestamptz '2026-09-06 11:00:00+00')`,
+      [tenantId],
+    );
+
+    const clics = await store.clicsParCampagne(tenantId, [avecLien, campaignId]);
+    // DEUX et pas trois : le clic du 4 precede le premier envoi du 5. Meta explore et clique chaque bouton
+    // URL pendant la revue du template, donc avant le moindre envoi ; sans ce seuil, une campagne demarre
+    // avec des dizaines de clics qui ne viennent de personne.
+    expect(clics.get(avecLien)).toBe(2);
+    // Et l autre campagne reste absente : la reponse ne comble pas les trous avec des zeros.
+    expect(clics.has(campaignId)).toBe(false);
+
+    // Le funnel lit la MEME fonction : c est ce qui garantit que les deux ecrans annoncent le meme chiffre.
+    expect((await store.getCampaignFunnel(tenantId, avecLien)).urlClicks).toBe(2);
+  });
+
+  /**
    * L ATTRIBUTION D UN ENVOI DE SCENARIO A LA CAMPAGNE QUI L A DEMARRE (decision de Julien, 2026-09-07).
    *
    * 🔴 CE QUE CES TESTS PROTEGENT, ET QU AUCUN RAISONNEMENT N AURAIT DONNE. Le moteur journalise le message

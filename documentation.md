@@ -341,7 +341,16 @@ ni `sent_at` ni `delivery_updated_at` (un refus à l'envoi n'envoie rien). Le jo
 `conversation_messages`, un envoi de scénario ne journalise que son succès), et un tableau PAR CODE n'a pas de
 ligne pour un échec sans code Meta (2 sur 25 en production : template inenvoyable, panne réseau). `error_code` (0020) alimenté par `extractDelivery` (webhook) + `markResult` (échec d'envoi,
 `MetaApiError.code`). **Coût = backend** : `getCostVolume` (volume/jour/catégorie, filtrable) × tarif Meta
-(`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif). 🔴 Depuis le 2026-09-07, ce qui n'est pas chiffrable est **compté** (`nonChiffrables`) au lieu de disparaître du calcul : un envoi sans catégorie connue produisait un coût nul que l'écran affichait sans rien dire, et 22 envois de scénario du tenant Demo étaient dans ce cas.
+(`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif).
+🔴 **Depuis le lot E (2026-09-08), un SECOND écran lit les mêmes tarifs** : le tableau « ce que coûte un
+engagement » de la page de synthèse (`getVolumeParCampagne` + `estimateCoutParCampagne`). Les tarifs
+passent par `tarifsMeta` (`src/index.ts`), UN seul lecteur de `pricing_analytics` pour les deux, parce que
+deux lectures écrites séparément divergent (l'une qui lit la devise, l'autre non) et que le client
+comparerait deux totaux qui devraient être le même. Le comptage des clics suit la même règle :
+`clicsParCampagne` sert le funnel d'une campagne ET le tableau de toutes. Le tableau est PLAFONNÉ
+(`PLAFOND_CAMPAGNES_SYNTHESE`, 50) : le SQL en garde une de plus pour savoir qu'il tronque, et l'écran
+le dit. La plage acceptant 366 jours, une liste sans borne aurait rendu des centaines de lignes.
+⚠️ **Ce tableau est la page d'ACCUEIL de l'onglet**, et il fait tourner la requête d'envois facturables, dont la sous-requête d'attribution est corrélée et sans index (voir `envoisTemplateFacturables`). Aucun cache n'a été posé : la production compte quelques campagnes, et un cache spéculatif serait une invalidation de plus à tenir. Le jour où l'écran traîne, la brique existe déjà (`src/lib/cache-court.ts`), et c'est elle qu'il faut utiliser, pas un second mécanisme. 🔴 Depuis le 2026-09-07, ce qui n'est pas chiffrable est **compté** (`nonChiffrables`) au lieu de disparaître du calcul : un envoi sans catégorie connue produisait un coût nul que l'écran affichait sans rien dire, et 22 envois de scénario du tenant Demo étaient dans ce cas.
 
 ## Accueil + statut compte
 

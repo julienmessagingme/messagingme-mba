@@ -277,6 +277,43 @@ export interface AnalyzedConversation {
   entities?: Record<string, unknown>;
 }
 /**
+ * Une ligne du tableau « ce que coute un engagement » (lot E du 2026-09-08).
+ *
+ * 🔴 TROIS CHAMPS PEUVENT ETRE `null`, ET AUCUN NE VAUT ZERO. `cout` null = aucun envoi chiffrable (Meta
+ * n'a pas rendu de tarif, ou la categorie manque) ; `clics` null = rien de mesurable ici (campagne a
+ * scenario, donc sans template, ou template sans lien trace) ; `coutParClic` null des qu'un des deux
+ * termes manque ou que les clics valent zero. L'ecran laisse ces cases VIDES et dit pourquoi : un zero
+ * affirmerait « ca n'a rien coute » ou « personne n'a clique ».
+ */
+export interface LigneCoutCampagne {
+  campaignId: string;
+  nom: string;
+  /** `null` pour une campagne a scenario : c'est ce qui explique l'absence de clics. */
+  template: string | null;
+  envoyes: number;
+  cout: number | null;
+  /** Envois comptes dans `envoyes` mais absents du cout (categorie inconnue, ou tarif indisponible). */
+  nonChiffrables: number;
+  clics: number | null;
+  coutParClic: number | null;
+}
+export interface CoutParCampagne {
+  lignes: LigneCoutCampagne[];
+  /**
+   * La periode comptait PLUS de campagnes que le tableau n'en montre (il garde celles qui ont le plus
+   * envoye). L'ecran le DIT : une troncature muette se lit comme un inventaire complet.
+   */
+  tronque: boolean;
+  /** Devise rendue par Meta ; `null` = inconnue, l'ecran affiche alors le nombre nu. */
+  currency: string | null;
+  /** Meta n'a rendu AUCUN tarif : toute la colonne cout est vide, et l'ecran doit dire pourquoi. */
+  hasRates: boolean;
+}
+export function getCoutParCampagne(tenantId: string, range?: StatsRange): Promise<CoutParCampagne> {
+  return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${rangeQuery(range)}`);
+}
+
+/**
  * Le damier « satisfaction x urgence » (lot F du 2026-09-08, migration 0121).
  *
  * Un point par CASE occupee du damier (les deux notes sont des entiers de 0 a 10 : 121 positions au plus),

@@ -45,7 +45,7 @@ la servait, et elle passe d'un appel occasionnel à un par destinataire de campa
 hors transaction. **Vérifier `indisvalid` après le déploiement** : `if not exists` saute un index invalide
 au lieu de le réparer.
 
-## Refonte des menus : A, B, C, D et F LIVRÉS ET DÉPLOYÉS · reste E (2026-09-08)
+## Refonte des menus : LES SIX LOTS SONT LIVRÉS (2026-09-08)
 
 Trois onglets de premier niveau, l'Inbox en boîte mail, et un Performance Lab dont la page d'accueil répond
 à deux questions : ce que coûte un engagement, et où se situent les conversations en urgence et en
@@ -81,17 +81,25 @@ gauche. `/performance` est aussi devenue la porte d'entrée de l'onglet Performa
 - ⚠️ `satisfaction` et `urgence` ne partent PAS vers HubSpot (`getStored` ne les relit pas, et dit
   pourquoi) : ce serait changer un contrat inter-dépôts que ce lot ne demandait pas.
 
-### Ce qui reste
-
-**Lot E** : coût par campagne rapporté aux engagements, sur la page de synthèse `/performance` (qui existe
-maintenant, avec le nuage du lot F).
-- Le coût n'est stocké nulle part : il se recalcule (envois × tarif Meta de la catégorie), donc une
-  **estimation** que l'écran doit annoncer comme telle, et une colonne VIDE quand Meta ne rend aucun tarif.
-- 🔴 Les clics existent pour les campagnes à TEMPLATE (le comptage filtre sur `template_name is not null`)
-  et PAS pour les campagnes à scénario. ⚠️ `todo.md` affirme l'inverse : sa correction fait partie du lot.
-- Deux réserves à afficher sous le tableau : les templates approuvés avant le 2026-09-02 n'ont pas de jeton
-  dans leur adresse figée chez Meta (aucun clic ne remonte), et deux campagnes qui envoient la même adresse
-  au même contact partagent le compteur.
+**Lot E** (livré le 2026-09-08, AUCUNE migration) : le tableau « ce que coûte un engagement » en tête de la
+page de synthèse. Une ligne par campagne ayant envoyé sur la période : envoyés, coût estimé, clics, coût par
+clic.
+- 🔴 **Trois cases restent VIDES plutôt que de valoir zéro**, et chacune dit pourquoi au survol : le coût
+  (aucun tarif Meta, ou catégorie inconnue), les clics (campagne à scénario, ou template sans lien tracé),
+  et le ratio (un terme manquant, ou zéro clic). Un zéro affirmerait « ça n'a rien coûté » ou « personne
+  n'a cliqué ».
+- Le coût est une ESTIMATION recalculée (envois × tarif Meta), pas une facture, et l'écran l'annonce. Les
+  tarifs passent par `tarifsMeta` (`src/index.ts`), UN seul lecteur de `pricing_analytics` pour le graphe de
+  coût ET ce tableau : deux lectures divergeraient, et le client comparerait.
+- Le comptage des clics a été GÉNÉRALISÉ (`clicsParCampagne`) : le funnel d'une campagne et le tableau de
+  toutes lisent la même fonction.
+- Le tableau est PLAFONNÉ à 50 campagnes (les plus envoyées) et DIT quand il tronque.
+- ⚠️ **`todo.md` disait l'inverse du code** sur les clics des campagnes directes (il les croyait sans
+  compteur, alors que ce sont les campagnes à SCÉNARIO qui n'en ont pas). Corrigé dans ce lot, avec la
+  raison : l'entrée décrivait le code de mémoire.
+- 🔴 **Défaut trouvé PAR la suite E2E, et il valait le lot** : la carte du coût faisait tomber la PAGE
+  ENTIÈRE (donc le nuage d'à côté) si le serveur rendait un corps sans `lignes`. Le type d'une réponse est
+  une promesse, pas une preuve. Garde posée sur les deux cartes, testée dans les deux sens.
 
 ⚠️ **Aucune migration en attente.** Dernière appliquée : **0121** (CLAUDE.md porte le compteur, et lui seul).
 

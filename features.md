@@ -46,7 +46,7 @@ RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API) · Paramètre
 **Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel / Erreurs) · Qualitatif ·
 Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.
 **Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte le nuage
-« urgence et satisfaction », et bientôt le coût par engagement.
+« urgence et satisfaction » et le tableau du coût par engagement.
 
 **Inbox** : **aucune barre de navigation**, ni sur ordinateur ni dans le tiroir mobile. L'écran portera son
 propre menu de dossiers, façon boîte mail.
@@ -940,7 +940,26 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 - ✅ **Page de synthèse « Synthèse », en tête du Performance Lab** (2026-09-08) : la première page de
   l'onglet, à l'adresse `/performance`. Elle répond à des questions que les autres écrans ne posent pas :
-  où en sont les conversations, et (bientôt) ce que coûte un engagement.
+  où en sont les conversations, et ce que coûte un engagement.
+- ✅ **« Ce que coûte un engagement »** (2026-09-08, sur la page de synthèse) : une ligne par campagne ayant
+  envoyé sur la période, avec ses **envoyés**, son **coût estimé**, ses **clics** et son **coût par clic**.
+  C'est la question qu'on se pose en arrivant sur l'onglet, et elle se lit sur tout l'historique dès le
+  premier jour.
+  🔴 **Le coût est une ESTIMATION, pas une facture, et l'écran le dit.** Aucun coût par campagne n'est
+  stocké : il se recalcule (envois × tarif Meta de la catégorie) à partir des tarifs que Meta rend pour la
+  période, exactement comme le graphe de coût de l'onglet Quantitatif, avec lequel il partage sa population
+  d'envois et sa lecture des tarifs.
+  ⚠️ **Trois cases restent VIDES plutôt que d'afficher zéro**, et chacune dit pourquoi au survol : le coût
+  quand Meta ne rend aucun tarif ou que la catégorie de l'envoi est inconnue (les envois, eux, sont comptés
+  à part et annoncés) ; les clics quand la campagne envoie un **scénario** et non un template, ou quand son
+  template ne porte aucun lien tracé (« non attribuable ») ; et le ratio dès qu'un des deux termes manque
+  ou que les clics valent zéro. Un zéro affirmerait « ça n'a rien coûté » ou « personne n'a cliqué ».
+  ⚠️ **Le tableau montre au plus 50 campagnes**, celles qui ont le plus envoyé, et il DIT quand la période
+  en compte davantage : une troncature muette se lirait comme l'inventaire complet de la période.
+  ⚠️ **Deux réserves sont écrites sous le tableau**, pas cachées dans une infobulle : un template approuvé
+  avant le 2026-09-02 porte chez Meta une adresse figée sans jeton, donc aucun de ses clics ne remonte ; et
+  deux campagnes qui envoient la même adresse au même contact partagent le compteur, l'attribution tranche
+  alors par proximité de temps.
 - ✅ **Nuage « urgence et satisfaction »** (2026-09-08, sur la page de synthèse). L'analyse de conversation
   note désormais **deux mesures de plus, de 0 à 10** : la **satisfaction** (0 = client très mécontent,
   10 = très satisfait) et l'**urgence** (0 = aucune attente particulière, 10 = il attend une réponse

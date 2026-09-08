@@ -3,7 +3,7 @@ import type { Guard } from '../auth/middleware';
 import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdownRow, CostFilter } from '../stats/store.pg';
 import type { ErreurLivraison } from '../ops/erreurs-livraison.pg';
 import type { FiltreCampagneOuTemplate } from '../stats/store.pg';
-import type { CostSeries } from '../stats/cost';
+import type { CostSeries, CoutParCampagne } from '../stats/cost';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
@@ -55,6 +55,14 @@ export interface StatsRouteDeps {
   getErrorContacts?(tenantId: string, range: DateRange, code: number, filter: FiltreCampagneOuTemplate): Promise<ErreurLivraison[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
   getCostSeries(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostSeries>;
+  /**
+   * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E) : une ligne par campagne
+   * ayant envoyé sur la période, son coût ESTIMÉ et ses clics.
+   *
+   * OPTIONNELLE -> 503 quand elle manque, comme ses voisines : un tableau vide se lirait « aucune campagne
+   * n'a envoyé sur la période », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
+   */
+  getCoutParCampagne?(tenantId: string, range: DateRange): Promise<CoutParCampagne>;
   /** Agrégats d'analyse de conversation (Pièce 1) sur la plage. */
   getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
   /** Liste des dernières conversations analysées (quali), filtrable. */
@@ -230,6 +238,22 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
   });
 
   // Analyse de conversation (Pièce 1) : agrégats quanti sur la plage. Scope tenant AUSSI en SQL (pas de fuite).
+  /**
+   * Coût par campagne rapporté aux engagements (page de synthèse).
+   *
+   * ⚠️ Adresse SOUS `/stats/cost`, parce que c'est la même matière que le graphe : mêmes tarifs Meta, même
+   * population d'envois facturables. Un client qui compare les deux totaux doit pouvoir se dire qu'ils
+   * viennent du même endroit, et ils en viennent.
+   */
+  app.get('/tenants/:tenantId/stats/cost/campaigns', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getCoutParCampagne) return reply.code(503).send({ error: 'cout par campagne non configure' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getCoutParCampagne(tenant, r.range));
+  });
+
   app.get('/tenants/:tenantId/stats/conversations', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });

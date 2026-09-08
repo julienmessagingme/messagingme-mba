@@ -247,6 +247,9 @@ Le module de coût actuel porte déjà ce cas et le compte des envois « non chi
 sémantique plutôt que d'en inventer une seconde.
 
 **Les clics viennent de `clicsLiensCampagne`**, qui existe et sert déjà le funnel d'une campagne.
+⚠️ *À l'implémentation (2026-09-08), elle a été généralisée à un ENSEMBLE de campagnes et renommée
+`clicsParCampagne` : le funnel l'appelle avec un seul identifiant, le tableau avec tous. Une seconde
+requête aurait donné deux chiffres sous le même mot, sur deux écrans du même onglet.*
 
 🔴 **CORRECTION D'UN DOCUMENT DU DÉPÔT.** `todo.md` affirme « une campagne DIRECTE (sans scénario) n'a aucun
 compteur de clics ». **C'est l'inverse.** Le code compte les clics quand `template_name is not null`,

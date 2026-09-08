@@ -44,6 +44,10 @@ async function mock(page: import('@playwright/test').Page, nuage: Nuage | 'erreu
       if (nuage === 'erreur') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'nuage qualitatif non configure' }) });
       return json(nuage);
     }
+    // ⚠️ La page porte DEUX cartes depuis le lot E : un faux qui ne sert que le nuage laisse l'autre carte
+    // recevoir `{}`, et c'est exactement ce qui a fait tomber toute cette suite le 2026-09-08. Un double
+    // doit ressembler au vrai serveur, sinon il teste un monde qui n'existe pas.
+    if (url.includes('/stats/cost/campaigns')) return json({ lignes: [], currency: 'EUR', hasRates: true, tronque: false });
     if (url.includes('/unread-count')) return json({ count: 0 });
     if (url.endsWith('/me')) return json({ email: ADMIN.email, name: 'Jean Test', role: 'admin' });
     if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
