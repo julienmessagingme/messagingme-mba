@@ -109,6 +109,21 @@ sudo docker compose up -d --build                                # 1) deploy le 
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
 
+## ⚠️ Le rechargement nginx doit venir APRÈS que les conteneurs soient sains, pas juste après `up -d`
+
+Vécu le 2026-09-08 : `up -d --build && nginx -s reload` enchaînés dans la même commande ont laissé les quatre
+chemins d'API en 502, alors que le conteneur était `healthy` et répondait 200 en interne. La raison est le
+timing : `up -d` REND LA MAIN avant que la recréation soit finie, donc le reload a résolu l'amont trop tôt,
+sur l'ancienne adresse. Un second reload, quelques secondes plus tard, a tout remis d'aplomb.
+
+```bash
+sudo docker compose up -d --build
+until [ "$(sudo docker inspect -f '{{.State.Health.Status}}' mba-api)" = healthy ]; do sleep 2; done
+sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload
+```
+
+C'est aussi pourquoi le contrôle ci-dessous n'est pas facultatif : il a attrapé ce cas exact, du premier coup.
+
 ## 🔴 Dernière étape OBLIGATOIRE : le contrôle de fumée public
 
 ```bash
