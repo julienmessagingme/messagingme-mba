@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { cheminDeNav, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'perf-synthese' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
+type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -99,7 +99,18 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
         { key: 'mba-guide', href: '/mba', label: t('MBA, guide', 'MBA, guide') },
         { key: 'mba-settings', href: '/mba/parametres', label: t('MBA, paramètres', 'MBA, settings') },
       ] },
-      { key: 'agents', href: '/agents', label: t('Other AI agent', 'Other AI agent') },
+      /**
+       * « Other AI agent » devient un GROUPE le 2026-09-08 (demande de Julien) : la fiche des agents d'un
+       * côté, le crédit de l'autre. Le solde n'est pas un réglage d'agent, il est celui de l'ESPACE : tous
+       * les agents y puisent, et le ranger dans la fiche de l'un d'eux laisserait croire le contraire.
+       *
+       * ⚠️ `/agents` NE BOUGE PAS : c'est l'écran d'aujourd'hui, avec ses huit onglets et ses liens déjà
+       * partagés. Seule l'entrée de menu gagne un parent.
+       */
+      { key: 'agents-groupe', label: t('Other AI agent', 'Other AI agent'), children: [
+        { key: 'agents', href: '/agents', label: t('Agents', 'Agents') },
+        { key: 'agents-credit', href: '/agents/credit', label: t('Crédit', 'Credit') },
+      ] },
     ] },
     // Contenu, rangé PAR CANAL. Les sept entrées étaient à plat et l'oeil devait relire les libellés pour
     // retrouver le sien : « Templates WhatsApp », « Formulaires WhatsApp », « Messages RCS », « Modèles
@@ -140,12 +151,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
     ] },
-    { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), d: icons.settings },
-    { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
   ];
   // Second tableau, rendu dans son propre conteneur COLLÉ EN BAS de la barre. La nav n'a aucun mécanisme de
   // placement (pas de champ `position`), donc le bas se fait par la structure, pas par une propriété d'entrée.
   const NAV_ADMIN_BAS: NavEntree[] = [
+    // ⚠️ PARAMÈTRES ET SUPPORT SONT ICI DEPUIS LE 2026-09-08 (demande de Julien), et pas au bout de la liste
+    // du haut. Ils ne servent pas le travail quotidien : ils le RÈGLENT, comme Developers juste en dessous.
+    // Les laisser en fin de liste haute les mettait au même rang que Campagnes ou Scénario, qu'on ouvre dix
+    // fois par jour. Aucune adresse ne change.
+    { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), d: icons.settings },
+    { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
     { key: 'developers', label: t('Developers', 'Developers'), d: icons.developers, children: [
       { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
@@ -389,7 +404,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       {/* Le bloc bas (Developers) appartient à la CONSOLE : le montrer sous le menu du Performance Lab y
           rangerait une entrée qui n'est pas de cet onglet. */}
       {session.role === 'admin' && onglet === 'console' && (
-        <div className="border-t border-ink-100 px-2 py-3">{renderNav(NAV_ADMIN_BAS)}</div>
+        <div data-testid="nav-bas" className="border-t border-ink-100 px-2 py-3">{renderNav(NAV_ADMIN_BAS)}</div>
       )}
     </div>
   );
@@ -416,17 +431,26 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           <Logo className="h-8 w-8" />
           <span className="hidden text-sm font-semibold tracking-tight text-ink-900 sm:inline">Engage Me</span>
         </Link>
-        <nav aria-label={t('Sections', 'Sections')} className="flex items-center gap-1 overflow-x-auto" data-testid="onglets">
+        {/**
+          * ⚠️ LES ONGLETS SE TIENNENT À DISTANCE DU LOGO, ET ILS NE LUI RESSEMBLENT PAS (2026-09-08, Julien :
+          * « la police n'est pas assez différenciante et c'est positionné beaucoup trop proche du logo »).
+          * Deux corrections, et les deux comptent : `ml-6` (plus le séparateur vertical) les détache de la
+          * marque, et la casse haute + l'interlettrage les sort de la même famille visuelle que « Engage
+          * Me », qui est un nom, pas un bouton. Un onglet doit se lire comme une SECTION, pas comme la
+          * suite du logo.
+          */}
+        <span aria-hidden="true" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block" />
+        <nav aria-label={t('Sections', 'Sections')} className="ml-2 flex items-center gap-1 overflow-x-auto" data-testid="onglets">
           {ongletsVisibles.map((o) => (
             <Link
               key={o.cle}
               href={o.href}
               data-testid={`onglet-${o.cle}`}
               aria-current={onglet === o.cle ? 'page' : undefined}
-              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
                 onglet === o.cle
-                  ? 'bg-brand-50 font-semibold text-brand-700'
-                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+                  ? 'bg-brand-50 text-brand-700'
+                  : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
               }`}
             >
               {o.label}

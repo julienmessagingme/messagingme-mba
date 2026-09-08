@@ -38,10 +38,15 @@ mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas 
 **Le menu de gauche change avec l'onglet.**
 
 **Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA [MBA, guide /
-MBA, paramètres] / Other AI agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
+MBA, paramètres] / Other AI agent [Agents / Crédit]) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
-RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API) · Paramètres · Support**, plus un bloc
-**Developers (Documentation API / Clés d'API / Serveur MCP)** collé **en bas** de la barre.
+RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API)**, puis, collés **en bas** de la barre,
+**Paramètres · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
+⚠️ **Paramètres et Support sont descendus en bas le 2026-09-08** : ils ne servent pas le travail quotidien,
+ils le règlent, comme Developers. Aucune adresse n'a changé.
+- ✅ **« Other AI agent » se déplie en deux** (2026-09-08) : **Agents** (l'écran des agents IA, inchangé) et
+  **Crédit**, qui montre le crédit prépayé de l'espace. Le rechargement en ligne n'est pas ouvert : l'écran
+  le dit et donne le solde, plutôt que de laisser une entrée de menu mener nulle part.
 
 **Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel / Erreurs) · Qualitatif ·
 Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.
