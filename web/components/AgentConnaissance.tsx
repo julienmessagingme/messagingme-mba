@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { cardCls, inputCls, inputClsAuto } from '@/lib/ui';
 import { formatDate } from '@/lib/day';
 import { JOURS_AVANT_ALERTE, MAX_CORPS_FICHE, MAX_TITRE_FICHE, joursDepuis, sourcePerimee } from '@/lib/agent-connaissance';
 import { MbaNotice } from '@/components/MbaNotice';
 import {
-  apercuImport, createFiche, deleteFiche, importerSource, listFiches, patchFiche,
+  apercuImport, createFiche, deleteFiche, importerDocument, importerSource, listFiches, patchFiche,
+  supprimerFiches,
   type ApercuImport, type FicheConnaissance,
 } from '@/lib/api-agent-knowledge';
 
@@ -28,6 +29,12 @@ export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; age
   const [fiches, setFiches] = useState<FicheConnaissance[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  /** Les fiches cochées, pour la suppression en masse. Vidée après chaque action : une sélection qui survit
+   *  à une suppression désigne des fiches qui n'existent plus. */
+  const [coches, setCoches] = useState<Set<string>>(new Set());
+  /** La fiche dépliée, s'il y en a une. Une seule à la fois : c'est un tableau qu'on parcourt, pas un
+   *  formulaire géant. */
+  const [ouverte, setOuverte] = useState<string | null>(null);
   const [bilan, setBilan] = useState<string | null>(null);
 
   const charger = useCallback(async () => {
@@ -89,6 +96,16 @@ export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; age
           : ecrites;
       })} />
 
+      <ImportDocument busy={busy} onDeposer={(nom, dataUrl) => agir(async () => {
+        const r = await importerDocument(tenantId, agentId, nom, dataUrl);
+        return r.retirees > 0
+          ? t(
+            `${r.ecrites} fiche(s) écrite(s) depuis « ${r.nom} », ${r.retirees} remplacée(s).`,
+            `${r.ecrites} entry(ies) written from “${r.nom}”, ${r.retirees} replaced.`,
+          )
+          : t(`${r.ecrites} fiche(s) écrite(s) depuis « ${r.nom} ».`, `${r.ecrites} entry(ies) written from “${r.nom}”.`);
+      })} />
+
       <AjoutManuel busy={busy} onAdd={(titre, corps) => agir(async () => {
         await createFiche(tenantId, agentId, { titre, corps });
         return null;
@@ -101,15 +118,74 @@ export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; age
             {t('Aucune fiche. Lisez une page de votre site, ou écrivez la première à la main.', 'No entry yet. Read a page of your site, or write the first one by hand.')}
           </p>
         )}
-        {(fiches ?? []).map((f) => (
-          <Fiche
-            key={f.id}
-            fiche={f}
-            busy={busy}
-            onSave={(patch) => agir(async () => { await patchFiche(tenantId, agentId, f.id, patch); return null; })}
-            onDelete={() => agir(async () => { await deleteFiche(tenantId, agentId, f.id); return null; })}
-          />
-        ))}
+
+        {/* 🔴 UN TABLEAU, PAS UNE PILE DE CARTES. À dix fiches une liste dépliée se lit ; à cinquante, venues
+            d'un site entier ou d'un PDF de quarante pages, elle devient un mur qu'on ne relit jamais. On voit
+            donc TOUT d'un coup d'œil (titre, provenance, taille), on ouvre ce qu'on veut corriger, et on peut
+            en cocher plusieurs pour les retirer d'un geste. */}
+        {fiches !== null && fiches.length > 0 && (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-ink-600">
+                <input
+                  type="checkbox"
+                  data-testid="kb-tout-cocher"
+                  checked={coches.size === fiches.length && fiches.length > 0}
+                  onChange={(e) => setCoches(e.target.checked ? new Set(fiches.map((f) => f.id)) : new Set())}
+                />
+                {t(`${fiches.length} fiche(s)`, `${fiches.length} entry(ies)`)}
+              </label>
+              {coches.size > 0 && (
+                <button
+                  data-testid="kb-supprimer-selection"
+                  disabled={busy}
+                  onClick={() => agir(async () => {
+                    const r = await supprimerFiches(tenantId, agentId, [...coches]);
+                    setCoches(new Set());
+                    // Le compte RÉEL, pas celui de la demande : une fiche déjà retirée par un collègue ne
+                    // doit pas être annoncée comme supprimée par ce clic.
+                    return t(`${r.supprimees} fiche(s) supprimée(s).`, `${r.supprimees} entry(ies) deleted.`);
+                  })}
+                  className="rounded-lg bg-coral px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  {t(`Supprimer les ${coches.size} fiches cochées`, `Delete the ${coches.size} selected entries`)}
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-ink-200">
+              <table className="w-full text-sm" data-testid="kb-tableau">
+                <thead className="bg-ink-50 text-left text-xs text-ink-500">
+                  <tr>
+                    <th className="w-8 p-2" />
+                    <th className="p-2 font-medium">{t('Fiche', 'Entry')}</th>
+                    <th className="p-2 font-medium">{t('Provenance', 'Source')}</th>
+                    <th className="w-20 p-2 text-right font-medium">{t('Taille', 'Size')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-100">
+                  {fiches.map((f) => (
+                    <LigneFiche
+                      key={f.id}
+                      fiche={f}
+                      busy={busy}
+                      coche={coches.has(f.id)}
+                      ouverte={ouverte === f.id}
+                      onCocher={(v) => setCoches((s2) => {
+                        const n = new Set(s2);
+                        if (v) n.add(f.id); else n.delete(f.id);
+                        return n;
+                      })}
+                      onOuvrir={() => setOuverte((o) => (o === f.id ? null : f.id))}
+                      onSave={(patch) => agir(async () => { await patchFiche(tenantId, agentId, f.id, patch); return null; })}
+                      onDelete={() => agir(async () => { await deleteFiche(tenantId, agentId, f.id); return null; })}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -226,6 +302,68 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur }: {
 }
 
 /** Une fiche écrite à la main : le chemin le plus court quand le client n'a pas de page pour ça. */
+/**
+ * Dépôt d'un document : texte, CSV, PDF ou Word.
+ *
+ * 🔴 RIEN N'EST RÉÉCRIT DERRIÈRE CE BOUTON. La reconnaissance par SIGNATURE, l'extraction et le découpage
+ * existaient déjà, écrits pour la conversation de construction : ils n'étaient joignables que de là. Le
+ * même moteur sert les deux chemins, donc un PDF joint en parlant au robot produit exactement les mêmes
+ * fiches que déposé ici.
+ *
+ * ⚠️ Les IMAGES ne passent pas par ici : les lire demande un modèle de vision que cette route n'a pas. Le
+ * dire est plus honnête que d'échouer sans expliquer, et la conversation, elle, sait le faire.
+ */
+function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: string, dataUrl: string) => void }) {
+  const t = useT();
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className={`${cardCls} flex flex-col gap-3`}>
+      <div>
+        <p className="text-sm font-medium text-ink-700">{t('Déposer un document', 'Upload a document')}</p>
+        <p className="mt-1 text-xs leading-relaxed text-ink-500">
+          {t(
+            'Un PDF, un Word, un fichier texte ou CSV de questions-réponses. On en fait des fiches, découpées sur ses titres. Le type est reconnu au CONTENU du fichier, pas à son extension.',
+            'A PDF, a Word file, a text or CSV of questions and answers. We turn it into entries, split on its headings. The type is recognised from the file CONTENT, not its extension.',
+          )}
+        </p>
+      </div>
+      <div>
+        <button
+          type="button"
+          data-testid="kb-document"
+          disabled={busy}
+          onClick={() => ref.current?.click()}
+          className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+        >
+          {t('Choisir un fichier', 'Choose a file')}
+        </button>
+        <input
+          ref={ref}
+          type="file"
+          data-testid="kb-document-fichier"
+          accept=".txt,.csv,.md,.pdf,.doc,.docx,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            // Remis à zéro : sans ça, redéposer LE MÊME fichier après une erreur n'émet aucun événement.
+            e.target.value = '';
+            if (!f) return;
+            const lecteur = new FileReader();
+            lecteur.onload = () => onDeposer(f.name, String(lecteur.result ?? ''));
+            lecteur.readAsDataURL(f);
+          }}
+        />
+      </div>
+      <p className="text-xs leading-relaxed text-amber-800">
+        {t(
+          'Redéposer le MÊME fichier remplace les fiches qu’il avait déjà produites : vos corrections sur celles-là seront perdues. Les autres ne bougent pas.',
+          'Re-uploading the SAME file replaces the entries it had already produced: your fixes on those will be lost. The others are untouched.',
+        )}
+      </p>
+    </div>
+  );
+}
+
 function AjoutManuel({ busy, onAdd }: { busy: boolean; onAdd: (titre: string, corps: string) => void }) {
   const t = useT();
   const [titre, setTitre] = useState('');
@@ -267,7 +405,115 @@ function AjoutManuel({ busy, onAdd }: { busy: boolean; onAdd: (titre: string, co
   );
 }
 
-/** Une fiche, éditable sur place. Enregistrement à la sortie du champ, comme le reste de l'écran. */
+/**
+ * Le DÉTAIL d'une ligne du tableau : la fiche éditable, dépliée sous sa ligne. Enregistrement à la sortie du
+ * champ, comme le reste de l'écran.
+ *
+ * ⚠️ Ce qu'un lecteur doit voir d'un coup d'œil (titre, provenance, alerte de péremption) vit dans la LIGNE,
+ * pas ici : un avertissement qu'il faut déplier pour voir n'avertit personne.
+ */
+/**
+ * Une LIGNE du tableau : ce qu'on voit sans ouvrir, et le détail quand on ouvre.
+ *
+ * 🔴 LA PROVENANCE EST UNE COLONNE, pas une note en bas de fiche. C'est la question que Julien pose en
+ * premier devant une base qu'il n'a pas remplie à la main : « est-ce parce qu'on a crawlé le site ? ». Sans
+ * elle, une fiche issue d'un PDF et une fiche tapée à la main se ressemblent exactement, et on ne sait ni
+ * laquelle relire ni laquelle un réimport va remplacer.
+ */
+function LigneFiche({ fiche, busy, coche, ouverte, onCocher, onOuvrir, onSave, onDelete }: {
+  fiche: FicheConnaissance;
+  busy: boolean;
+  coche: boolean;
+  ouverte: boolean;
+  onCocher: (v: boolean) => void;
+  onOuvrir: () => void;
+  onSave: (patch: { titre?: string; corps?: string }) => void;
+  onDelete: () => void;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const src = fiche.source;
+  // Même règle que dans le détail, et pour la même raison : l'alerte se calcule sur `updatedAt`, parce que
+  // corriger une fiche à la main EST une vérification humaine. Sans ça l'écran réclamerait la relecture
+  // d'une fiche que quelqu'un vient de relire, et l'avertissement finirait par ne plus rien vouloir dire.
+  const perimee = useMemo(() => sourcePerimee(fiche.updatedAt, Date.now()), [fiche.updatedAt]);
+  return (
+    <>
+      <tr className={coche ? 'bg-brand-50' : undefined} data-testid={`kb-ligne-${fiche.id}`}>
+        <td className="p-2 align-top">
+          <input
+            type="checkbox"
+            data-testid={`kb-cocher-${fiche.id}`}
+            checked={coche}
+            disabled={busy}
+            onChange={(e) => onCocher(e.target.checked)}
+          />
+        </td>
+        <td className="p-2">
+          <button
+            type="button"
+            data-testid={`kb-ouvrir-${fiche.id}`}
+            onClick={onOuvrir}
+            className="text-left font-medium text-ink-800 hover:underline"
+          >
+            {fiche.titre}
+          </button>
+          {!ouverte && (
+            // Les deux premières lignes suffisent à reconnaître une fiche ; le reste s'ouvre.
+            <p className="mt-0.5 line-clamp-2 text-xs text-ink-400">{fiche.corps}</p>
+          )}
+        </td>
+        <td className="p-2 align-top text-xs" data-testid={`kb-provenance-${fiche.id}`}>
+          {src.type === 'page' && (
+            <span className="text-ink-500" title={src.url}>
+              {t('Page web', 'Web page')}
+              <span className="ml-1 block max-w-[16rem] truncate text-ink-400">{src.url}</span>
+            </span>
+          )}
+          {src.type === 'document' && (
+            <span className="text-ink-500">
+              {t('Document', 'Document')}
+              <span className="ml-1 block max-w-[16rem] truncate text-ink-400">{src.nom}</span>
+            </span>
+          )}
+          {src.type === 'manuel' && <span className="text-ink-400">{t('Écrite à la main', 'Written by hand')}</span>}
+          {/* La date de LECTURE de la source, qui est de la provenance elle aussi : « lue le 3 janvier » dit
+              d'où vient le contenu, là où `updatedAt` dit quand un humain y a touché. Les deux ne se
+              confondent pas, et c'est la première qui a sa place ici. */}
+          {fiche.derniereLectureAt !== null && (
+            <span className="block text-ink-400" data-testid={`kb-lue-${fiche.id}`}>
+              {t('lue le', 'read on')}{' '}
+              {formatDate(fiche.derniereLectureAt, locale, { day: 'numeric', month: 'long', year: 'numeric' })}
+            </span>
+          )}
+          {/* 🔴 L'ALERTE « À RELIRE » VIT DANS LA LIGNE, PAS DANS LE DÉTAIL. Le passage au tableau l'avait
+              repliée derrière un clic : elle ne se serait plus jamais vue, alors que le cadrage en fait la
+              parade au défaut le PLUS COURANT du marché, le contenu périmé. Un avertissement qu'il faut
+              ouvrir pour voir n'avertit personne. */}
+          {perimee && (
+            <span
+              data-testid={`kb-perimee-${fiche.id}`}
+              className="mt-1 inline-block rounded-full bg-gold/20 px-2 py-0.5 font-medium text-ink-800"
+            >
+              {t(`À relire : plus de ${JOURS_AVANT_ALERTE} jours`, `Worth re-reading: over ${JOURS_AVANT_ALERTE} days`)}
+            </span>
+          )}
+        </td>
+        <td className="p-2 text-right align-top text-xs tabular-nums text-ink-400">
+          {t(`${fiche.corps.length} car.`, `${fiche.corps.length} chars`)}
+        </td>
+      </tr>
+      {ouverte && (
+        <tr>
+          <td colSpan={4} className="bg-ink-50/50 p-2">
+            <Fiche fiche={fiche} busy={busy} onSave={onSave} onDelete={onDelete} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function Fiche({ fiche, busy, onSave, onDelete }: {
   fiche: FicheConnaissance;
   busy: boolean;

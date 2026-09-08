@@ -13,24 +13,31 @@ const AG = '11111111-1111-4111-8111-111111111111';
 
 const MANUELLE = {
   id: 'f1', titre: 'Les clés', corps: 'Remise des clés à l’accueil, de 8 h à 19 h.',
-  sourceUrl: null, derniereLectureAt: null, updatedAt: '2026-08-01T10:00:00.000Z',
+  source: { type: 'manuel' }, sourceUrl: null, derniereLectureAt: null, updatedAt: '2026-08-01T10:00:00.000Z',
 };
 const IMPORTEE = {
   id: 'f2', titre: 'La piscine', corps: 'Ouverte tous les jours de 9 h à 20 h.',
-  sourceUrl: 'https://exemple.fr/residence', derniereLectureAt: '2026-08-20T10:00:00.000Z',
+  source: { type: 'page', url: 'https://exemple.fr/residence' }, sourceUrl: 'https://exemple.fr/residence', derniereLectureAt: '2026-08-20T10:00:00.000Z',
   updatedAt: '2026-08-20T10:00:00.000Z',
 };
 /** Lue il y a plus de trois mois, et jamais retouchée : c'est le cas que l'écran doit signaler. */
 const PERIMEE = {
   id: 'f3', titre: 'Les tarifs', corps: 'La semaine à 620 euros en haute saison.',
-  sourceUrl: 'https://exemple.fr/tarifs', derniereLectureAt: '2025-01-15T10:00:00.000Z',
+  source: { type: 'page', url: 'https://exemple.fr/tarifs' }, sourceUrl: 'https://exemple.fr/tarifs', derniereLectureAt: '2025-01-15T10:00:00.000Z',
   updatedAt: '2025-01-15T10:00:00.000Z',
 };
 /** Lue il y a très longtemps, mais CORRIGÉE À LA MAIN hier : un humain vient de la relire. */
 const RELUE = {
   id: 'f4', titre: 'Le ménage', corps: 'Forfait ménage à 60 euros.',
-  sourceUrl: 'https://exemple.fr/menage', derniereLectureAt: '2025-01-15T10:00:00.000Z',
+  source: { type: 'page', url: 'https://exemple.fr/menage' }, sourceUrl: 'https://exemple.fr/menage', derniereLectureAt: '2025-01-15T10:00:00.000Z',
   updatedAt: new Date(Date.now() - 86_400_000).toISOString(),
+};
+
+/** Une fiche issue d'un DOCUMENT : indiscernable d'une fiche manuelle avant la provenance. */
+const DOCUMENT = {
+  id: 'f5', titre: 'Nos garanties', corps: 'La garantie décès verse un capital aux bénéficiaires.',
+  source: { type: 'document', nom: 'Garanties.pdf' }, sourceUrl: null,
+  derniereLectureAt: '2026-09-08T10:00:00.000Z', updatedAt: '2026-09-08T10:00:00.000Z',
 };
 
 const AGENT = {
@@ -52,6 +59,10 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], fich
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
     // 🔴 L'APERÇU, qui precede desormais toute ecriture : il rend ce que l'import RAMENERAIT.
+    if (/\/knowledge\/supprimer$/.test(url)) {
+      appels.push({ method, url, body: req.postDataJSON() });
+      return json({ supprimees: (req.postDataJSON() as { ids: string[] }).ids.length, demandees: 2 });
+    }
     if (/\/knowledge\/apercu$/.test(url)) {
       appels.push({ method, url, body: req.postDataJSON() });
       if (apercuKo) return json(apercuKo.body, apercuKo.status);
@@ -98,6 +109,9 @@ test.describe('Agents IA : la base de connaissance', () => {
     await page.getByTestId('kb-ajouter').click();
     await expect.poll(() => appels.some((a) => a.method === 'POST' && (a.body as { titre?: string })?.titre === 'Le linge'), { timeout: 5000 }).toBe(true);
 
+    // 🔴 Le detail est REPLIE : a cinquante fiches venues d un site entier, une liste depliee est un mur
+    // qu on ne relit jamais. On ouvre celle qu on veut corriger.
+    await page.getByTestId('kb-ouvrir-f1').click();
     await page.getByTestId('kb-corps-f1').fill('Remise des clés à l’accueil, de 8 h à 21 h.');
     await page.getByTestId('kb-titre-f1').click(); // sortie du champ
     await expect.poll(
@@ -178,5 +192,42 @@ test.describe('Agents IA : la base de connaissance', () => {
     await page.getByTestId('kb-importer').click();
     await page.getByTestId('kb-confirmer').click();
     await expect(page.getByTestId('kb-erreur')).toContainText('injoignable');
+  });
+
+  test('🔴 le tableau DIT la provenance de chaque fiche', async ({ page }) => {
+    // Julien, le 2026-09-08 : « il faut avoir en face de chaque fiche la provenance, est-ce parce qu on a
+    // crawle le site ? ». Avant, une fiche issue d un PDF et une fiche tapee a la main etaient
+    // indiscernables : les deux avaient sourceUrl a null.
+    await mock(page, [], [MANUELLE, IMPORTEE, DOCUMENT]);
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await expect(page.getByTestId('kb-provenance-f1')).toContainText('la main');
+    await expect(page.getByTestId('kb-provenance-f2')).toContainText('exemple.fr/residence');
+    await expect(page.getByTestId('kb-provenance-f5')).toContainText('Garanties.pdf');
+  });
+
+  test('🔴 on coche plusieurs fiches et on les supprime en UNE requete', async ({ page }) => {
+    // Boucler cote navigateur ferait N allers-retours, dont certains echoueraient au milieu en laissant une
+    // selection a moitie supprimee que personne ne sait plus reconstituer.
+    const appels: Appel[] = [];
+    await mock(page, appels, [MANUELLE, IMPORTEE, DOCUMENT]);
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await page.getByTestId('kb-cocher-f1').check();
+    await page.getByTestId('kb-cocher-f5').check();
+    await page.getByTestId('kb-supprimer-selection').click();
+    await expect.poll(() => appels.find((a) => /supprimer$/.test(a.url))?.body, { timeout: 5000 })
+      .toEqual({ ids: ['f1', 'f5'] });
+    // 🔴 UNE seule requete, pas deux : c est tout l interet.
+    expect(appels.filter((a) => /supprimer$/.test(a.url))).toHaveLength(1);
+  });
+
+  test('🔴 l alerte « à relire » est VISIBLE sans ouvrir la fiche', async ({ page }) => {
+    // Le passage au tableau l avait repliee derriere un clic : elle ne se serait plus jamais vue, alors que
+    // le cadrage en fait la parade au defaut le plus courant du marche, le contenu perime. Un avertissement
+    // qu il faut ouvrir pour voir n avertit personne.
+    await mock(page, [], [PERIMEE]);
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await expect(page.getByTestId('kb-perimee-f3')).toBeVisible();
+    // Et le detail est bien REPLIE : c est la ligne qui porte l alerte.
+    await expect(page.getByTestId('kb-corps-f3')).toHaveCount(0);
   });
 });

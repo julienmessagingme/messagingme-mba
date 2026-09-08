@@ -100,3 +100,29 @@ export async function apercuImport(
     body: JSON.stringify(portee === undefined ? { url } : { url, portee }),
   });
 }
+
+/**
+ * Dépose un document (texte, CSV, PDF, Word) et en fait des fiches.
+ *
+ * 🔴 REMPLACE les fiches que le MÊME fichier avait déjà produites, comme une page relue. Redéposer un
+ * document doublerait sinon la base, et la recherche remonterait deux fois la même réponse.
+ */
+export async function importerDocument(
+  tenantId: string, agentId: string, nom: string, dataUrl: string,
+): Promise<{ nom: string; nature: string; ecrites: number; retirees: number; plafond: number }> {
+  return request(`${base(tenantId, agentId)}/document`, {
+    method: 'POST', body: JSON.stringify({ nom, dataUrl }),
+  });
+}
+
+/**
+ * Supprime plusieurs fiches en UNE requête.
+ *
+ * Boucler côté navigateur ferait N allers-retours, dont certains échoueraient au milieu en laissant une
+ * sélection à moitié supprimée que personne ne sait plus reconstituer.
+ */
+export async function supprimerFiches(
+  tenantId: string, agentId: string, ids: string[],
+): Promise<{ supprimees: number; demandees: number }> {
+  return request(`${base(tenantId, agentId)}/supprimer`, { method: 'POST', body: JSON.stringify({ ids }) });
+}

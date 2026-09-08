@@ -49,6 +49,15 @@ const documentSchema = z.object({
   dataUrl: z.string().min(1),
 });
 
+/**
+ * Une suppression EN MASSE, bornée.
+ *
+ * ⚠️ Le plafond n'est pas décoratif : sans lui, une liste arbitraire ferait une requête arbitrairement
+ * longue sur le chemin d'administration. 200 couvre très largement « je coche tout et je supprime », et le
+ * client peut recommencer.
+ */
+const suppressionSchema = z.object({ ids: z.array(z.string().trim()).min(1).max(200) });
+
 const PORTEE = z.enum(['page', 'sous-arbre', 'site']);
 const importSchema = z.object({
   url: z.string().trim().min(1).max(2000),
@@ -141,6 +150,32 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
     const supprime = await deps.supprimer(ctx.tenant, ctx.agentId, ficheId);
     if (!supprime) return reply.code(404).send({ error: 'fiche introuvable' });
     return reply.code(204).send();
+  });
+
+  /**
+   * Supprime PLUSIEURS fiches d'un coup.
+   *
+   * 🔴 UNE SEULE REQUETE, PAS N. Julien, le 2026-09-08 : « une fois qu'on a selectionne plusieurs fiches, un
+   * bouton qui permette de toutes les supprimer ». Boucler cote navigateur ferait cinquante allers-retours,
+   * dont certains echoueraient au milieu en laissant une selection a moitie supprimee que personne ne sait
+   * plus reconstituer.
+   *
+   * ⚠️ Les identifiants MAL FORMES sont ecartes ici, pas envoyes en base : un uuid invalide fait LEVER la
+   * requete entiere, donc une seule faute de frappe annulerait la suppression des cinquante autres.
+   */
+  app.post(`${base}/supprimer`, opts, async (req, reply) => {
+    const ctx = contexte(req);
+    if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
+    const parse = suppressionSchema.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'ids requis (1 à 200 identifiants)' });
+    const ids = parse.data.ids.filter((id) => estUuid(id));
+    if (ids.length === 0) return reply.code(400).send({ error: 'aucun identifiant valide' });
+
+    let supprimees = 0;
+    for (const id of ids) if (await deps.supprimer(ctx.tenant, ctx.agentId, id)) supprimees += 1;
+    // ⚠️ On rend le COMPTE REEL, pas la taille de la demande : une fiche deja supprimee par un collegue ne
+    // doit pas etre annoncee comme supprimee par ce clic.
+    return reply.code(200).send({ supprimees, demandees: ids.length });
   });
 
   /**
