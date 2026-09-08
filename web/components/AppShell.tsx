@@ -249,7 +249,17 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     router.replace('/login');
   }
 
-  const nav = session.role === 'admin' ? ARBRES[onglet] : NAV_AGENT;
+  /**
+   * L'arbre RENDU dans le corps de la barre.
+   *
+   * 🔴 DISTINCT de `ARBRES`, et la confusion coûte un doublon visible. `ARBRES` sert à la DÉDUCTION de
+   * l'onglet : il doit contenir TOUTES les clés, le bloc bas (Developers) compris, sinon ces pages
+   * n'appartiendraient à aucun onglet. Mais le bloc bas est rendu à part, collé en bas de la colonne : le
+   * passer aussi au corps affichait « Developers » deux fois sur la Console. Attrapé par l'E2E, qui a refusé
+   * un sélecteur résolvant à deux éléments.
+   */
+  const NAV_DU_CORPS: Record<Onglet, NavEntree[]> = { console: NAV_CONSOLE, inbox: NAV_INBOX, perf: NAV_PERF };
+  const nav = session.role === 'admin' ? NAV_DU_CORPS[onglet] : NAV_AGENT;
 
   const itemCls = (on: boolean) =>
     `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'}`;
@@ -320,49 +330,113 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   // changement de style de nav n'ait pas à être fait deux fois.
   const renderNav = (items: NavEntree[]) => <nav>{listeNav(items, 1)}</nav>;
 
+  /**
+   * Les trois onglets et leur point d'entrée.
+   *
+   * ⚠️ La destination du Performance Lab est `/dashboard`, sa PREMIÈRE entrée, et non une page de synthèse :
+   * celle-ci arrive avec les lots E et F, ceux qui lui donnent son contenu. Ce lot ne crée aucune adresse.
+   */
+  const ONGLETS_UI: Array<{ cle: Onglet; label: string; href: string }> = [
+    { cle: 'console', label: t('Console', 'Console'), href: '/accueil' },
+    { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/inbox' },
+    { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/dashboard' },
+  ];
+  /**
+   * 🔴 Un compte `agent` n'a accès QU'À l'inbox (`adminOnly` plus haut, et le serveur derrière lui). Lui
+   * montrer trois onglets dont deux le renverraient aussitôt à l'inbox serait pire que la barre unique
+   * d'avant : on lui promettrait deux portes fermées.
+   */
+  const ongletsVisibles = session.role === 'admin' ? ONGLETS_UI : ONGLETS_UI.filter((o) => o.cle === 'inbox');
+
+  /**
+   * L'onglet Inbox n'a PAS de menu de navigation : son écran porte son propre menu de dossiers (lot B).
+   * Une colonne vide y prendrait 15 rem de large pour ne rien montrer.
+   */
+  const avecBarreLaterale = onglet !== 'inbox';
+
   const SidebarInner = (
     // Colonne pleine hauteur : c'est elle qui permet au bloc bas de descendre. Le `flex-1` du corps ci-dessous
     // ne pousse rien tant que la colonne n'occupe pas vraiment la hauteur disponible.
-    <div className="flex h-full flex-col">
-      <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title={t('Accueil', 'Home')} onClick={() => setDrawerOpen(false)}>
-        <Logo className="h-8 w-8" />
-        <span className="text-sm font-semibold tracking-tight text-ink-900">Engage Me</span>
-      </Link>
+    <div className="flex h-full flex-col pt-3">
+      {/* ⚠️ Le logo a quitté cette colonne le 2026-09-08 : il vit dans l'entête, à gauche des onglets, parce
+          que l'entête est désormais PLEINE LARGEUR et surplombe la colonne. L'avoir aux deux endroits
+          l'aurait affiché deux fois sur la même page. */}
       {/* flex-1 pousse le bloc bas vers le bas ; overflow-y-auto fait scroller le CORPS de la nav sur un écran
           court, au lieu de faire déborder la colonne et de rendre le bloc bas inatteignable. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2">{renderNav(nav)}</div>
-      {session.role === 'admin' && (
+      {/* Le bloc bas (Developers) appartient à la CONSOLE : le montrer sous le menu du Performance Lab y
+          rangerait une entrée qui n'est pas de cet onglet. */}
+      {session.role === 'admin' && onglet === 'console' && (
         <div className="border-t border-ink-100 px-2 py-3">{renderNav(NAV_ADMIN_BAS)}</div>
       )}
     </div>
   );
 
   return (
-    <div className={`bg-[#F7F8FB] lg:flex ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
-      {/* Sidebar desktop */}
-      <aside className="hidden w-60 shrink-0 border-r border-ink-200 bg-white lg:block">
-        {/* h-screen (et pas seulement sticky) : sans hauteur réelle, la colonne flex ne s'étire pas et le bloc
-            bas se colle sous la dernière entrée au lieu de descendre. */}
-        <div className="sticky top-0 h-screen">{SidebarInner}</div>
-      </aside>
-
-      {/* Drawer mobile (z-40, sous les modales z-50) */}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <button aria-label={t('Fermer le menu', 'Close menu')} className="absolute inset-0 bg-ink-900/30" onClick={() => setDrawerOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-60 border-r border-ink-200 bg-white">{SidebarInner}</div>
-        </div>
-      )}
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-ink-200 bg-white px-4 py-2.5">
+    /**
+     * 🔴 L'ENTÊTE EST SORTIE DE LA COLONNE DE DROITE (2026-09-08). Elle vivait à l'intérieur, donc À DROITE
+     * de la barre latérale ; les onglets y auraient eu l'air de faire partie du contenu, alors qu'ils
+     * CHANGENT le menu. Ils surplombent donc les deux.
+     *
+     * ⚠️ `h-14` sur l'entête n'est pas décoratif : la colonne latérale est collante et haute d'un écran.
+     * Sous une entête de hauteur inconnue elle dépasserait par le bas, et son bloc bas (Developers)
+     * deviendrait inatteignable. D'où `top-14` et `h-[calc(100vh-3.5rem)]` juste en dessous : les trois
+     * valeurs doivent rester d'accord, 3.5rem ÉTANT h-14.
+     */
+    <div className={`flex flex-col bg-[#F7F8FB] ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-ink-200 bg-white px-4">
+        {avecBarreLaterale && (
           <button className="rounded-lg p-1.5 text-ink-600 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="ml-auto">
-            <AccountMenu session={session} onLogout={logout} />
-          </div>
-        </header>
+        )}
+        <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex shrink-0 items-center gap-2" title={t('Accueil', 'Home')}>
+          <Logo className="h-8 w-8" />
+          <span className="hidden text-sm font-semibold tracking-tight text-ink-900 sm:inline">Engage Me</span>
+        </Link>
+        <nav aria-label={t('Sections', 'Sections')} className="flex items-center gap-1 overflow-x-auto" data-testid="onglets">
+          {ongletsVisibles.map((o) => (
+            <Link
+              key={o.cle}
+              href={o.href}
+              data-testid={`onglet-${o.cle}`}
+              aria-current={onglet === o.cle ? 'page' : undefined}
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
+                onglet === o.cle
+                  ? 'bg-brand-50 font-semibold text-brand-700'
+                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+              }`}
+            >
+              {o.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto">
+          <AccountMenu session={session} onLogout={logout} />
+        </div>
+      </header>
+
+      <div className={`lg:flex ${fullBleed ? 'min-h-0 flex-1' : 'flex-1'}`}>
+      {avecBarreLaterale && (
+        <>
+          {/* Sidebar desktop */}
+          <aside className="hidden w-60 shrink-0 border-r border-ink-200 bg-white lg:block">
+            {/* Hauteur réelle (et pas seulement collante) : sans elle, la colonne flex ne s'étire pas et le
+                bloc bas se colle sous la dernière entrée au lieu de descendre. */}
+            <div className="sticky top-14 h-[calc(100vh-3.5rem)]">{SidebarInner}</div>
+          </aside>
+
+          {/* Drawer mobile (z-40, sous les modales z-50) */}
+          {drawerOpen && (
+            <div className="fixed inset-0 z-40 lg:hidden">
+              <button aria-label={t('Fermer le menu', 'Close menu')} className="absolute inset-0 bg-ink-900/30" onClick={() => setDrawerOpen(false)} />
+              <div className="absolute left-0 top-0 h-full w-60 border-r border-ink-200 bg-white">{SidebarInner}</div>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Session tombée : un message rouge dans un coin d'écran ne suffisait pas, le reste de l'interface
             restait actif et rien ne disait comment revenir. La bannière vit ICI, sous le header et hors du
             `<main>` : le mode pleine largeur y applique `lg:overflow-hidden`, donc une bannière posée dedans
@@ -406,6 +480,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           </div>
         )}
         <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
+      </div>
       </div>
     </div>
   );
