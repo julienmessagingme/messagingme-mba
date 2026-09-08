@@ -652,6 +652,23 @@ touchée, les uuid internes restent la source de vérité des relations.
   **Bloc « Attente » (2026-08-15, migration 0054)** : un parcours peut dormir jusqu'à une échéance.
   - moteur PUR : `waitDurationMs` (minutes/heures/jours, plafond 30 j, durée absente = passe-plat) ; `walk`
     rend `{ status: 'sleeping', nodeId, resumeInMs }`.
+  - **TROIS modes depuis le 2026-09-08** (`waitMode` : `delai` par défaut, `date`, `heures_ouvrees`), et
+    TROIS fonctions qui ne répondent pas à la même question, ce qui est le point à ne pas confondre :
+    `waitDurationMs` = le délai configuré (0 hors mode `delai`) ; `waitResumeInMs(node, ctx)` = ce que
+    l'EXÉCUTION lit, calculé depuis `ctx.now` ; `waitEstimationMs` = ce que l'ANALYSE DE GRAPHE prête au bloc
+    à la publication, soit la fenêtre ENTIÈRE pour les deux modes datés, dont la durée n'est pas connue
+    d'avance. 🔴 Rendre 0 dans ce dernier cas laisserait publier « attendre jusqu'à demain 9 h puis message
+    rapide », un montage dont le message ne partirait jamais. Le miroir front porte la même règle, et le
+    test de parité l'a immédiatement gagnée : un mode INCONNU doit retomber sur `delai` des deux côtés.
+  - 🔴 les modes datés EXIGENT le contexte d'évaluation, et c'est `buildCtx` (executor) qui décide de le
+    construire. L'oublier ne casse rien de visible : le bloc redevient un passe-plat et « attendre les heures
+    ouvrées » envoie à 1 h du matin. Tenu par `tests/workflow-executor.test.ts`, vérifié par mutation.
+  - ⚠️ la date est saisie DANS le bloc (elle vaut pour tous les contacts), lue comme une heure MURALE du
+    fuseau de l'espace. Un champ du contact aurait recouvert l'automation « un délai avant ou après une date
+    enregistrée ». Une échéance déjà passée ne retient personne.
+  - ⚠️ le réveil part au bloc SUIVANT : un bloc Attente ne se réévalue pas. Si le balayage prend du retard
+    (worker arrêté plusieurs heures), un « jusqu'aux heures ouvrées » repart à l'heure du réveil, pas à
+    l'ouverture. C'est la limite commune à toutes les échéances de ce dépôt, pas une propriété de ce mode.
   - base : `workflow_runs.resume_at` + statut `sleeping` (CHECK élargi) + index partiel `(resume_at)`.
   - réveil : `wake-sweep.ts` (miroir de `campaign/schedule-sweep`) toutes les
     `WORKFLOW_WAKE_SWEEP_INTERVAL_MS` (60 s = la précision réelle d'un délai).

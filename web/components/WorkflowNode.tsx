@@ -51,6 +51,16 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     return t('choisir une action…', 'choose an action…');
   }
   if (wfType === 'wait') {
+    // Même lecture défensive du mode que le serveur (`waitMode`) et que le panneau : un bloc d'avant le
+    // 2026-09-08 n'a pas ce champ et reste un délai.
+    const mode = String(data.waitMode ?? 'delai');
+    if (mode === 'heures_ouvrees') return t('jusqu’aux heures ouvrées', 'until business hours');
+    if (mode === 'date') {
+      // La date est montrée TELLE QU'ELLE EST SAISIE (format ISO) : elle se lit pareil en français et en
+      // anglais, là où « 09/10 » voudrait dire deux jours différents selon la langue du lecteur.
+      const brut = String(data.waitDate ?? '').trim();
+      return brut === '' ? t('date à choisir…', 'set a date…') : `${t('jusqu’au', 'until')} ${brut.replace('T', ' ')}`;
+    }
     const n = Number(data.delay ?? 0);
     const u = String(data.unit ?? 'hours');
     if (!Number.isFinite(n) || n <= 0) return t('durée à choisir…', 'set a duration…');

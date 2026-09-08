@@ -11,6 +11,7 @@ import type {
 import type { Campaign, Recipient, QualityRating, GuardrailThresholds } from '../src/campaign/types';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 import { MetaApiError } from '../src/meta/errors';
+import type { MotifDePause } from '../src/campaign/pause';
 
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
@@ -71,7 +72,7 @@ class FakeCampaigns implements CampaignStore {
   readonly statuses: string[] = [];
   /** Raisons de pause vues, avec leur instant de reprise. `null` = pas de reprise automatique. */
   readonly pauses: Array<{ raison: string; reprise: Date | null }> = [];
-  async setStatus(_id: string, status: string, pause?: { raison: 'debit' | 'qualite'; reprise: Date | null }): Promise<void> {
+  async setStatus(_id: string, status: string, pause?: { raison: MotifDePause; reprise: Date | null }): Promise<void> {
     if (pause) this.pauses.push(pause);
     this.statuses.push(status);
   }

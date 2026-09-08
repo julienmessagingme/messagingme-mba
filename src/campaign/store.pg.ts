@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import type { MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
 import type { BuildContact, BuiltRecipient } from './build';
@@ -25,6 +26,8 @@ export interface CreateCampaignInput {
   startNodeId?: string;
   /** Débit max en messages/minute (1..80). Absent/null = aucun throttle. */
   ratePerMinute?: number | null;
+  /** N'envoyer que pendant les heures d'ouverture de l'espace (migration 0122). Absent = aucune contrainte. */
+  businessHoursOnly?: boolean;
   /** Canal d'envoi. Absent = 'whatsapp' (comportement historique). */
   channel?: 'whatsapp' | 'rcs';
   /** Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'`. */
@@ -201,6 +204,7 @@ export class PgCampaignRepo {
       rcs_agent_id: string | null;
       rcs_message: unknown;
       webhook_id: string | null;
+      business_hours_only: boolean | null;
     }>(
       // `channel`, `rcs_agent_id` et `rcs_message` sont RELUS ici : c'est cette lecture qui alimente le job de
       // run, donc c'est elle qui décide du canal d'envoi. Les omettre ferait repartir une campagne RCS bien
@@ -209,7 +213,7 @@ export class PgCampaignRepo {
       // une campagne finie, mais une campagne qui attend son prochain arrivant.
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
               param_mapping, status, workflow_id, rate_per_minute, start_node_id,
-              channel, rcs_agent_id, rcs_message, webhook_id
+              channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only
        from campaigns where id = $1`,
       [id],
     );
@@ -232,6 +236,9 @@ export class PgCampaignRepo {
       rcsAgentId: r.rcs_agent_id,
       rcsMessage: r.rcs_message,
       webhookId: r.webhook_id,
+      // Campagne d'avant la migration 0122 : la colonne a un DEFAUT false, donc `null` ne peut venir que d'une
+      // ligne d'avant. Aucune contrainte d'horaire, comportement historique.
+      businessHoursOnly: r.business_hours_only === true,
     };
   }
 
@@ -758,23 +765,30 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Reprend les campagnes dont la pause de DÉBIT est arrivée à échéance. Rend celles réellement reprises.
+   * Reprend les campagnes dont la pause à ÉCHÉANCE est arrivée à terme. Rend celles réellement reprises.
    *
    * 🔴 RÉCLAMATION ATOMIQUE, comme les destinataires et les runs. L'`update ... returning` prend et rend dans
    * la MÊME instruction : deux balayages concurrents (deux workers un jour, ou un balayage qui déborde sur le
    * suivant) ne peuvent pas reprendre la même campagne deux fois et enfiler deux runs.
    *
-   * 🔴 `pause_reason = 'debit'` est dans le WHERE, et c'est la garde qui compte. Une pause de QUALITÉ n'a pas
-   * d'échéance (`paused_until` nul) et n'entrerait donc pas ici de toute façon ; l'écrire quand même rend la
-   * règle lisible sur place, et protège d'une ligne mal formée qui porterait une échéance sans le vouloir.
-   * Meta juge alors le numéro : relancer sans rien changer aggrave le problème et peut coûter le numéro.
+   * 🔴 LA LISTE DES MOTIFS EST DANS LE WHERE, et c'est la garde qui compte. Deux motifs ont une échéance et
+   * repartent seuls : `debit` (une limite de cadence Meta, qui retombe) et `hors_horaires` (la fenêtre
+   * d'envoi du client, qui rouvre). La QUALITÉ n'y est pas : elle n'a pas d'échéance (`paused_until` nul) et
+   * n'entrerait donc pas ici de toute façon, mais l'écrire rend la règle lisible sur place et protège d'une
+   * ligne mal formée qui porterait une échéance sans le vouloir. Meta juge alors le numéro : relancer sans
+   * rien changer aggrave le problème et peut coûter le numéro.
+   *
+   * ⚠️ Ce `where` est le CONTRAT de l'index partiel `campaigns_reprise_idx` (migrations 0103 puis 0122) :
+   * les deux listes de motifs doivent rester identiques. En sortir ne produit aucune erreur, seulement un
+   * balayage qui parcourt la table des campagnes toutes les minutes.
    */
-  async reprendreCampagnesEnPauseDeDebit(limite = 50): Promise<Array<{ id: string; tenantId: string }>> {
+  async reprendreCampagnesDues(limite = 50): Promise<Array<{ id: string; tenantId: string }>> {
     const res = await this.pool.query<{ id: string; tenant_id: string }>(
       `update campaigns set status = 'running', pause_reason = null, paused_until = null
         where id in (
           select id from campaigns
-           where status = 'paused' and pause_reason = 'debit' and paused_until is not null and paused_until <= now()
+           where status = 'paused' and pause_reason in ('debit', 'hors_horaires')
+             and paused_until is not null and paused_until <= now()
            order by paused_until asc
            limit $1
            for update skip locked
@@ -866,8 +880,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   const isWorkflow = !!input.workflowId;
   const res = await q.query<{ id: string }>(
     `insert into campaigns
-       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14)
+       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15)
      returning id`,
     [
       input.tenantId,
@@ -886,6 +900,7 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       input.rcsAgentId ?? null,
       input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
       input.webhookId ?? null,
+      input.businessHoursOnly === true,
     ],
   );
   const id = res.rows[0]?.id;
@@ -922,7 +937,7 @@ export class PgCampaignStore implements CampaignStore {
   async setStatus(
     campaignId: string,
     status: CampaignStatus,
-    pause?: { raison: 'debit' | 'qualite'; reprise: Date | null },
+    pause?: { raison: MotifDePause; reprise: Date | null },
   ): Promise<void> {
     // 🔴 Les deux colonnes sont TOUJOURS écrites, y compris à null quand `pause` est absent. Les laisser
     // telles quelles sur une reprise ferait qu'une campagne repartie garderait l'échéance de sa pause

@@ -20,7 +20,11 @@ class FakeRuns {
   }
 
   run: WorkflowRunRow | null = null;
+  /** L'état COMPLET reçu au démarrage. `WorkflowRunRow` ne porte pas `resumeAt`, or c'est justement lui qui dit
+   *  QUAND un parcours endormi doit repartir : sans ça, un test ne peut vérifier que le statut. */
+  dernierEtat: RunState | null = null;
   async start(tenantId: string, workflowId: string, waId: string, _contactId: string | null, state: RunState): Promise<{ id: string }> {
+    this.dernierEtat = state;
     this.run = { id: 'r1', workflowId, tenantId, waId, currentNode: state.currentNode, status: state.status, lastMessageId: null };
     return { id: 'r1' };
   }
@@ -428,7 +432,13 @@ describe('WorkflowExecutor', () => {
 });
 
 describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par evalContext)', () => {
-  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null, surBesoins?: (b?: { derniereSaisie: boolean }) => void) {
+  /**
+   * `now` fait coïncider les DEUX horloges d'une même étape : celle du contexte (`ctx.now`, qui sert au calcul
+   * de l'échéance) et celle de l'exécuteur (`deps.now`, qui la transforme en `resume_at`). En production elles
+   * sont distantes de quelques millisecondes ; dans un test à date figée, sans ce paramètre, l'échéance serait
+   * calculée depuis 2026 et posée depuis aujourd'hui.
+   */
+  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null, surBesoins?: (b?: { derniereSaisie: boolean }) => void, now?: () => number) {
     const runs = new FakeRuns();
     const calls: string[] = [];
     const ex = new WorkflowExecutor({
@@ -443,6 +453,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       sendFlow: async (_t, _w, flowId) => { calls.push(`flow:${flowId}`); },
       sendQuestion: async () => {},
       evalContext: async (_t, _w, besoins) => { surBesoins?.(besoins); return ctx; },
+      ...(now ? { now } : {}),
     });
     return { ex, runs, calls };
   }
@@ -527,6 +538,52 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual([]);
     expect(runs.run).toBeNull();
+  });
+
+  /**
+   * 🔴 LA GARDE DU BLOC ATTENTE DATÉ (2026-09-08). Un bloc « aux prochaines heures ouvrées » ne peut rien
+   * calculer sans le contexte (instant courant, fuseau, horaires de l'espace) : sans lui il devient un
+   * passe-plat et envoie à 1 h du matin exactement ce que le client voulait retenir. Or ce contexte n'est
+   * construit QUE si le graphe le réclame. Ce n'est donc pas le bloc qui garantit la fonctionnalité, c'est
+   * cette ligne-là de `buildCtx`, et rien d'autre ne la surveille.
+   */
+  describe('bloc Attente daté : le contexte est RÉCLAMÉ, sinon la fonctionnalité n’existe pas', () => {
+    const nuit = () => baseCtx({ now: new Date('2026-09-07T23:00:00Z') }); // mardi 1 h du matin à Paris
+    const attente = (data: Record<string, unknown>): WorkflowGraph => ({
+      nodes: [n('w', 'wait', data), n('tpl', 'template', { templateName: 'promo' })],
+      edges: [e('e1', 'w', 'tpl')],
+    });
+
+    it('🔴 « heures ouvrées » : evalContext est appelé, et le parcours dort jusqu’à 9 h', async () => {
+      const appels: Array<{ derniereSaisie: boolean } | undefined> = [];
+      const g = attente({ waitMode: 'heures_ouvrees' });
+      const { ex, runs, calls } = makeEval(g, nuit(), (b) => appels.push(b), () => nuit().now.getTime());
+      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      expect(appels).toHaveLength(1); // sans la ligne de `buildCtx`, aucun appel : c'est la mutation qui compte
+      expect(calls).toEqual([]); // le template ne part PAS maintenant
+      expect(runs.dernierEtat?.status).toBe('sleeping');
+      expect(runs.dernierEtat?.resumeAt?.toISOString()).toBe('2026-09-08T07:00:00.000Z'); // 9 h à Paris
+    });
+
+    it('🔴 « date précise » : même garde, même réclamation du contexte', async () => {
+      const appels: Array<{ derniereSaisie: boolean } | undefined> = [];
+      const g = attente({ waitMode: 'date', waitDate: '2026-09-10T09:00' });
+      const { ex, runs } = makeEval(g, nuit(), (b) => appels.push(b), () => nuit().now.getTime());
+      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      expect(appels).toHaveLength(1);
+      expect(runs.dernierEtat?.resumeAt?.toISOString()).toBe('2026-09-10T07:00:00.000Z');
+    });
+
+    it('une attente en DÉLAI ne réclame toujours rien : on n’a pas fait payer une requête à tout le monde', async () => {
+      // La contrepartie du cas ci-dessus. Sans elle, on aurait pu « corriger » en construisant le contexte
+      // pour tous les scénarios, ce qui remettrait deux requêtes par étape sur l'immense majorité d'entre eux.
+      const appels: Array<{ derniereSaisie: boolean } | undefined> = [];
+      const g = attente({ delay: 2, unit: 'hours' });
+      const { ex, runs } = makeEval(g, nuit(), (b) => appels.push(b), () => nuit().now.getTime());
+      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      expect(appels).toHaveLength(0);
+      expect(runs.dernierEtat?.status).toBe('sleeping');
+    });
   });
 });
 

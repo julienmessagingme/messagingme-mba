@@ -560,6 +560,13 @@ async function main(): Promise<void> {
        */
       moteur: {
       arretDemande: () => arretDemande,
+      // Les horaires d'ouverture de l'espace, pour une campagne cochée « uniquement pendant les heures
+      // ouvrées ». Le moteur ne les demande QUE si la campagne porte le drapeau, et une seule fois par run :
+      // ce câblage n'ajoute donc aucune requête aux campagnes qui ne s'en servent pas.
+      horairesOuvres: async (tenant: string) => {
+        const s = await settingsStore.get(tenant);
+        return { timeZone: s.timezone, businessHours: s.businessHours };
+      },
       // Le run rend la main au bout de ce délai et se réenfile : la file reste équitable entre clients.
       dureeMaxMs: config.CAMPAIGN_RUN_MAX_MS,
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
@@ -811,7 +818,7 @@ async function main(): Promise<void> {
   const plafondSweep = async (): Promise<void> => {
     try {
       const n = await runCampaignRepriseSweep({
-        reprendreDues: () => repo.reprendreCampagnesEnPauseDeDebit(),
+        reprendreDues: () => repo.reprendreCampagnesDues(),
         getRunSizing: (id) => repo.getRunSizing(id),
         enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
         defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,

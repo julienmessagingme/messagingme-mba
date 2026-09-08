@@ -124,6 +124,13 @@ export interface CreateCampaignInput {
    * (le serveur refuse les deux ensemble).
    */
   webhookId?: string;
+  /**
+   * N'envoyer QUE pendant les heures d'ouverture de l'espace (onglet Paramètres). Absent = aucune contrainte.
+   *
+   * Vaut pour « Maintenant » COMME pour « Plus tard » : la campagne lancée hors créneau n'est pas refusée,
+   * elle est mise en pause avec sa reprise, et un envoi coupé par la fermeture repart au créneau suivant.
+   */
+  businessHoursOnly?: boolean;
 }
 
 /** Campagnes actives par défaut ; `archived: true` renvoie la corbeille (les deux ensembles sont disjoints). */

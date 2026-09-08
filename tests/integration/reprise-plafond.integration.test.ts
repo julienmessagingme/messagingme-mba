@@ -57,7 +57,7 @@ describe.skipIf(!url)('reprise après un plafond de débit (Postgres)', () => {
 
   it('🔴 reprend une pause de DÉBIT échue, et efface les deux colonnes', async () => {
     const due = await campagneEnPause('debit', new Date(Date.now() - 60_000).toISOString());
-    const reprises = await repo.reprendreCampagnesEnPauseDeDebit();
+    const reprises = await repo.reprendreCampagnesDues();
     expect(reprises.map((c) => c.id)).toContain(due);
     expect(reprises.find((c) => c.id === due)?.tenantId).toBe(tenantId);
 
@@ -74,14 +74,14 @@ describe.skipIf(!url)('reprise après un plafond de débit (Postgres)', () => {
     // problème et peut coûter le numéro. L'échéance est posée ici EXPRÈS, pour prouver que c'est bien la
     // RAISON qui protège, et pas seulement l'absence de date.
     const qualite = await campagneEnPause('qualite', new Date(Date.now() - 60_000).toISOString());
-    const reprises = await repo.reprendreCampagnesEnPauseDeDebit();
+    const reprises = await repo.reprendreCampagnesDues();
     expect(reprises.map((c) => c.id)).not.toContain(qualite);
     expect((await statutDe(qualite)).status).toBe('paused');
   });
 
   it('une échéance encore FUTURE n’est pas reprise', async () => {
     const future = await campagneEnPause('debit', new Date(Date.now() + 3_600_000).toISOString());
-    const reprises = await repo.reprendreCampagnesEnPauseDeDebit();
+    const reprises = await repo.reprendreCampagnesDues();
     expect(reprises.map((c) => c.id)).not.toContain(future);
     expect((await statutDe(future)).status).toBe('paused');
   });
@@ -90,7 +90,7 @@ describe.skipIf(!url)('reprise après un plafond de débit (Postgres)', () => {
     // `pauseCampaign` (le bouton de l'opérateur) n'écrit ni raison ni échéance : une pause décidée par un
     // humain ne doit pas se lever toute seule.
     const manuelle = await campagneEnPause(null, null);
-    const reprises = await repo.reprendreCampagnesEnPauseDeDebit();
+    const reprises = await repo.reprendreCampagnesDues();
     expect(reprises.map((c) => c.id)).not.toContain(manuelle);
     expect((await statutDe(manuelle)).status).toBe('paused');
   });
@@ -100,8 +100,8 @@ describe.skipIf(!url)('reprise après un plafond de débit (Postgres)', () => {
     // enfilés pour la même campagne.
     const due = await campagneEnPause('debit', new Date(Date.now() - 60_000).toISOString());
     const [a, b] = await Promise.all([
-      repo.reprendreCampagnesEnPauseDeDebit(),
-      repo.reprendreCampagnesEnPauseDeDebit(),
+      repo.reprendreCampagnesDues(),
+      repo.reprendreCampagnesDues(),
     ]);
     const vues = [...a, ...b].filter((c) => c.id === due);
     expect(vues).toHaveLength(1);

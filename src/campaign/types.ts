@@ -38,6 +38,15 @@ export interface Campaign {
    * pas quand sa file est vide, elle reste `running` en attendant l'arrivant suivant.
    */
   webhookId?: string | null;
+  /**
+   * N'envoyer QUE pendant les heures d'ouverture de l'espace (migration 0122). Absent/false = comportement
+   * historique, l'envoi part quelle que soit l'heure.
+   *
+   * Vaut pour « maintenant » COMME pour « plus tard » : ce n'est pas un mode de lancement, c'est une
+   * contrainte de la campagne, relue à chaque run. C'est ce qui la fait tenir après une reprise, alors qu'un
+   * choix porté par le lancement se serait perdu à la première pause.
+   */
+  businessHoursOnly?: boolean;
 }
 
 export interface Recipient {

@@ -244,7 +244,18 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
   // ~1,4 million d'itérations par bloc et figerait l'onglet.
   const PAS_MIN_MS = 60_000;
   const UNITES: Record<string, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
+  /**
+   * Miroir de `waitEstimationMs` (serveur). Une attente « jusqu'à une date » ou « jusqu'aux prochaines heures
+   * ouvrées » n'a pas de durée connue à la publication : elle compte pour la FENÊTRE ENTIÈRE, sinon le
+   * builder laisserait monter « attendre jusqu'à demain 9 h, puis message rapide » sans rien dire, alors que
+   * le serveur, lui, le refuse. Les deux côtés doivent répondre pareil ou l'avertissement ment.
+   */
   const dureeMs = (node: GraphNodeLike): number => {
+    // ⚠️ Un mode INCONNU retombe sur le délai, comme `waitMode` côté serveur. Tester `!== 'delai'` suffisait
+    // pour les deux modes réels, et c'est ce qui a été écrit d'abord : le test de parité a montré qu'un mode
+    // inconnu devenait alors une attente de 24 h ici et de 2 h là-bas, donc un montage refusé par le builder
+    // et accepté par le serveur, sans que rien ne le dise.
+    if (['date', 'heures_ouvrees'].includes(String(node.data.waitMode ?? 'delai'))) return FENETRE_MS;
     const brut = Number(node.data.delay ?? 0);
     if (!Number.isFinite(brut) || brut <= 0) return 0;
     return (UNITES[String(node.data.unit ?? 'hours')] ?? 0) * brut;

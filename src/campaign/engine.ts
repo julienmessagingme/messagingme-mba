@@ -8,6 +8,10 @@ import type { OrigineMessage } from '../inbox/origine';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError, raisonDePause } from '../meta/errors';
 import { instantDeReprise, messageDePause } from './pause';
+import type { MotifDePause } from './pause';
+import { withinBusinessHours } from '../workflow/conditions';
+import type { BusinessHours } from '../workflow/conditions';
+import { prochaineOuverture } from '../lib/heures-ouvrees';
 import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
 
@@ -58,12 +62,13 @@ export interface RecipientStore {
 
 export interface CampaignStore {
   /**
-   * `pause` n'est fourni QUE sur une mise en pause par plafond Meta, et il décide si la campagne repartira
-   * toute seule : `raison: 'debit'` avec un instant de reprise, ou `raison: 'qualite'` avec `reprise: null`,
-   * qui veut dire « jamais automatiquement ». Toute autre transition l'omet, et l'implémentation efface
-   * alors les deux colonnes : une campagne qui repart ne doit pas garder l'échéance d'une pause d'avant.
+   * `pause` n'est fourni QUE sur une mise en pause qui doit être expliquée, et il décide si la campagne
+   * repartira toute seule : `raison: 'debit'` ou `'hors_horaires'` avec un instant de reprise, ou
+   * `raison: 'qualite'` avec `reprise: null`, qui veut dire « jamais automatiquement ». Toute autre
+   * transition l'omet, et l'implémentation efface alors les deux colonnes : une campagne qui repart ne doit
+   * pas garder l'échéance d'une pause d'avant.
    */
-  setStatus(campaignId: string, status: Campaign['status'], pause?: { raison: 'debit' | 'qualite'; reprise: Date | null }): Promise<void>;
+  setStatus(campaignId: string, status: Campaign['status'], pause?: { raison: MotifDePause; reprise: Date | null }): Promise<void>;
   /**
    * Relit le statut COURANT de la campagne en base, pour que le run puisse s'arrêter quand un opérateur la met
    * en pause pendant l'envoi. Scopé tenant comme toute lecture (le pooler est superuser, la RLS ne joue pas).
@@ -191,6 +196,16 @@ export interface EngineDeps {
    * le délai de réaction est le même pour toutes (quelques secondes) et le coût est borné, quel que soit le débit.
    */
   statusPollMs?: number;
+  /**
+   * Les horaires d'ouverture de l'espace, pour une campagne cochée « uniquement pendant les heures ouvrées ».
+   *
+   * Lus UNE FOIS par run, avant la boucle, et seulement si la campagne porte le drapeau : c'est un réglage
+   * d'espace, il ne bouge pas pendant un envoi, et le relire par destinataire ferait une requête par message.
+   *
+   * Absent -> aucune contrainte d'horaire, comportement historique. C'est aussi ce qui rend les fixtures de
+   * test et l'e2e muettes sur le sujet tant qu'elles n'en parlent pas.
+   */
+  horairesOuvres?: (tenantId: string) => Promise<{ timeZone: string; businessHours: BusinessHours } | null>;
 }
 
 /** Défaut du pas de relecture du statut : au pire une requête indexée toutes les 5 s par run en cours. */
@@ -376,6 +391,13 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // Horloge du LOT : un run travaille au plus `dureeMaxMs`, puis rend la main et se fait réenfiler.
   const debutDuLot = now();
 
+  // Horaires d'ouverture : lus UNE FOIS, et seulement si la campagne les demande. Une lecture en échec vaut
+  // « pas de contrainte » plutôt que « campagne bloquée » : le réglage sert à choisir un moment, pas à
+  // garder une porte, et une panne de sa lecture ne doit pas retenir un envoi que le client a lancé.
+  const horaires = campaign.businessHoursOnly === true && deps.horairesOuvres
+    ? await deps.horairesOuvres(campaign.tenantId).catch(() => null)
+    : null;
+
   for (const r of pending) {
     if (r.status === 'sent') continue; // idempotence défensive
 
@@ -399,6 +421,24 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     if (deps.arretDemande?.()) {
       report.paused = true;
       report.reason = 'arrêt du service pendant l’envoi ; la campagne reprendra au redémarrage';
+      return report;
+    }
+
+    // HORS DES HEURES D'OUVERTURE (migration 0122). Même forme que l'arrêt du service juste au-dessus :
+    // contrôlé AVANT toute réservation, donc le destinataire suivant n'est ni claimé ni envoyé et reste
+    // `pending`. La différence tient en une chose, et c'est tout l'intérêt : on POSE l'instant de reprise,
+    // donc le balayage de la migration 0103 relancera la campagne à l'ouverture, sans clic.
+    //
+    // 🔴 Contrôlé à CHAQUE destinataire, pas seulement au démarrage. Les deux cas que Julien a décrits sont
+    // le même code : « lancée à 23 h » (le tout premier tour ferme) et « pas finie à la fermeture » (un tour
+    // du milieu ferme). Un contrôle placé avant la boucle n'aurait couvert que le premier.
+    if (horaires !== null && !withinBusinessHours(new Date(now()), horaires.timeZone, horaires.businessHours)) {
+      // `null` = aucun jour ouvert de la semaine. Pas de reprise automatique possible, donc pas d'échéance :
+      // exactement la sémantique d'une pause de qualité, et le message le dit à l'opérateur.
+      const reprise = prochaineOuverture(new Date(now()), horaires.timeZone, horaires.businessHours);
+      report.paused = true;
+      report.reason = messageDePause('hors_horaires', reprise, undefined);
+      await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'hors_horaires', reprise });
       return report;
     }
 

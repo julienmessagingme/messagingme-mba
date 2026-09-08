@@ -343,6 +343,27 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
     const propre = String(n?.data?.name ?? '').trim();
     return propre || t(...nodeMetaOf(((n?.data?.wfType as WorkflowNodeType) ?? 'template')).label);
   };
+  /**
+   * CE QUE FAIT L'ATTENTE, dit en une phrase juste pour les trois modes.
+   *
+   * ⚠️ L'avertissement disait « attend 24 h ou plus » et conseillait de « raccourcir l'attente ». Depuis les
+   * modes datés (2026-09-08), les deux sont faux : « jusqu'à demain 9 h » peut ne durer que huit heures, et
+   * il n'y a rien à raccourcir, c'est le MODE qu'il faut changer. Un texte faux dans un avertissement envoie
+   * l'opérateur chercher un réglage qui n'existe pas.
+   */
+  const attenteDite = (id: string): { quoi: string; remede: string } => {
+    const n = nodes.find((x) => x.id === id);
+    const mode = String((n?.data as Record<string, unknown> | undefined)?.waitMode ?? 'delai');
+    return mode === 'date' || mode === 'heures_ouvrees'
+      ? {
+        quoi: t('retient le parcours pour une durée qu’on ne connaît pas d’avance', 'holds the parcours for a length not known in advance'),
+        remede: t('Remplace ce bloc par un envoi de template, ou repasse l’attente en délai court.', 'Replace that block with a template, or switch the wait back to a short delay.'),
+      }
+      : {
+        quoi: t('attend 24 h ou plus', 'waits 24h or more'),
+        remede: t('Remplace ce bloc par un envoi de template, ou raccourcis l’attente.', 'Replace that block with a template, or shorten the wait.'),
+      };
+  };
 
   // Auto-arranger : recalcule les positions (couches horizontales) et recadre. Le changement de position est
   // capté par l'auto-save existant (effet sur [nodes, edges]) -> persistance automatique, aucun appel API dédié.
@@ -479,15 +500,18 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         </div>
       )}
 
-      {montageImpossible && (
+      {montageImpossible && (() => {
+        const attente = attenteDite(montageImpossible.waitNodeId);
+        return (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <b>{t('Ce montage ne partira pas.', 'This setup will not be sent.')}</b>{' '}
           {t(
-            `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » attend 24 h ou plus, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n'accepte plus qu'un template. Remplace ce bloc par un envoi de template, ou raccourcis l'attente.`,
-            `Block “${nomDuBloc(montageImpossible.waitNodeId)}” waits 24h or more, then “${nomDuBloc(montageImpossible.messageNodeId)}” sends a non-template message. After 24h without a new message from the contact, WhatsApp only accepts templates. Replace that block with a template, or shorten the wait.`,
+            `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » ${attente.quoi}, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n'accepte plus qu'un template. ${attente.remede}`,
+            `Block “${nomDuBloc(montageImpossible.waitNodeId)}” ${attente.quoi}, then “${nomDuBloc(montageImpossible.messageNodeId)}” sends a non-template message. After 24h without a new message from the contact, WhatsApp only accepts templates. ${attente.remede}`,
           )}
         </div>
-      )}
+        );
+      })()}
 
       {sessionApresRcs && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="alerte-session-apres-rcs">

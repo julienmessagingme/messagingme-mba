@@ -57,7 +57,7 @@ test.describe('Builder : nature d’un bloc et bloc Attente', () => {
     await page.getByRole('button', { name: /Attente/i }).click();
 
     // Panneau de config : durée + unité, et l'avertissement sur la fenêtre de 24 h.
-    await expect(page.getByText('Attendre avant le bloc suivant')).toBeVisible();
+    await expect(page.getByText('Reprendre le parcours…')).toBeVisible();
     await page.getByRole('spinbutton').fill('3');
     await page.getByRole('combobox').last().selectOption('days');
     await expect(page.getByText(/seul un envoi de TEMPLATE peut encore partir/i)).toBeVisible();
@@ -99,6 +99,89 @@ test.describe('Builder : nature d’un bloc et bloc Attente', () => {
     await expect(chooser).toHaveCount(0);
     await expect(page.locator('.react-flow__node')).toHaveCount(3);
     await expect(page.locator('.react-flow__node').getByText(/attendre 1 h/i)).toBeVisible();
+  });
+
+  /**
+   * Les deux modes DATÉS du bloc Attente (demande de Julien du 2026-09-08). Ce qui compte ici, c'est que le
+   * choix ARRIVE EN BASE : le calcul serveur est déjà tenu par des tests unitaires, mais il lit `waitMode` et
+   * `waitDate`, et un panneau qui ne les enregistrerait pas ferait un bloc qui a l'air réglé et attend 1 h.
+   */
+  test('🔴 mode « heures ouvrées » : le bloc le DIT, et le mode est enregistré', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(page, UN_BLOC, saved);
+    await page.goto('/workflows?open=wf1');
+    await page.getByRole('button', { name: /Attente/i }).click();
+
+    await page.getByRole('combobox').first().selectOption('heures_ouvrees');
+    // Ni durée ni date à saisir : le créneau vient des Paramètres de l'espace.
+    await expect(page.getByRole('spinbutton')).toHaveCount(0);
+    await expect(page.getByText(/reprend . l.ouverture du jour/i)).toBeVisible();
+    // L'avertissement change de texte : la durée n'est plus connue d'avance, l'attente compte pour une LONGUE.
+    await expect(page.getByText(/comptée pour une attente LONGUE/i)).toBeVisible();
+
+    await expect(page.locator('.react-flow__node').getByText(/jusqu’aux heures ouvrées/i)).toBeVisible();
+    await page.getByTestId('workflow-autoarrange').click();
+    await expect.poll(() => saved[saved.length - 1]?.nodes.find((n) => n.type === 'wait')?.data ?? null, { timeout: 10_000 })
+      .toMatchObject({ waitMode: 'heures_ouvrees' });
+  });
+
+  test('🔴 mode « date précise » : la date saisie est celle qui part en base', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(page, UN_BLOC, saved);
+    await page.goto('/workflows?open=wf1');
+    await page.getByRole('button', { name: /Attente/i }).click();
+
+    await page.getByRole('combobox').first().selectOption('date');
+    // Tant qu'aucune date n'est choisie, le bloc le dit plutôt que d'afficher une échéance inventée.
+    await expect(page.locator('.react-flow__node').getByText(/date à choisir/i)).toBeVisible();
+
+    await page.getByTestId('wait-date').fill('2026-12-24T09:00');
+    await expect(page.locator('.react-flow__node').getByText(/jusqu’au 2026-12-24 09:00/i)).toBeVisible();
+
+    await page.getByTestId('workflow-autoarrange').click();
+    await expect.poll(() => saved[saved.length - 1]?.nodes.find((n) => n.type === 'wait')?.data ?? null, { timeout: 10_000 })
+      .toMatchObject({ waitMode: 'date', waitDate: '2026-12-24T09:00' });
+  });
+
+  test('🔴 l’avertissement de montage impossible dit VRAI sur une attente datée', async ({ page }) => {
+    // Trouvé par le rayon de souffle du commit. La phrase disait « attend 24 h ou plus » et conseillait de
+    // « raccourcir l'attente » : sur un « jusqu'aux heures ouvrées », les deux sont faux (ça peut ne durer
+    // que huit heures, et il n'y a rien à raccourcir, c'est le MODE qu'il faut changer). Un avertissement
+    // faux envoie l'opérateur chercher un réglage qui n'existe pas.
+    const graph: Graph = {
+      nodes: [
+        { id: 'w', type: 'wait', position: { x: 0, y: 0 }, data: { wfType: 'wait', waitMode: 'heures_ouvrees' } },
+        { id: 'q', type: 'quick_message', position: { x: 0, y: 200 }, data: { wfType: 'quick_message', body: 'Salut', quickReplies: ['Oui'] } },
+      ],
+      edges: [{ id: 'e1', source: 'w', target: 'q' }],
+    };
+    await mockBuilder(page, graph, []);
+    await page.goto('/workflows?open=wf1');
+
+    const alerte = page.getByText(/Ce montage ne partira pas/);
+    await expect(alerte).toBeVisible({ timeout: 15_000 });
+    const bandeau = page.locator('div').filter({ hasText: /Ce montage ne partira pas/ }).last();
+    await expect(bandeau).toContainText(/durée qu’on ne connaît pas d’avance/);
+    await expect(bandeau).not.toContainText(/attend 24 h ou plus/);
+    await expect(bandeau).not.toContainText(/raccourcis l’attente/);
+  });
+
+  test('une attente en DÉLAI garde le texte historique, au caractère près', async ({ page }) => {
+    // La preuve inverse : sans elle, on aurait pu remplacer la phrase partout et perdre le conseil juste
+    // dans le cas de loin le plus fréquent.
+    const graph: Graph = {
+      nodes: [
+        { id: 'w', type: 'wait', position: { x: 0, y: 0 }, data: { wfType: 'wait', delay: 2, unit: 'days' } },
+        { id: 'q', type: 'quick_message', position: { x: 0, y: 200 }, data: { wfType: 'quick_message', body: 'Salut', quickReplies: ['Oui'] } },
+      ],
+      edges: [{ id: 'e1', source: 'w', target: 'q' }],
+    };
+    await mockBuilder(page, graph, []);
+    await page.goto('/workflows?open=wf1');
+
+    const bandeau = page.locator('div').filter({ hasText: /Ce montage ne partira pas/ }).last();
+    await expect(bandeau).toContainText(/attend 24 h ou plus/, { timeout: 15_000 });
+    await expect(bandeau).toContainText(/raccourcis l’attente/);
   });
 
   test('tirer une flèche dans le vide DEMANDE la nature du bloc', async ({ page }) => {

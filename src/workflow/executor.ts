@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle } from './engine';
+import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMode } from './engine';
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow } from './engine';
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
@@ -373,7 +373,11 @@ export class WorkflowExecutor {
       if (n.type === 'action' && n.data.actionKind === 'set_field' && dyn) return String(n.data.valueKind);
       return null;
     };
-    const needsCtx = graph.nodes.some((n) => n.type === 'condition' || valeurDynamique(n) !== null);
+    // 🔴 UN BLOC ATTENTE DATÉ EN A BESOIN AUSSI, et l'oublier ne casse rien de visible : `waitResumeInMs`
+    // rend alors 0, le bloc devient un passe-plat, et « attendre jusqu'aux prochaines heures ouvrées »
+    // envoie à 1 h du matin, silencieusement. C'est la seule ligne qui l'empêche.
+    const needsCtx = graph.nodes.some((n) => n.type === 'condition' || valeurDynamique(n) !== null
+      || (n.type === 'wait' && waitMode(n) !== 'delai'));
     if (!needsCtx) return undefined;
     // Une requête de plus SEULEMENT si un bloc réclame la dernière saisie. Sans ce tri, tout scénario portant
     // une condition la paierait, alors que presque aucun ne s'en sert.

@@ -79,11 +79,28 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0121**, le 2026-09-08 (`conversation_analysis.satisfaction` et `.urgence`, deux
-`smallint` NULLABLES bornés 0-10 par un CHECK : l'analyse note désormais où en est le client et à quel point
-ça presse, et la page de synthèse en fait un nuage de points). **Prochaine libre = 0122.**
+**Dernière appliquée : 0122**, le 2026-09-08 (`campaigns.business_hours_only` : une campagne peut n'envoyer
+que pendant les heures d'ouverture de l'espace, s'arrêter à la fermeture et REPRENDRE au créneau suivant).
+**Prochaine libre = 0123.**
 
-🔴 **`null` N'EST PAS `0`, ET C'EST TOUTE LA MIGRATION.** Les analyses d'avant n'ont aucune mesure (14 en
+🔴 **ELLE NE CRÉE AUCUNE MÉCANIQUE DE REPRISE, ELLE ÉLARGIT CELLE DE 0103**, et c'est ce qui la rend petite :
+une campagne hors créneau se met `paused` avec un `paused_until`, exactement comme sur un plafond de débit,
+et le balayage existant la relance. D'où ses TROIS changements, dont le troisième est celui qu'on oublie :
+la colonne, le CHECK de `pause_reason` (qui n'acceptait que `debit` et `qualite`, donc la mise en pause
+aurait échoué à l'écriture, en pleine campagne), et **l'index partiel `campaigns_reprise_idx`, qui est un
+CONTRAT AVEC UNE REQUÊTE PRÉCISE** : élargir le `where` de `reprendreCampagnesDues` sans élargir le prédicat
+de l'index ne produit AUCUNE erreur, juste un balayage qui parcourt la table des campagnes chaque minute.
+`qualite` reste hors des deux : cette pause-là n'a jamais d'échéance.
+
+Le nom de la contrainte de 0103 (créée en ligne, donc nommée automatiquement) a été LU EN BASE avant
+d'écrire le `drop constraint if exists` : un nom deviné à côté aurait laissé l'ancienne contrainte en place
+ET ajouté la nouvelle, donc rejeté `hors_horaires` en silence, un `if exists` ne protégeant que de l'absence.
+
+Avant elle : **0121** le 2026-09-08 (`conversation_analysis.satisfaction` et `.urgence`, deux `smallint`
+NULLABLES bornés 0-10 par un CHECK : l'analyse note où en est le client et à quel point ça presse, et la page
+de synthèse en fait un nuage de points).
+
+🔴 **`null` N'EST PAS `0`, ET C'EST TOUTE LA MIGRATION 0121.** Les analyses d'avant n'ont aucune mesure (14 en
 base au moment de l'appliquer, toutes à null, vérifié) et n'en auront jamais : on ne réanalyse pas. Les
 compter comme zéro rangerait tout l'historique dans le coin « client furieux, urgence nulle ». À l'inverse,
 une satisfaction de 0 est une mesure PARFAITEMENT valide, celle qui alarme : un `if (!satisfaction)` la

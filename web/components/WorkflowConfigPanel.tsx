@@ -169,31 +169,70 @@ export function ConfigPanel({
         )}
       </div>
 
-      {wfType === 'wait' && (
+      {wfType === 'wait' && (() => {
+        // Le mode est lu défensivement, comme côté serveur (`waitMode`) : un bloc enregistré avant le
+        // 2026-09-08 n'a pas ce champ et reste un délai, exactement comme avant.
+        const mode = ['delai', 'date', 'heures_ouvrees'].includes(String(d.waitMode ?? 'delai')) ? String(d.waitMode ?? 'delai') : 'delai';
+        return (
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Attendre avant le bloc suivant', 'Wait before the next block')}</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min={1}
-              value={Number(d.delay ?? 1)}
-              onChange={(e) => onPatch({ delay: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
-              className={`${cls} w-24`}
-            />
-            <select value={String(d.unit ?? 'hours')} onChange={(e) => onPatch({ unit: e.target.value })} className={`${cls} bg-white`}>
-              <option value="minutes">{t('minutes', 'minutes')}</option>
-              <option value="hours">{t('heures', 'hours')}</option>
-              <option value="days">{t('jours', 'days')}</option>
-            </select>
-          </div>
-          <p className="mt-1 text-[11px] text-ink-400">
-            {t("Le délai est tenu à la minute près environ (le réveil des parcours se fait par balayage). Maximum 30 jours.", 'The delay is accurate to about a minute (parcours are woken by a sweep). Maximum 30 days.')}
-          </p>
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Reprendre le parcours…', 'Resume the parcours…')}</label>
+          <select value={mode} onChange={(e) => onPatch({ waitMode: e.target.value })} className={`${cls} w-full bg-white`}>
+            <option value="delai">{t('après un délai', 'after a delay')}</option>
+            <option value="date">{t('à une date précise', 'at a precise date')}</option>
+            <option value="heures_ouvrees">{t('aux prochaines heures ouvrées', 'at the next business hours')}</option>
+          </select>
+
+          {mode === 'delai' && (
+            <>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={Number(d.delay ?? 1)}
+                  onChange={(e) => onPatch({ delay: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+                  className={`${cls} w-24`}
+                />
+                <select value={String(d.unit ?? 'hours')} onChange={(e) => onPatch({ unit: e.target.value })} className={`${cls} bg-white`}>
+                  <option value="minutes">{t('minutes', 'minutes')}</option>
+                  <option value="hours">{t('heures', 'hours')}</option>
+                  <option value="days">{t('jours', 'days')}</option>
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t("Le délai est tenu à la minute près environ (le réveil des parcours se fait par balayage). Maximum 30 jours.", 'The delay is accurate to about a minute (parcours are woken by a sweep). Maximum 30 days.')}
+              </p>
+            </>
+          )}
+
+          {mode === 'date' && (
+            <>
+              <input
+                type="datetime-local"
+                data-testid="wait-date"
+                value={String(d.waitDate ?? '')}
+                onChange={(e) => onPatch({ waitDate: e.target.value })}
+                className={`${cls} mt-2 w-full bg-white`}
+              />
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t("Cette date vaut pour TOUS les contacts qui passent par ce bloc, dans le fuseau de l'espace (onglet Paramètres). Une date déjà passée ne retient personne : le parcours continue tout de suite. Au-delà de 30 jours d'attente, la reprise est ramenée à 30 jours.", 'This date applies to EVERY contact going through this block, in the workspace time zone (Settings tab). A date already past holds nobody: the parcours continues right away. Beyond 30 days of waiting, the resume is capped at 30 days.')}
+              </p>
+            </>
+          )}
+
+          {mode === 'heures_ouvrees' && (
+            <p className="mt-2 text-[11px] text-ink-400">
+              {t("S'il est 1 h du matin, le parcours reprend à l'ouverture du jour, telle qu'elle est réglée dans l'onglet Paramètres. Si on est déjà dans les heures ouvertes, il continue sans attendre. Si aucun jour n'est ouvert, ce bloc ne retient personne : le parcours continue tout de suite.", 'If it is 1am, the parcours resumes at the opening time set in the Settings tab. If it is already within business hours, it continues without waiting. If no day is open at all, this block holds nobody: the parcours continues right away.')}
+            </p>
+          )}
+
           <p className="mt-1 text-[11px] text-amber-700">
-            {t("Après une attente, seul un envoi de TEMPLATE peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a TEMPLATE can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')}
+            {mode === 'delai'
+              ? t("Après une attente, seul un envoi de TEMPLATE peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a TEMPLATE can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')
+              : t("La durée de cette attente n'est pas connue d'avance : elle est donc comptée pour une attente LONGUE. Seul un envoi de TEMPLATE peut encore partir derrière ; un message rapide ou un formulaire placé après sera refusé à la publication.", 'The length of this wait is not known in advance, so it counts as a LONG wait. Only a TEMPLATE can still be sent after it; a quick message or a form placed after will be refused at publication.')}
           </p>
         </div>
-      )}
+        );
+      })()}
 
       {wfType === 'rcs_message' && (() => {
         // Les boutons d'un bloc sont du JSON libre dans `node.data` : `boutonsDepuisNode` les relit de façon

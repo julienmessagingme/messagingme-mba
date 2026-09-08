@@ -258,6 +258,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       rcsAgentId: string;
       rcsMessage: unknown;
       webhookId: string;
+      businessHoursOnly: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
@@ -468,6 +469,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ...(isWorkflow ? { workflowId: b.workflowId as string } : {}),
       ...(ratePerMinute !== undefined ? { ratePerMinute } : {}),
       ...(isRcs ? { rcsAgentId: b.rcsAgentId as string, rcsMessage } : {}),
+      ...(b.businessHoursOnly === true ? { businessHoursOnly: true } : {}),
       ...(webhookId ? { webhookId } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);

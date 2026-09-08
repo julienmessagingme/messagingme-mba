@@ -51,7 +51,15 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
     }
     case 'wait': {
       // Aligné sur le résumé du builder : sans ce cas, « Contenu > Blocs » listait des blocs Attente au
-      // résumé VIDE (branche default), donc impossibles à distinguer les uns des autres.
+      // résumé VIDE (branche default), donc impossibles à distinguer les uns des autres. Les trois modes y
+      // sont, sinon une attente datée retomberait dans le résumé vide qu'on venait de corriger.
+      const mode = String(data.waitMode ?? 'delai');
+      if (mode === 'heures_ouvrees') { out = 'jusqu’aux heures ouvrées'; break; }
+      if (mode === 'date') {
+        const brut = String(data.waitDate ?? '').trim();
+        out = brut === '' ? '' : `jusqu’au ${brut.replace('T', ' ')}`;
+        break;
+      }
       const n = Number(data.delay ?? 0);
       const u = String(data.unit ?? 'hours');
       const lib = u === 'minutes' ? 'min' : u === 'days' ? 'j' : 'h';

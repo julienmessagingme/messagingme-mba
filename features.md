@@ -493,9 +493,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   brancher permet de prévoir un cas « le client a écrit autre chose », la laisser libre revient à dire « ce
   scénario n'a rien prévu pour ça ».
 
-- ✅ **Bloc « Attente »** (2026-08-15) : met le parcours en pause pendant un délai choisi en minutes, heures ou
-  jours (30 jours maximum), puis la suite repart toute seule. Le délai est tenu à la minute près environ. Un
-  bloc dont la durée n'est pas encore choisie laisse simplement passer, il ne bloque personne.
+- ✅ **Bloc « Attente »** (2026-08-15, **trois façons de reprendre depuis le 2026-09-08**) : met le parcours en
+  pause, puis la suite repart toute seule. Trois choix, dans le panneau du bloc :
+  - **après un délai** : minutes, heures ou jours (30 jours maximum), tenu à la minute près environ ;
+  - **à une date précise** : une date et une heure, valables pour tous les contacts qui passent par ce bloc,
+    lues dans le fuseau de l'espace (onglet Paramètres). Une date déjà passée ne retient personne ;
+  - **aux prochaines heures ouvrées** : s'il est 1 h du matin, la suite ne repart qu'à l'ouverture du jour,
+    telle qu'elle est réglée dans Paramètres. Si on est déjà dans les heures ouvertes, ça continue sans
+    attendre ; si aucun jour n'est ouvert, le bloc ne retient personne.
+
+  Un bloc dont le réglage n'est pas encore fait laisse simplement passer, il ne bloque personne.
+  ⚠️ Les deux attentes datées n'ont pas de durée connue d'avance : elles comptent donc pour une attente
+  LONGUE, et le constructeur refuse un message rapide ou un formulaire derrière elles, comme après 24 h.
   ⚠️ **Après une attente, seul un envoi de template peut encore partir.** WhatsApp n'accepte un message libre
   que dans les 24 h qui suivent le dernier message du client. Le constructeur signale donc en clair un montage
   « attendre 24 h ou plus, puis message rapide », en nommant les deux blocs concernés. Et si la fenêtre s'avère
@@ -629,6 +638,17 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Campagnes
 
+- ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08) : une case à cocher, au bas de l'étape
+  d'envoi, sous le choix « Maintenant / Plus tard ». Elle vaut pour les deux : c'est une contrainte de la
+  campagne, pas de son lancement.
+  - lancée hors créneau (à 23 h, par exemple), la campagne **n'est pas refusée** : elle attend la prochaine
+    ouverture réglée dans Paramètres, et repart toute seule ;
+  - un envoi que la fermeture interrompt **reprend au créneau suivant**, sans perdre un seul destinataire :
+    ceux qui n'ont rien reçu restent en attente et partent à la réouverture ;
+  - l'écran de la campagne dit alors pourquoi elle est en pause et vers quand elle repartira.
+
+  ⚠️ Si aucun jour d'ouverture n'est réglé, il n'y a aucun créneau où envoyer : la campagne se met en pause
+  et le dit, sans reprise automatique. Il faut alors régler les horaires, ou relancer à la main.
 - ✅ **Ce que la campagne envoie, et quand** (2026-08-11). Chaque campagne annonce, dans la liste **et** dans son
   détail, ce qu'elle envoie : `Template « promo_ete » (fr)` pour un envoi direct, `Scénario « Relance promo »`
   pour une campagne qui déclenche un scénario, `Scénario supprimé` si le scénario a disparu depuis. Une campagne

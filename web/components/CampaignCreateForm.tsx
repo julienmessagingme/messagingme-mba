@@ -182,6 +182,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   } | null>(null);
   // Timing du lancement (étape 2) : 'now' = envoi immédiat, 'later' = programmation à une date/heure future.
   const [timing, setTiming] = useState<'now' | 'later'>('now');
+  // « N'envoyer que pendant les heures ouvrees » : une contrainte de la CAMPAGNE, pas du lancement, donc elle
+  // vaut pour « Maintenant » comme pour « Plus tard » et elle survit a une pause.
+  const [heuresOuvrees, setHeuresOuvrees] = useState(false);
   // Date/heure choisie pour la programmation, en HEURE LOCALE (valeur brute d'un <input datetime-local>).
   // Convertie en ISO UTC absolu (new Date(...).toISOString()) seulement au moment de l'action.
   const [scheduledLocal, setScheduledLocal] = useState('');
@@ -718,11 +721,13 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
         // création entière pour une ligne qu'un opérateur a juste oublié de remplir).
         rcsMessage: versMessageRcs({ text: rcsText, imageUrl: rcsImage, suggestions: rcsBoutons }),
         ...cible, ratePerMinute,
+        ...(heuresOuvrees ? { businessHoursOnly: true } : {}),
       };
     }
+    const horaires = heuresOuvrees ? { businessHoursOnly: true } : {};
     return mode === 'workflow'
-      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), ...cible, ratePerMinute }
-      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), ...cible, ratePerMinute };
+      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), ...cible, ratePerMinute, ...horaires }
+      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), ...cible, ratePerMinute, ...horaires };
   }
 
   // Remise à zéro pour « Nouvelle campagne » après un lancement réussi (sans quitter l'écran de création).
@@ -740,6 +745,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setOk(null);
     setRatePerMinute(60); // retour au débit par défaut (jauge à 60/min)
     setTiming('now');
+    setHeuresOuvrees(false);
     setScheduledLocal('');
     setLaunch({ phase: 'idle' });
     // 🔴 L'ABANDON EST LEVÉ ICI, et l'oublier coûterait cher : `retirerBrouillon` pose la marque pour qu'une
@@ -759,7 +765,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       category, mode, source, webhookId,
       phoneNumberId, templateName, templateLanguage, vars,
       workflowId, rcsAgentId, rcsText, rcsImage,
-      ratePerMinute, timing, scheduledLocal,
+      ratePerMinute, timing, scheduledLocal, heuresOuvrees,
       /**
        * 🔴 LES DESTINATAIRES AUSSI (2026-09-08). Ils manquaient, et c'est le travail le plus long de l'écran :
        * Julien revenait sur son brouillon et devait tout recocher. Les filtres sont indispensables au reste :
@@ -856,6 +862,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (txt('rcsImage') !== undefined) setRcsImage(txt('rcsImage')!);
     if (txt('scheduledLocal') !== undefined) setScheduledLocal(txt('scheduledLocal')!);
     if (txt('timing') === 'now' || txt('timing') === 'later') setTiming(txt('timing') as 'now' | 'later');
+    // Le brouillon garde deja `timing` et la date : sans cette ligne, reprendre un brouillon perdrait la
+    // contrainte d'horaire EN SILENCE, ce qui est pire que de ne pas l'avoir proposee.
+    if (typeof s.heuresOuvrees === 'boolean') setHeuresOuvrees(s.heuresOuvrees);
     if (typeof s.ratePerMinute === 'number') setRatePerMinute(s.ratePerMinute);
     if (Array.isArray(s.vars)) setVars(s.vars as VarRow[]);
     // Les DESTINATAIRES. `filters` d'abord : c'est lui qui décide quelle liste sera chargée, donc ce à quoi
@@ -1733,6 +1742,28 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                   )}
                 </div>
               )}
+
+              {/* Contrainte d'HORAIRE, hors du choix Maintenant / Plus tard parce qu'elle vaut pour les deux :
+                  c'est une propriété de la campagne, pas de son lancement. */}
+              <label className="mt-3 flex items-start gap-2 text-sm text-ink-700">
+                <input
+                  type="checkbox"
+                  data-testid="campagne-heures-ouvrees"
+                  checked={heuresOuvrees}
+                  onChange={(e) => setHeuresOuvrees(e.target.checked)}
+                  disabled={launching}
+                  className="mt-0.5 h-4 w-4 rounded border-ink-300 disabled:opacity-40"
+                />
+                <span>
+                  {t('Envoyer uniquement pendant les heures ouvrées', 'Send only during business hours')}
+                  <span className="mt-0.5 block text-xs text-ink-500">
+                    {t(
+                      'Lancée hors créneau, la campagne attend la prochaine ouverture (onglet Paramètres) au lieu de partir. Un envoi que la fermeture interrompt reprend tout seul au créneau suivant, sans perdre un destinataire.',
+                      'Launched outside business hours, the campaign waits for the next opening (Settings tab) instead of going out. A send interrupted by closing time resumes on its own at the next window, without losing a recipient.',
+                    )}
+                  </span>
+                </span>
+              </label>
             </div>
 
             {/* Progression / résultat du lancement inline (compteurs rafraîchis par le polling). */}

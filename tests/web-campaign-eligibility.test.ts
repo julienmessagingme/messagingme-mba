@@ -312,6 +312,16 @@ describe('parité de la détection « attente >= 24 h puis message de session »
       [n('w', 'wait', { delay: 2, unit: 'days' }), n('a', 'agent', {}), QM('q')],
       [e('w', 'a'), e('a', 'q')],
     )],
+    // 🔴 LES DEUX MODES DATÉS (2026-09-08). Leur durée n'est pas connue à la publication, ils comptent donc
+    // pour la fenêtre ENTIÈRE des deux côtés. C'est exactement le genre de règle qui diverge : le front
+    // lisait `delay`, et une attente datée aurait valu ZÉRO chez lui pendant qu'elle vaut 24 h chez le
+    // serveur, laissant publier un montage que le serveur refuse.
+    ['attente heures ouvrées puis message rapide', g([n('w', 'wait', { waitMode: 'heures_ouvrees' }), QM('q')], [e('w', 'q')])],
+    ['attente à une date puis message rapide', g([n('w', 'wait', { waitMode: 'date', waitDate: '2026-12-24T09:00' }), QM('q')], [e('w', 'q')])],
+    // Le piège précis : un délai COURT resté dans `data` après un changement de mode. Les deux côtés doivent
+    // l'ignorer, sinon l'un des deux croit à une attente de 5 minutes.
+    ['attente datée gardant un vieux délai de 5 min', g([n('w', 'wait', { waitMode: 'heures_ouvrees', delay: 5, unit: 'minutes' }), QM('q')], [e('w', 'q')])],
+    ['mode INCONNU -> délai (les deux le lisent défensivement)', g([n('w', 'wait', { waitMode: 'quand_il_pleut', delay: 2, unit: 'hours' }), QM('q')], [e('w', 'q')])],
   ];
 
   it('front et serveur désignent le MÊME montage fautif (ou aucun)', () => {

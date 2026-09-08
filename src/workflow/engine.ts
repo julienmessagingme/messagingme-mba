@@ -1,6 +1,9 @@
 import type { WorkflowGraph, WorkflowNode } from './graph';
-import { evaluateConditionGroup, coerceConditionGroup } from './conditions';
+import { evaluateConditionGroup, coerceConditionGroup, parseInstant } from './conditions';
 import type { EvalContext } from './conditions';
+// « Quand est le prochain créneau ouvert ? » vit dans UN seul endroit : le bloc Attente, l'envoi de campagne
+// et la reprise d'une campagne coupée par la fermeture posent la même question et doivent avoir la même réponse.
+import { prochaineOuverture } from '../lib/heures-ouvrees';
 // Le format de « maintenant » vit dans `src/agent/variables.ts` : un connecteur et un bloc de scenario
 // doivent poser la MEME valeur, sinon la meme date lue a deux endroits ne serait pas la meme.
 import { formatMaintenant } from '../agent/variables';
@@ -218,6 +221,16 @@ export function etapeOffreUnChoix(a: WorkflowAction | null): boolean {
   return false;
 }
 
+/**
+ * La fenêtre de service WhatsApp : 24 h depuis le dernier message DU CONTACT. Au-delà, Meta refuse tout ce
+ * qui n'est pas un template (131047).
+ *
+ * Elle est au niveau du module parce que DEUX calculs la lisent : l'analyse de montage ci-dessous, et
+ * `waitEstimationMs`, qui décide de la durée à prêter à une attente sans durée connue. Écrite deux fois,
+ * elle aurait fini par ne plus valoir la même chose des deux côtés.
+ */
+export const FENETRE_SERVICE_MS = 24 * 3_600_000;
+
 /** Un montage impossible : une attente qui ferme forcément la fenêtre, suivie d'un message de session. */
 export interface WaitThenSession {
   /** Le dernier bloc Attente TRAVERSÉ sur ce chemin (celui qu'on montre à l'utilisateur). */
@@ -243,7 +256,6 @@ export interface WaitThenSession {
  * d'attentes ferait croître le cumul indéfiniment et la fonction ne rendrait jamais la main.
  */
 export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession | null {
-  const FENETRE_MS = 24 * 3_600_000;
   // Chaque attente compte pour au MOINS un pas de balayage (60 s), la granularité réelle d'un réveil. Sans ce
   // plancher, un délai fractionnaire enregistré par l'API (`{delay: 0.001}`, 60 ms) dans un cycle demanderait
   // ~1,4 million d'itérations par bloc et figerait l'onglet.
@@ -266,7 +278,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
       // Une question est un message de SESSION : après 24 h d'attente cumulée, elle ne partira jamais. Même
       // signalement que pour un message rapide ou un formulaire.
       const a = actionOf(node);
-      if (a && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      if (a && cumul >= FENETRE_SERVICE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
       // Configurée, elle BLOQUE (elle attend une réponse) : l'analyse s'arrête là, comme sur un message
       // rapide à boutons. Non configurée, elle est un passe-plat : on explore au-delà.
       if (a) continue;
@@ -278,7 +290,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
       // Le premier message de l'agent est un message de SESSION : après 24 h d'attente cumulée, il ne partira
       // jamais. Même signalement que pour un message rapide ou un formulaire.
       const configure = String(node.data.agentId ?? '').trim() !== '';
-      if (configure && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      if (configure && cumul >= FENETRE_SERVICE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
       // Configuré, il BLOQUE (il tient la conversation) : l'analyse s'arrête là. Non configuré, il est un
       // passe-plat, comme dans `walk` : on explore au-delà.
       if (configure) continue;
@@ -288,7 +300,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     }
     if (node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node);
-      if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage') && cumul >= FENETRE_MS && dernierWait) {
+      if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage') && cumul >= FENETRE_SERVICE_MS && dernierWait) {
         return { waitNodeId: dernierWait, messageNodeId: id };
       }
       // Un message rapide SANS bouton ne bloque pas le parcours (cf. `walk`) : on doit donc explorer AU-DELÀ,
@@ -305,7 +317,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     const suivant = node.type === 'template'
       ? { cumul: 0, dernierWait: null }
       : node.type === 'wait'
-        ? { cumul: Math.min(cumul + Math.max(PAS_MIN_MS, waitDurationMs(node)), FENETRE_MS), dernierWait: waitDurationMs(node) > 0 ? id : dernierWait }
+        ? { cumul: Math.min(cumul + Math.max(PAS_MIN_MS, waitEstimationMs(node)), FENETRE_SERVICE_MS), dernierWait: waitEstimationMs(node) > 0 ? id : dernierWait }
         : { cumul, dernierWait };
     if (node.type === 'condition') {
       for (const h of ['true', 'false'] as const) {
@@ -357,16 +369,108 @@ const UNIT_MS: Record<WaitUnit, number> = { minutes: 60_000, hours: 3_600_000, d
 export const WAIT_MAX_MS = 30 * 86_400_000;
 
 /**
- * Durée d'un bloc Attente, en millisecondes. 0 = bloc NON configuré (durée absente, nulle, négative ou unité
- * inconnue) : il se comporte alors en passe-plat, on ne bloque pas un parcours sur une saisie oubliée.
+ * Les trois façons de dire QUAND un bloc Attente reprend.
+ *
+ * `delai` est le mode historique ET le défaut : un scénario enregistré avant le 2026-09-08 n'a pas ce champ
+ * et doit se comporter exactement comme avant, au caractère près.
+ */
+export const WAIT_MODES = ['delai', 'date', 'heures_ouvrees'] as const;
+export type WaitMode = (typeof WAIT_MODES)[number];
+
+/** Le mode d'un bloc Attente, lu DÉFENSIVEMENT (`data` est du JSON libre venu du client). Inconnu -> `delai`,
+ *  jamais une erreur : un scénario enregistré par une version ultérieure ne doit pas devenir illisible. */
+export function waitMode(node: WorkflowNode): WaitMode {
+  const brut = String(node.data.waitMode ?? 'delai');
+  return (WAIT_MODES as readonly string[]).includes(brut) ? (brut as WaitMode) : 'delai';
+}
+
+/**
+ * Durée d'un bloc Attente en mode DÉLAI, en millisecondes. 0 = bloc NON configuré (durée absente, nulle,
+ * négative ou unité inconnue) : il se comporte alors en passe-plat, on ne bloque pas un parcours sur une
+ * saisie oubliée.
+ *
+ * ⚠️ Rend 0 pour les deux modes DATÉS, et ce n'est pas un oubli : leur échéance ne se calcule qu'à
+ * l'exécution. Le `delay` peut être resté dans `data` (le client a pu régler un délai avant de changer de
+ * mode) ; le rendre ici annoncerait une durée que le bloc ne tiendra pas. Les deux questions que ce zéro
+ * laisse ouvertes ont chacune leur fonction : `waitResumeInMs` pour l'exécution, `waitEstimationMs` pour
+ * l'analyse de graphe.
  */
 export function waitDurationMs(node: WorkflowNode): number {
+  if (waitMode(node) !== 'delai') return 0;
   const brut = Number(node.data.delay ?? node.data.value ?? 0);
   if (!Number.isFinite(brut) || brut <= 0) return 0;
   const unit = String(node.data.unit ?? 'hours') as WaitUnit;
   const ms = UNIT_MS[unit];
   if (!ms) return 0;
   return Math.min(Math.round(brut * ms), WAIT_MAX_MS);
+}
+
+/**
+ * La durée qu'une ANALYSE DE GRAPHE doit prêter à un bloc Attente, en millisecondes.
+ *
+ * 🔴 CE N'EST PAS `waitDurationMs`, ET LA DIFFÉRENCE DÉCIDE SI UN CLIENT REÇOIT UN MESSAGE OU RIEN.
+ * `waitBeforeSessionMessage` tourne à la PUBLICATION : elle doit dire, sans connaître l'instant d'exécution,
+ * si la fenêtre de 24 h sera fermée derrière l'attente. Une attente « jusqu'à une date » ou « jusqu'aux
+ * prochaines heures ouvrées » n'a pas de durée connue d'avance, on la compte donc pour une attente LONGUE,
+ * c'est-à-dire la fenêtre entière. Ce n'est pas un repli prudent : c'est déjà ce que le panneau du bloc
+ * ANNONCE au client (« après une attente, seul un envoi de TEMPLATE peut encore partir »).
+ *
+ * ⚠️ Le défaut à ne pas laisser passer serait de rendre 0. L'analyse croirait alors la fenêtre encore
+ * ouverte et laisserait publier « attendre jusqu'à demain 9 h, puis message rapide », un montage dont le
+ * message ne partira jamais et dont personne ne serait prévenu.
+ */
+export function waitEstimationMs(node: WorkflowNode): number {
+  return waitMode(node) === 'delai' ? waitDurationMs(node) : FENETRE_SERVICE_MS;
+}
+
+/**
+ * L'instant visé par un bloc Attente en mode « date fixe ». Saisie vide ou illisible -> `null`.
+ *
+ * La date est saisie DANS LE BLOC (décision de Julien du 2026-09-08), pas prise dans un champ du contact :
+ * ce dernier cas est déjà couvert par l'automation « un délai avant ou après une date enregistrée », et il
+ * poserait ici la question du champ vide, qui n'a pas de bonne réponse dans un parcours déjà lancé.
+ * Elle est lue comme une heure MURALE dans le fuseau de l'espace : « le 24 à 9 h » veut dire 9 h chez le
+ * client, pas 9 h UTC.
+ */
+function cibleDeDate(node: WorkflowNode, ctx: EvalContext): Date | null {
+  const brut = String(node.data.waitDate ?? '').trim();
+  if (brut === '') return null;
+  const d = parseInstant(brut, ctx.timeZone);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Dans combien de temps un bloc Attente doit reprendre, en millisecondes. C'est ce que l'exécution lit.
+ *
+ * 0 = PASSE-PLAT (on continue tout de suite), la doctrine de ce moteur pour tout bloc qu'on ne peut pas
+ * exécuter (attente sans durée, question sans texte, agent non configuré) : un parcours FIGÉ n'a ni signal
+ * ni recours, un parcours qui continue se voit.
+ *
+ * 🔴 LES DEUX MODES DATÉS EXIGENT `ctx` : sans l'instant courant, le fuseau et les horaires de l'espace, il
+ * n'y a rien à calculer. L'exécuteur ne construit ce contexte que si le graphe le réclame, et c'est
+ * `buildCtx` qui doit le savoir : sans cette ligne-là, un « attendre les heures ouvrées » deviendrait un
+ * passe-plat et enverrait à 1 h du matin exactement ce qu'on voulait retenir. C'est le seul chemin par
+ * lequel ce défaut peut passer, et c'est pourquoi il est tenu par un test plutôt que par une relecture.
+ *
+ * ⚠️ L'échéance est calculée UNE FOIS, ici, et le réveil repart au bloc SUIVANT : un bloc Attente ne se
+ * réévalue jamais. Si le balayage prend des heures de retard (worker arrêté), un « jusqu'aux heures
+ * ouvrées » repart à l'heure du réveil et non à l'ouverture. C'est la limite commune à toutes les échéances
+ * de ce dépôt, pas une propriété de ces modes, et la corriger demanderait que le balayage rejoue le bloc.
+ */
+export function waitResumeInMs(node: WorkflowNode, ctx?: EvalContext): number {
+  const mode = waitMode(node);
+  if (mode === 'delai') return waitDurationMs(node);
+  if (!ctx) return 0;
+  const cible = mode === 'date'
+    ? cibleDeDate(node, ctx)
+    : prochaineOuverture(ctx.now, ctx.timeZone, ctx.businessHours);
+  // `null` = rien à viser : une date illisible, ou une semaine ENTIÈREMENT fermée. `prochaineOuverture` rend
+  // délibérément `null` dans ce dernier cas plutôt qu'une date lointaine, en laissant l'appelant décider :
+  // ici, on décide passe-plat, pour la raison écrite plus haut.
+  if (cible === null) return 0;
+  // Une échéance DÉJÀ PASSÉE (une date d'hier, ou l'instant courant parce qu'on est déjà dans les heures
+  // ouvertes) n'est pas une attente négative, c'est « il n'y a rien à attendre ».
+  return Math.min(Math.max(0, cible.getTime() - ctx.now.getTime()), WAIT_MAX_MS);
 }
 
 /** Nombre MAXIMAL de lignes d'un menu. Plafond WhatsApp : « up to 10 rows for all sections combined ». */
@@ -755,9 +859,11 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     if (node.type === 'wait') {
       // Bloc ATTENTE : il n'agit pas, il met le parcours en sommeil jusqu'à l'échéance. Les actions déjà
       // accumulées partent MAINTENANT ; la suite reprendra depuis ce bloc (le sweeper repart de son successeur).
-      const ms = waitDurationMs(node);
+      // `waitResumeInMs`, jamais `waitDurationMs` : c'est ici que les modes « date fixe » et « heures ouvrées »
+      // calculent leur échéance, depuis l'instant courant du contexte.
+      const ms = waitResumeInMs(node, work);
       if (ms > 0) return { actions, rest: { status: 'sleeping', nodeId: current, resumeInMs: ms } };
-      current = nextNode(graph, current); // durée non configurée -> passe-plat
+      current = nextNode(graph, current); // rien à attendre (durée non configurée, échéance passée) -> passe-plat
       continue;
     }
     // tag / field / email : bloc synchrone -> action + on continue. On répercute l'effet dans la copie de
