@@ -177,12 +177,14 @@ test.describe('Inbox : le menu de dossiers', () => {
     // fois ne disait plus où l'on est.
     await mock(page, ADMIN);
     await page.goto('/inbox');
-    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText(/^Tout \(/);
+    // ⚠️ Le titre ne porte PLUS de nombre (revue du 2026-09-09) : il affichait ce qui est CHARGÉ, à côté
+    // d'un menu qui affiche le vrai total. Deux nombres contradictoires pour le même dossier.
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText('Tout');
     await page.getByTestId('dossier-archivees').click();
-    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText(/^Archivé \(/);
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText('Archivé');
     // Un membre porte SON nom, pas son identifiant technique.
     await page.getByTestId('dossier-membre-u-jean').click();
-    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText(/^Jean \(/);
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText('Jean');
   });
 
   test('🔴 les anciens boutons de filtre ont DISPARU', async ({ page }) => {

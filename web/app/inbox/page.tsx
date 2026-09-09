@@ -378,8 +378,17 @@ function InboxInner({ session }: { session: Session }) {
         {/* Le titre nomme le DOSSIER OUVERT, pas « Conversations » : le mot était déjà l'intitulé du groupe
             dans le menu d'à côté, et deux fois le même mot côte à côte ne dit plus où l'on est. */}
         <div className="mb-2 flex items-center justify-between gap-2">
+          {/*
+            🔴 LE TITRE NE PORTE PLUS DE NOMBRE (revue du 2026-09-09). Il affichait `conversations.length`,
+            c'est-à-dire ce qui est CHARGÉ (une page de 50), juste à côté d'un menu qui affiche le vrai total
+            de l'espace : « Tout (50) » sous « Tout (200) ». Et le premier grimpait à chaque « charger plus »
+            pendant que le second ne bougeait pas.
+            Deux nombres pour le même dossier, côte à côte, qui se contredisent : c'est la même famille que
+            les trois boutons de filtre remplacés par ce menu, « deux endroits pour la même chose sont deux
+            états qui divergent ». Le compteur juste, celui de l'espace entier, vit dans le menu.
+          */}
           <h2 className="min-w-0 truncate text-base font-semibold tracking-tight text-ink-900" data-testid="inbox-titre-dossier">
-            {libelleDossier(dossier, compteurs, t)} ({conversations.length})
+            {libelleDossier(dossier, compteurs, t)}
           </h2>
           <button onClick={reload} className="shrink-0 text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
         </div>

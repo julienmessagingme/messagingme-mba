@@ -493,7 +493,7 @@ export class PgInboxStore implements InboxStore {
       //  - ARCHIVÉES : elles ne sont plus dans « Tout ». Sans ce filtre, ranger une conversation non lue
       //    laissait la pastille l'annoncer pour toujours, sans aucun moyen de la faire descendre.
       //  - BLOQUÉES : elles n'apparaissent nulle part depuis le 2026-08-21, et la pastille les comptait
-      //    quand même. Défaut ANTÉRIEUR à ce lot, de la même famille que celui de `countATraiter`.
+      //    quand même. Défaut ANTÉRIEUR à ce lot ; `countATraiter` portait le même, corrigé le 2026-09-09.
       `select count(*)::text as n
          from conversations c
          left join contacts ct on ct.id = c.contact_id
@@ -577,8 +577,17 @@ export class PgInboxStore implements InboxStore {
    */
   async countATraiter(tenantId: string): Promise<number> {
     const res = await this.pool.query<{ n: string }>(
-      `select count(*)::text as n from conversations c
-        where c.tenant_id = $1 and c.control_owner <> 'app_workflow'`,
+      // 🔴 LES MÊMES EXCLUSIONS QUE LE MENU ET QUE LA LISTE (revue du 2026-09-09). Ce compteur-ci les
+      // ignorait toutes les deux : il comptait les conversations ARCHIVÉES et celles de contacts BLOQUÉS,
+      // donc il rendait un nombre plus grand que le dossier « À traiter » du menu, pour le même espace.
+      // La route qui l'expose n'a plus d'appelant depuis que le menu rend les cinq compteurs en une lecture
+      // (cf. `todo.md`), mais une route morte qui rend un chiffre FAUX n'est pas du code inerte : c'est un
+      // piège armé pour celui qui la rebranchera. Le commentaire de `countUnread` nommait déjà ce défaut.
+      `select count(*)::text as n
+         from conversations c
+         left join contacts ct on ct.id = c.contact_id
+        where c.tenant_id = $1 and c.control_owner <> 'app_workflow'
+          and c.archived_at is null and ct.blocked_at is null`,
       [tenantId],
     );
     return Number(res.rows[0]?.n ?? 0);
