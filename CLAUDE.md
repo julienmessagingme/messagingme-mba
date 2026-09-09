@@ -79,8 +79,13 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Écrite, PAS ENCORE APPLIQUÉE : 0124** (`agent_gateway_keys` : une clé AI Gateway par espace, provisionnée
-chez Vercel à la création du premier agent). **Prochaine libre = 0125.**
+**Dernière appliquée : 0124**, le 2026-09-09 (`agent_gateway_keys` : une clé AI Gateway par espace,
+provisionnée chez Vercel à la création du premier agent). **Prochaine libre = 0125.**
+
+Vérifiée EN BASE après coup, comme 0120 à 0123 : `information_schema` pour les six colonnes,
+`pg_constraint` pour la clé PRIMAIRE sur `tenant_id` (c'est elle qui rend le provisionnement IDEMPOTENT sans
+verrou applicatif : deux créations d'agent simultanées ne peuvent pas produire deux clés Vercel) et pour la
+clé étrangère, et `schema_migrations` pour l'ordre.
 
 🔴 **LE PLAFOND DE LA CLÉ EST LE CRÉDIT ACHETÉ, jamais un nombre que le client saisit** (tranché par Julien
 le 2026-09-09). La nuance décide de tout : un plafond que le client choisit ne protège personne, il suffit
@@ -95,10 +100,27 @@ indépendantes de se tromper, aucune visible du compilateur, toutes découvertes
 client crée son premier agent. Lues dans la documentation avant d'écrire une ligne, et figées par
 `tests/agent-cles-gateway.test.ts`.
 
+🔴 **ET LA DOCUMENTATION DE VERCEL EST FAUSSE SUR LA RÉPONSE DE CRÉATION.** Elle annonce `apiKeyString` ET
+`id` à la RACINE ; le serveur rend `apiKeyString` à la racine et l'identifiant sous **`apiKey.id`**. Mesuré
+le 2026-09-09 à la première création réelle. Le `safeParse` a refusé, donc rien n'a été enregistré : sans
+lui, `id` valait `undefined`, on gardait une ligne à l'identifiant vide, et on perdait DÉFINITIVEMENT le
+moyen de replafonner ou de révoquer une clé qui facture (Vercel ne rend le secret qu'une fois, il n'y a
+aucune session de rattrapage). ⚠️ La leçon générale n'est pas « Vercel se trompe », c'est **qu'une réponse
+d'API se VÉRIFIE, y compris quand sa documentation est explicite** : c'est exactement ce que la règle
+« `safeParse`, jamais `as` » achète, et c'est la deuxième fois en deux jours qu'elle paie.
+
 🔴 **`VERCEL_API_TOKEN` EST BIEN PLUS DANGEREUX QUE `AI_GATEWAY_API_KEY`** : la seconde ne sait que dépenser
 sous un plafond, le premier sait FABRIQUER des clés facturées à l'équipe. La parade ne vit pas dans le code,
-c'est le **plafond d'ÉQUIPE** posé chez Vercel (`vercel ai-gateway budgets set team --limit N`), à poser
-AVANT de renseigner la variable.
+c'est le **plafond d'ÉQUIPE** posé chez Vercel, qui borne les dégâts quel que soit le nombre de clés créées.
+**Posé le 2026-09-09 : 100 $/mois, actif**, vérifié en relecture (⚠️ la relecture juste après l'écriture rend
+`Quota not found` pendant quelques secondes, c'est une propagation, pas un échec).
+
+⚠️ **`monthly` pour l'ÉQUIPE, `none` pour les clés CLIENT**, et l'inverse serait faux des deux côtés : le
+plafond d'équipe est un budget de fonctionnement mensuel, en `none` il couperait tout définitivement une fois
+atteint ; le crédit d'un client est prépayé, en `monthly` il lui redonnerait chaque mois ce qu'il n'a pas
+acheté. 🔴 Et le plafond d'équipe coupe **TOUS** les projets du Gateway d'un coup, y compris les bots
+clients en production (Odalys, Hyundai, Gan Prévoyance, les deux Leadgen) : le calibrer bas n'est pas
+« prudent », c'est une panne.
 
 ⚠️ **NON BLOQUANTE dans l'autre sens** : le code lit la clé en tolérant son absence (l'espace retombe sur la
 clé maison, comme un espace RCS sans clé propre). Elle passe AVANT le déploiement parce que la route de

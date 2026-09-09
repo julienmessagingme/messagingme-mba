@@ -59,7 +59,8 @@ function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: 
   };
 }
 
-const OK = { status: 200, json: { id: 'key_neuf', apiKeyString: 'vck_neuf' } };
+// La forme REELLE de Vercel (mesuree le 2026-09-09) : `apiKeyString` a la racine, l'identifiant sous `apiKey`.
+const OK = { status: 200, json: { apiKeyString: 'vck_neuf', apiKey: { id: 'key_neuf' } } };
 
 describe('assurerCleGateway', () => {
   it('🔴 une clé qui EXISTE n’en fait pas créer une seconde', async () => {

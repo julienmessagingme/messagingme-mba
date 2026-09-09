@@ -40,7 +40,12 @@ class TransportCasse implements HttpTransportPatch {
   patch(): Promise<HttpResponse> { return Promise.reject(new Error('ECONNRESET')); }
 }
 
-const OK_CREATION: HttpResponse = { status: 200, json: { id: 'key_abc', apiKeyString: 'vck_secret' } };
+/**
+ * 🔴 LA FORME REELLE, MESUREE SUR LE VRAI COMPTE le 2026-09-09, et pas celle de la documentation. Celle-ci
+ * annonce `apiKeyString` ET `id` a la racine ; le serveur imbrique l'identifiant sous `apiKey`. Ce test a
+ * d'abord ete ecrit d'apres la doc, il passait, et la premiere creation reelle a echoue.
+ */
+const OK_CREATION: HttpResponse = { status: 200, json: { apiKeyString: 'vck_secret', apiKey: { id: 'key_abc', name: 'n' } } };
 
 describe('Créer une clé AI Gateway', () => {
   it('🔴 frappe api.vercel.com avec le JETON DE COMPTE et le teamId en paramètre', async () => {
@@ -74,9 +79,11 @@ describe('Créer une clé AI Gateway', () => {
   });
 
   it('🔴 un 200 au corps ILLISIBLE échoue, il ne devine pas', async () => {
-    // Deviner un nom de champ ici ferait enregistrer `undefined` comme clé d'un client : tous ses appels
-    // partiraient ensuite en 401, et la cause serait cherchée partout sauf ici.
-    const t = new FauxTransport([{ status: 200, json: { key: 'vck_x' } }]);
+    // CE CAS S'EST PRODUIT POUR DE VRAI le 2026-09-09, à la première création réelle : la documentation
+    // annonçait `id` à la racine, le serveur le met sous `apiKey`. Sans cette garde on enregistrait un
+    // identifiant vide, donc une clé qui facture et qu'on ne peut plus ni replafonner ni révoquer. Vercel ne
+    // rend le secret qu'une fois : il n'y a pas de session de rattrapage.
+    const t = new FauxTransport([{ status: 200, json: { apiKeyString: 'vck_x', id: 'key_a_la_racine' } }]);
     await expect(creerCleGateway(t, { jetonCompte: 'j', teamId: 'tm', nom: 'n', plafondDollars: 1 }))
       .rejects.toThrow(CleGatewayError);
   });

@@ -30,10 +30,22 @@ const QUOTAS_URL = 'https://ai-gateway.vercel.sh/v1/quotas';
  */
 const PERIODE = 'none';
 
-/** Reponse de creation. `safeParse`, jamais `parse` ni `as` : c'est une reponse externe (regle du repo). */
+/**
+ * Reponse de creation. `safeParse`, jamais `parse` ni `as` : c'est une reponse externe (regle du repo).
+ *
+ * 🔴 LA DOCUMENTATION DE VERCEL EST FAUSSE ICI, ET C'EST CE SCHEMA QUI L'A DIT. Elle annonce `apiKeyString`
+ * ET `id` a la RACINE. Le serveur, lui, rend `apiKeyString` a la racine mais l'identifiant sous
+ * `apiKey.id`. Mesure le 2026-09-09 sur le vrai compte, en imprimant les NOMS de champs de la reponse (jamais
+ * les valeurs, l'un d'eux est le secret).
+ *
+ * Ce que cette garde a evite, concretement : sans elle, `id` valait `undefined`, on enregistrait une ligne
+ * dont l'identifiant de cle est vide, et on perdait pour toujours le moyen de bouger le plafond de cette cle
+ * ou de la revoquer, PENDANT qu'elle facture. Vercel ne rend le secret qu'une fois : il n'y a pas de session
+ * de rattrapage.
+ */
 const creationSchema = z.object({
-  id: z.string().min(1),
   apiKeyString: z.string().min(1),
+  apiKey: z.object({ id: z.string().min(1) }),
 });
 
 export class CleGatewayError extends Error {
@@ -88,7 +100,7 @@ export async function creerCleGateway(
     // est le seul choix honnete, deviner un champ en serait un autre qu'on paierait plus tard.
     throw new CleGatewayError('creation', res.status, 'reponse illisible');
   }
-  return { id: parse.data.id, cle: parse.data.apiKeyString };
+  return { id: parse.data.apiKey.id, cle: parse.data.apiKeyString };
 }
 
 /**
