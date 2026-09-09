@@ -91,6 +91,18 @@ elle-même. C'est la séparation que le dépôt fait déjà tenir entre `abusive
 ⚠️ NON BLOQUANTE (le code tolère la colonne absente), mais passée AVANT le déploiement : la requête du
 dossier est sur le chemin d'affichage de l'Inbox.
 
+Vérifiée EN BASE après coup, comme 0120 à 0122 : `information_schema` pour les deux colonnes,
+`pg_indexes` pour le prédicat exact de l'index partiel, et `pg_constraint` pour le `on delete set null` de
+l'auteur (`confdeltype = 'n'`, sans quoi le départ d'un collaborateur DÉSIGNALERAIT ses conversations).
+Puis la requête du dossier exécutée PAR LE VRAI CODE (`PgInboxStore`), pas par un SQL recopié : compteurs et
+listes concordent, et `signaleeMain` remonte à `false`, pas à `undefined`.
+
+⚠️ **ET C'EST UNE SONDE RATÉE QUI A TROUVÉ LE SEUL RESTE DU LOT.** Le premier appel passait
+`{ dossier: 'signalees' }` là où l'option s'appelle `signalees: true` : une clé inconnue ne lève rien, le
+filtre n'est pas posé, et la liste rend TOUT. Le symptôme n'a été lisible que parce que le compteur était
+lu dans le même passage et disait 0. **Une sonde de vérification se lit à côté d'un chiffre qui la contredit**,
+sinon elle confirme ce qu'on croyait.
+
 Avant elle : **0122** le 2026-09-08 (`campaigns.business_hours_only` : une campagne peut n'envoyer
 que pendant les heures d'ouverture de l'espace, s'arrêter à la fermeture et REPRENDRE au créneau suivant).
 

@@ -94,7 +94,12 @@ export interface ListConversationsOptions {
    * ne s'est vu confier. Absent = toutes, affectées ou non.
    */
   affectee?: string | 'aucune';
-  /** Ne garder que les conversations SIGNALÉES par l'analyse comme injurieuses (onglet de modération). */
+  /**
+   * Le dossier « Signalé » (onglet de modération) : l'UNION du signalement posé À LA MAIN (`signalee_le`,
+   * migration 0123) et du constat d'injure de l'analyse. ⚠️ Ce commentaire a dit « signalées par l'analyse »
+   * après que la main soit devenue une source à part entière : une des deux moitiés du dossier était alors
+   * invisible pour qui lisait le contrat au lieu de la requête.
+   */
   signalees?: boolean;
 }
 
