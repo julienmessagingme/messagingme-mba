@@ -14,7 +14,7 @@ import { OUTILS_MAISON } from '../src/agent/outils-maison';
  * d'un outil, et surtout son activation.
  */
 
-const COURANT = (): EtatCourant => ({ fiche: ficheVide(), outils: [] });
+const COURANT = (): EtatCourant => ({ mentionIaFrequence: 'session' as const, fiche: ficheVide(), outils: [] });
 
 describe('propositionSchema', () => {
   it('accepte une proposition de fiche partielle', () => {
@@ -82,7 +82,7 @@ describe('propositionSchema', () => {
 
   it('une réponse sans message est refusée', () => {
     // Une proposition sans explication est un diff que personne ne peut juger.
-    expect(propositionSchema.safeParse({ fiche: { objectif: 'Aider.' } }).success).toBe(false);
+    expect(propositionSchema.safeParse({ mentionIaFrequence: 'session' as const, fiche: { objectif: 'Aider.' } }).success).toBe(false);
   });
 });
 
@@ -133,7 +133,7 @@ describe('differences', () => {
   it('ne rend QUE ce qui change vraiment', () => {
     // Un modèle qui recopie l'objectif à l'identique ne doit pas produire de ligne : le client apprendrait à
     // cliquer « Garder » sans lire, et c'est l'habitude que ce diff existe pour empêcher.
-    const courant: EtatCourant = { fiche: { ...ficheVide(), objectif: 'Aider les clients.' }, outils: [] };
+    const courant: EtatCourant = { mentionIaFrequence: 'session' as const, fiche: { ...ficheVide(), objectif: 'Aider les clients.' }, outils: [] };
     expect(differences(courant, { message: 'x', fiche: { objectif: 'Aider les clients.' } })).toEqual([]);
     const change = differences(courant, { message: 'x', fiche: { objectif: 'Cerner le besoin.' } });
     expect(change).toHaveLength(1);
@@ -142,6 +142,7 @@ describe('differences', () => {
 
   it('compare les règles d’arrêt sur leur contenu, pas sur leur objet', () => {
     const courant: EtatCourant = {
+      mentionIaFrequence: 'session' as const,
       fiche: { ...ficheVide(), sorties: [{ code: 'rdv', label: 'Rendez-vous pris' }] },
       outils: [],
     };
@@ -167,6 +168,7 @@ describe('differences', () => {
 
   it('un outil DÉJÀ posé n’est pas annoncé comme un ajout, et ses mots inchangés ne bougent pas', () => {
     const courant: EtatCourant = {
+      mentionIaFrequence: 'session' as const,
       fiche: ficheVide(),
       outils: [{ handler: 'poser_tag', description: 'Tague le contact.', nePasUtiliser: 'Pas de tag inventé.' }],
     };
@@ -197,7 +199,8 @@ describe('differences', () => {
  */
 describe('proposition : les connecteurs', () => {
   const etat = {
-    fiche: ficheVide(),
+    mentionIaFrequence: 'session' as const,
+      fiche: ficheVide(),
     outils: [],
     connecteurs: [{ nom: 'lire_commande', titre: 'Lire une commande', description: 'ancien', nePasUtiliser: 'ancien non' }],
   };

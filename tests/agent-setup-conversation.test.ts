@@ -18,7 +18,7 @@ import { ficheVide } from '../src/agent/fiche';
 const VIERGE: EtatEntretien = { poses: [], reponses: [] };
 
 const CTX = (over: Partial<ContexteConstruction> = {}): ContexteConstruction => ({
-  label: 'Conseiller séjours',
+  label: 'Conseiller séjours', mentionIaFrequence: 'session' as const,
   fiche: { ...ficheVide(), objectif: 'Aider.' },
   outils: [],
   titresConnaissance: [],

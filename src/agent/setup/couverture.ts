@@ -187,6 +187,24 @@ export const AGENDA: Point[] = [
     pistes: ['un prénom', 'le nom de la marque', 'aucun nom'],
   },
   {
+    /**
+     * 🔴 UN SEUL POINT POUR DEUX QUESTIONS, ET C'EST VOULU. Julien en a demandé deux (« dois-je dire que je
+     * suis une IA », puis « à chaque fois ou une fois par session »), mais la seconde n'a de sens que si la
+     * première est oui : deux points la poseraient même après un non. Un point d'agenda est une unité de
+     * COUVERTURE, pas de phrase, et le repli du serveur repose `question` quand le modèle n'interroge rien.
+     * Même forme que `connaissance`, qui exige déjà une relance ciblée dans son `aObtenir`.
+     */
+    code: 'annonce_ia',
+    question: 'Votre agent doit-il annoncer qu’il est une IA ? Si oui, à chaque message ou une seule fois par conversation ?',
+    aObtenir: 'SI l’agent annonce qu’il est une IA, et si oui À QUELLE FRÉQUENCE : à chaque message, ou une '
+      + 'seule fois par conversation. S’il répond oui sans préciser, DEMANDE-LUI la fréquence avant de passer '
+      + 'au point suivant : sans elle, on ne peut pas régler l’agent et il retombe sur « une fois par '
+      + 'conversation », qui n’est peut-être pas ce qu’il veut. ⚠️ Ne cherche pas à le convaincre : informer '
+      + 'l’interlocuteur relève de SA responsabilité de marque, pas de la nôtre, et « jamais » est une réponse '
+      + 'parfaitement valable qu’on enregistre sans commenter',
+    pistes: ['oui, une fois par conversation', 'oui, à chaque message', 'non, jamais'],
+  },
+  {
     code: 'ton',
     question: 'Comment doit-il parler : vouvoiement ou tutoiement, phrases courtes ou développées, emoji ou non ?',
     aObtenir: 'comment il parle : vouvoiement ou tutoiement, phrases courtes ou développées, emoji ou non',

@@ -505,11 +505,42 @@ function OngletIdentite({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
       <Champ
         testId="agent-mention" busy={busy} multi label={t('Mention d’IA', 'AI disclosure')}
         aide={t(
-          'Obligatoire : la loi impose d’annoncer que l’interlocuteur parle à une IA. Cette phrase part au premier message et ne peut pas être vide.',
-          'Mandatory: the law requires telling the contact they are talking to an AI. This sentence goes out with the first message and cannot be empty.',
+          'La phrase qui annonce que l’interlocuteur parle à une IA. Elle ne peut pas être vide ; c’est le réglage ci-dessous qui décide QUAND elle est dite.',
+          'The sentence telling the contact they are talking to an AI. It cannot be empty; the setting below decides WHEN it is said.',
         )}
         valeur={agent.mentionIa} onSave={(v) => onSave({ mentionIa: v })}
       />
+      {/*
+        🔴 QUAND la phrase est dite (migration 0126, demande de Julien du 2026-09-09). Trois régimes, et
+        « jamais » est un choix assumé du client : l'AI Act n'impose l'information que lorsqu'elle n'est pas
+        évidente du contexte, et l'obligation pèse sur la marque qui déploie l'agent. L'aide le dit, sans
+        chercher à l'influencer : ce n'est pas notre décision.
+        ⚠️ La même question est posée dans l'entretien de construction. Ici c'est le rattrapage, pas le
+        chemin principal : un client qui a déjà répondu ne doit pas avoir à la retrouver.
+      */}
+      <div className="space-y-1">
+        <label htmlFor="agent-mention-frequence" className="block text-xs font-medium text-ink-700">
+          {t('Quand l’annoncer', 'When to disclose')}
+        </label>
+        <select
+          id="agent-mention-frequence"
+          data-testid="agent-mention-frequence"
+          disabled={busy}
+          value={agent.mentionIaFrequence ?? 'session'}
+          onChange={(e) => onSave({ mentionIaFrequence: e.target.value as PatchAgent['mentionIaFrequence'] })}
+          className={inputCls}
+        >
+          <option value="session">{t('Une fois par conversation', 'Once per conversation')}</option>
+          <option value="chaque_message">{t('À chaque message', 'On every message')}</option>
+          <option value="jamais">{t('Jamais', 'Never')}</option>
+        </select>
+        <p className="text-[11px] text-ink-500">
+          {t(
+            'C’est vous qui décidez : la loi n’impose de l’annoncer que lorsque ce n’est pas évident du contexte, et cette responsabilité est celle de votre marque.',
+            'Your call: the law only requires disclosure when it is not obvious from context, and that responsibility is your brand’s.',
+          )}
+        </p>
+      </div>
     </div>
   );
 }

@@ -32,6 +32,9 @@ export interface AgentComplet {
   label: string;
   status: StatutAgent;
   mentionIa: string;
+  /** QUAND la phrase d'annonce est dite (migration 0126). Absent sur une reponse d'avant : lu comme
+   *  « une fois par conversation », qui est le defaut serveur. */
+  mentionIaFrequence?: 'jamais' | 'session' | 'chaque_message';
   modele: string;
   maxTours: number;
   maxAppelsOutils: number;

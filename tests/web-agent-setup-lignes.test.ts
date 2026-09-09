@@ -119,3 +119,31 @@ describe('garder, corriger ou jeter ligne par ligne', () => {
  * modèle, et un modèle pressé se déclarait couvert après une phrase : le ton, l'identité et la base de
  * connaissance n'étaient jamais demandés.
  */
+
+/**
+ * LE RÉGLAGE D'ANNONCE D'IA, qui n'est ni dans la fiche ni dans un outil (2026-09-09).
+ *
+ * 🔴 IL A FAILLI ÊTRE OUBLIÉ ICI, et le défaut aurait été parfaitement muet : l'entretien pose la question,
+ * le diff l'affiche, et appliquer ne changeait rien. C'est le hook de rayon de souffle qui l'a signalé, en
+ * nommant ce fichier comme lecteur de `differences`.
+ */
+describe('Le régime d’annonce d’IA dans une proposition', () => {
+  const AVEC = { ...PROPOSITION, mentionIaFrequence: 'jamais' as const };
+  const LIGNE: Changement[] = [{ champ: 'mentionIaFrequence', label: 'Annonce « je suis une IA »', avant: 'une fois par conversation', apres: 'jamais' }];
+
+  it('🔴 GARDÉE, la valeur proposée part', () => {
+    const r = restreindreProposition(AVEC, LIGNE, new Map([['mentionIaFrequence', 'jamais']]));
+    expect(r.mentionIaFrequence).toBe('jamais');
+  });
+
+  it('🔴 JETÉE, le champ est OMIS : la colonne reste inchangée', () => {
+    // Et surtout pas réécrit depuis `avant` : le diff ne porte que des libellés en français, pas le code.
+    const r = restreindreProposition(AVEC, LIGNE, new Map());
+    expect(r.mentionIaFrequence).toBeUndefined();
+  });
+
+  it('sans proposition sur ce point, rien n’est envoyé', () => {
+    const r = restreindreProposition(PROPOSITION, [], new Map());
+    expect(r.mentionIaFrequence).toBeUndefined();
+  });
+});

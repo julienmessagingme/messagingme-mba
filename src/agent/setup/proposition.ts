@@ -1,3 +1,4 @@
+import type { FrequenceMentionIa } from '../agent-store';
 import { z } from 'zod';
 import { fichePatchSchema, type FicheAgentContenu } from '../fiche';
 import { OUTILS_MAISON } from '../outils-maison';
@@ -88,6 +89,18 @@ export const propositionSchema = z.object({
   /** Les champs de fiche proposés. PARTIEL au sens strict : le modèle ne touche qu'à ce dont il parle, et
    *  les champs absents restent ABSENTS (voir `fichePatchSchema`, qui n'applique aucun défaut). */
   fiche: fichePatchSchema.optional(),
+  /**
+   * QUAND l'agent annonce qu'il est une IA (migration 0126, demande de Julien du 2026-09-09).
+   *
+   * 🔴 LE SEUL RÉGLAGE HORS FICHE QUE L'ASSISTANT PUISSE PROPOSER, et il est ici parce que l'entretien pose
+   * désormais la question. Sans ce champ, on aurait interrogé le client pour ranger sa réponse nulle part :
+   * c'est exactement l'incohérence contre laquelle Julien a prévenu (« il faut alors que le câblage derrière
+   * soit cohérent »).
+   *
+   * ⚠️ Il reste une PROPOSITION, comme tout le reste : la route n'écrit rien, le client voit le diff et
+   * applique. Une IA ne décide pas seule d'arrêter d'annoncer qu'elle est une IA.
+   */
+  mentionIaFrequence: z.enum(['jamais', 'session', 'chaque_message']).optional(),
   /** 🔴 HANDLERS UNIQUES, même exigence que les codes de sortie de la fiche. Deux entrées pour le même outil
    *  produiraient deux lignes de diff portant la MÊME clé, et l'application tenterait de créer deux fois le
    *  même outil : la seconde création se ferait refuser sur un nom déjà pris, en laissant la première. */
@@ -131,6 +144,13 @@ export const SCHEMA_PROPOSITION = {
   type: 'object',
   properties: {
     message: { type: 'string', description: 'Ce que tu dis au client, en français, bref.' },
+    mentionIaFrequence: {
+      type: 'string',
+      enum: ['jamais', 'session', 'chaque_message'],
+      description: 'QUAND l’agent annonce qu’il est une IA, et SEULEMENT si le client l’a tranché : '
+        + 'jamais = il ne l’annonce pas ; session = une seule fois par conversation ; chaque_message = à '
+        + 'chaque réponse. Ne le propose pas de toi-même : c’est la responsabilité de la marque, pas la tienne.',
+    },
     bascules: {
       type: 'array',
       description: 'Les moments où l’agent doit faire autre chose que répondre, un par entrée. Reprends le '
@@ -235,6 +255,8 @@ export interface Changement {
 /** L'état courant contre lequel le diff se calcule. */
 export interface EtatCourant {
   fiche: FicheAgentContenu;
+  /** Le régime d'annonce d'IA ACTUEL, pour que le diff dise ce qui change (migration 0126). */
+  mentionIaFrequence: FrequenceMentionIa;
   /** Les outils DÉJÀ posés sur l'agent, par handler, avec leurs mots actuels. */
   outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
   /** Les CONNECTEURS déjà déclarés par un administrateur, par leur nom exposé. L'assistant ne peut proposer
@@ -266,6 +288,13 @@ function texteSorties(sorties: FicheAgentContenu['sorties']): string {
  */
 // `reponses` et `bascules` sont l'état de l'ENTRETIEN, pas une proposition d'écriture : le diff ne les
 // regarde pas, et les exclure du type le dit plutôt que de compter sur la discipline de l'appelant.
+/** Le régime, dit en français : ce diff est lu par un humain qui tranche une question légale. */
+const LIBELLES_MENTION: Record<string, string> = {
+  jamais: 'jamais',
+  session: 'une fois par conversation',
+  chaque_message: 'à chaque message',
+};
+
 export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'reponses' | 'bascules'>): Changement[] {
   const out: Changement[] = [];
 
@@ -281,6 +310,17 @@ export function differences(courant: EtatCourant, proposition: Omit<Proposition,
     const apres = String(valeur);
     const avant = String(courant.fiche[cle as keyof FicheAgentContenu] ?? '');
     if (apres !== avant) out.push({ champ: `fiche.${cle}`, label, avant, apres });
+  }
+
+  // Le régime d'annonce d'IA : hors fiche, donc traité à part. Libellé en toutes lettres plutôt que le code,
+  // parce que ce diff est lu par un humain qui décide d'une question légale, pas par un développeur.
+  if (proposition.mentionIaFrequence !== undefined && proposition.mentionIaFrequence !== courant.mentionIaFrequence) {
+    out.push({
+      champ: 'mentionIaFrequence',
+      label: 'Annonce « je suis une IA »',
+      avant: LIBELLES_MENTION[courant.mentionIaFrequence] ?? courant.mentionIaFrequence,
+      apres: LIBELLES_MENTION[proposition.mentionIaFrequence] ?? proposition.mentionIaFrequence,
+    });
   }
 
   for (const o of proposition.outils ?? []) {

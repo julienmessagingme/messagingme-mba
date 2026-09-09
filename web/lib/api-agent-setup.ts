@@ -19,6 +19,8 @@ export interface TourConstruction {
 
 /** Ce que l'assistant propose d'écrire. Les clés de sécurité en sont ABSENTES, par construction. */
 export interface PropositionConstruction {
+  /** QUAND l'agent annonce qu'il est une IA. Absent = l'assistant n'en propose pas de changement. */
+  mentionIaFrequence?: 'jamais' | 'session' | 'chaque_message';
   fiche: {
     nom?: string;
     objectif?: string;
@@ -114,6 +116,19 @@ export function restreindreProposition(
 
   return {
     fiche,
+    /**
+     * 🔴 LE REGLAGE D ANNONCE D IA SUIT LA MEME REGLE QUE LE RESTE, et l oublier ici l aurait fait
+     * DISPARAITRE en silence : l entretien aurait pose la question, le diff l aurait affichee, et appliquer
+     * n aurait rien change. C est le defaut typique d une capacite cablee sur deux consommateurs sur trois.
+     *
+     * ⚠️ Contrairement aux champs texte, une ligne JETEE s omet au lieu de reecrire la valeur actuelle : le
+     * diff ne porte que des LIBELLES en francais (« une fois par conversation »), pas le code, donc il n y a
+     * rien a reecrire. Omettre laisse la colonne inchangee, ce qui est exactement le sens de « jeter ».
+     */
+    ...(proposition.mentionIaFrequence !== undefined
+      && (!avantDe.has('mentionIaFrequence') || gardees.has('mentionIaFrequence'))
+      ? { mentionIaFrequence: proposition.mentionIaFrequence }
+      : {}),
     outils: garde(proposition.outils, (o) => [`outil.${o.handler}.description`, `outil.${o.handler}.nePasUtiliser`])
       .map((o) => ({
         handler: o.handler,
