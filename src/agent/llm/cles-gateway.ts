@@ -128,6 +128,38 @@ export async function majPlafondCleGateway(
 }
 
 /**
+ * Supprime une cle chez Vercel. Sert au RATTRAPAGE, pas au menage courant.
+ *
+ * 🔴 POURQUOI ELLE EXISTE. Entre l appel a Vercel (qui reussit) et l ecriture en base (qui peut echouer), il
+ * y a une fenetre ou une cle existe chez eux et nulle part chez nous. Elle FACTURE, personne ne peut s en
+ * servir, et le client qui reessaie en fabrique une deuxieme, puis une troisieme. Sans cette suppression,
+ * une base indisponible pendant une minute laissait autant de cles orphelines que de tentatives.
+ *
+ * ⚠️ Ne leve JAMAIS : elle est appelee depuis un chemin qui est deja en train d echouer, et une seconde
+ * erreur y masquerait la premiere, qui est celle qui explique quelque chose.
+ */
+export async function supprimerCleGateway(
+  transport: HttpTransportSuppression,
+  o: { jetonCompte: string; teamId: string; cleId: string },
+): Promise<boolean> {
+  try {
+    const res = await transport.delete(
+      `${CREATION_URL}/${encodeURIComponent(o.cleId)}?teamId=${encodeURIComponent(o.teamId)}`,
+      { authorization: `Bearer ${o.jetonCompte}` },
+    );
+    return res.status >= 200 && res.status < 300;
+  } catch {
+    return false;
+  }
+}
+
+/** Le transport, plus `DELETE`. Meme raison qu ailleurs : on n ajoute pas de methode obligatoire a un type
+ *  que huit faux implementent deja. */
+export interface HttpTransportSuppression {
+  delete(url: string, headers: Record<string, string>): Promise<{ status: number }>;
+}
+
+/**
  * Le Gateway a-t-il refuse cet appel PARCE QUE le plafond est atteint ?
  *
  * 🔴 CE N'EST PAS UNE ERREUR TECHNIQUE, c'est un fait commercial : le client a consomme ce qu'il a achete.

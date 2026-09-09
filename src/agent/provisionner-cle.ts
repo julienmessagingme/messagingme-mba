@@ -1,5 +1,5 @@
 import { dollarsDepuisMicroEuros, PLAFOND_GATEWAY_MIN_DOLLARS } from './devise';
-import { creerCleGateway, majPlafondCleGateway, CleGatewayError } from './llm/cles-gateway';
+import { creerCleGateway, majPlafondCleGateway, supprimerCleGateway, CleGatewayError, type HttpTransportSuppression } from './llm/cles-gateway';
 import type { CleGatewayEspace, PgCleGatewayStore } from './cles-gateway.pg';
 import type { HttpTransportPatch } from '../meta/http';
 
@@ -35,7 +35,7 @@ export interface DepsProvisionCle {
   solde(tenantId: string): Promise<number>;
   /** Comment nommer la cle dans le tableau de bord Vercel. */
   nomEspace(tenantId: string): Promise<string | null>;
-  transport: HttpTransportPatch;
+  transport: HttpTransportPatch & HttpTransportSuppression;
   jetonCompte: string;
   teamId: string;
   cleGatewayMaison: string;
@@ -43,10 +43,19 @@ export interface DepsProvisionCle {
 }
 
 /**
- * ⚠️ L'ORDRE DES DEUX ECRITURES N'EST PAS INTERCHANGEABLE. On appelle Vercel, PUIS on enregistre. Vercel ne
- * rend le secret QU'UNE FOIS : si l'enregistrement echoue, la cle est perdue pour nous mais continue
- * d'exister (et de pouvoir facturer) chez eux. C'est pour ca que l'enregistrement est la derniere chose
- * faite, et qu'il ne fait rien d'autre.
+ * ⚠️ L'ORDRE DES DEUX ECRITURES N'EST PAS INTERCHANGEABLE. On appelle Vercel, PUIS on enregistre : Vercel ne
+ * rend le secret QU'UNE FOIS, donc il n'existe aucune facon d'enregistrer avant. L'enregistrement est la
+ * derniere chose faite, et il ne fait rien d'autre.
+ *
+ * 🔴 IL Y A DONC DEUX FACONS DE SE RETROUVER AVEC UNE CLE QUI FACTURE ET QUE PERSONNE NE PEUT UTILISER, et
+ * la seconde est plus discrete que la premiere :
+ *   1. l'enregistrement ECHOUE (base indisponible) : on leve, et le client qui reessaie fabrique une cle de
+ *      plus a chaque tentative ;
+ *   2. l'enregistrement REUSSIT mais sur un CONFLIT : une autre creation d'agent du meme espace a gagne la
+ *      course, la cle qui fait autorite est la sienne, et la NOTRE ne sera jamais lue par personne. Aucune
+ *      exception ne se leve ici, c'est pourquoi ce cas se voyait moins.
+ * Les deux sont rattrapes : la cle qu'on vient de creer est SUPPRIMEE chez Vercel des qu'elle se revele
+ * inutile. Sans ca, le plafond d'equipe reste le seul filet, et il ne dit rien de la fuite.
  */
 export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string): Promise<CleGatewayEspace> {
   const existante = await deps.cles.lire(tenantId);
@@ -67,7 +76,26 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
     nom: etiquette,
     plafondDollars: plafond,
   });
-  return deps.cles.enregistrer(tenantId, { cleId: creee.id, cle: creee.cle, plafondMicroEur: solde });
+  let enregistree;
+  try {
+    enregistree = await deps.cles.enregistrer(tenantId, { cleId: creee.id, cle: creee.cle, plafondMicroEur: solde });
+  } catch (err) {
+    // 🔴 LA CLE EXISTE CHEZ VERCEL ET NULLE PART CHEZ NOUS. Elle facture, personne ne peut s en servir, et
+    // le client qui reessaie en fabrique une deuxieme, puis une troisieme : une base indisponible une minute
+    // laissait autant de cles orphelines que de tentatives. On la retire avant de relever l echec.
+    // ⚠️ La suppression ne leve jamais et son resultat n est PAS teste : on est deja dans un chemin qui
+    // echoue, et masquer l erreur d origine par une seconde erreur ferait chercher au mauvais endroit.
+    await supprimerCleGateway(deps.transport, { jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: creee.id });
+    throw err;
+  }
+  // 🔴 LE PERDANT DE LA COURSE JETTE SA PROPRE CLE. `enregistrer` rend ce qui est EN BASE apres coup : un
+  // identifiant different du notre veut dire qu'une autre creation d'agent a gagne, et que la cle qu'on
+  // vient de fabriquer ne sera jamais lue par personne. Elle facturerait pourtant. Aucune exception ne se
+  // leve sur ce chemin, ce qui est precisement pourquoi il se voyait moins que l'echec d'ecriture.
+  if (enregistree.cleId !== creee.id) {
+    await supprimerCleGateway(deps.transport, { jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: creee.id });
+  }
+  return enregistree;
 }
 
 /**

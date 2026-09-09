@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { assurerCleGateway, remonterPlafondApresRecharge, CreditInsuffisantPourCle, type DepsProvisionCle } from '../src/agent/provisionner-cle';
 import type { CleGatewayEspace } from '../src/agent/cles-gateway.pg';
 import type { HttpResponse, HttpTransportPatch } from '../src/meta/http';
+import type { HttpTransportSuppression } from '../src/agent/llm/cles-gateway';
 
 /**
  * LE PROVISIONNEMENT d'une clé de modèle par espace (2026-09-09, demande de Julien).
@@ -15,11 +16,12 @@ import type { HttpResponse, HttpTransportPatch } from '../src/meta/http';
 const TAUX = 0.92; // euros par dollar, le défaut du dépôt
 const MICRO = 1_000_000;
 
-class FauxTransport implements HttpTransportPatch {
+class FauxTransport implements HttpTransportPatch, HttpTransportSuppression {
   readonly appels: Array<{ methode: string; url: string; body: unknown }> = [];
   constructor(private readonly reponses: HttpResponse[]) {}
   post(url: string, body: unknown): Promise<HttpResponse> { return this.note('POST', url, body); }
   patch(url: string, body: unknown): Promise<HttpResponse> { return this.note('PATCH', url, body); }
+  delete(url: string): Promise<{ status: number }> { this.appels.push({ methode: 'DELETE', url, body: null }); return Promise.resolve({ status: 204 }); }
   private note(m: string, url: string, body: unknown): Promise<HttpResponse> {
     this.appels.push({ methode: m, url, body });
     const r = this.reponses.shift();
@@ -46,7 +48,7 @@ function fauxCles(initial?: CleGatewayEspace) {
   };
 }
 
-function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch }): DepsProvisionCle {
+function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch & HttpTransportSuppression }): DepsProvisionCle {
   return {
     cles: o.cles,
     solde: async () => o.solde,
@@ -103,6 +105,54 @@ describe('assurerCleGateway', () => {
     const cles = fauxCles();
     await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: new FauxTransport([OK]) }), 't1');
     expect(cles.ecritures).toEqual([{ cleId: 'key_neuf', plafondMicroEur: 10 * MICRO }]);
+  });
+
+  it('🔴 si l’enregistrement échoue, la clé est SUPPRIMÉE chez Vercel', async () => {
+    // Sinon elle existe chez eux et nulle part chez nous : elle facture, personne ne peut s'en servir, et le
+    // client qui réessaie en fabrique une deuxième. Une base indisponible une minute laissait autant de clés
+    // orphelines que de tentatives.
+    const cles = fauxCles();
+    cles.enregistrer = async () => { throw new Error('base indisponible'); };
+    const t = new FauxTransport([OK]);
+    await expect(assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1')).rejects.toThrow('base indisponible');
+
+    const suppression = t.appels.find((a) => a.methode === 'DELETE');
+    expect(suppression).toBeDefined();
+    expect(suppression!.url).toContain('key_neuf');
+  });
+
+  it('🔴 l’erreur D’ORIGINE est relevée, pas celle de la suppression', async () => {
+    // On est déjà dans un chemin qui échoue : masquer la cause par une seconde erreur ferait chercher au
+    // mauvais endroit. La suppression ne lève jamais et son résultat n'est pas testé.
+    const cles = fauxCles();
+    cles.enregistrer = async () => { throw new Error('base indisponible'); };
+    const t = new FauxTransport([OK]);
+    t.delete = () => Promise.reject(new Error('vercel aussi est casse'));
+    await expect(assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1')).rejects.toThrow('base indisponible');
+  });
+
+  it('🔴 le PERDANT d’une course supprime la clé qu’il vient de créer', async () => {
+    // `enregistrer` rend ce qui est en base : sur conflit, c'est la clé du GAGNANT. La nôtre ne sera jamais
+    // lue par personne et facturerait quand même. Aucune exception ne se lève sur ce chemin, c'est
+    // précisément pourquoi il se voyait moins que l'échec d'écriture.
+    const cles = fauxCles();
+    cles.enregistrer = async () => ({ cleId: 'key_du_gagnant', cle: 'vck_gagnant', plafondMicroEur: 10 * MICRO });
+    const t = new FauxTransport([OK]);
+    const r = await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1');
+
+    expect(r.cleId).toBe('key_du_gagnant');
+    const suppression = t.appels.find((a) => a.methode === 'DELETE');
+    expect(suppression, 'la cle perdante doit etre supprimee').toBeDefined();
+    expect(suppression!.url).toContain('key_neuf');
+  });
+
+  it('🔴 le GAGNANT ne supprime rien : la preuve inverse', async () => {
+    // Sans ce cas, une suppression inconditionnelle passerait le test ci-dessus tout en détruisant la clé
+    // qu'on vient d'enregistrer, ce qui casserait tous les agents de l'espace au tour suivant.
+    const cles = fauxCles();
+    const t = new FauxTransport([OK]);
+    await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1');
+    expect(t.appels.find((a) => a.methode === 'DELETE')).toBeUndefined();
   });
 
   it('🔴 Vercel est appelé AVANT l’enregistrement, jamais après', async () => {

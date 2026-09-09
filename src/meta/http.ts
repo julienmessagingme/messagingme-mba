@@ -87,6 +87,20 @@ export class FetchTransport implements HttpTransportPatch {
     return this.envoyer('PATCH', url, body, headers, opts);
   }
 
+  /**
+   * ⚠️ `DELETE` SANS CORPS et sans lecture du corps de reponse : les API qui suppriment rendent 204, donc
+   * rien a lire, et `envoyer` echouerait a parser un corps vide. On ne rend que le statut, qui est tout ce
+   * qu un appelant peut faire de cette reponse.
+   */
+  async delete(url: string, headers: Record<string, string>): Promise<{ status: number }> {
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers,
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    return { status: res.status };
+  }
+
   private async envoyer(methode: 'POST' | 'PATCH', url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
     // 🔴 Sans plafond, un fournisseur qui accepte la connexion et ne répond jamais immobilise le job (donc le
     // slot de worker) jusqu'au défaut d'undici, de l'ordre de cinq minutes. Sur la file `webhook`, sérialisée,

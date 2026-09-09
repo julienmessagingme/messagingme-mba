@@ -207,6 +207,9 @@ async function main(): Promise<void> {
     pool,
     (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
     (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
+    // ⚠️ Le repli sur la cle maison est SILENCIEUX par nature : les agents repondent, tout a l'air normal, et
+    // la depense de cet espace cesse d'etre attribuee. Sans cette ligne, personne ne l'apprend jamais.
+    (tenantId, err) => { app.log.error({ err, tenantId }, 'cle_gateway_indechiffrable'); },
   );
   /**
    * ⚠️ `null` quand le jeton Vercel n'est pas configure : le provisionnement est alors ETEINT et la creation
