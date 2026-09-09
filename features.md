@@ -822,6 +822,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ⚠️ **L'affectation à un collaborateur reste son propre sélecteur**, et ce n'est pas un oubli : elle est
   INDÉPENDANTE du reste. Une conversation peut être confiée à Marie ET tenue par le scénario. Les réunir
   dans un seul menu laisserait croire qu'on choisit entre les deux.
+- ✅ **RANGER PLUSIEURS CONVERSATIONS D'UN COUP** (2026-09-09) : cochez-en autant que vous voulez, un menu
+  **« Ranger dans… »** apparaît au-dessus de la liste et propose les mêmes destinations. Avant, la sélection
+  ne pouvait aller QUE dans les archives : remettre dix conversations « à traiter » demandait de les ouvrir
+  une par une.
+  ⚠️ **Le menu ne propose que ce qui aura un effet VISIBLE**, et les options changent donc selon le dossier
+  où vous êtes : depuis « Archivé » il n'offre que **Désarchiver** (marquer « Signalé » une conversation
+  archivée l'écrirait sans qu'elle réapparaisse nulle part, les deux dossiers excluant les archivées) ;
+  depuis « À traiter » il n'offre pas « À traiter », et depuis « Signalé » pas « Signalé ».
+  ⚠️ **« Ne plus signaler » n'apparaît que si au moins une conversation cochée porte un signalement À LA
+  MAIN**, et il ne touche que celles-là. Celles que l'ANALYSE a signalées restent dans le dossier : son
+  constat n'est pas effaçable à la main, et prétendre le contraire ferait cliquer deux fois avant de
+  conclure que l'écran est cassé.
 - ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08, **réellement à gauche depuis le 2026-09-09**).
   Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Signalé**, **Archivé**, chacun
   avec son nombre entre parenthèses. Il remplace les trois boutons de filtre d'avant, qui ne portaient qu'un
@@ -839,9 +851,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   🔴 **Le compteur « À traiter » peut avoir BAISSÉ** chez un espace qui a des contacts bloqués : il les
   comptait alors que la liste ne les montre pas, donc il pouvait annoncer plus de conversations qu'il n'y en
   avait à l'écran. C'est corrigé, le compteur et la liste disent enfin la même chose.
-- ✅ **ARCHIVER une conversation** (2026-09-08). Cochez une ou plusieurs conversations, un bouton
-  **« Archiver »** apparaît, et elles rejoignent le dossier **Archivé**. Dans ce dossier, le même bouton les
-  **désarchive**.
+- ✅ **ARCHIVER une conversation** (2026-09-08). Cochez une ou plusieurs conversations et choisissez
+  **« Archivé »** dans le menu qui apparaît : elles rejoignent le dossier **Archivé**. Dans ce dossier, le
+  même menu les **désarchive**. (C'était un bouton unique jusqu'au 2026-09-09, cf. l'entrée ci-dessus.)
   ⚠️ **Rien n'est effacé** : les messages restent lisibles, le contact reste joignable, et aucun chiffre
   d'analytics ne bouge. C'est un rangement.
   🔴 **Un message du contact la fait REVENIR** dans « Tout ». Une conversation archivée puis relancée par le

@@ -18,6 +18,9 @@ import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import { InboxDossiers, libelleDossier, type DossierInbox } from '@/components/InboxDossiers';
 import {
+  destinationsEnLot, estActionRangement, libelleRangement, type ActionRangement,
+} from '@/lib/inbox-rangement';
+import {
   listConversations,
   countConversationsParDossier,
   archiverConversation,
@@ -71,6 +74,25 @@ const TAILLE_PAGE = 50;
  * Traduit le DOSSIER de l'écran en paramètres de requête. Un seul endroit : la liste et « charger plus »
  * doivent demander EXACTEMENT le même filtre, sinon la page suivante ne serait pas la suite de la première.
  */
+/**
+ * Applique UN geste de rangement à UNE conversation. Point de passage unique du menu de la conversation
+ * ouverte ET du menu de la sélection : deux copies de cette correspondance geste -> appel dériveraient au
+ * premier dossier ajouté, et rien ne le signalerait (les deux menus compilent séparément).
+ *
+ * Rend le nouveau détenteur du fil quand le geste le change (« à traiter » est une PRISE de contrôle),
+ * `null` sinon : l'écran de la conversation ouverte en a besoin pour rouvrir la zone de réponse tout de
+ * suite, sans attendre le rechargement.
+ */
+async function appliquerRangement(tenantId: string, conversationId: string, action: ActionRangement): Promise<ControlOwner | null> {
+  if (action === 'a-traiter') return (await prendreConversation(tenantId, conversationId)).controlOwner;
+  if (action === 'signaler' || action === 'ne-plus-signaler') {
+    await signalerConversation(tenantId, conversationId, action === 'signaler');
+    return null;
+  }
+  await archiverConversation(tenantId, conversationId, action === 'archiver');
+  return null;
+}
+
 function dossierEnParams(d: DossierInbox): { aTraiter?: boolean; signalees?: boolean; archivees?: boolean; affectee?: string | 'aucune' } {
   if (typeof d === 'object') return { affectee: d.membre };
   if (d === 'aTraiter') return { aTraiter: true };
@@ -155,12 +177,12 @@ function InboxInner({ session }: { session: Session }) {
    */
   const [dossier, setDossier] = useState<DossierInbox>('toutes');
   /**
-   * Les conversations COCHÉES, pour l'archivage en lot. Vidée à chaque changement de dossier : garder une
-   * sélection faite dans un autre dossier ferait archiver des lignes qu'on ne voit plus.
+   * Les conversations COCHÉES, pour le rangement en lot. Vidée à chaque changement de dossier : garder une
+   * sélection faite dans un autre dossier ferait ranger des lignes qu'on ne voit plus.
    */
   const [cochees, setCochees] = useState<Set<string>>(new Set());
   const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 0, parMembre: [] });
-  const [archivageEnCours, setArchivageEnCours] = useState(false);
+  const [rangementEnCours, setRangementEnCours] = useState(false);
   /**
    * Qui voit la charge par collaborateur.
    *
@@ -245,7 +267,7 @@ function InboxInner({ session }: { session: Session }) {
   }, [reload]);
 
   // Changer de dossier VIDE la sélection : garder des lignes cochées dans un dossier qu'on ne regarde plus
-  // ferait archiver des conversations qu'on ne voit pas.
+  // ferait ranger des conversations qu'on ne voit pas.
   useEffect(() => { setCochees(new Set()); }, [dossier]);
 
   /** Coche ou décoche une ligne. */
@@ -254,22 +276,35 @@ function InboxInner({ session }: { session: Session }) {
   }
 
   /**
-   * Range (ou sort) les conversations cochées.
+   * Range les conversations cochées dans le dossier choisi (2026-09-09, demande de Julien).
    *
-   * ⚠️ SÉQUENTIEL et non en parallèle : l'archivage invalide les compteurs à chaque appel, et vingt requêtes
+   * 🔴 CE GESTE N'AVAIT QU'UNE SEULE DESTINATION, « Archiver », alors que la conversation ouverte en a
+   * quatre depuis ce matin : cocher dix lignes ne permettait pas de les remettre « à traiter », il fallait
+   * les ouvrir une par une. Les destinations offertes viennent de `destinationsEnLot`, qui les déduit du
+   * DOSSIER et non de chaque ligne (une sélection est hétérogène, un libellé qui bascule n'y a pas de sens).
+   *
+   * ⚠️ SÉQUENTIEL et non en parallèle : chaque rangement invalide les compteurs, et vingt requêtes
    * simultanées feraient vingt recalculs pour un seul résultat. Vingt lignes cochées restent vingt appels,
    * ce qui est le prix d'un geste rare fait sur ce que l'écran affiche.
    *
    * ⚠️ Une conversation qui échoue n'arrête pas les autres : on range ce qui peut l'être, et la liste
    * rechargée montre ce qui reste. Un échec partiel qui annulerait tout serait pire.
    */
-  async function archiverLesCochees(archive: boolean): Promise<void> {
-    if (archivageEnCours || cochees.size === 0) return;
-    setArchivageEnCours(true);
+  async function rangerLesCochees(action: ActionRangement): Promise<void> {
+    if (rangementEnCours || cochees.size === 0) return;
+    // 🔴 « Ne plus signaler » NE PEUT RIEN sur une conversation signalée par le MODÈLE : le constat de
+    // l'analyse n'est pas effaçable à la main, et la ligne resterait dans le dossier. On n'écrit donc que là
+    // où le geste a un effet, au lieu d'appels qui réussissent sans rien changer. Les lignes du modèle
+    // restent visiblement signalées, ce qui est la vérité.
+    const cibles = action === 'ne-plus-signaler'
+      ? conversations.filter((c) => cochees.has(c.id) && c.signaleeMain === true).map((c) => c.id)
+      : [...cochees];
+    if (cibles.length === 0) return;
+    setRangementEnCours(true);
     try {
-      for (const id of cochees) {
+      for (const id of cibles) {
         try {
-          await archiverConversation(session.tenantId, id, archive);
+          await appliquerRangement(session.tenantId, id, action);
         } catch {
           /* une conversation disparue entre l'affichage et le clic ne doit pas bloquer les autres */
         }
@@ -278,7 +313,7 @@ function InboxInner({ session }: { session: Session }) {
       await reload();
       await rechargerCompteur();
     } finally {
-      setArchivageEnCours(false);
+      setRangementEnCours(false);
     }
   }
 
@@ -304,6 +339,10 @@ function InboxInner({ session }: { session: Session }) {
 
   // Le filtre est appliqué par le SERVEUR (`reload` le passe en paramètre) : la liste reçue est déjà la bonne.
   const visible = conversations;
+
+  // Au moins une ligne cochée porte-t-elle un signalement HUMAIN ? C'est ce qui décide si « Ne plus
+  // signaler » a un sens sur la sélection (cf. `destinationsEnLot`).
+  const selectionAvecSignalementManuel = conversations.some((c) => cochees.has(c.id) && c.signaleeMain === true);
 
   return (
     // 🔴 LES DOSSIERS ONT LEUR PROPRE COLONNE (2026-09-09, demande de Julien). Le menu vivait AU-DESSUS de
@@ -342,20 +381,30 @@ function InboxInner({ session }: { session: Session }) {
           </h2>
           <button onClick={reload} className="shrink-0 text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
         </div>
-        {/* Archivage en LOT : la barre n'apparaît qu'avec au moins une ligne cochée, pour ne pas occuper une
-            place permanente au-dessus de la liste. */}
+        {/* Rangement en LOT : la barre n'apparaît qu'avec au moins une ligne cochée, pour ne pas occuper une
+            place permanente au-dessus de la liste.
+
+            🔴 UN MENU, PLUS UN BOUTON (2026-09-09, demande de Julien). Le bouton n'offrait que « Archiver » :
+            une sélection ne pouvait aller QUE là, alors que la conversation ouverte se range dans quatre
+            dossiers. Le menu porte les mêmes libellés (`libelleRangement`, écrit une seule fois pour les
+            deux) et retombe TOUJOURS sur son titre, comme celui de la conversation : il déclenche une
+            action, il ne porte pas un état. */}
         {cochees.size > 0 && (
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs">
             <span className="text-brand-800">{t(`${cochees.size} sélectionnée(s)`, `${cochees.size} selected`)}</span>
-            <button
-              type="button"
-              data-testid="inbox-archiver"
-              disabled={archivageEnCours}
-              onClick={() => { void archiverLesCochees(dossier !== 'archivees'); }}
-              className="ml-auto rounded-md bg-brand-600 px-2 py-1 font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+            <select
+              data-testid="inbox-ranger-selection"
+              aria-label={t('Ranger la sélection', 'File the selection')}
+              disabled={rangementEnCours}
+              value=""
+              onChange={(e) => { const v = e.target.value; if (estActionRangement(v)) void rangerLesCochees(v); }}
+              className="ml-auto rounded-md border border-brand-300 bg-white px-2 py-1 font-medium text-brand-800 disabled:opacity-40"
             >
-              {dossier === 'archivees' ? t('Désarchiver', 'Unarchive') : t('Archiver', 'Archive')}
-            </button>
+              <option value="">{rangementEnCours ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
+              {destinationsEnLot(dossier, selectionAvecSignalementManuel).map((a) => (
+                <option key={a} value={a}>{libelleRangement(a, t)}</option>
+              ))}
+            </select>
           </div>
         )}
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -566,6 +615,11 @@ function FicheContact({ session, waId, onClose }: { session: Session; waId: stri
  * une conversation « à traiter » était impossible autrement qu'en ENVOYANT un message, puisque c'est l'envoi
  * qui prend le fil. On écrivait donc à un client pour un geste de rangement interne.
  *
+ * ⚠️ LA LISTE A DEPUIS SON PROPRE MENU (le même jour, seconde demande de Julien) : la barre de sélection
+ * offre les mêmes destinations pour plusieurs conversations d'un coup. Les deux menus partagent les
+ * libellés et l'application du geste (`libelleRangement`, `appliquerRangement`) mais PAS le choix des
+ * options, et c'est délibéré : voir `destinationsEnLot`.
+ *
  * ⚠️ CE MENU N'OFFRE JAMAIS « À traiter » EN MÊME TEMPS QUE LE BOUTON « Rendre la main », et c'est ce qui
  * évite deux endroits pour le même choix : ce sont les deux moitiés d'une bascule, l'une n'apparaît que
  * quand l'autre est absente. Le bouton reste où il est, il porte une histoire d'incident et ses propres cas
@@ -587,21 +641,10 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
   const archivee = dossier === 'archivees';
   const signaleeMain = conversation.signaleeMain === true;
 
-  async function ranger(action: string): Promise<void> {
-    if (action === '') return;
+  async function ranger(action: ActionRangement): Promise<void> {
     setBusy(true);
     try {
-      if (action === 'a-traiter') {
-        const r = await prendreConversation(session.tenantId, conversation.id);
-        onFait(r.controlOwner);
-        return;
-      }
-      if (action === 'signaler' || action === 'ne-plus-signaler') {
-        await signalerConversation(session.tenantId, conversation.id, action === 'signaler');
-      } else {
-        await archiverConversation(session.tenantId, conversation.id, action === 'archiver');
-      }
-      onFait(null);
+      onFait(await appliquerRangement(session.tenantId, conversation.id, action));
     } catch {
       /* L'échec se voit à l'absence de changement dans la liste, comme pour l'affectation : une alerte au
          milieu d'une conversation coûte plus qu'elle n'apprend. */
@@ -618,19 +661,23 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
       // La valeur retombe TOUJOURS sur le libellé : ce menu déclenche une action, il ne porte pas un état.
       // Laisser l'option choisie affichée ferait croire à un réglage, et re-choisir la même ne ferait rien.
       value=""
-      onChange={(e) => { void ranger(e.target.value); }}
+      onChange={(e) => { const v = e.target.value; if (estActionRangement(v)) void ranger(v); }}
       className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-[11px] text-ink-700 disabled:opacity-50"
     >
       <option value="">{busy ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
-      {/* « À traiter » SEULEMENT quand le scénario tient le fil : sinon la conversation y est déjà, et c'est
+      {/* 🔴 ICI les options se déduisent de l'ÉTAT DE CETTE conversation, pas du dossier : on en connaît le
+          détenteur et la nature du signalement. Le menu de la SÉLECTION ne le peut pas (elle est hétérogène)
+          et se déduit du dossier, cf. `destinationsEnLot`. Les libellés, eux, sont les mêmes des deux côtés.
+
+          « À traiter » SEULEMENT quand le scénario tient le fil : sinon la conversation y est déjà, et c'est
           le bouton « Rendre la main » qui offre le geste inverse. */}
-      {controlOwner === 'app_workflow' && <option value="a-traiter">{t('À traiter', 'To handle')}</option>}
+      {controlOwner === 'app_workflow' && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
       {signaleeMain
-        ? <option value="ne-plus-signaler">{t('Ne plus signaler', 'Unflag')}</option>
-        : <option value="signaler">{t('Signalé', 'Flagged')}</option>}
+        ? <option value="ne-plus-signaler">{libelleRangement('ne-plus-signaler', t)}</option>
+        : <option value="signaler">{libelleRangement('signaler', t)}</option>}
       {archivee
-        ? <option value="desarchiver">{t('Désarchiver', 'Unarchive')}</option>
-        : <option value="archiver">{t('Archivé', 'Archived')}</option>}
+        ? <option value="desarchiver">{libelleRangement('desarchiver', t)}</option>
+        : <option value="archiver">{libelleRangement('archiver', t)}</option>}
     </select>
   );
 }

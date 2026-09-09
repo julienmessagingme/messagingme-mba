@@ -948,6 +948,14 @@ suit est la règle, en une formulation courte.
 30. **Un texte d'écran est un LECTEUR du comportement qu'on change.** Un avertissement qui décrit une
     conséquence devient faux dès qu'on élargit le domaine, et il envoie alors l'opérateur chercher un réglage
     qui n'existe pas.
+31. **Un menu ne propose jamais un choix SANS EFFET VISIBLE, ni le même choix à deux endroits.** Les deux
+    défauts sont invisibles de la couche serveur : l'appel part, la route rend 200, et l'écran ne change pas.
+    L'opérateur en conclut que la console est cassée. Le cas de référence est le rangement de l'Inbox
+    (`web/lib/inbox-rangement.ts`) : ranger dans le dossier où l'on est déjà, marquer « signalé » une
+    conversation archivée alors que le dossier « Signalé » exclut les archivées, ou proposer « ne plus
+    signaler » sur un constat de l'analyse, qui n'est pas effaçable à la main. ⚠️ Cette règle se teste sur le
+    CHOIX DES OPTIONS, pas sur l'appel : un test qui vérifie qu'une requête est partie passe dans les deux
+    sens.
 
 ---
 
@@ -1001,6 +1009,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
 | `web/lib/rcs.ts` | déduire le format d'un message RCS de sa saisie, miroir de `rcsOutboundOf` |
 | `web/lib/flow-mapping.ts` | la cible d'un champ de formulaire, avec la sentinelle `@profile_name` |
+| `web/lib/inbox-rangement.ts` | les gestes de rangement de l'Inbox : leurs libellés, et les destinations qu'une SÉLECTION peut prendre selon le dossier |
 | `web/components/VariableBodyEditor.tsx` | l'éditeur à chips, partagé par les variables Meta (positionnelles) et RCS (nommées) |
 | `web/lib/session.ts` -> `pageDArrivee` | où atterrit un compte après connexion, selon son rôle |
 

@@ -105,41 +105,46 @@ test.describe('Inbox : le menu de dossiers', () => {
     await expect(page.getByTestId('dossier-membre-u-jean')).toBeVisible();
   });
 
+  // ⚠️ Ces trois cas exerçaient un BOUTON « Archiver ». Il est devenu un MENU le 2026-09-09 (demande de
+  // Julien : une sélection doit pouvoir aller dans n'importe quel dossier, pas seulement aux archives). Les
+  // cas sont CONSERVÉS tels quels, seul le geste change : la barre conditionnelle, l'archivage réellement
+  // posté, le sens inverse depuis « Archivé », et le vidage de la sélection au changement de dossier. Le
+  // choix des DESTINATIONS, lui, se teste dans `inbox-ranger.spec.ts` et `tests/web-inbox-rangement.test.ts`.
   test('🔴 archiver : la barre n’apparaît qu’avec une sélection, et poste bien l’archivage', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, ADMIN, appels);
     await page.goto('/inbox');
     // Rien de coché : pas de barre. Une barre permanente prendrait une place au-dessus de la liste pour un
     // geste qu'on fait rarement.
-    await expect(page.getByTestId('inbox-archiver')).toHaveCount(0);
+    await expect(page.getByTestId('inbox-ranger-selection')).toHaveCount(0);
 
     await page.getByTestId('cocher-c1').check();
-    await expect(page.getByTestId('inbox-archiver')).toBeVisible();
-    await page.getByTestId('inbox-archiver').click();
+    await expect(page.getByTestId('inbox-ranger-selection')).toBeVisible();
+    await page.getByTestId('inbox-ranger-selection').selectOption('archiver');
     await expect.poll(() => appels.some((a) => a.method === 'POST' && /\/conversations\/c1\/archive$/.test(a.url)), { timeout: 5000 }).toBe(true);
   });
 
-  test('🔴 dans le dossier Archivé, le bouton DÉSARCHIVE', async ({ page }) => {
-    // Le même bouton avec le sens inverse : sans ce cas, un bouton qui archiverait toujours viderait le
+  test('🔴 dans le dossier Archivé, le menu DÉSARCHIVE', async ({ page }) => {
+    // Le même endroit avec le sens inverse : sans ce cas, un menu qui archiverait toujours viderait le
     // dossier Archivé au lieu de le remplir, et le test précédent passerait quand même.
     const appels: Appel[] = [];
     await mock(page, ADMIN, appels);
     await page.goto('/inbox');
     await page.getByTestId('dossier-archivees').click();
     await page.getByTestId('cocher-c1').check();
-    await expect(page.getByTestId('inbox-archiver')).toHaveText(/Désarchiver|Unarchive/);
-    await page.getByTestId('inbox-archiver').click();
+    await expect(page.getByTestId('inbox-ranger-selection').locator('option')).toHaveText([/Ranger|File/, /Désarchiver|Unarchive/]);
+    await page.getByTestId('inbox-ranger-selection').selectOption('desarchiver');
     await expect.poll(() => appels.some((a) => a.method === 'POST' && /\/conversations\/c1\/unarchive$/.test(a.url)), { timeout: 5000 }).toBe(true);
   });
 
   test('changer de dossier VIDE la sélection', async ({ page }) => {
-    // Garder des lignes cochées dans un dossier qu'on ne regarde plus ferait archiver ce qu'on ne voit pas.
+    // Garder des lignes cochées dans un dossier qu'on ne regarde plus ferait ranger ce qu'on ne voit pas.
     await mock(page, ADMIN);
     await page.goto('/inbox');
     await page.getByTestId('cocher-c1').check();
-    await expect(page.getByTestId('inbox-archiver')).toBeVisible();
+    await expect(page.getByTestId('inbox-ranger-selection')).toBeVisible();
     await page.getByTestId('dossier-aTraiter').click();
-    await expect(page.getByTestId('inbox-archiver')).toHaveCount(0);
+    await expect(page.getByTestId('inbox-ranger-selection')).toHaveCount(0);
   });
 
   /**

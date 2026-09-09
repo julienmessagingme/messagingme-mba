@@ -523,14 +523,19 @@ reste à faire** : `explain` la requête de `findWaitingByWaId` en production et
 l'ancien devient une migration additive de plus (un index en moins, c'est de l'écriture en moins sur une
 table du chemin chaud). Si elle prend l'ancien, on garde les deux et on écrit pourquoi.
 
-## L'archivage en lot fait UN appel par conversation (relevé à la revue du 2026-09-08)
+## Le rangement en lot fait UN appel par conversation (relevé à la revue du 2026-09-08)
 
-🟡 Cocher vingt conversations et cliquer « Archiver » produit vingt requêtes, envoyées à la suite. C'est
+🟡 Cocher vingt conversations et choisir une destination produit vingt requêtes, envoyées à la suite. C'est
 tenable : on ne coche que ce que l'écran affiche (cinquante lignes au maximum), et le geste est rare.
 
+⚠️ Le constat portait sur le seul archivage ; depuis le 2026-09-09 la sélection va dans QUATRE destinations
+(« à traiter », « signalé », « archivé », « désarchiver »), donc le même N+1 vaut pour chacune. Il n'a pas
+empiré pour autant : c'est toujours un appel par ligne cochée, quelle que soit la destination.
+
 Ce qui le rendrait faux : une case « tout sélectionner » sur le dossier entier. Le jour où elle apparaît, il
-faut une route d'archivage EN MASSE, sur le modèle de l'action en masse du mini-CRM (une cible par INTENTION
-— filtres plus exclusions — et non une liste d'identifiants, qui plafonne la requête vers 25 000 contacts).
+faut une route de rangement EN MASSE, sur le modèle de l'action en masse du mini-CRM (une cible par
+INTENTION, filtres plus exclusions, et non une liste d'identifiants, qui plafonne la requête vers
+25 000 contacts).
 ⚠️ Ne pas se contenter de paralléliser les vingt appels : chacun invalide les compteurs, donc vingt appels
 simultanés feraient vingt recalculs pour un seul résultat.
 
