@@ -6,6 +6,7 @@ import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
 import { cacheCourt } from '../lib/cache-court';
+import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
@@ -68,6 +69,16 @@ export interface InboxRouteDeps {
    * réunit. Absente -> la route rend 503, comme l'archivage.
    */
   signalerConversation?(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean>;
+  /**
+   * Transcrit le vocal d'un message, à la demande (2026-09-09).
+   *
+   * OPTIONNELLE : absente, la route rend 503 plutôt que d'échouer, comme l'archivage. Une instance sans clé
+   * de modèle n'a pas à voir ses routes d'Inbox casser.
+   *
+   * ⚠️ Rend `deja` quand le message était DÉJÀ transcrit : l'écran doit pouvoir le dire, sinon un opérateur
+   * qui reclique croit avoir déclenché un nouvel appel.
+   */
+  transcrireMessage?(tenantId: string, messageId: string): Promise<{ texte: string; deja: boolean }>;
   /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
@@ -325,6 +336,44 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     await deps.takeControl(tenant, ctx.waId);
     invaliderCompteurs(tenant); // le fil entre dans « À traiter ».
     return reply.code(200).send({ controlOwner: 'app_human' });
+  });
+
+  /**
+   * TRANSCRIRE le vocal d'UN message, À LA DEMANDE (2026-09-09, demande de Julien).
+   *
+   * 🔴 UN BOUTON, PAS UN AUTOMATISME, et c'est son choix : « soit l'écouter avec un petit bouton lecture,
+   * soit le demander à transcrire ». Neuf fois sur dix un opérateur écoute, c'est plus rapide que de lire :
+   * transcrire tout ferait payer un service que personne n'a demandé. Le chemin de l'AGENT, lui, sera
+   * automatique, parce qu'un modèle ne sait pas écouter.
+   *
+   * ⚠️ IDEMPOTENTE : deux clics, ou deux opérateurs sur la même conversation, ne paient pas deux fois. La
+   * réponse dit `deja` pour que l'écran puisse le montrer plutôt que de laisser croire à un nouvel appel.
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/transcrire', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
+    if (!estUuid(messageId)) return reply.code(404).send({ error: 'message inconnu' });
+    // La conversation est relue DANS l'espace : c'est elle qui porte l'isolation, un identifiant de message
+    // seul ne dit pas à qui il appartient.
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!deps.transcrireMessage) return reply.code(503).send({ error: 'transcription indisponible sur cette instance' });
+    try {
+      const r = await deps.transcrireMessage(tenant, messageId);
+      return reply.code(200).send(r);
+    } catch (err) {
+      req.log.error({ err, tenant, messageId }, 'transcription_impossible');
+      // 🔴 4xx et JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc
+      // le message se perdrait exactement quand il sert. Et les trois causes n'appellent pas la même action :
+      // rien à transcrire (l'écran n'aurait pas dû proposer le bouton), fichier trop lourd (rien à faire),
+      // panne du fournisseur (réessayer).
+      if (err instanceof RienATranscrire) return reply.code(422).send({ error: 'ce message ne porte aucun vocal à transcrire' });
+      if (err instanceof MediaTropGros) {
+        return reply.code(422).send({ error: `vocal trop long pour être transcrit (${Math.round(err.octets / 1024)} Ko, maximum ${Math.round(err.plafond / 1024)} Ko)` });
+      }
+      return reply.code(422).send({ error: 'la transcription a échoué, réessayez dans un instant' });
+    }
   });
 
   /**

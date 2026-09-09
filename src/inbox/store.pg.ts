@@ -132,6 +132,22 @@ export interface ConversationMessage {
   /** Canal de CETTE bulle. Le fil est unique par contact, c'est le message qui porte le tuyau emprunté.
    *  Optionnel : les mocks de test qui omettent le champ restent valides (traités en WhatsApp). */
   channel?: 'whatsapp' | 'rcs';
+  /**
+   * Ce message porte-t-il un fichier chez Meta ? (migration 0125)
+   *
+   * ⚠️ On rend un BOOLÉEN, jamais l'identifiant : celui-ci ne sert qu'au serveur pour aller chercher le
+   * fichier, et le donner au navigateur ne lui apprendrait rien d'utile (l'URL de Meta exige notre jeton et
+   * expire en quelques minutes). L'écran a seulement besoin de savoir s'il doit proposer d'écouter.
+   */
+  aMedia?: boolean;
+  /**
+   * La transcription du vocal, quand un opérateur l'a demandée (migration 0125).
+   *
+   * 🔴 SÉPARÉE DE `body`, et l'écran doit la MARQUER comme telle. C'est la lecture d'un modèle, pas ce que le
+   * client a écrit : la présenter comme une citation ferait prendre une supposition pour un fait, et
+   * l'opérateur qui reprend une conversation menée par l'IA n'aurait plus aucun moyen de le savoir.
+   */
+  transcription?: string | null;
 }
 
 /**
@@ -744,7 +760,7 @@ export class PgInboxStore implements InboxStore {
    */
   async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null;
+      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; transcription: string | null;
     }>(
       // sender_name : name du user, sinon la partie locale de son email ; null si pas d'auteur (legacy/auto).
       // channel : le fil est UNIQUE par contact, c'est chaque bulle qui dit par quel tuyau elle est passée.
@@ -753,6 +769,7 @@ export class PgInboxStore implements InboxStore {
       // commentaire de `ConversationMessage.curseur` : c'est ce qui faisait revenir le dernier message à
       // chaque tour et redéclencher le défilement du fil.
       `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
+              (m.media_id is not null) as a_media, m.transcription,
               to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
        from conversation_messages m
@@ -773,7 +790,40 @@ export class PgInboxStore implements InboxStore {
       senderName: r.sender_name,
       // Message d'avant la migration 0056 : `channel` est null en base -> WhatsApp.
       channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',
+      aMedia: r.a_media === true,
+      transcription: r.transcription,
     }));
+  }
+
+  /**
+   * Le message à transcrire, RELU DANS SON ESPACE (migration 0125).
+   *
+   * 🔴 LA JOINTURE SUR `conversations` N'EST PAS DÉCORATIVE, c'est le contrôle d'isolation. `conversation_messages`
+   * ne porte pas de `tenant_id` : sans passer par sa conversation, un identifiant de message deviné donnerait
+   * accès au vocal d'un AUTRE client. La RLS est contournée (pooler superuser), donc ce filtre est le seul
+   * contrôle, comme partout ailleurs dans ce dépôt.
+   */
+  async lireMessagePourTranscription(tenantId: string, messageId: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; transcription: string | null } | null> {
+    const res = await this.pool.query<{ id: string; media_id: string | null; media_mime: string | null; transcription: string | null }>(
+      `select m.id, m.media_id, m.media_mime, m.transcription
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where m.id = $1 and c.tenant_id = $2`,
+      [messageId, tenantId],
+    );
+    const r = res.rows[0];
+    return r ? { id: r.id, mediaId: r.media_id, mediaMime: r.media_mime, transcription: r.transcription } : null;
+  }
+
+  /** Écrit la transcription et le modèle qui l'a produite. Même garde d'espace que la lecture. */
+  async ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string): Promise<void> {
+    await this.pool.query(
+      `update conversation_messages m
+          set transcription = $3, transcription_modele = $4
+         from conversations c
+        where m.id = $1 and c.id = m.conversation_id and c.tenant_id = $2`,
+      [messageId, tenantId, texte, modele],
+    );
   }
 
   /**

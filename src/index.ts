@@ -103,6 +103,7 @@ import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
+import { transcrireMessage } from './inbox/transcrire';
 import { assurerCleGateway, remonterPlafondApresRecharge, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -543,6 +544,22 @@ async function main(): Promise<void> {
       compterConversations: (tenant) => inboxStore.compterConversations(tenant),
       archiverConversation: (tenant, id, archive) => inboxStore.archiverConversation(tenant, id, archive),
       signalerConversation: (tenant, id, signale, par) => inboxStore.signalerConversation(tenant, id, signale, par),
+      /**
+       * ⚠️ LA CLE MAISON PAIE LA TRANSCRIPTION, decision de Julien du 2026-09-09 : « on va le payer
+       * nous-memes sur la cle API generale, et on verra apres si je la refacture au client ». Le resolveur
+       * par espace existe deja (`clesGateway.lire`) : le jour ou ca change, c'est cette ligne, et elle seule.
+       */
+      ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
+        transcrireMessage: (tenant: string, messageId: string) => transcrireMessage({
+          lireMessage: (t, m2) => inboxStore.lireMessagePourTranscription(t, m2),
+          ecrireTranscription: (t, m2, texte, modele) => inboxStore.ecrireTranscription(t, m2, texte, modele),
+          telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
+          transport,
+          cle: config.AI_GATEWAY_API_KEY,
+          modele: config.TRANSCRIPTION_MODELE,
+          tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
+        }, tenant, messageId),
+      } : {}),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),

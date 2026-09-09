@@ -423,6 +423,21 @@ export const schema = z.object({
    * Julien du 2026-09-09, parce que le bac a sable appelle vraiment le modele, donc un client sans cle
    * mettrait son agent au point sur notre argent.
    */
+  /**
+   * TRANSCRIPTION des vocaux entrants (2026-09-09).
+   *
+   * `whisper-1` par defaut : 0,0001 $ la seconde, soit un quart de centime pour un vocal de 30 s, et il
+   * detecte la langue tout seul (mesure). Vide -> la route de transcription rend 503, rien ne casse.
+   *
+   * 🔴 LE PLAFOND EST EN TAILLE, PAS EN DUREE, ET CE N EST PAS UN CAPRICE. Julien voulait refuser au-dela de
+   * trois minutes ; or la duree n est connue QU APRES avoir telecharge et paye la transcription. Meta, lui,
+   * annonce la TAILLE avant le telechargement, ce qui est le seul signal disponible avant de depenser.
+   * 2 Mo couvrent tres largement trois minutes de vocal WhatsApp (opus, environ 16 kbit/s, soit ~360 Ko) et
+   * bornent en meme temps la memoire : le fichier entre entier en RAM, puis repart en base64, qui pese un
+   * tiers de plus.
+   */
+  TRANSCRIPTION_MODELE: z.string().default('openai/whisper-1'),
+  TRANSCRIPTION_TAILLE_MAX_KO: z.coerce.number().int().positive().default(2048),
   VERCEL_API_TOKEN: z.string().default(''),
   VERCEL_TEAM_ID: z.string().default(''),
   /**

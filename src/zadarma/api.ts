@@ -31,7 +31,13 @@ export interface AppelEntrant {
   debut: string;
 }
 
-/** Transcription d'un enregistrement (`GET /v1/speech_recognition/`). */
+/**
+ * Transcription d'un enregistrement d'APPEL TÉLÉPHONIQUE (`GET /v1/speech_recognition/`), par Zadarma.
+ *
+ * ⚠️ Ne pas confondre avec `TranscriptionAudio` de `src/agent/llm/transcription.ts`, qui transcrit un
+ * FICHIER audio reçu sur WhatsApp par un modèle. Deux fournisseurs, deux entrées (identifiant d'appel contre
+ * octets), deux usages : rien à mettre en commun.
+ */
 export interface Transcription {
   /** La reconnaissance est terminée et le texte est exploitable. */
   pret: boolean;

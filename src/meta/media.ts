@@ -76,4 +76,49 @@ export class MetaMediaClient {
     if (!uj?.h) throw new MediaUploadError('upload sans handle');
     return uj.h;
   }
+
+  /**
+   * TÉLÉCHARGE un média entrant, en DEUX appels (2026-09-09).
+   *
+   * 🔴 POURQUOI DEUX, ET POURQUOI ON NE PEUT PAS MÉMORISER LE RÉSULTAT DU PREMIER. Meta ne donne pas d'URL
+   * stable : `GET /{media-id}` rend une URL de téléchargement à DURÉE DE VIE COURTE (quelques minutes), qu'il
+   * faut ensuite chercher AVEC le jeton, ce qu'aucun navigateur ne fera pour nous. Mettre cette URL en cache
+   * ou la donner au front produirait des 401 quelques minutes plus tard, de façon intermittente, donc
+   * difficile à relier à sa cause. L'identifiant, lui, reste valable tant que Meta garde le fichier (30 jours).
+   *
+   * ⚠️ LE SECOND APPEL PORTE LE JETON LUI AUSSI. L'URL rendue est sur `lookaside.fb.com` et ne s'ouvre pas
+   * sans en-tête d'autorisation : la tester dans un navigateur donne un 403 et fait croire à une URL morte.
+   *
+   * ⚠️ PLAFOND DE TAILLE OBLIGATOIRE. Un vocal WhatsApp monte à 16 Mo, et ce corps entre en MÉMOIRE avant
+   * d'être transcrit (l'API de transcription veut du base64, qui pèse un tiers de plus). Sans borne, un
+   * fichier inattendu ferait grossir le processus au lieu d'échouer proprement : on refuse au-delà, en le
+   * disant.
+   */
+  async telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> {
+    const meta = await this.fetchImpl(`${this.baseUrl}/${this.version}/${encodeURIComponent(mediaId)}`, {
+      headers: { authorization: `Bearer ${this.token}` },
+    });
+    const mj = (await meta.json().catch(() => null)) as { url?: string; mime_type?: string; file_size?: number; error?: MetaErrorBody } | null;
+    if (!meta.ok) throw new MetaApiError(meta.status, mj?.error ?? null);
+    if (!mj?.url) throw new MediaUploadError('media sans url de telechargement');
+    // La taille annoncée AVANT de télécharger : refuser ici évite de tirer 16 Mo pour les jeter ensuite.
+    if (typeof mj.file_size === 'number' && mj.file_size > tailleMaxOctets) {
+      throw new MediaTropGros(mj.file_size, tailleMaxOctets);
+    }
+    const bin = await this.fetchImpl(mj.url, { headers: { authorization: `Bearer ${this.token}` } });
+    if (!bin.ok) throw new MetaApiError(bin.status, null);
+    const buf = Buffer.from(await bin.arrayBuffer());
+    // Second contrôle sur ce qui est RÉELLEMENT arrivé : `file_size` peut manquer, et un en-tête ne fait pas
+    // un fichier. Sans ce test, l'absence du champ suffirait à contourner le plafond.
+    if (buf.byteLength > tailleMaxOctets) throw new MediaTropGros(buf.byteLength, tailleMaxOctets);
+    return { bytes: buf, mime: mj.mime_type ?? null };
+  }
+}
+
+/** Le média dépasse ce qu'on accepte de charger en mémoire. Distinct d'une panne : rien n'est cassé. */
+export class MediaTropGros extends Error {
+  constructor(readonly octets: number, readonly plafond: number) {
+    super(`media trop gros (${octets} octets, plafond ${plafond})`);
+    this.name = 'MediaTropGros';
+  }
 }
