@@ -4,6 +4,7 @@ import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdo
 import type { ErreurLivraison } from '../ops/erreurs-livraison.pg';
 import type { FiltreCampagneOuTemplate } from '../stats/store.pg';
 import type { CostSeries, CoutParCampagne } from '../stats/cost';
+import type { DetailCoutCampagne } from '../stats/cout-campagne';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
@@ -63,6 +64,18 @@ export interface StatsRouteDeps {
    * n'a envoyé sur la période », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
    */
   getCoutParCampagne?(tenantId: string, range: DateRange): Promise<CoutParCampagne>;
+  /**
+   * La fiche d'UNE campagne : ce qu'elle a coûté et ce que les gens en ont fait (demande de Julien du
+   * 2026-09-09, ouverte en cliquant une ligne du tableau ci-dessus).
+   *
+   * ⚠️ AUCUNE PLAGE, et c'est la décision de Julien : la fiche couvre toute la VIE de la campagne. Un
+   * scénario reçoit des réponses pendant des jours ; bornée à la fenêtre du tableau, elle montrerait le
+   * coût d'un lancement sans les interactions qu'il a produites ensuite. Le tableau, lui, reste sur la
+   * période : ce n'est pas une incohérence, ce sont deux questions différentes, et la fiche le DIT.
+   *
+   * `null` quand la campagne n'existe pas ou n'appartient pas à cet espace -> 404, jamais une fiche vide.
+   */
+  getDetailCoutCampagne?(tenantId: string, campaignId: string): Promise<DetailCoutCampagne | null>;
   /** Agrégats d'analyse de conversation (Pièce 1) sur la plage. */
   getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
   /** Liste des dernières conversations analysées (quali), filtrable. */
@@ -276,6 +289,33 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getNuageQualitatif(tenant, r.range));
+  });
+
+  /**
+   * La fiche d'une campagne, ouverte depuis une ligne du tableau du coût.
+   *
+   * ⚠️ SANS `parseRange`, seule route de ce fichier dans ce cas : elle couvre toute la vie de la campagne.
+   * Accepter une plage ici laisserait croire qu'elle en tient compte.
+   *
+   * 🔴 L'identifiant est VALIDÉ avant d'atteindre la base : `campaignId` vient de l'URL, il part en
+   * paramètre lié dans une requête `uuid`, et un texte quelconque y ferait lever Postgres (donc un 500 dont
+   * Cloudflare mangerait le corps) au lieu du 400 que mérite une adresse mal formée.
+   */
+  app.get('/tenants/:tenantId/stats/cost/campaigns/:campaignId', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getDetailCoutCampagne) return reply.code(503).send({ error: 'detail de campagne non configure' });
+    const { campaignId } = req.params as { campaignId?: string };
+    // `estUuid` du dépôt, pas une expression régulière de plus : elle est déjà importée ici, et une
+    // seconde définition de « un identifiant valide » dériverait de la première au premier ajustement.
+    if (typeof campaignId !== 'string' || !estUuid(campaignId)) {
+      return reply.code(400).send({ error: 'campaignId invalide' });
+    }
+    const fiche = await deps.getDetailCoutCampagne(tenant, campaignId);
+    // 404 et non une fiche a zero : « cette campagne n'existe pas ici » et « elle n'a rien coute » sont
+    // deux reponses differentes, et la seconde serait une affirmation fausse.
+    if (fiche === null) return reply.code(404).send({ error: 'campagne introuvable' });
+    return reply.code(200).send(fiche);
   });
 
   // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&topic=&limit=.

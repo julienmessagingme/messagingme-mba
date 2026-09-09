@@ -17,7 +17,8 @@ import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, type CategoryRates } from './stats/cost';
-import { rangeToUnix } from './stats/range';
+import { assemblerDetailCampagne } from './stats/cout-campagne';
+import { rangeToUnix, addDays, todayParis } from './stats/range';
 import { cacheCourt } from './lib/cache-court';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
@@ -785,6 +786,35 @@ async function main(): Promise<void> {
         ]);
         const clics = await statsStore.clicsParCampagne(tenant, [...new Set(volumes.map((v) => v.campaignId))]);
         return estimateCoutParCampagne(volumes, rates, clics);
+      },
+      /**
+       * La fiche d'UNE campagne, ouverte en cliquant sa ligne dans le tableau ci-dessus.
+       *
+       * 🔴 LES MÊMES TARIFS QUE LE TABLEAU, par le même `tarifsMeta`, et c'est ce qui empêche les deux
+       * écrans de se contredire au moment précis où on les met côte à côte : le clic sur une ligne ouvre
+       * cette fiche, et deux lectures de tarif différentes y afficheraient deux coûts pour la même campagne.
+       *
+       * ⚠️ LES TARIFS SONT CEUX DES 30 DERNIERS JOURS, alors que la fiche couvre toute la VIE de la
+       * campagne. C'est une approximation ASSUMÉE et non un oubli : Meta rend un tarif PAR PÉRIODE, et
+       * demander la période exacte de chaque campagne multiplierait les appels sans rien changer au chiffre
+       * (les tarifs bougent de quelques centimes par an). La carte annonce déjà un coût ESTIMÉ qui n'est
+       * pas une facture ; c'est la même réserve, pas une nouvelle.
+       *
+       * `null` -> 404 : la campagne n'est pas dans cet espace. La lecture de la fiche vient AVANT le reste,
+       * pour ne pas payer trois requêtes sur un identifiant qui n'existe pas.
+       */
+      getDetailCoutCampagne: async (tenant, campaignId) => {
+        const campagne = await statsStore.ficheCampagne(tenant, campaignId);
+        if (campagne === null) return null;
+        const [envois, rates, funnel, mesures] = await Promise.all([
+          statsStore.envoisDeLaCampagne(tenant, campaignId),
+          // Les 30 derniers jours, la fenêtre par défaut du tableau : c'est LUI qui sert de référence,
+          // parce que c'est de lui qu'on ouvre cette fiche.
+          tarifsMeta(tenant, { from: addDays(todayParis(), -29), to: todayParis() }),
+          statsStore.getCampaignFunnel(tenant, campaignId),
+          campagne.workflowId ? statsStore.mesuresScenarioParCampagne(tenant, campaignId) : Promise.resolve([]),
+        ]);
+        return assemblerDetailCampagne({ campagne, envois, rates, funnel, mesures });
       },
       /**
        * Mesures d'un scénario : les événements de blocs, PLUS les clics sur les liens tracés des templates

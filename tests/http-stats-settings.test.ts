@@ -62,6 +62,15 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       hasRates: true,
       tronque: false,
     }),
+    getDetailCoutCampagne: async (_t, id) => (id === CAMP_A ? {
+      campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', workflowId: null, devise: 'EUR',
+      lancement: {
+        envoyes: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0,
+        echecs: 1, clics: 4, coutParClic: 0.3575, reponses: 3, boutons: 2,
+      },
+      relances: { envoyes: 0, cout: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 },
+      etapes: [],
+    } : null),
     getNuageQualitatif: async () => ({
       points: [{ satisfaction: 0, urgence: 9, n: 2 }, { satisfaction: 8, urgence: 1, n: 1 }],
       moyenne: { satisfaction: 8 / 3, urgence: 19 / 3 },
@@ -366,6 +375,59 @@ describe('stats route', () => {
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost?days=30&campaignIds=pas-un-uuid', ...h(adminTok) });
     expect(res.statusCode).toBe(400);
     expect(appele).toBe(false);
+    await a.close();
+  });
+
+  /**
+   * 🔴 LA FICHE D UNE CAMPAGNE, ET CE BLOC EXISTE POUR UNE RAISON PRECISE : c est le SEUL endroit qui
+   * prouve que la route est REELLEMENT ATTEIGNABLE. Les tests e2e de l ecran interceptent l API, donc ils
+   * passeraient tous avec une capacite branchee dans `src/index.ts` et jamais transmise a `registerStats`.
+   * Le depot a deja paye exactement ce defaut en production (deux capacites cablees dans le worker,
+   * absentes du contrat, toutes les campagnes a lien trace en echec).
+   */
+  it('🔴 la route de la fiche existe et rend le detail', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: `/tenants/t1/stats/cost/campaigns/${CAMP_A}`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.lancement.envoyes).toBe(10);
+    expect(body.lancement.echecs).toBe(1);
+    await a.close();
+  });
+
+  it('🔴 campagne inconnue -> 404, jamais une fiche a zero', async () => {
+    // « cette campagne n existe pas ici » et « elle n a rien coute » sont deux reponses differentes, et la
+    // seconde serait une affirmation fausse posee sur un ecran ou le client decide de son budget.
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: `/tenants/t1/stats/cost/campaigns/${CAMP_B}`, ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('🔴 identifiant mal forme -> 400, et la base n est jamais appelee', async () => {
+    // Sans la garde, le texte partirait dans un parametre `uuid` et Postgres leverait : un 500, donc la
+    // page d erreur de Cloudflare a la place du corps, cote client.
+    let appele = false;
+    const a = app({ stats: { getDetailCoutCampagne: async () => { appele = true; return null; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns/pas-un-uuid', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    expect(appele).toBe(false);
+    await a.close();
+  });
+
+  it('un agent n a pas acces a la fiche de couts', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: `/tenants/t1/stats/cost/campaigns/${CAMP_A}`, ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('🔴 un AUTRE espace ne peut pas lire la fiche', async () => {
+    // `scopeTenant` echoue ferme : le tenant vient de la session, jamais de l URL. C est LE controle
+    // d isolation, la RLS etant contournee par le pooler.
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: `/tenants/t-autre/stats/cost/campaigns/${CAMP_A}`, ...h(adminTok) });
+    expect(res.statusCode).toBe(403);
     await a.close();
   });
 

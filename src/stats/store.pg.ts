@@ -9,6 +9,8 @@ import type { VolumeCampagneRow } from './cost';
 import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
+import type { NodeEventCount } from '../workflow/node-events.pg';
+import type { EnvoisCampagneRow } from './cout-campagne';
 
 export interface DailyPoint {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
@@ -454,6 +456,130 @@ export class PgStatsStore {
       buttonReplies: Number(row?.button_replies ?? 0),
       urlClicks: (await this.clicsParCampagne(tenantId, [campaignId])).get(campaignId) ?? null,
     };
+  }
+
+  /**
+   * L'identite d'une campagne, SCOPEE AU TENANT, pour la fiche de cout.
+   *
+   * 🔴 SCOPEE, et ce n'est pas une precaution de style : `PgCampaignStore.getForRun` lit `where id = $1`
+   * SANS tenant (elle rend le tenant pour que l'appelant tranche), et s'en servir ici aurait fait de cette
+   * route un IDOR : un identifiant de campagne devine ou vu ailleurs aurait rendu la fiche de couts d'un
+   * AUTRE client. La regle du depot est `tenant_id = $1` sur CHAQUE requete, la RLS etant contournee.
+   *
+   * `null` = la campagne n'existe pas, ou pas ici. L'appelant en fait un 404, jamais une fiche vide.
+   */
+  async ficheCampagne(tenantId: string, campaignId: string): Promise<{ id: string; nom: string; template: string | null; workflowId: string | null } | null> {
+    const res = await this.pool.query<{ id: string; name: string; template_name: string | null; workflow_id: string | null }>(
+      `select id, name, nullif(template_name, '') as template_name, workflow_id
+         from campaigns where id = $2 and tenant_id = $1`,
+      [tenantId, campaignId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return { id: r.id, nom: r.name, template: r.template_name, workflowId: r.workflow_id };
+  }
+
+  /**
+   * Les envois FACTURABLES d'UNE campagne sur TOUTE SA VIE, separes en LANCEMENT et en RELANCES.
+   *
+   * 🔴 « LE LANCEMENT » EST LE PREMIER ENVOI PAR PERSONNE, PAS LE PREMIER ENVOI DE LA CAMPAGNE. C'est le
+   * denominateur choisi par Julien le 2026-09-09 (« la base de depart, c'est le cout de lancement ») : un
+   * message par destinataire reellement parti, quel que soit le chemin. Une campagne a template direct n'a
+   * que celui-la ; une campagne a scenario y ajoute les templates que le parcours renvoie plus tard, qui
+   * sont factures en plus et qui n'ont RIEN a faire dans un ratio « ce que m'a coute un contact touche »
+   * (ils grossiraient a chaque relance, sans nouvelle interaction).
+   *
+   * ⚠️ MEME POPULATION que `getVolumeParCampagne`, aux memes gardes (statut `sent`, livraison non `failed`,
+   * canal WhatsApp, anti-double-compte par `meta_message_id`, attribution des envois de scenario). Deux
+   * definitions de « ce que cette campagne a envoye » donneraient deux couts sur deux ecrans qui s'ouvrent
+   * l'un depuis l'autre, et c'est le clic sur la ligne qui les mettrait cote a cote.
+   *
+   * 🔴 AUCUNE BORNE DE PERIODE, et c'est voulu : un scenario recoit des reponses pendant des jours. Borne a
+   * la fenetre du haut de l'ecran, on lirait le cout d'un lancement sans les interactions qu'il a produites
+   * apres, donc un cout par interaction faux. La branche 2 est quand meme bornee PAR LE BAS au premier
+   * `claimed_at` de la campagne : aucun envoi de cette campagne ne peut le preceder, et sans cette borne la
+   * sous-requete correlee balaierait tout l'historique des messages du client.
+   */
+  async envoisDeLaCampagne(tenantId: string, campaignId: string): Promise<EnvoisCampagneRow[]> {
+    const res = await this.pool.query<{ category: string | null; total: string; lancement: string }>(
+      `with debut as (
+         select min(coalesce(r.claimed_at, r.sent_at)) as le
+           from campaign_recipients r where r.campaign_id = $2 and r.sent_at is not null
+       ),
+       envois as (
+         select r.sent_at as at, c.category as category,
+                regexp_replace(r.to_e164, '[^0-9]', '', 'g') as wa
+           from campaign_recipients r join campaigns c on c.id = r.campaign_id
+          where c.id = $2 and c.tenant_id = $1 and nullif(c.template_name, '') is not null
+            and c.channel = 'whatsapp' and r.status = 'sent'
+            and (r.delivery_status is null or r.delivery_status <> 'failed')
+         union all
+         select m.created_at as at, m.template_category as category, cv.wa_id as wa
+           from conversation_messages m
+           join conversations cv on cv.id = m.conversation_id, debut d
+          where cv.tenant_id = $1 and not cv.is_test and m.direction = 'out' and m.type = 'template'
+            and m.template_name is not null
+            and d.le is not null and m.created_at >= d.le
+            and not exists (
+              select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+              where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
+            )
+            and $2::uuid = ${ATTRIBUTION_CAMPAGNE_SCENARIO}
+       ),
+       rangs as (select category, row_number() over (partition by wa order by at) as rang from envois)
+       select category, count(*)::int as total, count(*) filter (where rang = 1)::int as lancement
+         from rangs group by category`,
+      [tenantId, campaignId],
+    );
+    return res.rows.map((r) => ({
+      category: r.category, total: Number(r.total), lancement: Number(r.lancement),
+    }));
+  }
+
+  /**
+   * Les mesures du scenario d'UNE campagne, bloc par bloc, sur toute la vie de la campagne.
+   *
+   * 🔴 `workflow_node_events` NE PORTE PAS LA CAMPAGNE, et c'est le probleme entier de cette requete. Un
+   * scenario est declenche par des campagnes, par des automations et par des reponses de contacts : rendre
+   * les compteurs du SCENARIO sur un ecran qui parle d'UNE campagne y melangerait tout le reste. On
+   * reutilise donc EXACTEMENT l'attribution des envois (`ATTRIBUTION_CAMPAGNE_SCENARIO`) : l'evenement
+   * revient a la derniere campagne scenario reclamee pour ce numero avant lui. Une seconde heuristique,
+   * meme voisine, aurait donne deux verites sur le meme ecran.
+   *
+   * ⚠️ CE QU'ELLE PERD, et il vaut mieux le savoir que le decouvrir : les evenements ANONYMISES par la
+   * retention (`wa_id = 'anonyme'`, migration 0063) ne correspondent plus a aucun destinataire et sortent
+   * donc du compte. Ils restent visibles dans les mesures du SCENARIO, qui n'ont pas besoin d'attribution.
+   *
+   * ⚠️ Les clics sur un lien trace ne sont PAS ici : ils ne portent aucun numero (une adresse ouverte
+   * n'identifie personne) et sont fusionnes a la lecture, comme pour les mesures de scenario.
+   */
+  async mesuresScenarioParCampagne(tenantId: string, campaignId: string): Promise<NodeEventCount[]> {
+    const res = await this.pool.query<{ node_id: string; kind: string; handle: string | null; n: string; c: string }>(
+      `select e.node_id, e.kind, e.handle, count(*)::int as n, count(distinct e.wa_id)::int as c
+         from workflow_node_events e
+         join campaigns c on c.id = $2 and c.tenant_id = $1
+        where e.tenant_id = $1 and c.workflow_id is not null and e.workflow_id = c.workflow_id
+          and e.wa_id in (
+            select regexp_replace(r.to_e164, '[^0-9]', '', 'g')
+              from campaign_recipients r where r.campaign_id = c.id and r.sent_at is not null
+          )
+          and c.id = (
+            select r3.campaign_id
+              from campaign_recipients r3 join campaigns c3 on c3.id = r3.campaign_id
+             where c3.tenant_id = $1 and c3.workflow_id is not null and r3.sent_at is not null
+               and coalesce(r3.claimed_at, r3.sent_at) <= e.at
+               and e.wa_id = regexp_replace(r3.to_e164, '[^0-9]', '', 'g')
+             order by coalesce(r3.claimed_at, r3.sent_at) desc
+             limit 1
+          )
+        group by e.node_id, e.kind, e.handle
+        order by e.node_id, e.kind, e.handle`,
+      [tenantId, campaignId],
+    );
+    return res.rows.map((r) => ({
+      nodeId: r.node_id, kind: r.kind as NodeEventCount['kind'], handle: r.handle,
+      count: Number(r.n), contacts: Number(r.c),
+    }));
   }
 
   /**

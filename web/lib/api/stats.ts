@@ -327,6 +327,56 @@ export interface CoutParCampagne {
   /** Meta n'a rendu AUCUN tarif : toute la colonne cout est vide, et l'ecran doit dire pourquoi. */
   hasRates: boolean;
 }
+/**
+ * La FICHE d'une campagne, ouverte en cliquant sa ligne dans le tableau du cout.
+ *
+ * 🔴 ELLE COUVRE TOUTE LA VIE DE LA CAMPAGNE, pas la periode du haut de l'ecran, et c'est une decision de
+ * Julien du 2026-09-09 : un scenario recoit des reponses pendant des jours. Bornee a sept jours, la fiche
+ * montrerait le cout d'un lancement ampute des interactions qu'il a produites ensuite, donc un cout par
+ * interaction faux DANS LE SENS QUI FLATTE. Le tableau reste sur la periode : deux questions differentes,
+ * et l'ecran le dit plutot que de laisser croire a une incoherence.
+ */
+export interface VolumeChiffre {
+  envoyes: number;
+  /** `null` quand aucun de ces envois n'a pu etre chiffre. Jamais zero : zero se lirait « gratuit ». */
+  cout: number | null;
+  /** Total non chiffre, plus ses deux causes : la forme qu'attend `web/lib/cout-non-chiffrable.ts`. */
+  nonChiffrables: number;
+  sansCategorie: number;
+  sansTarif: number;
+}
+/** Ce que les gens ont fait a UN bloc du scenario. Les deux unites, parce qu'elles repondent a deux questions. */
+export interface EtapeCoutCampagne {
+  nodeId: string;
+  envoyes: { gestes: number; personnes: number };
+  boutons: { gestes: number; personnes: number };
+  reponses: { gestes: number; personnes: number };
+  /** `boutons.gestes + reponses.gestes` : le denominateur du ratio, pas un total a afficher. */
+  interactions: number;
+  /** Cout du LANCEMENT / interactions de cette etape. `null` si un terme manque ou si le total est nul. */
+  coutParInteraction: number | null;
+}
+export interface DetailCoutCampagne {
+  campaignId: string;
+  nom: string;
+  template: string | null;
+  /** Le scenario, s'il y en a un : c'est lui qui nomme les etapes. `null` = campagne a template direct. */
+  workflowId: string | null;
+  devise: string | null;
+  lancement: VolumeChiffre & {
+    echecs: number;
+    clics: number | null;
+    coutParClic: number | null;
+    reponses: number;
+    boutons: number;
+  };
+  relances: VolumeChiffre;
+  etapes: EtapeCoutCampagne[];
+}
+export function getDetailCoutCampagne(tenantId: string, campaignId: string): Promise<DetailCoutCampagne> {
+  return request<DetailCoutCampagne>(`/tenants/${tenantId}/stats/cost/campaigns/${campaignId}`);
+}
+
 export function getCoutParCampagne(tenantId: string, range?: StatsRange): Promise<CoutParCampagne> {
   return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${rangeQuery(range)}`);
 }

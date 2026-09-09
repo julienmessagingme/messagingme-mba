@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { getCoutParCampagne, type CoutParCampagne, type LigneCoutCampagne, type StatsRange } from '@/lib/api';
 import { fmtNum, fmtCost } from '@/lib/format';
 import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
+import { DetailCampagneModale } from '@/components/DetailCampagneModale';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
 
@@ -45,6 +46,9 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
   const { locale } = useLocale();
   const [donnees, setDonnees] = useState<CoutParCampagne | null>(null);
   const [erreur, setErreur] = useState(false);
+  // La campagne dont la fiche est ouverte. Le NOM voyage avec l'identifiant : la modale s'ouvre avec son
+  // titre sans attendre le reseau, au lieu d'afficher « Chargement… » a la place du nom qu'on vient de lire.
+  const [ouverte, setOuverte] = useState<{ id: string; nom: string } | null>(null);
 
   useEffect(() => {
     let vivant = true;
@@ -94,8 +98,8 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
         <h2 className="text-sm font-semibold text-ink-900">{t('Ce que coûte un engagement', 'What an engagement costs')}</h2>
         <p className="mt-0.5 text-xs text-ink-400">
           {t(
-            'Coût ESTIMÉ (envois × tarif Meta de la catégorie), rapporté aux clics mesurés. Ce n’est pas une facture.',
-            'ESTIMATED cost (sends × Meta category rate), against measured clicks. This is not an invoice.',
+            'Coût ESTIMÉ (envois × tarif Meta de la catégorie), rapporté aux clics mesurés. Ce n’est pas une facture. Cliquez une ligne pour le détail.',
+            'ESTIMATED cost (sends × Meta category rate), against measured clicks. This is not an invoice. Click a row for the detail.',
           )}
         </p>
       </header>
@@ -130,7 +134,8 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
               </thead>
               <tbody>
                 {donnees.lignes.map((l) => (
-                  <Ligne key={l.campaignId} l={l} devise={donnees.currency} locale={locale} t={t} />
+                  <Ligne key={l.campaignId} l={l} devise={donnees.currency} locale={locale} t={t}
+                    onOuvrir={() => setOuverte({ id: l.campaignId, nom: l.nom })} />
                 ))}
               </tbody>
             </table>
@@ -172,11 +177,23 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
           </div>
         </>
       )}
+
+      {ouverte !== null && (
+        <DetailCampagneModale
+          tenantId={tenantId}
+          campaignId={ouverte.id}
+          nom={ouverte.nom}
+          onClose={() => setOuverte(null)}
+        />
+      )}
     </section>
   );
 }
 
-function Ligne({ l, devise, locale, t }: { l: LigneCoutCampagne; devise: string | null; locale: Locale; t: (fr: string, en?: string) => string }) {
+function Ligne({ l, devise, locale, t, onOuvrir }: {
+  l: LigneCoutCampagne; devise: string | null; locale: Locale;
+  t: (fr: string, en?: string) => string; onOuvrir: () => void;
+}) {
   /**
    * Pourquoi cette case est vide, en une phrase, au survol. Le tiret seul dirait « rien » là où la vérité
    * est « on ne peut pas répondre », et ces deux-là ne se déduisent pas d'un tableau.
@@ -186,10 +203,28 @@ function Ligne({ l, devise, locale, t }: { l: LigneCoutCampagne; devise: string 
     : t('Ce template ne porte aucun lien tracé.', 'This template carries no tracked link.');
 
   return (
-    <tr className="border-b border-ink-50" data-testid={`cout-ligne-${l.campaignId}`}>
+    /* 🔴 LA LIGNE ENTIÈRE EST CLIQUABLE POUR LA SOURIS, LE NOM EST UN VRAI BOUTON POUR LE CLAVIER. Un
+       `<tr onClick>` seul est invisible d'un lecteur d'écran et inatteignable au clavier ; un bouton seul
+       obligerait à viser un mot dans une ligne de chiffres. Les deux ensemble, avec `stopPropagation` sur
+       le bouton pour ne pas ouvrir deux fois la même fiche. */
+    <tr
+      className="cursor-pointer border-b border-ink-50 transition hover:bg-ink-50"
+      data-testid={`cout-ligne-${l.campaignId}`}
+      onClick={onOuvrir}
+    >
       {/* Tronqué : dans une demi-largeur, un nom de campagne long poussait les quatre colonnes de chiffres
           hors du cadre à lui tout seul. Le nom complet reste au survol, il n'est pas perdu. */}
-      <td className={`${TD} max-w-[11rem] truncate font-medium text-ink-900`} title={l.nom}>{l.nom}</td>
+      <td className={`${TD} max-w-[11rem] font-medium text-ink-900`}>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOuvrir(); }}
+          title={l.nom}
+          data-testid={`cout-ouvrir-${l.campaignId}`}
+          className="block w-full truncate text-left hover:text-brand-700"
+        >
+          {l.nom}
+        </button>
+      </td>
       <td className={`${TD} text-right tabular-nums`}>{fmtNum(l.envoyes, locale)}</td>
       <td className={`${TD} text-right tabular-nums`} data-testid={`cout-montant-${l.campaignId}`}>
         {l.cout === null
