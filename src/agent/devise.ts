@@ -40,14 +40,24 @@ export function eurosDepuisMicro(microEur: number): number {
  * Le chemin INVERSE : un montant de nos micro-euros vers des dollars ENTIERS, pour le plafond d'une clé du
  * Gateway (2026-09-09). Vercel raisonne en dollars et n'accepte pas moins de 1.
  *
- * 🔴 ON ARRONDIT VERS LE BAS, ET LE SENS N'EST PAS INTERCHANGEABLE. Ce plafond borne ce qu'un client peut
- * dépenser avec le crédit qu'il a ACHETÉ ; arrondir vers le haut lui laisserait dépenser un peu plus que ce
- * qu'il a payé, à chaque rechargement, indéfiniment. Vers le bas, il est coupé une fraction de dollar trop
- * tôt, ce que notre propre décompte du solde a de toute façon déjà fait avant.
+ * 🔴 ON ARRONDIT VERS LE HAUT, ET LE SENS N'EST PAS INTERCHANGEABLE. Il y a DEUX barrières sur la dépense
+ * d'un espace, et elles n'ont pas le même rôle :
+ *   - la NÔTRE (`run-turn.ts`, `solde <= 0`) est la garde. Elle compte en EUROS, dans la monnaie où le
+ *     client a payé, et elle s'applique AVANT l'appel au modèle ;
+ *   - celle de VERCEL (le plafond de la clé) est le FILET. Elle existe pour le cas où notre comptage a un
+ *     bug, et pour empêcher qu'un espace mange le solde commun.
+ * Un filet doit donc être PLUS LARGE que la garde qu'il double. Arrondi vers le BAS, il mordait le premier :
+ * mesuré le 2026-09-09, un crédit de 10 € donnait un plafond de 10 $, atteint à 9,20 € consommés. Le client
+ * perdait 8 % de ce qu'il avait payé, et notre garde ne servait plus jamais. **Un filet qui se déclenche
+ * avant la garde n'est pas un filet, c'est la garde, et la moins précise des deux.**
  *
- * ⚠️ Rend `null` sous le minimum de Vercel plutôt que de poser 1 : un plafond gonflé à 1 $ pour un crédit de
- * 0,20 € donnerait au client cinq fois ce qu'il a payé, et surtout il MENTIRAIT sur ce que le plafond
- * garantit. L'appelant traite ce `null` comme « pas assez de crédit », qui est la vérité.
+ * ⚠️ Ce que ça coûte, et qui est le bon prix : si notre comptage casse, le filet laisse passer jusqu'à un
+ * dollar de plus que le crédit. Borné, et sans commune mesure avec un client coupé avant d'avoir consommé
+ * ce qu'il a acheté.
+ *
+ * ⚠️ LE MINIMUM SE JUGE SUR LE CRÉDIT BRUT, AVANT L'ARRONDI. Autrement `ceil` remonterait 0,20 € à un
+ * plafond de 1 $, et la règle « pas de crédit, pas de clé, donc pas d'agent » cesserait de tenir : il
+ * suffirait d'un centime pour ouvrir un agent. L'appelant traite ce `null` comme « pas assez de crédit ».
  *
  * ⚠️ Même défense du taux que ci-dessus, mais dans l'autre sens : un taux aberrant retombe sur 1, jamais sur
  * une division par zéro qui rendrait un plafond infini.
@@ -57,6 +67,7 @@ export const PLAFOND_GATEWAY_MIN_DOLLARS = 1;
 export function dollarsDepuisMicroEuros(microEur: number, tauxEurParDollar: number): number | null {
   if (!Number.isFinite(microEur) || microEur <= 0) return null;
   const taux = Number.isFinite(tauxEurParDollar) && tauxEurParDollar > 0 ? tauxEurParDollar : 1;
-  const dollars = Math.floor(microEur / MICRO / taux);
-  return dollars >= PLAFOND_GATEWAY_MIN_DOLLARS ? dollars : null;
+  const brut = microEur / MICRO / taux;
+  if (brut < PLAFOND_GATEWAY_MIN_DOLLARS) return null;
+  return Math.ceil(brut);
 }

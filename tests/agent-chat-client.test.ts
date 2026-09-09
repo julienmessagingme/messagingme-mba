@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GatewayChatClient } from '../src/agent/llm/chat-client';
-import { LlmApiError } from '../src/llm/errors';
+import { LlmApiError, PlafondModeleAtteint } from '../src/llm/errors';
 import type { HttpResponse, HttpTransport } from '../src/meta/http';
 
 /**
@@ -225,5 +225,34 @@ describe('La clé posée sur l’appel', () => {
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
     await new GatewayChatClient('vck_maison', t).completer({ tenantId: 't', modele: 'm', messages: [] });
     expect(t.appels[0]!.headers.authorization).toBe('Bearer vck_maison');
+  });
+});
+
+/**
+ * LE PLAFOND DE CREDIT ATTEINT (2026-09-09).
+ *
+ * 🔴 CE N'EST PAS UNE PANNE, ET LE CONFONDRE COUTE DE L'ARGENT. Vercel refuse un plafond atteint en 429, et
+ * 429 est rejouable dans la regle generale du client : sans distinction, chaque tour d'agent d'un client a
+ * sec repartait pour trois tentatives, toutes vouees a echouer, sur chaque message recu. La detection se lit
+ * sur le TYPE de l'erreur, jamais sur son message, qui porte des montants qui changent a chaque appel.
+ */
+describe('Plafond de crédit atteint', () => {
+  it('🔴 un refus de quota n’est PAS rejoué, et se reconnaît comme un plafond', async () => {
+    const corps = { error: { type: 'quota_for_entity_exceeded', message: 'Quota limit exceeded. Current spend: $10.00' } };
+    const t = new FauxTransport([ko(429, corps)]);
+    const err = await new GatewayChatClient('vck', t).completer({ tenantId: 't', modele: 'm', messages: [] }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(PlafondModeleAtteint);
+    expect(err.retryable).toBe(false);
+    // UN seul appel : la preuve qu'aucun rejeu n'a eu lieu.
+    expect(t.appels).toHaveLength(1);
+  });
+
+  it('🔴 la preuve inverse : un 429 ORDINAIRE est toujours rejoué', async () => {
+    // Sans ce cas, marquer tous les 429 comme non rejouables passerait le test ci-dessus tout en supprimant
+    // la reprise sur limite de débit, qui est le cas transitoire par excellence.
+    const t = new FauxTransport([ko(429), ko(429), ok(REPONSE_REELLE)]);
+    await new GatewayChatClient('vck', t).completer({ tenantId: 't', modele: 'm', messages: [] });
+    expect(t.appels.length).toBeGreaterThan(1);
   });
 });

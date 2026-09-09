@@ -1,4 +1,5 @@
 import type { AgentBrain } from './brain';
+import { PlafondModeleAtteint } from '../llm/errors';
 import { TourInterrompu } from './brain';
 import type { FicheAgent } from './agent-store';
 import type { AgentSession, AgentSessionStatus, AgentSessionStore } from './session-store';
@@ -335,6 +336,17 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     // puis casse sur son second appel de modèle serait entièrement gratuit pour le workspace, alors que le
     // fournisseur, lui, a bien facturé le premier.
     if (err instanceof TourInterrompu) await enregistrerCout(job, session.id, err.usage.coutMicroEur, deps);
+    // 🔴 UN PLAFOND ATTEINT N'EST PAS UN ECHEC, et il sort par la MEME branche que le solde epuise lu plus
+    // haut. C'est la meme situation vue des deux cotes : notre comptage dit « plus de credit », le Gateway
+    // dit « plafond de la cle atteint ». Les separer obligerait le client a cabler deux sorties pour un seul
+    // fait, et lui montrerait « Echec » la ou la reponse est « rechargez ».
+    // ⚠️ L'erreur voyage EMBALLEE dans `TourInterrompu` quand un aller-retour avait deja ete facture : il
+    // faut donc regarder les deux, l'erreur nue et celle qu'elle transporte.
+    const cause = err instanceof TourInterrompu ? err.erreur : err;
+    if (cause instanceof PlafondModeleAtteint) {
+      await cloreEtSortir(job, session.id, 'plafond', SORTIE_PLAFOND, deps);
+      return { fait: 'plafond', sortie: SORTIE_PLAFOND };
+    }
     // eslint-disable-next-line no-console
     console.error(`agent: le tour a échoué pour la session ${session.id}`, err instanceof Error ? err.message : err);
     await cloreEtSortir(job, session.id, 'erreur', SORTIE_ECHEC, deps);

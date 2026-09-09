@@ -86,14 +86,15 @@ describe('assurerCleGateway', () => {
     expect(t.appels).toHaveLength(0);
   });
 
-  it('🔴 le plafond envoyé est le crédit ACHETÉ, converti et arrondi VERS LE BAS', async () => {
-    // 10 € au taux de 0,92 valent 10,86 $. On envoie 10, pas 11 : arrondir vers le haut laisserait le client
-    // dépenser un peu plus que ce qu'il a payé, à chaque rechargement, indéfiniment.
+  it('🔴 le plafond envoyé COUVRE le crédit acheté, il ne le rogne pas', async () => {
+    // 10 € au taux de 0,92 valent 10,87 $, donc 11. Arrondir vers le bas donnait 10, atteint à 9,20 €
+    // consommés : le client était coupé avant d'avoir dépensé ce qu'il avait payé, et notre propre garde
+    // (`solde <= 0`) ne servait plus jamais.
     const cles = fauxCles();
     const t = new FauxTransport([OK]);
     await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1');
 
-    expect(t.appels[0]!.body).toMatchObject({ aiGatewayQuota: { limitAmount: 10, refreshPeriod: 'none' } });
+    expect(t.appels[0]!.body).toMatchObject({ aiGatewayQuota: { limitAmount: 11, refreshPeriod: 'none' } });
   });
 
   it('enregistre le plafond en MICRO-EUROS, pas en dollars', async () => {
@@ -130,8 +131,8 @@ describe('remonterPlafondApresRecharge', () => {
     const t = new FauxTransport([{ status: 200, json: {} }]);
     expect(await remonterPlafondApresRecharge(deps({ cles, solde: 2 * MICRO, transport: t }), 't1', 20 * MICRO)).toBe(true);
 
-    // 10 achetés + 20 rechargés = 30 €, soit 32 $ au taux de 0,92 (arrondi vers le bas).
-    expect(t.appels[0]!.body).toEqual({ limitAmount: 32, refreshPeriod: 'none' });
+    // 10 achetés + 20 rechargés = 30 €, soit 32,60 $ au taux de 0,92, donc 33 (arrondi au supérieur).
+    expect(t.appels[0]!.body).toEqual({ limitAmount: 33, refreshPeriod: 'none' });
     expect(cles.plafondsNotes).toEqual([30 * MICRO]);
   });
 

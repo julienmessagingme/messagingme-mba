@@ -62,27 +62,39 @@ describe('eurosDepuisMicro', () => {
 /**
  * LE CHEMIN INVERSE, pour le plafond d'une clé du Gateway (2026-09-09).
  *
- * 🔴 LE SENS DE L'ARRONDI N'EST PAS UN DÉTAIL. Ce plafond borne ce qu'un client peut dépenser avec le crédit
- * qu'il a ACHETÉ. Vers le haut, il dépense un peu plus qu'il n'a payé, à chaque rechargement, pour toujours.
- * Vers le bas, il est coupé une fraction de dollar trop tôt, ce que notre propre décompte a de toute façon
- * déjà fait avant lui.
+ * 🔴 LE SENS DE L'ARRONDI EST L'INVERSE DE CELUI QU'ON CROIT, ET ÇA A ÉTÉ LIVRÉ FAUX. Il y a deux barrières :
+ * la nôtre (`run-turn.ts`, `solde <= 0`, en euros, avant l'appel) est la GARDE ; celle de Vercel est le
+ * FILET. Arrondi vers le BAS, le filet mordait le premier : 10 € donnaient 10 $, atteints à 9,20 € consommés,
+ * donc 8 % du crédit payé devenaient inatteignables et la garde ne servait plus jamais. Un filet qui se
+ * déclenche avant sa garde n'est pas un filet.
  */
 describe('Micro-euros vers le plafond en dollars', () => {
-  it('🔴 arrondit VERS LE BAS, jamais au plus proche', () => {
-    // 10 € au taux de 0,92 valent 10,86 $. Un arrondi au plus proche donnerait 11.
-    expect(dollarsDepuisMicroEuros(10_000_000, 0.92)).toBe(10);
-    // 30 € valent 32,60 $ : au plus proche ce serait 33.
-    expect(dollarsDepuisMicroEuros(30_000_000, 0.92)).toBe(32);
+  it('🔴 arrondit VERS LE HAUT, pour que le filet reste plus large que la garde', () => {
+    // 10 € au taux de 0,92 valent 10,87 $. On envoie 11 : notre garde bloquera à 10 € pile, et le filet ne
+    // se déclenchera que si notre comptage est cassé.
+    expect(dollarsDepuisMicroEuros(10_000_000, 0.92)).toBe(11);
+    expect(dollarsDepuisMicroEuros(30_000_000, 0.92)).toBe(33);
   });
 
-  it('🔴 sous le minimum de Vercel, rend `null` plutôt que de gonfler à 1', () => {
-    // Poser 1 $ pour 20 centimes donnerait au client cinq fois ce qu'il a payé, et surtout le plafond
-    // cesserait de dire la vérité. L'appelant traite ce `null` comme « pas assez de crédit », qui est le fait.
+  it('🔴 le crédit payé reste TOUJOURS atteignable, à tous les montants', () => {
+    // La propriété qui compte, et que l'arrondi vers le bas violait : le plafond en dollars doit couvrir la
+    // totalité du crédit. Sans elle, le client est coupé avant d'avoir consommé ce qu'il a acheté.
+    for (const euros of [1, 2, 5, 10, 23, 50, 99, 100, 137]) {
+      const plafond = dollarsDepuisMicroEuros(euros * 1_000_000, 0.92)!;
+      expect(plafond, `${euros} EUR`).toBeGreaterThanOrEqual(euros / 0.92);
+    }
+  });
+
+  it('🔴 sous le minimum de Vercel, rend `null` : le minimum se juge AVANT l’arrondi', () => {
+    // Le piège de l'arrondi au supérieur : `ceil(0,217)` vaut 1, donc juger APRÈS ferait qu'un centime de
+    // crédit ouvrirait un agent à 1 $. « Pas de crédit, pas de clé, donc pas d'agent » cesserait de tenir.
     expect(dollarsDepuisMicroEuros(200_000, 0.92)).toBeNull();
+    expect(dollarsDepuisMicroEuros(900_000, 0.92)).toBeNull();
     expect(dollarsDepuisMicroEuros(0, 0.92)).toBeNull();
     expect(dollarsDepuisMicroEuros(-5, 0.92)).toBeNull();
-    // Juste au-dessus du minimum, en revanche, ça passe.
-    expect(dollarsDepuisMicroEuros(1_000_000, 0.92)).toBe(PLAFOND_GATEWAY_MIN_DOLLARS);
+    // Juste au-dessus du minimum en revanche, ça passe : 1 € vaut 1,087 $, donc un plafond de 2.
+    expect(dollarsDepuisMicroEuros(1_000_000, 0.92)).toBe(2);
+    expect(PLAFOND_GATEWAY_MIN_DOLLARS).toBe(1);
   });
 
   it('🔴 un taux aberrant retombe sur 1, jamais sur une division par zéro', () => {

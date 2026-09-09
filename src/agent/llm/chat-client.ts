@@ -1,5 +1,6 @@
 import { FetchTransport, withRetry, parseRetryAfter, type HttpTransport, HTTP_TIMEOUT_MODELE_MS } from '../../meta/http';
-import { LlmApiError } from '../../llm/errors';
+import { LlmApiError, PlafondModeleAtteint } from '../../llm/errors';
+import { estPlafondAtteint } from './cles-gateway';
 
 /**
  * Client Chat Completions du Vercel AI Gateway, pour l'agent.
@@ -200,9 +201,19 @@ export class GatewayChatClient {
           input.signal ? { signal: input.signal } : undefined,
         );
         if (res.status < 200 || res.status >= 300) {
+          // 🔴 LE PLAFOND AVANT LE STATUT. Vercel refuse un plafond atteint en 429, et 429 est rejouable
+          // trois lignes plus bas : sans ce test AVANT, un client a sec repayait trois tentatives par
+          // message recu, toutes perdues. Le TYPE est lu, jamais le message, qui porte des montants.
+          if (estPlafondAtteint(res.json)) {
+            throw new PlafondModeleAtteint(res.status, 'plafond de credit atteint pour cet espace');
+          }
           // 429, 408 et 425 sont rejouables, comme le fait déjà `src/meta/errors.ts`. Un 400 (schéma d'outil
           // refusé), un 401 (clé), un 403 (aucun fournisseur disponible) et un 404 (modèle inconnu) sont
           // TERMINAUX : les rejouer paierait plusieurs fois la même erreur de configuration.
+          // ⚠️ SAUF LE 429 D'UN PLAFOND ATTEINT, intercepté JUSTE AU-DESSUS. C'est le seul cas où le statut
+          // ne suffit pas à décider : le même 429 dit « ralentis » (transitoire, on rejoue) ou « tu as
+          // consommé ton crédit » (définitif, rejouer ne fait que perdre trois appels par message reçu).
+          // Seul le corps les distingue, et c'est pour ça que sa lecture passe avant.
           const retryable = res.status === 429 || res.status === 408 || res.status === 425 || res.status >= 500;
           const msg = (res.json as { error?: { message?: string } } | null)?.error?.message ?? `HTTP ${res.status}`;
           throw new LlmApiError(res.status, msg, retryable, parseRetryAfter(res.headers));
