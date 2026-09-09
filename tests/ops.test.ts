@@ -313,3 +313,50 @@ describe('jobs morts : les voir, puis les rejouer', () => {
     await a.close();
   });
 });
+
+/**
+ * RÉVOQUER la clé de modèle d'un espace (2026-09-09, question de Julien).
+ *
+ * 🔴 CE QUE CE GESTE EMPÊCHE. `agent_gateway_keys.tenant_id` porte un `on delete cascade` : sans révocation
+ * préalable, supprimer un espace emporte notre ligne et laisse la clé chez Vercel avec son identifiant
+ * PERDU, donc facturable et irrévocable. Le geste vit sur `/ops` parce que ce n'est pas au client de
+ * nettoyer nos clés.
+ */
+describe('/ops : révoquer la clé de modèle', () => {
+  const T = '11111111-1111-4111-8111-111111111111';
+
+  it('révoque, et le dit', async () => {
+    const srv = app(OPS, { revoquerCleModele: async () => true });
+    const r = await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ revoquee: true });
+  });
+
+  it('un espace SANS clé n’est pas une erreur', async () => {
+    // C'est le cas le plus fréquent : la plupart des espaces n'ont pas d'agent, donc pas de clé. Le traiter
+    // en erreur ferait chercher une panne là où il n'y a rien à faire.
+    const srv = app(OPS, { revoquerCleModele: async () => false });
+    const r = await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ revoquee: false });
+  });
+
+  it('🔴 Vercel refuse -> 422 qui DIT que la clé est toujours active', async () => {
+    // Et pas un 5xx : Cloudflare remplacerait le corps, et l'opérateur croirait à une panne quelconque au
+    // lieu de savoir que la clé vit encore et qu'il faut réessayer.
+    const srv = app(OPS, { revoquerCleModele: async () => { throw new Error('vercel refuse'); } });
+    const r = await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) });
+    expect(r.statusCode).toBe(422);
+    expect(r.json().error).toMatch(/toujours active/);
+  });
+
+  it('sans la dépendance, la route se déclare indisponible', async () => {
+    const srv = app(OPS);
+    expect((await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) })).statusCode).toBe(503);
+  });
+
+  it('🔴 et elle reste derrière le jeton, comme tout /ops', async () => {
+    const srv = app(OPS, { revoquerCleModele: async () => true });
+    expect((await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}` })).statusCode).toBe(401);
+  });
+});

@@ -88,6 +88,18 @@ export class PgCleGatewayStore {
     return { cleId: row.cle_id, cle: this.dechiffrer(row.cle_chiffree), plafondMicroEur: Number(row.plafond_micro_eur) };
   }
 
+  /**
+   * Oublie la cle d'un espace.
+   *
+   * ⚠️ N'appelle PAS Vercel : la revocation la-bas est le geste de l'appelant, et elle doit passer AVANT
+   * celui-ci. Inverser l'ordre laisserait une cle qui facture et dont plus personne ne connait
+   * l'identifiant, puisque c'est cette ligne qui le porte.
+   */
+  async oublier(tenantId: string): Promise<boolean> {
+    const res = await this.pool.query('delete from agent_gateway_keys where tenant_id = $1', [tenantId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Note le plafond REELLEMENT pose chez Vercel, pour ne rappeler Vercel que quand il change. */
   async noterPlafond(tenantId: string, plafondMicroEur: number): Promise<void> {
     await this.pool.query(

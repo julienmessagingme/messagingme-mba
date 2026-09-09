@@ -66,6 +66,17 @@ export interface OpsRouteDeps {
   /** Recharge le solde. Rend le nouveau solde, ou `null` si l'espace est inconnu. Absente -> route non montée. */
   rechargerAgent?(tenantId: string, montantMicroEur: number, note: string): Promise<number | null>;
   /**
+   * RÉVOQUE la clé de modèle d'un espace : chez Vercel, puis chez nous (2026-09-09).
+   *
+   * 🔴 À FAIRE AVANT DE SUPPRIMER UN ESPACE, le jour où ça existera. `agent_gateway_keys.tenant_id` porte un
+   * `on delete cascade` : sans révocation préalable, notre ligne part avec l'espace et la clé survit chez
+   * Vercel avec son identifiant PERDU, donc facturable et irrévocable. C'est pour ça que ce geste est ici,
+   * sur la surface d'exploitation, et pas sur un écran client : ce n'est pas au client de nettoyer.
+   *
+   * Rend `false` quand l'espace n'avait pas de clé, ce qui est le cas le plus fréquent et n'est pas une erreur.
+   */
+  revoquerCleModele?(tenantId: string): Promise<boolean>;
+  /**
    * L'ATTENTE DU POOL DE CONNEXIONS (lot 7 du plan post-audit).
    *
    * Deux choses, et il faut les deux : l'état INSTANTANÉ du pool de CE process (l'API), et la COURBE agrégée
@@ -246,6 +257,30 @@ export function registerOps(
    * La NOTE est obligatoire : le jeton d'exploitation est partagé, donc il n'y a aucune identité d'opérateur
    * à enregistrer, et cette phrase est la seule trace de qui a rechargé et pourquoi.
    */
+  /**
+   * RÉVOQUER la clé de modèle d'un espace.
+   *
+   * ⚠️ `DELETE` et non `POST` : c'est une suppression, et la surface d'exploitation doit se lire comme ce
+   * qu'elle fait. Journalisé en `warn` comme le rechargement : le jeton est partagé, donc cette ligne est la
+   * seule trace qu'un geste irréversible a eu lieu.
+   */
+  app.delete('/ops/cle-modele/:tenantId', guard, async (req, reply) => {
+    if (!deps.revoquerCleModele) return reply.code(503).send({ error: 'revocation non disponible sur cette instance' });
+    const { tenantId } = req.params as { tenantId: string };
+    if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
+    try {
+      const revoquee = await deps.revoquerCleModele(tenantId);
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_revoque_cle_modele', tenantId, revoquee, at: new Date().toISOString() }));
+      return reply.code(200).send({ tenantId, revoquee });
+    } catch (err) {
+      // 4xx et jamais 5xx : Cloudflare remplacerait le corps, et l'opérateur a besoin de savoir que la clé
+      // est TOUJOURS là (donc qu'il faut réessayer) plutôt que de croire à un succès silencieux.
+      req.log.error({ err, tenantId }, 'ops_revocation_impossible');
+      return reply.code(422).send({ error: 'Vercel n’a pas confirmé la suppression ; la clé est toujours active, réessayez' });
+    }
+  });
+
   app.post('/ops/credits/:tenantId', guard, async (req, reply) => {
     if (!deps.rechargerAgent) return reply.code(503).send({ error: 'rechargement non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };

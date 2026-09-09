@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assurerCleGateway, remonterPlafondApresRecharge, CreditInsuffisantPourCle, type DepsProvisionCle } from '../src/agent/provisionner-cle';
+import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, CreditInsuffisantPourCle, type DepsProvisionCle } from '../src/agent/provisionner-cle';
 import type { CleGatewayEspace } from '../src/agent/cles-gateway.pg';
 import type { HttpResponse, HttpTransportPatch } from '../src/meta/http';
 import type { HttpTransportSuppression } from '../src/agent/llm/cles-gateway';
@@ -35,9 +35,11 @@ function fauxCles(initial?: CleGatewayEspace) {
   let etat = initial ?? null;
   const ecritures: Array<{ cleId: string; plafondMicroEur: number }> = [];
   const plafondsNotes: number[] = [];
+  const oublis: boolean[] = [];
   return {
     ecritures,
     plafondsNotes,
+    oublis,
     lire: async () => etat,
     enregistrer: async (_t: string, o: { cleId: string; cle: string; plafondMicroEur: number }) => {
       ecritures.push({ cleId: o.cleId, plafondMicroEur: o.plafondMicroEur });
@@ -45,6 +47,7 @@ function fauxCles(initial?: CleGatewayEspace) {
       return etat;
     },
     noterPlafond: async (_t: string, p: number) => { plafondsNotes.push(p); if (etat) etat.plafondMicroEur = p; },
+    oublier: async (_t: string) => { const y = etat !== null; etat = null; oublis.push(true); return y; },
   };
 }
 
@@ -213,5 +216,47 @@ describe('remonterPlafondApresRecharge', () => {
     // Et le plafond n'est PAS noté : sinon on croirait l'avoir posé, et on ne réessaierait jamais.
     expect(cles.plafondsNotes).toEqual([]);
     expect(vus).toHaveLength(1);
+  });
+});
+
+/**
+ * RÉVOQUER la clé d'un espace (2026-09-09, question de Julien : « s'il supprime cet agent IA, la clé est-elle
+ * bien désactivée ? »).
+ *
+ * 🔴 CE QUE CETTE FONCTION EMPÊCHE. `agent_gateway_keys.tenant_id` porte un `on delete cascade` : le jour où
+ * un ESPACE sera supprimé, notre ligne partira avec lui et la clé survivra chez Vercel avec son identifiant
+ * PERDU. Elle resterait facturable, et personne ne pourrait plus la révoquer.
+ */
+describe('revoquerCleGateway', () => {
+  it('🔴 supprime chez VERCEL d’abord, chez nous ensuite', async () => {
+    // L'ordre est l'inverse de l'intuition, et c'est le contrôle : commencer par notre ligne perdrait
+    // l'identifiant si Vercel échouait, ce qui est exactement la panne qu'on veut éviter.
+    const ordre: string[] = [];
+    const cles = fauxCles({ cleId: 'key_a', cle: 'vck_a', plafondMicroEur: 10 * MICRO });
+    const oublier = cles.oublier;
+    cles.oublier = async (t: string) => { ordre.push('oublie'); return oublier(t); };
+    const t = new FauxTransport([]);
+    const del = t.delete.bind(t);
+    t.delete = (u) => { ordre.push('vercel'); return del(u); };
+
+    expect(await revoquerCleGateway(deps({ cles, solde: 0, transport: t }), 't1')).toBe(true);
+    expect(ordre).toEqual(['vercel', 'oublie']);
+  });
+
+  it('🔴 Vercel refuse : la ligne est GARDÉE, seul moyen de réessayer', async () => {
+    // Oublier la ligne ici perdrait l'identifiant pour toujours, et la clé continuerait de facturer sans que
+    // personne puisse la retrouver.
+    const cles = fauxCles({ cleId: 'key_a', cle: 'vck_a', plafondMicroEur: 10 * MICRO });
+    const t = new FauxTransport([]);
+    t.delete = () => Promise.resolve({ status: 500 });
+    await expect(revoquerCleGateway(deps({ cles, solde: 0, transport: t }), 't1')).rejects.toThrow();
+    expect(cles.oublis).toHaveLength(0);
+  });
+
+  it('un espace SANS clé rend `false` sans rien appeler', async () => {
+    const cles = fauxCles();
+    const t = new FauxTransport([]);
+    expect(await revoquerCleGateway(deps({ cles, solde: 0, transport: t }), 't1')).toBe(false);
+    expect(t.appels).toHaveLength(0);
   });
 });

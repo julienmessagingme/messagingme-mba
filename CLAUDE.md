@@ -153,6 +153,19 @@ acheté. 🔴 Et le plafond d'équipe coupe **TOUS** les projets du Gateway d'un
 clients en production (Odalys, Hyundai, Gan Prévoyance, les deux Leadgen) : le calibrer bas n'est pas
 « prudent », c'est une panne.
 
+🔴 **RÉVOQUER LA CLÉ AVANT DE SUPPRIMER UN ESPACE, le jour où ça existera** (question de Julien du
+2026-09-09). `agent_gateway_keys.tenant_id` porte un `on delete cascade`, qui reste le bon choix (une
+contrainte qui BLOQUERAIT la suppression d'un espace serait pire), mais il a une conséquence que personne
+n'aura en tête le jour venu : notre ligne part avec l'espace, et **la clé survit chez Vercel avec son
+identifiant PERDU**, donc facturable et irrévocable pour toujours. Le geste est
+`DELETE /ops/cle-modele/:tenantId`, qui supprime chez Vercel **puis** chez nous et refuse d'oublier la ligne
+si Vercel n'a pas confirmé : échouer dans ce sens-là garde de quoi réessayer.
+⚠️ Aucun chemin ne supprime un espace aujourd'hui : c'est un piège ARMÉ, pas une fuite ouverte.
+
+⚠️ **Supprimer un AGENT, en revanche, ne touche à rien, et c'est correct** : la clé est par ESPACE. Un espace
+sans agent ne peut plus rien dépenser (les deux seuls chemins, tour et bac à sable, passent par une fiche
+d'agent), et s'il en recrée un, la clé existante est RÉUTILISÉE au lieu d'en ouvrir une seconde.
+
 ⚠️ **NON BLOQUANTE dans l'autre sens** : le code lit la clé en tolérant son absence (l'espace retombe sur la
 clé maison, comme un espace RCS sans clé propre). Elle passe AVANT le déploiement parce que la route de
 création d'agent l'écrit.

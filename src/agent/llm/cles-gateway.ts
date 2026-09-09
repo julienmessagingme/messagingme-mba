@@ -49,7 +49,7 @@ const creationSchema = z.object({
 });
 
 export class CleGatewayError extends Error {
-  constructor(readonly operation: 'creation' | 'plafond', readonly status: number | null, detail: string) {
+  constructor(readonly operation: 'creation' | 'plafond' | 'revocation', readonly status: number | null, detail: string) {
     // ⚠️ `detail` est un LIBELLE choisi ici, jamais le corps de la reponse : celui d'une creation reussie
     // porte le secret, et ce message finit dans les journaux.
     super(`cle gateway : ${operation} impossible (${status ?? 'reseau'}) : ${detail}`);

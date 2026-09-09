@@ -29,6 +29,15 @@
 -- la cle maison, exactement comme un espace RCS sans cle propre). Elle passe AVANT le deploiement parce que
 -- la route de creation d agent l ecrit.
 
+-- 🔴 REVOQUER AVANT DE SUPPRIMER UN ESPACE (ajoute le 2026-09-09, question de Julien). Le `on delete
+-- cascade` ci-dessous est le bon choix (une contrainte qui BLOQUE la suppression d un espace serait pire),
+-- mais il a une consequence qu il faut ecrire ici parce que personne n y pensera le jour venu : notre ligne
+-- part avec l espace, et la cle SURVIT chez Vercel avec son identifiant PERDU. Elle reste facturable et plus
+-- personne ne peut la revoquer.
+-- Le geste existe : `DELETE /ops/cle-modele/:tenantId`, qui supprime chez Vercel PUIS chez nous, et refuse
+-- d oublier la ligne si Vercel n a pas confirme. Il passe AVANT toute suppression d espace.
+-- ⚠️ Aucun chemin ne supprime un espace aujourd hui : c est un piege arme, pas une fuite ouverte.
+
 create table if not exists agent_gateway_keys (
   tenant_id uuid primary key references tenants(id) on delete cascade,
   -- Identifiant Vercel (`key_...`), en clair : sert a piloter le plafond et a revoquer.

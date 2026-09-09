@@ -30,7 +30,7 @@ export class CreditInsuffisantPourCle extends Error {
 }
 
 export interface DepsProvisionCle {
-  cles: Pick<PgCleGatewayStore, 'lire' | 'enregistrer' | 'noterPlafond'>;
+  cles: Pick<PgCleGatewayStore, 'lire' | 'enregistrer' | 'noterPlafond' | 'oublier'>;
   /** Le solde PREPAYE de l'espace, en micro-euros. C'est lui qui devient le plafond. */
   solde(tenantId: string): Promise<number>;
   /** Comment nommer la cle dans le tableau de bord Vercel. */
@@ -136,6 +136,33 @@ export async function remonterPlafondApresRecharge(
     return false;
   }
   await deps.cles.noterPlafond(tenantId, cible);
+  return true;
+}
+
+/**
+ * REVOQUER la cle d'un espace : chez Vercel, PUIS chez nous (2026-09-09, question de Julien).
+ *
+ * 🔴 POURQUOI CETTE FONCTION EXISTE, ET CE QU'ELLE EMPECHE. `agent_gateway_keys.tenant_id` porte un
+ * `on delete cascade` : le jour ou un ESPACE sera supprime, notre ligne partira avec lui et la cle survivra
+ * chez Vercel avec son identifiant PERDU. Plus personne ne pourrait la revoquer, jamais, et elle resterait
+ * facturable. Aucun chemin ne supprime un espace aujourd'hui, mais le cascade arme le piege pour le jour ou
+ * ca existera, et ce jour-la personne ne pensera a la cle.
+ *
+ * 🔴 L'ORDRE EST LE CONTROLE, ET IL EST L'INVERSE DE L'INTUITION. On supprime chez VERCEL d'abord, chez nous
+ * ensuite. Commencer par notre ligne perdrait l'identifiant si l'appel a Vercel echouait, ce qui est
+ * exactement la panne qu'on veut eviter. En echouant dans ce sens-ci, on garde de quoi reessayer.
+ *
+ * Rend `false` quand l'espace n'avait pas de cle : ce n'est pas une erreur, c'est le cas le plus frequent.
+ */
+export async function revoquerCleGateway(deps: DepsProvisionCle, tenantId: string): Promise<boolean> {
+  const cle = await deps.cles.lire(tenantId);
+  if (!cle) return false;
+  const supprimee = await supprimerCleGateway(deps.transport, {
+    jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: cle.cleId,
+  });
+  // ⚠️ On n'oublie la ligne QUE si Vercel a confirme. Sinon on garde l'identifiant, seul moyen de reessayer.
+  if (!supprimee) throw new CleGatewayError('revocation', null, 'Vercel n a pas confirme la suppression');
+  await deps.cles.oublier(tenantId);
   return true;
 }
 

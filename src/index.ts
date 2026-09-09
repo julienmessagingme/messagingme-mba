@@ -104,7 +104,7 @@ import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { transcrireMessage } from './inbox/transcrire';
-import { assurerCleGateway, remonterPlafondApresRecharge, type DepsProvisionCle } from './agent/provisionner-cle';
+import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
@@ -1577,6 +1577,9 @@ async function main(): Promise<void> {
           mouvements: await credits.mouvements(tenantId, 50),
         };
       },
+      // ⚠️ Le jour où un espace se supprimera, CECI passe AVANT : sinon le `on delete cascade` emporte notre
+      // ligne et la clé survit chez Vercel, identifiant perdu, donc facturable et irrévocable.
+      ...(provisionCle ? { revoquerCleModele: (tenantId: string) => revoquerCleGateway(provisionCle, tenantId) } : {}),
       rechargerAgent: async (tenantId, montant, note) => {
         if ((await opsStore.getTenantName(tenantId)) === null) return null;
         const solde = await credits.crediter(tenantId, montant, note);
