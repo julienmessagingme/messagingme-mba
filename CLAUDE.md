@@ -79,8 +79,23 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0124**, le 2026-09-09 (`agent_gateway_keys` : une clé AI Gateway par espace,
-provisionnée chez Vercel à la création du premier agent). **Prochaine libre = 0125.**
+**Écrite, PAS ENCORE APPLIQUÉE : 0125** (`conversation_messages.media_id`, `.media_mime`, `.transcription`,
+`.transcription_modele` : garder de quoi RETROUVER un média entrant, et ce qu'on en a lu).
+**Prochaine libre = 0126.**
+
+🔴 **L'IDENTIFIANT DU MÉDIA ÉTAIT JETÉ À LA PORTE, et c'est le vrai sujet de 0125.** Meta ne transmet pas le
+fichier dans le webhook, il transmet un identifiant avec lequel on va chercher une URL de téléchargement.
+`contentOf` n'en gardait rien : un vocal se réduisait au libellé `[audio]` et devenait **inatteignable pour
+toujours**. Aucun correctif ultérieur ne rattrape ça, et Meta ne garde les médias que **30 jours** : c'est
+pourquoi cette migration passe AVANT que quoi que ce soit sache transcrire.
+
+⚠️ **`body` NE CHANGE PAS** : il garde la légende, sinon `[audio]`. Tout ce qui le lit (aperçu de l'Inbox,
+historique de l'agent, analyse) continue à l'identique, et la transcription vit dans SA colonne. Même règle
+qu'en 0123 : la lecture d'un modèle n'est pas ce que le client a écrit, et un opérateur qui reprend une
+conversation menée par l'IA doit pouvoir écouter ce qui a réellement été dit.
+
+Avant elle : **0124**, le 2026-09-09 (`agent_gateway_keys` : une clé AI Gateway par espace,
+provisionnée chez Vercel à la création du premier agent).
 
 Vérifiée EN BASE après coup, comme 0120 à 0123 : `information_schema` pour les six colonnes,
 `pg_constraint` pour la clé PRIMAIRE sur `tenant_id` (c'est elle qui rend le provisionnement IDEMPOTENT sans

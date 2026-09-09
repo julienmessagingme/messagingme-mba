@@ -99,6 +99,42 @@ describe('extractInbound', () => {
     expect(r[0]).toMatchObject({ type: 'reaction', body: '👍', buttonPayload: 'wamid.orig' });
   });
 
+  /**
+   * L'IDENTIFIANT DU MÉDIA (2026-09-09, migration 0125).
+   *
+   * 🔴 CE QUI N'EST PAS CAPTÉ ICI EST PERDU POUR TOUJOURS, et c'est ce qui rend ces cas différents des
+   * autres de ce fichier. Meta ne transmet pas le fichier dans le webhook : il transmet un identifiant, avec
+   * lequel on ira chercher une URL de téléchargement. Avant ce lot, `contentOf` n'en gardait rien, donc tous
+   * les vocaux reçus étaient définitivement inatteignables. Meta ne conserve les fichiers que 30 jours : un
+   * défaut ici ne se rattrape par aucun correctif ultérieur.
+   */
+  it('🔴 un vocal porte son identifiant de média ET son mime', () => {
+    const r = extractInbound(payload([{ id: 'wamid.v', from: '33611', type: 'audio', audio: { id: 'media-42', mime_type: 'audio/ogg; codecs=opus', voice: true } }]));
+    expect(r[0]).toMatchObject({ type: 'audio', body: '[audio]', media: { id: 'media-42', mime: 'audio/ogg; codecs=opus' } });
+  });
+
+  it('🔴 `body` ne change PAS : le média voyage À CÔTÉ', () => {
+    // La garde qui protège tout l'existant : l'aperçu de l'Inbox, l'historique de l'agent et l'analyse
+    // lisent `body`. Y mettre l'identifiant du média, ou le vider, les casserait tous en silence.
+    const r = extractInbound(payload([{ id: 'wamid.v2', from: '33611', type: 'audio', audio: { id: 'm1' } }]));
+    expect(r[0]!.body).toBe('[audio]');
+    const avecLegende = extractInbound(payload([{ id: 'wamid.v3', from: '33611', type: 'image', image: { id: 'm2', caption: 'Ma photo' } }]));
+    expect(avecLegende[0]!.body).toBe('Ma photo');
+    expect(avecLegende[0]!.media).toEqual({ id: 'm2', mime: null });
+  });
+
+  it('un média SANS identifiant ne pose pas de `media` vide', () => {
+    // Un objet `media` présent mais à l'identifiant vide ferait croire en aval qu'il y a quelque chose à
+    // télécharger, et ferait échouer un appel à Meta pour rien.
+    const r = extractInbound(payload([{ id: 'wamid.v4', from: '33611', type: 'audio', audio: {} }]));
+    expect(r[0]!.media).toBeUndefined();
+  });
+
+  it('un message TEXTE n’a pas de média', () => {
+    const r = extractInbound(payload([{ id: 'wamid.t', from: '33611', type: 'text', text: { body: 'coucou' } }]));
+    expect(r[0]!.media).toBeUndefined();
+  });
+
   it('image avec légende -> légende ; sans légende -> [image]', () => {
     const withCap = extractInbound(payload([{ id: 'wamid.8', from: '33611', type: 'image', image: { caption: 'Ma photo' } }]));
     expect(withCap[0]).toMatchObject({ type: 'image', body: 'Ma photo' });

@@ -313,10 +313,13 @@ export class PgInboxStore implements InboxStore {
     // `true` : un message du CONTACT désarchive. C'est le seul chemin qui le fait.
     const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true);
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id, channel)
-       values ($1, 'in', $2, $3, $4, $5, $6)
+      // ⚠️ `media_id` et `media_mime` sont ecrits ICI ET NULLE PART AILLEURS (migration 0125) : c est le seul
+      // instant ou le corps du webhook est encore sous la main. Un media non capte a l insertion est perdu,
+      // aucun chemin en aval ne peut le retrouver.
+      `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id, channel, media_id, media_mime)
+       values ($1, 'in', $2, $3, $4, $5, $6, $7, $8)
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
-      [conversationId, m.type, m.body, m.buttonPayload, m.messageId, channel],
+      [conversationId, m.type, m.body, m.buttonPayload, m.messageId, channel, m.media?.id ?? null, m.media?.mime ?? null],
     );
   }
 

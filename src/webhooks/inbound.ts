@@ -22,6 +22,18 @@ export interface InboundMessage {
   field: string | null;
   /** Publicité Click-to-WhatsApp à l'origine du message. Absent sur un message ordinaire. */
   referral?: InboundReferral;
+  /**
+   * De quoi RETROUVER le fichier d'un message média (2026-09-09).
+   *
+   * 🔴 Meta ne transmet PAS le fichier dans le webhook, seulement un identifiant avec lequel on va chercher
+   * une URL de téléchargement. Ne pas le capter ICI, c'est perdre le média pour toujours : rien en aval ne
+   * peut le rattraper, et Meta ne garde les fichiers que 30 jours. C'est exactement ce qui se passait avant
+   * cette ligne, où un vocal se réduisait au libellé `[audio]`.
+   *
+   * `mime` vient du même corps et est EXIGÉ par l'API de transcription : le redemander plus tard ferait
+   * dépendre une transcription d'un appel de plus qui peut échouer.
+   */
+  media?: { id: string; mime: string | null };
 }
 
 /**
@@ -79,8 +91,14 @@ function str(v: unknown): string | null {
   return typeof v === 'string' && v !== '' ? v : null;
 }
 
-/** Corps + payload de bouton selon le type de message entrant. */
-function contentOf(msg: Record<string, unknown>): { body: string | null; buttonPayload: string | null } {
+/**
+ * Corps, payload de bouton, et pour un MÉDIA de quoi le retrouver, selon le type de message entrant.
+ *
+ * ⚠️ Le média est rendu SÉPARÉMENT de `body`, jamais dedans : `body` est lu par l'aperçu de l'Inbox,
+ * l'historique de l'agent et l'analyse, et il garde exactement ce qu'il portait avant (la légende, sinon un
+ * libellé de type).
+ */
+function contentOf(msg: Record<string, unknown>): { body: string | null; buttonPayload: string | null; media?: { id: string; mime: string | null } } {
   const type = str(msg['type']) ?? '';
   if (type === 'text') return { body: str(asRecord(msg['text'])['body']), buttonPayload: null };
   if (type === 'button') {
@@ -109,9 +127,18 @@ function contentOf(msg: Record<string, unknown>): { body: string | null; buttonP
     const r = asRecord(msg['reaction']);
     return { body: str(r['emoji']), buttonPayload: str(r['message_id']) };
   }
-  // Médias : garder la légende si présente, sinon un libellé de type (aperçu non vide).
+  // Médias : garder la légende si présente, sinon un libellé de type (aperçu non vide), PLUS l'identifiant
+  // du fichier chez Meta, qui est la seule chose permettant d'aller le chercher ensuite.
   if (type === 'image' || type === 'video' || type === 'document' || type === 'audio' || type === 'sticker') {
-    return { body: str(asRecord(msg[type])['caption']) ?? `[${type}]`, buttonPayload: null };
+    const m = asRecord(msg[type]);
+    const id = str(m['id']);
+    // ⚠️ `body` NE CHANGE PAS : il garde la légende, sinon le libellé de type. Tout ce qui le lit aujourd'hui
+    // (aperçu de l'Inbox, historique de l'agent, analyse) continue à l'identique. Le média voyage À CÔTÉ.
+    return {
+      body: str(m['caption']) ?? `[${type}]`,
+      buttonPayload: null,
+      ...(id ? { media: { id, mime: str(m['mime_type']) } } : {}),
+    };
   }
   if (type === 'location') {
     const loc = asRecord(msg['location']);
@@ -136,7 +163,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
         const messageId = str(msg['id']);
         const waId = str(msg['from']) ?? fallbackWaId;
         if (!messageId || !waId) continue;
-        const { body, buttonPayload } = contentOf(msg);
+        const { body, buttonPayload, media } = contentOf(msg);
         out.push({
           phoneNumberId,
           waId,
@@ -147,6 +174,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
           profileName,
           field,
           ...(referralOf(msg) ? { referral: referralOf(msg)! } : {}),
+          ...(media ? { media } : {}),
         });
       }
     }
