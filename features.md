@@ -1684,6 +1684,16 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - ✅ **Trois plafonds de conversation** en plus du solde, réglés sur la fiche (tours, appels d'outils, budget).
   Le premier atteint fait sortir le parcours par 🛑 « Plafond atteint », qui est une sortie à brancher : c'est
   un garde-fou, pas un réglage de confort.
+- ✅ **CHAQUE ESPACE A SA PROPRE CLÉ DE MODÈLE** (2026-09-09), créée automatiquement au moment où le client
+  crée son PREMIER agent, et plafonnée au crédit qu'il a acheté. Ce qui change côté client : **sans crédit,
+  on ne peut plus créer d'agent du tout**, avec un message qui dit de recharger. Ce n'est pas une sévérité
+  gratuite : le bac à sable appelle vraiment le modèle, donc un espace sans crédit mettrait son agent au
+  point à nos frais.
+  ⚠️ **Le client ne choisit pas son plafond en le tapant**, il le choisit **en achetant du crédit**. Un
+  plafond saisi librement ne protégerait personne. Il monte à chaque rechargement, et ne redescend jamais
+  tout seul.
+  ⚠️ **Un espace créé AVANT ce lot n'a pas de clé propre** et continue de fonctionner sur la clé maison : sa
+  dépense n'est simplement pas séparée des autres. Il en aura une au prochain agent qu'il créera.
 
 ### La mention d'IA (obligation légale)
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { eurosDepuisMicro, microEurosDepuisDollars } from '../src/agent/devise';
+import { eurosDepuisMicro, microEurosDepuisDollars, dollarsDepuisMicroEuros, PLAFOND_GATEWAY_MIN_DOLLARS } from '../src/agent/devise';
 import { eurosDepuisMicro as eurosFront } from '../web/lib/agent-solde';
 
 /**
@@ -56,5 +56,46 @@ describe('eurosDepuisMicro', () => {
     for (const micro of [0, 1, 9200, 500_000, 1_234_567, 30_000_000]) {
       expect(eurosFront(micro), String(micro)).toBe(eurosDepuisMicro(micro));
     }
+  });
+});
+
+/**
+ * LE CHEMIN INVERSE, pour le plafond d'une clé du Gateway (2026-09-09).
+ *
+ * 🔴 LE SENS DE L'ARRONDI N'EST PAS UN DÉTAIL. Ce plafond borne ce qu'un client peut dépenser avec le crédit
+ * qu'il a ACHETÉ. Vers le haut, il dépense un peu plus qu'il n'a payé, à chaque rechargement, pour toujours.
+ * Vers le bas, il est coupé une fraction de dollar trop tôt, ce que notre propre décompte a de toute façon
+ * déjà fait avant lui.
+ */
+describe('Micro-euros vers le plafond en dollars', () => {
+  it('🔴 arrondit VERS LE BAS, jamais au plus proche', () => {
+    // 10 € au taux de 0,92 valent 10,86 $. Un arrondi au plus proche donnerait 11.
+    expect(dollarsDepuisMicroEuros(10_000_000, 0.92)).toBe(10);
+    // 30 € valent 32,60 $ : au plus proche ce serait 33.
+    expect(dollarsDepuisMicroEuros(30_000_000, 0.92)).toBe(32);
+  });
+
+  it('🔴 sous le minimum de Vercel, rend `null` plutôt que de gonfler à 1', () => {
+    // Poser 1 $ pour 20 centimes donnerait au client cinq fois ce qu'il a payé, et surtout le plafond
+    // cesserait de dire la vérité. L'appelant traite ce `null` comme « pas assez de crédit », qui est le fait.
+    expect(dollarsDepuisMicroEuros(200_000, 0.92)).toBeNull();
+    expect(dollarsDepuisMicroEuros(0, 0.92)).toBeNull();
+    expect(dollarsDepuisMicroEuros(-5, 0.92)).toBeNull();
+    // Juste au-dessus du minimum, en revanche, ça passe.
+    expect(dollarsDepuisMicroEuros(1_000_000, 0.92)).toBe(PLAFOND_GATEWAY_MIN_DOLLARS);
+  });
+
+  it('🔴 un taux aberrant retombe sur 1, jamais sur une division par zéro', () => {
+    // Un plafond infini serait exactement la panne que ce plafond existe pour empêcher.
+    for (const taux of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(dollarsDepuisMicroEuros(10_000_000, taux), String(taux)).toBe(10);
+    }
+  });
+
+  it('fait l’aller-retour avec la conversion du coût, à l’arrondi près', () => {
+    // Les deux fonctions vivent dans le même fichier précisément pour que le taux ne puisse pas diverger.
+    const dollars = 25;
+    const micro = microEurosDepuisDollars(dollars, 0.92);
+    expect(dollarsDepuisMicroEuros(micro, 0.92)).toBe(dollars);
   });
 });

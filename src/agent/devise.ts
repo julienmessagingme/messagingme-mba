@@ -35,3 +35,28 @@ export function microEurosDepuisDollars(coutDollars: number, tauxEurParDollar: n
 export function eurosDepuisMicro(microEur: number): number {
   return Math.round(microEur / 10_000) / 100;
 }
+
+/**
+ * Le chemin INVERSE : un montant de nos micro-euros vers des dollars ENTIERS, pour le plafond d'une clé du
+ * Gateway (2026-09-09). Vercel raisonne en dollars et n'accepte pas moins de 1.
+ *
+ * 🔴 ON ARRONDIT VERS LE BAS, ET LE SENS N'EST PAS INTERCHANGEABLE. Ce plafond borne ce qu'un client peut
+ * dépenser avec le crédit qu'il a ACHETÉ ; arrondir vers le haut lui laisserait dépenser un peu plus que ce
+ * qu'il a payé, à chaque rechargement, indéfiniment. Vers le bas, il est coupé une fraction de dollar trop
+ * tôt, ce que notre propre décompte du solde a de toute façon déjà fait avant.
+ *
+ * ⚠️ Rend `null` sous le minimum de Vercel plutôt que de poser 1 : un plafond gonflé à 1 $ pour un crédit de
+ * 0,20 € donnerait au client cinq fois ce qu'il a payé, et surtout il MENTIRAIT sur ce que le plafond
+ * garantit. L'appelant traite ce `null` comme « pas assez de crédit », qui est la vérité.
+ *
+ * ⚠️ Même défense du taux que ci-dessus, mais dans l'autre sens : un taux aberrant retombe sur 1, jamais sur
+ * une division par zéro qui rendrait un plafond infini.
+ */
+export const PLAFOND_GATEWAY_MIN_DOLLARS = 1;
+
+export function dollarsDepuisMicroEuros(microEur: number, tauxEurParDollar: number): number | null {
+  if (!Number.isFinite(microEur) || microEur <= 0) return null;
+  const taux = Number.isFinite(tauxEurParDollar) && tauxEurParDollar > 0 ? tauxEurParDollar : 1;
+  const dollars = Math.floor(microEur / MICRO / taux);
+  return dollars >= PLAFOND_GATEWAY_MIN_DOLLARS ? dollars : null;
+}

@@ -67,7 +67,6 @@ import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './lib/page-distante';
 import { signSession } from './auth/token';
@@ -103,6 +102,9 @@ import { creerRechercheSemantique } from './agent/recherche';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
+import { PgCleGatewayStore } from './agent/cles-gateway.pg';
+import { assurerCleGateway, remonterPlafondApresRecharge, type DepsProvisionCle } from './agent/provisionner-cle';
+import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
@@ -193,8 +195,44 @@ async function main(): Promise<void> {
   const agentSessions = new PgAgentSessionStore(pool);
   const agentSources = new PgSourceStore(pool);
   const agentRequetes = new PgRequeteStore(pool);
+  /**
+   * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
+   *
+   * 🔴 LE CHIFFREMENT EST INJECTE, il n'est pas relu dans le store : meme contrat que
+   * `PgChannelsMeConnectionStore`. Un store qui irait chercher la cle de chiffrement tout seul serait un
+   * second endroit ou la lire, donc un second endroit ou l'oublier.
+   */
+  const clesGateway = new PgCleGatewayStore(
+    pool,
+    (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
+    (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
+  );
+  /**
+   * ⚠️ `null` quand le jeton Vercel n'est pas configure : le provisionnement est alors ETEINT et la creation
+   * d'agent se comporte comme avant. C'est ce qui permet de deployer ce lot avant d'avoir pose le jeton.
+   */
+  const provisionCle: DepsProvisionCle | null = config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== ''
+    ? {
+      cles: clesGateway,
+      solde: (tenant) => credits.solde(tenant),
+      nomEspace: async (tenant) => {
+        const r = await pool.query<{ name: string }>('select name from tenants where id = $1', [tenant]);
+        return r.rows[0]?.name ?? null;
+      },
+      transport: new FetchTransport(),
+      jetonCompte: config.VERCEL_API_TOKEN,
+      teamId: config.VERCEL_TEAM_ID,
+      cleGatewayMaison: config.AI_GATEWAY_API_KEY,
+      tauxEurParDollar: config.EUR_PER_USD,
+    }
+    : null;
+
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
-  const gateway = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
+  // ⚠️ Le 3e argument est le resolveur de cle PAR ESPACE : sans lui, tous les appels partiraient sur la cle
+  // maison et aucune depense ne serait attribuee, ce qui est exactement ce que ce lot vient corriger.
+  const gateway = config.AI_GATEWAY_API_KEY
+    ? new GatewayChatClient(config.AI_GATEWAY_API_KEY, undefined, async (tenant) => (await clesGateway.lire(tenant))?.cle ?? null)
+    : null;
   const automationStore = new PgAutomationStore(pool);
   // Chaine WhatsApp (Channels Me). La cle de chiffrement est INJECTEE au store (contrat du sous-systeme),
   // elle n'est pas relue depuis la config a l'interieur : les deux secrets sont chiffres la, jamais plus haut.
@@ -846,6 +884,8 @@ async function main(): Promise<void> {
       modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
       // LECTURE seule : le client voit ce qui lui reste, il ne se recharge pas lui-meme (cf. /ops).
       soldeAgent: (tenant) => credits.solde(tenant),
+      // Absente quand le provisionnement est eteint : la creation d'agent se comporte alors comme avant.
+      ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
       consommationAgent: (tenant, agentId, jours) => agentSessions.consommation!(tenant, agentId, jours),
       // Le blocage dur avant activation : il lit la fiche, la connaissance, et les outils actifs AVEC leurs
       // handlers (le COMPTE seul ne peut pas dire QUEL outil manque, et c'est l'absence d'un outil PRECIS,
@@ -1499,7 +1539,18 @@ async function main(): Promise<void> {
       },
       rechargerAgent: async (tenantId, montant, note) => {
         if ((await opsStore.getTenantName(tenantId)) === null) return null;
-        return credits.crediter(tenantId, montant, note);
+        const solde = await credits.crediter(tenantId, montant, note);
+        // 🔴 LE PLAFOND DE LA CLE SUIT LE RECHARGEMENT, sinon le client paie et reste bloque : son credit
+        // monte chez nous, et le Gateway continue de le couper au plafond d avant. C est le seul endroit ou
+        // du credit est AJOUTE, donc le seul endroit ou ce rattrapage a lieu d etre.
+        // ⚠️ Ne leve pas et n annule rien : le rechargement est deja ecrit, et un tiers indisponible ne doit
+        // pas faire echouer un paiement. Le plafond rattrapera au mouvement suivant.
+        if (provisionCle) {
+          await remonterPlafondApresRecharge(provisionCle, tenantId, montant, (msg, err) => {
+            app.log.error({ err, tenantId }, msg);
+          });
+        }
+        return solde;
       },
       /**
        * Session d'OBSERVATION d'un espace client : un jeton de session en LECTURE SEULE.

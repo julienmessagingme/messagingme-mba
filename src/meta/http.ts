@@ -17,6 +17,19 @@ export interface HttpTransport {
 }
 
 /**
+ * Le meme transport, plus `PATCH`.
+ *
+ * 🔴 UNE INTERFACE SÉPARÉE, ET PAS UN `patch` AJOUTÉ CI-DESSUS. Huit implémentations de `HttpTransport`
+ * vivent dans ce dépôt, presque toutes des faux de test : y ajouter une méthode obligatoire les casserait
+ * toutes, et l'ajouter en OPTIONNEL serait pire, un transport sans `patch` échouerait alors à l'exécution
+ * sans que rien ne l'ait signalé à la compilation. Seul le module qui en a besoin (le plafond d'une clé du
+ * Gateway) demande ce type, donc seul son faux doit le fournir, et le compilateur l'exige.
+ */
+export interface HttpTransportPatch extends HttpTransport {
+  patch(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse>;
+}
+
+/**
  * Délai maximum d'un appel sortant quand l'appelant n'en impose pas.
  *
  * 30 s pour un fournisseur d'API ordinaire (Meta, HubSpot) : leurs réponses se comptent en centaines de
@@ -53,7 +66,7 @@ export function estAbandon(err: unknown): boolean {
   return name === 'TimeoutError' || name === 'AbortError';
 }
 
-export class FetchTransport implements HttpTransport {
+export class FetchTransport implements HttpTransportPatch {
   /**
    * ⚠️ Le délai est PAR INSTANCE, pas global : un client de modèle se construit avec
    * `new FetchTransport(HTTP_TIMEOUT_MODELE_MS)`. Un plafond unique serait forcément faux pour l'un des deux
@@ -61,7 +74,20 @@ export class FetchTransport implements HttpTransport {
    */
   constructor(private readonly timeoutMs: number = HTTP_TIMEOUT_DEFAUT_MS) {}
 
-  async post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
+  post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
+    return this.envoyer('POST', url, body, headers, opts);
+  }
+
+  /**
+   * ⚠️ MÊME corps que `post`, verbe différent : tout ce que le commentaire ci-dessous dit du plafond, de
+   * l'échéance de l'appelant et du corps coupé vaut identiquement. Les séparer en deux méthodes complètes
+   * aurait fait deux endroits où corriger le prochain défaut de délai, et un seul l'aurait été.
+   */
+  patch(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
+    return this.envoyer('PATCH', url, body, headers, opts);
+  }
+
+  private async envoyer(methode: 'POST' | 'PATCH', url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
     // 🔴 Sans plafond, un fournisseur qui accepte la connexion et ne répond jamais immobilise le job (donc le
     // slot de worker) jusqu'au défaut d'undici, de l'ordre de cinq minutes. Sur la file `webhook`, sérialisée,
     // c'est l'entrant de TOUS les clients qui s'arrête derrière un seul appel pendu.
@@ -74,7 +100,7 @@ export class FetchTransport implements HttpTransport {
     let res: Response;
     try {
       res = await fetch(url, {
-        method: 'POST',
+        method: methode,
         headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(body),
         signal,

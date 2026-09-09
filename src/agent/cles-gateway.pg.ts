@@ -1,0 +1,85 @@
+import type { Pool } from 'pg';
+
+/**
+ * La cle AI Gateway d'un espace : lecture, ecriture, et deplacement de son plafond (migration 0124).
+ *
+ * 🔴 LE SECRET ENTRE ET SORT CHIFFRE DE CE MODULE. Le chiffrement est INJECTE (`chiffrer` / `dechiffrer`),
+ * il n'est pas relu depuis la configuration ici : c'est le contrat que `PgChannelsMeConnectionStore` tient
+ * deja pour ses deux secrets. Un store qui irait chercher `config.ENCRYPTION_KEY` tout seul serait un
+ * second endroit ou la cle de chiffrement est lue, donc un second endroit ou l'oublier.
+ *
+ * ⚠️ AUCUNE de ces methodes ne journalise le secret, et aucune ne le rend au client : la seule sortie est
+ * `cleDe`, consommee par le client de modele, jamais par une route.
+ */
+export interface CleGatewayEspace {
+  cleId: string;
+  /** Le secret EN CLAIR. Ne jamais le mettre dans un journal ni dans une reponse HTTP. */
+  cle: string;
+  plafondMicroEur: number;
+}
+
+export class PgCleGatewayStore {
+  constructor(
+    private readonly pool: Pool,
+    private readonly chiffrer: (clair: string) => string,
+    private readonly dechiffrer: (chiffre: string) => string,
+  ) {}
+
+  /**
+   * La cle de cet espace, dechiffree, ou `null` s'il n'en a pas.
+   *
+   * ⚠️ `null` n'est PAS une erreur : un espace sans agent n'a pas de cle, et un espace d'avant ce lot non
+   * plus. L'appelant retombe alors sur la cle maison, exactement comme un espace RCS sans cle propre.
+   */
+  async lire(tenantId: string): Promise<CleGatewayEspace | null> {
+    const res = await this.pool.query<{ cle_id: string; cle_chiffree: string; plafond_micro_eur: string }>(
+      'select cle_id, cle_chiffree, plafond_micro_eur from agent_gateway_keys where tenant_id = $1',
+      [tenantId],
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    try {
+      return {
+        cleId: row.cle_id,
+        cle: this.dechiffrer(row.cle_chiffree),
+        plafondMicroEur: Number(row.plafond_micro_eur),
+      };
+    } catch {
+      // 🔴 Dechiffrement impossible (cle de chiffrement changee, ligne corrompue) : on rend `null`, donc on
+      // retombe sur la cle maison, plutot que de faire echouer TOUS les tours d'agent de cet espace. La
+      // depense cesse d'etre attribuee, ce qui est mauvais ; l'agent muet chez un client en production le
+      // serait davantage. ⚠️ Ce cas est SILENCIEUX par construction : c'est pourquoi la route de creation,
+      // elle, refuse plutot que de retomber.
+      return null;
+    }
+  }
+
+  /**
+   * Enregistre la cle d'un espace. Le conflit est un SUCCES : il veut dire qu'une autre creation d'agent a
+   * gagne la course, et la cle qu'elle a posee fait autorite.
+   *
+   * 🔴 REND CE QUI EST EN BASE APRES COUP, pas ce qu'on voulait ecrire. C'est ce qui rend le provisionnement
+   * sur : le perdant de la course jette sa propre cle (qui restera orpheline chez Vercel, bornee par le
+   * plafond d'equipe) et repart avec celle du gagnant, au lieu de deux espaces convaincus d'avoir chacun la
+   * leur.
+   */
+  async enregistrer(tenantId: string, o: { cleId: string; cle: string; plafondMicroEur: number }): Promise<CleGatewayEspace> {
+    const res = await this.pool.query<{ cle_id: string; cle_chiffree: string; plafond_micro_eur: string }>(
+      `insert into agent_gateway_keys (tenant_id, cle_id, cle_chiffree, plafond_micro_eur)
+       values ($1, $2, $3, $4)
+       on conflict (tenant_id) do update set updated_at = now()
+       returning cle_id, cle_chiffree, plafond_micro_eur`,
+      [tenantId, o.cleId, this.chiffrer(o.cle), Math.max(0, Math.round(o.plafondMicroEur))],
+    );
+    const row = res.rows[0]!;
+    return { cleId: row.cle_id, cle: this.dechiffrer(row.cle_chiffree), plafondMicroEur: Number(row.plafond_micro_eur) };
+  }
+
+  /** Note le plafond REELLEMENT pose chez Vercel, pour ne rappeler Vercel que quand il change. */
+  async noterPlafond(tenantId: string, plafondMicroEur: number): Promise<void> {
+    await this.pool.query(
+      'update agent_gateway_keys set plafond_micro_eur = $2, updated_at = now() where tenant_id = $1',
+      [tenantId, Math.max(0, Math.round(plafondMicroEur))],
+    );
+  }
+}

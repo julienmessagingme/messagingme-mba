@@ -49,7 +49,8 @@ export const MAX_ALLERS_RETOURS = 6;
 
 export interface GatewayBrainDeps {
   /** L'appel de modèle. Injecté : le cerveau se teste sans réseau. */
-  completer(input: { modele: string; messages: ChatMessage[]; outils?: OutilExpose[]; signal?: AbortSignal }): Promise<ReponseChat>;
+  /** ⚠️ `tenantId` decide QUELLE CLE paie l'appel (2026-09-09) : celle de l'espace, sinon la maison. */
+  completer(input: { tenantId: string; modele: string; messages: ChatMessage[]; outils?: OutilExpose[]; signal?: AbortSignal }): Promise<ReponseChat>;
   /** Tout ce que l'agent est : sa fiche, ses outils actifs, ses règles d'arrêt. `null` = agent introuvable. */
   contexte(tenantId: string, agentId: string): Promise<ContexteAgentComplet | null>;
   /** L'exécution d'outil, avec ses deps. La boucle ne les connaît pas, elle les passe. */
@@ -187,6 +188,7 @@ async function boucler(
 
   for (let allerRetour = 0; allerRetour < MAX_ALLERS_RETOURS; allerRetour += 1) {
     const reponse = await deps.completer({
+      tenantId: input.tenantId,
       modele: agent.modele,
       messages,
       ...(exposes.length > 0 ? { outils: exposes } : {}),

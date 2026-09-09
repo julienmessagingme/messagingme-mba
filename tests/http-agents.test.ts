@@ -4,6 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentsRouteDeps } from '../src/http/agents';
+import { CreditInsuffisantPourCle } from '../src/agent/provisionner-cle';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
@@ -48,9 +49,10 @@ const COMPLET: AgentComplet = {
 const ACTIFS: AgentResume[] = [{ id: AG1, label: 'Conseiller séjours', status: 'active', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }] }];
 const TOUTES: AgentResume[] = [...ACTIFS, { id: AG2, label: 'Brouillon', status: 'draft', sorties: [] }];
 
-function app() {
+function app(cleModele?: (tenant: string) => Promise<unknown>) {
   const cap = {
     listes: [] as string[],
+    ordre: [] as string[],
     crees: [] as Array<{ tenant: string; label: string; mention: string; modele: string }>,
     supprimes: [] as Array<{ tenant: string; id: string }>,
     patches: [] as Array<{ tenant: string; id: string; patch: PatchAgent }>,
@@ -60,6 +62,7 @@ function app() {
     listToutes: async (t) => { cap.listes.push(`toutes:${t}`); return TOUTES; },
     complet: async (_t, id) => (id === AG1 ? COMPLET : null),
     create: async (tenant, label, mention, modele) => {
+      cap.ordre.push('create');
       cap.crees.push({ tenant, label, mention, modele });
       if (label === 'pris') throw new LabelAgentDejaPris();
       return { ...COMPLET, label };
@@ -72,6 +75,7 @@ function app() {
     },
     remove: async (tenant, id) => { cap.supprimes.push({ tenant, id }); return id === AG1; },
     modeleParDefaut: 'modele-config',
+    ...(cleModele ? { assurerCleModele: async (t: string) => { cap.ordre.push('cle'); return cleModele(t); } } : {}),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agents: deps }) };
 }
@@ -134,6 +138,49 @@ describe('routes agents : création', () => {
   it('un label vide est refusé', async () => {
     const { srv } = app();
     expect((await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: '  ' } })).statusCode).toBe(400);
+  });
+
+  /**
+   * LA CLÉ DE MODÈLE DE L'ESPACE (2026-09-09, demande de Julien).
+   *
+   * 🔴 Le bac à sable appelle VRAIMENT le modèle : un agent né sans clé propre se mettrait au point sur
+   * notre argent, et sa dépense ne serait attribuée à personne. D'où le refus, choisi par Julien.
+   */
+  it('🔴 la clé est provisionnée AVANT l’agent, jamais après', async () => {
+    // L'ordre EST le contrôle : créer d'abord et provisionner ensuite laisserait, à chaque panne de Vercel,
+    // exactement l'agent sans clé que le refus existe pour empêcher.
+    const { cap, srv } = app(async () => ({ cleId: 'key_x' }));
+    const res = await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'A' } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.ordre).toEqual(['cle', 'create']);
+  });
+
+  it('🔴 provisionnement en échec -> 422 et AUCUN agent créé', async () => {
+    // 422 et non 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc le
+    // message se perdrait exactement quand il sert.
+    const { cap, srv } = app(async () => { throw new Error('vercel indisponible'); });
+    const res = await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'A' } });
+    expect(res.statusCode).toBe(422);
+    expect(cap.crees).toHaveLength(0);
+    expect(cap.ordre).toEqual(['cle']);
+  });
+
+  it('🔴 crédit insuffisant -> 422 qui dit de RECHARGER, pas « réessayez »', async () => {
+    // Les deux échecs se ressemblent et n'appellent pas la même action : l'un se résout en attendant, l'autre
+    // en payant. Un message unique enverrait la moitié des clients réessayer indéfiniment.
+    const { srv } = app(async () => { throw new CreditInsuffisantPourCle(0); });
+    const res = await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'A' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toMatch(/crédit|Rechargez/i);
+  });
+
+  it('🔴 dépendance ABSENTE : la création se comporte comme avant', async () => {
+    // La preuve inverse, et elle protège le déploiement : tant que le jeton Vercel n'est pas posé, ce lot ne
+    // doit rien changer. Sans ce cas, un refus inconditionnel passerait les trois tests ci-dessus.
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'A' } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.ordre).toEqual(['create']);
   });
 });
 

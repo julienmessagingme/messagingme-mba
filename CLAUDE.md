@@ -79,8 +79,33 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0123**, le 2026-09-09 (`conversations.signalee_le` et `.signalee_par` : signaler une
-conversation À LA MAIN, sans écraser le constat de l'analyse). **Prochaine libre = 0124.**
+**Écrite, PAS ENCORE APPLIQUÉE : 0124** (`agent_gateway_keys` : une clé AI Gateway par espace, provisionnée
+chez Vercel à la création du premier agent). **Prochaine libre = 0125.**
+
+🔴 **LE PLAFOND DE LA CLÉ EST LE CRÉDIT ACHETÉ, jamais un nombre que le client saisit** (tranché par Julien
+le 2026-09-09). La nuance décide de tout : un plafond que le client choisit ne protège personne, il suffit
+d'y taper 10 000 pour vider le pot commun ; un plafond égal à ce qu'il a payé est une garantie. Corollaire
+assumé : **pas de crédit, pas de clé, donc pas d'agent**, parce que le bac à sable appelle vraiment le
+modèle et qu'un client à zéro mettrait son agent au point sur notre argent.
+
+🔴 **DEUX APPELS VERCEL, DEUX HÔTES, DEUX AUTHENTIFICATIONS**, et c'est le piège du lot : créer une clé va
+sur `api.vercel.com/v1/api-keys?teamId=` avec le JETON DE COMPTE ; bouger son plafond va sur
+`ai-gateway.vercel.sh/v1/quotas?quotaEntityId=api_key_id_<id>` avec la CLÉ GATEWAY maison. Trois façons
+indépendantes de se tromper, aucune visible du compilateur, toutes découvertes en production au moment où un
+client crée son premier agent. Lues dans la documentation avant d'écrire une ligne, et figées par
+`tests/agent-cles-gateway.test.ts`.
+
+🔴 **`VERCEL_API_TOKEN` EST BIEN PLUS DANGEREUX QUE `AI_GATEWAY_API_KEY`** : la seconde ne sait que dépenser
+sous un plafond, le premier sait FABRIQUER des clés facturées à l'équipe. La parade ne vit pas dans le code,
+c'est le **plafond d'ÉQUIPE** posé chez Vercel (`vercel ai-gateway budgets set team --limit N`), à poser
+AVANT de renseigner la variable.
+
+⚠️ **NON BLOQUANTE dans l'autre sens** : le code lit la clé en tolérant son absence (l'espace retombe sur la
+clé maison, comme un espace RCS sans clé propre). Elle passe AVANT le déploiement parce que la route de
+création d'agent l'écrit.
+
+Avant elle : **0123**, le 2026-09-09 (`conversations.signalee_le` et `.signalee_par` : signaler une
+conversation À LA MAIN, sans écraser le constat de l'analyse).
 
 🔴 **UNE COLONNE À PART, ET PAS `conversation_analysis.abusive`.** Ce champ-là est un CONSTAT posé par un
 modèle, RECALCULÉ à chaque ré-analyse : un signalement humain écrit dedans disparaîtrait au passage suivant,

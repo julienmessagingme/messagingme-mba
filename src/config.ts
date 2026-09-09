@@ -411,6 +411,21 @@ export const schema = z.object({
    */
   AI_GATEWAY_API_KEY: z.string().default(''),
   /**
+   * Jeton d API Vercel autorise a CREER des cles AI Gateway, et l equipe sur laquelle les creer.
+   *
+   * 🔴 CE JETON EST BIEN PLUS DANGEREUX QUE `AI_GATEWAY_API_KEY`. Cette derniere ne sait que depenser sur un
+   * plafond ; celui-ci sait FABRIQUER des cles facturees a l equipe. Qui le vole peut en emettre autant
+   * qu il veut. La parade ne vit pas dans ce fichier : c est le plafond d EQUIPE pose chez Vercel, qui borne
+   * les degats quel que soit le nombre de cles. A poser avant de renseigner cette variable.
+   *
+   * Les deux vides -> le provisionnement est ETEINT, et la creation d agent se comporte comme avant (tout le
+   * monde sur la cle maison). Une fois allumee, la creation d un agent EXIGE une cle : c est le choix de
+   * Julien du 2026-09-09, parce que le bac a sable appelle vraiment le modele, donc un client sans cle
+   * mettrait son agent au point sur notre argent.
+   */
+  VERCEL_API_TOKEN: z.string().default(''),
+  VERCEL_TEAM_ID: z.string().default(''),
+  /**
    * Modele de l IA de CONSTRUCTION, a ne pas confondre avec celui d un agent. Celle-ci tourne rarement
    * (reglage et optimisation) et joue le role le plus dur : elle merite un modele plus fort que le runtime.
    * Vide -> repli sur LLM_MODEL.
@@ -622,6 +637,28 @@ export const schema = z.object({
       }
       if (c.AGENT_SETUP_MODEL === '') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['AGENT_SETUP_MODEL'], message: 'AGENT_SETUP_MODEL requis quand AI_GATEWAY_API_KEY est defini (identifiant du Gateway, ex. zai/glm-4.7)' });
+      }
+    }
+    /**
+     * 🔴 LE JETON ET L EQUIPE VONT PAR DEUX, et la moitie serait pire que rien. `POST /v1/api-keys` exige le
+     * `teamId` en parametre : avec le jeton seul, chaque provisionnement echouerait, et comme la creation
+     * d agent REFUSE quand elle echoue, plus aucun client ne pourrait creer d agent. Une panne totale du
+     * produit pour une variable oubliee. Refusee au chargement plutot que decouverte la-bas.
+     *
+     * ⚠️ La cle de CHIFFREMENT est exigee elle aussi : sans elle, la cle Gateway du client serait stockee en
+     * clair dans la base, ou bien le chiffrement echouerait a l ecriture. Les deux sont inacceptables, et
+     * c est le meme raisonnement que la garde d Embedded Signup juste plus bas.
+     */
+    const provisionnement = c.VERCEL_API_TOKEN !== '' || c.VERCEL_TEAM_ID !== '';
+    if (provisionnement) {
+      if (c.VERCEL_API_TOKEN === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['VERCEL_API_TOKEN'], message: 'VERCEL_API_TOKEN requis quand VERCEL_TEAM_ID est defini (les deux vont par paire)' });
+      }
+      if (c.VERCEL_TEAM_ID === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['VERCEL_TEAM_ID'], message: 'VERCEL_TEAM_ID requis quand VERCEL_API_TOKEN est defini (POST /v1/api-keys l exige en parametre)' });
+      }
+      if (!/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise pour chiffrer les cles Gateway des espaces' });
       }
     }
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).

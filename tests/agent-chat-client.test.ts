@@ -45,7 +45,7 @@ const ko = (status: number, json: unknown = { error: { message: 'boom' } }): Htt
 describe('GatewayChatClient (tâche 14)', () => {
   it('lit la réponse RÉELLE : texte, usage à la racine, coût sur le message', async () => {
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
-    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [{ role: 'user', content: 'salut' }] });
+    const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [{ role: 'user', content: 'salut' }] });
     expect(r.texte).toBe('ok');
     expect(r.usage.tokensIn).toBe(5);
     expect(r.usage.tokensOut).toBe(1);
@@ -59,6 +59,7 @@ describe('GatewayChatClient (tâche 14)', () => {
     // Se tromper de forme fait refuser le corps en 400 par le Gateway.
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
     await new GatewayChatClient('cle', t).completer({
+      tenantId: 't-banc',
       modele: 'm',
       messages: [{ role: 'user', content: 'x' }],
       outils: [{ name: 'chercher', description: 'cherche', parameters: { type: 'object', properties: {} } }],
@@ -71,7 +72,7 @@ describe('GatewayChatClient (tâche 14)', () => {
 
   it('sans outil, la clé tools est ABSENTE du corps (et non un tableau vide)', async () => {
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
-    await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [{ role: 'user', content: 'x' }] });
+    await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [{ role: 'user', content: 'x' }] });
     expect(t.appels[0]?.body).not.toHaveProperty('tools');
   });
 
@@ -84,7 +85,7 @@ describe('GatewayChatClient (tâche 14)', () => {
       usage: { prompt_tokens: 10, completion_tokens: 3 },
     };
     const t = new FauxTransport([ok(avecOutil)]);
-    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] });
     expect(r.texte).toBeNull();
     expect(r.finish).toBe('tool_calls');
     expect(r.appelsOutils).toEqual([{ id: 'call_1', nom: 'chercher', argumentsJson: '{"q":"prix"}' }]);
@@ -92,7 +93,7 @@ describe('GatewayChatClient (tâche 14)', () => {
 
   it('l authentification part en Bearer sur la bonne URL', async () => {
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
-    await new GatewayChatClient('ma-cle', t).completer({ modele: 'm', messages: [] });
+    await new GatewayChatClient('ma-cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] });
     expect(t.appels[0]?.url).toBe('https://ai-gateway.vercel.sh/v1/chat/completions');
     expect(t.appels[0]?.headers.authorization).toBe('Bearer ma-cle');
   });
@@ -101,7 +102,7 @@ describe('GatewayChatClient (tâche 14)', () => {
     // Sans lui, un fournisseur qui pend immobilise un slot de worker pendant des minutes, sans trace.
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
     const ac = new AbortController();
-    await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [], signal: ac.signal });
+    await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [], signal: ac.signal });
     expect(t.appels[0]?.opts?.signal).toBe(ac.signal);
   });
 
@@ -109,21 +110,21 @@ describe('GatewayChatClient (tâche 14)', () => {
     // Un schéma d'outil refusé ne devient pas valide en le renvoyant : rejouer paierait 3 fois la même
     // erreur de configuration.
     const t = new FauxTransport([ko(400)]);
-    await expect(new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] })).rejects.toBeInstanceOf(LlmApiError);
+    await expect(new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] })).rejects.toBeInstanceOf(LlmApiError);
     expect(t.appels).toHaveLength(1);
   });
 
   it('401, 403 et 404 sont terminaux eux aussi (clé, aucun fournisseur, modèle inconnu)', async () => {
     for (const status of [401, 403, 404]) {
       const t = new FauxTransport([ko(status)]);
-      await expect(new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] })).rejects.toBeInstanceOf(LlmApiError);
+      await expect(new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] })).rejects.toBeInstanceOf(LlmApiError);
       expect(t.appels, `status ${status}`).toHaveLength(1);
     }
   });
 
   it('🔴 429 est REJOUÉ, puis réussit', async () => {
     const t = new FauxTransport([ko(429), ok(REPONSE_REELLE)]);
-    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] });
     expect(r.texte).toBe('ok');
     expect(t.appels.length).toBeGreaterThan(1);
   });
@@ -132,13 +133,13 @@ describe('GatewayChatClient (tâche 14)', () => {
     // Le défaut de withRetry est maxRetries: 4 et maxDelayMs: 30000, ce qui consommerait à lui seul tout le
     // budget de temps d'un tour d'agent.
     const t = new FauxTransport([ko(503)]);
-    await expect(new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] })).rejects.toBeInstanceOf(LlmApiError);
+    await expect(new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] })).rejects.toBeInstanceOf(LlmApiError);
     expect(t.appels).toHaveLength(3);
   });
 
   it('un corps vide ou inattendu ne fait pas lever : texte null, compteurs à zéro', async () => {
     const t = new FauxTransport([ok(null)]);
-    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] });
     expect(r.texte).toBeNull();
     expect(r.usage).toEqual({ tokensIn: 0, tokensOut: 0, tokensCaches: 0, coutDollars: 0 });
     expect(r.appelsOutils).toEqual([]);
@@ -155,7 +156,7 @@ describe('GatewayChatClient (tâche 14)', () => {
       choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 4000, completion_tokens: 20, cost: 0.01, prompt_tokens_details: { cached_tokens: 3200 } },
     })]);
-    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] });
     expect(r.usage.tokensCaches).toBe(3200);
     expect(r.usage.tokensIn).toBe(4000);
   });
@@ -168,8 +169,61 @@ describe('GatewayChatClient (tâche 14)', () => {
       choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 4000, completion_tokens: 20 },
     })]);
-    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [] });
     expect(r.usage.tokensCaches).toBe(0);
     expect(r.usage.tokensIn).toBe(4000);
+  });
+});
+
+/**
+ * QUELLE CLÉ PAIE L'APPEL (2026-09-09, demande de Julien).
+ *
+ * 🔴 C'EST ICI, ET NULLE PART AILLEURS, QUE L'ATTRIBUTION DE LA DÉPENSE SE JOUE. Tout le reste du lot (créer
+ * la clé chez Vercel, la chiffrer, la stocker) ne sert à rien si l'en-tête posé sur la requête reste celui de
+ * la maison. Et le défaut serait MUET : les appels réussiraient, les réponses seraient bonnes, seule la
+ * facture Vercel dirait, un mois plus tard, que rien n'a jamais été séparé.
+ */
+describe('La clé posée sur l’appel', () => {
+  it('🔴 celle de l’ESPACE quand il en a une', async () => {
+    const t = new FauxTransport([ok(REPONSE_REELLE)]);
+    const client = new GatewayChatClient('vck_maison', t, async (tenant) => (tenant === 't-client' ? 'vck_client' : null));
+    await client.completer({ tenantId: 't-client', modele: 'm', messages: [] });
+    expect(t.appels[0]!.headers.authorization).toBe('Bearer vck_client');
+  });
+
+  it('🔴 la MAISON quand l’espace n’en a pas : la preuve inverse', async () => {
+    // Sans ce cas, un resolveur qui rendrait toujours la clé du client passerait le test ci-dessus, et les
+    // espaces d'avant ce lot (ou ceux dont le déchiffrement échoue) verraient tous leurs agents muets.
+    const t = new FauxTransport([ok(REPONSE_REELLE)]);
+    const client = new GatewayChatClient('vck_maison', t, async () => null);
+    await client.completer({ tenantId: 't-vieux', modele: 'm', messages: [] });
+    expect(t.appels[0]!.headers.authorization).toBe('Bearer vck_maison');
+  });
+
+  it('une chaîne VIDE vaut « pas de clé », pas une clé vide', async () => {
+    // Une colonne mal remplie ferait autrement partir un `Bearer ` nu, donc un 401 sur chaque tour.
+    const t = new FauxTransport([ok(REPONSE_REELLE)]);
+    await new GatewayChatClient('vck_maison', t, async () => '').completer({ tenantId: 't', modele: 'm', messages: [] });
+    expect(t.appels[0]!.headers.authorization).toBe('Bearer vck_maison');
+  });
+
+  it('🔴 le resolveur est appelé À CHAQUE appel, jamais mémorisé', async () => {
+    // Une clé peut NAÎTRE pendant la vie du process (création du premier agent de cet espace). Mémoriser
+    // ferait tourner le client sur l'ancienne valeur jusqu'au prochain redémarrage, c'est-à-dire garder un
+    // client sur la clé maison alors que la sienne existe.
+    const t = new FauxTransport([ok(REPONSE_REELLE), ok(REPONSE_REELLE)]);
+    let n = 0;
+    const client = new GatewayChatClient('vck_maison', t, async () => { n += 1; return n === 1 ? null : 'vck_neuve'; });
+    await client.completer({ tenantId: 't', modele: 'm', messages: [] });
+    await client.completer({ tenantId: 't', modele: 'm', messages: [] });
+    expect(n).toBe(2);
+    expect(t.appels[0]!.headers.authorization).toBe('Bearer vck_maison');
+    expect(t.appels[1]!.headers.authorization).toBe('Bearer vck_neuve');
+  });
+
+  it('sans resolveur, tout part sur la maison (comportement d’avant le lot)', async () => {
+    const t = new FauxTransport([ok(REPONSE_REELLE)]);
+    await new GatewayChatClient('vck_maison', t).completer({ tenantId: 't', modele: 'm', messages: [] });
+    expect(t.appels[0]!.headers.authorization).toBe('Bearer vck_maison');
   });
 });

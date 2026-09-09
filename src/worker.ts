@@ -63,6 +63,7 @@ import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { balayerVectorisation, creerRechercheSemantique } from './agent/recherche';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
+import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
@@ -94,7 +95,7 @@ import { arbitreDeDebit } from './meta/arbitre-debit';
 import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
-import { decryptSecret } from './crypto/secretbox';
+import { decryptSecret, encryptSecret } from './crypto/secretbox';
 import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
 import type { MessageSender } from './campaign/engine';
@@ -1291,7 +1292,17 @@ async function main(): Promise<void> {
   // ⚠️ Sans clé de Gateway, la file n'est PAS consommée. C'est délibéré : un consommateur qui échouerait à
   // chaque job enverrait les tours en DLQ et perdrait les conversations, alors qu'un job qui attend repart
   // dès que la clé est posée.
-  const gatewayAgent = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
+  // ⚠️ MEME resolveur de cle par espace que dans l'API : c'est ICI que passent les tours d'agent des vrais
+  // clients, donc l'essentiel de la depense. Le cabler d'un seul cote aurait attribue le bac a sable et
+  // laisse la production dans le pot commun, ce qui est le pire des deux mondes (on croirait mesurer).
+  const clesGatewayWorker = new PgCleGatewayStore(
+    pool,
+    (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
+    (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
+  );
+  const gatewayAgent = config.AI_GATEWAY_API_KEY
+    ? new GatewayChatClient(config.AI_GATEWAY_API_KEY, undefined, async (tenant) => (await clesGatewayWorker.lire(tenant))?.cle ?? null)
+    : null;
   if (gatewayAgent) {
     const agentStore = new PgAgentStore(pool);
     const toolCatalog = new PgToolCatalog(pool);

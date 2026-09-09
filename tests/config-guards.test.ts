@@ -81,6 +81,25 @@ describe('gardes de config en production', () => {
     expect(errPaths(schema.safeParse({ ...prodEnv, AI_GATEWAY_API_KEY: 'vck_test', AGENT_MODEL: 'zai/glm-4.7-flash' }))).toContain('AGENT_SETUP_MODEL');
   });
 
+  it('🔴 le jeton Vercel SANS l’équipe -> refusé, et l’inverse aussi', () => {
+    // `POST /v1/api-keys` exige le `teamId` en paramètre. Avec le jeton seul, CHAQUE provisionnement
+    // échouerait ; et comme la création d'agent REFUSE quand elle échoue, plus aucun client ne pourrait
+    // créer d'agent. Une panne totale du produit pour une variable oubliée au déploiement.
+    asProd();
+    const cle = { ENCRYPTION_KEY: 'a'.repeat(64) };
+    expect(errPaths(schema.safeParse({ ...prodEnv, ...cle, VERCEL_API_TOKEN: 'jeton' }))).toContain('VERCEL_TEAM_ID');
+    expect(errPaths(schema.safeParse({ ...prodEnv, ...cle, VERCEL_TEAM_ID: 'team_x' }))).toContain('VERCEL_API_TOKEN');
+    expect(schema.safeParse({ ...prodEnv, ...cle, VERCEL_API_TOKEN: 'jeton', VERCEL_TEAM_ID: 'team_x' }).success).toBe(true);
+  });
+
+  it('🔴 le provisionnement SANS clé de chiffrement -> refusé', () => {
+    // Sans elle, la clé Gateway d'un client finirait en clair dans la base, ou l'écriture échouerait au
+    // premier agent créé. Les deux sont inacceptables, et aucun des deux ne se voit avant la production.
+    asProd();
+    const r = schema.safeParse({ ...prodEnv, VERCEL_API_TOKEN: 'jeton', VERCEL_TEAM_ID: 'team_x' });
+    expect(errPaths(r)).toContain('ENCRYPTION_KEY');
+  });
+
   it('les deux modèles posés avec la clé -> accepté ; et SANS clé, rien n’est exigé', () => {
     // Le fail-fast doit rester borné : une instance qui n'a pas câblé l'agent (la plupart) ne doit pas être
     // obligée de déclarer des modèles qu'elle n'utilisera jamais.

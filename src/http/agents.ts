@@ -5,6 +5,7 @@ import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
 import { fichePatchSchema } from '../agent/fiche';
 import { manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
+import { CreditInsuffisantPourCle, PLAFOND_GATEWAY_MIN_DOLLARS } from '../agent/provisionner-cle';
 import { MODELES_CHOISIS, IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 import type { ConsommationAgent } from '../agent/session-store';
@@ -46,6 +47,18 @@ export interface AgentsRouteDeps {
    * ce qui est le point : une tarification indisponible n'a pas à interdire un réglage.
    */
   modelesProposes?(): Promise<ModeleProposable[]>;
+  /**
+   * S'assurer que l'espace a sa clé AI Gateway, en la créant chez Vercel s'il n'en a pas (2026-09-09).
+   *
+   * 🔴 ABSENTE = PROVISIONNEMENT ÉTEINT, et la création d'agent se comporte comme avant. C'est ce qui permet
+   * de déployer ce lot sans jeton Vercel configuré, et c'est le seul état où un agent peut naître sans clé
+   * propre. Une fois la dépendance câblée, elle est IMPÉRATIVE : son échec REFUSE la création.
+   *
+   * ⚠️ Elle est appelée AVANT `create`, jamais après. Un agent créé puis un provisionnement en échec
+   * laisserait un agent utilisable dans le bac à sable sans clé, c'est-à-dire exactement ce que le refus
+   * existe pour empêcher. L'ordre est le contrôle.
+   */
+  assurerCleModele?(tenantId: string): Promise<unknown>;
 }
 
 /**
@@ -164,6 +177,26 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     // source ici : le corps ne peut pas en imposer un.
     if (!nonEmpty(deps.modeleParDefaut)) {
       return reply.code(422).send({ error: 'aucun modèle par défaut configuré côté serveur' });
+    }
+    // 🔴 LA CLÉ DU MODÈLE AVANT L'AGENT, et son échec REFUSE (choix de Julien, 2026-09-09). Le bac à sable
+    // appelle vraiment le modèle : un agent né sans clé propre se mettrait au point sur NOTRE argent, et sa
+    // dépense ne serait attribuée à personne. Créer l'agent d'abord et provisionner ensuite ferait
+    // exactement ça à chaque panne de Vercel.
+    if (deps.assurerCleModele) {
+      try {
+        await deps.assurerCleModele(tenant);
+      } catch (err) {
+        // 🔴 422, JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc
+        // un message destiné au client se perdrait exactement quand il est utile. Journalisé côté serveur en
+        // plus, parce que ce 422 est la seule trace côté client.
+        req.log.error({ err, tenant }, 'cle_modele_non_provisionnee');
+        if (err instanceof CreditInsuffisantPourCle) {
+          return reply.code(422).send({
+            error: `crédit insuffisant pour créer un agent : il en faut au moins l'équivalent de ${PLAFOND_GATEWAY_MIN_DOLLARS} $. Rechargez le crédit des agents IA, puis réessayez.`,
+          });
+        }
+        return reply.code(422).send({ error: 'la clé de modèle de cet espace n’a pas pu être créée. Réessayez dans un instant.' });
+      }
     }
     try {
       // Créé en BROUILLON par le store, jamais actif : le corps ne peut pas en décider, et c'est voulu.

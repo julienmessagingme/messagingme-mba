@@ -57,7 +57,9 @@ export interface AgentSetupRouteDeps {
    *  qui redeviendrait non déterministe sans que personne ne le voie. */
   entretiens?: EntretienStore;
   /** Appel du modèle. Injecté pour rester testable sans réseau ; absent, la route répond 503. */
-  completer?(input: { modele: string; messages: Array<ChatMessage | ChatMessageImage>; outils: OutilExpose[]; toolChoice: string; signal: AbortSignal }): Promise<ReponseChat>;
+  /** ⚠️ `tenantId` decide QUELLE CLE paie l'appel (2026-09-09) : le bac a sable est du temps de modele, et
+   *  il se paie sur le credit du client comme le reste. */
+  completer?(input: { tenantId: string; modele: string; messages: Array<ChatMessage | ChatMessageImage>; outils: OutilExpose[]; toolChoice: string; signal: AbortSignal }): Promise<ReponseChat>;
   /** Modèle de l'IA de CONSTRUCTION. À ne pas confondre avec celui de l'agent : celui-ci tourne rarement et
    *  joue le rôle le plus dur, celui-là répond à chaque message d'un contact. */
   modele: string;
@@ -90,8 +92,9 @@ const CONSIGNE_IMAGE = 'Relève TOUT le texte lisible de cette image, tel quel, 
   + 'qu’elle montre, sans plus.';
 
 /** Lit une image par le modèle et rend son texte. Isolé pour que la route reste lisible. */
-async function lireImage(deps: AgentSetupRouteDeps, modele: string, dataUrl: string, nom: string): Promise<string | null> {
+async function lireImage(deps: AgentSetupRouteDeps, tenantId: string, modele: string, dataUrl: string, nom: string): Promise<string | null> {
   const r = await deps.completer!({
+    tenantId,
     modele,
     messages: [{
       role: 'user',
@@ -213,7 +216,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         return reply.code(503).send({ error: 'lecture d’image indisponible sur ce serveur (aucun modèle de vision configuré) ; les documents texte, PDF et Word passent quand même' });
       }
       try {
-        texte = await lireImage(deps, vision, parse.data.dataUrl, parse.data.nom);
+        texte = await lireImage(deps, ctx.tenant, vision, parse.data.dataUrl, parse.data.nom);
       } catch (err) {
         return reply.code(502).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
       }
@@ -258,6 +261,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     let reponse: ReponseChat;
     try {
       reponse = await deps.completer({
+        tenantId: ctx.tenant,
         modele: deps.modele,
         messages: construireMessages(ctx.etat, historique, avant),
         outils: [{

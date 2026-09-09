@@ -130,9 +130,38 @@ export class GatewayChatClient {
     private readonly apiKey: string,
     // Plafond LARGE : un modele a le droit d'etre lent la ou Meta n'en a pas le droit (cf. meta/http.ts).
     private readonly transport: HttpTransport = new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
+    /**
+     * La cle PROPRE a l'espace, resolue a CHAQUE appel (2026-09-09).
+     *
+     * 🔴 RESOLUE A CHAQUE APPEL, JAMAIS MEMORISEE, et c'est la meme raison que pour les cles RCS
+     * (`src/rcs/smsmode.ts`) : une cle peut naitre (creation du premier agent) ou changer pendant la vie du
+     * process, et un appel parti apres doit porter la nouvelle. Memoriser ferait tourner un client sur une
+     * cle morte jusqu'au prochain redemarrage.
+     *
+     * Absente ou rendant `null` -> la cle MAISON. C'est le repli des espaces d'avant ce lot, exactement
+     * comme un espace RCS qui n'a pas encore fait son activation.
+     */
+    private readonly apiKeyFor?: (tenantId: string) => Promise<string | null>,
   ) {}
 
+  /** La cle a poser sur CET appel : celle de l'espace si elle existe, sinon la notre. */
+  private async cleDe(tenantId: string): Promise<string> {
+    if (!this.apiKeyFor) return this.apiKey;
+    const propre = await this.apiKeyFor(tenantId);
+    return propre !== null && propre !== '' ? propre : this.apiKey;
+  }
+
   async completer(input: {
+    /**
+     * L'espace pour le compte de qui cet appel est fait, et donc QUI LE PAIE.
+     *
+     * 🔴 OBLIGATOIRE, et ce n'est pas une coquetterie de type. Optionnel, il aurait ete oublie sur l'un des
+     * appelants et cet appelant-la serait retombe en silence sur la cle maison : la depense d'un client
+     * aurait continue de tomber dans le pot commun, sans aucun signe. Le rendre obligatoire fait dire au
+     * COMPILATEUR quels sites de construction restent a cabler, ce qui est precisement la garde que le depot
+     * reclame pour toute capacite ajoutee (« cablee PARTOUT ? »).
+     */
+    tenantId: string;
     modele: string;
     /** Un `ChatMessage[]` ordinaire convient : l'union n'existe que pour la lecture d'une image. */
     messages: Array<ChatMessage | ChatMessageImage>;
@@ -146,6 +175,9 @@ export class GatewayChatClient {
     /** Coupe l'appel. Sans lui, un fournisseur qui pend immobilise un slot de worker pendant des minutes. */
     signal?: AbortSignal;
   }): Promise<ReponseChat> {
+    // Resolue ICI, hors de `withRetry` : une cle relue a chaque tentative ferait une lecture de base par
+    // rejeu, pour une valeur qui ne change pas pendant les quelques secondes d'un rejeu.
+    const cle = await this.cleDe(input.tenantId);
     return withRetry(
       async () => {
         const res = await this.transport.post(
@@ -164,7 +196,7 @@ export class GatewayChatClient {
               ? { tool_choice: { type: 'function', function: { name: input.toolChoice } } }
               : {}),
           },
-          { authorization: `Bearer ${this.apiKey}` },
+          { authorization: `Bearer ${cle}` },
           input.signal ? { signal: input.signal } : undefined,
         );
         if (res.status < 200 || res.status >= 300) {

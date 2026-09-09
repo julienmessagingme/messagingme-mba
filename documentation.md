@@ -646,10 +646,17 @@ coupable en une mesure.
 ### Les secrets
 
 Tous côté serveur, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*` : `META_ACCESS_TOKEN`,
-`META_APP_SECRET`, `OPS_TOKEN`, `ENCRYPTION_KEY`, `AUTH_SECRET`, `AI_GATEWAY_API_KEY`, la clé Supabase.
+`META_APP_SECRET`, `OPS_TOKEN`, `ENCRYPTION_KEY`, `AUTH_SECRET`, `AI_GATEWAY_API_KEY`, `VERCEL_API_TOKEN`,
+la clé Supabase.
+
+🔴 **`VERCEL_API_TOKEN` n'est pas un secret comme les autres, et le confondre avec `AI_GATEWAY_API_KEY`
+coûterait cher.** La seconde ne sait que DÉPENSER sous un plafond ; le premier sait FABRIQUER des clés
+facturées à l'équipe, autant qu'on veut. Sa compromission n'est donc pas bornée par nos plafonds applicatifs.
+Le seul contre-feu est le **plafond d'ÉQUIPE posé chez Vercel**, hors de ce dépôt et hors d'atteinte de qui
+lirait le `.env.prod` : il borne les dégâts quel que soit le nombre de clés créées.
 
 **Chiffrés au repos** (AES-256-GCM, `src/crypto/secretbox.ts`, même patron partout) : les tokens business
-d'Embedded Signup (`waba_credentials`), les clés RCS par workspace (`rcs_agents.api_key_enc`), les mots de
+d'Embedded Signup (`waba_credentials`), les clés RCS par workspace (`rcs_agents.api_key_enc`), les clés AI Gateway par espace (`agent_gateway_keys.cle_chiffree`), les mots de
 passe SMTP (`email_accounts.password_enc`), les secrets de connecteur API (`agent_tool_sources`).
 
 **Hachés, jamais stockés en clair** : les clés d'API publiques (`api_keys`, sha256), les jetons d'invitation et
@@ -693,10 +700,11 @@ Les clés se rangent en cinq familles, et savoir laquelle on touche dit le risqu
 | **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*`, `CAMPAIGN_RUN_MAX_MS` | latence, saturation muette, ou coupure de service |
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS`, `WEBHOOK_PAYLOAD_RETENTION_DAYS` | une réponse RGPD fausse |
 | **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT` | ce qu'on facture, ou ce qu'on annonce |
+| **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
 
 🔴 **Le boot ÉCHOUE VITE plutôt que de dégrader en silence**, et c'est délibéré : `AUTH_SECRET` trop court en
 production, `CORS_ORIGINS` à `*`, `AI_GATEWAY_API_KEY` sans ses deux modèles, une seule moitié des clés
-Zadarma. Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
+Zadarma, `VERCEL_API_TOKEN` sans `VERCEL_TEAM_ID` ou sans `ENCRYPTION_KEY`. Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
 
 ⚠️ **`EUR_PER_USD` est un paramètre commercial, pas un cours.** Le Gateway facture en dollars, tous nos
 compteurs sont en micro-euros. Aller chercher un cours en temps réel ferait varier le prix d'une même
@@ -1012,6 +1020,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/inbox-rangement.ts` | les gestes de rangement de l'Inbox : leurs libellés, et les destinations qu'une SÉLECTION peut prendre selon le dossier |
 | `web/components/VariableBodyEditor.tsx` | l'éditeur à chips, partagé par les variables Meta (positionnelles) et RCS (nommées) |
 | `web/lib/session.ts` -> `pageDArrivee` | où atterrit un compte après connexion, selon son rôle |
+| `src/agent/devise.ts` | LES DEUX SENS de la conversion dollars/micro-euros : le coût d'un appel, et le plafond d'une clé du Gateway |
+| `src/agent/llm/cles-gateway.ts` | les deux appels Vercel du provisionnement, qui n'ont ni le même hôte ni la même authentification |
 
 ⚠️ **Un miroir front/serveur n'est pas une copie tolérée, c'est un contrat gardé par un test de parité.** La
 frontière de build interdit de partager un module ; le test compare les DEUX implémentations sur une table de

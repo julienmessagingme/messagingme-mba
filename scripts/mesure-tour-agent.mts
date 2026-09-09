@@ -151,7 +151,9 @@ async function jouerUnTour(tour: number): Promise<void> {
     const debut = Date.now();
     let r;
     try {
-      r = await client.completer({ modele, messages, ...(outils.length > 0 ? { outils } : {}) });
+      // `banc` : ce script mesure la latence du Gateway, il n'appartient a aucun espace client. Le resolveur
+      // de cle n'etant pas cable ici, l'appel part sur la cle maison, ce qui est le comportement voulu.
+      r = await client.completer({ tenantId: 'banc', modele, messages, ...(outils.length > 0 ? { outils } : {}) });
     } catch (err) {
       // 🔴 UN ECHEC EST UNE MESURE, PAS UN ACCIDENT. C'est meme LA mesure qu'on cherche sous concurrence :
       // un 429 dit ou est la limite du Gateway, et l'avaler reviendrait a ne pas voir la reponse.
