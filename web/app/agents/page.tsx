@@ -19,7 +19,28 @@ import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
 import { appliquerProposition, lireManques, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
-import { consommationAgent, type ConsommationAgent } from '@/lib/api-agent';
+import { consommationAgent, listerModeles, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
+import { fmtCost } from '@/lib/format';
+import type { Locale } from '@/lib/locale';
+
+/**
+ * Le tarif d'un modèle, entre parenthèses, tel que Julien l'a demandé : le prix par million de jetons ENVOYÉS
+ * puis REÇUS, commission comprise.
+ *
+ * ⚠️ Un prix inconnu ne devient PAS zéro : « gratuit » serait une affirmation, et elle serait fausse. La
+ * parenthèse disparaît, et le modèle reste choisissable.
+ *
+ * `fmtCost` est le formateur du dépôt : il rend quatre décimales sous 1 € et deux au-dessus, ce qui est
+ * exactement ce qu'il faut ici (0,0708 € pour le moins cher, 3,30 € pour le plus cher).
+ */
+function libellePrix(m: ModeleProposable, locale: Locale, t: (fr: string, en?: string) => string): string {
+  if (m.prixEntree === null && m.prixSortie === null) return '';
+  const p = (v: number | null): string => (v === null ? '?' : fmtCost(v, locale, 'EUR'));
+  return t(
+    ` (${p(m.prixEntree)} / ${p(m.prixSortie)} par 1M jetons)`,
+    ` (${p(m.prixEntree)} / ${p(m.prixSortie)} per 1M tokens)`,
+  );
+}
 
 /**
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
@@ -576,6 +597,18 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
   const { locale } = useLocale();
   const [conso, setConso] = useState<ConsommationAgent | null>(null);
   const [consoLue, setConsoLue] = useState(false);
+  /** Les modèles proposables. `null` = pas encore lus (ou lecture en échec) : on n'affiche alors pas un menu
+   *  vide, qui laisserait croire qu'aucun modèle n'existe. */
+  const [modeles, setModeles] = useState<ModeleProposable[] | null>(null);
+
+  useEffect(() => {
+    let vivant = true;
+    // Best-effort, comme la consommation : une liste indisponible ne doit pas faire tomber l'onglet.
+    void listerModeles(tenantId)
+      .then((m) => { if (vivant) setModeles(m.length > 0 ? m : null); })
+      .catch(() => { if (vivant) setModeles(null); });
+    return () => { vivant = false; };
+  }, [tenantId]);
 
   useEffect(() => {
     let vivant = true;
@@ -593,11 +626,44 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
 
   return (
     <div className={`${cardCls} flex flex-col gap-4`}>
-      <Champ
-        testId="agent-modele" busy={busy} label={t('Modèle', 'Model')}
-        aide={t('Le moteur qui fait parler l’agent. À changer seulement si vous savez pourquoi.', 'The engine that makes the agent talk. Change it only if you know why.')}
-        valeur={agent.modele} onSave={(v) => onSave({ modele: v })}
-      />
+      {/*
+        🔴 UNE LISTE, PLUS UNE SAISIE LIBRE (2026-09-09, demande de Julien). Le champ était un `input` : on
+        tapait un identifiant de modèle à la main, et rien ne le vérifiait avant le premier message d'un
+        client. La liste ne porte que des modèles qui savent APPELER DES OUTILS, parce qu'un modèle qui ne le
+        sait pas n'a pas une réponse dégradée, il en a une INVENTÉE.
+
+        ⚠️ Si le catalogue est injoignable, on retombe sur l'affichage du modèle courant en lecture seule
+        plutôt que sur un menu vide : mieux vaut ne pas pouvoir changer que croire qu'il n'y a rien.
+      */}
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium text-ink-700" htmlFor="agent-modele">{t('Modèle', 'Model')}</label>
+        {modeles === null ? (
+          <>
+            <input id="agent-modele" data-testid="agent-modele" className={inputCls} value={agent.modele} disabled readOnly />
+            <p className="text-xs leading-relaxed text-amber-700">
+              {t('La liste des modèles est momentanément indisponible. Le modèle en place continue de fonctionner ; réessayez dans un moment pour en changer.', 'The model list is momentarily unavailable. The current model keeps working; try again later to change it.')}
+            </p>
+          </>
+        ) : (
+          <select
+            id="agent-modele" data-testid="agent-modele" className={`${inputCls} bg-white`} disabled={busy}
+            value={agent.modele}
+            onChange={(e) => onSave({ modele: e.target.value })}
+          >
+            {/* Le modèle EN PLACE mais absent de la liste garde sa ligne : sans elle, le menu afficherait le
+                premier de la liste et laisserait croire que l'agent tourne déjà dessus. */}
+            {!modeles.some((m) => m.id === agent.modele) && (
+              <option value={agent.modele}>{t(`${agent.modele} (en place, hors liste)`, `${agent.modele} (in use, off-list)`)}</option>
+            )}
+            {modeles.map((m) => (
+              <option key={m.id} value={m.id}>{`${m.nom}${libellePrix(m, locale, t)}`}</option>
+            ))}
+          </select>
+        )}
+        <p className="text-xs leading-relaxed text-ink-500">
+          {t('Le moteur qui fait parler l’agent. Entre parenthèses, le prix par million de jetons envoyés puis reçus. À changer seulement si vous savez pourquoi : le français et la capacité à chercher dans votre base de connaissance varient beaucoup d’un modèle à l’autre.', 'The engine that makes the agent talk. In brackets, the price per million tokens sent then received. Change it only if you know why: French quality and the ability to search your knowledge base vary a lot between models.')}
+        </p>
+      </div>
 
       {/* 🔴 CE QUE L'AGENT A CONSOMMÉ, PAS UN BUDGET À RÉGLER. Cet onglet portait un champ « budget par
           conversation en micro-euros » : un plafond, là où on vient voir ce que le robot a coûté. Le
@@ -614,7 +680,10 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
               { k: 'entree', v: nb(conso.tokensEntree), l: t('tokens en entrée', 'input tokens') },
               { k: 'sortie', v: nb(conso.tokensSortie), l: t('tokens en sortie', 'output tokens') },
               // Les micro-euros sont l'unité de STOCKAGE, pas une unité de lecture : on montre des euros.
-              { k: 'cout', v: `${(conso.coutMicroEur / 1_000_000).toFixed(2)} €`, l: t('coût estimé', 'estimated cost') },
+              // ⚠️ `fmtCost` et non `toFixed(2)` : ce dernier écrit « 1.37 € » avec un POINT, juste sous un
+              // tarif de modèle rendu « 0,0708 € » avec une virgule. Deux séparateurs décimaux dans le même
+              // encadré se remarquent tout de suite, et le formateur du dépôt existait déjà.
+              { k: 'cout', v: fmtCost(conso.coutMicroEur / 1_000_000, locale, 'EUR'), l: t('coût estimé', 'estimated cost') },
             ].map((x) => (
               <div key={x.k} data-testid={`agent-conso-${x.k}`}>
                 <dd className="text-lg font-semibold tabular-nums text-ink-800">{x.v}</dd>
@@ -626,6 +695,17 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
             {t(
               'Compté sur les conversations de cet agent. Une conversation encore en cours y figure déjà, avec ce qu’elle a consommé jusqu’ici.',
               'Counted over this agent’s conversations. An ongoing conversation already appears, with what it has used so far.',
+            )}
+          </p>
+          {/* 🔴 LES DEUX NOMBRES DE CET ÉCRAN N'ONT PAS LA MÊME BASE, et ils sont côte à côte : le tarif de
+              la liste porte notre commission, ce coût-ci est le montant brut réellement décompté. Le taire
+              laisserait un client multiplier ses jetons par le tarif affiché et trouver un autre chiffre,
+              sans savoir lequel croire. Décision de Julien du 2026-09-09 : afficher l'écart, pas le corriger,
+              tant que la facturation Stripe n'existe pas. */}
+          <p className="mt-1 text-xs text-ink-400" data-testid="agent-conso-base">
+            {t(
+              'Ce montant est le coût réellement décompté. Les tarifs de la liste ci-dessus incluent notre commission, ils sont donc un peu plus élevés.',
+              'This amount is the cost actually deducted. The rates in the list above include our commission, so they are slightly higher.',
             )}
           </p>
         </div>

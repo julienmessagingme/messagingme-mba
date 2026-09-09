@@ -487,6 +487,19 @@ export const schema = z.object({
    * plutot que de rendre toute consommation gratuite (`src/agent/devise.ts`).
    */
   EUR_PER_USD: z.coerce.number().positive().default(0.92),
+  /**
+   * Notre commission sur le tarif des modèles, en POURCENT, telle qu'elle est ANNONCÉE au client dans la
+   * liste déroulante de l'onglet Modèle (2026-09-09).
+   *
+   * 🔴 AFFICHAGE SEULEMENT, décision de Julien : la consommation réellement décomptée reste le coût BRUT du
+   * Gateway. L'onglet Consommation montre donc environ 10 % de moins que le tarif annoncé, le temps que la
+   * facturation Stripe existe. Le jour où elle arrivera, c'est le chemin d'écriture (`run-turn`) qu'il
+   * faudra majorer, pas l'affichage, sinon les deux écrans se remettront à diverger dans l'autre sens.
+   *
+   * Paramètre COMMERCIAL, comme `EUR_PER_USD` juste au-dessus : il ne bouge que quand Julien le décide. 0 est
+   * une valeur valide (aucune commission annoncée), d'où `nonnegative` et non `positive`.
+   */
+  COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
   /** max_tokens de la réponse d'analyse (petit JSON). */
   LLM_MAX_TOKENS: z.coerce.number().default(1024),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est INERTE (aucun job enfilé). */

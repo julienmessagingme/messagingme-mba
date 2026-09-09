@@ -142,6 +142,44 @@ test.describe('Inbox : le menu de dossiers', () => {
     await expect(page.getByTestId('inbox-archiver')).toHaveCount(0);
   });
 
+  /**
+   * 🔴 LES DOSSIERS SONT UNE COLONNE À PART (2026-09-09, demande de Julien). Le menu vivait AU-DESSUS de la
+   * liste : cliquer « Tout » ou « À traiter » faisait apparaître les conversations SOUS lui, et il fallait
+   * redescendre pour changer de dossier.
+   *
+   * ⚠️ Cette garantie est GÉOMÉTRIQUE, pas textuelle : une classe de grille perdue au prochain refactor
+   * remettrait les deux colonnes l'une sous l'autre sans casser un seul des autres cas de ce fichier, et
+   * personne ne le verrait avant que Julien ne rouvre l'écran. On mesure donc les rectangles.
+   */
+  test('🔴 le menu et la liste sont CÔTE À CÔTE, pas empilés', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mock(page, ADMIN);
+    await page.goto('/inbox');
+    const menu = await page.getByTestId('inbox-dossiers').boundingBox();
+    const liste = await page.getByTestId('inbox-liste').boundingBox();
+    expect(menu, 'le menu doit être visible').not.toBeNull();
+    expect(liste, 'la liste doit être visible').not.toBeNull();
+    // Le menu finit AVANT que la liste ne commence : c'est la définition de « à gauche de ».
+    expect(menu!.x + menu!.width).toBeLessThanOrEqual(liste!.x);
+    // Et ils partagent la même bande verticale : sans ça, « à gauche » serait vrai d'un menu placé bien
+    // au-dessus, ce qui est exactement ce qu'on vient de retirer.
+    expect(menu!.y).toBeLessThan(liste!.y + liste!.height);
+    expect(liste!.y).toBeLessThan(menu!.y + menu!.height);
+  });
+
+  test('le titre de la liste nomme le DOSSIER OUVERT, et il suit le clic', async ({ page }) => {
+    // « Conversations » était déjà l'intitulé du groupe dans le menu voisin : côte à côte, le même mot deux
+    // fois ne disait plus où l'on est.
+    await mock(page, ADMIN);
+    await page.goto('/inbox');
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText(/^Tout \(/);
+    await page.getByTestId('dossier-archivees').click();
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText(/^Archivé \(/);
+    // Un membre porte SON nom, pas son identifiant technique.
+    await page.getByTestId('dossier-membre-u-jean').click();
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText(/^Jean \(/);
+  });
+
   test('🔴 les anciens boutons de filtre ont DISPARU', async ({ page }) => {
     // Deux endroits pour le même choix, ce sont deux états qui divergent. Le dépôt l'a déjà payé sur le
     // contrôle du fil : le menu REMPLACE les boutons, il ne s'y ajoute pas.

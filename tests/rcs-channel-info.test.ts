@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { verifierCleRcs } from '../src/rcs/channel-info';
-import type { HttpGet } from '../src/rcs/channel-info';
+import type { HttpGet } from '../src/lib/http-get';
 
 function transport(reponse: { status: number; json: unknown } | Error): HttpGet {
   return {

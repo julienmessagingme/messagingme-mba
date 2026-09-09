@@ -77,9 +77,10 @@ const COMPLET: AgentComplet = {
   contactInconnu: 'lecture_seule', contenu: ficheVide(), ficheVersion: 1,
 };
 
-function app(etat: EtatPourLint | null) {
+function app(etat: EtatPourLint | null, modeles?: AgentsRouteDeps['modelesProposes']) {
   const cap = { patches: [] as PatchAgent[] };
   const deps: AgentsRouteDeps = {
+    ...(modeles ? { modelesProposes: modeles } : {}),
     listActifs: async (): Promise<AgentResume[]> => [],
     listToutes: async (): Promise<AgentResume[]> => [],
     complet: async () => COMPLET,
@@ -236,5 +237,89 @@ describe('les manques se LISENT, sans rien tenter', () => {
   it('tenant croisé -> 403', async () => {
     const { srv } = app(COMPLET_LINT());
     expect((await srv.inject({ method: 'GET', url: `/tenants/AUTRE/agents/${AG}/manques`, ...h(adminTok) })).statusCode).toBe(403);
+  });
+});
+
+/**
+ * LA LISTE DÉROULANTE DES MODÈLES (2026-09-09, demande de Julien).
+ *
+ * 🔴 CE QUE CES CAS FERMENT. Le champ « Modèle » était une saisie libre bornée à 120 caractères : un
+ * identifiant mal tapé passait l'enregistrement sans un mot, et ne se voyait qu'au premier message d'un
+ * client, quand le Gateway rendait un 404 sur un modèle inconnu. La liste rend le geste impossible depuis
+ * l'écran ; la garde ci-dessous le rend impossible tout court, y compris par l'API.
+ */
+describe('les modèles se choisissent dans une LISTE', () => {
+  const propose = async () => [
+    { id: 'zai/glm-4.7-flash', nom: 'GLM 4.7 Flash', prixEntree: 0.07, prixSortie: 0.4 },
+    { id: 'anthropic/claude-haiku-4.5', nom: 'Claude Haiku 4.5', prixEntree: 1.01, prixSortie: 5.06 },
+  ];
+
+  it('la route rend la liste et ses tarifs', async () => {
+    const { srv } = app(COMPLET_LINT(), propose);
+    const res = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/modeles', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().modeles).toEqual(await propose());
+  });
+
+  it('🔴 SANS câblage de tarification, la route rend quand même nos modèles, sans prix', async () => {
+    // Un 503 viderait le menu, donc interdirait de changer de modèle : une panne de tarification n'a pas à
+    // empêcher un réglage.
+    const { srv } = app(COMPLET_LINT());
+    const res = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/modeles', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const modeles = res.json<{ modeles: Array<{ id: string; prixEntree: number | null }> }>().modeles;
+    expect(modeles).toHaveLength(10);
+    expect(modeles.every((m) => m.prixEntree === null)).toBe(true);
+  });
+
+  it('🔴 `modeles` ne se fait PAS prendre pour un identifiant d’agent', async () => {
+    // Les deux routes partagent le préfixe `/agents/`. Si le segment fixe perdait sa priorité, cette adresse
+    // tomberait sur `/agents/:agentId` et rendrait un 404 « agent introuvable » que personne ne saurait lire.
+    const { srv } = app(COMPLET_LINT(), propose);
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents/modeles', ...h(adminTok) })).statusCode).toBe(200);
+  });
+
+  it('tenant croisé -> 403, comme toute lecture', async () => {
+    const { srv } = app(COMPLET_LINT(), propose);
+    expect((await srv.inject({ method: 'GET', url: '/tenants/AUTRE/agents/modeles', ...h(adminTok) })).statusCode).toBe(403);
+  });
+
+  it('🔴 un modèle HORS LISTE est refusé en 400, avec le nom fautif', async () => {
+    const { cap, srv } = app(COMPLET_LINT(), propose);
+    const res = await srv.inject({
+      method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok),
+      payload: { modele: 'anthropic/claude-haiku-45' }, // le point manquant : la faute de frappe typique
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('anthropic/claude-haiku-45');
+    expect(cap.patches).toHaveLength(0); // et rien n'a été écrit
+  });
+
+  it('un modèle DE LA LISTE passe', async () => {
+    // La preuve inverse : sans elle, une garde qui refuserait tout passerait le cas ci-dessus.
+    const { cap, srv } = app(COMPLET_LINT(), propose);
+    const res = await srv.inject({
+      method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok),
+      payload: { modele: 'anthropic/claude-haiku-4.5' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(cap.patches).toEqual([{ modele: 'anthropic/claude-haiku-4.5' }]);
+  });
+
+  it('🔴 le DÉFAUT du serveur passe même hors liste, sinon changer `AGENT_MODEL` casserait l’onglet', async () => {
+    const { srv } = app(COMPLET_LINT(), propose);
+    const res = await srv.inject({
+      method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok),
+      payload: { modele: 'modele-config' }, // `modeleParDefaut` du câblage de test
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('la garde ne touche QUE le modèle : les autres champs passent comme avant', async () => {
+    const { srv } = app(COMPLET_LINT(), propose);
+    const res = await srv.inject({
+      method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok), payload: { maxTours: 5 },
+    });
+    expect(res.statusCode).toBe(200);
   });
 });

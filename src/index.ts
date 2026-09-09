@@ -84,7 +84,10 @@ import type { RcsOutbound } from './rcs/types';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { urlImageRcs } from './rcs/image';
 import { newMediaCode } from './ids/code';
-import { verifierCleRcs, fetchGet } from './rcs/channel-info';
+import { verifierCleRcs } from './rcs/channel-info';
+import { fetchGet } from './lib/http-get';
+import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
+import { modelesProposables, type ModeleGateway } from './agent/modeles';
 import { apercuMo } from './rcs/callback';
 import { estDemandeArret } from './crm/consentement';
 import { apercuRcsSortant } from './rcs/schema';
@@ -295,6 +298,16 @@ async function main(): Promise<void> {
 
   /** Micro-cache de la pastille du numéro : dix minutes, très en deçà de la durée de vie de l'URL signée. */
   const photoNumeroCache = cacheCourt<string | null>(10 * 60_000);
+
+  /**
+   * Micro-cache du CATALOGUE de modèles du Gateway : une heure.
+   *
+   * Un catalogue de 373 modèles et leurs tarifs ne bouge pas d'une minute à l'autre, et cette lecture sert un
+   * menu déroulant qu'on ouvre en réglant un agent. Sans cache, chaque ouverture de l'onglet Modèle, de
+   * chaque onglet de navigateur ouvert, referait un aller-retour de plusieurs centaines de millisecondes vers
+   * Vercel pour une réponse identique.
+   */
+  const catalogueModelesCache = cacheCourt<ModeleGateway[]>(60 * 60_000);
 
   const app = buildServer({
     /**
@@ -851,6 +864,17 @@ async function main(): Promise<void> {
           handlersActifs: outils.map(handlerMaison).filter((h) => h !== ''),
         };
       },
+      /**
+       * LES MODÈLES PROPOSABLES ET LEUR TARIF (2026-09-09).
+       *
+       * Deux sources, et une seule sort d'ici : la LISTE est la nôtre (`MODELES_CHOISIS`, choisie pour la
+       * gestion des outils et pour le français), les PRIX viennent du Gateway en direct. Figer les prix dans
+       * le code aurait garanti qu'ils soient faux au premier changement de tarif chez un fournisseur.
+       *
+       * ⚠️ La clé du Gateway ne quitte JAMAIS le serveur : la console reçoit des identifiants et des euros.
+       */
+      modelesProposes: () => catalogueModelesCache.lire('catalogue', () => lireCatalogueGateway(fetchGet, config.AI_GATEWAY_API_KEY))
+        .then((catalogue) => modelesProposables(catalogue, config.EUR_PER_USD, config.COMMISSION_MODELE_PCT)),
     },
     // L assistant de construction. Il ne peut ecrire NI la mention legale d IA, NI les plafonds, NI le
     // modele, NI le risque ou l activation d un outil : il rend une proposition, le client l applique.

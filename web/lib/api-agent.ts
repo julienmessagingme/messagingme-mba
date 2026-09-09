@@ -119,3 +119,30 @@ export async function consommationAgent(tenantId: string, agentId: string): Prom
   );
   return r.consommation ?? null;
 }
+
+/**
+ * Un modèle proposable. Les prix sont en EUROS PAR MILLION de jetons, commission comprise. `null` = le
+ * fournisseur ne l'annonce pas, ou le catalogue était injoignable : l'écran le DIT, il n'invente pas 0.
+ *
+ * ⚠️ MIROIR À LA MAIN de `ModeleProposable` (`src/agent/modeles.ts`) : la frontière de build interdit au
+ * front d'importer `src/`. Même convention que `ConsommationAgent` juste au-dessus. Renommer un champ d'un
+ * seul côté ne casse aucun compilateur, ça vide simplement la valeur à l'écran : les deux se relisent
+ * ensemble, comme pour les autres contrats de cette frontière.
+ */
+export interface ModeleProposable {
+  id: string;
+  nom: string;
+  prixEntree: number | null;
+  prixSortie: number | null;
+}
+
+/**
+ * Les modèles proposés pour un agent, avec leur tarif. Triés par prix d'entrée croissant côté serveur.
+ *
+ * ⚠️ Une lecture en échec rend une liste VIDE, jamais une exception : l'onglet Modèle retombe alors sur
+ * l'affichage du modèle courant en lecture seule, plutôt que de faire tomber la fiche entière.
+ */
+export async function listerModeles(tenantId: string): Promise<ModeleProposable[]> {
+  const r = await request<{ modeles?: ModeleProposable[] }>(`/tenants/${tenantId}/agents/modeles`);
+  return Array.isArray(r.modeles) ? r.modeles : [];
+}

@@ -1,25 +1,7 @@
-/**
- * Lecture HTTP minimale. Interface DÉCLARÉE ICI plutôt qu'un élargissement de `HttpTransport` (qui ne fait
- * que du POST et sert les appels Meta) : ce module n'a besoin que d'un GET, et l'injecter le rend testable
- * sans réseau.
- */
-export interface HttpGet {
-  get(url: string, headers: Record<string, string>): Promise<{ status: number; json: unknown }>;
-}
-
-/** GET réel. Un corps non-JSON donne `null`, jamais une exception : c'est le status qui décide. */
-export const fetchGet: HttpGet = {
-  async get(url, headers) {
-    const res = await fetch(url, { headers });
-    let json: unknown = null;
-    try {
-      json = await res.json();
-    } catch {
-      json = null;
-    }
-    return { status: res.status, json };
-  },
-};
+// `HttpGet` et `fetchGet` vivent dans `src/lib/http-get.ts` depuis le 2026-09-09 : un second consommateur
+// (le catalogue de modeles du Gateway) en avait besoin. Pas de re-export ici, deux chemins d'import pour la
+// meme brique redonneraient les deux copies qu'on vient d'eviter.
+import type { HttpGet } from '../lib/http-get';
 
 /**
  * Ce qu'une clé d'API smsmode donne comme droits, lu chez eux.

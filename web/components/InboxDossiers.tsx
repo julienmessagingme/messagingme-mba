@@ -32,6 +32,28 @@ export function memeDossier(a: DossierInbox, b: DossierInbox): boolean {
   return a === b;
 }
 
+/**
+ * Le libellé d'un dossier. Sert au MENU et au titre de la liste, qui vivent maintenant dans deux colonnes
+ * voisines : deux libellés écrits séparément pour le même dossier finiraient par diverger, et l'écran dirait
+ * deux choses du même endroit, côte à côte.
+ *
+ * Un membre inconnu des compteurs (il vient d'être retiré de l'espace, la conversation lui reste affectée)
+ * rend un libellé neutre plutôt que son identifiant technique.
+ */
+export function libelleDossier(d: DossierInbox, compteurs: CompteursInbox, t: (fr: string, en?: string) => string): string {
+  if (typeof d === 'object') {
+    return compteurs.parMembre.find((m) => m.userId === d.membre)?.nom ?? t('Collaborateur', 'Teammate');
+  }
+  const table: Record<Exclude<DossierInbox, { membre: string }>, string> = {
+    toutes: t('Tout', 'All'),
+    aTraiter: t('À traiter', 'To handle'),
+    signalees: t('Signalé', 'Flagged'),
+    archivees: t('Archivé', 'Archived'),
+    nonAffectees: t('Non affecté', 'Unassigned'),
+  };
+  return table[d];
+}
+
 export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChange }: {
   dossier: DossierInbox;
   compteurs: CompteursInbox;
@@ -69,13 +91,15 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
         <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">
           {t('Conversations', 'Conversations')}
         </p>
+        {/* Les libellés viennent de `libelleDossier`, jamais réécrits ici : c'est la même phrase que le titre
+            de la colonne voisine, et deux copies auraient divergé au premier renommage. */}
         {([
-          ['toutes', t('Tout', 'All'), compteurs.tout],
-          ['aTraiter', t('À traiter', 'To handle'), compteurs.aTraiter],
-          ['signalees', t('Signalé', 'Flagged'), compteurs.signalees],
-          ['archivees', t('Archivé', 'Archived'), compteurs.archivees],
-        ] as const).map(([cle, label, n]) => (
-          <Entree key={cle} cle={cle} label={label} n={n} cible={cle} />
+          ['toutes', compteurs.tout],
+          ['aTraiter', compteurs.aTraiter],
+          ['signalees', compteurs.signalees],
+          ['archivees', compteurs.archivees],
+        ] as const).map(([cle, n]) => (
+          <Entree key={cle} cle={cle} label={libelleDossier(cle, compteurs, t)} n={n} cible={cle} />
         ))}
       </div>
 
@@ -84,7 +108,7 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
           <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">
             {t('Affectation', 'Assignment')}
           </p>
-          <Entree cle="nonAffectees" label={t('Non affecté', 'Unassigned')} n={compteurs.nonAffectees} cible="nonAffectees" />
+          <Entree cle="nonAffectees" label={libelleDossier('nonAffectees', compteurs, t)} n={compteurs.nonAffectees} cible="nonAffectees" />
           {/* TOUS les membres, y compris à ZÉRO : un collaborateur sans conversation est une information pour
               un manager, et ne le montrer que lorsqu'il a du travail le rendrait invisible au moment précis
               où on le cherche. */}

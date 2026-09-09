@@ -806,9 +806,16 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
-- ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08). À gauche de la liste : **Tout**, **À traiter**,
-  **Signalé**, **Archivé**, chacun avec son nombre entre parenthèses. Il remplace les trois boutons de filtre
-  d'avant, qui ne portaient qu'un compteur sur trois.
+- ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08, **réellement à gauche depuis le 2026-09-09**).
+  Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Signalé**, **Archivé**, chacun
+  avec son nombre entre parenthèses. Il remplace les trois boutons de filtre d'avant, qui ne portaient qu'un
+  compteur sur trois.
+  🔴 **Cette ligne annonçait « à gauche de la liste » et c'était FAUX** : le menu vivait AU-DESSUS d'elle,
+  dans la même colonne. Cliquer « Tout » ou « À traiter » faisait apparaître les conversations sous lui, et
+  il fallait redescendre pour changer de dossier. Signalé par Julien le 2026-09-09. Les deux colonnes sont
+  désormais côte à côte, comme dans une boîte mail : le menu reste en place, seule la liste change. Le titre
+  de la liste nomme le dossier ouvert, au lieu de répéter le mot « Conversations » déjà présent dans le menu.
+  ⚠️ Sur téléphone, les deux restent empilés : trois colonnes n'y laisseraient rien de lisible.
   ⚠️ **Le nombre est affiché même à zéro.** « Signalé (0) » est une information (« rien à relire ») ; un
   libellé nu laisse croire que le chiffre n'a pas chargé, et on va vérifier pour rien.
   ⚠️ **Les compteurs portent sur TOUT l'espace, pas sur la page affichée** : ils ne descendent pas quand vous
@@ -1442,8 +1449,20 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   réponse »), et **ce que l'agent a le droit de faire face à un contact inconnu du mini-CRM** : aucun outil,
   outils de lecture seulement (le défaut), ou tous. Chaque champ dit ses bornes et refuse une saisie hors
   clous plutôt que de la faire disparaître.
-- ✅ **Modèle** : le moteur qui fait parler l'agent, à ne changer que si on sait pourquoi, et le **budget d'une
-  conversation**. Budget épuisé, l'agent sort par « Plafond atteint ».
+- ✅ **Modèle : une LISTE DÉROULANTE avec les tarifs** (2026-09-09). Dix modèles, du moins cher au plus cher,
+  chacun avec entre parenthèses **son prix par million de jetons envoyés puis reçus**. On choisit, on ne tape
+  plus rien.
+  🔴 **C'était une saisie libre**, et rien ne la vérifiait : un identifiant mal tapé s'enregistrait sans un
+  mot, et ne se voyait qu'à la première réponse ratée d'un client. Le serveur refuse désormais tout modèle
+  hors liste, y compris par l'API.
+  ⚠️ **Les dix sont choisis, pas tirés au sort dans les 373 du fournisseur.** Deux critères : ils savent
+  APPELER DES OUTILS (un modèle qui ne le sait pas ne cherche pas dans votre base de connaissance, il
+  INVENTE), et ils parlent correctement français. Un modèle retiré du catalogue disparaît tout seul de la
+  liste. Les prix, eux, sont lus en direct chez le fournisseur : ils ne peuvent pas être périmés.
+  ⚠️ **Le tarif affiché inclut notre commission**, la consommation de l'encadré du dessous est le montant
+  brut réellement décompté : l'écart d'environ 10 % est écrit à l'écran plutôt que laissé à deviner.
+  ⚠️ Si le catalogue du fournisseur est injoignable, la liste reste utilisable, simplement sans tarif.
+- ✅ **Budget d'une conversation**. Budget épuisé, l'agent sort par « Plafond atteint ».
 
 ### La base de connaissance : la seule chose dont il a le droit de se servir
 

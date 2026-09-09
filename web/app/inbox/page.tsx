@@ -16,7 +16,7 @@ import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
 import { estAnnulation } from '@/lib/http';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
-import { InboxDossiers, type DossierInbox } from '@/components/InboxDossiers';
+import { InboxDossiers, libelleDossier, type DossierInbox } from '@/components/InboxDossiers';
 import {
   listConversations,
   countConversationsParDossier,
@@ -304,24 +304,41 @@ function InboxInner({ session }: { session: Session }) {
   const visible = conversations;
 
   return (
-    // Trois colonnes quand la fiche est ouverte : c'est la CONVERSATION qui rétrécit, pas la liste, parce
-    // qu'on consulte la fiche en lisant le fil, et qu'une liste qui change de largeur perd le repère visuel.
-    <div className={`grid gap-4 p-4 lg:h-full ${ficheWaId ? 'lg:grid-cols-[320px_1fr_340px]' : 'lg:grid-cols-[320px_1fr]'}`}>
-      <section className="lg:flex lg:min-h-0 lg:flex-col">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Conversations', 'Conversations')} ({conversations.length})</h2>
-          <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
-        </div>
-        {/* 🔴 LE MENU DE DOSSIERS REMPLACE LES TROIS BOUTONS DE FILTRE, il ne s'y ajoute pas. Deux endroits
-            pour le même choix, c'est deux états qui divergent : le dépôt l'a déjà payé sur le contrôle du
-            fil. Modération comprise : « Signalé » est l'ancien bouton, au même endroit que les autres. */}
-        <div className="mb-3">
-          <InboxDossiers
-            dossier={dossier}
-            compteurs={compteurs}
-            peutVoirAffectation={peutAffecter}
-            onChange={setDossier}
-          />
+    // 🔴 LES DOSSIERS ONT LEUR PROPRE COLONNE (2026-09-09, demande de Julien). Le menu vivait AU-DESSUS de
+    // la liste, dans la même colonne : cliquer « Tout » ou « À traiter » faisait apparaître les
+    // conversations SOUS le menu, et il fallait redescendre pour changer de dossier. Une boîte mail ne
+    // fonctionne pas comme ça : les dossiers restent à gauche, en place, et c'est la colonne d'à côté qui
+    // change. Le menu est court et fixe, la liste est longue et défile : les empiler faisait défiler les
+    // deux ensemble.
+    //
+    // Quatre colonnes au maximum quand la fiche est ouverte : c'est la CONVERSATION qui rétrécit, jamais la
+    // liste, parce qu'on consulte la fiche en lisant le fil, et qu'une liste qui change de largeur perd le
+    // repère visuel.
+    //
+    // ⚠️ Rien de tout ça en dessous de `lg` : le menu revient AU-DESSUS de la liste, empilé. Trois colonnes
+    // sur un téléphone ne laisseraient rien de lisible à aucune des trois.
+    <div className={`grid gap-4 p-4 lg:h-full ${ficheWaId ? 'lg:grid-cols-[190px_320px_1fr_340px]' : 'lg:grid-cols-[190px_320px_1fr]'}`}>
+      {/* 🔴 LE MENU DE DOSSIERS REMPLACE LES TROIS BOUTONS DE FILTRE, il ne s'y ajoute pas. Deux endroits
+          pour le même choix, c'est deux états qui divergent : le dépôt l'a déjà payé sur le contrôle du
+          fil. Modération comprise : « Signalé » est l'ancien bouton, dans ce menu comme les autres.
+          Il défile SÉPARÉMENT : un espace à vingt collaborateurs a un menu plus long que l'écran. */}
+      <div className="lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-ink-200 lg:pr-3">
+        <InboxDossiers
+          dossier={dossier}
+          compteurs={compteurs}
+          peutVoirAffectation={peutAffecter}
+          onChange={setDossier}
+        />
+      </div>
+
+      <section data-testid="inbox-liste" className="lg:flex lg:min-h-0 lg:flex-col">
+        {/* Le titre nomme le DOSSIER OUVERT, pas « Conversations » : le mot était déjà l'intitulé du groupe
+            dans le menu d'à côté, et deux fois le même mot côte à côte ne dit plus où l'on est. */}
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="min-w-0 truncate text-base font-semibold tracking-tight text-ink-900" data-testid="inbox-titre-dossier">
+            {libelleDossier(dossier, compteurs, t)} ({conversations.length})
+          </h2>
+          <button onClick={reload} className="shrink-0 text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
         </div>
         {/* Archivage en LOT : la barre n'apparaît qu'avec au moins une ligne cochée, pour ne pas occuper une
             place permanente au-dessus de la liste. */}

@@ -5,6 +5,7 @@ import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
 import { fichePatchSchema } from '../agent/fiche';
 import { manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
+import { MODELES_CHOISIS, IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 import type { ConsommationAgent } from '../agent/session-store';
 
@@ -38,6 +39,13 @@ export interface AgentsRouteDeps {
    * tests de routes voisins, jamais la production.
    */
   etatPourLint?(tenantId: string, agentId: string): Promise<EtatPourLint | null>;
+  /**
+   * Les modèles proposables et leur tarif, pour la liste déroulante de l'onglet Modèle.
+   *
+   * OPTIONNELLE : absente, la route rend nos modèles SANS tarif plutôt qu'un 503. Le menu reste utilisable,
+   * ce qui est le point : une tarification indisponible n'a pas à interdire un réglage.
+   */
+  modelesProposes?(): Promise<ModeleProposable[]>;
 }
 
 /**
@@ -191,6 +199,28 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     return reply.code(200).send({ manques: manquesAvantActivation(etat) });
   });
 
+  /**
+   * LES MODÈLES PROPOSABLES, avec leur tarif (2026-09-09, demande de Julien).
+   *
+   * 🔴 LE PRIX AFFICHÉ N'EST PAS CELUI QUI EST DÉCOMPTÉ, et il faut le savoir en lisant les deux écrans.
+   * Ce tarif porte la commission (`COMMISSION_MODELE_PCT`, 10 % par défaut) ; la consommation réelle de
+   * l'onglet voisin est enregistrée au coût BRUT du Gateway. L'écart est voulu le temps que la facturation
+   * Stripe existe (choix de Julien du 2026-09-09), et il est dit à l'écran plutôt que subi.
+   *
+   * ⚠️ La clé du Gateway ne sort JAMAIS d'ici : c'est le serveur qui lit le catalogue, la console ne reçoit
+   * que des identifiants et des prix. Une liste construite côté navigateur aurait exigé la clé dans le bundle.
+   */
+  app.get('/tenants/:tenantId/agents/modeles', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    // Sans câblage, on rend quand même NOS modèles : le menu doit rester utilisable. Le tarif manquant est
+    // une information que le front affiche, pas une panne.
+    const modeles = deps.modelesProposes
+      ? await deps.modelesProposes()
+      : MODELES_CHOISIS.map((m) => ({ ...m, prixEntree: null, prixSortie: null }));
+    return reply.code(200).send({ modeles });
+  });
+
   app.patch('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -206,6 +236,21 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     // Une version seule ne modifie rien : elle accompagne un patch, elle n'en est pas un.
     const { ficheVersionAttendue: _v, ...champs } = parse.data;
     if (Object.keys(champs).length === 0) return reply.code(400).send({ error: 'aucun champ à modifier' });
+    /**
+     * 🔴 LE MODÈLE SE CHOISIT DANS UNE LISTE, IL NE SE TAPE PLUS (2026-09-09). Le champ était une saisie
+     * libre bornée à 120 caractères : une faute de frappe passait l'enregistrement, et ne se voyait qu'au
+     * premier message d'un client, quand le Gateway rendait un 404 sur un modèle inconnu.
+     *
+     * Contrôlé contre la liste STATIQUE, jamais contre le catalogue en ligne : une panne du Gateway
+     * interdirait sinon d'enregistrer un modèle parfaitement valide. Le défaut du serveur est accepté même
+     * s'il n'est pas dans la liste, sinon changer `AGENT_MODEL` rendrait l'onglet inutilisable.
+     *
+     * ⚠️ N'affecte QUE les écritures : un agent qui porte déjà un modèle hors liste continue de tourner
+     * avec, et rien ne le réécrit dans son dos.
+     */
+    if (champs.modele !== undefined && !IDS_MODELES_CHOISIS.has(champs.modele) && champs.modele !== deps.modeleParDefaut) {
+      return reply.code(400).send({ error: `modèle inconnu : ${champs.modele}. Choisissez-en un dans la liste proposée.` });
+    }
     // 🔴 Le blocage dur du cadrage : on ne rend pas un agent proposable dans un scénario tant qu'il lui
     // manque de quoi tenir sa promesse. Sur des CHAMPS VIDES, jamais sur une qualité sémantique, et sur
     // l'ACTIVATION seulement : un brouillon se remplit dans n'importe quel ordre, et la conversation de
