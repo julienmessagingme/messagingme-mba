@@ -1,5 +1,15 @@
 import type { CategoryRates } from './cost';
 import type { NodeEventCount } from '../workflow/node-events.pg';
+import type { CompteurClic } from '../links/mesures';
+
+/**
+ * Une mesure de bloc, EVENEMENT ou CLIC.
+ *
+ * ⚠️ Le meme couple de types que `getWorkflowNodeCounts` (`src/http/stats.ts`), et pas un type de plus :
+ * `url_click` n'est pas une nature de `workflow_node_events`, il est fabrique a la lecture par
+ * `compteursDeClics`. Les deux ecrans qui affichent des mesures par bloc lisent donc la meme forme.
+ */
+export type MesureBloc = NodeEventCount | CompteurClic;
 
 /**
  * LE DÉTAIL D'UNE CAMPAGNE : ce qu'elle a coûté, et ce que les gens en ont fait.
@@ -67,11 +77,29 @@ export interface EtapeCoutCampagne {
   nodeId: string;
   /** Le bloc a envoyé quelque chose à ce contact : la base de comparaison de la ligne. */
   envoyes: { gestes: number; personnes: number };
+  /**
+   * Clics sur les liens tracés du template de ce bloc, ATTRIBUÉS à cette campagne.
+   *
+   * 🔴 CETTE COLONNE A FAILLI NE PAS EXISTER, sur une justification fausse : « un clic n'identifie
+   * personne ». C'est vrai d'un lien SANS jeton (template approuvé avant le 2026-09-02, dont l'URL est
+   * figée chez Meta pour toujours) et faux de tous les autres depuis la migration 0106, qui écrit
+   * `tracked_link_clicks.contact_id`. Ce qu'on ne sait pas rattacher est compté à part, au niveau de la
+   * fiche (`clicsAnonymes`), au lieu d'être tu ou mélangé ici.
+   *
+   * ⚠️ `personnes` reste indisponible : le compte se fait par CODE de lien, pas par personne. Un clic
+   * attribué sait de qui il vient, mais l'agrégat ne le distingue pas, et inventer un nombre de personnes
+   * égal au nombre de clics serait un mensonge dans la colonne d'à côté.
+   */
+  liens: { gestes: number };
   /** Boutons tapés (choix d'un scénario). Les deux unités existent : le tap porte un numéro. */
   boutons: { gestes: number; personnes: number };
   /** Réponses écrites en toutes lettres. */
   reponses: { gestes: number; personnes: number };
-  /** `boutons.gestes + reponses.gestes` : le dénominateur du ratio, jamais affiché comme un total à part. */
+  /**
+   * `liens.gestes + boutons.gestes + reponses.gestes` : le dénominateur du ratio, jamais affiché comme un
+   * total à part. Trois natures, un seul dénominateur : c'est ce que Julien a demandé (« le coût par clic
+   * ou nombre d'interactions »), et les trois colonnes restent lisibles pour elles-mêmes.
+   */
   interactions: number;
   /**
    * Coût du LANCEMENT rapporté aux interactions de CETTE étape.
@@ -113,6 +141,15 @@ export interface DetailCoutCampagne {
   relances: VolumeChiffre;
   /** Une ligne par bloc mesuré du scénario, dans l'ordre où la base les rend. Vide sans scénario. */
   etapes: EtapeCoutCampagne[];
+  /**
+   * Clics survenus depuis le lancement sur les liens de ce scénario, mais SANS identifiant.
+   *
+   * 🔴 Ils ne sont pas « les clics de cette campagne » et l'écran ne le prétend pas : ils viennent de
+   * templates approuvés avant le 2026-09-02, dont l'URL figée chez Meta ne porte aucun jeton, et rien ne
+   * les rattachera jamais à qui que ce soit. Les taire laisserait croire que la colonne des liens est
+   * complète ; les additionner aux attribués affirmerait qu'ils sont d'ici.
+   */
+  clicsAnonymes: number;
 }
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
@@ -155,12 +192,12 @@ function chiffrer(parts: Array<{ category: string | null; count: number }>, rate
  * choses qu'il FAIT. Les compter ferait tomber le coût par interaction à celui d'un envoi, c'est-à-dire
  * ferait passer une campagne que personne n'a lue pour une campagne parfaitement efficace.
  *
- * ⚠️ `url_click` n'y figure pas non plus, et pour une raison toute différente : il n'existe pas ici. Un
- * clic sur un lien tracé ne porte AUCUN numéro (une adresse ouverte n'identifie personne), donc il ne peut
- * pas être rattaché à une campagne parmi celles qui partagent un scénario. Les clics du template de
- * LANCEMENT, eux, le sont, par la borne du premier envoi : ils vivent dans `lancement.clics`.
+ * ⚠️ `url_click` EN FAIT PARTIE, et il a failli en être exclu sur une justification fausse. Un clic sur un
+ * lien dont l'URL porte le jeton du destinataire SAIT qui a cliqué (migration 0106), donc il s'attribue
+ * comme le reste. Seuls les clics venus d'un template approuvé avant le 2026-09-02 restent anonymes, et
+ * ils sont comptés à part dans `clicsAnonymes`.
  */
-const INTERACTIONS = new Set(['reply_button', 'reply_text']);
+const INTERACTIONS = new Set(['reply_button', 'reply_text', 'url_click']);
 
 /** Assemble la fiche. `mesures` est vide pour une campagne à template direct. */
 export function assemblerDetailCampagne(entree: {
@@ -168,7 +205,10 @@ export function assemblerDetailCampagne(entree: {
   envois: EnvoisCampagneRow[];
   rates: CategoryRates;
   funnel: { sent: number; failed: number; replied: number; buttonReplies: number; urlClicks: number | null };
-  mesures: NodeEventCount[];
+  /** Événements de blocs ET clics attribués (`kind: 'url_click'`), déjà fusionnés par l'appelant. */
+  mesures: MesureBloc[];
+  /** Clics sans identifiant survenus depuis le lancement. Voir `DetailCoutCampagne.clicsAnonymes`. */
+  clicsAnonymes?: number;
 }): DetailCoutCampagne {
   const { campagne, envois, rates, funnel, mesures } = entree;
 
@@ -187,6 +227,7 @@ export function assemblerDetailCampagne(entree: {
     const e = parNode.get(m.nodeId) ?? {
       nodeId: m.nodeId,
       envoyes: { gestes: 0, personnes: 0 },
+      liens: { gestes: 0 },
       boutons: { gestes: 0, personnes: 0 },
       reponses: { gestes: 0, personnes: 0 },
       interactions: 0,
@@ -194,6 +235,7 @@ export function assemblerDetailCampagne(entree: {
     };
     const personnes = typeof m.contacts === 'number' ? m.contacts : 0;
     if (m.kind === 'sent') { e.envoyes.gestes += m.count; e.envoyes.personnes += personnes; }
+    if (m.kind === 'url_click') e.liens.gestes += m.count;
     if (m.kind === 'reply_button') { e.boutons.gestes += m.count; e.boutons.personnes += personnes; }
     if (m.kind === 'reply_text') { e.reponses.gestes += m.count; e.reponses.personnes += personnes; }
     if (INTERACTIONS.has(m.kind)) e.interactions += m.count;
@@ -223,5 +265,6 @@ export function assemblerDetailCampagne(entree: {
     },
     relances,
     etapes,
+    clicsAnonymes: entree.clicsAnonymes ?? 0,
   };
 }

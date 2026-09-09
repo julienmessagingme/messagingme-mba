@@ -1012,8 +1012,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ⚠️ **Trois cases restent VIDES plutôt que d'afficher zéro**, et chacune dit pourquoi au survol : le coût
   quand Meta ne rend aucun tarif ou que la catégorie de l'envoi est inconnue (les envois, eux, sont comptés
   à part et annoncés) ; les clics quand la campagne envoie un **scénario** et non un template, ou quand son
-  template ne porte aucun lien tracé (« non attribuable ») ; et le ratio dès qu'un des deux termes manque
-  ou que les clics valent zéro. Un zéro affirmerait « ça n'a rien coûté » ou « personne n'a cliqué ».
+  template ne porte aucun lien tracé (« sans lien tracé », et non « non attribuable », qui se lisait comme
+  une panne d'attribution) ; et le ratio dès qu'un des deux termes manque ou que les clics valent zéro. Un
+  zéro affirmerait « ça n'a rien coûté » ou « personne n'a cliqué ».
   ⚠️ **Le tableau montre au plus 50 campagnes**, celles qui ont le plus envoyé, et il DIT quand la période
   en compte davantage : une troncature muette se lirait comme l'inventaire complet de la période.
   ⚠️ **Deux réserves sont écrites sous le tableau**, pas cachées dans une infobulle : un template approuvé

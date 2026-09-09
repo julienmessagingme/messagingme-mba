@@ -349,6 +349,8 @@ export interface VolumeChiffre {
 export interface EtapeCoutCampagne {
   nodeId: string;
   envoyes: { gestes: number; personnes: number };
+  /** Clics sur les liens traces du template de ce bloc, ATTRIBUES a cette campagne. Pas de compte de personnes. */
+  liens: { gestes: number };
   boutons: { gestes: number; personnes: number };
   reponses: { gestes: number; personnes: number };
   /** `boutons.gestes + reponses.gestes` : le denominateur du ratio, pas un total a afficher. */
@@ -372,6 +374,8 @@ export interface DetailCoutCampagne {
   };
   relances: VolumeChiffre;
   etapes: EtapeCoutCampagne[];
+  /** Clics survenus depuis le lancement mais SANS identifiant : ils ne sont attribuables a personne. */
+  clicsAnonymes: number;
 }
 export function getDetailCoutCampagne(tenantId: string, campaignId: string): Promise<DetailCoutCampagne> {
   return request<DetailCoutCampagne>(`/tenants/${tenantId}/stats/cost/campaigns/${campaignId}`);

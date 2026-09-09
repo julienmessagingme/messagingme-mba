@@ -19,6 +19,8 @@ import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, type CategoryRates } from './stats/cost';
 import { assemblerDetailCampagne } from './stats/cout-campagne';
 import { rangeToUnix, addDays, todayParis } from './stats/range';
+import type { CompteurClic } from './links/mesures';
+
 import { cacheCourt } from './lib/cache-court';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
@@ -806,7 +808,7 @@ async function main(): Promise<void> {
       getDetailCoutCampagne: async (tenant, campaignId) => {
         const campagne = await statsStore.ficheCampagne(tenant, campaignId);
         if (campagne === null) return null;
-        const [envois, rates, funnel, mesures] = await Promise.all([
+        const [envois, rates, funnel, evenements] = await Promise.all([
           statsStore.envoisDeLaCampagne(tenant, campaignId),
           // Les 30 derniers jours, la fenêtre par défaut du tableau : c'est LUI qui sert de référence,
           // parce que c'est de lui qu'on ouvre cette fiche.
@@ -814,7 +816,38 @@ async function main(): Promise<void> {
           statsStore.getCampaignFunnel(tenant, campaignId),
           campagne.workflowId ? statsStore.mesuresScenarioParCampagne(tenant, campaignId) : Promise.resolve([]),
         ]);
-        return assemblerDetailCampagne({ campagne, envois, rates, funnel, mesures });
+        /**
+         * Les clics de liens tracés, ATTRIBUÉS à cette campagne, fusionnés aux événements de blocs.
+         *
+         * ⚠️ MÊME MONTAGE que `getWorkflowNodeCounts` juste en dessous (graphe -> blocs template -> liens ->
+         * `compteursDeClics`), et c'est délibéré : le node d'un clic ne se déduit que du GRAPHE, et deux
+         * façons de faire ce chemin donneraient deux répartitions par bloc sur deux écrans.
+         *
+         * Best-effort, pour la même raison qu'à côté : une panne de cette lecture retire la colonne des
+         * liens, elle ne doit pas emporter le coût ni les réponses, qui sont déjà là.
+         */
+        let clics: CompteurClic[] = [];
+        let clicsAnonymes = 0;
+        if (campagne.workflowId) {
+          try {
+            const wf = await workflowStore.getById(campagne.workflowId, tenant);
+            const noeuds = noeudsTemplate(wf?.graph);
+            if (noeuds.length > 0) {
+              const liens = await trackedLinkStore.listByTemplates(tenant, noeuds.map((n) => n.templateName));
+              if (liens.length > 0) {
+                const compte = await trackedLinkStore.clicsAttribuesCampagne(tenant, campaignId, liens.map((l) => l.code));
+                clics = compteursDeClics(noeuds, liens, compte.attribues);
+                clicsAnonymes = compte.anonymes;
+              }
+            }
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('clics attribues a la campagne ignores:', err instanceof Error ? err.message : err);
+          }
+        }
+        return assemblerDetailCampagne({
+          campagne, envois, rates, funnel, mesures: [...evenements, ...clics], clicsAnonymes,
+        });
       },
       /**
        * Mesures d'un scénario : les événements de blocs, PLUS les clics sur les liens tracés des templates

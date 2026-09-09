@@ -70,6 +70,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       },
       relances: { envoyes: 0, cout: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 },
       etapes: [],
+      clicsAnonymes: 0,
     } : null),
     getNuageQualitatif: async () => ({
       points: [{ satisfaction: 0, urgence: 9, n: 2 }, { satisfaction: 8, urgence: 1, n: 1 }],

@@ -503,8 +503,15 @@ export class PgStatsStore {
   async envoisDeLaCampagne(tenantId: string, campaignId: string): Promise<EnvoisCampagneRow[]> {
     const res = await this.pool.query<{ category: string | null; total: string; lancement: string }>(
       `with debut as (
+         -- ⚠️ SCOPEE elle aussi. La route ne peut pas l atteindre avec une campagne d un autre espace
+         -- (ficheCampagne a deja rendu 404), mais la regle du depot est tenant_id = $1 sur CHAQUE requete
+         -- PRECISEMENT parce qu une garde posee ailleurs disparait le jour ou la methode est reutilisee.
+         -- La jointure ne coute rien, l oubli couterait un espace.
+         -- (Pas de guillemet oblique dans ce commentaire : il fermerait le gabarit JS. Invariant du depot.)
          select min(coalesce(r.claimed_at, r.sent_at)) as le
-           from campaign_recipients r where r.campaign_id = $2 and r.sent_at is not null
+           from campaign_recipients r
+           join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
+          where r.campaign_id = $2 and r.sent_at is not null
        ),
        envois as (
          select r.sent_at as at, c.category as category,
@@ -550,12 +557,19 @@ export class PgStatsStore {
    * retention (`wa_id = 'anonyme'`, migration 0063) ne correspondent plus a aucun destinataire et sortent
    * donc du compte. Ils restent visibles dans les mesures du SCENARIO, qui n'ont pas besoin d'attribution.
    *
-   * ⚠️ Les clics sur un lien trace ne sont PAS ici : ils ne portent aucun numero (une adresse ouverte
-   * n'identifie personne) et sont fusionnes a la lecture, comme pour les mesures de scenario.
+   * 🔴 GROUPE PAR (BLOC, NATURE) ET NON PAR HANDLE, ET C EST LE COMPTE DES PERSONNES QUI L EXIGE. Avec le
+   * handle dans le `group by`, `count(distinct wa_id)` compte les personnes PAR BOUTON, et l appelant, qui
+   * n affiche pas le detail par bouton, les additionne : une personne qui tape deux boutons du meme bloc
+   * compte alors pour DEUX. Le cas existe en production (verifie le 2026-09-09, un contact reel sur un bloc
+   * reel), donc la colonne « pers. » aurait surestime des le premier ecran ouvert. La fiche ne montre pas
+   * le detail par bouton : le handle n a rien a faire dans le regroupement.
+   *
+   * ⚠️ Les clics sur un lien trace ne sont pas dans cette table : ils sont fusionnes a la lecture par
+   * `compteursDeClics`, avec leur propre attribution (`clicsAttribuesCampagne`).
    */
   async mesuresScenarioParCampagne(tenantId: string, campaignId: string): Promise<NodeEventCount[]> {
-    const res = await this.pool.query<{ node_id: string; kind: string; handle: string | null; n: string; c: string }>(
-      `select e.node_id, e.kind, e.handle, count(*)::int as n, count(distinct e.wa_id)::int as c
+    const res = await this.pool.query<{ node_id: string; kind: string; n: string; c: string }>(
+      `select e.node_id, e.kind, count(*)::int as n, count(distinct e.wa_id)::int as c
          from workflow_node_events e
          join campaigns c on c.id = $2 and c.tenant_id = $1
         where e.tenant_id = $1 and c.workflow_id is not null and e.workflow_id = c.workflow_id
@@ -572,12 +586,12 @@ export class PgStatsStore {
              order by coalesce(r3.claimed_at, r3.sent_at) desc
              limit 1
           )
-        group by e.node_id, e.kind, e.handle
-        order by e.node_id, e.kind, e.handle`,
+        group by e.node_id, e.kind
+        order by e.node_id, e.kind`,
       [tenantId, campaignId],
     );
     return res.rows.map((r) => ({
-      nodeId: r.node_id, kind: r.kind as NodeEventCount['kind'], handle: r.handle,
+      nodeId: r.node_id, kind: r.kind as NodeEventCount['kind'], handle: null,
       count: Number(r.n), contacts: Number(r.c),
     }));
   }

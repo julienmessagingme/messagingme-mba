@@ -300,6 +300,73 @@ export class PgTrackedLinkStore {
    * doit afficher zéro pour les autres. Une mesure choisie qui vaut zéro est une information, et c'est à lui
    * de la produire, pas à cette requête d'inventer des lignes.
    */
+  /**
+   * Les clics d'UNE campagne sur des codes donnes, separes en ATTRIBUES et ANONYMES.
+   *
+   * 🔴 CETTE METHODE EXISTE PARCE QUE J AI AFFIRME LE CONTRAIRE, ET QUE C ETAIT FAUX. La premiere version
+   * de la fiche de campagne annoncait qu un clic « ne porte aucun numero, donc ne se rattache a aucune
+   * campagne », et refusait sur cette base la colonne que Julien avait demandee. La migration 0106 a ajoute
+   * `tracked_link_clicks.contact_id` : un lien dont l URL porte le jeton du destinataire SAIT qui a clique.
+   * L affirmation n etait vraie que du cas legataire, et une justification fausse est pire qu aucune,
+   * puisqu elle se recopie.
+   *
+   * ⚠️ CE QUI RESTE VRAI, ET QUI EST COMPTE A PART : les clics venus d un template approuve AVANT le
+   * 2026-09-02 portent une URL figee chez Meta, sans jeton, et n auront JAMAIS d identifiant (migration
+   * 0106 : « les templates deja approuves gardent leur URL sans jeton, pour toujours »). Ceux-la sont
+   * `anonymes` : ils ont eu lieu, on ne peut les rattacher a personne, et l ecran doit le dire plutot que
+   * de les taire ou de les compter ici.
+   *
+   * L attribution est EXACTEMENT celle des envois et des evenements de bloc : la derniere campagne scenario
+   * reclamee pour ce numero avant le clic. Une troisieme heuristique aurait donne une troisieme verite.
+   *
+   * ⚠️ Les anonymes sont bornes au PREMIER `claimed_at` de la campagne : sans cette borne, on remonterait
+   * des clics anterieurs a son existence. Ils ne sont pas pour autant SES clics, et le libelle de l ecran
+   * ne le pretend pas.
+   */
+  async clicsAttribuesCampagne(
+    tenantId: string, campaignId: string, codes: readonly string[],
+  ): Promise<{ attribues: Record<string, number>; anonymes: number }> {
+    if (codes.length === 0) return { attribues: {}, anonymes: 0 };
+    const res = await this.pool.query<{ code: string; attribues: string; anonymes: string }>(
+      `with debut as (
+         select min(coalesce(r.claimed_at, r.sent_at)) as le
+           from campaign_recipients r
+           join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
+          where r.campaign_id = $2 and r.sent_at is not null
+       ),
+       clics as (
+         select k.code as code, k.at as at, k.contact_id as contact_id,
+                regexp_replace(ct.phone_e164, '[^0-9]', '', 'g') as wa
+           from tracked_link_clicks k
+           left join contacts ct on ct.id = k.contact_id and ct.tenant_id = $1, debut d
+          where k.tenant_id = $1 and k.code = any($3::text[])
+            and d.le is not null and k.at >= d.le
+       )
+       select code,
+              count(*) filter (
+                where wa is not null and $2::uuid = (
+                  select r3.campaign_id
+                    from campaign_recipients r3 join campaigns c3 on c3.id = r3.campaign_id
+                   where c3.tenant_id = $1 and c3.workflow_id is not null and r3.sent_at is not null
+                     and coalesce(r3.claimed_at, r3.sent_at) <= clics.at
+                     and clics.wa = regexp_replace(r3.to_e164, '[^0-9]', '', 'g')
+                   order by coalesce(r3.claimed_at, r3.sent_at) desc
+                   limit 1
+                )
+              )::int as attribues,
+              count(*) filter (where contact_id is null)::int as anonymes
+         from clics group by code`,
+      [tenantId, campaignId, [...new Set(codes)]],
+    );
+    const attribues: Record<string, number> = {};
+    let anonymes = 0;
+    for (const r of res.rows) {
+      attribues[r.code] = Number(r.attribues);
+      anonymes += Number(r.anonymes);
+    }
+    return { attribues, anonymes };
+  }
+
   async countClicks(tenantId: string, codes: readonly string[], range: DateRange): Promise<Record<string, number>> {
     if (codes.length === 0) return {};
     const res = await this.pool.query<{ code: string; n: string }>(

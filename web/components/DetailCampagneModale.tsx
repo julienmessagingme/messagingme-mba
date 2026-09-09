@@ -26,11 +26,20 @@ import type { Locale } from '@/lib/locale';
  * 🔴 LES DEUX UNITÉS, gestes et personnes, parce qu'elles répondent à deux questions différentes (combien
  * d'activité, combien de gens). Le RATIO se calcule sur les gestes, seule unité qui existe partout.
  *
- * ⚠️ AUCUNE COLONNE « CLICS DE LIEN » DANS LES ÉTAPES, et ce n'est pas un oubli : un clic sur un lien
- * tracé ne porte AUCUN numéro (une adresse ouverte n'identifie personne), donc il ne peut pas être
- * rattaché à une campagne parmi celles qui partagent un scénario. Les clics du template de LANCEMENT, eux,
- * le sont par la borne du premier envoi, et ils ont leur ligne. L'écran l'écrit plutôt que de laisser une
- * colonne vide se lire « personne n'a cliqué ».
+ * 🔴 LA COLONNE DES LIENS A FAILLI NE PAS EXISTER, sur une justification FAUSSE. La première version de
+ * cette fiche annonçait qu'un clic « n'identifie personne, donc ne se rattache à aucune campagne », et
+ * refusait sur cette base une colonne que Julien avait demandée en toutes lettres. La migration 0106 écrit
+ * `tracked_link_clicks.contact_id` : un lien dont l'URL porte le jeton du destinataire SAIT qui a cliqué.
+ * L'affirmation n'était vraie que du cas légataire.
+ *
+ * ⚠️ CE QUI RESTE VRAI, ET QUI EST DIT À PART : les clics venus d'un template approuvé avant le 2026-09-02
+ * portent une URL figée chez Meta, sans jeton, et n'auront jamais d'identifiant. Ils sont comptés hors des
+ * colonnes, avec leur raison : les taire laisserait croire la colonne complète, les y ajouter affirmerait
+ * qu'ils viennent d'ici.
+ *
+ * ⚠️ La colonne des liens n'a PAS de compte de personnes : l'agrégat se fait par CODE de lien. Un clic
+ * attribué sait de qui il vient, mais le compteur ne les distingue pas, et écrire un nombre de personnes
+ * égal au nombre de clics mentirait dans la colonne d'à côté.
  */
 
 const TH = 'px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400';
@@ -159,7 +168,7 @@ function Contenu({ fiche, titres, locale, t }: {
             />
           )}
         </dl>
-        {phrasesNonChiffrables(l, 'periode', (n) => fmtNum(n, locale)).map((ph) => (
+        {phrasesNonChiffrables(l, 'campagne', (n) => fmtNum(n, locale)).map((ph) => (
           <p key={ph.fr} className="mt-2 text-xs text-ink-400" data-testid="detail-non-chiffrables">{t(ph.fr, ph.en)}</p>
         ))}
       </section>
@@ -189,6 +198,7 @@ function Contenu({ fiche, titres, locale, t }: {
                   <tr className="border-b border-ink-100">
                     <th className={TH}>{t('Étape', 'Step')}</th>
                     <th className={`${TH} text-right`}>{t('Envoyés', 'Sent')}</th>
+                    <th className={`${TH} text-right`}>{t('Liens', 'Links')}</th>
                     <th className={`${TH} text-right`}>{t('Boutons', 'Buttons')}</th>
                     <th className={`${TH} text-right`}>{t('Réponses', 'Replies')}</th>
                     <th className={`${TH} text-right`}>{t('Coût/interaction', 'Cost/interaction')}</th>
@@ -201,6 +211,14 @@ function Contenu({ fiche, titres, locale, t }: {
                         {titres.get(e.nodeId) ?? e.nodeId}
                       </td>
                       <td className={`${TD} text-right tabular-nums`}>{deuxUnites(e.envoyes, locale, t)}</td>
+                      {/* 🔴 `e.liens?` ET PAS `e.liens` : la console part sur Vercel a chaque push, l'API se
+                          deploie a la main sur le VPS. Pendant cette fenetre, l'ancienne API rend des etapes
+                          SANS cette colonne, et `e.liens.gestes` jetterait EN PLEIN RENDU, ce qui n'emporte
+                          pas la colonne mais la page. Meme piege que le detail des non-chiffrables, corrige
+                          au meme endroit du meme lot : le type est une promesse, pas une preuve. */}
+                      <td className={`${TD} text-right tabular-nums`} data-testid={`detail-liens-${e.nodeId}`}>
+                        {fmtNum(e.liens?.gestes ?? 0, locale)}
+                      </td>
                       <td className={`${TD} text-right tabular-nums`}>{deuxUnites(e.boutons, locale, t)}</td>
                       <td className={`${TD} text-right tabular-nums`}>{deuxUnites(e.reponses, locale, t)}</td>
                       <td className={`${TD} text-right tabular-nums`} data-testid={`detail-ratio-${e.nodeId}`}>
@@ -216,9 +234,13 @@ function Contenu({ fiche, titres, locale, t }: {
           )}
           <p className="mt-2 text-xs text-ink-400" data-testid="detail-liens-reserve">
             {t(
-              'Les clics sur un lien tracé n’apparaissent pas étape par étape : une adresse ouverte n’identifie personne, donc ils ne se rattachent à aucune campagne en particulier. Ceux du template de lancement, eux, sont ci-dessus.',
-              'Tracked link clicks do not appear step by step: an opened address identifies nobody, so they cannot be attached to one campaign. Those of the launch template are above.',
+              'La colonne « Liens » ne compte pas les personnes : le comptage se fait par lien, pas par contact.',
+              'The "Links" column does not count people: clicks are counted per link, not per contact.',
             )}
+            {fiche.clicsAnonymes > 0 && ` ${t(
+              `Et ${fmtNum(fiche.clicsAnonymes, locale)} clic(s) survenus depuis le lancement ne portent aucun identifiant : ils viennent de templates approuvés avant le 2 septembre 2026, dont l’adresse figée chez Meta ne permet pas de savoir qui a cliqué, ni pour quelle campagne. Ils ne sont donc dans aucune colonne.`,
+              `And ${fmtNum(fiche.clicsAnonymes, locale)} click(s) since the launch carry no identifier: they come from templates approved before 2 September 2026, whose address frozen at Meta cannot tell who clicked, nor for which campaign. They are in no column.`,
+            )}`}
           </p>
         </section>
       )}
@@ -233,8 +255,10 @@ function Contenu({ fiche, titres, locale, t }: {
  * rien et alourdit une colonne de chiffres. Elle est là pour signaler l'ÉCART, c'est-à-dire les gens qui
  * ont agi plusieurs fois.
  */
-function deuxUnites(v: { gestes: number; personnes: number }, locale: Locale, t: (fr: string, en?: string) => string): string {
-  if (v.gestes === 0) return '0';
+function deuxUnites(v: { gestes: number; personnes: number } | undefined, locale: Locale, t: (fr: string, en?: string) => string): string {
+  // Meme raison que la colonne des liens : une API plus ancienne que ce champ rend `undefined`, et le
+  // rendu entier tomberait sur un `.gestes` de trop.
+  if (!v || !Number.isFinite(v.gestes) || v.gestes === 0) return '0';
   if (v.personnes === v.gestes || v.personnes === 0) return fmtNum(v.gestes, locale);
   return `${fmtNum(v.gestes, locale)} (${fmtNum(v.personnes, locale)} ${t('pers.', 'ppl')})`;
 }

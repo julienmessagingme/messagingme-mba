@@ -40,8 +40,13 @@ export interface CausesNonChiffrable {
  * Sur quoi porte le compte, et ce n'est pas un détail de style : « des campagnes affichées » est la vérité
  * du tableau (qui tronque), « de la période » celle du graphe. Annoncer la période sur un tableau tronqué
  * serait faux exactement dans le cas où le chiffre compte le plus.
+ *
+ * 🔴 `campagne` A ÉTÉ AJOUTÉE EN REVUE, parce que la fiche de campagne affichait « de la période » à deux
+ * centimètres de son propre sous-titre, qui dit qu'elle NE SUIT PAS la période. Deux phrases voisines qui
+ * se contredisent valent mieux qu'un chiffre faux, mais pas de beaucoup : le lecteur ne sait plus laquelle
+ * décrit ce qu'il regarde.
  */
-export type PorteeNonChiffrable = 'campagnes-affichees' | 'periode';
+export type PorteeNonChiffrable = 'campagnes-affichees' | 'periode' | 'campagne';
 
 /** Une phrase par cause présente, dans les deux langues. Vide si tout est chiffré. */
 export interface PhrasesNonChiffrable {
@@ -64,8 +69,10 @@ export function phrasesNonChiffrables(
     typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
   const total = entier(causes.nonChiffrables) ?? 0;
   if (total === 0) return [];
-  const ouFr = portee === 'campagnes-affichees' ? 'des campagnes affichées' : 'de la période';
-  const ouEn = portee === 'campagnes-affichees' ? 'among the campaigns shown' : 'over this period';
+  const ouFr = portee === 'campagnes-affichees' ? 'des campagnes affichées'
+    : portee === 'campagne' ? 'de cette campagne' : 'de la période';
+  const ouEn = portee === 'campagnes-affichees' ? 'among the campaigns shown'
+    : portee === 'campagne' ? 'in this campaign' : 'over this period';
 
   const sc = entier(causes.sansCategorie);
   const st = entier(causes.sansTarif);

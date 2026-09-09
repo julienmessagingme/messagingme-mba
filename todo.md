@@ -477,12 +477,16 @@ canaux ». C'est l'INVERSE. Le comptage filtre sur `template_name is not null` :
 dont `template_name` est nul. Vérifié dans `src/stats/store.pg.ts` en écrivant le lot E, et gardé par un
 test d'intégration qui exerce les deux cas.
 
-Ce qui reste ouvert, une fois la phrase remise à l'endroit : une campagne à SCÉNARIO n'a pas de compteur de
-clics AU NIVEAU DE LA CAMPAGNE. Ses clics existent et s'affichent, mais par BLOC, dans Analytics > Mes
-tableaux. Les rattacher à la campagne qui a démarré le parcours est faisable (l'attribution à la lecture
-existe déjà, elle sert au coût depuis le 2026-09-07), ce n'est pas un chantier de fond, et la page de
-synthèse dit « non attribuable » en attendant plutôt que d'afficher un zéro qui se lirait « personne n'a
-cliqué ».
+✅ FAIT le 2026-09-09 : les clics d'une campagne à SCÉNARIO sont rattachés, bloc par bloc, dans la fiche
+qui s'ouvre en cliquant une ligne du tableau du coût. L'attribution est celle des envois (la dernière
+campagne scénario réclamée pour ce numéro avant le clic), et elle s'appuie sur
+`tracked_link_clicks.contact_id` (migration 0106). La case du TABLEAU, elle, dit désormais « sans lien
+tracé » et non « non attribuable », qui se lisait comme une panne d'attribution alors qu'il n'y a
+simplement rien à mesurer.
+
+⚠️ CE QUI RESTE, ET C'EST DÉFINITIF : les clics venus d'un template approuvé AVANT le 2026-09-02 portent
+une URL figée chez Meta, sans jeton, et n'auront jamais d'identifiant. La fiche les compte à part et dit
+pourquoi. Aucun code ne changera ça.
 
 ⚠️ Deux entrées de backlog fausses sur le même sujet, à un jour d'intervalle, dans les deux sens : ce qui
 les a produites n'est pas l'inattention, c'est d'avoir décrit le code de mémoire. Une affirmation sur ce que

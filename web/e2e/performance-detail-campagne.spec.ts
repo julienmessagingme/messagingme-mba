@@ -31,10 +31,11 @@ const DETAIL_SCENARIO = {
   },
   relances: { envoyes: 12, cout: 1.72, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 },
   etapes: [
-    { nodeId: 'n1', envoyes: { gestes: 40, personnes: 40 }, boutons: { gestes: 14, personnes: 11 }, reponses: { gestes: 6, personnes: 6 }, interactions: 20, coutParInteraction: 0.286 },
+    { nodeId: 'n1', envoyes: { gestes: 40, personnes: 40 }, liens: { gestes: 7 }, boutons: { gestes: 14, personnes: 11 }, reponses: { gestes: 6, personnes: 6 }, interactions: 27, coutParInteraction: 0.2119 },
     // Un bloc qui a bien ENVOYÉ et été LU, mais où personne n'a agi : aucun ratio.
-    { nodeId: 'n3', envoyes: { gestes: 5, personnes: 5 }, boutons: { gestes: 0, personnes: 0 }, reponses: { gestes: 0, personnes: 0 }, interactions: 0, coutParInteraction: null },
+    { nodeId: 'n3', envoyes: { gestes: 5, personnes: 5 }, liens: { gestes: 0 }, boutons: { gestes: 0, personnes: 0 }, reponses: { gestes: 0, personnes: 0 }, interactions: 0, coutParInteraction: null },
   ],
+  clicsAnonymes: 4,
 };
 
 /** Une campagne à template DIRECT : pas de scénario, donc pas d'étapes, mais des clics mesurés. */
@@ -46,6 +47,7 @@ const DETAIL_DIRECT = {
   },
   relances: { envoyes: 0, cout: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 },
   etapes: [],
+  clicsAnonymes: 0,
 };
 
 const GRAPH = {
@@ -146,16 +148,30 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-etape-n3')).toContainText('5');
     await expect(page.getByTestId('detail-ratio-n3')).toHaveText('—');
-    await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2860');
+    await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2119');
   });
 
-  test('🔴 les clics de lien sont dits ABSENTS des étapes, avec la raison', async ({ page }) => {
-    // Une colonne vide se lirait « personne n'a cliqué ». La vérité est qu'un clic sur une adresse
-    // n'identifie personne, donc ne se rattache à aucune campagne en particulier.
+  test('🔴 les clics de lien ATTRIBUÉS ont leur colonne, et comptent dans le ratio', async ({ page }) => {
+    // Cette colonne a failli ne pas exister, sur une justification fausse (« un clic n'identifie
+    // personne »). La migration 0106 écrit `tracked_link_clicks.contact_id` : c'est vrai d'un lien SANS
+    // jeton, faux de tous les autres. Le test garde la colonne ET son dénominateur commun.
     await mock(page);
     await page.goto('/performance');
     await page.getByTestId('cout-ligne-c-parcours').click();
-    await expect(page.getByTestId('detail-liens-reserve')).toContainText(/n’identifie personne|identifies nobody/);
+    await expect(page.getByTestId('detail-liens-n1')).toHaveText('7');
+    // 1,43... non : 5,72 / 27 = 0,2119. Le ratio porte bien sur les TROIS natures.
+    await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2119');
+  });
+
+  test('🔴 les clics ANONYMES sont dits, avec leur raison et leur date', async ({ page }) => {
+    // Ils ne sont dans aucune colonne : les taire laisserait croire la colonne complète, les y ajouter
+    // affirmerait qu'ils viennent d'ici. La phrase dit les deux, et ce qui les rend définitifs.
+    await mock(page);
+    await page.goto('/performance');
+    await page.getByTestId('cout-ligne-c-parcours').click();
+    await expect(page.getByTestId('detail-liens-reserve')).toContainText('4');
+    await expect(page.getByTestId('detail-liens-reserve')).toContainText(/2 septembre 2026|2 September 2026/);
+    await expect(page.getByTestId('detail-liens-reserve')).not.toContainText(/n’identifie personne|identifies nobody/);
   });
 
   test('une campagne à template DIRECT n’a pas de section « étape par étape »', async ({ page }) => {
@@ -183,6 +199,23 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await expect(page.getByTestId('detail-erreur')).toBeVisible();
     // Et le tableau derrière est intact : une fiche qui échoue n'emporte pas l'écran.
     await expect(page.getByTestId('cout-ligne-c-promo')).toBeVisible();
+  });
+
+  test('🔴 une API plus ANCIENNE que les colonnes ne tue pas la fiche', async ({ page }) => {
+    // La console part sur Vercel a chaque push, l'API se deploie a la main sur le VPS : il existe une
+    // fenetre ou le nouveau front interroge l'ancienne API, qui rend des etapes sans `liens`. Un acces
+    // direct y jetterait EN PLEIN RENDU, ce qui n'emporte pas la colonne mais la PAGE.
+    const ancien = {
+      ...DETAIL_SCENARIO,
+      etapes: [{ nodeId: 'n1', envoyes: { gestes: 40, personnes: 40 }, boutons: { gestes: 14, personnes: 11 }, reponses: { gestes: 6, personnes: 6 }, interactions: 20, coutParInteraction: 0.286 }],
+      clicsAnonymes: undefined,
+    };
+    await mock(page, ancien);
+    await page.goto('/performance');
+    await page.getByTestId('cout-ligne-c-parcours').click();
+    await expect(page.getByTestId('detail-etape-n1')).toBeVisible();
+    await expect(page.getByTestId('detail-liens-n1')).toHaveText('0');
+    await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2860');
   });
 
   test('le nom de la campagne est un vrai bouton, donc atteignable au clavier', async ({ page }) => {

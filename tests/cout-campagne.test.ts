@@ -92,25 +92,71 @@ describe('assemblerDetailCampagne — les étapes du scénario', () => {
     expect(d.etapes[0]!.interactions).toBe(0);
     expect(d.etapes[0]!.coutParInteraction).toBeNull();
     expect(d.etapes[0]!.envoyes).toEqual({ gestes: 10, personnes: 10 });
+    expect(d.etapes[0]!.liens).toEqual({ gestes: 0 });
   });
 
   it('boutons et réponses comptent, dans les DEUX unités, et le ratio se calcule sur les gestes', () => {
+    // ⚠️ UNE SEULE LIGNE PAR (BLOC, NATURE), et c'est le CONTRAT du store depuis la revue du 2026-09-09 :
+    // il ne regroupe plus par handle, précisément pour que ce module n'ait pas à additionner des comptes
+    // de personnes qui se chevauchent. Le contrat lui-même se vérifie contre un vrai Postgres, dans
+    // `tests/integration/stats-cout.integration.test.ts` : ici, un faux compteur rendrait ce qu'on lui dicte.
     const d = fiche({
       envois,
       mesures: [
         mes('a', 'sent', 10, 10),
-        mes('a', 'reply_button', 6, 4, 'btn:0'),
-        mes('a', 'reply_button', 2, 2, 'btn:1'),
+        mes('a', 'reply_button', 8, 6),
         mes('a', 'reply_text', 3, 3),
       ],
     });
     const e = d.etapes[0]!;
-    // Les deux handles du même bloc se cumulent : le tableau montre le bloc, pas chaque bouton.
     expect(e.boutons).toEqual({ gestes: 8, personnes: 6 });
     expect(e.reponses).toEqual({ gestes: 3, personnes: 3 });
     expect(e.interactions).toBe(11);
-    // 1,43 / 11. Sur les GESTES : c'est la seule des deux unités qui existe partout.
+    // 1,43 / 11. Sur les GESTES : c'est la seule des trois natures qui les porte toutes.
     expect(e.coutParInteraction).toBeCloseTo(0.13, 4);
+  });
+
+  /**
+   * 🔴 LES CLICS DE LIEN COMPTENT, ET CE BLOC EXISTE PARCE QUE J AVAIS AFFIRME LE CONTRAIRE.
+   *
+   * La première version de la fiche refusait cette colonne au motif qu'« un clic n'identifie personne ».
+   * La migration 0106 écrit `tracked_link_clicks.contact_id` : c'est vrai d'un lien SANS jeton, faux de
+   * tous les autres. Une justification fausse est pire qu'aucune, puisqu'elle se recopie, et celle-là
+   * avait servi à écarter une colonne que Julien avait demandée en toutes lettres.
+   */
+  it('🔴 un clic de lien ATTRIBUÉ est une interaction comme les autres', () => {
+    const d = fiche({
+      envois,
+      mesures: [mes('a', 'sent', 10, 10), mes('a', 'url_click' as never, 5, null)],
+    });
+    const e = d.etapes[0]!;
+    expect(e.liens).toEqual({ gestes: 5 });
+    expect(e.interactions).toBe(5);
+    // 1,43 / 5.
+    expect(e.coutParInteraction).toBeCloseTo(0.286, 3);
+  });
+
+  it('les trois natures partagent le MÊME dénominateur', () => {
+    const d = fiche({
+      envois,
+      mesures: [
+        mes('a', 'url_click' as never, 4, null),
+        mes('a', 'reply_button', 5, 5),
+        mes('a', 'reply_text', 2, 2),
+      ],
+    });
+    expect(d.etapes[0]!.interactions).toBe(11);
+    expect(d.etapes[0]!.coutParInteraction).toBeCloseTo(0.13, 4);
+  });
+
+  it('🔴 les clics ANONYMES sont portés à part, jamais fondus dans une colonne', () => {
+    // Ils ont eu lieu, on ne peut les rattacher a personne (template approuvé avant le 2026-09-02, URL
+    // figée chez Meta sans jeton). Les taire laisserait croire la colonne des liens complète ; les
+    // additionner affirmerait qu'ils sont d'ici.
+    const d = fiche({ envois, mesures: [mes('a', 'url_click' as never, 3, null)], clicsAnonymes: 9 });
+    expect(d.clicsAnonymes).toBe(9);
+    expect(d.etapes[0]!.liens.gestes).toBe(3);
+    expect(d.etapes[0]!.interactions).toBe(3);
   });
 
   it('🔴 le ratio est bien celui du LANCEMENT, pas de tous les envois', () => {

@@ -372,4 +372,63 @@ describe.skipIf(!url)('Cout : les deux lectures comptent la MEME population (Pos
       expect(cout).toBe(detail);
     });
   });
+
+  /**
+   * 🔴 LES PERSONNES D UN BLOC, ET POURQUOI CE TEST NE PEUT PAS ETRE UNITAIRE. Le defaut vit dans le
+   * `group by` : avec le handle dedans, `count(distinct wa_id)` compte les personnes PAR BOUTON, et
+   * l appelant, qui n affiche pas le detail par bouton, les additionne. Une personne qui tape deux boutons
+   * du meme bloc compte alors pour DEUX dans une colonne intitulee « pers. ».
+   *
+   * Le cas n est pas theorique : mesure en production le 2026-09-09, un contact reel a tape deux handles
+   * d un meme bloc. Aucun test unitaire ne peut l attraper (un faux pool rend ce qu on lui dicte), et la
+   * fiche l aurait affiche des le premier ecran ouvert sur ce scenario.
+   */
+  describe('mesures par bloc : les PERSONNES ne se comptent pas deux fois', () => {
+    let campagneScenario: string;
+    let noeud: string;
+
+    beforeAll(async () => {
+      const wf = (await pool.query<{ id: string }>(
+        `insert into workflows (tenant_id, name, graph) values ($1, 'itest-wf', '{"nodes":[],"edges":[]}'::jsonb) returning id`,
+        [tenantId],
+      )).rows[0]!.id;
+      noeud = 'bloc-itest';
+      campagneScenario = (await pool.query<{ id: string }>(
+        `insert into campaigns (tenant_id, name, category, channel, workflow_id)
+         values ($1, 'itest-scenario-personnes', 'marketing', 'whatsapp', $2) returning id`,
+        [tenantId, wf],
+      )).rows[0]!.id;
+      const contact = (await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000021') returning id`, [tenantId],
+      )).rows[0]!.id;
+      await pool.query(
+        `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, claimed_at, sent_at, message_id)
+         values ($1, $2, '+33600000021', '{}'::jsonb, 'sent', timestamptz '2026-09-05 08:00:00+00', timestamptz '2026-09-05 08:00:01+00', 'wamid.itest-perso')`,
+        [campagneScenario, contact],
+      );
+      // LA MEME personne tape DEUX boutons differents du MEME bloc.
+      await pool.query(
+        `insert into workflow_node_events (tenant_id, workflow_id, node_id, wa_id, kind, handle, at)
+         values ($1, $2, $3, '33600000021', 'reply_button', 'btn:0', timestamptz '2026-09-05 09:00:00+00'),
+                ($1, $2, $3, '33600000021', 'reply_button', 'btn:1', timestamptz '2026-09-05 09:05:00+00')`,
+        [tenantId, wf, noeud],
+      );
+    });
+
+    it('🔴 deux boutons tapes par UNE personne -> 2 gestes et 1 personne', async () => {
+      const mesures = await store.mesuresScenarioParCampagne(tenantId, campagneScenario);
+      const boutons = mesures.filter((m) => m.nodeId === noeud && m.kind === 'reply_button');
+      // UNE seule ligne : le handle n est plus dans le regroupement, donc l appelant n a rien a additionner.
+      expect(boutons).toHaveLength(1);
+      expect(boutons[0]!.count).toBe(2);
+      expect(boutons[0]!.contacts).toBe(1);
+      expect(boutons[0]!.handle).toBeNull();
+    });
+
+    it('les evenements d une AUTRE campagne ne remontent pas ici', async () => {
+      // L attribution est celle des envois : la campagne directe du decor commun ne doit rien absorber.
+      const mesures = await store.mesuresScenarioParCampagne(tenantId, campaignId);
+      expect(mesures).toEqual([]);
+    });
+  });
 });
