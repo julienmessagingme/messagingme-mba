@@ -28,8 +28,12 @@ const RACINE = resolve(__dirname, '..');
 const MANUEL = 'documentation.md';
 const lire = (f: string): string => readFileSync(join(RACINE, f), 'utf8');
 
-/** Les fichiers de doc dont les liens doivent résoudre. Le journal en fait partie : il pointe vers le manuel. */
-const DOCS = [MANUEL, 'CLAUDE.md', 'features.md', 'docs/JOURNAL-TECHNIQUE.md'];
+/**
+ * Les fichiers de doc dont les liens doivent résoudre. `README.md` en tête : c'est le PORTAIL, il n'est fait
+ * que de liens, et un portail qui renvoie dans le vide est pire qu'un portail absent. Le journal en fait
+ * partie lui aussi, puisqu'il pointe vers le manuel.
+ */
+const DOCS = ['README.md', MANUEL, 'CLAUDE.md', 'features.md', 'docs/JOURNAL-TECHNIQUE.md'];
 
 describe('le manuel ne recopie aucun compteur calculable', () => {
   it('🔴 le nombre de files n’est écrit NULLE PART en chiffres', () => {
