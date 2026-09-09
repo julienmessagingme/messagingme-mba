@@ -199,6 +199,30 @@ describe('penserTrace', () => {
     expect(r.appels).toHaveLength(MAX_ALLERS_RETOURS);
   });
 
+  it('🔴 le BUDGET arrête aussi les allers-retours, pas seulement les outils', async () => {
+    // Trouvé à la revue du 2026-09-09. Le budget était contrôlé à chaque appel d'OUTIL et nulle part dans la
+    // boucle : une conversation à court de budget refusait ses outils et continuait de payer des appels de
+    // modèle jusqu'aux six allers-retours. Le plafond est annoncé comme un garde-fou de conversation ; il
+    // débordait d'un tour entier, en silence.
+    const sansSou = { ...AGENT, plafonds: { maxAppelsOutils: 12, budgetMicroEur: 1 } };
+    const { cap, d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], undefined, sansSou);
+    const r = await penserTrace(entree(), TOUR, d);
+
+    expect(r.sortie).toBe(SORTIE_PLAFOND);
+    // UN SEUL appel de modèle : celui qui a fait franchir le plafond est payé, le suivant ne part pas.
+    expect(cap.messages).toHaveLength(1);
+  });
+
+  it('🔴 la preuve inverse : un budget LARGE laisse la boucle aller au bout', async () => {
+    // Sans ce cas, un arrêt inconditionnel passerait le test ci-dessus tout en coupant l'agent au premier
+    // aller-retour, donc en le rendant muet dès qu'il appelle un outil.
+    // ⚠️ Ce test assertait d'abord `cap.messages.length === 0` AVANT d'appeler `penserTrace` : il passait
+    // trivialement et ne prouvait rien. Deuxième fois de la journée que ce piège se referme.
+    const { cap, d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')]);
+    await penserTrace(entree(), TOUR, d);
+    expect(cap.messages).toHaveLength(MAX_ALLERS_RETOURS);
+  });
+
   it('🔴 le plafond d’APPELS D’OUTILS de la fiche est appliqué, appel par appel', async () => {
     // Dette D3(b). Recalculé à chaque appel et non une fois par tour : un modèle qui demande six outils
     // d'un coup ne doit pas pouvoir dépasser en une seule salve.

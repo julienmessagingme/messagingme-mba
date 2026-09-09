@@ -187,6 +187,24 @@ async function boucler(
   let appelsFaits = tour.appelsDejaFaits;
 
   for (let allerRetour = 0; allerRetour < MAX_ALLERS_RETOURS; allerRetour += 1) {
+    /**
+     * 🔴 LE BUDGET ARRÊTE AUSSI LES ALLERS-RETOURS, pas seulement les outils (revue du 2026-09-09).
+     *
+     * Il était contrôlé dans `executor.ts` à chaque appel d'outil, et NULLE PART ici : une conversation à
+     * court de budget refusait ses outils puis continuait de payer des appels de modèle jusqu'aux six
+     * allers-retours. Le plafond est annoncé comme un garde-fou de conversation, et il débordait d'un tour
+     * entier, en silence.
+     *
+     * 🔴 `allerRetour > 0`, ET C'EST TOUT L'ÉQUILIBRE DE CETTE GARDE. Contrôler dès le premier tour la
+     * rendrait plus stricte et CASSERAIT une garantie voisine : les outils du tour en cours ne seraient
+     * jamais exécutés, donc le refus « budget epuise » que l'executor rend au modèle deviendrait
+     * inatteignable, et le modèle n'aurait plus aucun moyen de savoir pourquoi il s'arrête. La première
+     * version de ce correctif faisait exactement ça, et un test existant l'a dit. `run-turn` garde déjà
+     * l'ENTRÉE du tour (`session.coutMicroEur >= budget`) : ce contrôle-ci ne doit borner que la SUITE.
+     */
+    if (allerRetour > 0 && tour.coutDejaMicroEur + usage.coutMicroEur >= agent.plafonds.budgetMicroEur) {
+      return { texte: null, sortie: SORTIE_PLAFOND, usage, appels, motif: 'plafond_allers_retours' };
+    }
     const reponse = await deps.completer({
       tenantId: input.tenantId,
       modele: agent.modele,
