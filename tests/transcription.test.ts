@@ -80,19 +80,22 @@ function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK]) {
   const ecrites: Array<{ texte: string; modele: string }> = [];
   const telechargements: string[] = [];
   const ordre: string[] = [];
+  const lus: Array<{ messageId: string; conversationId?: string }> = [];
+  const couts: Array<{ coutDollars: number | null; secondes: number | null }> = [];
   // ⚠️ La référence est GARDÉE : envelopper le transport sans la garder rendait `d.transport` inspectable
   // uniquement à travers l'enveloppe, et une assertion écrite dessus passait trivialement. Vu ici même.
   const faux = new FauxTransport(reponses);
   const d: DepsTranscrire = {
-    lireMessage: async () => msg,
+    lireMessage: async (_t, m2, c2) => { lus.push({ messageId: m2, ...(c2 ? { conversationId: c2 } : {}) }); return msg; },
     ecrireTranscription: async (_t, _m, texte, modele) => { ordre.push('ecrit'); ecrites.push({ texte, modele }); },
     telecharger: async (mediaId) => { telechargements.push(mediaId); return { bytes: Buffer.from('audio'), mime: 'audio/ogg' }; },
     transport: { post: (u, b, h) => { ordre.push('modele'); return faux.post(u, b, h); } },
     cle: 'vck-maison',
     modele: 'openai/whisper-1',
     tailleMaxOctets: 2 * 1024 * 1024,
+    noterCout: (_t, _m, coutDollars, secondes) => { couts.push({ coutDollars, secondes }); },
   };
-  return { d, faux, ecrites, telechargements, ordre };
+  return { d, faux, ecrites, telechargements, ordre, lus, couts };
 }
 
 describe('Transcrire le message d’une conversation', () => {
@@ -129,6 +132,31 @@ describe('Transcrire le message d’une conversation', () => {
     const { d, faux } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
     await transcrireMessage(d, 't1', 'm1');
     expect(faux.appels[0]!.headers.authorization).toBe('Bearer vck-maison');
+  });
+
+  it('🔴 la CONVERSATION nommée dans l’URL est transmise au dépôt', async () => {
+    // Sans elle, transcrire le message d'une AUTRE conversation du même espace réussirait : ce n'est pas une
+    // faille (le filtre d'espace tient au-dessus) mais une route qui ne fait pas ce qu'elle dit, et ça se
+    // paie plus tard, quand quelqu'un s'appuie sur le chemin pour raisonner.
+    const { d, lus } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
+    await transcrireMessage(d, 't1', 'm1', 'conv-7');
+    expect(lus).toEqual([{ messageId: 'm1', conversationId: 'conv-7' }]);
+  });
+
+  it('🔴 le COÛT est noté, il n’est pas lu puis jeté', async () => {
+    // Julien a décidé que la clé maison paie, donc rien n'est débité au client. Sans trace, « combien nous
+    // coûte la transcription » serait une question sans réponse, et c'est exactement le chiffre qui décidera
+    // de la refacturer ou non.
+    const { d, couts } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
+    await transcrireMessage(d, 't1', 'm1');
+    expect(couts).toEqual([{ coutDollars: 0.000235, secondes: 2.35 }]);
+  });
+
+  it('un message déjà transcrit ne note AUCUN coût', async () => {
+    // La contrepartie de l'idempotence : rien n'a été payé, rien ne doit être compté.
+    const { d, couts } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: 'deja' });
+    await transcrireMessage(d, 't1', 'm1');
+    expect(couts).toHaveLength(0);
   });
 
   it('un message SANS média n’est pas transcriptible', async () => {

@@ -95,7 +95,7 @@ import { contactVars } from './crm/render';
 import { resolveHintParams } from './crm/template';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
-import { FetchTransport } from './meta/http';
+import { FetchTransport, HTTP_TIMEOUT_MODELE_MS } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { creerRechercheSemantique } from './agent/recherche';
@@ -550,15 +550,21 @@ async function main(): Promise<void> {
        * par espace existe deja (`clesGateway.lire`) : le jour ou ca change, c'est cette ligne, et elle seule.
        */
       ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
-        transcrireMessage: (tenant: string, messageId: string) => transcrireMessage({
-          lireMessage: (t, m2) => inboxStore.lireMessagePourTranscription(t, m2),
+        transcrireMessage: (tenant: string, messageId: string, conversationId?: string) => transcrireMessage({
+          lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
           ecrireTranscription: (t, m2, texte, modele) => inboxStore.ecrireTranscription(t, m2, texte, modele),
           telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
-          transport,
+          // ⚠️ Le transport du MODÈLE (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en
+          // base64, donc 2,7 Mo à téléverser, et un modèle a le droit d'être lent là où Meta n'en a pas le
+          // droit. Le défaut aurait coupé les transcriptions les plus longues, celles qui servent le plus.
+          transport: new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
           cle: config.AI_GATEWAY_API_KEY,
           modele: config.TRANSCRIPTION_MODELE,
           tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
-        }, tenant, messageId),
+          noterCout: (t, m2, cout, secondes) => {
+            app.log.info({ tenant: t, messageId: m2, coutDollars: cout, secondes }, 'transcription_cout');
+          },
+        }, tenant, messageId, conversationId),
       } : {}),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),

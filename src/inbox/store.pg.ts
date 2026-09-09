@@ -803,13 +803,17 @@ export class PgInboxStore implements InboxStore {
    * accès au vocal d'un AUTRE client. La RLS est contournée (pooler superuser), donc ce filtre est le seul
    * contrôle, comme partout ailleurs dans ce dépôt.
    */
-  async lireMessagePourTranscription(tenantId: string, messageId: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; transcription: string | null } | null> {
+  async lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; transcription: string | null } | null> {
+    // ⚠️ `conversationId` est vérifié quand il est fourni : la route le nomme dans son chemin, et transcrire
+    // le message d'une AUTRE conversation ferait mentir l'URL. Ce n'est pas une faille (le filtre d'espace
+    // tient au-dessus), c'est une route qui ne fait pas ce qu'elle dit, et ça se paie plus tard.
     const res = await this.pool.query<{ id: string; media_id: string | null; media_mime: string | null; transcription: string | null }>(
       `select m.id, m.media_id, m.media_mime, m.transcription
          from conversation_messages m
          join conversations c on c.id = m.conversation_id
-        where m.id = $1 and c.tenant_id = $2`,
-      [messageId, tenantId],
+        where m.id = $1 and c.tenant_id = $2
+          and ($3::uuid is null or m.conversation_id = $3::uuid)`,
+      [messageId, tenantId, conversationId ?? null],
     );
     const r = res.rows[0];
     return r ? { id: r.id, mediaId: r.media_id, mediaMime: r.media_mime, transcription: r.transcription } : null;

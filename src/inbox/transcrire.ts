@@ -32,11 +32,25 @@ export interface MessageATranscrire {
 }
 
 export interface DepsTranscrire {
-  /** Le message, RELU dans l'espace appelant : c'est là que se joue l'isolation entre clients. */
-  lireMessage(tenantId: string, messageId: string): Promise<MessageATranscrire | null>;
+  /**
+   * Le message, RELU dans l'espace appelant : c'est là que se joue l'isolation entre clients.
+   *
+   * ⚠️ `conversationId` s'y ajoute quand la route en nomme une : elle n'apporte AUCUNE isolation
+   * supplémentaire (le filtre d'espace la porte entièrement), elle empêche seulement l'URL de mentir en
+   * transcrivant le message d'une autre conversation du même espace.
+   */
+  lireMessage(tenantId: string, messageId: string, conversationId?: string): Promise<MessageATranscrire | null>;
   ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string): Promise<void>;
   telecharger(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }>;
   transport: HttpTransport;
+  /**
+   * Ce que CET appel a coûté, en dollars.
+   *
+   * ⚠️ Le coût était LU (`providerMetadata.gateway.cost`) puis JETÉ. Julien a décidé que la clé maison paie,
+   * donc rien n'est débité au client ; mais sans trace, « combien nous coûte la transcription » est une
+   * question sans réponse, et c'est exactement le chiffre qui décidera de la refacturer ou non.
+   */
+  noterCout?(tenantId: string, messageId: string, coutDollars: number | null, secondes: number | null): void;
   /**
    * La clé qui PAIE la transcription.
    *
@@ -59,8 +73,8 @@ export interface DepsTranscrire {
  * un `mediaType` : le déduire de l'extension n'a pas de sens ici (il n'y a pas de nom de fichier), et un
  * mime faux fait échouer l'appel après l'avoir payé.
  */
-export async function transcrireMessage(deps: DepsTranscrire, tenantId: string, messageId: string): Promise<{ texte: string; deja: boolean }> {
-  const msg = await deps.lireMessage(tenantId, messageId);
+export async function transcrireMessage(deps: DepsTranscrire, tenantId: string, messageId: string, conversationId?: string): Promise<{ texte: string; deja: boolean }> {
+  const msg = await deps.lireMessage(tenantId, messageId, conversationId);
   if (!msg) throw new RienATranscrire();
   if (msg.transcription !== null && msg.transcription !== '') return { texte: msg.transcription, deja: true };
   if (!msg.mediaId) throw new RienATranscrire();
@@ -80,6 +94,7 @@ export async function transcrireMessage(deps: DepsTranscrire, tenantId: string, 
   // ⚠️ ÉCRIT AVANT DE RENDRE, et l'ordre compte : un appel payé dont le résultat n'est pas enregistré serait
   // repayé au clic suivant, indéfiniment.
   await deps.ecrireTranscription(tenantId, messageId, r.texte, deps.modele);
+  deps.noterCout?.(tenantId, messageId, r.coutDollars, r.secondes);
   return { texte: r.texte, deja: false };
 }
 

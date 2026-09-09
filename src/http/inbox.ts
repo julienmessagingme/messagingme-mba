@@ -5,6 +5,7 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
+import { gardeEtendue } from '../auth/middleware';
 import { cacheCourt } from '../lib/cache-court';
 import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -78,7 +79,7 @@ export interface InboxRouteDeps {
    * ⚠️ Rend `deja` quand le message était DÉJÀ transcrit : l'écran doit pouvoir le dire, sinon un opérateur
    * qui reclique croit avoir déclenché un nouvel appel.
    */
-  transcrireMessage?(tenantId: string, messageId: string): Promise<{ texte: string; deja: boolean }>;
+  transcrireMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ texte: string; deja: boolean }>;
   /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
@@ -187,8 +188,16 @@ export interface InboxRouteDeps {
  * Boîte de réception : lister/lire une conversation, répondre (texte dans la fenêtre 24 h,
  * template hors fenêtre). Lectures + réponse ouvertes à tout compte authentifié.
  */
-export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requireAuth?: PreHandler, requireAdmin?: Guard): void {
+export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requireAuth?: PreHandler, requireAdmin?: Guard, limiteCouteuse?: PreHandler): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  /**
+   * 🔴 LA GARDE DES GESTES QUI COÛTENT DE L'ARGENT RÉEL (2026-09-09). L'Inbox n'en avait aucun jusqu'à la
+   * transcription : tous ses gestes écrivent en base et rien de plus. Celui-ci appelle un modèle, et il est
+   * payé sur NOTRE clé maison. Sous le seul plafond général (300 appels par minute et par utilisateur), un
+   * script pourrait donc transcrire trois cents vocaux la minute à nos frais. L'idempotence ne protège que
+   * du re-clic sur LE MÊME message, pas de trois cents messages différents.
+   */
+  const couteux = gardeEtendue(requireAuth, limiteCouteuse);
   /**
    * La garde des gestes RÉSERVÉS AUX ADMINISTRATEURS de cet écran. Il n'y en a qu'un : effacer le contenu
    * d'une conversation. Un opérateur répond aux clients, il n'efface pas des traces.
@@ -349,7 +358,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * ⚠️ IDEMPOTENTE : deux clics, ou deux opérateurs sur la même conversation, ne paient pas deux fois. La
    * réponse dit `deja` pour que l'écran puisse le montrer plutôt que de laisser croire à un nouvel appel.
    */
-  app.post('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/transcrire', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/transcrire', couteux, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
@@ -360,7 +369,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     if (!deps.transcrireMessage) return reply.code(503).send({ error: 'transcription indisponible sur cette instance' });
     try {
-      const r = await deps.transcrireMessage(tenant, messageId);
+      const r = await deps.transcrireMessage(tenant, messageId, conversationId);
       return reply.code(200).send(r);
     } catch (err) {
       req.log.error({ err, tenant, messageId }, 'transcription_impossible');

@@ -416,7 +416,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
   // Deux gardes : l'inbox est ouverte a tout compte authentifie, mais l'effacement du contenu d'une
   // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
-  if (deps.inbox) registerInbox(app, deps.inbox, requireAuth, requireAdmin);
+  if (deps.inbox) registerInbox(app, deps.inbox, requireAuth, requireAdmin, limiteCouteuse);
   if (deps.hubspotEvents) registerHubspotEvents(app, deps.hubspotEvents);
   if (deps.stats) registerStats(app, deps.stats, requireAdmin);
   if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
