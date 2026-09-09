@@ -192,18 +192,24 @@ Meta -> POST /webhooks/meta (mba-api)
         auto-création ou mise à jour du contact (isolée : un échec ne casse pas l'inbox)
         capture du referral CTWA (premier message seulement)
         enregistrement dans le fil
-        puis, DANS L'ORDRE et chacun isolé en try/catch :
-          1. jeton de test          (consomme le message, personne d'autre ne le voit)
-          2. mapping de formulaire  (nfm_reply -> champs de la fiche)
-          3. avance de scénario     (le contact a répondu)
-          4. automations            (mot-clé, tag, lien de chaîne)
+        puis, DANS CET ORDRE et chacun isolé en try/catch :
+          1. mapping de formulaire  (nfm_reply -> champs de la fiche)
+          2. jeton de test          (CONSOMME le message, personne d'autre ne le voit)
+          3. automations            (mot-clé, tag, lien de chaîne) -- CONSOMMENT aussi
+          4. avance de scénario     (le contact a répondu, sur ce qui reste)
 ```
 
 🔴 **L'ordre n'est pas décoratif, et chaque maillon est isolé.** Ils partagent le MÊME job : une exception
 dans l'un rejouerait le job entier, donc les statuts de livraison et l'avance de scénario avec. Aucun ne throw.
 
-🔴 **Le jeton de test passe en premier** et signale les messages qu'il a consommés, pour qu'un seul message ne
-déclenche jamais deux choses.
+🔴 **LES AUTOMATIONS PASSENT AVANT L'AVANCE, et le message est CONSOMMÉ.** Quand un message est à la fois une
+réponse attendue par le parcours en cours et le déclencheur d'un autre scénario, **le déclencheur gagne,
+toujours** (décision produit). Dans l'ordre inverse, l'ancien parcours avançait et ENVOYAIT son bloc suivant,
+puis le nouveau scénario démarrait et le tuait : le client recevait deux messages, dont un venant d'un
+parcours qu'on venait d'abandonner. ⚠️ Fermer le parcours ne suffit pas, il faut lui RETIRER le message.
+
+⚠️ **« Consommé » se propage par union**, du jeton de test vers les automations puis vers l'avance : un seul
+message ne déclenche jamais deux choses.
 
 ⚠️ **`webhook-status` est une file SÉPARÉE** de `webhook`. Les accusés de livraison de Meta (sent, delivered,
 read) arrivent par rafales : une campagne de 5 000 messages en produit trois par destinataire. Sur la même

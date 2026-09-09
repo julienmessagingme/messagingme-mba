@@ -160,9 +160,10 @@ entrants), donc image construite, puis `migrate`, puis `up -d --build`. Vérifi�
 les journaux : sans trafic entrant, un silence ne prouve rien.
 
 **Le détail de CHAQUE migration (0093 à 0113), ce qu'elle a coûté et ce qu'elle a appris, vit dans**
-**[documentation.md](documentation.md) § « Les migrations, une par une ».** Il occupait un quart de ce
-fichier pour raconter des migrations appliquées depuis des semaines : un point d'entrée qui devient une
-archive cesse d'être un point d'entrée.
+**[docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) § « Les migrations, une par une ».** Il occupait un
+quart de ce fichier pour raconter des migrations appliquées depuis des semaines : un point d'entrée qui
+devient une archive cesse d'être un point d'entrée. ⚠️ Il est passé de `documentation.md` à l'archive le
+2026-09-09, quand le manuel a été séparé du journal.
 
 🔴 **CE QUI SE DÉCIDE À CHAQUE DÉPLOIEMENT, et qui reste donc ici : une migration qui AJOUTE une colonne**
 **écrite par le code se passe AVANT le déploiement** (sinon le chemin chaud échoue en boucle, `column ... does
@@ -397,4 +398,7 @@ Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse`
 
 ### Gotchas et décisions
 
-Le journal chronologique (gotchas Meta et décisions par lot) a été déplacé dans [documentation.md](documentation.md) pour garder ce CLAUDE.md léger. À consulter là, à la demande.
+Le journal chronologique (gotchas Meta et décisions par lot) vit dans
+[docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md), l'archive. Il a d'abord quitté ce fichier pour
+`documentation.md`, puis `documentation.md` pour l'archive le 2026-09-09 : la même dérive, deux fois, et
+c'est pour ça que le manuel porte désormais une règle qui l'interdit et un test qui la tient.

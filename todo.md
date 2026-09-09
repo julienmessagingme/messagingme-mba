@@ -253,6 +253,27 @@ ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et c
 multi-numéro sort du plan, remplacé par un refus explicite du second) et **conversations gardées 12 mois**
 (plancher de 3 mois donné par Julien, quadruplé parce que l'effacement est irréversible).
 
+## Ce que l'audit documentaire du 2026-09-08 laisse ouvert (trié le 2026-09-09)
+
+L'essentiel est fait : le manuel est séparé de son journal, le README est redevenu un portail, et trois
+contrôles automatiques empêchent le retour des dérives (compteur recopié, titre daté, lien mort). Restent
+deux items, tous deux P2 ou P3 dans l'audit, aucun urgent.
+
+🟠 **Classer les variables d'environnement, et faire de `src/config.ts` la source GÉNÉRATRICE.** Le schéma zod
+porte une centaine de clés, `.env.example` en montre dix-neuf. Le manuel les range désormais en cinq familles
+(secrets obligatoires, interrupteurs, capacité, rétention, paramètres commerciaux), mais cette table est
+écrite à la main : c'est exactement ce qu'on vient d'interdire ailleurs. La vraie fermeture est un générateur
+qui produit `.env.example` depuis le schéma. ⚠️ Ne PAS toucher au chargement des variables au passage :
+documenter d'abord, générer ensuite.
+
+🔵 **Un contrat OpenAPI pour l'API publique v1.** Utile le jour où on ouvre l'API à des intégrateurs, inutile
+avant. ⚠️ À GÉNÉRER depuis le code, jamais à écrire à la main : un contrat écrit à part est un second
+inventaire, donc une divergence programmée. Aucun besoin aujourd'hui, personne ne l'a demandé.
+
+⛔ **Écarté : formaliser des ADR.** L'audit le classe P3 en notant lui-même le risque de double documentation.
+Le « pourquoi » d'une décision vit déjà dans le journal technique et dans les invariants du manuel ; en faire
+un troisième endroit garantirait qu'un des trois soit faux.
+
 ## Un refus d'automation n'a AUCUN écran (relevé au lot « la chaîne reprend la main », 2026-09-08)
 
 🟠 **Le symptôme, vécu.** Un bouton de chaîne cliqué ne lançait pas son scénario. Le refus était légitime (le
@@ -576,7 +597,7 @@ verrou d'exécution par campagne, migration 0089), **R13** (arrêter une campagn
 déploiement ne gèle plus une campagne : balayage de reprise, bail court renouvelé, drapeau d'arrêt,
 `stop_grace_period`), **R10 + J2** (le rappel « avant date » ne part plus deux fois : claim conditionnel sur
 le marqueur d'occurrence, dans le runner), puis **R9** (import CSV) et **R7** (compteurs de l'inbox). Détail
-dans `documentation.md` §Journal des lots livrés.
+dans `docs/JOURNAL-TECHNIQUE.md`, l archive.
 
 **Il ne reste donc AUCUN constat rouge ni orange de cet audit.** R11+J3 reste ouvert, sans objet tant qu'un
 seul worker tourne, et deux leviers ont été laissés SCIEMMENT, avec leur condition de déclenchement :
@@ -1124,7 +1145,7 @@ Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **
 
 ## Programme 16 features (2026-07-16) : lots restants
 
-Lots A-E LIVE (cf `documentation.md §Journal des lots livrés`). Restent, dans l'ordre recommandé :
+Lots A-E LIVE (cf `docs/JOURNAL-TECHNIQUE.md` (l archive)). Restent, dans l'ordre recommandé :
 - ✅ **Lot 4b : fin du socle identifiants : FAIT (2026-07-16)** (codes des NODES mintés serveur + champs système
   déterministes + backfill, cf `.loop/lotF-identifiants-4b.md`). Reste le chantier DÉDIÉ **endpoints API publics**
   adressés par code (API keys, auth consommateur externe, scopes, rate limiting -> cadrage produit).
@@ -1242,7 +1263,7 @@ Chacun est un compromis assumé, pas un oubli.
 
 ## Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16)
 
-Contexte et gotchas : `documentation.md §Journal des lots livrés`. ⚠️ Le compteur de migrations vit dans `CLAUDE.md`, pas ici : cette ligne a annoncé « 0059 » pendant trente migrations.
+Contexte et gotchas : `docs/JOURNAL-TECHNIQUE.md` (l archive). ⚠️ Le compteur de migrations vit dans `CLAUDE.md`, pas ici : cette ligne a annoncé « 0059 » pendant trente migrations.
 
 - 🔴 **Le pilote OTP, avant toute construction.** Répondeur Zadarma sur un numéro DÉDIÉ, un OTP déclenché, et
   on regarde si Meta dicte son code à une machine ou raccroche. Aucun retour d'expérience publié : c'est la
@@ -1415,7 +1436,7 @@ comme « admin actif ». Défense en profondeur, à faire à froid (touche du SQ
 ## Refonte auth : ✅ FAITE (Lot 6, 2026-07-13)
 
 Inscription libre + Google + invitations Resend + mot de passe perdu/reset/changement, tous LIVE. Détail :
-`documentation.md §Journal des lots livrés` §Lot 6. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
+`docs/JOURNAL-TECHNIQUE.md` (l archive) §Lot 6. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
 
 ## Vérifier l'identité BSUID au 1er trafic réel (lot 4)
 
