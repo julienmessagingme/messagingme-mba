@@ -41,7 +41,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 const COMPLET: AgentComplet = {
   id: AG1, label: 'Conseiller séjours', status: 'draft',
-  mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-test',
+  mentionIa: 'Vous échangez avec un assistant automatique.', mentionIaFrequence: 'session' as const, modele: 'modele-test',
   maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
   contactInconnu: 'lecture_seule', contenu: ficheVide(), ficheVersion: 1,
 };
@@ -130,9 +130,23 @@ describe('routes agents : création', () => {
     // La mention est une obligation légale (AI Act, article 50) : la laisser au client créerait des agents
     // muets sur leur nature que personne ne penserait à compléter.
     const { cap, srv } = app();
-    await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'X', mentionIa: '', modele: 'gpt-pirate' } });
+    await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'X', mentionIa: '', mentionIaFrequence: 'session' as const, modele: 'gpt-pirate' } });
     expect(cap.crees[0]?.mention.length).toBeGreaterThan(10);
     expect(cap.crees[0]?.modele).toBe('modele-config');
+  });
+
+  it('🔴 le régime d’annonce d’IA se règle, et une valeur inconnue est REFUSÉE', async () => {
+    // `jamais` doit être un choix explicite du client (AI Act art. 50 : l'obligation pèse sur la marque
+    // déployante). Il est donc réglable, mais l'énumération est fermée ici ET par un `check` en base : la
+    // première rend un 400 qui dit quoi corriger, le second garantit qu'aucun autre chemin d'écriture ne
+    // posera une valeur inconnue.
+    const { cap, srv } = app();
+    const ok = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { mentionIaFrequence: 'jamais' } });
+    expect(ok.statusCode).toBe(200);
+    expect(cap.patches[0]?.patch).toMatchObject({ mentionIaFrequence: 'jamais' });
+
+    const ko = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { mentionIaFrequence: 'parfois' } });
+    expect(ko.statusCode).toBe(400);
   });
 
   it('un label vide est refusé', async () => {

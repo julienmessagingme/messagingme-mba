@@ -19,6 +19,15 @@ import { blocDelimite } from './bloc-donnees';
 /** Ce que le prompt a besoin de savoir. Volontairement réduit : tout vient de la fiche. */
 export interface ContexteAgent {
   mentionIa: string;
+  /**
+   * L'agent doit-il annoncer qu'il est une IA DANS CE TOUR-CI ?
+   *
+   * 🔴 UN BOOLÉEN DÉCIDÉ PAR LE CODE, ET SURTOUT PAS LE RÉGIME. Avant, la consigne disait « au tout premier
+   * message d'une conversation » : le modèle devait deviner, depuis un transcript, où commence une
+   * conversation. Il ne le sait pas. Lui passer le régime (`session`, `chaque_message`) ne ferait que
+   * déplacer la même devinette d'un cran. Le tour, lui, sait si l'agent a déjà parlé dans cette session.
+   */
+  annoncerIa: boolean;
   contenu: FicheAgentContenu;
   /** Le contact est-il connu du mini-CRM ? Change ce que l'agent peut faire, il doit le savoir. */
   contactConnu: boolean;
@@ -34,8 +43,13 @@ function section(titre: string, valeur: string): string[] {
 export function promptSysteme(ctx: ContexteAgent): string {
   const c = ctx.contenu;
   const blocs: string[] = [
-    // En tête, et formulée comme une obligation, pas comme une suggestion.
-    `Tu es un assistant automatique qui répond sur WhatsApp. Au tout premier message d'une conversation, tu annonces que tu es une IA, avec exactement cette phrase :\n« ${ctx.mentionIa.trim()} »`,
+    // En tête. L'annonce n'est PLUS conditionnelle pour le modèle : ou bien on la lui demande maintenant, ou
+    // bien on n'en parle pas du tout. Une consigne du genre « seulement si c'est le premier message » lui
+    // rendrait la décision qu'on vient justement de lui retirer.
+    ctx.annoncerIa
+      ? `Tu es un assistant automatique qui répond sur WhatsApp. Commence ta réponse par exactement cette phrase, seule, avant tout le reste :
+« ${ctx.mentionIa.trim()} »`
+      : 'Tu es un assistant automatique qui répond sur WhatsApp.',
     ...section('Ton objectif :', c.objectif),
     ...section('Ton nom :', c.nom),
     ...section('Ton ton :', c.ton),

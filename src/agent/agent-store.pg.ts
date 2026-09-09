@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { AgentComplet, AgentResume, AgentStore, FicheAgent, PatchAgent, SortieAgent, StatutAgent } from './agent-store';
+import { estFrequenceMention } from './agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
 import { asArray, asRecord } from '../webhooks/json';
 import { CODE_SORTIE_RE, ficheAgentSchema, ficheVide } from './fiche';
@@ -8,6 +9,7 @@ interface Ligne {
   id: string;
   tenant_id: string;
   mention_ia: string;
+  mention_ia_frequence?: string | null;
   modele: string;
   max_tours: number;
   max_appels_outils: number;
@@ -24,8 +26,8 @@ export class PgAgentStore implements AgentStore {
 
   async byId(tenantId: string, id: string): Promise<FicheAgent | null> {
     const res = await this.pool.query<Ligne>(
-      `select id, tenant_id, mention_ia, modele, max_tours, max_appels_outils, budget_micro_eur,
-              inactivite_minutes, contact_inconnu, status
+      `select id, tenant_id, mention_ia, mention_ia_frequence, modele, max_tours, max_appels_outils,
+              budget_micro_eur, inactivite_minutes, contact_inconnu, status
          from agents where tenant_id = $1 and id = $2`,
       [tenantId, id],
     );
@@ -35,6 +37,9 @@ export class PgAgentStore implements AgentStore {
       id: r.id,
       tenantId: r.tenant_id,
       mentionIa: r.mention_ia,
+      // ⚠️ Repli sur `session` si la colonne manque : c'est EXACTEMENT le comportement d'avant la migration
+      // 0126 (la consigne visait deja le premier message), donc une base en retard ne change rien.
+      mentionIaFrequence: estFrequenceMention(r.mention_ia_frequence) ? r.mention_ia_frequence : 'session',
       modele: r.modele,
       plafonds: {
         maxTours: r.max_tours,
@@ -106,6 +111,10 @@ export class PgAgentStore implements AgentStore {
          label = coalesce($3, label),
          status = coalesce($4, status),
          mention_ia = coalesce($5, mention_ia),
+         -- ⚠️ Le parametre 14 et non un numero intercale : renumeroter les treize existants pour inserer
+         -- celui-ci aurait ete treize occasions de decaler une valeur d un cran, en silence.
+         -- (Aucun backtick dans ce commentaire : il fermerait le gabarit JS, cf. invariant 23.)
+         mention_ia_frequence = coalesce($14, mention_ia_frequence),
          modele = coalesce($6, modele),
          max_tours = coalesce($7, max_tours),
          max_appels_outils = coalesce($8, max_appels_outils),
@@ -127,6 +136,7 @@ export class PgAgentStore implements AgentStore {
         patch.inactiviteMinutes ?? null, patch.contactInconnu ?? null,
         patch.contenu ? JSON.stringify(patch.contenu) : null,
         patch.ficheVersionAttendue ?? null,
+        patch.mentionIaFrequence ?? null,
       ],
     ).catch(surLabelDejaPris);
     const r = res.rows[0];
@@ -147,7 +157,7 @@ function surLabelDejaPris(err: unknown): never {
   throw err;
 }
 
-const COLONNES_COMPLETES = `id, label, status, mention_ia, modele, max_tours, max_appels_outils,
+const COLONNES_COMPLETES = `id, label, status, mention_ia, mention_ia_frequence, modele, max_tours, max_appels_outils,
                             budget_micro_eur, inactivite_minutes, contact_inconnu, fiche, fiche_version`;
 
 interface LigneComplete {
@@ -155,6 +165,7 @@ interface LigneComplete {
   label: string;
   status: StatutAgent;
   mention_ia: string;
+  mention_ia_frequence?: string | null;
   modele: string;
   max_tours: number;
   max_appels_outils: number;
@@ -174,6 +185,7 @@ function versComplet(r: LigneComplete): AgentComplet {
     label: r.label,
     status: r.status,
     mentionIa: r.mention_ia,
+      mentionIaFrequence: estFrequenceMention(r.mention_ia_frequence) ? r.mention_ia_frequence : 'session',
     modele: r.modele,
     maxTours: r.max_tours,
     maxAppelsOutils: r.max_appels_outils,

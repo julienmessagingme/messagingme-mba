@@ -1697,9 +1697,18 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 
 ### La mention d'IA (obligation légale)
 
-- ✅ **Chaque agent porte une phrase qui annonce au contact qu'il parle à une IA**, partant avec le premier
-  message. Pré-remplie (« Vous échangez avec un assistant automatique. »), modifiable, mais **elle ne peut
-  jamais être vide** : c'est une obligation de l'AI Act (article 50).
+- ✅ **Chaque agent porte une phrase qui annonce au contact qu'il parle à une IA.** Pré-remplie
+  (« Vous échangez avec un assistant automatique. »), modifiable, mais **elle ne peut jamais être vide**.
+- ✅ **QUAND elle est dite est un RÉGLAGE du client** (2026-09-09), à trois régimes : **jamais**,
+  **une fois par session** (le défaut) ou **à chaque message**. La question lui est posée à la construction
+  du bot, elle n'est pas cachée dans un écran qu'on ne trouve pas.
+  ⚠️ **Ce n'était pas tenable avant** : la phrase était obtenue en demandant au modèle de la dire « au tout
+  premier message d'une conversation ». Rien ne garantissait qu'elle parte, et surtout le modèle ne sait pas
+  où commence une session : le réglage « une fois par session » aurait été un mensonge. C'est le code qui
+  choisit désormais, avant chaque appel.
+  ⚠️ **« Jamais » est un choix, pas un oubli.** L'AI Act (article 50) n'impose l'information que lorsqu'elle
+  n'est pas évidente du contexte, et l'obligation pèse sur la marque qui déploie l'agent : c'est donc à elle
+  de trancher, en connaissance de cause.
 - ✅ **L'assistant de construction n'a pas le droit d'y toucher.** Une IA ne supprime pas la phrase qui annonce
   qu'elle est une IA.
 

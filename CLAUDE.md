@@ -79,9 +79,25 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Écrite, PAS ENCORE APPLIQUÉE : 0125** (`conversation_messages.media_id`, `.media_mime`, `.transcription`,
+**Écrite, PAS ENCORE APPLIQUÉE : 0126** (`agents.mention_ia_frequence` : annoncer qu'on est une IA devient un
+RÉGLAGE du client, à trois régimes). **Prochaine libre = 0127.**
+
+🔴 **LA REVUE DE L'AGENT A TROUVÉ QUE L'ANNONCE ÉTAIT CONFIÉE AU MODÈLE**, et c'est ce que 0126 corrige. La
+consigne système disait « au tout premier message d'une conversation, tu annonces que tu es une IA » : rien
+ne garantissait qu'elle parte, et surtout « le premier message d'une conversation » est une notion que le
+MODÈLE devait deviner depuis un transcript. Il ne sait pas où commence une session, donc un réglage « une
+fois par session » posé sur cette base n'aurait jamais pu être tenu. **C'est le code qui choisit désormais
+l'instruction avant l'appel** : dire la phrase maintenant, ou ne pas en parler. Le modèle n'a plus de
+décision à prendre.
+
+⚠️ **`jamais` est un choix EXPLICITE du client, obtenu en le lui demandant à la construction du bot**
+(décision de Julien du 2026-09-09 : « par principe non, on ne demande pas à l'IA de dire systématiquement je
+suis une IA »). L'AI Act article 50 n'impose l'information que lorsqu'elle n'est pas évidente du contexte, et
+l'obligation pèse sur la marque DÉPLOYANTE : c'est donc à elle de trancher, pas à nous en silence. Défaut
+`session`, qui ne change rien aux agents existants.
+
+Avant elle : **0125** (`conversation_messages.media_id`, `.media_mime`, `.transcription`,
 `.transcription_modele` : garder de quoi RETROUVER un média entrant, et ce qu'on en a lu).
-**Prochaine libre = 0126.**
 
 🔴 **L'IDENTIFIANT DU MÉDIA ÉTAIT JETÉ À LA PORTE, et c'est le vrai sujet de 0125.** Meta ne transmet pas le
 fichier dans le webhook, il transmet un identifiant avec lequel on va chercher une URL de téléchargement.

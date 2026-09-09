@@ -140,7 +140,7 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours', ouvertLe: '2026-08-28T10:00:00.000Z',
   };
   const FICHE: FicheAgent = {
-    id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', modele: 'm', status: 'active',
+    id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, modele: 'm', status: 'active',
     plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000 },
     inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
   };

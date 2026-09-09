@@ -28,6 +28,7 @@ const OUTIL: OutilDefini = {
 
 const AGENT: ContexteAgentComplet = {
   modele: 'modele-test',
+  mentionIaFrequence: 'session' as const,
   mentionIa: 'Vous échangez avec un assistant automatique.',
   sorties: [{ code: 'fini', label: 'Fini' }],
   contenu: { ...ficheVide(), objectif: 'Aider.' },
@@ -197,6 +198,35 @@ describe('penserTrace', () => {
     expect(r.sortie).toBe(SORTIE_PLAFOND);
     expect(cap.messages).toHaveLength(MAX_ALLERS_RETOURS);
     expect(r.appels).toHaveLength(MAX_ALLERS_RETOURS);
+  });
+
+  /**
+   * LE RÉGIME D'ANNONCE D'IA (migration 0126). C'est le TOUR qui décide, plus le modèle : il lit le
+   * transcript de la session, où « l'agent a-t-il déjà parlé » se voit sans requête.
+   */
+  it('🔴 « session » : l’annonce est demandée au premier tour, et à celui-là seulement', async () => {
+    const { cap, d } = deps([texte('bonjour')]);
+    await penserTrace(entree(), TOUR, d);
+    expect(JSON.stringify(cap.messages[0])).toContain('Commence ta réponse par exactement cette phrase');
+
+    // Le MÊME agent, mais l'agent a déjà parlé dans cette session : plus d'annonce.
+    const { cap: cap2, d: d2 } = deps([texte('et ensuite')]);
+    await penserTrace({ ...entree(), transcript: [{ role: 'agent', texte: 'deja dit' }] }, TOUR, d2);
+    expect(JSON.stringify(cap2.messages[0])).not.toContain('Commence ta réponse par exactement cette phrase');
+  });
+
+  it('🔴 « jamais » ne l’annonce pas, « chaque_message » l’annonce même après avoir parlé', async () => {
+    // Les deux bornes du réglage. Sans elles, un câblage qui lirait le régime de travers passerait le test
+    // ci-dessus (« session » est le défaut) sans que personne le voie.
+    const jamais = { ...AGENT, mentionIaFrequence: 'jamais' as const };
+    const { cap, d } = deps([texte('bonjour')], undefined, jamais);
+    await penserTrace(entree(), TOUR, d);
+    expect(JSON.stringify(cap.messages[0])).not.toContain('Commence ta réponse par exactement cette phrase');
+
+    const toujours = { ...AGENT, mentionIaFrequence: 'chaque_message' as const };
+    const { cap: c2, d: d2 } = deps([texte('et ensuite')], undefined, toujours);
+    await penserTrace({ ...entree(), transcript: [{ role: 'agent', texte: 'deja dit' }] }, TOUR, d2);
+    expect(JSON.stringify(c2.messages[0])).toContain('Commence ta réponse par exactement cette phrase');
   });
 
   it('🔴 le BUDGET arrête aussi les allers-retours, pas seulement les outils', async () => {

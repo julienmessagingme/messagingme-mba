@@ -5,6 +5,7 @@ import type { ContexteAppel, ResultatOutil, ToolExecutorDeps } from './executor'
 import { executeTool } from './executor';
 import type { OutilDefini } from './catalog';
 import type { SortieAgent } from './agent-store';
+import type { FrequenceMentionIa } from './agent-store';
 import { outilsExposes } from './outils-maison';
 import { blocResultatOutil, ressembleAUnBlocOutil, promptSysteme, type ContexteAgent } from './prompt';
 import { SORTIE_PLAFOND } from './sorties';
@@ -77,6 +78,8 @@ export interface GatewayBrainDeps {
 
 export interface ContexteAgentComplet {
   modele: string;
+  /** Le régime d'annonce d'IA (migration 0126). C'est le tour qui en tire un booléen, pas le modèle. */
+  mentionIaFrequence: FrequenceMentionIa;
   mentionIa: string;
   sorties: SortieAgent[];
   contenu: ContexteAgent['contenu'];
@@ -126,6 +129,18 @@ export interface DecisionTracee extends DecisionAgent {
 }
 
 /** Le transcript, tel que la session le porte : un rôle et un texte. Lu défensivement, c'est du jsonb. */
+/**
+ * L'agent a-t-il DÉJÀ pris la parole dans cette session ?
+ *
+ * ⚠️ Lu sur le transcript de la SESSION, pas sur l'historique de la conversation : deux notions différentes.
+ * Un contact qui revient trois jours plus tard ouvre une nouvelle session, et l'annonce se refait, ce qui est
+ * le sens de « une fois par session ». Compter sur l'historique complet ne l'aurait dite qu'une seule fois
+ * dans la vie du contact, ce qui n'est pas le réglage proposé au client.
+ */
+function dejaParle(transcript: unknown[]): boolean {
+  return transcript.some((t) => (t as { role?: unknown } | null)?.role === 'agent');
+}
+
 function versMessages(transcript: unknown[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const brut of transcript) {
@@ -179,7 +194,24 @@ async function boucler(
   const contact = deps.lireContact ? await deps.lireContact(input.tenantId, tour.waId) : null;
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: promptSysteme({ mentionIa: agent.mentionIa, contenu: agent.contenu, contactConnu: contact !== null }) },
+    {
+      role: 'system',
+      /**
+       * 🔴 C'EST ICI QUE LE RÉGIME D'ANNONCE DEVIENT UNE DÉCISION, et c'est le seul endroit qui puisse la
+       * prendre : `input.transcript` est celui de la SESSION en cours, donc « l'agent a-t-il déjà parlé »
+       * s'y lit sans requête. Le modèle, lui, ne sait pas où commence une session.
+       *   - `jamais`        : on n'en parle pas ;
+       *   - `chaque_message`: à tous les tours ;
+       *   - `session`       : au premier tour où l'agent prend la parole, et à celui-là seulement.
+       */
+      content: promptSysteme({
+        mentionIa: agent.mentionIa,
+        annoncerIa: agent.mentionIaFrequence === 'chaque_message'
+          || (agent.mentionIaFrequence === 'session' && !dejaParle(input.transcript)),
+        contenu: agent.contenu,
+        contactConnu: contact !== null,
+      }),
+    },
     ...versMessages(input.transcript),
   ];
   const exposes = outilsExposes(agent.outilsActifs, agent.sorties);

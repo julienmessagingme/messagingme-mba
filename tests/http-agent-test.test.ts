@@ -39,7 +39,7 @@ const OUTIL: OutilDefini = {
 
 const AGENT: ContexteAgentComplet = {
   modele: 'modele-test',
-  mentionIa: 'Vous échangez avec un assistant automatique.',
+  mentionIa: 'Vous échangez avec un assistant automatique.', mentionIaFrequence: 'session' as const,
   sorties: [{ code: 'fini', label: 'Fini' }],
   contenu: { ...ficheVide(), objectif: 'Aider.' },
   outilsActifs: [OUTIL],

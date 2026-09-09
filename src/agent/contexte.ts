@@ -29,6 +29,7 @@ export async function lireContexteAgent(
     // confondre ferait répondre aux contacts avec le modèle réservé au setup.
     modele: fiche.modele,
     mentionIa: fiche.mentionIa,
+    mentionIaFrequence: fiche.mentionIaFrequence,
     sorties: fiche.contenu.sorties,
     contenu: fiche.contenu,
     outilsActifs: await deps.outils.listActifs(tenantId, agentId),

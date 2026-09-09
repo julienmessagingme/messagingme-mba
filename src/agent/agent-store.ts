@@ -18,11 +18,36 @@ export interface PlafondsAgent {
  * modèle, sa mention d'IA et son statut. Le contenu éditorial (objectif, ton, règles) vit dans la colonne
  * `fiche` en jsonb et n'est lu que par le cerveau, pas par le tour.
  */
+/** Les trois régimes d'annonce. Fermé, et gardé par un CHECK en base : une valeur inattendue est refusée
+ *  par la base, pas seulement par un schéma applicatif. */
+export type FrequenceMentionIa = 'jamais' | 'session' | 'chaque_message';
+
+export const FREQUENCES_MENTION_IA: readonly FrequenceMentionIa[] = ['jamais', 'session', 'chaque_message'];
+
+/** Une valeur venue de la base est-elle un régime connu ? Sert au repli sûr d'une base en retard. */
+export function estFrequenceMention(v: unknown): v is FrequenceMentionIa {
+  return typeof v === 'string' && (FREQUENCES_MENTION_IA as readonly string[]).includes(v);
+}
+
 export interface FicheAgent {
   id: string;
   tenantId: string;
-  /** Phrase annonçant que l'interlocuteur parle à une IA. Obligation légale (AI Act, article 50). */
+  /** Phrase annonçant que l'interlocuteur parle à une IA. Jamais vide ; QUAND elle est dite dépend du
+   *  régime ci-dessous (migration 0126), elle n'est plus systématique. */
   mentionIa: string;
+  /**
+   * QUAND cette phrase est dite (migration 0126, demande de Julien du 2026-09-09).
+   *
+   * 🔴 C'EST LE CODE QUI DÉCIDE, PLUS LE MODÈLE. Avant, la consigne système disait « au tout premier message
+   * d'une conversation, annonce que tu es une IA » : le modèle devait deviner depuis un transcript où
+   * commence une conversation, ce qu'il ne sait pas. Un réglage « une fois par session » posé sur cette base
+   * n'aurait jamais pu être tenu. Le tour sait, lui, si l'agent a déjà parlé dans CETTE session.
+   *
+   * ⚠️ `jamais` est un choix EXPLICITE du client, obtenu en le lui demandant à la construction. L'obligation
+   * d'information (AI Act, article 50) ne joue que lorsqu'elle n'est pas évidente du contexte, et elle pèse
+   * sur la marque déployante : c'est donc à elle de trancher, pas à nous de décider en silence.
+   */
+  mentionIaFrequence: FrequenceMentionIa;
   modele: string;
   plafonds: PlafondsAgent;
   /** Minutes d'inactivité avant que le parcours reprenne la main. */
@@ -67,6 +92,8 @@ export interface AgentComplet {
   label: string;
   status: StatutAgent;
   mentionIa: string;
+  /** Le régime d'annonce d'IA, réglable par le client (migration 0126). */
+  mentionIaFrequence: FrequenceMentionIa;
   modele: string;
   maxTours: number;
   maxAppelsOutils: number;
@@ -83,6 +110,8 @@ export interface PatchAgent {
   label?: string;
   status?: StatutAgent;
   mentionIa?: string;
+  /** Le régime d'annonce d'IA (migration 0126). Absent = inchangé, comme tous les autres champs. */
+  mentionIaFrequence?: FrequenceMentionIa;
   modele?: string;
   maxTours?: number;
   maxAppelsOutils?: number;

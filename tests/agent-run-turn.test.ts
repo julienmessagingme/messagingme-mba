@@ -24,7 +24,7 @@ const SESSION: AgentSession = {
 };
 
 const FICHE: FicheAgent = {
-  id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', modele: 'm', status: 'active',
+  id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, modele: 'm', status: 'active',
   plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000 },
   inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
 };
@@ -294,7 +294,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
     const brain = creerCerveauGateway({
       completer: async () => reponses.shift() ?? reponses[0]!,
       contexte: async () => ({
-        modele: 'm', mentionIa: 'Je suis une IA.', sorties: [{ code: 'fini', label: 'Fini' }],
+        modele: 'm', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, sorties: [{ code: 'fini', label: 'Fini' }],
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [OUTIL],
         plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
       }),

@@ -95,6 +95,18 @@ const patchSchema = z.object({
   label: LABEL.optional(),
   status: z.enum(['draft', 'active', 'disabled']).optional(),
   mentionIa: z.string().trim().min(1).max(500).optional(),
+  /**
+   * QUAND l'agent annonce qu'il est une IA (migration 0126).
+   *
+   * 🔴 `jamais` est un choix EXPLICITE, jamais un défaut. L'obligation d'information (AI Act, article 50) ne
+   * joue que lorsqu'elle n'est pas évidente du contexte, et elle pèse sur la marque déployante : c'est donc
+   * à elle de trancher. La question lui est posée à la construction du bot, elle n'est pas cachée dans un
+   * réglage qu'on ne trouve pas.
+   *
+   * ⚠️ Énumération FERMÉE ici ET `check` en base : la première rend un 400 qui dit quoi corriger, le second
+   * garantit qu'aucun autre chemin d'écriture ne pourra poser une valeur inconnue.
+   */
+  mentionIaFrequence: z.enum(['jamais', 'session', 'chaque_message']).optional(),
   modele: z.string().trim().min(1).max(120).optional(),
   maxTours: z.number().int().min(1).max(20).optional(),
   maxAppelsOutils: z.number().int().min(0).max(60).optional(),

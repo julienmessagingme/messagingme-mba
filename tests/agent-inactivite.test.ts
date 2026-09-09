@@ -29,7 +29,7 @@ const SESSION: AgentSession = {
 };
 
 const FICHE: FicheAgent = {
-  id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', modele: 'm', status: 'active',
+  id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, modele: 'm', status: 'active',
   plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000 },
   inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
 };

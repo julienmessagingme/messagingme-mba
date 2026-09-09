@@ -12,18 +12,37 @@ import { ficheVide } from '../src/agent/fiche';
  */
 
 const CTX = (over: Partial<Parameters<typeof promptSysteme>[0]> = {}) => ({
-  mentionIa: 'Vous échangez avec un assistant automatique.',
+  mentionIa: 'Vous échangez avec un assistant automatique.', annoncerIa: true,
   contenu: ficheVide(),
   contactConnu: false,
   ...over,
 });
 
 describe('promptSysteme', () => {
-  it('🔴 la mention d’IA est en TÊTE, et elle y est toujours', () => {
-    const p = promptSysteme(CTX());
+  /**
+   * 🔴 CE TEST AFFIRMAIT « ELLE Y EST TOUJOURS », ET CETTE GARANTIE A CHANGÉ PAR DÉCISION (2026-09-09).
+   *
+   * Julien : « par principe non, on ne demande pas à l'IA de dire systématiquement je suis une IA ». L'annonce
+   * est devenue un réglage à trois régimes, posé à la construction du bot. Ce qui est CONSERVÉ du cas
+   * d'origine : quand elle doit être dite, elle est en TÊTE et rien d'une fiche vide ne peut la faire
+   * disparaître. Ce qui est AJOUTÉ : la preuve inverse, sans laquelle une consigne inconditionnelle
+   * passerait le premier cas tout en ignorant le réglage.
+   */
+  it('🔴 quand elle doit être dite, la mention d’IA est en TÊTE et rien ne l’en déloge', () => {
+    const p = promptSysteme({ ...CTX(), annoncerIa: true });
     expect(p.indexOf('Vous échangez avec un assistant automatique.')).toBeLessThan(200);
-    // Même sur une fiche entièrement vide : rien ne peut la faire disparaître.
-    expect(p).toContain('tu annonces que tu es une IA');
+    // Même sur une fiche entièrement vide : aucune section absente ne peut la repousser.
+    expect(p).toContain('Commence ta réponse par exactement cette phrase');
+  });
+
+  it('🔴 la preuve inverse : quand elle ne doit PAS être dite, la phrase n’apparaît nulle part', () => {
+    // Et surtout : le prompt ne doit pas non plus contenir une consigne CONDITIONNELLE (« si c'est le
+    // premier message... »), qui rendrait au modèle la décision qu'on vient précisément de lui retirer.
+    const p = promptSysteme({ ...CTX(), annoncerIa: false });
+    expect(p).not.toContain('Vous échangez avec un assistant automatique.');
+    expect(p).not.toContain('premier message');
+    // Le reste du prompt est intact : on retire l'annonce, pas l'identité.
+    expect(p).toContain('assistant automatique qui répond sur WhatsApp');
   });
 
   it('n’écrit pas les rubriques que le client n’a pas remplies', () => {

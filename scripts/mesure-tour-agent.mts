@@ -83,7 +83,7 @@ if (PREFIXE_LONG) fiche.objectif = `${fiche.objectif}\n\nCatalogue complet, a ci
 const systeme = promptSysteme({
   mentionIa: 'Bonjour, je suis un assistant automatique.',
   contenu: fiche as never,
-  contactConnu: false,
+  annoncerIa: true, contactConnu: false,
 });
 
 /**
