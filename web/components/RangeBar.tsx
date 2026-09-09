@@ -16,8 +16,16 @@ const inputCls =
  * La plage vit chez le parent (c'est lui qui recharge ses donnees quand elle change) ; seul le brouillon des
  * deux champs de date est local, pour ne rien recharger tant que « Appliquer » n'a pas ete cliquee.
  */
+/**
+ * `title` est OPTIONNEL depuis le 2026-09-09, pour la page de synthèse du Performance Lab : l'onglet actif
+ * y porte déjà le mot, et le répéter juste en dessous ajoutait une ligne qui n'apprenait rien. Les cinq
+ * autres écrans gardent le leur, où il nomme un contenu que l'onglet ne nomme pas.
+ *
+ * ⚠️ Sans titre, les commandes restent À DROITE (`ml-auto`) : un `justify-between` sur un seul enfant le
+ * colle à gauche, et la barre de période aurait sauté d'un bord à l'autre d'un écran à l'autre.
+ */
 export function RangeBar({ title, range, onChange }: {
-  title: string;
+  title?: string;
   range: DateRange;
   onChange: (range: DateRange) => void;
 }) {
@@ -45,8 +53,8 @@ export function RangeBar({ title, range, onChange }: {
     // decoupage du Quantitatif en sous-onglets rendait la duplication facile (une copie par onglet), et deux
     // barres divergeraient des le premier ajustement.
     <div data-testid="range-bar" className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-[#F7F8FB] py-2">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">{title}</h2>
-      <div className="flex flex-wrap items-center gap-2">
+      {title !== undefined && <h2 className="text-base font-semibold tracking-tight text-ink-900">{title}</h2>}
+      <div className="ml-auto flex flex-wrap items-center gap-2">
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
           {PRESETS.map((d) => (
             <button

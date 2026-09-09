@@ -15,11 +15,11 @@ const ADMIN = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tena
 const COUT = {
   lignes: [
     // Une campagne complète : elle a un coût, des clics, donc un ratio.
-    { campaignId: 'c-promo', nom: 'Promo été', template: 'promo', envoyes: 120, cout: 17.17, nonChiffrables: 0, clics: 8, coutParClic: 2.1463 },
+    { campaignId: 'c-promo', nom: 'Promo été', template: 'promo', envoyes: 120, cout: 17.17, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 8, coutParClic: 2.1463 },
     // Une campagne à SCÉNARIO : pas de template, donc rien à mesurer côté clics.
-    { campaignId: 'c-parcours', nom: 'Parcours bienvenue', template: null, envoyes: 40, cout: 5.72, nonChiffrables: 0, clics: null, coutParClic: null },
+    { campaignId: 'c-parcours', nom: 'Parcours bienvenue', template: null, envoyes: 40, cout: 5.72, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null },
     // Une campagne dont AUCUN envoi n'est chiffrable : la case coût est vide, et les envois sont comptés.
-    { campaignId: 'c-inconnue', nom: 'Relance', template: 'relance', envoyes: 30, cout: null, nonChiffrables: 30, clics: 0, coutParClic: null },
+    { campaignId: 'c-inconnue', nom: 'Relance', template: 'relance', envoyes: 30, cout: null, nonChiffrables: 30, sansCategorie: 30, sansTarif: 0, clics: 0, coutParClic: null },
   ],
   currency: 'EUR',
   hasRates: true,
@@ -51,12 +51,17 @@ test.describe('Performance Lab : ce que coûte un engagement', () => {
     await expect(page.getByTestId('cout-ratio-c-promo')).toContainText('2,15');
   });
 
-  test('🔴 une campagne à SCÉNARIO dit « non attribuable », elle n’affiche pas zéro clic', async ({ page }) => {
+  test('🔴 une campagne à SCÉNARIO dit « sans lien tracé », elle n’affiche pas zéro clic', async ({ page }) => {
     // Un zéro se lirait « personne n'a cliqué » alors que la campagne n'envoie aucun template, donc aucun
     // lien tracé : il n'y a rien à mesurer. C'est la case que `todo.md` décrivait à l'envers.
+    //
+    // ⚠️ LE CAS EST LE MÊME, SEUL LE MOT CHANGE (2026-09-09). Il disait « non attribuable », que Julien a lu
+    // comme une panne d'attribution : le test garde donc exactement ce qu'il exerçait, et vérifie EN PLUS
+    // que le mot qui trompait a bien disparu de l'écran.
     await mock(page);
     await page.goto('/performance');
-    await expect(page.getByTestId('cout-clics-c-parcours')).toContainText(/non attribuable|not attributable/);
+    await expect(page.getByTestId('cout-clics-c-parcours')).toContainText(/sans lien tracé|no tracked link/);
+    await expect(page.getByTestId('cout-clics-c-parcours')).not.toContainText(/non attribuable|not attributable/);
     await expect(page.getByTestId('cout-clics-c-parcours')).not.toContainText('0');
     await expect(page.getByTestId('cout-ratio-c-parcours')).toHaveText('—');
   });
@@ -68,6 +73,10 @@ test.describe('Performance Lab : ce que coûte un engagement', () => {
     // Les envois, eux, sont bien là : ils ont eu lieu, c'est leur PRIX qu'on ignore.
     await expect(page.getByTestId('cout-ligne-c-inconnue')).toContainText('30');
     await expect(page.getByTestId('cout-non-chiffrables')).toContainText('30');
+    // 🔴 ET LA PHRASE DIT LAQUELLE DES DEUX CAUSES, sinon le lecteur ne sait pas s'il doit attendre ou aller
+    // réparer. Ici la catégorie manque : c'est de l'historique, et la phrase doit le dater.
+    await expect(page.getByTestId('cout-non-chiffrables')).toContainText(/catégorie enregistrée|recorded category/);
+    await expect(page.getByTestId('cout-non-chiffrables')).toContainText(/7 septembre 2026|7 September 2026/);
   });
 
   test('🔴 zéro clic mesuré -> pas de ratio, jamais un ∞', async ({ page }) => {

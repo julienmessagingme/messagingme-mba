@@ -135,6 +135,15 @@ export interface CostSeries {
    * fait un mensonge par omission.
    */
   nonChiffrables: number;
+  /**
+   * ...sans categorie enregistree : HERITAGE ferme (cf. `web/lib/cout-non-chiffrable.ts`).
+   *
+   * ⚠️ OPTIONNEL, et le type dit ici la VERITE du reseau : la console part sur Vercel a chaque push, l'API
+   * se deploie a la main sur le VPS. Entre les deux, la reponse ne porte pas ces deux champs.
+   */
+  sansCategorie?: number;
+  /** ...dont Meta ne rend pas le tarif : panne VIVANTE, reparable. Meme reserve d'absence. */
+  sansTarif?: number;
   /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, on affiche le nombre nu. */
   currency: string | null;
 }
@@ -292,8 +301,17 @@ export interface LigneCoutCampagne {
   template: string | null;
   envoyes: number;
   cout: number | null;
-  /** Envois comptes dans `envoyes` mais absents du cout (categorie inconnue, ou tarif indisponible). */
+  /** Envois comptes dans `envoyes` mais absents du cout. Somme des deux causes qui suivent. */
   nonChiffrables: number;
+  /**
+   * ...sans categorie enregistree : HERITAGE ferme (cf. `web/lib/cout-non-chiffrable.ts`).
+   *
+   * ⚠️ OPTIONNEL, et le type dit ici la VERITE du reseau : la console part sur Vercel a chaque push, l'API
+   * se deploie a la main sur le VPS. Entre les deux, la reponse ne porte pas ces deux champs.
+   */
+  sansCategorie?: number;
+  /** ...dont Meta ne rend pas le tarif : panne VIVANTE, reparable. Meme reserve d'absence. */
+  sansTarif?: number;
   clics: number | null;
   coutParClic: number | null;
 }

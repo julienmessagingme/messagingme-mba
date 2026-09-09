@@ -41,7 +41,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getErrorContacts: async () => [
       { recipientId: 'r1', campaignId: CAMP_A, campaignName: 'Promo ete', telephone: '+33600000001', contactId: 'ct1', contactNom: 'Julie', code: 131049, message: 'Re-engagement message', origine: 'envoi' as const, at: '2026-09-05T10:00:00.000Z' },
     ],
-    getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR', nonChiffrables: 0 }),
+    getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR', nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 }),
     getConversationSummary: async () => ({
       enabled: true, retentionDays: 365, total: 3,
       sentiment: { positif: 1, neutre: 1, negatif: 1 },
@@ -55,8 +55,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getCoutParCampagne: async () => ({
       lignes: [
-        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, cout: 1.43, nonChiffrables: 0, clics: 4, coutParClic: 0.3575 },
-        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, cout: null, nonChiffrables: 5, clics: null, coutParClic: null },
+        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 4, coutParClic: 0.3575 },
+        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, cout: null, nonChiffrables: 5, sansCategorie: 5, sansTarif: 0, clics: null, coutParClic: null },
       ],
       currency: 'EUR',
       hasRates: true,
@@ -362,7 +362,7 @@ describe('stats route', () => {
 
   it('🔴 le meme garde protege /stats/cost : campaignIds mal forme -> 400', async () => {
     let appele = false;
-    const a = app({ stats: { getCostSeries: async () => { appele = true; return { marketing: [], utility: [], total: 0, hasRates: true, currency: 'EUR', nonChiffrables: 0 }; } } });
+    const a = app({ stats: { getCostSeries: async () => { appele = true; return { marketing: [], utility: [], total: 0, hasRates: true, currency: 'EUR', nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 }; } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost?days=30&campaignIds=pas-un-uuid', ...h(adminTok) });
     expect(res.statusCode).toBe(400);
     expect(appele).toBe(false);

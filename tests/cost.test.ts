@@ -82,6 +82,38 @@ describe('estimateCostSeries', () => {
     const rows = [{ date: '2026-07-09', category: 'marketing', count: 4 }];
     expect(estimateCostSeries('2026-07-09', '2026-07-09', rows, { marketing: 0.1, utility: 0.05 }).nonChiffrables).toBe(0);
   });
+
+  /**
+   * 🔴 LES DEUX CAUSES SE COMPTENT A PART, ET C EST LA QUESTION DE JULIEN DU 2026-09-09.
+   *
+   * « catégorie inconnue OU tarif indisponible » posait au lecteur un ou exclusif qu il ne pouvait pas
+   * trancher, donc la question « est-ce que ca se repare ? » restait sans reponse. Les deux causes
+   * n appellent pas le meme geste : une categorie absente est un heritage clos (les envois de scenario
+   * n ont commence a la porter que le 2026-09-07, mesure en production), un tarif manquant est une panne
+   * du jour qui se repare en relisant les tarifs. Un seul nombre les confondait.
+   */
+  it('🔴 categorie ABSENTE et tarif MANQUANT ne se comptent pas ensemble', () => {
+    const rows = [
+      { date: '2026-07-09', category: 'marketing', count: 2 },  // chiffrable
+      { date: '2026-07-09', category: null, count: 7 },         // heritage : aucune categorie
+      { date: '2026-07-09', category: 'utility', count: 3 },    // panne : categorie connue, tarif absent
+    ];
+    const s = estimateCostSeries('2026-07-09', '2026-07-09', rows, { marketing: 0.1, utility: null });
+    expect(s.sansCategorie).toBe(7);
+    expect(s.sansTarif).toBe(3);
+    // Le total reste la SOMME des deux : l ancien champ ne change pas de sens, il gagne un detail.
+    expect(s.nonChiffrables).toBe(10);
+    expect(s.total).toBeCloseTo(0.2, 5);
+  });
+
+  it('une categorie INCONNUE (ni marketing ni utility) compte comme absente, pas comme un tarif manquant', () => {
+    // Le discriminant est la CATEGORIE, pas le tarif : une valeur exotique venue de la base ne doit pas
+    // se ranger du cote reparable, sans quoi l ecran promettrait une reparation qui n arrivera jamais.
+    const rows = [{ date: '2026-07-09', category: 'authentication', count: 5 }];
+    const s = estimateCostSeries('2026-07-09', '2026-07-09', rows, { marketing: 0.1, utility: 0.05 });
+    expect(s.sansCategorie).toBe(5);
+    expect(s.sansTarif).toBe(0);
+  });
 });
 
 /**
@@ -139,6 +171,22 @@ describe('estimateCoutParCampagne', () => {
       new Map([['c1', 3]]),
     );
     expect(r.lignes[0]).toMatchObject({ envoyes: 7, cout: null, nonChiffrables: 7, coutParClic: null });
+    // Categorie `null` : c est l heritage, pas la panne de tarif. Le tableau doit dire la meme chose que
+    // la serie, sinon deux ecrans du meme onglet nomment differemment le meme envoi.
+    expect(r.lignes[0]).toMatchObject({ sansCategorie: 7, sansTarif: 0 });
+  });
+
+  it('🔴 sur UNE campagne aussi, les deux causes restent separees', () => {
+    // Une meme campagne peut porter les deux : de vieux envois sans categorie ET des envois recents dont
+    // Meta ne rend pas le tarif. Les additionner ferait disparaitre celle des deux qui se repare.
+    const r = estimateCoutParCampagne(
+      [ligne('c1', 'Promo', null, 4), ligne('c1', 'Promo', 'utility', 6), ligne('c1', 'Promo', 'marketing', 10)],
+      { marketing: 0.1431, utility: null, currency: 'EUR' },
+      new Map([['c1', 2]]),
+    );
+    expect(r.lignes[0]).toMatchObject({ envoyes: 20, sansCategorie: 4, sansTarif: 6, nonChiffrables: 10 });
+    // ...et le cout ne compte QUE les dix envois chiffrables.
+    expect(r.lignes[0]!.cout).toBeCloseTo(1.43, 2);
   });
 
   it('une campagne PARTIELLEMENT chiffrable garde son coût et dit ce qui manque', () => {

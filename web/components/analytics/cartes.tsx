@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { BoutonPdf } from '@/components/BoutonPdf';
 import { useT, useLocale } from '@/lib/i18n';
+import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { formatDate } from '@/lib/day';
@@ -573,16 +574,14 @@ export function CostChartCard({
                 aucun coût et disparaissait du calcul en silence : le client lisait zéro là où il avait bien
                 envoyé. Vécu sur 22 envois de scénario, dont la catégorie n'était pas écrite avant le
                 2026-09-07. Un volume non chiffrable est une information, l'escamoter est un mensonge par
-                omission. Ces envois-là ne deviendront pas chiffrables rétroactivement : on ne devine pas
-                une catégorie, elle se facturerait au mauvais tarif. */}
-            {cost && cost.nonChiffrables > 0 ? (
-              <span className="mt-1 block text-gold" data-testid="cout-non-chiffrables">
-                {t(
-                  `${fmtNum(cost.nonChiffrables, locale)} envoi(s) ne sont pas chiffrables : leur catégorie n’a pas été enregistrée. Ils comptent dans les volumes, pas dans ce coût.`,
-                  `${fmtNum(cost.nonChiffrables, locale)} send(s) cannot be priced: their category was not recorded. They count in volumes, not in this cost.`,
-                )}
-              </span>
-            ) : null}
+                omission.
+                ⚠️ LE TEXTE VIT DANS UN MODULE PARTAGÉ avec le tableau de la synthèse, et il DISTINGUE
+                désormais les deux causes : la catégorie absente est un héritage clos, le tarif manquant est
+                une panne du jour. Une seule phrase pour les deux laissait le lecteur sans savoir s'il devait
+                attendre ou aller réparer. */}
+            {cost ? phrasesNonChiffrables(cost, 'periode', (n) => fmtNum(n, locale)).map((ph) => (
+              <span key={ph.fr} className="mt-1 block text-gold" data-testid="cout-non-chiffrables">{t(ph.fr, ph.en)}</span>
+            )) : null}
           </p>
         </div>
         {/* Les deux axes restent MUTUELLEMENT EXCLUSIFS : choisir des campagnes vide les templates et

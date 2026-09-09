@@ -7,7 +7,6 @@ import { CoutParCampagneCard } from '@/components/CoutParCampagneCard';
 import { NuageQualitatifCard } from '@/components/NuageQualitatifCard';
 import type { Session } from '@/lib/session';
 import type { StatsRange } from '@/lib/api';
-import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
 
 /**
@@ -27,18 +26,30 @@ export default function PerformanceSynthesePage() {
 }
 
 function SyntheseInner({ session }: { session: Session }) {
-  const t = useT();
   // Même période par défaut que les écrans Analytics : passer de l'un à l'autre ne doit pas changer la
   // fenêtre sous les pieds de l'utilisateur.
   const [range, setRange] = useState<StatsRange>(() => presetRange(30));
 
   return (
     <div className="space-y-4">
-      <RangeBar title={t('Synthèse', 'Summary')} range={range} onChange={setRange} />
-      {/* Le coût d'abord : c'est la question qu'on se pose en arrivant (« combien ça me coûte »), et elle
-          se lit sur toute la période dès le premier jour. Le nuage, lui, se remplit avec le temps. */}
-      <CoutParCampagneCard tenantId={session.tenantId} range={range} />
-      <NuageQualitatifCard tenantId={session.tenantId} range={range} />
+      {/* Sans titre : l'onglet actif dit déjà « Performance Lab », et « Synthèse » juste en dessous
+          n'apprenait rien tout en poussant les deux cartes d'une ligne vers le bas. */}
+      <RangeBar range={range} onChange={setRange} />
+      {/*
+        🔴 DEUX COLONNES, ET L'ORDRE COMPTE DANS LES DEUX SENS DE LECTURE. Le coût est à GAUCHE parce que
+        c'est la question qu'on se pose en arrivant (« combien ça me coûte »), et parce qu'il se lit dès le
+        premier jour ; le nuage est à droite et se remplit avec le temps. Empilées, ces deux cartes
+        obligeaient à faire défiler pour comparer une dépense à un ressenti, ce qui est exactement la
+        comparaison que cette page existe pour permettre.
+
+        ⚠️ `items-start` : sans lui, la grille étire les deux cartes à la hauteur de la plus haute, et la
+        plus courte se retrouve avec un grand vide blanc sous son contenu. En dessous de `lg`, on retombe
+        sur une colonne unique, dans le même ordre.
+      */}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <CoutParCampagneCard tenantId={session.tenantId} range={range} />
+        <NuageQualitatifCard tenantId={session.tenantId} range={range} />
+      </div>
     </div>
   );
 }

@@ -10,7 +10,7 @@ export interface CostSeries {
   /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, l'écran affiche alors le nombre nu. */
   currency: string | null;
   /**
-   * Nombre d'envois COMPTÉS dans le volume mais absents du coût, faute de catégorie connue ou de tarif.
+   * Nombre d'envois COMPTÉS dans le volume mais absents du coût. Somme des deux causes ci-dessous.
    *
    * 🔴 Ce champ existe pour que l'écran puisse le DIRE. Sans lui, ces envois disparaissaient du calcul en
    * silence et le client lisait un coût nul là où il avait bien envoyé : c'est ce qui s'est passé pour
@@ -18,6 +18,26 @@ export interface CostSeries {
    * volume non chiffrable est une information ; l'escamoter en fait un mensonge par omission.
    */
   nonChiffrables: number;
+  /**
+   * ...dont l'envoi n'a AUCUNE catégorie enregistrée.
+   *
+   * 🔴 CAUSE FERMÉE ET DATÉE, ET C'EST TOUTE LA DIFFÉRENCE AVEC LA SUIVANTE. Un envoi de scénario
+   * antérieur au 2026-09-07 ne porte pas sa catégorie : le code lisait bien la fiche du template chez Meta
+   * mais la JETAIT. Mesuré sur la production le 2026-09-09, chemin d'écriture par chemin d'écriture :
+   * 15 envois `origin = scenario`, le dernier le 2026-09-07 à 12h36, et zéro depuis ; les chemins
+   * `campagne` et `humain` n'ont jamais rien perdu. Ces envois ne redeviendront JAMAIS chiffrables (on ne
+   * réécrit pas ce que Meta a déjà facturé), donc l'écran doit dire que c'est de l'HISTORIQUE et non une
+   * panne en cours : les deux appellent des gestes opposés.
+   */
+  sansCategorie: number;
+  /**
+   * ...dont la catégorie est connue mais dont Meta ne rend AUCUN tarif pour la période.
+   *
+   * Cause VIVANTE, celle-là : elle peut apparaître demain sur un envoi d'aujourd'hui, et elle se répare en
+   * relisant les tarifs. Les confondre avec les précédents ferait lire « panne » là où il n'y a qu'un
+   * héritage, et l'inverse.
+   */
+  sansTarif: number;
 }
 
 /** Tarif Meta par message pour chaque catégorie (null = indisponible -> coût non estimable). */
@@ -55,11 +75,17 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
   // trace : l'écran affichait zéro là où il y avait bien eu des envois. C'est ce qui a fait croire à un
   // coût nul sur 22 envois de scénario du tenant Demo, dont la catégorie n'était pas écrite avant le
   // 2026-09-07. Un volume non chiffrable est une information, pas un néant : l'écran doit le DIRE.
-  let nonChiffrables = 0;
+  //
+  // ⚠️ ET LES DEUX CAUSES SE COMPTENT À PART, parce qu'elles ne se réparent pas pareil : une catégorie
+  // absente est un héritage définitif, un tarif manquant est une panne du jour. Un seul nombre les
+  // confondait, et l'écran ne pouvait dire ni l'un ni l'autre sans risquer de mentir.
+  let sansCategorie = 0;
+  let sansTarif = 0;
   for (const r of rows) {
     const bucket = r.category === 'marketing' ? mktByDay : r.category === 'utility' ? utilByDay : null;
-    const rate = r.category === 'marketing' ? rates.marketing : r.category === 'utility' ? rates.utility : null;
-    if (!bucket || rate == null) { nonChiffrables += r.count; continue; }
+    if (!bucket) { sansCategorie += r.count; continue; }
+    const rate = r.category === 'marketing' ? rates.marketing : rates.utility;
+    if (rate == null) { sansTarif += r.count; continue; }
     bucket.set(r.date, (bucket.get(r.date) ?? 0) + r.count * rate);
   }
   const marketing = days.map((d) => ({ date: d, count: round2(mktByDay.get(d) ?? 0) }));
@@ -69,7 +95,9 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
     marketing, utility, total,
     hasRates: rates.marketing != null || rates.utility != null,
     currency: rates.currency ?? null,
-    nonChiffrables,
+    nonChiffrables: sansCategorie + sansTarif,
+    sansCategorie,
+    sansTarif,
   };
 }
 
@@ -108,8 +136,12 @@ export interface LigneCoutCampagne {
    * être chiffré : la case reste vide et le dit, plutôt que d'afficher un zéro qui se lirait « gratuit ».
    */
   cout: number | null;
-  /** Envois comptés dans `envoyes` mais absents du coût (catégorie inconnue, ou tarif Meta indisponible). */
+  /** Envois comptés dans `envoyes` mais absents du coût. Somme des deux causes qui suivent. */
   nonChiffrables: number;
+  /** ...dont ceux sans catégorie enregistrée : héritage définitif, cf. `CostSeries.sansCategorie`. */
+  sansCategorie: number;
+  /** ...dont ceux dont Meta ne rend pas le tarif : panne du jour, réparable, cf. `CostSeries.sansTarif`. */
+  sansTarif: number;
   /**
    * Clics sur les liens tracés, depuis le premier envoi. `null` = rien de mesurable ici, ce qui n'est PAS
    * zéro : campagne à scénario (elle n'a pas de template, donc pas de lien tracé) ou template sans lien.
@@ -154,11 +186,15 @@ export function estimateCoutParCampagne(
   for (const r of rows) {
     const ligne = par.get(r.campaignId) ?? {
       campaignId: r.campaignId, nom: r.nom, template: r.template,
-      envoyes: 0, cout: 0, nonChiffrables: 0, clics: null, coutParClic: null, chiffres: 0,
+      envoyes: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
     };
-    const rate = r.category === 'marketing' ? rates.marketing : r.category === 'utility' ? rates.utility : null;
+    // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
+    // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
+    const connue = r.category === 'marketing' || r.category === 'utility';
+    const rate = connue ? (r.category === 'marketing' ? rates.marketing : rates.utility) : null;
     ligne.envoyes += r.count;
-    if (rate == null) ligne.nonChiffrables += r.count;
+    if (!connue) { ligne.sansCategorie += r.count; ligne.nonChiffrables += r.count; }
+    else if (rate == null) { ligne.sansTarif += r.count; ligne.nonChiffrables += r.count; }
     else {
       ligne.chiffres += r.count;
       ligne.cout = (ligne.cout ?? 0) + r.count * rate;
@@ -174,7 +210,11 @@ export function estimateCoutParCampagne(
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
     const coutParClic = cout !== null && nbClics !== null && nbClics > 0 ? Math.round((cout / nbClics) * 10000) / 10000 : null;
-    return { campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, cout, nonChiffrables: l.nonChiffrables, clics: nbClics, coutParClic };
+    return {
+      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, cout,
+      nonChiffrables: l.nonChiffrables, sansCategorie: l.sansCategorie, sansTarif: l.sansTarif,
+      clics: nbClics, coutParClic,
+    };
   });
   /**
    * 🔴 ON TRONQUE SUR LE VOLUME, ON AFFICHE SUR LE COÛT, ET L'ORDRE DES DEUX COMPTE.

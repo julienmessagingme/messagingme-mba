@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getCoutParCampagne, type CoutParCampagne, type LigneCoutCampagne, type StatsRange } from '@/lib/api';
 import { fmtNum, fmtCost } from '@/lib/format';
+import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
 
@@ -20,11 +21,24 @@ import type { Locale } from '@/lib/locale';
  *    porte aucun lien tracé : il n'y a alors rien à mesurer, ce qui n'est pas « personne n'a cliqué » ;
  *  - le ratio, dès qu'un des deux termes manque ou que les clics valent zéro. Un « ∞ » ou un « 0 € »
  *    serait une réponse à une question qu'on n'a pas pu poser.
+ *
+ * 🔴 CETTE CASE DISAIT « NON ATTRIBUABLE », ET C'ÉTAIT LE MOT QUI TROMPAIT. Julien l'a lu le 2026-09-09
+ * comme « on n'a pas su rattacher les clics », donc comme une panne d'attribution, et a demandé si ça ne
+ * voulait pas plutôt dire « personne n'a cliqué ». Ce n'est ni l'un ni l'autre : il n'existe AUCUN lien
+ * tracé à mesurer. Zéro clic, lui, s'affiche `0`. La case dit donc désormais ce qu'elle constate, « sans
+ * lien tracé », et l'infobulle dit laquelle des deux situations on est.
  */
 
 const CARD = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
-const TH = 'px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400';
-const TD = 'px-3 py-2 text-sm text-ink-700';
+/**
+ * ⚠️ DENSITÉ RESSERRÉE LE 2026-09-09, parce que la carte ne fait plus toute la largeur : elle partage la
+ * ligne avec le nuage qualitatif. Aux anciennes mesures (`px-3 py-2`, `min-w-[36rem]`, « Coût estimé » en
+ * en-tête), cinq colonnes de chiffres débordaient d'une demi-largeur et le tableau défilait de côté en
+ * permanence, ce qui est le contraire d'un écran de synthèse. Le mot « estimé » n'est pas perdu : il est
+ * dans le sous-titre de la carte, où il ne coûte aucune colonne.
+ */
+const TH = 'px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400';
+const TD = 'px-2 py-1.5 text-[13px] text-ink-700';
 
 export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; range: StatsRange }) {
   const t = useT();
@@ -54,7 +68,25 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
   // ⚠️ Somme sur les lignes AFFICHÉES, pas sur la période : quand le tableau tronque, les campagnes
   // écartées ne sont comptées nulle part ici. La phrase le dit (« des campagnes affichées »), parce
   // qu'annoncer « de la période » serait faux exactement dans le cas où le chiffre compte le plus.
-  const nonChiffrables = donnees ? donnees.lignes.reduce((a, l) => a + l.nonChiffrables, 0) : 0;
+  //
+  // 🔴 ET LES DEUX CAUSES SE SOMMENT SÉPARÉMENT. Une catégorie absente est un héritage clos (les envois de
+  // scénario n'ont commencé à la porter que le 2026-09-07) ; un tarif manquant est une panne du jour. Le
+  // total unique d'avant obligeait le lecteur à trancher entre les deux sans aucun moyen de le faire.
+  //
+  // ⚠️ LE TOTAL SE SOMME AUSSI, et il est le seul champ garanti : le détail manque tant que l'API du VPS
+  // n'a pas rattrapé la console de Vercel. `phrasesNonChiffrables` retombe alors sur la phrase générique
+  // plutôt que de se taire, et c'est pour ça que les trois compteurs voyagent ensemble.
+  const causes = donnees
+    ? donnees.lignes.reduce(
+      (a, l) => ({
+        nonChiffrables: a.nonChiffrables + (l.nonChiffrables ?? 0),
+        sansCategorie: a.sansCategorie + (l.sansCategorie ?? 0),
+        sansTarif: a.sansTarif + (l.sansTarif ?? 0),
+        detail: a.detail && l.sansCategorie !== undefined && l.sansTarif !== undefined,
+      }),
+      { nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, detail: true },
+    )
+    : { nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, detail: true };
 
   return (
     <section className={CARD} data-testid="cout-engagement">
@@ -86,14 +118,14 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
           {/* Le tableau défile DANS son cadre : sur un écran étroit, cinq colonnes de chiffres ne tiennent
               pas, et faire défiler la page entière de côté abîmerait tout le reste de l'écran. */}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem] border-collapse">
+            <table className="w-full min-w-[28rem] border-collapse">
               <thead>
                 <tr className="border-b border-ink-100">
                   <th className={TH}>{t('Campagne', 'Campaign')}</th>
                   <th className={`${TH} text-right`}>{t('Envoyés', 'Sent')}</th>
-                  <th className={`${TH} text-right`}>{t('Coût estimé', 'Estimated cost')}</th>
+                  <th className={`${TH} text-right`}>{t('Coût', 'Cost')}</th>
                   <th className={`${TH} text-right`}>{t('Clics', 'Clicks')}</th>
-                  <th className={`${TH} text-right`}>{t('Coût par clic', 'Cost per click')}</th>
+                  <th className={`${TH} text-right`}>{t('Coût/clic', 'Cost/click')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,14 +153,13 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
                 )}
               </p>
             )}
-            {nonChiffrables > 0 && (
-              <p data-testid="cout-non-chiffrables">
-                {t(
-                  `${fmtNum(nonChiffrables, locale)} envoi(s) des campagnes affichées ne sont pas chiffrables (catégorie inconnue ou tarif indisponible). Ils sont comptés dans « Envoyés », pas dans le coût.`,
-                  `${fmtNum(nonChiffrables, locale)} send(s) among the campaigns shown cannot be priced (unknown category or unavailable rate). They count under "Sent", not in the cost.`,
-                )}
-              </p>
-            )}
+            {phrasesNonChiffrables(
+              causes.detail ? causes : { nonChiffrables: causes.nonChiffrables },
+              'campagnes-affichees',
+              (n) => fmtNum(n, locale),
+            ).map((ph) => (
+              <p key={ph.fr} data-testid="cout-non-chiffrables">{t(ph.fr, ph.en)}</p>
+            ))}
             {/* ⚠️ LES DEUX RÉSERVES SONT AFFICHÉES, PAS CACHÉES DANS UNE INFOBULLE. Elles disent quand le
                 chiffre des clics est structurellement bas, et quelqu'un qui compare deux campagnes sans
                 les connaître conclurait de travers. */}
@@ -156,7 +187,9 @@ function Ligne({ l, devise, locale, t }: { l: LigneCoutCampagne; devise: string 
 
   return (
     <tr className="border-b border-ink-50" data-testid={`cout-ligne-${l.campaignId}`}>
-      <td className={`${TD} font-medium text-ink-900`}>{l.nom}</td>
+      {/* Tronqué : dans une demi-largeur, un nom de campagne long poussait les quatre colonnes de chiffres
+          hors du cadre à lui tout seul. Le nom complet reste au survol, il n'est pas perdu. */}
+      <td className={`${TD} max-w-[11rem] truncate font-medium text-ink-900`} title={l.nom}>{l.nom}</td>
       <td className={`${TD} text-right tabular-nums`}>{fmtNum(l.envoyes, locale)}</td>
       <td className={`${TD} text-right tabular-nums`} data-testid={`cout-montant-${l.campaignId}`}>
         {l.cout === null
@@ -165,7 +198,7 @@ function Ligne({ l, devise, locale, t }: { l: LigneCoutCampagne; devise: string 
       </td>
       <td className={`${TD} text-right tabular-nums`} data-testid={`cout-clics-${l.campaignId}`}>
         {l.clics === null
-          ? <span className="text-ink-300" title={raisonClics}>{t('non attribuable', 'not attributable')}</span>
+          ? <span className="text-ink-300" title={raisonClics}>{t('sans lien tracé', 'no tracked link')}</span>
           : fmtNum(l.clics, locale)}
       </td>
       <td className={`${TD} text-right tabular-nums`} data-testid={`cout-ratio-${l.campaignId}`}>
