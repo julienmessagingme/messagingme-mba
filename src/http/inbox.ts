@@ -62,6 +62,13 @@ export interface InboxRouteDeps {
   /** Range une conversation dans Archivé, ou l'en sort. `false` = inconnue dans cet espace -> 404. */
   archiverConversation?(tenantId: string, conversationId: string, archive: boolean): Promise<boolean>;
   /**
+   * Signale une conversation À LA MAIN, ou retire ce signalement (migration 0123).
+   *
+   * ⚠️ N'écrit PAS le constat de l'analyse : ce sont deux sources distinctes que le dossier « Signalé »
+   * réunit. Absente -> la route rend 503, comme l'archivage.
+   */
+  signalerConversation?(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean>;
+  /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
    * c'est-à-dire exactement le comportement d'avant l'affectation.
@@ -272,6 +279,53 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       return reply.code(200).send({ archived: archive });
     });
   }
+
+  /**
+   * Signaler / ne plus signaler une conversation, À LA MAIN (2026-09-09).
+   *
+   * Même forme que l'archivage juste au-dessus, et pour les mêmes raisons : deux adresses plutôt qu'un PATCH
+   * à drapeau, et ouvert aux OPÉRATEURS. Signaler un échange qui a mal tourné est le geste de celui qui le
+   * lit, pas une décision d'administration.
+   *
+   * 🔴 L'AUTEUR EST PRIS DANS LA SESSION, jamais dans le corps. Un identifiant fourni par l'appelant
+   * laisserait signaler au nom d'un collègue, sur une conversation de client.
+   */
+  for (const [chemin, signale] of [['signaler', true], ['ne-plus-signaler', false]] as const) {
+    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, guard, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      if (!deps.signalerConversation) return reply.code(503).send({ error: 'signalement indisponible sur cette instance' });
+      const { conversationId } = req.params as { conversationId: string };
+      if (!(await deps.signalerConversation(tenant, conversationId, signale, req.auth?.userId ?? null))) {
+        return reply.code(404).send({ error: 'conversation inconnue' });
+      }
+      invaliderCompteurs(tenant); // le dossier « Signalé » vient de changer de contenu.
+      return reply.code(200).send({ signalee: signale });
+    });
+  }
+
+  /**
+   * L'opérateur PREND le fil : il sort le dossier « À traiter » de son statut de simple reflet.
+   *
+   * 🔴 CE GESTE N'AVAIT AUCUN BOUTON. On ne prenait un fil qu'en RÉPONDANT (l'envoi appelle `takeControl`),
+   * donc « remettre une conversation à traiter » sans rien écrire au client était impossible : il fallait
+   * envoyer un message qu'on n'avait pas à envoyer. C'est le miroir exact de `release`, qui existait seul.
+   *
+   * ⚠️ `takeControl` est appelé en BEST-EFFORT sur les chemins d'envoi (le message est déjà parti, un échec
+   * de bascule ne doit pas le faire passer pour raté). Ici c'est l'inverse : la bascule EST le geste, un
+   * échec doit se voir. On ne l'avale donc pas.
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/prendre', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!deps.takeControl) return reply.code(503).send({ error: 'prise du fil indisponible sur cette instance' });
+    await deps.takeControl(tenant, ctx.waId);
+    invaliderCompteurs(tenant); // le fil entre dans « À traiter ».
+    return reply.code(200).send({ controlOwner: 'app_human' });
+  });
 
   /**
    * Déclarée AVANT `/conversations/:conversationId` : `todo-count` n'est pas un identifiant.

@@ -32,6 +32,8 @@ import {
   type UserFieldDef,
   getConversationMessages,
   releaseConversation,
+  prendreConversation,
+  signalerConversation,
   effacerConversation,
   replyConversation,
   listTemplates,
@@ -458,7 +460,7 @@ function InboxInner({ session }: { session: Session }) {
 
       <section className="lg:min-h-0">
         {selected ? (
-          <Thread key={selected.id} session={session} conversation={selected} onSent={reload} />
+          <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} onSent={reload} />
         ) : (
           <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-ink-300 bg-white text-sm text-ink-400">
             {t('Sélectionne une conversation', 'Select a conversation')}
@@ -556,6 +558,83 @@ function FicheContact({ session, waId, onClose }: { session: Session; waId: stri
  * ⚠️ Ce composant ne PROTÈGE rien : le refus d'écrire est appliqué par le serveur. Il rend seulement la
  * règle lisible, pour qu'on ne rédige pas un message qu'on ne pourra pas envoyer.
  */
+/**
+ * RANGER LA CONVERSATION OUVERTE dans un dossier (2026-09-09, demande de Julien).
+ *
+ * 🔴 CE QUI MANQUAIT, ET POURQUOI ÇA SE VOYAIT MAL. Seul « Archivé » était atteignable, et seulement depuis
+ * la LISTE, en cochant une case : sur la conversation ouverte, aucun rangement n'existait. Surtout, remettre
+ * une conversation « à traiter » était impossible autrement qu'en ENVOYANT un message, puisque c'est l'envoi
+ * qui prend le fil. On écrivait donc à un client pour un geste de rangement interne.
+ *
+ * ⚠️ CE MENU N'OFFRE JAMAIS « À traiter » EN MÊME TEMPS QUE LE BOUTON « Rendre la main », et c'est ce qui
+ * évite deux endroits pour le même choix : ce sont les deux moitiés d'une bascule, l'une n'apparaît que
+ * quand l'autre est absente. Le bouton reste où il est, il porte une histoire d'incident et ses propres cas
+ * de test.
+ *
+ * ⚠️ L'AFFECTATION à un membre n'est PAS ici : elle est ORTHOGONALE (une conversation peut être affectée à
+ * quelqu'un ET tenue par le scénario), et le serveur fait respecter cette séparation. Les réunir dans un
+ * seul menu laisserait croire qu'on choisit entre les deux.
+ */
+function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
+  session: Session;
+  conversation: Conversation;
+  dossier: DossierInbox;
+  controlOwner: ControlOwner;
+  onFait: (owner: ControlOwner | null) => void;
+}) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const archivee = dossier === 'archivees';
+  const signaleeMain = conversation.signaleeMain === true;
+
+  async function ranger(action: string): Promise<void> {
+    if (action === '') return;
+    setBusy(true);
+    try {
+      if (action === 'a-traiter') {
+        const r = await prendreConversation(session.tenantId, conversation.id);
+        onFait(r.controlOwner);
+        return;
+      }
+      if (action === 'signaler' || action === 'ne-plus-signaler') {
+        await signalerConversation(session.tenantId, conversation.id, action === 'signaler');
+      } else {
+        await archiverConversation(session.tenantId, conversation.id, action === 'archiver');
+      }
+      onFait(null);
+    } catch {
+      /* L'échec se voit à l'absence de changement dans la liste, comme pour l'affectation : une alerte au
+         milieu d'une conversation coûte plus qu'elle n'apprend. */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <select
+      data-testid="ranger-dans"
+      aria-label={t('Ranger la conversation', 'File the conversation')}
+      disabled={busy}
+      // La valeur retombe TOUJOURS sur le libellé : ce menu déclenche une action, il ne porte pas un état.
+      // Laisser l'option choisie affichée ferait croire à un réglage, et re-choisir la même ne ferait rien.
+      value=""
+      onChange={(e) => { void ranger(e.target.value); }}
+      className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-[11px] text-ink-700 disabled:opacity-50"
+    >
+      <option value="">{busy ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
+      {/* « À traiter » SEULEMENT quand le scénario tient le fil : sinon la conversation y est déjà, et c'est
+          le bouton « Rendre la main » qui offre le geste inverse. */}
+      {controlOwner === 'app_workflow' && <option value="a-traiter">{t('À traiter', 'To handle')}</option>}
+      {signaleeMain
+        ? <option value="ne-plus-signaler">{t('Ne plus signaler', 'Unflag')}</option>
+        : <option value="signaler">{t('Signalé', 'Flagged')}</option>}
+      {archivee
+        ? <option value="desarchiver">{t('Désarchiver', 'Unarchive')}</option>
+        : <option value="archiver">{t('Archivé', 'Archived')}</option>}
+    </select>
+  );
+}
+
 function AffectationControl({ session, conversation, onChange }: { session: Session; conversation: Conversation; onChange: () => void }) {
   const t = useT();
   const peutAffecter = session.role === 'admin' || session.role === 'manager';
@@ -616,7 +695,12 @@ function AffectationControl({ session, conversation, onChange }: { session: Sess
   );
 }
 
-function Thread({ session, conversation, onSent }: { session: Session; conversation: Conversation; onSent: () => void }) {
+function Thread({ session, conversation, dossier, onSent }: {
+  session: Session; conversation: Conversation;
+  /** Le dossier OUVERT. Sert au menu de rangement : « Désarchiver » ne se propose que depuis Archivé. */
+  dossier: DossierInbox;
+  onSent: () => void;
+}) {
   const t = useT();
   const { locale } = useLocale();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
@@ -851,6 +935,13 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
             session={session}
             conversation={conversation}
             onChange={onSent}
+          />
+          <RangerDans
+            session={session}
+            conversation={conversation}
+            dossier={dossier}
+            controlOwner={controlOwner}
+            onFait={(owner) => { if (owner) setControlOwner(owner); onSent(); }}
           />
           <ControlBadge owner={controlOwner} />
           {/*

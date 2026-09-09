@@ -837,3 +837,83 @@ describe('effacer le contenu d’une conversation', () => {
     await srv.close();
   });
 });
+
+/**
+ * RANGER UNE CONVERSATION AILLEURS QUE DANS LES ARCHIVES (2026-09-09, demande de Julien).
+ *
+ * 🔴 CE QUE CES DEUX ROUTES FERMENT. Seul « Archivé » était atteignable ; remettre une conversation « à
+ * traiter » exigeait d'ENVOYER un message au client (c'est l'envoi qui prend le fil), et signaler à la main
+ * n'existait pas du tout. On écrivait donc à un client pour un geste de rangement interne.
+ */
+describe('signaler à la main, et prendre le fil', () => {
+  it('🔴 signaler passe l’auteur pris dans la SESSION, jamais dans le corps', async () => {
+    // Un identifiant fourni par l'appelant laisserait signaler au nom d'un collègue, sur la conversation
+    // d'un client. C'est la seule chose que cette route ne doit pas déléguer.
+    const vus: Array<{ id: string; signale: boolean; par: string | null }> = [];
+    const a = app({ signalerConversation: async (_t, id, signale, par) => { vus.push({ id, signale, par }); return true; } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...auth(), payload: { parUserId: 'u-quelqu-un-dautre' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ signalee: true });
+    expect(vus).toEqual([{ id: 'c1', signale: true, par: 'u1' }]); // u1 = la session, pas le corps
+  });
+
+  it('« ne plus signaler » est une adresse à part, pas un drapeau dans le corps', async () => {
+    // Même doctrine que archive/unarchive : l'intention se lit dans l'URL, et un corps mal formé ne peut pas
+    // transformer un signalement en son contraire.
+    const vus: boolean[] = [];
+    const a = app({ signalerConversation: async (_t, _id, signale) => { vus.push(signale); return true; } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/ne-plus-signaler`, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ signalee: false });
+    expect(vus).toEqual([false]);
+  });
+
+  it('🔴 ouvert aux OPÉRATEURS : ranger sa boîte n’est pas une décision d’administration', async () => {
+    const a = app({ signalerConversation: async () => true });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...authAgent() })).statusCode).toBe(200);
+  });
+
+  it('conversation inconnue -> 404, jamais un 200 qui annoncerait un rangement qui n’a pas eu lieu', async () => {
+    const a = app({ signalerConversation: async () => false });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/signaler`, ...auth() })).statusCode).toBe(404);
+  });
+
+  it('câblage absent -> 503, comme l’archivage', async () => {
+    const a = app();
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...auth() })).statusCode).toBe(503);
+  });
+
+  it('tenant croisé -> 403', async () => {
+    const a = app({ signalerConversation: async () => true });
+    expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/c1/signaler`, ...auth() })).statusCode).toBe(403);
+  });
+
+  it('🔴 « prendre » bascule le fil sur l’humain, sans envoyer le moindre message', async () => {
+    // Le point de la route : avant elle, entrer dans « À traiter » demandait d'écrire au client.
+    const pris: string[] = [];
+    const envois: string[] = [];
+    const a = app({
+      takeControl: async (_t, waId) => { pris.push(waId); },
+      sendReply: async () => { envois.push('envoi'); return 'wamid.X'; },
+    });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ controlOwner: 'app_human' });
+    expect(pris).toEqual(['33611']);
+    expect(envois).toEqual([]); // rien n'est parti chez le contact
+  });
+
+  it('🔴 un échec de bascule n’est PAS avalé, contrairement aux chemins d’envoi', async () => {
+    // Sur un envoi, `takeControl` est best-effort : le message est déjà parti. Ici la bascule EST le geste,
+    // l'avaler afficherait un rangement qui n'a pas eu lieu.
+    const a = app({ takeControl: async () => { throw new Error('base indisponible'); } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
+  });
+
+  it('« prendre » : conversation inconnue -> 404, câblage absent -> 503', async () => {
+    const a = app({ takeControl: async () => {} });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/prendre`, ...auth() })).statusCode).toBe(404);
+    expect((await app().inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(503);
+  });
+});

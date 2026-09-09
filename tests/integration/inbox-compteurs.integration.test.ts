@@ -189,3 +189,111 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     }
   });
 });
+
+/**
+ * LE SIGNALEMENT MANUEL, ET SON UNION AVEC LE CONSTAT DE L'ANALYSE (migration 0123, 2026-09-09).
+ *
+ * 🔴 CE QUI NE SE VÉRIFIE QU'EN BASE. Le dossier « Signalé » lit désormais DEUX sources : la colonne écrite
+ * par un opérateur, et le constat posé par l'analyse. Une union mal écrite ne lève aucune erreur, elle
+ * COMPTE MAL : soit elle rate les signalements humains, soit elle double ceux qui portent les deux marques.
+ * Un faux store ne peut rien en dire, c'est du SQL.
+ *
+ * 🔴 ET LE POINT LE PLUS COÛTEUX : une RÉ-ANALYSE ne doit pas effacer un signalement humain. C'est la raison
+ * d'être de la colonne séparée, et c'est le cas qui se vérifie ici plutôt que se raisonne.
+ */
+describe.skipIf(!url)('signalement manuel : deux sources, une union', () => {
+  let pool: Pool;
+  let store: PgInboxStore;
+  let tenantId = '';
+  let operateur = '';
+  let parIA = '';
+  let parHumain = '';
+  let parLesDeux = '';
+
+  async function conv(waId: string): Promise<string> {
+    const contact = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`, [tenantId, `+${waId}`],
+    )).rows[0]!.id;
+    return (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at)
+       values ($1, $2, $3, now()) returning id`, [tenantId, waId, contact],
+    )).rows[0]!.id;
+  }
+  async function analyseAbusive(conversationId: string, abusive: boolean): Promise<void> {
+    await pool.query(
+      `insert into conversation_analysis
+         (conversation_id, tenant_id, sentiment, intent, topic, resolved, abusive, handled_by,
+          exchanges_count, entities, action_suggestion, confidence, justification, llm_provider, llm_model)
+       values ($1, $2, 'negatif', 'reclamation', 'insultes', false, $3, 'humain',
+               2, '{}'::jsonb, 'escalader', 0.9, 'insultes', 'itest', 'itest')
+       on conflict (conversation_id) do update set abusive = excluded.abusive, created_at = now()`,
+      [conversationId, tenantId, abusive],
+    );
+  }
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    store = new PgInboxStore(pool);
+    tenantId = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-inbox-signalement') returning id`,
+    )).rows[0]!.id;
+    operateur = (await pool.query<{ id: string }>(
+      `insert into users (tenant_id, email, name, password_hash, role) values ($1, 'op@itest.test', 'Op', 'x', 'agent') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+
+    parIA = await conv('33610000001');
+    await analyseAbusive(parIA, true);
+    parHumain = await conv('33610000002');
+    await store.signalerConversation(tenantId, parHumain, true, operateur);
+    parLesDeux = await conv('33610000003');
+    await analyseAbusive(parLesDeux, true);
+    await store.signalerConversation(tenantId, parLesDeux, true, operateur);
+    await conv('33610000004'); // ni l'un ni l'autre
+  });
+
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    await pool.end();
+  });
+
+  it('🔴 le dossier montre l’UNION, et ne compte personne deux fois', async () => {
+    const c = await store.compterConversations(tenantId);
+    expect(c.signalees).toBe(3); // IA seule + humain seul + les deux, JAMAIS 4
+    const liste = await store.listConversations(tenantId, { signalees: true });
+    expect(liste.map((x) => x.id).sort()).toEqual([parIA, parHumain, parLesDeux].sort());
+  });
+
+  it('🔴 la liste DIT laquelle est signalée à la main : l’écran en a besoin pour savoir quoi proposer', async () => {
+    // Sur une conversation signalée par le MODÈLE, un bouton « ne plus signaler » n'aurait aucun effet
+    // visible, et l'opérateur cliquerait deux fois avant de conclure que l'écran est cassé.
+    const par = new Map((await store.listConversations(tenantId, { signalees: true })).map((x) => [x.id, x.signaleeMain]));
+    expect(par.get(parIA)).toBe(false);
+    expect(par.get(parHumain)).toBe(true);
+    expect(par.get(parLesDeux)).toBe(true);
+  });
+
+  it('🔴 une RÉ-ANALYSE n’efface PAS un signalement humain', async () => {
+    // La raison d'être de la colonne séparée. Écrit dans `abusive`, le signalement disparaîtrait ici.
+    await analyseAbusive(parLesDeux, false); // le modèle change d'avis
+    const liste = await store.listConversations(tenantId, { signalees: true });
+    expect(liste.map((x) => x.id)).toContain(parLesDeux);
+    await analyseAbusive(parLesDeux, true); // on remet la fixture d'aplomb
+  });
+
+  it('désignaler retire du dossier ET efface l’auteur', async () => {
+    // Garder le nom de celui qui avait signalé une conversation qui ne l'est plus laisserait croire à un
+    // signalement toujours actif.
+    expect(await store.signalerConversation(tenantId, parHumain, false, null)).toBe(true);
+    const r = await pool.query<{ signalee_le: Date | null; signalee_par: string | null }>(
+      'select signalee_le, signalee_par from conversations where id = $1', [parHumain],
+    );
+    expect(r.rows[0]).toEqual({ signalee_le: null, signalee_par: null });
+    expect((await store.compterConversations(tenantId)).signalees).toBe(2);
+    await store.signalerConversation(tenantId, parHumain, true, operateur); // fixture remise d'aplomb
+  });
+
+  it('une conversation d’un AUTRE espace ne se signale pas', async () => {
+    expect(await store.signalerConversation('00000000-0000-4000-8000-000000000000', parHumain, true, operateur)).toBe(false);
+  });
+});

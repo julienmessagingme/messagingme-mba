@@ -44,6 +44,17 @@ export interface ConversationSummary {
   assignedTo: string | null;
   /** Nom du membre affecté, pour l'afficher sans un second aller-retour. */
   assignedToName: string | null;
+  /**
+   * La conversation a-t-elle été signalée À LA MAIN (migration 0123) ?
+   *
+   * 🔴 DISTINCT du dossier « Signalé », qui montre l'UNION de ce drapeau et du constat de l'analyse. Sans
+   * cette distinction, l'écran ne saurait pas quoi proposer : sur une conversation signalée par le MODÈLE,
+   * un bouton « ne plus signaler » n'aurait aucun effet visible, et l'opérateur cliquerait deux fois avant
+   * de conclure que l'écran est cassé.
+   *
+   * Optionnel : les faux de test qui omettent le champ restent valides, et l'écran le lit comme `false`.
+   */
+  signaleeMain?: boolean;
 }
 /**
  * Options de lecture de l'inbox. Toutes optionnelles : sans elles, on obtient exactement la première page
@@ -361,7 +372,10 @@ export class PgInboxStore implements InboxStore {
     // conversation n'est donc jamais comptée dans deux dossiers à la fois.
     where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
     if (opts.signalees === true) {
-      where.push(`exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)`);
+      // 🔴 UNION des DEUX sources, et l'ordre des membres compte pour le planificateur : le signalement
+      // manuel est indexé (`conversations_signalees_main_idx`) et se teste sans sortir de la ligne, le
+      // constat de l'analyse demande une sous-requête. Le mettre en premier laisse court-circuiter.
+      where.push(`(c.signalee_le is not null or exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive))`);
     }
     if (opts.affectee === 'aucune') {
       where.push('c.assigned_to is null');
@@ -380,13 +394,15 @@ export class PgInboxStore implements InboxStore {
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date; curseur: string;
       control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
+      signalee_main: boolean;
     }>(
       // curseur : le même instant que last_message_at, mais en TEXTE à la microseconde. Voir
       // `ConversationSummary.curseur` : ici le défaut de précision faisait SAUTER des conversations, pas les
       // dupliquer, ce qui est le sens le plus dangereux des deux.
       `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
               to_char(c.last_message_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
-              ${UNREAD_SQL} as unread, c.assigned_to, u.name as assigned_name
+              ${UNREAD_SQL} as unread, c.assigned_to, u.name as assigned_name,
+              (c.signalee_le is not null) as signalee_main
        from conversations c
        left join contacts ct on ct.id = c.contact_id
        left join users u on u.id = c.assigned_to
@@ -406,6 +422,7 @@ export class PgInboxStore implements InboxStore {
       unread: r.unread,
       assignedTo: r.assigned_to,
       assignedToName: r.assigned_name,
+      signaleeMain: r.signalee_main === true,
     }));
   }
 
@@ -484,8 +501,8 @@ export class PgInboxStore implements InboxStore {
       `select
          count(*) filter (where c.archived_at is null)::text as tout,
          count(*) filter (where c.archived_at is null and c.control_owner <> 'app_workflow')::text as a_traiter,
-         count(*) filter (where c.archived_at is null and exists (
-           select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive))::text as signalees,
+         count(*) filter (where c.archived_at is null and (c.signalee_le is not null or exists (
+           select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)))::text as signalees,
          count(*) filter (where c.archived_at is not null)::text as archivees,
          count(*) filter (where c.archived_at is null and c.assigned_to is null)::text as non_affectees
          from conversations c
@@ -562,6 +579,30 @@ export class PgInboxStore implements InboxStore {
       `update conversations set archived_at = case when $3::boolean then now() else null end
         where id = $1 and tenant_id = $2`,
       [conversationId, tenantId, archive],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Signale une conversation À LA MAIN, ou retire ce signalement (migration 0123).
+   *
+   * 🔴 N'ÉCRIT JAMAIS `conversation_analysis.abusive`, et c'est tout l'intérêt d'avoir une colonne à part :
+   * ce champ-là est un CONSTAT posé par un modèle, recalculé à chaque ré-analyse. Un signalement humain
+   * écrit dedans disparaîtrait au passage suivant de l'analyse, sans cause visible. Le dossier « Signalé »
+   * montre l'UNION des deux, et chacune reste lisible pour elle-même.
+   *
+   * L'AUTEUR est enregistré quand on signale, et effacé quand on désignale : garder le nom de celui qui
+   * avait signalé une conversation qui ne l'est plus laisserait croire à un signalement toujours actif.
+   */
+  async signalerConversation(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean> {
+    const res = await this.pool.query(
+      // Même forme que `archiverConversation` : le drapeau est un PARAMÈTRE, pas un morceau de requête
+      // concaténé. L'auteur suit le drapeau, il n'a aucun sens sans lui.
+      `update conversations
+          set signalee_le = case when $3::boolean then now() else null end,
+              signalee_par = case when $3::boolean then $4::uuid else null end
+        where id = $1 and tenant_id = $2`,
+      [conversationId, tenantId, signale, parUserId],
     );
     return (res.rowCount ?? 0) > 0;
   }

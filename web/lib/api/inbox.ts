@@ -55,6 +55,14 @@ export interface Conversation {
    * l'appelant : la session du navigateur ne porte que l'email et le rôle.
    */
   assignedToMe?: boolean;
+  /**
+   * La conversation a-t-elle été signalée À LA MAIN ?
+   *
+   * ⚠️ DISTINCT du dossier « Signalé », qui montre l'union de ce drapeau et du constat de l'analyse. L'écran
+   * en a besoin pour savoir quoi proposer : sur une conversation signalée par le MODÈLE, un « ne plus
+   * signaler » n'aurait aucun effet visible. Absent (backend antérieur) = lu comme `false`.
+   */
+  signaleeMain?: boolean;
 }
 export interface InboxMessage {
   id: string;
@@ -216,6 +224,25 @@ export function effacerConversation(tenantId: string, conversationId: string): P
 }
 export function releaseConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/release`, { method: 'POST' });
+}
+/**
+ * L'opérateur PREND le fil : la conversation entre dans « À traiter ».
+ *
+ * Miroir exact de `releaseConversation`, qui existait seul. Sans lui, remettre une conversation à traiter
+ * demandait d'ENVOYER un message (c'est l'envoi qui prend le fil), donc d'écrire au client pour un geste
+ * de rangement interne.
+ */
+export function prendreConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/prendre`, { method: 'POST' });
+}
+/**
+ * Signale une conversation À LA MAIN, ou retire ce signalement.
+ *
+ * ⚠️ N'écrit PAS le constat de l'analyse (qui repère les injures toute seule) : ce sont deux sources, et le
+ * dossier « Signalé » montre leur union. Une ré-analyse ne peut donc pas effacer un signalement humain.
+ */
+export function signalerConversation(tenantId: string, conversationId: string, signale: boolean): Promise<{ signalee: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/${signale ? 'signaler' : 'ne-plus-signaler'}`, { method: 'POST' });
 }
 /** Surcharge de reprise de CE fil (C.4) : `resume` (repart au scénario), `inbox` (reste à l'humain), ou
  *  null (suit le défaut du tenant). Ne bascule pas le contrôle : réglage lu par le sweep de handback. */

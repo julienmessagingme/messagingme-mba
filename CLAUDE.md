@@ -79,9 +79,20 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0122**, le 2026-09-08 (`campaigns.business_hours_only` : une campagne peut n'envoyer
+**Dernière appliquée : 0123**, le 2026-09-09 (`conversations.signalee_le` et `.signalee_par` : signaler une
+conversation À LA MAIN, sans écraser le constat de l'analyse). **Prochaine libre = 0124.**
+
+🔴 **UNE COLONNE À PART, ET PAS `conversation_analysis.abusive`.** Ce champ-là est un CONSTAT posé par un
+modèle, RECALCULÉ à chaque ré-analyse : un signalement humain écrit dedans disparaîtrait au passage suivant,
+sans cause visible. Le dossier « Signalé » montre donc l'UNION des deux sources, et chacune reste lisible pour
+elle-même. C'est la séparation que le dépôt fait déjà tenir entre `abusive` (constat, ne déclenche rien) et
+`contacts.blocked_at` (décision, a des effets) : la casser ici la rendrait discutable là-bas.
+
+⚠️ NON BLOQUANTE (le code tolère la colonne absente), mais passée AVANT le déploiement : la requête du
+dossier est sur le chemin d'affichage de l'Inbox.
+
+Avant elle : **0122** le 2026-09-08 (`campaigns.business_hours_only` : une campagne peut n'envoyer
 que pendant les heures d'ouverture de l'espace, s'arrêter à la fermeture et REPRENDRE au créneau suivant).
-**Prochaine libre = 0123.**
 
 🔴 **ELLE NE CRÉE AUCUNE MÉCANIQUE DE REPRISE, ELLE ÉLARGIT CELLE DE 0103**, et c'est ce qui la rend petite :
 une campagne hors créneau se met `paused` avec un `paused_until`, exactement comme sur un plafond de débit,

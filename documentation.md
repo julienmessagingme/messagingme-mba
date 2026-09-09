@@ -429,6 +429,13 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 **Conversations**
 
 - `conversations` (`control_owner`, `assigned_to`, `archived_at`), `conversation_messages`.
+- 🔴 **LES CINQ DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
+  « Archivé » (`archived_at`) et l'affectation (`assigned_to`) sont des ÉTATS ÉCRITS ; « À traiter » est
+  DÉRIVÉ de `control_owner <> 'app_workflow'`, donc y ranger une conversation veut dire PRENDRE le fil ; et
+  « Signalé » réunit DEUX sources, le constat de l'analyse (`conversation_analysis.abusive`) et un
+  signalement humain (`signalee_le`, migration 0123). ⚠️ Les deux sources restent SÉPARÉES : `abusive` est
+  recalculé à chaque ré-analyse, un signalement humain écrit dedans disparaîtrait au passage suivant. La
+  liste rend `signaleeMain` pour que l'écran sache quoi proposer.
 - 🔴 **`control_owner` et `assigned_to` sont ORTHOGONAUX** : le premier dit QU'EST-CE QUI parle (scénario,
   humain, agent Meta), le second QUEL HUMAIN s'en occupe. Une conversation peut être affectée ET tenue par le
   scénario. La règle d'accès vit dans `src/inbox/assignment.ts`, PURE, et ne reçoit même pas `control_owner` :
@@ -749,9 +756,17 @@ partis en production. `tests/integration/purge-rgpd.integration.test.ts` écrit,
 perdue au prochain refactor ne casse aucune assertion de texte. Les rectangles se mesurent
 (`boundingBox()`).
 
-⚠️ **`inbox-envoi-scenario.spec.ts` est instable SOUS CHARGE, et seulement sous charge** (quantifié : 15
-exécutions isolées, 15 succès ; vert en CI, qui a `retries: 1` et des ressources dédiées). **Ne pas
-l'affaiblir** : le jour où il tombe en CI, c'est un vrai défaut.
+⚠️ **`inbox-envoi-scenario.spec.ts` est INSTABLE, y compris en isolé, et ce n'est pas le code qui bouge.**
+Mesuré le 2026-09-08 : 15 exécutions isolées, 15 succès. Re-mesuré le 2026-09-09 sur la MÊME machine, après
+une journée de suites lourdes : **1 échec sur 5 en isolé**. Et surtout, **la RÉFÉRENCE échoue au même taux**
+(5 exécutions sur le code d'avant le lot du jour : 1 échec) : le changement en cours n'y est pour rien.
+
+🔴 **C'est la mesure sur la référence qui vaut, pas le souvenir d'une mesure précédente.** Sans elle, on
+s'attribue une instabilité de machine et on part corriger un code qui n'a rien. La note « 15/15 » écrite la
+veille aurait suffi à faire conclure l'inverse.
+
+**Ne pas l'affaiblir**, et ne pas le réparer non plus tant que la CI reste verte (`retries: 1`, ressources
+dédiées) : le jour où il tombe EN CI, c'est un vrai défaut.
 
 ### Sondes committées
 

@@ -806,6 +806,22 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
+- ✅ **RANGER LA CONVERSATION OUVERTE** (2026-09-09) : un menu « Ranger dans… » en haut de la conversation,
+  à côté de l'affectation. Il propose, selon l'état :
+  - **À traiter** : vous reprenez le fil, la conversation entre dans ce dossier. 🔴 **Ce geste n'existait
+    pas** : on ne reprenait un fil qu'en ENVOYANT un message, donc il fallait écrire au client pour un
+    rangement interne. Le geste inverse (« Rendre la main » au scénario) est le bouton juste à côté, et les
+    deux ne s'affichent jamais ensemble : c'est une bascule, pas deux réglages.
+  - **Signalé / Ne plus signaler** : un signalement À LA MAIN. ⚠️ Il s'ajoute au constat de l'analyse (qui
+    repère les injures toute seule) sans l'écraser : le dossier « Signalé » montre les deux, et une
+    ré-analyse ne peut pas effacer votre signalement. Sur une conversation signalée par l'analyse, le menu
+    propose donc quand même « Signalé » : il n'y a rien à retirer, vous n'aviez rien posé.
+  - **Archivé / Désarchiver** : le geste existait, mais seulement en cochant une case dans la LISTE. Il
+    fallait donc revenir en arrière pour ranger ce qu'on venait de finir de lire.
+
+  ⚠️ **L'affectation à un collaborateur reste son propre sélecteur**, et ce n'est pas un oubli : elle est
+  INDÉPENDANTE du reste. Une conversation peut être confiée à Marie ET tenue par le scénario. Les réunir
+  dans un seul menu laisserait croire qu'on choisit entre les deux.
 - ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08, **réellement à gauche depuis le 2026-09-09**).
   Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Signalé**, **Archivé**, chacun
   avec son nombre entre parenthèses. Il remplace les trois boutons de filtre d'avant, qui ne portaient qu'un
