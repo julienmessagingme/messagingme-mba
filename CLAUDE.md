@@ -79,8 +79,14 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Écrite, PAS ENCORE APPLIQUÉE : 0126** (`agents.mention_ia_frequence` : annoncer qu'on est une IA devient un
-RÉGLAGE du client, à trois régimes). **Prochaine libre = 0127.**
+**Dernière appliquée : 0126**, le 2026-09-09 à 19h10 UTC (`agents.mention_ia_frequence` : annoncer qu'on est
+une IA devient un RÉGLAGE du client, à trois régimes). **Prochaine libre = 0127.**
+
+⚠️ **ET CETTE LIGNE A ENCORE DÉRIVÉ, une troisième fois.** Elle annonçait « écrite, PAS ENCORE APPLIQUÉE »
+alors que la base portait 0124, 0125 et 0126 depuis le jour même. La parade est écrite juste au-dessus et
+elle a fonctionné : **la base tranche**. Ce qui n'a pas fonctionné, c'est de relire la ligne après avoir
+appliqué la migration plutôt qu'après l'avoir écrite. Le moment où elle se met à jour est l'exécution de
+`migrate`, pas la rédaction du fichier SQL.
 
 🔴 **LA REVUE DE L'AGENT A TROUVÉ QUE L'ANNONCE ÉTAIT CONFIÉE AU MODÈLE**, et c'est ce que 0126 corrige. La
 consigne système disait « au tout premier message d'une conversation, tu annonces que tu es une IA » : rien
