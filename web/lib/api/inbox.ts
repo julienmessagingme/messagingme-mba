@@ -8,7 +8,7 @@
  * `lib/api.ts` reste le point d'entree et reexporte tout, donc AUCUN des 67 importeurs ne change.
  */
 
-import { request } from '../http';
+import { request, requestBlob } from '../http';
 
 // --- Inbox ---
 
@@ -85,6 +85,12 @@ export interface InboxMessage {
   /** Canal de CETTE bulle : le fil est unique par contact, c'est le message qui porte le tuyau emprunté.
    *  Absent (message d'avant la migration 0056) = WhatsApp. */
   channel?: 'whatsapp' | 'rcs';
+  /** Ce message porte un fichier chez Meta (migration 0125). Le serveur ne rend PAS son identifiant :
+   *  celui-ci ne sert qu'a aller chercher les octets, et l'ecran n'en ferait rien. */
+  aMedia?: boolean;
+  /** La transcription du vocal, quand un operateur l'a demandee. A afficher MARQUEE comme telle : c'est la
+   *  lecture d'un modele, pas ce que le client a ecrit. */
+  transcription?: string | null;
 }
 /**
  * Une page de conversations, de la plus récente à la plus ancienne.
@@ -264,4 +270,21 @@ export function sendTemplateToConversation(tenantId: string, conversationId: str
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+/**
+ * Le fichier d'un message média, en octets (2026-09-09).
+ *
+ * ⚠️ APPELÉ AU CLIC, jamais au rendu du fil. Un fil de trente messages dont dix vocaux téléchargerait
+ * vingt méga à l'ouverture, pour des fichiers que l'opérateur n'écoutera pas.
+ */
+export function lireMediaMessage(tenantId: string, conversationId: string, messageId: string): Promise<Blob> {
+  return requestBlob(`/tenants/${tenantId}/conversations/${conversationId}/messages/${messageId}/media`);
+}
+
+/**
+ * Transcrit le vocal d'un message. `deja` = il l'était déjà, rien n'a été repayé.
+ */
+export function transcrireMessage(tenantId: string, conversationId: string, messageId: string): Promise<{ texte: string; deja: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages/${messageId}/transcrire`, { method: 'POST' });
 }

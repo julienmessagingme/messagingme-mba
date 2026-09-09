@@ -108,6 +108,29 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 }
 
+/**
+ * Le MÊME appel authentifié, mais qui rend des OCTETS.
+ *
+ * 🔴 POURQUOI IL FAUT PASSER PAR LÀ POUR ÉCOUTER UN VOCAL. Une balise `<audio src="...">` ne sait pas poser
+ * d'en-tête `Authorization` : elle ne peut donc atteindre aucune de nos routes. On récupère les octets ici,
+ * et l'écran en fabrique une URL d'objet locale. `request` ne convient pas, il parse du JSON.
+ *
+ * ⚠️ Aucun rejeu : un média pèse jusqu'à deux méga, et rejouer un téléchargement raté doublerait la bande
+ * passante pour un geste que l'opérateur peut relancer d'un clic.
+ */
+export async function requestBlob(path: string): Promise<Blob> {
+  const session = getSession();
+  const headers = new Headers();
+  if (session) headers.set('authorization', `Bearer ${session.token}`);
+  const res = await fetch(`${BASE}${path}`, { headers });
+  if (res.status === 401) {
+    clearSession();
+    throw new ApiError(401, 'session expirée');
+  }
+  if (!res.ok) throw new ApiError(res.status, `média indisponible (${res.status})`);
+  return res.blob();
+}
+
 async function attempt<T>(path: string, init: RequestInit): Promise<T> {
   const session = getSession();
   const headers = new Headers(init.headers);

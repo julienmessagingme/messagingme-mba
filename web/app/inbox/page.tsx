@@ -37,6 +37,8 @@ import {
   releaseConversation,
   prendreConversation,
   signalerConversation,
+  lireMediaMessage,
+  transcrireMessage,
   effacerConversation,
   replyConversation,
   listTemplates,
@@ -682,6 +684,93 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
   );
 }
 
+
+/**
+ * UN VOCAL DANS LE FIL : l'ECOUTER, ou le faire TRANSCRIRE (2026-09-09, demande de Julien).
+ *
+ * 🔴 LE CHOIX EST A L'OPERATEUR, ET C'EST LUI QUI L'A TRANCHE : « il faut qu'il ait le choix, soit l'ecouter
+ * avec un petit bouton lecture, soit le demander a transcrire ». Neuf fois sur dix il ecoutera, c'est plus
+ * rapide que de lire. Transcrire automatiquement ferait payer un service que personne n'a demande.
+ * ⚠️ Le chemin de l'AGENT sera l'inverse (automatique et obligatoire), parce qu'un modele ne sait pas ecouter.
+ *
+ * 🔴 RIEN N'EST TELECHARGE AU RENDU. Un fil de trente messages dont dix vocaux tirerait vingt mega a
+ * l'ouverture, pour des fichiers que personne n'ecoutera. Les octets ne partent qu'au clic.
+ *
+ * ⚠️ POURQUOI UN BLOB ET PAS UN `src` : une balise `<audio src>` ne sait pas poser d'en-tete
+ * `Authorization`, elle ne peut donc atteindre aucune de nos routes. On recupere les octets avec le jeton,
+ * et on en fabrique une URL locale, revoquee au demontage sous peine de fuite memoire.
+ *
+ * ⚠️ LA TRANSCRIPTION EST MARQUEE COMME TELLE. C'est la lecture d'un modele, pas ce que le client a ecrit :
+ * la presenter comme une citation ferait prendre une supposition pour un fait, et un operateur qui reprend
+ * une conversation menee par l'IA n'aurait aucun moyen de le savoir. Le vocal reste ecoutable a cote.
+ */
+function VocalMessage({ session, conversationId, message }: { session: Session; conversationId: string; message: InboxMessage }) {
+  const t = useT();
+  const [url, setUrl] = useState<string | null>(null);
+  const [texte, setTexte] = useState<string | null>(message.transcription ?? null);
+  const [occupe, setOccupe] = useState<'audio' | 'texte' | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  // Révoque l'URL d'objet au démontage : sans ça, chaque vocal écouté garde ses octets en mémoire du
+  // navigateur jusqu'au rechargement de la page.
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+
+  async function ecouter(): Promise<void> {
+    setOccupe('audio'); setErreur(null);
+    try {
+      setUrl(URL.createObjectURL(await lireMediaMessage(session.tenantId, conversationId, message.id)));
+    } catch {
+      setErreur(t('Ce vocal n’a pas pu être récupéré.', 'This voice note could not be fetched.'));
+    } finally { setOccupe(null); }
+  }
+
+  async function transcrire(): Promise<void> {
+    setOccupe('texte'); setErreur(null);
+    try {
+      setTexte((await transcrireMessage(session.tenantId, conversationId, message.id)).texte);
+    } catch {
+      setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
+    } finally { setOccupe(null); }
+  }
+
+  return (
+    <div className="space-y-1" data-testid={`vocal-${message.id}`}>
+      {url
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        ? <audio src={url} controls autoPlay className="h-8 max-w-[220px]" data-testid={`vocal-lecteur-${message.id}`} />
+        : (
+          <button
+            type="button"
+            onClick={() => { void ecouter(); }}
+            disabled={occupe !== null}
+            data-testid={`vocal-ecouter-${message.id}`}
+            className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-white disabled:opacity-50"
+          >
+            {occupe === 'audio' ? t('Chargement…', 'Loading…') : t('▶ Écouter', '▶ Listen')}
+          </button>
+        )}
+      {texte === null && (
+        <button
+          type="button"
+          onClick={() => { void transcrire(); }}
+          disabled={occupe !== null}
+          data-testid={`vocal-transcrire-${message.id}`}
+          className="ml-1 rounded-full bg-white/70 px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-white disabled:opacity-50"
+        >
+          {occupe === 'texte' ? t('Transcription…', 'Transcribing…') : t('Transcrire', 'Transcribe')}
+        </button>
+      )}
+      {texte !== null && (
+        <p className="rounded-lg bg-white/60 px-2 py-1 text-xs text-ink-700" data-testid={`vocal-texte-${message.id}`}>
+          <span className="mr-1 font-medium uppercase tracking-wide text-ink-400">{t('transcription', 'transcript')}</span>
+          {texte}
+        </p>
+      )}
+      {erreur && <p className="text-xs text-red-600" data-testid={`vocal-erreur-${message.id}`}>{erreur}</p>}
+    </div>
+  );
+}
+
 function AffectationControl({ session, conversation, onChange }: { session: Session; conversation: Conversation; onChange: () => void }) {
   const t = useT();
   const peutAffecter = session.role === 'admin' || session.role === 'manager';
@@ -1064,6 +1153,9 @@ function Thread({ session, conversation, dossier, onSent }: {
                 >
                   {m.type === 'template' ? (
                     <span className="italic opacity-90">📋 {m.body}</span>
+                  ) : m.type === 'audio' && m.aMedia === true && m.direction === 'in' ? (
+                    // Le vocal remplace le libellé `[audio]`, qui ne disait rien de ce que le client a dit.
+                    <VocalMessage session={session} conversationId={conversation.id} message={m} />
                   ) : m.buttonPayload && m.direction === 'in' ? (
                     <InboundPayload body={m.body} payload={m.buttonPayload} />
                   ) : (

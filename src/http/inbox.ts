@@ -81,6 +81,13 @@ export interface InboxRouteDeps {
    */
   transcrireMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ texte: string; deja: boolean }>;
   /**
+   * Les octets d'un message média, pour les servir au navigateur (2026-09-09).
+   *
+   * `null` = ce message ne porte aucun média. OPTIONNELLE : absente, la route rend 503, comme les autres
+   * capacités de cet écran.
+   */
+  lireMediaMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ bytes: Buffer; mime: string | null } | null>;
+  /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
    * c'est-à-dire exactement le comportement d'avant l'affectation.
@@ -345,6 +352,39 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     await deps.takeControl(tenant, ctx.waId);
     invaliderCompteurs(tenant); // le fil entre dans « À traiter ».
     return reply.code(200).send({ controlOwner: 'app_human' });
+  });
+
+  /**
+   * SERVIR le fichier d'un message média au navigateur (2026-09-09).
+   *
+   * 🔴 POURQUOI CETTE ROUTE EXISTE PLUTÔT QU'UN LIEN DIRECT. L'URL que rend Meta vit quelques minutes ET
+   * exige notre jeton dans un en-tête : une balise `<audio src>` ne peut ni l'un ni l'autre. La donner au
+   * front produirait des lectures qui marchent au premier essai et échouent cinq minutes plus tard, ce qui
+   * est la pire forme de panne. On sert donc les octets nous-mêmes, sous la garde d'espace habituelle.
+   *
+   * ⚠️ PAS de plafond de débit COÛTEUX ici, contrairement à la transcription : écouter ne coûte rien à un
+   * modèle, seulement de la bande passante, et le plafond général suffit. Les deux gestes se ressemblent à
+   * l'écran et n'ont pas du tout le même prix : les mettre sous la même garde aurait rationné le geste
+   * gratuit pour protéger le payant.
+   */
+  app.get('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/media', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
+    if (!estUuid(messageId)) return reply.code(404).send({ error: 'message inconnu' });
+    if (!deps.lireMediaMessage) return reply.code(503).send({ error: 'lecture des médias indisponible sur cette instance' });
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    try {
+      const f = await deps.lireMediaMessage(tenant, messageId, conversationId);
+      if (!f) return reply.code(404).send({ error: 'ce message ne porte aucun média' });
+      // `no-store` : ces octets sont ceux d'un client, ils n'ont rien à faire dans un cache partagé.
+      return reply.header('cache-control', 'private, no-store').type(f.mime ?? 'application/octet-stream').send(f.bytes);
+    } catch (err) {
+      req.log.error({ err, tenant, messageId }, 'media_illisible');
+      // 4xx, jamais 5xx : Cloudflare remplacerait le corps, et l'écran a besoin de savoir quoi dire.
+      return reply.code(422).send({ error: 'ce média n’a pas pu être récupéré' });
+    }
   });
 
   /**

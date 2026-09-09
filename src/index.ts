@@ -568,6 +568,18 @@ async function main(): Promise<void> {
             app.log.info({ tenant: t, messageId: m2, coutDollars: cout, secondes }, 'transcription_cout');
           },
         }, tenant, messageId, conversationId),
+        /**
+         * ⚠️ MÊME plafond de taille que la transcription, et pour la même raison : le fichier entre entier en
+         * mémoire du serveur avant de partir vers le navigateur. Sans borne, un média inattendu ferait
+         * grossir le processus au lieu d'échouer proprement.
+         */
+        lireMediaMessage: async (tenant: string, messageId: string, conversationId?: string) => {
+          const msg = await inboxStore.lireMessagePourTranscription(tenant, messageId, conversationId);
+          if (!msg?.mediaId) return null;
+          const f = await mediaClient.telechargerEntrant(msg.mediaId, config.TRANSCRIPTION_TAILLE_MAX_KO * 1024);
+          // Le mime du MESSAGE d'abord : c'est celui que WhatsApp a annoncé, et Meta ne le rend pas toujours.
+          return { bytes: f.bytes, mime: msg.mediaMime ?? f.mime };
+        },
       } : {}),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
