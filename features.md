@@ -998,9 +998,14 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Analytics (menu Analytics)
 
-- ✅ **Page de synthèse « Synthèse », en tête du Performance Lab** (2026-09-08) : la première page de
-  l'onglet, à l'adresse `/performance`. Elle répond à des questions que les autres écrans ne posent pas :
-  où en sont les conversations, et ce que coûte un engagement.
+- ✅ **Page de synthèse, en tête du Performance Lab** (2026-09-08, remaniée le 2026-09-09) : la première
+  page de l'onglet, à l'adresse `/performance`. Elle répond à des questions que les autres écrans ne posent
+  pas : où en sont les conversations, et ce que coûte un engagement.
+  ⚠️ **Deux colonnes depuis le 2026-09-09** : le coût à gauche (la question qu'on se pose en arrivant, et
+  elle se lit dès le premier jour), le nuage à droite (il se remplit avec le temps). Empilées, les deux
+  cartes obligeaient à faire défiler pour comparer une dépense à un ressenti, ce qui est la comparaison que
+  cette page existe pour permettre. En dessous d'un grand écran, une seule colonne, dans le même ordre.
+  Le titre « Synthèse » a été retiré : l'onglet actif le portait déjà juste au-dessus.
 - ✅ **« Ce que coûte un engagement »** (2026-09-08, sur la page de synthèse) : une ligne par campagne ayant
   envoyé sur la période, avec ses **envoyés**, son **coût estimé**, ses **clics** et son **coût par clic**.
   C'est la question qu'on se pose en arrivant sur l'onglet, et elle se lit sur tout l'historique dès le
@@ -1021,6 +1026,26 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   avant le 2026-09-02 porte chez Meta une adresse figée sans jeton, donc aucun de ses clics ne remonte ; et
   deux campagnes qui envoient la même adresse au même contact partagent le compteur, l'attribution tranche
   alors par proximité de temps.
+- ✅ **La fiche d'une campagne, en cliquant sa ligne** (2026-09-09) : ce qu'elle a coûté et ce que les gens
+  en ont fait. Elle s'ouvre en cliquant n'importe où sur la ligne, ou au clavier depuis le nom de la
+  campagne.
+  🔴 **Le coût de référence est le LANCEMENT**, c'est-à-dire le premier message envoyé à chaque
+  destinataire. Les templates qu'un scénario renvoie ensuite sont facturés en plus, affichés à part, et
+  volontairement hors des rapports : les compter ferait baisser le « coût par interaction » à chaque
+  relance, sans qu'une seule interaction de plus soit survenue.
+  🔴 **Elle couvre toute la VIE de la campagne**, pas la période choisie en haut, et elle le dit : un
+  scénario reçoit des réponses pendant des jours. C'est pourquoi son chiffre peut différer de celui du
+  tableau, à deux centimètres de distance.
+  ⚠️ **Les échecs sont montrés à part.** Ils n'entraient déjà pas dans le coût ; rien ne distinguait
+  « exclus » de « oubliés ».
+  ⚠️ **Étape par étape, pour une campagne à scénario** : par bloc, les clics sur les liens tracés, les
+  boutons tapés et les réponses écrites, en **gestes et en personnes** (une personne qui agit deux fois
+  compte pour deux gestes et une personne), plus le coût du lancement rapporté aux gestes de l'étape.
+  « Envoyé » et « lu » n'y comptent pas comme des interactions : ce sont des choses qui ARRIVENT au
+  contact, pas des choses qu'il FAIT.
+  ⚠️ **Ce que la fiche ne peut pas rattacher, elle le dit** : les clics venus d'un template approuvé avant
+  le 2026-09-02 portent chez Meta une adresse figée sans jeton, ils n'auront jamais d'identifiant, et ils
+  sont comptés hors des colonnes. Ceux des templates plus récents, eux, savent de qui ils viennent.
 - ✅ **Nuage « urgence et satisfaction »** (2026-09-08, sur la page de synthèse). L'analyse de conversation
   note désormais **deux mesures de plus, de 0 à 10** : la **satisfaction** (0 = client très mécontent,
   10 = très satisfait) et l'**urgence** (0 = aucune attente particulière, 10 = il attend une réponse

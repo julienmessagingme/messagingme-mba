@@ -982,7 +982,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
-| `src/stats/store.pg.ts` -> `envoisTemplateFacturables()` | les envois facturables d'une période, et l'attribution d'un envoi de scénario à sa campagne |
+| `src/stats/store.pg.ts` -> `envoisTemplateFacturables()` | les envois facturables d'une période, et 🔴 l'UNIQUE heuristique d'attribution d'un fait à une campagne à scénario, désormais lue par TROIS mesures (les envois, les événements de bloc, les clics de lien) : la dernière campagne scénario réclamée pour ce numéro avant le fait. Une seconde heuristique, même voisine, donnerait deux vérités sur le même écran |
 | `src/campaign/echecs-sql.ts` | 🔴 la POPULATION d'un échec d'envoi et sa DATE, lues par quatre écrans |
 | `src/campaign/store.pg.ts` -> `insertCampaignRow`, `summarySelect()` | l'INSERT d'une campagne et la projection des résumés |
 | `src/campaign/pause.ts` | pourquoi une campagne est en pause, et ce que l'opérateur lit |
