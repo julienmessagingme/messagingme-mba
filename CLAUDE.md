@@ -193,10 +193,19 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-**Les cinq fichiers de doc**, et ce qu'on y met : [documentation.md](documentation.md) la technique (archi,
-stack, schéma DB, env, patterns, et le JOURNAL des lots livrés avec leurs gotchas) · [features.md](features.md)
-le fonctionnel vu utilisateur · [wip.md](wip.md) ce sur quoi on bosse MAINTENANT · [todo.md](todo.md) le
-backlog · et ce fichier, qui reste le point d'entrée LÉGER.
+**Les fichiers de doc**, et ce qu'on y met : [documentation.md](documentation.md) le MANUEL technique de ce
+qui est VRAI aujourd'hui (topologie, domaines, flux, invariants) · [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md)
+l'ARCHIVE des livraisons, incidents et mesures · [features.md](features.md) le fonctionnel vu utilisateur ·
+[wip.md](wip.md) ce sur quoi on bosse MAINTENANT · [todo.md](todo.md) le backlog · et ce fichier, qui reste le
+point d'entrée LÉGER.
+
+🔴 **LE MANUEL ET L'ARCHIVE ONT ÉTÉ SÉPARÉS LE 2026-09-09, et la règle qui les sépare est TEMPORELLE.**
+`documentation.md` faisait 5 576 lignes dont 61,6 % de journal, et sa partie « courante » contenait cinq
+affirmations vérifiablement fausses (hébergement, compteur de migrations, rôles, rétention des webhooks,
+nombre de files). Le journal est parti VERBATIM dans l'archive, qui ne fait jamais autorité sur le présent.
+Ce qui ne doit plus JAMAIS entrer dans le manuel : un compteur calculable (files, tests, migrations), un titre
+`DÉPLOYÉ` / `LIVRÉ` / `PROCHAINE ÉTAPE` / `RESTE À FAIRE`, le récit d'un bug (seul l'invariant qu'il révèle
+reste), ou un détail de `DEPLOY.md`. La § « Gouvernance documentaire » du manuel porte la règle complète.
 
 **Les audits et les plans sont tous CLOS**, et ils ne se lisent plus que pour comprendre une décision :
 [PLAN.md](PLAN.md) (les deux programmes, terminés le 2026-09-01),

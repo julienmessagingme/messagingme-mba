@@ -20,7 +20,13 @@ export function dlqName(queue: string): string {
   return `${queue}-dlq`;
 }
 
-/** Les 14 files réelles = chaque file de base + sa DLQ. Consommé par PgOpsStore.getQueueLoad (surface /ops). */
+/**
+ * Les files RÉELLES = chaque file de base PLUS sa DLQ. Consommé par PgOpsStore.getQueueLoad (surface /ops).
+ *
+ * ⚠️ Le compte n'est PAS écrit ici, et ce commentaire a justement dit « 14 » pendant que la constante en
+ * produisait 16 : un nombre à la main devient faux au premier ajout de file, sans que rien ne le signale.
+ * Un lecteur qui veut le compte le dérive de `BASE_QUEUES`, comme le fait cette ligne.
+ */
 export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
 
 /**
