@@ -398,19 +398,24 @@ describe.skipIf(!url)('Cout : les deux lectures comptent la MEME population (Pos
          values ($1, 'itest-scenario-personnes', 'marketing', 'whatsapp', $2) returning id`,
         [tenantId, wf],
       )).rows[0]!.id;
+      // ⚠️ NUMERO LIBRE DANS TOUT LE FICHIER, pas seulement dans ce bloc. `contacts_tenant_phone_uidx`
+      // porte sur (tenant_id, phone_e164), et les describes de ce fichier PARTAGENT le tenant : un numero
+      // deja pris par un autre bloc fait lever le `beforeAll`, donc tomber tout le describe. Vecu le
+      // 2026-09-09 avec `...021`, deja utilise trente lignes plus haut. La liste en usage se lit d un
+      // `grep -o '+336[0-9]\{8\}'` sur ce fichier, elle ne se devine pas.
       const contact = (await pool.query<{ id: string }>(
-        `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000021') returning id`, [tenantId],
+        `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000041') returning id`, [tenantId],
       )).rows[0]!.id;
       await pool.query(
         `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, claimed_at, sent_at, message_id)
-         values ($1, $2, '+33600000021', '{}'::jsonb, 'sent', timestamptz '2026-09-05 08:00:00+00', timestamptz '2026-09-05 08:00:01+00', 'wamid.itest-perso')`,
+         values ($1, $2, '+33600000041', '{}'::jsonb, 'sent', timestamptz '2026-09-05 08:00:00+00', timestamptz '2026-09-05 08:00:01+00', 'wamid.itest-perso')`,
         [campagneScenario, contact],
       );
       // LA MEME personne tape DEUX boutons differents du MEME bloc.
       await pool.query(
         `insert into workflow_node_events (tenant_id, workflow_id, node_id, wa_id, kind, handle, at)
-         values ($1, $2, $3, '33600000021', 'reply_button', 'btn:0', timestamptz '2026-09-05 09:00:00+00'),
-                ($1, $2, $3, '33600000021', 'reply_button', 'btn:1', timestamptz '2026-09-05 09:05:00+00')`,
+         values ($1, $2, $3, '33600000041', 'reply_button', 'btn:0', timestamptz '2026-09-05 09:00:00+00'),
+                ($1, $2, $3, '33600000041', 'reply_button', 'btn:1', timestamptz '2026-09-05 09:05:00+00')`,
         [tenantId, wf, noeud],
       );
     });
