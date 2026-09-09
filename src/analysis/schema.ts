@@ -6,7 +6,15 @@ export const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'auc
 export const HANDLED_BY = ['humain', 'automatise', 'mba'] as const;
 export type HandledBy = (typeof HANDLED_BY)[number];
 
-/** Bornes de l'échelle des deux notes (satisfaction, urgence). Le CHECK de la migration 0121 porte les mêmes. */
+/**
+ * Bornes de l'échelle des deux notes (satisfaction, urgence).
+ *
+ * 🔴 CETTE ÉCHELLE EXISTE EN TROIS EXEMPLAIRES, et les deux autres sont TENUS PAR DES TESTS, plus par cette
+ * phrase : le CHECK de la migration 0121 (`tests/analysis-engine.test.ts`) et les constantes du front
+ * (`web/lib/nuage.test.ts`, qui lit ce fichier-ci). La changer ici seule ferait échouer l'INSERT de
+ * l'analyse entière, en boucle et en silence, pour une note hors du CHECK. Et une migration appliquée ne se
+ * corrige pas : élargir l'échelle demande une migration DE PLUS.
+ */
 export const NOTE_MIN = 0;
 export const NOTE_MAX = 10;
 

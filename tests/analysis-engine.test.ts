@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import { buildTranscript, buildPrompt, deduceHandledBy, countExchanges, parseLlmOutput, type AnalysisMessage } from '../src/analysis/engine';
+import { NOTE_MIN, NOTE_MAX } from '../src/analysis/schema';
 
 const valid = {
   sentiment: 'positif', intent: 'demande_devis', topic: 'devis 50 licences', resolved: false,
@@ -125,6 +127,24 @@ describe('engine — satisfaction et urgence (lot F)', () => {
       expect(sortie?.sentiment).toBe('positif');
       expect(sortie?.satisfaction).toBeUndefined();
       expect(sortie?.urgence).toBeUndefined();
+    }
+  });
+
+  it('🔴 le CHECK de la migration 0121 porte les MÊMES bornes que le schéma', async () => {
+    // TROISIÈME copie de l'échelle, et la seule que rien ne tenait. Le front est déjà arrimé à ce schéma
+    // (`web/lib/nuage.test.ts` lit le fichier serveur) ; la contrainte EN BASE ne l'était que par un
+    // commentaire. Élargir l'échelle sans la migration qui va avec ne casserait pas la note, ça ferait
+    // échouer l'INSERT de l'analyse ENTIÈRE : la transaction est annulée, `analysis_status` n'avance pas,
+    // le balayage re-réclame la conversation et repaie le modèle à chaque passage. Une boucle payante et
+    // silencieuse, pour une constante changée dans un seul des trois fichiers.
+    const sql = await readFile(new URL('../db/migrations/0121_analyse_urgence_satisfaction.sql', import.meta.url), 'utf8');
+    const bornes = [...sql.matchAll(/check \((?:satisfaction|urgence) between (-?\d+) and (-?\d+)\)/g)];
+    // Sans cette ligne, une migration renommée ou reformatée rendrait zéro correspondance et le test
+    // passerait en ne vérifiant rien : c'est la panne qu'une sonde attrape le moins bien, la sienne.
+    expect(bornes.length, 'les deux CHECK n’ont pas été lus dans la migration : ce test ne garde plus rien').toBe(2);
+    for (const [, min, max] of bornes) {
+      expect(Number(min)).toBe(NOTE_MIN);
+      expect(Number(max)).toBe(NOTE_MAX);
     }
   });
 
