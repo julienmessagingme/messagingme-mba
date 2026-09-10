@@ -97,7 +97,12 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
       </p>
     </header>
   );
-  const coquille = (contenu: React.ReactNode) => <div className="mx-auto max-w-4xl space-y-6">{entete}{contenu}</div>;
+  /**
+   * ⚠️ `max-w-6xl` et non `4xl` (demandé par Julien le 2026-09-10) : huit onglets et des panneaux qui
+   * listent des FAQ, des fichiers et des compétences n'ont rien à faire dans une colonne de 896 px sur un
+   * écran de 1600. C'est l'écran le plus dense de la console, il est désormais le plus large.
+   */
+  const coquille = (contenu: React.ReactNode) => <div className="mx-auto max-w-6xl space-y-6">{entete}{contenu}</div>;
 
   if (chargement) return coquille(<p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>);
   if (err !== '') return coquille(<MbaNotice kind="error" testid="mba-page-error">{err}</MbaNotice>);

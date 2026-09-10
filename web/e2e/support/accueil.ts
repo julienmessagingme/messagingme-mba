@@ -41,7 +41,12 @@ const defaultSettings = { controlHandbackSeconds: null, mbaEnabled: false, hubsp
 
 export async function mockAccueil(
   page: Page,
-  over: { account?: AccountFixture; settings?: typeof defaultSettings; catchupTriggered?: boolean; numbersCount?: number; mbaStatus?: unknown } = {},
+  over: {
+    account?: AccountFixture; settings?: typeof defaultSettings; catchupTriggered?: boolean;
+    numbersCount?: number; mbaStatus?: unknown;
+    /** Fait échouer `PUT /mba-activation` en 409 avec ce message : le cas « on n'a pas pu lire chez Meta ». */
+    activationRefusee?: string;
+  } = {},
 ): Promise<void> {
   await page.addInitScript((s) => {
     window.localStorage.setItem('mba.session', JSON.stringify(s));
@@ -71,6 +76,19 @@ export async function mockAccueil(
     // cas le plus courant d'un numero fraichement ouvert.
     if (url.includes('/mba/') && url.endsWith('/status')) return json(over.mbaStatus ?? { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: false }, ai_audience: 'EVERYONE' } });
     if (url.includes('/mba/') && url.endsWith('/rollout')) return json({ rollout: { enabled: true }, ai_audience: 'EVERYONE' });
+    /**
+     * 🔴 LA ROUTE UNIQUE D'ACTIVATION (2026-09-10). Elle a remplacé une orchestration côté navigateur qui a
+     * cassé trois fois dans la même journée : le bouton n'échouait pas, il SAUTAIT l'appel à Meta et écrivait
+     * notre drapeau quand même. Le serveur décide désormais tout et rend ce qu'il a RÉELLEMENT fait, ce que
+     * ce mock reproduit : il fait l'écho de l'intention reçue, il ne la devine pas.
+     */
+    if (url.endsWith('/mba-activation')) {
+      if (over.activationRefusee) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: over.activationRefusee }) });
+      }
+      const b = (route.request().postDataJSON() ?? {}) as { enabled?: boolean };
+      return json({ enabled: b.enabled === true, chezMeta: 'applique', phoneNumberId: 'PN1' });
+    }
     if (url.includes('/account-status')) return json(account);
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
