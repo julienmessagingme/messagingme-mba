@@ -60,15 +60,16 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
     // Un outil ACTIF (activé par un humain, comme la contrainte l'exige) et un outil ÉTEINT.
     // ⚠️ DEUX ÉCRITURES PAR OUTIL DEPUIS LA MIGRATION 0127 : la DÉFINITION, puis le CONSENTEMENT. Les
     // lectures joignent la table de liaison, donc une définition sans ligne de liaison est INVISIBLE, y
-    // compris de `byName`. `agent_id` reste renseigné tant que 0128 ne l'a pas retiré (il est NOT NULL).
+    // compris de `byName`. La définition ne porte plus NI `agent_id` NI le consentement : ces colonnes sont
+    // parties avec 0128, et les écrire ici ferait échouer le test sur une base à jour.
     const actif = await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser,
-                                params, binding, output_paths, risk, timeout_ms, max_bytes, actif, active_par)
-       values ($1, $2, 'mba', 'lire_commande', 'Lire', 'lit une commande', 'jamais pour annuler',
-               $3::jsonb, $4::jsonb, array['data.statut'], 'read', 4000, 2048, true, $5) returning id`,
-      [tenantId, agentId,
+      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser,
+                                params, binding, output_paths, risk, timeout_ms, max_bytes)
+       values ($1, 'mba', 'lire_commande', 'Lire', 'lit une commande', 'jamais pour annuler',
+               $2::jsonb, $3::jsonb, array['data.statut'], 'read', 4000, 2048) returning id`,
+      [tenantId,
         JSON.stringify([{ name: 'reference', type: 'string', source: 'modele', required: true }]),
-        JSON.stringify({ handler: 'lire_contact' }), adminId],
+        JSON.stringify({ handler: 'lire_contact' })],
     );
     await pool.query(
       `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
@@ -76,9 +77,9 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
       [tenantId, actif.rows[0]!.id, `agent:${agentId}`, adminId],
     );
     const eteint = await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, risk, actif)
-       values ($1, $2, 'mba', 'outil_eteint', 'Éteint', 'inactif', 'jamais', 'read', false) returning id`,
-      [tenantId, agentId],
+      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'mba', 'outil_eteint', 'Éteint', 'inactif', 'jamais', 'read') returning id`,
+      [tenantId],
     );
     await pool.query(
       'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',

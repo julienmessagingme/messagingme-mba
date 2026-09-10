@@ -164,9 +164,9 @@ describe.skipIf(!url)('sources externes d outils (Postgres)', () => {
     // désormais par la jointure, donc une définition sans ligne de liaison compterait ZÉRO et ce test
     // vérifierait le contraire de ce qu'il annonce.
     const outil = await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, agent_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, risk, actif, active_par, active_le)
-       values ($1, $2, 'http', $3, 'lire_commande', 'Lire', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read', true, $4, now()) returning id`,
-      [tenantId, agentId, s.id, userId],
+      `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, risk)
+       values ($1, 'http', $2, 'lire_commande', 'Lire', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
+      [tenantId, s.id],
     );
     await pool.query(
       `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
@@ -183,13 +183,12 @@ describe.skipIf(!url)('sources externes d outils (Postgres)', () => {
   it('🔴 la base REFUSE un outil externe SANS source, et un outil maison AVEC', async () => {
     // La contrainte d'intégrité de la 0088. Sans elle, un outil `http` sans source serait actif, exposé au
     // modèle, et refuserait à chaque appel : le client verrait un agent qui « ne fait rien ».
-    const agentId = (await pool.query<{ id: string }>(
-      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest2', 'IA', 'm') returning id`, [tenantId],
-    )).rows[0]!.id;
+    // ⚠️ AUCUN AGENT ICI, et ce n'est pas un oubli : depuis 0128 une définition n'en référence plus aucun.
+    // En créer un pour la forme laisserait croire que la contrainte testée dépend de lui.
     const insere = (origin: string, sourceId: string | null) => pool.query(
-      `insert into agent_tools (tenant_id, agent_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, risk)
-       values ($1, $2, $3, $4, 'x_' || substr(md5(random()::text), 1, 8), 't', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read')`,
-      [tenantId, agentId, origin, sourceId],
+      `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, risk)
+       values ($1, $2, $3, 'x_' || substr(md5(random()::text), 1, 8), 't', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read')`,
+      [tenantId, origin, sourceId],
     );
     const s = await sources.creer(tenantId, { kind: 'http', label: 'Integrite', baseUrl: 'https://api.client.fr/i', authKind: 'none' });
     await expect(insere('http', null)).rejects.toThrow();
