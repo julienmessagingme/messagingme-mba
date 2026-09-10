@@ -187,7 +187,10 @@ function Outil({ outil, modele, busy, onSave, onActiver, onAutonomie, onRetirer 
             data-testid={`outil-retirer-${outil.id}`}
             disabled={busy}
             onClick={onRetirer}
-            title={t('Retirer cet outil', 'Remove this tool')}
+            // ⚠️ « DE CET AGENT », et la précision compte depuis la migration 0127 : la définition reste
+            // dans l'espace et les autres agents qui s'en servent ne sont pas touchés. Sans ces trois mots,
+            // un opérateur croit détruire un outil partagé et n'ose plus cliquer.
+            title={t('Retirer cet outil de cet agent (il reste dans l’espace)', 'Remove this tool from this agent (it stays in the workspace)')}
             className="rounded px-2 py-1 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
           >
             ✕

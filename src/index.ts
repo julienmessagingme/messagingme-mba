@@ -1193,6 +1193,13 @@ async function main(): Promise<void> {
         return fiche ? fiche.contenu.sorties : null;
       },
     },
+    // La BIBLIOTHEQUE d outils de l ESPACE (migration 0127) : les definitions, et qui s en sert. Separee des
+    // routes d agent parce qu elle ne parle pas du meme objet, et isolee par `scopeTenant` et non par un
+    // agent dans l URL : une definition appartient a l espace.
+    agentCatalogue: {
+      listCatalogue: (tenant) => toolCatalog.listCatalogue(tenant),
+      supprimerDefinition: (tenant, id) => toolCatalog.supprimerDefinition(tenant, id),
+    },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
     // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.
     agentSources: {

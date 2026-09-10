@@ -127,6 +127,41 @@ export async function autonomieOutil(tenantId: string, agentId: string, outilId:
   return r.outil;
 }
 
+/**
+ * Retire l'outil de CET agent. La DÉFINITION reste dans l'espace (migration 0127).
+ *
+ * 🔴 CETTE ROUTE SUPPRIMAIT POUR TOUT LE MONDE JUSQU'AU 2026-09-10. Depuis que la définition appartient à
+ * l'espace, la supprimer depuis l'écran d'un seul agent rendrait muets les autres agents qui s'en servent :
+ * elle DÉTACHE. La suppression définitive vit dans l'écran « Outils de l'espace », qui refuse tant qu'un
+ * agent y est rattaché.
+ */
 export async function retirerOutil(tenantId: string, agentId: string, outilId: string): Promise<void> {
   await request<void>(`${base(tenantId, agentId)}/${outilId}`, { method: 'DELETE' });
+}
+
+/** Une DÉFINITION de l'espace, vue de la bibliothèque : ce qu'elle est, et QUI s'en sert. */
+export interface OutilBibliotheque {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  origin: OrigineOutil;
+  risk: 'read' | 'write' | 'irreversible';
+  sourceId: string | null;
+  consommateurs: Array<{ cle: string; actif: boolean; agentId: string | null; agentLabel: string | null }>;
+}
+
+/**
+ * La bibliothèque d'outils de l'ESPACE (migration 0127).
+ *
+ * ⚠️ Indexée par TENANT, pas par agent : c'est ce que le lot 1 vient d'établir, une définition appartient à
+ * l'espace et plusieurs agents s'en servent.
+ */
+export function getBibliothequeOutils(tenantId: string): Promise<{ outils: OutilBibliotheque[] }> {
+  return request<{ outils: OutilBibliotheque[] }>(`/tenants/${tenantId}/agent-tools`);
+}
+
+/** Supprime la DÉFINITION, donc pour tout le monde. Le serveur REFUSE en 409 tant qu'elle est rattachée. */
+export async function supprimerDefinitionOutil(tenantId: string, outilId: string): Promise<void> {
+  await request<void>(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'DELETE' });
 }

@@ -129,6 +129,31 @@ export class NomOutilDejaPris extends Error {
 }
 
 /**
+ * Une DÉFINITION de l'espace, vue de la bibliothèque : ce qu'elle est, et QUI s'en sert.
+ *
+ * 🔴 LA COLONNE « UTILISÉ PAR » EST TOUTE LA RAISON DE CET ÉCRAN. Un outil déclaré une fois et branché sur
+ * trois agents était jusqu'ici trois outils qui se ressemblaient, et corriger ses mots à un endroit ne les
+ * corrigeait pas aux deux autres. Sans ce chiffre, la bibliothèque ne serait qu'une liste de plus.
+ */
+export interface OutilBibliotheque {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  origin: OrigineOutil;
+  risk: RisqueOutil;
+  sourceId: string | null;
+  consommateurs: Array<{
+    cle: string;
+    actif: boolean;
+    /** L'identifiant de l'agent, ou `null` quand ce consommateur n'en est pas un (le MBA). */
+    agentId: string | null;
+    /** Le nom lisible de l'agent, ou `null`. Un écran qui n'afficherait que des UUID ne sert à rien. */
+    agentLabel: string | null;
+  }>;
+}
+
+/**
  * L'écriture du catalogue, réservée à l'écran de réglage.
  *
  * 🔴 L'ACTIVATION PORTE LE NOM DE QUI L'A FAITE, et ce n'est pas de la traçabilité de confort. La spec MCP
@@ -187,6 +212,9 @@ export interface ToolAdminStore {
    * emporterait EN SILENCE le consentement d'agents qu'on ne regardait pas.
    */
   supprimerDefinition(tenantId: string, outilId: string): Promise<'ok' | 'rattachee' | 'introuvable'>;
+
+  /** TOUTES les définitions de l'espace, avec qui s'en sert. C'est l'écran Bibliothèque. */
+  listCatalogue(tenantId: string): Promise<OutilBibliotheque[]>;
 }
 
 export interface JournalAppels {

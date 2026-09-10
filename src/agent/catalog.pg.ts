@@ -1,10 +1,11 @@
 import type { Pool, PoolClient } from 'pg';
 import type {
-  JournalAppels, OutilComplet, OutilDefini, PatchOutil, RisqueOutil, ToolAdminStore, ToolCatalog,
+  JournalAppels, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, RisqueOutil,
+  ToolAdminStore, ToolCatalog,
 } from './catalog';
 import { NomOutilDejaPris } from './catalog';
 import { asRecord } from '../webhooks/json';
-import { consommateurAgent } from './consommateur';
+import { agentDuConsommateur, consommateurAgent } from './consommateur';
 
 interface Ligne {
   id: string;
@@ -329,6 +330,47 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       await client.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, outilId]);
       return 'ok';
     });
+  }
+
+  /**
+   * La bibliothèque de l'espace : chaque définition, et qui s'en sert.
+   *
+   * ⚠️ UNE SEULE REQUÊTE, pas une par outil. Une bibliothèque de trente outils ferait sinon trente allers et
+   * retours, ce que l'audit du 2026-08-25 a déjà eu à corriger ailleurs. Les consommateurs sont agrégés en
+   * jsonb dans la même passe.
+   *
+   * ⚠️ `left join` SUR LES CONSOMMATEURS : une définition que plus personne n'utilise doit APPARAÎTRE, c'est
+   * même la seule qu'on puisse supprimer. Une jointure interne la cacherait précisément quand elle compte.
+   */
+  async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
+    const res = await this.pool.query<{
+      id: string; name: string; title: string; description: string;
+      origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
+      consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
+    }>(
+      `select t.id, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
+              coalesce(
+                (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
+                                                     'agent_label', a.label) order by c.consommateur)
+                   from agent_tool_consommateurs c
+                   left join agents a on a.tenant_id = c.tenant_id and 'agent:' || a.id = c.consommateur
+                  where c.tool_id = t.id and c.tenant_id = t.tenant_id),
+                '[]'::jsonb) as consommateurs
+         from agent_tools t
+        where t.tenant_id = $1
+        order by t.name`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({
+      id: r.id, name: r.name, title: r.title, description: r.description,
+      origin: r.origin, risk: r.risk, sourceId: r.source_id,
+      consommateurs: (r.consommateurs ?? []).map((c) => ({
+        cle: c.cle,
+        actif: c.actif,
+        agentId: agentDuConsommateur(c.cle),
+        agentLabel: c.agent_label,
+      })),
+    }));
   }
 
   // ---------- Aides privées ----------

@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { cheminDeNav, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
+type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'outils-espace' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -150,6 +150,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'tools', label: t('Tools', 'Tools'), d: icons.tools, children: [
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
+      // 🔴 « Outils » AU NIVEAU DE L'ESPACE, à côté des connecteurs, depuis la migration 0127. Un connecteur
+      // est le SYSTÈME, un outil est l'ACTION qu'on y fait : les deux appartiennent au client, pas à un
+      // agent. C'est ici qu'on voit qu'un outil sert à plusieurs agents, ce qu'aucun écran ne disait.
+      { key: 'outils-espace', href: '/outils', label: t('Outils', 'Tools') },
     ] },
   ];
   // Second tableau, rendu dans son propre conteneur COLLÉ EN BAS de la barre. La nav n'a aucun mécanisme de
