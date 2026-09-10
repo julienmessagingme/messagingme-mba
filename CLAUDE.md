@@ -79,10 +79,29 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0127**, le 2026-09-10 à 19h35 (`agent_tool_consommateurs` : la DÉFINITION d'un outil
-appartient à l'ESPACE, le CONSENTEMENT au couple (outil, consommateur), où le Meta Business Agent est un
-consommateur comme un agent). **Prochaine libre = 0128**, qui RETIRE `agent_id` et les six colonnes de
-consentement de `agent_tools`, et qui passe donc APRÈS que le nouveau code ait été vu en production.
+**Dernière appliquée : 0129**, le 2026-09-10 à 20h50 (`agent_tool_sources.secret_publie_le` : se souvenir du
+secret qu'on a POSÉ chez Meta, seul moyen de savoir quand le reposer). Avant elle, **0127** le même jour à
+19h35 (`agent_tool_consommateurs` : la DÉFINITION d'un outil appartient à l'ESPACE, le CONSENTEMENT au couple
+(outil, consommateur), où le Meta Business Agent est un consommateur comme un agent).
+
+🔴 **IL Y A UN TROU : 0128 N'EXISTE PAS ENCORE, ET C'EST DÉLIBÉRÉ.** Elle est réservée depuis le 2026-09-10 au
+RETRAIT de `agent_id` et des six colonnes de consentement de `agent_tools`, qui passe APRÈS que le nouveau
+code ait été vu en production ; l'en-tête de 0127 et trois documents la nomment ainsi. Renuméroter pour
+boucher le trou aurait rendu ces textes faux, alors que le runner applique simplement les fichiers absents de
+`schema_migrations` par ordre de nom, sans exiger que la suite soit continue. **Prochaine libre = 0130**, et
+0128 reste due.
+
+🔴 **UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT (0129).** Meta ne rend JAMAIS le secret d'un connecteur : la
+publication ne le posait donc qu'à la CRÉATION, et un commentaire du code affirmait qu'un bouton dédié
+permettait de le faire tourner. Ce bouton n'existait pas, et ce texte partait vers `features.md` comme une
+fonctionnalité. **Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée**, et c'est en
+écrivant la doc que le défaut est sorti. Le drapeau retombe dès qu'on touche à l'authentification de la
+source (le secret, mais aussi le MODE et le NOM D'EN-TÊTE, qui décident du corps envoyé), et la publication
+suivante repose le secret. À secret inchangé, publier deux fois ne produit toujours aucun geste.
+
+Vérifiée EN BASE après coup : `information_schema` pour la colonne, `schema_migrations` pour l'ordre, et le
+chemin chaud exécuté PAR LE VRAI CODE (`PgSourceStore.lister` sur l'espace réel rend `secretPublie: false`,
+pas `undefined`).
 
 Vérifiée EN BASE après coup : les trois CHECK (dont celui qui verrouille la FORME de la clé de consommateur,
 recopiée verbatim depuis `src/agent/consommateur.ts` et tenue par un test qui LIT le fichier SQL), les deux
