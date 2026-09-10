@@ -754,6 +754,14 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   ce qui fait tomber la moitié du lot et récupère au passage la garde anti-IDOR que MCP ne fournit pas.
   **Deux décisions attendent Julien** : D3 (allowlist seule, l'URL libre restant à L7), et d'où vient le
   `risk` d'un outil MCP, puisque le plancher dérivé de la méthode HTTP n'existe pas ici.
+  🔴 **ET L4 NE SERVIRA JAMAIS LE MBA, vérifié le 2026-09-10 sur le corpus OpenAPI officiel de Meta**
+  (`mba documentation/`, version 2.0.0) : zéro occurrence de « MCP » dans les 16 specs et 12 pages, et
+  surtout **aucun champ où le déclarer**. Un `agent_connector` exige `base_url` + `auth_type`
+  (`OAUTH2 | OAUTH2_CLIENT_CREDENTIALS | API_KEY | BASIC | CUSTOM | NONE`) et rien d'autre ; un tool est
+  un `request_definition` HTTP. **Un outil MCP n'est donc pas publiable au MBA**, et L4 ne vaut que pour
+  NOS agents. Ce constat a sorti le client MCP du programme « catalogue centralisé » du 2026-09-10
+  (décision de Julien), il ne l'a pas annulé ici. ⚠️ Corollaire à ne pas perdre : le jour où L4 se fait,
+  la case « exposé au MBA » d'un outil MCP doit être **grisée avec la raison**, pas cochable en vain.
 - 🔵 **L6 : MCP OAuth.** Quatre à huit fois le coût de L4, et le coût n'est pas dans le développement mais
   dans la SUPERVISION : un jeton mort ne produit aucune erreur applicative, l'agent dégrade en silence au
   milieu d'une conversation. Premier serveur à brancher : Linear. Le pire premier candidat : HubSpot (la

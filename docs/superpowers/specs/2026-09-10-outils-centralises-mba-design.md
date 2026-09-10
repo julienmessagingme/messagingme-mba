@@ -148,15 +148,29 @@ les deux décrivent un appel HTTP paramétré.
 | Chez nous | Chez Meta |
 |---|---|
 | `agent_tool_sources` (adresse de base, authentification) | un `agent_connector` |
+| `source.baseUrl` | `base_url` (obligatoire) |
+| `source.authKind` | `auth_type` (obligatoire) |
 | `agent_tools` + `connector_requests` | un `tool` du connecteur |
 | `binding.methode`, `binding.chemin` | `request_definition.method`, `.path` |
 | `ParametreUrl`, `EnTete`, `ChampCorps` | `request_definition` query, headers, body typé |
-| le secret chiffré de la source | `upsertApiKey` / `upsertOAuth`, jamais dans le corps |
+| le secret chiffré de la source | `POST /{connector_id}/upsertApiKey` |
 
 Une source `http` donne donc **un connecteur, plus un outil Meta par outil coché**.
 
-⚠️ **Le secret ne part JAMAIS dans le corps du connecteur.** Meta impose ses routes dédiées, et c'est
-la bonne discipline : on la suit sans chercher de raccourci.
+La correspondance de l'authentification, lue dans `BizAIOmniChannelConnectorApiKeyAuthConfig` :
+
+| `authKind` chez nous | `auth_type` chez Meta | ce qu'on envoie à `upsertApiKey` |
+|---|---|---|
+| `none` | `NONE` | rien, pas d'appel |
+| `bearer` | `API_KEY` | `headers: [{field_name: 'Authorization', value: <secret>, prefix: 'Bearer '}]` |
+| `header` | `API_KEY` | `headers: [{field_name: <authHeaderName>, value: <secret>, prefix: null}]` |
+
+⚠️ **Le secret POURRAIT partir dans le corps de création, et on choisit quand même la route dédiée.**
+`BizAIOmniChannelConnectorRequest.auth_config.api_key` accepte la valeur directement : ce n'est donc
+PAS une contrainte de Meta, c'est notre choix, et il faut le dire dans ce sens. Deux raisons :
+`upsertApiKey` est le seul chemin qui sait ROTATIONNER un secret sans recréer le connecteur (« if
+credentials already exist, they are replaced »), et un secret qui n'a qu'UN chemin d'écriture n'a
+qu'un endroit à auditer. `auth_config` reste donc vide à la création.
 
 ### 5.2 L'écran de publication
 
@@ -183,45 +197,51 @@ c'est une décision du client, comme `autonome` l'est déjà depuis le 2026-08-2
 pour notre propre modèle depuis le correctif du 2026-08-29.
 
 Dans l'autre sens, Meta a des choses que nous n'avons pas, et **on ne prétend pas les gérer** au
-premier lot : les macros (`USER_MESSAGE`, `WHATSAPP_PHONE_NUMBER`, `WHATSAPP_CONVERSATION_ID`), le
-`transformation_spec` à cinq étapes, et `user_auth_required`. Un outil publié qui les utiliserait
-serait modifié dans WhatsApp Manager, donc écrasé à la publication suivante : l'aperçu doit le
-montrer comme une modification, pas le taire.
+premier lot : les macros (`USER_MESSAGE`, `WHATSAPP_PHONE_NUMBER`, `WHATSAPP_CONVERSATION_ID`) et le
+`transformation_spec` à cinq étapes. Un outil publié qui les utiliserait serait modifié dans WhatsApp
+Manager, donc écrasé à la publication suivante : l'aperçu doit le montrer comme une modification, pas
+le taire.
 
-## 7. MCP : ce qu'il faut construire, et ce que Meta n'en fait pas
+🔴 **`user_auth_required` est une exception : Meta l'exige, on l'envoie à `false`.** Il est dans le
+`required` de `BizAIOmniChannelConnectorToolRequest`, donc l'omettre ferait échouer la création. Le
+mettre à `true` demanderait à Meta d'injecter un jeton PAR UTILISATEUR FINAL que nous ne collectons
+nulle part : c'est une fonction d'authentification du contact, pas de l'espace, et elle n'a aucun
+équivalent chez nous. `false` est le seul choix honnête, et il est explicite plutôt qu'omis.
 
-🔴 **Meta ne consomme pas de serveur MCP.** Mesuré sur la récolte documentaire du 2026-09-10 : zéro
-occurrence de « MCP », et le tool d'un `agent_connector` y est décrit uniquement comme un
-`request_definition` HTTP. Un outil branché en MCP **n'est pas publiable tel quel au MBA**.
+## 7. MCP : vérifié à la source, et écarté du programme
 
-Deux façons de tenir quand même la demande de Julien, une seule liste centralisée :
+🔴 **Le MBA n'appelle pas de MCP, et son modèle de données ne le prévoit pas.** Vérifié le
+2026-09-10 sur le corpus OpenAPI OFFICIEL de Meta (`mba documentation/`, 16 specs et 12 pages
+narratives en version 2.0.0), pas sur notre résumé. Trois constats, chacun suffisant seul :
 
-- **(a) l'outil MCP n'est pas exposable au MBA.** La case est grisée avec la raison écrite. Simple,
-  honnête, et la liste reste unique du point de vue de l'administrateur, même si tous ses éléments
-  ne vont pas partout.
-- **(b) on le proxyfie.** Engage Me expose une route HTTP par outil MCP, et publie CETTE route à Meta
-  comme un connecteur ordinaire. La liste devient réellement universelle, au prix d'une surface HTTP
-  publique de plus, authentifiée, à débiter et à journaliser.
+1. **Zéro occurrence.** Aucun fichier du corpus ne contient « mcp » ni « model context protocol ».
+2. **Le connecteur n'a pas de champ de protocole.** `BizAIOmniChannelConnectorRequest` exige `name`,
+   `description`, **`base_url`** et `auth_type` (∈ `OAUTH2`, `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`,
+   `BASIC`, `CUSTOM`, `NONE`), plus `user_auth_injection_config` et `requires_certificate` en option.
+   Un connecteur Meta EST une API REST derrière une adresse de base ; il n'existe aucun champ où
+   déclarer autre chose.
+3. **Le tool non plus.** `BizAIOmniChannelConnectorToolRequest` exige `name`, `description`,
+   `request_definition` et `user_auth_required`. C'est un appel HTTP décrit champ par champ, pas une
+   découverte d'outils.
 
-**Recommandation : (a) au premier lot, (b) quand un client le demandera.** La raison n'est pas la
-difficulté, c'est qu'on n'a encore **aucune** source MCP en base : construire le proxy maintenant,
-ce serait dessiner une route publique pour un usage dont on ignore la forme. La case grisée dit la
-vérité et n'engage rien ; le proxy s'ajoute par-dessus sans rien casser.
+⚠️ **Ce qui resterait techniquement possible n'est pas du MCP** : décrire à la main un tool HTTP qui
+poste du JSON-RPC vers un serveur MCP. Ça revient à dire que Meta sait poster du HTTP, et il faudrait
+de toute façon décrire chaque outil un par un, ce que la découverte MCP est censée éviter.
 
-Ce que le client MCP demande, dans les deux cas :
+**Décision de Julien, 2026-09-10 : pas de client MCP dans ce programme.** On se contente des
+connecteurs HTTP existants.
 
-- lever le `kind: 'http'` en dur de la route des sources, et valider `'mcp'` ;
-- un résolveur `mcp` câblé dans `src/worker.ts` à côté de `mba` et `http`, qui parle le protocole en
-  POST sans état, comme notre propre serveur ;
-- une découverte des outils du serveur distant (`tools/list`) qui alimente le catalogue, avec la
-  même règle que pour un connecteur HTTP : la découverte PROPOSE, un humain active ;
-- les mêmes gardes que le résolveur HTTP, sans exception : `resolutionPublique` sur l'adresse,
-  `lireCorpsBorne` sur la réponse, plafonds de temps et d'octets par outil.
+⚠️ **La nuance a été posée avant de trancher, et elle ne change pas la décision** : un client MCP
+aurait servi NOS agents indépendamment de Meta. Mais on a **zéro source MCP en base**, aucun client
+ne l'a demandé, et le vocabulaire réservé (`kind` et `origin` acceptent déjà `'mcp'`) ne coûte rien
+tant qu'aucun code ne le sert. Le sujet part dans `todo.md`, il n'est pas perdu.
 
-🔴 **Un serveur MCP distant est une adresse fournie par le client, donc du même risque SSRF qu'un
-connecteur HTTP.** Les trois règles de `src/lib/adresse-privee.ts` s'appliquent telles quelles : une
-seule adresse interdite condamne le nom, une résolution qui échoue ou qui traîne est un refus, et
-une plage se compare en arithmétique.
+🔴 **Le jour où il reviendra, il ne s'improvise pas** : il faut lever le `kind: 'http'` écrit en dur
+dans la route des sources, câbler un résolveur `mcp` dans `src/worker.ts`, faire alimenter le
+catalogue par `tools/list` avec la règle « la découverte PROPOSE, un humain active », et surtout
+appliquer les mêmes gardes qu'au résolveur HTTP : `resolutionPublique` sur l'adresse (un serveur MCP
+distant est une adresse fournie par le client, donc le même risque SSRF qu'un connecteur),
+`lireCorpsBorne` sur la réponse, et les plafonds de temps et d'octets par outil.
 
 ## 8. Le découpage
 
@@ -231,32 +251,36 @@ une plage se compare en arithmétique.
 | **2** | L'écran catalogue au niveau de l'espace | Rend la mutualisation visible avant d'y ajouter des consommateurs |
 | **3** | La case « exposé au MBA » et son avertissement sur les irréversibles | Le consentement avant la publication, jamais l'inverse |
 | **4** | La publication : aperçu, réconciliation, secrets par les routes dédiées | Le premier lot qui écrit chez Meta |
-| **5** | Le client MCP, sources et résolveur, case grisée côté MBA | Indépendant des quatre autres |
 
-Chaque lot laisse le produit fonctionnel. Le lot 5 ne dépend d'aucun des autres et peut glisser.
+Chaque lot laisse le produit fonctionnel.
 
-## 9. Le point à confirmer avant le lot 1
+⚠️ **Il y avait un lot 5, « le client MCP », et il est SORTI du programme** le 2026-09-10 après la
+vérification du chapitre 7. Le supprimer plutôt que le repousser est délibéré : un lot qui reste en
+bas d'un tableau finit par être fait parce qu'il est écrit, pas parce qu'il sert.
 
-**Comment nommer le consommateur MBA.** La spec pose `consommateur text` avec `'agent:<uuid>'` et
+## 9. Le consommateur est une clé TEXTE (tranché)
+
+**Tranché par Julien le 2026-09-10.** `consommateur text`, avec `'agent:<uuid>'` et
 `'mba:<phone_number_id>'`. La clé texte évite de fabriquer une fausse ligne `agents` sans modèle ni
-crédit, mais elle sort du typage des clés étrangères : rien en base n'empêchera d'écrire
-`'agent:<uuid>'` pointant sur un agent supprimé. L'alternative, deux colonnes nullables avec un
-CHECK d'exclusivité, garde l'intégrité référentielle au prix d'une requête plus lourde.
+crédit, et un consommateur n'est pas toujours une ligne de notre base : le MBA aujourd'hui, un jour
+un canal qui n'existe pas encore. L'alternative écartée était deux colonnes nullables avec un CHECK
+d'exclusivité.
 
-**Proposé : la clé texte**, parce qu'un consommateur n'est pas toujours une ligne de notre base et ne
-le sera pas davantage demain (le MBA aujourd'hui, un jour un canal qui n'existe pas encore). Le prix
-à payer est un ménage explicite : la suppression d'un agent supprime ses lignes de
-`agent_tool_consommateurs`, et c'est du code, pas une cascade.
-
-⚠️ **Ce choix ne se rattrape pas après.** C'est le seul point de ce document qui attend une réponse
-de Julien avant que le lot 1 commence.
+🔴 **LE PRIX EST UN MÉNAGE EXPLICITE, ET IL SE PAIE EN CODE.** Il n'y a aucune clé étrangère derrière
+`'agent:<uuid>'`, donc **aucune cascade ne nettoiera les lignes d'un agent supprimé** : elles
+resteraient là, invisibles, et ressusciteraient le jour où un nouvel agent réutiliserait l'UUID (ce
+qui n'arrive pas avec `gen_random_uuid()`, mais une ligne orpheline pollue quand même les compteurs
+« utilisé par N consommateurs » de l'écran). La suppression d'un agent DOIT donc supprimer ses lignes
+dans la même transaction, et un test d'intégration le tient, sinon la règle vivra dans un commentaire
+que personne ne lira.
 
 ## 10. Hors périmètre, explicitement
 
-- les macros, `transformation_spec` et `user_auth_required` de Meta ;
+- les macros et le `transformation_spec` de Meta (`user_auth_required`, lui, est envoyé à `false`,
+  cf. chapitre 6) ;
 - l'import inverse (lire les connecteurs déjà créés dans WhatsApp Manager pour les rapatrier chez
   nous) : notre mesure dit qu'il n'y en a aucun, et le sens de la vérité est tranché ;
-- le proxy HTTP des outils MCP vers le MBA, option (b) du chapitre 7 ;
+- **le client MCP**, sorti du programme au chapitre 7 et reporté dans `todo.md` ;
 - `POST /{tool_id}/run` de Meta, qui exécute un outil pour le tester. Utile, mais notre bac à sable
   (migration 0119) répond déjà à la question côté nos agents.
 
