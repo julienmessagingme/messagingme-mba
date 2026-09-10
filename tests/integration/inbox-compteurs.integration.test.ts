@@ -102,91 +102,146 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
    * ⚠️ CES TESTS PASSENT PAR LE VRAI CODE (`recordInbound`, `recordOutbound`) et pas par un `insert`
    * recopié : ce qui se casserait, c'est justement un des trois chemins d'écriture qui oublierait le sens du
    * message. Un test qui écrirait `last_direction` lui-même vérifierait sa propre fixture.
+   *
+   * 🔴 ET DANS SON PROPRE ESPACE. Écrits d'abord dans le tenant partagé, ils ont fait exploser les compteurs
+   * des tests voisins, qui portent sur TOUTE la base de leur espace (« 10 au lieu de 4 »). Un test qui ajoute
+   * des lignes à une fixture partagée casse ses voisins, et le rapport accuse alors le mauvais test.
    */
   describe('🔴 « À traiter » suit QUI A PARLÉ EN DERNIER', () => {
+    let espace = '';
+
+    beforeAll(async () => {
+      espace = (await pool.query<{ id: string }>(
+        `insert into tenants (name) values ('itest-inbox-a-traiter') returning id`,
+      )).rows[0]!.id;
+    });
+    afterAll(async () => {
+      if (espace) await pool.query('delete from tenants where id = $1', [espace]);
+    });
+
+    /** Une conversation de CET espace, avec son contact et son détenteur. */
+    async function conv(waId: string, owner: 'app_workflow' | 'app_human' | 'mba'): Promise<string> {
+      const contact = (await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`,
+        [espace, `+${waId}`],
+      )).rows[0]!.id;
+      return (await pool.query<{ id: string }>(
+        `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, control_owner)
+         values ($1, $2, $3, now(), $4) returning id`,
+        [espace, waId, contact, owner],
+      )).rows[0]!.id;
+    }
+
     /** Un fil tenu par un humain, sur lequel le CONTACT vient d'écrire. */
     async function filTenu(waId: string): Promise<string> {
-      const conv = await conversation(waId, { tenu: true });
-      await store.recordInbound(tenantId, {
+      const id = await conv(waId, 'app_human');
+      await store.recordInbound(espace, {
         phoneNumberId: 'pn', waId, messageId: `m-${waId}-in`, type: 'text',
         body: 'bonjour', buttonPayload: null, profileName: null, field: 'messages',
       });
-      return conv;
+      return id;
     }
-    const dansLeDossier = async (conv: string): Promise<boolean> =>
-      (await store.listConversations(tenantId, { aTraiter: true })).some((c) => c.id === conv);
+    const dansLeDossier = async (id: string): Promise<boolean> =>
+      (await store.listConversations(espace, { aTraiter: true })).some((c) => c.id === id);
 
     it('un fil tenu où le CONTACT a parlé en dernier est à traiter', async () => {
-      const conv = await filTenu('33610000001');
-      expect(await dansLeDossier(conv)).toBe(true);
+      expect(await dansLeDossier(await filTenu('33610000001'))).toBe(true);
     });
 
     it('🔴 dès que l’HUMAIN répond, le fil SORT du dossier (mais reste dans Tout)', async () => {
-      const conv = await filTenu('33610000002');
-      const avant = await store.compterConversations(tenantId);
-      expect(await dansLeDossier(conv)).toBe(true);
+      const id = await filTenu('33610000002');
+      const avant = await store.compterConversations(espace);
+      expect(await dansLeDossier(id)).toBe(true);
 
-      await store.recordOutbound(conv, 'je regarde ça', 'm-out-1', 'humain');
+      await store.recordOutbound(id, 'je regarde ça', 'm-out-1', 'humain');
 
-      expect(await dansLeDossier(conv)).toBe(false);
-      const apres = await store.compterConversations(tenantId);
+      expect(await dansLeDossier(id)).toBe(false);
+      const apres = await store.compterConversations(espace);
       expect(apres.aTraiter).toBe(avant.aTraiter - 1);
       // ⚠️ ET IL RESTE DANS « TOUT » : on ne le range pas, on cesse seulement de le RÉCLAMER.
       expect(apres.tout).toBe(avant.tout);
-      expect((await store.listConversations(tenantId, {})).some((c) => c.id === conv)).toBe(true);
+      expect((await store.listConversations(espace, {})).some((c) => c.id === id)).toBe(true);
     });
 
     it('🔴 et il REVIENT dès que le contact réécrit', async () => {
       // Sans ce sens-là, le dossier se viderait pour de bon et un client qui relance ne serait jamais repris.
-      const conv = await filTenu('33610000003');
-      await store.recordOutbound(conv, 'je regarde ça', 'm-out-2', 'humain');
-      expect(await dansLeDossier(conv)).toBe(false);
+      const id = await filTenu('33610000003');
+      await store.recordOutbound(id, 'je regarde ça', 'm-out-2', 'humain');
+      expect(await dansLeDossier(id)).toBe(false);
 
-      await store.recordInbound(tenantId, {
+      await store.recordInbound(espace, {
         phoneNumberId: 'pn', waId: '33610000003', messageId: 'm-in-2', type: 'text',
         body: 'alors ?', buttonPayload: null, profileName: null, field: 'messages',
       });
-      expect(await dansLeDossier(conv)).toBe(true);
+      expect(await dansLeDossier(id)).toBe(true);
     });
 
     it('⚠️ un envoi AUTOMATISÉ sur un fil TENU compte aussi comme « nous avons parlé »', async () => {
       // `recordOutboundByWaId` sert les campagnes et les scénarios. Sur un fil qu'un humain tient, c'est bien
       // nous qui avons parlé en dernier : la balle est chez le contact.
-      const conv = await filTenu('33610000004');
-      await store.recordOutboundByWaId(tenantId, '33610000004', {
+      const id = await filTenu('33610000004');
+      await store.recordOutboundByWaId(espace, '33610000004', {
         body: 'votre commande est partie', messageId: 'm-auto-1', origine: 'scenario',
       });
-      expect(await dansLeDossier(conv)).toBe(false);
+      expect(await dansLeDossier(id)).toBe(false);
     });
 
     it('🔴 un fil tenu par l’AGENT DE META reste à traiter, même quand le robot vient de répondre', async () => {
       // La restriction est délibérée : ce dossier est là pour SURVEILLER ce que le robot mène. L'en sortir
       // dès qu'il répond le viderait de tous les fils du robot, c'est-à-dire de ce qu'on venait y voir.
-      const conv = await conversation('33610000006', {});
-      await pool.query(`update conversations set control_owner = 'mba' where id = $1`, [conv]);
-      await store.recordInbound(tenantId, {
+      const id = await conv('33610000006', 'mba');
+      await store.recordInbound(espace, {
         phoneNumberId: 'pn', waId: '33610000006', messageId: 'm-mba-in', type: 'text',
         body: 'bonjour', buttonPayload: null, profileName: null, field: 'standby',
       });
-      expect(await dansLeDossier(conv)).toBe(true);
+      expect(await dansLeDossier(id)).toBe(true);
 
-      // Le robot répond : le fil RESTE dans le dossier.
-      await store.recordOutboundByWaId(tenantId, '33610000006', {
+      await store.recordOutboundByWaId(espace, '33610000006', {
         body: 'je vous explique', messageId: 'm-mba-out', type: 'mba', origine: 'mba',
       });
-      expect(await dansLeDossier(conv)).toBe(true);
+      expect(await dansLeDossier(id)).toBe(true);
+    });
+
+    it('🔴 la réponse d’un HUMAIN repousse le dégel automatique', async () => {
+      // Le balayage rend la main au bout de deux heures comptées depuis `control_changed_at`, qui n'était
+      // écrite qu'au CHANGEMENT de détenteur. Un opérateur qui prenait un fil à 10 h et discutait encore à
+      // 11 h 55 se le faisait reprendre à 12 h, EN PLEINE CONVERSATION. C'est la règle telle que Julien
+      // l'énonce : deux heures après sa DERNIÈRE RÉPONSE.
+      const id = await filTenu('33610000007');
+      await pool.query(`update conversations set control_changed_at = now() - interval '90 minutes' where id = $1`, [id]);
+      const avant = (await pool.query<{ d: Date }>('select control_changed_at as d from conversations where id = $1', [id])).rows[0]!.d;
+
+      await store.recordOutbound(id, 'je vous réponds', 'm-out-3', 'humain');
+
+      const apres = (await pool.query<{ d: Date }>('select control_changed_at as d from conversations where id = $1', [id])).rows[0]!.d;
+      expect(apres.getTime()).toBeGreaterThan(avant.getTime());
+    });
+
+    it('⚠️ une réponse d’AUTOMATE ne prolonge PAS un gel humain', async () => {
+      // Sinon un fil resterait gelé par le seul fait qu'un scénario ou un agent IA parle dedans, et le
+      // garde-fou des deux heures ne servirait plus à rien.
+      const id = await filTenu('33610000008');
+      await pool.query(`update conversations set control_changed_at = now() - interval '90 minutes' where id = $1`, [id]);
+      const avant = (await pool.query<{ d: Date }>('select control_changed_at as d from conversations where id = $1', [id])).rows[0]!.d;
+
+      await store.recordOutbound(id, 'message du scenario', 'm-out-4', 'scenario');
+
+      const apres = (await pool.query<{ d: Date }>('select control_changed_at as d from conversations where id = $1', [id])).rows[0]!.d;
+      expect(apres.getTime()).toBe(avant.getTime());
     });
 
     it('🔴 un fil SANS sens connu reste dans le dossier, exactement comme avant', async () => {
-      // Le défaut décide de ce qui se passe au DÉPLOIEMENT, sur toutes les conversations d'avant la
-      // migration. Les faire disparaître du dossier serait la pire façon d'introduire un filtre : personne
-      // ne cherche ce qu'il ne sait pas avoir perdu. D'où `is distinct from 'out'` et non `= 'in'`.
-      const conv = await conversation('33610000005', { tenu: true });
+      // 🔴 CE TEST A TROUVÉ UNE VRAIE FAUTE, et c'est la raison d'être des tests d'intégration ici. La règle
+      // s'écrivait `not (owner = 'app_human' and last_direction = 'out')`, qui vaut NULL quand la colonne est
+      // NULL (logique à TROIS valeurs), et un prédicat NULL EXCLUT la ligne : toutes les conversations
+      // d'avant la migration, tenues par un humain, auraient DISPARU du dossier au déploiement. Aucun test
+      // unitaire ne peut voir ça, la faute est dans le SQL.
+      const id = await conv('33610000005', 'app_human');
       const sens = await pool.query<{ last_direction: string | null }>(
-        'select last_direction from conversations where id = $1', [conv],
+        'select last_direction from conversations where id = $1', [id],
       );
       expect(sens.rows[0]!.last_direction).toBeNull();
-      expect(await dansLeDossier(conv)).toBe(true);
+      expect(await dansLeDossier(id)).toBe(true);
     });
   });
 

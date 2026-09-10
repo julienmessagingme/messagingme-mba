@@ -180,9 +180,16 @@ const UNREAD_SQL = `exists (
  * et rien d'autre. ⚠️ Question ouverte pour Julien, pas tranchée ici : un fil MBA doit-il aussi sortir du
  * dossier tant que le robot suit ?
  *
- * ⚠️ `= 'out'` LU DANS UN `not (...)` : une conversation sans valeur connue (`null`) reste dans le dossier,
- * exactement comme avant la migration. Un filtre qui ferait DISPARAÎTRE des fils au déploiement serait la
- * pire façon de l'introduire, personne ne cherchant ce qu'il ne sait pas avoir perdu.
+ * 🔴 `is distinct from` ET NON `= 'out'`, ET LA PREMIÈRE ÉCRITURE ÉTAIT FAUSSE POUR CETTE RAISON. Écrite
+ * `not (c.control_owner = 'app_human' and c.last_direction = 'out')`, elle vaut NULL quand `last_direction`
+ * est NULL (logique à TROIS valeurs de SQL), et un prédicat NULL EXCLUT la ligne. Toutes les conversations
+ * d'avant la migration, tenues par un humain, auraient donc DISPARU du dossier au déploiement, c'est-à-dire
+ * l'inverse exact de ce que ce commentaire promettait. Attrapé par le test d'intégration « un fil SANS sens
+ * connu reste dans le dossier » : aucun test unitaire ne peut voir ça, la faute est dans le SQL.
+ *
+ * ⚠️ Une conversation sans valeur connue reste donc dans le dossier, exactement comme avant la migration. Un
+ * filtre qui ferait DISPARAÎTRE des fils au déploiement serait la pire façon de l'introduire, personne ne
+ * cherchant ce qu'il ne sait pas avoir perdu.
  *
  * ⚠️ Fragment PARTAGÉ par les trois lecteurs (la liste, les compteurs du menu, la vieille route de comptage) :
  * les écrire trois fois les ferait diverger au premier ajustement, et le dossier afficherait un nombre que la
@@ -190,7 +197,7 @@ const UNREAD_SQL = `exists (
  * `conversations`.
  */
 const A_TRAITER_SQL = `c.control_owner <> 'app_workflow'
-  and not (c.control_owner = 'app_human' and c.last_direction = 'out')`;
+  and (c.control_owner <> 'app_human' or c.last_direction is distinct from 'out')`;
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
@@ -1022,10 +1029,20 @@ export class PgInboxStore implements InboxStore {
       // `last_direction = 'out'` : c'est LE chemin de la réponse d'un opérateur, de l'agent IA et du serveur
       // MCP. Sans lui, répondre à un client laissait la conversation dans « À traiter » alors qu'on attend
       // désormais le CLIENT, et le dossier cessait d'être une liste de travail.
+      //
+      // 🔴 ET LA RÉPONSE D'UN HUMAIN REPOUSSE LE DÉGEL. Le balayage rend la main au bout de
+      // `CONTROL_HUMAN_TIMEOUT_MS` (deux heures par défaut) comptées depuis `control_changed_at`, qui n'était
+      // écrite qu'au CHANGEMENT de détenteur. Un opérateur qui prenait un fil à 10 h et discutait encore à
+      // 11 h 55 se le faisait donc reprendre à 12 h, EN PLEINE CONVERSATION, par l'agent de Meta. Le délai
+      // court désormais depuis sa dernière réponse, ce qui est la règle telle que Julien l'énonce.
+      // ⚠️ `origine = 'humain'` SEULEMENT : une réponse d'agent IA ou de scénario ne prolonge pas un gel
+      // humain, sinon un fil resterait gelé par le seul fait qu'un automate parle dedans.
       `update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
+         control_changed_at = case when $3::boolean and control_owner = 'app_human'
+                                   then now() else control_changed_at end,
          analysis_status = case when analysis_status in ('done', 'failed') then 'pending' else analysis_status end
        where id = $1`,
-      [conversationId, body],
+      [conversationId, body, origine === 'humain'],
     );
     await this.pool.query(
       `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin)
