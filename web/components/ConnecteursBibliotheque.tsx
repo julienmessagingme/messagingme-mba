@@ -30,6 +30,14 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [epreuves, setEpreuves] = useState<Record<string, string>>({});
+  /**
+   * 🔴 UN SEUL SYSTEME OUVERT A LA FOIS, ET RIEN D'OUVERT AU DEPART. L'ecran depliait TOUT : chaque systeme
+   * en grande fiche, le formulaire « brancher un systeme » toujours ouvert AU MILIEU, puis les appels de tous
+   * les systemes a la suite. On arrivait donc sur un formulaire de creation coince entre ce qu'on a deja et
+   * ce qu'on venait chercher. Ici : la liste, on clique, ca s'ouvre.
+   */
+  const [ouvert, setOuvert] = useState<string | null>(null);
+  const [ajout, setAjout] = useState(false);
 
   const charger = useCallback(async () => {
     try {
@@ -64,44 +72,98 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="connecteurs-erreur">{erreur}</MbaNotice>}
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold text-ink-900">{t('Vos systèmes', 'Your systems')}</h2>
+        <button
+          type="button"
+          data-testid="source-ajouter"
+          onClick={() => { setAjout((v) => !v); setOuvert(null); }}
+          className="rounded-lg border border-brand-500 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50"
+        >
+          {ajout ? t('Annuler', 'Cancel') : t('+ Brancher un système', '+ Connect a system')}
+        </button>
+      </div>
+
+      {/* Le formulaire d'ajout : REPLIE par défaut, et au-dessus de la liste quand il s'ouvre, là où on
+          regarde après avoir cliqué. Déplié en permanence au MILIEU de la page, il séparait les systèmes de
+          leurs appels et faisait croire qu'il fallait le remplir pour continuer. */}
+      {ajout && (
+        <NouvelleSource
+          busy={busy}
+          onCreer={(input) => agir(async () => { await creerSource(tenantId, input); setAjout(false); })}
+        />
+      )}
+
       {sources === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
-      {sources?.length === 0 && (
+      {sources?.length === 0 && !ajout && (
         <p data-testid="sources-vide" className="text-sm text-ink-500">
           {t('Aucun système branché. Déclarez-en un pour que vos agents puissent aller y chercher une information.', 'No system connected. Declare one so your agents can look up information in it.')}
         </p>
       )}
 
       {(sources ?? []).map((s) => (
-        <Source
-          key={s.id}
-          source={s}
-          busy={busy}
-          epreuve={epreuves[s.id]}
-          onEprouver={(chemin) => agir(async () => {
-            const r = await eprouverSource(tenantId, s.id, chemin);
-            setEpreuves((e) => ({
-              ...e,
-              [s.id]: r.ok
-                ? t(`Répond (HTTP ${r.httpStatus})`, `Responds (HTTP ${r.httpStatus})`)
-                : t(`Échec : ${r.erreur ?? 'inconnu'}`, `Failed: ${r.erreur ?? 'unknown'}`),
-            }));
-          })}
-          onPatch={(patch) => agir(async () => { await patchSource(tenantId, s.id, patch); })}
-          onSupprimer={() => agir(async () => { await supprimerSource(tenantId, s.id); })}
-        />
-      ))}
+        <div key={s.id} className="flex flex-col gap-3">
+          {/* LA LIGNE : ce qu'on lit d'un coup d'oeil pour choisir. Le détail et les appels sont dessous, à
+              la demande. */}
+          <button
+            type="button"
+            data-testid={`source-ligne-${s.id}`}
+            aria-expanded={ouvert === s.id}
+            onClick={() => setOuvert((v) => (v === s.id ? null : s.id))}
+            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+              ouvert === s.id ? 'border-brand-500 bg-brand-50/40' : 'border-ink-200 bg-white hover:bg-ink-50'
+            }`}
+          >
+            <span className="text-ink-400">{ouvert === s.id ? '▾' : '▸'}</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-baseline gap-2">
+                <span className="text-sm font-medium text-ink-900">{s.label}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[11px] ${s.status === 'active' ? 'bg-mint/20 text-emerald-700' : 'bg-ink-100 text-ink-600'}`}>
+                  {s.status === 'active' ? t('Actif', 'Active') : s.status === 'draft' ? t('Brouillon', 'Draft') : t('Désactivé', 'Disabled')}
+                </span>
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-ink-500">{s.baseUrl}</span>
+            </span>
+            {/* 🔴 QUI TAPE DEDANS, dès la liste : sans ce chiffre on croirait le système lié à l'agent d'où
+                on l'a vu, et on le supprimerait en cassant les autres. */}
+            <span data-testid={`source-usage-${s.id}`} className="shrink-0 text-right text-xs text-ink-600">
+              {s.agents === 0
+                ? t('aucun agent', 'no agent')
+                : t(`${s.agents} agent(s)`, `${s.agents} agent(s)`)}
+              <span className="block text-ink-400">
+                {t(`${s.outilsActifs} appel(s) actif(s)`, `${s.outilsActifs} active call(s)`)}
+              </span>
+            </span>
+          </button>
 
-      <NouvelleSource busy={busy} onCreer={(input) => agir(async () => { await creerSource(tenantId, input); })} />
+          {ouvert === s.id && (
+            <>
+              <Source
+                source={s}
+                busy={busy}
+                epreuve={epreuves[s.id]}
+                onEprouver={(chemin) => agir(async () => {
+                  const r = await eprouverSource(tenantId, s.id, chemin);
+                  setEpreuves((e) => ({
+                    ...e,
+                    [s.id]: r.ok
+                      ? t(`Répond (HTTP ${r.httpStatus})`, `Responds (HTTP ${r.httpStatus})`)
+                      : t(`Échec : ${r.erreur ?? 'inconnu'}`, `Failed: ${r.erreur ?? 'unknown'}`),
+                  }));
+                })}
+                onPatch={(patch) => agir(async () => { await patchSource(tenantId, s.id, patch); })}
+                onSupprimer={() => agir(async () => { await supprimerSource(tenantId, s.id); setOuvert(null); })}
+              />
 
-      {/* Les APPELS, sous les systèmes, et dans cet ordre : un appel a besoin de savoir où aller. Ils vivent
-          dans la même page parce qu'on ne met pas au point l'un sans regarder l'autre, et parce qu'un écran
-          qui séparerait « le système » et « l'appel vers ce système » obligerait à faire des allers-retours
-          pour une seule mise au point. */}
-      {sources !== null && (
-        <div className="mt-2 border-t border-ink-200 pt-4">
-          <RequetesConnecteur tenantId={tenantId} sources={sources} />
+              {/* Les APPELS DE CE SYSTÈME, sous lui. C'est la suite logique du geste : on ne met pas au point
+                  un appel sans regarder le système, et l'écran ne montre plus les appels des autres. */}
+              <div className="border-t border-ink-200 pt-4">
+                <RequetesConnecteur tenantId={tenantId} sources={sources ?? []} sourceFiltre={s.id} />
+              </div>
+            </>
+          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -121,28 +183,15 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
   return (
     <div className={`${cardCls} flex flex-col gap-3`} data-testid={`source-${source.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
+        {/* ⚠️ NI LE NOM NI L'ADRESSE ICI : ils sont dans la ligne qu'on vient de déplier, juste au-dessus.
+            Les répéter donnait deux fois la même information et repoussait les boutons hors de vue. */}
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink-800">
-            {source.label}{' '}
-            <span className={`rounded px-1.5 py-0.5 text-[11px] ${source.status === 'active' ? 'bg-mint/20 text-emerald-700' : 'bg-ink-100 text-ink-600'}`}>
-              {source.status === 'active' ? t('Actif', 'Active') : source.status === 'draft' ? t('Brouillon', 'Draft') : t('Désactivé', 'Disabled')}
-            </span>
-          </p>
-          <p className="mt-0.5 break-all text-xs text-ink-500">{source.baseUrl}</p>
-          <p className="mt-0.5 text-xs text-ink-500">
+          <p className="text-xs text-ink-500">
             {source.authKind === 'none'
               ? t('Sans authentification', 'No authentication')
               : source.authKind === 'bearer'
                 ? t('Jeton (Bearer)', 'Token (Bearer)')
                 : t(`En-tête ${source.authHeaderName ?? ''}`, `Header ${source.authHeaderName ?? ''}`)}
-          </p>
-          {/* 🔴 QUI TAPE DEDANS. Sans ce chiffre, on croirait le système lié à l'agent d'où on l'a vu, et on
-              le supprimerait en cassant les autres. */}
-          <p data-testid={`source-usage-${source.id}`} className="mt-0.5 text-xs text-ink-600">
-            {source.agents === 0
-              ? t('Aucun agent ne s’en sert encore', 'No agent uses it yet')
-              : t(`${source.agents} agent(s) s’en servent, ${source.outilsActifs} appel(s) actif(s)`,
-                `${source.agents} agent(s) use it, ${source.outilsActifs} active call(s)`)}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">

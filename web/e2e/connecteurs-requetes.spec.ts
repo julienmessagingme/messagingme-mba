@@ -10,7 +10,9 @@ import { test, expect } from '@playwright/test';
  *  - on ne peut PAS enregistrer sans avoir coché au moins un champ : le filtre de sortie n'est pas facultatif,
  *    c'est lui qui décide ce qui part chez le fournisseur du modèle ;
  *  - les deux façons de saisir un corps existent, et la bascule vers le JSON brut REPREND le travail fait ;
- *  - l'essai est refusé tant que l'appel n'est pas enregistré, parce que le serveur teste ce qui est EN BASE.
+ *  - un appel PAS ENCORE ENREGISTRÉ s'essaie : sans ça, le premier appel d'un client était impossible à
+ *    créer (enregistrer exige un champ de sortie, qui se coche dans la réponse d'un essai) ;
+ *  - l'écran s'ouvre sur la LISTE des systèmes ; les appels d'un système apparaissent quand on le déplie.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 const SRC = '22222222-2222-4222-8222-222222222222';
@@ -64,6 +66,10 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     return json({});
   });
   await page.goto('/connecteurs');
+  // ⚠️ L'ÉCRAN S'OUVRE SUR LA LISTE, PAS SUR TOUT. Il dépliait auparavant chaque système en grande fiche, le
+  // formulaire « brancher un système » ouvert au MILIEU, puis les appels de tous les systèmes à la suite. On
+  // déplie donc celui qu'on vient travailler, ce que fait aussi un client.
+  await page.getByTestId(`source-ligne-${SRC}`).click();
   await expect(page.getByTestId('requetes-bloc')).toBeVisible();
 }
 
@@ -147,13 +153,35 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     await expect(page.getByTestId('corps-json')).toHaveValue('{"r": "{{ref}}');
   });
 
-  test('l’essai est REFUSÉ tant que l’appel n’est pas enregistré', async ({ page }) => {
-    // Le serveur teste ce qui est EN BASE, avec les mêmes gardes que l'exécution. Laisser essayer un
-    // brouillon ferait valider un appel qui n'existe pas.
+  test('🔴 un appel PAS ENCORE ENREGISTRÉ s’essaie, sinon on ne peut en créer AUCUN', async ({ page }) => {
+    // MÊME CAS QU'AVANT (un brouillon jamais enregistré), VERDICT INVERSE, et c'est le sujet : ce test figeait
+    // un cycle fermé. Enregistrer exige au moins un champ de sortie ; ces champs se cochent dans la réponse
+    // d'un essai ; et l'essai exigeait un appel enregistré. Le premier appel d'un client était donc
+    // impossible, et aucun test de route ne pouvait le voir : ils créent leurs requêtes par l'API, donc ils
+    // n'empruntent jamais le chemin de l'écran.
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await page.getByTestId('requete-nouvelle').click();
-    await expect(page.getByTestId('requete-essayer')).toBeDisabled();
+    await page.getByTestId('requete-chemin').fill('/flow/subflows');
+
+    await expect(page.getByTestId('requete-essayer')).toBeEnabled();
+    await page.getByTestId('requete-essayer').click();
+    await expect(page.getByTestId('reponse-statut')).toContainText('200');
+
+    // 🔴 ET L'APPEL PART SUR LA ROUTE DU BROUILLON, sans identifiant : c'est ce qui prouve qu'on éprouve ce
+    // qui est À L'ÉCRAN. L'ancienne route (`/:id/test`) éprouvait la version stockée, donc une adresse que le
+    // client venait justement de changer.
+    const essai = capture.posts.find((p) => p.url.endsWith('/agent-requetes/test'));
+    expect(essai).toBeTruthy();
+    expect((essai!.body as { chemin: string }).chemin).toBe('/flow/subflows');
+
+    // Et le cycle s'ouvre pour de bon : on coche un champ, on nomme l'appel, on peut enregistrer.
+    // ⚠️ Le NOM aussi est exigé, et ce test l'a d'abord oublié : « Enregistrer » restait gris pour une raison
+    // parfaitement légitime, ce qui est le meilleur rappel que ce bouton a TROIS conditions, pas une.
+    await page.getByTestId('chemin-statut').check();
+    await expect(page.getByTestId('requete-enregistrer')).toBeDisabled();
+    await page.getByTestId('requete-label').fill('Lister les scénarios');
+    await expect(page.getByTestId('requete-enregistrer')).toBeEnabled();
   });
 
   test('🔴 une requête UTILISÉE par un agent ne se supprime pas', async ({ page }) => {

@@ -60,7 +60,17 @@ const deLaRequete = (r: RequeteApi): Brouillon => ({
   outputPaths: r.outputPaths, valeursTest: r.valeursTest,
 });
 
-export function RequetesConnecteur({ tenantId, sources }: { tenantId: string; sources: SourceAgent[] }) {
+export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
+  tenantId: string;
+  sources: SourceAgent[];
+  /**
+   * ⚠️ N'AFFICHER QUE LES APPELS DE CE SYSTÈME. L'écran des connecteurs ouvre un système à la fois : montrer
+   * les appels des autres dessous ferait croire qu'ils lui appartiennent, et c'est exactement la confusion
+   * que la bibliothèque existe pour lever. Absent = tous les appels (aucun autre appelant aujourd'hui, mais
+   * le composant reste utilisable tel quel).
+   */
+  sourceFiltre?: string;
+}) {
   const t = useT();
   const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
   const [champs, setChamps] = useState<string[]>([]);
@@ -98,6 +108,7 @@ export function RequetesConnecteur({ tenantId, sources }: { tenantId: string; so
   }
 
   const libelleSource = (id: string): string => sources.find((s) => s.id === id)?.label ?? id;
+  const visibles = (requetes ?? []).filter((r) => sourceFiltre === undefined || r.sourceId === sourceFiltre);
 
   return (
     <div className="flex flex-col gap-3" data-testid="requetes-bloc">
@@ -121,20 +132,22 @@ export function RequetesConnecteur({ tenantId, sources }: { tenantId: string; so
         </p>
       ) : (
         <>
-          {requetes?.length === 0 && (
+          {requetes !== null && visibles.length === 0 && (
             <p data-testid="requetes-vide" className="text-sm text-ink-500">
               {t('Aucun appel pour l’instant.', 'No call yet.')}
             </p>
           )}
 
-          {(requetes ?? []).map((r) => (
+          {visibles.map((r) => (
             <div key={r.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`requete-${r.id}`}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-medium text-ink-800">
                   <span className="mr-2 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px]">{r.methode}</span>
                   {r.label}
                 </p>
-                <p className="text-xs text-ink-500">{libelleSource(r.sourceId)} {r.chemin}</p>
+                {/* ⚠️ Le nom du système n'est répété que si l'écran montre PLUSIEURS systèmes. Sous la section
+                    d'un système déplié, il est déjà écrit deux fois au-dessus. */}
+                <p className="text-xs text-ink-500">{sourceFiltre === undefined ? `${libelleSource(r.sourceId)} ` : ''}{r.chemin}</p>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs">
                 <button
@@ -173,6 +186,7 @@ export function RequetesConnecteur({ tenantId, sources }: { tenantId: string; so
 
           <NouvelleRequete
             tenantId={tenantId} sources={sources} champs={champs} catalogue={catalogue} busy={busy}
+            sourceParDefaut={sourceFiltre}
             onCreer={(b) => agir(async () => { await creerRequete(tenantId, b as CreationRequete); })}
           />
         </>
@@ -181,17 +195,21 @@ export function RequetesConnecteur({ tenantId, sources }: { tenantId: string; so
   );
 }
 
-function NouvelleRequete({ tenantId, sources, champs, catalogue, busy, onCreer }: {
+function NouvelleRequete({ tenantId, sources, champs, catalogue, busy, sourceParDefaut, onCreer }: {
   tenantId: string; sources: SourceAgent[]; champs: string[]; catalogue: CatalogueVariables | null;
-  busy: boolean; onCreer: (b: Brouillon) => void;
+  busy: boolean;
+  /** Le système déjà ouvert : un appel créé depuis SA section lui appartient, ne pas le redemander. */
+  sourceParDefaut?: string;
+  onCreer: (b: Brouillon) => void;
 }) {
   const t = useT();
   const [ouvert, setOuvert] = useState(false);
-  const [brouillon, setBrouillon] = useState<Brouillon>(() => vide(sources[0]?.id ?? ''));
+  const defaut = sourceParDefaut ?? sources[0]?.id ?? '';
+  const [brouillon, setBrouillon] = useState<Brouillon>(() => vide(defaut));
 
   if (!ouvert) {
     return (
-      <button data-testid="requete-nouvelle" onClick={() => { setBrouillon(vide(sources[0]?.id ?? '')); setOuvert(true); }} className="self-start text-sm text-brand-600 hover:underline">
+      <button data-testid="requete-nouvelle" onClick={() => { setBrouillon(vide(defaut)); setOuvert(true); }} className="self-start text-sm text-brand-600 hover:underline">
         {t('+ un appel', '+ a call')}
       </button>
     );

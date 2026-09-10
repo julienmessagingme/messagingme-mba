@@ -88,7 +88,21 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
 /** La BIBLIOTHÈQUE, dans le menu Tools. C'est là que se déclare un système. */
 async function bibliotheque(page: import('@playwright/test').Page) {
   await page.goto('/connecteurs');
+  // ⚠️ LE FORMULAIRE EST REPLIÉ : l'écran s'ouvre sur la LISTE des systèmes, et « brancher un système » est
+  // un bouton. Déplié en permanence, il séparait les systèmes de leurs appels et faisait croire qu'il fallait
+  // le remplir pour continuer.
+  await page.getByTestId('source-ajouter').click();
   await expect(page.getByTestId('source-creer')).toBeVisible();
+}
+
+/**
+ * DÉPLIER un système de la liste : c'est là que vivent l'épreuve, le secret et ses appels.
+ *
+ * ⚠️ L'écran montrait tout, tout le temps. Il montre maintenant la liste, et on ouvre ce qu'on vient
+ * travailler : un client fait le même geste.
+ */
+async function deplier(page: import('@playwright/test').Page, id: string) {
+  await page.getByTestId(`source-ligne-${id}`).click();
 }
 
 /** L'onglet Outils d'un agent. Il ne déclare AUCUN système : il puise dans la bibliothèque. */
@@ -112,6 +126,7 @@ test.describe('Agent : brancher le système du client', () => {
     const envoi = capture.posts.find((p) => p.url.includes('/agent-sources'))!;
     expect(envoi.body).toMatchObject({ label: 'ERP', baseUrl: 'https://api.client.fr/v1', authKind: 'bearer', authSecret: 'jeton-tres-secret' });
     // La source relue ne porte pas le secret : l'écran ne peut donc pas le réafficher.
+    await deplier(page, SRC);
     await expect(page.getByTestId(`source-secret-${SRC}`)).toHaveValue('');
   });
 
@@ -121,6 +136,7 @@ test.describe('Agent : brancher le système du client', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { epreuve: { ok: false, httpStatus: 401, erreur: 'authentification refusée' } });
     await bibliotheque(page);
+    await deplier(page, SRC);
     await page.getByTestId(`source-eprouver-${SRC}`).click();
     await expect(page.getByTestId(`source-epreuve-${SRC}`)).toContainText(/authentification/i);
   });
