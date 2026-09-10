@@ -280,3 +280,26 @@ export function testMbaAgent(tenantId: string, phoneNumberId: string, message: s
     body: JSON.stringify({ message, ...(conversationId ? { conversationId } : {}) }),
   });
 }
+
+/** Ce que la route d'activation a RÉELLEMENT fait. Rendu tel quel par le serveur, rien à déduire ici. */
+export interface ResultatActivationMba {
+  enabled: boolean;
+  chezMeta: 'applique' | 'aucun_numero' | 'non_eligible';
+  phoneNumberId: string | null;
+}
+
+/**
+ * Allumer ou éteindre l'agent de Meta, en UN appel.
+ *
+ * 🔴 ELLE REMPLACE UNE ORCHESTRATION CÔTÉ NAVIGATEUR QUI A CASSÉ TROIS FOIS LE MÊME JOUR (2026-09-10). Le
+ * bouton lisait la session, l'état du compte et l'état chez Meta, puis décidait d'appeler Meta ou non selon
+ * lesquels étaient arrivés. Chaque trou bouché en laissait un autre, parce que le nombre de combinaisons ne
+ * diminuait pas. Le serveur, lui, sait tout, tout le temps.
+ *
+ * ⚠️ N'ENVOIE PAS le numéro : le résoudre ici est exactement ce qui a produit la troisième panne.
+ */
+export function putMbaActivation(tenantId: string, enabled: boolean): Promise<ResultatActivationMba> {
+  return request<ResultatActivationMba>(`/tenants/${tenantId}/mba-activation`, {
+    method: 'PUT', body: JSON.stringify({ enabled }),
+  });
+}

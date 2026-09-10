@@ -1044,6 +1044,16 @@ le premier ne dépend pas de nous.
    l'écho du message de transfert arrive. Puis corriger `ownerFromHandover` (`src/webhooks/handover.ts`),
    dont la lecture est DEVINÉE et probablement INVERSÉE. Le module journalise déjà tout payload reçu
    (`handover_recu`, `standby_echo`) : la trace sera là.
+   ✅ **FAIT le 2026-09-10 au soir, sur le `+33 5 25 68 02 50` et non sur l'autre numéro.** Réponses aux
+   quatre questions, toutes mesurées : on reçoit bien `messaging_handovers` ; la suite bascule bien de
+   `standby` vers `messages` ; l'écho du message de transfert arrive. **Et « probablement INVERSÉE » était
+   juste** : le repli « le texte contient `business_agent` » lisait `previous_owner_app_role`, donc le
+   détenteur PRÉCÉDENT, et concluait l'inverse. Deux autres défauts sont tombés avec :
+   `recipient` est un OBJET (le client vit dans `sender.phone_number`), et un `messaging_handovers` n'a
+   AUCUN `metadata` (le numéro business vit dans `recipient.phone_number_id`).
+   🔴 **CE QUI A DÉBLOQUÉ L'ATTENTE N'ÉTAIT PAS LE NUMÉRO, C'ÉTAIT UN RÉGLAGE** : `messaging_handovers` ne
+   se déclenche QUE si le bloc `handoff` est configuré chez Meta, et il valait `null`. On a attendu des
+   semaines un événement qu'aucun numéro n'aurait envoyé. Forme réelle et tests : `tests/handover-reel.test.ts`.
    ✅ L'abonnement webhook, lui, est FAIT (2026-08-21) : `messages`, `standby` et `messaging_handovers` sont
    souscrits sur l'app. Ce n'est donc plus un prérequis manquant.
 2. 🔲 **La pastille « quelqu'un a besoin d'aide »** dans l'inbox. Demande une donnée NOUVELLE : `app_human` ne

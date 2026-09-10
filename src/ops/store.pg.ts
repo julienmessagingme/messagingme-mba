@@ -387,4 +387,32 @@ export class PgOpsStore {
     );
     return res.rows.map((r) => ({ id: r.id, tenantId: r.tenant_id, wabaId: r.waba_id, status: r.status, qualityRating: r.quality_rating }));
   }
+
+  /**
+   * Combien de webhooks Meta ont été REÇUS sur la fenêtre, c'est-à-dire enfilés par le receveur.
+   *
+   * 🔴 C'est le SEUL compteur qui reste vrai quand la lecture des payloads est cassée : le receveur enfile
+   * avant toute interprétation. Pendant la panne du 2026-09-08, `webhook_events` était vide exactement comme
+   * s'il n'était rien arrivé ; ce chiffre-ci disait 58.
+   */
+  async webhooksRecusDepuis(minutes: number): Promise<number> {
+    const n = Math.max(1, Math.min(1440, Math.floor(minutes)));
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n from pgboss.job
+        where name = 'webhook' and created_on > now() - ($1 || ' minutes')::interval`,
+      [String(n)],
+    );
+    return Number(res.rows[0]?.n ?? '0');
+  }
+
+  /** Combien d'événements ont été ENREGISTRÉS sur la même fenêtre. */
+  async evenementsWebhookDepuis(minutes: number): Promise<number> {
+    const n = Math.max(1, Math.min(1440, Math.floor(minutes)));
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n from webhook_events
+        where received_at > now() - ($1 || ' minutes')::interval`,
+      [String(n)],
+    );
+    return Number(res.rows[0]?.n ?? '0');
+  }
 }

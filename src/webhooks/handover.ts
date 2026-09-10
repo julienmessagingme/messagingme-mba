@@ -23,9 +23,24 @@ import { valeurEffective } from './change';
  *
  * ⚠️ CE QUI RESTE VRAI DU PRÉ-CÂBLAGE : tout est traité en champ optionnel, rien ne plante sur une forme
  * inattendue, et ce qui n'est pas reconnu est JOURNALISÉ intégralement au lieu d'être avalé. C'est cette
- * trace qui a permis de trouver les deux écarts ci-dessus. En revanche, une trace ne suffit pas : personne
- * ne la lit tant que rien ne va mal, et c'est pourquoi le contrat est désormais tenu par des TESTS sur les
- * payloads réels (`tests/webhooks-change.test.ts`).
+ * trace qui a permis de trouver les écarts ci-dessus. En revanche, une trace ne suffit pas : personne ne la
+ * lit tant que rien ne va mal, et c'est pourquoi le contrat est désormais tenu par des TESTS sur les
+ * payloads réels (`tests/webhooks-change.test.ts`, `tests/handover-reel.test.ts`).
+ *
+ * 🔴 ET `messaging_handovers` A ENFIN ÉTÉ VU, LE 2026-09-10 AU SOIR. Il n'était jamais arrivé (zéro sur 58
+ * payloads) pour une raison qu'on ignorait : **il ne se déclenche que si `handoff` est configuré chez Meta**,
+ * et ce bloc valait `null` sur notre numéro. La forme réelle a invalidé les DEUX suppositions de ce module :
+ *
+ *  1. ni `take_thread_control` ni `pass_thread_control` n'existent. Le payload dit
+ *     `{type: 'control_passed', control_passed: {previous_owner_app_role: 'meta_business_agent',
+ *     metadata: 'customer_request'}}`. Le repli « le texte contient business_agent, donc c'est le MBA qui
+ *     détient » lisait donc le nom du détenteur PRÉCÉDENT et concluait l'INVERSE de la vérité ;
+ *  2. `recipient` est un OBJET décrivant le numéro business, pas le client. Le client est dans
+ *     `sender.phone_number`.
+ *
+ * ⚠️ Un seul SENS a été observé : l'agent de Meta qui nous rend la main sur demande du client. Nos propres
+ * `release` ne produisent AUCUN événement de ce type (vérifié : deux `release` déclenchés, zéro événement).
+ * On ne reconnaît donc que ce sens-là, et tout le reste reste journalisé sans être interprété.
  */
 
 export interface HandoverDeps {
@@ -48,24 +63,51 @@ function trace(msg: string, extra: Record<string, unknown>): void {
 /**
  * À qui Meta dit-il que le fil appartient désormais ?
  *
- * Le vocabulaire du protocole de handover vient de Messenger, où l'app cible est désignée par un
- * identifiant. On reconnaît donc les deux formulations plausibles sans en privilégier une : un champ qui
- * nomme explicitement l'agent, ou une paire prise/rendue. Tout le reste rend `null`, ce qui déclenche la
+ * 🔴 CETTE FONCTION DEVINAIT, ET ELLE DEVINAIT À L'ENVERS. Elle cherchait `take_thread_control` /
+ * `pass_thread_control`, absents du vrai payload, puis retombait sur « le texte contient `business_agent`,
+ * donc l'agent de Meta détient ». Or ce mot n'apparaît que dans `previous_owner_app_role` : il nomme le
+ * détenteur PRÉCÉDENT. Sur la seule bascule que Meta envoie réellement, elle concluait donc exactement
+ * l'inverse de la vérité.
+ *
+ * Elle ne reconnaît plus que ce qui a été MESURÉ, et rend `null` sur tout le reste, ce qui déclenche la
  * journalisation du payload complet plutôt qu'une supposition.
  */
 export function ownerFromHandover(value: Record<string, unknown>): ControlOwner | null {
-  const brut = JSON.stringify(value).toLowerCase();
-  // La PRÉSENCE de la clé suffit : sa valeur (objet, chaîne, vide) varie selon la formulation de Meta, et
-  // c'est justement ce qu'on ne veut pas présumer avant le premier payload réel.
-  const prise = 'take_thread_control' in value;
-  const rendue = 'pass_thread_control' in value;
-  // Un contrôle PRIS par l'app (nous) : le fil revient à notre automate. Un contrôle RENDU (release) le
-  // donne à l'agent de Meta, qui redevient le répondeur principal.
-  if (prise && !rendue) return 'app_workflow';
-  if (rendue && !prise) return 'mba';
-  // Repli sur une mention explicite de l'agent, si Meta nomme le nouveau détenteur autrement.
-  if (brut.includes('business_agent') || brut.includes('meta_agent')) return 'mba';
+  // Forme RÉELLE (mesurée) : `{type: 'control_passed', control_passed: {previous_owner_app_role, metadata}}`.
+  // Le nom du champ dit qui détenait AVANT, jamais qui détient maintenant : le nouveau détenteur, c'est
+  // celui qui REÇOIT le webhook, donc nous.
+  if (str(value['type']) !== 'control_passed') return null;
+  const passe = asRecord(value['control_passed']);
+  const precedent = str(passe['previous_owner_app_role']);
+  // On ne reconnaît QUE ce qu'on a vu : l'agent de Meta nous rend la main. Une autre app qui passerait le fil
+  // à l'agent produirait le même `type` avec un rôle différent, et le nouveau détenteur ne serait alors PAS
+  // nous ; rien dans le payload ne permet de trancher, donc on rend `null` et on journalise tout.
+  if (precedent === 'meta_business_agent') return 'app_workflow';
   return null;
+}
+
+/**
+ * Le numéro BUSINESS concerné, quel que soit le champ.
+ *
+ * 🔴 LES DEUX FORMES NE LE RANGENT PAS AU MÊME ENDROIT, et c'est le troisième écart de ce module. Un
+ * `standby` le met dans `metadata.phone_number_id` ; un `messaging_handovers` n'a **aucun** `metadata` et le
+ * met dans `recipient.phone_number_id`. Le module ne lisait que le premier : sur une vraie bascule de
+ * contrôle il sortait donc en `handover_sans_numero` avant même d'avoir regardé le reste, et les deux
+ * correctifs ci-dessus n'auraient rien changé.
+ */
+function numeroBusinessDuChange(value: Record<string, unknown>): string | undefined {
+  return str(asRecord(value['metadata'])['phone_number_id'])
+    ?? str(asRecord(value['recipient'])['phone_number_id']);
+}
+
+/** Le numéro du CLIENT concerné par la bascule. Mesuré : il vit dans `sender.phone_number`. */
+export function waIdFromHandover(value: Record<string, unknown>): string | undefined {
+  // ⚠️ `recipient` est un OBJET qui décrit le numéro BUSINESS (`phone_number_id`, `display_phone_number`),
+  // pas le client. Le lire comme une chaîne rendait `undefined`, et la garde `if (waId && owner)` du bas de
+  // ce fichier ne passait donc JAMAIS : le module tournait sans jamais rien écrire.
+  return str(asRecord(value['sender'])['phone_number'])
+    ?? str(value['to'])
+    ?? str(value['wa_id']);
 }
 
 /**
@@ -84,7 +126,7 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
       // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : voir `./change.ts`. Ce module lisait
       // `value.message_echoes` sur une forme DEVINÉE ; la vraie imbrique tout sous `value.standby`.
       const value = valeurEffective(change['value']);
-      const phoneNumberId = str(asRecord(value['metadata'])['phone_number_id']);
+      const phoneNumberId = numeroBusinessDuChange(value);
       if (!phoneNumberId) {
         trace('handover_sans_numero', { field, value });
         continue;
@@ -96,12 +138,11 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
       }
 
       if (field === 'messaging_handovers') {
-        // Le destinataire concerné : Meta le nomme `recipient`, `to` ou `wa_id` selon les surfaces.
-        const waId = str(value['recipient']) ?? str(value['to']) ?? str(value['wa_id']);
+        const waId = waIdFromHandover(value);
         const owner = ownerFromHandover(value);
-        // On journalise TOUJOURS, reconnu ou non. ⚠️ Contrairement à `standby`, `messaging_handovers` n'a
-        // TOUJOURS PAS été observé en production (zéro occurrence sur les 58 payloads du 2026-09-10) : sa
-        // forme reste devinée, et cette trace est encore le seul moyen de la découvrir.
+        // On journalise TOUJOURS, reconnu ou non : c'est cette trace qui a livré la vraie forme le
+        // 2026-09-10 au soir, et c'est elle qui livrera le SENS INVERSE (une app qui rend le fil à l'agent),
+        // que Meta n'a encore jamais envoyé et qu'on refuse donc d'interpréter.
         trace('handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
         if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
         continue;

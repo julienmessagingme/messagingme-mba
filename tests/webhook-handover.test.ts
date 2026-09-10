@@ -3,19 +3,23 @@ import { processHandovers, ownerFromHandover } from '../src/webhooks/handover';
 import type { HandoverDeps } from '../src/webhooks/handover';
 
 /**
- * Pré-câblage MBA : bascules de contrôle et messages de l'agent de Meta.
+ * Bascules de contrôle et messages de l'agent de Meta : la ROBUSTESSE du module.
  *
- * ⚠️ CES TESTS NE PROUVENT PAS QUE ÇA MARCHERA AVEC META. La forme réelle du payload `standby` et
- * `messaging_handovers` n'est documentée NULLE PART : Meta décrit la sémantique, jamais la structure. Les
- * charges utiles ci-dessous sont donc des HYPOTHÈSES, construites à partir du protocole de handover
- * Messenger dont ce vocabulaire est hérité.
+ * 🔴 CE FICHIER A TESTÉ UNE FORME INVENTÉE JUSQU'AU 2026-09-10, et il le disait honnêtement (« les charges
+ * utiles ci-dessous sont des HYPOTHÈSES »). Il annonçait aussi que « dès que la forme sera connue, seule la
+ * fonction de reconnaissance changera ». C'est arrivé, et la prédiction était trop optimiste : la vraie
+ * forme a invalidé TROIS choses, pas une (le détenteur déduit à l'envers, le numéro du client lu dans
+ * `recipient` qui est un objet, et le numéro business absent de `metadata`).
  *
- * Ce que ces tests prouvent réellement, et qui est ce qui compte avant le premier test réel :
+ * ⚠️ LA RECONNAISSANCE EST TESTÉE AILLEURS, SUR LE PAYLOAD RÉEL : `tests/handover-reel.test.ts`. Les quatre
+ * tests qui vivaient ici et qui affirmaient `pass_thread_control` / `take_thread_control` / « une mention de
+ * l'agent suffit » ont été RETIRÉS parce qu'ils asseyaient un comportement faux, et leurs cas sont repris
+ * là-bas contre la vraie donnée. Ce qui reste ici garde ce qui était vrai et le demeure :
+ *
  *  1. rien ne PLANTE sur une forme inattendue (le webhook est partagé avec les statuts de livraison et
  *     l'inbox, un throw ici les emporterait tous en DLQ) ;
- *  2. tout ce qui n'est pas reconnu est JOURNALISÉ intégralement, ce qui permettra de découvrir la vraie
- *     forme en lisant les logs au lieu de deviner ;
- *  3. le câblage est là : dès que la forme sera connue, seule la fonction de reconnaissance changera.
+ *  2. tout ce qui n'est pas reconnu est JOURNALISÉ intégralement. C'est exactement cette trace qui a livré
+ *     la vraie forme, donc ce point n'a rien de théorique : il a payé.
  */
 
 function deps(over: Partial<HandoverDeps> = {}): {
@@ -44,34 +48,15 @@ const enveloppe = (field: string, value: Record<string, unknown>) => ({
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('reconnaissance du nouveau détenteur', () => {
-  it('un contrôle rendu donne le fil à MBA, un contrôle pris nous le rend', () => {
-    expect(ownerFromHandover({ pass_thread_control: {} })).toBe('mba');
-    expect(ownerFromHandover({ take_thread_control: {} })).toBe('app_workflow');
-  });
-
-  it('une mention explicite de l’agent suffit', () => {
-    expect(ownerFromHandover({ new_owner: 'meta_business_agent' })).toBe('mba');
-  });
-
   it('une forme INCONNUE rend null au lieu de deviner', () => {
     // Deviner ici serait pire que ne rien faire : on poserait un détenteur faux, et le scénario se
     // tairait (ou parlerait) sans raison, sur une conversation réelle.
     expect(ownerFromHandover({ quelque_chose: 'inattendu' })).toBeNull();
     expect(ownerFromHandover({})).toBeNull();
   });
-
-  it('les deux marqueurs à la fois -> null (situation ambiguë, on ne tranche pas)', () => {
-    expect(ownerFromHandover({ pass_thread_control: {}, take_thread_control: {} })).toBeNull();
-  });
 });
 
 describe('traitement des bascules de contrôle', () => {
-  it('pose le détenteur annoncé par Meta', async () => {
-    const d = deps();
-    await processHandovers(enveloppe('messaging_handovers', { recipient: '33611', pass_thread_control: {} }), d.deps);
-    expect(d.poses).toEqual([['t1', '33611', 'mba']]);
-  });
-
   it('numéro business inconnu -> aucune pose, mais une trace', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const d = deps();
@@ -94,8 +79,13 @@ describe('traitement des bascules de contrôle', () => {
   });
 
   it('destinataire absent -> aucune pose (on ne devine jamais de qui il s’agit)', async () => {
+    // Même cas qu'avant, rejoué sur la VRAIE forme : un `control_passed` reconnaissable, mais sans le
+    // `sender` qui porte le numéro du client. On ne pose rien plutôt que d'écrire sur un fil au hasard.
     const d = deps();
-    await processHandovers(enveloppe('messaging_handovers', { pass_thread_control: {} }), d.deps);
+    await processHandovers(enveloppe('messaging_handovers', {
+      type: 'control_passed',
+      control_passed: { previous_owner_app_role: 'meta_business_agent' },
+    }), d.deps);
     expect(d.poses).toEqual([]);
   });
 });

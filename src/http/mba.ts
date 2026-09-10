@@ -10,6 +10,7 @@ import { urlRecuperable } from '../lib/page-distante';
 import type { PageDistante } from '../lib/page-distante';
 import { scopeTenant, nonEmpty } from './scope';
 import { calculerCompletion } from '../mba/completion';
+import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/activation';
 
 /**
  * Configuration de l'agent Meta Business Agent depuis la console : la base de connaissance (informations
@@ -27,6 +28,17 @@ import { calculerCompletion } from '../mba/completion';
 export interface MbaRouteDeps {
   /** Client MBA du tenant (token résolu par tenant, repli global en sommeil). */
   clientFor(tenantId: string): Promise<MbaClient>;
+  /**
+   * Numéro Meta du tenant, RÉSOLU CÔTÉ SERVEUR. `null` = aucun numéro connecté.
+   *
+   * 🔴 C'est ce qui rend la route d'activation possible. Toutes les autres routes de ce module reçoivent le
+   * numéro dans l'URL, parce que la surface MBA est indexée par numéro. Celle-là ne peut pas : c'est
+   * précisément le fait que le NAVIGATEUR devait connaître le numéro avant de pouvoir agir qui a produit
+   * trois pannes le 2026-09-10, la dernière parce que `account` n'était pas encore chargé au clic.
+   */
+  numeroDuTenant?(tenantId: string): Promise<string | null>;
+  /** Écrit NOTRE drapeau `tenant_settings.mba_enabled`. */
+  ecrireDrapeauMba?(tenantId: string, enabled: boolean): Promise<void>;
   /** Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
@@ -640,5 +652,59 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Gu
     const conversationId = nonEmpty(b.conversationId) ? b.conversationId : undefined;
     return reply.code(200).send(await ctx.client.test(ctx.pn, b.message.trim(), conversationId));
   });
-}
 
+  /**
+   * Allumer ou éteindre l'agent de Meta, en UN appel, décidé côté SERVEUR.
+   *
+   * 🔴 POURQUOI CETTE ROUTE EXISTE ALORS QUE `PUT .../rollout` EXISTE DÉJÀ. L'autre exige que l'appelant
+   * connaisse le numéro ET l'éligibilité avant d'agir : c'est le navigateur qui arbitrait, avec une
+   * connaissance partielle, et il a sauté l'appel à Meta trois fois le 2026-09-10 en écrivant quand même
+   * notre drapeau. L'écran annonçait « désactivé » pendant que l'agent répondait aux clients. Ici il n'y a
+   * plus rien à arbitrer côté navigateur : il envoie une intention, il reçoit ce qui a été fait.
+   *
+   * ⚠️ Le corps est volontairement minuscule (`{ enabled }`). Tout le reste se lit côté serveur : ajouter
+   * `phoneNumberId` au corps rouvrirait exactement la porte qu'on ferme.
+   */
+  app.put('/tenants/:tenantId/mba-activation', g, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    if (!deps.numeroDuTenant || !deps.ecrireDrapeauMba) {
+      return reply.code(503).send({ error: 'activation indisponible sur cette instance' });
+    }
+    const b = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof b.enabled !== 'boolean') return reply.code(400).send({ error: 'enabled booléen requis' });
+    const numeroDuTenant = deps.numeroDuTenant;
+    const ecrireDrapeauMba = deps.ecrireDrapeauMba;
+    try {
+      const r = await appliquerActivation({
+        numeroDuTenant: (t) => numeroDuTenant(t),
+        eligible: async (t, pn) => (await deps.clientFor(t)).isEligible(pn),
+        // `modifierSettings` RELIT puis n'écrit que `rollout` : un modèle typé fermé effacerait
+        // `never_say_phrases`, `followup` et tout champ que Meta ajouterait.
+        ecrireChezMeta: async (t, pn, enabled) => {
+          await modifierSettings(await deps.clientFor(t), pn, { rollout: { enabled } });
+        },
+        ecrireDrapeau: (t, enabled) => ecrireDrapeauMba(t, enabled),
+      }, tenant, b.enabled);
+      return reply.code(200).send(r);
+    } catch (err) {
+      /**
+       * 🔴 4xx, JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc un
+       * message destiné à l'utilisateur n'arriverait jamais. Et les DEUX cas se distinguent à l'écran, parce
+       * qu'ils appellent des gestes opposés : « on n'a pas pu demander » se réessaie, « Meta a refusé » se
+       * diagnostique.
+       */
+      if (err instanceof EtatMetaIllisible) {
+        // eslint-disable-next-line no-console
+        console.error(`mba-activation: état illisible (${tenant}):`, err.message);
+        return reply.code(409).send({ error: 'L’état de l’agent chez Meta n’a pas pu être lu. Rien n’a été changé, réessayez dans un instant.' });
+      }
+      if (err instanceof MetaARefuse) {
+        // eslint-disable-next-line no-console
+        console.error(`mba-activation: Meta a refusé (${tenant}):`, err.message);
+        return reply.code(409).send({ error: 'Meta a refusé de changer l’état de l’agent. Rien n’a été changé de notre côté.' });
+      }
+      throw err;
+    }
+  });
+}

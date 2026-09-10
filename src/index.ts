@@ -691,6 +691,22 @@ async function main(): Promise<void> {
        * le premier message suivant remet les deux d'accord.
        */
       releaseControl: async (tenant, waId) => {
+        /**
+         * 🔴 UN SEUL BOUTON, DEUX GESTES OPPOSÉS, ET C'EST CE QUI A CASSÉ. L'écran affiche « Rendre la main »
+         * quand un opérateur détient le fil, et « Reprendre la main » quand c'est l'agent de Meta : deux
+         * libellés contraires pour le MÊME appel. Ça marchait tant que cette fonction ne faisait qu'écrire
+         * `app_workflow` en local. Depuis qu'elle appelle Meta (2026-09-10), partir de `mba` revenait à
+         * RENDRE le fil à celui qui l'a déjà : un bouton sans effet, sous un libellé qui promet l'inverse.
+         *
+         * ⚠️ ET ON NE PEUT PAS LE PRENDRE, il n'existe aucune action `take` chez Meta. Partir de `mba` ne
+         * peut donc faire qu'une chose : rouvrir NOTRE côté (le scénario cesse d'être bloqué par la garde
+         * `mayAct`), la reprise réelle se produisant au premier message envoyé. C'est exactement ce que
+         * faisait le code d'avant, et c'est correct : on le garde tel quel pour ce cas.
+         */
+        if ((await inboxStore.getControlOwner(tenant, waId)) === 'mba') {
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          return 'app_workflow';
+        }
         const reglages = await settingsStore.get(tenant);
         if (!reglages.mbaEnabled) {
           await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
@@ -992,11 +1008,19 @@ async function main(): Promise<void> {
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
     // Configuration de l'agent MBA depuis la console (admin-only). `phoneNumberBelongsToTenant` est le contrôle
-    // d'isolation : la surface MBA est indexée par NUMÉRO, pas par tenant.
+    // d'isolation de la PLUPART de ces routes : la surface MBA est indexée par NUMÉRO chez Meta, pas par tenant.
+    // ⚠️ `PUT /tenants/:id/mba-activation` fait EXCEPTION, et c'est sa raison d'être : elle résout le numéro
+    // elle-même et s'isole par `scopeTenant`. Exiger le numéro de l'appelant est précisément ce qui a fait
+    // sauter l'appel à Meta trois fois le 2026-09-10, la dernière parce que le navigateur ne l'avait pas encore.
     mba: {
       clientFor: (tenant) => metaFactory.mbaClientForTenant(tenant),
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       fetchUrl: fetchUrlBorne(),
+      // 🔴 CE QUI REND LA ROUTE D'ACTIVATION POSSIBLE : le numéro se résout ICI, côté serveur. Le faire
+      // côté navigateur est ce qui a produit trois pannes le 2026-09-10, la dernière parce que l'état du
+      // compte n'était pas encore arrivé au moment du clic.
+      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      ecrireDrapeauMba: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
     agents: {

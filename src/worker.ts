@@ -90,6 +90,7 @@ import { PgOpsStore } from './ops/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
+import { creerWebhooksMuetsSweep } from './ops/webhooks-muets-sweep';
 import { MetaClientFactory } from './meta/factory';
 import { arbitreDeDebit } from './meta/arbitre-debit';
 import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
@@ -1242,6 +1243,33 @@ async function main(): Promise<void> {
   };
   void dlqSweepGarde();
   taches.programmer('files-echec', 5 * 60_000, dlqSweepGarde);
+
+  /**
+   * « Les webhooks arrivent, mais plus rien ne s'écrit. »
+   *
+   * 🔴 LA SEULE SONDE DU PARC QUI VÉRIFIE UN EFFET, PAS UNE RÉPONSE. Pendant deux jours (2026-09-08 au
+   * 2026-09-10), l'agent de Meta a répondu aux clients à notre place et nous n'avons rien enregistré :
+   * UptimeRobot vert, `/health` à 200, conteneurs `healthy`, jobs « terminés avec succès ». Un extracteur
+   * qui ne trouve rien rend un tableau vide, ce qui n'est pas une erreur. Le détail du raisonnement (et
+   * pourquoi on compare les REÇUS aux ENREGISTRÉS) est dans `ops/webhooks-muets-sweep.ts`.
+   *
+   * Cadence 5 min sur une fenêtre de 60 min : le silence se constate sur la durée, pas sur l'instant.
+   */
+  const webhooksMuets = creerWebhooksMuetsSweep({
+    recus: (min) => opsStore.webhooksRecusDepuis(min),
+    enregistres: (min) => opsStore.evenementsWebhookDepuis(min),
+    alert: (msg) => alert('webhooks-muets', msg),
+  });
+  const webhooksMuetsGarde = async (): Promise<void> => {
+    try {
+      await webhooksMuets();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('webhooks-muets-sweep erreur:', err instanceof Error ? err.message : err);
+    }
+  };
+  void webhooksMuetsGarde();
+  taches.programmer('webhooks-muets', 5 * 60_000, webhooksMuetsGarde);
 
   // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
   // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les

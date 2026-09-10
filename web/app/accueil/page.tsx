@@ -9,13 +9,13 @@ import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, type StatusBadge } from '@/lib/format';
 import {
-  getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
+  getMe, getSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
   getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
-import { getMbaStatus, putMbaRollout, type MbaStatus } from '@/lib/api-mba';
+import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -188,40 +188,44 @@ function AccueilInner({ session }: { session: Session }) {
   }, [session.tenantId, account?.phoneNumberId]);
 
   /**
-   * 🔴 « ON NE SAIT PAS » N'AUTORISE PAS À N'ÉTEINDRE QUE CHEZ NOUS (2026-09-10, second passage).
+   * Allumer ou éteindre l'agent de Meta. UN appel, décidé côté SERVEUR.
    *
-   * Le correctif du matin ne pilotait Meta que `if (mbaReel?.eligible)`. Tant que la lecture de l'état chez
-   * Meta n'a pas abouti (deux allers-retours réseau), `mbaReel` vaut `null` : un clic rapide retombait donc
-   * sur notre seul drapeau, EN SILENCE, c'est-à-dire exactement la panne qu'on venait de corriger, en plus
-   * rare et donc en plus difficile à croire.
+   * 🔴 CE BOUTON A CASSÉ TROIS FOIS LE 2026-09-10, ET TOUJOURS DE LA MÊME FAÇON : il n'échouait pas, il
+   * SAUTAIT l'appel à Meta et écrivait notre drapeau quand même. L'écran annonçait « désactivé » pendant que
+   * l'agent de Meta répondait aux clients. Le matin il n'appelait Meta nulle part ; corrigé, il ne l'appelait
+   * que si l'état Meta était déjà lu ; corrigé, il ne l'appelait que si le NUMÉRO était déjà chargé.
    *
-   * ⚠️ LA DISTINCTION QUI COMPTE : l'absence de NUMÉRO et l'absence d'ÉTAT ne sont pas la même chose. Sans
-   * numéro connecté, il n'y a rien à piloter chez Meta et notre drapeau se suffit (il ouvre le bloc MBA du
-   * constructeur de scénario). Avec un numéro mais sans état lu, on ignore ce qu'on casserait : on refuse.
+   * Le défaut n'était aucune de ces trois lignes : c'était de laisser CE COMPOSANT arbitrer avec une
+   * connaissance partielle. Il ne reste ici aucune condition sur un état à moitié chargé, aucune écriture
+   * optimiste à défaire : on envoie une intention, on affiche ce que le serveur a réellement fait.
    */
-  const etatMetaInconnu = Boolean(account?.phoneNumberId) && mbaReel === null;
-
   async function toggleMba() {
     if (!isAdmin) return;
-    if (etatMetaInconnu) {
-      setErreurMba(t(
-        'État de l’agent chez Meta non lu pour l’instant. Le bouton ne peut pas l’éteindre à l’aveugle : rechargez la page.',
-        'The agent state at Meta could not be read yet. The switch will not act blindly: reload the page.',
-      ));
-      return;
-    }
-    const next = !mbaEnabled;
     setSavingMba(true);
     setErreurMba(null);
-    setMbaEnabled(next); // optimiste
     try {
-      if (mbaReel?.eligible && account?.phoneNumberId) {
-        const s = await putMbaRollout(session.tenantId, account.phoneNumberId, next);
-        setMbaReel((v) => (v ? { ...v, settings: s } : v));
+      const r = await putMbaActivation(session.tenantId, !mbaEnabled);
+      setMbaEnabled(r.enabled);
+      // Relire l'état chez Meta pour que la phrase de la carte dise la vérité tout de suite. Best-effort :
+      // l'action a déjà abouti, un échec de relecture ne doit pas la faire passer pour ratée.
+      if (r.phoneNumberId) {
+        getMbaStatus(session.tenantId, r.phoneNumberId).then(setMbaReel).catch(() => {});
       }
-      await putSettings(session.tenantId, next);
+      // ⚠️ On DIT quand le geste n'a porté que de notre côté, au lieu de laisser croire qu'il a tout fait.
+      if (r.chezMeta === 'non_eligible') {
+        setErreurMba(t(
+          'Réglage enregistré de notre côté. Meta n’a pas encore ouvert l’agent sur ce numéro, il n’y avait rien à y changer.',
+          'Saved on our side. Meta has not opened the agent on this number yet, there was nothing to change there.',
+        ));
+      } else if (r.chezMeta === 'aucun_numero') {
+        setErreurMba(t(
+          'Réglage enregistré. Aucun numéro connecté, donc aucun agent Meta à piloter.',
+          'Saved. No number connected, so no Meta agent to drive.',
+        ));
+      }
     } catch (e) {
-      setMbaEnabled(!next); // rollback
+      // Rien n'a été écrit, ni chez Meta ni chez nous : le serveur refuse d'agir sur une incertitude. Le
+      // bouton reste donc sur son état d'avant, qui est le vrai.
       setErreurMba(e instanceof Error ? e.message : t('Le changement n’a pas pu être appliqué.', 'The change could not be applied.'));
     } finally {
       setSavingMba(false);
@@ -379,7 +383,7 @@ function AccueilInner({ session }: { session: Session }) {
                 testid="mba-toggle"
                 checked={mbaEnabled}
                 onChange={toggleMba}
-                disabled={!isAdmin || savingMba || etatMetaInconnu}
+                disabled={!isAdmin || savingMba}
                 title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
               />
               <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>

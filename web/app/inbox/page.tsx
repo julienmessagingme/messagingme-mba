@@ -853,6 +853,16 @@ function Thread({ session, conversation, dossier, onSent }: {
   // Qui détient le fil. Sans cette information, l'opérateur voit le scénario se taire sans comprendre
   // pourquoi, et ne sait pas s'il doit rendre la main.
   const [controlOwner, setControlOwner] = useState<ControlOwner>('app_workflow');
+  /**
+   * L'agent de Meta est-il allumé sur cet espace ?
+   *
+   * 🔴 SANS LUI, LE BOUTON DISPARAÎT AU PIRE MOMENT (constaté par Julien le 2026-09-10). Quand l'agent de
+   * Meta passe la conversation à un humain, le fil nous revient et le détenteur devient `app_workflow` :
+   * l'ancienne condition `controlOwner !== 'app_workflow'` cachait alors le bouton. Or c'est PRÉCISÉMENT le
+   * moment où un opérateur peut vouloir la rendre, avant même d'avoir répondu, parce qu'il vient de lire et
+   * de juger que ce n'est pas pour lui.
+   */
+  const [mbaActif, setMbaActif] = useState(false);
   const [releasing, setReleasing] = useState(false);
   const [effacement, setEffacement] = useState(false);
   const [text, setText] = useState('');
@@ -876,7 +886,10 @@ function Thread({ session, conversation, dossier, onSent }: {
   // builder. Éteint -> aucun bouton RCS : proposer un envoi qui finira en 422 n'aide personne.
   const [rcsEnabled, setRcsEnabled] = useState(false);
   useEffect(() => {
-    void getSettings(session.tenantId).then((s) => setRcsEnabled(s.rcsEnabled === true)).catch(() => {});
+    void getSettings(session.tenantId).then((s) => {
+      setRcsEnabled(s.rcsEnabled === true);
+      setMbaActif(s.mbaEnabled === true);
+    }).catch(() => {});
   }, [session.tenantId]);
   const bottomRef = useRef<HTMLDivElement>(null);
   /** Le conteneur défilant du fil. Sert à savoir si l'opérateur est REMONTÉ dans l'historique. */
@@ -1101,7 +1114,7 @@ function Thread({ session, conversation, dossier, onSent }: {
             REND une main qu'il a prise ; face à l'agent de Meta, on la lui REPREND. Les deux vont au même
             endroit (le scénario), par le même appel.
           */}
-          {controlOwner !== 'app_workflow' && (
+          {(controlOwner !== 'app_workflow' || mbaActif) && (
             <button
               onClick={() => { void release(); }}
               disabled={releasing}
@@ -1112,7 +1125,9 @@ function Thread({ session, conversation, dossier, onSent }: {
                 ? t('...', '...')
                 : controlOwner === 'mba'
                   ? t('Reprendre la main', 'Take back')
-                  : t('Rendre la main', 'Hand back')}
+                  : controlOwner === 'app_human'
+                    ? t('Rendre la main', 'Hand back')
+                    : t('Passer à l’agent Meta', 'Hand to Meta agent')}
             </button>
           )}
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
