@@ -118,6 +118,7 @@ import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';
+import { creerRendreLeFil } from './inbox/rendre-le-fil';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -290,6 +291,16 @@ async function main(): Promise<void> {
       config.PHONE_RATE_PER_MINUTE_MAX,
       depsPorteDebitPg(pool),
     ),
+  });
+
+  /**
+   * Rendre le fil à l'agent de Meta. MÊME module que le balayage du worker (`src/inbox/rendre-le-fil.ts`) :
+   * le geste vivait dans une fermeture du worker, donc l'API ne pouvait pas l'appeler, et le bouton « rendre
+   * la main » de l'Inbox n'écrivait que notre état local.
+   */
+  const rendreLeFilAuMba = creerRendreLeFil({
+    numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
+    clientMba: (t) => metaFactory.mbaClientForTenant(t),
   });
 
   /**
@@ -652,27 +663,48 @@ async function main(): Promise<void> {
         }
         return { messageId: issue.messageId, apercu: apercuRcsSortant(message) };
       },
-      // Un opérateur qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre. 
+      // Un opérateur qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre.
+      // 🔴 CE N'EST PLUS UNE HYPOTHÈSE, C'EST MESURÉ (2026-09-10). Meta n'a AUCUNE action `take` : la spec
+      // v1.0.0 n'expose que `pass` et `release`. On prend donc le fil en ENVOYANT, et c'est ce qu'on a
+      // observé pour de vrai ce jour-là : après une réponse depuis l'Inbox pendant que l'agent de Meta
+      // tenait le fil, l'entrant suivant est arrivé en `field: "messages"` et non plus en `standby`.
       // ⚠️ Une CAMPAGNE, elle, part quand même : elle est déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil (`ignoreHumanControl`). Le contraire a été écrit ici pendant des semaines, cf. `tests/campagne-controle-humain.test.ts`.
       takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
-      // Surcharge de reprise d'un fil (C.4) : dit au sweep de handback s'il faut, pour CE fil, le rendre au
-      // scénario ou le laisser à l'humain. Ne bascule pas le contrôle par elle-même.
       /**
-       * L'opérateur rend la main. Aujourd'hui la conversation repart au scénario.
+       * L'opérateur rend la main : au scénario, ou à l'agent de Meta quand le client l'a allumé.
        *
-       * PRÉ-CÂBLAGE MBA : quand l'agent de Meta est actif sur le numéro, c'est ici qu'il faudra appeler
-       * `POST https://api.facebook.com/business/whatsapp/phone_numbers/{id}/thread_control` avec
-       * `{ messaging_product:'whatsapp', action:'release', to:<waId> }` pour qu'il redevienne le
-       * répondeur principal. ⚠️ L'action est bien `release` et non `pass` : la spec dit que seul
-       * `release` est implémenté et qu'il rend la conversation à MBA, alors que le guide de démarrage
-       * de Meta dit l'inverse. Détail et citations dans docs/MBA-API-REFERENCE.md.
+       * 🔴 CE PRÉ-CÂBLAGE EST RESTÉ À MOITIÉ FAIT UN JOUR DE TROP. Il écrivait notre état local et
+       * n'appelait JAMAIS Meta ; son propre commentaire annonçait l'appel « le jour venu ». Le jour venu
+       * était le 2026-09-10, et le symptôme a été exactement celui qu'on pouvait prédire : Julien rend la
+       * main, écrit sur WhatsApp, et l'agent de Meta reste muet parce que Meta croit toujours que NOUS
+       * tenons le fil (son entrant suivant est arrivé en `field: "messages"`, pas en `standby`).
        *
-       * Le champ `mbaEnabled` du tenant est le bon interrupteur pour brancher cet appel le jour venu.
+       * ⚠️ META D'ABORD, NOTRE ÉTAT ENSUITE, ET SEULEMENT S'IL A CONFIRMÉ. L'ordre inverse est précisément
+       * ce qui vient de coûter la soirée : un état local qui annonce ce que Meta n'a pas fait est pire
+       * qu'une erreur, parce qu'il rend le problème invisible. Un échec REMONTE à l'appelant, qui le
+       * traduit en 4xx lisible plutôt qu'en 500 dont Cloudflare mange le corps.
+       *
+       * ⚠️ `mbaEnabled` est notre drapeau, il peut avoir dérivé de l'état réel chez Meta. C'est acceptable
+       * ICI parce que la dérive est réparée automatiquement à chaque message entrant, à partir du `field`
+       * du webhook (`processInbound`) : au pire on rend au scénario un fil que Meta donnerait au MBA, et
+       * le premier message suivant remet les deux d'accord.
        */
       releaseControl: async (tenant, waId) => {
-        await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
-        return 'app_workflow';
+        const reglages = await settingsStore.get(tenant);
+        if (!reglages.mbaEnabled) {
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          return 'app_workflow';
+        }
+        const rendu = await rendreLeFilAuMba(tenant, waId);
+        if (!rendu) {
+          // Aucun numéro connecté : il n'y a pas de fil à rendre chez Meta, et notre état local reste la
+          // seule vérité. Ce n'est pas un échec, c'est un espace sans WhatsApp.
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          return 'app_workflow';
+        }
+        await inboxStore.setControlOwner(tenant, waId, 'mba');
+        return 'mba';
       },
       /**
        * Lancement d'un SCÉNARIO depuis l'Inbox. La fenêtre décide de la porte d'entrée :

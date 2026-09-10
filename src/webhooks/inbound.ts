@@ -6,6 +6,7 @@
 
 import { FLOW_REF_KEY } from '../meta/flow-json';
 import { estDemandeArret } from '../crm/consentement';
+import type { ControlOwner } from '../inbox/store.pg';
 import { asArray, asRecord } from './json';
 import { valeurEffective } from './change';
 
@@ -94,6 +95,20 @@ export interface InboxStore {
   phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /** Upsert la conversation (par tenant+wa_id) et insère le message (idempotent par wamid). */
   recordInbound(tenantId: string, m: InboundMessage): Promise<void>;
+  /**
+   * Corrige QUI détient le fil, d'après ce que Meta vient de dire. OPTIONNEL (deps de test minimales).
+   *
+   * 🔴 C'EST LE SEUL SIGNAL DE BASCULE QU'ON REÇOIVE VRAIMENT. On comptait sur l'événement
+   * `messaging_handovers` : **zéro occurrence** sur les 58 payloads réels du 2026-09-10. Notre
+   * `control_owner` ne pouvait donc être corrigé que par nous-mêmes, et il dérivait en silence dès que Meta
+   * changeait d'avis. Le `field` de CHAQUE message entrant, lui, le dit à chaque fois.
+   */
+  setControlOwner?(
+    tenantId: string,
+    waId: string,
+    owner: ControlOwner,
+    opts?: { only?: readonly ControlOwner[] },
+  ): Promise<boolean>;
 }
 
 function str(v: unknown): string | null {
@@ -298,5 +313,43 @@ export async function processInbound(
       }
     }
     await store.recordInbound(tenantId, m);
+    await accorderLeDetenteur(store, tenantId, m);
+  }
+}
+
+/**
+ * Remet notre `control_owner` d'accord avec Meta, à partir du `field` du webhook.
+ *
+ * 🔴 META FAIT AUTORITÉ, ET C'EST LE SEUL MOYEN DE LE SAVOIR. `standby` veut dire « l'agent de Meta tient
+ * ce fil », `messages` veut dire « nous le tenons ». Ces deux mots arrivent sur CHAQUE message entrant,
+ * alors que l'événement `messaging_handovers`, sur lequel reposait toute notre détection de bascule, n'a
+ * JAMAIS été observé (zéro sur 58 payloads réels, 2026-09-10). Sans cette correction, un fil rendu au MBA
+ * restait `app_workflow` chez nous, nos scénarios se croyaient maîtres, et l'écran mentait à l'opérateur.
+ *
+ * ⚠️ LES DEUX SENS NE SONT PAS SYMÉTRIQUES, et c'est tout le soin de cette fonction :
+ *
+ *  - `standby` écrase SANS condition. Meta a tranché, y compris contre un `app_human` : si l'agent de Meta
+ *    répond, un opérateur qui se croit maître du fil se ferait doubler sans comprendre.
+ *  - `messages` ne corrige QUE si nous croyions `mba`. Ce mot dit seulement que Meta nous laisse répondre,
+ *    il ne dit RIEN de qui, chez nous, tient le fil. Sans le `only`, chaque message d'un client rendrait la
+ *    main au scénario par-dessus l'opérateur en train de lui écrire.
+ *
+ * ⚠️ Un `field` absent (`null`) ne corrige rien : c'est une forme de payload qu'on ne sait pas interpréter,
+ * et deviner vaudrait moins que se taire.
+ *
+ * BEST-EFFORT : un échec ici ne doit pas faire échouer l'enregistrement du message, qui est la donnée
+ * métier. Il reste visible en console.
+ */
+async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: InboundMessage): Promise<void> {
+  if (!store.setControlOwner || m.field === null) return;
+  try {
+    if (m.field === 'standby') {
+      await store.setControlOwner(tenantId, m.waId, 'mba');
+    } else if (m.field === 'messages') {
+      await store.setControlOwner(tenantId, m.waId, 'app_workflow', { only: ['mba'] });
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('processInbound: détenteur du fil non corrigé:', err instanceof Error ? err.message : err);
   }
 }

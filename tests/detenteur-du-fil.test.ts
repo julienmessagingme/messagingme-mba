@@ -1,0 +1,125 @@
+import { describe, it, expect } from 'vitest';
+import { processInbound, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
+import { creerRendreLeFil } from '../src/inbox/rendre-le-fil';
+
+/**
+ * Qui détient le fil d'une conversation, et comment on l'apprend.
+ *
+ * 🔴 CE FICHIER GARDE DEUX PANNES VÉCUES LE 2026-09-10, à quelques heures d'intervalle :
+ *
+ *  1. le bouton « rendre la main » de l'Inbox n'appelait JAMAIS Meta. Julien rend la main, écrit sur
+ *     WhatsApp, et l'agent de Meta reste muet : Meta croyait toujours que nous tenions le fil ;
+ *  2. rien, dans notre code, n'apprenait qu'un fil avait changé de mains. On comptait sur l'événement
+ *     `messaging_handovers`, dont il y a eu **zéro occurrence** sur 58 payloads réels. Le seul signal qu'on
+ *     reçoive vraiment est le `field` de chaque message entrant, et on le jetait.
+ */
+
+const PAYLOAD = (field: 'messages' | 'standby' | null) => ({
+  entry: [{
+    id: '1695646181671929',
+    changes: [{
+      ...(field === null ? {} : { field }),
+      value: {
+        ...(field === 'standby'
+          ? { standby: { contacts: [{ wa_id: '33633921577' }], messages: [{ id: 'wamid.X', from: '33633921577', type: 'text', text: { body: 'coucou' } }] } }
+          : { contacts: [{ wa_id: '33633921577' }], messages: [{ id: 'wamid.X', from: '33633921577', type: 'text', text: { body: 'coucou' } }] }),
+        metadata: { phone_number_id: '1234840649713976' },
+      },
+    }],
+  }],
+});
+
+function fauxStore() {
+  const ecrits: Array<{ owner: string; only?: readonly string[] }> = [];
+  const store: InboxStore = {
+    phoneNumberTenant: async () => 'tenant-1',
+    recordInbound: async (_t: string, _m: InboundMessage) => {},
+    setControlOwner: async (_t, _w, owner, opts) => {
+      ecrits.push({ owner, ...(opts?.only ? { only: opts.only } : {}) });
+      return true;
+    },
+  };
+  return { store, ecrits };
+}
+
+describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
+  it('🔴 un `standby` dit que le MBA tient le fil, et il écrase SANS condition', () => {
+    // Meta fait autorité, y compris contre un `app_human` : si son agent répond, un opérateur qui se croit
+    // maître du fil se ferait doubler sans comprendre pourquoi.
+    const { store, ecrits } = fauxStore();
+    return processInbound(PAYLOAD('standby'), store).then(() => {
+      expect(ecrits).toEqual([{ owner: 'mba' }]);
+    });
+  });
+
+  it('🔴 un `messages` ne corrige QUE si on croyait `mba`', async () => {
+    // Ce mot dit seulement que Meta nous laisse répondre. Il ne dit RIEN de qui, chez nous, tient le fil.
+    // Sans le `only`, chaque message d'un client rendrait la main au scénario par-dessus l'opérateur en
+    // train de lui écrire.
+    const { store, ecrits } = fauxStore();
+    await processInbound(PAYLOAD('messages'), store);
+    expect(ecrits).toEqual([{ owner: 'app_workflow', only: ['mba'] }]);
+  });
+
+  it('🔴 un `field` absent ne corrige RIEN', async () => {
+    // Forme de payload qu'on ne sait pas interpréter : deviner vaudrait moins que se taire.
+    const { store, ecrits } = fauxStore();
+    await processInbound(PAYLOAD(null), store);
+    expect(ecrits).toEqual([]);
+  });
+
+  it('un store sans `setControlOwner` continue de marcher', async () => {
+    // Les suites de tests construisent des deps minimales : la méthode est optionnelle, et son absence ne
+    // doit pas casser l'enregistrement du message, qui est la donnée métier.
+    const recus: string[] = [];
+    await processInbound(PAYLOAD('standby'), {
+      phoneNumberTenant: async () => 'tenant-1',
+      recordInbound: async (_t, m) => { recus.push(m.body ?? ''); },
+    });
+    expect(recus).toEqual(['coucou']);
+  });
+
+  it('🔴 un échec de correction n’empêche PAS d’enregistrer le message', async () => {
+    // La correction est best-effort : le message du client est la donnée métier, la propriété du fil est un
+    // confort d'aiguillage. Les inverser perdrait un message pour une raison sans rapport.
+    const recus: string[] = [];
+    await processInbound(PAYLOAD('standby'), {
+      phoneNumberTenant: async () => 'tenant-1',
+      recordInbound: async (_t, m) => { recus.push(m.body ?? ''); },
+      setControlOwner: async () => { throw new Error('base indisponible'); },
+    });
+    expect(recus).toEqual(['coucou']);
+  });
+});
+
+describe('rendre le fil à Meta', () => {
+  it('appelle `releaseThread` avec le numéro du client et rend `true`', async () => {
+    const appels: Array<[string, string]> = [];
+    const rendre = creerRendreLeFil({
+      numeroDuTenant: async () => '1234840649713976',
+      clientMba: async () => ({ releaseThread: async (pn: string, waId: string) => { appels.push([pn, waId]); } }),
+    });
+    expect(await rendre('tenant-1', '33633921577')).toBe(true);
+    expect(appels).toEqual([['1234840649713976', '33633921577']]);
+  });
+
+  it('sans numéro connecté, il n’y a rien à rendre : `false`, et AUCUN appel', async () => {
+    let appele = false;
+    const rendre = creerRendreLeFil({
+      numeroDuTenant: async () => null,
+      clientMba: async () => { appele = true; return { releaseThread: async () => {} }; },
+    });
+    expect(await rendre('tenant-1', '33633921577')).toBe(false);
+    expect(appele).toBe(false);
+  });
+
+  it('🔴 LÈVE si Meta refuse, elle n’avale pas l’échec', async () => {
+    // C'est ce qui permet à l'appelant de REFUSER d'écrire son état local. Un `catch` silencieux ici
+    // recréerait le défaut qu'on répare : un état local qui annonce ce que Meta n'a pas fait.
+    const rendre = creerRendreLeFil({
+      numeroDuTenant: async () => '1234840649713976',
+      clientMba: async () => ({ releaseThread: async () => { throw new Error('jeton expiré'); } }),
+    });
+    await expect(rendre('tenant-1', '33633921577')).rejects.toThrow('jeton expiré');
+  });
+});

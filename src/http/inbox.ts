@@ -768,7 +768,23 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     if (!deps.releaseControl) return reply.code(503).send({ error: 'reprise indisponible sur cette instance' });
-    const owner = await deps.releaseControl(tenant, ctx.waId);
+    /**
+     * 🔴 UN ÉCHEC CHEZ META SORT EN 4xx, PAS EN 500. Depuis le 2026-09-10, rendre la main APPELLE Meta
+     * (`thread_control`, action `release`) avant d'écrire notre état. L'appel peut échouer (jeton, réseau,
+     * numéro non éligible) et l'opérateur DOIT le savoir : Cloudflare remplace le corps de toute réponse
+     * 5xx par sa page d'erreur, donc un message d'erreur en 500 n'arriverait jamais à l'écran.
+     *
+     * ⚠️ Et surtout, notre état local n'a PAS bougé dans ce cas : `releaseControl` écrit après Meta, jamais
+     * avant. L'écran continue donc d'annoncer que l'opérateur tient le fil, ce qui est la vérité.
+     */
+    let owner: 'app_workflow' | 'mba';
+    try {
+      owner = await deps.releaseControl(tenant, ctx.waId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`release: Meta a refusé de reprendre le fil (${tenant}/${ctx.waId}):`, err instanceof Error ? err.message : err);
+      return reply.code(409).send({ error: 'Meta n’a pas repris la conversation. Elle reste de votre côté, réessayez dans un instant.' });
+    }
     invaliderCompteurs(tenant); // le fil repart en automatique : il sort de « À traiter ».
     return reply.code(200).send({ controlOwner: owner });
   });

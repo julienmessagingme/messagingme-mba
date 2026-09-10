@@ -1019,7 +1019,10 @@ async function main(): Promise<void> {
         // Destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres. Plus
         // rien à arbitrer, la règle se déduit de l'état du compte.
         mbaActifParTenant: (ids) => settingsStore.mbaActifParTenant(ids),
-        releaseToMba: (tenant, waId) => releaseThreadChezMeta(tenant, waId),
+        // ⚠️ Le verdict de `rendreLeFil` est IGNORÉ ici, et seulement ici : le balayage est best-effort, un
+        // fil ne doit pas rester gelé pour toujours à cause d'un hoquet réseau. La route de l'Inbox, elle,
+        // s'en sert pour refuser d'écrire un état que Meta n'a pas confirmé.
+        releaseToMba: async (tenant, waId) => { await releaseThreadChezMeta(tenant, waId); },
       });
       // eslint-disable-next-line no-console
       if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);
