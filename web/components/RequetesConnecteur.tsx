@@ -6,7 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import type { SourceAgent } from '@/lib/api-agent-sources';
 import {
-  creerRequete, listRequetes, patchRequete, supprimerRequete, testerRequete,
+  creerRequete, listRequetes, patchRequete, supprimerRequete, testerBrouillon,
   type CatalogueVariables, type CorpsRequete, type CreationRequete, type MethodeRequete,
   type OrigineVariable, type Paire, type RequeteApi, type ResultatTest, type VariableRequete,
 } from '@/lib/api-agent-requetes';
@@ -244,10 +244,18 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
   };
 
   const essayer = async (): Promise<void> => {
-    if (!requeteId) return;
     setEssai(true);
     try {
-      setResultat(await testerRequete(tenantId, requeteId, brouillon.valeursTest));
+      // 🔴 ON ÉPROUVE CE QUI EST À L'ÉCRAN, enregistré ou non. Avant, ce bouton exigeait un appel déjà en
+      // base : créer le premier appel d'un client était donc impossible (enregistrer réclame un champ de
+      // sortie, qui se coche dans la réponse d'un essai, qui réclamait un enregistrement). Et sur un appel
+      // existant qu'on modifiait, il éprouvait la version STOCKÉE, donc une adresse que le client venait de
+      // changer.
+      setResultat(await testerBrouillon(tenantId, {
+        sourceId: brouillon.sourceId, methode: brouillon.methode, chemin: brouillon.chemin,
+        parametres: brouillon.parametres, entetes: brouillon.entetes, corps: brouillon.corps,
+        variables: brouillon.variables, valeursTest: brouillon.valeursTest,
+      }));
       setOnglet('reponse');
     } catch (err) {
       setResultat({ ok: false, erreur: err instanceof Error ? err.message : 'erreur' });
@@ -289,11 +297,11 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         </label>
         <button
           data-testid="requete-essayer"
-          // 🔴 On n'essaie que ce qui est ENREGISTRÉ : le serveur teste la requête telle qu'elle est en base,
-          // avec les mêmes gardes que l'exécution. Tester un brouillon non enregistré ferait valider un appel
-          // qui n'existe pas, et c'est exactement le genre d'écart qu'on cherche à éviter ici.
-          disabled={busy || essai || !requeteId}
-          title={requeteId ? '' : t('Enregistrez d’abord l’appel pour pouvoir l’essayer.', 'Save the call first to try it.')}
+          // ⚠️ IL MANQUE SEULEMENT L'ADRESSE : le serveur assemble l'appel avec le MÊME code que l'exécution,
+          // donc ce qui passe ici passera en conversation. Ce qu'on exige avant de laisser essayer est donc
+          // ce sans quoi il n'y a pas d'appel du tout : une source et un chemin.
+          disabled={busy || essai || brouillon.sourceId === '' || brouillon.chemin.trim() === ''}
+          title={brouillon.sourceId !== '' && brouillon.chemin.trim() !== '' ? '' : t('Choisissez un système et un chemin.', 'Pick a system and a path.')}
           onClick={() => { void essayer(); }}
           className="rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-300"
         >

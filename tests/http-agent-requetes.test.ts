@@ -209,6 +209,97 @@ describe('requêtes : modifier et supprimer', () => {
   });
 });
 
+describe('🔴 requêtes : ESSAYER UN BROUILLON, le cycle qui rendait la création impossible', () => {
+  const reponse = (body: string, status = 200) => (async () => new Response(body, { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+  /** Ce que l'écran envoie : ce qui est À L'ÉCRAN. Ni nom, ni champs de sortie : ils n'existent pas encore. */
+  const BROUILLON = {
+    sourceId: SRC, methode: 'GET', chemin: '/commandes/{ref}',
+    parametres: [], entetes: [], corps: { mode: 'aucun' },
+    variables: [{ nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true }],
+    valeursTest: { ref: 'CMD-1' },
+  };
+
+  it('🔴 un brouillon SANS nom ni champs de sortie s’éprouve, et c’est tout le sujet', async () => {
+    // LE CYCLE ÉTAIT FERMÉ, et il rendait la création d'un appel IMPOSSIBLE : enregistrer EXIGE au moins un
+    // champ de sortie, ces champs se cochent dans la réponse d'un essai, et l'essai exigeait un appel
+    // ENREGISTRÉ. Trouvé par Julien le 2026-09-10 en essayant de déclarer son premier appel.
+    const { srv } = app({}, reponse(JSON.stringify({ statut: 'ok', livraison: { date: '2026-09-02' } })));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/test`, ...h(adminTok), payload: BROUILLON });
+    expect(res.statusCode).toBe(200);
+    const b = res.json();
+    expect(b.ok).toBe(true);
+    // Et il rend les chemins à cocher : c'est avec eux que l'enregistrement devient possible.
+    expect(b.chemins).toEqual(['statut', 'livraison.date']);
+    expect(b.envoye.url).toBe('https://api.client.fr/v1/commandes/CMD-1');
+  });
+
+  it('🔴 il éprouve CE QUI EST À L’ÉCRAN, pas ce qui est en base', async () => {
+    // Second défaut du même bouton, plus discret : sur un appel déjà enregistré qu'on MODIFIE, l'ancienne
+    // route éprouvait la version STOCKÉE. Le client changeait son chemin, cliquait Essayer, et obtenait la
+    // réponse de l'ancien. Ici le chemin du brouillon diffère de celui de la requête en base.
+    const { srv } = app({}, reponse('{"a":1}'));
+    const res = await srv.inject({
+      method: 'POST', url: `${base()}/test`, ...h(adminTok),
+      payload: { ...BROUILLON, chemin: '/v2/commandes/{ref}' },
+    });
+    // ⚠️ `v1/v2` et non `v2` : le chemin reste TOUJOURS sous l'adresse de base de la source, c'est la garde
+    // anti-SSRF du lot. Ce que ce test prouve, c'est que le chemin du BROUILLON a servi, pas celui en base.
+    expect(res.json().envoye.url).toBe('https://api.client.fr/v1/v2/commandes/CMD-1');
+  });
+
+  it('⚠️ il valide COMME la création : une variable non déclarée est refusée AVANT tout appel', async () => {
+    // Un essai qui accepterait ce que l'enregistrement refuse ferait mettre au point un appel impossible à
+    // sauver, ce qui est une autre façon de rendre l'écran menteur.
+    let appels = 0;
+    const compte = (async () => { appels += 1; return new Response('{}'); }) as unknown as typeof fetch;
+    const { srv } = app({}, compte);
+    const res = await srv.inject({
+      method: 'POST', url: `${base()}/test`, ...h(adminTok),
+      payload: { ...BROUILLON, chemin: '/commandes/{inconnue}', variables: [] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/inconnue/);
+    expect(appels).toBe(0);
+  });
+
+  it('⚠️ un en-tête réservé est refusé sur un brouillon comme sur une création', async () => {
+    const { srv } = app({}, reponse('{}'));
+    const res = await srv.inject({
+      method: 'POST', url: `${base()}/test`, ...h(adminTok),
+      payload: { ...BROUILLON, entetes: [{ nom: 'authorization', valeur: 'Bearer x' }] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/authentification|authorization/i);
+  });
+
+  it('🔴 la même garde d’adresse interne que sur la route enregistrée', async () => {
+    // La nouvelle route appelle une URL que le client vient de saisir, depuis notre réseau : c'est le chemin
+    // le plus facile à atteindre du produit. Une garde posée sur une route et pas sur sa jumelle serait
+    // simplement contournable en n'enregistrant pas.
+    let appels = 0;
+    const compte = (async () => { appels += 1; return new Response('{}'); }) as unknown as typeof fetch;
+    const { srv } = app({}, compte, ['ville', 'points'], async () => ({ ok: false, raison: 'adresse interne' }));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/test`, ...h(adminTok), payload: BROUILLON });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(false);
+    expect(appels).toBe(0);
+  });
+
+  it('🔴 un agent (non admin) ne peut pas éprouver un brouillon', async () => {
+    // Cette route fait partir un appel réseau depuis notre infrastructure vers une adresse SAISIE dans la
+    // requête : elle doit être aussi fermée que sa jumelle.
+    const { srv } = app({}, reponse('{}'));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/test`, ...h(agentTok), payload: BROUILLON });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('⚠️ sans jeton, elle refuse', async () => {
+    const { srv } = app({}, reponse('{}'));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/test`, payload: BROUILLON, headers: { 'content-type': 'application/json' } });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe('requêtes : le bouton Test', () => {
   const reponse = (body: string, status = 200) => (async () => new Response(body, { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
 

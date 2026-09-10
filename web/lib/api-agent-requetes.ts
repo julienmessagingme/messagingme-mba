@@ -105,7 +105,20 @@ export async function supprimerRequete(tenantId: string, id: string): Promise<vo
   await request(`${base(tenantId)}/${id}`, { method: 'DELETE' });
 }
 
-/** Éprouve la requête pour de vrai et rend la réponse ENTIÈRE, plus les chemins à cocher. */
-export async function testerRequete(tenantId: string, id: string, valeurs?: Record<string, string | number | boolean>): Promise<ResultatTest> {
-  return request(`${base(tenantId)}/${id}/test`, { method: 'POST', body: JSON.stringify(valeurs ? { valeurs } : {}) });
+/**
+ * Éprouve un BROUILLON, c'est-à-dire ce qui est à l'écran, enregistré ou non.
+ *
+ * 🔴 C'EST CE QUE L'ÉCRAN DOIT APPELER, et son absence rendait la création d'un appel IMPOSSIBLE : on ne peut
+ * enregistrer qu'avec au moins un champ de sortie, ces champs se cochent dans la réponse d'un essai, et
+ * l'essai exigeait un appel déjà enregistré. Le cycle était fermé.
+ *
+ * ⚠️ Elle envoie CE QUI EST À L'ÉCRAN, pas ce qui est en base : sur un appel déjà enregistré qu'on modifie,
+ * l'ancienne route éprouvait la version STOCKÉE, donc répondait sur une adresse que le client venait
+ * justement de changer.
+ */
+export async function testerBrouillon(
+  tenantId: string,
+  brouillon: Omit<CreationRequete, 'label' | 'outputPaths'>,
+): Promise<ResultatTest> {
+  return request(`${base(tenantId)}/test`, { method: 'POST', body: JSON.stringify(brouillon) });
 }

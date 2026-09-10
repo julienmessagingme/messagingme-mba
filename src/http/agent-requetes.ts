@@ -120,6 +120,37 @@ const testSchema = z.object({
   valeurs: z.record(z.string(), z.union([z.string().max(2000), z.number(), z.boolean()])).optional(),
 });
 
+/**
+ * Un BROUILLON qu'on eprouve avant de l'enregistrer : tout ce qu'il faut pour ASSEMBLER l'appel, et rien de
+ * ce qu'un brouillon ne peut pas encore avoir.
+ *
+ * 🔴 NI `label` NI `outputPaths`, et ce n'est pas un oubli : les champs de sortie se choisissent DANS la
+ * reponse de cet essai. Les exiger ici refermerait le cycle que la route d'essai existe pour ouvrir.
+ */
+const brouillonTest = z.object({
+  sourceId: CHAMPS.sourceId,
+  methode: CHAMPS.methode,
+  chemin: CHAMPS.chemin,
+  parametres: CHAMPS.parametres.default([]),
+  entetes: CHAMPS.entetes.default([]),
+  corps: CHAMPS.corps.default({ mode: 'aucun' }),
+  variables: CHAMPS.variables.default([]),
+  valeursTest: CHAMPS.valeursTest.default({}),
+  /** Valeurs saisies dans l'ecran d'essai, qui l'emportent sur celles du brouillon. */
+  valeurs: CHAMPS.valeursTest.optional(),
+});
+
+/**
+ * Ce dont un essai a besoin, et rien d'autre.
+ *
+ * ⚠️ `Pick` du BON cote de la regle du depot : ses membres sont CONSOMMES SUR PLACE (`assemblerAppel`,
+ * `risqueSelonMethode`), donc un oubli serait une erreur au point d'usage, pas une liste qui derive.
+ */
+type RequetePourTest = Pick<
+  RequeteConnecteur,
+  'sourceId' | 'methode' | 'chemin' | 'parametres' | 'entetes' | 'corps' | 'valeursTest'
+>;
+
 /** Réponse de test TRONQUÉE. Le client doit voir assez pour choisir ses champs, pas de quoi remplir un écran. */
 const MAX_APERCU = 20_000;
 
@@ -134,7 +165,16 @@ const DELAI_TEST_MS = 10_000;
  * Ce qui cloche dans une requête, ou `null`. Rejoué à la création ET au patch, sur l'état EFFECTIF après
  * écriture : une garde calculée sur le seul corps de la requête ne fermerait qu'un sens (règle du CLAUDE.md).
  */
-function verifier(r: z.infer<typeof corpsRequete>, clesDeChamps: readonly string[]): string | null {
+/**
+ * Ce que `verifier` LIT, et rien de plus.
+ *
+ * ⚠️ Elle est appelee sur une CREATION, sur un PATCH fusionne et desormais sur un BROUILLON d'essai, qui n'a
+ * ni nom ni champs de sortie. La typer sur le corps complet rendait ce troisieme appel impossible sans un
+ * `as`, c'est-a-dire sans desactiver la seule garde qui compte ici.
+ */
+type ARegler = Pick<z.infer<typeof corpsRequete>, 'methode' | 'chemin' | 'parametres' | 'entetes' | 'corps' | 'variables'>;
+
+function verifier(r: ARegler, clesDeChamps: readonly string[]): string | null {
   // 1. L'adresse, avec la MÊME fonction que le résolveur. Une seconde définition finirait par accepter à
   // l'écriture ce que l'appel refuse, donc par promettre un connecteur qui ne marchera jamais.
   // Les variables de chemin sont remplies d'un jeton quelconque : on éprouve la FORME, pas les valeurs.
@@ -267,39 +307,42 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
    * ce que l'agent aura le droit d'en lire. Cette route est réservée aux administrateurs ; le filtre de sortie
    * protège le MODÈLE, pas le client de ses propres données.
    */
-  app.post(`${base}/:id/test`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    const { id } = req.params as { id: string };
-    if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
-    const parse = testSchema.safeParse(req.body ?? {});
-    if (!parse.success) return reply.code(400).send({ error: 'corps invalide' });
-    const requete = await deps.parId(tenant, id);
-    if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
-    const source = await deps.sourcePourTest(tenant, requete.sourceId);
-    if (!source) return reply.code(400).send({ error: 'la source de cette requête n’existe plus' });
+  /**
+   * L'EXECUTION d'un essai, partagee par les deux routes ci-dessous.
+   *
+   * 🔴 UNE SEULE CONSTRUCTION, ET C'EST LA RAISON D'ETRE DE CETTE FONCTION. Il y a deux facons d'eprouver un
+   * appel (un BROUILLON qu'on met au point, un appel DEJA ENREGISTRE qu'on rejoue), et les ecrire deux fois
+   * les ferait diverger : c'est la lecon d'`enTetesAuthSource`, deja payee une fois dans ce depot.
+   */
+  async function executerTest(
+    tenant: string,
+    r: RequetePourTest,
+    valeursSup: Record<string, ValeurVariable> | undefined,
+  ): Promise<{ code: number; body: unknown }> {
+    const source = await deps.sourcePourTest(tenant, r.sourceId);
+    if (!source) return { code: 400, body: { error: 'la source de cet appel n’existe plus' } };
 
-    // Une source en brouillon peut être testée : c'est justement l'ordre normal (on éprouve, puis on active).
-    // Une source DÉSACTIVÉE, non : elle a été coupée exprès, et la tester la ferait appeler quand même.
-    if (source.status === 'disabled') return reply.code(409).send({ error: 'cette source est désactivée' });
+    // Une source en brouillon peut etre testee : c'est justement l'ordre normal (on eprouve, puis on active).
+    // Une source DESACTIVEE, non : elle a ete coupee expres, et la tester la ferait appeler quand meme.
+    if (source.status === 'disabled') return { code: 409, body: { error: 'cette source est désactivée' } };
 
-    const valeurs: Record<string, ValeurVariable> = { ...requete.valeursTest, ...(parse.data.valeurs ?? {}) };
+    const valeurs: Record<string, ValeurVariable> = { ...r.valeursTest, ...(valeursSup ?? {}) };
     const appel = assemblerAppel({
-      baseUrl: source.baseUrl, methode: requete.methode, chemin: requete.chemin,
-      parametres: requete.parametres, entetes: requete.entetes, corps: requete.corps,
+      baseUrl: source.baseUrl, methode: r.methode, chemin: r.chemin,
+      parametres: r.parametres, entetes: r.entetes, corps: r.corps,
       valeurs, construireCible,
     });
     // Un refus d'assemblage est une INFORMATION pour le client, pas une panne : 200 avec `ok: false`, sinon
-    // Cloudflare remplace le corps et il ne sait même pas ce qui a échoué (cf. CLAUDE.md).
-    if (!appel.ok) return reply.code(200).send({ ok: false, erreur: appel.raison });
+    // Cloudflare remplace le corps et il ne sait meme pas ce qui a echoue (cf. CLAUDE.md).
+    if (!appel.ok) return { code: 200, body: { ok: false, erreur: appel.raison } };
 
-    // 🔴 OÙ CE NOM MÈNE-T-IL VRAIMENT ? Ce bouton appelle une URL que le client vient de saisir, depuis notre
-    // réseau, exactement comme le connecteur en conversation. `construireCible` refuse les hôtes internes sur
-    // leur TEXTE ; elle ne peut rien contre un nom public qui pointe vers le réseau Docker ou vers les
-    // métadonnées du fournisseur. Même garde ici, sinon le chemin le plus facile à atteindre resterait ouvert.
+    // 🔴 OU CE NOM MENE-T-IL VRAIMENT ? Ce bouton appelle une URL que le client vient de saisir, depuis notre
+    // reseau, exactement comme le connecteur en conversation. `construireCible` refuse les hotes internes sur
+    // leur TEXTE ; elle ne peut rien contre un nom public qui pointe vers le reseau Docker ou vers les
+    // metadonnees du fournisseur. Meme garde ici, sinon le chemin le plus facile a atteindre resterait ouvert.
     const resolution = await estPublique(appel.url);
     if (!resolution.ok) {
-      return reply.code(200).send({ ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' });
+      return { code: 200, body: { ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' } };
     }
 
     const debut = Date.now();
@@ -307,12 +350,11 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     /**
      * 🔴 LE SEUL DES TROIS BOUTONS « TEST » QUI N'AVAIT PAS DE PLAFOND (contre-audit du 2026-09-03).
      *
-     * L'épreuve d'une source en pose un de 10 s, l'embarquement d'agent un de 45 s ; celui-ci, écrit par la
-     * même main sur le même motif, n'en avait aucun. Sans `signal`, ce n'est pas illimité pour autant : c'est
-     * le défaut d'undici qui coupe, MESURÉ à 309 s contre un serveur qui accepte et ne répond jamais. Trente
-     * fois le plafond du bouton voisin, sur une adresse que le client SAISIT lui-même, donc sur un hôte
-     * arbitraire dont la lenteur est choisie par autrui. C'est ce qui distingue ce chemin des clients Meta,
-     * RCS et Zadarma, qui tapent des hôtes fixes et de confiance.
+     * L'epreuve d'une source en pose un de 10 s, l'embarquement d'agent un de 45 s ; celui-ci, ecrit par la
+     * meme main sur le meme motif, n'en avait aucun. Sans `signal`, ce n'est pas illimite pour autant : c'est
+     * le defaut d'undici qui coupe, MESURE a 309 s contre un serveur qui accepte et ne repond jamais. Trente
+     * fois le plafond du bouton voisin, sur une adresse que le client SAISIT lui-meme, donc sur un hote
+     * arbitraire dont la lenteur est choisie par autrui.
      */
     const echeance = AbortSignal.timeout(deps.delaiTestMs ?? DELAI_TEST_MS);
     try {
@@ -324,50 +366,95 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
         signal: echeance,
       });
     } catch (err) {
-      return reply.code(200).send({ ok: false, erreur: `appel impossible : ${err instanceof Error ? err.message : 'erreur réseau'}` });
+      return { code: 200, body: { ok: false, erreur: `appel impossible : ${err instanceof Error ? err.message : 'erreur réseau'}` } };
     }
 
-    // Lecture bornée EN FLUX : `res.text()` chargeait tout en mémoire avant de couper à `MAX_APERCU`, donc un
-    // système client bavard remplissait le process pour un aperçu de quelques kilo-octets. On lit un peu plus
-    // que l'aperçu (pour savoir qu'il est tronqué) et pas un octet de plus.
+    // Lecture bornee EN FLUX : `res.text()` chargeait tout en memoire avant de couper a `MAX_APERCU`, donc un
+    // systeme client bavard remplissait le process pour un apercu de quelques kilo-octets.
     const lu = await lireCorpsBorne(res, MAX_APERCU * 2);
-    // 🔴 ET LE PLAFOND DOIT COUVRIR LA LECTURE DU CORPS, pas seulement l'établissement de la réponse. Un
-    // serveur qui rend ses en-têtes vite puis distille son corps épuise l'échéance ICI, et `lireCorpsBorne`
-    // avale l'abandon en rendant un texte vide : la route répondrait alors `ok: true`, `httpStatus: 200`,
-    // aperçu vide et aucun chemin, c'est-à-dire un SUCCÈS AU CORPS VIDE qui ferait chercher longtemps du
-    // mauvais côté. C'est le piège que `src/meta/http.ts` documente depuis le 2026-08-31.
+    // 🔴 ET LE PLAFOND DOIT COUVRIR LA LECTURE DU CORPS, pas seulement l'etablissement de la reponse. Un
+    // serveur qui rend ses en-tetes vite puis distille son corps epuise l'echeance ICI, et `lireCorpsBorne`
+    // avale l'abandon en rendant un texte vide : la route repondrait alors `ok: true`, apercu vide et aucun
+    // chemin, c'est-a-dire un SUCCES AU CORPS VIDE qui ferait chercher longtemps du mauvais cote.
     if (echeance.aborted) {
-      return reply.code(200).send({ ok: false, erreur: 'le système n’a pas répondu dans le temps imparti' });
+      return { code: 200, body: { ok: false, erreur: 'le système n’a pas répondu dans le temps imparti' } };
     }
-    // 🔴 ET L'ÉCHÉANCE N'EST PAS LE SEUL FAUX SUCCÈS POSSIBLE (audit du 2026-09-04). Un système qui coupe en
-    // plein corps, sans que l'échéance soit atteinte, produisait exactement la même réponse trompeuse :
-    // `ok: true`, `httpStatus: 200`, aperçu vide, aucun chemin. C'est le cas que la réécriture des tests de la
-    // veille avait cessé d'exercer, et il vivait toujours dans le code.
+    // 🔴 ET L'ECHEANCE N'EST PAS LE SEUL FAUX SUCCES POSSIBLE (audit du 2026-09-04). Un systeme qui coupe en
+    // plein corps, sans que l'echeance soit atteinte, produisait exactement la meme reponse trompeuse.
     if (lu.casse) {
-      return reply.code(200).send({ ok: false, erreur: 'la réponse a été interrompue en cours de lecture' });
+      return { code: 200, body: { ok: false, erreur: 'la réponse a été interrompue en cours de lecture' } };
     }
-    // Le corps trop gros était le troisième : la route l'ignorait et rendait un aperçu vide, là où ses deux
-    // routes sœurs refusent. Le plafond n'a de sens que si on le DIT.
+    // Le corps trop gros etait le troisieme : la route l'ignorait et rendait un apercu vide, la ou ses deux
+    // routes soeurs refusent. Le plafond n'a de sens que si on le DIT.
     if (lu.trop_gros) {
-      return reply.code(200).send({ ok: false, erreur: 'réponse trop volumineuse pour l’aperçu' });
+      return { code: 200, body: { ok: false, erreur: 'réponse trop volumineuse pour l’aperçu' } };
     }
     const brut = lu.texte.slice(0, MAX_APERCU);
     let json: unknown;
     try { json = JSON.parse(brut); } catch { json = undefined; }
-    return reply.code(200).send({
-      // `ok` décrit l'ASSEMBLAGE et l'aller-retour, pas le verdict du système du client : un 404 est une
-      // réponse valide à montrer, et la marquer en échec ferait chercher un problème chez nous.
-      ok: true,
-      httpStatus: res.status,
-      dureeMs: Date.now() - debut,
-      // Ce qui est PARTI, pour que le client voie ce que sa configuration produit vraiment. L'authentification
-      // n'y est pas : ces en-têtes-là sont ceux de la requête, la source ajoute les siens à l'envoi.
-      envoye: { url: appel.url, methode: appel.methode, corps: appel.corps },
-      apercu: brut,
-      // Les chemins à cocher, dérivés de la RÉPONSE RÉELLE : c'est ce qui évite d'avoir à écrire
-      // `livraison.date` de tête, et donc de découvrir sa faute de frappe en pleine conversation.
-      chemins: json === undefined ? [] : cheminsDeLaReponse(json),
-      risqueMinimum: risqueSelonMethode(requete.methode),
-    });
+    return {
+      code: 200,
+      body: {
+        // `ok` decrit l'ASSEMBLAGE et l'aller-retour, pas le verdict du systeme du client : un 404 est une
+        // reponse valide a montrer, et la marquer en echec ferait chercher un probleme chez nous.
+        ok: true,
+        httpStatus: res.status,
+        dureeMs: Date.now() - debut,
+        // Ce qui est PARTI, pour que le client voie ce que sa configuration produit vraiment.
+        envoye: { url: appel.url, methode: appel.methode, corps: appel.corps },
+        apercu: brut,
+        // Les chemins a cocher, derives de la REPONSE REELLE : c'est ce qui evite d'ecrire `livraison.date`
+        // de tete, et donc de decouvrir sa faute de frappe en pleine conversation.
+        chemins: json === undefined ? [] : cheminsDeLaReponse(json),
+        risqueMinimum: risqueSelonMethode(r.methode),
+      },
+    };
+  }
+
+  /**
+   * REJOUER un appel ENREGISTRE, tel qu'il est en base.
+   *
+   * ⚠️ CE N'EST PAS CE QUE LA CONSOLE APPELLE : son bouton « Essayer » eprouve ce qui est A L'ECRAN
+   * (`POST .../test`, juste en dessous), sinon il repondrait sur une adresse que le client vient de changer.
+   * Celle-ci reste la seule facon d'eprouver ce qui EST enregistre, et c'est elle que la suite de tests de
+   * securite emprunte : resolution d'adresse interne, plafond de temps, corps coupe, corps trop gros. Les
+   * deux routes partagent `executerTest`, donc ce qui est verifie ici vaut pour les deux.
+   */
+  app.post(`${base}/:id/test`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
+    const parse = testSchema.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'corps invalide' });
+    const requete = await deps.parId(tenant, id);
+    if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
+    const r = await executerTest(tenant, requete, parse.data.valeurs);
+    return reply.code(r.code).send(r.body);
   });
+
+  /**
+   * EPROUVER UN BROUILLON, c'est-a-dire un appel qui n'existe pas encore en base.
+   *
+   * 🔴 SANS ELLE, AUCUN APPEL NE POUVAIT ETRE CREE, et c'etait un blocage TOTAL, trouve par Julien le
+   * 2026-09-10 en essayant d'en declarer un. Le cycle etait ferme : enregistrer EXIGE au moins un champ de
+   * sortie, les champs de sortie se cochent dans la reponse d'un essai, et l'essai exigeait un appel
+   * ENREGISTRE. Le premier appel d'un client etait donc impossible, alors que l'ecran promet l'ordre inverse
+   * en toutes lettres : « quelles donnees on envoie, ou on les envoie, on essaie, on coche ce qu'on garde ».
+   *
+   * ⚠️ ELLE VALIDE COMME LA CREATION, moins ce qu'un brouillon ne peut pas encore avoir (son nom, ses champs
+   * de sortie) : en-tetes reserves, variables declarees, corps JSON valide. Un essai qui accepterait ce que
+   * l'enregistrement refuse ferait mettre au point un appel impossible a sauver.
+   */
+  app.post(`${base}/test`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const parse = brouillonTest.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'source, méthode et chemin requis' });
+    const pb = verifier(parse.data, await deps.clesDeChamps(tenant));
+    if (pb) return reply.code(400).send({ error: pb });
+    const r = await executerTest(tenant, parse.data, parse.data.valeurs);
+    return reply.code(r.code).send(r.body);
+  });
+
 }
