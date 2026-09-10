@@ -1407,8 +1407,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   publication ignorerait en silence serait pire qu'une case interdite.
   ⚠️ **Sur une action irréversible, la case demande une confirmation, et elle est franche** : chez Meta, la
   validation humaine que vous avez réglée sur l'agent **n'existe pas**. L'outil y sera appelé seul.
-- ✅ **Réservé aux administrateurs** : un utilisateur non administrateur voit la bibliothèque et qui utilise
-  quoi, mais ni la case, ni la suppression, ni la publication.
+- ⛔ **Réservé aux administrateurs, écran compris** : la route de lecture est admin comme les écritures, et
+  de toute façon un utilisateur non administrateur n'a accès qu'à l'Inbox. Vérifié dans le code, pas supposé :
+  la première version de cette ligne annonçait une lecture ouverte à tous, ce qui était faux.
 
 ### Publier chez Meta
 
