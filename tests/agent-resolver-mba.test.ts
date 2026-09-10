@@ -15,7 +15,7 @@ const CTX: ContexteAppel = {
 };
 
 const outil = (handler: string): OutilDefini => ({
-  id: 'to1', tenantId: 't1', agentId: 'ag1', origin: 'mba', name: `mba_${handler}`, description: '',
+  id: 'to1', tenantId: 't1', origin: 'mba', name: `mba_${handler}`, description: '',
   params: [], binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', outputPaths: [], risk: 'write', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
 });
 

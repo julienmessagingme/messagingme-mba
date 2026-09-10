@@ -55,7 +55,16 @@ export interface AgentToolsRouteDeps {
   patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
-  retirer(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+  /**
+   * Retire l'outil de CET agent. La définition reste dans l'espace (migration 0127).
+   *
+   * 🔴 ELLE S'APPELAIT `retirer` ET ELLE SUPPRIMAIT POUR TOUT LE MONDE. Le renommage n'est pas cosmétique :
+   * après 0127 les deux gestes existent, et un nom qui ne dit pas lequel il fait finirait par faire le
+   * mauvais, depuis l'écran d'un seul agent, en rendant muets ceux qu'on ne regardait pas.
+   */
+  detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+  /** Rend un outil de la bibliothèque de l'espace disponible pour cet agent, INACTIF. */
+  rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
   /** Les règles d'arrêt de la fiche : c'est d'elles que dérive l'énumération de l'outil « terminer ». */
   sortiesDeLAgent(tenantId: string, agentId: string): Promise<SortieAgent[] | null>;
 }
@@ -321,8 +330,30 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const { outilId } = req.params as { outilId: string };
     if (!estUuid(outilId)) return reply.code(404).send({ error: 'outil introuvable' });
-    const retire = await deps.retirer(ctx.tenant, ctx.agentId, outilId);
-    if (!retire) return reply.code(404).send({ error: 'outil introuvable' });
+    // DÉTACHE, ne supprime pas : la définition appartient à l'espace depuis la migration 0127.
+    const detache = await deps.detacher(ctx.tenant, ctx.agentId, outilId);
+    if (!detache) return reply.code(404).send({ error: 'outil introuvable' });
     return reply.code(204).send();
+  });
+
+  /**
+   * Rattacher ou détacher un outil de la bibliothèque, pour cet agent.
+   *
+   * ⚠️ SÉPARÉE DE `activation`, et pas fondue dedans : rattacher rend l'outil DISPONIBLE, activer l'expose
+   * au modèle. Un seul geste qui ferait les deux exposerait au modèle un outil dont personne n'a relu les
+   * mots, ce que la migration 0086 existe précisément pour empêcher.
+   */
+  app.put(`${base}/:outilId/rattachement`, opts, async (req, reply) => {
+    const ctx = contexte(req);
+    if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
+    const { outilId } = req.params as { outilId: string };
+    if (!estUuid(outilId)) return reply.code(404).send({ error: 'outil introuvable' });
+    const parse = drapeauSchema.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'valeur booléenne requise' });
+    const fait = parse.data.valeur
+      ? await deps.rattacher(ctx.tenant, ctx.agentId, outilId)
+      : await deps.detacher(ctx.tenant, ctx.agentId, outilId);
+    if (!fait) return reply.code(404).send({ error: 'outil introuvable' });
+    return reply.code(200).send({ rattache: parse.data.valeur });
   });
 }

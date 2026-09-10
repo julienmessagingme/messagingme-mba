@@ -24,7 +24,7 @@ const CTX: ContexteAppel = {
 };
 
 const OUTIL: OutilDefini = {
-  id: 'to1', tenantId: 't1', agentId: 'ag1', origin: 'mba', name: 'mba_chercher_connaissance', description: '',
+  id: 'to1', tenantId: 't1', origin: 'mba', name: 'mba_chercher_connaissance', description: '',
   params: [], binding: { handler: 'chercher_connaissance' }, sourceId: null, requestId: null, nePasUtiliser: '', outputPaths: [],
   risk: 'read', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
 };

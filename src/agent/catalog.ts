@@ -22,7 +22,11 @@ export type StatutAppel = 'ok' | 'erreur_outil' | 'refuse' | 'timeout' | 'erreur
 export interface OutilDefini {
   id: string;
   tenantId: string;
-  agentId: string;
+  /**
+   * ⚠️ PLUS D'`agentId` DEPUIS LA MIGRATION 0127. Un outil appartient désormais à l'ESPACE, et le couple
+   * (outil, consommateur) porte le consentement. L'agent qui a demandé cet outil est connu de l'APPELANT,
+   * qui vient de le nommer : le remettre sur la ligne recréerait la duplication qu'on vient de retirer.
+   */
   origin: OrigineOutil;
   /** Nom EXPOSÉ au modèle. */
   name: string;
@@ -90,6 +94,13 @@ export interface ToolCatalog {
 
   /** Les outils actifs d'un agent, pour construire ce qu'on expose au modèle. */
   listActifs(tenantId: string, agentId: string): Promise<OutilDefini[]>;
+
+  /**
+   * ⚠️ `listActifsConsommateur` EXISTE SUR L'IMPLÉMENTATION, PAS DANS CE CONTRAT, et c'est délibéré. C'est
+   * la porte par laquelle le Meta Business Agent entrera sans qu'on lui invente une fiche d'agent, mais
+   * aucun appelant ne l'utilise encore : l'exiger ici obligerait huit faux de test à écrire une méthode que
+   * personne n'appelle. Elle entrera dans le contrat le jour où un consommateur non-agent existe.
+   */
 }
 
 /** Un outil tel que l'écran de réglage le montre : tout ce que le runtime lit, plus qui a autorisé quoi. */
@@ -112,9 +123,9 @@ export interface PatchOutil {
   enums?: Record<string, string[]>;
 }
 
-/** Le nom exposé d'un outil est unique par agent (index de la migration 0086). */
+/** Le nom exposé d'un outil est unique par ESPACE (index de la migration 0127, il l'était par agent avant). */
 export class NomOutilDejaPris extends Error {
-  constructor() { super('un outil de cet agent porte déjà ce nom'); this.name = 'NomOutilDejaPris'; }
+  constructor() { super('un outil de cet espace porte déjà ce nom'); this.name = 'NomOutilDejaPris'; }
 }
 
 /**
@@ -149,7 +160,33 @@ export interface ToolAdminStore {
   /** Coche ou décoche l'autonomie sur une action irréversible. `parUtilisateur` vient du jeton. */
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
 
-  retirer(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+  /**
+   * Rend cet outil de l'espace disponible pour cet agent, INACTIF.
+   *
+   * ⚠️ LE RATTACHEMENT ET L'ACTIVATION SONT DEUX GESTES. Les fondre ferait qu'ajouter un outil de la
+   * bibliothèque à un agent l'exposerait au modèle dans la foulée, sans que personne ait relu ses mots :
+   * exactement ce que la migration 0086 existe pour empêcher.
+   * `false` = l'outil n'existe pas dans cet espace, ou il y est déjà rattaché.
+   */
+  rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+
+  /** Même geste, pour un consommateur qui n'est pas un agent (le MBA). */
+  rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean>;
+
+  /** Retire l'outil de CET agent. La définition reste dans l'espace. */
+  detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+
+  /** Active ou désactive pour un consommateur qui n'est pas un agent. */
+  activerConsommateur(tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
+
+  /**
+   * Supprime la DÉFINITION, donc pour tout le monde.
+   *
+   * 🔴 REFUSE tant qu'un consommateur y est rattaché (`'rattachee'`), même inactif. La contrainte de la
+   * migration 0127 est en `on delete cascade` : sans ce refus applicatif, supprimer une définition
+   * emporterait EN SILENCE le consentement d'agents qu'on ne regardait pas.
+   */
+  supprimerDefinition(tenantId: string, outilId: string): Promise<'ok' | 'rattachee' | 'introuvable'>;
 }
 
 export interface JournalAppels {

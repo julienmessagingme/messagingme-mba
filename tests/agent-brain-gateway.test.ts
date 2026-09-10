@@ -20,7 +20,7 @@ import { TourInterrompu } from '../src/agent/brain';
  */
 
 const OUTIL: OutilDefini = {
-  id: 'o1', tenantId: 't1', agentId: 'a1', origin: 'mba', name: 'mba_poser_tag',
+  id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag',
   description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'poser_tag' }, sourceId: null, requestId: null, nePasUtiliser: '', outputPaths: [], risk: 'write',
   timeoutMs: 8000, maxBytes: 16384, autonome: false,

@@ -1184,7 +1184,9 @@ async function main(): Promise<void> {
       patch: (tenant, agentId, id, p) => toolCatalog.patch(tenant, agentId, id, p),
       activer: (tenant, agentId, id, actif, par) => toolCatalog.activer(tenant, agentId, id, actif, par),
       autonomie: (tenant, agentId, id, autonome, par) => toolCatalog.autonomie(tenant, agentId, id, autonome, par),
-      retirer: (tenant, agentId, id) => toolCatalog.retirer(tenant, agentId, id),
+      // DÉTACHE de cet agent, ne supprime plus la définition : elle appartient à l'espace (migration 0127).
+      detacher: (tenant, agentId, id) => toolCatalog.detacher(tenant, agentId, id),
+      rattacher: (tenant, agentId, id) => toolCatalog.rattacher(tenant, agentId, id),
       // Les regles d'arret viennent de la FICHE : c'est d'elles que derive l'enumeration de « terminer ».
       sortiesDeLAgent: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);

@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgJournalAppels, PgToolCatalog } from '../../src/agent/catalog.pg';
 import { NomOutilDejaPris } from '../../src/agent/catalog';
+import { consommateurMba } from '../../src/agent/consommateur';
 import { PgUserStore } from '../../src/user/store.pg';
 import { PgAgentSessionStore } from '../../src/agent/session-store.pg';
 
@@ -170,6 +171,18 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
  * une seule instruction. Un faux store dirait oui à tout.
  */
 describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
+
+  /**
+   * Nettoyage de fin de test : DÉTACHE de l'agent puis supprime la DÉFINITION.
+   *
+   * 🔴 `retirer` FAISAIT LES DEUX EN UN, ET C'EST CE QUE LA MIGRATION 0127 SÉPARE. Ne faire que détacher
+   * laisserait les définitions s'accumuler dans l'espace de test, et le test suivant buterait sur l'unicité
+   * du nom PAR ESPACE, avec une erreur qui n'aurait aucun rapport avec ce qu'il vérifie.
+   */
+  const retirerCompletement = async (t: string, a: string, id: string): Promise<void> => {
+    await catalogue.detacher(t, a, id);
+    await catalogue.supprimerDefinition(t, id);
+  };
   let pool: Pool;
   let catalogue: PgToolCatalog;
   let tenantId: string;
@@ -226,7 +239,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     expect(outil!.origin).toBe('mba');
     // Et il n'est PAS dans ce que le runtime expose, puisqu'il n'est pas actif.
     expect(await catalogue.listActifs(tenantId, agentId)).toEqual([]);
-    await catalogue.retirer(tenantId, agentId, outil!.id);
+    await retirerCompletement(tenantId, agentId, outil!.id);
   });
 
   it('🔴 un agent d un AUTRE tenant ne peut pas recevoir d outil, et rien n est ecrit', async () => {
@@ -238,7 +251,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
   it('deux outils du meme agent ne peuvent pas porter le meme nom expose', async () => {
     const un = await catalogue.ajouter(tenantId, agentId, modele);
     await expect(catalogue.ajouter(tenantId, agentId, modele)).rejects.toThrow(NomOutilDejaPris);
-    await catalogue.retirer(tenantId, agentId, un!.id);
+    await retirerCompletement(tenantId, agentId, un!.id);
   });
 
   it('🔴 activer ecrit QUI a active, et desactiver l efface', async () => {
@@ -258,7 +271,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     expect(inactif!.activeLe).toBeNull();
     const apres = await pool.query<{ active_par: string | null }>('select active_par from agent_tools where id = $1', [outil.id]);
     expect(apres.rows[0]!.active_par).toBeNull();
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    await retirerCompletement(tenantId, agentId, outil.id);
   });
 
   it('l autonomie se pose et se retire de la meme facon', async () => {
@@ -269,7 +282,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     const retire = await catalogue.autonomie(tenantId, agentId, outil.id, false, adminId);
     expect(retire!.autonome).toBe(false);
     expect(retire!.autonomeLe).toBeNull();
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    await retirerCompletement(tenantId, agentId, outil.id);
   });
 
   it('🔴 corriger les enumerations reecrit le jsonb SANS toucher au reste du parametre', async () => {
@@ -288,7 +301,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     // Et une liste vide EFFACE la restriction, elle ne la laisse pas en place.
     const vide = await catalogue.patch(tenantId, agentId, outil.id, { enums: { tag: [] } });
     expect(vide!.params).toEqual([{ name: 'tag', type: 'string', source: 'modele', required: true, enum: [] }]);
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    await retirerCompletement(tenantId, agentId, outil.id);
   });
 
   it('🔴 un AUTRE tenant ne peut ni lire, ni corriger, ni activer, ni retirer', async () => {
@@ -297,12 +310,12 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     expect(await catalogue.patch(autreTenantId, agentId, outil.id, { title: 'Detourne' })).toBeNull();
     expect(await catalogue.activer(autreTenantId, agentId, outil.id, true, adminId)).toBeNull();
     expect(await catalogue.autonomie(autreTenantId, agentId, outil.id, true, adminId)).toBeNull();
-    expect(await catalogue.retirer(autreTenantId, agentId, outil.id)).toBe(false);
+    expect(await catalogue.detacher(autreTenantId, agentId, outil.id)).toBe(false);
     // Et l outil est intact : un refus qui aurait quand meme ecrit ne serait pas un refus.
     const apres = (await catalogue.listToutes(tenantId, agentId))[0]!;
     expect(apres.title).toBe('Poser un tag');
     expect(apres.actif).toBe(false);
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    await retirerCompletement(tenantId, agentId, outil.id);
   });
 
   it('🔴 l agent de l URL fait partie du perimetre, pas seulement le tenant', async () => {
@@ -316,8 +329,8 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     const outil = (await catalogue.ajouter(tenantId, agentId, modele))!;
     expect(await catalogue.patch(tenantId, autre, outil.id, { title: 'Detourne' })).toBeNull();
     expect(await catalogue.activer(tenantId, autre, outil.id, true, adminId)).toBeNull();
-    expect(await catalogue.retirer(tenantId, autre, outil.id)).toBe(false);
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    expect(await catalogue.detacher(tenantId, autre, outil.id)).toBe(false);
+    await retirerCompletement(tenantId, agentId, outil.id);
   });
 
   it('🔴 supprimer l utilisateur qui a active un outil ne casse PAS la suppression', async () => {
@@ -344,7 +357,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     expect(apres.autonome).toBe(false);
     expect(apres.activeLe).toBeNull();
     expect(apres.autonomeLe).toBeNull();
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    await retirerCompletement(tenantId, agentId, outil.id);
   });
 
   it('un refus de suppression n eteint AUCUN outil', async () => {
@@ -358,6 +371,110 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
 
     const apres = (await catalogue.listToutes(tenantId, agentId)).find((o) => o.id === outil.id)!;
     expect(apres.actif).toBe(true);
-    await catalogue.retirer(tenantId, agentId, outil.id);
+    await retirerCompletement(tenantId, agentId, outil.id);
+  });
+
+  /**
+   * 🔴 LE COEUR DE LA MIGRATION 0127 : la DÉFINITION est partagée, le CONSENTEMENT ne l'est pas.
+   *
+   * Sans cette séparation, remonter les outils au niveau de l'espace les aurait rendus actifs pour tous les
+   * agents d'un coup, ce qui aurait vidé de son contenu la règle que 0086 pose en base : un outil n'est actif
+   * que si un humain l'a activé.
+   */
+  describe('la définition se partage, le consentement non', () => {
+    it('🔴 un outil n’est actif QUE pour le consommateur qui l’a activé', async () => {
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'partage_actif' });
+      await catalogue.rattacher(tenantId, agentDeLAutre, outil!.id);
+      await catalogue.activer(tenantId, agentId, outil!.id, true, adminId);
+
+      expect(await catalogue.byName(tenantId, agentId, 'partage_actif')).not.toBeNull();
+      expect(await catalogue.byName(tenantId, agentDeLAutre, 'partage_actif')).toBeNull();
+      await catalogue.detacher(tenantId, agentDeLAutre, outil!.id);
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
+
+    it('🔴 le MBA est un consommateur comme un autre, sur la MÊME définition', async () => {
+      // C'est la porte par laquelle le Meta Business Agent entre sans qu'on lui invente une fiche d'agent,
+      // sans modèle et sans crédit. Une définition, deux consentements parfaitement indépendants.
+      const mba = consommateurMba('1234840649713976');
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'partage_mba' });
+      await catalogue.rattacherConsommateur(tenantId, mba, outil!.id);
+      await catalogue.activerConsommateur(tenantId, mba, outil!.id, true, adminId);
+
+      expect((await catalogue.listActifsConsommateur(tenantId, mba)).map((o) => o.name)).toContain('partage_mba');
+      // L'agent, lui, ne l'a pas activé : son consentement est le sien.
+      expect(await catalogue.byName(tenantId, agentId, 'partage_mba')).toBeNull();
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
+
+    it('🔴 l’isolation entre clients tient sur la JOINTURE, pas seulement sur l’outil', async () => {
+      // Le nom d'outil vient du MODÈLE, donc d'un texte qu'un contact peut influencer. Si la clause `where`
+      // de la jointure oubliait le tenant, une injection réussie appellerait l'outil d'un autre client.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'isole_jointure' });
+      await catalogue.activer(tenantId, agentId, outil!.id, true, adminId);
+      expect(await catalogue.byName(autreTenantId, agentId, 'isole_jointure')).toBeNull();
+      expect(await catalogue.listActifs(autreTenantId, agentId)).toEqual([]);
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
+
+    it('🔴 créer un outil depuis un agent le RATTACHE à cet agent, INACTIF', async () => {
+      // Le geste du client n'a pas changé (« j'ajoute un outil à mon agent »). Ce qui a changé, c'est qu'il
+      // crée une définition d'espace PLUS un rattachement. Sans le rattachement, l'outil serait créé et
+      // invisible dans l'onglet d'où on vient de le créer.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'neuf_rattache' });
+      expect(outil).not.toBeNull();
+      expect(outil!.actif).toBe(false);
+      expect((await catalogue.listToutes(tenantId, agentId)).map((o) => o.name)).toContain('neuf_rattache');
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
+
+    it('🔴 détacher un outil d’un agent ne le supprime PAS de l’espace', async () => {
+      // C'est le changement de sens du bouton « supprimer » de l'onglet d'un agent : il retire l'outil DE CET
+      // AGENT. Le supprimer pour tout le monde depuis l'écran d'un seul casserait les autres en silence.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'garde_definition' });
+      await catalogue.rattacher(tenantId, agentDeLAutre, outil!.id);
+      expect(await catalogue.detacher(tenantId, agentId, outil!.id)).toBe(true);
+      expect((await catalogue.listToutes(tenantId, agentId)).map((o) => o.name)).not.toContain('garde_definition');
+      expect((await catalogue.listToutes(tenantId, agentDeLAutre)).map((o) => o.name)).toContain('garde_definition');
+      await retirerCompletement(tenantId, agentDeLAutre, outil!.id);
+    });
+
+    it('🔴 supprimer une DÉFINITION encore rattachée est REFUSÉ, pas silencieux', async () => {
+      // Même doctrine que la suppression d'une source qui porte des outils actifs : ce qui rendrait un agent
+      // muet doit se refuser en le disant, pas se faire. La contrainte est en cascade, donc sans ce refus la
+      // suppression emporterait le consentement d'agents qu'on ne regardait pas.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'occupee' });
+      expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('rattachee');
+      await catalogue.detacher(tenantId, agentId, outil!.id);
+      expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('ok');
+      expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('introuvable');
+    });
+
+    it('🔴 un nom d’outil est pris pour tout l’ESPACE, plus seulement pour l’agent', async () => {
+      const un = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'unique_espace' });
+      await expect(catalogue.ajouter(tenantId, agentDeLAutre, { ...modele, name: 'unique_espace' }))
+        .rejects.toBeInstanceOf(NomOutilDejaPris);
+      await retirerCompletement(tenantId, agentId, un!.id);
+    });
+
+    it('🔴 activer pour un consommateur NON rattaché ne crée RIEN', async () => {
+      // Sinon `activer` deviendrait un rattachement implicite, et un identifiant d'agent erroné poserait un
+      // consentement sur un consommateur qui n'existe nulle part, invisible de tous les écrans.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'pas_rattache' });
+      expect(await catalogue.activer(tenantId, agentDeLAutre, outil!.id, true, adminId)).toBeNull();
+      expect(await catalogue.byName(tenantId, agentDeLAutre, 'pas_rattache')).toBeNull();
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
+
+    it('🔴 désactiver EFFACE l’activateur, sur la ligne de liaison', async () => {
+      // Ces colonnes disent « qui l'a mis en service, et quand », pas « qui y a touché un jour ». Les garder
+      // ferait afficher un consentement qui n'a plus cours.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'bascule_activateur' });
+      await catalogue.activer(tenantId, agentId, outil!.id, true, adminId);
+      const eteint = await catalogue.activer(tenantId, agentId, outil!.id, false, adminId);
+      expect(eteint!.actif).toBe(false);
+      expect(eteint!.activeLe).toBeNull();
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
   });
 });

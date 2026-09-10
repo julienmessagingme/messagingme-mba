@@ -37,7 +37,7 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const OUTIL: OutilComplet = {
-  id: OUT, tenantId: 't1', agentId: AG, origin: 'mba', name: 'mba_terminer',
+  id: OUT, tenantId: 't1', origin: 'mba', name: 'mba_terminer',
   title: 'Terminer', description: 'Termine la conversation.', nePasUtiliser: 'Pas pour escalader.',
   params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'terminer' }, sourceId: null, requestId: null, outputPaths: [], risk: 'read',
@@ -70,6 +70,7 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
     activations: [] as Array<{ tenant: string; id: string; actif: boolean; par: string }>,
     autonomies: [] as Array<{ tenant: string; id: string; autonome: boolean; par: string }>,
     retraits: [] as Array<{ tenant: string; id: string }>,
+    rattachements: [] as Array<{ tenant: string; id: string }>,
     connecteurs: [] as Array<{ tenant: string; agentId: string; outil: Record<string, unknown> }>,
   };
   const deps: AgentToolsRouteDeps = {
@@ -94,7 +95,10 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
       cap.autonomies.push({ tenant, id, autonome, par });
       return id === OUT ? { ...OUTIL, autonome } : null;
     },
-    retirer: async (tenant, _a, id) => { cap.retraits.push({ tenant, id }); return id === OUT; },
+    // 🔴 DÉTACHE, ne supprime plus : depuis la migration 0127 la définition appartient à l'ESPACE, et la
+    // supprimer depuis l'écran d'un seul agent rendrait muets ceux qu'on ne regardait pas.
+    detacher: async (tenant, _a, id) => { cap.retraits.push({ tenant, id }); return id === OUT; },
+    rattacher: async (tenant, _a, id) => { cap.rattachements.push({ tenant, id }); return id === OUT; },
     ajouterConnecteur: async (tenant, agentId, outil) => {
       cap.connecteurs.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
       if (outil.name === 'deja_pris') throw new NomOutilDejaPris();

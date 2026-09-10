@@ -1,14 +1,14 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type {
   JournalAppels, OutilComplet, OutilDefini, PatchOutil, RisqueOutil, ToolAdminStore, ToolCatalog,
 } from './catalog';
 import { NomOutilDejaPris } from './catalog';
 import { asRecord } from '../webhooks/json';
+import { consommateurAgent } from './consommateur';
 
 interface Ligne {
   id: string;
   tenant_id: string;
-  agent_id: string;
   origin: OutilDefini['origin'];
   name: string;
   description: string;
@@ -24,16 +24,30 @@ interface Ligne {
   autonome: boolean;
 }
 
-/** Colonnes lues par les deux requêtes. Une seule liste : deux projections divergentes finiraient par ne plus
- *  rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution. */
-const COLONNES = `id, tenant_id, agent_id, origin, name, description, ne_pas_utiliser, params, binding,
-                  source_id, request_id, output_paths, risk, timeout_ms, max_bytes, autonome`;
+/**
+ * La jointure, écrite UNE fois. `c.tenant_id = t.tenant_id` est dans la JOINTURE en plus du `where` : le
+ * second suffirait à l'isolation entre clients, le premier empêche en plus une ligne de liaison mal écrite
+ * (portant le tenant d'un autre client) de rattacher un outil qui n'est pas le sien.
+ */
+const JOINTURE = `from agent_tools t
+                  join agent_tool_consommateurs c on c.tool_id = t.id and c.tenant_id = t.tenant_id`;
+
+/**
+ * Colonnes lues par TOUTES les requêtes. Une seule liste : deux projections divergentes finiraient par ne
+ * plus rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution.
+ *
+ * 🔴 `autonome` VIENT DE `c`, LA LIAISON, PAS DE `t`. C'est un consentement, il est par consommateur. Le lire
+ * sur `t` rendrait l'ancienne colonne tant que 0128 ne l'a pas retirée : silencieusement juste pour le
+ * premier consommateur, et faux pour tous les autres.
+ */
+const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
+                  t.binding, t.source_id, t.request_id, t.output_paths, t.risk, t.timeout_ms, t.max_bytes,
+                  c.autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
   return {
     id: r.id,
     tenantId: r.tenant_id,
-    agentId: r.agent_id,
     origin: r.origin,
     name: r.name,
     description: r.description,
@@ -70,30 +84,40 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
 
   async byName(tenantId: string, agentId: string, name: string): Promise<OutilDefini | null> {
     const res = await this.pool.query<Ligne>(
-      `select ${COLONNES} from agent_tools
-        where tenant_id = $1 and agent_id = $2 and name = $3 and actif`,
-      [tenantId, agentId, name],
+      `select ${COLONNES} ${JOINTURE}
+        where t.tenant_id = $1 and c.consommateur = $2 and t.name = $3 and c.actif`,
+      [tenantId, consommateurAgent(agentId), name],
     );
     const r = res.rows[0];
     return r ? versOutil(r) : null;
   }
 
   async listActifs(tenantId: string, agentId: string): Promise<OutilDefini[]> {
+    return this.listActifsConsommateur(tenantId, consommateurAgent(agentId));
+  }
+
+  async listActifsConsommateur(tenantId: string, consommateur: string): Promise<OutilDefini[]> {
     const res = await this.pool.query<Ligne>(
-      `select ${COLONNES} from agent_tools
-        where tenant_id = $1 and agent_id = $2 and actif order by name`,
-      [tenantId, agentId],
+      `select ${COLONNES} ${JOINTURE}
+        where t.tenant_id = $1 and c.consommateur = $2 and c.actif
+        order by t.name`,
+      [tenantId, consommateur],
     );
     return res.rows.map(versOutil);
   }
 
   // ---------- Écriture : l'écran de réglage (tranche 19c) ----------
 
+  /**
+   * ⚠️ JOINTURE INTERNE, ET C'EST DÉLIBÉRÉ. L'onglet Outils d'un agent montre ce que CET agent utilise, pas
+   * tout le catalogue de l'espace : la bibliothèque complète est un autre écran. Passer en `left join` ferait
+   * apparaître, dans chaque agent, les outils de tous les autres.
+   */
   async listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]> {
     const res = await this.pool.query<LigneAdmin>(
-      `select ${COLONNES_ADMIN} from agent_tools
-        where tenant_id = $1 and agent_id = $2 order by name`,
-      [tenantId, agentId],
+      `select ${COLONNES_ADMIN} ${JOINTURE}
+        where t.tenant_id = $1 and c.consommateur = $2 order by t.name`,
+      [tenantId, consommateurAgent(agentId)],
     );
     return res.rows.map(versComplet);
   }
@@ -105,23 +129,32 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     // `origin` vaut 'mba' en dur : L1 n'a que des outils maison, et le corps de la requête n'a rien à dire
     // là-dessus. `actif` reste à son défaut (faux) : la migration 0086 refuserait un actif sans activateur,
     // et surtout un outil actif d'emblée serait exposé au modèle avant que quiconque ait relu ses mots.
-    const res = await this.pool.query<LigneAdmin>(
-      `insert into agent_tools
-         (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
-       select $1, $2, 'mba', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9
-        where exists (select 1 from agents where id = $2 and tenant_id = $1)
-       returning ${COLONNES_ADMIN}`,
-      [
-        tenantId, agentId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
-        JSON.stringify(outil.params ?? []),
-        // `binding.handler` est ce qui donne son COMPORTEMENT à l'outil : le résolveur maison le lit là, et
-        // jamais dans le nom exposé, que le client peut changer.
-        JSON.stringify({ handler: outil.handler }),
-        outil.risk,
-      ],
-    ).catch(surNomDejaPris);
-    const r = res.rows[0];
-    return r ? versComplet(r) : null;
+    // 🔴 DEUX ÉCRITURES, DONC UNE TRANSACTION. Une définition créée sans son rattachement serait un outil
+    // qui n'apparaît dans AUCUN écran : ni dans l'agent d'où on vient de le créer, ni ailleurs.
+    return this.enTransaction(async (client) => {
+      const res = await client.query<{ id: string }>(
+        `insert into agent_tools
+           (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+         select $1, 'mba', $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8
+          where exists (select 1 from agents where id = $9 and tenant_id = $1)
+         returning id`,
+        [
+          tenantId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
+          JSON.stringify(outil.params ?? []),
+          // `binding.handler` est ce qui donne son COMPORTEMENT à l'outil : le résolveur maison le lit là, et
+          // jamais dans le nom exposé, que le client peut changer.
+          JSON.stringify({ handler: outil.handler }),
+          outil.risk, agentId,
+        ],
+      ).catch(surNomDejaPris);
+      const id = res.rows[0]?.id;
+      if (!id) return null;
+      await client.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, consommateurAgent(agentId)],
+      );
+      return this.completAvecClient(client, tenantId, consommateurAgent(agentId), id);
+    });
   }
 
   /**
@@ -135,29 +168,36 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
   }): Promise<OutilComplet | null> {
-    const res = await this.pool.query<LigneAdmin>(
-      // ⚠️ L'appel n'est PLUS décrit ici (migration 0105) : `binding` reste vide et `output_paths` aussi,
-      // parce que la REQUÊTE les porte. Les remplir en double créerait deux vérités, dont une que le
-      // résolveur ne lit pas, donc une que personne ne verrait diverger.
-      //
-      // Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
-      // tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
-      `insert into agent_tools
-         (tenant_id, agent_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, risk)
-       select $1, $2, 'http', $3, $4, $5, $6, $7, $8, $9::jsonb, '{}'::jsonb, '{}'::text[], $10
-        where exists (select 1 from agents where id = $2 and tenant_id = $1)
-          and exists (select 1 from agent_tool_sources where id = $3 and tenant_id = $1)
-          and exists (select 1 from connector_requests where id = $4 and tenant_id = $1)
-       returning ${COLONNES_ADMIN}`,
-      [
-        tenantId, agentId, outil.sourceId, outil.requestId,
-        outil.name, outil.title, outil.description, outil.nePasUtiliser,
-        JSON.stringify(outil.params ?? []),
-        outil.risk,
-      ],
-    ).catch(surNomDejaPris);
-    const r = res.rows[0];
-    return r ? versComplet(r) : null;
+    return this.enTransaction(async (client) => {
+      const res = await client.query<{ id: string }>(
+        // ⚠️ L'appel n'est PLUS décrit ici (migration 0105) : `binding` reste vide et `output_paths` aussi,
+        // parce que la REQUÊTE les porte. Les remplir en double créerait deux vérités, dont une que le
+        // résolveur ne lit pas, donc une que personne ne verrait diverger.
+        //
+        // Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
+        // tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
+        `insert into agent_tools
+           (tenant_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, risk)
+         select $1, 'http', $2, $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, '{}'::text[], $9
+          where exists (select 1 from agents where id = $10 and tenant_id = $1)
+            and exists (select 1 from agent_tool_sources where id = $2 and tenant_id = $1)
+            and exists (select 1 from connector_requests where id = $3 and tenant_id = $1)
+         returning id`,
+        [
+          tenantId, outil.sourceId, outil.requestId,
+          outil.name, outil.title, outil.description, outil.nePasUtiliser,
+          JSON.stringify(outil.params ?? []),
+          outil.risk, agentId,
+        ],
+      ).catch(surNomDejaPris);
+      const id = res.rows[0]?.id;
+      if (!id) return null;
+      await client.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, consommateurAgent(agentId)],
+      );
+      return this.completAvecClient(client, tenantId, consommateurAgent(agentId), id);
+    });
   }
 
   async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
@@ -190,57 +230,149 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   async activer(
     tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string,
   ): Promise<OutilComplet | null> {
-    // Désactiver EFFACE l'activateur : ces deux colonnes disent « qui l'a mis en service, et quand », pas
-    // « qui y a touché un jour ». Les garder ferait afficher un consentement qui n'a plus cours.
-    const res = await this.pool.query<LigneAdmin>(
-      `update agent_tools set
+    return this.activerConsommateur(tenantId, consommateurAgent(agentId), outilId, actif, parUtilisateur);
+  }
+
+  /**
+   * ⚠️ `update`, JAMAIS `insert ... on conflict` : activer n'est PAS un rattachement implicite. Un
+   * identifiant d'agent erroné doit rendre `null`, pas fabriquer un consentement pour un consommateur qui
+   * n'existe nulle part et que plus aucun écran ne montrerait.
+   *
+   * Désactiver EFFACE l'activateur : ces deux colonnes disent « qui l'a mis en service, et quand », pas
+   * « qui y a touché un jour ». Les garder ferait afficher un consentement qui n'a plus cours.
+   */
+  async activerConsommateur(
+    tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string,
+  ): Promise<OutilComplet | null> {
+    const res = await this.pool.query(
+      `update agent_tool_consommateurs set
          actif = $4,
          active_par = case when $4 then $5::uuid else null end,
          active_le = case when $4 then now() else null end,
          updated_at = now()
-       where tenant_id = $1 and agent_id = $2 and id = $3
-       returning ${COLONNES_ADMIN}`,
-      [tenantId, agentId, outilId, actif, parUtilisateur],
+       where tenant_id = $1 and consommateur = $2 and tool_id = $3`,
+      [tenantId, consommateur, outilId, actif, parUtilisateur],
     );
-    const r = res.rows[0];
-    return r ? versComplet(r) : null;
+    if ((res.rowCount ?? 0) === 0) return null;
+    return this.complet(tenantId, consommateur, outilId);
   }
 
   async autonomie(
     tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string,
   ): Promise<OutilComplet | null> {
-    const res = await this.pool.query<LigneAdmin>(
-      `update agent_tools set
+    const consommateur = consommateurAgent(agentId);
+    const res = await this.pool.query(
+      `update agent_tool_consommateurs set
          autonome = $4,
          autonome_par = case when $4 then $5::uuid else null end,
          autonome_le = case when $4 then now() else null end,
          updated_at = now()
-       where tenant_id = $1 and agent_id = $2 and id = $3
-       returning ${COLONNES_ADMIN}`,
-      [tenantId, agentId, outilId, autonome, parUtilisateur],
+       where tenant_id = $1 and consommateur = $2 and tool_id = $3`,
+      [tenantId, consommateur, outilId, autonome, parUtilisateur],
+    );
+    if ((res.rowCount ?? 0) === 0) return null;
+    return this.complet(tenantId, consommateur, outilId);
+  }
+
+  async rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
+    return this.rattacherConsommateur(tenantId, consommateurAgent(agentId), outilId);
+  }
+
+  /**
+   * Le `where exists` vérifie que l'outil est de CE tenant : une clé étrangère lèverait en 500, dont
+   * Cloudflare remplace le corps. `do nothing` rend un rattachement répété inoffensif.
+   */
+  async rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
+       select $1, $2, $3 where exists (select 1 from agent_tools where id = $2 and tenant_id = $1)
+       on conflict (tool_id, consommateur) do nothing`,
+      [tenantId, outilId, consommateur],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
+      [tenantId, consommateurAgent(agentId), outilId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async supprimerDefinition(tenantId: string, outilId: string): Promise<'ok' | 'rattachee' | 'introuvable'> {
+    return this.enTransaction(async (client) => {
+      // `for update` sur la définition : sans lui, un rattachement concurrent passerait entre le comptage et
+      // la suppression, et la cascade emporterait le consentement qui vient d'être posé.
+      const exist = await client.query(
+        'select 1 from agent_tools where tenant_id = $1 and id = $2 for update',
+        [tenantId, outilId],
+      );
+      if ((exist.rowCount ?? 0) === 0) return 'introuvable';
+      const rattachee = await client.query(
+        'select 1 from agent_tool_consommateurs where tenant_id = $1 and tool_id = $2 limit 1',
+        [tenantId, outilId],
+      );
+      if ((rattachee.rowCount ?? 0) > 0) return 'rattachee';
+      await client.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, outilId]);
+      return 'ok';
+    });
+  }
+
+  // ---------- Aides privées ----------
+
+  private async enTransaction<T>(travail: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const r = await travail(client);
+      await client.query('commit');
+      return r;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async complet(tenantId: string, consommateur: string, outilId: string): Promise<OutilComplet | null> {
+    const client = await this.pool.connect();
+    try {
+      return await this.completAvecClient(client, tenantId, consommateur, outilId);
+    } finally {
+      client.release();
+    }
+  }
+
+  private async completAvecClient(
+    client: PoolClient, tenantId: string, consommateur: string, outilId: string,
+  ): Promise<OutilComplet | null> {
+    const res = await client.query<LigneAdmin>(
+      `select ${COLONNES_ADMIN} ${JOINTURE}
+        where t.tenant_id = $1 and c.consommateur = $2 and t.id = $3`,
+      [tenantId, consommateur, outilId],
     );
     const r = res.rows[0];
     return r ? versComplet(r) : null;
   }
-
-  async retirer(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
-    const res = await this.pool.query(
-      'delete from agent_tools where tenant_id = $1 and agent_id = $2 and id = $3',
-      [tenantId, agentId, outilId],
-    );
-    return (res.rowCount ?? 0) > 0;
-  }
 }
 
-/** L'index unique `(agent_id, name)` de la migration 0086, traduit en erreur métier. Sans ça, deux outils du
- *  même nom remontaient en 500, dont Cloudflare remplace le corps : le client ne voyait rien. */
+/**
+ * L'index unique `(tenant_id, name)` de la migration 0127, traduit en erreur métier. Sans ça, deux outils du
+ * même nom remontaient en 500, dont Cloudflare remplace le corps : le client ne voyait rien.
+ *
+ * ⚠️ IL PORTAIT SUR `(agent_id, name)` JUSQU'À 0127. La portée s'est ÉLARGIE : un nom pris par l'agent du
+ * voisin bloque désormais la création, ce qui est le comportement voulu (une définition par nom et par
+ * espace) mais change ce que le message veut dire. D'où « un outil de cet ESPACE » et non « de cet agent ».
+ */
 function surNomDejaPris(err: unknown): never {
   if ((err as { code?: string } | null)?.code === '23505') throw new NomOutilDejaPris();
   throw err;
 }
 
 // `ne_pas_utiliser` n'y est plus : elle est passée dans `COLONNES`, que le RUNTIME lit aussi.
-const COLONNES_ADMIN = `${COLONNES}, title, actif, active_le, autonome_le`;
+const COLONNES_ADMIN = `${COLONNES}, t.title, c.actif, c.active_le, c.autonome_le`;
 
 interface LigneAdmin extends Ligne {
   title: string;

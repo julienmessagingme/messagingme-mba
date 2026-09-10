@@ -12,7 +12,6 @@ import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catal
 const OUTIL: OutilDefini = {
   id: 'to1',
   tenantId: 't1',
-  agentId: 'ag1',
   origin: 'mba',
   nePasUtiliser: '',
   name: 'lire_commande',

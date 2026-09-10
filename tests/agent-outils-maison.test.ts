@@ -15,7 +15,7 @@ import type { OutilDefini } from '../src/agent/catalog';
  */
 
 const outil = (params: unknown, handler = 'terminer'): OutilDefini => ({
-  id: 'o1', tenantId: 't1', agentId: 'a1', origin: 'mba', name: 'mba_terminer',
+  id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_terminer',
   description: 'Termine.', params, binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false,
 });
