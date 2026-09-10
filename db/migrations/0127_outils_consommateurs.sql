@@ -85,7 +85,8 @@ begin
   end if;
 end $$;
 
--- 🔴 `agent_id` DEVIENT NULLABLE, ET C EST CE QUI REND LA FENETRE DE COEXISTENCE POSSIBLE. Cette migration
+-- 🔴 `agent_id` DEVIENT NULLABLE, PREMIER DES DEUX GESTES QUI RENDENT LA COEXISTENCE POSSIBLE (le second
+-- est le retrait de sa cascade, juste en dessous). Cette migration
 -- « n ajoute que », disait le plan, et c etait FAUX sur ce point : le nouveau code n ecrit plus `agent_id`
 -- (l outil appartient a l espace), or la colonne etait NOT NULL jusqu a 0128. Toute creation d outil aurait
 -- echoue en 23502 entre le deploiement et la 0128, c est-a-dire exactement pendant la fenetre censee etre la
@@ -95,6 +96,25 @@ end $$;
 -- ce qui distingue ce geste d un RETRAIT, et c est pour ca qu il a sa place ici et non dans 0128. La colonne
 -- elle-meme part avec 0128, une fois le nouveau code vu en production.
 alter table agent_tools alter column agent_id drop not null;
+
+-- 🔴 ET SA CASCADE DOIT PARTIR AUSSI, sinon supprimer un agent DETRUIT des definitions PARTAGEES. La cle
+-- etrangere de 0086 est `on delete cascade` : tant qu elle existe, l outil que trois agents utilisent
+-- disparait avec le premier des trois qu on supprime. C est exactement ce que la migration 0127 existe pour
+-- empecher, et la colonne survivante l aurait fait dans le dos de tout le monde jusqu a la 0128.
+--
+-- ⚠️ Le nom de la contrainte est LU en base, jamais devine : nommee automatiquement en 0086, un nom devine a
+-- cote laisserait la cascade en place et un `if exists` ne protege que de l absence.
+do $$
+declare nom text;
+begin
+  select conname into nom from pg_constraint
+   where conrelid = 'agent_tools'::regclass and contype = 'f'
+     and conkey = array[(select attnum from pg_attribute
+                          where attrelid = 'agent_tools'::regclass and attname = 'agent_id')];
+  if nom is not null then
+    execute format('alter table agent_tools drop constraint %I', nom);
+  end if;
+end $$;
 
 -- Le nom expose devient unique par ESPACE, plus par agent. Pas de `lower()` : la contrainte
 -- `name ~ '^[a-z0-9_]{1,64}$'` de 0086 garantit deja des minuscules, et un `lower()` inutile ferait croire

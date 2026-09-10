@@ -203,7 +203,15 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
     // Les énumérations sont réécrites DANS le jsonb, en une instruction : une lecture suivie d'une écriture
     // laisserait deux administrateurs se recouvrir en silence sur la même colonne.
-    const res = await this.pool.query<LigneAdmin>(
+    const res = await this.pool.query<{ id: string }>(
+      // 🔴 AUCUN ALIAS SUR LA TABLE MISE A JOUR, et surtout PAS `returning ${COLONNES_ADMIN}` : cette liste
+      // porte desormais les prefixes `t.` et `c.` de la JOINTURE, qui n existent pas dans un UPDATE. Postgres
+      // repond « missing FROM-clause entry for table t », et c est ce qu il a repondu en CI.
+      //
+      // ⚠️ LE PERIMETRE A CHANGE : `agent_id = $2` n existe plus (la colonne part avec 0128). C est un
+      // `exists` sur la LIAISON qui le remplace, et il n est pas decoratif : sans lui, l ecran d un agent
+      // pourrait corriger les mots d un outil qu il n utilise pas, donc changer le comportement de l agent
+      // du voisin.
       `update agent_tools set
          name = coalesce($4, name),
          title = coalesce($5, title),
@@ -215,16 +223,20 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
                   then jsonb_set(p - 'enum', '{enum}', $8::jsonb -> (p->>'name'))
                   else p end
              order by ord), '[]'::jsonb)
-             from jsonb_array_elements(params) with ordinality as t(p, ord)
+             from jsonb_array_elements(agent_tools.params) with ordinality as x(p, ord)
          ) end,
          updated_at = now()
-       where tenant_id = $1 and agent_id = $2 and id = $3
-       returning ${COLONNES_ADMIN}`,
-      [tenantId, agentId, outilId, patch.name ?? null, patch.title ?? null, patch.description ?? null,
-        patch.nePasUtiliser ?? null, patch.enums ? JSON.stringify(patch.enums) : null],
+       where agent_tools.tenant_id = $1 and agent_tools.id = $3
+         and exists (select 1 from agent_tool_consommateurs c
+                      where c.tool_id = agent_tools.id and c.tenant_id = agent_tools.tenant_id
+                        and c.consommateur = $2)
+       returning id`,
+      [tenantId, consommateurAgent(agentId), outilId, patch.name ?? null, patch.title ?? null,
+        patch.description ?? null, patch.nePasUtiliser ?? null,
+        patch.enums ? JSON.stringify(patch.enums) : null],
     ).catch(surNomDejaPris);
     const r = res.rows[0];
-    return r ? versComplet(r) : null;
+    return r ? this.complet(tenantId, consommateurAgent(agentId), r.id) : null;
   }
 
   async activer(

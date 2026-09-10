@@ -412,14 +412,19 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
    */
   describe('la définition se partage, le consentement non', () => {
     it('🔴 un outil n’est actif QUE pour le consommateur qui l’a activé', async () => {
+      const voisin = (await pool.query<{ id: string }>(
+        `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin-actif', 'IA', 'm') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
       const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'partage_actif' });
-      await catalogue.rattacher(tenantId, agentDeLAutre, outil!.id);
+      await catalogue.rattacher(tenantId, voisin, outil!.id);
       await catalogue.activer(tenantId, agentId, outil!.id, true, adminId);
 
       expect(await catalogue.byName(tenantId, agentId, 'partage_actif')).not.toBeNull();
-      expect(await catalogue.byName(tenantId, agentDeLAutre, 'partage_actif')).toBeNull();
-      await catalogue.detacher(tenantId, agentDeLAutre, outil!.id);
+      expect(await catalogue.byName(tenantId, voisin, 'partage_actif')).toBeNull();
+      await catalogue.detacher(tenantId, voisin, outil!.id);
       await retirerCompletement(tenantId, agentId, outil!.id);
+      await pool.query('delete from agents where id = $1', [voisin]);
     });
 
     it('🔴 le MBA est un consommateur comme un autre, sur la MÊME définition', async () => {
@@ -460,12 +465,17 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     it('🔴 détacher un outil d’un agent ne le supprime PAS de l’espace', async () => {
       // C'est le changement de sens du bouton « supprimer » de l'onglet d'un agent : il retire l'outil DE CET
       // AGENT. Le supprimer pour tout le monde depuis l'écran d'un seul casserait les autres en silence.
+      const voisin = (await pool.query<{ id: string }>(
+        `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin-garde', 'IA', 'm') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
       const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'garde_definition' });
-      await catalogue.rattacher(tenantId, agentDeLAutre, outil!.id);
+      await catalogue.rattacher(tenantId, voisin, outil!.id);
       expect(await catalogue.detacher(tenantId, agentId, outil!.id)).toBe(true);
       expect((await catalogue.listToutes(tenantId, agentId)).map((o) => o.name)).not.toContain('garde_definition');
-      expect((await catalogue.listToutes(tenantId, agentDeLAutre)).map((o) => o.name)).toContain('garde_definition');
-      await retirerCompletement(tenantId, agentDeLAutre, outil!.id);
+      expect((await catalogue.listToutes(tenantId, voisin)).map((o) => o.name)).toContain('garde_definition');
+      await retirerCompletement(tenantId, voisin, outil!.id);
+      await pool.query('delete from agents where id = $1', [voisin]);
     });
 
     it('🔴 supprimer une DÉFINITION encore rattachée est REFUSÉ, pas silencieux', async () => {
@@ -480,18 +490,31 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     });
 
     it('🔴 un nom d’outil est pris pour tout l’ESPACE, plus seulement pour l’agent', async () => {
+      // ⚠️ IL FAUT UN SECOND AGENT DU MEME ESPACE. Avec l'agent d'un AUTRE tenant, `ajouter` rend `null` sur
+      // sa garde d'isolation AVANT d'atteindre l'index unique : le test passait alors pour la mauvaise
+      // raison, et il n'aurait rien prouvé sur la portée du nom.
+      const voisin = (await pool.query<{ id: string }>(
+        `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin', 'IA', 'm') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
       const un = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'unique_espace' });
-      await expect(catalogue.ajouter(tenantId, agentDeLAutre, { ...modele, name: 'unique_espace' }))
+      await expect(catalogue.ajouter(tenantId, voisin, { ...modele, name: 'unique_espace' }))
         .rejects.toBeInstanceOf(NomOutilDejaPris);
       await retirerCompletement(tenantId, agentId, un!.id);
+      await pool.query('delete from agents where id = $1', [voisin]);
     });
 
     it('🔴 activer pour un consommateur NON rattaché ne crée RIEN', async () => {
       // Sinon `activer` deviendrait un rattachement implicite, et un identifiant d'agent erroné poserait un
       // consentement sur un consommateur qui n'existe nulle part, invisible de tous les écrans.
+      const voisin = (await pool.query<{ id: string }>(
+        `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin-pasrat', 'IA', 'm') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
       const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'pas_rattache' });
-      expect(await catalogue.activer(tenantId, agentDeLAutre, outil!.id, true, adminId)).toBeNull();
-      expect(await catalogue.byName(tenantId, agentDeLAutre, 'pas_rattache')).toBeNull();
+      expect(await catalogue.activer(tenantId, voisin, outil!.id, true, adminId)).toBeNull();
+      expect(await catalogue.byName(tenantId, voisin, 'pas_rattache')).toBeNull();
+      await pool.query('delete from agents where id = $1', [voisin]);
       await retirerCompletement(tenantId, agentId, outil!.id);
     });
 
