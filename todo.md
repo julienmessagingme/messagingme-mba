@@ -527,6 +527,22 @@ reste à faire** : `explain` la requête de `findWaitingByWaId` en production et
 l'ancien devient une migration additive de plus (un index en moins, c'est de l'écriture en moins sur une
 table du chemin chaud). Si elle prend l'ancien, on garde les deux et on écrit pourquoi.
 
+## L'état de Meta se lit connecteur par connecteur, en séquence (relevé à la revue du 2026-09-10)
+
+🟡 `etatMeta` (câblage de `mbaPublication`, `src/index.ts`) demande la liste des connecteurs, puis les outils
+de CHAQUE connecteur, l'un après l'autre. Un espace à dix connecteurs fait onze allers-retours chez Meta
+avant d'afficher le moindre aperçu, et l'aperçu est appelé deux fois par publication (une fois pour montrer,
+une fois pour recalculer au moment d'appliquer).
+
+**Pas corrigé, et c'est délibéré** : sur le parc réel (une source déclarée, zéro connecteur chez Meta au
+2026-09-10), la question ne se pose pas encore, et paralléliser sans mesure serait de l'optimisation à
+l'aveugle. ⚠️ Ce qui le rendrait urgent : un premier client avec plusieurs systèmes branchés. Le jour venu,
+`Promise.all` sur la boucle des connecteurs suffit (ce sont des LECTURES, aucune ne dépend de la précédente),
+mais il faudra regarder ce que Meta plafonne en débit avant d'en lancer dix d'un coup.
+
+⚠️ Ne pas confondre avec le contexte de publication (`ctx`), déjà posé : lui mémorise les lectures pendant
+l'APPLICATION du plan, il ne touche pas au calcul de l'état initial.
+
 ## Le rangement en lot fait UN appel par conversation (relevé à la revue du 2026-09-08)
 
 🟡 Cocher vingt conversations et choisir une destination produit vingt requêtes, envoyées à la suite. C'est
