@@ -7,6 +7,7 @@
 import { FLOW_REF_KEY } from '../meta/flow-json';
 import { estDemandeArret } from '../crm/consentement';
 import { asArray, asRecord } from './json';
+import { valeurEffective } from './change';
 
 export interface InboundMessage {
   phoneNumberId: string;
@@ -16,9 +17,17 @@ export interface InboundMessage {
   body: string | null;
   buttonPayload: string | null;
   profileName: string | null;
-  /** `field` du change webhook source ('messages' pour un vrai entrant, 'standby' quand un autre app tient le
-   *  fil...). Sert au consommateur d'AVANCE de scénario à ignorer un standby (ne pas répondre / reprendre le
-   *  contrôle au MBA). L'INBOX, elle, enregistre tout (voir les échanges vus en standby). null si absent. */
+  /**
+   * `field` du change webhook source : `'messages'` pour un vrai entrant, `'standby'` quand une autre app
+   * tient le fil (le Meta Business Agent). Sert au consommateur d'AVANCE de scénario et aux déclencheurs
+   * d'automation à IGNORER un standby : répondre reprendrait implicitement le fil au MBA.
+   *
+   * 🔴 CE COMMENTAIRE AFFIRMAIT « L'INBOX, ELLE, ENREGISTRE TOUT », ET C'ÉTAIT FAUX. L'extraction lisait
+   * `value.messages` alors qu'un standby imbrique tout sous `value.standby` : l'Inbox n'a rien enregistré
+   * pendant les deux jours où l'agent de Meta a répondu à notre place (2026-09-08 au 2026-09-10, zéro
+   * entrant et zéro statut mesurés en base). C'est vrai depuis `valeurEffective` (`./change.ts`), et c'est
+   * un test sur le payload réel qui le tient, plus une phrase. `null` si le champ est absent.
+   */
   field: string | null;
   /** Publicité Click-to-WhatsApp à l'origine du message. Absent sur un message ordinaire. */
   referral?: InboundReferral;
@@ -151,7 +160,9 @@ export function extractInbound(payload: unknown): InboundMessage[] {
   const out: InboundMessage[] = [];
   for (const entryRaw of asArray(asRecord(payload)['entry'])) {
     for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
-      const value = asRecord(asRecord(changeRaw)['value']);
+      // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : voir `./change.ts`. En standby, les messages
+      // vivent un niveau plus bas, et les lire ici ne rendait simplement rien, sans erreur.
+      const value = valeurEffective(asRecord(changeRaw)['value']);
       const phoneNumberId = str(asRecord(value['metadata'])['phone_number_id']);
       if (!phoneNumberId) continue;
       const contacts = asArray(value['contacts']).map(asRecord);
@@ -192,7 +203,9 @@ export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
   const out: FlowCompletion[] = [];
   for (const entryRaw of asArray(asRecord(payload)['entry'])) {
     for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
-      const value = asRecord(asRecord(changeRaw)['value']);
+      // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : voir `./change.ts`. En standby, les messages
+      // vivent un niveau plus bas, et les lire ici ne rendait simplement rien, sans erreur.
+      const value = valeurEffective(asRecord(changeRaw)['value']);
       const phoneNumberId = str(asRecord(value['metadata'])['phone_number_id']);
       if (!phoneNumberId) continue;
       const contacts = asArray(value['contacts']).map(asRecord);

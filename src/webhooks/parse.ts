@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { asArray, asRecord } from './json';
+import { valeurEffective } from './change';
 
 export type WebhookSource =
   | 'messages'
@@ -70,7 +71,10 @@ export function nAQueDesAccuses(payload: unknown): boolean {
   for (const entryRaw of entries) {
     for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
       const change = asRecord(changeRaw);
-      const value = asRecord(change['value']);
+      // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : quand le MBA tient le fil, Meta imbrique
+      // `contacts`, `messages` et `statuses` sous `value.standby`. Deux jours d'entrants perdus le prouvent
+      // (2026-09-08 au 2026-09-10). Voir `./change.ts`.
+      const value = valeurEffective(change['value']);
       // Tout ce qui n'est pas un accusé disqualifie le payload : messages, echoes, et le champ de handover,
       // dont la valeur ne porte AUCUNE des clés ci-dessous.
       if (asArray(value['messages']).length > 0) return false;
@@ -108,7 +112,10 @@ export function cleDeContact(payload: unknown): string | undefined {
   for (const entryRaw of asArray(asRecord(payload)['entry'])) {
     for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
       const change = asRecord(changeRaw);
-      const value = asRecord(change['value']);
+      // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : quand le MBA tient le fil, Meta imbrique
+      // `contacts`, `messages` et `statuses` sous `value.standby`. Deux jours d'entrants perdus le prouvent
+      // (2026-09-08 au 2026-09-10). Voir `./change.ts`.
+      const value = valeurEffective(change['value']);
       const pnId = texte(asRecord(value['metadata'])['phone_number_id']);
       if (pnId === undefined) { inattribuable = true; continue; }
       // La forme des bascules de contrôle n'est pas documentée : on ne devine pas de qui elles parlent.
@@ -144,7 +151,10 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
     for (const changeRaw of asArray(entry['changes'])) {
       const change = asRecord(changeRaw);
       const field = typeof change['field'] === 'string' ? (change['field'] as string) : '';
-      const value = asRecord(change['value']);
+      // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : quand le MBA tient le fil, Meta imbrique
+      // `contacts`, `messages` et `statuses` sous `value.standby`. Deux jours d'entrants perdus le prouvent
+      // (2026-09-08 au 2026-09-10). Voir `./change.ts`.
+      const value = valeurEffective(change['value']);
       // Lu UNE fois par `change` : tous les événements qu'il porte visent le même numéro.
       const pnId = asRecord(value['metadata'])['phone_number_id'];
       const meta = typeof pnId === 'string' && pnId !== '' ? { phoneNumberId: pnId } : {};
