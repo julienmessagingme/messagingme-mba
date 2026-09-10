@@ -1,0 +1,29 @@
+-- 0129 : se souvenir du secret qu on a POSE chez Meta, pour savoir quand le reposer.
+--
+-- POURQUOI. Meta ne rend JAMAIS le secret d un connecteur : on ne peut donc pas comparer le sien au notre.
+-- La publication ne le posait qu a la CREATION du connecteur, et un commentaire du code affirmait qu un
+-- bouton dedie permettait de le faire tourner a la demande. Ce bouton n existe pas. Consequence mesuree en
+-- relisant le chemin le 2026-09-10 : un client qui change son jeton dans Engage Me le voit pris en compte
+-- par ses agents et PAS par l agent de Meta, qui continue de presenter l ancien jusqu a ce qu un contact
+-- decouvre que l outil ne repond plus. Aucun ecran ne montrait le moindre ecart.
+--
+-- 🔴 UNE JUSTIFICATION FAUSSE EST PIRE QU AUCUNE, PARCE QU ELLE SERA RECOPIEE : c est exactement ce qui a
+-- failli se produire, ce commentaire partait vers `features.md` comme une fonctionnalite.
+--
+-- CE QUE LA COLONNE CHANGE. `secret_publie_le` est l instant ou NOTRE secret courant a ete accepte par Meta.
+-- Elle retombe a NULL des qu on touche a l authentification de la source (secret, mode, nom d en-tete), et
+-- la publication suivante produit alors un geste `secret_poser`. A secret inchange, elle reste renseignee et
+-- publier deux fois ne produit toujours aucun geste, ce qui garde le seul test qui prouve la reconciliation.
+--
+-- ⚠️ ELLE N AJOUTE QUE, ET LE CODE LA LIT : elle passe donc AVANT le deploiement. L ancien code ignore la
+-- colonne, la fenetre de coexistence est sans risque.
+--
+-- ⚠️ POURQUOI 0129 ET PAS 0128. 0128 est reservee depuis le 2026-09-10 au RETRAIT de `agent_id` et des six
+-- colonnes de consentement, qui passe APRES le deploiement ; trois documents et l en-tete de 0127 la
+-- nomment ainsi. Renumeroter pour boucher un trou rendrait ces textes faux. Le runner applique les fichiers
+-- absents de `schema_migrations` par ordre de nom, sans exiger que la suite soit continue : 0129 avant 0128
+-- est legal, et les deux sont independantes.
+--
+-- BACKFILL : aucun. NULL veut dire « jamais posee chez Meta », ce qui est vrai de toutes les sources
+-- existantes (mesure du 2026-09-10 : zero source declaree en production, zero connecteur chez Meta).
+alter table agent_tool_sources add column if not exists secret_publie_le timestamptz;

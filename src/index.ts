@@ -1221,6 +1221,7 @@ async function main(): Promise<void> {
         .map((s) => ({
           id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
           authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
+          secretPublie: s.secretPublie,
         })),
       /**
        * Les outils EXPOSES au MBA, avec leur methode et leur chemin.
@@ -1281,20 +1282,14 @@ async function main(): Promise<void> {
         if (geste.type === 'connecteur_creer') {
           const s = await sourceParId(geste.sourceId);
           if (s) {
-            await client.createConnector(pn, corpsConnecteurMeta({
-              id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
-              authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
-            }));
+            await client.createConnector(pn, corpsConnecteurMeta(s));
             ctx.delete('connecteurs'); // il vient d apparaitre : la photo d avant ne le contient pas.
           }
           return;
         }
         if (geste.type === 'connecteur_modifier') {
           const s = await sourceParId(geste.sourceId);
-          if (s) await client.updateConnector(pn, geste.connecteurId, corpsConnecteurMeta({
-            id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
-            authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
-          }));
+          if (s) await client.updateConnector(pn, geste.connecteurId, corpsConnecteurMeta(s));
           return;
         }
         if (geste.type === 'connecteur_supprimer') {
@@ -1310,6 +1305,17 @@ async function main(): Promise<void> {
             await client.upsertApiKey(pn, cid, corpsApiKey(
               { authKind: s.authKind, authHeaderName: s.authHeaderName }, secret.authSecret,
             ));
+            /**
+             * 🔴 MARQUE APRES L ACCUSE DE RECEPTION DE META, jamais avant. Marquer d abord ferait croire un
+             * secret publie alors que l appel a echoue, et la publication suivante ne le reposerait plus :
+             * le connecteur de Meta resterait sur l ancien jeton pour toujours. Un `upsertApiKey` qui jette
+             * remonte au POST, qui s arrete en 409 et dit de relancer.
+             *
+             * ⚠️ La photo des sources memorisee dans `ctx` devient perimee sur ce champ : elle ne sert plus
+             * qu a lire l adresse et le mode d authentification pour les gestes SUIVANTS du meme plan, qui
+             * ne relisent pas `secretPublie` (le plan, lui, a ete calcule avant).
+             */
+            await agentSources.marquerSecretPublie(tenant, geste.sourceId);
           }
           return;
         }

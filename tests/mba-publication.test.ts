@@ -16,6 +16,8 @@ import { corpsConnecteurMeta, corpsOutilMeta } from '../src/http/mba-publication
 const SRC: SourceAPublier = {
   id: 's1', label: 'Shopify', baseUrl: 'https://api.shopify.com/v1',
   authKind: 'bearer', authHeaderName: null, aAuthentification: true,
+  // Le secret courant est DEJA chez Meta : c'est l'etat de croisiere, celui qui doit produire zero geste.
+  secretPublie: true,
 };
 const OUT: OutilAPublier = {
   id: 'o1', sourceId: 's1', name: 'check_order_status',
@@ -48,11 +50,33 @@ describe('planifierPublication', () => {
     expect(planifierPublication([SRC], [OUT], ALIGNE)).toEqual([]);
   });
 
-  it('🔴 un secret n’est reposé QU’À LA CRÉATION', () => {
-    // Meta ne rend jamais le secret : on ne peut pas savoir s'il a changé. Le reposer à chaque publication
-    // le ferait tourner sans raison ; ne jamais le reposer laisserait un secret périmé pour toujours. Il est
-    // posé à la création, et l'écran des connecteurs a un bouton dédié pour le faire tourner.
+  it('un secret DÉJÀ POSÉ chez Meta n’est pas reposé', () => {
+    // Meta ne rend jamais le secret : on ne peut pas comparer, seulement se souvenir de ce qu'on a posé. Le
+    // reposer à chaque publication marcherait, mais on perdrait le test d'idempotence juste au-dessus.
     expect(planifierPublication([SRC], [], ALIGNE).some((x) => x.type === 'secret_poser')).toBe(false);
+  });
+
+  it('🔴 un secret CHANGÉ chez nous est REPOSÉ à la publication suivante', () => {
+    // Trouvé en relisant le chemin le 2026-09-10 : le plan ne posait le secret qu'à la CRÉATION du
+    // connecteur, et un commentaire affirmait qu'un bouton dédié permettait de le faire tourner. Ce bouton
+    // n'existait pas. Un client qui changeait son jeton le voyait pris en compte par ses agents et PAS par
+    // l'agent de Meta, qui présentait l'ancien jusqu'à ce qu'un contact découvre l'outil muet.
+    const g = planifierPublication([{ ...SRC, secretPublie: false }], [OUT], ALIGNE);
+    expect(g).toEqual([{ type: 'secret_poser', sourceId: 's1', nom: 'Shopify' }]);
+  });
+
+  it('⚠️ une source SANS authentification ne produit jamais de geste de secret', () => {
+    // `secretPublie` reste `false` pour toujours sur une source sans secret : sans la garde
+    // `aAuthentification`, elle réclamerait un `secret_poser` à CHAQUE publication, et le geste échouerait
+    // faute de secret à poser, ce qui arrêterait toute la publication sur un cas parfaitement normal.
+    const nue: SourceAPublier = {
+      ...SRC, authKind: 'none', aAuthentification: false, secretPublie: false,
+    };
+    const meta: EtatMeta = {
+      connecteurs: [{ id: 'c1', name: 'Shopify', base_url: SRC.baseUrl, auth_type: 'NONE' }],
+      outilsParConnecteur: {},
+    };
+    expect(planifierPublication([nue], [], meta)).toEqual([]);
   });
 
   it('une adresse de base qui a bougé produit une MODIFICATION, pas une recréation', () => {

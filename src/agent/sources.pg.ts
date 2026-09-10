@@ -20,7 +20,8 @@ import {
 
 /** Colonnes de la projection PUBLIQUE. Le secret n'y est pas, seulement son EXISTENCE. */
 const COLS = `s.id, s.tenant_id, s.kind, s.label, s.base_url, s.auth_kind, s.auth_header_name,
-  (s.auth_secret_enc is not null) as a_auth, s.status, s.last_ok_at, s.last_error,
+  (s.auth_secret_enc is not null) as a_auth, (s.secret_publie_le is not null) as secret_publie,
+  s.status, s.last_ok_at, s.last_error,
   -- 🔴 CES DEUX COMPTEURS LISAIENT t.actif ET t.agent_id, QUE LA MIGRATION 0128 SUPPRIME. Le
   -- consentement vit désormais dans agent_tool_consommateurs (0127). Les laisser tels quels aurait fait
   -- tomber l'écran des connecteurs au moment du retrait des colonnes, sans qu'aucun test unitaire ne le voie.
@@ -39,7 +40,7 @@ const COLS = `s.id, s.tenant_id, s.kind, s.label, s.base_url, s.auth_kind, s.aut
 
 interface LigneVue {
   id: string; tenant_id: string; kind: string; label: string; base_url: string;
-  auth_kind: string; auth_header_name: string | null; a_auth: boolean;
+  auth_kind: string; auth_header_name: string | null; a_auth: boolean; secret_publie: boolean;
   status: string; last_ok_at: Date | null; last_error: string | null; outils_actifs: number; agents: number;
 }
 
@@ -53,6 +54,7 @@ function versVue(r: LigneVue): SourceVue {
     authKind: r.auth_kind as AuthSource,
     authHeaderName: r.auth_header_name,
     aAuthentification: r.a_auth,
+    secretPublie: r.secret_publie,
     status: r.status as StatutSource,
     lastOkAt: r.last_ok_at ? r.last_ok_at.toISOString() : null,
     lastError: r.last_error,
@@ -129,6 +131,14 @@ export class PgSourceStore implements SourceStore {
     } else if (patch.authSecret !== undefined && patch.authSecret !== '') {
       push('auth_secret_enc', encryptSecret(patch.authSecret, config.ENCRYPTION_KEY));
     }
+    // 🔴 TOUCHER À L'AUTHENTIFICATION DÉPUBLIE LE SECRET, et les TROIS champs comptent : le secret bien sûr,
+    // mais aussi le MODE (`bearer` -> `header`) et le NOM D'EN-TÊTE, qui décident du corps envoyé à Meta
+    // (`corpsApiKey`). N'écouter que `authSecret` laisserait Meta présenter le bon secret dans le mauvais
+    // en-tête, ce qui ressemble à un jeton refusé et s'en diagnostique très mal.
+    if (patch.authKind !== undefined || patch.authHeaderName !== undefined
+        || (patch.authSecret !== undefined && patch.authSecret !== '')) {
+      sets.push('secret_publie_le = null');
+    }
     if (sets.length === 0) return this.parId(tenantId, id);
 
     const res = await this.pool.query<LigneVue>(
@@ -168,6 +178,19 @@ export class PgSourceStore implements SourceStore {
       authSecret: r.auth_secret_enc ? decryptSecret(r.auth_secret_enc, config.ENCRYPTION_KEY) : null,
       status: r.status as StatutSource,
     };
+  }
+
+  /**
+   * Le secret courant est désormais posé chez Meta.
+   *
+   * ⚠️ `tenant_id = $1` comme partout : sans lui, une publication marquerait la source d'un autre client, qui
+   * cesserait alors de reposer SON secret.
+   */
+  async marquerSecretPublie(tenantId: string, id: string): Promise<void> {
+    await this.pool.query(
+      'update agent_tool_sources set secret_publie_le = now(), updated_at = now() where tenant_id = $1 and id = $2',
+      [tenantId, id],
+    );
   }
 
   async marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void> {

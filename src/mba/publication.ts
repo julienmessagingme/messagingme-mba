@@ -28,6 +28,14 @@ export interface SourceAPublier {
   authHeaderName: string | null;
   /** Le secret EXISTE-t-il ? Sa valeur ne transite pas par ce module. */
   aAuthentification: boolean;
+  /**
+   * Le secret ACTUEL a-t-il déjà été posé chez Meta ?
+   *
+   * 🔴 C'EST LE SEUL MOYEN DE FAIRE TOURNER UN SECRET, et il manquait. Meta ne rend jamais le sien : on ne
+   * peut pas comparer, seulement se souvenir de ce qu'on a posé. Le drapeau retombe à `false` dès qu'on
+   * touche à l'authentification de la source, et la publication suivante repose le secret.
+   */
+  secretPublie: boolean;
 }
 
 /** Un OUTIL de chez nous, exposé au MBA, tel qu'il devient un tool de connecteur. */
@@ -114,10 +122,16 @@ export function planifierPublication(
       if (s.aAuthentification) gestes.push({ type: 'secret_poser', sourceId: s.id, nom: s.label });
       continue;
     }
-    // ⚠️ ON NE COMPARE QUE CE QUE META REND. Le secret n'est jamais relu (Meta ne le rend pas), donc on ne
-    // peut pas savoir s'il a changé : le reposer à chaque publication le ferait tourner sans raison, et ne
-    // jamais le reposer laisserait un secret périmé pour toujours. Il n'est reposé qu'à la CRÉATION, et
-    // l'écran des connecteurs porte un bouton dédié pour le faire tourner à la demande.
+    // 🔴 LE SECRET SE REPOSE QUAND IL A CHANGÉ CHEZ NOUS, jamais « au cas où ». Meta ne rend pas le sien,
+    // donc on ne compare pas : on se souvient de ce qu'on a posé (`secretPublie`), et toute écriture sur
+    // l'authentification de la source remet ce drapeau à zéro. Le reposer à CHAQUE publication marcherait
+    // aussi, mais on perdrait le seul test qui prouve que la réconciliation fonctionne (« publier deux fois
+    // ne produit aucun geste ») ; ne jamais le reposer laissait un secret périmé pour toujours, et c'était
+    // le comportement d'avant le 2026-09-10.
+    if (s.aAuthentification && !s.secretPublie) {
+      gestes.push({ type: 'secret_poser', sourceId: s.id, nom: s.label });
+    }
+    // ⚠️ ON NE COMPARE QUE CE QUE META REND, pour le reste.
     if (chezMeta.base_url !== s.baseUrl || chezMeta.auth_type !== authTypeMeta(s.authKind)) {
       gestes.push({ type: 'connecteur_modifier', connecteurId: chezMeta.id, sourceId: s.id, nom: s.label });
     }

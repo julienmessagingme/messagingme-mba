@@ -26,6 +26,17 @@ export interface SourceVue {
   authHeaderName: string | null;
   /** Le secret EXISTE-t-il. Sa valeur ne sort jamais du serveur. */
   aAuthentification: boolean;
+  /**
+   * Le secret ACTUEL a-t-il déjà été posé chez Meta ?
+   *
+   * 🔴 SANS CE DRAPEAU, FAIRE TOURNER UN SECRET CASSAIT LE CONNECTEUR DE META EN SILENCE. Meta ne rend
+   * jamais un secret : on ne peut donc pas comparer le sien au nôtre, et la publication ne le posait qu'à la
+   * CRÉATION du connecteur. Un client qui changeait son jeton ici le voyait pris en compte par ses agents et
+   * PAS par l'agent de Meta, qui continuait de présenter l'ancien jusqu'à ce qu'un contact le découvre.
+   * Le drapeau retombe à `false` dès qu'on touche à l'authentification, et la publication suivante repose le
+   * secret. C'est aussi ce qui garde l'idempotence : à secret inchangé, publier deux fois ne fait rien.
+   */
+  secretPublie: boolean;
   status: StatutSource;
   lastOkAt: string | null;
   lastError: string | null;
@@ -86,4 +97,12 @@ export interface SourceStore {
   pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
   /** Résultat de la dernière épreuve. Best-effort chez l'appelant : jamais bloquant. */
   marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void>;
+  /**
+   * Le secret courant vient d'être posé chez Meta.
+   *
+   * ⚠️ APPELÉE APRÈS L'ACCUSÉ DE RÉCEPTION DE META, jamais avant : marquer d'abord ferait croire un secret
+   * publié alors que l'appel a échoué, et la publication suivante ne le reposerait plus. Échouer dans ce
+   * sens-là garde de quoi réessayer.
+   */
+  marquerSecretPublie(tenantId: string, id: string): Promise<void>;
 }

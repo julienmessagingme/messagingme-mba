@@ -27,7 +27,7 @@ const h = (): { headers: Record<string, string> } => ({
 
 const SRC: SourceAPublier = {
   id: 's1', label: 'Shopify', baseUrl: 'https://api.shopify.com/v1',
-  authKind: 'bearer', authHeaderName: null, aAuthentification: true,
+  authKind: 'bearer', authHeaderName: null, aAuthentification: true, secretPublie: false,
 };
 const OUT: OutilAPublier = {
   id: 'o1', sourceId: 's1', name: 'check_order_status', description: 'État d’une commande.',

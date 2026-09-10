@@ -123,8 +123,13 @@ export function corpsOutilMeta(o: OutilAPublier): {
  * d'OMETTRE ce champ quand `auth_type` vaut `NONE` (400 sinon), et pour les autres cas nous passons par
  * `upsertApiKey`, seul chemin qui sache faire TOURNER un secret sans recréer le connecteur. Un secret qui
  * n'a qu'un chemin d'écriture n'a qu'un endroit à auditer.
+ *
+ * ⚠️ IL NE DEMANDE QUE LES TROIS CHAMPS QU'IL CONSOMME, et ce `Pick` est du bon côté de la règle du dépôt :
+ * ses membres sont lus SUR PLACE, donc un oubli serait une erreur au point d'usage. Le faire porter une
+ * `SourceAPublier` entière obligeait ses deux appelants à recopier la source champ par champ, liste qui
+ * dérive dès qu'on y ajoute un champ (ce qui vient d'arriver avec `secretPublie`).
  */
-export function corpsConnecteurMeta(s: SourceAPublier): {
+export function corpsConnecteurMeta(s: Pick<SourceAPublier, 'label' | 'baseUrl' | 'authKind'>): {
   name: string; description: string; base_url: string; auth_type: string;
 } {
   return {

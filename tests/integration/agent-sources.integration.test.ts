@@ -83,6 +83,37 @@ describe.skipIf(!url)('sources externes d outils (Postgres)', () => {
     expect((await sources.pourAppel(tenantId, s.id))!.authSecret).toBeNull();
   });
 
+  it('🔴 TOUCHER À L’AUTHENTIFICATION DÉPUBLIE LE SECRET, donc la publication suivante le repose', async () => {
+    // Meta ne rend JAMAIS le secret d'un connecteur : on ne peut pas comparer le sien au nôtre, seulement se
+    // souvenir de ce qu'on a posé. Sans ce drapeau, la publication ne posait le secret qu'à la CRÉATION du
+    // connecteur : un client qui faisait tourner son jeton le voyait pris en compte par ses agents et PAS
+    // par l'agent de Meta, qui présentait l'ancien jusqu'à ce qu'un contact découvre l'outil muet.
+    const s = await sources.creer(tenantId, {
+      kind: 'http', label: 'Rotation', baseUrl: 'https://api.client.fr/rot', authKind: 'bearer', authSecret: 'v1',
+    });
+    // Née NON publiée : un connecteur qui n'existe pas encore chez Meta n'a rien reçu.
+    expect(s.secretPublie).toBe(false);
+
+    await sources.marquerSecretPublie(tenantId, s.id);
+    expect((await sources.parId(tenantId, s.id))!.secretPublie).toBe(true);
+
+    // Renommer ne touche PAS à l'authentification : reposer le secret à cette occasion serait un appel à Meta
+    // pour rien, et surtout cela ferait mentir le test « publier deux fois ne produit aucun geste ».
+    await sources.patch(tenantId, s.id, { label: 'Rotation (prod)' });
+    expect((await sources.parId(tenantId, s.id))!.secretPublie).toBe(true);
+
+    // Le secret change : Meta doit le recevoir.
+    await sources.patch(tenantId, s.id, { authSecret: 'v2' });
+    expect((await sources.parId(tenantId, s.id))!.secretPublie).toBe(false);
+
+    // ⚠️ ET LE MODE COMPTE AUTANT QUE LE SECRET : `bearer` -> `header` change le corps envoyé à Meta
+    // (`corpsApiKey`), donc l'en-tête présenté. N'écouter que le secret laisserait Meta présenter le bon
+    // jeton dans le mauvais en-tête, ce qui ressemble à un jeton refusé et se diagnostique très mal.
+    await sources.marquerSecretPublie(tenantId, s.id);
+    await sources.patch(tenantId, s.id, { authKind: 'header', authHeaderName: 'X-Cle' });
+    expect((await sources.parId(tenantId, s.id))!.secretPublie).toBe(false);
+  });
+
   it('🔴 la base REFUSE une source « bearer » sans secret', async () => {
     // Elle signerait avec une chaîne vide, et le système du client répondrait 401 qu'on mettrait sur le dos
     // de ses identifiants.
