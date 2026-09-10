@@ -208,4 +208,34 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
   it('byId d un run inexistant rend null', async () => {
     expect(await runs.byId(tenantId, '00000000-0000-0000-0000-000000000000')).toBeNull();
   });
+
+  it('🔴 supprimer un agent supprime ses lignes de consentement d’outils', async () => {
+    // C'est le PRIX de la clé texte, tranché le 2026-09-10 : il n'y a AUCUNE clé étrangère derrière
+    // `agent:<uuid>`, donc aucune cascade ne nettoie ces lignes. Sans ce ménage explicite, elles restent en
+    // base, invisibles, et faussent les compteurs « utilisé par N consommateurs » de la bibliothèque.
+    const agent = await agents.create(tenantId, `jetable-${Date.now()}`, 'Je suis une IA.', 'm');
+    const outil = await pool.query<{ id: string }>(
+      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+       values ($1, 'mba', 'menage_consentement', 'M', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
+      [tenantId],
+    );
+    const toolId = outil.rows[0]!.id;
+    await pool.query(
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+      [tenantId, toolId, `agent:${agent!.id}`],
+    );
+
+    await agents.remove(tenantId, agent!.id);
+
+    const restant = await pool.query(
+      'select 1 from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
+      [tenantId, `agent:${agent!.id}`],
+    );
+    expect(restant.rowCount).toBe(0);
+    // ⚠️ Et la DÉFINITION, elle, SURVIT : elle appartient à l'espace, pas à l'agent. La supprimer avec lui
+    // casserait les autres agents qui s'en servent, ce que la migration 0127 existe pour éviter.
+    const def = await pool.query('select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, toolId]);
+    expect(def.rowCount).toBe(1);
+    await pool.query('delete from agent_tools where id = $1', [toolId]);
+  });
 });
