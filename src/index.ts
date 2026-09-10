@@ -1247,7 +1247,14 @@ async function main(): Promise<void> {
       etatMeta: async (tenant, pn) => {
         const client = await metaFactory.mbaClientForTenant(tenant);
         const connecteurs = await client.listConnectors(pn);
-        const outilsParConnecteur: Record<string, Array<{ id: string; name: string; description?: string }>> = {};
+        /**
+         * 🔴 LE TYPE VIENT DU CLIENT, il n est pas RECOPIE ici. L annotation ecrite a la main omettait
+         * `request_definition`, que le client rend et que le plan COMPARE depuis la revue du 2026-09-10 :
+         * la donnee passait quand meme (c est la meme reference), mais le type disait le contraire. Le
+         * premier « menage » qui aurait projete les champs un a un aurait donc silencieusement remis le
+         * defaut que cette revue venait de corriger, avec un compilateur d accord.
+         */
+        const outilsParConnecteur: Record<string, Awaited<ReturnType<typeof client.listConnectorTools>>> = {};
         for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
         return { connecteurs, outilsParConnecteur };
       },
