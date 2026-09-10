@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BASE_QUEUES, ALL_QUEUES, dlqName, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE } from '../src/queue/names';
+import { BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE, SONDAGE_FILET_NOTIFIE } from '../src/queue/names';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -162,19 +162,48 @@ describe('cadence de polling par file', () => {
     expect(wrapper, 'la classification par file doit reellement etre consultee').toMatch(/notifieePour\(name\)/);
   });
 
-  it('🔴 le filet de sondage vaut la cadence de BASE quand la notification est active', () => {
-    // C'est ce qui rend le changement sans risque : si l'ecouteur tombe, on retombe exactement sur le
-    // comportement d'hier. Le defaut pg-boss serait 30 s, soit une latence QUINZE fois pire qu'avant sur les
-    // entrants, et seulement les jours ou l'ecouteur est casse, donc invisible en test.
+  it('🔴 le FILET de sondage est relache a 60 s quand la notification est active', () => {
+    // 🔴 LA CONCURRENCE EST UN MULTIPLICATEUR DE SONDAGE : chaque unite de concurrence est un worker avec SA
+    // PROPRE boucle (lu dans la source de pg-boss). `agent-turn` (concurrence 12, sondage 2 s) tapait donc la
+    // base six fois par seconde pour une file qui n'a traite AUCUN job en trente jours. Mesure du 2026-09-10
+    // en production : 785 555 requetes/jour, dont 88 % de sondage a vide, contre 786 240 predites par le
+    // modele `somme(concurrence / cadence)`.
+    //
+    // ⚠️ Ce qui rend le relachement sur, ce n'est PAS ce filet mais `pollingIntervalSeconds`, teste juste
+    // au-dessus : pg-boss reevalue `isNotifyActive()` a chaque tour et y retombe seul si l'ecouteur meurt.
+    // La version precedente de ce test figeait l'inverse (« le filet vaut la cadence de base »), sur une
+    // lecture fausse de pg-boss, et c'est cette precaution mal fondee qui a coute les deux tiers du trafic.
     const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));
-    expect(wrapper, 'le filet doit valoir la cadence de base, jamais le defaut de 30 s').toMatch(
-      /^\s{8}notifyPollingIntervalSeconds: pollingSecondsFor\(name\),$/m,
+    expect(wrapper, 'le filet doit etre une propriete DIRECTE des options de boss.work').toMatch(
+      /^\s{8}notifyPollingIntervalSeconds: filetNotifieSecondes\(name\),$/m,
     );
+  });
+
+  it('🔴 le filet n’est JAMAIS plus court que la cadence de base', () => {
+    // pg-boss REFUSE au demarrage un filet plus court que la cadence de base (`assert notifyPollingInterval
+    // >= pollingInterval`). Sans le `max`, ralentir un jour une file de fond a 120 s ferait planter le worker
+    // au boot, pas en test : la panne serait au deploiement, sur une file de fond que personne ne regarde.
+    for (const q of BASE_QUEUES) {
+      expect(filetNotifieSecondes(q), q).toBeGreaterThanOrEqual(pollingSecondsFor(q));
+    }
+    expect(filetNotifieSecondes('webhook')).toBe(SONDAGE_FILET_NOTIFIE);
+    expect(filetNotifieSecondes('analyze-conversation')).toBe(SONDAGE_FILET_NOTIFIE);
+    // Une file dont la cadence de base DEPASSERAIT le filet garde sa cadence, elle ne l'accelere pas.
+    expect(filetNotifieSecondes('file-hypothetique-lente')).toBe(SONDAGE_FILET_NOTIFIE);
+  });
+
+  it('⚠️ le filet ne touche PAS la cadence de base, qui reste le comportement de repli', () => {
+    // Les deux valeurs partent ensemble a pg-boss et ne disent pas la meme chose : la base est ce qui
+    // s'applique quand l'ecouteur est MORT, le filet ce qui s'applique quand il est VIVANT. Les confondre est
+    // exactement l'erreur qu'on repare.
+    expect(pollingSecondsFor('webhook')).toBe(2);
+    expect(pollingSecondsFor('agent-turn')).toBe(2);
   });
 
   it('🔴 la RAFALE est branchée : sans elle, le débit d’une file vaut 1 / cadence de sondage', () => {
     // Mesuré en production le 2026-09-03, pas supposé : `webhook-status` sonde toutes les 30 s, prend UN job
-    // par sondage et le traite en 0,05 s, soit DEUX jobs par minute. Une campagne de 5 000 destinataires
+    // par sondage et le traite en 0,05 s, soit DEUX jobs par minute (sa concurrence vaut 1 ; le débit d'une
+    // file vaut `concurrence / cadence`, cf. `SONDAGE_FILET_NOTIFIE`). Une campagne de 5 000 destinataires
     // produit environ 15 000 accusés : 125 heures pour les absorber, avec des compteurs faux pendant des
     // jours. La cadence lente est juste au repos et absurde sous retard.
     const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));

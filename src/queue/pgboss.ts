@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import type { ConstructorOptions, MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
-import { dlqName, notifieePour, pollingSecondsFor, SEUIL_RAFALE } from './names';
+import { dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, SEUIL_RAFALE } from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -242,22 +242,27 @@ export class PgBossQueue implements Queue {
     // penser à sa cadence retombe alors sur un défaut sûr au lieu de rouvrir la fuite.
     // Concurrence PAR GROUPE (ex. par tenant) : voir `workConcurrencyOptions`. Absente par défaut, donc les
     // files existantes (webhook, campaign-run, sweepers) gardent strictement le comportement d'aujourd'hui.
-    // `notifyPollingIntervalSeconds` : la cadence de sondage QUAND la notification est active. On la pose
-    // ÉGALE à la cadence de base, là où pg-boss propose 30 s par défaut, et c'est le coeur de la sûreté de ce
-    // changement : si l'écouteur tombe (connexion coupée, pooler repassé en mode transaction, base qui ne sait
-    // pas faire), le sondage redevient le seul chemin et il doit alors valoir EXACTEMENT ce qu'il valait avant.
-    // Le pire cas est donc le comportement d'hier, jamais une latence de 30 s. Relâcher ce filet vaudrait
-    // quinze fois moins d'egress sur les entrants : c'est une SECONDE décision, à prendre sur des mesures de
-    // production une fois l'écouteur éprouvé, pas ici et pas en même temps.
+    // `notifyPollingIntervalSeconds` : la cadence de sondage QUAND la notification est active. C'est la
+    // SECONDE décision que le commentaire précédent annonçait, et elle est prise le 2026-09-10 sur des
+    // mesures de production : l'écouteur livre en 37 ms de moyenne sur 102 jobs réels, et le sondage à vide
+    // pesait 88 % du trafic de la base. Le raisonnement complet, les chiffres et les deux vérifications dans
+    // la source de pg-boss sont dans `names.ts` (`SONDAGE_FILET_NOTIFIE`).
+    //
+    // ⚠️ Ce qui rend le relâchement sûr n'est PAS ce filet, c'est `pollingIntervalSeconds` juste au-dessus,
+    // qui ne bouge pas : pg-boss réévalue `isNotifyActive()` à chaque tour et y retombe seul si l'écouteur
+    // meurt. Le pire cas reste donc le comportement d'hier.
     await this.boss.work<unknown>(
       name,
       {
         batchSize: 1,
         pollingIntervalSeconds: pollingSecondsFor(name),
-        notifyPollingIntervalSeconds: pollingSecondsFor(name),
-        // 🔴 LA RAFALE. Sans elle, le débit d'une file valait `1 / cadence de sondage` : deux jobs par minute
-        // sur `webhook-status`, MESURÉ en production, quand une campagne de 5 000 destinataires en produit
-        // quinze mille. La cadence lente reste juste au REPOS et devient absurde sous retard. Détail et
+        notifyPollingIntervalSeconds: filetNotifieSecondes(name),
+        // 🔴 LA RAFALE. Sans elle, le débit d'une file vaut `concurrence / cadence de sondage` : deux jobs par
+        // minute sur `webhook-status` (concurrence 1, cadence 30 s), MESURÉ en production, quand une campagne
+        // de 5 000 destinataires en produit quinze mille.
+        // ⚠️ Le facteur `concurrence` a longtemps manqué à cette phrase, et il n'est pas cosmétique : c'est
+        // lui qui a fait sonder `agent-turn` six fois par seconde (cf. `SONDAGE_FILET_NOTIFIE` dans
+        // `names.ts`). Chaque unité de concurrence est un worker avec sa propre boucle. La cadence lente reste juste au REPOS et devient absurde sous retard. Détail et
         // chiffres dans `names.ts` (`SEUIL_RAFALE`). S'applique à toutes les files : celles qui n'ont jamais
         // vingt jobs en attente ne la déclenchent simplement jamais.
         burstWhenReadyExceeds: SEUIL_RAFALE,

@@ -120,6 +120,46 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
 export const SEUIL_RAFALE = 20;
 
 /**
+ * FILET de sondage, en secondes, QUAND la notification est active.
+ *
+ * 🔴 LA CONCURRENCE EST UN MULTIPLICATEUR DE SONDAGE, ET PERSONNE NE LE SAVAIT. Dans pg-boss, chaque unité de
+ * concurrence est un worker AVEC SA PROPRE boucle de sondage (`for (let i = 0; i < localConcurrency; i++)
+ * worker.start()`, lu dans sa source le 2026-09-10). La cadence d'une file ne vaut donc pas
+ * `1 / pollingIntervalSeconds`, elle vaut `concurrence / pollingIntervalSeconds`. Avec
+ * `AGENT_TURN_CONCURRENCY = 12` et un sondage à 2 s, `agent-turn` tapait la base SIX fois par seconde,
+ * 518 400 fois par jour, pour une file qui n'a traité AUCUN job en trente jours.
+ *
+ * MESURE DU 2026-09-10, en production, sur sept minutes : 785 555 requêtes/jour, dont 88 % de sondage à vide.
+ * Le modèle `somme(concurrence / cadence)` en prédisait 786 240, soit 0,1 % d'écart. À ~400 octets par
+ * sondage à vide, c'est ~300 Mo/jour, donc 9 Go/mois contre 5 Go inclus au plan Free : c'est LA cause du
+ * dépassement d'egress, et elle ne se voyait dans aucun écran.
+ *
+ * 🔴 CE FILET NE COÛTE AUCUNE LATENCE, et c'est vérifié des deux côtés. Dans la source de pg-boss,
+ * `worker.notify()` ANNULE le sommeil en cours (`this.loopDelayPromise.abort()`) : une notification réveille
+ * le worker à l'instant, quelle que soit la longueur du filet. Et en production, sur 102 jobs `webhook`
+ * réels, l'attente entre l'insertion et la prise vaut 37 ms en moyenne, 223 ms au pire : c'est la
+ * notification qui livre, le sondage n'a jamais servi sur ce chemin.
+ *
+ * ⚠️ ET LE REPLI EST AUTOMATIQUE, ce que le commentaire précédent ignorait : pg-boss réévalue
+ * `isNotifyActive()` À CHAQUE TOUR et retombe alors sur `pollingIntervalSeconds`. Poser le filet ÉGAL à la
+ * cadence de base « pour retrouver le comportement d'hier si l'écouteur tombe » était donc inutile, et c'est
+ * cette précaution mal fondée qui a coûté les deux tiers du trafic de la base. Le comportement d'hier est
+ * déjà garanti par `pollingIntervalSeconds`, qui ne bouge pas.
+ */
+export const SONDAGE_FILET_NOTIFIE = 60;
+
+/**
+ * Le filet d'une file, jamais plus court que sa cadence de base.
+ *
+ * ⚠️ Le `max` n'est pas décoratif : pg-boss REFUSE au démarrage un filet plus court que la cadence de base
+ * (`assert notifyPollingInterval >= pollingInterval`), donc une file de fond qu'on ralentirait un jour à
+ * 120 s ferait planter le worker au boot, pas en test. Fonction PURE, testée.
+ */
+export function filetNotifieSecondes(queue: string): number {
+  return Math.max(SONDAGE_FILET_NOTIFIE, pollingSecondsFor(queue));
+}
+
+/**
  * Une file est-elle réveillée par notification ? Une DLQ ne l'est jamais (personne ne la travaille), et une
  * file inconnue non plus : le défaut est « sondage seul », c'est-à-dire le comportement d'avant. Se tromper
  * ici doit coûter de la latence, jamais un réveil non voulu sur un chemin de fond.

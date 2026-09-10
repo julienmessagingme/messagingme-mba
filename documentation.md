@@ -552,6 +552,14 @@ réveillées par LISTEN/NOTIFY (`FILES_NOTIFIEES`), et toute file qui accumule a
 d'attendre entre deux prises jusqu'à s'être vidée. ⚠️ La concurrence, elle, ne bouge pas : c'est elle qui
 protège les entrants, pas la cadence. Rendre une rafale rapide n'autorise pas à en traiter deux ensemble.
 
+🔴 **LA CONCURRENCE MULTIPLIE LE SONDAGE, et le tableau ci-dessus ne se lit pas sans elle.** Chaque unité de
+concurrence est un worker pg-boss avec SA PROPRE boucle : une file sonde `concurrence / cadence` fois par
+seconde, pas `1 / cadence`. `agent-turn` (concurrence 12, cadence 2 s) tapait ainsi la base six fois par
+seconde pour une file vide. C'est pourquoi le FILET de sondage, celui qui s'applique quand la notification
+est vivante, vaut `SONDAGE_FILET_NOTIFIE` (60 s) et non la cadence de base : la notification annule le
+sommeil du worker à l'instant (vérifié dans la source de pg-boss et mesuré à 37 ms sur 102 jobs réels), et
+`pollingIntervalSeconds` reste le repli automatique si l'écouteur meurt.
+
 🔴 **Toute nouvelle file entre dans `BASE_QUEUES`**, sinon elle est invisible de `/ops` et sa DLQ n'est
 surveillée par personne. `tests/queue-names.test.ts` dérive la liste des `queue.work(...)` du worker et casse
 si on l'oublie ; `QUEUE_POLLING_SECONDS` et `FILES_NOTIFIEES` doivent aussi porter une entrée.
