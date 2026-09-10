@@ -79,8 +79,27 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0126**, le 2026-09-09 à 19h10 UTC (`agents.mention_ia_frequence` : annoncer qu'on est
-une IA devient un RÉGLAGE du client, à trois régimes). **Prochaine libre = 0127.**
+**Dernière appliquée : 0127**, le 2026-09-10 à 19h35 (`agent_tool_consommateurs` : la DÉFINITION d'un outil
+appartient à l'ESPACE, le CONSENTEMENT au couple (outil, consommateur), où le Meta Business Agent est un
+consommateur comme un agent). **Prochaine libre = 0128**, qui RETIRE `agent_id` et les six colonnes de
+consentement de `agent_tools`, et qui passe donc APRÈS que le nouveau code ait été vu en production.
+
+Vérifiée EN BASE après coup : les trois CHECK (dont celui qui verrouille la FORME de la clé de consommateur,
+recopiée verbatim depuis `src/agent/consommateur.ts` et tenue par un test qui LIT le fichier SQL), les deux
+index, `agent_id` devenu nullable, ZÉRO clé étrangère restante sur `agent_id`, les 2 lignes reprises (le
+compte exact des outils existants), et la requête du chemin chaud exécutée sur les vraies données.
+
+🔴 **« ELLE N'AJOUTE QUE » ÉTAIT FAUX, ET C'EST LA LEÇON DE CE LOT.** La migration a été écrite en croyant
+qu'ajouter suffisait, puis la CI a rendu ONZE tests d'intégration rouges d'un coup : le nouveau code n'écrit
+plus `agent_id`, or la colonne était `NOT NULL`. Toute création d'outil aurait échoué **pendant la fenêtre
+censée être la plus sûre**, celle où l'on peut encore revenir en arrière. Et le même raisonnement cachait un
+second piège, trouvé par un test : `agent_id` portait `on delete cascade`, donc supprimer UN agent aurait
+détruit les définitions que plusieurs agents partagent.
+
+⚠️ **LA RÈGLE CORRIGÉE, ET ELLE VAUT POUR TOUTES LES MIGRATIONS À VENIR** : « avant ou après le déploiement »
+ne se décide pas sur *ajoute / retire*, mais sur **« l'ancien code survit-il à ce changement ? »**. RELÂCHER
+une contrainte le laisse vivre (il continue de renseigner la colonne), RETIRER non. Un `drop not null` et un
+`drop constraint` de cascade ont donc leur place AVANT, un `drop column` APRÈS.
 
 ⚠️ **ET CETTE LIGNE A ENCORE DÉRIVÉ, une troisième fois.** Elle annonçait « écrite, PAS ENCORE APPLIQUÉE »
 alors que la base portait 0124, 0125 et 0126 depuis le jour même. La parade est écrite juste au-dessus et
