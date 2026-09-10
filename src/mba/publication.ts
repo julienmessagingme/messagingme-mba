@@ -54,6 +54,13 @@ export interface OutilChezMeta {
   id: string;
   name: string;
   description?: string;
+  /**
+   * 🔴 COMPARÉ, ET IL NE L'ÉTAIT PAS. Le plan ne regardait que la `description` : changer la MÉTHODE ou le
+   * CHEMIN d'une requête chez nous ne produisait AUCUN geste, et l'agent de Meta continuait d'appeler
+   * l'ancienne adresse indéfiniment. Le symptôme aurait été un outil qui « ne marche plus » sans qu'aucun
+   * écran ne montre d'écart, puisque l'aperçu aurait dit « rien à changer ».
+   */
+  request_definition?: { method?: string; path?: string };
 }
 
 export type Geste =
@@ -137,7 +144,7 @@ export function planifierPublication(
       const existant = parNomOutil.get(o.name);
       if (!existant) {
         gestes.push({ type: 'outil_creer', sourceId: s.id, outilId: o.id, nom: o.name });
-      } else if (existant.description !== descriptionPourMeta(o)) {
+      } else if (aChange(existant, o)) {
         gestes.push({ type: 'outil_modifier', sourceId: s.id, outilMetaId: existant.id, outilId: o.id, nom: o.name });
       }
     }
@@ -150,6 +157,26 @@ export function planifierPublication(
   }
 
   return gestes;
+}
+
+/**
+ * Cet outil a-t-il bougé depuis la dernière publication ?
+ *
+ * 🔴 LES TROIS CHAMPS COMPTENT, et n'en comparer qu'un est la faute qui rend une publication silencieusement
+ * incomplète : la DESCRIPTION (qui porte aussi la clause « ne pas utiliser », seul levier qui décide quand
+ * l'outil se déclenche), la MÉTHODE et le CHEMIN (sans quoi Meta appellerait l'ancienne adresse pour
+ * toujours, avec un aperçu qui annonce « rien à changer »).
+ *
+ * ⚠️ Un `request_definition` ABSENT de la réponse de Meta ne vaut PAS « identique » : on ne peut pas
+ * comparer ce qu'on n'a pas reçu, donc on demande la mise à jour. Le prix est un geste de trop à chaque
+ * publication si Meta cessait un jour de rendre ce champ ; le prix de l'inverse est un outil cassé pour
+ * toujours, en silence.
+ */
+function aChange(chezMeta: OutilChezMeta, chezNous: OutilAPublier): boolean {
+  if (chezMeta.description !== descriptionPourMeta(chezNous)) return true;
+  const rd = chezMeta.request_definition;
+  if (!rd) return true;
+  return rd.method !== chezNous.methode || rd.path !== chezNous.chemin;
 }
 
 /**

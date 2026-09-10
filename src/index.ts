@@ -1222,7 +1222,6 @@ async function main(): Promise<void> {
           id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
           authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
         })),
-      secretDeLaSource: async (tenant, sourceId) => (await agentSources.pourAppel(tenant, sourceId))?.authSecret ?? null,
       /**
        * Les outils EXPOSES au MBA, avec leur methode et leur chemin.
        *
@@ -1251,21 +1250,43 @@ async function main(): Promise<void> {
         for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
         return { connecteurs, outilsParConnecteur };
       },
-      appliquer: async (tenant, pn, geste) => {
+      appliquer: async (tenant, pn, geste, ctx) => {
         const client = await metaFactory.mbaClientForTenant(tenant);
+        /**
+         * ⚠️ DEUX LECTURES MEMORISEES POUR TOUTE LA PUBLICATION. Sans ce contexte, chaque geste relisait la
+         * liste des connecteurs CHEZ META et les sources EN BASE : quarante lectures pour un plan de vingt
+         * gestes, dont la moitie sur le reseau.
+         *
+         * 🔴 LE CACHE DES CONNECTEURS EST INVALIDE des qu on en cree ou supprime un, sinon le geste suivant
+         * chercherait un connecteur dans une photo prise AVANT sa creation, et ne le trouverait pas.
+         */
+        const connecteurs = async (): Promise<Array<{ id: string; name: string }>> => {
+          const vu = ctx.get('connecteurs');
+          if (vu) return vu as Array<{ id: string; name: string }>;
+          const frais = await client.listConnectors(pn);
+          ctx.set('connecteurs', frais);
+          return frais;
+        };
         // Le connecteur se retrouve par son NOM au moment ou on en a besoin : `connecteur_creer` precede
         // toujours `outil_creer` dans le plan, donc il existe. Le porter dans le geste obligerait a le
         // deviner avant sa creation.
         const idDuConnecteur = async (nomSource: string): Promise<string | null> =>
-          (await client.listConnectors(pn)).find((c) => c.name === nomSource)?.id ?? null;
-        const sourceParId = async (id: string) => (await agentSources.lister(tenant)).find((s) => s.id === id);
+          (await connecteurs()).find((c) => c.name === nomSource)?.id ?? null;
+        const sourceParId = async (id: string) => {
+          let liste = ctx.get('sources') as Awaited<ReturnType<typeof agentSources.lister>> | undefined;
+          if (!liste) { liste = await agentSources.lister(tenant); ctx.set('sources', liste); }
+          return liste.find((s) => s.id === id);
+        };
 
         if (geste.type === 'connecteur_creer') {
           const s = await sourceParId(geste.sourceId);
-          if (s) await client.createConnector(pn, corpsConnecteurMeta({
-            id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
-            authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
-          }));
+          if (s) {
+            await client.createConnector(pn, corpsConnecteurMeta({
+              id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
+              authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
+            }));
+            ctx.delete('connecteurs'); // il vient d apparaitre : la photo d avant ne le contient pas.
+          }
           return;
         }
         if (geste.type === 'connecteur_modifier') {
@@ -1278,6 +1299,7 @@ async function main(): Promise<void> {
         }
         if (geste.type === 'connecteur_supprimer') {
           await client.deleteConnector(pn, geste.connecteurId);
+          ctx.delete('connecteurs');
           return;
         }
         if (geste.type === 'secret_poser') {

@@ -43,7 +43,6 @@ function monter(opts: { numero?: string | null; echoueSur?: Geste['type'] } = {}
     mbaPublication: {
       numeroDuTenant: async () => (opts.numero === undefined ? '1234840649713976' : opts.numero),
       sources: async () => [SRC],
-      secretDeLaSource: async () => 'SECRET',
       outilsExposes: async () => [OUT],
       etatMeta: async () => META_VIDE,
       appliquer: async (_t, _pn, g) => {

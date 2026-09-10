@@ -319,9 +319,18 @@ export class MbaClient {
     return this.appel<unknown>('POST', `${phoneNumberId}/agent_connectors/${connectorId}/upsertApiKey`, corps);
   }
 
-  async listConnectorTools(phoneNumberId: string, connectorId: string): Promise<Array<{ id: string; name: string; description?: string }>> {
+  /**
+   * ⚠️ `request_definition` EST RENDU TEL QUEL, et il n'est pas facultatif pour l'appelant : le plan de
+   * publication le COMPARE. Sans lui, chaque publication demanderait la mise à jour de tous les outils, et
+   * le test « publier deux fois ne produit aucun geste » tomberait, ce qui est précisément le signal que la
+   * réconciliation ne marche plus.
+   */
+  async listConnectorTools(phoneNumberId: string, connectorId: string): Promise<Array<{
+    id: string; name: string; description?: string; request_definition?: { method?: string; path?: string };
+  }>> {
+    type T = { id: string; name: string; description?: string; request_definition?: { method?: string; path?: string } };
     const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors/${connectorId}/tools`);
-    return Array.isArray(r) ? r as Array<{ id: string; name: string }> : ((r as { data?: unknown })?.data as Array<{ id: string; name: string }>) ?? [];
+    return Array.isArray(r) ? r as T[] : ((r as { data?: unknown })?.data as T[]) ?? [];
   }
 
   /**

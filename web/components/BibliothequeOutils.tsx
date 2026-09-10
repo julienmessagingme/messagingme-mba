@@ -218,16 +218,30 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
               {/* La case « exposé au MBA ». Elle n'est PAS un réglage d'agent : elle rattache l'outil au
                   consommateur `mba:<numero>`, qui est un consommateur comme un autre depuis 0127. */}
               {isAdmin && (
-                <label className="mt-3 flex items-center gap-2 text-xs text-ink-700">
+                <label className={`mt-3 flex items-center gap-2 text-xs ${o.origin === 'http' ? 'text-ink-700' : 'text-ink-400'}`}>
                   <input
                     type="checkbox"
                     data-testid={`outil-${o.name}-mba`}
                     checked={exposeAuMba(o)}
+                    /* 🔴 GRISÉE POUR UN OUTIL QUI N'EST PAS PUBLIABLE, et la raison est DITE. Un connecteur
+                       Meta est une API REST : son schéma exige `base_url` et `auth_type`, et n'a AUCUN champ
+                       de protocole (vérifié sur le corpus OpenAPI officiel le 2026-09-10). Un outil MAISON
+                       n'a pas d'adresse à appeler, un outil MCP ne parle pas HTTP. Laisser la case cochable
+                       produirait une case cochée que la publication ignore en silence, ce qui est pire que
+                       de l'interdire. */
+                    disabled={o.origin !== 'http'}
                     onChange={(e) => { void basculerMba(o, e.target.checked); }}
-                    className="h-3.5 w-3.5 rounded border-ink-300"
+                    className="h-3.5 w-3.5 rounded border-ink-300 disabled:opacity-40"
                   />
                   {t('Exposé à l’agent de Meta', 'Exposed to Meta’s agent')}
-                  {o.risk === 'irreversible' && (
+                  {o.origin !== 'http' && (
+                    <span>
+                      {o.origin === 'mba'
+                        ? t('(outil maison : rien à appeler chez Meta)', '(built-in tool: nothing for Meta to call)')
+                        : t('(MCP : Meta ne sait appeler que du HTTP)', '(MCP: Meta only calls HTTP)')}
+                    </span>
+                  )}
+                  {o.risk === 'irreversible' && o.origin === 'http' && (
                     <span className="text-coral">
                       {t('(sans la validation humaine : Meta n’a pas ce réglage)', '(without human approval: Meta has no such setting)')}
                     </span>

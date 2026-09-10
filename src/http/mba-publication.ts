@@ -24,14 +24,19 @@ export interface MbaPublicationDeps {
   numeroDuTenant(tenantId: string): Promise<string | null>;
   /** Les sources de l'espace, sans secret. */
   sources(tenantId: string): Promise<SourceAPublier[]>;
-  /** Le secret DÉCHIFFRÉ d'une source, lu seulement au moment de le poser chez Meta. */
-  secretDeLaSource(tenantId: string, sourceId: string): Promise<string | null>;
   /** Les outils EXPOSÉS au MBA, déjà résolus avec leur méthode et leur chemin. */
   outilsExposes(tenantId: string, phoneNumberId: string): Promise<OutilAPublier[]>;
   /** L'état actuel chez Meta. */
   etatMeta(tenantId: string, phoneNumberId: string): Promise<EtatMeta>;
-  /** Applique UN geste. Isolé pour rester testable sans réseau. */
-  appliquer(tenantId: string, phoneNumberId: string, geste: Geste): Promise<void>;
+  /**
+   * Applique UN geste. Isolé pour rester testable sans réseau.
+   *
+   * ⚠️ `ctx` EST UN BAC À MÉMOIRE PARTAGÉ PAR TOUTE UNE PUBLICATION, et il n'est pas décoratif : sans lui,
+   * l'implémentation relisait la liste des connecteurs CHEZ META et les sources EN BASE à chaque geste. Sur
+   * un plan de vingt gestes, cela faisait quarante lectures dont la moitié sur le réseau, pour un état qui
+   * ne change qu'aux gestes qu'on vient d'appliquer. La route le crée vide et le passe tel quel.
+   */
+  appliquer(tenantId: string, phoneNumberId: string, geste: Geste, ctx: Map<string, unknown>): Promise<void>;
 }
 
 export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicationDeps, guard?: Guard): void {
@@ -71,9 +76,12 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     }
     const gestes = await planifier(tenant, pn);
     const faits: Geste[] = [];
+    // Vit le temps de CETTE publication, et meurt avec elle : deux publications ne partagent jamais un état
+    // lu, ce qui serait précisément la façon d'agir sur une photo périmée.
+    const ctx = new Map<string, unknown>();
     for (const g of gestes) {
       try {
-        await deps.appliquer(tenant, pn, g);
+        await deps.appliquer(tenant, pn, g, ctx);
         faits.push(g);
       } catch (err) {
         // eslint-disable-next-line no-console

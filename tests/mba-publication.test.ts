@@ -27,7 +27,12 @@ const VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 /** L'état chez Meta qui correspond EXACTEMENT à `SRC` + `OUT` : c'est lui qui doit produire zéro geste. */
 const ALIGNE: EtatMeta = {
   connecteurs: [{ id: 'c1', name: 'Shopify', base_url: 'https://api.shopify.com/v1', auth_type: 'API_KEY' }],
-  outilsParConnecteur: { c1: [{ id: 't1', name: 'check_order_status', description: descriptionPourMeta(OUT) }] },
+  outilsParConnecteur: {
+    c1: [{
+      id: 't1', name: 'check_order_status', description: descriptionPourMeta(OUT),
+      request_definition: { method: 'GET', path: '/orders/{id}' },
+    }],
+  },
 };
 
 describe('planifierPublication', () => {
@@ -78,7 +83,10 @@ describe('planifierPublication', () => {
       ...ALIGNE,
       outilsParConnecteur: {
         c1: [
-          { id: 't1', name: 'check_order_status', description: descriptionPourMeta(OUT) },
+          {
+            id: 't1', name: 'check_order_status', description: descriptionPourMeta(OUT),
+            request_definition: { method: 'GET', path: '/orders/{id}' },
+          },
           { id: 't2', name: 'ajoute_a_la_main' },
         ],
       },
@@ -97,6 +105,27 @@ describe('planifierPublication', () => {
   it('une description modifiée chez nous produit une modification chez Meta', () => {
     const g = planifierPublication([SRC], [{ ...OUT, description: 'Autre chose.' }], ALIGNE);
     expect(g).toEqual([{ type: 'outil_modifier', sourceId: 's1', outilMetaId: 't1', outilId: 'o1', nom: 'check_order_status' }]);
+  });
+
+  it('🔴 changer la MÉTHODE ou le CHEMIN produit une modification', () => {
+    // Trouvé en revue : le plan ne comparait QUE la description. Changer l'adresse d'une requête chez nous
+    // ne produisait AUCUN geste, l'aperçu annonçait « rien à changer », et l'agent de Meta continuait
+    // d'appeler l'ancienne adresse pour toujours. Symptôme : un outil qui « ne marche plus » sans qu'aucun
+    // écran ne montre le moindre écart.
+    expect(planifierPublication([SRC], [{ ...OUT, chemin: '/v2/orders/{id}' }], ALIGNE).map((x) => x.type))
+      .toEqual(['outil_modifier']);
+    expect(planifierPublication([SRC], [{ ...OUT, methode: 'POST' }], ALIGNE).map((x) => x.type))
+      .toEqual(['outil_modifier']);
+  });
+
+  it('🔴 un `request_definition` ABSENT de la réponse de Meta ne vaut PAS « identique »', () => {
+    // On ne peut pas comparer ce qu'on n'a pas reçu. Le prix de ce choix est un geste de trop si Meta
+    // cessait de rendre ce champ ; le prix de l'inverse est un outil cassé pour toujours, en silence.
+    const sansRd: EtatMeta = {
+      ...ALIGNE,
+      outilsParConnecteur: { c1: [{ id: 't1', name: 'check_order_status', description: descriptionPourMeta(OUT) }] },
+    };
+    expect(planifierPublication([SRC], [OUT], sansRd).map((x) => x.type)).toEqual(['outil_modifier']);
   });
 
   it('🔴 changer SEULEMENT « ne pas utiliser » produit quand même une modification', () => {
