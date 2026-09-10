@@ -187,8 +187,29 @@ function AccueilInner({ session }: { session: Session }) {
     return () => { vivant = false; };
   }, [session.tenantId, account?.phoneNumberId]);
 
+  /**
+   * 🔴 « ON NE SAIT PAS » N'AUTORISE PAS À N'ÉTEINDRE QUE CHEZ NOUS (2026-09-10, second passage).
+   *
+   * Le correctif du matin ne pilotait Meta que `if (mbaReel?.eligible)`. Tant que la lecture de l'état chez
+   * Meta n'a pas abouti (deux allers-retours réseau), `mbaReel` vaut `null` : un clic rapide retombait donc
+   * sur notre seul drapeau, EN SILENCE, c'est-à-dire exactement la panne qu'on venait de corriger, en plus
+   * rare et donc en plus difficile à croire.
+   *
+   * ⚠️ LA DISTINCTION QUI COMPTE : l'absence de NUMÉRO et l'absence d'ÉTAT ne sont pas la même chose. Sans
+   * numéro connecté, il n'y a rien à piloter chez Meta et notre drapeau se suffit (il ouvre le bloc MBA du
+   * constructeur de scénario). Avec un numéro mais sans état lu, on ignore ce qu'on casserait : on refuse.
+   */
+  const etatMetaInconnu = Boolean(account?.phoneNumberId) && mbaReel === null;
+
   async function toggleMba() {
     if (!isAdmin) return;
+    if (etatMetaInconnu) {
+      setErreurMba(t(
+        'État de l’agent chez Meta non lu pour l’instant. Le bouton ne peut pas l’éteindre à l’aveugle : rechargez la page.',
+        'The agent state at Meta could not be read yet. The switch will not act blindly: reload the page.',
+      ));
+      return;
+    }
     const next = !mbaEnabled;
     setSavingMba(true);
     setErreurMba(null);
@@ -358,7 +379,7 @@ function AccueilInner({ session }: { session: Session }) {
                 testid="mba-toggle"
                 checked={mbaEnabled}
                 onChange={toggleMba}
-                disabled={!isAdmin || savingMba}
+                disabled={!isAdmin || savingMba || etatMetaInconnu}
                 title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
               />
               <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
