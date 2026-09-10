@@ -84,12 +84,30 @@ secret qu'on a POSÉ chez Meta, seul moyen de savoir quand le reposer). Avant el
 19h35 (`agent_tool_consommateurs` : la DÉFINITION d'un outil appartient à l'ESPACE, le CONSENTEMENT au couple
 (outil, consommateur), où le Meta Business Agent est un consommateur comme un agent).
 
-🔴 **IL Y A UN TROU : 0128 N'EXISTE PAS ENCORE, ET C'EST DÉLIBÉRÉ.** Elle est réservée depuis le 2026-09-10 au
-RETRAIT de `agent_id` et des six colonnes de consentement de `agent_tools`, qui passe APRÈS que le nouveau
-code ait été vu en production ; l'en-tête de 0127 et trois documents la nomment ainsi. Renuméroter pour
-boucher le trou aurait rendu ces textes faux, alors que le runner applique simplement les fichiers absents de
-`schema_migrations` par ordre de nom, sans exiger que la suite soit continue. **Prochaine libre = 0130**, et
-0128 reste due.
+⚠️ **0128 A ÉTÉ APPLIQUÉE APRÈS 0129, et le désordre des numéros est délibéré** : elle RETIRE `agent_id` et
+les six colonnes de consentement de `agent_tools`, donc elle devait passer après que le nouveau code ait été
+vu en production, quand 0129 devait passer avant. Le runner applique les fichiers absents de
+`schema_migrations` par ordre de nom, sans exiger que la suite soit continue ni que l'ordre d'application la
+suive. **Prochaine libre = 0130.**
+
+🔴 **L'ORDRE DE LA SÉQUENCE S'INVERSE POUR UNE MIGRATION QUI RETIRE** : build, `up -d --build`, PUIS
+`migrate`. La routine documentée (migrer d'abord) vaut pour une migration qui AJOUTE une colonne que le code
+écrit. Ici, migrer d'abord aurait cassé la production pendant toute la durée du déploiement. Et avant de
+lancer `migrate`, le code DÉPLOYÉ a été mesuré dans le conteneur (`grep` dans `mba-api` et `mba-worker` :
+zéro écriture restante sur les colonnes qui partaient), pas déduit du fait qu'on venait de le pousser.
+
+🔴 **DEUX LECTEURS ÉCRIVAIENT ENCORE CES COLONNES, ET AUCUN N'ÉTAIT VISIBLE D'UN TEST UNITAIRE.**
+`PgUserStore.deleteUser` éteignait les outils du partant sur `agent_tools` EN PLUS de la table de liaison :
+tout `delete` d'un compte serait tombé en `42703`, sur un chemin qu'on n'emprunte que le jour d'un départ de
+collaborateur. Et trois fixtures d'intégration inséraient encore `agent_id`, `actif` et `active_par`, donc la
+CI serait devenue rouge sur une base fraîche. La question « qui écrit encore ceci ? » se pose AVANT d'écrire
+le `drop column`, pas après l'avoir appliqué.
+
+Vérifiée EN BASE après coup : les 7 colonnes parties, les deux CHECK partis, les deux index remplacés
+(`agent_tools_name_idx` et `agent_tools_actifs_idx` absents, `agent_tools_nom_espace_idx` présent), et les
+chemins chauds exécutés PAR LE VRAI CODE (`listActifs`, `listToutes`, `byName`, `listActifsConsommateur`,
+`listCatalogue`, `PgSourceStore.lister`), plus les deux écritures de `deleteUser` jouées pour de vrai dans
+une transaction annulée.
 
 🔴 **UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT (0129).** Meta ne rend JAMAIS le secret d'un connecteur : la
 publication ne le posait donc qu'à la CRÉATION, et un commentaire du code affirmait qu'un bouton dédié

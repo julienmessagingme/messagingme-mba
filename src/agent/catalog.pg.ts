@@ -37,9 +37,10 @@ const JOINTURE = `from agent_tools t
  * Colonnes lues par TOUTES les requêtes. Une seule liste : deux projections divergentes finiraient par ne
  * plus rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution.
  *
- * 🔴 `autonome` VIENT DE `c`, LA LIAISON, PAS DE `t`. C'est un consentement, il est par consommateur. Le lire
- * sur `t` rendrait l'ancienne colonne tant que 0128 ne l'a pas retirée : silencieusement juste pour le
- * premier consommateur, et faux pour tous les autres.
+ * 🔴 `autonome` VIENT DE `c`, LA LIAISON, PAS DE `t`. C'est un consentement, il est par consommateur. La
+ * colonne de `t` n'existe plus depuis 0128, mais tant qu'elle était là, la lire aurait été silencieusement
+ * juste pour le premier consommateur et faux pour tous les autres : le compilateur n'en aurait rien dit, et
+ * la base non plus.
  */
 const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
                   t.binding, t.source_id, t.request_id, t.output_paths, t.risk, t.timeout_ms, t.max_bytes,
@@ -209,7 +210,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       // porte desormais les prefixes `t.` et `c.` de la JOINTURE, qui n existent pas dans un UPDATE. Postgres
       // repond « missing FROM-clause entry for table t », et c est ce qu il a repondu en CI.
       //
-      // ⚠️ LE PERIMETRE A CHANGE : `agent_id = $2` n existe plus (la colonne part avec 0128). C est un
+      // ⚠️ LE PERIMETRE A CHANGE : `agent_id = $2` n existe plus (colonne retiree par 0128). C est un
       // `exists` sur la LIAISON qui le remplace, et il n est pas decoratif : sans lui, l ecran d un agent
       // pourrait corriger les mots d un outil qu il n utilise pas, donc changer le comportement de l agent
       // du voisin.

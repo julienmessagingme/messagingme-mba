@@ -22,7 +22,7 @@ import {
 const COLS = `s.id, s.tenant_id, s.kind, s.label, s.base_url, s.auth_kind, s.auth_header_name,
   (s.auth_secret_enc is not null) as a_auth, (s.secret_publie_le is not null) as secret_publie,
   s.status, s.last_ok_at, s.last_error,
-  -- 🔴 CES DEUX COMPTEURS LISAIENT t.actif ET t.agent_id, QUE LA MIGRATION 0128 SUPPRIME. Le
+  -- 🔴 CES DEUX COMPTEURS LISAIENT t.actif ET t.agent_id, QUE LA MIGRATION 0128 A SUPPRIMEES. Le
   -- consentement vit désormais dans agent_tool_consommateurs (0127). Les laisser tels quels aurait fait
   -- tomber l'écran des connecteurs au moment du retrait des colonnes, sans qu'aucun test unitaire ne le voie.
   --
