@@ -21,8 +21,21 @@ import {
 /** Colonnes de la projection PUBLIQUE. Le secret n'y est pas, seulement son EXISTENCE. */
 const COLS = `s.id, s.tenant_id, s.kind, s.label, s.base_url, s.auth_kind, s.auth_header_name,
   (s.auth_secret_enc is not null) as a_auth, s.status, s.last_ok_at, s.last_error,
-  (select count(*)::int from agent_tools t where t.source_id = s.id and t.actif) as outils_actifs,
-  (select count(distinct t.agent_id)::int from agent_tools t where t.source_id = s.id) as agents`;
+  -- 🔴 CES DEUX COMPTEURS LISAIENT t.actif ET t.agent_id, QUE LA MIGRATION 0128 SUPPRIME. Le
+  -- consentement vit désormais dans agent_tool_consommateurs (0127). Les laisser tels quels aurait fait
+  -- tomber l'écran des connecteurs au moment du retrait des colonnes, sans qu'aucun test unitaire ne le voie.
+  --
+  -- ⚠️ count(distinct t.id) ET NON count(*) : un outil actif pour DEUX consommateurs est UN outil. Avec
+  -- count(*), la jointure le compterait deux fois et le refus de supprimer une source afficherait un
+  -- chiffre faux.
+  (select count(distinct t.id)::int from agent_tools t
+     join agent_tool_consommateurs c on c.tool_id = t.id and c.tenant_id = t.tenant_id
+    where t.source_id = s.id and c.actif) as outils_actifs,
+  -- ⚠️ CE CHIFFRE COMPTE DÉSORMAIS DES CONSOMMATEURS, PAS DES AGENTS : le Meta Business Agent en est un.
+  -- Le nom du champ reste agents parce que l'écran le lit sous ce nom ; c'est son SENS qui s'élargit.
+  (select count(distinct c.consommateur)::int from agent_tools t
+     join agent_tool_consommateurs c on c.tool_id = t.id and c.tenant_id = t.tenant_id
+    where t.source_id = s.id) as agents`;
 
 interface LigneVue {
   id: string; tenant_id: string; kind: string; label: string; base_url: string;

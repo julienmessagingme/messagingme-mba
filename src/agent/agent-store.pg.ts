@@ -4,6 +4,7 @@ import { estFrequenceMention } from './agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
 import { asArray, asRecord } from '../webhooks/json';
 import { CODE_SORTIE_RE, ficheAgentSchema, ficheVide } from './fiche';
+import { consommateurAgent } from './consommateur';
 
 interface Ligne {
   id: string;
@@ -94,12 +95,42 @@ export class PgAgentStore implements AgentStore {
     return versComplet(res.rows[0]!);
   }
 
+  /**
+   * Supprime un agent, et le CONSENTEMENT qu'il portait sur les outils de l'espace.
+   *
+   * Ses sessions, appels et fiches de connaissance partent avec lui (`on delete cascade`, migration 0086).
+   * Un bloc de scénario qui le désignait encore devient un passe-plat, et le moteur ne suit alors qu'une
+   * arête LIBRE : il ne vole aucune branche typée.
+   *
+   * 🔴 LES OUTILS, EUX, NE PARTENT PLUS AVEC LUI, ET C'EST TOUT L'OBJET DE CETTE MÉTHODE DEPUIS 0127. Une
+   * DÉFINITION appartient à l'ESPACE : la supprimer avec l'agent casserait les autres agents qui s'en
+   * servent. Ce qui doit partir, c'est sa ligne de `agent_tool_consommateurs`.
+   *
+   * ⚠️ ET AUCUNE CASCADE NE LE FAIT, parce que `consommateur` est un TEXTE (`agent:<uuid>`), choisi pour que
+   * le Meta Business Agent puisse être un consommateur sans avoir de fiche d'agent. C'est le prix de ce
+   * choix, il se paie ICI, en code, et un test d'intégration le tient. Sans lui, la ligne resterait en base,
+   * invisible, et fausserait les compteurs « utilisé par N consommateurs » de la bibliothèque.
+   *
+   * ⚠️ UNE TRANSACTION, parce que l'ATOMICITÉ compte même si l'ordre est indifférent (rien ne lit entre les
+   * deux) : la première écriture seule laisserait un orphelin que plus rien ne rattrapera jamais.
+   */
   async remove(tenantId: string, id: string): Promise<boolean> {
-    // Les sessions, outils, appels et fiches de connaissance de cet agent partent avec lui (`on delete
-    // cascade`, migration 0086). Un bloc de scénario qui le désignait encore devient un passe-plat, et le
-    // moteur ne suit alors qu'une arête LIBRE : il ne vole aucune branche typée.
-    const res = await this.pool.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
-    return (res.rowCount ?? 0) > 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
+      await client.query(
+        'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
+        [tenantId, consommateurAgent(id)],
+      );
+      await client.query('commit');
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async patch(tenantId: string, id: string, patch: PatchAgent): Promise<AgentComplet | null> {

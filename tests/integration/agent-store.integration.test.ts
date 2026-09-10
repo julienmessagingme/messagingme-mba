@@ -215,9 +215,11 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     // base, invisibles, et faussent les compteurs « utilisé par N consommateurs » de la bibliothèque.
     const agent = await agents.create(tenantId, `jetable-${Date.now()}`, 'Je suis une IA.', 'm');
     const outil = await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
-       values ($1, 'mba', 'menage_consentement', 'M', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
-      [tenantId],
+      // ⚠️ `agent_id` est encore NOT NULL : la migration 0128, qui le retire, passe APRÈS le déploiement.
+      // C'est la fenêtre où les deux formes coexistent, et ce test tourne dedans.
+      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+       values ($1, $2, 'mba', 'menage_consentement', 'M', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
+      [tenantId, agent!.id],
     );
     const toolId = outil.rows[0]!.id;
     await pool.query(

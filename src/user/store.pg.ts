@@ -315,6 +315,22 @@ export class PgUserStore {
           where tenant_id = $2 and active_par = $1 and actif`,
         [userId, tenantId],
       );
+      // 🔴 LE MÊME CHECK VIT MAINTENANT SUR `agent_tool_consommateurs` (migration 0127), et il ferait
+      // échouer ce `delete` exactement de la même façon. Recopier la contrainte sans recopier ce qui la
+      // protège aurait rendu le bug du 2026-08-28 à l'identique : un départ de collaborateur en 500, donc
+      // une page Cloudflare, sur un geste parfaitement légitime.
+      const liaisonsActives = await client.query(
+        `update agent_tool_consommateurs
+            set actif = false, active_par = null, active_le = null, updated_at = now()
+          where tenant_id = $2 and active_par = $1 and actif`,
+        [userId, tenantId],
+      );
+      const liaisonsAutonomes = await client.query(
+        `update agent_tool_consommateurs
+            set autonome = false, autonome_par = null, autonome_le = null, updated_at = now()
+          where tenant_id = $2 and autonome_par = $1 and autonome`,
+        [userId, tenantId],
+      );
       const autonomies = await client.query(
         `update agent_tools
             set autonome = false, autonome_par = null, autonome_le = null, updated_at = now()
@@ -336,7 +352,11 @@ export class PgUserStore {
         return (exists.rowCount ?? 0) > 0 ? 'last_admin' : 'not_found';
       }
       await client.query('commit');
-      const eteints = (outils.rowCount ?? 0) + (autonomies.rowCount ?? 0);
+      // ⚠️ LES QUATRE ÉCRITURES, PAS DEUX. Depuis la migration 0127 le consentement vit aussi dans
+      // `agent_tool_consommateurs` : ne compter que les deux anciennes ferait sous-déclarer ce qu'on vient
+      // d'éteindre, dans le seul journal qui relie un départ à un agent devenu muet.
+      const eteints = (outils.rowCount ?? 0) + (autonomies.rowCount ?? 0)
+        + (liaisonsActives.rowCount ?? 0) + (liaisonsAutonomes.rowCount ?? 0);
       // Journalisé : un agent qui cesse d'envoyer un bloc doit pouvoir être rattaché à ce geste-là, sans
       // quoi personne ne fera jamais le lien entre un départ et un agent devenu muet.
       if (eteints > 0) {
