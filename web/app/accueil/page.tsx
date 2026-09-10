@@ -15,6 +15,7 @@ import {
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
+import { getMbaStatus, putMbaRollout, type MbaStatus } from '@/lib/api-mba';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -56,7 +57,18 @@ function AccueilInner({ session }: { session: Session }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [account, setAccount] = useState<AccountStatusResponse | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
+  /**
+   * L'etat REEL de l'agent chez Meta, par opposition a `mbaEnabled` qui n'est que NOTRE drapeau.
+   *
+   * 🔴 CETTE DISTINCTION EST TOUT LE CORRECTIF DU 2026-09-10. La carte affichait `mbaEnabled` sous le titre
+   * « Meta Business Agent », a cote d'une phrase ECRITE EN DUR annoncant qu'on attendait l'ouverture de
+   * Meta. Les deux etaient faux le meme jour : l'agent tournait chez Meta en `EVERYONE` depuis des jours,
+   * et Julien a bascule ce bouton en croyant l'eteindre. Il a eteint notre drapeau, qui ne commande que le
+   * bloc MBA du constructeur de scenario. `null` = pas encore lu, ou lecture impossible.
+   */
+  const [mbaReel, setMbaReel] = useState<MbaStatus | null>(null);
   const [savingMba, setSavingMba] = useState(false);
+  const [erreurMba, setErreurMba] = useState<string | null>(null);
   const [savingHubspot, setSavingHubspot] = useState(false);
   // Dialogue Pause vs Déconnexion complète (candidat 2), ouvert au clic « couper ». Nombre de numéros du tenant :
   // sert à AVERTIR que la déconnexion (tenant-wide, le portail est lié par tenant) coupe TOUS les numéros.
@@ -140,15 +152,56 @@ function AccueilInner({ session }: { session: Session }) {
     void loadKpis();
   }, [load, loadAccount, loadKpis]);
 
+  /**
+   * Allume ou eteint l'agent, CHEZ META quand c'est possible, et pas seulement chez nous.
+   *
+   * 🔴 AVANT LE 2026-09-10, CE BOUTON N'ECRIVAIT QUE `mbaEnabled`, notre drapeau local. Un utilisateur qui
+   * le baissait croyait couper l'agent ; il ne coupait rien du tout, et Meta continuait de repondre a ses
+   * clients. C'est arrive a Julien sur son propre numero. Un interrupteur qui n'interrompt pas est pire
+   * qu'une absence d'interrupteur : il fait croire que la question est reglee.
+   *
+   * ⚠️ L'ORDRE COMPTE : Meta d'abord, notre drapeau ensuite. Si l'appel a Meta echoue (numero non eligible,
+   * jeton expire, agent jamais cree), on ne touche a rien et on le DIT. L'inverse laisserait notre drapeau
+   * annoncer un etat que Meta n'a pas.
+   *
+   * ⚠️ Quand le numero n'est pas eligible, le bouton ne pilote QUE notre drapeau, qui garde son sens propre :
+   * il ouvre le bloc MBA du constructeur de scenario pour preparer les parcours avant l'ouverture de Meta.
+   */
+  /**
+   * L'etat REEL de l'agent chez Meta, relu des que le numero du compte est connu.
+   *
+   * ⚠️ SEPARE DE `load()` : le numero ne vient pas du profil mais de l'etat du compte, qui se charge par un
+   * autre chemin. Le lire dans `load()` aurait marche une fois sur deux, selon l'ordre d'arrivee des deux
+   * reponses, ce qui est exactement le genre de dependance qui rend un ecran « parfois juste ».
+   *
+   * Best-effort : cet appel depend d'un jeton valide et d'un aller-retour chez Meta. Un echec laisse
+   * `null`, et la carte dit « non lu » plutot que d'inventer un etat.
+   */
+  useEffect(() => {
+    const pn = account?.phoneNumberId;
+    if (!pn) { setMbaReel(null); return; }
+    let vivant = true;
+    getMbaStatus(session.tenantId, pn)
+      .then((s) => { if (vivant) setMbaReel(s); })
+      .catch(() => { if (vivant) setMbaReel(null); });
+    return () => { vivant = false; };
+  }, [session.tenantId, account?.phoneNumberId]);
+
   async function toggleMba() {
     if (!isAdmin) return;
     const next = !mbaEnabled;
     setSavingMba(true);
+    setErreurMba(null);
     setMbaEnabled(next); // optimiste
     try {
+      if (mbaReel?.eligible && account?.phoneNumberId) {
+        const s = await putMbaRollout(session.tenantId, account.phoneNumberId, next);
+        setMbaReel((v) => (v ? { ...v, settings: s } : v));
+      }
       await putSettings(session.tenantId, next);
-    } catch {
+    } catch (e) {
       setMbaEnabled(!next); // rollback
+      setErreurMba(e instanceof Error ? e.message : t('Le changement n’a pas pu être appliqué.', 'The change could not be applied.'));
     } finally {
       setSavingMba(false);
     }
@@ -281,12 +334,23 @@ function AccueilInner({ session }: { session: Session }) {
               <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
-                <p className="mt-0.5 text-xs text-ink-500">
-                  {mbaEnabled
-                    ? t("Activé : l'agent IA répondra quand Meta ouvrira la fonctionnalité sur ton numéro.", 'Enabled: the AI agent will reply once Meta opens the feature on your number.')
-                    : t("Désactivé. Active-le pour préparer l'agent IA WhatsApp.", 'Disabled. Enable it to prepare the WhatsApp AI agent.')}
-                  <span className="ml-1 text-ink-400">{t("En attente d'ouverture Meta (mur ToS Business AI).", 'Awaiting Meta rollout (Business AI ToS wall).')}</span>
+                {/* 🔴 CE QUE META DIT, PAS CE QU'ON SUPPOSE. La phrase « En attente d'ouverture Meta » etait
+                    ECRITE EN DUR ici : elle ne mesurait rien, et elle est restee affichee des semaines
+                    apres que le numero soit devenu eligible. Elle ne s'affiche plus que quand elle est
+                    VRAIE, c'est-a-dire quand Meta repond `is_eligible: false`. */}
+                <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-etat-reel">
+                  {mbaReel === null
+                    ? t('État chez Meta : non lu pour l’instant.', 'State at Meta: not read yet.')
+                    : !mbaReel.eligible
+                      ? t("Meta n'a pas encore ouvert l'agent sur ce numéro. Le bouton prépare le bloc MBA des scénarios en attendant.", 'Meta has not opened the agent on this number yet. The switch prepares the MBA block in scenarios meanwhile.')
+                      : mbaReel.settings?.rollout?.enabled
+                        ? t(
+                          `L'agent de Meta RÉPOND en ce moment, à ${mbaReel.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'la liste autorisée' : 'tout le monde'}. Il répond avant nos scénarios.`,
+                          `Meta's agent IS ANSWERING right now, to ${mbaReel.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'the allowlist' : 'everyone'}. It answers before our scenarios.`,
+                        )
+                        : t("Éligible, agent éteint chez Meta. Personne ne répond automatiquement.", 'Eligible, agent off at Meta. Nobody answers automatically.')}
                 </p>
+                {erreurMba && <p className="mt-1 text-xs text-coral" data-testid="mba-erreur">{erreurMba}</p>}
               </div>
             </div>
             <div className="flex items-center gap-3 pt-2">
@@ -298,6 +362,11 @@ function AccueilInner({ session }: { session: Session }) {
                 title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
               />
               <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
+              {/* ⚠️ DIRE CE QUE LE BOUTON PILOTE. Tant que Meta n'a pas ouvert, il ne commande que notre
+                  cote, et se taire la-dessus est exactement ce qui a fait croire a une coupure. */}
+              {mbaReel !== null && !mbaReel.eligible && (
+                <span className="text-xs text-ink-400">{t('(côté Engage Me seulement)', '(Engage Me side only)')}</span>
+              )}
             </div>
             {/* La reprise après intervention d'un opérateur vivait ICI. Elle a rejoint MBA > Paramètres >
                 Activation, avec le passage de main : ce sont les deux faces d'une même question, « qui parle

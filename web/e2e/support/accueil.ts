@@ -41,7 +41,7 @@ const defaultSettings = { controlHandbackSeconds: null, mbaEnabled: false, hubsp
 
 export async function mockAccueil(
   page: Page,
-  over: { account?: AccountFixture; settings?: typeof defaultSettings; catchupTriggered?: boolean; numbersCount?: number } = {},
+  over: { account?: AccountFixture; settings?: typeof defaultSettings; catchupTriggered?: boolean; numbersCount?: number; mbaStatus?: unknown } = {},
 ): Promise<void> {
   await page.addInitScript((s) => {
     window.localStorage.setItem('mba.session', JSON.stringify(s));
@@ -65,6 +65,12 @@ export async function mockAccueil(
     }
     // Liste des numéros du tenant (GET .../phone-numbers, sans suffixe /hubspot).
     if (route.request().method() === 'GET' && url.endsWith('/phone-numbers')) return json({ phoneNumbers });
+    // 🔴 L'ETAT REEL DE L'AGENT CHEZ META, mockable par les specs. La carte d'accueil l'affiche depuis le
+    // 2026-09-10 : avant, elle montrait notre drapeau local sous une phrase ecrite en dur annoncant qu'on
+    // attendait l'ouverture de Meta. Les deux etaient faux le meme jour. Defaut : eligible et ETEINT, le
+    // cas le plus courant d'un numero fraichement ouvert.
+    if (url.includes('/mba/') && url.endsWith('/status')) return json(over.mbaStatus ?? { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: false }, ai_audience: 'EVERYONE' } });
+    if (url.includes('/mba/') && url.endsWith('/rollout')) return json({ rollout: { enabled: true }, ai_audience: 'EVERYONE' });
     if (url.includes('/account-status')) return json(account);
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
