@@ -12,9 +12,13 @@
 -- runtime vers la CONFIGURATION, et on le rend incontournable EN BASE ». Ses deux CHECK sont donc RECOPIES
 -- ici. Les perdre en chemin viderait 0086 de son contenu sans que rien ne le signale.
 --
--- ⚠️ ELLE N AJOUTE QUE. Le retrait de `agent_id` et des six colonnes de consentement est la migration 0128,
--- qui passe APRES le deploiement : entre les deux, les deux formes coexistent et le retour arriere reste
--- possible. Le TYPE de la migration decide de l ordre, pas la routine.
+-- ⚠️ ELLE N AJOUTE PAS QUE, ET C EST DELIBERE : elle RELACHE aussi le NOT NULL de `agent_id` (voir plus bas).
+-- Relacher est compatible avec l ANCIEN code, qui continue de renseigner la colonne ; RETIRER ne l est pas.
+-- C est cette nuance qui rend la fenetre de coexistence possible, et je l avais ratee : sans elle, toute
+-- creation d outil echouait en 23502 entre le deploiement et la 0128.
+--
+-- Le RETRAIT de `agent_id` et des six colonnes de consentement est la migration 0128, qui passe APRES le
+-- deploiement. Le TYPE de la migration decide de l ordre, pas la routine.
 --
 -- MESURE QUI REND CE LOT FAISABLE MAINTENANT (2026-09-10) : 2 outils au total, 1 agent, 1 espace, 0 actif,
 -- 0 doublon de nom, 0 source declaree. Aucune fusion de donnees a arbitrer. Ce ne sera jamais moins cher.
@@ -80,6 +84,17 @@ begin
     raise exception 'migration 0127 impossible : % nom(s) d outil porte(s) par plusieurs agents du meme espace. Renommer les doublons avant de rejouer : select tenant_id, name, count(*) from agent_tools group by 1,2 having count(*) > 1;', doublons;
   end if;
 end $$;
+
+-- 🔴 `agent_id` DEVIENT NULLABLE, ET C EST CE QUI REND LA FENETRE DE COEXISTENCE POSSIBLE. Cette migration
+-- « n ajoute que », disait le plan, et c etait FAUX sur ce point : le nouveau code n ecrit plus `agent_id`
+-- (l outil appartient a l espace), or la colonne etait NOT NULL jusqu a 0128. Toute creation d outil aurait
+-- echoue en 23502 entre le deploiement et la 0128, c est-a-dire exactement pendant la fenetre censee etre la
+-- plus sure. Constate en CI, sur onze tests d integration d un coup.
+--
+-- ⚠️ RELACHER une contrainte est compatible avec l ANCIEN code, qui continue de renseigner la colonne : c est
+-- ce qui distingue ce geste d un RETRAIT, et c est pour ca qu il a sa place ici et non dans 0128. La colonne
+-- elle-meme part avec 0128, une fois le nouveau code vu en production.
+alter table agent_tools alter column agent_id drop not null;
 
 -- Le nom expose devient unique par ESPACE, plus par agent. Pas de `lower()` : la contrainte
 -- `name ~ '^[a-z0-9_]{1,64}$'` de 0086 garantit deja des minuscules, et un `lower()` inutile ferait croire

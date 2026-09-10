@@ -129,10 +129,18 @@ describe.skipIf(!url)('sources externes d outils (Postgres)', () => {
     const userId = (await pool.query<{ id: string }>(
       `insert into users (tenant_id, email, role) values ($1, 'itest-src@e.test', 'admin') returning id`, [tenantId],
     )).rows[0]!.id;
-    await pool.query(
+    // ⚠️ DEUX ÉCRITURES DEPUIS LA MIGRATION 0127 : la définition PUIS le consentement. `outilsActifs` compte
+    // désormais par la jointure, donc une définition sans ligne de liaison compterait ZÉRO et ce test
+    // vérifierait le contraire de ce qu'il annonce.
+    const outil = await pool.query<{ id: string }>(
       `insert into agent_tools (tenant_id, agent_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, risk, actif, active_par, active_le)
-       values ($1, $2, 'http', $3, 'lire_commande', 'Lire', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read', true, $4, now())`,
+       values ($1, $2, 'http', $3, 'lire_commande', 'Lire', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read', true, $4, now()) returning id`,
       [tenantId, agentId, s.id, userId],
+    );
+    await pool.query(
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
+       values ($1, $2, $3, true, $4, now())`,
+      [tenantId, outil.rows[0]!.id, `agent:${agentId}`, userId],
     );
     expect((await sources.parId(tenantId, s.id))!.outilsActifs).toBe(1);
 

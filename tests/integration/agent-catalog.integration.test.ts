@@ -256,24 +256,36 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
 
   it('🔴 un agent d un AUTRE tenant ne peut pas recevoir d outil, et rien n est ecrit', async () => {
     expect(await catalogue.ajouter(tenantId, agentDeLAutre, modele)).toBeNull();
-    const n = await pool.query<{ n: string }>('select count(*) as n from agent_tools where agent_id = $1', [agentDeLAutre]);
+    // ⚠️ ON COMPTE LES LIAISONS, PLUS LES COLONNES `agent_id`. Le nouveau code n'écrit plus cette colonne :
+    // ce test serait devenu CREUX, il aurait compté zéro même si une définition avait bel et bien été créée.
+    const n = await pool.query<{ n: string }>(
+      'select count(*) as n from agent_tool_consommateurs where consommateur = $1',
+      [`agent:${agentDeLAutre}`],
+    );
     expect(Number(n.rows[0]!.n)).toBe(0);
   });
 
-  it('deux outils du meme agent ne peuvent pas porter le meme nom expose', async () => {
+  it('deux outils du meme ESPACE ne peuvent pas porter le meme nom expose', async () => {
     const un = await catalogue.ajouter(tenantId, agentId, modele);
     await expect(catalogue.ajouter(tenantId, agentId, modele)).rejects.toThrow(NomOutilDejaPris);
     await retirerCompletement(tenantId, agentId, un!.id);
   });
 
   it('🔴 activer ecrit QUI a active, et desactiver l efface', async () => {
-    // La migration 0086 refuse `actif` sans activateur : c'est le consentement humain de la spec MCP, deplace
-    // du runtime vers la configuration parce que notre agent n a aucun humain au runtime.
+    // Le consentement humain de la spec MCP, deplace du runtime vers la configuration parce que notre agent
+    // n a aucun humain au runtime. La migration 0086 le refusait sur `agent_tools` ; depuis 0127 le meme
+    // CHECK vit sur `agent_tool_consommateurs`, ou le consentement a demenage.
     const outil = (await catalogue.ajouter(tenantId, agentId, modele))!;
     const actif = await catalogue.activer(tenantId, agentId, outil.id, true, adminId);
     expect(actif!.actif).toBe(true);
     expect(actif!.activeLe).not.toBeNull();
-    const qui = await pool.query<{ active_par: string }>('select active_par from agent_tools where id = $1', [outil.id]);
+    // ⚠️ ON LIT LA LIAISON, PLUS L OUTIL. `activer` ecrit desormais dans `agent_tool_consommateurs` : lire
+    // `agent_tools.active_par` rendrait null et ce test aurait echoue, alors que le consentement est bien
+    // pose. Il se trouve au bon endroit, pas a l ancien.
+    const qui = await pool.query<{ active_par: string }>(
+      'select active_par from agent_tool_consommateurs where tool_id = $1 and consommateur = $2',
+      [outil.id, `agent:${agentId}`],
+    );
     expect(qui.rows[0]!.active_par).toBe(adminId);
     // Actif, il entre dans ce que le runtime expose.
     expect((await catalogue.listActifs(tenantId, agentId)).map((o) => o.name)).toEqual(['mba_poser_tag']);
@@ -281,7 +293,12 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     const inactif = await catalogue.activer(tenantId, agentId, outil.id, false, adminId);
     expect(inactif!.actif).toBe(false);
     expect(inactif!.activeLe).toBeNull();
-    const apres = await pool.query<{ active_par: string | null }>('select active_par from agent_tools where id = $1', [outil.id]);
+    // ⚠️ MÊME PIÈGE : lire `agent_tools.active_par` rendrait null sans rien prouver, puisque plus personne
+    // ne l'écrit. C'est la ligne de liaison qui doit avoir été effacée.
+    const apres = await pool.query<{ active_par: string | null }>(
+      'select active_par from agent_tool_consommateurs where tool_id = $1 and consommateur = $2',
+      [outil.id, `agent:${agentId}`],
+    );
     expect(apres.rows[0]!.active_par).toBeNull();
     await retirerCompletement(tenantId, agentId, outil.id);
   });
