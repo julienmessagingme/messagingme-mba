@@ -161,7 +161,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Scénarios** | le graphe, son moteur pur, l'exécution par contact | `src/workflow/` | `/workflows` | `workflows`, `workflow_runs`, `workflow_node_events` | `wake-sweep` |
 | **Automations** | déclencher un scénario sur un événement | `src/automation/` | `/automations` | `automations`, `automation_fires` | `automation-event`, `date-sweep` |
 | **Inbox** | la conversation, son détenteur, son affectation, l'archivage | `src/inbox/` | `/inbox` | `conversations`, `conversation_messages` | `control-sweep` |
-| **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils | `src/agent/` | `/agents` | `agents`, `agent_tools`, `agent_sessions`, `agent_knowledge`, `agent_credits` | `agent-turn` |
+| **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils | `src/agent/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits` | `agent-turn` |
 | **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
@@ -332,10 +332,39 @@ bloc agent atteint -> executor ouvre une session -> job `agent-turn`
    -> le parcours repart par le handle `sortie:<code>`
 ```
 
-🔴 **Le consentement humain est porté par la BASE, pas par une convention** : deux CHECK sur `agent_tools`
-(`actif = false or active_par is not null`, `autonome = false or autonome_par is not null`). La spec MCP exige
-un consentement humain avant invocation ; notre agent n'a aucun humain au runtime, donc le consentement est
-déplacé du runtime vers la CONFIGURATION.
+🔴 **LA DÉFINITION D'UN OUTIL APPARTIENT À L'ESPACE, LE CONSENTEMENT AU COUPLE (outil, consommateur).**
+`agent_tools` porte ce qu'un outil EST (son nom, unique par espace, sa description, ses paramètres, sa
+liaison, son risque, ses plafonds) ; `agent_tool_consommateurs` porte qui a le droit de s'en servir. Les
+tenir ensemble obligeait à redécrire le même outil pour chaque agent, donc à corriger ses mots à N endroits,
+et rendait impossible de l'exposer au Meta Business Agent sans lui inventer une fiche d'agent.
+
+⚠️ **LE CONSOMMATEUR EST UNE CLÉ TEXTE**, `agent:<uuid>` ou `mba:<phone_number_id>`, fabriquée par
+`src/agent/consommateur.ts` et jamais concaténée ailleurs ; sa FORME est verrouillée par un CHECK, parce
+qu'une faute de frappe produirait une ligne MUETTE (aucun consommateur ne la lit, l'outil paraît simplement
+inactif, et il n'y a rien à diagnostiquer). Une clé texte plutôt qu'une clé étrangère parce qu'un
+consommateur n'est pas toujours une ligne de notre base : **le MBA est un numéro chez Meta**, et c'est
+précisément ce qui en fait un consommateur comme un agent.
+
+🔴 **Le consentement humain est porté par la BASE, pas par une convention** : deux CHECK sur
+`agent_tool_consommateurs` (`actif = false or active_par is not null`, `autonome = false or autonome_par is
+not null`). La spec MCP exige un consentement humain avant invocation ; notre agent n'a aucun humain au
+runtime, donc le consentement est déplacé du runtime vers la CONFIGURATION. Ils sont RECOPIÉS À L'IDENTIQUE
+depuis 0086 : les perdre en remontant la définition aurait vidé 0086 de son contenu sans que rien ne le
+signale.
+
+🔴 **CE QU'ENGAGE ME A, META L'A : la publication ÉCRASE** (décision de Julien du 2026-09-10). La
+réconciliation se fait sur les NOMS, jamais sur un identifiant Meta qu'on stockerait (une table de
+correspondance dériverait dès qu'un client supprime un connecteur dans WhatsApp Manager). Corollaire assumé :
+renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau », et l'aperçu le dit avant le clic.
+Le plan est PUR (`src/mba/publication.ts`, aucune IO) et il compare la description, la MÉTHODE et le CHEMIN,
+les trois : n'en comparer qu'un rendait la publication silencieusement incomplète.
+
+🔴 **UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT.** Meta ne rend jamais le secret d'un connecteur.
+`agent_tool_sources.secret_publie_le` (0129) est l'instant où NOTRE secret courant a été accepté par Meta ; il
+retombe à `null` dès qu'on touche à l'authentification de la source (le secret, mais aussi le MODE et le NOM
+D'EN-TÊTE, qui décident du corps envoyé), et la publication suivante repose le secret. Sans cette mémoire, le
+secret n'était posé qu'à la CRÉATION du connecteur : faire tourner un jeton cassait l'agent de Meta en
+silence.
 
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse

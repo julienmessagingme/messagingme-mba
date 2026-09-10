@@ -40,6 +40,11 @@ qui affirmait par ailleurs que rien n'était en cours. Où lire quoi, désormais
   expose aucun. Onglet Outils de la fiche. C'est une décision qui change ce que l'agent a le droit de faire
   chez un client en secteur RÉGULÉ, donc elle ne se prend pas sans lui. ⚠️ Le modèle, lui, est déjà passé sur
   `anthropic/claude-haiku-4.5` (écriture en base du 2026-09-09, vérifiée, et le modèle appelle bien l'outil).
+- **Relire la phrase de passage de main du MBA** (Paramètres de l'agent Meta, « message de transfert ») :
+  celle qui est en place a été posée par moi pendant les essais du 2026-09-10, sans accents et sans les mots
+  de la marque. C'est la phrase que LIT le client au moment où l'agent de Meta passe la main : elle doit être
+  la vôtre. ⚠️ Le même écran décide aussi si l'agent LÂCHE le fil après l'avoir annoncée : à « non », le
+  client lit « un conseiller arrive » sans que personne ne soit prévenu.
 - **Poser une photo de profil sur le numéro WhatsApp** : la pastille de l'Accueil n'affiche rien tant qu'il
   n'y en a pas, et aucun des deux numéros du parc n'en a (mesuré).
 - **Régler les heures d'ouverture dans Paramètres** avant d'utiliser la case « heures ouvrées » d'une

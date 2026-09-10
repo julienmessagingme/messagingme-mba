@@ -1387,6 +1387,53 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ⛔ **Pas encore : MCP** (les serveurs d'outils standardisés). La console les acceptera, aucun code ne les
   sert aujourd'hui.
 
+## Les outils de l'espace (menu « Tools » > Outils)
+
+- ✅ **La bibliothèque de tout ce que vos agents savent FAIRE** (2026-09-10). Un outil s'y déclare une fois,
+  puis chaque agent choisit de s'en servir : les outils maison, et les appels de vos connecteurs API. Pour
+  chacun, son nom lisible, le nom technique que le modèle voit, sa description, et son étiquette
+  (**maison**, **connecteur**, ou **MCP**), plus une pastille rouge sur les actions irréversibles.
+- ✅ **« Utilisé par », sur chaque outil**, et c'est la raison d'être de l'écran : les agents qui s'en servent
+  sont nommés, et ceux qui l'ont ajouté sans l'avoir activé sont marqués « (inactif) ». Sans cette ligne, ce
+  serait une liste de plus ; avec elle, on voit qu'y toucher touche plusieurs agents à la fois.
+- ✅ **Supprimer un outil de l'espace, et seulement s'il ne sert à personne.** Le bouton n'apparaît pas tant
+  qu'un agent l'utilise. Montrer un bouton dont on sait qu'il échouera est une invitation à l'échec, pas une
+  garde : le serveur refuse de toute façon, en disant qui s'en sert.
+- ✅ **« Exposé à l'agent de Meta »** : une case par outil, qui met l'outil à disposition du **Meta Business
+  Agent** sur le numéro WhatsApp de l'espace. Le MBA devient alors un utilisateur d'outil comme un de vos
+  agents, sans avoir de fiche d'agent chez nous.
+  ⚠️ **La case est grisée sur un outil qui n'est pas un appel d'API**, avec la raison écrite à côté : un outil
+  maison n'a aucune adresse que Meta puisse appeler, et un outil MCP ne parle pas HTTP. Une case cochée que la
+  publication ignorerait en silence serait pire qu'une case interdite.
+  ⚠️ **Sur une action irréversible, la case demande une confirmation, et elle est franche** : chez Meta, la
+  validation humaine que vous avez réglée sur l'agent **n'existe pas**. L'outil y sera appelé seul.
+- ✅ **Réservé aux administrateurs** : un utilisateur non administrateur voit la bibliothèque et qui utilise
+  quoi, mais ni la case, ni la suppression, ni la publication.
+
+### Publier chez Meta
+
+- ✅ **« Voir ce qui va changer » n'écrit RIEN** : le bouton affiche le plan en toutes lettres, geste par
+  geste, les suppressions en rouge. Le bouton qui publie n'apparaît qu'ensuite, et seulement s'il y a quelque
+  chose à publier.
+- ⚠️ **Engage Me fait foi, la publication ÉCRASE.** Un connecteur ou un outil ajouté à la main dans WhatsApp
+  Manager sera SUPPRIMÉ à la publication suivante. L'écran le dit, et l'aperçu le montre avant le clic.
+- ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms. Elle
+  compare la description, la clause « quand ne pas l'appeler », la méthode et le chemin. Corollaire :
+  **renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau »**, et l'aperçu l'écrit ainsi.
+- ✅ **Changer le jeton d'un de vos systèmes le fait REPOSER chez Meta** à la publication suivante
+  (2026-09-10). Meta ne rend jamais un secret : nous nous souvenons de celui que nous avons posé, et toute
+  modification de l'authentification d'un système (le secret, mais aussi le mode ou le nom d'en-tête) le
+  remet à publier. ⚠️ **Tant que vous n'avez pas republié, l'agent de Meta présente encore l'ANCIEN jeton**,
+  alors que vos propres agents utilisent déjà le nouveau.
+- ✅ **Un échec en cours de publication s'ARRÊTE et le dit** : ce qui a été fait est listé, le reste n'est pas
+  tenté. Relancer ne refait pas ce qui a réussi, et laisser un état à moitié publié dont personne ne connaît
+  la forme serait pire.
+- ⛔ **Sans numéro WhatsApp connecté, il n'y a pas d'agent Meta où publier** : l'aperçu est vide (ce n'est pas
+  une panne) et la publication refuse en le disant.
+- ⛔ **Ce que Meta sait faire et que nous ne publions pas encore** : les macros, les transformations de
+  réponse et l'authentification par utilisateur final. Un outil qui les utiliserait devrait être réglé dans
+  WhatsApp Manager, donc serait écrasé, et l'aperçu le montre.
+
 ## Journaux et traces (menu Paramètres)
 
 - ✅ **Journal des actions** : qui a ajouté, supprimé, effacé ou basculé un consentement, et quand. Les
@@ -1556,6 +1603,12 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - ✅ **Un outil n'est utilisable qu'une fois ACTIVÉ à la main.** Tant qu'il ne l'est pas, l'agent ne sait même
   pas qu'il existe. L'activation est un geste séparé de l'ajout, et elle garde le nom de qui l'a donnée.
   ⚠️ **Sans aucun outil actif, l'agent peut parler mais ne peut rien faire, pas même terminer.**
+- ✅ **L'outil appartient à l'ESPACE, l'autorisation appartient à l'agent** (2026-09-10). Le même outil sert
+  plusieurs agents sans être redécrit : ses mots se corrigent une fois et sont corrigés partout. Ce qui reste
+  propre à chaque agent, c'est de s'en servir ou non, et l'activation. La liste de tout ce que l'espace
+  possède, avec qui s'en sert, est dans **Tools > Outils** (section « Les outils de l'espace », plus bas).
+  ⚠️ **Conséquence à connaître** : changer la description d'un outil partagé change ce que voient TOUS les
+  agents qui l'utilisent. L'écran de la bibliothèque les nomme, justement pour qu'on le sache avant.
 - ✅ **Sept outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
   - **Chercher dans la base de connaissance** (lecture) : à appeler avant toute question de fond.
   - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs. Jamais la fiche
