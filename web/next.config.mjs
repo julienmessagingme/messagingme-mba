@@ -14,6 +14,54 @@ const nextConfig = {
   outputFileTracingRoot: dirname,
   // Proxy vers l'API Fastify : le navigateur appelle /api/backend/* (même origine, zéro CORS),
   // Next relaie vers le backend en forwardant l'en-tête Authorization.
+  /**
+   * Les en-tetes de securite de la console (plan RSSI du 2026-09-09, livres le 2026-09-10).
+   *
+   * 🔴 LA CSP EST EN REPORT-ONLY, ET ELLE DOIT LE RESTER JUSQU A OBSERVATION. La console charge le SDK Meta
+   * (`connect.facebook.net`) et Google Sign-In (`accounts.google.com`), et Next injecte ses propres scripts
+   * en ligne. Une CSP enforcante posee sans mesure casserait la connexion des clients, c est-a-dire la
+   * porte d entree du produit. Report-Only pose la meme politique et se contente de la SIGNALER : rien ne
+   * casse, et on apprend ce qui la violerait vraiment.
+   *
+   * ⚠️ POUR LA PASSER EN BLOCAGE, il faut d abord une destination de rapport (`report-to`) et quelques
+   * jours d observation. Sans cette etape, on ne saurait pas ce qu on est en train d interdire. Le jour ou
+   * on bascule, c est cette meme chaine qui devient `Content-Security-Policy`.
+   *
+   * ⚠️ `Strict-Transport-Security` n est PAS ici : Vercel le pose deja sur ce domaine (mesure le
+   * 2026-09-10, `max-age=63072000`). Deux sources pour une meme valeur finissent par diverger.
+   */
+  async headers() {
+    const csp = [
+      "default-src 'self'",
+      // Next injecte des scripts en ligne (hydratation, chargeur). `unsafe-inline` est ce qui rend cette
+      // politique OBSERVABLE plutot que bruyante ; c est le premier relachement a retirer le jour ou on
+      // passera aux nonces.
+      "script-src 'self' 'unsafe-inline' https://connect.facebook.net https://accounts.google.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      // `connect-src` : l API passe par le rewrite same-origin, donc `'self'` suffit pour elle. Les deux
+      // origines externes sont celles de l embarquement Meta et de la connexion Google.
+      "connect-src 'self' https://graph.facebook.com https://accounts.google.com",
+      "frame-src https://connect.facebook.net https://accounts.google.com https://business.facebook.com",
+      "font-src 'self' data:",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'Content-Security-Policy-Report-Only', value: csp },
+        // Ceux-la sont ENFORCANTS des maintenant : ils ne peuvent rien casser dans une application qui n est
+        // jamais encadree, ne devine jamais un type MIME et n a besoin d aucune capacite materielle.
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
+      ],
+    }];
+  },
+
   async rewrites() {
     return [
       { source: '/api/backend/:path*', destination: `${backend}/:path*` },

@@ -64,7 +64,20 @@ function markLogin(deps: AuthRouteDeps, userId: string): void {
 // verifyPassword est TOUJOURS exécuté, supprimant l'oracle temporel d'énumération de comptes.
 const DUMMY_HASH = hashPasswordSync(randomBytes(24).toString('hex')); // une seule fois au chargement -> sync OK
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD = 8;
+/**
+ * Longueur minimale d'un mot de passe CHOISI, portée de 8 à 12 le 2026-09-10.
+ *
+ * 🔴 ELLE NE MORD QUE SUR LES QUATRE CHEMINS QUI EN CHOISISSENT UN : inscription, invitation acceptée,
+ * réinitialisation, changement. `/auth/login` ne regarde JAMAIS la longueur, il compare un hash : un compte
+ * existant à 8 caractères continue donc de se connecter indéfiniment, et ne rencontrera ce seuil qu'au jour
+ * où il changera de mot de passe. C'est la migration douce voulue, et c'est ce qui rend ce changement
+ * applicable sans prévenir personne ni réinitialiser quoi que ce soit.
+ *
+ * ⚠️ AUCUNE RÈGLE DE COMPOSITION, et c'est délibéré : pas de majuscule, de chiffre ni de symbole imposés.
+ * Ces règles poussent à `Password1!` et RACCOURCISSENT ce que les gens choisissent. La longueur seule laisse
+ * passer les phrases de passe, plus longues et plus faciles à retenir.
+ */
+const MIN_PASSWORD = 12;
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**

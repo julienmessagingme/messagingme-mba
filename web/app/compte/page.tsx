@@ -7,6 +7,7 @@ import { changePassword } from '@/lib/api';
 import { getSession, pageDArrivee, type Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { MIN_MOT_DE_PASSE, aideMotDePasse } from '@/lib/mot-de-passe';
 
 export default function ComptePage() {
   const t = useT();
@@ -55,7 +56,7 @@ export default function ComptePage() {
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nouveau mot de passe', 'New password')}</label>
-          <input type="password" required minLength={8} value={next} onChange={(e) => setNext(e.target.value)} className={inputCls} placeholder={t('8 caractères minimum', 'At least 8 characters')} />
+          <input type="password" required minLength={MIN_MOT_DE_PASSE} value={next} onChange={(e) => setNext(e.target.value)} className={inputCls} placeholder={t(aideMotDePasse().fr, aideMotDePasse().en)} />
         </div>
         {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
         <button type="submit" disabled={loading} className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">

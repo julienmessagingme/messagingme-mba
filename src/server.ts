@@ -99,6 +99,7 @@ import type { MbaRouteDeps } from './http/mba';
 import type { EmailRoutesDeps } from './http/email';
 import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
+import { ENTETES_SECURITE_API } from './http/entetes-securite';
 
 export interface ServerDeps {
   /**
@@ -268,6 +269,24 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * `x-ops-token` est dans les en-têtes autorisés parce que l'écran d'exploitation le pose lui-même : sans
    * lui, la requête préalable du navigateur échouerait et `/ops` serait muet depuis le nouveau front.
    */
+  /**
+   * Les en-têtes de sécurité, sur CHAQUE réponse.
+   *
+   * `onSend` est le DERNIER point du cycle avant que la réponse parte : il couvre donc toute réponse quelle
+   * que soit ce qui l'a produite, y compris celles qu'un hook antérieur rend directement sans jamais
+   * atteindre la route (un refus de plafond de débit, un préalable CORS).
+   *
+   * ⚠️ MESURÉ, ET PLUS MODESTE QUE PRÉVU : j'avais écrit ici que `onRequest` manquerait les réponses
+   * d'erreur. C'est FAUX pour la 404, vérifié par mutation le 2026-09-10 (le test passe avec les deux).
+   * Fastify exécute bien ses hooks de requête sur le chemin « route introuvable ». `onSend` reste le choix
+   * juste parce qu'il est en aval de tout, mais ce n'est pas lui qui répare la 404 : elle n'était pas
+   * cassée. Le test, lui, garde ce qui compte vraiment, à savoir que les en-têtes sont là sur une erreur.
+   */
+  app.addHook('onSend', async (_req, reply, payload) => {
+    for (const [nom, valeur] of Object.entries(ENTETES_SECURITE_API)) reply.header(nom, valeur);
+    return payload;
+  });
+
   const origines = deps.corsOrigins?.map((o) => o.trim()).filter((o) => o !== '') ?? [];
   if (origines.length > 0) {
     void app.register(cors, {

@@ -42,7 +42,7 @@ function app(over: Partial<AuthRouteDeps> = {}) {
 describe('POST /auth/signup', () => {
   it('crée un espace + admin, connecte (201 + token)', async () => {
     const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'Mon Espace', email: 'A@X.fr', password: 'motdepasse1', name: 'Jean' } });
+    const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'Mon Espace', email: 'A@X.fr', password: 'motdepasse-longue', name: 'Jean' } });
     expect(res.statusCode).toBe(201);
     const body = res.json<{ token: string; user: { role: string; tenantId: string } }>();
     expect(body.token).toBeTruthy();
@@ -52,16 +52,31 @@ describe('POST /auth/signup', () => {
   });
   it('email déjà pris -> 409', async () => {
     const { server } = app();
-    const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'E', email: 'taken@x.fr', password: 'motdepasse1' } });
+    const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'E', email: 'taken@x.fr', password: 'motdepasse-longue' } });
     expect(res.statusCode).toBe(409);
     await server.close();
   });
   it('validations -> 400 (mdp court, email invalide, espace vide)', async () => {
     const { server } = app();
     const short = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'E', email: 'a@x.fr', password: 'court' } });
-    const mail = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'E', email: 'pasunemail', password: 'motdepasse1' } });
-    const ws = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: '', email: 'a@x.fr', password: 'motdepasse1' } });
+    const mail = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'E', email: 'pasunemail', password: 'motdepasse-longue' } });
+    const ws = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: '', email: 'a@x.fr', password: 'motdepasse-longue' } });
     expect([short.statusCode, mail.statusCode, ws.statusCode]).toEqual([400, 400, 400]);
+    /**
+     * 🔴 LA RAISON, PAS SEULEMENT LE CODE. Trois refus qui rendent tous 400 se ressemblent : rien ne dit
+     * lequel des trois motifs a mordu, et un test qui ne lit que le code reste vert quand deux cas sur
+     * trois cessent d'être exercés.
+     *
+     * ⚠️ Ce que le passage de 8 à 12 a montré, en 2026-09-10, c'est que la GARDE tient ici par l'ORDRE des
+     * contrôles : le nom d'espace et l'email sont refusés AVANT que la longueur ne soit mesurée. Les deux
+     * derniers cas portaient onze caractères et restaient donc justes, ce que la mutation a confirmé.
+     * L'assertion n'a pas réparé un défaut, elle retire la dépendance à cet ordre : le jour où quelqu'un
+     * remonte le contrôle de longueur, ou relève encore le minimum, ces deux cas cesseraient d'exercer ce
+     * qu'ils annoncent, et là le test le dira.
+     */
+    expect(short.json().error).toMatch(/trop court/);
+    expect(mail.json().error).not.toMatch(/trop court/);
+    expect(ws.json().error).not.toMatch(/trop court/);
     await server.close();
   });
 });

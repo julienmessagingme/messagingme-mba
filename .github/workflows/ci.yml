@@ -24,6 +24,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 🔴 SECURITE : QUATRE CONTROLES, AUCUN BLOQUANT POUR L INSTANT (plan RSSI du 2026-09-09, livre le
+  # 2026-09-10). Le plan le demande explicitement : « ne bloquer que sur des alertes comprises et
+  # qualifiees ». Un job qui casse le deploiement des le premier CVE transitif d une dependance de build
+  # est un job qu on desactive au bout de deux jours, et on se retrouve alors sans aucun controle.
+  #
+  # ⚠️ CE QU IL APPORTE DES MAINTENANT, meme en non bloquant : une TRACE datee et reguliere, qui est
+  # exactement ce qu un questionnaire RSSI demande de montrer. Le passage en bloquant se fera controle par
+  # controle, avec un seuil ecrit, quand on aura vu ce qu ils remontent vraiment.
+  #
+  # ⚠️ gitleaks tourne DEJA en pre-commit sur le poste de Julien (hook global). Ce n est pas un doublon :
+  # un hook local protege une machine, pas le depot. Il ne voit ni un commit fait ailleurs, ni un
+  # `--no-verify`, ni l historique.
+  securite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # L historique complet : gitleaks compare des commits, un clone superficiel ne lui donnerait
+          # qu un instantane et il ne verrait pas un secret introduit puis retire.
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Secrets committes (gitleaks)
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Dependances vulnerables (npm audit, racine et front)
+        continue-on-error: true
+        run: |
+          echo "--- racine ---"
+          npm audit --audit-level=high
+          echo "--- web ---"
+          npm --prefix web audit --audit-level=high
+      - name: Analyse statique (semgrep, regles publiques TypeScript)
+        continue-on-error: true
+        # Regles publiques, sans compte ni jeton : le depot est PRIVE, donc CodeQL demanderait GitHub
+        # Advanced Security, qui est payant. Semgrep couvre le meme besoin de premier niveau gratuitement.
+        run: |
+          pipx install semgrep || pip install semgrep
+          semgrep --config=p/typescript --config=p/secrets --error --quiet --metrics=off src web/lib web/app
+      - name: Image Docker (trivy)
+        continue-on-error: true
+        run: |
+          docker build -t mba-api:ci .
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:latest image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-api:ci
+      - name: L image ne tourne PAS en root
+        # 🔴 CELUI-CI BLOQUE, et c est le seul. Il ne depend d aucune base de vulnerabilites exterieure : il
+        # verifie une propriete que NOUS avons choisie et que nous pouvons tenir. Un `USER node` retire par
+        # megarde dans un futur Dockerfile passerait autrement inapercu jusqu au prochain audit.
+        run: |
+          test "$(docker run --rm mba-api:ci id -u)" = "1000"
+          echo "OK : le conteneur tourne en uid 1000 (node)"
+
   unit:
     runs-on: ubuntu-latest
     steps:

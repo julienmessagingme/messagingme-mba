@@ -8,6 +8,7 @@ import { Logo } from '@/components/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { MIN_MOT_DE_PASSE, aideMotDePasse } from '@/lib/mot-de-passe';
 
 export default function ResetPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
@@ -49,7 +50,7 @@ export default function ResetPage({ params }: { params: Promise<{ token: string 
           </div>
         ) : (
           <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-            <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} placeholder={t('Nouveau mot de passe (8 min)', 'New password (8 min)')} />
+            <input type="password" required minLength={MIN_MOT_DE_PASSE} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} placeholder={t(aideMotDePasse().fr, aideMotDePasse().en)} />
             {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
             <button type="submit" disabled={loading} className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
               {loading ? t('Mise à jour...', 'Updating...') : t('Définir le mot de passe', 'Set password')}

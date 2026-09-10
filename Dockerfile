@@ -2,7 +2,22 @@
 FROM node:22-alpine
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# 🔴 TOUT CE QUI SUIT TOURNE EN `node`, PAS EN ROOT (plan RSSI, 2026-09-10). L'image officielle fournit
+# deja cet utilisateur (uid 1000) et son `/home/node`. Un processus compromis n'obtient donc plus root
+# DANS le conteneur, ce qui est la premiere marche vers une evasion et la seule que nous controlions.
+#
+# ⚠️ `chown` SUR LE REPERTOIRE VIDE, puis `COPY --chown`, et surtout PAS un `chown -R /app` a la fin : le
+# recursif recopierait tout `node_modules` dans une nouvelle couche, doublant la taille de l'image pour
+# changer un proprietaire. Ici chaque fichier arrive deja au bon nom.
+#
+# ⚠️ CE QUI REND CE CHANGEMENT SUR : le conteneur n'ecrit RIEN sur disque a l'execution (verifie le
+# 2026-09-10, aucun `writeFile`, `mkdir` ni `tmpdir()` hors des tests), et le compose ne monte aucun volume.
+# Le jour ou un chemin ecrira quelque chose, il faudra lui donner un repertoire possede par `node`, et le
+# conteneur le dira en echouant au demarrage plutot qu'en silence.
+RUN chown node:node /app
+USER node
+
+COPY --chown=node:node package.json package-lock.json ./
 # 🔴 `--omit=dev` : l'image de production n'embarque PAS les outils de test. Sans lui, `vitest` et toute sa
 # chaîne (`vite`, `esbuild`, `postcss`…) partaient en production, ce qui faisait porter à l'image cinq
 # alertes de sécurité (dont une critique) pour du code qui n'y sert à rien. Constaté le 2026-08-31 dans le
@@ -16,12 +31,12 @@ COPY package.json package-lock.json ./
 # ne démarrerait plus : la preuve se refait par un `compose run --rm --no-deps mba-api npm run migrate`.
 RUN npm ci --omit=dev
 
-COPY tsconfig.json ./
-COPY src ./src
-COPY db ./db
+COPY --chown=node:node tsconfig.json ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node db ./db
 # CA Supabase (cert PUBLIC, pas un secret) bakée dans l'image -> DB_SSL_CA_FILE=/app/certs/... toujours présent
 # (pas de crash import-time sur un mount manquant), reproductible et compatible Railway. Cf. src/db/ssl.ts (4.11).
-COPY certs ./certs
+COPY --chown=node:node certs ./certs
 
 EXPOSE 8095
 # API par défaut ; le worker surcharge la commande (voir docker-compose).

@@ -594,6 +594,36 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | `OPS_TOKEN` | `/ops` | l'exploitation cross-tenant |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
+| En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
+
+🔴 **LES EN-TÊTES DE SÉCURITÉ SONT ENFORÇANTS CÔTÉ API ET EN OBSERVATION CÔTÉ CONSOLE** (2026-09-10). La
+surface de l'API est petite et connue (du JSON, deux redirections, des images, deux pages HTML d'erreur de
+lien) : sa CSP est donc fermée, `default-src 'none'`, et elle vit dans `src/http/entetes-securite.ts`. La
+console est une application Next entière avec le SDK Meta et Google Sign-In : sa CSP part en
+**Report-Only** dans `web/next.config.mjs`, et n'a rien à bloquer tant qu'on n'a pas observé ce qu'elle
+signale. Les quatre autres en-têtes (anti-frame, `nosniff`, référent, capacités) sont enforçants des deux
+côtés.
+
+⚠️ **`Referrer-Policy: no-referrer` sur l'API ferme une fuite RÉELLE**, la seule de cette liste :
+`/r/<code>/<jeton>` identifie un destinataire, et un référent le livrerait au site de destination.
+
+⚠️ **HSTS n'est posé NULLE PART par nous** : Cloudflare le pose devant l'API, Vercel devant la console
+(mesuré). Le reposer créerait une seconde source pour une valeur unique, et c'est le plus court des deux
+`max-age` qui gagnerait sans qu'on le sache.
+
+🔴 **LE CONTENEUR TOURNE EN `node` (uid 1000), PAS EN ROOT** (2026-09-10). Ce qui le rend tenable est
+vérifié et non supposé : l'application n'écrit RIEN sur disque à l'exécution et le compose ne monte aucun
+volume. Le jour où un chemin écrira quelque chose, il lui faudra un répertoire possédé par `node`, et le
+conteneur le dira en refusant de démarrer plutôt qu'en silence. La CI le vérifie à chaque exécution, et
+c'est le SEUL de ses contrôles de sécurité qui bloque : il ne dépend d'aucune base de vulnérabilités
+extérieure, seulement d'une propriété que nous choisissons.
+
+🔴 **LE MINIMUM DU MOT DE PASSE EST DE 12 CARACTÈRES, SANS RÈGLE DE COMPOSITION** (2026-09-10), et il ne
+mord que sur les quatre chemins qui en CHOISISSENT un. `/auth/login` compare un hash et ne regarde jamais
+la longueur : un compte existant continue de se connecter, et ne rencontre la règle qu'au prochain
+changement. La valeur est arrimée entre le serveur et les quatre écrans par
+`web/lib/mot-de-passe.test.ts`, parce qu'elle était écrite huit fois et que quatre copies ont dérivé le
+jour même du changement.
 
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
 CHARGEMENT de la configuration. Jamais `credentials: true` : la session voyage dans un en-tête

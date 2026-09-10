@@ -10,6 +10,7 @@ import { GoogleButton } from '@/components/GoogleButton';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { MIN_MOT_DE_PASSE, aideMotDePasse } from '@/lib/mot-de-passe';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -63,7 +64,7 @@ export default function SignupPage() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">{t('Mot de passe', 'Password')}</label>
-            <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} placeholder={t('8 caractères minimum', '8 characters minimum')} />
+            <input type="password" required minLength={MIN_MOT_DE_PASSE} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} placeholder={t(aideMotDePasse().fr, aideMotDePasse().en)} />
           </div>
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
