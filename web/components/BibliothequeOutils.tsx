@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import {
-  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, type OutilBibliotheque,
+  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba,
+  apercuPublicationMba, publierChezMeta,
+  type OutilBibliotheque, type GestePublication,
 } from '@/lib/api-agent-tools';
 import { useT } from '@/lib/i18n';
 
@@ -21,6 +23,8 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   const t = useT();
   const [outils, setOutils] = useState<OutilBibliotheque[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [plan, setPlan] = useState<GestePublication[] | null>(null);
+  const [publie, setPublie] = useState(false);
 
   useEffect(() => {
     let vivant = true;
@@ -81,6 +85,47 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
     }
   }
 
+  /**
+   * L'APERÇU avant la publication.
+   *
+   * 🔴 « ENGAGE ME FAIT FOI, LA PUBLICATION ÉCRASE » (décision de Julien du 2026-09-10). Écraser n'est
+   * acceptable que si l'on montre QUOI avant de le faire : ce bouton n'écrit rien, il demande le plan et
+   * l'affiche en toutes lettres, y compris les suppressions.
+   */
+  async function voirLePlan(): Promise<void> {
+    setErreur(null);
+    setPublie(false);
+    try {
+      setPlan((await apercuPublicationMba(tenantId)).gestes);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : t('L’aperçu a échoué.', 'Preview failed.'));
+    }
+  }
+
+  async function publier(): Promise<void> {
+    setErreur(null);
+    try {
+      await publierChezMeta(tenantId);
+      setPublie(true);
+      setPlan([]);
+      setOutils((await getBibliothequeOutils(tenantId)).outils);
+    } catch (e) {
+      // Le message du serveur dit combien de gestes ont abouti et qu'on peut relancer sans risque de doublon.
+      setErreur(e instanceof Error ? e.message : t('La publication a échoué.', 'Publishing failed.'));
+      void voirLePlan();
+    }
+  }
+
+  const LIBELLE_GESTE: Record<GestePublication['type'], string> = {
+    connecteur_creer: t('créer le connecteur', 'create connector'),
+    connecteur_modifier: t('modifier le connecteur', 'update connector'),
+    connecteur_supprimer: t('SUPPRIMER le connecteur', 'DELETE connector'),
+    secret_poser: t('poser le secret', 'set the secret'),
+    outil_creer: t('créer l’outil', 'create tool'),
+    outil_modifier: t('modifier l’outil', 'update tool'),
+    outil_supprimer: t('SUPPRIMER l’outil', 'DELETE tool'),
+  };
+
   if (outils === null) return null;
 
   return (
@@ -94,6 +139,47 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
       </header>
 
       {erreur && <p className="text-xs text-coral" data-testid="bibliotheque-erreur">{erreur}</p>}
+
+      {/* La publication chez Meta. Elle vit ICI et pas dans les paramètres MBA : ce qu'on publie, c'est
+          cette bibliothèque-là, et le geste doit être à côté de ce qu'il emporte. */}
+      {isAdmin && (
+        <section className="rounded-2xl border border-ink-200 bg-ink-50/50 p-4" data-testid="publication-mba">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-ink-800">{t('Publier chez Meta', 'Publish to Meta')}</span>
+            <button type="button" className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs"
+              data-testid="publication-apercu" onClick={() => { void voirLePlan(); }}>
+              {t('Voir ce qui va changer', 'Preview changes')}
+            </button>
+            {plan !== null && plan.length > 0 && (
+              <button type="button" className="rounded-lg bg-brand-600 px-2 py-0.5 text-xs font-medium text-white"
+                data-testid="publication-publier" onClick={() => { void publier(); }}>
+                {t(`Publier ces ${plan.length} changement(s)`, `Publish these ${plan.length} change(s)`)}
+              </button>
+            )}
+          </div>
+
+          {/* ⚠️ CE QUE PERSONNE NE DEVINE, ET QUI DOIT ÊTRE ÉCRIT : une modification faite dans WhatsApp
+              Manager sera PERDUE. C'est la conséquence directe de « Engage Me fait foi ». */}
+          <p className="mt-1 text-xs text-ink-500">
+            {t('Ce que vous avez ici remplace ce qui est chez Meta. Un connecteur ou un outil ajouté à la main dans WhatsApp Manager sera supprimé.',
+              'What you have here replaces what is at Meta. A connector or tool added by hand in WhatsApp Manager will be deleted.')}
+          </p>
+
+          {publie && <p className="mt-2 text-xs text-mint-700" data-testid="publication-faite">{t('Publié. Meta est à jour.', 'Published. Meta is up to date.')}</p>}
+          {plan !== null && plan.length === 0 && !publie && (
+            <p className="mt-2 text-xs text-mint-700" data-testid="publication-rien">{t('Rien à changer : Meta est déjà à jour.', 'Nothing to change: Meta is already up to date.')}</p>
+          )}
+          {plan !== null && plan.length > 0 && (
+            <ul className="mt-2 space-y-0.5" data-testid="publication-plan">
+              {plan.map((g, i) => (
+                <li key={`${g.type}-${g.nom}-${i}`} className={`text-xs ${g.type.endsWith('supprimer') ? 'text-coral' : 'text-ink-600'}`}>
+                  {LIBELLE_GESTE[g.type]} : <code>{g.nom}</code>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {outils.length === 0 ? (
         <p className="text-sm text-ink-500" data-testid="bibliotheque-vide">

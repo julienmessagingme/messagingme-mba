@@ -177,3 +177,20 @@ export async function exposerOutilAuMba(tenantId: string, outilId: string, valeu
     method: 'PUT', body: JSON.stringify({ valeur }),
   });
 }
+
+/** Un geste du plan de publication, tel que le serveur le rend. */
+export interface GestePublication {
+  type: 'connecteur_creer' | 'connecteur_modifier' | 'connecteur_supprimer' | 'secret_poser'
+  | 'outil_creer' | 'outil_modifier' | 'outil_supprimer';
+  nom: string;
+}
+
+/** L'APERÇU : ce qui changera chez Meta si l'on publie. N'écrit RIEN. */
+export function apercuPublicationMba(tenantId: string): Promise<{ gestes: GestePublication[]; phoneNumberId: string | null }> {
+  return request<{ gestes: GestePublication[]; phoneNumberId: string | null }>(`/tenants/${tenantId}/mba-publication`);
+}
+
+/** Exécute le plan. Le serveur le RECALCULE : on ne lui renvoie pas celui qu'on a affiché. */
+export function publierChezMeta(tenantId: string): Promise<{ faits: GestePublication[] }> {
+  return request<{ faits: GestePublication[] }>(`/tenants/${tenantId}/mba-publication`, { method: 'POST' });
+}

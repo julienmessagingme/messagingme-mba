@@ -274,6 +274,77 @@ export class MbaClient {
     return this.appel<unknown>('PUT', `${phoneNumberId}/agent_config/settings${q}`, corps);
   }
 
+  // ---------- Connecteurs et leurs outils ----------
+
+  /**
+   * Les connecteurs d'un numéro, c'est-à-dire les systèmes que l'agent de Meta sait interroger.
+   *
+   * ⚠️ UN CONNECTEUR CHEZ META EST UNE API REST, RIEN D'AUTRE. Son schéma exige `name`, `description`,
+   * `base_url` et `auth_type` (∈ `OAUTH2`, `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `BASIC`, `CUSTOM`,
+   * `NONE`), et n'a AUCUN champ de protocole : un serveur MCP n'y entre pas, vérifié sur le corpus OpenAPI
+   * officiel le 2026-09-10. C'est pour ça que la bibliothèque grise la case « exposé au MBA » sur un outil
+   * MCP le jour où il en existera.
+   */
+  async listConnectors(phoneNumberId: string): Promise<Array<{ id: string; name: string; base_url?: string; auth_type?: string }>> {
+    const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors`);
+    return Array.isArray(r) ? r as Array<{ id: string; name: string }> : ((r as { data?: unknown })?.data as Array<{ id: string; name: string }>) ?? [];
+  }
+
+  async createConnector(phoneNumberId: string, corps: {
+    name: string; description: string; base_url: string; auth_type: string;
+  }): Promise<{ id: string }> {
+    return this.appel<{ id: string }>('POST', `${phoneNumberId}/agent_connectors`, corps);
+  }
+
+  async updateConnector(phoneNumberId: string, connectorId: string, corps: {
+    name?: string; description?: string; base_url?: string; auth_type?: string;
+  }): Promise<unknown> {
+    return this.appel<unknown>('PUT', `${phoneNumberId}/agent_connectors/${connectorId}`, corps);
+  }
+
+  async deleteConnector(phoneNumberId: string, connectorId: string): Promise<void> {
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_connectors/${connectorId}`);
+  }
+
+  /**
+   * Pose ou fait tourner le secret d'un connecteur.
+   *
+   * 🔴 LE SECRET POURRAIT PARTIR DANS LE CORPS DE CRÉATION (`auth_config.api_key` l'accepte), et on choisit
+   * quand même cette route : c'est la SEULE qui sache le remplacer sans recréer le connecteur (« if
+   * credentials already exist, they are replaced »), et un secret qui n'a qu'UN chemin d'écriture n'a qu'un
+   * endroit à auditer. Ce n'est donc PAS une contrainte de Meta, c'est notre discipline, et il faut le dire
+   * dans ce sens.
+   */
+  async upsertApiKey(phoneNumberId: string, connectorId: string, corps: unknown): Promise<unknown> {
+    return this.appel<unknown>('POST', `${phoneNumberId}/agent_connectors/${connectorId}/upsertApiKey`, corps);
+  }
+
+  async listConnectorTools(phoneNumberId: string, connectorId: string): Promise<Array<{ id: string; name: string; description?: string }>> {
+    const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors/${connectorId}/tools`);
+    return Array.isArray(r) ? r as Array<{ id: string; name: string }> : ((r as { data?: unknown })?.data as Array<{ id: string; name: string }>) ?? [];
+  }
+
+  /**
+   * Crée un outil sur un connecteur.
+   *
+   * ⚠️ `user_auth_required` EST EXIGÉ par le schéma de Meta, et on l'envoie à `false` : le mettre à `true`
+   * demanderait d'injecter un jeton PAR UTILISATEUR FINAL que nous ne collectons nulle part. L'omettre ferait
+   * échouer la création ; `false` est le seul choix honnête, et il est explicite plutôt qu'absent.
+   */
+  async createConnectorTool(phoneNumberId: string, connectorId: string, corps: {
+    name: string; description: string; request_definition: unknown; user_auth_required: boolean;
+  }): Promise<{ id: string }> {
+    return this.appel<{ id: string }>('POST', `${phoneNumberId}/agent_connectors/${connectorId}/tools`, corps);
+  }
+
+  async updateConnectorTool(phoneNumberId: string, connectorId: string, toolId: string, corps: unknown): Promise<unknown> {
+    return this.appel<unknown>('PUT', `${phoneNumberId}/agent_connectors/${connectorId}/tools/${toolId}`, corps);
+  }
+
+  async deleteConnectorTool(phoneNumberId: string, connectorId: string, toolId: string): Promise<void> {
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_connectors/${connectorId}/tools/${toolId}`);
+  }
+
   async listAllowlist(phoneNumberId: string): Promise<AllowlistEntry[]> {
     return this.appel<AllowlistEntry[]>('GET', `${phoneNumberId}/agent_config/allowlist`);
   }

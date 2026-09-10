@@ -21,6 +21,8 @@ import { registerAgents } from './http/agents';
 import { registerAgentKnowledge } from './http/agent-knowledge';
 import { registerAgentTools } from './http/agent-tools';
 import { registerAgentCatalogue } from './http/agent-catalogue';
+import { registerMbaPublication } from './http/mba-publication';
+import type { MbaPublicationDeps } from './http/mba-publication';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
 import { registerAgentRequetes, type AgentRequetesRouteDeps } from './http/agent-requetes';
@@ -164,6 +166,8 @@ export interface ServerDeps {
   agentTools?: AgentToolsRouteDeps;
   /** La BIBLIOTHÈQUE d'outils de l'espace (migration 0127) : les définitions, et qui s'en sert. */
   agentCatalogue?: AgentCatalogueRouteDeps;
+  /** Publication du catalogue d'outils chez Meta : l'aperçu, puis l'exécution. */
+  mbaPublication?: MbaPublicationDeps;
   agentSources?: AgentSourcesRouteDeps;
   agentRequetes?: AgentRequetesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
@@ -243,7 +247,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   const modulesTenant = [
     deps.import, deps.campaigns, deps.admin, deps.flows, deps.templates, deps.support, deps.contacts,
     deps.account, deps.me, deps.workflows, deps.embeddedSignup, deps.apiKeys, deps.hubspotImport,
-    deps.hubspotInstall, deps.hubspotPipelines, deps.mba, deps.email, deps.webhooksAdmin, deps.agentCatalogue,
+    deps.hubspotInstall, deps.hubspotPipelines, deps.mba, deps.email, deps.webhooksAdmin, deps.agentCatalogue, deps.mbaPublication,
     deps.inbox, deps.stats, deps.settings, deps.rcsMessages, deps.rcsChannel, deps.rcsMedia, deps.media,
     deps.tags, deps.fields, deps.workflowReports, deps.automations, deps.agents, deps.agentKnowledge,
     deps.agentTools, deps.agentSources, deps.agentRequetes, deps.agentSetup, deps.agentTest,
@@ -449,6 +453,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.agentKnowledge) registerAgentKnowledge(app, deps.agentKnowledge, requireAdmin);
   if (deps.agentTools) registerAgentTools(app, deps.agentTools, requireAdmin);
   if (deps.agentCatalogue) registerAgentCatalogue(app, deps.agentCatalogue, requireAdmin);
+  if (deps.mbaPublication) registerMbaPublication(app, deps.mbaPublication, requireAdmin);
   if (deps.agentSources) registerAgentSources(app, deps.agentSources, requireAdmin);
   // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
   // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.

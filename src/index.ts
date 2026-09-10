@@ -119,6 +119,8 @@ import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerRendreLeFil } from './inbox/rendre-le-fil';
+import { consommateurMba } from './agent/consommateur';
+import { corpsConnecteurMeta, corpsOutilMeta, corpsApiKey } from './http/mba-publication';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -1205,6 +1207,116 @@ async function main(): Promise<void> {
       rattacherConsommateur: (tenant, cle, id) => toolCatalog.rattacherConsommateur(tenant, cle, id),
       detacherConsommateur: (tenant, cle, id) => toolCatalog.detacherConsommateur(tenant, cle, id),
       activerConsommateur: (tenant, cle, id, actif, par) => toolCatalog.activerConsommateur(tenant, cle, id, actif, par),
+    },
+    /**
+     * Publication du catalogue chez Meta (lot 4).
+     *
+     * 🔴 LE PLAN EST RECALCULE AU MOMENT D APPLIQUER, jamais transmis par le navigateur : le lui faire
+     * porter ouvrirait une fenetre ou Meta a change entre l apercu et le clic.
+     */
+    mbaPublication: {
+      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      sources: async (tenant) => (await agentSources.lister(tenant))
+        .filter((s) => s.kind === 'http' && s.status === 'active')
+        .map((s) => ({
+          id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
+          authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
+        })),
+      secretDeLaSource: async (tenant, sourceId) => (await agentSources.pourAppel(tenant, sourceId))?.authSecret ?? null,
+      /**
+       * Les outils EXPOSES au MBA, avec leur methode et leur chemin.
+       *
+       * ⚠️ Un outil MAISON (`origin: 'mba'`) n a ni source ni requete : il n est pas publiable chez Meta,
+       * qui ne sait appeler que du HTTP. On le filtre ICI plutot que de le laisser produire un geste qui
+       * echouerait, ce qui arreterait toute la publication sur un cas parfaitement normal.
+       */
+      outilsExposes: async (tenant, pn) => {
+        const actifs = await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn));
+        const sortie = [];
+        for (const o of actifs) {
+          if (o.origin !== 'http' || !o.sourceId || !o.requestId) continue;
+          const req = await agentRequetes.parId(tenant, o.requestId);
+          if (!req) continue;
+          sortie.push({
+            id: o.id, sourceId: o.sourceId, name: o.name, description: o.description,
+            nePasUtiliser: o.nePasUtiliser, methode: req.methode, chemin: req.chemin,
+          });
+        }
+        return sortie;
+      },
+      etatMeta: async (tenant, pn) => {
+        const client = await metaFactory.mbaClientForTenant(tenant);
+        const connecteurs = await client.listConnectors(pn);
+        const outilsParConnecteur: Record<string, Array<{ id: string; name: string; description?: string }>> = {};
+        for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
+        return { connecteurs, outilsParConnecteur };
+      },
+      appliquer: async (tenant, pn, geste) => {
+        const client = await metaFactory.mbaClientForTenant(tenant);
+        // Le connecteur se retrouve par son NOM au moment ou on en a besoin : `connecteur_creer` precede
+        // toujours `outil_creer` dans le plan, donc il existe. Le porter dans le geste obligerait a le
+        // deviner avant sa creation.
+        const idDuConnecteur = async (nomSource: string): Promise<string | null> =>
+          (await client.listConnectors(pn)).find((c) => c.name === nomSource)?.id ?? null;
+        const sourceParId = async (id: string) => (await agentSources.lister(tenant)).find((s) => s.id === id);
+
+        if (geste.type === 'connecteur_creer') {
+          const s = await sourceParId(geste.sourceId);
+          if (s) await client.createConnector(pn, corpsConnecteurMeta({
+            id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
+            authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
+          }));
+          return;
+        }
+        if (geste.type === 'connecteur_modifier') {
+          const s = await sourceParId(geste.sourceId);
+          if (s) await client.updateConnector(pn, geste.connecteurId, corpsConnecteurMeta({
+            id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
+            authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
+          }));
+          return;
+        }
+        if (geste.type === 'connecteur_supprimer') {
+          await client.deleteConnector(pn, geste.connecteurId);
+          return;
+        }
+        if (geste.type === 'secret_poser') {
+          const s = await sourceParId(geste.sourceId);
+          const secret = await agentSources.pourAppel(tenant, geste.sourceId);
+          const cid = await idDuConnecteur(geste.nom);
+          if (s && cid && secret?.authSecret) {
+            await client.upsertApiKey(pn, cid, corpsApiKey(
+              { authKind: s.authKind, authHeaderName: s.authHeaderName }, secret.authSecret,
+            ));
+          }
+          return;
+        }
+        if (geste.type === 'outil_creer' || geste.type === 'outil_modifier') {
+          const s = await sourceParId(geste.sourceId);
+          if (!s) return;
+          const cid = await idDuConnecteur(s.label);
+          if (!cid) return;
+          const outils = await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn));
+          const o = outils.find((x) => x.id === geste.outilId);
+          if (!o || !o.requestId) return;
+          const req = await agentRequetes.parId(tenant, o.requestId);
+          if (!req) return;
+          const corps = corpsOutilMeta({
+            id: o.id, sourceId: s.id, name: o.name, description: o.description,
+            nePasUtiliser: o.nePasUtiliser, methode: req.methode, chemin: req.chemin,
+          });
+          if (geste.type === 'outil_creer') await client.createConnectorTool(pn, cid, corps);
+          else await client.updateConnectorTool(pn, cid, geste.outilMetaId, corps);
+          return;
+        }
+        if (geste.type === 'outil_supprimer') {
+          const cid = geste.sourceId === ''
+            ? null
+            : await idDuConnecteur((await sourceParId(geste.sourceId))?.label ?? '');
+          // Un outil dont le connecteur part aussi : Meta l emporte avec lui, rien a faire ici.
+          if (cid) await client.deleteConnectorTool(pn, cid, geste.outilMetaId);
+        }
+      },
     },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
     // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.
