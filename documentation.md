@@ -181,6 +181,23 @@ Où regarder avant de modifier quoi que ce soit.
 
 ### 4.1 Un message arrive
 
+🔴 **DEUX FORMES DE PAYLOAD, ET LA SECONDE EST IMBRIQUÉE.** Quand le Meta Business Agent tient le fil,
+Meta n'envoie plus `field: "messages"` mais `field: "standby"`, et il place `contacts`, `messages`,
+`statuses` et `message_echoes` **sous `value.standby`**, en laissant `metadata` au premier niveau. Tout
+lecteur d'un `change` passe donc par **`valeurEffective` (`src/webhooks/change.ts`)**, qui remonte le
+contenu ; sur un payload normal, elle le rend inchangé. Lire `value.messages` en direct est un défaut :
+il ne lève rien, il rend un tableau vide, et le job se termine « avec succès ».
+
+⚠️ **`field` reste rendu TEL QUEL, et c'est la moitié qui fait tenir la première.** Ce qui doit se TAIRE
+quand le MBA tient le fil (déclencheurs d'automation, avance de scénario, jeton de test) teste
+`field !== 'messages'` : répondre reprendrait implicitement le fil à l'agent de Meta. L'Inbox et les
+accusés de livraison, eux, enregistrent les deux formes. **Enregistrer n'est pas répondre.**
+
+⚠️ **Un écho porte son contenu sous `message`** : `{id, timestamp, message: {to, text: {body}, recipient}}`.
+`message.to` est le `wa_id`, `message.recipient` est le BSUID : les intervertir rattache le message de
+l'agent à un contact qui n'existe pas.
+
+
 ```
 Meta -> POST /webhooks/meta (mba-api)
    signature X-Hub-Signature-256 vérifiée AVANT de lire le corps
