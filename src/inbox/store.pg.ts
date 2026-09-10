@@ -164,6 +164,34 @@ const UNREAD_SQL = `exists (
     and m.created_at > coalesce(c.last_read_at, to_timestamp(0))
 )`;
 
+/**
+ * LE DOSSIER « À TRAITER », défini UNE fois.
+ *
+ * 🔴 DEUX CONDITIONS, ET LA SECONDE MANQUAIT. « À traiter » valait seulement « le scénario ne gère plus ce
+ * fil » (`control_owner <> 'app_workflow'`). Un opérateur prenait donc la main, RÉPONDAIT au client, et la
+ * conversation restait dans le dossier alors qu'on attend désormais le CLIENT. Constaté par Julien le
+ * 2026-09-10 : le dossier se remplissait de fils où il n'y a rien à faire, et cessait d'être une liste de
+ * travail. La possession du fil ne suffit pas, il faut savoir QUI A PARLÉ EN DERNIER (migration 0130).
+ *
+ * 🔴 LA SECONDE CONDITION NE VAUT QUE POUR UN FIL TENU PAR UN HUMAIN, et cette restriction est délibérée.
+ * Un fil tenu par l'agent de Meta est dans ce dossier pour être SURVEILLÉ : le sortir dès que le robot a
+ * répondu le viderait de tous les fils que le robot mène, c'est-à-dire de ce que le client a justement
+ * demandé à voir. La règle corrige donc exactement le cas décrit (« l'humain a la main, l'humain répond »),
+ * et rien d'autre. ⚠️ Question ouverte pour Julien, pas tranchée ici : un fil MBA doit-il aussi sortir du
+ * dossier tant que le robot suit ?
+ *
+ * ⚠️ `= 'out'` LU DANS UN `not (...)` : une conversation sans valeur connue (`null`) reste dans le dossier,
+ * exactement comme avant la migration. Un filtre qui ferait DISPARAÎTRE des fils au déploiement serait la
+ * pire façon de l'introduire, personne ne cherchant ce qu'il ne sait pas avoir perdu.
+ *
+ * ⚠️ Fragment PARTAGÉ par les trois lecteurs (la liste, les compteurs du menu, la vieille route de comptage) :
+ * les écrire trois fois les ferait diverger au premier ajustement, et le dossier afficherait un nombre que la
+ * liste ne montre pas. C'est déjà la raison d'être d'`UNREAD_SQL` juste au-dessus. `c` = alias de
+ * `conversations`.
+ */
+const A_TRAITER_SQL = `c.control_owner <> 'app_workflow'
+  and not (c.control_owner = 'app_human' and c.last_direction = 'out')`;
+
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
@@ -199,18 +227,33 @@ export class PgInboxStore implements InboxStore {
      * trancher, plutôt qu'un défaut qui le laisserait hériter d'un choix qu'il n'a pas fait.
      */
     desarchive: boolean,
+    /**
+     * QUI VIENT DE PARLER : `in` le contact, `out` nous.
+     *
+     * 🔴 OBLIGATOIRE, SANS VALEUR PAR DÉFAUT. C'est ce qui décide du dossier « À traiter », donc un appelant
+     * qui l'oublierait rangerait le fil au mauvais endroit, en silence. Sans défaut, l'oubli est une erreur
+     * du compilateur : c'est la même raison qui a rendu `origine` obligatoire sur `recordOutbound` (migration
+     * 0101), après qu'une valeur DÉDUITE eut marqué « scénario » toutes les réponses du serveur MCP.
+     */
+    sens: 'in' | 'out',
   ): Promise<string> {
     const conv = await this.pool.query<{ id: string }>(
       // UN contact = UNE conversation, quel que soit le canal : c'est le MESSAGE qui porte son canal
       // (`conversation_messages.channel`, migration 0056), pas le fil. L'unique (tenant_id, wa_id) de 0009
       // reste donc l'arbitre de ce ON CONFLICT, et la reprise de main par un opérateur continue de valoir
       // pour le contact entier, pas pour un tuyau.
-      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview)
+      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview, last_direction)
        values ($1, $2, (select id from contacts where tenant_id = $1
-         ${MATCH_BY_WAID_SQL}), now(), $3)
+         ${MATCH_BY_WAID_SQL}), now(), $3, $5)
        on conflict (tenant_id, wa_id) do update set
          last_message_at = now(),
          last_preview = excluded.last_preview,
+         -- 🔴 LE SENS DU DERNIER MESSAGE, ecrit dans la MEME ecriture que l apercu. Deux ecritures
+         -- laisseraient une fenetre ou l apercu montre la reponse de l operateur pendant que le dossier
+         -- « A traiter » compte encore le fil comme du : l ecran se contredirait lui-meme.
+         -- ⚠️ Aucun accent grave dans ce commentaire : il vit DANS un gabarit TypeScript, et un accent grave
+         -- y fermerait la chaine. Deja paye une fois dans ce depot (sources.pg.ts).
+         last_direction = excluded.last_direction,
          contact_id = coalesce(conversations.contact_id, excluded.contact_id),
          -- Un nouveau message ROUVRE l'analyse : une conversation déjà analysée (done/failed) qui reçoit un message
          -- redevient 'pending' -> ré-analysée à la prochaine inactivité (sinon un contact qui revient n'est jamais réanalysé).
@@ -220,7 +263,7 @@ export class PgInboxStore implements InboxStore {
          -- reste rangee dans Archive : precisement l'etat que personne ne regarde.
          archived_at = case when $4::boolean then null else conversations.archived_at end
        returning id`,
-      [tenantId, waId, preview, desarchive],
+      [tenantId, waId, preview, desarchive, sens],
     );
     return conv.rows[0]!.id;
   }
@@ -327,7 +370,7 @@ export class PgInboxStore implements InboxStore {
   async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
     // `true` : un message du CONTACT désarchive. C'est le seul chemin qui le fait.
-    const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true);
+    const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true, 'in');
     await this.pool.query(
       // ⚠️ `media_id` et `media_mime` sont ecrits ICI ET NULLE PART AILLEURS (migration 0125) : c est le seul
       // instant ou le corps du webhook est encore sous la main. Un media non capte a l insertion est perdu,
@@ -352,7 +395,7 @@ export class PgInboxStore implements InboxStore {
   ): Promise<void> {
     // `false` : un envoi AUTOMATISÉ (campagne, scénario) ne désarchive pas. Une campagne qui touche mille
     // contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés.
-    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, false);
+    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, false, 'out');
     await this.pool.query(
       // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,
       // donc tous les appelants historiques écrivent exactement ce qu'ils écrivaient.
@@ -385,8 +428,7 @@ export class PgInboxStore implements InboxStore {
     const where: string[] = ['c.tenant_id = $1'];
 
     if (opts.aTraiter === true) {
-      // Même définition que l'écran : le scénario ne gère plus ce fil (opérateur, escalade, ou agent Meta).
-      where.push(`c.control_owner <> 'app_workflow'`);
+      where.push(A_TRAITER_SQL);
     }
     // 🔴 Contact BLOQUÉ : sa conversation disparaît de l'inbox, décision produit du 2026-08-21. Ses messages
     // restent ENREGISTRÉS et le contact est retrouvable dans l'écran des contacts bloqués, qui est la seule
@@ -524,7 +566,7 @@ export class PgInboxStore implements InboxStore {
     }>(
       `select
          count(*) filter (where c.archived_at is null)::text as tout,
-         count(*) filter (where c.archived_at is null and c.control_owner <> 'app_workflow')::text as a_traiter,
+         count(*) filter (where c.archived_at is null and ${A_TRAITER_SQL})::text as a_traiter,
          count(*) filter (where c.archived_at is null and (c.signalee_le is not null or exists (
            select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)))::text as signalees,
          count(*) filter (where c.archived_at is not null)::text as archivees,
@@ -586,7 +628,7 @@ export class PgInboxStore implements InboxStore {
       `select count(*)::text as n
          from conversations c
          left join contacts ct on ct.id = c.contact_id
-        where c.tenant_id = $1 and c.control_owner <> 'app_workflow'
+        where c.tenant_id = $1 and ${A_TRAITER_SQL}
           and c.archived_at is null and ct.blocked_at is null`,
       [tenantId],
     );
@@ -977,7 +1019,10 @@ export class PgInboxStore implements InboxStore {
     channel: 'whatsapp' | 'rcs' = 'whatsapp',
   ): Promise<void> {
     await this.pool.query(
-      `update conversations set last_message_at = now(), last_preview = $2,
+      // `last_direction = 'out'` : c'est LE chemin de la réponse d'un opérateur, de l'agent IA et du serveur
+      // MCP. Sans lui, répondre à un client laissait la conversation dans « À traiter » alors qu'on attend
+      // désormais le CLIENT, et le dossier cessait d'être une liste de travail.
+      `update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
          analysis_status = case when analysis_status in ('done', 'failed') then 'pending' else analysis_status end
        where id = $1`,
       [conversationId, body],

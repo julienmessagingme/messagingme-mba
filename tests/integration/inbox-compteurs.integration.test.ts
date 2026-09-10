@@ -92,6 +92,104 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     await pool.end();
   });
 
+  /**
+   * 🔴 « À TRAITER » VEUT DIRE « LA BALLE EST DANS NOTRE CAMP », et il ne le voulait pas dire.
+   *
+   * Le dossier valait `control_owner <> 'app_workflow'`, c'est-à-dire « le scénario ne gère plus ce fil ».
+   * Un opérateur prenait donc la main, RÉPONDAIT au client, et la conversation restait dans le dossier alors
+   * qu'on attend désormais le CLIENT. Constaté par Julien le 2026-09-10.
+   *
+   * ⚠️ CES TESTS PASSENT PAR LE VRAI CODE (`recordInbound`, `recordOutbound`) et pas par un `insert`
+   * recopié : ce qui se casserait, c'est justement un des trois chemins d'écriture qui oublierait le sens du
+   * message. Un test qui écrirait `last_direction` lui-même vérifierait sa propre fixture.
+   */
+  describe('🔴 « À traiter » suit QUI A PARLÉ EN DERNIER', () => {
+    /** Un fil tenu par un humain, sur lequel le CONTACT vient d'écrire. */
+    async function filTenu(waId: string): Promise<string> {
+      const conv = await conversation(waId, { tenu: true });
+      await store.recordInbound(tenantId, {
+        phoneNumberId: 'pn', waId, messageId: `m-${waId}-in`, type: 'text',
+        body: 'bonjour', buttonPayload: null, profileName: null, field: 'messages',
+      });
+      return conv;
+    }
+    const dansLeDossier = async (conv: string): Promise<boolean> =>
+      (await store.listConversations(tenantId, { aTraiter: true })).some((c) => c.id === conv);
+
+    it('un fil tenu où le CONTACT a parlé en dernier est à traiter', async () => {
+      const conv = await filTenu('33610000001');
+      expect(await dansLeDossier(conv)).toBe(true);
+    });
+
+    it('🔴 dès que l’HUMAIN répond, le fil SORT du dossier (mais reste dans Tout)', async () => {
+      const conv = await filTenu('33610000002');
+      const avant = await store.compterConversations(tenantId);
+      expect(await dansLeDossier(conv)).toBe(true);
+
+      await store.recordOutbound(conv, 'je regarde ça', 'm-out-1', 'humain');
+
+      expect(await dansLeDossier(conv)).toBe(false);
+      const apres = await store.compterConversations(tenantId);
+      expect(apres.aTraiter).toBe(avant.aTraiter - 1);
+      // ⚠️ ET IL RESTE DANS « TOUT » : on ne le range pas, on cesse seulement de le RÉCLAMER.
+      expect(apres.tout).toBe(avant.tout);
+      expect((await store.listConversations(tenantId, {})).some((c) => c.id === conv)).toBe(true);
+    });
+
+    it('🔴 et il REVIENT dès que le contact réécrit', async () => {
+      // Sans ce sens-là, le dossier se viderait pour de bon et un client qui relance ne serait jamais repris.
+      const conv = await filTenu('33610000003');
+      await store.recordOutbound(conv, 'je regarde ça', 'm-out-2', 'humain');
+      expect(await dansLeDossier(conv)).toBe(false);
+
+      await store.recordInbound(tenantId, {
+        phoneNumberId: 'pn', waId: '33610000003', messageId: 'm-in-2', type: 'text',
+        body: 'alors ?', buttonPayload: null, profileName: null, field: 'messages',
+      });
+      expect(await dansLeDossier(conv)).toBe(true);
+    });
+
+    it('⚠️ un envoi AUTOMATISÉ sur un fil TENU compte aussi comme « nous avons parlé »', async () => {
+      // `recordOutboundByWaId` sert les campagnes et les scénarios. Sur un fil qu'un humain tient, c'est bien
+      // nous qui avons parlé en dernier : la balle est chez le contact.
+      const conv = await filTenu('33610000004');
+      await store.recordOutboundByWaId(tenantId, '33610000004', {
+        body: 'votre commande est partie', messageId: 'm-auto-1', origine: 'scenario',
+      });
+      expect(await dansLeDossier(conv)).toBe(false);
+    });
+
+    it('🔴 un fil tenu par l’AGENT DE META reste à traiter, même quand le robot vient de répondre', async () => {
+      // La restriction est délibérée : ce dossier est là pour SURVEILLER ce que le robot mène. L'en sortir
+      // dès qu'il répond le viderait de tous les fils du robot, c'est-à-dire de ce qu'on venait y voir.
+      const conv = await conversation('33610000006', {});
+      await pool.query(`update conversations set control_owner = 'mba' where id = $1`, [conv]);
+      await store.recordInbound(tenantId, {
+        phoneNumberId: 'pn', waId: '33610000006', messageId: 'm-mba-in', type: 'text',
+        body: 'bonjour', buttonPayload: null, profileName: null, field: 'standby',
+      });
+      expect(await dansLeDossier(conv)).toBe(true);
+
+      // Le robot répond : le fil RESTE dans le dossier.
+      await store.recordOutboundByWaId(tenantId, '33610000006', {
+        body: 'je vous explique', messageId: 'm-mba-out', type: 'mba', origine: 'mba',
+      });
+      expect(await dansLeDossier(conv)).toBe(true);
+    });
+
+    it('🔴 un fil SANS sens connu reste dans le dossier, exactement comme avant', async () => {
+      // Le défaut décide de ce qui se passe au DÉPLOIEMENT, sur toutes les conversations d'avant la
+      // migration. Les faire disparaître du dossier serait la pire façon d'introduire un filtre : personne
+      // ne cherche ce qu'il ne sait pas avoir perdu. D'où `is distinct from 'out'` et non `= 'in'`.
+      const conv = await conversation('33610000005', { tenu: true });
+      const sens = await pool.query<{ last_direction: string | null }>(
+        'select last_direction from conversations where id = $1', [conv],
+      );
+      expect(sens.rows[0]!.last_direction).toBeNull();
+      expect(await dansLeDossier(conv)).toBe(true);
+    });
+  });
+
   it('🔴 les cinq compteurs portent sur TOUTE la base, et s’accordent entre eux', async () => {
     const c = await store.compterConversations(tenantId);
     expect(c.tout).toBe(4);
