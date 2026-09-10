@@ -1389,15 +1389,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Les outils de l'espace (menu « Tools » > Outils)
 
-- ✅ **La bibliothèque de tout ce que vos agents savent FAIRE** (2026-09-10). Un outil s'y déclare une fois,
-  puis chaque agent choisit de s'en servir : les outils maison, et les appels de vos connecteurs API. Pour
+- ✅ **La bibliothèque de tout ce que vos agents savent FAIRE** (2026-09-10) : les outils maison, et les
+  appels de vos connecteurs API. Un outil s'y déclare une fois, puis chaque agent choisit de s'en servir. Pour
   chacun, son nom lisible, le nom technique que le modèle voit, sa description, et son étiquette
   (**maison**, **connecteur**, ou **MCP**), plus une pastille rouge sur les actions irréversibles.
+  ⚠️ **C'est un écran de PILOTAGE, pas de création** : un outil s'ajoute toujours depuis l'onglet Outils d'un
+  agent, là où on lui donne ses mots et ses valeurs autorisées. Ici on voit qui s'en sert, on l'ouvre à
+  l'agent de Meta, et on le supprime de l'espace.
 - ✅ **« Utilisé par », sur chaque outil**, et c'est la raison d'être de l'écran : les agents qui s'en servent
   sont nommés, et ceux qui l'ont ajouté sans l'avoir activé sont marqués « (inactif) ». Sans cette ligne, ce
   serait une liste de plus ; avec elle, on voit qu'y toucher touche plusieurs agents à la fois.
 - ✅ **Supprimer un outil de l'espace, et seulement s'il ne sert à personne.** Le bouton n'apparaît pas tant
-  qu'un agent l'utilise. Montrer un bouton dont on sait qu'il échouera est une invitation à l'échec, pas une
+  qu'un agent l'utilise, ni tant qu'il est exposé à l'agent de Meta. Montrer un bouton dont on sait qu'il échouera est une invitation à l'échec, pas une
   garde : le serveur refuse de toute façon, en disant qui s'en sert.
 - ✅ **« Exposé à l'agent de Meta »** : une case par outil, qui met l'outil à disposition du **Meta Business
   Agent** sur le numéro WhatsApp de l'espace. Le MBA devient alors un utilisateur d'outil comme un de vos
