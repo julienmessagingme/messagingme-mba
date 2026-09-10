@@ -42,6 +42,32 @@ export function getMbaStatus(tenantId: string, phoneNumberId: string): Promise<M
   return request<MbaStatus>(`${base(tenantId, phoneNumberId)}/status`);
 }
 
+/**
+ * Ou en est la configuration, repris de l ecran de Meta (« 4 of 5 tasks completed »).
+ *
+ * 🔴 PLUS STRICT QUE CELUI DE META sur deux points mesures le 2026-09-10 : une competence `pending_review`
+ * ne compte pas (elle existe et n agit pas), et un site a `pages_crawled: 0` ne compte pas (Meta y affiche
+ * une coche verte alors que rien n a ete aspire). Le calcul vit cote serveur, `src/mba/completion.ts`.
+ */
+export type EtatTacheMba = 'faite' | 'a_faire' | 'inconnue';
+export interface TacheMba {
+  cle: 'business_info' | 'faq' | 'competences' | 'activation' | 'paiement' | 'fichiers' | 'sites' | 'connecteurs' | 'outils';
+  requise: boolean;
+  etat: EtatTacheMba;
+  /** Pourquoi ce n est pas fait, ou pourquoi on ne peut pas le dire. Absent quand c est fait. */
+  raison?: string;
+}
+export interface CompletionMba {
+  taches: TacheMba[];
+  faites: number;
+  total: number;
+  /** Taches obligatoires hors de notre portee (le paiement). Affichees a part, jamais dans le ratio. */
+  indeterminees: number;
+}
+export function getMbaCompletion(tenantId: string, phoneNumberId: string): Promise<CompletionMba> {
+  return request<CompletionMba>(`${base(tenantId, phoneNumberId)}/completion`);
+}
+
 export interface MbaSettingsPatch {
   aiAudience?: 'EVERYONE' | 'ALLOWLISTED_ONLY';
   neverSay?: string[];

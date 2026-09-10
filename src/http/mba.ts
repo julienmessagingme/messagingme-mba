@@ -9,6 +9,7 @@ import { isSendableButtonUrl } from '../meta/button-url';
 import { urlRecuperable } from '../lib/page-distante';
 import type { PageDistante } from '../lib/page-distante';
 import { scopeTenant, nonEmpty } from './scope';
+import { calculerCompletion } from '../mba/completion';
 
 /**
  * Configuration de l'agent Meta Business Agent depuis la console : la base de connaissance (informations
@@ -165,6 +166,39 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Gu
   const base = '/tenants/:tenantId/mba/:phoneNumberId';
 
   // ---------- État général ----------
+
+  /**
+   * « Où en est la configuration », en une lecture. Reprend la sémantique de l'écran de Meta
+   * (« 4 of 5 tasks completed »), demandé par Julien le 2026-09-10 : nos onglets ne DISENT pas ce qui
+   * manque, il faut les ouvrir un par un, et c'est ainsi que les compétences sont restées vides pendant
+   * que l'agent répondait à tout le monde.
+   *
+   * 🔴 SIX LECTURES EN PARALLÈLE, ET CHACUNE PEUT ÉCHOUER SEULE. Un `allSettled` et non un `all` : une
+   * seule route de Meta en erreur ne doit pas priver l'écran des cinq autres réponses. Un échec devient
+   * `null`, que `calculerCompletion` traduit en « pas lu » et JAMAIS en « à faire » : afficher « FAQ à
+   * faire » sur un agent qui en a trente enverrait le client en écrire une de plus.
+   *
+   * ⚠️ Les compétences exigent un `agent_id` : sans agent créé, la liste n'est pas « vide », elle n'existe
+   * pas. On passe donc `null` plutôt qu'un tableau, et l'écran dira « pas lu ».
+   */
+  app.get(`${base}/completion`, g, async (req, reply) => {
+    const ctx = await contexte(req, reply, deps);
+    if (!ctx) return;
+    const settings = await ctx.client.getSettings(ctx.pn).catch(() => null);
+    const agentId = typeof settings?.agent_id === 'string' ? settings.agent_id : null;
+    const [bi, faqs, skills, sites, fichiers] = await Promise.all([
+      ctx.client.getBusinessInfo(ctx.pn).catch(() => null),
+      ctx.client.listFaqs(ctx.pn).catch(() => null),
+      agentId ? ctx.client.listSkills(ctx.pn, agentId).catch(() => null) : Promise.resolve(null),
+      ctx.client.listWebsites(ctx.pn).catch(() => null),
+      ctx.client.listFiles(ctx.pn).catch(() => null),
+    ]);
+    return reply.code(200).send(calculerCompletion({
+      settings, businessInfo: bi, faqs, skills, websites: sites, files: fichiers,
+    }));
+  });
+
+
 
   /**
    * Ce que l'écran affiche à l'ouverture : l'agent est-il ouvert par Meta sur ce numéro, et dans quel état.

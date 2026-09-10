@@ -54,6 +54,18 @@ export interface Skill {
   description: string;
   /** Le corps d'instructions. 20 000 caractères max. */
   skill: string;
+  /**
+   * `active`, `pending_review` ou `blocked`, tel que Meta le rend.
+   *
+   * 🔴 CE CHAMP ÉTAIT JETÉ, et c'est ce qui rendait une compétence écrite indiscernable d'une compétence
+   * QUI AGIT. Meta RELIT les compétences : mesuré le 2026-09-10, les quatre posées sur notre numéro sont
+   * revenues `pending_review` puis `active` moins d'une heure après. Entre les deux, l'agent répondait
+   * sans elles, et rien à l'écran ne pouvait le dire.
+   *
+   * ⚠️ Optionnel, parce que c'est Meta qui le rend et jamais nous qui l'écrivons : il est absent des corps
+   * de création et de mise à jour.
+   */
+  status?: string;
 }
 
 /** Un site web crawlé par Meta pour alimenter la connaissance. */

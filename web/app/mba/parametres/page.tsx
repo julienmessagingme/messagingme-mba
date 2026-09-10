@@ -18,6 +18,7 @@ import { MbaSkillsPanel } from '@/components/MbaSkillsPanel';
 import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
+import { MbaCompletion } from '@/components/MbaCompletion';
 
 export default function MbaSettingsPage() {
   // `useSearchParams` impose une frontière Suspense au build (règle Next 15), sinon la page bascule en rendu
@@ -107,6 +108,9 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
 
   return coquille(
     <>
+      {/* La complétion AVANT les onglets : c'est ce qui manque qui doit se voir en arrivant, pas la liste
+          des endroits où chercher. Elle n'apparaît que si la lecture a abouti. */}
+      {phoneNumberId && <MbaCompletion tenantId={tenantId} phoneNumberId={phoneNumberId} onOnglet={choisirOnglet} />}
       <MbaTabs
         active={onglet}
         onSelect={choisirOnglet}
