@@ -39,6 +39,17 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
     o.consommateurs.some((c) => c.cle.startsWith('mba:') && c.actif);
 
   /**
+   * Le nom LISIBLE d'un consommateur.
+   *
+   * ⚠️ LE MBA N'A PAS DE FICHE D'AGENT, DONC PAS DE LIBELLÉ, et c'est voulu : c'est un numéro chez Meta, pas
+   * une ligne de notre base. Sans cette traduction, la ligne « utilisé par » affichait la clé technique
+   * telle quelle (`mba:1234840649713976`), c'est-à-dire un identifiant interne montré au client sur l'écran
+   * même qui sert à décider quoi exposer.
+   */
+  const nomConsommateur = (c: { cle: string; agentLabel: string | null }): string =>
+    c.agentLabel ?? (c.cle.startsWith('mba:') ? t('Agent de Meta', 'Meta’s agent') : c.cle);
+
+  /**
    * Coche ou décoche « exposé au Meta Business Agent ».
    *
    * 🔴 L'AVERTISSEMENT SUR UN OUTIL IRRÉVERSIBLE VIT ICI, AU MOMENT DU CLIC, et pas dans une documentation.
@@ -211,7 +222,7 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
                 {o.consommateurs.length === 0
                   ? t('Utilisé par aucun agent.', 'Used by no agent.')
                   : `${t('Utilisé par', 'Used by')} : ${o.consommateurs
-                    .map((c) => `${c.agentLabel ?? c.cle}${c.actif ? '' : t(' (inactif)', ' (inactive)')}`)
+                    .map((c) => `${nomConsommateur(c)}${c.actif ? '' : t(' (inactif)', ' (inactive)')}`)
                     .join(', ')}`}
               </p>
 
