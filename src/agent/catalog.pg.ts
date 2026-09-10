@@ -306,9 +306,13 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   }
 
   async detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
+    return this.detacherConsommateur(tenantId, consommateurAgent(agentId), outilId);
+  }
+
+  async detacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
     const res = await this.pool.query(
       'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
-      [tenantId, consommateurAgent(agentId), outilId],
+      [tenantId, consommateur, outilId],
     );
     return (res.rowCount ?? 0) > 0;
   }

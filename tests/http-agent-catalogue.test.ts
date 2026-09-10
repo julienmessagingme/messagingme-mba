@@ -44,17 +44,25 @@ const BIB: OutilBibliotheque = {
   ],
 };
 
-function monter(verdict: 'ok' | 'rattachee' | 'introuvable') {
+function monter(verdict: 'ok' | 'rattachee' | 'introuvable', numero: string | null = '1234840649713976') {
   const supprimes: string[][] = [];
+  const gestes: string[] = [];
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     agentCatalogue: {
       listCatalogue: async () => [BIB],
       supprimerDefinition: async (t, id) => { supprimes.push([t, id]); return verdict; },
+      numeroDuTenant: async () => numero,
+      rattacherConsommateur: async (_t, cle, id) => { gestes.push(`rattache:${cle}:${id}`); return true; },
+      detacherConsommateur: async (_t, cle, id) => { gestes.push(`detache:${cle}:${id}`); return true; },
+      activerConsommateur: async (_t, cle, id, actif, par) => {
+        gestes.push(`active:${cle}:${id}:${actif}:${par}`);
+        return {};
+      },
     },
   });
-  return { app, supprimes };
+  return { app, supprimes, gestes };
 }
 
 describe('la bibliothèque d’outils', () => {
@@ -113,5 +121,66 @@ describe('la bibliothèque d’outils', () => {
     const res = await app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/agent-tools/pas-un-uuid`, ...h() });
     expect(res.statusCode).toBe(404);
     expect(supprimes).toEqual([]);
+  });
+});
+
+describe('exposer un outil au Meta Business Agent', () => {
+  it('🔴 cocher RATTACHE ET ACTIVE, en un seul geste', async () => {
+    // C'est la seule fois où ces deux-là se confondent. Pour un agent ils sont distincts (on ajoute, puis un
+    // humain relit les mots avant d'exposer au modèle) ; le MBA n'a pas d'écran de relecture chez nous, donc
+    // la case EST le consentement. En deux temps, on produirait un « rattaché mais éteint » invisible.
+    const { app, gestes } = monter('ok');
+    const res = await app.inject({
+      method: 'PUT', url: `/tenants/${TENANT}/agent-tools/${OUTIL}/mba`, payload: { valeur: true }, ...h(),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ expose: true, consommateur: 'mba:1234840649713976' });
+    expect(gestes).toEqual([
+      `rattache:mba:1234840649713976:${OUTIL}`,
+      `active:mba:1234840649713976:${OUTIL}:true:u1`,
+    ]);
+  });
+
+  it('🔴 le NUMÉRO vient du serveur, jamais du corps de la requête', async () => {
+    // Le faire porter au navigateur est exactement ce qui a cassé le toggle MBA trois fois le 2026-09-10, la
+    // dernière parce qu'il ne l'avait pas encore chargé au moment du clic. Un corps qui prétend en donner un
+    // autre est simplement ignoré.
+    const { app, gestes } = monter('ok');
+    await app.inject({
+      method: 'PUT', url: `/tenants/${TENANT}/agent-tools/${OUTIL}/mba`,
+      payload: { valeur: true, phoneNumberId: '999999999' }, ...h(),
+    });
+    expect(gestes.join('|')).toContain('mba:1234840649713976');
+    expect(gestes.join('|')).not.toContain('999999999');
+  });
+
+  it('décocher DÉTACHE, et n’active rien', async () => {
+    const { app, gestes } = monter('ok');
+    const res = await app.inject({
+      method: 'PUT', url: `/tenants/${TENANT}/agent-tools/${OUTIL}/mba`, payload: { valeur: false }, ...h(),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().expose).toBe(false);
+    expect(gestes).toEqual([`detache:mba:1234840649713976:${OUTIL}`]);
+  });
+
+  it('🔴 sans numéro connecté, on REFUSE en le disant, on n’écrit rien', async () => {
+    // Écrire une ligne pour un consommateur qui n'existe pas produirait un consentement muet : personne ne
+    // le lirait, et l'écran afficherait une case cochée sans aucun effet.
+    const { app, gestes } = monter('ok', null);
+    const res = await app.inject({
+      method: 'PUT', url: `/tenants/${TENANT}/agent-tools/${OUTIL}/mba`, payload: { valeur: true }, ...h(),
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/Aucun numéro/);
+    expect(gestes).toEqual([]);
+  });
+
+  it('un corps sans booléen rend 400', async () => {
+    const { app } = monter('ok');
+    const res = await app.inject({
+      method: 'PUT', url: `/tenants/${TENANT}/agent-tools/${OUTIL}/mba`, payload: { valeur: 'oui' }, ...h(),
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

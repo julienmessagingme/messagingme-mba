@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  getBibliothequeOutils, supprimerDefinitionOutil, type OutilBibliotheque,
+  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, type OutilBibliotheque,
 } from '@/lib/api-agent-tools';
 import { useT } from '@/lib/i18n';
 
@@ -29,6 +29,42 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
       .catch(() => { if (vivant) setOutils([]); });
     return () => { vivant = false; };
   }, [tenantId]);
+
+  /** Un outil est « exposé au MBA » quand un consommateur `mba:` le porte ET qu'il est actif. */
+  const exposeAuMba = (o: OutilBibliotheque): boolean =>
+    o.consommateurs.some((c) => c.cle.startsWith('mba:') && c.actif);
+
+  /**
+   * Coche ou décoche « exposé au Meta Business Agent ».
+   *
+   * 🔴 L'AVERTISSEMENT SUR UN OUTIL IRRÉVERSIBLE VIT ICI, AU MOMENT DU CLIC, et pas dans une documentation.
+   * `risk` et `autonome` n'existent pas chez Meta : un outil marqué irréversible exposé au MBA sera appelé
+   * SANS la garde d'autonomie que le client a réglée de notre côté, parce que le modèle de Meta n'a aucun
+   * champ pour la porter. C'est le seul endroit de ce programme où l'on abaisse une protection existante, et
+   * une protection qu'on abaisse doit se voir.
+   *
+   * ⚠️ On ne bloque PAS : c'est une décision du client, comme `autonome` l'est déjà depuis le 2026-08-26. On
+   * la lui fait confirmer en nommant la conséquence.
+   */
+  async function basculerMba(o: OutilBibliotheque, valeur: boolean): Promise<void> {
+    setErreur(null);
+    if (valeur && o.risk === 'irreversible') {
+      const ok = window.confirm(t(
+        `« ${o.title} » peut faire une action IRRÉVERSIBLE.\n\nExposé à l’agent de Meta, il sera appelé sans la validation humaine que vous avez réglée ici : Meta n’a aucun réglage équivalent.\n\nL’exposer quand même ?`,
+        `“${o.title}” can perform an IRREVERSIBLE action.\n\nExposed to Meta's agent, it will be called without the human approval you set here: Meta has no equivalent setting.\n\nExpose it anyway?`,
+      ));
+      if (!ok) return;
+    }
+    try {
+      await exposerOutilAuMba(tenantId, o.id, valeur);
+      // Relecture complète plutôt qu'une bascule optimiste : c'est le serveur qui sait ce qu'il a fait, et
+      // afficher un état qu'il n'a pas confirmé est exactement ce qui a coûté trois pannes au toggle MBA.
+      const r = await getBibliothequeOutils(tenantId);
+      setOutils(r.outils);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : t('Le changement n’a pas pu être appliqué.', 'The change could not be applied.'));
+    }
+  }
 
   async function supprimer(outilId: string): Promise<void> {
     setErreur(null);
@@ -92,6 +128,26 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
                     .map((c) => `${c.agentLabel ?? c.cle}${c.actif ? '' : t(' (inactif)', ' (inactive)')}`)
                     .join(', ')}`}
               </p>
+
+              {/* La case « exposé au MBA ». Elle n'est PAS un réglage d'agent : elle rattache l'outil au
+                  consommateur `mba:<numero>`, qui est un consommateur comme un autre depuis 0127. */}
+              {isAdmin && (
+                <label className="mt-3 flex items-center gap-2 text-xs text-ink-700">
+                  <input
+                    type="checkbox"
+                    data-testid={`outil-${o.name}-mba`}
+                    checked={exposeAuMba(o)}
+                    onChange={(e) => { void basculerMba(o, e.target.checked); }}
+                    className="h-3.5 w-3.5 rounded border-ink-300"
+                  />
+                  {t('Exposé à l’agent de Meta', 'Exposed to Meta’s agent')}
+                  {o.risk === 'irreversible' && (
+                    <span className="text-coral">
+                      {t('(sans la validation humaine : Meta n’a pas ce réglage)', '(without human approval: Meta has no such setting)')}
+                    </span>
+                  )}
+                </label>
+              )}
 
               {/* ⚠️ LE BOUTON N'APPARAÎT QUE SUR UN OUTIL RATTACHÉ À PERSONNE. Le serveur refuse de toute
                   façon en 409, mais montrer un bouton dont on sait qu'il échouera est une invitation à

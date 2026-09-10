@@ -1199,6 +1199,12 @@ async function main(): Promise<void> {
     agentCatalogue: {
       listCatalogue: (tenant) => toolCatalog.listCatalogue(tenant),
       supprimerDefinition: (tenant, id) => toolCatalog.supprimerDefinition(tenant, id),
+      // Le numero est resolu ICI, cote serveur : le faire porter au navigateur est ce qui a casse le toggle
+      // MBA trois fois le 2026-09-10.
+      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      rattacherConsommateur: (tenant, cle, id) => toolCatalog.rattacherConsommateur(tenant, cle, id),
+      detacherConsommateur: (tenant, cle, id) => toolCatalog.detacherConsommateur(tenant, cle, id),
+      activerConsommateur: (tenant, cle, id, actif, par) => toolCatalog.activerConsommateur(tenant, cle, id, actif, par),
     },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
     // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.

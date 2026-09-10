@@ -165,3 +165,15 @@ export function getBibliothequeOutils(tenantId: string): Promise<{ outils: Outil
 export async function supprimerDefinitionOutil(tenantId: string, outilId: string): Promise<void> {
   await request<void>(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'DELETE' });
 }
+
+/**
+ * Expose, ou retire, cet outil au Meta Business Agent.
+ *
+ * ⚠️ N'ENVOIE PAS LE NUMÉRO : le serveur le résout. Le faire porter au navigateur est exactement ce qui a
+ * cassé le toggle MBA trois fois le 2026-09-10.
+ */
+export async function exposerOutilAuMba(tenantId: string, outilId: string, valeur: boolean): Promise<{ expose: boolean }> {
+  return request<{ expose: boolean }>(`/tenants/${tenantId}/agent-tools/${outilId}/mba`, {
+    method: 'PUT', body: JSON.stringify({ valeur }),
+  });
+}

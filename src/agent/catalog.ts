@@ -201,6 +201,9 @@ export interface ToolAdminStore {
   /** Retire l'outil de CET agent. La définition reste dans l'espace. */
   detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
 
+  /** Même geste, pour un consommateur qui n'est pas un agent (le MBA). */
+  detacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean>;
+
   /** Active ou désactive pour un consommateur qui n'est pas un agent. */
   activerConsommateur(tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
 
