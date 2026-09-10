@@ -102,8 +102,9 @@ export function descriptionPourMeta(o: { description: string; nePasUtiliser: str
  * Le plan de publication : ce qui sera créé, modifié, supprimé.
  *
  * ⚠️ L'ORDRE DES GESTES EST CELUI DE L'EXÉCUTION, et il n'est pas indifférent : un outil ne peut pas être
- * créé avant son connecteur, et un connecteur ne peut pas être supprimé avant ses outils. La liste est donc
- * lisible de haut en bas comme une recette, et l'écran l'affiche telle quelle.
+ * créé avant son connecteur, un connecteur ne peut pas être supprimé avant ses outils, et un secret ne se
+ * pose pas avant que son connecteur porte le bon `auth_type`. La liste est donc lisible de haut en bas comme
+ * une recette, et l'écran l'affiche telle quelle.
  */
 export function planifierPublication(
   sources: SourceAPublier[],
@@ -114,13 +115,21 @@ export function planifierPublication(
   const parNom = new Map(meta.connecteurs.map((c) => [c.name, c]));
   const nosNoms = new Set(sources.map((s) => s.label));
 
-  // 1. Les connecteurs : créer ce qui manque, modifier ce qui a bougé.
+  // 1. Les connecteurs : créer ce qui manque, modifier ce qui a bougé, et poser le secret quand il n'est
+  //    pas encore chez Meta (à la création, ou parce qu'on l'a changé chez nous depuis).
   for (const s of sources) {
     const chezMeta = parNom.get(s.label);
     if (!chezMeta) {
       gestes.push({ type: 'connecteur_creer', sourceId: s.id, nom: s.label });
       if (s.aAuthentification) gestes.push({ type: 'secret_poser', sourceId: s.id, nom: s.label });
       continue;
+    }
+    // ⚠️ ON NE COMPARE QUE CE QUE META REND, et le connecteur se met à jour AVANT son secret : le passage de
+    // « aucune authentification » à `bearer` change les DEUX, et poser une clé sur un connecteur encore
+    // déclaré `NONE` chez Meta est une écriture qu'il n'a aucune raison d'accepter. C'est le même ordre qu'à
+    // la création (créer, puis poser le secret), et il se lit de haut en bas comme une recette.
+    if (chezMeta.base_url !== s.baseUrl || chezMeta.auth_type !== authTypeMeta(s.authKind)) {
+      gestes.push({ type: 'connecteur_modifier', connecteurId: chezMeta.id, sourceId: s.id, nom: s.label });
     }
     // 🔴 LE SECRET SE REPOSE QUAND IL A CHANGÉ CHEZ NOUS, jamais « au cas où ». Meta ne rend pas le sien,
     // donc on ne compare pas : on se souvient de ce qu'on a posé (`secretPublie`), et toute écriture sur
@@ -130,10 +139,6 @@ export function planifierPublication(
     // le comportement d'avant le 2026-09-10.
     if (s.aAuthentification && !s.secretPublie) {
       gestes.push({ type: 'secret_poser', sourceId: s.id, nom: s.label });
-    }
-    // ⚠️ ON NE COMPARE QUE CE QUE META REND, pour le reste.
-    if (chezMeta.base_url !== s.baseUrl || chezMeta.auth_type !== authTypeMeta(s.authKind)) {
-      gestes.push({ type: 'connecteur_modifier', connecteurId: chezMeta.id, sourceId: s.id, nom: s.label });
     }
   }
 

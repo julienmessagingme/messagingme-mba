@@ -65,6 +65,18 @@ describe('planifierPublication', () => {
     expect(g).toEqual([{ type: 'secret_poser', sourceId: 's1', nom: 'Shopify' }]);
   });
 
+  it('🔴 passer une source de « aucune » à « jeton » MODIFIE le connecteur AVANT de poser le secret', () => {
+    // L'ordre n'est pas cosmétique : poser une clé sur un connecteur encore déclaré `NONE` chez Meta est une
+    // écriture qu'il n'a aucune raison d'accepter, et la publication s'arrêterait là en laissant le
+    // connecteur à moitié converti. Même ordre qu'à la création : le connecteur, puis son secret.
+    const meta: EtatMeta = {
+      connecteurs: [{ id: 'c1', name: 'Shopify', base_url: SRC.baseUrl, auth_type: 'NONE' }],
+      outilsParConnecteur: {},
+    };
+    const g = planifierPublication([{ ...SRC, secretPublie: false }], [], meta);
+    expect(g.map((x) => x.type)).toEqual(['connecteur_modifier', 'secret_poser']);
+  });
+
   it('⚠️ une source SANS authentification ne produit jamais de geste de secret', () => {
     // `secretPublie` reste `false` pour toujours sur une source sans secret : sans la garde
     // `aAuthentification`, elle réclamerait un `secret_poser` à CHAQUE publication, et le geste échouerait
