@@ -12,69 +12,42 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
-## 🔴 LE LOT DEMANDÉ PAR JULIEN LE 2026-09-11 AU SOIR, RIEN N'EST COMMENCÉ
+## Le lot du 2026-09-11 au soir : ce qui RESTE
 
-Écrit ici VERBATIM dans l'esprit, avant une compaction de session, parce qu'un résumé perdrait le détail qui
-fait le travail. Aucun de ces points n'est instruit : ce sont ses mots remis en ordre, pas des décisions.
+Onze demandes, neuf traitées le soir même. ⚠️ Ce qui suit n'est que le reste : le livré est dans
+[features.md](features.md) et son récit dans [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md).
 
-### A. L'écran du bot d'aide est triste
+### 🔴 Le bac à sable de l'agent : la question est CLOSE, mais autre chose est sorti
 
-Le cadre qui s'ouvre quand on clique le bouton d'aide manque de tout. A minima : le **logo Engage Me**, deux
-ou trois **étoiles « magiques »** qui disent l'IA, et un message d'accueil qui soit une invitation, **« Je
-suis là pour vous aider »**, pas la consigne actuelle « Posez votre question sur la console ».
+Julien pensait que le bac à sable n'actionnait pas les outils tant que l'agent n'était pas activé
+globalement. **C'est faux, et c'est mesuré** : `agent_test_runs` garde chaque essai, et les trois siens
+montrent `mba_chercher_connaissance` appelé à chaque fois, avant comme après l'activation. Ce qui changeait
+était la QUESTION, pas l'activation.
 
-### B. 🔴 Bug : la transcription des notes vocales échoue
+La vraie cause était la recherche, sourde aux mots sans accent (migration 0132, livrée). ⚠️ **À revérifier
+avec lui une fois 0132 déployée** : si l'agent rate encore une réponse que la base contient, ce sera un
+autre défaut, et il faudra repartir des essais enregistrés plutôt que d'une hypothèse.
 
-Dans une conversation de l'Inbox, le bouton **Transcrire** rend « La transcription a échoué, réessayez ».
-⚠️ Le bouton **Écouter** fonctionne, donc le média est bien récupérable : le défaut est dans la
-transcription elle-même, pas dans l'accès au fichier.
+### Ce qui demande une décision de Julien, pas du code
 
-### C. L'agent IA, son setup et son bac à sable
-
-1. **Outil « Envoyer un bloc de votre scénario » (irréversible) : le client ne peut pas choisir le bloc.**
-   Ce que Julien attend : pouvoir désigner **soit un scénario** (une liste de scénarios), **soit un scénario
-   PUIS un bloc à l'intérieur**. Aujourd'hui rien ne le lui demande.
-2. **Outil « Terminer par une règle d'arrêt » : question de cohérence.** Son texte dit « À appeler quand la
-   conversation a atteint un de ses aboutissements ». Julien demande confirmation que ces aboutissements sont
-   bien ceux déclarés dans **Règles d'arrêt**, onglet Objectifs et transferts. Si oui, le dire dans le texte ;
-   si non, c'est un défaut.
-3. **Règles d'arrêt, thème `question_resolue` : il manque un DÉLAI MAXIMUM.** Au bout de combien de temps
-   sans réaction du client cesse-t-on de relancer l'agent s'il revient ? La question doit être **posée par le
-   bot de construction**, et le réglage écrit dans l'onglet correspondant.
-4. **Bandeau orange fantôme.** « Aucun outil actif : l'agent peut parler mais ne peut rien faire, pas même
-   terminer » persiste après activation des outils. Il a disparu après être sorti de l'agent, revenu, et avoir
-   cliqué « activer » en haut à droite. Donc soit un rafraîchissement manquant, soit deux notions d'activation
-   confondues.
-5. 🔴 **LE PLUS IMPORTANT DU BLOC : le bac à sable doit actionner les OUTILS même quand l'agent n'est pas
-   activé globalement.** Vécu : question « quel type de contrat de prévoyance vendez-vous », réponse « la base
-   ne me donne pas le détail des types de contrats », alors que la base de connaissance était activée dans
-   Outils et que l'information est dans les fiches issues du site. Après activation globale du bot, la même
-   question a trouvé sa réponse. **Un essai qui ne prouve rien est pire qu'aucun essai** : c'est le motif que
-   le cadrage nomme déjà (« un bac à sable qui ne jugerait pas comme la production ne prouverait rien »).
-
-### D. Le MBA
-
-1. **Allowlist de numéros pour tester gratuitement.** Regarder ce que permet
-   `https://developers.facebook.com/documentation/meta-business-agent/reference/onboard/agent-allowlist`.
-   ⚠️ Et lever l'ambiguïté : « tester gratuitement » veut-il dire tester **via WhatsApp** ou **via le Business
-   Manager** ? Ce que Julien veut, c'est tester **dans Engage Me, dans un vrai WhatsApp**, pour revoir la
-   synchronisation avec l'envoi d'un scénario, la reprise en main par un agent humain, bref tout ce qui a été
-   éprouvé le 2026-09-10.
-2. **Comment récupérer la consommation réelle de tokens, ou le prix, du MBA ?** Aujourd'hui on ne sait pas.
-3. **Voir d'un coup d'œil, dans l'Inbox, qui tient chaque conversation.** Colorer le cadre du NOM (deuxième
-   colonne) différemment quand le MBA tient le fil : bleu clair un peu flou ou dégradé, avec quelques étoiles
-   ou une baguette magique dans le cadre ou juste à côté. La mention texte « agent Meta » devient alors
-   inutile et disparaît.
-4. 🔴 **Bug : « Reprendre la main » ne tient pas.** Après ce clic le MBA est censé être éteint, mais si le
-   client écrit juste après, **il se remet en route**. Il doit rester éteint jusqu'au moment prévu (2 h par
-   défaut), **même si l'agent humain n'a écrit aucun message**. ⚠️ À rapprocher du lot du 2026-09-11 sur
-   `control_changed_at`, qui ne se met à jour que sur un envoi humain : c'est probablement la même racine.
-
-### E. mini-CRM : ce qu'un contact a coûté, et ce qu'il a rapporté
-
-Sur la fiche d'un contact, onglet **Historique**, afficher tout en haut ce que la personne a **coûté**, et en
-face son nombre d'**engagements par niveau** : premier niveau (elle a réagi au premier message), deuxième,
-troisième… Même esprit que le coût d'engagement par campagne de la page d'accueil du Performance Lab.
+- **Le coût réel du MBA n'est pas récupérable aujourd'hui**, mesuré le 2026-09-11. Meta facture
+  **2,00 $ par million de jetons** (~4 à 5 centimes par message, 20 000 à 25 000 jetons chacun), mais :
+  `pricing_analytics` ne rend AUCUNE catégorie MBA sur notre WABA (Meta écrit que ces analytics « are
+  forthcoming »), et sur le second numéro Meta refuse le coût à la source, « le COÛT ne s'affiche pas pour
+  les entreprises qui effectuent les paiements par le biais d'un partenaire ». La seule chose honnête
+  constructible est donc une **estimation** (messages tenus par le MBA × tarif publié), affichée comme
+  telle. Julien doit dire s'il la veut.
+- **L'allowlist n'est PAS un dispositif de gratuité**, contrairement à ce qu'on pouvait croire. Doc Meta,
+  verbatim : « Adding consumers to the allowlist does not by itself limit who the agent replies to. The
+  allowlist is only enforced when `ai_audience` is `ALLOWLISTED_ONLY`. » C'est un filtre sur QUI l'agent
+  sert. Le gratuit, c'est `agent_test`. Pour essayer dans un vrai WhatsApp il faut payer les messages
+  (« messages are not delivered unless your account has a payment method attached »). ⚠️ L'allowlist reste
+  utile pour autre chose : **restreindre l'agent au seul numéro d'essai**, pour qu'il ne réponde à personne
+  d'autre pendant les tests. À faire si Julien le veut.
+- **Lancer un AUTRE scénario depuis un agent** n'existe pas, et ce n'est pas un oubli. L'outil « Envoyer un
+  bloc » n'envoie qu'un bloc du scénario où le contact se trouve DÉJÀ, et `envoyerBlocDepuisAgent` écrit
+  pourquoi : passer par `runFrom` tuerait le run de l'agent qui appelle et clôrait sa session. Julien décrit
+  aussi « choisir un scénario » : c'est une capacité différente, donc un OUTIL différent, à cadrer.
 
 ## Ce qui attend une action de Julien
 

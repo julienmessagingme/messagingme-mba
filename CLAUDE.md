@@ -79,7 +79,20 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0130**, le 2026-09-11 (`conversations.last_direction` : le SENS du dernier message
+**Dernière appliquée : 0131**, le 2026-09-11 (`aide_fiches` : le mode d'emploi du produit, sans `tenant_id`,
+avec son tsvector et son index HNSW. C'est le corpus du bot d'aide de la console).
+
+🔴 **0132 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`french_sans_accent` : la recherche plein texte cessait de
+trouver un mot écrit sans accent, mesuré à zéro fiche contre trois sur un corpus réel). Elle passe **AVANT**
+le déploiement, parce que le code neuf interroge une configuration qui doit exister. ⚠️ Et l'ancien code ne
+survit pas intact non plus : le temps du déploiement, ses requêtes accentuées cessent de matcher pendant que
+ses requêtes sans accent se mettent à marcher. C'est un échange, pas une perte, et il est assumé.
+
+⚠️ **ET CETTE LIGNE A DÉRIVÉ UNE CINQUIÈME FOIS** : elle annonçait 0130 alors que 0131 était appliquée depuis
+le matin même. Toujours la même cause, et toujours la même parade : la base tranche. Relire la ligne APRÈS
+avoir lancé `migrate`, jamais après avoir écrit le fichier SQL.
+
+Avant elle : **0130**, le 2026-09-11 (`conversations.last_direction` : le SENS du dernier message
 d'une conversation, plus son CHECK et sa reprise de l'historique. C'est ce qui permet au dossier « À traiter »
 de vouloir dire « la balle est dans notre camp » plutôt que « quelqu'un a écrit »). Avant elle, **0129** le
 2026-09-10 à 20h50 (`agent_tool_sources.secret_publie_le` : se souvenir du secret qu'on a POSÉ chez Meta, seul
@@ -98,7 +111,7 @@ juste après.
 les six colonnes de consentement de `agent_tools`, donc elle devait passer après que le nouveau code ait été
 vu en production, quand 0129 devait passer avant. Le runner applique les fichiers absents de
 `schema_migrations` par ordre de nom, sans exiger que la suite soit continue ni que l'ordre d'application la
-suive. **Prochaine libre = 0131.**
+suive. **Prochaine libre = 0133.**
 
 🔴 **L'ORDRE DE LA SÉQUENCE S'INVERSE POUR UNE MIGRATION QUI RETIRE** : build, `up -d --build`, PUIS
 `migrate`. La routine documentée (migrer d'abord) vaut pour une migration qui AJOUTE une colonne que le code
