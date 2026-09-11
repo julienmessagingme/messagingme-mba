@@ -1,5 +1,5 @@
 /**
- * LES FICHES DU MODE D'EMPLOI : le contrat de recherche.
+ * LES FICHES DU MODE D'EMPLOI : le contrat de recherche, et le format d'un fichier de fiche.
  *
  * 🔴 CE MODULE NE REND QUE DES MESURES, JAMAIS UN VERDICT. C'est la même séparation que la connaissance des
  * agents (`src/agent/knowledge.ts`), et elle est ce qui empêche l'hallucination : le rappel remonte des
@@ -51,4 +51,58 @@ export interface DepotAide {
    * 0131 non bloquante.
    */
   chercherParVecteur?(vecteur: number[], limite: number): Promise<FicheAide[]>;
+}
+
+/** Une fiche telle qu'elle vit dans le dépôt, avant d'être chargée en base. */
+export interface FicheFichier {
+  /** Le nom du fichier sans extension. C'est la clé d'unicité, donc ce qui rend le chargement idempotent. */
+  cle: string;
+  titre: string;
+  corps: string;
+  ecran: string | null;
+  sourceSection: string | null;
+  sourceEmpreinte: string | null;
+}
+
+/**
+ * Lit un fichier de fiche : un en-tête `---` de métadonnées, puis un titre `# ...`, puis le corps.
+ *
+ * ⚠️ `lireFicheDuDepot` ET NON `lireFiche` : ce dernier nom est DÉJÀ pris dans ce dépôt, par la dépendance
+ * qui lit la fiche d'un AGENT en base (`RunTurnDeps.lireFiche`). Aucun conflit de compilation, les deux
+ * vivent dans des modules différents, mais un `grep lireFiche` rendrait deux choses sans rapport. Le nom
+ * choisi est symétrique de `fichesDuDepot` : l'une lit toutes les fiches, l'autre en analyse une.
+ *
+ * ⚠️ VOLONTAIREMENT PRIMITIF, et sans aucune dépendance de lecture d'en-tête. Le format est le nôtre, il est
+ * lu à un seul endroit, et il est tenu par `tests/aide-fiches-format.test.ts`. Ajouter une bibliothèque pour
+ * six lignes de découpage serait le genre de dépendance qu'on regrette au premier audit.
+ *
+ * ⚠️ NE JETTE JAMAIS. Une fiche mal formée qui ferait échouer la lecture priverait le bot de TOUTES les
+ * autres au chargement. Le défaut sûr est de charger ce qu'on comprend ; c'est le test de format qui refuse
+ * un fichier douteux, en amont, là où quelqu'un peut le corriger.
+ *
+ * ⚠️ LE TITRE EST RETIRÉ DU CORPS. Il est déjà donné au modèle à part, et le laisser le ferait compter deux
+ * fois dans la vectorisation comme dans le rappel lexical, ce qui avantagerait les fiches au titre long sans
+ * aucune raison.
+ */
+export function lireFicheDuDepot(nomFichier: string, texte: string): FicheFichier {
+  const cle = nomFichier.replace(/\.md$/, '');
+  const entete = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(texte);
+  const corpsBrut = (entete ? texte.slice(entete[0].length) : texte).trim();
+  const champ = (nom: string): string | null => {
+    if (!entete) return null;
+    const trouve = new RegExp(`^${nom}:(.*)$`, 'm').exec(entete[1] ?? '');
+    const valeur = trouve?.[1]?.trim() ?? '';
+    // Un champ VIDE vaut ABSENT : `ecran: ` produirait sinon une clé d'écran vide, que la carte ne
+    // résoudrait jamais et que personne ne verrait, au lieu d'une fiche honnêtement sans écran.
+    return valeur === '' ? null : valeur;
+  };
+  const titre = /^#[ \t]+(.+)$/m.exec(corpsBrut);
+  return {
+    cle,
+    titre: titre?.[1]?.trim() ?? '',
+    corps: corpsBrut.replace(/^#[ \t]+.+$/m, '').trim(),
+    ecran: champ('ecran'),
+    sourceSection: champ('source_section'),
+    sourceEmpreinte: champ('source_empreinte'),
+  };
 }

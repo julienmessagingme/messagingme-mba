@@ -17,7 +17,8 @@
     "migrate": "tsx db/migrate.ts",
     "seed": "tsx db/seed.ts",
     "auto-attaque": "tsx scripts/auto-attaque.mts",
-    "aide:carte": "tsx scripts/carte-console.ts"
+    "aide:carte": "tsx scripts/carte-console.ts",
+    "aide:charger": "tsx db/charger-aide.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

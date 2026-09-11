@@ -128,6 +128,74 @@ describe.skipIf(!url)('recherche dans les fiches d’aide', () => {
     expect(autre.map((f) => f.titre)).toContain('Lancer une campagne');
   });
 
+  /**
+   * LE CHARGEUR, ET CE QU'IL RETIRE.
+   *
+   * 🔴 CES TESTS VIDENT LA TABLE de tout ce qu'ils ne gardent pas, et c'est inhérent à ce qu'ils vérifient :
+   * le chargeur supprime ce qui n'est plus dans le dépôt. Ils sont donc placés APRÈS les tests de recherche,
+   * qui ont besoin des trois fiches. La base d'intégration est jetable et ce fichier est le seul à toucher
+   * `aide_fiches` ; le dire ici évite qu'on s'étonne.
+   *
+   * ⚠️ ILS PRENNENT UN `Client` DÉDIÉ, PAS LE `Pool`. Le chargeur ouvre une transaction, et sur un pool le
+   * `begin` et le `commit` peuvent partir sur deux connexions différentes : la transaction ne tiendrait
+   * rien, et le test passerait quand même.
+   */
+  it('🔴 une fiche RETIRÉE du dépôt disparaît de la recherche', async () => {
+    // Sans cette suppression, le bot continuerait de répondre avec une page effacée du produit, et personne
+    // ne saurait d'où sort sa réponse.
+    const { chargerFiches } = await import('../../db/charger-aide');
+    const garde = {
+      cle: 'itest-campagne', titre: 'Lancer une campagne', corps: 'Corps conservé, assez long pour compter.',
+      ecran: 'campagnes', sourceSection: null, sourceEmpreinte: null,
+    };
+    const client = await pool.connect();
+    let retirees = 0;
+    try { ({ retirees } = await chargerFiches(client as never, [garde])); } finally { client.release(); }
+    expect(retirees).toBeGreaterThan(0);
+    const restantes = await pool.query<{ cle: string }>('select cle from aide_fiches');
+    expect(restantes.rows.map((r) => r.cle)).toEqual(['itest-campagne']);
+  });
+
+  it('🔴 réécrire le TEXTE d’une fiche INVALIDE son vecteur', async () => {
+    // C'est la pire des deux erreurs possibles : garder le vecteur laisserait la fiche réécrite trouvable
+    // par son ANCIEN sens, et la recherche resterait cohérente avec elle-même tout en servant le texte
+    // d'avant. Le balayage le recalcule au passage suivant.
+    const { chargerFiches } = await import('../../db/charger-aide');
+    const id = (await pool.query<{ id: string }>(`select id from aide_fiches where cle = 'itest-campagne'`)).rows[0]!.id;
+    await depot.ecrireVecteurs('itest-modele', [{ id, vecteur: axe(3) }]);
+    expect((await pool.query<{ n: string }>(
+      `select count(*)::text as n from aide_fiches where cle = 'itest-campagne' and embedding is not null`,
+    )).rows[0]?.n).toBe('1');
+
+    const client = await pool.connect();
+    try {
+      await chargerFiches(client as never, [{
+        cle: 'itest-campagne', titre: 'Lancer une campagne', corps: 'Un corps ENTIÈREMENT différent, réécrit.',
+        ecran: 'campagnes', sourceSection: null, sourceEmpreinte: null,
+      }]);
+    } finally { client.release(); }
+    expect((await pool.query<{ n: string }>(
+      `select count(*)::text as n from aide_fiches where cle = 'itest-campagne' and embedding is null`,
+    )).rows[0]?.n).toBe('1');
+  });
+
+  it('⚠️ recharger un texte IDENTIQUE garde le vecteur', async () => {
+    // Le miroir, et il compte autant : invalider à chaque chargement ferait revectoriser toute la base à
+    // chaque déploiement, pour rien, et laisserait la recherche sémantique muette entre-temps.
+    const { chargerFiches } = await import('../../db/charger-aide');
+    const fiche = {
+      cle: 'itest-campagne', titre: 'Lancer une campagne', corps: 'Un corps ENTIÈREMENT différent, réécrit.',
+      ecran: 'campagnes', sourceSection: null, sourceEmpreinte: null,
+    };
+    const id = (await pool.query<{ id: string }>(`select id from aide_fiches where cle = 'itest-campagne'`)).rows[0]!.id;
+    await depot.ecrireVecteurs('itest-modele', [{ id, vecteur: axe(4) }]);
+    const client = await pool.connect();
+    try { await chargerFiches(client as never, [fiche]); } finally { client.release(); }
+    expect((await pool.query<{ n: string }>(
+      `select count(*)::text as n from aide_fiches where cle = 'itest-campagne' and embedding is not null`,
+    )).rows[0]?.n).toBe('1');
+  });
+
   it('⚠️ la clé est UNIQUE : recharger une fiche la met à jour, il ne la duplique pas', async () => {
     // C'est ce qui rend `npm run aide:charger` idempotent. Sans la contrainte, chaque chargement doublerait
     // la base et la recherche remonterait deux fois la même réponse.
