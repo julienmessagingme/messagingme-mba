@@ -84,10 +84,28 @@ listes à tenir alignées, et le CLAUDE.md du dépôt dit ce que ça coûte).
 - Test : `web/lib/nav.test.ts` (ajouts) et `tests/web-carte-console.test.ts` (nouveau)
 
 **Interfaces :**
-- Produit : `arbresNav(t: Traducteur): Record<Onglet, EntreeNav[]>`, où
+- Produit : `arbresNav(t: Traducteur): ListesNav`, où
   `type Traducteur = (fr: string, en: string) => string` et
-  `interface EntreeNav extends NavEntree { adminOnly?: boolean }`.
+  `interface ListesNav { console: NavEntree[]; inbox: NavEntree[]; perf: NavEntree[]; adminBas: NavEntree[] }`.
 - Consommé par : tâche 2 (`scripts/carte-console.mts`).
+
+🔴 **TROIS CORRECTIONS APPORTÉES À CE PLAN LE 2026-09-11, avant écriture, par la relecture du code réel.**
+Elles ne changent pas la conception, seulement ce que cette tâche doit faire. Elles sont écrites ici parce
+qu'elles se redécouvriraient sinon, au prix d'un aller-retour chacune :
+
+1. **`adminOnly` n'est PAS une propriété d'entrée**, contrairement à ce que ce plan annonçait d'abord.
+   La règle réelle tient en une ligne de `AppShell` : `const adminOnly = active !== 'inbox'`, tout ce qui
+   n'est pas l'Inbox exige admin. Ajouter un champ par entrée inventerait une donnée, avec la certitude
+   qu'elle finisse par contredire la vraie règle. La carte CALCULE donc `adminOnly` depuis cette règle, et un
+   test lit la ligne de `AppShell` pour casser le jour où elle change.
+2. **Il y a QUATRE listes, pas trois.** `NAV_ADMIN_BAS` (le bloc Developers) est fusionné dans l'arbre
+   Console pour la déduction d'onglet, mais rendu à PART, collé en bas de la colonne. Un commentaire du
+   fichier raconte que les confondre avait affiché « Developers » deux fois, et que l'E2E l'avait attrapé.
+   `arbresNav` rend donc les quatre listes BRUTES ; `AppShell` continue de composer `ARBRES` et
+   `NAV_DU_CORPS` exactement comme aujourd'hui, et l'émetteur de la carte prend les quatre.
+3. **Les entrées portent leurs icônes** (`d: icons.xxx`). La constante `icons` est un dictionnaire de tracés
+   SVG sans aucune dépendance React : elle déménage dans `nav.ts` avec les listes. Le composant `Ico`, lui,
+   reste dans `AppShell`.
 
 - [ ] **Étape 1 : écrire le test qui échoue**
 
@@ -97,7 +115,7 @@ Dans `tests/web-carte-console.test.ts` :
 import { describe, it, expect } from 'vitest';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { arbresNav, ONGLETS, type EntreeNav } from '../web/lib/nav';
+import { arbresNav, type NavEntree } from '../web/lib/nav';
 
 /**
  * LA BARRE DE NAVIGATION EST LA CARTE DE LA CONSOLE, et ce test est ce qui l'empêche de mentir.
@@ -203,19 +221,33 @@ export interface EntreeNav extends NavEntree {
  * ⚠️ C'est aussi la CARTE que lit le bot d'aide, via `scripts/carte-console.mts`. Ajouter un écran ici le
  * rend connaissable du bot ; l'oublier ici le lui rend invisible, ce qui est le bon défaut (silence plutôt
  * qu'invention).
+ *
+ * ⚠️ Les QUATRE listes sont rendues BRUTES, sans être composées. `adminBas` (le bloc Developers) appartient
+ * à la Console pour la déduction d'onglet mais se rend à PART, collé en bas de la colonne : les fusionner
+ * ici afficherait « Developers » deux fois, ce qui est déjà arrivé.
  */
-export function arbresNav(t: Traducteur): Record<Onglet, EntreeNav[]> {
-  // ... les trois tableaux, déplacés depuis AppShell
+export interface ListesNav {
+  console: NavEntree[];
+  inbox: NavEntree[];
+  perf: NavEntree[];
+  adminBas: NavEntree[];
+}
+
+export function arbresNav(t: Traducteur): ListesNav {
+  // ... les quatre tableaux et la constante `icons`, déplacés VERBATIM depuis AppShell
 }
 ```
 
 - [ ] **Étape 4 : faire consommer `arbresNav` par `AppShell`**
 
-Remplacer les trois déclarations locales par :
+Remplacer les QUATRE déclarations locales par une seule, et laisser la composition inchangée :
 
 ```tsx
-const { console: NAV_CONSOLE, inbox: NAV_INBOX, perf: NAV_PERF } = arbresNav(t);
+const { console: NAV_CONSOLE, inbox: NAV_INBOX, perf: NAV_PERF, adminBas: NAV_ADMIN_BAS } = arbresNav(t);
 ```
+
+⚠️ Ne PAS toucher à `ARBRES` ni à `NAV_DU_CORPS` : leur distinction est délibérée (le bloc bas compte pour la
+déduction d'onglet et ne doit pas être rendu dans le corps), et elle est tenue par un E2E.
 
 - [ ] **Étape 5 : lancer les tests et le typecheck**
 
@@ -328,7 +360,7 @@ Attendu : ÉCHEC, `src/aide/carte.ts` n'existe pas.
 
 ```ts
 import { writeFileSync } from 'node:fs';
-import { arbresNav, ONGLETS, type EntreeNav } from '../web/lib/nav';
+import { arbresNav, type NavEntree } from '../web/lib/nav';
 
 /**
  * ÉMET LA CARTE DE LA CONSOLE pour le serveur, depuis la barre de navigation.
