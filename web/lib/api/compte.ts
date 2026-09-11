@@ -313,8 +313,20 @@ export function listUsers(tenantId: string): Promise<{ users: AdminUser[] }> {
   return request<{ users: AdminUser[] }>(`/tenants/${tenantId}/users`);
 }
 /** Invite un membre (crée un compte en attente + envoie un lien pour choisir son mot de passe). */
-export function inviteMember(tenantId: string, email: string, role: UserRole): Promise<{ user: AdminUser; emailSent: boolean }> {
-  return request(`/tenants/${tenantId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) });
+export function inviteMember(tenantId: string, email: string, role: UserRole, name?: string): Promise<{ user: AdminUser; emailSent: boolean }> {
+  // ⚠️ Le nom est posé DÈS L'INVITATION quand il est saisi : sans lui, le nouveau membre apparaît sous son
+  // adresse e-mail dans toute l'Inbox jusqu'à ce que quelqu'un pense à le renommer.
+  return request(`/tenants/${tenantId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role, ...(name ? { name } : {}) }) });
+}
+
+/**
+ * Le NOM AFFICHÉ d'un membre. Vide = on efface, et le produit retombe sur l'adresse e-mail.
+ *
+ * 🔴 C'EST CE QUE L'INBOX MONTRE : « suivi par… », le sélecteur d'affectation et la charge par membre font
+ * tous `name ?? email`. Tant que personne ne posait ce nom, l'équipe entière s'y affichait en adresses.
+ */
+export function renommerMembre(tenantId: string, userId: string, name: string): Promise<{ id: string; name: string | null }> {
+  return request(`/tenants/${tenantId}/users/${userId}/name`, { method: 'PATCH', body: JSON.stringify({ name }) });
 }
 /** Accepte une invitation : pose le mot de passe et connecte (renvoie une session comme le login). */
 export function acceptInvitation(token: string, password: string): Promise<LoginResult> {

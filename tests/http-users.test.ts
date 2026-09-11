@@ -23,18 +23,19 @@ interface Captured {
   roleSet: Array<{ tenant: string; userId: string; role: string }>;
   disabledSet: Array<{ tenant: string; userId: string; disabled: boolean }>;
   deleted: Array<{ tenant: string; userId: string }>;
-  invited: Array<{ tenant: string; email: string; role: string }>;
+  invited: Array<{ tenant: string; email: string; role: string; name?: string }>;
+  nameSet: Array<{ tenant: string; userId: string; name: string }>;
   emails: string[];
   emailObjs: Array<{ to: string; subject: string; text: string; html?: string }>;
 }
 
 function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
-  const cap: Captured = { roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [] };
+  const cap: Captured = { roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [], nameSet: [] };
   const deps: UsersRouteDeps = {
     listUsers: async () => [EXISTING],
-    createPendingUser: async (tenant, email, role) => {
+    createPendingUser: async (tenant, email, role, name) => {
       if (email === 'taken@demo.test') throw new DuplicateEmailError();
-      cap.invited.push({ tenant, email, role });
+      cap.invited.push({ tenant, email, role, ...(name ? { name } : {}) });
       // Une invitation en attente n'a par construction jamais servi à se connecter.
       return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z', lastLoginAt: null };
     },
@@ -43,6 +44,10 @@ function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof bu
     getInviterName: async () => 'Julien',
     getWorkspaceName: async () => 'Acme Corp',
     appUrl: 'https://mba.messagingme.app',
+    setUserName: async (tenant, userId, name) => {
+      cap.nameSet.push({ tenant, userId, name });
+      return userId === 'known' ? 'ok' : 'not_found';
+    },
     setUserRole: async (tenant, userId, role) => {
       cap.roleSet.push({ tenant, userId, role });
       return userId === 'known' ? 'ok' : 'not_found'; // 'known' existe, tout le reste -> 404
@@ -309,5 +314,83 @@ describe('users route — invitation', () => {
     expect(res.statusCode).toBe(403);
     expect(cap.invited).toHaveLength(0);
     await server.close();
+  });
+});
+
+/**
+ * LE NOM AFFICHÉ D'UN MEMBRE.
+ *
+ * 🔴 CE QUE CETTE ROUTE RÉPARE : la colonne `users.name` existait depuis toujours, tous les écrans font déjà
+ * `name ?? email`, et RIEN ne permettait de l'écrire. L'Inbox affichait donc des adresses e-mail partout,
+ * jusque dans « suivi par… ». Demandé par Julien le 2026-09-11.
+ */
+describe('users route — le nom affiché', () => {
+  it('un admin renomme un membre', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/name', ...h(adminTok), payload: { name: '  Camille  ' } });
+    expect(res.statusCode).toBe(200);
+    // ⚠️ Le nom rendu est le nom EFFECTIF, espaces retirés : l'écran affiche ce qui est en base, pas ce qui a
+    // été tapé.
+    expect(res.json()).toEqual({ id: 'known', name: 'Camille' });
+    expect(cap.nameSet).toEqual([{ tenant: 't1', userId: 'known', name: '  Camille  ' }]);
+  });
+
+  it('🔴 une chaîne VIDE efface le nom, elle n’enregistre pas un nom vide', async () => {
+    // Sans ça, le repli `name ?? email` cesserait de s'appliquer et les écrans afficheraient du blanc à la
+    // place de l'adresse, ce qui est pire que l'adresse.
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/name', ...h(adminTok), payload: { name: '   ' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ id: 'known', name: null });
+  });
+
+  it('un membre inconnu (ou d’un autre espace) rend 404', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/inconnu/name', ...h(adminTok), payload: { name: 'X' } });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('⚠️ un nom trop long est refusé, avec la limite dans le message', async () => {
+    // C'est un libellé d'écran : il s'affiche dans la liste des membres, dans le sélecteur d'affectation de
+    // l'Inbox et dans « suivi par… ». Trop long, il déborde des trois à la fois.
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/name', ...h(adminTok), payload: { name: 'a'.repeat(61) } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/60/);
+  });
+
+  it('un corps sans `name` est refusé', async () => {
+    const { server } = app();
+    expect((await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/name', ...h(adminTok), payload: {} })).statusCode).toBe(400);
+  });
+
+  it('🔴 un MANAGER ne renomme personne : ce module est admin-only', async () => {
+    const managerTok = await signSession({ userId: 'u3', tenantId: 't1', role: 'manager' }, SECRET);
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/name', ...h(managerTok), payload: { name: 'X' } });
+    expect(res.statusCode).toBe(403);
+    expect(cap.nameSet).toEqual([]);
+  });
+
+  it('⚠️ le nom peut être posé DÈS L’INVITATION', async () => {
+    // Sans lui, le nouveau membre apparaît sous son adresse e-mail dans toute l'Inbox jusqu'à ce que
+    // quelqu'un pense à le renommer.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok),
+      payload: { email: 'nouveau@demo.test', role: 'agent', name: 'Camille' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(cap.invited[0]).toMatchObject({ email: 'nouveau@demo.test', name: 'Camille' });
+  });
+
+  it('une invitation SANS nom reste possible, exactement comme avant', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok),
+      payload: { email: 'sansnom@demo.test', role: 'agent' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(cap.invited[0]?.name).toBeUndefined();
   });
 });

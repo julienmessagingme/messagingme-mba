@@ -14,7 +14,15 @@ export interface UsersRouteDeps {
   /** Supprime définitivement un compte. Refusé si dernier admin actif. */
   deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
   /** Invitation : crée un compte EN ATTENTE (sans mdp). Absent -> invitations indisponibles (503). */
-  createPendingUser?(tenantId: string, email: string, role: string): Promise<UserRow>;
+  createPendingUser?(tenantId: string, email: string, role: string, name?: string): Promise<UserRow>;
+  /**
+   * Pose le nom affiché d'un membre. `not_found` = id inconnu ou autre espace.
+   *
+   * ⚠️ Le type de retour est celui des autres mutations de membre (`UserMutation`), même si `last_admin` ne
+   * peut pas arriver ici : renommer quelqu'un ne touche à aucun invariant. Le déclarer plus étroit obligerait
+   * le câblage à traduire, et c'est précisément là que les contrats divergent.
+   */
+  setUserName?(tenantId: string, userId: string, name: string): Promise<UserMutation>;
   /** Génère un token d'invitation à usage unique pour ce compte, renvoie le token en clair. */
   createInviteToken?(userId: string): Promise<string>;
   /** Envoi de l'email d'invitation (Resend). Absent -> l'invitation est créée mais aucun email n'est envoyé. */
@@ -37,6 +45,14 @@ export interface UsersRouteDeps {
  * par défaut d'implémentation.
  */
 const ROLES = new Set(['admin', 'manager', 'agent']);
+
+/**
+ * Borne du NOM affiché d'un membre.
+ *
+ * ⚠️ C'est un libellé d'écran, pas un champ libre : il s'affiche dans la liste des membres, dans le sélecteur
+ * d'affectation de l'Inbox et dans « suivi par… ». Trop long, il déborde partout à la fois.
+ */
+const MAX_NOM = 60;
 // Validation d'email minimale (un @, pas d'espace) : le vrai contrôle d'unicité est en base.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -60,13 +76,19 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.createPendingUser || !deps.createInviteToken) return reply.code(503).send({ error: 'invitations indisponibles' });
 
-    const b = (req.body ?? {}) as Partial<{ email: unknown; role: unknown }>;
+    const b = (req.body ?? {}) as Partial<{ email: unknown; role: unknown; name: unknown }>;
     const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
     if (typeof b.role !== 'string' || !ROLES.has(b.role)) return reply.code(400).send({ error: 'role invalide (admin|manager|agent)' });
+    // ⚠️ LE NOM EST FACULTATIF, et borné : c'est un libellé d'écran, pas un champ libre. Trop long, il
+    // déborderait de la liste des membres et du sélecteur d'affectation de l'Inbox.
+    if (b.name !== undefined && (typeof b.name !== 'string' || b.name.length > MAX_NOM)) {
+      return reply.code(400).send({ error: `nom invalide (${MAX_NOM} caractères maximum)` });
+    }
+    const nom = typeof b.name === 'string' ? b.name.trim() : '';
 
     try {
-      const user = await deps.createPendingUser(tenant, email, b.role);
+      const user = await deps.createPendingUser(tenant, email, b.role, nom);
       const raw = await deps.createInviteToken(user.id);
       let emailSent = false;
       if (deps.sendEmail && deps.appUrl) {
@@ -100,6 +122,33 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'email déjà utilisé' });
       throw err;
     }
+  });
+
+  /**
+   * LE NOM AFFICHÉ d'un membre.
+   *
+   * 🔴 POURQUOI CETTE ROUTE EXISTE : la colonne `users.name` était là depuis toujours, tous les écrans font
+   * déjà `name ?? email`, et RIEN ne permettait de l'écrire. Conséquence, l'Inbox affichait des adresses
+   * e-mail partout (« suivi par julien@messagingme.fr »), ce qui n'est ni lisible ni ce qu'on montre à une
+   * équipe. Demandé par Julien le 2026-09-11.
+   *
+   * ⚠️ PAS DE SELF-BLOCK, contrairement au rôle : se renommer soi-même n'a aucune conséquence sur les droits,
+   * et un admin qui ne pourrait pas corriger son propre nom serait une bizarrerie sans raison.
+   */
+  app.patch('/tenants/:tenantId/users/:userId/name', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.setUserName) return reply.code(503).send({ error: 'renommage indisponible' });
+    const { userId } = req.params as { userId: string };
+    const nom = (req.body as { name?: unknown } | null)?.name;
+    if (typeof nom !== 'string' || nom.length > MAX_NOM) {
+      return reply.code(400).send({ error: `nom invalide (${MAX_NOM} caractères maximum)` });
+    }
+    const result = await deps.setUserName(tenant, userId, nom);
+    if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
+    // Le nom EFFECTIF est rendu : vide -> `null`, ce que l'écran doit afficher comme « pas de nom » et non
+    // comme une chaîne vide qu'il aurait crue enregistrée.
+    return reply.code(200).send({ id: userId, name: nom.trim() === '' ? null : nom.trim() });
   });
 
   app.patch('/tenants/:tenantId/users/:userId/role', opts, async (req, reply) => {

@@ -998,7 +998,8 @@ async function main(): Promise<void> {
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
       setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
       deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),
-      createPendingUser: (tenant, email, role) => userStore.createPending(tenant, email, role),
+      createPendingUser: (tenant, email, role, name) => userStore.createPending(tenant, email, role, name),
+      setUserName: (tenant, userId, name) => userStore.setName(tenant, userId, name),
       createInviteToken: (userId) => authTokenStore.create('invite', userId, config.INVITE_TOKEN_TTL_MS),
       // Personnalisation de l'email d'invitation : nom de l'invitant (repli email) + nom de l'espace.
       getInviterName: async (userId) => {

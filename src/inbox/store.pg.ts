@@ -502,7 +502,12 @@ export class PgInboxStore implements InboxStore {
       // dupliquer, ce qui est le sens le plus dangereux des deux.
       `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
               to_char(c.last_message_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
-              ${UNREAD_SQL} as unread, c.assigned_to, u.name as assigned_name,
+              ${UNREAD_SQL} as unread, c.assigned_to,
+              -- ⚠️ coalesce ET NON u.name SEUL : sans nom, l ecran affichait « suivi par … », c est-a-dire
+              -- rien du tout, alors qu il a toujours l adresse sous la main. Le repli est le meme que partout
+              -- ailleurs (charge par membre, selecteur d affectation) : un nom si on en a un, l adresse sinon.
+              -- ⚠️ Aucun accent grave dans ce commentaire : il vit DANS un gabarit TypeScript.
+              coalesce(u.name, u.email) as assigned_name,
               (c.signalee_le is not null) as signalee_main
        from conversations c
        left join contacts ct on ct.id = c.contact_id

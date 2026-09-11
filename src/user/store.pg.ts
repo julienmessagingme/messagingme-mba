@@ -149,17 +149,20 @@ export class PgUserStore {
 
   /** Crée un compte EN ATTENTE (invitation) : sans mot de passe (login impossible tant que non finalisé via le
    *  lien). L'invité posera son mdp à l'acceptation. 409 (DuplicateEmailError) si l'email est déjà pris. */
-  async createPending(tenantId: string, email: string, role: string): Promise<UserRow> {
+  async createPending(tenantId: string, email: string, role: string, name?: string): Promise<UserRow> {
     const code = makeCode('usr', await resolveTenantCode(this.pool, tenantId));
     try {
       // L'identité est créée si l'adresse est nouvelle, RÉUTILISÉE sinon : un invité qui a déjà un compte
       // ailleurs se connectera avec le mot de passe qu'il connaît déjà, sans repasser par le lien.
       const identityId = await this.ensureIdentity(this.pool, email, null);
+      // ⚠️ LE NOM EST POSÉ DÈS L'INVITATION quand l'admin l'a saisi : sans lui, le nouveau membre apparaît
+      // sous son adresse e-mail dans toute l'Inbox jusqu'à ce que quelqu'un pense à le renommer. Absent ->
+      // `null`, donc le repli `name ?? email` d'avant, à l'identique.
       const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; created_at: Date }>(
         `insert into users (tenant_id, email, name, role, password_hash, code, identity_id)
-         values ($1, $2, null, $3, null, $4, $5)
+         values ($1, $2, $6, $3, null, $4, $5)
          returning id, email, name, role, created_at`,
-        [tenantId, email, role, code, identityId],
+        [tenantId, email, role, code, identityId, name?.trim() === '' ? null : (name?.trim() ?? null)],
       );
       const r = res.rows[0]!;
       return { id: r.id, email: r.email, name: r.name, role: r.role, code, disabled: false, pending: true, createdAt: r.created_at.toISOString(), lastLoginAt: null };
@@ -245,6 +248,30 @@ export class PgUserStore {
    *  toutes deux voir count>1. Négligeable ici — 2 admins qui se rétrogradent à la milliseconde —
    *  et le chemin réaliste, le JWT périmé, est fermé. À revoir si on ajoute token_version.)
    */
+  /**
+   * Pose (ou efface) le NOM affiché d'un membre.
+   *
+   * 🔴 CE NOM EST CE QUE TOUT LE MONDE VOIT, et son absence est la raison pour laquelle l'Inbox affichait des
+   * ADRESSES E-MAIL partout : la charge par membre, le sélecteur d'affectation, « suivi par… » font tous
+   * `name ?? email` depuis toujours, mais rien ne permettait de poser ce nom. La colonne existait, personne
+   * ne l'écrivait jamais.
+   *
+   * ⚠️ UNE CHAÎNE VIDE EFFACE (elle devient `null`), elle n'enregistre pas un nom vide : sans ça, le repli
+   * `name ?? email` cesserait de s'appliquer et les écrans afficheraient du blanc à la place de l'adresse,
+   * ce qui est pire que l'adresse.
+   *
+   * ⚠️ AUCUN INVARIANT À PROTÉGER ICI, contrairement à `setRole` et `setDisabled` : renommer quelqu'un ne peut
+   * pas faire tomber le nombre d'administrateurs. La seule garde est le tenant.
+   */
+  async setName(tenantId: string, userId: string, name: string): Promise<UserMutation> {
+    const propre = name.trim();
+    const upd = await this.pool.query(
+      `update users set name = $3 where id = $1 and tenant_id = $2`,
+      [userId, tenantId, propre === '' ? null : propre],
+    );
+    return (upd.rowCount ?? 0) > 0 ? 'ok' : 'not_found';
+  }
+
   async setRole(tenantId: string, userId: string, role: string): Promise<UserMutation> {
     const upd = await this.pool.query(
       // `role <> 'admin'` et non `role = 'agent'` : le compte visé n'étant PAS admin, le changer ne peut pas

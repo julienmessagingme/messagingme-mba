@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, type AdminUser, type UserRole } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
@@ -34,6 +34,27 @@ function AdminInner({ session }: { session: Session }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Renomme un membre, à la sortie du champ.
+   *
+   * ⚠️ OPTIMISTE PUIS ROLLBACK, comme le changement de rôle juste en dessous : l'écran ne doit pas clignoter
+   * pour une écriture qui réussit presque toujours, mais il ne doit pas non plus garder un nom que le serveur
+   * a refusé.
+   */
+  async function renommer(u: AdminUser, nom: string) {
+    const propre = nom.trim();
+    if (propre === (u.name ?? '')) return; // rien n'a changé : pas d'écriture.
+    setError(null);
+    const prev = users;
+    setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, name: propre === '' ? null : propre } : x)));
+    try {
+      await renommerMembre(session.tenantId, u.id, propre);
+    } catch (err) {
+      setUsers(prev);
+      setError(err instanceof Error ? err.message : t('Renommage impossible', 'Unable to rename'));
+    }
+  }
 
   async function changeRole(u: AdminUser, role: UserRole) {
     setError(null);
@@ -103,7 +124,20 @@ function AdminInner({ session }: { session: Session }) {
                 const isSelf = u.email.toLowerCase() === session.email.toLowerCase();
                 return (
                   <tr key={u.id} className="border-b border-ink-50 last:border-0">
-                    <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-800'}`}>{u.name ?? <span className="text-ink-300">·</span>}</td>
+                    {/* 🔴 LE NOM EST MODIFIABLE ICI, et c'est tout le sujet : la colonne existait, tous les
+                        écrans font déjà `name ?? email`, mais rien ne permettait de l'écrire. L'Inbox
+                        affichait donc des adresses e-mail partout. */}
+                    <td className="px-5 py-3">
+                      <input
+                        data-testid={`membre-nom-${u.id}`}
+                        defaultValue={u.name ?? ''}
+                        onBlur={(e) => { void renommer(u, e.target.value); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        placeholder={t('prénom', 'first name')}
+                        maxLength={60}
+                        className={`w-36 rounded-lg border border-transparent px-2 py-1 text-sm hover:border-ink-200 focus:border-brand-500 focus:outline-none ${u.disabled ? 'text-ink-400' : 'text-ink-800'}`}
+                      />
+                    </td>
                     <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-600'}`}>{u.email}</td>
                     <td className="px-5 py-3">
                       <select
@@ -173,6 +207,7 @@ function AdminInner({ session }: { session: Session }) {
 function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () => void }) {
   const t = useT();
   const [email, setEmail] = useState('');
+  const [nom, setNom] = useState('');
   const [role, setRole] = useState<UserRole>('agent');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -182,9 +217,10 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
     setMsg(null);
     setBusy(true);
     try {
-      const res = await inviteMember(tenantId, email.trim(), role);
+      const res = await inviteMember(tenantId, email.trim(), role, nom.trim());
       setMsg({ kind: 'ok', text: res.emailSent ? t(`Invitation envoyée à ${email.trim()}.`, `Invitation sent to ${email.trim()}.`) : t(`Invitation créée pour ${email.trim()} (email non envoyé, vérifie la config).`, `Invitation created for ${email.trim()} (email not sent, check the config).`) });
       setEmail('');
+      setNom('');
       setRole('agent');
       onInvited();
     } catch (err) {
@@ -202,6 +238,12 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
         <div className="min-w-[200px] flex-1">
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Email', 'Email')}</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder={t('membre@entreprise.fr', 'member@company.com')} />
+        </div>
+        {/* ⚠️ FACULTATIF, mais proposé ICI : posé à l'invitation, le membre apparaît tout de suite sous son
+            prénom dans l'Inbox. Saisi plus tard, il aura été une adresse e-mail entre-temps. */}
+        <div className="min-w-[140px]">
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Prénom (facultatif)', 'First name (optional)')}</label>
+          <input value={nom} onChange={(e) => setNom(e.target.value)} maxLength={60} className={inputCls} placeholder={t('Camille', 'Camille')} />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Rôle', 'Role')}</label>
