@@ -7,6 +7,7 @@ import { getSession, clearSession, type Session } from '@/lib/session';
 import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
+import { BoutonAide } from './BoutonAide';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { arbresNav, cheminDeNav, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
@@ -386,6 +387,11 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
         <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
       </div>
       </div>
+      {/* 🔴 POSÉ UNE SEULE FOIS, ICI. Le bouton d'aide doit être sur les 36 écrans authentifiés ; le mettre
+          page par page serait 36 occasions de l'oublier, et le 37e écran ne l'aurait pas. Il n'apparaît pas
+          sur les écrans de connexion, qui ne passent pas par cette coquille et où il n'aurait rien à dire.
+          `active` est la clé de nav de la page : c'est ce qui rend l'aide contextuelle sans rien demander. */}
+      <BoutonAide tenantId={session.tenantId} ecranCourant={active} />
     </div>
   );
 }
