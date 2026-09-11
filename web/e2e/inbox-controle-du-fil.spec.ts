@@ -188,8 +188,10 @@ test.describe('Qui tient le fil se voit dans la LISTE, sans se lire', () => {
       await expect(page.getByTestId(`inbox-ligne-${id}`)).not.toHaveAttribute('data-mba', 'oui');
       await expect(page.getByTestId(`inbox-baguette-${id}`)).toHaveCount(0);
     }
-    // Le fil tenu par un HUMAIN garde sa mention texte : elle n'a pas de couleur pour la remplacer.
-    await expect(page.getByText(/vous avez la main|you have the hand/)).toBeVisible();
+    // 🔴 ET PLUS AUCUNE MENTION TEXTE DANS LA LISTE, pas même pour l'humain (demande de Julien du
+    // 2026-09-11 : « laisse juste le frame en blanc »). La liste sert à REPÉRER l'exception, et
+    // l'exception est la seule chose colorée ; le détenteur exact se lit dans l'en-tête du fil ouvert.
+    await expect(page.getByText(/vous avez la main|you have the hand/)).toHaveCount(0);
   });
 });
 

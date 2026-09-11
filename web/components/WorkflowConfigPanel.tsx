@@ -113,7 +113,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 export function ConfigPanel({
-  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag,
+  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag, onCreerChamp,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
@@ -124,6 +124,9 @@ export function ConfigPanel({
   campaignEligible: boolean;
   onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
+  /** Crée un champ de contact sans quitter le scénario, et rend sa CLÉ (ou `null` si le nom est refusé).
+   *  Optionnel : absent, les listes de champs restent en lecture seule, ce qui est l'ancien comportement. */
+  onCreerChamp?: (label: string) => Promise<string | null>;
   /** Relévé « champ rempli sur N fiches ». null = indisponible -> le sélecteur s'affiche sans compteur. */
   usageChamps: { total: number; parChamp: Record<string, number> } | null;
   emailAccounts: EmailAccount[]; emailTemplates: EmailTemplate[]; rcsMessages: RcsMessage[];
@@ -739,6 +742,7 @@ export function ConfigPanel({
           champCible={String(d.champCible ?? '')}
           fields={fields}
           onPatch={onPatch}
+          {...(onCreerChamp ? { onCreerChamp } : {})}
         />
       )}
       {wfType === 'http' && (
@@ -1044,18 +1048,22 @@ export function ConfigPanel({
  * serveur (QuickJS en WebAssembly) : l'éprouver dans le navigateur, où il aurait accès au DOM et au réseau,
  * ferait réussir des essais que l'exécution ne saurait pas reproduire.
  */
-function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch }: {
+function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, onCreerChamp }: {
   tenantId: string;
   code: string;
   champSource: string;
   champCible: string;
   fields: UserFieldDef[];
   onPatch: (p: Record<string, unknown>) => void;
+  onCreerChamp?: (label: string) => Promise<string | null>;
 }) {
   const t = useT();
   const [valeurEssai, setValeurEssai] = useState('');
   const [resultat, setResultat] = useState<EssaiJs | null>(null);
   const [enCours, setEnCours] = useState(false);
+  /** Création d'un champ à la volée : le nom saisi, et le refus éventuel du serveur. */
+  const [nouveauChamp, setNouveauChamp] = useState<string | null>(null);
+  const [refusChamp, setRefusChamp] = useState<string | null>(null);
   const cls = 'w-full rounded-lg border border-ink-200 px-2 py-1.5 text-sm';
 
   async function essayer(): Promise<void> {
@@ -1087,19 +1095,27 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch }
         {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
       </select>
 
-      <label className="text-xs font-medium text-ink-700">{t('Votre fonction', 'Your function')}</label>
-      {/* Le CONTRAT, écrit au-dessus du champ : la valeur arrive dans `valeur`, il faut faire `return`.
-          Le laisser deviner produirait des fonctions qui ne rendent rien, et un champ cible vide. */}
-      <p className="text-[11px] text-ink-500">
-        {t('La valeur arrive dans', 'The value comes in as')} <code>valeur</code>. {t('Terminez par', 'End with')} <code>return</code>.
-      </p>
+      <label className="text-xs font-medium text-ink-700">{t('Votre transformation', 'Your transformation')}</label>
+      {/**
+        * 🔴 L'ENVELOPPE EST MONTRÉE, PLUS SEULEMENT DÉCRITE (2026-09-11). Le serveur exécute ce texte comme
+        * le CORPS d'une fonction qui reçoit `valeur` : c'était déjà vrai, c'était écrit en une phrase, et
+        * Julien a quand même cru qu'il fallait taper `function (valeur) { … }` en entier. Une phrase se lit
+        * ou ne se lit pas ; deux lignes grises au-dessus et en dessous du champ ne se contournent pas. Le
+        * libellé disait « Votre fonction », ce qui invitait précisément à écrire la fonction entière.
+        */}
+      <div className="font-mono text-[11px] leading-tight text-ink-400">function (valeur) {'{'}</div>
       <textarea
         data-testid="js-node-code" rows={6} spellCheck={false}
-        className={`${cls} font-mono text-xs`}
+        className={`${cls} ml-3 font-mono text-xs`}
         value={code}
         onChange={(e) => onPatch({ code: e.target.value })}
         placeholder={'return JSON.parse(valeur).statut;'}
       />
+      <div className="font-mono text-[11px] leading-tight text-ink-400">{'}'}</div>
+      <p className="text-[11px] text-ink-500">
+        {t('Écrivez seulement l’intérieur : la valeur du champ arrive dans', 'Write only the inside: the field value comes in as')}
+        {' '}<code>valeur</code>, {t('et il faut', 'and you must')} <code>return</code> {t('le résultat.', 'the result.')}
+      </p>
 
       <label className="text-xs font-medium text-ink-700">{t('Essayer avec cette valeur', 'Try with this value')}</label>
       <div className="flex gap-2">
@@ -1127,13 +1143,69 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch }
       )}
 
       <label className="text-xs font-medium text-ink-700">{t('Où ranger le résultat', 'Where to store the result')}</label>
-      <select
-        data-testid="js-node-cible" className={`${cls} bg-white`} value={champCible}
-        onChange={(e) => onPatch({ champCible: e.target.value })}
-      >
-        <option value="">{t('choisir un champ…', 'choose a field…')}</option>
-        {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
-      </select>
+      <div className="flex gap-2">
+        <select
+          data-testid="js-node-cible" className={`${cls} bg-white`} value={champCible}
+          onChange={(e) => onPatch({ champCible: e.target.value })}
+        >
+          <option value="">{t('choisir un champ…', 'choose a field…')}</option>
+          {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+        </select>
+        {/**
+          * 🔴 CRÉER UN CHAMP SANS QUITTER LE SCÉNARIO (demande de Julien, 2026-09-11). Sans ce bouton, il
+          * fallait abandonner le bloc en cours d'écriture, aller dans Contenu > Champs, créer, revenir, et
+          * retrouver son nœud : assez de friction pour qu'on range le résultat dans un champ approchant
+          * plutôt que dans le bon.
+          *
+          * ⚠️ LE CHAMP CRÉÉ EST CELUI DU MINI-CRM, pas une copie : même table, même route que l'écran
+          * Contenu > Champs. Il n'y a donc rien à propager, et rien qui puisse se désynchroniser.
+          */}
+        {onCreerChamp && nouveauChamp === null && (
+          <button
+            type="button" data-testid="js-node-cible-nouveau"
+            onClick={() => { setNouveauChamp(''); setRefusChamp(null); }}
+            className="shrink-0 rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50"
+          >
+            {t('+ Nouveau champ', '+ New field')}
+          </button>
+        )}
+      </div>
+      {onCreerChamp && nouveauChamp !== null && (
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              data-testid="js-node-cible-nom" className={cls} value={nouveauChamp}
+              onChange={(e) => { setNouveauChamp(e.target.value); setRefusChamp(null); }}
+              placeholder={t('Nom du champ, par exemple « Statut commande »', 'Field name, e.g. “Order status”')}
+              onKeyDown={(e) => { if (e.key === 'Escape') setNouveauChamp(null); }}
+            />
+            <button
+              type="button" data-testid="js-node-cible-creer"
+              disabled={nouveauChamp.trim() === ''}
+              onClick={() => {
+                void onCreerChamp(nouveauChamp).then((cle) => {
+                  // 🔴 CRÉÉ PUIS SÉLECTIONNÉ : créer un champ et devoir ensuite le chercher dans la liste
+                  // serait le geste fait à moitié, et personne ne remarquerait qu'il manque la seconde moitié.
+                  if (cle === null) { setRefusChamp(t('Ce nom est déjà pris, ou réservé à un champ de base.', 'That name is already taken, or reserved for a base field.')); return; }
+                  onPatch({ champCible: cle });
+                  setNouveauChamp(null);
+                });
+              }}
+              className="shrink-0 rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-300"
+            >
+              {t('Créer', 'Create')}
+            </button>
+          </div>
+          {/* ⚠️ LE REFUS SE DIT. Un bouton qui ne fait rien sur un nom déjà pris laisserait croire à une
+              panne, et le client réessaierait le même nom. */}
+          {refusChamp !== null && <p className="text-[11px] text-coral" data-testid="js-node-cible-refus">{refusChamp}</p>}
+          <p className="text-[11px] text-ink-500">
+            {t('Il sera créé en TEXTE et apparaîtra aussitôt dans le mini-CRM. Son type se change dans Contenu > Champs.',
+              'It will be created as TEXT and will appear at once in the mini-CRM. Its type can be changed in Content > Fields.')}
+          </p>
+        </div>
+      )}
 
       {/* 🔴 LES MÊMES DEUX PHRASES QUE LE BLOC « APPEL API », pour la même raison : ce qui se passe en cas
           d'échec décide de la suite du scénario, et personne ne le devine. */}

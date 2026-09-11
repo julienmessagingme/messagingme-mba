@@ -7,7 +7,7 @@ import {
   type Connection, type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
-  listTemplates, listFlows, listTags, listUserFields, listUserFieldUsage, createTag, listEmailAccounts, listEmailTemplates, listRcsMessages, publishWorkflow,
+  listTemplates, listFlows, listTags, listUserFields, listUserFieldUsage, createTag, createUserField, listEmailAccounts, listEmailTemplates, listRcsMessages, publishWorkflow,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
@@ -116,6 +116,36 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
     try { await createTag(tenantId, clean); } catch { /* best-effort */ }
     listTags(tenantId).then((r) => setTags(r.tags)).catch(() => {});
   }, [tenantId, tags]);
+
+  /**
+   * CRÉER UN CHAMP DE CONTACT SANS QUITTER LE SCÉNARIO (demande de Julien, 2026-09-11 : « il faut que je
+   * puisse créer à la volée un nouveau champ, qui se répercutera bien sûr partout où c'est nécessaire, y
+   * compris jusqu'au mini-CRM »).
+   *
+   * 🔴 IL SE RÉPERCUTE PARTOUT PAR CONSTRUCTION, pas par une synchronisation : c'est la MÊME table que le
+   * mini-CRM, la même route que l'écran Contenu > Champs. Il n'y a donc rien à propager, et rien qui puisse
+   * se désynchroniser. Décalque de `commitTag` juste au-dessus, qui fait le même geste pour un tag.
+   *
+   * ⚠️ TYPE `text`, ET C'EST UN CHOIX : le bloc JS range ce que sa fonction rend, converti en texte
+   * (`enTexte`), et le bloc « Appel API » fait pareil. Proposer un choix de type ici ferait porter à
+   * quelqu'un qui écrit un scénario une décision de modèle de données, pour un champ qui recevra du texte.
+   * Le type se change ensuite dans Contenu > Champs, qui est fait pour ça.
+   *
+   * Rend la CLÉ créée (ou `null` si le nom est refusé, typiquement un doublon), pour que l'appelant la
+   * sélectionne tout de suite : créer un champ puis devoir le rechercher dans la liste serait à moitié fait.
+   */
+  const creerChamp = useCallback(async (label: string): Promise<string | null> => {
+    const propre = label.trim().slice(0, 64);
+    if (propre === '') return null;
+    try {
+      const cree = await createUserField(tenantId, { label: propre, type: 'text' });
+      setFields((prec) => (prec.some((f) => f.key === cree.key) ? prec : [...prec, cree]));
+      return cree.key;
+    } catch {
+      // Un doublon (409) ou un nom réservé : l'appelant l'annonce, on ne devine pas à sa place.
+      return null;
+    }
+  }, [tenantId]);
 
   // Une seule cible par SORTIE : relier depuis un handle déjà relié remplace l'arête existante de ce
   // (source, sourceHandle) — un bouton mène à un seul bloc suivant.
@@ -614,7 +644,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} onCreerChamp={creerChamp} />
           )}
         </div>
       </div>

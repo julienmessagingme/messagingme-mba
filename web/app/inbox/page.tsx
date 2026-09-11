@@ -549,13 +549,13 @@ function InboxInner({ session }: { session: Session }) {
                     </span>
                     <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
-                  {/* Le badge n'apparaît QUE si quelqu'un détient le fil : l'afficher sur toutes les
-                      lignes noierait l'information, alors que c'est l'exception qui doit sauter aux yeux.
-                      ⚠️ ET PLUS POUR `mba`, dont le dégradé et la baguette disent déjà la même chose, en
-                      mieux : deux façons de dire la même chose sur douze pixels de haut, c'est une de trop. */}
-                  {c.controlOwner !== 'app_workflow' && c.controlOwner !== 'mba' && (
-                    <span className="pointer-events-none relative mt-1 inline-block"><ControlBadge owner={c.controlOwner} /></span>
-                  )}
+                  {/* 🔴 PLUS AUCUN BADGE DANS LA LISTE (demande de Julien, 2026-09-11 : « quand un agent a
+                      la main, laisse juste le frame en blanc, pas obligé d'écrire Vous avez la main »).
+                      Le badge `mba` était déjà parti, remplacé par le dégradé et la baguette ; celui de
+                      l'humain part à son tour, et il ne reste rien. C'est cohérent : la liste sert à
+                      REPÉRER l'exception, et l'exception est désormais la seule chose colorée. Le
+                      détenteur exact se lit dans l'en-tête de la conversation ouverte, où l'on a la place
+                      et le besoin du mot juste. */}
                 </div>
               </li>
             ))}

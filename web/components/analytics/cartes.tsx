@@ -37,6 +37,15 @@ export interface EtapeFunnel {
   color: string;
   /** Le pourcentage des envois, ou la chaîne vide quand il n'a pas de sens (étape en CLICS, pas en personnes). */
   sub: string;
+  /**
+   * Cette étape n'a AUCUNE mesure : Meta n'a rendu aucun accusé sur cette campagne. La colonne s'efface et
+   * affiche « — », au lieu d'un zéro qu'on lirait comme un fait.
+   *
+   * 🔴 « 0 délivrés » ET « on ne sait pas » NE SONT PAS LA MÊME CHOSE, et la carte les confondait. Signalé
+   * par Julien le 2026-09-11 : « 3 envoyés, 0 délivrés, 0 lus et pourtant 3 répondus, erreur manifeste
+   * non ? ». Chaque nombre était juste ; c'est leur mise côte à côte qui mentait.
+   */
+  inconnue?: boolean;
 }
 
 /**
@@ -58,16 +67,25 @@ function FunnelVertical({ etapes, sent, locale }: { etapes: EtapeFunnel[]; sent:
     <div className="flex h-56 items-end gap-2" data-testid="funnel-colonnes">
       {etapes.map((e) => (
         <div key={e.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
-          <div className="text-xs font-semibold tabular-nums text-ink-800">{fmtNum(e.value, locale)}</div>
+          {/* 🔴 « — » ET UNE COLONNE HACHURÉE QUAND IL N'Y A PAS DE MESURE. Un zéro dessiné comme les
+              autres se lit comme un fait mesuré ; c'est ce qui a fait conclure à une erreur de calcul là où
+              il n'y avait qu'une absence d'accusé. La hauteur est fixée bas et la couleur devient neutre :
+              la colonne reste à sa place, elle cesse seulement d'affirmer. */}
+          <div className={`text-xs font-semibold tabular-nums ${e.inconnue ? 'text-ink-400' : 'text-ink-800'}`}>
+            {e.inconnue ? '—' : fmtNum(e.value, locale)}
+          </div>
           <div
-            className="w-full rounded-t-md"
-            style={{ height: `${hauteur(e.value)}%`, backgroundColor: e.color }}
+            className={`w-full rounded-t-md ${e.inconnue ? 'border border-dashed border-ink-300' : ''}`}
+            style={e.inconnue
+              ? { height: '8%', backgroundColor: 'transparent' }
+              : { height: `${hauteur(e.value)}%`, backgroundColor: e.color }}
             data-testid={`funnel-barre-${e.label}`}
+            {...(e.inconnue ? { 'data-inconnue': 'oui' } : {})}
           />
           {/* Le libellé SOUS la colonne, sur deux lignes au besoin : les étapes de clic ont des noms longs,
               et les tronquer ferait perdre l'unité, qui est justement ce qui les distingue. */}
           <div className="h-8 w-full text-center text-[10px] leading-tight text-ink-500" title={e.label}>{e.label}</div>
-          <div className="h-3 text-[10px] tabular-nums text-ink-400">{e.sub}</div>
+          <div className="h-3 text-[10px] tabular-nums text-ink-400">{e.inconnue ? '' : e.sub}</div>
         </div>
       ))}
     </div>
@@ -101,11 +119,20 @@ function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: Ca
   }, [tenantId, campagne.id]);
 
   const sent = funnel?.sent ?? 0;
+  /**
+   * AUCUN accusé sur AUCUN envoi : les deux étapes du milieu n'ont pas de mesure, elles ne valent pas zéro.
+   *
+   * ⚠️ LE SEUIL EST « TOUS », PAS « CERTAINS », et c'est volontaire. Un accusé manquant sur trois envois sur
+   * dix laisse les sept autres parfaitement mesurés : effacer la colonne entière perdrait une vraie
+   * information. C'est quand il n'y en a AUCUN que le zéro devient un mensonge, et ce cas-là n'est pas rare,
+   * il est SYSTÉMATIQUE sur une campagne à scénario.
+   */
+  const sansMesure = funnel !== null && sent > 0 && (funnel.sansAccuse ?? 0) === sent;
   const etapes: EtapeFunnel[] = funnel
     ? [
         { label: t('Envoyés', 'Sent'), value: funnel.sent, color: '#009AFE', sub: '' },
-        { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent, locale) },
-        { label: t('Lus', 'Read'), value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent, locale) },
+        { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent, locale), inconnue: sansMesure },
+        { label: t('Lus', 'Read'), value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent, locale), inconnue: sansMesure },
         { label: t('Répondus', 'Replied'), value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent, locale) },
         // Les deux étapes de CLIC n'apparaissent que si la donnée existe pour cette campagne. Une barre à zéro
         // sur un template sans bouton se lirait « personne n'a cliqué » au lieu de « il n'y a rien à cliquer ».
@@ -133,6 +160,14 @@ function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: Ca
       ) : (
         <>
           <FunnelVertical etapes={etapes} sent={sent} locale={locale} />
+          {sansMesure && (
+            <p className="pt-2 text-xs text-amber-800" data-testid="funnel-sans-accuse">
+              {t(
+                'Meta n’a rendu aucun accusé de livraison sur cette campagne : « délivrés » et « lus » sont inconnus, pas nuls. C’est le cas de toutes les campagnes qui envoient un scénario.',
+                'Meta returned no delivery receipt for this campaign: “delivered” and “read” are unknown, not zero. This is the case for every campaign that sends a scenario.',
+              )}
+            </p>
+          )}
           {funnel.failed > 0 && (
             <p className="pt-2 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
           )}

@@ -25,6 +25,21 @@ export interface CampaignFunnel {
   replied: number;
   failed: number;
   /**
+   * Envois partis dont Meta n'a JAMAIS rendu d'accusé : `delivered` et `read` ne les comptent pas, et ce
+   * n'est pas la même chose que « ils n'ont pas été délivrés ».
+   *
+   * 🔴 ET C'EST SYSTÉMATIQUE POUR UNE CAMPAGNE À SCÉNARIO, PAS UN ALÉA. Mesuré le 2026-09-11 sur la base :
+   * 29 envois de scénario, 29 sans accusé, soit 100 % ; contre 18 sur 21 AVEC accusé côté template. La
+   * raison est écrite dans `campaign/engine.ts` : la branche scénario enregistre un identifiant de message
+   * SYNTHÉTIQUE (`wf-…`, le même pour tous les destinataires), quand l'accusé de Meta porte le vrai
+   * `wamid`. `updateDeliveryByMessageId` ne peut donc jamais apparier les deux.
+   *
+   * ⚠️ SANS CE COMPTE, L'ÉCRAN AFFICHE UN ZÉRO LÀ OÙ IL N'Y A PAS DE MESURE, et on le lit comme un fait.
+   * Signalé par Julien le 2026-09-11 : « 3 envoyés, 0 délivrés, 0 lus et pourtant 3 répondus, erreur
+   * manifeste non ? ». Chaque nombre était juste ; c'est leur mise côte à côte qui mentait.
+   */
+  sansAccuse: number;
+  /**
    * Taps sur un bouton de RÉPONSE RAPIDE du template, attribués comme `replied` (dont ils sont un
    * sous-ensemble : un tap de bouton EST un message entrant).
    */
@@ -428,15 +443,19 @@ export class PgStatsStore {
    * APRÈS son envoi (created_at > sent_at) ET attribué à CETTE campagne : aucun envoi ULTÉRIEUR au même
    * numéro (même tenant) n'a eu lieu entre cet envoi et la réponse (sinon la réponse est attribuée au
    * dernier envoi, pas à celui-ci). Évite le double-comptage d'une même réponse sur plusieurs campagnes.
-   * NB : « répondu » peut dépasser « lu » (accusés de lecture désactivés côté client) — signal indépendant.
+   * NB : « répondu » peut dépasser « lu », et pour DEUX raisons qu'il ne faut pas confondre : le contact
+   * peut avoir désactivé ses accusés de lecture, ou l'envoi peut n'avoir AUCUN accusé du tout (`sansAccuse`,
+   * le cas de toute campagne à scénario). Dans le second, « 0 lus » ne veut pas dire « personne n'a lu ».
    */
   async getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
-    const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string; button_replies: string }>(
+    const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string; sans_accuse: string; button_replies: string }>(
       `select
          count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed')::int as sent,
          count(r.id) filter (where r.delivery_status in ('delivered', 'read'))::int as delivered,
          count(r.id) filter (where r.delivery_status = 'read')::int as read,
          count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed')::int as failed,
+         -- Parti, mais aucun accusé de Meta : ni délivré, ni lu, ni échoué. « On ne sait pas », pas « non ».
+         count(r.id) filter (where r.status = 'sent' and r.delivery_status is null)::int as sans_accuse,
          count(r.id) filter (where ${entrantAttribue()})::int as replied,
          -- Sous-ensemble des repondants, restreint aux taps de bouton. On teste type = 'button' et NON
          -- button_payload is not null : ce champ est aussi rempli par un message interactive et par une
@@ -453,6 +472,7 @@ export class PgStatsStore {
       read: Number(row?.read ?? 0),
       replied: Number(row?.replied ?? 0),
       failed: Number(row?.failed ?? 0),
+      sansAccuse: Number(row?.sans_accuse ?? 0),
       buttonReplies: Number(row?.button_replies ?? 0),
       urlClicks: (await this.clicsParCampagne(tenantId, [campaignId])).get(campaignId) ?? null,
     };

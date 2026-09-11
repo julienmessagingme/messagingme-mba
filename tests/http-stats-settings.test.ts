@@ -33,7 +33,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
-    getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 2, urlClicks: 4 }),
+    getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 2, urlClicks: 4 }),
     getErrorBreakdown: async () => [
       { code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' },
       { code: 131047, count: 2, templateName: null, campaignId: CAMP_B, campaignName: 'Relance' },
@@ -275,13 +275,13 @@ describe('stats route', () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel?campaignId=c1', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 2, urlClicks: 4 });
+    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 2, urlClicks: 4 });
     await a.close();
   });
 
   it('🔴 un template SANS lien tracé rend urlClicks = null, pas 0', async () => {
     // 0 se lirait « personne n'a cliqué » ; null dit « il n'y a rien à cliquer », et l'écran masque l'étape.
-    const a = app({ stats: { getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 0, urlClicks: null }) } });
+    const a = app({ stats: { getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 0, urlClicks: null }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel?campaignId=c1', ...h(adminTok) });
     expect(res.json<{ urlClicks: number | null }>().urlClicks).toBeNull();
     await a.close();

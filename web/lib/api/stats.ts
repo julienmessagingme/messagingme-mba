@@ -51,6 +51,10 @@ export interface CampaignFunnel {
   read: number;
   replied: number;
   failed: number;
+  /** Envois partis dont Meta n'a rendu AUCUN accusé : « on ne sait pas », pas « non délivré ». Systématique
+   *  pour une campagne à scénario (identifiant de message synthétique, que l'accusé de Meta ne peut pas
+   *  apparier). Optionnel : une instance antérieure au 2026-09-11 ne le rend pas. */
+  sansAccuse?: number;
   /** Taps sur un bouton de reponse rapide. Sous-ensemble de `replied`. */
   buttonReplies: number;
   /**
