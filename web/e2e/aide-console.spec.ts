@@ -176,3 +176,25 @@ test.describe('Bouton d’aide de la console', () => {
     await expect(page.getByTestId('aide-envoyer')).toBeEnabled();
   });
 });
+
+test.describe('L’accueil du cadre d’aide', () => {
+  /**
+   * Demande de Julien, le 2026-09-11 : « là c'est hyper triste [...] a minima prends le logo Engage Me,
+   * rajoute 2 ou 3 étoiles magiques genre IA et dis "Je suis là pour vous aider", pas un truc "posez votre
+   * question sur la console" ».
+   */
+  test('🔴 il ACCUEILLE au lieu de donner une consigne, et une suggestion remplit le champ', async ({ page }) => {
+    await mock(page, SAIT, []);
+    await page.goto('/campaigns');
+    await page.getByTestId('aide-bouton').click();
+
+    await expect(page.getByTestId('aide-accueil')).toContainText(/Je suis là pour vous aider|I am here to help/);
+    // La consigne a disparu : c'était le mauvais ton pour quelqu'un qui vient chercher de l'aide.
+    await expect(page.getByText(/Posez votre question sur la console/)).toHaveCount(0);
+
+    // 🔴 L'EXEMPLE N'A PAS DISPARU, IL EST DEVENU UNE PORTE. Le supprimer laisserait un cadre vide devant
+    // quelqu'un qui ne sait pas ce qu'on peut demander.
+    await page.getByTestId('aide-suggestion').first().click();
+    await expect(page.getByTestId('aide-question')).toHaveValue(/campagne|campaign/);
+  });
+});

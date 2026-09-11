@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useT, useLocale } from '@/lib/i18n';
+import { Logo } from '@/components/Logo';
 import { inputCls } from '@/lib/ui';
 import { demanderAide, type ReponseAide } from '@/lib/api-aide';
 import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib/aide-fil';
@@ -109,17 +110,62 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
           data-testid="aide-panneau"
           className="fixed bottom-20 right-5 z-40 flex max-h-[70vh] w-[min(24rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl"
         >
-          <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
-            <span className="text-sm font-semibold text-ink-900">{t('Aide', 'Help')}</span>
+          <div className="flex items-center justify-between border-b border-ink-100 bg-gradient-to-r from-brand-50 via-white to-white px-4 py-3">
+            <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+              <Logo className="h-5 w-5 shrink-0" />
+              {t('Aide', 'Help')}
+            </span>
             <button type="button" onClick={() => setOuvert(false)} className="text-ink-400 hover:text-ink-700" aria-label={t('Fermer', 'Close')}>×</button>
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3" data-testid="aide-fil">
+            {/**
+              * 🔴 UNE INVITATION, PAS UNE CONSIGNE (demande de Julien, 2026-09-11 : « là c'est hyper triste
+              * [...] dis "Je suis là pour vous aider", pas un truc "posez votre question sur la console" »).
+              * La première version donnait un ordre à quelqu'un qui vient chercher de l'aide, ce qui est
+              * exactement le mauvais ton pour un écran de secours.
+              *
+              * ⚠️ L'EXEMPLE NE DISPARAÎT PAS, IL DEVIENT CLIQUABLE. Le supprimer laisserait un cadre vide
+              * devant quelqu'un qui ne sait pas ce qu'on peut demander ; le laisser en consigne était le
+              * défaut. Une suggestion qu'on clique est une porte, une phrase qui dit quoi faire est un mur.
+              */}
             {fil.length === 0 && erreur === null && !occupe && (
-              <p className="text-sm text-ink-500">
-                {t('Posez votre question sur la console, par exemple « comment je lance une campagne ? ».',
-                  'Ask your question about the console, for example "how do I launch a campaign?".')}
-              </p>
+              <div className="flex flex-col items-center gap-3 px-2 py-6 text-center" data-testid="aide-accueil">
+                <span className="relative inline-flex h-14 w-14 items-center justify-center">
+                  {/* Le halo : il pose la marque sur un fond, sinon le logo flotte. */}
+                  <span aria-hidden="true" className="absolute inset-0 rounded-full bg-gradient-to-br from-brand-100 via-brand-50 to-white" />
+                  <Logo className="relative h-8 w-8" />
+                  {/* Trois étincelles, placées autour et pas dessus : elles disent « IA » sans masquer la
+                      marque. `aria-hidden` parce qu'elles ne portent aucune information. */}
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute -right-1 -top-1 h-4 w-4 text-brand-400" fill="currentColor">
+                    <path d="M12 2l1.5 3.5L17 7l-3.5 1.5L12 12l-1.5-3.5L7 7l3.5-1.5L12 2z" />
+                  </svg>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute -left-2 top-2 h-3 w-3 text-brand-300" fill="currentColor">
+                    <path d="M12 2l1.5 3.5L17 7l-3.5 1.5L12 12l-1.5-3.5L7 7l3.5-1.5L12 2z" />
+                  </svg>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute -bottom-1 right-1 h-2.5 w-2.5 text-mint-400" fill="currentColor">
+                    <path d="M12 2l1.5 3.5L17 7l-3.5 1.5L12 12l-1.5-3.5L7 7l3.5-1.5L12 2z" />
+                  </svg>
+                </span>
+                <p className="text-sm font-semibold text-ink-900">{t('Je suis là pour vous aider', 'I am here to help')}</p>
+                <div className="flex flex-wrap justify-center gap-1.5">
+                  {[
+                    { fr: 'Comment je lance une campagne ?', en: 'How do I launch a campaign?' },
+                    { fr: 'Modèle ou scénario ?', en: 'Template or scenario?' },
+                    { fr: 'Comment j’importe mes contacts ?', en: 'How do I import my contacts?' },
+                  ].map((sug) => (
+                    <button
+                      key={sug.fr}
+                      type="button"
+                      data-testid="aide-suggestion"
+                      onClick={() => setQuestion(locale === 'en' ? sug.en : sug.fr)}
+                      className="rounded-full border border-ink-200 px-2.5 py-1 text-xs text-ink-600 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                    >
+                      {t(sug.fr, sug.en)}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
 
             {fil.map((e, i) => (
