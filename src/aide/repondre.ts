@@ -83,8 +83,18 @@ const reponseSchema = z.object({
   ecrans: z.array(z.string()).optional(),
 });
 
-/** Au-delà, ce n'est plus une question mais un message recopié : on borne le coût du rappel. */
-const QUESTION_MAX = 500;
+/**
+ * Au-delà, ce n'est plus une question mais un message recopié : on borne le coût du rappel.
+ *
+ * ⚠️ EXPORTÉE, et la route l'IMPORTE (`src/http/aide.ts`). Deux constantes de fichiers différents devant
+ * rester ordonnées finissent par ne plus l'être : si la route acceptait plus que le moteur, la question
+ * serait tronquée en silence et le client se demanderait pourquoi la réponse est à côté.
+ *
+ * ⚠️ Le suffixe `_CARACTERES` n'est pas décoratif : `QUESTION_MAX_ROWS` existe déjà dans le moteur de
+ * scénario et borne les LIGNES d'un menu. Les deux sont dans des modules sans rapport, mais un grep les
+ * rendait toutes les deux sans qu'on sache laquelle compte quoi.
+ */
+export const QUESTION_MAX_CARACTERES = 500;
 /** Ce qu'on donne du corps d'une fiche au modèle. Assez pour répondre, borné pour que le prompt reste petit. */
 const CORPS_MAX = 2_000;
 /** Combien de fiches partent au modèle, au plus. Trois suffisent et gardent la réponse nette. */
@@ -172,7 +182,7 @@ function consigne(q: QuestionAide, ecrans: EcranAide[]): string {
 export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<ReponseAide> {
   const rien: ReponseAide = { sait: false, texte: '', sources: [], ecrans: [] };
   return async (q) => {
-    const question = q.question.trim().slice(0, QUESTION_MAX);
+    const question = q.question.trim().slice(0, QUESTION_MAX_CARACTERES);
     if (question === '') return rien;
 
     const large = deps.recherche !== null;

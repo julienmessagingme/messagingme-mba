@@ -61,6 +61,7 @@ import { PgAgentStore } from './agent/agent-store.pg';
 import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { balayerVectorisation, creerRechercheSemantique } from './agent/recherche';
+import { PgDepotAide } from './aide/fiches.pg';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
@@ -1339,6 +1340,9 @@ async function main(): Promise<void> {
     const toolCatalog = new PgToolCatalog(pool);
     const journalAppels = new PgJournalAppels(pool);
     const knowledgeStore = new PgKnowledgeStore(pool);
+    // Les fiches du mode d emploi de la console (migration 0131). Elles sont vectorisees par le MEME
+    // balayage que la connaissance des agents, juste en dessous.
+    const depotAide = new PgDepotAide(pool);
     const rechercheSemantique = creerRechercheSemantique();
     /**
      * LE BALAYAGE QUI VECTORISE, seul endroit du depot qui calcule un vecteur de fiche. Il rattrape les
@@ -1352,6 +1356,21 @@ async function main(): Promise<void> {
           const n = await balayerVectorisation(knowledgeStore, rechercheSemantique, config.AGENT_EMBED_MODEL);
           // eslint-disable-next-line no-console
           if (n > 0) console.log(`vectorisation: ${n} fiche(s) vectorisee(s)`);
+          /**
+           * 🔴 LES FICHES DU MODE D EMPLOI AUSSI, et les oublier ici rendait MUETTE la moitie semantique du
+           * bot d aide : la colonne `embedding` d `aide_fiches` serait restee nulle pour toujours,
+           * `chercherParVecteur` aurait toujours rendu une liste vide, et le rappel se serait reduit au plein
+           * texte. Le bot aurait continue de repondre, ce qui est le pire : on perd exactement le cas pour
+           * lequel le semantique existe, le client qui ne dit pas << campagne >> mais << envoyer un message a
+           * toute ma liste >>. Releve a la revue du lot, le 2026-09-11.
+           *
+           * ⚠️ MEME MODELE que la connaissance des agents (`AGENT_EMBED_MODEL`) : les deux colonnes ont la
+           * meme dimension par construction, et en prendre un autre ici rendrait les deux bases
+           * incomparables sans qu aucune erreur ne le signale.
+           */
+          const na = await balayerVectorisation(depotAide, rechercheSemantique, config.AGENT_EMBED_MODEL);
+          // eslint-disable-next-line no-console
+          if (na > 0) console.log(`vectorisation: ${na} fiche(s) d aide vectorisee(s)`);
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('vectorisation: lot ignore :', err instanceof Error ? err.message : err);

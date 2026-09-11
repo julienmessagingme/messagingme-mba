@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { RateLimiter } from '../auth/rate-limit';
 import { scopeTenant } from './scope';
-import type { QuestionAide, ReponseAide } from '../aide/repondre';
+import { QUESTION_MAX_CARACTERES, type QuestionAide, type ReponseAide } from '../aide/repondre';
 
 /**
  * LE BOT D'AIDE DE LA CONSOLE : une route, synchrone.
@@ -24,8 +24,6 @@ export interface AideRouteDeps {
   /** Absent = l'aide n'est pas configurée (clé du Gateway ou modèle manquant) -> 503, jamais un repli muet. */
   repondre?(q: QuestionAide): Promise<ReponseAide>;
 }
-
-const QUESTION_MAX = 500;
 
 /**
  * Le plafond de débit de cette route.
@@ -53,8 +51,8 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, requireA
     if (question === '') return reply.code(400).send({ error: 'question requise' });
     // 4xx et pas 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, et le client
     // ne lirait jamais la raison.
-    if (question.length > QUESTION_MAX) {
-      return reply.code(400).send({ error: `question trop longue (${QUESTION_MAX} caractères maximum)` });
+    if (question.length > QUESTION_MAX_CARACTERES) {
+      return reply.code(400).send({ error: `question trop longue (${QUESTION_MAX_CARACTERES} caractères maximum)` });
     }
 
     // 🔴 LE RÔLE VIENT DU JETON, JAMAIS DU CORPS. C'est lui qui décide des écrans qu'on a le droit de

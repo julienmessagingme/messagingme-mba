@@ -49,6 +49,29 @@ describe('câblage du bot d’aide', () => {
     expect(bloc).not.toContain('AGENT_MODEL,');
   });
 
+  it('🔴 les fiches d’aide sont VECTORISÉES par le balayage du worker', () => {
+    // Relevé à la revue du 2026-09-11 : le balayage ne tournait que sur `agent_knowledge`. La colonne
+    // `embedding` d'`aide_fiches` serait restée nulle pour toujours, `chercherParVecteur` aurait toujours
+    // rendu une liste vide, et le rappel se serait réduit au plein texte. Le bot aurait continué de
+    // répondre, ce qui est le pire : on perd exactement le cas pour lequel le sémantique existe.
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const sansComm = worker.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(sansComm, 'le balayage de vectorisation doit passer sur le dépôt des fiches d’aide')
+      .toMatch(/balayerVectorisation\(depotAide, rechercheSemantique, config\.AGENT_EMBED_MODEL\)/);
+    // Et le MÊME modèle que la connaissance des agents : les deux colonnes ont la même dimension par
+    // construction, en prendre un autre rendrait les deux bases incomparables sans erreur.
+    expect(sansComm).toMatch(/balayerVectorisation\(knowledgeStore, rechercheSemantique, config\.AGENT_EMBED_MODEL\)/);
+  });
+
+  it('🔴 le module `aide` est bien celui que `ServerDeps` attend', () => {
+    // ⚠️ LE CONTRÔLE DES PROPRIÉTÉS EN TROP NE TRAVERSE PAS UN SPREAD (règle du CLAUDE.md, mesurée) : le
+    // câblage monte `aide` dans un `...( ? {} : {})`, donc une clé mal orthographiée COMPILERAIT et la route
+    // ne se monterait jamais. Personne ne le verrait avant qu'un client clique sur le bouton.
+    const debut = sansCommentaires.indexOf('aide: {');
+    expect(debut, 'le module `aide` n’est pas monté sous ce nom').toBeGreaterThan(-1);
+    expect(sansCommentaires.slice(debut, debut + 120)).toContain('repondre: creerRepondeur(');
+  });
+
   it('🔴 la route d’aide est couverte par le garde-fou d’authentification', () => {
     // `src/server.ts` refuse de démarrer si un module à routes `:tenantId` se monte sans `auth`. En ajouter
     // un sans l'inscrire dans cette liste, c'est rouvrir la porte pour lui seul.
