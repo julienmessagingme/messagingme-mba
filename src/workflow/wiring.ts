@@ -23,6 +23,7 @@ import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-co
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
+import { problemeLienBouton } from './engine';
 import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
 import { waIdOfTarget } from '../crm/identity';
@@ -575,9 +576,16 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Deux chemins d'accès,
     // tous deux EN fenêtre 24 h : `advance` (le contact vient de répondre) et `startFromNode` (cible node de
     // /v1/sends, qui a écarté les hors-fenêtre en amont). Texte littéral en V1 (pas de variables).
-    sendQuickMessage: async (tenant, waId, body, buttons, mediaUrl) => {
+    sendQuickMessage: async (tenant, waId, body, buttons, mediaUrl, lien) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (body.trim() === '') return 'le bloc « message rapide » n\'a pas de texte';
+      // 🔴 BOUTON DE LIEN INCOMPLET -> REFUS, jamais un message nu. Le client a coché la case ; lui envoyer
+      // le texte seul parce que l'adresse manque, c'est le silence que ce bloc passe son temps à fermer (le
+      // visuel non préparable refuse déjà, quelques lignes plus bas, pour exactement cette raison). La règle
+      // vit dans le moteur (`problemeLienBouton`), une seule fois, et l'écran la répète au client au moment
+      // de la saisie plutôt qu'après coup.
+      const problemeLien = lien ? problemeLienBouton(lien) : null;
+      if (problemeLien) return problemeLien;
       const pn = await repo.getTenantPhoneNumberId(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
@@ -605,13 +613,20 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
         mediaId = prepare;
       }
       const utilisables = buttons.some((b) => b.text.trim() !== '');
+      // 🔴 LE BOUTON DE LIEN PASSE EN PREMIER, et il ne peut pas cohabiter avec des réponses rapides : chez
+      // Meta, `button` et `cta_url` sont deux TYPES de messages interactifs différents. Le moteur vide déjà
+      // `buttons` quand le bloc porte un lien, donc cet ordre n'arbitre rien en pratique ; il est écrit dans
+      // ce sens pour que la contrainte tienne même si un graphe portait les deux.
+      //
       // Un message interactif EXIGE au moins un bouton : avec un visuel et aucun bouton, c'est une image
       // légendée. Sans visuel ni bouton, un texte simple, comme avant.
-      const res = utilisables
-        ? await client.sendInteractive(waId, body, buttons, mediaId)
-        : mediaId
-          ? await client.sendImage(waId, mediaId, body)
-          : await client.sendText(waId, body);
+      const res = lien
+        ? await client.sendCtaUrl(waId, body, lien, mediaId)
+        : utilisables
+          ? await client.sendInteractive(waId, body, buttons, mediaId)
+          : mediaId
+            ? await client.sendImage(waId, mediaId, body)
+            : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };

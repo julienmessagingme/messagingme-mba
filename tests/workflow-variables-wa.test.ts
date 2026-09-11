@@ -16,6 +16,12 @@ import type { WorkflowGraph } from '../src/workflow/graph';
  * `startInWindow` qu'emprunte le chemin réel (un contact qui vient d'écrire). Ces tests portent sur la
  * SUBSTITUTION, pas sur cette garde, qui a ses propres tests.
  */
+/**
+ * ⚠️ LE DERNIER `undefined` DES ASSERTIONS `sendQuickMessage` EST LE BOUTON DE LIEN (`cta_url`), pas une
+ * coquille : le contrat en a SIX paramètres depuis le 2026-09-11, et `toHaveBeenCalledWith` compare la
+ * longueur de la liste d'arguments. L'écrire vaut mieux que de relâcher l'assertion en `expect.anything()`,
+ * qui laisserait passer un lien transmis à tort sur un bloc qui n'en porte pas.
+ */
 const graphe = (type: 'quick_message' | 'question', data: Record<string, unknown>): WorkflowGraph => ({
   nodes: [{ id: 'n', type, data, position: { x: 0, y: 0 } }],
   edges: [],
@@ -49,7 +55,7 @@ describe('variables des messages WhatsApp', () => {
     const varsFor = vi.fn().mockResolvedValue({ prenom: 'Camille' });
     const ex = new WorkflowExecutor(deps({ sendQuickMessage, varsFor }));
     await ex.startInWindow('t1', 'wf1', graphe('quick_message', { body: 'Bonjour {{prenom}} !' }), { waId: '336', contactId: null });
-    expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour Camille !', expect.anything(), undefined);
+    expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour Camille !', expect.anything(), undefined, undefined);
   });
 
   it('🔴 une QUESTION aussi : l’écran le proposait déjà, le serveur ne le faisait pas', async () => {
@@ -69,7 +75,7 @@ describe('variables des messages WhatsApp', () => {
     const sendQuickMessage = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(deps({ sendQuickMessage, varsFor: async () => ({}) }));
     await ex.startInWindow('t1', 'wf1', graphe('quick_message', { body: 'Bonjour {{inconnu}}.' }), { waId: '336', contactId: null });
-    expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour .', expect.anything(), undefined);
+    expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour .', expect.anything(), undefined, undefined);
   });
 
   it('🔴 un message SANS variable ne lit PAS la fiche du contact', async () => {
@@ -85,6 +91,6 @@ describe('variables des messages WhatsApp', () => {
     const sendQuickMessage = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(deps({ sendQuickMessage }));
     await ex.startInWindow('t1', 'wf1', graphe('quick_message', { body: 'Bonjour {{prenom}}' }), { waId: '336', contactId: null });
-    expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour {{prenom}}', expect.anything(), undefined);
+    expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour {{prenom}}', expect.anything(), undefined, undefined);
   });
 });

@@ -126,6 +126,44 @@ export class MetaClient {
   }
 
   /**
+   * Message à BOUTON DE LIEN (`cta_url`) : un corps de texte et UN bouton qui ouvre le navigateur du contact.
+   *
+   * 🔴 EXCLUSIF DES RÉPONSES RAPIDES, et ce n'est pas notre choix : chez Meta, `button` (jusqu'à trois
+   * réponses rapides, qui REVIENNENT dans le scénario) et `cta_url` (un bouton, qui OUVRE une page) sont deux
+   * types de messages interactifs DIFFÉRENTS. Un bouton de réponse rapide ne peut donc pas porter d'adresse,
+   * quelle que soit la façon dont on l'écrit dans la console. L'écran le dit au moment où la case se coche,
+   * plutôt que de laisser le client le découvrir à l'envoi.
+   *
+   * ⚠️ RIEN NE REVIENT quand le contact clique : Meta n'envoie aucun webhook pour ce bouton. Le bloc ne
+   * porte donc aucune sortie à relier, et le parcours continue tout de suite après, comme après un simple
+   * texte.
+   *
+   * ⚠️ Le libellé est borné à 20 caractères, la même limite que les réponses rapides. La dépasser fait
+   * refuser le message ENTIER par Meta.
+   *
+   * ⚠️ L'en-tête image vient de la référence Cloud API, PAS d'une mesure : on ne mesure jamais contre le
+   * Meta de production (le numéro est live). Un refus de Meta serait visible et remonté tel quel ; laisser
+   * tomber le visuel en silence, non.
+   */
+  async sendCtaUrl(to: string, body: string, lien: { texte: string; url: string }, mediaId?: string): Promise<SendResult> {
+    const json = await this.call('messages', {
+      messaging_product: 'whatsapp',
+      ...messagingTarget(to),
+      type: 'interactive',
+      interactive: {
+        type: 'cta_url',
+        ...(mediaId ? { header: { type: 'image', image: { id: mediaId } } } : {}),
+        body: { text: body },
+        action: {
+          name: 'cta_url',
+          parameters: { display_text: lien.texte.trim().slice(0, 20), url: lien.url.trim() },
+        },
+      },
+    });
+    return { messageId: this.messageId(json) };
+  }
+
+  /**
    * LISTE interactive (menu déroulant) : un corps de texte, un bouton qui ouvre le menu, et jusqu'à 10 lignes
    * sélectionnables. C'est ce qu'envoie un bloc Question quand il porte un menu.
    *

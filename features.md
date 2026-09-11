@@ -449,7 +449,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
     bloc où tous les autres points sont bleus, un point gris se lit comme désactivé. C'est LA sortie à
     brancher pour prévoir le cas « le contact écrit au lieu de cliquer ».
   - **Le bloc RCS demande d'abord d'où vient le message** : d'un message enregistré, ou composé ici. Sur un
-    message enregistré, l'image et le texte à modifier disparaîssent (on vient de choisir un message tout
+    message enregistré, l'image et le texte à modifier disparaissent (on vient de choisir un message tout
     fait) et un aperçu montre ce qui partira. Les blocs déjà construits gardent leurs champs.
   - **Trois pavés de texte retirés** du panneau latéral, qui expliquaient la mécanique des sorties au milieu
     d'un sélecteur de bouton et alourdissaient un écran déjà chargé.
@@ -463,6 +463,17 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   segmentable en campagne. ⚠️ Meta ne transmet cette origine qu'au PREMIER message après le clic, et l'envoie
   seulement si l'attribution est activée côté WhatsApp Business : à vérifier dans les réglages avant la
   première campagne publicitaire.
+- ✅ **Le bloc « message rapide » peut porter un BOUTON DE LIEN** (2026-09-11). Une case « ce message porte
+  un bouton de lien », puis un libellé (20 caractères) et une adresse : le contact reçoit un bouton qui ouvre
+  la page dans son navigateur. ⚠️ **Il exclut les réponses rapides, et ce n'est pas notre choix** : chez Meta,
+  des réponses rapides et un bouton de lien sont deux TYPES de messages différents, et un message n'a qu'un
+  type. Cocher la case retire donc les réponses rapides, avec la raison écrite à l'endroit où elles
+  disparaissent. Le contact qui clique **ne renvoie rien** au scénario (Meta n'émet aucun retour pour ce
+  bouton) : le bloc n'a donc pas de sortie à relier, et le parcours continue tout de suite après, comme après
+  un simple texte. Sur un parcours **RCS**, le même bloc part avec une suggestion « ouvrir un lien », si bien
+  qu'un scénario se monte une fois pour les deux canaux. Une adresse vide, mal formée ou porteuse d'une
+  variable **fait refuser l'envoi** au lieu de laisser partir le message sans son bouton, et l'écran la
+  signale dès la saisie.
 - ✅ **Le bloc « message rapide » accepte une image** (2026-08-25). Même champ et même téléversement que le
   bloc RCS : un seul visuel, qui sert aux DEUX canaux. En WhatsApp il part en en-tête du message, au-dessus du
   texte et des boutons ; sur un parcours RCS, le message devient une carte qui porte l'image. Sans aucune
@@ -563,7 +574,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   quitte la page ou ferme l'onglet. En cas d'échec réseau : indicateur rouge + « réessayer ».
 - ✅ **Bloc « message rapide »** : un texte + **jusqu'à 3 réponses rapides** (20 caractères chacune), envoyé SANS
   template Meta approuvé (message interactif). Chaque réponse devient une **sortie à relier** (branche par
-  bouton, comme un template). Depuis le 2026-08-02, il peut aussi **ouvrir un scénario**, à condition que le
+  bouton, comme un template). Au choix, **un bouton de lien** à la place des réponses rapides (voir plus haut,
+  2026-09-11) : les deux ne peuvent pas cohabiter dans un même message WhatsApp. Depuis le 2026-08-02, il peut aussi **ouvrir un scénario**, à condition que le
   déclenchement garantisse que le contact vient d'écrire (mot-clé, premier message, lien de test) : c'est
   uniquement en **campagne** qu'il est refusé, une campagne partant sur une audience froide.
 - ✅ **Bloc « formulaire » ENVOIE vraiment** (2026-07-17, fini le blocage silencieux) : le bloc envoie le

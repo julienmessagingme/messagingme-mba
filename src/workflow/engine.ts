@@ -66,8 +66,17 @@ export type WorkflowAction =
   | { kind: 'optIn'; value: 'opted_in' | 'opted_out' }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
   /** `mediaUrl` = visuel du bloc, hébergé chez nous (`/m/<code>.<ext>`), le MÊME champ que le bloc RCS.
-   *  Absent = message texte, comportement historique. */
-  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[]; mediaUrl?: string }
+   *  Absent = message texte, comportement historique.
+   *
+   *  `lien` = le bloc porte un BOUTON DE LIEN (WhatsApp `cta_url`, RCS `openUrl`) au lieu de réponses rapides.
+   *
+   *  🔴 LES DEUX S'EXCLUENT CHEZ META, donc ils s'excluent ici : `button` (des réponses qui REVIENNENT) et
+   *  `cta_url` (un bouton qui OUVRE une page) sont deux types de messages interactifs différents. Quand
+   *  `lien` est présent, `buttons` est VIDÉ à la construction de l'action, et c'est délibéré : transporter
+   *  les deux laisserait la couche d'envoi choisir, c'est-à-dire déplacer la décision là où elle ne se voit
+   *  plus. Conséquence voulue : `etapeOffreUnChoix` rend `false`, le parcours continue tout de suite, ce qui
+   *  est exact puisque Meta ne renvoie RIEN quand le contact clique un bouton de lien. */
+  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[]; mediaUrl?: string; lien?: LienBouton }
   | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string }
   /**
    * Bloc QUESTION : une question posée au contact, avec un MENU de réponses (liste interactive WhatsApp) ou
@@ -211,6 +220,36 @@ export function scanOpening(graph: WorkflowGraph): OpeningScan {
  */
 function quickMessageNonBloquant(a: WorkflowAction | null): boolean {
   return a?.kind === 'sendQuickMessage' && !etapeOffreUnChoix(a);
+}
+
+/** Le bouton de lien d'un message rapide : un libellé, une adresse. */
+export interface LienBouton { texte: string; url: string }
+
+/**
+ * Ce bouton de lien est-il UTILISABLE ? Rend la raison du refus, ou `null` quand il est bon.
+ *
+ * 🔴 UN REFUS EXPLICITE, JAMAIS UN ENVOI SANS LE BOUTON. Le client a coché la case : lui livrer un message
+ * nu parce que l'adresse est vide ou mal formée, c'est exactement le silence qu'on ferme partout ailleurs
+ * (le visuel non préparable refuse déjà pour cette raison, `sendQuickMessage` dans le câblage).
+ *
+ * ⚠️ AUCUNE VARIABLE DANS L'ADRESSE, comme pour les liens RCS : une variable vide fabriquerait une adresse
+ * invalide, donc un message refusé ENTIER par Meta, là où le contact aurait au pire reçu un lien imparfait.
+ *
+ * ⚠️ On ne vérifie PAS que l'adresse est publiquement joignable (`urlRecuperable`, `resolutionPublique`) :
+ * ces gardes protègent NOS requêtes sortantes, et ici personne chez nous ne va chercher cette page. C'est le
+ * contact qui l'ouvre, dans son navigateur.
+ */
+export function problemeLienBouton(lien: LienBouton): string | null {
+  if (lien.texte.trim() === '') return 'le bouton de lien du bloc « message rapide » n’a pas de libellé';
+  const url = lien.url.trim();
+  if (url === '') return 'le bouton de lien du bloc « message rapide » n’a pas d’adresse';
+  if (url.includes('{{')) return 'l’adresse du bouton de lien ne peut pas contenir de variable';
+  let parsee: URL;
+  try { parsee = new URL(url); } catch { return 'l’adresse du bouton de lien n’est pas une adresse valide'; }
+  if (parsee.protocol !== 'http:' && parsee.protocol !== 'https:') {
+    return 'l’adresse du bouton de lien doit commencer par http:// ou https://';
+  }
+  return null;
 }
 
 /**
@@ -758,13 +797,30 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     const raw = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
     const buttons: WorkflowButton[] = raw.map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }));
     // Un bloc SANS aucune réponse rapide envoie quand même son TEXTE (la couche d'envoi bascule alors sur un
-    // message simple). Avant, il ne faisait rien du tout, en silence : on croyait avoir programmé un message,
-    // le contact ne recevait jamais rien et aucune erreur n'apparaissait nulle part.
+    // message simple, ou sur un `cta_url` s'il porte un bouton de lien). Avant, il ne faisait rien du tout,
+    // en silence : on croyait avoir programmé un message, le contact ne recevait jamais rien et aucune
+    // erreur n'apparaissait nulle part.
     if (!body) return null;
     // Visuel facultatif. Même nom de champ que le bloc RCS (`imageUrl`) : un seul composant d'écran, une
     // seule convention de stockage, et le même visuel sert aux DEUX canaux (en-tête WhatsApp, carte RCS).
     const mediaUrl = String(node.data.imageUrl ?? '').trim();
-    return { kind: 'sendQuickMessage', body, buttons, ...(mediaUrl ? { mediaUrl } : {}) };
+    // BOUTON DE LIEN. La case de l'écran vide déjà `quickReplies` quand on la coche, et on revide ICI quand
+    // même : un graphe enregistré avant cette case, ou posé par l'API, peut porter les deux, et laisser
+    // passer la paire déplacerait le choix du type de message chez Meta dans la couche d'envoi.
+    //
+    // ⚠️ Le bloc est transporté TEL QUE SAISI, même incomplet : c'est le câblage qui refuse, avec la raison
+    // (`problemeLienBouton`). Le rendre silencieusement absent enverrait un message nu alors que le client a
+    // demandé un bouton, sans que rien ne le signale.
+    const lien: LienBouton | null = node.data.lienActif === true
+      ? { texte: String(node.data.lienTexte ?? '').trim(), url: String(node.data.lienUrl ?? '').trim() }
+      : null;
+    return {
+      kind: 'sendQuickMessage',
+      body,
+      buttons: lien ? [] : buttons,
+      ...(mediaUrl ? { mediaUrl } : {}),
+      ...(lien ? { lien } : {}),
+    };
   }
   if (node.type === 'email') {
     // Lecture défensive comme les autres blocs de config : `data` est opaque (parseGraph ne le valide pas pour

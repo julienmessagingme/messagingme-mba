@@ -586,6 +586,53 @@ describe('message rapide à visuel sur un parcours RCS', () => {
   });
 });
 
+/**
+ * LE BOUTON DE LIEN D'UN MESSAGE RAPIDE, SUR UN PARCOURS RCS.
+ *
+ * 🔴 POURQUOI CE BLOC EXISTE : `sendQuickMessage` a DEUX consommateurs, le câblage WhatsApp et ce chemin RCS,
+ * et une capacité ajoutée au premier seulement est un correctif à moitié. Mesuré : en retirant la branche
+ * `openUrl` de `envoyerQuickEnRcs`, les quinze tests de `tests/workflow-lien-bouton.test.ts` restaient VERTS
+ * et le message partait sans son bouton, en silence. Exactement la faute déjà fermée juste au-dessus pour le
+ * visuel.
+ *
+ * ⚠️ Le RCS, lui, SAIT faire les deux à la fois (une suggestion `openUrl` à côté de réponses), mais on garde
+ * l'exclusivité de Meta sur les deux canaux : un même bloc doit partir pareil partout, sinon l'écran devrait
+ * expliquer une règle qui change selon un canal que l'opérateur ne choisit pas lui-même.
+ */
+describe('message rapide à bouton de lien sur un parcours RCS', () => {
+  function grapheQuick(data: Record<string, unknown>): WorkflowGraph {
+    return parseGraph({
+      nodes: [
+        { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour' } },
+        { id: 'q', type: 'quick_message', position: pos, data },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'q', sourceHandle: 'btn:0' }],
+    })!;
+  }
+
+  it('🔴 le bouton part en suggestion `openUrl`, il ne disparaît pas', async () => {
+    const g = grapheQuick({ body: 'La brochure', lienActif: true, lienTexte: 'Télécharger', lienUrl: 'https://exemple.fr/b.pdf' });
+    const { provider, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0', 'rcs');
+
+    expect(provider.sent).toHaveLength(1);
+    const msg = provider.sent[0]!.msg as { kind: string; suggestions?: Array<Record<string, unknown>> };
+    expect(msg.suggestions).toHaveLength(1);
+    // ⚠️ `postbackData` HORS de l'espace `btn:<i>` : ces sorties-là sont celles des réponses rapides, et un
+    // clic sur un lien ne doit correspondre à aucune branche du scénario.
+    expect(msg.suggestions![0]).toMatchObject({ kind: 'openUrl', text: 'Télécharger', url: 'https://exemple.fr/b.pdf' });
+    expect(String(msg.suggestions![0]!.postbackData)).not.toMatch(/^btn:/);
+  });
+
+  it('🔴 un lien INUTILISABLE refuse l’envoi, il ne laisse pas partir un message nu', async () => {
+    const g = grapheQuick({ body: 'La brochure', lienActif: true, lienTexte: 'Télécharger', lienUrl: '' });
+    const { provider, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+    await executor.advance('t1', '33600000002', 'mo-2', 'btn:0', 'rcs');
+
+    expect(provider.sent).toHaveLength(0);
+  });
+});
+
 
 /**
  * Une QUESTION branchee derriere un bloc RCS. La liste interactive n'existe QUE sur WhatsApp : le bloc part

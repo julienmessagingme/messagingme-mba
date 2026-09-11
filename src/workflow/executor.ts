@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMode } from './engine';
+import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMode, problemeLienBouton } from './engine';
 import type { WalkStep } from './engine';
-import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow } from './engine';
+import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow, LienBouton } from './engine';
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
 import { renderText } from '../crm/render';
 import type { EvalContext } from './conditions';
@@ -130,11 +130,21 @@ export interface WorkflowExecutorDeps {
    * préparable, variable manquante, template illisible chez Meta). Voir `SendRefusal`.
    */
   sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[], explicitParams?: string[]): Promise<SendRefusal>;
-  /** Envoie un message interactif (texte + 2-3 réponses rapides) hors template. Atteint via `advance` (après
-   *  réponse du contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
+  /** Envoie un message hors template : interactif (texte + 2-3 réponses rapides, OU un bouton de lien),
+   *  image légendée, ou simple texte, selon ce que porte le bloc. Atteint via `advance` (après réponse du
+   *  contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
   /** `mediaUrl` = visuel du bloc, hébergé chez nous. Le câblage le téléverse chez Meta et le pose en
-   *  EN-TÊTE du message interactif (ou envoie une image légendée s'il n'y a aucun bouton). */
-  sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[], mediaUrl?: string): Promise<SendRefusal>;
+   *  EN-TÊTE du message interactif (ou envoie une image légendée s'il n'y a aucun bouton).
+   *
+   *  `lien` = BOUTON DE LIEN, exclusif des réponses rapides (`button` et `cta_url` sont deux types de
+   *  messages différents chez Meta). L'action arrive alors avec `buttons` vide. Absent = comportement
+   *  d'avant, à l'identique.
+   *
+   *  🔴 SIXIÈME PARAMÈTRE, donc une implémentation qui n'en déclare que cinq compile ET AVALE LE LIEN EN
+   *  SILENCE (le piège documenté du CLAUDE.md : une flèche à deux paramètres est assignable à un contrat qui
+   *  en déclare trois). Le vrai câblage est tenu par `tests/workflow-lien-bouton.test.ts`, qui vérifie que
+   *  c'est bien `sendCtaUrl` qui part, pas un faux monté pour le test. */
+  sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[], mediaUrl?: string, lien?: LienBouton): Promise<SendRefusal>;
   /** Envoie un formulaire (message interactif type flow) hors template. Même contrainte de fenêtre 24 h que
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
@@ -460,16 +470,27 @@ export class WorkflowExecutor {
   private async envoyerQuickEnRcs(
     tenantId: string,
     waId: string,
-    a: { body: string; buttons: WorkflowButton[]; mediaUrl?: string },
+    a: { body: string; buttons: WorkflowButton[]; mediaUrl?: string; lien?: LienBouton },
   ): Promise<SendRefusal> {
     const rcs = this.deps.rcs;
     if (!rcs) return 'canal RCS non câblé sur ce serveur';
     const agentId = await rcs.agentIdFor(tenantId);
     if (!agentId) return "le canal RCS n'est pas activé sur cet espace";
-    const suggestions: RcsSuggestion[] = a.buttons
-      .filter((b) => b.type === 'QUICK_REPLY' && b.text.trim() !== '')
-      .slice(0, 11)
-      .map((b, i) => ({ kind: 'reply' as const, text: b.text.trim(), postbackData: `btn:${i}` }));
+    // 🔴 LE BOUTON DE LIEN A UN ÉQUIVALENT RCS NATIF (`openUrl`), et l'ignorer aurait fait partir le message
+    // SANS son bouton sur un parcours RCS, en silence. C'est la même faute que le visuel perdu qu'on a
+    // fermée juste en dessous. Le libellé est borné à 20 comme côté WhatsApp (le RCS en accepte 25 : garder
+    // la borne la plus stricte fait qu'un même bloc part à l'identique sur les deux canaux).
+    //
+    // ⚠️ `postbackData` hors de l'espace `btn:<i>` : ces sorties-là sont celles des réponses rapides, et un
+    // clic sur un lien ne doit correspondre à aucune branche du scénario.
+    const probleme = a.lien ? problemeLienBouton(a.lien) : null;
+    if (probleme) return probleme;
+    const suggestions: RcsSuggestion[] = a.lien
+      ? [{ kind: 'openUrl' as const, text: a.lien.texte.trim().slice(0, 20), url: a.lien.url.trim(), postbackData: 'lien' }]
+      : a.buttons
+        .filter((b) => b.type === 'QUICK_REPLY' && b.text.trim() !== '')
+        .slice(0, 11)
+        .map((b, i) => ({ kind: 'reply' as const, text: b.text.trim(), postbackData: `btn:${i}` }));
     // 🔴 Un visuel change la FORME du message RCS : le texte nu n'en porte pas, il faut une carte. Sans
     // ça, un bloc à visuel partirait en texte sur un parcours RCS et l'image disparaîtrait en silence, ce qui
     // est exactement le défaut qu'on vient de fermer ailleurs. Les boutons restent SOUS le message (11 max,
@@ -649,7 +670,7 @@ export class WorkflowExecutor {
           // Le canal du PARCOURS décide, pas le type du bloc. Voir `envoyerQuickEnRcs`.
           ? (canal === 'rcs'
             ? await this.envoyerQuickEnRcs(tenantId, waId, a)
-            : await this.deps.sendQuickMessage(tenantId, waId, await corpsAvecVariables(a.body), a.buttons, a.mediaUrl))
+            : await this.deps.sendQuickMessage(tenantId, waId, await corpsAvecVariables(a.body), a.buttons, a.mediaUrl, a.lien))
           // Une QUESTION part toujours en WhatsApp : la liste interactive n'a aucun équivalent RCS, et le
           // bloc est réservé à ce canal (décision de Julien du 2026-08-26). Pas de branche `canal === 'rcs'`
           // ici : elle promettrait un repli qui n'existe pas.

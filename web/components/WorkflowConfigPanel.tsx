@@ -477,6 +477,13 @@ export function ConfigPanel({
       })()}
       {wfType === 'quick_message' && (() => {
         const qr = Array.isArray(d.quickReplies) ? (d.quickReplies as string[]) : [];
+        const lienActif = d.lienActif === true;
+        const lienUrl = String(d.lienUrl ?? '').trim();
+        // ⚠️ MIROIR de `problemeLienBouton` (src/workflow/engine.ts), volontairement ALLÉGÉ : l'écran dit la
+        // règle au moment de la saisie, le moteur la fait respecter à l'envoi. Les deux doivent rester
+        // d'accord sur le PRINCIPE (http(s), aucune variable), pas sur chaque détail de formulation.
+        const lienMauvaiseUrl = lienUrl !== ''
+          && (lienUrl.includes('{{') || !(lienUrl.startsWith('http://') || lienUrl.startsWith('https://')));
         return (
           <div className="space-y-2">
             {/* MÊME composant d'insertion que le bloc RCS et le bloc Question : « + Variable » pose un champ
@@ -491,9 +498,10 @@ export function ConfigPanel({
                 placeholder={t('Ton message…', 'Your message…')}
                 testId="quick-node-body"
                 // ⚠️ LE PLAFOND DÉPEND DES BOUTONS, et ce n'est pas un détail d'affichage : avec des réponses
-                // rapides, le message part en INTERACTIF, que Meta borne à 1024 caractères ; sans bouton, il
-                // part en texte simple, borné à 4096. Un seul chiffre affiché serait faux la moitié du temps.
-                max={qr.some((x) => x.trim() !== '') ? 1024 : 4096}
+                // rapides OU un bouton de lien, le message part en INTERACTIF, que Meta borne à 1024
+                // caractères ; sans aucun bouton, il part en texte simple, borné à 4096. Un seul chiffre
+                // affiché serait faux la moitié du temps.
+                max={lienActif || qr.some((x) => x.trim() !== '') ? 1024 : 4096}
                 compact
               />
               <p className="mt-1 text-[11px] text-ink-400">
@@ -516,8 +524,61 @@ export function ConfigPanel({
                 {t('JPEG, PNG ou GIF, 2 Mo maximum. Le message part alors avec le visuel en en-tête. Sans aucune réponse rapide, il part en image légendée.', 'JPEG, PNG or GIF, 2 MB maximum. The message then goes out with the visual as its header. With no quick reply at all, it goes out as a captioned image.')}
               </p>
             </div>
+            {/* BOUTON DE LIEN. 🔴 EXCLUSIF DES RÉPONSES RAPIDES, et ce n'est pas notre choix : chez Meta,
+                des réponses rapides (`button`) et un bouton qui ouvre une page (`cta_url`) sont deux TYPES de
+                messages interactifs différents. On le dit ICI, au moment où la case se coche, plutôt que de
+                laisser le client monter son scénario et découvrir le refus à l'envoi.
+
+                ⚠️ Cocher la case VIDE les réponses rapides, au lieu de les masquer : l'exclusivité vit alors
+                dans la DONNÉE, et les trois lecteurs de `quickReplies` (le moteur, la miniature du bloc, les
+                alertes de montage) continuent de voir un simple message texte, sans qu'aucun n'ait à
+                connaître la nouvelle case. */}
+            <div className="rounded-lg border border-ink-200 bg-ink-50/50 p-2">
+              <label className="flex items-start gap-2 text-xs font-medium text-ink-700">
+                <input
+                  type="checkbox"
+                  data-testid="quick-node-lien-actif"
+                  checked={lienActif}
+                  onChange={(e) => onPatch(e.target.checked ? { lienActif: true, quickReplies: [] } : { lienActif: false })}
+                  className="mt-0.5 shrink-0"
+                />
+                <span>{t('Ce message porte un bouton de lien', 'This message carries a link button')}</span>
+              </label>
+              {lienActif && (
+                <div className="mt-2 space-y-1.5">
+                  <input
+                    value={String(d.lienTexte ?? '')}
+                    maxLength={20}
+                    onChange={(e) => onPatch({ lienTexte: e.target.value })}
+                    className={cls}
+                    placeholder={t('Libellé du bouton', 'Button label')}
+                    data-testid="quick-node-lien-texte"
+                  />
+                  <input
+                    value={String(d.lienUrl ?? '')}
+                    onChange={(e) => onPatch({ lienUrl: e.target.value })}
+                    className={cls}
+                    placeholder="https://…"
+                    data-testid="quick-node-lien-url"
+                  />
+                  {lienMauvaiseUrl && (
+                    <p className="text-[11px] text-coral" data-testid="quick-node-lien-erreur">
+                      {t('L’adresse doit commencer par http:// ou https:// et ne peut pas contenir de variable : sinon WhatsApp refuse le message entier.', 'The address must start with http:// or https:// and cannot contain a variable, otherwise WhatsApp rejects the whole message.')}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-ink-400">
+                    {t('Libellé 20 caractères max. Le contact ouvre la page dans son navigateur : rien ne revient au scénario, donc ce bloc n’a pas de sortie à relier et le parcours continue juste après.', 'Label 20 characters max. The contact opens the page in their browser: nothing comes back to the scenario, so this block has no output to connect and the journey continues right after.')}
+                  </p>
+                </div>
+              )}
+            </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Réponses rapides', 'Quick replies')}</label>
+              {lienActif ? (
+                <p className="text-[11px] text-ink-400" data-testid="quick-node-qr-desactivees">
+                  {t('Désactivées tant que ce message porte un bouton de lien : WhatsApp ne sait pas envoyer les deux dans un même message. Décochez la case au-dessus pour les retrouver.', 'Disabled while this message carries a link button: WhatsApp cannot send both in one message. Untick the box above to get them back.')}
+                </p>
+              ) : (<>
               <div className="space-y-1.5">
                 {qr.map((r, i) => (
                   <div key={i} className="flex items-center gap-1.5">
@@ -530,6 +591,7 @@ export function ConfigPanel({
                 <button type="button" onClick={() => onPatch({ quickReplies: [...qr, ''] })} className="mt-1.5 text-xs text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
               )}
               <p className="mt-1 text-[11px] text-ink-400">{t('Max 3, 20 caractères. Chaque réponse devient une sortie à relier (point à droite du bloc).', 'Max 3, 20 characters. Each reply becomes an output to connect (dot on the right of the block).')}</p>
+              </>)}
             </div>
           </div>
         );
