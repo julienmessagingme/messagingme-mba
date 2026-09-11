@@ -15,9 +15,14 @@ import type { HttpTransport } from '../../meta/http';
  * Ajouter le SDK aurait apporte une dependance entiere pour un appel.
  *
  * 🔴 LA REPONSE PORTE LE COUT, au MEME endroit que les completions
- * (`providerMetadata.gateway.cost`) : mesure a 0,000235 $ pour 2,35 s, soit exactement le tarif de
- * `whisper-1` (0,0001 $/s). La comptabilite existante se reutilise donc telle quelle. Sans ce champ il
- * aurait fallu recalculer depuis la duree, et une consommation sous-comptee ne se voit pas.
+ * (`providerMetadata.gateway.cost`) : le tarif de `whisper-1` est de 0,0001 $/s. La comptabilite existante
+ * se reutilise donc telle quelle. Sans ce champ il aurait fallu recalculer depuis la duree, et une
+ * consommation sous-comptee ne se voit pas.
+ *
+ * ⚠️ ET CE MEME COMMENTAIRE A MENTI PENDANT DEUX JOURS. Il disait « au MEME endroit que les completions »
+ * tout en decrivant un NOMBRE, quand le champ est une CHAINE des deux cotes. Le schema a suivi le
+ * commentaire, le `safeParse` a refuse toute reponse, et le bouton Transcrire a echoue a chaque clic en
+ * ayant paye l appel. Une justification a moitie vraie est plus dangereuse qu aucune : elle a l air verifiee.
  */
 
 const URL_TRANSCRIPTION = 'https://ai-gateway.vercel.sh/v4/ai/transcription-model';
@@ -26,21 +31,48 @@ const URL_TRANSCRIPTION = 'https://ai-gateway.vercel.sh/v4/ai/transcription-mode
 const VERSION_PROTOCOLE = '0.0.1';
 
 /**
- * Reponse de transcription. `safeParse`, jamais `parse` ni `as` : reponse externe.
+ * 🔴 LE COUT ARRIVE EN CHAINE DECIMALE DE DOLLARS, PAS EN NOMBRE, et c est ce qui cassait le bouton.
+ * Mesure sur le vrai Gateway le 2026-09-11 : `"cost":"0.0001"`. Le client de completions le savait deja
+ * (`llm/chat-client.ts` declare `cost?: string` et le passe a `Number()`) ; ce fichier, ecrit le meme jour
+ * et qui affirme lire « au MEME endroit que les completions », en attendait un nombre. Les deux lecteurs
+ * du MEME champ se contredisaient, et c est le second qui avait tort.
+ */
+const COUT = z.union([z.number(), z.string()]).optional().catch(undefined);
+
+/**
+ * ⚠️ `.catch(undefined)` SUR CHAQUE CHAMP DE CONFORT, et ce n est pas de la coquetterie : le commentaire
+ * ci-dessous promettait deja que « seul `text` est EXIGE », mais un champ optionnel dont le TYPE derive
+ * faisait echouer le `safeParse` ENTIER, donc refusait une transcription parfaitement bonne et DEJA PAYEE.
+ * La promesse est desormais tenue par le schema et plus par l intention.
  *
  * ⚠️ Seul `text` est EXIGE. La duree, la langue et le cout sont optionnels a dessein : un fournisseur qui
  * cesserait de les rendre ne doit pas faire echouer une transcription par ailleurs correcte. C est l inverse
  * du choix fait pour la CREATION d une cle, ou l identifiant manquant rendait la cle impilotable : ici, ce
  * qui manque est du confort, pas la substance.
  */
+/** Reponse de transcription. `safeParse`, jamais `parse` ni `as` : reponse externe. */
 const reponseSchema = z.object({
   text: z.string(),
-  language: z.string().optional(),
-  durationInSeconds: z.number().optional(),
+  language: z.string().optional().catch(undefined),
+  durationInSeconds: z.number().optional().catch(undefined),
   providerMetadata: z.object({
-    gateway: z.object({ cost: z.number().optional(), generationId: z.string().optional() }).optional(),
-  }).optional(),
+    gateway: z.object({ cost: COUT, generationId: z.string().optional().catch(undefined) }).optional().catch(undefined),
+  }).optional().catch(undefined),
 });
+
+/**
+ * `"0.0001"` ou `0.0001` rendent `0.0001` ; tout le reste rend `null`.
+ *
+ * ⚠️ `null`, jamais `0` : un cout ILLISIBLE n est pas un cout NUL. Les compter comme zero ferait croire a
+ * une transcription gratuite, et c est precisement le chiffre qui decidera de la refacturer ou non.
+ * ⚠️ La chaine vide passe par ici parce que `Number("")` vaut 0, ce qui en ferait un faux gratuit.
+ */
+function dollarsOuNull(v: number | string | undefined): number | null {
+  if (v === undefined) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 export class TranscriptionError extends Error {
   constructor(readonly status: number | null, detail: string) {
@@ -104,6 +136,6 @@ export async function transcrire(
     texte: parse.data.text,
     langue: parse.data.language ?? null,
     secondes: parse.data.durationInSeconds ?? null,
-    coutDollars: g?.cost ?? null,
+    coutDollars: dollarsOuNull(g?.cost),
   };
 }

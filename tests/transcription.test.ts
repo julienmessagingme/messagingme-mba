@@ -24,14 +24,32 @@ class FauxTransport implements HttpTransport {
   }
 }
 
-/** La forme RÉELLE mesurée le 2026-09-09 sur le vrai Gateway. */
+/**
+ * La forme REELLE, re-mesuree le 2026-09-11 sur le vrai Gateway.
+ *
+ * 🔴 CE FAUX ETAIT FAUX, ET C EST CE QUI A LAISSE PASSER LE DEFAUT. Il posait `cost` en NOMBRE ; le Gateway
+ * rend une CHAINE. Les tests etaient donc verts pendant que chaque clic sur Transcrire echouait en
+ * production, parce qu un test unitaire monte un faux cablage et que le faux ne bouge pas avec le vrai.
+ * Les champs annexes (`segments`, `warnings`, `routing`, `marketCost`) sont gardes tels quels : le schema
+ * doit continuer de les ignorer sans broncher.
+ */
 const OK: HttpResponse = {
   status: 200,
   json: {
     text: 'Bonjour, ma commande est-elle partie ?',
+    segments: [{ text: ' Bonjour, ma commande est-elle partie ?', startSecond: 0, endSecond: 2.35 }],
     language: 'fr',
     durationInSeconds: 2.35,
-    providerMetadata: { gateway: { cost: 0.000235, generationId: 'gen_1' } },
+    warnings: [],
+    providerMetadata: {
+      gateway: {
+        routing: { originalModelId: 'openai/whisper-1', finalProvider: 'openai' },
+        cost: '0.000235',
+        marketCost: '0.000235',
+        surchargeCost: '0',
+        generationId: 'gen_1',
+      },
+    },
   },
 };
 
@@ -54,9 +72,10 @@ describe('Le client de transcription', () => {
     expect(t.appels[0]!.body).toEqual({ audio: Buffer.from('salut').toString('base64'), mediaType: 'audio/ogg' });
   });
 
-  it('🔴 le COÛT est lu, au même endroit que pour les complétions', async () => {
-    // Mesuré : 0,000235 $ pour 2,35 s, soit exactement le tarif de whisper-1. Sans cette lecture, la
-    // consommation serait sous-comptée en silence, ce qui ne se voit sur aucun écran.
+  it('🔴 le COÛT arrive en CHAÎNE de caractères, et il est lu comme un nombre', async () => {
+    // 0,000235 $ pour 2,35 s, soit exactement le tarif de whisper-1. Le Gateway le rend en CHAÎNE, comme
+    // pour les complétions : un schéma qui en attendait un nombre refusait TOUTE la réponse, donc faisait
+    // échouer une transcription déjà payée.
     const r = await transcrire(new FauxTransport([OK]), { cle: 'k', modele: 'm', bytes: Buffer.from('x'), mime: 'audio/ogg' });
     expect(r).toEqual({ texte: 'Bonjour, ma commande est-elle partie ?', langue: 'fr', secondes: 2.35, coutDollars: 0.000235 });
   });
@@ -65,6 +84,8 @@ describe('Le client de transcription', () => {
     // Seul `text` est exigé : un fournisseur qui cesserait de rendre le confort ne doit pas faire échouer une
     // transcription par ailleurs correcte. C'est l'inverse du choix fait pour la création d'une clé, où
     // l'identifiant manquant rendait la clé impilotable.
+    // ⚠️ Celui-ci éprouve le champ ABSENT ; le test juste en dessous éprouve le champ PRÉSENT au MAUVAIS
+    // type, qui est le cas réellement survenu. Les deux se ressemblent et un seul des deux a cassé.
     const r = await transcrire(new FauxTransport([{ status: 200, json: { text: 'ok' } }]), { cle: 'k', modele: 'm', bytes: Buffer.from('x'), mime: 'audio/ogg' });
     expect(r).toEqual({ texte: 'ok', langue: null, secondes: null, coutDollars: null });
   });
@@ -72,6 +93,35 @@ describe('Le client de transcription', () => {
   it('un corps illisible échoue plutôt que de rendre du vide', async () => {
     await expect(transcrire(new FauxTransport([{ status: 200, json: { transcript: 'x' } }]), { cle: 'k', modele: 'm', bytes: Buffer.from('x'), mime: 'audio/ogg' }))
       .rejects.toBeInstanceOf(TranscriptionError);
+  });
+
+  it('🔴 un champ de CONFORT dont le type dérive ne fait plus échouer la transcription', async () => {
+    // C'est le défaut exact qui cassait le bouton, rejoué sur un AUTRE champ : ce qui a dérivé une fois
+    // dérivera ailleurs. Le texte est là, il est payé, il sort ; seul le confort manquant retombe à `null`.
+    const derive: HttpResponse = {
+      status: 200,
+      json: {
+        text: 'le texte est bon',
+        language: 42,
+        durationInSeconds: '2.35',
+        providerMetadata: { gateway: { cost: '0.0001' } },
+      },
+    };
+    const r = await transcrire(new FauxTransport([derive]), { cle: 'k', modele: 'm', bytes: Buffer.from('x'), mime: 'audio/ogg' });
+    expect(r).toEqual({ texte: 'le texte est bon', langue: null, secondes: null, coutDollars: 0.0001 });
+  });
+
+  it('🔴 un coût ILLISIBLE rend `null`, jamais `0`', async () => {
+    // Un coût nul et un coût inconnu se ressemblent sur un écran et n'ont rien à voir : compter l'inconnu
+    // comme zéro ferait croire à une transcription gratuite, et c'est ce chiffre qui décidera de la
+    // refacturer. ⚠️ La chaîne VIDE est du même lot : `Number('')` vaut 0.
+    for (const cost of ['gratuit', '', ' ']) {
+      const r = await transcrire(
+        new FauxTransport([{ status: 200, json: { text: 'x', providerMetadata: { gateway: { cost } } } }]),
+        { cle: 'k', modele: 'm', bytes: Buffer.from('x'), mime: 'audio/ogg' },
+      );
+      expect(r.coutDollars, `cost=${JSON.stringify(cost)}`).toBeNull();
+    }
   });
 });
 
