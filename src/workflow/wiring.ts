@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { config } from '../config';
 import { PgWorkflowRunStore } from './run-store.pg';
 import { creerAppelHttpScenario } from './appel-http';
+import { executerFonctionJs } from './fonction-js';
 import { PgSourceStore } from '../agent/sources.pg';
 import { PgRequeteStore } from '../agent/requetes.pg';
 import { PgWorkflowStore } from './store.pg';
@@ -409,6 +410,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * derniere saisie du contact ou l heure locale partirait avec `null` et `UTC`, donc avec une valeur
      * fausse mais plausible, ce qui est pire qu un refus.
      */
+    /**
+     * LE BLOC « FONCTION JS ». Le module porte les plafonds et les mesures ; il n'y a rien a decider ici.
+     *
+     * ⚠️ ELLE NE LEVE JAMAIS : une faute du client ressort en `{ok: false}`, que l executeur traduit en champ
+     * vide. Un parcours ne s arrete pas parce qu une transformation a rate.
+     */
+    executerJs: (code, valeur) => executerFonctionJs(code, valeur),
     appelHttp: creerAppelHttpScenario({
       sources: new PgSourceStore(pool),
       requetes: new PgRequeteStore(pool),

@@ -22,6 +22,9 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   // Il ne DÉCRIT aucun appel, il en DÉSIGNE un, mis au point dans Tools > Connecteurs API. Le nom dit donc
   // « appel », pas « HTTP » : le client a branché un système, il ne code pas une requête.
   http: { emoji: '🔌', label: ['Appel API', 'API call'] },
+  // « Fonction » et non « JavaScript » : ce que le client fait, c'est transformer une valeur. Le langage est
+  // un détail de l'écran, pas le sujet du bloc.
+  js: { emoji: '🧮', label: ['Fonction JS', 'JS function'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
   mba_handoff: { emoji: '🗑️', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
@@ -32,7 +35,7 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
 // `question` est dans la liste NORMALE, pas dans une quatrieme liste gatee : rien ne le conditionne, il
 // part sur le numero WhatsApp deja rattache. Une liste de plus aurait demande de mettre a jour ses TROIS
 // lecteurs (palette, menu du fil, puces de Contenu > Blocs), la derive exacte du commit c1b8441.
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox'];
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox', 'js'];
 
 // Bloc RCS : présenté à part et GRISÉ tant que le tenant n'a pas d'agent RCS rattaché. Même doctrine que les
 // blocs MBA. Le canal est construit de bout en bout, mais un agent doit être déposé et approuvé par Google et
@@ -53,6 +56,10 @@ export const AGENT_NODE_ORDER: WorkflowNodeType[] = ['agent'];
 // API. Même doctrine que RCS, Email et Agent IA : un bloc qui ne pourrait désigner aucun appel promettrait un
 // aller-retour qui n'aurait jamais lieu.
 export const HTTP_NODE_ORDER: WorkflowNodeType[] = ['http'];
+
+// Bloc « Fonction JS » : il ne dépend d'AUCUN branchement (ni connecteur, ni boîte mail, ni agent), donc il
+// est dans la liste normale. Sa seule condition est d'avoir un champ à transformer, et un espace sans champ
+// personnalisé le verra dans la palette avec deux sélecteurs vides, ce qui se comprend tout seul.
 
 export const HTTP_GATE_TITRE: [string, string] = [
   'Disponible quand vous aurez déclaré un appel dans Tools > Connecteurs API',

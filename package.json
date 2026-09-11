@@ -29,6 +29,7 @@
     "papaparse": "^5.5.4",
     "pg": "^8.22.0",
     "pg-boss": "^12.25.1",
+    "quickjs-emscripten": "^0.32.0",
     "secure-json-parse": "^4.1.0",
     "tsx": "^4.19.2",
     "unpdf": "^1.8.1",

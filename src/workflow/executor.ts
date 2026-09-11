@@ -255,6 +255,13 @@ export interface WorkflowExecutorDeps {
    */
   appelHttp?(tenantId: string, waId: string, requestId: string): Promise<{ ok: boolean; valeur: string }>;
   /**
+   * Exécute le JavaScript d'un bloc « Fonction JS » sur une valeur, dans un bac à sable.
+   *
+   * 🔴 INJECTÉE, comme l'appel HTTP : elle charge un module WebAssembly, ce qu'une suite de tests de scénario
+   * n'a aucune raison de payer. Absente -> le bloc ne fait RIEN et le parcours continue.
+   */
+  executerJs?(code: string, valeur: string): Promise<{ ok: boolean; valeur: string }>;
+  /**
    * État des conversations tenues par un bloc agent. OPTIONNEL, comme les autres deps de ce fichier : absent,
    * aucun bloc agent ne peut être servi, ce qui préserve les suites de tests à deps minimales et l'intégration.
    */
@@ -552,6 +559,25 @@ export class WorkflowExecutor {
         // Même forme que `sendEmail` juste en dessous, pour la même raison.
         if (this.deps.appelHttp) {
           const r = await this.deps.appelHttp(tenantId, waId, a.requestId);
+          await this.deps.setField(tenantId, waId, a.champCible, r.ok ? r.valeur : '');
+        }
+      }
+      /**
+       * 🔴 LA VALEUR D'ENTRÉE EST RELUE ICI, pas prise au walk. C'est ce qui fait marcher l'enchaînement que
+       * le client va écrire en premier : « Appel API » qui range une réponse dans un champ, puis « Fonction
+       * JS » qui la transforme. Une photo prise au walk servirait la valeur d'AVANT l'appel.
+       *
+       * ⚠️ Un champ source ABSENT donne une chaîne vide, pas un refus : la fonction du client décide alors
+       * quoi en faire, ce qu'elle est mieux placée que nous pour savoir.
+       *
+       * Même doctrine d'échec que le bloc « Appel API » : le champ cible est VIDÉ, jamais laissé tel quel.
+       */
+      else if (a.kind === 'fonctionJs') {
+        if (this.deps.executerJs) {
+          const evalCtx = this.deps.evalContext ? await this.deps.evalContext(tenantId, waId) : null;
+          const brut = evalCtx?.fields?.[a.champSource];
+          const entree = brut === null || brut === undefined ? '' : String(brut);
+          const r = await this.deps.executerJs(a.code, entree);
           await this.deps.setField(tenantId, waId, a.champCible, r.ok ? r.valeur : '');
         }
       }

@@ -15,6 +15,8 @@ import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { ConditionBuilder, type ConditionGroup } from '@/components/ConditionBuilder';
 import { sortiesDuBloc, type EmailRecipientData, type RFNode } from '@/lib/workflow-canevas';
+import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
+import { useState } from 'react';
 
 /**
  * Le panneau de DROITE : la configuration du bloc sélectionné, un cas par nature de bloc.
@@ -650,6 +652,16 @@ export function ConfigPanel({
           </p>
         </div>
       )}
+      {wfType === 'js' && (
+        <FonctionJs
+          tenantId={tenantId}
+          code={String(d.code ?? '')}
+          champSource={String(d.champSource ?? '')}
+          champCible={String(d.champCible ?? '')}
+          fields={fields}
+          onPatch={onPatch}
+        />
+      )}
       {wfType === 'http' && (
         <div className="flex flex-col gap-2">
           <p className="text-xs leading-relaxed text-ink-500">
@@ -938,6 +950,120 @@ export function ConfigPanel({
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+/**
+ * LE BLOC « FONCTION JS » : un champ d'entrée, du code, un bouton pour l'éprouver, un champ de sortie.
+ *
+ * 🔴 COMPOSANT À PART, parce qu'il porte de l'ÉTAT (la valeur d'essai et son résultat) et que le panneau
+ * n'en avait aucun. L'écrire en ligne aurait ajouté des hooks à un composant qui rend seize natures de bloc :
+ * chaque `useState` y serait appelé pour tous, et le premier `if` autour en ferait un bug de règle des hooks.
+ *
+ * ⚠️ L'ESSAI PASSE PAR LE SERVEUR, et c'est le point. Le code du client tournera dans le bac à sable du
+ * serveur (QuickJS en WebAssembly) : l'éprouver dans le navigateur, où il aurait accès au DOM et au réseau,
+ * ferait réussir des essais que l'exécution ne saurait pas reproduire.
+ */
+function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch }: {
+  tenantId: string;
+  code: string;
+  champSource: string;
+  champCible: string;
+  fields: UserFieldDef[];
+  onPatch: (p: Record<string, unknown>) => void;
+}) {
+  const t = useT();
+  const [valeurEssai, setValeurEssai] = useState('');
+  const [resultat, setResultat] = useState<EssaiJs | null>(null);
+  const [enCours, setEnCours] = useState(false);
+  const cls = 'w-full rounded-lg border border-ink-200 px-2 py-1.5 text-sm';
+
+  async function essayer(): Promise<void> {
+    setEnCours(true);
+    try {
+      setResultat(await essayerFonctionJs(tenantId, code, valeurEssai));
+    } catch (err) {
+      setResultat({ ok: false, valeur: '', erreur: err instanceof Error ? err.message : 'essai impossible' });
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs leading-relaxed text-ink-500">
+        {t(
+          'Transforme la valeur d’un champ et range le résultat dans un autre (ou le même). Typiquement après un bloc « Appel API », pour extraire ou mettre en forme ce que votre système a répondu.',
+          'Transforms the value of a field and stores the result in another (or the same). Typically after an “API call” block, to extract or reformat what your system answered.',
+        )}
+      </p>
+
+      <label className="text-xs font-medium text-ink-700">{t('Champ à transformer', 'Field to transform')}</label>
+      <select
+        data-testid="js-node-source" className={`${cls} bg-white`} value={champSource}
+        onChange={(e) => onPatch({ champSource: e.target.value })}
+      >
+        <option value="">{t('choisir un champ…', 'choose a field…')}</option>
+        {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+      </select>
+
+      <label className="text-xs font-medium text-ink-700">{t('Votre fonction', 'Your function')}</label>
+      {/* Le CONTRAT, écrit au-dessus du champ : la valeur arrive dans `valeur`, il faut faire `return`.
+          Le laisser deviner produirait des fonctions qui ne rendent rien, et un champ cible vide. */}
+      <p className="text-[11px] text-ink-500">
+        {t('La valeur arrive dans', 'The value comes in as')} <code>valeur</code>. {t('Terminez par', 'End with')} <code>return</code>.
+      </p>
+      <textarea
+        data-testid="js-node-code" rows={6} spellCheck={false}
+        className={`${cls} font-mono text-xs`}
+        value={code}
+        onChange={(e) => onPatch({ code: e.target.value })}
+        placeholder={'return JSON.parse(valeur).statut;'}
+      />
+
+      <label className="text-xs font-medium text-ink-700">{t('Essayer avec cette valeur', 'Try with this value')}</label>
+      <div className="flex gap-2">
+        <input
+          data-testid="js-node-valeur-essai" className={cls} value={valeurEssai}
+          onChange={(e) => setValeurEssai(e.target.value)}
+          placeholder={'{"statut":"expédiée"}'}
+        />
+        <button
+          type="button" data-testid="js-node-essayer"
+          disabled={enCours || code.trim() === ''}
+          onClick={() => { void essayer(); }}
+          className="shrink-0 rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-300"
+        >
+          {enCours ? t('Essai…', 'Trying…') : t('Essayer', 'Try')}
+        </button>
+      </div>
+      {resultat && (
+        <p
+          data-testid="js-node-resultat"
+          className={`break-all rounded-lg px-2 py-1.5 text-xs ${resultat.ok ? 'bg-mint/10 text-emerald-700' : 'bg-red-50 text-coral'}`}
+        >
+          {resultat.ok ? `→ ${resultat.valeur === '' ? t('(vide)', '(empty)') : resultat.valeur}` : resultat.erreur}
+        </p>
+      )}
+
+      <label className="text-xs font-medium text-ink-700">{t('Où ranger le résultat', 'Where to store the result')}</label>
+      <select
+        data-testid="js-node-cible" className={`${cls} bg-white`} value={champCible}
+        onChange={(e) => onPatch({ champCible: e.target.value })}
+      >
+        <option value="">{t('choisir un champ…', 'choose a field…')}</option>
+        {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+      </select>
+
+      {/* 🔴 LES MÊMES DEUX PHRASES QUE LE BLOC « APPEL API », pour la même raison : ce qui se passe en cas
+          d'échec décide de la suite du scénario, et personne ne le devine. */}
+      <p className="text-xs text-ink-500">
+        {t(
+          'Si la fonction échoue (erreur, ou plus de 200 ms), le champ de sortie est VIDÉ. Branchez une condition « ce champ est vide » pour traiter ce cas.',
+          'If the function fails (error, or over 200 ms), the output field is EMPTIED. Add a condition “this field is empty” to handle that case.',
+        )}
+      </p>
     </div>
   );
 }

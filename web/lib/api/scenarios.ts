@@ -130,7 +130,10 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 // ⚠️ CETTE LISTE EST UN MIROIR de `WORKFLOW_NODE_TYPES` (`src/workflow/graph.ts`), qui FAIT AUTORITE : un
 // type present d'un seul cote produit soit un bloc que le serveur refuse d'enregistrer, soit un bloc que
 // l'ecran ne sait pas rendre. `tests/web-node-types-parity.test.ts` casse des que les deux divergent.
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http';
+/** Résultat d'un essai de « Fonction JS » : ce que le bac à sable a produit, ou la faute du client. */
+export interface EssaiJs { ok: boolean; valeur: string; erreur?: string }
+
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http' | 'js';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
@@ -203,6 +206,19 @@ export function estEnLigne(w: WorkflowSummary): boolean {
   // 19 tests e2e des webhooks rouges d'un coup.
   return Array.isArray(w.graph?.nodes) && w.graph.nodes.length > 0;
 }
+/**
+ * Éprouve une « Fonction JS » sur une valeur d'essai.
+ *
+ * ⚠️ LE MÊME BAC À SABLE QUE L'EXÉCUTION, côté serveur : un essai qui réussirait là où le parcours échoue
+ * serait pire que pas d'essai du tout. Le résultat arrive toujours en 200, échec compris : la faute du
+ * client est le RÉSULTAT de l'essai, pas une panne de la route.
+ */
+export function essayerFonctionJs(tenantId: string, code: string, valeur: string): Promise<EssaiJs> {
+  return request<EssaiJs>(`/tenants/${tenantId}/workflows/js-test`, {
+    method: 'POST', body: JSON.stringify({ code, valeur }),
+  });
+}
+
 export function listWorkflows(tenantId: string): Promise<{ workflows: WorkflowSummary[] }> {
   return request<{ workflows: WorkflowSummary[] }>(`/tenants/${tenantId}/workflows`);
 }

@@ -102,6 +102,8 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
     // Ce que la liste des blocs montre d'un appel HTTP : le champ où la réponse atterrit. L'appel lui-même
     // est nommé dans la bibliothèque, pas ici : un identifiant n'apprendrait rien à qui lit la liste.
     case 'http': out = s(data.champCible) === '' ? '' : `-> ${s(data.champCible)}`; break;
+    // Les deux champs, pas le code : une liste de blocs doit tenir sur une ligne, et le code n'y tiendrait pas.
+    case 'js': out = s(data.champSource) === '' || s(data.champCible) === '' ? '' : `${s(data.champSource)} -> ${s(data.champCible)}`; break;
     case 'agent': out = s(data.label); break;
     default: out = '';
   }

@@ -34,7 +34,10 @@
 // dans un champ du contact. Action SYNCHRONE non bloquante, comme `tag` ou `field` : le walk (PUR) emet
 // l'action, l'executor fait l'IO. Le bloc ne DECRIT aucun appel, il en DESIGNE un : l'adresse, la methode, le
 // corps et le filtre de sortie vivent dans la bibliotheque, ou ils sont eprouves une fois pour toutes.
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http'] as const;
+// `js` = « Fonction JS » : transforme la valeur d'un champ par un bout de JavaScript ecrit par le client, et
+// range le resultat dans un champ. Le code tourne dans QuickJS compile en WebAssembly, avec plafond de temps
+// et de memoire : voir `src/workflow/fonction-js.ts`, qui porte les mesures.
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

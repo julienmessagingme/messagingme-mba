@@ -11,6 +11,7 @@ import { newTestToken, waMeTestLink } from '../workflow/test-token';
 import { grapheEditable, WorkflowUtiliseParLienChaine } from '../workflow/store.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
+import { executerFonctionJs } from '../workflow/fonction-js';
 
 /**
  * NOTE (Lot D) : le SAVE n'exige PLUS qu'un scénario commence par un template. Un scénario peut désormais
@@ -78,6 +79,30 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
 export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps, guard?: Guard): void {
   const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 2 * 1024 * 1024 };
   const journal = makeJournal(deps.audit);
+
+  /**
+   * ÉPROUVER une « Fonction JS » sur une valeur d'essai, depuis l'écran du bloc.
+   *
+   * 🔴 DÉCLARÉE AVANT `/workflows/:id`, et ce n'est pas cosmétique : `js-test` serait sinon lu comme un
+   * identifiant de scénario. Le dépôt a déjà payé ce piège sur `/conversations/unread-count`.
+   *
+   * ⚠️ CE BOUTON FAIT TOURNER DU CODE ÉCRIT PAR LE CLIENT sur notre infrastructure, exactement comme le
+   * parcours le fera. Il passe donc par LE MÊME bac à sable, avec les mêmes plafonds : un essai qui
+   * réussirait là où l'exécution échoue serait pire que pas d'essai du tout. Réservé aux administrateurs,
+   * comme tout ce module.
+   */
+  app.post('/tenants/:tenantId/workflows/js-test', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const b = (req.body ?? {}) as { code?: unknown; valeur?: unknown };
+    if (typeof b.code !== 'string') return reply.code(400).send({ error: 'code requis' });
+    // La valeur d'essai est une CHAÎNE, comme le sera le champ source à l'exécution : accepter un nombre ici
+    // ferait réussir un essai que le parcours ne saurait pas reproduire.
+    const valeur = typeof b.valeur === 'string' ? b.valeur : '';
+    // 200 même en cas d'échec : l'erreur est le RÉSULTAT de l'essai, pas une panne de la route. Un 4xx ferait
+    // afficher un message d'infrastructure là où le client attend la faute de SON code.
+    return reply.code(200).send(await executerFonctionJs(b.code, valeur));
+  });
 
   app.post('/tenants/:tenantId/workflows', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

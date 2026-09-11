@@ -55,6 +55,13 @@ export type WorkflowAction =
    * c'est l'exécuteur qui fait l'appel réseau, comme pour l'envoi d'un mail.
    */
   | { kind: 'appelHttp'; requestId: string; champCible: string }
+  /**
+   * Bloc « Fonction JS » : transforme `champSource` par `code` et range le résultat dans `champCible`.
+   *
+   * ⚠️ LE CODE VOYAGE DANS L'ACTION, la VALEUR non : elle est relue au moment d'exécuter. Un bloc « Appel
+   * API » qui précède vient peut-être d'écrire ce champ, et une photo prise au walk servirait l'ancienne.
+   */
+  | { kind: 'fonctionJs'; code: string; champSource: string; champCible: string }
   /** Consentement marketing posé par un scénario. Les deux sens, comme depuis la fiche et l'action en masse. */
   | { kind: 'optIn'; value: 'opted_in' | 'opted_out' }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
@@ -690,6 +697,16 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     const requestId = String(node.data.requestId ?? '').trim();
     const champCible = String(node.data.champCible ?? '').trim();
     return requestId !== '' && champCible !== '' ? { kind: 'appelHttp', requestId, champCible } : null;
+  }
+  if (node.type === 'js') {
+    const code = String(node.data.code ?? '');
+    const champSource = String(node.data.champSource ?? '').trim();
+    const champCible = String(node.data.champCible ?? '').trim();
+    // Bloc à moitié réglé -> no-op, comme les autres. Le code VIDE compte comme non réglé : l'exécuter
+    // écrirait une valeur vide dans le champ cible, ce qui ressemblerait à un échec de la fonction.
+    return code.trim() !== '' && champSource !== '' && champCible !== ''
+      ? { kind: 'fonctionJs', code, champSource, champCible }
+      : null;
   }
   if (node.type === 'action') {
     // Bloc unifié : la sous-action est portée par `data.actionKind`. add_tag/set_field produisent les MÊMES
