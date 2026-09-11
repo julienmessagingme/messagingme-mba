@@ -49,7 +49,7 @@ export default function CampaignsPage() {
 // useT() y est inappelable -> on fait porter les deux langues à la valeur.
 const STATUS: Record<string, { text: [string, string]; cls: string }> = {
   draft: { text: ['brouillon', 'draft'], cls: 'bg-ink-100 text-ink-600' },
-  scheduled: { text: ['planifiée', 'scheduled'], cls: 'bg-violet-50 text-violet-700' },
+  scheduled: { text: ['planifiée', 'scheduled'], cls: 'bg-violet/10 text-violet' },
   running: { text: ['en cours', 'running'], cls: 'bg-blue-50 text-blue-700' },
   paused: { text: ['en pause', 'paused'], cls: 'bg-amber-50 text-amber-700' },
   completed: { text: ['terminée', 'completed'], cls: 'bg-emerald-50 text-emerald-700' },
@@ -368,13 +368,13 @@ function CampaignsInner({ session }: { session: Session }) {
                           se terminera jamais d'elle-même. Sans cette pastille, son statut mentirait par
                           omission : c'est ce marqueur qui explique pourquoi elle est encore là. */}
                       {c.webhookId && (
-                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700" data-testid="campaign-badge-fil">
+                        <span className="rounded-full bg-sky/10 px-2 py-0.5 text-[11px] font-medium text-sky" data-testid="campaign-badge-fil">
                           {t('au fil de l\'eau', 'continuous')}{c.webhookName ? ` · ${c.webhookName}` : ''}
                         </span>
                       )}
                     </div>
                     {c.status === 'scheduled' && c.scheduledAt && (
-                      <p className="mt-0.5 text-xs font-medium text-violet-700">
+                      <p className="mt-0.5 text-xs font-medium text-violet">
                         {t('Planifiée le', 'Scheduled for')} {new Date(c.scheduledAt).toLocaleString()}
                       </p>
                     )}

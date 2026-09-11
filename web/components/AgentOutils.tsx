@@ -154,7 +154,7 @@ function Bilingue({ texte }: { texte: TexteBilingue }) {
 function Risque({ risk }: { risk: OutilAgent['risk'] }) {
   const t = useT();
   if (risk === 'read') return <Etiquette classe="bg-ink-100 text-ink-600">{t('lecture', 'read')}</Etiquette>;
-  if (risk === 'write') return <Etiquette classe="bg-sky-50 text-sky-800">{t('écriture', 'write')}</Etiquette>;
+  if (risk === 'write') return <Etiquette classe="bg-sky/10 text-sky">{t('écriture', 'write')}</Etiquette>;
   return <Etiquette classe="bg-amber-50 text-amber-800">{t('irréversible', 'irreversible')}</Etiquette>;
 }
 

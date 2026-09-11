@@ -1660,10 +1660,10 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       {dernierEnvoi && (
         <div
           data-testid="campagne-dernier-envoi"
-          className={`mt-4 rounded-xl border p-4 text-sm ${dernierEnvoi.kind === 'lance' ? 'border-emerald-200 bg-emerald-50/60' : 'border-violet-200 bg-violet-50/60'}`}
+          className={`mt-4 rounded-xl border p-4 text-sm ${dernierEnvoi.kind === 'lance' ? 'border-emerald-200 bg-emerald-50/60' : 'border-violet/30 bg-violet/10'}`}
         >
           <div className="flex items-start justify-between gap-3">
-            <p className={`font-medium ${dernierEnvoi.kind === 'lance' ? 'text-emerald-800' : 'text-violet-800'}`}>{dernierEnvoi.message}</p>
+            <p className={`font-medium ${dernierEnvoi.kind === 'lance' ? 'text-emerald-800' : 'text-violet'}`}>{dernierEnvoi.message}</p>
             <button
               type="button"
               onClick={() => setDernierEnvoi(null)}

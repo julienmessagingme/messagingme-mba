@@ -446,8 +446,21 @@ function InboxInner({ session }: { session: Session }) {
                   minuscule ne servait qu'à faire deviner ce qu'on peut lire en entier.
                 */}
                 <div
+                  data-testid={`inbox-ligne-${c.id}`}
+                  data-mba={c.controlOwner === 'mba' ? 'oui' : undefined}
                   className={`relative w-full rounded-xl border px-3 py-2 transition ${
-                    selected?.id === c.id ? 'border-brand-500 bg-brand-50' : 'border-ink-200 bg-white hover:bg-ink-50'
+                    selected?.id === c.id
+                      ? 'border-brand-500 bg-brand-50'
+                      /* 🔴 UN FIL TENU PAR L'AGENT DE META SE VOIT SANS SE LIRE (demande de Julien,
+                         2026-09-11). Un dégradé bleu clair et une baguette : on balaie la colonne et on sait
+                         d'un coup d'œil ce que Meta tient, au lieu de lire une pastille de onze pixels sur
+                         chaque ligne. La mention texte « agent Meta » disparaît d'ici, elle faisait double
+                         emploi ; elle reste dans l'en-tête du fil, où l'on a besoin du mot exact.
+                         ⚠️ LA SÉLECTION GAGNE, et c'est volontaire : savoir OÙ L'ON EST prime sur savoir qui
+                         tient le fil, qu'on lit alors dans l'en-tête juste à côté. */
+                      : c.controlOwner === 'mba'
+                        ? 'border-sky/50 bg-gradient-to-br from-sky/20 via-sky/10 to-violet/20 hover:from-sky/30 hover:to-violet/30'
+                        : 'border-ink-200 bg-white hover:bg-ink-50'
                   }`}
                 >
                   <button
@@ -481,6 +494,27 @@ function InboxInner({ session }: { session: Session }) {
                       {/* Point de non-lu : le compteur du menu doit pouvoir se traduire en action, sinon il dit
                           « 3 » sans dire lesquelles. */}
                       {c.unread && <span data-testid="unread-dot" className="mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-coral align-middle" aria-label={t('non lu', 'unread')} />}
+                      {/* 🔴 LA BAGUETTE PORTE CE QUE LE TEXTE DISAIT, infobulle comprise. Retirer la
+                          mention sans rien mettre à la place aurait retiré l'information à qui ne connaît
+                          pas encore le code couleur, et à qui navigue au lecteur d'écran. */}
+                      {c.controlOwner === 'mba' && (
+                        <span
+                          data-testid={`inbox-baguette-${c.id}`}
+                          title={t('L’agent de Meta répond directement au client.', 'Meta’s agent is answering the customer directly.')}
+                          aria-label={t('agent Meta', 'Meta agent')}
+                          role="img"
+                          className="mr-1.5 shrink-0 text-sky"
+                        >
+                          {/* Une baguette et ses étincelles. Dessinée plutôt qu'empruntée à une police
+                              d'emoji : un emoji change de tête selon le système, et celui-ci doit rester le
+                              même signe pour tout le monde, parce qu'il REMPLACE un mot. */}
+                          <svg viewBox="0 0 24 24" className="inline h-4 w-4 align-[-0.2em]" aria-hidden="true">
+                            <path d="M15.6 3.2l1.3 3.1 3.1 1.3-3.1 1.3-1.3 3.1-1.3-3.1-3.1-1.3 3.1-1.3 1.3-3.1z" fill="currentColor" />
+                            <path d="M6.6 11.4l.75 1.85 1.85.75-1.85.75-.75 1.85-.75-1.85L4 15.9l1.85-.75.75-1.85z" fill="currentColor" opacity=".75" />
+                            <path d="M13.6 12.1l1.9 1.9-8.1 8.1a1.34 1.34 0 01-1.9-1.9l8.1-8.1z" fill="currentColor" opacity=".55" />
+                          </svg>
+                        </span>
+                      )}
                       <button
                         onClick={() => setFicheWaId(c.waId)}
                         data-testid={`open-contact-${c.id}`}
@@ -493,8 +527,10 @@ function InboxInner({ session }: { session: Session }) {
                     <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
                   {/* Le badge n'apparaît QUE si quelqu'un détient le fil : l'afficher sur toutes les
-                      lignes noierait l'information, alors que c'est l'exception qui doit sauter aux yeux. */}
-                  {c.controlOwner !== 'app_workflow' && (
+                      lignes noierait l'information, alors que c'est l'exception qui doit sauter aux yeux.
+                      ⚠️ ET PLUS POUR `mba`, dont le dégradé et la baguette disent déjà la même chose, en
+                      mieux : deux façons de dire la même chose sur douze pixels de haut, c'est une de trop. */}
+                  {c.controlOwner !== 'app_workflow' && c.controlOwner !== 'mba' && (
                     <span className="pointer-events-none relative mt-1 inline-block"><ControlBadge owner={c.controlOwner} /></span>
                   )}
                 </div>
@@ -1677,7 +1713,7 @@ function ControlBadge({ owner }: { owner: ControlOwner }) {
     },
     mba: {
       label: t('agent Meta', 'Meta agent'),
-      cls: 'bg-violet-50 text-violet-700',
+      cls: 'bg-violet/10 text-violet',
       title: t("L'agent de Meta répond directement au client.", 'Meta’s agent is answering the customer directly.'),
     },
   };

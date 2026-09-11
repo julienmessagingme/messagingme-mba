@@ -145,3 +145,50 @@ test.describe('Contrôle du fil : un seul réglage, à un seul endroit', () => {
     await expect(page.getByTestId('lien-activation')).toBeVisible();
   });
 });
+
+test.describe('Qui tient le fil se voit dans la LISTE, sans se lire', () => {
+  /**
+   * Demande de Julien, le 2026-09-11 : « remplir les frames qui contiennent les Noms des personnes d'une
+   * autre couleur, genre bleu clair un peu fuzzy ou dégradé pour ceux qui sont en cours de MBA avec qq
+   * petites étoiles ou genre baguette magique [...] et du coup plus besoin de mettre dans le frame la
+   * mention "agent Meta" ».
+   */
+  const LIGNES = [
+    { ...CONV, id: 'c1', profileName: 'Tenue par Meta', controlOwner: 'mba' },
+    { ...CONV, id: 'c2', waId: '33600000002', profileName: 'Tenue par un humain', controlOwner: 'app_human' },
+    { ...CONV, id: 'c3', waId: '33600000003', profileName: 'Au scénario', controlOwner: 'app_workflow' },
+  ];
+
+  async function poser(page: import('@playwright/test').Page) {
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: LIGNES });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/inbox');
+  }
+
+  test('🔴 un fil tenu par Meta porte la baguette, et PLUS la mention texte', async ({ page }) => {
+    await poser(page);
+    await expect(page.getByTestId('inbox-baguette-c1')).toBeVisible();
+    // La mention texte a disparu de la LISTE : c'est la demande, le dégradé et la baguette la remplacent.
+    await expect(page.getByText('agent Meta', { exact: true })).toHaveCount(0);
+    // ⚠️ Mais l'information reste accessible à qui ne voit pas la couleur.
+    await expect(page.getByTestId('inbox-baguette-c1')).toHaveAttribute('aria-label', /agent Meta|Meta agent/);
+  });
+
+  test('🔴 preuves inverses : les autres lignes ne sont ni colorées ni baguettées', async ({ page }) => {
+    // Sans elles, colorer TOUTES les lignes passerait le test ci-dessus, et le coup d'œil ne dirait plus rien.
+    await poser(page);
+    await expect(page.getByTestId('inbox-ligne-c1')).toHaveAttribute('data-mba', 'oui');
+    for (const id of ['c2', 'c3']) {
+      await expect(page.getByTestId(`inbox-ligne-${id}`)).not.toHaveAttribute('data-mba', 'oui');
+      await expect(page.getByTestId(`inbox-baguette-${id}`)).toHaveCount(0);
+    }
+    // Le fil tenu par un HUMAIN garde sa mention texte : elle n'a pas de couleur pour la remplacer.
+    await expect(page.getByText(/vous avez la main|you have the hand/)).toBeVisible();
+  });
+});
