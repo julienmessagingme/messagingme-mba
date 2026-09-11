@@ -4,6 +4,7 @@ import type { Guard, PreHandler } from '../auth/middleware';
 import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
+import type { CoutContact, NiveauEngagement } from '../stats/cost';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 import { scopeTenant } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
@@ -74,6 +75,14 @@ export interface ContactsRouteDeps {
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
   listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
+  /**
+   * CE QU'UN CONTACT A COÛTÉ, et jusqu'où il est allé (2026-09-11).
+   *
+   * OPTIONNELLE : absente, la route rend 503 plutôt que d'exister sans rien dire. Elle appelle Meta pour les
+   * tarifs, donc une instance sans jeton ne peut pas la servir, et la fiche contact doit continuer de
+   * s'ouvrir sans elle.
+   */
+  getBilanContact?(tenantId: string, contactId: string): Promise<{ cout: CoutContact; entonnoir: NiveauEngagement[] } | null>;
   /**
    * Signale qu'un tag vient d'être posé sur UN contact, pour les automations « tag ajouté » (E.2). Best-effort :
    * l'édition de la fiche a déjà réussi, un échec ici ne doit pas la faire échouer.
@@ -281,6 +290,26 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const history = await deps.getContactHistory(tenant, contactId);
     if (!history) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(history);
+  });
+
+  /**
+   * LE BILAN d'un contact : ce qu'il a coûté, et son entonnoir d'engagement (demande de Julien,
+   * 2026-09-11 : « mettre le fric que la personne nous a coûté et en face le nombre d'engagements de 1er
+   * niveau [...] puis de 2e niveau, 3e niveau »).
+   *
+   * ⚠️ ROUTE À PART DE `/history`, alors que l'écran les affiche ensemble, et pour une raison qui compte :
+   * celle-ci appelle META pour les tarifs. La fiche contact s'ouvre souvent juste pour corriger un champ, et
+   * faire dépendre son historique d'un aller-retour réseau chez Meta transformerait une lecture locale en
+   * lecture distante. Les deux partent en parallèle depuis l'écran.
+   */
+  app.get('/tenants/:tenantId/contacts/:contactId/bilan', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { contactId } = req.params as { contactId: string };
+    if (!deps.getBilanContact) return reply.code(503).send({ error: 'bilan indisponible sur cette instance' });
+    const bilan = await deps.getBilanContact(tenant, contactId);
+    if (!bilan) return reply.code(404).send({ error: 'contact inconnu' });
+    return reply.code(200).send(bilan);
   });
 
   /**

@@ -105,6 +105,27 @@ export interface ContactHistory {
 export function getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory> {
   return request<ContactHistory>(`/tenants/${tenantId}/contacts/${contactId}/history`);
 }
+/** Ce qu'un contact a coûté. `cout: null` = AUCUN envoi chiffrable, ce qui n'est PAS zéro. */
+export interface CoutContact {
+  envoyes: number;
+  cout: number | null;
+  nonChiffrables: number;
+  sansCategorie: number;
+  sansTarif: number;
+  currency: string | null;
+}
+/** Un niveau de l'entonnoir : combien de parcours l'ont atteint, AU MOINS. */
+export interface NiveauEngagement { niveau: number; parcours: number }
+export interface BilanContact { cout: CoutContact; entonnoir: NiveauEngagement[] }
+/**
+ * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement.
+ *
+ * ⚠️ APPEL À PART de `getContactHistory`, et l'écran les lance en parallèle : celui-ci va chercher les
+ * tarifs chez META, donc il est plus lent et peut échouer seul. L'historique ne doit pas attendre après lui.
+ */
+export function getContactBilan(tenantId: string, contactId: string): Promise<BilanContact> {
+  return request<BilanContact>(`/tenants/${tenantId}/contacts/${contactId}/bilan`);
+}
 /** Envois du contact pour l'export CSV (F5), NON capé (contrairement à getContactHistory borné à l'écran). */
 export function getContactSendsForExport(tenantId: string, contactId: string): Promise<{ sends: ContactSend[] }> {
   return request<{ sends: ContactSend[] }>(`/tenants/${tenantId}/contacts/${contactId}/history/export`);

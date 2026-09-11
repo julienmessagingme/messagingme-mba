@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getContactHistory, getContactSendsForExport, type ContactHistory, type ContactSend, type ContactConversation } from '@/lib/api';
+import { getContactHistory, getContactBilan, getContactSendsForExport, type ContactHistory, type BilanContact, type ContactSend, type ContactConversation } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { explainMetaError } from '@/lib/meta-errors';
@@ -22,6 +22,14 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
   const t = useT();
   const { locale } = useLocale();
   const [history, setHistory] = useState<ContactHistory | null>(null);
+  /**
+   * Le bilan est CHARGÉ À PART, et son échec est SILENCIEUX (il reste `null`).
+   *
+   * ⚠️ Il va chercher les tarifs chez Meta : il est plus lent que l'historique et il peut tomber tout seul
+   * (jeton, panne, instance sans Meta). Le faire partager l'état d'erreur de l'historique ferait disparaître
+   * la liste des envois pour une carte d'en-tête, ce qui échangerait l'essentiel contre l'accessoire.
+   */
+  const [bilan, setBilan] = useState<BilanContact | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -58,6 +66,10 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
       .catch((err: unknown) => {
         if (alive) setError(err instanceof Error ? err.message : t('Historique indisponible', 'History unavailable'));
       });
+    // En PARALLÈLE, jamais en chaîne : l'historique est local, le bilan passe par Meta.
+    getContactBilan(tenantId, contactId)
+      .then((b) => { if (alive) setBilan(b); })
+      .catch(() => { if (alive) setBilan(null); });
     return () => { alive = false; };
   }, [tenantId, contactId, t]);
 
@@ -68,6 +80,7 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
 
   return (
     <div className="mt-4 space-y-6">
+      {bilan && <Bilan bilan={bilan} />}
       <section>
         <div className="mb-2 flex items-center justify-between gap-3">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-500">
@@ -245,5 +258,86 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
         {t('Ouvrir dans l\'inbox', 'Open in inbox')}
       </Link>
     </li>
+  );
+}
+
+/**
+ * CE QUE LE CONTACT A COÛTÉ, ET JUSQU'OÙ IL EST ALLÉ. Demande de Julien, le 2026-09-11 : « tout en haut,
+ * mettre le fric que la personne nous a coûté et EN FACE le nombre d'engagements de 1er niveau [...] puis de
+ * 2e niveau, 3e niveau ». D'où les deux moitiés côte à côte : la dépense et ce qu'elle a produit.
+ *
+ * 🔴 UN COÛT INCONNU N'EST PAS UN COÛT NUL, et l'écran ne les confond pas. « — » quand aucun envoi n'a pu
+ * être chiffré, jamais « 0 € », qui se lirait « ce contact ne nous a rien coûté ». Et le nombre d'envois non
+ * chiffrables est DIT, avec sa cause, parce qu'un total amputé en silence se lit comme un total.
+ *
+ * ⚠️ C'EST UN PLANCHER, PAS UNE FACTURE, et le mot « estimé » est là pour ça : seuls les envois de CAMPAGNE
+ * sont comptés. Un message de scénario ou une réponse d'opérateur dans la fenêtre de service ne passe pas
+ * par la même table ; Meta les facture souvent à zéro, mais pas toujours.
+ */
+function Bilan({ bilan }: { bilan: BilanContact }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const { cout, entonnoir } = bilan;
+  const montant = cout.cout === null
+    ? '—'
+    : new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'fr-FR', cout.currency
+      ? { style: 'currency', currency: cout.currency }
+      : { maximumFractionDigits: 2 }).format(cout.cout);
+  const max = entonnoir.length > 0 ? entonnoir[0]!.parcours : 0;
+
+  return (
+    <section data-testid="contact-bilan" className="grid gap-4 rounded-xl border border-ink-200 bg-ink-50/60 p-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{t('Ce qu’il a coûté', 'What they cost')}</p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums text-ink-900" data-testid="contact-bilan-cout">{montant}</p>
+        <p className="mt-0.5 text-xs text-ink-500">
+          {t(`${cout.envoyes} envoi${cout.envoyes > 1 ? 's' : ''} de campagne, coût estimé`,
+            `${cout.envoyes} campaign send${cout.envoyes > 1 ? 's' : ''}, estimated cost`)}
+        </p>
+        {/* La troncature se DIT, et sa cause avec : une catégorie absente est un héritage définitif, un
+            tarif manquant est une panne du jour. Les deux se réparent différemment. */}
+        {cout.nonChiffrables > 0 && (
+          <p className="mt-1 text-xs text-amber-800" data-testid="contact-bilan-nonchiffrables">
+            {t(`${cout.nonChiffrables} non chiffré${cout.nonChiffrables > 1 ? 's' : ''}`,
+              `${cout.nonChiffrables} not priced`)}
+            {cout.sansCategorie > 0 && t(` (${cout.sansCategorie} sans catégorie enregistrée)`, ` (${cout.sansCategorie} with no recorded category)`)}
+            {cout.sansTarif > 0 && t(` (${cout.sansTarif} sans tarif rendu par Meta)`, ` (${cout.sansTarif} with no rate from Meta)`)}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{t('Jusqu’où il est allé', 'How far they went')}</p>
+        {entonnoir.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-500" data-testid="contact-bilan-sans-engagement">
+            {t('Il n’a réagi à aucun message.', 'They reacted to no message.')}
+          </p>
+        ) : (
+          <div className="mt-2 flex flex-col gap-1">
+            {entonnoir.map((n) => (
+              <div key={n.niveau} className="flex items-center gap-2" data-testid={`contact-bilan-niveau-${n.niveau}`}>
+                <span className="w-16 shrink-0 text-xs text-ink-500">
+                  {t(`Niveau ${n.niveau}`, `Level ${n.niveau}`)}
+                </span>
+                {/* La barre est proportionnelle au PREMIER niveau, qui est le plus large par construction :
+                    un entonnoir se lit à la décroissance, et une barre normalisée sur son propre maximum
+                    montrerait cinq barres pleines. */}
+                <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-ink-100">
+                  <span
+                    className="block h-full rounded-full bg-brand-400"
+                    style={{ width: `${max > 0 ? Math.round((n.parcours / max) * 100) : 0}%` }}
+                  />
+                </span>
+                <span className="w-6 shrink-0 text-right text-xs font-medium tabular-nums text-ink-700">{n.parcours}</span>
+              </div>
+            ))}
+            <p className="mt-1 text-xs text-ink-400">
+              {t('Un niveau de plus = il a encore réagi au message suivant, en répondant ou en cliquant.',
+                'One more level = they reacted to the next message again, by replying or clicking.')}
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

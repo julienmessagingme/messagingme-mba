@@ -50,6 +50,26 @@ export interface CategoryRates {
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
+/**
+ * Ce qu'on peut faire d'une catégorie d'envoi : la chiffrer, ou dire POURQUOI on ne peut pas.
+ *
+ * 🔴 UNE SEULE DÉFINITION DE « CHIFFRABLE », pour les TROIS écrans qui l'affichent (la série de coût, le
+ * tableau par campagne, et le bilan d'un contact). Deux définitions donneraient deux totaux sur deux écrans
+ * du même produit, et le client les comparerait. La règle était déjà écrite deux fois à l'identique quand le
+ * troisième écran est arrivé : c'est le moment où recopier devient une dette, pas avant.
+ *
+ * ⚠️ LES DEUX CAUSES RESTENT DISTINCTES, parce qu'elles ne se réparent pas pareil : une catégorie absente est
+ * un héritage définitif (rien ne la retrouvera), un tarif manquant est une panne du jour (Meta le rendra
+ * demain). Un seul nombre les confondait, et l'écran ne pouvait dire ni l'un ni l'autre sans risquer de mentir.
+ */
+export type Chiffrage = { tarif: number } | { refus: 'sansCategorie' | 'sansTarif' };
+
+export function chiffrer(category: string | null, rates: CategoryRates): Chiffrage {
+  if (category !== 'marketing' && category !== 'utility') return { refus: 'sansCategorie' };
+  const tarif = category === 'marketing' ? rates.marketing : rates.utility;
+  return tarif == null ? { refus: 'sansTarif' } : { tarif };
+}
+
 /** Énumère les jours 'YYYY-MM-DD' de from à to INCLUS (arithmétique UTC pure, borne 366 jours). */
 export function enumerateDays(from: string, to: string): string[] {
   const [fy, fm, fd] = from.split('-').map(Number) as [number, number, number];
@@ -82,11 +102,13 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
   let sansCategorie = 0;
   let sansTarif = 0;
   for (const r of rows) {
-    const bucket = r.category === 'marketing' ? mktByDay : r.category === 'utility' ? utilByDay : null;
-    if (!bucket) { sansCategorie += r.count; continue; }
-    const rate = r.category === 'marketing' ? rates.marketing : rates.utility;
-    if (rate == null) { sansTarif += r.count; continue; }
-    bucket.set(r.date, (bucket.get(r.date) ?? 0) + r.count * rate);
+    const verdict = chiffrer(r.category, rates);
+    if ('refus' in verdict) {
+      if (verdict.refus === 'sansCategorie') sansCategorie += r.count; else sansTarif += r.count;
+      continue;
+    }
+    const bucket = r.category === 'marketing' ? mktByDay : utilByDay;
+    bucket.set(r.date, (bucket.get(r.date) ?? 0) + r.count * verdict.tarif);
   }
   const marketing = days.map((d) => ({ date: d, count: round2(mktByDay.get(d) ?? 0) }));
   const utility = days.map((d) => ({ date: d, count: round2(utilByDay.get(d) ?? 0) }));
@@ -190,14 +212,14 @@ export function estimateCoutParCampagne(
     };
     // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
     // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
-    const connue = r.category === 'marketing' || r.category === 'utility';
-    const rate = connue ? (r.category === 'marketing' ? rates.marketing : rates.utility) : null;
+    const verdict = chiffrer(r.category, rates);
     ligne.envoyes += r.count;
-    if (!connue) { ligne.sansCategorie += r.count; ligne.nonChiffrables += r.count; }
-    else if (rate == null) { ligne.sansTarif += r.count; ligne.nonChiffrables += r.count; }
-    else {
+    if ('refus' in verdict) {
+      if (verdict.refus === 'sansCategorie') ligne.sansCategorie += r.count; else ligne.sansTarif += r.count;
+      ligne.nonChiffrables += r.count;
+    } else {
       ligne.chiffres += r.count;
-      ligne.cout = (ligne.cout ?? 0) + r.count * rate;
+      ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
     }
     par.set(r.campaignId, ligne);
   }
@@ -239,4 +261,94 @@ export function estimateCoutParCampagne(
     currency: rates.currency ?? null,
     hasRates: rates.marketing != null || rates.utility != null,
   };
+}
+
+/** Un volume d'envois facturables vers UN contact, pour UNE catégorie Meta. */
+export interface VolumeContactRow {
+  category: string | null;
+  count: number;
+}
+
+/** Ce qu'un contact a coûté, et ce qu'on n'a pas su chiffrer. */
+export interface CoutContact {
+  /** Envois facturables, chiffrables ou non. */
+  envoyes: number;
+  /**
+   * Coût ESTIMÉ. `null` quand AUCUN envoi n'a pu être chiffré : la case reste vide et le dit, plutôt qu'un
+   * zéro qui se lirait « ce contact ne nous a rien coûté ».
+   */
+  cout: number | null;
+  nonChiffrables: number;
+  sansCategorie: number;
+  sansTarif: number;
+  currency: string | null;
+}
+
+/**
+ * Ce qu'un contact a coûté, à partir de ses envois par catégorie et des tarifs Meta.
+ *
+ * 🔴 LES MÊMES RÈGLES QUE LES DEUX AUTRES ÉCRANS, par le MÊME `chiffrer` : un client qui compare le coût
+ * d'un contact au coût de la campagne qui le lui a envoyé doit retrouver la même arithmétique.
+ *
+ * ⚠️ IL NE COMPTE QUE LES ENVOIS DE CAMPAGNE, et c'est une limite à dire plutôt qu'à taire : un message de
+ * scénario ou une réponse d'opérateur dans la fenêtre de service ne passe pas par `campaign_recipients`,
+ * donc n'entre pas ici. Meta les facture souvent à zéro (`FREE_CUSTOMER_SERVICE`, mesuré sur notre WABA),
+ * mais pas toujours. Le chiffre est donc un PLANCHER, jamais une facture.
+ */
+export function estimerCoutContact(rows: VolumeContactRow[], rates: CategoryRates): CoutContact {
+  let envoyes = 0, chiffres = 0, cout = 0, sansCategorie = 0, sansTarif = 0;
+  for (const r of rows) {
+    envoyes += r.count;
+    const verdict = chiffrer(r.category, rates);
+    if ('refus' in verdict) {
+      if (verdict.refus === 'sansCategorie') sansCategorie += r.count; else sansTarif += r.count;
+      continue;
+    }
+    chiffres += r.count;
+    cout += r.count * verdict.tarif;
+  }
+  return {
+    envoyes,
+    cout: chiffres > 0 ? round2(cout) : null,
+    nonChiffrables: sansCategorie + sansTarif,
+    sansCategorie,
+    sansTarif,
+    currency: rates.currency ?? null,
+  };
+}
+
+/**
+ * Combien de niveaux l'entonnoir d'un contact montre au plus.
+ *
+ * 🔴 UNE BORNE, PAS UN CONFORT. Mesuré sur les données réelles le 2026-09-11 : sans borne de temps ni de
+ * profondeur, un contact bavard produisait des « niveaux » 27 et 35, c'est-à-dire une conversation racontée
+ * comme un entonnoir. Au-delà du cinquième échange, ce n'est plus une progression dans un scénario, c'est un
+ * dialogue, et il se lit dans l'Inbox.
+ */
+export const NIVEAUX_MONTRES = 5;
+
+/** Un niveau de l'entonnoir : combien de parcours l'ont atteint, AU MOINS. */
+export interface NiveauEngagement {
+  niveau: number;
+  parcours: number;
+}
+
+/**
+ * L'entonnoir CUMULÉ, à partir des profondeurs atteintes parcours par parcours.
+ *
+ * 🔴 « AU MOINS N », PAS « EXACTEMENT N », et c'est ce qui en fait un entonnoir. Quelqu'un qui est allé
+ * jusqu'au troisième message a forcément réagi au premier et au deuxième : un scénario n'avance QUE sur une
+ * réaction. Compter « exactement » rendrait une suite non décroissante, illisible comme entonnoir, et ferait
+ * disparaître du niveau 1 les contacts les plus engagés.
+ *
+ * ⚠️ LE DERNIER NIVEAU MONTRÉ RAMASSE CE QUI EST PLUS PROFOND, au lieu de le tronquer : sinon un parcours
+ * allé au septième échange sortirait de l'entonnoir, et le total du niveau 5 serait faux vers le bas.
+ */
+export function entonnoirEngagement(profondeurs: readonly number[]): NiveauEngagement[] {
+  const out: NiveauEngagement[] = [];
+  for (let n = 1; n <= NIVEAUX_MONTRES; n += 1) {
+    out.push({ niveau: n, parcours: profondeurs.filter((p) => p >= n).length });
+  }
+  // Un entonnoir qui ne commence par rien n'a rien à dire : l'écran préfère ne pas l'afficher du tout.
+  return out[0]!.parcours === 0 ? [] : out;
 }

@@ -50,6 +50,7 @@ const FULL: ContactHistory = {
 function app(
   history: (tenantId: string, contactId: string) => Promise<ContactHistory | null>,
   exportSends?: (tenantId: string, contactId: string) => Promise<ContactSend[] | null>,
+  bilan?: ContactsRouteDeps['getBilanContact'],
 ) {
   const contacts: ContactsRouteDeps = {
     applyEdits: async () => null,
@@ -57,6 +58,7 @@ function app(
     listUserFields: async () => [],
     getContactHistory: history,
     listSendsForExport: exportSends ?? (async (_t, id) => (id === 'c1' ? FULL.sends : null)),
+    ...(bilan ? { getBilanContact: bilan } : {}),
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts });
 }
@@ -160,3 +162,57 @@ describe('GET /tenants/:t/contacts/:id/history/export (F5)', () => {
 // `registerImport`, dans un autre routeur, qu'un serveur de test câblé sur les seules deps `contacts` ne monte
 // pas. Le risque a été écarté PAR CONCEPTION (le segment `/history` au lieu d'un `/contacts/:contactId` nu),
 // pas par une assertion, et un test qui ne monte qu'un des deux routeurs ne prouverait rien.
+
+/**
+ * LE BILAN D'UN CONTACT (2026-09-11) : ce qu'il a coûté, et jusqu'où il est allé.
+ *
+ * ⚠️ ROUTE À PART DE `/history`, et ces cas disent pourquoi : elle appelle META pour les tarifs, donc elle
+ * est plus lente et elle peut manquer là où l'historique est servi. Les fondre ferait dépendre l'ouverture
+ * d'une fiche contact d'un aller-retour réseau chez Meta.
+ */
+describe('GET /tenants/:t/contacts/:id/bilan', () => {
+  const BILAN = {
+    cout: { envoyes: 5, cout: 0.34, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, currency: 'EUR' },
+    entonnoir: [{ niveau: 1, parcours: 3 }, { niveau: 2, parcours: 1 }],
+  };
+
+  it('contact connu -> 200 avec le coût ET l’entonnoir', async () => {
+    const a = app(known, undefined, async (_t, id) => (id === 'c1' ? BILAN : null));
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/bilan', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(BILAN);
+    await a.close();
+  });
+
+  it('🔴 contact d’un AUTRE compte -> 404, même invariant que l’historique', async () => {
+    // Un 200 avec un coût à zéro sur un identifiant qui ne nous appartient pas serait une information sur
+    // le contact d'autrui : « il ne leur a rien coûté » est une information.
+    const a = app(known, undefined, async (_t, id) => (id === 'c1' ? BILAN : null));
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/AUTRUI/bilan', ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('câblage absent -> 503, et l’historique continue de répondre', async () => {
+    // C'est tout l'intérêt des deux routes : une instance sans jeton Meta ne peut pas chiffrer, et la fiche
+    // contact doit quand même s'ouvrir.
+    const a = app(known);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/bilan', ...h(adminTok) })).statusCode).toBe(503);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history', ...h(adminTok) })).statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('tenant croisé -> 403', async () => {
+    const a = app(known, undefined, async () => BILAN);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/contacts/c1/bilan', ...h(adminTok) })).statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('agent -> 403, comme tout le mini-CRM', async () => {
+    // ⚠️ Vérifié plutôt que supposé : les routes contacts sont admin-only, et une route neuve qui s'en
+    // écarterait ouvrirait le coût de chaque contact aux opérateurs sans que personne l'ait décidé.
+    const a = app(known, undefined, async () => BILAN);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/bilan', ...h(agentTok) })).statusCode).toBe(403);
+    await a.close();
+  });
+});

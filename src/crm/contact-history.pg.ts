@@ -123,6 +123,86 @@ export class PgContactHistoryStore {
   }
 
   /**
+   * LA MATIÈRE DU BILAN D'UN CONTACT : ses envois par catégorie (pour le coût), et la profondeur atteinte
+   * parcours par parcours (pour l'entonnoir). Demande de Julien du 2026-09-11.
+   *
+   * 🔴 UN PARCOURS = UN ENVOI DE CAMPAGNE, BORNÉ COMME `engage` L'EST DÉJÀ : jusqu'au prochain envoi, et au
+   * plus 24 h. Ce n'est pas un choix de confort, c'est la seule borne cohérente avec le reste de la fiche.
+   * Sans elle, mesuré sur les données réelles, le dernier parcours avalait toute la conversation qui suit et
+   * rendait des « niveaux » 27 et 35 : une discussion racontée comme un entonnoir.
+   *
+   * 🔴 SEULS LES SORTANTS AUTOMATIQUES COMPTENT COMME SOLLICITATION (`sender_user_id is null`). Un opérateur
+   * qui écrit depuis l'Inbox ne fait pas avancer un scénario d'un cran : compter ses messages ferait grimper
+   * le niveau d'un contact au seul motif qu'on a discuté avec lui, ce qui est l'inverse de ce que l'entonnoir
+   * mesure.
+   *
+   * ⚠️ UNE RÉACTION EST UN ENTRANT **OU** UN CLIC ATTRIBUÉ, exactement la définition d'`engage` un peu plus
+   * haut, appliquée en profondeur : « cliqué ou répondu, bref il y a eu un engagement » (Julien). Un bouton
+   * de réponse rapide arrive comme un entrant portant son `button_payload`, donc il compte ; un bouton URL
+   * fait SORTIR le contact de la conversation, d'où le second test.
+   *
+   * ⚠️ La profondeur est un `max`, pas un compte : le niveau ATTEINT est le plus profond, et c'est
+   * `entonnoirEngagement` qui en fait un cumul « au moins N ».
+   */
+  async bilanContact(tenantId: string, contactId: string): Promise<{ envois: Array<{ category: string | null; count: number }>; profondeurs: number[] } | null> {
+    const owner = await this.pool.query<{ id: string }>(
+      `select id from contacts where id = $1 and tenant_id = $2`,
+      [contactId, tenantId],
+    );
+    if (!owner.rows[0]) return null;
+
+    const [volumes, profondeurs] = await Promise.all([
+      this.pool.query<{ category: string | null; count: string }>(
+        `select c.category, count(*)::bigint as count
+           from campaign_recipients r join campaigns c on c.id = r.campaign_id
+          where r.contact_id = $2 and c.tenant_id = $1 and r.sent_at is not null
+          group by c.category`,
+        [tenantId, contactId],
+      ),
+      this.pool.query<{ niveau: string }>(
+        `with parcours as (
+           select r.sent_at as debut,
+                  lead(r.sent_at) over (order by r.sent_at) as fin
+             from campaign_recipients r join campaigns c on c.id = r.campaign_id
+            where r.contact_id = $2 and c.tenant_id = $1 and r.sent_at is not null
+         ),
+         sollicitations as (
+           select p.debut, m.created_at,
+                  row_number() over (partition by p.debut order by m.created_at, m.id) as rang,
+                  lead(m.created_at) over (partition by p.debut order by m.created_at, m.id) as suivante
+             from parcours p
+             join conversations cv on cv.tenant_id = $1 and cv.contact_id = $2
+             join conversation_messages m on m.conversation_id = cv.id
+            where m.direction = 'out'
+              and m.sender_user_id is null
+              and m.created_at >= p.debut
+              and m.created_at < least(coalesce(p.fin, 'infinity'::timestamptz), p.debut + interval '24 hours')
+         ),
+         touchees as (
+           select s.debut, s.rang
+             from sollicitations s
+            where exists (
+               select 1 from conversation_messages m2 join conversations cv2 on cv2.id = m2.conversation_id
+                where cv2.tenant_id = $1 and cv2.contact_id = $2 and m2.direction = 'in'
+                  and m2.created_at > s.created_at
+                  and m2.created_at < least(coalesce(s.suivante, 'infinity'::timestamptz), s.created_at + interval '24 hours'))
+               or exists (
+               select 1 from tracked_link_clicks tc
+                where tc.tenant_id = $1 and tc.contact_id = $2
+                  and tc.at > s.created_at
+                  and tc.at < least(coalesce(s.suivante, 'infinity'::timestamptz), s.created_at + interval '24 hours'))
+         )
+         select max(rang)::bigint as niveau from touchees group by debut`,
+        [tenantId, contactId],
+      ),
+    ]);
+    return {
+      envois: volumes.rows.map((r) => ({ category: r.category, count: Number(r.count) })),
+      profondeurs: profondeurs.rows.map((r) => Number(r.niveau)),
+    };
+  }
+
+  /**
    * Envois d'un contact pour l'EXPORT CSV (F5) : mêmes lignes que l'historique d'écran mais SANS le cap 200 (borné à
    * EXPORT_MAX_SENDS par sûreté, log si atteint). null si le contact n'appartient pas au tenant (404 côté route, pas
    * une liste vide trompeuse sur une ressource interdite). Lecture seule, scopée tenant en SQL.

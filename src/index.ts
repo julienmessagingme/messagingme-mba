@@ -16,7 +16,7 @@ import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
-import { estimateCostSeries, estimateCoutParCampagne, type CategoryRates } from './stats/cost';
+import { estimateCostSeries, estimateCoutParCampagne, estimerCoutContact, entonnoirEngagement, type CategoryRates } from './stats/cost';
 import { assemblerDetailCampagne } from './stats/cout-campagne';
 import { rangeToUnix, addDays, todayParis } from './stats/range';
 import type { CompteurClic } from './links/mesures';
@@ -1565,6 +1565,29 @@ async function main(): Promise<void> {
       },
       getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
       listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
+      /**
+       * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement.
+       *
+       * 🔴 LES MÊMES TARIFS QUE LES DEUX AUTRES ÉCRANS, par le MÊME `tarifsMeta`, et c'est ce qui les
+       * empêche de se contredire au moment précis où on les met côte à côte : un client qui compare le coût
+       * d'un contact au coût de la campagne qui le lui a envoyé doit retrouver la même arithmétique.
+       *
+       * ⚠️ LES TARIFS SONT CEUX DES 30 DERNIERS JOURS, alors que la fiche couvre toute la vie du contact.
+       * Même approximation ASSUMÉE que la fiche de campagne, et pour la même raison : Meta rend un tarif PAR
+       * PÉRIODE, et demander la période exacte de chaque envoi multiplierait les appels sans rien changer au
+       * chiffre. L'écran annonce un coût ESTIMÉ, pas une facture.
+       */
+      getBilanContact: async (tenant, id) => {
+        const matiere = await contactHistoryStore.bilanContact(tenant, id);
+        if (!matiere) return null;
+        // ⚠️ MÊME fenêtre que la fiche de campagne, écrite de la même façon : trois écrans qui disent un
+        // coût doivent lire le même tarif, sinon ils se contredisent sur la même donnée.
+        const rates = await tarifsMeta(tenant, { from: addDays(todayParis(), -29), to: todayParis() });
+        return {
+          cout: estimerCoutContact(matiere.envois, rates),
+          entonnoir: entonnoirEngagement(matiere.profondeurs),
+        };
+      },
       // Automations « tag ajouté » (E.2) : l'API ne sait pas démarrer un scénario (c'est le worker qui tient
       // l'exécuteur), elle publie donc un événement par tag posé. Un contact sans identité joignable (ni
       // numéro ni BSUID) n'a rien à déclencher.
