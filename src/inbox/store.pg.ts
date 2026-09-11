@@ -174,19 +174,20 @@ const UNREAD_SQL = `exists (
  * 2026-09-10 : le dossier se remplissait de fils où il n'y a rien à faire, et cessait d'être une liste de
  * travail. La possession du fil ne suffit pas, il faut savoir QUI A PARLÉ EN DERNIER (migration 0130).
  *
- * 🔴 LA SECONDE CONDITION NE VAUT QUE POUR UN FIL TENU PAR UN HUMAIN, et cette restriction est délibérée.
- * Un fil tenu par l'agent de Meta est dans ce dossier pour être SURVEILLÉ : le sortir dès que le robot a
- * répondu le viderait de tous les fils que le robot mène, c'est-à-dire de ce que le client a justement
- * demandé à voir. La règle corrige donc exactement le cas décrit (« l'humain a la main, l'humain répond »),
- * et rien d'autre. ⚠️ Question ouverte pour Julien, pas tranchée ici : un fil MBA doit-il aussi sortir du
- * dossier tant que le robot suit ?
+ * 🔴 ELLE VAUT POUR TOUT DÉTENTEUR, HUMAIN COMME ROBOT (tranché par Julien le 2026-09-11). La première
+ * version la restreignait aux fils tenus par un humain, pour garder les fils du Meta Business Agent sous
+ * surveillance. Julien a tranché l'inverse, et c'est cohérent avec le nom du dossier : « À traiter » ne veut
+ * pas dire « à surveiller », il veut dire « quelqu'un attend quelque chose de nous ». Un fil où le robot vient
+ * de répondre n'attend rien : la balle est chez le contact, et il reste dans « Tout ».
+ * ⚠️ Corollaire assumé : pour VOIR ce que le robot mène, on ouvre « Tout », pas « À traiter ». Un fil MBA
+ * revient dans le dossier dès que le contact réécrit et tant que le robot n'a pas répondu.
  *
- * 🔴 `is distinct from` ET NON `= 'out'`, ET LA PREMIÈRE ÉCRITURE ÉTAIT FAUSSE POUR CETTE RAISON. Écrite
- * `not (c.control_owner = 'app_human' and c.last_direction = 'out')`, elle vaut NULL quand `last_direction`
- * est NULL (logique à TROIS valeurs de SQL), et un prédicat NULL EXCLUT la ligne. Toutes les conversations
- * d'avant la migration, tenues par un humain, auraient donc DISPARU du dossier au déploiement, c'est-à-dire
- * l'inverse exact de ce que ce commentaire promettait. Attrapé par le test d'intégration « un fil SANS sens
- * connu reste dans le dossier » : aucun test unitaire ne peut voir ça, la faute est dans le SQL.
+ * 🔴 `is distinct from` ET NON `= 'out'`, ET UNE ÉCRITURE INTERMÉDIAIRE ÉTAIT FAUSSE POUR CETTE RAISON.
+ * Écrite `not (c.control_owner = 'app_human' and c.last_direction = 'out')`, elle valait NULL quand
+ * `last_direction` est NULL (logique à TROIS valeurs de SQL), et un prédicat NULL EXCLUT la ligne. Toutes les
+ * conversations d'avant la migration auraient donc DISPARU du dossier au déploiement, c'est-à-dire l'inverse
+ * exact de ce que le commentaire promettait. Attrapé par le test d'intégration « un fil SANS sens connu reste
+ * dans le dossier » : aucun test unitaire ne peut voir ça, la faute est dans le SQL.
  *
  * ⚠️ Une conversation sans valeur connue reste donc dans le dossier, exactement comme avant la migration. Un
  * filtre qui ferait DISPARAÎTRE des fils au déploiement serait la pire façon de l'introduire, personne ne
@@ -197,8 +198,7 @@ const UNREAD_SQL = `exists (
  * liste ne montre pas. C'est déjà la raison d'être d'`UNREAD_SQL` juste au-dessus. `c` = alias de
  * `conversations`.
  */
-const A_TRAITER_SQL = `c.control_owner <> 'app_workflow'
-  and (c.control_owner <> 'app_human' or c.last_direction is distinct from 'out')`;
+const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out'`;
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {

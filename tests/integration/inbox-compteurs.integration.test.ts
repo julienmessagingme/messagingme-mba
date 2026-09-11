@@ -176,9 +176,9 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
       expect(await dansLeDossier(id)).toBe(true);
     });
 
-    it('⚠️ un envoi AUTOMATISÉ sur un fil TENU compte aussi comme « nous avons parlé »', async () => {
-      // `recordOutboundByWaId` sert les campagnes et les scénarios. Sur un fil qu'un humain tient, c'est bien
-      // nous qui avons parlé en dernier : la balle est chez le contact.
+    it('⚠️ un envoi AUTOMATISÉ compte aussi comme « nous avons parlé »', async () => {
+      // `recordOutboundByWaId` sert les campagnes, les scénarios et l'agent de Meta. Quel que soit le
+      // détenteur du fil, c'est bien nous qui avons parlé en dernier : la balle est chez le contact.
       const id = await filTenu('33610000004');
       await store.recordOutboundByWaId(espace, '33610000004', {
         body: 'votre commande est partie', messageId: 'm-auto-1', origine: 'scenario',
@@ -186,18 +186,31 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
       expect(await dansLeDossier(id)).toBe(false);
     });
 
-    it('🔴 un fil tenu par l’AGENT DE META reste à traiter, même quand le robot vient de répondre', async () => {
-      // La restriction est délibérée : ce dossier est là pour SURVEILLER ce que le robot mène. L'en sortir
-      // dès qu'il répond le viderait de tous les fils du robot, c'est-à-dire de ce qu'on venait y voir.
+    it('🔴 un fil tenu par l’AGENT DE META en SORT aussi des que le robot a répondu', async () => {
+      // MÊME CAS, VERDICT INVERSÉ, tranché par Julien le 2026-09-11. La première version gardait les fils du
+      // robot dans le dossier pour les SURVEILLER. Mais « À traiter » ne veut pas dire « à surveiller », il
+      // veut dire « quelqu'un attend quelque chose de nous » : un fil où le robot vient de répondre n'attend
+      // rien. Pour voir ce que le robot mène, on ouvre « Tout ».
       const id = await conv('33610000006', 'mba');
       await store.recordInbound(espace, {
         phoneNumberId: 'pn', waId: '33610000006', messageId: 'm-mba-in', type: 'text',
         body: 'bonjour', buttonPayload: null, profileName: null, field: 'standby',
       });
+      // Le contact a parlé, le robot n'a pas encore répondu : c'est bien à traiter.
       expect(await dansLeDossier(id)).toBe(true);
 
       await store.recordOutboundByWaId(espace, '33610000006', {
         body: 'je vous explique', messageId: 'm-mba-out', type: 'mba', origine: 'mba',
+      });
+      expect(await dansLeDossier(id)).toBe(false);
+      // ⚠️ Mais il reste dans « Tout » : on ne le range pas, on cesse seulement de le RÉCLAMER.
+      expect((await store.listConversations(espace, {})).some((c) => c.id === id)).toBe(true);
+
+      // Et il REVIENT dès que le contact réécrit : c'est ce qui empêche un fil mené par le robot de
+      // disparaître pour de bon si le client relance.
+      await store.recordInbound(espace, {
+        phoneNumberId: 'pn', waId: '33610000006', messageId: 'm-mba-in-2', type: 'text',
+        body: 'et sinon ?', buttonPayload: null, profileName: null, field: 'standby',
       });
       expect(await dansLeDossier(id)).toBe(true);
     });
