@@ -916,4 +916,43 @@ describe('signaler à la main, et prendre le fil', () => {
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/prendre`, ...auth() })).statusCode).toBe(404);
     expect((await app().inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(503);
   });
+
+  it('🔴 META D’ABORD, notre état local ENSUITE', async () => {
+    // L'ordre inverse est le bug du 2026-09-11 : on écrivait « c'est à moi » pendant que Meta continuait de
+    // router les entrants vers son agent. Un état local qui annonce ce que Meta n'a pas fait est pire
+    // qu'une erreur, parce qu'il rend le problème invisible jusqu'au message suivant du client.
+    const ordre: string[] = [];
+    const a = app({
+      prendreLeFil: async (_t, waId) => { ordre.push(`meta:${waId}`); },
+      takeControl: async () => { ordre.push('local'); },
+    });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(ordre).toEqual(['meta:33611', 'local']);
+  });
+
+  it('🔴 Meta refuse -> 409 qui donne la porte de secours, et AUCUNE écriture locale', async () => {
+    // 409 et non 500 : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc un
+    // message destiné à l'opérateur n'arriverait jamais à l'écran. Et le refus est un cas NORMAL, Meta
+    // réservant `take` au « configured escalation partner ».
+    let localEcrit = false;
+    const a = app({
+      prendreLeFil: async () => { throw new Error('not the configured escalation partner'); },
+      takeControl: async () => { localEcrit = true; },
+    });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
+    expect(res.statusCode).toBe(409);
+    // La porte de secours est DITE, parce qu'elle est vraie quoi qu'il arrive : écrire prend le fil.
+    expect(res.json().error).toContain('Envoyez un message');
+    expect(localEcrit).toBe(false);
+  });
+
+  it('sans câblage Meta, le bouton garde son ancien comportement purement local', async () => {
+    // Le bon repli pour une instance sans MBA : `prendreLeFil` est optionnelle, son absence ne doit pas
+    // faire disparaître un geste de rangement qui n'a rien à voir avec Meta.
+    const pris: string[] = [];
+    const a = app({ takeControl: async (_t, waId) => { pris.push(waId); } });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(200);
+    expect(pris).toEqual(['33611']);
+  });
 });

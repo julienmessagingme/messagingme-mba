@@ -1065,14 +1065,28 @@ function Thread({ session, conversation, dossier, onSent }: {
     }
   }
 
-  async function release() {
+  /**
+   * LE BOUTON DE CONTRÔLE DU FIL, QUI VA DÉSORMAIS À DEUX ADRESSES SELON LE SENS.
+   *
+   * 🔴 IL N'EN AVAIT QU'UNE, ET C'ÉTAIT LE BUG DU 2026-09-11. « Reprendre la main » et « Rendre la main »
+   * sont deux gestes OPPOSÉS, et les deux appelaient `/release`. Sur un fil tenu par l'agent de Meta,
+   * « Reprendre la main » revenait donc à demander à Meta de le garder, puis à remettre notre côté en
+   * automatique : l'agent répondait au message suivant du client, exactement ce que le libellé promet
+   * d'empêcher. Le sens du geste décide maintenant de la route, et `/prendre` appelle `thread_control`
+   * avec l'action `take`.
+   */
+  async function basculerLeFil() {
     setReleasing(true);
     setError(null);
     try {
-      const res = await releaseConversation(session.tenantId, conversation.id);
+      const res = controlOwner === 'mba'
+        ? await prendreConversation(session.tenantId, conversation.id)
+        : await releaseConversation(session.tenantId, conversation.id);
       setControlOwner(res.controlOwner);
       onSent(); // rafraîchit la liste : le badge y change aussi
     } catch (err) {
+      // ⚠️ Le message du serveur est repris TEL QUEL quand il y en a un : sur un refus de Meta, il porte la
+      // porte de secours (« envoyez un message »), que ce repli générique effacerait.
       setError(err instanceof Error ? err.message : t('Reprise impossible', 'Hand back failed'));
     } finally {
       setReleasing(false);
@@ -1110,13 +1124,15 @@ function Thread({ session, conversation, dossier, onSent }: {
             n'écrivait dedans. Vécu le 2026-09-08 : un bouton de chaîne cliqué par Julien ne lançait rien,
             le mot-clé correspondait pourtant et l'automation était bien trouvée.
 
-            ⚠️ Le libellé n'est PAS le même dans les deux sens, et c'est ce qui le rend juste : un opérateur
-            REND une main qu'il a prise ; face à l'agent de Meta, on la lui REPREND. Les deux vont au même
-            endroit (le scénario), par le même appel.
+            ⚠️ Le libellé n'est PAS le même dans les deux sens, et LA ROUTE NON PLUS depuis le 2026-09-11.
+            Un opérateur REND une main qu'il a prise (`/release`) ; face à l'agent de Meta, on la lui PREND
+            (`/prendre`, qui appelle `thread_control` avec l'action `take`). Les deux ont longtemps partagé
+            le même appel, et c'est ce qui laissait l'agent de Meta répondre juste après un clic sur
+            « Reprendre la main ».
           */}
           {(controlOwner !== 'app_workflow' || mbaActif) && (
             <button
-              onClick={() => { void release(); }}
+              onClick={() => { void basculerLeFil(); }}
               disabled={releasing}
               data-testid="inbox-rendre-la-main"
               className="rounded-lg border border-ink-300 px-2 py-0.5 text-[11px] font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"

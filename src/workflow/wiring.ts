@@ -45,7 +45,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // La MÊME décision que sur le chemin des campagnes : un template tracé exige ses composants de bouton, quel
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
-import { creerRendreLeFil } from '../inbox/rendre-le-fil';
+import { creerRendreLeFil } from '../inbox/controle-du-fil';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -253,7 +253,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * (`only: ['app_workflow']` pour le scénario, `only: ['app_human']` pour le balayage de reprise). Une fonction
    * qui ferait les deux avec un `only` figé échouerait EN SILENCE chez le second appelant, qui a déjà basculé.
    */
-  // ⚠️ EXTRAIT dans `src/inbox/rendre-le-fil.ts` le 2026-09-10 : ce geste vivait ici, dans une fermeture,
+  // ⚠️ EXTRAIT dans `src/inbox/controle-du-fil.ts` le 2026-09-10 : ce geste vivait ici, dans une fermeture,
   // donc atteignable du WORKER seulement. Le bouton « rendre la main » de l'Inbox est servi par l'API et ne
   // pouvait pas l'appeler, ce qui a laissé Meta croire que NOUS tenions le fil pendant que l'écran annonçait
   // le contraire. Le module est le point de passage des deux processus.

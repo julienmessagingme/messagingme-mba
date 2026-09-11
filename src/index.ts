@@ -120,7 +120,7 @@ import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';
-import { creerRendreLeFil } from './inbox/rendre-le-fil';
+import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurMba } from './agent/consommateur';
 import { corpsConnecteurMeta, corpsOutilMeta, corpsApiKey } from './http/mba-publication';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
@@ -315,14 +315,21 @@ async function main(): Promise<void> {
   });
 
   /**
-   * Rendre le fil à l'agent de Meta. MÊME module que le balayage du worker (`src/inbox/rendre-le-fil.ts`) :
+   * Rendre le fil à l'agent de Meta. MÊME module que le balayage du worker (`src/inbox/controle-du-fil.ts`) :
    * le geste vivait dans une fermeture du worker, donc l'API ne pouvait pas l'appeler, et le bouton « rendre
    * la main » de l'Inbox n'écrivait que notre état local.
    */
-  const rendreLeFilAuMba = creerRendreLeFil({
-    numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
-    clientMba: (t) => metaFactory.mbaClientForTenant(t),
-  });
+  const controleDuFil = {
+    numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
+    clientMba: (t: string) => metaFactory.mbaClientForTenant(t),
+  };
+  const rendreLeFilAuMba = creerRendreLeFil(controleDuFil);
+  /**
+   * PRENDRE le fil à l'agent de Meta, sans écrire au client. C'est ce qui manquait au bouton « Reprendre la
+   * main » : il n'écrivait que notre état local, donc Meta continuait de router les entrants vers son agent,
+   * qui répondait au message suivant. Signalé par Julien le 2026-09-11.
+   */
+  const prendreLeFilAuMba = creerPrendreLeFil(controleDuFil);
 
   /**
    * DRY_RUN : aucun appel Meta. ⚠️ L'API ne lisait PAS ce drapeau jusqu'ici, alors que le worker le respecte
@@ -685,12 +692,38 @@ async function main(): Promise<void> {
         return { messageId: issue.messageId, apercu: apercuRcsSortant(message) };
       },
       // Un opérateur qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre.
-      // 🔴 CE N'EST PLUS UNE HYPOTHÈSE, C'EST MESURÉ (2026-09-10). Meta n'a AUCUNE action `take` : la spec
-      // v1.0.0 n'expose que `pass` et `release`. On prend donc le fil en ENVOYANT, et c'est ce qu'on a
-      // observé pour de vrai ce jour-là : après une réponse depuis l'Inbox pendant que l'agent de Meta
-      // tenait le fil, l'entrant suivant est arrivé en `field: "messages"` et non plus en `standby`.
+      // 🔴 ÉCRIRE SUFFIT, ET C'EST MESURÉ (2026-09-10) : après une réponse depuis l'Inbox pendant que l'agent
+      // de Meta tenait le fil, l'entrant suivant est arrivé en `field: "messages"` et non plus en `standby`.
+      // Meta le dit aussi en toutes lettres, « Sending a message to a conversation takes control implicitly ».
+      // ⚠️ CE COMMENTAIRE A AJOUTÉ « Meta n'a AUCUNE action `take` », ET C'ÉTAIT FAUX (corrigé le 2026-09-11).
+      // L'action existe depuis le 2026-08-13 ; c'est le corpus OpenAPI TÉLÉCHARGÉ qui ne la connaît pas. Elle
+      // est désormais câblée sur le bouton « Reprendre la main » (`prendreLeFil`, juste en dessous). Ici,
+      // rien à changer : sur un chemin d'ENVOI, l'appel serait une redondance payante.
       // ⚠️ Une CAMPAGNE, elle, part quand même : elle est déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil (`ignoreHumanControl`). Le contraire a été écrit ici pendant des semaines, cf. `tests/campagne-controle-humain.test.ts`.
       takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+      /**
+       * Le bouton « Reprendre la main » : il PREND le fil chez Meta avant de toucher notre état local.
+       *
+       * 🔴 C'EST LE CORRECTIF DU 2026-09-11. Le bouton n'écrivait que notre état local ; Meta, lui,
+       * continuait de router les entrants du client vers son agent, qui répondait au message suivant.
+       * Autrement dit le geste ne faisait rien de ce que son libellé promet, et la seule façon d'éteindre
+       * réellement l'agent de Meta était d'ÉCRIRE au client, c'est-à-dire d'envoyer un message qu'on n'a
+       * pas à envoyer pour un geste de reprise.
+       *
+       * ⚠️ ON N'APPELLE META QUE SI META TIENT LE FIL. La doc pose la précondition symétrique sur `release`
+       * (« you must currently hold thread control ») et ne dit rien du cas inverse : demander `take` sur un
+       * fil qu'on détient déjà est au mieux inutile, au pire une erreur que l'opérateur lirait comme une
+       * panne. Reprendre un fil qui n'est tenu par personne chez Meta n'est qu'une écriture locale.
+       *
+       * ⚠️ LÈVE quand Meta refuse, et la route en fait un 409 lisible. `take` est réservé au « configured
+       * escalation partner » : le refus est un cas normal, pas un incident.
+       */
+      prendreLeFil: async (tenant, waId) => {
+        if ((await inboxStore.getControlOwner(tenant, waId)) !== 'mba') return;
+        const reglages = await settingsStore.get(tenant);
+        if (!reglages.mbaEnabled) return;
+        await prendreLeFilAuMba(tenant, waId);
+      },
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
       /**
        * L'opérateur rend la main : au scénario, ou à l'agent de Meta quand le client l'a allumé.
@@ -719,10 +752,13 @@ async function main(): Promise<void> {
          * `app_workflow` en local. Depuis qu'elle appelle Meta (2026-09-10), partir de `mba` revenait à
          * RENDRE le fil à celui qui l'a déjà : un bouton sans effet, sous un libellé qui promet l'inverse.
          *
-         * ⚠️ ET ON NE PEUT PAS LE PRENDRE, il n'existe aucune action `take` chez Meta. Partir de `mba` ne
-         * peut donc faire qu'une chose : rouvrir NOTRE côté (le scénario cesse d'être bloqué par la garde
-         * `mayAct`), la reprise réelle se produisant au premier message envoyé. C'est exactement ce que
-         * faisait le code d'avant, et c'est correct : on le garde tel quel pour ce cas.
+         * ⚠️ CE BRANCHEMENT N'EST PLUS LE CHEMIN DU BOUTON « Reprendre la main », qui va désormais sur
+         * `/prendre` et appelle réellement `thread_control` avec l'action `take` (2026-09-11). Il reste ici
+         * pour le cas où `/release` est appelée alors que Meta tient le fil : releaser sans le détenir est
+         * hors contrat (« you must currently hold thread control »), donc on ne fait que rouvrir NOTRE côté,
+         * ce qui est le geste sûr.
+         * ⚠️ Ce commentaire a dit « il n'existe aucune action `take` chez Meta ». C'était faux, et c'est ce
+         * qui a laissé l'agent de Meta répondre juste après un clic sur « Reprendre la main ».
          */
         if ((await inboxStore.getControlOwner(tenant, waId)) === 'mba') {
           await inboxStore.setControlOwner(tenant, waId, 'app_workflow');

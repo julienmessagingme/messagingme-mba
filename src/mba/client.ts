@@ -369,10 +369,11 @@ export class MbaClient {
   // ---------- Contrôle du fil ----------
 
   /**
-   * Rend le fil à MBA, qui redevient le répondeur automatique. C'est le SEUL acte de contrôle que nous ayons :
-   * on ne prend pas la main par appel, on la prend en ENVOYANT un message (« your app takes control simply by
-   * sending a message », Get Started). L'action `take` existe depuis le 2026-08-13 mais Meta la réserve au
-   * « configured escalation partner », notion qu'il ne définit nulle part.
+   * Rend le fil à MBA, qui redevient le répondeur automatique.
+   *
+   * ⚠️ Son miroir `takeThread` existe juste en dessous. Ce commentaire a dit pendant deux jours que le
+   * `release` était « le SEUL acte de contrôle que nous ayons » : c'était faux, et ça a coûté le bouton
+   * « Reprendre la main » (cf. `takeThread`).
    *
    * ⚠️ PRÉCONDITION MÉTIER, en toutes lettres dans la doc : « You must currently hold thread control for the
    * conversation. » Un release en aveugle est hors contrat, et Meta ne dit pas s'il répond une erreur, un no-op
@@ -389,6 +390,34 @@ export class MbaClient {
       'POST',
       `business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
       { messaging_product: 'whatsapp', action: 'release', to },
+      VERSION_THREAD_CONTROL,
+    );
+  }
+
+  /**
+   * PREND le fil à l'agent de Meta, SANS écrire au client.
+   *
+   * 🔴 CETTE ACTION EXISTE, ET TROIS ENDROITS DE CE DÉPÔT AFFIRMAIENT LE CONTRAIRE. Le corpus OpenAPI
+   * téléchargé (v1.0.0, `mba documentation/`) n'expose en effet que `pass` et `release` : c'est un
+   * INSTANTANÉ, et Meta a réécrit la page le 2026-08-13. Relu en direct sur la documentation vivante le
+   * 2026-09-11 : l'énumération vaut `pass`, `release`, `take`, et la page Get Started le dit en toutes
+   * lettres, « Sending a message to a conversation takes control implicitly » puis « Use the `take` action
+   * to take control BEFORE you send anything ». C'est exactement le geste qui manquait.
+   *
+   * ⚠️ META LA RÉSERVE AU « configured escalation partner », notion qu'il ne définit nulle part. Un refus
+   * est donc un cas NORMAL, pas une anomalie : l'appelant doit le traduire pour l'opérateur plutôt que de
+   * l'avaler, et la porte de secours reste vraie dans tous les cas, ÉCRIRE prend le fil à coup sûr.
+   *
+   * ⚠️ La réponse ne porte AUCUNE information, comme pour `release` : la confirmation arrive de façon
+   * asynchrone par le webhook `messaging_handovers`.
+   *
+   * @param to Identifiant du consommateur. Convention Cloud API : E.164 SANS `+` ni séparateur.
+   */
+  async takeThread(phoneNumberId: string, to: string): Promise<void> {
+    await this.appel<unknown>(
+      'POST',
+      `business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
+      { messaging_product: 'whatsapp', action: 'take', to },
       VERSION_THREAD_CONTROL,
     );
   }

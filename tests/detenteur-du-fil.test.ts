@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { processInbound, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
-import { creerRendreLeFil } from '../src/inbox/rendre-le-fil';
+import { creerRendreLeFil, creerPrendreLeFil } from '../src/inbox/controle-du-fil';
 
 /**
  * Qui détient le fil d'une conversation, et comment on l'apprend.
@@ -97,7 +97,7 @@ describe('rendre le fil à Meta', () => {
     const appels: Array<[string, string]> = [];
     const rendre = creerRendreLeFil({
       numeroDuTenant: async () => '1234840649713976',
-      clientMba: async () => ({ releaseThread: async (pn: string, waId: string) => { appels.push([pn, waId]); } }),
+      clientMba: async () => ({ releaseThread: async (pn: string, waId: string) => { appels.push([pn, waId]); }, takeThread: async () => {} }),
     });
     expect(await rendre('tenant-1', '33633921577')).toBe(true);
     expect(appels).toEqual([['1234840649713976', '33633921577']]);
@@ -107,7 +107,7 @@ describe('rendre le fil à Meta', () => {
     let appele = false;
     const rendre = creerRendreLeFil({
       numeroDuTenant: async () => null,
-      clientMba: async () => { appele = true; return { releaseThread: async () => {} }; },
+      clientMba: async () => { appele = true; return { releaseThread: async () => {}, takeThread: async () => {} }; },
     });
     expect(await rendre('tenant-1', '33633921577')).toBe(false);
     expect(appele).toBe(false);
@@ -118,8 +118,50 @@ describe('rendre le fil à Meta', () => {
     // recréerait le défaut qu'on répare : un état local qui annonce ce que Meta n'a pas fait.
     const rendre = creerRendreLeFil({
       numeroDuTenant: async () => '1234840649713976',
-      clientMba: async () => ({ releaseThread: async () => { throw new Error('jeton expiré'); } }),
+      clientMba: async () => ({ releaseThread: async () => { throw new Error('jeton expiré'); }, takeThread: async () => {} }),
     });
     await expect(rendre('tenant-1', '33633921577')).rejects.toThrow('jeton expiré');
+  });
+});
+
+describe('prendre le fil à Meta', () => {
+  it('🔴 appelle `takeThread`, PAS `releaseThread`', async () => {
+    // Les deux actes partent sur la MÊME URL et ne different que par un mot dans le corps : les confondre
+    // rendrait le fil à l'agent de Meta sous un bouton qui promet de le lui prendre, et le symptôme serait
+    // exactement celui qu'on répare.
+    const appels: Array<[string, string, string]> = [];
+    const prendre = creerPrendreLeFil({
+      numeroDuTenant: async () => '1234840649713976',
+      clientMba: async () => ({
+        releaseThread: async (pn: string, waId: string) => { appels.push(['release', pn, waId]); },
+        takeThread: async (pn: string, waId: string) => { appels.push(['take', pn, waId]); },
+      }),
+    });
+    expect(await prendre('tenant-1', '33633921577')).toBe(true);
+    expect(appels).toEqual([['take', '1234840649713976', '33633921577']]);
+  });
+
+  it('sans numéro connecté : `false`, et AUCUN appel', async () => {
+    let appele = false;
+    const prendre = creerPrendreLeFil({
+      numeroDuTenant: async () => null,
+      clientMba: async () => { appele = true; return { releaseThread: async () => {}, takeThread: async () => {} }; },
+    });
+    expect(await prendre('tenant-1', '33633921577')).toBe(false);
+    expect(appele).toBe(false);
+  });
+
+  it('🔴 LÈVE si Meta refuse, et ça compte plus encore que pour son jumeau', async () => {
+    // Meta réserve `take` au « configured escalation partner » : le refus est un cas NORMAL. L'avaler
+    // laisserait un opérateur croire qu'il a éteint l'agent de Meta, donc cesser de surveiller la
+    // conversation pendant que l'agent continue de répondre.
+    const prendre = creerPrendreLeFil({
+      numeroDuTenant: async () => '1234840649713976',
+      clientMba: async () => ({
+        releaseThread: async () => {},
+        takeThread: async () => { throw new Error('not the configured escalation partner'); },
+      }),
+    });
+    await expect(prendre('tenant-1', '33633921577')).rejects.toThrow('escalation partner');
   });
 });

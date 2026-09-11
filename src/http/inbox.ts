@@ -112,6 +112,19 @@ export interface InboxRouteDeps {
    */
   takeControl?(tenantId: string, waId: string): Promise<void>;
   /**
+   * PREND le fil À L'AGENT DE META, sans écrire au client (`thread_control`, action `take`).
+   *
+   * 🔴 DISTINCTE DE `takeControl`, ET CE N'EST PAS UN DOUBLON. `takeControl` n'écrit QUE notre état local,
+   * et c'est tout ce qu'il faut sur les chemins d'ENVOI : écrire un message prend déjà le fil chez Meta,
+   * implicitement. Ici il n'y a pas de message, donc rien ne le dit à Meta, et c'est précisément le défaut
+   * signalé par Julien le 2026-09-11 : après « Reprendre la main », l'agent de Meta répondait au message
+   * suivant du client comme si de rien n'était.
+   *
+   * ⚠️ LÈVE si Meta refuse, et la route en fait un 4xx lisible. Optionnelle : absente, le bouton garde son
+   * ancien comportement local, ce qui est le bon repli pour une instance sans MBA.
+   */
+  prendreLeFil?(tenantId: string, waId: string): Promise<void>;
+  /**
    * L'opérateur REND la main : la conversation repart en automatique. Renvoie qui la détient désormais.
    *
    * Quand MBA sera actif sur le numéro, c'est ici qu'il faudra aussi appeler `thread_control` avec
@@ -357,6 +370,25 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     if (!deps.takeControl) return reply.code(503).send({ error: 'prise du fil indisponible sur cette instance' });
+    /**
+     * 🔴 META D'ABORD, NOTRE ÉTAT ENSUITE, comme pour `release`. L'ordre inverse est ce qui a produit le
+     * bug : un état local qui annonce ce que Meta n'a pas fait est pire qu'une erreur, parce qu'il rend le
+     * problème invisible jusqu'au prochain message du client.
+     *
+     * 🔴 ET LE REFUS SORT EN 409, PAS EN 500. Meta réserve l'action `take` au « configured escalation
+     * partner » : un refus est un cas NORMAL, pas une panne. Cloudflare remplace le corps de toute réponse
+     * 5xx par sa page d'erreur, donc un message destiné à l'opérateur doit sortir en 4xx. Et il lui donne la
+     * porte de secours, qui reste vraie quoi qu'il arrive : ÉCRIRE prend le fil à coup sûr.
+     */
+    if (deps.prendreLeFil) {
+      try {
+        await deps.prendreLeFil(tenant, ctx.waId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId}):`, err instanceof Error ? err.message : err);
+        return reply.code(409).send({ error: 'Meta n’a pas cédé la conversation, son agent peut encore répondre. Envoyez un message : écrire prend le fil à coup sûr.' });
+      }
+    }
     await deps.takeControl(tenant, ctx.waId);
     invaliderCompteurs(tenant); // le fil entre dans « À traiter ».
     return reply.code(200).send({ controlOwner: 'app_human' });
