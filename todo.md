@@ -749,10 +749,16 @@ Ce qu'il faut, dans l'ordre :
 
 Deux à trois heures, sur le chemin d'ENVOI en production : à faire d'un bloc, pas en passant.
 
-## 🔴 Agent IA : les lots NON développés (L2 à L7), du cadrage du 2026-08-23
+## 🔴 Agent IA : les lots NON développés (L3, L4, L6, L7), du cadrage du 2026-08-23
 
-Ce qui est livré, c'est **L0 et L1** : l'agent, ses outils MAISON, sa base de connaissance, la construction en
-parlant, le bac à sable, le tour de production, et le solde prépayé. Tout le reste ci-dessous n'existe pas. Le
+⚠️ **CE TITRE A DIT « L2 à L7 » JUSQU'AU 2026-09-11**, alors que L2 est livré et déployé depuis le
+2026-08-28, deux lignes plus bas et marqué ✅. Un titre qui contredit sa propre liste est plus lu que la
+liste : il a fait annoncer à Julien un chantier en pause plus gros qu'il n'est. Il n'y a PAS de L5, la
+numérotation du cadrage saute de L4 à L6.
+
+Ce qui est livré, c'est **L0, L1 et L2** : l'agent, ses outils MAISON, sa base de connaissance, la
+construction en parlant, le bac à sable, le tour de production, le solde prépayé, et les connecteurs API du
+client. Tout le reste ci-dessous n'existe pas. Le
 séquencement et le pourquoi de l'ordre sont en §7 de
 [AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md) ; le tableau côté client est dans
 [AGENT-IA-PRODUIT-2026-08-27.md](AGENT-IA-PRODUIT-2026-08-27.md).
