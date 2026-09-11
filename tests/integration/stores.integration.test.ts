@@ -1069,7 +1069,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(notre(await journal.lister(tenantId, { code: 131026, from: '2020-01-01', to: '2020-01-02' }))).toHaveLength(0);
 
     const vol = await stats.getCostVolume(tenantId, range, {});
-    expect(vol.find((v) => v.category === 'marketing' && v.date === today)?.count).toBe(2); // r1 + r2 (r3 échec exclu)
+    expect(vol.find((v) => v.category === 'marketing' && v.date === today)?.count).toBe(3); // r1 + r2 + r4 (r3 échec exclu)
     // Filtre par template inexistant -> aucun volume.
     expect(await stats.getCostVolume(tenantId, range, { templateNames: ['inconnu'] })).toHaveLength(0);
     // Liste VIDE = « tout », pas « rien » : `= any('{}')` ne matche aucune ligne, donc un filtre vide effacerait
@@ -1077,7 +1077,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await stats.getCostVolume(tenantId, range, { templateNames: [], campaignIds: [] })).toHaveLength(1);
     // 🔴 Plusieurs valeurs -> serie COMPILEE : le template reel est pris avec un inconnu, le volume reste entier.
     const compile = await stats.getCostVolume(tenantId, range, { templateNames: ['inconnu', 'te'] });
-    expect(compile.find((v) => v.category === 'marketing')?.count).toBe(2);
+    expect(compile.find((v) => v.category === 'marketing')?.count).toBe(3);
   });
 
   it('🔴 etancheite : un entrant RCS ne compte NI en reponse NI en clic d une campagne WhatsApp', async () => {
