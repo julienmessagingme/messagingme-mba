@@ -148,7 +148,15 @@ export const MIN_TERMES_COMMUNS = 2;
 export const COUVERTURE_MIN = 0.5;
 export const PROXIMITE_TITRE_MIN = 0.3;
 
-export function ficheEstPertinente(f: FicheTrouvee): boolean {
+/**
+ * La règle LEXICALE de pertinence : la fiche a-t-elle assez de rapport avec la question ?
+ *
+ * ⚠️ ELLE PREND LES TROIS MESURES QU'ELLE LIT, pas une `FicheTrouvee` entière, depuis le 2026-09-11. Le bot
+ * d'aide (`src/aide/`) cherche dans une AUTRE table, dont les fiches n'ont pas de `sourceUrl` : deux règles
+ * de pertinence auraient fini par ne plus vouloir dire la même chose, et personne n'aurait su laquelle
+ * s'appliquait où. Le `Pick` est CONSOMMÉ sur place, ce qui est le cas où le CLAUDE.md l'autorise.
+ */
+export function ficheEstPertinente(f: Pick<FicheTrouvee, 'termesTrouves' | 'couverture' | 'proximiteTitre'>): boolean {
   return f.termesTrouves >= MIN_TERMES_COMMUNS
     || f.couverture >= COUVERTURE_MIN
     || f.proximiteTitre >= PROXIMITE_TITRE_MIN;

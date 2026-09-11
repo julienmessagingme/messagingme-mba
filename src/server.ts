@@ -32,6 +32,7 @@ import { registerMedia } from './http/media';
 import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
+import { registerAide, type AideRouteDeps } from './http/aide';
 import { registerContacts } from './http/contacts';
 import { registerWorkflowReports } from './http/workflow-reports';
 import type { WorkflowReportsRouteDeps } from './http/workflow-reports';
@@ -182,6 +183,8 @@ export interface ServerDeps {
   fields?: FieldsRouteDeps;
   /** Formulaire de support (envoi email via Resend) — tout compte authentifié. */
   support?: SupportRouteDeps;
+  /** Le bot d'aide de la console : il explique et il emmène, il n'écrit jamais rien. */
+  aide?: AideRouteDeps;
   /** Édition d'un contact (fields/tags depuis la fiche) — réservé aux admins. */
   contacts?: ContactsRouteDeps;
   /** Statut du compte WhatsApp (page Accueil : numéro + pastille) — réservé aux admins. */
@@ -251,7 +254,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     deps.inbox, deps.stats, deps.settings, deps.rcsMessages, deps.rcsChannel, deps.rcsMedia, deps.media,
     deps.tags, deps.fields, deps.workflowReports, deps.automations, deps.agents, deps.agentKnowledge,
     deps.agentTools, deps.agentSources, deps.agentRequetes, deps.agentSetup, deps.agentTest,
-    deps.channelsMe,
+    deps.channelsMe, deps.aide,
   ];
   if (modulesTenant.some((m) => m !== undefined) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant refuse tout et le service est mort
@@ -464,6 +467,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.tags) registerTags(app, deps.tags, requireAdmin);
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);
   if (deps.support) registerSupport(app, deps.support, requireAuth);
+  if (deps.aide) registerAide(app, deps.aide, requireAuth);
   if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin, limiteCouteuse);
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
   if (deps.workflowReports) registerWorkflowReports(app, deps.workflowReports, requireAdmin);

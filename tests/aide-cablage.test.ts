@@ -1,0 +1,59 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+/**
+ * LE CÂBLAGE DU BOT D'AIDE, lu dans la source.
+ *
+ * 🔴 POURQUOI CE TEST NE PEUT PAS ÊTRE UN TEST ORDINAIRE. Ce qui se joue ici est QUI PAIE, et cela ne se
+ * voit dans aucune assertion de comportement : le bot répondrait exactement pareil en facturant le client.
+ * Julien a tranché le 2026-09-11 que l'aide est à NOTRE charge, parce que facturer quelqu'un pour apprendre
+ * à se servir du produit se retourne contre nous. Un câblage qui prend le mauvais client de Gateway
+ * renverse cette décision en silence, et personne ne s'en apercevrait avant une facture.
+ *
+ * Le mécanisme est celui de `cleDe` (`src/agent/llm/chat-client.ts`) : sans résolveur de clé par espace, la
+ * clé maison est utilisée. Le client de l'aide est donc construit SANS ce résolveur, délibérément.
+ *
+ * Même famille que `tests/campagne-cablage.test.ts` et `tests/workflow-cablage-categorie.test.ts` : ce qui
+ * traverse un câblage ne se vérifie pas au type, il se vérifie en le regardant.
+ */
+const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+/** Sans les commentaires : sinon une explication qui CITE le bon code ferait passer un câblage fautif. */
+const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+describe('câblage du bot d’aide', () => {
+  it('🔴 le client du bot d’aide est construit SANS résolveur de clé par espace', () => {
+    // Un seul argument : la clé maison. Un troisième argument ferait résoudre la clé DU CLIENT, et l'aide
+    // serait facturée sur son crédit prépayé.
+    expect(sansCommentaires, 'gatewayAide doit être construit avec la seule clé maison')
+      .toMatch(/const gatewayAide = config\.AI_GATEWAY_API_KEY \? new GatewayChatClient\(config\.AI_GATEWAY_API_KEY\) : null;/);
+  });
+
+  it('🔴 l’aide n’utilise PAS le client qui fait payer les clients', () => {
+    // Le piège exact : `gateway` et `gatewayAide` ne diffèrent que par un mot, et les intervertir compile.
+    const bloc = sansCommentaires.slice(sansCommentaires.indexOf('aide: {'), sansCommentaires.indexOf('agentSetup: {'));
+    expect(bloc, 'le bloc `aide` n’a pas été trouvé dans le câblage').not.toBe('');
+    expect(bloc).toContain('gatewayAide.completer');
+    expect(bloc, 'l’aide passerait par le client qui facture l’espace').not.toMatch(/[^A-Za-z]gateway\.completer/);
+  });
+
+  it('⚠️ l’aide ne se monte QUE si son modèle est configuré', () => {
+    // Sans modèle, la route doit répondre 503 plutôt que de retomber sur le modèle d'un autre usage : celui
+    // de l'agent de production coûte plus cher et n'a pas le même métier.
+    expect(sansCommentaires).toMatch(/gatewayAide && config\.AGENT_AIDE_MODEL/);
+  });
+
+  it('⚠️ le modèle de l’aide est le SIEN, pas celui d’un autre usage', () => {
+    const bloc = sansCommentaires.slice(sansCommentaires.indexOf('aide: {'), sansCommentaires.indexOf('agentSetup: {'));
+    expect(bloc).toContain('config.AGENT_AIDE_MODEL');
+    expect(bloc).not.toContain('AGENT_SETUP_MODEL');
+    expect(bloc).not.toContain('AGENT_MODEL,');
+  });
+
+  it('🔴 la route d’aide est couverte par le garde-fou d’authentification', () => {
+    // `src/server.ts` refuse de démarrer si un module à routes `:tenantId` se monte sans `auth`. En ajouter
+    // un sans l'inscrire dans cette liste, c'est rouvrir la porte pour lui seul.
+    const server = readFileSync(new URL('../src/server.ts', import.meta.url), 'utf8');
+    const bloc = server.slice(server.indexOf('const modulesTenant'), server.indexOf('const app = Fastify'));
+    expect(bloc).toContain('deps.aide');
+  });
+});

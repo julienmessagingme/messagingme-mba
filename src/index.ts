@@ -102,6 +102,8 @@ import { FetchTransport, HTTP_TIMEOUT_MODELE_MS } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { creerRechercheSemantique } from './agent/recherche';
+import { PgDepotAide } from './aide/fiches.pg';
+import { creerRepondeur } from './aide/repondre';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
@@ -240,9 +242,26 @@ async function main(): Promise<void> {
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
   // ⚠️ Le 3e argument est le resolveur de cle PAR ESPACE : sans lui, tous les appels partiraient sur la cle
   // maison et aucune depense ne serait attribuee, ce qui est exactement ce que ce lot vient corriger.
+  // ⚠️ UNE SEULE EXCEPTION, juste en dessous et DELIBEREE : `gatewayAide` est construit sans resolveur,
+  // parce que l aide de la console est a NOTRE charge. Ne pas << corriger >> cet ecart.
   const gateway = config.AI_GATEWAY_API_KEY
     ? new GatewayChatClient(config.AI_GATEWAY_API_KEY, undefined, async (tenant) => (await clesGateway.lire(tenant))?.cle ?? null)
     : null;
+  /**
+   * LE CLIENT DU BOT D AIDE, construit SANS resolveur de cle par espace.
+   *
+   * 🔴 C EST CE QUI FAIT QUE NOUS PAYONS, et ce n est pas un oubli : `cleDe` rend la cle maison des que le
+   * resolveur est absent (`src/agent/llm/chat-client.ts`). Lui passer le resolveur ferait facturer l aide
+   * au credit prepaye du client, c est-a-dire l inverse exact de ce que Julien a tranche le 2026-09-11.
+   * Facturer quelqu un pour apprendre a se servir du produit se retourne contre nous : celui qui hesite a
+   * poser une question est celui qui abandonne.
+   *
+   * ⚠️ La depense est bornee par le plafond d EQUIPE pose chez Vercel, et par le plafond de debit PAR ESPACE
+   * de la route (`src/http/aide.ts`), qui empeche un seul client de la consommer pour tout le monde.
+   */
+  const gatewayAide = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
+  /** Il n y a aucun espace pour le compte de qui l aide est appelee : la depense est la NOTRE. */
+  const AUCUN_ESPACE_PAYEUR = '';
   const automationStore = new PgAutomationStore(pool);
   // Chaine WhatsApp (Channels Me). La cle de chiffrement est INJECTEE au store (contrat du sous-systeme),
   // elle n'est pas relue depuis la config a l'interieur : les deux secrets sont chiffres la, jamais plus haut.
@@ -1079,6 +1098,26 @@ async function main(): Promise<void> {
     },
     // L assistant de construction. Il ne peut ecrire NI la mention legale d IA, NI les plafonds, NI le
     // modele, NI le risque ou l activation d un outil : il rend une proposition, le client l applique.
+    /**
+     * LE BOT D AIDE DE LA CONSOLE. Il explique et il emmene, il n ecrit jamais rien.
+     *
+     * ⚠️ `gatewayAide` ET NON `gateway` : le premier est construit sans resolveur de cle par espace, donc il
+     * paie sur la NOTRE. Les intervertir ferait facturer l aide au credit du client, en silence, et c est
+     * `tests/aide-cablage.test.ts` qui garde ce point.
+     */
+    ...(gatewayAide && config.AGENT_AIDE_MODEL ? {
+      aide: {
+        repondre: creerRepondeur({
+          depot: new PgDepotAide(pool),
+          recherche: creerRechercheSemantique(),
+          // AUCUN espace ne paie cet appel : c est nous. `gatewayAide` n a pas de resolveur de cle par
+          // espace, donc cette valeur n est jamais lue pour en choisir une ; la nommer evite qu on la
+          // prenne pour un oubli et qu on y mette le tenant, ce qui facturerait le client.
+          completer: (i) => gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
+          modele: config.AGENT_AIDE_MODEL,
+        }),
+      },
+    } : {}),
     agentSetup: {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);

@@ -50,7 +50,7 @@ describe('scopeTenant : le contrôle d’isolation entre clients', () => {
       'mba', 'email', 'webhooksAdmin',
       'inbox', 'stats', 'settings', 'rcsMessages', 'rcsChannel', 'rcsMedia', 'media', 'tags', 'fields',
       'workflowReports', 'automations', 'agents', 'agentKnowledge', 'agentTools', 'agentSources',
-      'agentRequetes', 'agentSetup', 'agentTest', 'channelsMe',
+      'agentRequetes', 'agentSetup', 'agentTest', 'channelsMe', 'aide',
     ];
     const manquants = dependants.filter((m) => !bloc.includes(`deps.${m}`));
     expect(manquants, `ces modules exposent des routes tenant sans être couverts par le garde-fou : ${manquants.join(', ')}`).toEqual([]);

@@ -447,6 +447,19 @@ export const schema = z.object({
    */
   AGENT_SETUP_MODEL: z.string().default(''),
   /**
+   * Modele du BOT D AIDE de la console (celui qui explique le produit au client).
+   *
+   * 🔴 SEPARE des deux autres, et pour une raison de nature differente : celui-ci repond a quelqu un qui
+   * ATTEND DEVANT SON ECRAN, il n appelle aucun outil, et il lit trois fiches courtes. Un modele rapide et
+   * bon marche y suffit, la ou l agent de production et l IA de construction meritent plus fort. Les
+   * confondre ferait payer un modele de raisonnement pour repondre << ouvrez Campagnes >>.
+   *
+   * ⚠️ CES APPELS SONT SUR NOTRE CLE, PAS SUR LE CREDIT DU CLIENT (decision de Julien du 2026-09-11) :
+   * facturer quelqu un pour apprendre a se servir du produit se retourne contre nous. Vide -> la route d
+   * aide repond 503, jamais un repli muet.
+   */
+  AGENT_AIDE_MODEL: z.string().default(''),
+  /**
    * Modèle qui LIT LES IMAGES jointes à la conversation de construction.
    *
    * 🔴 SÉPARÉ de `AGENT_SETUP_MODEL`, et mesuré le 2026-08-31 : `zai/glm-4.7`, le modèle d'entretien de la
