@@ -30,7 +30,11 @@
 // ou sans menu du tout. Il ATTEND toujours une réponse, comme un message rapide à boutons, et il est le seul
 // bloc à porter EN PLUS une échéance : son parcours attend la réponse ET le temps qui passe.
 // Sorties : `row:<i>` par ligne du menu, `timeout` à l'échéance, et l'arête libre pour une réponse écrite.
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent'] as const;
+// `http` = « Appel HTTP » : joue un appel DEJA mis au point dans Tools > Connecteurs API et range sa reponse
+// dans un champ du contact. Action SYNCHRONE non bloquante, comme `tag` ou `field` : le walk (PUR) emet
+// l'action, l'executor fait l'IO. Le bloc ne DECRIT aucun appel, il en DESIGNE un : l'adresse, la methode, le
+// corps et le filtre de sortie vivent dans la bibliotheque, ou ils sont eprouves une fois pour toutes.
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

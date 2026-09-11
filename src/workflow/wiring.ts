@@ -1,6 +1,9 @@
 import type { Pool } from 'pg';
 import { config } from '../config';
 import { PgWorkflowRunStore } from './run-store.pg';
+import { creerAppelHttpScenario } from './appel-http';
+import { PgSourceStore } from '../agent/sources.pg';
+import { PgRequeteStore } from '../agent/requetes.pg';
 import { PgWorkflowStore } from './store.pg';
 import { PgWorkflowNodeEventStore } from './node-events.pg';
 import { PgTagStore } from '../crm/tag-store.pg';
@@ -395,6 +398,29 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag: clean } } satisfies AutomationEventJob);
     },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
+    /**
+     * LE BLOC « APPEL HTTP » : il joue un appel de la bibliotheque et rend ce qu il faut ranger dans un champ.
+     *
+     * 🔴 LES MEMES GARDES QUE L AGENT IA, parce que c est LE MEME CODE (`creerAppelConnecteur`) : source
+     * active, filtre de sortie non vide, variables requises, adresse interne refusee, redirection refusee,
+     * echeance, corps borne. Une seconde implementation aurait eu ses propres trous.
+     *
+     * ⚠️ Les deux valeurs systeme sont cablees comme pour l agent : sans elles, une requete qui demande la
+     * derniere saisie du contact ou l heure locale partirait avec `null` et `UTC`, donc avec une valeur
+     * fausse mais plausible, ce qui est pire qu un refus.
+     */
+    appelHttp: creerAppelHttpScenario({
+      sources: new PgSourceStore(pool),
+      requetes: new PgRequeteStore(pool),
+      derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+      fuseau: async (t) => (await settingsStore.get(t)).timezone,
+      // 🔴 RELUE A CHAQUE APPEL, pas portee par le contexte du parcours : le bloc peut suivre un bloc qui
+      // vient d ecrire un champ, et servir une photo d avant ferait envoyer l ancienne valeur.
+      projectionContact: async (t, waId) => {
+        const etat = await contactStore.getContactStateByWaId(t, waId);
+        return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
+      },
+    }),
     // Retrait : même normalisation (trim + slice 64) que l'ajout, pour matcher le tag stocké. Le référentiel Tags
     // n'est PAS touché (retirer un tag d'un contact ne « dé-déclare » pas le tag du référentiel du tenant).
     removeTag: async (tenant, waId, tag) => {

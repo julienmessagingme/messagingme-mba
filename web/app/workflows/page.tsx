@@ -8,6 +8,7 @@ import type { Session } from '@/lib/session';
 import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, listEmailAccounts, grapheEditable, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
 import { listAgents, type AgentResume } from '@/lib/api-agent';
 import { listUsers, type AdminUser } from '@/lib/api/compte';
+import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 
@@ -47,6 +48,8 @@ function WorkflowsInner({ session }: { session: Session }) {
    * refusera est une invitation à l'échec.
    */
   const [membres, setMembres] = useState<AdminUser[] | null>(null);
+  /** Les appels de Tools > Connecteurs API : ils GATENT le bloc « Appel API » et alimentent son sélecteur. */
+  const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -95,6 +98,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     void listUsers(session.tenantId)
       .then((r) => setMembres(r.users.filter((u) => !u.disabled && !u.pending)))
       .catch(() => {});
+    void listRequetes(session.tenantId).then((r) => setRequetes(r.requetes)).catch(() => {});
   }, [session.tenantId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -216,7 +220,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         <div className="min-h-0 flex-1">
           {/* L'éditeur ouvre le BROUILLON s'il y en a un (lot 7) : c'est le travail en cours de l'auteur, pas
               forcément ce qui tourne. `brouillonInitial` allume le bouton « Publier » dès l'ouverture. */}
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} requetes={requetes} />
         </div>
       </div>
     );

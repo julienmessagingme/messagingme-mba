@@ -111,7 +111,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 export function ConfigPanel({
-  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, onCommitTag,
+  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
@@ -130,6 +130,8 @@ export function ConfigPanel({
   agents: AgentResume[] | null;
   /** Membres de l'équipe, pour l'affectation du bloc « passer à un humain ». `null` = pas encore chargés. */
   membres?: Array<{ id: string; name: string | null; email: string }> | null;
+  /** Appels déclarés dans Tools > Connecteurs API, pour le bloc « Appel API ». `null` = pas encore chargés. */
+  requetes?: Array<{ id: string; label: string; methode: string; chemin: string }> | null;
   onCommitTag: (tag: string) => void;
 }) {
   const t = useT();
@@ -644,6 +646,63 @@ export function ConfigPanel({
             {t(
               'Au pot commun, tout le monde la voit et peut répondre. Affectée, elle n\'allume la pastille que de cette personne, et d\'un manager ou d\'un administrateur.',
               'In the shared pool, everyone sees it and can reply. Assigned, it only lights up that person\'s badge, plus a manager\'s or an admin\'s.',
+            )}
+          </p>
+        </div>
+      )}
+      {wfType === 'http' && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs leading-relaxed text-ink-500">
+            {t(
+              'Ce bloc joue un appel que vous avez déjà mis au point dans Tools > Connecteurs API, puis range sa réponse dans un champ du contact. Le parcours continue sans attendre : la suite peut tester ce champ.',
+              'This block runs a call you already set up in Tools > API connectors, then stores its answer in a contact field. The journey continues without waiting: the next steps can test that field.',
+            )}
+          </p>
+
+          <label className="text-xs font-medium text-ink-700">{t('Quel appel', 'Which call')}</label>
+          <select
+            data-testid="http-node-requete"
+            className={`${cls} bg-white`}
+            value={String(d.requestId ?? '')}
+            onChange={(e) => {
+              const choisi = (requetes ?? []).find((r) => r.id === e.target.value);
+              // Le LIBELLÉ est copié dans le graphe à côté de l'identifiant, comme le bloc agent copie ses
+              // sorties : la liste des blocs doit pouvoir nommer l'appel sans relire la bibliothèque.
+              onPatch(choisi ? { requestId: choisi.id, requeteLabel: choisi.label } : { requestId: '', requeteLabel: '' });
+            }}
+          >
+            <option value="">{t('choisir un appel…', 'choose a call…')}</option>
+            {(requetes ?? []).map((r) => (
+              <option key={r.id} value={r.id}>{r.label} ({r.methode} {r.chemin})</option>
+            ))}
+          </select>
+          {/* ⚠️ Un appel choisi puis SUPPRIMÉ disparaît de la liste : le sélecteur retomberait sur « choisir… »
+              sans rien dire, alors que le graphe porte toujours son identifiant. */}
+          {requetes != null && String(d.requestId ?? '') !== '' && !requetes.some((r) => r.id === d.requestId) && (
+            <p className="text-xs text-coral" data-testid="http-node-requete-partie">
+              {t(
+                `L'appel « ${String(d.requeteLabel ?? d.requestId)} » n'existe plus : ce bloc ne fera rien.`,
+                `The call “${String(d.requeteLabel ?? d.requestId)}” no longer exists: this block will do nothing.`,
+              )}
+            </p>
+          )}
+
+          <label className="text-xs font-medium text-ink-700">{t('Où ranger la réponse', 'Where to store the answer')}</label>
+          <select
+            data-testid="http-node-champ"
+            className={`${cls} bg-white`}
+            value={String(d.champCible ?? '')}
+            onChange={(e) => onPatch({ champCible: e.target.value })}
+          >
+            <option value="">{t('choisir un champ…', 'choose a field…')}</option>
+            {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+          </select>
+
+          {/* 🔴 CE QUE PERSONNE NE DEVINE, ET QUI DÉCIDE DE LA SUITE DU SCÉNARIO. */}
+          <p className="text-xs text-ink-500">
+            {t(
+              'Si l’appel échoue (système injoignable, information manquante), le champ est VIDÉ. Branchez une condition « ce champ est vide » pour traiter ce cas : une valeur de la veille ferait prendre la bonne branche pour de mauvaises raisons.',
+              'If the call fails (unreachable system, missing information), the field is EMPTIED. Add a condition “this field is empty” to handle that case: a value from yesterday would send the journey down the right branch for the wrong reasons.',
             )}
           </p>
         </div>

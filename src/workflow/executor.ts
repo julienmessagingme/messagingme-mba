@@ -243,6 +243,18 @@ export interface WorkflowExecutorDeps {
    */
   escalateToHuman?(tenantId: string, waId: string, assigneA?: string | null): Promise<void>;
   /**
+   * Joue un appel de la bibliothèque (Tools > Connecteurs API) pour ce contact, et rend ce qu'il faut ranger
+   * dans un champ.
+   *
+   * 🔴 INJECTÉE, comme tout ce qui touche le réseau ici : un test de scénario ne doit pas dépendre d'un
+   * serveur distant. Absente -> le bloc « Appel HTTP » ne fait RIEN et le parcours continue, exactement
+   * comme un bloc mail sur une instance sans SMTP.
+   *
+   * `ok: false` = l'appel n'a pas abouti (connecteur inactif, variable manquante, adresse refusée, échéance).
+   * L'exécuteur VIDE alors le champ cible : voir le commentaire du point d'application.
+   */
+  appelHttp?(tenantId: string, waId: string, requestId: string): Promise<{ ok: boolean; valeur: string }>;
+  /**
    * État des conversations tenues par un bloc agent. OPTIONNEL, comme les autres deps de ce fichier : absent,
    * aucun bloc agent ne peut être servi, ce qui préserve les suites de tests à deps minimales et l'intégration.
    */
@@ -524,6 +536,25 @@ export class WorkflowExecutor {
       }
       else if (a.kind === 'removeTag') await this.deps.removeTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
+      /**
+       * 🔴 UN ÉCHEC VIDE LE CHAMP, il ne le laisse PAS tel quel. C'est la seule façon de rendre le bloc
+       * utilisable dans un scénario : la suite branche une condition sur ce champ, et un reste de la veille
+       * ferait prendre la bonne branche pour de mauvaises raisons, sans que rien ne le signale. Un champ vide
+       * se teste (« si le champ est vide »), une valeur périmée ne se distingue de rien.
+       *
+       * ⚠️ BEST-EFFORT, comme l'envoi de mail : un connecteur en panne ne doit pas arrêter le parcours du
+       * contact. L'échec est journalisé côté câblage, là où l'on sait ce qui a échoué.
+       */
+      else if (a.kind === 'appelHttp') {
+        // 🔴 LE TEST DU `kind` D'ABORD, LA DÉPENDANCE ENSUITE, et le compilateur l'a prouvé nécessaire :
+        // écrit `a.kind === 'appelHttp' && this.deps.appelHttp`, un appel HTTP sur une instance sans ce
+        // câblage TOMBAIT DANS LA BRANCHE SUIVANTE et finissait par être traité comme un envoi de TEMPLATE.
+        // Même forme que `sendEmail` juste en dessous, pour la même raison.
+        if (this.deps.appelHttp) {
+          const r = await this.deps.appelHttp(tenantId, waId, a.requestId);
+          await this.deps.setField(tenantId, waId, a.champCible, r.ok ? r.valeur : '');
+        }
+      }
       else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);
       else if (a.kind === 'optIn') await this.deps.setOptIn?.(tenantId, waId, a.value);
       // Best-effort STRICT (contrairement aux canaux WhatsApp/RCS ci-dessous, qui peuvent refuser tout le run) :

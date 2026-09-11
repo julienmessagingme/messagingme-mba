@@ -19,6 +19,9 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   rcs_message: { emoji: '📱', label: ['Message RCS', 'RCS message'] },
   email: { emoji: '✉️', label: ['Envoi de mail', 'Send email'] },
   agent: { emoji: '🤖', label: ['Agent IA', 'AI agent'] },
+  // Il ne DÉCRIT aucun appel, il en DÉSIGNE un, mis au point dans Tools > Connecteurs API. Le nom dit donc
+  // « appel », pas « HTTP » : le client a branché un système, il ne code pas une requête.
+  http: { emoji: '🔌', label: ['Appel API', 'API call'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
   mba_handoff: { emoji: '🗑️', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
@@ -45,6 +48,16 @@ export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 // les deux ci-dessus : un bloc agent sans agent derrière ne peut pas tenir une conversation, et le proposer
 // promettrait une réponse qui ne viendrait jamais.
 export const AGENT_NODE_ORDER: WorkflowNodeType[] = ['agent'];
+
+// Bloc « Appel API » : présenté à part et GRISÉ tant qu'aucun appel n'est déclaré dans Tools > Connecteurs
+// API. Même doctrine que RCS, Email et Agent IA : un bloc qui ne pourrait désigner aucun appel promettrait un
+// aller-retour qui n'aurait jamais lieu.
+export const HTTP_NODE_ORDER: WorkflowNodeType[] = ['http'];
+
+export const HTTP_GATE_TITRE: [string, string] = [
+  'Disponible quand vous aurez déclaré un appel dans Tools > Connecteurs API',
+  'Available once you declare a call in Tools > API connectors',
+];
 
 /** Nombre maximal de destinataires d'un bloc « Envoi de mail ». ⚠️ MIROIR de MAX_DESTINATAIRES_EMAIL
  *  (src/workflow/engine.ts), qui fait AUTORITÉ : c'est lui qui tronque, le bouton « + » n'est qu'un confort.

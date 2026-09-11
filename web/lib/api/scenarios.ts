@@ -125,7 +125,12 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 // `question` : pose une question au contact, avec un MENU de reponses (liste interactive WhatsApp) ou
 // sans menu. Il attend TOUJOURS une reponse, et il est le seul bloc a porter en plus une echeance.
 // Sorties : `row:<i>` par ligne du menu, `timeout` a l'echeance, et l'arete libre pour une reponse ecrite.
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent';
+// `http` : joue un appel DEJA mis au point dans Tools > Connecteurs API et range sa reponse dans un champ du
+// contact. Action synchrone non bloquante, comme `tag` ou `action`.
+// ⚠️ CETTE LISTE EST UN MIROIR de `WORKFLOW_NODE_TYPES` (`src/workflow/graph.ts`), qui FAIT AUTORITE : un
+// type present d'un seul cote produit soit un bloc que le serveur refuse d'enregistrer, soit un bloc que
+// l'ecran ne sait pas rendre. `tests/web-node-types-parity.test.ts` casse des que les deux divergent.
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;

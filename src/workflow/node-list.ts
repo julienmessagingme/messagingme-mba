@@ -99,6 +99,9 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
       break;
     }
     case 'inbox': out = ''; break;
+    // Ce que la liste des blocs montre d'un appel HTTP : le champ où la réponse atterrit. L'appel lui-même
+    // est nommé dans la bibliothèque, pas ici : un identifiant n'apprendrait rien à qui lit la liste.
+    case 'http': out = s(data.champCible) === '' ? '' : `-> ${s(data.champCible)}`; break;
     case 'agent': out = s(data.label); break;
     default: out = '';
   }

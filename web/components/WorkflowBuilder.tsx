@@ -13,7 +13,7 @@ import {
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import type { AgentResume } from '@/lib/api-agent';
-import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, AGENT_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, AGENT_GATE_TITRE, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, AGENT_NODE_ORDER, HTTP_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, AGENT_GATE_TITRE, HTTP_GATE_TITRE, nodeMetaOf } from '@/lib/nodeMeta';
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { EDGE_OPTS, toRF, fromRF, type RFNode, type RFEdge } from '@/lib/workflow-canevas';
@@ -58,7 +58,7 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
  * contacts : il écrit une version de travail, et seul le bouton « Publier » la met en ligne. Avant ce lot, une
  * retouche partait en production dans la seconde, y compris pour les parcours déjà en cours.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null }: { tenantId: string; workflowId: string;
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null, requetes = null }: { tenantId: string; workflowId: string;
   /** Ce que l'éditeur ouvre : le brouillon s'il existe, sinon la version en ligne (cf. `grapheEditable`). */
   initialGraph: WorkflowGraph;
   /** Un brouillon non publié attendait-il déjà à l'ouverture ? Pilote l'état initial du bouton « Publier ». */
@@ -69,7 +69,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
    *  brique « Agent IA » est grisée dans les deux cas, mais seul `[]` autorise à AFFIRMER qu'un agent n'est
    *  plus actif. */ agents?: AgentResume[] | null;
   /** Membres de l'équipe, pour le sélecteur d'affectation du bloc « passer à un humain ». */
-  membres?: Array<{ id: string; name: string | null; email: string }> | null }) {
+  membres?: Array<{ id: string; name: string | null; email: string }> | null;
+  /** Appels déclarés dans Tools > Connecteurs API, pour le bloc « Appel API ». `null` = pas encore chargés. */
+  requetes?: Array<{ id: string; label: string; methode: string; chemin: string }> | null }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -383,11 +385,14 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
   // inatteignables au fil. Ne pas réintroduire une liste écrite à la main ici.
   // Un agent ACTIF au moins : sans lui, le bloc ne pourrait tenir aucune conversation.
   const agentEnabled = (agents ?? []).length > 0;
+  // Un appel déclaré au moins : sans lui, le bloc n'aurait rien à désigner.
+  const httpEnabled = (requetes ?? []).length > 0;
   const choixBlocs: Array<{ nt: WorkflowNodeType; actif: boolean; titre: string | undefined }> = [
     ...NODE_ORDER.map((nt) => ({ nt, actif: true, titre: undefined })),
     ...RCS_NODE_ORDER.map((nt) => ({ nt, actif: rcsEnabled, titre: rcsEnabled ? undefined : t(...RCS_GATE_TITRE) })),
     ...EMAIL_NODE_ORDER.map((nt) => ({ nt, actif: emailEnabled, titre: emailEnabled ? undefined : t(...EMAIL_GATE_TITRE) })),
     ...AGENT_NODE_ORDER.map((nt) => ({ nt, actif: agentEnabled, titre: agentEnabled ? undefined : t(...AGENT_GATE_TITRE) })),
+    ...HTTP_NODE_ORDER.map((nt) => ({ nt, actif: httpEnabled, titre: httpEnabled ? undefined : t(...HTTP_GATE_TITRE) })),
   ];
 
   return (
@@ -437,6 +442,19 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
             onClick={() => { if (agentEnabled) addNode(nt); }}
             disabled={!agentEnabled}
             title={agentEnabled ? undefined : t(...AGENT_GATE_TITRE)}
+            className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
+          >
+            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
+          </button>
+        ))}
+        {/* Bloc Appel API : GRISÉ tant qu'aucun appel n'est déclaré dans Tools > Connecteurs API. */}
+        {HTTP_NODE_ORDER.map((nt) => (
+          <button
+            key={nt}
+            data-testid={`add-node-${nt}`}
+            onClick={() => { if (httpEnabled) addNode(nt); }}
+            disabled={!httpEnabled}
+            title={httpEnabled ? undefined : t(...HTTP_GATE_TITRE)}
             className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
           >
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
@@ -596,7 +614,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} />
           )}
         </div>
       </div>

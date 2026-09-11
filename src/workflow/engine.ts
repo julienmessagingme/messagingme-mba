@@ -48,6 +48,13 @@ export type WorkflowAction =
   | { kind: 'removeTag'; tag: string }
   | { kind: 'field'; key: string; value: string }
   | { kind: 'clearField'; key: string }
+  /**
+   * Bloc « Appel HTTP » : joue la requête `requestId` de la bibliothèque et range sa réponse dans `champCible`.
+   *
+   * ⚠️ L'action ne porte PAS la réponse : elle porte ce qu'il faut pour aller la chercher. Le walk est PUR,
+   * c'est l'exécuteur qui fait l'appel réseau, comme pour l'envoi d'un mail.
+   */
+  | { kind: 'appelHttp'; requestId: string; champCible: string }
   /** Consentement marketing posé par un scénario. Les deux sens, comme depuis la fiche et l'action en masse. */
   | { kind: 'optIn'; value: 'opted_in' | 'opted_out' }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
@@ -675,6 +682,14 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     const key = String(node.data.fieldKey ?? node.data.key ?? '').trim();
     if (!key) return null;
     return { kind: 'field', key, value: valeurDuChamp(node.data, ctx) };
+  }
+  if (node.type === 'http') {
+    // Bloc INCOMPLET (aucun appel choisi, ou aucun champ où ranger la réponse) -> `null`, donc un no-op qui
+    // laisse le parcours continuer. Même traitement que `tag` sans tag : un bloc à moitié réglé ne doit pas
+    // casser un scénario en production, il doit ne rien faire et se voir à l'écran.
+    const requestId = String(node.data.requestId ?? '').trim();
+    const champCible = String(node.data.champCible ?? '').trim();
+    return requestId !== '' && champCible !== '' ? { kind: 'appelHttp', requestId, champCible } : null;
   }
   if (node.type === 'action') {
     // Bloc unifié : la sous-action est portée par `data.actionKind`. add_tag/set_field produisent les MÊMES

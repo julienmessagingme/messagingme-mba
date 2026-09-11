@@ -75,12 +75,56 @@ function extraire(source: unknown, chemin: string): unknown {
   return courant;
 }
 
-export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
+/**
+ * CE QU'IL FAUT SAVOIR POUR APPELER UN CONNECTEUR, quel que soit l'appelant.
+ *
+ * 🔴 CE TYPE EXISTE PARCE QU'IL Y A DEUX APPELANTS DEPUIS LE 2026-09-11 : l'agent IA (qui a un outil et un
+ * modèle qui fournit des arguments) et le bloc « appel HTTP » d'un scénario (qui n'a ni l'un ni l'autre).
+ * Réécrire l'appel pour le second aurait dupliqué SEPT gardes (source active, filtre de sortie, variables
+ * requises, adresse interne, redirection, échéance, corps borné), et la copie aurait divergé au premier
+ * correctif. La leçon est celle d'`enTetesAuthSource`, payée deux fois dans ce dépôt.
+ */
+export interface AppelConnecteur {
+  tenantId: string;
+  waId: string;
+  /**
+   * Projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`.
+   *
+   * ⚠️ MÊME TYPE QUE `ContexteAppel.contact` : `null` quand l'appelant n'a pas chargé la fiche, et l'appel
+   * est alors REFUSÉ si une variable la réclame, jamais envoyé avec une valeur inventée.
+   */
+  contact: Record<string, unknown> | null;
+  /** La requête à jouer (`connector_requests`). */
+  requestId: string;
+  /** Plafond de lecture du corps, en octets. */
+  maxBytes: number;
+  /**
+   * Valeurs des variables d'origine `modele`.
+   *
+   * ⚠️ VIDE POUR UN SCÉNARIO, et ce n'est pas un manque : un scénario n'a pas de modèle qui décide. Une
+   * requête qui déclare une variable `modele` REQUISE sera donc refusée avec sa raison, ce qui est le bon
+   * comportement (l'appel partirait sinon sans l'identifiant qui le rend juste).
+   */
+  args: Record<string, unknown>;
+  signal: AbortSignal;
+}
+
+/**
+ * L'appel lui-même, partagé par l'agent IA et le bloc de scénario.
+ *
+ * Tout ce qui suit était le corps de `creerResolveurHttp`, déplacé tel quel : les deux appelants passent
+ * donc par les mêmes gardes, dans le même ordre, avec les mêmes messages.
+ */
+export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecteur) => Promise<SortieResolveur> {
   const appeler = deps.fetchImpl ?? fetch;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
-  return async (entree: EntreeResolveur): Promise<SortieResolveur> => {
-    const { outil, args, ctx, signal } = entree;
+  return async (p: AppelConnecteur): Promise<SortieResolveur> => {
+    const { args, signal } = p;
+    // Les deux locales gardent leur nom d'avant l'extraction : le corps ci-dessous n'a pas changé d'une ligne,
+    // et c'est ce qui rend ce déplacement relisable.
+    const ctx = { tenantId: p.tenantId, waId: p.waId, contact: p.contact };
+    const outil = { requestId: p.requestId, maxBytes: p.maxBytes };
 
     // 1. LA REQUÊTE. Un outil de connecteur en DÉSIGNE une (migration 0105) : sans elle, il n'y a rien à
     // appeler. Un outil orphelin (requête supprimée malgré la contrainte) refuse au lieu d'inventer un appel.
@@ -266,4 +310,23 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
     return { contenu, httpStatus: res.status };
   };
+}
+
+/**
+ * Le résolveur d'OUTIL D'AGENT : un adaptateur au-dessus de `creerAppelConnecteur`.
+ *
+ * ⚠️ Il ne reste ici que la TRADUCTION d'un appel d'outil en appel de connecteur. Tout ce qui décide vit dans
+ * la fonction partagée, donc un correctif de garde profite aux deux appelants sans qu'on ait à y penser.
+ */
+export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
+  const appel = creerAppelConnecteur(deps);
+  return async (entree: EntreeResolveur): Promise<SortieResolveur> => appel({
+    tenantId: entree.ctx.tenantId,
+    waId: entree.ctx.waId,
+    contact: entree.ctx.contact,
+    requestId: typeof entree.outil.requestId === 'string' ? entree.outil.requestId : '',
+    maxBytes: entree.outil.maxBytes,
+    args: entree.args,
+    signal: entree.signal,
+  });
 }
