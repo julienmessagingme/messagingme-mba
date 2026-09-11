@@ -56,7 +56,7 @@ Elles s'appliquent à CHAQUE tâche, sans être répétées dans chacune.
 |---|---|
 | `web/lib/nav.ts` (modifié) | `arbresNav(t)` : la structure ET les libellés de la barre, en un seul endroit |
 | `web/components/AppShell.tsx` (modifié) | consomme `arbresNav(t)` au lieu de construire l'arbre |
-| `scripts/carte-console.mts` (nouveau) | émet `src/aide/carte-console.json` depuis `arbresNav` |
+| `scripts/carte-console.ts` (nouveau) | émet `src/aide/carte-console.json` depuis `arbresNav` |
 | `src/aide/carte-console.json` (généré) | la carte lue par le serveur : clé, adresse, libellés FR/EN, rôle |
 | `src/aide/carte.ts` (nouveau) | lit la carte, la filtre par rôle, résout une clé. Aucune entrée/sortie |
 | `db/migrations/0131_aide_fiches.sql` (nouveau) | la table de recherche des fiches |
@@ -87,7 +87,7 @@ listes à tenir alignées, et le CLAUDE.md du dépôt dit ce que ça coûte).
 - Produit : `arbresNav(t: Traducteur): ListesNav`, où
   `type Traducteur = (fr: string, en: string) => string` et
   `interface ListesNav { console: NavEntree[]; inbox: NavEntree[]; perf: NavEntree[]; adminBas: NavEntree[] }`.
-- Consommé par : tâche 2 (`scripts/carte-console.mts`).
+- Consommé par : tâche 2 (`scripts/carte-console.ts`).
 
 🔴 **TROIS CORRECTIONS APPORTÉES À CE PLAN LE 2026-09-11, avant écriture, par la relecture du code réel.**
 Elles ne changent pas la conception, seulement ce que cette tâche doit faire. Elles sont écrites ici parce
@@ -218,7 +218,7 @@ export interface EntreeNav extends NavEntree {
  * constante de structure plus une table de libellés : ce seraient deux listes à tenir alignées à la main,
  * et le CLAUDE.md de ce dépôt documente ce que ça coûte (un `Pick` recopié pour être retransmis dérive).
  *
- * ⚠️ C'est aussi la CARTE que lit le bot d'aide, via `scripts/carte-console.mts`. Ajouter un écran ici le
+ * ⚠️ C'est aussi la CARTE que lit le bot d'aide, via `scripts/carte-console.ts`. Ajouter un écran ici le
  * rend connaissable du bot ; l'oublier ici le lui rend invisible, ce qui est le bon défaut (silence plutôt
  * qu'invention).
  *
@@ -286,7 +286,7 @@ Le serveur ne peut pas importer `web/`. La carte est donc ÉMISE en JSON, et un 
 fichier émis ne correspond plus à la barre.
 
 **Fichiers :**
-- Créer : `scripts/carte-console.mts`, `src/aide/carte-console.json`, `src/aide/carte.ts`
+- Créer : `scripts/carte-console.ts`, `src/aide/carte-console.json`, `src/aide/carte.ts`
 - Modifier : `package.json` (script `aide:carte`)
 - Test : `tests/aide-carte.test.ts`
 
@@ -321,7 +321,7 @@ describe('carte de la console', () => {
   it('🔴 le fichier émis correspond à la barre : sinon la CI casse', () => {
     // Le fichier est un ARTEFACT, pas une source. S'il dérive, le bot emmène vers l'état d'hier.
     const avant = readFileSync(new URL('../src/aide/carte-console.json', import.meta.url), 'utf8');
-    execFileSync('npx', ['tsx', 'scripts/carte-console.mts'], { stdio: 'pipe', shell: true });
+    execFileSync('npx', ['tsx', 'scripts/carte-console.ts'], { stdio: 'pipe', shell: true });
     const apres = readFileSync(new URL('../src/aide/carte-console.json', import.meta.url), 'utf8');
     expect(apres, 'carte périmée : lancer `npm run aide:carte` et commiter').toBe(avant);
   });
@@ -356,7 +356,7 @@ npx vitest run tests/aide-carte.test.ts
 
 Attendu : ÉCHEC, `src/aide/carte.ts` n'existe pas.
 
-- [ ] **Étape 3 : écrire l'émetteur `scripts/carte-console.mts`**
+- [ ] **Étape 3 : écrire l'émetteur `scripts/carte-console.ts`**
 
 ```ts
 import { writeFileSync } from 'node:fs';
@@ -463,7 +463,7 @@ export function resoudre(cles: string[], role: string): EcranAide[] {
 
 - [ ] **Étape 5 : générer la carte et ajouter le script npm**
 
-Ajouter à `package.json` : `"aide:carte": "tsx scripts/carte-console.mts"`, puis :
+Ajouter à `package.json` : `"aide:carte": "tsx scripts/carte-console.ts"`, puis :
 
 ```bash
 npm run aide:carte
@@ -486,8 +486,8 @@ entière : le test de la clé réservée doit tomber. Restaurer.
 - [ ] **Étape 8 : commiter**
 
 ```bash
-git add -N scripts/carte-console.mts src/aide/carte.ts src/aide/carte-console.json tests/aide-carte.test.ts
-git commit --only scripts/carte-console.mts src/aide/carte.ts src/aide/carte-console.json tests/aide-carte.test.ts package.json -F /tmp/msg.txt
+git add -N scripts/carte-console.ts src/aide/carte.ts src/aide/carte-console.json tests/aide-carte.test.ts
+git commit --only scripts/carte-console.ts src/aide/carte.ts src/aide/carte-console.json tests/aide-carte.test.ts package.json -F /tmp/msg.txt
 ```
 
 ---
