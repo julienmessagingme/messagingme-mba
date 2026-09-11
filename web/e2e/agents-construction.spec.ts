@@ -249,6 +249,58 @@ test.describe('Agents IA : construire en parlant', () => {
     await expect(page).toHaveURL(/tab=outils/);
   });
 
+  test('🔴 activer un outil fait DISPARAÎTRE son avertissement sur-le-champ', async ({ page }) => {
+    /**
+     * Le bandeau fantôme signalé par Julien le 2026-09-11 : il activait ses outils et « Aucun outil actif »
+     * restait à l'écran. Il a fallu quitter l'agent et y revenir pour qu'il parte, ce qui lui a fait croire
+     * que l'activation elle-même n'avait pas pris.
+     *
+     * LA CAUSE : les manques étaient relus après chaque écriture de la FICHE, et le panneau Outils écrit
+     * dans SA table, sans passer par là. Un avertissement qui survit au geste qui le règle devient du bruit
+     * qu'on apprend à ignorer, et c'est la fin de son utilité.
+     */
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    let outilActif = false;
+    const manques: string[] = [];
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (/\/activation$/.test(url)) { outilActif = true; return json({ outil: { id: 'o1' } }); }
+      if (/\/tools/.test(url)) {
+        return json({
+          outils: [{
+            id: 'o1', origin: 'mba', sourceId: null, name: 'mba_chercher_connaissance',
+            title: 'Chercher dans la base de connaissance', description: 'Cherche une réponse dans les fiches.',
+            nePasUtiliser: '', params: { type: 'object', properties: {} }, binding: { handler: 'chercher_connaissance' },
+            risk: 'lecture', actif: outilActif, activeLe: null, autonome: false, autonomeLe: null, expose: null,
+          }],
+          catalogue: [],
+        });
+      }
+      if (/\/manques$/.test(url)) {
+        manques.push(url);
+        // Le serveur dit la vérité du moment : c'est justement ce que l'écran ne redemandait pas.
+        return json({ manques: outilActif ? [] : [{ onglet: 'outils', message: 'Aucun outil actif : l’agent peut parler mais ne peut rien faire, pas même terminer.' }] });
+      }
+      if (/\/setup$/.test(url)) return json({ messages: [], couverture: { manquants: [], total: 9, pointOuvert: null } });
+      if (/\/knowledge/.test(url)) return json({ fiches: [] });
+      if (new RegExp(`/agents/${AG}$`).test(url)) return json({ agent: AGENT });
+      if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await expect(page.getByTestId('agent-manques')).toBeVisible();
+    const avant = manques.length;
+
+    await page.getByTestId('outil-activer-o1').click();
+
+    // 🔴 SANS QUITTER L'AGENT : c'est tout le défaut. Le bandeau part parce que les manques ont été RELUS.
+    await expect(page.getByTestId('agent-manques')).toHaveCount(0, { timeout: 5000 });
+    expect(manques.length).toBeGreaterThan(avant);
+  });
+
   test('🔴 ce qui manque s’affiche À L’OUVERTURE, sans avoir cliqué « activer »', async ({ page }) => {
     /**
      * Le défaut vécu par Julien le 2026-09-08 : son agent avait 10 fiches de connaissance et l'outil de

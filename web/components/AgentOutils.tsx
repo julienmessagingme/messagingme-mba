@@ -25,7 +25,14 @@ import {
  *  - **le schéma réellement envoyé au modèle est montré**, parce que les mots du client pilotent un appel de
  *    fonction : il ne peut vérifier ce qu'il a écrit que dans sa forme réelle.
  */
-export function AgentOutils({ tenantId, agentId }: { tenantId: string; agentId: string }) {
+/**
+ * ⚠️ `onChange` EXISTE PARCE QUE LE BANDEAU D'AVERTISSEMENT VIT AILLEURS. Ce panneau écrit dans SA table,
+ * sans passer par `enregistrer` de la page ; or c'est `enregistrer` qui relisait les manques. Activer un
+ * outil laissait donc « Aucun outil actif » à l'écran alors que l'outil venait d'être activé, jusqu'à ce
+ * qu'on quitte l'agent et qu'on y revienne. Signalé par Julien le 2026-09-11, et il a d'abord cru que
+ * c'était l'activation qui n'avait pas pris.
+ */
+export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string; agentId: string; onChange?: () => void }) {
   const t = useT();
   const [vue, setVue] = useState<{ outils: OutilAgent[]; catalogue: ModeleOutil[] } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,6 +54,8 @@ export function AgentOutils({ tenantId, agentId }: { tenantId: string; agentId: 
     try {
       await travail();
       await charger();
+      // Le bandeau de la page se calcule sur CET inventaire : sans ce rappel, il annonce l'état d'avant.
+      onChange?.();
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
     } finally {

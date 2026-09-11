@@ -204,8 +204,12 @@ function Ecran({ tenantId }: { tenantId: string }) {
       const avecVerrou = patch.contenu ? { ...patch, ficheVersionAttendue: ouvert.ficheVersion } : patch;
       setOuvert(await patchAgent(tenantId, ouvert.id, avecVerrou));
       await charger();
-      // Relu après CHAQUE écriture : activer un outil doit faire disparaître son manque tout de suite,
-      // sinon l'avertissement devient du bruit qu'on apprend à ignorer.
+      // Relu après CHAQUE écriture de la FICHE.
+      // ⚠️ CE COMMENTAIRE PROMETTAIT « activer un outil doit faire disparaître son manque tout de suite »,
+      // et c'était précisément ce qui ne marchait pas : les outils et la connaissance vivent dans LEURS
+      // tables et ne passent pas par ici. Ils rappellent désormais `rafraichirManques` eux-mêmes, par leur
+      // `onChange`. Un avertissement qui survit au geste qui le règle devient du bruit qu'on apprend à
+      // ignorer, et c'est ce qui est arrivé le 2026-09-11.
       void rafraichirManques(ouvert.id);
     } catch (err) {
       // 422 sur une activation : l'agent est incomplet. On montre la LISTE, pas « agent incomplet », qui
@@ -301,10 +305,10 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {onglet === 'objectif' && <OngletObjectif agent={ouvert} busy={busy} onSave={enregistrer} />}
         {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels
             et son propre verrou d'ecriture, il ne passe pas par `enregistrer`. */}
-        {onglet === 'connaissance' && <AgentConnaissance tenantId={tenantId} agentId={ouvert.id} />}
+        {onglet === 'connaissance' && <AgentConnaissance tenantId={tenantId} agentId={ouvert.id} onChange={() => rafraichirManques(ouvert.id)} />}
         {/* Les outils vivent dans LEUR table, avec leur propre consentement humain : ce panneau ne passe pas
             non plus par `enregistrer`, qui n'ecrit que la fiche. */}
-        {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} />}
+        {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} onChange={() => rafraichirManques(ouvert.id)} />}
         {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
         {onglet === 'modele' && <OngletModele agent={ouvert} tenantId={tenantId} busy={busy} onSave={enregistrer} />}
         {/* Le bac a sable fait tourner le VRAI cerveau, sans session ni run : il n ecrit rien, il ne passe

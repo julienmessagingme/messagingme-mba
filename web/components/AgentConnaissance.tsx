@@ -24,7 +24,12 @@ import {
  * Le reste de l'écran suit le patron des panneaux MBA : enregistrement à la SORTIE du champ, erreurs
  * annoncées dans un bandeau, aucune boîte de dialogue maison.
  */
-export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; agentId: string }) {
+/**
+ * ⚠️ `onChange` pour la MÊME raison que `AgentOutils` : deux des trois avertissements de la page se
+ * calculent sur le nombre de fiches (« la base est vide », et « la base est remplie mais l'outil de
+ * recherche n'est pas actif »). Sans ce rappel, remplir la base laisse « la base est vide » à l'écran.
+ */
+export function AgentConnaissance({ tenantId, agentId, onChange }: { tenantId: string; agentId: string; onChange?: () => void }) {
   const t = useT();
   const [fiches, setFiches] = useState<FicheConnaissance[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,6 +60,8 @@ export function AgentConnaissance({ tenantId, agentId }: { tenantId: string; age
     try {
       setBilan(await travail());
       await charger();
+      // Le bandeau de la page se calcule sur CE nombre de fiches : sans ce rappel, il annonce l'état d'avant.
+      onChange?.();
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
     } finally {
