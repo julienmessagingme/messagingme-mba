@@ -124,6 +124,15 @@ interface CorpsReponse {
   };
 }
 
+/**
+ * Un coût lisible, ou 0. Voir la justification au point d'appel : le neutre sûr d'un budget est 0, jamais
+ * NaN, et la chaîne vide en fait partie (`Number('')` vaut 0, ce qui est le bon résultat ici).
+ */
+function nombreOuZero(v: string | number | undefined): number {
+  const n = typeof v === 'number' ? v : Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export class GatewayChatClient {
   private static readonly URL = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 
@@ -239,7 +248,18 @@ export class GatewayChatClient {
             tokensCaches: Number(body?.usage?.prompt_tokens_details?.cached_tokens ?? 0),
             // `gateway.cost` est une CHAÎNE décimale de dollars ; `usage.cost` porte la même valeur en
             // nombre. On lit la chaîne en premier (c'est le champ documenté), l'autre sert de repli.
-            coutDollars: gateway?.cost !== undefined ? Number(gateway.cost) : Number(body?.usage?.cost ?? 0),
+            //
+            // ⚠️ UN COÛT ILLISIBLE VAUT 0 ICI, ET `null` DANS LA TRANSCRIPTION : deux réponses différentes
+            // à la même question, et les deux sont justes parce que le chiffre ne sert pas à la même chose.
+            // Là-bas il est AFFICHÉ et journalisé, donc « on ne sait pas » doit se distinguer de « gratuit ».
+            // Ici il est ADDITIONNÉ dans le budget du tour : il n'existe aucune façon de débiter un montant
+            // inconnu, et refuser le tour priverait le contact d'une réponse déjà payée. 0 est le neutre sûr.
+            //
+            // ⚠️ EXPLICITE PLUTÔT QUE PAR ACCIDENT : `Number('gratuit')` rend NaN, qui se propageait jusqu'à
+            // `microEurosDepuisDollars` où un `Number.isFinite` le rattrapait. Ça marchait, mais par un
+            // garde-fou situé trois fichiers plus loin, et un NaN qui voyage dans un objet de comptabilité
+            // finit par ressortir sur un écran.
+            coutDollars: nombreOuZero(gateway?.cost ?? body?.usage?.cost),
           },
           generationId: gateway?.generationId ?? null,
         };

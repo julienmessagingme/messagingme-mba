@@ -297,6 +297,11 @@ function Ecran({ tenantId }: { tenantId: string }) {
                 // refuser en 409 pour une raison qui n'a rien à voir avec la cause réelle.
                 setOuvert(await getAgent(tenantId, ouvert.id));
                 await charger();
+                // ⚠️ ET LES MANQUES AUSSI, TROISIÈME CHEMIN DU MÊME DÉFAUT. Appliquer une proposition pose
+                // souvent des OUTILS : sans ce rappel, « Aucun outil actif » survivait au geste qui venait
+                // de le régler, exactement comme dans les panneaux Outils et Connaissance corrigés le
+                // 2026-09-11. L'effet `useEffect` ne rejoue pas, l'identifiant de l'agent n'ayant pas changé.
+                rafraichirManques(ouvert.id);
               }
             }}
           />

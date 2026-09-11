@@ -303,17 +303,40 @@ function InboxInner({ session }: { session: Session }) {
       : [...cochees];
     if (cibles.length === 0) return;
     setRangementEnCours(true);
+    setError(null);
     try {
+      /**
+       * 🔴 LES ÉCHECS SE COMPTENT ET SE DISENT, ILS NE S'AVALENT PLUS (2026-09-11).
+       *
+       * Cette boucle attrapait TOUT en silence, et c'était juste tant que le geste n'écrivait qu'en local :
+       * une conversation disparue entre l'affichage et le clic ne doit pas bloquer les autres. Depuis que
+       * « À traiter » appelle META (`thread_control` action `take`), un refus est un cas NORMAL et lourd de
+       * conséquence : l'opérateur croirait avoir éteint l'agent de Meta sur toute sa sélection alors qu'il
+       * répond encore sur une partie, et il cesserait de surveiller ces fils.
+       *
+       * ⚠️ ON CONTINUE QUAND MÊME la sélection : un échec partiel qui annulerait tout serait pire. Ce qui
+       * change est qu'on le DIT à la fin, avec le compte.
+       */
+      let echecs = 0;
       for (const id of cibles) {
         try {
           await appliquerRangement(session.tenantId, id, action);
         } catch {
-          /* une conversation disparue entre l'affichage et le clic ne doit pas bloquer les autres */
+          echecs += 1;
         }
       }
       setCochees(new Set());
       await reload();
       await rechargerCompteur();
+      // 🔴 APRÈS LE RECHARGEMENT, ET C'EST OBLIGATOIRE : `reload` commence par `setError(null)`. Posé avant,
+      // le message était effacé une milliseconde plus tard, et l'écran redevenait muet sur des refus bien
+      // réels. Attrapé par l'e2e, pas par la relecture.
+      if (echecs > 0) {
+        setError(t(
+          `${echecs} conversation(s) sur ${cibles.length} n’ont pas pu être rangées. Rouvrez-les une par une : le détail y est affiché.`,
+          `${echecs} of ${cibles.length} conversations could not be filed. Open them one by one: the reason is shown there.`,
+        ));
+      }
     } finally {
       setRangementEnCours(false);
     }

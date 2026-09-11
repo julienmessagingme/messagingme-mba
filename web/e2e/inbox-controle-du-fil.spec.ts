@@ -192,3 +192,35 @@ test.describe('Qui tient le fil se voit dans la LISTE, sans se lire', () => {
     await expect(page.getByText(/vous avez la main|you have the hand/)).toBeVisible();
   });
 });
+
+test.describe('Le rangement en LOT ne cache pas ses échecs', () => {
+  /**
+   * 🔴 RELEVÉ EN REVUE LE 2026-09-11. La boucle du rangement en lot attrape toute erreur en silence, ce qui
+   * était juste tant que « À traiter » n'écrivait qu'en local. Depuis qu'il appelle Meta, un refus avalé
+   * laisse l'opérateur croire qu'il a éteint l'agent de Meta sur toute sa sélection, alors qu'il répond
+   * encore sur une partie, et il cesse de surveiller ces fils.
+   */
+  test('🔴 « À traiter » sur une sélection dont Meta refuse une partie le DIT', async ({ page }) => {
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    const LIGNES = [
+      { ...CONV, id: 'c1', waId: '33600000001', profileName: 'Refusée par Meta', controlOwner: 'mba' },
+      { ...CONV, id: 'c2', waId: '33600000002', profileName: 'Prise sans souci', controlOwner: 'mba' },
+    ];
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (/\/c1\/prendre$/.test(url)) return json({ error: 'Meta n’a pas cédé la conversation.' }, 409);
+      if (/\/prendre$/.test(url)) return json({ controlOwner: 'app_human' });
+      if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: LIGNES });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/inbox');
+    await page.getByTestId('cocher-c1').check();
+    await page.getByTestId('cocher-c2').check();
+    await page.getByTestId('inbox-ranger-selection').selectOption('a-traiter');
+
+    // Le compte est DIT, et il nomme les deux nombres : une sur deux, pas « une erreur ».
+    await expect(page.getByText(/1 conversation\(s\) sur 2/)).toBeVisible({ timeout: 5000 });
+  });
+});

@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 775541
+source_empreinte: 6cbd27
 ---
 # Ajouter ou importer mes contacts
 

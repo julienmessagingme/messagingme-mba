@@ -1,5 +1,5 @@
 import { request } from './http';
-import { patchAgent, type SortieAgent } from './api-agent';
+import { patchAgent, type PatchAgent, type SortieAgent } from './api-agent';
 import { ajouterOutil, listOutils, patchOutil } from './api-agent-tools';
 
 /**
@@ -219,9 +219,35 @@ export async function effacerEntretien(tenantId: string, agentId: string): Promi
 export async function appliquerProposition(
   tenantId: string, agentId: string, proposition: PropositionConstruction, ficheVersion: number,
 ): Promise<void> {
-  const ficheEcrite = Object.keys(proposition.fiche).length > 0;
+  /**
+   * 🔴 LES REGLAGES HORS FICHE PARTENT ICI AUSSI, ET ILS NE PARTAIENT PAS. Trouve en revue le 2026-09-11 :
+   * cette fonction n envoyait que `contenu`, donc `mentionIaFrequence` (depuis le 2026-09-09) et
+   * `inactiviteMinutes` (le jour meme) etaient MUETS de bout en bout. L entretien posait la question, le diff
+   * affichait le changement, l ecran disait « C est enregistre », et rien n atteignait la base.
+   *
+   * 🔴 ET LE TEST PROUVAIT LA MAUVAISE MOITIE. `restreindreProposition`, juste au-dessus, les calcule
+   * correctement et porte meme un commentaire qui NOMME le risque (« une capacite cablee sur deux
+   * consommateurs sur trois ») ; ses trois tests passaient. Mais elle ne fait que CALCULER : c est cette
+   * fonction-ci qui ENVOIE, et personne ne la testait. Tester la fonction qui calcule au lieu de celle qui
+   * ecrit donne un vert qui ne prouve rien.
+   *
+   * ⚠️ LE VERROU DE VERSION N ACCOMPAGNE QUE `contenu`, exactement comme dans l ecran des agents : il
+   * protege la fiche jsonb, que deux surfaces peuvent reecrire ; une colonne scalaire n en a pas besoin, et
+   * l envoyer ferait echouer en 409 un reglage qui n a aucune raison de se heurter.
+   */
+  const patch: PatchAgent = {
+    ...(Object.keys(proposition.fiche).length > 0
+      ? { contenu: proposition.fiche, ficheVersionAttendue: ficheVersion }
+      : {}),
+    ...(proposition.mentionIaFrequence !== undefined ? { mentionIaFrequence: proposition.mentionIaFrequence } : {}),
+    ...(proposition.inactiviteMinutes !== undefined ? { inactiviteMinutes: proposition.inactiviteMinutes } : {}),
+  };
+  // 🔴 ON N ENVOIE QUE S IL Y A QUELQUE CHOSE A ENVOYER, mais on envoie des qu IL Y A QUELQUE CHOSE : la
+  // condition portait sur la seule fiche, donc une proposition qui ne changeait QU UN reglage hors fiche
+  // (le cas le plus probable, puisque l entretien a un point dedie a chacun) ne declenchait AUCUN appel.
+  const ficheEcrite = Object.keys(patch).length > 0;
   if (ficheEcrite) {
-    await patchAgent(tenantId, agentId, { contenu: proposition.fiche, ficheVersionAttendue: ficheVersion });
+    await patchAgent(tenantId, agentId, patch);
   }
   const connecteurs = proposition.connecteurs ?? [];
   if (proposition.outils.length === 0 && connecteurs.length === 0) return;
@@ -257,6 +283,8 @@ export async function appliquerProposition(
     // version périmé, c'est-à-dire une erreur qui ne parle pas du tout de ce qui s'est passé.
     const cause = err instanceof Error ? err.message : 'erreur inconnue';
     // Apostrophes typographiques, comme partout ailleurs dans l'interface : ce message est lu par le client.
+    // ⚠️ `ficheEcrite` couvre depuis le 2026-09-11 la fiche ET les réglages hors fiche, qui partent dans le
+    // MÊME patch : le message reste juste, c'est bien « ce qui touche à l'agent » qui est enregistré.
     throw new Error(ficheEcrite
       ? `La fiche est enregistrée, mais un outil n’a pas pu l’être : ${cause}. Vérifiez l’onglet Outils.`
       : `Un outil n’a pas pu être enregistré : ${cause}`);

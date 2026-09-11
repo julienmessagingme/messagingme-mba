@@ -311,7 +311,7 @@ function texteSorties(sorties: FicheAgentContenu['sorties']): string {
 // `reponses` et `bascules` sont l'état de l'ENTRETIEN, pas une proposition d'écriture : le diff ne les
 // regarde pas, et les exclure du type le dit plutôt que de compter sur la discipline de l'appelant.
 /** Le régime, dit en français : ce diff est lu par un humain qui tranche une question légale. */
-const LIBELLES_MENTION: Record<string, string> = {
+export const LIBELLES_MENTION: Record<string, string> = {
   jamais: 'jamais',
   session: 'une fois par conversation',
   chaque_message: 'à chaque message',
@@ -323,7 +323,7 @@ const LIBELLES_MENTION: Record<string, string> = {
  * ⚠️ `1440` ne se lit pas, et c'est un diff qu'un humain doit JUGER : lui montrer le nombre nu reviendrait à
  * lui demander de faire la division lui-même, donc à l'inviter à cliquer « Garder » sans lire.
  */
-function dureeEnClair(minutes: number): string {
+export function dureeEnClair(minutes: number): string {
   if (minutes % 1440 === 0) return minutes === 1440 ? '24 heures' : `${minutes / 1440} jours`;
   if (minutes % 60 === 0) return minutes === 60 ? '1 heure' : `${minutes / 60} heures`;
   return `${minutes} minutes`;

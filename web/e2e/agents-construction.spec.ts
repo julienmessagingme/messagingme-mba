@@ -249,6 +249,43 @@ test.describe('Agents IA : construire en parlant', () => {
     await expect(page).toHaveURL(/tab=outils/);
   });
 
+  test('🔴 un réglage HORS FICHE part vraiment au serveur, même SEUL', async ({ page }) => {
+    /**
+     * 🔴 LE DÉFAUT TROUVÉ EN REVUE LE 2026-09-11, ET IL ÉTAIT MUET DE BOUT EN BOUT. `appliquerProposition`
+     * n'envoyait que `contenu` : l'entretien posait la question, le diff affichait le changement, l'écran
+     * disait « C'est enregistré », et RIEN n'atteignait la base. Pire, quand la proposition ne touchait
+     * QU'UN réglage hors fiche (le cas le plus probable, puisque l'entretien a un point dédié à chacun),
+     * aucun appel ne partait du tout.
+     *
+     * ⚠️ CE TEST PORTE SUR CE QUI EST ENVOYÉ, pas sur ce qui est calculé. Les trois tests unitaires de
+     * `restreindreProposition` passaient déjà : elle calcule bien ces champs. C'est la fonction d'à côté,
+     * celle qui ÉCRIT, que personne n'éprouvait. Tester celle qui calcule au lieu de celle qui écrit donne
+     * un vert qui ne prouve rien.
+     *
+     * ⚠️ Et le verrou de version N'ACCOMPAGNE PAS un réglage scalaire : l'envoyer ferait échouer en 409 un
+     * réglage qui n'a aucune raison de se heurter à une réécriture de fiche.
+     */
+    const appels: Appel[] = [];
+    await mock(page, appels, {
+      setup: {
+        status: 200,
+        body: {
+          message: 'Je propose de laisser deux heures.',
+          proposition: { fiche: {}, outils: [], inactiviteMinutes: 120 },
+          changements: [{ champ: 'inactiviteMinutes', label: 'Silence du contact : quand l’agent lâche', avant: '30 minutes', apres: '2 heures' }],
+          usage: { tokensIn: 100, tokensOut: 20 },
+        },
+      },
+    });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Deux heures sans réponse, il lâche.');
+    await page.getByTestId('setup-envoyer').click();
+    await page.getByTestId('setup-garder').click();
+
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH')?.body, { timeout: 5000 })
+      .toEqual({ inactiviteMinutes: 120 });
+  });
+
   test('🔴 activer un outil fait DISPARAÎTRE son avertissement sur-le-champ', async ({ page }) => {
     /**
      * Le bandeau fantôme signalé par Julien le 2026-09-11 : il activait ses outils et « Aucun outil actif »

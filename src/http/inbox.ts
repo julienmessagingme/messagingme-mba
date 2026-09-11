@@ -127,9 +127,14 @@ export interface InboxRouteDeps {
   /**
    * L'opérateur REND la main : la conversation repart en automatique. Renvoie qui la détient désormais.
    *
-   * Quand MBA sera actif sur le numéro, c'est ici qu'il faudra aussi appeler `thread_control` avec
-   * l'action `release` côté Meta, pour que l'agent redevienne le répondeur principal. Aujourd'hui la
-   * fonction se contente de l'état local, ce qui est exactement ce qu'il faut sans MBA.
+   * ⚠️ ELLE APPELLE META, depuis le 2026-09-10 : `thread_control` action `release`, pour que l'agent de Meta
+   * redevienne le répondeur principal. Ce texte annonçait cet appel au FUTUR (« quand MBA sera actif, c'est
+   * ici qu'il faudra ») et disait que la fonction « se contente de l'état local » : c'était faux depuis un
+   * jour quand la revue l'a relevé, le 2026-09-11. Son jumeau `prendreLeFil`, juste en dessous, fait le
+   * geste inverse.
+   *
+   * 🔴 UN ÉCHEC REMONTE, il ne s'avale pas : la route en fait un 409 lisible, et notre état local ne bouge
+   * pas. Un état local qui annonce ce que Meta n'a pas fait est pire qu'une erreur.
    */
   releaseControl?(tenantId: string, waId: string): Promise<'app_workflow' | 'mba'>;
   /** Détenteur courant du fil, pour l'afficher dans le détail de la conversation. */

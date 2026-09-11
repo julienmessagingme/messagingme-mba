@@ -30,8 +30,14 @@ Trois détenteurs possibles, exclusifs :
 | Détenteur | Qui écrit au client | Comment on y arrive |
 |---|---|---|
 | `mba` | l'agent de Meta | état par défaut quand MBA est activé et que le contact est dans l'audience |
-| `app_workflow` | notre moteur de scénario | notre app envoie un message (l'envoi **prend** le contrôle, il n'existe pas d'action `take`) |
-| `app_human` | un opérateur dans l'inbox | un humain envoie depuis l'inbox, ou reprend explicitement la main |
+| `app_workflow` | notre moteur de scénario | notre app envoie un message (l'envoi **prend** le contrôle implicitement) |
+| `app_human` | un opérateur dans l'inbox | un humain envoie depuis l'inbox, ou reprend explicitement la main (`thread_control` action `take`) |
+
+> ⚠️ **CORRIGÉ LE 2026-09-11** : ce tableau affirmait « il n'existe pas d'action `take` ». C'était vrai du
+> corpus OpenAPI v1.0.0 téléchargé, et faux de la documentation vivante, que Meta a réécrite le 2026-08-13.
+> L'action existe et elle est câblée sur le bouton « Reprendre la main ». Meta la réserve au « configured
+> escalation partner » : un refus est un cas normal, et écrire au contact reste la porte de secours qui
+> prend le fil à coup sûr.
 
 Règles qui découlent directement de la doc Meta et du bug constaté :
 

@@ -51,7 +51,14 @@ export function empreinteDe(texte: string): string {
  */
 export function decouperFeatures(markdown: string): SectionFeatures[] {
   const out: SectionFeatures[] = [];
-  const lignes = markdown.split('\n');
+  // 🔴 CRLF TOLERE, ET CE N EST PAS DE LA COQUETTERIE. Cette fonction LIT un fichier du disque, et sous
+  // Windows (le poste de ce depot) un `.md` porte legitimement des fins de ligne CRLF : git le reecrit
+  // ainsi au checkout avec `core.autocrlf=true`, et tout outil qui le reecrit fait pareil. Le retour
+  // chariot final defait alors le motif de titre ci-dessous (en JS, le point ne matche pas un terminateur
+  // de ligne), et la fonction rend ZERO section SANS la moindre erreur. Vecu le 2026-09-11 : l ecriture
+  // d une section dans `features.md` a converti le fichier, et la detection de derive s est mise a
+  // annoncer que TOUTES les sections citees par les fiches avaient disparu.
+  const lignes = markdown.split(/\r?\n/);
   let titre: string | null = null;
   let corps: string[] = [];
   const pousser = (): void => {

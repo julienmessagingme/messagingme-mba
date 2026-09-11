@@ -42,6 +42,26 @@ describe('construireMessages', () => {
     for (const p of AGENDA) expect(mandat, p.code).toContain(p.code);
   });
 
+  it('🔴 le modèle VOIT les deux réglages HORS FICHE sur lesquels on l’envoie interroger', () => {
+    /**
+     * Relevé en revue du lot du 2026-09-11. L'entretien pose une question sur chacun (`annonce_ia` et
+     * `silence`), et le modèle ne voyait NI l'un NI l'autre : il demandait donc au client une valeur sans
+     * pouvoir lui dire celle qui est en place, ni lui proposer de la garder. Le premier trou existait déjà,
+     * le second venait de s'y ajouter.
+     *
+     * ⚠️ L'assertion porte sur le LIBELLÉ en français, pas sur le code : c'est le même que celui du diff que
+     * le client lira juste après, et deux formulations pour la même valeur lui feraient croire à deux
+     * réglages.
+     */
+    const mandat = construireMessages(
+      CTX({ mentionIaFrequence: 'session', inactiviteMinutes: 120 }),
+      [{ role: 'user', content: 'Bonjour' }],
+      VIERGE,
+    )[0]!.content ?? '';
+    expect(mandat).toContain('une fois par conversation');
+    expect(mandat).toContain('2 heures');
+  });
+
   it('🔴 le mandat n’ordonne plus de DEVINER ce que le client n’a pas dit', () => {
     // C'était la cause racine des propositions absurdes du 2026-08-28 : « déduis-les de ce qu'il raconte
     // plutôt que de les lui demander », et une clause « quand ne pas l'appeler » jamais vide. Le modèle

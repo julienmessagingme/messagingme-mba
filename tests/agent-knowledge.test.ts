@@ -178,8 +178,12 @@ describe('découpage des termes de recherche (sécurité de la requête plein te
     for (const t of termes) expect(t).not.toMatch(/[&|!():*'<>]/);
   });
 
-  it('🔴 les accents sont CONSERVÉS', () => {
-    // `to_tsvector('french', ...)` les garde : les retirer côté requête casserait le rapprochement.
+  it('🔴 les accents sont CONSERVÉS ICI : c’est la CONFIGURATION qui les retire, des deux côtés', () => {
+    // ⚠️ CE COMMENTAIRE DISAIT « les retirer côté requête casserait le rapprochement », et c'était le
+    // raisonnement à moitié vrai que la migration 0132 a corrigé : les retirer d'UN SEUL côté casse, les
+    // retirer des DEUX répare. `termesDeRecherche` ne touche toujours pas aux accents, et c'est bien ce
+    // qu'on éprouve ici ; ce qui a changé, c'est `CONFIG_RECHERCHE`, qui les neutralise en base ET en
+    // requête. Laisser l'ancien texte en ferait un fossile qu'on recopierait.
     expect(termesDeRecherche('résidence à Sète, déjà réservée')).toEqual(['résidence', 'Sète', 'déjà', 'réservée']);
   });
 

@@ -234,6 +234,19 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   stable qu'une future API utilisera. Les codes des blocs sont posés côté serveur à l'enregistrement (un code
   existant n'est jamais changé).
 
+### Ce qu'un contact a coûté, et jusqu'où il est allé
+
+En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à face.
+
+- **Ce qu'il a coûté** : ses envois de campagne, chiffrés au tarif Meta de leur catégorie. C'est un coût
+  **estimé** et un **plancher** : seuls les envois de campagne y entrent, un message de scénario ou une
+  réponse d'opérateur dans la fenêtre de service n'y est pas. ⚠️ Quand aucun envoi n'a pu être chiffré, la
+  case affiche « — » et jamais « 0 € » : un coût inconnu n'est pas un coût nul. Les envois non chiffrés sont
+  annoncés avec leur cause (catégorie non enregistrée, ou tarif que Meta ne rend pas).
+- **Jusqu'où il est allé** : l'entonnoir de ses engagements. Un engagement de niveau N veut dire qu'il a
+  réagi, en répondant **ou en cliquant**, à notre N-ième message d'un même parcours. L'entonnoir est cumulé
+  (« au moins N »), sur cinq niveaux, le dernier ramassant ce qui est plus profond.
+
 ## Templates WhatsApp (menu Contenu)
 
 - ✅ **Création** : template simple (**en-tête optionnel** texte / image / vidéo, corps + variables, **pied de
@@ -1171,6 +1184,24 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   template, attribution des réponses du funnel) **et de l'analyse** (elle n'est jamais analysée, donc absente
   de la page Qualitatif). Tester un scénario depuis son propre téléphone ne déforme donc pas les compteurs.
 
+## L'aide de la console (bouton flottant, sur tous les écrans)
+
+Un bouton rond en bas à droite de chaque écran connecté ouvre un panneau de discussion. Il répond aux
+questions sur **l'usage du produit** : comment lancer une campagne, la différence entre un modèle et un
+scénario, comment importer des contacts.
+
+- **Il explique et il emmène, il n'écrit jamais rien.** Aucune action, aucun brouillon, aucun réglage. Quand
+  la réponse concerne un écran précis, il pose un lien qui y conduit.
+- **Il cite sa source** (le titre de la fiche du mode d'emploi d'où vient la réponse), et **quand il ne sait
+  pas, il le dit** et ouvre la page Support plutôt que d'inventer une réponse plausible.
+- **Le fil de la conversation est gardé tant que la personne reste connectée** : il survit au changement
+  d'écran et au rechargement, il meurt avec l'onglet, et il part à la déconnexion. Les questions de suite
+  (« et ensuite ? ») sont comprises dans le contexte des précédentes.
+- L'accueil montre le logo, trois étincelles et « Je suis là pour vous aider », avec trois suggestions
+  cliquables qui remplissent le champ.
+- ⚠️ **Les jetons sont à notre charge**, pas sur le crédit prépayé du client : ce bot est un service de la
+  console, pas une fonctionnalité qu'il achète.
+
 ## Support (menu Support)
 
 - ✅ **Formulaire de contact** : sujet + message -> email à l'équipe via Resend. Le **reply-to est l'email du
@@ -1614,6 +1645,10 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   sa compréhension se calcule en tâche de fond. Éditer une fiche remet ce calcul à zéro, pour que sa
   compréhension ne décrive jamais un texte qu'elle n'a plus.
 
+⚠️ **La recherche ne tient pas compte des accents**, dans les deux sens : « prevoyance » et « prévoyance »
+trouvent les mêmes fiches. C'est vrai de la base de connaissance des agents comme du mode d'emploi du bot
+d'aide.
+
 ### Les outils : ce que l'agent a le droit de FAIRE
 
 - ✅ **Un outil n'est utilisable qu'une fois ACTIVÉ à la main.** Tant qu'il ne l'est pas, l'agent ne sait même
@@ -1659,6 +1694,13 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   ⚠️ **Piège de vocabulaire** : le menu **Tools** de la barre de gauche et l'onglet **Outils** d'un agent ne
   parlent pas de la même chose. Le système appartient à l'espace, l'appel appartient à l'agent.
 - ⛔ **Pas encore : MCP.** Aucun code ne sert cette famille aujourd'hui.
+
+#### Choisir les blocs que l'agent peut envoyer
+
+L'outil « Envoyer un bloc de votre scénario » se règle en **cochant les blocs dans une liste**, groupés par
+scénario et nommés en clair. ⚠️ Seuls les scénarios **contenant un bloc Agent IA** sont proposés : cet outil
+envoie un bloc du scénario où le contact se trouve déjà, donc un bloc pris ailleurs ne pourrait jamais
+partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les refusant à coup sûr.
 
 ### Les règles d'arrêt, et les sorties du bloc
 
@@ -1736,6 +1778,13 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - 🔴 **Le cas qui coûte le plus cher est couvert** : une base de connaissance REMPLIE avec l'outil de
   recherche DÉSACTIVÉ. L'agent transfère alors toutes les questions de fond, et l'écran d'une base bien
   garnie donne l'impression que tout va bien. C'est le pire des deux mondes : le travail est fait et inutile.
+
+### Le silence du contact : quand l'agent lâche
+
+L'entretien de construction demande **au bout de combien de temps sans réponse l'agent doit lâcher la
+conversation**, et écrit la réponse dans le réglage correspondant (onglet des garde-fous, « Inactivité, en
+minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le parcours sort par la règle
+« Pas de réponse », et l'agent ne repart pas si le contact revient plus tard.
 
 ### Le bac à sable : lui parler avant de l'activer
 
@@ -1855,6 +1904,24 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   traiter la demande. Mesuré le 21/08/2026 : une réclamation qui décrit un incident ET demande un dédommagement
   obtient de l'agent une réponse **vide**, ce qui rend d'autant plus nécessaire de voir ces conversations
   remonter dans « À traiter ».
+
+### Reprendre la main sur l'agent de Meta
+
+Dans l'Inbox, sur une conversation que l'agent de Meta tient, le bouton **« Reprendre la main »** la lui
+PREND réellement : la console appelle Meta pour cela, sans qu'aucun message ne parte chez le contact. L'agent
+de Meta se tait alors jusqu'à la reprise automatique (deux heures par défaut, réglable), même si personne
+n'écrit au client entre-temps.
+
+⚠️ **Meta peut refuser**, et l'écran le dit alors au lieu de laisser croire que c'est fait : l'action est
+réservée par Meta au partenaire d'escalade configuré. La porte de secours reste vraie dans tous les cas,
+**écrire au contact prend le fil à coup sûr**. Sur un rangement en lot, le nombre de conversations refusées
+est annoncé.
+
+### Voir d'un coup d'œil qui tient chaque conversation
+
+Dans la liste de l'Inbox, une conversation tenue par l'agent de Meta porte un **dégradé bleu vers violet** et
+une **baguette à étincelles** devant le nom. La mention texte « agent Meta » a disparu de la liste, où elle
+faisait doublon ; elle reste dans l'en-tête de la conversation ouverte, là où l'on a besoin du mot exact.
 
 ## Canal RCS (menu Contenu > Messages RCS, et canal de campagne)
 

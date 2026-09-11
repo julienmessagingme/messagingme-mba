@@ -43,6 +43,32 @@ const ok = (json: unknown): HttpResponse => ({ status: 200, json });
 const ko = (status: number, json: unknown = { error: { message: 'boom' } }): HttpResponse => ({ status, json });
 
 describe('GatewayChatClient (tâche 14)', () => {
+  it('🔴 un coût ILLISIBLE vaut 0, pas NaN, et le repli `usage.cost` sert quand la chaîne manque', () => {
+    /**
+     * ⚠️ 0 ICI, `null` DANS LA TRANSCRIPTION, et les deux sont justes : là-bas le chiffre est AFFICHÉ, donc
+     * « inconnu » doit se distinguer de « gratuit » ; ici il est ADDITIONNÉ dans le budget du tour, où il
+     * n'existe aucune façon de débiter un montant inconnu et où refuser priverait le contact d'une réponse
+     * déjà payée.
+     *
+     * ⚠️ CE QUI CHANGE est que le neutre est désormais EXPLICITE. `Number('gratuit')` rendait NaN, rattrapé
+     * trois fichiers plus loin par un `Number.isFinite` : ça marchait, mais un NaN qui voyage dans un objet
+     * de comptabilité finit par ressortir sur un écran.
+     */
+    const cas: Array<[unknown, number]> = [
+      ['0.00000275', 0.00000275],
+      ['gratuit', 0],
+      ['', 0],
+      [undefined, 0],
+    ];
+    return Promise.all(cas.map(async ([cost, attendu]) => {
+      const msg = { ...REPONSE_REELLE.choices[0]!.message, provider_metadata: { gateway: cost === undefined ? {} : { cost } } };
+      const corps = { ...REPONSE_REELLE, choices: [{ index: 0, message: msg }], usage: { prompt_tokens: 5, completion_tokens: 1 } };
+      const t: HttpTransport = { post: async (): Promise<HttpResponse> => ({ status: 200, json: corps }) };
+      const r = await new GatewayChatClient('k', t).completer({ tenantId: 't1', modele: 'm', messages: [{ role: 'user', content: 'x' }] });
+      expect(r.usage.coutDollars, `cost=${JSON.stringify(cost)}`).toBe(attendu);
+    }));
+  });
+
   it('lit la réponse RÉELLE : texte, usage à la racine, coût sur le message', async () => {
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
     const r = await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [{ role: 'user', content: 'salut' }] });

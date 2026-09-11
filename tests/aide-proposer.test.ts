@@ -49,6 +49,21 @@ describe('découpage de features.md', () => {
     const doublons = titres.filter((t, i) => titres.indexOf(t) !== i);
     expect(doublons, `sections en double : ${doublons.join(', ')}`).toEqual([]);
   });
+
+  it('🔴 un fichier en CRLF se decoupe comme un fichier en LF', () => {
+    /**
+     * Vecu le 2026-09-11, et le symptome etait le pire possible : ZERO section, sans aucune erreur. Sous
+     * Windows, git reecrit les `.md` en CRLF au checkout (`core.autocrlf=true`), et tout outil qui reecrit
+     * le fichier fait pareil. Le retour chariot final defaisait le motif de titre, et la detection de
+     * derive annoncait que TOUTES les sections citees par les fiches avaient disparu.
+     *
+     * ⚠️ L assertion compare les DEUX decoupages plutot que de verifier un compte : c est leur EGALITE
+     * qui est l invariant, et elle resterait vraie si l exemple changeait.
+     */
+    const lf = '## Un titre\nDu corps.\n\n## Un autre\nEncore du corps.\n';
+    expect(decouperFeatures(lf.replace(/\n/g, '\r\n'))).toEqual(decouperFeatures(lf));
+    expect(decouperFeatures(lf)).toHaveLength(2);
+  });
 });
 
 describe('empreinte', () => {

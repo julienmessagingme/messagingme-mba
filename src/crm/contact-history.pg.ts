@@ -136,6 +136,11 @@ export class PgContactHistoryStore {
    * le niveau d'un contact au seul motif qu'on a discuté avec lui, ce qui est l'inverse de ce que l'entonnoir
    * mesure.
    *
+   * ⚠️ ET C'EST `sender_user_id`, PAS `origin`, POUR UNE RAISON MESURÉE. La colonne `origin` dit pourtant
+   * « humain » en toutes lettres, ce qui serait plus lisible ; mais elle est NULLE sur 73 des 163 sortants
+   * de la base (relevé le 2026-09-11), parce qu'elle est arrivée après eux. S'y fier ferait compter tout
+   * l'historique comme automatique, sans qu'aucun test le voie : les faux d'un test sont toujours complets.
+   *
    * ⚠️ UNE RÉACTION EST UN ENTRANT **OU** UN CLIC ATTRIBUÉ, exactement la définition d'`engage` un peu plus
    * haut, appliquée en profondeur : « cliqué ou répondu, bref il y a eu un engagement » (Julien). Un bouton
    * de réponse rapide arrive comme un entrant portant son `button_payload`, donc il compte ; un bouton URL
@@ -143,6 +148,17 @@ export class PgContactHistoryStore {
    *
    * ⚠️ La profondeur est un `max`, pas un compte : le niveau ATTEINT est le plus profond, et c'est
    * `entonnoirEngagement` qui en fait un cumul « au moins N ».
+   *
+   * 🔴 LA DERNIERE SOLLICITATION D UN PARCOURS EST BORNEE PAR `p.fin`, PAS SEULEMENT PAR 24 H. Sans
+   * `s.fin` dans le `coalesce`, elle n avait aucune borne haute autre que la fenetre de service : si la
+   * campagne SUIVANTE partait moins de 24 h apres, la reaction qu ELLE provoquait comptait aussi comme un
+   * engagement sur le parcours PRECEDENT. L entonnoir surestimait alors la profondeur, et d autant plus que
+   * le client enchaine ses campagnes. Releve en revue le 2026-09-11.
+   *
+   * ⚠️ LES DEPARTS SONT DEDUPLIQUES ET BORNES, et les deux raisons sont ecrites dans la requete : deux
+   * envois a la meme milliseconde produisaient une fenetre VIDE, donc un parcours perdu en silence ; et
+   * l entonnoir couvre les `MAX_SENDS` derniers departs, exactement la population de la liste d envois
+   * affichee juste en dessous.
    */
   async bilanContact(tenantId: string, contactId: string): Promise<{ envois: Array<{ category: string | null; count: number }>; profondeurs: number[] } | null> {
     const owner = await this.pool.query<{ id: string }>(
@@ -160,14 +176,26 @@ export class PgContactHistoryStore {
         [tenantId, contactId],
       ),
       this.pool.query<{ niveau: string }>(
-        `with parcours as (
-           select r.sent_at as debut,
-                  lead(r.sent_at) over (order by r.sent_at) as fin
+        `with departs as (
+           -- 🔴 DISTINCT, ET IL CORRIGE UNE SOUSTRACTION MUETTE. Deux campagnes parties vers le meme contact
+           -- a la MEME milliseconde donnaient deux departs identiques, donc une fenetre
+           -- [t, lead(t)) = [t, t) VIDE : ce parcours sortait de l entonnoir sans rien signaler. Et c est
+           -- aussi plus juste : deux envois simultanes ne font qu UNE sollicitation vue du contact.
+           --
+           -- ⚠️ BORNE AU MEME PLAFOND QUE LA LISTE D ENVOIS affichee juste en dessous, pour que les deux
+           -- moities de l ecran parlent de la meme population. Sans borne, un contact a plusieurs centaines
+           -- d envois faisait reparcourir la conversation entiere une fois par parcours.
+           select distinct r.sent_at as debut
              from campaign_recipients r join campaigns c on c.id = r.campaign_id
             where r.contact_id = $2 and c.tenant_id = $1 and r.sent_at is not null
+            order by 1 desc
+            limit $3
+         ),
+         parcours as (
+           select debut, lead(debut) over (order by debut) as fin from departs
          ),
          sollicitations as (
-           select p.debut, m.created_at,
+           select p.debut, p.fin, m.created_at,
                   row_number() over (partition by p.debut order by m.created_at, m.id) as rang,
                   lead(m.created_at) over (partition by p.debut order by m.created_at, m.id) as suivante
              from parcours p
@@ -185,15 +213,15 @@ export class PgContactHistoryStore {
                select 1 from conversation_messages m2 join conversations cv2 on cv2.id = m2.conversation_id
                 where cv2.tenant_id = $1 and cv2.contact_id = $2 and m2.direction = 'in'
                   and m2.created_at > s.created_at
-                  and m2.created_at < least(coalesce(s.suivante, 'infinity'::timestamptz), s.created_at + interval '24 hours'))
+                  and m2.created_at < least(coalesce(s.suivante, s.fin, 'infinity'::timestamptz), s.created_at + interval '24 hours'))
                or exists (
                select 1 from tracked_link_clicks tc
                 where tc.tenant_id = $1 and tc.contact_id = $2
                   and tc.at > s.created_at
-                  and tc.at < least(coalesce(s.suivante, 'infinity'::timestamptz), s.created_at + interval '24 hours'))
+                  and tc.at < least(coalesce(s.suivante, s.fin, 'infinity'::timestamptz), s.created_at + interval '24 hours'))
          )
          select max(rang)::bigint as niveau from touchees group by debut`,
-        [tenantId, contactId],
+        [tenantId, contactId, MAX_SENDS],
       ),
     ]);
     return {
