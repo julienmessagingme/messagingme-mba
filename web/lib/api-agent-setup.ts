@@ -21,6 +21,9 @@ export interface TourConstruction {
 export interface PropositionConstruction {
   /** QUAND l'agent annonce qu'il est une IA. Absent = l'assistant n'en propose pas de changement. */
   mentionIaFrequence?: 'jamais' | 'session' | 'chaque_message';
+  /** Combien de minutes l'agent attend une réponse avant de lâcher. Même nature que le champ ci-dessus :
+   *  un réglage hors fiche que l'entretien demande depuis le 2026-09-11. */
+  inactiviteMinutes?: number;
   fiche: {
     nom?: string;
     objectif?: string;
@@ -128,6 +131,13 @@ export function restreindreProposition(
     ...(proposition.mentionIaFrequence !== undefined
       && (!avantDe.has('mentionIaFrequence') || gardees.has('mentionIaFrequence'))
       ? { mentionIaFrequence: proposition.mentionIaFrequence }
+      : {}),
+    // ⚠️ MEME REGLE, ET LE MEME PIEGE : un reglage hors fiche oublie ICI serait pose par l entretien,
+    // affiche par le diff, et jete a l application, sans que rien ne le signale. C est le defaut typique
+    // d une capacite cablee sur deux consommateurs sur trois, deja paye une fois dans ce depot.
+    ...(proposition.inactiviteMinutes !== undefined
+      && (!avantDe.has('inactiviteMinutes') || gardees.has('inactiviteMinutes'))
+      ? { inactiviteMinutes: proposition.inactiviteMinutes }
       : {}),
     outils: garde(proposition.outils, (o) => [`outil.${o.handler}.description`, `outil.${o.handler}.nePasUtiliser`])
       .map((o) => ({

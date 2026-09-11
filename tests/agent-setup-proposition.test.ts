@@ -14,7 +14,7 @@ import { OUTILS_MAISON } from '../src/agent/outils-maison';
  * d'un outil, et surtout son activation.
  */
 
-const COURANT = (): EtatCourant => ({ mentionIaFrequence: 'session' as const, fiche: ficheVide(), outils: [] });
+const COURANT = (): EtatCourant => ({ mentionIaFrequence: 'session', inactiviteMinutes: 30, fiche: ficheVide(), outils: [] });
 
 describe('propositionSchema', () => {
   it('accepte une proposition de fiche partielle', () => {
@@ -80,9 +80,40 @@ describe('propositionSchema', () => {
     }).success).toBe(false);
   });
 
+  it('🔴 le DÉLAI D’INACTIVITÉ est proposable, et le diff le dit en toutes lettres', () => {
+    // Demande de Julien du 2026-09-11 : « au bout de combien de temps de non réaction, on ne relance plus
+    // l'agent IA ? ». Le réglage existait, l'entretien ne le demandait pas, donc il gardait sa valeur
+    // d'usine chez tout le monde.
+    const p = propositionSchema.parse({ message: 'voici', inactiviteMinutes: 120 });
+    const d = differences(COURANT(), p);
+    expect(d).toEqual([{
+      champ: 'inactiviteMinutes',
+      label: 'Silence du contact : quand l’agent lâche',
+      // 🔴 EN CLAIR, PAS EN NOMBRE NU : « 1440 » ne se lit pas, et c'est un diff qu'un humain doit JUGER.
+      // Lui demander la division reviendrait à l'inviter à cliquer « Garder » sans lire.
+      avant: '30 minutes',
+      apres: '2 heures',
+    }]);
+  });
+
+  it('une durée INCHANGÉE ne produit aucune ligne de diff', () => {
+    // Preuve inverse : sans elle, écrire la ligne à chaque tour passerait le test ci-dessus, et le client
+    // apprendrait à valider un diff qui ne change rien.
+    expect(differences(COURANT(), propositionSchema.parse({ message: 'voici', inactiviteMinutes: 30 }))).toEqual([]);
+  });
+
+  it('🔴 les BORNES sont celles de la base, pas des valeurs choisies ici', () => {
+    // La colonne porte le même CHECK (1 à 1440). Accepter 5000 ferait remonter un 500 au moment d'appliquer,
+    // sur une proposition que le client venait de valider.
+    expect(propositionSchema.safeParse({ message: 'x', inactiviteMinutes: 1440 }).success).toBe(true);
+    expect(propositionSchema.safeParse({ message: 'x', inactiviteMinutes: 1441 }).success).toBe(false);
+    expect(propositionSchema.safeParse({ message: 'x', inactiviteMinutes: 0 }).success).toBe(false);
+    expect(propositionSchema.safeParse({ message: 'x', inactiviteMinutes: 30.5 }).success).toBe(false);
+  });
+
   it('une réponse sans message est refusée', () => {
     // Une proposition sans explication est un diff que personne ne peut juger.
-    expect(propositionSchema.safeParse({ mentionIaFrequence: 'session' as const, fiche: { objectif: 'Aider.' } }).success).toBe(false);
+    expect(propositionSchema.safeParse({ mentionIaFrequence: 'session', fiche: { objectif: 'Aider.' } }).success).toBe(false);
   });
 });
 
@@ -133,7 +164,7 @@ describe('differences', () => {
   it('ne rend QUE ce qui change vraiment', () => {
     // Un modèle qui recopie l'objectif à l'identique ne doit pas produire de ligne : le client apprendrait à
     // cliquer « Garder » sans lire, et c'est l'habitude que ce diff existe pour empêcher.
-    const courant: EtatCourant = { mentionIaFrequence: 'session' as const, fiche: { ...ficheVide(), objectif: 'Aider les clients.' }, outils: [] };
+    const courant: EtatCourant = { mentionIaFrequence: 'session', inactiviteMinutes: 30, fiche: { ...ficheVide(), objectif: 'Aider les clients.' }, outils: [] };
     expect(differences(courant, { message: 'x', fiche: { objectif: 'Aider les clients.' } })).toEqual([]);
     const change = differences(courant, { message: 'x', fiche: { objectif: 'Cerner le besoin.' } });
     expect(change).toHaveLength(1);
@@ -142,7 +173,7 @@ describe('differences', () => {
 
   it('compare les règles d’arrêt sur leur contenu, pas sur leur objet', () => {
     const courant: EtatCourant = {
-      mentionIaFrequence: 'session' as const,
+      mentionIaFrequence: 'session', inactiviteMinutes: 30,
       fiche: { ...ficheVide(), sorties: [{ code: 'rdv', label: 'Rendez-vous pris' }] },
       outils: [],
     };
@@ -168,7 +199,7 @@ describe('differences', () => {
 
   it('un outil DÉJÀ posé n’est pas annoncé comme un ajout, et ses mots inchangés ne bougent pas', () => {
     const courant: EtatCourant = {
-      mentionIaFrequence: 'session' as const,
+      mentionIaFrequence: 'session', inactiviteMinutes: 30,
       fiche: ficheVide(),
       outils: [{ handler: 'poser_tag', description: 'Tague le contact.', nePasUtiliser: 'Pas de tag inventé.' }],
     };
@@ -198,9 +229,10 @@ describe('differences', () => {
  * et un secret, et cela reste un geste d'administrateur.
  */
 describe('proposition : les connecteurs', () => {
-  const etat = {
-    mentionIaFrequence: 'session' as const,
-      fiche: ficheVide(),
+  const etat: EtatCourant = {
+    mentionIaFrequence: 'session',
+    inactiviteMinutes: 30,
+    fiche: ficheVide(),
     outils: [],
     connecteurs: [{ nom: 'lire_commande', titre: 'Lire une commande', description: 'ancien', nePasUtiliser: 'ancien non' }],
   };

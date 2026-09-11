@@ -74,7 +74,7 @@ function app(opts: {
   const deps: AgentSetupRouteDeps = {
     etatCourant: async (_t, agentId) => (agentId === AG
       ? {
-        label: 'Conseiller séjours', mentionIaFrequence: 'session' as const,
+        label: 'Conseiller séjours', mentionIaFrequence: 'session', inactiviteMinutes: 30,
         fiche: { ...ficheVide(), objectif: 'Aider.' },
         outils: [],
         titresConnaissance: ['La piscine'],

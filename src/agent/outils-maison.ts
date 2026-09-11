@@ -63,9 +63,16 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     handler: 'terminer',
     nomDefaut: 'mba_terminer',
     titre: { fr: 'Terminer par une règle d’arrêt', en: 'Finish through a stop rule' },
+    // ⚠️ LE TEXTE NOMME MAINTENANT L'ONGLET, parce que « un de ses aboutissements » ne disait pas D'OÙ ils
+    // viennent. Question de Julien, le 2026-09-11 : « est-on d'accord que les conditions d'aboutissement dont
+    // tu parles sont définies dans Règles d'arrêt ? ». Oui, et c'est mécanique : le paramètre `sortie` est en
+    // `derive_des_sorties`, donc son énumération EST la liste des règles d'arrêt de la fiche, jamais stockée
+    // ni recopiée. L'écran le disait déjà sous le champ ; la description, elle, ne le disait pas.
+    // ⚠️ Ce texte est le DÉFAUT d'un outil NEUF : les outils déjà posés gardent leur copie en base, et c'est
+    // voulu (le client peut réécrire ces mots, ce sont eux qui pilotent l'appel de fonction).
     description: {
-      fr: 'À appeler quand la conversation a atteint un de ses aboutissements. Rend la main au scénario par la sortie choisie.',
-      en: 'Call when the conversation has reached one of its outcomes. Hands back to the scenario through the chosen output.',
+      fr: 'À appeler quand la conversation a atteint un de ses aboutissements, c’est-à-dire une des règles d’arrêt de l’onglet « Objectif et transferts ». Rend la main au scénario par la sortie choisie.',
+      en: 'Call when the conversation has reached one of its outcomes, that is one of the stop rules from the “Objective and handovers” tab. Hands back to the scenario through the chosen output.',
     },
     nePasUtiliser: {
       fr: 'Ne pas appeler pour passer la main à un humain : il y a un outil pour ça.',

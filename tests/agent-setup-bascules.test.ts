@@ -178,7 +178,7 @@ describe('couverture de l’ordre du jour', () => {
 
     it('un système DÉJÀ branché n’est pas proposé une seconde fois comme « à relier »', () => {
       const ctx: ContexteConstruction = {
-        label: 'A', mentionIaFrequence: 'session' as const, fiche: ficheVide(), outils: [], titresConnaissance: [],
+        label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [],
         connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '' }],
         sources: [{ label: 'ERP interne', kind: 'http', status: 'active' }, { label: 'Agenda', kind: 'http', status: 'active' }],
       };
@@ -189,7 +189,7 @@ describe('couverture de l’ordre du jour', () => {
 
     it('une source DÉSACTIVÉE ne compte pas : la proposer promettrait un appel qui échouerait', () => {
       const ctx: ContexteConstruction = {
-        label: 'A', mentionIaFrequence: 'session' as const, fiche: ficheVide(), outils: [], titresConnaissance: [], connecteurs: [],
+        label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [], connecteurs: [],
         sources: [{ label: 'Vieux CRM', kind: 'http', status: 'disabled' }, { label: 'MCP off', kind: 'mcp', status: 'disabled' }],
       };
       expect(inventaireDe(ctx)).toEqual({ outilsApi: [], systemesApi: [], mcp: [] });

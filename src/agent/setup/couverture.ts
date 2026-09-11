@@ -127,9 +127,13 @@ export interface Point {
 /**
  * L'ordre du jour, de la substance vers la surface.
  *
- * Il compte neuf points au lieu de six, et l'ordre n'est pas décoratif : on ne demande le ton et l'identité
- * qu'une fois qu'on sait ce que l'agent fait, sinon on décore une coquille. Neuf reste tenable ; c'est
- * l'entretien de quarante questions qui serait un formulaire avec plus de friction, pas celui-ci.
+ * Il en compte DIX (six à l'origine, neuf le 2026-08-31, dix le 2026-09-11), et l'ordre n'est pas décoratif :
+ * on ne demande le ton et l'identité qu'une fois qu'on sait ce que l'agent fait, sinon on décore une
+ * coquille. Dix reste tenable ; c'est l'entretien de quarante questions qui serait un formulaire avec plus de
+ * friction, pas celui-ci.
+ *
+ * ⚠️ CETTE PHRASE PORTE UN COMPTE, DONC ELLE DÉRIVE : `tests/agent-setup-agenda.test.ts` la tient, et tient
+ * surtout l'invariant qui compte vraiment, à savoir que chaque point a QUELQUE PART OÙ RANGER sa réponse.
  */
 export const AGENDA: Point[] = [
   {
@@ -172,6 +176,25 @@ export const AGENDA: Point[] = [
       + 'y fait : on prendra chaque moment un par un juste après',
     pistes: ['le client veut prendre rendez-vous', 'il demande où vous êtes', 'il faut qualifier son besoin'],
     collecteDesMoments: true,
+  },
+  {
+    /**
+     * 🔴 LE SILENCE DU CONTACT EST UNE FIN DE CONVERSATION COMME UNE AUTRE, et personne ne la déclarait.
+     * Demande de Julien, le 2026-09-11 : « le client ne réagit plus.. au bout de combien de temps de non
+     * réaction, on ne relance plus l'agent IA si le client revient ? ». Le réglage EXISTAIT déjà
+     * (`agents.inactivite_minutes`, 30 minutes par défaut, sortie « Pas de réponse »), mais il vivait dans
+     * un onglet de garde-fous techniques que personne n'ouvre, et l'entretien ne l'abordait pas. Un réglage
+     * qu'on ne demande jamais est un réglage qui garde sa valeur d'usine chez tout le monde.
+     *
+     * ⚠️ IL VIENT APRÈS `aboutissements` ET AVANT `humain`, et l'ordre a un sens : on demande à quoi
+     * ressemble une conversation RÉUSSIE, puis ce qui se passe quand il n'y en a pas, puis qui reprend.
+     */
+    code: 'silence',
+    question: 'Si le contact ne répond plus, au bout de combien de temps votre agent doit-il lâcher la conversation ?',
+    aObtenir: 'au bout de combien de temps SANS réponse du contact l’agent cesse d’attendre, EN MINUTES. '
+      + 'Convertis toi-même ce qu’il dit (« une demi-heure » = 30, « deux heures » = 120, « une journée » = 1440). '
+      + 'Le maximum est 24 heures, soit 1440 minutes : s’il demande plus, dis-le et propose 1440',
+    pistes: ['30 minutes', '2 heures', 'une demi-journée', '24 heures'],
   },
   {
     code: 'humain',

@@ -101,6 +101,18 @@ export const propositionSchema = z.object({
    * applique. Une IA ne décide pas seule d'arrêter d'annoncer qu'elle est une IA.
    */
   mentionIaFrequence: z.enum(['jamais', 'session', 'chaque_message']).optional(),
+  /**
+   * COMBIEN DE MINUTES l'agent attend une réponse avant de lâcher (demande de Julien, 2026-09-11).
+   *
+   * 🔴 LE DEUXIÈME RÉGLAGE HORS FICHE, et il est ici pour la même raison que le premier : l'entretien pose
+   * désormais la question (point `silence`). Sans ce champ, on interrogerait le client pour ranger sa
+   * réponse nulle part, ce qui est l'incohérence exacte contre laquelle il avait prévenu.
+   *
+   * ⚠️ LES BORNES SONT CELLES DE LA BASE (1 à 1440), pas des valeurs choisies ici. La colonne porte le même
+   * CHECK : accepter 5000 dans le schéma ferait remonter un 500 au moment d'appliquer, sur une proposition
+   * que le client venait de valider.
+   */
+  inactiviteMinutes: z.number().int().min(1).max(1440).optional(),
   /** 🔴 HANDLERS UNIQUES, même exigence que les codes de sortie de la fiche. Deux entrées pour le même outil
    *  produiraient deux lignes de diff portant la MÊME clé, et l'application tenterait de créer deux fois le
    *  même outil : la seconde création se ferait refuser sur un nom déjà pris, en laissant la première. */
@@ -150,6 +162,14 @@ export const SCHEMA_PROPOSITION = {
       description: 'QUAND l’agent annonce qu’il est une IA, et SEULEMENT si le client l’a tranché : '
         + 'jamais = il ne l’annonce pas ; session = une seule fois par conversation ; chaque_message = à '
         + 'chaque réponse. Ne le propose pas de toi-même : c’est la responsabilité de la marque, pas la tienne.',
+    },
+    inactiviteMinutes: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 1440,
+      description: 'Combien de MINUTES l’agent attend une réponse du contact avant de lâcher la '
+        + 'conversation, et SEULEMENT si le client l’a dit. Convertis ce qu’il dit en minutes '
+        + '(« une demi-heure » = 30, « deux heures » = 120, « une journée » = 1440). Maximum 1440.',
     },
     bascules: {
       type: 'array',
@@ -257,6 +277,8 @@ export interface EtatCourant {
   fiche: FicheAgentContenu;
   /** Le régime d'annonce d'IA ACTUEL, pour que le diff dise ce qui change (migration 0126). */
   mentionIaFrequence: FrequenceMentionIa;
+  /** Le délai d'inactivité ACTUEL, en minutes, pour la même raison. */
+  inactiviteMinutes: number;
   /** Les outils DÉJÀ posés sur l'agent, par handler, avec leurs mots actuels. */
   outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
   /** Les CONNECTEURS déjà déclarés par un administrateur, par leur nom exposé. L'assistant ne peut proposer
@@ -295,6 +317,18 @@ const LIBELLES_MENTION: Record<string, string> = {
   chaque_message: 'à chaque message',
 };
 
+/**
+ * Un nombre de minutes, dit comme on le dirait à voix haute.
+ *
+ * ⚠️ `1440` ne se lit pas, et c'est un diff qu'un humain doit JUGER : lui montrer le nombre nu reviendrait à
+ * lui demander de faire la division lui-même, donc à l'inviter à cliquer « Garder » sans lire.
+ */
+function dureeEnClair(minutes: number): string {
+  if (minutes % 1440 === 0) return minutes === 1440 ? '24 heures' : `${minutes / 1440} jours`;
+  if (minutes % 60 === 0) return minutes === 60 ? '1 heure' : `${minutes / 60} heures`;
+  return `${minutes} minutes`;
+}
+
 export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'reponses' | 'bascules'>): Changement[] {
   const out: Changement[] = [];
 
@@ -320,6 +354,17 @@ export function differences(courant: EtatCourant, proposition: Omit<Proposition,
       label: 'Annonce « je suis une IA »',
       avant: LIBELLES_MENTION[courant.mentionIaFrequence] ?? courant.mentionIaFrequence,
       apres: LIBELLES_MENTION[proposition.mentionIaFrequence] ?? proposition.mentionIaFrequence,
+    });
+  }
+
+  // Le délai d'inactivité : hors fiche lui aussi. Dit en toutes lettres plutôt qu'en nombre nu, parce que
+  // « 1440 » ne se lit pas et que c'est la seule ligne du diff que le client doit pouvoir juger d'un coup.
+  if (proposition.inactiviteMinutes !== undefined && proposition.inactiviteMinutes !== courant.inactiviteMinutes) {
+    out.push({
+      champ: 'inactiviteMinutes',
+      label: 'Silence du contact : quand l’agent lâche',
+      avant: dureeEnClair(courant.inactiviteMinutes),
+      apres: dureeEnClair(proposition.inactiviteMinutes),
     });
   }
 

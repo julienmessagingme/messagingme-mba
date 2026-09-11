@@ -147,3 +147,31 @@ describe('Le régime d’annonce d’IA dans une proposition', () => {
     expect(r.mentionIaFrequence).toBeUndefined();
   });
 });
+
+/**
+ * LE DÉLAI D'INACTIVITÉ, deuxième réglage hors fiche (2026-09-11, demande de Julien).
+ *
+ * 🔴 LE MÊME PIÈGE QUE SON AÎNÉ, ET IL EST MUET : l'entretien pose la question, le diff l'affiche, et
+ * appliquer ne changerait rien. C'est le défaut typique d'une capacité câblée sur deux consommateurs sur
+ * trois, que ce dépôt a déjà payé. Ces trois cas sont là pour que le troisième consommateur ne s'oublie pas.
+ */
+describe('Le délai d’inactivité dans une proposition', () => {
+  const AVEC = { ...PROPOSITION, inactiviteMinutes: 120 };
+  const LIGNE: Changement[] = [{ champ: 'inactiviteMinutes', label: 'Silence du contact : quand l’agent lâche', avant: '30 minutes', apres: '2 heures' }];
+
+  it('🔴 GARDÉE, la valeur proposée part', () => {
+    const r = restreindreProposition(AVEC, LIGNE, new Map([['inactiviteMinutes', '2 heures']]));
+    expect(r.inactiviteMinutes).toBe(120);
+  });
+
+  it('🔴 JETÉE, le champ est OMIS : la colonne reste inchangée', () => {
+    // Et surtout pas réécrit depuis `avant` : le diff porte « 30 minutes », pas 30, et l'écrire tel quel
+    // ferait échouer l'écriture sur un champ entier.
+    const r = restreindreProposition(AVEC, LIGNE, new Map());
+    expect(r.inactiviteMinutes).toBeUndefined();
+  });
+
+  it('sans proposition sur ce point, rien n’est envoyé', () => {
+    expect(restreindreProposition(PROPOSITION, [], new Map()).inactiviteMinutes).toBeUndefined();
+  });
+});

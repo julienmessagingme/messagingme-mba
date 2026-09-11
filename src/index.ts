@@ -1170,6 +1170,8 @@ async function main(): Promise<void> {
           label: fiche.label,
           // Le régime d'annonce d'IA : l'entretien pose la question, le diff doit donc pouvoir dire ce qui change.
           mentionIaFrequence: fiche.mentionIaFrequence,
+          // Idem pour le délai d'inactivité, depuis que l'entretien demande quand l'agent lâche un contact muet.
+          inactiviteMinutes: fiche.inactiviteMinutes,
           fiche: fiche.contenu,
           // Les outils MAISON, par leur handler : c est par lui que l assistant les designe.
           outils: outils.filter((o) => o.origin === 'mba')
