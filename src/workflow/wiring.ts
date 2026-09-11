@@ -417,6 +417,14 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * vide. Un parcours ne s arrete pas parce qu une transformation a rate.
      */
     executerJs: (code, valeur) => executerFonctionJs(code, valeur),
+    /**
+     * LES VARIABLES `{{champ}}` d un message rapide ou d une question.
+     *
+     * 🔴 LA MEME TABLE QUE LE RCS ET LES MODELES D E-MAIL (`contactVars`), cablee sur la meme lecture : un
+     * client qui ecrit `{{prenom}}` attend la meme chose dans les trois, et trois tables differentes
+     * finiraient par ne pas connaitre les memes champs.
+     */
+    varsFor: async (tenant, waId) => contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}),
     appelHttp: creerAppelHttpScenario({
       sources: new PgSourceStore(pool),
       requetes: new PgRequeteStore(pool),

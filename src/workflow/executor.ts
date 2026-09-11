@@ -3,6 +3,7 @@ import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMo
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow } from './engine';
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
+import { renderText } from '../crm/render';
 import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow, RunChannel, RunStatus } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
@@ -261,6 +262,22 @@ export interface WorkflowExecutorDeps {
    * n'a aucune raison de payer. Absente -> le bloc ne fait RIEN et le parcours continue.
    */
   executerJs?(code: string, valeur: string): Promise<{ ok: boolean; valeur: string }>;
+  /**
+   * Table de substitution des variables `{{champ}}` du contact, pour les messages WhatsApp d'un scénario
+   * (message rapide, question).
+   *
+   * 🔴 LA MÊME QUE CELLE DU RCS ET DES MODÈLES D'E-MAIL (`contactVars`), et c'est le point : un client qui
+   * écrit `{{prenom}}` dans un message rapide attend exactement ce qu'il obtient dans un mail ou un message
+   * RCS. Trois grammaires pour la même accolade seraient trois choses à apprendre.
+   *
+   * ⚠️ OPTIONNELLE, et appelée SEULEMENT si le message porte au moins une accolade : un bloc sans variable
+   * (le cas courant) ne paie aucune requête. Absente -> le message part avec ses accolades telles quelles,
+   * ce qui se voit tout de suite et vaut mieux qu'un envoi bloqué.
+   *
+   * ⚠️ RIEN À VOIR avec les variables POSITIONNELLES `{{1}}` d'un template Meta, qui n'existent que parce que
+   * Meta valide un gabarit. Un message rapide n'est soumis à personne.
+   */
+  varsFor?(tenantId: string, waId: string): Promise<Record<string, string | null>>;
   /**
    * État des conversations tenues par un bloc agent. OPTIONNEL, comme les autres deps de ce fichier : absent,
    * aucun bloc agent ne peut être servi, ce qui préserve les suites de tests à deps minimales et l'intégration.
@@ -609,18 +626,35 @@ export class WorkflowExecutor {
         }
       }
       else {
+        /**
+         * 🔴 LES VARIABLES `{{champ}}` DU CONTACT, résolues ICI et pour les deux blocs WhatsApp qui portent un
+         * corps libre (message rapide, question). C'est la MÊME grammaire et la MÊME table que le RCS et les
+         * modèles d'e-mail (`contactVars`) : un client qui écrit `{{prenom}}` attend la même chose partout, et
+         * trois grammaires pour la même accolade seraient trois choses à apprendre.
+         *
+         * ⚠️ LA FICHE N'EST LUE QUE SI LE MESSAGE EN PORTE : un bloc sans variable, qui est le cas courant, ne
+         * paie aucune requête. Même optimisation que le chemin RCS juste au-dessus.
+         *
+         * ⚠️ SEUL LE CORPS est substitué, pas les libellés de boutons : vingt caractères chez Meta, un prénom
+         * un peu long ferait refuser le message ENTIER pour un gain nul. C'est la règle déjà posée côté RCS,
+         * et la tenir identique est ce qui la rend explicable.
+         */
+        const corpsAvecVariables = async (texte: string): Promise<string> => {
+          if (!this.deps.varsFor || !/\{\{\s*[\w.-]+\s*\}\}/.test(texte)) return texte;
+          return renderText(texte, await this.deps.varsFor(tenantId, waId), { html: false });
+        };
         // ⚠️ Jamais `refus ??= await …` : `??=` n'évalue pas sa droite quand la gauche est déjà remplie, donc
         // l'envoi lui-même serait SAUTÉ. On envoie toujours, on ne garde que la 1re raison.
         const dit = a.kind === 'sendQuickMessage'
           // Le canal du PARCOURS décide, pas le type du bloc. Voir `envoyerQuickEnRcs`.
           ? (canal === 'rcs'
             ? await this.envoyerQuickEnRcs(tenantId, waId, a)
-            : await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons, a.mediaUrl))
+            : await this.deps.sendQuickMessage(tenantId, waId, await corpsAvecVariables(a.body), a.buttons, a.mediaUrl))
           // Une QUESTION part toujours en WhatsApp : la liste interactive n'a aucun équivalent RCS, et le
           // bloc est réservé à ce canal (décision de Julien du 2026-08-26). Pas de branche `canal === 'rcs'`
           // ici : elle promettrait un repli qui n'existe pas.
           : a.kind === 'sendQuestion'
-            ? await this.deps.sendQuestion(tenantId, waId, a.body, a.buttonLabel, a.rows)
+            ? await this.deps.sendQuestion(tenantId, waId, await corpsAvecVariables(a.body), a.buttonLabel, a.rows)
             : a.kind === 'sendFlow'
               ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
               : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);

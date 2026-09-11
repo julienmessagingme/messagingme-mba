@@ -479,9 +479,26 @@ export function ConfigPanel({
         const qr = Array.isArray(d.quickReplies) ? (d.quickReplies as string[]) : [];
         return (
           <div className="space-y-2">
+            {/* MÊME composant d'insertion que le bloc RCS et le bloc Question : « + Variable » pose un champ
+                du contact, et le sélecteur d'émojis évite d'aller en chercher un ailleurs. C'était le DERNIER
+                corps de message resté un champ nu, où il fallait recopier les accolades de mémoire. */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
-              <textarea value={(d.body as string) ?? ''} onChange={(e) => onPatch({ body: e.target.value })} rows={3} className={cls} placeholder={t('Ton message…', 'Your message…')} />
+              <ChampCorpsVariables
+                valeur={(d.body as string) ?? ''}
+                onChange={(body) => onPatch({ body })}
+                fields={fields}
+                label={t('Message', 'Message')}
+                placeholder={t('Ton message…', 'Your message…')}
+                testId="quick-node-body"
+                // ⚠️ LE PLAFOND DÉPEND DES BOUTONS, et ce n'est pas un détail d'affichage : avec des réponses
+                // rapides, le message part en INTERACTIF, que Meta borne à 1024 caractères ; sans bouton, il
+                // part en texte simple, borné à 4096. Un seul chiffre affiché serait faux la moitié du temps.
+                max={qr.some((x) => x.trim() !== '') ? 1024 : 4096}
+                compact
+              />
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('« + Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“+ Variable” inserts a contact field, filled in from their record at send time.')}
+              </p>
             </div>
             {/* MÊME composant et MÊME champ (`imageUrl`) que le bloc RCS : un seul téléversement, un seul
                 format de stockage, et le visuel sert aux DEUX canaux. En WhatsApp il devient l'en-tête du
