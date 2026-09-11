@@ -86,11 +86,17 @@ export interface FicheFichier {
  */
 export function lireFicheDuDepot(nomFichier: string, texte: string): FicheFichier {
   const cle = nomFichier.replace(/\.md$/, '');
-  const entete = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(texte);
-  const corpsBrut = (entete ? texte.slice(entete[0].length) : texte).trim();
+  // 🔴 L'EN-TÊTE EST LU LIGNE PAR LIGNE, et non par une expression régulière. La version régulière ne
+  // reconnaissait pas un en-tête VIDE (une ligne `---` suivie d'une autre), et laissait alors les deux
+  // tirets DANS le corps, c'est-à-dire sous les yeux du client. Trouvé en relisant les fiches le
+  // 2026-09-11, sur une fiche qui n'avait rien à déclarer et portait donc un en-tête vide.
+  const lignes = texte.split(/\r?\n/);
+  const finEntete = lignes[0] === '---' ? lignes.indexOf('---', 1) : -1;
+  const entete = finEntete > 0 ? lignes.slice(1, finEntete).join('\n') : null;
+  const corpsBrut = (finEntete > 0 ? lignes.slice(finEntete + 1).join('\n') : texte).trim();
   const champ = (nom: string): string | null => {
-    if (!entete) return null;
-    const trouve = new RegExp(`^${nom}:(.*)$`, 'm').exec(entete[1] ?? '');
+    if (entete === null) return null;
+    const trouve = new RegExp(`^${nom}:(.*)$`, 'm').exec(entete);
     const valeur = trouve?.[1]?.trim() ?? '';
     // Un champ VIDE vaut ABSENT : `ecran: ` produirait sinon une clé d'écran vide, que la carte ne
     // résoudrait jamais et que personne ne verrait, au lieu d'une fiche honnêtement sans écran.

@@ -83,6 +83,23 @@ describe('les fiches d’aide', () => {
     }
   });
 
+  it('🔴 aucun résidu d’en-tête ne se retrouve dans le CORPS', () => {
+    // Une fiche sans rien à déclarer porte un en-tête VIDE (`---` suivi de `---`). La première version du
+    // lecteur ne le reconnaissait pas et laissait les deux tirets dans le corps, donc sous les yeux du
+    // client. Ce test garde le cas quelle que soit la façon dont le lecteur sera réécrit.
+    for (const nom of fichiers) {
+      const f = lireFicheDuDepot(nom, readFileSync(new URL(nom, DOSSIER), 'utf8'));
+      expect(f.corps.trimStart().startsWith('---'), `${nom} garde un résidu d’en-tête dans son corps`).toBe(false);
+      expect(f.corps).not.toContain('source_empreinte');
+    }
+  });
+
+  it('⚠️ un en-tête VIDE est reconnu comme tel', () => {
+    const f = lireFicheDuDepot('x.md', '---\n---\n# Titre\n\nUn corps.');
+    expect(f.corps).toBe('Un corps.');
+    expect(f.ecran).toBeNull();
+  });
+
   it('la CLÉ d’une fiche est le nom de son fichier, et elle est unique', () => {
     // C'est elle qui rend le chargement idempotent : recharger met à jour, il ne duplique pas.
     const cles = fichiers.map((nom) => lireFicheDuDepot(nom, readFileSync(new URL(nom, DOSSIER), 'utf8')).cle);
