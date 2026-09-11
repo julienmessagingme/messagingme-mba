@@ -64,6 +64,12 @@ function envoieVraiment(node: GraphNodeLike): boolean {
  */
 function messageNonBloquant(node: GraphNodeLike): boolean {
   if (node.type !== 'quick_message' || !envoieVraiment(node)) return false;
+  // 🔴 UN BOUTON DE LIEN REND LE BLOC NON BLOQUANT, quoi que porte `quickReplies`. Le moteur VIDE les
+  // réponses rapides quand le bloc porte un lien (`actionOf`), donc s'arrêter ici à `quickReplies` ferait
+  // diverger le miroir sur le seul graphe où ça compte : celui qui porte les deux, enregistré avant que
+  // l'écran ne propose la case, ou posé par l'API. L'éditeur annoncerait une attente que le moteur ne fait
+  // pas. Meta n'émet aucun retour sur un clic de bouton de lien : rien ne viendra, jamais.
+  if (node.data.lienActif === true) return true;
   const raw = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
   return raw.every((q) => String(q ?? '').trim() === '');
 }

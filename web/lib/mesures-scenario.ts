@@ -184,7 +184,12 @@ interface BoutonDeclare {
  *
  * Le type n'est pas décoratif : Meta n'émet AUCUN événement quand on clique un bouton URL. Traiter tous les
  * boutons pareil faisait proposer « A cliqué « Voir le site » » sur un lien, une case qui restait à zéro pour
- * toujours. Un message rapide n'a que des boutons de choix, d'où le type par défaut.
+ * toujours. Les boutons que déclare un message rapide (`quickReplies`) sont tous des boutons de choix, d'où
+ * le type par défaut.
+ *
+ * ⚠️ Un message rapide PEUT porter un bouton de lien depuis le 2026-09-11, et il n'apparaît volontairement
+ * pas ici : il vit dans `lienActif`/`lienTexte`, pas dans `quickReplies` (les deux s'excluent, cf. le bloc
+ * dans `WorkflowConfigPanel`), et il n'y a rien à mesurer dessus, pour la raison écrite juste au-dessus.
  */
 function boutonsDe(n: GraphNode): BoutonDeclare[] {
   const d = n.data ?? {};

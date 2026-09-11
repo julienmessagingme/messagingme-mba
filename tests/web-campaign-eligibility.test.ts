@@ -322,6 +322,23 @@ describe('parité de la détection « attente >= 24 h puis message de session »
     // l'ignorer, sinon l'un des deux croit à une attente de 5 minutes.
     ['attente datée gardant un vieux délai de 5 min', g([n('w', 'wait', { waitMode: 'heures_ouvrees', delay: 5, unit: 'minutes' }), QM('q')], [e('w', 'q')])],
     ['mode INCONNU -> délai (les deux le lisent défensivement)', g([n('w', 'wait', { waitMode: 'quand_il_pleut', delay: 2, unit: 'hours' }), QM('q')], [e('w', 'q')])],
+    // 🔴 LE BOUTON DE LIEN (2026-09-11), ET SURTOUT LE GRAPHE QUI PORTE LES DEUX. L'écran vide les réponses
+    // rapides quand la case se coche, mais un graphe enregistré AVANT cette case, ou posé par l'API, peut
+    // porter `quickReplies` ET `lienActif`. Le moteur vide alors les boutons, donc le bloc ne bloque pas ;
+    // un front resté sur `quickReplies` aurait cru à une attente que le moteur ne fait pas, et signalé un
+    // montage fautif différent. C'est exactement la divergence que ce tableau existe pour attraper.
+    ['attente, message à bouton de lien, attente, message rapide', g(
+      [n('w1', 'wait', { delay: 12, unit: 'hours' }),
+       n('ql', 'quick_message', { body: 'La brochure', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }),
+       n('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
+      [e('w1', 'ql'), e('ql', 'w2'), e('w2', 'q')],
+    )],
+    ['attente, message à bouton de lien QUI GARDE ses réponses rapides, attente, message rapide', g(
+      [n('w1', 'wait', { delay: 12, unit: 'hours' }),
+       n('ql', 'quick_message', { body: 'La brochure', quickReplies: ['Oui', 'Non'], lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }),
+       n('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
+      [e('w1', 'ql'), e('ql', 'w2'), e('w2', 'q')],
+    )],
   ];
 
   it('front et serveur désignent le MÊME montage fautif (ou aucun)', () => {
