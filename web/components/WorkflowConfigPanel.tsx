@@ -1064,6 +1064,9 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
   /** Création d'un champ à la volée : le nom saisi, et le refus éventuel du serveur. */
   const [nouveauChamp, setNouveauChamp] = useState<string | null>(null);
   const [refusChamp, setRefusChamp] = useState<string | null>(null);
+  /** Une création EN VOL. Sans ce verrou, deux clics rapides envoient deux `POST` : le second se fait
+   *  refuser en 409 sur le nom que le premier vient de créer, et l'écran annonce un échec après un succès. */
+  const [creationEnVol, setCreationEnVol] = useState(false);
   const cls = 'w-full rounded-lg border border-ink-200 px-2 py-1.5 text-sm';
 
   async function essayer(): Promise<void> {
@@ -1104,13 +1107,20 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
         * libellé disait « Votre fonction », ce qui invitait précisément à écrire la fonction entière.
         */}
       <div className="font-mono text-[11px] leading-tight text-ink-400">function (valeur) {'{'}</div>
-      <textarea
-        data-testid="js-node-code" rows={6} spellCheck={false}
-        className={`${cls} ml-3 font-mono text-xs`}
-        value={code}
-        onChange={(e) => onPatch({ code: e.target.value })}
-        placeholder={'return JSON.parse(valeur).statut;'}
-      />
+      {/* ⚠️ LE RETRAIT EST SUR L'ENVELOPPE, PAS SUR LE CHAMP. `ml-3` posé sur un élément déjà en `w-full`
+          S'AJOUTE à sa largeur (une marge n'entre jamais dans le calcul de `width`, quel que soit le
+          `box-sizing`) : mesuré le 2026-09-11, le champ débordait de 12 px de son parent dans un panneau qui
+          en fait 280, ce qui y faisait apparaître une barre de défilement horizontale. Un conteneur qui
+          porte le `pl-3` donne le même décalage visuel sans toucher à la largeur. */}
+      <div className="pl-3">
+        <textarea
+          data-testid="js-node-code" rows={6} spellCheck={false}
+          className={`${cls} font-mono text-xs`}
+          value={code}
+          onChange={(e) => onPatch({ code: e.target.value })}
+          placeholder={'return JSON.parse(valeur).statut;'}
+        />
+      </div>
       <div className="font-mono text-[11px] leading-tight text-ink-400">{'}'}</div>
       <p className="text-[11px] text-ink-500">
         {t('Écrivez seulement l’intérieur : la valeur du champ arrive dans', 'Write only the inside: the field value comes in as')}
@@ -1182,9 +1192,10 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
             />
             <button
               type="button" data-testid="js-node-cible-creer"
-              disabled={nouveauChamp.trim() === ''}
+              disabled={creationEnVol || nouveauChamp.trim() === ''}
               onClick={() => {
-                void onCreerChamp(nouveauChamp).then((cle) => {
+                setCreationEnVol(true);
+                void onCreerChamp(nouveauChamp).finally(() => setCreationEnVol(false)).then((cle) => {
                   // 🔴 CRÉÉ PUIS SÉLECTIONNÉ : créer un champ et devoir ensuite le chercher dans la liste
                   // serait le geste fait à moitié, et personne ne remarquerait qu'il manque la seconde moitié.
                   if (cle === null) { setRefusChamp(t('Ce nom est déjà pris, ou réservé à un champ de base.', 'That name is already taken, or reserved for a base field.')); return; }
@@ -1194,7 +1205,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
               }}
               className="shrink-0 rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-300"
             >
-              {t('Créer', 'Create')}
+              {creationEnVol ? t('…', '…') : t('Créer', 'Create')}
             </button>
           </div>
           {/* ⚠️ LE REFUS SE DIT. Un bouton qui ne fait rien sur un nom déjà pris laisserait croire à une

@@ -27,6 +27,17 @@ const FUNNELS: Record<string, Record<string, unknown>> = {
   camp3: { sent: 50, delivered: 50, read: 50, replied: 50, failed: 0, buttonReplies: 0, urlClicks: null },
 };
 
+/**
+ * Une campagne a SCENARIO : Meta ne rend AUCUN accuse, et les deux etapes du milieu sont INCONNUES.
+ *
+ * 🔴 CE N EST PAS UN CAS LIMITE, C EST LE CAS DOMINANT DE CE TYPE DE CAMPAGNE. Mesure en production le
+ * 2026-09-11 : 29 envois de scenario, 29 sans accuse, soit 100 %. La branche scenario enregistre un
+ * identifiant de message SYNTHETIQUE que l accuse de Meta ne peut pas apparier.
+ */
+const SANS_ACCUSE = { sent: 3, delivered: 0, read: 0, replied: 3, failed: 0, sansAccuse: 3, buttonReplies: 0, urlClicks: null };
+/** La MEME campagne, mais un seul accuse manquant sur trois : la mesure existe, elle est juste partielle. */
+const PARTIEL = { sent: 3, delivered: 2, read: 1, replied: 3, failed: 0, sansAccuse: 1, buttonReplies: 0, urlClicks: null };
+
 async function monter(page: import('@playwright/test').Page) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -102,5 +113,47 @@ test.describe('Funnel : barres verticales et comparaison', () => {
     // qui lit les zones dans le DOM. C'est le piège de la duplication d'un composant qui portait son id.
     await expect(page.locator('#quanti-funnel')).toHaveCount(1);
     await expect(page.getByTestId('pdf-quanti-funnel')).toHaveCount(1);
+  });
+});
+
+test.describe('Le funnel ne confond plus « zero » et « on ne sait pas »', () => {
+  /**
+   * 🔴 SIGNALE PAR JULIEN LE 2026-09-11 : « 3 envoyes, 0 delivres, 0 lus et pourtant 3 repondus, erreur
+   * manifeste non ? ». Chaque nombre etait juste ; c est leur mise cote a cote qui mentait. Une campagne a
+   * SCENARIO n aura JAMAIS d accuse de livraison, par construction.
+   */
+  async function monterAvec(page: import('@playwright/test').Page, funnel: Record<string, unknown>) {
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.includes('/stats/campaign-funnel')) return json(funnel);
+      if (url.includes('/campaigns')) return json({ campaigns: [CAMPAGNES[0]!] });
+      if (url.includes('/unread-count')) return json({ count: 0 });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
+      return json({});
+    });
+    await page.goto('/dashboard/funnel');
+    await page.getByTestId('funnel-campagne-camp1').waitFor();
+  }
+
+  test('🔴 aucun accuse : « — » et la raison, jamais un zero', async ({ page }) => {
+    await monterAvec(page, SANS_ACCUSE);
+    const carte = page.getByTestId('funnel-campagne-camp1');
+    // Les envoyes et les repondus restent des MESURES : eux se lisent.
+    await expect(carte).toContainText('3');
+    // Les deux etapes du milieu n en sont pas, et la carte le DIT plutot que d afficher 0.
+    await expect(carte.getByTestId('funnel-sans-accuse')).toBeVisible();
+    await expect(carte.getByText('—')).toHaveCount(2);
+  });
+
+  test('🔴 preuve inverse : un accuse PARTIEL garde ses chiffres', async ({ page }) => {
+    // Sans ce cas, effacer la colonne des qu un accuse manque passerait le test ci-dessus, et on perdrait
+    // une vraie mesure sur les envois qui, eux, ont bien ete accuses.
+    await monterAvec(page, PARTIEL);
+    const carte = page.getByTestId('funnel-campagne-camp1');
+    await expect(carte.getByTestId('funnel-sans-accuse')).toHaveCount(0);
+    await expect(carte.getByText('—')).toHaveCount(0);
   });
 });

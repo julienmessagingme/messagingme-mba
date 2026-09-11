@@ -931,7 +931,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   équipe l'ouvre en même temps. Ouvrir un fil éteint la pastille **immédiatement**, sans attendre.
 - ✅ **Qui répond à ce client, à cet instant** (2026-07-21). Une conversation appartient à un seul
   répondeur à la fois : le **scénario** (automatique), un **opérateur** (quelqu'un s'en occupe), ou
-  demain l'**agent de Meta**. Un badge le dit dans la liste et dans le fil, et n'apparaît que quand ce
+  demain l'**agent de Meta**. Un badge le dit dans le FIL OUVERT, et n'apparaît que quand ce
   n'est PAS le scénario : c'est l'exception qui doit se voir.
 - ✅ **Filtre « À traiter »** dans la liste des conversations, à côté de « Toutes ». Il ne garde que les
   conversations que **le scénario ne gère plus** : quelqu'un a pris la main, le scénario a passé la main, ou
@@ -1116,6 +1116,13 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   Sous-estimation des « lus » assumée si le destinataire a coupé les accusés. Campagne-only en V1. **Ce bloc
   ignore le sélecteur de période** : il porte toujours sur la totalité de la campagne choisie, changer la plage
   ne le fait pas bouger.
+
+  🔴 **« Délivrés » et « lus » affichent « — » quand Meta n'a rendu AUCUN accusé**, au lieu d'un zéro qu'on
+  lirait comme un fait. Ce n'est pas un cas limite : une campagne qui envoie un **scénario** n'aura jamais
+  d'accusé, par construction (mesuré à 29 envois sur 29), parce que le message y porte un identifiant interne
+  que l'accusé de Meta ne peut pas apparier. La carte le dit sous le graphe. ⚠️ Le seuil est « AUCUN », pas
+  « certains » : trois accusés manquants sur dix laissent les sept autres parfaitement mesurés, et effacer la
+  colonne entière perdrait une vraie information.
 - ✅ **Erreurs Meta par code ET par template** : breakdown des codes d'erreur (131049, 131047, 131026...) sur la
   période, avec libellé FR et volume, **filtrable par template** (menu « Tous les templates » / un template précis).
 **filtrable sur PLUSIEURS templates à la fois** (on les empile un par un, « Tous les templates »
@@ -1920,8 +1927,12 @@ est annoncé.
 ### Voir d'un coup d'œil qui tient chaque conversation
 
 Dans la liste de l'Inbox, une conversation tenue par l'agent de Meta porte un **dégradé bleu vers violet** et
-une **baguette à étincelles** devant le nom. La mention texte « agent Meta » a disparu de la liste, où elle
-faisait doublon ; elle reste dans l'en-tête de la conversation ouverte, là où l'on a besoin du mot exact.
+une **baguette à étincelles** devant le nom.
+
+⚠️ **La liste ne porte plus AUCUNE mention texte de détenteur**, pas même « vous avez la main » (demande de
+Julien du 2026-09-11 : « laisse juste le frame en blanc »). Elle sert à REPÉRER l'exception, et l'exception
+est la seule chose colorée. Le détenteur exact, lui, se lit dans l'en-tête de la conversation ouverte, là où
+l'on a la place et le besoin du mot juste.
 
 ## Canal RCS (menu Contenu > Messages RCS, et canal de campagne)
 

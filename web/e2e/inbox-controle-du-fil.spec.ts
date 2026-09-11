@@ -193,6 +193,31 @@ test.describe('Qui tient le fil se voit dans la LISTE, sans se lire', () => {
     // l'exception est la seule chose colorée ; le détenteur exact se lit dans l'en-tête du fil ouvert.
     await expect(page.getByText(/vous avez la main|you have the hand/)).toHaveCount(0);
   });
+
+  test('🔴 le détenteur se lit toujours dans l’EN-TÊTE du fil ouvert', async ({ page }) => {
+    /**
+     * 🔴 LE CAS QUE LE TEST CI-DESSUS A PERDU, REMIS À SA NOUVELLE PLACE. Il éprouvait « un fil tenu par un
+     * humain porte sa mention » ; retirer la mention de la LISTE a fait disparaître le seul endroit où
+     * `ControlBadge` était exercé, et l'écran aurait pu cesser de l'afficher PARTOUT sans qu'aucun test ne
+     * bronche. Le geste demandé par Julien était de vider la liste, pas de rendre le détenteur invisible.
+     *
+     * ⚠️ Faux À LUI SEUL, avec UNE conversation : réutiliser celui des tests de liste obligeait à cliquer la
+     * deuxième ligne, que la case à cocher en surimpression rend instable au clic.
+     */
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (/\/messages$/.test(url)) return json({ ...THREAD, controlOwner: 'app_human' });
+      if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: [{ ...CONV, controlOwner: 'app_human' }] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/inbox');
+    await page.getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).click();
+    await expect(page.getByText(/vous avez la main|you have the hand/)).toBeVisible();
+  });
+
 });
 
 test.describe('Le rangement en LOT ne cache pas ses échecs', () => {

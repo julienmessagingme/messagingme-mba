@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: edd3d1
+source_empreinte: 367c72
 ---
 # Répondre à un client dans l'Inbox
 
@@ -29,3 +29,9 @@ sont deux questions différentes.
 que si vous le lui rendez explicitement, avec le bouton prévu, ou après un délai sans réponse de votre part.
 C'est voulu : rien n'est plus déroutant pour un client qu'un robot qui reprend la parole au milieu d'un
 échange avec une personne.
+
+**Sur un fil tenu par l'agent de Meta**, le même bouton le lui prend pour de bon, sans qu'aucun message ne
+parte chez le client : l'agent se tait jusqu'à la reprise prévue, même si vous n'écrivez rien. Ces
+conversations-là se repèrent dans la liste à leur fond bleu dégradé et à la petite baguette devant le nom.
+Il arrive que Meta refuse de céder le fil ; l'écran vous le dit alors, et écrire au client le prend à coup
+sûr.
