@@ -144,6 +144,71 @@ describe('répondeur d’aide', () => {
   });
 });
 
+describe('répondeur d’aide : le fil de la conversation', () => {
+  it('🔴 les échanges passés sont REJOUÉS au modèle, dans l’ordre', async () => {
+    // Sans eux, « et ensuite ? » est incompréhensible, et l'écran afficherait un historique auquel le bot
+    // répond comme si rien ne précédait : pire que pas d'historique du tout.
+    const completer = vi.fn().mockResolvedValue(repondu('ok'));
+    await creerRepondeur(deps({ completer }))({
+      ...question,
+      historique: [{ question: 'comment lancer une campagne', reponse: 'Ouvrez Campagnes.' }],
+    });
+    const { messages } = completer.mock.calls[0]![0] as { messages: Array<{ role: string; content: string }> };
+    const roles = messages.map((m) => m.role).join(',');
+    expect(roles).toContain('user,assistant,user');
+    expect(messages.some((m) => m.content === 'Ouvrez Campagnes.' && m.role === 'assistant')).toBe(true);
+  });
+
+  it('⚠️ le fil est BORNÉ : au-delà de quatre échanges, les plus vieux tombent', async () => {
+    // Chaque appel renvoie l'intégralité de ce qu'on lui donne : un fil non borné ferait grossir le coût de
+    // CHAQUE question au fil de la conversation.
+    const completer = vi.fn().mockResolvedValue(repondu('ok'));
+    const long = Array.from({ length: 9 }, (_, i) => ({ question: `q${i}`, reponse: `r${i}` }));
+    await creerRepondeur(deps({ completer }))({ ...question, historique: long });
+    const { messages } = completer.mock.calls[0]![0] as { messages: Array<{ content: string }> };
+    expect(messages.some((m) => m.content === 'r8')).toBe(true);
+    expect(messages.some((m) => m.content === 'r0')).toBe(false);
+  });
+
+  it('🔴 une question de SUITE est rattrapée par la question précédente', async () => {
+    // « Et ensuite ? » seul ne ramène aucune fiche : sans rattrapage, le bot dirait « je ne sais pas » à
+    // toute question de suite, c'est-à-dire exactement là où une conversation devient utile.
+    const chercher = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([fiche()]);
+    const r = await creerRepondeur(deps({ depot: { chercher } }))({
+      ...question,
+      question: 'et ensuite ?',
+      historique: [{ question: 'comment lancer une campagne', reponse: 'Ouvrez Campagnes.' }],
+    });
+    expect(r.sait).toBe(true);
+    // La seconde recherche porte bien les DEUX questions, pas seulement la nouvelle.
+    expect(chercher.mock.calls[1]![0]).toContain('comment lancer une campagne');
+    expect(chercher.mock.calls[1]![0]).toContain('et ensuite ?');
+  });
+
+  it('🔴 le rattrapage n’a lieu QUE si la question seule a échoué', async () => {
+    // La concaténer systématiquement polluerait toutes les recherches : un nouveau sujet posé après un
+    // premier ramènerait les fiches du premier, et le bot répondrait à côté avec aplomb.
+    const chercher = vi.fn().mockResolvedValue([fiche()]);
+    await creerRepondeur(deps({ depot: { chercher } }))({
+      ...question,
+      historique: [{ question: 'un tout autre sujet', reponse: 'x' }],
+    });
+    expect(chercher).toHaveBeenCalledTimes(1);
+    expect(chercher.mock.calls[0]![0]).not.toContain('un tout autre sujet');
+  });
+
+  it('⚠️ sans historique, rien ne change : aucun rattrapage, aucun message de plus', async () => {
+    const chercher = vi.fn().mockResolvedValue([]);
+    const completer = vi.fn();
+    const r = await creerRepondeur(deps({ depot: { chercher }, completer }))(question);
+    expect(r.sait).toBe(false);
+    expect(chercher).toHaveBeenCalledTimes(1);
+    expect(completer).not.toHaveBeenCalled();
+  });
+});
+
 describe('répondeur d’aide : avec la recherche sémantique', () => {
   const recherche = {
     vectoriser: async () => [[1, 0, 0]],

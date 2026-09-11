@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { demanderAide, type ReponseAide } from '@/lib/api-aide';
+import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib/aide-fil';
 
 /**
  * LE BOUTON D'AIDE DE LA CONSOLE : posé UNE SEULE FOIS dans `AppShell`, donc présent sur les 36 écrans
@@ -17,9 +18,11 @@ import { demanderAide, type ReponseAide } from '@/lib/api-aide';
  * chose qu'on ne tolère pas : un bot qui annonce un bouton qui n'existe pas fait perdre confiance dans le
  * PRODUIT, pas dans le bot. L'écran de recours existe déjà et part par e-mail vers l'équipe.
  *
- * ⚠️ L'historique vit dans le composant, pas sur le serveur. Une question d'aide n'a pas de suite : on
- * demande, on lit, on va sur l'écran. Persister la conversation aurait été du travail pour un besoin que
- * personne n'a exprimé.
+ * 🔴 LE FIL EST GARDÉ TANT QUE LA PERSONNE EST CONNECTÉE (demande de Julien, 2026-09-11). La première
+ * version ne gardait rien, au motif qu'« une question d'aide n'a pas de suite ». C'était faux : on enchaîne
+ * toujours, et suivre le lien que le bot vient de donner REMONTE la coquille, donc effaçait la conversation
+ * au moment précis où l'on voulait poser la question suivante. Le fil vit dans `sessionStorage`
+ * (`lib/aide-fil.ts`), survit à la navigation, et part à la déconnexion.
  */
 export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecranCourant: string }) {
   const t = useT();
@@ -27,11 +30,19 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
   const [ouvert, setOuvert] = useState(false);
   const [question, setQuestion] = useState('');
   const [occupe, setOccupe] = useState(false);
-  const [reponse, setReponse] = useState<ReponseAide | null>(null);
+  const [fil, setFil] = useState<EchangeAide[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   // Une question en vol quand on en pose une autre est ABANDONNÉE : sans ça, la réponse à l'ancienne
   // pourrait arriver après la nouvelle et s'afficher à sa place.
   const enCours = useRef<AbortController | null>(null);
+  const basDuFil = useRef<HTMLDivElement | null>(null);
+
+  // Le fil est relu au MONTAGE, pas à l'ouverture du panneau : la coquille est remontée à chaque changement
+  // d'écran, et c'est précisément là qu'il faut le retrouver intact.
+  useEffect(() => { setFil(lireFil(tenantId)); }, [tenantId]);
+
+  // On descend sur la dernière réponse. Sans ça, une réponse longue apparaît au-dessus de ce qu'on lit.
+  useEffect(() => { basDuFil.current?.scrollIntoView({ block: 'end' }); }, [fil, occupe, ouvert]);
 
   async function envoyer(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -40,19 +51,28 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
     enCours.current?.abort();
     const abandon = new AbortController();
     enCours.current = abandon;
+    // 🔴 LE CHAMP SE VIDE TOUT DE SUITE. Il restait rempli après l'envoi, et la question suivante venait se
+    // coller à la précédente. Vidé AVANT l'appel, pas après : la personne n'a pas à attendre la réponse pour
+    // que l'écran réagisse à sa touche Entrée.
+    setQuestion('');
     setOccupe(true);
     setErreur(null);
-    setReponse(null);
     try {
       const r = await demanderAide(tenantId, {
         question: q,
         ecranCourant: ecranCourant === '' ? null : ecranCourant,
         langue: locale === 'en' ? 'en' : 'fr',
+        // ⚠️ Seul le TEXTE des réponses passées part au serveur, pas les liens : le modèle n'a rien à faire
+        // des écrans qu'il a proposés hier, et les renvoyer l'inciterait à les reproposer.
+        historique: fil.filter((x) => x.reponse.sait).map((x) => ({ question: x.question, reponse: x.reponse.texte })),
       }, abandon.signal);
-      setReponse(r);
+      const suite = [...fil, { question: q, reponse: r }].slice(-MAX_ECHANGES_GARDES);
+      setFil(suite);
+      ecrireFil(tenantId, suite);
     } catch {
       // Une panne n'affiche pas de trace technique : elle propose la même issue que « je ne sais pas », qui
-      // est une issue, là où un message d'erreur n'en est pas une.
+      // est une issue, là où un message d'erreur n'en est pas une. La question n'entre PAS dans le fil :
+      // sinon le modèle croirait avoir répondu quelque chose.
       setErreur(t('L’aide est indisponible pour le moment.', 'Help is unavailable right now.'));
     } finally {
       setOccupe(false);
@@ -94,13 +114,60 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
             <button type="button" onClick={() => setOuvert(false)} className="text-ink-400 hover:text-ink-700" aria-label={t('Fermer', 'Close')}>×</button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3">
-            {reponse === null && erreur === null && !occupe && (
+          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3" data-testid="aide-fil">
+            {fil.length === 0 && erreur === null && !occupe && (
               <p className="text-sm text-ink-500">
                 {t('Posez votre question sur la console, par exemple « comment je lance une campagne ? ».',
                   'Ask your question about the console, for example "how do I launch a campaign?".')}
               </p>
             )}
+
+            {fil.map((e, i) => (
+              <div key={`${i}-${e.question}`} className="space-y-1.5">
+                <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-ink-100 px-3 py-1.5 text-sm text-ink-800" data-testid="aide-question-posee">
+                  {e.question}
+                </p>
+                {!e.reponse.sait ? (
+                  <div data-testid="aide-je-ne-sais-pas">
+                    <p className="text-sm text-ink-700">
+                      {t('Je ne trouve pas la réponse dans le mode d’emploi.', 'I cannot find the answer in the user guide.')}
+                    </p>
+                    {recours}
+                  </div>
+                ) : (
+                  <div data-testid="aide-reponse">
+                    <p className="whitespace-pre-wrap text-sm text-ink-800">{e.reponse.texte}</p>
+                    {e.reponse.ecrans.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {e.reponse.ecrans.map((ec) => (
+                          <Link
+                            key={ec.cle}
+                            href={ec.href}
+                            data-testid={`aide-lien-${ec.cle}`}
+                            onClick={() => setOuvert(false)}
+                            className="block rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
+                          >
+                            {t('Ouvrir ', 'Open ')}
+                            {locale === 'en' ? ec.en : ec.fr}
+                            {ec.chemin.length > 0 && (
+                              <span className="font-normal text-brand-500"> ({ec.chemin.join(' > ')})</span>
+                            )}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                    {/* La SOURCE est montrée, et ce n'est pas décoratif : le client voit d'où sort la réponse,
+                        et peut juger si elle parle bien de ce qu'il cherche. */}
+                    {e.reponse.sources.length > 0 && (
+                      <p className="mt-2 text-[11px] text-ink-400" data-testid="aide-sources">
+                        {t('D’après : ', 'Based on: ')}{e.reponse.sources.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
             {occupe && <p className="text-sm text-ink-500" data-testid="aide-attente">{t('Je cherche…', 'Looking…')}</p>}
             {erreur !== null && (
               <div data-testid="aide-erreur">
@@ -108,45 +175,7 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
                 {recours}
               </div>
             )}
-            {reponse !== null && !reponse.sait && (
-              <div data-testid="aide-je-ne-sais-pas">
-                <p className="text-sm text-ink-700">
-                  {t('Je ne trouve pas la réponse dans le mode d’emploi.', 'I cannot find the answer in the user guide.')}
-                </p>
-                {recours}
-              </div>
-            )}
-            {reponse !== null && reponse.sait && (
-              <div data-testid="aide-reponse">
-                <p className="whitespace-pre-wrap text-sm text-ink-800">{reponse.texte}</p>
-                {reponse.ecrans.length > 0 && (
-                  <div className="mt-3 space-y-1.5">
-                    {reponse.ecrans.map((e) => (
-                      <Link
-                        key={e.cle}
-                        href={e.href}
-                        data-testid={`aide-lien-${e.cle}`}
-                        onClick={() => setOuvert(false)}
-                        className="block rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
-                      >
-                        {t('Ouvrir ', 'Open ')}
-                        {locale === 'en' ? e.en : e.fr}
-                        {e.chemin.length > 0 && (
-                          <span className="font-normal text-brand-500"> ({e.chemin.join(' > ')})</span>
-                        )}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-                {/* La SOURCE est montrée, et ce n'est pas décoratif : le client voit d'où sort la réponse, et
-                    peut juger si elle parle bien de ce qu'il cherche. */}
-                {reponse.sources.length > 0 && (
-                  <p className="mt-3 text-[11px] text-ink-400" data-testid="aide-sources">
-                    {t('D’après : ', 'Based on: ')}{reponse.sources.join(', ')}
-                  </p>
-                )}
-              </div>
-            )}
+            <div ref={basDuFil} />
           </div>
 
           <form onSubmit={envoyer} className="flex gap-2 border-t border-ink-100 px-4 py-3">

@@ -153,8 +153,22 @@ Un bouton flottant, posé **une seule fois dans `AppShell`**, donc aucun des 36 
 modifier (les 8 autres sont les pages de connexion, où il n'a rien à faire). Il transmet la clé de l'écran
 courant, ce qui rend l'aide contextuelle sans rien demander à la personne.
 
-La conversation est persistée côté serveur et conduite par le serveur, comme celle de la Construction : c'est
-ce qui permet de la rouvrir là où on l'avait laissée et de garder la logique hors du navigateur.
+🔴 **LE FIL EST GARDÉ TANT QUE LA PERSONNE EST CONNECTÉE, dans le NAVIGATEUR** (`sessionStorage`), et non
+côté serveur comme cette spec l'annonçait d'abord. Ce que le serveur persiste pour la Construction, il le
+fait parce que cette conversation-là CONDUIT un entretien, décide du point suivant et produit un réglage
+durable ; une question d'aide ne produit rien et ne se reprend pas d'un autre poste. Une table de plus, avec
+sa purge, coûterait plus cher que le service rendu.
+
+⚠️ **Et il doit survivre à la NAVIGATION**, ce qui a été le vrai enseignement de l'essai : la coquille est
+remontée à chaque changement d'écran, donc suivre le lien que le bot vient de donner effacerait la
+conversation au moment précis où l'on veut poser la question suivante. `sessionStorage` survit à la
+navigation et au rechargement, meurt avec l'onglet, et est effacé à la déconnexion : le fil dit ce que la
+personne cherchait à faire, le laisser derrière elle le mettrait à la disposition du suivant sur le poste.
+
+⚠️ **Le fil part au modèle, borné à quatre échanges**, sans quoi il serait décoratif : un écran qui affiche
+un historique auquel le bot répond comme si rien ne précédait est pire que pas d'historique. Corollaire à ne
+pas perdre : « et ensuite ? » ne ramène aucune fiche au rappel, qui est donc rattrapé par la question
+précédente, mais SEULEMENT quand la question seule a échoué.
 
 ## La route et le moteur
 
@@ -217,7 +231,7 @@ Chacun se vérifie par MUTATION avant d'être considéré comme acquis, conform�
 
 ## Ce que ça prépare pour la suite (le résumé des données)
 
-- Le widget, la route, la persistance de conversation et le plafond de débit sont réutilisés tels quels.
+- Le widget, la route, le fil de conversation et le plafond de débit sont réutilisés tels quels.
 - Les outils de lecture des données existent déjà (`src/mcp/outils.ts` : `list_conversations`,
   `get_conversation`, `get_messages`, `search_contacts`, `get_contact`, `list_members`).
 - 🔴 **Ce qui restera entièrement à faire, et qui n'est pas un détail** : les messages des contacts sont du

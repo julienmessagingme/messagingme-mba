@@ -109,6 +109,64 @@ test.describe('Bouton d’aide de la console', () => {
     await expect(page.getByTestId('aide-erreur')).not.toContainText('502');
   });
 
+  test('🔴 la question QUITTE le champ dès qu’on l’envoie', async ({ page }) => {
+    // Elle y restait, et la question suivante venait se coller à la précédente. Signalé par Julien le
+    // 2026-09-11 en essayant le bouton pour la première fois.
+    await mock(page, SAIT, []);
+    await page.goto('/campaigns');
+    await page.getByTestId('aide-bouton').click();
+    await page.getByTestId('aide-question').fill('comment lancer une campagne');
+    await page.getByTestId('aide-question').press('Enter');
+    await expect(page.getByTestId('aide-question')).toHaveValue('');
+    await expect(page.getByTestId('aide-reponse')).toBeVisible();
+  });
+
+  test('🔴 le fil SURVIT au changement d’écran', async ({ page }) => {
+    // La coquille est remontée à chaque navigation : un fil gardé en mémoire disparaissait dès qu'on suivait
+    // le lien que le bot venait de donner, c'est-à-dire au moment précis où l'on voulait enchaîner.
+    const vues: Array<Record<string, unknown>> = [];
+    await mock(page, SAIT, vues);
+    await page.goto('/campaigns');
+    await page.getByTestId('aide-bouton').click();
+    await page.getByTestId('aide-question').fill('comment lancer une campagne');
+    await page.getByTestId('aide-envoyer').click();
+    await expect(page.getByTestId('aide-reponse')).toBeVisible();
+
+    await page.goto('/contacts');
+    await page.getByTestId('aide-bouton').click();
+    await expect(page.getByTestId('aide-question-posee')).toContainText('comment lancer une campagne');
+    await expect(page.getByTestId('aide-reponse')).toBeVisible();
+  });
+
+  test('🔴 la question suivante emporte le fil au serveur', async ({ page }) => {
+    // Sans lui, « et ensuite ? » serait incompréhensible et l'écran afficherait une conversation à laquelle
+    // le bot répond comme si rien ne précédait.
+    const vues: Array<Record<string, unknown>> = [];
+    await mock(page, SAIT, vues);
+    await page.goto('/campaigns');
+    await page.getByTestId('aide-bouton').click();
+    await page.getByTestId('aide-question').fill('comment lancer une campagne');
+    await page.getByTestId('aide-envoyer').click();
+    await expect(page.getByTestId('aide-reponse')).toBeVisible();
+
+    await page.getByTestId('aide-question').fill('et ensuite ?');
+    await page.getByTestId('aide-envoyer').click();
+    await expect.poll(() => (vues[1]?.historique as unknown[] | undefined)?.length).toBe(1);
+    expect((vues[1]!.historique as Array<{ question: string }>)[0]!.question).toBe('comment lancer une campagne');
+  });
+
+  test('⚠️ une question en ÉCHEC n’entre pas dans le fil', async ({ page }) => {
+    // Sinon le modèle croirait avoir répondu quelque chose, et la question suivante s'appuierait sur une
+    // réponse qui n'a jamais existé.
+    await mock(page, 'panne', []);
+    await page.goto('/campaigns');
+    await page.getByTestId('aide-bouton').click();
+    await page.getByTestId('aide-question').fill('q');
+    await page.getByTestId('aide-envoyer').click();
+    await expect(page.getByTestId('aide-erreur')).toBeVisible();
+    await expect(page.getByTestId('aide-question-posee')).toHaveCount(0);
+  });
+
   test('le bouton d’envoi reste inerte tant que la question est vide', async ({ page }) => {
     await mock(page, SAIT, []);
     await page.goto('/campaigns');

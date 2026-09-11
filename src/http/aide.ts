@@ -34,6 +34,11 @@ export interface AideRouteDeps {
  */
 const PAR_MINUTE = 20;
 
+/** Combien d'échanges passés la route accepte. Le moteur en garde autant, ce plafond-ci borne la REQUÊTE. */
+const MAX_ECHANGES_RECUS = 4;
+/** Une réponse du bot tient largement là-dedans ; au-delà, c'est un appelant qui gonfle le prompt. */
+const REPONSE_MAX_CARACTERES = 4_000;
+
 export function registerAide(app: FastifyInstance, deps: AideRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
   const limiter = new RateLimiter(PAR_MINUTE, 60_000);
@@ -46,7 +51,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, requireA
     }
     if (!deps.repondre) return reply.code(503).send({ error: 'aide indisponible (non configurée)' });
 
-    const b = (req.body ?? {}) as { question?: unknown; ecranCourant?: unknown; langue?: unknown };
+    const b = (req.body ?? {}) as { question?: unknown; ecranCourant?: unknown; langue?: unknown; historique?: unknown };
     const question = typeof b.question === 'string' ? b.question.trim() : '';
     if (question === '') return reply.code(400).send({ error: 'question requise' });
     // 4xx et pas 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, et le client
@@ -63,8 +68,29 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, requireA
       ? b.ecranCourant.trim().slice(0, 60) : null;
     const langue = b.langue === 'en' ? 'en' : 'fr';
 
+    /**
+     * L'historique de la conversation, envoyé par l'écran.
+     *
+     * ⚠️ IL VIENT DU CLIENT, donc il est BORNÉ ici et pas seulement dans le moteur : un appelant qui pousse
+     * mille échanges ferait grossir le prompt, donc NOTRE facture, sans qu'aucune garde ne l'arrête. Quatre
+     * échanges, chacun aux mêmes bornes qu'une question et qu'une réponse.
+     *
+     * ⚠️ Et il est VALIDÉ forme par forme plutôt que pris tel quel : une entrée dont un champ n'est pas une
+     * chaîne est ignorée, pas devinée.
+     */
+    const brut = Array.isArray(b.historique) ? b.historique : [];
+    const historique = brut
+      .filter((e): e is { question: string; reponse: string } => typeof e === 'object' && e !== null
+        && typeof (e as { question?: unknown }).question === 'string'
+        && typeof (e as { reponse?: unknown }).reponse === 'string')
+      .slice(-MAX_ECHANGES_RECUS)
+      .map((e) => ({
+        question: e.question.slice(0, QUESTION_MAX_CARACTERES),
+        reponse: e.reponse.slice(0, REPONSE_MAX_CARACTERES),
+      }));
+
     try {
-      const r = await deps.repondre({ question, role, langue, ecranCourant });
+      const r = await deps.repondre({ question, role, langue, ecranCourant, historique });
       return reply.code(200).send(r);
     } catch (err) {
       // JOURNALISER AVANT DE MASQUER, comme le formulaire de support. Un `catch` nu avalerait aussi bien une

@@ -35,7 +35,19 @@ export interface ReponseAide {
  */
 export function demanderAide(
   tenantId: string,
-  input: { question: string; ecranCourant: string | null; langue: 'fr' | 'en' },
+  input: {
+    question: string;
+    ecranCourant: string | null;
+    langue: 'fr' | 'en';
+    /**
+     * Les échanges précédents, du plus ancien au plus récent.
+     *
+     * 🔴 SANS EUX, UNE QUESTION DE SUITE EST INCOMPRÉHENSIBLE. « Et ensuite ? » ne veut rien dire seul, et
+     * afficher un historique auquel le bot répond comme si rien ne précédait serait pire que pas
+     * d'historique du tout. Le serveur les borne de son côté, il ne fait pas confiance à ce qui arrive.
+     */
+    historique?: Array<{ question: string; reponse: string }>;
+  },
   signal?: AbortSignal,
 ): Promise<ReponseAide> {
   return request<ReponseAide>(`/tenants/${tenantId}/aide`, {

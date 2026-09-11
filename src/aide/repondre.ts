@@ -24,6 +24,21 @@ export interface QuestionAide {
   langue: 'fr' | 'en';
   /** La clé de l'écran où elle se trouve, pour que l'aide soit contextuelle sans qu'elle le demande. */
   ecranCourant: string | null;
+  /**
+   * Les échanges précédents de la MÊME session, du plus ancien au plus récent.
+   *
+   * 🔴 SANS EUX, UNE QUESTION DE SUITE EST INCOMPRÉHENSIBLE. « Et ensuite ? » ne veut rien dire seul, et
+   * l'écran afficherait une conversation à laquelle le bot répond comme si rien ne précédait, ce qui est
+   * pire que pas d'historique du tout. Ils servent à DEUX choses distinctes : donner le fil au modèle, et
+   * rattraper le RAPPEL quand la question seule ne ramène aucune fiche.
+   */
+  historique?: EchangeAide[];
+}
+
+/** Un échange déjà eu : ce que la personne a demandé, ce que le bot a répondu. */
+export interface EchangeAide {
+  question: string;
+  reponse: string;
 }
 
 export interface ReponseAide {
@@ -100,6 +115,14 @@ const CORPS_MAX = 2_000;
 /** Combien de fiches partent au modèle, au plus. Trois suffisent et gardent la réponse nette. */
 const FICHES_RENDUES = 3;
 const DELAI_DEFAUT_MS = 20_000;
+/**
+ * Combien d'échanges passés partent au modèle.
+ *
+ * ⚠️ BORNÉ, et pas par prudence : chaque appel renvoie l'INTÉGRALITÉ de ce qu'on lui donne, donc un fil non
+ * borné ferait grossir le coût de CHAQUE question au fil de la conversation. Quatre suffisent pour qu'une
+ * question de suite ait du sens ; au-delà, la personne a changé de sujet.
+ */
+const MAX_ECHANGES = 4;
 
 /**
  * Fusionne le rappel lexical et le rappel vectoriel, sans doublon, en gardant la meilleure mesure de chacun.
@@ -200,8 +223,26 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
       }
     }
 
-    const retenues = (deps.recherche ? await verdict(candidates, question, deps.recherche)
+    let retenues = (deps.recherche ? await verdict(candidates, question, deps.recherche)
       : candidates.filter(ficheEstPertinente)).slice(0, FICHES_RENDUES);
+
+    /**
+     * 🔴 LE RATTRAPAGE DES QUESTIONS DE SUITE, et sans lui l'historique serait décoratif. « Et ensuite ? »
+     * ou « ça marche aussi pour les scénarios ? » ne ramènent RIEN au rappel : le bot dirait « je ne sais
+     * pas » à toute question de suite, c'est-à-dire exactement là où une conversation devient utile.
+     *
+     * ⚠️ ON NE CHERCHE AVEC LA QUESTION PRÉCÉDENTE QUE SI LA QUESTION SEULE A ÉCHOUÉ. La concaténer
+     * systématiquement polluerait toutes les recherches : un nouveau sujet posé après un premier ramènerait
+     * les fiches du premier, et le bot répondrait à côté avec aplomb.
+     */
+    const precedente = q.historique?.at(-1)?.question?.trim() ?? '';
+    if (retenues.length === 0 && precedente !== '') {
+      const elargie = `${precedente} ${question}`.slice(0, QUESTION_MAX_CARACTERES);
+      const rattrapees = await deps.depot.chercher(elargie, large ? deps.recherche!.candidats : FICHES_RENDUES);
+      retenues = (deps.recherche ? await verdict(rattrapees, elargie, deps.recherche)
+        : rattrapees.filter(ficheEstPertinente)).slice(0, FICHES_RENDUES);
+    }
+
     // 🔴 AUCUNE SOURCE : on ne va PAS voir le modèle. C'est la garde la moins chère et la plus efficace.
     if (retenues.length === 0) return rien;
 
@@ -215,6 +256,12 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
         messages: [
           { role: 'system', content: consigne(q, permis) },
           { role: 'user', content: `FICHES DU MODE D’EMPLOI :\n\n${blocFiches(retenues)}` },
+          // Le fil de la conversation, borné. Les échanges passés sont rejoués tels quels : c'est ce qui
+          // permet au modèle de comprendre « et ensuite ? » sans qu'on ait à lui expliquer de quoi il parle.
+          ...(q.historique ?? []).slice(-MAX_ECHANGES).flatMap((e): ChatMessage[] => [
+            { role: 'user', content: e.question },
+            { role: 'assistant', content: e.reponse },
+          ]),
           { role: 'user', content: question },
         ],
         outils: [{ name: OUTIL_REPONDRE, description: 'Rends ta réponse et les écrans où aller.', parameters: SCHEMA_REPONSE }],

@@ -1,4 +1,5 @@
 'use client';
+import { effacerFils } from './aide-fil';
 
 export interface Session {
   token: string;
@@ -35,6 +36,10 @@ export function getSession(): Session | null {
 
 export function clearSession(): void {
   localStorage.removeItem(KEY);
+  // 🔴 LE FIL DU BOT D'AIDE PART AVEC LA SESSION. Il dit ce que la personne cherchait à faire ; le laisser
+  // derrière elle le mettrait à la disposition du suivant sur le même poste, et un onglet resté ouvert
+  // survit très bien à un changement de compte.
+  effacerFils();
 }
 
 /**
