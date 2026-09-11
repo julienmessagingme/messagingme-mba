@@ -79,16 +79,26 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0129**, le 2026-09-10 à 20h50 (`agent_tool_sources.secret_publie_le` : se souvenir du
-secret qu'on a POSÉ chez Meta, seul moyen de savoir quand le reposer). Avant elle, **0127** le même jour à
-19h35 (`agent_tool_consommateurs` : la DÉFINITION d'un outil appartient à l'ESPACE, le CONSENTEMENT au couple
-(outil, consommateur), où le Meta Business Agent est un consommateur comme un agent).
+**Dernière appliquée : 0130**, le 2026-09-11 (`conversations.last_direction` : le SENS du dernier message
+d'une conversation, plus son CHECK et sa reprise de l'historique. C'est ce qui permet au dossier « À traiter »
+de vouloir dire « la balle est dans notre camp » plutôt que « quelqu'un a écrit »). Avant elle, **0129** le
+2026-09-10 à 20h50 (`agent_tool_sources.secret_publie_le` : se souvenir du secret qu'on a POSÉ chez Meta, seul
+moyen de savoir quand le reposer), et **0127** le même jour à 19h35 (`agent_tool_consommateurs` : la
+DÉFINITION d'un outil appartient à l'ESPACE, le CONSENTEMENT au couple (outil, consommateur), où le Meta
+Business Agent est un consommateur comme un agent).
+
+⚠️ **CETTE LIGNE A DÉRIVÉ UNE QUATRIÈME FOIS, le 2026-09-11** : elle annonçait 0129 et « prochaine libre =
+0130 » alors que 0130 était écrite ET appliquée depuis le matin. Relevée en écrivant une spec qui avait
+besoin du prochain numéro, donc par quelqu'un qui allait s'en servir. La parade reste la même et elle a encore
+fonctionné : **la base tranche**. Ce qui ne fonctionne toujours pas, c'est de compter sur le souvenir d'avoir
+mis à jour la ligne : le moment où elle se met à jour est l'exécution de `migrate`, et il faut la RELIRE
+juste après.
 
 ⚠️ **0128 A ÉTÉ APPLIQUÉE APRÈS 0129, et le désordre des numéros est délibéré** : elle RETIRE `agent_id` et
 les six colonnes de consentement de `agent_tools`, donc elle devait passer après que le nouveau code ait été
 vu en production, quand 0129 devait passer avant. Le runner applique les fichiers absents de
 `schema_migrations` par ordre de nom, sans exiger que la suite soit continue ni que l'ordre d'application la
-suive. **Prochaine libre = 0130.**
+suive. **Prochaine libre = 0131.**
 
 🔴 **L'ORDRE DE LA SÉQUENCE S'INVERSE POUR UNE MIGRATION QUI RETIRE** : build, `up -d --build`, PUIS
 `migrate`. La routine documentée (migrer d'abord) vaut pour une migration qui AJOUTE une colonne que le code
