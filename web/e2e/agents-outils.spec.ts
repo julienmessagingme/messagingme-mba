@@ -79,6 +79,17 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], outi
       if (/\/autonomie$/.test(url)) return json({ outil: { ...BLOC, autonome: corps.valeur === true } });
       return json({ outil: { ...TAG, ...corps } });
     }
+    /* Les blocs des scénarios, d'où le choisisseur tire sa liste. `sce-b` n'a AUCUN bloc agent : il ne doit
+       donc jamais apparaître, l'outil ne pouvant envoyer que dans le scénario où le contact se trouve. */
+    if (/\/nodes(\?|$)/.test(url)) {
+      return json({ nodes: [
+        { code: null, type: 'agent', name: 'Le conseiller', workflowId: 'w1', workflowName: 'Séjours', summary: 'Agent IA' },
+        { code: 'nod_photo', type: 'template', name: 'La photo de la résidence', workflowId: 'w1', workflowName: 'Séjours', summary: 'Modèle photo' },
+        { code: 'nod_form', type: 'flow', name: '', workflowId: 'w1', workflowName: 'Séjours', summary: 'Formulaire de rappel' },
+        { code: 'nod_attente', type: 'wait', name: 'Patienter 2 h', workflowId: 'w1', workflowName: 'Séjours', summary: 'Attente' },
+        { code: 'nod_autre', type: 'template', name: 'Bloc d un scénario sans agent', workflowId: 'w2', workflowName: 'Relances', summary: 'Modèle' },
+      ] });
+    }
     if (new RegExp(`/agents/${AG}$`).test(url)) return json({ agent: AGENT });
     if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -173,5 +184,44 @@ test.describe('Agents IA : les outils', () => {
     await page.goto(`/agents?id=${AG}&tab=outils`);
     await page.getByTestId('outil-retirer-o1').click();
     await expect.poll(() => appels.some((a) => a.method === 'DELETE'), { timeout: 5000 }).toBe(true);
+  });
+});
+
+test.describe('Agents IA : choisir le bloc que l agent peut envoyer', () => {
+  test('🔴 les blocs se COCHENT dans une liste, ils ne se tapent plus en « nod_… »', async ({ page }) => {
+    /**
+     * Question de Julien, le 2026-09-11 : « comment le user choisit le bloc ? ». Il ne pouvait pas. Le
+     * paramètre réclamait des codes « nod_… » qui ne sont écrits nulle part dans la console.
+     */
+    const appels: Appel[] = [];
+    await mock(page, appels, [BLOC]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+
+    // Le bloc du scénario QUI A un agent est proposé, avec son nom lisible et non son seul code.
+    await expect(page.getByTestId('outil-bloc-o2-nod_photo')).toContainText('La photo de la résidence');
+    // Un bloc sans nom retombe sur son résumé : une ligne vide ne se choisit pas.
+    await expect(page.getByTestId('outil-bloc-o2-nod_form')).toContainText('Formulaire de rappel');
+
+    // 🔴 LES PREUVES INVERSES, sans lesquelles « tout afficher » passerait le test.
+    // Une Attente : l'exécuteur la refuse à coup sûr, la proposer promettrait un geste qui échoue toujours.
+    await expect(page.getByTestId('outil-bloc-o2-nod_attente')).toHaveCount(0);
+    // Un bloc d'un scénario SANS agent : le contact n'y sera jamais quand l'agent tient le fil.
+    await expect(page.getByTestId('outil-bloc-o2-nod_autre')).toHaveCount(0);
+    await expect(page.getByText('Relances')).toHaveCount(0);
+
+    await page.getByTestId('outil-bloc-o2-nod_photo').click();
+    await expect.poll(
+      () => appels.some((a) => JSON.stringify((a.body as { enums?: unknown })?.enums ?? {}).includes('nod_photo')),
+      { timeout: 5000 },
+    ).toBe(true);
+  });
+
+  test('🔴 un code enregistré qui n’existe plus reste RETIRABLE', async ({ page }) => {
+    // Sinon il resterait invisible sur un outil qui échouerait en silence, sans aucun moyen de le corriger.
+    const appels: Appel[] = [];
+    const avecFantome = { ...BLOC, params: [{ name: 'code', type: 'string', source: 'modele', required: true, enum: ['nod_disparu'] }] };
+    await mock(page, appels, [avecFantome]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await expect(page.getByTestId('outil-bloc-inconnu-nod_disparu')).toContainText(/n’existe plus/);
   });
 });

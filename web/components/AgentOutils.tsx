@@ -6,6 +6,7 @@ import { cardCls, inputCls, inputClsAuto } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import { AgentConnecteurs } from '@/components/AgentConnecteurs';
 import { normaliserNomOutil } from '@/lib/agent-outils';
+import { listNodes, type NodeListItem } from '@/lib/api/scenarios';
 import {
   activerOutil, ajouterOutil, autonomieOutil, listOutils, patchOutil, retirerOutil,
   type ModeleOutil, type OutilAgent, type TexteBilingue,
@@ -86,6 +87,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       {(vue?.outils ?? []).filter((o) => o.origin === 'mba').map((o) => (
         <Outil
           key={o.id}
+          tenantId={tenantId}
           outil={o}
           modele={(vue?.catalogue ?? []).find((m) => m.handler === String(o.binding.handler ?? ''))}
           busy={busy}
@@ -160,7 +162,8 @@ function Etiquette({ classe, children }: { classe: string; children: React.React
   return <span className={`ml-1 rounded-full px-2 py-0.5 align-middle text-[11px] font-medium ${classe}`}>{children}</span>;
 }
 
-function Outil({ outil, modele, busy, onSave, onActiver, onAutonomie, onRetirer }: {
+function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, onRetirer }: {
+  tenantId: string;
   outil: OutilAgent;
   modele: ModeleOutil | undefined;
   busy: boolean;
@@ -248,15 +251,31 @@ function Outil({ outil, modele, busy, onSave, onActiver, onAutonomie, onRetirer 
       />
 
       {(modele?.params ?? []).filter((p) => p.edition === 'enum').map((p) => (
-        <ListeValeurs
-          key={p.name}
-          outilId={outil.id}
-          nom={p.name}
-          aide={p.aideEnum}
-          valeurs={valeursDe(outil, p.name)}
-          busy={busy}
-          onSave={(valeurs) => onSave({ enums: { [p.name]: valeurs } })}
-        />
+        /* 🔴 LE CODE D'UN BLOC NE SE TAPE PAS, IL SE CHOISIT. Ce paramètre demandait des codes « nod_… »
+           que le client ne voit NULLE PART dans la console : la question de Julien, le 2026-09-11, était
+           littéralement « comment le user choisit le bloc ? ». La réponse était : il ne pouvait pas. Les
+           autres énumérations (les champs de contact) restent en saisie libre, elles n'ont pas de liste
+           d'où sortir. */
+        String(outil.binding.handler ?? '') === 'envoyer_bloc' && p.name === 'code' ? (
+          <ChoixDeBlocs
+            key={p.name}
+            tenantId={tenantId}
+            outilId={outil.id}
+            valeurs={valeursDe(outil, p.name)}
+            busy={busy}
+            onSave={(valeurs) => onSave({ enums: { [p.name]: valeurs } })}
+          />
+        ) : (
+          <ListeValeurs
+            key={p.name}
+            outilId={outil.id}
+            nom={p.name}
+            aide={p.aideEnum}
+            valeurs={valeursDe(outil, p.name)}
+            busy={busy}
+            onSave={(valeurs) => onSave({ enums: { [p.name]: valeurs } })}
+          />
+        )
       ))}
       {(modele?.params ?? []).some((p) => p.edition === 'derive_des_sorties') && (
         <p className="text-xs leading-relaxed text-ink-500">
@@ -329,6 +348,118 @@ function valeursDe(outil: OutilAgent, nom: string): string[] {
     return Array.isArray(p.enum) ? p.enum.filter((v): v is string => typeof v === 'string') : [];
   }
   return [];
+}
+
+/**
+ * CHOISIR LES BLOCS que l'agent a le droit d'envoyer, dans une LISTE, au lieu de taper des codes.
+ *
+ * 🔴 POURQUOI IL FALLAIT LE FAIRE. Le paramètre `code` de « Envoyer un bloc de votre scénario » réclamait
+ * des codes « nod_… ». Ils existent, ils sont justes, et ils ne sont écrits NULLE PART dans la console :
+ * personne ne pouvait en connaître un. Julien, le 2026-09-11 : « comment le user choisit le bloc ? ».
+ * Il ne pouvait pas.
+ *
+ * 🔴 SEULS LES SCÉNARIOS QUI CONTIENNENT UN BLOC AGENT SONT PROPOSÉS, et ce n'est pas du rangement.
+ * L'outil envoie un bloc du scénario où le contact se trouve DÉJÀ (`envoyerBlocDepuisAgent` refuse tout
+ * autre parcours, et la raison est écrite dans l'exécuteur : passer par `runFrom` tuerait le run de
+ * l'agent qui appelle). Un bloc pris dans un scénario sans agent ne pourrait donc JAMAIS partir, et le
+ * proposer serait promettre un geste qui échouera toujours.
+ *
+ * ⚠️ QUATRE TYPES DE BLOCS SONT ÉCARTÉS, parce que l'exécuteur les refuse à coup sûr : un bloc Agent (une
+ * seconde session lèverait sur l'index « une seule session vivante par parcours »), un bloc Inbox (le fil
+ * basculerait en laissant le run planté), une Attente (son échéance n'est écrite nulle part, donc la suite
+ * ne partirait jamais) et un envoi RCS. ⚠️ Le filtre est SÛR, pas COMPLET : l'exécuteur refuse sur le REPOS
+ * du parcours, qu'on ne peut pas calculer ici. Un bloc proposé peut donc encore être refusé s'il mène à
+ * l'un de ces quatre ; l'inverse, lui, ne peut pas arriver.
+ */
+function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
+  tenantId: string; outilId: string; valeurs: string[]; busy: boolean; onSave: (v: string[]) => void;
+}) {
+  const t = useT();
+  const [blocs, setBlocs] = useState<NodeListItem[] | null>(null);
+  const [erreur, setErreur] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    void listNodes(tenantId)
+      .then((r) => { if (vivant) setBlocs(r.nodes); })
+      // Un échec ne doit pas rendre le paramètre INMODIFIABLE : on retombe sur la liste brute des codes déjà
+      // choisis, qui reste retirable. Perdre le choisisseur est gênant, perdre le réglage serait grave.
+      .catch(() => { if (vivant) setErreur(true); });
+    return () => { vivant = false; };
+  }, [tenantId]);
+
+  const REPOS_REFUSES = ['agent', 'inbox', 'wait', 'rcs_message'];
+  const avecAgent = new Set((blocs ?? []).filter((n) => n.type === 'agent').map((n) => n.workflowId));
+  const proposables = (blocs ?? []).filter(
+    (n) => n.code !== null && avecAgent.has(n.workflowId) && !REPOS_REFUSES.includes(n.type),
+  );
+  const parScenario = new Map<string, NodeListItem[]>();
+  for (const n of proposables) parScenario.set(n.workflowName, [...(parScenario.get(n.workflowName) ?? []), n]);
+  const connus = new Map(proposables.map((n) => [n.code!, n]));
+  const bascule = (code: string) => onSave(valeurs.includes(code) ? valeurs.filter((v) => v !== code) : [...valeurs, code]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-sm font-medium text-ink-700">{t('Blocs que l’agent peut envoyer', 'Blocks the agent may send')}</label>
+      <p className="text-xs leading-relaxed text-ink-500">
+        {t(
+          'Cochez les blocs. L’agent ne pourra envoyer que ceux-là, et seulement dans le scénario où se trouve déjà le contact.',
+          'Tick the blocks. The agent may send only these, and only within the scenario the contact is already in.',
+        )}
+      </p>
+
+      {valeurs.length === 0 && (
+        <span className="text-xs text-amber-800">
+          {t('Aucun bloc coché : l’agent ne peut en envoyer aucun.', 'No block ticked: the agent cannot send any.')}
+        </span>
+      )}
+
+      {/* 🔴 UN CODE CHOISI QUI N'EXISTE PLUS RESTE VISIBLE, ET SE DIT. Un bloc supprimé, ou dont le scénario
+          a perdu son agent, disparaîtrait de la liste : le code resterait enregistré et invisible, donc
+          impossible à retirer, sur un outil qui échouerait en silence. */}
+      {valeurs.filter((v) => !connus.has(v)).map((v) => (
+        <span key={v} data-testid={`outil-bloc-inconnu-${v}`} className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+          <span className="font-mono">{v}</span>
+          <span>{t('ce bloc n’existe plus, ou son scénario n’a plus d’agent', 'this block no longer exists, or its scenario has no agent')}</span>
+          <button disabled={busy} onClick={() => bascule(v)} className="ml-auto text-coral disabled:opacity-40">✕</button>
+        </span>
+      ))}
+
+      {blocs === null && !erreur && <p className="text-xs text-ink-500">{t('Chargement des scénarios…', 'Loading scenarios…')}</p>}
+      {erreur && <p className="text-xs text-coral">{t('Scénarios illisibles : réessayez en rouvrant cet onglet.', 'Scenarios unreadable: reopen this tab to retry.')}</p>}
+      {blocs !== null && proposables.length === 0 && (
+        <p className="text-xs text-ink-500" data-testid="outil-blocs-aucun">
+          {t(
+            'Aucun bloc disponible : cet outil n’envoie que des blocs d’un scénario qui contient un bloc Agent IA.',
+            'No block available: this tool only sends blocks from a scenario containing an AI Agent block.',
+          )}
+        </p>
+      )}
+
+      {[...parScenario.entries()].map(([scenario, liste]) => (
+        <div key={scenario} className="rounded-lg border border-ink-200 px-3 py-2">
+          <p className="text-xs font-semibold text-ink-700">{scenario}</p>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {liste.map((n) => (
+              <label key={n.code!} data-testid={`outil-bloc-${outilId}-${n.code}`} className="flex items-start gap-2 text-sm text-ink-800">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  disabled={busy}
+                  checked={valeurs.includes(n.code!)}
+                  onChange={() => bascule(n.code!)}
+                />
+                <span>
+                  {n.name.trim() === '' ? n.summary : n.name}
+                  <span className="ml-1 font-mono text-[11px] text-ink-400">{n.code}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** La liste fermée des valeurs qu'un paramètre accepte. Vide, elle n'impose rien, et l'écran le dit : c'est

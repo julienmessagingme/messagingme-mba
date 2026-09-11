@@ -178,9 +178,12 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     // Un message parti chez un contact ne se rappelle pas, et il est facturé : c'est la définition même de
     // l'irréversible, et le tronc commun le refuse tant que le client n'a pas coché l'autonomie.
     risk: 'irreversible',
+    // ⚠️ L'AIDE NE DEMANDE PLUS DE TAPER UN CODE. Elle disait « les codes de blocs [...] en nod_… », qui sont
+    // justes et que le client ne voit NULLE PART : la console les lui fait cocher dans une liste depuis le
+    // 2026-09-11 (`ChoixDeBlocs`). Un texte qui redemanderait la saisie rouvrirait l'impasse.
     params: [P(
       'code', 'Le code du bloc à envoyer.', 'enum',
-      { fr: 'Les codes de blocs que cet agent a le droit d’envoyer (ceux de vos scénarios, en « nod_… »).', en: 'The block codes this agent may send (from your scenarios, as “nod_…”).' },
+      { fr: 'Les blocs que cet agent a le droit d’envoyer. Cochez-les ci-dessous : seuls ceux d’un scénario contenant un bloc Agent IA peuvent partir.', en: 'The blocks this agent may send. Tick them below: only those in a scenario containing an AI Agent block can be sent.' },
     )],
   },
 ];
