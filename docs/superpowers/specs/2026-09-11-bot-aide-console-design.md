@@ -64,9 +64,11 @@ un écran disparaît**.
 
 Ce qu'il faut faire :
 
-- **Sortir la STRUCTURE de l'arbre dans `web/lib/nav.ts`** (une constante : `key`, `href`, `adminOnly`,
-  `children`), en laissant l'appel `t()` des libellés au rendu. C'est le seul changement de code existant que
-  cette spec demande, et il est petit : `nav.ts` existe déjà comme modèle de la nav, avec son test.
+- **Sortir l'arbre dans `web/lib/nav.ts`, sous la forme `arbresNav(t)`** : une fonction qui PREND le
+  traducteur et rend les trois arbres. Structure et libellés restent donc ENSEMBLE, ce qui compte : une
+  constante de structure plus une table de libellés seraient deux listes à tenir alignées à la main, et le
+  CLAUDE.md du dépôt documente ce que ça coûte. C'est le seul changement de code existant que cette spec
+  demande, et `nav.ts` existe déjà comme modèle de la nav, avec son test.
 - **Générer `carte-console.json`** depuis cette constante, à la construction, et le servir au moteur.
 - **Un test qui casse la CI** si une entrée de la carte pointe vers un `href` sans page correspondante dans
   `web/app/**/page.tsx`, ou vers une clé absente de `type Tab`.
@@ -93,12 +95,17 @@ des récits d'incident (« vécu le 2026-08-25 »). Un bot client qui cite ça e
 expose notre cuisine.
 
 Donc : une passe de génération transforme les entrées de `features.md` en fiches CLIENT (titre, corps, écran
-concerné), **présentées en diff, et seules les fiches validées sont indexées**. C'est exactement le motif que
-l'onglet Construction applique déjà en production : il propose, le client corrige, rien ne s'écrit sans un
-clic.
+concerné), **écrites comme des fichiers markdown dans `docs/aide/fiches/`**, une fiche par fichier. La
+relecture est alors un **diff git** : on garde, on réécrit, on jette, et l'historique est gratuit.
+
+🔴 **LE DÉPÔT EST LA SOURCE, LA BASE N'EST QUE L'INDEX.** C'était d'abord conçu avec une colonne `statut` et
+un écran de relecture à construire. Le diff git fait déjà tout ce que cet écran aurait fait, mieux et sans
+code : versionné, attribuable, réversible, et relu là où on relit déjà tout le reste. Conséquence à ne pas
+perdre de vue : une ligne supprimée à la main en base revient au chargement suivant, et c'est le
+comportement voulu.
 
 ⚠️ **La relecture est faite par NOUS, une fois, pas par le client.** Ces fiches décrivent notre produit ; un
-client n'a rien à y valider. Le motif du diff est réutilisé pour sa mécanique, pas pour son acteur.
+client n'a rien à y valider.
 
 **Ce qui garde les fiches à jour** : un contrôle de CI compare l'empreinte des sections de `features.md` à
 celle enregistrée sur chaque fiche, et signale les fiches dont la section a bougé. Il ne régénère pas tout
@@ -110,16 +117,21 @@ c'est pour ça que la dérive doit être DÉTECTÉE mécaniquement même si la c
 
 ```
 aide_fiches (
-  id, titre, corps,
+  id,
+  cle,                -- le NOM DU FICHIER sans extension : c'est elle qui rend le chargement idempotent
+  titre, corps,
   ecran,              -- la clé de nav (`campagnes`, `workflows`...), pas une URL
   source_section,     -- la section de features.md dont elle vient
   source_empreinte,   -- pour détecter que la section a bougé
-  statut,             -- 'brouillon' | 'publiee'
   corps_tsv,          -- généré, to_tsvector('french', titre || corps), comme 0086
   embedding vector(1536), embedding_modele,   -- mêmes colonnes qu'en 0110
   created_at, updated_at
 )
 ```
+
+⚠️ **Pas de colonne `statut`** : une fiche présente dans le dépôt est publiée, une fiche absente n'existe
+pas. Le chargeur (`npm run aide:charger`) met à jour par `cle` et SUPPRIME les lignes dont le fichier a
+disparu, sans quoi le bot continuerait de répondre avec une page effacée.
 
 🔴 **UNE TABLE À PART, et surtout PAS `agent_knowledge` avec `tenant_id` nullable.** `tenant_id = $1` sur
 chaque requête est LE contrôle d'isolation entre clients de ce produit, la RLS étant contournée (le pooler
