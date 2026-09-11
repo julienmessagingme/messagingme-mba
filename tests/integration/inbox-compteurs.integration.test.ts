@@ -323,7 +323,7 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
       await poser('33700000002', { archivee: true });  // rangée -> ne compte pas
       await poser('33700000003', { bloque: true });    // bloquée -> ne compte pas
 
-      expect(await store2.countUnread(t2)).toBe(1);
+      expect(await store2.countUnread(t2, { userId: null, role: 'admin' })).toBe(1);
     } finally {
       await pool.query('delete from tenants where id = $1', [t2]);
     }

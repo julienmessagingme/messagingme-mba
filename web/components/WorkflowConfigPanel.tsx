@@ -111,7 +111,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 export function ConfigPanel({
-  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, onCommitTag,
+  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, onCommitTag,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
@@ -128,6 +128,8 @@ export function ConfigPanel({
   /** Agents IA actifs, pour le sélecteur du bloc agent. `null` = liste pas encore chargée : on ne peut alors
    *  pas AFFIRMER qu'un agent a disparu. */
   agents: AgentResume[] | null;
+  /** Membres de l'équipe, pour l'affectation du bloc « passer à un humain ». `null` = pas encore chargés. */
+  membres?: Array<{ id: string; name: string | null; email: string }> | null;
   onCommitTag: (tag: string) => void;
 }) {
   const t = useT();
@@ -602,12 +604,49 @@ export function ConfigPanel({
         </div>
       )}
       {wfType === 'inbox' && (
-        <p className="text-xs leading-relaxed text-ink-500">
-          {t(
-            "Le fil passe à un humain : le scénario s'arrête ici et la conversation apparaît dans « À traiter » dans l'Inbox. À placer APRÈS le message qui annonce le conseiller, c'est lui qui fait taire l'agent automatique.",
-            "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
+        <div className="flex flex-col gap-2">
+          <p className="text-xs leading-relaxed text-ink-500">
+            {t(
+              "Le fil passe à un humain : le scénario s'arrête ici et la conversation apparaît dans « À traiter » dans l'Inbox. À placer APRÈS le message qui annonce le conseiller, c'est lui qui fait taire l'agent automatique.",
+              "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
+            )}
+          </p>
+          <label className="text-xs font-medium text-ink-700">{t('Affecter à', 'Assign to')}</label>
+          <select
+            data-testid="inbox-node-assignee"
+            className={`${cls} bg-white`}
+            value={String(d.assigneA ?? '')}
+            onChange={(e) => {
+              const choisi = (membres ?? []).find((m) => m.id === e.target.value);
+              // Le NOM est copié dans le graphe à côté de l'identifiant, comme le bloc agent copie ses
+              // sorties : l'écran doit pouvoir dire « affecté à Anne » sans relire la liste des membres, et un
+              // membre parti ne doit pas transformer le bloc en identifiant nu.
+              onPatch(choisi
+                ? { assigneA: choisi.id, assigneNom: choisi.name ?? choisi.email }
+                : { assigneA: '', assigneNom: '' });
+            }}
+          >
+            <option value="">{t('personne en particulier (pot commun)', 'no one in particular (shared pool)')}</option>
+            {(membres ?? []).map((m) => <option key={m.id} value={m.id}>{m.name ?? m.email}</option>)}
+          </select>
+          {/* ⚠️ Un membre choisi puis RÉVOQUÉ disparaît de la liste : le sélecteur retomberait sur « pot
+              commun » sans rien dire, alors que le graphe porte toujours son identifiant. On le dit.
+              `membres !== null` : sur une liste pas encore arrivée, l'affirmer serait un mensonge. */}
+          {membres != null && String(d.assigneA ?? '') !== '' && !membres.some((m) => m.id === d.assigneA) && (
+            <p className="text-xs text-coral" data-testid="inbox-node-assignee-parti">
+              {t(
+                `« ${String(d.assigneNom ?? d.assigneA)} » n'est plus un membre actif : la conversation ira au pot commun.`,
+                `“${String(d.assigneNom ?? d.assigneA)}” is no longer an active member: the conversation will go to the shared pool.`,
+              )}
+            </p>
           )}
-        </p>
+          <p className="text-xs text-ink-500">
+            {t(
+              'Au pot commun, tout le monde la voit et peut répondre. Affectée, elle n\'allume la pastille que de cette personne, et d\'un manager ou d\'un administrateur.',
+              'In the shared pool, everyone sees it and can reply. Assigned, it only lights up that person\'s badge, plus a manager\'s or an admin\'s.',
+            )}
+          </p>
+        </div>
       )}
       {wfType === 'agent' && (
         <div className="flex flex-col gap-2">

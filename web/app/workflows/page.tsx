@@ -7,6 +7,7 @@ import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
 import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, listEmailAccounts, grapheEditable, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
 import { listAgents, type AgentResume } from '@/lib/api-agent';
+import { listUsers, type AdminUser } from '@/lib/api/compte';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 
@@ -37,6 +38,15 @@ function WorkflowsInner({ session }: { session: Session }) {
   // Agents IA ACTIFS : gouverne la brique « Agent IA » (grisée tant que la liste est vide) et alimente son
   // sélecteur. `null` tant que la lecture n'a pas abouti, pour ne pas affirmer qu'un agent a disparu.
   const [agents, setAgents] = useState<AgentResume[] | null>(null);
+  /**
+   * Les MEMBRES de l'équipe, pour le sélecteur du bloc « passer à un humain ».
+   *
+   * ⚠️ Les comptes RÉVOQUÉS et les invitations EN ATTENTE sont retirés : affecter une conversation à
+   * quelqu'un qui ne peut pas se connecter la rendrait invisible de tous les autres, ce qui est exactement
+   * la conversation qu'on ne veut pas perdre. Le serveur refuse de toute façon, mais proposer un nom qu'il
+   * refusera est une invitation à l'échec.
+   */
+  const [membres, setMembres] = useState<AdminUser[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -81,6 +91,10 @@ function WorkflowsInner({ session }: { session: Session }) {
   // Best-effort, non bloquant : un échec laisse la brique grisée, défaut prudent, comme pour le bloc Email.
   useEffect(() => {
     void listAgents(session.tenantId).then(setAgents).catch(() => {});
+    // Échec silencieux comme pour les agents : le sélecteur s'affiche vide, l'éditeur reste utilisable.
+    void listUsers(session.tenantId)
+      .then((r) => setMembres(r.users.filter((u) => !u.disabled && !u.pending)))
+      .catch(() => {});
   }, [session.tenantId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -202,7 +216,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         <div className="min-h-0 flex-1">
           {/* L'éditeur ouvre le BROUILLON s'il y en a un (lot 7) : c'est le travail en cours de l'auteur, pas
               forcément ce qui tourne. `brouillonInitial` allume le bouton « Publier » dès l'ouverture. */}
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} />
         </div>
       </div>
     );

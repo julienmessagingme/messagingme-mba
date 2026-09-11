@@ -334,7 +334,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Un run qui atteint un bloc `inbox` remonte la conversation à un humain : on pose control_owner=app_human,
     // mais SEULEMENT si le fil était encore à nous (`only: ['app_workflow']`) pour ne pas écraser une prise de
     // main concurrente. Rend le badge honnête (fin du trou où le scénario semblait « répondre » sans plus avancer).
-    escalateToHuman: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }); },
+    //
+    // 🔴 ET L AFFECTATAIRE QUE LE BLOC DESIGNE. Ce cablage est le JUMEAU de celui de `src/worker.ts` : ne
+    // poser l affectation que sur l un des deux la ferait marcher sur un chemin (le worker) et pas sur
+    // l autre, sans que rien ne le signale. C est le motif « capacite cablee sur un lecteur sur deux » que
+    // le depot paie deja deux fois.
+    escalateToHuman: async (tenant, waId, assigneA) => {
+      await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] });
+      if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA);
+    },
     // 🔴 LE BLOC AGENT. Sans ces deux dépendances, il est traversé comme un PASSE-PLAT : le scénario continue
     // sans que l'agent parle, et personne ne voit rien puisque le moteur ne suit alors qu'une arête libre.
     // Elles vont par paire : ouvrir une session sans enfiler le tour laisserait une session vivante et muette,

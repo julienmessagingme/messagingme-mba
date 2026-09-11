@@ -1377,6 +1377,14 @@ async function main(): Promise<void> {
     const escaladerVersHumain = creerEscaladeVersHumain({
       sessions: agentSessions,
       sortirDuBlocAgent: (t, waId, sessionId, sortie) => workflowExecutor.sortirDuBlocAgent(t, waId, sessionId, sortie),
+      /**
+       * ⚠️ AUCUN AFFECTATAIRE ICI, ET CE N EST PAS LE MEME CHEMIN. Celle-ci est l escalade de l AGENT IA
+       * (`src/agent/escalade.ts`), qui decide lui-meme de passer la main : personne n a designe de membre. Le
+       * bloc « passer a un humain » d un scenario, lui, passe par `buildWorkflowRuntime`
+       * (`src/workflow/wiring.ts`), qui affecte. Deux contrats voisins qui portent le meme nom : les
+       * confondre reviendrait a affecter une conversation a personne, ou a chercher longtemps pourquoi
+       * l affectation ne prend pas.
+       */
       escalateToHuman: async (t, waId) => { await inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] }); },
     });
 

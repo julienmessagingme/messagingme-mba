@@ -29,3 +29,31 @@ export function peutEcrire(acteur: ActeurConversation, assignedTo: string | null
 export function peutAffecter(acteur: ActeurConversation): boolean {
   return acteur.role === 'admin' || acteur.role === 'manager';
 }
+
+/**
+ * Voit-on TOUT, quelle que soit l'affectation ? Managers et admins.
+ *
+ * ⚠️ Exactement la même frontière que `peutAffecter`, mais ce n'est PAS la même question : l'une donne le
+ * droit de distribuer le travail, l'autre celui de le voir. Les confondre en une seule fonction ferait qu'en
+ * bougeant l'une on bougerait l'autre sans s'en apercevoir.
+ */
+export function voitTout(acteur: ActeurConversation): boolean {
+  return acteur.role === 'admin' || acteur.role === 'manager';
+}
+
+/**
+ * LA MÊME RÈGLE QUE `peutEcrire`, EN SQL, pour les compteurs qui ne peuvent pas la faire tourner ligne à
+ * ligne. `c` est l'alias de `conversations`.
+ *
+ * 🔴 DEUX ÉCRITURES D'UNE MÊME RÈGLE, ET C'EST ASSUMÉ : une pastille se calcule en une requête sur toute la
+ * base, on ne va pas rapatrier les conversations pour leur appliquer une fonction. Ce qui rend la
+ * duplication tenable, c'est qu'elles vivent DANS LE MÊME FICHIER, sous les yeux l'une de l'autre, et qu'un
+ * test d'intégration vérifie qu'elles rendent le MÊME verdict sur les mêmes lignes.
+ *
+ * ⚠️ `assigned_to is null` D'ABORD : une conversation que personne ne s'est vu confier appartient au pot
+ * commun, et tout le monde doit la voir, sinon une conversation non affectée n'allumerait la pastille de
+ * personne et resterait invisible jusqu'à ce qu'un manager la distribue.
+ */
+export function visibiliteSql(paramVoitTout: string, paramUserId: string): string {
+  return `(${paramVoitTout}::boolean or c.assigned_to is null or c.assigned_to = ${paramUserId}::uuid)`;
+}

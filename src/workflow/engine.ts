@@ -357,7 +357,14 @@ export type WalkRest =
   // `restToState` aurait clos le parcours en `done` pile au moment où l'agent doit prendre la main. D'où un cas
   // EXPLICITE là-bas.
   | { status: 'agent_turn'; nodeId: string }
-  | { status: 'inbox' } // conversation remontée à l'humain (terminal)
+  /**
+   * Conversation remontée à l'humain (terminal).
+   *
+   * ⚠️ `assigneA` VOYAGE AVEC LE STATUT, il n'est pas relu du graphe plus loin : l'exécuteur n'a pas le
+   * nœud sous la main quand il escalade, et le lui faire rechercher par identifiant serait une seconde
+   * lecture du graphe qui pourrait diverger de celle qui vient de décider.
+   */
+  | { status: 'inbox'; assigneA?: string | null }
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
 
 /** Unités proposées par le bloc Attente. */
@@ -790,7 +797,10 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     const node = byId.get(current);
     if (!node) return { actions, rest: { status: 'done' } };
 
-    if (node.type === 'inbox') return { actions, rest: { status: 'inbox' } };
+    if (node.type === 'inbox') {
+      const a = typeof node.data.assigneA === 'string' ? node.data.assigneA.trim() : '';
+      return { actions, rest: { status: 'inbox', assigneA: a === '' ? null : a } };
+    }
     if (node.type === 'condition') {
       // Bloc SYNCHRONE sans action : évalue la condition (copie de travail) et suit la sortie 'true' (« Si réunie »)
       // ou 'false' (« Sinon »). Sans contexte (analyse de graphe pure) -> 'false' DÉTERMINISTE. Anti-cycle via visited.

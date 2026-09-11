@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import type { InboxStore, InboundMessage } from '../webhooks/inbound';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { OrigineMessage } from './origine';
+import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 
 /**
  * Qui détient la conversation, et donc qui répond au client.
@@ -276,6 +277,33 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * AFFECTE une conversation à un membre, par son numéro.
+   *
+   * 🔴 POURQUOI PAR `wa_id` ET NON PAR IDENTIFIANT DE CONVERSATION : l'appelant est le moteur de scénario,
+   * qui ne connaît que le contact. Sa jumelle `setAssignee` sert l'Inbox, qui a la conversation sous la main.
+   *
+   * ⚠️ ELLE ÉCRASE une affectation existante, et c'est voulu : le bloc « passer à un humain » nomme
+   * explicitement qui doit traiter ce fil, c'est une décision de routage plus récente que la précédente.
+   *
+   * ⚠️ `assigned_by` reste NULL : personne n'a cliqué, c'est le scénario. Le journal d'affectation distingue
+   * ainsi un routage automatique d'une distribution faite à la main, ce qu'un identifiant d'emprunt aurait
+   * rendu impossible.
+   *
+   * 🔴 L'`exists` sur `users` est la garde : un membre d'un AUTRE espace, ou un compte révoqué, ne reçoit
+   * rien. Sans lui, un identifiant recopié dans le graphe affecterait une conversation à quelqu'un qui n'a
+   * pas le droit de la lire, et elle disparaîtrait de la vue de tous les autres.
+   */
+  async setAssigneeByWaId(tenantId: string, waId: string, assignee: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = null
+        where tenant_id = $1 and wa_id = $2
+          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $1 and u.disabled_at is null)`,
+      [tenantId, waId, assignee],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Détenteur courant du fil. L'ABSENCE de conversation vaut `app_workflow` : une campagne peut viser un
    * contact qui n'a jamais écrit, sa conversation n'existe alors pas encore et rien ne doit être bloqué.
    */
@@ -534,7 +562,18 @@ export class PgInboxStore implements InboxStore {
   /** Nombre de conversations NON LUES du tenant (pastille de l'ONGLET Inbox, depuis le lot du 2026-09-08 ;
    *  elle vivait dans la barre latérale avant). Requête dédiée : la pastille est affichée sur toutes les
    *  pages, elle ne doit pas rapatrier 100 conversations pour afficher un nombre. */
-  async countUnread(tenantId: string): Promise<number> {
+  /**
+   * 🔴 LA PASTILLE EST CELLE DE L'UTILISATEUR, PAS CELLE DE L'ESPACE. Elle comptait TOUTES les conversations
+   * non lues du client, pour tout le monde : un agent voyait « 12 » alors qu'aucune ne lui revenait, et un
+   * manager voyait le même chiffre. Une pastille qu'on ne peut pas éteindre soi-même cesse d'être regardée.
+   * La règle est celle de `peutEcrire` (`src/inbox/assignment.ts`) : le pot commun pour tout le monde, le
+   * reste pour son affectataire, et tout pour un manager ou un admin.
+   *
+   * ⚠️ `acteur` est OBLIGATOIRE, sans valeur par défaut : un appelant qui l'oublierait rendrait la pastille
+   * de l'espace à quelqu'un qui n'a pas le droit de la voir, en silence. Sans défaut, l'oubli est une erreur
+   * du compilateur.
+   */
+  async countUnread(tenantId: string, acteur: ActeurConversation): Promise<number> {
     const res = await this.pool.query<{ n: string }>(
       // 🔴 LES MÊMES EXCLUSIONS QUE LA LISTE, et les deux ont été ajoutées le 2026-09-08 pour la même
       // raison : une pastille qui compte ce que l'écran ne montre pas est un compteur qui ment, et on le
@@ -546,8 +585,9 @@ export class PgInboxStore implements InboxStore {
       `select count(*)::text as n
          from conversations c
          left join contacts ct on ct.id = c.contact_id
-        where c.tenant_id = $1 and c.archived_at is null and ct.blocked_at is null and ${UNREAD_SQL}`,
-      [tenantId],
+        where c.tenant_id = $1 and c.archived_at is null and ct.blocked_at is null
+          and ${visibiliteSql('$2', '$3')} and ${UNREAD_SQL}`,
+      [tenantId, voitTout(acteur), acteur.userId],
     );
     return Number(res.rows[0]?.n ?? 0);
   }

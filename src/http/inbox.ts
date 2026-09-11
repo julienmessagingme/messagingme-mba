@@ -56,7 +56,7 @@ export interface InboxRouteDeps {
   audit?: AuditSink;
   listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
   /** Nombre de conversations non lues (pastille du menu). Optionnel : absent -> 0, la pastille ne s'affiche pas. */
-  countUnread?(tenantId: string): Promise<number>;
+  countUnread?(tenantId: string, acteur: { userId: string | null; role: string | null }): Promise<number>;
   /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
   countATraiter?(tenantId: string): Promise<number>;
   /** Les cinq compteurs du menu de dossiers, plus la charge par membre. */
@@ -220,7 +220,12 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   // instance juste en dessous : ce commentaire disait « les DEUX » et l'oublier aurait laissé croire que la
   // liste d'invalidation était complète alors qu'il lui en manquait un.
   const compteurs = cacheCourt<number>(COMPTEURS_TTL_MS);
-  const cleUnread = (tenant: string): string => `unread:${tenant}`;
+  /**
+   * 🔴 LA CLÉ PORTE L'UTILISATEUR, et l'oublier ferait fuiter un chiffre d'un compte à l'autre. La pastille
+   * n'est plus celle de l'espace : deux membres du même client attendent deux nombres différents, et un
+   * cache indexé sur le seul espace servirait au second celui du premier.
+   */
+  const cleUnread = (tenant: string, userId: string | null): string => `unread:${tenant}:${userId ?? '-'}`;
   const cleATraiter = (tenant: string): string => `todo:${tenant}`;
   /**
    * Le MÊME mécanisme, une seconde instance : le menu de dossiers rend un OBJET, pas un nombre, et le cache
@@ -231,7 +236,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   /** Une écriture vient de changer ce que les compteurs disent : TOUS repartent en base au prochain appel.
    *  🔴 Un compteur oublié ici resterait juste assez longtemps pour qu'on le croie. */
   const invaliderCompteurs = (tenant: string): void => {
-    compteurs.invalider(cleUnread(tenant));
+    // ⚠️ PAR PRÉFIXE pour les non-lus : la clé porte l'utilisateur depuis que la pastille est la sienne, donc
+    // invalider `unread:<espace>` tout court ne toucherait plus aucune entrée. Un compteur qu'on croit
+    // invalidé et qui ne l'est pas est précisément le défaut que ce mécanisme existe pour éviter.
+    compteurs.invaliderPrefixe(`unread:${tenant}:`);
     compteurs.invalider(cleATraiter(tenant));
     compteursMenu.invalider(cleMenu(tenant));
   };
@@ -447,7 +455,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.countUnread) return reply.code(200).send({ count: 0 });
-    const count = await compteurs.lire(cleUnread(tenant), () => deps.countUnread!(tenant));
+    const acteur = { userId: req.auth?.userId ?? null, role: req.auth?.role ?? null };
+    const count = await compteurs.lire(cleUnread(tenant, acteur.userId), () => deps.countUnread!(tenant, acteur));
     return reply.code(200).send({ count });
   });
 

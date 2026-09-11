@@ -27,6 +27,14 @@ export interface CacheCourt<T> {
   lire(cle: string, calcul: () => Promise<T>): Promise<T>;
   /** Oublie cette clé : le prochain `lire` recalcule. À appeler depuis l'écriture qui rend la valeur fausse. */
   invalider(cle: string): void;
+  /**
+   * Invalide toutes les entrées dont la clé commence par ce préfixe.
+   *
+   * ⚠️ Née le jour où une clé a cessé d'être un simple identifiant d'espace (la pastille de non-lus porte
+   * désormais l'utilisateur). Sans elle, l'invalidation par clé exacte ne touchait plus rien, et le cache
+   * rendait un chiffre périmé pendant toute sa durée de vie : le défaut qu'il existe pour éviter.
+   */
+  invaliderPrefixe(prefixe: string): void;
 }
 
 /**
@@ -79,6 +87,11 @@ export function cacheCourt<T>(ttlMs: number, maintenant: () => number = Date.now
 
     invalider(cle) {
       entrees.delete(cle);
+    },
+    invaliderPrefixe(prefixe) {
+      // Un balayage complet : les entrées sont bornées par `PLAFOND_ENTREES`, et l'invalidation est un
+      // geste rare (une écriture dans l'inbox), pas un chemin chaud.
+      for (const cle of entrees.keys()) if (cle.startsWith(prefixe)) entrees.delete(cle);
     },
   };
 }

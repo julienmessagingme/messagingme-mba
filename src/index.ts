@@ -751,7 +751,7 @@ async function main(): Promise<void> {
           ? workflowRuntime.executor.startInWindow(tenant, workflowId, wf.graph, contact, opts)
           : workflowRuntime.executor.start(tenant, workflowId, wf.graph, contact, undefined, opts);
       },
-      countUnread: (tenant) => inboxStore.countUnread(tenant),
+      countUnread: (tenant, acteur) => inboxStore.countUnread(tenant, acteur),
       markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (tenant, phoneNumberId, to, text) => {

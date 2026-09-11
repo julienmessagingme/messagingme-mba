@@ -58,7 +58,7 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
  * contacts : il écrit une version de travail, et seul le bouton « Publier » la met en ligne. Avant ce lot, une
  * retouche partait en production dans la seconde, y compris pour les parcours déjà en cours.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [] }: { tenantId: string; workflowId: string;
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null }: { tenantId: string; workflowId: string;
   /** Ce que l'éditeur ouvre : le brouillon s'il existe, sinon la version en ligne (cf. `grapheEditable`). */
   initialGraph: WorkflowGraph;
   /** Un brouillon non publié attendait-il déjà à l'ouverture ? Pilote l'état initial du bouton « Publier ». */
@@ -67,7 +67,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
   publieLe?: string | null;
   mbaEnabled?: boolean; rcsEnabled?: boolean; emailEnabled?: boolean; /** Agents IA ACTIFS du workspace. `null` = pas encore chargés (ou lecture en échec), `[]` = aucun : la
    *  brique « Agent IA » est grisée dans les deux cas, mais seul `[]` autorise à AFFIRMER qu'un agent n'est
-   *  plus actif. */ agents?: AgentResume[] | null }) {
+   *  plus actif. */ agents?: AgentResume[] | null;
+  /** Membres de l'équipe, pour le sélecteur d'affectation du bloc « passer à un humain ». */
+  membres?: Array<{ id: string; name: string | null; email: string }> | null }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -594,7 +596,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} onCommitTag={commitTag} />
           )}
         </div>
       </div>

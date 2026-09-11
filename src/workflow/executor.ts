@@ -235,7 +235,13 @@ export interface WorkflowExecutorDeps {
    * Sans ça, atteindre le bloc inbox n'était qu'un arrêt de run silencieux, et le badge d'inbox affichait encore
    * « le scénario répond » alors que plus rien n'avançait (trou A.5). OPTIONNEL : absent -> comportement historique.
    */
-  escalateToHuman?(tenantId: string, waId: string): Promise<void>;
+  /**
+   * `assigneA` : le membre que le bloc « passer a un humain » designe, `null` = au pot commun.
+   *
+   * ⚠️ OPTIONNEL DANS LA SIGNATURE mais toujours passe par les appelants : un cablage qui l oublierait
+   * laisserait la conversation non affectee, c est-a-dire le comportement d avant, qui ne casse rien.
+   */
+  escalateToHuman?(tenantId: string, waId: string, assigneA?: string | null): Promise<void>;
   /**
    * État des conversations tenues par un bloc agent. OPTIONNEL, comme les autres deps de ce fichier : absent,
    * aucun bloc agent ne peut être servi, ce qui préserve les suites de tests à deps minimales et l'intégration.
@@ -749,7 +755,9 @@ export class WorkflowExecutor {
     // et on remonte à un humain. Ce qui POUVAIT partir (template, tags) est déjà parti juste au-dessus.
     if (fenetreFermee) {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
-      if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+      // ⚠️ AUCUN AFFECTATAIRE ICI, et ce n est pas un oubli : on n a atteint aucun bloc « passer a un
+      // humain », c est la fenetre de 24 h qui s est fermee. Personne n a designe qui doit traiter ce fil.
+      if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
       return false;
     }
     // Refus au réveil sans qu'aucun message ne parte : le contact n'a rien reçu. Laisser le run en attente le
@@ -762,14 +770,17 @@ export class WorkflowExecutor {
         // Garde de VIVACITÉ ici aussi : remonter en `inbox` et escalader à un humain une conversation qui a
         // déjà été remplacée mettrait un opérateur sur un parcours abandonné.
         if (!(await this.ecrireSiVivant(tenantId, run.id, { currentNode: null, status: 'inbox' }))) return false;
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        // Remontee SANS bloc « passer a un humain » : pas d affectataire, le fil part au pot commun.
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
         return false;
       }
     }
     // 🔴 SI LE PARCOURS VIT ENCORE. Un autre chemin a pu le clore pendant nos envois (une campagne le fait
     // desormais par destinataire) : ecrire sans regarder le ressusciterait AVEC son echeance.
     if (!(await this.ecrireSiVivant(tenantId, run.id, { ...restToState(rest, this.now()), channel: canal }))) return false;
-    if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+    if (rest.status === 'inbox' && this.deps.escalateToHuman) {
+      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null);
+    }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
     // Bloc AGENT atteint au réveil : ouvrir la session et enfiler le premier tour. APRÈS les sorties
     // anticipées ci-dessus (fenêtre fermée, refus sans envoi), sinon on créerait une session vivante sur un
@@ -1105,7 +1116,9 @@ export class WorkflowExecutor {
       ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state)
       : null;
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
-    if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
+    if (rest.status === 'inbox' && this.deps.escalateToHuman) {
+      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null);
+    }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
     // Bloc AGENT en ouverture : la session naît maintenant, le run existe enfin.
     if (rest.status === 'agent_turn' && cree) {
@@ -1477,7 +1490,9 @@ export class WorkflowExecutor {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: run ${run.id} sur un bloc agent sans session vivante, remonté en inbox`);
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
+        // n a designe d affectataire, le fil part au pot commun.
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
         return;
       }
       // ⚠️ ORDRE : on enfile AVANT de marquer le message consommé, comme partout ailleurs dans ce fichier
@@ -1559,7 +1574,7 @@ export class WorkflowExecutor {
       if (boutonSansSuite) {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
       } else {
         await this.rendreLaMainAMba(tenantId, waId);
       }
@@ -1576,12 +1591,16 @@ export class WorkflowExecutor {
       console.error(`workflow ${run.workflowId}: envoi refusé pour ${waId} : ${refus}`);
       if (partis === 0) {
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
+        // n a designe d affectataire, le fil part au pot commun.
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
         return;
       }
     }
     await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
-    if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+    if (rest.status === 'inbox' && this.deps.escalateToHuman) {
+      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null);
+    }
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
     // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);

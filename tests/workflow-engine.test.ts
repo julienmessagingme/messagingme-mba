@@ -266,14 +266,16 @@ describe('walk', () => {
   it('depuis le bloc après le template (inbox) : rest=inbox, aucune action', () => {
     const r = walk(linear, nextNode(linear, 'tpl')!);
     expect(r.actions).toEqual([]);
-    expect(r.rest).toEqual({ status: 'inbox' });
+    // ⚠️ `assigneA` voyage AVEC le statut depuis que le bloc peut nommer un membre : `null` = au pot commun.
+    expect(r.rest).toEqual({ status: 'inbox', assigneA: null });
   });
 
   it('bloc field -> action field', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'ville', value: 'Lyon' }), n('ib', 'inbox')], edges: [e('e', 'f', 'ib')] };
     const r = walk(g, 'f');
     expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
-    expect(r.rest).toEqual({ status: 'inbox' });
+    // ⚠️ `assigneA` voyage AVEC le statut depuis que le bloc peut nommer un membre : `null` = au pot commun.
+    expect(r.rest).toEqual({ status: 'inbox', assigneA: null });
   });
 
   it('tag sans arête sortante -> done', () => {
