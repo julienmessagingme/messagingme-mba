@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { cheminDeNav, contientLaCle, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { arbresNav, cheminDeNav, contientLaCle, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -151,22 +151,27 @@ describe('ongletDeLaPage', () => {
     /**
      * Les clés déclarées dans un arbre.
      *
-     * ⚠️ La fin de la déclaration est la PROCHAINE déclaration, pas un `];` en colonne 2. Un arbre qui tient
-     * sur une seule ligne (`NAV_INBOX`) n'a pas ce `];`-là, et chercher le suivant faisait avaler l'arbre
-     * d'après : la clé de la première page du Performance Lab se retrouvait dans deux onglets. Ce test l'a
-     * signalé au premier lancement, ce qui est exactement ce qu'on lui demande.
+     * 🔴 LUES EN APPELANT `arbresNav`, depuis le 2026-09-11. Elles étaient extraites de la SOURCE d'`AppShell`
+     * à coups d'expressions régulières, parce que les quatre listes vivaient à l'intérieur du composant et
+     * qu'aucun test ne pouvait les atteindre autrement. Elles vivent désormais dans ce module (la barre est
+     * la CARTE de la console, et un composant ne se lit pas de l'extérieur), donc on les APPELLE.
+     *
+     * ⚠️ Ce que l'ancienne version avait attrapé, et qui ne peut plus arriver : elle cherchait la fin d'une
+     * déclaration à la PROCHAINE déclaration, et un arbre tenant sur une seule ligne (`NAV_INBOX`) faisait
+     * avaler l'arbre d'après, si bien que la première page du Performance Lab se retrouvait dans deux
+     * onglets. Un appel de fonction n'a aucune fin de déclaration à deviner.
+     *
+     * ⚠️ `console` est la CONCATÉNATION de sa liste et du bloc bas, exactement comme `ARBRES` dans
+     * `AppShell` : le bloc Developers appartient à la Console pour la déduction d'onglet, même s'il se rend
+     * à part. Les séparer ici ferait échouer ce test sur des pages parfaitement rangées.
      */
-    const arbre = (nom: string): string[] => {
-      const debut = src.indexOf(`const ${nom}: NavEntree[] = [`);
-      expect(debut, `${nom} a disparu de AppShell : ce test ne garde plus rien, il faut le remettre à jour`).toBeGreaterThan(-1);
-      const suivante = src.indexOf('\n  const ', debut + 1);
-      const fin = suivante === -1 ? src.length : suivante;
-      return [...src.slice(debut, fin).matchAll(/key: '([a-z0-9-]+)'/g)].map((m) => m[1]!);
-    };
+    const listes = arbresNav((fr) => fr);
+    const cles = (entrees: NavEntree[]): string[] =>
+      entrees.flatMap((e) => [e.key, ...(e.children ? cles(e.children) : [])]);
     const reels: Record<Onglet, string[]> = {
-      console: [...arbre('NAV_CONSOLE'), ...arbre('NAV_ADMIN_BAS')],
-      inbox: arbre('NAV_INBOX'),
-      perf: arbre('NAV_PERF'),
+      console: [...cles(listes.console), ...cles(listes.adminBas)],
+      inbox: cles(listes.inbox),
+      perf: cles(listes.perf),
     };
 
     /**

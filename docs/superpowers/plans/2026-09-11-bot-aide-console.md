@@ -46,8 +46,15 @@ Elles s'appliquent à CHAQUE tâche, sans être répétées dans chacune.
   une colonne écrite par le code passe AVANT le déploiement.
 - **Un test ne compte que MUTÉ à la main** : remettre le code fautif, constater l'échec ET son symptôme,
   restaurer. Le noter dans le message de commit.
+- 🔴 **IL Y A DEUX SUITES UNITAIRES, ET `npm test` N'EN LANCE QU'UNE.** La racine (`npx vitest run tests/`)
+  et le FRONT (`cd web && npx vitest run`, 288 tests) sont deux exécutions distinctes, et la CI les fait
+  toutes les deux (jobs `unit` et `web`). Vécu sur ce lot même : la tâche 1 a été annoncée verte alors que
+  le job `web` était rouge depuis son premier commit, et deux tâches ont été poussées par-dessus. Avant tout
+  commit qui touche `web/`, lancer LES DEUX.
 - **`npm test` en local ne prouve que la moitié** : les tests d'intégration ne tournent qu'en CI. Après une
   poussée, lire le run job par job (`gh run view <id> --json jobs`), jamais `gh run watch --exit-status`.
+  ⚠️ Et lire le run DU BON COMMIT : `gh run list --limit 1` juste après un `git push` rend souvent le run
+  PRÉCÉDENT, celui d'avant la poussée, parce que le nouveau n'existe pas encore. Vérifier le `headSha`.
 - **Aucun `Workflow` ni `Agent` sans un oui explicite de Julien.**
 
 ## Les fichiers, et de quoi chacun répond
