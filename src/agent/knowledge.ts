@@ -162,6 +162,20 @@ export function ficheEstPertinente(f: Pick<FicheTrouvee, 'termesTrouves' | 'couv
     || f.proximiteTitre >= PROXIMITE_TITRE_MIN;
 }
 
+/**
+ * LA CONFIGURATION DE RECHERCHE PLEIN TEXTE, pour les deux corpus (`agent_knowledge`, `aide_fiches`).
+ *
+ * 🔴 UNE SEULE DÉFINITION, PARCE QUE LA COLONNE ET LA REQUÊTE DOIVENT S'ACCORDER. Elles vivent dans deux
+ * mondes qui ne se parlent pas : la colonne est GÉNÉRÉE en base (migrations 0086, 0131, 0132), la requête
+ * est écrite ici. Rien ne signale leur désaccord, ni le compilateur, ni une erreur SQL : la recherche rend
+ * simplement moins de résultats. `tests/recherche-configuration.test.ts` tient les deux alignées en LISANT
+ * les fichiers de migration, seul endroit d'où l'invariant est visible.
+ *
+ * ⚠️ ELLE EST INTERPOLÉE DANS DU SQL, jamais paramétrée : `regconfig` n'accepte pas un paramètre de requête.
+ * C'est une constante de ce fichier, aucune entrée utilisateur ne l'atteint.
+ */
+export const CONFIG_RECHERCHE = 'french_sans_accent';
+
 /** Au-delà, ce n'est plus une requête mais un message entier recopié : on borne le coût du plein texte. Les
  *  doublons sont retirés AVANT de trancher, sinon une question bavarde perdait son mot-clé au profit de trois
  *  « le ». */
@@ -175,8 +189,11 @@ const MAX_TERMES = 20;
  * en `sans_source` en permanence. On découpe donc sur tout ce qui n'est PAS une lettre ou un chiffre unicode,
  * ce qui ne peut en laisser passer aucun.
  *
- * ⚠️ LES ACCENTS SONT CONSERVÉS. `to_tsvector('french', ...)` les garde (la colonne générée de la migration
- * 0086 aussi) : les retirer côté requête casserait le rapprochement au lieu de l'élargir.
+ * ⚠️ LES ACCENTS SONT CONSERVÉS ICI, ET C'EST LA CONFIGURATION QUI LES RETIRE, DES DEUX CÔTÉS.
+ * Ce commentaire disait « les retirer côté requête casserait le rapprochement au lieu de l'élargir » :
+ * l'observation était juste, la conclusion fausse. Les retirer d'UN SEUL côté casse ; les retirer des DEUX
+ * répare, et c'est ce que fait `CONFIG_RECHERCHE` depuis la migration 0132. Mesuré avant : « prevoyance »
+ * trouvait ZÉRO fiche là où « prévoyance » en trouvait trois.
  */
 export function termesDeRecherche(texte: string): string[] {
   const vus = new Set<string>();

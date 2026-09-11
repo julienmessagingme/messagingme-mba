@@ -53,6 +53,10 @@ describe.skipIf(!url)('recherche dans la base de connaissance (Postgres)', () =>
       ['La piscine', 'Horaires de la piscine : la piscine chauffee est ouverte tous les jours de 9 h a 20 h, bonnet obligatoire.'],
       ['Le parking', 'Le parking souterrain est gratuit pour les residents, une place par appartement.'],
       ['Les animaux', 'Les chiens sont acceptes dans les residences, moyennant un supplement de 8 euros par nuit.'],
+      // ⚠️ LA SEULE FICHE ACCENTUÉE DU CORPUS, et elle est là exprès. Les trois autres sont écrites sans
+      // accents, ce qui rendait le cas « accents » intestable : une fiche sans accent se trouve de toute
+      // façon. C'est ce qui a laissé le défaut de la migration 0132 invisible pendant deux mois.
+      ['La prevoyance', 'Nos contrats de prévoyance couvrent l arrêt de travail, l invalidité et le décès.'],
     ];
     for (const [titre, corps] of fiches) {
       await pool.query(
@@ -120,9 +124,29 @@ describe.skipIf(!url)('recherche dans la base de connaissance (Postgres)', () =>
     expect(ficheEstPertinente(parking!)).toBe(true);
   });
 
-  it('les accents et la casse ne font pas rater une fiche', async () => {
+  it('la casse ne fait pas rater une fiche', async () => {
     const r = await store.chercher(tenantId, agentId, 'PISCINE CHAUFFÉE', 3);
     expect(r.map((f) => f.titre)).toContain('La piscine');
+  });
+
+  it('🔴 une question SANS accents trouve une fiche qui EN a (migration 0132)', async () => {
+    /**
+     * Le défaut mesuré le 2026-09-11 sur le corpus réel d'un client : « prévoyance » trouvait 3 fiches,
+     * « prevoyance » en trouvait ZÉRO. `to_tsvector('french', ...)` garde les accents, donc 'prévoi' et
+     * 'prevoi' ne se rencontrent jamais. Les gens tapent sans accents, surtout au téléphone.
+     *
+     * ⚠️ CE TEST S'APPUIE SUR `termesTrouves`, PAS SUR LA PRÉSENCE DE LA FICHE, et c'est tout ce qui le rend
+     * probant. La fiche remonterait de toute façon par la proximité TRIGRAMME de son titre, qui est une
+     * autre moitié du dispositif : l'assertion serait verte avec le défaut intact. Seul `termesTrouves` ne
+     * peut venir que du plein texte.
+     */
+    const sans = await store.chercher(tenantId, agentId, 'prevoyance invalidite', 3);
+    const avec = await store.chercher(tenantId, agentId, 'prévoyance invalidité', 3);
+    const fiche = (r: typeof sans) => r.find((f) => f.titre === 'La prevoyance');
+    expect(fiche(sans), 'la question sans accents ne trouve pas la fiche').toBeDefined();
+    expect(fiche(sans)!.termesTrouves, 'trouvée par le TITRE seulement, donc le plein texte est resté sourd').toBeGreaterThanOrEqual(2);
+    // Et la réparation va dans les DEUX sens : l'orthographe accentuée ne doit rien avoir perdu.
+    expect(fiche(avec)?.termesTrouves).toBe(fiche(sans)!.termesTrouves);
   });
 
   it('🔴 un AUTRE tenant, ou un AUTRE agent, ne voit pas ces fiches', async () => {

@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { PROXIMITE_TITRE_MIN, termesDeRecherche } from '../agent/knowledge';
+import { CONFIG_RECHERCHE, PROXIMITE_TITRE_MIN, termesDeRecherche } from '../agent/knowledge';
 import { texteAVectoriser, type DepotAVectoriser } from '../agent/recherche';
 import type { DepotAide, FicheAide } from './fiches';
 
@@ -39,16 +39,16 @@ export class PgDepotAide implements DepotAide, DepotAVectoriser {
     if (termes.length === 0) return [];
     const res = await this.pool.query<Ligne>(
       `with utiles as (
-         select distinct plainto_tsquery('french'::regconfig, t) as tq
+         select distinct plainto_tsquery('${CONFIG_RECHERCHE}'::regconfig, t) as tq
            from unnest($1::text[]) as t
-          where numnode(plainto_tsquery('french'::regconfig, t)) > 0
+          where numnode(plainto_tsquery('${CONFIG_RECHERCHE}'::regconfig, t)) > 0
        )
        select f.id, f.cle, f.titre, f.corps, f.ecran,
               (select count(*) from utiles u where f.corps_tsv @@ u.tq)::int as termes_trouves,
               (select count(*) from utiles)::int as termes_utiles,
               similarity(f.titre, $2) as proximite_titre
          from aide_fiches f
-        where f.corps_tsv @@ to_tsquery('french'::regconfig, $3)
+        where f.corps_tsv @@ to_tsquery('${CONFIG_RECHERCHE}'::regconfig, $3)
               -- L operateur % d abord, parce que LUI seul utilise l index trigramme sur le titre
               -- (aide_fiches_titre_trgm_idx) ; la comparaison explicite ensuite, pour que le seuil effectif
               -- vienne de NOTRE code et non du GUC pg_trgm.similarity_threshold, qui est un reglage serveur

@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import {
-  PROXIMITE_TITRE_MIN, termesDeRecherche,
+  CONFIG_RECHERCHE, PROXIMITE_TITRE_MIN, termesDeRecherche,
   type FicheAEcrire, type FicheConnaissance, type FicheTrouvee, type KnowledgeAdminStore, type KnowledgeStore,
   type SourceFiche,
 } from './knowledge';
@@ -48,9 +48,9 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     if (termes.length === 0) return [];
     const res = await this.pool.query<Ligne>(
       `with utiles as (
-         select distinct plainto_tsquery('french'::regconfig, t) as tq
+         select distinct plainto_tsquery('${CONFIG_RECHERCHE}'::regconfig, t) as tq
            from unnest($3::text[]) as t
-          where numnode(plainto_tsquery('french'::regconfig, t)) > 0
+          where numnode(plainto_tsquery('${CONFIG_RECHERCHE}'::regconfig, t)) > 0
        )
        select k.id, k.titre, k.corps, k.source_url,
               (select count(*) from utiles u where k.corps_tsv @@ u.tq)::int as termes_trouves,
@@ -58,7 +58,7 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
               similarity(k.titre, $4) as proximite_titre
          from agent_knowledge k
         where k.tenant_id = $1 and k.agent_id = $2
-          and (k.corps_tsv @@ to_tsquery('french'::regconfig, $5)
+          and (k.corps_tsv @@ to_tsquery('${CONFIG_RECHERCHE}'::regconfig, $5)
                -- L operateur % d abord, parce que LUI seul utilise l index trigramme sur le titre
                -- (agent_knowledge_titre_trgm_idx) ; la comparaison explicite ensuite, pour que le seuil
                -- effectif vienne de NOTRE code et non du GUC pg_trgm.similarity_threshold, qui est un
