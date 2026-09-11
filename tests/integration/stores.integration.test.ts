@@ -979,23 +979,31 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const mk = async (phone: string) => (await pool.query<{ id: string }>(
       `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, phone],
     )).rows[0]!.id;
-    const [c1, c2, c3] = [await mk('+33600000050'), await mk('+33600000051'), await mk('+33600000052')];
+    const [c1, c2, c3, c4] = [await mk('+33600000050'), await mk('+33600000051'), await mk('+33600000052'), await mk('+33600000053')];
     const { campaignId } = await repo.createWithRecipients(
       { tenantId, phoneNumberId: 'pn-st', name: 'Funnel', category: 'marketing', templateName: 'te', templateLanguage: 'fr', paramMapping: [] },
       [
         { contactId: c1, toE164: '+33600000050', resolvedParams: [] },
         { contactId: c2, toE164: '+33600000051', resolvedParams: [] },
         { contactId: c3, toE164: '+33600000052', resolvedParams: [] },
+        // 🔴 UN QUATRIEME, PARTI SANS QUE META N EN DISE RIEN. C est le cas de TOUTE campagne a scenario
+        // (identifiant de message synthetique, que l accuse de Meta ne peut pas apparier) : 29 envois sur 29
+        // dans la base de production le 2026-09-11. Sans lui, `sansAccuse` n aurait aucun cas qui le prouve.
+        { contactId: c4, toE164: '+33600000053', resolvedParams: [] },
       ],
     );
     const byPhone = new Map((await recipients.listPending(campaignId)).map((p) => [p.toE164, p.id]));
     const r1 = byPhone.get('+33600000050')!, r2 = byPhone.get('+33600000051')!, r3 = byPhone.get('+33600000052')!;
+    const r4 = byPhone.get('+33600000053')!;
     const at = Date.now() - 5000;
 
-    // r1 envoyé + lu + répond ; r2 envoyé + délivré ; r3 échec d'envoi (code 131026).
+    // r1 envoyé + lu + répond ; r2 envoyé + délivré ; r3 échec d'envoi (code 131026) ; r4 envoyé SANS
+    // qu'aucun accusé ne vienne jamais, le cas de toute campagne à scénario.
     await recipients.claim(r1); await recipients.markResult(r1, { status: 'sent', messageId: 'ms-1', sentAt: at });
     await recipients.claim(r2); await recipients.markResult(r2, { status: 'sent', messageId: 'ms-2', sentAt: at });
     await recipients.claim(r3); await recipients.markResult(r3, { status: 'failed', error: '131026 x', errorCode: 131026 });
+    // r4 : parti, et AUCUN accuse ne viendra jamais. On ne l appelle donc pas.
+    await recipients.claim(r4); await recipients.markResult(r4, { status: 'sent', messageId: 'wf-scenario', sentAt: at });
     await recipients.updateDeliveryByMessageId('ms-1', 'read', null, null);
     await recipients.updateDeliveryByMessageId('ms-2', 'delivered', null, null);
 
@@ -1006,7 +1014,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await pool.query(`insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'in', 'text', 'oui')`, [convId]);
 
     const funnel = await stats.getCampaignFunnel(tenantId, campaignId);
-    expect(funnel).toEqual({ sent: 2, delivered: 2, read: 1, replied: 1, failed: 1, buttonReplies: 0, urlClicks: null });
+    // ⚠️ LES CAS D ORIGINE SONT CONSERVES (lu, delivre, echoue, repondu) : le quatrieme destinataire s AJOUTE,
+    // il ne remplace rien. Seul `sent` passe de 2 a 3, et `sansAccuse` compte le nouveau.
+    expect(funnel).toEqual({ sent: 3, delivered: 2, read: 1, replied: 1, failed: 1, sansAccuse: 1, buttonReplies: 0, urlClicks: null });
+    // 🔴 « 0 DELIVRE » ET « ON NE SAIT PAS » NE SONT PAS LA MEME CHOSE, et c est ce chiffre qui permet a
+    // l ecran de ne plus les confondre : sans lui, il affichait un zero la ou il n y a pas de mesure.
+    expect(funnel.sansAccuse).toBe(1);
 
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
     const range = { from: today, to: today };
