@@ -34,6 +34,12 @@ RUN npm ci --omit=dev
 COPY --chown=node:node tsconfig.json ./
 COPY --chown=node:node src ./src
 COPY --chown=node:node db ./db
+# 🔴 LES FICHES DU MODE D EMPLOI ENTRENT DANS L IMAGE, comme les migrations, et pour la meme raison :
+# `npm run aide:charger` tourne DANS le conteneur. Sans cette ligne il ne trouve aucun fichier, refuse de
+# charger, et le bot d aide repond << je ne sais pas >> a tout sans que rien n explique pourquoi. Seul
+# `docs/aide` est copie : le reste de `docs/` est de la documentation d equipe, elle n a rien a faire en
+# production.
+COPY --chown=node:node docs/aide ./docs/aide
 # CA Supabase (cert PUBLIC, pas un secret) bakée dans l'image -> DB_SSL_CA_FILE=/app/certs/... toujours présent
 # (pas de crash import-time sur un mount manquant), reproductible et compatible Railway. Cf. src/db/ssl.ts (4.11).
 COPY --chown=node:node certs ./certs

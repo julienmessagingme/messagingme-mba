@@ -72,6 +72,14 @@ describe('câblage du bot d’aide', () => {
     expect(sansCommentaires.slice(debut, debut + 120)).toContain('repondre: creerRepondeur(');
   });
 
+  it('🔴 les fiches entrent dans l’IMAGE, sinon le chargeur ne trouve rien en production', () => {
+    // `npm run aide:charger` tourne DANS le conteneur, comme `migrate`. Sans cette copie il refuse de
+    // charger (zéro fiche trouvée), et le bot répond « je ne sais pas » à tout sans que rien n'explique
+    // pourquoi. Relevé avant le premier déploiement, en relisant le Dockerfile.
+    const docker = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
+    expect(docker, 'le Dockerfile doit copier docs/aide').toMatch(/COPY .*docs\/aide \.\/docs\/aide/);
+  });
+
   it('🔴 la route d’aide est couverte par le garde-fou d’authentification', () => {
     // `src/server.ts` refuse de démarrer si un module à routes `:tenantId` se monte sans `auth`. En ajouter
     // un sans l'inscrire dans cette liste, c'est rouvrir la porte pour lui seul.
