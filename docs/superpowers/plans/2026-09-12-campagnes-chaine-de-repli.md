@@ -19,6 +19,29 @@ lieu de clore.
 
 ---
 
+## Méthode de livraison
+
+**Retenue : implémenteur par lot, puis revue humaine sur le DIFF, CI job par job, déploiement avec
+vérification en base.** Cinq lots, un point d'arrêt entre chaque.
+
+**Pourquoi celle-là et pas feature-loop** : les quatre questions du `CLAUDE.md` global répondent oui
+aux deux premières. Ce chantier touche le chemin d'envoi, le webhook de livraison, deux migrations
+et les chiffres affichés à l'écran ; et rien n'y est réversible, un message parti ne se rappelle pas
+et un chiffre faux fait condamner un canal. Il porte en plus des invariants qu'un relecteur générique
+ne connaît pas : un contrat d'unicité qui EST le dédoublonnage des destinataires, un index partiel
+créé en 0007 pour une requête précise, deux horloges différentes sur la même notion d'instant.
+
+**Ce que ça a effectivement coûté et rapporté** (mesuré, pas supposé) : la revue a trouvé un index
+manquant sur le chemin des accusés, deux commentaires qui affirmaient du faux, et une dette à
+échéance. La CI sur un vrai Postgres a trouvé le défaut d'attribution, qu'aucune des deux méthodes
+n'aurait vu en local. Les exécutants eux-mêmes ont trouvé le trou du plan, une colonne absente et une
+instruction impossible, parce que la consigne leur disait de s'arrêter plutôt que de deviner.
+
+🔴 **L'essai RÉEL qui clôt la feature, et qu'aucun test ne remplace** : une campagne à deux étages
+lancée sur le numéro de Julien, avec un destinataire volontairement injoignable en WhatsApp, et on
+regarde ce qui part. Personne n'a encore cliqué sur l'assistant, et la bascule n'a jamais tourné : à
+ce jour elle est verte, pas éprouvée.
+
 ## Contraintes globales
 
 Elles s'appliquent à **toutes** les tâches, sans être répétées dans chacune.

@@ -12,6 +12,27 @@ citer aucun nombre qui ne soit dans son entrée. Le résultat est mis en cache p
 
 **Spec :** [../specs/2026-09-12-recap-bot-aide-cadrage.md](../specs/2026-09-12-recap-bot-aide-cadrage.md)
 
+## Méthode de livraison
+
+**Retenue : mixte, et c'est le premier plan où les deux se justifient sur le même lot.** Les tâches 1
+et 2 (le SQL du récap, la garde de rôle et le cache) en implémenteur + revue ; les tâches 3 et 4 (le
+rendu et le bouton) en **feature-loop**.
+
+**Pourquoi cette coupure** : la tâche 1 porte un piège que seule la connaissance du dépôt voit,
+`conversation_analysis.created_at` étant réécrit à chaque ré-analyse, et la tâche 2 ouvre la
+**première lecture des données d'un client par le bot d'aide**, donc l'isolation `tenant_id = $1` et
+la garde de rôle y sont le sujet, pas un détail. Les tâches 3 et 4, à l'inverse, ont des critères
+mécaniquement testables et un rayon de souffle nul : un gabarit, un seuil, un bouton.
+
+⚠️ **Ce plan est donc le cas d'école du fait que la méthode se choisit par LOT et pas par chantier.**
+Appliquer la méthode lourde aux quatre tâches aurait taxé deux tâches qui ne le méritent pas, et
+c'est comme ça qu'une règle finit contournée.
+
+🔴 **L'essai RÉEL qui clôt la feature** : ouvrir le bot sur l'espace de production avec un compte
+`admin`, cliquer le bouton, et **recompter à la main** les conversations de la veille contre ce qu'il
+annonce. Puis rouvrir avec un compte `agent` et vérifier que le bouton n'est pas là. Un récap qui
+affiche un chiffre plausible et faux est pire que pas de récap, parce que les gens agissent dessus.
+
 ## Contraintes globales
 
 Celles du plan des campagnes s'appliquent à l'identique. Trois ajouts propres à ce lot :

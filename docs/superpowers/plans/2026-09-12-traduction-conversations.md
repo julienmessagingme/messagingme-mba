@@ -13,6 +13,26 @@ contact s'apprend, elle ne se demande pas.
 
 **Spec :** [../specs/2026-09-12-traduction-conversations-cadrage.md](../specs/2026-09-12-traduction-conversations-cadrage.md)
 
+## Méthode de livraison
+
+**Retenue : implémenteur par lot, puis revue humaine sur le DIFF.** Les tâches 1 à 5 en un lot, la
+tâche 6 (le toggle et l'écran) en un second.
+
+**Pourquoi pas feature-loop** : la traduction écrit sur le chemin d'envoi, et la question de savoir
+ce que `body` contient pour un sortant est un invariant que seule la connaissance du dépôt rend
+visible (c'est le miroir de la migration 0125, et se tromper de sens rend notre trace fausse le jour
+d'un litige). Deux autres pièges sont du même genre : un template ne se traduit pas, et la dépense
+tombe sur le crédit prépayé du client alors que le bot d'aide, lui, est sur notre clé.
+
+⚠️ **La tâche 6 seule aurait pu passer en feature-loop** (un toggle, des critères mécaniques, un
+rayon de souffle nul). Elle reste dans le même lot par simple économie de mise en route, pas parce
+que la méthode lourde s'impose.
+
+🔴 **L'essai RÉEL qui clôt la feature** : un vrai message entrant en espagnol sur le numéro de
+service, lu en français dans l'Inbox, puis une réponse rédigée en français et envoyée traduite. Et
+le contrôle qui compte : vérifier **en base** que `body` porte bien ce qui est PARTI et la colonne
+d'origine ce que l'opérateur a écrit.
+
 ## Contraintes globales
 
 Celles du plan des campagnes s'appliquent à l'identique (`git commit --only`, `tenant_id = $1`,
