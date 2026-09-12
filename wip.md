@@ -12,6 +12,34 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
+## 🔴 LA FILE DE TRAVAIL (posée le 2026-09-12)
+
+Trois chantiers planifiés, dans cet ordre. Chacun a sa spec et son plan, et **chaque lot laisse le
+système fonctionnel** : on peut s'arrêter entre deux sans rien laisser à moitié.
+
+| Rang | Chantier | Spec | Plan | État |
+|---|---|---|---|---|
+| **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan, 14 tâches](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **lot 1 sur 5 EN COURS** |
+| **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | planifié |
+| **3** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié |
+
+⚠️ **L'ordre n'est pas arbitraire, et une dépendance le contraint.** Le chantier 1 pose la
+joignabilité mémorisée sur `contacts` et le motif « une donnée qu'on détecte et qu'on garde ». Le
+chantier 2 pose la **langue détectée** du contact sur la même table, avec le même motif. Les faire
+dans l'autre sens marcherait, mais les faire en parallèle produirait deux migrations concurrentes
+sur `contacts` et deux façons voisines de répondre à « que sait-on de ce contact ».
+
+⚠️ **Le chantier 3 ne dépend de rien** et peut passer devant si le besoin change. Il est troisième
+parce qu'il est le moins urgent, pas parce qu'il est bloqué.
+
+🔴 **Découpage d'exécution retenu (décidé le 2026-09-12) : PAS un sous-agent par tâche.** La skill
+`subagent-driven-development` en dispatcherait deux par tâche plus une revue finale, soit 29 agents
+au plancher et 35 à 40 en pratique pour le seul chantier 1. On groupe donc par PHASE (5 lots pour le
+chantier 1), les revues se font ici, et un relecteur unique passe sur la branche à la fin. Six
+agents au lieu de quarante, un point d'arrêt entre chaque lot. La raison est dans le `CLAUDE.md`
+global : le relecteur unique d'un lot précédent avait trouvé les deux mêmes vrais défauts que les
+49 agents de l'incident du 2026-09-07.
+
 ## Les deux lots du 2026-09-11 au soir : ce qui RESTE
 
 Quinze demandes en deux vagues (onze, puis quatre), toutes traitées et déployées le soir même, plus deux
