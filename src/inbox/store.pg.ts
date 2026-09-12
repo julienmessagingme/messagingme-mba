@@ -341,14 +341,26 @@ export class PgInboxStore implements InboxStore {
    * qui change entre deux réponses reviendrait à tirer au sort. `created_at` seul ne suffit pas (deux
    * comptes créés dans la même transaction partagent l'horodatage), d'où `id` en second critère.
    *
-   * ⚠️ NI RÉVOQUÉ NI EN ATTENTE D'INVITATION, exactement comme le sélecteur de l'assistant : affecter une
-   * conversation à quelqu'un qui ne peut pas se connecter, c'est la ranger là où personne ne la lira.
-   * `password_hash is null` EST le marqueur d'une invitation non acceptée (`pending` de `PgUserStore.list`).
+   * ⚠️ NI RÉVOQUÉ NI JAMAIS CONNECTÉ, exactement comme le sélecteur de l'assistant : affecter une
+   * conversation à quelqu'un qui ne peut pas la lire, c'est la ranger là où personne ne la lira.
+   *
+   * 🔴 UNE VERSION DE CE DOCBLOC DISAIT QUE `password_hash is null` EST LE MARQUEUR D'UNE INVITATION NON
+   * ACCEPTÉE. C'était faux, et c'est la faute de ce lot : ce champ est nul pour tout compte qui se connecte
+   * par GOOGLE, donc pour des gens parfaitement actifs. La justification fausse a voyagé du commentaire au
+   * code, puis du code à trois écrans. C'est l'illustration exacte de « une justification fausse est pire
+   * qu'aucune, parce qu'elle sera recopiée ».
    */
   async membresAffectables(tenantId: string): Promise<string[]> {
     const res = await this.pool.query<{ id: string }>(
+      // 🔴 `last_login_at is not null`, ET SURTOUT PAS `password_hash is not null`. Ce second critère a
+      // été écrit ici le 2026-09-12 et il était FAUX : la connexion par Google ne pose aucun mot de passe,
+      // donc le tour de rôle écartait silencieusement toute personne qui se connecte ainsi. Mesuré en
+      // production le soir même : sur quatre comptes tous actifs, DEUX étaient écartés, et un espace dont
+      // toute l'équipe passe par Google aurait rendu une liste VIDE, donc aucune affectation, sans erreur.
+      // ⚠️ Le critère juste est « cette personne s'est déjà connectée », parce que c'est exactement ce
+      // qu'on lui demande : pouvoir lire la conversation qu'on lui confie.
       `select id from users
-        where tenant_id = $1 and disabled_at is null and password_hash is not null
+        where tenant_id = $1 and disabled_at is null and last_login_at is not null
         order by created_at asc, id asc`,
       [tenantId],
     );

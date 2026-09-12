@@ -77,7 +77,15 @@ export class PgUserStore {
 
   async list(tenantId: string): Promise<UserRow[]> {
     const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; code: string | null; disabled_at: Date | null; pending: boolean; created_at: Date; last_login_at: Date | null }>(
-      `select id, email, name, role, code, disabled_at, (password_hash is null) as pending, created_at, last_login_at from users
+      // 🔴 `pending` VEUT DIRE « N'A JAMAIS ACCEPTÉ SON INVITATION », ET SE LIT SUR `last_login_at`.
+      // Il se lisait sur `password_hash is null`, ce qui était FAUX pour tout compte Google : la connexion
+      // par Google ne pose aucun mot de passe, donc une personne qui travaille dans la console tous les
+      // jours y était annoncée « invitation en attente ». Mesuré en production le 2026-09-12 : deux des
+      // quatre comptes, connectés la veille et l'avant-veille, étaient classés en attente.
+      // ⚠️ Trois écrans lisaient ce drapeau pour EXCLURE ces personnes de leurs listes (membres d'un
+      // scénario, assignation d'une campagne, et le tour de rôle côté serveur) : le défaut ne se voyait pas
+      // sur la fiche des comptes, il se voyait par une absence ailleurs, ce qui est la pire forme.
+      `select id, email, name, role, code, disabled_at, (last_login_at is null) as pending, created_at, last_login_at from users
        where tenant_id = $1 order by created_at asc`,
       [tenantId],
     );
