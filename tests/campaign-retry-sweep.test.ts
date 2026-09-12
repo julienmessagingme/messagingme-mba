@@ -1,18 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { runRetrySweep, type RetrySweepDeps } from '../src/campaign/retry-sweep';
-import type { AutoRetryRecipient } from '../src/campaign/store.pg';
+import type { AutoRetryRecipient, CandidatBascule } from '../src/campaign/store.pg';
+import type { Etage } from '../src/campaign/etages';
 
 const R = (id: string, campaignId = `c-${id}`): AutoRetryRecipient => ({ id, campaignId, tenantId: `t-${id}`, contactId: `ct-${id}`, toE164: `+3360${id}` });
 
+/** Un candidat à la bascule : le destinataire de `R`, plus tout ce que la règle demande. */
+const CHAINE_2: Etage[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }];
+const C = (id: string, over: Partial<CandidatBascule> = {}): CandidatBascule => ({
+  ...R(id), codeErreur: 131026, chaine: CHAINE_2, rangCourant: 1, reessayer: true, dejaReessaye: false,
+  emailDuContact: null, ...over,
+});
+
 function deps(over: Partial<RetrySweepDeps> = {}): {
   d: RetrySweepDeps; enqueued: string[]; reset: string[]; flagged: Array<[string, string]>; marked: string[];
-  notes: Array<[string, string, boolean]>;
+  notes: Array<[string, string, boolean]>; bascules: Array<[string, number]>;
 } {
   const enqueued: string[] = [];
   const reset: string[] = [];
   const flagged: Array<[string, string]> = [];
   const marked: string[] = [];
   const notes: Array<[string, string, boolean]> = [];
+  const bascules: Array<[string, number]> = [];
   const d: RetrySweepDeps = {
     isMorningWindow: () => true,
     list131049: async () => [],
@@ -23,9 +32,11 @@ function deps(over: Partial<RetrySweepDeps> = {}): {
     enqueueRun: async (id) => { enqueued.push(id); },
     flagUnreachable: async (tenantId, e164) => { flagged.push([tenantId, e164]); },
     noterJoignabilite: async (tenantId, contactId, joignable) => { notes.push([tenantId, contactId, joignable]); },
+    listCandidatsBascule: async () => [],
+    basculerEtage: async (id, rang) => { bascules.push([id, rang]); return true; },
     ...over,
   };
-  return { d, enqueued, reset, flagged, marked, notes };
+  return { d, enqueued, reset, flagged, marked, notes, bascules };
 }
 
 describe('runRetrySweep (F6)', () => {
@@ -105,5 +116,73 @@ describe('runRetrySweep (F6)', () => {
     // 'a' throw, mais 'b' est quand même traité.
     expect((await runRetrySweep(d.d)).retried).toBe(1);
     expect(d.enqueued).toEqual(['c-b']);
+  });
+});
+
+/**
+ * LA BASCULE D'ÉTAGE, la passe des campagnes à REPLI.
+ *
+ * ⚠️ Les huit cas ci-dessus sont ceux des campagnes SANS repli, et ils restent VERBATIM : la politique
+ * de réessai de F6 n'est pas remplacée, elle est bornée aux campagnes qui n'ont pas de chaîne. La
+ * frontière est posée en SQL (`SANS_REPLI_SQL`), donc invisible d'un test qui injecte ses listes ; ce
+ * que ces tests-ci vérifient, c'est ce que le balayage FAIT d'un candidat, pas qui lui arrive.
+ */
+describe('runRetrySweep : la bascule d\'étage', () => {
+  it('un candidat qui a un etage suivant bascule et son run est reenfile', async () => {
+    const d = deps({ listCandidatsBascule: async () => [C('a')] });
+    const res = await runRetrySweep(d.d);
+    expect(res.bascules).toBe(1);
+    expect(d.bascules).toEqual([['a', 2]]);
+    expect(d.enqueued).toEqual(['c-a']);
+    // 🔴 ET SURTOUT PAS DE RÉESSAI : une bascule ne consomme pas le budget de réessai, et `resetForRetry`
+    // remettrait le destinataire sur l'étage qui vient d'échouer.
+    expect(d.reset).toEqual([]);
+  });
+
+  it('au dernier etage, le balayage ne fait RIEN : ni bascule, ni reessai, ni cloture', async () => {
+    const d = deps({ listCandidatsBascule: async () => [C('z', { rangCourant: 2 })] });
+    const res = await runRetrySweep(d.d);
+    expect(res.bascules).toBe(0);
+    // « Terminal » se joue en ne faisant rien : le destinataire reste `failed`, plus personne ne le reprend.
+    expect(d.bascules).toEqual([]);
+    expect(d.enqueued).toEqual([]);
+    expect(d.reset).toEqual([]);
+    expect(d.marked).toEqual([]);
+  });
+
+  it('basculerEtage qui rend false (concurrence) -> pas d enqueue', async () => {
+    // Un autre balayage a déjà fait avancer ce destinataire : le verrou `etage_courant < $2` refuse
+    // l'écriture, et on ne doit surtout pas enfiler un second run pour le même échec.
+    const d = deps({ listCandidatsBascule: async () => [C('a')], basculerEtage: async () => false });
+    const res = await runRetrySweep(d.d);
+    expect(res.bascules).toBe(0);
+    expect(d.enqueued).toEqual([]);
+  });
+
+  it('un echec par candidat n interrompt pas la passe', async () => {
+    const d = deps({
+      listCandidatsBascule: async () => [C('a'), C('b')],
+      basculerEtage: async (id, rang) => { if (id === 'a') throw new Error('boom'); return (d.bascules.push([id, rang]), true); },
+    });
+    expect((await runRetrySweep(d.d)).bascules).toBe(1);
+    expect(d.enqueued).toEqual(['c-b']);
+  });
+
+  it('la bascule ne desactive PAS les relances de F6 (les deux passes coexistent dans le meme tour)', async () => {
+    // Deux campagnes différentes, l'une à repli, l'autre sans : le balayage sert les deux d'un tour.
+    const d = deps({ listCandidatsBascule: async () => [C('a')], list131026: async () => [R('s')] });
+    const res = await runRetrySweep(d.d);
+    expect(res.bascules).toBe(1);
+    expect(res.retried).toBe(1);
+    expect(d.bascules).toEqual([['a', 2]]);
+    expect(d.reset).toEqual(['s']);
+  });
+
+  it('la chaine trouee : le balayage transporte le rang que la REGLE rend, pas rangCourant + 1', async () => {
+    // 🔴 C'est ce que la passe doit propager jusqu'à l'écriture. Un jeu `[1, 2]` ne l'aurait pas montré.
+    const TROUEE: Etage[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 3, canal: 'email' }];
+    const d = deps({ listCandidatsBascule: async () => [C('a', { chaine: TROUEE })] });
+    expect((await runRetrySweep(d.d)).bascules).toBe(1);
+    expect(d.bascules).toEqual([['a', 3]]);
   });
 });

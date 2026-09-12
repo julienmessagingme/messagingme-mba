@@ -1036,9 +1036,14 @@ async function main(): Promise<void> {
           },
           flagUnreachable,
           noterJoignabilite: noterJoignabiliteContact,
+          // La bascule d'étage : seules les campagnes à repli y passent, et il n'y en a aucune tant
+          // qu'une chaîne à plus d'un étage n'est pas créable. Le câblage est posé maintenant pour que
+          // le jour où elle le sera, il n'y ait plus qu'à lui apprendre à envoyer le bon contenu.
+          listCandidatsBascule: () => repo.listCandidatsBascule(),
+          basculerEtage: (id, rang) => repo.basculerEtage(id, rang),
         });
         // eslint-disable-next-line no-console
-        if (res.retried > 0 || res.flagged > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s)`);
+        if (res.retried > 0 || res.flagged > 0 || res.bascules > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s), ${res.bascules} bascule(s) d'étage`);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('retry-sweep erreur:', err instanceof Error ? err.message : err);

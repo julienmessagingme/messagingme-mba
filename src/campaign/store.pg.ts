@@ -7,6 +7,7 @@ import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
 import { RANG_INITIAL, type CanalEtage, type Etage } from './etages';
+import type { EntreeDeDecision } from './bascule';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
@@ -137,6 +138,24 @@ export interface CampaignDetail extends CampaignSummary {
 /** Codes d'erreur Meta « variable de template » (F7) : renvoyables après correction de la donnée du contact. */
 export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
 
+/**
+ * « Cette campagne n'a PAS de repli », c'est-à-dire rien au-delà du premier étage.
+ *
+ * 🔴 C'EST LA FRONTIÈRE ENTRE LES DEUX POLITIQUES DE RATTRAPAGE, et elle est posée en SQL parce que
+ * c'est le seul endroit qui la rend exclusive. Avec un repli, la chaîne gouverne (bascule) ; sans
+ * repli, la politique de réessai gouverne (F6, inchangée). Sans cette clause, un destinataire d'une
+ * campagne à chaîne resterait listé par les trois relances de F6 EN PLUS d'être basculé : deux
+ * mécanismes sur le même échec, donc un envoi de trop, et rien ne l'aurait signalé.
+ *
+ * ⚠️ Le parc d'aujourd'hui est ENTIÈREMENT « sans repli » : la reprise de 0134 a mis toutes les
+ * campagnes existantes au rang 1, et `insertCampaignRow` n'écrit que ce rang. La clause est donc vraie
+ * partout aujourd'hui, et le comportement de F6 est rigoureusement celui d'avant.
+ *
+ * ⚠️ `${RANG_INITIAL}` est interpolé et non paramétré : c'est une constante de module (un nombre du
+ * code), jamais une entrée. Le paramétrer obligerait chaque appelant à décaler ses `$n`.
+ */
+const SANS_REPLI_SQL = `not exists (select 1 from campaign_etages ce where ce.campaign_id = r.campaign_id and ce.rang > ${RANG_INITIAL})`;
+
 /** Destinataire candidat à une auto-relance (F6). */
 /**
  * Un destinataire repris par le balayage de relance.
@@ -146,6 +165,16 @@ export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
  * une seconde définition de son identité, là où `campaign_recipients.contact_id` la porte déjà.
  */
 export interface AutoRetryRecipient { id: string; campaignId: string; tenantId: string; contactId: string; toE164: string; }
+
+/**
+ * Un destinataire en échec dont la campagne porte un REPLI, avec tout ce que la règle de bascule demande.
+ *
+ * 🔴 IL ÉTEND `EntreeDeDecision`, IL N'EN RECOPIE PAS LES CHAMPS. Une liste recopiée pour être
+ * RETRANSMISE est une liste à tenir alignée à la main, et elle dérive : c'est exactement le défaut qui a
+ * fait échouer toutes les campagnes à lien tracé en 131008 le 2026-09-02. En l'étendant, un champ ajouté
+ * à la règle devient une erreur de compilation ICI, au seul endroit qui sait le remplir.
+ */
+export interface CandidatBascule extends AutoRetryRecipient, EntreeDeDecision {}
 
 /** Résultat d'une tentative de renvoi (F7). Discriminé pour que la route mappe proprement 404/409/422/202. */
 export type RetryReset =
@@ -272,7 +301,27 @@ export class PgCampaignRepo {
    * protégé rien du tout, et en ajouter aux deux aurait changé le contrat de `getCampaign`.
    */
   private async lireChaine(campaignId: string): Promise<Etage[]> {
+    return (await this.lireChainesDe([campaignId])).get(campaignId) ?? [];
+  }
+
+  /**
+   * Les chaînes de PLUSIEURS campagnes en une requête, indexées par campagne.
+   *
+   * 🔴 C'EST LE POINT DE PASSAGE UNIQUE DE LA TRADUCTION `campaign_etages` -> `Etage`, et `lireChaine`
+   * en dépend maintenant au lieu d'en porter une seconde copie. Le balayage de bascule a besoin des
+   * chaînes de tous ses candidats d'un coup : lui donner sa propre lecture aurait produit deux
+   * traductions des mêmes colonnes, donc deux occasions de diverger le jour où un étage gagne un champ.
+   *
+   * ⚠️ `= any($1::uuid[])` et non `= $1` : c'est la seule différence avec la lecture d'avant, et la clé
+   * primaire `(campaign_id, rang)` la sert exactement pareil. Le `order by` gagne `campaign_id` pour que
+   * le regroupement ne dépende pas de l'ordre de retour ; les rangs d'une même campagne restent triés,
+   * même si `etages.ts` ne le suppose nulle part.
+   */
+  private async lireChainesDe(campaignIds: string[]): Promise<Map<string, Etage[]>> {
+    const parCampagne = new Map<string, Etage[]>();
+    if (campaignIds.length === 0) return parCampagne;
     const res = await this.pool.query<{
+      campaign_id: string;
       rang: number;
       canal: CanalEtage;
       template_name: string | null;
@@ -281,19 +330,24 @@ export class PgCampaignRepo {
       email_template_id: string | null;
       workflow_id: string | null;
     }>(
-      `select rang, canal, template_name, template_language, rcs_message, email_template_id, workflow_id
-       from campaign_etages where campaign_id = $1 order by rang`,
-      [campaignId],
+      `select campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, workflow_id
+       from campaign_etages where campaign_id = any($1::uuid[]) order by campaign_id, rang`,
+      [campaignIds],
     );
-    return res.rows.map((e) => ({
-      rang: e.rang,
-      canal: e.canal,
-      ...(e.template_name !== null ? { templateName: e.template_name } : {}),
-      ...(e.template_language !== null ? { templateLanguage: e.template_language } : {}),
-      ...(e.rcs_message !== null ? { rcsMessage: e.rcs_message } : {}),
-      ...(e.email_template_id !== null ? { emailTemplateId: e.email_template_id } : {}),
-      ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
-    }));
+    for (const e of res.rows) {
+      const etage: Etage = {
+        rang: e.rang,
+        canal: e.canal,
+        ...(e.template_name !== null ? { templateName: e.template_name } : {}),
+        ...(e.template_language !== null ? { templateLanguage: e.template_language } : {}),
+        ...(e.rcs_message !== null ? { rcsMessage: e.rcs_message } : {}),
+        ...(e.email_template_id !== null ? { emailTemplateId: e.email_template_id } : {}),
+        ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
+      };
+      const deja = parCampagne.get(e.campaign_id);
+      if (deja) deja.push(etage); else parCampagne.set(e.campaign_id, [etage]);
+    }
+    return parCampagne;
   }
 
   /** Le numéro appartient-il au tenant ? (garde-fou anti envoi depuis le numéro d'autrui.) */
@@ -584,11 +638,89 @@ export class PgCampaignRepo {
          join campaigns c on c.id = r.campaign_id
          join tenant_settings ts on ts.tenant_id = c.tenant_id
        where ts.auto_retry_enabled = true and (${RECIPIENT_FAILED_SQL}) and ${cond}
+         and ${SANS_REPLI_SQL}
        order by r.id
        limit ${limit}`,
       params,
     );
     return res.rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164 }));
+  }
+
+  /**
+   * Les destinataires en échec d'une campagne qui a un REPLI : la matière première de la bascule.
+   *
+   * 🔴 ELLE NE DÉCIDE RIEN, ET C'EST DÉLIBÉRÉ. Le `where` sélectionne « la campagne a un étage au-delà
+   * du premier », pas « il existe un étage après CELUI de ce destinataire » : la seconde formulation
+   * ferait porter la règle par du SQL, donc hors de portée de `decider` et de ses tests. Un destinataire
+   * arrivé au dernier étage remonte donc ici, et c'est `decider` qui répond « plus d'étage disponible ».
+   *
+   * 🔴 ELLE N'EST PAS GATÉE PAR `auto_retry_enabled`, CONTRAIREMENT AUX TROIS LISTES DE RELANCE. Ce
+   * drapeau gouverne le RATTRAPAGE AUTOMATIQUE d'un échec ; une chaîne de repli est une configuration
+   * explicite de la campagne, que l'opérateur a construite étage par étage. La refuser au motif qu'un
+   * réglage d'espace sans rapport est décoché rendrait une chaîne muette sans que rien ne le dise.
+   *
+   * ⚠️ CE QUI LA REND SERVABLE PAR UN INDEX : le `in (select ...)` part de `campaign_etages`, dont les
+   * lignes de rang > 1 sont rarissimes (la reprise de 0134 a tout mis au rang 1), et rejoint
+   * `campaign_recipients` par `campaign_id`, que l'unique `(campaign_id, contact_id)` de 0003 sert. Sans
+   * ce sens de lecture, la condition d'échec seule imposerait un parcours de la plus grosse table du
+   * produit à chaque tour de balayage.
+   */
+  async listCandidatsBascule(limit = 500): Promise<CandidatBascule[]> {
+    const res = await this.pool.query<{
+      id: string; campaign_id: string; tenant_id: string; contact_id: string; to_e164: string;
+      error_code: number | null; etage_courant: number; retry_count: number; reessayer: boolean;
+    }>(
+      `select r.id, r.campaign_id, c.tenant_id, r.contact_id, r.to_e164,
+              r.error_code, r.etage_courant, r.retry_count, c.reessayer
+       from campaign_recipients r
+         join campaigns c on c.id = r.campaign_id
+       where (${RECIPIENT_FAILED_SQL})
+         and r.campaign_id in (select campaign_id from campaign_etages where rang > ${RANG_INITIAL})
+       order by r.id
+       limit ${limit}`,
+    );
+    const chaines = await this.lireChainesDe([...new Set(res.rows.map((r) => r.campaign_id))]);
+    return res.rows.map((r) => ({
+      id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164,
+      codeErreur: r.error_code,
+      chaine: chaines.get(r.campaign_id) ?? [],
+      rangCourant: r.etage_courant,
+      reessayer: r.reessayer,
+      // Le budget de réessai est d'UN, tous motifs confondus : `retry_count` le porte déjà.
+      dejaReessaye: r.retry_count > 0,
+      // 🔴 TOUJOURS `null` AUJOURD'HUI, ET CE N'EST PAS UN OUBLI : `contacts` N'A PAS de colonne
+      // `email` (vérifié dans les migrations, 0001 puis les sept `alter table contacts` qui ont
+      // suivi). Le jour où l'étage e-mail arrivera, c'est ici que l'adresse se branchera, et la
+      // signature de `decider` n'aura pas à bouger.
+      emailDuContact: null,
+    }));
+  }
+
+  /**
+   * Fait avancer un destinataire à l'étage `rang` : il repart `pending`, le prochain run le reprend.
+   *
+   * 🔴 `etage_courant < $2` EST LE VERROU, et il n'est pas décoratif : deux balayages qui se
+   * chevauchent (le tour précédent n'a pas fini) liraient le même candidat et basculeraient deux fois,
+   * donc enfileraient deux runs pour un seul échec. L'étage ne recule jamais, donc la seconde écriture
+   * ne touche aucune ligne et l'appelant n'enfile rien.
+   *
+   * 🔴 `retry_count` N'EST PAS INCRÉMENTÉ : une bascule n'est pas un réessai. L'incrémenter ferait
+   * mentir `dejaReessaye` à l'étage suivant, c'est-à-dire retirer au destinataire un budget qu'il n'a
+   * pas dépensé.
+   *
+   * ⚠️ Elle efface l'erreur, le `message_id` et l'état de livraison pour les MÊMES raisons que
+   * `resetForRetry` : sans ça le destinataire compterait encore comme échoué, et un accusé Meta tardif
+   * sur l'ANCIEN identifiant réécrirait `delivery_status = 'failed'` pendant l'envoi du nouvel étage.
+   */
+  async basculerEtage(id: string, rang: number): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaign_recipients set etage_courant = $2, status = 'pending', retried_at = now(),
+         error = null, error_code = null, message_id = null, delivery_status = null, delivery_error = null,
+         delivery_updated_at = null, claimed_at = null
+       where id = $1 and etage_courant < $2 and (status = 'failed' or delivery_status = 'failed')`,
+      [id, rang],
+    );
+    return (res.rowCount ?? 0) === 1;
   }
 
   /**
