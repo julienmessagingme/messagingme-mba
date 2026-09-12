@@ -62,7 +62,16 @@ export function raisonDePause(err: unknown): RaisonDePause | undefined {
 
 // Premier jeu de codes (extensible, à affiner avec la doc Meta live).
 // Transitoires : rejouables tels quels.
-const RETRYABLE_CODES = new Set<number>([1, 2, 4, 130429, 131016, 131026, 131048, 131056, 133016]);
+// 🔴 131026 N'EST PAS ICI, ET C'EST DÉLIBÉRÉ (2026-09-12). Meta dit textuellement que ce code veut
+// dire que le numéro n'est pas un numéro WhatsApp, ou que la personne n'a pas accepté les
+// conditions. Aucune de ces causes ne change dans la seconde : le rejouer double les appels sur
+// chaque numéro sans WhatsApp, sans aucune chance de succès. Son rattrapage vit au niveau
+// campagne (bascule d'étage ou joignabilité mémorisée), pas au niveau transport.
+// ⚠️ Ce retrait vaut pour TOUS les chemins d'envoi, pas seulement les campagnes : `classify` ne sert
+// qu'à `MetaApiError.retryable`, lu par le seul `withRetry` (`src/meta/http.ts`), qui enveloppe
+// `MetaClient.call`, donc l'envoi rapide de l'Inbox, le tour d'agent et le scénario autant que le
+// moteur de campagne. C'est voulu : le code veut dire la même chose partout.
+const RETRYABLE_CODES = new Set<number>([1, 2, 4, 130429, 131016, 131048, 131056, 133016]);
 // Terminaux : rejouer ne sert à rien (param invalide, hors fenêtre, marché bloqué, auth).
 const TERMINAL_CODES = new Set<number>([100, 190, 131047, 131049, 131051, 131052, 131053]);
 

@@ -14,8 +14,11 @@ describe('classify', () => {
     expect(classify(425, null)).toBe(true);
   });
   it('code transitoire connu -> retryable', () => {
-    expect(classify(400, { code: 131026 })).toBe(true);
+    expect(classify(400, { code: 130429 })).toBe(true);
     expect(classify(400, { code: 1 })).toBe(true);
+  });
+  it('131026 n est PAS rejouable : le numero n est pas un numero WhatsApp', () => {
+    expect(classify(400, { code: 131026 })).toBe(false);
   });
   it('code terminal connu -> non retryable', () => {
     expect(classify(400, { code: 100 })).toBe(false);
