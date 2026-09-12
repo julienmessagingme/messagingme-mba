@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgCampaignRepo } from '../../src/campaign/store.pg';
 import { PgInboxStore } from '../../src/inbox/store.pg';
-import { assignerReponse, type AssignationDeps } from '../../src/inbox/assignation-campagne';
+import { assignerReponse, prochainAssigne, type AssignationDeps } from '../../src/inbox/assignation-campagne';
 
 /**
  * L'ASSIGNATION À TOUR DE RÔLE, EN BASE.
@@ -116,13 +116,29 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
     expect(a).not.toBe(b);
   });
 
-  it('le roulement sert les membres dans l ordre, puis recommence', async () => {
+  /**
+   * LE ROULEMENT SERT CHAQUE MEMBRE UNE FOIS, PUIS RECOMMENCE.
+   *
+   * ⚠️ CE TEST N'ÉPINGLE PLUS UN POINT DE DÉPART, ET C'EST DÉLIBÉRÉ. Le premier rang consommé vaut 1 et
+   * non 0 (la colonne part de 0, et `RETURNING` rend l'après-incrément) : la première réponse va donc au
+   * DEUXIÈME membre de la liste. Le point de départ d'une rotation est arbitraire ; ce qui se vérifie,
+   * c'est que trois réponses d'affilée touchent TROIS personnes différentes, et que la quatrième
+   * reboucle sur la première servie. Exiger `[a, b, c, a]` aurait figé un détail sans conséquence et
+   * rendu le test rouge pour une raison qui n'intéresse personne.
+   */
+  it('le roulement sert chaque membre une fois, puis recommence', async () => {
     const numeros = ['33600000111', '33600000112', '33600000113', '33600000114'];
     for (const n of numeros) await destinataireQuiRepond(n);
     const recus: Array<string | null> = [];
-    // En SÉRIE, pas en parallèle : ce cas-ci vérifie l'ORDRE, celui du dessus la concurrence.
+    // En SÉRIE, pas en parallèle : ce cas-ci vérifie la ROTATION (chacun une fois, puis on reboucle),
+    // celui du dessus la CONCURRENCE. Les mélanger rendrait l'un des deux illisible.
     for (const n of numeros) recus.push(await assignerReponse(tenantId, n, deps));
-    expect(recus).toEqual([membres[0], membres[1], membres[2], membres[0]]);
+
+    // Les trois premières réponses touchent les TROIS membres, chacun une fois et une seule.
+    expect(new Set(recus.slice(0, 3)).size).toBe(3);
+    expect([...recus.slice(0, 3)].sort()).toEqual([...membres].sort());
+    // Et la quatrième reboucle exactement sur la première servie.
+    expect(recus[3]).toBe(recus[0]);
   });
 
   /**
@@ -132,7 +148,9 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
    */
   it('un second message du meme contact ne consomme aucun rang', async () => {
     const w = await destinataireQuiRepond('33600000121');
-    expect(await assignerReponse(tenantId, w, deps)).toBe(membres[0]);
+    // ⚠️ On n'épingle PAS lequel des trois membres reçoit : le point de départ d'une rotation est
+    // arbitraire (le premier rang consommé vaut 1, pas 0). Ce qui se vérifie ici est le COMPTEUR.
+    expect(membres).toContain(await assignerReponse(tenantId, w, deps));
     expect(await assignerReponse(tenantId, w, deps)).toBeNull();
     const { rows } = await pool.query<{ rang: number }>(
       `select tour_de_role_rang as rang from campaigns where id = $1`, [campaignId],
@@ -140,28 +158,50 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
     expect(rows[0]?.rang, 'le second message a fait avancer le roulement').toBe(1);
   });
 
-  // ⚠️ L'AUTRE SENS : la conversation reste bien affectée à la première personne, on ne l'a pas perdue.
+  // ⚠️ L'AUTRE SENS DU CAS DU DESSUS : on a bien ÉCRIT quelque chose, l'affectation n'est pas restée en
+  // mémoire. Sans lui, une implémentation qui rend un membre sans jamais toucher la base passerait.
   it('la premiere affectation tient', async () => {
     const w = await destinataireQuiRepond('33600000131');
-    await assignerReponse(tenantId, w, deps);
+    const recu = await assignerReponse(tenantId, w, deps);
     const { rows } = await pool.query<{ assigned_to: string | null }>(
       `select assigned_to from conversations where tenant_id = $1 and wa_id = $2`, [tenantId, w],
     );
-    expect(rows[0]?.assigned_to).toBe(membres[0]);
+    // ⚠️ On compare à CE QUI A ÉTÉ RENDU, pas à un membre nommé : ce cas vérifie que l'écriture en base
+    // dit la même chose que la valeur rendue, pas quel membre le roulement a servi en premier.
+    expect(rows[0]?.assigned_to).toBe(recu);
+    expect(membres).toContain(recu);
   });
 
   /**
-   * 🔴 LE RANG EST UN `smallint`, ET IL NE SE REMET JAMAIS À ZÉRO. Une campagne AU FIL DE L'EAU n'a aucun
-   * plafond de destinataires : sans repliage, la 32 768e réponse lèverait `22003 smallint out of range`
-   * sur le chemin d'un message entrant. Ce cas exécute le repliage POUR DE VRAI plutôt que de le lire.
+   * 🔴 L'INVARIANT DU RANG, ÉPINGLÉ LÀ OÙ LE DÉPÔT S'EST TROMPÉ DEUX FOIS : **deux rangs consécutifs sont
+   * DISTINCTS, tous deux POSITIFS, et ils désignent deux personnes DIFFÉRENTES**. Ce n'est pas une valeur
+   * particulière qui compte, c'est cette propriété-là.
+   *
+   * Ce test part de 32 766, l'ancien point de rupture, et il aurait rougi sur les DEUX défauts :
+   *   - avec `returning tour_de_role_rang - 1`, le second appel rendait **-1** (`RETURNING` rend la
+   *     valeur NOUVELLE, jamais l'ancienne), et `prochainAssigne` ne désigne personne sur un négatif ;
+   *   - avec le `% 32767` qui protégeait le `smallint`, les deux rangs valaient 32766 puis 0, donc la
+   *     MÊME personne pour une équipe de 2, 3 ou 6 (mesuré : seules les tailles divisant 32767, soit 7,
+   *     31, 151 et 217, y échappaient). L'équipe de ce test en compte TROIS, donc elle est dans le cas
+   *     qui casse.
+   *
+   * ⚠️ Il exerce aussi, au passage, le fait que 32 767 n'est plus une borne : la colonne est un `integer`
+   * depuis la migration 0136, et la dépasser ne lève plus `22003 smallint out of range` sur le chemin
+   * d'un message entrant.
    */
-  it('le rang se replie au lieu de deborder le smallint', async () => {
+  it('deux rangs consecutifs restent distincts et positifs, meme au-dela de 32766', async () => {
     await pool.query(`update campaigns set tour_de_role_rang = 32766 where id = $1`, [campaignId]);
-    expect(await repo.prendreUnRangDeTourDeRole(tenantId, campaignId)).toBe(32765);
-    // 32766 + 1 = 32767, replié à 0 ; le rang RENDU est alors -1, que `prochainAssigne` ramène dans le
-    // tableau. C'est pour ça que cette fonction corrige le signe du modulo.
-    expect(await repo.prendreUnRangDeTourDeRole(tenantId, campaignId)).toBe(-1);
-    expect(await repo.prendreUnRangDeTourDeRole(tenantId, campaignId)).toBe(0);
+    const un = await repo.prendreUnRangDeTourDeRole(tenantId, campaignId);
+    const deux = await repo.prendreUnRangDeTourDeRole(tenantId, campaignId);
+
+    expect(un).toBeGreaterThan(0);
+    expect(deux).toBeGreaterThan(0);
+    expect(deux).not.toBe(un);
+    // 🔴 LA PROPRIÉTÉ QUI COMPTE VRAIMENT, exercée par la VRAIE règle et non par un calcul recopié : ces
+    // deux rangs doivent désigner deux membres différents de l'équipe.
+    expect(prochainAssigne(membres, un)).not.toBe(prochainAssigne(membres, deux));
+    expect(membres).toContain(prochainAssigne(membres, un));
+    expect(membres).toContain(prochainAssigne(membres, deux));
   });
 
   /**

@@ -876,24 +876,36 @@ export class PgCampaignRepo {
    * fois de temps en temps, sous charge. Un `update ... returning` fait les deux sous le verrou de ligne
    * de Postgres : le second appelant attend, puis lit la valeur déjà avancée.
    *
-   * 🔴 LE MODULO EST DANS LE SQL PARCE QUE LA COLONNE EST UN `smallint`. `tour_de_role_rang` ne se remet
-   * jamais à zéro : il compte les réponses depuis le début de la campagne. Une campagne AU FIL DE L'EAU
-   * n'a aucun plafond de destinataires, donc rien n'empêche d'atteindre 32 767, où Postgres lèverait
-   * `22003 smallint out of range` sur le chemin d'un message entrant. Le coût du repliage est une place
-   * sautée dans le roulement toutes les 32 767 réponses ; le coût de l'absence de repliage est une panne.
+   * 🔴 ELLE REND LA VALEUR NOUVELLE, TELLE QUELLE, ET C'EST TOUT. Une première version rendait
+   * `tour_de_role_rang - 1`, pour désigner « la valeur qu'on vient de consommer ». Deux choses
+   * l'ont fait retirer, et la CI a attrapé la première :
    *
-   * ⚠️ `returning tour_de_role_rang - 1` REND LA VALEUR D'AVANT, celle qu'on vient de consommer, pas la
-   * prochaine. ⚠️ Après un repliage, cette soustraction peut rendre -1 : `prochainAssigne` corrige le
-   * signe, et c'est pour ça qu'elle le fait.
+   *   1. `RETURNING` rend la valeur NOUVELLE de la colonne, jamais l'ancienne. La soustraction était
+   *      donc une reconstruction, juste partout sauf au point de repliage, où elle sortait de
+   *      l'intervalle et rendait -1. Un rang négatif ne désigne personne.
+   *   2. Surtout, UN TOUR DE RÔLE N'A BESOIN QUE DE VALEURS CONSÉCUTIVES ET DISTINCTES, pas d'une
+   *      valeur particulière : c'est `prochainAssigne` qui ramène le rang dans l'équipe. Reconstruire
+   *      « la valeur d'avant » n'achetait rien et ajoutait une arithmétique à raisonner.
+   *
+   * ⚠️ CONSÉQUENCE ASSUMÉE : LE PREMIER RANG CONSOMMÉ VAUT 1, PAS 0. La colonne part de 0 et on rend
+   * l'après-incrément, donc la première réponse d'une campagne va au DEUXIÈME membre de la liste. Le
+   * point de départ d'une rotation est arbitraire ; ce qui compte est que deux réponses consécutives
+   * aillent à deux personnes différentes, et que la charge soit égale sur la durée. Les deux tiennent.
+   *
+   * 🔴 IL N'Y A PLUS DE REPLIAGE DANS LE SQL, ET C'EST LA MIGRATION 0136 QUI LE PERMET (la colonne passe
+   * en `integer`). Le `% 32767` qui protégeait le `smallint` créait un point où deux rangs consécutifs
+   * valent 32766 puis 0 : mesuré, les deux tombent sur la MÊME personne pour une équipe de 2, 3 ou 6, et
+   * seules les tailles qui divisent 32767 (7, 31, 151, 217) y échappaient. Il échangeait donc une panne
+   * visible contre une double affectation silencieuse.
    *
    * ⚠️ Campagne inconnue (supprimée entre-temps) -> `0`, c'est-à-dire le premier membre. Lever ici
    * casserait l'enregistrement d'un message entrant pour une affectation de confort.
    */
   async prendreUnRangDeTourDeRole(tenantId: string, campaignId: string): Promise<number> {
     const res = await this.pool.query<{ rang: number }>(
-      `update campaigns set tour_de_role_rang = (tour_de_role_rang + 1) % 32767
+      `update campaigns set tour_de_role_rang = tour_de_role_rang + 1
         where tenant_id = $1 and id = $2
-        returning tour_de_role_rang - 1 as rang`,
+        returning tour_de_role_rang as rang`,
       [tenantId, campaignId],
     );
     return res.rows[0]?.rang ?? 0;

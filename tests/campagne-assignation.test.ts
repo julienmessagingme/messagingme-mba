@@ -20,11 +20,14 @@ describe('prochainAssigne', () => {
   });
 
   /**
-   * 🔴 UN RANG NÉGATIF NE DOIT PAS SORTIR DU TABLEAU NON PLUS. Le rang vient d'un `returning
-   * tour_de_role_rang - 1`, donc d'une soustraction : sur une colonne remise à zéro à la main, ou sur un
-   * `smallint` qui aurait débordé, il peut être négatif. `%` de JavaScript garde le SIGNE de l'opérande
-   * gauche, donc `-1 % 3` vaut `-1` et `membres[-1]` vaut `undefined` : la conversation tomberait dans
-   * « À traiter » sans que rien ne le dise, exactement le cas que « sans membre » existe pour couvrir.
+   * 🔴 UN RANG NÉGATIF NE DOIT PAS SORTIR DU TABLEAU NON PLUS. `%` garde en JavaScript le SIGNE de son
+   * opérande gauche, donc `-1 % 3` vaut `-1` et `membres[-1]` vaut `undefined` : la conversation
+   * tomberait dans « À traiter » sans que rien ne le dise.
+   *
+   * ⚠️ PLUS AUCUN APPELANT NE PRODUIT DE RANG NÉGATIF depuis que `prendreUnRangDeTourDeRole` rend la
+   * valeur nouvelle au lieu de reconstruire l'ancienne par soustraction. Ce cas garde donc une fonction
+   * EXPORTÉE honnête sur son propre domaine, il ne décrit plus un chemin vivant. Le dire évite de croire
+   * qu'il protège d'un défaut réel, et évite de le retirer en croyant qu'il n'a jamais servi.
    */
   it('un rang negatif reste dans le tableau', () => {
     expect(prochainAssigne(['a', 'b', 'c'], -1)).toBe('c');

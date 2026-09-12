@@ -48,11 +48,17 @@ describe.skipIf(!url)('la creation d une chaine d etages', () => {
     tenantId = (await pool.query<{ id: string }>(
       `insert into tenants (name) values ('itest-chaine-creation') returning id`,
     )).rows[0]!.id;
-    // Un vrai modèle de mail : `campaign_etages.email_template_id` porte une clé étrangère, donc un
-    // identifiant inventé rendrait une 23503 et le test mesurerait la contrainte au lieu de l'écriture.
+    /**
+     * Un vrai modèle de mail : `campaign_etages.email_template_id` porte une clé étrangère, donc un
+     * identifiant inventé rendrait une 23503 et le test mesurerait la contrainte au lieu de l'écriture.
+     *
+     * ⚠️ `format` VAUT `basic`, PAS `text`. La migration 0062 pose `check (format in ('basic', 'html'))`,
+     * et ce gabarit a été écrit de mémoire avec `text` : la CI l'a rendu rouge en `23514`. Une valeur de
+     * gabarit se lit dans le SQL de la table, jamais dans le souvenir du nom qu'on aurait donné au champ.
+     */
     modeleId = (await pool.query<{ id: string }>(
       `insert into email_templates (tenant_id, name, format, subject, body)
-       values ($1, 'modele-chaine', 'text', 'sujet', 'corps') returning id`,
+       values ($1, 'modele-chaine', 'basic', 'sujet', 'corps') returning id`,
       [tenantId],
     )).rows[0]!.id;
   });

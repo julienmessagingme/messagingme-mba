@@ -22,10 +22,19 @@
  * réponse à trois. `membres[rang]` rendrait `undefined`, et la conversation tomberait dans « À traiter »
  * en silence à partir de là.
  *
- * ⚠️ LE DOUBLE MODULO N'EST PAS UNE COQUETTERIE. `%` garde en JavaScript le SIGNE de son opérande
- * gauche : `-1 % 3` vaut `-1`, et `membres[-1]` vaut `undefined`. Un rang négatif n'est pas théorique,
- * il vient d'un `returning tour_de_role_rang - 1`, donc d'une soustraction, sur une colonne qu'une
- * intervention manuelle pourrait avoir remise à zéro entre-temps.
+ * 🔴 ET C'EST ICI, ET NULLE PART AILLEURS, QUE LE RANG EST RAMENÉ DANS L'ÉQUIPE. Le dépôt a essayé de
+ * le borner AUSSI en base, par un `% 32767` qui protégeait un `smallint` : deux rangs consécutifs y
+ * valaient 32766 puis 0, et les deux tombaient sur la MÊME personne pour une équipe de 2, 3 ou 6. Un
+ * tour de rôle n'a besoin que de rangs CONSÉCUTIFS ET DISTINCTS ; les borner deux fois, c'est créer un
+ * endroit où ils cessent de l'être.
+ *
+ * ⚠️ LE DOUBLE MODULO CORRIGE LE SIGNE, ET SA JUSTIFICATION A CHANGÉ, DONC ELLE EST RÉÉCRITE. Il
+ * existait parce que le dépôt rendait alors `tour_de_role_rang - 1`, une soustraction qui pouvait sortir
+ * de l'intervalle ; cette soustraction a été retirée (cf. `prendreUnRangDeTourDeRole`), et AUCUN
+ * appelant ne produit plus de rang négatif aujourd'hui. Il reste quand même, pour une raison qui ne
+ * dépend d'aucun appelant : `%` garde en JavaScript le SIGNE de son opérande gauche, donc `-1 % 3` vaut
+ * `-1` et `membres[-1]` vaut `undefined`. Le symptôme serait une conversation NON ASSIGNÉE, c'est-à-dire
+ * un silence, sur une fonction exportée que n'importe quel appelant futur peut appeler.
  *
  * ⚠️ L'ORDRE DES MEMBRES EST CELUI QUE L'APPELANT DONNE, et il doit être STABLE d'un appel à l'autre
  * (le câblage trie par date de création puis par identifiant). Un ordre qui change entre deux réponses

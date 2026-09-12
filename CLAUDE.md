@@ -91,6 +91,14 @@ fois (il annonçait 0131 quand la base portait 0134), et il a été corrigé par
 `insertCampaignRow` l'ÉCRIT dès qu'une chaîne porte un étage e-mail, et `lireChainesDe` la LIT sur le chemin
 de chaque run. Sans elle, toute création de campagne tombe en `42703`, ce qu'aucun `?? null` ne rattrape.
 
+🔴 **0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`campaigns.tour_de_role_rang` passe de `smallint` à
+`integer`). Elle RETIRE un repliage, et c'est la vraie raison : le `% 32767` qui protégeait le `smallint`
+créait un point où deux rangs consécutifs valent 32766 puis 0, donc la MÊME personne servie deux fois
+d'affilée pour une équipe de 2, 3 ou 6 (mesuré ; seules les tailles divisant 32767 = 7 x 31 x 151 y
+échappaient). Il échangeait une panne visible contre une double affectation silencieuse. Elle est un
+ÉLARGISSEMENT, donc l'ancien code y survit, mais elle passe quand même AVANT le déploiement : le code neuf
+n'a plus de repliage et lèverait `22003` sur un `smallint`.
+
 🔴 **CE N'EST PAS LA MIGRATION QUE LE PLAN ANNONÇAIT, ET C'EST LE VRAI RÉSULTAT DE CE LOT.** Il prévoyait une
 colonne `contacts.email`, sur l'idée que « le destinataire sera l'adresse e-mail présente sur la fiche du
 mini-CRM ». Vérification faite dans les migrations : `contacts` n'a effectivement PAS de colonne `email`

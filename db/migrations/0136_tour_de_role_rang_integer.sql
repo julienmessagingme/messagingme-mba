@@ -1,0 +1,43 @@
+-- 0136 : LE RANG DU TOUR DE RÔLE PASSE DE `smallint` À `integer`, POUR SUPPRIMER SON REPLIAGE.
+--
+-- 🔴 POURQUOI IL Y AVAIT UN REPLIAGE, ET POURQUOI C'ÉTAIT LA MAUVAISE RÉPONSE. `tour_de_role_rang`
+-- (migration 0134) ne se remet jamais à zéro : il compte les réponses depuis le début de la campagne.
+-- Une campagne AU FIL DE L'EAU n'a aucun plafond de destinataires, donc rien n'empêchait d'atteindre
+-- 32 767, où Postgres lève `22003 smallint out of range` SUR LE CHEMIN D'UN MESSAGE ENTRANT. La parade
+-- écrite d'abord était un `(rang + 1) % 32767` dans le SQL. Elle échangeait une panne contre un défaut
+-- silencieux, et le défaut est pire.
+--
+-- 🔴 CE QUE LE REPLIAGE CASSE, MESURÉ PLUTÔT QUE SUPPOSÉ. Au point de repliage, deux rangs CONSÉCUTIFS
+-- valent 32766 puis 0. Le roulement lit `rang % nombre_de_membres` : les deux tombent donc sur la même
+-- personne dès que le nombre de membres divise 32766 et 0 de la même façon. Calculé sur les tailles
+-- d'équipe réelles de ce produit :
+--     equipe de  2 : index 0 puis 0  -> MEME PERSONNE
+--     equipe de  3 : index 0 puis 0  -> MEME PERSONNE
+--     equipe de  6 : index 0 puis 0  -> MEME PERSONNE
+--     equipe de  4, 5, 7, 8, 9, 10  -> ok
+-- Seules les tailles qui DIVISENT 32767 (= 7 x 31 x 151, soit 7, 31, 151, 217) sont sûres par
+-- construction, et aucune n'est une taille d'équipe plausible. Autrement dit : le repliage donnait deux
+-- conversations d'affilée à la même personne, sur la moitié des équipes, et rien ne l'aurait signalé.
+--
+-- ⚠️ ET CE N'EST PAS L'AUTRE DÉFAUT, CELUI QUE LA CI A ATTRAPÉ. Le `returning tour_de_role_rang - 1`
+-- rendait -1 au repliage, parce que `RETURNING` rend la valeur NOUVELLE de la colonne et non l'ancienne.
+-- Un rang négatif ne désigne personne. Ce défaut-là se corrige dans le code (la soustraction disparaît,
+-- on rend la valeur nouvelle telle quelle) ; celui du dessus, non : tant qu'il y a un repliage, il y a
+-- un point où deux rangs consécutifs se confondent. C'est donc le REPLIAGE qu'on retire, et il ne peut
+-- se retirer qu'en agrandissant la colonne.
+--
+-- 🔴 `integer` DÉPLACE LA LIMITE HORS D'ATTEINTE, il ne la supprime pas. 2 147 483 647 réponses sur une
+-- seule campagne : à une réponse par seconde sans interruption, il faudrait soixante-huit ans. 32 767,
+-- lui, est atteignable par une campagne au fil de l'eau qui tourne quelques mois. `bigint` coûterait
+-- quatre octets de plus par campagne pour repousser une échéance déjà irréelle.
+--
+-- ⚠️ NON BLOQUANTE, ET ELLE PEUT PASSER AVANT COMME APRÈS LE DÉPLOIEMENT. C'est un ÉLARGISSEMENT : la
+-- règle du dépôt est que RELÂCHER laisse vivre l'ancien code (il continue d'écrire des valeurs qui
+-- tiennent dans un smallint, qui tiennent a fortiori dans un integer), quand RETIRER ne le laisse pas.
+-- Elle passe quand même AVANT, avec 0135, parce que le code neuf n'a plus de repliage : déployé sur une
+-- colonne `smallint`, il lèverait `22003` au lieu de replier.
+--
+-- ⚠️ RÉÉCRITURE DE TABLE, SOUS VERROU EXCLUSIF. `campaigns` porte une ligne par campagne (quelques
+-- dizaines sur le parc) : la réécriture est instantanée. Le dire évite de croire la migration gratuite
+-- le jour où quelqu'un la relira devant une grosse table.
+alter table campaigns alter column tour_de_role_rang type integer;
