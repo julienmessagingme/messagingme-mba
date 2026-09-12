@@ -1643,8 +1643,17 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             {t(`~${Math.ceil(nbDestinataires / ratePerMinute)} min pour envoyer ${nbDestinataires} message(s)`, `~${Math.ceil(nbDestinataires / ratePerMinute)} min to send ${nbDestinataires} message(s)`)}
           </p>
         )}
+        {/* 🔴 LE PLAFOND RÉEL DÉPEND DU CANAL DEPUIS LE 2026-09-12, et cette phrase ne doit pas dire le
+            contraire. La jauge monte toujours à 80, qui est la borne de saisie de l'API ; mais le frein
+            appliqué à l'envoi est celui du canal (`plafondDuCanal`, côté serveur), donc une campagne RCS
+            réglée au-dessus du plafond de l'opérateur y est RAMENÉE, en silence.
+            ⚠️ Le chiffre du plafond RCS n'est PAS recopié ici : il vit en configuration serveur pour se
+            corriger sans déploiement, et une valeur en dur dans l'écran deviendrait fausse sans que rien
+            ne le signale. */}
         <p className="mt-2 text-[11px] text-ink-400">
-          {t('Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du numéro.', 'Default 60/min. Cap 80/min (WhatsApp limit); lowering the rate protects the number reputation.')}
+          {mode === 'rcs'
+            ? t('Défaut 60/min. Sur RCS, le plafond est celui de l’opérateur : un débit plus élevé y est ramené à l’envoi.', 'Default 60/min. On RCS the cap is the carrier’s: a higher rate is brought down to it when sending.')
+            : t('Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du numéro.', 'Default 60/min. Cap 80/min (WhatsApp limit); lowering the rate protects the number reputation.')}
         </p>
       </div>
 
