@@ -65,10 +65,20 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
     )).rows[0]!.id;
     // 🔴 TROIS MEMBRES, ET LEUR ORDRE EST CELUI DE `membresAffectables` (created_at asc, id asc). Deux
     // membres suffiraient à voir le roulement mais pas à voir un rang qui dépasse l'équipe.
-    for (const nom of ['a', 'b', 'c']) {
+    //
+    // 🔴 `last_login_at` RENSEIGNÉ, ET `password_hash` NUL POUR LE TROISIÈME : c'est le vrai monde, et
+    // c'est ce que cette fixture ne reproduisait pas. Elle posait un mot de passe à tout le monde et
+    // AUCUNE date de connexion, donc elle validait exactement le critère FAUX que le code portait
+    // (`password_hash is not null`). Un compte qui se connecte par Google n'a jamais de mot de passe : en
+    // production, deux des quatre comptes réels étaient dans ce cas, et le tour de rôle les écartait en
+    // silence. Le troisième membre ci-dessous EST ce compte, et c'est lui qui tient la règle : si
+    // quelqu'un revient au critère du mot de passe, le roulement ne servira plus que deux personnes et
+    // les cas de ce fichier le diront.
+    for (const [i, nom] of ['a', 'b', 'c'].entries()) {
       membres.push((await pool.query<{ id: string }>(
-        `insert into users (tenant_id, email, role, password_hash) values ($1, $2, 'agent', 'x') returning id`,
-        [tenantId, `${nom}-assignation@example.test`],
+        `insert into users (tenant_id, email, role, password_hash, last_login_at)
+         values ($1, $2, 'agent', $3, now()) returning id`,
+        [tenantId, `${nom}-assignation@example.test`, i === 2 ? null : 'x'],
       )).rows[0]!.id);
     }
     campaignId = await repo.insertCampaign({
