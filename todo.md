@@ -1,5 +1,83 @@
 # todo.md : backlog
 
+## Traduction des conversations (tranché le 2026-09-12, RIEN de commencé)
+
+**Deux langues, FR et EN, et c'est ce qui rend le dessin simple.** « Traduire » veut dire « dans
+l'autre », donc **aucun sélecteur de langue nulle part** : ni sur le contact, ni sur la conversation.
+
+Décisions de Julien :
+
+- **La langue de lecture vient de la console.** Elle vit dans le `localStorage`
+  ([web/lib/i18n.tsx](web/lib/i18n.tsx)), **pas sur le compte**, donc le serveur ne la connaît pas.
+  C'est le navigateur qui la passe à chaque appel. ⚠️ Le motif existe déjà et se décalque : le bot
+  d'aide envoie `QuestionAide.langue: 'fr' | 'en'` à chaque question.
+- **Les entrants se traduisent TOUS à l'ouverture d'une conversation**, jamais à l'arrivée. Traduire
+  à l'arrivée fait payer les « ok », les emojis et toutes les conversations que personne n'ouvrira.
+  Le premier lecteur paie, les suivants réutilisent le résultat rangé.
+- **Les sortants ne se traduisent JAMAIS automatiquement.** Un bouton « Traduire » avant l'envoi.
+  🔴 C'est une garde, pas une commodité : une traduction ratée en entrée se rattrape sur l'original
+  affiché à côté, une traduction ratée en sortie est partie chez un client et **aucun message
+  WhatsApp livré ne se rappelle**.
+- **Le toggle « traduire les entrants » vit dans le `localStorage`**, comme la langue elle-même.
+- **Stockage** : une colonne de traduction plus la langue dans laquelle elle est. Un message français
+  n'a jamais besoin que d'une traduction anglaise, et réciproquement.
+- 🔴 **À l'envoi, `body` porte ce qui est PARTI (le texte traduit), et une colonne à part porte ce
+  que l'opérateur a ÉCRIT.** Miroir exact de la migration 0125 : ne garder que le traduit rend
+  l'opérateur incapable de se relire, ne garder que l'original rend notre trace fausse le jour d'un
+  litige.
+
+Trois pièges à ne pas découvrir en route :
+
+- 🔴 **Un template ne se traduit pas.** Il est approuvé par Meta dans une langue, et le texte
+  approuvé EST le texte. La traduction ne concerne que les messages libres, dans la fenêtre de 24 h.
+  Un bouton « Traduire » affiché sur un template ment.
+- ⚠️ **Traduire coûte des jetons** sur la clé Gateway de l'espace (migration 0124), donc sur le
+  crédit prépayé. Un espace à zéro ne peut pas traduire, et ça se dit à l'activation, pas au premier
+  message muet.
+- 🔴 **Toute cette élégance tient à ce qu'il y ait EXACTEMENT deux langues.** Le jour où l'espagnol
+  arrive, « l'autre langue » cesse d'être défini, le bouton devient ambigu et la colonne unique ne
+  suffit plus. À écrire dans le code, pour que celui qui ajoute la troisième langue sache qu'il
+  casse une hypothèse au lieu de le découvrir.
+
+## Récap du jour dans le bot d'aide (demandé le 2026-09-12, à cadrer)
+
+Un bouton proposé à l'ouverture du bot : combien de conversations, combien de messages, quels thèmes
+principaux. « Le bot doit aider mais aussi synthétiser » (Julien).
+
+🔴 **Ce n'est pas un bouton, c'est la PREMIÈRE capacité de lecture de données du bot d'aide.**
+`src/http/aide.ts` ne lui câble aucun outil aujourd'hui : il cherche dans `aide_fiches` et rien
+d'autre. Le paramètre `outils` existe dans sa signature et personne ne le remplit. On passe d'un bot
+qui explique le produit à un bot qui lit l'espace du client, avec les questions d'isolation
+(`tenant_id = $1`) et de rôle que ça pose.
+
+Ce qui est déjà là, et gratuit :
+
+- **`conversation_analysis.topic`** existe, alimenté par l'analyse, consigne « le sujet en 2 à 5
+  mots, en français ». Les thèmes sont un `group by topic`.
+- **L'écran d'accueil du bot porte déjà trois suggestions cliquables**, avec sa justification écrite
+  ([web/components/BoutonAide.tsx](web/components/BoutonAide.tsx) : « une suggestion qu'on clique est
+  une porte, une phrase qui dit quoi faire est un mur »). Le bouton s'y pose sans rien réinventer.
+
+Ce qui demande de la conception :
+
+- 🔴 **Le modèle ne compte JAMAIS.** Les chiffres sortent du SQL, le modèle les FORMULE. Un chiffre
+  faux dans un récap est pire que pas de récap, parce que les gens agissent dessus. Même leçon que
+  la migration 0126, où l'annonce d'IA était confiée au modèle et où le code a dû reprendre la
+  décision.
+- 🔴 **L'invariant du moteur doit survivre** : aujourd'hui, quand aucune fiche n'est pertinente, le
+  bot dit qu'il ne sait pas **sans appeler le modèle**, parce qu'appeler sans source c'est demander
+  d'inventer. Un récap ne vient d'aucune fiche : branché naïvement, il tombe dans le chemin « je ne
+  sais pas ».
+- ⚠️ **L'analyse ne tourne que quand une conversation est retombée inactive.** Les fils encore
+  vivants n'ont pas de thème. Un récap qui compte 40 conversations et n'en thématise que 25 doit
+  l'écrire, sinon il sous-déclare sans prévenir.
+- ⚠️ **Le libellé doit dire ce qu'il fait.** « Récap du jour » qui recense la veille laissera
+  quelqu'un se demander à 16 h pourquoi ses conversations du matin n'y sont pas.
+
+À trancher : un opérateur (qui ne voit que l'Inbox) a-t-il droit au récap de tout l'espace, ou
+seulement de ce qu'il traite ? `carteVisiblePar(role)` existe déjà pour les écrans, la même question
+se pose pour les données.
+
 ## 🔴 Ce qu'on exécute est le POINT 2 de l'audit externe du 2026-09-02
 
 > **Au 2026-09-03 au soir : A1 à A4, B et C sont livrés et déployés.** Ne restent de ce point que le profil
