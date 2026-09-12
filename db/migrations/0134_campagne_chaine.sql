@@ -114,8 +114,18 @@ create index if not exists campaign_envois_campagne_idx on campaign_envois (camp
 create index if not exists campaign_envois_message_id_idx on campaign_envois (message_id);
 
 -- L'étage où en est chaque contact. Défaut 1 : tout le parc existant est au premier étage.
--- ⚠️ Personne ne l'écrit encore, et c'est voulu : c'est le moteur de bascule qui la fera avancer.
--- Posée maintenant pour qu'il n'ait pas à migrer une table de destinataires déjà pleine.
+--
+-- ⚠️ ELLE EST DÉSORMAIS ÉCRITE PAR LE BALAYAGE DE BASCULE (`src/campaign/retry-sweep.ts`, lot du
+-- 2026-09-12), et une version de ce commentaire affirmait le contraire. Sa mise à jour porte le
+-- verrou `etage_courant < $2`, qui empêche deux balayages concurrents de faire avancer deux fois le
+-- même destinataire.
+--
+-- 🔴 MAIS LE MOTEUR D'ENVOI NE LA LIT PAS ENCORE, ET C'EST UN PIÈGE ARMÉ. La bascule marque l'étage,
+-- personne ne s'en sert pour choisir le contenu à envoyer. Aujourd'hui c'est inoffensif : aucune
+-- campagne ne peut avoir plus d'un étage, l'assistant qui permettra d'en créer n'existe pas. Le jour
+-- où il existera, une bascule renverrait le contenu de l'étage 1 sur le canal de l'étage 1, c'est-à-dire
+-- exactement le message qui vient d'échouer. La lecture doit être posée AVANT que l'assistant ne
+-- rende une chaîne créable, pas après.
 alter table campaign_recipients add column if not exists etage_courant smallint not null default 1;
 
 -- Les réglages de l'assistant.

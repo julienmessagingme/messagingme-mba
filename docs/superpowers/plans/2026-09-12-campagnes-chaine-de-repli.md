@@ -985,11 +985,32 @@ git commit --only src/campaign/pacing.ts src/config.ts src/campaign/engine.ts we
 
 ## Phase 4 : l'assistant
 
+### 🔴 DEUX DETTES À SOLDER AVANT QUE L'ASSISTANT RENDE UNE CHAÎNE CRÉABLE
+
+Relevées aux lots 2 et 3 du 2026-09-12. Les deux sont **inoffensives tant qu'aucune campagne ne peut
+avoir plus d'un étage**, et les deux deviennent des défauts visibles le jour où la tâche 10 livre
+l'écran qui permet d'en créer une. Elles se soldent donc **dans la phase 4, avant la mise en
+service**, pas « plus tard ».
+
+1. **Le moteur d'envoi ne lit pas `etage_courant`.** La bascule marque l'étage, personne ne s'en sert
+   pour choisir le contenu. Une bascule renverrait aujourd'hui le contenu de l'étage 1 sur le canal
+   de l'étage 1, c'est-à-dire exactement le message qui vient d'échouer.
+2. **Le funnel GLOBAL sous-compte les réponses arrivées sur un canal de repli.** `entrantAttribue`
+   filtre sur `m.channel = c.channel`, le canal DÉCLARÉ de la campagne. Le funnel par canal, lui, est
+   juste. Le premier client à utiliser un repli lirait donc deux chiffres qui se contredisent sur le
+   même écran.
+
 ### Tâche 10 : la coquille et l'étape Canal
 
 **Fichiers**
 - Créer : `web/components/campagne/AssistantCampagne.tsx`, `web/components/campagne/EtapeCanal.tsx`
 - Test : `web/e2e/campagne-assistant-canal.spec.ts`
+
+⚠️ **Le choix de cadence (« Au plus vite », « Étalé sur la journée », « Heures ouvrées seulement »)
+appartient à CETTE tâche, pas à la tâche 9.** Le plan le rangeait en tâche 9, dont le moteur est fait,
+mais le composant qui doit le porter est créé ici : l'exécutant du lot 3 s'est arrêté dessus plutôt
+que de créer le fichier en avance, et il a eu raison. Reste à trancher ici : quel débit signifie
+« Étalé sur la journée ».
 
 **Interfaces**
 - Produit : `AssistantCampagne` porte l'état `{ nom, chaine, reessayer, rattrapageHorsHoraires, ... }`
@@ -1197,8 +1218,16 @@ git commit --only web/components/campagne/EtapeRecap.tsx web/components/Campaign
 ### Tâche 13 : l'étage e-mail
 
 **Fichiers**
+- Créer : une migration pour `contacts.email` (numéro à lire EN BASE)
 - Modifier : `src/campaign/engine.ts`, `src/campaign/bascule.ts`
 - Test : `tests/campagne-etage-email.test.ts`
+
+🔴 **`contacts` N'A PAS DE COLONNE `email`, relevé au lot 3 du 2026-09-12.** Le cadrage tenait pour
+acquis que « le destinataire sera l'adresse e-mail présente sur la fiche du mini-CRM » : cette
+adresse n'existe pas en tant que colonne. Vérifier d'abord si elle vit dans le jsonb `fields` comme
+champ personnalisé, auquel cas il n'y a **pas** de migration à faire mais une convention de clé à
+respecter, et le filtre « a une adresse » à écrire sur le jsonb. `emailDuContact` de la tâche 7 vaut
+`null` en attendant, ce qui rend l'étage e-mail terminal, donc inoffensif.
 
 **Interfaces**
 - Consomme : le chemin d'envoi d'e-mail existant (`sendEmail` de `src/workflow/engine.ts`,
