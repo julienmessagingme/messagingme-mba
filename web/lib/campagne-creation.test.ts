@@ -8,7 +8,7 @@ import type { EtageAssistant } from './campagne-chaine';
  * 🔴 C'EST LA DERNIÈRE TRADUCTION AVANT DES MESSAGES RÉELS. Le récapitulatif se relit à l'œil ; ce qui
  * décide de ce qui PART est cet objet, et une clé posée au mauvais endroit y est invisible à l'écran.
  */
-const CTX: ContexteDeCreation = { phoneNumberId: 'pn-1', rcsAgentId: 'ag-1', filtres: { tags: ['vip'] } };
+const CTX: ContexteDeCreation = { phoneNumberId: 'pn-1', rcsAgentId: 'ag-1', filtres: { tags: ['vip'] }, champEmail: 'email' };
 
 const ETAT: EtatPourCreation = {
   nom: '  Promo rentrée  ',
@@ -197,5 +197,35 @@ describe('problemeAvantLancement', () => {
 
   it('refuse un premier etage WhatsApp quand l espace n a aucun numero', () => {
     expect(problemeAvantLancement(ETAT, CHAINE, { ...CTX, phoneNumberId: '' })).toMatch(/numéro/i);
+  });
+});
+
+describe('l etage e-mail et son champ d adresse', () => {
+  /**
+   * 🔴 `contacts` N'A PAS DE COLONNE `email` : l'adresse vit dans le jsonb `fields`, sous un nom que le
+   * client choisit (un espace dit « mail », un autre « email »). La clé voyage donc AVEC l'étage, sans
+   * quoi il serait enregistré puis SAUTÉ à chaque bascule, en silence.
+   */
+  it('la cle du champ d adresse voyage avec l etage e-mail', () => {
+    expect(entreeDeCreation(ETAT, CHAINE, CTX).chaine?.[2]?.emailChamp).toBe('email');
+  });
+
+  // ⚠️ ET SEULEMENT SUR L'ÉTAGE E-MAIL : la poser sur un étage WhatsApp ou RCS écrirait en base un
+  // réglage que rien ne lit, donc une seconde vérité sur ce que fait cet étage.
+  it('elle ne voyage pas sur les autres etages', () => {
+    const e = entreeDeCreation(ETAT, CHAINE, CTX);
+    expect(e.chaine?.[0]?.emailChamp).toBeUndefined();
+    expect(e.chaine?.[1]?.emailChamp).toBeUndefined();
+  });
+
+  it('sans champ d adresse, le lancement est refuse avant l appel', () => {
+    expect(problemeAvantLancement(ETAT, CHAINE, { ...CTX, champEmail: null })).toMatch(/adresse/i);
+  });
+
+  // ⚠️ L'AUTRE SENS : une chaîne SANS étage e-mail n'a que faire du champ d'adresse, et l'exiger
+  // bloquerait le repli le plus courant du produit (WhatsApp puis RCS).
+  it('une chaine sans etage e-mail se lance sans champ d adresse', () => {
+    const sansEmail: EtageAssistant[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }];
+    expect(problemeAvantLancement(ETAT, sansEmail, { ...CTX, champEmail: null })).toBeNull();
   });
 });

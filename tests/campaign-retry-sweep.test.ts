@@ -188,7 +188,10 @@ describe('runRetrySweep : la bascule d\'étage', () => {
   it('la chaine trouee : le balayage transporte le rang que la REGLE rend, pas rangCourant + 1', async () => {
     // 🔴 C'est ce que la passe doit propager jusqu'à l'écriture. Un jeu `[1, 2]` ne l'aurait pas montré.
     const TROUEE: Etage[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 3, canal: 'email' }];
-    const d = deps({ listCandidatsBascule: async () => [C('a', { chaine: TROUEE })] });
+    // ⚠️ `emailDuContact` FOURNI : le canal de remplissage de ce jeu est `email`, et depuis le
+    // 2026-09-12 un étage e-mail sans adresse est SAUTÉ. Sans cette adresse, le cas n'exercerait plus
+    // l'arithmétique des rangs, qui est sa seule raison d'être.
+    const d = deps({ listCandidatsBascule: async () => [C('a', { chaine: TROUEE, emailDuContact: 'a@b.fr' })] });
     expect((await runRetrySweep(d.d)).bascules).toBe(1);
     expect(d.bascules).toEqual([['a', 3]]);
   });

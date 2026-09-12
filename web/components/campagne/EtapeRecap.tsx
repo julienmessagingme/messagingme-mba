@@ -58,6 +58,9 @@ export function EtapeRecap({
     phoneNumberId: numero,
     rcsAgentId: agentRcs,
     filtres: filtresDeLAudience(etat.audience),
+    // ⚠️ LE MÊME POINT DE PASSAGE que le comptage et que le sélecteur de l'étape Contenu
+    // (`champEmailEffectif`) : trois lectures du même réglage, une seule règle pour le résoudre.
+    champEmail: champEmailDeLaChaine(etat, chaine, references.userFields),
   };
   const probleme = problemeAvantLancement(etat, chaine, contexte);
 
@@ -240,12 +243,9 @@ function useMesuresAudience(
   // étage RCS n'a donc rien à compter : l'appliquer quand même ferait basculer un chiffre mesuré sur un
   // autre canal, ce qui est pire qu'une case vide.
   const premierEstWhatsApp = tries[0]?.canal === 'whatsapp';
-  const etageEmail = tries.find((e) => e.canal === 'email');
-  // ⚠️ LE MÊME POINT DE PASSAGE QUE LE SÉLECTEUR (`champEmailEffectif`) : appliquer la suggestion ici
-  // de son côté ferait compter sur un champ que l'écran n'affiche pas, ou ne rien compter du tout.
-  const champEmail = etageEmail
-    ? champEmailEffectif(etat.contenus[etageEmail.rang]?.emailChamp, champs)
-    : null;
+  // ⚠️ LE MÊME POINT DE PASSAGE QUE LE SÉLECTEUR ET QUE L'ENVOI (`champEmailDeLaChaine`) : appliquer la
+  // suggestion ici de son côté ferait compter sur un champ que l'écran n'affiche pas, ou ne rien compter.
+  const champEmail = champEmailDeLaChaine(etat, tries, champs);
 
   useEffect(() => {
     let vivant = true;
@@ -291,4 +291,22 @@ function useMesuresAudience(
     connusInjoignables: restants === null ? null : Math.max(0, retenus - restants),
     sansAdresse,
   };
+}
+
+/**
+ * LA CLÉ DU CHAMP D'ADRESSE DE LA CHAÎNE, ou `null` si la chaîne n'a pas d'étage e-mail.
+ *
+ * 🔴 TROIS LECTEURS, UNE SEULE RÈGLE. Le sélecteur de l'étape Contenu affiche ce champ, le comptage du
+ * récapitulatif compte dessus, et l'envoi l'écrit en base. Chacun appliquant la suggestion de son côté,
+ * l'écran pourrait montrer un champ, compter sur un autre et en enregistrer un troisième, sans qu'aucun
+ * compilateur ne le voie.
+ */
+function champEmailDeLaChaine(
+  etat: EtatCampagne,
+  chaine: EtageAssistant[],
+  champs: ReferencesContenu['userFields'],
+): string | null {
+  const etage = chaine.find((e) => e.canal === 'email');
+  if (!etage) return null;
+  return champEmailEffectif(etat.contenus[etage.rang]?.emailChamp, champs);
 }

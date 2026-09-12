@@ -40,10 +40,18 @@ export interface EntreeDeDecision {
   /** Un réessai a-t-il DÉJÀ été consommé pour ce destinataire ? Le budget est de un. */
   dejaReessaye: boolean;
   /**
-   * Adresse du contact. ⚠️ DANS LA SIGNATURE DÈS MAINTENANT, même si l'étage e-mail n'arrive que
-   * plus tard : l'ajouter après coup changerait la signature d'une fonction déjà testée, et un
-   * appelant oublié se contenterait d'un `undefined` qu'aucun compilateur ne signale sur un objet
-   * dont toutes les autres clés sont fournies. Vaut `null` tant qu'aucun étage e-mail n'existe.
+   * L'adresse e-mail du contact, LUE DANS LE JSONB `contacts.fields` sous la clé que l'étage e-mail de
+   * la chaîne désigne (`campaign_etages.email_champ`, migration 0135).
+   *
+   * 🔴 ELLE EST RÉSOLUE DEPUIS LE 2026-09-12, et ce champ ne vaut plus toujours `null` : ce commentaire
+   * annonçait « tant qu'aucun étage e-mail n'existe », et il en existe. C'est
+   * `PgCampaignRepo.poserLesAdresses` qui la pose, sur les seuls candidats dont la chaîne porte un
+   * étage e-mail.
+   *
+   * ⚠️ `null` VEUT DIRE « PAS D'ADRESSE EXPLOITABLE », ce qui couvre trois cas indiscernables ici et qui
+   * appellent la même décision : la chaîne n'a pas d'étage e-mail, l'étage n'a pas de clé de champ, ou
+   * la fiche n'a rien sous cette clé. Dans les trois, l'étage e-mail n'est pas servable pour ce
+   * contact, et il est SAUTÉ.
    */
   emailDuContact: string | null;
 }
@@ -67,14 +75,64 @@ function aUnRepli(chaine: Etage[]): boolean {
   return rangSuivant(chaine, RANG_INITIAL) !== null;
 }
 
+/**
+ * L'ADRESSE EST-ELLE EXPLOITABLE ?
+ *
+ * ⚠️ UNE CHAÎNE VIDE OU BLANCHE N'EST PAS UNE ADRESSE. Le jsonb d'un contact peut porter la clé avec une
+ * valeur vide (import CSV à colonne vide, champ effacé à l'écran) : la lire comme « il a une adresse »
+ * ferait partir un envoi vers rien, et le fournisseur SMTP refuserait l'envoi entier, pas seulement ce
+ * destinataire.
+ */
+function adresseExploitable(email: string | null): boolean {
+  return email !== null && email.trim() !== '';
+}
+
+/**
+ * LE PROCHAIN ÉTAGE QU'ON PEUT RÉELLEMENT SERVIR, en sautant ceux dont le destinataire n'existe pas.
+ *
+ * 🔴 IL N'Y A QU'UN SEUL CANAL CONCERNÉ, ET C'EST L'E-MAIL. WhatsApp et RCS partent vers le NUMÉRO du
+ * destinataire, qui est présent par construction (`campaign_recipients.to_e164`). L'adresse e-mail, elle,
+ * vit dans le jsonb `fields` du contact, sous une clé que le client a choisie : elle peut manquer sur une
+ * fiche et pas sur la suivante. `contacts` N'A PAS de colonne `email` (vérifié dans les migrations : 0001
+ * crée la table sans, 0002 ajoute `fields`, aucun `alter table contacts` n'en a ajouté depuis).
+ *
+ * 🔴 ON SAUTE, ON NE CLÔT PAS. Rien n'impose que l'e-mail soit le dernier rang : la migration 0134 borne
+ * les rangs à 3, pas leurs canaux. S'arrêter sur un étage e-mail injoignable retirerait au destinataire
+ * un canal qui, lui, le joindrait. C'est la même doctrine que `rangSuivant`, qui cherche le prochain rang
+ * QUI EXISTE au lieu de `rang + 1`.
+ */
+function prochainEtageServable(entree: EntreeDeDecision): number | null {
+  let rang = entree.rangCourant;
+  for (;;) {
+    const suivant = rangSuivant(entree.chaine, rang);
+    if (suivant === null) return null;
+    const etage = entree.chaine.find((e) => e.rang === suivant);
+    if (etage?.canal !== 'email' || adresseExploitable(entree.emailDuContact)) return suivant;
+    rang = suivant;
+  }
+}
+
 export function decider(entree: EntreeDeDecision): Geste {
   // 1. LA CHAÎNE D'ABORD, ET SANS REGARDER LE CODE. C'est la règle tranchée : avec un repli, tout
   //    échec bascule DÈS LE PREMIER. Réessayer le même canal avant de basculer doublerait le délai
   //    de rattrapage pour n'ajouter qu'une chance sur un canal qui vient déjà d'échouer.
-  const suivant = rangSuivant(entree.chaine, entree.rangCourant);
+  //
+  // ⚠️ LA SEULE EXCEPTION EST UN ÉTAGE DONT LE DESTINATAIRE N'EXISTE PAS (un e-mail sans adresse) :
+  //    il est SAUTÉ, pas servi. Basculer vers lui produirait un envoi vide, compté comme une tentative
+  //    et rangé en échec sous un code de fournisseur qui n'expliquerait rien.
+  const suivant = prochainEtageServable(entree);
   if (suivant !== null) return { type: 'bascule', rang: suivant };
 
-  // 2. PLUS D'ÉTAGE, MAIS IL Y EN AVAIT : la chaîne EST le rattrapage, elle est épuisée, on s'arrête.
+  // 1 bis. LA CHAÎNE AVAIT UN ÉTAGE APRÈS, MAIS IL N'ÉTAIT PAS SERVABLE. Le motif doit être le VRAI :
+  //    « pas d'adresse e-mail » se corrige (on remplit la fiche), « plus d'étage disponible » non.
+  //    Les confondre ferait chercher une panne d'envoi là où il manque une donnée de contact.
+  if (rangSuivant(entree.chaine, entree.rangCourant) !== null) {
+    return { type: 'terminal', motif: 'pas d adresse e-mail' };
+  }
+
+  // 2. PLUS AUCUN ÉTAGE APRÈS CELUI-CI, ET IL Y EN AVAIT AVANT : la chaîne EST le rattrapage, elle est
+  //    épuisée, on s'arrête. ⚠️ Le cas « il y avait un étage après, mais pas servable » est traité en
+  //    1 bis, avec SON motif : les deux ne se réparent pas pareil.
   //    ⚠️ La politique de réessai ne reprend PAS la main ici. Lui rendre la main à chaque étage
   //    multiplierait les envois par le nombre d'étages sans que personne ne l'ait demandé.
   if (aUnRepli(entree.chaine)) return { type: 'terminal', motif: 'plus d etage disponible' };

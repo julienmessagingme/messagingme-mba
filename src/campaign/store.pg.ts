@@ -392,9 +392,10 @@ export class PgCampaignRepo {
       template_language: string | null;
       rcs_message: unknown;
       email_template_id: string | null;
+      email_champ: string | null;
       workflow_id: string | null;
     }>(
-      `select campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, workflow_id
+      `select campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id
        from campaign_etages where campaign_id = any($1::uuid[]) order by campaign_id, rang`,
       [campaignIds],
     );
@@ -406,6 +407,7 @@ export class PgCampaignRepo {
         ...(e.template_language !== null ? { templateLanguage: e.template_language } : {}),
         ...(e.rcs_message !== null ? { rcsMessage: e.rcs_message } : {}),
         ...(e.email_template_id !== null ? { emailTemplateId: e.email_template_id } : {}),
+        ...(e.email_champ !== null ? { emailChamp: e.email_champ } : {}),
         ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
       };
       const deja = parCampagne.get(e.campaign_id);
@@ -751,7 +753,7 @@ export class PgCampaignRepo {
        limit ${limit}`,
     );
     const chaines = await this.lireChainesDe([...new Set(res.rows.map((r) => r.campaign_id))]);
-    return res.rows.map((r) => ({
+    const candidats: CandidatBascule[] = res.rows.map((r) => ({
       id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164,
       rattrapageHorsHoraires: r.rattrapage_hors_horaires,
       codeErreur: r.error_code,
@@ -760,11 +762,64 @@ export class PgCampaignRepo {
       reessayer: r.reessayer,
       // Le budget de réessai est d'UN, tous motifs confondus : `retry_count` le porte déjà.
       dejaReessaye: r.retry_count > 0,
-      // 🔴 TOUJOURS `null` AUJOURD'HUI, ET CE N'EST PAS UN OUBLI : `contacts` N'A PAS de colonne
-      // `email` (vérifié dans les migrations, 0001 puis les sept `alter table contacts` qui ont
-      // suivi). Le jour où l'étage e-mail arrivera, c'est ici que l'adresse se branchera, et la
-      // signature de `decider` n'aura pas à bouger.
       emailDuContact: null,
+    }));
+    return this.poserLesAdresses(candidats, chaines);
+  }
+
+  /**
+   * L'ADRESSE E-MAIL DE CHAQUE CANDIDAT DONT LA CHAÎNE PORTE UN ÉTAGE E-MAIL.
+   *
+   * 🔴 ELLE SE LIT DANS LE JSONB, SOUS LA CLÉ DE L'ÉTAGE, ET NULLE PART AILLEURS. `contacts` n'a pas de
+   * colonne `email` (0001 crée la table sans, 0002 ajoute `fields`, aucun `alter table contacts` n'en a
+   * ajouté depuis), et il n'existe aucune convention de nom : un espace l'appelle « mail », un autre
+   * « email » (`src/workflow/wiring.ts`, cas du 2026-08-25). La campagne dit donc quelle clé lire
+   * (`campaign_etages.email_champ`, migration 0135).
+   *
+   * 🔴 UNE REQUÊTE PAR CLÉ DISTINCTE, PAS UNE PAR CANDIDAT. En pratique il y en a ZÉRO (aucune chaîne à
+   * étage e-mail) ou UNE. `fields ->> $2` avec la clé en PARAMÈTRE, jamais interpolée : elle vient d'un
+   * écran, donc d'une entrée non fiable, et l'interpoler dans le SQL serait une injection.
+   *
+   * ⚠️ SON INDEX EST LA CLÉ PRIMAIRE DE `contacts` (`id = any($1::uuid[])`), et le lot est borné par la
+   * limite de `listCandidatsBascule` (500). C'est ce qui permet d'ajouter ce lecteur sans ajouter un
+   * parcours de la table des contacts à chaque tour de balayage.
+   *
+   * ⚠️ SCOPÉE TENANT, comme chaque requête du dépôt : le pooler est superuser, la RLS est contournée, et
+   * `contact_id` seul suffirait à lire la fiche d'un autre espace si un identifiant se glissait ici.
+   * Les candidats d'un même tour appartiennent à PLUSIEURS espaces, d'où le groupement par tenant.
+   */
+  private async poserLesAdresses(
+    candidats: CandidatBascule[],
+    chaines: Map<string, Etage[]>,
+  ): Promise<CandidatBascule[]> {
+    // (tenant, clé de champ) -> les contacts à résoudre. La clé de groupe est un JSON des deux valeurs,
+    // et non leur concaténation : une clé de champ perso est un texte LIBRE (import CSV, webhook), donc
+    // rien n'interdit qu'elle contienne le séparateur qu'on aurait choisi, et deux groupes distincts se
+    // confondraient alors en un seul, résolu sur le mauvais champ.
+    const groupes = new Map<string, { tenantId: string; champ: string; contacts: Set<string> }>();
+    for (const c of candidats) {
+      const champ = (chaines.get(c.campaignId) ?? []).find((e) => e.canal === 'email')?.emailChamp;
+      if (!champ) continue;
+      const cle = JSON.stringify([c.tenantId, champ]);
+      const deja = groupes.get(cle);
+      if (deja) deja.contacts.add(c.contactId);
+      else groupes.set(cle, { tenantId: c.tenantId, champ, contacts: new Set([c.contactId]) });
+    }
+    if (groupes.size === 0) return candidats;
+
+    const adresses = new Map<string, string>();
+    for (const g of groupes.values()) {
+      const res = await this.pool.query<{ id: string; email: string | null }>(
+        `select id, fields ->> $3 as email from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+        [g.tenantId, [...g.contacts], g.champ],
+      );
+      for (const row of res.rows) {
+        if (row.email !== null) adresses.set(JSON.stringify([g.tenantId, row.id]), row.email);
+      }
+    }
+    return candidats.map((c) => ({
+      ...c,
+      emailDuContact: adresses.get(JSON.stringify([c.tenantId, c.contactId])) ?? null,
     }));
   }
 
@@ -1235,9 +1290,9 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   // ⚠️ UNE SEULE REQUÊTE POUR TOUTE LA CHAÎNE (`unnest`), sur le modèle de `bulkInsertRecipients` : trois
   // allers-retours pour trois étages au milieu d'une transaction tiennent le client ouvert pour rien.
   await q.query(
-    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, workflow_id)
-     select $1, r, c, tn, tl, rm::jsonb, et::uuid, wf::uuid
-     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[]) as u(r, c, tn, tl, rm, et, wf)
+    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id)
+     select $1, r, c, tn, tl, rm::jsonb, et::uuid, ec, wf::uuid
+     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[]) as u(r, c, tn, tl, rm, et, ec, wf)
      on conflict (campaign_id, rang) do nothing`,
     [
       id,
@@ -1250,6 +1305,7 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       etages.map((e) => e.templateLanguage ?? null),
       etages.map((e) => (e.rcsMessage === undefined ? null : JSON.stringify(e.rcsMessage))),
       etages.map((e) => e.emailTemplateId ?? null),
+      etages.map((e) => e.emailChamp ?? null),
       etages.map((e) => e.workflowId ?? null),
     ],
   );

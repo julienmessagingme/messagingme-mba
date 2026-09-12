@@ -59,9 +59,16 @@ describe('decider', () => {
  */
 describe('decider : les cas qui discriminent', () => {
   // Chaîne TROUÉE (l'étage 2 a été retiré) : le repli utile est le 3, pas « rien ».
+  //
+  // ⚠️ `emailDuContact` EST FOURNI DEPUIS LE 2026-09-12, et ce n'est pas un ajustement cosmétique : ces
+  // deux cas-ci exercent l'ARITHMÉTIQUE DES RANGS, et leur canal de remplissage se trouve être `email`.
+  // Depuis que l'étage e-mail SAUTE le destinataire sans adresse, laisser l'adresse à `null` aurait fait
+  // rendre un terminal, donc aurait effacé le cas que ces tests existent pour exercer. Le cas exercé est
+  // CONSERVÉ, on lui donne seulement de quoi rester atteignable.
   const TROUEE: Etage[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 3, canal: 'email' }];
   it('une chaine trouee bascule au rang REELLEMENT suivant, pas a rangCourant + 1', () => {
-    expect(decider({ ...base, codeErreur: 131026, chaine: TROUEE })).toEqual({ type: 'bascule', rang: 3 });
+    expect(decider({ ...base, codeErreur: 131026, chaine: TROUEE, emailDuContact: 'a@b.fr' }))
+      .toEqual({ type: 'bascule', rang: 3 });
   });
 
   // Chaîne DÉSORDONNÉE : rien ne trie les lignes d'un `select`, et un appelant ne trie pas non plus.
@@ -72,7 +79,8 @@ describe('decider : les cas qui discriminent', () => {
   // terminal, donc elle se voit.
   const DESORDRE: Etage[] = [{ rang: 3, canal: 'email' }, { rang: 1, canal: 'whatsapp' }];
   it('une chaine desordonnee ne fait pas revenir en arriere', () => {
-    expect(decider({ ...base, codeErreur: 131026, chaine: DESORDRE })).toEqual({ type: 'bascule', rang: 3 });
+    expect(decider({ ...base, codeErreur: 131026, chaine: DESORDRE, emailDuContact: 'a@b.fr' }))
+      .toEqual({ type: 'bascule', rang: 3 });
   });
 
   // ⚠️ Une chaîne VIDE n'est pas une chaîne de repli : c'est le cas dégradé (campagne créée avant

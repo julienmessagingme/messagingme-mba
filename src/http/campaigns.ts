@@ -518,6 +518,17 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
           if (!estUuid(e.emailTemplateId ?? '')) {
             return reply.code(422).send({ error: `L'étage ${e.rang} part en e-mail : il lui faut un modèle de mail.` });
           }
+          /**
+           * 🔴 SANS LA CLÉ DU CHAMP, L'ÉTAGE EST MORT-NÉ. `contacts` n'a pas de colonne `email` :
+           * l'adresse vit dans le jsonb `fields`, sous un nom que le client choisit (un espace dit
+           * « mail », un autre « email »). Un étage e-mail sans cette clé serait enregistré, montré à
+           * l'écran, et SAUTÉ à chaque bascule (`prochainEtageServable`) sans que rien ne l'explique.
+           * Mieux vaut un refus que l'opérateur peut lire.
+           */
+          if (typeof e.emailChamp !== 'string' || e.emailChamp.trim() === '') {
+            return reply.code(422).send({ error: `L'étage ${e.rang} part en e-mail : il faut dire quel champ de la fiche porte l'adresse.` });
+          }
+          e.emailChamp = e.emailChamp.trim();
           if (!deps.emailTemplateBelongsToTenant) {
             return reply.code(422).send({ error: "Les étages e-mail ne sont pas disponibles sur cette instance." });
           }

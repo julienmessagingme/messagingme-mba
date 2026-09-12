@@ -52,6 +52,19 @@ export interface Etage {
   rcsMessage?: unknown;
   /** Étage e-mail : le modèle (`email_templates.id`). */
   emailTemplateId?: string;
+  /**
+   * Étage e-mail : LA CLÉ DU JSONB `contacts.fields` QUI PORTE L'ADRESSE (migration 0135).
+   *
+   * 🔴 `contacts` N'A PAS DE COLONNE `email`, vérifié dans les migrations (0001 crée la table sans,
+   * 0002 ajoute `fields`, aucun `alter table contacts` n'en a ajouté depuis), et il n'existe AUCUNE
+   * convention de nom : un espace l'appelle « mail », un autre « email » (`src/workflow/wiring.ts`,
+   * cas du 2026-08-25). La clé appartient donc à l'étage, et deux campagnes du même espace peuvent
+   * viser deux champs différents.
+   *
+   * ⚠️ Absente = on ne sait pas où lire l'adresse, donc l'étage n'est pas servable et il est SAUTÉ
+   * (`prochainEtageServable`, `src/campaign/bascule.ts`).
+   */
+  emailChamp?: string;
   /** Étage à SCÉNARIO : démarre ce parcours au lieu d'envoyer un contenu propre. */
   workflowId?: string;
 }
@@ -104,6 +117,8 @@ export interface EtageEntrant {
   templateLanguage?: string;
   rcsMessage?: unknown;
   emailTemplateId?: string;
+  /** La clé du jsonb `contacts.fields` qui porte l'adresse (migration 0135). Cf. `Etage.emailChamp`. */
+  emailChamp?: string;
   workflowId?: string;
 }
 

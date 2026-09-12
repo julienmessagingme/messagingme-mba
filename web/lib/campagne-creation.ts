@@ -44,6 +44,16 @@ export interface ContexteDeCreation {
   phoneNumberId: string;
   rcsAgentId: string | null;
   filtres: ContactFilters;
+  /**
+   * La CLÉ du champ perso qui porte l'adresse e-mail, telle que l'écran l'a résolue
+   * (`champEmailEffectif`). `null` = aucune, et un étage e-mail est alors refusé AVANT l'appel.
+   *
+   * ⚠️ ELLE ARRIVE PAR LE CONTEXTE ET NON PAR `contenus`, parce qu'elle est le résultat d'une RÉSOLUTION
+   * (choix explicite, sinon suggestion) qui doit se faire à UN seul endroit. La recalculer ici en
+   * donnerait un second exemplaire, et l'écran pourrait afficher un champ pendant qu'on en envoie un
+   * autre.
+   */
+  champEmail: string | null;
 }
 
 /**
@@ -80,6 +90,11 @@ export function problemeAvantLancement(
     }
     if (etage.canal === 'email' && !c?.emailTemplateId) {
       return `L’étage ${etage.rang} n’a pas de modèle d’e-mail.`;
+    }
+    // 🔴 `contacts` N'A PAS DE COLONNE `email` : l'adresse vit dans le jsonb `fields`, sous un nom que
+    // le client choisit. Sans ce nom, l'étage serait enregistré puis SAUTÉ à chaque bascule, en silence.
+    if (etage.canal === 'email' && !ctx.champEmail) {
+      return `L’étage ${etage.rang} part en e-mail : choisissez le champ de la fiche qui porte l’adresse.`;
     }
   }
   return null;
@@ -124,6 +139,7 @@ export function entreeDeCreation(
       ...(e.canal === 'whatsapp' && c?.templateName ? { templateName: c.templateName, templateLanguage: c.templateLanguage ?? 'fr' } : {}),
       ...(e.canal === 'rcs' ? { rcsMessage: messageRcs(c) } : {}),
       ...(e.canal === 'email' && c?.emailTemplateId ? { emailTemplateId: c.emailTemplateId } : {}),
+      ...(e.canal === 'email' && ctx.champEmail ? { emailChamp: ctx.champEmail } : {}),
       ...(c?.formule === 'avec_scenario' && c.workflowId ? { workflowId: c.workflowId } : {}),
     };
   });

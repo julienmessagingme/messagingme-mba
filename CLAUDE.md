@@ -79,14 +79,31 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0131**, le 2026-09-11 (`aide_fiches` : le mode d'emploi du produit, sans `tenant_id`,
-avec son tsvector et son index HNSW. C'est le corpus du bot d'aide de la console).
+**Dernière appliquée : 0134**, le 2026-09-12 (la CHAÎNE d'étages : `campaign_etages`, `campaign_envois`,
+`campaign_recipients.etage_courant`, et les cinq réglages de l'assistant sur `campaigns`).
 
-🔴 **0132 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`french_sans_accent` : la recherche plein texte cessait de
-trouver un mot écrit sans accent, mesuré à zéro fiche contre trois sur un corpus réel). Elle passe **AVANT**
-le déploiement, parce que le code neuf interroge une configuration qui doit exister. ⚠️ Et l'ancien code ne
-survit pas intact non plus : le temps du déploiement, ses requêtes accentuées cessent de matcher pendant que
-ses requêtes sans accent se mettent à marcher. C'est un échange, pas une perte, et il est assumé.
+⚠️ **CE CHIFFRE VIENT DE JULIEN, QUI A INTERROGÉ LA BASE LE 2026-09-12**, pas d'une lecture faite en écrivant
+cette ligne. C'est la parade habituelle appliquée dans l'autre sens : le fichier avait dérivé d'une SIXIÈME
+fois (il annonçait 0131 quand la base portait 0134), et il a été corrigé par la base, pas par le souvenir.
+
+🔴 **0135 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`campaign_etages.email_champ` : QUELLE clé du jsonb
+`contacts.fields` porte l'adresse e-mail d'un étage). Elle passe **AVANT** le déploiement, sans exception :
+`insertCampaignRow` l'ÉCRIT dès qu'une chaîne porte un étage e-mail, et `lireChainesDe` la LIT sur le chemin
+de chaque run. Sans elle, toute création de campagne tombe en `42703`, ce qu'aucun `?? null` ne rattrape.
+
+🔴 **CE N'EST PAS LA MIGRATION QUE LE PLAN ANNONÇAIT, ET C'EST LE VRAI RÉSULTAT DE CE LOT.** Il prévoyait une
+colonne `contacts.email`, sur l'idée que « le destinataire sera l'adresse e-mail présente sur la fiche du
+mini-CRM ». Vérification faite dans les migrations : `contacts` n'a effectivement PAS de colonne `email`
+(0001 crée la table sans, aucun `alter table contacts` n'en ajoute), mais l'adresse EXISTE, dans le jsonb
+`fields` de 0002, sous une clé que le CLIENT crée. Et il n'y a **aucune convention de nom** : le dépôt porte
+la trace d'un espace qui l'appelait « mail » quand un autre l'appelait « email » (`src/workflow/wiring.ts`,
+cas du 2026-08-25). Une colonne `contacts.email` aurait donc créé une SECONDE vérité à côté du jsonb, et le
+jour où les deux divergent, c'est la neuve, vide, que la campagne aurait lue.
+
+Avant elle : **0132** (`french_sans_accent` : la recherche plein texte cessait de trouver un mot écrit sans
+accent), **0133** (la joignabilité WhatsApp MÉMORISÉE d'un contact) et **0134** (la chaîne d'étages). ⚠️ Cette
+page décrivait encore 0132 comme « écrite, pas encore appliquée » : elle l'est, comme 0133 et 0134. C'est la
+même dérive, pour la même raison, et la base a encore tranché.
 
 ⚠️ **ET CETTE LIGNE A DÉRIVÉ UNE CINQUIÈME FOIS** : elle annonçait 0130 alors que 0131 était appliquée depuis
 le matin même. Toujours la même cause, et toujours la même parade : la base tranche. Relire la ligne APRÈS

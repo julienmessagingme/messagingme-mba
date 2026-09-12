@@ -101,6 +101,14 @@ export interface EtageCreation {
   templateLanguage?: string;
   rcsMessage?: RcsOutbound;
   emailTemplateId?: string;
+  /**
+   * La CLÉ du champ perso qui porte l'adresse e-mail du contact (migration 0135).
+   *
+   * 🔴 REQUISE SUR UN ÉTAGE E-MAIL, et le serveur refuse en 422 sans elle. `contacts` n'a pas de
+   * colonne `email` : l'adresse vit dans le jsonb `fields`, sous un nom que le client choisit. Un étage
+   * sans cette clé serait enregistré puis SAUTÉ à chaque bascule, sans rien pour l'expliquer.
+   */
+  emailChamp?: string;
   workflowId?: string;
 }
 

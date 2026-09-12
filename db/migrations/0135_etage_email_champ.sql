@@ -1,0 +1,39 @@
+-- 0135 : QUELLE CLÉ DU JSONB `contacts.fields` PORTE L'ADRESSE E-MAIL DE L'ÉTAGE.
+--
+-- 🔴 CE N'EST PAS LA MIGRATION QUE LE PLAN ANNONÇAIT, ET LE CONSTAT QUI L'A REMPLACÉE EST LE SUJET.
+-- Le cadrage tenait pour acquis que « le destinataire sera l'adresse e-mail présente sur la fiche du
+-- mini-CRM », et prévoyait d'ajouter `contacts.email`. Vérification faite dans les migrations plutôt
+-- que supposée : `contacts` n'a effectivement PAS de colonne `email` (0001 crée la table sans, et
+-- aucun des `alter table contacts` qui ont suivi n'en ajoute), MAIS l'adresse existe bel et bien,
+-- dans le jsonb `fields` ajouté par 0002, sous une clé que le CLIENT crée dans « Champs perso ».
+--
+-- 🔴 ET IL N'Y A AUCUNE CONVENTION DE CLÉ, ce qui est le vrai fait de ce lot. Le dépôt porte la trace
+-- d'un espace qui l'appelait « mail » quand un autre l'appelait « email » : le commentaire de
+-- `src/workflow/wiring.ts` cite le cas du 2026-08-25, où un bloc d'envoi de mail visait un champ vide
+-- pendant que le contact portait l'adresse sous l'autre nom. Une colonne `contacts.email` aurait donc
+-- créé une SECONDE vérité à côté du jsonb, et le jour où les deux divergent, c'est la neuve, vide,
+-- que la campagne aurait lue. Ajouter une colonne ici aurait été le geste facile et le mauvais.
+--
+-- ⚠️ LA CLÉ APPARTIENT À L'ÉTAGE, PAS AU CONTACT NI À L'ESPACE. Deux campagnes d'un même espace
+-- peuvent viser deux champs différents (« email pro » pour l'une, « email perso » pour l'autre), et
+-- rien ne justifie de trancher à leur place. C'est pour la même raison que le bloc « Envoi de mail »
+-- des scénarios laisse déjà choisir son champ destinataire.
+--
+-- 🔴 BLOQUANTE : ELLE PASSE AVANT LE DÉPLOIEMENT. `insertCampaignRow` ÉCRIT cette colonne dès qu'une
+-- chaîne porte un étage e-mail, et `lireChainesDe` la LIT sur le chemin de CHAQUE run de campagne.
+-- Déployer le code avant elle ferait échouer toute création de campagne en `42703 column ... does not
+-- exist`, ce qu'aucun `?? null` ne rattrape. C'est la règle du dépôt : une migration qui AJOUTE une
+-- colonne écrite par le code passe AVANT (vécu le 2026-08-17, 1 h 30 sans enregistrer un message).
+--
+-- ⚠️ NULLABLE, ET SANS DÉFAUT. Tous les étages existants sont au rang 1 en WhatsApp ou en RCS : aucun
+-- n'a d'adresse à résoudre, et leur en inventer une reviendrait à parier sur un nom de champ. `null`
+-- se lit « on ne sait pas où est l'adresse », et le moteur en tire la seule conclusion honnête : cet
+-- étage n'est pas servable pour ce contact, on le SAUTE (`prochainEtageServable`,
+-- `src/campaign/bascule.ts`), on ne clôt pas la chaîne pour autant.
+--
+-- ⚠️ AUCUNE CLÉ ÉTRANGÈRE VERS `user_fields`, ET C'EST DÉLIBÉRÉ. `contacts.fields` est un jsonb LIBRE :
+-- un import CSV ou un webhook y pose des clés qui n'ont jamais été déclarées dans `user_fields`. Une
+-- contrainte refuserait donc des campagnes parfaitement valides, et la suppression d'un champ perso
+-- emporterait ou viderait l'étage d'une campagne en cours. Le contrôle utile est à l'écran, où la
+-- liste proposée EST celle de `user_fields`.
+alter table campaign_etages add column if not exists email_champ text;
