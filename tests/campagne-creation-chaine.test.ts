@@ -69,9 +69,9 @@ describe('problemeDeChaine', () => {
   });
 
   /**
-   * 🔴 LE PREMIER ÉTAGE EST LA CAMPAGNE, PAS UN ÉTAGE COMME LES AUTRES. Le moteur construit son run sur
-   * les colonnes de `campaigns` (sender, plafond de débit, pré-lectures de template) et ne sert QUE le
-   * rang 1 (`etageServable`, `src/campaign/engine.ts`, vérifié). Laisser passer un rang 1 en RCS sur
+   * 🔴 LE PREMIER ÉTAGE EST LA CAMPAGNE, PAS UN ÉTAGE COMME LES AUTRES. Son contenu vient des COLONNES
+   * de `campaigns`, jamais de sa ligne d'étage (`contenuDeLEtage`, `src/campaign/engine.ts`, vérifié),
+   * et c'est l'invariant de la migration 0134. Laisser passer un rang 1 en RCS sur
    * une campagne déclarée WhatsApp ferait partir le contenu WhatsApp en journalisant « rcs » : le
    * message serait le bon, la ventilation par canal serait fausse, et personne ne le verrait.
    */

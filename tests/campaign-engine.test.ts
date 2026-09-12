@@ -1210,9 +1210,11 @@ describe('runCampaign : le journal des tentatives', () => {
  * le message qui venait d'échouer. Aucun test ne pouvait le voir : `listPending` ne rendait même pas la
  * colonne, donc le moteur n'avait pas de quoi se tromper, il avait de quoi ne rien savoir.
  *
- * ⚠️ ET CE QU'ILS NE PROTÈGENT PAS, pour qu'on ne le croie pas acquis : le moteur ne sait toujours pas
- * ENVOYER un second étage. Il refuse, avec sa raison. Le jour où un run saura servir un autre canal que
- * celui de sa campagne, c'est le refus qui devra tomber, et ces tests le diront en échouant.
+ * ⚠️ ET CE QU'ILS PROTÈGENT DEPUIS LE LOT 6 : le refus a changé de NATURE sans disparaître. Il ne porte
+ * plus sur le RANG (« ce run n'envoie que l'étage 1 ») mais sur le CANAL (« ce run ne sait pas envoyer
+ * sur ce canal »), et les faux d'ici ne déclarent aucune table de canaux : leur run ne sert donc que le
+ * canal de la campagne, ce qui reproduit exactement le comportement d'avant. Le cas où un second étage
+ * PART vraiment vit dans `tests/campagne-envoi-multicanal.test.ts`, qui câble cette table.
  */
 describe('runCampaign : l etage du destinataire', () => {
   const collecteurEtage = (): { vues: TentativeEnvoi[]; noterEnvoi: EngineDeps['noterEnvoi'] } => {

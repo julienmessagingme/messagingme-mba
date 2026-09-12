@@ -115,16 +115,16 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
   // et `terminal` se joue en NE FAISANT RIEN, le destinataire restant `failed` sans que plus personne
   // ne le reprenne. Écrire un second chemin de réessai ici en ferait deux qui doivent rester d'accord.
   //
-  // 🔴 CETTE PASSE N'EST PLUS DORMANTE DEPUIS LE 2026-09-12. Elle l'a été tant que `insertCampaignRow`
-  // n'écrivait que le rang 1 ; ce chemin écrit désormais la chaîne complète que l'assistant décrit, donc
-  // une campagne PEUT avoir un second étage et des candidats PEUVENT remonter ici. Le moteur, lui, LIT
-  // `etage_courant` (`etageServable`, `src/campaign/engine.ts`) : une bascule ne peut plus faire renvoyer
-  // le contenu de l'étage 1 sur le canal de l'étage 1, c'est-à-dire le message qui vient d'échouer.
+  // 🔴 CETTE PASSE N'EST PLUS DORMANTE DEPUIS LE 2026-09-12, ET CE QU'ELLE DÉCLENCHE PART VRAIMENT.
+  // Elle a été dormante tant que `insertCampaignRow` n'écrivait que le rang 1 ; ce chemin écrit désormais
+  // la chaîne complète que l'assistant décrit. Et depuis le lot 6, le run qu'elle enfile SERT le canal de
+  // l'étage : `run-job` construit un sender et un frein par canal de la chaîne, et le moteur choisit
+  // selon `etage_courant` (`etageServable` + `contenuDeLEtage`, `src/campaign/engine.ts`).
   //
-  // ⚠️ MAIS LE MOTEUR NE SAIT TOUJOURS PAS ENVOYER UN SECOND ÉTAGE, il le REFUSE avec sa raison : un run
-  // est construit sur les colonnes de `campaigns`, qui sont le contenu du rang 1 (sender, plafond de
-  // débit, pré-lectures de template). Basculer aujourd'hui mène donc à un échec LISIBLE, plus à un envoi
-  // faux. Servir le second étage est un lot à part.
+  // ⚠️ CE QUI RESTE UN REFUS, ET IL EST LISIBLE : un étage dont le canal n'est pas servable (un étage
+  // e-mail, qui n'a aucun sender de campagne ; un étage RCS sur un espace sans agent). Le destinataire
+  // échoue alors avec sa raison, au vrai rang et au vrai canal, et le tour suivant le fera avancer ou le
+  // clora. Jamais un renvoi du message qui vient d'échouer.
   for (const c of await deps.listCandidatsBascule()) {
     try {
       const geste = decider(c);

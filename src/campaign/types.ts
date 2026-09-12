@@ -51,11 +51,13 @@ export interface Campaign {
   /**
    * LA CHAÎNE D'ÉTAGES de la campagne (migration 0134), triée par rang.
    *
-   * ⚠️ À UN SEUL ÉTAGE AUJOURD'HUI, TOUJOURS, et c'est ce qui rend ce lot invisible : `rangSuivant` rend
-   * alors null, donc aucune bascule n'est possible et le moteur suit exactement le chemin d'avant. La
-   * chaîne est REDONDANTE avec `channel`, `templateName`, `rcsMessage` et `workflowId` tant que le
-   * formulaire de création n'a pas basculé dessus ; elle devient la seule source quand ce sera fait, et
-   * les colonnes d'origine partiront dans une migration ULTÉRIEURE (elles sont encore lues).
+   * ⚠️ ELLE PEUT AVOIR PLUSIEURS ÉTAGES DEPUIS LE 2026-09-12, et ce commentaire a affirmé le contraire
+   * (« à un seul étage aujourd'hui, toujours ») : `insertCampaignRow` écrit la chaîne complète que
+   * l'assistant décrit, la bascule fait avancer `etage_courant`, et le moteur sert le canal de l'étage.
+   *
+   * ⚠️ LE RANG 1 RESTE REDONDANT avec `channel`, `templateName`, `rcsMessage` et `workflowId`, et c'est
+   * volontaire : ces colonnes sont la SEULE source du contenu du rang 1 (invariant de la migration 0134,
+   * `contenuDeLEtage`). Elles partiront dans une migration ULTÉRIEURE, elles sont encore lues.
    *
    * OPTIONNELLE : `getCampaign` la rend toujours, mais un faux câblé par un test n'a rien à fournir. Absente
    * veut donc dire « cet appelant ne s'en sert pas », jamais « cette campagne n'a pas d'étage ».

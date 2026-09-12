@@ -116,6 +116,28 @@ export interface RateGate {
   acquire(): Promise<void>;
 }
 
+/** Ce qu'il faut pour servir UN canal pendant un run : par qui on envoie, à quelle cadence, depuis quel numéro. */
+export interface CanalServi {
+  /**
+   * Sender de CANAL (RCS). Absent = canal WhatsApp, servi par `deps.sender` et ses gardes Meta.
+   *
+   * ⚠️ C'est sa PRÉSENCE, et non le nom du canal, qui neutralise les gardes propres à WhatsApp (porte de
+   * qualité, pré-lectures de modèle, mémoire de joignabilité) : elles n'ont pas d'équivalent ailleurs et
+   * il n'y a aucun numéro Meta à interroger.
+   */
+  sender?: CampaignSender;
+  /** Le frein de cadence de CE canal (`plafondDuCanal`). Absent = aucun frein sur ce canal. */
+  rateLimiter?: RateGate;
+  /**
+   * Le numéro Meta qui sert ce canal, pour la porte de qualité. Utile au seul canal WhatsApp.
+   *
+   * 🔴 IL N'EST PAS TOUJOURS `campaign.phoneNumberId` : une campagne RCS l'a VIDE en base (migration
+   * 0056, « une campagne RCS n'a pas de numéro Meta ») et son repli WhatsApp doit pourtant partir de
+   * quelque part. `run-job` résout alors le numéro de l'espace.
+   */
+  phoneNumberId?: string;
+}
+
 export interface EngineDeps {
   sender: MessageSender;
   recipients: RecipientStore;
@@ -124,12 +146,37 @@ export interface EngineDeps {
   quality: QualityProvider;
   rateLimiter?: RateGate;
   /**
-   * Sender de CANAL (RCS). Présent : le moteur envoie par LUI, et les gardes propres à WhatsApp sont
-   * neutralisées (quality rating Meta, lecture du carousel et de l'en-tête média du template) parce
-   * qu'elles n'ont pas d'équivalent sur ce canal et qu'aucun numéro Meta n'existe pour l'interroger.
-   * Absent : comportement historique INCHANGÉ, ce qui garantit la non-régression des campagnes WhatsApp.
+   * Sender de CANAL (RCS) POUR LE CANAL DE LA CAMPAGNE, quand `canaux` n'est pas fourni.
+   *
+   * ⚠️ C'EST LA FORME COURTE DE `canaux`, GARDÉE POUR LES CÂBLAGES QUI N'EN ONT QU'UN. Le moteur en
+   * fabrique alors une table à une entrée, celle du canal de la campagne. Présent : l'envoi passe par
+   * LUI, et les gardes propres à WhatsApp sont neutralisées (quality rating Meta, lecture du carousel et
+   * de l'en-tête média) parce qu'elles n'ont pas d'équivalent sur ce canal et qu'aucun numéro Meta
+   * n'existe pour l'interroger. Absent : comportement historique INCHANGÉ.
+   *
+   * ⚠️ IGNORÉ DÈS QUE `canaux` EST FOURNI, et c'est le bon sens de priorité : `run-job` construit la
+   * table complète, elle ne doit pas être complétée par une valeur qui ne dit qu'un canal.
    */
   channelSender?: CampaignSender;
+  /**
+   * CE QUE CE RUN SAIT SERVIR, CANAL PAR CANAL (lot 6).
+   *
+   * 🔴 C'EST LA PIÈCE QUI REND UNE CHAÎNE DE REPLI FONCTIONNELLE. Un run était construit sur les
+   * colonnes de `campaigns`, donc sur UN canal : le sender, le frein de cadence et la porte de qualité en
+   * dépendaient tous, et un destinataire posé au rang 2 par la bascule ne pouvait qu'être refusé. Ici,
+   * chaque canal de la chaîne apporte son sender et son frein, et le moteur choisit selon l'ÉTAGE du
+   * destinataire.
+   *
+   * 🔴 UN CANAL ABSENT DE CETTE TABLE N'EST PAS SERVABLE, et son étage échoue AVEC SA RAISON. C'est
+   * le cas de l'e-mail (aucun sender de campagne n'existe) et d'un étage RCS sur un espace sans agent.
+   * Le refus vaut mieux qu'un repli sur le canal de la campagne, qui renverrait le message qui vient
+   * d'échouer.
+   *
+   * ⚠️ ABSENTE = LE COMPORTEMENT D'AVANT, MOT POUR MOT : le moteur fabrique alors la table à UNE entrée,
+   * celle du canal de la campagne, avec `channelSender` et `rateLimiter`. C'est ce qui laisse intacts tous
+   * les faux de test et l'e2e, qui ne la câblent pas.
+   */
+  canaux?: Partial<Record<CanalEtage, CanalServi>>;
   /**
    * Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template).
    * `firstTemplateParams` = variables du 1er template DÉJÀ résolues par contact (buildRecipients à partir du
@@ -321,27 +368,20 @@ export function suffixesPourDestinataire(
 /**
  * L'ÉTAGE OÙ EST LE DESTINATAIRE, ET CE QUE CE RUN SAIT EN FAIRE (migration 0134).
  *
- * 🔴 CE RUN EST CONSTRUIT SUR LES COLONNES DE `campaigns`, ET CES COLONNES SONT LE CONTENU DU RANG 1.
- * La migration 0134 a repris l'une dans l'autre, et `insertCampaignRow` écrit les deux depuis une seule
- * valeur. Tout ce qu'un run prépare UNE FOIS en dépend : le sender (WhatsApp ou canal), le plafond de
- * débit (`plafondDuCanal` sur `campaign.channel`), le carousel et l'en-tête média relus sur
- * `campaign.templateName`. Un run sait donc servir le rang 1, et lui seul.
+ * 🔴 CE N'EST PLUS « LE RANG 1 ET LUI SEUL » DEPUIS LE 2026-09-12. Un run sert désormais tout étage
+ * dont il sait servir le CANAL, et `canauxServis` est la liste de ces canaux, calculée par `run-job` sur
+ * la chaîne de la campagne (un sender par canal, un frein par canal). Le refus a donc changé de nature :
+ * il ne porte plus sur le RANG, il porte sur le CANAL. C'est ce qui rend une chaîne de repli réellement
+ * fonctionnelle au lieu de décorative.
  *
- * 🔴 D'OÙ LE REFUS PLUTÔT QUE L'ENVOI SUR UN RANG SUPÉRIEUR. Sans cette lecture, un destinataire qu'une
- * bascule vient de poser au rang 2 recevait le contenu du rang 1 sur le canal du rang 1, c'est-à-dire
- * EXACTEMENT le message qui vient d'échouer. Le refus, lui, est explicite : échec avec sa raison, et une
- * ligne de journal au VRAI rang et au VRAI canal. Le premier qui essaiera une chaîne le verra tout de
- * suite, au lieu de croire son repli parti.
+ * 🔴 ET IL RESTE UN REFUS, JAMAIS UN REPLI SILENCIEUX. Un étage dont le canal n'est pas servable (pas
+ * d'agent RCS, canal e-mail qui n'a aucun sender de campagne) échoue AVEC SA RAISON, au vrai rang et au
+ * vrai canal. Lui renvoyer le contenu du rang 1 lui enverrait EXACTEMENT le message qui vient d'échouer.
  *
- * ⚠️ CE N'EST PAS LE MOTEUR DE REPLI, ET IL NE FAUT PAS LE LIRE COMME TEL. Servir un second étage demande
- * un run capable d'envoyer sur un AUTRE canal que celui de sa campagne : sender, plafond de débit, quality
- * gate (notion Meta, sans équivalent RCS), pré-lectures de template, journal du fil et mémoire de
- * joignabilité en dépendent tous. C'est un lot à part.
- *
- * ⚠️ ET IL PRESSE DEPUIS LE 2026-09-12, ce que ce commentaire niait : `insertCampaignRow` écrit désormais
- * la chaîne COMPLÈTE, donc un destinataire peut réellement arriver au rang 2 et se faire refuser ici. Le
- * refus reste le bon comportement (échec LISIBLE, au vrai rang et au vrai canal, plutôt qu'un renvoi du
- * message qui vient d'échouer), mais il n'est plus théorique.
+ * ⚠️ `canauxServis` ABSENT = LE CANAL DE LA CAMPAGNE, ET RIEN D'AUTRE. C'est le comportement d'avant mot
+ * pour mot, et c'est ce qui laisse intacts tous les faux de test qui n'en fournissent pas : une chaîne
+ * dont deux étages ne partagent jamais le même canal (`problemeDeChaine` l'interdit) n'a alors qu'un seul
+ * étage servable, le rang 1.
  *
  * ⚠️ CHAÎNE ABSENTE OU VIDE = le comportement d'avant, mot pour mot : rang 1, canal de la campagne. C'est
  * le cas de tout le parc (campagnes d'avant 0134 non reprises, faux des tests qui ne câblent pas `chaine`).
@@ -349,6 +389,7 @@ export function suffixesPourDestinataire(
 export function etageServable(
   campaign: Pick<Campaign, 'channel' | 'chaine'>,
   rangCourant: number | undefined,
+  canauxServis?: readonly CanalEtage[],
 ): { rang: number; canal: CanalEtage; refus: string | null } {
   const canalCampagne: CanalEtage = campaign.channel ?? 'whatsapp';
   const chaine = campaign.chaine ?? [];
@@ -361,14 +402,75 @@ export function etageServable(
   // le journal dise où il s'est arrêté.
   if (etage === null) return { rang, canal: canalCampagne, refus: `étage ${rang} absent de la chaîne de cette campagne` };
 
-  if (rang !== RANG_INITIAL) {
+  const servis = canauxServis ?? [canalCampagne];
+  if (!servis.includes(etage.canal)) {
     return {
       rang,
       canal: etage.canal,
-      refus: `étage ${rang} (${etage.canal}) : ce run n'envoie que l'étage ${RANG_INITIAL} (${canalCampagne})`,
+      refus: `étage ${rang} (${etage.canal}) : ce run ne sait pas envoyer sur ce canal`,
     };
   }
   return { rang, canal: etage.canal, refus: null };
+}
+
+/**
+ * CE QU'UN ÉTAGE ENVOIE : son modèle, son message RCS, son scénario.
+ *
+ * 🔴 LE RANG 1 VIENT TOUJOURS DES COLONNES DE `campaigns`, JAMAIS DE LA LIGNE D'ÉTAGE. C'est
+ * l'invariant que la migration 0134 pose en toutes lettres (« une seule source pour le contenu d'un
+ * étage ») et que `insertCampaignRow` applique : la ligne du rang 1 est RECOPIÉE depuis ces colonnes, et
+ * ce que le client aurait mis sur son premier étage est ignoré. Lire la ligne ici rouvrirait la seconde
+ * vérité que cet invariant ferme, et casserait au passage tout faux de test qui déclare une chaîne sans
+ * recopier le contenu de sa campagne.
+ *
+ * ⚠️ LES RANGS SUIVANTS, EUX, N'ONT QUE LEUR LIGNE. Retomber sur les colonnes de la campagne quand un
+ * champ y manque serait le défaut que tout ce lot ferme : un repli qui renvoie le message du rang 1.
+ * Un étage de rang 2 sans contenu part donc vide, et c'est le sender ou Meta qui le dira.
+ */
+export function contenuDeLEtage(
+  campaign: Pick<Campaign, 'templateName' | 'templateLanguage' | 'rcsMessage' | 'workflowId' | 'chaine'>,
+  rang: number,
+): { templateName: string; templateLanguage: string; rcsMessage: unknown; workflowId: string | null } {
+  if (rang === RANG_INITIAL) {
+    return {
+      templateName: campaign.templateName,
+      templateLanguage: campaign.templateLanguage,
+      rcsMessage: campaign.rcsMessage,
+      workflowId: campaign.workflowId,
+    };
+  }
+  const etage = etageAuRang(campaign.chaine ?? [], rang);
+  return {
+    templateName: etage?.templateName ?? '',
+    templateLanguage: etage?.templateLanguage ?? '',
+    rcsMessage: etage?.rcsMessage,
+    workflowId: etage?.workflowId ?? null,
+  };
+}
+
+/**
+ * L'ÉTAGE WHATSAPP DE CETTE CAMPAGNE, quand ce run sait le servir.
+ *
+ * 🔴 IL EST UNIQUE PAR CONSTRUCTION : `problemeDeChaine` refuse deux étages sur le même canal. C'est
+ * ce qui permet de garder les pré-lectures de modèle (carousel, en-tête média, boutons tracés) EN AMONT
+ * de la boucle, une seule fois par run, comme avant ce lot : il n'y a jamais deux modèles WhatsApp à
+ * relire dans une même campagne.
+ *
+ * ⚠️ IL N'EST PAS FORCÉMENT LE RANG 1. Une campagne RCS avec repli WhatsApp met son modèle au rang 2, et
+ * c'est SON corps qu'il faut relire, pas `campaign.templateName`, qui vaut alors la chaîne vide.
+ */
+function etageWhatsApp(
+  campaign: Pick<Campaign, 'channel' | 'chaine' | 'templateName' | 'templateLanguage' | 'rcsMessage' | 'workflowId'>,
+  canauxServis: readonly CanalEtage[],
+): { rang: number; templateName: string; templateLanguage: string; workflowId: string | null } | null {
+  if (!canauxServis.includes('whatsapp')) return null;
+  const chaine = campaign.chaine ?? [];
+  const rang = chaine.length === 0
+    ? ((campaign.channel ?? 'whatsapp') === 'whatsapp' ? RANG_INITIAL : null)
+    : (chaine.find((e) => e.canal === 'whatsapp')?.rang ?? null);
+  if (rang === null) return null;
+  const contenu = contenuDeLEtage(campaign, rang);
+  return { rang, templateName: contenu.templateName, templateLanguage: contenu.templateLanguage, workflowId: contenu.workflowId };
 }
 
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {
@@ -378,6 +480,26 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
 
   await deps.campaigns.setStatus(campaign.id, 'running');
   const pending = await deps.recipients.listPending(campaign.id);
+
+  /**
+   * LES CANAUX QUE CE RUN SAIT SERVIR.
+   *
+   * ⚠️ LE REPLI SUR `channelSender` / `rateLimiter` REPRODUIT EXACTEMENT L'ÉTAT D'AVANT CE LOT : une seule
+   * entrée, celle du canal de la campagne. Un faux de test qui pose `channelSender` sur une campagne
+   * WhatsApp obtient donc le même comportement qu'avant (envoi par le sender de canal, gardes Meta
+   * neutralisées), et ce n'est pas un accident : c'est ce qui garde ces tests représentatifs.
+   */
+  const canaux: Partial<Record<CanalEtage, CanalServi>> = deps.canaux ?? {};
+  if (!deps.canaux) {
+    canaux[campaign.channel ?? 'whatsapp'] = {
+      ...(deps.channelSender ? { sender: deps.channelSender } : {}),
+      ...(deps.rateLimiter ? { rateLimiter: deps.rateLimiter } : {}),
+      phoneNumberId: campaign.phoneNumberId,
+    };
+  }
+  const canauxServis = Object.keys(canaux) as CanalEtage[];
+  /** L'étage WhatsApp de la chaîne, s'il y en a un et que ce run sait le servir. Unique par construction. */
+  const etageWa = etageWhatsApp(campaign, canauxServis);
 
   // Statut de SORTIE du run. Une campagne AU FIL DE L'EAU (alimentée par un webhook) n'est pas finie quand sa
   // file est vide : elle attend son prochain arrivant. La marquer `completed` la couperait définitivement de
@@ -407,9 +529,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // avant (un template sans carousel est inchangé ; un carousel échouera avec le message d'erreur de Meta).
   let carousel: { cards: OutboundCarouselCard[] } | null = null;
   let carouselBlocked: string | null = null;
-  if (!campaign.workflowId && !deps.channelSender && deps.getTemplateCarousel) {
+  if (etageWa && !etageWa.workflowId && deps.getTemplateCarousel) {
     try {
-      const read = await deps.getTemplateCarousel(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
+      const read = await deps.getTemplateCarousel(campaign.tenantId, etageWa.templateName, etageWa.templateLanguage);
       if (read) {
         carouselBlocked = carouselSendBlocker(read.cards);
         if (carouselBlocked === null) carousel = read;
@@ -423,9 +545,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // pour tous les destinataires, donc son `media id` aussi.
   let headerMedia: { headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null = null;
   let headerBlocked: string | null = null;
-  if (!campaign.workflowId && !deps.channelSender && !carousel && deps.getTemplateHeaderMedia) {
+  if (etageWa && !etageWa.workflowId && !carousel && deps.getTemplateHeaderMedia) {
     try {
-      headerMedia = await deps.getTemplateHeaderMedia(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
+      headerMedia = await deps.getTemplateHeaderMedia(campaign.tenantId, etageWa.templateName, etageWa.templateLanguage);
       if (headerMedia) headerBlocked = headerMediaSendBlocker(headerMedia.headerFormat, headerMedia.mediaId ?? undefined);
     } catch {
       /* lecture best-effort : un template sans en-tête média ne doit jamais être bloqué par elle */
@@ -464,7 +586,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // `contactId` absent : rien à rattacher, et la colonne est `not null`. Les faux des tests en sont
     // dépourvus, la production ne l'est jamais (le destinataire naît d'un contact).
     if (!deps.noterEnvoi || !r.contactId) return;
-    const etage = etageServable(campaign, r.etageCourant);
+    const etage = etageServable(campaign, r.etageCourant, canauxServis);
     try {
       await deps.noterEnvoi({
         campaignId: campaign.id,
@@ -482,20 +604,34 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   };
 
-  // Rien d'envoyable : AUCUN destinataire ne peut partir, et on le sait avant d'avoir commencé. Traité
-  // ICI et pas dans la boucle : y passer ferait compter 100 % d'échecs au quality gate, qui mettrait la
-  // campagne en pause avec « taux d'échec 100 % » au bout de 20 destinataires. Ce serait exactement le
-  // diagnostic trompeur que ce lot supprime, et ça laisserait le reste des destinataires en attente.
+  /**
+   * LE MODÈLE WHATSAPP N'EST PAS ENVOYABLE : on le sait avant d'avoir commencé.
+   *
+   * ⚠️ LE REFUS NE VISE QUE LES DESTINATAIRES DE L'ÉTAGE WHATSAPP, PAS TOUTE LA CAMPAGNE. Un modèle dont
+   * le carousel ou l'en-tête média est inenvoyable ne dit rien du repli RCS, et couper le run entier
+   * priverait de leur message des destinataires qu'une bascule a précisément amenés là parce que le
+   * premier canal avait échoué. Ils repartent donc dans la boucle normale.
+   *
+   * ⚠️ Le reste est INCHANGÉ, et sa raison aussi : le refus est traité ICI et pas dans la boucle, sinon la
+   * porte de qualité verrait 100 % d'échecs et mettrait la campagne en pause au bout de 20 destinataires,
+   * avec un diagnostic trompeur.
+   */
+  let aTraiter = pending;
   if (carouselBlocked !== null || headerBlocked !== null) {
     const reason = carouselBlocked !== null ? `Carousel non envoyable : ${carouselBlocked}` : `Template non envoyable : ${headerBlocked}`;
+    const restants: Recipient[] = [];
     for (const r of pending) {
       if (r.status === 'sent') continue;
+      if (etageServable(campaign, r.etageCourant, canauxServis).canal !== 'whatsapp') { restants.push(r); continue; }
       if (!(await deps.recipients.claim(r.id))) continue;
       await resoudre(r, { status: 'failed', error: reason });
       report.failed += 1;
     }
-    await deps.campaigns.setStatus(campaign.id, await statutDeSortie());
-    return report;
+    if (restants.length === 0) {
+      await deps.campaigns.setStatus(campaign.id, await statutDeSortie());
+      return report;
+    }
+    aTraiter = restants;
   }
 
   /**
@@ -513,31 +649,36 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   let boutonsAJeton: number[] = [];
   let jetons = new Map<string, string>();
   const idsDesContacts = (): string[] =>
-    [...new Set(pending.map((r) => r.contactId).filter((v): v is string => typeof v === 'string' && v !== ''))];
-  if (!campaign.workflowId && !deps.channelSender && deps.boutonsTraces && deps.jetonsPourContacts) {
+    [...new Set(aTraiter.map((r) => r.contactId).filter((v): v is string => typeof v === 'string' && v !== ''))];
+  if (etageWa && !etageWa.workflowId && deps.boutonsTraces) {
     try {
-      boutonsAJeton = await deps.boutonsTraces(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
-      if (boutonsAJeton.length > 0) jetons = await deps.jetonsPourContacts(campaign.tenantId, idsDesContacts());
+      boutonsAJeton = await deps.boutonsTraces(campaign.tenantId, etageWa.templateName, etageWa.templateLanguage);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('attribution des clics ignorée pour cette campagne:', err instanceof Error ? err.message : err);
       boutonsAJeton = [];
     }
-  } else if (deps.channelSender?.aBesoinDeJeton && deps.jetonsPourContacts) {
-    /**
-     * Le MÊME chargement pour une campagne RCS, à une différence près : il n'y a pas de `boutonsTraces` à lire.
-     *
-     * 🔴 Côté WhatsApp, cette lecture est OBLIGATOIRE et décide de l'envoi : l'URL soumise à Meta porte (ou
-     * non) un `{{1}}`, et fournir un composant à contretemps fait échouer l'appel avec un 132000. Côté RCS,
-     * l'URL est écrite à l'envoi : il n'y a rien à accorder, donc rien à relire. C'est le message lui-même qui
-     * dit s'il porte un lien traçable, et le sender de canal l'a calculé une fois pour toutes
-     * (`aBesoinDeJeton`) plutôt que de le recalculer par destinataire.
-     */
+  }
+  /**
+   * Les jetons, chargés en UN énoncé pour tous les destinataires, si l'un des deux canaux en a besoin.
+   *
+   * 🔴 Côté WhatsApp, la lecture des boutons est OBLIGATOIRE et décide de l'envoi : l'URL soumise à Meta
+   * porte (ou non) un `{{1}}`, et fournir un composant à contretemps fait échouer l'appel avec un 132000.
+   * Côté RCS, l'URL est écrite à l'envoi : il n'y a rien à accorder, donc rien à relire. C'est le message
+   * lui-même qui dit s'il porte un lien traçable, et le sender de canal l'a calculé une fois pour toutes
+   * (`aBesoinDeJeton`) plutôt que de le recalculer par destinataire.
+   *
+   * ⚠️ UNE CHAÎNE PEUT AVOIR BESOIN DES DEUX, et c'était le piège de la version d'avant : ses deux branches
+   * étaient EXCLUSIVES (`else if`), donc une campagne WhatsApp à repli RCS aurait chargé les jetons pour le
+   * premier canal et pas pour le second, ou l'inverse. Un seul `ou` suffit, la table est la même.
+   */
+  const besoinDeJeton = boutonsAJeton.length > 0 || canaux.rcs?.sender?.aBesoinDeJeton === true;
+  if (besoinDeJeton && deps.jetonsPourContacts) {
     try {
       jetons = await deps.jetonsPourContacts(campaign.tenantId, idsDesContacts());
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('attribution des clics ignorée pour cette campagne RCS:', err instanceof Error ? err.message : err);
+      console.error('attribution des jetons de clic ignorée pour cette campagne:', err instanceof Error ? err.message : err);
     }
   }
 
@@ -555,7 +696,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     ? await deps.horairesOuvres(campaign.tenantId).catch(() => null)
     : null;
 
-  for (const r of pending) {
+  for (const r of aTraiter) {
     if (r.status === 'sent') continue; // idempotence défensive
 
     // 🔴 DURÉE MAXIMALE DU LOT (lot 5). Sans elle, un job traitait sa campagne jusqu'à épuisement : 5 000
@@ -621,10 +762,25 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       }
     }
 
+    /**
+     * L'ÉTAGE DE CE DESTINATAIRE, ET CE QU'IL FAUT POUR LE SERVIR.
+     *
+     * 🔴 RÉSOLU EN TÊTE DU TOUR, PARCE QUE QUATRE DÉCISIONS EN DÉPENDENT AVANT MÊME L'ENVOI : la porte
+     * de qualité (une notion Meta, qui n'a pas de sens sur un étage RCS), le frein de cadence (le plafond
+     * du canal de l'étage, pas celui de la campagne), le contenu, et le journal. Le calcul est PUR et
+     * parcourt au plus trois étages.
+     *
+     * ⚠️ LE REFUS, LUI, RESTE APRÈS LE CLAIM : marquer un destinataire suppose de l'avoir réservé.
+     */
+    const etageDuTour = etageServable(campaign, r.etageCourant, canauxServis);
+    const servi = canaux[etageDuTour.canal];
+
     // Quality gate : notion META (rating du numéro WABA). Sur un canal sans numéro Meta, il n'y a rien à
     // interroger, et l'interroger quand même appellerait Graph avec un phoneNumberId vide.
-    if (!deps.channelSender) {
-      const rating = await deps.quality.getRating(campaign.phoneNumberId);
+    // ⚠️ C'est la présence d'un SENDER DE CANAL qui la neutralise, pas le nom du canal : c'est ce qui garde
+    // le comportement d'avant pour un faux de test qui pose `channelSender` sur une campagne WhatsApp.
+    if (servi && !servi.sender) {
+      const rating = await deps.quality.getRating(servi.phoneNumberId ?? campaign.phoneNumberId);
       const gate = qualityGate({ rating, sent: report.sent, failed: report.failed }, t);
       if (gate.pause) {
         report.paused = true;
@@ -648,17 +804,23 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Claim atomique : si un autre run/worker a déjà pris ce destinataire, on passe.
     if (!(await deps.recipients.claim(r.id))) continue;
 
-    // 🔴 L'ÉTAGE DU DESTINATAIRE, ET LE REFUS S'IL N'EST PAS CELUI QUE CE RUN SERT (cf. `etageServable`).
-    // Placé APRÈS le claim parce qu'il faut avoir réservé le destinataire pour le marquer, et AVANT le
-    // frein de cadence parce qu'un refus n'occupe aucun créneau d'envoi : il ne part rien.
-    const etageDuTour = etageServable(campaign, r.etageCourant);
-    if (etageDuTour.refus !== null) {
-      await resoudre(r, { status: 'failed', error: etageDuTour.refus });
+    // 🔴 LE REFUS S'IL N'EST PAS SERVABLE (cf. `etageServable`). Placé APRÈS le claim parce qu'il faut
+    // avoir réservé le destinataire pour le marquer, et AVANT le frein de cadence parce qu'un refus
+    // n'occupe aucun créneau d'envoi : il ne part rien.
+    if (etageDuTour.refus !== null || !servi) {
+      const refus = etageDuTour.refus ?? `étage ${etageDuTour.rang} (${etageDuTour.canal}) : ce run ne sait pas envoyer sur ce canal`;
+      await resoudre(r, { status: 'failed', error: refus });
       report.failed += 1;
       continue;
     }
 
-    if (deps.rateLimiter) await deps.rateLimiter.acquire();
+    // 🔴 LE FREIN EST CELUI DU CANAL DE L'ÉTAGE, PAS CELUI DE LA CAMPAGNE. Un étage RCS sous le plafond
+    // qu'impose Meta à un NUMÉRO WhatsApp est exactement le défaut que le lot 4 a fermé : ne pas le rouvrir
+    // par le bas en faisant tenir la cadence d'un canal par la contrainte d'un autre.
+    if (servi.rateLimiter) await servi.rateLimiter.acquire();
+
+    /** Ce que CET étage envoie. Le rang 1 vient des colonnes de la campagne (invariant 0134). */
+    const contenu = contenuDeLEtage(campaign, etageDuTour.rang);
 
     // Variables du template : les positions de source NOW sont rafraîchies à l'instant de l'ENVOI (les autres
     // ont été résolues à la création). Sans ça, une campagne programmée/draft enverrait la date de sa CRÉATION.
@@ -674,28 +836,28 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // rien n'est parti et rien n'a raté. Symétrique de `notStarted`, traité après le try comme lui.
     let skipped: string | null = null;
     try {
-      if (deps.channelSender) {
+      if (servi.sender) {
         // Le jeton de CE destinataire, pour que le clic sur un lien du message dise QUI a réagi. Absent
         // (contact inconnu, chargement en échec) : le lien part tracé mais anonyme, jamais cassé.
-        const out = await deps.channelSender.sendTo(r, r.contactId ? jetons.get(r.contactId) : undefined);
+        const out = await servi.sender.sendTo(r, r.contactId ? jetons.get(r.contactId) : undefined);
         if ('skipped' in out) {
           skipped = out.skipped;
           res = { messageId: '' };
         } else {
           res = out;
         }
-      } else if (campaign.workflowId && campaign.startNodeId) {
+      } else if (contenu.workflowId && campaign.startNodeId) {
         // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
         // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
         const waId = waIdOfTarget(r.toE164);
-        const started = await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
+        const started = await deps.startWorkflowFromNode(campaign.tenantId, contenu.workflowId, campaign.startNodeId, waId, r.contactId);
         // Une CHAÎNE porte la raison exacte du refus : on l'affiche telle quelle plutôt que d'énumérer les
         // causes possibles et de laisser l'opérateur deviner laquelle s'applique.
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
         else if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible, ou fil repris par un opérateur / MBA)';
-        res = { messageId: `wf-${campaign.workflowId}` };
-      } else if (campaign.workflowId) {
+        res = { messageId: `wf-${contenu.workflowId}` };
+      } else if (contenu.workflowId) {
         // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
         // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
         // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).
@@ -703,14 +865,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         const waId = waIdOfTarget(r.toE164);
         // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
         // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
-        const started = await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, params);
+        const started = await deps.startWorkflow(campaign.tenantId, contenu.workflowId, waId, r.contactId, params);
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
         else if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, scénario supprimé, ou fil repris par un opérateur / MBA)';
-        res = { messageId: `wf-${campaign.workflowId}` };
+        res = { messageId: `wf-${contenu.workflowId}` };
       } else {
         const tpl: TemplateSpec = {
-          name: campaign.templateName,
-          language: campaign.templateLanguage,
+          name: contenu.templateName,
+          language: contenu.templateLanguage,
           components: buildTemplateComponents({
             bodyParams: params,
             ...(carousel ? { carousel } : {}),
@@ -791,7 +953,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     //
     // ⚠️ Best-effort, exactement comme le journal du fil : un échec d'écriture ne relabellise JAMAIS un
     // message livré, et le pire qu'il coûte est un verdict qui reste `inconnu`, ce qui n'exclut personne.
-    if (deps.noterJoignabilite && !campaign.workflowId && !deps.channelSender && r.contactId) {
+    if (deps.noterJoignabilite && !contenu.workflowId && !servi.sender && etageDuTour.canal === 'whatsapp' && r.contactId) {
       try {
         await deps.noterJoignabilite(campaign.tenantId, r.contactId, true);
       } catch {
@@ -805,12 +967,12 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Le fil est UNIQUE par contact : un envoi RCS s'y journalise comme un template WhatsApp, avec son canal.
     // Sans ça, l'opérateur ouvre le fil d'un client et ne voit AUCUNE trace de ce qui vient de lui être
     // envoyé. Le libellé diffère parce que le RCS n'a pas de template : on journalise le message lui-même.
-    if (deps.recordOutbound && !campaign.workflowId) {
+    if (deps.recordOutbound && !contenu.workflowId) {
       const waId = waIdOfTarget(r.toE164);
-      const rcs = deps.channelSender !== undefined;
+      const rcs = servi.sender !== undefined;
       const body = rcs
-        ? rcsCampaignBody(campaign.rcsMessage)
-        : `Template « ${campaign.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
+        ? rcsCampaignBody(contenu.rcsMessage)
+        : `Template « ${contenu.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
       try {
         await deps.recordOutbound(campaign.tenantId, waId, {
           body,
@@ -819,7 +981,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           type: rcs ? 'rcs' : 'template',
           ...(rcs
             ? { channel: 'rcs' as const }
-            : { templateCategory: campaign.category, templateName: campaign.templateName }),
+            : { templateCategory: campaign.category, templateName: contenu.templateName }),
         });
       } catch {
         /* log best-effort : ne casse jamais l'envoi réussi */

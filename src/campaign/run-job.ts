@@ -6,8 +6,11 @@ import type {
   FrequencyStore,
   QualityProvider,
   RateGate,
+  CanalServi,
   EngineDeps,
 } from './engine';
+import { RANG_INITIAL } from './etages';
+import type { CanalEtage, Etage } from './etages';
 import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 import { BAIL_SECONDES, type CampaignRunLock } from './run-lock';
@@ -47,7 +50,7 @@ import type { CampaignSender } from './sender';
  */
 export type CapacitesMoteur = Omit<
   EngineDeps,
-  'sender' | 'channelSender' | 'rateLimiter' | 'renouvelerVerrou'
+  'sender' | 'channelSender' | 'rateLimiter' | 'renouvelerVerrou' | 'canaux'
   | 'recipients' | 'campaigns' | 'frequency' | 'quality'
 >;
 
@@ -58,9 +61,15 @@ export interface RunJobDeps {
    */
   moteur?: CapacitesMoteur;
   getCampaign(id: string): Promise<Campaign | null>;
-  /** Construit le sender pour la campagne (MetaClient sur le token du tenant en prod, fake en test). Async : la
-   *  résolution du token par tenant (B1) lit la base + déchiffre. */
-  senderFor(campaign: Campaign): Promise<MessageSender>;
+  /**
+   * Construit le sender pour la campagne (MetaClient sur le token du tenant en prod, fake en test). Async : la
+   * résolution du token par tenant (B1) lit la base + déchiffre.
+   *
+   * ⚠️ `phoneNumberId` EST PASSÉ EXPLICITEMENT, ET CE N'EST PAS `campaign.phoneNumberId` EN TOUTE
+   * CIRCONSTANCE : une campagne RCS a la colonne VIDE (migration 0056) et son repli WhatsApp doit pourtant
+   * partir d'un numéro. Un sender construit sur la campagne seule ne saurait pas d'où envoyer.
+   */
+  senderFor(campaign: Campaign, phoneNumberId: string): Promise<MessageSender>;
   recipients: RecipientStore;
   campaigns: CampaignStore;
   frequency: FrequencyStore;
@@ -95,7 +104,24 @@ export interface RunJobDeps {
    * canal RCS non câblé sur ce serveur : une campagne RCS est mise en pause au lieu de repartir en silence
    * sur le chemin WhatsApp, qui l'enverrait depuis un `phone_number_id` vide.
    */
-  rcsSenderFor?: (campaign: Campaign) => Promise<CampaignSender | null>;
+  rcsSenderFor?: (campaign: Campaign, message: unknown) => Promise<CampaignSender | null>;
+  /**
+   * LE NUMÉRO META DE CET ESPACE, pour un étage WhatsApp de REPLI sur une campagne qui n'en a pas.
+   *
+   * ⚠️ MÊME NOM ET MÊME CONTRAT QUE LES TROIS AUTRES `numeroDuTenant` DU DÉPÔT (`src/http/mba.ts`,
+   * `mba-publication.ts`, `agent-catalogue.ts`), tous câblés sur `repo.getTenantPhoneNumberId`. Un
+   * quatrième nom pour la même dépendance aurait obligé à chercher laquelle on lit.
+   *
+   * 🔴 UNE CAMPAGNE RCS A `phone_number_id` VIDE (migration 0056), et c'est correct : elle part d'un agent
+   * de marque. Son repli WhatsApp, lui, a besoin d'un numéro, et le seul honnête est celui que l'écran de
+   * création aurait choisi : le PREMIER numéro de l'espace (`listPhoneNumbers` et `getTenantPhoneNumberId`
+   * ordonnent tous deux par `created_at`, vérifié, et l'assistant prend `numeros[0]`).
+   *
+   * ⚠️ ABSENTE ou sans réponse -> le canal WhatsApp n'est pas servable pour cette campagne, et son étage
+   * échoue avec sa raison. Jamais un envoi depuis un `phone_number_id` vide, qui partirait chez Meta sur
+   * l'adresse `//messages`.
+   */
+  numeroDuTenant?: (tenantId: string) => Promise<string | null>;
   /**
    * SÉRIALISATION des runs d'une même campagne (R1-bis, cf. `run-lock.ts`). Les trois pièces vont ensemble,
    * d'où un seul objet : on ne peut pas câbler le verrou sans savoir dimensionner son bail, ni sans savoir
@@ -154,66 +180,139 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'campagne en pause' };
   }
 
-  // Garde d'appartenance du numéro (optionnelle, injectée en prod par le worker). Si le numéro a été réaffecté à un
-  // autre tenant depuis la création de la campagne, on n'envoie RIEN et on remonte la raison dans le rapport (pas de
-  // colonne dédiée) plutôt que d'envoyer depuis un numéro qui n'est plus le nôtre.
-  // Canal RCS : il n'y a pas de numéro Meta à revalider (`phone_number_id` est vide), et l'interroger
-  // répondrait toujours « non » -> campagne mise en pause avec une raison fausse.
-  const isRcs = campaign.channel === 'rcs';
-  if (!isRcs && deps.phoneNumberBelongsToTenant && !(await deps.phoneNumberBelongsToTenant(campaign.phoneNumberId, campaign.tenantId))) {
-    return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'numéro non rattaché à ce workspace (réaffecté ?)' };
-  }
+  /**
+   * ⚠️ LA GARDE D'APPARTENANCE DU NUMÉRO ET LA RÉSOLUTION DES SENDERS VIVENT DANS LA BOUCLE CI-DESSOUS,
+   * canal par canal. Elles étaient ici, posées sur `campaign.channel`, et c'est exactement ce qui rendait
+   * un run mono-canal : une campagne RCS y sautait la garde et n'obtenait jamais de sender Meta, donc son
+   * repli WhatsApp ne pouvait pas partir.
+   */
 
-  // Débit PAR CAMPAGNE : le rate posé sur la campagne prime ; à défaut, le défaut serveur (deps, absent en test
-  // -> opt-out préservé). Un rate résolu > 0 instancie un RateLimiter dédié à CE run (intervalle minimal =
-  // 60000/rate ms), prioritaire sur un éventuel limiteur statique. 1 job = 1 campagne, donc l'instance est
-  // naturellement par-campagne. Le throttle attend AVANT de claimer le destinataire suivant : aucun destinataire
-  // ne reste 'sending' plus longtemps qu'une latence d'envoi (le sweeper reclaim ne le voit pas).
-  // 🔴 LE PLAFOND EST CELUI DU CANAL, PAS CELUI DE META POUR TOUT LE MONDE. C'est ici, et seulement
-  // ici, qu'on sait de quel canal on parle : `campaign.channel` est sur la campagne qu'on exécute. Les
-  // enfileurs, eux, ne font qu'estimer une durée et prennent une borne sûre (`plafondLePlusBas`).
-  // ⚠️ `deps.plafondDeDebit` absent (tests) -> aucun plafond, donc exactement le comportement d'avant.
-  const rate = resolveRatePerMinute(campaign.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondDeDebit?.(campaign.channel) ?? SANS_PLAFOND);
+  /**
+   * LES CANAUX QUE CE RUN DOIT SAVOIR SERVIR.
+   *
+   * 🔴 CE SONT CEUX DE LA CHAÎNE, PAS CELUI DE LA CAMPAGNE. C'est toute la différence entre une chaîne de
+   * repli fonctionnelle et une chaîne décorative : un run construit sur `campaign.channel` ne pouvait que
+   * REFUSER un destinataire que la bascule avait posé au rang 2.
+   *
+   * ⚠️ Chaîne absente ou vide (parc d'avant 0134, faux de test) -> le canal de la campagne, et lui seul,
+   * donc exactement le comportement d'avant ce lot.
+   */
+  const chaine: Etage[] = campaign.chaine ?? [];
+  const canalCampagne: CanalEtage = campaign.channel ?? 'whatsapp';
+  const canauxVoulus: CanalEtage[] = chaine.length > 0
+    ? [...new Set(chaine.map((e) => e.canal))]
+    : [canalCampagne];
+
+  /**
+   * LE FREIN DE CADENCE D'UN CANAL.
+   *
+   * Le rate posé sur la campagne prime ; à défaut, le défaut serveur (absent en test -> opt-out préservé).
+   * Un rate résolu > 0 instancie un RateLimiter dédié à CE run (intervalle minimal = 60000/rate ms),
+   * prioritaire sur un éventuel limiteur statique. Le throttle attend AVANT de claimer le destinataire
+   * suivant : aucun destinataire ne reste 'sending' plus longtemps qu'une latence d'envoi.
+   *
+   * 🔴 LE PLAFOND EST CELUI DU CANAL, PAS CELUI DE META POUR TOUT LE MONDE, et c'est ici, et seulement
+   * ici, qu'on sait de quel canal on parle. Les enfileurs, eux, ne font qu'estimer une durée et prennent
+   * une borne sûre (`plafondLePlusBas`).
+   *
+   * ⚠️ `deps.plafondDeDebit` absent (tests) -> aucun plafond, donc exactement le comportement d'avant.
+   *
+   * ⚠️ CHAQUE CANAL A SON PROPRE FREIN, DONC UN RUN MIXTE PEUT DÉPASSER LE DÉBIT DE LA CAMPAGNE, et c'est
+   * assumé : les deux canaux ne partagent ni fournisseur ni quota, et c'est toute la raison d'être de
+   * `plafondDuCanal`. Un frein commun ferait attendre un repli RCS derrière des envois WhatsApp. Le cas
+   * est rare de toute façon : un run sert presque toujours un seul étage, la bascule étant ce qui déplace
+   * un destinataire d'un rang à l'autre, entre deux runs.
+   */
+  /** Le sender Meta, posé quand le canal WhatsApp s'est révélé servable. Lu tout en bas, une seule fois. */
+  let senderMeta: MessageSender | undefined;
   const makeLimiter = deps.makeRateLimiter ?? ((ms: number) => new RateLimiter(ms));
-  const rateLimiter: RateGate | undefined =
-    rate > 0 ? makeLimiter(Math.ceil(60_000 / rate)) : deps.rateLimiter;
+  const freinDuCanal = (canal: CanalEtage): RateGate | undefined => {
+    const plafond = canal === 'email' ? SANS_PLAFOND : deps.plafondDeDebit?.(canal) ?? SANS_PLAFOND;
+    const rate = resolveRatePerMinute(campaign.ratePerMinute, deps.defaultRatePerMinute ?? 0, plafond);
+    return rate > 0 ? makeLimiter(Math.ceil(60_000 / rate)) : deps.rateLimiter;
+  };
 
-  // Résolution du sender (token PAR TENANT). Un token révoqué/expiré -> TokenInvalidError : on met la campagne en
-  // PAUSE proprement (rapport paused + raison) au lieu de laisser le throw remonter, ce qui ferait rejouer le job
-  // en boucle par pg-boss. Miroir de la garde d'appartenance du numéro ci-dessus.
-  // Canal RCS : on ne résout AUCUN token Meta (il n'y en a pas), on construit le sender de canal. Absent ou
-  // sans agent exploitable -> PAUSE avec la raison, jamais un run qui repart sur le chemin WhatsApp.
-  let channelSender: CampaignSender | undefined;
-  if (isRcs) {
-    if (!deps.rcsSenderFor) {
-      return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'canal RCS non câblé sur ce serveur' };
-    }
-    const cs = await deps.rcsSenderFor(campaign);
-    if (!cs) {
-      return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'aucun agent RCS exploitable pour cette campagne' };
-    }
-    channelSender = cs;
-  }
+  /**
+   * CE QUI EMPÊCHE DE SERVIR LE CANAL DE LA CAMPAGNE MET LA CAMPAGNE EN PAUSE ; ce qui empêche de servir
+   * un canal de REPLI ne fait que le retirer de la table.
+   *
+   * 🔴 LA DISTINCTION EST LA SEULE CHOSE QUI COMPTE ICI. Mettre en pause une campagne WhatsApp qui part
+   * parfaitement parce que son repli RCS n'a pas d'agent couperait l'envoi que l'opérateur a lancé ; à
+   * l'inverse, laisser une campagne RCS partir sans son sender l'enverrait depuis un numéro Meta vide.
+   */
+  const canaux: Partial<Record<CanalEtage, CanalServi>> = {};
+  let pauseDuCanalPrincipal: string | null = null;
+  const refuser = (canal: CanalEtage, raison: string): void => {
+    if (canal === canalCampagne) pauseDuCanalPrincipal ??= raison;
+  };
 
-  let sender: MessageSender;
-  if (isRcs) {
-    // `EngineDeps.sender` est requis par le type, mais le moteur branche sur `channelSender` AVANT de
-    // l'utiliser. Ce garde rend l'invariant explicite : s'il est un jour appelé, c'est un bug de branchement,
-    // et on veut le voir immédiatement plutôt qu'un envoi Meta parti d'une campagne RCS.
-    const interdit = async (): Promise<never> => {
-      throw new Error('campagne RCS : le sender Meta ne doit jamais être appelé');
-    };
-    sender = { sendMarketing: interdit, sendTemplate: interdit };
-  } else {
-    try {
-      sender = await deps.senderFor(campaign);
-    } catch (err) {
-      if (err instanceof TokenInvalidError) {
-        return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'token WhatsApp révoqué/expiré, reconnectez le numéro' };
+  for (const canal of canauxVoulus) {
+    if (canal === 'rcs') {
+      // L'agent et le message sont figés sur la campagne (rang 1) ou sur l'étage (rangs suivants) : c'est
+      // le CONTENU de l'étage RCS qui part, jamais celui de la campagne, sans quoi un repli renverrait le
+      // message du premier canal.
+      const etage = chaine.find((e) => e.canal === 'rcs');
+      const message = etage && etage.rang !== RANG_INITIAL ? etage.rcsMessage : campaign.rcsMessage;
+      if (!deps.rcsSenderFor) { refuser(canal, 'canal RCS non câblé sur ce serveur'); continue; }
+      const cs = await deps.rcsSenderFor(campaign, message);
+      if (!cs) { refuser(canal, 'aucun agent RCS exploitable pour cette campagne'); continue; }
+      // ⚠️ UN SEUL APPEL : `freinDuCanal` CONSTRUIT un limiteur, il n'en rend pas un déjà là. L'appeler
+      // deux fois (une pour tester, une pour poser) en fabriquerait deux, dont un jamais utilisé, et
+      // doublerait le compte que les tests de câblage vérifient.
+      const frein = freinDuCanal(canal);
+      canaux.rcs = { sender: cs, ...(frein ? { rateLimiter: frein } : {}) };
+      continue;
+    }
+    if (canal === 'whatsapp') {
+      // Le numéro de la campagne, ou celui de l'espace quand la campagne n'en porte pas (campagne RCS à
+      // repli WhatsApp). Vide des deux côtés = canal non servable, jamais un envoi depuis un numéro vide.
+      const numero = campaign.phoneNumberId !== ''
+        ? campaign.phoneNumberId
+        : (await deps.numeroDuTenant?.(campaign.tenantId)) ?? '';
+      if (numero === '') { refuser(canal, 'aucun numéro WhatsApp sur cet espace'); continue; }
+      // Garde d'appartenance : elle ne vaut QUE pour un numéro porté par la campagne. Celui de l'espace
+      // vient d'être lu SUR le tenant, l'interroger reviendrait à lui demander ce qu'on vient de lui dire.
+      if (numero === campaign.phoneNumberId && deps.phoneNumberBelongsToTenant
+        && !(await deps.phoneNumberBelongsToTenant(numero, campaign.tenantId))) {
+        refuser(canal, 'numéro non rattaché à ce workspace (réaffecté ?)');
+        continue;
       }
-      throw err;
+      try {
+        const meta = await deps.senderFor(campaign, numero);
+        // ⚠️ UN SEUL APPEL, même raison qu'au-dessus : `freinDuCanal` construit, il ne consulte pas.
+        const frein = freinDuCanal(canal);
+        canaux.whatsapp = {
+          phoneNumberId: numero,
+          ...(frein ? { rateLimiter: frein } : {}),
+        };
+        senderMeta = meta;
+      } catch (err) {
+        // Un token révoqué/expiré met la campagne en PAUSE proprement au lieu de laisser le throw remonter,
+        // ce qui ferait rejouer le job en boucle par pg-boss. Sur un canal de repli, il le retire seulement.
+        if (err instanceof TokenInvalidError) { refuser(canal, 'token WhatsApp révoqué/expiré, reconnectez le numéro'); continue; }
+        throw err;
+      }
+      continue;
     }
+    // 🔴 L'E-MAIL N'A AUCUN SENDER DE CAMPAGNE, et ce n'est pas un oubli de câblage : il n'en existe pas.
+    // Son étage échoue donc avec sa raison, au vrai rang et au vrai canal, et la bascule passera au
+    // suivant. L'inventer ici enverrait des messages par un chemin que personne n'a écrit.
+    refuser(canal, "le canal e-mail n'est pas servable par une campagne");
   }
+
+  if (pauseDuCanalPrincipal !== null) {
+    return { sent: 0, skipped: 0, failed: 0, paused: true, reason: pauseDuCanalPrincipal };
+  }
+
+  /**
+   * `EngineDeps.sender` est REQUIS par le type, mais le moteur ne l'utilise que pour un étage WhatsApp.
+   * Ce garde rend l'invariant explicite : s'il est un jour appelé sans canal WhatsApp servable, c'est un
+   * bug de branchement, et on veut le voir immédiatement plutôt qu'un envoi Meta parti d'une campagne RCS.
+   */
+  const sender: MessageSender = senderMeta ?? {
+    sendMarketing: async (): Promise<never> => { throw new Error('campagne sans étage WhatsApp : le sender Meta ne doit jamais être appelé'); },
+    sendTemplate: async (): Promise<never> => { throw new Error('campagne sans étage WhatsApp : le sender Meta ne doit jamais être appelé'); },
+  };
 
   const optionsMoteur: EngineDeps = {
     // 🔴 UN SEUL SPREAD, et c'est tout l'intérêt : il n'y a plus de liste de noms à tenir alignée avec le
@@ -225,12 +324,11 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     // spread, donc ils gagnent, ce qui est la bonne priorité (un appelant ne peut pas les usurper, le type
     // les lui interdit déjà).
     sender,
-    ...(channelSender ? { channelSender } : {}),
+    canaux,
     recipients: deps.recipients,
     campaigns: deps.campaigns,
     frequency: deps.frequency,
     quality: deps.quality,
-    ...(rateLimiter ? { rateLimiter } : {}),
   };
 
   const serialisation = deps.serialisation;

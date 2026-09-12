@@ -2,10 +2,15 @@
  * LA CHAÎNE D'ÉTAGES D'UNE CAMPAGNE : le canal n'est plus un attribut de la campagne, c'est une SUITE
  * de tentatives, chacune sur son canal, qu'on parcourt tant que la précédente n'a pas abouti.
  *
- * 🔴 CE MODULE NE CHANGE RIEN AUJOURD'HUI, ET C'EST SON INTÉRÊT. Une chaîne à UN seul étage a, par
- * construction, un `rangSuivant` toujours nul : aucune bascule n'est possible, donc le comportement est
- * EXACTEMENT celui d'avant. La migration 0134 reprend tout le parc existant au rang 1, ce qui permet de
- * déployer la chaîne avant que le moteur de bascule existe, et de la vérifier sur du vrai trafic.
+ * 🔴 IL EST EN SERVICE DEPUIS LE 2026-09-12, et cet en-tête a dit le contraire (« ce module ne change
+ * rien aujourd'hui ») tant que la chaîne n'était que déclarative. Le balayage fait avancer un
+ * destinataire d'étage (`bascule.ts`), et le run SERT le canal de l'étage où il est (`etageServable` et
+ * `contenuDeLEtage`, `src/campaign/engine.ts`).
+ *
+ * ⚠️ CE QUI RESTE VRAI DU PARC EXISTANT : une chaîne à UN seul étage a, par construction, un
+ * `rangSuivant` toujours nul, donc aucune bascule n'est possible et le comportement est EXACTEMENT celui
+ * d'avant. La migration 0134 a repris tout le parc au rang 1, et c'est ce qui a permis de déployer la
+ * chaîne avant le moteur, puis de la vérifier sur du vrai trafic.
  *
  * ⚠️ Les fonctions sont PURES et ne supposent rien de l'ordre du tableau. Le contraire aurait été le
  * piège : la lecture SQL peut rendre les lignes dans n'importe quel ordre, et une chaîne construite par
@@ -15,9 +20,11 @@
 /**
  * Les canaux qu'un étage sait porter.
  *
- * ⚠️ `email` est déjà ici alors qu'aucun étage e-mail ne peut encore être créé : c'est le CHECK de la
- * table qui fait foi (`campaign_etages.canal`), et il porte les trois. Une liste plus étroite ici
- * refuserait de relire une ligne que la base accepte d'écrire, ce qui est la pire des deux fautes.
+ * ⚠️ UN ÉTAGE E-MAIL SE CRÉE (l'assistant le propose en troisième niveau) MAIS NE S'ENVOIE PAS : aucun
+ * sender de campagne n'existe pour ce canal, donc le run le REFUSE avec sa raison (`run-job.ts`) et la
+ * bascule passe au suivant. C'est le CHECK de la table qui fait foi sur cette liste
+ * (`campaign_etages.canal`), et il porte les trois : une liste plus étroite ici refuserait de relire une
+ * ligne que la base accepte d'écrire, ce qui est la pire des deux fautes.
  */
 export type CanalEtage = 'whatsapp' | 'rcs' | 'email';
 
@@ -25,9 +32,10 @@ export type CanalEtage = 'whatsapp' | 'rcs' | 'email';
  * Le rang du PREMIER étage, celui de toute campagne d'aujourd'hui.
  *
  * 🔴 CONSTANTE PARTAGÉE, PAS UN `1` RECOPIÉ. Elle est écrite par la reprise de 0134, par le défaut de
- * `campaign_recipients.etage_courant`, et par le journal des tentatives du moteur. Le jour où le moteur
- * de bascule fera avancer un destinataire, c'est la liste des lecteurs de cette constante qu'il faudra
- * relire, et un `1` en dur n'apparaît dans aucune liste.
+ * `campaign_recipients.etage_courant`, et par le journal des tentatives du moteur. Elle est SURTOUT ce
+ * qui sépare le rang dont le contenu vient des colonnes de `campaigns` de ceux dont le contenu vient de
+ * leur ligne d'étage (`contenuDeLEtage`, `src/campaign/engine.ts`) : un `1` en dur n'apparaîtrait dans
+ * aucune liste de lecteurs le jour où cette frontière bougerait.
  */
 export const RANG_INITIAL = 1;
 
@@ -158,9 +166,10 @@ export function normaliserChaine(entrants: EtageEntrant[]): Etage[] {
  * lequel des six refus vient de tomber.
  *
  * ⚠️ `canalCampagne` est le canal DÉCLARÉ de la campagne (`campaigns.channel`). Le premier étage doit
- * lui être égal : le moteur construit son run sur les colonnes de `campaigns` et ne sert que le rang 1
- * (`etageServable`, `src/campaign/engine.ts`). Une divergence enverrait le bon message en le
- * journalisant sur le mauvais canal, ce qui fausse la ventilation sans rien casser de visible.
+ * lui être égal parce que le contenu du rang 1 vient des COLONNES de `campaigns`, pas de sa ligne
+ * d'étage : c'est l'invariant de la migration 0134, appliqué par `insertCampaignRow` et lu par
+ * `contenuDeLEtage` (`src/campaign/engine.ts`). Une divergence enverrait le contenu d'un canal en le
+ * journalisant sur un autre, ce qui fausse la ventilation sans rien casser de visible.
  */
 export function problemeDeChaine(entrants: EtageEntrant[], canalCampagne: CanalEtage): string | null {
   if (!Array.isArray(entrants) || entrants.length === 0) {

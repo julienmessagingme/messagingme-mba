@@ -19,8 +19,15 @@ export interface RcsStack {
   agents: PgRcsAgentStore;
   /** Opt-out du canal. Exposé parce que le webhook de réponses doit ÉCRIRE dedans quand un contact dit STOP. */
   optout: PgRcsOptoutStore;
-  /** Sender de canal pour une campagne. null = campagne inexploitable (agent absent, message manquant). */
-  senderForCampaign(campaign: Campaign): Promise<CampaignSender | null>;
+  /**
+   * Sender de canal pour une campagne. null = campagne inexploitable (agent absent, message manquant).
+   *
+   * ⚠️ `message` EST CELUI DE L'ÉTAGE, PAS TOUJOURS CELUI DE LA CAMPAGNE. Un repli RCS sur une campagne
+   * WhatsApp a son message sur SA ligne d'étage, et `campaign.rcsMessage` y vaut `null` : construire le
+   * sender sur la campagne enverrait un message vide, ou rien. Absent -> celui de la campagne, qui est le
+   * contenu du rang 1 (invariant de la migration 0134).
+   */
+  senderForCampaign(campaign: Campaign, message?: unknown): Promise<CampaignSender | null>;
 }
 
 export interface SmsmodeCredentials {
@@ -85,12 +92,13 @@ export function buildRcsStack(
     sender,
     agents,
     optout,
-    async senderForCampaign(campaign: Campaign): Promise<CampaignSender | null> {
-      // L'agent et le message sont figés SUR la campagne à sa création (et validés là-bas). On ne va pas
+    async senderForCampaign(campaign: Campaign, messageDeLEtage?: unknown): Promise<CampaignSender | null> {
+      // L'agent est figé SUR la campagne à sa création (et validé là-bas), y compris quand le RCS n'est
+      // qu'un étage de repli d'une campagne WhatsApp (`src/http/campaigns.ts` l'exige alors). On ne va pas
       // rechercher l'agent du tenant ici : une campagne doit partir avec l'agent sous lequel elle a été
       // écrite, même si le tenant en a changé depuis.
       const agentId = campaign.rcsAgentId;
-      const message = campaign.rcsMessage as RcsOutbound | null | undefined;
+      const message = (messageDeLEtage ?? campaign.rcsMessage) as RcsOutbound | null | undefined;
       if (!agentId || !message) return null;
       return makeCampaignSender({
         channel: 'rcs',

@@ -118,9 +118,9 @@ describe.skipIf(!url)('la creation d une chaine d etages', () => {
 
   /**
    * 🔴 LE RANG 1 VIENT DES COLONNES DE `campaigns`, JAMAIS DE LA CHAÎNE REÇUE, et c'est l'invariant que
-   * la migration 0134 pose (« une seule source pour le contenu d'un étage »). Le moteur construit son run
-   * sur ces colonnes et ne sert que le rang 1 (`etageServable`) : si l'étage disait autre chose, le
-   * message parti serait celui de la campagne et le journal dirait celui de l'étage.
+   * la migration 0134 pose (« une seule source pour le contenu d'un étage »). Le moteur le lit ainsi
+   * (`contenuDeLEtage`) : si l'étage disait autre chose, le message parti serait celui de la campagne et
+   * le journal dirait celui de l'étage.
    */
   it('le contenu du rang 1 est celui de la campagne, meme si le client en propose un autre', async () => {
     const id = await repo.insertCampaign({

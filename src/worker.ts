@@ -527,8 +527,11 @@ async function main(): Promise<void> {
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT
   // (B1), avec intercepteur d'auth (un token révoqué invalide le WABA au lieu de brûler des appels).
   const dryRunSender = new DryRunSender();
-  const senderFor = async (campaign: Campaign): Promise<MessageSender> =>
-    dryRun ? dryRunSender : metaFactory.senderForTenant(campaign.tenantId, campaign.phoneNumberId);
+  // ⚠️ LE NUMÉRO EST CELUI QUE LE RUN A RÉSOLU, PAS `campaign.phoneNumberId` : une campagne RCS a la
+  // colonne vide (migration 0056) et son repli WhatsApp part du numéro de l'espace. Lire la campagne ici
+  // enverrait ce repli depuis un identifiant vide.
+  const senderFor = async (campaign: Campaign, phoneNumberId: string): Promise<MessageSender> =>
+    dryRun ? dryRunSender : metaFactory.senderForTenant(campaign.tenantId, phoneNumberId);
 
   // 🔴 DRAPEAU D'ARRÊT (R4). Levé par SIGTERM, lu par le moteur à CHAQUE destinataire : un run de campagne
   // s'arrête alors à la frontière d'un envoi, rend son verrou, et laisse la campagne `running` avec ses
@@ -563,7 +566,10 @@ async function main(): Promise<void> {
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       // Canal RCS : sender construit à partir de l'agent et du message FIGÉS sur la campagne. null -> la
       // campagne est mise en pause avec sa raison, elle ne repart jamais sur le chemin WhatsApp.
-      rcsSenderFor: (campaign) => rcsStack.senderForCampaign(campaign),
+      rcsSenderFor: (campaign, message) => rcsStack.senderForCampaign(campaign, message),
+      // Le numéro de l'espace, pour un étage WhatsApp de REPLI sur une campagne qui n'en porte pas (une
+      // campagne RCS). Le MÊME que l'écran de création aurait choisi : le premier par `created_at`.
+      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
       // SÉRIALISATION des runs (R1-bis) : un seul run vivant par campagne. Injectée ICI seulement, comme les
       // gardes voisines : absente en test/e2e, le comportement historique est conservé mot pour mot.
       serialisation: {

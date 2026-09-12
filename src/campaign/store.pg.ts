@@ -1345,8 +1345,9 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
    *
    * 🔴 LE RANG 1 NE VIENT JAMAIS DE LA CHAÎNE REÇUE, IL VIENT DES COLONNES DE `campaigns`. C'est
    * l'invariant que la migration 0134 pose en toutes lettres (« une seule source pour le contenu d'un
-   * étage ») et dont le moteur dépend : un run est construit sur ces colonnes et ne sait servir que le
-   * rang 1 (`etageServable`). Recopier ici le contenu que le client a mis sur son premier étage
+   * étage ») et dont le moteur dépend : `contenuDeLEtage` (`src/campaign/engine.ts`) lit ces colonnes
+   * pour le rang 1 et la ligne d'étage pour les suivants. Recopier ici le contenu que le client a mis
+   * sur son premier étage
    * ouvrirait deux vérités sur la même campagne, dont c'est la NÔTRE qui part et la SIENNE qu'on
    * journalise. `problemeDeChaine` a déjà refusé le seul écart visible, un canal de rang 1 qui
    * contredit `campaigns.channel`.
