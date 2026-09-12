@@ -1518,6 +1518,72 @@ it('un etage RCS reussi n ecrit aucune joignabilite WhatsApp', async () => { /* 
 
 ---
 
+## Phase 6 : les trois retours du PREMIER essai réel (lot 7)
+
+🔴 **CE SONT LES TROIS PREMIERS RETOURS D'UN ŒIL HUMAIN SUR L'ASSISTANT, et deux sur trois sont des
+erreurs de PÉRIMÈTRE, pas d'exécution.** Julien a ouvert l'écran le 2026-09-12 au soir. Aucun des
+trois n'était visible d'un test : le premier demandait un espace avec des invitations en attente, les
+deux autres demandaient de se souvenir de ce qui avait été DEMANDÉ.
+
+### Tâche 17 : les membres non activés se GRISENT, ils ne disparaissent pas
+
+**Fichiers** : `web/app/campaigns/nouvelle/page.tsx`, `web/components/campagne/EtapeContenu.tsx`
+
+**Le constat** : trois comptes dans l'espace, un seul dans la liste. Mesuré en base, les deux autres
+ont `password_hash is null`, donc une **invitation en attente**. Le filtre `!u.disabled && !u.pending`
+fait exactement ce qu'il annonce, et c'est juste : assigner à quelqu'un qui ne peut pas se connecter
+range les conversations là où personne ne les lira.
+
+🔴 **Le défaut n'est pas le filtre, c'est le SILENCE.** Le produit s'interdit ailleurs de masquer une
+option indisponible (« un canal non configuré est grisé AVEC SA RAISON, pas masqué ») et c'est
+exactement le même cas : ici l'empêchement est levable par celui qui le voit, il suffit que la
+personne accepte son invitation. Les trois membres s'affichent, les deux non activés sont grisés avec
+la mention « invitation en attente ».
+
+- [ ] Test : trois membres dont deux en attente -> **trois** entrées, deux désactivées, la mention visible
+- [ ] Mutation : remettre le filtre silencieux, constater qu'il n'y a plus qu'une entrée
+
+### Tâche 18 : la cadence redevient la jauge, et une seule question horaire
+
+**Fichiers** : `web/components/campagne/EtapeCanal.tsx`, `web/lib/campagne-creation.ts`
+
+🔴 **LES TROIS INTENTIONS DE CADENCE N'ONT JAMAIS ÉTÉ DEMANDÉES.** Elles viennent d'une
+recommandation que j'ai écrite dans la spec (« l'écran cesse de demander un nombre de messages par
+minute ») et que Julien n'a jamais validée. Sur ce sujet il n'a tranché qu'une chose : le débit RCS à
+60 par minute. Retirer une capacité que le client utilisait sur la foi d'une recommandation non
+validée est une régression déguisée en amélioration.
+
+**Ce qu'il veut, dit le 2026-09-12** : « je veux juste une seule question : envoyer ou pas hors des
+business hours. C'est tout ! et après on shoote au rythme du canon que le client choisit ».
+
+- **Une seule question horaire** à l'étape Canal : hors heures d'ouverture, oui ou non.
+- **La jauge de débit revient**, telle qu'elle est dans `CampaignCreateForm`, et elle vit **à la fin**
+  du parcours, avec la durée estimée que l'audience connue permet enfin de calculer.
+- ⚠️ **Le plafond reste résolu PAR CANAL** (tâche 9) : c'est le seul acquis de ce sujet, et il est
+  invisible de l'écran. Une campagne RCS ne doit pas se voir imposer le plafond de Meta.
+
+### Tâche 19 : l'audience redevient CELLE D'AVANT
+
+**Fichiers** : `web/components/campagne/EtapeAudience.tsx` et ses dépendances
+
+🔴 **UN ÉCRAN QUI SAIT FAIRE MOINS QUE CELUI QU'IL REMPLACE N'EST PAS UN REMPLAÇANT.** L'étape
+Audience a été livrée réduite, et le plan classait la sélection fine en « capacité manquante n°2 »,
+à traiter plus tard. C'est une erreur de découpage : pour l'utilisateur ce n'est pas une capacité
+absente, c'est une régression.
+
+Ce qui doit revenir, à l'identique de `CampaignCreateForm` (le lire, ne pas réinventer) :
+
+- les **filtres du mini-CRM** (tags, champs, consentement, dates) et les exclusions ;
+- l'**upload d'un fichier** de contacts ;
+- la **sélection parmi les contacts** du mini-CRM, cases à cocher comprises ;
+- les **listes HubSpot**.
+
+⚠️ **Ce n'est PAS une réécriture.** Le panneau de filtres est déjà un composant partagé
+(`ContactFilterPanel`), et `contactIdsForTarget` passe déjà par le même `buildContactWhere`. Le
+travail est de RÉUTILISER, et toute ligne réécrite ici est une seconde définition de l'audience.
+
+---
+
 ## Revue et rayon de souffle, avant déploiement
 
 🔴 **La revue `/revue` est systématique et ne se demande pas.** Elle inclut la section « Rayon de
