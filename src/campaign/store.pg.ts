@@ -6,7 +6,7 @@ import type { BuildContact, BuiltRecipient } from './build';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
-import { RANG_INITIAL, type CanalEtage, type Etage } from './etages';
+import { RANG_INITIAL, normaliserChaine, type CanalEtage, type Etage, type EtageEntrant } from './etages';
 import type { EntreeDeDecision } from './bascule';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
@@ -32,7 +32,14 @@ export interface CreateCampaignInput {
   businessHoursOnly?: boolean;
   /** Canal d'envoi. Absent = 'whatsapp' (comportement historique). */
   channel?: 'whatsapp' | 'rcs';
-  /** Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'`. */
+  /**
+   * Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'`, ET depuis le 2026-09-12 si la CHAÎNE
+   * porte un étage RCS alors que la campagne part sur un autre canal.
+   *
+   * ⚠️ Posé sur une campagne WhatsApp, il est INERTE : c'est `channel` qui gouverne le branchement du
+   * sender (`isRcs`, `src/campaign/run-job.ts`), jamais la présence de cette valeur. Il est là pour que
+   * le repli RCS ait un agent le jour où le moteur saura servir un second étage.
+   */
   rcsAgentId?: string;
   /** Message RCS, validé par zod à la création. Requis si `channel = 'rcs'`. */
   rcsMessage?: unknown;
@@ -41,6 +48,29 @@ export interface CreateCampaignInput {
    * SANS destinataire (`contactIds` n'a plus de sens), et ne se termine pas toute seule.
    */
   webhookId?: string;
+  /**
+   * LA CHAÎNE D'ÉTAGES, quand la campagne en a une. Absente = UN étage, celui de la campagne, exactement
+   * comme avant.
+   *
+   * 🔴 SANS ELLE, L'ASSISTANT AFFICHE TROIS ÉTAGES ET CRÉE UNE CAMPAGNE À UN SEUL. `insertCampaignRow`
+   * était le SEUL écrivain de `campaign_etages` et n'écrivait que le rang 1 : le moteur de bascule, la
+   * ventilation par canal et l'écran de repli existaient tous les trois sans que quoi que ce soit ne
+   * sache ENREGISTRER ce qu'ils décrivent.
+   *
+   * ⚠️ SES RANGS SONT UNE INTENTION D'ORDRE, PAS UNE VALEUR DE CONFIANCE : ils sont renumérotés 1..N par
+   * `normaliserChaine`, et `problemeDeChaine` refuse en amont ce que le CHECK de la table refuserait en
+   * 5xx. ⚠️ Le CONTENU du rang 1 est ignoré : il vient des colonnes de `campaigns`, seule source (cf.
+   * `insertCampaignRow`).
+   */
+  chaine?: EtageEntrant[];
+  /** « Réessayer les envois qui échouent » (`campaigns.reessayer`, 0134). Absent = le défaut de la table (vrai). */
+  reessayer?: boolean;
+  /** Le rattrapage peut-il partir hors des heures d'ouverture (0134) ? Absent = le défaut de la table (faux). */
+  rattrapageHorsHoraires?: boolean;
+  /** Comment les réponses se répartissent dans l'Inbox (0134). Absent/null = aucune assignation. */
+  assignation?: 'personne' | 'tour_de_role' | null;
+  /** La personne, quand `assignation` vaut `personne`. Ignoré sinon. */
+  assignationUserId?: string | null;
 }
 
 /** Ligne SQL d'un résumé de campagne (liste + détail : même projection). */
@@ -147,9 +177,12 @@ export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
  * campagne à chaîne resterait listé par les trois relances de F6 EN PLUS d'être basculé : deux
  * mécanismes sur le même échec, donc un envoi de trop, et rien ne l'aurait signalé.
  *
- * ⚠️ Le parc d'aujourd'hui est ENTIÈREMENT « sans repli » : la reprise de 0134 a mis toutes les
- * campagnes existantes au rang 1, et `insertCampaignRow` n'écrit que ce rang. La clause est donc vraie
- * partout aujourd'hui, et le comportement de F6 est rigoureusement celui d'avant.
+ * ⚠️ LE PARC EXISTANT RESTE « SANS REPLI », MAIS CE N'EST PLUS UN INVARIANT DU CODE. La reprise de
+ * 0134 a mis toutes les campagnes d'avant au rang 1 ; ce qui a changé le 2026-09-12, c'est que
+ * `insertCampaignRow` écrit désormais la chaîne COMPLÈTE qu'un appelant lui donne. Une campagne créée
+ * avec un repli sort donc de cette clause, et c'est précisément ce pour quoi elle a été écrite : la
+ * frontière n'était pas un constat sur le parc, c'est le contrôle qui empêche qu'un même échec soit à
+ * la fois basculé et relancé par F6.
  *
  * ⚠️ `${RANG_INITIAL}` est interpolé et non paramétré : c'est une constante de module (un nombre du
  * code), jamais une entrée. Le paramétrer obligerait chaque appelant à décaler ses `$n`.
@@ -229,8 +262,29 @@ const summarySelect = (colonnesEnPlus = '') => `select c.id, c.name, c.category,
 export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Crée UNE campagne, sans destinataire. Sert les tests d'intégration et l'API de bas niveau.
+   *
+   * 🔴 ELLE EST TRANSACTIONNELLE DEPUIS QUE LA CHAÎNE PEUT AVOIR PLUSIEURS ÉTAGES, et c'est une dette
+   * que le lot 0134 avait explicitement laissée ouverte (« un échec entre les deux laisserait une
+   * campagne à chaîne vide... à reprendre avec le moteur de bascule »). Elle ne coûtait rien tant qu'une
+   * chaîne avait toujours un étage unique écrit dans la foulée ; elle coûte une campagne MORTE dès qu'il
+   * y en a trois, parce que `getCampaign` lit la chaîne pour décider ce qu'un run envoie. Mieux vaut
+   * aucune campagne qu'une campagne que personne ne peut servir.
+   */
   async insertCampaign(input: CreateCampaignInput): Promise<string> {
-    return insertCampaignRow(this.pool, input);
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const id = await insertCampaignRow(client, input);
+      await client.query('commit');
+      return id;
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async getCampaign(id: string): Promise<Campaign | null> {
@@ -1096,8 +1150,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   const rcsMessage = input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage);
   const res = await q.query<{ id: string }>(
     `insert into campaigns
-       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15)
+       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, reessayer, rattrapage_hors_horaires, assignation, assignation_user_id)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19)
      returning id`,
     [
       input.tenantId,
@@ -1117,34 +1171,87 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       rcsMessage,
       input.webhookId ?? null,
       input.businessHoursOnly === true,
+      /**
+       * 🔴 LES QUATRE RÉGLAGES DE L'ASSISTANT, ÉCRITS ICI ET NULLE PART AILLEURS. Les colonnes existent
+       * depuis 0134 et sont LUES (`listCandidatsBascule` lit `reessayer` et `rattrapage_hors_horaires`,
+       * l'assignation d'une réponse lit les deux autres), mais AUCUN chemin ne les écrivait : elles
+       * gardaient donc leur défaut de table quoi que l'opérateur ait coché. C'est exactement le même
+       * trou que celui de la chaîne, sur la même fonction, et il rendait l'assignation à tour de rôle
+       * inatteignable.
+       *
+       * ⚠️ `?? true` ET `?? false` REPRODUISENT LES DÉFAUTS DE LA TABLE, pas un choix nouveau : une
+       * création qui ne dit rien (l'API publique, un test, un client existant) obtient exactement ce
+       * qu'elle obtenait avant.
+       */
+      input.reessayer ?? true,
+      input.rattrapageHorsHoraires ?? false,
+      input.assignation ?? null,
+      // ⚠️ L'identifiant ne survit QU'AVEC `personne` : le garder sur un tour de rôle laisserait en base
+      // une personne désignée que plus rien ne lit, donc une seconde vérité sur le même réglage.
+      input.assignation === 'personne' ? input.assignationUserId ?? null : null,
     ],
   );
   const id = res.rows[0]?.id;
   if (!id) throw new Error('insertCampaignRow : aucun id retourné');
 
   /**
-   * L'ÉTAGE 1 : la campagne qu'on vient d'écrire, dite en chaîne (migration 0134).
+   * LA CHAÎNE (migration 0134). Absente = UN étage, celui de la campagne, exactement comme avant.
    *
-   * ⚠️ UN SEUL ÉTAGE, TOUJOURS, tant que le formulaire n'a pas basculé. C'est l'invariant qui rend ce
-   * lot invisible : `rangSuivant` rend null sur une chaîne à un étage, donc aucune bascule n'est
-   * possible et le moteur suit le chemin d'avant. Le jour où le formulaire enverra une vraie chaîne,
-   * c'est ICI qu'elle s'écrira, et c'est la seule écriture à changer.
+   * 🔴 LE RANG 1 NE VIENT JAMAIS DE LA CHAÎNE REÇUE, IL VIENT DES COLONNES DE `campaigns`. C'est
+   * l'invariant que la migration 0134 pose en toutes lettres (« une seule source pour le contenu d'un
+   * étage ») et dont le moteur dépend : un run est construit sur ces colonnes et ne sait servir que le
+   * rang 1 (`etageServable`). Recopier ici le contenu que le client a mis sur son premier étage
+   * ouvrirait deux vérités sur la même campagne, dont c'est la NÔTRE qui part et la SIENNE qu'on
+   * journalise. `problemeDeChaine` a déjà refusé le seul écart visible, un canal de rang 1 qui
+   * contredit `campaigns.channel`.
+   *
+   * ⚠️ LES RANGS SONT RENUMÉROTÉS, PAS CRUS. Le CHECK `rang between 1 and 3` et la clé primaire
+   * `(campaign_id, rang)` sont les bornes de la table ; y envoyer directement ce qu'un client a tapé
+   * ferait trancher Postgres, c'est-à-dire une 5xx remplacée par la page d'erreur de Cloudflare.
    *
    * ⚠️ Le `on conflict do nothing` n'a rien à rattraper sur un identifiant qu'on vient de créer ; il
    * est là pour que la ligne reste idempotente le jour où cette fonction sera rejouée sur une campagne
    * existante, ce que fait déjà `bulkInsertRecipients` juste en dessous.
    *
-   * 🔴 SUR LE CHEMIN RÉEL (`createWithRecipients`) LES DEUX INSERT SONT DANS LA MÊME TRANSACTION, donc
-   * une campagne sans son étage n'existe pas. Sur le chemin `insertCampaign` (le pool nu, utilisé par
-   * les tests d'intégration) elles ne le sont pas : un échec entre les deux laisserait une campagne à
-   * chaîne vide. Ce qui, aujourd'hui, ne casse rien (personne ne lit encore la chaîne pour décider),
-   * et qui cassera le jour où le moteur s'en servira. À reprendre avec le moteur de bascule.
+   * 🔴 LES DEUX ÉCRITURES SONT DANS LA MÊME TRANSACTION SUR LES DEUX CHEMINS DEPUIS CE LOT
+   * (`createWithRecipients` l'était déjà, `insertCampaign` ne l'était pas). Une campagne enregistrée
+   * sans ses étages est une campagne qu'aucun run ne peut servir, puisque `getCampaign` lit la chaîne
+   * pour décider ce qui part : mieux vaut aucune campagne qu'une campagne morte.
    */
+  const etages: Etage[] = input.chaine && input.chaine.length > 0
+    ? normaliserChaine(input.chaine).map((e) => (e.rang === RANG_INITIAL
+      ? { rang: RANG_INITIAL, canal, ...(templateName !== null && templateName !== undefined ? { templateName } : {}),
+          ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
+          ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
+          ...(input.workflowId ? { workflowId: input.workflowId } : {}) }
+      : e))
+    : [{
+      rang: RANG_INITIAL, canal,
+      ...(templateName !== null && templateName !== undefined ? { templateName } : {}),
+      ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
+      ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
+      ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+    }];
+  // ⚠️ UNE SEULE REQUÊTE POUR TOUTE LA CHAÎNE (`unnest`), sur le modèle de `bulkInsertRecipients` : trois
+  // allers-retours pour trois étages au milieu d'une transaction tiennent le client ouvert pour rien.
   await q.query(
-    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, workflow_id)
-     values ($1, $2, $3, $4, $5, $6::jsonb, $7)
+    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, workflow_id)
+     select $1, r, c, tn, tl, rm::jsonb, et::uuid, wf::uuid
+     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[]) as u(r, c, tn, tl, rm, et, wf)
      on conflict (campaign_id, rang) do nothing`,
-    [id, RANG_INITIAL, canal, templateName, templateLanguage, rcsMessage, input.workflowId ?? null],
+    [
+      id,
+      etages.map((e) => e.rang),
+      etages.map((e) => e.canal),
+      // ⚠️ `?? null` ET NON `|| null` : une chaîne vide est ce que l'ancien chemin écrivait déjà pour une
+      // campagne RCS (`templateName: ''`), et la transformer en null ici changerait ce que la table porte
+      // pour toutes les campagnes existantes sans que personne ne l'ait demandé.
+      etages.map((e) => e.templateName ?? null),
+      etages.map((e) => e.templateLanguage ?? null),
+      etages.map((e) => (e.rcsMessage === undefined ? null : JSON.stringify(e.rcsMessage))),
+      etages.map((e) => e.emailTemplateId ?? null),
+      etages.map((e) => e.workflowId ?? null),
+    ],
   );
   return id;
 }

@@ -13,7 +13,8 @@ import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
-import { scopeTenant, nonEmpty } from './scope';
+import { scopeTenant, nonEmpty, estUuid } from './scope';
+import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type EtageEntrant } from '../campaign/etages';
 // Le MÊME analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
 import { parseBulkTarget } from './contacts';
@@ -79,6 +80,15 @@ export interface CampaignRouteDeps {
   rcsAgentBelongsToTenant?(agentId: string, tenantId: string): Promise<boolean>;
   /** Agents RCS du tenant (sélecteur de l'assistant). Absent -> liste vide. */
   listRcsAgents?(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>>;
+  /**
+   * Le modèle de mail appartient-il au tenant (et n'est-il pas supprimé) ? Garde d'un étage e-mail de la
+   * chaîne, exactement comme `rcsAgentBelongsToTenant` l'est d'une campagne RCS.
+   *
+   * 🔴 SANS ELLE, L'IDENTIFIANT PART DIRECTEMENT DANS UNE CLÉ ÉTRANGÈRE : `campaign_etages.email_template_id`
+   * référence `email_templates(id)`, donc un modèle inconnu rendrait une 23503, c'est-à-dire une 5xx dont
+   * Cloudflare remplace le corps. Absente du câblage -> aucun étage e-mail n'est créable, et le refus le dit.
+   */
+  emailTemplateBelongsToTenant?(templateId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
   /**
@@ -262,6 +272,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       rcsMessage: unknown;
       webhookId: string;
       businessHoursOnly: unknown;
+      chaine: unknown;
+      reessayer: unknown;
+      rattrapageHorsHoraires: unknown;
+      assignation: unknown;
+      assignationUserId: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
@@ -464,6 +479,99 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(400).send({ error: 'paramMapping invalide (positions 1..N contiguës, sources valides)' });
     }
 
+    /**
+     * LA CHAÎNE D'ÉTAGES (migration 0134), quand l'assistant en envoie une.
+     *
+     * 🔴 ELLE SE REFUSE EN 422, JAMAIS EN 5XX. La table porte `check (rang between 1 and 3)`, un CHECK de
+     * canal et une clé primaire `(campaign_id, rang)` : envoyer directement ce qu'un client a tapé ferait
+     * trancher Postgres, et Cloudflare remplacerait le corps de la 5xx par sa page d'erreur, donc
+     * l'opérateur ne lirait jamais ce qui cloche.
+     *
+     * ⚠️ ABSENTE = UNE CAMPAGNE À UN SEUL ÉTAGE, exactement comme avant. C'est le cas de l'API publique,
+     * des clients existants et de tout le parc : ce bloc ne se déclenche que si `chaine` est là.
+     */
+    let chaine: EtageEntrant[] | undefined;
+    if (b.chaine !== undefined) {
+      if (!Array.isArray(b.chaine)) {
+        return reply.code(400).send({ error: 'chaine invalide (tableau d\'étages)' });
+      }
+      const probleme = problemeDeChaine(b.chaine as EtageEntrant[], channel);
+      if (probleme) return reply.code(422).send({ error: probleme });
+      const normalisee = normaliserChaine(b.chaine as EtageEntrant[]);
+      /**
+       * 🔴 LE CONTENU DES ÉTAGES AU-DELÀ DU PREMIER, ET SEULEMENT LUI. Le rang 1 est la campagne
+       * elle-même : son template, son message RCS et son scénario ont déjà été contrôlés plus haut, et
+       * `insertCampaignRow` le réécrit depuis les colonnes de `campaigns` (invariant de 0134, « une seule
+       * source pour le contenu d'un étage »). Le revalider ici ne ferait que donner deux occasions de
+       * diverger.
+       */
+      for (const e of normalisee) {
+        if (e.rang === RANG_INITIAL) continue;
+        if (e.canal === 'rcs') {
+          const parsed = rcsOutboundSchema.safeParse(e.rcsMessage);
+          if (!parsed.success) {
+            return reply.code(422).send({ error: `L'étage ${e.rang} part en RCS : son message n'est pas valide.` });
+          }
+          e.rcsMessage = parsed.data;
+        }
+        if (e.canal === 'email') {
+          if (!estUuid(e.emailTemplateId ?? '')) {
+            return reply.code(422).send({ error: `L'étage ${e.rang} part en e-mail : il lui faut un modèle de mail.` });
+          }
+          if (!deps.emailTemplateBelongsToTenant) {
+            return reply.code(422).send({ error: "Les étages e-mail ne sont pas disponibles sur cette instance." });
+          }
+          if (!(await deps.emailTemplateBelongsToTenant(e.emailTemplateId as string, effectiveTenant))) {
+            return reply.code(422).send({ error: `L'étage ${e.rang} vise un modèle de mail inconnu de cet espace.` });
+          }
+        }
+        // ⚠️ MÊME GARDE QUE `workflowId` SUR LA CAMPAGNE : sans elle, un identifiant recopié ferait démarrer
+        // le scénario d'un AUTRE espace. `getWorkflowGraph` est scopée tenant, elle rend null hors espace.
+        if (e.workflowId !== undefined) {
+          if (!estUuid(e.workflowId) || !(await deps.getWorkflowGraph(e.workflowId, effectiveTenant))) {
+            return reply.code(422).send({ error: `L'étage ${e.rang} vise un scénario inconnu de cet espace.` });
+          }
+        }
+      }
+      /**
+       * 🔴 UN ÉTAGE RCS EXIGE UN AGENT, MÊME SUR UNE CAMPAGNE WHATSAPP. Sans lui, la chaîne est
+       * enregistrée mais son repli ne pourra jamais partir : `senderForCampaign` (`src/rcs/factory.ts`)
+       * rend `null` sans `rcsAgentId`, et le run se met en pause avec « aucun agent RCS exploitable ».
+       * Autant le dire à la création, où l'opérateur peut encore choisir.
+       *
+       * ⚠️ VÉRIFIÉ : POSER `rcs_agent_id` SUR UNE CAMPAGNE WHATSAPP EST INERTE. C'est `campaign.channel`
+       * qui gouverne le branchement du sender (`isRcs`, `src/campaign/run-job.ts`), pas la présence de
+       * l'agent ; une campagne WhatsApp ne consulte jamais cette colonne aujourd'hui.
+       */
+      if (!isRcs && normalisee.some((e) => e.canal === 'rcs')) {
+        if (!nonEmpty(b.rcsAgentId)) {
+          return reply.code(422).send({ error: "Cette chaîne comporte un étage RCS : il lui faut un agent RCS." });
+        }
+        if (!deps.rcsAgentBelongsToTenant || !(await deps.rcsAgentBelongsToTenant(b.rcsAgentId as string, effectiveTenant))) {
+          return reply.code(422).send({ error: 'rcsAgentId inconnu pour ce tenant' });
+        }
+      }
+      chaine = normalisee;
+    }
+
+    /**
+     * L'ASSIGNATION DES RÉPONSES (migration 0134). `null`/absente = aucune, comme aujourd'hui.
+     *
+     * ⚠️ `personne` SANS PERSONNE EST UN REFUS, pas une assignation vide : l'écrire laisserait une
+     * campagne qui promet un destinataire d'Inbox et n'en désigne aucun, donc des réponses qui tombent
+     * dans « À traiter » alors que l'opérateur croit les avoir routées.
+     */
+    let assignation: 'personne' | 'tour_de_role' | null | undefined;
+    if (b.assignation !== undefined && b.assignation !== null) {
+      if (b.assignation !== 'personne' && b.assignation !== 'tour_de_role') {
+        return reply.code(400).send({ error: 'assignation invalide (personne|tour_de_role)' });
+      }
+      assignation = b.assignation;
+      if (assignation === 'personne' && !estUuid(typeof b.assignationUserId === 'string' ? b.assignationUserId : '')) {
+        return reply.code(422).send({ error: "Cette campagne confie ses réponses à une personne : il faut la choisir." });
+      }
+    }
+
     const input: CreateCampaignInput = {
       tenantId: effectiveTenant,
       phoneNumberId: isRcs ? '' : (b.phoneNumberId as string),
@@ -479,6 +587,14 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ...(isRcs ? { rcsAgentId: b.rcsAgentId as string, rcsMessage } : {}),
       ...(b.businessHoursOnly === true ? { businessHoursOnly: true } : {}),
       ...(webhookId ? { webhookId } : {}),
+      ...(chaine ? { chaine } : {}),
+      // ⚠️ Un étage RCS de repli sur une campagne WhatsApp : l'agent voyage avec la campagne, il a été
+      // contrôlé juste au-dessus. Inerte tant que `channel` n'est pas `rcs`, cf. le commentaire de la garde.
+      ...(!isRcs && chaine?.some((e) => e.canal === 'rcs') ? { rcsAgentId: b.rcsAgentId as string } : {}),
+      ...(b.reessayer !== undefined ? { reessayer: b.reessayer === true } : {}),
+      ...(b.rattrapageHorsHoraires !== undefined ? { rattrapageHorsHoraires: b.rattrapageHorsHoraires === true } : {}),
+      ...(assignation !== undefined ? { assignation } : {}),
+      ...(assignation === 'personne' ? { assignationUserId: b.assignationUserId as string } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     // AVERTISSEMENT de palier (lot 7 du programme II) : dit AVANT ce que le moteur sait déjà gérer APRÈS (il

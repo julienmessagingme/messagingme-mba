@@ -472,6 +472,9 @@ async function main(): Promise<void> {
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
       rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),
       listRcsAgents: (tenant) => workflowRuntime.rcsStack.agents.listForTenant(tenant),
+      // Garde d'un étage e-mail de la chaîne : `getById` est scopée tenant ET écarte les modèles supprimés
+      // (suppression douce), donc elle rend null dans les deux cas où la clé étrangère aurait rendu une 5xx.
+      emailTemplateBelongsToTenant: async (id, tenant) => (await emailTemplates.getById(tenant, id)) !== null,
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
       // Campagne AU FIL DE L'EAU : le webhook doit appartenir à l'espace ET être actif. Même nature de garde
       // que pour le numéro Meta et l'agent RCS, sur la troisième porte d'entrée possible des destinataires.

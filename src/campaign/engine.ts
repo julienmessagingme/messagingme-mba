@@ -336,8 +336,12 @@ export function suffixesPourDestinataire(
  * ⚠️ CE N'EST PAS LE MOTEUR DE REPLI, ET IL NE FAUT PAS LE LIRE COMME TEL. Servir un second étage demande
  * un run capable d'envoyer sur un AUTRE canal que celui de sa campagne : sender, plafond de débit, quality
  * gate (notion Meta, sans équivalent RCS), pré-lectures de template, journal du fil et mémoire de
- * joignabilité en dépendent tous. C'est un lot à part, et rien ne presse tant qu'aucun chemin de création
- * n'écrit un second étage (`insertCampaignRow` n'écrit que le rang 1).
+ * joignabilité en dépendent tous. C'est un lot à part.
+ *
+ * ⚠️ ET IL PRESSE DEPUIS LE 2026-09-12, ce que ce commentaire niait : `insertCampaignRow` écrit désormais
+ * la chaîne COMPLÈTE, donc un destinataire peut réellement arriver au rang 2 et se faire refuser ici. Le
+ * refus reste le bon comportement (échec LISIBLE, au vrai rang et au vrai canal, plutôt qu'un renvoi du
+ * message qui vient d'échouer), mais il n'est plus théorique.
  *
  * ⚠️ CHAÎNE ABSENTE OU VIDE = le comportement d'avant, mot pour mot : rang 1, canal de la campagne. C'est
  * le cas de tout le parc (campagnes d'avant 0134 non reprises, faux des tests qui ne câblent pas `chaine`).

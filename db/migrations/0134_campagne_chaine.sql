@@ -130,7 +130,8 @@ create index if not exists campaign_envois_message_id_idx on campaign_envois (me
 -- deux depuis une seule valeur) : il sait donc servir le rang 1, et lui seul. Un destinataire posé à un
 -- rang supérieur est REFUSÉ avec sa raison, et sa tentative est journalisée au vrai rang et au vrai canal.
 -- Servir réellement un second étage demande un run capable d'envoyer sur un AUTRE canal que celui de sa
--- campagne : c'est un lot à part, et rien ne le presse tant qu'aucun chemin de création n'écrit un rang 2.
+-- campagne : c'est un lot à part. ⚠️ Il n'est plus THÉORIQUE depuis le 2026-09-12 : `insertCampaignRow`
+-- écrit désormais la chaîne complète que l'assistant décrit, donc un rang 2 peut réellement exister.
 alter table campaign_recipients add column if not exists etage_courant smallint not null default 1;
 
 -- Les réglages de l'assistant.

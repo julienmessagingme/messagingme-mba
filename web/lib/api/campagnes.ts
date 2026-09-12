@@ -10,6 +10,7 @@
 
 import { request } from '../http';
 import type { BulkTarget } from '../contact-filters';
+import type { CanalEtage } from '../campagne-chaine';
 
 // --- Campagnes ---
 
@@ -82,6 +83,27 @@ export interface RcsAgent {
   status: string;
 }
 
+/**
+ * UN ÉTAGE DE LA CHAÎNE, tel que l'assistant le propose à la création.
+ *
+ * ⚠️ LE CONTENU DU RANG 1 N'EST PAS LU PAR LE SERVEUR : il vient des colonnes de la campagne
+ * (`templateName`, `rcsMessage`, `workflowId` ci-dessous), qui restent la seule source de l'étage 1
+ * (invariant de la migration 0134). Le canal du rang 1, lui, DOIT être celui de `channel`, sans quoi la
+ * création est refusée en 422.
+ *
+ * ⚠️ Les rangs sont une INTENTION D'ORDRE : le serveur les renumérote 1..N. Un trou ou un désordre ne
+ * casse rien, mais plus de trois étages est un refus, pas une troncature.
+ */
+export interface EtageCreation {
+  rang: number;
+  canal: CanalEtage;
+  templateName?: string;
+  templateLanguage?: string;
+  rcsMessage?: RcsOutbound;
+  emailTemplateId?: string;
+  workflowId?: string;
+}
+
 export interface CreateCampaignInput {
   /** Vide sur une campagne RCS : elle part d'un agent de marque, pas d'un numéro Meta. */
   phoneNumberId: string;
@@ -124,6 +146,22 @@ export interface CreateCampaignInput {
    * (le serveur refuse les deux ensemble).
    */
   webhookId?: string;
+  /**
+   * LA CHAÎNE D'ÉTAGES (migration 0134). Absente = une campagne à UN étage, exactement comme avant.
+   *
+   * 🔴 C'EST CE QUI REND L'ASSISTANT RÉEL. Sans elle, l'écran décrivait trois étages et la campagne créée
+   * n'en portait qu'un : le moteur de bascule n'avait jamais rien à parcourir, et personne ne s'en serait
+   * aperçu avant la recette.
+   */
+  chaine?: EtageCreation[];
+  /** « Réessayer les envois qui échouent ». Absent = le défaut du serveur (vrai). */
+  reessayer?: boolean;
+  /** Le rattrapage (réessai ou repli) peut-il partir hors des heures d'ouverture ? Absent = non. */
+  rattrapageHorsHoraires?: boolean;
+  /** Comment les réponses se répartissent dans l'Inbox. Absent/null = aucune répartition. */
+  assignation?: 'personne' | 'tour_de_role' | null;
+  /** La personne, quand `assignation` vaut `personne`. Ignoré (et non enregistré) sinon. */
+  assignationUserId?: string | null;
   /**
    * N'envoyer QUE pendant les heures d'ouverture de l'espace (onglet Paramètres). Absent = aucune contrainte.
    *

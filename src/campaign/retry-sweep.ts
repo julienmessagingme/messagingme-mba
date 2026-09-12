@@ -115,11 +115,11 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
   // et `terminal` se joue en NE FAISANT RIEN, le destinataire restant `failed` sans que plus personne
   // ne le reprenne. Écrire un second chemin de réessai ici en ferait deux qui doivent rester d'accord.
   //
-  // 🔴 CETTE PASSE EST DORMANTE TANT QU'UNE CAMPAGNE NE PEUT PAS AVOIR PLUS D'UN ÉTAGE : `insertCampaignRow`
-  // n'écrit que le rang 1. Ce qui a CHANGÉ le 2026-09-12, c'est l'autre bout : le moteur LIT désormais
-  // `etage_courant` (`etageServable`, `src/campaign/engine.ts`), donc une bascule ne peut plus faire
-  // renvoyer le contenu de l'étage 1 sur le canal de l'étage 1, c'est-à-dire le message qui vient
-  // d'échouer.
+  // 🔴 CETTE PASSE N'EST PLUS DORMANTE DEPUIS LE 2026-09-12. Elle l'a été tant que `insertCampaignRow`
+  // n'écrivait que le rang 1 ; ce chemin écrit désormais la chaîne complète que l'assistant décrit, donc
+  // une campagne PEUT avoir un second étage et des candidats PEUVENT remonter ici. Le moteur, lui, LIT
+  // `etage_courant` (`etageServable`, `src/campaign/engine.ts`) : une bascule ne peut plus faire renvoyer
+  // le contenu de l'étage 1 sur le canal de l'étage 1, c'est-à-dire le message qui vient d'échouer.
   //
   // ⚠️ MAIS LE MOTEUR NE SAIT TOUJOURS PAS ENVOYER UN SECOND ÉTAGE, il le REFUSE avec sa raison : un run
   // est construit sur les colonnes de `campaigns`, qui sont le contenu du rang 1 (sender, plafond de

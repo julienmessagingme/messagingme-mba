@@ -87,3 +87,92 @@ export function rangSuivant(chaine: Etage[], rangCourant: number): number | null
   }
   return suivant;
 }
+
+/**
+ * UN ÉTAGE TEL QU'UN APPELANT LE PROPOSE, avant d'être cru.
+ *
+ * 🔴 IL EST DISTINCT D'`Etage` EXPRÈS, et la différence tient dans le rang : ici c'est une INTENTION
+ * d'ordre, là c'est une valeur écrite en base sous un `check (rang between 1 and 3)` et une clé
+ * primaire `(campaign_id, rang)`. Les confondre revient à écrire ce que le client a tapé, donc à faire
+ * trancher Postgres, donc à rendre une 5xx que Cloudflare remplace par sa page d'erreur là où
+ * l'utilisateur attend une phrase.
+ */
+export interface EtageEntrant {
+  rang: number;
+  canal: CanalEtage;
+  templateName?: string;
+  templateLanguage?: string;
+  rcsMessage?: unknown;
+  emailTemplateId?: string;
+  workflowId?: string;
+}
+
+/** Les trois canaux que le CHECK de `campaign_etages.canal` accepte. Miroir du SQL, pas une supposition. */
+const CANAUX: readonly string[] = ['whatsapp', 'rcs', 'email'];
+
+/**
+ * LA CHAÎNE RENUMÉROTÉE 1..N, DANS L'ORDRE DES RANGS PROPOSÉS.
+ *
+ * 🔴 ELLE TRIE AVANT DE RENUMÉROTER, ET C'EST TOUTE LA FONCTION. Renuméroter par position dans le
+ * tableau donne le même résultat sur une entrée déjà triée, donc passe la moitié des tests, et pose le
+ * contenu du rang 2 sur l'étage 1 dès qu'un client envoie ses étages dans un autre ordre. Le tri de
+ * JavaScript est STABLE depuis ES2019 : deux étages au même rang gardent leur ordre d'arrivée plutôt
+ * que d'échanger leur place d'une exécution à l'autre.
+ *
+ * ⚠️ ELLE NE TRONQUE PAS, et ce n'est pas un oubli : une chaîne trop longue est REFUSÉE par
+ * `problemeDeChaine`. Tronquer supprimerait en silence un étage que l'opérateur a configuré, ce qui
+ * est exactement le genre de perte qu'on ne découvre qu'à la recette.
+ *
+ * ⚠️ ELLE NE DÉCIDE RIEN D'AUTRE : ni canal valide, ni cohérence avec la campagne. Ces refus-là sont
+ * des messages destinés à un humain, donc ils vivent dans `problemeDeChaine`, qui les rend.
+ */
+export function normaliserChaine(entrants: EtageEntrant[]): Etage[] {
+  return [...entrants]
+    .sort((a, b) => a.rang - b.rang)
+    .map((e, i) => {
+      const { rang: _propose, ...contenu } = e;
+      return { ...contenu, rang: RANG_INITIAL + i } as Etage;
+    });
+}
+
+/**
+ * CE QUI INTERDIT D'ÉCRIRE CETTE CHAÎNE, en français, ou `null` si rien ne l'interdit.
+ *
+ * 🔴 ELLE REND UN MESSAGE, PAS UN BOOLÉEN, parce que l'appelant est une route qui doit répondre 422
+ * avec une phrase. Un booléen l'obligerait à rédiger le motif de son côté, c'est-à-dire à deviner
+ * lequel des six refus vient de tomber.
+ *
+ * ⚠️ `canalCampagne` est le canal DÉCLARÉ de la campagne (`campaigns.channel`). Le premier étage doit
+ * lui être égal : le moteur construit son run sur les colonnes de `campaigns` et ne sert que le rang 1
+ * (`etageServable`, `src/campaign/engine.ts`). Une divergence enverrait le bon message en le
+ * journalisant sur le mauvais canal, ce qui fausse la ventilation sans rien casser de visible.
+ */
+export function problemeDeChaine(entrants: EtageEntrant[], canalCampagne: CanalEtage): string | null {
+  if (!Array.isArray(entrants) || entrants.length === 0) {
+    return "Cette campagne désigne une chaîne d'étages sans en donner aucun.";
+  }
+  if (entrants.length > RANG_MAX) {
+    return `Une chaîne ne peut pas dépasser ${RANG_MAX} étages.`;
+  }
+  for (const e of entrants) {
+    if (typeof e?.rang !== 'number' || !Number.isInteger(e.rang)) {
+      return "Le rang d'un étage doit être un entier.";
+    }
+    if (typeof e?.canal !== 'string' || !CANAUX.includes(e.canal)) {
+      return `Canal d'étage inconnu : les canaux disponibles sont ${CANAUX.join(', ')}.`;
+    }
+  }
+  // 🔴 DEUX ÉTAGES SUR LE MÊME CANAL NE SONT PAS UN REPLI. C'est d'abord un contresens produit (« WhatsApp
+  // puis WhatsApp » est un réessai déguisé, cf. `web/lib/campagne-chaine.ts`), et c'est ensuite mesurable :
+  // la ventilation par canal du funnel groupe par `canal` (`funnelParCanal`, `src/stats/store.pg.ts`), donc
+  // les deux étages se confondraient en une seule ligne et l'écran ne dirait plus lequel a échoué.
+  const canaux = entrants.map((e) => e.canal);
+  if (new Set(canaux).size !== canaux.length) {
+    return "Deux étages d'une même chaîne ne peuvent pas partir sur le même canal.";
+  }
+  const premier = normaliserChaine(entrants)[0];
+  if (premier && premier.canal !== canalCampagne) {
+    return `Le premier étage doit partir sur le canal de la campagne (${canalCampagne}).`;
+  }
+  return null;
+}
