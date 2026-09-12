@@ -1429,6 +1429,95 @@ git commit --only src/inbox/assignation-campagne.ts src/campaign/webhook-feed.ts
 
 ---
 
+## Phase 5 : ce qui rend la chaîne RÉELLEMENT fonctionnelle (lot 6)
+
+🔴 **À la fin de la phase 4, tout est déployé et RIEN ne marche de bout en bout.** Deux manques, et
+deux seulement, séparent la plomberie d'une fonctionnalité utilisable. Les sept autres capacités
+absentes de l'assistant (aperçu, sélection fine, « Plus tard », fil de l'eau, brouillons, visuel RCS,
+débit fin) ne servent qu'au RETRAIT de l'ancien formulaire : elles sont réelles, elles ne sont pas
+sur ce chemin critique, et elles forment le lot 7.
+
+### Tâche 15 : les variables de template dans l'assistant
+
+**Fichiers**
+- Modifier : `web/components/campagne/EtapeContenu.tsx`, `web/lib/campagne-creation.ts`
+- Test : `web/lib/campagne-creation.test.ts`, `web/e2e/campagne-assistant-variables.spec.ts`
+
+🔴 **C'EST LE BLOCAGE, ET IL EST BINAIRE.** L'assistant n'envoie aucun `paramMapping` : un template
+portant `{{1}}` part avec zéro paramètre de corps et Meta refuse la **campagne entière** sur le
+compte de paramètres (`resolveHintParams`, `src/crm/template.ts`). Tant que cette tâche n'est pas
+faite, l'assistant ne sait créer que des campagnes à template sans variable, c'est-à-dire le cas rare.
+
+⚠️ **L'ancien formulaire porte déjà cette association**, et c'est lui la référence : on reprend sa
+sémantique (variable reliée à un champ de contact, avec repli sur l'exemple du template), on n'en
+invente pas une seconde. Lire `CampaignCreateForm.tsx` avant d'écrire.
+
+- [ ] **Étape 1 : le test qui échoue, et il porte le cas qui casse en production**
+
+```ts
+it('un template a variables produit un paramMapping complet', () => {
+  const c = corpsDeCreation({ ...base, template: { name: 'promo', params: ['{{1}}', '{{2}}'] },
+    associations: { 1: { source: 'champ', cle: 'prenom' }, 2: { source: 'constante', valeur: 'Paris' } } });
+  expect(c.paramMapping).toHaveLength(2);
+});
+
+// 🔴 LE CAS QUI PROTEGE LE CLIENT : une variable non associee ne part PAS en silence.
+it('une variable laissee vide empeche la creation, avec sa raison', () => {
+  const v = validerContenu({ template: { name: 'promo', params: ['{{1}}'] }, associations: {} });
+  expect(v.ok).toBe(false);
+  expect(v.raison).toMatch(/variable/i);
+});
+
+it('un template SANS variable ne produit aucun mapping, et reste creable', () => {
+  const c = corpsDeCreation({ ...base, template: { name: 'simple', params: [] } });
+  expect(c.paramMapping).toEqual([]);
+});
+```
+
+- [ ] **Étape 2 : lancer, implémenter, relancer, MUTER** (rendre `paramMapping: []` sur un template à
+      variables : le premier test doit échouer, et le second reste la garde d'écran)
+- [ ] **Étape 3 : l'e2e en 1280 x 800**, `pasDeDebordement` + `pasDeChevauchement` : l'association des
+      variables est une liste qui grandit, c'est un candidat au débordement.
+- [ ] **Étape 4 : commit**
+
+### Tâche 16 : le moteur envoie sur le canal de l'étage
+
+**Fichiers**
+- Modifier : `src/campaign/engine.ts`, `src/campaign/run-job.ts`, `src/worker.ts`
+- Test : `tests/campagne-envoi-multicanal.test.ts`,
+  `tests/integration/campagne-bascule-envoi.integration.test.ts`
+
+🔴 **SANS ELLE, LA CHAÎNE EST DÉCORATIVE.** La bascule marque `etage_courant`, le journal
+l'enregistre, et l'envoi reste mono-canal : un run ne sait envoyer que par le canal de SA campagne.
+Sept branches en dépendent, relevées au lot 4 : le sender, le plafond de débit, la porte de qualité,
+les pré-lectures de template, le journal du fil, la joignabilité, et le choix du contenu.
+
+⚠️ **Le moteur REFUSE déjà proprement** (lot 4) : il ne renvoie pas le message qui vient d'échouer,
+il s'arrête avec sa raison. Le point de départ est donc sûr, pas cassé.
+
+- [ ] **Étape 1 : les tests, et le premier est celui qu'on oublie**
+
+```ts
+// 🔴 CHAQUE ETAGE PREND LE PLAFOND DE SON CANAL, pas celui de la campagne. Un etage RCS sous le
+// plafond WhatsApp est exactement le defaut que la tache 9 a corrige : ne pas le rouvrir par le bas.
+it('l etage 2 en RCS prend le plafond RCS, pas celui de la campagne WhatsApp', async () => { /* ... */ });
+
+it('l etage 2 envoie le contenu de l ETAGE 2, pas celui de l etage 1', async () => { /* ... */ });
+
+it('le journal note le canal REELLEMENT utilise, pas celui de la campagne', async () => { /* ... */ });
+
+// ⚠️ La joignabilite ne s ecrit que pour WhatsApp : un envoi RCS reussi ne dit RIEN de WhatsApp.
+it('un etage RCS reussi n ecrit aucune joignabilite WhatsApp', async () => { /* ... */ });
+```
+
+- [ ] **Étape 2 : énumérer les sept branches AVANT d'écrire**, et dire pour chacune si elle lit le
+      canal de la campagne ou celui de l'étage. C'est la liste qui fait le travail, pas le code.
+- [ ] **Étape 3 : implémenter, relancer, MUTER** (faire lire `campaign.channel` à une branche :
+      le test du plafond ou celui du contenu doit rougir)
+- [ ] **Étape 4 : commit**
+
+---
+
 ## Revue et rayon de souffle, avant déploiement
 
 🔴 **La revue `/revue` est systématique et ne se demande pas.** Elle inclut la section « Rayon de
