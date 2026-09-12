@@ -62,6 +62,33 @@ export interface CampaignFunnel {
    * `null` = ce template ne porte aucun lien trace : l etape ne doit pas etre affichee.
    */
   urlClicks: number | null;
+  /**
+   * Combien d'HUMAINS la campagne a visés, quel que soit le nombre de tentatives faites pour les joindre.
+   * Optionnel : une instance antérieure au 2026-09-12 ne le rend pas.
+   *
+   * ⚠️ Ne se déduit PAS de la somme de `parCanal`, qui compte des TENTATIVES : une personne jointe au
+   * second étage après un échec au premier y compte deux fois, et ici une seule.
+   */
+  contactsVises?: number;
+  /**
+   * La ventilation par canal (journal des tentatives, migration 0134).
+   *
+   * ⚠️ VIDE N'EST PAS ZÉRO : le journal ne contient que les tentatives postérieures à sa mise en service,
+   * donc une campagne plus ancienne n'a aucune ligne alors que ses compteurs du haut sont complets. La
+   * ventilation se TAIT dans ce cas ; elle n'affiche pas des canaux à zéro.
+   */
+  parCanal?: FunnelCanal[];
+}
+/** Les compteurs d'UN canal, au grain TENTATIVE. */
+export interface FunnelCanal {
+  canal: 'whatsapp' | 'rcs' | 'email';
+  envois: number;
+  reussis: number;
+  delivres: number;
+  lus: number;
+  repondus: number;
+  /** Tentatives parties sans aucun accusé de Meta, POUR CE CANAL : « on ne sait pas », pas « non ». */
+  sansAccuse: number;
 }
 export function getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
   return request<CampaignFunnel>(`/tenants/${tenantId}/stats/campaign-funnel?campaignId=${encodeURIComponent(campaignId)}`);

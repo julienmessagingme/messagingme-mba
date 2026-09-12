@@ -11,13 +11,23 @@ import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { EnvoisCampagneRow } from './cout-campagne';
+import type { CanalEtage } from '../campaign/etages';
 
 export interface DailyPoint {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
   count: number;
 }
 
-/** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus (message entrant après l'envoi), + échecs. */
+/**
+ * Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus (message entrant après l'envoi), + échecs.
+ *
+ * 🔴 IL PORTE DEUX GRAINS DEPUIS LA MIGRATION 0134, ET LES CONFONDRE DONNE DES CHIFFRES FAUX. Tous les
+ * compteurs ci-dessous, plus `contactsVises`, comptent des PERSONNES (une ligne par contact dans
+ * `campaign_recipients`). `parCanal` compte des TENTATIVES (une ligne par envoi tenté dans
+ * `campaign_envois`). Sa somme DÉPASSE légitimement `contactsVises` dès qu'une chaîne de repli a fait
+ * deux tentatives pour joindre la même personne : ce n'est pas une incohérence, c'est la réponse à une
+ * autre question, et l'écran doit dire laquelle il pose.
+ */
 export interface CampaignFunnel {
   sent: number;
   delivered: number;
@@ -55,6 +65,48 @@ export interface CampaignFunnel {
    * premier envoi), mais deux campagnes sur le même template partagent leurs clics. L'écran doit le dire.
    */
   urlClicks: number | null;
+  /**
+   * COMBIEN D'HUMAINS CETTE CAMPAGNE A VISÉS, quel que soit le nombre de tentatives faites pour les
+   * joindre.
+   *
+   * 🔴 C'EST LA LIGNE DE TÊTE, ET ELLE NE SE DÉDUIT PAS DE `parCanal`. Additionner les envois des canaux
+   * donnerait le nombre de TENTATIVES : une personne jointe au second étage après un échec au premier y
+   * compterait pour deux. Le grain est garanti par `unique (campaign_id, contact_id)` sur
+   * `campaign_recipients`, qui est aussi le dédoublonnage du produit.
+   */
+  contactsVises: number;
+  /**
+   * LA VENTILATION PAR CANAL, lue sur le journal des tentatives (`campaign_envois`, migration 0134).
+   *
+   * ⚠️ ELLE PEUT ÊTRE VIDE ALORS QUE LA CAMPAGNE A ENVOYÉ, et il faut le savoir pour ne pas lire ce vide
+   * comme un zéro : le journal ne contient que les tentatives postérieures à sa mise en service. Toute
+   * campagne lancée avant n'a aucune ligne ici, pendant que les compteurs du dessus, eux, sont complets.
+   * L'écran doit taire la ventilation dans ce cas plutôt que d'annoncer « aucun envoi ».
+   *
+   * Une ligne par canal RÉELLEMENT emprunté, dans l'ordre des étages de la chaîne.
+   */
+  parCanal: FunnelCanal[];
+}
+
+/** Les compteurs d'UN canal d'une campagne, au grain TENTATIVE (une personne peut en avoir plusieurs). */
+export interface FunnelCanal {
+  canal: CanalEtage;
+  /** Toutes les tentatives de ce canal, quel qu'en soit le verdict (parties, échouées, écartées). */
+  envois: number;
+  /** Celles qui sont VRAIMENT parties : même définition que `sent` du funnel global. */
+  reussis: number;
+  delivres: number;
+  lus: number;
+  repondus: number;
+  /**
+   * Tentatives parties dont Meta n'a rendu AUCUN accusé, POUR CE CANAL.
+   *
+   * 🔴 LA DISTINCTION « ZÉRO » CONTRE « ON NE SAIT PAS » S'APPLIQUE PAR CANAL, SINON ELLE NE VEUT PLUS
+   * RIEN DIRE. Un canal parfaitement mesuré et un canal sans aucun accusé se retrouveraient derrière un
+   * seul verdict global : soit on efface les chiffres justes du premier, soit on affiche un « 0 délivré »
+   * crédible pour le second. C'est la mise côte à côte qui ment, exactement comme le 2026-09-11.
+   */
+  sansAccuse: number;
 }
 
 /** Une ligne du breakdown d'erreurs : code Meta numérique + template + occurrences sur la plage. */
@@ -282,23 +334,55 @@ const TZ = STATS_TZ;
  * L'opérateur jugeait son template sur le taux de clic d'un autre canal. Les deux colonnes sont
  * `not null default 'whatsapp'` depuis la migration 0056 : l'égalité simple suffit, pas de coalesce.
  */
-const entrantAttribue = (extra = ''): string => `r.sent_at is not null and exists (
+const entrantAttribueDepuis = (
+  envoi: { instant: string; numero: string; canal: string },
+  extra = '',
+): string => `${envoi.instant} is not null and exists (
            select 1 from conversations cv
              join conversation_messages m on m.conversation_id = cv.id
            where cv.tenant_id = c.tenant_id and not cv.is_test
-             and cv.wa_id = regexp_replace(r.to_e164, '[^0-9]', '', 'g')
+             and cv.wa_id = regexp_replace(${envoi.numero}, '[^0-9]', '', 'g')
              and m.direction = 'in'
-             and m.channel = c.channel
-             and m.created_at > r.sent_at ${extra}
+             and m.channel = ${envoi.canal}
+             and m.created_at > ${envoi.instant} ${extra}
              and not exists (
                select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
                where c2.tenant_id = c.tenant_id
-                 and r2.to_e164 = r.to_e164
+                 and r2.to_e164 = ${envoi.numero}
                  and r2.sent_at is not null
-                 and r2.sent_at > r.sent_at
+                 and r2.sent_at > ${envoi.instant}
                  and r2.sent_at < m.created_at
              )
          )`;
+
+/** L'attribution ancrée sur le DESTINATAIRE (`r`), telle qu'elle existe depuis l'origine du funnel. */
+const entrantAttribue = (extra = ''): string =>
+  entrantAttribueDepuis({ instant: 'r.sent_at', numero: 'r.to_e164', canal: 'c.channel' }, extra);
+
+/**
+ * L'attribution ancrée sur UNE TENTATIVE du journal (`e`, `campaign_envois`, migration 0134).
+ *
+ * 🔴 MÊME DOCTRINE, PAS UNE SECONDE. Le fragment est le même à l'ancrage près, et c'est délibéré : deux
+ * heuristiques d'attribution voisines donneraient deux vérités sur le MÊME écran, celui où l'on clique
+ * sur une campagne pour voir sa ventilation par canal. Ce qui change est l'instant de référence (celui de
+ * la tentative, pas celui du destinataire) et le canal (celui de la tentative, pas celui de la campagne),
+ * puisque c'est précisément ce que le grain « une ligne par tentative » permet de distinguer.
+ *
+ * ⚠️ L'EXCLUSION RESTE SUR `campaign_recipients`, ET C'EST NÉCESSAIRE, pas une facilité. Le journal ne
+ * contient que les tentatives postérieures à sa mise en service : un envoi plus ancien, ou fait par une
+ * autre campagne d'avant, n'y figure pas. Chercher l'envoi intercalé dans le journal seul laisserait donc
+ * de vieilles réponses se faire attribuer deux fois. `campaign_recipients`, elle, porte tout l'historique.
+ *
+ * ⚠️ Et c'est aussi ce qui règle le cas à deux canaux : la réussite du second étage écrit `sent_at` sur la
+ * ligne du destinataire, donc elle s'intercale entre la tentative du PREMIER étage et la réponse, ce qui
+ * retire la réponse au premier sans la retirer au second (l'inégalité est stricte).
+ *
+ * ⚠️ `e.sent_at is not null` est TOUJOURS vrai (la colonne est `not null default now()`) : c'est le prix
+ * du fragment partagé, et il ne coûte qu'un prédicat constant. Le rendre conditionnel aurait coûté une
+ * seconde forme du fragment, exactement ce qu'on cherche à éviter.
+ */
+const entrantAttribueTentative = (extra = ''): string =>
+  entrantAttribueDepuis({ instant: 'e.sent_at', numero: 'r.to_e164', canal: 'e.canal' }, extra);
 
 export class PgStatsStore {
   constructor(private readonly pool: Pool) {}
@@ -448,8 +532,12 @@ export class PgStatsStore {
    * le cas de toute campagne à scénario). Dans le second, « 0 lus » ne veut pas dire « personne n'a lu ».
    */
   async getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
-    const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string; sans_accuse: string; button_replies: string }>(
+    const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string; sans_accuse: string; button_replies: string; contacts_vises: string }>(
       `select
+         -- Le grain CONTACT, et il est a part : une ligne par personne visee, que la chaine d etages ait
+         -- fait une tentative ou trois pour la joindre. C est la contrainte unique (campaign_id,
+         -- contact_id) qui le garantit, pas une convention.
+         count(r.id)::int as contacts_vises,
          count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed')::int as sent,
          count(r.id) filter (where r.delivery_status in ('delivered', 'read'))::int as delivered,
          count(r.id) filter (where r.delivery_status = 'read')::int as read,
@@ -467,6 +555,7 @@ export class PgStatsStore {
     );
     const row = res.rows[0];
     return {
+      contactsVises: Number(row?.contacts_vises ?? 0),
       sent: Number(row?.sent ?? 0),
       delivered: Number(row?.delivered ?? 0),
       read: Number(row?.read ?? 0),
@@ -475,7 +564,65 @@ export class PgStatsStore {
       sansAccuse: Number(row?.sans_accuse ?? 0),
       buttonReplies: Number(row?.button_replies ?? 0),
       urlClicks: (await this.clicsParCampagne(tenantId, [campaignId])).get(campaignId) ?? null,
+      parCanal: await this.funnelParCanal(tenantId, campaignId),
     };
+  }
+
+  /**
+   * LA VENTILATION PAR CANAL d'une campagne, lue sur le journal des tentatives (migration 0134).
+   *
+   * 🔴 UNE REQUÊTE SÉPARÉE, PARCE QUE LES DEUX GRAINS NE SE MÉLANGENT PAS. La requête du dessus compte des
+   * PERSONNES (`campaign_recipients`, une ligne par contact), celle-ci compte des TENTATIVES : joindre les
+   * deux multiplierait les lignes de destinataires par leurs tentatives et fausserait tous les compteurs
+   * du haut, silencieusement, le jour où quelqu'un aura deux étages. Deux grains, deux requêtes.
+   *
+   * 🔴 ET LA SOMME DES CANAUX N'EST PAS `sent`, C'EST VOULU. Un contact joint au second étage après un
+   * échec au premier compte DEUX tentatives ici et UNE personne là-haut. L'écran doit dire laquelle des
+   * deux questions il répond ; c'est pour ça que `contactsVises` existe et qu'elle vient d'ailleurs.
+   *
+   * ⚠️ SCOPÉE AU TENANT PAR LA JOINTURE SUR `campaigns`, parce que `campaign_envois` NE PORTE PAS de
+   * `tenant_id` : son isolation passe par la campagne. La règle du dépôt est `tenant_id = $1` sur CHAQUE
+   * requête, le pooler étant superuser et la RLS contournée, et c'est cette jointure qui l'applique ici.
+   *
+   * ⚠️ `order by min(rang), canal` : la ventilation se lit dans l'ordre de la CHAÎNE, du premier étage
+   * tenté au dernier, pas dans l'ordre alphabétique d'un nom de canal. `canal` départage deux canaux
+   * arrivés au même rang, pour que l'affichage ne bouge pas d'un rafraîchissement à l'autre.
+   */
+  private async funnelParCanal(tenantId: string, campaignId: string): Promise<FunnelCanal[]> {
+    const res = await this.pool.query<{
+      canal: CanalEtage; envois: number; reussis: number; delivres: number; lus: number; repondus: number; sans_accuse: number;
+    }>(
+      `select e.canal,
+         count(*)::int as envois,
+         -- « Reussi » a EXACTEMENT la definition de « sent » du funnel global : parti, et pas dementi par
+         -- un accuse d echec arrive apres coup. Une seconde definition rendrait deux chiffres sur un ecran.
+         -- (Pas de guillemet oblique dans ces commentaires : il fermerait le gabarit JS. Invariant du depot.)
+         count(*) filter (where e.statut = 'sent' and e.delivery_status is distinct from 'failed')::int as reussis,
+         count(*) filter (where e.delivery_status in ('delivered', 'read'))::int as delivres,
+         count(*) filter (where e.delivery_status = 'read')::int as lus,
+         -- ⚠️ Le statut « sent » EN PLUS de l attribution : une tentative ECHOUEE n a rien envoye, donc ne
+         -- peut rien avoir provoque. Sans cette garde, une reponse arrivee apres un echec WhatsApp serait
+         -- portee au credit du canal qui vient precisement de ne pas fonctionner.
+         count(*) filter (where e.statut = 'sent' and ${entrantAttribueTentative()})::int as repondus,
+         -- Parti, mais aucun accusé de Meta : ni délivré, ni lu, ni échoué. « On ne sait pas », pas « non ».
+         count(*) filter (where e.statut = 'sent' and e.delivery_status is null)::int as sans_accuse
+       from campaign_envois e
+         join campaigns c on c.id = e.campaign_id
+         join campaign_recipients r on r.id = e.recipient_id
+       where e.campaign_id = $1 and c.tenant_id = $2
+       group by e.canal
+       order by min(e.rang), e.canal`,
+      [campaignId, tenantId],
+    );
+    return res.rows.map((l) => ({
+      canal: l.canal,
+      envois: Number(l.envois),
+      reussis: Number(l.reussis),
+      delivres: Number(l.delivres),
+      lus: Number(l.lus),
+      repondus: Number(l.repondus),
+      sansAccuse: Number(l.sans_accuse),
+    }));
   }
 
   /**

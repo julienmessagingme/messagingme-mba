@@ -19,6 +19,7 @@ import { BoutonPdf } from '@/components/BoutonPdf';
 import { useT, useLocale } from '@/lib/i18n';
 import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
+import { mesureInconnue, ventilationAffichable } from '@/lib/funnel-canal';
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { formatDate } from '@/lib/day';
 import {
@@ -171,8 +172,94 @@ function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: Ca
           {funnel.failed > 0 && (
             <p className="pt-2 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
           )}
+          <VentilationParCanal funnel={funnel} />
         </>
       )}
+    </div>
+  );
+}
+
+/** Le nom lisible d'un canal. Le libellé du produit, jamais l'identifiant technique de la base. */
+const NOM_CANAL: Record<string, string> = { whatsapp: 'WhatsApp', rcs: 'RCS', email: 'E-mail' };
+
+/**
+ * LA VENTILATION PAR CANAL d'une campagne (journal des tentatives, migration 0134).
+ *
+ * 🔴 ELLE NE S'AFFICHE QU'À PARTIR DE DEUX CANAUX, et c'est le point. Sur une campagne mono-canal, elle
+ * répéterait ligne pour ligne les barres juste au-dessus : deux fois les mêmes chiffres sur un écran, c'est
+ * une invitation à chercher pourquoi ils diffèrent. Or toutes les campagnes sont mono-canal aujourd'hui,
+ * donc cet ajout ne change RIEN de visible tant que la chaîne de repli n'existe pas, exactement comme le
+ * reste du lot.
+ *
+ * ⚠️ UNE VENTILATION ABSENTE N'EST PAS UNE VENTILATION À ZÉRO. Le journal ne contient que les tentatives
+ * postérieures à sa mise en service : une campagne plus ancienne n'a aucune ligne, alors que ses compteurs
+ * du dessus sont complets. On se tait dans ce cas, on n'annonce pas « 0 envoi » sur une campagne qui a
+ * réellement envoyé.
+ *
+ * ⚠️ LARGEUR : le tableau défile dans SON conteneur (`overflow-x-auto`). La carte vit dans un comparateur
+ * qui en met deux ou trois côte à côte sur environ 1000 px utiles : un tableau qui pousserait la page
+ * ferait déborder tout l'écran, pas seulement lui.
+ */
+function VentilationParCanal({ funnel }: { funnel: CampaignFunnel }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const lignes = funnel.parCanal ?? [];
+  if (!ventilationAffichable(funnel.parCanal)) return null;
+
+  return (
+    <div className="mt-3 border-t border-ink-100 pt-3">
+      <p className="mb-1 text-xs font-medium text-ink-700">{t('Par canal', 'By channel')}</p>
+      {/* ⚠️ La ligne de tête est au grain CONTACT : la somme des « tentatives » ci-dessous la dépasse dès
+          qu'une personne a été jointe au second étage, et sans cette phrase l'écart se lit comme une erreur. */}
+      {funnel.contactsVises !== undefined && (
+        <p className="mb-2 text-xs text-ink-500">
+          {t(
+            `${fmtNum(funnel.contactsVises, locale)} personne(s) visée(s), jointe(s) en ${fmtNum(lignes.reduce((n, l) => n + l.envois, 0), locale)} tentative(s).`,
+            `${fmtNum(funnel.contactsVises, locale)} person(s) targeted, reached in ${fmtNum(lignes.reduce((n, l) => n + l.envois, 0), locale)} attempt(s).`,
+          )}
+        </p>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[22rem] text-left text-xs">
+          <thead>
+            <tr className="text-ink-500">
+              <th className="py-1 pr-2 font-medium">{t('Canal', 'Channel')}</th>
+              <th className="py-1 pr-2 text-right font-medium">{t('Tentatives', 'Attempts')}</th>
+              <th className="py-1 pr-2 text-right font-medium">{t('Partis', 'Sent')}</th>
+              <th className="py-1 pr-2 text-right font-medium">{t('Délivrés', 'Delivered')}</th>
+              <th className="py-1 pr-2 text-right font-medium">{t('Lus', 'Read')}</th>
+              <th className="py-1 text-right font-medium">{t('Répondus', 'Replied')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lignes.map((l) => {
+              // « On ne sait pas » plutôt que « zéro », canal par canal. La règle et ses deux pièges
+              // vivent dans `lib/funnel-canal.ts`, où ils sont tenus par un test : écrite ici, elle ne
+              // serait exerçable que par un rendu complet, donc en pratique jamais.
+              const sansMesure = mesureInconnue(l);
+              return (
+                <tr key={l.canal} className="border-t border-ink-100">
+                  <td className="py-1 pr-2">
+                    <span className="rounded bg-violet/10 px-1.5 py-0.5 font-medium text-ink-800">
+                      {NOM_CANAL[l.canal] ?? l.canal}
+                    </span>
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700">{fmtNum(l.envois, locale)}</td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700">{fmtNum(l.reussis, locale)}</td>
+                  {/* Un tiret, jamais un zéro : la valeur n'est pas nulle, elle est inconnue. */}
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700" title={sansMesure ? t('Aucun accusé de Meta sur ce canal : inconnu, pas nul.', 'No Meta receipt on this channel: unknown, not zero.') : undefined}>
+                    {sansMesure ? '—' : fmtNum(l.delivres, locale)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700">
+                    {sansMesure ? '—' : fmtNum(l.lus, locale)}
+                  </td>
+                  <td className="py-1 text-right tabular-nums text-ink-700">{fmtNum(l.repondus, locale)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
