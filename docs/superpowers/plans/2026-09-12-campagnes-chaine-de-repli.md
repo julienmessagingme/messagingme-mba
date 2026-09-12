@@ -1149,6 +1149,78 @@ git commit --only web/components/campagne/EtapeContenu.tsx web/e2e/campagne-assi
 
 ---
 
+### 🔴 Tâche 11bis : ÉCRIRE la chaîne à la création (trou du plan, relevé au lot 4)
+
+**Fichiers**
+- Modifier : `src/campaign/store.pg.ts` (`insertCampaignRow`), `src/http/campaigns.ts`,
+  `web/lib/api/campaigns.ts`
+- Test : `tests/campagne-creation-chaine.test.ts`,
+  `tests/integration/campagne-chaine-creation.integration.test.ts`
+
+🔴 **SANS ELLE, LE PLAN NE LIVRE PAS SA PROMESSE, et personne ne s'en apercevrait avant la recette.**
+`insertCampaignRow` est le SEUL écrivain de `campaign_etages` et il n'écrit que le rang 1 (vérifié :
+un seul `insert into campaign_etages` dans tout `src/`). Les tâches 10 et 11 construisent un écran
+qui SAIT décrire une chaîne, les tâches 7 et 8 un moteur qui SAIT la parcourir, et rien entre les
+deux ne sait l'ENREGISTRER. Toute la phase 4 se terminerait sur un assistant qui affiche trois
+étages et crée une campagne à un seul.
+
+⚠️ **Elle passe AVANT la tâche 12**, qui retire l'ancien formulaire : retirer le seul chemin de
+création qui fonctionne avant que le nouveau sache écrire ce qu'il promet laisserait la console sans
+création de campagne du tout.
+
+- [ ] **Étape 1 : le test qui échoue, et il porte l'invariant que la migration 0134 a posé**
+
+```ts
+it('une chaine a trois etages ecrit TROIS lignes, dans leur ordre', async () => {
+  const id = await repo.insertCampaign({ ...base, chaine: [
+    { rang: 1, canal: 'whatsapp', templateName: 'promo', templateLanguage: 'fr' },
+    { rang: 2, canal: 'rcs', rcsMessage: { kind: 'text', text: 'coucou' } },
+    { rang: 3, canal: 'email', emailTemplateId: modeleId },
+  ] });
+  const r = await pool.query('select rang, canal from campaign_etages where campaign_id = $1 order by rang', [id]);
+  expect(r.rows).toEqual([
+    { rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }, { rang: 3, canal: 'email' },
+  ]);
+});
+
+// 🔴 LE CAS QUI PROTÈGE L'EXISTANT : une création SANS chaîne doit continuer à écrire exactement
+// un étage, comme aujourd'hui. C'est ce test qui casserait si quelqu'un rendait `chaine` obligatoire.
+it('une creation sans chaine ecrit UN etage, comme avant', async () => {
+  const id = await repo.insertCampaign({ ...base });
+  const r = await pool.query('select count(*)::int as n from campaign_etages where campaign_id = $1', [id]);
+  expect(r.rows[0].n).toBe(1);
+});
+
+// ⚠️ Les rangs viennent du client : ils se NORMALISENT, ils ne se croient pas.
+it('des rangs trous ou desordonnes sont renumerotes 1, 2, 3', async () => {
+  const id = await repo.insertCampaign({ ...base, chaine: [
+    { rang: 3, canal: 'rcs' }, { rang: 1, canal: 'whatsapp' },
+  ] });
+  const r = await pool.query('select rang, canal from campaign_etages where campaign_id = $1 order by rang', [id]);
+  expect(r.rows).toEqual([{ rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }]);
+});
+```
+
+- [ ] **Étape 2 : lancer, constater l'échec, implémenter**
+
+⚠️ **L'écriture des étages et celle de la campagne sont dans la MÊME transaction.** Une campagne
+enregistrée sans ses étages est une campagne qu'aucun run ne peut servir (`getCampaign` lit la
+chaîne) : mieux vaut aucune campagne qu'une campagne morte.
+
+⚠️ **Le CHECK `rang between 1 and 3` de la migration est la borne**, et la validation d'entrée doit
+refuser en **422** avant d'y arriver, pas laisser Postgres rendre une 5xx que Cloudflare remplacerait
+par sa page d'erreur.
+
+- [ ] **Étape 3 : MUTER** : écrire les étages hors transaction et faire échouer le second insert,
+      constater qu'une campagne orpheline subsiste. Restaurer.
+- [ ] **Étape 4 : commit**
+
+```bash
+git commit --only src/campaign/store.pg.ts src/http/campaigns.ts web/lib/api/campaigns.ts tests/campagne-creation-chaine.test.ts tests/integration/campagne-chaine-creation.integration.test.ts -m "feat(campagne): la creation sait enfin ECRIRE une chaine, pas seulement l afficher"
+```
+
+---
+
 ### Tâche 12 : Audience, Récapitulatif, et retrait de l'ancien formulaire
 
 **Fichiers**
