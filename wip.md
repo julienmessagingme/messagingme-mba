@@ -12,10 +12,17 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
-## Le lot du 2026-09-11 au soir : ce qui RESTE
+## Les deux lots du 2026-09-11 au soir : ce qui RESTE
 
-Onze demandes, neuf traitées le soir même. ⚠️ Ce qui suit n'est que le reste : le livré est dans
-[features.md](features.md) et son récit dans [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md).
+Quinze demandes en deux vagues (onze, puis quatre), toutes traitées et déployées le soir même, plus deux
+revues passées après coup qui ont produit quinze constats de plus, tous corrigés. ⚠️ Ce qui suit n'est que
+le RESTE : le livré est dans [features.md](features.md) et son récit dans
+[docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md).
+
+⚠️ **LEÇON DE LA SOIRÉE, ET ELLE EST SUR LA MÉTHODE :** la revue de code a dû être RÉCLAMÉE deux fois, et
+les deux fois elle a trouvé un défaut réel qu'aucun test ne voyait (un réglage muet de bout en bout, puis un
+champ qui débordait de son panneau de 12 px). Elle n'est pas une formalité de fin de lot, et elle ne doit
+pas attendre qu'on la demande.
 
 ### 🔴 Le bac à sable de l'agent : la question est CLOSE, mais autre chose est sorti
 
@@ -24,9 +31,27 @@ globalement. **C'est faux, et c'est mesuré** : `agent_test_runs` garde chaque e
 montrent `mba_chercher_connaissance` appelé à chaque fois, avant comme après l'activation. Ce qui changeait
 était la QUESTION, pas l'activation.
 
-La vraie cause était la recherche, sourde aux mots sans accent (migration 0132, livrée). ⚠️ **À revérifier
-avec lui une fois 0132 déployée** : si l'agent rate encore une réponse que la base contient, ce sera un
-autre défaut, et il faudra repartir des essais enregistrés plutôt que d'une hypothèse.
+La vraie cause était la recherche, sourde aux mots sans accent. **Migration 0132 appliquée et déployée le
+2026-09-11 au soir**, vérifiée en base et par le vrai code : « prevoyance » et « prévoyance » rendent
+désormais exactement le même résultat.
+
+⚠️ **IL RESTE À LE REVÉRIFIER AVEC LUI, sur une vraie question.** Si l'agent rate encore une réponse que sa
+base contient, ce sera un AUTRE défaut, et il faudra repartir des essais enregistrés (`agent_test_runs`)
+plutôt que d'une hypothèse. C'est ainsi que celui-ci a été trouvé.
+
+### 🔴 Le bot d'aide ne connaît AUCUNE des nouveautés du 2026-09-11
+
+Les fiches du mode d'emploi (`docs/aide/fiches/`) ne parlent ni du bilan d'un contact, ni du choix des blocs,
+ni du réglage de silence, ni du funnel sans accusé, ni de la création d'un champ à la volée. Un client qui
+pose la question au bouton d'aide obtiendra « je ne trouve pas la réponse dans le mode d'emploi », ce qui est
+honnête mais inutile.
+
+⚠️ **Les fiches ne se régénèrent PAS toutes seules, et c'est délibéré** : une régénération automatique
+remplacerait un texte RELU par un texte que personne n'a validé, et le bot se mettrait à parler aux clients
+avec des phrases non relues. `features.md` porte désormais toutes ces sections ; il reste à en tirer des
+fiches et à les relire. ⚠️ La détection de dérive, elle, a fait son travail DEUX fois dans la soirée
+(`importer-mes-contacts` puis `repondre-dans-l-inbox`), et la seconde fiche a été enrichie du cas que le lot
+changeait.
 
 ### Ce qui demande une décision de Julien, pas du code
 
