@@ -39,7 +39,8 @@ d'arrêter la campagne). Il ne change pas.
 | Question | Décision | Ce qu'elle achète |
 |---|---|---|
 | Quand bascule-t-on ? | **À l'échec technique de l'envoi**, plus la joignabilité mémorisée d'une campagne précédente | Le message n'est jamais parti, donc le double envoi est **structurellement impossible**, sans aucune machinerie de déduplication |
-| Bascule au premier ou au second échec ? | **Au PREMIER**, quand le code dit que le destinataire ne peut pas recevoir | Retenter un canal qui vient de dire « cette personne n'est pas là » ne sert à rien. ⚠️ Ne vaut PAS pour les incidents temporaires, cf. les trois familles ci-dessous |
+| Bascule au premier ou au second échec ? | **Au PREMIER, et pour TOUT code d'échec** | Retenter un canal qui vient de refuser retarde la seule chose qui compte, joindre la personne. Sans risque : les incidents temporaires sont déjà rejoués par la couche transport |
+| 131026 avec l'option de réessai cochée | **Terminal quand même** | Le numéro n'est pas un numéro WhatsApp. Réessayer ne peut rien changer, ni maintenant ni demain |
 | Ordre des étapes | Nom, Canal et repli, Contenu, Audience, Récapitulatif | Ordre choisi contre la recommandation de mettre l'audience avant le contenu. Conséquence assumée et compensée à l'étape 5 |
 | Présentation du canal | Une liste à trois entrées, puis sous-questions | WhatsApp seul, RCS seul, ou les deux avec repli |
 | Réessai sur campagne SANS repli | Une question à la création, **« Réessayer les envois qui échouent »** | Sans chaîne, c'est le seul rattrapage possible. Avec chaîne, le repli tient déjà ce rôle |
@@ -230,36 +231,57 @@ tenus par des tests.
 
 ## Le moteur de repli
 
-### Trois familles d'échec, trois gestes
+### Deux couches, et la plus basse existe déjà
 
-🔴 **C'est le cœur du lot, et la seule chose à ne pas se tromper.** Un envoi échoue. Le code
-d'erreur range l'échec dans une famille, et **la famille décide du geste**. Un déclencheur unique
-serait faux dans deux cas sur trois.
+🔴 **Le rejeu des incidents temporaires n'est PAS l'affaire de la campagne, et il est déjà fait.**
+`src/meta/errors.ts` porte un classement `retryable` : HTTP 429, 408, 425 et tous les 5xx sont
+rejouables, et `src/meta/http.ts` rejoue en plus les coupures réseau (`ECONNRESET`, `ETIMEDOUT`).
 
-| Famille | Ce que ça veut dire | Exemples | Geste |
-|---|---|---|---|
-| **1. Destinataire inapte** | Cette personne ne peut pas recevoir sur ce canal | 131026 | **Bascule à l'étage suivant, dès le PREMIER échec.** Sans chaîne : réessai si l'option est cochée, sinon terminal. Écrit la joignabilité sur le contact |
-| **2. Incident temporaire** | Le canal marche, c'est le moment qui ne va pas | plafond de débit, 5xx, délai dépassé | **Réessai sur le MÊME canal, toujours, chaîne ou pas.** Jamais de bascule |
-| **3. Erreur de configuration** | Ni le canal ni le moment ne sont en cause | 131047 (hors fenêtre de 24 h), modèle non approuvé | **Ni réessai ni bascule.** Terminal, avec un motif lisible à l'écran |
+Conséquence, et c'est ce qui rend la règle de campagne simple : **quand un destinataire arrive en
+`failed`, les incidents temporaires ont déjà été rejoués.** Une première version de cette spec
+prévoyait une famille « incident temporaire » au niveau campagne pour éviter qu'un hoquet de Meta
+ne bascule une campagne entière sur le RCS. Cette protection existe, une couche plus bas. La famille
+a été retirée.
 
-🔴 **La famille 2 est celle qui coûte cher si on l'oublie.** Si « bascule au premier échec »
-s'appliquait à tous les codes, **un hoquet de Meta de deux minutes ferait basculer une campagne
-entière sur le RCS et doublerait la facture**, alors que WhatsApp était disponible trente secondes
-plus tard. C'est un incident qu'on ne découvre qu'en lisant l'addition.
+### La règle de campagne
 
-🔴 **La famille 3 ne doit jamais basculer**, et 131047 est le cas d'école : c'est la fenêtre de 24 h
-qui est fermée, pas le canal qui est inapte. Basculer masquerait une erreur de conception du
-scénario au lieu de la montrer.
+Un destinataire échoue, après rejeu du transport.
 
-⚠️ **Le classement des codes est un livrable, pas une intuition.** Il se lit dans la documentation
-Meta, se fige dans une table nommée, et se tient par un test qui vérifie les **trois** familles sur
-des codes réels, pas seulement la famille 1.
+| Cas | Avec chaîne de repli | Sans chaîne |
+|---|---|---|
+| **131026** (le numéro n'est pas un numéro WhatsApp) | Bascule à l'étage suivant, **dès le premier échec** | **Terminal, jamais de réessai, même si l'option est cochée.** Écrit la joignabilité sur le contact |
+| **131049** (plafond marketing par utilisateur chez Meta) | Bascule à l'étage suivant, **dès le premier échec** | Réessai **le lendemain matin**, mécanisme existant de `retry-sweep` |
+| **Tout autre échec** | Bascule à l'étage suivant, **dès le premier échec** | Réessai si l'option « Réessayer les envois qui échouent » est cochée |
 
-### Ce que le déclencheur fait, une fois la famille connue
+🔴 **Avec une chaîne, tout échec bascule au premier coup, sans exception de code.** C'est la
+décision de Julien, et elle est juste : retenter un canal qui vient de refuser retarde la seule
+chose qui compte, joindre la personne. Le rejeu des incidents est déjà couvert plus bas.
 
-- **Bascule** : on n'écrit pas terminal. On incrémente `etage_courant`, on remet le destinataire en
-  attente, on ré-enfile. Le prochain tour l'envoie par le canal de l'étage suivant.
-- **Réessai** : comportement actuel de `retry-sweep`, borné par `retry_count` comme aujourd'hui.
+🔴 **131026 DOIT SORTIR DE `RETRYABLE_CODES`** (`src/meta/errors.ts:65`). Il y est aujourd'hui, donc
+un numéro sans WhatsApp est rejoué dans le transport **en plus** de la relance du balayage. Or Meta
+dit textuellement que ce code veut dire que le numéro n'est pas un numéro WhatsApp, ou que la
+personne n'a pas accepté les conditions : aucune de ces causes ne change dans la seconde. C'est du
+gaspillage d'appels sur chaque numéro sans WhatsApp, et c'est un correctif de ce lot.
+
+⚠️ **131046 n'existe pas.** Le code « Meta bloque une fois, on peut renvoyer le lendemain », fréquent
+hors de France, est **131049**, « Marketing message limit reached ». Vérifié dans la documentation
+Meta le 2026-09-12. Son traitement est déjà codé dans `retry-sweep.ts` (une relance, plus de 24 h
+après, dans une fenêtre de début de journée, sous le réglage d'espace « Relancer automatiquement les
+échecs »). ⚠️ À ne pas confondre avec le bouton « Corriger + renvoyer » du détail de campagne, qui
+ne sert qu'aux erreurs de **variable de template**.
+
+### Deux conséquences de la bascule sur 131049, à connaître
+
+1. **Sur les marchés où 131049 est fréquent, une part notable d'une campagne WhatsApp deviendra du
+   RCS**, et **ça ne se prédit pas** : le plafond est par utilisateur et vit chez Meta. Le
+   récapitulatif de l'étape 5 ne peut pas l'annoncer, seule la facture le dira.
+2. **La fenêtre matinale ne sert plus que pour les campagnes mono-canal.** Avec une chaîne, on ne
+   patiente pas jusqu'au lendemain, on change de canal tout de suite.
+
+### Ce que la bascule fait, mécaniquement
+
+- On n'écrit pas terminal. On incrémente `etage_courant`, on remet le destinataire en attente, on
+  ré-enfile. Le prochain tour l'envoie par le canal de l'étage suivant.
 - **Plus d'étage disponible** : terminal.
 
 ### L'ordre des gardes avant chaque envoi
@@ -372,6 +394,11 @@ Ce que ce lot change et qui a des lecteurs ailleurs. À vérifier un par un pend
   correct. Vérifier que l'estimation le dit **avant** l'envoi.
 - **`retry-sweep`** change de comportement terminal : son test actuel affirme « clôt en
   injoignable ». Ce cas doit être **conservé** pour les campagnes sans chaîne, pas remplacé.
+- 🔴 **`RETRYABLE_CODES` perd 131026, et cette constante ne sert PAS qu'aux campagnes.** Elle est
+  lue par tout ce qui appelle Meta (envoi d'un message rapide depuis l'Inbox, tour d'agent IA,
+  scénario). Retirer 131026 supprime donc un rejeu **partout**, pas seulement en campagne. C'est
+  voulu (le code veut dire la même chose sur tous les chemins), mais la liste des appelants se
+  vérifie avant, pas après.
 - **L'index `campaign_recipients_pending_idx`** (partiel, `where status = 'pending'`) sert la
   réclamation. Une bascule remet en `pending` : vérifier que le prédicat couvre toujours la requête.
 - **L'historique de contact** (`src/crm/contact-history.pg.ts`) et le bilan par niveau livré le
@@ -385,14 +412,16 @@ l'échec et son symptôme, restaurer), conformément à la règle du dépôt.
 
 **Unitaires**
 
-- **Les trois familles, une par une** : 131026 bascule dès le premier échec ; un incident temporaire
-  réessaie sur le même canal **même quand une chaîne existe** ; 131047 ne fait ni l'un ni l'autre.
-  🔴 Le deuxième cas est celui qui manque toujours dans ce genre de test, et c'est celui qui double
-  la facture.
-- Un code inconnu tombe dans la famille la plus prudente (terminal avec motif), jamais dans la
-  bascule : un code non classé ne doit pas pouvoir déclencher un envoi payant.
-- L'option « Réessayer les envois qui échouent » décochée : aucun réessai, et le destinataire est
-  terminal du premier coup.
+- **Avec chaîne, tout code bascule au premier échec** : 131026, 131049 et un code quelconque donnent
+  le même geste. Un test par cas, pour que personne ne « rétablisse » une exception plus tard.
+- **131026 est terminal même avec l'option de réessai cochée**, sans chaîne. 🔴 Ce test est celui
+  qui casserait si quelqu'un remettait 131026 dans `RETRYABLE_CODES` : il tient les deux couches à
+  la fois.
+- **131026 ne vaut PAS `retryable`** au niveau transport (test direct sur `classify`), et 429, 425,
+  408 et 5xx le valent toujours. Sans le second, on retire 131026 en cassant le rejeu des incidents.
+- **131049 sans chaîne réessaie le lendemain matin**, pas tout de suite : le mécanisme existant est
+  conservé, pas remplacé.
+- L'option « Réessayer les envois qui échouent » décochée : aucun réessai, terminal du premier coup.
 - Péremption : 89 jours lit la valeur, 91 jours rend `inconnu`.
 - `null` n'est pas `false` : un contact jamais sollicité n'est pas sauté.
 - Plus d'étage disponible : terminal, pas de boucle.
@@ -419,12 +448,14 @@ Plus aucune décision de conception. Trois choses à obtenir ou à établir pend
 
 1. **Le débit RCS réel.** Julien pose la question à smsmode. 60 par minute en attendant, en
    configuration. Ne bloque rien.
-2. **Le classement des codes d'erreur Meta dans les trois familles.** C'est une lecture de la
-   documentation Meta, pas un arbitrage. ⚠️ Tant qu'il n'est pas fait, aucun code ne doit basculer
-   par défaut : un code non classé est terminal, jamais payant.
-3. **L'équivalent côté smsmode.** Le RCS a ses propres codes d'échec, et la même question se pose :
-   lesquels veulent dire « ce destinataire est inapte » plutôt que « réessaie dans une minute ».
-   Facile à oublier parce que la chaîne se pense depuis WhatsApp.
+2. **Les codes d'échec de smsmode.** La chaîne se pense depuis WhatsApp, et on oubliera que le RCS a
+   ses propres codes. La question à leur poser est la même qu'à Meta : lesquels veulent dire « ce
+   destinataire est inapte » (donc joignabilité à mémoriser, et étage suivant) plutôt que
+   « réessaie » (donc `retryable` au niveau transport, comme les 5xx de Meta). Sans ce classement,
+   l'étage RCS d'une chaîne à trois niveaux basculera vers l'e-mail sur des incidents passagers.
+3. **La validation de la bascule sur 131049**, présentée à Julien le 2026-09-12 avec ses deux
+   conséquences (une part imprévisible de campagne WhatsApp devient du RCS hors de France, et la
+   fenêtre matinale ne sert plus que pour le mono-canal).
 
 ⚠️ **Le parc actuel de campagnes est du test et sera effacé avant la mise en service.** La migration
 reprend quand même les campagnes existantes dans `campaign_etages` au rang 1 : la reprise coûte
