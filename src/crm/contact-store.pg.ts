@@ -544,9 +544,14 @@ export class PgContactStore implements ContactStore {
       id: r.id, phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
       fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
       blockedAt: r.blocked_at ? r.blocked_at.toISOString() : null,
-      // ⚠️ `?? null`, jamais `undefined` : la colonne peut manquer (migration pas encore passée) et un
-      // `undefined` traverserait JSON.stringify en disparaissant du corps. L'écran lirait alors une clé
-      // absente là où il attend « jamais mesuré », ce qui est la même valeur mais par accident.
+      // ⚠️ `?? null`, jamais `undefined` : un `undefined` traverserait `JSON.stringify` en DISPARAISSANT du
+      // corps, et l'écran lirait une clé absente là où il attend « jamais mesuré ». Même valeur, mais par
+      // accident.
+      //
+      // 🔴 CE N'EST PAS UNE TOLÉRANCE À LA MIGRATION MANQUANTE, et une version de ce commentaire l'a
+      // affirmé. Les trois `select` qui alimentent cette fonction listent les deux colonnes : sans la
+      // migration 0133, Postgres rend `42703` et la ligne n'arrive jamais ici. La garde couvre un objet
+      // construit sans ces clés (un faux de test), pas une table sans ces colonnes.
       whatsappJoignable: r.whatsapp_joignable ?? null,
       whatsappJoignableLe: r.whatsapp_joignable_le ? r.whatsapp_joignable_le.toISOString() : null,
     };
