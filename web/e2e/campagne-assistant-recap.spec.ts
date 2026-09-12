@@ -83,6 +83,23 @@ async function monter(
   await page.goto(`/campaigns/nouvelle?${q.toString()}`);
 }
 
+/**
+ * 🔴 LA JAUGE DE DÉBIT VIT ICI, ET LA DURÉE LA SUIT. Elle a passé une journée à l'étape du canal sous la
+ * forme de trois « intentions » jamais demandées ; elle est revenue à la fin du parcours, là où
+ * l'audience est connue. Ce cas vérifie les DEUX : la jauge existe, et bouger le débit change la durée.
+ * Sans la seconde moitié, une jauge décorative passerait.
+ */
+test('la jauge de debit est au recapitulatif, et elle change la duree', async ({ page }) => {
+  await monter(page);
+  await expect(page.getByTestId('debit-valeur')).toHaveText('60 messages / min');
+  // 1000 contacts a 60/min = 17 min (arrondi au superieur).
+  await expect(page.getByTestId('recap-duree')).toContainText('17');
+  await page.getByTestId('campagne-debit').fill('10');
+  await expect(page.getByTestId('debit-valeur')).toHaveText('10 messages / min');
+  // 1000 contacts a 10/min = 100 min.
+  await expect(page.getByTestId('recap-duree')).toContainText('100');
+});
+
 test('le recap montre la repartition par etage, pas un resume', async ({ page }) => {
   await monter(page);
   await expect(page.getByTestId('etape-recap')).toBeVisible();
@@ -130,6 +147,19 @@ test('la repartition ne fait pas deborder la page en 13 pouces', async ({ page }
 test('le tableau, le bloc de cout et le bouton sont EMPILES, jamais cote a cote', async ({ page }) => {
   await page.setViewportSize(TREIZE_POUCES);
   await monter(page);
+  /**
+   * 🔴 ON MESURE APRÈS UN ÉTAT RENDU, JAMAIS APRÈS UNE SIMPLE VISIBILITÉ. Ce cas était rouge une fois sur
+   * deux EN LOT et vert en isolé, sur la référence comme sur le code modifié : il lisait les boîtes dès le
+   * retour de `monter`, c'est-à-dire pendant que les TROIS comptes du récapitulatif arrivaient encore. Une
+   * ligne du tableau qui gagne une phrase pousse le bloc suivant de quelques pixels, et la lecture tombait
+   * entre les deux. La parade n'est pas une attente en millisecondes : on attend le DERNIER texte que les
+   * comptes produisent, dans le tableau ET dans le bloc de coût, donc l'état final de la mise en page.
+   *
+   * ⚠️ L'ASSERTION D'EMPILEMENT N'EST PAS TOUCHÉE, et elle ne doit pas l'être : c'est la SEULE qui attrape
+   * trois cadres côte à côte, cas que `pasDeDebordement` et `pasDeChevauchement` laissent tous deux passer.
+   */
+  await expect(page.getByTestId('repartition-3')).toHaveText(/12 n.ont pas d.adresse e-mail/);
+  await expect(page.getByTestId('recap-duree')).toContainText('17');
   const table = (await page.getByTestId('repartition').boundingBox())!;
   const cout = (await page.getByTestId('bloc-cout').boundingBox())!;
   const bouton = (await page.getByTestId('bouton-lancer').boundingBox())!;
@@ -166,20 +196,25 @@ test('l etape Audience compte les contacts retenus', async ({ page }) => {
   await expect(page.getByTestId('audience-compte')).toHaveText(/1\s?000 contacts retenus/);
 });
 
-// ⚠️ La case d'exclusion CHANGE le compte, donc le sens de tout le récapitulatif : cocher sans que le
-// nombre bouge voudrait dire que le filtre n'est pas posé, ce qui est invisible autrement.
-test('ecarter les injoignables change le nombre retenu', async ({ page }) => {
+/**
+ * ⚠️ UN FILTRE CHANGE LE COMPTE, DONC LE SENS DE TOUT LE RÉCAPITULATIF : le poser sans que le nombre
+ * bouge voudrait dire qu'il n'est pas appliqué, ce qui est invisible autrement.
+ *
+ * 🔴 IL SE POSE DANS LE PANNEAU PARTAGÉ AVEC LE MINI-CRM, ET PLUS DANS UNE CASE À PART. L'étape portait
+ * sa propre case « écarter les injoignables » pendant que le panneau portait déjà la même question sous
+ * la clé `joignabiliteWhatsApp` : deux commandes pour un seul filtre, donc deux états à tenir d'accord.
+ */
+test('ecarter les injoignables, depuis le panneau de filtres, change le nombre retenu', async ({ page }) => {
   await monter(page, { etape: 'audience' });
   await expect(page.getByTestId('audience-compte')).toHaveText(/1\s?000 contacts retenus/);
-  await page.getByTestId('audience-sans-injoignables').check();
+  await page.getByTestId('filtre-joignabilite').selectOption('connu_injoignable');
   await expect(page.getByTestId('audience-compte')).toHaveText(/940 contacts retenus/);
 });
 
-test('l audience tient dans un 13 pouces, tags compris', async ({ page }) => {
+test('l audience tient dans un 13 pouces, panneau de filtres et liste compris', async ({ page }) => {
   await page.setViewportSize(TREIZE_POUCES);
   await monter(page, { etape: 'audience' });
-  await page.getByRole('radio', { name: 'Ceux qui portent un de ces tags' }).check();
-  await expect(page.getByTestId('choix-tags')).toBeVisible();
+  await expect(page.getByTestId('destinataires-liste')).toBeVisible();
   await pasDeDebordement(page);
-  await pasDeChevauchement(page, ['choix-audience', 'audience-compte']);
+  await pasDeChevauchement(page, ['audience-sources', 'destinataires-liste', 'audience-compte']);
 });

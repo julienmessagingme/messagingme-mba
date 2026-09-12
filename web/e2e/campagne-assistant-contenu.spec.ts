@@ -25,14 +25,27 @@ const TEMPLATES = [
 ];
 const WORKFLOWS = [{ id: 'wf1', name: 'Prise de RDV', campaignEligible: true }];
 const EMAIL_TEMPLATES = [{ id: 'em1', name: 'Relance e-mail', format: 'html', subject: 's', body: 'b', createdAt: '', updatedAt: '' }];
+/**
+ * L'ÉQUIPE TELLE QUE LE SERVEUR LA REND, ET TELLE QUE LE VRAI MONDE EST FAIT.
+ *
+ * 🔴 CETTE FIXTURE DÉCRIT L'ESPACE DE JULIEN, PAS CE QUE LE CODE ATTEND. Trois comptes, dont DEUX qui
+ * n'ont jamais accepté leur invitation : c'est exactement ce qu'il a ouvert le 2026-09-12, et l'écran
+ * n'en montrait qu'un. Une fixture où tout le monde serait activé aurait laissé passer le filtre
+ * silencieux sans rien dire, parce qu'elle aurait reproduit l'hypothèse du code plutôt que la réalité.
+ *
+ * ⚠️ `pending` EST CALCULÉ PAR LE SERVEUR SUR `last_login_at is null`, pas sur le mot de passe : un
+ * compte Google n'a aucun `password_hash` et n'est pourtant PAS en attente. C'est le défaut qui a produit
+ * le symptôme, et il est corrigé côté serveur ; cette fixture rend la valeur que l'API renvoie vraiment.
+ */
 const USERS = [
   { id: 'u1', email: 'alice@e2e.test', name: 'Alice', role: 'admin', disabled: false, pending: false },
-  { id: 'u2', email: 'bob@e2e.test', name: 'Bob', role: 'agent', disabled: false, pending: false },
+  { id: 'u2', email: 'bob@e2e.test', name: 'Bob', role: 'agent', disabled: false, pending: true },
+  { id: 'u3', email: 'chloe@e2e.test', name: 'Chloé', role: 'agent', disabled: false, pending: true },
 ];
 
 async function monter(
   page: Page,
-  sur: { canal?: string; troisieme?: string; agents?: unknown[] } = {},
+  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[] } = {},
 ): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -48,7 +61,7 @@ async function monter(
     if (chemin.endsWith('/email-templates')) return json({ templates: EMAIL_TEMPLATES });
     if (chemin.endsWith('/templates')) return json({ templates: TEMPLATES });
     if (chemin.endsWith('/workflows')) return json({ workflows: WORKFLOWS });
-    if (chemin.endsWith('/users')) return json({ users: USERS });
+    if (chemin.endsWith('/users')) return json({ users: sur.users ?? USERS });
     if (chemin.endsWith('/agents')) return json({ agents: sur.agents ?? [{ id: 'ag1', label: 'Conseiller', status: 'actif', sorties: [] }] });
     return json({});
   });
@@ -138,4 +151,38 @@ test('onze suggestions RCS ne font pas deborder le cadre', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toHaveCount(0);
   await pasDeDebordement(page);
   await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3', 'bloc-devenir']);
+});
+
+/**
+ * 🔴 TROIS MEMBRES, PAS UN. C'est le premier retour d'un œil humain sur cet écran : Julien a ouvert la
+ * liste d'affectation et y a vu UNE personne alors que son espace en compte trois. Les deux absentes
+ * avaient simplement une invitation en attente, et rien ne le disait.
+ *
+ * ⚠️ LE COMPTE EXACT EST L'ASSERTION QUI COMPTE. « Alice est visible » passerait aussi sur l'écran
+ * fautif ; seul un COMPTE sépare l'implémentation juste de celle qui filtre en silence.
+ */
+test('les membres non actives sont la, grises, avec leur raison', async ({ page }) => {
+  await monter(page, { canal: 'whatsapp' });
+  await page.getByRole('radio', { name: 'Assignée à une personne' }).check();
+  const select = page.getByTestId('assignation-personne');
+  await expect(select.locator('option')).toHaveCount(4); // « Choisir... » + les trois membres
+  await expect(select.locator('option[disabled]')).toHaveCount(2);
+  await expect(select).toContainText('Bob (invitation en attente)');
+  await expect(select).toContainText('Chloé (invitation en attente)');
+  await expect(page.getByTestId('membres-en-attente')).toBeVisible();
+});
+
+/**
+ * ⚠️ L'AUTRE SENS : un membre ACTIF ne porte ni la mention ni le grisé, et la phrase d'explication ne
+ * s'affiche pas sur une équipe entièrement activée. Sans ce cas, un écran qui griserait TOUT LE MONDE
+ * passerait celui du dessus.
+ */
+test('un membre actif n est ni grise ni annote', async ({ page }) => {
+  await monter(page, { canal: 'whatsapp', users: [USERS[0]!] });
+  await page.getByRole('radio', { name: 'Assignée à une personne' }).check();
+  const select = page.getByTestId('assignation-personne');
+  await expect(select.locator('option')).toHaveCount(2);
+  await expect(select.locator('option[disabled]')).toHaveCount(0);
+  await expect(select).not.toContainText('invitation en attente');
+  await expect(page.getByTestId('membres-en-attente')).toHaveCount(0);
 });

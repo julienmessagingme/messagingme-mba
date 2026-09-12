@@ -3,9 +3,11 @@ import {
   chaineDeLaFormule,
   aUnRepli,
   rattrapagePossible,
-  reglagesDeCadence,
   heuresDOuvertureReglees,
-  DEBIT_ETALE_PAR_MINUTE,
+  debitBorne,
+  DEBIT_DEFAUT,
+  DEBIT_MAX,
+  DEBIT_MIN,
 } from './campagne-chaine';
 
 /**
@@ -80,27 +82,38 @@ describe('la question du rattrapage hors horaires', () => {
   });
 });
 
-describe('les trois intentions de cadence', () => {
-  it('au plus vite laisse le defaut du serveur, sans contrainte d horaire', () => {
-    expect(reglagesDeCadence('vite')).toEqual({ ratePerMinute: null, businessHoursOnly: false });
+describe('la jauge de debit', () => {
+  // 🔴 CE QUE CES BORNES PROTÈGENT : 80 est la borne de SAISIE de l'API (`PHONE_RATE_PER_MINUTE_MAX`), et
+  // le serveur refuse la création entière au-delà. Un état venu d'ailleurs (adresse, brouillon repris)
+  // peut sortir de la jauge, contrairement à un `<input type="range">`.
+  it('les bornes encadrent le defaut, et 80 est celle de l API', () => {
+    expect(DEBIT_MIN).toBe(1);
+    expect(DEBIT_MAX).toBe(80);
+    expect(DEBIT_DEFAUT).toBeGreaterThanOrEqual(DEBIT_MIN);
+    expect(DEBIT_DEFAUT).toBeLessThanOrEqual(DEBIT_MAX);
   });
 
-  it('etale sur la journee pose un debit, et n allume PAS les heures ouvrees', () => {
-    expect(reglagesDeCadence('etale')).toEqual({ ratePerMinute: DEBIT_ETALE_PAR_MINUTE, businessHoursOnly: false });
+  // ⚠️ 60 EST CELUI DE `CampaignCreateForm`, pas celui du serveur (30) : c'est ce que les campagnes de ce
+  // produit envoient réellement aujourd'hui. Deux écrans qui créent la même campagne à deux vitesses
+  // seraient une divergence invisible de tout compilateur.
+  it('le defaut est celui de l ecran en service, 60', () => {
+    expect(DEBIT_DEFAUT).toBe(60);
   });
 
-  it('heures ouvrees allume le drapeau, et ne touche PAS au debit', () => {
-    // 🔴 Les deux colonnes sont distinctes : poser un debit ici ferait de « heures ouvrees » un
-    // ralentissement que personne n'a demande, et le drapeau de 0122 ne dit rien de la vitesse.
-    expect(reglagesDeCadence('ouvrees')).toEqual({ ratePerMinute: null, businessHoursOnly: true });
+  it('un debit hors bornes est RAMENE, jamais laisse partir', () => {
+    expect(debitBorne(0)).toBe(DEBIT_MIN);
+    expect(debitBorne(-12)).toBe(DEBIT_MIN);
+    expect(debitBorne(1000)).toBe(DEBIT_MAX);
+    expect(debitBorne(42)).toBe(42);
   });
 
-  it('🔴 le debit de l etalement reste SOUS les deux plafonds de canal', () => {
-    // WhatsApp 80/min (`PHONE_RATE_PER_MINUTE_MAX`), RCS 60/min (`RCS_RATE_PER_MINUTE_MAX`). Au-dessus de
-    // l'un des deux, le debit serait RAMENE en silence a l'envoi : l'intention choisie ne serait pas
-    // celle appliquee, et pas de la meme facon selon le canal.
-    expect(DEBIT_ETALE_PAR_MINUTE).toBeLessThan(60);
-    expect(DEBIT_ETALE_PAR_MINUTE).toBeGreaterThanOrEqual(1);
+  // 🔴 L'AUTRE SENS, ET IL SÉPARE LA VRAIE IMPLÉMENTATION DE LA FAUSSE : un `Math.min/max` seul rendrait
+  // `NaN` sur une valeur illisible, et le serveur refuserait la campagne entière sur un nombre qu'aucun
+  // écran n'a montré. Un débit décimal, lui, n'existe pas côté base (colonne entière).
+  it('une valeur illisible retombe sur le defaut, et un decimal est arrondi', () => {
+    expect(debitBorne(Number.NaN)).toBe(DEBIT_DEFAUT);
+    expect(debitBorne(Number.POSITIVE_INFINITY)).toBe(DEBIT_DEFAUT);
+    expect(debitBorne(12.4)).toBe(12);
   });
 });
 

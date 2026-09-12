@@ -1,4 +1,3 @@
-import type { ContactFilters } from './contact-filters';
 import type { CanalEtage, EtageAssistant } from './campagne-chaine';
 import { RANG_INITIAL } from './campagne-chaine';
 
@@ -58,6 +57,21 @@ export interface MesuresAudience {
    * Sans ce choix, il n'y a rien à compter.
    */
   sansAdresse: number | null;
+  /**
+   * POURQUOI UN COMPTE MANQUE, quand il manque.
+   *
+   * 🔴 UN `null` SANS MOTIF SE FAIT ATTRIBUER LE MAUVAIS. Cette table n'avait qu'une seule raison de ne
+   * pas savoir (« la joignabilité n'est mémorisée que sur WhatsApp ») et l'écrivait donc à chaque `null`,
+   * y compris sur un comptage qui avait simplement échoué. Depuis que l'audience peut être une SÉLECTION
+   * de contacts (2026-09-13), il y en a une seconde, et donner la première à la seconde serait une
+   * explication fausse, c'est-à-dire pire que pas d'explication : elle serait recopiée.
+   *
+   * `canal` : le premier étage ne part pas en WhatsApp, seul canal dont la joignabilité soit mémorisée.
+   * `selection` : l'audience n'est pas décrite par des filtres seuls (`audienceEnFiltres`), et
+   * `countContacts` ne sait interroger que des filtres.
+   * Absent : les comptes étaient possibles, donc un `null` restant est un échec de lecture.
+   */
+  motifNonPrevisible?: 'canal' | 'selection';
 }
 
 /** Une ligne du tableau de répartition. `nombre` à `null` = le chiffre n'est pas prévisible. */
@@ -91,7 +105,12 @@ export function repartitionPrevue(
       if (m.sansAdresse === null) {
         return {
           rang: etage.rang, canal: etage.canal, nombre: null,
-          texte: "Choisissez le champ qui porte l'adresse e-mail pour savoir combien de fiches en ont une.",
+          // ⚠️ TROIS RAISONS DE NE PAS SAVOIR, TROIS PHRASES. Dire « choisissez le champ » à quelqu'un qui
+          // l'a déjà choisi l'enverrait corriger un réglage correct ; c'est exactement l'erreur que le
+          // motif existe pour fermer.
+          texte: m.motifNonPrevisible === 'selection'
+            ? "Les fiches sans adresse e-mail ne se comptent que sur une audience décrite par des filtres, pas sur une sélection."
+            : "Choisissez le champ qui porte l'adresse e-mail pour savoir combien de fiches en ont une.",
         };
       }
       return {
@@ -106,7 +125,7 @@ export function repartitionPrevue(
         rang: etage.rang, canal: etage.canal, nombre: null,
         texte: etage.rang === RANG_INITIAL
           ? `Tous les contacts retenus partiront en ${libelle}.`
-          : `Ceux qui échouent en ${LIBELLE_CANAL[tries[0]?.canal ?? 'whatsapp']} basculeront en ${libelle}. Ce nombre n'est pas prévisible : la joignabilité n'est mémorisée que sur WhatsApp.`,
+          : `Ceux qui échouent en ${LIBELLE_CANAL[tries[0]?.canal ?? 'whatsapp']} basculeront en ${libelle}. ${raisonDuSilence(m.motifNonPrevisible)}`,
       };
     }
     if (etage.rang === RANG_INITIAL) {
@@ -144,38 +163,16 @@ export function champEmailSuggere(champs: Array<{ key: string; label: string }>)
 }
 
 /**
- * CE QUE L'ÉTAPE AUDIENCE LAISSE CHOISIR.
+ * LA PHRASE QUI DIT POURQUOI UNE BASCULE NE SE PRÉVOIT PAS.
  *
- * ⚠️ VOLONTAIREMENT PAUVRE, et c'est la discipline anti-tailor-made du dépôt : « tout le monde », « ceux
- * qui portent un de ces tags », et une case pour écarter ceux qu'on sait injoignables. Le mini-CRM porte
- * déjà des filtres riches ; les rapatrier ici ferait un second écran de filtres à tenir d'accord avec le
- * premier, pour une campagne qui se cible en pratique par tag.
+ * ⚠️ ELLE N'INVENTE JAMAIS DE RAISON. Sans motif, les deux comptes étaient possibles : le `null` qui
+ * reste vient d'une lecture qui a échoué, et c'est ce qu'on écrit. Recopier la raison « canal » ici
+ * enverrait chercher un problème de configuration là où il y a eu un hoquet réseau.
  */
-export interface AudienceChoix {
-  mode: 'tous' | 'tags';
-  tags: string[];
-  /** Écarter ceux dont la dernière mesure dit « injoignable en WhatsApp » (migration 0133). */
-  sansInjoignables: boolean;
-}
-
-/**
- * LES FILTRES SERVEUR QUE CE CHOIX DÉCRIT.
- *
- * 🔴 C'EST LE MÊME OBJET QUE CELUI DU MINI-CRM (`ContactFilters`), ET C'EST TOUT L'INTÉRÊT. Le compte de
- * l'écran et la résolution des destinataires à la création passent alors par le MÊME analyseur côté
- * serveur (`parseFilters`), donc l'écran ne peut pas annoncer une population et la campagne en emporter
- * une autre. Un second vocabulaire de ciblage aurait eu besoin d'un second analyseur, et c'est là que les
- * deux divergent.
- *
- * ⚠️ `mode: 'tags'` SANS AUCUN TAG NE REND PAS « TOUT LE MONDE » : l'objet rendu porte `tags: []`, que
- * `filtersActive` lit comme « aucun filtre posé ». C'est l'appelant qui doit refuser d'avancer, et
- * l'étape Audience le fait. Le dire ici serait inventer un filtre qui n'existe pas.
- */
-export function filtresDeLAudience(a: AudienceChoix): ContactFilters {
-  return {
-    ...(a.mode === 'tags' ? { tags: a.tags, tagMode: 'or' as const } : {}),
-    ...(a.sansInjoignables ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
-  };
+function raisonDuSilence(motif: MesuresAudience['motifNonPrevisible']): string {
+  if (motif === 'canal') return "Ce nombre n'est pas prévisible : la joignabilité n'est mémorisée que sur WhatsApp.";
+  if (motif === 'selection') return "Ce nombre n'est pas prévisible : l'audience est une sélection de contacts, et la joignabilité ne se compte que par filtre.";
+  return "Ce nombre n'a pas pu être lu.";
 }
 
 /**

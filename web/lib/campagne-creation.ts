@@ -1,9 +1,10 @@
 import type { CreateCampaignInput, EtageCreation } from './api/campagnes';
 import type { CampaignCategory } from './api/campagnes';
 import type { ContactFilters } from './contact-filters';
+import { cibleDeCreation, type SelectionDestinataires } from './audience';
 import type { RcsOutbound, RcsSuggestion } from './rcs-types';
 import type { EtageAssistant } from './campagne-chaine';
-import { RANG_INITIAL, reglagesDeCadence, type Cadence } from './campagne-chaine';
+import { RANG_INITIAL, debitBorne } from './campagne-chaine';
 import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
 import { varCountOf } from './fields';
 
@@ -25,7 +26,17 @@ import { varCountOf } from './fields';
 export interface EtatPourCreation {
   nom: string;
   category: CampaignCategory;
-  cadence: Cadence;
+  /** La jauge de l'étape 5, en messages par minute (1..80). Cf. `DEBIT_DEFAUT`. */
+  debitParMinute: number;
+  /**
+   * « Envoyer uniquement pendant les heures ouvrées » : la SEULE question horaire de l'étape Canal.
+   *
+   * ⚠️ MÊME NOM, MÊME SENS ET MÊME DÉFAUT QUE DANS `CampaignCreateForm` : la question posée à l'opérateur
+   * doit se traduire par la même colonne (`campaigns.business_hours_only`, migration 0122), quel que soit
+   * l'écran qui l'a posée. Faux par défaut, c'est-à-dire « on envoie à toute heure », le comportement
+   * d'aujourd'hui.
+   */
+  heuresOuvrees: boolean;
   reessayer: boolean;
   rattrapageHorsHoraires: boolean;
   assignation: 'aucune' | 'personne' | 'tour_de_role';
@@ -105,6 +116,14 @@ export interface ContexteDeCreation {
    */
   champEmail: string | null;
   /**
+   * CE QUI A ÉTÉ COCHÉ DANS L'ÉTAPE AUDIENCE.
+   *
+   * ⚠️ ELLE ARRIVE PAR LE CONTEXTE, À CÔTÉ DE `filtres`, parce que les deux ne se comprennent QUE
+   * ensemble : `toutFiltre` vise ce que les filtres décrivent moins les exclusions, son contraire vise
+   * une liste. Les séparer ferait envoyer les filtres d'une sélection qu'on n'a pas faite.
+   */
+  selection: SelectionDestinataires;
+  /**
    * LE NOMBRE DE VARIABLES `{{n}}` DU MODÈLE DE CHAQUE ÉTAGE, PAR RANG.
    *
    * 🔴 IL VIENT DE L'ÉCRAN PARCE QU'IL VIENT DU CORPS DU MODÈLE, que cette lib ne connaît pas. Le
@@ -132,6 +151,18 @@ export function problemeAvantLancement(
   ctx: ContexteDeCreation,
 ): string | null {
   if (etat.nom.trim() === '') return 'Cette campagne n’a pas de nom.';
+  /**
+   * 🔴 UNE LISTE EXPLICITEMENT VIDE NE PART PAS, ET L'ÉCRAN LE SAIT SANS DEMANDER. Le serveur refuse déjà
+   * en 422 (« Aucun contact ne correspond à cette sélection »), donc rien ne partirait à tout l'espace ;
+   * ce qu'on évite ici est un aller-retour et un message d'erreur rouge pour un cas que l'écran a sous les
+   * yeux, exactement comme le bouton de lancement de `CampaignCreateForm` qui s'éteint à zéro.
+   *
+   * ⚠️ SEULEMENT LE MODE LISTE. En mode « tout ce qui correspond », le nombre retenu dépend d'un COMPTE
+   * SERVEUR que cette fonction pure n'a pas : y deviner zéro bloquerait une campagne parfaitement valide.
+   */
+  if (!ctx.selection.toutFiltre && ctx.selection.selected.size === 0) {
+    return 'Aucun contact n’est sélectionné : cochez au moins une personne à l’étape Audience.';
+  }
   const premier = [...chaine].sort((a, b) => a.rang - b.rang)[0];
   if (!premier) return 'Cette campagne n’a aucun étage.';
   if (premier.canal === 'whatsapp' && ctx.phoneNumberId === '') {
@@ -216,7 +247,6 @@ export function entreeDeCreation(
   const tries = [...chaine].sort((a, b) => a.rang - b.rang);
   const premier = tries[0]!;
   const contenuPremier = etat.contenus[premier.rang];
-  const cadence = reglagesDeCadence(etat.cadence);
   const rcsPremier = premier.canal === 'rcs';
   const scenarioPremier = contenuPremier?.formule === 'avec_scenario' && !!contenuPremier.workflowId;
 
@@ -268,9 +298,15 @@ export function entreeDeCreation(
     channel: rcsPremier ? 'rcs' : 'whatsapp',
     ...(ctx.rcsAgentId && chaine.some((e) => e.canal === 'rcs') ? { rcsAgentId: ctx.rcsAgentId } : {}),
     ...(rcsPremier ? { rcsMessage: messageRcs(contenuPremier) } : {}),
-    contactTarget: { filters: ctx.filtres },
-    ratePerMinute: cadence.ratePerMinute,
-    businessHoursOnly: cadence.businessHoursOnly,
+    /**
+     * 🔴 LES DESTINATAIRES PASSENT PAR LE POINT UNIQUE `cibleDeCreation`, PARTAGÉ AVEC L'ÉCRAN EN SERVICE.
+     * Cette ligne posait `contactTarget: { filters }` et RIEN D'AUTRE : l'assistant ne savait donc pas
+     * emporter une sélection fine, quoi que l'écran ait montré. Les deux formes (une intention filtrée
+     * avec ses exclusions, ou une liste d'identifiants) sont exclusives, et le serveur refuse les deux.
+     */
+    ...cibleDeCreation(ctx.selection, ctx.filtres),
+    ratePerMinute: debitBorne(etat.debitParMinute),
+    businessHoursOnly: etat.heuresOuvrees,
     // ⚠️ UN SEUL ÉTAGE N'EST PAS UNE CHAÎNE, et on ne l'envoie pas. Le serveur écrit de toute façon le
     // rang 1 depuis les colonnes de la campagne : un tableau à un élément n'ajouterait rien à ce que
     // `channel` dit déjà, et ferait passer par la validation de chaîne une campagne qui n'en a pas.

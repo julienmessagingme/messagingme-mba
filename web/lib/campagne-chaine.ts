@@ -95,53 +95,39 @@ export function rattrapagePossible(choix: { reessayer: boolean; chaine: EtageAss
   return choix.reessayer || aUnRepli(choix.chaine);
 }
 
-/** Les trois intentions de cadence de l'étape 2. */
-export type Cadence = 'vite' | 'etale' | 'ouvrees';
+/**
+ * LA JAUGE DE DÉBIT : ses bornes et son défaut, en messages par minute.
+ *
+ * 🔴 L'ÉCRAN REDEMANDE UN NOMBRE DE MESSAGES PAR MINUTE, ET C'EST UN RETOUR EN ARRIÈRE ASSUMÉ
+ * (2026-09-12). Il a porté trois « intentions » (au plus vite, étalé, heures ouvrées) pendant une
+ * journée : elles venaient d'une recommandation écrite dans la spec, jamais validée, et elles RETIRAIENT
+ * une capacité que `CampaignCreateForm` offre depuis toujours et que le client utilise. Retirer une
+ * capacité sur la foi d'une recommandation non validée est une régression déguisée en amélioration.
+ *
+ * ⚠️ 80 EST LA BORNE DE SAISIE, PAS LE PLAFOND APPLIQUÉ. Le frein réel est celui du CANAL
+ * (`plafondDuCanal`, côté serveur : 80 pour WhatsApp, 60 pour le RCS), et une campagne réglée au-dessus
+ * y est RAMENÉE en silence. Le chiffre du plafond RCS n'est volontairement recopié nulle part dans
+ * l'écran : il vit en configuration serveur pour se corriger sans déploiement, et une valeur en dur
+ * deviendrait fausse sans que rien ne le signale.
+ *
+ * ⚠️ 60 PAR DÉFAUT, ET NON LE DÉFAUT DU SERVEUR (30). C'est celui de `CampaignCreateForm`, donc ce que
+ * les campagnes de ce produit envoient réellement aujourd'hui : en prendre un autre ici ferait partir
+ * deux campagnes identiques à deux vitesses selon l'écran qui les a créées.
+ */
+export const DEBIT_MIN = 1;
+export const DEBIT_MAX = 80;
+export const DEBIT_DEFAUT = 60;
 
 /**
- * LE DÉBIT DE « ÉTALÉ SUR LA JOURNÉE », en messages par minute.
+ * LE DÉBIT RAMENÉ DANS SES BORNES.
  *
- * 🔴 C'EST UN CHOIX, PAS UNE MESURE, et il vaut mieux l'écrire que de laisser croire à un calcul. Le
- * moteur ne connaît qu'un débit en messages/minute (`campaigns.rate_per_minute`), et l'étape du canal
- * ignore encore la taille de l'audience (elle est demandée à l'étape 4) : aucune valeur posée ICI ne peut
- * donc promettre une DURÉE. Ce qui a été vérifié, et qui justifie ce chiffre-ci :
- *
- *   1. 10/min tient une journée ouvrée de 8 h à 4 800 messages, soit au-dessus de la taille réaliste
- *      d'une campagne de ce produit. Sur cette plage, le libellé dit vrai.
- *   2. Il est SOUS LES DEUX PLAFONDS DE CANAL, lus dans `src/campaign/pacing.ts` et `src/config.ts` :
- *      80/min pour WhatsApp (`PHONE_RATE_PER_MINUTE_MAX`) et 60/min pour le RCS
- *      (`RCS_RATE_PER_MINUTE_MAX`). Un débit au-dessus de l'un des deux serait RAMENÉ en silence à
- *      l'envoi, donc l'intention choisie ne serait pas celle appliquée, et elle ne le serait pas de la
- *      même façon selon le canal.
- *   3. Il est visiblement plus lent que « au plus vite » (défaut serveur à 60/min) : un sixième. Deux
- *      intentions dont l'effet se ressemble ne valent pas deux boutons.
- *
- * ⚠️ LE MEILLEUR RÉGLAGE N'EST PAS CELUI-CI, et il appartient à l'étape 5 : une fois l'audience connue,
- * le débit d'un étalement se CALCULE (N contacts / minutes de la journée). Tant que le récapitulatif
- * n'existe pas, une constante honnête vaut mieux qu'un calcul impossible.
+ * ⚠️ ELLE EXISTE POUR L'ADRESSE ET POUR LA REPRISE, pas pour la jauge : un `<input type="range">` ne
+ * peut pas sortir de ses bornes, mais un état venu d'ailleurs (paramètre d'URL, brouillon repris) le
+ * peut, et le serveur refuse alors la création entière pour un nombre qu'aucun écran n'a montré.
  */
-export const DEBIT_ETALE_PAR_MINUTE = 10;
-
-/**
- * CE QU'UNE INTENTION DE CADENCE ÉCRIT SUR LA CAMPAGNE.
- *
- * 🔴 DEUX COLONNES, PAS UNE, et c'est ce qui rend cette traduction nécessaire. « Au plus vite » et
- * « étalé » se jouent sur le DÉBIT (`rate_per_minute`), « heures ouvrées seulement » sur un DRAPEAU
- * (`business_hours_only`, migration 0122) qui ne parle pas de vitesse du tout. Les trois sont pourtant
- * une seule question pour l'opérateur, « à quel rythme veux-tu que ça parte », et c'est la bonne
- * question : il ne peut pas choisir un nombre de messages par minute, il n'a aucun moyen de connaître
- * les plafonds des opérateurs.
- *
- * ⚠️ `ratePerMinute: null` VEUT DIRE « le défaut du serveur », JAMAIS « aucun frein ». C'est
- * `resolveRatePerMinute` qui tranche (`src/campaign/pacing.ts`) : à défaut de valeur sur la campagne, il
- * prend `CAMPAIGN_DEFAULT_RATE_PER_MINUTE`. Poser un gros nombre pour dire « vite » serait à la fois
- * faux (le plafond du canal le ramènerait) et fragile (il faudrait le corriger à chaque changement de
- * plafond, dans un écran, sans déploiement du serveur).
- */
-export function reglagesDeCadence(cadence: Cadence): { ratePerMinute: number | null; businessHoursOnly: boolean } {
-  if (cadence === 'etale') return { ratePerMinute: DEBIT_ETALE_PAR_MINUTE, businessHoursOnly: false };
-  if (cadence === 'ouvrees') return { ratePerMinute: null, businessHoursOnly: true };
-  return { ratePerMinute: null, businessHoursOnly: false };
+export function debitBorne(v: number): number {
+  if (!Number.isFinite(v)) return DEBIT_DEFAUT;
+  return Math.min(DEBIT_MAX, Math.max(DEBIT_MIN, Math.round(v)));
 }
 
 /**

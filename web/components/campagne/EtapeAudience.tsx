@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { countContacts } from '@/lib/api';
+import { useState } from 'react';
+import { CsvImport } from '@/components/CsvImport';
+import { HubspotListImport } from '@/components/HubspotListImport';
 import { fmtNum } from '@/lib/format';
-import { filtresDeLAudience, type AudienceChoix } from '@/lib/campagne-repartition';
-import type { EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
+import {
+  filtresDesImportes, nbRetenus, selectionTout,
+  type AudienceChoix, type SourceAudience,
+} from '@/lib/audience';
+import { ListeDestinataires, useContactsFiltres } from '@/components/campagne/ListeDestinataires';
+import type { CapacitesEspace, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 
 /**
  * ÉTAPE 4 : QUI reçoit.
@@ -15,28 +20,79 @@ import type { EtatCampagne, ReferencesContenu } from '@/components/campagne/Assi
  * ordre est que l'opérateur a réglé son repli sans savoir combien de monde il concerne, et c'est le
  * RÉCAPITULATIF qui le rachète : il montre la répartition, pas un résumé.
  *
+ * 🔴 ELLE SAIT CE QUE `CampaignCreateForm` SAIT, ET PAR LES MÊMES BRIQUES (2026-09-13). Elle a été
+ * livrée réduite à deux boutons radio, et le plan rangeait la sélection fine en « capacité manquante » à
+ * traiter plus tard : vu de l'utilisateur, ce n'est pas une capacité absente, c'est une RÉGRESSION. Les
+ * filtres du mini-CRM, les exclusions, l'import de fichier, les listes HubSpot et les cases à cocher
+ * reviennent donc, en RÉUTILISANT les composants de l'écran en service (`ContactFilterPanel`,
+ * `CsvImport`, `HubspotListImport`, `ListeDestinataires`). Toute ligne réécrite ici aurait donné une
+ * seconde définition de l'audience, à tenir d'accord avec la première à la main.
+ *
  * 🔴 LE COMPTE VIENT DU SERVEUR, PAS D'UNE LISTE RAPATRIÉE. `countContacts` rend un nombre ; charger les
  * contacts pour les compter dans le navigateur est exactement ce que l'audit du 2026-09-02 a fermé
  * (« tout sélectionner » rapatriait jusqu'à 100 000 identifiants, et la création échouait vers 25 000
- * sur le plafond de 1 Mo du corps de requête, BIEN avant la limite annoncée à l'écran).
+ * sur le plafond de 1 Mo du corps de requête).
  *
  * ⚠️ UNE SEULE COLONNE, BLOCS EMPILÉS. Même règle que les étapes 2 et 3 : sur un 13 pouces la console
  * laisse environ 990 px utiles, et une grille qui se réorganise sous un seuil produit précisément les
  * chevauchements que ce lot existe pour empêcher.
+ *
+ * ⚠️ LA CASE « ÉCARTER LES INJOIGNABLES » A DISPARU AU PROFIT DU PANNEAU DE FILTRES, qui porte la MÊME
+ * question (« Joignabilité WhatsApp : sauf les injoignables connus », clé `joignabiliteWhatsApp`).
+ * Garder les deux aurait donné deux commandes pour un seul filtre, c'est-à-dire la divergence en
+ * miniature : cocher l'une sans l'autre, et l'écran ne sait plus dire ce qui est posé.
  */
 export function EtapeAudience({
   tenantId,
   etat,
   references,
+  capacites,
   onChange,
 }: {
   tenantId: string;
   etat: EtatCampagne;
   references: ReferencesContenu;
+  capacites: CapacitesEspace;
   onChange: (patch: Partial<EtatCampagne>) => void;
 }) {
   const audience = etat.audience;
   const modifier = (patch: Partial<AudienceChoix>): void => onChange({ audience: { ...audience, ...patch } });
+  /** Un import en vol GÈLE les boutons de source : changer de source démonterait l'import et sa requête. */
+  const [importEnCours, setImportEnCours] = useState(false);
+
+  const page = useContactsFiltres({
+    tenantId,
+    filtres: audience.filtres,
+    actif: audience.source === 'crm',
+    selection: audience.selection,
+    onSelection: (selection) => modifier({ selection }),
+  });
+
+  /**
+   * APRÈS UN IMPORT, LES CONTACTS SONT DANS LE CRM ET TAGGÉS : on pivote sur la source CRM, filtrée par
+   * leur(s) tag(s), et on vise « tout ce qui correspond ».
+   *
+   * ⚠️ `selectionTout()` PLUTÔT QUE LES LIGNES AFFICHÉES, et c'est là que cet écran s'écarte
+   * volontairement de `CampaignCreateForm` : la liste est plafonnée à 500, or un fichier de 2 000
+   * contacts vient d'être importé. Cocher les 500 affichées ferait partir la campagne à un quart du
+   * fichier, en affichant « 500 » comme si c'était tout. Le filtre de tag, lui, les désigne tous.
+   */
+  const apresImport = (tags: string[]): void => {
+    modifier({ source: 'crm', filtres: filtresDesImportes(tags), selection: selectionTout() });
+  };
+
+  /**
+   * 🔴 CHANGER DE SOURCE OUBLIE CE QUI ÉTAIT VISÉ. Sans ça : on clique « Tout sélectionner » sur le CRM
+   * (filtres vides = tout l'espace), on bascule sur « Import fichier », et l'écran montre un widget
+   * d'upload vide pendant que l'état retient encore la cible du CRM. Plus rien à l'écran ne dit ce qui
+   * est visé, et lancer enverrait à tout l'espace.
+   */
+  const choisirSource = (source: SourceAudience): void => {
+    modifier({ source, selection: selectionTout() });
+  };
+
+  const retenus = nbRetenus(audience.selection, page.total);
+  const hubspotVisible = capacites.hubspotListes;
 
   return (
     <section data-testid="etape-audience" className="w-full">
@@ -46,140 +102,110 @@ export function EtapeAudience({
         que soit ce choix.
       </p>
 
-      <fieldset data-testid="choix-audience" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-        <legend className="px-1 text-sm font-medium text-ink-700">Destinataires</legend>
-        <div className="space-y-2">
-          <Radio
-            groupe="audience"
-            libelle="Tous les contacts"
-            coche={audience.mode === 'tous'}
-            onCheck={() => modifier({ mode: 'tous' })}
+      {/* Sélecteur de SOURCE, mêmes trois entrées et même geste que l'écran en service. Le webhook (une
+          campagne « au fil de l'eau ») n'est PAS ici : il n'a aucune liste, c'est une autre nature de
+          campagne, et l'assistant ne la propose pas encore. */}
+      <div className="mt-4 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm" data-testid="audience-sources">
+        <BoutonSource
+          actif={audience.source === 'crm'}
+          desactive={importEnCours}
+          onClick={() => choisirSource('crm')}
+          libelle="📇 Liste de contacts"
+        />
+        <BoutonSource
+          actif={audience.source === 'fichier'}
+          desactive={importEnCours}
+          onClick={() => choisirSource('fichier')}
+          libelle="📄 Import fichier"
+        />
+        {/* ⚠️ HUBSPOT N'APPARAÎT PAS QUAND LE CONNECTEUR EST ÉTEINT (demande de Julien du 2026-08-26) :
+            un bouton grisé pour une intégration qu'on n'a pas est du bruit, pas une information. En
+            PAUSE, en revanche, il s'affiche grisé AVEC sa raison : l'empêchement est levable. */}
+        {hubspotVisible && (
+          <BoutonSource
+            actif={audience.source === 'hubspot'}
+            desactive={importEnCours || capacites.hubspotEnPause}
+            onClick={() => choisirSource('hubspot')}
+            libelle="🔗 HubSpot"
+            aide={capacites.hubspotEnPause ? "Synchronisation HubSpot en pause. Réactive-la sur l'accueil." : undefined}
+            testId="audience-source-hubspot"
           />
-          <Radio
-            groupe="audience"
-            libelle="Ceux qui portent un de ces tags"
-            coche={audience.mode === 'tags'}
-            onCheck={() => modifier({ mode: 'tags' })}
-          />
-        </div>
-
-        {audience.mode === 'tags' && (
-          <div className="mt-3 w-full" data-testid="choix-tags">
-            {references.tags.length === 0 ? (
-              <p className="text-xs text-ink-500">Aucun tag sur cet espace. Posez-en depuis l&apos;onglet Contacts.</p>
-            ) : (
-              // ⚠️ `flex-wrap` ET `min-w-0` : une liste de tags est de longueur imprévisible, et c'est le seul
-              // endroit de l'étape où du contenu du client décide de la largeur. Sans le retour à la ligne,
-              // quarante tags poussent le cadre au-delà des 990 px utiles d'un 13 pouces.
-              <div className="flex w-full flex-wrap gap-2">
-                {references.tags.map((tg) => {
-                  const choisi = audience.tags.includes(tg.tag);
-                  return (
-                    <label
-                      key={tg.tag}
-                      className={`flex min-w-0 max-w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${choisi ? 'border-brand-400 bg-brand-50 text-ink-800' : 'border-ink-200 text-ink-700'}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={choisi}
-                        onChange={() => modifier({
-                          tags: choisi ? audience.tags.filter((x) => x !== tg.tag) : [...audience.tags, tg.tag],
-                        })}
-                        className="h-4 w-4 shrink-0 accent-brand-500"
-                      />
-                      <span className="truncate">{tg.tag}</span>
-                      <span className="shrink-0 text-xs text-ink-400">{fmtNum(tg.count, 'fr')}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         )}
-      </fieldset>
+      </div>
+
+      <div className="mt-3 w-full">
+        {audience.source === 'fichier' ? (
+          <CsvImport
+            tenantId={tenantId}
+            requireTag
+            onImported={({ tags }) => apresImport(tags)}
+            onBusyChange={setImportEnCours}
+          />
+        ) : audience.source === 'hubspot' ? (
+          <HubspotListImport
+            tenantId={tenantId}
+            onImported={({ tags }) => apresImport(tags)}
+            onBusyChange={setImportEnCours}
+          />
+        ) : (
+          <ListeDestinataires
+            page={page}
+            filtres={audience.filtres}
+            onFiltres={(filtres) => modifier({ filtres })}
+            selection={audience.selection}
+            onSelection={(selection) => modifier({ selection })}
+            userFields={references.userFields}
+            tagSuggestions={references.tags.map((tc) => tc.tag)}
+          />
+        )}
+      </div>
 
       {/*
-        🔴 ELLE CHANGE LE SENS DU RÉCAPITULATIF, d'où sa place ici plutôt qu'à l'étape du canal. Cochée,
-        ceux qu'on sait injoignables sortent de l'audience : plus personne ne bascule sur le second étage
-        pour ce motif, et le récapitulatif l'affichera à zéro, ce qui sera vrai. Décochée, ils restent et
-        c'est le repli qui les rattrape. Les deux sont défendables ; ce qui ne l'est pas, c'est de ne pas
-        savoir lequel on a choisi au moment de lire les chiffres.
-
-        ⚠️ UN INCONNU N'EST PAS UN INJOIGNABLE. Le filtre ne retire que ceux qui ont été MESURÉS
-        injoignables, et la mesure se périme à 90 jours (`verdictWhatsApp`) : un espace qui démarre n'a
-        aucune mesure, donc cette case n'y retire personne.
+        ⚠️ LE COMPTE RESTE AFFICHÉ HORS DE LA SOURCE CRM, et il dit alors ce qu'il sait. Un import en
+        cours ne change pas encore l'audience : le masquer ferait croire qu'il n'y en a plus.
       */}
-      <label className="mt-4 flex w-full items-start gap-2 text-sm text-ink-800">
-        <input
-          type="checkbox"
-          checked={audience.sansInjoignables}
-          onChange={(e) => modifier({ sansInjoignables: e.target.checked })}
-          data-testid="audience-sans-injoignables"
-          className="mt-0.5 h-4 w-4 shrink-0 accent-brand-500"
-        />
-        <span className="min-w-0">
-          Écarter les contacts qu&apos;on sait injoignables en WhatsApp
-          <span className="mt-0.5 block text-xs text-ink-500">
-            Seulement ceux dont une tentative a échoué ; un contact jamais sollicité reste dans l&apos;audience.
-          </span>
-        </span>
-      </label>
-
-      <CompteAudience tenantId={tenantId} audience={audience} />
+      <p className="mt-4 text-sm text-ink-700" data-testid="audience-compte">
+        {audience.source !== 'crm'
+          ? <span className="text-ink-500">L&apos;import choisira les contacts : ils seront visés par leur étiquette.</span>
+          : page.enCours
+            ? 'Comptage...'
+            : page.total === null
+              // ⚠️ UNE LECTURE EN ÉCHEC N'AFFICHE PAS ZÉRO. Zéro est une réponse (« personne ne
+              // correspond ») ; la confondre avec une panne ferait croire à une audience vide alors que
+              // l'écran n'a simplement pas pu compter.
+              ? <span className="text-gold">Le nombre de contacts n&apos;a pas pu être lu.</span>
+              : <><b>{fmtNum(retenus, 'fr')}</b> contacts retenus</>}
+      </p>
     </section>
   );
 }
 
 /**
- * LE NOMBRE DE CONTACTS RETENUS, relu à chaque changement de choix.
+ * Un bouton de source, dont le NOM ACCESSIBLE est exactement son libellé.
  *
- * ⚠️ `vivant` PLUTÔT QU'UN SIGNAL D'ABANDON : deux changements rapides lancent deux requêtes, et rien ne
- * garantit qu'elles reviennent dans l'ordre. Sans ce drapeau, la réponse de l'ancien choix peut arriver
- * après celle du nouveau et afficher un compte qui ne correspond plus à ce qui est coché.
- *
- * ⚠️ UNE LECTURE EN ÉCHEC N'AFFICHE PAS ZÉRO. Zéro est une réponse (« personne ne correspond »), et la
- * confondre avec une panne ferait croire à une audience vide alors que l'écran n'a simplement pas pu
- * compter.
+ * ⚠️ Même invariant que les radios des étapes 2 et 3 : rien d'autre que le libellé, sinon aucune requête
+ * par rôle ne peut désigner la commande sans réciter sa phrase entière.
  */
-function CompteAudience({ tenantId, audience }: { tenantId: string; audience: AudienceChoix }) {
-  const [compte, setCompte] = useState<number | null>(null);
-  const [echec, setEchec] = useState(false);
-
-  useEffect(() => {
-    let vivant = true;
-    setEchec(false);
-    setCompte(null);
-    void countContacts(tenantId, filtresDeLAudience(audience))
-      .then((r) => { if (vivant) setCompte(typeof r?.total === 'number' ? r.total : 0); })
-      .catch(() => { if (vivant) setEchec(true); });
-    return () => { vivant = false; };
-  }, [tenantId, audience]);
-
+function BoutonSource({
+  actif, desactive, onClick, libelle, aide, testId,
+}: {
+  actif: boolean;
+  desactive?: boolean;
+  onClick: () => void;
+  libelle: string;
+  aide?: string;
+  testId?: string;
+}) {
   return (
-    <p className="mt-4 text-sm text-ink-700" data-testid="audience-compte">
-      {echec
-        ? <span className="text-gold">Le nombre de contacts n&apos;a pas pu être lu.</span>
-        : compte === null
-          ? 'Comptage...'
-          : <><b>{fmtNum(compte, 'fr')}</b> contacts retenus</>}
-    </p>
-  );
-}
-
-/** Un radio dont le NOM ACCESSIBLE est exactement son libellé (même invariant que les étapes 2 et 3). */
-function Radio({
-  groupe, libelle, coche, onCheck,
-}: { groupe: string; libelle: string; coche: boolean; onCheck: () => void }) {
-  return (
-    <label className="flex w-full items-center gap-2 text-sm text-ink-800">
-      <input
-        type="radio"
-        name={groupe}
-        checked={coche}
-        onChange={onCheck}
-        className="h-4 w-4 shrink-0 accent-brand-500"
-      />
-      <span className="min-w-0 break-words">{libelle}</span>
-    </label>
+    <button
+      type="button"
+      disabled={desactive === true}
+      onClick={onClick}
+      {...(aide ? { title: aide } : {})}
+      {...(testId ? { 'data-testid': testId } : {})}
+      className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${actif ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+    >
+      {libelle}
+    </button>
   );
 }

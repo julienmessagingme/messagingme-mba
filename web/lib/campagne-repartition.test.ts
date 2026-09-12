@@ -48,12 +48,46 @@ describe('repartitionPrevue', () => {
    */
   it('sans mesure applicable, aucun nombre n est annonce', () => {
     const rcsDAbord: EtageAssistant[] = [{ rang: 1, canal: 'rcs' }, { rang: 2, canal: 'whatsapp' }];
-    const lignes = repartitionPrevue(rcsDAbord, { retenus: 1000, connusInjoignables: null, sansAdresse: null }, brut);
+    const lignes = repartitionPrevue(
+      rcsDAbord,
+      { retenus: 1000, connusInjoignables: null, sansAdresse: null, motifNonPrevisible: 'canal' },
+      brut,
+    );
     expect(lignes[0]?.nombre).toBeNull();
     expect(lignes[1]?.nombre).toBeNull();
     expect(lignes[1]?.texte).toMatch(/pas prévisible/);
+    expect(lignes[1]?.texte).toMatch(/mémorisée que sur WhatsApp/);
     // ⚠️ Et surtout : aucun « 0 » nulle part, qui serait lu comme une prévision.
     expect(lignes.map((l) => l.texte).join(' ')).not.toMatch(/\b0\b/);
+  });
+
+  /**
+   * 🔴 UN `null` SANS MOTIF SE FAISAIT ATTRIBUER LE MAUVAIS, ET C'EST CE QUE CES DEUX CAS SÉPARENT.
+   * Cette table n'avait qu'une seule raison de ne pas savoir (« la joignabilité n'est mémorisée que sur
+   * WhatsApp ») et l'écrivait à CHAQUE `null`. Depuis que l'audience peut être une sélection de contacts,
+   * il y en a une seconde, et un comptage qui échoue est une troisième : donner la première aux deux
+   * autres enverrait chercher un problème de configuration là où il y a eu un hoquet réseau. Sans ces
+   * cas, une implémentation qui rendrait toujours la même phrase passerait.
+   */
+  it('une audience choisie ligne a ligne dit que ce n est PAS un probleme de canal', () => {
+    const lignes = repartitionPrevue(
+      CHAINE,
+      { retenus: 12, connusInjoignables: null, sansAdresse: null, motifNonPrevisible: 'selection' },
+      brut,
+    );
+    expect(lignes[1]?.texte).toMatch(/sélection de contacts/);
+    expect(lignes[1]?.texte).not.toMatch(/mémorisée que sur WhatsApp/);
+    // ⚠️ ET LA LIGNE E-MAIL AVEC : dire « choisissez le champ » à quelqu'un qui l'a déjà choisi l'envoie
+    // corriger un réglage parfaitement correct.
+    expect(lignes[2]?.texte).toMatch(/décrite par des filtres/);
+    expect(lignes[2]?.texte).not.toMatch(/Choisissez le champ/);
+  });
+
+  it('sans motif, le silence est un ECHEC DE LECTURE, pas une explication empruntee', () => {
+    const lignes = repartitionPrevue(CHAINE, { retenus: 1000, connusInjoignables: null, sansAdresse: 12 }, brut);
+    expect(lignes[1]?.texte).toMatch(/n'a pas pu être lu/);
+    expect(lignes[1]?.texte).not.toMatch(/mémorisée que sur WhatsApp/);
+    expect(lignes[1]?.texte).not.toMatch(/sélection de contacts/);
   });
 
   // ⚠️ Sans champ d'adresse choisi, l'écran demande le choix au lieu d'inventer un compte.

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { BusinessHours } from '@/lib/api';
 import {
   chaineDeLaFormule,
-  type Cadence,
+  DEBIT_DEFAUT,
   type CanalPremier,
   type EtageAssistant,
   type FormuleCanal,
@@ -14,7 +14,7 @@ import { EtapeCanal } from '@/components/campagne/EtapeCanal';
 import { EtapeContenu, contenuVide } from '@/components/campagne/EtapeContenu';
 import { EtapeAudience } from '@/components/campagne/EtapeAudience';
 import { EtapeRecap } from '@/components/campagne/EtapeRecap';
-import type { AudienceChoix } from '@/lib/campagne-repartition';
+import { audienceInitiale, type AudienceChoix } from '@/lib/audience';
 import type { VarRow } from '@/lib/variables-template';
 import type { CampaignCategory, PhoneNumber, RcsAgent, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
 
@@ -38,14 +38,17 @@ import type { CampaignCategory, PhoneNumber, RcsAgent, RcsSuggestion, TagCount, 
  *   1. ⚠️ l'association des variables d'un modèle sur un étage de REPLI : la campagne n'a qu'un
  *      `param_mapping` et `campaign_etages` n'a pas de colonne pour un second, donc un repli à variables
  *      est REFUSÉ au récapitulatif, avec sa raison (le rang 1, lui, est servi) ;
- *   2. la sélection fine des contacts (cases à cocher, filtres du mini-CRM, exclusions, listes HubSpot) ;
- *   3. l'APERÇU du template, carousel et en-tête média compris ;
- *   4. la création d'un template à la volée ;
- *   5. la programmation « Plus tard » (`scheduledAt`) ;
- *   6. la campagne AU FIL DE L'EAU (alimentée par un webhook) ;
- *   7. les brouillons de composition (écrits dans un `state` opaque que seul l'ancien formulaire relit) ;
- *   8. le visuel RCS et ses médias ;
- *   9. le débit fin (jauge 1..80), ici réduit à trois intentions de cadence.
+ *   2. l'APERÇU du template, carousel et en-tête média compris ;
+ *   3. la création d'un template à la volée ;
+ *   4. la programmation « Plus tard » (`scheduledAt`) ;
+ *   5. la campagne AU FIL DE L'EAU (alimentée par un webhook) ;
+ *   6. les brouillons de composition (écrits dans un `state` opaque que seul l'ancien formulaire relit) ;
+ *   7. le visuel RCS et ses médias.
+ *
+ * ⚠️ DEUX LIGNES ONT QUITTÉ CETTE LISTE LE 2026-09-13, et ce n'étaient pas des capacités manquantes mais
+ * des RÉGRESSIONS : la sélection fine des contacts (elle revient en RÉUTILISANT les briques de l'écran
+ * en service) et la jauge de débit (elle revient à l'étape 5). Un écran qui sait faire moins que celui
+ * qu'il remplace n'est pas un remplaçant, quel que soit le mot qu'on met dans le plan.
  */
 
 /** Les cinq étapes, dans l'ordre décidé par Julien le 2026-09-12. */
@@ -77,7 +80,24 @@ export interface EtatCampagne {
   reessayer: boolean;
   /** « Le rattrapage peut-il partir en dehors des heures d'ouverture ? ». Défaut : non. */
   rattrapageHorsHoraires: boolean;
-  cadence: Cadence;
+  /**
+   * « N'envoyer que pendant les heures ouvrées » : LA SEULE QUESTION HORAIRE de l'étape Canal.
+   *
+   * 🔴 ELLE A REMPLACÉ TROIS « INTENTIONS DE CADENCE » QUI N'AVAIENT JAMAIS ÉTÉ DEMANDÉES (2026-09-12).
+   * Elles venaient d'une recommandation écrite dans la spec et non validée, et retiraient au passage la
+   * jauge de débit de `CampaignCreateForm`. Julien : « je veux juste une seule question : envoyer ou pas
+   * hors des business hours. C'est tout ! et après on shoote au rythme du canon que le client choisit ».
+   */
+  heuresOuvrees: boolean;
+  /**
+   * LA JAUGE DE DÉBIT, en messages par minute (1..80), demandée à l'étape 5.
+   *
+   * ⚠️ ELLE VIT À LA FIN DU PARCOURS et non à l'étape du canal, parce que c'est là seulement que
+   * l'audience est connue : une durée estimée sans nombre de destinataires ne veut rien dire.
+   * Le plafond RÉEL reste résolu PAR CANAL côté serveur (`plafondDuCanal`) : une campagne RCS n'est pas
+   * soumise au plafond de Meta, et ce chiffre-là ne se recopie pas dans l'écran.
+   */
+  debitParMinute: number;
   /**
    * Le contenu de chaque étage, PAR RANG.
    *
@@ -147,12 +167,33 @@ export type Devenir = 'mba' | 'agent' | 'inbox';
 /** Comment la conversation se répartit, quand elle tombe dans l'Inbox. */
 export type Assignation = 'aucune' | 'personne' | 'tour_de_role';
 
+/** Un collaborateur de l'espace, tel que l'étape Contenu le propose pour l'affectation. */
+export interface MembreAssistant {
+  id: string;
+  nom: string;
+  /**
+   * LE COMPTE N'A JAMAIS ÉTÉ ACTIVÉ : son invitation est en attente (`users.last_login_at is null`).
+   *
+   * 🔴 IL EST GRISÉ, PAS MASQUÉ, ET C'EST LE PREMIER RETOUR DE JULIEN SUR CET ÉCRAN (2026-09-12) : il
+   * voyait UNE personne alors que son espace en compte trois. Le filtre silencieux faisait exactement ce
+   * qu'il annonçait (assigner à quelqu'un qui ne peut pas se connecter range les conversations là où
+   * personne ne les lira), mais le produit s'interdit ailleurs de masquer une option indisponible : un
+   * canal non configuré est grisé AVEC SA RAISON. Ici l'empêchement est en plus LEVABLE par celui qui le
+   * voit, il suffit que la personne accepte son invitation.
+   *
+   * ⚠️ UN COMPTE RÉVOQUÉ, LUI, RESTE MASQUÉ, et la différence n'est pas cosmétique : son empêchement
+   * n'est pas levable par la personne qui le lit, et il ne redeviendra actif que si un administrateur le
+   * décide. L'afficher grisé ferait grossir la liste de comptes qui ne reviendront pas.
+   */
+  enAttente: boolean;
+}
+
 /** Ce que l'étape Contenu propose à choisir. Chargé par l'écran, jamais par l'étape. */
 export interface ReferencesContenu {
   templates: TemplateSummary[];
   workflows: WorkflowSummary[];
   emailTemplates: Array<{ id: string; name: string }>;
-  membres: Array<{ id: string; nom: string }>;
+  membres: MembreAssistant[];
   agents: Array<{ id: string; label: string }>;
   /** Les tags de l'espace, pour cibler l'audience. */
   tags: TagCount[];
@@ -184,7 +225,11 @@ export const ETAT_INITIAL: EtatCampagne = {
    * PERSONNE ne choisit (un repli qui tombe à 18 h 02), seul le défaut prudent est défendable.
    */
   rattrapageHorsHoraires: false,
-  cadence: 'vite',
+  // ⚠️ Faux par défaut, c'est-à-dire « on envoie à toute heure » : le comportement d'aujourd'hui, et
+  // celui de `CampaignCreateForm`. Cocher cette case sur un espace sans horaires ARRÊTE la campagne
+  // pour toujours, l'étape Canal le dit au moment du clic.
+  heuresOuvrees: false,
+  debitParMinute: DEBIT_DEFAUT,
   contenus: {},
   /**
    * 🔴 DÉFAUT « INBOX », ET C'EST LE COMPORTEMENT D'AUJOURD'HUI. Une réponse à une campagne arrive dans
@@ -197,8 +242,8 @@ export const ETAT_INITIAL: EtatCampagne = {
   assignation: 'aucune',
   assignationUserId: null,
   // ⚠️ « Tous les contacts » par défaut, et l'écran l'affiche COMPTÉ : un défaut qui ne se voit pas serait
-  // le pire des deux, puisque c'est la sélection la plus large du produit.
-  audience: { mode: 'tous', tags: [], sansInjoignables: false },
+  // le pire des deux, puisque c'est la sélection la plus large du produit. Cf. `audienceInitiale`.
+  audience: audienceInitiale(),
 };
 
 /** Ce que l'espace sait faire, lu une fois et passé aux étapes qui en dépendent. */
@@ -214,6 +259,16 @@ export interface CapacitesEspace {
    * chaque ajout suivant.
    */
   mbaEnabled: boolean;
+  /**
+   * Le connecteur HubSpot est-il branché sur cet espace ? Faux = la source HubSpot n'est pas AFFICHÉE.
+   *
+   * ⚠️ MASQUÉE ET NON GRISÉE, à l'inverse du RCS, et c'est une demande de Julien du 2026-08-26 reprise
+   * telle quelle de `CampaignCreateForm` : un bouton grisé pour une intégration qu'on n'a pas est du
+   * bruit, pas une information. La PAUSE, elle, se grise avec sa raison : elle se lève d'un clic.
+   */
+  hubspotListes: boolean;
+  /** La synchronisation HubSpot est en pause (drapeau d'espace) : la source s'affiche, grisée. */
+  hubspotEnPause: boolean;
   /** Les heures d'ouverture de l'espace, pour dire la vérité au moment où l'on coche. */
   businessHours?: BusinessHours;
 }
@@ -369,7 +424,13 @@ export function AssistantCampagne({
       )}
 
       {etape === 'audience' && (
-        <EtapeAudience tenantId={tenantId} etat={etat} references={references} onChange={modifier} />
+        <EtapeAudience
+          tenantId={tenantId}
+          etat={etat}
+          references={references}
+          capacites={capacites}
+          onChange={modifier}
+        />
       )}
 
       {etape === 'recap' && (
@@ -379,6 +440,7 @@ export function AssistantCampagne({
           chaine={chaine}
           references={references}
           aller={setEtape}
+          onChange={modifier}
           {...(onCree ? { onCree } : {})}
         />
       )}

@@ -2,7 +2,6 @@
 
 import {
   rattrapagePossible,
-  type Cadence,
   type CanalPremier,
   type EtageAssistant,
   type FormuleCanal,
@@ -12,11 +11,18 @@ import { heuresDOuvertureReglees } from '@/lib/campagne-chaine';
 import type { CapacitesEspace, EtatCampagne } from '@/components/campagne/AssistantCampagne';
 
 /**
- * ÉTAPE 2 : le canal, le repli, le réessai, l'horaire du rattrapage, et la cadence.
+ * ÉTAPE 2 : le canal, le repli, le réessai, et les DEUX questions d'horaire.
+ *
+ * 🔴 LES DEUX QUESTIONS D'HORAIRE NE PARLENT PAS DU MÊME MOMENT, et c'est pour ça qu'elles cohabitent.
+ * « Envoyer uniquement pendant les heures ouvrées » gouverne l'envoi INITIAL, celui que l'opérateur
+ * CHOISIT en appuyant sur le bouton (`campaigns.business_hours_only`, migration 0122). Celle du
+ * rattrapage gouverne le moment que PERSONNE ne choisit : un repli qui se présente à 18 h 02. Une
+ * campagne peut parfaitement envoyer la nuit et refuser de rattraper la nuit, et c'est ce cas-là qui
+ * prouve que la séparation est réelle (`src/lib/heures-ouvrees.ts` la porte côté serveur).
  *
  * 🔴 UNE SEULE COLONNE, DES BLOCS EMPILÉS, JAMAIS CÔTE À CÔTE. C'est l'étape la plus chargée de
  * l'assistant : trois entrées de canal, deux sous-questions, une case à cocher, un encart
- * d'avertissement et trois cadences. Sur un 13 pouces (1280 x 800), la console laisse environ 990 px
+ * d'avertissement et deux questions d'horaire. Sur un 13 pouces (1280 x 800), la console laisse 990 px
  * utiles une fois retirées la barre latérale de 240 px et les marges. Une grille qui se réorganiserait
  * sous un seuil produirait exactement les chevauchements que ce lot existe pour empêcher ; l'empilement,
  * lui, n'a pas de seuil. `web/e2e/campagne-assistant-canal.spec.ts` le MESURE, il ne le suppose pas.
@@ -193,36 +199,41 @@ export function EtapeCanal({
         </div>
       )}
 
-      <fieldset data-testid="choix-cadence" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-        <legend className="px-1 text-sm font-medium text-ink-700">À quel rythme ?</legend>
-        {/* 🔴 L'ÉCRAN NE DEMANDE PLUS UN NOMBRE DE MESSAGES PAR MINUTE. Un marketeur n'a aucun moyen de
-            connaître les plafonds des opérateurs : il choisit une INTENTION, le plafond technique reste
-            en coulisse (`plafondDuCanal`, côté serveur). Ce que chaque intention écrit sur la campagne
-            est dans `reglagesDeCadence` (`web/lib/campagne-chaine.ts`), avec la raison du chiffre. */}
-        <div className="space-y-2">
-          <Entree
-            groupe="cadence"
-            libelle="Au plus vite"
-            description="Le débit par défaut du serveur, ramené au plafond du canal."
-            coche={etat.cadence === 'vite'}
-            onCheck={() => onChange({ cadence: 'vite' })}
-          />
-          <Entree
-            groupe="cadence"
-            libelle="Étalé sur la journée"
-            description="Un débit volontairement bas, pour ménager la réputation du numéro et laisser l'équipe absorber les réponses."
-            coche={etat.cadence === 'etale'}
-            onCheck={() => onChange({ cadence: 'etale' })}
-          />
-          <Entree
-            groupe="cadence"
-            libelle="Heures ouvrées seulement"
-            description="Lancée hors créneau, la campagne attend la prochaine ouverture. Un envoi que la fermeture interrompt reprend au créneau suivant."
-            coche={etat.cadence === 'ouvrees'}
-            onCheck={() => onChange({ cadence: 'ouvrees' })}
-          />
-        </div>
-      </fieldset>
+      {/*
+        🔴 LA CADENCE N'EST PLUS ICI, ET CE N'EST PAS UN OUBLI (2026-09-12). Cet écran a porté trois
+        « intentions » (au plus vite, étalé sur la journée, heures ouvrées seulement) qui n'ont JAMAIS été
+        demandées : elles venaient d'une recommandation écrite dans la spec et non validée, et elles
+        retiraient la jauge que `CampaignCreateForm` offre depuis toujours. La jauge revient, et elle vit
+        à la FIN du parcours (étape 5), là où l'audience est connue : c'est le seul endroit où une durée
+        estimée veut dire quelque chose. Ce qui reste ici, c'est la seule question horaire demandée.
+      */}
+      <div data-testid="bloc-horaires" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+        <Case
+          libelle="Envoyer uniquement pendant les heures ouvrées"
+          description="Lancée hors créneau, la campagne attend la prochaine ouverture (onglet Paramètres) au lieu de partir. Un envoi que la fermeture interrompt reprend tout seul au créneau suivant, sans perdre un destinataire."
+          coche={etat.heuresOuvrees}
+          onChange={(v) => onChange({ heuresOuvrees: v })}
+        />
+        {/*
+          🔴 SANS AUCUN JOUR OUVERT, CETTE CASE NE RETARDE PAS L'ENVOI : ELLE L'ANNULE. Vérifié dans le
+          code, pas déduit du libellé : `withinBusinessHours` rend faux sur des horaires vides, le moteur
+          met donc la campagne en pause `hors_horaires`, et `prochaineOuverture` ne trouvant aucune
+          reprise, `paused_until` reste nul. Or le balayage de reprise exige `paused_until is not null`
+          (`reprendreCampagnesDues`) : la campagne reste en pause POUR TOUJOURS, sans qu'aucune erreur ne
+          le dise.
+
+          ⚠️ C'EST L'INVERSE DE LA CASE DU RATTRAPAGE juste au-dessus, où l'absence d'horaires rend la
+          fenêtre TOUJOURS ouverte. Deux cases voisines, deux comportements opposés sur la même absence :
+          le dire au moment où l'on coche est la seule façon de ne pas se faire avoir.
+        */}
+        {etat.heuresOuvrees && !horairesReglees && (
+          <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700" data-testid="horaires-absentes">
+            Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : cochée, cette case mettrait la
+            campagne en pause sans jamais la reprendre. Réglez vos horaires dans Paramètres, ou décochez.
+          </p>
+        )}
+      </div>
+
     </section>
   );
 }
@@ -301,4 +312,4 @@ function Case({
 }
 
 /** Réexporté pour que l'étape suivante n'ait pas à réimporter le type depuis deux endroits. */
-export type { Cadence, FormuleCanal, TroisiemeNiveau };
+export type { FormuleCanal, TroisiemeNiveau };

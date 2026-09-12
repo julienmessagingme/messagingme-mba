@@ -620,13 +620,37 @@ function BlocDevenir({
 
           {etat.assignation === 'personne' && (
             <div className="mt-3 space-y-2">
+              {/*
+                🔴 LES MEMBRES NON ACTIVÉS SONT LÀ, GRISÉS AVEC LEUR RAISON (2026-09-12). L'écran les
+                MASQUAIT : Julien a ouvert la liste et y a vu une personne sur les trois de son espace,
+                sans un mot d'explication. Les écarter est juste (une conversation assignée à quelqu'un
+                qui ne peut pas se connecter est rangée là où personne ne la lira), mais le produit grise
+                ailleurs les options indisponibles AVEC leur raison au lieu de les faire disparaître, et
+                ici l'empêchement se lève tout seul dès que la personne accepte son invitation.
+
+                ⚠️ `disabled` SUR L'OPTION, ET PAS SEULEMENT UN LIBELLÉ : un `<option>` grisé ne peut pas
+                être choisi, donc l'écran ne peut pas enregistrer une affectation vers un compte qui ne
+                se connectera pas. La mention est dans le libellé plutôt qu'à côté, parce qu'un `<select>`
+                fermé ne montre rien d'autre que le libellé de la ligne choisie.
+              */}
               <Selecteur
                 libelle="Personne"
                 valeur={etat.assignationUserId ?? ''}
                 onChange={(v) => onChange({ assignationUserId: v })}
-                options={references.membres.map((m) => ({ valeur: m.id, libelle: m.nom }))}
+                options={references.membres.map((m) => ({
+                  valeur: m.id,
+                  libelle: m.enAttente ? `${m.nom} (invitation en attente)` : m.nom,
+                  desactive: m.enAttente,
+                }))}
                 vide="Aucun collaborateur sur cet espace."
+                testId="assignation-personne"
               />
+              {references.membres.some((m) => m.enAttente) && (
+                <p className="text-xs text-ink-500" data-testid="membres-en-attente">
+                  Les membres dont l&apos;invitation est en attente ne peuvent pas encore recevoir de
+                  conversation : ils apparaissent ici dès qu&apos;ils ont accepté.
+                </p>
+              )}
               {/* 🔴 LE NOMBRE AVANT DE VALIDER. Assigner cinq mille conversations à quelqu'un doit se voir
                   au moment où on le décide, pas le lendemain matin quand il ouvre sa liste.
                   ⚠️ À CETTE ÉTAPE, L'AUDIENCE N'EST PAS ENCORE CHOISIE (elle vient à l'étape 4) : on dit
@@ -667,7 +691,7 @@ function Selecteur({
   libelle: string;
   valeur: string;
   onChange: (v: string) => void;
-  options: Array<{ valeur: string; libelle: string }>;
+  options: Array<{ valeur: string; libelle: string; desactive?: boolean }>;
   vide: string;
   /**
    * ⚠️ UNE CLÉ DE TEST PLUTÔT QU'UNE DÉSIGNATION PAR LIBELLÉ, et ce n'est pas un confort : « Modèle »
@@ -691,7 +715,7 @@ function Selecteur({
         >
           <option value="">Choisir...</option>
           {options.map((o) => (
-            <option key={o.valeur} value={o.valeur}>{o.libelle}</option>
+            <option key={o.valeur} value={o.valeur} disabled={o.desactive === true}>{o.libelle}</option>
           ))}
         </select>
       )}

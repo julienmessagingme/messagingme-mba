@@ -51,10 +51,15 @@ function AssistantInner({ session }: { session: Session }) {
         setCapacites({
           rcsEnabled: s.rcsEnabled === true,
           mbaEnabled: s.mbaEnabled === true,
+          // ⚠️ Mêmes deux drapeaux que `CampaignCreateForm` : le connecteur branché décide si la source
+          // HubSpot est AFFICHÉE, la pause décide si elle est cliquable. Les confondre montrerait un
+          // panneau vide à un espace qui n'a pas HubSpot, ou masquerait une pause qui se lève d'un clic.
+          hubspotListes: s.hubspotListsEnabled === true,
+          hubspotEnPause: s.campaignsPaused === true,
           ...(s.businessHours ? { businessHours: s.businessHours as BusinessHours } : {}),
         });
       })
-      .catch(() => { if (vivant) setCapacites({ rcsEnabled: false, mbaEnabled: false }); });
+      .catch(() => { if (vivant) setCapacites({ rcsEnabled: false, mbaEnabled: false, hubspotListes: false, hubspotEnPause: false }); });
     return () => { vivant = false; };
   }, [session.tenantId]);
 
@@ -86,12 +91,21 @@ function AssistantInner({ session }: { session: Session }) {
       .then((r) => poser({ emailTemplates: (Array.isArray(r?.templates) ? r.templates : []).map((t) => ({ id: t.id, name: t.name })) }))
       .catch(() => {});
     void listUsers(session.tenantId)
-      // ⚠️ Ni les comptes révoqués ni les invitations en attente : assigner des conversations à quelqu'un
-      // qui ne peut pas se connecter, c'est les ranger là où personne ne les lira.
+      /**
+       * 🔴 LES INVITATIONS EN ATTENTE RESTENT DANS LA LISTE, GRISÉES (2026-09-12). Ce filtre les RETIRAIT,
+       * et Julien a ouvert l'écran pour y voir UNE personne sur les trois de son espace, sans un mot. Le
+       * motif écrit ici était juste (assigner à quelqu'un qui ne peut pas se connecter range les
+       * conversations là où personne ne les lira) ; c'est le SILENCE qui ne l'était pas. Le produit grise
+       * un canal non configuré AVEC SA RAISON plutôt que de le masquer, et ici l'empêchement est en plus
+       * levable par celui qui le voit : il suffit que la personne accepte son invitation.
+       *
+       * ⚠️ LE COMPTE RÉVOQUÉ, LUI, RESTE ÉCARTÉ : son empêchement n'est pas levable par le lecteur, et
+       * l'afficher allongerait la liste de comptes qui ne reviendront pas.
+       */
       .then((r) => poser({
         membres: (Array.isArray(r?.users) ? r.users : [])
-          .filter((u) => !u.disabled && !u.pending)
-          .map((u) => ({ id: u.id, nom: u.name ?? u.email })),
+          .filter((u) => !u.disabled)
+          .map((u) => ({ id: u.id, nom: u.name ?? u.email, enAttente: u.pending === true })),
       }))
       .catch(() => {});
     void listAgents(session.tenantId)

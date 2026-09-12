@@ -13,7 +13,8 @@ import { TemplatePreview } from '@/components/TemplatePreview';
 import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
-import { ContactFilterPanel } from '@/components/ContactFilterPanel';
+import { ListeDestinataires, useContactsFiltres } from '@/components/campagne/ListeDestinataires';
+import { cibleDeCreation, nbRetenus, type SelectionDestinataires } from '@/lib/audience';
 import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
@@ -36,12 +37,9 @@ import {
   listTags,
   listRcsAgents,
   listRcsMessages,
-  queryContacts,
-  countContacts,
   getTemplateHints,
   getSettings,
   getCampaign,
-  contactIdentity,
   listWebhooks,
   type WebhookEntrant,
   type UserFieldDef,
@@ -53,7 +51,6 @@ import {
   type RcsSuggestion,
   type TemplateParam,
   type TemplateSummary,
-  type Contact,
   type ImportReport,
   type ContactFilters,
   type TagCount,
@@ -62,7 +59,7 @@ import {
 } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample, varCountOf } from '@/lib/fields';
 import { appliquerIndices, lignesParDefaut, versParamMapping, type VarRow } from '@/lib/variables-template';
-import { filtersActive, filtresRepris } from '@/lib/contact-filters';
+import { filtresRepris } from '@/lib/contact-filters';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
 import { useCampagneReferences } from '@/lib/use-campagne-references';
 /**
@@ -217,13 +214,14 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [webhookId, setWebhookId] = useState('');
   const [webhooks, setWebhooks] = useState<WebhookEntrant[] | null>(null);
   const [webhooksErreur, setWebhooksErreur] = useState(false);
-  // Filtres de la source CRM : UN objet ContactFilters, édité par le composant PARTAGÉ ContactFilterPanel
-  // (même moteur de recherche que le mini-CRM, pas de 2e implémentation parallèle).
+  // Filtres de la source CRM : UN objet ContactFilters, édité par le panneau PARTAGÉ avec le mini-CRM
+  // (même moteur de recherche, pas de 2e implémentation parallèle). ⚠️ Il est monté par
+  // `ListeDestinataires` depuis le 2026-09-13, et non plus ici : c'est ce composant-là qui est partagé
+  // avec l'étape Audience de l'assistant, panneau de filtres compris.
   const [filters, setFilters] = useState<ContactFilters>({});
-  // Résultats : liste affichée (<= 500), total réel (compteur), sélection ciblée.
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [total, setTotal] = useState<number | null>(null);
-  const [countLoading, setCountLoading] = useState(false);
+  // Résultats : la liste affichée et le total réel viennent de `useContactsFiltres`, partagé avec
+  // l'assistant (cf. plus bas). Ne restent ici que les CHOIX de l'opérateur, parce que le brouillon les
+  // enregistre : la liste, elle, se recharge toute seule et n'a rien à faire dans un brouillon.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /**
    * « Tout ce qui correspond aux filtres », par INTENTION plutôt que par liste d'identifiants.
@@ -240,8 +238,6 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [importMsg, setImportMsg] = useState<{ n: number; tags: string[] } | null>(null);
   // Import CSV (source fichier) en vol : gèle les boutons de source (changer de source démonterait CsvImport).
   const [importBusy, setImportBusy] = useState(false);
-  // Anti-course : n'appliquer qu'une réponse à jour (une plus récente peut la doubler entre-temps).
-  const reqSeq = useRef(0);
   /**
    * 🔴 UNE SÉLECTION RESTAURÉE NE DOIT PAS ÊTRE ÉCRASÉE PAR LE PREMIER CHARGEMENT. Julien, le 2026-09-08 :
    * « si je ferme le site et que je reviens, il faut à nouveau que je sélectionne les personnes ».
@@ -344,67 +340,33 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, submittedTemplate, templates, templateName]);
 
-  // Rechargement DEBOUNCÉ (350 ms) de la liste + du compteur quand les filtres changent (source 'crm' seulement).
-  // Au rechargement, on re-coche tous les contacts chargés (comportement « tout ciblé » par défaut).
-  useEffect(() => {
-    if (source !== 'crm') { setCountLoading(false); return; }
-    const f = filters;
-    setCountLoading(true);
-    const timer = setTimeout(() => {
-      const seq = ++reqSeq.current;
-      void (async () => {
-        try {
-          const [q, c] = await Promise.all([queryContacts(tenantId, f, { limit: 500 }), countContacts(tenantId, f)]);
-          if (seq !== reqSeq.current || !mountedRef.current) return; // réponse périmée ou écran quitté
-          // Normalisé AVANT d'entrer dans l'état. Une réponse 200 sans le champ `contacts` (version d'API en
-          // retard, route qui rend `{}`) posait `undefined` dans un état typé tableau : le `.length` du rendu
-          // jetait, et React démontait TOUT l'écran de création, pas seulement la liste. Le `catch` ci-dessous
-          // n'y peut rien, il n'y a aucune erreur réseau dans ce cas.
-          const liste = Array.isArray(q?.contacts) ? q.contacts : [];
-          setContacts(liste);
-          // `null` et NON `liste.length` : `total` est deja type `number | null`, et l'ecran sait rendre
-          // l'inconnu. Deduire un total des lignes ramenees inventerait un chiffre plafonne par la limite
-          // de la requete, qu'on afficherait comme une verite.
-          setTotal(typeof c?.total === 'number' ? c.total : null);
-          const restauree = selectionRestauree.current;
-          if (restauree) {
-            // Une seule fois : le prochain changement de filtres reprend le comportement « tout coché ».
-            selectionRestauree.current = null;
-            // ⚠️ On BORNE la sélection restaurée à ce qui existe encore. Garder un identifiant disparu
-            // ferait mentir le compteur, et viser quelqu'un qui ne correspond plus aux filtres.
-            const vivants = new Set(liste.filter((x) => restauree.selected.has(x.id)).map((x) => x.id));
-            setSelected(vivants);
-            setSelectionReduite(restauree.selected.size > vivants.size ? restauree.selected.size - vivants.size : null);
-            /**
-             * 🔴 LES EXCLUSIONS SONT RENDUES TELLES QUELLES, ET SURTOUT PAS ÉLAGUÉES.
-             *
-             * Une exclusion dont le contact a disparu ne coûte qu'un compteur légèrement bas (elle ne retire
-             * plus personne). Élaguer sur les 500 lignes AFFICHÉES coûterait l'inverse : au-delà de 500
-             * correspondances, la fenêtre affichée change d'une session à l'autre, et une exclusion encore
-             * valide en tomberait dehors. Le contact recevrait alors le message dont on l'avait retiré. Les
-             * deux erreurs ne se valent pas, on garde donc tout.
-             */
-            setExclus(restauree.exclus);
-          } else {
-            setSelected(new Set(liste.map((x) => x.id)));
-            // Le bandeau « N contacts ne sont plus là » appartient au chargement qui l'a produit : le garder
-            // au-delà le rendrait faux, il parlerait d'une sélection qui n'existe plus.
-            setSelectionReduite(null);
-            // 🔴 Les filtres ont changé, donc les EXCLUSIONS ne veulent plus rien dire : elles désignaient des
-            // contacts d'un autre ensemble. Les garder retirerait des gens que l'utilisateur n'a jamais vus
-            // dans cette nouvelle sélection, et le compteur afficherait un nombre plus petit sans raison
-            // visible. Le mode « tout ce qui correspond », lui, RESTE : il suit les filtres, c'est son sens.
-            setExclus(new Set());
-          }
-          setCountLoading(false);
-        } catch {
-          if (seq !== reqSeq.current || !mountedRef.current) return;
-          setCountLoading(false); // erreur silencieuse : on garde l'affichage précédent
-        }
-      })();
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [source, tenantId, filters]);
+  /**
+   * LA LISTE ET LE COMPTEUR VIENNENT DU HOOK PARTAGÉ AVEC L'ASSISTANT (`useContactsFiltres`).
+   *
+   * 🔴 CE CHARGEMENT VIVAIT ICI ET NULLE PART AILLEURS, et c'est ce qui a laissé l'étape Audience de
+   * l'assistant naître avec deux boutons radio à la place des filtres. Le recopier là-bas aurait donné
+   * deux définitions de l'audience à tenir d'accord à la main ; il n'y en a plus qu'une.
+   *
+   * ⚠️ LES CHOIX RESTENT ICI. Le hook ne garde que ce qui se DÉDUIT de `tenantId` + filtres ; la
+   * sélection continue de vivre dans les trois états ci-dessus, parce que c'est le brouillon qui les
+   * enregistre, dans un format déjà écrit en base qu'on ne change pas.
+   */
+  const selection: SelectionDestinataires = { toutFiltre, selected, exclus };
+  const appliquerSelection = (s: SelectionDestinataires): void => {
+    setToutFiltre(s.toutFiltre);
+    setSelected(s.selected);
+    setExclus(s.exclus);
+  };
+  const pageContacts = useContactsFiltres({
+    tenantId,
+    filtres: filters,
+    actif: source === 'crm',
+    selection,
+    onSelection: appliquerSelection,
+    restauration: selectionRestauree,
+    onReduite: setSelectionReduite,
+  });
+  const total = pageContacts.total;
 
   const selectedTemplate = templates.find((tpl) => tpl.name === templateName);
   // Nom vérifié du numéro courant, pour que l'aperçu porte le nom de l'entreprise qui va vraiment envoyer.
@@ -622,36 +584,16 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setSource('crm');
     setImportMsg({ n: report.created + report.updated, tags });
   }
-  function toggleContact(id: string) {
-    // En mode « tout ce qui correspond », décocher une ligne l'EXCLUT ; on ne reconstruit jamais la liste.
-    if (toutFiltre) {
-      setExclus((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-      return;
-    }
-    setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  }
-  /** « Tout sélectionner (N) » : on retient l'INTENTION, on ne rapatrie plus aucun identifiant. */
-  function selectAllMatching() {
-    setToutFiltre(true);
-    setSelected(new Set());
-    setExclus(new Set());
-  }
-  function viderSelection() {
-    setToutFiltre(false);
-    setSelected(new Set());
-    setExclus(new Set());
-  }
-  /** Une ligne affichée est-elle retenue ? En mode « tout », tout l'est sauf ce qui a été exclu. */
-  const estRetenu = (id: string): boolean => (toutFiltre ? !exclus.has(id) : selected.has(id));
   /**
    * Combien de destinataires, réellement. En mode « tout ce qui correspond », c'est le total SERVEUR moins
    * les exclusions : le navigateur ne connaît pas la liste, il connaît son cardinal. Toutes les phrases de
    * l'écran (durée estimée, « prêt à lancer à N ») lisent ce nombre, plus `selected.size`, qui vaudrait zéro.
+   *
+   * ⚠️ MÊME RÈGLE QUE L'ASSISTANT (`nbRetenus`) : les deux écrans annoncent le même chiffre parce qu'ils
+   * le calculent au même endroit. Cocher/décocher et « Tout sélectionner » vivent désormais dans
+   * `ListeDestinataires`, pour la même raison.
    */
-  const nbDestinataires = toutFiltre ? Math.max(0, (total ?? 0) - exclus.size) : selected.size;
-
-  // Un filtre est actif dès qu'une clé est posée -> distingue « aucun résultat » de « aucun contact du tout ».
-  const hasActiveFilters = filtersActive(filters);
+  const nbDestinataires = nbRetenus(selection, total);
   // Le récap d'import n'est PERTINENT que tant que le filtre affiché == exactement les tags importés (rien
   // d'autre). Dès que l'utilisateur touche un filtre, la sélection diverge des importés -> on masque le récap.
   const importMsgFresh = importMsg !== null
@@ -674,11 +616,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     // laisser croire que la liste va partir alors que seule l'adresse compte.
     // Trois façons de désigner les destinataires, et une seule part : une adresse (fil de l'eau), une
     // INTENTION (filtres + exclusions), ou une liste explicite. Le serveur refuse d'en recevoir deux.
+    // ⚠️ LA TRADUCTION « CE QUI EST COCHÉ » -> « CE QUE LA REQUÊTE EMPORTE » EST PARTAGÉE AVEC L'ASSISTANT
+    // (`cibleDeCreation`). Elle tenait dans ce ternaire, et l'assistant n'en avait recopié que la branche
+    // « filtres » : une sélection ligne à ligne y était affichée puis jamais envoyée.
     const cible: Pick<CreateCampaignInput, 'contactIds' | 'contactTarget' | 'webhookId'> = auFilDeLEau
       ? { webhookId }
-      : toutFiltre
-        ? { contactTarget: { filters, excludeIds: [...exclus] } }
-        : { contactIds: [...selected] };
+      : cibleDeCreation(selection, filters);
     // Débit TOUJOURS choisi (jauge, défaut 60) : on envoie systématiquement le plafond 1..80.
     // Campagne RCS : ni numéro Meta, ni template, ni variables. Le message part tel qu'il est écrit.
     if (mode === 'rcs') {
@@ -1263,92 +1206,45 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
         ) : loadingRefs ? (
           <p className="text-xs text-ink-400">{t('Chargement des contacts...', 'Loading contacts...')}</p>
         ) : (
-          <div>
-            {/* Récap d'import (non bloquant) : rappelle N importés + le(s) tag(s) posé(s), qui filtrent la liste.
-                Masqué dès que l'utilisateur modifie un filtre (le récap ne décrit plus la sélection affichée). */}
-            {importMsgFresh && importMsg && (
-              <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                <span>
-                  <b>{importMsg.n}</b> {t('contact(s) importé(s) et taggé(s)', 'contact(s) imported and tagged')} « {importMsg.tags.join(', ')} ». {t('Ils sont sélectionnés ci-dessous.', 'They are selected below.')}
-                </span>
-                <button type="button" onClick={() => setImportMsg(null)} className="shrink-0 leading-none text-emerald-500 hover:text-emerald-800" aria-label={t('Fermer', 'Close')}>×</button>
-              </div>
-            )}
-            {/* 🔴 La sélection reprise a MAIGRI depuis. On le DIT : revenir sur un brouillon qui vise moins de
-                monde qu'on ne l'a laissé, sans explication, est pire que de tout recocher, parce qu'on ne
-                s'en aperçoit pas. */}
-            {selectionReduite !== null && (
-              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <span>
-                  {t(
-                    `${selectionReduite} contact(s) de votre sélection ne sont plus là (supprimés, ou sortis de ces filtres depuis). Le reste est bien resté coché.`,
-                    `${selectionReduite} contact(s) from your selection are gone (deleted, or no longer matching these filters). The rest is still selected.`,
-                  )}
-                </span>
-                <button type="button" onClick={() => setSelectionReduite(null)} className="shrink-0 leading-none text-amber-500 hover:text-amber-800" aria-label={t('Fermer', 'Close')}>×</button>
-              </div>
-            )}
-            {/* Recherche/filtres : composant PARTAGÉ avec le mini-CRM (une seule implémentation, pas deux moteurs). */}
-            <div className="mb-2">
-              <ContactFilterPanel
-                filters={filters}
-                onChange={setFilters}
-                userFields={userFields}
-                tagSuggestions={tags.map((tc) => tc.tag)}
-                onClear={() => setFilters({})}
-              />
-            </div>
-
-            {/* Compteur live (débounce) + contrôles de sélection sur gros volumes. */}
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-                {countLoading || total === null ? t('… contacts', '… contacts') : t(`${total} contact(s) correspondent`, `${total} contact(s) match`)}
-              </span>
-              {total !== null && total > contacts.length && (
-                <>
-                  <span className="text-ink-400">{t(`${contacts.length} affichés sur ${total} au total`, `${contacts.length} shown of ${total} total`)}</span>
-                  <button type="button" onClick={selectAllMatching} className="rounded-lg border border-brand-300 bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100">
-                    {t(`Tout sélectionner (${total})`, `Select all (${total})`)}
-                  </button>
-                </>
-              )}
-              <button type="button" onClick={viderSelection} className="rounded-lg border border-ink-300 px-2 py-0.5 text-ink-600 hover:bg-ink-50">{t('Vider', 'Clear')}</button>
-            </div>
-
-            {/* Le mode « tout ce qui correspond » doit se VOIR : sans cette ligne, l'écran montre 500 cases
-                cochées et rien ne dit que la campagne en vise beaucoup plus. */}
-            {toutFiltre && (
-              <div data-testid="campagne-cible-filtre" className="mb-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800">
-                {t(
-                  `Les ${nbDestinataires} contacts qui correspondent aux filtres sont visés, y compris ceux qui ne sont pas affichés ci-dessous. Décocher une ligne l'exclut.`,
-                  `All ${nbDestinataires} contacts matching the filters are targeted, including those not shown below. Unticking a row excludes it.`,
+          /* Filtres, compteur et cases à cocher : composant PARTAGÉ avec l'étape Audience de l'assistant.
+             Il n'y a plus qu'UNE implémentation de « qui reçoit », donc plus qu'une à corriger. */
+          <ListeDestinataires
+            page={pageContacts}
+            filtres={filters}
+            onFiltres={setFilters}
+            selection={selection}
+            onSelection={appliquerSelection}
+            userFields={userFields}
+            tagSuggestions={tags.map((tc) => tc.tag)}
+            bandeaux={(
+              <>
+                {/* Récap d'import (non bloquant) : rappelle N importés + le(s) tag(s) posé(s), qui filtrent la
+                    liste. Masqué dès que l'utilisateur modifie un filtre (le récap ne décrit plus la sélection). */}
+                {importMsgFresh && importMsg && (
+                  <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                    <span>
+                      <b>{importMsg.n}</b> {t('contact(s) importé(s) et taggé(s)', 'contact(s) imported and tagged')} « {importMsg.tags.join(', ')} ». {t('Ils sont sélectionnés ci-dessous.', 'They are selected below.')}
+                    </span>
+                    <button type="button" onClick={() => setImportMsg(null)} className="shrink-0 leading-none text-emerald-500 hover:text-emerald-800" aria-label={t('Fermer', 'Close')}>×</button>
+                  </div>
                 )}
-              </div>
+                {/* 🔴 La sélection reprise a MAIGRI depuis. On le DIT : revenir sur un brouillon qui vise moins
+                    de monde qu'on ne l'a laissé, sans explication, est pire que de tout recocher, parce qu'on
+                    ne s'en aperçoit pas. */}
+                {selectionReduite !== null && (
+                  <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <span>
+                      {t(
+                        `${selectionReduite} contact(s) de votre sélection ne sont plus là (supprimés, ou sortis de ces filtres depuis). Le reste est bien resté coché.`,
+                        `${selectionReduite} contact(s) from your selection are gone (deleted, or no longer matching these filters). The rest is still selected.`,
+                      )}
+                    </span>
+                    <button type="button" onClick={() => setSelectionReduite(null)} className="shrink-0 leading-none text-amber-500 hover:text-amber-800" aria-label={t('Fermer', 'Close')}>×</button>
+                  </div>
+                )}
+              </>
             )}
-
-            {/* Liste des contacts correspondants (<= 500 affichés) : cocher/décocher affine la sélection. */}
-            <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
-              {contacts.map((c) => (
-                <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
-                  <input type="checkbox" checked={estRetenu(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
-                  <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
-                  {(c.tags ?? []).slice(0, 3).map((tag) => (
-                    <span key={tag} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{tag}</span>
-                  ))}
-                  <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
-                  {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
-                </label>
-              ))}
-              {contacts.length === 0 && (
-                <p className="px-2.5 py-3 text-xs text-ink-400">
-                  {countLoading ? t('Chargement…', 'Loading…')
-                    : hasActiveFilters ? t('Aucun contact ne correspond aux filtres.', 'No contact matches the filters.')
-                    : t("Aucun contact joignable. Importe des contacts dans l'onglet Contacts.", 'No reachable contact. Import contacts in the Contacts tab.')}
-                </p>
-              )}
-            </div>
-            <p className="mt-1 text-[11px] text-ink-400">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
-          </div>
+          />
         )}
       </div>
 

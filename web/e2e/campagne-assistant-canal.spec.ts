@@ -150,8 +150,48 @@ test('le second canal du repli s AFFICHE et suit le premier', async ({ page }) =
   await expect(page.getByText(/le repli part en WhatsApp/i)).toBeVisible();
 });
 
+/**
+ * 🔴 UNE SEULE QUESTION HORAIRE SUR L'ENVOI, ET LA JAUGE N'EST PLUS ICI (2026-09-12). L'ecran a porte
+ * une journee trois « intentions de cadence » (au plus vite, etale, heures ouvrees) qui n'avaient jamais
+ * ete demandees et qui retiraient la jauge de debit de l'ecran en service. Ce cas verifie les DEUX sens :
+ * la question horaire est la, et aucune trace des intentions ne l'est.
+ */
+test('une seule question horaire sur l envoi, et plus aucune intention de cadence', async ({ page }) => {
+  await surCanal(page);
+  await expect(page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Au plus vite' })).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: 'Étalé sur la journée' })).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: 'Heures ouvrées seulement' })).toHaveCount(0);
+  // ⚠️ ET LA JAUGE NON PLUS : elle vit a l'etape 5, la ou l'audience est connue. La voir ici voudrait dire
+  // qu'elle a ete posee deux fois, donc deux valeurs a tenir d'accord.
+  await expect(page.getByTestId('campagne-debit')).toHaveCount(0);
+});
+
+/**
+ * 🔴 SANS AUCUN JOUR OUVERT, CETTE CASE N'AJOURNE PAS L'ENVOI : ELLE L'ANNULE. Verifie dans le code :
+ * `withinBusinessHours` rend faux sur des horaires vides, le moteur met la campagne en pause
+ * `hors_horaires`, `prochaineOuverture` ne trouve aucune reprise donc `paused_until` reste nul, et le
+ * balayage de reprise exige `paused_until is not null`. La campagne ne repart JAMAIS.
+ *
+ * ⚠️ C'EST L'INVERSE DE LA CASE DU RATTRAPAGE, ou l'absence d'horaires rend la fenetre TOUJOURS ouverte.
+ * Deux cases voisines, deux comportements opposes sur la meme absence.
+ */
+test('la case des heures ouvrees previent quand l espace n a AUCUN horaire', async ({ page }) => {
+  await surCanal(page, { businessHours: {} });
+  await expect(page.getByTestId('horaires-absentes')).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' }).check();
+  await expect(page.getByTestId('horaires-absentes')).toContainText(/sans jamais la reprendre/);
+});
+
+test('un espace QUI a des horaires ne recoit pas cet avertissement', async ({ page }) => {
+  // L'autre sens : sans ce cas, un avertissement affiche en permanence passerait le test precedent.
+  await surCanal(page);
+  await page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' }).check();
+  await expect(page.getByTestId('horaires-absentes')).toHaveCount(0);
+});
+
 // 🔴 LA GARDE DE LARGEUR, sur l'etape la plus chargee : trois entrees de canal, deux
-// sous-questions, une case a cocher, un encart d'avertissement et les trois cadences.
+// sous-questions, deux cases a cocher et un encart d'avertissement.
 test('rien ne deborde ni ne se chevauche en 13 pouces', async ({ page }) => {
   await page.setViewportSize(TREIZE_POUCES);
   await surCanal(page, { businessHours: {} });
@@ -164,7 +204,7 @@ test('rien ne deborde ni ne se chevauche en 13 pouces', async ({ page }) => {
   await expect(page.getByTestId('bloc-rattrapage')).toBeVisible();
   await pasDeDebordement(page);
   await pasDeChevauchement(page, ['choix-canal', 'choix-ordre', 'choix-troisieme', 'bloc-rattrapage']);
-  // ⚠️ La cadence est le cinquieme bloc de l'etape : l'omettre laisserait le seul bloc non mesure etre
-  // celui qui deborde.
-  await pasDeChevauchement(page, ['choix-troisieme', 'bloc-rattrapage', 'choix-cadence']);
+  // ⚠️ Le bloc des horaires est le cinquieme de l'etape : l'omettre laisserait le seul bloc non mesure
+  // etre celui qui deborde.
+  await pasDeChevauchement(page, ['choix-troisieme', 'bloc-rattrapage', 'bloc-horaires']);
 });

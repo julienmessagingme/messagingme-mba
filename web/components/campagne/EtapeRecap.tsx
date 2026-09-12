@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { countContacts, createCampaign, runCampaign } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
-import { DEBIT_ETALE_PAR_MINUTE, type EtageAssistant } from '@/lib/campagne-chaine';
+import { DEBIT_MAX, DEBIT_MIN, type EtageAssistant } from '@/lib/campagne-chaine';
+import { audienceEnFiltres, libelleAudience, nbRetenus } from '@/lib/audience';
 import {
-  LIBELLE_CANAL, champEmailEffectif, filtresDeLAudience, repartitionPrevue,
+  LIBELLE_CANAL, champEmailEffectif, repartitionPrevue,
   type MesuresAudience,
 } from '@/lib/campagne-repartition';
 import { entreeDeCreation, problemeAvantLancement, variablesParRang } from '@/lib/campagne-creation';
@@ -36,6 +37,7 @@ export function EtapeRecap({
   chaine,
   references,
   aller,
+  onChange,
   onCree,
 }: {
   tenantId: string;
@@ -44,6 +46,8 @@ export function EtapeRecap({
   references: ReferencesContenu;
   /** Revenir à une étape, sans quitter l'assistant ni perdre l'état. */
   aller: (e: EtapeAssistant) => void;
+  /** La jauge de débit se règle ICI : c'est le seul écran qui connaît l'audience. */
+  onChange: (patch: Partial<EtatCampagne>) => void;
   onCree?: (campaignId: string) => void;
 }) {
   const mesures = useMesuresAudience(tenantId, etat, chaine, references.userFields);
@@ -57,7 +61,14 @@ export function EtapeRecap({
   const contexte = {
     phoneNumberId: numero,
     rcsAgentId: agentRcs,
-    filtres: filtresDeLAudience(etat.audience),
+    filtres: etat.audience.filtres,
+    /**
+     * 🔴 CE QUI A ÉTÉ COCHÉ VOYAGE JUSQU'ICI. Sans cette ligne, `entreeDeCreation` n'emportait que les
+     * FILTRES : une sélection ligne à ligne était affichée, comptée, et jamais envoyée. La campagne
+     * partait alors à tout ce que les filtres décrivent, c'est-à-dire à plus de monde que ce que
+     * l'opérateur avait sous les yeux.
+     */
+    selection: etat.audience.selection,
     // ⚠️ LE MÊME POINT DE PASSAGE que le comptage et que le sélecteur de l'étape Contenu
     // (`champEmailEffectif`) : trois lectures du même réglage, une seule règle pour le résoudre.
     champEmail: champEmailDeLaChaine(etat, chaine, references.userFields),
@@ -110,8 +121,8 @@ export function EtapeRecap({
           {mesures === null ? '...' : fmtNum(mesures.retenus, 'fr')} contacts retenus
         </a>
         {' '}
-        <span className="text-ink-500">
-          ({etat.audience.mode === 'tous' ? 'tous les contacts' : `tags : ${etat.audience.tags.join(', ') || 'aucun'}`})
+        <span className="text-ink-500" data-testid="recap-audience-libelle">
+          ({libelleAudience(etat.audience)})
         </span>
       </p>
 
@@ -146,7 +157,7 @@ export function EtapeRecap({
         </table>
       </div>
 
-      <BlocCout etat={etat} retenus={mesures?.retenus ?? null} aller={aller} />
+      <BlocCout etat={etat} retenus={mesures?.retenus ?? null} onChange={onChange} />
 
       {probleme && (
         <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="recap-probleme">{probleme}</p>
@@ -176,43 +187,75 @@ export function EtapeRecap({
 }
 
 /**
- * CE QUE LA CAMPAGNE COÛTE, dit avec ce qu'on sait et rien de plus.
+ * LE DÉBIT, LE VOLUME ET LA DURÉE : ce que la campagne coûte, dit avec ce qu'on sait et rien de plus.
+ *
+ * 🔴 LA JAUGE DE DÉBIT VIT ICI, ET C'EST LE SEUL ENDROIT OÙ ELLE A UN SENS (2026-09-12). Elle a passé une
+ * journée à l'étape du canal sous la forme de trois « intentions » (au plus vite, étalé, heures ouvrées)
+ * qui n'avaient jamais été demandées et qui retiraient au client un réglage qu'il utilise. Placée ici,
+ * l'audience est CONNUE : la durée estimée qu'elle affiche est un vrai nombre, pas une promesse.
  *
  * 🔴 AUCUN PRIX EN EUROS, ET CE N'EST PAS UN MANQUE D'AMBITION. Le tarif d'un message vient de Meta
  * APRÈS l'envoi (`pricing_analytics`, avec sa devise) ; rien avant le lancement ne donne un prix unitaire
  * pour ce numéro, cette catégorie et ce pays. Un montant affiché ici serait inventé, et il serait cru
  * parce qu'il est à côté du bouton qui envoie.
- *
- * ⚠️ CE QUI SE DIT HONNÊTEMENT : le VOLUME facturable (un message par contact retenu, par étage tenté) et
- * la DURÉE, qui découle du débit choisi à l'étape Canal.
  */
 function BlocCout({
-  etat, retenus, aller,
-}: { etat: EtatCampagne; retenus: number | null; aller: (e: EtapeAssistant) => void }) {
-  const debit = etat.cadence === 'etale' ? DEBIT_ETALE_PAR_MINUTE : 60;
+  etat, retenus, onChange,
+}: { etat: EtatCampagne; retenus: number | null; onChange: (patch: Partial<EtatCampagne>) => void }) {
+  const debit = etat.debitParMinute;
   const minutes = retenus === null ? null : Math.max(1, Math.ceil(retenus / debit));
   return (
     <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-cout">
-      <h3 className="text-sm font-medium text-ink-700">Volume et durée</h3>
-      <p className="mt-2 text-sm text-ink-600">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium text-ink-700">Débit d&apos;envoi</h3>
+        <span className="shrink-0 text-sm font-semibold text-ink-800" data-testid="debit-valeur">
+          {debit} messages / min
+        </span>
+      </div>
+      <input
+        type="range"
+        min={DEBIT_MIN}
+        max={DEBIT_MAX}
+        step={1}
+        value={debit}
+        onChange={(e) => onChange({ debitParMinute: Number(e.target.value) })}
+        data-testid="campagne-debit"
+        aria-label="Débit d'envoi en messages par minute"
+        className="mt-3 w-full accent-brand-500"
+      />
+      {/*
+        🔴 LE PLAFOND RÉEL DÉPEND DU CANAL, ET CETTE PHRASE NE DOIT PAS DIRE LE CONTRAIRE. La jauge monte
+        toujours à 80, qui est la borne de SAISIE de l'API ; le frein appliqué à l'envoi est celui du
+        canal (`plafondDuCanal`, côté serveur), donc un étage RCS réglé au-dessus du plafond de
+        l'opérateur y est RAMENÉ, en silence.
+        ⚠️ LE CHIFFRE DU PLAFOND RCS N'EST PAS RECOPIÉ ICI : il vit en configuration serveur pour se
+        corriger sans déploiement, et une valeur en dur dans l'écran deviendrait fausse sans que rien ne
+        le signale.
+      */}
+      <p className="mt-2 text-[11px] text-ink-400">
+        Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du
+        numéro. Sur un étage RCS, le plafond est celui de l&apos;opérateur : un débit plus élevé y est
+        ramené à l&apos;envoi.
+      </p>
+
+      <p className="mt-3 border-t border-ink-100 pt-3 text-sm text-ink-600">
         {retenus === null
           ? 'Le nombre de contacts retenus n’a pas pu être lu : le volume et la durée restent inconnus.'
           : <>Jusqu&apos;à <b>{fmtNum(retenus, 'fr')}</b> messages facturables au premier étage, plus un message par bascule.</>}
       </p>
-      <p className="mt-1 text-sm text-ink-600">
-        {etat.cadence === 'ouvrees'
-          ? "Envoi pendant les heures d'ouverture de l'espace uniquement : la durée dépend de vos créneaux."
-          : minutes === null
-            ? 'Durée inconnue.'
-            : <>Environ <b>{fmtNum(minutes, 'fr')}</b> min d&apos;envoi à {fmtNum(debit, 'fr')} messages/min.</>}
-        {' '}
-        <a
-          href="?etape=canal"
-          onClick={(e) => { e.preventDefault(); aller('canal'); }}
-          className="text-brand-600 underline decoration-brand-200 underline-offset-2"
-        >
-          Changer la cadence
-        </a>
+      <p className="mt-1 text-sm text-ink-600" data-testid="recap-duree">
+        {minutes === null
+          ? 'Durée inconnue.'
+          : <>Environ <b>{fmtNum(minutes, 'fr')}</b> min d&apos;envoi à {fmtNum(debit, 'fr')} messages/min.</>}
+        {/* ⚠️ LA CONTRAINTE D'HORAIRE S'AJOUTE À LA DURÉE, elle ne la remplace pas : la campagne enverra
+            bien ce nombre de minutes, mais réparties sur les créneaux ouverts. Annoncer « la durée dépend
+            de vos créneaux » SEULE effaçait le seul chiffre que l'écran sait donner. */}
+        {etat.heuresOuvrees && (
+          <span className="mt-0.5 block text-xs text-ink-500">
+            Envoi limité aux heures d&apos;ouverture de l&apos;espace : ces minutes se répartissent sur vos
+            créneaux, la campagne se clôt donc plus tard.
+          </span>
+        )}
       </p>
       <p className="mt-2 text-xs text-ink-400">
         Le prix d&apos;un message dépend du pays et de la catégorie, et n&apos;est connu qu&apos;après
@@ -239,34 +282,51 @@ function useMesuresAudience(
   chaine: EtageAssistant[],
   champs: ReferencesContenu['userFields'],
 ): MesuresAudience | null {
-  const [retenus, setRetenus] = useState<number | null>(null);
+  /** Le total SERVEUR des contacts que les filtres décrivent. Inutile hors du mode « tout ce qui... ». */
+  const [total, setTotal] = useState<number | null>(null);
   /** Les contacts qui SURVIVENT au filtre « écarter les connus injoignables », pas les injoignables. */
   const [restants, setRestants] = useState<number | null>(null);
   const [sansAdresse, setSansAdresse] = useState<number | null>(null);
 
-  const filtres = useMemo(() => filtresDeLAudience(etat.audience), [etat.audience]);
+  const selection = etat.audience.selection;
+  const filtres = etat.audience.filtres;
   const tries = useMemo(() => [...chaine].sort((a, b) => a.rang - b.rang), [chaine]);
   // ⚠️ LA JOIGNABILITÉ MÉMORISÉE EST CELLE DE WHATSAPP, ET D'ELLE SEULE (migration 0133). Un premier
   // étage RCS n'a donc rien à compter : l'appliquer quand même ferait basculer un chiffre mesuré sur un
   // autre canal, ce qui est pire qu'une case vide.
   const premierEstWhatsApp = tries[0]?.canal === 'whatsapp';
+  /**
+   * 🔴 DEUX DES TROIS COMPTES N'EXISTENT QUE SUR UNE AUDIENCE DÉCRITE PAR SES FILTRES. `countContacts`
+   * n'interroge que des filtres : une liste de contacts cochés un par un, ou un filtre amputé de ses
+   * exclusions, ne se comptent pas de ce côté-là. On rend alors `null` AVEC SON MOTIF, plutôt qu'un
+   * chiffre voisin qui serait cru parce qu'il est plausible.
+   *
+   * ⚠️ LE TOTAL, LUI, RESTE EXACT DANS LES DEUX CAS : en mode liste il vaut le nombre de cases cochées,
+   * que le navigateur connaît sans rien demander.
+   */
+  const parFiltres = audienceEnFiltres(selection);
+  const motif: MesuresAudience['motifNonPrevisible'] = !premierEstWhatsApp ? 'canal' : !parFiltres ? 'selection' : undefined;
   // ⚠️ LE MÊME POINT DE PASSAGE QUE LE SÉLECTEUR ET QUE L'ENVOI (`champEmailDeLaChaine`) : appliquer la
   // suggestion ici de son côté ferait compter sur un champ que l'écran n'affiche pas, ou ne rien compter.
   const champEmail = champEmailDeLaChaine(etat, tries, champs);
 
   useEffect(() => {
     let vivant = true;
-    setRetenus(null);
+    setTotal(null);
+    // ⚠️ AUCUNE REQUÊTE EN MODE LISTE : le nombre retenu est celui des cases cochées, et le total des
+    // filtres n'en dit rien. La demander quand même ferait payer un aller-retour pour un chiffre
+    // qu'aucune phrase de l'écran n'affiche.
+    if (!selection.toutFiltre) return () => { vivant = false; };
     void countContacts(tenantId, filtres)
-      .then((r) => { if (vivant) setRetenus(typeof r?.total === 'number' ? r.total : 0); })
+      .then((r) => { if (vivant) setTotal(typeof r?.total === 'number' ? r.total : 0); })
       .catch(() => {});
     return () => { vivant = false; };
-  }, [tenantId, filtres]);
+  }, [tenantId, filtres, selection.toutFiltre]);
 
   useEffect(() => {
     let vivant = true;
     setRestants(null);
-    if (!premierEstWhatsApp) return () => { vivant = false; };
+    if (!premierEstWhatsApp || !parFiltres) return () => { vivant = false; };
     // ⚠️ ON COMPTE CE QUI RESTE APRÈS AVOIR ÉCARTÉ LES INJOIGNABLES, puis on soustrait dans
     // `repartitionPrevue`. Le filtre du mini-CRM sait EXCLURE les connus injoignables ; il n'a pas de
     // forme qui les ISOLE, et en inventer une ici donnerait un second vocabulaire de ciblage à tenir
@@ -275,12 +335,12 @@ function useMesuresAudience(
       .then((r) => { if (vivant) setRestants(typeof r?.total === 'number' ? r.total : 0); })
       .catch(() => {});
     return () => { vivant = false; };
-  }, [tenantId, filtres, premierEstWhatsApp]);
+  }, [tenantId, filtres, premierEstWhatsApp, parFiltres]);
 
   useEffect(() => {
     let vivant = true;
     setSansAdresse(null);
-    if (!champEmail) return () => { vivant = false; };
+    if (!champEmail || !parFiltres) return () => { vivant = false; };
     void countContacts(tenantId, {
       ...filtres,
       fieldFilters: [...(filtres.fieldFilters ?? []), { key: champEmail, op: 'empty', value: '' }],
@@ -288,15 +348,19 @@ function useMesuresAudience(
       .then((r) => { if (vivant) setSansAdresse(typeof r?.total === 'number' ? r.total : 0); })
       .catch(() => {});
     return () => { vivant = false; };
-  }, [tenantId, filtres, champEmail]);
+  }, [tenantId, filtres, champEmail, parFiltres]);
 
-  if (retenus === null) return null;
+  // ⚠️ `null` TANT QUE LE TOTAL MANQUE, et seulement dans le mode qui en a besoin : en mode liste le
+  // compte est connu tout de suite, et l'écran ne doit pas afficher « ... » pour rien.
+  if (selection.toutFiltre && total === null) return null;
+  const retenus = nbRetenus(selection, total);
   return {
     retenus,
     // ⚠️ `retenus - restants` : le second compte est celui des contacts qui SURVIVENT au filtre, donc la
     // différence est bien le nombre de connus injoignables, sur la même sélection et au même instant.
     connusInjoignables: restants === null ? null : Math.max(0, retenus - restants),
     sansAdresse,
+    ...(motif ? { motifNonPrevisible: motif } : {}),
   };
 }
 

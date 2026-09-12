@@ -4,6 +4,7 @@ import {
   type ContexteDeCreation, type EtatPourCreation,
 } from './campagne-creation';
 import type { EtageAssistant } from './campagne-chaine';
+import { selectionTout, selectionVide } from './audience';
 
 /**
  * CE QUE LE BOUTON « LANCER » ENVOIE VRAIMENT.
@@ -13,6 +14,9 @@ import type { EtageAssistant } from './campagne-chaine';
  */
 const CTX: ContexteDeCreation = {
   phoneNumberId: 'pn-1', rcsAgentId: 'ag-1', filtres: { tags: ['vip'] }, champEmail: 'email',
+  // ⚠️ « TOUT CE QUI CORRESPOND », c'est-à-dire le défaut de l'assistant : l'audience part alors en
+  // FILTRES. Le cas « liste de contacts cochés » a son propre test plus bas, et les deux sont exclusifs.
+  selection: selectionTout(),
   // Le modèle du rang 1 ne porte aucune variable : c'est le cas de base des tests d'avant ce lot.
   variablesDuModele: {},
 };
@@ -20,7 +24,8 @@ const CTX: ContexteDeCreation = {
 const ETAT: EtatPourCreation = {
   nom: '  Promo rentrée  ',
   category: 'marketing',
-  cadence: 'vite',
+  debitParMinute: 60,
+  heuresOuvrees: false,
   reessayer: true,
   rattrapageHorsHoraires: false,
   assignation: 'aucune',
@@ -121,12 +126,25 @@ describe('entreeDeCreation', () => {
     expect(e.assignation).toBeUndefined();
   });
 
-  // ⚠️ La cadence se traduit en DEUX colonnes (débit et drapeau d'horaires), pas une : c'est
-  // `reglagesDeCadence` qui tranche, et l'entrée doit porter les deux.
-  it('la cadence « heures ouvrees » pose le drapeau, pas un debit', () => {
-    const e = entreeDeCreation({ ...ETAT, cadence: 'ouvrees' }, CHAINE, CTX);
+  // 🔴 DEUX COLONNES INDÉPENDANTES, ET C'EST TOUT LE SUJET DU RETOUR EN ARRIÈRE DU 2026-09-12. L'écran a
+  // porté une journée trois « intentions » qui mélangeaient débit et horaires ; la jauge et la question
+  // horaire sont deux réglages distincts, et une campagne « heures ouvrées » garde SON débit.
+  it('la jauge part telle quelle, et la question horaire ne la touche pas', () => {
+    expect(entreeDeCreation(ETAT, CHAINE, CTX).ratePerMinute).toBe(60);
+    const e = entreeDeCreation({ ...ETAT, heuresOuvrees: true, debitParMinute: 12 }, CHAINE, CTX);
     expect(e.businessHoursOnly).toBe(true);
-    expect(e.ratePerMinute).toBeNull();
+    expect(e.ratePerMinute).toBe(12);
+  });
+
+  // ⚠️ L'AUTRE SENS : un écran qui enverrait toujours `businessHoursOnly: true` passerait le cas du dessus.
+  it('sans la case, aucune contrainte d horaire ne part', () => {
+    expect(entreeDeCreation(ETAT, CHAINE, CTX).businessHoursOnly).toBe(false);
+  });
+
+  // 🔴 UN DÉBIT HORS BORNES FERAIT REFUSER LA CAMPAGNE ENTIÈRE par le serveur, sur un nombre qu'aucun
+  // écran n'a montré (un état repris d'une adresse ou d'un brouillon peut sortir de la jauge).
+  it('un debit hors bornes est ramene avant de partir', () => {
+    expect(entreeDeCreation({ ...ETAT, debitParMinute: 500 }, CHAINE, CTX).ratePerMinute).toBe(80);
   });
 
   // 🔴 L'AUDIENCE VOYAGE EN FILTRES, PAS EN IDENTIFIANTS. C'est ce qui retire le piège des grosses
@@ -134,8 +152,37 @@ describe('entreeDeCreation', () => {
   // vers 25 000 sur le plafond de 1 Mo du corps de requête, bien avant la limite annoncée à l'écran.
   it('l audience part en filtres, jamais en liste d identifiants', () => {
     const e = entreeDeCreation(ETAT, CHAINE, CTX);
-    expect(e.contactTarget).toEqual({ filters: { tags: ['vip'] } });
+    expect(e.contactTarget).toEqual({ filters: { tags: ['vip'] }, excludeIds: [] });
     expect(e.contactIds).toBeUndefined();
+  });
+
+  // 🔴 L'AUTRE SENS, ET C'EST LE DÉFAUT QUE CE LOT FERME. L'assistant posait `contactTarget: { filters }`
+  // et RIEN D'AUTRE : une sélection ligne à ligne était affichée, comptée, et jamais envoyée, donc la
+  // campagne partait à tout ce que les filtres décrivent. Les deux formes sont exclusives, le serveur
+  // refuse de recevoir les deux.
+  // 🔴 UNE LISTE EXPLICITEMENT VIDE NE PART PAS. Le serveur refuse en 422, donc rien ne part à tout
+  // l'espace ; ce qu'on évite est un aller-retour et un message rouge pour un cas que l'écran a sous les
+  // yeux. ⚠️ Et SEULEMENT en mode liste : en mode « tout ce qui correspond », le nombre dépend d'un
+  // compte serveur que cette fonction pure n'a pas, y deviner zéro bloquerait une campagne valide.
+  it('une liste vide est refusee AVANT l appel, un mode « tout » ne l est jamais', () => {
+    expect(problemeAvantLancement(ETAT, CHAINE, { ...CTX, selection: selectionVide() }))
+      .toMatch(/Aucun contact n’est sélectionné/);
+    expect(problemeAvantLancement(ETAT, CHAINE, { ...CTX, selection: selectionTout() })).toBeNull();
+  });
+
+  it('une selection ligne a ligne part en identifiants, et PAS en filtres', () => {
+    const selection = { ...selectionVide(), selected: new Set(['c1', 'c2']) };
+    const e = entreeDeCreation(ETAT, CHAINE, { ...CTX, selection });
+    expect(e.contactIds).toEqual(['c1', 'c2']);
+    expect(e.contactTarget).toBeUndefined();
+  });
+
+  // ⚠️ LES EXCLUSIONS VOYAGENT AVEC LES FILTRES : les perdre ferait viser quelqu'un que l'opérateur avait
+  // explicitement retiré, c'est-à-dire envoyer à PLUS de monde que ce qu'il a validé.
+  it('les exclusions accompagnent les filtres', () => {
+    const selection = { ...selectionTout(), exclus: new Set(['c9']) };
+    const e = entreeDeCreation(ETAT, CHAINE, { ...CTX, selection });
+    expect(e.contactTarget).toEqual({ filters: { tags: ['vip'] }, excludeIds: ['c9'] });
   });
 
   // ⚠️ Une suggestion RCS ajoutée puis laissée vierge ferait refuser TOUT le message par le schéma
