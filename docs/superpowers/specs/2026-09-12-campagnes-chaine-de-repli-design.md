@@ -80,6 +80,40 @@ du contact, et qu'un contact sans adresse sortira de la chaîne.
 **Les choix 1 et 2 (canal seul) ouvrent une question de plus** : « Réessayer les envois qui
 échouent ? », cochée par défaut. Sans chaîne de repli, c'est le seul rattrapage disponible.
 
+### L'horaire du rattrapage, et pourquoi c'est une question SÉPARÉE
+
+🔴 **Un seul réglage servait deux moments qui n'ont rien à voir.** Cocher « heures ouvrées » sur une
+campagne veut dire « n'envoie pas la nuit », et c'est une décision sur l'**envoi initial**, dont
+l'opérateur choisit l'instant : il appuie sur le bouton, ou il programme. Le **rattrapage** (réessai
+ou repli) tombe quand il tombe, et **personne n'en choisit l'instant**. Un repli qui se déclenche à
+18h02 sur une campagne partie à 17h est un message de nuit que personne n'a demandé.
+
+Aujourd'hui le réessai hérite du réglage de la campagne par ricochet, parce qu'il repasse par le
+même moteur (`src/campaign/engine.ts:435`). Ça tient par accident, et ça cesse de tenir dès qu'un
+repli existe.
+
+**Donc une seconde question, posée dès qu'il y a un réessai coché OU une chaîne** :
+
+> « Le rattrapage peut-il partir en dehors des heures d'ouverture ? »
+
+**Défaut : non**, heures ouvrées seulement. Sur le moment qu'on choisit, un défaut permissif est
+légitime ; sur le moment qu'on ne choisit pas, seul le défaut prudent est défendable. Qui veut un
+repli à toute heure le décoche sciemment.
+
+⚠️ **Contrepartie assumée** : un repli qui tombe à 18h02 attend le lendemain matin, donc la campagne
+met plus longtemps à se clore et ses chiffres restent incomplets entre-temps. L'écran le dit au
+moment où on coche.
+
+⚠️ **Un espace sans heures d'ouverture configurées** est traité comme « toujours ouvert », ce qui est
+le bon repli et le comportement actuel du moteur. 🔴 Mais **l'écran doit le dire au moment où on
+coche**, sinon on croit avoir posé une garde qui n'existe pas, et c'est pire que de ne pas l'avoir
+posée.
+
+**Mécanique : aucune machinerie nouvelle.** Le balayage teste la fenêtre avant de ré-enfiler et ne
+fait rien sinon, exactement le motif de `isMorningWindow()` déjà en place pour 131049. Pas de
+colonne sur le destinataire, et surtout **pas de mise en pause de la campagne**, qui peut être
+terminée depuis longtemps au moment où un rattrapage se présente.
+
 🔴 **Ne JAMAIS écrire « relancer » à cet endroit.** Dans le vocabulaire marketing, relancer
 quelqu'un veut dire lui renvoyer un message parce qu'il n'a pas répondu. Ici il s'agit de retenter
 un envoi qui a échoué techniquement, avant même que le destinataire ait vu quoi que ce soit. Un
@@ -213,9 +247,15 @@ Sans lui, l'analytics ne sait pas expliquer pourquoi personne n'a reçu l'étage
 **`campaign_recipients`** : `+ etage_courant smallint not null default 1`.
 
 **`campaigns`** : `+ reessayer boolean not null default true` (l'option de l'étape 2, sans effet
-quand une chaîne existe), `+ assignation text` (`null` | `'personne'` | `'tour_de_role'`),
-`+ assignation_user_id uuid` et `+ tour_de_role_rang smallint not null default 0`, ce dernier
-incrémenté à l'arrivée de chaque conversation réelle.
+quand une chaîne existe), `+ rattrapage_hors_horaires boolean not null default false` (le second
+réglage horaire, **distinct de `business_hours_only` qui reste celui de l'envoi initial**),
+`+ assignation text` (`null` | `'personne'` | `'tour_de_role'`), `+ assignation_user_id uuid` et
+`+ tour_de_role_rang smallint not null default 0`, ce dernier incrémenté à l'arrivée de chaque
+conversation réelle.
+
+🔴 **`rattrapage_hors_horaires` ne remplace pas `business_hours_only`, il le complète.** Les deux
+cohabitent parce qu'ils répondent à deux moments différents. Nommer la nouvelle colonne comme un
+synonyme de l'ancienne, ou pire la fusionner, ramènerait exactement le défaut que ce lot corrige.
 
 **`contacts`** : `+ whatsapp_joignable boolean`, `+ whatsapp_joignable_le timestamptz`. Les deux
 nullables ; `null` veut dire **inconnu**, et ce n'est pas `false`.
@@ -422,6 +462,15 @@ l'échec et son symptôme, restaurer), conformément à la règle du dépôt.
 - **131049 sans chaîne réessaie le lendemain matin**, pas tout de suite : le mécanisme existant est
   conservé, pas remplacé.
 - L'option « Réessayer les envois qui échouent » décochée : aucun réessai, terminal du premier coup.
+- **Le rattrapage hors horaires, dans les deux sens** : réglage à « non » et il est 22 h, le
+  balayage ne ré-enfile rien et **le destinataire est toujours là au tour suivant** (ne pas se
+  contenter de vérifier qu'il n'est pas parti, sinon un test passerait aussi sur un destinataire
+  perdu) ; réglage à « oui » et il est 22 h, il part.
+- **Les deux réglages horaires sont indépendants** : une campagne à `business_hours_only = false` et
+  `rattrapage_hors_horaires = false` envoie la nuit mais ne rattrape pas la nuit. 🔴 C'est la
+  combinaison qui prouve que la séparation est réelle et pas décorative.
+- **Espace sans heures d'ouverture** : le rattrapage part, quel que soit le réglage, et l'écran
+  l'avait annoncé.
 - Péremption : 89 jours lit la valeur, 91 jours rend `inconnu`.
 - `null` n'est pas `false` : un contact jamais sollicité n'est pas sauté.
 - Plus d'étage disponible : terminal, pas de boucle.
