@@ -153,6 +153,22 @@ export interface EngineDeps {
     name: string,
     language: string,
   ) => Promise<{ headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null>;
+  /**
+   * Écrit la joignabilité WhatsApp d'un contact (migration 0133), ici toujours `true`.
+   *
+   * 🔴 SANS CE CÂBLAGE, LE CHAMP N'EST QU'UNE LISTE NOIRE. Le balayage de relance ne sait écrire que
+   * « non » : personne n'écrirait jamais « oui », donc aucun écran ne pourrait annoncer une COUVERTURE,
+   * seulement une exclusion, et la péremption de 90 jours ne se rafraîchirait jamais sur un numéro qui
+   * répond tous les jours.
+   *
+   * ⚠️ UN ENVOI ACCEPTÉ N'EST PAS UNE LIVRAISON, et c'est la limite assumée de ce signal : Meta rend un
+   * wamid tout de suite, et le 131026 arrive ENSUITE par le webhook de livraison. Un « oui » peut donc
+   * être démenti quelques minutes plus tard. Ce n'est pas un défaut : la mesure la plus RÉCENTE gagne
+   * (la date est réécrite à chaque note), et c'est le second échec 131026 qui pose le « non ».
+   *
+   * Absent -> aucune écriture, comportement d'avant (fixtures de test, e2e).
+   */
+  noterJoignabilite?: (tenantId: string, contactId: string, joignable: boolean) => Promise<void>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -614,6 +630,23 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     report.sent += 1;
     await deps.recipients.markResult(r.id, { status: 'sent', messageId: res.messageId, sentAt: at });
     await deps.frequency.record(campaign.tenantId, r.toE164, at);
+
+    // Ce contact est joignable en WhatsApp : Meta a accepté le message et rendu un wamid.
+    //
+    // 🔴 LA CONDITION EST CELLE DE `recordOutbound` JUSTE EN DESSOUS, ET POUR LA MÊME RAISON : c'est la
+    // seule branche où un template WhatsApp est VRAIMENT parti d'ici. `channelSender` présent veut dire
+    // RCS, qui ne dit rien de WhatsApp ; une campagne de scénario rend un `messageId` synthétique `wf-...`
+    // et délègue l'envoi réel ailleurs. Écrire « oui » sur l'une ou l'autre serait inventer une mesure.
+    //
+    // ⚠️ Best-effort, exactement comme le journal du fil : un échec d'écriture ne relabellise JAMAIS un
+    // message livré, et le pire qu'il coûte est un verdict qui reste `inconnu`, ce qui n'exclut personne.
+    if (deps.noterJoignabilite && !campaign.workflowId && !deps.channelSender && r.contactId) {
+      try {
+        await deps.noterJoignabilite(campaign.tenantId, r.contactId, true);
+      } catch {
+        /* best-effort : ne casse jamais l'envoi réussi */
+      }
+    }
 
     // Journalise le template envoyé dans le fil de conversation (fil d'inbox complet + transcript d'analyse).
     // UNIQUEMENT pour un envoi template DIRECT : la branche workflow a un messageId synthétique `wf-...`, le vrai

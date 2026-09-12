@@ -25,6 +25,7 @@ import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runTourBloqueSweep } from './agent/tour-bloque-sweep';
 import { SORTIE_ECHEC } from './agent/sorties';
 import { runRetrySweep } from './campaign/retry-sweep';
+import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { resolveRatePerMinute } from './campaign/pacing';
@@ -277,6 +278,16 @@ async function main(): Promise<void> {
     rcsProvider: config.RCS_PROVIDER,
     emailTemplates, emailResolver,
   });
+
+  /**
+   * La mémoire de joignabilité WhatsApp d'un contact (migration 0133), écrite par ses DEUX sources.
+   *
+   * ⚠️ UN SEUL NOTEUR POUR LES DEUX, et c'est délibéré : le moteur de campagne pose le « oui » sur un envoi
+   * accepté, le balayage de relance pose le « non » au second échec 131026. Deux fabrications séparées
+   * seraient deux endroits où la requête peut diverger, alors que la péremption suppose une date posée de la
+   * même façon des deux côtés.
+   */
+  const noterJoignabiliteContact = creerNoteurJoignabilite(pool);
 
   /**
    * Campagnes AU FIL DE L'EAU : un contact arrive par un webhook entrant, il devient destinataire des
@@ -621,6 +632,15 @@ async function main(): Promise<void> {
           const mediaId = info.headerMediaUrl ? await prepareHeaderMedia(tenant, info.headerMediaUrl) : null;
           return { headerFormat: info.headerFormat, mediaId };
         },
+        /**
+         * Ce contact est joignable en WhatsApp (migration 0133).
+         *
+         * 🔴 DANS LE BLOC NON-DRY_RUN, AVEC LES APPELS META, ET C'EST LA RAISON D'ÊTRE DE SA PLACE. En
+         * DRY_RUN aucun message ne part vraiment : le faux sender réussit, le destinataire passe `sent`, et
+         * une capacité câblée ici écrirait « joignable » sur des numéros que personne n'a jamais sollicités.
+         * Une mesure inventée est pire qu'une mesure absente, puisque `inconnu` n'exclut personne.
+         */
+        noterJoignabilite: noterJoignabiliteContact,
       } satisfies Partial<CapacitesMoteur>)),
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant: string, waId: string, msg: Parameters<typeof inboxStore.recordOutboundByWaId>[2]) =>
@@ -955,13 +975,26 @@ async function main(): Promise<void> {
   taches.programmer('tours-agent-bloques', 60_000, toursBloquesSweep);
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
-  // injoignable dans HubSpot au 2e échec). Gaté par le canal service (le flag injoignable en dépend) : monté seulement
-  // si le connecteur est configuré. Le sweep lui-même ne touche QUE les tenants ayant activé le toggle auto_retry.
+  // injoignable au 2e échec). Le sweep lui-même ne touche QUE les tenants ayant activé le toggle auto_retry.
+  //
+  // 🔴 IL N'EST PLUS GATÉ PAR HUBSPOT, et c'est une correction, pas un élargissement de confort. Il était monté
+  // sous `if (config.HUBSPOT_SERVICE_URL)` parce que le flag injoignable en dépendait : conséquence non voulue,
+  // un espace SANS HubSpot n'avait AUCUNE relance automatique, ni des 131049 ni des 131026, alors que ces deux
+  // mécanismes n'ont rien à voir avec un CRM. Seul l'appel HubSpot reste conditionnel désormais.
   const isMorningParis = (nowMs: number): boolean => {
     const h = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }).format(new Date(nowMs)));
     return h >= 8 && h < 12; // « début de journée »
   };
-  if (config.HUBSPOT_SERVICE_URL) {
+  {
+    // ⚠️ L'ORDRE « flag PUIS clôture » DE `runRetrySweep` REPOSE SUR UN FLAG QUI PEUT ÉCHOUER : quand HubSpot
+    // n'est pas configuré, il devient une fonction qui ne fait RIEN et qui RÉUSSIT. Un no-op qui réussit laisse
+    // l'ordre vrai (rien à flaguer, donc rien qui puisse rater), là où un no-op qui throw bloquerait la clôture
+    // de tous les injoignables des espaces sans CRM.
+    const flagUnreachable = config.HUBSPOT_SERVICE_URL
+      ? async (tenantId: string, e164: string): Promise<void> => {
+          await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);
+        }
+      : async (): Promise<void> => {};
     const retrySweep = async (): Promise<void> => {
       try {
         const res = await runRetrySweep({
@@ -988,9 +1021,8 @@ async function main(): Promise<void> {
               resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
             });
           },
-          flagUnreachable: async (tenantId, e164) => {
-            await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);
-          },
+          flagUnreachable,
+          noterJoignabilite: noterJoignabiliteContact,
         });
         // eslint-disable-next-line no-console
         if (res.retried > 0 || res.flagged > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s)`);

@@ -137,7 +137,14 @@ export interface CampaignDetail extends CampaignSummary {
 export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
 
 /** Destinataire candidat à une auto-relance (F6). */
-export interface AutoRetryRecipient { id: string; campaignId: string; tenantId: string; toE164: string; }
+/**
+ * Un destinataire repris par le balayage de relance.
+ *
+ * ⚠️ `contactId` sert à écrire la joignabilité CHEZ NOUS (migration 0133). `toE164` ne pouvait pas s'y
+ * substituer : la mémoire est posée sur la ligne `contacts`, et retrouver un contact par son numéro serait
+ * une seconde définition de son identité, là où `campaign_recipients.contact_id` la porte déjà.
+ */
+export interface AutoRetryRecipient { id: string; campaignId: string; tenantId: string; contactId: string; toE164: string; }
 
 /** Résultat d'une tentative de renvoi (F7). Discriminé pour que la route mappe proprement 404/409/422/202. */
 export type RetryReset =
@@ -524,8 +531,8 @@ export class PgCampaignRepo {
    * inclure delivery_status (même définition d'échec que getCampaignDetail/les stats). Scopé par la jointure.
    */
   private async listAutoRetry(cond: string, params: unknown[], limit: number): Promise<AutoRetryRecipient[]> {
-    const res = await this.pool.query<{ id: string; campaign_id: string; tenant_id: string; to_e164: string }>(
-      `select r.id, r.campaign_id, c.tenant_id, r.to_e164
+    const res = await this.pool.query<{ id: string; campaign_id: string; tenant_id: string; contact_id: string; to_e164: string }>(
+      `select r.id, r.campaign_id, c.tenant_id, r.contact_id, r.to_e164
        from campaign_recipients r
          join campaigns c on c.id = r.campaign_id
          join tenant_settings ts on ts.tenant_id = c.tenant_id
@@ -534,7 +541,7 @@ export class PgCampaignRepo {
        limit ${limit}`,
       params,
     );
-    return res.rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, toE164: r.to_e164 }));
+    return res.rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164 }));
   }
 
   /**
@@ -557,7 +564,8 @@ export class PgCampaignRepo {
   }
 
   /** Marque un destinataire comme injoignable traité (F6, 2e 131026) : retry_count=2 (terminal) pour ne plus le
-   *  re-marquer. À appeler APRÈS le flag HubSpot réussi. Atomique sur l'état attendu (131026, retry_count=1). */
+   *  re-marquer. À appeler APRÈS le flag HubSpot ET la note de joignabilité, tous deux réussis (cf. `retry-sweep.ts`).
+   *  Atomique sur l'état attendu (131026, retry_count=1). */
   async markUnreachableDone(id: string): Promise<boolean> {
     const res = await this.pool.query(
       `update campaign_recipients set retry_count = 2, retried_at = now()

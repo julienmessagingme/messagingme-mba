@@ -1009,3 +1009,74 @@ describe('moteur : ne pas clore une campagne avec un destinataire en vol', () =>
     expect(s.statuts[s.statuts.length - 1]).toBe('completed');
   });
 });
+
+/**
+ * LA JOIGNABILITÉ WHATSAPP ÉCRITE PAR LE MOTEUR (migration 0133).
+ *
+ * 🔴 SANS CE CÂBLAGE, LE CHAMP N'EST QU'UNE LISTE NOIRE. Seul le balayage de relance sait écrire « non » :
+ * personne n'écrirait jamais « oui », donc aucun écran ne pourrait annoncer une COUVERTURE, seulement une
+ * exclusion. C'est la moitié manquante du champ, pas un agrément.
+ */
+describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
+  type Note = [string, string, boolean];
+
+  it('un envoi template DIRECT accepté note le contact joignable', async () => {
+    const notes: Note[] = [];
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    await runCampaign(campaign, deps({
+      recipients,
+      noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
+    }));
+    // Le CONTACT, pas le destinataire : la mémoire vit sur `contacts` et sert au-delà de cette campagne.
+    expect(notes).toEqual([['t1', 'ct-r1', true], ['t1', 'ct-r2', true]]);
+  });
+
+  it('un envoi en ÉCHEC ne note rien : le moteur n\'écrit que ce qu\'il a mesuré', async () => {
+    const notes: Note[] = [];
+    const sender = new FakeSender();
+    sender.failFor = new Set(['+33622']);
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    await runCampaign(campaign, deps({
+      recipients,
+      sender,
+      noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
+    }));
+    // 🔴 Et surtout PAS `[..., false]` sur l'échoué : un 131049 dit que Meta a plafonné le marketing, pas que
+    // le numéro n'a pas WhatsApp. Le seul « non » légitime est celui du second échec 131026, ailleurs.
+    expect(notes).toEqual([['t1', 'ct-r1', true]]);
+  });
+
+  it('une campagne de SCÉNARIO ne note rien : son messageId est synthétique, rien n\'est parti d\'ici', async () => {
+    const notes: Note[] = [];
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async () => true,
+      noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
+    }));
+    expect(notes).toEqual([]);
+  });
+
+  it('une campagne RCS ne note rien : joignable en RCS ne dit RIEN de WhatsApp', async () => {
+    const notes: Note[] = [];
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(campaign, deps({
+      recipients,
+      channelSender: { sendTo: async () => ({ messageId: 'rcs-r1' }) },
+      noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
+    }));
+    expect(notes).toEqual([]);
+  });
+
+  it('une note qui throw ne relabellise JAMAIS un message livré', async () => {
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({
+      recipients,
+      noterJoignabilite: async () => { throw new Error('base down'); },
+    }));
+    // Best-effort, exactement comme le journal du fil : le pire coût est un verdict resté `inconnu`.
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
+  });
+});

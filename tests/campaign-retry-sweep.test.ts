@@ -2,15 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { runRetrySweep, type RetrySweepDeps } from '../src/campaign/retry-sweep';
 import type { AutoRetryRecipient } from '../src/campaign/store.pg';
 
-const R = (id: string, campaignId = `c-${id}`): AutoRetryRecipient => ({ id, campaignId, tenantId: `t-${id}`, toE164: `+3360${id}` });
+const R = (id: string, campaignId = `c-${id}`): AutoRetryRecipient => ({ id, campaignId, tenantId: `t-${id}`, contactId: `ct-${id}`, toE164: `+3360${id}` });
 
 function deps(over: Partial<RetrySweepDeps> = {}): {
   d: RetrySweepDeps; enqueued: string[]; reset: string[]; flagged: Array<[string, string]>; marked: string[];
+  notes: Array<[string, string, boolean]>;
 } {
   const enqueued: string[] = [];
   const reset: string[] = [];
   const flagged: Array<[string, string]> = [];
   const marked: string[] = [];
+  const notes: Array<[string, string, boolean]> = [];
   const d: RetrySweepDeps = {
     isMorningWindow: () => true,
     list131049: async () => [],
@@ -20,9 +22,10 @@ function deps(over: Partial<RetrySweepDeps> = {}): {
     markUnreachableDone: async (id) => { marked.push(id); return true; },
     enqueueRun: async (id) => { enqueued.push(id); },
     flagUnreachable: async (tenantId, e164) => { flagged.push([tenantId, e164]); },
+    noterJoignabilite: async (tenantId, contactId, joignable) => { notes.push([tenantId, contactId, joignable]); },
     ...over,
   };
-  return { d, enqueued, reset, flagged, marked };
+  return { d, enqueued, reset, flagged, marked, notes };
 }
 
 describe('runRetrySweep (F6)', () => {
@@ -45,15 +48,36 @@ describe('runRetrySweep (F6)', () => {
     expect(d.enqueued).toEqual(['c-a', 'c-b']);
   });
 
-  it('131026 2e échec : flag injoignable PUIS markUnreachableDone (dans cet ordre)', async () => {
+  it('131026 2e échec : flag injoignable PUIS note PUIS markUnreachableDone (dans cet ordre)', async () => {
     const order: string[] = [];
     const d = deps({
       list131026SecondFail: async () => [R('z')],
       flagUnreachable: async () => { order.push('flag'); },
+      noterJoignabilite: async () => { order.push('note'); },
       markUnreachableDone: async (id) => { order.push(`mark:${id}`); return true; },
     });
     expect((await runRetrySweep(d.d)).flagged).toBe(1);
-    expect(order).toEqual(['flag', 'mark:z']);
+    // 🔴 LA CLÔTURE EST LA DERNIÈRE : tant qu'elle n'est pas passée, le destinataire reste listé, donc un
+    // échec de l'une des deux écritures d'avant ne perd rien. Noter APRÈS elle perdrait le verdict pour
+    // toujours, le destinataire n'étant plus jamais relisté.
+    expect(order).toEqual(['flag', 'note', 'mark:z']);
+  });
+
+  it('131026 2e échec : le verdict est écrit CHEZ NOUS, sur le contact, et il vaut false', async () => {
+    const d = deps({ list131026SecondFail: async () => [R('z')] });
+    expect((await runRetrySweep(d.d)).flagged).toBe(1);
+    // Le contact, pas le destinataire : la mémoire vit sur `contacts`, et elle sert au-delà de cette campagne.
+    expect(d.notes).toEqual([['t-z', 'ct-z', false]]);
+  });
+
+  it('noterJoignabilite qui throw -> PAS de markUnreachableDone (réessayé au tour suivant)', async () => {
+    const d = deps({
+      list131026SecondFail: async () => [R('z')],
+      noterJoignabilite: async () => { throw new Error('base injoignable'); },
+    });
+    const res = await runRetrySweep(d.d);
+    expect(res.flagged).toBe(0);
+    expect(d.marked).toEqual([]);
   });
 
   it('flagUnreachable qui throw -> PAS de markUnreachableDone (réessayé au tour suivant)', async () => {
@@ -64,6 +88,7 @@ describe('runRetrySweep (F6)', () => {
     const res = await runRetrySweep(d.d);
     expect(res.flagged).toBe(0);
     expect(d.marked).toEqual([]); // pas marqué : on ne clôt pas sur un flag échoué
+    expect(d.notes).toEqual([]); // et rien n'est noté : la note vient APRÈS le flag
   });
 
   it('resetForRetry qui renvoie false (conflit) -> pas d\'enqueue', async () => {
