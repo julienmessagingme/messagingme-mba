@@ -39,10 +39,15 @@ d'arrêter la campagne). Il ne change pas.
 | Question | Décision | Ce qu'elle achète |
 |---|---|---|
 | Quand bascule-t-on ? | **À l'échec technique de l'envoi**, plus la joignabilité mémorisée d'une campagne précédente | Le message n'est jamais parti, donc le double envoi est **structurellement impossible**, sans aucune machinerie de déduplication |
+| Bascule au premier ou au second échec ? | **Au PREMIER**, quand le code dit que le destinataire ne peut pas recevoir | Retenter un canal qui vient de dire « cette personne n'est pas là » ne sert à rien. ⚠️ Ne vaut PAS pour les incidents temporaires, cf. les trois familles ci-dessous |
 | Ordre des étapes | Nom, Canal et repli, Contenu, Audience, Récapitulatif | Ordre choisi contre la recommandation de mettre l'audience avant le contenu. Conséquence assumée et compensée à l'étape 5 |
 | Présentation du canal | Une liste à trois entrées, puis sous-questions | WhatsApp seul, RCS seul, ou les deux avec repli |
+| Réessai sur campagne SANS repli | Une question à la création, **« Réessayer les envois qui échouent »** | Sans chaîne, c'est le seul rattrapage possible. Avec chaîne, le repli tient déjà ce rôle |
 | Péremption | **90 jours** pour WhatsApp, **7 jours** (existant) pour le RCS | Asymétrie voulue : le RCS dépend du terminal et de l'opérateur, il est volatil ; un numéro qui gagne WhatsApp est rare mais réel |
 | Analytics | **Par canal**, pas dédoublonné par contact | « envois WhatsApp : 1, réussi : 0 ; envois RCS : 1, réussi : 1 » |
+| Débit RCS | **60 par minute** en attendant la réponse de smsmode | Valeur actuelle de fait, réglable en configuration, à réviser dès que le vrai plafond est connu |
+| Assignation | Sans assignation, à une personne, ou **à tour de rôle dans l'équipe** | Les trois sont dans le périmètre |
+| Campagnes existantes | **Aucune à préserver** : le parc actuel est du test, il sera effacé | Retire l'exigence de démontrer la reprise d'une campagne en vol |
 
 ## Le parcours de création
 
@@ -71,6 +76,20 @@ Le choix 3 ouvre deux sous-questions, dans cet ordre :
 Le choix de l'e-mail affiche tout de suite que le destinataire sera l'adresse portée par la fiche
 du contact, et qu'un contact sans adresse sortira de la chaîne.
 
+**Les choix 1 et 2 (canal seul) ouvrent une question de plus** : « Réessayer les envois qui
+échouent ? », cochée par défaut. Sans chaîne de repli, c'est le seul rattrapage disponible.
+
+🔴 **Ne JAMAIS écrire « relancer » à cet endroit.** Dans le vocabulaire marketing, relancer
+quelqu'un veut dire lui renvoyer un message parce qu'il n'a pas répondu. Ici il s'agit de retenter
+un envoi qui a échoué techniquement, avant même que le destinataire ait vu quoi que ce soit. Un
+utilisateur qui lit « relancer automatiquement la campagne » comprendra la première chose et
+cochera pour une raison qui n'est pas la bonne. Le libellé porte le mot **réessayer**, jamais
+**relancer**.
+
+⚠️ **La question n'apparaît pas sur le choix 3**, parce que le repli tient déjà ce rôle. Conséquence
+à assumer et à ne pas découvrir plus tard : le **dernier** étage d'une chaîne ne réessaie donc pas.
+Un contact dont l'e-mail échoue est terminal du premier coup.
+
 ⚠️ **Un canal que l'espace n'a pas configuré est grisé AVEC SA RAISON, pas masqué.** Sans agent RCS
 relié, l'entrée 3 doit dire pourquoi elle ne s'ouvre pas et où aller la régler. Une option absente
 fait croire que la fonctionnalité n'existe pas.
@@ -91,8 +110,14 @@ conversation :
 
 - le Meta Business Agent prend la main,
 - un agent IA existant prend la main (liste des agents de l'espace),
-- ou ça tombe dans l'Inbox. Dans ce cas, un second choix : **sans assignation** (la conversation
-  arrive dans « À traiter »), ou **assignée** à une personne.
+- ou ça tombe dans l'Inbox. Dans ce cas, un second choix à trois entrées : **sans assignation** (la
+  conversation arrive dans « À traiter »), **assignée à une personne**, ou **répartie à tour de
+  rôle** entre les membres de l'espace.
+
+⚠️ **Le tour de rôle se joue à l'ARRIVÉE de la réponse, pas au lancement.** Répartir cinq mille
+conversations d'avance attribuerait des conversations qui n'existeront jamais (la plupart des
+destinataires ne répondront pas) et fausserait tous les compteurs de charge. Le rang du tour de
+rôle se garde sur la campagne et s'incrémente au moment où une conversation devient réelle.
 
 🔴 **L'assignation affiche le nombre de conversations concernées avant de valider.** Assigner cinq
 mille conversations à quelqu'un doit se voir au moment où on le décide, pas le lendemain matin.
@@ -186,6 +211,11 @@ Sans lui, l'analytics ne sait pas expliquer pourquoi personne n'a reçu l'étage
 
 **`campaign_recipients`** : `+ etage_courant smallint not null default 1`.
 
+**`campaigns`** : `+ reessayer boolean not null default true` (l'option de l'étape 2, sans effet
+quand une chaîne existe), `+ assignation text` (`null` | `'personne'` | `'tour_de_role'`),
+`+ assignation_user_id uuid` et `+ tour_de_role_rang smallint not null default 0`, ce dernier
+incrémenté à l'arrivée de chaque conversation réelle.
+
 **`contacts`** : `+ whatsapp_joignable boolean`, `+ whatsapp_joignable_le timestamptz`. Les deux
 nullables ; `null` veut dire **inconnu**, et ce n'est pas `false`.
 
@@ -200,26 +230,37 @@ tenus par des tests.
 
 ## Le moteur de repli
 
-### Le déclencheur
+### Trois familles d'échec, trois gestes
 
-Un envoi échoue. Le code d'erreur décide :
+🔴 **C'est le cœur du lot, et la seule chose à ne pas se tromper.** Un envoi échoue. Le code
+d'erreur range l'échec dans une famille, et **la famille décide du geste**. Un déclencheur unique
+serait faux dans deux cas sur trois.
 
-- **code de la liste de bascule** : on n'écrit pas terminal. On incrémente `etage_courant`, on
-  remet le destinataire en attente, on ré-enfile. Le prochain tour l'envoie par le canal de l'étage
-  suivant.
-- **tout autre code** : comportement actuel, inchangé.
-- **plus d'étage disponible** : terminal, comme aujourd'hui.
+| Famille | Ce que ça veut dire | Exemples | Geste |
+|---|---|---|---|
+| **1. Destinataire inapte** | Cette personne ne peut pas recevoir sur ce canal | 131026 | **Bascule à l'étage suivant, dès le PREMIER échec.** Sans chaîne : réessai si l'option est cochée, sinon terminal. Écrit la joignabilité sur le contact |
+| **2. Incident temporaire** | Le canal marche, c'est le moment qui ne va pas | plafond de débit, 5xx, délai dépassé | **Réessai sur le MÊME canal, toujours, chaîne ou pas.** Jamais de bascule |
+| **3. Erreur de configuration** | Ni le canal ni le moment ne sont en cause | 131047 (hors fenêtre de 24 h), modèle non approuvé | **Ni réessai ni bascule.** Terminal, avec un motif lisible à l'écran |
 
-🔴 **La liste des codes qui basculent est un livrable, pas une intuition.** 131026 (non délivrable)
-est le cas clair, déjà traité par `retry-sweep`. **131047 ne doit surtout pas basculer** : c'est la
-fenêtre de 24 h qui est fermée, pas le canal qui est inapte, et basculer masquerait une erreur de
-conception du scénario au lieu de la montrer. La liste se lit dans la documentation Meta, se fige
-dans une constante nommée, et se tient par un test qui vérifie les deux sens (un code qui bascule,
-un code qui ne bascule pas).
+🔴 **La famille 2 est celle qui coûte cher si on l'oublie.** Si « bascule au premier échec »
+s'appliquait à tous les codes, **un hoquet de Meta de deux minutes ferait basculer une campagne
+entière sur le RCS et doublerait la facture**, alors que WhatsApp était disponible trente secondes
+plus tard. C'est un incident qu'on ne découvre qu'en lisant l'addition.
 
-⚠️ **La relance existante passe AVANT la bascule.** 131026 se relance une fois sur le même canal,
-comme aujourd'hui ; c'est au **second** échec que l'étage change. Inverser ferait basculer sur un
-incident passager.
+🔴 **La famille 3 ne doit jamais basculer**, et 131047 est le cas d'école : c'est la fenêtre de 24 h
+qui est fermée, pas le canal qui est inapte. Basculer masquerait une erreur de conception du
+scénario au lieu de la montrer.
+
+⚠️ **Le classement des codes est un livrable, pas une intuition.** Il se lit dans la documentation
+Meta, se fige dans une table nommée, et se tient par un test qui vérifie les **trois** familles sur
+des codes réels, pas seulement la famille 1.
+
+### Ce que le déclencheur fait, une fois la famille connue
+
+- **Bascule** : on n'écrit pas terminal. On incrémente `etage_courant`, on remet le destinataire en
+  attente, on ré-enfile. Le prochain tour l'envoie par le canal de l'étage suivant.
+- **Réessai** : comportement actuel de `retry-sweep`, borné par `retry_count` comme aujourd'hui.
+- **Plus d'étage disponible** : terminal.
 
 ### L'ordre des gardes avant chaque envoi
 
@@ -297,11 +338,12 @@ Meta.
 
 Deux changements :
 
-1. **Le plafond se résout par canal.** WhatsApp garde le sien. Le RCS prend le sien, à établir :
-   smsmode ne publie aucun chiffre (leur documentation répond que l'infrastructure « s'ajuste
-   automatiquement au volume »), donc **la valeur se demande à smsmode et se mesure sur notre
-   compte**, elle ne se devine pas. En attendant, le RCS prend une valeur de configuration propre,
-   distincte de celle de WhatsApp.
+1. **Le plafond se résout par canal.** WhatsApp garde le sien, dérivé de Meta. Le RCS prend le
+   sien, **60 par minute pour commencer** : c'est la valeur de fait d'aujourd'hui, et smsmode ne
+   publie aucun chiffre (leur documentation répond que l'infrastructure « s'ajuste automatiquement
+   au volume »). ⚠️ **60 est un point de départ, pas une mesure.** Julien pose la question à
+   smsmode ; la valeur vit en configuration pour se corriger sans déploiement, et ne doit jamais
+   être recopiée en dur.
 2. **L'écran cesse de demander un nombre de messages par minute.** Un marketeur ne peut pas choisir
    ce nombre correctement, il n'a aucun moyen de connaître les plafonds des opérateurs. Il choisit
    une intention (« au plus vite », « étalé sur la journée », « heures ouvrées seulement », ce
@@ -343,8 +385,14 @@ l'échec et son symptôme, restaurer), conformément à la règle du dépôt.
 
 **Unitaires**
 
-- La liste des codes de bascule : 131026 bascule, 131047 ne bascule pas.
-- La relance passe avant la bascule : premier 131026 relance le même canal, second bascule.
+- **Les trois familles, une par une** : 131026 bascule dès le premier échec ; un incident temporaire
+  réessaie sur le même canal **même quand une chaîne existe** ; 131047 ne fait ni l'un ni l'autre.
+  🔴 Le deuxième cas est celui qui manque toujours dans ce genre de test, et c'est celui qui double
+  la facture.
+- Un code inconnu tombe dans la famille la plus prudente (terminal avec motif), jamais dans la
+  bascule : un code non classé ne doit pas pouvoir déclencher un envoi payant.
+- L'option « Réessayer les envois qui échouent » décochée : aucun réessai, et le destinataire est
+  terminal du premier coup.
 - Péremption : 89 jours lit la valeur, 91 jours rend `inconnu`.
 - `null` n'est pas `false` : un contact jamais sollicité n'est pas sauté.
 - Plus d'étage disponible : terminal, pas de boucle.
@@ -365,11 +413,20 @@ l'échec et son symptôme, restaurer), conformément à la règle du dépôt.
 - Le récapitulatif affiche la répartition et ses liens de retour.
 - Le troisième niveau SMS est visible et non sélectionnable.
 
-## Ce qui reste à trancher
+## Ce qui reste ouvert
 
-1. **Le débit RCS réel.** À demander à smsmode et à mesurer. Bloque la valeur par défaut, pas la
-   conception.
-2. **La troisième option d'assignation.** « Sans assignation » et « à une personne » sont décidées.
-   Une répartition dans l'équipe (à tour de rôle) est-elle attendue dans ce lot ?
-3. **Une campagne en cours au moment du déploiement.** Les campagnes vivantes ont un étage 1
-   implicite. La reprise doit être **démontrée** sur une campagne `paused` réelle, pas supposée.
+Plus aucune décision de conception. Trois choses à obtenir ou à établir pendant l'exécution.
+
+1. **Le débit RCS réel.** Julien pose la question à smsmode. 60 par minute en attendant, en
+   configuration. Ne bloque rien.
+2. **Le classement des codes d'erreur Meta dans les trois familles.** C'est une lecture de la
+   documentation Meta, pas un arbitrage. ⚠️ Tant qu'il n'est pas fait, aucun code ne doit basculer
+   par défaut : un code non classé est terminal, jamais payant.
+3. **L'équivalent côté smsmode.** Le RCS a ses propres codes d'échec, et la même question se pose :
+   lesquels veulent dire « ce destinataire est inapte » plutôt que « réessaie dans une minute ».
+   Facile à oublier parce que la chaîne se pense depuis WhatsApp.
+
+⚠️ **Le parc actuel de campagnes est du test et sera effacé avant la mise en service.** La migration
+reprend quand même les campagnes existantes dans `campaign_etages` au rang 1 : la reprise coûte
+trois lignes de SQL, et parier sur un nettoyage manuel fait de l'ordre des gestes une condition de
+correction.
