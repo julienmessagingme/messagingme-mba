@@ -26,6 +26,7 @@ import { runTourBloqueSweep } from './agent/tour-bloque-sweep';
 import { SORTIE_ECHEC } from './agent/sorties';
 import { runRetrySweep } from './campaign/retry-sweep';
 import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
+import { creerNoteurEnvois } from './campaign/envois.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { resolveRatePerMinute } from './campaign/pacing';
@@ -288,6 +289,7 @@ async function main(): Promise<void> {
    * même façon des deux côtés.
    */
   const noterJoignabiliteContact = creerNoteurJoignabilite(pool);
+  const noterEnvoiCampagne = creerNoteurEnvois(pool);
 
   /**
    * Campagnes AU FIL DE L'EAU : un contact arrive par un webhook entrant, il devient destinataire des
@@ -645,6 +647,17 @@ async function main(): Promise<void> {
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant: string, waId: string, msg: Parameters<typeof inboxStore.recordOutboundByWaId>[2]) =>
         inboxStore.recordOutboundByWaId(tenant, waId, msg),
+      /**
+       * Journalise CHAQUE tentative d'envoi (migration 0134).
+       *
+       * 🔴 HORS DU BLOC `dryRun`, ET C'EST UNE DIFFÉRENCE DE NATURE AVEC `noterJoignabilite`, PAS UN
+       * OUBLI. Cette dernière est une MESURE SUR LE MONDE (« ce numéro a WhatsApp »), qu'un faux sender
+       * inventerait de toutes pièces ; ce journal-ci enregistre CE QUE LE PRODUIT A FAIT, et en DRY_RUN
+       * le produit résout réellement ses destinataires (`campaign_recipients` est bien écrite). Le
+       * couper là ferait dire deux choses différentes aux deux tables, dans le seul mode où on les
+       * compare à la main. Même place, et pour la même raison, que `recordOutbound` juste au-dessus.
+       */
+      noterEnvoi: noterEnvoiCampagne,
       },
     });
   }, { concurrency: config.CAMPAIGN_RUN_CONCURRENCY, groupConcurrency: 1 });

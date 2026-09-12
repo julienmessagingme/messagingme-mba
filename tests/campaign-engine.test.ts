@@ -7,6 +7,7 @@ import type {
   FrequencyStore,
   QualityProvider,
   EngineDeps,
+  TentativeEnvoi,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating, GuardrailThresholds } from '../src/campaign/types';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
@@ -1078,5 +1079,124 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
     // Best-effort, exactement comme le journal du fil : le pire coût est un verdict resté `inconnu`.
     expect(report).toMatchObject({ sent: 1, failed: 0 });
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
+  });
+});
+
+/**
+ * LE JOURNAL DES TENTATIVES ÉCRIT PAR LE MOTEUR (migration 0134).
+ *
+ * 🔴 CE QUE CE BLOC PROTÈGE, ET QUE LE TEST D'INTÉGRATION NE PEUT PAS PROTÉGER AUSSI BIEN. Le journal est
+ * au grain TENTATIVE : il doit s'écrire sur TOUS les chemins de résolution d'un destinataire, y compris les
+ * trois qui n'envoient rien. Un chemin oublié ne produit aucune erreur, juste un canal qui semble n'avoir
+ * jamais échoué, c'est-à-dire exactement le chiffre sur lequel on déciderait de le remplacer par un autre.
+ * Ici les cinq chemins se provoquent à la demande, ce qu'une vraie base rend bien plus difficile.
+ */
+describe('runCampaign : le journal des tentatives', () => {
+  /** Ce que le moteur a voulu journaliser, dans l'ordre. */
+  const collecteur = (): { vues: TentativeEnvoi[]; noterEnvoi: EngineDeps['noterEnvoi'] } => {
+    const vues: TentativeEnvoi[] = [];
+    return { vues, noterEnvoi: async (t) => { vues.push(t); } };
+  };
+
+  it('un envoi réussi journalise une tentative `sent`, au rang 1 et sur le canal de la campagne', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    await runCampaign(campaign, deps({ recipients, noterEnvoi }));
+    expect(vues).toEqual([
+      { campaignId: 'c1', recipientId: 'r1', contactId: 'ct-r1', rang: 1, canal: 'whatsapp', statut: 'sent', messageId: 'm-+33611' },
+      { campaignId: 'c1', recipientId: 'r2', contactId: 'ct-r2', rang: 1, canal: 'whatsapp', statut: 'sent', messageId: 'm-+33622' },
+    ]);
+  });
+
+  it('🔴 un ÉCHEC d envoi est journalisé aussi, avec son code Meta', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const sender = new FakeSender();
+    sender.failFor = new Set(['+33622']);
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    await runCampaign(campaign, deps({ recipients, sender, noterEnvoi }));
+    // Le succès ET l'échec : c'est le couple qui fait un funnel, une seule des deux moitiés ne dit rien.
+    expect(vues.map((t) => t.statut)).toEqual(['sent', 'failed']);
+    expect(vues[1]).toMatchObject({ recipientId: 'r2', statut: 'failed', errorCode: 131049 });
+  });
+
+  it('🔴 un destinataire ÉCARTÉ PAR LE CANAL est journalisé `saute`, jamais `failed`', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const rcs: Campaign = { ...campaign, channel: 'rcs' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    // Le sender de canal rend `{ skipped }` : rien n'est parti et rien n'a raté. C'est aujourd'hui le SEUL
+    // producteur de `saute` du moteur, et la nuance décide d'un chiffre : compté en échec, ce canal
+    // paraîtrait défaillant alors qu'il n'a rien tenté.
+    await runCampaign(rcs, deps({
+      recipients, noterEnvoi,
+      channelSender: { sendTo: async () => ({ skipped: 'non joignable en RCS' }) },
+    }));
+    expect(vues).toHaveLength(1);
+    expect(vues[0]).toMatchObject({ statut: 'saute', canal: 'rcs' });
+  });
+
+  it('🔴 le saut de FRÉQUENCE ne journalise RIEN, et c est essentiel', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({
+      recipients, noterEnvoi,
+      frequency: { lastSentAt: async () => 1_000_000_000 - 1, record: async () => {} },
+      thresholds: { frequencyWindowMs: 3_600_000, maxFailureRate: 1, minSendsForFailureCheck: 999 },
+    }));
+    // 🔴 CE SAUT-LÀ EST TRANSITOIRE : le destinataire reste `pending` et sera réévalué au run suivant. Le
+    // journaliser écrirait une ligne À CHAQUE RUN pour la même personne, donc gonflerait sans fin les
+    // compteurs par canal d'un envoi qui n'a jamais eu lieu. Le journal ne note QUE les résolutions.
+    expect(report).toMatchObject({ skipped: 1 });
+    expect(vues).toEqual([]);
+  });
+
+  it('🔴 un scénario qui ne DÉMARRE PAS est journalisé `failed` : rien n est parti', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(wf, deps({ recipients, noterEnvoi, startWorkflow: async () => false }));
+    expect(vues).toHaveLength(1);
+    expect(vues[0]).toMatchObject({ statut: 'failed' });
+  });
+
+  it('🔴 le refus PRÉ-BOUCLE journalise TOUS les destinataires, alors qu aucun n a été tenté', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    // Un carousel non envoyable arrête le run avant la boucle : les destinataires sont marqués `failed`
+    // en bloc. Le journal doit dire la MÊME chose que `campaign_recipients`, sans quoi les deux tables
+    // se contrediraient précisément le jour où l'on cherche pourquoi une campagne n'a rien envoyé.
+    await runCampaign(campaign, deps({
+      recipients, noterEnvoi,
+      getTemplateCarousel: async () => ({ cards: [] }),
+    }));
+    expect(vues.map((t) => [t.recipientId, t.statut])).toEqual([['r1', 'failed'], ['r2', 'failed']]);
+  });
+
+  it('une campagne RCS journalise sur SON canal', async () => {
+    const { vues, noterEnvoi } = collecteur();
+    const rcs: Campaign = { ...campaign, channel: 'rcs' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(rcs, deps({
+      recipients, noterEnvoi,
+      channelSender: { sendTo: async () => ({ messageId: 'rcs-r1' }) },
+    }));
+    expect(vues[0]).toMatchObject({ canal: 'rcs', statut: 'sent', messageId: 'rcs-r1' });
+  });
+
+  it('un journal qui throw ne relabellise JAMAIS un message livré', async () => {
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({
+      recipients,
+      noterEnvoi: async () => { throw new Error('base down'); },
+    }));
+    // Best-effort, comme le journal du fil et la note de joignabilité : le pire coût est une ligne de
+    // statistique manquante, jamais un run interrompu ni un envoi réussi requalifié en échec.
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
+  });
+
+  it('sans câblage, le moteur n écrit rien : comportement d avant, intact', async () => {
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({ recipients }));
+    expect(report).toMatchObject({ sent: 1 });
   });
 });

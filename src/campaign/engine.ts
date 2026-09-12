@@ -14,6 +14,29 @@ import type { BusinessHours } from '../workflow/conditions';
 import { prochaineOuverture } from '../lib/heures-ouvrees';
 import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
+import { RANG_INITIAL, type CanalEtage } from './etages';
+
+/**
+ * UNE TENTATIVE D'ENVOI, telle qu'on la journalise (migration 0134).
+ *
+ * ⚠️ `saute` n'est PAS un échec : le destinataire a été ÉCARTÉ avant toute tentative (consentement absent
+ * sur une campagne marketing, variable de template introuvable sur sa fiche). Les confondre gonflerait le
+ * taux d'échec d'un canal avec des gens qu'il n'a jamais essayé de joindre.
+ *
+ * ⚠️ Le contrat vit ICI et son implémentation dans `envois.pg.ts`, comme `RecipientStore` et
+ * `CampaignStore` : c'est le moteur qui dit ce dont il a besoin, pas la base qui dicte sa forme.
+ */
+export interface TentativeEnvoi {
+  campaignId: string;
+  recipientId: string;
+  contactId: string;
+  rang: number;
+  canal: CanalEtage;
+  statut: 'sent' | 'failed' | 'saute';
+  messageId?: string;
+  errorCode?: number;
+  error?: string;
+}
 
 /** Satisfait par MetaClient (Loop 2). */
 /**
@@ -169,6 +192,21 @@ export interface EngineDeps {
    * Absent -> aucune écriture, comportement d'avant (fixtures de test, e2e).
    */
   noterJoignabilite?: (tenantId: string, contactId: string, joignable: boolean) => Promise<void>;
+  /**
+   * Journalise UNE tentative d'envoi (migration 0134), quel qu'en soit le résultat.
+   *
+   * 🔴 EN AJOUT SEUL, ET AU GRAIN TENTATIVE. `campaign_recipients` garde une ligne par CONTACT, donc un
+   * seul état : le jour où un destinataire échouera en WhatsApp puis réussira en RCS, elle n'en gardera
+   * que le dernier, et l'échec du premier canal serait invisible. C'est ce journal, et lui seul, qui
+   * saura dire ce que chaque canal a coûté et rapporté.
+   *
+   * ⚠️ BEST-EFFORT, exactement comme `recordOutbound` et `noterJoignabilite` : une écriture de journal
+   * qui échoue ne doit JAMAIS relabelliser un message livré ni interrompre un run. Ce qu'elle coûte
+   * alors est une ligne manquante dans une statistique, jamais un message.
+   *
+   * Absent -> aucune écriture, comportement d'avant (fixtures de test, e2e).
+   */
+  noterEnvoi?: (t: TentativeEnvoi) => Promise<void>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -341,6 +379,54 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
 
+  /**
+   * RÉSOUDRE UN DESTINATAIRE : le marquer ET journaliser la tentative, en UN seul geste.
+   *
+   * 🔴 UN SEUL POINT DE PASSAGE, PARCE QUE DEUX ÉCRITURES QUI DOIVENT S'ACCORDER NE DOIVENT PAS ÊTRE
+   * APPELÉES SÉPARÉMENT. Un destinataire se résout à CINQ endroits de ce fichier (refus pré-boucle,
+   * erreur d'envoi, écarté, scénario non démarré, succès) ; poser le journal à côté de chacun aurait fait
+   * du journal une liste à tenir à la main, dont un site oublié ne produit aucune erreur, juste un canal
+   * qui semble n'avoir jamais rien tenté. Depuis ce lot, `markResult` n'a plus qu'UN appelant, ici :
+   * marquer sans journaliser est devenu impossible, et le prochain site l'héritera sans y penser.
+   *
+   * ⚠️ L'ORDRE COMPTE : on marque D'ABORD. Le journal ne doit jamais affirmer une tentative que la table
+   * des destinataires ne connaît pas ; l'inverse (une marque sans sa ligne de journal) ne coûte qu'une
+   * statistique, et c'est le sens de perte qu'on accepte.
+   *
+   * ⚠️ `rang: RANG_INITIAL` EN DUR, ET C'EST EXACT AUJOURD'HUI : le moteur ne lit pas encore la chaîne,
+   * toute campagne n'a qu'un étage, donc toute tentative est au premier. C'est le moteur de bascule qui
+   * fera avancer ce rang, et c'est par les lecteurs de `RANG_INITIAL` qu'on retrouvera cette ligne.
+   *
+   * ⚠️ LE CANAL VIENT DE `campaign.channel`, PAS DE LA CHAÎNE, pour la même raison : lire la chaîne ici
+   * laisserait croire que le moteur la suit. Les deux disent la même chose (la migration 0134 a repris
+   * l'un dans l'autre, et la création écrit les deux depuis une seule valeur), et c'est la colonne que ce
+   * moteur-ci consulte réellement pour décider par où il envoie.
+   */
+  const resoudre = async (
+    r: Recipient,
+    resultat: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
+  ): Promise<void> => {
+    await deps.recipients.markResult(r.id, resultat);
+    // `contactId` absent : rien à rattacher, et la colonne est `not null`. Les faux des tests en sont
+    // dépourvus, la production ne l'est jamais (le destinataire naît d'un contact).
+    if (!deps.noterEnvoi || !r.contactId) return;
+    try {
+      await deps.noterEnvoi({
+        campaignId: campaign.id,
+        recipientId: r.id,
+        contactId: r.contactId,
+        rang: RANG_INITIAL,
+        canal: campaign.channel ?? 'whatsapp',
+        statut: resultat.status === 'skipped' ? 'saute' : resultat.status,
+        ...(resultat.messageId !== undefined ? { messageId: resultat.messageId } : {}),
+        ...(resultat.errorCode !== undefined ? { errorCode: resultat.errorCode } : {}),
+        ...(resultat.error !== undefined ? { error: resultat.error } : {}),
+      });
+    } catch {
+      /* best-effort : une statistique manquante ne vaut jamais un run interrompu */
+    }
+  };
+
   // Rien d'envoyable : AUCUN destinataire ne peut partir, et on le sait avant d'avoir commencé. Traité
   // ICI et pas dans la boucle : y passer ferait compter 100 % d'échecs au quality gate, qui mettrait la
   // campagne en pause avec « taux d'échec 100 % » au bout de 20 destinataires. Ce serait exactement le
@@ -350,7 +436,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     for (const r of pending) {
       if (r.status === 'sent') continue;
       if (!(await deps.recipients.claim(r.id))) continue;
-      await deps.recipients.markResult(r.id, { status: 'failed', error: reason });
+      await resoudre(r, { status: 'failed', error: reason });
       report.failed += 1;
     }
     await deps.campaigns.setStatus(campaign.id, await statutDeSortie());
@@ -602,7 +688,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         return report;
       }
 
-      await deps.recipients.markResult(r.id, { status: 'failed', error: msg, ...(errorCode !== undefined ? { errorCode } : {}) });
+      await resoudre(r, { status: 'failed', error: msg, ...(errorCode !== undefined ? { errorCode } : {}) });
       report.failed += 1;
       continue;
     }
@@ -611,13 +697,13 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // la raison) au lieu de le compter en `sent` : une campagne « 500 envoyés, 0 échec » alors que rien n'est
     // parti est un mensonge affiché, et il masque la vraie cause (fil repris, scénario devenu non lançable).
     if (skipped !== null) {
-      await deps.recipients.markResult(r.id, { status: 'skipped', error: skipped });
+      await resoudre(r, { status: 'skipped', error: skipped });
       report.skipped += 1;
       continue;
     }
 
     if (notStarted !== null) {
-      await deps.recipients.markResult(r.id, { status: 'failed', error: notStarted });
+      await resoudre(r, { status: 'failed', error: notStarted });
       report.failed += 1;
       continue;
     }
@@ -628,7 +714,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // même si markResult échoue et que le job est rejoué, il ne sera pas ré-envoyé.
     const at = now();
     report.sent += 1;
-    await deps.recipients.markResult(r.id, { status: 'sent', messageId: res.messageId, sentAt: at });
+    await resoudre(r, { status: 'sent', messageId: res.messageId, sentAt: at });
     await deps.frequency.record(campaign.tenantId, r.toE164, at);
 
     // Ce contact est joignable en WhatsApp : Meta a accepté le message et rendu un wamid.

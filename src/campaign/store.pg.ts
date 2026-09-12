@@ -1072,20 +1072,55 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
    * Applique un statut de livraison Meta (par message_id), en MONOTONE : sent -> delivered
    * -> read ne régresse jamais (un `delivered` tardif n'écrase pas un `read`). `failed`
    * s'applique toujours. Retourne le nb de lignes touchées (0 si le wamid n'est pas à nous).
+   *
+   * 🔴 ELLE MET À JOUR LES DEUX TABLES, ET C'EST INDISPENSABLE AU FUNNEL PAR CANAL.
+   * `campaign_recipients` ne porte qu'UN `delivery_status`, celui de la dernière tentative : le jour où
+   * un destinataire échouera en WhatsApp puis réussira en RCS, lire la livraison depuis cette ligne
+   * attribuerait l'accusé du second canal au PREMIER, c'est-à-dire à celui qui a échoué. Le journal
+   * (`campaign_envois`) garde donc son propre accusé, par tentative. Sans cette seconde écriture, sa
+   * colonne resterait NULLE pour toujours et le funnel par canal annoncerait « aucun accusé » sur toutes
+   * les campagnes du monde, ce qui est exactement le mensonge que la distinction « zéro contre on ne
+   * sait pas » est censée empêcher.
+   *
+   * 🔴 UNE SEULE INSTRUCTION, PAS DEUX REQUÊTES. Les deux mises à jour sont dans le même énoncé, donc
+   * dans la même transaction implicite : il est impossible que l'une passe et l'autre non, et les deux
+   * tables ne peuvent pas se retrouver en désaccord sur un accusé. La règle de monotonie est recopiée à
+   * l'identique dans les deux branches, pour la même raison qu'elle existe : un `delivered` en retard ne
+   * doit pas rabaisser un `read` d'un côté pendant qu'il le laisse de l'autre.
+   *
+   * ⚠️ LE COMPTE RENDU RESTE CELUI DES DESTINATAIRES (`maj`), jamais la somme des deux. C'est lui qui
+   * répond à la question posée par l'appelant, « ce wamid est-il à nous ? », et y ajouter les lignes de
+   * journal ferait répondre 2 à un webhook qui en attend 1.
    */
   async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number> {
-    const res = await this.pool.query(
-      `update campaign_recipients
-       set delivery_status = $2, delivery_error = $3, delivery_updated_at = now(),
-           error_code = $4::integer
-       where message_id = $1 and (
-         $2 = 'failed'
-         or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
-            > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
-       )`,
+    const res = await this.pool.query<{ n: number }>(
+      `with maj as (
+         update campaign_recipients
+         set delivery_status = $2, delivery_error = $3, delivery_updated_at = now(),
+             error_code = $4::integer
+         where message_id = $1 and (
+           $2 = 'failed'
+           or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+              > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+         )
+         returning 1 as touche
+       ),
+       journal as (
+         update campaign_envois
+         set delivery_status = $2
+         where message_id = $1 and (
+           $2 = 'failed'
+           or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+              > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+         )
+         returning 1 as touche
+       )
+       select (select count(*) from maj)::int as n`,
       [messageId, status, error, errorCode],
     );
-    return res.rowCount ?? 0;
+    // ⚠️ `rowCount` ne convient plus : l'énoncé rend TOUJOURS une ligne (le `select` final), donc il
+    // vaudrait 1 même quand le wamid n'est pas à nous. C'est le compte porté PAR cette ligne qui répond.
+    return Number(res.rows[0]?.n ?? 0);
   }
 
   async listPending(campaignId: string): Promise<Recipient[]> {
