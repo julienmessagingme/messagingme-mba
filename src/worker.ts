@@ -25,6 +25,7 @@ import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runTourBloqueSweep } from './agent/tour-bloque-sweep';
 import { SORTIE_ECHEC } from './agent/sorties';
 import { runRetrySweep } from './campaign/retry-sweep';
+import { fenetreDeRattrapageOuverte } from './lib/heures-ouvrees';
 import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
 import { creerNoteurEnvois } from './campaign/envois.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
@@ -1041,6 +1042,14 @@ async function main(): Promise<void> {
           // le jour où elle le sera, il n'y ait plus qu'à lui apprendre à envoyer le bon contenu.
           listCandidatsBascule: () => repo.listCandidatsBascule(),
           basculerEtage: (id, rang) => repo.basculerEtage(id, rang),
+          // L'horaire du RATTRAPAGE, distinct de celui de l'envoi initial (`business_hours_only`, lu
+          // par le moteur). Ici c'est l'espace qui parle, pas la campagne : la campagne dit seulement
+          // si elle s'en affranchit (`rattrapage_hors_horaires`), et cette réponse-là voyage avec le
+          // destinataire.
+          fenetreOuverte: async (tenant: string) => {
+            const s = await settingsStore.get(tenant);
+            return fenetreDeRattrapageOuverte(new Date(), s.timezone, s.businessHours);
+          },
         });
         // eslint-disable-next-line no-console
         if (res.retried > 0 || res.flagged > 0 || res.bascules > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s), ${res.bascules} bascule(s) d'étage`);

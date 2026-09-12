@@ -63,3 +63,26 @@ export function prochaineOuverture(depuis: Date, timeZone: string, hours: Busine
   }
   return null;
 }
+
+/**
+ * « A-t-on le droit de RATTRAPER maintenant ? », pour un réessai ou un repli d'étage.
+ *
+ * 🔴 CE N'EST PAS LA MÊME QUESTION QUE `business_hours_only`, ET LES DEUX RÉGLAGES COHABITENT.
+ * `business_hours_only` gouverne l'envoi INITIAL, c'est-à-dire le moment que l'opérateur CHOISIT en
+ * lançant sa campagne. Celui-ci gouverne le moment que PERSONNE ne choisit : un échec survenu à 3 h du
+ * matin, un repli qui se présente une semaine après la fin de la campagne. Une campagne peut donc
+ * parfaitement envoyer la nuit et refuser de rattraper la nuit, et c'est ce cas-là qui prouve que la
+ * séparation est réelle.
+ *
+ * 🔴 UNE SEMAINE SANS AUCUN JOUR OUVERT REND `true`, ET C'EST LE PIÈGE QUE CETTE FONCTION EXISTE POUR
+ * FERMER. Un espace dont les sept jours sont fermés n'a pas de « prochaine ouverture » : attendre
+ * l'ouverture y reviendrait à ne JAMAIS rattraper, en silence et pour toujours. `prochaineOuverture`
+ * rend déjà `null` dans ce cas précis, on lui redemande plutôt que de réinterpréter les horaires ici.
+ *
+ * ⚠️ Elle ne dit rien du drapeau `rattrapage_hors_horaires` de la campagne, qui la court-circuite en
+ * amont : une campagne qui autorise le rattrapage hors horaires ne pose jamais la question.
+ */
+export function fenetreDeRattrapageOuverte(maintenant: Date, timeZone: string, hours: BusinessHours): boolean {
+  if (withinBusinessHours(maintenant, timeZone, hours)) return true;
+  return prochaineOuverture(maintenant, timeZone, hours) === null;
+}

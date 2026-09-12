@@ -66,6 +66,9 @@ describe.skipIf(!url)('joignabilite WhatsApp memorisee', () => {
     list131026SecondFail: () => repo.listRetry131026SecondFail(),
     resetForRetry: (id) => repo.resetForRetry(id),
     markUnreachableDone: (id) => repo.markUnreachableDone(id),
+    // Les heures d'ouverture ne sont pas le sujet de ce fichier : la fenêtre est ouverte, comme elle
+    // l'est pour un espace aux horaires par défaut en pleine journée.
+    fenetreOuverte: async () => true,
     // ⚠️ La passe de bascule est câblée sur le VRAI dépôt, pas sur un bouchon : la campagne de ce
     // fichier n'a qu'un étage, donc elle ne bascule rien, mais la requête est bel et bien exécutée à
     // chaque balayage. Un bouchon aurait fait passer ces tests avec un SQL qui ne compile pas.

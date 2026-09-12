@@ -15,6 +15,9 @@ import type { AutoRetryRecipient, CandidatBascule } from './store.pg';
  *  - 131049 (Meta a plafonné le marketing) : relancer UNE fois, plus de 24 h après l'échec, et seulement dans une
  *    fenêtre « début de journée » (le plafond se libère avec le temps ; on ne re-tape pas dans la foulée). Le fenêtrage
  *    horaire est décidé par `isMorningWindow` (le worker le câble sur Europe/Paris).
+ *  - Toute relance, et tout repli, passent en plus par la FENÊTRE DE RATTRAPAGE de l'espace, à moins que
+ *    la campagne ne s'en affranchisse (`rattrapage_hors_horaires`, migration 0134). C'est un réglage
+ *    DISTINCT de `business_hours_only`, qui gouverne l'envoi initial et vit dans le moteur.
  *  - 131026 (non délivrable) : retenter UNE fois. Si ça re-échoue (retry_count=1), marquer le contact INJOIGNABLE dans
  *    HubSpot (best-effort), l'écrire CHEZ NOUS (migration 0133), puis clore (retry_count=2) UNIQUEMENT si les deux ont
  *    réussi (sinon réessayé au tour suivant).
@@ -52,6 +55,14 @@ export interface RetrySweepDeps {
   listCandidatsBascule(): Promise<CandidatBascule[]>;
   /** Fait avancer le destinataire à l'étage `rang` et le remet en `pending`, atomique. true si repris. */
   basculerEtage(id: string, rang: number): Promise<boolean>;
+  /**
+   * L'espace est-il DANS ses heures d'ouverture, maintenant ? (fuseau géré par l'appelant)
+   *
+   * ⚠️ Elle n'est interrogée que pour les campagnes qui REFUSENT le rattrapage hors horaires, et une
+   * seule fois par espace et par tour : la réponse ne change pas pendant un balayage, et la poser par
+   * destinataire ferait une lecture des réglages par destinataire.
+   */
+  fenetreOuverte(tenantId: string): Promise<boolean>;
 }
 
 function logErr(kind: string, id: string, err: unknown): void {
@@ -63,6 +74,34 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
   let retried = 0;
   let flagged = 0;
   let bascules = 0;
+
+  /**
+   * A-t-on le droit de faire PARTIR quelque chose pour ce destinataire, maintenant ?
+   *
+   * 🔴 LA GARDE EST ICI ET PAS DANS UNE MISE EN PAUSE DE LA CAMPAGNE, et ce n'est pas un raccourci :
+   * un rattrapage se présente souvent quand la campagne est TERMINÉE depuis longtemps, et mettre en
+   * pause une campagne terminée n'a aucun sens. Le balayage teste la fenêtre avant de ré-enfiler et
+   * ne fait rien sinon, exactement comme `isMorningWindow()` le fait déjà pour les 131049. Ne rien
+   * faire ne perd rien : le destinataire reste en échec, donc listé au tour suivant.
+   *
+   * 🔴 ET ELLE ÉCHOUE FERMÉ, À L'INVERSE DE `horairesOuvres` DU MOTEUR, qui traite une lecture ratée
+   * comme « aucune contrainte » (un envoi que le client vient de lancer ne doit pas être retenu par
+   * une panne de lecture). Ici personne n'attend l'envoi à la seconde : une lecture ratée saute le
+   * tour, et le tour suivant arrive dans quelques minutes. C'est le `catch` par destinataire des
+   * boucles ci-dessous qui l'applique, il n'y a donc rien de plus à écrire.
+   *
+   * ⚠️ Le cache est par TOUR de balayage, pas par process : une fenêtre qui s'ouvre pendant un tour
+   * s'appliquera au tour suivant, et un tour dure quelques secondes.
+   */
+  const fenetres = new Map<string, boolean>();
+  const peutPartirMaintenant = async (r: { tenantId: string; rattrapageHorsHoraires: boolean }): Promise<boolean> => {
+    if (r.rattrapageHorsHoraires) return true;
+    const connue = fenetres.get(r.tenantId);
+    if (connue !== undefined) return connue;
+    const ouverte = await deps.fenetreOuverte(r.tenantId);
+    fenetres.set(r.tenantId, ouverte);
+    return ouverte;
+  };
 
   // LA BASCULE D'ÉTAGE, en PREMIER. Elle ne concerne que les campagnes à repli, et les trois passes de
   // F6 qui suivent ne concernent QUE celles qui n'en ont pas : la frontière est posée en SQL
@@ -85,22 +124,35 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
     try {
       const geste = decider(c);
       if (geste.type !== 'bascule') continue;
+      // Le repli est un envoi que PERSONNE n'a choisi de déclencher maintenant : il passe par la garde
+      // d'horaire, comme les réessais. Et il la passe AVANT d'écrire : basculer puis ne pas enfiler
+      // laisserait le destinataire `pending` sur le nouvel étage, donc hors de toute liste d'échec.
+      if (!(await peutPartirMaintenant(c))) continue;
       if (await deps.basculerEtage(c.id, geste.rang)) { await deps.enqueueRun(c.campaignId); bascules += 1; }
     } catch (err) { logErr('bascule', c.id, err); }
   }
 
   // 131049 : seulement en fenêtre matinale, une seule relance (les listes ne renvoient que retry_count=0).
+  // ⚠️ DEUX GARDES SE CUMULENT DEPUIS L'HORAIRE DE RATTRAPAGE, et elles ne disent pas la même chose :
+  // `isMorningWindow` dit « c'est le bon moment de la journée pour retenter un plafond marketing »,
+  // `peutPartirMaintenant` dit « l'espace accepte qu'on écrive à ses contacts maintenant ». Un matin de
+  // jour férié, la première est vraie et la seconde fausse.
   if (deps.isMorningWindow()) {
     for (const r of await deps.list131049()) {
       try {
+        if (!(await peutPartirMaintenant(r))) continue;
         if (await deps.resetForRetry(r.id)) { await deps.enqueueRun(r.campaignId); retried += 1; }
       } catch (err) { logErr('131049', r.id, err); }
     }
   }
 
-  // 131026 : retenter une fois, tout de suite (pas d'attente de 24 h).
+  // 131026 : retenter une fois, sans attendre les 24 h qu'exige 131049.
+  // ⚠️ « Sans attendre 24 h » N'EST PLUS « tout de suite » : le réessai passe par la fenêtre de
+  // rattrapage, donc une campagne qui refuse le rattrapage hors horaires attend l'ouverture. Ce qui
+  // reste vrai, c'est qu'il n'attend pas un DÉLAI depuis l'échec.
   for (const r of await deps.list131026()) {
     try {
+      if (!(await peutPartirMaintenant(r))) continue;
       if (await deps.resetForRetry(r.id)) { await deps.enqueueRun(r.campaignId); retried += 1; }
     } catch (err) { logErr('131026', r.id, err); }
   }
@@ -115,6 +167,11 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
   // ⚠️ La mémoire vient APRÈS le flag, pas avant : mettre du code neuf devant un chemin qui marchait
   // ferait dépendre le flag HubSpot de notre nouvelle écriture, alors que l'inverse coûte au pire un tour
   // de balayage de retard.
+  //
+  // 🔴 PAS DE GARDE D'HORAIRE SUR CETTE PASSE, ET C'EST VOLONTAIRE : elle n'envoie RIEN. Elle écrit un
+  // constat (le numéro n'a pas WhatsApp) chez nous et chez HubSpot, puis clôt. Lui appliquer la fenêtre
+  // de rattrapage repousserait au lendemain une écriture que personne ne reçoit, et un espace fermé
+  // sept jours sur sept ne clôturerait jamais ses injoignables.
   for (const r of await deps.list131026SecondFail()) {
     try {
       await deps.flagUnreachable(r.tenantId, r.toE164);

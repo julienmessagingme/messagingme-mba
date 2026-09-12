@@ -3,7 +3,13 @@ import { runRetrySweep, type RetrySweepDeps } from '../src/campaign/retry-sweep'
 import type { AutoRetryRecipient, CandidatBascule } from '../src/campaign/store.pg';
 import type { Etage } from '../src/campaign/etages';
 
-const R = (id: string, campaignId = `c-${id}`): AutoRetryRecipient => ({ id, campaignId, tenantId: `t-${id}`, contactId: `ct-${id}`, toE164: `+3360${id}` });
+const R = (id: string, campaignId = `c-${id}`): AutoRetryRecipient => ({
+  id, campaignId, tenantId: `t-${id}`, contactId: `ct-${id}`, toE164: `+3360${id}`,
+  // Défaut de la migration 0134 : la campagne REFUSE de rattraper hors horaires. Les huit cas
+  // historiques ci-dessous posent donc tous la question à `fenetreOuverte`, dont le défaut du gabarit
+  // répond « ouvert » : leur comportement est rigoureusement celui d'avant.
+  rattrapageHorsHoraires: false,
+});
 
 /** Un candidat à la bascule : le destinataire de `R`, plus tout ce que la règle demande. */
 const CHAINE_2: Etage[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }];
@@ -32,6 +38,7 @@ function deps(over: Partial<RetrySweepDeps> = {}): {
     enqueueRun: async (id) => { enqueued.push(id); },
     flagUnreachable: async (tenantId, e164) => { flagged.push([tenantId, e164]); },
     noterJoignabilite: async (tenantId, contactId, joignable) => { notes.push([tenantId, contactId, joignable]); },
+    fenetreOuverte: async () => true,
     listCandidatsBascule: async () => [],
     basculerEtage: async (id, rang) => { bascules.push([id, rang]); return true; },
     ...over,

@@ -164,7 +164,17 @@ const SANS_REPLI_SQL = `not exists (select 1 from campaign_etages ce where ce.ca
  * substituer : la mémoire est posée sur la ligne `contacts`, et retrouver un contact par son numéro serait
  * une seconde définition de son identité, là où `campaign_recipients.contact_id` la porte déjà.
  */
-export interface AutoRetryRecipient { id: string; campaignId: string; tenantId: string; contactId: string; toE164: string; }
+export interface AutoRetryRecipient {
+  id: string; campaignId: string; tenantId: string; contactId: string; toE164: string;
+  /**
+   * L'option `rattrapage_hors_horaires` de SA campagne (migration 0134).
+   *
+   * 🔴 ELLE EST PORTÉE PAR LE DESTINATAIRE, PAS PAR LE BALAYAGE, et c'est ce qui la rend juste : un
+   * tour de balayage sert les destinataires de PLUSIEURS campagnes, dont les réglages diffèrent. Un
+   * drapeau posé sur le balayage rendrait le réglage de la première campagne opposable à toutes.
+   */
+  rattrapageHorsHoraires: boolean;
+}
 
 /**
  * Un destinataire en échec dont la campagne porte un REPLI, avec tout ce que la règle de bascule demande.
@@ -632,8 +642,11 @@ export class PgCampaignRepo {
    * inclure delivery_status (même définition d'échec que getCampaignDetail/les stats). Scopé par la jointure.
    */
   private async listAutoRetry(cond: string, params: unknown[], limit: number): Promise<AutoRetryRecipient[]> {
-    const res = await this.pool.query<{ id: string; campaign_id: string; tenant_id: string; contact_id: string; to_e164: string }>(
-      `select r.id, r.campaign_id, c.tenant_id, r.contact_id, r.to_e164
+    const res = await this.pool.query<{
+      id: string; campaign_id: string; tenant_id: string; contact_id: string; to_e164: string;
+      rattrapage_hors_horaires: boolean;
+    }>(
+      `select r.id, r.campaign_id, c.tenant_id, r.contact_id, r.to_e164, c.rattrapage_hors_horaires
        from campaign_recipients r
          join campaigns c on c.id = r.campaign_id
          join tenant_settings ts on ts.tenant_id = c.tenant_id
@@ -643,7 +656,10 @@ export class PgCampaignRepo {
        limit ${limit}`,
       params,
     );
-    return res.rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164 }));
+    return res.rows.map((r) => ({
+      id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164,
+      rattrapageHorsHoraires: r.rattrapage_hors_horaires,
+    }));
   }
 
   /**
@@ -669,9 +685,10 @@ export class PgCampaignRepo {
     const res = await this.pool.query<{
       id: string; campaign_id: string; tenant_id: string; contact_id: string; to_e164: string;
       error_code: number | null; etage_courant: number; retry_count: number; reessayer: boolean;
+      rattrapage_hors_horaires: boolean;
     }>(
       `select r.id, r.campaign_id, c.tenant_id, r.contact_id, r.to_e164,
-              r.error_code, r.etage_courant, r.retry_count, c.reessayer
+              r.error_code, r.etage_courant, r.retry_count, c.reessayer, c.rattrapage_hors_horaires
        from campaign_recipients r
          join campaigns c on c.id = r.campaign_id
        where (${RECIPIENT_FAILED_SQL})
@@ -682,6 +699,7 @@ export class PgCampaignRepo {
     const chaines = await this.lireChainesDe([...new Set(res.rows.map((r) => r.campaign_id))]);
     return res.rows.map((r) => ({
       id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, contactId: r.contact_id, toE164: r.to_e164,
+      rattrapageHorsHoraires: r.rattrapage_hors_horaires,
       codeErreur: r.error_code,
       chaine: chaines.get(r.campaign_id) ?? [],
       rangCourant: r.etage_courant,

@@ -1079,6 +1079,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/cache-court.ts` | le micro-cache du dépôt : durée de vie ET mutualisation des appels en vol |
 | `src/lib/http-get.ts` | une lecture GET injectable, testable sans réseau |
 | `src/lib/heures-ouvrees.ts` -> `prochaineOuverture` | « quand est le prochain créneau ouvert ? », pour le bloc Attente et les campagnes |
+| `src/lib/heures-ouvrees.ts` -> `fenetreDeRattrapageOuverte` | « a-t-on le droit de RATTRAPER maintenant ? ». 🔴 Autre question que `business_hours_only` (l'envoi initial, côté moteur), et une semaine entièrement fermée y rend `true` : sinon ses rattrapages gèlent pour toujours |
 | `src/lib/adresses-publiques.ts` | les adresses que le produit DISTRIBUE (`/r/`, `/m/`, `/w/`) |
 | `src/agent/devise.ts` | dollars du Gateway -> micro-euros, en UN endroit |
 | `src/agent/modeles.ts` | les modèles proposables et leur tarif client : le menu ET la garde d'écriture y lisent |
