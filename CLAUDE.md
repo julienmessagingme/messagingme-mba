@@ -79,17 +79,24 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0134**, le 2026-09-12 (la CHAÎNE d'étages : `campaign_etages`, `campaign_envois`,
-`campaign_recipients.etage_courant`, et les cinq réglages de l'assistant sur `campaigns`).
+**Dernière appliquée : 0136**, le 2026-09-12 au soir (`campaigns.tour_de_role_rang` passe de `smallint` à
+`integer`, ce qui retire le repliage `% 32767` du tour de rôle).
 
-⚠️ **CE CHIFFRE VIENT DE JULIEN, QUI A INTERROGÉ LA BASE LE 2026-09-12**, pas d'une lecture faite en écrivant
-cette ligne. C'est la parade habituelle appliquée dans l'autre sens : le fichier avait dérivé d'une SIXIÈME
-fois (il annonçait 0131 quand la base portait 0134), et il a été corrigé par la base, pas par le souvenir.
+⚠️ **LU EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE.** Le fichier avait dérivé une SIXIÈME fois
+dans la journée (il annonçait 0131 quand la base portait 0134). Le moment où cette ligne se met à jour est
+l'exécution de `migrate`, et il faut la RELIRE juste après, jamais après avoir écrit le fichier SQL.
 
-🔴 **0135 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`campaign_etages.email_champ` : QUELLE clé du jsonb
-`contacts.fields` porte l'adresse e-mail d'un étage). Elle passe **AVANT** le déploiement, sans exception :
-`insertCampaignRow` l'ÉCRIT dès qu'une chaîne porte un étage e-mail, et `lireChainesDe` la LIT sur le chemin
-de chaque run. Sans elle, toute création de campagne tombe en `42703`, ce qu'aucun `?? null` ne rattrape.
+Avant elle : **0135** le même soir (`campaign_etages.email_champ` : QUELLE clé du jsonb `contacts.fields`
+porte l'adresse e-mail d'un étage). 🔴 **Il n'y a PAS de colonne `contacts.email`, et c'est délibéré** :
+l'adresse vit dans le jsonb depuis 0002, sous une clé que le client nomme lui-même, et le dépôt porte la
+trace d'un espace qui l'appelait « mail » quand un autre disait « email » (`src/workflow/wiring.ts`,
+2026-08-25). Ajouter une colonne aurait créé une SECONDE vérité à côté du jsonb, et le jour où les deux
+divergent, c'est la neuve, vide, que la campagne aurait lue.
+
+Avant elle : **0134** (la CHAÎNE d'étages : `campaign_etages`, `campaign_envois`,
+`campaign_recipients.etage_courant`, et les cinq réglages de l'assistant sur `campaigns`), et **0133**
+(`contacts.whatsapp_joignable` : garder le verdict qu'on calculait déjà et qu'on jetait dans HubSpot).
+**Prochaine libre = 0137.**
 
 🔴 **0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`campaigns.tour_de_role_rang` passe de `smallint` à
 `integer`). Elle RETIRE un repliage, et c'est la vraie raison : le `% 32767` qui protégeait le `smallint`
