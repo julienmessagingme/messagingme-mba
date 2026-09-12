@@ -115,11 +115,16 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
   // et `terminal` se joue en NE FAISANT RIEN, le destinataire restant `failed` sans que plus personne
   // ne le reprenne. Écrire un second chemin de réessai ici en ferait deux qui doivent rester d'accord.
   //
-  // 🔴 CETTE PASSE EST DORMANTE TANT QU'UNE CAMPAGNE NE PEUT PAS AVOIR PLUS D'UN ÉTAGE, et il faut le
-  // dire : `insertCampaignRow` n'écrit que le rang 1, et le moteur d'envoi ne lit pas encore
-  // `etage_courant`. Le jour où une chaîne à deux étages sera créable, c'est le MOTEUR qui devra
-  // apprendre à envoyer le contenu de l'étage courant, sans quoi une bascule ferait renvoyer le
-  // contenu de l'étage 1 sur le canal de l'étage 1. La bascule est prête, l'envoi ne l'est pas.
+  // 🔴 CETTE PASSE EST DORMANTE TANT QU'UNE CAMPAGNE NE PEUT PAS AVOIR PLUS D'UN ÉTAGE : `insertCampaignRow`
+  // n'écrit que le rang 1. Ce qui a CHANGÉ le 2026-09-12, c'est l'autre bout : le moteur LIT désormais
+  // `etage_courant` (`etageServable`, `src/campaign/engine.ts`), donc une bascule ne peut plus faire
+  // renvoyer le contenu de l'étage 1 sur le canal de l'étage 1, c'est-à-dire le message qui vient
+  // d'échouer.
+  //
+  // ⚠️ MAIS LE MOTEUR NE SAIT TOUJOURS PAS ENVOYER UN SECOND ÉTAGE, il le REFUSE avec sa raison : un run
+  // est construit sur les colonnes de `campaigns`, qui sont le contenu du rang 1 (sender, plafond de
+  // débit, pré-lectures de template). Basculer aujourd'hui mène donc à un échec LISIBLE, plus à un envoi
+  // faux. Servir le second étage est un lot à part.
   for (const c of await deps.listCandidatsBascule()) {
     try {
       const geste = decider(c);

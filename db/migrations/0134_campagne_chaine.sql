@@ -120,12 +120,17 @@ create index if not exists campaign_envois_message_id_idx on campaign_envois (me
 -- verrou `etage_courant < $2`, qui empêche deux balayages concurrents de faire avancer deux fois le
 -- même destinataire.
 --
--- 🔴 MAIS LE MOTEUR D'ENVOI NE LA LIT PAS ENCORE, ET C'EST UN PIÈGE ARMÉ. La bascule marque l'étage,
--- personne ne s'en sert pour choisir le contenu à envoyer. Aujourd'hui c'est inoffensif : aucune
--- campagne ne peut avoir plus d'un étage, l'assistant qui permettra d'en créer n'existe pas. Le jour
--- où il existera, une bascule renverrait le contenu de l'étage 1 sur le canal de l'étage 1, c'est-à-dire
--- exactement le message qui vient d'échouer. La lecture doit être posée AVANT que l'assistant ne
--- rende une chaîne créable, pas après.
+-- ⚠️ ET ELLE EST DÉSORMAIS LUE PAR LE MOTEUR D'ENVOI (`etageServable`, `src/campaign/engine.ts`, lot du
+-- 2026-09-12). Une version de ce commentaire annonçait un « piège armé » : la bascule marquait l'étage et
+-- personne ne s'en servait pour choisir le contenu, si bien qu'un repli aurait renvoyé le contenu de
+-- l'étage 1 sur le canal de l'étage 1, c'est-à-dire le message qui venait d'échouer. Ce n'est plus le cas.
+--
+-- 🔴 CE QUE LE MOTEUR EN FAIT, ET CE QU'IL N'EN FAIT PAS. Un run est construit sur les colonnes de
+-- `campaigns`, qui SONT le contenu du rang 1 (la reprise ci-dessus et `insertCampaignRow` écrivent les
+-- deux depuis une seule valeur) : il sait donc servir le rang 1, et lui seul. Un destinataire posé à un
+-- rang supérieur est REFUSÉ avec sa raison, et sa tentative est journalisée au vrai rang et au vrai canal.
+-- Servir réellement un second étage demande un run capable d'envoyer sur un AUTRE canal que celui de sa
+-- campagne : c'est un lot à part, et rien ne le presse tant qu'aucun chemin de création n'écrit un rang 2.
 alter table campaign_recipients add column if not exists etage_courant smallint not null default 1;
 
 -- Les réglages de l'assistant.

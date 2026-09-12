@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign } from '../src/campaign/engine';
+import { runCampaign, etageServable } from '../src/campaign/engine';
 import type {
   MessageSender,
   RecipientStore,
@@ -10,6 +10,7 @@ import type {
   TentativeEnvoi,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating, GuardrailThresholds } from '../src/campaign/types';
+import type { Etage } from '../src/campaign/etages';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 import { MetaApiError } from '../src/meta/errors';
 import type { MotifDePause } from '../src/campaign/pause';
@@ -1198,5 +1199,133 @@ describe('runCampaign : le journal des tentatives', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
     const report = await runCampaign(campaign, deps({ recipients }));
     expect(report).toMatchObject({ sent: 1 });
+  });
+});
+
+/**
+ * L'ÉTAGE QUE LE MOTEUR SERT, ET CELUI QU'IL REFUSE (dette du lot 3, soldée le 2026-09-12).
+ *
+ * 🔴 CE QUE CES TESTS PROTÈGENT : la bascule écrit `etage_courant`, le moteur ne le lisait pas. Un
+ * destinataire posé au rang 2 repartait donc avec le contenu du rang 1 sur le canal du rang 1, c'est-à-dire
+ * le message qui venait d'échouer. Aucun test ne pouvait le voir : `listPending` ne rendait même pas la
+ * colonne, donc le moteur n'avait pas de quoi se tromper, il avait de quoi ne rien savoir.
+ *
+ * ⚠️ ET CE QU'ILS NE PROTÈGENT PAS, pour qu'on ne le croie pas acquis : le moteur ne sait toujours pas
+ * ENVOYER un second étage. Il refuse, avec sa raison. Le jour où un run saura servir un autre canal que
+ * celui de sa campagne, c'est le refus qui devra tomber, et ces tests le diront en échouant.
+ */
+describe('runCampaign : l etage du destinataire', () => {
+  const collecteurEtage = (): { vues: TentativeEnvoi[]; noterEnvoi: EngineDeps['noterEnvoi'] } => {
+    const vues: TentativeEnvoi[] = [];
+    return { vues, noterEnvoi: async (t) => { vues.push(t); } };
+  };
+  const CHAINE: Etage[] = [
+    { rang: 1, canal: 'whatsapp', templateName: 'promo', templateLanguage: 'fr' },
+    { rang: 2, canal: 'rcs' },
+  ];
+
+  it('sans chaine, rien ne change : le rang 1 et le canal de la campagne', async () => {
+    const { vues, noterEnvoi } = collecteurEtage();
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({ recipients, sender, noterEnvoi }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(sender.calls).toEqual(['+33611']);
+    expect(vues[0]).toMatchObject({ rang: 1, canal: 'whatsapp', statut: 'sent' });
+  });
+
+  it('une chaine a UN seul etage envoie exactement comme avant', async () => {
+    const sender = new FakeSender();
+    const seul: Campaign = { ...campaign, chaine: [CHAINE[0]!] };
+    const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 1 }]);
+    const report = await runCampaign(seul, deps({ recipients, sender }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(sender.calls).toEqual(['+33611']);
+  });
+
+  it('🔴 un destinataire BASCULE au rang 2 n est PAS renvoye sur le canal du rang 1', async () => {
+    const { vues, noterEnvoi } = collecteurEtage();
+    const sender = new FakeSender();
+    const avecRepli: Campaign = { ...campaign, chaine: CHAINE };
+    const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 2 }]);
+    const report = await runCampaign(avecRepli, deps({ recipients, sender, noterEnvoi }));
+
+    // 🔴 LE CŒUR DE LA DETTE : aucun appel au sender. C'est ce qui distingue la bonne implémentation de
+    // celle qui lit le rang pour le journaliser et envoie quand même.
+    expect(sender.calls).toEqual([]);
+    expect(report).toMatchObject({ sent: 0, failed: 1 });
+    // Le refus est LISIBLE, pas un silence : c'est ce que verra le premier qui essaiera une chaîne.
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
+    expect(recipients.results.get('r1')!.error).toContain('étage 2');
+    // Et la ligne de journal porte le VRAI rang et le VRAI canal : au rang 1 / whatsapp, l'analytique par
+    // canal mettrait cet échec au crédit d'un canal qui n'a rien tenté.
+    expect(vues[0]).toMatchObject({ rang: 2, canal: 'rcs', statut: 'failed' });
+  });
+
+  it('la presence d un repli ne bloque PAS le rang 1', async () => {
+    const sender = new FakeSender();
+    const avecRepli: Campaign = { ...campaign, chaine: CHAINE };
+    const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 1 }]);
+    const report = await runCampaign(avecRepli, deps({ recipients, sender }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(sender.calls).toEqual(['+33611']);
+  });
+
+  it('un faux sans etageCourant vaut le rang 1, jamais un refus', async () => {
+    const sender = new FakeSender();
+    const avecRepli: Campaign = { ...campaign, chaine: CHAINE };
+    // `rec()` ne pose pas `etageCourant` : c'est le câblage de tous les tests d'avant ce lot, et le
+    // traiter comme un rang inconnu les aurait tous rendus rouges.
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(avecRepli, deps({ recipients, sender }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+  });
+
+  it('🔴 un etage RETIRE de la chaine refuse, il ne retombe pas sur le contenu de la campagne', async () => {
+    const { vues, noterEnvoi } = collecteurEtage();
+    const sender = new FakeSender();
+    // La chaîne ne porte plus que le rang 1, le destinataire est resté au rang 2.
+    const ampute: Campaign = { ...campaign, chaine: [CHAINE[0]!] };
+    const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 2 }]);
+    const report = await runCampaign(ampute, deps({ recipients, sender, noterEnvoi }));
+    expect(sender.calls).toEqual([]);
+    expect(report).toMatchObject({ sent: 0, failed: 1 });
+    expect(recipients.results.get('r1')!.error).toContain('absent de la chaîne');
+    expect(vues[0]).toMatchObject({ rang: 2, statut: 'failed' });
+  });
+});
+
+/**
+ * `etageServable` seule. Elle décide d'un envoi sur le chemin le plus chaud du produit : l'éprouver à
+ * travers un run entier ne dirait pas ce qu'elle répond, seulement ce qui en sort.
+ */
+describe('etageServable', () => {
+  it('chaine absente -> rang 1, canal de la campagne, aucun refus', () => {
+    expect(etageServable({}, undefined)).toEqual({ rang: 1, canal: 'whatsapp', refus: null });
+    expect(etageServable({ channel: 'rcs' }, undefined)).toEqual({ rang: 1, canal: 'rcs', refus: null });
+  });
+
+  it('chaine vide -> le comportement d avant, meme si le destinataire porte un rang 2', () => {
+    // ⚠️ Une campagne d'avant 0134 non reprise n'a pas d'étage : lui refuser l'envoi arrêterait un parc
+    // entier pour une colonne qu'on vient d'ajouter.
+    expect(etageServable({ chaine: [] }, 2)).toEqual({ rang: 1, canal: 'whatsapp', refus: null });
+  });
+
+  it('🔴 une chaine DESORDONNEE ne change pas la reponse : c est le rang qui compte, pas la position', () => {
+    const desordre: Etage[] = [{ rang: 2, canal: 'rcs' }, { rang: 1, canal: 'whatsapp' }];
+    // Une implémentation qui lirait `chaine[0]` rendrait ici l'étage RCS pour un destinataire au rang 1,
+    // donc refuserait un envoi parfaitement servable. La lecture SQL ne garantit aucun ordre.
+    expect(etageServable({ chaine: desordre }, 1)).toEqual({ rang: 1, canal: 'whatsapp', refus: null });
+  });
+
+  it('🔴 une chaine TROUEE (rangs 1 et 3) refuse le rang 3 sans se tromper de canal', () => {
+    const trouee: Etage[] = [{ rang: 1, canal: 'whatsapp' }, { rang: 3, canal: 'email' }];
+    const v = etageServable({ chaine: trouee }, 3);
+    // Le canal rendu est celui de l'ÉTAGE (email), pas celui de la campagne : c'est lui que le journal
+    // écrira, et une implémentation qui recopierait `campaign.channel` le dirait « whatsapp ».
+    expect(v).toMatchObject({ rang: 3, canal: 'email' });
+    expect(v.refus).toContain('email');
+    // Et le rang ABSENT de la chaîne est un refus distinct, pas un repli sur le rang 1.
+    expect(etageServable({ chaine: trouee }, 2)).toMatchObject({ rang: 2, refus: expect.stringContaining('absent') });
   });
 });

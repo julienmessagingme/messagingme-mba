@@ -1280,8 +1280,13 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
       to_e164: string;
       resolved_params: string[];
       status: Recipient['status'];
+      etage_courant: number;
     }>(
-      `select id, contact_id, to_e164, resolved_params, status
+      // 🔴 `etage_courant` EST RELU ICI PARCE QUE C'EST LE MOTEUR QUI DÉCIDE QUOI ENVOYER. Il a manqué
+      // pendant un lot : la bascule faisait avancer le rang, `listPending` ne le rendait pas, et le run
+      // repartait donc sur le contenu du rang 1. La colonne est `not null default 1` (migration 0134),
+      // aucune ligne ne peut la rendre nulle.
+      `select id, contact_id, to_e164, resolved_params, status, etage_courant
        from campaign_recipients
        where campaign_id = $1 and status = 'pending'
        order by id`,
@@ -1293,6 +1298,7 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
       toE164: r.to_e164,
       resolvedParams: r.resolved_params,
       status: r.status,
+      etageCourant: r.etage_courant,
     }));
   }
 

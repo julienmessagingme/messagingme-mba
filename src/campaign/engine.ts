@@ -14,7 +14,7 @@ import type { BusinessHours } from '../workflow/conditions';
 import { prochaineOuverture } from '../lib/heures-ouvrees';
 import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
-import { RANG_INITIAL, type CanalEtage } from './etages';
+import { RANG_INITIAL, etageAuRang, type CanalEtage } from './etages';
 
 /**
  * UNE TENTATIVE D'ENVOI, telle qu'on la journalise (migration 0134).
@@ -318,6 +318,55 @@ export function suffixesPourDestinataire(
   return { suffixesBoutons: Object.fromEntries(boutons.map((i) => [i, suffixe])) };
 }
 
+/**
+ * L'ÉTAGE OÙ EST LE DESTINATAIRE, ET CE QUE CE RUN SAIT EN FAIRE (migration 0134).
+ *
+ * 🔴 CE RUN EST CONSTRUIT SUR LES COLONNES DE `campaigns`, ET CES COLONNES SONT LE CONTENU DU RANG 1.
+ * La migration 0134 a repris l'une dans l'autre, et `insertCampaignRow` écrit les deux depuis une seule
+ * valeur. Tout ce qu'un run prépare UNE FOIS en dépend : le sender (WhatsApp ou canal), le plafond de
+ * débit (`plafondDuCanal` sur `campaign.channel`), le carousel et l'en-tête média relus sur
+ * `campaign.templateName`. Un run sait donc servir le rang 1, et lui seul.
+ *
+ * 🔴 D'OÙ LE REFUS PLUTÔT QUE L'ENVOI SUR UN RANG SUPÉRIEUR. Sans cette lecture, un destinataire qu'une
+ * bascule vient de poser au rang 2 recevait le contenu du rang 1 sur le canal du rang 1, c'est-à-dire
+ * EXACTEMENT le message qui vient d'échouer. Le refus, lui, est explicite : échec avec sa raison, et une
+ * ligne de journal au VRAI rang et au VRAI canal. Le premier qui essaiera une chaîne le verra tout de
+ * suite, au lieu de croire son repli parti.
+ *
+ * ⚠️ CE N'EST PAS LE MOTEUR DE REPLI, ET IL NE FAUT PAS LE LIRE COMME TEL. Servir un second étage demande
+ * un run capable d'envoyer sur un AUTRE canal que celui de sa campagne : sender, plafond de débit, quality
+ * gate (notion Meta, sans équivalent RCS), pré-lectures de template, journal du fil et mémoire de
+ * joignabilité en dépendent tous. C'est un lot à part, et rien ne presse tant qu'aucun chemin de création
+ * n'écrit un second étage (`insertCampaignRow` n'écrit que le rang 1).
+ *
+ * ⚠️ CHAÎNE ABSENTE OU VIDE = le comportement d'avant, mot pour mot : rang 1, canal de la campagne. C'est
+ * le cas de tout le parc (campagnes d'avant 0134 non reprises, faux des tests qui ne câblent pas `chaine`).
+ */
+export function etageServable(
+  campaign: Pick<Campaign, 'channel' | 'chaine'>,
+  rangCourant: number | undefined,
+): { rang: number; canal: CanalEtage; refus: string | null } {
+  const canalCampagne: CanalEtage = campaign.channel ?? 'whatsapp';
+  const chaine = campaign.chaine ?? [];
+  if (chaine.length === 0) return { rang: RANG_INITIAL, canal: canalCampagne, refus: null };
+
+  const rang = rangCourant ?? RANG_INITIAL;
+  const etage = etageAuRang(chaine, rang);
+  // L'étage a été retiré de la chaîne pendant que ce destinataire y était. On ne devine PAS un contenu de
+  // remplacement : on ne sait plus ce qu'on devait lui envoyer, et le rang reste celui où il est, pour que
+  // le journal dise où il s'est arrêté.
+  if (etage === null) return { rang, canal: canalCampagne, refus: `étage ${rang} absent de la chaîne de cette campagne` };
+
+  if (rang !== RANG_INITIAL) {
+    return {
+      rang,
+      canal: etage.canal,
+      refus: `étage ${rang} (${etage.canal}) : ce run n'envoie que l'étage ${RANG_INITIAL} (${canalCampagne})`,
+    };
+  }
+  return { rang, canal: etage.canal, refus: null };
+}
+
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {
   const now = deps.now ?? (() => Date.now());
   const t = deps.thresholds ?? DEFAULT_THRESHOLDS;
@@ -393,14 +442,15 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
    * des destinataires ne connaît pas ; l'inverse (une marque sans sa ligne de journal) ne coûte qu'une
    * statistique, et c'est le sens de perte qu'on accepte.
    *
-   * ⚠️ `rang: RANG_INITIAL` EN DUR, ET C'EST EXACT AUJOURD'HUI : le moteur ne lit pas encore la chaîne,
-   * toute campagne n'a qu'un étage, donc toute tentative est au premier. C'est le moteur de bascule qui
-   * fera avancer ce rang, et c'est par les lecteurs de `RANG_INITIAL` qu'on retrouvera cette ligne.
+   * 🔴 LE RANG ET LE CANAL VIENNENT DE L'ÉTAGE DU DESTINATAIRE, plus d'un `RANG_INITIAL` en dur ni de
+   * `campaign.channel`. Ce commentaire a affirmé le contraire, et c'était exact tant que rien n'écrivait
+   * `etage_courant` ; depuis que la bascule l'écrit, une tentative refusée au rang 2 se serait journalisée
+   * « rang 1, canal de la campagne », c'est-à-dire au crédit du canal qui n'a rien tenté. Le journal est la
+   * SEULE source de l'analytique par canal : une ligne fausse ici est un chiffre faux à l'écran.
    *
-   * ⚠️ LE CANAL VIENT DE `campaign.channel`, PAS DE LA CHAÎNE, pour la même raison : lire la chaîne ici
-   * laisserait croire que le moteur la suit. Les deux disent la même chose (la migration 0134 a repris
-   * l'un dans l'autre, et la création écrit les deux depuis une seule valeur), et c'est la colonne que ce
-   * moteur-ci consulte réellement pour décider par où il envoie.
+   * ⚠️ `etageServable` est rappelée ici plutôt que passée en paramètre : elle est PURE et parcourt au plus
+   * trois étages. Un paramètre de plus sur les cinq sites de résolution serait une liste à tenir à la main,
+   * et c'est exactement ce que ce point de passage unique existe pour éviter.
    */
   const resoudre = async (
     r: Recipient,
@@ -410,13 +460,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // `contactId` absent : rien à rattacher, et la colonne est `not null`. Les faux des tests en sont
     // dépourvus, la production ne l'est jamais (le destinataire naît d'un contact).
     if (!deps.noterEnvoi || !r.contactId) return;
+    const etage = etageServable(campaign, r.etageCourant);
     try {
       await deps.noterEnvoi({
         campaignId: campaign.id,
         recipientId: r.id,
         contactId: r.contactId,
-        rang: RANG_INITIAL,
-        canal: campaign.channel ?? 'whatsapp',
+        rang: etage.rang,
+        canal: etage.canal,
         statut: resultat.status === 'skipped' ? 'saute' : resultat.status,
         ...(resultat.messageId !== undefined ? { messageId: resultat.messageId } : {}),
         ...(resultat.errorCode !== undefined ? { errorCode: resultat.errorCode } : {}),
@@ -592,6 +643,16 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
 
     // Claim atomique : si un autre run/worker a déjà pris ce destinataire, on passe.
     if (!(await deps.recipients.claim(r.id))) continue;
+
+    // 🔴 L'ÉTAGE DU DESTINATAIRE, ET LE REFUS S'IL N'EST PAS CELUI QUE CE RUN SERT (cf. `etageServable`).
+    // Placé APRÈS le claim parce qu'il faut avoir réservé le destinataire pour le marquer, et AVANT le
+    // frein de cadence parce qu'un refus n'occupe aucun créneau d'envoi : il ne part rien.
+    const etageDuTour = etageServable(campaign, r.etageCourant);
+    if (etageDuTour.refus !== null) {
+      await resoudre(r, { status: 'failed', error: etageDuTour.refus });
+      report.failed += 1;
+      continue;
+    }
 
     if (deps.rateLimiter) await deps.rateLimiter.acquire();
 

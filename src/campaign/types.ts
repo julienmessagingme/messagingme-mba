@@ -69,6 +69,19 @@ export interface Recipient {
   toE164: string;
   resolvedParams: string[];
   status: RecipientStatus;
+  /**
+   * L'ÉTAGE OÙ EN EST CE DESTINATAIRE dans la chaîne de sa campagne
+   * (`campaign_recipients.etage_courant`, migration 0134).
+   *
+   * 🔴 ÉCRIT PAR LA BASCULE, LU PAR LE MOTEUR, et il a manqué le second pendant un lot : le balayage
+   * faisait avancer le rang, personne ne s'en servait pour décider quoi envoyer, donc un repli renvoyait
+   * le contenu du rang 1 sur le canal du rang 1, c'est-à-dire le message qui venait d'échouer.
+   *
+   * OPTIONNEL : absent veut dire « cet appelant ne le sait pas » (faux d'un test, câblage d'avant 0134),
+   * et vaut alors `RANG_INITIAL`. La colonne, elle, est `not null default 1` : la base ne peut pas
+   * l'omettre, seul un faux le peut.
+   */
+  etageCourant?: number;
 }
 
 export interface GuardrailThresholds {
