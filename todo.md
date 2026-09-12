@@ -34,10 +34,41 @@ Trois pièges à ne pas découvrir en route :
 - ⚠️ **Traduire coûte des jetons** sur la clé Gateway de l'espace (migration 0124), donc sur le
   crédit prépayé. Un espace à zéro ne peut pas traduire, et ça se dit à l'activation, pas au premier
   message muet.
-- 🔴 **Toute cette élégance tient à ce qu'il y ait EXACTEMENT deux langues.** Le jour où l'espagnol
-  arrive, « l'autre langue » cesse d'être défini, le bouton devient ambigu et la colonne unique ne
-  suffit plus. À écrire dans le code, pour que celui qui ajoute la troisième langue sache qu'il
-  casse une hypothèse au lieu de le découvrir.
+- 🔴 **« L'autre langue » NE SUFFIT PAS, et c'est la précision de Julien du 2026-09-12.** Nos deux
+  langues sont celles de la CONSOLE, pas celles des contacts : un client peut très bien écrire en
+  espagnol. La règle juste est donc dissymétrique.
+  - **En entrée** : traduire vers la langue du LECTEUR, quelle que soit la source. Aucun problème,
+    la cible est toujours connue.
+  - **En sortie** : la cible est la langue du CONTACT, qui n'est ni le français ni l'anglais dans ce
+    cas. « L'autre des deux » ne veut plus rien dire.
+
+### La langue du contact s'APPREND, elle ne se demande pas
+
+🔴 **On la détecte déjà, et on la jette.** `src/agent/llm/transcription.ts` rend `langue: string |
+null` (ligne 94) et la migration 0125 n'a créé aucune colonne pour la garder. Troisième fois dans la
+même journée qu'on trouve une donnée calculée puis perdue, après la joignabilité WhatsApp.
+
+Elle se retient donc sur la fiche du contact, alimentée par la transcription de ses vocaux et par la
+traduction de ses textes. Ni question posée au contact, ni choix imposé à l'opérateur.
+
+⚠️ **Le bouton NOMME sa cible** : « Traduire en espagnol », jamais « Traduire » tout court. Meilleur
+même quand la cible est évidente, parce que l'opérateur voit où part sa phrase avant de valider.
+Tant qu'on n'a rien appris du contact, il nomme la langue par défaut : il ne ment donc jamais.
+
+### Les vocaux (précision de Julien, 2026-09-12)
+
+Quand le client appuie sur **Transcrire** et que la traduction est active, la transcription doit
+arriver dans SA langue de console, **même si le vocal était en espagnol**.
+
+- 🔴 **On traduit la TRANSCRIPTION, pas le corps.** Le `body` d'un audio vaut `[audio]` ou la
+  légende : le traduire ne produirait rien. L'ordre est imposé, transcrire puis traduire, et ça
+  reste **un seul geste** pour l'opérateur.
+- 🔴 **NE PAS utiliser le mode « traduire » intégré des API de transcription.** Il ne cible que
+  l'anglais : s'en servir donnerait un comportement différent selon que l'opérateur est en FR ou en
+  EN, et **détruirait l'original**. On transcrit fidèlement, puis on traduit.
+- ⚠️ **Deux appels, donc deux fois le coût** sur le crédit prépayé pour un vocal traduit.
+- La transcription garde ce qui a été **dit** (en espagnol), la traduction vit dans sa colonne avec
+  sa langue. Même principe qu'en 0125 : la lecture d'un modèle n'est pas ce que le client a dit.
 
 ## Récap du jour dans le bot d'aide (demandé le 2026-09-12, à cadrer)
 
