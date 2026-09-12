@@ -139,30 +139,32 @@ describe.skipIf(!url)('le funnel par canal (0134)', () => {
     expect(f.parCanal.map((l) => l.canal)).toEqual(['whatsapp', 'rcs']);
   });
 
-  it('🔴 la reponse va au SEUL canal qui a livre, et le funnel GLOBAL ne la voit pas (manque connu)', async () => {
+  it('🔴 la reponse va au SEUL canal qui a livre, et le funnel GLOBAL la voit aussi', async () => {
     const f = await stats.getCampaignFunnel(tenantId, campaignId);
     // La somme des réponses par canal vaut 1, pas 2 : c'est le double-comptage que l'attribution empêche.
     expect(f.parCanal.reduce((n, l) => n + l.repondus, 0)).toBe(1);
 
     /**
-     * 🔴 ET LE FUNNEL GLOBAL, LUI, REND 0 : IL SOUS-COMPTE SUR UNE CAMPAGNE À CHAÎNE. Ce n'est pas une
-     * erreur de ce test, c'est un manque CONNU du funnel global, et l'écrire ici est le seul moyen de ne
-     * pas le redécouvrir par surprise.
+     * 🔴 ET LE FUNNEL GLOBAL REND 1 DEPUIS LE 2026-09-12. Ce test a affirmé `0` pendant un lot, avec sa
+     * raison : `entrantAttribue` comparait l'entrant à `c.channel`, le canal DÉCLARÉ de la campagne, qui
+     * cesse d'être la vérité du canal dès qu'une chaîne existe. La réponse arrivait en RCS, la campagne se
+     * déclarait WhatsApp, et deux chiffres du MÊME écran se contredisaient.
      *
-     * La cause : `entrantAttribue` filtre `m.channel = c.channel`, où `c.channel` est le canal DÉCLARÉ de
-     * la campagne. Dès qu'une chaîne existe, cette colonne cesse d'être la vérité du canal : la réponse
-     * est arrivée en RCS, la campagne se déclare WhatsApp, donc l'attribution globale ne la voit pas.
-     *
-     * ⚠️ POURQUOI ON L'ACCEPTE AUJOURD'HUI, et pourquoi ce test dit 0 plutôt que d'exiger 1 : AUCUNE
-     * campagne n'a de chaîne en production (l'assistant qui permettra d'en créer est le lot 4), donc le
-     * cas ne se produit pas ; et réparer l'attribution globale déplacerait les chiffres de TOUTES les
-     * campagnes existantes pour un cas qui n'existe pas encore. Un test qui affirmerait `1` affirmerait un
-     * futur qu'on n'a pas construit.
-     *
-     * 🔴 À FERMER AVANT QUE L'ASSISTANT PERMETTE DE CRÉER UNE CHAÎNE, sans quoi le premier client à
-     * utiliser un repli lira un funnel qui ment. Suivi dans `todo.md`.
+     * ⚠️ CE QUI A ÉTÉ ÉLARGI, ET CE QUI NE L'A PAS ÉTÉ. Le terme d'origine est intact : une campagne sans
+     * chaîne, ou d'avant la migration 0134 (donc sans aucune ligne de journal), compte exactement comme
+     * avant. Ce qui s'ajoute, ce sont les canaux sur lesquels une tentative est RÉELLEMENT PARTIE vers CE
+     * destinataire. C'est ce que le test voisin du même fichier vérifie dans l'autre sens : une suggestion
+     * RCS reçue par ailleurs, sur une campagne WhatsApp qui n'a jamais écrit en RCS, ne compte toujours pas.
      */
-    expect(f.replied).toBe(0);
+    expect(f.replied).toBe(1);
+
+    /**
+     * 🔴 ET L'INVARIANT ENTRE LES DEUX GRAINS REDEVIENT GÉNÉRAL : la somme des réponses par canal ne
+     * dépasse jamais le `replied` du funnel global. Il était borné aux campagnes mono-canal par le lot
+     * précédent, précisément à cause de ce manque ; c'est ICI, sur une campagne à DEUX canaux, qu'il
+     * fallait le remettre pour que sa réparation soit démontrée.
+     */
+    expect(f.parCanal.reduce((n, l) => n + l.repondus, 0)).toBeLessThanOrEqual(f.replied);
   });
 
   it('🔴 la somme des canaux DEPASSE le nombre de personnes, et c est juste', async () => {
@@ -277,21 +279,15 @@ describe.skipIf(!url)('le funnel par canal (0134)', () => {
     expect(f.parCanal[0]).toMatchObject({ canal: 'whatsapp', envois: 2, reussis: 2, repondus: 1 });
 
     /**
-     * 🔴 L'INVARIANT ENTRE LES DEUX GRAINS, DÉSORMAIS BORNÉ AUX CAMPAGNES MONO-CANAL, ET C'EST UN
-     * ABANDON QU'IL FAUT NOMMER PLUTÔT QUE DE LE LAISSER DISPARAÎTRE.
+     * 🔴 L'INVARIANT ENTRE LES DEUX GRAINS : la somme des réponses par canal ne dépasse jamais le
+     * `replied` du funnel global, parce que les deux chiffres sont côte à côte sur le même écran.
      *
-     * Ce que je gardais : « la somme des réponses par canal ne dépasse jamais le `replied` du funnel
-     * global », parce que les deux chiffres sont côte à côte sur le même écran.
-     *
-     * Ce que j'abandonne : sa forme GÉNÉRALE. Elle est FAUSSE sur une campagne à chaîne, et mesurée comme
-     * telle par le test à deux canaux plus haut (somme 1, `replied` 0). La raison n'est pas un défaut de
-     * la ventilation : les deux compteurs ne filtrent pas le même canal. `replied` compare l'entrant au
-     * canal DÉCLARÉ de la campagne (`c.channel`), la ventilation au canal de la TENTATIVE (`e.canal`).
-     * Sur une campagne mono-canal les deux coïncident, donc l'invariant tient ; sur une chaîne, non.
-     *
-     * ⚠️ C'est donc ICI qu'il est vérifié, sur une campagne dont on vient d'établir qu'elle n'a qu'un
-     * canal, et nulle part ailleurs. Le manque du funnel global est suivi dans `todo.md` ; le jour où il
-     * sera fermé, cet invariant redeviendra général et pourra remonter dans le test à deux canaux.
+     * ⚠️ IL A ÉTÉ BORNÉ AUX CAMPAGNES MONO-CANAL PENDANT UN LOT, et c'était honnête : il était FAUX sur
+     * une campagne à chaîne (somme 1, `replied` 0), parce que les deux compteurs ne filtraient pas le
+     * même canal, le global sur `c.channel` et la ventilation sur `e.canal`. Le manque a été fermé le
+     * 2026-09-12 et l'invariant est redevenu GÉNÉRAL : il est de nouveau vérifié sur le test à deux
+     * canaux, et le garder ici aussi n'est pas un doublon (une campagne mono-canal n'emprunte pas le
+     * terme élargi de l'attribution, donc ce cas-ci l'exerce sur l'autre moitié de la disjonction).
      */
     expect(f.parCanal.reduce((n, l) => n + l.repondus, 0)).toBeLessThanOrEqual(f.replied);
     expect(f.replied).toBe(1);

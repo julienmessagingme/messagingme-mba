@@ -560,48 +560,6 @@ tranche le 2026-09-01, « on s'encombre pas de l'ancienne version » et « tant 
 dans le vide ». Ce n'est donc pas une dette, c'est un arbitrage. Ce qui reste utile et pas cher : **dire au
 moment de publier combien de parcours vivants vont etre affectes**. Ne plus le faire les yeux fermes.
 
-## 🔴 Le funnel global SOUS-COMPTE les réponses arrivées sur un canal de repli (relevé au lot 2 de la chaîne, 2026-09-12)
-
-**Le symptôme.** Sur une campagne à CHAÎNE dont le premier étage échoue et dont le second aboutit, une
-réponse du contact n'est comptée nulle part dans `replied`. Mesuré sur une vraie base : échec WhatsApp puis
-succès RCS, réponse en RCS, la ventilation par canal rend bien `repondus: 1` sur la ligne RCS pendant que
-`replied` rend **0**. Les deux chiffres sont côte à côte sur le même écran.
-
-**La cause, lue dans le code et non déduite du symptôme.** `entrantAttribue` (`src/stats/store.pg.ts`)
-filtre l'entrant par `m.channel = c.channel`, où `c.channel` est le canal **DÉCLARÉ de la campagne**. C'est
-juste tant qu'une campagne n'a qu'un canal ; dès qu'il y a une chaîne, **`campaigns.channel` cesse d'être la
-vérité du canal** : le message est parti en RCS, la campagne se déclare WhatsApp, et l'attribution globale
-ne voit rien. La ventilation par canal, elle, compare au canal de la TENTATIVE (`e.canal`, migration 0134),
-et c'est pour ça qu'elle a raison là où le funnel global a tort.
-
-**Pourquoi c'est INOFFENSIF aujourd'hui, et pourquoi on n'y touche pas maintenant.** Aucune campagne n'a de
-chaîne en production : l'assistant qui permettra d'en créer est le lot 4, et la migration 0134 a repris tout
-le parc existant à UN seul étage. Le cas ne peut donc pas se produire. À l'inverse, réparer l'attribution
-globale déplacerait les chiffres de TOUTES les campagnes existantes, pour un cas qui n'existe pas encore.
-Décision de ne pas la toucher dans ce lot, prise sciemment.
-
-🔴 **ELLE DOIT ÊTRE FERMÉE AVANT QUE L'ASSISTANT DE CAMPAGNE PERMETTE DE CRÉER UNE CHAÎNE.** Ce n'est pas une
-préférence de calendrier : le jour où un client crée un repli, son premier funnel ment, et il ment DANS LE
-SENS QUI DÉCOURAGE (il montre moins de réponses que la réalité, donc il fait condamner le canal de repli qui
-vient précisément de sauver la conversation). Aucune correction ultérieure ne rattrape une décision déjà
-prise sur un chiffre faux.
-
-**Ce qui est déjà en place pour ne pas le redécouvrir par surprise :**
-
-- le test à deux canaux de `tests/integration/stats-funnel-canal.integration.test.ts` **affirme `replied` à
-  0** et porte la raison en commentaire. Il dit la vérité d'aujourd'hui ; le jour de la correction, c'est
-  lui qui deviendra rouge et rappellera le contrat ;
-- l'invariant « somme(repondus par canal) ≤ replied » est désormais **borné aux campagnes mono-canal** et
-  vérifié sur le test de relance, pas sur celui à deux canaux, où il est faux. Il redeviendra général une
-  fois cette entrée fermée.
-
-**La piste, sans l'avoir instruite.** Ancrer l'attribution globale sur le canal des tentatives plutôt que
-sur `campaigns.channel`, c'est-à-dire faire dépendre `entrantAttribue` du journal comme le fait déjà
-`entrantAttribueTentative`. ⚠️ À instruire pour de vrai avant de l'écrire : le journal ne contient que les
-tentatives postérieures à sa mise en service, donc une campagne plus ancienne n'a aucune ligne, et une
-attribution globale qui en dépendrait rendrait 0 sur tout l'historique. C'est exactement le genre de
-raisonnement qui s'est déjà trompé deux fois dans ce fichier : il se relit DANS le code avant d'être écrit.
-
 ## L'attribution des clics par campagne est APPROCHÉE, pas exacte (relevé au lot RCS, 2026-09-02)
 
 ⚠️ **Le titre de cette entrée était faux et il est corrigé le 2026-09-03** : il disait « les clics ne se

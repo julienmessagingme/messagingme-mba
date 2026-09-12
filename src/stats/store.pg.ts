@@ -317,24 +317,6 @@ const TZ = STATS_TZ;
  *  Plage `range` (from..to INCLUS, Europe/Paris) : bornes SQL calculées via bounds CTE (DST-safe),
  *  borne haute EXCLUSIVE = minuit Paris de (to+1). Params partout : [tenantId, from, to, TZ]. */
 /**
- * Un message ENTRANT attribué à CET envoi : même numéro, après l'envoi, et aucun envoi ultérieur au même
- * numéro entre les deux (sinon la réponse revient au dernier envoi, pas à celui-ci). C'est ce qui empêche
- * une même réponse d'être comptée sur deux campagnes.
- *
- * Sorti en fragment parce que le funnel s'en sert DEUX fois, pour « répondu » et pour « a tapé un bouton ».
- * Deux copies divergeraient à la première correction de l'attribution. Même doctrine que
- * `RECIPIENT_FAILED_SQL` (`src/campaign/echecs-sql.ts`).
- *
- * ⚠️ S'utilise UNIQUEMENT dans une requête où `c` est `campaigns` et `r` est `campaign_recipients`.
- * `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
- *
- * 🔴 `m.channel = c.channel` : l'entrant doit venir du MÊME tuyau que la campagne. Sans ça, un contact qui
- * ignorait le template mais tapait une suggestion RCS reçue par ailleurs était compté « a répondu » ET « a
- * tapé un bouton » de la campagne WhatsApp (une suggestion RCS est enregistrée avec `type='button'`).
- * L'opérateur jugeait son template sur le taux de clic d'un autre canal. Les deux colonnes sont
- * `not null default 'whatsapp'` depuis la migration 0056 : l'égalité simple suffit, pas de coalesce.
- */
-/**
  * « AUCUN DÉPART INTERCALÉ », lu sur les LIGNES DE DESTINATAIRE (`campaign_recipients`).
  *
  * C'est la garde d'origine, et elle porte tout l'historique : une ligne par contact et par campagne,
@@ -388,8 +370,30 @@ const aucunDepartJournalise = (instant: string, numero: string): string => `not 
                  and e2.sent_at < m.created_at
              )`;
 
+/**
+ * Un message ENTRANT attribué à CET envoi : même numéro, après l'envoi, sur un canal par lequel cet envoi
+ * est réellement passé, et aucun envoi ultérieur au même numéro entre les deux (sinon la réponse revient au
+ * dernier envoi, pas à celui-ci). C'est ce qui empêche une même réponse d'être comptée sur deux campagnes.
+ *
+ * Sorti en fragment parce que le funnel s'en sert DEUX fois, pour « répondu » et pour « a tapé un bouton ».
+ * Deux copies divergeraient à la première correction de l'attribution. Même doctrine que
+ * `RECIPIENT_FAILED_SQL` (`src/campaign/echecs-sql.ts`).
+ *
+ * ⚠️ CE COMMENTAIRE ÉTAIT ORPHELIN : il décrivait ce fragment depuis une position située au-dessus d'une
+ * AUTRE fonction, où le lecteur le rapportait au mauvais code. Il est revenu sur ce qu'il justifie.
+ *
+ * ⚠️ S'utilise UNIQUEMENT dans une requête où `c` est `campaigns` et `r` est `campaign_recipients`.
+ * `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
+ *
+ * 🔴 `predicatCanal` EST UN PRÉDICAT, PAS UNE COLONNE, et c'est ce qui a changé le 2026-09-12. Le principe
+ * ne bouge pas : l'entrant doit venir d'un tuyau par lequel CETTE campagne a écrit à CE contact. Sans cette
+ * garde, un contact qui ignorait le template mais tapait une suggestion RCS reçue par ailleurs était compté
+ * « a répondu » ET « a tapé un bouton » de la campagne WhatsApp (une suggestion RCS est enregistrée avec
+ * `type='button'`), et l'opérateur jugeait son template sur le taux de clic d'un autre canal. Ce qui bouge,
+ * c'est que « le tuyau de la campagne » n'est plus une colonne unique dès qu'une chaîne de repli existe.
+ */
 const entrantAttribueDepuis = (
-  envoi: { instant: string; numero: string; canal: string },
+  envoi: { instant: string; numero: string; predicatCanal: string },
   extra: string,
   gardes: string[],
 ): string => `${envoi.instant} is not null and exists (
@@ -398,20 +402,52 @@ const entrantAttribueDepuis = (
            where cv.tenant_id = c.tenant_id and not cv.is_test
              and cv.wa_id = regexp_replace(${envoi.numero}, '[^0-9]', '', 'g')
              and m.direction = 'in'
-             and m.channel = ${envoi.canal}
+             and (${envoi.predicatCanal})
              and m.created_at > ${envoi.instant} ${extra}
              and ${gardes.join('\n             and ')}
          )`;
 
 /**
- * L'attribution ancrée sur le DESTINATAIRE (`r`), telle qu'elle existe depuis l'origine du funnel.
+ * LE CANAL, VU DU FUNNEL GLOBAL : celui que la campagne DÉCLARE, ou n'importe lequel de ceux par lesquels
+ * elle a réellement écrit à CE destinataire.
  *
- * ⚠️ INCHANGÉE : une seule garde, sans exclusion, parce que l'ancrage EST la colonne comparée et que la
- * ligne s'auto-exclut donc toute seule. Y ajouter quoi que ce soit changerait les chiffres du funnel
- * global, qui ne sont pas le sujet de ce lot.
+ * 🔴 C'EST LA DETTE DU LOT 3, ET ELLE FAISAIT SE CONTREDIRE DEUX CHIFFRES DU MÊME ÉCRAN. `c.channel` cesse
+ * d'être la vérité du canal dès qu'une chaîne existe : la réponse arrive en RCS, la campagne se déclare
+ * WhatsApp, le funnel PAR CANAL la compte (il est ancré sur la tentative) et le funnel GLOBAL ne la voit
+ * pas. Mesuré en intégration : `somme(parCanal.repondus)` valait 1 et `replied` valait 0.
+ *
+ * 🔴 ÉLARGIR, JAMAIS REMPLACER, et la nuance vaut tous les chiffres déjà affichés. Le premier terme est
+ * celui d'avant, mot pour mot : aucune campagne existante ne voit son `replied` bouger. Le second n'ajoute
+ * que des canaux sur lesquels une tentative est RÉELLEMENT PARTIE vers CE destinataire (`statut = 'sent'`,
+ * `recipient_id = r.id`) ; sur une campagne sans chaîne, ces lignes portent justement `c.channel`, donc il
+ * n'ajoute rien du tout. Retirer la garde de canal au lieu de l'élargir aurait rendu au contraire toute
+ * réponse d'un autre tuyau, ce que la ligne du dessus existe pour empêcher.
+ *
+ * ⚠️ SON INDEX EXISTE DÉJÀ, et c'est pour ça que l'ordre des clauses est celui-ci : `campaign_id` puis
+ * `canal` sont les deux colonnes de `campaign_envois_campagne_idx` (migration 0134), dans cet ordre. Le
+ * filtre par destinataire et par statut se paie ensuite sur les quelques lignes retenues. Une clause
+ * ancrée d'abord sur `recipient_id`, elle, n'a aucun index : la table n'en porte pas sur cette colonne.
+ */
+const CANAL_DECLARE_OU_TENTE = `m.channel = c.channel or exists (
+               select 1 from campaign_envois e4
+               where e4.campaign_id = c.id
+                 and e4.canal = m.channel
+                 and e4.recipient_id = r.id
+                 and e4.statut = 'sent'
+             )`;
+
+/**
+ * L'attribution ancrée sur le DESTINATAIRE (`r`), celle du funnel GLOBAL.
+ *
+ * ⚠️ UNE SEULE GARDE D'INTERCALATION, sans exclusion, parce que l'ancrage EST la colonne comparée et que la
+ * ligne s'auto-exclut donc toute seule. C'est la garde qui est inchangée ; le CANAL, lui, a été élargi le
+ * 2026-09-12 (cf. `CANAL_DECLARE_OU_TENTE`), et ce commentaire a affirmé « INCHANGÉE » tout court, ce qui
+ * se lisait comme une interdiction d'y toucher. La règle exacte est : ne pas ajouter de garde ici (elle
+ * déplacerait les chiffres de toutes les campagnes), et élargir le canal seulement par ÉLARGISSEMENT,
+ * c'est-à-dire sans jamais retirer le terme d'origine.
  */
 export const entrantAttribue = (extra = ''): string =>
-  entrantAttribueDepuis({ instant: 'r.sent_at', numero: 'r.to_e164', canal: 'c.channel' }, extra, [
+  entrantAttribueDepuis({ instant: 'r.sent_at', numero: 'r.to_e164', predicatCanal: CANAL_DECLARE_OU_TENTE }, extra, [
     aucunDepartDestinataire('r.sent_at', 'r.to_e164'),
   ]);
 
@@ -446,7 +482,7 @@ export const entrantAttribue = (extra = ''): string =>
  * seconde forme du fragment, exactement ce qu'on cherche à éviter.
  */
 export const entrantAttribueTentative = (extra = ''): string =>
-  entrantAttribueDepuis({ instant: 'e.sent_at', numero: 'r.to_e164', canal: 'e.canal' }, extra, [
+  entrantAttribueDepuis({ instant: 'e.sent_at', numero: 'r.to_e164', predicatCanal: 'm.channel = e.canal' }, extra, [
     aucunDepartDestinataire('e.sent_at', 'r.to_e164', 'r.id'),
     aucunDepartJournalise('e.sent_at', 'r.to_e164'),
   ]);

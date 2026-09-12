@@ -62,18 +62,74 @@ describe('l attribution d une reponse a UN destinataire, l ancrage d origine', (
   it('🔴 reste ancree sur le destinataire, sans une trace de l ancrage par tentative', () => {
     expect(sql).toContain('and r2.sent_at > r.sent_at');
     expect(sql).not.toContain('e.sent_at');
-    expect(sql).not.toContain('e.canal');
+    // ⚠️ `e.canal` est l ancrage de l AUTRE variante. Le canal du funnel global se lit sur `e4`, un alias
+    // DISTINCT, precisement pour qu on ne puisse pas confondre les deux en relisant le SQL produit.
+    expect(sql).not.toContain('m.channel = e.canal');
   });
 
   it('🔴 n exclut RIEN, et c est correct : ancree sur sa propre colonne, la ligne s auto-exclut', () => {
-    // Y ajouter une exclusion ne reparerait rien et changerait les chiffres du funnel global, qui n est
-    // pas le sujet de ce lot.
+    // Y ajouter une exclusion ne reparerait rien et changerait les chiffres du funnel global.
     expect(sql).not.toContain('r2.id <>');
   });
 
-  it('n a QU UNE garde : les departs supplementaires n existent pas a ce grain', () => {
+  it('n a QU UNE garde d intercalation : les departs supplementaires n existent pas a ce grain', () => {
     // Une ligne par contact : le meme destinataire ne peut pas y etre parti deux fois, donc le journal
-    // n aurait rien a lui apprendre.
-    expect(sql).not.toContain('campaign_envois');
+    // n aurait rien a lui apprendre SUR LES DEPARTS INTERCALES. Il lui apprend le CANAL, c est une autre
+    // question et c est pourquoi la garde et le canal se testent separement.
+    //
+    // ⚠️ CE TEST DISAIT `not.toContain('campaign_envois')`, ET IL EST DEVENU FAUX LE 2026-09-12 : le
+    // funnel global lit desormais le journal pour connaitre les canaux REELLEMENT empruntes. Le cas
+    // qu il exercait est CONSERVE, en nommant les alias de la garde journalisee (`aucunDepartJournalise`)
+    // au lieu du nom de la table, qui n en etait qu un indice.
+    expect(sql).not.toContain('e2.statut');
+    expect(sql).not.toContain('r3.to_e164');
+    expect(sql).not.toContain('c3.tenant_id');
+  });
+});
+
+/**
+ * LE CANAL DU FUNNEL GLOBAL, ET LA DETTE QU IL SOLDE (2026-09-12).
+ *
+ * 🔴 CE QUE CES TESTS SEPARENT : trois ecritures passaient le jeu d avant. L egalite seule
+ * (`m.channel = c.channel`, le defaut : une reponse arrivee sur le canal de repli n est pas vue), le
+ * REMPLACEMENT par le journal (qui perdrait toute campagne d avant la migration 0134, sans ligne de
+ * journal), et l abandon pur et simple de la garde (qui rendrait n importe quelle reponse d un autre
+ * tuyau). Seule la DISJONCTION, bornee au destinataire et aux tentatives PARTIES, passe les quatre cas.
+ */
+describe('le canal du funnel global', () => {
+  const sql = entrantAttribue();
+
+  it('🔴 garde le terme d origine : aucun chiffre existant ne bouge', () => {
+    // C est la moitie qui protege le parc. Sans elle, une campagne d avant 0134 (aucune ligne de journal)
+    // perdrait TOUTES ses reponses d un coup.
+    expect(sql).toContain('m.channel = c.channel');
+  });
+
+  it('🔴 et n ajoute que les canaux REELLEMENT empruntes vers CE destinataire', () => {
+    expect(sql).toContain('e4.campaign_id = c.id');
+    expect(sql).toContain('e4.canal = m.channel');
+    // Borne au destinataire : sans elle, la reponse d un contact serait attribuee parce qu un AUTRE
+    // contact de la meme campagne a bascule sur ce canal.
+    expect(sql).toContain('e4.recipient_id = r.id');
+    // Bornee aux tentatives PARTIES : une tentative echouee n a rien envoye, donc n a rien pu provoquer.
+    expect(sql).toContain("e4.statut = 'sent'");
+  });
+
+  it('🔴 la disjonction est PARENTHESEE, sans quoi le `or` avalerait la requete entiere', () => {
+    // Un `or` non parenthese dans une conjonction de huit clauses rend vraie toute ligne qui satisfait le
+    // seul terme de droite : l attribution ne filtrerait plus ni le numero, ni le sens, ni l instant.
+    // C est une faute qui ne leve rien et qui se lit dans le texte du SQL, donc elle se teste ici.
+    expect(sql).toContain("and (m.channel = c.channel or exists (");
+  });
+
+  it('l ordre des clauses suit l index existant (campaign_id, canal)', () => {
+    // ⚠️ `campaign_envois` n a PAS d index sur `recipient_id` : commencer par lui serait un parcours de
+    // table a chaque ligne de funnel. Le contrat avec `campaign_envois_campagne_idx` se lit dans l ordre.
+    const i = sql.indexOf('e4.campaign_id');
+    const j = sql.indexOf('e4.canal');
+    const k = sql.indexOf('e4.recipient_id');
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(i);
+    expect(k).toBeGreaterThan(j);
   });
 });
