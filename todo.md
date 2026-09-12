@@ -1755,3 +1755,22 @@ segment de la phrase qui ne porte NI accent NI espace (« Réserver ma place » 
 contient la phrase entière contient forcément ce segment, donc le préfiltre ne peut RIEN perdre, et le
 comptage exact reste en JS sur les survivants. Repli quand aucun segment ne qualifie (phrase entièrement
 accentuée) : pas de préfiltre, comportement actuel.
+
+## 🟡 `campagne-assistant-recap` : la garde d'empilement est instable EN LOT (mesuré le 2026-09-12)
+
+Le cas « le tableau, le bloc de coût et le bouton sont EMPILÉS » échoue par intermittence, mais
+**seulement quand le fichier est lancé avec d'autres specs**, jamais seul.
+
+**Quantifié dans les deux sens avant de conclure**, comme la règle du dépôt l'exige : **4 exécutions
+vertes sur la référence** et **4 exécutions vertes avec le changement soupçonné**, en isolé. En lot,
+il tombe environ une fois sur deux, sur la référence comme sur le code modifié. Ce n'est donc pas une
+régression, et surtout ce n'est pas la faute du dernier qui l'a vu rougir.
+
+⚠️ **Ne PAS l'affaiblir pour le faire taire.** L'assertion qu'il porte est celle qui attrape trois
+blocs côte à côte, que ni `pasDeDebordement` ni `pasDeChevauchement` ne voient. C'est la garde la
+plus utile de l'écran.
+
+**La piste** : `boundingBox()` est lu sans attendre que la mise en page soit stabilisée. En lot, le
+serveur de dev sert plus lentement et la mesure part avant la fin du rendu. La réparation est une
+attente sur un état RENDU (les trois blocs visibles ET leur hauteur non nulle) avant de mesurer, pas
+un `waitForTimeout`.

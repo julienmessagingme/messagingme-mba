@@ -112,11 +112,17 @@ test('🔴 et elle apparait sur une CHAINE meme sans question de reessai', async
   await expect(page.getByTestId('bloc-rattrapage')).toBeVisible();
 });
 
-test('SMS est visible et non selectionnable', async ({ page }) => {
+// ⚠️ DEUX ENTRÉES SONT GRISÉES, ET POUR DEUX RAISONS DIFFÉRENTES qu'il vaut mieux ne pas confondre : le
+// SMS n'a aucune brique fournisseur, l'e-mail a toute sa chaîne SAUF un sender de campagne. Vu de
+// l'utilisateur c'est le même écran, donc le même traitement ; vu du code ce sont deux chantiers distincts.
+test('SMS et e-mail sont visibles et non selectionnables', async ({ page }) => {
   await surCanal(page);
   await page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' }).check();
   await expect(page.getByRole('radio', { name: /SMS/ })).toBeDisabled();
-  await expect(page.getByText('bientôt')).toBeVisible();
+  await expect(page.getByRole('radio', { name: /E-mail/ })).toBeDisabled();
+  // 🔴 DEUX, PAS UN : `getByText` seul passerait en mode strict si une seule entrée portait le badge, donc
+  // ce compte est ce qui empêche d'en dégriser une sans que ce test le dise.
+  await expect(page.getByText('bientôt')).toHaveCount(2);
 });
 
 test('un espace sans heures d ouverture le DIT au moment ou on coche', async ({ page }) => {
@@ -151,7 +157,10 @@ test('rien ne deborde ni ne se chevauche en 13 pouces', async ({ page }) => {
   await surCanal(page, { businessHours: {} });
   await page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' }).check();
   await page.getByRole('radio', { name: 'RCS en premier' }).check();
-  await page.getByRole('radio', { name: 'E-mail' }).check(); // troisieme niveau, l'ecran est plein
+  // ⚠️ L'E-MAIL NE SE COCHE PLUS (2026-09-12) : il est grisé tant qu'aucun sender de campagne ne sert ce
+  // canal. Ce test le CONSTATE au lieu de le cliquer, ce qui lui ajoute une garde utile : le jour où
+  // quelqu'un le rend cochable sans avoir écrit le sender, c'est ici que ça rougira.
+  await expect(page.getByRole('radio', { name: /E-mail/ })).toBeDisabled();
   await expect(page.getByTestId('bloc-rattrapage')).toBeVisible();
   await pasDeDebordement(page);
   await pasDeChevauchement(page, ['choix-canal', 'choix-ordre', 'choix-troisieme', 'bloc-rattrapage']);

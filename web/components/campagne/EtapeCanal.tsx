@@ -120,11 +120,19 @@ export function EtapeCanal({
               coche={etat.troisieme === 'aucun'}
               onCheck={() => onChange({ troisieme: 'aucun' })}
             />
+            {/* 🔴 L'E-MAIL EST GRISÉ, ET CE N'EST PAS UNE PRUDENCE : IL N'ENVERRAIT RIEN (2026-09-12).
+                La chaîne sait le décrire, `campaign_etages` sait le stocker, la bascule sait y arriver, et
+                `run-job` n'a AUCUN sender pour ce canal. Le laisser cochable offrait donc un étage qui se
+                configure, s'enregistre, et reste inerte sans qu'aucune erreur ne le dise nulle part.
+                ⚠️ Offert-et-inerte est PIRE que masqué : masqué, on cherche ailleurs ; offert, on croit
+                l'avoir. C'est le même arbitrage que le SMS juste en dessous, et il se règle pareil. */}
             <Entree
               groupe="troisieme"
               libelle="E-mail"
-              coche={etat.troisieme === 'email'}
-              onCheck={() => onChange({ troisieme: 'email' })}
+              badge="bientôt"
+              coche={false}
+              desactive
+              onCheck={() => {}}
             />
             {/* 🔴 LE SMS EST MONTRÉ, GRISÉ : montrer ce qui arrive vaut mieux que laisser croire que ça
                 n'existera jamais, et l'emplacement est celui où on le cherchera le jour venu. */}
