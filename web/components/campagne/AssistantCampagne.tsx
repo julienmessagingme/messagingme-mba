@@ -11,6 +11,8 @@ import {
   type TroisiemeNiveau,
 } from '@/lib/campagne-chaine';
 import { EtapeCanal } from '@/components/campagne/EtapeCanal';
+import { EtapeContenu } from '@/components/campagne/EtapeContenu';
+import type { RcsSuggestion, TemplateSummary, WorkflowSummary } from '@/lib/api';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE : cinq étapes, une question par écran, retour libre.
@@ -48,7 +50,53 @@ export interface EtatCampagne {
   /** « Le rattrapage peut-il partir en dehors des heures d'ouverture ? ». Défaut : non. */
   rattrapageHorsHoraires: boolean;
   cadence: Cadence;
+  /**
+   * Le contenu de chaque étage, PAR RANG.
+   *
+   * ⚠️ INDEXÉ PAR RANG, PAS PAR POSITION DANS UN TABLEAU. Changer l'ordre du repli (« RCS en premier »)
+   * réécrit la chaîne : un tableau ferait glisser le contenu WhatsApp sur l'étage RCS sans que rien ne le
+   * signale. Le rang est ce que la base stocke (`campaign_etages.rang`), c'est donc la bonne clé.
+   */
+  contenus: Record<number, ContenuEtage>;
+  /** Où va la conversation quand le contact répond. */
+  devenir: Devenir;
+  /** L'agent IA qui prend la main, quand `devenir` vaut `agent`. */
+  agentId: string | null;
+  /** La répartition, quand la conversation tombe dans l'Inbox. */
+  assignation: Assignation;
+  /** La personne, quand `assignation` vaut `personne`. */
+  assignationUserId: string | null;
 }
+
+/** Le contenu d'UN étage. Les champs inutiles au canal de l'étage restent absents. */
+export interface ContenuEtage {
+  /** `seul` = le contenu part tel quel ; `avec_scenario` = il ouvre un parcours. */
+  formule: 'seul' | 'avec_scenario';
+  templateName?: string;
+  templateLanguage?: string;
+  workflowId?: string;
+  texteRcs?: string;
+  suggestions: RcsSuggestion[];
+  emailTemplateId?: string;
+}
+
+/** Où va la conversation quand le contact répond. */
+export type Devenir = 'mba' | 'agent' | 'inbox';
+/** Comment la conversation se répartit, quand elle tombe dans l'Inbox. */
+export type Assignation = 'aucune' | 'personne' | 'tour_de_role';
+
+/** Ce que l'étape Contenu propose à choisir. Chargé par l'écran, jamais par l'étape. */
+export interface ReferencesContenu {
+  templates: TemplateSummary[];
+  workflows: WorkflowSummary[];
+  emailTemplates: Array<{ id: string; name: string }>;
+  membres: Array<{ id: string; nom: string }>;
+  agents: Array<{ id: string; label: string }>;
+}
+
+export const REFERENCES_VIDES: ReferencesContenu = {
+  templates: [], workflows: [], emailTemplates: [], membres: [], agents: [],
+};
 
 export const ETAT_INITIAL: EtatCampagne = {
   nom: '',
@@ -64,12 +112,32 @@ export const ETAT_INITIAL: EtatCampagne = {
    */
   rattrapageHorsHoraires: false,
   cadence: 'vite',
+  contenus: {},
+  /**
+   * 🔴 DÉFAUT « INBOX », ET C'EST LE COMPORTEMENT D'AUJOURD'HUI. Une réponse à une campagne arrive dans
+   * l'Inbox tant que personne n'a décidé autre chose. Prendre l'agent de Meta ou une IA par défaut
+   * ferait répondre une machine à la place de l'équipe sans que quiconque l'ait choisi.
+   */
+  devenir: 'inbox',
+  agentId: null,
+  /** Sans assignation : la conversation arrive dans « À traiter », comme aujourd'hui. */
+  assignation: 'aucune',
+  assignationUserId: null,
 };
 
 /** Ce que l'espace sait faire, lu une fois et passé aux étapes qui en dépendent. */
 export interface CapacitesEspace {
   /** Un agent RCS est rattaché à l'espace. Faux = l'entrée RCS est grisée AVEC sa raison. */
   rcsEnabled: boolean;
+  /**
+   * L'agent de Meta est-il activé sur cet espace ? Faux = l'entrée est grisée AVEC sa raison.
+   *
+   * ⚠️ IL VIT ICI ET NON DANS `ReferencesContenu`, où il a passé une heure : ce n'est pas quelque chose
+   * qu'on CHOISIT dans une liste, c'est ce que l'espace sait faire, exactement comme `rcsEnabled`. Deux
+   * objets qui décrivent tous deux les capacités de l'espace, c'est la question « lequel des deux ? » à
+   * chaque ajout suivant.
+   */
+  mbaEnabled: boolean;
   /** Les heures d'ouverture de l'espace, pour dire la vérité au moment où l'on coche. */
   businessHours?: BusinessHours;
 }
@@ -85,10 +153,13 @@ const TITRES: Record<EtapeAssistant, string> = {
 
 export function AssistantCampagne({
   capacites,
+  references = REFERENCES_VIDES,
   etapeInitiale = 'nom',
   etatInitial,
 }: {
   capacites: CapacitesEspace;
+  /** Ce que l'étape Contenu propose à choisir. Absent = tout est vide, et chaque cas vide le DIT. */
+  references?: ReferencesContenu;
   /** L'étape d'ouverture. Sert au retour sur un brouillon, et aux tests d'écran qui visent une étape. */
   etapeInitiale?: EtapeAssistant;
   etatInitial?: Partial<EtatCampagne>;
@@ -152,10 +223,27 @@ export function AssistantCampagne({
         />
       )}
 
-      {(etape === 'contenu' || etape === 'audience' || etape === 'recap') && (
-        // ⚠️ PLACEHOLDER ASSUMÉ, et il ne prétend rien : ces trois étapes sont livrées par les tâches
-        // suivantes. Un écran vide qui le DIT vaut mieux qu'un bouton « Créer » qui partirait sans que
-        // le contenu ni l'audience aient été demandés.
+      {etape === 'contenu' && (
+        <EtapeContenu
+          etat={etat}
+          chaine={chaine}
+          references={references}
+          capacites={capacites}
+          /**
+           * 🔴 `null` TANT QUE L'AUDIENCE N'EST PAS CHOISIE, et ce n'est pas un câblage manquant : elle
+           * est demandée à l'étape SUIVANTE. L'étape Contenu ne peut donc pas afficher un compte, et
+           * l'écran le dit plutôt que d'en inventer un.
+           */
+          nbDestinataires={null}
+          onChange={modifier}
+        />
+      )}
+
+      {(etape === 'audience' || etape === 'recap') && (
+        // ⚠️ PLACEHOLDER ASSUMÉ, et il ne prétend rien : ces DEUX étapes sont livrées par la tâche
+        // suivante (elles étaient trois avant que l'étape Contenu arrive, et ce commentaire le disait
+        // encore). Un écran vide qui le DIT vaut mieux qu'un bouton « Créer » qui partirait sans que
+        // l'audience ait été demandée.
         <section data-testid={`etape-${etape}`}>
           <h2 className="text-lg font-semibold text-ink-800">{TITRES[etape]}</h2>
           <p className="mt-2 text-sm text-ink-500">Cette étape arrive dans une prochaine livraison.</p>

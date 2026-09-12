@@ -3,8 +3,16 @@
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { getSettings, type BusinessHours } from '@/lib/api';
-import { AssistantCampagne, type CapacitesEspace, type EtapeAssistant } from '@/components/campagne/AssistantCampagne';
+import {
+  getSettings, listTemplates, listWorkflows, listEmailTemplates, listUsers,
+  type BusinessHours,
+} from '@/lib/api';
+import { listAgents } from '@/lib/api-agent';
+import { isCampaignEligible } from '@/lib/campaign-eligibility';
+import {
+  AssistantCampagne, REFERENCES_VIDES,
+  type CapacitesEspace, type EtapeAssistant, type ReferencesContenu,
+} from '@/components/campagne/AssistantCampagne';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE, sur son propre écran.
@@ -24,6 +32,7 @@ export default function NouvelleCampagnePage() {
 
 function AssistantInner({ session }: { session: Session }) {
   const [capacites, setCapacites] = useState<CapacitesEspace | null>(null);
+  const [references, setReferences] = useState<ReferencesContenu>(REFERENCES_VIDES);
 
   useEffect(() => {
     let vivant = true;
@@ -36,9 +45,55 @@ function AssistantInner({ session }: { session: Session }) {
     void getSettings(session.tenantId)
       .then((s) => {
         if (!vivant) return;
-        setCapacites({ rcsEnabled: s.rcsEnabled === true, ...(s.businessHours ? { businessHours: s.businessHours as BusinessHours } : {}) });
+        setCapacites({
+          rcsEnabled: s.rcsEnabled === true,
+          mbaEnabled: s.mbaEnabled === true,
+          ...(s.businessHours ? { businessHours: s.businessHours as BusinessHours } : {}),
+        });
       })
-      .catch(() => { if (vivant) setCapacites({ rcsEnabled: false }); });
+      .catch(() => { if (vivant) setCapacites({ rcsEnabled: false, mbaEnabled: false }); });
+    return () => { vivant = false; };
+  }, [session.tenantId]);
+
+  useEffect(() => {
+    let vivant = true;
+    /**
+     * 🔴 CHACUNE POUR ELLE-MÊME, JAMAIS UN `Promise.all` TOUT-OU-RIEN. Cinq listes alimentent l'étape
+     * Contenu ; si l'une tombe, les quatre autres doivent rester choisissables. Un `all` aurait fait
+     * d'une panne de la liste des agents IA un écran de campagne entièrement vide.
+     *
+     * ⚠️ `Array.isArray` EN PLUS DU `catch`, et ce n'est pas de la ceinture-bretelles : une réponse 200
+     * sans la clé attendue (backend plus ancien, proxy qui rend un objet vide) passe le `catch` et pose
+     * `undefined` dans un état typé tableau. Le rendu suivant lit `.length` dessus et c'est TOUT l'écran
+     * qui casse, pas seulement la liste concernée.
+     */
+    const poser = (patch: Partial<ReferencesContenu>): void => { if (vivant) setReferences((r) => ({ ...r, ...patch })); };
+    void listTemplates(session.tenantId)
+      .then((r) => poser({ templates: (Array.isArray(r?.templates) ? r.templates : []).filter((t) => t.status === 'APPROVED') }))
+      .catch(() => {});
+    void listWorkflows(session.tenantId)
+      // Le sélecteur ne propose QUE les scénarios lançables en campagne (ceux qui OUVRENT par un template
+      // configuré), même règle que l'ancien formulaire. L'éligibilité vient du SERVEUR quand il la donne.
+      .then((r) => poser({
+        workflows: (Array.isArray(r?.workflows) ? r.workflows : [])
+          .filter((w) => w.campaignEligible ?? (w.graph ? isCampaignEligible(w.graph) : false)),
+      }))
+      .catch(() => {});
+    void listEmailTemplates(session.tenantId)
+      .then((r) => poser({ emailTemplates: (Array.isArray(r?.templates) ? r.templates : []).map((t) => ({ id: t.id, name: t.name })) }))
+      .catch(() => {});
+    void listUsers(session.tenantId)
+      // ⚠️ Ni les comptes révoqués ni les invitations en attente : assigner des conversations à quelqu'un
+      // qui ne peut pas se connecter, c'est les ranger là où personne ne les lira.
+      .then((r) => poser({
+        membres: (Array.isArray(r?.users) ? r.users : [])
+          .filter((u) => !u.disabled && !u.pending)
+          .map((u) => ({ id: u.id, nom: u.name ?? u.email })),
+      }))
+      .catch(() => {});
+    void listAgents(session.tenantId)
+      .then((a) => poser({ agents: (Array.isArray(a) ? a : []).map((x) => ({ id: x.id, label: x.label })) }))
+      .catch(() => {});
     return () => { vivant = false; };
   }, [session.tenantId]);
 
@@ -54,5 +109,25 @@ function AssistantInner({ session }: { session: Session }) {
   const connues: EtapeAssistant[] = ['nom', 'canal', 'contenu', 'audience', 'recap'];
   const etapeInitiale = connues.find((e) => e === demandee) ?? 'nom';
 
-  return <AssistantCampagne capacites={capacites} etapeInitiale={etapeInitiale} />;
+  /**
+   * ⚠️ L'ÉTAT D'OUVERTURE SE LIT AUSSI DANS L'ADRESSE, et UNIQUEMENT pour le canal (`?canal=repli`).
+   * L'étape Contenu ne montre une chaîne que si une chaîne a été choisie : sans ce paramètre, l'ouvrir
+   * directement n'afficherait qu'un seul étage, et il faudrait repasser par l'étape 2 à chaque fois pour
+   * regarder l'écran suivant. Comme au-dessus, la valeur est validée contre la liste.
+   */
+  const canalDemande = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('canal');
+  const formules = ['whatsapp', 'rcs', 'repli'] as const;
+  const formule = formules.find((f) => f === canalDemande);
+  const troisiemeDemande = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('troisieme');
+  const troisiemes = ['aucun', 'email'] as const;
+  const troisieme = troisiemes.find((t) => t === troisiemeDemande);
+
+  return (
+    <AssistantCampagne
+      capacites={capacites}
+      references={references}
+      etapeInitiale={etapeInitiale}
+      etatInitial={{ ...(formule ? { formule } : {}), ...(troisieme ? { troisieme } : {}) }}
+    />
+  );
 }

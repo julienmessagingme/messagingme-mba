@@ -16,11 +16,19 @@ import { inputCls } from '@/lib/ui';
  * même saisie.
  */
 export function RcsButtonsEditor({
-  boutons, onChange, max = 11, dateFields = [], compact = false, testIdPrefix = 'rcs',
+  boutons, onChange, max = 11, dateFields = [], compact = false, testIdPrefix = 'rcs', libelleAjout,
 }: {
   boutons: RcsSuggestion[];
   onChange: (boutons: RcsSuggestion[]) => void;
   max?: number;
+  /**
+   * Le libellé du bouton d'ajout, quand l'écran appelant nomme la chose autrement.
+   *
+   * ⚠️ OPTIONNEL, ET LE DÉFAUT NE BOUGE PAS. L'assistant de campagne parle de « suggestions », le mot du
+   * RCS ; les trois écrans existants disent « + bouton » et leurs specs le vérifient. Changer le défaut
+   * aurait déplacé la copie de trois surfaces pour la commodité d'une quatrième.
+   */
+  libelleAjout?: string;
   /** Champs « date et heure » du contact, proposés comme source d'un rendez-vous. Vide -> saisie fixe seule. */
   dateFields?: UserFieldDef[];
   /** Rendu resserré, pour le panneau étroit du builder. */
@@ -148,7 +156,7 @@ export function RcsButtonsEditor({
           onClick={() => onChange([...boutons, nouveauBouton('reply', { text: '', postbackData: '' })])}
           className="mt-1.5 text-xs text-brand-600 hover:underline"
         >
-          + {t('bouton', 'button')}
+          {libelleAjout ?? `+ ${t('bouton', 'button')}`}
         </button>
       )}
     </div>

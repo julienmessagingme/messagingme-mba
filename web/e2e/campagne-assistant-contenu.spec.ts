@@ -1,0 +1,141 @@
+import { test, expect, type Page } from '@playwright/test';
+import { TREIZE_POUCES, pasDeDebordement, pasDeChevauchement } from './aide/largeur';
+
+/**
+ * E2E de l'assistant de campagne, étape Contenu.
+ *
+ * 🔴 C'EST L'ÉTAPE LA PLUS EXPOSÉE AU DÉBORDEMENT : trois cadres d'étage, un éditeur de modèle, un
+ * éditeur de suggestions RCS (le composant le plus large de la console) et le bloc du devenir de la
+ * conversation. Deux cas la mesurent à 1280 x 800, et l'un d'eux vérifie en plus l'EMPILEMENT, qui est
+ * la décision de conception qui évite le problème au lieu de le détecter.
+ *
+ * ⚠️ L'ÉTAT D'OUVERTURE PASSE PAR L'ADRESSE (`?etape=contenu&canal=repli&troisieme=email`). Sans cela,
+ * chaque cas devrait rejouer l'étape Canal au clic, ce qui ferait dépendre ces vérifications-ci du bon
+ * fonctionnement de l'écran d'à côté : un test de l'étape 3 qui rougit parce que l'étape 2 a bougé ne
+ * dit plus ce qu'il vérifie.
+ */
+
+const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
+
+const TEMPLATES = [
+  { id: 't1', name: 'promo_rentree', status: 'APPROVED', category: 'MARKETING', language: 'fr' },
+  { id: 't2', name: 'rappel_rdv', status: 'APPROVED', category: 'UTILITY', language: 'fr' },
+  // ⚠️ Un non approuvé : le sélecteur ne doit jamais proposer ce qui ne partira pas.
+  { id: 't3', name: 'brouillon_promo', status: 'PENDING', category: 'MARKETING', language: 'fr' },
+];
+const WORKFLOWS = [{ id: 'wf1', name: 'Prise de RDV', campaignEligible: true }];
+const EMAIL_TEMPLATES = [{ id: 'em1', name: 'Relance e-mail', format: 'html', subject: 's', body: 'b', createdAt: '', updatedAt: '' }];
+const USERS = [
+  { id: 'u1', email: 'alice@e2e.test', name: 'Alice', role: 'admin', disabled: false, pending: false },
+  { id: 'u2', email: 'bob@e2e.test', name: 'Bob', role: 'agent', disabled: false, pending: false },
+];
+
+async function monter(
+  page: Page,
+  sur: { canal?: string; troisieme?: string; agents?: unknown[] } = {},
+): Promise<void> {
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+  await page.route('**/api/backend/**', async (route) => {
+    const chemin = new URL(route.request().url()).pathname.replace('/api/backend', '');
+    const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (chemin.endsWith('/settings')) {
+      return json({
+        controlHandbackSeconds: null, mbaHandoffMode: null, mbaEnabled: true, rcsEnabled: true,
+        hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: true,
+        timezone: 'Europe/Paris', businessHours: {},
+      });
+    }
+    if (chemin.endsWith('/email-templates')) return json({ templates: EMAIL_TEMPLATES });
+    if (chemin.endsWith('/templates')) return json({ templates: TEMPLATES });
+    if (chemin.endsWith('/workflows')) return json({ workflows: WORKFLOWS });
+    if (chemin.endsWith('/users')) return json({ users: USERS });
+    if (chemin.endsWith('/agents')) return json({ agents: sur.agents ?? [{ id: 'ag1', label: 'Conseiller', status: 'actif', sorties: [] }] });
+    return json({});
+  });
+  const q = new URLSearchParams({ etape: 'contenu', canal: sur.canal ?? 'repli', ...(sur.troisieme ? { troisieme: sur.troisieme } : {}) });
+  await page.goto(`/campaigns/nouvelle?${q.toString()}`);
+  await expect(page.getByTestId('etape-contenu')).toBeVisible();
+}
+
+test('un cadre par etage, dans l ordre de la chaine', async ({ page }) => {
+  await monter(page);
+  await expect(page.getByRole('group', { name: /Étage 1 . WhatsApp/ })).toBeVisible();
+  await expect(page.getByRole('group', { name: /Étage 2 . RCS/ })).toBeVisible();
+});
+
+test('🔴 un canal SEUL ne montre qu un cadre : la chaine commande, pas un nombre fixe', async ({ page }) => {
+  // Sans ce cas, un écran qui afficherait toujours trois cadres passerait le cas du dessus.
+  await monter(page, { canal: 'whatsapp' });
+  await expect(page.getByTestId('etage-1')).toBeVisible();
+  await expect(page.getByTestId('etage-2')).toHaveCount(0);
+});
+
+test('le devenir de la conversation est demande UNE SEULE FOIS, pas par etage', async ({ page }) => {
+  await monter(page, { troisieme: 'email' });
+  await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toHaveCount(1);
+});
+
+// 🔴 Il vaut pour les DEUX formules, modèle seul comme modèle plus scénario.
+test('le devenir est demande aussi quand un scenario est choisi', async ({ page }) => {
+  await monter(page);
+  await page.getByTestId('etage-1').click(); // deplie le cadre WhatsApp
+  await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toBeVisible();
+  // ⚠️ Et il reste demandé UNE fois : un scénario ne le déplace pas dans le cadre de l'étage.
+  await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toHaveCount(1);
+});
+
+test('l assignation a une personne affiche le NOMBRE avant de valider', async ({ page }) => {
+  await monter(page);
+  await page.getByRole('radio', { name: 'Assignée à une personne' }).check();
+  await expect(page.getByText(/conversations lui seront attribuées/)).toBeVisible();
+});
+
+test('🔴 sans assignation a une personne, aucune phrase d attribution', async ({ page }) => {
+  // L'autre sens : une phrase affichée en permanence passerait le cas du dessus sans rien garantir.
+  await monter(page);
+  await expect(page.getByText(/conversations lui seront attribuées/)).toHaveCount(0);
+});
+
+test('le RCS garde ses suggestions, il ne se reduit pas a un lien', async ({ page }) => {
+  await monter(page);
+  await page.getByTestId('etage-2').click(); // deplie le cadre RCS
+  await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toBeVisible();
+});
+
+test('🔴 un agent IA absent est grise AVEC SA RAISON, pas masque', async ({ page }) => {
+  await monter(page, { agents: [] });
+  await expect(page.getByRole('radio', { name: 'Un agent IA prend la main' })).toBeDisabled();
+  await expect(page.getByText(/aucun agent IA actif/i)).toBeVisible();
+});
+
+// 🔴 L'ÉTAPE LA PLUS EXPOSÉE AU DÉBORDEMENT : trois cadres d'étage, un éditeur de modèle, un
+// éditeur de suggestions RCS et le bloc du devenir de la conversation.
+test('les cadres d etage sont EMPILES, jamais cote a cote, et rien ne deborde en 13 pouces', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  await monter(page, { troisieme: 'email' });
+  await page.getByTestId('etage-1').click(); // deplie le premier
+  await pasDeDebordement(page);
+  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3', 'bloc-devenir']);
+
+  // Les cadres sont empiles : chacun commence SOUS le precedent, jamais a sa droite.
+  const un = (await page.getByTestId('etage-1').boundingBox())!;
+  const deux = (await page.getByTestId('etage-2').boundingBox())!;
+  expect(deux.y).toBeGreaterThanOrEqual(un.y + un.height);
+});
+
+// ⚠️ L'editeur de suggestions RCS est le composant le plus large de l'ecran : un cadre deplie
+// avec onze suggestions est le pire cas realiste.
+test('onze suggestions RCS ne font pas deborder le cadre', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  await monter(page, { troisieme: 'email' });
+  await page.getByTestId('etage-2').click();
+  for (let i = 0; i < 11; i += 1) {
+    await page.getByRole('button', { name: 'Ajouter une suggestion' }).click();
+  }
+  // 🔴 ONZE EST LE PLAFOND DU RCS : au douzième, le bouton d'ajout disparaît. Le vérifier ici garantit
+  // que les onze clics ont bien produit onze suggestions, et non dix plus un clic tombé dans le vide.
+  await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toHaveCount(0);
+  await pasDeDebordement(page);
+  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3', 'bloc-devenir']);
+});
