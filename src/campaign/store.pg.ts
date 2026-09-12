@@ -894,9 +894,12 @@ export class PgCampaignRepo {
    *
    * 🔴 IL N'Y A PLUS DE REPLIAGE DANS LE SQL, ET C'EST LA MIGRATION 0136 QUI LE PERMET (la colonne passe
    * en `integer`). Le `% 32767` qui protégeait le `smallint` créait un point où deux rangs consécutifs
-   * valent 32766 puis 0 : mesuré, les deux tombent sur la MÊME personne pour une équipe de 2, 3 ou 6, et
-   * seules les tailles qui divisent 32767 (7, 31, 151, 217) y échappaient. Il échangeait donc une panne
-   * visible contre une double affectation silencieuse.
+   * valent 32766 puis 0. Le roulement lisant `rang % nombre_de_membres`, une équipe de N y tombait sur la
+   * MÊME personne dès que **N divise 32766** (= 2 x 3 x 43 x 127), c'est-à-dire pour N valant 2, 3, 6, 43,
+   * 86, 127... ⚠️ Une première version de ce commentaire disait « seules les tailles qui divisent 32767 y
+   * échappaient » : c'est FAUX, et dans le sens rassurant. La plupart des tailles échappaient (4, 5, 7, 8,
+   * 9, 10 sont saines) ; ce sont au contraire **les trois plus petites équipes, donc les plus courantes**,
+   * qui collisionnaient. Il échangeait une panne visible contre une double affectation silencieuse.
    *
    * ⚠️ Campagne inconnue (supprimée entre-temps) -> `0`, c'est-à-dire le premier membre. Lever ici
    * casserait l'enregistrement d'un message entrant pour une affectation de confort.

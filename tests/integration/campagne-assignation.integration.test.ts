@@ -181,9 +181,11 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
    *   - avec `returning tour_de_role_rang - 1`, le second appel rendait **-1** (`RETURNING` rend la
    *     valeur NOUVELLE, jamais l'ancienne), et `prochainAssigne` ne désigne personne sur un négatif ;
    *   - avec le `% 32767` qui protégeait le `smallint`, les deux rangs valaient 32766 puis 0, donc la
-   *     MÊME personne pour une équipe de 2, 3 ou 6 (mesuré : seules les tailles divisant 32767, soit 7,
-   *     31, 151 et 217, y échappaient). L'équipe de ce test en compte TROIS, donc elle est dans le cas
-   *     qui casse.
+   *     MÊME personne dès que la taille de l'équipe DIVISE 32766 (= 2 x 3 x 43 x 127), soit 2, 3, 6, 43,
+   *     86, 127... ⚠️ Ce n'est PAS « les tailles qui divisent 32767 » : une première rédaction le disait
+   *     et c'était faux dans le sens rassurant, la plupart des tailles étant saines (4, 5, 7, 8, 9, 10).
+   *     Ce sont les TROIS PLUS PETITES équipes qui cassaient, donc les plus courantes. Celle de ce test
+   *     en compte TROIS : elle est pile dans le cas qui casse, et c'est pour ça qu'elle en compte trois.
    *
    * ⚠️ Il exerce aussi, au passage, le fait que 32 767 n'est plus une borne : la colonne est un `integer`
    * depuis la migration 0136, et la dépasser ne lève plus `22003 smallint out of range` sur le chemin
