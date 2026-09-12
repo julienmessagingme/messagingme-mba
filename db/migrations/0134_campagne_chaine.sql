@@ -99,6 +99,20 @@ create table if not exists campaign_envois (
 -- ne l'est le jour où quelqu'un mesurera la requête.
 create index if not exists campaign_envois_campagne_idx on campaign_envois (campaign_id, canal);
 
+-- 🔴 LE SECOND INDEX, ET IL SERT LE CHEMIN LE PLUS CHAUD DU PRODUIT. `updateDeliveryByMessageId`
+-- écrit désormais dans les DEUX tables, donc cette requête tourne à CHAQUE accusé de livraison Meta :
+--     update campaign_envois set delivery_status = $2 where message_id = $1 and (monotonie)
+-- Meta en envoie environ trois par message parti (`sent`, `delivered`, `read`), et cette table gagne
+-- une ligne par TENTATIVE, donc plus vite que `campaign_recipients`. Sans index, chaque accusé serait
+-- un parcours complet d'une table qui grossit : sur une campagne de 5 000 destinataires, quinze mille
+-- parcours.
+--
+-- ⚠️ SON JUMEAU EXISTE DEPUIS LA MIGRATION 0007 SUR `campaign_recipients`
+-- (`campaign_recipients_message_id_idx`), créé pour exactement cette requête. Ajouter un second
+-- lecteur du même motif sans ajouter son index est l'erreur que ce commentaire existe pour empêcher
+-- de refaire.
+create index if not exists campaign_envois_message_id_idx on campaign_envois (message_id);
+
 -- L'étage où en est chaque contact. Défaut 1 : tout le parc existant est au premier étage.
 -- ⚠️ Personne ne l'écrit encore, et c'est voulu : c'est le moteur de bascule qui la fera avancer.
 -- Posée maintenant pour qu'il n'ait pas à migrer une table de destinataires déjà pleine.
