@@ -6,6 +6,7 @@ import type { BuildContact, BuiltRecipient } from './build';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
+import { RANG_INITIAL, type CanalEtage, type Etage } from './etages';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
@@ -246,7 +247,53 @@ export class PgCampaignRepo {
       // Campagne d'avant la migration 0122 : la colonne a un DEFAUT false, donc `null` ne peut venir que d'une
       // ligne d'avant. Aucune contrainte d'horaire, comportement historique.
       businessHoursOnly: r.business_hours_only === true,
+      chaine: await this.lireChaine(id),
     };
+  }
+
+  /**
+   * La CHAÎNE D'ÉTAGES d'une campagne (migration 0134), triée par rang.
+   *
+   * ⚠️ UNE REQUÊTE DE PLUS PAR APPEL DE `getCampaign`, JAMAIS PAR DESTINATAIRE. Le compte exact de ce
+   * que ça coûte, parce qu'un « c'est négligeable » non chiffré finit toujours par être faux : deux
+   * appelants seulement. `run-job.ts` la lit UNE fois au démarrage d'un run, hors de la boucle d'envoi ;
+   * `listRunningByWebhook` la lit une fois par campagne vivante du webhook, à chaque arrivant du fil de
+   * l'eau, et c'est le seul endroit où le surcoût se répète (il y passe de une à deux requêtes).
+   * La joindre à la lecture principale aurait dupliqué la ligne de campagne par étage, donc obligé à
+   * dédoublonner en code ce que la base venait de multiplier.
+   *
+   * ⚠️ `order by rang` est ici pour le LECTEUR, pas pour la correction : `rangSuivant` et `etageAuRang`
+   * ne supposent aucun ordre, et c'est tenu par un test. Une chaîne triée se lit simplement dans un
+   * journal ou un débogueur, ce qui vaut la clause.
+   *
+   * ⚠️ Pas de `tenant_id` ici, et c'est le seul endroit du lot où son absence est correcte :
+   * `getCampaign` elle-même lit `where id = $1` sans tenant (elle REND le tenant pour que l'appelant
+   * tranche, cf. `getForRun`). Ajouter un filtre à la chaîne sans en ajouter à la campagne n'aurait
+   * protégé rien du tout, et en ajouter aux deux aurait changé le contrat de `getCampaign`.
+   */
+  private async lireChaine(campaignId: string): Promise<Etage[]> {
+    const res = await this.pool.query<{
+      rang: number;
+      canal: CanalEtage;
+      template_name: string | null;
+      template_language: string | null;
+      rcs_message: unknown;
+      email_template_id: string | null;
+      workflow_id: string | null;
+    }>(
+      `select rang, canal, template_name, template_language, rcs_message, email_template_id, workflow_id
+       from campaign_etages where campaign_id = $1 order by rang`,
+      [campaignId],
+    );
+    return res.rows.map((e) => ({
+      rang: e.rang,
+      canal: e.canal,
+      ...(e.template_name !== null ? { templateName: e.template_name } : {}),
+      ...(e.template_language !== null ? { templateLanguage: e.template_language } : {}),
+      ...(e.rcs_message !== null ? { rcsMessage: e.rcs_message } : {}),
+      ...(e.email_template_id !== null ? { emailTemplateId: e.email_template_id } : {}),
+      ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
+    }));
   }
 
   /** Le numéro appartient-il au tenant ? (garde-fou anti envoi depuis le numéro d'autrui.) */
@@ -886,6 +933,17 @@ export class PgCampaignRepo {
 async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInput): Promise<string> {
   // Campagne workflow : pas de template propre -> template_name/language null + workflow_id posé.
   const isWorkflow = !!input.workflowId;
+  /**
+   * 🔴 LE CONTENU, CALCULÉ UNE FOIS POUR LES DEUX ÉCRITURES. Ces quatre valeurs partent à la fois dans
+   * `campaigns` et dans l'étage 1 de `campaign_etages`, et elles doivent être LES MÊMES : les recopier
+   * de part et d'autre, c'est se donner rendez-vous avec deux vérités sur la même campagne le jour où
+   * l'une des deux expressions bouge. C'est exactement la dérive que l'avertissement du dessus décrit
+   * sur les deux INSERT d'origine, une case plus loin.
+   */
+  const canal: CanalEtage = input.channel ?? 'whatsapp';
+  const templateName = isWorkflow ? null : input.templateName;
+  const templateLanguage = isWorkflow ? null : input.templateLanguage;
+  const rcsMessage = input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage);
   const res = await q.query<{ id: string }>(
     `insert into campaigns
        (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only)
@@ -897,22 +955,47 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       input.phoneNumberId === '' ? null : input.phoneNumberId,
       input.name,
       input.category,
-      isWorkflow ? null : input.templateName,
-      isWorkflow ? null : input.templateLanguage,
+      templateName,
+      templateLanguage,
       JSON.stringify(input.paramMapping),
       input.workflowId ?? null,
       input.ratePerMinute ?? null,
       // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null (pas de campagne bâtarde).
       isWorkflow ? input.startNodeId ?? null : null,
-      input.channel ?? 'whatsapp',
+      canal,
       input.rcsAgentId ?? null,
-      input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
+      rcsMessage,
       input.webhookId ?? null,
       input.businessHoursOnly === true,
     ],
   );
   const id = res.rows[0]?.id;
   if (!id) throw new Error('insertCampaignRow : aucun id retourné');
+
+  /**
+   * L'ÉTAGE 1 : la campagne qu'on vient d'écrire, dite en chaîne (migration 0134).
+   *
+   * ⚠️ UN SEUL ÉTAGE, TOUJOURS, tant que le formulaire n'a pas basculé. C'est l'invariant qui rend ce
+   * lot invisible : `rangSuivant` rend null sur une chaîne à un étage, donc aucune bascule n'est
+   * possible et le moteur suit le chemin d'avant. Le jour où le formulaire enverra une vraie chaîne,
+   * c'est ICI qu'elle s'écrira, et c'est la seule écriture à changer.
+   *
+   * ⚠️ Le `on conflict do nothing` n'a rien à rattraper sur un identifiant qu'on vient de créer ; il
+   * est là pour que la ligne reste idempotente le jour où cette fonction sera rejouée sur une campagne
+   * existante, ce que fait déjà `bulkInsertRecipients` juste en dessous.
+   *
+   * 🔴 SUR LE CHEMIN RÉEL (`createWithRecipients`) LES DEUX INSERT SONT DANS LA MÊME TRANSACTION, donc
+   * une campagne sans son étage n'existe pas. Sur le chemin `insertCampaign` (le pool nu, utilisé par
+   * les tests d'intégration) elles ne le sont pas : un échec entre les deux laisserait une campagne à
+   * chaîne vide. Ce qui, aujourd'hui, ne casse rien (personne ne lit encore la chaîne pour décider),
+   * et qui cassera le jour où le moteur s'en servira. À reprendre avec le moteur de bascule.
+   */
+  await q.query(
+    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, workflow_id)
+     values ($1, $2, $3, $4, $5, $6::jsonb, $7)
+     on conflict (campaign_id, rang) do nothing`,
+    [id, RANG_INITIAL, canal, templateName, templateLanguage, rcsMessage, input.workflowId ?? null],
+  );
   return id;
 }
 

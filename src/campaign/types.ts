@@ -1,4 +1,5 @@
 import type { TemplateParam } from '../crm/template';
+import type { Etage } from './etages';
 
 export type CampaignCategory = 'marketing' | 'utility';
 export type CampaignStatus = 'draft' | 'running' | 'paused' | 'completed' | 'failed' | 'scheduled';
@@ -47,6 +48,19 @@ export interface Campaign {
    * choix porté par le lancement se serait perdu à la première pause.
    */
   businessHoursOnly?: boolean;
+  /**
+   * LA CHAÎNE D'ÉTAGES de la campagne (migration 0134), triée par rang.
+   *
+   * ⚠️ À UN SEUL ÉTAGE AUJOURD'HUI, TOUJOURS, et c'est ce qui rend ce lot invisible : `rangSuivant` rend
+   * alors null, donc aucune bascule n'est possible et le moteur suit exactement le chemin d'avant. La
+   * chaîne est REDONDANTE avec `channel`, `templateName`, `rcsMessage` et `workflowId` tant que le
+   * formulaire de création n'a pas basculé dessus ; elle devient la seule source quand ce sera fait, et
+   * les colonnes d'origine partiront dans une migration ULTÉRIEURE (elles sont encore lues).
+   *
+   * OPTIONNELLE : `getCampaign` la rend toujours, mais un faux câblé par un test n'a rien à fournir. Absente
+   * veut donc dire « cet appelant ne s'en sert pas », jamais « cette campagne n'a pas d'étage ».
+   */
+  chaine?: Etage[];
 }
 
 export interface Recipient {
