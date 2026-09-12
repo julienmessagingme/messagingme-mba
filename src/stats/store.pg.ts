@@ -334,9 +334,64 @@ const TZ = STATS_TZ;
  * L'opérateur jugeait son template sur le taux de clic d'un autre canal. Les deux colonnes sont
  * `not null default 'whatsapp'` depuis la migration 0056 : l'égalité simple suffit, pas de coalesce.
  */
+/**
+ * « AUCUN DÉPART INTERCALÉ », lu sur les LIGNES DE DESTINATAIRE (`campaign_recipients`).
+ *
+ * C'est la garde d'origine, et elle porte tout l'historique : une ligne par contact et par campagne,
+ * depuis toujours.
+ *
+ * 🔴 `exclure` EST OBLIGATOIRE DÈS QUE L'ANCRAGE N'EST PAS `r.sent_at` LUI-MÊME, et l'oublier est
+ * exactement le défaut qui a rendu la CI rouge le 2026-09-12. Ancrée sur sa propre colonne, la ligne du
+ * destinataire ne peut pas être « postérieure à elle-même » : elle s'auto-exclut, gratuitement. Ancrée sur
+ * `e.sent_at`, qui est une colonne DIFFÉRENTE, elle se compare à un instant voisin de quelques
+ * millisecondes, et le verdict se met à dépendre du SIGNE de cet écart. Mesuré dans le code : `markResult`
+ * est le seul écrivain de `campaign_recipients.sent_at` et y pose l'horloge JS du moteur, tandis que la
+ * ligne de journal prend le `now()` de Postgres à l'INSERT qui suit. Deux horloges, deux instants, aucun
+ * ordre garanti. Une attribution qui dépend de cela n'est pas une attribution.
+ */
+const aucunDepartDestinataire = (instant: string, numero: string, exclure?: string): string => `not exists (
+               select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+               where c2.tenant_id = c.tenant_id
+                 and r2.to_e164 = ${numero}${exclure ? `
+                 and r2.id <> ${exclure}` : ''}
+                 and r2.sent_at is not null
+                 and r2.sent_at > ${instant}
+                 and r2.sent_at < m.created_at
+             )`;
+
+/**
+ * « AUCUN DÉPART INTERCALÉ », lu sur le JOURNAL DES TENTATIVES (`campaign_envois`, migration 0134).
+ *
+ * 🔴 ELLE NE REMPLACE PAS LA PRÉCÉDENTE, ELLE LA COMPLÈTE, et il faut les deux parce qu'aucune des deux
+ * ne connaît tous les départs. `campaign_recipients` n'a qu'UNE ligne par contact : elle ne sait pas dire
+ * qu'un même destinataire est reparti deux fois, ce qui est précisément ce que le grain « tentative »
+ * apporte. Sans cette garde-ci, un destinataire relancé (`resetForRetry`, l'auto-relance existe
+ * aujourd'hui et n'attend aucune chaîne) a DEUX tentatives parties sur le même canal, et la même réponse
+ * serait comptée sur les deux : `repondus` vaudrait 2 pour une seule personne qui a écrit une fois.
+ *
+ * ⚠️ `statut = 'sent'` : seule une tentative RÉELLEMENT PARTIE peut voler une réponse. Une tentative
+ * échouée ou écartée n'a rien envoyé, donc n'a rien pu provoquer et ne s'intercale pas.
+ *
+ * ⚠️ CE QU'ELLE NE SAIT PAS FAIRE, et il vaut mieux le savoir que le découvrir : l'écriture du journal est
+ * BEST-EFFORT côté moteur. Une tentative dont la ligne de journal n'a pas pu s'écrire est un départ
+ * invisible ici. C'est aussi pourquoi la garde du dessus est conservée : elle, verra quand même la ligne
+ * du destinataire, et les deux ensemble gardent l'invariant qui compte, `somme(repondus) <= replied`.
+ */
+const aucunDepartJournalise = (instant: string, numero: string): string => `not exists (
+               select 1 from campaign_envois e2
+                 join campaign_recipients r3 on r3.id = e2.recipient_id
+                 join campaigns c3 on c3.id = e2.campaign_id
+               where c3.tenant_id = c.tenant_id
+                 and r3.to_e164 = ${numero}
+                 and e2.statut = 'sent'
+                 and e2.sent_at > ${instant}
+                 and e2.sent_at < m.created_at
+             )`;
+
 const entrantAttribueDepuis = (
   envoi: { instant: string; numero: string; canal: string },
-  extra = '',
+  extra: string,
+  gardes: string[],
 ): string => `${envoi.instant} is not null and exists (
            select 1 from conversations cv
              join conversation_messages m on m.conversation_id = cv.id
@@ -345,19 +400,20 @@ const entrantAttribueDepuis = (
              and m.direction = 'in'
              and m.channel = ${envoi.canal}
              and m.created_at > ${envoi.instant} ${extra}
-             and not exists (
-               select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
-               where c2.tenant_id = c.tenant_id
-                 and r2.to_e164 = ${envoi.numero}
-                 and r2.sent_at is not null
-                 and r2.sent_at > ${envoi.instant}
-                 and r2.sent_at < m.created_at
-             )
+             and ${gardes.join('\n             and ')}
          )`;
 
-/** L'attribution ancrée sur le DESTINATAIRE (`r`), telle qu'elle existe depuis l'origine du funnel. */
-const entrantAttribue = (extra = ''): string =>
-  entrantAttribueDepuis({ instant: 'r.sent_at', numero: 'r.to_e164', canal: 'c.channel' }, extra);
+/**
+ * L'attribution ancrée sur le DESTINATAIRE (`r`), telle qu'elle existe depuis l'origine du funnel.
+ *
+ * ⚠️ INCHANGÉE : une seule garde, sans exclusion, parce que l'ancrage EST la colonne comparée et que la
+ * ligne s'auto-exclut donc toute seule. Y ajouter quoi que ce soit changerait les chiffres du funnel
+ * global, qui ne sont pas le sujet de ce lot.
+ */
+export const entrantAttribue = (extra = ''): string =>
+  entrantAttribueDepuis({ instant: 'r.sent_at', numero: 'r.to_e164', canal: 'c.channel' }, extra, [
+    aucunDepartDestinataire('r.sent_at', 'r.to_e164'),
+  ]);
 
 /**
  * L'attribution ancrée sur UNE TENTATIVE du journal (`e`, `campaign_envois`, migration 0134).
@@ -368,21 +424,32 @@ const entrantAttribue = (extra = ''): string =>
  * la tentative, pas celui du destinataire) et le canal (celui de la tentative, pas celui de la campagne),
  * puisque c'est précisément ce que le grain « une ligne par tentative » permet de distinguer.
  *
- * ⚠️ L'EXCLUSION RESTE SUR `campaign_recipients`, ET C'EST NÉCESSAIRE, pas une facilité. Le journal ne
- * contient que les tentatives postérieures à sa mise en service : un envoi plus ancien, ou fait par une
- * autre campagne d'avant, n'y figure pas. Chercher l'envoi intercalé dans le journal seul laisserait donc
- * de vieilles réponses se faire attribuer deux fois. `campaign_recipients`, elle, porte tout l'historique.
+ * 🔴 DEUX GARDES, ET LA PREMIÈRE VERSION N'EN AVAIT QU'UNE : C'EST CE QUI A RENDU LA CI ROUGE. Elle
+ * affirmait que « l'exclusion reste sur `campaign_recipients`, et c'est nécessaire », au motif que le
+ * journal ne porte pas l'historique d'avant sa mise en service. Ce motif était doublement faux, et il
+ * vaut mieux écrire pourquoi que le corriger en silence :
+ *   1. il ne protégeait rien, puisque seul un départ POSTÉRIEUR à une tentative journalisée peut voler sa
+ *      réponse, et qu'un départ postérieur à une ligne de journal est lui-même journalisé (le code neuf
+ *      est en place dès qu'une telle ligne existe) ;
+ *   2. il cachait le vrai défaut : ancrée sur `e.sent_at`, cette garde attrapait la ligne du destinataire
+ *      LUI-MÊME et refusait toute attribution. Mesuré : `repondus` valait 0 partout, pendant que le
+ *      `replied` du funnel global valait 1 sur la même personne. Deux vérités sur le même écran, soit
+ *      exactement ce que le fragment partagé existe pour empêcher.
  *
- * ⚠️ Et c'est aussi ce qui règle le cas à deux canaux : la réussite du second étage écrit `sent_at` sur la
- * ligne du destinataire, donc elle s'intercale entre la tentative du PREMIER étage et la réponse, ce qui
- * retire la réponse au premier sans la retirer au second (l'inégalité est stricte).
+ * ⚠️ LES DEUX GARDES DISENT LA MÊME RÈGLE sur deux populations, ce n'est pas une seconde heuristique :
+ * « aucun départ intercalé ». Les départs d'un AUTRE destinataire se lisent sur `campaign_recipients`,
+ * les départs SUPPLÉMENTAIRES du même destinataire (relance, étage suivant) ne se lisent que dans le
+ * journal, parce que `campaign_recipients` n'a qu'une ligne par contact et ne sait pas les exprimer.
  *
  * ⚠️ `e.sent_at is not null` est TOUJOURS vrai (la colonne est `not null default now()`) : c'est le prix
  * du fragment partagé, et il ne coûte qu'un prédicat constant. Le rendre conditionnel aurait coûté une
  * seconde forme du fragment, exactement ce qu'on cherche à éviter.
  */
-const entrantAttribueTentative = (extra = ''): string =>
-  entrantAttribueDepuis({ instant: 'e.sent_at', numero: 'r.to_e164', canal: 'e.canal' }, extra);
+export const entrantAttribueTentative = (extra = ''): string =>
+  entrantAttribueDepuis({ instant: 'e.sent_at', numero: 'r.to_e164', canal: 'e.canal' }, extra, [
+    aucunDepartDestinataire('e.sent_at', 'r.to_e164', 'r.id'),
+    aucunDepartJournalise('e.sent_at', 'r.to_e164'),
+  ]);
 
 export class PgStatsStore {
   constructor(private readonly pool: Pool) {}

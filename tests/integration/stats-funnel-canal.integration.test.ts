@@ -105,10 +105,25 @@ describe.skipIf(!url)('le funnel par canal (0134)', () => {
     // réponse. Le destinataire porte le résultat du DERNIER étage, comme en production.
     await tentative({ rang: 1, canal: 'whatsapp', statut: 'failed', quand: '3 hours' });
     await tentative({ rang: 2, canal: 'rcs', statut: 'sent', quand: '2 hours', messageId: 'rcs-1', livraison: 'read' });
+    /**
+     * 🔴 `sent_at` DU DESTINATAIRE POSÉ UNE MILLISECONDE APRÈS CELUI DE SA TENTATIVE, DÉLIBÉRÉMENT.
+     *
+     * Les deux colonnes décrivent le MÊME départ mais ne sont pas écrites par la même horloge :
+     * `markResult` pose l'horloge JS du moteur, la ligne de journal prend le `now()` de Postgres à
+     * l'INSERT qui suit. Elles diffèrent donc toujours de quelques millisecondes, dans un sens que rien ne
+     * garantit. Le sens choisi ici est le DÉFAVORABLE, celui où la ligne du destinataire est postérieure à
+     * sa propre tentative : c'est lui qui faisait attraper la ligne par sa propre garde anti-intercalation
+     * et refuser toute attribution (`repondus` à 0 partout, CI rouge du 2026-09-12).
+     *
+     * ⚠️ NE PAS « SIMPLIFIER » EN POSANT LES DEUX INSTANTS ÉGAUX : l'inégalité de la garde est stricte,
+     * donc à instants égaux le défaut ne se reproduit pas et ce test redeviendrait vert sur le code fautif.
+     */
     await pool.query(
-      `update campaign_recipients set status = 'sent', message_id = 'rcs-1', sent_at = now() - interval '2 hours',
-              delivery_status = 'read' where id = $1`,
-      [recipientId],
+      `update campaign_recipients set status = 'sent', message_id = 'rcs-1', delivery_status = 'read',
+              sent_at = (select sent_at + interval '1 millisecond' from campaign_envois
+                          where campaign_id = $2 and canal = 'rcs')
+         where id = $1`,
+      [recipientId, campaignId],
     );
     await entrant('1 hour', 'rcs');
 
@@ -194,6 +209,55 @@ describe.skipIf(!url)('le funnel par canal (0134)', () => {
     const f = await stats.getCampaignFunnel(autreTenant, campaignId);
     expect(f.parCanal).toEqual([]);
     expect(f.contactsVises).toBe(0);
+  });
+
+  it('🔴 DEUX tentatives sur le MEME canal ne se partagent pas la reponse : elle va a la DERNIERE', async () => {
+    /**
+     * LE CAS QUE `campaign_recipients` NE SAIT PAS EXPRIMER, et qui existe DEJA en production.
+     *
+     * L'auto-relance (`resetForRetry`) remet un destinataire en `pending` : le moteur repart, et une
+     * SECONDE tentative s'inscrit au journal sur le meme canal, pour la meme personne. La table des
+     * destinataires, elle, n'a toujours qu'UNE ligne : elle est incapable de dire qu'il y a eu deux
+     * departs, donc sa garde anti-intercalation ne peut pas empecher les deux tentatives de reclamer la
+     * meme reponse. Sans la garde lue sur le JOURNAL, `repondus` vaudrait 2 pour une personne qui a ecrit
+     * une seule fois, et depasserait le `replied` du funnel global sur le meme ecran.
+     *
+     * ⚠️ Ce test ne depend d'AUCUNE chaine d'etages : il est vrai du produit tel qu'il tourne aujourd'hui.
+     */
+    const c4 = await repo.insertCampaign({
+      tenantId, phoneNumberId: 'pn-funnel', name: 'funnel-relance', category: 'utility',
+      templateName: 't', templateLanguage: 'fr', paramMapping: [],
+    });
+    await repo.insertRecipients(c4, [{ contactId, toE164: TEL, resolvedParams: [] }]);
+    const r4 = (await pool.query<{ id: string }>(
+      `select id from campaign_recipients where campaign_id = $1`, [c4],
+    )).rows[0]!.id;
+    // Deux departs REELS sur le meme canal, a 20 et 10 minutes, puis la reponse a 5 minutes.
+    for (const [quand, wamid] of [['20 minutes', 'wa-1'], ['10 minutes', 'wa-2']] as const) {
+      await pool.query(
+        `insert into campaign_envois (campaign_id, recipient_id, contact_id, rang, canal, statut, message_id, sent_at)
+         values ($1, $2, $3, 1, 'whatsapp', 'sent', $4, now() - ($5::text)::interval)`,
+        [c4, r4, contactId, wamid, quand],
+      );
+    }
+    await pool.query(
+      `update campaign_recipients set status = 'sent', message_id = 'wa-2', delivery_status = 'delivered',
+              sent_at = (select max(sent_at) + interval '1 millisecond' from campaign_envois where campaign_id = $2)
+         where id = $1`,
+      [r4, c4],
+    );
+    await entrant('5 minutes', 'whatsapp');
+
+    const f = await stats.getCampaignFunnel(tenantId, c4);
+    // UNE seule ligne (meme canal), DEUX tentatives, et UNE seule reponse.
+    expect(f.parCanal).toHaveLength(1);
+    expect(f.parCanal[0]).toMatchObject({ canal: 'whatsapp', envois: 2, reussis: 2, repondus: 1 });
+    // 🔴 L'INVARIANT QUI TIENT LES DEUX GRAINS ENSEMBLE : la somme des reponses par canal ne depasse
+    // JAMAIS le `replied` du funnel global. Les deux chiffres sont cote a cote sur le meme ecran ; s'ils
+    // se contredisent, c'est l'ecran entier qui devient indefendable.
+    expect(f.parCanal.reduce((n, l) => n + l.repondus, 0)).toBeLessThanOrEqual(f.replied);
+    expect(f.replied).toBe(1);
+    expect(f.contactsVises).toBe(1);
   });
 
   it('une campagne SANS journal rend une ventilation vide, pas des canaux a zero', async () => {

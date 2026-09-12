@@ -1016,10 +1016,24 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const funnel = await stats.getCampaignFunnel(tenantId, campaignId);
     // ⚠️ LES CAS D ORIGINE SONT CONSERVES (lu, delivre, echoue, repondu) : le quatrieme destinataire s AJOUTE,
     // il ne remplace rien. Seul `sent` passe de 2 a 3, et `sansAccuse` compte le nouveau.
-    expect(funnel).toEqual({ sent: 3, delivered: 2, read: 1, replied: 1, failed: 1, sansAccuse: 1, buttonReplies: 0, urlClicks: null });
+    expect(funnel).toEqual({
+      sent: 3, delivered: 2, read: 1, replied: 1, failed: 1, sansAccuse: 1, buttonReplies: 0, urlClicks: null,
+      contactsVises: 4, parCanal: [],
+    });
     // 🔴 « 0 DELIVRE » ET « ON NE SAIT PAS » NE SONT PAS LA MEME CHOSE, et c est ce chiffre qui permet a
     // l ecran de ne plus les confondre : sans lui, il affichait un zero la ou il n y a pas de mesure.
     expect(funnel.sansAccuse).toBe(1);
+    // 🔴 QUATRE VISES POUR TROIS PARTIS, ET LES DEUX CHIFFRES SONT JUSTES. `contactsVises` compte des
+    // PERSONNES (une ligne de destinataire chacune, le troisieme inclus bien qu il ait echoue), `sent`
+    // compte les envois REELLEMENT partis. Les confondre ferait disparaitre l echoue du denominateur, donc
+    // remonterait mecaniquement tous les taux de la campagne.
+    expect(funnel.contactsVises).toBe(4);
+    // 🔴 LA VENTILATION SE TAIT, ELLE N INVENTE PAS DES CANAUX A ZERO. Ce test ecrit ses resultats par
+    // `markResult` en direct, sans passer par le moteur : aucune ligne de journal n existe, exactement
+    // comme pour toute campagne anterieure a la migration 0134. Une ventilation qui rendrait ici
+    // `[{ canal: 'whatsapp', envois: 0, ... }]` affirmerait qu aucun envoi n a eu lieu, alors que trois
+    // sont partis. Vide veut dire « on ne sait pas », pas « zero ».
+    expect(funnel.parCanal).toEqual([]);
 
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
     const range = { from: today, to: today };
