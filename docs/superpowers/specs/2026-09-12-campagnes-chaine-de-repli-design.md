@@ -502,9 +502,12 @@ Plus aucune décision de conception. Trois choses à obtenir ou à établir pend
    destinataire est inapte » (donc joignabilité à mémoriser, et étage suivant) plutôt que
    « réessaie » (donc `retryable` au niveau transport, comme les 5xx de Meta). Sans ce classement,
    l'étage RCS d'une chaîne à trois niveaux basculera vers l'e-mail sur des incidents passagers.
-3. **La validation de la bascule sur 131049**, présentée à Julien le 2026-09-12 avec ses deux
-   conséquences (une part imprévisible de campagne WhatsApp devient du RCS hors de France, et la
-   fenêtre matinale ne sert plus que pour le mono-canal).
+3. ~~La validation de la bascule sur 131049.~~ **VALIDÉE par Julien le 2026-09-12**, après
+   présentation de ses deux conséquences : une part imprévisible de campagne WhatsApp devient du RCS
+   hors de France, et la fenêtre matinale ne sert plus que pour le mono-canal. ⚠️ Le point à ne pas
+   perdre : 131049 est un plafond que Meta pose pour protéger l'utilisateur du trop-plein marketing,
+   et la bascule le contourne par un autre canal. C'est licite (le RCS a ses propres règles) et
+   assumé, mais ça ne doit pas devenir un réglage qu'on étend sans y repenser.
 
 ⚠️ **Le parc actuel de campagnes est du test et sera effacé avant la mise en service.** La migration
 reprend quand même les campagnes existantes dans `campaign_etages` au rang 1 : la reprise coûte
