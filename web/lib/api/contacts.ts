@@ -26,6 +26,15 @@ export interface Contact {
    * conversation n'apparaît plus dans l'inbox. Ses messages restent enregistrés.
    */
   blockedAt?: string | null;
+  /**
+   * Joignabilité WhatsApp MESURÉE (migration 0133), et l'instant de la mesure. Absents = jamais mesuré.
+   *
+   * ⚠️ NE JAMAIS LIRE `whatsappJoignable` SEUL. Une valeur sans date ne peut pas se périmer, donc elle
+   * vaudrait pour toujours ; et `null`/absent veut dire « jamais testé », pas « injoignable ». La lecture
+   * passe par `verdictWhatsApp` (`src/contacts/joignabilite.ts`), qui tient ces trois cas d'un coup.
+   */
+  whatsappJoignable?: boolean | null;
+  whatsappJoignableLe?: string | null;
 }
 /** Identité messageable d'un contact : le numéro s'il existe, sinon le BSUID. null si aucun. */
 export function contactIdentity(c: Pick<Contact, 'phoneE164' | 'bsuid'>): string | null {

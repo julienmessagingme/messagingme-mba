@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildContactWhere, buildBulkSelector } from '../src/crm/contact-store.pg';
+import { PEREMPTION_WHATSAPP_MS } from '../src/contacts/joignabilite';
 
 // Fonctions PURES (aucune DB) : on vérifie le SQL + les params générés. C'est le GATE testable de la boucle
 // mini-CRM (les nouveaux opérateurs de filtre + le sélecteur d'action en masse), sans toucher Postgres.
@@ -109,5 +110,42 @@ describe('buildBulkSelector', () => {
     expect(where).toContain('deleted_at is null');
     expect(where).toContain('and not (id = any($3::uuid[]))');
     expect(params).toEqual(['t1', ['vip'], ['x', 'y']]);
+  });
+});
+
+/**
+ * LE FILTRE DE JOIGNABILITÉ (migration 0133).
+ *
+ * 🔴 IL EXCLUT LES INJOIGNABLES **CONNUS**, JAMAIS LES INCONNUS. C'est la transposition en SQL du même
+ * piège que `verdictWhatsApp` ferme côté code : traiter `null` comme `false` ferait sortir de l'audience
+ * tout le parc jamais sollicité, c'est-à-dire la quasi-totalité des contacts d'un client qui démarre.
+ * `is not false` laisse passer `null` ; `is not true` l'exclurait, et rien ne le signalerait.
+ */
+describe('buildContactWhere — joignabilité WhatsApp', () => {
+  it('le filtre exclut les injoignables CONNUS, jamais les inconnus', () => {
+    const { where } = buildContactWhere('t1', { joignabiliteWhatsApp: 'connu_injoignable' });
+    expect(where).toContain('whatsapp_joignable is not false');
+    // ⚠️ LA CLAUSE ENTIÈRE, PAS UN MORCEAU. Un `toContain` sur le seul premier terme laisse passer une
+    // altération des deux autres : la clause est un OU à trois branches, et chacune garde une population
+    // différente. Un sous-ensemble d'assertions sur un OU ne contraint presque rien.
+    expect(where).toContain(
+      "(whatsapp_joignable is not false or whatsapp_joignable_le is null"
+      + " or whatsapp_joignable_le < now() - ($2::bigint * interval '1 millisecond'))",
+    );
+  });
+
+  it('une mesure PÉRIMÉE laisse repasser le contact : le SQL dit la même chose que verdictWhatsApp', () => {
+    const { where, params } = buildContactWhere('t1', { joignabiliteWhatsApp: 'connu_injoignable' });
+    // 🔴 La péremption n'est pas un détail d'affichage : sans elle, le filtre exclurait pour toujours sur un
+    // constat vieux de deux ans, alors que la fiche contact du même contact afficherait « Jamais testé ».
+    expect(where).toContain('whatsapp_joignable_le is null');
+    expect(where).toContain('whatsapp_joignable_le <');
+    // Le seuil est PARAMÉTRÉ depuis la constante, jamais écrit « 90 days » en SQL : deux endroits qui portent
+    // le même nombre, c'est un endroit qui finira par mentir.
+    expect(params).toEqual(['t1', PEREMPTION_WHATSAPP_MS]);
+  });
+
+  it('absent -> aucune clause : le filtre ne s\'invite pas dans les requêtes qui ne le demandent pas', () => {
+    expect(buildContactWhere('t1', {}).where).not.toContain('whatsapp_joignable');
   });
 });

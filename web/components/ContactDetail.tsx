@@ -15,6 +15,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
 import { formatDate } from '@/lib/day';
+import { verdictWhatsApp, type Verdict } from '@/lib/joignabilite';
 import {
   updateContact,
   createUserField,
@@ -31,6 +32,20 @@ export const OPT_IN_LABEL: Record<string, { text: [string, string]; cls: string 
   opted_in: { text: ['opt-in', 'opt-in'], cls: 'bg-emerald-50 text-emerald-700' },
   opted_out: { text: ['opt-out', 'opt-out'], cls: 'bg-red-50 text-red-700' },
   unknown: { text: ['inconnu', 'unknown'], cls: 'bg-ink-100 text-ink-600' },
+};
+
+/**
+ * Les trois verdicts de joignabilité, à l'écran.
+ *
+ * 🔴 « JAMAIS TESTÉ » ET NON « INJOIGNABLE » POUR UN INCONNU. C'est le même défaut que confondre `null` et
+ * `false` en base, transposé à l'affichage, et il est PIRE ici : l'opérateur, lui, agit sur ce qu'il lit. Un
+ * contact jamais sollicité affiché « injoignable » ne sera jamais recontacté par personne, et rien dans
+ * l'écran ne dira que c'était une supposition. Gris, donc, comme le consentement inconnu juste au-dessus.
+ */
+export const JOIGNABILITE_BADGE: Record<Verdict, { text: [string, string]; cls: string }> = {
+  oui: { text: ['joignable', 'reachable'], cls: 'bg-emerald-50 text-emerald-700' },
+  non: { text: ['injoignable', 'unreachable'], cls: 'bg-red-50 text-red-700' },
+  inconnu: { text: ['Jamais testé', 'Never tested'], cls: 'bg-ink-100 text-ink-600' },
 };
 
 
@@ -130,6 +145,17 @@ export function ContactDetail({
   const t = useT();
   const { locale } = useLocale();
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
+  /**
+   * 🔴 LE VERDICT VIENT DU MODULE PARTAGÉ, il n'est pas recalculé ici. Écrire `contact.whatsappJoignable
+   * === false ? 'injoignable' : ...` à l'écran donnerait une SECONDE définition de « joignable », qui
+   * dériverait de celle du filtre d'audience et de celle du SQL : la fiche dirait « injoignable » sur une
+   * mesure que le filtre, lui, aurait déjà périmée.
+   */
+  const verdict = verdictWhatsApp(
+    contact.whatsappJoignable ?? null,
+    contact.whatsappJoignableLe ? new Date(contact.whatsappJoignableLe) : null,
+    new Date(),
+  );
   const defByKey = new Map(userFields.map((d) => [d.key, d]));
   // Les champs SOCLE ont leur ligne DÉDIÉE dans le bloc fixe ci-dessus (toujours visible, même vide) : les
   // exclure d'ici, sinon ils s'afficheraient deux fois dès qu'ils sont remplis, et seraient re-proposés à
@@ -337,6 +363,20 @@ export function ContactDetail({
                 className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50">
                 {t('bloquer ce contact', 'block this contact')}
               </button>
+            )}
+          </span>
+          {/* JOIGNABILITÉ, juste après la modération : même famille de question, « ce message a-t-il une
+              chance d'arriver ». Elle vient de ce qu'on a MESURÉ (migration 0133), jamais d'une supposition. */}
+          <span className="text-ink-400">{t('Joignabilité', 'Reachability')}</span>
+          <span className="flex flex-wrap items-center gap-2" data-testid="fiche-joignabilite">
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${JOIGNABILITE_BADGE[verdict].cls}`}>
+              {t(...JOIGNABILITE_BADGE[verdict].text)}
+            </span>
+            {/* La DATE de la mesure, et seulement quand il y en a une : c'est elle qui rend le verdict
+                lisible (« injoignable » d'hier et « injoignable » d'il y a trois mois ne se valent pas), et
+                sans elle personne ne peut juger s'il faut réessayer. */}
+            {verdict !== 'inconnu' && contact.whatsappJoignableLe && (
+              <span className="text-xs text-ink-400">{t('mesuré le', 'measured on')} {formatDate(contact.whatsappJoignableLe, locale)}</span>
             )}
           </span>
           <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>

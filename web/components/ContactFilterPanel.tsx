@@ -91,6 +91,21 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
           </div>
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-500">
+          {t('Joignabilité WhatsApp', 'WhatsApp reachability')}
+          {/* ⚠️ DEUX CHOIX, PAS TROIS. Il n'y a pas de « seulement les joignables » : ce serait exclure tout
+              le parc jamais sollicité, c'est-à-dire l'inverse de ce qu'un opérateur croit demander. La seule
+              question utile est « écarte ceux qu'on SAIT injoignables », et elle laisse passer les inconnus. */}
+          <select
+            value={filters.joignabiliteWhatsApp ?? ''}
+            onChange={(e) => set({ joignabiliteWhatsApp: e.target.value === 'connu_injoignable' ? 'connu_injoignable' : undefined })}
+            className={`${inputClsAuto} bg-white`}
+            data-testid="filtre-joignabilite"
+          >
+            <option value="">{t('tous', 'all')}</option>
+            <option value="connu_injoignable">{t('sauf les injoignables connus', 'except known unreachable')}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Téléphone commence par', 'Phone starts with')}
           <input value={filters.phonePrefix ?? ''} onChange={(e) => set({ phonePrefix: e.target.value || undefined })} className={inputClsAuto} placeholder="+336" />
         </label>

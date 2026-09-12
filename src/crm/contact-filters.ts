@@ -52,6 +52,7 @@ export interface EntreesFiltres {
   phonePrefix: unknown;
   phoneContains: unknown;
   nameSearch: unknown;
+  joignabilite: unknown;
   fieldFilters: ContactFieldFilter[];
 }
 
@@ -68,6 +69,9 @@ export function buildContactFilters(e: EntreesFiltres): ContactFilters {
     ...(texteFiltre(e.phonePrefix) ? { phonePrefix: texteFiltre(e.phonePrefix) } : {}),
     ...(texteFiltre(e.phoneContains) ? { phoneContains: texteFiltre(e.phoneContains) } : {}),
     ...(texteFiltre(e.nameSearch) ? { nameSearch: texteFiltre(e.nameSearch) } : {}),
+    // ⚠️ UNE SEULE VALEUR RECONNUE, le reste est JETÉ. C'est la règle de tout ce module : une donnée
+    // cliente à moitié comprise viserait la mauvaise population, ce qui est pire que pas de filtre du tout.
+    ...(e.joignabilite === 'connu_injoignable' ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
     ...(e.fieldFilters.length > 0 ? { fieldFilters: e.fieldFilters } : {}),
   };
 }

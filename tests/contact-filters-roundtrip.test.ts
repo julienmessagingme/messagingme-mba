@@ -21,6 +21,7 @@ describe('filtersToQuery (web) <-> parseFilters (serveur) — round-trip', () =>
       phonePrefix: '+336',
       phoneContains: '4242',
       nameSearch: 'marc',
+      joignabiliteWhatsApp: 'connu_injoignable',
       fieldFilters: [
         { key: 'email', op: 'not_empty', value: '' },
         { key: 'ville', op: 'not_contains', value: 'paris' },
@@ -41,5 +42,11 @@ describe('filtersToQuery (web) <-> parseFilters (serveur) — round-trip', () =>
 
   it('filtres vides -> objet vide des deux côtés', () => {
     expect(roundTrip({})).toEqual({});
+  });
+
+  // 🔴 SEUL, il doit survivre. Un critère ajouté d'un seul côté de la chaîne ne casse RIEN de visible : il
+  // est simplement perdu en route, et l'écran affiche un filtre coché qui ne filtre pas.
+  it('la joignabilité seule survit au round-trip', () => {
+    expect(roundTrip({ joignabiliteWhatsApp: 'connu_injoignable' })).toEqual({ joignabiliteWhatsApp: 'connu_injoignable' });
   });
 });

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgCampaignRepo } from '../../src/campaign/store.pg';
+import { buildContactWhere } from '../../src/crm/contact-store.pg';
 import { runRetrySweep, type RetrySweepDeps } from '../../src/campaign/retry-sweep';
 import { creerNoteurJoignabilite } from '../../src/contacts/joignabilite.pg';
 import { verdictWhatsApp } from '../../src/contacts/joignabilite';
@@ -171,6 +172,40 @@ describe.skipIf(!url)('joignabilite WhatsApp memorisee', () => {
     expect((await lire(contactId, tenantId)).valeur).toBeNull();
     await noter(tenantId, contactId, true);
     expect((await lire(contactId, tenantId)).valeur).toBe(true);
+  });
+
+  it('le filtre d audience : la TABLE DE VERITE, evaluee par Postgres et pas par une chaine', async () => {
+    // 🔴 UN TEST SUR LE TEXTE DU SQL NE PROUVE PAS SON SENS. `is not false` et `is not true` se ressemblent,
+    // et seule une vraie base dit lequel garde qui. Quatre contacts, les quatre etats possibles.
+    const mk = async (tel: string, valeur: boolean | null, jours: number | null): Promise<string> => {
+      const { rows } = await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164, opt_in_status, whatsapp_joignable, whatsapp_joignable_le)
+         values ($1, $2, 'opted_in', $3, case when $4::int is null then null else now() - ($4::int * interval '1 day') end)
+         returning id`,
+        [tenantId, tel, valeur, jours],
+      );
+      return rows[0]!.id;
+    };
+    const jamais = await mk('+33600000201', null, null);
+    const injoignableFrais = await mk('+33600000202', false, 10);
+    const injoignablePerime = await mk('+33600000203', false, 91);
+    const joignable = await mk('+33600000204', true, 10);
+    const sansDate = await mk('+33600000205', false, null);
+
+    const { where, params } = buildContactWhere(tenantId, { joignabiliteWhatsApp: 'connu_injoignable' });
+    const { rows } = await pool.query<{ id: string }>(`select id from contacts where ${where}`, params);
+    const gardes = new Set(rows.map((r) => r.id));
+
+    // Le SEUL exclu est celui qu'on SAIT injoignable, sur une mesure encore valide.
+    expect(gardes.has(injoignableFrais)).toBe(false);
+    // 🔴 Les quatre autres passent, et chacun pour sa raison : jamais mesure, mesure perimee (elle redevient
+    // inconnue), mesure sans instant (ce n est pas une mesure), et joignable avere.
+    expect(gardes.has(jamais)).toBe(true);
+    expect(gardes.has(injoignablePerime)).toBe(true);
+    expect(gardes.has(sansDate)).toBe(true);
+    expect(gardes.has(joignable)).toBe(true);
+
+    await pool.query(`delete from contacts where id = any($1::uuid[])`, [[jamais, injoignableFrais, injoignablePerime, joignable, sansDate]]);
   });
 
   it('l index partiel de 0133 existe, avec SON predicat', async () => {

@@ -113,6 +113,7 @@ function normalizeContactFilters(raw: unknown): ContactFilters {
     phonePrefix: r.phonePrefix,
     phoneContains: r.phoneContains,
     nameSearch: r.nameSearch,
+    joignabilite: r.joignabiliteWhatsApp,
     fieldFilters: Array.isArray(r.fieldFilters) ? normalizeFieldFilters(r.fieldFilters) : [],
   });
 }

@@ -21,6 +21,12 @@ export interface ContactFilters {
   phonePrefix?: string;
   phoneContains?: string;
   nameSearch?: string;
+  /**
+   * Joignabilité WhatsApp MÉMORISÉE (migration 0133). `connu_injoignable` = « écarte ceux qu'on SAIT
+   * injoignables ». ⚠️ Un INCONNU n'est pas un injoignable : un contact jamais sollicité reste dans
+   * l'audience, sinon le filtre viderait la liste de tout client qui démarre.
+   */
+  joignabiliteWhatsApp?: 'connu_injoignable';
   fieldFilters?: ContactFieldFilter[];
 }
 
@@ -32,6 +38,7 @@ export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeI
 export function filtersActive(f: ContactFilters): boolean {
   return Boolean(
     f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch ||
+    f.joignabiliteWhatsApp ||
     f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.value.trim() !== ''),
   );
 }
@@ -72,6 +79,7 @@ export function filtresRepris(v: unknown): ContactFilters {
     ...(texte('phonePrefix') ? { phonePrefix: texte('phonePrefix')! } : {}),
     ...(texte('phoneContains') ? { phoneContains: texte('phoneContains')! } : {}),
     ...(texte('nameSearch') ? { nameSearch: texte('nameSearch')! } : {}),
+    ...(o.joignabiliteWhatsApp === 'connu_injoignable' ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
     ...(champs.length > 0 ? { fieldFilters: champs } : {}),
   };
 }
@@ -86,6 +94,7 @@ export function filtersToQuery(f: ContactFilters): URLSearchParams {
   if (f.phonePrefix) qs.set('phonePrefix', f.phonePrefix);
   if (f.phoneContains) qs.set('phoneContains', f.phoneContains);
   if (f.nameSearch) qs.set('nameSearch', f.nameSearch);
+  if (f.joignabiliteWhatsApp) qs.set('joignabilite', f.joignabiliteWhatsApp);
   if (f.fieldFilters && f.fieldFilters.length > 0) qs.set('fields', JSON.stringify(f.fieldFilters));
   return qs;
 }

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { PEREMPTION_WHATSAPP_MS } from '../contacts/joignabilite';
 import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';
 
@@ -14,6 +15,15 @@ export interface ContactRow {
   createdAt: string;
   /** Date de blocage (modération). `null` = non bloqué. Bloqué : plus aucun envoi, conversation masquée. */
   blockedAt: string | null;
+  /**
+   * Joignabilité WhatsApp MESURÉE (migration 0133), et sa date. Les DEUX voyagent ensemble, toujours.
+   *
+   * 🔴 UNE VALEUR SANS SA DATE N'EST PAS UNE MESURE : elle ne pourrait pas se périmer, donc elle vaudrait
+   * pour toujours. C'est pourquoi la fiche ne lit jamais `whatsappJoignable` seul, elle passe par
+   * `verdictWhatsApp`, qui rend `inconnu` dans ce cas comme dans celui d'un contact jamais sollicité.
+   */
+  whatsappJoignable: boolean | null;
+  whatsappJoignableLe: string | null;
 }
 
 /** Opérateurs de filtre sur un champ perso (jsonb, valeur STRING).
@@ -62,6 +72,20 @@ export interface ContactFilters {
   phoneContains?: string;
   /** Recherche sur le nom de profil (insensible à la casse). */
   nameSearch?: string;
+  /**
+   * Joignabilité WhatsApp MÉMORISÉE (migration 0133). Une seule valeur aujourd'hui, `connu_injoignable` :
+   * « écarte ceux qu'on SAIT injoignables ».
+   *
+   * 🔴 UN INCONNU N'EST PAS UN INJOIGNABLE. C'est la même règle que `verdictWhatsApp`, et elle décide de
+   * tout : un contact jamais sollicité porte `null`, et le compter injoignable viderait l'audience de tout
+   * client qui démarre. Le SQL dit donc `is not false`, jamais `is not true`.
+   *
+   * ⚠️ PAS DE CANAL RCS ICI, et ce n'est pas un oubli : la joignabilité RCS vit dans un cache indexé par
+   * AGENT (`src/rcs/reachability.ts`), pas sur la ligne `contacts`. L'exprimer dans ce WHERE demanderait un
+   * agent que l'appelant ne fournit pas, et l'approcher autrement serait une SECONDE définition de
+   * « joignable », exactement ce que `src/contacts/joignabilite.ts` interdit.
+   */
+  joignabiliteWhatsApp?: 'connu_injoignable';
   fieldFilters?: ContactFieldFilter[];
 }
 
@@ -215,7 +239,8 @@ export class PgContactStore implements ContactStore {
    *  si createMissing, ré-upserté donc ressuscité. Jamais destinataire d'un envoi. */
   async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
     const res = await this.pool.query(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
+              whatsapp_joignable, whatsapp_joignable_le
        from contacts where tenant_id = $1 and phone_e164 = $2 and deleted_at is null limit 1`,
       [tenantId, phoneE164],
     );
@@ -513,15 +538,23 @@ export class PgContactStore implements ContactStore {
   private static rowToContact(r: {
     id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date; blocked_at?: Date | null;
+    whatsapp_joignable?: boolean | null; whatsapp_joignable_le?: Date | null;
   }): ContactRow {
     return {
       id: r.id, phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
       fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
       blockedAt: r.blocked_at ? r.blocked_at.toISOString() : null,
+      // ⚠️ `?? null`, jamais `undefined` : la colonne peut manquer (migration pas encore passée) et un
+      // `undefined` traverserait JSON.stringify en disparaissant du corps. L'écran lirait alors une clé
+      // absente là où il attend « jamais mesuré », ce qui est la même valeur mais par accident.
+      whatsappJoignable: r.whatsapp_joignable ?? null,
+      whatsappJoignableLe: r.whatsapp_joignable_le ? r.whatsapp_joignable_le.toISOString() : null,
     };
   }
   private static readonly SELECT_ONE =
-    'select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at from contacts where id = $1 and tenant_id = $2';
+    `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
+            whatsapp_joignable, whatsapp_joignable_le
+       from contacts where id = $1 and tenant_id = $2`;
 
   /** Un contact par id, scopé tenant. null si absent/autre tenant. */
   async getById(tenantId: string, contactId: string): Promise<ContactRow | null> {
@@ -621,7 +654,8 @@ export class PgContactStore implements ContactStore {
       id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
       opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
     }>(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
+              whatsapp_joignable, whatsapp_joignable_le
        from contacts where ${where}
        order by created_at desc limit ${limitRef} offset ${offsetRef}`,
       [...params, capped, Math.max(offset, 0)],
@@ -980,6 +1014,20 @@ export function buildContactWhere(tenantId: string, f: ContactFilters): { where:
   }
   if (f.nameSearch && f.nameSearch.trim() !== '') {
     clauses.push(`profile_name ilike '%' || ${add(f.nameSearch.trim())} || '%'`);
+  }
+  if (f.joignabiliteWhatsApp === 'connu_injoignable') {
+    // 🔴 LES TROIS TERMES SONT LA TRANSPOSITION EXACTE DE `verdictWhatsApp`, dans l'ordre où il les teste :
+    // `null` est INCONNU (donc gardé), une valeur SANS date est inconnue elle aussi (une mesure sans instant
+    // ne peut pas se périmer, donc elle vaudrait pour toujours), et une mesure périmée redevient inconnue.
+    // En retirer un ferait diverger la liste de ce que la fiche du même contact affiche, sans rien casser
+    // de visible : c'est exactement le genre d'écart que personne ne va chercher.
+    //
+    // ⚠️ Le seuil est PARAMÉTRÉ depuis `PEREMPTION_WHATSAPP_MS`, jamais écrit « 90 days » : un nombre posé à
+    // deux endroits est un nombre qui finira par différer, et c'est la règle qui perdrait son sens.
+    clauses.push(
+      `(whatsapp_joignable is not false or whatsapp_joignable_le is null` +
+      ` or whatsapp_joignable_le < now() - (${add(PEREMPTION_WHATSAPP_MS)}::bigint * interval '1 millisecond'))`,
+    );
   }
   for (const ff of f.fieldFilters ?? []) {
     const key = String(ff.key ?? '').trim();

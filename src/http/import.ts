@@ -49,13 +49,16 @@ export function parseFilters(q: Record<string, unknown>): ContactFilters {
     phonePrefix: q.phonePrefix,
     phoneContains: q.phoneContains,
     nameSearch: q.nameSearch,
+    joignabilite: q.joignabilite,
     fieldFilters,
   });
 }
 
 /** Un des filtres avancés est-il posé ? (sinon on garde le chemin `listContacts` historique, avec `tag`.) */
 function hasFilters(f: ContactFilters): boolean {
-  return Boolean(f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.fieldFilters?.length);
+  // 🔴 TOUT NOUVEAU CRITÈRE ENTRE ICI AUSSI. Cette porte décide du chemin requêtable : un critère oublié
+  // n'echoue pas, il retombe sur la liste par défaut, donc il s'affiche coché et ne filtre RIEN.
+  return Boolean(f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.joignabiliteWhatsApp || f.fieldFilters?.length);
 }
 
 /** Construit un mapping par défaut depuis la reconnaissance de colonnes. */

@@ -20,6 +20,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 const CONTACT: ContactRow = {
   id: 'c1', phoneE164: '+33611', bsuid: null, profileName: 'Marc', optInStatus: 'opted_in',
   fields: { prenom: 'Marc' }, tags: ['vip'], createdAt: '2026-07-10T00:00:00.000Z', blockedAt: null,
+  whatsappJoignable: null, whatsappJoignableLe: null,
 };
 const FIELDS: UserFieldDef[] = [
   { key: 'prenom', label: 'Prénom', type: 'text' },
