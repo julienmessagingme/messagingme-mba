@@ -46,6 +46,10 @@ Elles s'appliquent à **toutes** les tâches, sans être répétées dans chacun
   chose en marketing).
 - **Palette Tailwind maison** : `sky` et `violet` sont des couleurs SIMPLES (`sky: '#3A8BD8'`).
   `bg-violet-50` N'EXISTE PAS et ne produit aucune erreur. Utiliser `bg-violet/10`.
+- 🔴 **LARGEUR : RIEN NE DÉBORDE NI NE SE CHEVAUCHE SUR UN 13 POUCES** (demande de Julien,
+  2026-09-12). L'écran de référence est **1280 x 800**, moins la barre latérale de la console, donc
+  environ **1000 px utiles**. « Je ferai attention » n'est pas vérifiable : la garde est MÉCANIQUE,
+  cf. la section « La garde de largeur » ci-dessous, et chaque tâche d'interface la porte.
 
 ---
 
@@ -79,6 +83,77 @@ Elles s'appliquent à **toutes** les tâches, sans être répétées dans chacun
 | `src/campaign/pacing.ts` | `resolveRatePerMinute` prend le canal |
 | `src/stats/store.pg.ts:450` | `getCampaignFunnel` lit `campaign_envois` et groupe par canal |
 | `web/components/CampaignCreateForm.tsx` | Remplacé par l'assistant ; le fichier disparaît en T12 |
+
+---
+
+## La garde de largeur
+
+🔴 **Un écran qui déborde ne se voit pas sur l'écran de celui qui l'écrit.** Le développeur travaille
+en 1920 de large, l'utilisateur ouvre la console sur un portable 13 pouces, et le chevauchement
+n'apparaît que chez lui. Le dépôt a déjà payé ça : un `ml-3` posé sur un `w-full` ajoutait 12 px et
+faisait déborder un textarea, trouvé en MESURANT dans le navigateur, pas en relisant le code.
+
+**Le helper, écrit une fois, utilisé par chaque tâche d'interface.**
+
+Créer `web/e2e/aide/largeur.ts` :
+
+```ts
+import { expect, type Page } from '@playwright/test';
+
+/** L'écran de référence : un portable 13 pouces. Pas une supposition, la demande de Julien. */
+export const TREIZE_POUCES = { width: 1280, height: 800 };
+
+/**
+ * Aucun débordement horizontal, et aucun chevauchement entre les blocs nommés.
+ *
+ * 🔴 LES DEUX CONTRÔLES SONT NÉCESSAIRES ET DIFFÉRENTS. Un `overflow-hidden` supprime le
+ * débordement du document en MASQUANT le contenu qui dépasse : la page ne scrolle plus
+ * horizontalement, et pourtant la moitié d'un bouton est coupée. Seul le second contrôle le voit.
+ */
+export async function pasDeDebordement(page: Page): Promise<void> {
+  const debord = await page.evaluate(() => {
+    const d = document.documentElement;
+    return d.scrollWidth - d.clientWidth;
+  });
+  expect(debord, 'la page déborde horizontalement').toBeLessThanOrEqual(0);
+}
+
+/**
+ * Deux éléments ne se recouvrent pas, et aucun ne sort de son parent.
+ * `cles` sont des `data-testid`.
+ */
+export async function pasDeChevauchement(page: Page, cles: string[]): Promise<void> {
+  const boites = [];
+  for (const cle of cles) {
+    const b = await page.getByTestId(cle).boundingBox();
+    expect(b, `introuvable : ${cle}`).not.toBeNull();
+    boites.push({ cle, ...b! });
+  }
+  for (let i = 0; i < boites.length; i += 1) {
+    for (let j = i + 1; j < boites.length; j += 1) {
+      const a = boites[i]!;
+      const b = boites[j]!;
+      const seRecouvrent =
+        a.x < b.x + b.width && b.x < a.x + a.width &&
+        a.y < b.y + b.height && b.y < a.y + a.height;
+      expect(seRecouvrent, `${a.cle} chevauche ${b.cle}`).toBe(false);
+    }
+  }
+}
+```
+
+⚠️ **Chaque tâche d'interface (10, 11, 12, et l'étape 4 de la tâche 9) ouvre son écran en
+`TREIZE_POUCES` et appelle les deux fonctions.** Un test qui ne fixe pas la taille de la fenêtre
+mesure celle de la machine qui l'exécute, donc il passe chez nous et rate chez le client.
+
+⚠️ **Vérification par MUTATION, comme partout** : poser une largeur fixe absurde (`w-[1600px]`) sur
+un cadre de l'étape, constater que `pasDeDebordement` échoue, retirer. Un garde-fou de mise en page
+qu'on n'a jamais vu échouer n'est pas un garde-fou.
+
+**Le point de conception qui évite le problème plutôt que de le détecter** : à l'étape 3, les cadres
+d'étage sont **empilés verticalement**, jamais côte à côte. Trois cadres à 320 px avec leurs
+gouttières ne tiennent pas dans 1000 px utiles, et une grille qui se réorganise en dessous d'un
+seuil produit exactement les chevauchements que Julien décrit. Un seul cadre est déplié à la fois.
 
 ---
 
@@ -954,6 +1029,17 @@ test('un espace sans heures d ouverture le DIT au moment ou on coche', async ({ 
   await page.getByRole('checkbox', { name: /heures d.ouverture/i }).check();
   await expect(page.getByText(/aucune heure d.ouverture n.est réglée/i)).toBeVisible();
 });
+
+// 🔴 LA GARDE DE LARGEUR, sur l'etape la plus chargee : trois entrees de canal, deux
+// sous-questions, une case a cocher et un encart d'avertissement.
+test('rien ne deborde ni ne se chevauche en 13 pouces', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  await page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' }).check();
+  await page.getByRole('radio', { name: 'RCS en premier' }).check();
+  await page.getByRole('radio', { name: 'E-mail' }).check(); // troisieme niveau, l'ecran est plein
+  await pasDeDebordement(page);
+  await pasDeChevauchement(page, ['choix-canal', 'choix-ordre', 'choix-troisieme', 'bloc-rattrapage']);
+});
 ```
 
 - [ ] **Étape 2 : lancer, constater l'échec (aucun écran), implémenter, relancer**
@@ -1002,6 +1088,31 @@ test('l assignation a une personne affiche le NOMBRE avant de valider', async ({
 test('le RCS garde ses suggestions, il ne se reduit pas a un lien', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toBeVisible();
 });
+
+// 🔴 L'ÉTAPE LA PLUS EXPOSÉE AU DÉBORDEMENT : trois cadres d'étage, un éditeur de modèle, un
+// éditeur de suggestions RCS et le bloc du devenir de la conversation.
+test('les cadres d etage sont EMPILES, jamais cote a cote, et rien ne deborde en 13 pouces', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  await page.getByTestId('etage-1').click(); // deplie le premier
+  await pasDeDebordement(page);
+  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3', 'bloc-devenir']);
+
+  // Les cadres sont empiles : chacun commence SOUS le precedent, jamais a sa droite.
+  const un = (await page.getByTestId('etage-1').boundingBox())!;
+  const deux = (await page.getByTestId('etage-2').boundingBox())!;
+  expect(deux.y).toBeGreaterThanOrEqual(un.y + un.height);
+});
+
+// ⚠️ L'editeur de suggestions RCS est le composant le plus large de l'ecran : un cadre deplie
+// avec onze suggestions est le pire cas realiste.
+test('onze suggestions RCS ne font pas deborder le cadre', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  await page.getByTestId('etage-2').click();
+  for (let i = 0; i < 11; i += 1) {
+    await page.getByRole('button', { name: 'Ajouter une suggestion' }).click();
+  }
+  await pasDeDebordement(page);
+});
 ```
 
 - [ ] **Étape 2 : implémenter, relancer, MUTER**
@@ -1041,6 +1152,21 @@ test('le recap montre la repartition par etage, pas un resume', async ({ page })
 test('chaque ligne ramene a son etape', async ({ page }) => {
   await page.getByRole('link', { name: /contacts retenus/ }).click();
   await expect(page.getByRole('heading', { name: 'Audience' })).toBeVisible();
+});
+
+// 🔴 LE RÉCAP PORTE UN TABLEAU DE RÉPARTITION, donc le risque n'est pas le chevauchement mais la
+// coupe. Un tableau large scrolle DANS SON PROPRE conteneur, la page ne scrolle jamais de côté.
+test('la repartition ne fait pas deborder la page en 13 pouces', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  await pasDeDebordement(page);
+  await pasDeChevauchement(page, ['repartition', 'bloc-cout', 'bouton-lancer']);
+});
+
+// ⚠️ Un nombre à sept chiffres (1 000 000 de contacts) est le pire cas de largeur d'une cellule.
+test('des grands nombres ne cassent pas la mise en page', async ({ page }) => {
+  await page.setViewportSize(TREIZE_POUCES);
+  // Audience gonflée à 1 000 000 dans la fixture.
+  await pasDeDebordement(page);
 });
 ```
 
