@@ -1774,3 +1774,25 @@ plus utile de l'écran.
 serveur de dev sert plus lentement et la mesure part avant la fin du rendu. La réparation est une
 attente sur un état RENDU (les trois blocs visibles ET leur hauteur non nulle) avant de mesurer, pas
 un `waitForTimeout`.
+
+## 🟡 Cocher « heures ouvrées » sur un espace SANS jour ouvert condamne la campagne (relevé au lot 7, 2026-09-12)
+
+**Le comportement est documenté et voulu**, pas accidentel : sans aucun jour ouvert,
+`prochaineOuverture` rend `null`, la campagne se met en pause `hors_horaires` **sans échéance**, et
+`reprendreCampagnesDues` exige `paused_until is not null`. Elle ne repart donc jamais toute seule.
+⚠️ Ce n'est PAS silencieux : `messageDePause` l'explique à l'opérateur, avec la même sémantique
+qu'une pause de qualité.
+
+🔴 **Le manque est EN AMONT, et il est dans l'ANCIEN formulaire.** Il laisse cocher la case sans
+prévenir qu'elle condamnera la campagne sur cet espace. Le nouvel assistant, lui, avertit au moment
+du clic (« aucune heure d'ouverture n'est réglée »), et c'est la bonne place : au moment de la
+décision, pas au moment de la panne.
+
+⚠️ **MESURÉ LE 2026-09-12 : l'espace « Demo » a ZÉRO jour ouvert.** C'est celui sur lequel les essais
+se font. Le piège est donc armé là où on teste, et zéro campagne y est bloquée aujourd'hui.
+
+**Deux réparations possibles, à trancher** : porter l'avertissement dans l'ancien formulaire (petit,
+et il disparaîtra avec lui), ou décider qu'un espace sans jour ouvert est « toujours ouvert » pour
+l'envoi initial, ce qui alignerait le comportement sur celui du rattrapage
+(`fenetreDeRattrapageOuverte` rend déjà `true` dans ce cas). La seconde est plus cohérente mais
+change un comportement d'envoi : elle ne se fait pas sans décision explicite.
