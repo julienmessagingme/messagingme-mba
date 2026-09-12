@@ -20,6 +20,7 @@ import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
+import { LaunchCounts } from '@/components/LaunchCounts';
 import { inputCls } from '@/lib/ui';
 import {
   createCampaign,
@@ -1834,21 +1835,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
 }
 
 /**
- * Compteurs sent/failed/pending/skipped d'une campagne. Servent au lancement en ligne (étape 2) ET à la liste
- * des campagnes, qui en recopiait le JSX au lieu de l'appeler : `className` absorbe le seul écart entre les
- * deux (marge et nuance de gris).
+ * ⚠️ `LaunchCounts` A DÉMÉNAGÉ DANS SON PROPRE MODULE (`@/components/LaunchCounts`), et il est RÉEXPORTÉ
+ * ici pour ne casser aucun importeur. Il vivait dans ce fichier alors que la LISTE des campagnes
+ * l'utilise aussi : le jour où ce formulaire sera retiré, un export utile serait parti avec lui, et une
+ * recherche sur `CampaignCreateForm` ne l'aurait pas montré (c'est un AUTRE nom dans le même fichier).
  */
-export function LaunchCounts({ counts, className = 'mt-2 text-xs text-ink-600' }: { counts: RecipientCounts; className?: string }) {
-  const t = useT();
-  return (
-    <p className={className}>
-      <b className="text-emerald-700">{counts.sent}</b> {t('envoyés', 'sent')}
-      {counts.failed > 0 && <> · <b className="text-red-700">{counts.failed}</b> {t('échecs', 'failures')}</>}
-      {counts.pending > 0 && <> · {counts.pending} {t('en attente', 'pending')}</>}
-      {counts.skipped > 0 && <> · {counts.skipped} {t('ignorés', 'skipped')}</>}
-    </p>
-  );
-}
+export { LaunchCounts };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { RcsSuggestion } from '@/lib/api';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import type { CanalEtage, EtageAssistant } from '@/lib/campagne-chaine';
+import { champEmailEffectif } from '@/lib/campagne-repartition';
 import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 
 /**
@@ -258,8 +259,28 @@ function CadreEmail({
         options={references.emailTemplates.map((t) => ({ valeur: t.id, libelle: t.name }))}
         vide="Aucun modèle d'e-mail sur cet espace."
       />
+      {/*
+        🔴 QUEL CHAMP PORTE L'ADRESSE ? LA QUESTION SE POSE PARCE QU'IL N'Y A AUCUNE CONVENTION. `contacts`
+        n'a PAS de colonne `email` (vérifié : 0001, puis les `alter table contacts` qui ont suivi) :
+        l'adresse vit dans le jsonb `fields`, sous la clé que le client a créée dans « Champs perso ». Le
+        dépôt porte déjà la trace d'un espace qui l'appelait « mail » quand un autre l'appelait « email »
+        (`src/workflow/wiring.ts`, cas du 2026-08-25, où le bloc visait un champ vide). Deviner la clé,
+        c'est se tromper une fois sur deux, EN SILENCE, sur un envoi réel.
+
+        ⚠️ La valeur est SUGGÉRÉE et non imposée (`champEmailEffectif`, le MÊME point de passage que le
+        comptage du récapitulatif) : on épargne un clic quand un champ
+        ressemble à une adresse, et l'opérateur garde la main. Sans suggestion, le sélecteur reste vide et
+        le récapitulatif le dit au lieu d'inventer un compte.
+      */}
+      <Selecteur
+        libelle="Champ qui porte l'adresse e-mail"
+        valeur={champEmailEffectif(contenu.emailChamp, references.userFields) ?? ''}
+        onChange={(v) => onChange({ emailChamp: v })}
+        options={references.userFields.map((f) => ({ valeur: f.key, libelle: `${f.label} (${f.key})` }))}
+        vide="Aucun champ perso sur cet espace : créez-en un dans Contacts > Champs perso."
+      />
       <p className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
-        L&apos;e-mail part à l&apos;adresse portée par la fiche du contact. Un contact sans adresse sort de
+        L&apos;e-mail part à l&apos;adresse portée par ce champ. Un contact dont le champ est vide sort de
         la chaîne avant cet étage.
       </p>
     </div>

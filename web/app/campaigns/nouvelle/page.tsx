@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
+import { useRouter } from 'next/navigation';
 import {
   getSettings, listTemplates, listWorkflows, listEmailTemplates, listUsers,
+  listTags, listUserFields, listPhoneNumbers, listRcsAgents,
   type BusinessHours,
 } from '@/lib/api';
 import { listAgents } from '@/lib/api-agent';
@@ -18,19 +20,20 @@ import {
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE, sur son propre écran.
  *
  * 🔴 UNE ADRESSE À PART, ET NON UN MODE DE `/campaigns`, TANT QUE L'ANCIEN FORMULAIRE EST EN SERVICE.
- * `CampaignCreateForm` reste le chemin de création réel : le remplacer ici couperait la seule façon de
- * lancer une campagne avant que l'audience et le récapitulatif existent. Une adresse séparée permet de
- * livrer les étapes une par une, de les montrer, et de basculer le bouton « Nouvelle campagne » le jour
- * où le parcours est complet.
+ * `CampaignCreateForm` reste le chemin de création complet ; le bouton « Ajouter une campagne » continue
+ * de l'ouvrir. Les deux coexistent, et ce n'est pas de la prudence : l'assistant n'envoie pas encore de
+ * `paramMapping`, donc une campagne sur un template à variables y serait refusée par Meta. L'inventaire
+ * de ce qui lui manque vit dans `AssistantCampagne.tsx`.
  *
- * ⚠️ CET ÉCRAN NE CRÉE ENCORE RIEN. Il n'y a aucun bouton de lancement, et c'est délibéré : un parcours
- * qui envoie sans avoir demandé le contenu ni l'audience enverrait une campagne vide à personne.
+ * ⚠️ CET ÉCRAN CRÉE ET LANCE VRAIMENT DEPUIS LE 2026-09-12. Le bouton du récapitulatif appelle
+ * `createCampaign` puis `runCampaign` : ce qui part d'ici part à de vraies personnes.
  */
 export default function NouvelleCampagnePage() {
   return <AppShell active="campagnes">{(session) => <AssistantInner session={session} />}</AppShell>;
 }
 
 function AssistantInner({ session }: { session: Session }) {
+  const router = useRouter();
   const [capacites, setCapacites] = useState<CapacitesEspace | null>(null);
   const [references, setReferences] = useState<ReferencesContenu>(REFERENCES_VIDES);
 
@@ -94,6 +97,20 @@ function AssistantInner({ session }: { session: Session }) {
     void listAgents(session.tenantId)
       .then((a) => poser({ agents: (Array.isArray(a) ? a : []).map((x) => ({ id: x.id, label: x.label })) }))
       .catch(() => {});
+    // Les quatre listes des étapes Audience et Récapitulatif, chargées de la même façon et pour la même
+    // raison : un hoquet sur les tags ne doit pas priver l'écran de son numéro d'expédition.
+    void listTags(session.tenantId)
+      .then((r) => poser({ tags: Array.isArray(r?.tags) ? r.tags : [] }))
+      .catch(() => {});
+    void listUserFields(session.tenantId)
+      .then((r) => poser({ userFields: Array.isArray(r?.fields) ? r.fields : [] }))
+      .catch(() => {});
+    void listPhoneNumbers(session.tenantId)
+      .then((r) => poser({ numeros: Array.isArray(r?.phoneNumbers) ? r.phoneNumbers : [] }))
+      .catch(() => {});
+    void listRcsAgents(session.tenantId)
+      .then((r) => poser({ agentsRcs: Array.isArray(r?.agents) ? r.agents : [] }))
+      .catch(() => {});
     return () => { vivant = false; };
   }, [session.tenantId]);
 
@@ -124,10 +141,14 @@ function AssistantInner({ session }: { session: Session }) {
 
   return (
     <AssistantCampagne
+      tenantId={session.tenantId}
       capacites={capacites}
       references={references}
       etapeInitiale={etapeInitiale}
       etatInitial={{ ...(formule ? { formule } : {}), ...(troisieme ? { troisieme } : {}) }}
+      // ⚠️ La redirection se fait APRÈS que l'écran a dit « lancée » : partir tout de suite priverait
+      // l'opérateur du seul accusé de réception qu'il aura, et il relancerait.
+      onCree={() => { setTimeout(() => router.push('/campaigns'), 1200); }}
     />
   );
 }

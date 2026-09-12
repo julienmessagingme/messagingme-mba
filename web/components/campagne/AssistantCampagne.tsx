@@ -12,21 +12,41 @@ import {
 } from '@/lib/campagne-chaine';
 import { EtapeCanal } from '@/components/campagne/EtapeCanal';
 import { EtapeContenu } from '@/components/campagne/EtapeContenu';
-import type { RcsSuggestion, TemplateSummary, WorkflowSummary } from '@/lib/api';
+import { EtapeAudience } from '@/components/campagne/EtapeAudience';
+import { EtapeRecap } from '@/components/campagne/EtapeRecap';
+import type { AudienceChoix } from '@/lib/campagne-repartition';
+import type { CampaignCategory, PhoneNumber, RcsAgent, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE : cinq étapes, une question par écran, retour libre.
  *
- * 🔴 IL NE REMPLACE PAS ENCORE `CampaignCreateForm`, ET C'EST VOULU. L'ancien formulaire (1 906 lignes)
- * reste le chemin de création en service ; son retrait est une tâche à part, celle qui livrera aussi
- * l'audience et le récapitulatif. Déposer ici un écran qui crée VRAIMENT une campagne avant que le
- * récapitulatif existe reviendrait à lancer des envois depuis un parcours dont personne n'a vu la fin.
+ * 🔴 IL CRÉE ET LANCE VRAIMENT DEPUIS LE 2026-09-12 (étapes Audience et Récapitulatif), MAIS IL NE
+ * REMPLACE TOUJOURS PAS `CampaignCreateForm`, et le motif est MESURÉ, pas prudentiel : cet assistant
+ * n'envoie AUCUN `paramMapping`. Un template qui porte `{{1}}` partirait donc avec zéro paramètre de
+ * corps, et Meta refuse la campagne entière sur le compte de paramètres (cf. `resolveHintParams`,
+ * `src/crm/template.ts`, dont le commentaire dit que c'est le compte fourni qui évite le 132000).
+ * Retirer l'ancien formulaire aujourd'hui couperait donc toute campagne à template variable, c'est-à-dire
+ * le cas courant. Huit autres capacités lui manquent encore : voir la § « Ce qui manque » ci-dessous.
  *
  * ⚠️ CE QUE PORTE CE COMPOSANT, ET RIEN DE PLUS : l'état de la campagne en cours d'écriture et la
  * navigation. Chaque étape est un composant qui reçoit ce dont elle a besoin et rend ce qu'elle change.
  * C'est la leçon de l'ancien formulaire, 48 états dans un seul fichier, que l'audit du 2026-08-31 a
  * demandé de découper en prévenant dans la même phrase qu'« une extraction mécanique ne réduit pas la
  * complexité d'état » : on découpe par QUESTION POSÉE, pas par zone de rendu.
+ *
+ * ⚠️ CE QUI MANQUE ENCORE À L'ASSISTANT, inventorié le 2026-09-12 en préparant le retrait de l'ancien
+ * formulaire, et qui explique pourquoi ce retrait n'a PAS eu lieu. Chaque ligne est une capacité que
+ * `CampaignCreateForm` porte seul aujourd'hui :
+ *   1. 🔴 l'ASSOCIATION DES VARIABLES d'un template (`paramMapping`) : sans elle, un template à variables
+ *      est refusé par Meta, campagne entière ;
+ *   2. la sélection fine des contacts (cases à cocher, filtres du mini-CRM, exclusions, listes HubSpot) ;
+ *   3. l'APERÇU du template, carousel et en-tête média compris ;
+ *   4. la création d'un template à la volée ;
+ *   5. la programmation « Plus tard » (`scheduledAt`) ;
+ *   6. la campagne AU FIL DE L'EAU (alimentée par un webhook) ;
+ *   7. les brouillons de composition (écrits dans un `state` opaque que seul l'ancien formulaire relit) ;
+ *   8. le visuel RCS et ses médias ;
+ *   9. le débit fin (jauge 1..80), ici réduit à trois intentions de cadence.
  */
 
 /** Les cinq étapes, dans l'ordre décidé par Julien le 2026-09-12. */
@@ -42,6 +62,15 @@ export type EtapeAssistant = 'nom' | 'canal' | 'contenu' | 'audience' | 'recap';
  */
 export interface EtatCampagne {
   nom: string;
+  /**
+   * À QUOI SERT LA CAMPAGNE, au sens de Meta.
+   *
+   * 🔴 ELLE N'A PAS DE DÉFAUT SILENCIEUX POSSIBLE DANS L'AUTRE SENS. `marketing` exige le consentement
+   * (`buildRecipients` écarte les contacts sans opt-in), `utility` non : partir sur `utility` par défaut
+   * enverrait du marketing à des gens qui ne l'ont pas accepté, sans que rien ne le signale. Le défaut est
+   * donc le plus RESTRICTIF, et la question est posée quand même.
+   */
+  category: CampaignCategory;
   formule: FormuleCanal;
   premier: CanalPremier;
   troisieme: TroisiemeNiveau;
@@ -66,6 +95,8 @@ export interface EtatCampagne {
   assignation: Assignation;
   /** La personne, quand `assignation` vaut `personne`. */
   assignationUserId: string | null;
+  /** QUI reçoit (étape 4). */
+  audience: AudienceChoix;
 }
 
 /** Le contenu d'UN étage. Les champs inutiles au canal de l'étage restent absents. */
@@ -78,6 +109,16 @@ export interface ContenuEtage {
   texteRcs?: string;
   suggestions: RcsSuggestion[];
   emailTemplateId?: string;
+  /**
+   * LA CLÉ DU CHAMP PERSO QUI PORTE L'ADRESSE E-MAIL DU CONTACT.
+   *
+   * 🔴 IL N'Y A AUCUNE CONVENTION DANS CE PRODUIT, ET C'EST UN FAIT VÉRIFIÉ : `contacts` n'a PAS de
+   * colonne `email` (0001 et les `alter table contacts` qui ont suivi), l'adresse vit dans le jsonb
+   * `fields` sous la clé que le client a créée. Le dépôt porte déjà la trace d'un espace qui l'appelait
+   * « mail » quand un autre l'appelait « email » (`src/workflow/wiring.ts`, cas du 2026-08-25). La
+   * deviner, c'est se tromper une fois sur deux EN SILENCE.
+   */
+  emailChamp?: string;
 }
 
 /** Où va la conversation quand le contact répond. */
@@ -92,14 +133,25 @@ export interface ReferencesContenu {
   emailTemplates: Array<{ id: string; name: string }>;
   membres: Array<{ id: string; nom: string }>;
   agents: Array<{ id: string; label: string }>;
+  /** Les tags de l'espace, pour cibler l'audience. */
+  tags: TagCount[];
+  /** Les champs perso, pour désigner celui qui porte l'adresse e-mail. */
+  userFields: UserFieldDef[];
+  /** Les numéros Meta de l'espace. Le premier sert d'expéditeur : un assistant ne pose pas la question. */
+  numeros: PhoneNumber[];
+  /** Les agents RCS de l'espace. Le premier sert de marque, même raison. */
+  agentsRcs: RcsAgent[];
 }
 
 export const REFERENCES_VIDES: ReferencesContenu = {
   templates: [], workflows: [], emailTemplates: [], membres: [], agents: [],
+  tags: [], userFields: [], numeros: [], agentsRcs: [],
 };
 
 export const ETAT_INITIAL: EtatCampagne = {
   nom: '',
+  // 🔴 LE DÉFAUT LE PLUS RESTRICTIF : `marketing` exige le consentement, `utility` non.
+  category: 'marketing',
   formule: 'whatsapp',
   premier: 'whatsapp',
   troisieme: 'aucun',
@@ -123,6 +175,9 @@ export const ETAT_INITIAL: EtatCampagne = {
   /** Sans assignation : la conversation arrive dans « À traiter », comme aujourd'hui. */
   assignation: 'aucune',
   assignationUserId: null,
+  // ⚠️ « Tous les contacts » par défaut, et l'écran l'affiche COMPTÉ : un défaut qui ne se voit pas serait
+  // le pire des deux, puisque c'est la sélection la plus large du produit.
+  audience: { mode: 'tous', tags: [], sansInjoignables: false },
 };
 
 /** Ce que l'espace sait faire, lu une fois et passé aux étapes qui en dépendent. */
@@ -152,17 +207,22 @@ const TITRES: Record<EtapeAssistant, string> = {
 };
 
 export function AssistantCampagne({
+  tenantId,
   capacites,
   references = REFERENCES_VIDES,
   etapeInitiale = 'nom',
   etatInitial,
+  onCree,
 }: {
+  tenantId: string;
   capacites: CapacitesEspace;
   /** Ce que l'étape Contenu propose à choisir. Absent = tout est vide, et chaque cas vide le DIT. */
   references?: ReferencesContenu;
   /** L'étape d'ouverture. Sert au retour sur un brouillon, et aux tests d'écran qui visent une étape. */
   etapeInitiale?: EtapeAssistant;
   etatInitial?: Partial<EtatCampagne>;
+  /** Appelé une fois la campagne créée ET lancée. Absent = l'écran se contente de le dire. */
+  onCree?: (campaignId: string) => void;
 }) {
   const [etat, setEtat] = useState<EtatCampagne>({ ...ETAT_INITIAL, ...etatInitial });
   const [etape, setEtape] = useState<EtapeAssistant>(etapeInitiale);
@@ -211,6 +271,35 @@ export function AssistantCampagne({
             />
           </label>
           <p className="mt-2 text-xs text-ink-400">Il n&apos;est visible que de votre équipe.</p>
+
+          {/*
+            🔴 LA CATÉGORIE EST POSÉE ICI PARCE QU'ELLE GOUVERNE LE CONSENTEMENT, PAS LE CONTENU. Une
+            campagne `marketing` écarte à la création tout contact sans opt-in (`buildRecipients`), une
+            campagne `utility` non. Elle ne peut donc pas être devinée depuis le message, et la poser à
+            l'étape du contenu la ferait passer pour un détail de rédaction.
+          */}
+          <fieldset className="mt-6 w-full rounded-xl border border-ink-200 p-4" data-testid="choix-categorie">
+            <legend className="px-1 text-sm font-medium text-ink-700">Nature de la campagne</legend>
+            <div className="space-y-2">
+              <RadioSimple
+                groupe="categorie"
+                libelle="Marketing"
+                coche={etat.category === 'marketing'}
+                onCheck={() => modifier({ category: 'marketing' })}
+              />
+              <RadioSimple
+                groupe="categorie"
+                libelle="Service (information liée à une commande, un rendez-vous, un compte)"
+                coche={etat.category === 'utility'}
+                onCheck={() => modifier({ category: 'utility' })}
+              />
+            </div>
+            <p className="mt-2 text-xs text-ink-500">
+              {etat.category === 'marketing'
+                ? 'Seuls les contacts qui ont accepté le marketing seront retenus.'
+                : 'Une campagne de service ne demande pas de consentement marketing : ne l’utilisez pas pour une promotion.'}
+            </p>
+          </fieldset>
         </section>
       )}
 
@@ -239,15 +328,19 @@ export function AssistantCampagne({
         />
       )}
 
-      {(etape === 'audience' || etape === 'recap') && (
-        // ⚠️ PLACEHOLDER ASSUMÉ, et il ne prétend rien : ces DEUX étapes sont livrées par la tâche
-        // suivante (elles étaient trois avant que l'étape Contenu arrive, et ce commentaire le disait
-        // encore). Un écran vide qui le DIT vaut mieux qu'un bouton « Créer » qui partirait sans que
-        // l'audience ait été demandée.
-        <section data-testid={`etape-${etape}`}>
-          <h2 className="text-lg font-semibold text-ink-800">{TITRES[etape]}</h2>
-          <p className="mt-2 text-sm text-ink-500">Cette étape arrive dans une prochaine livraison.</p>
-        </section>
+      {etape === 'audience' && (
+        <EtapeAudience tenantId={tenantId} etat={etat} references={references} onChange={modifier} />
+      )}
+
+      {etape === 'recap' && (
+        <EtapeRecap
+          tenantId={tenantId}
+          etat={etat}
+          chaine={chaine}
+          references={references}
+          aller={setEtape}
+          {...(onCree ? { onCree } : {})}
+        />
       )}
 
       <div className="mt-8 flex items-center gap-2 border-t border-ink-100 pt-4">
@@ -272,5 +365,28 @@ export function AssistantCampagne({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Un radio dont le NOM ACCESSIBLE est exactement son libellé.
+ *
+ * ⚠️ Même invariant que dans les étapes Canal et Contenu : rien d'autre que le libellé n'entre dans le
+ * `<label>`, sinon aucune requête par rôle ne peut désigner la commande sans réciter sa phrase entière.
+ */
+function RadioSimple({
+  groupe, libelle, coche, onCheck,
+}: { groupe: string; libelle: string; coche: boolean; onCheck: () => void }) {
+  return (
+    <label className="flex w-full items-center gap-2 text-sm text-ink-800">
+      <input
+        type="radio"
+        name={groupe}
+        checked={coche}
+        onChange={onCheck}
+        className="h-4 w-4 shrink-0 accent-brand-500"
+      />
+      <span className="min-w-0 break-words">{libelle}</span>
+    </label>
   );
 }
