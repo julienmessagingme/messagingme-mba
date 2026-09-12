@@ -131,15 +131,27 @@ et il n'emprunte pas le rappel de connaissance.
 | `web/components/BoutonAide.tsx` | L'accueil et ses suggestions cliquables |
 | `carteVisiblePar(role)` | Le motif de filtrage par rôle, aujourd'hui pour les écrans |
 
+## Les décisions de Julien (2026-09-12)
+
+**Le récap est réservé aux rôles `admin` et `manager`.** Un opérateur (rôle `agent`, qui ne voit que
+l'Inbox) n'y a pas droit. C'est un artefact de pilotage, pas un outil de traitement.
+
+🔴 **Le bouton est MASQUÉ pour un opérateur, pas grisé avec sa raison**, et c'est une exception
+assumée à la règle inverse posée ailleurs dans le produit (un canal non configuré se grise en disant
+pourquoi). La distinction tient au type d'empêchement : un canal grisé dit « tu pourrais avoir ceci,
+voilà comment », ce qui est utile ; un récap grisé dirait à un opérateur « tes collègues ont une
+fonctionnalité que tu n'auras jamais », ce qui n'est que du bruit. La règle générale n'est donc pas
+« toujours griser », c'est **« griser quand l'empêchement est levable par celui qui le voit »**.
+
+⚠️ La garde se pose **côté serveur**, pas seulement en masquant le bouton. La route refuse en 403
+pour un rôle non autorisé, comme les écritures admin du reste du produit.
+
+**Le récap porte sur la veille, et rien d'autre.** Pas d'historique, pas de choix de date, pas de
+relecture d'avant-hier. « Sinon trop compliqué » (Julien). Conséquence : le cache n'a pas besoin
+d'être une table, une entrée par espace remplacée chaque jour suffit.
+
 ## Ce qui reste à trancher
 
-1. 🔴 **Un opérateur a-t-il droit au récap de tout l'espace ?** Il ne voit que l'Inbox. Ma position :
-   **oui pour les conversations, les messages et les thèmes**, parce que ce sont les conversations
-   qu'il traite déjà et qu'il les voit toutes dans son Inbox ; **non pour tout chiffre de coût**, qui
-   vit dans le Performance Lab et reste admin. Le récap tel que décrit par Julien ne contient aucun
-   coût, donc il passe pour tout le monde.
-2. **Appel de modèle systématique, ou seulement quand il y a quelque chose à signaler ?** Position
-   ci-dessus, à confirmer.
-3. **Le récap est-il gardé après coup ?** S'il est mis en cache pour la journée, faut-il pouvoir
-   relire celui d'avant-hier ? Ça transforme un bouton en historique, donc une table. Mon avis :
-   non dans ce lot, le bouton donne la veille et rien d'autre.
+1. **Appel de modèle systématique, ou seulement quand il y a quelque chose à signaler ?** Position
+   proposée plus haut : gabarit par défaut, modèle seulement les jours où le SQL a trouvé un écart.
+   On ne paie que quand ça achète quelque chose, et le bot d'aide dépense NOTRE argent.
