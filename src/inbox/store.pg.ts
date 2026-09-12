@@ -304,6 +304,58 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * AFFECTE UNE CONVERSATION QUI N'EST ENCORE À PERSONNE, et rend `false` si elle l'est déjà.
+   *
+   * 🔴 SA JUMELLE `setAssigneeByWaId` ÉCRASE, ET C'EST CORRECT LÀ-BAS : le bloc « passer à un humain »
+   * d'un scénario NOMME explicitement qui doit traiter le fil, c'est une décision de routage plus récente
+   * que la précédente. Ici, l'appelant est l'arrivée d'une réponse de campagne, donc un ROULEMENT : il
+   * n'a rien nommé, il prend son tour. Écraser reviendrait à retirer une conversation à l'opérateur qui
+   * est peut-être déjà en train d'y répondre, au deuxième message du même contact.
+   *
+   * 🔴 LE `assigned_to is null` EST DANS LE `where`, PAS DANS UNE LECTURE PRÉALABLE. Deux réponses
+   * simultanées du même contact liraient toutes deux « libre » et écriraient toutes deux : la seconde
+   * écrasait la première, et le rang consommé par l'une était perdu. Ici la seconde ne touche aucune
+   * ligne et l'appelant l'apprend.
+   *
+   * ⚠️ MÊME GARDE D'ESPACE que sa jumelle : un membre d'un AUTRE espace, ou un compte révoqué, ne reçoit
+   * rien. Sans elle, un identifiant recopié affecterait une conversation à quelqu'un qui n'a pas le droit
+   * de la lire, et elle disparaîtrait de la vue de tous les autres.
+   *
+   * ⚠️ `assigned_by` reste NULL : personne n'a cliqué. Le journal d'affectation distingue ainsi un routage
+   * automatique d'une distribution faite à la main.
+   */
+  async assignerSiLibre(tenantId: string, waId: string, assignee: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = null
+        where tenant_id = $1 and wa_id = $2 and assigned_to is null
+          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $1 and u.disabled_at is null)`,
+      [tenantId, waId, assignee],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * LES MEMBRES QUI PEUVENT RECEVOIR UNE CONVERSATION, dans un ordre STABLE.
+   *
+   * 🔴 L'ORDRE EST LA MOITIÉ DU TOUR DE RÔLE. Le roulement lit `membres[rang % membres.length]` : un ordre
+   * qui change entre deux réponses reviendrait à tirer au sort. `created_at` seul ne suffit pas (deux
+   * comptes créés dans la même transaction partagent l'horodatage), d'où `id` en second critère.
+   *
+   * ⚠️ NI RÉVOQUÉ NI EN ATTENTE D'INVITATION, exactement comme le sélecteur de l'assistant : affecter une
+   * conversation à quelqu'un qui ne peut pas se connecter, c'est la ranger là où personne ne la lira.
+   * `password_hash is null` EST le marqueur d'une invitation non acceptée (`pending` de `PgUserStore.list`).
+   */
+  async membresAffectables(tenantId: string): Promise<string[]> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from users
+        where tenant_id = $1 and disabled_at is null and password_hash is not null
+        order by created_at asc, id asc`,
+      [tenantId],
+    );
+    return res.rows.map((r) => r.id);
+  }
+
+  /**
    * Détenteur courant du fil. L'ABSENCE de conversation vaut `app_workflow` : une campagne peut viser un
    * contact qui n'a jamais écrit, sa conversation n'existe alors pas encore et rien ne doit être bloqué.
    */

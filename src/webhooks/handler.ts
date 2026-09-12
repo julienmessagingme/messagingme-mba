@@ -8,7 +8,7 @@ import { processHandovers } from './handover';
 import { processTriggers } from './triggers';
 import { processTestTokens } from './test-token';
 import type { DeliveryStore } from './delivery';
-import type { InboxStore, InboundContactUpsert, InboundOptOut } from './inbound';
+import type { InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
 import type { WorkflowAdvanceDeps } from './workflow-advance';
 import type { HandoverDeps } from './handover';
@@ -65,12 +65,17 @@ export interface WebhookJobDeps {
    * Voir `processInbound` pour les deux points d'ordre qui comptent.
    */
   inboundOptOut?: InboundOptOut;
+  /**
+   * Répartition d'une réponse de CAMPAGNE dans l'Inbox (`campaigns.assignation`, migration 0134).
+   * Absente -> aucune affectation automatique, la conversation tombe dans « À traiter » comme avant.
+   */
+  inboundAssignation?: InboundAssignation;
 }
 
 export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, inboundContactUpsert,
-    handover, triggers, testTokens, nodeEvents, inboundOptOut,
+    handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation,
   } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -99,7 +104,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
         return r;
       }
     : undefined;
-  if (inbox) await processInbound(raw, inbox, upsert, inboundOptOut);
+  if (inbox) await processInbound(raw, inbox, upsert, inboundOptOut, inboundAssignation);
   // Report Flow -> user fields. ISOLÉ : ne doit JAMAIS faire échouer le job (partagé avec les statuts de
   // livraison + l'inbox). Un throw ici rejouerait/DLQ tout le webhook, donc aussi les statuts déjà traités.
   if (flowMapping) {

@@ -283,11 +283,23 @@ export type InboundOptOut = (tenantId: string, waId: string) => Promise<string |
  * ⚠️ SEULEMENT LES MESSAGES TEXTE, comme en RCS. Un bouton porte son libellé dans `body` : un bouton
  * « Stopper la simulation » désabonnerait quelqu'un qui voulait juste sortir d'un parcours.
  */
+export type InboundAssignation = (tenantId: string, waId: string) => Promise<unknown>;
+
 export async function processInbound(
   payload: unknown,
   store: InboxStore,
   upsertContact?: InboundContactUpsert,
   optOut?: InboundOptOut,
+  /**
+   * RÉPARTITION D'UNE RÉPONSE DE CAMPAGNE (migration 0134). Absente -> aucune affectation automatique,
+   * c'est-à-dire le comportement d'avant : la conversation tombe dans « À traiter ».
+   *
+   * 🔴 ELLE PASSE APRÈS `recordInbound`, ET C'EST OBLIGATOIRE : c'est cet appel-là qui CRÉE la
+   * conversation (`upsertConversationByWaId`). L'affectation vise une ligne de `conversations` ; jouée
+   * avant, elle ne trouverait rien à affecter sur la toute première réponse d'un contact, c'est-à-dire
+   * précisément le cas qu'elle existe pour servir.
+   */
+  assignation?: InboundAssignation,
 ): Promise<void> {
   for (const m of extractInbound(payload)) {
     const tenantId = await store.phoneNumberTenant(m.phoneNumberId);
@@ -313,6 +325,19 @@ export async function processInbound(
       }
     }
     await store.recordInbound(tenantId, m);
+    /**
+     * ⚠️ ISOLÉE, comme l'auto-création de contact plus haut et pour la même raison : l'enregistrement du
+     * message est le CŒUR du webhook, et une affectation ratée ne doit jamais le faire échouer. Un throw
+     * ici ferait rejouer, puis passer en DLQ, un job qui a déjà écrit le message.
+     */
+    if (assignation) {
+      try {
+        await assignation(tenantId, m.waId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('processInbound: affectation de campagne ignorée:', err instanceof Error ? err.message : err);
+      }
+    }
     await accorderLeDetenteur(store, tenantId, m);
   }
 }

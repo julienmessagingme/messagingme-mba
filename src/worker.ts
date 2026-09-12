@@ -29,6 +29,7 @@ import { fenetreDeRattrapageOuverte } from './lib/heures-ouvrees';
 import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
 import { creerNoteurEnvois } from './campaign/envois.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
+import { assignerReponse } from './inbox/assignation-campagne';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
@@ -474,6 +475,23 @@ async function main(): Promise<void> {
       // source `whatsapp_stop` distingue ce refus de ceux poses a la main dans le mini-CRM, ce qui compte
       // le jour ou il faut prouver d ou vient un desabonnement.
       inboundOptOut: (tenant, waId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP),
+      /**
+       * RÉPARTITION D'UNE RÉPONSE DE CAMPAGNE (`campaigns.assignation`, migration 0134).
+       *
+       * 🔴 LE TOUR DE RÔLE SE JOUE ICI, À L'ARRIVÉE DE LA RÉPONSE, ET PAS AU LANCEMENT. Répartir cinq
+       * mille conversations d'avance attribuerait des conversations qui n'existeront jamais : la plupart
+       * des destinataires ne répondent pas, et les compteurs de charge de l'équipe afficheraient une
+       * répartition imaginaire.
+       *
+       * ⚠️ Les quatre dépendances sont des requêtes du dépôt, aucune n'est réécrite ici : c'est la règle
+       * (`src/inbox/assignation-campagne.ts`) qui décide, et elle est éprouvée sans base.
+       */
+      inboundAssignation: (tenant, waId) => assignerReponse(tenant, waId, {
+        campagneDeLaReponse: (t, w) => repo.campagneAssignanteDuContact(t, w),
+        membres: (t) => inboxStore.membresAffectables(t),
+        prendreUnRang: (t, campaignId) => repo.prendreUnRangDeTourDeRole(t, campaignId),
+        assigner: (t, w, userId) => inboxStore.assignerSiLibre(t, w, userId),
+      }),
     });
     // 🔴 CONCURRENCE DES ENTRANTS (lot 3 du programme II), et les deux options vont ENSEMBLE.
     // `concurrency` seul remettrait le désordre entre deux messages d'un même contact ; `groupConcurrency`

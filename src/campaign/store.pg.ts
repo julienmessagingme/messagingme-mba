@@ -824,6 +824,82 @@ export class PgCampaignRepo {
   }
 
   /**
+   * LA CAMPAGNE ASSIGNANTE DONT CE CONTACT EST UN DESTINATAIRE DÉJÀ SERVI, ou `null`.
+   *
+   * 🔴 ELLE REND `null` DANS L'ÉCRASANTE MAJORITÉ DES CAS, et c'est ce qui la rend acceptable sur le
+   * chemin de CHAQUE message entrant : trois conditions doivent tenir ensemble (la conversation existe et
+   * n'est pas encore affectée, le contact est destinataire d'une campagne, cette campagne demande une
+   * répartition). La très grande majorité des messages du produit n'en remplit aucune.
+   *
+   * 🔴 `cv.assigned_to is null` EST DANS LA REQUÊTE, PAS SEULEMENT DANS L'ÉCRITURE, et ce n'est pas une
+   * optimisation : sans elle, un contact bavard ferait AVANCER le rang du roulement à chacun de ses
+   * messages. La répartition compterait alors des messages et non des conversations, et un seul
+   * interlocuteur pourrait décaler tout le tour de rôle de la campagne.
+   *
+   * ⚠️ SON INDEX EXISTE DÉJÀ, et c'est ce qui décide de la forme de la requête : l'unique
+   * `(tenant_id, wa_id)` de 0009 rend UNE conversation, puis `campaign_recipients_contact_idx`
+   * (`contact_id, sent_at desc`, migration 0039) rend ses destinataires déjà triés par date d'envoi. La
+   * clause ancrée sur `contact_id` est donc servie ; une clause ancrée sur `to_e164` ne le serait pas,
+   * aucun index ne portant cette colonne.
+   *
+   * ⚠️ LA PLUS RÉCENTE GAGNE. Un contact peut être destinataire de plusieurs campagnes assignantes ; on
+   * ne sait pas à laquelle il répond, et la dernière qui lui a écrit est la seule réponse défendable.
+   *
+   * ⚠️ AUCUNE FENÊTRE DE TEMPS, et c'est un choix qu'il faut connaître : un contact qui répond six mois
+   * plus tard est encore attribué à cette campagne. Une fenêtre serait un nombre inventé, et la garde
+   * `assigned_to is null` borne déjà le dégât à UNE affectation par conversation.
+   */
+  async campagneAssignanteDuContact(
+    tenantId: string,
+    waId: string,
+  ): Promise<{ campaignId: string; assignation: 'personne' | 'tour_de_role'; assignationUserId: string | null } | null> {
+    const res = await this.pool.query<{ id: string; assignation: 'personne' | 'tour_de_role'; assignation_user_id: string | null }>(
+      `select c.id, c.assignation, c.assignation_user_id
+         from conversations cv
+         join campaign_recipients r on r.contact_id = cv.contact_id
+         join campaigns c on c.id = r.campaign_id
+        where cv.tenant_id = $1 and cv.wa_id = $2 and cv.assigned_to is null
+          and c.tenant_id = $1 and c.assignation is not null and r.sent_at is not null
+        order by r.sent_at desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    const row = res.rows[0];
+    return row ? { campaignId: row.id, assignation: row.assignation, assignationUserId: row.assignation_user_id } : null;
+  }
+
+  /**
+   * PREND LE PROCHAIN RANG DU TOUR DE RÔLE DE CETTE CAMPAGNE, ET L'AVANCE, EN UNE SEULE ÉCRITURE.
+   *
+   * 🔴 LIRE PUIS ÉCRIRE SERAIT FAUX, ET LE DÉFAUT SERAIT INVISIBLE EN TEST. Deux réponses qui arrivent
+   * en même temps sur la même campagne liraient le même rang et tomberaient sur la même personne, une
+   * fois de temps en temps, sous charge. Un `update ... returning` fait les deux sous le verrou de ligne
+   * de Postgres : le second appelant attend, puis lit la valeur déjà avancée.
+   *
+   * 🔴 LE MODULO EST DANS LE SQL PARCE QUE LA COLONNE EST UN `smallint`. `tour_de_role_rang` ne se remet
+   * jamais à zéro : il compte les réponses depuis le début de la campagne. Une campagne AU FIL DE L'EAU
+   * n'a aucun plafond de destinataires, donc rien n'empêche d'atteindre 32 767, où Postgres lèverait
+   * `22003 smallint out of range` sur le chemin d'un message entrant. Le coût du repliage est une place
+   * sautée dans le roulement toutes les 32 767 réponses ; le coût de l'absence de repliage est une panne.
+   *
+   * ⚠️ `returning tour_de_role_rang - 1` REND LA VALEUR D'AVANT, celle qu'on vient de consommer, pas la
+   * prochaine. ⚠️ Après un repliage, cette soustraction peut rendre -1 : `prochainAssigne` corrige le
+   * signe, et c'est pour ça qu'elle le fait.
+   *
+   * ⚠️ Campagne inconnue (supprimée entre-temps) -> `0`, c'est-à-dire le premier membre. Lever ici
+   * casserait l'enregistrement d'un message entrant pour une affectation de confort.
+   */
+  async prendreUnRangDeTourDeRole(tenantId: string, campaignId: string): Promise<number> {
+    const res = await this.pool.query<{ rang: number }>(
+      `update campaigns set tour_de_role_rang = (tour_de_role_rang + 1) % 32767
+        where tenant_id = $1 and id = $2
+        returning tour_de_role_rang - 1 as rang`,
+      [tenantId, campaignId],
+    );
+    return res.rows[0]?.rang ?? 0;
+  }
+
+  /**
    * Fait avancer un destinataire à l'étage `rang` : il repart `pending`, le prochain run le reprend.
    *
    * 🔴 `etage_courant < $2` EST LE VERROU, et il n'est pas décoratif : deux balayages qui se
