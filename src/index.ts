@@ -47,7 +47,7 @@ import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
-import { resolveRatePerMinute } from './campaign/pacing';
+import { plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
@@ -494,6 +494,9 @@ async function main(): Promise<void> {
       resetRecipientForRetry: (tenant, id, rid) => repo.resetRecipientForRetry(tenant, id, rid),
       listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+      // Borne SÛRE pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
+      // estimation trop OPTIMISTE fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).
+      plafondLePlusBas: plafondLePlusBas(config),
     },
     // Redirection publique des liens tracés. Le tenant vient du code retrouvé en base, jamais de l'URL.
     links: {
@@ -2056,7 +2059,7 @@ async function main(): Promise<void> {
             campaignId,
             tenantId,
             pendingCount: count,
-            resolvedRatePerMinute: resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
+            resolvedRatePerMinute: resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)),
           }),
         idempotencyClaim: (tenant, key) => idempotencyStore.claim(tenant, key),
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),

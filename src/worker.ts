@@ -30,7 +30,7 @@ import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
 import { creerNoteurEnvois } from './campaign/envois.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
 import { enqueueCampaignRun } from './campaign/enqueue';
-import { resolveRatePerMinute } from './campaign/pacing';
+import { plafondDuCanal, plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
@@ -303,7 +303,7 @@ async function main(): Promise<void> {
     insertRecipient: (campaignId, r) => repo.insertWebhookRecipient(campaignId, r),
     // Un seul arrivant enfilé : `pendingCount` à 1 suffit à dimensionner l'expiration du job, et le débit
     // résolu est le MÊME que celui du run réel (sinon pg-boss rejouerait le job en parallèle).
-    enqueueRun: (c) => enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: 1, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) }),
+    enqueueRun: (c) => enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: 1, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)) }),
   };
 
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
@@ -536,6 +536,10 @@ async function main(): Promise<void> {
       // Frein par défaut des campagnes sans ratePerMinute (0 = opt-out). Injecté ICI seulement : les tests de
       // câblage de run-job ne le passent pas, donc une campagne à rate null y reste en opt-out (aucun frein).
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+      // 🔴 LE PLAFOND DU CANAL, et c'est le SEUL câblage qui bride vraiment un envoi. Les enfileurs
+      // n'estiment qu'une durée ; ici on exécute. `plafondDuCanal` lit le canal de LA campagne en cours,
+      // donc une campagne RCS cesse d'hériter du plafond que Meta impose à un numéro WhatsApp.
+      plafondDeDebit: (canal) => plafondDuCanal(canal, config),
       // Revalide l'appartenance du numéro juste avant d'envoyer (défense contre une réaffectation). Injecté ICI
       // seulement : absent en test/e2e, la garde est sautée (pas de rupture des fixtures sans ligne phone_numbers).
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
@@ -553,7 +557,7 @@ async function main(): Promise<void> {
         relancer: async (id) => {
           const sizing = await repo.getRunSizing(id);
           if (!sizing || sizing.pendingCount === 0) return;
-          await enqueueCampaignRun(queue, { campaignId: id, tenantId: sizing.tenantId, pendingCount: sizing.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) });
+          await enqueueCampaignRun(queue, { campaignId: id, tenantId: sizing.tenantId, pendingCount: sizing.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)) });
         },
       },
       /**
@@ -823,6 +827,7 @@ async function main(): Promise<void> {
         enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
         markRunning: (id) => repo.markScheduledRunning(id),
         defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+        plafondLePlusBas: plafondLePlusBas(config),
         onError: (m, err) => {
           // eslint-disable-next-line no-console
           console.error(`${m}:`, err instanceof Error ? err.message : err);
@@ -859,6 +864,7 @@ async function main(): Promise<void> {
         getRunSizing: (id) => repo.getRunSizing(id),
         enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
         defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+        plafondLePlusBas: plafondLePlusBas(config),
         onError: (m, err) => {
           // eslint-disable-next-line no-console
           console.error(`${m}:`, err instanceof Error ? err.message : err);
@@ -899,7 +905,7 @@ async function main(): Promise<void> {
       const gelees = await repo.listCampagnesGelees();
       for (const c of gelees) {
         try {
-          await enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: c.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) });
+          await enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: c.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)) });
         } catch (err) {
           // Par campagne : une file qui refuse un job ne doit pas empêcher les autres de repartir.
           // eslint-disable-next-line no-console
@@ -1032,7 +1038,7 @@ async function main(): Promise<void> {
               campaignId: id,
               tenantId: sizing.tenantId,
               pendingCount: sizing.pendingCount,
-              resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
+              resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)),
             });
           },
           flagUnreachable,

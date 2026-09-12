@@ -9,7 +9,7 @@ import type {
   EngineDeps,
 } from './engine';
 import { RateLimiter } from '../meta/http';
-import { resolveRatePerMinute } from './pacing';
+import { resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 import { BAIL_SECONDES, type CampaignRunLock } from './run-lock';
 import { TokenInvalidError } from '../meta/credentials';
 import type { OutboundCarouselCard } from '../meta/template-components';
@@ -75,6 +75,13 @@ export interface RunJobDeps {
    * à rate null reste en opt-out (aucun frein), donc les tests de câblage existants ne changent pas.
    */
   defaultRatePerMinute?: number;
+  /**
+   * Le plafond de débit DU CANAL de cette campagne (`plafondDuCanal`), en messages par minute.
+   *
+   * 🔴 C'est le seul endroit du dépôt qui connaît à la fois la campagne et son canal au moment d'appliquer
+   * un frein. ⚠️ Absent (tests) -> aucun plafond, donc exactement le comportement d'avant ce lot.
+   */
+  plafondDeDebit?: (canal: 'whatsapp' | 'rcs' | undefined) => number;
   /**
    * Revalide que le numéro d'envoi de la campagne appartient toujours à son tenant, juste avant d'envoyer. Défense
    * contre une réaffectation de numéro survenue entre la création de la campagne et son exécution. OPTIONNEL :
@@ -162,7 +169,11 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   // 60000/rate ms), prioritaire sur un éventuel limiteur statique. 1 job = 1 campagne, donc l'instance est
   // naturellement par-campagne. Le throttle attend AVANT de claimer le destinataire suivant : aucun destinataire
   // ne reste 'sending' plus longtemps qu'une latence d'envoi (le sweeper reclaim ne le voit pas).
-  const rate = resolveRatePerMinute(campaign.ratePerMinute, deps.defaultRatePerMinute ?? 0);
+  // 🔴 LE PLAFOND EST CELUI DU CANAL, PAS CELUI DE META POUR TOUT LE MONDE. C'est ici, et seulement
+  // ici, qu'on sait de quel canal on parle : `campaign.channel` est sur la campagne qu'on exécute. Les
+  // enfileurs, eux, ne font qu'estimer une durée et prennent une borne sûre (`plafondLePlusBas`).
+  // ⚠️ `deps.plafondDeDebit` absent (tests) -> aucun plafond, donc exactement le comportement d'avant.
+  const rate = resolveRatePerMinute(campaign.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondDeDebit?.(campaign.channel) ?? SANS_PLAFOND);
   const makeLimiter = deps.makeRateLimiter ?? ((ms: number) => new RateLimiter(ms));
   const rateLimiter: RateGate | undefined =
     rate > 0 ? makeLimiter(Math.ceil(60_000 / rate)) : deps.rateLimiter;

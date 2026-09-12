@@ -1,4 +1,4 @@
-import { campaignJobExpireSeconds, resolveRatePerMinute } from './pacing';
+import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 
 /**
  * BALAYAGE DE REPRISE APRÈS UNE PAUSE DE DÉBIT (migration 0103).
@@ -23,6 +23,12 @@ export interface RepriseSweepDeps {
    *  concurrence par espace, et un client qui touche souvent le plafond occuperait toute la file. */
   enqueueRun(campaignId: string, tenantId: string, expireInSeconds: number): Promise<void>;
   defaultRatePerMinute?: number;
+  /**
+   * Le plus BAS des plafonds de canal (`plafondLePlusBas`), pour ESTIMER une durée sans connaître le
+   * canal. ⚠️ Absent (tests) -> aucun plafond, donc le comportement d'avant. Ce n'est pas le frein
+   * réel : celui-là est posé par `run-job`, qui lit le canal sur la campagne.
+   */
+  plafondLePlusBas?: number;
   /** Échec sur UNE campagne. Le balayage, lui, continue : une campagne qui n'a pas pu être enfilée ne doit
    *  pas empêcher les autres de repartir. Sans cette remontée, elle resterait `running` sans run. */
   onError?: (msg: string, err: unknown) => void;
@@ -49,7 +55,7 @@ export async function runCampaignRepriseSweep(deps: RepriseSweepDeps): Promise<n
       await deps.enqueueRun(
         c.id,
         c.tenantId,
-        campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0)),
+        campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND)),
       );
       relancees += 1;
     } catch (err) {

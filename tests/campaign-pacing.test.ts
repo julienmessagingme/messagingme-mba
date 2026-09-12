@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { campaignJobExpireSeconds, resolveRatePerMinute } from '../src/campaign/pacing';
+import { campaignJobExpireSeconds, plafondDuCanal, resolveRatePerMinute, SANS_PLAFOND } from '../src/campaign/pacing';
 
 /**
  * Lot 8 Phase 4 : dimensionnement du timeout d'un job campaign-run. Un timeout FIXE (ex. 7200 s) ne couvre
@@ -53,22 +53,25 @@ describe('campaignJobExpireSeconds', () => {
 });
 
 describe('resolveRatePerMinute (débit effectif partagé run-job / pacing)', () => {
+  // ⚠️ Ces quatre cas sont ceux d'avant le plafond par canal, CONSERVÉS TELS QUELS : ils exercent la
+  // RÉSOLUTION (campagne > défaut serveur), pas le plafonnement. Ils passent donc `SANS_PLAFOND`, qui
+  // est exactement ce que faisait la fonction à deux paramètres.
   it('rate posé sur la campagne -> prime sur le défaut serveur', () => {
-    expect(resolveRatePerMinute(60, 30)).toBe(60);
-    expect(resolveRatePerMinute(15, 30)).toBe(15);
+    expect(resolveRatePerMinute(60, 30, SANS_PLAFOND)).toBe(60);
+    expect(resolveRatePerMinute(15, 30, SANS_PLAFOND)).toBe(15);
   });
 
   it('rate null -> défaut serveur', () => {
-    expect(resolveRatePerMinute(null, 30)).toBe(30);
+    expect(resolveRatePerMinute(null, 30, SANS_PLAFOND)).toBe(30);
   });
 
   it('rate null + défaut serveur 0 (opt-out) -> 0 (aucun frein)', () => {
-    expect(resolveRatePerMinute(null, 0)).toBe(0);
+    expect(resolveRatePerMinute(null, 0, SANS_PLAFOND)).toBe(0);
   });
 
   it('rate <= 0 traité comme non posé -> défaut serveur', () => {
-    expect(resolveRatePerMinute(0, 30)).toBe(30);
-    expect(resolveRatePerMinute(-5, 30)).toBe(30);
+    expect(resolveRatePerMinute(0, 30, SANS_PLAFOND)).toBe(30);
+    expect(resolveRatePerMinute(-5, 30, SANS_PLAFOND)).toBe(30);
   });
 });
 
@@ -77,7 +80,7 @@ describe('alignement pacing / run-job (pas de rejeu parallèle)', () => {
   // (run-job throttle), pacing doit l'estimer avec CE débit, pas avec son plancher de 30 (qui sous-estimerait la
   // durée -> expireInSeconds trop court -> pg-boss rejoue en parallèle). On passe donc le rate RÉSOLU à pacing.
   it('défaut serveur 15/min : la durée est estimée à 15/min, pas au plancher 30', () => {
-    const resolu = resolveRatePerMinute(null, 15); // = 15
+    const resolu = resolveRatePerMinute(null, 15, SANS_PLAFOND); // = 15
     const expire15 = campaignJobExpireSeconds(600, resolu);
     const expire30 = campaignJobExpireSeconds(600, 30);
     // 600 à 15/min = 2400 s de run ; à 30/min = 1200 s. L'estimation à 15 doit être STRICTEMENT plus grande
@@ -89,7 +92,7 @@ describe('alignement pacing / run-job (pas de rejeu parallèle)', () => {
 
   it('défaut serveur >= 30 : pacing et run-job convergent (le plancher 30 ne mord jamais sur un rate positif)', () => {
     // resolu = 30 ; effectiveRate = 30 ; identique au cas opt-out estimé à 30. Pas de sous-dimensionnement.
-    expect(campaignJobExpireSeconds(1000, resolveRatePerMinute(null, 30))).toBe(campaignJobExpireSeconds(1000, 30));
+    expect(campaignJobExpireSeconds(1000, resolveRatePerMinute(null, 30, SANS_PLAFOND))).toBe(campaignJobExpireSeconds(1000, 30));
   });
 });
 
@@ -136,5 +139,114 @@ describe('câblage : tout enfilement de campaign-run est dimensionné ET groupé
     }
     expect(vus, 'le test doit VRAIMENT trouver des enfilements, sinon il ne prouve rien').toBeGreaterThan(0);
     expect(fautifs, 'un enfilement de campaign-run doit porter SON EXPIRATION (sinon rejeu parallèle) et SON GROUPE (sinon un client occupe toute la file)').toEqual([]);
+  });
+});
+
+/**
+ * LE PLAFOND DE DÉBIT EST PROPRE AU CANAL.
+ *
+ * 🔴 CE QUE CE BLOC CORRIGE. `PHONE_RATE_PER_MINUTE_MAX` vaut 80 parce que c'est ce que Meta tolère
+ * pour un numéro WhatsApp. Une campagne RCS ne passe par aucun numéro Meta : lui appliquer ce chiffre,
+ * c'est faire tenir la cadence d'un canal par la contrainte d'un autre. Le jour où l'un des deux
+ * bouge, l'autre bouge avec lui sans que personne ne l'ait voulu.
+ */
+describe('plafondDuCanal', () => {
+  const config = { PHONE_RATE_PER_MINUTE_MAX: 80, RCS_RATE_PER_MINUTE_MAX: 60 };
+
+  it('une campagne RCS n herite PAS du plafond WhatsApp', () => {
+    // Le plafond WhatsApp vient de Meta (80). Le RCS a le sien, 60 pour commencer.
+    expect(plafondDuCanal('whatsapp', config)).toBe(80);
+    expect(plafondDuCanal('rcs', config)).toBe(60);
+  });
+
+  it('un canal absent est du WhatsApp : c est le defaut historique de la colonne', () => {
+    // `campaigns.channel` est `not null default 'whatsapp'` (migration 0056), et `Campaign.channel` est
+    // optionnel côté type. Les deux lectures doivent dire la même chose.
+    expect(plafondDuCanal(undefined, config)).toBe(80);
+  });
+
+  it('les deux plafonds bougent INDEPENDAMMENT', () => {
+    // 🔴 LE CAS QUI DISCRIMINE. Avec 80 et 60, une implémentation qui rendrait toujours
+    // `PHONE_RATE_PER_MINUTE_MAX` se verrait sur le RCS ; mais une implémentation qui rendrait toujours
+    // `RCS_RATE_PER_MINUTE_MAX` se verrait sur le WhatsApp seulement si les deux valeurs diffèrent.
+    // On les fait donc bouger dans les DEUX sens, et on vérifie que chacune suit la sienne.
+    expect(plafondDuCanal('rcs', { PHONE_RATE_PER_MINUTE_MAX: 80, RCS_RATE_PER_MINUTE_MAX: 12 })).toBe(12);
+    expect(plafondDuCanal('whatsapp', { PHONE_RATE_PER_MINUTE_MAX: 7, RCS_RATE_PER_MINUTE_MAX: 60 })).toBe(7);
+    // Et le RCS peut passer AU-DESSUS du plafond WhatsApp : rien ne les ordonne l'un par rapport à l'autre.
+    expect(plafondDuCanal('rcs', { PHONE_RATE_PER_MINUTE_MAX: 80, RCS_RATE_PER_MINUTE_MAX: 200 })).toBe(200);
+  });
+});
+
+describe('resolveRatePerMinute : le plafond du canal borne le debit choisi', () => {
+  it('un debit choisi AU-DESSUS du plafond du canal est ramene au plafond', () => {
+    // L'écran laissait choisir jusqu'à 80 pour tous les canaux : une campagne RCS à 80 doit descendre à 60.
+    expect(resolveRatePerMinute(80, 30, 60)).toBe(60);
+  });
+
+  it('un debit choisi SOUS le plafond est respecte tel quel', () => {
+    expect(resolveRatePerMinute(20, 30, 60)).toBe(20);
+  });
+
+  it('le defaut SERVEUR est plafonne aussi', () => {
+    // 🔴 Sinon un `CAMPAIGN_DEFAULT_RATE_PER_MINUTE` relevé au-dessus d'un plafond de canal le
+    // contournerait pour toutes les campagnes qui ne posent pas de débit, c'est-à-dire la majorité.
+    expect(resolveRatePerMinute(null, 80, 60)).toBe(60);
+  });
+
+  it('l opt-out (aucun frein) reste un opt-out, le plafond ne le REVEILLE pas', () => {
+    // ⚠️ `0` veut dire « aucun frein », pas « débit de zéro ». Le plafonner à 60 transformerait un
+    // opt-out explicite en une cadence de 60/min, donc changerait le comportement de reproduction
+    // d'incident pour lequel l'opt-out existe.
+    expect(resolveRatePerMinute(null, 0, 60)).toBe(0);
+    expect(resolveRatePerMinute(0, 0, 60)).toBe(0);
+  });
+
+  it('un plafond <= 0 veut dire AUCUN plafond', () => {
+    expect(resolveRatePerMinute(80, 30, SANS_PLAFOND)).toBe(80);
+    expect(resolveRatePerMinute(80, 30, 0)).toBe(80);
+  });
+});
+
+/**
+ * 🔴 UN PLAFOND DÉCLARÉ MAIS NON CÂBLÉ NE PLAFONNE RIEN, ET RIEN NE LE DIRAIT.
+ *
+ * `plafondDeDebit` et `plafondLePlusBas` sont des dépendances OPTIONNELLES, parce que les tests de câblage
+ * de `run-job` et des balayages ne les passent pas et doivent rester en opt-out. Le prix de cette
+ * commodité est exactement le défaut que le dépôt a déjà payé : une dépendance oubliée continue de
+ * compiler, et le comportement retombe en silence sur celui d'avant. Ce test le rend mécanique, comme le
+ * fait déjà le câblage de l'expiration juste au-dessus.
+ */
+describe('cablage : un debit par defaut cable impose un plafond cable', () => {
+  it('tout fichier de src qui INJECTE defaultRatePerMinute injecte aussi un plafond', async () => {
+    const { readFileSync, readdirSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const racine = new URL('../src/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+
+    const fichiers: string[] = [];
+    const parcourir = (dir: string): void => {
+      for (const e of readdirSync(dir)) {
+        const p = join(dir, e);
+        if (statSync(p).isDirectory()) parcourir(p);
+        else if (p.endsWith('.ts')) fichiers.push(p);
+      }
+    };
+    parcourir(racine);
+
+    const fautifs: string[] = [];
+    let vus = 0;
+    for (const f of fichiers) {
+      const src = readFileSync(f, 'utf8');
+      // ⚠️ `defaultRatePerMinute:` sans `?` : une INJECTION, pas la déclaration du champ optionnel
+      // (`defaultRatePerMinute?: number;`), qui elle est légitime et ne câble rien.
+      const injections = [...src.matchAll(/defaultRatePerMinute:\s/g)].length;
+      if (injections === 0) continue;
+      vus += injections;
+      const plafonds = [...src.matchAll(/plafond(DeDebit|LePlusBas):\s/g)].length;
+      if (plafonds < injections) {
+        fautifs.push(`${f.split('src')[1]} : ${injections} injection(s) de débit pour ${plafonds} plafond(s)`);
+      }
+    }
+    expect(vus, 'le test doit VRAIMENT trouver des injections, sinon il ne prouve rien').toBeGreaterThan(0);
+    expect(fautifs).toEqual([]);
   });
 });

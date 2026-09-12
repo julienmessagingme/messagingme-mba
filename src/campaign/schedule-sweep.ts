@@ -1,4 +1,4 @@
-import { campaignJobExpireSeconds, resolveRatePerMinute } from './pacing';
+import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 
 export interface ScheduleSweepDeps {
   /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. */
@@ -13,6 +13,12 @@ export interface ScheduleSweepDeps {
    *  la route campagnes, pour que l'estimation d'expiration voie le débit réel qu'appliquera run-job. Absent
    *  (tests) -> 0 = opt-out. */
   defaultRatePerMinute?: number;
+  /**
+   * Le plus BAS des plafonds de canal (`plafondLePlusBas`), pour ESTIMER une durée sans connaître le
+   * canal. ⚠️ Absent (tests) -> aucun plafond, donc le comportement d'avant. Ce n'est pas le frein
+   * réel : celui-là est posé par `run-job`, qui lit le canal sur la campagne.
+   */
+  plafondLePlusBas?: number;
   /** Échec sur UNE campagne. Le balayage, lui, RÉUSSIT (il continue), donc le catch du worker ne le voit
    *  jamais : sans cette remontée, la campagne reste `scheduled` et se retente toutes les 60 s à vie, sans
    *  qu'aucune alerte ne parte. Même signature que `AnalysisSweepDeps.onError`. Absent (tests) -> silencieux. */
@@ -40,7 +46,7 @@ export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise
       await deps.enqueueRun(
         c.id,
         c.tenantId,
-        campaignJobExpireSeconds(c.pendingCount, resolveRatePerMinute(c.ratePerMinute, deps.defaultRatePerMinute ?? 0)),
+        campaignJobExpireSeconds(c.pendingCount, resolveRatePerMinute(c.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND)),
       );
       await deps.markRunning(c.id);
       launched += 1;

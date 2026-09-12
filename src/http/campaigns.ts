@@ -7,7 +7,7 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow, RetryReset } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
-import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
+import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from '../campaign/pacing';
 import { PLAFOND_DESTINATAIRES_DEFAUT, refusDePlafond } from '../campaign/plafond';
 import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
@@ -122,6 +122,9 @@ export interface CampaignRouteDeps {
    *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
    *  throttle réel voient le même débit. Absent (tests) -> 0 = opt-out, comme avant ce défaut. */
   defaultRatePerMinute?: number;
+  /** Le plus BAS des plafonds de canal, pour ESTIMER une durée sans connaître le canal (`plafondLePlusBas`).
+   *  ⚠️ Absent (tests) -> aucun plafond. Le frein réel est posé par `run-job`, qui lit le canal. */
+  plafondLePlusBas?: number;
 }
 
 const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
@@ -286,6 +289,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     }
     // Débit optionnel : entier 1..80 messages/min (le client ne peut que BAISSER sous le plafond métier).
     // Absent/null = aucun throttle. Rejette 0, 81, décimal, négatif -> 400 déterministe.
+    // ⚠️ 80 EST LA BORNE DE SAISIE, PAS LE PLAFOND APPLIQUÉ. Le plafond réel dépend du CANAL
+    // (`plafondDuCanal`) : une campagne RCS qui demanderait 80 est RAMENÉE au plafond RCS à l'exécution,
+    // en silence et sans erreur. C'est le bon sens du compromis : on n'envoie jamais plus vite que ce que
+    // l'opérateur a autorisé, et un 400 sur un chiffre qu'aucun écran ne demande plus serait une régression
+    // d'API pour les clients qui le posent encore.
     let ratePerMinute: number | null | undefined;
     if (b.ratePerMinute !== undefined && b.ratePerMinute !== null) {
       const r = b.ratePerMinute;
@@ -512,7 +520,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // débit choisi) : un run throttlé long ne doit pas expirer et être rejoué en parallèle. Absent -> défaut file.
     const sizing = await deps.getRunSizing(campaignId);
     const expireInSeconds = sizing
-      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
+      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND))
       : undefined;
     // REPRISE d'une campagne en pause : la pause est levée AVANT l'enfilement, parce que le job refuse de
     // démarrer une campagne en pause (garde de `campaignRunJob`, qui empêche un job enfilé avant la pause de la
@@ -553,7 +561,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // queued : enfile un run (le destinataire redevenu pending est renvoyé par runCampaign avec les valeurs corrigées).
     const sizing = await deps.getRunSizing(campaignId);
     const expireInSeconds = sizing
-      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
+      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND))
       : undefined;
     // Même groupe que partout ailleurs : un renvoi de destinataire ne doit pas échapper au plafond par espace.
     await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });

@@ -206,7 +206,11 @@ export const schema = z.object({
    * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
    *
    * 80 par défaut, et le chiffre n'est pas arbitraire : c'est le débit maximum qu'une campagne peut CHOISIR
-   * dans l'écran (1 à 80/min). Le plafond du numéro ne bride donc jamais une campagne seule, il empêche
+   * dans l'écran (1 à 80/min).
+   *
+   * 🔴 IL NE VAUT QUE POUR WHATSAPP. Le RCS a le sien (`RCS_RATE_PER_MINUTE_MAX`), et le choix se fait par
+   * `plafondDuCanal` : lire cette variable-ci directement pour brider autre chose qu'un numéro Meta
+   * réintroduirait exactement le défaut corrigé le 2026-09-12. Le plafond du numéro ne bride donc jamais une campagne seule, il empêche
    * seulement DEUX campagnes du même numéro d'en faire 160, et fait payer les envois d'inbox et de scénario
    * sur le même budget. Le relever au-delà de ce que Meta tolère pour le palier du numéro ne rend rien plus
    * rapide : Meta répond alors 130429, et depuis le lot 1 la campagne se met en pause.
@@ -214,6 +218,16 @@ export const schema = z.object({
    * `0` retire le frein. À n'utiliser que pour reproduire un incident.
    */
   PHONE_RATE_PER_MINUTE_MAX: z.coerce.number().default(80),
+  /**
+   * Plafond de débit du canal RCS, en messages par minute.
+   *
+   * ⚠️ 60 EST UN POINT DE DÉPART, PAS UNE MESURE (2026-09-12). smsmode ne publie aucun chiffre : leur
+   * documentation répond que l'infrastructure « s'ajuste automatiquement au volume ». La valeur vit
+   * donc en configuration pour se corriger sans déploiement, et ne doit JAMAIS être recopiée en dur.
+   * 🔴 Elle n'a rien à voir avec PHONE_RATE_PER_MINUTE_MAX, qui vient de Meta : les confondre est
+   * exactement le défaut que ce lot corrige.
+   */
+  RCS_RATE_PER_MINUTE_MAX: z.coerce.number().int().min(0).max(600).default(60),
   /**
    * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
    *
