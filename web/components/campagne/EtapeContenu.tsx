@@ -1,10 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import type { RcsSuggestion } from '@/lib/api';
+import { useRef, useState } from 'react';
+import { getTemplateHints, getWorkflow, type RcsSuggestion, type UserFieldDef } from '@/lib/api';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import type { CanalEtage, EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
+import { modeleDeLEtage } from '@/lib/campagne-creation';
+import { SYSTEM_FIELDS, customFieldsOnly, varCountOf } from '@/lib/fields';
+import { firstTemplateOf } from '@/lib/campaign-eligibility';
+import { appliquerIndices, lignesParDefaut, type VarRow } from '@/lib/variables-template';
 import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 
 /**
@@ -39,13 +43,17 @@ const LIBELLE_CANAL: Record<CanalEtage, string> = {
 };
 
 export function EtapeContenu({
+  tenantId,
   etat,
   chaine,
   references,
   capacites,
   nbDestinataires,
   onChange,
+  onContenu,
 }: {
+  /** L'espace, pour lire les INDICES d'un modèle et le graphe d'un scénario. Rien d'autre n'en a besoin. */
+  tenantId: string;
   etat: EtatCampagne;
   chaine: EtageAssistant[];
   references: ReferencesContenu;
@@ -60,14 +68,18 @@ export function EtapeContenu({
    */
   nbDestinataires: number | null;
   onChange: (patch: Partial<EtatCampagne>) => void;
+  /**
+   * Modifier le contenu d'UN étage.
+   *
+   * 🔴 ELLE VIENT DE LA COQUILLE, ET C'EST CE QUI LA REND SÛRE. Fabriquée ici, elle relirait
+   * `etat.contenus` du RENDU : deux écritures de suite (le nom d'un modèle, puis ses variables) en
+   * perdraient une, et une écriture asynchrone (les indices, qui reviennent du réseau) effacerait ce qui
+   * a été choisi entre-temps. La coquille, elle, part de l'état COURANT.
+   */
+  onContenu: (rang: number, patch: Partial<ContenuEtage>) => void;
 }) {
   /** Le cadre déplié, ou `null`. Un seul à la fois : l'état est local, il ne décrit pas la campagne. */
   const [ouvert, setOuvert] = useState<number | null>(null);
-
-  const majContenu = (rang: number, patch: Partial<ContenuEtage>): void => {
-    const courant = etat.contenus[rang] ?? contenuVide();
-    onChange({ contenus: { ...etat.contenus, [rang]: { ...courant, ...patch } } });
-  };
 
   return (
     <section data-testid="etape-contenu" className="w-full">
@@ -80,12 +92,13 @@ export function EtapeContenu({
       {chaine.map((etage) => (
         <CadreEtage
           key={etage.rang}
+          tenantId={tenantId}
           etage={etage}
           ouvert={ouvert === etage.rang}
           onToggle={() => setOuvert((o) => (o === etage.rang ? null : etage.rang))}
           contenu={etat.contenus[etage.rang] ?? contenuVide()}
           references={references}
-          onChange={(patch) => majContenu(etage.rang, patch)}
+          onChange={(patch) => onContenu(etage.rang, patch)}
         />
       ))}
 
@@ -106,6 +119,7 @@ export function contenuVide(): ContenuEtage {
 }
 
 function CadreEtage({
+  tenantId,
   etage,
   ouvert,
   onToggle,
@@ -113,6 +127,7 @@ function CadreEtage({
   references,
   onChange,
 }: {
+  tenantId: string;
   etage: EtageAssistant;
   ouvert: boolean;
   onToggle: () => void;
@@ -148,7 +163,7 @@ function CadreEtage({
 
       {ouvert && (
         <div className="border-t border-ink-100 px-4 py-4">
-          {etage.canal === 'whatsapp' && <CadreWhatsApp contenu={contenu} references={references} onChange={onChange} />}
+          {etage.canal === 'whatsapp' && <CadreWhatsApp tenantId={tenantId} rang={etage.rang} contenu={contenu} references={references} onChange={onChange} />}
           {etage.canal === 'rcs' && <CadreRcs contenu={contenu} references={references} onChange={onChange} />}
           {etage.canal === 'email' && <CadreEmail contenu={contenu} references={references} onChange={onChange} />}
         </div>
@@ -158,14 +173,103 @@ function CadreEtage({
 }
 
 function CadreWhatsApp({
+  tenantId,
+  rang,
   contenu,
   references,
   onChange,
 }: {
+  tenantId: string;
+  rang: number;
   contenu: ContenuEtage;
   references: ReferencesContenu;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
+  /**
+   * LES INDICES ARRIVENT APRÈS, ET UN SEUL CHOIX COMPTE.
+   *
+   * 🔴 UNE `useRef`, PAS UN `useState`, ET LA DIFFÉRENCE EST TOUTE LA GARDE. Un état est CAPTURÉ par
+   * la fermeture du rendu : la comparaison faite dans le `.then` relirait la valeur d'alors, donc elle
+   * serait toujours vraie et n'écarterait jamais rien. Une ref est partagée entre les rendus, donc elle
+   * voit le choix suivant. C'est le même `useRef` que porte l'ancien formulaire (`chooseSeq`), et c'est
+   * pour cette raison-là.
+   *
+   * ⚠️ Sans elle : choisir « promo » puis « rappel » pendant que la première lecture est en vol reposerait
+   * les indices de « promo » sur les variables de « rappel ».
+   */
+  const tour = useRef(0);
+
+  /**
+   * Le modèle dont on associe les variables : celui de l'étage, ou celui par lequel son scénario ouvre.
+   *
+   * ⚠️ `modeleDeLEtage` EST LE MÊME POINT DE PASSAGE QUE LE RÉCAPITULATIF. Lui, il compte ce qu'il
+   * ATTEND ; ici on affiche ce qu'on PROPOSE d'associer. Deux règles séparées auraient montré une liste
+   * que la garde de lancement aurait jugée incomplète, sans rien pour l'expliquer à l'écran.
+   */
+  const modele = modeleDeLEtage(contenu);
+  const nbVariables = varCountOf(references.templates.find((t) => t.name === modele?.name)?.body);
+
+  /**
+   * POSER LES LIGNES TOUT DE SUITE, PUIS LES AFFINER.
+   *
+   * 🔴 LE DÉFAUT EST POSÉ DE FAÇON SYNCHRONE, ET C'EST CE QUI REND LA GARDE DU RÉCAPITULATIF VRAIE : un
+   * modèle choisi porte immédiatement autant de lignes que de `{{n}}`, donc un lancement qui suit le clic
+   * d'une seconde part avec un `paramMapping` complet. Les indices ne font que remplacer des sources.
+   */
+  const poserVariables = (n: number, nom: string, langue: string, avec: Partial<ContenuEtage> = {}): void => {
+    const mien = (tour.current += 1);
+    // ⚠️ UN SEUL PATCH POUR LE CHOIX ET SES VARIABLES : deux appels de suite partiraient du même état de
+    // rendu et le second effacerait le premier. La coquille fusionne, elle ne devine pas.
+    onChange({ ...avec, variables: lignesParDefaut(n) });
+    if (n === 0) return;
+    void getTemplateHints(tenantId, nom, langue)
+      .then(({ hints }) => {
+        // Un autre modèle a été choisi entre-temps : sa réponse à lui n'a rien à faire ici.
+        if (mien !== tour.current || hints.length === 0) return;
+        onChange({ variables: appliquerIndices(lignesParDefaut(n), hints, references.userFields) });
+      })
+      .catch(() => { /* pas d'indices -> on garde le défaut, jamais une liste vide */ });
+  };
+
+  const choisirModele = (v: string): void => {
+    const tpl = references.templates.find((t) => t.name === v);
+    poserVariables(varCountOf(tpl?.body), v, tpl?.language ?? '', { templateName: v, templateLanguage: tpl?.language ?? '' });
+  };
+
+  /**
+   * CHOISIR UN SCÉNARIO, C'EST CHOISIR LE MODÈLE PAR LEQUEL IL OUVRE.
+   *
+   * 🔴 SES VARIABLES SONT CELLES QUE LA CAMPAGNE DOIT FOURNIR. Le premier envoi d'un scénario de campagne
+   * reçoit `paramMapping` RÉSOLU PAR CONTACT et l'utilise tel quel, sans relire les indices
+   * (`explicitParams`, `src/workflow/wiring.ts`) : un mapping vide sur un modèle à variables est donc le
+   * même refus global de Meta que sur une campagne de modèle direct.
+   *
+   * ⚠️ Le graphe est lu À LA DEMANDE : la liste des scénarios ne le porte plus (elle renvoyait deux
+   * graphes complets par scénario pour afficher des noms). Une lecture en échec laisse le scénario
+   * choisi SANS modèle connu, et c'est le récapitulatif qui le dira plutôt que l'écran d'ici.
+   */
+  const choisirScenario = (id: string): void => {
+    onChange({ workflowId: id });
+    if (id === '') return;
+    const mien = (tour.current += 1);
+    void getWorkflow(tenantId, id)
+      .then(({ workflow }) => {
+        if (mien !== tour.current) return;
+        const entree = workflow.graph ? firstTemplateOf(workflow.graph) : null;
+        const nom = entree ? String(entree.data.templateName ?? '').trim() : '';
+        if (nom === '') return;
+        const langue = String(entree?.data.language ?? 'fr');
+        // Le modèle du scénario ET ses variables dans le MÊME patch, pour la même raison qu'au-dessus.
+        poserVariables(
+          varCountOf(references.templates.find((t) => t.name === nom)?.body),
+          nom,
+          langue,
+          { modeleDuScenario: { name: nom, language: langue } },
+        );
+      })
+      .catch(() => { /* graphe illisible -> aucun modèle connu, le récapitulatif le dira */ });
+  };
+
   return (
     <div className="w-full space-y-3">
       <Formule
@@ -177,15 +281,98 @@ function CadreWhatsApp({
       />
       <Selecteur
         libelle="Modèle"
+        testId={`modele-${rang}`}
         valeur={contenu.templateName ?? ''}
-        onChange={(v) => {
-          const tpl = references.templates.find((t) => t.name === v);
-          onChange({ templateName: v, templateLanguage: tpl?.language ?? '' });
-        }}
+        onChange={choisirModele}
         options={references.templates.map((t) => ({ valeur: t.name, libelle: `${t.name} (${t.language})` }))}
         vide="Aucun modèle approuvé sur cet espace."
       />
-      {contenu.formule === 'avec_scenario' && <SelecteurScenario contenu={contenu} references={references} onChange={onChange} />}
+      {contenu.formule === 'avec_scenario' && (
+        <SelecteurScenario contenu={contenu} references={references} onChange={choisirScenario} testId={`scenario-${rang}`} />
+      )}
+      <EditeurVariables
+        rang={rang}
+        nbVariables={nbVariables}
+        lignes={contenu.variables ?? []}
+        champs={references.userFields}
+        onChange={(lignes) => onChange({ variables: lignes })}
+      />
+    </div>
+  );
+}
+
+/**
+ * D'OÙ VIENT CHAQUE VARIABLE `{{n}}` DU MODÈLE.
+ *
+ * 🔴 C'EST LA MÊME SÉMANTIQUE QUE L'ANCIEN FORMULAIRE, PAS UNE SECONDE : les trois fonctions qui
+ * traduisent un choix en `ParamSource` vivent dans `web/lib/variables-template.ts` et servent les DEUX
+ * écrans. Deux règles pour décider du même envoi finiraient par diverger sur un cas (une clé système
+ * renommée, un indice périmé), et la divergence ferait sauter des contacts en silence.
+ *
+ * ⚠️ UNE LIGNE PAR VARIABLE, EMPILÉES ET BORNÉES À LA LARGEUR DU CADRE. C'est une liste qui GRANDIT avec
+ * le modèle : dix variables sur un 13 pouces sont le pire cas réaliste, et le `<select>` y est en
+ * `min-w-0 flex-1` pour rétrécir au lieu de pousser le champ de texte hors du cadre.
+ */
+function EditeurVariables({
+  rang,
+  nbVariables,
+  lignes,
+  champs,
+  onChange,
+}: {
+  rang: number;
+  nbVariables: number;
+  lignes: VarRow[];
+  champs: UserFieldDef[];
+  onChange: (lignes: VarRow[]) => void;
+}) {
+  if (nbVariables === 0) return null;
+  const perso = customFieldsOnly(champs);
+  const majLigne = (i: number, patch: Partial<VarRow>): void =>
+    onChange(lignes.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  return (
+    <div className="w-full" data-testid={`variables-${rang}`}>
+      <p className="text-sm font-medium text-ink-700">Variables ({nbVariables})</p>
+      <div className="mt-1 w-full space-y-2">
+        {lignes.map((l, i) => (
+          <div key={`var-${i + 1}`} className="flex w-full items-center gap-1.5">
+            <span className="w-10 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
+            <select
+              value={l.sel}
+              onChange={(e) => majLigne(i, { sel: e.target.value })}
+              data-testid={`variable-${rang}-${i + 1}`}
+              aria-label={`Variable ${i + 1}`}
+              className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
+            >
+              <optgroup label="Champs de base">
+                {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{f.label[0]}</option>)}
+              </optgroup>
+              {perso.length > 0 && (
+                <optgroup label="Mes champs">
+                  {perso.map((f) => <option key={f.key} value={`field:${f.key}`}>{f.label}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="Autre">
+                <option value="now">Date du jour (auto)</option>
+                <option value="literal">Texte fixe</option>
+              </optgroup>
+            </select>
+            {l.sel === 'literal' && (
+              <input
+                value={l.value}
+                onChange={(e) => majLigne(i, { value: e.target.value })}
+                data-testid={`variable-${rang}-${i + 1}-texte`}
+                aria-label={`Texte fixe de la variable ${i + 1}`}
+                placeholder="valeur"
+                className="w-28 min-w-0 shrink rounded-lg border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] text-ink-400">
+        Un contact sans la valeur choisie est écarté de la campagne, et le récapitulatif le compte.
+      </p>
     </div>
   );
 }
@@ -234,7 +421,10 @@ function CadreRcs({
           />
         </div>
       </div>
-      {contenu.formule === 'avec_scenario' && <SelecteurScenario contenu={contenu} references={references} onChange={onChange} />}
+      {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant. */}
+      {contenu.formule === 'avec_scenario' && (
+        <SelecteurScenario contenu={contenu} references={references} onChange={(v) => onChange({ workflowId: v })} />
+      )}
     </div>
   );
 }
@@ -317,16 +507,25 @@ function SelecteurScenario({
   contenu,
   references,
   onChange,
+  testId,
 }: {
   contenu: ContenuEtage;
   references: ReferencesContenu;
-  onChange: (patch: Partial<ContenuEtage>) => void;
+  /**
+   * ⚠️ LA VALEUR, PAS UN PATCH. Choisir un scénario ne pose plus seulement son identifiant : il faut
+   * aussi lire le modèle par lequel il ouvre, pour savoir combien de variables la campagne doit fournir.
+   * Un patch laisserait cette lecture au bon vouloir de chaque appelant.
+   */
+  onChange: (workflowId: string) => void;
+  /** Cf. `Selecteur.testId` : « Scénario » est sans ambiguïté, mais l'écran en porte un par étage. */
+  testId?: string;
 }) {
   return (
     <Selecteur
       libelle="Scénario"
+      {...(testId ? { testId } : {})}
       valeur={contenu.workflowId ?? ''}
-      onChange={(v) => onChange({ workflowId: v })}
+      onChange={onChange}
       options={references.workflows.map((w) => ({ valeur: w.id, libelle: w.name }))}
       vide="Aucun scénario lançable en campagne sur cet espace."
     />
@@ -463,12 +662,20 @@ function Selecteur({
   onChange,
   options,
   vide,
+  testId,
 }: {
   libelle: string;
   valeur: string;
   onChange: (v: string) => void;
   options: Array<{ valeur: string; libelle: string }>;
   vide: string;
+  /**
+   * ⚠️ UNE CLÉ DE TEST PLUTÔT QU'UNE DÉSIGNATION PAR LIBELLÉ, et ce n'est pas un confort : « Modèle »
+   * désigne aussi les deux boutons radio « Modèle seul » et « Modèle et scénario » du même cadre, donc
+   * une requête par étiquette y trouve trois éléments et échoue. Le libellé reste ce que l'utilisateur
+   * lit ; la clé est ce qui désigne le champ sans ambiguïté.
+   */
+  testId?: string;
 }) {
   return (
     <label className="block w-full text-sm">
@@ -479,6 +686,7 @@ function Selecteur({
         <select
           value={valeur}
           onChange={(e) => onChange(e.target.value)}
+          {...(testId ? { 'data-testid': testId } : {})}
           className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
         >
           <option value="">Choisir...</option>

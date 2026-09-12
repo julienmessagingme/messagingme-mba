@@ -21,9 +21,9 @@ import {
  *
  * 🔴 UNE ADRESSE À PART, ET NON UN MODE DE `/campaigns`, TANT QUE L'ANCIEN FORMULAIRE EST EN SERVICE.
  * `CampaignCreateForm` reste le chemin de création complet ; le bouton « Ajouter une campagne » continue
- * de l'ouvrir. Les deux coexistent, et ce n'est pas de la prudence : l'assistant n'envoie pas encore de
- * `paramMapping`, donc une campagne sur un template à variables y serait refusée par Meta. L'inventaire
- * de ce qui lui manque vit dans `AssistantCampagne.tsx`.
+ * de l'ouvrir. Les deux coexistent, et l'inventaire de ce qui manque encore à l'assistant vit dans
+ * `AssistantCampagne.tsx`. ⚠️ Le motif principal a disparu au lot 6 : il envoie désormais son
+ * `paramMapping`, donc une campagne sur un modèle à variables y part sans être refusée par Meta.
  *
  * ⚠️ CET ÉCRAN CRÉE ET LANCE VRAIMENT DEPUIS LE 2026-09-12. Le bouton du récapitulatif appelle
  * `createCampaign` puis `runCampaign` : ce qui part d'ici part à de vraies personnes.

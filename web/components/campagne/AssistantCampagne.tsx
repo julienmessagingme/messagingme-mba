@@ -11,22 +11,20 @@ import {
   type TroisiemeNiveau,
 } from '@/lib/campagne-chaine';
 import { EtapeCanal } from '@/components/campagne/EtapeCanal';
-import { EtapeContenu } from '@/components/campagne/EtapeContenu';
+import { EtapeContenu, contenuVide } from '@/components/campagne/EtapeContenu';
 import { EtapeAudience } from '@/components/campagne/EtapeAudience';
 import { EtapeRecap } from '@/components/campagne/EtapeRecap';
 import type { AudienceChoix } from '@/lib/campagne-repartition';
+import type { VarRow } from '@/lib/variables-template';
 import type { CampaignCategory, PhoneNumber, RcsAgent, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE : cinq étapes, une question par écran, retour libre.
  *
- * 🔴 IL CRÉE ET LANCE VRAIMENT DEPUIS LE 2026-09-12 (étapes Audience et Récapitulatif), MAIS IL NE
- * REMPLACE TOUJOURS PAS `CampaignCreateForm`, et le motif est MESURÉ, pas prudentiel : cet assistant
- * n'envoie AUCUN `paramMapping`. Un template qui porte `{{1}}` partirait donc avec zéro paramètre de
- * corps, et Meta refuse la campagne entière sur le compte de paramètres (cf. `resolveHintParams`,
- * `src/crm/template.ts`, dont le commentaire dit que c'est le compte fourni qui évite le 132000).
- * Retirer l'ancien formulaire aujourd'hui couperait donc toute campagne à template variable, c'est-à-dire
- * le cas courant. Huit autres capacités lui manquent encore : voir la § « Ce qui manque » ci-dessous.
+ * 🔴 IL CRÉE ET LANCE VRAIMENT, ET IL SAIT ASSOCIER LES VARIABLES D'UN MODÈLE DEPUIS LE LOT 6. Le
+ * blocage qui le tenait hors service est levé : il envoie son `paramMapping`, donc une campagne à modèle
+ * variable part sans se faire refuser par Meta sur le compte de paramètres. Ce qui l'empêche encore de
+ * REMPLACER `CampaignCreateForm` est ailleurs, et c'est la § « Ce qui manque » ci-dessous.
  *
  * ⚠️ CE QUE PORTE CE COMPOSANT, ET RIEN DE PLUS : l'état de la campagne en cours d'écriture et la
  * navigation. Chaque étape est un composant qui reçoit ce dont elle a besoin et rend ce qu'elle change.
@@ -37,8 +35,9 @@ import type { CampaignCategory, PhoneNumber, RcsAgent, RcsSuggestion, TagCount, 
  * ⚠️ CE QUI MANQUE ENCORE À L'ASSISTANT, inventorié le 2026-09-12 en préparant le retrait de l'ancien
  * formulaire, et qui explique pourquoi ce retrait n'a PAS eu lieu. Chaque ligne est une capacité que
  * `CampaignCreateForm` porte seul aujourd'hui :
- *   1. 🔴 l'ASSOCIATION DES VARIABLES d'un template (`paramMapping`) : sans elle, un template à variables
- *      est refusé par Meta, campagne entière ;
+ *   1. ⚠️ l'association des variables d'un modèle sur un étage de REPLI : la campagne n'a qu'un
+ *      `param_mapping` et `campaign_etages` n'a pas de colonne pour un second, donc un repli à variables
+ *      est REFUSÉ au récapitulatif, avec sa raison (le rang 1, lui, est servi) ;
  *   2. la sélection fine des contacts (cases à cocher, filtres du mini-CRM, exclusions, listes HubSpot) ;
  *   3. l'APERÇU du template, carousel et en-tête média compris ;
  *   4. la création d'un template à la volée ;
@@ -119,6 +118,28 @@ export interface ContenuEtage {
    * deviner, c'est se tromper une fois sur deux EN SILENCE.
    */
   emailChamp?: string;
+  /**
+   * L'ASSOCIATION DES VARIABLES `{{n}}` DU MODÈLE DE CET ÉTAGE (ce qui devient `paramMapping`).
+   *
+   * 🔴 SANS ELLE, UN MODÈLE À VARIABLES FAIT REFUSER LA CAMPAGNE ENTIÈRE. Meta compare le nombre de
+   * paramètres fournis à celui du modèle approuvé : zéro paramètre sur un modèle qui porte `{{1}}` est un
+   * refus global, pas un destinataire sauté (`resolveHintParams`, `src/crm/template.ts`).
+   *
+   * ⚠️ ELLE EST PAR ÉTAGE, comme le reste du contenu, mais SEUL LE RANG 1 PART AUJOURD'HUI : la campagne
+   * n'a qu'un `param_mapping`, et `campaign_etages` n'a pas de colonne pour en porter un second. Un étage
+   * de repli sur un modèle à variables est donc REFUSÉ au récapitulatif, avec sa raison, plutôt que
+   * enregistré puis refusé par Meta le jour où le repli part.
+   */
+  variables?: VarRow[];
+  /**
+   * LE MODÈLE PAR LEQUEL LE SCÉNARIO DE CET ÉTAGE OUVRE, quand la formule est « modèle et scénario ».
+   *
+   * 🔴 IL NE SORT JAMAIS DE L'ÉCRAN, ET C'EST VOLONTAIRE. Le serveur ne veut pas de modèle sur une
+   * campagne de scénario (il écrit `template_name = ''`) : c'est le premier bloc du graphe qui dit ce qui
+   * part. Mais ses variables, elles, voyagent dans `paramMapping` et sont passées telles quelles au
+   * premier envoi. Il faut donc savoir COMBIEN il en porte, sans pour autant l'enregistrer.
+   */
+  modeleDuScenario?: { name: string; language: string };
 }
 
 /** Où va la conversation quand le contact répond. */
@@ -240,6 +261,23 @@ export function AssistantCampagne({
 
   const modifier = (patch: Partial<EtatCampagne>): void => setEtat((e) => ({ ...e, ...patch }));
 
+  /**
+   * MODIFIER LE CONTENU D'UN ÉTAGE, SUR L'ÉTAT COURANT ET NON SUR CELUI DU RENDU.
+   *
+   * 🔴 ELLE EXISTE PARCE QUE DEUX ÉCRITURES DE SUITE EN PERDAIENT UNE. L'étape Contenu fabriquait son
+   * patch en relisant `etat.contenus`, c'est-à-dire la valeur CAPTURÉE au rendu : choisir un modèle écrit
+   * son nom, puis ses variables, et la seconde écriture repartait d'un `contenus` où le nom n'était pas
+   * encore. Le modèle disparaissait. Le cas asynchrone était pire : les indices d'un modèle reviennent du
+   * réseau avec la fermeture d'un rendu périmé, donc ils effaçaient le choix fait entre-temps.
+   *
+   * ⚠️ LA FORME FONCTIONNELLE EST LA SEULE QUI TIENNE : `setEtat(e => ...)` reçoit l'état COURANT, jamais
+   * celui du rendu. Un `modifier({ contenus })` calculé au-dehors a exactement le défaut qu'on ferme ici.
+   */
+  const modifierContenu = (rang: number, patch: Partial<ContenuEtage>): void => setEtat((e) => ({
+    ...e,
+    contenus: { ...e.contenus, [rang]: { ...(e.contenus[rang] ?? contenuVide()), ...patch } },
+  }));
+
   return (
     // ⚠️ UNE SEULE COLONNE, BORNÉE. L'écran de référence est un 13 pouces (1280 x 800) moins la barre
     // latérale de 240 px et les marges de la coquille, soit environ 990 px utiles. Une colonne bornée à
@@ -314,6 +352,7 @@ export function AssistantCampagne({
 
       {etape === 'contenu' && (
         <EtapeContenu
+          tenantId={tenantId}
           etat={etat}
           chaine={chaine}
           references={references}
@@ -325,6 +364,7 @@ export function AssistantCampagne({
            */
           nbDestinataires={null}
           onChange={modifier}
+          onContenu={modifierContenu}
         />
       )}
 

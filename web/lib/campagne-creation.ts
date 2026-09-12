@@ -4,6 +4,8 @@ import type { ContactFilters } from './contact-filters';
 import type { RcsOutbound, RcsSuggestion } from './rcs-types';
 import type { EtageAssistant } from './campagne-chaine';
 import { RANG_INITIAL, reglagesDeCadence, type Cadence } from './campagne-chaine';
+import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
+import { varCountOf } from './fields';
 
 /**
  * CE QUE L'ASSISTANT ENVOIE AU SERVEUR, en fonction PURE.
@@ -36,7 +38,55 @@ export interface EtatPourCreation {
     texteRcs?: string;
     suggestions: RcsSuggestion[];
     emailTemplateId?: string;
+    /** L'association des variables du modèle de cet étage. Cf. `ContenuEtage.variables`. */
+    variables?: VarRow[];
+    /** Le modèle par lequel le scénario de cet étage ouvre. Cf. `ContenuEtage.modeleDuScenario`. */
+    modeleDuScenario?: { name: string; language: string };
   }>;
+}
+
+/**
+ * LE MODÈLE DONT UN ÉTAGE ASSOCIE LES VARIABLES, ou `null`.
+ *
+ * 🔴 DEUX LECTEURS, UNE SEULE RÈGLE, et c'est pour ça qu'elle est ici et pas dans le composant :
+ * l'étape Contenu s'en sert pour savoir COMBIEN de lignes afficher, le récapitulatif pour savoir combien
+ * il en attend. Si l'un prenait `templateName` quand l'autre prend le modèle du scénario, l'écran
+ * montrerait une liste que la garde jugerait incomplète, sans que rien ne l'explique.
+ *
+ * ⚠️ EN FORMULE « SCÉNARIO », CE N'EST PAS LE MODÈLE DU SÉLECTEUR. La campagne n'envoie pas ce modèle-là :
+ * elle démarre un parcours, dont le PREMIER bloc envoie un modèle, et ce sont les variables de celui-ci
+ * que `paramMapping` doit couvrir.
+ */
+export function modeleDeLEtage(
+  contenu: EtatPourCreation['contenus'][number] | undefined,
+): { name: string } | null {
+  if (!contenu) return null;
+  if (contenu.formule === 'avec_scenario') return contenu.modeleDuScenario ?? null;
+  return contenu.templateName ? { name: contenu.templateName } : null;
+}
+
+/**
+ * LE NOMBRE DE VARIABLES DU MODÈLE DE CHAQUE ÉTAGE WHATSAPP, PAR RANG.
+ *
+ * ⚠️ UN RANG DONT LE MODÈLE EST INTROUVABLE N'ENTRE PAS DANS LA TABLE, il n'y entre pas à zéro : « on ne
+ * sait pas » et « il n'en a pas » appellent des décisions opposées côté garde. Cf. `variablesDuModele`
+ * dans `ContexteDeCreation`.
+ */
+export function variablesParRang(
+  chaine: EtageAssistant[],
+  contenus: EtatPourCreation['contenus'],
+  modeles: ReadonlyArray<{ name: string; body?: string }>,
+): Record<number, number> {
+  const table: Record<number, number> = {};
+  for (const etage of chaine) {
+    if (etage.canal !== 'whatsapp') continue;
+    const modele = modeleDeLEtage(contenus[etage.rang]);
+    if (!modele) continue;
+    const tpl = modeles.find((m) => m.name === modele.name);
+    if (!tpl) continue;
+    table[etage.rang] = varCountOf(tpl.body);
+  }
+  return table;
 }
 
 /** Ce que l'assistant ne porte pas lui-même : le numéro, l'agent RCS, et les filtres de l'audience. */
@@ -54,6 +104,19 @@ export interface ContexteDeCreation {
    * autre.
    */
   champEmail: string | null;
+  /**
+   * LE NOMBRE DE VARIABLES `{{n}}` DU MODÈLE DE CHAQUE ÉTAGE, PAR RANG.
+   *
+   * 🔴 IL VIENT DE L'ÉCRAN PARCE QU'IL VIENT DU CORPS DU MODÈLE, que cette lib ne connaît pas. Le
+   * recalculer ici demanderait la liste des modèles de l'espace, plus la résolution du modèle par lequel
+   * un scénario ouvre : deux lectures que l'étape Contenu a déjà faites, et qui divergeraient.
+   *
+   * ⚠️ UN RANG ABSENT VEUT DIRE « MODÈLE INCONNU », JAMAIS « ZÉRO VARIABLE ». Un modèle qu'on n'a pas su
+   * lire (liste non chargée, graphe de scénario illisible) ne doit pas faire croire qu'il n'a rien à
+   * associer : la garde se tait et laisse le serveur, puis Meta, trancher. Compter zéro à sa place aurait
+   * exactement l'effet qu'on cherche à empêcher, un `paramMapping` vide envoyé sans un mot.
+   */
+  variablesDuModele: Record<number, number>;
 }
 
 /**
@@ -96,8 +159,41 @@ export function problemeAvantLancement(
     if (etage.canal === 'email' && !ctx.champEmail) {
       return `L’étage ${etage.rang} part en e-mail : choisissez le champ de la fiche qui porte l’adresse.`;
     }
+    const probleme = problemeDesVariables(etage, etat, ctx);
+    if (probleme !== null) return probleme;
   }
   return null;
+}
+
+/**
+ * CE QUI EMPÊCHE D'ENVOYER LES VARIABLES DE CET ÉTAGE, ou `null`.
+ *
+ * 🔴 UN MODÈLE À VARIABLES SANS ASSOCIATION FAIT REFUSER LA CAMPAGNE ENTIÈRE, PAS UN DESTINATAIRE. Meta
+ * compare le nombre de paramètres fournis à celui du modèle approuvé, et c'est le seul refus de cet écran
+ * dont le coût est GLOBAL : les autres écartent une fiche. D'où une garde, plutôt qu'un aller-retour qui
+ * reviendrait avec un code Meta que personne ne sait lire.
+ *
+ * 🔴 ET UN ÉTAGE DE REPLI À VARIABLES EST REFUSÉ TOUT COURT, parce que rien ne peut le porter : la
+ * campagne n'a qu'un `param_mapping`, `campaign_etages` n'a pas de colonne pour un second, et
+ * `campaign_recipients.resolved_params` est résolu UNE fois, à la création, depuis ce mapping unique
+ * (`buildRecipients`). Vérifié dans la migration 0134 et dans `PgCampaignRepo.insertCampaignRow`.
+ * Le laisser passer enregistrerait une chaîne dont le repli échouerait chez Meta des jours plus tard, sur
+ * un chemin que personne ne regarde.
+ */
+function problemeDesVariables(
+  etage: EtageAssistant,
+  etat: EtatPourCreation,
+  ctx: ContexteDeCreation,
+): string | null {
+  if (etage.canal !== 'whatsapp') return null;
+  const attendues = ctx.variablesDuModele[etage.rang];
+  // Modèle inconnu : on ne sait pas combien il en porte, et inventer zéro serait le défaut qu'on ferme.
+  if (attendues === undefined || attendues === 0) return null;
+  if (etage.rang !== RANG_INITIAL) {
+    return `L’étage ${etage.rang} part sur un modèle à variables : ce n’est pas encore possible sur un repli. Choisissez un modèle sans variable.`;
+  }
+  const probleme = problemeDAssociation(etat.contenus[etage.rang]?.variables ?? [], attendues);
+  return probleme === null ? null : `L’étage ${etage.rang} : ${probleme}.`;
 }
 
 /** Le message RCS d'un étage, dans la forme que `rcsOutboundSchema` accepte. */
@@ -148,6 +244,22 @@ export function entreeDeCreation(
     phoneNumberId: rcsPremier ? '' : ctx.phoneNumberId,
     name: etat.nom.trim(),
     category: etat.category,
+    /**
+     * 🔴 L'ASSOCIATION DES VARIABLES DU PREMIER ÉTAGE, ET D'AUCUN AUTRE. `campaigns.param_mapping` décrit
+     * le modèle de la campagne, c'est-à-dire le rang 1 : c'est lui que `buildRecipients` résout par contact
+     * dans `campaign_recipients.resolved_params`, et c'est cette liste-là que l'envoi passe à Meta. Y mettre
+     * les variables d'un étage de repli ferait écarter, dès la création, les contacts à qui il manque une
+     * valeur dont le PREMIER étage n'a pas besoin.
+     *
+     * ⚠️ IL PART AUSSI SUR UNE CAMPAGNE DE SCÉNARIO, et ce n'est pas un oubli du contraire : le premier
+     * envoi du scénario reçoit ces variables DÉJÀ RÉSOLUES et les utilise telles quelles, sans relire les
+     * indices du modèle (`explicitParams`, `src/workflow/wiring.ts`). Un mapping vide y produit le même
+     * refus global de Meta que sur une campagne de modèle direct.
+     *
+     * ⚠️ VIDE SUR UN PREMIER ÉTAGE RCS : ce canal n'a pas de variables de modèle, et le serveur valide de
+     * toute façon `paramMapping ?? []` pour tout le monde.
+     */
+    paramMapping: rcsPremier ? [] : versParamMapping(contenuPremier?.variables ?? []),
     ...(rcsPremier || scenarioPremier ? {} : {
       templateName: contenuPremier?.templateName ?? '',
       templateLanguage: contenuPremier?.templateLanguage ?? 'fr',

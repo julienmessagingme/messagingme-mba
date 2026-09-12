@@ -60,7 +60,8 @@ import {
   type CampaignDetail,
   type WorkflowSummary,
 } from '@/lib/api';
-import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample, varCountOf } from '@/lib/fields';
+import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample, varCountOf } from '@/lib/fields';
+import { appliquerIndices, lignesParDefaut, versParamMapping, type VarRow } from '@/lib/variables-template';
 import { filtersActive, filtresRepris } from '@/lib/contact-filters';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
 import { useCampagneReferences } from '@/lib/use-campagne-references';
@@ -78,35 +79,11 @@ function estSourceDestinataires(v: unknown): v is SourceDestinataires {
   return v === 'crm' || v === 'file' || v === 'hubspot' || v === 'webhook';
 }
 
-interface VarRow {
-  /** Option choisie dans le sélecteur : 'sys:<key>' (champ de base), 'field:<key>' (champ perso), ou 'literal'. */
-  sel: string;
-  /** Valeur saisie (uniquement pour 'literal'). */
-  value: string;
-}
-
-/** Option choisie -> ParamSource envoyée au backend. */
-function selToSource(sel: string, value: string): TemplateParam['source'] {
-  if (sel === 'now') return { type: 'now' };
-  if (sel === 'literal') return { type: 'literal', value };
-  if (sel.startsWith('sys:')) {
-    const f = SYSTEM_FIELDS.find((s) => `sys:${s.key}` === sel);
-    return f ? f.source : { type: 'attribute', key: 'name' };
-  }
-  return { type: 'field', key: sel.slice('field:'.length) };
-}
-
-/** ParamSource (indice de template stocké) -> option à présélectionner. `customFields` = les champs perso RÉELS :
- *  un indice vers un champ inexistant (ex. indice périmé « nom » d'un champ supprimé) retombe sur « Nom » : sinon
- *  le `<select>` afficherait la 1re option (« Nom ») tout en gardant en interne un `sel` fantôme qui saute le contact. */
-function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]): string {
-  if (s.type === 'now') return 'now';
-  if (s.type === 'literal') return 'literal';
-  if (s.type === 'attribute') return `sys:${s.key ?? 'name'}`;
-  const key = s.key ?? '';
-  if (isSystemFieldKey(key)) return `sys:${key}`; // prenom/email = champ système
-  return customFields.some((f) => f.key === key) ? `field:${key}` : 'sys:name';
-}
+/**
+ * ⚠️ `VarRow`, `selToSource` et `selForSource` VIVAIENT ICI ; ils vivent maintenant dans
+ * `web/lib/variables-template.ts` et cet écran les IMPORTE. L'assistant de campagne a besoin de la même
+ * association, et la recopier là-bas aurait donné deux règles qui décident du même envoi.
+ */
 
 /**
  * Délai avant qu'un changement de l'écran parte dans le brouillon.
@@ -449,23 +426,14 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     const tpl = templates.find((x) => x.name === nm);
     const n = varCountOf(tpl?.body);
     // Défaut immédiat : chaque variable -> Nom. On affine ensuite avec les indices posés à la création du template.
-    setVars(Array.from({ length: n }, () => ({ sel: 'sys:name', value: '' })));
+    setVars(lignesParDefaut(n));
     if (n === 0) return;
     const seq = ++chooseSeq.current;
     try {
       const { hints } = await getTemplateHints(tenantId, nm, language);
       if (seq !== chooseSeq.current) return; // un autre template/workflow a été choisi entre-temps
       if (hints.length === 0) return;
-      setVars((prev) => {
-        if (prev.length !== n) return prev;
-        const rows = [...prev];
-        for (const h of hints) {
-          const i = h.position - 1;
-          if (i < 0 || i >= n) continue;
-          rows[i] = { sel: selForSource(h.source, userFields), value: h.source.type === 'literal' ? (h.source.value ?? '') : '' };
-        }
-        return rows;
-      });
+      setVars((prev) => (prev.length === n ? appliquerIndices(prev, hints, userFields) : prev));
     } catch { /* pas d'indices -> on garde le défaut */ }
   }
 
@@ -696,7 +664,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     && !(filters.tagsExclude?.length) && !(filters.fieldFilters?.length);
 
   function toParamMapping(): TemplateParam[] {
-    return vars.map((v, i) => ({ position: i + 1, source: selToSource(v.sel, v.value) }));
+    return versParamMapping(vars);
   }
 
   // Payload de création partagé par le brouillon (submit) et le lancement direct (createAndLaunch).

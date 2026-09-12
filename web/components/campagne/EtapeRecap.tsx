@@ -8,7 +8,7 @@ import {
   LIBELLE_CANAL, champEmailEffectif, filtresDeLAudience, repartitionPrevue,
   type MesuresAudience,
 } from '@/lib/campagne-repartition';
-import { entreeDeCreation, problemeAvantLancement } from '@/lib/campagne-creation';
+import { entreeDeCreation, problemeAvantLancement, variablesParRang } from '@/lib/campagne-creation';
 import type {
   EtapeAssistant, EtatCampagne, ReferencesContenu,
 } from '@/components/campagne/AssistantCampagne';
@@ -61,6 +61,13 @@ export function EtapeRecap({
     // ⚠️ LE MÊME POINT DE PASSAGE que le comptage et que le sélecteur de l'étape Contenu
     // (`champEmailEffectif`) : trois lectures du même réglage, une seule règle pour le résoudre.
     champEmail: champEmailDeLaChaine(etat, chaine, references.userFields),
+    /**
+     * ⚠️ LE MÊME POINT DE PASSAGE QUE L'ÉTAPE CONTENU (`modeleDeLEtage`, via `variablesParRang`) : c'est
+     * lui qui dit quel modèle un étage envoie, le sien ou celui par lequel son scénario ouvre. Le
+     * recalculer ici de son côté ferait compter les variables d'un modèle que l'écran n'a pas proposé à
+     * associer, donc refuser un lancement parfaitement valide.
+     */
+    variablesDuModele: variablesParRang(chaine, etat.contenus, references.templates),
   };
   const probleme = problemeAvantLancement(etat, chaine, contexte);
 
