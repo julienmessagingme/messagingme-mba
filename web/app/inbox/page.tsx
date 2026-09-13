@@ -989,11 +989,30 @@ function Thread({ session, conversation, dossier, onSent }: {
   const bornRef = useRef<{ at: string; id: string } | null>(null);
   /** Requête de fil en cours, annulée quand on change de conversation ou qu'on quitte l'écran. */
   const enVolRef = useRef<AbortController | null>(null);
+  /**
+   * 🔴 UNE REQUÊTE DE FIL EST-ELLE ENCORE EN VOL ? C'EST LA GARDE QUI EMPÊCHE DE PAYER EN BOUCLE.
+   *
+   * Depuis que le fil se fait TRADUIRE (2026-09-13), sa requête peut durer jusqu'à 20 secondes (le
+   * plafond que s'accorde le traducteur) pendant que le minuteur la relance toutes les 4 secondes. Or
+   * `abort()` ferme la connexion du NAVIGATEUR : il n'annule pas l'appel au modèle, déjà parti, déjà
+   * facturé au crédit prépayé du client. Et comme le curseur du delta ne se pose qu'à la RÉCEPTION
+   * d'une réponse, chaque tour repartait du fil ENTIER et relançait une traduction complète.
+   *
+   * Résultat mesuré au diff : jusqu'à cinq traductions payées du même lot par minute, en boucle tant
+   * que l'opérateur reste sur la conversation, et un écran qui peut ne jamais afficher la traduction
+   * puisque chaque requête est tuée avant d'aboutir.
+   *
+   * ⚠️ LE TICK PASSE SON TOUR, IL N'ANNULE PLUS. L'annulation reste pour ce qui la justifie vraiment,
+   * un changement de conversation ou la sortie de l'écran : là, la réponse ne nous intéresse plus.
+   */
+  const enCoursRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (o?: { passerSiEnVol?: boolean }) => {
+    if (o?.passerSiEnVol === true && enCoursRef.current) return;
     enVolRef.current?.abort();
     const ctrl = new AbortController();
     enVolRef.current = ctrl;
+    enCoursRef.current = true;
     try {
       // DELTA (lot 5 du programme II) : on ne redemande que ce qui est arrivé APRÈS ce qu'on a déjà. Le fil
       // se rafraîchit toutes les 4 s ; il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
@@ -1048,6 +1067,11 @@ function Thread({ session, conversation, dossier, onSent }: {
       // un bandeau rouge à chaque clic serait absurde.
       if (estAnnulation(err)) return;
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
+    } finally {
+      // ⚠️ SEULEMENT SI C'EST ENCORE NOTRE REQUÊTE. Une requête annulée par une suivante ne doit pas
+      // déclarer la voie libre : la suivante, elle, est bien en vol, et le tick doit continuer de la
+      // laisser finir.
+      if (enVolRef.current === ctrl) enCoursRef.current = false;
     }
   }, [session.tenantId, conversation.id, t]);
 
@@ -1061,7 +1085,9 @@ function Thread({ session, conversation, dossier, onSent }: {
   // Auto-refresh du fil ouvert (~4 s, chat vivant) tant que l'onglet est visible. Thread est remonté par
   // conversation (key=selected.id), donc l'interval se recrée proprement à chaque changement de conversation.
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') void load(); };
+    // ⚠️ `passerSiEnVol` : un tour qui tombe pendant qu'une requête traduit encore ne relance RIEN.
+    // Cf. le docblock de `enCoursRef` : sans lui, on paie le même lot jusqu'à cinq fois par minute.
+    const tick = () => { if (document.visibilityState === 'visible') void load({ passerSiEnVol: true }); };
     const arreter = repeterAvecGigue(tick, 4000);
     document.addEventListener('visibilitychange', tick);
     return () => { arreter(); document.removeEventListener('visibilitychange', tick); };

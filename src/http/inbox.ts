@@ -674,10 +674,24 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     /**
      * ⚠️ PAS DE PLAFOND DE DEBIT « COUTEUX » SUR CETTE ROUTE, ET C'EST DELIBERE. Le fil se rafraichit
      * toutes les 4 secondes, soit 15 appels par minute : le plafond couteux (10 par minute et par
-     * espace) le couperait purement et simplement. Ce qui borne la depense ici est ailleurs, et c'est
-     * plus solide qu'un compteur : le delta ne ramene que les messages NOUVEAUX (donc zero traduction
-     * sur un fil calme), une traduction deja rangee n'est jamais recalculee, le lot est plafonne a 40
-     * messages, et la facture tombe sur le credit PREPAYE du client, qui est sa propre borne.
+     * espace) le couperait purement et simplement. Ce qui borne la depense ici est ailleurs : une
+     * traduction deja rangee n'est jamais recalculee, le lot est plafonne a 40 messages et a 20 000
+     * caracteres, et la facture tombe sur le credit PREPAYE du client, qui est sa propre borne.
+     *
+     * 🔴 ET UNE QUATRIEME BORNE VIT DANS LE NAVIGATEUR, SANS QUOI LES TROIS AUTRES NE SUFFISENT PAS
+     * (revue du 2026-09-13). Ce commentaire a d'abord affirme que « le delta ne ramene que les
+     * messages NOUVEAUX, donc zero traduction sur un fil calme ». C'etait FAUX au premier chargement,
+     * et faux de la maniere la plus couteuse : le curseur du delta ne se pose qu'a la RECEPTION d'une
+     * reponse. Une traduction pouvant durer jusqu'a 20 secondes contre un rafraichissement toutes les
+     * 4, aucune requete n'aboutissait, aucun curseur ne se posait, et chaque tour repartait du fil
+     * ENTIER pour relancer une traduction complete. Mesure par mutation : QUATRE traductions payees
+     * en treize secondes la ou une suffisait, en boucle tant que la conversation reste ouverte.
+     *
+     * La borne manquante est dans `web/app/inbox/page.tsx` : un tour qui tombe pendant qu'une requete
+     * est encore en vol PASSE SON TOUR au lieu de l'annuler (`enCoursRef`). Elle est gardee par
+     * `web/e2e/inbox-traduction-polling.spec.ts`, qui COMPTE les requetes dans les deux sens.
+     * ⚠️ Retirer cette garde cote ecran remet la dependance en boucle, sans qu'aucun test serveur ne
+     * bouge : c'est pour cela qu'elle est nommee ici, a l'endroit ou l'on croit que la borne existe.
      */
     const traduit = cible !== null && deps.traduireFil
       ? await deps.traduireFil(tenant, conversationId, messages, cible)
