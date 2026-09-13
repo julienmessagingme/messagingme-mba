@@ -12,33 +12,57 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
-## 🔴 LA FILE DE TRAVAIL (posée le 2026-09-12)
-
-Trois chantiers planifiés, dans cet ordre. Chacun a sa spec et son plan, et **chaque lot laisse le
-système fonctionnel** : on peut s'arrêter entre deux sans rien laisser à moitié.
+## 🔴 LA FILE DE TRAVAIL (à jour au 2026-09-13, après le lot 8)
 
 | Rang | Chantier | Spec | Plan | État |
 |---|---|---|---|---|
-| **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan, 14 tâches](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **lots 1 à 7 déployés (`b4eccda`) ; lot 8 LIVRÉ le 2026-09-13, pas encore déployé** |
-| **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | planifié |
-| **3** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié |
+| **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
+| **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | **PROCHAIN**, rien de commencé |
+| **3** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié, rien de commencé |
 
-⚠️ **L'ordre n'est pas arbitraire, et une dépendance le contraint.** Le chantier 1 pose la
-joignabilité mémorisée sur `contacts` et le motif « une donnée qu'on détecte et qu'on garde ». Le
-chantier 2 pose la **langue détectée** du contact sur la même table, avec le même motif. Les faire
-dans l'autre sens marcherait, mais les faire en parallèle produirait deux migrations concurrentes
-sur `contacts` et deux façons voisines de répondre à « que sait-on de ce contact ».
+### Où en est le chantier 1, exactement
 
-⚠️ **Le chantier 3 ne dépend de rien** et peut passer devant si le besoin change. Il est troisième
-parce qu'il est le moins urgent, pas parce qu'il est bloqué.
+Migrations **0133 à 0136 appliquées**. Prochaine libre : **0137** (le plan de la traduction a été
+corrigé, il annonçait 0136 qui est prise).
 
-🔴 **Découpage d'exécution retenu (décidé le 2026-09-12) : PAS un sous-agent par tâche.** La skill
-`subagent-driven-development` en dispatcherait deux par tâche plus une revue finale, soit 29 agents
-au plancher et 35 à 40 en pratique pour le seul chantier 1. On groupe donc par PHASE (5 lots pour le
-chantier 1), les revues se font ici, et un relecteur unique passe sur la branche à la fin. Six
-agents au lieu de quarante, un point d'arrêt entre chaque lot. La raison est dans le `CLAUDE.md`
-global : le relecteur unique d'un lot précédent avait trouvé les deux mêmes vrais défauts que les
-49 agents de l'incident du 2026-09-07.
+**Ce qui marche de bout en bout** : l'assistant à cinq étapes est le SEUL chemin de création, il gère
+les variables de template, l'aperçu, « Plus tard », le fil de l'eau, le visuel RCS, les brouillons
+(les deux formats), l'audience complète et la jauge de débit. Le moteur envoie sur le canal de
+l'étage. La joignabilité WhatsApp se mémorise. Le funnel compte par canal.
+
+🔴 **CE QUI N'A JAMAIS TOURNÉ EN RÉEL** : aucune chaîne de repli n'a jamais basculé sur de vraies
+données. Zéro campagne à deux étages, zéro ligne de journal, zéro joignabilité mesurée (compté en
+base le 2026-09-12). **L'essai réel est LA chose qui manque**, et le plan le nomme : une campagne à
+deux étages sur le numéro de Julien, avec un destinataire volontairement injoignable en WhatsApp.
+
+⚠️ **L'espace « Demo » a ZÉRO jour ouvert** (mesuré). Cocher « heures ouvrées » y condamne une
+campagne, cf. `todo.md`.
+
+### Ce que les huit lots ont appris, et qui vaut pour les deux chantiers suivants
+
+🔴 **Le motif qui s'est répété DEUX fois : l'écran affiche ce que la requête n'envoie pas.** Au lot 7
+la cible était posée sur les filtres quoi qu'on ait coché ; au lot 8 le message RCS était un littéral
+texte alors que l'écran montrait le visuel. La cause est la méthode de construction, pas
+l'inattention : ce qu'un écran MONTRE et ce qu'il ENVOIE avancent à des vitesses différentes, et les
+tests d'interface ne voient que la première. **Parade, à appliquer aux chantiers 2 et 3 : pour tout
+écran qui construit une requête, au moins un test lit le CORPS de la requête.**
+
+🔴 **Une fixture écrite en même temps que le code qu'elle garde REPRODUIT ses hypothèses.** Quatre
+tests d'intégration validaient un critère faux (`password_hash` comme preuve d'activité) parce que
+leur fixture posait un mot de passe à tout le monde, comme le code. C'est un essai humain qui l'a
+trouvé. **Écrire une fixture, c'est se demander de quoi le VRAI MONDE a l'air, pas de quoi le code a
+besoin.**
+
+⚠️ **Chacune des huit revues a trouvé un défaut réel qu'aucun test ne voyait** : un index manquant sur
+le chemin des accusés, deux commentaires affirmant que le code survivait à une migration absente, un
+étage e-mail configurable et inerte, une arithmétique fausse dans le sens rassurant, et les deux
+défauts du motif ci-dessus. Julien a dû la réclamer trois fois ; elle n'est jamais une économie.
+
+### La méthode de livraison est désormais une RÈGLE TENUE PAR UN TEST
+
+Tout plan doit porter une section `## Méthode de livraison` qui nomme la méthode, l'argumente, et
+nomme **l'essai réel qui clôt la feature**. `tests/plan-methode.test.ts` le vérifie, et le
+`CLAUDE.md` global porte les quatre méthodes et les quatre questions qui tranchent.
 
 ## Les deux lots du 2026-09-11 au soir : ce qui RESTE
 
