@@ -5,20 +5,48 @@ import { resolveTenantCode } from '../ids/tenant-code';
 import { scanOpening } from './engine';
 
 /**
- * Le scénario peut-il OUVRIR une campagne ? Miroir exact de la règle de l'écran
- * (`web/lib/campaign-eligibility.ts`), calculé côté serveur pour que la liste n'ait plus à envoyer les
- * graphes au navigateur. Les deux s'appuient sur le même `scanOpening`, dont la parité est déjà gardée par
- * `tests/web-campaign-eligibility.test.ts`.
+ * PAR QUOI ce scénario ouvre, quand il peut ouvrir une campagne. `null` = il ne le peut pas.
+ *
+ * 🔴 IL SE CALCULE DEPUIS LE GRAPHE, IL NE SE STOCKE PAS. Une colonne serait une seconde vérité à tenir
+ * d'accord avec le graphe, et c'est le graphe qui fait foi : à la première divergence, c'est la colonne,
+ * périmée, qu'on lirait.
+ *
+ * Miroir exact de la règle de l'écran (`web/lib/campaign-eligibility.ts`), calculé côté serveur pour que la
+ * liste n'ait plus à envoyer les graphes au navigateur. Les deux s'appuient sur le même `scanOpening`, dont
+ * la parité est déjà gardée par `tests/web-campaign-eligibility.test.ts`.
  *
  * Une campagne part sur une audience FROIDE : hors fenêtre de 24 h, seul un template (ou un bloc RCS, qui ne
  * passe pas par WhatsApp) peut ouvrir.
+ *
+ * ⚠️ L'ORDRE COMPTE : `rcsOpen` est examiné AVANT `firstTemplate`, comme dans la règle d'origine. Un
+ * scénario qui ouvre par un bloc RCS ouvre en RCS, même s'il porte un template plus loin.
+ *
+ * ⚠️ LE MODÈLE SANS NOM EST REFUSÉ DEUX FOIS, et c'est REDONDANT PAR CONSTRUCTION (mesuré en mutant) :
+ * `scanOpening` pose `unnamedOpeningTemplate` dans la même itération où il pose `firstTemplate`, donc la
+ * garde du haut suffit et le contrôle du nom, en bas, n'est jamais le seul à décider. Les deux sont gardés
+ * parce qu'ils viennent de la règle d'origine et qu'il s'agit d'un contrat lu par trois écrans : on ne
+ * retire pas une ceinture sur ce chemin-là. Retirer les DEUX fait tomber `tests/workflow-ouverture.test.ts`.
+ */
+export type CanalOuverture = 'whatsapp' | 'rcs' | null;
+
+export function canalDOuverture(graph: WorkflowGraph): CanalOuverture {
+  const scan = scanOpening(graph);
+  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return null;
+  if (scan.rcsOpen) return 'rcs';
+  if (!scan.firstTemplate) return null;
+  return String(scan.firstTemplate.data.templateName ?? '').trim() !== '' ? 'whatsapp' : null;
+}
+
+/**
+ * Le scénario peut-il OUVRIR une campagne ?
+ *
+ * 🔴 DÉRIVÉ DE `canalDOuverture`, ET PAS RECALCULÉ EN PARALLÈLE. Deux implémentations de la même règle
+ * finissent par diverger, et la divergence serait muette : l'écran proposerait un scénario que la création
+ * refuse, ou cacherait un scénario qu'elle accepte. `campaignEligible` est un contrat lu par TROIS écrans,
+ * sa valeur ne doit pas bouger d'un pouce.
  */
 function campagneOuvrable(graph: WorkflowGraph): boolean {
-  const scan = scanOpening(graph);
-  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return false;
-  if (scan.rcsOpen) return true;
-  if (!scan.firstTemplate) return false;
-  return String(scan.firstTemplate.data.templateName ?? '').trim() !== '';
+  return canalDOuverture(graph) !== null;
 }
 
 /**
@@ -36,6 +64,14 @@ export interface WorkflowResumeRow {
   nodeCount: number;
   hasDraft: boolean;
   campaignEligible: boolean;
+  /**
+   * Par quoi il ouvre, quand il le peut. `null` = il ne peut pas ouvrir de campagne.
+   *
+   * ⚠️ À CÔTÉ de `campaignEligible`, jamais à sa place : les trois écrans qui lisent le booléen continuent
+   * de le lire. Le canal ne sert qu'à ne proposer, sur un étage donné, que des scénarios capables de
+   * l'ouvrir.
+   */
+  canalOuverture: CanalOuverture;
 }
 
 export interface WorkflowRow {
@@ -163,8 +199,10 @@ export class PgWorkflowStore {
       nodeCount: r.node_count,
       hasDraft: r.has_draft,
       // MÊME fonction que la garde serveur de création de campagne : l'écran ne peut donc pas proposer un
-      // scénario que la création refusera, ni cacher un scénario qu'elle accepterait.
+      // scénario que la création refusera, ni cacher un scénario qu'elle accepterait. Le booléen est DÉRIVÉ
+      // du canal, donc les deux ne peuvent pas se contredire.
       campaignEligible: campagneOuvrable(r.graph),
+      canalOuverture: canalDOuverture(r.graph),
     }));
   }
 

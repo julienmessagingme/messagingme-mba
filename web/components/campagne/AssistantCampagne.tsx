@@ -203,6 +203,17 @@ export interface ContenuEtage {
    * premier envoi. Il faut donc savoir COMBIEN il en porte, sans pour autant l'enregistrer.
    */
   modeleDuScenario?: { name: string; language: string };
+  /**
+   * PAR QUOI LE SCÉNARIO CHOISI OUVRE, lu dans la liste au moment du choix.
+   *
+   * 🔴 IL NE SORT PAS DE L'ÉCRAN NON PLUS. Il sert au récapitulatif à refuser, AVANT le clic, un scénario
+   * qui ouvrirait sur un autre canal que celui de l'étage : une campagne dont l'ouverture ne correspond
+   * pas est refusée ENTIÈREMENT par Meta, pas destinataire par destinataire.
+   *
+   * ⚠️ ABSENT = on ne sait pas (serveur plus ancien, ou brouillon d'avant ce champ). On ne refuse alors
+   * rien sur cette base : c'est `modeleDuScenario` qui reste la garde, comme avant.
+   */
+  canalOuvertureDuScenario?: 'whatsapp' | 'rcs' | null;
 }
 
 /** Où va la conversation quand le contact répond. */

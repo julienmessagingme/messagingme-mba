@@ -389,7 +389,7 @@ describe('GET /workflows : le RÉSUMÉ, jamais les graphes', () => {
       listWorkflowsResume: async () => [{
         id: W1, tenantId: 't1', name: 'Onboarding', code: 'scn_k7m2p3_x',
         createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', publishedAt: null,
-        nodeCount: 4, hasDraft: true, campaignEligible: true,
+        nodeCount: 4, hasDraft: true, campaignEligible: true, canalOuverture: 'whatsapp' as const,
       }],
     });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });

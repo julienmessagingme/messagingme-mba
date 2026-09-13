@@ -176,6 +176,15 @@ export interface WorkflowSummary {
    * que la garde de création : l'écran ne peut donc pas proposer un scénario que la création refuserait.
    */
   campaignEligible?: boolean;
+  /**
+   * PAR QUOI il ouvre, quand il le peut. Rendu par la LISTE, à côté de `campaignEligible` et jamais à sa
+   * place : les trois écrans qui lisent le booléen continuent de le lire.
+   *
+   * ⚠️ ABSENT = un serveur plus ancien. `web/lib/campagne-scenario.ts` GARDE alors le scénario au lieu de
+   * le masquer : le front part sur Vercel à chaque push, l'API suit à la main, et masquer ce qu'on ne sait
+   * pas viderait toute la liste entre les deux.
+   */
+  canalOuverture?: 'whatsapp' | 'rcs' | null;
   /** Dernière mise en ligne. null = jamais publié (scénario neuf, ou antérieur au bouton). */
   publishedAt?: string | null;
   createdAt: string;

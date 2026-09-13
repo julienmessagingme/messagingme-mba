@@ -75,6 +75,8 @@ export interface EtatPourCreation {
     variables?: VarRow[];
     /** Le modèle par lequel le scénario de cet étage ouvre. Cf. `ContenuEtage.modeleDuScenario`. */
     modeleDuScenario?: { name: string; language: string };
+    /** Par quoi le scénario de cet étage ouvre. Cf. `ContenuEtage.canalOuvertureDuScenario`. */
+    canalOuvertureDuScenario?: 'whatsapp' | 'rcs' | null;
   }>;
 }
 
@@ -279,6 +281,16 @@ export function problemeAvantLancement(
      * donc le récapitulatif ne disait rien du tout. La campagne partait avec un `paramMapping` vide sur
      * un modèle à variables, et Meta la refusait ENTIÈREMENT.
      */
+    /**
+     * ⚠️ LE CANAL D'OUVERTURE EST DIT, QUAND ON LE SAIT. Le refus ci-dessous est le même, mais sa RAISON
+     * est exacte : « ce scénario ouvre en RCS » se corrige d'un geste, « il ne commence pas par un modèle »
+     * laisse chercher. Le canal vient de la liste des scénarios, calculé par le serveur.
+     *
+     * ⚠️ ET IL PASSE AVANT la garde du modèle, sinon c'est le message vague qui sortirait le premier.
+     */
+    if (etage.canal === 'whatsapp' && c?.formule === 'avec_scenario' && c?.canalOuvertureDuScenario === 'rcs') {
+      return `L’étage ${etage.rang} : ce scénario ouvre par un message RCS, il ne peut donc pas ouvrir un étage WhatsApp. Choisissez-en un qui démarre par un modèle approuvé.`;
+    }
     if (etage.canal === 'whatsapp' && c?.formule === 'avec_scenario' && c?.workflowId && !c?.modeleDuScenario) {
       return `L’étage ${etage.rang} : ce scénario ne commence pas par un modèle WhatsApp, il ne peut donc pas ouvrir une campagne. Choisissez-en un qui démarre par un modèle approuvé.`;
     }

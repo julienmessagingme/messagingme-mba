@@ -11,6 +11,7 @@ import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
 import { RANG_INITIAL, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
+import { scenariosPourEtage } from '@/lib/campagne-scenario';
 import { modeleDeLEtage } from '@/lib/campagne-creation';
 import { SYSTEM_FIELDS, customFieldsOnly, varCountOf } from '@/lib/fields';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
@@ -336,7 +337,10 @@ function CadreWhatsApp({
    * vraie a été ajoutée le 2026-09-13, dans `problemeAvantLancement`.
    */
   const choisirScenario = (id: string): void => {
-    onChange({ workflowId: id });
+    // Le canal d'ouverture vient de la LISTE, pas du graphe : il y est déjà, et le lire ici évite une
+    // seconde lecture réseau pour une information que le serveur a déjà calculée.
+    const canal = references.workflows.find((w) => w.id === id)?.canalOuverture;
+    onChange({ workflowId: id, ...(canal !== undefined ? { canalOuvertureDuScenario: canal } : {}) });
     if (id === '') return;
     const mien = (tour.current += 1);
     void getWorkflow(tenantId, id)
@@ -414,7 +418,7 @@ function CadreWhatsApp({
         />
       )}
       {contenu.formule === 'avec_scenario' && (
-        <SelecteurScenario contenu={contenu} references={references} onChange={choisirScenario} testId={`scenario-${rang}`} />
+        <SelecteurScenario contenu={contenu} references={references} canal="whatsapp" onChange={choisirScenario} testId={`scenario-${rang}`} />
       )}
       <ApercuModele rang={rang} contenu={contenu} tpl={tpl} references={references} />
       <EditeurVariables
@@ -656,7 +660,7 @@ function CadreRcs({
       </p>
       {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant. */}
       {contenu.formule === 'avec_scenario' && (
-        <SelecteurScenario contenu={contenu} references={references} onChange={(v) => onChange({ workflowId: v })} />
+        <SelecteurScenario contenu={contenu} references={references} canal="rcs" onChange={(v) => onChange({ workflowId: v })} />
       )}
     </div>
   );
@@ -754,11 +758,17 @@ function Formule({
 function SelecteurScenario({
   contenu,
   references,
+  canal,
   onChange,
   testId,
 }: {
   contenu: ContenuEtage;
   references: ReferencesContenu;
+  /**
+   * 🔴 LE CANAL DE CET ÉTAGE-CI, pas celui de la campagne. Un scénario qui ouvre par un modèle WhatsApp
+   * proposé sur un étage de repli RCS fait refuser la campagne ENTIÈRE par Meta, pas un destinataire.
+   */
+  canal: CanalEtage;
   /**
    * ⚠️ LA VALEUR, PAS UN PATCH. Choisir un scénario ne pose plus seulement son identifiant : il faut
    * aussi lire le modèle par lequel il ouvre, pour savoir combien de variables la campagne doit fournir.
@@ -774,8 +784,8 @@ function SelecteurScenario({
       {...(testId ? { testId } : {})}
       valeur={contenu.workflowId ?? ''}
       onChange={onChange}
-      options={references.workflows.map((w) => ({ valeur: w.id, libelle: w.name }))}
-      vide="Aucun scénario lançable en campagne sur cet espace."
+      options={scenariosPourEtage(references.workflows, canal).map((w) => ({ valeur: w.id, libelle: w.name }))}
+      vide="Aucun scénario ne peut ouvrir cet étage."
     />
   );
 }

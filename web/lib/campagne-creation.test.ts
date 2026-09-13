@@ -756,6 +756,31 @@ describe('formule « modele et scenario » : le scenario decide, pas un modele c
     )).toBeNull();
   });
 
+  /**
+   * ⚠️ QUAND ON SAIT PAR QUOI IL OUVRE, ON LE DIT. Le refus est le même, sa RAISON est exacte : « ce
+   * scénario ouvre en RCS » se corrige d'un geste, « il ne commence pas par un modèle » laisse chercher.
+   */
+  it('⚠️ un scenario qui ouvre en RCS est refuse sur un etage WhatsApp, en le DISANT', () => {
+    const v = problemeAvantLancement(
+      avecScenario({ workflowId: 'wf1', canalOuvertureDuScenario: 'rcs' }),
+      SEUL, CTX,
+    );
+    expect(v).toMatch(/ouvre par un message RCS/);
+  });
+
+  it('⚠️ et un scenario qui ouvre en WhatsApp passe, canal connu ou pas', () => {
+    expect(problemeAvantLancement(
+      avecScenario({ workflowId: 'wf1', canalOuvertureDuScenario: 'whatsapp', modeleDuScenario: { name: 'promo', language: 'fr' } }),
+      SEUL, CTX,
+    )).toBeNull();
+    // Canal INCONNU (serveur plus ancien, brouillon d'avant le champ) : on ne refuse rien sur cette base,
+    // c'est `modeleDuScenario` qui reste la garde, comme avant.
+    expect(problemeAvantLancement(
+      avecScenario({ workflowId: 'wf1', modeleDuScenario: { name: 'promo', language: 'fr' } }),
+      SEUL, CTX,
+    )).toBeNull();
+  });
+
   it('sans scenario du tout, c est l autre message qui sort (le cas n est pas avale)', () => {
     expect(problemeAvantLancement(avecScenario({}), SEUL, CTX)).toMatch(/n’a pas de scénario/);
   });
