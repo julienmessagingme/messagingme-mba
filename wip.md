@@ -17,7 +17,7 @@
 | Rang | Chantier | Spec | Plan | État |
 |---|---|---|---|---|
 | **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
-| **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | **PROCHAIN**, rien de commencé |
+| **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | **LES 6 TÂCHES ÉCRITES**. 1 à 5 déployées (0137 appliquée), la 6 commitée et **PAS déployée** |
 | **3** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié, rien de commencé |
 
 ### Où en est le chantier 1, exactement
@@ -57,6 +57,24 @@ besoin.**
 le chemin des accusés, deux commentaires affirmant que le code survivait à une migration absente, un
 étage e-mail configurable et inerte, une arithmétique fausse dans le sens rassurant, et les deux
 défauts du motif ci-dessus. Julien a dû la réclamer trois fois ; elle n'est jamais une économie.
+
+### Où en est le chantier 2, exactement
+
+Les six tâches sont écrites. Les cinq premières sont déployées et **la migration 0137 est appliquée**.
+La sixième (l'interrupteur « Traduire les messages reçus », l'affichage des trois états, le bandeau
+« pas de crédit », la cible passée à la transcription d'un vocal) est **commitée et pas déployée**.
+
+🔴 **LA FONCTIONNALITÉ EST ÉTEINTE TANT QUE `TRADUCTION_MODELE` EST VIDE**, et c'est délibéré : le
+choix du modèle se mesure, il ne se suppose pas. Sans lui, le fil sort en VO avec son drapeau et le
+bouton sortant répond 422. **Rien n'a donc encore tourné sur de vraies données**, et l'essai réel que
+le plan nomme reste dû : un message espagnol reçu sur le numéro de service, lu en français, puis une
+réponse traduite, avec le contrôle EN BASE que `body` porte ce qui est PARTI et `redaction_origine` ce
+que l'opérateur a écrit.
+
+⚠️ **La dépense tombe sur le crédit PRÉPAYÉ du client**, pas sur notre clé comme le bot d'aide. Deux
+bornes vivent côté écran et se cassent en silence si on y touche : un tour de rafraîchissement qui
+tombe pendant une requête PASSE SON TOUR (`enCoursRef`), et basculer le réglage recharge le fil ENTIER
+au lieu du delta. Les deux sont gardées par des tests qui COMPTENT les requêtes ou LISENT leur URL.
 
 ### La méthode de livraison est désormais une RÈGLE TENUE PAR UN TEST
 

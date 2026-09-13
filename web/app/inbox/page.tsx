@@ -1086,8 +1086,11 @@ function Thread({ session, conversation, dossier, onSent }: {
    * que l'opérateur reste sur la conversation, et un écran qui peut ne jamais afficher la traduction
    * puisque chaque requête est tuée avant d'aboutir.
    *
-   * ⚠️ LE TICK PASSE SON TOUR, IL N'ANNULE PLUS. L'annulation reste pour ce qui la justifie vraiment,
-   * un changement de conversation ou la sortie de l'écran : là, la réponse ne nous intéresse plus.
+   * ⚠️ LE TICK PASSE SON TOUR, IL N'ANNULE PLUS. L'annulation reste pour ce qui la justifie vraiment :
+   * un changement de conversation, la sortie de l'écran, et depuis le 2026-09-13 le changement de
+   * LANGUE DE LECTURE. Dans les trois cas la réponse en vol ne nous intéresse plus, et les trois sont
+   * des gestes DÉLIBÉRÉS de l'opérateur, pas un minuteur : c'est ce qui les sépare du tour de 4 s.
+   * Basculer deux fois de suite paie donc deux lots, et c'est le prix assumé d'un geste voulu.
    */
   const enCoursRef = useRef(false);
   /**
