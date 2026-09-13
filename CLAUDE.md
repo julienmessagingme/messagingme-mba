@@ -79,7 +79,27 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0137**, le 2026-09-13 (la traduction des conversations :
+**Dernière appliquée : 0138**, le 2026-09-13 au soir (`contacts.opt_out_at` : QUAND un contact s'est
+désabonné, plus l'index partiel `contacts_opted_out_idx` qui sert la liste du centre de Sécurité).
+**Prochaine libre = 0139.**
+
+🔴 **LUE EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE** : la colonne dans `information_schema`, le
+PRÉDICAT EXACT de l'index partiel dans `pg_indexes` (il doit reprendre mot pour mot le `where` de
+`listeDesabonnes`, sans quoi cette page retombe sur un balayage complet de la table des contacts sans
+qu'aucune erreur ne le signale), et `schema_migrations` relue.
+
+🔴 **CE QU'ELLE RÉPARE : le dépôt savait QUI avait posé un opt-out et pas QUAND.** `opt_in_source` portait
+déjà l'origine ('crm', 'scenario', 'flow', 'webhook:<nom>') ; `updated_at` ne répond PAS à la question,
+il bouge à la moindre modification de la fiche, si bien qu'un contact désabonné en mars et renommé hier
+paraîtrait s'être désabonné hier. Sur un écran de conformité, afficher cette date aurait été pire que de
+n'en afficher aucune, et les lignes antérieures restent donc à `null` avec « date inconnue » à l'écran.
+
+⚠️ **ELLE SE REMET À NULL AU RETOUR EN `opted_in`, SUR LES QUATRE CHEMINS D'ÉCRITURE.** Trois étaient
+évidents (le parcours/webhook, la fiche contact, l'action en masse) ; le QUATRIÈME, relevé en revue, est
+l'upsert d'import CSV et de l'API publique, qui peut faire régresser un statut sans que personne y pense.
+Un invariant énoncé dans une migration se tient partout ou nulle part.
+
+Avant elle : **0137**, le 2026-09-13 (la traduction des conversations :
 `conversation_messages.traduction`, `.traduction_langue`, `.redaction_origine`, `.transcription_langue`,
 plus `contacts.langue_detectee` et `.langue_detectee_le`). Vérifiée EN BASE après `migrate`, pas déduite
 de l'absence d'erreur : les six colonnes dans `information_schema`, le CHECK qui borne
