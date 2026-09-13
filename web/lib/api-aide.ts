@@ -57,3 +57,26 @@ export function demanderAide(
     ...(signal ? { signal } : {}),
   });
 }
+
+/**
+ * Demande le récap de LA VEILLE.
+ *
+ * 🔴 AUCUNE DATE N'EST ENVOYÉE, ET C'EST VOULU. Le jour est choisi par le serveur : le récap porte sur la
+ * veille et rien d'autre, pas d'historique, pas de choix de date (décision de Julien du 2026-09-12). Laisser
+ * l'écran nommer le jour rouvrirait une lecture de toute l'histoire de l'espace depuis un bouton d'aide.
+ *
+ * ⚠️ RÉSERVÉ AUX RÔLES `admin` ET `manager`. Le bouton est MASQUÉ pour les autres, mais la garde qui compte
+ * est côté serveur (403) : masquer n'est pas contrôler.
+ */
+export function demanderRecap(
+  tenantId: string,
+  langue: 'fr' | 'en',
+  signal?: AbortSignal,
+): Promise<ReponseAide> {
+  return request<ReponseAide>(`/tenants/${tenantId}/aide/recap`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ langue }),
+    ...(signal ? { signal } : {}),
+  });
+}

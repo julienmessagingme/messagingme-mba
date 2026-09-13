@@ -104,6 +104,8 @@ import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { creerRechercheSemantique } from './agent/recherche';
 import { PgDepotAide } from './aide/fiches.pg';
 import { creerRepondeur } from './aide/repondre';
+import { creerRecap } from './aide/recap.pg';
+import { creerRecapRedige, creerRedacteurRecap, gabarit } from './aide/recap-rendu';
 import { creerTraducteur, type LangueConsole } from './traduction/traduire';
 import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
@@ -1215,8 +1217,25 @@ async function main(): Promise<void> {
      * paie sur la NOTRE. Les intervertir ferait facturer l aide au credit du client, en silence, et c est
      * `tests/aide-cablage.test.ts` qui garde ce point.
      */
-    ...(gatewayAide && config.AGENT_AIDE_MODEL ? {
-      aide: {
+    aide: {
+      /**
+       * LE RECAP DE LA VEILLE. Il est branche MEME SANS MODELE, et ce n est pas une tolerance : tout ce qui
+       * est chiffre sort du SQL, et le gabarit le dit deja en trois phrases. Le modele n ajoute que le
+       * REMARQUABLE, les jours ou il y en a un.
+       */
+      recap: {
+        calculer: creerRecapRedige({
+          recap: creerRecap(pool),
+          rediger: gatewayAide && config.AGENT_AIDE_MODEL
+            ? creerRedacteurRecap({
+              // Meme clef que la question, et pour la meme raison : c est NOUS qui payons.
+              completer: (i) => gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
+              modele: config.AGENT_AIDE_MODEL,
+            })
+            : async (r, langue) => ({ texte: gabarit(r, langue), redigeParModele: false }),
+        }),
+      },
+      ...(gatewayAide && config.AGENT_AIDE_MODEL ? {
         repondre: creerRepondeur({
           depot: new PgDepotAide(pool),
           recherche: creerRechercheSemantique(),
@@ -1226,8 +1245,8 @@ async function main(): Promise<void> {
           completer: (i) => gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
           modele: config.AGENT_AIDE_MODEL,
         }),
-      },
-    } : {}),
+      } : {}),
+    },
     agentSetup: {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);

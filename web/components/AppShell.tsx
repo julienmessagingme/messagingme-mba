@@ -391,7 +391,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           page par page serait 36 occasions de l'oublier, et le 37e écran ne l'aurait pas. Il n'apparaît pas
           sur les écrans de connexion, qui ne passent pas par cette coquille et où il n'aurait rien à dire.
           `active` est la clé de nav de la page : c'est ce qui rend l'aide contextuelle sans rien demander. */}
-      <BoutonAide tenantId={session.tenantId} ecranCourant={active} />
+      <BoutonAide tenantId={session.tenantId} ecranCourant={active} role={session.role} />
     </div>
   );
 }

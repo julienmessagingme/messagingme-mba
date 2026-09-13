@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useT, useLocale } from '@/lib/i18n';
 import { Logo } from '@/components/Logo';
 import { inputCls } from '@/lib/ui';
-import { demanderAide, type ReponseAide } from '@/lib/api-aide';
+import { demanderAide, demanderRecap, type ReponseAide } from '@/lib/api-aide';
 import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib/aide-fil';
 
 /**
@@ -25,7 +25,22 @@ import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib
  * au moment précis où l'on voulait poser la question suivante. Le fil vit dans `sessionStorage`
  * (`lib/aide-fil.ts`), survit à la navigation, et part à la déconnexion.
  */
-export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecranCourant: string }) {
+/**
+ * 🔴 QUI VOIT LE RÉCAP. Un opérateur (rôle `agent`, qui ne voit que l'Inbox) n'y a pas droit : c'est un
+ * artefact de PILOTAGE, pas un outil de traitement. Le bouton lui est MASQUÉ, pas grisé, et c'est une
+ * exception assumée à la règle inverse posée ailleurs dans le produit (un canal non configuré se grise en
+ * disant pourquoi). La distinction tient au type d'empêchement : un canal grisé dit « tu pourrais avoir
+ * ceci, voilà comment », ce qui est utile ; un récap grisé dirait à un opérateur « tes collègues ont une
+ * fonctionnalité que tu n'auras jamais », ce qui n'est que du bruit. La règle n'est donc pas « toujours
+ * griser », c'est « griser quand l'empêchement est levable par celui qui le voit ».
+ *
+ * ⚠️ ET CE MASQUAGE N'EST PAS LE CONTRÔLE D'ACCÈS : la route refuse en 403 (`src/http/aide.ts`).
+ */
+function peutVoirLeRecap(role: string): boolean {
+  return role === 'admin' || role === 'manager';
+}
+
+export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string; ecranCourant: string; role: string }) {
   const t = useT();
   const { locale } = useLocale();
   const [ouvert, setOuvert] = useState(false);
@@ -75,6 +90,32 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
       // est une issue, là où un message d'erreur n'en est pas une. La question n'entre PAS dans le fil :
       // sinon le modèle croirait avoir répondu quelque chose.
       setErreur(t('L’aide est indisponible pour le moment.', 'Help is unavailable right now.'));
+    } finally {
+      setOccupe(false);
+    }
+  }
+
+  /**
+   * LE RÉCAP : il ne remplit pas le champ comme les autres suggestions, il PART tout de suite.
+   *
+   * ⚠️ Il entre dans le fil comme un échange ordinaire, et c'est ce qui le rend utile : la question
+   * suivante (« et quel sujet a le plus augmenté ? ») a alors de quoi s'appuyer.
+   */
+  async function lancerRecap(): Promise<void> {
+    if (occupe) return;
+    enCours.current?.abort();
+    const abandon = new AbortController();
+    enCours.current = abandon;
+    const question = t('Le récap d’hier', 'Yesterday’s recap');
+    setOccupe(true);
+    setErreur(null);
+    try {
+      const r = await demanderRecap(tenantId, locale === 'en' ? 'en' : 'fr', abandon.signal);
+      const suite = [...fil, { question, reponse: r }].slice(-MAX_ECHANGES_GARDES);
+      setFil(suite);
+      ecrireFil(tenantId, suite);
+    } catch {
+      setErreur(t('Le récap est indisponible pour le moment.', 'The recap is unavailable right now.'));
     } finally {
       setOccupe(false);
     }
@@ -148,6 +189,18 @@ export function BoutonAide({ tenantId, ecranCourant }: { tenantId: string; ecran
                   </svg>
                 </span>
                 <p className="text-sm font-semibold text-ink-900">{t('Je suis là pour vous aider', 'I am here to help')}</p>
+                {/* ⚠️ LE LIBELLÉ DIT CE QU'IL FAIT. « Récap du jour » pour un récap de la veille laisserait
+                    quelqu'un se demander à 16 h pourquoi ses conversations du matin n'y sont pas. */}
+                {peutVoirLeRecap(role) && (
+                  <button
+                    type="button"
+                    data-testid="aide-recap"
+                    onClick={() => { void lancerRecap(); }}
+                    className="rounded-full border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
+                  >
+                    {t('Le récap d’hier', 'Yesterday’s recap')}
+                  </button>
+                )}
                 <div className="flex flex-wrap justify-center gap-1.5">
                   {[
                     { fr: 'Comment je lance une campagne ?', en: 'How do I launch a campaign?' },

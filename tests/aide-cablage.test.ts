@@ -63,13 +63,25 @@ describe('câblage du bot d’aide', () => {
     expect(sansComm).toMatch(/balayerVectorisation\(knowledgeStore, rechercheSemantique, config\.AGENT_EMBED_MODEL\)/);
   });
 
-  it('🔴 le module `aide` est bien celui que `ServerDeps` attend', () => {
+  it('🔴 le module `aide` est bien celui que `ServerDeps` attend, ses DEUX capacités comprises', () => {
     // ⚠️ LE CONTRÔLE DES PROPRIÉTÉS EN TROP NE TRAVERSE PAS UN SPREAD (règle du CLAUDE.md, mesurée) : le
-    // câblage monte `aide` dans un `...( ? {} : {})`, donc une clé mal orthographiée COMPILERAIT et la route
-    // ne se monterait jamais. Personne ne le verrait avant qu'un client clique sur le bouton.
+    // câblage monte `repondre` dans un `...( ? {} : {})`, donc une clé mal orthographiée COMPILERAIT et la
+    // route ne se monterait jamais. Personne ne le verrait avant qu'un client clique sur le bouton.
     const debut = sansCommentaires.indexOf('aide: {');
     expect(debut, 'le module `aide` n’est pas monté sous ce nom').toBeGreaterThan(-1);
-    expect(sansCommentaires.slice(debut, debut + 120)).toContain('repondre: creerRepondeur(');
+    const bloc = sansCommentaires.slice(debut, sansCommentaires.indexOf('agentSetup: {'));
+    expect(bloc, 'la question du bot d’aide n’est plus câblée').toContain('repondre: creerRepondeur(');
+    expect(bloc, 'le récap de la veille n’est plus câblé').toContain('calculer: creerRecapRedige(');
+  });
+
+  it('⚠️ le RÉCAP tient sans modèle, la question non', () => {
+    // Les deux ne dépendent pas de la même chose, et c'est voulu : tout ce qui est chiffré dans un récap
+    // sort du SQL, et le gabarit le dit déjà. Monter le récap sous la même condition que la question
+    // priverait un client sans modèle configuré d'un écran qui n'a besoin d'aucun modèle.
+    const bloc = sansCommentaires.slice(sansCommentaires.indexOf('aide: {'), sansCommentaires.indexOf('agentSetup: {'));
+    const recap = bloc.slice(bloc.indexOf('recap: {'), bloc.indexOf('repondre: creerRepondeur('));
+    expect(recap, 'le récap doit précéder la question dans le câblage').not.toBe('');
+    expect(recap, 'sans modèle, le récap doit retomber sur le gabarit').toContain('gabarit(r, langue)');
   });
 
   it('🔴 les fiches entrent dans l’IMAGE, sinon le chargeur ne trouve rien en production', () => {
