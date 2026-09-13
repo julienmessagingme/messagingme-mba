@@ -79,9 +79,38 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0139**, le 2026-09-13 dans la nuit (`tenant_settings.optout_request_id` : QUEL
+**Dernière appliquée : 0141**, le 2026-09-13 dans la nuit (elle RETIRE `agents.mention_ia_frequence`, que
+0140 venait de remonter au niveau de l'ESPACE dans `tenant_settings.mention_ia_frequence`).
+**Prochaine libre = 0142.**
+
+🔴 **0140 ET 0141 SONT UNE PAIRE, ET ELLES N'ONT PAS ÉTÉ APPLIQUÉES AU MÊME MOMENT.** 0140 AJOUTE et
+REPREND, donc avant le déploiement ; 0141 RETIRE une colonne que le code déployé lisait encore, donc APRÈS.
+Même séquence que 0128 après 0129, et pour la même raison : migrer d'abord aurait fait tomber chaque lecture
+de fiche d'agent en `42703` pendant toute la durée du déploiement.
+
+⚠️ **ET LE PIÈGE EST DANS LE DÉPÔT, PAS DANS LA BASE** : les migrations vivent DANS L'IMAGE, et `migrate`
+applique TOUT ce qu'il y trouve. 0141 étant poussée en même temps que 0140, un `compose build` suivi d'un
+`migrate` les aurait appliquées ENSEMBLE. 0141 a donc été mise de côté sur le VPS AVANT le build, remise
+après le déploiement, et l'image reconstruite pour elle seule.
+
+🔴 **CE QUE 0140 REPREND, ET POURQUOI LA MESURE DÉCIDAIT DE TOUT.** La spec demandait « un réglage d'espace »
+ET « ne change rien aux agents existants », ce qui ne se concilie que si aucun espace ne porte deux agents
+divergents. Mesure faite AVANT d'écrire la migration : UN seul agent en production, sur un seul espace, en
+`session`. La reprise est donc EXACTE. La règle pour le jour où la divergence existera est écrite quand même,
+et elle va vers PLUS de déclaration (`chaque_message` > `session` > `jamais`) : rassembler deux agents sous
+une politique unique oblige à bouger l'un des deux, et entre les deux erreurs possibles, une seule se
+rattrape.
+
+🔴 **LU EN BASE APRÈS `migrate`**, pour les deux : la colonne et son CHECK sur `tenant_settings`, la reprise
+espace par espace, puis après 0141 la disparition de la colonne d'agent et de son CHECK, et surtout les
+CHEMINS CHAUDS exécutés PAR LE VRAI CODE (`PgAgentStore.byId`, celui de chaque tour d'agent, et
+`listerPourConformite`) : ils rendent `session`, donc l'agent de production fait exactement ce qu'il faisait.
+
+⚠️ **`agents.mention_ia` NE BOUGE PAS** : la PHRASE reste la voix de l'agent, seul le QUAND est monté à
+l'espace. L'écran Sécurité > IA montre les deux, sans quoi il ne montrerait qu'un interrupteur.
+
+Avant elles : **0139**, le 2026-09-13 dans la nuit (`tenant_settings.optout_request_id` : QUEL
 connecteur prévenir quand quelqu'un se désabonne, plus son index partiel).
-**Prochaine libre = 0140.**
 
 🔴 **LUE EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE**, et les quatre points l'ont été : la colonne
 dans `information_schema`, le PRÉDICAT EXACT de l'index partiel dans `pg_indexes`, `confdeltype = 'n'` sur la
