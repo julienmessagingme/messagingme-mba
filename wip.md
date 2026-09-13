@@ -16,12 +16,12 @@
 
 | | |
 |---|---|
-| `origin/main` | `f2a1e2b` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `f2a1e2b` |
+| `origin/main` | `acf74a5` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `acf74a5` |
 | L'écart entre les deux | **aucun** |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 
-⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Six déploiements le 2026-09-13, six fois le
+⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Sept déploiements le 2026-09-13, sept fois le
 même. ⚠️ **Et le 2026-09-13, un SEUL `nginx -s reload` n'a pas suffi** : le contrôle public juste après
 rendait encore 502, un second reload l'a réglé. Contrôler, réparer, RECONTRÔLER, et recommencer si besoin :
 le reload rend 0 même quand le proxy sert encore l'ancienne adresse : conteneurs `healthy`, appel interne à 200, appel public à 502 sur les trois chemins d'API, réglé
@@ -35,7 +35,7 @@ par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le con
 | **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | ✅ **TERMINÉ ET DÉPLOYÉ** le 2026-09-13 (0137 appliquée, `TRADUCTION_MODELE=google/gemini-2.5-flash` posée en prod). Décrit dans `features.md`. 🔴 **JAMAIS ESSAYÉ EN RÉEL** : aucun message étranger n'a encore été traduit sur de vraies données |
 | **3** | ✅ **BUG « Modèle et scénario »** | — | [todo.md](todo.md) | ✅ **CORRIGÉ ET DÉPLOYÉ** le 2026-09-13 (`01b82c6`, CI verte, Vercel). Le sélecteur de modèle disparaît en formule scénario, les variables se vident à la bascule, et un scénario qui n'ouvre pas par un modèle est refusé sur un étage WhatsApp |
-| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LIVRÉ ET DÉPLOYÉ** le 2026-09-13 (`f2a1e2b`), aucune migration. Route vérifiée en production (401 sans jeton, 404 sur une voisine inexistante). 🔴 **Jamais essayé en réel**, cf. plus bas |
+| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LIVRÉ, RELU ET DÉPLOYÉ** le 2026-09-13 (`acf74a5`), aucune migration. La revue a trouvé deux défauts réels, corrigés et redéployés : les conversations `is_test` entraient dans les chiffres, et la garde des nombres inventés était percée sur la plage 1-31. Route vérifiée en production (401 sans jeton, 404 sur une voisine inexistante). 🔴 **Jamais essayé en réel**, cf. plus bas |
 | **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | spec et plan écrits, rien de commencé |
 | **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches en 3 lots](docs/superpowers/plans/2026-09-13-centre-securite.md) | spec et plan écrits. ⚠️ Tâches 7 et 9 **pas cadrées**, à préciser avec Julien |
 | **7** | ✅ Menu Scénario dans Contenu + la réponse compte comme engagement | — | [plan, 2 tâches](docs/superpowers/plans/2026-09-13-menu-scenario-et-engagement.md) | ✅ **FAIT ET DÉPLOYÉ** le 2026-09-13 (`444b509`). Essai réel concluant : « Testjulien2 », zéro clic, **1 engagé** |
