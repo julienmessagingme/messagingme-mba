@@ -18,9 +18,11 @@
 |---|---|---|---|---|
 | **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | ✅ **TERMINÉ ET DÉPLOYÉ** le 2026-09-13 (0137 appliquée, `TRADUCTION_MODELE=google/gemini-2.5-flash` posée en prod). Décrit dans `features.md`. 🔴 **JAMAIS ESSAYÉ EN RÉEL** : aucun message étranger n'a encore été traduit sur de vraies données |
-| **3** | 🔴 **BUG : « Modèle et scénario » demande DEUX choix** | — | [todo.md](todo.md) | **LE PROCHAIN**. Régression : le sélecteur de Modèle reste affiché à côté de celui du scénario, et les deux peuvent se contredire |
+| **3** | ✅ **BUG « Modèle et scénario »** | — | [todo.md](todo.md) | ✅ **CORRIGÉ ET DÉPLOYÉ** le 2026-09-13 (`01b82c6`, CI verte, Vercel). Le sélecteur de modèle disparaît en formule scénario, les variables se vident à la bascule, et un scénario qui n'ouvre pas par un modèle est refusé sur un étage WhatsApp |
 | **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié, rien de commencé |
-| **5** | Les quatre évolutions demandées le 2026-09-13 | — | [todo.md](todo.md) | cadrées, pas planifiées. L'opt-out du menu Sécurité **demande une discussion avant** d'être planifiable |
+| **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | spec et plan écrits, rien de commencé |
+| **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches en 3 lots](docs/superpowers/plans/2026-09-13-centre-securite.md) | spec et plan écrits. ⚠️ Tâches 7 et 9 **pas cadrées**, à préciser avec Julien |
+| **7** | Menu Scénario dans Contenu + la réponse compte comme engagement | — | [plan, 2 tâches](docs/superpowers/plans/2026-09-13-menu-scenario-et-engagement.md) | plan écrit, méthode « en direct » |
 
 ### Où en est le chantier 1, exactement
 
