@@ -238,3 +238,35 @@ test('un etage de repli vide bloque le passage sans masquer le devenir', async (
   await expect(page.getByTestId('contenu-incomplet')).toContainText('2');
   await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
 });
+
+/**
+ * 🔴 LE BUG DU 2026-09-13, SIGNALE PAR JULIEN : « le user ne doit pas choisir un modele puis un
+ * scenario, il doit choisir uniquement un scenario ».
+ *
+ * L ecran laissait le selecteur de Modele affiche a cote de celui du scenario. Ce n etait pas une
+ * question de trop : choisir un modele a la main ECRASE les variables de l etage, alors que le modele
+ * qui PART est celui du premier bloc du scenario. Le paramMapping ne decrivait plus le modele envoye,
+ * et Meta refuse la campagne ENTIERE sur un compte de parametres qui ne correspond pas.
+ *
+ * ⚠️ LES DEUX SENS : sans le second cas, un ecran qui aurait perdu le selecteur pour de bon passerait
+ * le premier sans rien dire.
+ */
+test('🔴 « Modele et scenario » ne propose QUE le scenario', async ({ page }) => {
+  await monter(page, { canal: 'whatsapp' });
+  await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('modele-1')).toBeVisible();
+  await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  await expect(page.getByTestId('modele-1')).toHaveCount(0);
+  await expect(page.getByTestId('scenario-1')).toBeVisible();
+  // ⚠️ La creation de modele a la volee suit la meme regle : elle n a de sens que sur « modele seul ».
+  await expect(page.getByRole('button', { name: /Créer un modèle/i })).toHaveCount(0);
+});
+
+test('et « Modele seul » le repropose : on peut revenir en arriere', async ({ page }) => {
+  await monter(page, { canal: 'whatsapp' });
+  await page.getByTestId('etage-1').click();
+  await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  await expect(page.getByTestId('modele-1')).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Modèle seul' }).check();
+  await expect(page.getByTestId('modele-1')).toBeVisible();
+});

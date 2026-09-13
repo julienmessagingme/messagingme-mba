@@ -330,7 +330,10 @@ function CadreWhatsApp({
    *
    * ⚠️ Le graphe est lu À LA DEMANDE : la liste des scénarios ne le porte plus (elle renvoyait deux
    * graphes complets par scénario pour afficher des noms). Une lecture en échec laisse le scénario
-   * choisi SANS modèle connu, et c'est le récapitulatif qui le dira plutôt que l'écran d'ici.
+   * choisi SANS modèle connu, et le récapitulatif REFUSE alors le lancement avec sa raison.
+   * ⚠️ Cette phrase a affirmé pendant un jour que « le récapitulatif le dira », alors qu'il ne disait
+   * rien : `problemeDesVariables` rendait `null` dès que le modèle était inconnu. La garde qui la rend
+   * vraie a été ajoutée le 2026-09-13, dans `problemeAvantLancement`.
    */
   const choisirScenario = (id: string): void => {
     onChange({ workflowId: id });
@@ -363,21 +366,34 @@ function CadreWhatsApp({
         contenu={contenu}
         onChange={onChange}
       />
-      <Selecteur
-        libelle="Modèle"
-        testId={`modele-${rang}`}
-        valeur={contenu.templateName ?? ''}
-        onChange={choisirModele}
-        options={references.templates.map((t) => ({ valeur: t.name, libelle: `${t.name} (${t.language})` }))}
-        vide="Aucun modèle approuvé sur cet espace."
-      />
+      {/*
+        🔴 LE SÉLECTEUR DE MODÈLE N'EXISTE PAS EN FORMULE « MODÈLE ET SCÉNARIO » (2026-09-13, bug
+        signalé par Julien : « le user ne doit pas choisir un modèle puis un scénario »). Le modèle qui
+        part est celui du PREMIER BLOC du scénario, et `choisirScenario` le DÉDUIT déjà du graphe.
+
+        🔴 CE N'ÉTAIT PAS UNE QUESTION DE TROP, C'ÉTAIT UNE CAMPAGNE REFUSÉE. `choisirModele` appelle
+        `poserVariables`, qui ÉCRASE `variables` avec les lignes du modèle choisi à la main. Les
+        variables envoyées ne correspondaient donc plus au modèle réellement envoyé, et Meta compare le
+        nombre de paramètres au modèle approuvé : c'est un refus GLOBAL de la campagne, pas un
+        destinataire sauté (`resolveHintParams`, `src/crm/template.ts`).
+      */}
+      {contenu.formule === 'seul' && (
+        <Selecteur
+          libelle="Modèle"
+          testId={`modele-${rang}`}
+          valeur={contenu.templateName ?? ''}
+          onChange={choisirModele}
+          options={references.templates.map((t) => ({ valeur: t.name, libelle: `${t.name} (${t.language})` }))}
+          vide="Aucun modèle approuvé sur cet espace."
+        />
+      )}
       {/*
         🔴 LE PARCOURS DE SOUMISSION À META EST CELUI DE L'ÉCRAN EN SERVICE, pas une seconde version. Un
         modèle neuf revient `PENDING`, donc inenvoyable, et le sélecteur ci-dessus ne liste que les
         approuvés : c'est tout l'objet du panneau, qui nomme l'attente et choisit le modèle dès son
         approbation. Le refaire ici aurait donné deux façons de soumettre un modèle à Meta.
       */}
-      {rechargerTemplates && (
+      {contenu.formule === 'seul' && rechargerTemplates && (
         <CreationModeleEnLigne
           tenantId={tenantId}
           templates={references.templates}
@@ -709,12 +725,27 @@ function Formule({
 }) {
   return (
     <div className="w-full space-y-2">
-      <Radio groupe={groupe} libelle={seul} coche={contenu.formule === 'seul'} onCheck={() => onChange({ formule: 'seul' })} />
+      {/*
+        🔴 CHANGER DE FORMULE VIDE LES VARIABLES, ET C'EST LA MOITIÉ DU CORRECTIF (2026-09-13). Les
+        lignes de `variables` décrivent UN modèle précis. Passer de « modèle seul » à « modèle et
+        scénario » change le modèle qui part (c'est désormais celui du premier bloc du scénario) : les
+        garder ferait voyager l'association de l'ANCIEN modèle avec le NOUVEAU, et Meta refuse la
+        campagne entière sur un compte de paramètres qui ne correspond pas.
+
+        ⚠️ `choisirScenario` et `choisirModele` les reposent aussitôt après le choix suivant. Le seul
+        moment où l'écran reste sans variables est celui où il n'a effectivement plus de modèle.
+      */}
+      <Radio
+        groupe={groupe}
+        libelle={seul}
+        coche={contenu.formule === 'seul'}
+        onCheck={() => onChange({ formule: 'seul', variables: [] })}
+      />
       <Radio
         groupe={groupe}
         libelle={avecScenario}
         coche={contenu.formule === 'avec_scenario'}
-        onCheck={() => onChange({ formule: 'avec_scenario' })}
+        onCheck={() => onChange({ formule: 'avec_scenario', variables: [] })}
       />
     </div>
   );

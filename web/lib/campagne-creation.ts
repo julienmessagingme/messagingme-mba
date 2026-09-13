@@ -266,6 +266,22 @@ export function problemeAvantLancement(
     if (etage.canal === 'whatsapp' && c?.formule === 'avec_scenario' && !c?.workflowId) {
       return `L’étage ${etage.rang} n’a pas de scénario.`;
     }
+    /**
+     * 🔴 UN SCÉNARIO QUI N'OUVRE PAS PAR UN MODÈLE NE PEUT PAS OUVRIR UNE CAMPAGNE WHATSAPP (2026-09-13).
+     * Une campagne parle à des gens qui ne nous ont pas écrit récemment : son premier message DOIT être
+     * un modèle approuvé, sans quoi Meta refuse (fenêtre de 24 h, 131047). `modeleDuScenario` est posé
+     * par l'écran depuis le PREMIER BLOC du graphe : absent, c'est que ce scénario ouvre autrement (par
+     * un bloc RCS, par un message de session) ou que son graphe n'a pas pu être lu.
+     *
+     * ⚠️ CE CAS N'ÉTAIT REFUSÉ NULLE PART, ET UN COMMENTAIRE AFFIRMAIT LE CONTRAIRE. Celui de
+     * `choisirScenario` disait « une lecture en échec laisse le scénario sans modèle connu, et c'est le
+     * récapitulatif qui le dira » : `problemeDesVariables` rend `null` dès que le modèle est inconnu,
+     * donc le récapitulatif ne disait rien du tout. La campagne partait avec un `paramMapping` vide sur
+     * un modèle à variables, et Meta la refusait ENTIÈREMENT.
+     */
+    if (etage.canal === 'whatsapp' && c?.formule === 'avec_scenario' && c?.workflowId && !c?.modeleDuScenario) {
+      return `L’étage ${etage.rang} : ce scénario ne commence pas par un modèle WhatsApp, il ne peut donc pas ouvrir une campagne. Choisissez-en un qui démarre par un modèle approuvé.`;
+    }
     if (etage.canal === 'rcs' && !c?.texteRcs?.trim()) {
       return `L’étage ${etage.rang} n’a pas de message RCS.`;
     }

@@ -236,13 +236,20 @@ describe('problemeAvantLancement', () => {
     expect(problemeAvantLancement(etat, CHAINE, CTX)).toMatch(/étage 2/);
   });
 
-  // ⚠️ Un étage WhatsApp « avec scénario » n'a PAS besoin de template : exiger les deux refuserait une
-  // campagne parfaitement valide, et c'est le sens du repli le plus utilisé du produit.
-  it('un etage a scenario n exige pas de modele WhatsApp', () => {
+  // ⚠️ Un étage WhatsApp « avec scénario » n'a PAS besoin qu'on lui CHOISISSE un template : exiger les
+  // deux refuserait une campagne parfaitement valide, et c'est le sens du repli le plus utilisé.
+  // ⚠️ `modeleDuScenario` n'est PAS ce template-là : c'est celui que l'écran DÉDUIT du premier bloc du
+  // graphe. La fixture le porte depuis le 2026-09-13, parce que la garde neuve le réclame ; le cas
+  // exercé ici ne change pas, il prouve toujours qu'aucun `templateName` n'est exigé.
+  it('un etage a scenario n exige pas de modele WhatsApp CHOISI a la main', () => {
     const etat: EtatPourCreation = {
       ...ETAT,
-      contenus: { ...ETAT.contenus, 1: { formule: 'avec_scenario', workflowId: 'wf-1', suggestions: [] } },
+      contenus: {
+        ...ETAT.contenus,
+        1: { formule: 'avec_scenario', workflowId: 'wf-1', modeleDuScenario: { name: 'promo', language: 'fr' }, suggestions: [] },
+      },
     };
+    expect(etat.contenus[1]?.templateName).toBeUndefined();
     expect(problemeAvantLancement(etat, CHAINE, CTX)).toBeNull();
   });
 
@@ -716,5 +723,53 @@ describe('ce qui part vraiment, quand l ecran a cache la question', () => {
 
   it('🔴 et decoche, le rattrapage part a toute heure comme l envoi initial', () => {
     expect(entreeDeCreation({ ...ETAT, heuresOuvrees: false }, CHAINE, CTX).rattrapageHorsHoraires).toBe(true);
+  });
+});
+
+/**
+ * 🔴 LE BUG DU 2026-09-13 : « Modele et scenario » demandait DEUX choix au lieu d un.
+ *
+ * L ecran laissait le selecteur de Modele affiche a cote de celui du scenario. Ce n etait pas une
+ * question de trop : `choisirModele` ECRASE `variables` avec les lignes du modele choisi a la main,
+ * alors que le modele qui PART est celui du premier bloc du scenario. Le paramMapping ne decrivait
+ * donc plus le modele envoye, et Meta refuse la campagne ENTIERE sur un compte de parametres qui ne
+ * correspond pas.
+ */
+describe('formule « modele et scenario » : le scenario decide, pas un modele choisi a cote', () => {
+  const SEUL: EtageAssistant[] = [{ rang: 1, canal: 'whatsapp' }];
+  const avecScenario = (contenu: Record<string, unknown>): EtatPourCreation => ({
+    ...ETAT,
+    contenus: { 1: { formule: 'avec_scenario', suggestions: [], ...contenu } },
+  });
+
+  it('🔴 un scenario SANS modele d ouverture est refuse, avec sa raison', () => {
+    // Il ouvre par un bloc RCS, par un message de session, ou son graphe n a pas pu etre lu : dans
+    // tous les cas il ne peut pas ouvrir une campagne WhatsApp, et ce cas n etait refuse NULLE PART.
+    const v = problemeAvantLancement(avecScenario({ workflowId: 'wf1' }), SEUL, CTX);
+    expect(v).toMatch(/ne commence pas par un modèle WhatsApp/);
+  });
+
+  it('l AUTRE SENS : avec son modele d ouverture, rien ne bloque', () => {
+    expect(problemeAvantLancement(
+      avecScenario({ workflowId: 'wf1', modeleDuScenario: { name: 'promo', language: 'fr' } }),
+      SEUL, CTX,
+    )).toBeNull();
+  });
+
+  it('sans scenario du tout, c est l autre message qui sort (le cas n est pas avale)', () => {
+    expect(problemeAvantLancement(avecScenario({}), SEUL, CTX)).toMatch(/n’a pas de scénario/);
+  });
+
+  /**
+   * ⚠️ LA GARDE NE MORD QUE SUR WHATSAPP. Un etage RCS en formule scenario n a pas de modele
+   * d ouverture par construction : le lui reclamer bloquerait une campagne parfaitement valide.
+   */
+  it('un etage RCS en formule scenario n est PAS soumis a cette garde', () => {
+    const etatRcs: EtatPourCreation = {
+      ...ETAT,
+      contenus: { 1: { formule: 'avec_scenario', workflowId: 'wf1', texteRcs: 'coucou', suggestions: [] } },
+    };
+    // `null` = rien ne bloque, ce qui est déjà la preuve que la garde WhatsApp n'a pas mordu.
+    expect(problemeAvantLancement(etatRcs, [{ rang: 1, canal: 'rcs' }], CTX)).toBeNull();
   });
 });
