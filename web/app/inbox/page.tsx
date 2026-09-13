@@ -1033,8 +1033,17 @@ function Thread({ session, conversation, dossier, onSent }: {
    * complet pour rien à chaque ouverture de conversation.
    */
   const [traduireRecus, setTraduireRecus] = useState<boolean>(() => lireTraductionActive());
-  /** Cet espace n'a pas de crédit de modèle. Rendu par le serveur SEULEMENT quand on demande `traduire`. */
+  /** La traduction n'a pas pu se faire. Rendu par le serveur SEULEMENT quand on demande `traduire`. */
   const [traductionIndisponible, setTraductionIndisponible] = useState(false);
+  /**
+   * POURQUOI, parce que les deux causes n'appellent pas le même geste (revue du 2026-09-13).
+   *
+   * 🔴 CE BANDEAU A AFFIRMÉ « le crédit de cet espace est épuisé » DANS LES DEUX CAS, et c'était faux
+   * dans celui qui était justement l'état de la production : aucun modèle de traduction n'y est
+   * configuré. On envoyait donc un administrateur recharger un crédit sans rapport, en lui cachant la
+   * seule cause réelle. Une phrase fausse coûte plus cher qu'aucune phrase, parce qu'on la suit.
+   */
+  const [traductionCause, setTraductionCause] = useState<'instance' | 'credit' | null>(null);
   /** La langue demandée au serveur, ou `undefined` : c'est celle de la console, jamais une question de plus. */
   const cibleLecture = cibleDeLecture(traduireRecus, locale);
   const [showTemplate, setShowTemplate] = useState(false);
@@ -1188,6 +1197,9 @@ function Thread({ session, conversation, dossier, onSent }: {
        * l'opérateur coupe le réglage. Ce n'est pas une panne et c'est un 200 : le fil s'affiche, en VO.
        */
       setTraductionIndisponible(res.traductionIndisponible === true);
+      // ⚠️ `null` quand le serveur ne dit rien (version plus ancienne, ou traduction qui a marché) : le
+      // bandeau retombe alors sur sa formulation prudente plutôt que d'inventer une cause.
+      setTraductionCause(res.traductionCause === 'instance' || res.traductionCause === 'credit' ? res.traductionCause : null);
     } catch (err) {
       // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
       // un bandeau rouge à chaque clic serait absurde.
@@ -1523,11 +1535,22 @@ function Thread({ session, conversation, dossier, onSent }: {
       {traduireRecus && traductionIndisponible && (
         <p
           data-testid="traduction-indisponible"
+          data-cause={traductionCause ?? 'inconnue'}
           className="mx-4 mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
         >
-          {t(
+          {traductionCause === 'credit' && t(
             'Traduction indisponible : le crédit de cet espace est épuisé. Les messages restent dans leur langue d’origine, un administrateur peut le recharger.',
             'Translation unavailable: this workspace has run out of credit. Messages stay in their original language, an admin can top it up.',
+          )}
+          {/* ⚠️ AUCUN RENVOI VERS LE CRÉDIT ICI : la cause est chez nous, et rien de ce que le client
+              ferait n'y changerait quoi que ce soit. Lui dire de recharger le ferait payer pour rien. */}
+          {traductionCause === 'instance' && t(
+            'Traduction indisponible sur ce serveur : elle n’y est pas encore activée. Les messages restent dans leur langue d’origine.',
+            'Translation is not enabled on this server yet. Messages stay in their original language.',
+          )}
+          {traductionCause === null && t(
+            'Traduction indisponible : les messages restent dans leur langue d’origine.',
+            'Translation unavailable: messages stay in their original language.',
           )}
         </p>
       )}

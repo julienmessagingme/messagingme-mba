@@ -1877,3 +1877,32 @@ retirés une fois constatée cette duplication.
 
 Le code de cet écran est juste, sa garde est inerte. Pour la rendre vivante il faut que l'API dise si
 la colonne est nulle (un drapeau à côté des heures), sans quoi le front ne peut pas faire la différence.
+
+## Une bulle SORTANTE change de contenu selon un réglage sur les messages REÇUS (2026-09-13)
+
+Signalé par le lot de la tâche 6, confirmé en revue. L'interrupteur s'appelle « Traduire les messages
+reçus », et pourtant il change aussi ce qu'affichent les bulles **envoyées** :
+
+- **éteint** : la bulle montre `body`, c'est-à-dire **ce qui est PARTI** (donc le texte traduit, si
+  l'opérateur avait utilisé le bouton de traduction sortante) ;
+- **allumé** : elle montre `redaction_origine`, c'est-à-dire **ce que l'opérateur avait écrit**.
+
+🔴 **LES DEUX SONT DÉFENDABLES, MAIS PAS SOUS LE MÊME INTERRUPTEUR, ET SURTOUT PAS EN SILENCE.** Rien
+à l'écran ne dit laquelle des deux versions on regarde. Un opérateur qui cherche à savoir ce que son
+client a réellement reçu peut lire l'autre texte sans s'en apercevoir, et c'est précisément la question
+qui se pose le jour d'un litige.
+
+À trancher par Julien : soit une bulle sortante montre TOUJOURS ce qui est parti (la vérité de
+l'échange) avec un moyen de déplier ce qu'il avait écrit, soit l'inverse, mais de façon constante et
+avec une marque qui dit laquelle.
+
+## Le bouton « Envoyer » est recouvert par la bulle d'aide en 13 pouces (2026-09-13)
+
+Mesuré pendant la tâche 6, et **ce n'est pas une régression de ce lot** : la bulle flottante du bot
+d'aide se pose au-dessus du coin bas-droit, donc par-dessus la droite du bouton « Envoyer » de l'Inbox
+à 1280 x 800.
+
+⚠️ **AUCUNE DES DEUX GARDES DE LARGEUR NE PEUT LE VOIR** : `pasDeDebordement` regarde le débordement du
+document, `pasDeChevauchement` compare des éléments qu'on lui NOMME, et personne n'a jamais pensé à
+nommer la bulle d'aide en face du bouton d'envoi. C'est le trou de la méthode plus que celui de
+l'écran : une garde qui exige qu'on nomme les paires ne trouve que ce à quoi on pensait déjà.

@@ -223,8 +223,20 @@ export interface ConversationThread {
    * sa cible, et supposer une langue ferait promettre « Traduire en espagnol » a un anglophone.
    */
   langueContact?: string | null;
-  /** `true` = cet espace n'a pas de credit de modele. Rendu seulement si `traduire` a ete demande. */
+  /** `true` = la traduction n'a pas pu se faire. Rendu seulement si `traduire` a ete demande. */
   traductionIndisponible?: boolean;
+  /**
+   * POURQUOI, et les deux causes n'appellent pas le meme geste (revue du 2026-09-13).
+   *
+   * `instance` = aucun modele de traduction n'est configure sur le serveur (`TRADUCTION_MODELE` vide) ;
+   * personne, cote client, ne peut rien y faire. `credit` = cet espace n'a pas de cle de modele, et la
+   * recharger le regle.
+   *
+   * ⚠️ L'ecran a d'abord affirme « le credit est epuise » dans LES DEUX cas. C'etait faux dans le
+   * premier, qui etait justement l'etat de la production : on envoyait un administrateur recharger un
+   * credit sans rapport. Absente = on ne sait pas, et l'ecran reste prudent.
+   */
+  traductionCause?: 'instance' | 'credit';
   /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
   messages: InboxMessage[];
 }

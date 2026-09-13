@@ -712,6 +712,21 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
        * c'est un 200 : Cloudflare remplacerait de toute facon le corps d'un 5xx par sa page.
        */
       ...(cible !== null ? { traductionIndisponible: traduit === null || traduit.indisponible } : {}),
+      /**
+       * 🔴 POURQUOI ELLE EST INDISPONIBLE, PARCE QUE LES DEUX CAUSES N'APPELLENT PAS LE MÊME GESTE
+       * (revue du 2026-09-13). Le drapeau ci-dessus vaut vrai dans DEUX situations : cette instance
+       * n'a pas de modèle de traduction configuré (`TRADUCTION_MODELE` vide, donc `traduireFil`
+       * absent), ou cet espace n'a pas de clé Gateway, c'est-à-dire pas de crédit.
+       *
+       * L'écran affirmait « le crédit de cet espace est épuisé, un administrateur peut le recharger »
+       * dans les deux cas. C'est FAUX dans le premier, et c'était l'état exact de la production au
+       * moment où ce lot a été écrit : on envoyait un administrateur recharger un crédit sans rapport,
+       * en lui cachant la seule cause réelle. Une phrase fausse coûte plus cher qu'aucune phrase,
+       * parce qu'elle donne une piste et qu'on la suit.
+       */
+      ...(cible !== null && (traduit === null || traduit.indisponible)
+        ? { traductionCause: traduit === null ? 'instance' : 'credit' }
+        : {}),
       // Qui détient le fil : sans cette information, l'opérateur voit le scénario se taire sans comprendre
       // pourquoi et ne sait pas s'il doit rendre la main. Défaut `app_workflow` quand le dep est absent,
       // qui est l'état d'une conversation dont personne n'a pris le contrôle.

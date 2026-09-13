@@ -48,8 +48,15 @@ const TRADUIT = [
 ];
 
 interface Options {
-  /** L'espace n'a pas de crédit de modèle : la route répond 200, en VO, avec son drapeau. */
+  /**
+   * La traduction ne se fait pas : la route répond 200, en VO, avec son drapeau.
+   *
+   * ⚠️ LE NOM DIT « crédit » MAIS LE CAS EST PLUS LARGE depuis la revue du 2026-09-13 : `cause`
+   * choisit laquelle des deux indisponibilités on simule, et `credit` n'est que le défaut historique.
+   */
   sansCredit?: boolean;
+  /** `instance` = aucun modele configure cote serveur ; `credit` = espace sans cle. Defaut `credit`. */
+  cause?: 'instance' | 'credit';
   /** Le réglage est DÉJÀ rangé dans ce navigateur (cas du retour sur l'écran). */
   dejaActif?: boolean;
 }
@@ -83,6 +90,8 @@ async function monter(page: Page, opts: Options = {}) {
           // Le serveur rend ce champ dès que `traduire` est demandé, delta vide compris : il ne dépend
           // pas des messages, mais de la présence d'une clé de modèle sur l'espace.
           ...(cible ? { traductionIndisponible: opts.sansCredit === true } : {}),
+        ...(cible && opts.sansCredit === true ? { traductionCause: opts.cause ?? 'credit' } : {}),
+          ...(cible && opts.sansCredit === true ? { traductionCause: opts.cause ?? 'credit' } : {}),
         });
       }
       return json({
@@ -91,6 +100,7 @@ async function monter(page: Page, opts: Options = {}) {
         // Sans crédit, la route rend le fil EN VO avec son drapeau : ce n'est pas une panne.
         messages: cible && opts.sansCredit !== true ? TRADUIT : VO,
         ...(cible ? { traductionIndisponible: opts.sansCredit === true } : {}),
+        ...(cible && opts.sansCredit === true ? { traductionCause: opts.cause ?? 'credit' } : {}),
       });
     }
     if (/\/conversations\/counts/.test(url)) return json({ tout: 1, aTraiter: 1, signalees: 0, archivees: 0, nonAffectees: 1, parMembre: [] });
@@ -203,8 +213,31 @@ test.describe('Inbox : traduire les messages reçus', () => {
     // que ce soit sur ce bandeau.
     await expect(page.getByTestId('traduction-indisponible')).toBeVisible();
     await expect(page.getByTestId('traduction-indisponible')).toHaveText(/crédit/i);
+    await expect(page.getByTestId('traduction-indisponible')).toHaveAttribute('data-cause', 'credit');
     // L'INTERRUPTEUR RESTE VISIBLE : le cacher laisserait croire à une panne de l'écran lui-même.
     await expect(interrupteur).toBeVisible();
+    await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
+  });
+
+  /**
+   * 🔴 LA DEUXIEME CAUSE, ET C'EST CELLE DE LA PRODUCTION (revue du 2026-09-13). `traductionIndisponible`
+   * vaut vrai pour DEUX raisons : aucun modele configure sur le serveur (`TRADUCTION_MODELE` vide), ou
+   * espace sans credit. Le bandeau affirmait « le credit est epuise » dans les deux cas. C'etait FAUX
+   * dans le premier, qui etait justement l'etat du produit au moment ou ce lot a ete ecrit : on envoyait
+   * un administrateur recharger un credit sans rapport, en lui cachant la seule cause reelle.
+   *
+   * ⚠️ LES DEUX SENS, dans ce cas et dans celui du dessus : sans le controle « ne parle PAS de credit »,
+   * un bandeau qui dirait toujours la meme chose passerait les deux.
+   */
+  test('🔴 sans modele configure, le bandeau ne parle PAS de crédit', async ({ page }) => {
+    const { interrupteur } = await monter(page, { sansCredit: true, cause: 'instance', dejaActif: true });
+    await expect(interrupteur).toBeChecked();
+    const bandeau = page.getByTestId('traduction-indisponible');
+    await expect(bandeau).toBeVisible();
+    await expect(bandeau).toHaveAttribute('data-cause', 'instance');
+    await expect(bandeau).not.toHaveText(/crédit/i);
+    await expect(bandeau).toHaveText(/pas encore activée/i);
+    // Le fil reste lisible, en VO : ce n'est pas une panne.
     await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
   });
 
