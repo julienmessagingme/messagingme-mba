@@ -945,6 +945,19 @@ export class PgStatsStore {
    *
    * ⚠️ Une campagne ABSENTE de la map = aucune mesure, ce qui n'est pas zéro. Même règle que partout
    * ailleurs dans ce fichier.
+   *
+   * 🔴 SES TROIS JOINTURES SONT DES CONTRATS AVEC DES INDEX EXISTANTS, ET DEUX SONT PARTIELS. Vérifié en
+   * base le 2026-09-13, pas supposé :
+   *   - `conversation_messages_unread_idx` : `(conversation_id, created_at) WHERE direction = 'in'`,
+   *     c'est-à-dire le prédicat de la branche `repondeurs` mot pour mot ;
+   *   - `tracked_link_clicks_contact_idx` : `(tenant_id, contact_id) WHERE contact_id IS NOT NULL`,
+   *     celui de la branche `cliqueurs` ;
+   *   - `conversations_contact_idx` : `(contact_id) WHERE contact_id IS NOT NULL`.
+   *
+   * ⚠️ SORTIR DE CES PRÉDICATS NE PRODUIRAIT AUCUNE ERREUR, seulement un balayage. Compter aussi les
+   * messages SORTANTS, ou les clics sans `contact_id`, ferait tomber la requête hors de ses index
+   * partiels sur les deux tables les plus écrites du produit. Le dépôt a déjà payé ce défaut ailleurs :
+   * si le besoin change, l'index change AVEC la requête, dans le même lot.
    */
   async engagementsParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
     if (campaignIds.length === 0) return new Map();
