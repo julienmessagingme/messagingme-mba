@@ -569,6 +569,62 @@ export class PgContactStore implements ContactStore {
     }));
   }
 
+  /**
+   * LES MESSAGES ENTRANTS RÉCENTS de contacts PAS ENCORE désabonnés, pour que la règle élargie les relise.
+   *
+   * 🔴 LA RÈGLE N'EST PAS APPLIQUÉE ICI, ET C'EST VOULU. Elle vit dans `src/crm/consentement.ts`, en
+   * TypeScript, avec ses tests : la recopier en SQL en ferait une seconde version, et deux versions d'une
+   * règle de consentement qui divergent, c'est un refus respecté d'un côté et ignoré de l'autre. Ce store ne
+   * fait que RAMENER les messages à relire.
+   *
+   * 🔴 LE PLAFOND EST UN NOMBRE DE MESSAGES SCANNÉS, PAS DE RÉSULTATS, et l'appelant doit le DIRE quand il
+   * mord : filtrer après une troncature ferait manquer des refus plus anciens que les `limite` derniers
+   * messages, en affichant une liste qui aurait l'air complète. (Mesure du 2026-09-13 : 135 messages
+   * entrants porteurs de texte en tout sur la production, donc le plafond ne mord pas aujourd'hui.)
+   *
+   * ⚠️ Les contacts DÉJÀ désabonnés sont écartés : ce qu'on cherche, ce sont les refus qu'on n'a PAS
+   * entendus. Un message sans fiche contact est gardé, parce qu'un refus vaut d'être lu même si le
+   * rapprochement de fiche a échoué.
+   */
+  async messagesARelire(
+    tenantId: string,
+    jours = 30,
+    limite = 2000,
+  ): Promise<{
+    scannes: number;
+    messages: Array<{ messageId: string; conversationId: string; contactId: string | null; waId: string; profileName: string | null; body: string; recuLe: string }>;
+  }> {
+    const res = await this.pool.query<{
+      id: string; conversation_id: string; contact_id: string | null; wa_id: string;
+      profile_name: string | null; body: string; created_at: Date;
+    }>(
+      `select m.id, m.conversation_id, ct.id as contact_id, cv.wa_id, ct.profile_name, m.body, m.created_at
+         from conversation_messages m
+         join conversations cv on cv.id = m.conversation_id
+         left join contacts ct on ct.id = cv.contact_id and ct.tenant_id = cv.tenant_id
+        where cv.tenant_id = $1
+          and m.direction = 'in'
+          and m.body is not null and btrim(m.body) <> ''
+          and m.created_at >= now() - make_interval(days => $2::int)
+          and (ct.id is null or (ct.opt_in_status <> 'opted_out' and ct.deleted_at is null))
+        order by m.created_at desc
+        limit $3`,
+      [tenantId, Math.min(Math.max(1, jours), 365), Math.min(Math.max(1, limite), 5000)],
+    );
+    return {
+      scannes: res.rows.length,
+      messages: res.rows.map((r) => ({
+        messageId: r.id,
+        conversationId: r.conversation_id,
+        contactId: r.contact_id,
+        waId: r.wa_id,
+        profileName: r.profile_name,
+        body: r.body,
+        recuLe: r.created_at.toISOString(),
+      })),
+    };
+  }
+
   async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `select id from contacts where tenant_id = $1 and deleted_at is null

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
-import { listeDesabonnes, type ContactDesabonne } from '@/lib/api';
+import { listeDesabonnes, refusPossibles, type ContactDesabonne, type RefusPossible } from '@/lib/api';
 import { cardCls } from '@/lib/ui';
 
 /**
@@ -37,6 +37,7 @@ function Consentement({ tenantId }: { tenantId: string }) {
   const t = useT();
   const [contacts, setContacts] = useState<ContactDesabonne[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [aRelire, setARelire] = useState<{ scannes: number; refus: RefusPossible[] } | null>(null);
 
   useEffect(() => {
     let vivant = true;
@@ -46,6 +47,9 @@ function Consentement({ tenantId }: { tenantId: string }) {
       // lire » appellent des réactions opposées, et confondre les deux ferait croire à une conformité qu'on
       // n'a pas vérifiée.
       .catch(() => { if (vivant) setErreur(t('La liste n’a pas pu être lue.', 'The list could not be read.')); });
+    // ⚠️ Best-effort et SÉPARÉE : la relecture des refus possibles est une commodité, la liste des
+    // désabonnés est la donnée de conformité. Un échec de la première ne doit pas masquer la seconde.
+    refusPossibles(tenantId).then((r) => { if (vivant) setARelire(r); }).catch(() => {});
     return () => { vivant = false; };
   }, [tenantId, t]);
 
@@ -113,6 +117,52 @@ function Consentement({ tenantId }: { tenantId: string }) {
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      {/*
+        🔴 CETTE SECTION N'A DÉSABONNÉ PERSONNE, ET C'EST TOUT SON INTÉRÊT. Une règle plus large que celle
+        qui agit relit les messages entrants récents et remonte ce qu'elle AURAIT pris pour un refus. Sur
+        135 messages réels mesurés le 2026-09-13, ni la règle actuelle ni une règle élargie n'ont rien
+        trouvé : il n'y a rien sur quoi calibrer, donc on instrumente d'abord et on décide ensuite.
+      */}
+      <section className={cardCls} data-testid="refus-possibles">
+        <div className="border-b border-ink-100 px-4 py-3">
+          <span className="text-sm font-semibold text-ink-900">{t('Refus possibles à confirmer', 'Possible refusals to confirm')}</span>
+          <p className="mt-1 text-xs text-ink-500">
+            {t(
+              'Des messages qui ressemblent à une demande d’arrêt sans en avoir la forme reconnue. Personne n’a été désabonné : à vous de juger, depuis la conversation.',
+              'Messages that look like a stop request without matching the recognised form. Nobody was unsubscribed: judge for yourself, from the conversation.',
+            )}
+          </p>
+        </div>
+
+        {aRelire === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Relecture…', 'Re-reading…')}</p>}
+        {aRelire !== null && aRelire.refus.length === 0 && (
+          <p className="px-4 py-3 text-sm text-ink-500" data-testid="refus-possibles-vide">
+            {/* ⚠️ ON DIT SUR QUOI ON A REGARDÉ. « rien trouvé » et « rien lu » ne veulent pas dire la même
+                chose, et sur un écran de conformité la différence compte. */}
+            {t('Rien à signaler sur les ', 'Nothing to report across the last ')}
+            {aRelire.scannes}
+            {t(' derniers messages reçus.', ' inbound messages.')}
+          </p>
+        )}
+        {aRelire !== null && aRelire.refus.length > 0 && (
+          <ul className="divide-y divide-ink-100">
+            {aRelire.refus.map((r) => (
+              <li key={r.messageId} className="flex items-start justify-between gap-3 px-4 py-2" data-testid="refus-possible-ligne">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-ink-800">{r.body}</p>
+                  <p className="text-xs text-ink-400">
+                    {r.profileName ?? r.waId} · {new Date(r.recuLe).toLocaleDateString()}
+                  </p>
+                </div>
+                <Link href={`/inbox?c=${r.conversationId}`} className="shrink-0 text-xs font-medium text-brand-600 hover:underline">
+                  {t('Ouvrir la conversation', 'Open the conversation')}
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </div>

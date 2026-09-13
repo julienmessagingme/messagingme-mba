@@ -185,6 +185,27 @@ export interface ContactDesabonne {
 export function listeDesabonnes(tenantId: string): Promise<{ contacts: ContactDesabonne[] }> {
   return request(`/tenants/${tenantId}/contacts/desabonnes`);
 }
+
+/** Un message qu'une règle ÉLARGIE aurait pris pour un refus, et qui n'a désabonné personne. */
+export interface RefusPossible {
+  messageId: string;
+  conversationId: string;
+  contactId: string | null;
+  waId: string;
+  profileName: string | null;
+  body: string;
+  recuLe: string;
+}
+/**
+ * Les refus POSSIBLES à relire.
+ *
+ * ⚠️ `scannes` dit sur COMBIEN de messages la relecture a porté. Une liste vide obtenue sans avoir rien lu
+ * et une liste vide obtenue après avoir tout lu ne veulent pas dire la même chose, et l'écran doit pouvoir
+ * faire la différence.
+ */
+export function refusPossibles(tenantId: string): Promise<{ scannes: number; refus: RefusPossible[] }> {
+  return request(`/tenants/${tenantId}/contacts/refus-possibles`);
+}
 /** Contacts bloqués : la SEULE porte de sortie d'un blocage, puisqu'ils sont invisibles partout ailleurs. */
 export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
   return request(`/tenants/${tenantId}/contacts/blocked`);

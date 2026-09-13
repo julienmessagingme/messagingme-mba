@@ -6,6 +6,7 @@ import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
 import type { CoutContact, NiveauEngagement } from '../stats/cost';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
+import { classerDemandeArret } from '../crm/consentement';
 import { scopeTenant } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -36,6 +37,11 @@ export interface ContactsRouteDeps {
   listeDesabonnes?(tenantId: string): Promise<Array<{
     id: string; profileName: string | null; phoneE164: string | null; desabonneLe: string | null; source: string | null;
   }>>;
+  /** Les messages entrants récents à relire avec la règle ÉLARGIE. Cf. `PgContactStore.messagesARelire`. */
+  messagesARelire?(tenantId: string): Promise<{
+    scannes: number;
+    messages: Array<{ messageId: string; conversationId: string; contactId: string | null; waId: string; profileName: string | null; body: string; recuLe: string }>;
+  }>;
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /**
@@ -203,6 +209,27 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.listeDesabonnes) return reply.code(503).send({ error: 'liste des désabonnés indisponible' });
     return reply.code(200).send({ contacts: await deps.listeDesabonnes(tenant) });
+  });
+
+  /**
+   * LES REFUS POSSIBLES À CONFIRMER : ce que la règle ÉLARGIE aurait attrapé, et qu'elle n'a PAS appliqué.
+   *
+   * 🔴 ELLE N'A DÉSABONNÉ PERSONNE, ET CETTE ROUTE N'ÉCRIT RIEN. Mesure du 2026-09-13 : sur 135 messages
+   * entrants réels, zéro reconnu par la règle qui agit comme par une règle élargie candidate. Il n'y a rien
+   * sur quoi calibrer, donc on instrumente d'abord et on décide ensuite. Cette liste EST l'instrument.
+   *
+   * ⚠️ LE PLAFOND DE MESSAGES SCANNÉS EST REMONTÉ TEL QUEL (`scannes`), pour que l'écran puisse dire sur
+   * quoi il a regardé. Une liste vide obtenue en n'ayant rien lu et une liste vide obtenue après avoir tout
+   * lu ne veulent pas dire la même chose.
+   */
+  app.get('/tenants/:tenantId/contacts/refus-possibles', gardeEncadrement, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.messagesARelire) return reply.code(503).send({ error: 'relecture des refus indisponible' });
+    const { scannes, messages } = await deps.messagesARelire(tenant);
+    // La règle vit dans `src/crm/consentement.ts`, avec ses tests. Elle n'est PAS recopiée ici.
+    const refus = messages.filter((m) => classerDemandeArret(m.body) === 'peut_etre');
+    return reply.code(200).send({ scannes, refus });
   });
 
   app.get('/tenants/:tenantId/contacts/blocked', opts, async (req, reply) => {

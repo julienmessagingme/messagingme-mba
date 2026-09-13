@@ -1655,6 +1655,7 @@ async function main(): Promise<void> {
       setBlocked: (tenant, id, bloque, par) => contactStore.setBlocked(tenant, id, bloque, par),
       listBlocked: (tenant) => contactStore.listBlocked(tenant),
       listeDesabonnes: (tenant) => contactStore.listeDesabonnes(tenant),
+      messagesARelire: (tenant) => contactStore.messagesARelire(tenant),
       purgeMany: (tenant, ids) => contactStore.purgeMany(tenant, ids),
       contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
       audit: auditSink,

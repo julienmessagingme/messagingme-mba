@@ -18,6 +18,11 @@ async function monter(page: Page): Promise<void> {
   await page.route('**/api/backend/**', async (route) => {
     const chemin = new URL(route.request().url()).pathname.replace('/api/backend', '');
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (chemin.endsWith('/contacts/refus-possibles')) {
+      return json({ scannes: 42, refus: [
+        { messageId: 'm1', conversationId: 'cv1', contactId: 'ct9', waId: '33600000009', profileName: 'Bob', body: 'arrêtez de me contacter', recuLe: '2026-09-12T09:00:00.000Z' },
+      ] });
+    }
     if (chemin.endsWith('/contacts/desabonnes')) {
       return json({ contacts: [
         { id: 'ct1', profileName: 'Alice', phoneE164: '+33600000001', desabonneLe: '2026-09-12T10:00:00.000Z', source: 'scenario' },
@@ -113,6 +118,18 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(page.getByTestId('desabonne-ligne')).toHaveCount(2);
     await expect(page.getByTestId('desabonnes-compte')).toContainText('2');
     await expect(page.getByTestId('desabonne-date').nth(1)).toContainText(/date inconnue/i);
+  });
+
+  /**
+   * 🔴 LA RÈGLE ÉLARGIE REMONTE, ELLE NE DÉSABONNE PAS. L'écran doit le DIRE : sans cette phrase, une ligne
+   * dans cette section se lirait comme un désabonnement déjà appliqué.
+   */
+  test('🔴 les refus possibles remontent SANS avoir desabonne personne', async ({ page }) => {
+    await monter(page);
+    await page.goto('/securite/consentement');
+    await expect(page.getByTestId('refus-possibles')).toContainText(/Personne n.a été désabonné/);
+    await expect(page.getByTestId('refus-possible-ligne')).toHaveCount(1);
+    await expect(page.getByTestId('refus-possible-ligne')).toContainText('arrêtez de me contacter');
   });
 
   test('rien ne deborde en 13 pouces', async ({ page }) => {
