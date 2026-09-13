@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import { forbidNonAdmin, gardeEtendue, makeRequireRole } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
 import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
@@ -28,6 +28,14 @@ export interface ContactsRouteDeps {
    */
   setBlocked?(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
   listBlocked?(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>>;
+  /**
+   * Les contacts qui ont demandé à ne plus être contactés. Absente -> 503, jamais une liste vide : « aucun
+   * désabonné » et « la liste n'est pas branchée » sont deux situations opposées, et la seconde est un
+   * défaut de câblage qu'on ne doit pas afficher comme une bonne nouvelle.
+   */
+  listeDesabonnes?(tenantId: string): Promise<Array<{
+    id: string; profileName: string | null; phoneE164: string | null; desabonneLe: string | null; source: string | null;
+  }>>;
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /**
@@ -165,6 +173,11 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
 
 export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard, limiteCouteuse?: PreHandler): void {
   const opts = guard ? { preHandler: guard } : {};
+  /**
+   * L'ENCADREMENT, ET PAS TOUT LE MONDE : `admin` et `manager`. La liste des désabonnés nomme des personnes
+   * avec leur numéro ; c'est un artefact de conformité, pas un outil de traitement quotidien.
+   */
+  const gardeEncadrement = gardeEtendue(guard, makeRequireRole(['admin', 'manager']));
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
   const couteux = gardeEtendue(guard, limiteCouteuse);
   const journal = makeJournal(deps.audit);
@@ -175,6 +188,23 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    *
    * Déclarée AVANT `/contacts/:contactId` : `blocked` n'est pas un identifiant de contact.
    */
+  /**
+   * LES CONTACTS DÉSABONNÉS : la liste du centre de Sécurité & compliance.
+   *
+   * 🔴 RÉSERVÉE À L'ENCADREMENT (`admin` et `manager`). Elle nomme des personnes qui ont demandé qu'on les
+   * laisse tranquilles, avec leur numéro : c'est une liste de conformité, pas un outil de travail
+   * quotidien. Même garde que le récap du bot d'aide, et pour la même raison.
+   *
+   * ⚠️ `tenant_id = $1` dans la requête, EN PLUS de `scopeTenant` : le pooler est superuser, la RLS est
+   * contournée, et le filtrage en code est donc le seul contrôle.
+   */
+  app.get('/tenants/:tenantId/contacts/desabonnes', gardeEncadrement, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.listeDesabonnes) return reply.code(503).send({ error: 'liste des désabonnés indisponible' });
+    return reply.code(200).send({ contacts: await deps.listeDesabonnes(tenant) });
+  });
+
   app.get('/tenants/:tenantId/contacts/blocked', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });

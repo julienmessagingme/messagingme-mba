@@ -297,7 +297,11 @@ export class PgContactStore implements ContactStore {
     source: string,
   ): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
-      `update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now()
+      // 🔴 `opt_out_at` SUIT LE STATUT, DANS LES DEUX SENS (migration 0138) : posée en se désabonnant,
+      // REMISE À NULL en se réabonnant. La colonne répond à « depuis quand est-il désabonné ? » ; garder une
+      // date sur un contact réabonné ferait apparaître un refus là où il n'y en a plus.
+      `update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now(),
+              opt_out_at = case when $4 = 'opted_out' then now() else null end
        where id = (
          select id from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}
@@ -527,6 +531,44 @@ export class PgContactStore implements ContactStore {
     }));
   }
 
+  /**
+   * LES CONTACTS QUI ONT DEMANDÉ À NE PLUS ÊTRE CONTACTÉS, du plus récent au plus ancien.
+   *
+   * 🔴 `desabonneLe` PEUT ÊTRE `null`, ET L'ÉCRAN DOIT LE DIRE. La date n'existe que depuis la migration
+   * 0138 : les désabonnements antérieurs n'en ont pas, et la reconstituer depuis `updated_at` serait un
+   * mensonge (cette colonne bouge à la moindre modification de la fiche). « Date inconnue » est la vérité.
+   *
+   * ⚠️ `source` dit D'OÙ vient le refus ('crm' = saisi à la main, 'scenario' = posé par un parcours, 'flow'
+   * = coché par la personne dans un formulaire, 'webhook:<nom>' = reçu d'un système tiers). C'est la seule
+   * chose qui distingue un refus exprimé par la personne d'un statut posé par l'équipe.
+   *
+   * ⚠️ Servi par l'index PARTIEL `contacts_opted_out_idx` (0138), dont le prédicat reprend EXACTEMENT le
+   * `where` ci-dessous : l'élargir sans élargir l'index ferait retomber cette page sur un balayage complet
+   * de la table des contacts, sans qu'aucune erreur ne le signale.
+   */
+  async listeDesabonnes(
+    tenantId: string,
+    limite = 500,
+  ): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; desabonneLe: string | null; source: string | null }>> {
+    const res = await this.pool.query<{
+      id: string; profile_name: string | null; phone_e164: string | null; opt_out_at: Date | null; opt_in_source: string | null;
+    }>(
+      `select id, profile_name, phone_e164, opt_out_at, opt_in_source
+         from contacts
+        where tenant_id = $1 and opt_in_status = 'opted_out' and deleted_at is null
+        order by opt_out_at desc nulls last, updated_at desc
+        limit $2`,
+      [tenantId, Math.min(Math.max(1, limite), 2000)],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      profileName: r.profile_name,
+      phoneE164: r.phone_e164,
+      desabonneLe: r.opt_out_at ? r.opt_out_at.toISOString() : null,
+      source: r.opt_in_source,
+    }));
+  }
+
   async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `select id from contacts where tenant_id = $1 and deleted_at is null
@@ -633,7 +675,10 @@ export class PgContactStore implements ContactStore {
         // renseigné. Aucun retour à « inconnu » : ce statut signifie « rien n'a jamais été enregistré », et
         // l'écrire après coup falsifierait le registre plutôt que de le corriger.
         await client.query(
-          `update contacts set opt_in_status = $3, opt_in_source = 'crm', updated_at = now() where id = $1 and tenant_id = $2`,
+          // `opt_out_at` suit le statut dans les deux sens, cf. `setOptInByWaId` (migration 0138).
+          `update contacts set opt_in_status = $3, opt_in_source = 'crm', updated_at = now(),
+                  opt_out_at = case when $3 = 'opted_out' then now() else null end
+             where id = $1 and tenant_id = $2`,
           [contactId, tenantId, edits.optInStatus],
         );
       }
@@ -783,7 +828,10 @@ export class PgContactStore implements ContactStore {
       // Écriture DIRECTE du statut, y compris à la baisse : c'est une décision d'opérateur, pas une donnée
       // importée. La source dit d'où vient la décision, pour qu'un `opted_out` ne soit pas confondu plus tard
       // avec un statut jamais renseigné.
-      sets.push(`opt_in_status = ${add(optIn)}`, `opt_in_source = ${add('crm')}`);
+      // `opt_out_at` suit le statut dans les deux sens, cf. `setOptInByWaId` (migration 0138). La valeur est
+      // connue ICI (`optIn`), donc la date se pose sans `case` : une action en masse porte UN seul statut.
+      sets.push(`opt_in_status = ${add(optIn)}`, `opt_in_source = ${add('crm')}`,
+        `opt_out_at = ${optIn === 'opted_out' ? 'now()' : 'null'}`);
     }
     sets.push('updated_at = now()');
     const res = await this.pool.query(`update contacts set ${sets.join(', ')} where ${sel.where}`, params);

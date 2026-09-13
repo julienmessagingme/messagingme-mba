@@ -1654,6 +1654,7 @@ async function main(): Promise<void> {
       applyEditsMany: (tenant, target, edits) => contactStore.applyEditsMany(tenant, target, edits),
       setBlocked: (tenant, id, bloque, par) => contactStore.setBlocked(tenant, id, bloque, par),
       listBlocked: (tenant) => contactStore.listBlocked(tenant),
+      listeDesabonnes: (tenant) => contactStore.listeDesabonnes(tenant),
       purgeMany: (tenant, ids) => contactStore.purgeMany(tenant, ids),
       contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
       audit: auditSink,

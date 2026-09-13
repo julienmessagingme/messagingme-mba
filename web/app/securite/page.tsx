@@ -23,6 +23,15 @@ function Securite() {
   const t = useT();
   const boites = [
     {
+      cle: 'securite-consentement',
+      href: '/securite/consentement',
+      titre: t('Consentement', 'Consent'),
+      texte: t(
+        'Qui a demandé à ne plus être contacté, depuis quand, et par quel chemin. Aucun envoi automatique ne leur est adressé.',
+        'Who asked not to be contacted again, since when, and how. No automatic message is sent to them.',
+      ),
+    },
+    {
       cle: 'securite-audit',
       href: '/securite/audit',
       titre: t('Audit trails', 'Audit trails'),

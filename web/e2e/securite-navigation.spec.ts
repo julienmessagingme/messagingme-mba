@@ -18,6 +18,14 @@ async function monter(page: Page): Promise<void> {
   await page.route('**/api/backend/**', async (route) => {
     const chemin = new URL(route.request().url()).pathname.replace('/api/backend', '');
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (chemin.endsWith('/contacts/desabonnes')) {
+      return json({ contacts: [
+        { id: 'ct1', profileName: 'Alice', phoneE164: '+33600000001', desabonneLe: '2026-09-12T10:00:00.000Z', source: 'scenario' },
+        // ⚠️ Une ligne SANS date : c'est le cas des désabonnements d'avant la migration 0138, et l'écran
+        // doit le DIRE plutôt que d'inventer une date.
+        { id: 'ct2', profileName: null, phoneE164: '+33600000002', desabonneLe: null, source: 'crm' },
+      ] });
+    }
     if (chemin.endsWith('/audit')) return json({ entries: [], total: 0 });
     if (chemin.endsWith('/erreurs-livraison')) return json({ erreurs: [], total: 0 });
     if (chemin.endsWith('/unread-count')) return json({ count: 0 });
@@ -91,6 +99,20 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(page.getByTestId('param-auto-retry-toggle')).toBeVisible();
     await expect(page.getByTestId('audit-journal')).toHaveCount(0);
     await expect(page.getByTestId('erreurs-livraison')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 LA DATE MANQUANTE SE DIT, ELLE NE S'INVENTE PAS. Elle n'est enregistrée que depuis la migration
+   * 0138 : afficher la derniere modification de la fiche a la place aurait ete plus joli et FAUX, ce qui
+   * est le pire resultat possible sur un ecran de conformite.
+   */
+  test('🔴 le consentement liste les desabonnes, et dit quand la date manque', async ({ page }) => {
+    await monter(page);
+    await page.goto('/securite/consentement');
+    await expect(page.getByTestId('securite-consentement')).toBeVisible();
+    await expect(page.getByTestId('desabonne-ligne')).toHaveCount(2);
+    await expect(page.getByTestId('desabonnes-compte')).toContainText('2');
+    await expect(page.getByTestId('desabonne-date').nth(1)).toContainText(/date inconnue/i);
   });
 
   test('rien ne deborde en 13 pouces', async ({ page }) => {

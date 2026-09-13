@@ -37,6 +37,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"quanti-messages","href":"/dashboard","fr":"Messages & contacts","en":"Messages & contacts","adminOnly":true,"chemin":["Quantitatif"]},
   {"cle":"rcs-messages","href":"/rcs-messages","fr":"Messages","en":"Messages","adminOnly":true,"chemin":["Contenu","RCS"]},
   {"cle":"securite-audit","href":"/securite/audit","fr":"Audit trails","en":"Audit trails","adminOnly":true,"chemin":["Sécurité"]},
+  {"cle":"securite-consentement","href":"/securite/consentement","fr":"Consentement","en":"Consent","adminOnly":true,"chemin":["Sécurité"]},
   {"cle":"securite-erreurs","href":"/securite/erreurs","fr":"Journal des erreurs","en":"Error log","adminOnly":true,"chemin":["Sécurité"]},
   {"cle":"support","href":"/support","fr":"Support","en":"Support","adminOnly":true,"chemin":[]},
   {"cle":"tags","href":"/tags","fr":"Étiquettes","en":"Tags","adminOnly":true,"chemin":["Contenu","Bibliothèque"]},

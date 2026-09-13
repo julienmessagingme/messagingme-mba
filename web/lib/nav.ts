@@ -286,6 +286,9 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * comptes, pas pour régler l'espace. Consentement et IA suivront avec leurs écrans.
      */
     { key: 'securite', label: t('Sécurité', 'Security'), d: icons.securite, children: [
+      // Le CONSENTEMENT en premier : c'est le seul sous-menu qui décrit ce que le produit s'interdit de
+      // faire, les deux autres racontent ce qu'il a fait.
+      { key: 'securite-consentement', href: '/securite/consentement', label: t('Consentement', 'Consent') },
       { key: 'securite-audit', href: '/securite/audit', label: t('Audit trails', 'Audit trails') },
       { key: 'securite-erreurs', href: '/securite/erreurs', label: t('Journal des erreurs', 'Error log') },
     ] },

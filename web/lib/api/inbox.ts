@@ -163,6 +163,28 @@ export function setContactBlocked(tenantId: string, contactId: string, blocked: 
   return request(`/tenants/${tenantId}/contacts/${contactId}/blocked`, { method: 'PATCH', body: JSON.stringify({ blocked }) });
 }
 export interface BlockedContact { id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }
+
+/**
+ * Un contact qui a demandé à ne plus être contacté.
+ *
+ * ⚠️ `desabonneLe` PEUT ÊTRE `null`, et l'écran doit le DIRE plutôt que d'inventer une date : elle n'est
+ * enregistrée que depuis la migration 0138, et la reconstituer depuis la dernière modification de la fiche
+ * serait un mensonge (cette date-là bouge au moindre changement de nom).
+ *
+ * `source` dit d'OÙ vient le refus : « crm » (saisi à la main), « scenario » (posé par un parcours),
+ * « flow » (coché par la personne), « webhook:<nom> » (reçu d'un système tiers).
+ */
+export interface ContactDesabonne {
+  id: string;
+  profileName: string | null;
+  phoneE164: string | null;
+  desabonneLe: string | null;
+  source: string | null;
+}
+/** La liste des désabonnés du centre de Sécurité. Réservée aux rôles `admin` et `manager` côté serveur. */
+export function listeDesabonnes(tenantId: string): Promise<{ contacts: ContactDesabonne[] }> {
+  return request(`/tenants/${tenantId}/contacts/desabonnes`);
+}
 /** Contacts bloqués : la SEULE porte de sortie d'un blocage, puisqu'ils sont invisibles partout ailleurs. */
 export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
   return request(`/tenants/${tenantId}/contacts/blocked`);
