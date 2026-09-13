@@ -109,6 +109,13 @@ test('le devenir est demande aussi quand un scenario est choisi', async ({ page 
   await monter(page);
   await page.getByTestId('etage-1').click(); // deplie le cadre WhatsApp
   await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  /**
+   * 🔴 LE SCENARIO EST CHOISI, ET CE CLIC N'EST PAS DE LA CEREMONIE (2026-09-13). En formule
+   * « modele et scenario », c'est le SCENARIO qui dit ce qui part : basculer la formule sans en choisir
+   * un laisse l'etage sans rien a envoyer, et le bloc du devenir se masque, a juste titre. Ce test
+   * exercait donc un ecran a mi-chemin, dans un etat que personne ne garde plus de trois secondes.
+   */
+  await page.getByTestId('scenario-1').selectOption('wf1');
   await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toBeVisible();
   // ⚠️ Et il reste demandé UNE fois : un scénario ne le déplace pas dans le cadre de l'étage.
   await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toHaveCount(1);

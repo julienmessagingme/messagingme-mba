@@ -663,17 +663,26 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Campagnes
 
-- ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08) : une case à cocher, au bas de l'étape
-  d'envoi, sous le choix « Maintenant / Plus tard ». Elle vaut pour les deux : c'est une contrainte de la
-  campagne, pas de son lancement.
+- ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08, **seule question horaire depuis le
+  2026-09-13**) : une case à cocher, à l'étape **Canal** de l'assistant. Elle vaut pour les premiers envois
+  **et pour les relances**, avec chaîne de repli ou sans : c'est une contrainte de la campagne, pas de son
+  lancement, et il n'y a plus de second réglage pour le rattrapage.
   - lancée hors créneau (à 23 h, par exemple), la campagne **n'est pas refusée** : elle attend la prochaine
     ouverture réglée dans Paramètres, et repart toute seule ;
   - un envoi que la fermeture interrompt **reprend au créneau suivant**, sans perdre un seul destinataire :
-    ceux qui n'ont rien reçu restent en attente et partent à la réouverture ;
-  - l'écran de la campagne dit alors pourquoi elle est en pause et vers quand elle repartira.
+    ceux qui n'ont rien reçu restent en attente et partent à la réouverture.
+
+  🔴 **CE QUE L'ÉCRAN NE DIT PAS ENCORE, ET IL FAUT LE SAVOIR** (mesuré le 2026-09-13). La liste des
+  campagnes affiche « en pause », **sans la raison ni la date de reprise**. Cette page a affirmé le
+  contraire pendant cinq jours, et c'est ce qui a fait chercher une panne là où il n'y en avait pas : une
+  campagne lancée un dimanche sur un espace fermé le dimanche attendait simplement le lundi 9 h. Les deux
+  informations existent en base, elles ne sont pas encore remontées à l'écran (cf. `todo.md`).
+
+  ⚠️ **Changer ses heures d'ouverture ne réveille PAS une campagne déjà en pause** : l'échéance a été
+  calculée au moment de la pause. Le bouton **« Reprendre »** de la liste est le geste qui rattrape ça.
 
   ⚠️ Si aucun jour d'ouverture n'est réglé, il n'y a aucun créneau où envoyer : la campagne se met en pause
-  et le dit, sans reprise automatique. Il faut alors régler les horaires, ou relancer à la main.
+  sans reprise automatique. Il faut alors régler les horaires, puis « Reprendre ».
 - ✅ **Ce que la campagne envoie, et quand** (2026-08-11). Chaque campagne annonce, dans la liste **et** dans son
   détail, ce qu'elle envoie : `Template « promo_ete » (fr)` pour un envoi direct, `Scénario « Relance promo »`
   pour une campagne qui déclenche un scénario, `Scénario supprimé` si le scénario a disparu depuis. Une campagne

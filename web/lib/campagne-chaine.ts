@@ -124,7 +124,15 @@ export function etageRenseigne(canal: CanalEtage, contenu: ContenuMinimal | unde
   if (contenu.formule === 'avec_scenario') return (contenu.workflowId ?? '').trim() !== '';
   if (canal === 'whatsapp') return (contenu.templateName ?? '').trim() !== '';
   if (canal === 'rcs') return (contenu.texteRcs ?? '').trim() !== '';
-  return (contenu.emailTemplateId ?? '').trim() !== '';
+  if (canal === 'email') return (contenu.emailTemplateId ?? '').trim() !== '';
+  /**
+   * ⚠️ UN CANAL QU'ON NE CONNAÎT PAS N'A RIEN À ENVOYER, donc il BLOQUE. Le `return` final valait
+   * auparavant la règle de l'e-mail, ce qui aurait fait exiger un gabarit d'e-mail le jour où `sms`
+   * devient un canal d'étage : le blocage aurait été SILENCIEUX et impossible à lever, puisque aucun
+   * écran ne propose de gabarit d'e-mail sur un étage SMS. Bloquer explicitement se remarque et se
+   * corrige ; bloquer par la mauvaise règle se cherche pendant une heure.
+   */
+  return false;
 }
 
 /**
