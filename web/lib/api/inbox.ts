@@ -358,7 +358,23 @@ export function lireMediaMessage(tenantId: string, conversationId: string, messa
 
 /**
  * Transcrit le vocal d'un message. `deja` = il l'était déjà, rien n'a été repayé.
+ *
+ * 🔴 UN SEUL GESTE POUR L'OPÉRATEUR : avec `traduire`, le texte revient DANS SA LANGUE même si le
+ * vocal était en espagnol. `texte` reste ce qui a été DIT, `traduction` notre lecture : garder les
+ * deux est ce qui permet de marquer la seconde comme une lecture de modèle plutôt que comme une
+ * citation.
+ *
+ * ⚠️ C'est la TRANSCRIPTION qui est traduite, jamais `body` : pour un vocal il vaut `[audio]` ou la
+ * légende. Deux appels de modèle, donc deux fois le coût, et c'est assumé.
  */
-export function transcrireMessage(tenantId: string, conversationId: string, messageId: string): Promise<{ texte: string; deja: boolean }> {
-  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages/${messageId}/transcrire`, { method: 'POST' });
+export function transcrireMessage(
+  tenantId: string,
+  conversationId: string,
+  messageId: string,
+  traduire?: 'fr' | 'en' | null,
+): Promise<{ texte: string; deja: boolean; langue: string | null; traduction: string | null }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages/${messageId}/transcrire`, {
+    method: 'POST',
+    ...(traduire ? { body: JSON.stringify({ traduire }) } : {}),
+  });
 }

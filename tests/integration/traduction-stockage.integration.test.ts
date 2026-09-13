@@ -225,6 +225,25 @@ describe.skipIf(!url)('traduction : le chemin chaud, par le vrai code (Postgres)
     expect(r.langue_detectee).toBe('es');
   });
 
+  it('la transcription d un vocal garde SA LANGUE, et le fil la rend', async () => {
+    // Elle etait rendue par `transcrire` depuis le 2026-09-09 et jetee (migration 0137). Sans elle, on
+    // traduirait en francais un vocal deja francais, a chaque ouverture, sur le credit du client.
+    const vocal = (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, media_id, created_at)
+       values ($1, 'in', 'audio', '[audio]', 'media-1', now()) returning id`,
+      [conversationId],
+    )).rows[0]!.id;
+    await store.ecrireTranscription(tenantId, vocal, 'Hola, tengo un problema', 'openai/whisper-1', 'es');
+    const relu = (await store.getMessages(conversationId)).find((m) => m.id === vocal)!;
+    expect(relu.body).toBe('[audio]');
+    expect(relu.transcription).toBe('Hola, tengo un problema');
+    expect(relu.transcriptionLangue).toBe('es');
+    // Et la lecture du chemin de transcription voit la meme chose, avec de quoi ne pas repayer.
+    const pourTranscription = await store.lireMessagePourTranscription(tenantId, vocal, conversationId);
+    expect(pourTranscription?.transcriptionLangue).toBe('es');
+    expect(pourTranscription?.traduction).toBeNull();
+  });
+
   it('un contexte de conversation SANS contact rend null, pas undefined', async () => {
     // Le cas d un fil cree avant que le contact ne soit rattache : l ecran doit pouvoir distinguer
     // « on ne sait pas encore » d un champ que ce serveur ignore.

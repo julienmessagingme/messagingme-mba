@@ -627,9 +627,22 @@ async function main(): Promise<void> {
        * par espace existe deja (`clesGateway.lire`) : le jour ou ca change, c'est cette ligne, et elle seule.
        */
       ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
-        transcrireMessage: (tenant: string, messageId: string, conversationId?: string) => transcrireMessage({
+        transcrireMessage: (tenant: string, messageId: string, conversationId?: string, cible?: LangueConsole | null) => transcrireMessage({
           lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
-          ecrireTranscription: (t, m2, texte, modele) => inboxStore.ecrireTranscription(t, m2, texte, modele),
+          // ⚠️ `langue` EST TRANSMISE, et l'oublier ne casserait rien de visible : la transcription
+          // marcherait, la langue partirait a la poubelle, et on repaierait une traduction inutile sur
+          // chaque vocal deja dans la langue du lecteur.
+          ecrireTranscription: (t, m2, texte, modele, langue) => inboxStore.ecrireTranscription(t, m2, texte, modele, langue),
+          /**
+           * ⚠️ LA TRADUCTION D'UN VOCAL EST SUR LE CREDIT DU CLIENT, la transcription sur NOTRE cle, et
+           * les deux cohabitent dans le meme geste. Ce n'est pas une incoherence : la transcription a ete
+           * tranchee comme un service offert le 2026-09-09, la traduction sert les conversations du
+           * client. Deux decisions, deux payeurs, le meme bouton.
+           */
+          ...(traducteur ? {
+            traduire: (t, texte, cible2, source) => traducteur.traduire(t, texte, cible2, source),
+            rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
+          } : {}),
           telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
           // ⚠️ Le transport du MODÈLE (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en
           // base64, donc 2,7 Mo à téléverser, et un modèle a le droit d'être lent là où Meta n'en a pas le
@@ -641,7 +654,7 @@ async function main(): Promise<void> {
           noterCout: (t, m2, cout, secondes) => {
             app.log.info({ tenant: t, messageId: m2, coutDollars: cout, secondes }, 'transcription_cout');
           },
-        }, tenant, messageId, conversationId),
+        }, tenant, messageId, conversationId, cible),
         /**
          * ⚠️ MÊME plafond de taille que la transcription, et pour la même raison : le fichier entre entier en
          * mémoire du serveur avant de partir vers le navigateur. Sans borne, un média inattendu ferait

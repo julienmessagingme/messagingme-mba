@@ -81,7 +81,19 @@ export interface InboxRouteDeps {
    * ⚠️ Rend `deja` quand le message était DÉJÀ transcrit : l'écran doit pouvoir le dire, sinon un opérateur
    * qui reclique croit avoir déclenché un nouvel appel.
    */
-  transcrireMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ texte: string; deja: boolean }>;
+  transcrireMessage?(
+    tenantId: string,
+    messageId: string,
+    conversationId?: string,
+    /**
+     * La langue du LECTEUR, quand la traduction est allumée dans son navigateur (migration 0137).
+     *
+     * 🔴 ON TRADUIT LA TRANSCRIPTION, PAS LE CORPS : `body` vaut `[audio]` ou la légende, le traduire
+     * ne produirait rien. Et c'est UN SEUL geste pour l'opérateur : il appuie sur Transcrire, et le
+     * texte arrive dans sa langue même si le vocal était en espagnol.
+     */
+    cible?: LangueConsole | null,
+  ): Promise<{ texte: string; deja: boolean; langue: string | null; traduction: string | null }>;
   /**
    * Les octets d'un message média, pour les servir au navigateur (2026-09-09).
    *
@@ -493,8 +505,15 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     if (!deps.transcrireMessage) return reply.code(503).send({ error: 'transcription indisponible sur cette instance' });
+    /**
+     * `traduire` dans le CORPS : la langue de lecture vient du navigateur, exactement comme pour le
+     * fil. Une valeur hors de nos deux langues est IGNORÉE, et on transcrit sans traduire : un
+     * paramètre mal formé ne doit jamais priver l'opérateur de sa transcription.
+     */
+    const demande = (req.body ?? {}) as { traduire?: unknown };
+    const cible = estLangueConsole(demande.traduire) ? demande.traduire : null;
     try {
-      const r = await deps.transcrireMessage(tenant, messageId, conversationId);
+      const r = await deps.transcrireMessage(tenant, messageId, conversationId, cible);
       return reply.code(200).send(r);
     } catch (err) {
       req.log.error({ err, tenant, messageId }, 'transcription_impossible');

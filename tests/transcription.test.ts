@@ -154,7 +154,10 @@ describe('Transcrire le message d’une conversation', () => {
     // d'audio. Et la seconde transcription écraserait la première par une variante différente, ce qui ferait
     // douter de celle qu'on venait de lire.
     const { d, ecrites, telechargements } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: 'deja dit' });
-    expect(await transcrireMessage(d, 't1', 'm1')).toEqual({ texte: 'deja dit', deja: true });
+    // ⚠️ `langue` et `traduction` a null : SANS langue cible (migration 0137), la traduction est
+    // eteinte et aucun second appel n'est fait. Le cas exerce ici ne change pas d'un iota, seule la
+    // FORME du retour s'est elargie.
+    expect(await transcrireMessage(d, 't1', 'm1')).toEqual({ texte: 'deja dit', deja: true, langue: null, traduction: null });
     expect(telechargements).toHaveLength(0);
     expect(ecrites).toHaveLength(0);
   });

@@ -1017,12 +1017,16 @@ export class PgInboxStore implements InboxStore {
    * accès au vocal d'un AUTRE client. La RLS est contournée (pooler superuser), donc ce filtre est le seul
    * contrôle, comme partout ailleurs dans ce dépôt.
    */
-  async lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; transcription: string | null } | null> {
+  async lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; transcription: string | null; transcriptionLangue: string | null; traduction: string | null; traductionLangue: string | null } | null> {
     // ⚠️ `conversationId` est vérifié quand il est fourni : la route le nomme dans son chemin, et transcrire
     // le message d'une AUTRE conversation ferait mentir l'URL. Ce n'est pas une faille (le filtre d'espace
     // tient au-dessus), c'est une route qui ne fait pas ce qu'elle dit, et ça se paie plus tard.
-    const res = await this.pool.query<{ id: string; media_id: string | null; media_mime: string | null; transcription: string | null }>(
-      `select m.id, m.media_id, m.media_mime, m.transcription
+    const res = await this.pool.query<{ id: string; media_id: string | null; media_mime: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null }>(
+      // ⚠️ Les trois dernières colonnes (migration 0137) servent à NE PAS REPAYER : la langue déjà
+      // détectée évite de traduire un vocal déjà dans la langue du lecteur, et une traduction déjà
+      // rangée dans la bonne langue se relit au lieu de se recalculer.
+      `select m.id, m.media_id, m.media_mime, m.transcription, m.transcription_langue,
+              m.traduction, m.traduction_langue
          from conversation_messages m
          join conversations c on c.id = m.conversation_id
         where m.id = $1 and c.tenant_id = $2
@@ -1030,17 +1034,31 @@ export class PgInboxStore implements InboxStore {
       [messageId, tenantId, conversationId ?? null],
     );
     const r = res.rows[0];
-    return r ? { id: r.id, mediaId: r.media_id, mediaMime: r.media_mime, transcription: r.transcription } : null;
+    return r ? {
+      id: r.id, mediaId: r.media_id, mediaMime: r.media_mime, transcription: r.transcription,
+      transcriptionLangue: r.transcription_langue, traduction: r.traduction, traductionLangue: r.traduction_langue,
+    } : null;
   }
 
-  /** Écrit la transcription et le modèle qui l'a produite. Même garde d'espace que la lecture. */
-  async ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string): Promise<void> {
+  /**
+   * Écrit la transcription, le modèle qui l'a produite, et LA LANGUE DÉTECTÉE. Même garde d'espace
+   * que la lecture.
+   *
+   * 🔴 LA LANGUE ÉTAIT RENDUE PAR `transcrire` DEPUIS LE 2026-09-09 ET JETÉE (migration 0137). Elle
+   * sert deux fois, et les deux sont de l'argent : ne pas traduire un vocal déjà dans la langue du
+   * lecteur, et alimenter la langue du contact sans un second appel de détection.
+   *
+   * ⚠️ `langue` en DERNIÈRE position et à défaut `null` : un câblage qui l'oublie compile toujours
+   * (une flèche à quatre paramètres reste assignable à un contrat qui en déclare cinq), donc les deux
+   * sites d'appel ont été relus plutôt que supposés.
+   */
+  async ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null = null): Promise<void> {
     await this.pool.query(
       `update conversation_messages m
-          set transcription = $3, transcription_modele = $4
+          set transcription = $3, transcription_modele = $4, transcription_langue = $5
          from conversations c
         where m.id = $1 and c.id = m.conversation_id and c.tenant_id = $2`,
-      [messageId, tenantId, texte, modele],
+      [messageId, tenantId, texte, modele, langue],
     );
   }
 

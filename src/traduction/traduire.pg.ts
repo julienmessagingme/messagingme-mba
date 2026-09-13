@@ -23,14 +23,20 @@ export class PgTraductionStore {
    * c'est-a-dire sur un ecran que l'operateur attend. `unnest` de trois tableaux paralleles fait le
    * meme travail en un aller, et le pilote `pg` sait envoyer un tableau sans le concatener a la main.
    *
-   * ⚠️ `conversation_id` est dans le `where` EN PLUS du tenant : la traduction d'un message est
+   * ⚠️ `conversation_id` s'ajoute au `where` QUAND L'APPELANT EN A UN : la traduction d'un fil est
    * calculee a l'ouverture d'UNE conversation, l'ecrire ailleurs voudrait dire qu'on s'est trompe de
    * fil. Ce n'est pas une faille (le filtre d'espace la porte entierement), c'est une garde contre
-   * une erreur de cablage qui ne se verrait jamais autrement.
+   * une erreur de cablage qui ne se verrait jamais autrement. La transcription d'un vocal, elle,
+   * n'a qu'un identifiant de message et passe `null` : meme forme que `lireMessagePourTranscription`.
    */
   async ranger(
     tenantId: string,
-    conversationId: string,
+    /**
+     * ⚠️ `null` = « n'importe quelle conversation DE CET ESPACE », pour l'appelant qui n'a qu'un
+     * identifiant de message (la transcription d'un vocal). L'isolation ne bouge pas d'un iota :
+     * c'est la jointure sur `conversations` et `c.tenant_id` qui la porte, et elle reste.
+     */
+    conversationId: string | null,
     traductions: Array<{ messageId: string; texte: string; langue: LangueConsole }>,
   ): Promise<void> {
     if (traductions.length === 0) return;
@@ -42,7 +48,7 @@ export class PgTraductionStore {
         where m.id = v.id
           and c.id = m.conversation_id
           and c.tenant_id = $1
-          and m.conversation_id = $2`,
+          and ($2::uuid is null or m.conversation_id = $2::uuid)`,
       [
         tenantId,
         conversationId,
