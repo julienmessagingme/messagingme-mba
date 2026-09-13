@@ -1584,7 +1584,23 @@ travail est de RÉUTILISER, et toute ligne réécrite ici est une seconde défin
 
 ---
 
-## Phase 7 : ce qui reste avant de RETIRER l'ancien formulaire (lot 8)
+## Phase 7 : ce qui reste avant de RETIRER l'ancien formulaire (lot 8) : FAIT le 2026-09-13
+
+🔴 **LE RETRAIT A EU LIEU.** `web/components/CampaignCreateForm.tsx` et `web/lib/use-campagne-references.ts`
+(devenu orphelin avec lui) sont supprimés, et `grep -rn "CampaignCreateForm" web/` rend zéro. La liste
+« ce qui manque encore » de `AssistantCampagne.tsx` a disparu avec, remplacée par les LIMITES connues,
+qui ne sont pas des capacités perdues.
+
+⚠️ **LA SEULE LIGNE RESTANTE DE CETTE LISTE N'ÉTAIT PAS UNE CAPACITÉ DE L'ÉCRAN RETIRÉ**, et c'est ce
+qui a permis de conclure : l'association des variables sur un étage de REPLI. Vérifié avant de retirer,
+pas supposé : le constructeur de requête de l'ancien formulaire n'envoyait JAMAIS de `chaine`, il ne
+savait donc créer qu'une campagne à UN étage, donc il n'avait jamais eu de repli à paramétrer.
+
+⚠️ **ONZE SPÉCIFICATIONS E2E ONT CHANGÉ D'ÉCRAN LE MÊME JOUR**, et elles ont été PORTÉES, pas
+supprimées : chacune gardait un cas réel (heures ouvrées, aperçu carousel, cible par filtre, brouillons,
+webhook, RCS, modèle à la volée, colonne étroite, scénarios éligibles, réponses dégradées, enchaînement).
+Elles vivent maintenant dans sept fichiers `campagne-assistant-*`, sur un faux backend partagé
+(`web/e2e/aide/assistant.ts`) : il y en avait onze copies, il n'y en a plus qu'une.
 
 Six capacités, inventoriées dans `AssistantCampagne.tsx` et tenues à jour par chaque lot. ⚠️ **Deux
 lignes ont quitté cette liste le 2026-09-13** et ce n'étaient pas des capacités manquantes mais des
@@ -1625,8 +1641,9 @@ retirer l'écran en service retire une capacité que quelqu'un utilise.
 opaque que seul l'ancien formulaire relit. Un brouillon écrit par l'ancien écran doit rester lisible
 par le nouveau, sinon le retrait détruit le travail en cours de quelqu'un.
 
-- [ ] Étape finale : `grep -rn "CampaignCreateForm" web/` doit rendre **zéro** résultat avant la
-      suppression du fichier.
+- [x] Étape finale : `grep -rn "CampaignCreateForm" web/` rend **zéro** résultat. Les mentions en
+      commentaire ont été réécrites en « l'ancien formulaire » plutôt que laissées au présent : un nom
+      de fichier qui n'existe plus, conjugué au présent, est une piste morte pour le prochain lecteur.
 
 ---
 

@@ -1783,16 +1783,15 @@ un `waitForTimeout`.
 ⚠️ Ce n'est PAS silencieux : `messageDePause` l'explique à l'opérateur, avec la même sémantique
 qu'une pause de qualité.
 
-🔴 **Le manque est EN AMONT, et il est dans l'ANCIEN formulaire.** Il laisse cocher la case sans
-prévenir qu'elle condamnera la campagne sur cet espace. Le nouvel assistant, lui, avertit au moment
-du clic (« aucune heure d'ouverture n'est réglée »), et c'est la bonne place : au moment de la
-décision, pas au moment de la panne.
+⚠️ **LA MOITIÉ « ÉCRAN » DE CE POINT EST CLOSE DEPUIS LE 2026-09-13.** Elle disait que le manque
+était dans l'ancien formulaire, qui laissait cocher la case sans prévenir : cet écran a été RETIRÉ, et
+l'assistant, seul chemin de création désormais, avertit au moment du clic (« aucune heure d'ouverture
+n'est réglée »). C'est la bonne place : au moment de la décision, pas au moment de la panne.
 
 ⚠️ **MESURÉ LE 2026-09-12 : l'espace « Demo » a ZÉRO jour ouvert.** C'est celui sur lequel les essais
 se font. Le piège est donc armé là où on teste, et zéro campagne y est bloquée aujourd'hui.
 
-**Deux réparations possibles, à trancher** : porter l'avertissement dans l'ancien formulaire (petit,
-et il disparaîtra avec lui), ou décider qu'un espace sans jour ouvert est « toujours ouvert » pour
-l'envoi initial, ce qui alignerait le comportement sur celui du rattrapage
-(`fenetreDeRattrapageOuverte` rend déjà `true` dans ce cas). La seconde est plus cohérente mais
-change un comportement d'envoi : elle ne se fait pas sans décision explicite.
+**Il ne reste donc qu'UNE question, et elle demande une décision** : un espace sans aucun jour ouvert
+doit-il être traité comme « toujours ouvert » pour l'envoi initial ? Cela alignerait le comportement
+sur celui du rattrapage (`fenetreDeRattrapageOuverte` rend déjà `true` dans ce cas). C'est plus
+cohérent, mais cela change un comportement d'ENVOI : ça ne se fait pas sans décision explicite.

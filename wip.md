@@ -19,7 +19,7 @@ système fonctionnel** : on peut s'arrêter entre deux sans rien laisser à moit
 
 | Rang | Chantier | Spec | Plan | État |
 |---|---|---|---|---|
-| **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan, 14 tâches](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **lot 1 sur 5 EN COURS** |
+| **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan, 14 tâches](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **lots 1 à 7 déployés (`b4eccda`) ; lot 8 LIVRÉ le 2026-09-13, pas encore déployé** |
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | planifié |
 | **3** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié |
 

@@ -17,7 +17,17 @@ export function TemplatePreview({
   examples,
   senderName,
 }: {
-  template: Pick<TemplateSummary, 'body' | 'buttons' | 'carousel'>;
+  /**
+   * ⚠️ L'EN-TÊTE ET LE PIED SONT DANS LA LISTE DEPUIS LE 2026-09-13, et ils étaient le seul morceau du
+   * modèle que cet aperçu-ci jetait. L'écran Templates les affiche depuis toujours (il appelle
+   * `WhatsAppPreview` directement) : les campagnes montraient donc une bulle SANS le visuel d'en-tête
+   * que le destinataire recevra, ce qui est exactement l'inverse de ce qu'un aperçu promet.
+   *
+   * ⚠️ TOUS OPTIONNELS, donc aucun appelant existant ne change : l'Inbox passe un littéral sans en-tête
+   * et rend la même chose qu'avant.
+   */
+  template: Pick<TemplateSummary, 'body' | 'buttons' | 'carousel'>
+    & Partial<Pick<TemplateSummary, 'headerFormat' | 'headerText' | 'headerMediaUrl' | 'footer'>>;
   /** Valeurs des variables `{{n}}` du corps (le corps d'un carousel est son message d'introduction). */
   examples: string[];
   /**
@@ -44,5 +54,27 @@ export function TemplatePreview({
       />
     );
   }
-  return <WhatsAppPreview body={template.body ?? ''} examples={examples} buttons={template.buttons ?? []} {...(senderName ? { senderName } : {})} hideNote />;
+  /**
+   * ⚠️ `headerMediaUrl` VIENT DU CDN DE META ET EXPIRE : elle est lue à l'affichage (`listTemplates`) et
+   * jamais mise en cache, exactement comme les visuels de carte d'un carousel juste au-dessus. Absente,
+   * `WhatsAppPreview` retombe sur son pictogramme de format, qui dit déjà « il y aura une image ici ».
+   */
+  const header = template.headerFormat
+    ? {
+      format: template.headerFormat,
+      ...(template.headerText ? { text: template.headerText } : {}),
+      ...(template.headerMediaUrl ? { mediaUrl: template.headerMediaUrl } : {}),
+    }
+    : null;
+  return (
+    <WhatsAppPreview
+      body={template.body ?? ''}
+      examples={examples}
+      buttons={template.buttons ?? []}
+      header={header}
+      {...(template.footer ? { footer: template.footer } : {})}
+      {...(senderName ? { senderName } : {})}
+      hideNote
+    />
+  );
 }

@@ -63,7 +63,7 @@ export function useContactsFiltres(opts: {
   onSelection: (s: SelectionDestinataires) => void;
   /**
    * La sélection d'un brouillon repris, dans une REF que ce chargement CONSOMME (il la remet à `null`).
-   * Absente = comportement normal. Cf. `CampaignCreateForm`, seul écran à porter des brouillons.
+   * Absente = comportement normal. Elle servait à la reprise d'un brouillon dans l'ancien formulaire.
    */
   restauration?: React.MutableRefObject<RestaurationSelection | null>;
   /** Combien de contacts de la sélection restaurée ont disparu. `null` = rien à signaler. */

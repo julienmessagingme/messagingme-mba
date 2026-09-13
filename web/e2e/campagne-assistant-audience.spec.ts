@@ -5,7 +5,7 @@ import { TREIZE_POUCES, pasDeDebordement, pasDeChevauchement } from './aide/larg
  * E2E de l'étape Audience de l'assistant, après son retour au niveau de l'écran en service.
  *
  * 🔴 CE QUE CES CAS PROTÈGENT, ET POURQUOI ILS EXISTENT. L'étape a été livrée réduite à deux boutons
- * radio (« tous » / « ceux qui portent un de ces tags ») alors que `CampaignCreateForm` offre les filtres
+ * radio (« tous » / « ceux qui portent un de ces tags ») alors que l'ancien formulaire offrait les filtres
  * complets du mini-CRM, les exclusions, l'import de fichier, les listes HubSpot et la sélection ligne à
  * ligne. Aucun test ne pouvait le voir : ils vérifiaient ce que l'écran FAISAIT, pas ce qu'il avait
  * cessé de savoir faire. Chaque cas ci-dessous nomme une capacité qui doit rester là.

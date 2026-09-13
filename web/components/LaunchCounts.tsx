@@ -6,11 +6,12 @@ import type { RecipientCounts } from '@/lib/api';
 /**
  * Compteurs sent/failed/pending/skipped d'une campagne.
  *
- * ⚠️ IL VIVAIT DANS `CampaignCreateForm.tsx`, ET C'EST POUR ÇA QU'IL A DÛ DÉMÉNAGER. Ce fichier a été
+ * ⚠️ IL VIVAIT DANS L'ANCIEN FORMULAIRE DE CAMPAGNE, ET C'EST POUR ÇA QU'IL A DÛ DÉMÉNAGER. Ce fichier a été
  * supprimé avec le retrait de l'ancien formulaire (2026-09-12) ; la liste des campagnes, elle, importe
  * toujours ce composant. Un export utile enfoui dans un module qu'on retire est exactement ce qu'une
  * recherche sur le nom du COMPOSANT PRINCIPAL ne montre pas : le grep de contrôle rendait zéro résultat
- * pour `CampaignCreateForm` alors que `LaunchCounts` avait encore un lecteur.
+ * pour cet ancien formulaire alors que `LaunchCounts` avait encore un lecteur. (Il a effectivement été
+ * retiré le 2026-09-13, et ce déménagement est ce qui a évité d'emporter ce composant avec lui.)
  *
  * `className` absorbe le seul écart entre ses deux appelants historiques (marge et nuance de gris).
  */

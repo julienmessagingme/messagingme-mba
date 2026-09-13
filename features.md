@@ -698,6 +698,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ⚠️ **Un contact disparu depuis est retiré de la sélection reprise, et l'écran le dit** (« N contacts de
   votre sélection ne sont plus là »). Le garder ferait mentir le compteur ; le retirer en silence ferait
   repartir une campagne vers moins de monde sans que personne ne s'en aperçoive.
+  ⚠️ **UN BROUILLON COMMENCÉ AVANT LE 2026-09-13 SE ROUVRE NORMALEMENT** dans le nouvel assistant, avec son
+  modèle, sa catégorie, ses contacts cochés, son débit et sa programmation. L'écran qui les écrivait a été
+  retiré ce jour-là, et il était le seul à savoir les relire : le retirer sans savoir relire ce qu'il avait
+  écrit aurait jeté, sans un mot, la campagne que quelqu'un avait commencée.
 
 - ✅ **Archiver ou supprimer une campagne** (2026-07-20). Une campagne qui n'a **jamais rien envoyé** se
   **supprime** définitivement (confirmation). Toutes les autres s'**archivent** : elles disparaissent de la liste
@@ -705,13 +709,24 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   le funnel, les erreurs). Archiver ne change donc **jamais** un chiffre du tableau de bord. Un lien « Voir les
   archivées » bascule sur la corbeille, d'où chaque campagne se **restaure**. Le coût affiché en haut de liste
   porte explicitement sur « les campagnes affichées », pour ne pas contredire le total du tableau de bord.
-- ✅ **Créer un template depuis l'écran Campagne** (2026-07-20) : sous le sélecteur de template, un bouton ouvre
+- ✅ **Créer un template depuis l'écran Campagne** (2026-07-20) : sous le sélecteur de modèle, un bouton ouvre
   le formulaire de création habituel sans quitter la campagne en cours. Un template neuf part en validation chez
   Meta : l'écran le dit clairement et **ne le fait pas apparaître dans la liste** (une campagne ne peut partir
-  qu'avec un template approuvé), avec un bouton « Rafraîchir la liste » pour le récupérer une fois approuvé.
-- ✅ **Un seul écran PLEINE LARGEUR, en 2 étapes** (refonte 2026-07-17) : fini de préparer la campagne à un
-  endroit et de la lancer ailleurs. **ÉTAPE 1 Préparation** (nom + Expéditeur | Destinataires | Débit | Message)
-  et **ÉTAPE 2 Lancement** (le timing) sur la même page. L'étape 2 s'active quand l'étape 1 est prête.
+  qu'avec un template approuvé). **Il suit la revue tout seul** et **sélectionne le modèle dès qu'il est
+  approuvé**, sans qu'on ait à penser à cliquer ; un bouton « Vérifier maintenant » reste là pour ceux qui
+  n'attendent pas. Un choix fait PENDANT l'attente n'est jamais écrasé, et l'écran le dit alors au lieu
+  d'affirmer une sélection qui n'a pas eu lieu.
+  ⚠️ **Le panneau survit au repliage du cadre et au changement d'étape** : c'est la promesse qu'il fait, et
+  une promesse qui disparaît en repliant un cadre est pire que pas de promesse.
+- ✅ **Un ASSISTANT en cinq étapes, une question par écran** (2026-09-13, il remplace l'écran à deux étapes de
+  juillet). « Ajouter une campagne » ouvre `/campaigns/nouvelle`, et le parcours est : **Nom** (et la nature de
+  la campagne, marketing ou service), **Canal** (un canal seul, ou une CHAÎNE avec repli), **Contenu** (un cadre
+  par étage de la chaîne, plus le devenir de la conversation), **Audience** (qui reçoit), **Récapitulatif**.
+  - chaque étape a son **adresse** (`?etape=contenu`) : elle se partage, se met en favori, et survit à un
+    rechargement, ce qu'un mode local dans la page de liste ne permettait pas ;
+  - on **revient en arrière librement** sans rien perdre, et le récapitulatif renvoie vers l'étape à corriger ;
+  - le **récapitulatif n'est pas un résumé** : il montre la RÉPARTITION prévue (combien de contacts par étage de
+    la chaîne), c'est-à-dire la seule information qu'on n'a vue nulle part ailleurs.
 - ✅ **Choisir les destinataires par SOURCE** : un sélecteur de source en haut de la zone Destinataires.
   - **📇 Liste de contacts** (mini-CRM) : un vrai moteur de FILTRES combinables : par **tag(s)** (tous / au moins
     un), **opt-in**, **téléphone** (commence par / contient), **valeur de champ perso**, **nom**. Un compteur live
@@ -744,16 +759,23 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Débit d'envoi réglable** : une **jauge par défaut à 60 messages/min** (toujours visible depuis 2026-07-28,
   plus de case « Limiter »), ajustable de 1 à 80/min (le plafond WhatsApp) pour protéger la réputation du numéro,
   avec la **durée estimée** affichée. Le débit est respecté pour de vrai côté serveur.
-- ✅ **Lancer maintenant OU plus tard** (ÉTAPE 2) : « Maintenant » lance sur place (avec un suivi inline des
-  envois) ; « Plus tard » ouvre un **calendrier** (date + heure) et **programme** la campagne, qui partira toute
-  seule à l'échéance. Une campagne programmée porte un badge « planifiée » + sa date dans la liste, et se
-  **désprogramme** en un clic.
-- ✅ **Écran de préparation (étape 1)** : le **nom est une « étape 0 » obligatoire** (2026-07-28), qui **grise les
-  zones Destinataires / Message / débit tant qu'il est vide** (le lancement était déjà bloqué, c'est explicite
-  visuellement) ; puis **Expéditeur en bandeau pleine largeur au-dessus** (le numéro, affiché en texte s'il n'y en
-  a qu'un), et **Destinataires** (source + filtres) et **Message** (toggle **Template OU Scénario**, aperçu,
-  variables) en deux cadres pleine largeur. **Tooltip** au survol template vs scénario, qui précise que **si le
-  client répond, le Meta Business Agent prend le relais**.
+- ✅ **Lancer maintenant OU plus tard** (au récapitulatif) : « Maintenant » lance sur place ; « Plus tard »
+  ouvre un **calendrier** (date + heure) et **programme** la campagne, qui partira toute seule à l'échéance.
+  Une campagne programmée porte un badge « planifiée » + sa date dans la liste, et se **désprogramme** en un
+  clic. Une date déjà passée est **refusée**, pas ramenée à maintenant : « je me suis trompé d'un jour » doit
+  se corriger, pas s'envoyer.
+- ✅ **Créer sans envoyer** : un second bouton crée la campagne avec ses destinataires calculés, et s'arrête là.
+  C'est ainsi qu'on vérifie QUI est retenu, et combien de contacts ont été écartés, avant d'engager le moindre
+  message. Elle attend ensuite dans la liste, avec son bouton « Lancer ».
+- ✅ **Une campagne qui ne toucherait PERSONNE n'est pas lancée** : si tous les contacts choisis sont écartés,
+  l'écran le dit avec le MOTIF (une variable de modèle sans valeur sur la fiche, ou un consentement qui
+  manque), parce que les deux n'appellent pas la même correction. La campagne est déjà créée : on la reprend
+  depuis la liste plutôt que d'en créer une seconde.
+- ✅ **Le nom est la première étape, et il est obligatoire** : c'est lui qui déclenche l'enregistrement du
+  brouillon, donc rien n'est jamais perdu à partir de là.
+  ⚠️ **L'expéditeur n'est plus demandé** : l'assistant prend le premier numéro WhatsApp de l'espace et le
+  premier agent RCS. La très grande majorité des espaces n'en ont qu'un, et un assistant qui pose une question
+  à réponse unique fait perdre un écran à tout le monde.
 - ✅ **La miniature du template montre ses BOUTONS** (réponse rapide / lien / formulaire), que ce soit un template
   direct ou le 1er template d'un scénario. Le suivi des destinataires (statut interne + cycle de livraison Meta) se
   **rafraîchit tout seul pendant la douzaine de secondes qui suit un lancement**, le temps de voir les statuts

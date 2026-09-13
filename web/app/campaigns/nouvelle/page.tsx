@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { useRouter } from 'next/navigation';
 import {
   getSettings, listTemplates, listWorkflows, listEmailTemplates, listUsers,
-  listTags, listUserFields, listPhoneNumbers, listRcsAgents,
-  type BusinessHours,
+  listTags, listUserFields, listPhoneNumbers, listRcsAgents, listRcsMessages,
+  listCampaignDrafts,
+  type BusinessHours, type CampaignDraft, type TemplateSummary,
 } from '@/lib/api';
 import { listAgents } from '@/lib/api-agent';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
@@ -17,13 +18,12 @@ import {
 } from '@/components/campagne/AssistantCampagne';
 
 /**
- * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE, sur son propre écran.
+ * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE, sur son propre écran, et le SEUL chemin de création.
  *
- * 🔴 UNE ADRESSE À PART, ET NON UN MODE DE `/campaigns`, TANT QUE L'ANCIEN FORMULAIRE EST EN SERVICE.
- * `CampaignCreateForm` reste le chemin de création complet ; le bouton « Ajouter une campagne » continue
- * de l'ouvrir. Les deux coexistent, et l'inventaire de ce qui manque encore à l'assistant vit dans
- * `AssistantCampagne.tsx`. ⚠️ Le motif principal a disparu au lot 6 : il envoie désormais son
- * `paramMapping`, donc une campagne sur un modèle à variables y part sans être refusée par Meta.
+ * 🔴 UNE ADRESSE À PART, ET NON UN MODE DE `/campaigns`, ET C'EST CE QUI A SURVÉCU AU RETRAIT DE
+ * L'ANCIEN FORMULAIRE (2026-09-13). Une adresse se partage, se recharge, et porte l'étape d'ouverture
+ * (`?etape=`) comme le brouillon repris (`?brouillon=`) ; un mode local dans la page de liste ne peut
+ * rien de tout cela, et c'est précisément ce que l'écran retiré faisait.
  *
  * ⚠️ CET ÉCRAN CRÉE ET LANCE VRAIMENT DEPUIS LE 2026-09-12. Le bouton du récapitulatif appelle
  * `createCampaign` puis `runCampaign` : ce qui part d'ici part à de vraies personnes.
@@ -36,6 +36,53 @@ function AssistantInner({ session }: { session: Session }) {
   const router = useRouter();
   const [capacites, setCapacites] = useState<CapacitesEspace | null>(null);
   const [references, setReferences] = useState<ReferencesContenu>(REFERENCES_VIDES);
+  /**
+   * LE BROUILLON REPRIS, quand l'adresse en nomme un (`?brouillon=<id>`).
+   *
+   * 🔴 `'chargement'` EST UN TROISIÈME ÉTAT, ET IL EST OBLIGATOIRE. L'assistant lit le brouillon UNE
+   * SEULE FOIS, à son initialisation : le monter avant que le brouillon soit arrivé lui donnerait un
+   * écran vierge que le chargement suivant ne corrigerait JAMAIS, et l'opérateur retrouverait une page
+   * blanche là où il attend son travail. Tant qu'on charge, on ne monte rien.
+   *
+   * ⚠️ `null` COUVRE LES DEUX CAS OÙ IL N'Y A RIEN À REPRENDRE : aucune adresse de brouillon, ou un
+   * identifiant qui ne désigne plus rien (brouillon supprimé entre-temps, lien recopié). Les deux
+   * ouvrent une création NEUVE, ce qui est le seul comportement utile.
+   */
+  const [brouillon, setBrouillon] = useState<CampaignDraft | null | 'chargement'>('chargement');
+
+  /**
+   * RELIT LES MODÈLES, ET REND LA LISTE COMPLÈTE.
+   *
+   * 🔴 LE SÉLECTEUR NE GARDE QUE LES APPROUVÉS, MAIS L'APPELANT A BESOIN DE TOUT. C'est le suivi de la
+   * revue Meta qui en dépend (`CreationModeleEnLigne`) : filtrée, la relecture effacerait précisément
+   * l'information qu'on vient chercher, si bien que « toujours en revue » et « approuvé » se
+   * ressembleraient trait pour trait et que le bouton aurait l'air cassé.
+   *
+   * ⚠️ `silencieux` est accepté et IGNORÉ ici, et ce n'est pas un oubli : cet écran n'affiche aucune
+   * erreur globale (chaque liste tombe pour elle-même, cf. plus bas), il n'a donc rien à taire.
+   */
+  const rechargerTemplates = useCallback(async (): Promise<TemplateSummary[]> => {
+    const r = await listTemplates(session.tenantId);
+    const tous = Array.isArray(r?.templates) ? r.templates : [];
+    setReferences((ref) => ({ ...ref, templates: tous.filter((t) => t.status === 'APPROVED') }));
+    return tous;
+  }, [session.tenantId]);
+
+  useEffect(() => {
+    let vivant = true;
+    const demande = new URLSearchParams(window.location.search).get('brouillon');
+    if (!demande) { setBrouillon(null); return () => { vivant = false; }; }
+    // ⚠️ Un échec de lecture ouvre une création NEUVE plutôt qu'un écran bloqué : c'est ennuyeux, mais le
+    // brouillon reste en base, visible et reprenable depuis la liste des campagnes.
+    void listCampaignDrafts(session.tenantId)
+      .then((r) => {
+        if (!vivant) return;
+        const liste = Array.isArray(r?.drafts) ? r.drafts : [];
+        setBrouillon(liste.find((d) => d.id === demande) ?? null);
+      })
+      .catch(() => { if (vivant) setBrouillon(null); });
+    return () => { vivant = false; };
+  }, [session.tenantId]);
 
   useEffect(() => {
     let vivant = true;
@@ -51,7 +98,7 @@ function AssistantInner({ session }: { session: Session }) {
         setCapacites({
           rcsEnabled: s.rcsEnabled === true,
           mbaEnabled: s.mbaEnabled === true,
-          // ⚠️ Mêmes deux drapeaux que `CampaignCreateForm` : le connecteur branché décide si la source
+          // ⚠️ Mêmes deux drapeaux que l'ancien formulaire : le connecteur branché décide si la source
           // HubSpot est AFFICHÉE, la pause décide si elle est cliquable. Les confondre montrerait un
           // panneau vide à un espace qui n'a pas HubSpot, ou masquerait une pause qui se lève d'un clic.
           hubspotListes: s.hubspotListsEnabled === true,
@@ -125,10 +172,16 @@ function AssistantInner({ session }: { session: Session }) {
     void listRcsAgents(session.tenantId)
       .then((r) => poser({ agentsRcs: Array.isArray(r?.agents) ? r.agents : [] }))
       .catch(() => {});
+    // ⚠️ La BIBLIOTHÈQUE de messages RCS, pour partir d'un message déjà écrit. Chargée comme les autres et
+    // pour la même raison : un hoquet ici ne doit priver l'écran de rien d'autre que du sélecteur « partir
+    // d'un message enregistré », dont le cas vide le dit déjà.
+    void listRcsMessages(session.tenantId)
+      .then((r) => poser({ messagesRcs: Array.isArray(r?.messages) ? r.messages : [] }))
+      .catch(() => {});
     return () => { vivant = false; };
   }, [session.tenantId]);
 
-  if (!capacites) return <p className="text-sm text-ink-400">Chargement...</p>;
+  if (!capacites || brouillon === 'chargement') return <p className="text-sm text-ink-400">Chargement...</p>;
 
   /**
    * ⚠️ L'ÉTAPE D'OUVERTURE SE LIT DANS L'ADRESSE (`?etape=canal`), et cela ne sert pas qu'aux tests : un
@@ -158,8 +211,10 @@ function AssistantInner({ session }: { session: Session }) {
       tenantId={session.tenantId}
       capacites={capacites}
       references={references}
+      rechargerTemplates={rechargerTemplates}
       etapeInitiale={etapeInitiale}
       etatInitial={{ ...(formule ? { formule } : {}), ...(troisieme ? { troisieme } : {}) }}
+      {...(brouillon ? { brouillon } : {})}
       // ⚠️ La redirection se fait APRÈS que l'écran a dit « lancée » : partir tout de suite priverait
       // l'opérateur du seul accusé de réception qu'il aura, et il relancerait.
       onCree={() => { setTimeout(() => router.push('/campaigns'), 1200); }}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  entreeDeCreation, modeleDeLEtage, problemeAvantLancement, variablesParRang,
+  entreeDeCreation, modeleDeLEtage, momentDuLancement, problemeAvantLancement, variablesParRang,
   type ContexteDeCreation, type EtatPourCreation,
 } from './campagne-creation';
 import type { EtageAssistant } from './campagne-chaine';
@@ -17,6 +17,9 @@ const CTX: ContexteDeCreation = {
   // ⚠️ « TOUT CE QUI CORRESPOND », c'est-à-dire le défaut de l'assistant : l'audience part alors en
   // FILTRES. Le cas « liste de contacts cochés » a son propre test plus bas, et les deux sont exclusifs.
   selection: selectionTout(),
+  // ⚠️ `null` = campagne sur LISTE, le cas de base. Le fil de l'eau a ses propres cas plus bas, et la
+  // distinction entre `null` et la chaîne vide y est vérifiée dans les deux sens.
+  webhookId: null,
   // Le modèle du rang 1 ne porte aucune variable : c'est le cas de base des tests d'avant ce lot.
   variablesDuModele: {},
 };
@@ -30,6 +33,9 @@ const ETAT: EtatPourCreation = {
   rattrapageHorsHoraires: false,
   assignation: 'aucune',
   assignationUserId: null,
+  // Le cas de base : on lance tout de suite. La programmation a ses propres cas plus bas.
+  quand: 'maintenant',
+  dateLocale: '',
   contenus: {
     1: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
     2: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
@@ -461,5 +467,218 @@ describe('modeleDeLEtage et variablesParRang', () => {
   it('un modele sans variable y entre bien a zero', () => {
     const table = variablesParRang(CHAINE, { 1: { formule: 'seul', templateName: 'simple', suggestions: [] } }, MODELES);
     expect(table).toEqual({ 1: 0 });
+  });
+});
+
+/**
+ * LE MOMENT DU LANCEMENT.
+ *
+ * 🔴 CE QUE CES CAS PROTÈGENT : `runCampaign` SANS date LANCE IMMÉDIATEMENT. Une implémentation qui
+ * validerait la date d'un côté et rendrait `undefined` de l'autre enverrait donc une campagne programmée
+ * pour la semaine prochaine sur-le-champ, à des gens réels. Chaque cas ci-dessous sépare une
+ * implémentation juste d'une fausse qui lui ressemble.
+ */
+describe('momentDuLancement', () => {
+  // L'horloge est INJECTÉE : ces cas ne dépendent pas de l'heure de la machine qui les exécute.
+  const MAINTENANT = new Date('2026-09-13T10:00:00Z').getTime();
+
+  it('« maintenant » ne porte aucune date', () => {
+    expect(momentDuLancement({ quand: 'maintenant', dateLocale: '' }, MAINTENANT)).toEqual({ maintenant: true });
+  });
+
+  /**
+   * 🔴 LE CAS QUI SÉPARE : une date SAISIE mais le mode resté sur « maintenant » ne programme RIEN. Une
+   * implémentation qui lirait `dateLocale` sans regarder `quand` programmerait une campagne que
+   * l'opérateur a décidé d'envoyer tout de suite, après avoir changé d'avis.
+   */
+  it('une date saisie puis abandonnee ne programme rien', () => {
+    expect(momentDuLancement({ quand: 'maintenant', dateLocale: '2026-12-25T10:00' }, MAINTENANT))
+      .toEqual({ maintenant: true });
+  });
+
+  it('« plus tard » sans date est un refus, pas un depart immediat', () => {
+    const m = momentDuLancement({ quand: 'plus_tard', dateLocale: '' }, MAINTENANT);
+    expect(m).toEqual({ probleme: expect.stringMatching(/date/i) });
+  });
+
+  it('une date illisible est un refus', () => {
+    const m = momentDuLancement({ quand: 'plus_tard', dateLocale: 'jeudi prochain' }, MAINTENANT);
+    expect('probleme' in m).toBe(true);
+  });
+
+  /**
+   * 🔴 UNE DATE PASSÉE EST REFUSÉE, PAS RAMENÉE À MAINTENANT. « Je me suis trompé d'un jour » doit se
+   * corriger, pas s'envoyer : les deux gestes n'ont pas le même coût, et l'un des deux est irréversible.
+   */
+  it('une date passee est refusee, jamais ramenee a maintenant', () => {
+    const m = momentDuLancement({ quand: 'plus_tard', dateLocale: '2020-01-01T10:00' }, MAINTENANT);
+    expect(m).toEqual({ probleme: expect.stringMatching(/futur/i) });
+  });
+
+  it('une date future rend l instant ABSOLU', () => {
+    const m = momentDuLancement({ quand: 'plus_tard', dateLocale: '2026-12-25T10:30' }, MAINTENANT);
+    // ⚠️ Comparé à ce que le navigateur ferait de la même saisie : `datetime-local` est lu en heure
+    // LOCALE, et l'attendu ne doit donc pas figer un fuseau.
+    expect(m).toEqual({ iso: new Date('2026-12-25T10:30').toISOString() });
+  });
+
+  // ⚠️ L'INSTANT EXACT N'EST PAS « DANS LE FUTUR » : une égalité stricte ferait passer une date déjà
+  // consommée le temps de l'aller-retour réseau.
+  it('l instant exact n est pas dans le futur', () => {
+    const localeMaintenant = new Date(MAINTENANT);
+    const saisie = `${localeMaintenant.getFullYear()}-${String(localeMaintenant.getMonth() + 1).padStart(2, '0')}-${String(localeMaintenant.getDate()).padStart(2, '0')}T${String(localeMaintenant.getHours()).padStart(2, '0')}:${String(localeMaintenant.getMinutes()).padStart(2, '0')}`;
+    const m = momentDuLancement({ quand: 'plus_tard', dateLocale: saisie }, new Date(saisie).getTime());
+    expect('probleme' in m).toBe(true);
+  });
+
+  // Le bouton de lancement ne doit pas être actif sur une date que le lancement refuserait : la garde
+  // relaie donc ce refus, elle n'en a pas une seconde de son côté.
+  it('la garde de lancement relaie le refus de programmation', () => {
+    const etat: EtatPourCreation = { ...ETAT, quand: 'plus_tard', dateLocale: '' };
+    expect(problemeAvantLancement(etat, CHAINE, CTX, MAINTENANT)).toMatch(/date/i);
+  });
+});
+
+/**
+ * LA CAMPAGNE AU FIL DE L'EAU.
+ *
+ * 🔴 CE QUI SE VÉRIFIE ICI EST LE CORPS DE LA REQUÊTE, pas ce que l'écran montre. Le serveur refuse de
+ * recevoir à la fois une adresse et une liste, et une implémentation qui enverrait les deux ferait croire
+ * que la liste part alors que seule l'adresse compte.
+ */
+describe('au fil de l eau', () => {
+  const FIL: ContexteDeCreation = { ...CTX, webhookId: 'wh-1' };
+
+  it('le corps emporte l adresse et AUCUNE cible de contacts', () => {
+    const e = entreeDeCreation(ETAT, CHAINE, FIL);
+    expect(e.webhookId).toBe('wh-1');
+    expect(e.contactIds).toBeUndefined();
+    expect(e.contactTarget).toBeUndefined();
+  });
+
+  // 🔴 L'AUTRE SENS, sans quoi une implémentation qui poserait TOUJOURS `webhookId` passerait le cas
+  // du dessus : une campagne sur liste n'emporte aucune adresse.
+  it('une campagne sur liste n emporte aucune adresse', () => {
+    const e = entreeDeCreation(ETAT, CHAINE, CTX);
+    expect(e.webhookId).toBeUndefined();
+    expect(e.contactTarget).toBeDefined();
+  });
+
+  // Même sens, en mode LISTE explicite : la cible reste `contactIds`, l'adresse reste absente.
+  it('une selection ligne a ligne n emporte aucune adresse non plus', () => {
+    const liste: ContexteDeCreation = { ...CTX, selection: { toutFiltre: false, selected: new Set(['c1']), exclus: new Set() } };
+    const e = entreeDeCreation(ETAT, CHAINE, liste);
+    expect(e.contactIds).toEqual(['c1']);
+    expect(e.webhookId).toBeUndefined();
+  });
+
+  it('une adresse non choisie est refusee, avec sa raison', () => {
+    expect(problemeAvantLancement(ETAT, CHAINE, { ...CTX, webhookId: '' })).toMatch(/adresse/i);
+  });
+
+  /**
+   * 🔴 LE CAS QUI SÉPARE L'IMPLÉMENTATION JUSTE DE LA FAUSSE. Naître SANS destinataire est l'état NORMAL
+   * d'une campagne au fil de l'eau : une implémentation qui garderait la garde « aucun contact
+   * sélectionné » refuserait ici la seule création valide que ce mode connaisse.
+   */
+  it('aucun contact coche n empeche PAS un lancement au fil de l eau', () => {
+    const rien: ContexteDeCreation = { ...FIL, selection: selectionVide() };
+    expect(problemeAvantLancement(ETAT, CHAINE, rien)).toBeNull();
+  });
+
+  // ⚠️ ET LA GARDE RESTE ENTIÈRE SUR UNE LISTE : sans ce cas, la retirer pour tout le monde passerait
+  // le cas du dessus.
+  it('aucun contact coche reste un refus sur une campagne a liste', () => {
+    const rien: ContexteDeCreation = { ...CTX, selection: selectionVide() };
+    expect(problemeAvantLancement(ETAT, CHAINE, rien)).toMatch(/sélectionné/i);
+  });
+});
+
+/**
+ * LE VISUEL D'UN ÉTAGE RCS.
+ *
+ * 🔴 CE QUI SE VÉRIFIE ICI EST LE CORPS DE LA REQUÊTE, pas l'écran. Un écran peut afficher un visuel, le
+ * téléverser, l'afficher en aperçu, et n'en rien envoyer : c'est exactement ce que faisait cet assistant,
+ * dont le constructeur de message était un littéral `kind: 'text'`. Le visuel ne changeait donc RIEN, en
+ * silence, et seul un test qui lit `rcsMessage` pouvait le dire.
+ */
+describe('le visuel d un etage RCS', () => {
+  const CHAINE_RCS: EtageAssistant[] = [{ rang: 1, canal: 'rcs' }, { rang: 2, canal: 'whatsapp' }];
+  const avecRcs = (rcs: Record<string, unknown>): EtatPourCreation => ({
+    ...ETAT,
+    contenus: {
+      1: { formule: 'seul', texteRcs: 'coucou', suggestions: [], ...rcs },
+      2: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
+    },
+  });
+
+  it('un visuel fait partir le message en CARTE, avec l image', () => {
+    const e = entreeDeCreation(avecRcs({ imageRcs: 'https://exemple.fr/v.jpg' }), CHAINE_RCS, CTX);
+    expect(e.rcsMessage).toMatchObject({
+      kind: 'card',
+      card: { description: 'coucou', mediaUrl: 'https://exemple.fr/v.jpg', mediaHeight: 'TALL' },
+    });
+  });
+
+  // 🔴 L'AUTRE SENS, sans quoi une implémentation qui produirait TOUJOURS une carte passerait le cas du
+  // dessus : sans visuel, le message reste un TEXTE, qui est la forme historique de ce produit.
+  it('sans visuel, le message reste un TEXTE', () => {
+    const e = entreeDeCreation(avecRcs({}), CHAINE_RCS, CTX);
+    expect(e.rcsMessage).toEqual({ kind: 'text', text: 'coucou' });
+  });
+
+  /**
+   * 🔴 OÙ SONT ACCROCHÉS LES BOUTONS DÉCIDE DE LEUR APPARENCE, et ce n'est pas nous qui la dessinons.
+   * Dans la carte, ce sont des boutons pleine largeur qui RESTENT ; sous la bulle, des pastilles qui
+   * disparaissent dès que la conversation avance. Un littéral `kind: 'text'` les mettait toujours en
+   * pastilles, y compris sur une campagne à visuel.
+   */
+  it('avec un visuel, les boutons partent DANS la carte', () => {
+    const e = entreeDeCreation(
+      avecRcs({ imageRcs: 'https://exemple.fr/v.jpg', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'p1' }] }),
+      CHAINE_RCS, CTX,
+    );
+    expect(e.rcsMessage).toMatchObject({ card: { suggestions: [{ text: 'Oui' }] } });
+    expect((e.rcsMessage as { suggestions?: unknown }).suggestions).toBeUndefined();
+  });
+
+  it('sans visuel, les memes boutons partent en pastilles sous la bulle', () => {
+    const e = entreeDeCreation(
+      avecRcs({ suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'p1' }] }),
+      CHAINE_RCS, CTX,
+    );
+    expect(e.rcsMessage).toMatchObject({ kind: 'text', suggestions: [{ text: 'Oui' }] });
+  });
+
+  /**
+   * 🔴 LE PLAFOND DE TEXTE BAISSE QUAND ON AJOUTE UN VISUEL (3 072 -> 2 000, la borne du champ
+   * `description` chez l'opérateur). Un texte déjà saisi ne se raccourcit pas tout seul : sans cette
+   * garde, ajouter l'image à la fin ferait échouer la création avec un « content invalide » que personne
+   * ne saurait relier à ce geste.
+   */
+  it('un texte de 2500 caracteres passe SANS visuel et est refuse AVEC', () => {
+    const long = 'a'.repeat(2500);
+    expect(problemeAvantLancement(avecRcs({ texteRcs: long }), CHAINE_RCS, CTX)).toBeNull();
+    const v = problemeAvantLancement(avecRcs({ texteRcs: long, imageRcs: 'https://exemple.fr/v.jpg' }), CHAINE_RCS, CTX);
+    expect(v).toMatch(/2000/);
+    expect(v).toMatch(/étage 1/);
+  });
+
+  // ⚠️ UN BOUTON INCOMPLET FAIT REFUSER TOUT LE MESSAGE côté serveur, pas seulement le bouton : le lien
+  // sans adresse est le cas courant, et il se voit à l'écran bien avant l'envoi.
+  it('un bouton de lien sans adresse est refuse, avec sa raison', () => {
+    const v = problemeAvantLancement(
+      avecRcs({ suggestions: [{ kind: 'openUrl', text: 'Voir', url: '  ', postbackData: 'p1' }] }),
+      CHAINE_RCS, CTX,
+    );
+    expect(v).toMatch(/bouton/i);
+  });
+
+  // ⚠️ L'AUTRE SENS : le même bouton, complet, ne bloque rien.
+  it('le meme bouton complet ne bloque rien', () => {
+    expect(problemeAvantLancement(
+      avecRcs({ suggestions: [{ kind: 'openUrl', text: 'Voir', url: 'https://exemple.fr', postbackData: 'p1' }] }),
+      CHAINE_RCS, CTX,
+    )).toBeNull();
   });
 });

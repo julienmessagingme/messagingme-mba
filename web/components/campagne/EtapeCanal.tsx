@@ -203,7 +203,7 @@ export function EtapeCanal({
         🔴 LA CADENCE N'EST PLUS ICI, ET CE N'EST PAS UN OUBLI (2026-09-12). Cet écran a porté trois
         « intentions » (au plus vite, étalé sur la journée, heures ouvrées seulement) qui n'ont JAMAIS été
         demandées : elles venaient d'une recommandation écrite dans la spec et non validée, et elles
-        retiraient la jauge que `CampaignCreateForm` offre depuis toujours. La jauge revient, et elle vit
+        retiraient la jauge que l'ancien formulaire offrait depuis toujours. La jauge revient, et elle vit
         à la FIN du parcours (étape 5), là où l'audience est connue : c'est le seul endroit où une durée
         estimée veut dire quelque chose. Ce qui reste ici, c'est la seule question horaire demandée.
       */}

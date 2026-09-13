@@ -164,3 +164,52 @@ describe('champEmailEffectif', () => {
     expect(champEmailEffectif(undefined, [{ key: 'ville', label: 'Ville' }])).toBeNull();
   });
 });
+
+/**
+ * LA PRÉVISION D'UNE CAMPAGNE AU FIL DE L'EAU : trois phrases qui ne doivent PAS être celles des autres.
+ *
+ * 🔴 CE QUE CES CAS PROTÈGENT. Ce motif a été ajouté APRÈS les deux autres, et chacune des trois phrases
+ * du module retombait sur une valeur par défaut qui, ici, est fausse dans le sens RASSURANT : « tous les
+ * contacts retenus partiront » sur une campagne qui n'a aucun contact retenu, et « choisissez le champ
+ * qui porte l'adresse » adressé à quelqu'un qui l'a déjà choisi. Les trois sont donc exercées.
+ */
+describe('la prevision au fil de l eau', () => {
+  const M = {
+    retenus: 0, connusInjoignables: null, sansAdresse: null,
+    motifNonPrevisible: 'fil_de_l_eau' as const,
+  };
+  const fr = (n: number): string => String(n);
+
+  it('le premier etage parle d ARRIVANTS, pas de contacts retenus', () => {
+    const [un] = repartitionPrevue([{ rang: 1, canal: 'whatsapp' }], M, fr);
+    expect(un?.texte).toMatch(/arrive/i);
+    expect(un?.texte).not.toMatch(/contacts retenus/i);
+  });
+
+  it('un etage de repli dit pourquoi le nombre n est pas previsible', () => {
+    const lignes = repartitionPrevue([{ rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }], M, fr);
+    expect(lignes[1]?.nombre).toBeNull();
+    expect(lignes[1]?.texte).toMatch(/fil de l/i);
+  });
+
+  /**
+   * 🔴 LA PHRASE E-MAIL NE DOIT PAS ENVOYER CORRIGER UN RÉGLAGE CORRECT. Le champ d'adresse peut être
+   * parfaitement choisi : ce qui manque, ce sont les fiches, qui n'existent pas encore.
+   */
+  it('l etage e-mail n envoie pas choisir un champ deja choisi', () => {
+    const lignes = repartitionPrevue(
+      [{ rang: 1, canal: 'whatsapp' }, { rang: 2, canal: 'rcs' }, { rang: 3, canal: 'email' }], M, fr,
+    );
+    expect(lignes[2]?.texte).toMatch(/fil de l/i);
+    expect(lignes[2]?.texte).not.toMatch(/Choisissez le champ/i);
+  });
+
+  // ⚠️ L'AUTRE SENS : sans ce motif, la phrase e-mail reste bien celle qui demande de choisir le champ.
+  it('sans ce motif, l etage e-mail redemande bien le champ', () => {
+    const lignes = repartitionPrevue(
+      [{ rang: 1, canal: 'whatsapp' }, { rang: 3, canal: 'email' }],
+      { retenus: 10, connusInjoignables: 0, sansAdresse: null }, fr,
+    );
+    expect(lignes[1]?.texte).toMatch(/Choisissez le champ/i);
+  });
+});

@@ -101,7 +101,7 @@ export function rattrapagePossible(choix: { reessayer: boolean; chaine: EtageAss
  * 🔴 L'ÉCRAN REDEMANDE UN NOMBRE DE MESSAGES PAR MINUTE, ET C'EST UN RETOUR EN ARRIÈRE ASSUMÉ
  * (2026-09-12). Il a porté trois « intentions » (au plus vite, étalé, heures ouvrées) pendant une
  * journée : elles venaient d'une recommandation écrite dans la spec, jamais validée, et elles RETIRAIENT
- * une capacité que `CampaignCreateForm` offre depuis toujours et que le client utilise. Retirer une
+ * une capacité que l'ancien formulaire offrait depuis toujours et que le client utilise. Retirer une
  * capacité sur la foi d'une recommandation non validée est une régression déguisée en amélioration.
  *
  * ⚠️ 80 EST LA BORNE DE SAISIE, PAS LE PLAFOND APPLIQUÉ. Le frein réel est celui du CANAL
@@ -110,7 +110,7 @@ export function rattrapagePossible(choix: { reessayer: boolean; chaine: EtageAss
  * l'écran : il vit en configuration serveur pour se corriger sans déploiement, et une valeur en dur
  * deviendrait fausse sans que rien ne le signale.
  *
- * ⚠️ 60 PAR DÉFAUT, ET NON LE DÉFAUT DU SERVEUR (30). C'est celui de `CampaignCreateForm`, donc ce que
+ * ⚠️ 60 PAR DÉFAUT, ET NON LE DÉFAUT DU SERVEUR (30). C'est celui de l'ancien formulaire, donc ce que
  * les campagnes de ce produit envoient réellement aujourd'hui : en prendre un autre ici ferait partir
  * deux campagnes identiques à deux vitesses selon l'écran qui les a créées.
  */

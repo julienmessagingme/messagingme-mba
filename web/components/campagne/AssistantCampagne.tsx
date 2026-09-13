@@ -1,7 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import type { BusinessHours } from '@/lib/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createCampaignDraft, deleteCampaignDraft, updateCampaignDraft,
+  type BusinessHours, type CampaignDraft,
+} from '@/lib/api';
+import { brouillonDeLEtat, etatDeBrouillon } from '@/lib/campagne-brouillon';
 import {
   chaineDeLaFormule,
   DEBIT_DEFAUT,
@@ -15,41 +19,56 @@ import { EtapeContenu, contenuVide } from '@/components/campagne/EtapeContenu';
 import { EtapeAudience } from '@/components/campagne/EtapeAudience';
 import { EtapeRecap } from '@/components/campagne/EtapeRecap';
 import { audienceInitiale, type AudienceChoix } from '@/lib/audience';
+import type { CreatedTemplate } from '@/components/TemplateForm';
+import type { RestaurationSelection } from '@/components/campagne/ListeDestinataires';
 import type { VarRow } from '@/lib/variables-template';
-import type { CampaignCategory, PhoneNumber, RcsAgent, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
+import type { CampaignCategory, PhoneNumber, RcsAgent, RcsMessage, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE : cinq étapes, une question par écran, retour libre.
  *
- * 🔴 IL CRÉE ET LANCE VRAIMENT, ET IL SAIT ASSOCIER LES VARIABLES D'UN MODÈLE DEPUIS LE LOT 6. Le
- * blocage qui le tenait hors service est levé : il envoie son `paramMapping`, donc une campagne à modèle
- * variable part sans se faire refuser par Meta sur le compte de paramètres. Ce qui l'empêche encore de
- * REMPLACER `CampaignCreateForm` est ailleurs, et c'est la § « Ce qui manque » ci-dessous.
+ * 🔴 IL EST LE SEUL CHEMIN DE CRÉATION DEPUIS LE 2026-09-13. L'ancien formulaire a été RETIRÉ ce
+ * jour-là, après que la liste « ce qui manque encore » soit tombée à zéro : la liste est donc vide, et
+ * elle n'est pas conservée vide, elle a disparu. Ce qui reste ci-dessous, ce sont les LIMITES connues du
+ * produit, qui ne sont pas des capacités perdues.
  *
- * ⚠️ CE QUE PORTE CE COMPOSANT, ET RIEN DE PLUS : l'état de la campagne en cours d'écriture et la
- * navigation. Chaque étape est un composant qui reçoit ce dont elle a besoin et rend ce qu'elle change.
- * C'est la leçon de l'ancien formulaire, 48 états dans un seul fichier, que l'audit du 2026-08-31 a
- * demandé de découper en prévenant dans la même phrase qu'« une extraction mécanique ne réduit pas la
- * complexité d'état » : on découpe par QUESTION POSÉE, pas par zone de rendu.
+ * ⚠️ CE QUE PORTE CE COMPOSANT, ET RIEN DE PLUS : l'état de la campagne en cours d'écriture, son
+ * brouillon, et la navigation. Chaque étape est un composant qui reçoit ce dont elle a besoin et rend ce
+ * qu'elle change. C'est la leçon de l'ancien formulaire, 48 états dans un seul fichier, que l'audit du
+ * 2026-08-31 a demandé de découper en prévenant dans la même phrase qu'« une extraction mécanique ne
+ * réduit pas la complexité d'état » : on découpe par QUESTION POSÉE, pas par zone de rendu.
  *
- * ⚠️ CE QUI MANQUE ENCORE À L'ASSISTANT, inventorié le 2026-09-12 en préparant le retrait de l'ancien
- * formulaire, et qui explique pourquoi ce retrait n'a PAS eu lieu. Chaque ligne est une capacité que
- * `CampaignCreateForm` porte seul aujourd'hui :
- *   1. ⚠️ l'association des variables d'un modèle sur un étage de REPLI : la campagne n'a qu'un
- *      `param_mapping` et `campaign_etages` n'a pas de colonne pour un second, donc un repli à variables
- *      est REFUSÉ au récapitulatif, avec sa raison (le rang 1, lui, est servi) ;
- *   2. l'APERÇU du template, carousel et en-tête média compris ;
- *   3. la création d'un template à la volée ;
- *   4. la programmation « Plus tard » (`scheduledAt`) ;
- *   5. la campagne AU FIL DE L'EAU (alimentée par un webhook) ;
- *   6. les brouillons de composition (écrits dans un `state` opaque que seul l'ancien formulaire relit) ;
- *   7. le visuel RCS et ses médias.
+ * 🔴 LE RETRAIT A ÉTÉ FAIT EN RÉUTILISANT, JAMAIS EN RECOPIANT, et c'est ce qui le rend sûr. Les six
+ * capacités qui manquaient existaient déjà et fonctionnaient : l'aperçu est `TemplatePreview`, celui de
+ * l'Inbox et de l'écran en service ; la création de modèle à la volée est `CreationModeleEnLigne`,
+ * extraite telle quelle avec son suivi de la revue Meta ; le fil de l'eau est `SourceWebhook`, avec ses
+ * deux avertissements ; le visuel RCS passe par `versMessageRcs`, `ChampImageHebergee` et
+ * `ChampCorpsVariables`, que trois autres écrans utilisent déjà. L'ancien formulaire a PERDU 214 lignes
+ * avant de disparaître : c'est l'inverse d'une duplication.
  *
- * ⚠️ DEUX LIGNES ONT QUITTÉ CETTE LISTE LE 2026-09-13, et ce n'étaient pas des capacités manquantes mais
- * des RÉGRESSIONS : la sélection fine des contacts (elle revient en RÉUTILISANT les briques de l'écran
- * en service) et la jauge de débit (elle revient à l'étape 5). Un écran qui sait faire moins que celui
- * qu'il remplace n'est pas un remplaçant, quel que soit le mot qu'on met dans le plan.
+ * ⚠️ LA LIMITE CONNUE, ET ELLE N'A JAMAIS ÉTÉ UNE CAPACITÉ DE L'ÉCRAN RETIRÉ : l'association des
+ * variables d'un modèle sur un étage de REPLI. La campagne n'a qu'un `param_mapping`, `campaign_etages`
+ * n'a pas de colonne pour un second, et `campaign_recipients.resolved_params` est résolu UNE fois à la
+ * création depuis ce mapping unique. Un repli à variables est donc REFUSÉ au récapitulatif AVEC sa
+ * raison, le rang 1 étant servi normalement. ⚠️ VÉRIFIÉ AVANT LE RETRAIT, pas supposé : le
+ * constructeur de requête de l'ancien formulaire n'envoyait JAMAIS de `chaine`, il ne savait donc créer
+ * qu'une campagne à UN étage. Retirer cet écran n'a pu retirer cette capacité, puisqu'il ne l'avait pas.
+ *
+ * ⚠️ UNE SECONDE DIFFÉRENCE, DÉLIBÉRÉE ET ANTÉRIEURE À CE LOT : l'écran retiré proposait de choisir le
+ * NUMÉRO émetteur et l'AGENT RCS quand l'espace en compte plusieurs ; l'assistant prend le premier des
+ * deux (cf. `ReferencesContenu`). C'est la décision « un assistant ne pose pas la question », et elle
+ * reste discutable sur un espace multi-numéros : c'est le seul point de ce lot qui mériterait d'être
+ * retranché si quelqu'un s'en plaint.
  */
+
+/**
+ * Délai avant qu'un changement de l'écran parte dans le brouillon.
+ *
+ * Assez court pour qu'un aller-retour dans un autre onglet ne perde rien, assez long pour que cocher dix
+ * contacts ne fasse pas dix écritures : le plafond de débit des routes authentifiées est partagé avec
+ * tout le reste de la console.
+ */
+const DELAI_SAUVEGARDE_MS = 1200;
 
 /** Les cinq étapes, dans l'ordre décidé par Julien le 2026-09-12. */
 export type EtapeAssistant = 'nom' | 'canal' | 'contenu' | 'audience' | 'recap';
@@ -85,7 +104,7 @@ export interface EtatCampagne {
    *
    * 🔴 ELLE A REMPLACÉ TROIS « INTENTIONS DE CADENCE » QUI N'AVAIENT JAMAIS ÉTÉ DEMANDÉES (2026-09-12).
    * Elles venaient d'une recommandation écrite dans la spec et non validée, et retiraient au passage la
-   * jauge de débit de `CampaignCreateForm`. Julien : « je veux juste une seule question : envoyer ou pas
+   * jauge de débit de l'ancien formulaire. Julien : « je veux juste une seule question : envoyer ou pas
    * hors des business hours. C'est tout ! et après on shoote au rythme du canon que le client choisit ».
    */
   heuresOuvrees: boolean;
@@ -116,6 +135,16 @@ export interface EtatCampagne {
   assignationUserId: string | null;
   /** QUI reçoit (étape 4). */
   audience: AudienceChoix;
+  /**
+   * QUAND LA CAMPAGNE PART : tout de suite, ou à une date choisie (étape 5).
+   *
+   * ⚠️ CE N'EST PAS `heuresOuvrees`, ET LES DEUX SE CUMULENT. Celui-ci fixe le moment du DÉCLENCHEMENT,
+   * l'autre borne les créneaux pendant lesquels l'envoi a le droit de courir. Une campagne programmée à
+   * 22 h sur un espace fermé la nuit est bien déclenchée à 22 h, puis mise en pause jusqu'à l'ouverture.
+   */
+  quand: 'maintenant' | 'plus_tard';
+  /** La date/heure du départ, en HEURE LOCALE (valeur brute d'un `<input type="datetime-local">`). */
+  dateLocale: string;
 }
 
 /** Le contenu d'UN étage. Les champs inutiles au canal de l'étage restent absents. */
@@ -126,6 +155,15 @@ export interface ContenuEtage {
   templateLanguage?: string;
   workflowId?: string;
   texteRcs?: string;
+  /**
+   * L'URL DU VISUEL D'UN ÉTAGE RCS. Vide ou absente = message TEXTE ; renseignée = message CARTE.
+   *
+   * 🔴 CE N'EST PAS UNE DÉCORATION, C'EST LE FORMAT DU MESSAGE. Avec un visuel, `versMessageRcs` bascule
+   * en carte : l'image passe au-dessus du texte, les boutons deviennent des boutons PLEINE LARGEUR
+   * empilés dans la carte (4 au plus, le surplus retombant en pastilles), et le plafond de texte descend
+   * de 3 072 à 2 000 caractères. C'est la forme qu'on reconnaît des grandes campagnes RCS.
+   */
+  imageRcs?: string;
   suggestions: RcsSuggestion[];
   emailTemplateId?: string;
   /**
@@ -203,11 +241,19 @@ export interface ReferencesContenu {
   numeros: PhoneNumber[];
   /** Les agents RCS de l'espace. Le premier sert de marque, même raison. */
   agentsRcs: RcsAgent[];
+  /**
+   * LES MESSAGES RCS ENREGISTRÉS de l'espace (Contenu > Messages RCS), pour partir de l'un d'eux.
+   *
+   * ⚠️ C'EST UNE COPIE QUI EST FAITE, PAS UN LIEN : la campagne garde le message tel qu'il était au
+   * moment où on l'a repris. Modifier la bibliothèque ensuite ne doit pas réécrire une campagne déjà
+   * partie, et c'est déjà la règle de l'écran en service.
+   */
+  messagesRcs: RcsMessage[];
 }
 
 export const REFERENCES_VIDES: ReferencesContenu = {
   templates: [], workflows: [], emailTemplates: [], membres: [], agents: [],
-  tags: [], userFields: [], numeros: [], agentsRcs: [],
+  tags: [], userFields: [], numeros: [], agentsRcs: [], messagesRcs: [],
 };
 
 export const ETAT_INITIAL: EtatCampagne = {
@@ -226,7 +272,7 @@ export const ETAT_INITIAL: EtatCampagne = {
    */
   rattrapageHorsHoraires: false,
   // ⚠️ Faux par défaut, c'est-à-dire « on envoie à toute heure » : le comportement d'aujourd'hui, et
-  // celui de `CampaignCreateForm`. Cocher cette case sur un espace sans horaires ARRÊTE la campagne
+  // celui de l'ancien formulaire. Cocher cette case sur un espace sans horaires ARRÊTE la campagne
   // pour toujours, l'étape Canal le dit au moment du clic.
   heuresOuvrees: false,
   debitParMinute: DEBIT_DEFAUT,
@@ -244,6 +290,10 @@ export const ETAT_INITIAL: EtatCampagne = {
   // ⚠️ « Tous les contacts » par défaut, et l'écran l'affiche COMPTÉ : un défaut qui ne se voit pas serait
   // le pire des deux, puisque c'est la sélection la plus large du produit. Cf. `audienceInitiale`.
   audience: audienceInitiale(),
+  // ⚠️ « Maintenant » par défaut : c'est le geste courant, et c'était celui de l'ancien formulaire. Un
+  // défaut « plus tard » obligerait à saisir une date pour la campagne qu'on veut envoyer tout de suite.
+  quand: 'maintenant',
+  dateLocale: '',
 };
 
 /** Ce que l'espace sait faire, lu une fois et passé aux étapes qui en dépendent. */
@@ -263,7 +313,7 @@ export interface CapacitesEspace {
    * Le connecteur HubSpot est-il branché sur cet espace ? Faux = la source HubSpot n'est pas AFFICHÉE.
    *
    * ⚠️ MASQUÉE ET NON GRISÉE, à l'inverse du RCS, et c'est une demande de Julien du 2026-08-26 reprise
-   * telle quelle de `CampaignCreateForm` : un bouton grisé pour une intégration qu'on n'a pas est du
+   * telle quelle de l'ancien formulaire : un bouton grisé pour une intégration qu'on n'a pas est du
    * bruit, pas une information. La PAUSE, elle, se grise avec sa raison : elle se lève d'un clic.
    */
   hubspotListes: boolean;
@@ -288,20 +338,166 @@ export function AssistantCampagne({
   references = REFERENCES_VIDES,
   etapeInitiale = 'nom',
   etatInitial,
+  rechargerTemplates,
+  brouillon,
   onCree,
 }: {
   tenantId: string;
   capacites: CapacitesEspace;
+  /**
+   * Relit la liste des modèles et rend la liste COMPLÈTE (statuts non approuvés compris).
+   *
+   * 🔴 ABSENTE, LA CRÉATION DE MODÈLE À LA VOLÉE N'EST PAS PROPOSÉE, et c'est délibéré : le panneau
+   * promet de choisir le modèle dès son approbation par Meta, ce qui suppose de pouvoir relire la liste.
+   * Afficher le bouton sans ce moyen offrirait un parcours qui s'arrête au milieu.
+   */
+  rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
   /** Ce que l'étape Contenu propose à choisir. Absent = tout est vide, et chaque cas vide le DIT. */
   references?: ReferencesContenu;
   /** L'étape d'ouverture. Sert au retour sur un brouillon, et aux tests d'écran qui visent une étape. */
   etapeInitiale?: EtapeAssistant;
   etatInitial?: Partial<EtatCampagne>;
+  /**
+   * UN BROUILLON REPRIS. Son `state` est relu par `etatDeBrouillon`, qui sait lire les DEUX formats.
+   *
+   * 🔴 IL EST LU UNE SEULE FOIS, À L'INITIALISATION, et l'écran ne doit donc être monté qu'une fois le
+   * brouillon chargé : arrivé plus tard, il ne serait jamais appliqué, et l'opérateur retrouverait un
+   * écran vierge là où il attend son travail. C'est la page qui tient cette condition.
+   */
+  brouillon?: CampaignDraft;
   /** Appelé une fois la campagne créée ET lancée. Absent = l'écran se contente de le dire. */
   onCree?: (campaignId: string) => void;
 }) {
-  const [etat, setEtat] = useState<EtatCampagne>({ ...ETAT_INITIAL, ...etatInitial });
+  const [etat, setEtat] = useState<EtatCampagne>({
+    ...ETAT_INITIAL,
+    ...etatInitial,
+    // ⚠️ LE BROUILLON PASSE APRÈS `etatInitial` : ce qu'on a réellement écrit l'emporte sur les valeurs
+    // d'ouverture posées par l'adresse (`?canal=repli`), qui ne servent qu'à une création neuve.
+    ...(brouillon ? { ...etatDeBrouillon(brouillon.state), nom: brouillon.name } : {}),
+  });
   const [etape, setEtape] = useState<EtapeAssistant>(etapeInitiale);
+  /**
+   * LE MODÈLE QU'ON VIENT DE SOUMETTRE À META, et qui passe en revue.
+   *
+   * 🔴 IL VIT DANS LA COQUILLE, PAS DANS LE CADRE QUI L'A CRÉÉ, et sa durée de vie EST la promesse de
+   * l'écran : « on vérifie automatiquement et il sera sélectionné dès qu'il est approuvé ». Rangé dans le
+   * cadre de l'étage, replier ce cadre ou passer à l'étape suivante l'effacerait, et la promesse
+   * disparaîtrait sans un mot, ce qui est pire que de ne pas l'avoir faite.
+   *
+   * ⚠️ IL N'EST PAS DANS `EtatCampagne` : ce n'est pas la campagne, c'est l'état d'un écran. L'y mettre
+   * l'enverrait dans le brouillon, où un statut Meta périmé n'a rien à faire.
+   */
+  const [modeleSoumis, setModeleSoumis] = useState<CreatedTemplate | null>(null);
+
+  /**
+   * LA SÉLECTION D'UN BROUILLON REPRIS, À APPLIQUER AU PREMIER CHARGEMENT DE LA LISTE ET À LUI SEUL.
+   *
+   * 🔴 SANS ELLE, REPRENDRE UN BROUILLON PERD SES DESTINATAIRES, ET C'EST LE DÉFAUT EXACT QUE JULIEN A
+   * SIGNALÉ LE 2026-09-08 : « la campagne est enregistrée mais il faut à nouveau que je sélectionne les
+   * personnes ». Le chargement de la liste RECOCHE tout par défaut, ce qui est le bon comportement quand
+   * les filtres changent (on vient de désigner un autre ensemble) ; à la reprise, il tombe juste après la
+   * restauration et l'efface.
+   *
+   * ⚠️ UNE `ref` ET NON UN ÉTAT : le chargement la CONSOMME (il la remet à `null`) et doit lire sa
+   * valeur à l'instant même. La mettre dans les dépendances de l'effet le relancerait à chaque coche.
+   *
+   * 🔴 ET ELLE PORTE LES EXCLUSIONS, pas seulement la sélection. Perdre une sélection fait envoyer à
+   * MOINS de monde ; perdre une exclusion fait envoyer à PLUS, c'est-à-dire viser quelqu'un que
+   * l'opérateur avait explicitement retiré. Les deux ne se valent pas.
+   */
+  const selectionRestauree = useRef<RestaurationSelection | null>(
+    brouillon
+      ? { selected: new Set(etat.audience.selection.selected), exclus: new Set(etat.audience.selection.exclus) }
+      : null,
+  );
+
+  /**
+   * LE BROUILLON DE COMPOSITION : la campagne en cours d'écriture, enregistrée toute seule.
+   *
+   * 🔴 UNE `ref` ET NON UN ÉTAT POUR L'IDENTIFIANT. Un état React n'est visible qu'au rendu SUIVANT : deux
+   * sauvegardes rapprochées le liraient toutes les deux à `null` et créeraient DEUX brouillons pour une
+   * seule campagne. La ref porte la valeur à l'instant même.
+   */
+  const idBrouillon = useRef<string | null>(brouillon?.id ?? null);
+  /** Sauvegarde en vol, pour ENCHAÎNER au lieu de doubler : même raison que la ref ci-dessus. */
+  const sauvegardeEnVol = useRef<Promise<void> | null>(null);
+  /**
+   * 🔴 LE BROUILLON EST ABANDONNÉ : plus aucune sauvegarde, même déjà programmée. Sans cette marque, la
+   * minuterie en vol rejouerait APRÈS la suppression : la campagne est lancée, le brouillon retiré, puis
+   * une minuterie le RECRÉE, sans identifiant, donc en double dans la liste.
+   */
+  const abandonne = useRef(false);
+  const [enregistre, setEnregistre] = useState(brouillon !== undefined);
+
+  /**
+   * ENREGISTRE : création au premier nom, mise à jour ensuite.
+   *
+   * ⚠️ SILENCIEUX EN CAS D'ÉCHEC, et c'est un choix : perdre un brouillon est ennuyeux, mais un bandeau
+   * rouge au milieu de la saisie le serait davantage, et l'écran reste utilisable tel quel.
+   */
+  const enregistrerBrouillon = async (nom: string, etatCourant: EtatCampagne): Promise<void> => {
+    if (nom === '' || abandonne.current) return;
+    const corps = brouillonDeLEtat(etatCourant);
+    // Sérialisé sur la sauvegarde précédente : sans cette file, deux écritures rapprochées partiraient en
+    // parallèle, toutes deux sans identifiant, et créeraient deux brouillons pour une seule campagne.
+    const suite = (sauvegardeEnVol.current ?? Promise.resolve()).then(async () => {
+      try {
+        if (idBrouillon.current === null) {
+          const { draft } = await createCampaignDraft(tenantId, nom, corps);
+          idBrouillon.current = draft.id;
+        } else {
+          await updateCampaignDraft(tenantId, idBrouillon.current, nom, corps);
+        }
+        setEnregistre(true);
+      } catch { /* un brouillon qui ne s'enregistre pas ne doit pas interrompre la saisie */ }
+    });
+    sauvegardeEnVol.current = suite;
+    await suite;
+  };
+
+  /**
+   * 🔴 IL SUIT TOUT L'ÉCRAN, PAS SEULEMENT LE NOM, et c'est la leçon du 2026-09-08 sur l'ancien
+   * formulaire. Julien : « la campagne est enregistrée mais il faut à nouveau que je sélectionne les
+   * personnes ». La cause n'était pas seulement que les destinataires manquaient de l'état enregistré :
+   * la sauvegarde ne partait QU'AU MOMENT où le champ du nom perdait le focus. Or le nom est la PREMIÈRE
+   * chose qu'on tape : le brouillon photographiait donc un écran encore vide. Un seul déclencheur, placé
+   * au début, ne peut capturer que le début.
+   *
+   * ⚠️ L'ÉTAT EST SÉRIALISÉ À CHAQUE RENDU plutôt que suivi champ par champ : une liste de dépendances
+   * tenue à la main dériverait dès qu'on ajoute un réglage, et la sauvegarde cesserait de le suivre sans
+   * que rien ne le signale. Le coût est une sérialisation par frappe, invisible devant le rendu lui-même.
+   *
+   * ⚠️ LE DÉLAI N'EST PAS DE LA COQUETTERIE : sans lui, cocher dix contacts ferait dix écritures, et le
+   * plafond de débit des routes authentifiées est partagé avec tout le reste de la console.
+   */
+  const serialise = JSON.stringify(brouillonDeLEtat(etat));
+  const nomEcrit = etat.nom.trim();
+  useEffect(() => {
+    if (nomEcrit === '' || abandonne.current) return;
+    const minuterie = setTimeout(() => { void enregistrerBrouillon(nomEcrit, etat); }, DELAI_SAUVEGARDE_MS);
+    return () => clearTimeout(minuterie);
+    // `serialise` porte TOUT ce qui est enregistré : c'est la seule dépendance qui ne dérive pas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serialise, nomEcrit]);
+
+  /**
+   * LA CAMPAGNE EXISTE : le brouillon n'a plus lieu d'être, sinon la liste montrerait les deux.
+   *
+   * ⚠️ LA MARQUE D'ABANDON EST POSÉE AVANT TOUTE ATTENTE, et l'ordre est ce qui la rend utile : une
+   * minuterie déjà en vol recréerait le brouillon juste après sa suppression. On attend ensuite la
+   * sauvegarde en cours, pour ne pas supprimer pendant une création qui le laisserait derrière soi.
+   */
+  const retirerBrouillon = async (): Promise<void> => {
+    abandonne.current = true;
+    await (sauvegardeEnVol.current ?? Promise.resolve());
+    const id = idBrouillon.current;
+    if (id === null) return;
+    try {
+      await deleteCampaignDraft(tenantId, id);
+      idBrouillon.current = null;
+      setEnregistre(false);
+    } catch { /* un brouillon qui survit est visible et supprimable à la main */ }
+  };
 
   const chaine: EtageAssistant[] = useMemo(
     () => chaineDeLaFormule({ formule: etat.formule, premier: etat.premier, troisieme: etat.troisieme }),
@@ -332,6 +528,19 @@ export function AssistantCampagne({
     ...e,
     contenus: { ...e.contenus, [rang]: { ...(e.contenus[rang] ?? contenuVide()), ...patch } },
   }));
+
+  /**
+   * MODIFIER L'AUDIENCE, SUR L'ÉTAT COURANT ET NON SUR CELUI DU RENDU.
+   *
+   * 🔴 MÊME RAISON QUE `modifierContenu` JUSTE AU-DESSUS, ET LE MÊME DÉFAUT ÉTAIT ARMÉ ICI. L'étape
+   * Audience fabriquait son patch en relisant `etat.audience`, c'est-à-dire la valeur CAPTURÉE au rendu.
+   * Une écriture ASYNCHRONE y suffit à tout perdre : le panneau du fil de l'eau efface une adresse morte
+   * quand la liste des adresses revient du réseau, avec la fermeture d'un rendu périmé, donc il
+   * remettrait au passage les filtres et les coches d'AVANT. Perdre une sélection de destinataires est
+   * précisément le travail le plus long du parcours.
+   */
+  const modifierAudience = (patch: Partial<AudienceChoix>): void =>
+    setEtat((e) => ({ ...e, audience: { ...e.audience, ...patch } }));
 
   return (
     // ⚠️ UNE SEULE COLONNE, BORNÉE. L'écran de référence est un 13 pouces (1280 x 800) moins la barre
@@ -364,6 +573,13 @@ export function AssistantCampagne({
             />
           </label>
           <p className="mt-2 text-xs text-ink-400">Il n&apos;est visible que de votre équipe.</p>
+          {/* ⚠️ LE DIRE, ET SEULEMENT UNE FOIS QUE C'EST VRAI : le bandeau n'apparaît qu'après une
+              écriture réussie, sinon il promettrait une reprise que l'échec silencieux n'offrirait pas. */}
+          {enregistre && (
+            <p className="mt-1 text-xs text-ink-400" data-testid="brouillon-enregistre">
+              Brouillon enregistré : vous pouvez quitter cet écran et reprendre plus tard.
+            </p>
+          )}
 
           {/*
             🔴 LA CATÉGORIE EST POSÉE ICI PARCE QU'ELLE GOUVERNE LE CONSENTEMENT, PAS LE CONTENU. Une
@@ -420,6 +636,9 @@ export function AssistantCampagne({
           nbDestinataires={null}
           onChange={modifier}
           onContenu={modifierContenu}
+          {...(rechargerTemplates ? { rechargerTemplates } : {})}
+          modeleSoumis={modeleSoumis}
+          onModeleSoumis={setModeleSoumis}
         />
       )}
 
@@ -429,7 +648,8 @@ export function AssistantCampagne({
           etat={etat}
           references={references}
           capacites={capacites}
-          onChange={modifier}
+          restauration={selectionRestauree}
+          onAudience={modifierAudience}
         />
       )}
 
@@ -441,7 +661,13 @@ export function AssistantCampagne({
           references={references}
           aller={setEtape}
           onChange={modifier}
-          {...(onCree ? { onCree } : {})}
+          /**
+           * ⚠️ LE BROUILLON PART AVANT LA SUITE : la campagne existe désormais pour de bon, et laisser
+           * son brouillon derrière ferait apparaître les deux dans la liste, dont un qu'on croirait
+           * encore à finir. `retirerBrouillon` est best-effort et n'interrompt donc jamais l'accusé de
+           * réception du lancement.
+           */
+          onCree={(id) => { void retirerBrouillon(); onCree?.(id); }}
         />
       )}
 

@@ -3,6 +3,8 @@ import type { CampaignCategory } from './api/campagnes';
 import type { ContactFilters } from './contact-filters';
 import { cibleDeCreation, type SelectionDestinataires } from './audience';
 import type { RcsOutbound, RcsSuggestion } from './rcs-types';
+import { maxTexteRcs, versMessageRcs } from './rcs';
+import { boutonPret } from './rcs-boutons';
 import type { EtageAssistant } from './campagne-chaine';
 import { RANG_INITIAL, debitBorne } from './campagne-chaine';
 import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
@@ -31,7 +33,7 @@ export interface EtatPourCreation {
   /**
    * « Envoyer uniquement pendant les heures ouvrées » : la SEULE question horaire de l'étape Canal.
    *
-   * ⚠️ MÊME NOM, MÊME SENS ET MÊME DÉFAUT QUE DANS `CampaignCreateForm` : la question posée à l'opérateur
+   * ⚠️ MÊME NOM, MÊME SENS ET MÊME DÉFAUT QUE DANS L'ANCIEN FORMULAIRE : la question posée à l'opérateur
    * doit se traduire par la même colonne (`campaigns.business_hours_only`, migration 0122), quel que soit
    * l'écran qui l'a posée. Faux par défaut, c'est-à-dire « on envoie à toute heure », le comportement
    * d'aujourd'hui.
@@ -39,6 +41,25 @@ export interface EtatPourCreation {
   heuresOuvrees: boolean;
   reessayer: boolean;
   rattrapageHorsHoraires: boolean;
+  /**
+   * QUAND LA CAMPAGNE PART : tout de suite, ou à une date choisie.
+   *
+   * 🔴 CE N'EST PAS `businessHoursOnly`, ET LES DEUX SE CUMULENT. Celui-ci fixe le moment du
+   * DÉCLENCHEMENT, celui-là borne les créneaux pendant lesquels l'envoi a le droit de courir : une
+   * campagne programmée à 22 h sur un espace fermé la nuit est créée, déclenchée, puis mise en pause
+   * jusqu'à l'ouverture. Les confondre ferait disparaître l'une des deux questions.
+   */
+  quand: 'maintenant' | 'plus_tard';
+  /**
+   * LA DATE ET L'HEURE CHOISIES POUR « PLUS TARD », en HEURE LOCALE, telles qu'un `<input
+   * type="datetime-local">` les rend (`2026-09-20T10:00`, sans fuseau).
+   *
+   * ⚠️ ELLE EST CONVERTIE EN ISO ABSOLU AU DERNIER MOMENT (`momentDuLancement`) et jamais stockée
+   * convertie : `new Date('2026-09-20T10:00')` est interprétée en heure LOCALE par le navigateur, ce qui
+   * est bien ce que l'opérateur a saisi. La convertir plus tôt figerait le fuseau de l'instant où l'on a
+   * tapé, et un brouillon repris ailleurs partirait à une autre heure.
+   */
+  dateLocale: string;
   assignation: 'aucune' | 'personne' | 'tour_de_role';
   assignationUserId: string | null;
   contenus: Record<number, {
@@ -47,6 +68,8 @@ export interface EtatPourCreation {
     templateLanguage?: string;
     workflowId?: string;
     texteRcs?: string;
+    /** L'URL du VISUEL d'un étage RCS. Renseignée = le message part en CARTE. Cf. `ContenuEtage.imageRcs`. */
+    imageRcs?: string;
     suggestions: RcsSuggestion[];
     emailTemplateId?: string;
     /** L'association des variables du modèle de cet étage. Cf. `ContenuEtage.variables`. */
@@ -116,6 +139,20 @@ export interface ContexteDeCreation {
    */
   champEmail: string | null;
   /**
+   * L'ADRESSE QUI AMÈNERA LES DESTINATAIRES AU FIL DE L'EAU, ou `null` pour une campagne sur LISTE.
+   *
+   * 🔴 TROIS VALEURS, TROIS SENS, ET LA DISTINCTION DÉCIDE DE CE QUI PART. `null` = ce n'est pas une
+   * campagne au fil de l'eau, on regarde les filtres et les coches ; une chaîne VIDE = c'en est une, et
+   * son adresse n'est pas encore choisie, donc le lancement est refusé ; une chaîne renseignée = c'en
+   * est une, et la requête n'emporte QUE cette adresse. Le serveur refuse de recevoir à la fois une
+   * adresse et une liste, et il a raison : ce serait laisser croire que la liste va partir.
+   *
+   * ⚠️ L'APPELANT LA MET À `null` DÈS QUE LA SOURCE N'EST PAS `webhook` (`auFilDeLEau`), même si une
+   * adresse traîne encore dans l'état d'un aller-retour précédent. C'est le seul endroit où cet
+   * arbitrage se fait.
+   */
+  webhookId: string | null;
+  /**
    * CE QUI A ÉTÉ COCHÉ DANS L'ÉTAPE AUDIENCE.
    *
    * ⚠️ ELLE ARRIVE PAR LE CONTEXTE, À CÔTÉ DE `filtres`, parce que les deux ne se comprennent QUE
@@ -139,6 +176,41 @@ export interface ContexteDeCreation {
 }
 
 /**
+ * LE MOMENT DU LANCEMENT : maintenant, à une date, ou un refus.
+ *
+ * 🔴 UNE SEULE FONCTION POUR LES DEUX QUESTIONS, ET C'EST DÉLIBÉRÉ. Séparer « est-ce valide ? » de
+ * « quelle date envoyer ? » laisse exister un état où la première dit oui et la seconde rend `undefined` :
+ * `runCampaign` sans date LANCE IMMÉDIATEMENT, donc une campagne programmée pour la semaine prochaine
+ * partirait sur-le-champ, à des gens réels, sans que rien ne le signale. Une union fermée rend ce
+ * chemin-là impossible à écrire.
+ *
+ * 🔴 STRICTEMENT DANS LE FUTUR, et l'horloge est INJECTÉE. Une date passée est refusée plutôt que
+ * silencieusement ramenée à maintenant, parce que les deux gestes n'ont pas le même coût : « je me suis
+ * trompé d'un jour » doit se corriger, pas s'envoyer. L'horloge en paramètre est ce qui rend la règle
+ * exerçable sans dépendre de l'heure de la machine qui exécute le test.
+ *
+ * ⚠️ `new Date('2026-09-20T10:00')` EST LUE EN HEURE LOCALE par le moteur (forme date-heure sans
+ * décalage), et c'est bien ce que l'opérateur a tapé dans son `<input type="datetime-local">`. Le `toISOString`
+ * qui suit donne l'instant ABSOLU, seul format que le serveur accepte.
+ */
+export type MomentDuLancement =
+  | { maintenant: true }
+  | { iso: string }
+  | { probleme: string };
+
+export function momentDuLancement(
+  etat: Pick<EtatPourCreation, 'quand' | 'dateLocale'>,
+  maintenant: number,
+): MomentDuLancement {
+  if (etat.quand !== 'plus_tard') return { maintenant: true };
+  if (etat.dateLocale.trim() === '') return { probleme: 'Choisissez la date et l’heure du départ.' };
+  const t = new Date(etat.dateLocale).getTime();
+  if (Number.isNaN(t)) return { probleme: 'Cette date n’est pas lisible : choisissez-la dans le sélecteur.' };
+  if (t <= maintenant) return { probleme: 'La date du départ doit être dans le futur.' };
+  return { iso: new Date(t).toISOString() };
+}
+
+/**
  * CE QUI EMPÊCHE DE LANCER, en français, ou `null`.
  *
  * ⚠️ ELLE NE REFAIT PAS LE TRAVAIL DU SERVEUR, elle évite un aller-retour sur ce que l'écran sait déjà.
@@ -149,18 +221,34 @@ export function problemeAvantLancement(
   etat: EtatPourCreation,
   chaine: EtageAssistant[],
   ctx: ContexteDeCreation,
+  /** L'horloge, pour la seule garde qui en dépend (la programmation). Cf. `momentDuLancement`. */
+  maintenant: number = Date.now(),
 ): string | null {
   if (etat.nom.trim() === '') return 'Cette campagne n’a pas de nom.';
+  // ⚠️ LA PROGRAMMATION EST VÉRIFIÉE PAR LA MÊME FONCTION QUI LA CALCULE : le bouton ne peut pas être
+  // actif sur une date que le lancement refuserait ensuite de traduire.
+  const moment = momentDuLancement(etat, maintenant);
+  if ('probleme' in moment) return moment.probleme;
   /**
    * 🔴 UNE LISTE EXPLICITEMENT VIDE NE PART PAS, ET L'ÉCRAN LE SAIT SANS DEMANDER. Le serveur refuse déjà
    * en 422 (« Aucun contact ne correspond à cette sélection »), donc rien ne partirait à tout l'espace ;
    * ce qu'on évite ici est un aller-retour et un message d'erreur rouge pour un cas que l'écran a sous les
-   * yeux, exactement comme le bouton de lancement de `CampaignCreateForm` qui s'éteint à zéro.
+   * yeux, exactement comme le bouton de lancement de l'ancien formulaire, qui s'éteignait à zéro.
    *
    * ⚠️ SEULEMENT LE MODE LISTE. En mode « tout ce qui correspond », le nombre retenu dépend d'un COMPTE
    * SERVEUR que cette fonction pure n'a pas : y deviner zéro bloquerait une campagne parfaitement valide.
    */
-  if (!ctx.selection.toutFiltre && ctx.selection.selected.size === 0) {
+  /**
+   * 🔴 AU FIL DE L'EAU, IL N'Y A RIEN À COCHER, ET NAÎTRE VIDE EST L'ÉTAT NORMAL. Appliquer la garde
+   * ci-dessous à ce mode refuserait la seule création valide qu'il connaisse. Ce qui se vérifie ici,
+   * c'est l'ADRESSE : sans elle, le serveur refuserait en 400 une campagne qui ne recevra jamais
+   * personne, et l'écran a la réponse sous les yeux.
+   */
+  if (ctx.webhookId !== null) {
+    if (ctx.webhookId === '') {
+      return 'Choisissez l’adresse qui amènera les contacts, à l’étape Audience.';
+    }
+  } else if (!ctx.selection.toutFiltre && ctx.selection.selected.size === 0) {
     return 'Aucun contact n’est sélectionné : cochez au moins une personne à l’étape Audience.';
   }
   const premier = [...chaine].sort((a, b) => a.rang - b.rang)[0];
@@ -181,6 +269,24 @@ export function problemeAvantLancement(
     }
     if (etage.canal === 'rcs' && !c?.texteRcs?.trim()) {
       return `L’étage ${etage.rang} n’a pas de message RCS.`;
+    }
+    /**
+     * 🔴 LE PLAFOND DE TEXTE CHANGE QUAND ON AJOUTE UN VISUEL : 3 072 caractères sur un message nu,
+     * 2 000 dans une carte (c'est la borne du champ `description` chez l'opérateur, pas un choix). Un
+     * texte déjà saisi ne se raccourcit pas tout seul : sans cette garde, ajouter l'image à la fin ferait
+     * échouer la création avec un « content invalide » que personne ne saurait relier à ce geste.
+     */
+    if (etage.canal === 'rcs' && (c?.texteRcs ?? '').length > maxTexteRcs(c?.imageRcs ?? '')) {
+      return `L’étage ${etage.rang} : le message RCS dépasse ${maxTexteRcs(c?.imageRcs ?? '')} caractères (la limite baisse quand il y a un visuel).`;
+    }
+    /**
+     * ⚠️ UN BOUTON INCOMPLET FAIT REFUSER TOUT LE MESSAGE, pas seulement le bouton : le schéma serveur
+     * exige l'adresse d'un lien, le numéro d'un appel, les bornes d'un agenda. `versMessageRcs` n'écarte
+     * que les boutons SANS LIBELLÉ ; celui qui a un libellé et rien d'autre part tel quel et se fait
+     * refuser. C'est la même garde que l'écran en service (`contentReady`).
+     */
+    if (etage.canal === 'rcs' && (c?.suggestions ?? []).some((b) => !boutonPret(b))) {
+      return `L’étage ${etage.rang} : un bouton RCS est incomplet (libellé, lien, numéro ou dates).`;
     }
     if (etage.canal === 'email' && !c?.emailTemplateId) {
       return `L’étage ${etage.rang} n’a pas de modèle d’e-mail.`;
@@ -227,16 +333,25 @@ function problemeDesVariables(
   return probleme === null ? null : `L’étage ${etage.rang} : ${probleme}.`;
 }
 
-/** Le message RCS d'un étage, dans la forme que `rcsOutboundSchema` accepte. */
+/**
+ * LE MESSAGE RCS D'UN ÉTAGE, dans la forme que `rcsOutboundSchema` accepte.
+ *
+ * 🔴 ELLE PASSE PAR `versMessageRcs`, LE CONSTRUCTEUR PARTAGÉ, ET PLUS PAR UN LITTÉRAL `kind: 'text'`.
+ * C'est lui qui décide TEXTE ou CARTE selon qu'il y a un visuel, qui accroche les boutons au bon endroit
+ * (dans la carte, pleine largeur, 4 au plus ; sinon en pastilles sous la bulle, 11 au plus) et qui écarte
+ * les suggestions sans libellé. Écrit en dur ici, l'étage RCS de l'assistant aurait ignoré le visuel EN
+ * SILENCE : l'écran l'aurait montré, le message serait parti sans lui, et personne n'aurait su pourquoi.
+ *
+ * ⚠️ IL EST DÉJÀ CELUI DES TROIS AUTRES ÉCRANS (bibliothèque, bloc de scénario, ancien formulaire) : la
+ * même saisie y produit donc le même message, ce qui n'était pas vrai tant que celui-ci en avait un
+ * quatrième exemplaire, réduit au texte.
+ */
 function messageRcs(c: EtatPourCreation['contenus'][number] | undefined): RcsOutbound {
-  // ⚠️ Une suggestion SANS LIBELLÉ est écartée ici, pas envoyée : le schéma serveur exige un `text` non
-  // vide, et un bouton ajouté puis laissé vierge ferait refuser TOUT le message pour un bouton oublié.
-  const suggestions = (c?.suggestions ?? []).filter((s) => s.text.trim() !== '');
-  return {
-    kind: 'text',
+  return versMessageRcs({
     text: c?.texteRcs ?? '',
-    ...(suggestions.length > 0 ? { suggestions } : {}),
-  };
+    imageUrl: c?.imageRcs ?? '',
+    suggestions: c?.suggestions ?? [],
+  });
 }
 
 export function entreeDeCreation(
@@ -303,8 +418,12 @@ export function entreeDeCreation(
      * Cette ligne posait `contactTarget: { filters }` et RIEN D'AUTRE : l'assistant ne savait donc pas
      * emporter une sélection fine, quoi que l'écran ait montré. Les deux formes (une intention filtrée
      * avec ses exclusions, ou une liste d'identifiants) sont exclusives, et le serveur refuse les deux.
+     *
+     * 🔴 ET UNE TROISIÈME FORME LES EXCLUT TOUTES DEUX : l'adresse du fil de l'eau. Emporter les deux
+     * ferait croire que la liste va partir alors que seule l'adresse compte, et le serveur refuse de les
+     * recevoir ensemble. C'est le seul endroit du front où cet arbitrage se fait.
      */
-    ...cibleDeCreation(ctx.selection, ctx.filtres),
+    ...(ctx.webhookId !== null ? { webhookId: ctx.webhookId } : cibleDeCreation(ctx.selection, ctx.filtres)),
     ratePerMinute: debitBorne(etat.debitParMinute),
     businessHoursOnly: etat.heuresOuvrees,
     // ⚠️ UN SEUL ÉTAGE N'EST PAS UNE CHAÎNE, et on ne l'envoie pas. Le serveur écrit de toute façon le

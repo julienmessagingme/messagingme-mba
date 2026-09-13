@@ -5,10 +5,11 @@ import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
 import { fmtNum } from '@/lib/format';
 import {
-  filtresDesImportes, nbRetenus, selectionTout,
+  auFilDeLEau, filtresDesImportes, nbRetenus, selectionTout,
   type AudienceChoix, type SourceAudience,
 } from '@/lib/audience';
-import { ListeDestinataires, useContactsFiltres } from '@/components/campagne/ListeDestinataires';
+import { ListeDestinataires, useContactsFiltres, type RestaurationSelection } from '@/components/campagne/ListeDestinataires';
+import { SourceWebhook } from '@/components/campagne/SourceWebhook';
 import type { CapacitesEspace, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 
 /**
@@ -20,7 +21,7 @@ import type { CapacitesEspace, EtatCampagne, ReferencesContenu } from '@/compone
  * ordre est que l'opérateur a réglé son repli sans savoir combien de monde il concerne, et c'est le
  * RÉCAPITULATIF qui le rachète : il montre la répartition, pas un résumé.
  *
- * 🔴 ELLE SAIT CE QUE `CampaignCreateForm` SAIT, ET PAR LES MÊMES BRIQUES (2026-09-13). Elle a été
+ * 🔴 ELLE SAIT CE QUE L'ANCIEN FORMULAIRE SAVAIT, ET PAR LES MÊMES BRIQUES (2026-09-13). Elle a été
  * livrée réduite à deux boutons radio, et le plan rangeait la sélection fine en « capacité manquante » à
  * traiter plus tard : vu de l'utilisateur, ce n'est pas une capacité absente, c'est une RÉGRESSION. Les
  * filtres du mini-CRM, les exclusions, l'import de fichier, les listes HubSpot et les cases à cocher
@@ -47,18 +48,41 @@ export function EtapeAudience({
   etat,
   references,
   capacites,
-  onChange,
+  restauration,
+  onAudience,
 }: {
   tenantId: string;
   etat: EtatCampagne;
   references: ReferencesContenu;
   capacites: CapacitesEspace;
-  onChange: (patch: Partial<EtatCampagne>) => void;
+  /**
+   * La sélection d'un brouillon repris, à appliquer au PREMIER chargement et à lui seul.
+   *
+   * 🔴 SANS ELLE, REPRENDRE UN BROUILLON PERD SES DESTINATAIRES : le chargement de la liste recoche tout
+   * par défaut, et il tombe juste après la restauration. Cf. le docblock de `AssistantCampagne`.
+   */
+  restauration?: React.MutableRefObject<RestaurationSelection | null>;
+  /**
+   * MODIFIER L'AUDIENCE, SUR L'ÉTAT COURANT.
+   *
+   * 🔴 ELLE VIENT DE LA COQUILLE, ET C'EST CE QUI LA REND SÛRE. Fabriquée ici, elle relirait
+   * `etat.audience` du RENDU : une écriture asynchrone (le panneau du fil de l'eau efface une adresse
+   * morte quand la liste revient du réseau) repartirait alors d'une audience périmée et remettrait les
+   * filtres et les coches d'avant. C'est le même invariant que `onContenu` à l'étape précédente.
+   */
+  onAudience: (patch: Partial<AudienceChoix>) => void;
 }) {
   const audience = etat.audience;
-  const modifier = (patch: Partial<AudienceChoix>): void => onChange({ audience: { ...audience, ...patch } });
+  const modifier = onAudience;
   /** Un import en vol GÈLE les boutons de source : changer de source démonterait l'import et sa requête. */
   const [importEnCours, setImportEnCours] = useState(false);
+  /**
+   * Combien de contacts de la sélection reprise ont DISPARU (supprimés, ou sortis des filtres depuis).
+   *
+   * ⚠️ SE TAIRE FERAIT REVENIR L'OPÉRATEUR SUR UNE CAMPAGNE QUI VISE MOINS DE MONDE qu'il ne l'a laissée,
+   * sans que rien ne l'explique : il ne s'en apercevrait pas, ce qui est pire que de tout recocher.
+   */
+  const [selectionReduite, setSelectionReduite] = useState<number | null>(null);
 
   const page = useContactsFiltres({
     tenantId,
@@ -66,6 +90,8 @@ export function EtapeAudience({
     actif: audience.source === 'crm',
     selection: audience.selection,
     onSelection: (selection) => modifier({ selection }),
+    ...(restauration ? { restauration } : {}),
+    onReduite: setSelectionReduite,
   });
 
   /**
@@ -73,7 +99,7 @@ export function EtapeAudience({
    * leur(s) tag(s), et on vise « tout ce qui correspond ».
    *
    * ⚠️ `selectionTout()` PLUTÔT QUE LES LIGNES AFFICHÉES, et c'est là que cet écran s'écarte
-   * volontairement de `CampaignCreateForm` : la liste est plafonnée à 500, or un fichier de 2 000
+   * volontairement de l'ancien formulaire : la liste est plafonnée à 500, or un fichier de 2 000
    * contacts vient d'être importé. Cocher les 500 affichées ferait partir la campagne à un quart du
    * fichier, en affichant « 500 » comme si c'était tout. Le filtre de tag, lui, les désigne tous.
    */
@@ -89,10 +115,20 @@ export function EtapeAudience({
    */
   const choisirSource = (source: SourceAudience): void => {
     modifier({ source, selection: selectionTout() });
+    /**
+     * 🔴 ET LA REPRISE D'UN BROUILLON EST OUBLIÉE AVEC, pour la même raison que la ligne au-dessus. Le
+     * chargement de la liste ne tourne que sur la source CRM : une marque laissée ARMÉE y survivrait à un
+     * détour par « Import fichier », et le premier retour au CRM appliquerait une sélection qui
+     * appartenait à une AUTRE source, en pratique vide. Rien ne serait coché là où tout devrait l'être.
+     */
+    if (restauration) restauration.current = null;
+    setSelectionReduite(null);
   };
 
   const retenus = nbRetenus(audience.selection, page.total);
   const hubspotVisible = capacites.hubspotListes;
+  /** Le prédicat partagé, jamais un `source === 'webhook'` de plus : cf. `auFilDeLEau`. */
+  const fil = auFilDeLEau(audience);
 
   return (
     <section data-testid="etape-audience" className="w-full">
@@ -102,9 +138,9 @@ export function EtapeAudience({
         que soit ce choix.
       </p>
 
-      {/* Sélecteur de SOURCE, mêmes trois entrées et même geste que l'écran en service. Le webhook (une
-          campagne « au fil de l'eau ») n'est PAS ici : il n'a aucune liste, c'est une autre nature de
-          campagne, et l'assistant ne la propose pas encore. */}
+      {/* Sélecteur de SOURCE, mêmes entrées et même geste que l'écran en service. Le webhook est rangé
+          derrière les trois autres parce qu'il n'est pas une quatrième façon de constituer une liste :
+          c'est l'ABSENCE de liste, et la campagne reste ouverte au lieu de partir sur un ensemble figé. */}
       <div className="mt-4 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm" data-testid="audience-sources">
         <BoutonSource
           actif={audience.source === 'crm'}
@@ -131,10 +167,24 @@ export function EtapeAudience({
             testId="audience-source-hubspot"
           />
         )}
+        <BoutonSource
+          actif={fil}
+          desactive={importEnCours}
+          onClick={() => choisirSource('webhook')}
+          libelle="🪝 Au fil de l’eau"
+          testId="audience-source-webhook"
+        />
       </div>
 
       <div className="mt-3 w-full">
-        {audience.source === 'fichier' ? (
+        {fil ? (
+          <SourceWebhook
+            tenantId={tenantId}
+            webhookId={audience.webhookId}
+            onChange={(webhookId) => modifier({ webhookId })}
+            category={etat.category}
+          />
+        ) : audience.source === 'fichier' ? (
           <CsvImport
             tenantId={tenantId}
             requireTag
@@ -156,6 +206,25 @@ export function EtapeAudience({
             onSelection={(selection) => modifier({ selection })}
             userFields={references.userFields}
             tagSuggestions={references.tags.map((tc) => tc.tag)}
+            bandeaux={selectionReduite !== null ? (
+              /* 🔴 LA SÉLECTION REPRISE A MAIGRI DEPUIS. On le DIT : revenir sur un brouillon qui vise
+                 moins de monde qu'on ne l'a laissé, sans explication, est pire que de tout recocher,
+                 parce qu'on ne s'en aperçoit pas. */
+              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700">
+                <span>
+                  {selectionReduite} contact(s) de votre sélection ne sont plus là (supprimés, ou sortis de
+                  ces filtres depuis). Le reste est bien resté coché.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectionReduite(null)}
+                  aria-label="Fermer"
+                  className="shrink-0 leading-none text-ink-400 hover:text-ink-700"
+                >
+                  ×
+                </button>
+              </div>
+            ) : undefined}
           />
         )}
       </div>
@@ -165,7 +234,11 @@ export function EtapeAudience({
         cours ne change pas encore l'audience : le masquer ferait croire qu'il n'y en a plus.
       */}
       <p className="mt-4 text-sm text-ink-700" data-testid="audience-compte">
-        {audience.source !== 'crm'
+        {/* 🔴 AU FIL DE L'EAU, IL N'Y A RIEN À COMPTER, ET UN CHIFFRE Y SERAIT UN MENSONGE : la campagne
+            n'envoie à personne qui soit déjà là, elle prend les arrivants à partir de son lancement. */}
+        {fil
+          ? <span className="text-ink-500">Aucune liste : chaque contact qui arrivera par cette adresse recevra le message.</span>
+          : audience.source !== 'crm'
           ? <span className="text-ink-500">L&apos;import choisira les contacts : ils seront visés par leur étiquette.</span>
           : page.enCours
             ? 'Comptage...'

@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { countContacts, createCampaign, runCampaign } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
 import { DEBIT_MAX, DEBIT_MIN, type EtageAssistant } from '@/lib/campagne-chaine';
-import { audienceEnFiltres, libelleAudience, nbRetenus } from '@/lib/audience';
+import { audienceEnFiltres, auFilDeLEau, libelleAudience, nbRetenus } from '@/lib/audience';
 import {
   LIBELLE_CANAL, champEmailEffectif, repartitionPrevue,
   type MesuresAudience,
 } from '@/lib/campagne-repartition';
-import { entreeDeCreation, problemeAvantLancement, variablesParRang } from '@/lib/campagne-creation';
+import { entreeDeCreation, momentDuLancement, problemeAvantLancement, variablesParRang } from '@/lib/campagne-creation';
+import { messageAucunDestinataire } from '@/lib/campagne-ecartes';
 import type {
   EtapeAssistant, EtatCampagne, ReferencesContenu,
 } from '@/components/campagne/AssistantCampagne';
@@ -50,6 +51,8 @@ export function EtapeRecap({
   onChange: (patch: Partial<EtatCampagne>) => void;
   onCree?: (campaignId: string) => void;
 }) {
+  /** La campagne est-elle alimentée AU FIL DE L'EAU ? Le prédicat partagé, jamais un test de source ici. */
+  const fil = auFilDeLEau(etat.audience);
   const mesures = useMesuresAudience(tenantId, etat, chaine, references.userFields);
   const lignes = useMemo(
     () => repartitionPrevue(chaine, mesures ?? { retenus: 0, connusInjoignables: null, sansAdresse: null }, (n) => fmtNum(n, 'fr')),
@@ -69,6 +72,13 @@ export function EtapeRecap({
      * l'opérateur avait sous les yeux.
      */
     selection: etat.audience.selection,
+    /**
+     * 🔴 L'ARBITRAGE « LISTE OU FIL DE L'EAU » SE FAIT ICI, ET NULLE PART AILLEURS. L'adresse RESTE dans
+     * l'état quand on quitte la source (pour ne pas la reperdre à chaque aller-retour) : la lire sans
+     * regarder la source ferait partir « au fil de l'eau » une campagne dont l'opérateur a sous les yeux
+     * une liste de contacts cochés.
+     */
+    webhookId: auFilDeLEau(etat.audience) ? etat.audience.webhookId : null,
     // ⚠️ LE MÊME POINT DE PASSAGE que le comptage et que le sélecteur de l'étape Contenu
     // (`champEmailEffectif`) : trois lectures du même réglage, une seule règle pour le résoudre.
     champEmail: champEmailDeLaChaine(etat, chaine, references.userFields),
@@ -82,18 +92,60 @@ export function EtapeRecap({
   };
   const probleme = problemeAvantLancement(etat, chaine, contexte);
 
-  const [envoi, setEnvoi] = useState<'repos' | 'en_cours' | 'fait'>('repos');
+  const [envoi, setEnvoi] = useState<'repos' | 'en_cours' | 'fait' | 'creee'>('repos');
   const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * L'AVERTISSEMENT DE PALIER, redige PAR LE SERVEUR.
+   *
+   * 🔴 IL DIT AVANT LE LANCEMENT CE QUE META REFUSERA APRES, et l'ecran ne le reformule pas : le palier
+   * d'un numero n'est connu que du serveur, et un chiffre recopie ici deviendrait faux sans que rien ne
+   * le signale. Ce n'est PAS un refus : la campagne part, se met en pause au plafond et reprend.
+   */
+  const [avertissement, setAvertissement] = useState<string | null>(null);
 
-  const lancer = async (): Promise<void> => {
+  /**
+   * CREER, PUIS LANCER OU NON.
+   *
+   * 🔴 CE SONT DEUX APPELS, ET LE SECOND PEUT ECHOUER SANS DETRUIRE LE PREMIER : la campagne reste
+   * alors en brouillon, avec ses destinataires calcules, et se lance depuis la liste. Annoncer un echec
+   * global ferait croire qu'il n'y a rien a reprendre, et l'operateur la recreerait en double.
+   */
+  const creer = async (puisLancer: boolean): Promise<void> => {
+    /**
+     * 🔴 LE MOMENT EST RÉSOLU AVANT L'APPEL, PAR LA MÊME FONCTION QUI L'A VALIDÉ. `runCampaign` sans date
+     * lance IMMÉDIATEMENT : un « plus tard » qui retomberait sur `undefined` enverrait la campagne
+     * sur-le-champ, à de vraies personnes, sans que rien à l'écran ne le montre. L'union fermée de
+     * `momentDuLancement` rend ce chemin impossible, et la garde du bouton a déjà refusé le cas `probleme`.
+     */
+    const moment = momentDuLancement(etat, Date.now());
+    if ('probleme' in moment) { setErreur(moment.probleme); return; }
     setErreur(null);
+    setAvertissement(null);
     setEnvoi('en_cours');
     try {
       const cree = await createCampaign(tenantId, entreeDeCreation(etat, chaine, contexte));
-      // ⚠️ LE LANCEMENT EST UN SECOND APPEL, ET SON ÉCHEC NE DÉTRUIT PAS LA CAMPAGNE : elle reste en
-      // brouillon, avec ses destinataires calculés, et se lance depuis la liste. Annoncer un échec global
-      // ferait croire qu'il n'y a rien à reprendre, et l'opérateur la recréerait en double.
-      await runCampaign(cree.campaignId);
+      /**
+       * 🔴 ZERO DESTINATAIRE = TOUS ECARTES, ET ON NE LANCE PAS. Sans cette garde, l'ecran annoncerait
+       * « la campagne est lancée » sur un envoi qui n'atteindra personne, et l'opérateur ne l'apprendrait
+       * qu'en ouvrant le rapport. Les motifs sont ventilés parce qu'ils n'appellent pas la même
+       * correction (une fiche à compléter, ou un consentement qui manque).
+       *
+       * ⚠️ SAUF AU FIL DE L'EAU, OÙ NAÎTRE VIDE EST L'ÉTAT NORMAL : les destinataires n'existent pas
+       * encore. Confondre les deux bloquerait la seule création valide de ce mode.
+       */
+      if (cree.recipientCount === 0 && !fil) {
+        setErreur(messageAucunDestinataire(cree.skipped));
+        setEnvoi('repos');
+        return;
+      }
+      if (cree.avertissement) setAvertissement(cree.avertissement);
+      // 🔴 CREER SANS ENVOYER S'ARRETE ICI, et la campagne attend dans la liste avec ses
+      // destinataires deja calcules : c'est ainsi qu'on verifie QUI est retenu avant d'engager un message.
+      if (!puisLancer) { setEnvoi('creee'); onCree?.(cree.campaignId); return; }
+      // ⚠️ DEUX APPELS ÉCRITS EN CLAIR plutôt qu'un argument optionnel calculé : `runCampaign` sans date
+      // LANCE, avec date PROGRAMME, et ces deux gestes n'ont pas le même coût. La différence se lit.
+      if ('iso' in moment) await runCampaign(cree.campaignId, moment.iso);
+      else await runCampaign(cree.campaignId);
       setEnvoi('fait');
       onCree?.(cree.campaignId);
     } catch (err) {
@@ -118,7 +170,12 @@ export function EtapeRecap({
           data-testid="lien-audience"
           className="font-semibold text-brand-600 underline decoration-brand-200 underline-offset-2"
         >
-          {mesures === null ? '...' : fmtNum(mesures.retenus, 'fr')} contacts retenus
+          {/* 🔴 AU FIL DE L'EAU, IL N'Y A AUCUN CONTACT À COMPTER, ET « 0 CONTACTS RETENUS » SERAIT LU
+              COMME UNE PANNE : c'est l'état normal de départ de ce mode, les destinataires n'existent pas
+              encore. On dit donc ce qui se passera, pas un chiffre. */}
+          {fil
+            ? 'Aucune liste : les contacts arrivent au fil de l’eau'
+            : `${mesures === null ? '...' : fmtNum(mesures.retenus, 'fr')} contacts retenus`}
         </a>
         {' '}
         <span className="text-ink-500" data-testid="recap-audience-libelle">
@@ -157,7 +214,9 @@ export function EtapeRecap({
         </table>
       </div>
 
-      <BlocCout etat={etat} retenus={mesures?.retenus ?? null} onChange={onChange} />
+      <BlocCout etat={etat} retenus={mesures?.retenus ?? null} fil={fil} onChange={onChange} />
+
+      <BlocQuand etat={etat} onChange={onChange} />
 
       {probleme && (
         <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="recap-probleme">{probleme}</p>
@@ -165,24 +224,127 @@ export function EtapeRecap({
       {erreur && (
         <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="recap-erreur">{erreur}</p>
       )}
+      {/* ⚠️ UN AVERTISSEMENT N'EST PAS UN REFUS : la campagne part, se met en pause au plafond et
+          reprend. Il s'affiche donc à côté du succès, pas à la place. */}
+      {avertissement && (
+        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="recap-avertissement">{avertissement}</p>
+      )}
       {envoi === 'fait' && (
         <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="recap-lancee">
-          La campagne est lancée. Suivez-la depuis la liste des campagnes.
+          {etat.quand === 'plus_tard'
+            ? 'La campagne est programmée. Vous pouvez annuler la programmation depuis la liste des campagnes.'
+            : 'La campagne est lancée. Suivez-la depuis la liste des campagnes.'}
+        </p>
+      )}
+      {envoi === 'creee' && (
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="recap-creee">
+          La campagne est créée avec ses destinataires, et n&apos;a rien envoyé. Lancez-la depuis la
+          liste des campagnes quand vous voulez.
+          {/* ⚠️ LA DATE N'A PAS ÉTÉ POSÉE, ET IL FAUT LE DIRE. « Créer sans envoyer » s'arrête à la
+              création : la programmation, elle, se fait AU LANCEMENT. Se taire laisserait l'opérateur
+              croire que sa campagne partira à la date qu'il vient de saisir, et elle ne partirait jamais. */}
+          {etat.quand === 'plus_tard' && (
+            <span className="mt-0.5 block text-xs text-ink-600">
+              La date que vous avez choisie n&apos;a pas été posée : reprenez-la au lancement, depuis la
+              liste des campagnes.
+            </span>
+          )}
         </p>
       )}
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <button
           type="button"
           data-testid="bouton-lancer"
           disabled={probleme !== null || envoi !== 'repos'}
-          onClick={() => { void lancer(); }}
+          onClick={() => { void creer(true); }}
           className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
         >
-          {envoi === 'en_cours' ? 'Lancement...' : 'Lancer la campagne'}
+          {envoi === 'en_cours' ? 'Lancement...' : etat.quand === 'plus_tard' ? 'Créer et programmer' : 'Lancer la campagne'}
+        </button>
+        {/*
+          🔴 CRÉER SANS ENVOYER EST UN GESTE À PART, ET IL EXISTE DEPUIS TOUJOURS DANS L'ÉCRAN EN
+          SERVICE. Il calcule les destinataires et s'arrête là : c'est ainsi qu'on vérifie QUI est retenu,
+          et combien ont été écartés, avant d'engager le moindre message. La campagne attend ensuite dans
+          la liste, avec son bouton « Lancer ».
+          ⚠️ CE N'EST PAS LE BROUILLON DE COMPOSITION : celui-là n'a ni destinataire ni modèle résolu
+          et ne peut rien envoyer. Celle-ci est une campagne complète, prête à partir.
+        */}
+        {/*
+          ⚠️ IL EST SOUMIS À LA MÊME GARDE, Y COMPRIS SUR LA DATE, alors qu'une création sans envoi n'en a
+          pas besoin. C'est délibéré : en mode « Plus tard » avec une date invalide, laisser ce bouton
+          actif créerait une campagne dont la date saisie serait silencieusement perdue. Mieux vaut
+          corriger la date, ou repasser en « Maintenant ».
+        */}
+        <button
+          type="button"
+          data-testid="bouton-creer-sans-lancer"
+          disabled={probleme !== null || envoi !== 'repos'}
+          onClick={() => { void creer(false); }}
+          className="rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+        >
+          Créer sans envoyer
         </button>
       </div>
     </section>
+  );
+}
+
+/**
+ * QUAND LA CAMPAGNE PART : maintenant, ou à une date choisie.
+ *
+ * 🔴 C'EST UNE AUTRE QUESTION QUE « HEURES OUVRÉES », ET LES DEUX SE CUMULENT. Celle-ci fixe le moment du
+ * DÉCLENCHEMENT ; l'autre, posée à l'étape Canal, borne les créneaux pendant lesquels l'envoi a le droit
+ * de courir. Une campagne programmée à 22 h sur un espace fermé la nuit est bien déclenchée à 22 h, puis
+ * mise en pause jusqu'à l'ouverture, et elle reprend toute seule. Les fusionner ferait disparaître l'une
+ * des deux.
+ *
+ * ⚠️ LA DATE EST SAISIE EN HEURE LOCALE et convertie en instant absolu au dernier moment
+ * (`momentDuLancement`), qui est aussi ce qui VALIDE la saisie : l'écran ne porte donc aucune règle de
+ * date, il montre seulement ce que la règle a répondu. Une seconde vérification ici pourrait accepter ce
+ * que le lancement refuse.
+ */
+function BlocQuand({
+  etat, onChange,
+}: { etat: EtatCampagne; onChange: (patch: Partial<EtatCampagne>) => void }) {
+  return (
+    <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-quand">
+      <h3 className="text-sm font-medium text-ink-700">Quand ?</h3>
+      <div className="mt-3 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
+        {([
+          ['maintenant', 'Maintenant'],
+          ['plus_tard', 'Plus tard'],
+        ] as const).map(([valeur, libelle]) => (
+          <button
+            key={valeur}
+            type="button"
+            onClick={() => onChange({ quand: valeur })}
+            data-testid={`quand-${valeur}`}
+            className={`rounded-md px-3 py-1 ${etat.quand === valeur ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+          >
+            {libelle}
+          </button>
+        ))}
+      </div>
+      {etat.quand === 'plus_tard' && (
+        <div className="mt-3">
+          <label className="block text-sm text-ink-700">
+            <span className="block font-medium">Date et heure du départ</span>
+            <input
+              type="datetime-local"
+              value={etat.dateLocale}
+              onChange={(e) => onChange({ dateLocale: e.target.value })}
+              data-testid="campagne-date"
+              className="mt-1 w-full max-w-xs rounded-lg border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+            />
+          </label>
+          <p className="mt-1 text-xs text-ink-500">
+            La campagne est créée tout de suite avec ses destinataires, et partira automatiquement à cette
+            date. Vous pouvez annuler la programmation depuis la liste des campagnes.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -200,10 +362,16 @@ export function EtapeRecap({
  * parce qu'il est à côté du bouton qui envoie.
  */
 function BlocCout({
-  etat, retenus, onChange,
-}: { etat: EtatCampagne; retenus: number | null; onChange: (patch: Partial<EtatCampagne>) => void }) {
+  etat, retenus, fil, onChange,
+}: {
+  etat: EtatCampagne;
+  retenus: number | null;
+  /** La campagne est-elle au fil de l'eau ? Alors ni volume ni durée n'existent : il n'y a pas de lot. */
+  fil: boolean;
+  onChange: (patch: Partial<EtatCampagne>) => void;
+}) {
   const debit = etat.debitParMinute;
-  const minutes = retenus === null ? null : Math.max(1, Math.ceil(retenus / debit));
+  const minutes = fil || retenus === null ? null : Math.max(1, Math.ceil(retenus / debit));
   return (
     <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-cout">
       <div className="flex items-center justify-between gap-3">
@@ -239,14 +407,21 @@ function BlocCout({
       </p>
 
       <p className="mt-3 border-t border-ink-100 pt-3 text-sm text-ink-600">
-        {retenus === null
-          ? 'Le nombre de contacts retenus n’a pas pu être lu : le volume et la durée restent inconnus.'
-          : <>Jusqu&apos;à <b>{fmtNum(retenus, 'fr')}</b> messages facturables au premier étage, plus un message par bascule.</>}
+        {/* 🔴 AU FIL DE L'EAU, IL N'Y A PAS DE LOT À CHIFFRER : la campagne facture un message par contact
+            qui arrive, aussi longtemps qu'elle reste ouverte. Afficher « jusqu'à 0 messages » serait faux
+            dans le sens rassurant, qui est le pire des deux sur un écran de lancement. */}
+        {fil
+          ? <>Un message facturable par contact qui arrive, tant que la campagne reste ouverte. Arrêtez-la depuis la liste des campagnes.</>
+          : retenus === null
+            ? 'Le nombre de contacts retenus n’a pas pu être lu : le volume et la durée restent inconnus.'
+            : <>Jusqu&apos;à <b>{fmtNum(retenus, 'fr')}</b> messages facturables au premier étage, plus un message par bascule.</>}
       </p>
       <p className="mt-1 text-sm text-ink-600" data-testid="recap-duree">
-        {minutes === null
-          ? 'Durée inconnue.'
-          : <>Environ <b>{fmtNum(minutes, 'fr')}</b> min d&apos;envoi à {fmtNum(debit, 'fr')} messages/min.</>}
+        {fil
+          ? 'Aucune durée : la campagne reste ouverte jusqu’à ce que vous l’arrêtiez.'
+          : minutes === null
+            ? 'Durée inconnue.'
+            : <>Environ <b>{fmtNum(minutes, 'fr')}</b> min d&apos;envoi à {fmtNum(debit, 'fr')} messages/min.</>}
         {/* ⚠️ LA CONTRAINTE D'HORAIRE S'AJOUTE À LA DURÉE, elle ne la remplace pas : la campagne enverra
             bien ce nombre de minutes, mais réparties sur les créneaux ouverts. Annoncer « la durée dépend
             de vos créneaux » SEULE effaçait le seul chiffre que l'écran sait donner. */}
@@ -296,6 +471,13 @@ function useMesuresAudience(
   // autre canal, ce qui est pire qu'une case vide.
   const premierEstWhatsApp = tries[0]?.canal === 'whatsapp';
   /**
+   * 🔴 AU FIL DE L'EAU, LES TROIS COMPTES N'ONT AUCUN OBJET, ET LES LANCER SERAIT PIRE QUE LES OMETTRE.
+   * L'audience résiduelle vaut encore « tous les contacts » (elle n'est pas vidée quand on change de
+   * source, pour ne pas la reperdre à chaque aller-retour) : `countContacts` rendrait donc le total de
+   * l'espace, et le récapitulatif annoncerait une population à qui cette campagne n'enverra rien.
+   */
+  const fil = auFilDeLEau(etat.audience);
+  /**
    * 🔴 DEUX DES TROIS COMPTES N'EXISTENT QUE SUR UNE AUDIENCE DÉCRITE PAR SES FILTRES. `countContacts`
    * n'interroge que des filtres : une liste de contacts cochés un par un, ou un filtre amputé de ses
    * exclusions, ne se comptent pas de ce côté-là. On rend alors `null` AVEC SON MOTIF, plutôt qu'un
@@ -305,7 +487,10 @@ function useMesuresAudience(
    * que le navigateur connaît sans rien demander.
    */
   const parFiltres = audienceEnFiltres(selection);
-  const motif: MesuresAudience['motifNonPrevisible'] = !premierEstWhatsApp ? 'canal' : !parFiltres ? 'selection' : undefined;
+  // ⚠️ LE FIL DE L'EAU PASSE EN PREMIER : c'est le motif qui ne se corrige pas, et le donner en second
+  // ferait afficher « choisissez d'autres filtres » à quelqu'un qui n'a pas de filtres du tout.
+  const motif: MesuresAudience['motifNonPrevisible'] = fil ? 'fil_de_l_eau'
+    : !premierEstWhatsApp ? 'canal' : !parFiltres ? 'selection' : undefined;
   // ⚠️ LE MÊME POINT DE PASSAGE QUE LE SÉLECTEUR ET QUE L'ENVOI (`champEmailDeLaChaine`) : appliquer la
   // suggestion ici de son côté ferait compter sur un champ que l'écran n'affiche pas, ou ne rien compter.
   const champEmail = champEmailDeLaChaine(etat, tries, champs);
@@ -316,17 +501,17 @@ function useMesuresAudience(
     // ⚠️ AUCUNE REQUÊTE EN MODE LISTE : le nombre retenu est celui des cases cochées, et le total des
     // filtres n'en dit rien. La demander quand même ferait payer un aller-retour pour un chiffre
     // qu'aucune phrase de l'écran n'affiche.
-    if (!selection.toutFiltre) return () => { vivant = false; };
+    if (fil || !selection.toutFiltre) return () => { vivant = false; };
     void countContacts(tenantId, filtres)
       .then((r) => { if (vivant) setTotal(typeof r?.total === 'number' ? r.total : 0); })
       .catch(() => {});
     return () => { vivant = false; };
-  }, [tenantId, filtres, selection.toutFiltre]);
+  }, [tenantId, filtres, selection.toutFiltre, fil]);
 
   useEffect(() => {
     let vivant = true;
     setRestants(null);
-    if (!premierEstWhatsApp || !parFiltres) return () => { vivant = false; };
+    if (fil || !premierEstWhatsApp || !parFiltres) return () => { vivant = false; };
     // ⚠️ ON COMPTE CE QUI RESTE APRÈS AVOIR ÉCARTÉ LES INJOIGNABLES, puis on soustrait dans
     // `repartitionPrevue`. Le filtre du mini-CRM sait EXCLURE les connus injoignables ; il n'a pas de
     // forme qui les ISOLE, et en inventer une ici donnerait un second vocabulaire de ciblage à tenir
@@ -335,12 +520,12 @@ function useMesuresAudience(
       .then((r) => { if (vivant) setRestants(typeof r?.total === 'number' ? r.total : 0); })
       .catch(() => {});
     return () => { vivant = false; };
-  }, [tenantId, filtres, premierEstWhatsApp, parFiltres]);
+  }, [tenantId, filtres, premierEstWhatsApp, parFiltres, fil]);
 
   useEffect(() => {
     let vivant = true;
     setSansAdresse(null);
-    if (!champEmail || !parFiltres) return () => { vivant = false; };
+    if (fil || !champEmail || !parFiltres) return () => { vivant = false; };
     void countContacts(tenantId, {
       ...filtres,
       fieldFilters: [...(filtres.fieldFilters ?? []), { key: champEmail, op: 'empty', value: '' }],
@@ -348,8 +533,12 @@ function useMesuresAudience(
       .then((r) => { if (vivant) setSansAdresse(typeof r?.total === 'number' ? r.total : 0); })
       .catch(() => {});
     return () => { vivant = false; };
-  }, [tenantId, filtres, champEmail, parFiltres]);
+  }, [tenantId, filtres, champEmail, parFiltres, fil]);
 
+  // ⚠️ `0` ET NON `null` AU FIL DE L'EAU, parce que `null` veut dire « en cours de lecture » et ferait
+  // battre un « ... » qui n'aboutirait jamais. Zéro est ici la vérité : au moment du lancement, cette
+  // campagne n'a effectivement aucun destinataire, et le motif dit pourquoi ce n'est pas un échec.
+  if (fil) return { retenus: 0, connusInjoignables: null, sansAdresse: null, motifNonPrevisible: 'fil_de_l_eau' };
   // ⚠️ `null` TANT QUE LE TOTAL MANQUE, et seulement dans le mode qui en a besoin : en mode liste le
   // compte est connu tout de suite, et l'écran ne doit pas afficher « ... » pour rien.
   if (selection.toutFiltre && total === null) return null;

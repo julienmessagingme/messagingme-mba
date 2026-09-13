@@ -3,12 +3,19 @@
 import { useRef, useState } from 'react';
 import { getTemplateHints, getWorkflow, type RcsSuggestion, type UserFieldDef } from '@/lib/api';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
+import { TemplatePreview } from '@/components/TemplatePreview';
+import { ChampImageHebergee } from '@/components/ChampImageHebergee';
+import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
+import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
+import type { CreatedTemplate } from '@/components/TemplateForm';
+import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
 import type { CanalEtage, EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { modeleDeLEtage } from '@/lib/campagne-creation';
 import { SYSTEM_FIELDS, customFieldsOnly, varCountOf } from '@/lib/fields';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
-import { appliquerIndices, lignesParDefaut, type VarRow } from '@/lib/variables-template';
+import { appliquerIndices, exemplesDApercu, lignesParDefaut, type VarRow } from '@/lib/variables-template';
+import type { TemplateSummary } from '@/lib/api';
 import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 
 /**
@@ -49,6 +56,9 @@ export function EtapeContenu({
   references,
   capacites,
   nbDestinataires,
+  rechargerTemplates,
+  modeleSoumis,
+  onModeleSoumis,
   onChange,
   onContenu,
 }: {
@@ -67,6 +77,14 @@ export function EtapeContenu({
    * et renvoie au récapitulatif, qui est précisément l'écran qui rachète cet ordre.
    */
   nbDestinataires: number | null;
+  /**
+   * Relit la liste des modèles et rend la liste COMPLÈTE. ABSENTE = la création à la volée n'est pas
+   * proposée, cf. le docblock de `AssistantCampagne`.
+   */
+  rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  /** Le modèle en cours de revue chez Meta. Il vit dans la COQUILLE : cf. `AssistantCampagne`. */
+  modeleSoumis: CreatedTemplate | null;
+  onModeleSoumis: (t: CreatedTemplate | null) => void;
   onChange: (patch: Partial<EtatCampagne>) => void;
   /**
    * Modifier le contenu d'UN étage.
@@ -98,6 +116,9 @@ export function EtapeContenu({
           onToggle={() => setOuvert((o) => (o === etage.rang ? null : etage.rang))}
           contenu={etat.contenus[etage.rang] ?? contenuVide()}
           references={references}
+          {...(rechargerTemplates ? { rechargerTemplates } : {})}
+          modeleSoumis={modeleSoumis}
+          onModeleSoumis={onModeleSoumis}
           onChange={(patch) => onContenu(etage.rang, patch)}
         />
       ))}
@@ -125,6 +146,9 @@ function CadreEtage({
   onToggle,
   contenu,
   references,
+  rechargerTemplates,
+  modeleSoumis,
+  onModeleSoumis,
   onChange,
 }: {
   tenantId: string;
@@ -133,6 +157,9 @@ function CadreEtage({
   onToggle: () => void;
   contenu: ContenuEtage;
   references: ReferencesContenu;
+  rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  modeleSoumis: CreatedTemplate | null;
+  onModeleSoumis: (t: CreatedTemplate | null) => void;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
   const titreId = `etage-titre-${etage.rang}`;
@@ -163,8 +190,19 @@ function CadreEtage({
 
       {ouvert && (
         <div className="border-t border-ink-100 px-4 py-4">
-          {etage.canal === 'whatsapp' && <CadreWhatsApp tenantId={tenantId} rang={etage.rang} contenu={contenu} references={references} onChange={onChange} />}
-          {etage.canal === 'rcs' && <CadreRcs contenu={contenu} references={references} onChange={onChange} />}
+          {etage.canal === 'whatsapp' && (
+            <CadreWhatsApp
+              tenantId={tenantId}
+              rang={etage.rang}
+              contenu={contenu}
+              references={references}
+              {...(rechargerTemplates ? { rechargerTemplates } : {})}
+              modeleSoumis={modeleSoumis}
+              onModeleSoumis={onModeleSoumis}
+              onChange={onChange}
+            />
+          )}
+          {etage.canal === 'rcs' && <CadreRcs tenantId={tenantId} rang={etage.rang} contenu={contenu} references={references} onChange={onChange} />}
           {etage.canal === 'email' && <CadreEmail contenu={contenu} references={references} onChange={onChange} />}
         </div>
       )}
@@ -177,12 +215,18 @@ function CadreWhatsApp({
   rang,
   contenu,
   references,
+  rechargerTemplates,
+  modeleSoumis,
+  onModeleSoumis,
   onChange,
 }: {
   tenantId: string;
   rang: number;
   contenu: ContenuEtage;
   references: ReferencesContenu;
+  rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  modeleSoumis: CreatedTemplate | null;
+  onModeleSoumis: (t: CreatedTemplate | null) => void;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
   /**
@@ -207,7 +251,15 @@ function CadreWhatsApp({
    * que la garde de lancement aurait jugée incomplète, sans rien pour l'expliquer à l'écran.
    */
   const modele = modeleDeLEtage(contenu);
-  const nbVariables = varCountOf(references.templates.find((t) => t.name === modele?.name)?.body);
+  /**
+   * LE MODÈLE COMPLET, PAS SEULEMENT SON NOM.
+   *
+   * ⚠️ IL SERT DEUX LECTEURS D'UN SEUL COUP : le compte de variables (son corps) et l'APERÇU (son corps,
+   * ses boutons, son carousel, son en-tête). Les chercher deux fois dans la même liste donnerait deux
+   * occasions de viser deux modèles différents dans le même cadre.
+   */
+  const tpl = references.templates.find((t) => t.name === modele?.name);
+  const nbVariables = varCountOf(tpl?.body);
 
   /**
    * POSER LES LIGNES TOUT DE SUITE, PUIS LES AFFINER.
@@ -287,9 +339,36 @@ function CadreWhatsApp({
         options={references.templates.map((t) => ({ valeur: t.name, libelle: `${t.name} (${t.language})` }))}
         vide="Aucun modèle approuvé sur cet espace."
       />
+      {/*
+        🔴 LE PARCOURS DE SOUMISSION À META EST CELUI DE L'ÉCRAN EN SERVICE, pas une seconde version. Un
+        modèle neuf revient `PENDING`, donc inenvoyable, et le sélecteur ci-dessus ne liste que les
+        approuvés : c'est tout l'objet du panneau, qui nomme l'attente et choisit le modèle dès son
+        approbation. Le refaire ici aurait donné deux façons de soumettre un modèle à Meta.
+      */}
+      {rechargerTemplates && (
+        <CreationModeleEnLigne
+          tenantId={tenantId}
+          templates={references.templates}
+          rechargerTemplates={rechargerTemplates}
+          nomChoisi={contenu.templateName ?? ''}
+          onChoisir={choisirModele}
+          soumis={modeleSoumis}
+          onSoumis={onModeleSoumis}
+          /**
+           * 🔴 L'APERÇU PASSE SOUS LES CHAMPS, ET C'EST MESURÉ, PAS SUPPOSÉ. L'assistant est une colonne
+           * bornée à 768 px : dans le cadre d'un étage il reste environ 700 px utiles, dont l'aperçu de
+           * `TemplateForm` prendrait 300 en dur. Le champ « Nom » y tomberait sous 400 px, et l'incident
+           * du 2026-09-08 (« la miniature passe au-dessus des cases à remplir ») vient exactement de là.
+           * ⚠️ Aucune media query ne peut décider à sa place : les points de rupture lisent la largeur de
+           * l'ÉCRAN, pas celle du conteneur. C'est l'appelant qui SAIT dans quoi il rend.
+           */
+          colonneEtroite
+        />
+      )}
       {contenu.formule === 'avec_scenario' && (
         <SelecteurScenario contenu={contenu} references={references} onChange={choisirScenario} testId={`scenario-${rang}`} />
       )}
+      <ApercuModele rang={rang} contenu={contenu} tpl={tpl} references={references} />
       <EditeurVariables
         rang={rang}
         nbVariables={nbVariables}
@@ -297,6 +376,56 @@ function CadreWhatsApp({
         champs={references.userFields}
         onChange={(lignes) => onChange({ variables: lignes })}
       />
+    </div>
+  );
+}
+
+/**
+ * L'APERÇU DU MODÈLE QUI VA PARTIR : carousel, en-tête média et boutons compris.
+ *
+ * 🔴 SANS LUI, L'OPÉRATEUR VALIDE UN ENVOI DE MASSE SUR UN NOM DE MODÈLE. C'est la capacité qui manquait
+ * le plus à l'usage, et la raison pour laquelle elle vient en premier dans ce lot. Elle RÉUTILISE
+ * `TemplatePreview`, le composant que l'écran en service et l'Inbox appellent déjà : le choix carousel ou
+ * bulle simple se fait sur le CONTENU du modèle, jamais sur l'écran qui l'affiche, donc les trois endroits
+ * du produit qui montrent un modèle approuvé montrent la même chose.
+ *
+ * 🔴 C'EST LE MODÈLE RÉSOLU PAR `modeleDeLEtage`, PAS `templateName`. En formule « modèle et scénario »,
+ * ce n'est pas le modèle du sélecteur qui part : c'est celui par lequel le scénario OUVRE. Montrer le
+ * premier afficherait une bulle que personne ne recevra, juste à côté de la liste de variables du second.
+ *
+ * ⚠️ BORNÉ À `max-xs`, ET C'EST LA GARDE DE LARGEUR. `PhoneFrame` est fluide : dans la colonne de 768 px
+ * de l'assistant, il rendrait une bulle de téléphone large comme la page. La borne le ramène aux ~320 px
+ * qu'il occupe dans l'écran en service, et par construction il ne peut plus rien déborder.
+ */
+function ApercuModele({
+  rang,
+  contenu,
+  tpl,
+  references,
+}: {
+  rang: number;
+  contenu: ContenuEtage;
+  tpl: TemplateSummary | undefined;
+  references: ReferencesContenu;
+}) {
+  // ⚠️ RIEN À MONTRER PLUTÔT QU'UN CADRE VIDE : un modèle sans corps (anciens modèles, `body` absent de la
+  // liste) donnerait une bulle « Le message apparaîtra ici… » qui ressemble à une panne.
+  if (!tpl?.body) return null;
+  const parScenario = contenu.formule === 'avec_scenario';
+  return (
+    <div className="w-full" data-testid={`apercu-${rang}`}>
+      {parScenario && (
+        <p className="mb-1 text-xs text-ink-500">
+          1<sup>er</sup> modèle envoyé par le scénario : <b>{tpl.name}</b>
+        </p>
+      )}
+      <div className="w-full max-w-xs">
+        <TemplatePreview
+          template={tpl}
+          examples={exemplesDApercu(contenu.variables ?? [])}
+          {...(references.numeros[0]?.verifiedName ? { senderName: references.numeros[0]!.verifiedName! } : {})}
+        />
+      </div>
     </div>
   );
 }
@@ -378,14 +507,20 @@ function EditeurVariables({
 }
 
 function CadreRcs({
+  tenantId,
+  rang,
   contenu,
   references,
   onChange,
 }: {
+  /** L'espace, pour TÉLÉVERSER le visuel : c'est le seul appel réseau de ce cadre. */
+  tenantId: string;
+  rang: number;
   contenu: ContenuEtage;
   references: ReferencesContenu;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
+  const image = contenu.imageRcs ?? '';
   return (
     <div className="w-full space-y-3">
       <Formule
@@ -395,16 +530,61 @@ function CadreRcs({
         contenu={contenu}
         onChange={onChange}
       />
-      <label className="block text-sm">
-        <span className="block font-medium text-ink-700">Message</span>
-        <textarea
-          value={contenu.texteRcs ?? ''}
-          onChange={(e) => onChange({ texteRcs: e.target.value })}
-          rows={3}
-          data-testid="rcs-texte"
-          className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
-        />
-      </label>
+      {/*
+        ⚠️ PARTIR D'UN MESSAGE ENREGISTRÉ fait une COPIE, jamais un lien. La campagne garde le message tel
+        qu'il était au moment où on l'a repris : modifier la bibliothèque ensuite ne doit pas réécrire une
+        campagne déjà partie. `versBrouillonRcs` rend `null` sur un format que ce composeur ne sait pas
+        éditer (carrousel, carte à titre), et ces messages-là ne sont donc PAS proposés : les ouvrir à
+        moitié réenregistrerait un message amputé.
+      */}
+      <Selecteur
+        libelle="Partir d’un message enregistré"
+        testId={`rcs-bibliotheque-${rang}`}
+        valeur=""
+        onChange={(id) => {
+          const b = versBrouillonRcs(references.messagesRcs.find((m) => m.id === id)?.content ?? null);
+          // ⚠️ UN SEUL PATCH POUR LES TROIS CHAMPS : trois appels de suite partiraient du même état de
+          // rendu et les deux derniers effaceraient le premier. Même règle que le choix d'un modèle.
+          if (b) onChange({ texteRcs: b.text, imageRcs: b.imageUrl, suggestions: b.suggestions });
+        }}
+        options={references.messagesRcs
+          .filter((m) => versBrouillonRcs(m.content) !== null)
+          .map((m) => ({ valeur: m.id, libelle: m.name }))}
+        vide="Aucun message RCS enregistré sur cet espace."
+      />
+      {/*
+        🔴 LE VISUEL CHANGE LE FORMAT DU MESSAGE, PAS SEULEMENT SON APPARENCE. Dès qu'il y en a un,
+        `versMessageRcs` bascule en CARTE : l'image passe au-dessus du texte, les boutons deviennent des
+        boutons pleine largeur empilés DANS la carte (4 au plus) au lieu de pastilles éphémères sous la
+        bulle (11 au plus), et le plafond de texte descend de 3 072 à 2 000 caractères. Les deux plafonds
+        ci-dessous suivent donc le visuel, sans quoi l'écran laisserait saisir ce que l'envoi refuserait.
+      */}
+      <div>
+        <p className="text-sm font-medium text-ink-700">Visuel</p>
+        <div className="mt-1 w-full">
+          <ChampImageHebergee
+            tenantId={tenantId}
+            valeur={image}
+            onChange={(url) => onChange({ imageRcs: url })}
+            testIdPrefix={`campagne-rcs-${rang}`}
+            compact
+          />
+        </div>
+      </div>
+      {/*
+        ⚠️ LE MÊME COMPOSEUR QUE LA BIBLIOTHÈQUE ET QUE L'ÉCRAN EN SERVICE : il porte l'insertion des
+        variables `{{champ}}` (remplacées par la fiche de chaque contact à l'envoi) et le compteur de
+        caractères. Le `<textarea>` nu qui était ici n'avait ni l'une ni l'autre, donc écrire une variable
+        y demandait de connaître la syntaxe par cœur.
+      */}
+      <ChampCorpsVariables
+        valeur={contenu.texteRcs ?? ''}
+        onChange={(v) => onChange({ texteRcs: v })}
+        fields={references.userFields}
+        label="Message"
+        testId="rcs-texte"
+        max={maxTexteRcs(image)}
+      />
       {/* 🔴 LE RCS NE SE RÉDUIT PAS À UN LIEN : ses suggestions sont ce qui le distingue d'un SMS enrichi,
           et l'éditeur partagé est celui des trois autres écrans, pas une quatrième copie.
           ⚠️ On part de ZÉRO suggestion : une suggestion posée d'office serait un bouton vide envoyé à des
@@ -415,12 +595,17 @@ function CadreRcs({
           <RcsButtonsEditor
             boutons={contenu.suggestions}
             onChange={(b: RcsSuggestion[]) => onChange({ suggestions: b })}
-            testIdPrefix="campagne-rcs"
+            max={image.trim() !== '' ? MAX_BOUTONS_CARTE : MAX_BOUTONS_RCS}
+            dateFields={references.userFields}
+            testIdPrefix={`campagne-rcs-${rang}`}
             libelleAjout="Ajouter une suggestion"
             compact
           />
         </div>
       </div>
+      <p className="text-[11px] text-amber-700">
+        Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport.
+      </p>
       {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant. */}
       {contenu.formule === 'avec_scenario' && (
         <SelecteurScenario contenu={contenu} references={references} onChange={(v) => onChange({ workflowId: v })} />

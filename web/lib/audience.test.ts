@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  audienceEnFiltres, audienceInitiale, cibleDeCreation, estRetenu, filtresDesImportes,
+  audienceEnFiltres, audienceInitiale, auFilDeLEau, cibleDeCreation, estRetenu, filtresDesImportes,
   libelleAudience, nbRetenus, selectionTout, selectionVide,
 } from './audience';
 
@@ -137,5 +137,42 @@ describe('l audience d une campagne qui demarre', () => {
     const b = audienceInitiale();
     expect(a.selection.selected).not.toBe(b.selection.selected);
     expect(a.filtres).not.toBe(b.filtres);
+  });
+});
+
+/**
+ * LA CAMPAGNE AU FIL DE L'EAU : l'absence de liste, pas une quatrieme facon d'en faire une.
+ *
+ * 🔴 CE QUE CES CAS PROTÈGENT : la sélection RESTE dans l'état quand on passe au fil de l'eau (elle n'est
+ * pas vidée, pour ne pas la reperdre à chaque aller-retour). Tout lecteur qui la lirait sans regarder le
+ * mode décrirait donc une population à qui cette campagne n'enverra rien.
+ */
+describe('au fil de l eau', () => {
+  it('le predicat ne reconnait que la source webhook', () => {
+    expect(auFilDeLEau({ source: 'webhook' })).toBe(true);
+    expect(auFilDeLEau({ source: 'crm' })).toBe(false);
+    expect(auFilDeLEau({ source: 'fichier' })).toBe(false);
+    expect(auFilDeLEau({ source: 'hubspot' })).toBe(false);
+  });
+
+  /**
+   * 🔴 LE CAS QUI SÉPARE : la sélection résiduelle vaut « tous les contacts », et une implémentation qui
+   * la lirait d'abord annoncerait « tous les contacts » sur une campagne qui n'envoie à personne de déjà
+   * présent. Le mode se lit AVANT tout le reste.
+   */
+  it('le libelle dit le MODE, jamais la selection residuelle', () => {
+    const a = { ...audienceInitiale(), source: 'webhook' as const };
+    expect(a.selection.toutFiltre).toBe(true); // la résiduelle est bien « tous », c'est le piège
+    expect(libelleAudience(a)).toMatch(/fil de l/i);
+    expect(libelleAudience(a)).not.toMatch(/tous les contacts/i);
+  });
+
+  // ⚠️ L'AUTRE SENS : hors de ce mode, le libellé continue de décrire la sélection comme avant.
+  it('hors de ce mode, le libelle decrit toujours la selection', () => {
+    expect(libelleAudience(audienceInitiale())).toMatch(/tous les contacts/i);
+  });
+
+  it('une audience neuve part sans adresse', () => {
+    expect(audienceInitiale().webhookId).toBe('');
   });
 });

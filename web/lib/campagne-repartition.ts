@@ -69,9 +69,11 @@ export interface MesuresAudience {
    * `canal` : le premier étage ne part pas en WhatsApp, seul canal dont la joignabilité soit mémorisée.
    * `selection` : l'audience n'est pas décrite par des filtres seuls (`audienceEnFiltres`), et
    * `countContacts` ne sait interroger que des filtres.
+   * `fil_de_l_eau` : il n'y a AUCUNE audience à mesurer, les contacts n'existent pas encore et
+   * arriveront un par un par une adresse entrante. C'est le seul motif qui ne se corrige pas.
    * Absent : les comptes étaient possibles, donc un `null` restant est un échec de lecture.
    */
-  motifNonPrevisible?: 'canal' | 'selection';
+  motifNonPrevisible?: 'canal' | 'selection' | 'fil_de_l_eau';
 }
 
 /** Une ligne du tableau de répartition. `nombre` à `null` = le chiffre n'est pas prévisible. */
@@ -110,7 +112,9 @@ export function repartitionPrevue(
           // motif existe pour fermer.
           texte: m.motifNonPrevisible === 'selection'
             ? "Les fiches sans adresse e-mail ne se comptent que sur une audience décrite par des filtres, pas sur une sélection."
-            : "Choisissez le champ qui porte l'adresse e-mail pour savoir combien de fiches en ont une.",
+            : m.motifNonPrevisible === 'fil_de_l_eau'
+              ? "Les fiches sans adresse e-mail ne se comptent pas au fil de l'eau : les contacts n'existent pas encore."
+              : "Choisissez le champ qui porte l'adresse e-mail pour savoir combien de fiches en ont une.",
         };
       }
       return {
@@ -124,7 +128,12 @@ export function repartitionPrevue(
       return {
         rang: etage.rang, canal: etage.canal, nombre: null,
         texte: etage.rang === RANG_INITIAL
-          ? `Tous les contacts retenus partiront en ${libelle}.`
+          // ⚠️ AU FIL DE L'EAU, « TOUS LES CONTACTS RETENUS » NE DÉSIGNE PERSONNE : il n'y a pas d'ensemble
+          // retenu, il y a des arrivants. La phrase par défaut serait lue comme « la campagne part à tout
+          // l'espace », c'est-à-dire l'inverse de ce qui va se passer.
+          ? (m.motifNonPrevisible === 'fil_de_l_eau'
+            ? `Chaque contact qui arrive par l'adresse choisie recevra le message en ${libelle}.`
+            : `Tous les contacts retenus partiront en ${libelle}.`)
           : `Ceux qui échouent en ${LIBELLE_CANAL[tries[0]?.canal ?? 'whatsapp']} basculeront en ${libelle}. ${raisonDuSilence(m.motifNonPrevisible)}`,
       };
     }
@@ -172,6 +181,7 @@ export function champEmailSuggere(champs: Array<{ key: string; label: string }>)
 function raisonDuSilence(motif: MesuresAudience['motifNonPrevisible']): string {
   if (motif === 'canal') return "Ce nombre n'est pas prévisible : la joignabilité n'est mémorisée que sur WhatsApp.";
   if (motif === 'selection') return "Ce nombre n'est pas prévisible : l'audience est une sélection de contacts, et la joignabilité ne se compte que par filtre.";
+  if (motif === 'fil_de_l_eau') return "Ce nombre n'est pas prévisible : les contacts arrivent au fil de l'eau, ils n'existent pas encore.";
   return "Ce nombre n'a pas pu être lu.";
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
@@ -13,8 +14,6 @@ import {
   deleteCampaignDraft,
   type CampaignDraft,
   getCampaign,
-  listPhoneNumbers,
-  getSettings,
   runCampaign,
   retryRecipient,
   updateContact,
@@ -29,10 +28,8 @@ import {
   type CampaignDetail,
   type CampaignRecipient,
   type CampaignCategory,
-  type PhoneNumber,
   type PricingSummary,
 } from '@/lib/api';
-import { CampaignCreateForm } from '@/components/CampaignCreateForm';
 import { LaunchCounts } from '@/components/LaunchCounts';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
@@ -71,19 +68,21 @@ function Badge({ status }: { status: string }) {
 
 function CampaignsInner({ session }: { session: Session }) {
   const t = useT();
+  /**
+   * 🔴 LA CREATION A SON PROPRE ECRAN DEPUIS LE 2026-09-13, ET CETTE PAGE N'EN PORTE PLUS AUCUN
+   * MORCEAU. Elle hebergeait l'ancien formulaire dans un mode « create » : l'assistant, lui, vit a
+   * `/campaigns/nouvelle`, avec son adresse, ses etapes partageables (`?etape=`) et la reprise d'un
+   * brouillon par son identifiant (`?brouillon=`). Un mode local ne peut rien de tout cela.
+   */
+  const router = useRouter();
   const { locale } = useLocale();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
-  const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
-  const [mode, setMode] = useState<'list' | 'create'>('list');
-  const [rcsEnabled, setRcsEnabled] = useState(false);
   // Corbeille : la liste montre SOIT les campagnes actives SOIT les archivées, jamais les deux mélangées.
   const [showArchived, setShowArchived] = useState(false);
-  // Un lancement inline (étape 2) est en cours dans CreateForm -> on gèle le retour liste (remonté par callback).
-  const [createBusy, setCreateBusy] = useState(false);
   // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
   const [pricing, setPricing] = useState<PricingSummary | null>(null);
   /**
@@ -91,8 +90,6 @@ function CampaignsInner({ session }: { session: Session }) {
    * est pollé pendant un envoi : un brouillon ne bouge pas six fois en douze secondes.
    */
   const [brouillons, setBrouillons] = useState<CampaignDraft[]>([]);
-  /** Le brouillon qu'on vient de rouvrir, passé au formulaire. `null` = création neuve. */
-  const [brouillonRepris, setBrouillonRepris] = useState<CampaignDraft | null>(null);
 
   const rechargerBrouillons = useCallback(async () => {
     // Silencieux : l'absence de brouillons ne doit jamais masquer la liste des campagnes, qui est l'essentiel
@@ -115,21 +112,17 @@ function CampaignsInner({ session }: { session: Session }) {
     getTemplateStats(session.tenantId).then((ts) => setPricing(ts.pricing)).catch(() => setPricing(null));
   }, [session.tenantId]);
 
-  // Canal RCS : lecture DÉCOUPLÉE des référentiels (jamais dans le Promise.all all-or-nothing), même patron
-  // que la page Scénarios. Un hoquet ici ne doit pas vider la liste des campagnes ; le canal reste éteint.
-  useEffect(() => {
-    void getSettings(session.tenantId).then((s) => setRcsEnabled(s.rcsEnabled === true)).catch(() => {});
-  }, [session.tenantId]);
-
+  /**
+   * ⚠️ ELLE NE CHARGE PLUS QUE LES CAMPAGNES, ET C'EST UNE CONSÉQUENCE DU RETRAIT DU 2026-09-13. Les
+   * numéros Meta et le drapeau RCS ne servaient QU'au formulaire de création que cette page hébergeait :
+   * lui parti, ils n'avaient plus un seul lecteur ici. Et `reload` est SONDÉE pendant un envoi (six fois
+   * en douze secondes), donc chaque tour payait une lecture des numéros dont personne ne faisait rien.
+   */
   const reload = useCallback(async () => {
     setError(null);
     try {
-      const [c, n] = await Promise.all([
-        listCampaigns(session.tenantId, { archived: showArchived }),
-        listPhoneNumbers(session.tenantId),
-      ]);
+      const c = await listCampaigns(session.tenantId, { archived: showArchived });
       setCampaigns(c.campaigns);
-      setNumbers(n.phoneNumbers);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     } finally {
@@ -239,28 +232,6 @@ function CampaignsInner({ session }: { session: Session }) {
     await mutateAndReload(c.id, () => deleteCampaign(session.tenantId, c.id), t('Suppression impossible', 'Deletion failed'));
   }
 
-  // Écran de création (ouvert via « Ajouter une campagne »). Pleine largeur : fullBleed retire le padding et
-  // impose overflow-hidden sur <main>, donc on gère ici notre propre scroll et notre propre padding.
-  if (mode === 'create') {
-    return (
-      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        {/* Retour désactivé pendant un lancement en cours (createBusy) : on n'invite pas à quitter l'écran
-            au milieu du mini-polling. */}
-        <button onClick={() => setMode('list')} disabled={createBusy} className="mb-4 flex items-center gap-1 text-sm text-brand-600 hover:underline disabled:opacity-40">
-          ← {t('Retour aux campagnes', 'Back to campaigns')}
-        </button>
-        <CampaignCreateForm
-          tenantId={session.tenantId}
-          numbers={numbers}
-          onBusyChange={setCreateBusy}
-          onCreated={() => { void reload(); void rechargerBrouillons(); setMode('list'); }}
-          rcsEnabled={rcsEnabled}
-          {...(brouillonRepris ? { draft: brouillonRepris } : {})}
-        />
-      </div>
-    );
-  }
-
   // Écran par défaut : dashboard de suivi des campagnes. Même conteneur scrollable pleine largeur que la création.
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
@@ -299,7 +270,7 @@ function CampaignsInner({ session }: { session: Session }) {
             {showArchived ? t('Voir les campagnes actives', 'View active campaigns') : t('Voir les archivées', 'View archived')}
           </button>
           <button
-            onClick={() => { setDetail(null); setBrouillonRepris(null); setMode('create'); }}
+            onClick={() => router.push('/campaigns/nouvelle')}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
           >
             + {t('Ajouter une campagne', 'Add a campaign')}
@@ -326,7 +297,9 @@ function CampaignsInner({ session }: { session: Session }) {
                 <div className="flex shrink-0 items-center gap-3">
                   <button
                     data-testid={`draft-resume-${d.id}`}
-                    onClick={() => { setDetail(null); setBrouillonRepris(d); setMode('create'); }}
+                    /* ⚠️ LE BROUILLON VOYAGE PAR SON IDENTIFIANT, PAS PAR L'ETAT DE CETTE PAGE : l'ecran de
+                       creation le relit lui-meme, donc le lien se partage et survit a un rechargement. */
+                    onClick={() => router.push(`/campaigns/nouvelle?brouillon=${d.id}`)}
                     className="text-sm font-medium text-brand-600 hover:underline"
                   >
                     {t('Reprendre', 'Resume')}

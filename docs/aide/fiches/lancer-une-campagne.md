@@ -1,32 +1,46 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: ad9a7e
+source_empreinte: 4912f8
 ---
 # Lancer une campagne
 
 Une campagne envoie un même message à une liste de contacts, les uns après les autres.
 
-Tout se passe sur un seul écran, en deux étapes. La deuxième s'ouvre quand la première est complète.
+Depuis « Ajouter une campagne », un assistant vous pose une question par écran, en cinq étapes. Vous pouvez
+revenir en arrière à tout moment sans rien perdre.
 
-**Étape 1, la préparation.** Vous donnez un nom à la campagne, puis vous remplissez quatre zones :
+**1. Le nom.** Il n'est visible que de votre équipe. Vous dites aussi ici la nature de la campagne :
+« Marketing », qui n'envoie qu'aux contacts ayant donné leur consentement, ou « Service », pour une
+information liée à une commande, un rendez-vous ou un compte.
 
-- **Expéditeur** : le numéro WhatsApp qui envoie.
-- **Destinataires** : à qui. Le plus courant est de piocher dans votre liste de contacts, avec des filtres
-  que vous combinez (un ou plusieurs tags, le consentement marketing, le début ou un morceau du numéro, la
-  valeur d'un champ que vous avez créé, le nom). Un compteur vous dit en direct combien de contacts
-  correspondent. Vous pouvez aussi importer un fichier CSV, qui pose alors un tag obligatoire sur les
-  contacts importés et cible ce tag.
-- **Débit** : à quelle cadence les messages partent. Une cadence prudente protège la réputation de votre
-  numéro.
-- **Message** : ce que les gens reçoivent. Vous avez le choix entre un modèle approuvé et un scénario.
+**2. Le canal.** Un canal seul (WhatsApp ou RCS), ou une chaîne : le message part sur un premier canal, et
+les contacts qu'il n'a pas atteints sont repris sur un second, puis éventuellement par e-mail.
 
-**Étape 2, le lancement.** Vous choisissez quand la campagne part.
+**3. Le contenu.** Un cadre par étage de la chaîne, dans l'ordre d'envoi. Pour WhatsApp, vous choisissez un
+modèle approuvé, vous voyez tout de suite un aperçu de ce que le contact recevra, et vous dites d'où vient
+chaque variable du modèle. Si le modèle qu'il vous faut n'existe pas encore, vous le créez sans quitter la
+campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. Vous dites
+enfin ce qui se passe quand un contact répond : l'agent de Meta, un agent IA, ou votre Inbox.
+
+**4. L'audience.** À qui. Le plus courant est de piocher dans votre liste de contacts, avec des filtres que
+vous combinez (un ou plusieurs tags, le consentement marketing, le début ou un morceau du numéro, la valeur
+d'un champ que vous avez créé, le nom). Un compteur vous dit en direct combien de contacts correspondent.
+Vous pouvez aussi importer un fichier CSV, qui pose alors un tag obligatoire sur les contacts importés et
+cible ce tag. Autre possibilité : une campagne « au fil de l'eau », sans liste du tout, qui prend chaque
+contact arrivant par une adresse de webhook tant qu'elle reste ouverte.
+
+**5. Le récapitulatif.** Il montre combien de contacts chaque étage de la chaîne concerne, ce qu'aucun écran
+précédent ne pouvait vous dire. Vous y réglez la cadence d'envoi (une cadence prudente protège la réputation
+de votre numéro) et vous choisissez le moment : maintenant, ou à une date que vous fixez. Vous pouvez aussi
+créer la campagne sans rien envoyer, pour vérifier qui est retenu avant d'engager le moindre message : elle
+vous attend alors dans la liste, avec son bouton « Lancer ».
 
 Une campagne s'adresse à des gens qui ne vous ont pas forcément écrit récemment. C'est pourquoi son premier
 message doit être un modèle approuvé par WhatsApp, ou un scénario qui commence par un tel modèle. Si le
 scénario que vous cherchez n'apparaît pas dans le sélecteur, c'est presque toujours cela : il commence par un
 message qui ne peut partir que dans une conversation déjà ouverte.
 
-Une campagne que vous avez commencée sans la lancer est conservée. Vous la retrouvez dans la liste et vous
-reprenez où vous en étiez.
+Une campagne que vous avez commencée sans la lancer est conservée dès que vous lui avez donné un nom, avec
+tout ce que vous avez saisi ensuite, destinataires cochés compris. Vous la retrouvez en haut de la liste des
+campagnes et vous reprenez où vous en étiez.

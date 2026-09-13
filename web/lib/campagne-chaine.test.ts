@@ -93,7 +93,7 @@ describe('la jauge de debit', () => {
     expect(DEBIT_DEFAUT).toBeLessThanOrEqual(DEBIT_MAX);
   });
 
-  // ⚠️ 60 EST CELUI DE `CampaignCreateForm`, pas celui du serveur (30) : c'est ce que les campagnes de ce
+  // ⚠️ 60 EST CELUI DE L'ANCIEN FORMULAIRE, pas celui du serveur (30) : c'est ce que les campagnes de ce
   // produit envoient réellement aujourd'hui. Deux écrans qui créent la même campagne à deux vitesses
   // seraient une divergence invisible de tout compilateur.
   it('le defaut est celui de l ecran en service, 60', () => {
