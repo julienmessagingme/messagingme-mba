@@ -10,9 +10,9 @@ import { AccountMenu } from './AccountMenu';
 import { BoutonAide } from './BoutonAide';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
-import { arbresNav, cheminDeNav, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
+import { arbresNav, groupesAOuvrir, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'outils-espace' | 'parametres';
+type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'outils-espace' | 'parametres' | 'securite' | 'securite-audit' | 'securite-erreurs';
 
 /** Le RENDU d'une icône de nav. Les TRACÉS, eux, vivent avec les listes dans `lib/nav.ts` : ils sont de la
  *  donnée, et la carte de la console doit pouvoir être lue sans monter de composant React. */
@@ -62,13 +62,14 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   };
   const onglet = ongletDeLaPage(ARBRES, active);
 
-  // Chaîne des groupes qui mènent à la page active, DÉDUITE de la nav ci-dessus (`lib/nav.ts`). Deux choses
-  // en vivent : le groupe de premier niveau à surligner, et les groupes à déplier. Elles étaient écrites à la
-  // main ; un groupe oublié dans l'une laissait sa page active invisible, l'autre le gardait replié.
+  // LES GROUPES ACTIFS, DÉDUITS de la nav ci-dessus (`lib/nav.ts`) : ceux qui MÈNENT à la page, plus la page
+  // elle-même quand c'est un groupe (la page d'accueil de Sécurité en est une, cf. `groupesAOuvrir`). Deux
+  // choses en vivent : les groupes à SURLIGNER et ceux à DÉPLIER. Elles étaient écrites à la main ; un
+  // groupe oublié dans l'une laissait sa page active invisible, l'autre le gardait replié.
   //
   // ⚠️ Calculée dans l'arbre de l'onglet COURANT, pas dans leur union : deux arbres pourraient porter un
   // groupe de même clé, et l'union ferait déplier celui du mauvais onglet.
-  const chemin = cheminDeNav(ARBRES[onglet], active);
+  const chemin = groupesAOuvrir(ARBRES[onglet], active);
 
   // Groupes repliables : ouverts au départ sur TOUTE la chaîne de la page active (à trois niveaux, n'ouvrir
   // que le premier laisserait la page dans un sous-menu encore replié). `active` est une prop stable, donc

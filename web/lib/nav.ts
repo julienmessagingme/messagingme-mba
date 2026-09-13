@@ -41,6 +41,32 @@ export function cheminDeNav(items: NavEntree[], key: string): string[] {
 }
 
 /**
+ * LES GROUPES QUE LA BARRE DOIT OUVRIR pour une page donnée : ceux qui MÈNENT à `key`, plus `key` elle-même
+ * quand c'est un GROUPE.
+ *
+ * 🔴 CE DERNIER CAS EST CELUI QUI MANQUAIT, et il ne se voit qu'une fois qu'un groupe a sa propre page.
+ * `cheminDeNav('securite')` rend `[]` (« aucun groupe à traverser », ce qui est juste), si bien qu'en
+ * arrivant sur la page d'accueil de Sécurité la barre laissait ses sous-menus REPLIÉS : l'écran annonçait
+ * quatre destinations que le menu ne montrait pas.
+ *
+ * ⚠️ `cheminDeNav` n'est pas modifiée : son contrat est « la chaîne qui mène à », et une page qui EST un
+ * groupe n'a pas de chaîne. C'est l'appelant qui a besoin des deux.
+ */
+export function groupesAOuvrir(items: NavEntree[], key: string): string[] {
+  const chemin = cheminDeNav(items, key);
+  return estGroupe(items, key) ? [...chemin, key] : chemin;
+}
+
+/** `key` désigne-t-elle une entrée qui porte des enfants (donc un groupe, et non une destination) ? */
+function estGroupe(items: NavEntree[], key: string): boolean {
+  for (const item of items) {
+    if (item.key === key) return (item.children?.length ?? 0) > 0;
+    if (item.children && estGroupe(item.children, key)) return true;
+  }
+  return false;
+}
+
+/**
  * Les trois onglets de premier niveau (2026-09-08).
  *
  * `console` = configurer et opérer · `inbox` = traiter les conversations · `perf` = lire les résultats.
@@ -118,6 +144,8 @@ const icons = {
   automation: 'M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z',
   support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
   developers: 'M8 6l-5 6 5 6M16 6l5 6-5 6M13 4l-2 16',
+  // Un bouclier : c'est le seul pictogramme que tout le monde lit « sécurité » sans légende.
+  securite: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   // Tools : une prise. Ce menu regroupe ce qui BRANCHE la console sur l'extérieur.
   tools: 'M9 2v6M15 2v6M7 8h10v5a5 5 0 01-10 0V8zM12 18v4',
   mba: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM6 19l.7 1.9L8.6 21l-1.9.7L6 23.6l-.7-1.9L3.4 21l1.9-.1L6 19z',
@@ -249,6 +277,18 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // fois par jour. Aucune adresse ne change.
     { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), d: icons.settings },
     { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
+    /**
+     * LE CENTRE DE SÉCURITÉ & COMPLIANCE (2026-09-13).
+     *
+     * ⚠️ SES SOUS-MENUS ARRIVENT AU FUR ET À MESURE DE LEUR CONTENU, et c'est délibéré : une entrée de
+     * menu qui ouvre une page vide est pire que pas d'entrée. Les deux journaux y sont parce qu'ils
+     * EXISTAIENT déjà, dans Paramètres, où ils n'avaient rien à faire : on les consulte pour rendre des
+     * comptes, pas pour régler l'espace. Consentement et IA suivront avec leurs écrans.
+     */
+    { key: 'securite', label: t('Sécurité', 'Security'), d: icons.securite, children: [
+      { key: 'securite-audit', href: '/securite/audit', label: t('Audit trails', 'Audit trails') },
+      { key: 'securite-erreurs', href: '/securite/erreurs', label: t('Journal des erreurs', 'Error log') },
+    ] },
     { key: 'developers', label: t('Developers', 'Developers'), d: icons.developers, children: [
       { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },

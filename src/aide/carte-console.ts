@@ -36,6 +36,8 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"quanti-funnel","href":"/dashboard/funnel","fr":"Funnel","en":"Funnel","adminOnly":true,"chemin":["Quantitatif"]},
   {"cle":"quanti-messages","href":"/dashboard","fr":"Messages & contacts","en":"Messages & contacts","adminOnly":true,"chemin":["Quantitatif"]},
   {"cle":"rcs-messages","href":"/rcs-messages","fr":"Messages","en":"Messages","adminOnly":true,"chemin":["Contenu","RCS"]},
+  {"cle":"securite-audit","href":"/securite/audit","fr":"Audit trails","en":"Audit trails","adminOnly":true,"chemin":["Sécurité"]},
+  {"cle":"securite-erreurs","href":"/securite/erreurs","fr":"Journal des erreurs","en":"Error log","adminOnly":true,"chemin":["Sécurité"]},
   {"cle":"support","href":"/support","fr":"Support","en":"Support","adminOnly":true,"chemin":[]},
   {"cle":"tags","href":"/tags","fr":"Étiquettes","en":"Tags","adminOnly":true,"chemin":["Contenu","Bibliothèque"]},
   {"cle":"templates","href":"/templates","fr":"Templates","en":"Templates","adminOnly":true,"chemin":["Contenu","WhatsApp"]},

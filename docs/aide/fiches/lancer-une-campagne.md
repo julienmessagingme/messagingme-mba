@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: 48e295
+source_empreinte: fc76b5
 ---
 # Lancer une campagne
 
@@ -33,6 +33,12 @@ campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès 
 rempli, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
 Meta, un agent IA, ou votre Inbox.
 
+Un étage peut aussi partir en scénario plutôt qu'en simple message. Sur WhatsApp, c'est le scénario qui
+fournit le modèle d'ouverture ; sur RCS, votre message part d'abord et le scénario démarre juste après. Comme
+pour les modèles, si le scénario qu'il vous faut n'existe pas, vous le créez sans quitter la campagne :
+l'éditeur s'ouvre dans une fenêtre, et le scénario publié est choisi tout seul pour cet étage. Vous le
+retrouvez ensuite dans l'onglet Scénario comme les autres.
+
 **4. L'audience.** À qui. Le plus courant est de piocher dans votre liste de contacts, avec des filtres que
 vous combinez (un ou plusieurs tags, le consentement marketing, le début ou un morceau du numéro, la valeur
 d'un champ que vous avez créé, le nom). Un compteur vous dit en direct combien de contacts correspondent.
@@ -48,8 +54,10 @@ vous attend alors dans la liste, avec son bouton « Lancer ».
 
 Une campagne s'adresse à des gens qui ne vous ont pas forcément écrit récemment. C'est pourquoi son premier
 message doit être un modèle approuvé par WhatsApp, ou un scénario qui commence par un tel modèle. Si le
-scénario que vous cherchez n'apparaît pas dans le sélecteur, c'est presque toujours cela : il commence par un
-message qui ne peut partir que dans une conversation déjà ouverte.
+scénario que vous cherchez n'apparaît pas dans le sélecteur, c'est l'une de ces deux raisons : il commence
+par un message qui ne peut partir que dans une conversation déjà ouverte, ou bien il ouvre sur l'autre canal
+(un étage WhatsApp ne propose que les scénarios qui démarrent par un modèle, un étage RCS que ceux qui
+démarrent par un message RCS).
 
 Une campagne que vous avez commencée sans la lancer est conservée dès que vous lui avez donné un nom, avec
 tout ce que vous avez saisi ensuite, destinataires cochés compris. Vous la retrouvez en haut de la liste des

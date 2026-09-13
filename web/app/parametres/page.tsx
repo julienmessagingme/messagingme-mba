@@ -7,8 +7,6 @@ import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetB
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { BlockedContacts } from '@/components/BlockedContacts';
-import { AuditJournal } from '@/components/AuditJournal';
-import { ErreursLivraison } from '@/components/ErreursLivraison';
 import { Toggle } from '@/components/Toggle';
 
 export default function ParametresPage() {
@@ -202,12 +200,12 @@ function Parametres({ tenantId }: { tenantId: string }) {
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}
           <BlockedContacts tenantId={tenantId} />
 
-          {/* Journal d'audit : lecture seule, alimenté par les actions sur les contacts. */}
-          <AuditJournal tenantId={tenantId} />
-          {/* Les ERREURS juste en dessous, au meme endroit, parce qu on les consulte pour la meme raison :
-              comprendre ce qui s est passe. Mais ce sont deux journaux differents, et leur en-tete le dit :
-              l un ne porte aucun numero (preuve immuable), l autre en porte (exploitation). */}
-          <ErreursLivraison tenantId={tenantId} />
+          {/*
+            ⚠️ LES DEUX JOURNAUX SONT PARTIS DANS « SÉCURITÉ » LE 2026-09-13, ensemble parce qu'ils étaient
+            déjà ensemble, et parce qu'on ne les consulte pas pour la même raison qu'on vient ici : ils
+            servent à RENDRE DES COMPTES, pas à régler l'espace. Aucune adresse n'a changé, `/parametres`
+            existe à l'identique.
+          */}
         </>
       )}
     </div>

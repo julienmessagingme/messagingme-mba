@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { arbresNav, cheminDeNav, contientLaCle, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -226,5 +226,43 @@ describe('la place du menu « Scénario »', () => {
 
   it('et il reste dans l’onglet Console, donc atteignable', () => {
     expect(ongletDeLaPage(arbresNav(t), 'workflows')).toBe('console');
+  });
+});
+
+/**
+ * 🔴 LE GROUPE QUI A SA PROPRE PAGE. `cheminDeNav` rend `[]` pour une clé de premier niveau, ce qui est
+ * juste (« aucun groupe à traverser ») et laissait pourtant la barre repliée en arrivant sur la page
+ * d'accueil de Sécurité : l'écran annonçait des destinations que le menu ne montrait pas.
+ */
+describe('groupesAOuvrir', () => {
+  const arbre: NavEntree[] = [
+    { key: 'seul', href: '/seul', label: 'Seul' },
+    { key: 'groupe', label: 'Groupe', children: [
+      { key: 'enfant', href: '/groupe/enfant', label: 'Enfant' },
+      { key: 'sous-groupe', label: 'Sous-groupe', children: [{ key: 'petit-fils', href: '/x', label: 'Petit-fils' }] },
+    ] },
+  ];
+
+  it('🔴 un GROUPE ouvre le sien, en plus de ceux qui y mènent', () => {
+    expect(groupesAOuvrir(arbre, 'groupe')).toEqual(['groupe']);
+    expect(groupesAOuvrir(arbre, 'sous-groupe')).toEqual(['groupe', 'sous-groupe']);
+  });
+
+  it('une DESTINATION n ouvre que ce qui y mène, pas elle-même', () => {
+    expect(groupesAOuvrir(arbre, 'enfant')).toEqual(['groupe']);
+    expect(groupesAOuvrir(arbre, 'petit-fils')).toEqual(['groupe', 'sous-groupe']);
+    expect(groupesAOuvrir(arbre, 'seul')).toEqual([]);
+  });
+
+  it('une clé inconnue n ouvre rien, elle ne jette pas', () => {
+    expect(groupesAOuvrir(arbre, 'inexistant')).toEqual([]);
+  });
+
+  it('⚠️ « Sécurité » est bien un groupe dans le VRAI arbre', () => {
+    // Sans ce cas, les trois précédents passeraient sur un arbre de test pendant que la vraie barre reste
+    // repliée : c'est la nav réelle qui décide.
+    const { adminBas } = arbresNav((fr) => fr);
+    expect(groupesAOuvrir(adminBas, 'securite')).toEqual(['securite']);
+    expect(groupesAOuvrir(adminBas, 'securite-audit')).toEqual(['securite']);
   });
 });
