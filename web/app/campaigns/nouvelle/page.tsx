@@ -8,7 +8,7 @@ import {
   getSettings, listTemplates, listWorkflows, listEmailTemplates, listUsers,
   listTags, listUserFields, listPhoneNumbers, listRcsAgents, listRcsMessages,
   listCampaignDrafts,
-  type BusinessHours, type CampaignDraft, type TemplateSummary,
+  type BusinessHours, type CampaignDraft, type TemplateSummary, type WorkflowSummary,
 } from '@/lib/api';
 import { listAgents } from '@/lib/api-agent';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
@@ -65,6 +65,21 @@ function AssistantInner({ session }: { session: Session }) {
     const r = await listTemplates(session.tenantId);
     const tous = Array.isArray(r?.templates) ? r.templates : [];
     setReferences((ref) => ({ ...ref, templates: tous.filter((t) => t.status === 'APPROVED') }));
+    return tous;
+  }, [session.tenantId]);
+
+  /**
+   * Relit la liste des scénarios et rend celle que le sélecteur propose.
+   *
+   * ⚠️ MÊME FILTRE QUE LE CHARGEMENT INITIAL, et pas un filtre voisin : un scénario qu'on vient de publier
+   * doit entrer dans la liste par la même porte que les autres, sinon il y apparaîtrait alors que la
+   * création l'aurait refusé, ou l'inverse.
+   */
+  const rechargerScenarios = useCallback(async (): Promise<WorkflowSummary[]> => {
+    const r = await listWorkflows(session.tenantId);
+    const tous = (Array.isArray(r?.workflows) ? r.workflows : [])
+      .filter((w) => w.campaignEligible ?? (w.graph ? isCampaignEligible(w.graph) : false));
+    setReferences((ref) => ({ ...ref, workflows: tous }));
     return tous;
   }, [session.tenantId]);
 
@@ -212,6 +227,7 @@ function AssistantInner({ session }: { session: Session }) {
       capacites={capacites}
       references={references}
       rechargerTemplates={rechargerTemplates}
+      rechargerScenarios={rechargerScenarios}
       etapeInitiale={etapeInitiale}
       etatInitial={{ ...(formule ? { formule } : {}), ...(troisieme ? { troisieme } : {}) }}
       {...(brouillon ? { brouillon } : {})}

@@ -14,7 +14,7 @@ import {
 import { useT } from '@/lib/i18n';
 import type { AgentResume } from '@/lib/api-agent';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, AGENT_NODE_ORDER, HTTP_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, AGENT_GATE_TITRE, HTTP_GATE_TITRE, nodeMetaOf } from '@/lib/nodeMeta';
-import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
+import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf, canalDOuvertureDuGraphe } from '@/lib/campaign-eligibility';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { EDGE_OPTS, toRF, fromRF, type RFNode, type RFEdge } from '@/lib/workflow-canevas';
 import { useEnregistrementScenario } from '@/lib/use-enregistrement-scenario';
@@ -58,7 +58,7 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
  * contacts : il écrit une version de travail, et seul le bouton « Publier » la met en ligne. Avant ce lot, une
  * retouche partait en production dans la seconde, y compris pour les parcours déjà en cours.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null, requetes = null }: { tenantId: string; workflowId: string;
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null, requetes = null, canalExige, onPublie }: { tenantId: string; workflowId: string;
   /** Ce que l'éditeur ouvre : le brouillon s'il existe, sinon la version en ligne (cf. `grapheEditable`). */
   initialGraph: WorkflowGraph;
   /** Un brouillon non publié attendait-il déjà à l'ouverture ? Pilote l'état initial du bouton « Publier ». */
@@ -71,7 +71,17 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
   /** Membres de l'équipe, pour le sélecteur d'affectation du bloc « passer à un humain ». */
   membres?: Array<{ id: string; name: string | null; email: string }> | null;
   /** Appels déclarés dans Tools > Connecteurs API, pour le bloc « Appel API ». `null` = pas encore chargés. */
-  requetes?: Array<{ id: string; label: string; methode: string; chemin: string }> | null }) {
+  requetes?: Array<{ id: string; label: string; methode: string; chemin: string }> | null;
+  /**
+   * LE CANAL QUE CE SCÉNARIO DOIT SAVOIR OUVRIR, quand l'éditeur est monté DEPUIS une campagne.
+   *
+   * 🔴 SANS LUI, LA VÉRIFICATION N'ARRIVE QU'AU RÉCAPITULATIF, c'est-à-dire après avoir construit tout un
+   * scénario. Avec lui, la publication refuse tout de suite, en disant par quoi il faut ouvrir. Absent
+   * (l'onglet Scénario ordinaire) : aucune exigence, un scénario n'a pas à savoir ouvrir une campagne.
+   */
+  canalExige?: 'whatsapp' | 'rcs';
+  /** Appelé après une publication réussie. Sert à l'hôte qui doit refermer sa fenêtre et choisir le scénario. */
+  onPublie?: () => void }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -332,8 +342,31 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
 
   // Mise en ligne. Deux états seulement : en cours, et le message d'échec.
   const [publication, setPublication] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
+  /** Le refus d'ouverture, quand l'éditeur est monté depuis une campagne. `null` = rien à signaler. */
+  const [refusOuverture, setRefusOuverture] = useState<string | null>(null);
   const [publieA, setPublieA] = useState<string | null>(publieLe);
   const publier = useCallback(async () => {
+    /**
+     * 🔴 LA GARDE D'OUVERTURE, QUAND L'ÉDITEUR EST MONTÉ DEPUIS UNE CAMPAGNE. Une campagne part sur une
+     * audience FROIDE : si son premier envoi n'est pas du canal attendu, Meta refuse la campagne ENTIÈRE,
+     * pas un destinataire. Refuser ICI plutôt qu'au récapitulatif évite de construire tout un scénario
+     * avant d'apprendre qu'il ne pourra pas servir.
+     *
+     * ⚠️ Le graphe est relu de `nodes`/`edges` plutôt que du `graphe` mémoïsé : celui-ci est déclaré plus
+     * bas, le nommer dans les dépendances de ce `useCallback` le lirait avant son initialisation.
+     */
+    if (canalExige) {
+      const ouvre = canalDOuvertureDuGraphe(fromRF(nodes, edges));
+      if (ouvre !== canalExige) {
+        setRefusOuverture(canalExige === 'whatsapp'
+          ? t('Ce scénario ne commence pas par un modèle WhatsApp : il ne peut pas ouvrir cet étage. Mettez un bloc « Modèle » en premier, avec un modèle approuvé.',
+            'This scenario does not start with a WhatsApp template: it cannot open this step. Put a “Template” block first, with an approved template.')
+          : t('Ce scénario ne commence pas par un message RCS : il ne peut pas ouvrir cet étage. Mettez un bloc « Message RCS » en premier.',
+            'This scenario does not start with an RCS message: it cannot open this step. Put an “RCS message” block first.'));
+        return;
+      }
+      setRefusOuverture(null);
+    }
     setPublication({ enCours: true, erreur: null });
     // 🔴 On vide D'ABORD la file d'enregistrement. L'auto-save attend 1,2 s : publier sans ça, juste après une
     // modification, mettrait en ligne le brouillon PRÉCÉDENT, et l'écran affirmerait pourtant « publié ».
@@ -347,10 +380,11 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       setPublieA(rep.publishedAt);
       enregistrement.marquerPublie();
       setPublication({ enCours: false, erreur: null });
+      onPublie?.();
     } catch (err) {
       setPublication({ enCours: false, erreur: err instanceof Error ? err.message : t('Publication impossible', 'Could not publish') });
     }
-  }, [tenantId, workflowId, enregistrement, t]);
+  }, [tenantId, workflowId, enregistrement, t, canalExige, nodes, edges, onPublie]);
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -543,6 +577,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         )}
         </div>
       </div>
+
+      {refusOuverture !== null && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="refus-ouverture">
+          {refusOuverture}
+        </div>
+      )}
 
       {publication.erreur && (
         <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="workflow-publier-erreur">

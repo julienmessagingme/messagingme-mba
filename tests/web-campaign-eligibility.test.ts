@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   entryNodeOf, isCampaignEligible, firstTemplateOf, scanOpening, waitBeforeSessionMessage, sessionMessageAfterRcs,
+  canalDOuvertureDuGraphe,
 } from '../web/lib/campaign-eligibility';
 import { scanOpening as scanServeur, waitBeforeSessionMessage as waitBeforeSessionMessageServeur } from '../src/workflow/engine';
+import { canalDOuverture as canalServeur } from '../src/workflow/store.pg';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { GraphLike, GraphNodeLike } from '../web/lib/campaign-eligibility';
 
@@ -347,6 +349,48 @@ describe('parité de la détection « attente >= 24 h puis message de session »
       const api = waitBeforeSessionMessageServeur(graph as unknown as WorkflowGraph);
       expect(web?.messageNodeId ?? null, `messageNodeId sur « ${nom} »`).toBe(api?.messageNodeId ?? null);
       expect(web?.waitNodeId ?? null, `waitNodeId sur « ${nom} »`).toBe(api?.waitNodeId ?? null);
+    }
+  });
+});
+
+/**
+ * 🔴 LA PARITÉ DU CANAL D'OUVERTURE, DES DEUX CÔTÉS. Le navigateur s'en sert pour refuser une publication
+ * depuis une campagne, le serveur pour remplir la liste des scénarios : si les deux divergeaient d'un cas,
+ * l'écran refuserait de publier un scénario que la liste propose, ou l'inverse. Aucune erreur ne serait
+ * levée, et personne ne saurait lequel des deux a raison.
+ */
+describe('canalDOuvertureDuGraphe : la meme reponse des deux cotes', () => {
+  const cas: Array<[string, GraphLike]> = [
+    ['modèle nommé', g([n('a', 'template', { templateName: 'promo' })])],
+    ['modèle sans nom', g([n('a', 'template', { templateName: '  ' })])],
+    ['modèle sans données', g([n('a', 'template')])],
+    ['RCS configuré', g([n('r', 'rcs_message', { text: 'Bonjour' })])],
+    ['RCS vide', g([n('r', 'rcs_message')])],
+    ['message de session', g([n('q', 'quick_message', { action: { kind: 'sendQuickMessage', text: 'x' } })])],
+    ['graphe vide', g([])],
+    ['attente puis modèle', g(
+      [n('w', 'wait', { seconds: 60 }), n('t', 'template', { templateName: 'promo' })],
+      [{ id: 'e', source: 'w', target: 't' }],
+    )],
+    ['tag puis modèle', g(
+      [n('g', 'tag', { tag: 'x' }), n('t', 'template', { templateName: 'promo' })],
+      [{ id: 'e', source: 'g', target: 't' }],
+    )],
+    ['RCS puis modèle', g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'promo' })],
+      [{ id: 'e', source: 'r', target: 't' }],
+    )],
+  ];
+
+  it('🔴 le navigateur et le serveur rendent le MEME canal, cas par cas', () => {
+    for (const [nom, graph] of cas) {
+      expect(canalDOuvertureDuGraphe(graph), nom).toBe(canalServeur(graph as unknown as WorkflowGraph));
+    }
+  });
+
+  it('⚠️ et « il a un canal » reste exactement « il est eligible »', () => {
+    for (const [nom, graph] of cas) {
+      expect(canalDOuvertureDuGraphe(graph) !== null, nom).toBe(isCampaignEligible(graph));
     }
   });
 });

@@ -12,7 +12,9 @@ import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } fro
 import { RANG_INITIAL, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { scenariosPourEtage } from '@/lib/campagne-scenario';
+import { CreationScenarioEnLigne } from '@/components/campagne/CreationScenarioEnLigne';
 import { modeleDeLEtage } from '@/lib/campagne-creation';
+import type { WorkflowSummary } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, varCountOf } from '@/lib/fields';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
 import { appliquerIndices, exemplesDApercu, lignesParDefaut, type VarRow } from '@/lib/variables-template';
@@ -59,6 +61,7 @@ export function EtapeContenu({
   nbDestinataires,
   rangsIncomplets,
   rechargerTemplates,
+  rechargerScenarios,
   modeleSoumis,
   onModeleSoumis,
   onChange,
@@ -92,6 +95,12 @@ export function EtapeContenu({
    * proposée, cf. le docblock de `AssistantCampagne`.
    */
   rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  /**
+   * Relit la liste des scénarios. ABSENTE = « Créer un scénario » n'est pas proposé, même convention que
+   * `rechargerTemplates` : sans relecture, un scénario neuf serait choisi sans figurer dans la liste, et le
+   * sélecteur afficherait un vide sur un champ pourtant rempli.
+   */
+  rechargerScenarios?: () => Promise<WorkflowSummary[]>;
   /** Le modèle en cours de revue chez Meta. Il vit dans la COQUILLE : cf. `AssistantCampagne`. */
   modeleSoumis: CreatedTemplate | null;
   onModeleSoumis: (t: CreatedTemplate | null) => void;
@@ -127,6 +136,8 @@ export function EtapeContenu({
           contenu={etat.contenus[etage.rang] ?? contenuVide()}
           references={references}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
+          {...(rechargerScenarios ? { rechargerScenarios } : {})}
+          capacites={capacites}
           modeleSoumis={modeleSoumis}
           onModeleSoumis={onModeleSoumis}
           onChange={(patch) => onContenu(etage.rang, patch)}
@@ -173,6 +184,7 @@ export function contenuVide(): ContenuEtage {
 }
 
 function CadreEtage({
+  capacites,
   tenantId,
   etage,
   ouvert,
@@ -180,6 +192,7 @@ function CadreEtage({
   contenu,
   references,
   rechargerTemplates,
+  rechargerScenarios,
   modeleSoumis,
   onModeleSoumis,
   onChange,
@@ -191,6 +204,10 @@ function CadreEtage({
   contenu: ContenuEtage;
   references: ReferencesContenu;
   rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  /** Cf. `EtapeContenu.rechargerScenarios`. */
+  rechargerScenarios?: () => Promise<WorkflowSummary[]>;
+  /** Ce que l'espace sait faire, pour l'éditeur de scénario ouvert à la volée. */
+  capacites: CapacitesEspace;
   modeleSoumis: CreatedTemplate | null;
   onModeleSoumis: (t: CreatedTemplate | null) => void;
   onChange: (patch: Partial<ContenuEtage>) => void;
@@ -230,12 +247,24 @@ function CadreEtage({
               contenu={contenu}
               references={references}
               {...(rechargerTemplates ? { rechargerTemplates } : {})}
+              {...(rechargerScenarios ? { rechargerScenarios } : {})}
+              capacites={capacites}
               modeleSoumis={modeleSoumis}
               onModeleSoumis={onModeleSoumis}
               onChange={onChange}
             />
           )}
-          {etage.canal === 'rcs' && <CadreRcs tenantId={tenantId} rang={etage.rang} contenu={contenu} references={references} onChange={onChange} />}
+          {etage.canal === 'rcs' && (
+            <CadreRcs
+              tenantId={tenantId}
+              rang={etage.rang}
+              contenu={contenu}
+              references={references}
+              capacites={capacites}
+              {...(rechargerScenarios ? { rechargerScenarios } : {})}
+              onChange={onChange}
+            />
+          )}
           {etage.canal === 'email' && <CadreEmail contenu={contenu} references={references} onChange={onChange} />}
         </div>
       )}
@@ -244,11 +273,13 @@ function CadreEtage({
 }
 
 function CadreWhatsApp({
+  capacites,
   tenantId,
   rang,
   contenu,
   references,
   rechargerTemplates,
+  rechargerScenarios,
   modeleSoumis,
   onModeleSoumis,
   onChange,
@@ -258,6 +289,10 @@ function CadreWhatsApp({
   contenu: ContenuEtage;
   references: ReferencesContenu;
   rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  /** Cf. `EtapeContenu.rechargerScenarios`. */
+  rechargerScenarios?: () => Promise<WorkflowSummary[]>;
+  /** Ce que l'espace sait faire, pour l'éditeur de scénario ouvert à la volée. */
+  capacites: CapacitesEspace;
   modeleSoumis: CreatedTemplate | null;
   onModeleSoumis: (t: CreatedTemplate | null) => void;
   onChange: (patch: Partial<ContenuEtage>) => void;
@@ -418,7 +453,16 @@ function CadreWhatsApp({
         />
       )}
       {contenu.formule === 'avec_scenario' && (
-        <SelecteurScenario contenu={contenu} references={references} canal="whatsapp" onChange={choisirScenario} testId={`scenario-${rang}`} />
+        <SelecteurScenario
+          contenu={contenu}
+          references={references}
+          canal="whatsapp"
+          onChange={choisirScenario}
+          testId={`scenario-${rang}`}
+          tenantId={tenantId}
+          capacites={capacites}
+          {...(rechargerScenarios ? { rechargerScenarios } : {})}
+        />
       )}
       <ApercuModele rang={rang} contenu={contenu} tpl={tpl} references={references} />
       <EditeurVariables
@@ -563,6 +607,8 @@ function CadreRcs({
   rang,
   contenu,
   references,
+  capacites,
+  rechargerScenarios,
   onChange,
 }: {
   /** L'espace, pour TÉLÉVERSER le visuel : c'est le seul appel réseau de ce cadre. */
@@ -570,6 +616,10 @@ function CadreRcs({
   rang: number;
   contenu: ContenuEtage;
   references: ReferencesContenu;
+  /** Ce que l'espace sait faire, pour l'éditeur de scénario ouvert à la volée. */
+  capacites: CapacitesEspace;
+  /** Cf. `EtapeContenu.rechargerScenarios`. */
+  rechargerScenarios?: () => Promise<WorkflowSummary[]>;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
   const image = contenu.imageRcs ?? '';
@@ -660,7 +710,15 @@ function CadreRcs({
       </p>
       {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant. */}
       {contenu.formule === 'avec_scenario' && (
-        <SelecteurScenario contenu={contenu} references={references} canal="rcs" onChange={(v) => onChange({ workflowId: v })} />
+        <SelecteurScenario
+          contenu={contenu}
+          references={references}
+          canal="rcs"
+          onChange={(v) => onChange({ workflowId: v })}
+          tenantId={tenantId}
+          capacites={capacites}
+          {...(rechargerScenarios ? { rechargerScenarios } : {})}
+        />
       )}
     </div>
   );
@@ -761,6 +819,9 @@ function SelecteurScenario({
   canal,
   onChange,
   testId,
+  tenantId,
+  capacites,
+  rechargerScenarios,
 }: {
   contenu: ContenuEtage;
   references: ReferencesContenu;
@@ -777,8 +838,15 @@ function SelecteurScenario({
   onChange: (workflowId: string) => void;
   /** Cf. `Selecteur.testId` : « Scénario » est sans ambiguïté, mais l'écran en porte un par étage. */
   testId?: string;
+  /** L'espace, pour créer le scénario. */
+  tenantId: string;
+  /** Ce que l'espace sait faire : l'éditeur n'ouvre que les briques réellement disponibles. */
+  capacites: CapacitesEspace;
+  /** Absente = pas de création à la volée. Cf. `EtapeContenu.rechargerScenarios`. */
+  rechargerScenarios?: () => Promise<WorkflowSummary[]>;
 }) {
   return (
+    <div className="space-y-1">
     <Selecteur
       libelle="Scénario"
       {...(testId ? { testId } : {})}
@@ -787,6 +855,25 @@ function SelecteurScenario({
       options={scenariosPourEtage(references.workflows, canal).map((w) => ({ valeur: w.id, libelle: w.name }))}
       vide="Aucun scénario ne peut ouvrir cet étage."
     />
+    {/*
+      ⚠️ L'ENTRÉE EST SOUS LE SÉLECTEUR ET NON DEDANS. Une option « Créer un scénario » dans la liste
+      déroulante serait un choix qui n'en est pas un : elle se sélectionnerait comme une valeur, et un
+      brouillon rechargé porterait un identifiant qui ne désigne aucun scénario.
+    */}
+    {rechargerScenarios && (
+      <CreationScenarioEnLigne
+        tenantId={tenantId}
+        canal={canal}
+        rcsEnabled={capacites.rcsEnabled}
+        mbaEnabled={capacites.mbaEnabled}
+        onCree={(id) => {
+          // 🔴 LA LISTE D'ABORD, LE CHOIX ENSUITE. Choisir un identifiant absent des options laisserait le
+          // sélecteur vide sur un champ pourtant rempli.
+          void rechargerScenarios().then(() => onChange(id)).catch(() => onChange(id));
+        }}
+      />
+    )}
+    </div>
   );
 }
 

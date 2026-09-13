@@ -349,6 +349,7 @@ export function AssistantCampagne({
   etapeInitiale = 'nom',
   etatInitial,
   rechargerTemplates,
+  rechargerScenarios,
   brouillon,
   onCree,
 }: {
@@ -362,6 +363,12 @@ export function AssistantCampagne({
    * Afficher le bouton sans ce moyen offrirait un parcours qui s'arrête au milieu.
    */
   rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
+  /**
+   * Relit la liste des scénarios. ABSENTE = « Créer un scénario » n'est pas proposé, même convention que
+   * `rechargerTemplates` : sans relecture, un scénario neuf serait choisi sans figurer dans la liste, et
+   * le sélecteur afficherait un vide sur un champ pourtant rempli.
+   */
+  rechargerScenarios?: () => Promise<WorkflowSummary[]>;
   /** Ce que l'étape Contenu propose à choisir. Absent = tout est vide, et chaque cas vide le DIT. */
   references?: ReferencesContenu;
   /** L'étape d'ouverture. Sert au retour sur un brouillon, et aux tests d'écran qui visent une étape. */
@@ -666,6 +673,7 @@ export function AssistantCampagne({
           onChange={modifier}
           onContenu={modifierContenu}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
+          {...(rechargerScenarios ? { rechargerScenarios } : {})}
           modeleSoumis={modeleSoumis}
           onModeleSoumis={setModeleSoumis}
         />

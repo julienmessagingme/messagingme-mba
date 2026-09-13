@@ -182,13 +182,25 @@ export function firstTemplateOf(graph: GraphLike): GraphNodeLike | null {
  * après le clic.
  */
 export function isCampaignEligible(graph: GraphLike): boolean {
+  return canalDOuvertureDuGraphe(graph) !== null;
+}
+
+/**
+ * PAR QUOI CE GRAPHE OUVRE : `whatsapp`, `rcs`, ou `null` s'il ne peut ouvrir aucune campagne.
+ *
+ * 🔴 MIROIR EXACT DE `canalDOuverture` (`src/workflow/store.pg.ts`), et `isCampaignEligible` en est DÉRIVÉ
+ * plutôt que recalculé à côté : deux implémentations de la même règle finissent par diverger, et la
+ * divergence serait muette. La parité des deux côtés est gardée par `tests/web-campaign-eligibility.test.ts`.
+ *
+ * ⚠️ Un bloc RCS configuré ouvre à froid, il ne dépend d'aucune fenêtre de 24 h. Testé APRÈS les refus, qui
+ * restent des refus (une attente avant l'ouverture, une ouverture ambiguë).
+ */
+export function canalDOuvertureDuGraphe(graph: GraphLike): 'whatsapp' | 'rcs' | null {
   const scan = scanOpening(graph);
-  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return false;
-  // Un bloc RCS configuré ouvre à froid : il ne dépend d'aucune fenêtre de 24 h. Testé APRÈS les refus
-  // ci-dessus, qui restent des refus (une attente avant l'ouverture, une ouverture ambiguë).
-  if (scan.rcsOpen) return true;
-  if (!scan.firstTemplate) return false;
-  return String(scan.firstTemplate.data.templateName ?? '').trim() !== '';
+  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return null;
+  if (scan.rcsOpen) return 'rcs';
+  if (!scan.firstTemplate) return null;
+  return String(scan.firstTemplate.data.templateName ?? '').trim() !== '' ? 'whatsapp' : null;
 }
 
 /**
