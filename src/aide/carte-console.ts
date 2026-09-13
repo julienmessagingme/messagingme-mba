@@ -40,5 +40,5 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"tags","href":"/tags","fr":"Étiquettes","en":"Tags","adminOnly":true,"chemin":["Contenu","Bibliothèque"]},
   {"cle":"templates","href":"/templates","fr":"Templates","en":"Templates","adminOnly":true,"chemin":["Contenu","WhatsApp"]},
   {"cle":"webhooks","href":"/webhooks","fr":"Webhooks","en":"Webhooks","adminOnly":true,"chemin":["Tools"]},
-  {"cle":"workflows","href":"/workflows","fr":"Scénario","en":"Scenario","adminOnly":true,"chemin":[]},
+  {"cle":"workflows","href":"/workflows","fr":"Scénario","en":"Scenario","adminOnly":true,"chemin":["Contenu"]},
 ];

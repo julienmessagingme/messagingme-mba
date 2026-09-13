@@ -191,3 +191,40 @@ describe('ongletDeLaPage', () => {
     }
   });
 });
+
+/**
+ * 🔴 « SCÉNARIO » VIT DANS CONTENU DEPUIS LE 2026-09-13 (demande de Julien : « deplacer le menu
+ * scenario dans Contenu > juste apres Email »).
+ *
+ * ⚠️ IL Y A UNE TENSION, ET ELLE A ÉTÉ TRANCHÉE PAR JULIEN plutôt que contournée en silence. Contenu
+ * est rangé PAR CANAL (WhatsApp / RCS / Email / Bibliothèque) et un scénario n'est pas un canal : il
+ * les traverse. Mis à plat après Email, il est donc le seul enfant de Contenu qui ne soit pas un
+ * groupe de canal. C'est ce que la demande disait, et c'est assumé.
+ */
+describe('la place du menu « Scénario »', () => {
+  const t = (fr: string) => fr;
+
+  it('🔴 vit dans Contenu, JUSTE APRÈS le groupe Email', () => {
+    const contenu = arbresNav(t).console.find((e) => e.key === 'contenu');
+    const cles = (contenu?.children ?? []).map((c) => c.key);
+    expect(cles).toContain('workflows');
+    // La POSITION est la demande, pas seulement la présence.
+    expect(cles.indexOf('workflows')).toBe(cles.indexOf('contenu-email') + 1);
+  });
+
+  it('🔴 et il n’est PLUS dans la liste du haut : sinon il y aurait DEUX entrées « Scénario »', () => {
+    // ⚠️ C'est la faute la plus probable d'un déplacement : copier sans couper. Le cas générique
+    // « chaque page est dans exactement un onglet » ne l'attraperait pas, les deux étant dans `console`.
+    expect(arbresNav(t).console.map((e) => e.key)).not.toContain('workflows');
+  });
+
+  it('son adresse ne change pas : /workflows reste /workflows', () => {
+    const contenu = arbresNav(t).console.find((e) => e.key === 'contenu');
+    const entree = (contenu?.children ?? []).find((c) => c.key === 'workflows');
+    expect(entree?.href).toBe('/workflows');
+  });
+
+  it('et il reste dans l’onglet Console, donc atteignable', () => {
+    expect(ongletDeLaPage(arbresNav(t), 'workflows')).toBe('console');
+  });
+});

@@ -161,7 +161,6 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     // Juste apres Campagnes : les deux repondent a « comment je parle a plusieurs personnes a la fois ».
     { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), d: icons.chaine },
-    { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
     // Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA, son guide et ses réglages,
     // qui gardent leurs URL) et le nôtre. MBA est un SOUS-GROUPE et non deux entrées voisines : ses deux
@@ -204,6 +203,18 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       { key: 'contenu-email', label: t('Email', 'Email'), children: [
         { key: 'email-templates', href: '/email-templates', label: t('Modèles', 'Templates') },
       ] },
+      /**
+       * 🔴 « SCÉNARIO » EST ICI DEPUIS LE 2026-09-13 (demande de Julien), ET IL EST LE SEUL ENFANT DE
+       * CONTENU QUI NE SOIT PAS UN GROUPE DE CANAL. Contenu est rangé par canal (WhatsApp / RCS /
+       * Email / Bibliothèque) ; un scénario, lui, les TRAVERSE : le même parcours peut ouvrir en
+       * WhatsApp, poursuivre en RCS et finir par un e-mail.
+       *
+       * ⚠️ LA TENSION A ÉTÉ POSÉE À JULIEN ET TRANCHÉE PAR LUI, plutôt que contournée en silence. Deux
+       * autres places se défendaient : dans « Bibliothèque », qui est précisément « ce qui se réutilise
+       * sans appartenir à un canal », ou en restant dans la liste du haut. Il a choisi « juste après
+       * Email », à plat. Ne pas le « ranger » ailleurs par cohérence de structure sans le lui demander.
+       */
+      { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
       // « Bibliothèque » : ce qui se RÉUTILISE, sans appartenir à un canal.
       // ⚠️ Le groupe reste bancal, et le nom n'y peut rien : « Blocs » est du contenu, « Étiquettes » et
       // « Champs » sont de la donnée de CONTACT. Ils sont ici par héritage, leur place logique serait le
