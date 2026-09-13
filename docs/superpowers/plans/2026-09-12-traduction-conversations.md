@@ -51,13 +51,16 @@ auto-appliquées et numéro lu EN BASE, `bg-violet/10` et pas `bg-violet-50`, ga
 ### Tâche 1 : le stockage
 
 **Fichiers**
-- Créer : `db/migrations/0136_traduction.sql` (numéro à confirmer EN BASE)
+- Créer : `db/migrations/0137_traduction.sql`
+  ⚠️ **0136 a été prise le 2026-09-12 au soir** par `tour_de_role_rang` en `integer`. Ce plan avait
+  été écrit avant et annonçait encore 0136 : une collision qui ne se serait vue qu'au moment de
+  migrer, donc au pire moment. **La base tranche** : relire `schema_migrations` avant d'écrire.
 - Test : `tests/integration/traduction-stockage.integration.test.ts`
 
 **Produit** : trois colonnes sur `conversation_messages`, une sur `contacts`.
 
 ```sql
--- 0136 : garder la traduction A COTE de l'original, jamais a sa place.
+-- 0137 : garder la traduction A COTE de l'original, jamais a sa place.
 --
 -- 🔴 EN ENTREE ET EN SORTIE, LE SENS S'INVERSE, et c'est le piege de ce lot.
 -- Entrant : `body` garde ce que le client a ECRIT, `traduction` porte notre lecture.
