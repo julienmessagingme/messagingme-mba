@@ -13,7 +13,7 @@ bloque réellement tous les envois automatiques.
 **Retenue : implémenteur par lot, puis revue humaine sur le DIFF, en TROIS lots livrés séparément.**
 Lot 1, le menu et sa coquille (tâches 1 et 2). Lot 2, le blocage réel des envois (tâches 3 et 4). Lot 3,
 l'écran Consentement et l'observation (tâches 5 à 7). Le sous-menu IA et le journal des erreurs
-(tâches 8 et 9) viennent après, et le journal n'est **pas encore cadré**.
+(tâches 8 et 9) viennent après ; les deux sont cadrés depuis les arbitrages de Julien du 2026-09-13.
 
 **Pourquoi** : la deuxième question tranche à elle seule. **Rien n'est réversible ici.** Un envoi bloqué
 à tort est une campagne que le client croit partie ; un envoi passé à tort est un message reçu par
@@ -64,10 +64,17 @@ sous-menu. La barre latérale reste à gauche et déplie les sous-menus sous « 
 
 ---
 
-### Tâche 2 : les audit trails déménagent
+### Tâche 2 : les audit trails ET le journal de livraison déménagent
 
 **Fichiers**
 - Modifier : `web/lib/nav.ts`, `web/app/parametres/`, `web/app/securite/`
+
+⚠️ **LES DEUX ENSEMBLE, parce qu'ils sont déjà au même endroit** (mesuré le 2026-09-13 : le journal des
+erreurs de livraison est rangé « au même endroit que le journal des actions »). Les séparer coûterait
+deux déménagements et laisserait Paramètres à moitié vidé.
+
+⚠️ **LE JOURNAL DE LIVRAISON PORTE LES NUMÉROS DE TÉLÉPHONE, délibérément**, et il est admin-only. Le
+déplacer ne doit pas l'ouvrir plus largement.
 
 - [ ] **Étape 1 : le test qui garde l'ANCIENNE adresse** (elle redirige, ou elle marche encore)
 - [ ] **Étape 2 : déplacer, relancer**
@@ -168,10 +175,25 @@ it('« stop » en debut de message desabonne toujours, sans confirmation', () =>
 
 ---
 
-### Tâche 7 : ce que l'espace fait au moment d'un opt-out
+### Tâche 7 : l'opt-out déclenche un APPEL D'OUTIL
 
-Le réglage, avec accès à la liste des outils (Tools). ⚠️ **À préciser avec Julien avant d'être codé** :
-la demande dit « on peut demander ce que l'user veut faire », sans dire quelles actions sont offertes.
+**Tranché par Julien le 2026-09-13** : au moment où un opt-out est déclaré, l'espace peut déclencher un
+**outil / connecteur API** déjà déclaré dans Tools, pour pousser le refus vers son propre système (CRM,
+HubSpot, back-office).
+
+🔴 **C'EST CE QUI REND LE REFUS OPPOSABLE AILLEURS QUE CHEZ NOUS.** Un opt-out qui ne vit que dans notre
+base laisse le client continuer à écrire à cette personne depuis ses autres outils, et c'est lui qui en
+répond. C'est la raison pour laquelle Julien a nommé les Tools dans sa demande.
+
+⚠️ **L'APPEL NE DOIT JAMAIS BLOQUER L'OPT-OUT LUI-MÊME.** On écrit `opted_out` d'abord, on appelle
+ensuite. Un connecteur en panne ne doit pas faire échouer le respect d'un refus : ce serait exactement
+l'inverse de ce que ce menu existe pour garantir. L'échec se journalise et se réessaie.
+
+- [ ] Le réglage (quel outil, ou aucun), avec la liste venue de Tools
+- [ ] L'appel APRÈS l'écriture, jamais avant, et jamais bloquant
+- [ ] Un test qui MUTE l'ordre : l'appel avant l'écriture, et un connecteur en panne -> l'opt-out doit
+      quand même être posé
+- [ ] Tests, mutation, commit
 
 ---
 
@@ -187,12 +209,24 @@ Remonter la bascule « l'IA se déclare comme telle » de la fiche d'agent au ni
 
 ---
 
-### Tâche 9 : le journal des erreurs
+### Tâche 9 : le journal des erreurs, LES DEUX
 
-⚠️ **PAS ENCORE CADRÉ, et il ne doit pas être codé avant de l'être.** La question ouverte : les erreurs
-**du client** (envois refusés par Meta, appels d'outil en échec) ou celles **du système** (DLQ, `/ops`) ?
-Les deux publics n'ont ni les mêmes droits ni les mêmes besoins, et le dépôt porte déjà des chemins de
-journalisation pour le second.
+**Tranché par Julien le 2026-09-13** : « on a déjà un log d'erreurs [...] donc il faut les 2 ».
+
+🔴 **LA MOITIÉ CLIENT EXISTE DÉJÀ ET DÉMÉNAGE EN TÂCHE 2** : `GET /tenants/:tenantId/erreurs-livraison`
+rend ce que Meta a répondu quand un message n'est pas parti, avec sa recherche par téléphone et par code,
+et son écran `ErreursLivraison.tsx`. **Ne rien recréer.** Le vérifier avant d'écrire une ligne : un
+second journal à côté du premier se contredirait le jour où l'un filtre autrement que l'autre.
+
+Ce qui s'AJOUTE ici, c'est la moitié SYSTÈME : les retours d'API qui n'ont pas fonctionné, et les échecs
+d'avancement de parcours (`workflow_advance_failures`, migration 0108, déjà en base).
+
+- [ ] **Étape 1 : inventorier ce qui est DÉJÀ journalisé** avant d'en journaliser plus. Le dépôt porte
+      des DLQ, `/ops` et des alertes Telegram : la question n'est pas « que journaliser » mais « qu'est-ce
+      qui est déjà écrit quelque part et que personne ne montre au client »
+- [ ] **Étape 2 : les deux moitiés dans le même écran**, distinguées par leur NATURE et non mélangées
+- [ ] ⚠️ **Ce qui porte des numéros reste admin-only**
+- [ ] Tests, mutation, commit
 
 ## Revue
 

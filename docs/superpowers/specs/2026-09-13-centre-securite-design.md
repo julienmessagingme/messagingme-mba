@@ -13,7 +13,7 @@ boîtes que de sous-menus. La barre latérale reste à gauche et déplie les sou
 | **Consentement** | l'opt-out : sa règle, sa liste, ses exports | le gros morceau, cf. ci-dessous |
 | **Audit trails** | déplacés depuis Paramètres | existe, change de place |
 | **IA** | les réglages liés à l'AI Act | une seule bascule au départ |
-| **Journal des erreurs** | la liste des erreurs | à définir avec l'existant |
+| **Journal des erreurs** | celles du client ET celles du système | l'existant DÉMÉNAGE, le reste s'ajoute |
 
 ## 🔴 Le consentement : ce qui existe déjà, mesuré et non supposé
 
@@ -91,13 +91,29 @@ cause le 2026-09-09. **Le remonter au niveau de l'espace ne doit pas changer le 
 existants** : c'est une migration de réglage, et un agent déjà configuré doit continuer à faire ce
 qu'il faisait.
 
+## Le journal des erreurs : LES DEUX, et la moitié existe déjà
+
+Tranché par Julien le 2026-09-13 : « on a déjà un log d'erreurs (les erreurs d'envoi et autres erreurs
+du système quand on a un retour d'api qui a pas fonctionné)... donc il faut les 2 ».
+
+🔴 **ET LA MOITIÉ CLIENT EXISTE DÉJÀ, MESURÉE AVANT DE PLANIFIER QUOI QUE CE SOIT.**
+`GET /tenants/:tenantId/erreurs-livraison` (`src/http/contacts.ts`) rend ce que Meta a répondu quand un
+message n'est pas parti ou n'est pas arrivé : admin-only, avec sa recherche par texte, par téléphone et
+par code Meta, et son écran (`web/components/ErreursLivraison.tsx`). **Il n'y a rien à recréer.**
+
+⚠️ **ET IL EST RANGÉ AU MÊME ENDROIT QUE LES AUDIT TRAILS**, ce qui simplifie le déménagement : les deux
+partent ensemble vers Sécurité, dans le même geste.
+
+Ce qui s'AJOUTE, c'est la moitié système : les retours d'API qui n'ont pas fonctionné, et les échecs
+d'avancement de parcours (`workflow_advance_failures`, migration 0108).
+
+⚠️ **CE QUI PORTE LES NUMÉROS RESTE ADMIN-ONLY.** Le journal de livraison porte les numéros de
+téléphone, délibérément (« quel message n'est pas arrivé » sans dire « à qui » ne répond à rien). Le
+déplacer dans un centre de conformité ne doit pas l'ouvrir plus largement.
+
 ## Ce qui reste à cadrer avant de coder
 
-1. **Le journal des erreurs** : quelles erreurs ? Il existe déjà des chemins de journalisation (les DLQ
-   des files, `/ops`, les alertes Telegram). Ce sous-menu doit-il montrer les erreurs **du client**
-   (envois refusés par Meta, appels d'outil en échec) ou celles **du système** ? Les deux publics sont
-   différents et n'ont pas les mêmes droits.
-2. **La portée de l'export** d'une conversation : RGPD, durée de conservation, qui a le droit.
+1. **La portée de l'export** d'une conversation : RGPD, durée de conservation, qui a le droit.
 
 ## L'essai réel qui clôt la feature
 

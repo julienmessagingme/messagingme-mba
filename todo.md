@@ -1892,9 +1892,14 @@ reçus », et pourtant il change aussi ce qu'affichent les bulles **envoyées** 
 client a réellement reçu peut lire l'autre texte sans s'en apercevoir, et c'est précisément la question
 qui se pose le jour d'un litige.
 
-À trancher par Julien : soit une bulle sortante montre TOUJOURS ce qui est parti (la vérité de
-l'échange) avec un moyen de déplier ce qu'il avait écrit, soit l'inverse, mais de façon constante et
-avec une marque qui dit laquelle.
+✅ **TRANCHÉ PAR JULIEN LE 2026-09-13 : une bulle sortante montre TOUJOURS ce qui est PARTI**, quel que
+soit le réglage de traduction, avec un moyen de déplier ce que l'opérateur avait écrit. C'est la vérité
+de l'échange, celle qui compte le jour d'un litige, et elle cesse de dépendre d'un interrupteur qui ne
+parle que des messages REÇUS.
+
+⚠️ **CE N'EST PAS QU'UN CHANGEMENT D'AFFICHAGE** : `texteOriginal` (`src/traduction/fil.ts`) rend
+aujourd'hui `redactionOrigine ?? body` pour un sortant. C'est CETTE ligne qui s'inverse, et le test qui
+la garde doit exercer les deux sens, réglage allumé comme éteint.
 
 ## Le bouton « Envoyer » est recouvert par la bulle d'aide en 13 pouces (2026-09-13)
 
@@ -1906,6 +1911,14 @@ d'aide se pose au-dessus du coin bas-droit, donc par-dessus la droite du bouton 
 document, `pasDeChevauchement` compare des éléments qu'on lui NOMME, et personne n'a jamais pensé à
 nommer la bulle d'aide en face du bouton d'envoi. C'est le trou de la méthode plus que celui de
 l'écran : une garde qui exige qu'on nomme les paires ne trouve que ce à quoi on pensait déjà.
+
+✅ **TRANCHÉ PAR JULIEN LE 2026-09-13 : LA BULLE SE DÉCALE SUR L'INBOX.** Le bot d'aide remonte ou se
+décale quand une conversation est ouverte, là où il gêne ; les autres écrans ne bougent pas. On corrige
+la cause sans toucher à la zone de saisie, qui est l'élément le plus utilisé du produit et dont la
+largeur ne doit pas payer pour un problème qui n'existe que sur un écran.
+
+⚠️ **ET ON AJOUTE LA PAIRE À LA GARDE**, sinon on corrige le symptôme sans empêcher son retour :
+`pasDeChevauchement(page, ['bouton-envoyer', 'bulle-aide'])` en 1280 x 800.
 
 ---
 
