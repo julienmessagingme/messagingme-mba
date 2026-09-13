@@ -449,6 +449,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Source `scenario` : elle distingue un consentement pose par un parcours de celui saisi a la main
     // (`crm`) ou coche par la personne dans un Flow (`flow`). Utile quand il faut savoir d'ou vient un opt-out.
     setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario'); },
+    /**
+     * 🔴 LA GARDE D'OPT-OUT DE TOUT CE QUI EST AUTOMATIQUE. Scénario, automation et agent IA passent par
+     * cet exécuteur : ce branchement les couvre les trois. Sans lui, un contact qui a écrit STOP continuait
+     * de recevoir les messages d'un parcours, et c'est exactement le manquement que le centre de sécurité
+     * existe pour empêcher.
+     */
+    estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
     // Mesure par bloc (Analytics > Mes tableaux). L'executeur l'appelle en best-effort : une panne ici ne doit
     // jamais arreter un parcours.
     recordNodeEvent: (e) => nodeEvents.record(e),

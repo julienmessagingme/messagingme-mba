@@ -46,6 +46,20 @@ export function messageIdDe(issue: SendRefusal): string | undefined {
   return typeof issue === 'object' && issue !== null && typeof issue.messageId === 'string' ? issue.messageId : undefined;
 }
 
+/**
+ * LES ACTIONS QUI FONT PARTIR UN MESSAGE, et elles seules.
+ *
+ * 🔴 CETTE LISTE EST LA DÉFINITION DE « ENVOYER » POUR LA GARDE D'OPT-OUT. En oublier une rouvrirait le
+ * trou pour ce canal-là, en silence : rien ne lèverait d'erreur, le message partirait simplement. Un test
+ * la compare aux `kind` que le dispatch d'`apply` traite comme des envois.
+ *
+ * ⚠️ Le RCS n'y figure pas sous un nom propre : un bloc RCS est un `sendQuickMessage` que le CANAL du
+ * parcours fait partir en RCS (cf. `envoyerQuickEnRcs`). Le couvrir vient donc avec `sendQuickMessage`.
+ */
+export const EST_UN_ENVOI: ReadonlySet<string> = new Set([
+  'sendTemplate', 'sendQuickMessage', 'sendQuestion', 'sendFlow', 'sendEmail',
+]);
+
 export interface WorkflowExecutorDeps {
   runs: {
     start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState): Promise<{ id: string }>;
@@ -130,6 +144,19 @@ export interface WorkflowExecutorDeps {
    * préparable, variable manquante, template illisible chez Meta). Voir `SendRefusal`.
    */
   sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[], explicitParams?: string[]): Promise<SendRefusal>;
+  /**
+   * CE CONTACT A-T-IL DEMANDÉ À NE PLUS ÊTRE CONTACTÉ ?
+   *
+   * 🔴 C'EST LA GARDE D'OPT-OUT DE TOUT CE QUI EST AUTOMATIQUE. Scénario, automation et agent IA passent
+   * tous par cet exécuteur : une seule question posée ici les couvre les trois, là où trois gardes posées
+   * à trois endroits auraient fini par diverger. La campagne et l'API publique, elles, filtrent en amont
+   * (`optInAllows`), à la construction de leur liste.
+   *
+   * ⚠️ OPTIONNELLE POUR LES CÂBLAGES DE TEST, et c'est un défaut PERMISSIF : absente, rien n'est bloqué.
+   * Ce n'est acceptable que parce qu'un test de câblage vérifie que la vraie construction la fournit
+   * (`tests/optout-chemins.test.ts`) : sans lui, un oubli de branchement rouvrirait le trou en silence.
+   */
+  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie un message hors template : interactif (texte + 2-3 réponses rapides, OU un bouton de lien),
    *  image légendée, ou simple texte, selon ce que porte le bloc. Atteint via `advance` (après réponse du
    *  contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
@@ -561,6 +588,8 @@ export class WorkflowExecutor {
     // parti : un refus n'est décisif pour l'appelant que si RIEN n'est parti.
     let refus: string | null = null;
     let partis = 0;
+    /** Réponse de la garde d'opt-out, lue au plus une fois par liste d'effets. `null` = pas encore posée. */
+    let desabonne: boolean | null = null;
     for (const { nodeId, action: a } of steps) {
       // 🔴 On s'ARRÊTE si le tour n'est plus à nous, et on s'arrête ICI, entre deux effets. Le jeton clôture
       // l'écriture d'état, il n'a jamais rien pu contre un message déjà remis à Meta : sans ce point de
@@ -573,6 +602,26 @@ export class WorkflowExecutor {
         console.warn(`workflow ${workflowId ?? '?'}: effets INTERROMPUS pour ${waId} au bloc ${nodeId} (${perdu}), ${partis} envoi(s) déjà partis`);
         refus ??= `tour perdu pendant les effets (${perdu})`;
         break;
+      }
+      /**
+       * 🔴 UN CONTACT DÉSABONNÉ NE REÇOIT AUCUN ENVOI AUTOMATIQUE, et c'est vérifié ICI parce que c'est le
+       * seul endroit que le scénario, l'automation et l'agent IA traversent tous les trois.
+       *
+       * ⚠️ ON SAUTE L'ENVOI, ON N'ARRÊTE PAS LE PARCOURS. Un scénario qui pose un tag « a dit stop » ou qui
+       * range une information doit continuer à le faire : ce qu'on refuse est de lui PARLER, pas de tenir
+       * sa fiche à jour. D'où `continue` et non `break`.
+       *
+       * ⚠️ LU UNE SEULE FOIS PAR LISTE D'EFFETS : un parcours peut enchaîner plusieurs envois, et poser la
+       * question à chacun paierait une requête par message pour une réponse qui ne change pas pendant ces
+       * quelques secondes.
+       */
+      if (EST_UN_ENVOI.has(a.kind) && this.deps.estDesabonne) {
+        desabonne ??= await this.deps.estDesabonne(tenantId, waId);
+        if (desabonne) {
+          refus ??= 'contact désabonné : il a demandé à ne plus recevoir de messages';
+          await this.mesurer(tenantId, workflowId, nodeId, waId, 'failed');
+          continue;
+        }
       }
       if (a.kind === 'tag') {
         const nouveau = await this.deps.applyTag(tenantId, waId, a.tag);

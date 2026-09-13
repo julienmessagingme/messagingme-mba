@@ -453,6 +453,25 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * CE CONTACT A-T-IL DEMANDÉ À NE PLUS ÊTRE CONTACTÉ ?
+   *
+   * 🔴 UNE MÉTHODE À PART, ET LA PLUS ÉTROITE POSSIBLE, parce qu'elle est sur le chemin de CHAQUE envoi
+   * automatique. `getContactStateByWaId` répondrait aussi, mais elle ramène les champs et les tags du
+   * contact : payer un jsonb entier pour lire un mot, à chaque message d'un scénario, serait un coût qu'on
+   * ne reverrait jamais.
+   *
+   * ⚠️ UN CONTACT INCONNU N'EST PAS DÉSABONNÉ. C'est le cas ordinaire d'un premier contact, et répondre
+   * « désabonné » par prudence bloquerait précisément les gens à qui on n'a jamais écrit.
+   */
+  async estDesabonneParWaId(tenantId: string, waId: string): Promise<boolean> {
+    const res = await this.pool.query<{ opt_in_status: string }>(
+      `select opt_in_status from contacts where tenant_id = $1 ${MATCH_BY_WAID_SQL}`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.opt_in_status === 'opted_out';
+  }
+
+  /**
    * Id du contact par wa_id : matching `MATCH_BY_WAID_SQL`, restreint aux contacts NON supprimés. Sert à
    * RELIER un run de scénario déclenché par une automation à la fiche du contact : sans lui, le run partirait
    * avec `contactId: null` alors que la fiche existe (l'upsert d'inbound vient de tourner). null = aucune
