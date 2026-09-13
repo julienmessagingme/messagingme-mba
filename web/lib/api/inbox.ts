@@ -206,6 +206,25 @@ export interface RefusPossible {
 export function refusPossibles(tenantId: string): Promise<{ scannes: number; refus: RefusPossible[] }> {
   return request(`/tenants/${tenantId}/contacts/refus-possibles`);
 }
+/**
+ * LE CONNECTEUR PRÉVENU À CHAQUE DÉSABONNEMENT (migration 0139).
+ *
+ * 🔴 ADMIN SEULEMENT, côté serveur, EN LECTURE COMME EN ÉCRITURE : brancher, c'est décider que des données
+ * de contact partent chez un tiers. L'écran du Consentement est ouvert à l'encadrement, il n'affiche donc
+ * ce bloc que pour un administrateur plutôt que de lui montrer un réglage qui rendrait 403.
+ */
+export interface PousseeOptOut {
+  requestId: string | null;
+  requetes: Array<{ id: string; label: string }>;
+}
+export function pousseeOptOut(tenantId: string): Promise<PousseeOptOut> {
+  return request(`/tenants/${tenantId}/settings/poussee-optout`);
+}
+/** `null` débranche. Le serveur refuse un identifiant qui n'est pas une requête de CET espace. */
+export function setPousseeOptOut(tenantId: string, requestId: string | null): Promise<{ requestId: string | null }> {
+  return request(`/tenants/${tenantId}/settings/poussee-optout`, { method: 'PATCH', body: JSON.stringify({ requestId }) });
+}
+
 /** Contacts bloqués : la SEULE porte de sortie d'un blocage, puisqu'ils sont invisibles partout ailleurs. */
 export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
   return request(`/tenants/${tenantId}/contacts/blocked`);

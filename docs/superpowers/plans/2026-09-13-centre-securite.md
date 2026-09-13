@@ -250,7 +250,7 @@ Revue `/revue` systématique, plus le rayon de souffle :
 | 4. Le blocage sur tous les chemins sauf la main de l operateur | ✅ `edd6a7f` + `2786599` |
 | 5. La liste des opt-out | ✅ `b13456e`, avec la migration 0138 |
 | 6. La regle elargie EN OBSERVATION | ✅ `623e6a5` |
-| 7. L opt-out declenche un APPEL D OUTIL | pas commence |
+| 7. L opt-out declenche un APPEL D OUTIL | ✅ (migration 0139) |
 | 8. Le sous-menu IA | pas commence |
 | 9. Le journal des erreurs, les DEUX | pas commence |
 
@@ -267,7 +267,23 @@ Revue `/revue` systématique, plus le rayon de souffle :
 3. **DEUX CHEMINS ETAIENT A LA FRONTIERE** et ont ete poses a Julien plutot que tranches seul : l envoi d un
    MODELE depuis l Inbox (marketing refuse, service autorise) et la reponse d un agent tiers par MCP
    (bloquee). Les deux sont implementes avec leurs tests.
-4. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
+4. **LA TACHE 7 DESIGNE UNE REQUETE, PAS UN OUTIL D AGENT.** Le plan disait « outil / connecteur API deja
+   declare dans Tools » ; un OUTIL est une surface exposee a un MODELE (nom expose, description pour le modele,
+   parametres que le modele remplit), et il n y a aucun modele ici. C est exactement le cas du bloc « Appel
+   HTTP » d un scenario, qui DESIGNE une requete de la bibliotheque : les trois passent donc par
+   `creerAppelConnecteur`, avec les memes sept gardes.
+5. **LA TACHE 7 A DEMANDE UNE MIGRATION QUE LE PLAN NE PREVOYAIT PAS** (0139, `tenant_settings.optout_request_id`),
+   et un refus de suppression que le plan ne prevoyait pas non plus : le compteur `outils` d une requete ne voit
+   que les outils d agent, donc une requete branchee sur le consentement y compte ZERO et se supprimait, la cle
+   etrangere `on delete set null` debranchant la conformite EN SILENCE.
+6. **L ANNONCE EST POSEE SUR LE DEPOT, PAS SUR LES APPELANTS.** Trois methodes ecrivent `opted_out`
+   (`setOptInByWaId`, `applyEdits`, `applyEditsMany`) ; la couvrir chez les appelants l aurait fait oublier au
+   prochain bouton, exactement comme l invariant de 0138. Un test DERIVE du fichier la liste des methodes qui
+   posent `opt_out_at = now()` et exige qu elle soit celle des methodes qui annoncent.
+7. 🔴 **UN DOCBLOCK FAUX A ETE RECOPIE DANS UNE ROUTE NEUVE.** `registerSettings` annoncait « GET ouvert
+   (lecture), PUT admin-only » ; le module entier est monte avec `requireAdmin` depuis longtemps. La phrase a ete
+   reprise telle quelle dans la route de la tache 7, et seul le TEST l a montree. Les deux docblocks sont corriges.
+8. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
    « arret du traitement », « stop covid » et « stopper la commande » DESABONNENT aujourd hui, alors que le
    docblock citait « arret de bus » comme un cas evite. Sur un espace d assureur, c est un message ordinaire.
    La regle n est PAS modifiee (resserrer l ancrage ferait perdre « stop merci ») : c est un arbitrage pose a

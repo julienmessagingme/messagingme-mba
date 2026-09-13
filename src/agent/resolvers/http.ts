@@ -78,11 +78,15 @@ function extraire(source: unknown, chemin: string): unknown {
 /**
  * CE QU'IL FAUT SAVOIR POUR APPELER UN CONNECTEUR, quel que soit l'appelant.
  *
- * 🔴 CE TYPE EXISTE PARCE QU'IL Y A DEUX APPELANTS DEPUIS LE 2026-09-11 : l'agent IA (qui a un outil et un
- * modèle qui fournit des arguments) et le bloc « appel HTTP » d'un scénario (qui n'a ni l'un ni l'autre).
- * Réécrire l'appel pour le second aurait dupliqué SEPT gardes (source active, filtre de sortie, variables
- * requises, adresse interne, redirection, échéance, corps borné), et la copie aurait divergé au premier
- * correctif. La leçon est celle d'`enTetesAuthSource`, payée deux fois dans ce dépôt.
+ * 🔴 CE TYPE EXISTE PARCE QU'IL Y A PLUSIEURS APPELANTS DEPUIS LE 2026-09-11 : l'agent IA (qui a un outil et
+ * un modèle qui fournit des arguments), le bloc « appel HTTP » d'un scénario, et depuis le 2026-09-13 la
+ * poussée d'un opt-out vers le système du client (`src/crm/poussee-optout.ts`). Les deux derniers n'ont ni
+ * outil ni modèle. Réécrire l'appel pour chacun aurait dupliqué SEPT gardes (source active, filtre de sortie,
+ * variables requises, adresse interne, redirection, échéance, corps borné), et les copies auraient divergé au
+ * premier correctif. La leçon est celle d'`enTetesAuthSource`, payée deux fois dans ce dépôt.
+ *
+ * ⚠️ LE COMPTE N'EST PLUS ÉCRIT ICI, et il a justement dit « DEUX » pendant qu'il y en avait trois : un
+ * nombre à la main devient faux au premier ajout, sans que rien ne le signale.
  */
 export interface AppelConnecteur {
   tenantId: string;
@@ -110,9 +114,9 @@ export interface AppelConnecteur {
 }
 
 /**
- * L'appel lui-même, partagé par l'agent IA et le bloc de scénario.
+ * L'appel lui-même, partagé par tous les appelants listés sur `AppelConnecteur`.
  *
- * Tout ce qui suit était le corps de `creerResolveurHttp`, déplacé tel quel : les deux appelants passent
+ * Tout ce qui suit était le corps de `creerResolveurHttp`, déplacé tel quel : tous les appelants passent
  * donc par les mêmes gardes, dans le même ordre, avec les mêmes messages.
  */
 export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecteur) => Promise<SortieResolveur> {
@@ -316,7 +320,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
  * Le résolveur d'OUTIL D'AGENT : un adaptateur au-dessus de `creerAppelConnecteur`.
  *
  * ⚠️ Il ne reste ici que la TRADUCTION d'un appel d'outil en appel de connecteur. Tout ce qui décide vit dans
- * la fonction partagée, donc un correctif de garde profite aux deux appelants sans qu'on ait à y penser.
+ * la fonction partagée, donc un correctif de garde profite à TOUS les appelants sans qu'on ait à y penser.
  */
 export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
   const appel = creerAppelConnecteur(deps);

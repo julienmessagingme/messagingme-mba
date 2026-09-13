@@ -73,6 +73,7 @@ import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
+import { creerAnnonceOptOut, creerTravailPousseeOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
@@ -211,7 +212,19 @@ async function main(): Promise<void> {
   const erreursLivraison = new PgErreursLivraisonStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
-  const contactStore = new PgContactStore(pool);
+  /**
+   * 🔴 LA MEME ANNONCE QUE COTE API, ET C'EST OBLIGATOIRE. Le mot-cle « stop » d'un message entrant est
+   * traite ICI, dans le worker : monter l'annonce uniquement cote API aurait couvert la fiche contact et
+   * l'action en masse, et laisse le chemin le plus important, celui ou la personne elle-meme refuse, muet.
+   */
+  const contactStore = new PgContactStore(
+    pool,
+    creerAnnonceOptOut({
+      enfiler: (job) => queue.enqueue(FILE_POUSSEE_OPTOUT, job),
+      // eslint-disable-next-line no-console
+      log: (m) => console.warn(m),
+    }),
+  );
   // Sert à déclarer les champs « Pub » la première fois qu'un contact arrive par une publicité : sans
   // définition, la valeur serait écrite mais invisible dans le CRM, donc infiltrable et insegmentable.
   const fieldStore = new PgUserFieldStore(pool);
@@ -690,6 +703,34 @@ async function main(): Promise<void> {
       },
     });
   }, { concurrency: config.CAMPAIGN_RUN_CONCURRENCY, groupConcurrency: 1 });
+
+  /**
+   * File optout-poussee : prevenir le systeme du client qu une personne a refuse (tache 7 du centre de
+   * Securite, migration 0139).
+   *
+   * 🔴 INCONDITIONNELLE, contrairement a `push-analysis`. La file est enfilee par l API comme par le worker
+   * des qu un opt-out est ecrit, sans regarder aucun reglage : c est le HANDLER qui relit le branchement et
+   * ne fait rien s il n y en a pas. L inverse (ne pas consommer quand personne n est branche) laisserait
+   * s empiler des jobs que personne ne depile, exactement le trou que `agent-turn` a vecu plusieurs jours.
+   *
+   * ⚠️ Concurrence 1, par defaut : un client peut desabonner des milliers de personnes d un geste, et
+   * frapper son propre systeme en parallele ne lui rendrait pas service.
+   */
+  await queue.work('optout-poussee', creerTravailPousseeOptOut({
+    sources: new PgSourceStore(pool),
+    requetes: new PgRequeteStore(pool),
+    requeteConfiguree: async (tenant) => (await settingsStore.get(tenant)).optoutRequestId,
+    derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    // Relue a chaque appel, comme pour le bloc « Appel HTTP » d un scenario : la fiche a pu bouger entre le
+    // refus et la reprise du job.
+    projectionContact: async (t, waId) => {
+      const etat = await contactStore.getContactStateByWaId(t, waId);
+      return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
+    },
+    // eslint-disable-next-line no-console
+    log: (m) => console.warn(m),
+  }));
 
   // File analyze-conversation (Pièce 1). INERTE tant que CONVERSATION_ANALYSIS_ENABLED != 'true' : aucun worker,
   // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).

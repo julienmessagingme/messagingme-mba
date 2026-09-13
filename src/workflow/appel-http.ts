@@ -10,8 +10,8 @@ import { creerAppelConnecteur, type DepsResolveurHttp } from '../agent/resolvers
  * déclarer un appel, avec ses propres gardes à écrire, à tester et à oublier.
  *
  * ⚠️ CE MODULE NE CONTIENT AUCUNE GARDE : elles sont toutes dans `creerAppelConnecteur`, partagé avec l'agent
- * IA (source active, filtre de sortie non vide, variables requises, adresse interne, redirection, échéance,
- * corps borné). Il n'y a ici que la traduction « réponse de connecteur -> valeur de champ ».
+ * IA et avec la poussée d'un opt-out (source active, filtre de sortie non vide, variables requises, adresse
+ * interne, redirection, échéance, corps borné). Il n'y a ici que la traduction « réponse -> valeur de champ ».
  */
 
 /** Plafond de lecture du corps pour ce chemin, en octets. Une réponse plus grosse est refusée, pas tronquée. */

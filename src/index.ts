@@ -47,6 +47,7 @@ import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
+import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
@@ -162,7 +163,20 @@ async function main(): Promise<void> {
   // parce que les rappels du fournisseur RCS arrivent SUR L'API (le worker n'expose aucune route publique).
   const recipientStore = new PgRecipientStore(pool);
   const campaignDraftStore = new PgCampaignDraftStore(pool);
-  const contactStore = new PgContactStore(pool);
+  /**
+   * 🔴 L'ANNONCE D'UN OPT-OUT, POSÉE SUR LE DÉPÔT LUI-MÊME. Elle couvre par CONSTRUCTION les trois méthodes
+   * capables d'écrire `opted_out` (mot-clé entrant, fiche contact, action en masse) au lieu d'être recopiée
+   * sur chaque appelant, où elle aurait été oubliée au prochain bouton. Elle n'appelle RIEN : elle enfile.
+   * L'appel au connecteur, lui, vit dans le worker, avec ses réessais.
+   */
+  const contactStore = new PgContactStore(
+    pool,
+    creerAnnonceOptOut({
+      enfiler: (job) => queue.enqueue(FILE_POUSSEE_OPTOUT, job),
+      // eslint-disable-next-line no-console
+      log: (m) => console.warn(m),
+    }),
+  );
   const contactHistoryStore = new PgContactHistoryStore(pool);
   const templateHintStore = new PgTemplateHintStore(pool);
   const fieldStore = new PgUserFieldStore(pool);
@@ -1110,6 +1124,14 @@ async function main(): Promise<void> {
       ),
       setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
       setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
+      /**
+       * LE CONNECTEUR PREVENU A CHAQUE DESABONNEMENT (migration 0139).
+       *
+       * ⚠️ On ne rend que l IDENTIFIANT et le LIBELLE, pas la requete entiere : l ecran du Consentement a
+       * besoin de nommer un appel, pas de connaitre son adresse, ses en-tetes ni ce qu il envoie.
+       */
+      listerRequetesConnecteur: async (tenant) => (await agentRequetes.lister(tenant)).map((r) => ({ id: r.id, label: r.label })),
+      setOptoutRequestId: (tenant, requestId) => settingsStore.setOptoutRequestId(tenant, requestId),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
     ...(config.HUBSPOT_SERVICE_URL
@@ -1617,6 +1639,8 @@ async function main(): Promise<void> {
       // Les cles des champs DECLARES : une variable `champ` doit en designer une, sinon la faute de frappe ne
       // se verrait qu a l appel, en pleine conversation.
       clesDeChamps: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
+      // Le SECOND usage d une requete, celui que le compteur `outils` ne voit pas : la poussee d opt-out.
+      brancheeSurConsentement: async (tenant, requestId) => (await settingsStore.get(tenant)).optoutRequestId === requestId,
     },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil

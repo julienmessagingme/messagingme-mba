@@ -13,11 +13,27 @@ import { TREIZE_POUCES, pasDeDebordement } from './aide/largeur';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
-async function monter(page: Page): Promise<void> {
+/** Les PATCH captés par le faux serveur : c'est ce qui prouve qu'un choix est bien ENVOYÉ, pas seulement affiché. */
+type Ecriture = { chemin: string; corps: unknown };
+
+async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: string }>; branche?: string | null; ecritures?: Ecriture[] } = {}): Promise<void> {
+  const requetes = opts.requetes ?? [{ id: 'rq-1', label: 'Desabonner dans le CRM' }];
+  let branche = opts.branche ?? null;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const chemin = new URL(route.request().url()).pathname.replace('/api/backend', '');
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    // ⚠️ AVANT le `endsWith('/settings')` : `/settings/poussee-optout` ne finit pas par `/settings`, mais
+    // l'ordre reste explicite pour que l'ajout d'un `includes` un jour ne les confonde pas.
+    if (chemin.endsWith('/settings/poussee-optout')) {
+      if (route.request().method() === 'PATCH') {
+        const corps = route.request().postDataJSON() as { requestId: string | null };
+        opts.ecritures?.push({ chemin, corps });
+        branche = corps.requestId;
+        return json({ requestId: branche });
+      }
+      return json({ requestId: branche, requetes });
+    }
     if (chemin.endsWith('/contacts/refus-possibles')) {
       return json({ scannes: 42, refus: [
         { messageId: 'm1', conversationId: 'cv1', contactId: 'ct9', waId: '33600000009', profileName: 'Bob', body: 'arrêtez de me contacter', recuLe: '2026-09-12T09:00:00.000Z' },
@@ -130,6 +146,37 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(page.getByTestId('refus-possibles')).toContainText(/Personne n.a été désabonné/);
     await expect(page.getByTestId('refus-possible-ligne')).toHaveCount(1);
     await expect(page.getByTestId('refus-possible-ligne')).toContainText('arrêtez de me contacter');
+  });
+
+  /**
+   * 🔴 CE QUI REND UN REFUS OPPOSABLE AILLEURS QUE CHEZ NOUS. Le cas vérifie que le choix PART vers le
+   * serveur : un sélecteur qui change d'apparence sans rien envoyer donnerait à un client la certitude que
+   * son CRM est prévenu, alors qu'il ne le serait jamais.
+   */
+  test('🔴 brancher un connecteur sur le consentement ENVOIE le choix', async ({ page }) => {
+    const ecritures: Ecriture[] = [];
+    await monter(page, { ecritures });
+    await page.goto('/securite/consentement');
+    await expect(page.getByTestId('poussee-optout')).toBeVisible();
+    await page.getByTestId('poussee-optout-choix').selectOption('rq-1');
+    await expect(page.getByTestId('poussee-optout-ok')).toBeVisible();
+    expect(ecritures).toEqual([{ chemin: '/tenants/t-e2e/settings/poussee-optout', corps: { requestId: 'rq-1' } }]);
+
+    // ⚠️ LE TÉMOIN DANS L'AUTRE SENS : débrancher doit envoyer `null`, pas une chaîne vide. Sans ce cas, un
+    // « aucun » qui n'envoie rien laisserait le connecteur branché sans que l'écran le dise.
+    await page.getByTestId('poussee-optout-choix').selectOption('');
+    expect(ecritures[1]).toEqual({ chemin: '/tenants/t-e2e/settings/poussee-optout', corps: { requestId: null } });
+  });
+
+  /**
+   * ⚠️ AUCUN CONNECTEUR DÉCLARÉ : on le DIT et on emmène là où on en déclare un. Un sélecteur vide se
+   * lirait « ça ne marche pas », alors qu'il n'y a simplement rien à brancher pour l'instant.
+   */
+  test('⚠️ sans aucun appel declare, l ecran dit ou aller le declarer', async ({ page }) => {
+    await monter(page, { requetes: [] });
+    await page.goto('/securite/consentement');
+    await expect(page.getByTestId('poussee-optout-vide')).toContainText(/Connecteurs API/);
+    await expect(page.getByTestId('poussee-optout-choix')).toHaveCount(0);
   });
 
   test('rien ne deborde en 13 pouces', async ({ page }) => {

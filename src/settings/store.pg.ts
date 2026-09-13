@@ -43,6 +43,17 @@ export interface TenantSettings {
    * chez Meta. `null` = jamais réglé : on n'écrit alors RIEN chez Meta, et l'écran montre le défaut usine.
    */
   mbaHandoffMode: MbaHandoffMode | null;
+  /**
+   * La requête de connecteur (Tools > Connecteurs API) jouée quand quelqu'un se désabonne, ou `null`.
+   *
+   * 🔴 C'EST CE QUI REND UN REFUS OPPOSABLE AILLEURS QUE CHEZ NOUS : un opt-out qui ne vit que dans notre
+   * base laisse le client continuer à écrire à cette personne depuis son CRM, et c'est lui qui en répond.
+   *
+   * ⚠️ `null` PAR DÉFAUT, POUR TOUT LE MONDE. Un défaut qui enverrait quoi que ce soit à un système tiers
+   * sans qu'on l'ait choisi serait l'inverse de ce que le centre de sécurité garantit. Détail dans
+   * `src/crm/poussee-optout.ts` et la migration 0139.
+   */
+  optoutRequestId: string | null;
 }
 
 /**
@@ -60,8 +71,8 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode, optout_request_id from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -74,7 +85,24 @@ export class PgTenantSettingsStore {
       timezone: r?.timezone ?? DEFAULT_TIMEZONE,
       businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
       mbaHandoffMode: r?.mba_handoff_mode ?? null,
+      optoutRequestId: r?.optout_request_id ?? null,
     };
+  }
+
+  /**
+   * Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. Upsert ciblé : n'écrase
+   * aucun autre réglage.
+   *
+   * ⚠️ L'EXISTENCE DE LA REQUÊTE EST VÉRIFIÉE PAR LA ROUTE, pas ici : ce store ne parle qu'à la base. La
+   * contrainte de la migration 0139 reste la ceinture (une requête d'un AUTRE espace, ou inexistante, est
+   * refusée par la clé étrangère plutôt qu'écrite).
+   */
+  async setOptoutRequestId(tenantId: string, requestId: string | null): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, optout_request_id, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set optout_request_id = excluded.optout_request_id, updated_at = now()`,
+      [tenantId, requestId],
+    );
   }
 
   /**

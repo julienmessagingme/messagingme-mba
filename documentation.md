@@ -559,7 +559,7 @@ La cadence de polling se règle **par file**, sur la latence réellement utile, 
 |---|---|---|
 | conversationnelle (quelqu'un attend) | 2 s | `webhook`, `agent-turn` |
 | interactive (l'opérateur regarde l'écran) | 5 s | `campaign-run`, `automation-event` |
-| de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup` |
+| de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee` |
 | dépôt inspecté, consommé par personne | 60 s | toute DLQ |
 
 🔴 **Pourquoi pas le défaut de pg-boss (2 s partout)** : mesuré, le polling à vide des quatre process (mba api

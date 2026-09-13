@@ -114,7 +114,43 @@ export interface BulkEdits {
  * ne régresse jamais (unknown -> opted_in seulement).
  */
 export class PgContactStore implements ContactStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * @param annoncerDesabonnement APPELÉE APRÈS chaque écriture qui pose `opted_out`, avec les `wa_id` touchés.
+   *
+   * 🔴 ELLE EST ICI, ET PAS CHEZ LES APPELANTS, POUR UNE RAISON MESURÉE. L'invariant « un refus se pousse
+   * vers le système du client » se tient PARTOUT ou nulle part, et le dépôt vient de payer exactement cette
+   * leçon : la migration 0138 énonçait « la date se remet à null au réabonnement » et trois chemins
+   * d'écriture sur quatre la tenaient. Posée sur les appelants, l'annonce aurait été oubliée au prochain
+   * bouton. Posée ici, elle couvre par CONSTRUCTION les trois méthodes capables d'écrire `opted_out`, et
+   * `tests/optout-poussee.test.ts` DÉRIVE cette liste du fichier plutôt que de la recopier.
+   *
+   * ⚠️ ELLE NE PEUT PAS FAIRE ÉCHOUER L'ÉCRITURE : elle n'est appelée qu'APRÈS le `commit`, et ce qu'elle
+   * lève est absorbé (`annoncer`). L'ordre EST la fonctionnalité, cf. `src/crm/poussee-optout.ts`.
+   *
+   * ⚠️ ABSENTE = personne n'est prévenu, ce qui est le comportement d'avant. Les scripts et les tests qui
+   * construisent ce dépôt avec le seul pool continuent donc de marcher à l'identique.
+   */
+  constructor(
+    private readonly pool: Pool,
+    private readonly annoncerDesabonnement?: (tenantId: string, waIds: string[]) => Promise<void>,
+  ) {}
+
+  /**
+   * Annonce, sans jamais lever. Un refus est DÉJÀ enregistré quand on arrive ici : laisser une exception
+   * remonter ferait rendre 500 à la route qui vient pourtant de l'écrire, et l'opérateur croirait son geste
+   * perdu.
+   */
+  private async annoncer(tenantId: string, waIds: Array<string | null>): Promise<void> {
+    if (!this.annoncerDesabonnement) return;
+    const propres = waIds.filter((w): w is string => typeof w === 'string' && w.trim() !== '');
+    if (propres.length === 0) return;
+    try {
+      await this.annoncerDesabonnement(tenantId, propres);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`contacts: annonce d opt-out impossible pour ${tenantId}:`, err instanceof Error ? err.message : err);
+    }
+  }
 
   /** Comme upsertByPhone mais renvoie AUSSI l'id du contact (pour l'API : upsert-then-send adresse par id). */
   async upsertByPhoneReturningId(c: ContactUpsert): Promise<{ id: string; created: boolean }> {
@@ -323,7 +359,11 @@ export class PgContactStore implements ContactStore {
        returning id`,
       [tenantId, waId, source, statut],
     );
-    return res.rows[0]?.id ?? null;
+    const id = res.rows[0]?.id ?? null;
+    // L'annonce vient APRÈS l'écriture, et seulement si elle a touché quelqu'un : annoncer le refus d'un
+    // numéro inconnu pousserait vers le système du client une personne qui n'existe pas chez nous.
+    if (statut === 'opted_out' && id !== null) await this.annoncer(tenantId, [waId]);
+    return id;
   }
 
   /**
@@ -767,8 +807,15 @@ export class PgContactStore implements ContactStore {
       // n'est pas sur le contact à la fin. L'annoncer « ajouté » enverrait un message pour un tag inexistant.
       // On se fie donc à l'état FINAL réellement écrit, pas seulement au snapshot d'avant.
       const apres = new Set(PgContactStore.rowToContact(r).tags);
+      const contact = PgContactStore.rowToContact(r);
+      // APRÈS le `commit`, jamais dans la transaction : ce qui part vers le système du client ne doit décrire
+      // que ce qui est réellement enregistré chez nous. Annoncer avant, c'est risquer d'annoncer un refus
+      // qu'un `rollback` vient d'annuler.
+      if (edits.optInStatus === 'opted_out') {
+        await this.annoncer(tenantId, [waIdOf(contact.phoneE164, contact.bsuid)]);
+      }
       return {
-        contact: PgContactStore.rowToContact(r),
+        contact,
         addedTags: edits.addTags.filter((t) => !avant.has(t) && apres.has(t)),
       };
     } catch (err) {
@@ -904,7 +951,24 @@ export class PgContactStore implements ContactStore {
         `opt_out_at = ${optIn === 'opted_out' ? 'now()' : 'null'}`);
     }
     sets.push('updated_at = now()');
-    const res = await this.pool.query(`update contacts set ${sets.join(', ')} where ${sel.where}`, params);
+    /**
+     * `returning` SEULEMENT quand c'est un opt-out, et la condition n'est pas cosmétique.
+     *
+     * 🔴 L'annonce a besoin des IDENTITÉS, et les relire après coup par une seconde requête donnerait une
+     * photo d'APRÈS, donc potentiellement d'autres contacts (une action en masse se résout sur des filtres).
+     * Mais un `returning` INCONDITIONNEL ferait remonter une ligne par contact pour TOUTE action en masse,
+     * y compris une pose d'étiquette sur dix mille fiches, où personne n'en a l'usage. Cette base est
+     * facturée à l'egress, et c'est exactement le genre de coût qui ne se voit dans aucun écran (cf.
+     * `src/queue/names.ts`, où le sondage à vide pesait 88 % du trafic sans que personne ne le sache).
+     */
+    const estOptOut = optIn === 'opted_out';
+    const res = await this.pool.query<{ id: string; phone_e164: string | null; bsuid: string | null }>(
+      `update contacts set ${sets.join(', ')} where ${sel.where}${estOptOut ? ' returning id, phone_e164, bsuid' : ''}`,
+      params,
+    );
+    if (estOptOut && res.rows.length > 0) {
+      await this.annoncer(tenantId, res.rows.map((r) => waIdOf(r.phone_e164, r.bsuid)));
+    }
     return res.rowCount ?? 0;
   }
 

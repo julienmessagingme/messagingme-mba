@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
-import { listeDesabonnes, refusPossibles, type ContactDesabonne, type RefusPossible } from '@/lib/api';
+import { listeDesabonnes, refusPossibles, pousseeOptOut, setPousseeOptOut, type ContactDesabonne, type RefusPossible } from '@/lib/api';
 import { cardCls } from '@/lib/ui';
 
 /**
@@ -20,7 +20,7 @@ import { cardCls } from '@/lib/ui';
  * été plus joli et faux, ce qui est le pire résultat possible sur un écran de conformité.
  */
 export default function SecuriteConsentementPage() {
-  return <AppShell active="securite-consentement">{(session) => <Consentement tenantId={session.tenantId} />}</AppShell>;
+  return <AppShell active="securite-consentement">{(session) => <Consentement tenantId={session.tenantId} estAdmin={session.role === 'admin'} />}</AppShell>;
 }
 
 /** Le chemin par lequel le refus est arrivé, dit en français plutôt qu'en clé technique. */
@@ -33,7 +33,7 @@ function sourceDite(source: string | null, t: (fr: string, en: string) => string
   return source;
 }
 
-function Consentement({ tenantId }: { tenantId: string }) {
+function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
   const t = useT();
   const [contacts, setContacts] = useState<ContactDesabonne[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -121,6 +121,16 @@ function Consentement({ tenantId }: { tenantId: string }) {
       </section>
 
       {/*
+        🔴 CE QUI REND UN REFUS OPPOSABLE AILLEURS QUE CHEZ NOUS. Un opt-out qui ne vit que dans notre base
+        laisse le client continuer à écrire à cette personne depuis son CRM, et c'est lui qui en répond.
+
+        ⚠️ ADMIN SEULEMENT, et le bloc n'est pas seulement DÉSACTIVÉ pour les autres, il est ABSENT : la
+        route est montée avec la garde d'administration, donc un manager n'obtiendrait qu'un 403 et un
+        sélecteur vide, c'est-à-dire un écran qui a l'air cassé.
+      */}
+      {estAdmin && <PousseeVersLeSysteme tenantId={tenantId} />}
+
+      {/*
         🔴 CETTE SECTION N'A DÉSABONNÉ PERSONNE, ET C'EST TOUT SON INTÉRÊT. Une règle plus large que celle
         qui agit relit les messages entrants récents et remonte ce qu'elle AURAIT pris pour un refus. Sur
         135 messages réels mesurés le 2026-09-13, ni la règle actuelle ni une règle élargie n'ont rien
@@ -166,5 +176,80 @@ function Consentement({ tenantId }: { tenantId: string }) {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * « Prévenir mon système à chaque désabonnement ».
+ *
+ * ⚠️ IL NE PROPOSE AUCUNE CRÉATION D'APPEL. La liste vient de Tools > Connecteurs API, où un appel se met au
+ * point une fois et s'éprouve avec le bouton « Essayer ». Permettre de le décrire ici ferait exister une
+ * seconde façon de déclarer un appel, avec ses propres gardes à écrire, à tester et à oublier.
+ */
+function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const [etat, setEtat] = useState<{ requestId: string | null; requetes: Array<{ id: string; label: string }> } | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [enregistre, setEnregistre] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    pousseeOptOut(tenantId)
+      .then((r) => { if (vivant) setEtat(r); })
+      .catch(() => { if (vivant) setErreur(t('Le branchement n’a pas pu être lu.', 'The wiring could not be read.')); });
+    return () => { vivant = false; };
+  }, [tenantId, t]);
+
+  async function choisir(valeur: string): Promise<void> {
+    const requestId = valeur === '' ? null : valeur;
+    setErreur(null);
+    setEnregistre(false);
+    try {
+      await setPousseeOptOut(tenantId, requestId);
+      setEtat((e) => (e ? { ...e, requestId } : e));
+      setEnregistre(true);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : t('Le branchement n’a pas pu être enregistré.', 'The wiring could not be saved.'));
+    }
+  }
+
+  return (
+    <section className={cardCls} data-testid="poussee-optout">
+      <div className="border-b border-ink-100 px-4 py-3">
+        <span className="text-sm font-semibold text-ink-900">{t('Prévenir mon système', 'Notify my system')}</span>
+        <p className="mt-1 text-xs text-ink-500">
+          {t(
+            'À chaque refus, Engage Me peut appeler un connecteur de Tools pour que votre CRM ou votre back-office le sache aussi. Le refus est enregistré ici d’abord : si votre système ne répond pas, la personne cesse quand même de recevoir.',
+            'On each refusal, Engage Me can call a connector from Tools so your CRM or back-office knows too. The refusal is recorded here first: if your system does not answer, the person still stops receiving messages.',
+          )}
+        </p>
+      </div>
+      <div className="space-y-2 px-4 py-3">
+        {etat === null && erreur === null && <p className="text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+        {etat !== null && etat.requetes.length === 0 && (
+          <p className="text-sm text-ink-500" data-testid="poussee-optout-vide">
+            {t('Aucun appel déclaré dans ', 'No request declared in ')}
+            <Link href="/connecteurs" className="font-medium text-brand-600 hover:underline">{t('Tools > Connecteurs API', 'Tools > API connectors')}</Link>
+            {t('. Déclarez-en un, puis revenez le brancher ici.', '. Declare one, then come back and wire it here.')}
+          </p>
+        )}
+        {etat !== null && etat.requetes.length > 0 && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium text-ink-600">{t('Appel joué à chaque désabonnement', 'Request played on each unsubscribe')}</span>
+            <select
+              className="w-full max-w-md rounded border border-ink-200 px-2 py-1.5 text-sm"
+              data-testid="poussee-optout-choix"
+              value={etat.requestId ?? ''}
+              onChange={(e) => { void choisir(e.target.value); }}
+            >
+              <option value="">{t('Aucun : ne prévenir personne', 'None: notify nobody')}</option>
+              {etat.requetes.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            </select>
+          </label>
+        )}
+        {erreur !== null && <p className="text-sm text-red-700" data-testid="poussee-optout-erreur">{erreur}</p>}
+        {enregistre && erreur === null && <p className="text-xs text-emerald-700" data-testid="poussee-optout-ok">{t('Enregistré.', 'Saved.')}</p>}
+      </div>
+    </section>
   );
 }

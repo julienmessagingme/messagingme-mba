@@ -33,6 +33,15 @@ export interface SettingsRouteDeps {
   setTimezone(tenantId: string, timezone: string): Promise<void>;
   /** Heures d'ouverture par jour ('0'..'6'). */
   setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void>;
+  /**
+   * Les requêtes de connecteur de l'espace (Tools > Connecteurs API), réduites à ce que l'écran affiche.
+   *
+   * ⚠️ Optionnelle : absente, l'écran du Consentement dit que le branchement n'est pas disponible plutôt que
+   * de proposer une liste vide, qui se lirait « vous n'avez aucun connecteur » et serait un mensonge.
+   */
+  listerRequetesConnecteur?(tenantId: string): Promise<Array<{ id: string; label: string }>>;
+  /** Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. */
+  setOptoutRequestId?(tenantId: string, requestId: string | null): Promise<void>;
 }
 
 /** Fuseau IANA valide ? (Intl throw sur un identifiant inconnu.) */
@@ -63,7 +72,14 @@ function normalizeBusinessHours(raw: unknown): BusinessHours | null {
   return out;
 }
 
-/** Réglages tenant : GET ouvert (lecture), PUT admin-only (toggle MBA). */
+/**
+ * Réglages tenant.
+ *
+ * ⚠️ TOUT CE MODULE EST MONTÉ AVEC `requireAdmin` (`src/server.ts`), y compris les GET. Ce docblock a dit
+ * « GET ouvert (lecture), PUT admin-only » pendant longtemps : c'était faux, et la phrase a été recopiée
+ * telle quelle dans une route neuve le 2026-09-13. Le paramètre s'appelle `requireAuth` par héritage, mais
+ * ce qu'on lui passe est la garde d'administration.
+ */
 export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
@@ -95,6 +111,61 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
     await deps.setHubspotListsEnabled(tenant, enabled);
     return reply.code(200).send({ hubspotListsEnabled: enabled });
+  });
+
+  /**
+   * LE CONNECTEUR PRÉVENU À CHAQUE DÉSABONNEMENT : lecture.
+   *
+   * ⚠️ ADMIN SEULEMENT, COMME TOUT CE MODULE, et ce n'était PAS ce que ce commentaire disait d'abord : il
+   * annonçait « ouverte à tout compte authentifié, comme `GET /settings` », en se fiant au docblock de
+   * `registerSettings` (« GET ouvert (lecture) »). Les deux étaient faux, mesuré en écrivant le test :
+   * `src/server.ts` monte ce module entier avec `requireAdmin`. L'écran du Consentement, lui, est ouvert à
+   * l'encadrement : il n'affiche donc ce bloc QUE pour un administrateur, plutôt que de montrer à un manager
+   * un réglage dont la lecture lui rendrait 403.
+   *
+   * Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée : celle-ci l'a été d'un
+   * docblock voisin, lui-même faux depuis longtemps.
+   */
+  app.get('/tenants/:tenantId/settings/poussee-optout', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.listerRequetesConnecteur) return reply.code(503).send({ error: 'connecteurs indisponibles' });
+    const { optoutRequestId } = await deps.getSettings(tenant);
+    return reply.code(200).send({ requestId: optoutRequestId, requetes: await deps.listerRequetesConnecteur(tenant) });
+  });
+
+  /**
+   * LE CONNECTEUR PRÉVENU À CHAQUE DÉSABONNEMENT : écriture, ADMIN SEULEMENT.
+   *
+   * 🔴 BRANCHER UN CONNECTEUR ICI, C'EST DÉCIDER D'ENVOYER DES DONNÉES DE CONTACT À UN SYSTÈME TIERS. Le
+   * geste appartient donc à un administrateur, comme la déclaration du connecteur lui-même, et pas à un
+   * manager qui consulte la liste des désabonnés.
+   *
+   * 🔴 L'IDENTIFIANT EST VÉRIFIÉ CONTRE LES REQUÊTES DE CET ESPACE, jamais accepté sur sa seule forme : un
+   * uuid pris ailleurs pointerait sur le connecteur d'un AUTRE client, et la poussée partirait chez lui. La
+   * clé étrangère de la migration 0139 ne suffirait pas, elle ignore le tenant.
+   */
+  app.patch('/tenants/:tenantId/settings/poussee-optout', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.setOptoutRequestId || !deps.listerRequetesConnecteur) return reply.code(503).send({ error: 'connecteurs indisponibles' });
+    const brut = (req.body as { requestId?: unknown } | null)?.requestId;
+    if (brut === null) {
+      await deps.setOptoutRequestId(tenant, null);
+      return reply.code(200).send({ requestId: null });
+    }
+    if (typeof brut !== 'string' || brut.trim() === '') {
+      return reply.code(400).send({ error: 'requestId (identifiant de requête, ou null) requis' });
+    }
+    const requestId = brut.trim();
+    const connues = await deps.listerRequetesConnecteur(tenant);
+    if (!connues.some((r) => r.id === requestId)) {
+      // 400 et non 500 : Cloudflare remplace le corps des 5xx, et c'est un message destiné à l'utilisateur.
+      return reply.code(400).send({ error: 'cette requête n’existe pas dans cet espace' });
+    }
+    await deps.setOptoutRequestId(tenant, requestId);
+    return reply.code(200).send({ requestId });
   });
 
   // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).

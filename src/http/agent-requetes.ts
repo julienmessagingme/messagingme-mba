@@ -37,6 +37,18 @@ export interface AgentRequetesRouteDeps {
   sourcePourTest(tenantId: string, sourceId: string): Promise<{ baseUrl: string; entetes: Record<string, string>; status: string } | null>;
   /** Les clés des champs personnalisés DÉCLARÉS par l'espace : une variable `champ` doit en désigner une. */
   clesDeChamps(tenantId: string): Promise<string[]>;
+  /**
+   * Cette requête est-elle branchée sur le CONSENTEMENT (migration 0139) ?
+   *
+   * 🔴 UN SECOND USAGE EST APPARU LE 2026-09-13, ET IL NE PASSE PAS PAR `outils`. Le compteur `outils` ne
+   * voit que les outils d'agent : une requête branchée sur la poussée d'opt-out y compte ZÉRO, donc la
+   * supprimer était accepté, et la clé étrangère `on delete set null` débranchait la poussée EN SILENCE.
+   * Le client cesserait alors de prévenir son propre système à chaque refus sans que rien ne le dise, ce qui
+   * est exactement le manquement que le centre de sécurité existe pour empêcher.
+   *
+   * ⚠️ Optionnelle : absente, on retombe sur le comportement d'avant (seul `outils` protège).
+   */
+  brancheeSurConsentement?(tenantId: string, requestId: string): Promise<boolean>;
   fetchImpl?: typeof fetch;
   /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
   verifierResolution?: (url: string) => Promise<VerdictResolution>;
@@ -291,6 +303,11 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     // muet sur ces gestes-là, en production, sans que personne ne l'ait décidé.
     if (actuelle.outils > 0) {
       return reply.code(409).send({ error: `${actuelle.outils} outil(s) d’agent utilisent cette requête : retirez-les d’abord` });
+    }
+    // Le SECOND usage, qui ne compte pas dans `outils` : la poussée d'opt-out du centre de Sécurité. Sans ce
+    // refus, la clé étrangère `on delete set null` de 0139 débrancherait la conformité sans un mot.
+    if (deps.brancheeSurConsentement && await deps.brancheeSurConsentement(tenant, id)) {
+      return reply.code(409).send({ error: 'cette requête prévient votre système à chaque désabonnement (Sécurité > Consentement) : débranchez-la d’abord' });
     }
     return reply.code(200).send({ id, deleted: await deps.supprimer(tenant, id) });
   });

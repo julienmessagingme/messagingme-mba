@@ -1616,6 +1616,21 @@ boîte par sous-menu.
   - 🔴 **Mais un opérateur peut toujours répondre à la main.** Sans cette exception, il ne pourrait même plus
     accuser réception du désabonnement, ni répondre à une réclamation posée juste après. La machine se tait ;
     la personne peut encore répondre à la personne.
+- ✅ **Prévenir votre propre système à chaque désabonnement** (2026-09-13) : sur l'écran Consentement, un
+  administrateur choisit un appel déjà déclaré dans **Tools > Connecteurs API**, et Engage Me le joue à chaque
+  refus, quel qu'en soit le chemin (« stop » reçu, case cochée dans la fiche, action en masse). Votre CRM, votre
+  back-office ou votre routeur d'e-mails apprennent donc le refus, avec le numéro de la personne.
+  - 🔴 **Pourquoi ça compte** : un refus qui ne vit que chez nous vous laisse continuer à écrire à cette
+    personne depuis vos autres outils, et c'est vous qui en répondez.
+  - 🔴 **Votre système en panne ne bloque JAMAIS le désabonnement.** Le refus est enregistré d'abord, l'appel
+    part ensuite : un connecteur mort, un réseau coupé, une adresse changée ne peuvent pas empêcher quelqu'un
+    de cesser de recevoir. L'appel raté est réessayé cinq fois, à intervalle croissant.
+  - ⚠️ **Aucun espace n'est branché par défaut** : tant que personne n'a choisi d'appel, rien ne sort.
+  - ⚠️ **On ne décrit pas l'appel ici, on en désigne un.** Il se met au point une fois dans Tools, où le bouton
+    « Essayer » permet de l'éprouver avant de le brancher. Et tant qu'il est branché sur le consentement, il
+    **refuse d'être supprimé** : sinon vous cesseriez de prévenir votre système sans que rien ne le dise.
+  - ⚠️ **Réservé à l'administrateur**, en lecture comme en écriture : brancher, c'est décider que des données
+    de contact partent chez un tiers. Un manager voit la liste des désabonnés, pas ce réglage.
 - ✅ **Audit trails** et **Journal des erreurs** : les deux journaux ci-dessous, qui vivaient dans Paramètres
   et s'y trouvaient par accident. Aucune adresse n'a changé.
 

@@ -10,7 +10,7 @@
  * sont enregistrées qu'à l'exécution (analyse activée / push connecteur), mais la file EXISTE côté /ops même
  * désactivée — getQueueLoad renvoie zéro job si aucun n'a été enfilé — donc on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn'] as const;
+export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee'] as const;
 
 /**
  * Convention de nommage de la dead-letter queue d'une file. UNE seule définition : PgBossQueue.ensure()
@@ -47,6 +47,9 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  * - `campaign-run` : l'utilisateur vient de cliquer « lancer » et regarde l'écran -> 5 s.
  * - `automation-event` : démarre un scénario sur mot-clé / tag / nouveau contact, donc chemin conversationnel -> 5 s.
  * - `analyze-conversation`, `push-analysis`, `hubspot-catchup` : traitements de fond, personne n'attend -> 30 s.
+ * - `optout-poussee` : pousse un refus vers le systeme du client. Traitement de fond lui aussi, et la
+ *   demi-minute d'attente ne change rien a la conformite : ce qui compte est que le refus soit ECRIT,
+ *   ce qui est deja fait quand le job est enfile -> 30 s.
  *
  * `tests/queue-names.test.ts` garde l'invariant : toute file de `BASE_QUEUES` a une entrée ici.
  */
@@ -59,6 +62,7 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
   'push-analysis': 30,
   'hubspot-catchup': 30,
   'agent-turn': 2,
+  'optout-poussee': 30,
 };
 
 /**
@@ -91,6 +95,7 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'analyze-conversation': false, // traitement de fond
   'push-analysis': false, // traitement de fond
   'hubspot-catchup': false, // traitement de fond
+  'optout-poussee': false, // le refus est deja ecrit ; sa diffusion peut attendre le tour d'horloge
 };
 
 /**
