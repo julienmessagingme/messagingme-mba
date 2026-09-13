@@ -805,6 +805,22 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   le contact vient d'écrire. Quand aucun scénario n'est utilisable en campagne, l'écran le dit et explique
   pourquoi, au lieu d'annoncer « aucun scénario » alors qu'il en existe. Les variables associées sont celles du
   **1er template du scénario**.
+- ✅ **...et seulement ceux qui peuvent ouvrir CET étage-là** (2026-09-13) : un étage WhatsApp ne propose que les
+  scénarios qui démarrent par un modèle, un étage RCS que ceux qui démarrent par un message RCS. Un scénario qui
+  ouvre sur le mauvais canal ferait refuser la campagne **entière** par Meta, pas un destinataire, et le
+  récapitulatif le dit avec sa raison exacte (« ce scénario ouvre par un message RCS ») plutôt qu'en termes vagues.
+- ✅ **« Créer un scénario » sans quitter sa campagne** (2026-09-13) : sous le sélecteur, un lien demande le nom du
+  scénario puis ouvre **l'éditeur habituel dans une fenêtre**, par-dessus la campagne. Le brouillon en cours est
+  intact au retour, et le scénario publié est **choisi tout seul** pour l'étage ; il se retrouve ensuite dans
+  l'onglet Scénario comme n'importe quel autre. **La publication refuse depuis cette fenêtre un scénario qui
+  n'ouvre pas sur le canal de l'étage**, en disant quel premier bloc il lui faut : on l'apprend en construisant, pas
+  au moment de lancer.
+- ✅ **« Message et scénario » sur un étage RCS fait enfin les deux** (2026-09-13) : le message RCS part, **puis** le
+  scénario démarre. Avant, le scénario choisi était enregistré et n'était jamais lancé : l'écran affichait
+  « envoyé », ce qui était vrai, pour une campagne à moitié faite. Le message RCS apparaît aussi dans le fil de
+  conversation du contact, ce qui n'était pas le cas dès qu'un scénario était attaché. Si le scénario ne peut pas
+  démarrer (fil repris par un opérateur, scénario supprimé), le message reste compté **envoyé**, avec la raison à
+  côté : il est bien parti, et le recompter en échec le ferait renvoyer une seconde fois à la relance.
 - ✅ **Variables associées à la création** : on associe chaque variable à sa source via un **menu déroulant**
   (« Champs de base » : Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email · « Mes champs » : les vrais champs
   perso · « Autre » : **Date du jour (auto)** et **Texte fixe**). Fini la clé tapée à la main qui pointait un champ

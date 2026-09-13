@@ -56,7 +56,7 @@ export type CanalOuverture = 'whatsapp' | 'rcs' | null;
 🔴 **IL SE CALCULE DEPUIS LE GRAPHE, IL NE SE STOCKE PAS.** `scanOpening` existe et rend déjà
 `firstTemplate` et `rcsOpen` : la fonction à écrire les traduit, elle ne les recalcule pas.
 
-- [ ] **Étape 1 : les tests**
+- [x] **Étape 1 : les tests**
 
 ```ts
 it('un scenario qui ouvre par un modele nomme rend whatsapp', () => { /* ... */ });
@@ -66,11 +66,11 @@ it('un modele sans nom rend null, pas whatsapp', () => { /* ... */ });
 it('un scenario qui commence par une attente rend null', () => { /* ... */ });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer**
-- [ ] **Étape 3 : MUTER** : faire rendre `whatsapp` sur un modèle sans nom, constater l'échec
-- [ ] **Étape 4 : vérifier que `campaignEligible` ne change pas de valeur** pour tous les cas existants.
+- [x] **Étape 2 : implémenter, relancer**
+- [x] **Étape 3 : MUTER** : faire rendre `whatsapp` sur un modèle sans nom, constater l'échec
+- [x] **Étape 4 : vérifier que `campaignEligible` ne change pas de valeur** pour tous les cas existants.
       ⚠️ C'est un contrat lu par trois écrans : le modifier au passage casserait des campagnes valides.
-- [ ] **Étape 5 : commit**
+- [x] **Étape 5 : commit**
 
 ---
 
@@ -80,7 +80,7 @@ it('un scenario qui commence par une attente rend null', () => { /* ... */ });
 - Modifier : `web/components/campagne/EtapeContenu.tsx` (`SelecteurScenario`), `web/lib/api/*`
 - Test : `web/lib/campagne-scenario.test.ts` (fonction pure de filtrage)
 
-- [ ] **Étape 1 : la règle, PURE, dans `web/lib/`** (seul endroit testable hors navigateur)
+- [x] **Étape 1 : la règle, PURE, dans `web/lib/`** (seul endroit testable hors navigateur)
 
 ```ts
 export function scenariosPourEtage(
@@ -93,11 +93,11 @@ export function scenariosPourEtage(
 }
 ```
 
-- [ ] **Étape 2 : les tests, dont le cas de tolérance ci-dessus**
-- [ ] **Étape 3 : brancher le filtre sur le sélecteur, par canal d'ÉTAGE**
-- [ ] **Étape 4 : MUTER** : filtrer sur le canal du rang 1 pour tous les étages, constater qu'un étage
+- [x] **Étape 2 : les tests, dont le cas de tolérance ci-dessus**
+- [x] **Étape 3 : brancher le filtre sur le sélecteur, par canal d'ÉTAGE**
+- [x] **Étape 4 : MUTER** : filtrer sur le canal du rang 1 pour tous les étages, constater qu'un étage
       de repli RCS se voit proposer des scénarios WhatsApp
-- [ ] **Étape 5 : commit**
+- [x] **Étape 5 : commit**
 
 ---
 
@@ -111,9 +111,9 @@ export function scenariosPourEtage(
 WhatsApp »). Cette tâche ajoute le **miroir RCS** et fait reposer les deux sur `canalOuverture` plutôt
 que sur la présence de `modeleDuScenario`.
 
-- [ ] **Étape 1 : les tests des deux sens, et du cas « on ne sait pas »**
-- [ ] **Étape 2 : implémenter, relancer, MUTER**
-- [ ] **Étape 3 : commit**
+- [x] **Étape 1 : les tests des deux sens, et du cas « on ne sait pas »**
+- [x] **Étape 2 : implémenter, relancer, MUTER**
+- [x] **Étape 3 : commit**
 
 ---
 
@@ -126,12 +126,12 @@ que sur la présence de `modeleDuScenario`.
 ⚠️ **LE MODÈLE À SUIVRE EXISTE** : `CreationModeleEnLigne` fait exactement cela pour un modèle WhatsApp
 (demander, créer, suivre, choisir dès que c'est prêt). **Le lire avant d'écrire**, et reprendre sa forme.
 
-- [ ] **Étape 1 : l'entrée « Créer un scénario » en TÊTE du sélecteur**, avant les existants
-- [ ] **Étape 2 : la demande du NOM** (le parcours normal le demande avant l'éditeur, celui-ci n'a pas
+- [x] **Étape 1 : l'entrée « Créer un scénario » en TÊTE du sélecteur**, avant les existants
+- [x] **Étape 2 : la demande du NOM** (le parcours normal le demande avant l'éditeur, celui-ci n'a pas
       d'endroit où le poser)
-- [ ] **Étape 3 : la création, qui rend un `workflowId`**
-- [ ] **Étape 4 : les tests e2e** (l'entrée est en tête ; sans nom on ne crée rien)
-- [ ] **Étape 5 : commit**
+- [x] **Étape 3 : la création, qui rend un `workflowId`**
+- [x] **Étape 4 : les tests e2e** (l'entrée est en tête ; sans nom on ne crée rien)
+- [x] **Étape 5 : commit**
 
 ---
 
@@ -145,7 +145,7 @@ que sur la présence de `modeleDuScenario`.
 `workflowId`, `initialGraph` et ses données de contexte : il n'a pas besoin de la page `/workflows`.
 **Aucune version allégée, aucun second éditeur.**
 
-- [ ] **Étape 1 : la fenêtre, ~75 % de l'écran, et la garde de largeur en 1280 x 800**
+- [x] **Étape 1 : la fenêtre, ~75 % de l'écran, et la garde de largeur en 1280 x 800**
 
 ```ts
 test('l editeur respire en 13 pouces', async ({ page }) => {
@@ -156,9 +156,9 @@ test('l editeur respire en 13 pouces', async ({ page }) => {
 });
 ```
 
-- [ ] **Étape 2 : vérifier que le brouillon de la CAMPAGNE survit à l'ouverture** (on ne quitte pas la
+- [x] **Étape 2 : vérifier que le brouillon de la CAMPAGNE survit à l'ouverture** (on ne quitte pas la
       page, donc en principe oui : le vérifier plutôt que le supposer)
-- [ ] **Étape 3 : commit**
+- [x] **Étape 3 : commit**
 
 ---
 
@@ -168,7 +168,7 @@ test('l editeur respire en 13 pouces', async ({ page }) => {
 - Modifier : `web/components/campagne/CreationScenarioEnLigne.tsx`, la route de publication
 - Test : `web/e2e/campagne-scenario-a-la-volee.spec.ts`
 
-- [ ] **Étape 1 : les tests, et le premier est celui qui protège**
+- [x] **Étape 1 : les tests, et le premier est celui qui protège**
 
 ```ts
 // 🔴 LA GARDE DEMANDEE PAR JULIEN. Sur un etage WhatsApp, un scenario qui n ouvre pas par un modele
@@ -188,9 +188,9 @@ test('publier un scenario valide ferme la fenetre ET le selectionne dans la camp
 test('le scenario cree apparait dans la liste de l onglet Scenario', async ({ page }) => { /* ... */ });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer, MUTER** (retirer la garde, constater qu'un scénario invalide
+- [x] **Étape 2 : implémenter, relancer, MUTER** (retirer la garde, constater qu'un scénario invalide
       se publie et que le refus n'arrive qu'au récapitulatif)
-- [ ] **Étape 3 : commit**
+- [x] **Étape 3 : commit**
 
 ## Revue
 
@@ -204,3 +204,33 @@ Revue `/revue` systématique, plus le rayon de souffle :
   qui ne montrent que les scénarios publiés, et qu'il n'est pas proposé en campagne.
 - **Les textes** : la page `/workflows` dit peut-être « créez un scénario ici » ; il y a maintenant un
   second chemin.
+
+---
+
+## Ce qui a ete livre, et les DEUX ecarts avec ce plan (2026-09-13)
+
+Les six taches sont faites, sans migration, en deux lots (`90f7aa9` puis `d1bb1a2`). Deux ecarts, dont un
+qui a ouvert un chantier que ce plan n'avait pas vu.
+
+1. 🔴 **LA TACHE 3 N'A PAS EU SON MIROIR RCS, ELLE A EU UNE CORRECTION DE MOTEUR.** Le plan demandait
+   « et sur un etage RCS, c'est l'inverse qui est exige ». En l'ecrivant, la mesure a montre que sur un
+   etage RCS **le scenario choisi n'etait JAMAIS demarre** : `engine.ts` teste `servi.sender` avant
+   `contenu.workflowId`, et un etage RCS a toujours un sender. Mesure avec le vrai moteur : message parti,
+   `sent: 1`, zero demarrage. Ajouter une garde aurait renforce l'illusion que la formule fait quelque
+   chose. Julien a tranche (« bah pourquoi je retirerais le message / scenario pour un RCS ??? ») : le
+   moteur demarre desormais le scenario APRES l'envoi. Corrige dans `b555012`, avec son test.
+   ⚠️ Le meme `!contenu.workflowId` privait le fil de sa trace : le message RCS n'etait pas journalise
+   dans la conversation des qu'un scenario etait attache. Meme cause, meme correctif.
+2. **Le canal d'ouverture est aussi cote NAVIGATEUR** (`canalDOuvertureDuGraphe`), parce que la garde de
+   publication s'execute dans l'editeur. `isCampaignEligible` en est derive des deux cotes, et un test
+   compare les deux implementations cas par cas.
+
+⚠️ **ET L'ENTREE N'EST PAS DANS LE SELECTEUR, elle est dessous.** Le plan disait « en TETE du selecteur ».
+Une option « Creer un scenario » dans une liste deroulante est un choix qui n'en est pas un : elle se
+selectionne comme une valeur, et un brouillon recharge porterait un identifiant qui ne designe aucun
+scenario.
+
+🔴 **CE QUI RESTE DU : l'essai reel.** Creer un scenario depuis une campagne WhatsApp, le publier, verifier
+qu'il apparait dans l'onglet Scenario, lancer la campagne sur un vrai numero et constater la reception du
+modele d'ouverture. Puis l'essai qui protege : tenter de publier, depuis la fenetre, un scenario qui ne
+commence pas par un modele, et constater le refus AVEC sa raison.

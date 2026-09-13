@@ -36,7 +36,7 @@ par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le con
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | ✅ **TERMINÉ ET DÉPLOYÉ** le 2026-09-13 (0137 appliquée, `TRADUCTION_MODELE=google/gemini-2.5-flash` posée en prod). Décrit dans `features.md`. 🔴 **JAMAIS ESSAYÉ EN RÉEL** : aucun message étranger n'a encore été traduit sur de vraies données |
 | **3** | ✅ **BUG « Modèle et scénario »** | — | [todo.md](todo.md) | ✅ **CORRIGÉ ET DÉPLOYÉ** le 2026-09-13 (`01b82c6`, CI verte, Vercel). Le sélecteur de modèle disparaît en formule scénario, les variables se vident à la bascule, et un scénario qui n'ouvre pas par un modèle est refusé sur un étage WhatsApp |
 | **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LIVRÉ, RELU ET DÉPLOYÉ** le 2026-09-13 (`acf74a5`), aucune migration. La revue a trouvé deux défauts réels, corrigés et redéployés : les conversations `is_test` entraient dans les chiffres, et la garde des nombres inventés était percée sur la plage 1-31. Route vérifiée en production (401 sans jeton, 404 sur une voisine inexistante). 🔴 **Jamais essayé en réel**, cf. plus bas |
-| **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | spec et plan écrits, rien de commencé |
+| **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | ✅ **LES 6 TÂCHES LIVRÉES** (`90f7aa9` + `d1bb1a2`), aucune migration. En chemin, un DÉFAUT DE MOTEUR trouvé et corrigé (`b555012`), cf. plus bas. 🔴 **Pas encore déployé, jamais essayé en réel** |
 | **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches en 3 lots](docs/superpowers/plans/2026-09-13-centre-securite.md) | spec et plan écrits. ⚠️ Tâches 7 et 9 **pas cadrées**, à préciser avec Julien |
 | **7** | ✅ Menu Scénario dans Contenu + la réponse compte comme engagement | — | [plan, 2 tâches](docs/superpowers/plans/2026-09-13-menu-scenario-et-engagement.md) | ✅ **FAIT ET DÉPLOYÉ** le 2026-09-13 (`444b509`). Essai réel concluant : « Testjulien2 », zéro clic, **1 engagé** |
 
@@ -49,6 +49,22 @@ Migrations **0133 à 0137 appliquées**. Prochaine libre : **0138** (le compteur
 les variables de template, l'aperçu, « Plus tard », le fil de l'eau, le visuel RCS, les brouillons
 (les deux formats), l'audience complète et la jauge de débit. Le moteur envoie sur le canal de
 l'étage. La joignabilité WhatsApp se mémorise. Le funnel compte par canal.
+
+### 🔴 « Message et scénario » sur un étage RCS ne démarrait RIEN (trouvé le 2026-09-13)
+
+**Mesuré avec le vrai moteur, pas déduit d'une lecture** : un étage RCS portant un scénario envoyait son
+message, comptait `sent: 1`, et ne démarrait AUCUN scénario. `engine.ts` teste `servi.sender` avant
+`contenu.workflowId`, et un étage RCS a toujours un sender. La formule existait dans l'écran depuis le
+chantier 1, l'identifiant était enregistré sur l'étage, et personne ne le lisait. **L'écran affichait
+« envoyé », ce qui était vrai, pour une campagne à moitié faite.**
+
+Le même `!contenu.workflowId` privait le fil de sa trace : le message RCS n'était pas journalisé dans la
+conversation dès qu'un scénario était attaché. Une cause, deux symptômes.
+
+Corrigé dans `b555012` : le message part, PUIS le scénario. ⚠️ **Conséquence à connaître à l'usage** : les
+scénarios proposés sur un étage RCS ouvrent par un envoi, donc le contact reçoit le message de l'étage puis
+le premier message du scénario. C'est la lecture littérale de « message plus scénario », et c'est le point
+à regarder au premier essai réel.
 
 ### 🔴 Le récap d'hier : ce qu'il reste à faire
 
