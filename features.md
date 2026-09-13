@@ -683,6 +683,16 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
   ⚠️ Si aucun jour d'ouverture n'est réglé, il n'y a aucun créneau où envoyer : la campagne se met en pause
   sans reprise automatique. Il faut alors régler les horaires, puis « Reprendre ».
+- ✅ **L'assistant ne vous laisse plus avancer sans contenu** (2026-09-13) : tant qu'un étage de la
+  chaîne n'a pas son modèle, son message RCS ou son gabarit d'e-mail, le bouton « Suivant » reste
+  inactif et l'écran **nomme les étages qui manquent**. Avant, on atteignait le récapitulatif avec une
+  campagne vide et le refus n'arrivait qu'au dernier écran, loin de l'endroit où on pouvait le corriger.
+  La question « Que se passe-t-il quand le contact répond ? » n'apparaît qu'une fois le **premier**
+  étage rempli : on ne demande pas ce qui suit avant de savoir ce que le contact reçoit.
+- ✅ **Réessayer les envois qui échouent : sur un canal seul uniquement** (2026-09-13). Avec une chaîne
+  de repli, la question ne se pose plus : **le repli EST le rattrapage**, et le premier échec bascule
+  déjà vers le canal suivant. Réessayer en plus, ce serait repartir sur le tuyau dont on sait qu'il ne
+  passe pas.
 - ✅ **Ce que la campagne envoie, et quand** (2026-08-11). Chaque campagne annonce, dans la liste **et** dans son
   détail, ce qu'elle envoie : `Template « promo_ete » (fr)` pour un envoi direct, `Scénario « Relance promo »`
   pour une campagne qui déclenche un scénario, `Scénario supprimé` si le scénario a disparu depuis. Une campagne

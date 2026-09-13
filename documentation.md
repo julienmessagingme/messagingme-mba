@@ -161,6 +161,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Scénarios** | le graphe, son moteur pur, l'exécution par contact | `src/workflow/` | `/workflows` | `workflows`, `workflow_runs`, `workflow_node_events` | `wake-sweep` |
 | **Automations** | déclencher un scénario sur un événement | `src/automation/` | `/automations` | `automations`, `automation_fires` | `automation-event`, `date-sweep` |
 | **Inbox** | la conversation, son détenteur, son affectation, l'archivage | `src/inbox/` | `/inbox` | `conversations`, `conversation_messages` | `control-sweep` |
+| **Traduction** | lire les entrants dans sa langue, traduire un sortant avant l'envoi | `src/traduction/` | `/inbox` | `conversation_messages` (`traduction`), `contacts` (`langue_detectee`) | |
 | **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils | `src/agent/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits` | `agent-turn` |
 | **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
@@ -491,6 +492,24 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   que plus personne ne peut prendre serait invisible et sans réponse.
 - ⚠️ `control_changed_at` ne se rafraîchit PAS quand un opérateur répond une seconde fois : le compte à
   rebours de reprise part de la PREMIÈRE intervention.
+- 🔴 **`conversation_messages.body` N'A PAS LE MÊME SENS DANS LES DEUX DIRECTIONS, et tous ses lecteurs
+  en dépendent.** Sur un message ENTRANT, `body` porte ce que le client a ÉCRIT, et `traduction` porte
+  notre lecture dans la langue de l'opérateur. Sur un message SORTANT, `body` porte ce qui est PARTI,
+  donc le texte traduit quand l'opérateur a fait traduire sa réponse, et `redaction_origine` porte ce
+  qu'il avait écrit. Le principe est le même des deux côtés : **`body` est ce que le CLIENT a vu ou
+  écrit**, jamais notre version de confort.
+  ⚠️ Les lecteurs de `body` héritent donc de ce sens : l'aperçu de l'Inbox, l'historique donné à
+  l'agent, l'analyse de conversation et l'export lisent ce que le client a vu. C'est cohérent, et c'est
+  ce qui fait foi le jour d'un litige.
+  ⚠️ `traduction_langue` est bornée aux deux langues de la console (`fr`, `en`) par un CHECK : une
+  valeur hors de cet ensemble ne serait jamais reconnue comme « déjà traduit », et la même traduction
+  serait repayée à chaque ouverture du fil.
+- 🔴 **UNE REQUÊTE DE FIL PEUT DURER PLUS LONGTEMPS QUE LA PÉRIODE DE RAFRAÎCHISSEMENT, et l'écran en
+  tient compte.** Le fil se redemande toutes les 4 secondes ; traduire ses entrants s'accorde jusqu'à
+  20 secondes. Un tour qui tombe pendant qu'une requête est en vol PASSE SON TOUR
+  (`enCoursRef`, `web/app/inbox/page.tsx`) au lieu de l'annuler : annuler ne fait qu'abandonner la
+  réponse, l'appel au modèle est déjà parti et déjà facturé. C'est une borne de dépense, pas un confort,
+  et elle est tenue par `web/e2e/inbox-traduction-polling.spec.ts`, qui COMPTE les requêtes.
 
 **Réglages d'espace** (`tenant_settings`, une ligne par tenant, aucun défaut « allumé »)
 

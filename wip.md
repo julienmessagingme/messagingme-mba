@@ -18,12 +18,14 @@
 |---|---|---|---|---|
 | **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | ✅ **TERMINÉ ET DÉPLOYÉ** le 2026-09-13 (0137 appliquée, `TRADUCTION_MODELE=google/gemini-2.5-flash` posée en prod). Décrit dans `features.md`. 🔴 **JAMAIS ESSAYÉ EN RÉEL** : aucun message étranger n'a encore été traduit sur de vraies données |
-| **3** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié, rien de commencé |
+| **3** | 🔴 **BUG : « Modèle et scénario » demande DEUX choix** | — | [todo.md](todo.md) | **LE PROCHAIN**. Régression : le sélecteur de Modèle reste affiché à côté de celui du scénario, et les deux peuvent se contredire |
+| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié, rien de commencé |
+| **5** | Les quatre évolutions demandées le 2026-09-13 | — | [todo.md](todo.md) | cadrées, pas planifiées. L'opt-out du menu Sécurité **demande une discussion avant** d'être planifiable |
 
 ### Où en est le chantier 1, exactement
 
-Migrations **0133 à 0136 appliquées**. Prochaine libre : **0137** (le plan de la traduction a été
-corrigé, il annonçait 0136 qui est prise).
+Migrations **0133 à 0137 appliquées**. Prochaine libre : **0138** (le compteur fait foi dans
+`CLAUDE.md`, relu en base).
 
 **Ce qui marche de bout en bout** : l'assistant à cinq étapes est le SEUL chemin de création, il gère
 les variables de template, l'aperçu, « Plus tard », le fil de l'eau, le visuel RCS, les brouillons

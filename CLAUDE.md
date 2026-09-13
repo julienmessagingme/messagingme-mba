@@ -514,6 +514,15 @@ Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `t
   `gh run view <id> --json jobs`, job par job, jamais sur le code de sortie du watch.
   ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
   de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.
+- 🔴 **QUI PAIE QUOI, ET LES TROIS NE SONT PAS SUR LA MÊME CLÉ.** La **traduction** des conversations
+  (`TRADUCTION_MODELE`, `google/gemini-2.5-flash`) tombe sur le **crédit prépayé du client** : elle passe
+  par `gateway`, celui qui porte le résolveur de clé PAR ESPACE. La **transcription** d'un vocal et le
+  **bot d'aide** de la console sont sur **notre** clé maison : le premier par décision du 2026-09-09
+  (« on le paie nous-mêmes, on verra après si je le refacture »), le second parce que facturer quelqu'un
+  pour apprendre à se servir du produit se retourne contre nous. Le bot d'aide est construit SANS
+  résolveur (`gatewayAide`, `src/index.ts`), et cet écart ne se « corrige » pas.
+  ⚠️ `TRADUCTION_MODELE` vide = traduction ÉTEINTE, et l'écran le dit avec la cause `instance` (rien à
+  faire côté client) plutôt qu'en parlant d'un crédit qui n'est pas en cause.
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)

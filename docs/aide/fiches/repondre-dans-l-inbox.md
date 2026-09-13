@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 367c72
+source_empreinte: 6077d9
 ---
 # Répondre à un client dans l'Inbox
 
@@ -35,3 +35,20 @@ parte chez le client : l'agent se tait jusqu'à la reprise prévue, même si vou
 conversations-là se repèrent dans la liste à leur fond bleu dégradé et à la petite baguette devant le nom.
 Il arrive que Meta refuse de céder le fil ; l'écran vous le dit alors, et écrire au client le prend à coup
 sûr.
+
+**Si votre client n'écrit pas dans votre langue**, l'interrupteur « Traduire les messages reçus », en haut
+de la conversation, affiche ses messages dans la langue de votre console. Le réglage vaut pour votre
+navigateur seulement : un collègue peut lire le même fil en anglais pendant que vous le lisez en français.
+L'original n'est jamais remplacé, il est gardé à côté, et c'est lui qui fait foi.
+
+**Pour répondre dans SA langue à lui**, écrivez votre réponse normalement puis utilisez le bouton qui
+nomme la langue (« Traduire en espagnol »). Il remplace votre texte par sa traduction et **n'envoie rien** :
+vous relisez avant d'appuyer sur Envoyer. La langue de votre contact s'apprend toute seule de ce qu'il
+écrit, on ne vous la demande jamais. Sur un envoi de modèle, le bouton n'apparaît pas : le texte approuvé
+par WhatsApp est le texte, le traduire le ferait refuser.
+
+**Sur un message vocal**, si la traduction est allumée, « Transcrire » vous donne d'un seul geste ce qui a
+été dit et sa traduction, même si le vocal était en espagnol.
+
+⚠️ La traduction est payée par le crédit de votre espace, contrairement à la transcription et à cette aide.
+Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit.

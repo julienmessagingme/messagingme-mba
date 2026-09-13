@@ -1906,3 +1906,82 @@ d'aide se pose au-dessus du coin bas-droit, donc par-dessus la droite du bouton 
 document, `pasDeChevauchement` compare des éléments qu'on lui NOMME, et personne n'a jamais pensé à
 nommer la bulle d'aide en face du bouton d'envoi. C'est le trou de la méthode plus que celui de
 l'écran : une garde qui exige qu'on nomme les paires ne trouve que ce à quoi on pensait déjà.
+
+---
+
+# Demandes de Julien du 2026-09-13 (après l'essai réel de la traduction)
+
+## 🔴 BUG — « Modèle et scénario » demande DEUX choix au lieu d'un
+
+**Constaté par Julien, vérifié dans le code.** Dans l'étape Contenu d'une campagne, choisir la formule
+« Modèle et scénario » laisse le sélecteur **Modèle** affiché (il est rendu inconditionnellement dans
+`CadreWhatsApp`, `web/components/campagne/EtapeContenu.tsx`) EN PLUS du sélecteur de scénario.
+
+Julien : « le user ne doit pas choisir un modèle puis un scénario, il doit choisir uniquement un
+scénario, et un scénario qui commence par un Template. On avait déjà répondu à ce bug depuis
+longtemps. » C'est donc une RÉGRESSION : l'assistant a réintroduit ce que l'ancien formulaire avait réglé.
+
+🔴 **CE N'EST PAS QU'UNE QUESTION DE TROP, C'EST UNE SOURCE DE CONTRADICTION.** Le modèle qui part
+réellement est celui du PREMIER BLOC du scénario ; celui que l'écran fait choisir à côté ne sert qu'à
+compter des variables. Les deux peuvent différer, et alors l'association des variables est faite sur le
+mauvais modèle, ce qui fait refuser la campagne entière par Meta (`resolveHintParams`).
+
+⚠️ **LA BRIQUE POUR LE CORRIGER EXISTE DÉJÀ** : `scanOpening(graph)` (`web/lib/campaign-eligibility.ts`)
+rend `firstTemplate` (avec son `templateName`) et `rcsOpen`. Le modèle d'ouverture se DÉDUIT donc du
+scénario choisi, au lieu d'être demandé. Corollaire à ne pas oublier : c'est ce même scan qui doit
+refuser un scénario dont le premier bloc ne convient pas au canal de l'étage.
+
+## ÉVOL — « Créer un scénario » depuis la campagne, sans la quitter
+
+Dans la liste des scénarios d'une campagne « Modèle et scénario », le **premier choix**, avant les
+scénarios existants, doit être **« Créer un scénario »**. Il ouvre une fenêtre qui occupe environ les
+trois quarts de l'écran et reprend l'écran de construction (les blocs qu'on relie).
+
+- **Le nom se demande d'abord** : dans le parcours normal, c'est la première étape avant que l'écran de
+  construction apparaisse. En arrivant directement sur le graphe, il faut donc le demander quelque part.
+- **« Publier » ferme la fenêtre et revient à la campagne**, avec le scénario choisi.
+- 🔴 **Le scénario doit se retrouver dans l'onglet Scénario** : ce n'est pas un objet jetable propre à
+  la campagne, c'est un scénario de l'espace comme un autre.
+- 🔴 **LA GARDE DU PREMIER BLOC, ET ELLE EST LE CŒUR DE LA DEMANDE.** Sur un étage **WhatsApp**, on ne
+  doit pas pouvoir publier un scénario qui ne commence pas par un **Template** ; sur un étage **RCS**,
+  il doit commencer par un bloc **RCS**. La même règle vaut pour **les étages de repli** d'une campagne
+  à chaîne, qui utilisent eux aussi des scénarios.
+- ⚠️ `isCampaignEligible` / `scanOpening` portent déjà la moitié de cette règle (ils savent dire si un
+  graphe ouvre par un template nommé ou par un bloc RCS). Ce qui manque, c'est de l'appliquer AU MOMENT
+  DE PUBLIER depuis la campagne, et par CANAL d'étage.
+
+## ÉVOL — Un menu « Sécurité », à côté de Paramètres, Support et Developers
+
+Page d'accueil : « Bienvenue au centre de sécurité & compliance de Engage Me », puis autant de boîtes
+que de sous-menus. La barre latérale reste à gauche et montre les sous-menus sous « Sécurité ».
+
+Sous-menus demandés :
+
+1. **Audit trails** : les déplacer ici (ils sont aujourd'hui dans Paramètres).
+2. **Consentement / opt-out** — 🔴 **À DISCUTER AVANT DE PLANIFIER**, c'est la partie la plus lourde :
+   - une **règle** qui met un contact en opt-out quand il le dit (« stop », « arrêtez de me parler »,
+     et les formulations voisines), et qui **remonte sur le champ consentement** ;
+   - 🔴 **un opt-out BLOQUE tout message sortant vers cette personne**, campagne ultérieure comprise.
+     À vérifier explicitement, c'est la garantie qui compte ;
+   - le réglage de **ce que l'espace veut faire au moment où l'opt-out est déclaré**, avec accès à la
+     liste des outils (Tools) ;
+   - la **liste des opt-out**, exportable ; un clic donne le **résumé de la conversation** qui y a mené,
+     un clic de plus ouvre la **conversation dans l'Inbox**, et on doit pouvoir **télécharger la
+     conversation entière** qui a abouti à l'opt-out.
+3. **IA** : les réglages macro liés à l'AI Act. Pour commencer, y remonter le toggle « l'IA se déclare
+   comme telle », qui vit aujourd'hui dans la fiche de l'agent IA.
+   ⚠️ **Le Meta Business Agent n'en a pas besoin** : Meta écrit déjà « IA » en bas de ses messages.
+4. **Journal des erreurs** : la liste des erreurs.
+
+## ÉVOL — Déplacer « Scénario » dans Contenu, juste après Email
+
+Le menu Scénario quitte sa place actuelle pour le menu **Contenu**, immédiatement après Email.
+
+## ÉVOL — Une RÉPONSE est un engagement, au même titre qu'un clic
+
+Performance lab, page d'accueil, « ce que coûte l'engagement ». Constaté par Julien sur l'envoi
+« Testjulien2 » : le destinataire d'un message marketing n'a **pas cliqué**, mais il a **répondu**.
+
+🔴 **UNE RÉPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU, et ne pas la compter sous-estime exactement ce que
+la page prétend mesurer.** Quelqu'un qui prend la peine d'écrire s'est engagé plus fort que quelqu'un
+qui clique. Le coût par engagement doit donc compter les réponses avec les clics.
