@@ -16,13 +16,15 @@
 
 | | |
 |---|---|
-| `origin/main` | `289bf07` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `444b509` |
-| L'écart entre les deux | **un commentaire et des `.md`** : aucun redéploiement dû |
+| `origin/main` | `f2a1e2b` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `f2a1e2b` |
+| L'écart entre les deux | **aucun** |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 
-⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Cinq déploiements le 2026-09-13, cinq fois le
-même : conteneurs `healthy`, appel interne à 200, appel public à 502 sur les trois chemins d'API, réglé
+⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Six déploiements le 2026-09-13, six fois le
+même. ⚠️ **Et le 2026-09-13, un SEUL `nginx -s reload` n'a pas suffi** : le contrôle public juste après
+rendait encore 502, un second reload l'a réglé. Contrôler, réparer, RECONTRÔLER, et recommencer si besoin :
+le reload rend 0 même quand le proxy sert encore l'ancienne adresse : conteneurs `healthy`, appel interne à 200, appel public à 502 sur les trois chemins d'API, réglé
 par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le contrôle public après CHAQUE
 `up --build` est la seule façon de ne pas laisser la réception des messages coupée sans le savoir.**
 
@@ -33,7 +35,7 @@ par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le con
 | **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | ✅ **TERMINÉ ET DÉPLOYÉ** le 2026-09-13 (0137 appliquée, `TRADUCTION_MODELE=google/gemini-2.5-flash` posée en prod). Décrit dans `features.md`. 🔴 **JAMAIS ESSAYÉ EN RÉEL** : aucun message étranger n'a encore été traduit sur de vraies données |
 | **3** | ✅ **BUG « Modèle et scénario »** | — | [todo.md](todo.md) | ✅ **CORRIGÉ ET DÉPLOYÉ** le 2026-09-13 (`01b82c6`, CI verte, Vercel). Le sélecteur de modèle disparaît en formule scénario, les variables se vident à la bascule, et un scénario qui n'ouvre pas par un modèle est refusé sur un étage WhatsApp |
-| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LES 4 TÂCHES LIVRÉES** (`289bf07`), aucune migration. **Pas encore déployé sur le VPS.** 🔴 **Jamais essayé en réel**, cf. plus bas |
+| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LIVRÉ ET DÉPLOYÉ** le 2026-09-13 (`f2a1e2b`), aucune migration. Route vérifiée en production (401 sans jeton, 404 sur une voisine inexistante). 🔴 **Jamais essayé en réel**, cf. plus bas |
 | **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | spec et plan écrits, rien de commencé |
 | **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches en 3 lots](docs/superpowers/plans/2026-09-13-centre-securite.md) | spec et plan écrits. ⚠️ Tâches 7 et 9 **pas cadrées**, à préciser avec Julien |
 | **7** | ✅ Menu Scénario dans Contenu + la réponse compte comme engagement | — | [plan, 2 tâches](docs/superpowers/plans/2026-09-13-menu-scenario-et-engagement.md) | ✅ **FAIT ET DÉPLOYÉ** le 2026-09-13 (`444b509`). Essai réel concluant : « Testjulien2 », zéro clic, **1 engagé** |
@@ -50,11 +52,10 @@ l'étage. La joignabilité WhatsApp se mémorise. Le funnel compte par canal.
 
 ### 🔴 Le récap d'hier : ce qu'il reste à faire
 
-Le lot est **complet et poussé** (`289bf07`), sans migration : le SQL, la garde de rôle, le cache, le
-gabarit, la garde des nombres inventés et le bouton. Il manque **deux choses, dans cet ordre** :
+Le lot est **déployé** (`f2a1e2b`), sans migration : le SQL, la garde de rôle, le cache, le gabarit, la
+garde des nombres inventés et le bouton. Il manque **une chose, et c'est celle qui compte** :
 
-1. **Le déploiement sur le VPS** (l'API porte la route ; Vercel a déjà le bouton, qui rendra 404 tant que
-   l'API n'a pas suivi). Rien à migrer, mais le contrôle public après `up --build` reste obligatoire.
+1. ~~Le déploiement sur le VPS~~ ✅ **fait le 2026-09-13** (`f2a1e2b`), sans migration.
 2. 🔴 **L'ESSAI RÉEL, et le plan le nomme précisément** : ouvrir le bot sur la production avec un compte
    admin, cliquer le bouton, et **RECOMPTER À LA MAIN** les conversations de la veille contre ce qu'il
    annonce. Puis rouvrir avec un compte `agent` et vérifier que le bouton n'est pas là. **Un récap qui
