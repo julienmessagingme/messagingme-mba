@@ -220,7 +220,7 @@ async function main(): Promise<void> {
   const contactStore = new PgContactStore(
     pool,
     creerAnnonceOptOut({
-      enfiler: (job) => queue.enqueue(FILE_POUSSEE_OPTOUT, job),
+      enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
       // eslint-disable-next-line no-console
       log: (m) => console.warn(m),
     }),
@@ -716,7 +716,7 @@ async function main(): Promise<void> {
    * ⚠️ Concurrence 1, par defaut : un client peut desabonner des milliers de personnes d un geste, et
    * frapper son propre systeme en parallele ne lui rendrait pas service.
    */
-  await queue.work('optout-poussee', creerTravailPousseeOptOut({
+  await queue.work(FILE_POUSSEE_OPTOUT, creerTravailPousseeOptOut({
     sources: new PgSourceStore(pool),
     requetes: new PgRequeteStore(pool),
     requeteConfiguree: async (tenant) => (await settingsStore.get(tenant)).optoutRequestId,

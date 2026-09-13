@@ -1795,13 +1795,15 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await recipients.listPending(campaignId)).toHaveLength(1); // de retour pending
   });
 
-  // Forme COMPLÈTE de TenantSettings (9 clés) : évite les toEqual qui périment quand un réglage est ajouté.
+  // Forme COMPLÈTE de TenantSettings : évite les toEqual qui périment quand un réglage est ajouté.
   // ⚠️ À COMPLÉTER quand un réglage arrive dans TenantSettings, sinon ces tests cassent (comportement voulu :
   // ils signalent qu'un champ neuf n'a pas été relu ici).
+  // ⚠️ LE COMPTE N'EST PLUS ÉCRIT ICI : cette ligne a annoncé « 9 clés » pendant qu'il y en avait HUIT, et
+  // l'ajout d'`optoutRequestId` le 2026-09-13 l'a rendue vraie par accident. Un nombre à la main ne tient pas.
   const settingsShape = (over: object = {}) => ({
     mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
     controlHandbackSeconds: null, mbaHandoffMode: null, timezone: DEFAULT_TIMEZONE,
-    businessHours: DEFAULT_BUSINESS_HOURS, ...over,
+    businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, ...over,
   });
 
   it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {

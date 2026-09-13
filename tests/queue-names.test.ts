@@ -31,6 +31,7 @@ describe('queue names (source unique)', () => {
     const resolved = viaConst.map((name) => {
       if (name === 'AUTOMATION_EVENT_QUEUE') return 'automation-event';
       if (name === 'AGENT_TURN_QUEUE') return 'agent-turn';
+      if (name === 'FILE_POUSSEE_OPTOUT') return 'optout-poussee';
       throw new Error(`constante de file inconnue du test : ${name} (ajoute sa résolution ici)`);
     });
     const worked = [...new Set([...literals, ...resolved])];
@@ -46,7 +47,12 @@ describe('queue names (source unique)', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const literals = [...worker.matchAll(/queue\.work\(\s*'([^']+)'/g)].map((m) => m[1]!);
     const viaConst = [...worker.matchAll(/queue\.work\(\s*([A-Z_][A-Z0-9_]*)\s*,/g)].map((m) => m[1]!);
-    const resolus = new Set([...literals, ...viaConst.map((n) => (n === 'AUTOMATION_EVENT_QUEUE' ? 'automation-event' : n === 'AGENT_TURN_QUEUE' ? 'agent-turn' : n))]);
+    const RESOLUTION: Record<string, string> = {
+      AUTOMATION_EVENT_QUEUE: 'automation-event',
+      AGENT_TURN_QUEUE: 'agent-turn',
+      FILE_POUSSEE_OPTOUT: 'optout-poussee',
+    };
+    const resolus = new Set([...literals, ...viaConst.map((n) => RESOLUTION[n] ?? n)]);
     for (const q of BASE_QUEUES) {
       expect([...resolus], `file ${q} déclarée mais SANS consommateur dans src/worker.ts`).toContain(q);
     }

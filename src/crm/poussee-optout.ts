@@ -82,9 +82,25 @@ export function lotsDePoussee(waIds: readonly string[]): string[][] {
   return lots;
 }
 
+/**
+ * Combien de temps un job de ce lot a le droit de TOURNER, avant que pg-boss le croie mort et le rejoue.
+ *
+ * 🔴 SANS CE CALCUL, UN LOT LENT SERAIT REJOUÉ EN PARALLÈLE DE LUI-MÊME. Le défaut de pg-boss est de quinze
+ * minutes, et un lot de deux cents refus dont le système du client ne répond plus les dépasse (chaque appel
+ * s'accorde `DELAI_POUSSEE_OPTOUT_MS`). Le dommage serait limité, la poussée étant idempotente, mais on
+ * doublerait le trafic vers un système déjà en difficulté, ce qui est exactement le mauvais moment.
+ *
+ * ⚠️ DÉRIVÉ de la taille RÉELLE du lot et de l'échéance d'un appel, jamais écrit en dur : c'est la leçon de
+ * `campaign-run`, dont l'échéance est dimensionnée sur son travail réel pour la même raison. La minute de
+ * marge couvre la lecture des projections de contact.
+ */
+export function echeanceDuLot(taille: number): number {
+  return Math.ceil((taille * DELAI_POUSSEE_OPTOUT_MS) / 1000) + 60;
+}
+
 export interface DepsAnnonceOptOut {
-  /** Met un lot en file. Peut lever : l'annonce l'absorbe. */
-  enfiler(job: JobPousseeOptOut): Promise<void>;
+  /** Met un lot en file, avec l'échéance que ce lot mérite. Peut lever : l'annonce l'absorbe. */
+  enfiler(job: JobPousseeOptOut, opts: { expireInSeconds: number }): Promise<void>;
   /** Journal serveur, injecté pour être observé en test. */
   log?(message: string): void;
 }
@@ -106,7 +122,7 @@ export function creerAnnonceOptOut(deps: DepsAnnonceOptOut) {
     const lots = lotsDePoussee(waIds);
     for (const lot of lots) {
       try {
-        await deps.enfiler({ tenantId, waIds: lot });
+        await deps.enfiler({ tenantId, waIds: lot }, { expireInSeconds: echeanceDuLot(lot.length) });
       } catch (err) {
         // Journalisé et rien d'autre : le refus EST enregistré, c'est sa diffusion qui est perdue. La dire
         // perdue est plus honnête que de faire échouer un geste de conformité déjà accompli.

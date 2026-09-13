@@ -7,6 +7,7 @@ import {
   creerAnnonceOptOut,
   creerTravailPousseeOptOut,
   TAILLE_LOT_POUSSEE,
+  echeanceDuLot,
   type JobPousseeOptOut,
 } from '../src/crm/poussee-optout';
 
@@ -274,6 +275,26 @@ describe('l’annonce n’échoue jamais vers son appelant', () => {
     expect(jobs).toHaveLength(2);
     expect(jobs[0]?.tenantId).toBe(TENANT);
     expect(jobs.flatMap((j) => j.waIds)).toHaveLength(TAILLE_LOT_POUSSEE + 1);
+  });
+
+  /**
+   * 🔴 L'ÉCHÉANCE SUIT LA TAILLE DU LOT, sinon pg-boss croit le job mort et le REJOUE EN PARALLÈLE de
+   * lui-même. Son défaut est de quinze minutes ; un lot de deux cents refus dont le système du client ne
+   * répond plus les dépasse, chaque appel s'accordant `DELAI_POUSSEE_OPTOUT_MS`. On doublerait alors le
+   * trafic vers un système déjà en difficulté, c'est-à-dire au pire moment.
+   */
+  it('🔴 chaque job porte une échéance DIMENSIONNÉE sur son lot', async () => {
+    const echeances: number[] = [];
+    const annonce = creerAnnonceOptOut({ enfiler: async (_j, o) => { echeances.push(o.expireInSeconds); } });
+    await annonce(TENANT, Array.from({ length: TAILLE_LOT_POUSSEE + 3 }, (_, i) => `w${i}`));
+
+    expect(echeances).toHaveLength(2);
+    expect(echeances[0], 'le lot plein').toBe(echeanceDuLot(TAILLE_LOT_POUSSEE));
+    expect(echeances[1], 'le reste, beaucoup plus court').toBe(echeanceDuLot(3));
+    // ⚠️ LE TÉMOIN : un lot plein dépasse VRAIMENT le défaut de pg-boss (900 s), sinon ce calcul ne
+    // protégerait de rien et le test passerait sur une échéance constante.
+    expect(echeances[0]).toBeGreaterThan(900);
+    expect(echeances[1]).toBeLessThan(900);
   });
 });
 

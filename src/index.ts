@@ -172,7 +172,7 @@ async function main(): Promise<void> {
   const contactStore = new PgContactStore(
     pool,
     creerAnnonceOptOut({
-      enfiler: (job) => queue.enqueue(FILE_POUSSEE_OPTOUT, job),
+      enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
       // eslint-disable-next-line no-console
       log: (m) => console.warn(m),
     }),
