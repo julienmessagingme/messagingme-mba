@@ -79,7 +79,24 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0136**, le 2026-09-12 au soir (`campaigns.tour_de_role_rang` passe de `smallint` à
+**Dernière appliquée : 0137**, le 2026-09-13 (la traduction des conversations :
+`conversation_messages.traduction`, `.traduction_langue`, `.redaction_origine`, `.transcription_langue`,
+plus `contacts.langue_detectee` et `.langue_detectee_le`). Vérifiée EN BASE après `migrate`, pas déduite
+de l'absence d'erreur : les six colonnes dans `information_schema`, le CHECK qui borne
+`traduction_langue` à `fr`/`en` dans `pg_constraint`, et `schema_migrations` relue.
+
+🔴 **ELLE ÉTAIT BLOQUANTE, ET LA SÉQUENCE A ÉTÉ SUIVIE DANS CET ORDRE** : `git pull`, `compose build
+mba-api`, `compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`. Ces colonnes ne
+sont pas seulement écrites, elles sont NOMMÉES dans les `select` du chemin chaud (`getMessages`,
+rafraîchi toutes les 4 secondes). Déployer d'abord aurait rendu `42703` en boucle sur l'Inbox entière,
+comme le 2026-08-17.
+
+⚠️ **ET LE 502 PUBLIC EST ARRIVÉ, une fois de plus** : conteneurs `healthy`, appel interne à 200, appel
+public à 502 sur `api.` comme sur le chemin `/api/backend/` de `mba.`. NPM tenait l'ancienne IP.
+`sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Le contrôle public après
+CHAQUE `up --build` n'est pas une précaution de circonstance, c'est la seule façon de voir ce défaut.
+
+Avant elle : **0136**, le 2026-09-12 au soir (`campaigns.tour_de_role_rang` passe de `smallint` à
 `integer`, ce qui retire le repliage `% 32767` du tour de rôle).
 
 ⚠️ **LU EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE.** Le fichier avait dérivé une SIXIÈME fois
@@ -98,14 +115,15 @@ Avant elle : **0134** (la CHAÎNE d'étages : `campaign_etages`, `campaign_envoi
 (`contacts.whatsapp_joignable` : garder le verdict qu'on calculait déjà et qu'on jetait dans HubSpot).
 **Prochaine libre = 0138.**
 
-🔴 **0137 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (la traduction des conversations :
-`conversation_messages.traduction`, `.traduction_langue`, `.redaction_origine`, `.transcription_langue`,
-plus `contacts.langue_detectee` et `.langue_detectee_le`). 🔴 **BLOQUANTE, elle passe AVANT le
-déploiement** : ces colonnes ne sont pas seulement écrites, elles sont NOMMÉES dans les `select` du chemin
-chaud (`getMessages`, rafraîchi toutes les 4 secondes, et `getConversationContext`). Sans elles, `42703` et
-l'Inbox entière tombe, comme le 2026-08-17.
+⚠️ **CETTE LIGNE A DÉRIVÉ UNE SEPTIÈME FOIS, ET DOUBLEMENT, le 2026-09-13.** Elle annonçait à la fois
+« 0137 EST ÉCRITE ET PAS ENCORE APPLIQUÉE » et « 0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE », alors que
+0136 l'était depuis la veille au soir et que 0137 venait de l'être. Deux affirmations fausses d'un coup,
+dans un fichier qui se déclare seule source du compteur et qui prévient qu'il dérive. La parade n'a pas
+changé et elle a encore fonctionné : **la base tranche**. Ce qui ne fonctionne toujours pas, c'est
+d'écrire la ligne au moment où l'on écrit le fichier SQL : le moment juste est l'exécution de `migrate`,
+et il faut RELIRE la base juste après.
 
-🔴 **0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`campaigns.tour_de_role_rang` passe de `smallint` à
+**0136** (`campaigns.tour_de_role_rang` passe de `smallint` à
 `integer`). Elle RETIRE un repliage, et c'est la vraie raison : le `% 32767` qui protégeait le `smallint`
 créait un point où deux rangs consécutifs valent 32766 puis 0, donc la MÊME personne servie deux fois
 d'affilée pour une équipe de 2, 3 ou 6 (mesuré ; seules les tailles divisant 32767 = 7 x 31 x 151 y
