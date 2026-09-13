@@ -252,8 +252,16 @@ test.describe('Inbox : le vocal suit le réglage', () => {
       const sansQuery = url.split('?')[0]!;
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       if (/\/messages\/[^/]+\/transcrire$/.test(sansQuery)) {
-        transcriptions.push(req.postDataJSON() ?? null);
-        return json({ texte: 'Hola, tengo un problema', deja: false, langue: 'es', traduction: actif ? 'Bonjour, j’ai un problème' : null });
+        const corps = req.postDataJSON() ?? null;
+        transcriptions.push(corps);
+        // ⚠️ LA RÉPONSE SE DÉDUIT DE LA DEMANDE, jamais du réglage que le test a posé. Câblée sur le
+        // réglage, elle rendrait une traduction même si l'écran avait oublié de demander la cible : le
+        // texte affiché confirmerait ce qu'on croyait, et seul le corps de la requête dirait la vérité.
+        const cible = (corps as { traduire?: unknown } | null)?.traduire;
+        return json({
+          texte: 'Hola, tengo un problema', deja: false, langue: 'es',
+          traduction: cible === 'fr' ? 'Bonjour, j’ai un problème' : null,
+        });
       }
       if (/\/conversations\/c1\/messages$/.test(sansQuery)) {
         const cible = new URL(url).searchParams.get('traduire');
