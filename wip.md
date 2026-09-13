@@ -16,7 +16,7 @@
 
 | | |
 |---|---|
-| `origin/main` | `9136414` |
+| `origin/main` | `289bf07` |
 | VPS (`mba-api`, `mba-worker`, `mba-web`) | `444b509` |
 | L'écart entre les deux | **un commentaire et des `.md`** : aucun redéploiement dû |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
@@ -33,7 +33,7 @@ par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le con
 | **1** | **Chaîne de repli des campagnes** + assistant de création | [spec](docs/superpowers/specs/2026-09-12-campagnes-chaine-de-repli-design.md) | [plan](docs/superpowers/plans/2026-09-12-campagnes-chaine-de-repli.md) | **HUIT LOTS DÉPLOYÉS** (`d22b3b0`). L'ancien formulaire est RETIRÉ |
 | **2** | **Traduction des conversations** (FR / EN) | [spec](docs/superpowers/specs/2026-09-12-traduction-conversations-cadrage.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-12-traduction-conversations.md) | ✅ **TERMINÉ ET DÉPLOYÉ** le 2026-09-13 (0137 appliquée, `TRADUCTION_MODELE=google/gemini-2.5-flash` posée en prod). Décrit dans `features.md`. 🔴 **JAMAIS ESSAYÉ EN RÉEL** : aucun message étranger n'a encore été traduit sur de vraies données |
 | **3** | ✅ **BUG « Modèle et scénario »** | — | [todo.md](todo.md) | ✅ **CORRIGÉ ET DÉPLOYÉ** le 2026-09-13 (`01b82c6`, CI verte, Vercel). Le sélecteur de modèle disparaît en formule scénario, les variables se vident à la bascule, et un scénario qui n'ouvre pas par un modèle est refusé sur un étage WhatsApp |
-| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | planifié, rien de commencé |
+| **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LES 4 TÂCHES LIVRÉES** (`289bf07`), aucune migration. **Pas encore déployé sur le VPS.** 🔴 **Jamais essayé en réel**, cf. plus bas |
 | **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | spec et plan écrits, rien de commencé |
 | **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches en 3 lots](docs/superpowers/plans/2026-09-13-centre-securite.md) | spec et plan écrits. ⚠️ Tâches 7 et 9 **pas cadrées**, à préciser avec Julien |
 | **7** | ✅ Menu Scénario dans Contenu + la réponse compte comme engagement | — | [plan, 2 tâches](docs/superpowers/plans/2026-09-13-menu-scenario-et-engagement.md) | ✅ **FAIT ET DÉPLOYÉ** le 2026-09-13 (`444b509`). Essai réel concluant : « Testjulien2 », zéro clic, **1 engagé** |
@@ -47,6 +47,23 @@ Migrations **0133 à 0137 appliquées**. Prochaine libre : **0138** (le compteur
 les variables de template, l'aperçu, « Plus tard », le fil de l'eau, le visuel RCS, les brouillons
 (les deux formats), l'audience complète et la jauge de débit. Le moteur envoie sur le canal de
 l'étage. La joignabilité WhatsApp se mémorise. Le funnel compte par canal.
+
+### 🔴 Le récap d'hier : ce qu'il reste à faire
+
+Le lot est **complet et poussé** (`289bf07`), sans migration : le SQL, la garde de rôle, le cache, le
+gabarit, la garde des nombres inventés et le bouton. Il manque **deux choses, dans cet ordre** :
+
+1. **Le déploiement sur le VPS** (l'API porte la route ; Vercel a déjà le bouton, qui rendra 404 tant que
+   l'API n'a pas suivi). Rien à migrer, mais le contrôle public après `up --build` reste obligatoire.
+2. 🔴 **L'ESSAI RÉEL, et le plan le nomme précisément** : ouvrir le bot sur la production avec un compte
+   admin, cliquer le bouton, et **RECOMPTER À LA MAIN** les conversations de la veille contre ce qu'il
+   annonce. Puis rouvrir avec un compte `agent` et vérifier que le bouton n'est pas là. **Un récap qui
+   affiche un chiffre plausible et faux est pire que pas de récap, parce que les gens agissent dessus.**
+
+⚠️ **Une décision y a été prise qui mérite d'être confirmée à l'usage** : « une conversation d'hier » veut
+dire « une conversation qui a PARLÉ hier », pas « une ligne créée hier ». Une conversation étant unique par
+numéro pour toujours, compter les créations aurait fait dire « hier : 2 conversations, 128 messages reçus »
+chez un client installé. Les ouvertures sont comptées à part, sous « dont N nouvelles ».
 
 🔴 **CE QUI N'A JAMAIS TOURNÉ EN RÉEL** : aucune chaîne de repli n'a jamais basculé sur de vraies
 données. Zéro campagne à deux étages, zéro ligne de journal, zéro joignabilité mesurée (compté en

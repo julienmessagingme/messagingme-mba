@@ -1277,8 +1277,23 @@ scénario, comment importer des contacts.
   (« et ensuite ? ») sont comprises dans le contexte des précédentes.
 - L'accueil montre le logo, trois étincelles et « Je suis là pour vous aider », avec trois suggestions
   cliquables qui remplissent le champ.
+- ✅ **« Le récap d'hier »** (2026-09-13) : un bouton en tête de l'accueil du bot, qui part d'un clic et
+  répond dans le fil. Il dit combien de conversations ont eu lieu la veille (**dont combien de nouvelles**),
+  combien de messages sont arrivés et sont partis, et quels sujets dominaient, comparés au **même jour de la
+  semaine précédente**.
+  - **Il porte sur la veille, et rien d'autre** : pas d'historique, pas de choix de date. Le libellé le dit,
+    pour que personne ne se demande à 16 h pourquoi ses conversations du matin n'y sont pas.
+  - **Il dit ce qu'il ne sait pas** : l'analyse ne tourne qu'une fois une conversation retombée inactive,
+    donc un récap annonce « 17 conversations ne sont pas encore analysées, leur sujet n'apparaît pas ici »
+    plutôt que de laisser croire que tout est couvert.
+  - 🔴 **Réservé aux rôles administrateur et manager.** C'est un artefact de pilotage : un opérateur ne voit
+    pas le bouton du tout, et la route le refuse aussi s'il l'appelle directement.
+  - **Un seul calcul par espace et par jour** : le premier qui clique le fait calculer, tout le monde lit le
+    même, et il ne bouge plus.
 - ⚠️ **Les jetons sont à notre charge**, pas sur le crédit prépayé du client : ce bot est un service de la
-  console, pas une fonctionnalité qu'il achète.
+  console, pas une fonctionnalité qu'il achète. Le récap ne consulte un modèle que **les jours où il y a
+  quelque chose à signaler** (un volume qui s'écarte nettement de la semaine précédente, un sujet nouveau) ;
+  sinon il rend le même texte sans rien dépenser.
 
 ## Support (menu Support)
 

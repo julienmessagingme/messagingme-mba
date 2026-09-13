@@ -76,7 +76,7 @@ DERNIÈRE ANALYSE, pas celle de la conversation. Le volume se lit donc sur `conv
 réécrire rouvrirait le piège déjà relevé dans `todo.md` : les mesures filtrent en UTC et l'écran
 raisonne en heure locale.
 
-- [ ] **Étape 1 : le test d'intégration, sur le piège en premier**
+- [x] **Étape 1 : le test d'intégration, sur le piège en premier**
 
 ```ts
 // 🔴 LE TEST QUI COMPTE. Sans lui, le recap est plausible et faux.
@@ -109,11 +109,11 @@ it('ne voit rien d un autre espace', async () => {
 });
 ```
 
-- [ ] **Étape 2 : implémenter**
-- [ ] **Étape 3 : MUTER** : indexer les thèmes sur `conversation_analysis.created_at` au lieu de la
+- [x] **Étape 2 : implémenter**
+- [x] **Étape 3 : MUTER** : indexer les thèmes sur `conversation_analysis.created_at` au lieu de la
       date de la conversation, constater que les deux premiers tests échouent en sens inverse l'un
       de l'autre. C'est cette paire qui tient le piège.
-- [ ] **Étape 4 : commit**
+- [x] **Étape 4 : commit**
 
 ---
 
@@ -126,7 +126,7 @@ it('ne voit rien d un autre espace', async () => {
 
 **Produit** : `POST /tenants/:tenantId/aide/recap`, 403 pour un rôle non autorisé.
 
-- [ ] **Étape 1 : les tests**
+- [x] **Étape 1 : les tests**
 
 ```ts
 // 🔴 LA GARDE EST COTE SERVEUR. Masquer le bouton n est pas un controle d acces.
@@ -159,9 +159,9 @@ it('le cache expire au changement de jour', async () => {
 });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer, MUTER** (retirer la garde de rôle, constater le 200 pour
+- [x] **Étape 2 : implémenter, relancer, MUTER** (retirer la garde de rôle, constater le 200 pour
       `agent` ; retirer l'expiration, constater que le dernier test échoue)
-- [ ] **Étape 3 : commit**
+- [x] **Étape 3 : commit**
 
 ---
 
@@ -181,7 +181,7 @@ export function gabarit(r: Recap, langue: 'fr' | 'en'): string;
 nettement de la semaine précédente, ou un thème absent la semaine d'avant). Sinon, gabarit. On ne
 paie que les jours où ça achète quelque chose, et cette dépense est la nôtre.
 
-- [ ] **Étape 1 : les tests**
+- [x] **Étape 1 : les tests**
 
 ```ts
 it('sans ecart notable, aucun appel de modele', () => {
@@ -204,9 +204,9 @@ it('un jour sans activite le dit en une phrase', () => {
 });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer, MUTER** (retirer la phrase des non analysées, constater
+- [x] **Étape 2 : implémenter, relancer, MUTER** (retirer la phrase des non analysées, constater
       l'échec du troisième test)
-- [ ] **Étape 3 : brancher l'appel de modèle**
+- [x] **Étape 3 : brancher l'appel de modèle**
 
 🔴 **Le modèle reçoit l'objet `Recap` et rien d'autre.** Tout nombre qu'il a le droit de citer est
 dans son entrée, donc il ne peut pas en inventer. Sa consigne lui interdit explicitement d'en
@@ -216,7 +216,7 @@ calculer un nouveau.
 sans appeler le modèle quand aucune fiche n'est pertinente, et un récap ne vient d'aucune fiche :
 branché comme une question ordinaire, il tomberait droit dedans.
 
-- [ ] **Étape 4 : commit**
+- [x] **Étape 4 : commit**
 
 ---
 
@@ -228,7 +228,7 @@ branché comme une question ordinaire, il tomberait droit dedans.
 
 L'accueil du bot porte déjà trois suggestions cliquables. Le récap devient la première, en tête.
 
-- [ ] **Étape 1 : les tests**
+- [x] **Étape 1 : les tests**
 
 ```ts
 // ⚠️ LE LIBELLE DIT CE QU IL FAIT : « du jour » pour la veille laisserait quelqu un se demander
@@ -251,7 +251,7 @@ test('rien ne deborde en 13 pouces', async ({ page }) => {
 });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer, commit**
+- [x] **Étape 2 : implémenter, relancer, commit**
 
 ---
 
@@ -267,3 +267,34 @@ Revue `/revue` systématique. Rayon de souffle :
   récap ne passe pas par là.
 - Le plafond de débit de la route d'aide (20 par minute et par ESPACE) couvre-t-il le récap, ou
   faut-il un plafond à part ? Un récap coûte plus qu'une question.
+
+---
+
+## Ce qui a été livré, et les QUATRE écarts avec ce plan (2026-09-13, `289bf07`)
+
+Les quatre tâches sont faites, sans migration. Quatre décisions ont été prises en cours d'exécution, et
+elles sont écrites ici parce qu'elles changent ce que le produit AFFIRME, pas seulement comment il est fait.
+
+1. 🔴 **« Une conversation d'hier » veut dire « une conversation qui a PARLÉ hier », pas « une ligne créée
+   hier ».** Le plan lisait la création. Une conversation est unique par `(tenant_id, wa_id)` POUR TOUJOURS
+   (migration 0058) : chez un client installé, un habitué qui réécrit n'ouvre aucune ligne neuve, et le
+   récap aurait dit « hier : 2 conversations, 128 messages reçus », un couple visiblement incohérent qui
+   aurait fait douter de tout l'écran. Les ouvertures sont comptées à part, `conversationsNouvelles`, parce
+   que « dont 3 nouvelles » est justement ce qu'on veut savoir.
+2. **`semainePrecedente` porte aussi ses THÈMES** (par leur nom, sans compte). Le plan déclenchait l'appel
+   de modèle sur « un thème absent la semaine d'avant » alors que son propre type ne permettait pas de le
+   savoir : c'était une contradiction interne. Une requête de plus, une fois par espace et par jour, et le
+   critère le plus utile devient calculable.
+3. 🔴 **La garde des nombres inventés n'était pas au plan, et c'est elle qui fait de « le modèle ne compte
+   jamais » une GARANTIE plutôt qu'une consigne.** `nombresInventes` relit la réponse du modèle et la refuse
+   si elle contient un nombre absent de son entrée (un pourcentage qu'il aurait calculé, typiquement) ; on
+   retombe alors sur le gabarit. Le plan n'avait qu'une consigne dans le prompt, c'est-à-dire une intention.
+4. **Le cache porte aussi la LANGUE dans sa clé**, et ce n'est pas `un cache neuf` : c'est `cacheCourt`, qui
+   apportait déjà la mutualisation des appels en vol et le refus de mettre un échec en cache. Sans la langue,
+   le premier arrivé imposait la sienne à tout l'espace.
+
+⚠️ **Et la réponse du récap a la FORME d'une réponse d'aide** (`sait`, `texte`, `sources`, `ecrans`) : le fil
+de la console l'affiche alors sans chemin de rendu à part, et la question suivante peut s'appuyer dessus. Les
+`ecrans` sont résolus DANS la route, hors du cache, parce qu'ils dépendent du rôle.
+
+🔴 **CE QUI RESTE DÛ : le déploiement de l'API, puis l'essai réel nommé plus haut** (recompter à la main).
