@@ -22,8 +22,27 @@ import { join, relative } from 'node:path';
  * La machine se tait ; la personne peut encore répondre à la personne.
  */
 
-/** Les méthodes qui font VRAIMENT partir un message. `sendTo` couvre le sender de canal (RCS). */
-const METHODES = /\.(sendText|sendTemplate|sendInteractive|sendMedia|sendMarketing|sendTo)\s*\(/;
+/**
+ * LES MÉTHODES QUI FONT VRAIMENT PARTIR UN MESSAGE, DÉRIVÉES DU CLIENT META LUI-MÊME.
+ *
+ * 🔴 ÉCRITE À LA MAIN, CETTE LISTE ÉTAIT DÉJÀ INCOMPLÈTE (relevé en revue le 2026-09-13) : elle citait six
+ * méthodes quand le client en expose huit, et il manquait `sendCtaUrl`, `sendList`, `sendImage` et
+ * `sendFlowMessage`. Le test passait quand même, parce que les fichiers concernés appelaient AUSSI
+ * `sendText` ou `sendTemplate` : un fichier NEUF qui n'aurait employé que les quatre manquantes aurait
+ * échappé au balayage, sans jamais faire rougir l'inventaire qui prétend rendre cela impossible.
+ *
+ * La liste se lit donc dans `src/meta/client.ts`. Ajouter une méthode d'envoi au client élargit
+ * automatiquement le balayage, ce qui est exactement ce qu'on veut : c'est le client qui définit ce que
+ * « envoyer » veut dire, pas ce fichier. `sendTo` s'y ajoute à la main, c'est le sender de canal (RCS),
+ * qui n'est pas une méthode du client Meta.
+ */
+function methodesDEnvoi(): RegExp {
+  const client = readFileSync(new URL('../src/meta/client.ts', import.meta.url), 'utf8');
+  const noms = [...client.matchAll(/^\s*async (send[A-Za-z]+)\s*\(/gm)].map((m) => m[1]!);
+  if (noms.length < 5) throw new Error('aucune méthode d’envoi lue dans le client Meta : le balayage ne garde plus rien');
+  return new RegExp(`\\.(${[...new Set([...noms, 'sendTo'])].join('|')})\\s*\\(`);
+}
+const METHODES = methodesDEnvoi();
 
 /** Ce que devient un chemin : bloqué par un opt-out, ou exempté avec sa raison. */
 type Verdict = 'bloque' | 'exempte' | 'delegue' | 'a_trancher';

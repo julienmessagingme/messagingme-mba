@@ -78,6 +78,8 @@ function monter(o: {
   envoiRcs?: () => Promise<SendResult | { skipped: string }>;
   demarrage?: () => Promise<void | boolean | string>;
   suivi: string[];
+  /** Ce que le scénario a reçu comme variables de premier modèle. Cf. le cas dédié plus bas. */
+  paramsRecus?: Array<string[] | null>;
 }) {
   const recipients = new Recipients([destinataire(o.etageCourant ?? 2)]);
   const journalFil: Array<{ body: string; type?: string }> = [];
@@ -94,8 +96,9 @@ function monter(o: {
     now: () => 1_000_000_000,
     recipients,
     canaux: { rcs },
-    startWorkflow: async () => {
+    startWorkflow: async (_t, _wf, _wa, _ct, params) => {
       o.suivi.push('scenario');
+      o.paramsRecus?.push(params ?? null);
       return o.demarrage ? o.demarrage() : true;
     },
     recordOutbound: async (_t, _w, m) => {
@@ -217,5 +220,46 @@ describe('un etage RCS qui porte un scenario', () => {
     expect(rapport).toMatchObject({ sent: 1 });
     expect(suivi).toEqual(['scenario']);
     expect(wa.envois).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LES VARIABLES DU RANG 1 NE PARTENT PAS AVEC LE SCÉNARIO D'UN ÉTAGE DE REPLI (relevé en revue le
+ * 2026-09-13).
+ *
+ * `campaign.paramMapping` décrit le modèle du RANG 1 et lui seul, et `startWorkflow` passe ces valeurs au
+ * PREMIER bloc « Modèle » que le parcours rencontre. Sur un étage de repli, ce modèle-là n'a aucune raison
+ * d'avoir les mêmes variables : Meta refuserait le message (mauvais nombre), ou, pire, remplirait le bon
+ * nombre de trous avec les mauvaises valeurs, ce que personne ne verrait avant de lire un message reçu.
+ */
+describe('les variables heritees d un etage de repli', () => {
+  it('🔴 un scenario de RANG 2 ne recoit AUCUNE variable du modele du rang 1', async () => {
+    const suivi = gestes();
+    const paramsRecus: Array<string[] | null> = [];
+    const { campagne, deps } = monter({ suivi, paramsRecus });
+    // Le destinataire porte les variables resolues du rang 1 : c'est le cas reel.
+    const recipients = new Recipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: ['Jean', '42 euros'], status: 'pending', etageCourant: 2 }]);
+    await runCampaign(campagne, { ...deps, recipients });
+    expect(paramsRecus).toEqual([[]]);
+  });
+
+  /**
+   * ⚠️ L'AUTRE SENS, sans quoi une implementation qui n'enverrait JAMAIS de variables passerait le cas
+   * ci-dessus : au rang 1, `paramMapping` decrit bien ce qui part, et les variables doivent suivre.
+   */
+  it('⚠️ ...mais un scenario de RANG 1 les recoit, elles decrivent bien son modele', async () => {
+    const suivi = gestes();
+    const paramsRecus: Array<string[] | null> = [];
+    const recipients = new Recipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: ['Jean'], status: 'pending', etageCourant: 1 }]);
+    const campagne: Campaign = {
+      ...CAMPAGNE, workflowId: 'wf-42', paramMapping: [{ source: 'field', key: 'prenom' }] as never,
+      chaine: [{ rang: 1, canal: 'whatsapp', templateName: '', templateLanguage: 'fr', workflowId: 'wf-42' }],
+    };
+    await runCampaign(campagne, {
+      sender: new SenderWa(), campaigns: new Campaigns(), frequency: new Freq(), quality: new Quality(),
+      now: () => 1_000_000_000, recipients,
+      startWorkflow: async (_t, _wf, _wa, _ct, params) => { suivi.push('scenario'); paramsRecus.push(params ?? null); return true; },
+    });
+    expect(paramsRecus).toEqual([['Jean']]);
   });
 });

@@ -134,6 +134,13 @@ export class PgContactStore implements ContactStore {
            when excluded.opt_in_status = 'opted_in' then 'opted_in'
            else contacts.opt_in_status
          end,
+         -- LA DATE DE DESABONNEMENT SUIT LE STATUT, ICI AUSSI (releve en revue le 2026-09-13). Cet upsert
+         -- est le QUATRIEME chemin capable de faire repasser un contact en opted_in (import CSV, API
+         -- publique avec consentement explicite), et il ne touchait pas opt_out_at : la colonne gardait la
+         -- date d un refus leve depuis. Elle ne mentait a personne aujourd hui (la liste filtre sur le
+         -- statut), et elle aurait menti au premier lecteur qui ne filtrerait pas. La migration 0138 enonce
+         -- l invariant ; c est ici qu il se tient.
+         opt_out_at = case when excluded.opt_in_status = 'opted_in' then null else contacts.opt_out_at end,
          opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
@@ -214,6 +221,13 @@ export class PgContactStore implements ContactStore {
            when excluded.opt_in_status = 'opted_in' then 'opted_in'
            else contacts.opt_in_status
          end,
+         -- LA DATE DE DESABONNEMENT SUIT LE STATUT, ICI AUSSI (releve en revue le 2026-09-13). Cet upsert
+         -- est le QUATRIEME chemin capable de faire repasser un contact en opted_in (import CSV, API
+         -- publique avec consentement explicite), et il ne touchait pas opt_out_at : la colonne gardait la
+         -- date d un refus leve depuis. Elle ne mentait a personne aujourd hui (la liste filtre sur le
+         -- statut), et elle aurait menti au premier lecteur qui ne filtrerait pas. La migration 0138 enonce
+         -- l invariant ; c est ici qu il se tient.
+         opt_out_at = case when excluded.opt_in_status = 'opted_in' then null else contacts.opt_out_at end,
          opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          deleted_at = null,

@@ -870,8 +870,19 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
               if (!deps.startWorkflow) {
                 scenarioNonDemarre = 'Scénario non démarré : moteur de scénario non câblé.';
               } else {
+                /**
+                 * 🔴 LES VARIABLES DU RANG 1 NE PARTENT PAS AVEC LE SCÉNARIO D'UN ÉTAGE DE REPLI.
+                 * `params` vient de `campaign.paramMapping`, qui décrit le modèle du rang 1 et lui seul.
+                 * `startWorkflow` les passe au PREMIER bloc « Modèle » que le parcours rencontre : sur un
+                 * étage de repli, ce modèle-là n'a aucune raison d'avoir les mêmes variables, et Meta
+                 * refuserait le message (mauvais nombre) ou, pire, remplirait le bon nombre de trous avec
+                 * les mauvaises valeurs. Un rang de repli part donc SANS variables héritées.
+                 *
+                 * ⚠️ Le rang 1 les garde : c'est le cas où `paramMapping` décrit bien ce qui part.
+                 */
+                const heritees = etageDuTour.rang === RANG_INITIAL ? params : [];
                 const suite = await deps.startWorkflow(
-                  campaign.tenantId, contenu.workflowId, waIdOfTarget(r.toE164), r.contactId, params,
+                  campaign.tenantId, contenu.workflowId, waIdOfTarget(r.toE164), r.contactId, heritees,
                 );
                 if (typeof suite === 'string') scenarioNonDemarre = `Scénario non démarré : ${suite}`;
                 else if (suite === false) scenarioNonDemarre = 'Scénario non démarré (scénario supprimé, ou fil repris par un opérateur / MBA).';

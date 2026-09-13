@@ -1926,26 +1926,32 @@ trois quarts de l'écran et reprend l'écran de construction (les blocs qu'on re
 
 ## ÉVOL — Un menu « Sécurité », à côté de Paramètres, Support et Developers
 
-Page d'accueil : « Bienvenue au centre de sécurité & compliance de Engage Me », puis autant de boîtes
-que de sous-menus. La barre latérale reste à gauche et montre les sous-menus sous « Sécurité ».
+🔴 **LIVRÉ LE 2026-09-13, TÂCHES 1 À 6** (`623e6a5`). La page d'accueil, le menu et ses trois sous-menus
+(Consentement, Audit trails, Journal des erreurs) existent. Un opt-out bloque désormais scénario, automation
+et agent IA, l'envoi d'un modèle marketing depuis l'Inbox et la réponse d'un agent MCP. La liste des
+désabonnés porte la date (migration 0138) et les « refus possibles à confirmer » remontent sans désabonner
+personne. Le détail et les écarts : [plan](docs/superpowers/plans/2026-09-13-centre-securite.md).
 
-Sous-menus demandés :
+**Ce qui RESTE de ce chantier**, et rien d'autre :
 
-1. **Audit trails** : les déplacer ici (ils sont aujourd'hui dans Paramètres).
-2. **Consentement / opt-out** — 🔴 **À DISCUTER AVANT DE PLANIFIER**, c'est la partie la plus lourde :
-   - une **règle** qui met un contact en opt-out quand il le dit (« stop », « arrêtez de me parler »,
-     et les formulations voisines), et qui **remonte sur le champ consentement** ;
-   - 🔴 **un opt-out BLOQUE tout message sortant vers cette personne**, campagne ultérieure comprise.
-     À vérifier explicitement, c'est la garantie qui compte ;
-   - le réglage de **ce que l'espace veut faire au moment où l'opt-out est déclaré**, avec accès à la
-     liste des outils (Tools) ;
-   - la **liste des opt-out**, exportable ; un clic donne le **résumé de la conversation** qui y a mené,
-     un clic de plus ouvre la **conversation dans l'Inbox**, et on doit pouvoir **télécharger la
-     conversation entière** qui a abouti à l'opt-out.
-3. **IA** : les réglages macro liés à l'AI Act. Pour commencer, y remonter le toggle « l'IA se déclare
-   comme telle », qui vit aujourd'hui dans la fiche de l'agent IA.
-   ⚠️ **Le Meta Business Agent n'en a pas besoin** : Meta écrit déjà « IA » en bas de ses messages.
-4. **Journal des erreurs** : la liste des erreurs.
+1. **L'opt-out déclenche un APPEL D'OUTIL** (tâche 7) : au moment où un refus est déclaré, l'espace peut
+   pousser l'information vers son propre système via un connecteur déjà déclaré dans Tools. C'est ce qui rend
+   le refus opposable ailleurs que chez nous. ⚠️ L'appel ne doit JAMAIS bloquer l'écriture de l'opt-out.
+2. **Le sous-menu IA** (tâche 8) : remonter « l'IA se déclare comme telle » de la fiche d'agent au niveau de
+   l'ESPACE, sans changer le comportement des agents existants. ⚠️ Le Meta Business Agent n'est pas concerné,
+   Meta écrit déjà « IA » sous ses messages.
+3. **Le journal des erreurs, la moitié SYSTÈME** (tâche 9) : les retours d'API qui n'ont pas fonctionné et les
+   échecs d'avancement de parcours (`workflow_advance_failures`, migration 0108, déjà en base). La moitié
+   client existe déjà et a déménagé.
+4. 🔴 **L'ESSAI RÉEL, qui n'est pas une tâche mais la seule preuve** : écrire « stop » depuis un vrai
+   téléphone, constater l'opt-out, PUIS tenter d'atteindre ce contact par un scénario ET par une automation.
+   Puis l'essai inverse : un opérateur doit encore pouvoir lui répondre à la main.
+
+🔴 **ET UN ARBITRAGE EN ATTENTE, découvert le 2026-09-13** : la règle STOP désabonne « arrêt maladie »,
+« arrêt du traitement », « stop covid » et « stopper la commande », parce que l'ancrage en début de message
+ne protège pas d'un message qui COMMENCE par le mot-clé. Sur un espace d'assureur, c'est un message ordinaire.
+Resserrer l'ancrage ferait perdre « stop merci », qui est un vrai refus : c'est un choix produit, et le
+comportement actuel est figé par `tests/consentement-observation.test.ts` en attendant.
 
 ## ÉVOL — Déplacer « Scénario » dans Contenu, juste après Email
 
