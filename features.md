@@ -1590,7 +1590,36 @@ scénario, comment importer des contacts.
   réponse et l'authentification par utilisateur final. Un outil qui les utiliserait devrait être réglé dans
   WhatsApp Manager, donc serait écrasé, et l'aperçu le montre.
 
-## Journaux et traces (menu Paramètres)
+## Sécurité & compliance (menu Sécurité)
+
+Un menu au bas de la barre, à côté de Paramètres et Support, qui rassemble **tout ce qui sert à rendre des
+comptes** : ce qui a été fait, ce qui a échoué, et ce que les gens ont accepté. Sa page d'accueil porte une
+boîte par sous-menu.
+
+- ✅ **Consentement** (2026-09-13) : la liste des personnes qui ont demandé à ne plus être contactées, avec
+  **depuis quand** et **par quel chemin** le refus est arrivé (saisi par l'équipe, posé par un scénario, coché
+  par la personne dans un formulaire, reçu d'un système tiers). Réservée aux rôles administrateur et manager.
+  - ⚠️ **La date peut manquer, et l'écran le dit** : elle n'est enregistrée que depuis le 2026-09-13. Pour les
+    refus antérieurs, l'écran affiche « date inconnue » au lieu d'inventer une date à partir de la dernière
+    modification de la fiche, qui n'aurait rien à voir.
+  - ✅ **Refus possibles à confirmer** : des messages qui *ressemblent* à une demande d'arrêt sans en avoir la
+    forme reconnue (« arrêtez de me contacter », « retirez-moi de votre liste »). **Personne n'est désabonné
+    par cette relecture** : elle sert à juger, depuis la conversation, si la règle automatique doit être
+    élargie. L'écran dit aussi sur combien de messages il a regardé.
+  - ⚠️ **On ne réabonne pas d'un clic depuis cette liste** : ça se fait depuis la fiche du contact, là où l'on
+    voit à qui l'on a affaire. Un bouton sur une liste rendrait trop facile d'annuler en série des refus que
+    des personnes ont exprimés.
+- ✅ **Un désabonnement bloque réellement tous les envois automatiques** (2026-09-13) : campagne, API, mais
+  aussi **scénario, automation et agent IA**, qui passaient jusque-là. Un envoi de **modèle** depuis l'Inbox
+  est refusé s'il est de catégorie Marketing, autorisé s'il est de catégorie Service (une livraison, un
+  rendez-vous, un compte). Un agent tiers branché en MCP est refusé.
+  - 🔴 **Mais un opérateur peut toujours répondre à la main.** Sans cette exception, il ne pourrait même plus
+    accuser réception du désabonnement, ni répondre à une réclamation posée juste après. La machine se tait ;
+    la personne peut encore répondre à la personne.
+- ✅ **Audit trails** et **Journal des erreurs** : les deux journaux ci-dessous, qui vivaient dans Paramètres
+  et s'y trouvaient par accident. Aucune adresse n'a changé.
+
+## Journaux et traces (menu Sécurité)
 
 - ✅ **Journal des actions** : qui a ajouté, supprimé, effacé ou basculé un consentement, et quand. Les
   contacts y figurent par identifiant interne, **jamais par numéro** : y écrire un numéro annulerait la

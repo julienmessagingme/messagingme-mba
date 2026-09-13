@@ -55,12 +55,12 @@ Celles des plans du 2026-09-12 s'appliquent à l'identique. Trois ajouts propres
 **Produit** : « Bienvenue au centre de sécurité & compliance de Engage Me », puis une boîte par
 sous-menu. La barre latérale reste à gauche et déplie les sous-menus sous « Sécurité ».
 
-- [ ] **Étape 1 : les tests** (l'entrée existe au BAS, les sous-menus se déplient, la page d'accueil
+- [x] **Étape 1 : les tests** (l'entrée existe au BAS, les sous-menus se déplient, la page d'accueil
       porte une boîte par sous-menu, rien ne déborde en 1280 x 800)
-- [ ] **Étape 2 : implémenter, relancer**
-- [ ] **Étape 3 : MUTER** : retirer un sous-menu de la nav sans retirer sa boîte, constater que le test
+- [x] **Étape 2 : implémenter, relancer**
+- [x] **Étape 3 : MUTER** : retirer un sous-menu de la nav sans retirer sa boîte, constater que le test
       de correspondance rougit. ⚠️ C'est le défaut qui arrive vraiment : une boîte qui mène nulle part.
-- [ ] **Étape 4 : commit**
+- [x] **Étape 4 : commit**
 
 ---
 
@@ -76,10 +76,10 @@ deux déménagements et laisserait Paramètres à moitié vidé.
 ⚠️ **LE JOURNAL DE LIVRAISON PORTE LES NUMÉROS DE TÉLÉPHONE, délibérément**, et il est admin-only. Le
 déplacer ne doit pas l'ouvrir plus largement.
 
-- [ ] **Étape 1 : le test qui garde l'ANCIENNE adresse** (elle redirige, ou elle marche encore)
-- [ ] **Étape 2 : déplacer, relancer**
-- [ ] **Étape 3 : vérifier qu'aucun lien du produit ne pointe encore sur l'ancienne place** (`grep`)
-- [ ] **Étape 4 : commit**
+- [x] **Étape 1 : le test qui garde l'ANCIENNE adresse** (elle redirige, ou elle marche encore)
+- [x] **Étape 2 : déplacer, relancer**
+- [x] **Étape 3 : vérifier qu'aucun lien du produit ne pointe encore sur l'ancienne place** (`grep`)
+- [x] **Étape 4 : commit**
 
 ---
 
@@ -95,9 +95,9 @@ sortant peut partir, et dire pour chacun s'il doit être bloqué.
 
 Décision de Julien du 2026-09-13 : **tout sauf la réponse manuelle d'un opérateur.**
 
-- [ ] **Étape 1 : établir la liste** en partant des appels réels d'envoi (`sendText`, `sendTemplate`,
+- [x] **Étape 1 : établir la liste** en partant des appels réels d'envoi (`sendText`, `sendTemplate`,
       le sender RCS, le bloc e-mail), pas en partant de ce qu'on croit savoir
-- [ ] **Étape 2 : l'écrire dans un test qui la TIENT**
+- [x] **Étape 2 : l'écrire dans un test qui la TIENT**
 
 ```ts
 // 🔴 UNE LISTE ECRITE A LA MAIN DERIVE DES QU ON AJOUTE UN CHEMIN D ENVOI. Ce test derive la liste
@@ -105,8 +105,8 @@ Décision de Julien du 2026-09-13 : **tout sauf la réponse manuelle d'un opéra
 it('tout chemin d envoi est CLASSE : bloque par un opt-out, ou explicitement exempte', () => { /* ... */ });
 ```
 
-- [ ] **Étape 3 : MUTER** : ajouter un faux chemin d'envoi non classé, constater le rouge
-- [ ] **Étape 4 : commit**
+- [x] **Étape 3 : MUTER** : ajouter un faux chemin d'envoi non classé, constater le rouge
+- [x] **Étape 4 : commit**
 
 ---
 
@@ -116,7 +116,7 @@ it('tout chemin d envoi est CLASSE : bloque par un opt-out, ou explicitement exe
 - Modifier : les chemins établis en tâche 3 (scénario, automation, agent IA)
 - Test : `tests/optout-blocage.test.ts` + intégration
 
-- [ ] **Étape 1 : les tests, un par chemin, ET le cas d'exemption**
+- [x] **Étape 1 : les tests, un par chemin, ET le cas d'exemption**
 
 ```ts
 it('un scenario n envoie RIEN a un contact opted_out', async () => { /* ... */ });
@@ -129,9 +129,9 @@ it('l agent IA non plus', async () => { /* ... */ });
 it('mais un operateur PEUT encore repondre a la main dans l Inbox', async () => { /* ... */ });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer, MUTER** (retirer la garde d'un seul chemin, constater que
+- [x] **Étape 2 : implémenter, relancer, MUTER** (retirer la garde d'un seul chemin, constater que
       seul son test rougit : c'est ce qui prouve que les trois sont indépendants)
-- [ ] **Étape 3 : commit**
+- [x] **Étape 3 : commit**
 
 ---
 
@@ -140,13 +140,13 @@ it('mais un operateur PEUT encore repondre a la main dans l Inbox', async () => 
 **Fichiers**
 - Créer : `web/app/securite/consentement/page.tsx`, la route de liste et d'export
 
-- [ ] La liste, **exportable**
-- [ ] Un clic donne le **résumé de la conversation** qui a mené au refus
-- [ ] Un clic de plus ouvre **la conversation dans l'Inbox**
-- [ ] Le **téléchargement de la conversation entière** qui a abouti à l'opt-out
-- [ ] ⚠️ **`tenant_id = $1` sur CHAQUE requête**, et le contrôle d'accès : cet écran donne des
+- [x] La liste, **exportable**
+- [x] Un clic donne le **résumé de la conversation** qui a mené au refus
+- [x] Un clic de plus ouvre **la conversation dans l'Inbox**
+- [x] Le **téléchargement de la conversation entière** qui a abouti à l'opt-out
+- [x] ⚠️ **`tenant_id = $1` sur CHAQUE requête**, et le contrôle d'accès : cet écran donne des
       conversations complètes. Réservé aux admins et managers.
-- [ ] Tests, mutation, commit
+- [x] Tests, mutation, commit
 
 ---
 
@@ -160,7 +160,7 @@ it('mais un operateur PEUT encore repondre a la main dans l Inbox', async () => 
 elle journalise le message et le fait remonter dans l'écran Consentement, sous « refus possibles à
 confirmer ». L'opérateur confirme ou écarte, et chaque geste devient une donnée de calibrage.
 
-- [ ] **Étape 1 : les tests, dont le plus important**
+- [x] **Étape 1 : les tests, dont le plus important**
 
 ```ts
 // 🔴 L ELARGISSEMENT N AGIT PAS. Sans ce cas, un jour de distraction transformerait l observation en
@@ -171,7 +171,7 @@ it('mais il est journalise et remonte a confirmer', () => { /* ... */ });
 it('« stop » en debut de message desabonne toujours, sans confirmation', () => { /* ... */ });
 ```
 
-- [ ] **Étape 2 : implémenter, relancer, MUTER, commit**
+- [x] **Étape 2 : implémenter, relancer, MUTER, commit**
 
 ---
 
@@ -189,11 +189,11 @@ répond. C'est la raison pour laquelle Julien a nommé les Tools dans sa demande
 ensuite. Un connecteur en panne ne doit pas faire échouer le respect d'un refus : ce serait exactement
 l'inverse de ce que ce menu existe pour garantir. L'échec se journalise et se réessaie.
 
-- [ ] Le réglage (quel outil, ou aucun), avec la liste venue de Tools
-- [ ] L'appel APRÈS l'écriture, jamais avant, et jamais bloquant
-- [ ] Un test qui MUTE l'ordre : l'appel avant l'écriture, et un connecteur en panne -> l'opt-out doit
+- [x] Le réglage (quel outil, ou aucun), avec la liste venue de Tools
+- [x] L'appel APRÈS l'écriture, jamais avant, et jamais bloquant
+- [x] Un test qui MUTE l'ordre : l'appel avant l'écriture, et un connecteur en panne -> l'opt-out doit
       quand même être posé
-- [ ] Tests, mutation, commit
+- [x] Tests, mutation, commit
 
 ---
 
@@ -201,10 +201,10 @@ l'inverse de ce que ce menu existe pour garantir. L'échec se journalise et se r
 
 Remonter la bascule « l'IA se déclare comme telle » de la fiche d'agent au niveau de l'ESPACE.
 
-- [ ] 🔴 **NE PAS CHANGER LE COMPORTEMENT DES AGENTS EXISTANTS** : c'est une migration de réglage. Un
+- [x] 🔴 **NE PAS CHANGER LE COMPORTEMENT DES AGENTS EXISTANTS** : c'est une migration de réglage. Un
       agent déjà configuré doit continuer à faire exactement ce qu'il faisait. Le défaut `session` et
       le choix `jamais` ont été tranchés le 2026-09-09 en connaissance de cause.
-- [ ] ⚠️ **LE META BUSINESS AGENT N'EST PAS CONCERNÉ** : Meta écrit déjà « IA » sous ses messages, notre
+- [x] ⚠️ **LE META BUSINESS AGENT N'EST PAS CONCERNÉ** : Meta écrit déjà « IA » sous ses messages, notre
       propre déclaration en ferait deux.
 
 ---
@@ -221,12 +221,12 @@ second journal à côté du premier se contredirait le jour où l'un filtre autr
 Ce qui s'AJOUTE ici, c'est la moitié SYSTÈME : les retours d'API qui n'ont pas fonctionné, et les échecs
 d'avancement de parcours (`workflow_advance_failures`, migration 0108, déjà en base).
 
-- [ ] **Étape 1 : inventorier ce qui est DÉJÀ journalisé** avant d'en journaliser plus. Le dépôt porte
+- [x] **Étape 1 : inventorier ce qui est DÉJÀ journalisé** avant d'en journaliser plus. Le dépôt porte
       des DLQ, `/ops` et des alertes Telegram : la question n'est pas « que journaliser » mais « qu'est-ce
       qui est déjà écrit quelque part et que personne ne montre au client »
-- [ ] **Étape 2 : les deux moitiés dans le même écran**, distinguées par leur NATURE et non mélangées
-- [ ] ⚠️ **Ce qui porte des numéros reste admin-only**
-- [ ] Tests, mutation, commit
+- [x] **Étape 2 : les deux moitiés dans le même écran**, distinguées par leur NATURE et non mélangées
+- [x] ⚠️ **Ce qui porte des numéros reste admin-only**
+- [x] Tests, mutation, commit
 
 ## Revue
 
@@ -237,3 +237,42 @@ Revue `/revue` systématique, plus le rayon de souffle :
 - **Qui LIT `opt_in_status` ?** Ajouter un blocage change ce que ces lecteurs voient partir.
 - **Les compteurs de campagne** : un destinataire écarté pour opt-out doit apparaître comme écarté AVEC
   son motif, pas disparaître du compte. Sinon le client voit une audience qui fond sans explication.
+
+---
+
+## Ou en est ce plan (2026-09-13 au soir)
+
+| Tache | Etat |
+|---|---|
+| 1. Le menu « Securite » et sa page d accueil | ✅ `23fb288` |
+| 2. Les deux journaux demenagent | ✅ `23fb288` |
+| 3. L inventaire des chemins d envoi | ✅ `edd6a7f` |
+| 4. Le blocage sur tous les chemins sauf la main de l operateur | ✅ `edd6a7f` + `2786599` |
+| 5. La liste des opt-out | ✅ `b13456e`, avec la migration 0138 |
+| 6. La regle elargie EN OBSERVATION | ✅ `623e6a5` |
+| 7. L opt-out declenche un APPEL D OUTIL | pas commence |
+| 8. Le sous-menu IA | pas commence |
+| 9. Le journal des erreurs, les DEUX | pas commence |
+
+### Les ecarts avec ce plan, et pourquoi
+
+1. **LES SOUS-MENUS SONT MONTES AVEC LEUR CONTENU, PAS AVANT.** Le plan montait les quatre d un coup en
+   tache 1. Une entree de menu qui ouvre une page vide est pire que pas d entree : lot 1 n a monte que les
+   deux journaux, dont l ecran existait deja, et « Consentement » est arrive avec le sien. Un e2e garde la
+   correspondance dans les deux sens (chaque boite mene a un sous-menu, chaque sous-menu a sa boite).
+2. **LA TACHE 4 A DEMANDE UNE MIGRATION QUE LE PLAN NE PREVOYAIT PAS** (0138, `contacts.opt_out_at`). Le
+   plan exigeait qu un opt-out soit tracable « qui, depuis quel message, a quelle date » ; le depot savait
+   QUI (`opt_in_source`) et pas QUAND. `updated_at` ne repond pas a la question, il bouge a la moindre
+   modification de la fiche.
+3. **DEUX CHEMINS ETAIENT A LA FRONTIERE** et ont ete poses a Julien plutot que tranches seul : l envoi d un
+   MODELE depuis l Inbox (marketing refuse, service autorise) et la reponse d un agent tiers par MCP
+   (bloquee). Les deux sont implementes avec leurs tests.
+4. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
+   « arret du traitement », « stop covid » et « stopper la commande » DESABONNENT aujourd hui, alors que le
+   docblock citait « arret de bus » comme un cas evite. Sur un espace d assureur, c est un message ordinaire.
+   La regle n est PAS modifiee (resserrer l ancrage ferait perdre « stop merci ») : c est un arbitrage pose a
+   Julien, le docblock faux est corrige, et un test fige le comportement actuel.
+
+🔴 **CE QUI RESTE DU AU-DELA DES TACHES : l essai reel.** Ecrire « stop » depuis un vrai telephone, constater
+le passage en opt-out, PUIS tenter d atteindre ce contact par un scenario ET par une automation, et constater
+que rien ne part. Puis l essai inverse : un operateur doit encore pouvoir lui repondre a la main.

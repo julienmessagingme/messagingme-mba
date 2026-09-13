@@ -37,7 +37,7 @@ par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le con
 | **3** | ✅ **BUG « Modèle et scénario »** | — | [todo.md](todo.md) | ✅ **CORRIGÉ ET DÉPLOYÉ** le 2026-09-13 (`01b82c6`, CI verte, Vercel). Le sélecteur de modèle disparaît en formule scénario, les variables se vident à la bascule, et un scénario qui n'ouvre pas par un modèle est refusé sur un étage WhatsApp |
 | **4** | **Récap de la veille** dans le bot d'aide | [spec](docs/superpowers/specs/2026-09-12-recap-bot-aide-cadrage.md) | [plan, 4 tâches](docs/superpowers/plans/2026-09-12-recap-bot-aide.md) | ✅ **LIVRÉ, RELU ET DÉPLOYÉ** le 2026-09-13 (`acf74a5`), aucune migration. La revue a trouvé deux défauts réels, corrigés et redéployés : les conversations `is_test` entraient dans les chiffres, et la garde des nombres inventés était percée sur la plage 1-31. Route vérifiée en production (401 sans jeton, 404 sur une voisine inexistante). 🔴 **Jamais essayé en réel**, cf. plus bas |
 | **5** | **Créer un scénario sans quitter sa campagne** | [spec](docs/superpowers/specs/2026-09-13-scenario-a-la-volee-design.md) | [plan, 6 tâches](docs/superpowers/plans/2026-09-13-scenario-a-la-volee.md) | ✅ **LES 6 TÂCHES LIVRÉES ET DÉPLOYÉES** (`ad84f7f`), aucune migration. En chemin, un DÉFAUT DE MOTEUR trouvé et corrigé (`b555012`), cf. plus bas. 🔴 **Jamais essayé en réel** |
-| **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches en 3 lots](docs/superpowers/plans/2026-09-13-centre-securite.md) | spec et plan écrits. ⚠️ Tâches 7 et 9 **pas cadrées**, à préciser avec Julien |
+| **6** | **Centre de Sécurité & compliance** (opt-out, IA, audit, erreurs) | [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) | [plan, 9 tâches](docs/superpowers/plans/2026-09-13-centre-securite.md) | **TÂCHES 1 à 6 LIVRÉES** (`623e6a5`), migration **0138 écrite, PAS ENCORE APPLIQUÉE**. Restent 7 (appel d'outil à l'opt-out), 8 (sous-menu IA), 9 (journal système). 🔴 Rien de déployé, jamais essayé en réel |
 | **7** | ✅ Menu Scénario dans Contenu + la réponse compte comme engagement | — | [plan, 2 tâches](docs/superpowers/plans/2026-09-13-menu-scenario-et-engagement.md) | ✅ **FAIT ET DÉPLOYÉ** le 2026-09-13 (`444b509`). Essai réel concluant : « Testjulien2 », zéro clic, **1 engagé** |
 
 ### Où en est le chantier 1, exactement
@@ -49,6 +49,25 @@ Migrations **0133 à 0137 appliquées**. Prochaine libre : **0138** (le compteur
 les variables de template, l'aperçu, « Plus tard », le fil de l'eau, le visuel RCS, les brouillons
 (les deux formats), l'audience complète et la jauge de débit. Le moteur envoie sur le canal de
 l'étage. La joignabilité WhatsApp se mémorise. Le funnel compte par canal.
+
+### 🔴 « arrêt maladie » DÉSABONNE aujourd'hui, et c'est un arbitrage en attente
+
+Trouvé le 2026-09-13 en écrivant le test de la règle élargie, **sur la règle qui agit déjà en production** :
+
+```
+"arrêt maladie" -> true   "arrêt du traitement" -> true
+"arrêt de bus"  -> true   "stop covid" -> true   "stopper la commande" -> true
+```
+
+Le docblock d'`estDemandeArret` citait pourtant « arrêt de bus » comme un cas **évité** par l'ancrage. C'est
+faux : la phrase COMMENCE par « arrêt ». **Gan Prévoyance est un assureur, en production** : « arrêt maladie »
+y est un message ordinaire, et la personne cesserait de recevoir sans que personne ne le sache.
+
+⚠️ **La règle n'a PAS été modifiée, et c'est délibéré** : resserrer l'ancrage (exiger le mot-clé seul, ou
+suivi d'une ponctuation) ferait perdre « stop merci », qui est un vrai refus. C'est un arbitrage produit, posé
+à Julien. Le docblock faux est corrigé, et `tests/consentement-observation.test.ts` fige le comportement
+ACTUEL en NOMMANT chaque cas, pour que rien ne bouge par accident et que celui qui le changera voie la liste
+de ce qu'il change.
 
 ### 🔴 « Message et scénario » sur un étage RCS ne démarrait RIEN (trouvé le 2026-09-13)
 
