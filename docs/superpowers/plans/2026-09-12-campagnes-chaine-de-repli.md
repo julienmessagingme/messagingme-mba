@@ -1584,6 +1584,52 @@ travail est de RÉUTILISER, et toute ligne réécrite ici est une seconde défin
 
 ---
 
+## Phase 7 : ce qui reste avant de RETIRER l'ancien formulaire (lot 8)
+
+Six capacités, inventoriées dans `AssistantCampagne.tsx` et tenues à jour par chaque lot. ⚠️ **Deux
+lignes ont quitté cette liste le 2026-09-13** et ce n'étaient pas des capacités manquantes mais des
+**régressions** (la sélection fine des contacts et la jauge de débit) : elles sont revenues au lot 7.
+
+### Tâche 20 : l'aperçu du template, le carousel et l'en-tête média
+
+**Fichiers** : `web/components/campagne/EtapeContenu.tsx`, plus le composant d'aperçu de
+`CampaignCreateForm` (à RÉUTILISER, pas à recopier)
+
+⚠️ **C'est la capacité qui manque le plus à l'usage** : sans aperçu, l'opérateur valide un envoi de
+masse sur un nom de modèle. Elle vient donc en premier.
+
+### Tâche 21 : « Plus tard » et la campagne au fil de l'eau
+
+**Fichiers** : `web/components/campagne/EtapeRecap.tsx`, `web/lib/campagne-creation.ts`
+
+Deux façons de ne pas partir tout de suite, et elles sont différentes : `scheduledAt` programme un
+départ unique, le fil de l'eau alimente la campagne par un webhook au fur et à mesure.
+
+### Tâche 22 : le visuel RCS et ses médias, et la création de modèle à la volée
+
+**Fichiers** : `web/components/campagne/EtapeContenu.tsx` et les briques RCS existantes
+
+⚠️ La création d'un modèle à la volée existe déjà dans l'écran en service, **avec son parcours de
+soumission à Meta**. Le refaire produirait une seconde façon de soumettre un modèle.
+
+### Tâche 23 : les brouillons, puis le RETRAIT de l'ancien formulaire
+
+**Fichiers** : `web/components/campagne/AssistantCampagne.tsx`, suppression de
+`web/components/CampaignCreateForm.tsx`, `web/app/campaigns/page.tsx`
+
+🔴 **LE RETRAIT EST LA DERNIÈRE ÉTAPE DE CE LOT, ET IL A UNE CONDITION VÉRIFIABLE** : la liste
+« CE QUI MANQUE ENCORE » de `AssistantCampagne.tsx` doit être **vide**. Tant qu'elle porte une ligne,
+retirer l'écran en service retire une capacité que quelqu'un utilise.
+
+⚠️ **Les brouillons en dernier, et pour une raison de FORMAT** : ils sont écrits dans un `state`
+opaque que seul l'ancien formulaire relit. Un brouillon écrit par l'ancien écran doit rester lisible
+par le nouveau, sinon le retrait détruit le travail en cours de quelqu'un.
+
+- [ ] Étape finale : `grep -rn "CampaignCreateForm" web/` doit rendre **zéro** résultat avant la
+      suppression du fichier.
+
+---
+
 ## Revue et rayon de souffle, avant déploiement
 
 🔴 **La revue `/revue` est systématique et ne se demande pas.** Elle inclut la section « Rayon de
