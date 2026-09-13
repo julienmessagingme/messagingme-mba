@@ -186,3 +186,47 @@ describe('le câblage réel fournit la garde', () => {
       .not.toMatch(/WorkflowExecutor/);
   });
 });
+
+/**
+ * LES DEUX CHEMINS TRANCHÉS PAR JULIEN LE 2026-09-13, après l'inventaire.
+ *
+ * 🔴 ILS ÉTAIENT « À LA FRONTIÈRE » et le restent conceptuellement : un modèle envoyé de l'Inbox est un
+ * geste d'opérateur, une réponse par MCP vient d'une machine agissant pour un opérateur. Ce que ces tests
+ * gardent, ce n'est pas la règle, c'est la DÉCISION : marketing bloqué / service autorisé d'un côté,
+ * machine muette de l'autre.
+ */
+describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () => {
+  it('🔴 la route d’envoi de modèle REFUSE en 409 un contact désabonné, sauf en « Service »', () => {
+    const src = readFileSync(new URL('../src/http/inbox.ts', import.meta.url), 'utf8');
+    const bloc = src.slice(src.indexOf("'/tenants/:tenantId/conversations/:conversationId/send-template'"));
+    expect(bloc, 'la garde d’opt-out a disparu de l’envoi de modèle').toMatch(/deps\.estDesabonne/);
+    expect(bloc, 'le SERVICE doit rester autorisé').toMatch(/categorie !== 'utility'/);
+  });
+
+  /**
+   * 🔴 LA CATÉGORIE NE VIENT PAS DU CORPS. `templateCategory` y est présent, mais il est fourni par le
+   * navigateur et ne sert qu'aux statistiques : s'en servir comme garde laisserait n'importe qui se
+   * déclarer « utility » pour écrire à un contact désabonné.
+   */
+  it('🔴 la catégorie est lue chez Meta, JAMAIS dans le corps de la requête', () => {
+    const src = readFileSync(new URL('../src/http/inbox.ts', import.meta.url), 'utf8');
+    const bloc = src.slice(src.indexOf("'/tenants/:tenantId/conversations/:conversationId/send-template'"));
+    const garde = bloc.slice(bloc.indexOf('deps.estDesabonne'), bloc.indexOf('// Carousel'));
+    expect(garde).toMatch(/deps\.categorieDuModele/);
+    expect(garde, 'la garde s’appuierait sur une valeur venue du navigateur').not.toMatch(/templateCategory/);
+  });
+
+  /**
+   * 🔴 ET LA DÉPENDANCE N'EST BRANCHÉE QUE SUR LE CÂBLAGE MCP. `repondreDansLaFenetre` est PARTAGÉE avec la
+   * console : c'est cette asymétrie de câblage qui fait l'exemption de l'opérateur. La brancher des deux
+   * côtés rendrait un opérateur muet, ce qui est exactement ce que la décision refuse.
+   */
+  it('🔴 `estDesabonne` est branchée sur le câblage MCP, et le refus a son propre motif', () => {
+    const src = readFileSync(new URL('../src/inbox/repondre.ts', import.meta.url), 'utf8');
+    expect(src, 'le refus d’opt-out doit avoir son propre motif, jamais le repli « fenêtre fermée »')
+      .toMatch(/motif: 'contact_desabonne'/);
+    expect(src, 'la garde ne doit viser que l’origine machine').toMatch(/origine === 'mcp'/);
+    const outils = readFileSync(new URL('../src/mcp/outils.ts', import.meta.url), 'utf8');
+    expect(outils, 'l’agent doit recevoir la raison exacte, pas « fenêtre fermée »').toMatch(/contact_desabonne/);
+  });
+});

@@ -898,6 +898,20 @@ async function main(): Promise<void> {
        * Cartes d'un template CAROUSEL, relues chez Meta et visuels re-téléversés pour l'envoi. `null` si le
        * template n'est pas un carousel : l'envoi classique reste strictement inchangé.
        */
+      /**
+       * 🔴 LA GARDE D OPT-OUT DE L ENVOI DE MODELE DEPUIS L INBOX, et elle est en DEUX morceaux : le statut
+       * du contact, et la categorie REELLE du modele. Le corps de la requete porte bien un
+       * `templateCategory`, mais il vient du navigateur et ne sert qu aux statistiques : s en servir comme
+       * garde laisserait n importe qui se declarer « utility ».
+       *
+       * ⚠️ `templateVarInfo` est la MEME lecture que le worker, avec son cache court : le cas ou la
+       * question se pose (un contact desabonne) ne paie donc quasiment jamais un appel a Meta.
+       */
+      estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
+      categorieDuModele: async (tenant, name, language) => {
+        const cat = (await workflowRuntime.templateVarInfo(tenant, name, language))?.category;
+        return cat === 'utility' ? 'utility' : cat === 'marketing' ? 'marketing' : null;
+      },
       prepareCarousel: async (tenant, name, language) => {
         // MÊME lecture que le worker (résolution nom+langue, repli sur le nom seul, cache court) : c'est
         // `templateVarInfo` de la fabrique partagée. L'API en avait sa propre copie, sans cache.
@@ -2175,6 +2189,14 @@ async function main(): Promise<void> {
           const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1)
           return (await client.sendText(to, text)).messageId;
         },
+        /**
+         * 🔴 BRANCHEE ICI ET NULLE PART AILLEURS, ET C EST TOUT LE SUJET. `repondreDansLaFenetre` est
+         * PARTAGEE avec la route de la console : c est la presence de cette dependance, sur le seul cablage
+         * MCP, qui fait qu une machine se tait quand un contact a dit STOP pendant qu un operateur, lui,
+         * peut encore repondre. La ne pas mettre sur le cablage de la console n est donc pas un oubli, c est
+         * l exemption elle-meme, rendue structurelle.
+         */
+        estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
         recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
         // ⚠️ `app_human` pour un agent TIERS, et c'est un choix : `ControlOwner` n'a que trois valeurs, et ce
         // qui compte ici est que le scénario cesse d'avancer TOUT SEUL et que MBA cesse de répondre, ce que

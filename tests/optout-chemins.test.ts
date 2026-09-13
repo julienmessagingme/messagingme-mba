@@ -58,12 +58,14 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
       + 'envoient tous par ici : une seule garde les couvre les trois, là où trois gardes auraient divergé.',
   },
   'src/index.ts': {
-    verdict: 'a_trancher',
-    pourquoi: '⚠️ TROIS ENVOIS DE NATURES DIFFÉRENTES DANS LE MÊME FICHIER, et c’est pour ça qu’il n’a pas '
-      + 'un verdict unique : la réponse manuelle de l’Inbox (exemptée par décision), l’envoi d’un MODÈLE '
-      + 'depuis l’Inbox (un geste d’opérateur, mais pas une réponse : il ROUVRE une conversation), et la '
-      + 'réponse d’un agent tiers par MCP (une machine, mais qui agit pour un opérateur). Les deux derniers '
-      + 'sont posés à Julien plutôt que tranchés ici.',
+    verdict: 'bloque',
+    pourquoi: 'TROIS ENVOIS DE NATURES DIFFÉRENTES DANS LE MÊME FICHIER, tranchés par Julien le 2026-09-13. '
+      + '(1) La réponse manuelle de l’Inbox : EXEMPTÉE, sans quoi un opérateur ne pourrait même plus accuser '
+      + 'réception d’un opt-out. (2) L’envoi d’un MODÈLE depuis l’Inbox : un modèle n’est pas une réponse, il '
+      + 'ROUVRE une conversation fermée, donc le MARKETING est refusé et le SERVICE passe, sur la catégorie '
+      + 'lue chez Meta et jamais dans le corps de la requête. (3) La réponse d’un agent tiers par MCP : '
+      + 'BLOQUÉE, c’est une machine. La garde vit dans `src/inbox/repondre.ts`, visant la seule origine '
+      + '`mcp` : c’est l’asymétrie de câblage qui fait l’exemption de l’opérateur.',
   },
 };
 

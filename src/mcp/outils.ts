@@ -290,6 +290,17 @@ export const OUTILS: OutilMcp[] = [
       if ('refus' in res) {
         if (res.refus.motif === 'conversation_inconnue') throw new RefusOutil('conversation inconnue dans cet espace');
         if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');
+        /**
+         * 🔴 UNE MACHINE NE PARLE PAS À QUELQU'UN QUI A DIT STOP (décision de Julien du 2026-09-13). Le
+         * message le dit à l'agent ET lui donne l'issue : un opérateur, lui, peut encore répondre. Sans
+         * cette phrase, l'agent conclurait à une panne et réessaierait.
+         */
+        if (res.refus.motif === 'contact_desabonne') {
+          throw new RefusOutil(
+            'ce contact a demandé à ne plus recevoir de messages (opt-out) : aucun envoi automatique ne lui '
+            + 'est adressé. Un opérateur peut encore lui répondre à la main depuis la console.',
+          );
+        }
         throw new RefusOutil(
           'fenêtre de 24 h fermée : le contact n’a pas écrit récemment, WhatsApp refuse le message libre. '
           + 'Il faut un template approuvé, envoyé depuis la console.',

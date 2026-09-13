@@ -46,6 +46,13 @@ export interface DepsRepondre {
     redactionOrigine?: string | null,
   ): Promise<void>;
   takeControl?(tenantId: string, waId: string): Promise<void>;
+  /**
+   * Ce contact a-t-il demandé à ne plus être contacté ?
+   *
+   * ⚠️ LU SEULEMENT POUR UNE ORIGINE MACHINE, donc la réponse d'un opérateur ne paie aucune requête. Absente
+   * = aucun blocage (câblages de test) ; le câblage réel la fournit, et un test le garde.
+   */
+  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
 }
 
 /**
@@ -56,7 +63,8 @@ export interface DepsRepondre {
 export type RefusReponse =
   | { motif: 'conversation_inconnue' }
   | { motif: 'fenetre_fermee' }
-  | { motif: 'aucun_numero' };
+  | { motif: 'aucun_numero' }
+  | { motif: 'contact_desabonne' };
 
 export type ResultatReponse = { messageId: string } | { refus: RefusReponse };
 
@@ -90,6 +98,23 @@ export async function repondreDansLaFenetre(
   const ctx = await deps.getConversationContext(conversationId, tenantId);
   if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
   if (!ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
+
+  /**
+   * 🔴 UNE MACHINE NE PARLE PAS À QUELQU'UN QUI A DIT STOP, UN OPÉRATEUR SI (décision de Julien du
+   * 2026-09-13). C'est la SEULE divergence voulue entre les deux appelants de cette fonction, et elle est
+   * écrite ici plutôt que chez l'un d'eux : la recopier côté MCP aurait rendu possible qu'elle dérive, et
+   * ce fichier existe précisément pour que les deux chemins ne divergent jamais par accident.
+   *
+   * La raison de l'exception humaine doit survivre à ce commentaire : sans elle, un opérateur ne pourrait
+   * même plus accuser réception d'un opt-out, ni répondre à une réclamation posée juste après. La machine
+   * se tait ; la personne peut encore répondre à la personne.
+   *
+   * ⚠️ LA REQUÊTE N'EST PAYÉE QUE PAR L'ORIGINE MACHINE : le chemin de la console, qui est le plus
+   * fréquent de loin, ne lit rien de plus qu'avant.
+   */
+  if (origine === 'mcp' && deps.estDesabonne && await deps.estDesabonne(tenantId, ctx.waId)) {
+    return { refus: { motif: 'contact_desabonne' } };
+  }
 
   const phoneNumberId = await deps.getTenantPhoneNumberId(tenantId);
   if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };

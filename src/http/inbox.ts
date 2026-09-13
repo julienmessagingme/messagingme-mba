@@ -235,6 +235,24 @@ export interface InboxRouteDeps {
   /** Envoie un template (autorisé hors fenêtre). `tenantId` -> token Meta PAR TENANT. Retourne le message_id. */
   sendTemplateMessage(tenantId: string, phoneNumberId: string, to: string, tpl: OutboundTemplate): Promise<string>;
   /**
+   * Ce contact a-t-il demandé à ne plus être contacté ? Absente = aucun blocage (câblages de test).
+   *
+   * ⚠️ Elle ne sert PAS à la réponse texte de cette route, qui reste exemptée : seul l'envoi d'un MODÈLE la
+   * consulte, parce qu'un modèle ROUVRE une conversation au lieu de répondre dans une conversation ouverte.
+   */
+  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * La catégorie RÉELLE d'un modèle, telle que Meta la connaît. `null` = indéterminable.
+   *
+   * 🔴 ELLE NE VIENT PAS DU CORPS DE LA REQUÊTE, et c'est tout l'intérêt. `templateCategory` y est bien
+   * présent, mais il est fourni par le NAVIGATEUR et ne sert qu'aux statistiques : s'en servir comme d'une
+   * garde laisserait n'importe qui se déclarer « utility » pour écrire à un contact désabonné. Même règle
+   * que le rôle, qui vient du jeton et jamais du corps.
+   *
+   * ⚠️ N'EST APPELÉE QUE SUR UN CONTACT DÉSABONNÉ, donc le cas ordinaire ne paie aucune lecture chez Meta.
+   */
+  categorieDuModele?(tenantId: string, name: string, language: string): Promise<'marketing' | 'utility' | null>;
+  /**
    * Template CAROUSEL : relit ses cartes chez Meta et prépare leurs visuels pour l'envoi (re-téléversement).
    * `null` = ce template n'est pas un carousel (envoi inchangé). `{ refus }` = il en est un mais n'est pas
    * envoyable, et la raison est destinée à l'opérateur.
@@ -814,6 +832,15 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if ('refus' in res) {
       if (res.refus.motif === 'conversation_inconnue') return reply.code(404).send({ error: 'conversation inconnue' });
       if (res.refus.motif === 'aucun_numero') return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
+      /**
+       * ⚠️ INATTEIGNABLE PAR CONSTRUCTION depuis cette route (le refus d'opt-out ne vise que l'origine
+       * machine), et écrit quand même : ce qui suit est un REPLI qui suppose « fenêtre fermée ». Sans
+       * branche explicite, tout motif futur sortirait sous ce message-là, c'est-à-dire une raison fausse
+       * affichée à un opérateur qui chercherait un template approuvé pour rien.
+       */
+      if (res.refus.motif === 'contact_desabonne') {
+        return reply.code(409).send({ error: 'ce contact a demandé à ne plus recevoir de messages', code: 'contact_desabonne' });
+      }
       // Hors fenêtre 24 h : Meta refuse le texte libre. On bloque et on dit les DEUX chemins qui restent.
       // Le message ne parlait que du template, alors que le même écran propose le RCS juste en dessous : un
       // opérateur croyait devoir faire approuver un template alors qu'il avait un chemin immédiat.
@@ -932,6 +959,34 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (refusTpl) return reply.code(403).send({ error: refusTpl, code: 'assigned_to_other' });
     const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
+
+    /**
+     * 🔴 UN CONTACT DÉSABONNÉ NE REÇOIT PLUS DE MODÈLE MARKETING, MÊME ENVOYÉ À LA MAIN (décision de Julien
+     * du 2026-09-13). Un modèle n'est pas une réponse : il ROUVRE une conversation fermée, c'est-à-dire
+     * exactement le geste dont la personne a demandé qu'il cesse. Le SERVICE passe (livraison, rendez-vous,
+     * compte), parce qu'il répond à un engagement pris et non à une sollicitation.
+     *
+     * 🔴 LA CATÉGORIE EST LUE CHEZ META, PAS DANS LA REQUÊTE, et un modèle dont on n'a PAS pu lire la
+     * catégorie est REFUSÉ. Échouer fermé est la seule position tenable ici : la lire dans le corps
+     * laisserait se déclarer « utility » pour passer, et l'accepter en cas de doute reviendrait au même
+     * résultat par une autre porte.
+     *
+     * ⚠️ RIEN DE TOUT CECI N'EST PAYÉ PAR LE CAS ORDINAIRE : la lecture chez Meta n'a lieu que si le
+     * contact est effectivement désabonné, ce qui est rare.
+     */
+    if (deps.estDesabonne && await deps.estDesabonne(tenant, ctx.waId)) {
+      const categorie = deps.categorieDuModele
+        ? await deps.categorieDuModele(tenant, b.templateName, b.language).catch(() => null)
+        : null;
+      if (categorie !== 'utility') {
+        return reply.code(409).send({
+          error: categorie === null
+            ? 'ce contact s’est désabonné, et la catégorie de ce modèle n’a pas pu être vérifiée : l’envoi est refusé par prudence. Vous pouvez encore lui répondre à la main si la conversation est ouverte.'
+            : 'ce contact s’est désabonné : seuls les modèles de catégorie « Service » peuvent encore lui être envoyés. Vous pouvez lui répondre à la main si la conversation est ouverte.',
+          code: 'contact_desabonne',
+        });
+      }
+    }
 
     // Carousel : ses cartes ne sont pas dans la requête, elles se relisent chez Meta, et leurs visuels doivent
     // être re-téléversés. Un refus (carte sans visuel exploitable, variable de carte) sort en 422 AVANT
