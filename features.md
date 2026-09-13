@@ -862,6 +862,36 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
+- ✅ **LIRE LES MESSAGES REÇUS DANS SA LANGUE** (2026-09-13) : un interrupteur « Traduire les messages
+  reçus », dans l'en-tête de la conversation. Allumé, les messages entrants du fil s'affichent dans la
+  langue de votre console (celle du menu compte, français ou anglais), quelle que soit celle du client.
+  - le réglage vit **dans votre navigateur** : deux collègues peuvent lire le même fil, l'un en
+    français, l'autre en anglais, sans se marcher dessus ;
+  - **l'original n'est jamais remplacé, il est gardé à côté.** C'est ce qui permet de revenir dessus,
+    et c'est ce qui fait foi ;
+  - une traduction qui **échoue** montre le texte d'origine avec une marque qui le dit ; un message
+    ancien que l'on n'a **pas tenté** de traduire montre son original sans aucune marque. Les deux ne
+    veulent pas dire la même chose, et l'écran ne les confond pas ;
+  - **au plus 40 messages** sont traduits par ouverture, les plus récents d'abord, et une traduction
+    déjà faite n'est jamais repayée.
+- ✅ **Traduire ce que vous vous apprêtez à envoyer** (2026-09-13) : un bouton qui **nomme sa cible**
+  (« Traduire en espagnol »), jamais « Traduire » tout court. Il **remplace le texte dans votre zone de
+  saisie et n'envoie rien** : vous relisez avant de cliquer sur Envoyer. La langue du contact est
+  **apprise** de ce qu'il écrit, jamais demandée ; tant qu'on ne sait rien, le bouton propose l'autre
+  langue de la console et ne prétend pas savoir.
+  ⚠️ Le bouton est **absent sur un envoi de modèle** : le texte approuvé par Meta EST le texte, le
+  traduire le ferait refuser.
+- ✅ **Un vocal transcrit revient dans votre langue** (2026-09-13) : si le réglage est allumé, appuyer
+  sur « Transcrire » sur un message vocal donne en un seul geste ce qui a été dit ET sa traduction,
+  même si le vocal était en espagnol. C'est la **transcription** qui est traduite, jamais le libellé
+  `[audio]`.
+
+  🔴 **QUI PAIE, ET C'EST DIFFÉRENT DE LA TRANSCRIPTION.** La traduction est facturée sur le **crédit
+  prépayé de l'espace**, là où la transcription et le bot d'aide sont à notre charge. Un espace sans
+  crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue les deux causes
+  possibles : pas de crédit sur l'espace (un administrateur peut le recharger) ou traduction pas encore
+  activée sur le serveur (rien à faire côté client).
+
 - ✅ **RANGER LA CONVERSATION OUVERTE** (2026-09-09) : un menu « Ranger dans… » en haut de la conversation,
   à côté de l'affectation. Il propose, selon l'état :
   - **À traiter** : vous reprenez le fil, la conversation entre dans ce dossier. 🔴 **Ce geste n'existait
