@@ -14,6 +14,7 @@ import { varCountOf } from '@/lib/fields';
 import { repeterAvecGigue } from '@/lib/poll';
 import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
 import { estAnnulation } from '@/lib/http';
+import { langueSortanteParDefaut, nomDeLangue } from '@/lib/langue-nom';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import { InboxDossiers, libelleDossier, type DossierInbox } from '@/components/InboxDossiers';
@@ -41,6 +42,7 @@ import {
   transcrireMessage,
   effacerConversation,
   replyConversation,
+  traduireSortant,
   listTemplates,
   sendTemplateToConversation,
   resolveTemplateParamsForConversation,
@@ -938,6 +940,19 @@ function Thread({ session, conversation, dossier, onSent }: {
     && session.role !== 'manager';
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * LA TRADUCTION D'UN SORTANT (migration 0137), et ses deux états.
+   *
+   * `langueContact` est la langue APPRISE du contact, `null` tant qu'on n'a rien appris : le bouton
+   * nomme alors la langue par défaut, donc il ne ment jamais sur sa cible.
+   *
+   * 🔴 `redactionOrigine` GARDE CE QUE L'OPÉRATEUR AVAIT ÉCRIT, et il part avec l'envoi : `body`
+   * portera ce qui est PARTI (le traduit, c'est ce que le client recevra), cette colonne l'original.
+   * Ne garder qu'un des deux est faux dans les deux sens.
+   */
+  const [langueContact, setLangueContact] = useState<string | null>(null);
+  const [traduction, setTraduction] = useState<{ origine: string; traduit: string } | null>(null);
+  const [traduisant, setTraduisant] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showScenario, setShowScenario] = useState(false);
   const [showRcs, setShowRcs] = useState(false);
@@ -1025,6 +1040,9 @@ function Thread({ session, conversation, dossier, onSent }: {
       // la garde anti-saut de scroll d'avant, obtenue ici gratuitement par le delta.
       setWindowOpen(res.windowOpen);
       setControlOwner(res.controlOwner);
+      // La langue APPRISE du contact. Elle arrive a CHAQUE tour, y compris sur un delta vide : c'est
+      // elle qui nomme la cible du bouton de traduction, et elle peut changer en cours de conversation.
+      setLangueContact(res.langueContact ?? null);
     } catch (err) {
       // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
       // un bandeau rouge à chaque clic serait absurde.
@@ -1079,13 +1097,58 @@ function Thread({ session, conversation, dossier, onSent }: {
     bottomRef.current?.scrollIntoView(premierChargement ? undefined : { behavior: 'smooth' });
   }, [messages]);
 
+  /**
+   * La cible d'une traduction sortante : ce qu'on a APPRIS du contact, sinon la langue par défaut.
+   *
+   * ⚠️ Le bouton la NOMME, et c'est toute la garde : la langue apprise peut être fausse une fois (un
+   * contact francophone qui répond « ok » ou par un emoji), et l'opérateur le voit AVANT d'envoyer.
+   */
+  const cibleSortante = langueContact ?? langueSortanteParDefaut(locale);
+
+  /**
+   * TRADUIRE ce qui est dans la zone de saisie. N'ENVOIE RIEN.
+   *
+   * 🔴 C'est une garde, pas une commodité : une traduction ratée en entrée se rattrape sur l'original
+   * affiché à côté ; une traduction ratée en SORTIE est partie chez un client, et aucun message
+   * WhatsApp livré ne se rappelle. Le texte traduit REMPLACE donc le brouillon, et l'opérateur relit.
+   */
+  async function traduire() {
+    const origine = text.trim();
+    if (origine === '') return;
+    setTraduisant(true);
+    setError(null);
+    try {
+      const r = await traduireSortant(session.tenantId, conversation.id, origine, cibleSortante);
+      setText(r.texte);
+      setTraduction({ origine, traduit: r.texte });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Traduction impossible', 'Translation failed'));
+    } finally {
+      setTraduisant(false);
+    }
+  }
+
+  /**
+   * Le brouillon a changé : ce qu'on avait traduit n'est plus ce qui va partir.
+   *
+   * 🔴 SANS CETTE REMISE À ZÉRO, ON MENTIRAIT DANS LA TRACE. L'opérateur traduit, puis retouche le
+   * texte espagnol à la main : `redaction_origine` porterait encore le français d'avant, qui n'a plus
+   * rien à voir avec ce qui part. Une trace fausse est pire que pas de trace.
+   */
+  function ecrire(valeur: string) {
+    setText(valeur);
+    if (traduction && valeur !== traduction.traduit) setTraduction(null);
+  }
+
   async function send() {
     if (text.trim() === '') return;
     setBusy(true);
     setError(null);
     try {
-      await replyConversation(session.tenantId, conversation.id, text.trim());
+      // `text` est ce qui PART (traduit compris) ; `origine` ce que l'opérateur avait écrit.
+      await replyConversation(session.tenantId, conversation.id, text.trim(), traduction?.origine ?? null);
       setText('');
+      setTraduction(null);
       await load();
       onSent();
     } catch (err) {
@@ -1316,15 +1379,41 @@ function Thread({ session, conversation, dossier, onSent }: {
           )}
           <input
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => ecrire(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void send(); }}
             placeholder={t('Répondre (fenêtre de service 24 h)...', 'Reply (24h service window)...')}
-            className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            data-testid="zone-saisie"
+            className="min-w-0 flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
+          {/*
+            🔴 LE BOUTON NOMME SA CIBLE, jamais « Traduire » tout court. L'opérateur voit où part sa
+            phrase AVANT de valider, ce qui est la seule protection qui reste quand la langue apprise du
+            contact est fausse (un « ok » ou un emoji peuvent la fausser une fois).
+
+            🔴 ET IL N'ENVOIE PAS : il remplace le brouillon par sa traduction, que l'opérateur relit.
+            Une traduction ratée en entrée se rattrape sur l'original affiché à côté ; une traduction
+            ratée en sortie est partie chez un client, et aucun message WhatsApp livré ne se rappelle.
+
+            ⚠️ Il n'existe QUE dans ce bloc, celui de la fenêtre de 24 h ouverte. Un TEMPLATE ne se
+            traduit pas : son texte est approuvé par Meta dans une langue donnée, et le texte approuvé
+            EST le texte. Afficher « Traduire » sur un template mentirait.
+          */}
+          <button
+            onClick={() => { void traduire(); }}
+            disabled={traduisant || busy || text.trim() === ''}
+            data-testid="bouton-traduire"
+            title={t('Traduire avant d’envoyer, sans envoyer', 'Translate before sending, without sending')}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-600 transition hover:bg-ink-50 disabled:opacity-50"
+          >
+            {traduisant
+              ? t('...', '...')
+              : t(`Traduire en ${nomDeLangue(cibleSortante, locale)}`, `Translate to ${nomDeLangue(cibleSortante, locale)}`)}
+          </button>
           <button
             onClick={send}
             disabled={busy || text.trim() === ''}
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+            data-testid="bouton-envoyer"
+            className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
           >
             {busy ? '...' : t('Envoyer', 'Send')}
           </button>

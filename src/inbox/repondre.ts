@@ -35,6 +35,15 @@ export interface DepsRepondre {
     templateName?: string | null,
     senderUserId?: string | null,
     channel?: 'whatsapp' | 'rcs',
+    /**
+     * Ce que l'opérateur avait ÉCRIT avant de faire traduire (migration 0137).
+     *
+     * ⚠️ EN DERNIÈRE POSITION ET OPTIONNELLE, donc un câblage qui l'oublie compile toujours : c'est
+     * le piège connu de ce dépôt (une flèche à moins de paramètres est assignable à un contrat qui
+     * en déclare plus, et le reste est avalé en silence). Les deux câblages de `src/index.ts` la
+     * transmettent, et l'intégration le vérifie sur la vraie base plutôt que sur un faux.
+     */
+    redactionOrigine?: string | null,
   ): Promise<void>;
   takeControl?(tenantId: string, waId: string): Promise<void>;
 }
@@ -68,6 +77,15 @@ export async function repondreDansLaFenetre(
   texte: string,
   auteur: string | null,
   origine: OrigineMessage,
+  /**
+   * 🔴 `texte` EST CE QUI PART, y compris quand il a été traduit : c'est ce que le client recevra, et
+   * notre trace doit y correspondre le jour d'un litige. `redactionOrigine` garde ce que l'opérateur
+   * avait écrit avant de faire traduire, sans quoi il ne peut plus se relire.
+   *
+   * `null` (le cas de tous les appelants d'avant ce lot, et de tout envoi non traduit) : rien de plus
+   * n'est enregistré, `body` est à la fois ce qui est parti et ce qui a été écrit.
+   */
+  redactionOrigine: string | null = null,
 ): Promise<ResultatReponse> {
   const ctx = await deps.getConversationContext(conversationId, tenantId);
   if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
@@ -91,6 +109,6 @@ export async function repondreDansLaFenetre(
   // `tests/automation-chaine-reprend-la-main.test.ts`. Une automation ordinaire par mot-clé, elle, reste bien
   // arrêtée par la prise de main.
   await deps.takeControl?.(tenantId, ctx.waId).catch(() => {});
-  await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur);
+  await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };
 }

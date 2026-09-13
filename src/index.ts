@@ -678,7 +678,11 @@ async function main(): Promise<void> {
         traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
         traductionDisponible: (tenant: string) => traducteur.disponible(tenant),
       } : {}),
-      recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal),
+      // ⚠️ `redaction` EST TRANSMISE, et l'oublier ne casserait RIEN de visible : une fleche a neuf
+      // parametres reste assignable a un contrat qui en declare dix, et la redaction d'origine
+      // partirait simplement a la poubelle. C'est exactement le defaut que ce cablage portait deja sur
+      // le curseur du delta, juste au-dessus.
+      recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
       /**
        * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les
        * alimente. MÊME résolution que l'envoi réel (`resolveHintParams` + les indices posés à la création du
@@ -2133,7 +2137,7 @@ async function main(): Promise<void> {
           const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1)
           return (await client.sendText(to, text)).messageId;
         },
-        recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal),
+        recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
         // ⚠️ `app_human` pour un agent TIERS, et c'est un choix : `ControlOwner` n'a que trois valeurs, et ce
         // qui compte ici est que le scénario cesse d'avancer TOUT SEUL et que MBA cesse de répondre, ce que
         // `app_human` produit exactement. La distinction « qui a parlé » est portée là où elle sert et où

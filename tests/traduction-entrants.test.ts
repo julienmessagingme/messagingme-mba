@@ -6,7 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
 import type { ConversationMessage } from '../src/inbox/store.pg';
 import { traduireFil, candidats, texteATraduire, type DepsFil, type MessageATraduire } from '../src/traduction/fil';
-import { TRADUCTIONS_MAX_PAR_REQUETE, type LangueConsole, type Traducteur, type Traduction } from '../src/traduction/traduire';
+import { TRADUCTIONS_MAX_PAR_REQUETE, type Traducteur, type Traduction } from '../src/traduction/traduire';
 
 /**
  * LES ENTRANTS, TRADUITS A L'OUVERTURE D'UNE CONVERSATION.
@@ -27,7 +27,7 @@ function faux(opts: {
   reponses?: (textes: Array<{ id: string; texte: string }>) => Array<[string, Traduction]>;
   disponible?: boolean;
 } = {}) {
-  const appels: Array<{ tenantId: string; textes: Array<{ id: string; texte: string }>; cible: LangueConsole }> = [];
+  const appels: Array<{ tenantId: string; textes: Array<{ id: string; texte: string }>; cible: string }> = [];
   const traducteur: Traducteur = {
     disponible: async () => opts.disponible ?? true,
     traduireLot: async (tenantId, textes, cible) => {

@@ -91,6 +91,29 @@ export interface InboxMessage {
   /** La transcription du vocal, quand un operateur l'a demandee. A afficher MARQUEE comme telle : c'est la
    *  lecture d'un modele, pas ce que le client a ecrit. */
   transcription?: string | null;
+  /** La langue dans laquelle le vocal a ete DIT (migration 0137). Sert a ne pas le traduire pour rien. */
+  transcriptionLangue?: string | null;
+  /** NOTRE lecture d'un ENTRANT, dans la langue du lecteur (migration 0137). A COTE de `body`, jamais a sa place. */
+  traduction?: string | null;
+  traductionLangue?: string | null;
+  /**
+   * Ce que l'OPERATEUR a ecrit avant de faire traduire, sur un SORTANT (migration 0137).
+   *
+   * 🔴 LE SENS S'INVERSE ICI : sur un sortant, `body` porte ce qui est PARTI (le texte traduit, celui
+   * que le client a recu), et ce champ porte l'original. L'ecran affiche l'original, sinon l'operateur
+   * est aveugle a sa propre conversation.
+   */
+  redactionOrigine?: string | null;
+  /**
+   * LES TROIS ETATS, rendus seulement quand le fil a ete demande avec `traduire`.
+   *
+   * `affiche` est le texte de la bulle, quel que soit l'etat. `traduit` dit que c'est une traduction.
+   * `traductionEchouee` dit qu'elle a ete TENTEE et n'est pas revenue : au-dela du plafond, rien n'a
+   * ete tente et les deux drapeaux sont faux. Les confondre ferait annoncer une panne qui n'existe pas.
+   */
+  affiche?: string;
+  traduit?: boolean;
+  traductionEchouee?: boolean;
 }
 /**
  * Une page de conversations, de la plus récente à la plus ancienne.
@@ -193,6 +216,15 @@ export interface ConversationThread {
   windowOpen: boolean;
   lastInboundAt: string | null;
   controlOwner: ControlOwner;
+  /**
+   * La langue APPRISE du contact (migration 0137), `null` tant qu'on n'a rien appris.
+   *
+   * 🔴 `null` N'EST PAS « francais » : c'est elle que le bouton de traduction sortante lit pour NOMMER
+   * sa cible, et supposer une langue ferait promettre « Traduire en espagnol » a un anglophone.
+   */
+  langueContact?: string | null;
+  /** `true` = cet espace n'a pas de credit de modele. Rendu seulement si `traduire` a ete demande. */
+  traductionIndisponible?: boolean;
   /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
   messages: InboxMessage[];
 }
@@ -212,10 +244,37 @@ export interface ConversationThread {
 export function getConversationMessages(
   tenantId: string,
   conversationId: string,
-  opts?: { apres?: { at: string; id: string }; signal?: AbortSignal },
+  opts?: { apres?: { at: string; id: string }; traduire?: 'fr' | 'en'; signal?: AbortSignal },
 ): Promise<ConversationThread> {
-  const q = opts?.apres ? `?afterAt=${encodeURIComponent(opts.apres.at)}&afterId=${encodeURIComponent(opts.apres.id)}` : '';
-  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages${q}`, opts?.signal ? { signal: opts.signal } : {});
+  const params = new URLSearchParams();
+  if (opts?.apres) {
+    params.set('afterAt', opts.apres.at);
+    params.set('afterId', opts.apres.id);
+  }
+  // ⚠️ La langue de LECTURE vient du navigateur : le serveur ne la connait pas, et il ne peut pas la
+  // deviner a l'arrivee du message (deux collegues lisent le meme fil dans deux langues).
+  if (opts?.traduire) params.set('traduire', opts.traduire);
+  const q = params.toString();
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages${q ? `?${q}` : ''}`, opts?.signal ? { signal: opts.signal } : {});
+}
+
+/**
+ * TRADUIT ce que l'operateur s'apprete a envoyer. Il n'envoie RIEN.
+ *
+ * 🔴 C'est une garde, pas une commodite : une traduction ratee en entree se rattrape sur l'original
+ * affiche a cote, une traduction ratee en SORTIE est partie chez un client, et aucun message WhatsApp
+ * livre ne se rappelle. L'operateur voit le texte traduit dans sa zone de saisie avant de valider.
+ */
+export function traduireSortant(
+  tenantId: string,
+  conversationId: string,
+  texte: string,
+  cible: string,
+): Promise<{ texte: string; langueSource: string | null; cible: string }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/traduire`, {
+    method: 'POST',
+    body: JSON.stringify({ texte, cible }),
+  });
 }
 /** L'opérateur rend la main : le scénario (ou l'agent de Meta) reprend la conversation. */
 /**
@@ -252,8 +311,23 @@ export function signalerConversation(tenantId: string, conversationId: string, s
 }
 /** Surcharge de reprise de CE fil (C.4) : `resume` (repart au scénario), `inbox` (reste à l'humain), ou
  *  null (suit le défaut du tenant). Ne bascule pas le contrôle : réglage lu par le sweep de handback. */
-export function replyConversation(tenantId: string, conversationId: string, text: string): Promise<{ messageId: string }> {
-  return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+export function replyConversation(
+  tenantId: string,
+  conversationId: string,
+  text: string,
+  /**
+   * Ce que l'operateur avait ECRIT avant de faire traduire (migration 0137).
+   *
+   * 🔴 `text` EST CE QUI PART, traduit compris : c'est ce que le client recevra, et notre trace doit y
+   * correspondre le jour d'un litige. Ce champ garde l'original. Ne garder qu'un des deux est faux
+   * dans les deux sens.
+   */
+  redactionOrigine?: string | null,
+): Promise<{ messageId: string }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify(redactionOrigine ? { text, redactionOrigine } : { text }),
+  });
 }
 export interface SendTemplateInput {
   templateName: string;

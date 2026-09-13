@@ -1180,6 +1180,17 @@ export class PgInboxStore implements InboxStore {
     templateName: string | null = null,
     senderUserId: string | null = null,
     channel: 'whatsapp' | 'rcs' = 'whatsapp',
+    /**
+     * Ce que l'opérateur a ÉCRIT avant de faire traduire (migration 0137).
+     *
+     * 🔴 `body` PORTE CE QUI EST PARTI, y compris traduit : c'est ce que le client a reçu, et notre
+     * trace doit y correspondre le jour d'un litige. Cette colonne garde l'original, sans quoi
+     * l'opérateur ne peut plus se relire. Ne garder qu'un des deux est faux dans les deux sens.
+     *
+     * ⚠️ `last_preview` N'EST PAS TOUCHÉ : l'aperçu de la liste montre ce qui est parti, comme avant.
+     * Y mettre la rédaction d'origine ferait diverger la liste du fil pour le même message.
+     */
+    redactionOrigine: string | null = null,
   ): Promise<void> {
     await this.pool.query(
       // `last_direction = 'out'` : c'est LE chemin de la réponse d'un opérateur, de l'agent IA et du serveur
@@ -1201,9 +1212,9 @@ export class PgInboxStore implements InboxStore {
       [conversationId, body, origine === 'humain'],
     );
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin)
-       values ($1, 'out', $4, $2, $3, $5, $6, $7, $8, $9)`,
-      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine],
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin, redaction_origine)
+       values ($1, 'out', $4, $2, $3, $5, $6, $7, $8, $9, $10)`,
+      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine, redactionOrigine],
     );
   }
 }

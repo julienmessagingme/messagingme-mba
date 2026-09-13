@@ -11,7 +11,7 @@ import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
-import { estLangueConsole, TEXTE_MAX_CARACTERES, type LangueConsole, type Traduction } from '../traduction/traduire';
+import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
 
 /**
@@ -134,7 +134,7 @@ export interface InboxRouteDeps {
    * rattrape sur l'original affiche a cote ; une traduction ratee en sortie est partie chez un
    * client, et aucun message WhatsApp livre ne se rappelle.
    */
-  traduireSortant?(tenantId: string, texte: string, cible: LangueConsole): Promise<Traduction | null>;
+  traduireSortant?(tenantId: string, texte: string, cible: string): Promise<Traduction | null>;
   /** Cet espace peut-il traduire ? `false` = pas de cle de modele, donc pas de credit. */
   traductionDisponible?(tenantId: string): Promise<boolean>;
   /** Pose/retire la surcharge de reprise d'UN fil (C.4). null = suit le défaut du tenant. Optionnel (deps de test minimales). */
@@ -187,6 +187,11 @@ export interface InboxRouteDeps {
     senderUserId?: string | null,
     /** Canal de la bulle. Absent -> WhatsApp. */
     channel?: 'whatsapp' | 'rcs',
+    /**
+     * Ce que l'opérateur avait ÉCRIT avant de faire traduire (migration 0137). `body`, lui, porte ce
+     * qui est PARTI. Absent -> les deux sont la même chose, ce qui est le cas de tout envoi non traduit.
+     */
+    redactionOrigine?: string | null,
   ): Promise<void>;
   /** Numéro du tenant depuis lequel répondre. */
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
@@ -506,6 +511,52 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   });
 
   /**
+   * TRADUIRE CE QUE L'OPÉRATEUR S'APPRÊTE À ENVOYER (2026-09-12).
+   *
+   * 🔴 ELLE NE FAIT QUE TRADUIRE, ELLE N'ENVOIE RIEN, et c'est la garde centrale de ce lot. Une
+   * traduction ratée en ENTRÉE se rattrape sur l'original affiché à côté ; une traduction ratée en
+   * SORTIE est partie chez un client, et aucun message WhatsApp livré ne se rappelle. L'opérateur
+   * voit donc le texte traduit dans sa zone de saisie AVANT de cliquer sur Envoyer.
+   *
+   * 🔴 LA CIBLE EST CELLE DU CONTACT, PAS UNE DE NOS DEUX LANGUES : c'est la moitié dissymétrique de
+   * la règle. Un entrant se traduit vers la langue du LECTEUR (fr ou en), un sortant vers celle du
+   * CONTACT, qui écrit ce qu'il veut. L'écran la NOMME dans le libellé du bouton, donc l'opérateur
+   * sait où part sa phrase avant de valider.
+   *
+   * ⚠️ PAS de plafond de débit « coûteux » ici, contrairement à la transcription, et la différence
+   * est le PAYEUR. La transcription est sur NOTRE clé, donc un script pourrait nous facturer trois
+   * cents vocaux la minute ; la traduction est sur le crédit PRÉPAYÉ du client (migration 0124), qui
+   * est sa propre borne. Et ce plafond-là est par ESPACE : à 10 par minute, une équipe de cinq
+   * opérateurs qui traduisent chacun deux réponses le saturerait, sur un geste délibéré.
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/traduire', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const b = (req.body ?? {}) as { texte?: unknown; cible?: unknown };
+    if (!nonEmpty(b.texte)) return reply.code(400).send({ error: 'texte requis' });
+    if (b.texte.length > TEXTE_MAX_CARACTERES) {
+      // 4xx et jamais 5xx, et surtout jamais une troncature : une traduction coupée en deux
+      // s'afficherait comme un message entier.
+      return reply.code(422).send({ error: `texte trop long pour être traduit (maximum ${TEXTE_MAX_CARACTERES} caractères)` });
+    }
+    if (!estCodeLangue(b.cible)) return reply.code(400).send({ error: 'cible requise (code de langue)' });
+    // La conversation est relue DANS l'espace : elle porte l'isolation, et traduire pour un fil qu'on
+    // ne possède pas n'a aucun sens même si rien n'en sort.
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!deps.traduireSortant) return reply.code(503).send({ error: 'traduction indisponible sur cette instance' });
+    if (deps.traductionDisponible && !(await deps.traductionDisponible(tenant))) {
+      // ⚠️ 422 et NON 503 : ce n'est pas une panne de l'instance, c'est un espace sans crédit de
+      // modèle. Le code est lu par l'écran, qui en fait une phrase actionnable.
+      return reply.code(422).send({ error: 'Cet espace n’a pas de crédit de modèle : la traduction est indisponible.', code: 'traduction_indisponible' });
+    }
+    const r = await deps.traduireSortant(tenant, b.texte.trim(), b.cible.trim().toLowerCase());
+    if (r === null) return reply.code(422).send({ error: 'la traduction a échoué, réessayez dans un instant' });
+    return reply.code(200).send({ texte: r.texte, langueSource: r.langueSource, cible: b.cible.trim().toLowerCase() });
+  });
+
+  /**
    * Déclarée AVANT `/conversations/:conversationId` : `todo-count` n'est pas un identifiant.
    */
   app.get('/tenants/:tenantId/conversations/todo-count', guard, async (req, reply) => {
@@ -682,8 +733,27 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
-    const text = (req.body as { text?: unknown } | null)?.text;
+    const corps = (req.body ?? {}) as { text?: unknown; redactionOrigine?: unknown };
+    const text = corps.text;
     if (!nonEmpty(text)) return reply.code(400).send({ error: 'text requis' });
+    /**
+     * CE QUE L'OPÉRATEUR A ÉCRIT AVANT DE FAIRE TRADUIRE (migration 0137).
+     *
+     * 🔴 LE SENS S'INVERSE ICI, et c'est le piège du lot : `text` est ce qui PART, donc le texte
+     * traduit, parce que c'est ce que le client recevra et que notre trace doit y correspondre le
+     * jour d'un litige. Ce champ-ci garde l'original, sans quoi l'opérateur ne peut plus se relire.
+     * Ne garder qu'un des deux est faux dans les deux sens.
+     *
+     * ⚠️ REFUSÉ EN 400 plutôt qu'ignoré quand il est mal formé, et l'ordre compte : rien n'est encore
+     * parti, donc refuser ne coûte qu'un nouvel essai. L'ignorer ferait partir le message en perdant
+     * sa trace, c'est-à-dire le défaut exact que cette colonne existe pour empêcher.
+     */
+    const brutOrigine = corps.redactionOrigine;
+    if (brutOrigine !== undefined && brutOrigine !== null
+      && (!nonEmpty(brutOrigine) || brutOrigine.length > TEXTE_MAX_CARACTERES)) {
+      return reply.code(400).send({ error: 'redactionOrigine invalide' });
+    }
+    const redactionOrigine = nonEmpty(brutOrigine) ? brutOrigine.trim() : null;
 
     // L'affectation est une règle de la CONSOLE (qui, parmi les opérateurs, a la charge du fil) : elle est
     // vérifiée ici et pas dans `repondreDansLaFenetre`, qui sert aussi un appelant sans opérateur.
@@ -692,7 +762,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
 
     // « humain » : cette route n'est atteignable qu'avec un JWT de console, donc c'est toujours un opérateur
     // qui écrit. L'origine est POSÉE et non déduite, cf. le commentaire de `repondreDansLaFenetre`.
-    const res = await repondreDansLaFenetre(deps, tenant, conversationId, text, req.auth?.userId ?? null, 'humain');
+    const res = await repondreDansLaFenetre(deps, tenant, conversationId, text, req.auth?.userId ?? null, 'humain', redactionOrigine);
     if ('refus' in res) {
       if (res.refus.motif === 'conversation_inconnue') return reply.code(404).send({ error: 'conversation inconnue' });
       if (res.refus.motif === 'aucun_numero') return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
