@@ -835,6 +835,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Destinataire écarté par le canal lui-même (non joignable en RCS, opt-out). Ce n'est PAS un échec :
     // rien n'est parti et rien n'a raté. Symétrique de `notStarted`, traité après le try comme lui.
     let skipped: string | null = null;
+    /**
+     * 🔴 LE SCÉNARIO D'UN ÉTAGE SERVI PAR UN CANAL N'A PAS ÉCHOUÉ, IL N'A PAS DÉMARRÉ, et la nuance décide
+     * du statut. Le message, lui, EST parti : marquer le destinataire `failed` le rendrait repris par une
+     * relance, et la personne recevrait le message RCS une SECONDE fois. Il reste donc `sent`, avec la
+     * raison enregistrée à côté (`RECIPIENT_FAILED_SQL` ne regarde que `status` et `delivery_status`, donc
+     * cette raison n'en fait pas un échec).
+     */
+    let scenarioNonDemarre: string | null = null;
     try {
       if (servi.sender) {
         // Le jeton de CE destinataire, pour que le clic sur un lien du message dise QUI a réagi. Absent
@@ -845,6 +853,33 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           res = { messageId: '' };
         } else {
           res = out;
+          /**
+           * 🔴 « MESSAGE ET SCÉNARIO » : LE MESSAGE PART, PUIS LE SCÉNARIO. Cette branche manquait, et
+           * l'identifiant du scénario était enregistré sur l'étage sans que rien ne le lise jamais (mesuré
+           * le 2026-09-13 avec le vrai moteur : message parti, `sent: 1`, zéro démarrage). L'écran
+           * affichait « envoyé », ce qui était vrai, pour une campagne à moitié faite.
+           *
+           * ⚠️ APRÈS L'ENVOI, jamais avant : la suite du scénario ne doit pas arriver avant le message
+           * qu'elle suit. Et JAMAIS sur un destinataire écarté par le canal, qui n'a rien reçu.
+           *
+           * ⚠️ SON PROPRE `try` : une panne du moteur de scénario ne doit pas passer par le `catch`
+           * d'envoi, qui marquerait `failed` un message déjà livré.
+           */
+          if (contenu.workflowId) {
+            try {
+              if (!deps.startWorkflow) {
+                scenarioNonDemarre = 'Scénario non démarré : moteur de scénario non câblé.';
+              } else {
+                const suite = await deps.startWorkflow(
+                  campaign.tenantId, contenu.workflowId, waIdOfTarget(r.toE164), r.contactId, params,
+                );
+                if (typeof suite === 'string') scenarioNonDemarre = `Scénario non démarré : ${suite}`;
+                else if (suite === false) scenarioNonDemarre = 'Scénario non démarré (scénario supprimé, ou fil repris par un opérateur / MBA).';
+              }
+            } catch (e) {
+              scenarioNonDemarre = `Scénario non démarré : ${e instanceof Error ? e.message : String(e)}`;
+            }
+          }
         }
       } else if (contenu.workflowId && campaign.startNodeId) {
         // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
@@ -941,7 +976,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // même si markResult échoue et que le job est rejoué, il ne sera pas ré-envoyé.
     const at = now();
     report.sent += 1;
-    await resoudre(r, { status: 'sent', messageId: res.messageId, sentAt: at });
+    await resoudre(r, {
+      status: 'sent',
+      messageId: res.messageId,
+      sentAt: at,
+      // Le message est livré ; si son scénario n'a pas démarré, la raison voyage AVEC le succès plutôt que
+      // de disparaître. Un destinataire `sent` porteur d'une raison n'entre dans aucun compte d'échec.
+      ...(scenarioNonDemarre !== null ? { error: scenarioNonDemarre } : {}),
+    });
     await deps.frequency.record(campaign.tenantId, r.toE164, at);
 
     // Ce contact est joignable en WhatsApp : Meta a accepté le message et rendu un wamid.
@@ -961,13 +1003,22 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       }
     }
 
-    // Journalise le template envoyé dans le fil de conversation (fil d'inbox complet + transcript d'analyse).
-    // UNIQUEMENT pour un envoi template DIRECT : la branche workflow a un messageId synthétique `wf-...`, le vrai
-    // template est loggé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise pas l'envoi.
+    // Journalise dans le fil de conversation (fil d'inbox complet + transcript d'analyse) CE QUI EST PARTI
+    // D'ICI : un envoi template direct, ou un message servi par un sender de canal. Une campagne WhatsApp de
+    // SCÉNARIO en est exclue, et pour une bonne raison : elle rend un messageId synthétique `wf-...`, le vrai
+    // template étant journalisé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise
+    // jamais l'envoi.
     // Le fil est UNIQUE par contact : un envoi RCS s'y journalise comme un template WhatsApp, avec son canal.
     // Sans ça, l'opérateur ouvre le fil d'un client et ne voit AUCUNE trace de ce qui vient de lui être
     // envoyé. Le libellé diffère parce que le RCS n'a pas de template : on journalise le message lui-même.
-    if (deps.recordOutbound && !contenu.workflowId) {
+    /**
+     * 🔴 LA CONDITION PORTE SUR « QUI A ENVOYÉ », PAS SUR « Y A-T-IL UN SCÉNARIO ». Elle disait
+     * `!contenu.workflowId`, ce qui est juste sur WhatsApp (le worker journalise au moment de l'envoi réel
+     * du modèle) et FAUX sur RCS, où le message vient de partir d'ici : l'opérateur ouvrait le fil de son
+     * client et n'y voyait AUCUNE trace de ce qui venait de lui être envoyé, du seul fait qu'un scénario
+     * était attaché à l'étage.
+     */
+    if (deps.recordOutbound && (servi.sender !== undefined || !contenu.workflowId)) {
       const waId = waIdOfTarget(r.toE164);
       const rcs = servi.sender !== undefined;
       const body = rcs
