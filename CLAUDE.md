@@ -96,7 +96,14 @@ divergent, c'est la neuve, vide, que la campagne aurait lue.
 Avant elle : **0134** (la CHAÎNE d'étages : `campaign_etages`, `campaign_envois`,
 `campaign_recipients.etage_courant`, et les cinq réglages de l'assistant sur `campaigns`), et **0133**
 (`contacts.whatsapp_joignable` : garder le verdict qu'on calculait déjà et qu'on jetait dans HubSpot).
-**Prochaine libre = 0137.**
+**Prochaine libre = 0138.**
+
+🔴 **0137 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (la traduction des conversations :
+`conversation_messages.traduction`, `.traduction_langue`, `.redaction_origine`, `.transcription_langue`,
+plus `contacts.langue_detectee` et `.langue_detectee_le`). 🔴 **BLOQUANTE, elle passe AVANT le
+déploiement** : ces colonnes ne sont pas seulement écrites, elles sont NOMMÉES dans les `select` du chemin
+chaud (`getMessages`, rafraîchi toutes les 4 secondes, et `getConversationContext`). Sans elles, `42703` et
+l'Inbox entière tombe, comme le 2026-08-17.
 
 🔴 **0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE** (`campaigns.tour_de_role_rang` passe de `smallint` à
 `integer`). Elle RETIRE un repliage, et c'est la vraie raison : le `% 32767` qui protégeait le `smallint`
