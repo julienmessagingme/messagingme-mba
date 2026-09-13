@@ -32,6 +32,15 @@ function Securite() {
       ),
     },
     {
+      cle: 'securite-ia',
+      href: '/securite/ia',
+      titre: t('IA', 'AI'),
+      texte: t(
+        'Vos agents annoncent-ils qu’ils sont des IA, et avec quelle phrase. Une politique pour tout l’espace, parce que l’obligation pèse sur votre marque.',
+        'Do your agents announce that they are AI, and with which sentence. One policy for the whole workspace, because the obligation lies with your brand.',
+      ),
+    },
+    {
       cle: 'securite-audit',
       href: '/securite/audit',
       titre: t('Audit trails', 'Audit trails'),

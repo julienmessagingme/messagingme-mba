@@ -1132,6 +1132,15 @@ async function main(): Promise<void> {
        */
       listerRequetesConnecteur: async (tenant) => (await agentRequetes.lister(tenant)).map((r) => ({ id: r.id, label: r.label })),
       setOptoutRequestId: (tenant, requestId) => settingsStore.setOptoutRequestId(tenant, requestId),
+      /**
+       * « L IA se declare comme telle », au niveau de l ESPACE (migration 0140).
+       *
+       * ⚠️ La LISTE porte la PHRASE de chaque agent, pas seulement son nom : le reglage dit QUAND on
+       * annonce, il ne dit pas CE QU ON annonce, et un ecran de conformite qui cacherait le texte
+       * promettrait une verification qu il ne permet pas de faire.
+       */
+      setMentionIaFrequence: (tenant, frequence) => settingsStore.setMentionIaFrequence(tenant, frequence),
+      listerAgentsPourConformite: (tenant) => agentStore.listerPourConformite(tenant),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
     ...(config.HUBSPOT_SERVICE_URL
@@ -1297,8 +1306,10 @@ async function main(): Promise<void> {
         ]);
         return {
           label: fiche.label,
-          // Le régime d'annonce d'IA : l'entretien pose la question, le diff doit donc pouvoir dire ce qui change.
-          mentionIaFrequence: fiche.mentionIaFrequence,
+          // Le régime d'annonce d'IA : l'entretien pose la question, le diff doit donc pouvoir dire ce qui
+          // change. ⚠️ IL VIENT DE L'ESPACE depuis 0140, plus de la fiche : la question posée à la
+          // construction règle la politique de la marque, pas celle de ce robot-là.
+          mentionIaFrequence: (await settingsStore.get(tenant)).mentionIaFrequence ?? 'session',
           // Idem pour le délai d'inactivité, depuis que l'entretien demande quand l'agent lâche un contact muet.
           inactiviteMinutes: fiche.inactiviteMinutes,
           fiche: fiche.contenu,
@@ -1351,7 +1362,7 @@ async function main(): Promise<void> {
           completer: (i) => gateway.completer(i),
           // Point de lecture PARTAGE avec le tour de production : c est ce qui garantit que le bac a sable
           // montre exactement ce que la production ferait, modele et politiques compris.
-          contexte: (tenant, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog }, tenant, agentId),
+          contexte: (tenant, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog, politiqueMentionIa: async (t) => (await settingsStore.get(t)).mentionIaFrequence }, tenant, agentId),
           // Meme taux qu en production : un essai doit annoncer ce que la conversation couterait vraiment.
           tauxEurParDollar: config.EUR_PER_USD,
           outils: {

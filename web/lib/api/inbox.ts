@@ -225,6 +225,25 @@ export function setPousseeOptOut(tenantId: string, requestId: string | null): Pr
   return request(`/tenants/${tenantId}/settings/poussee-optout`, { method: 'PATCH', body: JSON.stringify({ requestId }) });
 }
 
+/**
+ * « L'IA SE DÉCLARE COMME TELLE » : la politique de l'ESPACE (migration 0140), et ce que chaque agent dit.
+ *
+ * ⚠️ `reglee` DISTINGUE « le client a choisi » de « personne n'a rien choisi et le défaut s'applique ». Les
+ * deux donnent le même comportement, et ne veulent pas dire la même chose sur un écran de conformité.
+ */
+export type FrequenceMentionIa = 'jamais' | 'session' | 'chaque_message';
+export interface PolitiqueMentionIa {
+  frequence: FrequenceMentionIa;
+  reglee: boolean;
+  agents: Array<{ id: string; label: string; status: string; mentionIa: string }>;
+}
+export function politiqueMentionIa(tenantId: string): Promise<PolitiqueMentionIa> {
+  return request(`/tenants/${tenantId}/settings/mention-ia`);
+}
+export function setPolitiqueMentionIa(tenantId: string, frequence: FrequenceMentionIa): Promise<{ frequence: FrequenceMentionIa }> {
+  return request(`/tenants/${tenantId}/settings/mention-ia`, { method: 'PATCH', body: JSON.stringify({ frequence }) });
+}
+
 /** Contacts bloqués : la SEULE porte de sortie d'un blocage, puisqu'ils sont invisibles partout ailleurs. */
 export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
   return request(`/tenants/${tenantId}/contacts/blocked`);

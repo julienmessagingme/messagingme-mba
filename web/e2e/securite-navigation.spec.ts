@@ -16,15 +16,42 @@ const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', te
 /** Les PATCH captés par le faux serveur : c'est ce qui prouve qu'un choix est bien ENVOYÉ, pas seulement affiché. */
 type Ecriture = { chemin: string; corps: unknown };
 
-async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: string }>; branche?: string | null; ecritures?: Ecriture[] } = {}): Promise<void> {
+async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: string }>; branche?: string | null; ecritures?: Ecriture[]; mentionIa?: string | null; agentsIa?: Array<{ id: string; label: string; status: string; mentionIa: string }> } = {}): Promise<void> {
   const requetes = opts.requetes ?? [{ id: 'rq-1', label: 'Desabonner dans le CRM' }];
   let branche = opts.branche ?? null;
+  let mentionIa = opts.mentionIa === undefined ? null : opts.mentionIa;
+  const agentsIa = opts.agentsIa ?? [
+    { id: 'ag-1', label: 'Conseiller sejours', status: 'active', mentionIa: 'Vous echangez avec un assistant automatique.' },
+  ];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const chemin = new URL(route.request().url()).pathname.replace('/api/backend', '');
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     // ⚠️ AVANT le `endsWith('/settings')` : `/settings/poussee-optout` ne finit pas par `/settings`, mais
     // l'ordre reste explicite pour que l'ajout d'un `includes` un jour ne les confonde pas.
+    // La fiche d un agent, pour le cas qui verifie que le selecteur a bien quitte cet ecran.
+    if (chemin.endsWith('/agents')) return json({ agents: [{ id: 'ag-1', label: 'Conseiller sejours', status: 'active', sorties: [] }] });
+    if (chemin.includes('/agents/ag-1')) {
+      return json({
+        agent: {
+          id: 'ag-1', label: 'Conseiller sejours', status: 'active',
+          mentionIa: 'Vous echangez avec un assistant automatique.', modele: 'm',
+          maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000, inactiviteMinutes: 30,
+          contactInconnu: 'lecture_seule',
+          contenu: { nom: '', objectif: '', ton: '', personnalite: '', reglesTransfert: '', sorties: [] },
+          ficheVersion: 1,
+        },
+      });
+    }
+    if (chemin.endsWith('/settings/mention-ia')) {
+      if (route.request().method() === 'PATCH') {
+        const corps = route.request().postDataJSON() as { frequence: string };
+        opts.ecritures?.push({ chemin, corps });
+        mentionIa = corps.frequence;
+        return json({ frequence: mentionIa });
+      }
+      return json({ frequence: mentionIa ?? 'session', reglee: mentionIa !== null, agents: agentsIa });
+    }
     if (chemin.endsWith('/settings/poussee-optout')) {
       if (route.request().method() === 'PATCH') {
         const corps = route.request().postDataJSON() as { requestId: string | null };
@@ -177,6 +204,55 @@ test.describe('Centre de sécurité & compliance', () => {
     await page.goto('/securite/consentement');
     await expect(page.getByTestId('poussee-optout-vide')).toContainText(/Connecteurs API/);
     await expect(page.getByTestId('poussee-optout-choix')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 UNE POLITIQUE POUR L'ESPACE, ET ELLE PART VERS LE SERVEUR. Un bouton radio qui change d'apparence
+   * sans rien envoyer donnerait à un client la certitude d'avoir tranché une question légale qu'il n'aurait
+   * pas tranchée.
+   */
+  test('🔴 le sous-menu IA regle la politique de l espace, et l ENVOIE', async ({ page }) => {
+    const ecritures: Ecriture[] = [];
+    await monter(page, { ecritures });
+    await page.goto('/securite/ia');
+    await expect(page.getByTestId('securite-ia')).toBeVisible();
+    // ⚠️ Rien n'a ete regle : l'ecran doit le DIRE, au lieu de faire passer le defaut pour un choix.
+    await expect(page.getByTestId('mention-ia-defaut')).toBeVisible();
+
+    await page.getByTestId('mention-ia-jamais').locator('input').check();
+    await expect(page.getByTestId('mention-ia-ok')).toBeVisible();
+    expect(ecritures).toEqual([{ chemin: '/tenants/t-e2e/settings/mention-ia', corps: { frequence: 'jamais' } }]);
+    // ...et la mention « defaut applique » disparait, parce que quelqu un a desormais choisi.
+    await expect(page.getByTestId('mention-ia-defaut')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 LES DEUX CHOSES QUE CET ECRAN DOIT DIRE ET QU'UN INTERRUPTEUR SEUL NE DIRAIT PAS : la PHRASE que
+   * chaque agent prononce, et le fait que l'agent de Meta n'est PAS gouverne par ce reglage. Sans la
+   * seconde, un client lirait « mes IA se declarent » et ce serait faux pour l une d elles.
+   */
+  test('🔴 il montre la phrase de chaque agent, et EXCLUT le Meta Business Agent', async ({ page }) => {
+    await monter(page);
+    await page.goto('/securite/ia');
+    await expect(page.getByTestId('mention-ia-agent')).toHaveCount(1);
+    await expect(page.getByTestId('mention-ia-agent')).toContainText('assistant automatique');
+    await expect(page.getByTestId('mention-ia-mba')).toContainText(/Meta Business Agent/);
+  });
+
+  /**
+   * ⚠️ LE REGLAGE A QUITTE LA FICHE D'AGENT, ET L'ECRAN LE DIT AU LIEU DE LE FAIRE DISPARAITRE. Un reglage
+   * qui s'evapore se lit « la fonctionnalite a ete supprimee », et le client la cherche la ou elle n est
+   * plus, ou pire, croit que ses agents n annoncent plus rien.
+   */
+  test('⚠️ la fiche d agent renvoie vers Securite > IA au lieu de porter le selecteur', async ({ page }) => {
+    await monter(page);
+    // ⚠️ PAS DE `if` DANS CE TEST : une condition autour d une assertion la rend facultative, donc le test
+    // passerait aussi le jour ou le bloc disparaitrait pour de bon. On force l ecran a rendre la fiche.
+    await page.goto('/agents?id=ag-1&tab=identite');
+    await expect(page.getByTestId('agent-mention-frequence-renvoi')).toContainText(/Sécurité > IA/);
+    // Et le selecteur d avant n est plus la : sans ce cas, on aurait pu AJOUTER le renvoi sans RETIRER le
+    // reglage, donc laisser deux verites cote a cote, dont une qui n ecrit plus rien.
+    await expect(page.getByTestId('agent-mention-frequence')).toHaveCount(0);
   });
 
   test('rien ne deborde en 13 pouces', async ({ page }) => {

@@ -39,6 +39,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"securite-audit","href":"/securite/audit","fr":"Audit trails","en":"Audit trails","adminOnly":true,"chemin":["Sécurité"]},
   {"cle":"securite-consentement","href":"/securite/consentement","fr":"Consentement","en":"Consent","adminOnly":true,"chemin":["Sécurité"]},
   {"cle":"securite-erreurs","href":"/securite/erreurs","fr":"Journal des erreurs","en":"Error log","adminOnly":true,"chemin":["Sécurité"]},
+  {"cle":"securite-ia","href":"/securite/ia","fr":"IA","en":"AI","adminOnly":true,"chemin":["Sécurité"]},
   {"cle":"support","href":"/support","fr":"Support","en":"Support","adminOnly":true,"chemin":[]},
   {"cle":"tags","href":"/tags","fr":"Étiquettes","en":"Tags","adminOnly":true,"chemin":["Contenu","Bibliothèque"]},
   {"cle":"templates","href":"/templates","fr":"Templates","en":"Templates","adminOnly":true,"chemin":["Contenu","WhatsApp"]},

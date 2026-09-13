@@ -92,8 +92,13 @@ export interface AgentComplet {
   label: string;
   status: StatutAgent;
   mentionIa: string;
-  /** Le régime d'annonce d'IA, réglable par le client (migration 0126). */
-  mentionIaFrequence: FrequenceMentionIa;
+  /**
+   * ⚠️ PLUS DE `mentionIaFrequence` ICI DEPUIS LA MIGRATION 0140 : le régime d'annonce d'IA appartient à
+   * l'ESPACE, pas à l'agent (l'AI Act fait peser l'obligation sur la marque déployante). Il se lit et
+   * s'écrit par `TenantSettings.mentionIaFrequence`, et l'écran Sécurité > IA le porte. Le laisser ici
+   * ferait une SECONDE vérité à côté, et le jour où les deux divergent c'est celle qu'on n'édite plus qui
+   * serait lue.
+   */
   modele: string;
   maxTours: number;
   maxAppelsOutils: number;
@@ -110,8 +115,6 @@ export interface PatchAgent {
   label?: string;
   status?: StatutAgent;
   mentionIa?: string;
-  /** Le régime d'annonce d'IA (migration 0126). Absent = inchangé, comme tous les autres champs. */
-  mentionIaFrequence?: FrequenceMentionIa;
   modele?: string;
   maxTours?: number;
   maxAppelsOutils?: number;

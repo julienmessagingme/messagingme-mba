@@ -1,5 +1,6 @@
 import { request } from './http';
 import { patchAgent, type PatchAgent, type SortieAgent } from './api-agent';
+import { setPolitiqueMentionIa } from './api';
 import { ajouterOutil, listOutils, patchOutil } from './api-agent-tools';
 
 /**
@@ -239,7 +240,6 @@ export async function appliquerProposition(
     ...(Object.keys(proposition.fiche).length > 0
       ? { contenu: proposition.fiche, ficheVersionAttendue: ficheVersion }
       : {}),
-    ...(proposition.mentionIaFrequence !== undefined ? { mentionIaFrequence: proposition.mentionIaFrequence } : {}),
     ...(proposition.inactiviteMinutes !== undefined ? { inactiviteMinutes: proposition.inactiviteMinutes } : {}),
   };
   // 🔴 ON N ENVOIE QUE S IL Y A QUELQUE CHOSE A ENVOYER, mais on envoie des qu IL Y A QUELQUE CHOSE : la
@@ -248,6 +248,17 @@ export async function appliquerProposition(
   const ficheEcrite = Object.keys(patch).length > 0;
   if (ficheEcrite) {
     await patchAgent(tenantId, agentId, patch);
+  }
+  /**
+   * 🔴 LE REGIME D ANNONCE NE PART PLUS AVEC L AGENT (migration 0140) : c est une politique de l ESPACE,
+   * parce que l AI Act fait peser l obligation sur la marque deployante. Il a donc sa PROPRE ecriture.
+   *
+   * ⚠️ APRES le patch de fiche, et jamais avant. Le patch peut echouer en 409 si la fiche a bouge sous nos
+   * pieds, et le docblock ci-dessus dit que RIEN d autre n est alors tente : regler la politique d abord
+   * laisserait l espace change alors que le client verrait un refus.
+   */
+  if (proposition.mentionIaFrequence !== undefined) {
+    await setPolitiqueMentionIa(tenantId, proposition.mentionIaFrequence);
   }
   const connecteurs = proposition.connecteurs ?? [];
   if (proposition.outils.length === 0 && connecteurs.length === 0) return;

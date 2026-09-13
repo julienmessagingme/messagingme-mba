@@ -1999,6 +1999,17 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ✅ **QUAND elle est dite est un RÉGLAGE du client** (2026-09-09), à trois régimes : **jamais**,
   **une fois par session** (le défaut) ou **à chaque message**. La question lui est posée à la construction
   du bot, elle n'est pas cachée dans un écran qu'on ne trouve pas.
+- ✅ **Et ce réglage vaut pour TOUT L'ESPACE depuis le 2026-09-13**, dans **Sécurité > IA** : l'obligation
+  d'information pèse sur la marque qui déploie, pas sur chacun de ses robots, et trois agents ne sont pas
+  trois marques. La fiche d'un agent ne porte plus le choix, elle renvoie vers l'écran qui le porte.
+  - ✅ **L'écran montre aussi la PHRASE de chaque agent.** Le réglage dit QUAND on annonce, pas CE QU'ON
+    annonce : montrer l'un sans l'autre promettrait une vérification qu'on ne permet pas de faire.
+  - ⚠️ **Il distingue « vous avez choisi » de « le défaut s'applique ».** Le comportement est le même, la
+    responsabilité non, et sur un écran de conformité la différence compte.
+  - ⚠️ **L'agent de Meta n'est PAS concerné, et l'écran le dit** : Meta appose déjà sa propre mention sous
+    les messages de son agent, la nôtre en ferait deux.
+  - ⚠️ **Rien n'a changé pour les agents déjà réglés** : chaque espace a hérité de ce que ses agents
+    faisaient déjà.
   ⚠️ **Ce n'était pas tenable avant** : la phrase était obtenue en demandant au modèle de la dire « au tout
   premier message d'une conversation ». Rien ne garantissait qu'elle parte, et surtout le modèle ne sait pas
   où commence une session : le réglage « une fois par session » aurait été un mensonge. C'est le code qui

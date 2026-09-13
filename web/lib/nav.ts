@@ -289,6 +289,9 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       // Le CONSENTEMENT en premier : c'est le seul sous-menu qui décrit ce que le produit s'interdit de
       // faire, les deux autres racontent ce qu'il a fait.
       { key: 'securite-consentement', href: '/securite/consentement', label: t('Consentement', 'Consent') },
+      // L'IA juste après : comme le consentement, elle décrit ce que le produit s'ENGAGE à faire, quand les
+      // deux journaux racontent ce qu'il A fait.
+      { key: 'securite-ia', href: '/securite/ia', label: t('IA', 'AI') },
       { key: 'securite-audit', href: '/securite/audit', label: t('Audit trails', 'Audit trails') },
       { key: 'securite-erreurs', href: '/securite/erreurs', label: t('Journal des erreurs', 'Error log') },
     ] },

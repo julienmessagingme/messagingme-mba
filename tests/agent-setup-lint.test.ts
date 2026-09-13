@@ -72,7 +72,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 const COMPLET: AgentComplet = {
   id: AG, label: 'Conseiller séjours', status: 'draft',
-  mentionIa: 'Vous échangez avec un assistant automatique.', mentionIaFrequence: 'session' as const, modele: 'modele-test',
+  mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-test',
   maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
   contactInconnu: 'lecture_seule', contenu: ficheVide(), ficheVersion: 1,
 };

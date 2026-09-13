@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { MbaNotice } from '@/components/MbaNotice';
 import { MbaTabs } from '@/components/MbaTabs';
@@ -520,33 +521,27 @@ function OngletIdentite({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
         valeur={agent.mentionIa} onSave={(v) => onSave({ mentionIa: v })}
       />
       {/*
-        🔴 QUAND la phrase est dite (migration 0126, demande de Julien du 2026-09-09). Trois régimes, et
-        « jamais » est un choix assumé du client : l'AI Act n'impose l'information que lorsqu'elle n'est pas
-        évidente du contexte, et l'obligation pèse sur la marque qui déploie l'agent. L'aide le dit, sans
-        chercher à l'influencer : ce n'est pas notre décision.
-        ⚠️ La même question est posée dans l'entretien de construction. Ici c'est le rattrapage, pas le
-        chemin principal : un client qui a déjà répondu ne doit pas avoir à la retrouver.
+        🔴 LE SÉLECTEUR « QUAND L'ANNONCER » A QUITTÉ CETTE FICHE (migration 0140). QUAND on annonce est une
+        politique de l'ESPACE, réglée dans Sécurité > IA : l'AI Act fait peser l'obligation sur la marque
+        DÉPLOYANTE, et trois agents ne sont pas trois marques.
+
+        ⚠️ IL EST REMPLACÉ PAR UN POINTEUR, PAS SIMPLEMENT RETIRÉ. Un réglage qui disparaît d'un écran sans
+        rien dire se lit « la fonctionnalité a été supprimée », et le client la cherche là où elle n'est
+        plus. Pire ici : il croirait que ses agents n'annoncent plus rien.
       */}
-      <div className="space-y-1">
-        <label htmlFor="agent-mention-frequence" className="block text-xs font-medium text-ink-700">
-          {t('Quand l’annoncer', 'When to disclose')}
-        </label>
-        <select
-          id="agent-mention-frequence"
-          data-testid="agent-mention-frequence"
-          disabled={busy}
-          value={agent.mentionIaFrequence ?? 'session'}
-          onChange={(e) => onSave({ mentionIaFrequence: e.target.value as PatchAgent['mentionIaFrequence'] })}
-          className={inputCls}
-        >
-          <option value="session">{t('Une fois par conversation', 'Once per conversation')}</option>
-          <option value="chaque_message">{t('À chaque message', 'On every message')}</option>
-          <option value="jamais">{t('Jamais', 'Never')}</option>
-        </select>
+      <div className="space-y-1" data-testid="agent-mention-frequence-renvoi">
+        <span className="block text-xs font-medium text-ink-700">{t('Quand l’annoncer', 'When to disclose')}</span>
         <p className="text-[11px] text-ink-500">
           {t(
-            'C’est vous qui décidez : la loi n’impose de l’annoncer que lorsque ce n’est pas évident du contexte, et cette responsabilité est celle de votre marque.',
-            'Your call: the law only requires disclosure when it is not obvious from context, and that responsibility is your brand’s.',
+            'Ce choix vaut pour tout l’espace, et se règle dans ',
+            'This choice applies to the whole workspace, and is set in ',
+          )}
+          <Link href="/securite/ia" className="font-medium text-brand-600 hover:underline">
+            {t('Sécurité > IA', 'Security > AI')}
+          </Link>
+          {t(
+            '. La loi n’impose de l’annoncer que lorsque ce n’est pas évident du contexte, et cette responsabilité est celle de votre marque, pas de chacun de vos agents.',
+            '. The law only requires disclosure when it is not obvious from context, and that responsibility is your brand’s, not each agent’s.',
           )}
         </p>
       </div>

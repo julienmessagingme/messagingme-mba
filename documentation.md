@@ -325,7 +325,8 @@ ligne depuis le panneau passe par un événement que le BUILDER traite, parce qu
 bloc agent atteint -> executor ouvre une session -> job `agent-turn`
    run-turn : garde de solde (à l'ENTRÉE du tour, jamais à l'écriture)
      brain.gateway.penserTrace :   <- LA boucle, partagée par la production ET le bac à sable
-       prompt : mention d'IA EN TÊTE, si le régime de l'agent la demande pour CE tour (0126)
+       prompt : mention d'IA EN TÊTE, si le régime de l'ESPACE la demande pour CE tour (0126, remontée à
+       l'espace par 0140 : l'obligation pèse sur la marque déployante, pas sur chaque robot)
        appel du modèle (Vercel AI Gateway)
        si appel d'outil : executor d'outil (validation, injection, budget de temps, journal, troncature)
          résultat encadré par `blocResultatOutil`, jamais concaténé au prompt

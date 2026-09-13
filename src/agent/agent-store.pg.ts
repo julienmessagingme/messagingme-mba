@@ -27,9 +27,16 @@ export class PgAgentStore implements AgentStore {
 
   async byId(tenantId: string, id: string): Promise<FicheAgent | null> {
     const res = await this.pool.query<Ligne>(
-      `select id, tenant_id, mention_ia, mention_ia_frequence, modele, max_tours, max_appels_outils,
-              budget_micro_eur, inactivite_minutes, contact_inconnu, status
-         from agents where tenant_id = $1 and id = $2`,
+      // 🔴 LA FRÉQUENCE VIENT DE L'ESPACE, PLUS DE L'AGENT (migration 0140). L'AI Act fait peser
+      // l'obligation d'information sur la marque DÉPLOYANTE : un espace porte UNE politique, pas une par
+      // robot. La jointure évite une seconde requête sur le chemin CHAUD d'un tour d'agent.
+      // ⚠️ `agents.mention_ia_frequence` existe encore et n'est plus lue : elle part en 0141, APRÈS que ce
+      // code ait été vu en production. La retirer avant casserait la prod pendant le déploiement.
+      `select a.id, a.tenant_id, a.mention_ia, s.mention_ia_frequence, a.modele, a.max_tours, a.max_appels_outils,
+              a.budget_micro_eur, a.inactivite_minutes, a.contact_inconnu, a.status
+         from agents a
+         left join tenant_settings s on s.tenant_id = a.tenant_id
+        where a.tenant_id = $1 and a.id = $2`,
       [tenantId, id],
     );
     const r = res.rows[0];
@@ -38,8 +45,9 @@ export class PgAgentStore implements AgentStore {
       id: r.id,
       tenantId: r.tenant_id,
       mentionIa: r.mention_ia,
-      // ⚠️ Repli sur `session` si la colonne manque : c'est EXACTEMENT le comportement d'avant la migration
-      // 0126 (la consigne visait deja le premier message), donc une base en retard ne change rien.
+      // ⚠️ Repli sur `session` quand l'espace n'a rien réglé : c'est EXACTEMENT le défaut de 0126, et donc
+      // le comportement d'avant pour tout espace que la reprise de 0140 n'a pas touché (un espace sans
+      // agent). Une base en retard se comporte de même.
       mentionIaFrequence: estFrequenceMention(r.mention_ia_frequence) ? r.mention_ia_frequence : 'session',
       modele: r.modele,
       plafonds: {
@@ -73,6 +81,24 @@ export class PgAgentStore implements AgentStore {
       [tenantId],
     );
     return res.rows.map((r) => ({ id: r.id, label: r.label, status: r.status, sorties: sortiesDeLaFiche(r.fiche) }));
+  }
+
+  /**
+   * Les agents de l'espace et la PHRASE que chacun annonce : l'écran Sécurité > IA (migration 0140).
+   *
+   * ⚠️ HORS du contrat `AgentStore`, comme `listActifsConsommateur` sur le catalogue : c'est une projection
+   * d'écran, et l'exiger du contrat obligerait chaque faux de test à écrire une méthode que le runtime
+   * n'appelle jamais.
+   *
+   * ⚠️ TOUS les statuts, brouillons compris : un agent en brouillon ne parle à personne, mais le voir dans
+   * la liste évite de croire qu'il a disparu, et c'est celui qu'on relit AVANT de l'activer.
+   */
+  async listerPourConformite(tenantId: string): Promise<Array<{ id: string; label: string; status: StatutAgent; mentionIa: string }>> {
+    const res = await this.pool.query<{ id: string; label: string; status: StatutAgent; mention_ia: string }>(
+      `select id, label, status, mention_ia from agents where tenant_id = $1 order by lower(label)`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({ id: r.id, label: r.label, status: r.status, mentionIa: r.mention_ia }));
   }
 
   async complet(tenantId: string, id: string): Promise<AgentComplet | null> {
@@ -142,10 +168,12 @@ export class PgAgentStore implements AgentStore {
          label = coalesce($3, label),
          status = coalesce($4, status),
          mention_ia = coalesce($5, mention_ia),
-         -- ⚠️ Le parametre 14 et non un numero intercale : renumeroter les treize existants pour inserer
-         -- celui-ci aurait ete treize occasions de decaler une valeur d un cran, en silence.
-         -- (Aucun backtick dans ce commentaire : il fermerait le gabarit JS, cf. invariant 23.)
-         mention_ia_frequence = coalesce($14, mention_ia_frequence),
+         -- ⚠️ PLUS DE mention_ia_frequence ICI (migration 0140) : le regime d annonce est un reglage de
+         -- l ESPACE. La colonne existe encore et n est plus ni lue ni ecrite ; elle part en 0141, APRES que
+         -- ce code ait ete vu en production. Le parametre 14 disparait donc avec elle, sans renumeroter les
+         -- treize autres : renumeroter aurait ete treize occasions de decaler une valeur d un cran.
+         -- (Aucun backtick dans ce commentaire : il fermerait le gabarit JS, cf. invariant 23. Le retirer a
+         -- casse le fichier a la premiere ecriture de ce lot, ce qui est la meilleure preuve qu il sert.)
          modele = coalesce($6, modele),
          max_tours = coalesce($7, max_tours),
          max_appels_outils = coalesce($8, max_appels_outils),
@@ -167,7 +195,6 @@ export class PgAgentStore implements AgentStore {
         patch.inactiviteMinutes ?? null, patch.contactInconnu ?? null,
         patch.contenu ? JSON.stringify(patch.contenu) : null,
         patch.ficheVersionAttendue ?? null,
-        patch.mentionIaFrequence ?? null,
       ],
     ).catch(surLabelDejaPris);
     const r = res.rows[0];
@@ -188,7 +215,7 @@ function surLabelDejaPris(err: unknown): never {
   throw err;
 }
 
-const COLONNES_COMPLETES = `id, label, status, mention_ia, mention_ia_frequence, modele, max_tours, max_appels_outils,
+const COLONNES_COMPLETES = `id, label, status, mention_ia, modele, max_tours, max_appels_outils,
                             budget_micro_eur, inactivite_minutes, contact_inconnu, fiche, fiche_version`;
 
 interface LigneComplete {
@@ -196,7 +223,6 @@ interface LigneComplete {
   label: string;
   status: StatutAgent;
   mention_ia: string;
-  mention_ia_frequence?: string | null;
   modele: string;
   max_tours: number;
   max_appels_outils: number;
@@ -216,7 +242,6 @@ function versComplet(r: LigneComplete): AgentComplet {
     label: r.label,
     status: r.status,
     mentionIa: r.mention_ia,
-      mentionIaFrequence: estFrequenceMention(r.mention_ia_frequence) ? r.mention_ia_frequence : 'session',
     modele: r.modele,
     maxTours: r.max_tours,
     maxAppelsOutils: r.max_appels_outils,

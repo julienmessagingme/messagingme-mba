@@ -1562,7 +1562,7 @@ async function main(): Promise<void> {
       completer: (i) => gatewayAgent.completer(i),
       // Point de lecture PARTAGÉ avec le bac à sable de la console : un champ ajouté d'un seul côté ferait
       // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
-      contexte: (t, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog }, t, agentId),
+      contexte: (t, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog, politiqueMentionIa: async (t) => (await settingsStore.get(t)).mentionIaFrequence }, t, agentId),
       // Le Gateway facture en dollars, tous nos compteurs sont en micro-euros : la conversion se fait a l
       // entree, une seule fois, avec le taux commercial de la configuration.
       tauxEurParDollar: config.EUR_PER_USD,

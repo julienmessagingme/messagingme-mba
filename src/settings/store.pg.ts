@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { BusinessHours } from '../workflow/conditions';
+import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
 export const DEFAULT_TIMEZONE = 'Europe/Paris';
@@ -54,6 +55,18 @@ export interface TenantSettings {
    * `src/crm/poussee-optout.ts` et la migration 0139.
    */
   optoutRequestId: string | null;
+  /**
+   * QUAND les agents IA de cet espace annoncent qu'ils sont des IA (migration 0140). `null` = rien n'a
+   * jamais été réglé ici, le code retombe alors sur `session`, exactement le défaut de 0126.
+   *
+   * 🔴 AU NIVEAU DE L'ESPACE, ET PAS PAR AGENT, parce que l'AI Act (article 50) fait peser l'obligation sur
+   * la marque DÉPLOYANTE. Un client qui a trois agents n'a pas à répondre trois fois à la même question de
+   * conformité, et trois réponses différentes seraient trois politiques, ce qui n'existe pas juridiquement.
+   *
+   * ⚠️ LE META BUSINESS AGENT N'EST PAS GOUVERNÉ PAR CE RÉGLAGE : Meta écrit déjà « IA » sous les messages
+   * de son agent, et notre propre déclaration en ferait deux. L'écran le dit.
+   */
+  mentionIaFrequence: FrequenceMentionIa | null;
 }
 
 /**
@@ -71,8 +84,8 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode, optout_request_id from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode, optout_request_id, mention_ia_frequence from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -86,7 +99,26 @@ export class PgTenantSettingsStore {
       businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
       mbaHandoffMode: r?.mba_handoff_mode ?? null,
       optoutRequestId: r?.optout_request_id ?? null,
+      // ⚠️ Une valeur inconnue vaut `null`, donc « rien n'a été réglé », donc le défaut `session`. Une base
+      // en retard (migration 0140 pas encore passée) se comporte comme avant, sans rien casser.
+      mentionIaFrequence: estFrequenceMention(r?.mention_ia_frequence) ? r.mention_ia_frequence : null,
     };
+  }
+
+  /**
+   * Règle QUAND les agents de cet espace annoncent qu'ils sont des IA. Upsert ciblé : n'écrase aucun autre
+   * réglage.
+   *
+   * ⚠️ IL N'Y A PAS DE « remettre à null » : le client choisit entre trois régimes, dont `jamais`. Rendre le
+   * réglage à « non renseigné » n'aurait aucun sens pour lui, et ferait retomber l'espace sur un défaut
+   * qu'il n'a pas choisi.
+   */
+  async setMentionIaFrequence(tenantId: string, frequence: FrequenceMentionIa): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, mention_ia_frequence, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set mention_ia_frequence = excluded.mention_ia_frequence, updated_at = now()`,
+      [tenantId, frequence],
+    );
   }
 
   /**

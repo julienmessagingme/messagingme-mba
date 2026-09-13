@@ -1,4 +1,4 @@
-import type { AgentStore } from './agent-store';
+import type { AgentStore, FrequenceMentionIa } from './agent-store';
 import type { ToolCatalog } from './catalog';
 import type { ContexteAgentComplet } from './brain.gateway';
 
@@ -17,6 +17,18 @@ import type { ContexteAgentComplet } from './brain.gateway';
 export interface DepsContexteAgent {
   agents: Pick<AgentStore, 'complet'>;
   outils: Pick<ToolCatalog, 'listActifs'>;
+  /**
+   * QUAND les agents de cet ESPACE annoncent qu'ils sont des IA (migration 0140).
+   *
+   * 🔴 UNE DEP À PART, parce que ce n'est plus un champ de la fiche : l'obligation d'information pèse sur la
+   * marque déployante, donc un espace porte UNE politique et pas une par robot. La lire ici, dans le point
+   * de passage unique, garantit que le bac à sable et la production voient la MÊME chose : c'est
+   * précisément ce que ce module existe pour empêcher de diverger.
+   *
+   * ⚠️ Absente -> `session`, le défaut de 0126, donc le comportement d'avant. Un harnais de test qui ne la
+   * câble pas ne change donc rien.
+   */
+  politiqueMentionIa?(tenantId: string): Promise<FrequenceMentionIa | null>;
 }
 
 export async function lireContexteAgent(
@@ -29,7 +41,8 @@ export async function lireContexteAgent(
     // confondre ferait répondre aux contacts avec le modèle réservé au setup.
     modele: fiche.modele,
     mentionIa: fiche.mentionIa,
-    mentionIaFrequence: fiche.mentionIaFrequence,
+    // La politique de l'ESPACE, jamais celle de l'agent : la fiche n'en porte plus depuis 0140.
+    mentionIaFrequence: (deps.politiqueMentionIa ? await deps.politiqueMentionIa(tenantId) : null) ?? 'session',
     sorties: fiche.contenu.sorties,
     contenu: fiche.contenu,
     outilsActifs: await deps.outils.listActifs(tenantId, agentId),

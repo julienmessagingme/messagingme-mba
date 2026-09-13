@@ -32,9 +32,11 @@ export interface AgentComplet {
   label: string;
   status: StatutAgent;
   mentionIa: string;
-  /** QUAND la phrase d'annonce est dite (migration 0126). Absent sur une reponse d'avant : lu comme
-   *  « une fois par conversation », qui est le defaut serveur. */
-  mentionIaFrequence?: 'jamais' | 'session' | 'chaque_message';
+  /**
+   * ⚠️ PLUS DE `mentionIaFrequence` ICI DEPUIS LA MIGRATION 0140 : QUAND la phrase est dite est une
+   * politique de l'ESPACE, réglée dans Sécurité > IA, parce que l'obligation d'information pèse sur la
+   * marque déployante et pas sur chaque robot. La PHRASE, elle, reste propre à l'agent : c'est sa voix.
+   */
   modele: string;
   maxTours: number;
   maxAppelsOutils: number;

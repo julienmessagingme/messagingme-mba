@@ -41,7 +41,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 const COMPLET: AgentComplet = {
   id: AG1, label: 'Conseiller séjours', status: 'draft',
-  mentionIa: 'Vous échangez avec un assistant automatique.', mentionIaFrequence: 'session' as const, modele: 'modele-test',
+  mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-test',
   maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
   contactInconnu: 'lecture_seule', contenu: ficheVide(), ficheVersion: 1,
 };
@@ -135,18 +135,21 @@ describe('routes agents : création', () => {
     expect(cap.crees[0]?.modele).toBe('modele-config');
   });
 
-  it('🔴 le régime d’annonce d’IA se règle, et une valeur inconnue est REFUSÉE', async () => {
-    // `jamais` doit être un choix explicite du client (AI Act art. 50 : l'obligation pèse sur la marque
-    // déployante). Il est donc réglable, mais l'énumération est fermée ici ET par un `check` en base : la
-    // première rend un 400 qui dit quoi corriger, le second garantit qu'aucun autre chemin d'écriture ne
-    // posera une valeur inconnue.
+  /**
+   * 🔴 LE RÉGIME D'ANNONCE A DÉMÉNAGÉ VERS L'ESPACE (migration 0140), ET CE CAS GARDE LE DÉMÉNAGEMENT.
+   * Le test d'avant vérifiait qu'on pouvait le régler ICI ; son remplaçant vit dans
+   * `tests/http-securite-ia.test.ts`, qui vérifie qu'on le règle LÀ-BAS, pour tout l'espace.
+   *
+   * 🔴 CE QUI EST VÉRIFIÉ ICI EST L'AUTRE MOITIÉ, et elle n'est pas cosmétique : `z.object()` retire une
+   * clé inconnue EN SILENCE. Sans refus explicite, un onglet resté ouvert sur l'ancienne console enverrait
+   * encore ce champ, recevrait 200, et le choix du client serait perdu sans que personne ne l'apprenne.
+   */
+  it('🔴 le régime d’annonce d’IA n’est plus un champ d’agent, et le refus DIT où il est parti', async () => {
     const { cap, srv } = app();
-    const ok = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { mentionIaFrequence: 'jamais' } });
-    expect(ok.statusCode).toBe(200);
-    expect(cap.patches[0]?.patch).toMatchObject({ mentionIaFrequence: 'jamais' });
-
-    const ko = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { mentionIaFrequence: 'parfois' } });
-    expect(ko.statusCode).toBe(400);
+    const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { mentionIaFrequence: 'jamais' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toContain('settings/mention-ia');
+    expect(cap.patches, 'rien n’a été écrit sur l’agent').toHaveLength(0);
   });
 
   it('un label vide est refusé', async () => {

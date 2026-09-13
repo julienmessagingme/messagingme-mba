@@ -1803,7 +1803,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   const settingsShape = (over: object = {}) => ({
     mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
     controlHandbackSeconds: null, mbaHandoffMode: null, timezone: DEFAULT_TIMEZONE,
-    businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, ...over,
+    businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null, ...over,
   });
 
   it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {

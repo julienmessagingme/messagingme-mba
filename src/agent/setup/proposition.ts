@@ -159,9 +159,10 @@ export const SCHEMA_PROPOSITION = {
     mentionIaFrequence: {
       type: 'string',
       enum: ['jamais', 'session', 'chaque_message'],
-      description: 'QUAND l’agent annonce qu’il est une IA, et SEULEMENT si le client l’a tranché : '
-        + 'jamais = il ne l’annonce pas ; session = une seule fois par conversation ; chaque_message = à '
-        + 'chaque réponse. Ne le propose pas de toi-même : c’est la responsabilité de la marque, pas la tienne.',
+      description: 'QUAND les agents de cet ESPACE annoncent qu’ils sont des IA, et SEULEMENT si le client '
+        + 'l’a tranché : jamais = ils ne l’annoncent pas ; session = une seule fois par conversation ; '
+        + 'chaque_message = à chaque réponse. Ce choix vaut pour TOUS les agents de l’espace, pas seulement '
+        + 'celui-ci. Ne le propose pas de toi-même : c’est la responsabilité de la marque, pas la tienne.',
     },
     inactiviteMinutes: {
       type: 'integer',
@@ -275,7 +276,12 @@ export interface Changement {
 /** L'état courant contre lequel le diff se calcule. */
 export interface EtatCourant {
   fiche: FicheAgentContenu;
-  /** Le régime d'annonce d'IA ACTUEL, pour que le diff dise ce qui change (migration 0126). */
+  /**
+   * Le régime d'annonce d'IA ACTUEL, pour que le diff dise ce qui change.
+   *
+   * ⚠️ C'est celui de l'ESPACE depuis la migration 0140, plus celui de la fiche : la question posée à la
+   * construction règle la politique de la marque, pas celle de ce robot-là.
+   */
   mentionIaFrequence: FrequenceMentionIa;
   /** Le délai d'inactivité ACTUEL, en minutes, pour la même raison. */
   inactiviteMinutes: number;
@@ -348,10 +354,13 @@ export function differences(courant: EtatCourant, proposition: Omit<Proposition,
 
   // Le régime d'annonce d'IA : hors fiche, donc traité à part. Libellé en toutes lettres plutôt que le code,
   // parce que ce diff est lu par un humain qui décide d'une question légale, pas par un développeur.
+  // ⚠️ LE LIBELLÉ DIT « pour tout l'espace » DEPUIS 0140. Le réglage a quitté la fiche de l'agent : laisser
+  // le diff parler comme s'il ne touchait que celui-ci ferait valider un changement plus large que ce qui
+  // est montré, sur la seule ligne de la construction qui engage juridiquement la marque.
   if (proposition.mentionIaFrequence !== undefined && proposition.mentionIaFrequence !== courant.mentionIaFrequence) {
     out.push({
       champ: 'mentionIaFrequence',
-      label: 'Annonce « je suis une IA »',
+      label: 'Annonce « je suis une IA » (pour tout l’espace)',
       avant: LIBELLES_MENTION[courant.mentionIaFrequence] ?? courant.mentionIaFrequence,
       apres: LIBELLES_MENTION[proposition.mentionIaFrequence] ?? proposition.mentionIaFrequence,
     });

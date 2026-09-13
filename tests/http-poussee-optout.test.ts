@@ -43,7 +43,7 @@ function app(branche: string | null = null) {
   const settings: SettingsRouteDeps = {
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, optoutRequestId: courant,
+      controlHandbackSeconds: null, mbaHandoffMode: null, optoutRequestId: courant, mentionIaFrequence: null,
       timezone: 'Europe/Paris', businessHours: {},
     }),
     setMbaEnabled: async () => {},

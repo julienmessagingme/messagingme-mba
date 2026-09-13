@@ -251,7 +251,7 @@ Revue `/revue` systématique, plus le rayon de souffle :
 | 5. La liste des opt-out | ✅ `b13456e`, avec la migration 0138 |
 | 6. La regle elargie EN OBSERVATION | ✅ `623e6a5` |
 | 7. L opt-out declenche un APPEL D OUTIL | ✅ (migration 0139) |
-| 8. Le sous-menu IA | pas commence |
+| 8. Le sous-menu IA | ✅ (migration 0140, puis 0141 APRES le deploiement) |
 | 9. Le journal des erreurs, les DEUX | pas commence |
 
 ### Les ecarts avec ce plan, et pourquoi
@@ -283,7 +283,17 @@ Revue `/revue` systématique, plus le rayon de souffle :
 7. 🔴 **UN DOCBLOCK FAUX A ETE RECOPIE DANS UNE ROUTE NEUVE.** `registerSettings` annoncait « GET ouvert
    (lecture), PUT admin-only » ; le module entier est monte avec `requireAdmin` depuis longtemps. La phrase a ete
    reprise telle quelle dans la route de la tache 7, et seul le TEST l a montree. Les deux docblocks sont corriges.
-8. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
+8. **LA TACHE 8 A ETE TRANCHEE PAR UNE MESURE, PAS PAR UN ARBITRAGE.** La spec demandait deux choses qui
+   tirent en sens contraire : « c est un reglage d ESPACE » et « ne change pas le comportement des agents
+   existants ». Elles ne se concilient que si aucun espace ne porte deux agents divergents. Mesure du
+   2026-09-13 en production : UN seul agent existe, sur un seul espace, en `session`. La reprise est donc
+   EXACTE pour tout le monde, et la regle de depart (`chaque_message` > `session` > `jamais`) n a servi a
+   personne aujourd hui mais est ecrite pour le jour ou elle servira.
+9. 🔴 **UN CHAMP QUI DEMENAGE SE REFUSE, IL NE S AVALE PAS.** `z.object()` retire une cle inconnue EN
+   SILENCE : sans garde explicite, un onglet reste ouvert sur l ancienne console aurait continue d envoyer
+   `mentionIaFrequence` sur le PATCH d agent, aurait recu 200, et le choix du client aurait ete perdu sans
+   que personne ne l apprenne. La route rend desormais 400 en DISANT ou le reglage est parti.
+10. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
    « arret du traitement », « stop covid » et « stopper la commande » DESABONNENT aujourd hui, alors que le
    docblock citait « arret de bus » comme un cas evite. Sur un espace d assureur, c est un message ordinaire.
    La regle n est PAS modifiee (resserrer l ancrage ferait perdre « stop merci ») : c est un arbitrage pose a

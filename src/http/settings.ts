@@ -5,6 +5,7 @@ import type { TenantSettings, MbaHandoffMode } from '../settings/store.pg';
 import type { BusinessHours, DayHours } from '../workflow/conditions';
 import { withinBusinessHours } from '../workflow/conditions';
 import { scopeTenant } from './scope';
+import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
 
 export interface SettingsRouteDeps {
   getSettings(tenantId: string): Promise<TenantSettings>;
@@ -42,6 +43,17 @@ export interface SettingsRouteDeps {
   listerRequetesConnecteur?(tenantId: string): Promise<Array<{ id: string; label: string }>>;
   /** Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. */
   setOptoutRequestId?(tenantId: string, requestId: string | null): Promise<void>;
+  /** Règle QUAND les agents de cet espace annoncent qu'ils sont des IA (migration 0140). */
+  setMentionIaFrequence?(tenantId: string, frequence: FrequenceMentionIa): Promise<void>;
+  /**
+   * Les agents de l'espace et la PHRASE que chacun dit.
+   *
+   * 🔴 LA PHRASE, PAS SEULEMENT LE NOM, et c'est ce qui fait de cet écran autre chose qu'un interrupteur.
+   * Le régime dit QUAND on annonce ; il ne dit pas CE QU'ON ANNONCE, qui reste propre à chaque agent
+   * (« Vous échangez avec un assistant automatique. »). Sur un écran de conformité, montrer un réglage sans
+   * montrer le texte qu'il déclenche, c'est promettre une vérification qu'on ne permet pas de faire.
+   */
+  listerAgentsPourConformite?(tenantId: string): Promise<Array<{ id: string; label: string; status: string; mentionIa: string }>>;
 }
 
 /** Fuseau IANA valide ? (Intl throw sur un identifiant inconnu.) */
@@ -166,6 +178,54 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
     }
     await deps.setOptoutRequestId(tenant, requestId);
     return reply.code(200).send({ requestId });
+  });
+
+  /**
+   * « L'IA SE DÉCLARE COMME TELLE » : lecture de la politique de l'ESPACE, et de ce que chaque agent dit.
+   *
+   * 🔴 UNE POLITIQUE PAR ESPACE, PAS UNE PAR AGENT (migration 0140). L'AI Act, article 50, fait peser
+   * l'obligation d'information sur la marque DÉPLOYANTE : trois agents ne sont pas trois marques, et trois
+   * réponses différentes seraient trois politiques, ce qui n'existe pas juridiquement.
+   *
+   * ⚠️ LE META BUSINESS AGENT N'EST PAS DANS CETTE LISTE, ET CE N'EST PAS UN OUBLI : Meta écrit déjà « IA »
+   * sous les messages de son agent. Lui appliquer notre déclaration par symétrie en ferait deux. L'écran le
+   * dit, plutôt que de laisser croire que la politique couvre tout ce qui parle sur l'espace.
+   */
+  app.get('/tenants/:tenantId/settings/mention-ia', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { mentionIaFrequence } = await deps.getSettings(tenant);
+    return reply.code(200).send({
+      // `null` en base veut dire « rien n'a jamais été réglé ici » : l'écran montre le défaut EFFECTIF,
+      // celui que le runtime appliquera, pas une case vide qui ne dirait rien de ce qui se passe.
+      frequence: mentionIaFrequence ?? 'session',
+      reglee: mentionIaFrequence !== null,
+      agents: deps.listerAgentsPourConformite ? await deps.listerAgentsPourConformite(tenant) : [],
+    });
+  });
+
+  /**
+   * ...et son écriture, ADMIN SEULEMENT.
+   *
+   * 🔴 `jamais` EST UN CHOIX EXPLICITE DU CLIENT, jamais un défaut que nous poserions en silence.
+   * L'obligation d'information ne joue que lorsqu'elle n'est pas évidente du contexte, et elle pèse sur la
+   * marque déployante : c'est donc à elle de trancher (décision de Julien du 2026-09-09).
+   *
+   * ⚠️ IL N'Y A PAS DE RETOUR À « non réglé » : le client choisit entre trois régimes, dont `jamais`. Lui
+   * offrir de revenir à « rien » le ferait retomber sur un défaut qu'il n'a pas choisi.
+   */
+  app.patch('/tenants/:tenantId/settings/mention-ia', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.setMentionIaFrequence) return reply.code(503).send({ error: 'réglage indisponible' });
+    const brut = (req.body as { frequence?: unknown } | null)?.frequence;
+    if (!estFrequenceMention(brut)) {
+      // 400 et non 500 : Cloudflare remplace le corps des 5xx, et c'est un message destiné à l'utilisateur.
+      return reply.code(400).send({ error: `frequence requise (${FREQUENCES_MENTION_IA.join(' | ')})` });
+    }
+    await deps.setMentionIaFrequence(tenant, brut);
+    return reply.code(200).send({ frequence: brut });
   });
 
   // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).
