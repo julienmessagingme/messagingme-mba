@@ -13,7 +13,7 @@ import { PgTagStore } from './crm/tag-store.pg';
 import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
 import { PgCampaignRepo, PgRecipientStore } from './campaign/store.pg';
 import { PgCampaignDraftStore } from './campaign/draft-store.pg';
-import { PgInboxStore } from './inbox/store.pg';
+import { PgInboxStore, type ConversationMessage } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, estimerCoutContact, entonnoirEngagement, type CategoryRates } from './stats/cost';
@@ -104,6 +104,9 @@ import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { creerRechercheSemantique } from './agent/recherche';
 import { PgDepotAide } from './aide/fiches.pg';
 import { creerRepondeur } from './aide/repondre';
+import { creerTraducteur, type LangueConsole } from './traduction/traduire';
+import { PgTraductionStore } from './traduction/traduire.pg';
+import { traduireFil } from './traduction/fil';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
@@ -262,6 +265,29 @@ async function main(): Promise<void> {
   const gatewayAide = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
   /** Il n y a aucun espace pour le compte de qui l aide est appelee : la depense est la NOTRE. */
   const AUCUN_ESPACE_PAYEUR = '';
+  /**
+   * LE TRADUCTEUR DES CONVERSATIONS (2026-09-12).
+   *
+   * 🔴 IL PREND `gateway`, JAMAIS `gatewayAide`, et c est la seule chose a ne pas se tromper ici : la
+   * traduction sert les conversations du CLIENT, donc elle tombe sur son credit prepaye (migration 0124),
+   * quand l aide de la console est a NOTRE charge. Les deux clients se ressemblent a une lettre pres et
+   * n ont pas le meme payeur.
+   *
+   * ⚠️ `cleDisponible` est ce qui fait qu un espace SANS credit ne traduit pas du tout, au lieu de retomber
+   * en silence sur la cle maison comme le fait `cleDe`. Sans elle, le repli de `GatewayChatClient` nous
+   * ferait payer les traductions de tous les espaces sans cle.
+   *
+   * Vide (`TRADUCTION_MODELE` non configure) -> la traduction est eteinte : le fil sort en VO avec son
+   * drapeau, le bouton sortant refuse en 422, et rien d autre ne change.
+   */
+  const traductionStore = new PgTraductionStore(pool);
+  const traducteur = gateway && config.TRADUCTION_MODELE
+    ? creerTraducteur({
+      completer: (input) => gateway.completer(input),
+      modele: config.TRADUCTION_MODELE,
+      cleDisponible: async (tenantId) => (await clesGateway.lire(tenantId)) !== null,
+    })
+    : null;
   const automationStore = new PgAutomationStore(pool);
   // Chaine WhatsApp (Channels Me). La cle de chiffrement est INJECTEE au store (contrat du sous-systeme),
   // elle n'est pas relue depuis la config a l'interieur : les deux secrets sont chiffres la, jamais plus haut.
@@ -632,7 +658,26 @@ async function main(): Promise<void> {
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
-      getMessages: (id) => inboxStore.getMessages(id),
+      getMessages: (id, apres) => inboxStore.getMessages(id, apres),
+      /**
+       * LA TRADUCTION DES CONVERSATIONS (migration 0137).
+       *
+       * ⚠️ LES TROIS LIGNES SONT MONTEES ENSEMBLE OU PAS DU TOUT : une console qui pourrait traduire les
+       * entrants sans pouvoir traduire un sortant proposerait un bouton qui rendrait 503, et l inverse
+       * laisserait l ecran croire que la traduction est branchee.
+       */
+      ...(traducteur ? {
+        traduireFil: (tenant: string, conversationId: string, messages: ConversationMessage[], cible: LangueConsole) => traduireFil({
+          traducteur,
+          ranger: (t, c, trads) => traductionStore.ranger(t, c, trads),
+          apprendreLangueContact: (t, c, langue) => traductionStore.apprendreLangueContact(t, c, langue),
+          // Une ecriture d appoint qui echoue ne prive personne de sa lecture, mais elle fait REPAYER la
+          // meme traduction a chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
+          onErreur: (err, quoi) => { app.log.error({ err, quoi }, 'traduction_ecriture_impossible'); },
+        }, { tenantId: tenant, conversationId, messages, cible }),
+        traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
+        traductionDisponible: (tenant: string) => traducteur.disponible(tenant),
+      } : {}),
       recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal),
       /**
        * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les

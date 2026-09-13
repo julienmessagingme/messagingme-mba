@@ -474,6 +474,21 @@ export const schema = z.object({
    */
   AGENT_AIDE_MODEL: z.string().default(''),
   /**
+   * Modele de TRADUCTION des conversations (2026-09-12).
+   *
+   * 🔴 SUR LE CREDIT PREPAYE DU CLIENT, contrairement au bot d aide juste au-dessus, et c est la seule
+   * difference qui compte entre les deux : la traduction sert les conversations du client, pas son
+   * apprentissage du produit. Le client de modele utilise ici est donc celui qui porte le resolveur de cle
+   * PAR ESPACE (`gateway`), jamais celui du bot d aide (`gatewayAide`).
+   *
+   * Un modele rapide et bon marche suffit largement : traduire est la tache la plus simple qu on demande a
+   * un modele, et il y en a jusqu a quarante par ouverture de fil.
+   *
+   * VIDE -> la traduction est ETEINTE : le fil sort en VO avec son drapeau, le bouton sortant refuse en
+   * 422, et rien d autre ne change. C est ce qui permet de deployer ce lot avant d avoir choisi le modele.
+   */
+  TRADUCTION_MODELE: z.string().default(''),
+  /**
    * Modèle qui LIT LES IMAGES jointes à la conversation de construction.
    *
    * 🔴 SÉPARÉ de `AGENT_SETUP_MODEL`, et mesuré le 2026-08-31 : `zai/glm-4.7`, le modèle d'entretien de la

@@ -11,6 +11,8 @@ import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
+import { estLangueConsole, TEXTE_MAX_CARACTERES, type LangueConsole, type Traduction } from '../traduction/traduire';
+import type { FilTraduit } from '../traduction/fil';
 
 /**
  * Ce que rend la route des compteurs quand la dépendance n'est pas câblée (suites de tests à deps minimales,
@@ -97,11 +99,44 @@ export interface InboxRouteDeps {
   setAssignee?(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
   /** Marque un fil comme lu (un opérateur vient de l'ouvrir). Optionnel (deps de test minimales). */
   markConversationRead?(tenantId: string, conversationId: string): Promise<void>;
-  /** wa_id + état de la fenêtre de service 24 h + surcharge de reprise du fil (C.4). null si conversation absente/autre tenant. */
+  /**
+   * wa_id + état de la fenêtre de service 24 h. `null` si conversation absente, ou d'un autre espace.
+   *
+   * ⚠️ `langueContact` s'y est ajoutée avec la migration 0137 : la langue APPRISE du contact,
+   * OPTIONNELLE dans le type pour que les câblages de test qui ne la rendent pas restent valides, et
+   * `null` quand on n'a encore rien appris. Ce n'est PAS « français » : c'est elle que le bouton de
+   * traduction sortante lit pour nommer sa cible, et supposer une langue ferait promettre
+   * « Traduire en espagnol » à un anglophone.
+   */
   getConversationContext(
     conversationId: string,
     tenantId: string,
-  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
+  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean; langueContact?: string | null } | null>;
+  /**
+   * Traduit les ENTRANTS d'un fil vers la langue du lecteur, et range le resultat (migration 0137).
+   *
+   * OPTIONNELLE : absente, la route rend le fil en VO avec `traductionIndisponible`, jamais une
+   * erreur. Une instance sans cle de modele n'a pas a voir son Inbox casser.
+   *
+   * ⚠️ Elle rend les messages ENRICHIS, pas remplaces : meme nombre, meme ordre, plus les trois
+   * etats (`affiche`, `traduit`, `traductionEchouee`).
+   */
+  traduireFil?(
+    tenantId: string,
+    conversationId: string,
+    messages: ConversationMessage[],
+    cible: LangueConsole,
+  ): Promise<FilTraduit<ConversationMessage>>;
+  /**
+   * Traduit UN texte que l'operateur s'apprete a envoyer. `null` = la traduction n'a pas abouti.
+   *
+   * 🔴 JAMAIS AUTOMATIQUE : c'est un bouton, avant l'envoi. Une traduction ratee en entree se
+   * rattrape sur l'original affiche a cote ; une traduction ratee en sortie est partie chez un
+   * client, et aucun message WhatsApp livre ne se rappelle.
+   */
+  traduireSortant?(tenantId: string, texte: string, cible: LangueConsole): Promise<Traduction | null>;
+  /** Cet espace peut-il traduire ? `false` = pas de cle de modele, donc pas de credit. */
+  traductionDisponible?(tenantId: string): Promise<boolean>;
   /** Pose/retire la surcharge de reprise d'UN fil (C.4). null = suit le défaut du tenant. Optionnel (deps de test minimales). */
   getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
   /**
@@ -552,20 +587,54 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // ⚠️ LES DEUX ou AUCUN, et `afterId` doit être un uuid : un couple incomplet ou mal formé est IGNORÉ, donc
     // on rend le fil entier. C'est le repli sûr — un client qui se trompe voit trop de messages, jamais trop
     // peu. L'inverse (partir d'un point inventé) escamoterait des bulles sans que personne ne le voie.
-    const q = (req.query ?? {}) as { afterAt?: unknown; afterId?: unknown };
+    const q = (req.query ?? {}) as { afterAt?: unknown; afterId?: unknown; traduire?: unknown };
     const afterAt = typeof q.afterAt === 'string' && !Number.isNaN(Date.parse(q.afterAt)) ? q.afterAt : undefined;
     const apres = afterAt !== undefined && estUuid(q.afterId) ? { at: afterAt, id: q.afterId } : undefined;
+    /**
+     * `?traduire=fr` : LA LANGUE DU LECTEUR, qui vient du navigateur et que le serveur ne connait pas.
+     *
+     * 🔴 ELLE NE PEUT PAS ETRE DECIDEE A L'ARRIVEE DU MESSAGE. A cet instant, personne ne sait dans
+     * quelle langue le futur lecteur voudra le lire : deux collegues, l'un francophone et l'autre
+     * anglophone, ouvrent le meme fil. C'est donc le navigateur qui demande, comme le fait deja le bot
+     * d'aide (`QuestionAide.langue`). Une valeur hors de nos deux langues est IGNOREE, et le fil sort
+     * en VO : un parametre mal forme ne doit jamais casser l'ecran le plus utilise du produit.
+     */
+    const cible = estLangueConsole(q.traduire) ? q.traduire : null;
+    const messages = await deps.getMessages(conversationId, apres);
+    /**
+     * ⚠️ PAS DE PLAFOND DE DEBIT « COUTEUX » SUR CETTE ROUTE, ET C'EST DELIBERE. Le fil se rafraichit
+     * toutes les 4 secondes, soit 15 appels par minute : le plafond couteux (10 par minute et par
+     * espace) le couperait purement et simplement. Ce qui borne la depense ici est ailleurs, et c'est
+     * plus solide qu'un compteur : le delta ne ramene que les messages NOUVEAUX (donc zero traduction
+     * sur un fil calme), une traduction deja rangee n'est jamais recalculee, le lot est plafonne a 40
+     * messages, et la facture tombe sur le credit PREPAYE du client, qui est sa propre borne.
+     */
+    const traduit = cible !== null && deps.traduireFil
+      ? await deps.traduireFil(tenant, conversationId, messages, cible)
+      : null;
     return reply.code(200).send({
       waId: ctx.waId,
       windowOpen: ctx.windowOpen,
       lastInboundAt: ctx.lastInboundAt,
+      /**
+       * La langue APPRISE du contact, `null` tant qu'on n'a rien appris. C'est elle qui permet au
+       * bouton de traduction sortante de NOMMER sa cible au lieu de dire « Traduire » tout court.
+       */
+      langueContact: ctx.langueContact ?? null,
+      /**
+       * ⚠️ RENDU SEULEMENT QUAND UNE TRADUCTION A ETE DEMANDEE, et c'est ce qui garde le rayon de
+       * souffle a zero : sans `?traduire`, la reponse est mot pour mot celle d'avant ce lot.
+       * `true` = cet espace n'a pas de cle de modele, donc pas de credit. Ce n'est pas une panne, et
+       * c'est un 200 : Cloudflare remplacerait de toute facon le corps d'un 5xx par sa page.
+       */
+      ...(cible !== null ? { traductionIndisponible: traduit === null || traduit.indisponible } : {}),
       // Qui détient le fil : sans cette information, l'opérateur voit le scénario se taire sans comprendre
       // pourquoi et ne sait pas s'il doit rendre la main. Défaut `app_workflow` quand le dep est absent,
       // qui est l'état d'une conversation dont personne n'a pris le contrôle.
       controlOwner: deps.getControlOwner ? await deps.getControlOwner(tenant, ctx.waId) : 'app_workflow',
       // Surcharge de reprise de CE fil (C.4) : null = suit le défaut du tenant. L'inbox l'affiche pour que
       // l'opérateur sache si, à la reprise, ce fil précis restera à l'humain ou repartira au scénario.
-      messages: await deps.getMessages(conversationId, apres),
+      messages: traduit ? traduit.messages : messages,
     });
   });
 

@@ -149,6 +149,32 @@ export interface ConversationMessage {
    * l'opérateur qui reprend une conversation menée par l'IA n'aurait plus aucun moyen de le savoir.
    */
   transcription?: string | null;
+  /**
+   * La langue dans laquelle le vocal a ete DIT, telle que le modele de transcription la lit
+   * (migration 0137).
+   *
+   * ⚠️ Elle etait rendue par `transcrire` depuis le 2026-09-09 et JETEE. Elle sert deux fois : ne pas
+   * traduire un vocal deja dans la langue du lecteur, et alimenter la langue du contact.
+   */
+  transcriptionLangue?: string | null;
+  /**
+   * NOTRE LECTURE d'un message ENTRANT, dans la langue de la console (migration 0137).
+   *
+   * 🔴 A COTE de `body`, jamais a sa place : `body` garde ce que le CLIENT a ecrit, et c'est lui qui
+   * fait foi. Meme separation qu'entre `transcription` et `body` (0125), et pour la meme raison : la
+   * lecture d'un modele n'est pas ce que le client a ecrit.
+   */
+  traduction?: string | null;
+  /** La langue de `traduction`. Bornee a nos deux langues de console par la migration 0137. */
+  traductionLangue?: string | null;
+  /**
+   * Ce que l'OPERATEUR a ecrit avant de faire traduire, sur un message SORTANT (migration 0137).
+   *
+   * 🔴 LE SENS S'INVERSE ICI, et c'est le piege du lot : sur un sortant, `body` porte ce qui est PARTI
+   * (donc le texte traduit, c'est ce que le client a recu), et cette colonne porte l'original. Ne
+   * garder qu'un des deux est faux dans les deux sens.
+   */
+  redactionOrigine?: string | null;
 }
 
 /**
@@ -867,20 +893,33 @@ export class PgInboxStore implements InboxStore {
   async getConversationContext(
     conversationId: string,
     tenantId: string,
-  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null> {
-    const res = await this.pool.query<{ wa_id: string; last_in: Date | null }>(
-      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in' and m.channel = 'whatsapp') as last_in
+  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean; langueContact?: string | null } | null> {
+    const res = await this.pool.query<{ wa_id: string; last_in: Date | null; langue_detectee: string | null }>(
+      // ⚠️ `contacts.langue_detectee` (migration 0137) est NOMMEE ici : la migration est BLOQUANTE,
+      // sans elle ce `select` rend `42703` et toutes les routes de l'inbox qui lisent un contexte
+      // tombent d'un coup (le fil, la reponse, le template, la transcription).
+      `select c.wa_id, ct.langue_detectee,
+              max(m.created_at) filter (where m.direction = 'in' and m.channel = 'whatsapp') as last_in
        from conversations c
+       left join contacts ct on ct.id = c.contact_id
        left join conversation_messages m on m.conversation_id = c.id
        where c.id = $1 and c.tenant_id = $2
-       group by c.wa_id`,
+       group by c.wa_id, ct.langue_detectee`,
       [conversationId, tenantId],
     );
     const r = res.rows[0];
     if (!r) return null;
     const lastIn = r.last_in;
     const windowOpen = !!lastIn && Date.now() - lastIn.getTime() < 24 * 3600 * 1000;
-    return { waId: r.wa_id, lastInboundAt: lastIn ? lastIn.toISOString() : null, windowOpen };
+    /**
+     * `langueContact` : la langue APPRISE du contact, `null` tant qu'on n'a rien appris.
+     *
+     * 🔴 `null` N'EST PAS « francais ». C'est le bouton de traduction sortante qui la lit pour NOMMER
+     * sa cible : supposer une langue ferait promettre « Traduire en espagnol » a un anglophone, et
+     * l'operateur ne s'en apercevrait qu'apres l'envoi. Sans rien d'appris, le bouton nomme la langue
+     * par defaut, donc il ne ment pas.
+     */
+    return { waId: r.wa_id, lastInboundAt: lastIn ? lastIn.toISOString() : null, windowOpen, langueContact: r.langue_detectee };
   }
 
   /**
@@ -927,7 +966,7 @@ export class PgInboxStore implements InboxStore {
    */
   async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; transcription: string | null;
+      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
     }>(
       // sender_name : name du user, sinon la partie locale de son email ; null si pas d'auteur (legacy/auto).
       // channel : le fil est UNIQUE par contact, c'est chaque bulle qui dit par quel tuyau elle est passée.
@@ -935,8 +974,12 @@ export class PgInboxStore implements InboxStore {
       // `created_at` ci-dessus traverse un Date JavaScript qui n'en garde que la milliseconde. Voir le
       // commentaire de `ConversationMessage.curseur` : c'est ce qui faisait revenir le dernier message à
       // chaque tour et redéclencher le défilement du fil.
+      // 🔴 `traduction`, `traduction_langue`, `redaction_origine` et `transcription_langue` (migration
+      // 0137) sont NOMMEES ici, donc cette migration est BLOQUANTE : sans elles, ce `select` rend
+      // `42703` et le fil entier tombe, sur la requete la plus appelee du produit (toutes les 4 s).
       `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
-              (m.media_id is not null) as a_media, m.transcription,
+              (m.media_id is not null) as a_media, m.transcription, m.transcription_langue,
+              m.traduction, m.traduction_langue, m.redaction_origine,
               to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
        from conversation_messages m
@@ -959,6 +1002,10 @@ export class PgInboxStore implements InboxStore {
       channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',
       aMedia: r.a_media === true,
       transcription: r.transcription,
+      transcriptionLangue: r.transcription_langue,
+      traduction: r.traduction,
+      traductionLangue: r.traduction_langue,
+      redactionOrigine: r.redaction_origine,
     }));
   }
 
