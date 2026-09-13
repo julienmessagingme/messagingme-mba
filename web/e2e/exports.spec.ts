@@ -115,7 +115,7 @@ test.describe('Journal des actions : export CSV', () => {
     { id: 'a-2', at: '2026-08-18T09:00:00.000Z', actorEmail: null, action: 'contact.optin', targetKind: 'contact', targetId: 'c-7', detail: {} },
   ];
 
-  async function monterParametres(page: import('@playwright/test').Page) {
+  async function monterJournalDAudit(page: import('@playwright/test').Page) {
     const appelsAudit: string[] = [];
     await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
     // Le CSV est fabriqué en mémoire puis téléchargé via un blob : on intercepte sa création pour lire ce qui
@@ -140,13 +140,15 @@ test.describe('Journal des actions : export CSV', () => {
       if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
       return json({});
     });
-    await page.goto('/parametres');
+    // ⚠️ LE JOURNAL A DÉMÉNAGÉ DANS « SÉCURITÉ » LE 2026-09-13. Ce test le désignait par sa PAGE, pas par
+    // un symbole : aucun `grep` sur le composant ne pouvait le trouver, et il n'a rougi qu'en CI.
+    await page.goto('/securite/audit');
     await expect(page.getByTestId('journal-export-csv')).toBeEnabled({ timeout: 15_000 });
     return { appelsAudit };
   }
 
   test('🔴 le CSV porte les libellés, l’acteur système, et RELIT le journal au-delà de l’écran', async ({ page }) => {
-    const { appelsAudit } = await monterParametres(page);
+    const { appelsAudit } = await monterJournalDAudit(page);
     await page.getByTestId('journal-export-csv').click();
 
     await expect.poll(() => page.evaluate(() => (window as unknown as { __csv: string[] }).__csv.length), { timeout: 15_000 }).toBe(1);
