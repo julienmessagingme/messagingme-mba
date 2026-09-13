@@ -208,9 +208,17 @@ export function EtapeCanal({
           (`reprendreCampagnesDues`) : la campagne reste en pause POUR TOUJOURS, sans qu'aucune erreur ne
           le dise.
 
-          ⚠️ C'EST L'INVERSE DE LA CASE DU RATTRAPAGE juste au-dessus, où l'absence d'horaires rend la
-          fenêtre TOUJOURS ouverte. Deux cases voisines, deux comportements opposés sur la même absence :
-          le dire au moment où l'on coche est la seule façon de ne pas se faire avoir.
+          ⚠️ CE FUT L'INVERSE DE LA CASE DU RATTRAPAGE, qui vivait juste au-dessus jusqu'au 2026-09-13 et
+          pour qui l'absence d'horaires rendait la fenêtre TOUJOURS ouverte. Deux cases voisines, deux
+          comportements opposés sur la même absence : c'est une des raisons pour lesquelles la seconde a
+          été retirée. Le dire au moment où l'on coche reste la seule façon de ne pas se faire avoir.
+
+          ⚠️ ET CE CAS EXISTE VRAIMENT : l'espace de démonstration n'avait AUCUNE heure réglée en base le
+          2026-09-13, ce qui ne se voyait pas à l'écran parce que l'API rend des heures PAR DÉFAUT
+          (lundi-vendredi 9 h-18 h, `DEFAULT_BUSINESS_HOURS`) quand la colonne est nulle. Cet
+          avertissement ne s'affiche donc JAMAIS aujourd'hui : `heuresDOuvertureReglees` reçoit le défaut
+          et répond « oui ». La console ne sait pas distinguer « réglé » de « jamais réglé », et c'est
+          une limite connue, pas un oubli de câblage.
         */}
         {etat.heuresOuvrees && !horairesReglees && (
           <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700" data-testid="horaires-absentes">

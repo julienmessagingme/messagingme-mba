@@ -134,22 +134,22 @@ test('SMS et e-mail sont visibles et non selectionnables', async ({ page }) => {
   await expect(page.getByText('bientôt')).toHaveCount(2);
 });
 
-test('un espace sans heures d ouverture le DIT au moment ou on coche', async ({ page }) => {
-  // 🔴 La case EST la garde, et elle est cochée par défaut. On la décoche puis on la recoche pour
-  // exercer le geste que décrit la spec : « au moment où l'on coche ».
-  await surCanal(page, { businessHours: {} });
-  const garde = page.getByRole('checkbox', { name: /heures d.ouverture/i });
-  await garde.uncheck();
-  await garde.check();
-  await expect(page.getByText(/aucune heure d.ouverture n.est réglée/i)).toBeVisible();
-});
-
-test('un espace QUI a des heures d ouverture ne recoit aucun avertissement', async ({ page }) => {
-  // L'autre sens : sans ce cas, un avertissement affiché en permanence passerait le test précédent.
-  await surCanal(page);
-  await expect(page.getByRole('checkbox', { name: /heures d.ouverture/i })).toBeChecked();
-  await expect(page.getByText(/aucune heure d.ouverture n.est réglée/i)).toHaveCount(0);
-});
+/**
+ * 🔴 DEUX CAS ONT ETE RETIRES ICI, ET IL FAUT DIRE POURQUOI (2026-09-13). Ils s'appelaient « un espace
+ * sans heures d ouverture le DIT au moment ou on coche » et son miroir, et ils designaient leur cible
+ * par le LIBELLE `/heures d.ouverture/i`. Ce libelle ne correspondait PAS a « Envoyer uniquement pendant
+ * les heures OUVREES » mais a « Ne pas envoyer le rattrapage en dehors des heures D'OUVERTURE », la
+ * seconde question, retiree ce jour-la. Ils ne gardaient donc plus rien.
+ *
+ * ⚠️ LEUR CAS N'EST PAS PERDU, il est deja couvert plus bas, et mieux : « la case des heures ouvrees
+ * previent quand l espace n a AUCUN horaire » et « un espace QUI a des horaires ne recoit pas cet
+ * avertissement » exercent les deux sens sur la case qui RESTE, en la designant par son nom complet.
+ * Les reecrire ici en aurait fait deux exemplaires du meme controle.
+ *
+ * 🔴 LA LECON, ET ELLE VAUT AU-DELA DE CE FICHIER : un test qui designe un element par son TEXTE ne
+ * nomme aucun symbole, donc aucun `grep` sur le nom du champ ou sur le `data-testid` ne le trouve quand
+ * on retire ce qu'il gardait. C'est la CI qui l'a dit, pas la revue.
+ */
 
 test('le second canal du repli s AFFICHE et suit le premier', async ({ page }) => {
   await surCanal(page);
@@ -182,8 +182,9 @@ test('une seule question horaire sur l envoi, et plus aucune intention de cadenc
  * `hors_horaires`, `prochaineOuverture` ne trouve aucune reprise donc `paused_until` reste nul, et le
  * balayage de reprise exige `paused_until is not null`. La campagne ne repart JAMAIS.
  *
- * ⚠️ C'EST L'INVERSE DE LA CASE DU RATTRAPAGE, ou l'absence d'horaires rend la fenetre TOUJOURS ouverte.
- * Deux cases voisines, deux comportements opposes sur la meme absence.
+ * ⚠️ CE FUT L'INVERSE DE LA CASE DU RATTRAPAGE, qui vivait juste au-dessus et pour qui l'absence
+ * d'horaires rendait la fenetre TOUJOURS ouverte. Deux cases voisines, deux comportements opposes sur la
+ * meme absence : c'est une des raisons pour lesquelles la seconde a ete retiree le 2026-09-13.
  */
 test('la case des heures ouvrees previent quand l espace n a AUCUN horaire', async ({ page }) => {
   await surCanal(page, { businessHours: {} });

@@ -1846,3 +1846,34 @@ ses horaires en croyant avoir résolu le problème.
 
 À faire : exposer les deux colonnes dans le résumé, afficher la phrase et l'échéance sous le badge
 « en pause », et nommer le bouton « Reprendre » comme le geste qui rattrape un horaire corrigé.
+
+## Un test qui désigne par le TEXTE ne nomme aucun symbole (2026-09-13)
+
+Trouvé par la CI, pas par la revue, et c'est bien le problème. En retirant la question « Ne pas envoyer
+le rattrapage en dehors des heures d'ouverture », la revue a cherché ses lecteurs par `grep` sur le
+champ (`rattrapageHorsHoraires`), sur le `data-testid` (`bloc-rattrapage`) et sur la fonction
+(`rattrapagePossible`). Zéro reste. **Deux e2e la gardaient pourtant**, en la désignant par son
+libellé : `getByRole('checkbox', { name: /heures d.ouverture/i })`.
+
+🔴 **ET LE PIÈGE EST PLUS FIN QUE « J'AI OUBLIÉ UN GREP »** : ce libellé ressemblait à celui de la case
+qui RESTE (« Envoyer uniquement pendant les heures **ouvrées** »). En lisant le test, on croit qu'il
+parle de la survivante. Il fallait comparer les deux libellés au caractère près pour voir que
+`/heures d.ouverture/i` ne correspond qu'à la disparue.
+
+⚠️ **LA PARADE** : quand on retire un élément d'interface, chercher aussi son **LIBELLÉ** dans les
+tests, pas seulement son identifiant. Et si un cas réécrit se met à ressembler à un cas déjà présent,
+c'est qu'il faut le SUPPRIMER en nommant son remplaçant, pas le réécrire : les deux exemplaires ont été
+retirés une fois constatée cette duplication.
+
+## L'espace ne sait pas distinguer « horaires réglés » de « jamais réglés » (2026-09-13)
+
+`tenant_settings.business_hours` valait `null` pour l'espace Demo, et l'API rend
+`DEFAULT_BUSINESS_HOURS` (lundi-vendredi 9 h-18 h) à la place. Conséquences mesurées :
+
+- l'espace se voit appliquer des heures d'ouverture **qu'il n'a jamais choisies**, et une campagne
+  « heures ouvrées » lancée un dimanche attend le lundi ;
+- l'avertissement « aucune heure d'ouverture n'est réglée pour cet espace » de l'étape Canal ne peut
+  donc **JAMAIS s'afficher** : `heuresDOuvertureReglees` reçoit le défaut et répond « oui ».
+
+Le code de cet écran est juste, sa garde est inerte. Pour la rendre vivante il faut que l'API dise si
+la colonne est nulle (un drapeau à côté des heures), sans quoi le front ne peut pas faire la différence.

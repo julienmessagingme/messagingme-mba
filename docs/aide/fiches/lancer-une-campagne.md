@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: 4912f8
+source_empreinte: 584936
 ---
 # Lancer une campagne
 
@@ -15,13 +15,23 @@ revenir en arrière à tout moment sans rien perdre.
 information liée à une commande, un rendez-vous ou un compte.
 
 **2. Le canal.** Un canal seul (WhatsApp ou RCS), ou une chaîne : le message part sur un premier canal, et
-les contacts qu'il n'a pas atteints sont repris sur un second, puis éventuellement par e-mail.
+les contacts qu'il n'a pas atteints sont repris sur un second, puis éventuellement par e-mail. Sur un canal
+seul, vous pouvez demander de réessayer les envois qui échouent ; avec une chaîne, la question ne se pose
+pas, puisque le repli EST le rattrapage. Vous décidez enfin si la campagne n'envoie que pendant vos heures
+d'ouverture : cette case vaut pour les premiers envois comme pour les relances.
+
+Lancée hors de ces heures, la campagne n'est pas refusée : elle se met en pause et repart d'elle-même à la
+prochaine ouverture. Attention, la liste ne dit pas encore pourquoi une campagne est en pause ni quand elle
+repartira ; et si vous corrigez vos heures d'ouverture après coup, la campagne déjà en pause ne se réveille
+pas toute seule : utilisez son bouton « Reprendre ».
 
 **3. Le contenu.** Un cadre par étage de la chaîne, dans l'ordre d'envoi. Pour WhatsApp, vous choisissez un
 modèle approuvé, vous voyez tout de suite un aperçu de ce que le contact recevra, et vous dites d'où vient
 chaque variable du modèle. Si le modèle qu'il vous faut n'existe pas encore, vous le créez sans quitter la
-campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. Vous dites
-enfin ce qui se passe quand un contact répond : l'agent de Meta, un agent IA, ou votre Inbox.
+campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. Tant qu'un
+étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer. Une fois le premier étage
+rempli, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
+Meta, un agent IA, ou votre Inbox.
 
 **4. L'audience.** À qui. Le plus courant est de piocher dans votre liste de contacts, avec des filtres que
 vous combinez (un ou plusieurs tags, le consentement marketing, le début ou un morceau du numéro, la valeur
