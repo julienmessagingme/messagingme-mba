@@ -241,3 +241,50 @@ describe('estimateCoutParCampagne', () => {
     expect(r.lignes.map((l) => l.campaignId)).toEqual(['c2', 'c1', 'c3']);
   });
 });
+
+/**
+ * 🔴 UNE REPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU (Julien, 2026-09-13, sur un cas reel : sur
+ * « Testjulien2 », le destinataire n a PAS clique mais il a REPONDU).
+ *
+ * ⚠️ ON COMPTE DES PERSONNES, PAS DES GESTES, et c est un ecart assume avec la fiche des campagnes a
+ * scenario. Tranche par Julien : diviser un cout par des PERSONNES donne ce que coute une personne
+ * engagee, ce qui se compare d une campagne a l autre ; par des gestes, on flatte mecaniquement les
+ * campagnes dont les gens reagissent plusieurs fois.
+ */
+describe('le cout par ENGAGEMENT', () => {
+  const rows = [{ campaignId: 'c1', nom: 'Testjulien2', template: 'promo', category: 'marketing', count: 100 }];
+  const rates = { marketing: 0.05, utility: 0.01 };
+
+  it('🔴 une campagne SANS clic mais AVEC des reponses a bien un cout par engagement', () => {
+    // Le cas exact de Julien : zero clic, des gens qui ont repondu. Avant, la ligne etait vide.
+    const r = estimateCoutParCampagne(rows as never, rates as never, new Map([['c1', 0]]), new Map([['c1', 4]]));
+    const l = r.lignes[0]!;
+    expect(l.clics).toBe(0);
+    // 🔴 LE COUT PAR CLIC RESTE VIDE, et c est juste : personne n a clique. Les deux colonnes disent
+    // deux choses differentes, et c est pour ca qu on a AJOUTE la seconde au lieu de renommer la premiere.
+    expect(l.coutParClic).toBeNull();
+    expect(l.engagements).toBe(4);
+    expect(l.coutParEngagement).toBe(1.25); // 100 x 0,05 = 5 ; 5 / 4
+  });
+
+  it('sans mesure d engagement, la case est VIDE et non a zero', () => {
+    // ⚠️ Le deploiement est decale (Vercel avant le VPS) : la reponse peut ne pas porter le champ.
+    // « On ne sait pas » et « personne ne s est engage » n appellent pas la meme lecture.
+    const r = estimateCoutParCampagne(rows as never, rates as never, new Map([['c1', 3]]));
+    expect(r.lignes[0]!.engagements).toBeNull();
+    expect(r.lignes[0]!.coutParEngagement).toBeNull();
+  });
+
+  it('zero engagement mesure ne produit AUCUN ratio, jamais un infini', () => {
+    const r = estimateCoutParCampagne(rows as never, rates as never, new Map([['c1', 0]]), new Map([['c1', 0]]));
+    expect(r.lignes[0]!.engagements).toBe(0);
+    expect(r.lignes[0]!.coutParEngagement).toBeNull();
+  });
+
+  it('sans cout chiffrable, pas de ratio non plus', () => {
+    const sansTarif = [{ campaignId: 'c1', nom: 'X', template: 'p', category: null, count: 10 }];
+    const r = estimateCoutParCampagne(sansTarif as never, rates as never, new Map(), new Map([['c1', 5]]));
+    expect(r.lignes[0]!.cout).toBeNull();
+    expect(r.lignes[0]!.coutParEngagement).toBeNull();
+  });
+});

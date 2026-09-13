@@ -164,3 +164,40 @@ test.describe('Performance Lab : ce que coûte un engagement', () => {
     await expect(page.getByTestId('cout-vide')).toHaveCount(0);
   });
 });
+
+/**
+ * 🔴 LE CAS DE JULIEN, 2026-09-13 : sur « Testjulien2 », le destinataire n a PAS clique mais il a
+ * REPONDU. Le tableau ne comptait que les clics, donc il annoncait « aucun engagement » sur une
+ * campagne qui en avait produit un. Une reponse est un engagement de PREMIER niveau.
+ */
+test.describe('Performance Lab : une reponse compte comme un engagement', () => {
+  const AVEC_ENGAGEMENT = {
+    ...COUT,
+    lignes: [
+      // Zero clic, mais quatre personnes se sont engagees : c est la ligne qui etait vide avant.
+      { campaignId: 'c-test', nom: 'Testjulien2', template: 'promo', envoyes: 100, cout: 5, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 0, coutParClic: null, engagements: 4, coutParEngagement: 1.25 },
+    ],
+  };
+
+  test('🔴 zero clic mais des engages : la colonne engagement est REMPLIE', async ({ page }) => {
+    await mock(page, AVEC_ENGAGEMENT);
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-engages-c-test')).toHaveText('4');
+    await expect(page.getByTestId('cout-ratio-engage-c-test')).not.toHaveText('—');
+    // 🔴 ET LA COLONNE CLIC RESTE VIDE, ce qui est la verite : personne n a clique. Les deux colonnes
+    // disent deux choses differentes, et c est pour ca qu on a AJOUTE la seconde sans renommer la premiere.
+    await expect(page.getByTestId('cout-ratio-c-test')).toHaveText('—');
+  });
+
+  /**
+   * ⚠️ UNE API PLUS ANCIENNE NE REND PAS CES CHAMPS, et ce cas arrive VRAIMENT : la console part sur
+   * Vercel a chaque push, l API se deploie a la main sur le VPS. Entre les deux, l ecran doit tenir.
+   */
+  test('une reponse SANS les champs d engagement ne casse pas l ecran', async ({ page }) => {
+    await mock(page); // COUT, qui ne porte ni engagements ni coutParEngagement
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-engages-c-promo')).toHaveText('—');
+    // Le reste de la ligne reste lisible : c est ca, « ne pas casser ».
+    await expect(page.getByTestId('cout-clics-c-promo')).toHaveText('8');
+  });
+});

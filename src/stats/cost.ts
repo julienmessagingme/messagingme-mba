@@ -174,6 +174,31 @@ export interface LigneCoutCampagne {
    * « 0 € » serait une réponse à une question qu'on n'a pas pu poser.
    */
   coutParClic: number | null;
+  /**
+   * LES PERSONNES QUI SE SONT ENGAGÉES : celles qui ont cliqué, ET celles qui ont RÉPONDU.
+   *
+   * 🔴 UNE RÉPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU (décision de Julien du 2026-09-13, sur un cas
+   * réel : « le destinataire n'a pas cliqué mais en revanche il a répondu, c'est comme un clic »).
+   * Quelqu'un qui prend la peine d'écrire s'est engagé plus fort que quelqu'un qui clique ; ne pas le
+   * compter sous-estimait exactement ce que cette colonne prétend mesurer.
+   *
+   * 🔴 ON COMPTE DES PERSONNES, PAS DES GESTES, et c'est un écart ASSUMÉ avec `EtapeCoutCampagne`
+   * (qui additionne liens + boutons + réponses). Tranché par Julien le 2026-09-13 : diviser un coût
+   * par des PERSONNES donne ce que coûte une personne engagée, ce qui se compare d'une campagne à
+   * l'autre ; le diviser par des gestes flatte mécaniquement les campagnes dont les gens réagissent
+   * plusieurs fois. Quelqu'un qui clique PUIS répond compte donc une fois.
+   *
+   * ⚠️ LES CLICS ANONYMES N'Y SONT PAS, ET C'EST INÉVITABLE : un lien d'un template approuvé avant le
+   * 2026-09-02 n'a pas de jeton, donc son clic n'est rattaché à personne (cf. `clicsAnonymes`). On ne
+   * peut pas compter une personne qu'on ne sait pas nommer. `clics` continue de les compter, lui.
+   *
+   * ⚠️ OPTIONNEL, comme `sansCategorie` et `sansTarif`, et pour la même raison de RÉSEAU : la console
+   * part sur Vercel à chaque push, l'API se déploie à la main sur le VPS. Entre les deux, la réponse
+   * ne porte pas ce champ, et l'écran doit retomber sur les clics sans rien casser.
+   */
+  engagements?: number | null;
+  /** Coût par personne engagée. `null` aux mêmes conditions que `coutParClic`. */
+  coutParEngagement?: number | null;
 }
 
 export interface CoutParCampagne {
@@ -203,6 +228,14 @@ export function estimateCoutParCampagne(
   rows: VolumeCampagneRow[],
   rates: CategoryRates,
   clics: Map<string, number>,
+  /**
+   * Les PERSONNES engagées par campagne (cliqueurs identifiés et répondeurs, dédoublonnés).
+   *
+   * ⚠️ ABSENTE = on ne sait pas, et l'écran retombe sur les clics. Ce n'est pas zéro : une campagne
+   * sans engagement mesurable et une campagne dont on n'a pas mesuré l'engagement ne se disent pas
+   * de la même façon, et c'est la règle que tout ce fichier applique déjà aux trois autres cases.
+   */
+  engagements?: Map<string, number>,
 ): CoutParCampagne {
   const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
   for (const r of rows) {
@@ -232,10 +265,16 @@ export function estimateCoutParCampagne(
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
     const coutParClic = cout !== null && nbClics !== null && nbClics > 0 ? Math.round((cout / nbClics) * 10000) / 10000 : null;
+    // Même règle que le coût par clic, sur l'autre dénominateur : les deux termes, et un dénominateur non nul.
+    const e = engagements?.get(l.campaignId);
+    const nbEngagements = e === undefined ? null : e;
+    const coutParEngagement = cout !== null && nbEngagements !== null && nbEngagements > 0
+      ? Math.round((cout / nbEngagements) * 10000) / 10000
+      : null;
     return {
       campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, cout,
       nonChiffrables: l.nonChiffrables, sansCategorie: l.sansCategorie, sansTarif: l.sansTarif,
-      clics: nbClics, coutParClic,
+      clics: nbClics, coutParClic, engagements: nbEngagements, coutParEngagement,
     };
   });
   /**

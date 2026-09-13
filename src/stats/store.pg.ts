@@ -917,6 +917,73 @@ export class PgStatsStore {
   }
 
   /**
+   * LES PERSONNES QUI SE SONT ENGAGÉES sur une campagne : celles qui ont CLIQUÉ, et celles qui ont RÉPONDU.
+   *
+   * 🔴 UNE RÉPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU (Julien, 2026-09-13, sur un cas réel : le
+   * destinataire de « Testjulien2 » n'avait pas cliqué mais avait répondu). Le tableau ne comptait que
+   * les clics, donc il annonçait « aucun engagement » sur une campagne qui en avait produit.
+   *
+   * 🔴 ON COMPTE DES PERSONNES, PAS DES GESTES, et c'est un écart ASSUMÉ avec la fiche des campagnes à
+   * scénario (`EtapeCoutCampagne.interactions` additionne liens + boutons + réponses). Tranché par Julien :
+   * diviser un coût par des PERSONNES donne ce que coûte une personne engagée, ce qui se compare d'une
+   * campagne à l'autre ; par des gestes, on flatte mécaniquement les campagnes dont les mêmes gens
+   * réagissent plusieurs fois. D'où le `count(distinct ...)` sur l'UNION des deux populations : quelqu'un
+   * qui clique PUIS répond compte une fois.
+   *
+   * 🔴 SEPT JOURS APRÈS SON PROPRE ENVOI, PAR DESTINATAIRE, et les deux moitiés de cette phrase comptent.
+   * Sans borne haute, toute réponse ultérieure gonflerait le score d'une vieille campagne à chaque message
+   * reçu, et son chiffre ne se stabiliserait jamais. Bornée au PREMIER envoi de la campagne plutôt qu'à
+   * celui de chacun, une campagne étalée sur plusieurs jours perdrait les réactions de ses derniers
+   * destinataires. ⚠️ C'est un écart DÉLIBÉRÉ avec la fiche, qui n'a aucune borne parce qu'un scénario
+   * reçoit des réponses pendant des jours : ici on mesure un envoi unique.
+   *
+   * ⚠️ LES CLICS ANONYMES EN SONT ABSENTS, ET C'EST INÉVITABLE. Un lien d'un template approuvé avant le
+   * 2026-09-02 n'a pas de jeton, donc `contact_id` est nul et le clic n'est rattaché à personne (cf.
+   * `clicsAnonymes`). On ne peut pas compter une personne qu'on ne sait pas nommer. `clicsParCampagne`,
+   * lui, continue de les compter : les deux colonnes ne disent pas la même chose, et c'est pour cela
+   * qu'on a ajouté celle-ci au lieu de renommer l'autre.
+   *
+   * ⚠️ Une campagne ABSENTE de la map = aucune mesure, ce qui n'est pas zéro. Même règle que partout
+   * ailleurs dans ce fichier.
+   */
+  async engagementsParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
+    if (campaignIds.length === 0) return new Map();
+    const res = await this.pool.query<{ campaign_id: string; n: string | null }>(
+      `with envoyes as (
+         select r.campaign_id, r.contact_id, r.sent_at
+           from campaign_recipients r
+           join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
+          where r.campaign_id = any($2::uuid[]) and r.sent_at is not null and r.contact_id is not null
+       ),
+       cliqueurs as (
+         select distinct e.campaign_id, k.contact_id
+           from envoyes e
+           join tracked_link_clicks k
+             on k.tenant_id = $1 and k.contact_id = e.contact_id
+            and k.at >= e.sent_at and k.at < e.sent_at + interval '7 days'
+       ),
+       repondeurs as (
+         select distinct e.campaign_id, e.contact_id
+           from envoyes e
+           join conversations cv on cv.tenant_id = $1 and cv.contact_id = e.contact_id
+           join conversation_messages m
+             on m.conversation_id = cv.id and m.direction = 'in'
+            and m.created_at >= e.sent_at and m.created_at < e.sent_at + interval '7 days'
+       ),
+       engages as (
+         select campaign_id, contact_id from cliqueurs
+         union
+         select campaign_id, contact_id from repondeurs
+       )
+       select e.campaign_id, count(*)::int as n
+         from engages e
+        group by e.campaign_id`,
+      [tenantId, campaignIds],
+    );
+    return new Map(res.rows.map((r) => [r.campaign_id, Number(r.n ?? 0)]));
+  }
+
+  /**
    * Le VOLUME d'envois facturables de la période, par campagne et par catégorie.
    *
    * ⚠️ Même population que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) : c'est ce

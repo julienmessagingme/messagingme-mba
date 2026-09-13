@@ -345,6 +345,20 @@ export interface LigneCoutCampagne {
   sansTarif?: number;
   clics: number | null;
   coutParClic: number | null;
+  /**
+   * LES PERSONNES QUI SE SONT ENGAGEES : celles qui ont clique, ET celles qui ont REPONDU (2026-09-13).
+   *
+   * 🔴 UNE REPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU, decision de Julien sur un cas reel : le
+   * destinataire n avait pas clique mais avait repondu, et le tableau annoncait « aucun engagement ».
+   * 🔴 DES PERSONNES, PAS DES GESTES : quelqu un qui clique PUIS repond compte une fois. Diviser un cout
+   * par des personnes donne ce que coute une personne engagee, ce qui se compare d une campagne a l autre.
+   * ⚠️ OPTIONNEL, meme reserve de RESEAU que `sansCategorie` : la console part sur Vercel a chaque push,
+   * l API se deploie a la main. Entre les deux, la reponse ne porte pas ce champ et l ecran retombe sur
+   * les clics.
+   */
+  engagements?: number | null;
+  /** Cout par personne engagee. `null` aux memes conditions que `coutParClic`. */
+  coutParEngagement?: number | null;
 }
 export interface CoutParCampagne {
   lignes: LigneCoutCampagne[];

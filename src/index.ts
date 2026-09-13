@@ -959,8 +959,14 @@ async function main(): Promise<void> {
           statsStore.getVolumeParCampagne(tenant, range),
           tarifsMeta(tenant, range),
         ]);
-        const clics = await statsStore.clicsParCampagne(tenant, [...new Set(volumes.map((v) => v.campaignId))]);
-        return estimateCoutParCampagne(volumes, rates, clics);
+        const ids = [...new Set(volumes.map((v) => v.campaignId))];
+        // ⚠️ LES DEUX ENSEMBLE, pas l'un après l'autre : ce sont deux lectures indépendantes sur la même
+        // liste d'identifiants, et cette route sert la page d'accueil de Performance lab.
+        const [clics, engagements] = await Promise.all([
+          statsStore.clicsParCampagne(tenant, ids),
+          statsStore.engagementsParCampagne(tenant, ids),
+        ]);
+        return estimateCoutParCampagne(volumes, rates, clics, engagements);
       },
       /**
        * La fiche d'UNE campagne, ouverte en cliquant sa ligne dans le tableau ci-dessus.

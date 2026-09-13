@@ -98,8 +98,8 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
         <h2 className="text-sm font-semibold text-ink-900">{t('Ce que coûte un engagement', 'What an engagement costs')}</h2>
         <p className="mt-0.5 text-xs text-ink-400">
           {t(
-            'Coût ESTIMÉ (envois × tarif Meta de la catégorie), rapporté aux clics mesurés. Ce n’est pas une facture. Cliquez une ligne pour le détail.',
-            'ESTIMATED cost (sends × Meta category rate), against measured clicks. This is not an invoice. Click a row for the detail.',
+            'Coût ESTIMÉ (envois × tarif Meta de la catégorie), rapporté aux clics puis aux personnes ENGAGÉES, celles qui ont cliqué ou répondu dans les sept jours. Ce n’est pas une facture. Cliquez une ligne pour le détail.',
+            'ESTIMATED cost (sends × Meta category rate), against clicks then against ENGAGED people, those who clicked or replied within seven days. This is not an invoice. Click a row for the detail.',
           )}
         </p>
       </header>
@@ -130,6 +130,12 @@ export function CoutParCampagneCard({ tenantId, range }: { tenantId: string; ran
                   <th className={`${TH} text-right`}>{t('Coût', 'Cost')}</th>
                   <th className={`${TH} text-right`}>{t('Clics', 'Clicks')}</th>
                   <th className={`${TH} text-right`}>{t('Coût/clic', 'Cost/click')}</th>
+                  {/* 🔴 DEUX COLONNES DE PLUS, PAS UN RENOMMAGE DES DEUX PRECEDENTES. Un clic et un
+                      engagement ne disent pas la meme chose : « zero clic » reste une information utile
+                      sur une campagne dont des gens ont repondu. Les mettre l une a cote de l autre est
+                      precisement ce qui rend la difference lisible. */}
+                  <th className={`${TH} text-right`}>{t('Engagés', 'Engaged')}</th>
+                  <th className={`${TH} text-right`}>{t('Coût/engagé', 'Cost/engaged')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -240,6 +246,19 @@ function Ligne({ l, devise, locale, t, onOuvrir }: {
         {l.coutParClic === null
           ? <Vide titre={t('Il manque un des deux termes, ou aucun clic n’a été mesuré.', 'One of the two terms is missing, or no click was measured.')} />
           : fmtCost(l.coutParClic, locale, devise)}
+      </td>
+      {/* ⚠️ `undefined` ET `null` NE SE DISENT PAS PAREIL, et les deux arrivent vraiment ici :
+          `undefined` = une API plus ancienne qui ne rend pas encore le champ (le front part sur Vercel
+          avant que l API ne soit deployee a la main) ; `null` = mesure faite, rien a compter. */}
+      <td className={`${TD} text-right tabular-nums`} data-testid={`cout-engages-${l.campaignId}`}>
+        {l.engagements === undefined || l.engagements === null
+          ? <Vide titre={t('Engagement non mesuré sur cette version.', 'Engagement not measured on this version.')} />
+          : fmtNum(l.engagements, locale)}
+      </td>
+      <td className={`${TD} text-right tabular-nums`} data-testid={`cout-ratio-engage-${l.campaignId}`}>
+        {l.coutParEngagement === undefined || l.coutParEngagement === null
+          ? <Vide titre={t('Il manque un des deux termes, ou personne ne s’est engagé.', 'One of the two terms is missing, or nobody engaged.')} />
+          : fmtCost(l.coutParEngagement, locale, devise)}
       </td>
     </tr>
   );
