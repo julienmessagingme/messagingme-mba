@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  rattrapagePossible,
+  reessaiProposable,
   type CanalPremier,
   type EtageAssistant,
   type FormuleCanal,
@@ -11,27 +11,20 @@ import { heuresDOuvertureReglees } from '@/lib/campagne-chaine';
 import type { CapacitesEspace, EtatCampagne } from '@/components/campagne/AssistantCampagne';
 
 /**
- * ÉTAPE 2 : le canal, le repli, le réessai, et les DEUX questions d'horaire.
+ * ÉTAPE 2 : le canal, le repli, le réessai, et UNE question d'horaire.
  *
- * 🔴 LES DEUX QUESTIONS D'HORAIRE NE PARLENT PAS DU MÊME MOMENT, et c'est pour ça qu'elles cohabitent.
- * « Envoyer uniquement pendant les heures ouvrées » gouverne l'envoi INITIAL, celui que l'opérateur
- * CHOISIT en appuyant sur le bouton (`campaigns.business_hours_only`, migration 0122). Celle du
- * rattrapage gouverne le moment que PERSONNE ne choisit : un repli qui se présente à 18 h 02. Une
- * campagne peut parfaitement envoyer la nuit et refuser de rattraper la nuit, et c'est ce cas-là qui
- * prouve que la séparation est réelle (`src/lib/heures-ouvrees.ts` la porte côté serveur).
+ * 🔴 UNE SEULE QUESTION D'HORAIRE, ET C'EST UN RETOUR EN ARRIÈRE ASSUMÉ (2026-09-13). L'écran en a porté
+ * DEUX pendant une journée, avec l'argument qu'elles parlaient de moments différents : l'envoi initial
+ * que l'opérateur choisit, et le rattrapage que personne ne choisit. L'argument était juste et la
+ * conclusion fausse. Julien l'a tranché sur son essai réel : « cette option vaut pour les primo messages
+ * et pour les relances, avec fallback ou pas ». Deux cases voisines parlant d'heures d'ouverture, avec
+ * des sens OPPOSÉS sur l'absence d'horaires, demandaient à l'opérateur d'arbitrer ce que le produit doit
+ * tenir lui-même. `rattrapage_hors_horaires` est désormais dérivée dans `entreeDeCreation`.
  *
- * 🔴 UNE SEULE COLONNE, DES BLOCS EMPILÉS, JAMAIS CÔTE À CÔTE. C'est l'étape la plus chargée de
- * l'assistant : trois entrées de canal, deux sous-questions, une case à cocher, un encart
- * d'avertissement et deux questions d'horaire. Sur un 13 pouces (1280 x 800), la console laisse 990 px
- * utiles une fois retirées la barre latérale de 240 px et les marges. Une grille qui se réorganiserait
- * sous un seuil produirait exactement les chevauchements que ce lot existe pour empêcher ; l'empilement,
- * lui, n'a pas de seuil. `web/e2e/campagne-assistant-canal.spec.ts` le MESURE, il ne le suppose pas.
- *
- * ⚠️ LA QUESTION DU RATTRAPAGE EST POSÉE UNE FOIS, EN BAS, ET C'EST UN CHOIX. Elle naît de DEUX causes
- * (un réessai coché, ou une chaîne) qui vivent dans deux branches différentes de l'écran. La poser dans
- * chaque branche en ferait deux exemplaires, donc deux nœuds portant le même libellé, et un lecteur qui
- * revient en arrière verrait la question changer de place. Elle reste donc à un seul endroit, le
- * dernier, c'est-à-dire APRÈS ce qui la fait apparaître : on lit la cause, puis sa conséquence.
+ * 🔴 UNE SEULE COLONNE, DES BLOCS EMPILÉS, JAMAIS CÔTE À CÔTE. Sur un 13 pouces (1280 x 800), la console
+ * laisse 990 px utiles une fois retirées la barre latérale de 240 px et les marges. Une grille qui se
+ * réorganiserait sous un seuil produirait exactement les chevauchements que ce lot existe pour
+ * empêcher ; l'empilement, lui, n'a pas de seuil. `web/e2e/campagne-assistant-canal.spec.ts` le MESURE.
  */
 export function EtapeCanal({
   etat,
@@ -46,7 +39,7 @@ export function EtapeCanal({
 }) {
   const rcsIndisponible = !capacites.rcsEnabled;
   const second: CanalPremier = etat.premier === 'whatsapp' ? 'rcs' : 'whatsapp';
-  const montreRattrapage = rattrapagePossible({ reessayer: etat.reessayer, chaine });
+  const montreReessai = reessaiProposable(chaine);
   const horairesReglees = heuresDOuvertureReglees(capacites.businessHours);
 
   return (
@@ -160,7 +153,12 @@ export function EtapeCanal({
         </fieldset>
       )}
 
-      {etat.formule !== 'repli' && (
+      {/* 🔴 LA CONDITION SE LIT SUR LA CHAÎNE, PLUS SUR LA FORMULE (2026-09-13). Les deux disent la même
+          chose aujourd'hui, mais `reessaiProposable` est la MÊME fonction que celle qui tranche au point
+          d'envoi (`entreeDeCreation`) : c'est ce qui garantit que ce qu'on cache est exactement ce
+          qu'on n'envoie pas. Deux règles écrites séparément auraient divergé le jour où une quatrième
+          formule apparaît. */}
+      {montreReessai && (
         <div data-testid="bloc-reessai" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
           {/* 🔴 « RÉESSAYER », JAMAIS « RELANCER ». En marketing, relancer quelqu'un veut dire lui
               renvoyer un message parce qu'il n'a pas répondu. Ici il s'agit de retenter un envoi qui a
@@ -175,29 +173,17 @@ export function EtapeCanal({
         </div>
       )}
 
-      {montreRattrapage && (
-        <div data-testid="bloc-rattrapage" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-          {/* 🔴 LA CASE EST LA GARDE, ET ELLE EST COCHÉE PAR DÉFAUT (`rattrapageHorsHoraires` vaut faux).
-              Un rattrapage tombe quand il tombe, personne n'en choisit l'instant : un repli déclenché à
-              18 h 02 sur une campagne partie à 17 h est un message de nuit que personne n'a demandé. */}
-          <Case
-            libelle="Ne pas envoyer le rattrapage en dehors des heures d'ouverture"
-            description="Un rattrapage qui se présente après la fermeture attend l'ouverture suivante : la campagne met plus longtemps à se clore, et ses chiffres restent incomplets entre-temps."
-            coche={!etat.rattrapageHorsHoraires}
-            onChange={(v) => onChange({ rattrapageHorsHoraires: !v })}
-          />
-          {/* 🔴 LE DIRE AU MOMENT OÙ L'ON COCHE. Sans aucun jour ouvert, la fenêtre de rattrapage est
-              considérée comme TOUJOURS ouverte (`fenetreDeRattrapageOuverte`, vérifié dans le code) :
-              cette case ne retient alors rien, et croire avoir posé une garde est pire que de ne pas
-              l'avoir posée. */}
-          {!etat.rattrapageHorsHoraires && !horairesReglees && (
-            <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700">
-              Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : le rattrapage partira donc
-              à toute heure. Réglez-les dans Paramètres pour que cette case ait un effet.
-            </p>
-          )}
-        </div>
-      )}
+      {/*
+        🔴 LA QUESTION DU RATTRAPAGE A ÉTÉ RETIRÉE (2026-09-13, tranché par Julien sur son essai réel) :
+        « ne sert à rien, on a juste besoin d'Envoyer uniquement pendant les heures ouvrées, cette option
+        vaut pour les primo messages et pour les relances, avec fallback ou pas ». Deux cases voisines
+        parlant toutes deux d'heures d'ouverture, avec des sens opposés sur l'absence d'horaires,
+        demandaient à l'opérateur de trancher un arbitrage que le produit doit tenir lui-même.
+
+        ⚠️ LA COLONNE N'A PAS DISPARU, ELLE EST DÉRIVÉE. `rattrapage_hors_horaires` (migration 0134) vaut
+        désormais l'inverse de la case ci-dessous, et c'est `entreeDeCreation` qui l'écrit. Le moteur
+        et le balayage de rattrapage n'ont pas bougé d'une ligne : seule la question a disparu.
+      */}
 
       {/*
         🔴 LA CADENCE N'EST PLUS ICI, ET CE N'EST PAS UN OUBLI (2026-09-12). Cet écran a porté trois

@@ -9,7 +9,7 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
-import type { CanalEtage, EtageAssistant } from '@/lib/campagne-chaine';
+import { RANG_INITIAL, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { modeleDeLEtage } from '@/lib/campagne-creation';
 import { SYSTEM_FIELDS, customFieldsOnly, varCountOf } from '@/lib/fields';
@@ -56,6 +56,7 @@ export function EtapeContenu({
   references,
   capacites,
   nbDestinataires,
+  rangsIncomplets,
   rechargerTemplates,
   modeleSoumis,
   onModeleSoumis,
@@ -77,6 +78,14 @@ export function EtapeContenu({
    * et renvoie au récapitulatif, qui est précisément l'écran qui rachète cet ordre.
    */
   nbDestinataires: number | null;
+  /**
+   * LES RANGS DONT LE CONTENU MANQUE, calculés par la coquille (`rangsSansContenu`).
+   *
+   * ⚠️ CALCULÉS AILLEURS, ET C'EST VOLONTAIRE : la MÊME liste grise le bouton « Suivant ». La recalculer
+   * ici en ferait une seconde règle, qui finirait par dire l'autre chose que celle qui bloque, et
+   * l'écran afficherait « tout est rempli » sur un bouton grisé.
+   */
+  rangsIncomplets: number[];
   /**
    * Relit la liste des modèles et rend la liste COMPLÈTE. ABSENTE = la création à la volée n'est pas
    * proposée, cf. le docblock de `AssistantCampagne`.
@@ -123,13 +132,36 @@ export function EtapeContenu({
         />
       ))}
 
-      <BlocDevenir
-        etat={etat}
-        references={references}
-        capacites={capacites}
-        nbDestinataires={nbDestinataires}
-        onChange={onChange}
-      />
+      {/*
+        🔴 LA QUESTION DU DEVENIR N'APPARAÎT QU'UNE FOIS L'ÉTAGE 1 REMPLI (2026-09-13, demande de Julien
+        après son essai réel). Demander « que se passe-t-il quand le contact répond ? » avant de savoir ce
+        que le contact REÇOIT pose la question dans le désordre : la réponse dépend de ce qu'on envoie, et
+        l'écran donnait à croire que l'étape était finie alors que rien n'avait été choisi.
+
+        ⚠️ ELLE SE LIT SUR LE RANG 1 SEUL, pas sur la chaîne entière, et la nuance compte : sur une chaîne
+        de repli, on remplit son premier étage puis on veut régler le devenir sans avoir à descendre
+        remplir d'abord l'étage 2. La conversation, elle, n'a qu'un devenir pour toute la campagne.
+      */}
+      {!rangsIncomplets.includes(RANG_INITIAL) && (
+        <BlocDevenir
+          etat={etat}
+          references={references}
+          capacites={capacites}
+          nbDestinataires={nbDestinataires}
+          onChange={onChange}
+        />
+      )}
+
+      {/* Ce qui reste à remplir, nommé. Un bouton grisé sans sa raison est le défaut qu'on vient de
+          corriger ailleurs : l'écran doit dire ce qu'il attend, au moment où il l'attend. */}
+      {rangsIncomplets.length > 0 && (
+        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="contenu-incomplet">
+          {rangsIncomplets.length === 1
+            ? `Le contenu de l'étage ${rangsIncomplets[0]} n'est pas encore choisi.`
+            : `Le contenu des étages ${rangsIncomplets.join(', ')} n'est pas encore choisi.`}
+          {' '}Remplissez-le pour passer à la suite.
+        </p>
+      )}
     </section>
   );
 }

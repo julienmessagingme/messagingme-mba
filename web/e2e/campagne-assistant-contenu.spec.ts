@@ -45,7 +45,7 @@ const USERS = [
 
 async function monter(
   page: Page,
-  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[] } = {},
+  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean } = {},
 ): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -68,6 +68,22 @@ async function monter(
   const q = new URLSearchParams({ etape: 'contenu', canal: sur.canal ?? 'repli', ...(sur.troisieme ? { troisieme: sur.troisieme } : {}) });
   await page.goto(`/campaigns/nouvelle?${q.toString()}`);
   await expect(page.getByTestId('etape-contenu')).toBeVisible();
+  /**
+   * 🔴 L'ETAGE 1 EST REMPLI PAR DEFAUT DEPUIS LE 2026-09-13, et ce n'est pas du confort : le bloc du
+   * devenir de la conversation n'apparait QUE lorsqu'il l'est (demande de Julien, on ne demande pas ce
+   * qui se passe quand le contact repond avant de savoir ce qu'il recoit). Sans ce remplissage, une
+   * dizaine de cas ci-dessous chercheraient un bloc que l'ecran a legitimement masque, et rougiraient
+   * en accusant le devenir alors que c'est le contenu qui manque.
+   *
+   * ⚠️ ON REPLIE LE CADRE APRES, pour rendre l'ecran exactement dans l'etat d'avant : les deux cas de
+   * largeur deplient eux-memes celui qu'ils mesurent, et un cadre deja ouvert changerait ce qu'ils
+   * mesurent sans qu'on l'ait voulu.
+   */
+  if (sur.sansContenu !== true) {
+    await page.getByTestId('etage-1').click();
+    await page.getByTestId('modele-1').selectOption('promo_rentree');
+    await page.getByTestId('etage-1').click();
+  }
 }
 
 test('un cadre par etage, dans l ordre de la chaine', async ({ page }) => {
@@ -185,4 +201,33 @@ test('un membre actif n est ni grise ni annote', async ({ page }) => {
   await expect(select.locator('option[disabled]')).toHaveCount(0);
   await expect(select).not.toContainText('invitation en attente');
   await expect(page.getByTestId('membres-en-attente')).toHaveCount(0);
+});
+
+/**
+ * 🔴 LA QUESTION DU DEVENIR ATTEND QUE L'ETAGE 1 SOIT REMPLI (2026-09-13, essai reel de Julien).
+ *
+ * ⚠️ LES DEUX SENS DANS LE MEME CAS, ET C'EST VOLONTAIRE : un test qui ne verifierait que l'absence
+ * passerait aussi sur un ecran qui aurait perdu le bloc pour de bon.
+ */
+test('🔴 le devenir n apparait qu une fois l etage 1 rempli', async ({ page }) => {
+  await monter(page, { sansContenu: true });
+  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await expect(page.getByTestId('contenu-incomplet')).toBeVisible();
+  // Le bouton de l'assistant refuse aussi d'avancer, et c'est la MEME regle qui le decide.
+  await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
+
+  await page.getByTestId('etage-1').click();
+  await page.getByTestId('modele-1').selectOption('promo_rentree');
+  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+});
+
+/**
+ * ⚠️ UN ETAGE DE REPLI VIDE BLOQUE AUSSI, mais il ne masque PAS le devenir : la conversation n'a qu'un
+ * devenir pour toute la campagne, et on doit pouvoir le regler sans descendre remplir l'etage 2 d'abord.
+ */
+test('un etage de repli vide bloque le passage sans masquer le devenir', async ({ page }) => {
+  await monter(page); // etage 1 rempli, etages 2 et 3 vides
+  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  await expect(page.getByTestId('contenu-incomplet')).toContainText('2');
+  await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
 });

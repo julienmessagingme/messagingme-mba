@@ -93,23 +93,32 @@ test('un canal non configure est grise AVEC SA RAISON, pas masque', async ({ pag
   await expect(page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' })).toBeDisabled();
 });
 
-test('la question du rattrapage n apparait QUE quand il y a un reessai ou une chaine', async ({ page }) => {
+/**
+ * 🔴 IL N'Y A PLUS QU'UNE SEULE QUESTION D'HORAIRE (2026-09-13, tranche par Julien sur son essai reel).
+ * L'ecran en portait DEUX, et ces tests gardaient la seconde. Elles disaient toutes deux « heures
+ * d'ouverture » avec des sens OPPOSES sur l'absence d'horaires : « ne sert a rien, on a juste besoin
+ * d'Envoyer uniquement pendant les heures ouvrees, cette option vaut pour les primo messages et pour les
+ * relances, avec fallback ou pas ». La colonne `rattrapage_hors_horaires` est desormais DERIVEE de cette
+ * case unique, et c'est `entreeDeCreation` qui l'ecrit (teste dans `lib/campagne-creation.test.ts`).
+ */
+test('🔴 la question du rattrapage a disparu, sur un canal seul comme sur une chaine', async ({ page }) => {
   await surCanal(page);
   await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
-  await page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' }).uncheck();
-  await expect(page.getByText(/en dehors des heures d.ouverture/i)).toBeHidden();
   await page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' }).check();
-  await expect(page.getByText(/en dehors des heures d.ouverture/i)).toBeVisible();
+  // Cocher le reessai etait LA cause qui faisait apparaitre la seconde question. Elle ne revient plus.
+  await expect(page.getByTestId('bloc-rattrapage')).toHaveCount(0);
+  await page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' }).check();
+  await expect(page.getByTestId('bloc-rattrapage')).toHaveCount(0);
+  // ⚠️ L'AUTRE SENS, sans quoi ce test passerait aussi sur un ecran qui aurait perdu les DEUX questions.
+  await expect(page.getByTestId('bloc-horaires')).toBeVisible();
 });
 
-test('🔴 et elle apparait sur une CHAINE meme sans question de reessai', async ({ page }) => {
-  // Sur une chaîne, l'écran ne pose PAS la question du réessai (le repli tient ce rôle) : c'est
-  // exactement le cas où un « et » au lieu d'un « ou » ferait disparaître la question du rattrapage,
-  // sur le scénario même qui l'a fait naître.
+test('🔴 le reessai n est pas propose sur une chaine : « le renvoi, c est le fallback »', async ({ page }) => {
   await surCanal(page);
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
+  await expect(page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' })).toBeVisible();
   await page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' }).check();
   await expect(page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' })).toHaveCount(0);
-  await expect(page.getByTestId('bloc-rattrapage')).toBeVisible();
 });
 
 // ⚠️ DEUX ENTRÉES SONT GRISÉES, ET POUR DEUX RAISONS DIFFÉRENTES qu'il vaut mieux ne pas confondre : le
@@ -201,10 +210,9 @@ test('rien ne deborde ni ne se chevauche en 13 pouces', async ({ page }) => {
   // canal. Ce test le CONSTATE au lieu de le cliquer, ce qui lui ajoute une garde utile : le jour où
   // quelqu'un le rend cochable sans avoir écrit le sender, c'est ici que ça rougira.
   await expect(page.getByRole('radio', { name: /E-mail/ })).toBeDisabled();
-  await expect(page.getByTestId('bloc-rattrapage')).toBeVisible();
   await pasDeDebordement(page);
-  await pasDeChevauchement(page, ['choix-canal', 'choix-ordre', 'choix-troisieme', 'bloc-rattrapage']);
-  // ⚠️ Le bloc des horaires est le cinquieme de l'etape : l'omettre laisserait le seul bloc non mesure
+  await pasDeChevauchement(page, ['choix-canal', 'choix-ordre', 'choix-troisieme']);
+  // ⚠️ Le bloc des horaires est le DERNIER de l'etape : l'omettre laisserait le seul bloc non mesure
   // etre celui qui deborde.
-  await pasDeChevauchement(page, ['choix-troisieme', 'bloc-rattrapage', 'bloc-horaires']);
+  await pasDeChevauchement(page, ['choix-troisieme', 'bloc-horaires']);
 });

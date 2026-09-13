@@ -8,6 +8,7 @@ import {
 import { brouillonDeLEtat, etatDeBrouillon } from '@/lib/campagne-brouillon';
 import {
   chaineDeLaFormule,
+  rangsSansContenu,
   DEBIT_DEFAUT,
   type CanalPremier,
   type EtageAssistant,
@@ -95,10 +96,14 @@ export interface EtatCampagne {
   formule: FormuleCanal;
   premier: CanalPremier;
   troisieme: TroisiemeNiveau;
-  /** « Réessayer les envois qui échouent », cochée par défaut. Ne vaut que sur un canal SEUL. */
+  /**
+   * « Réessayer les envois qui échouent ». Ne vaut que sur un canal SEUL.
+   *
+   * ⚠️ SA VALEUR N'EST PAS SA CONSÉQUENCE : sur une chaîne de repli, l'écran ne pose plus la question et
+   * `entreeDeCreation` envoie `false` quoi qu'il y ait ici. Ce champ garde donc le dernier choix de
+   * l'opérateur pour le lui rendre s'il revient à un canal seul, au lieu de l'effacer sous ses pieds.
+   */
   reessayer: boolean;
-  /** « Le rattrapage peut-il partir en dehors des heures d'ouverture ? ». Défaut : non. */
-  rattrapageHorsHoraires: boolean;
   /**
    * « N'envoyer que pendant les heures ouvrées » : LA SEULE QUESTION HORAIRE de l'étape Canal.
    *
@@ -265,12 +270,6 @@ export const ETAT_INITIAL: EtatCampagne = {
   troisieme: 'aucun',
   // 🔴 COCHÉE PAR DÉFAUT : sans chaîne de repli, c'est le SEUL rattrapage disponible.
   reessayer: true,
-  /**
-   * 🔴 DÉFAUT PRUDENT, ET IL N'EST PAS SYMÉTRIQUE DE L'AUTRE. Sur le moment qu'on CHOISIT (l'envoi
-   * initial), un défaut permissif est légitime : quelqu'un appuie sur le bouton. Sur le moment que
-   * PERSONNE ne choisit (un repli qui tombe à 18 h 02), seul le défaut prudent est défendable.
-   */
-  rattrapageHorsHoraires: false,
   // ⚠️ Faux par défaut, c'est-à-dire « on envoie à toute heure » : le comportement d'aujourd'hui, et
   // celui de l'ancien formulaire. Cocher cette case sur un espace sans horaires ARRÊTE la campagne
   // pour toujours, l'étape Canal le dit au moment du clic.
@@ -505,10 +504,21 @@ export function AssistantCampagne({
   );
 
   const rang = ORDRE.indexOf(etape);
-  // ⚠️ Le nom est la SEULE condition de passage posée ici. Les autres étapes portent les leurs, là où
-  // elles savent ce qui manque : une liste de conditions tenue dans la coquille dériverait de ce que
-  // chaque étape demande réellement.
-  const peutAvancer = etape !== 'nom' || etat.nom.trim() !== '';
+  /**
+   * LES RANGS DONT LE CONTENU MANQUE. Vide = l'étape Contenu est franchissable.
+   *
+   * 🔴 CE GARDIEN NE CONTRÔLAIT QUE LE NOM, ET C'EST CE QUI A LAISSÉ PASSER UNE CAMPAGNE SANS MODÈLE
+   * (2026-09-13, essai réel de Julien : « j'ai pu avancer sans mettre de contenu »). Le commentaire
+   * qu'il portait affirmait que « les autres étapes portent leurs conditions, là où elles savent ce qui
+   * manque » : c'était vrai du récapitulatif, qui refuse bien, et faux de l'étape Contenu, qui ne
+   * refusait rien. Une justification à moitié vraie est plus dangereuse qu'aucune, parce qu'elle a l'air
+   * vérifiée et qu'on ne la relit plus. L'étape Contenu SAIT ce qui manque : elle le dit maintenant, au
+   * moment où l'on peut encore le corriger, et non trois écrans plus loin.
+   */
+  const rangsIncomplets = useMemo(() => rangsSansContenu(chaine, etat.contenus), [chaine, etat.contenus]);
+  const peutAvancer = etape === 'nom'
+    ? etat.nom.trim() !== ''
+    : etape !== 'contenu' || rangsIncomplets.length === 0;
 
   const modifier = (patch: Partial<EtatCampagne>): void => setEtat((e) => ({ ...e, ...patch }));
 
@@ -634,6 +644,14 @@ export function AssistantCampagne({
            * l'écran le dit plutôt que d'en inventer un.
            */
           nbDestinataires={null}
+          /**
+           * 🔴 CE QUI MANQUE, TRANSMIS À L'ÉTAPE, parce qu'elle en fait DEUX choses : masquer la question
+           * du devenir de la conversation tant que l'étage 1 est vide (demande de Julien du 2026-09-13 :
+           * on ne demande pas ce qui se passe quand le contact répond avant de savoir ce qu'il reçoit),
+           * et nommer les étages à remplir. La même liste sert au gardien du bouton : une seconde règle
+           * écrite ici aurait pu dire l'inverse de celle qui bloque.
+           */
+          rangsIncomplets={rangsIncomplets}
           onChange={modifier}
           onContenu={modifierContenu}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}

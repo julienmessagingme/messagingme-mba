@@ -87,6 +87,11 @@ test.describe('Assistant : l’enregistrement du brouillon', () => {
     await nommer(page);
     await page.getByRole('button', { name: 'Suivant' }).click(); // canal
     await page.getByRole('button', { name: 'Suivant' }).click(); // contenu
+    // ⚠️ LE MODELE EST DESORMAIS EXIGE POUR SORTIR DE L'ETAPE CONTENU (2026-09-13) : l'assistant laissait
+    // passer une campagne sans contenu, et ce parcours en profitait sans le savoir. Le cas exerce par ce
+    // test ne change pas d'un pouce : c'est toujours la selection PARTIELLE d'audience qui est mesuree.
+    await page.getByTestId('etage-1').click();
+    await page.getByTestId('modele-1').selectOption('promo');
     await page.getByRole('button', { name: 'Suivant' }).click(); // audience
     // 🔴 ATTENDRE QUE LA LISTE SOIT CHARGÉE : elle RECOCHE tout à son arrivée (des filtres qui changent
     // désignent un autre ensemble), donc une coche posée avant serait silencieusement annulée.

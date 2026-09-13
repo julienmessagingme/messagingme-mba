@@ -6,7 +6,7 @@ import type { RcsOutbound, RcsSuggestion } from './rcs-types';
 import { maxTexteRcs, versMessageRcs } from './rcs';
 import { boutonPret } from './rcs-boutons';
 import type { EtageAssistant } from './campagne-chaine';
-import { RANG_INITIAL, debitBorne } from './campagne-chaine';
+import { RANG_INITIAL, debitBorne, reessaiProposable } from './campagne-chaine';
 import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
 import { varCountOf } from './fields';
 
@@ -40,7 +40,6 @@ export interface EtatPourCreation {
    */
   heuresOuvrees: boolean;
   reessayer: boolean;
-  rattrapageHorsHoraires: boolean;
   /**
    * QUAND LA CAMPAGNE PART : tout de suite, ou à une date choisie.
    *
@@ -430,8 +429,25 @@ export function entreeDeCreation(
     // rang 1 depuis les colonnes de la campagne : un tableau à un élément n'ajouterait rien à ce que
     // `channel` dit déjà, et ferait passer par la validation de chaîne une campagne qui n'en a pas.
     ...(etages.length > 1 ? { chaine: etages } : {}),
-    reessayer: etat.reessayer,
-    rattrapageHorsHoraires: etat.rattrapageHorsHoraires,
+    /**
+     * 🔴 UNE CHAÎNE N'EMPORTE JAMAIS DE RÉESSAI, ET LA GARDE EST ICI, AU POINT D'ENVOI. L'écran masquait
+     * déjà le bloc sur une formule « avec repli », mais masquer n'efface pas : cocher « réessayer » en
+     * WhatsApp puis basculer sur « avec repli » laissait la case à vrai dans l'état, et ce corps
+     * l'emportait telle quelle vers le serveur. La campagne partait donc avec les DEUX rattrapages,
+     * dont aucun écran ne montrait plus le premier.
+     */
+    reessayer: reessaiProposable(etages) ? etat.reessayer : false,
+    /**
+     * 🔴 DÉRIVÉE, PLUS DEMANDÉE (2026-09-13, tranché par Julien sur son essai réel) : « on a juste besoin
+     * d'Envoyer uniquement pendant les heures ouvrées, cette option vaut pour les primo messages et pour
+     * les relances, avec fallback ou pas ». Une seule question gouverne donc les deux moments, et la
+     * colonne `rattrapage_hors_horaires` (migration 0134) devient son miroir plutôt qu'un second réglage.
+     *
+     * ⚠️ LE SENS EST INVERSE, et c'est exactement là qu'on se trompe : `rattrapage_hors_horaires` à vrai
+     * veut dire « le rattrapage S'AFFRANCHIT des horaires ». Cocher « heures ouvrées » doit donc l'éteindre.
+     * Le serveur n'a pas bougé d'une ligne, c'est la question qui a disparu.
+     */
+    rattrapageHorsHoraires: !etat.heuresOuvrees,
     ...(etat.assignation === 'aucune' ? {} : { assignation: etat.assignation }),
     ...(etat.assignation === 'personne' ? { assignationUserId: etat.assignationUserId } : {}),
   };

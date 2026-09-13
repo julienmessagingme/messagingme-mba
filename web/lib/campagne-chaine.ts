@@ -80,19 +80,75 @@ export function aUnRepli(chaine: EtageAssistant[]): boolean {
 }
 
 /**
- * LA QUESTION DU RATTRAPAGE HORS HORAIRES EST-ELLE POSÉE ?
+ * LE RÉESSAI EST-IL PROPOSABLE ?
  *
- * 🔴 DÈS QU'IL Y A UN RATTRAPAGE POSSIBLE, ET SEULEMENT LÀ : un réessai coché, OU une chaîne. Sans l'un
- * ni l'autre, rien ne peut partir à une heure que personne n'a choisie, et poser la question ferait
- * croire à une garde sur un événement qui n'existe pas.
+ * 🔴 SUR UN CANAL SEUL, ET SEULEMENT LÀ (2026-09-13, retour de Julien sur son essai réel) : « le renvoi,
+ * c'est le fallback ». Une chaîne de repli EST le rattrapage d'un échec, et le premier échec y fait
+ * basculer vers le canal suivant. Proposer en plus de réessayer le canal qui vient d'échouer, c'est
+ * proposer deux mécaniques concurrentes sur le même événement, dont la seconde repart précisément sur
+ * le tuyau dont on sait déjà qu'il ne passe pas.
  *
- * ⚠️ LE « OU » N'EST PAS UN « ET », et l'erreur serait invisible : sur une chaîne, l'écran ne pose PAS la
- * question du réessai (le repli tient ce rôle), donc `reessayer` y garde sa valeur par défaut. Exiger les
- * deux ferait disparaître la question précisément sur le cas qui l'a fait naître, un repli qui tombe à
- * 18 h 02 sur une campagne partie à 17 h.
+ * ⚠️ CE N'EST PAS QU'UNE QUESTION D'AFFICHAGE, et c'est le piège que cette fonction ferme : l'écran
+ * masquait déjà le bloc sur une formule « avec repli », mais l'état, lui, gardait la case cochée d'un
+ * choix précédent. Passer de WhatsApp à « avec repli » après avoir coché emportait donc un réessai que
+ * plus aucun écran ne montrait. La création s'en sert pour trancher au point d'envoi, pas seulement au
+ * point d'affichage.
  */
-export function rattrapagePossible(choix: { reessayer: boolean; chaine: EtageAssistant[] }): boolean {
-  return choix.reessayer || aUnRepli(choix.chaine);
+export function reessaiProposable(chaine: EtageAssistant[]): boolean {
+  return !aUnRepli(chaine);
+}
+
+/**
+ * Ce qu'un étage doit porter pour qu'on ait le droit d'avancer. Miroir MINIMAL de `ContenuEtage`
+ * (`AssistantCampagne.tsx`), volontairement réduit aux seuls champs qui décident : cette lib ne connaît
+ * ni React ni le reste de l'écran, c'est ce qui la rend exerçable en quelques millisecondes.
+ */
+export interface ContenuMinimal {
+  formule: 'seul' | 'avec_scenario';
+  templateName?: string | undefined;
+  workflowId?: string | undefined;
+  texteRcs?: string | undefined;
+  emailTemplateId?: string | undefined;
+}
+
+/**
+ * CET ÉTAGE A-T-IL DE QUOI ENVOYER QUELQUE CHOSE ?
+ *
+ * 🔴 LA RÉPONSE DÉPEND DU CANAL, et les confondre laisserait passer un étage vide. Un étage WhatsApp part
+ * par un modèle approuvé, un étage RCS par un texte, un étage e-mail par un gabarit. La formule
+ * « modèle et scénario » déplace la question ailleurs : c'est le scénario qui dit ce qui part, donc
+ * c'est lui qu'on exige (le serveur écrit d'ailleurs `template_name = ''` dans ce cas).
+ */
+export function etageRenseigne(canal: CanalEtage, contenu: ContenuMinimal | undefined): boolean {
+  if (!contenu) return false;
+  if (contenu.formule === 'avec_scenario') return (contenu.workflowId ?? '').trim() !== '';
+  if (canal === 'whatsapp') return (contenu.templateName ?? '').trim() !== '';
+  if (canal === 'rcs') return (contenu.texteRcs ?? '').trim() !== '';
+  return (contenu.emailTemplateId ?? '').trim() !== '';
+}
+
+/**
+ * LES RANGS DONT LE CONTENU MANQUE, dans l'ordre de la chaîne. Vide = on peut avancer.
+ *
+ * 🔴 ELLE EXISTE PARCE QUE L'ASSISTANT LAISSAIT PASSER UNE CAMPAGNE SANS CONTENU (2026-09-13, essai réel
+ * de Julien). Son gardien d'étape ne contrôlait QUE le nom : les quatre autres étapes rendaient `true`
+ * sans rien regarder, si bien qu'on atteignait le récapitulatif avec un étage 1 vide, et que le refus
+ * n'arrivait qu'au tout dernier écran, loin de l'endroit où on pouvait le corriger.
+ *
+ * ⚠️ ELLE REGARDE TOUS LES ÉTAGES, pas seulement le premier. Un étage de repli vide ne bascule sur rien :
+ * la campagne aurait un repli à l'écran et aucun repli en fait, ce qui est la pire des deux situations.
+ *
+ * ⚠️ CE N'EST PAS UNE RÈGLE NEUVE, C'EST UNE RÈGLE AVANCÉE. `problemeAvantLancement` refusait déjà
+ * exactement ces cas, au récapitulatif, avec les mêmes critères par canal : aucun parcours qui lance
+ * vraiment ne devient impossible, seul le moment du refus change. Le récapitulatif garde en revanche ses
+ * contrôles PLUS FINS (longueur du RCS, boutons incomplets, variables du modèle), qui n'ont rien à faire
+ * ici : celle-ci répond « y a-t-il quelque chose à envoyer ? », pas « est-ce envoyable ? ».
+ */
+export function rangsSansContenu(
+  chaine: EtageAssistant[],
+  contenus: Record<number, ContenuMinimal | undefined>,
+): number[] {
+  return chaine.filter((e) => !etageRenseigne(e.canal, contenus[e.rang])).map((e) => e.rang);
 }
 
 /**

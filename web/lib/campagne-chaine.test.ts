@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   chaineDeLaFormule,
   aUnRepli,
-  rattrapagePossible,
+  reessaiProposable,
+  etageRenseigne,
+  rangsSansContenu,
   heuresDOuvertureReglees,
   debitBorne,
   DEBIT_DEFAUT,
@@ -62,23 +64,78 @@ describe('la chaine que decrivent les choix de l etape Canal', () => {
   });
 });
 
-describe('la question du rattrapage hors horaires', () => {
+describe('la question du reessai', () => {
   const SEUL = [{ rang: 1, canal: 'whatsapp' as const }];
   const REPLI = [{ rang: 1, canal: 'whatsapp' as const }, { rang: 2, canal: 'rcs' as const }];
 
-  it('se pose des qu un reessai est coche, sans chaine', () => {
-    expect(rattrapagePossible({ reessayer: true, chaine: SEUL })).toBe(true);
+  it('se pose sur un canal seul, ou elle est le seul rattrapage disponible', () => {
+    expect(reessaiProposable(SEUL)).toBe(true);
   });
 
-  it('ne se pose pas sans reessai ni chaine : rien ne peut partir a une heure non choisie', () => {
-    expect(rattrapagePossible({ reessayer: false, chaine: SEUL })).toBe(false);
+  it('🔴 ne se pose PAS sur une chaine de repli : « le renvoi, c est le fallback »', () => {
+    // Decision de Julien du 2026-09-13, sur son essai reel. Une chaine EST le rattrapage d'un echec, et
+    // le premier echec y fait basculer vers le canal suivant. Reessayer en plus, ce serait repartir sur
+    // le tuyau dont on sait deja qu'il ne passe pas.
+    expect(reessaiProposable(REPLI)).toBe(false);
   });
 
-  it('🔴 se pose sur une CHAINE meme reessai decoche : c est un OU, pas un ET', () => {
-    // Sur une chaine, l'ecran ne pose PAS la question du reessai (le repli tient ce role), donc
-    // `reessayer` y garde sa valeur par defaut. Un ET ferait disparaitre la question sur le cas meme qui
-    // l'a fait naitre : un repli qui tombe a 18 h 02 sur une campagne partie a 17 h.
-    expect(rattrapagePossible({ reessayer: false, chaine: REPLI })).toBe(true);
+  it('une chaine trouee (1 puis 3) compte comme un repli', () => {
+    expect(reessaiProposable([{ rang: 1, canal: 'whatsapp' }, { rang: 3, canal: 'email' }])).toBe(false);
+  });
+});
+
+describe('le contenu d un etage', () => {
+  it('un etage whatsapp exige un modele', () => {
+    expect(etageRenseigne('whatsapp', { formule: 'seul' })).toBe(false);
+    expect(etageRenseigne('whatsapp', { formule: 'seul', templateName: 'bienvenue' })).toBe(true);
+  });
+
+  it('🔴 un etage RCS n exige PAS de modele, il exige un texte', () => {
+    // Le piege serait de contoler `templateName` partout : un etage RCS parfaitement rempli serait
+    // declare vide, et l'assistant bloquerait sur une campagne qui n'a rien a se reprocher.
+    expect(etageRenseigne('rcs', { formule: 'seul', templateName: 'bienvenue' })).toBe(false);
+    expect(etageRenseigne('rcs', { formule: 'seul', texteRcs: 'Bonjour' })).toBe(true);
+  });
+
+  it('un etage e-mail exige son gabarit', () => {
+    expect(etageRenseigne('email', { formule: 'seul' })).toBe(false);
+    expect(etageRenseigne('email', { formule: 'seul', emailTemplateId: 'g1' })).toBe(true);
+  });
+
+  it('🔴 la formule « avec scenario » deplace l exigence sur le SCENARIO', () => {
+    // Le serveur ecrit `template_name = ''` dans ce cas : c'est le premier bloc du graphe qui dit ce qui
+    // part. Exiger le modele ici bloquerait une campagne de scenario parfaitement valide.
+    expect(etageRenseigne('whatsapp', { formule: 'avec_scenario', templateName: 'bienvenue' })).toBe(false);
+    expect(etageRenseigne('whatsapp', { formule: 'avec_scenario', workflowId: 'w1' })).toBe(true);
+  });
+
+  it('un texte fait d espaces ne remplit rien', () => {
+    expect(etageRenseigne('rcs', { formule: 'seul', texteRcs: '   ' })).toBe(false);
+  });
+
+  it('un contenu absent n est pas un contenu vide, et les deux bloquent', () => {
+    expect(etageRenseigne('whatsapp', undefined)).toBe(false);
+  });
+});
+
+describe('les rangs sans contenu', () => {
+  const REPLI = [{ rang: 1, canal: 'whatsapp' as const }, { rang: 2, canal: 'rcs' as const }];
+
+  it('rend vide quand tout est rempli', () => {
+    expect(rangsSansContenu(REPLI, {
+      1: { formule: 'seul', templateName: 'bienvenue' },
+      2: { formule: 'seul', texteRcs: 'Bonjour' },
+    })).toEqual([]);
+  });
+
+  it('🔴 nomme l ETAGE DE REPLI vide, pas seulement le premier', () => {
+    // Un etage 2 vide ne bascule sur rien : la campagne aurait un repli a l'ecran et aucun repli en
+    // fait, ce qui est la pire des deux situations. Ne regarder que le rang 1 laisserait passer ce cas.
+    expect(rangsSansContenu(REPLI, { 1: { formule: 'seul', templateName: 'bienvenue' } })).toEqual([2]);
+  });
+
+  it('les rend dans l ordre de la chaine', () => {
+    expect(rangsSansContenu(REPLI, {})).toEqual([1, 2]);
   });
 });
 

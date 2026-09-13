@@ -21,7 +21,6 @@ const ETAT: EtatBrouillon = {
   premier: 'whatsapp',
   troisieme: 'email',
   reessayer: true,
-  rattrapageHorsHoraires: false,
   heuresOuvrees: true,
   debitParMinute: 42,
   contenus: {

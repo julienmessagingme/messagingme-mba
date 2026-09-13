@@ -60,7 +60,6 @@ export interface EtatBrouillon {
   premier: CanalPremier;
   troisieme: TroisiemeNiveau;
   reessayer: boolean;
-  rattrapageHorsHoraires: boolean;
   heuresOuvrees: boolean;
   debitParMinute: number;
   contenus: Record<number, ContenuBrouillon>;
@@ -91,7 +90,6 @@ export function brouillonDeLEtat(etat: EtatBrouillon): Record<string, unknown> {
     premier: etat.premier,
     troisieme: etat.troisieme,
     reessayer: etat.reessayer,
-    rattrapageHorsHoraires: etat.rattrapageHorsHoraires,
     heuresOuvrees: etat.heuresOuvrees,
     debitParMinute: etat.debitParMinute,
     contenus: etat.contenus,
@@ -213,7 +211,6 @@ function etatDepuisAssistant(o: Record<string, unknown>): Partial<EtatBrouillon>
     ...(dans(o.premier, ['whatsapp', 'rcs'] as const) ? { premier: o.premier as CanalPremier } : {}),
     ...(dans(o.troisieme, ['aucun', 'email', 'sms'] as const) ? { troisieme: o.troisieme as TroisiemeNiveau } : {}),
     ...(booleen(o, 'reessayer') !== undefined ? { reessayer: booleen(o, 'reessayer')! } : {}),
-    ...(booleen(o, 'rattrapageHorsHoraires') !== undefined ? { rattrapageHorsHoraires: booleen(o, 'rattrapageHorsHoraires')! } : {}),
     ...(booleen(o, 'heuresOuvrees') !== undefined ? { heuresOuvrees: booleen(o, 'heuresOuvrees')! } : {}),
     ...(typeof o.debitParMinute === 'number' ? { debitParMinute: debitBorne(o.debitParMinute) } : {}),
     contenus,

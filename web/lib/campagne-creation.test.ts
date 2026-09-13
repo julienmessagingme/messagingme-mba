@@ -30,7 +30,6 @@ const ETAT: EtatPourCreation = {
   debitParMinute: 60,
   heuresOuvrees: false,
   reessayer: true,
-  rattrapageHorsHoraires: false,
   assignation: 'aucune',
   assignationUserId: null,
   // Le cas de base : on lance tout de suite. La programmation a ses propres cas plus bas.
@@ -680,5 +679,42 @@ describe('le visuel d un etage RCS', () => {
       avecRcs({ suggestions: [{ kind: 'openUrl', text: 'Voir', url: 'https://exemple.fr', postbackData: 'p1' }] }),
       CHAINE_RCS, CTX,
     )).toBeNull();
+  });
+});
+
+/**
+ * LES DEUX RÈGLES QUE L'ÉCRAN NE PEUT PAS TENIR SEUL (2026-09-13, essai réel de Julien).
+ *
+ * 🔴 ELLES SE TESTENT ICI, AU POINT D'ENVOI, ET C'EST TOUT L'INTÉRÊT. L'écran masquait déjà le bloc du
+ * réessai sur une formule « avec repli », mais masquer n'efface pas : la case cochée en WhatsApp
+ * survivait à la bascule et partait vers le serveur. C'est le motif déjà payé DEUX fois sur ce chantier,
+ * « l'écran affiche ce que la requête n'envoie pas », et la parade est celle qui est écrite dans
+ * `wip.md` : au moins un test lit le CORPS de la requête.
+ */
+describe('ce qui part vraiment, quand l ecran a cache la question', () => {
+  const SEUL: EtageAssistant[] = [{ rang: 1, canal: 'whatsapp' }];
+
+  it('🔴 une chaine de repli n emporte AUCUN reessai, meme case cochee', () => {
+    // ETAT.reessayer vaut true, et CHAINE porte trois etages.
+    expect(ETAT.reessayer).toBe(true);
+    expect(entreeDeCreation(ETAT, CHAINE, CTX).reessayer).toBe(false);
+  });
+
+  it('sur un canal seul, le choix de l operateur est respecte', () => {
+    expect(entreeDeCreation(ETAT, SEUL, CTX).reessayer).toBe(true);
+    expect(entreeDeCreation({ ...ETAT, reessayer: false }, SEUL, CTX).reessayer).toBe(false);
+  });
+
+  /**
+   * 🔴 LE SENS EST INVERSE, ET C'EST EXACTEMENT LA OU L'ON SE TROMPE. `rattrapage_hors_horaires` a vrai
+   * veut dire « le rattrapage S'AFFRANCHIT des horaires ». Cocher « heures ouvrees » doit donc l'ETEINDRE.
+   * Un test qui ne verifierait qu'un seul des deux sens passerait sur l'implementation inversee.
+   */
+  it('🔴 « heures ouvrees » coche eteint l affranchissement du rattrapage', () => {
+    expect(entreeDeCreation({ ...ETAT, heuresOuvrees: true }, CHAINE, CTX).rattrapageHorsHoraires).toBe(false);
+  });
+
+  it('🔴 et decoche, le rattrapage part a toute heure comme l envoi initial', () => {
+    expect(entreeDeCreation({ ...ETAT, heuresOuvrees: false }, CHAINE, CTX).rattrapageHorsHoraires).toBe(true);
   });
 });
