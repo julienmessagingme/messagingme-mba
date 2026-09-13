@@ -1826,3 +1826,23 @@ d'interface ne voient que la première, et ils sont verts pendant que la seconde
 ⚠️ **LA PARADE, ET ELLE EST BON MARCHÉ** : pour tout écran qui construit une requête, au moins un test
 lit le **CORPS DE LA REQUÊTE**, pas le rendu. C'est le seul qui prouve quelque chose. À appliquer à
 l'assistant de traduction et au récap avant qu'ils ne reproduisent le motif une troisième fois.
+
+## Une campagne en pause ne dit NI pourquoi NI jusqu'à quand (2026-09-13)
+
+Trouvé en diagnostiquant le « le truc reste en pause » de Julien, un dimanche. La campagne était
+parfaitement saine : `business_hours_only` coché, l'espace fermé le dimanche, donc
+`pause_reason = 'hors_horaires'` et `paused_until` au lundi 9 h. Le moteur avait raison de bout en
+bout, et **l'écran n'en montrait rien** : la liste affiche « en pause », point.
+
+🔴 **LES DEUX COLONNES EXISTENT DEPUIS 0103 ET 0122, ET L'API NE LES EXPOSE PAS** (`pause_reason`,
+`paused_until` absentes de `CampaignSummary`). `messageDePause` sait déjà fabriquer la phrase
+(`src/campaign/pause.ts`), personne ne l'affiche dans la liste. C'est encore le même motif que
+celui du bloc au-dessus, dans l'autre sens : le serveur SAIT, l'écran ne le dit pas.
+
+⚠️ **ET LE PIÈGE QUI SUIT** : changer ses heures d'ouverture ne réveille PAS une campagne déjà en
+pause, `paused_until` ayant été calculé au moment de la pause. Le geste existe (le bouton
+« Reprendre » de la liste, que Julien a trouvé seul), mais rien ne l'indique à qui vient de corriger
+ses horaires en croyant avoir résolu le problème.
+
+À faire : exposer les deux colonnes dans le résumé, afficher la phrase et l'échéance sous le badge
+« en pause », et nommer le bouton « Reprendre » comme le geste qui rattrape un horaire corrigé.
