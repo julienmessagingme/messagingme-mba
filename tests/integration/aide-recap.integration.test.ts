@@ -39,12 +39,14 @@ describe.skipIf(!url)('le récap de la veille (Postgres)', () => {
     creeeLe: string;
     messages?: Array<{ a: string; sens?: 'in' | 'out' }>;
     analyse?: { le: string; topic: string };
+    test?: boolean;
   }): Promise<string> {
     const tenant = o.tenant ?? tenantId;
     n += 1;
     const conv = await pool.query<{ id: string }>(
-      `insert into conversations (tenant_id, wa_id, created_at, last_message_at) values ($1, $2, $3, $3) returning id`,
-      [tenant, `+3360000${String(n).padStart(4, '0')}`, o.creeeLe],
+      `insert into conversations (tenant_id, wa_id, created_at, last_message_at, is_test)
+       values ($1, $2, $3, $3, $4) returning id`,
+      [tenant, `+3360000${String(n).padStart(4, '0')}`, o.creeeLe, o.test === true],
     );
     const id = conv.rows[0]!.id;
     for (const m of o.messages ?? []) {
@@ -205,6 +207,32 @@ describe.skipIf(!url)('le récap de la veille (Postgres)', () => {
     // ...et l'autre espace voit bien la sienne : sans ce second sens, un filtre qui ne rend JAMAIS rien
     // passerait le test précédent.
     expect((await recap(autreTenantId, '2026-03-24')).conversations).toBe(1);
+  });
+
+  /**
+   * 🔴 LES ESSAIS DU CLIENT NE SONT PAS DES CLIENTS. `conversations.is_test` existe depuis la migration 0053
+   * pour ça, et TOUTES les requêtes soeurs la filtrent (`src/stats/store.pg.ts`,
+   * `src/stats/conversation-stats.pg.ts`). Sur un petit espace, deux essais depuis son propre téléphone
+   * suffisent à fausser « hier : X conversations » de façon visible, et à faire commenter au modèle un
+   * écart qui n'existe pas.
+   */
+  it('🔴 une conversation de TEST n entre ni dans les volumes ni dans les sujets', async () => {
+    await conversation({
+      creeeLe: '2026-03-22T10:00:00+01:00',
+      messages: [{ a: '2026-03-22T10:00:00+01:00' }, { a: '2026-03-22T10:01:00+01:00', sens: 'out' }],
+      analyse: { le: '2026-03-23T08:00:00+01:00', topic: 'essai interne' },
+      test: true,
+    });
+    // ...et une VRAIE conversation le même jour, pour que le test ne passe pas sur un filtre qui rend
+    // toujours zéro.
+    await conversation({ creeeLe: '2026-03-22T11:00:00+01:00', messages: [{ a: '2026-03-22T11:00:00+01:00' }] });
+    const r = await recap(tenantId, '2026-03-22');
+    expect(r.conversations).toBe(1);
+    expect(r.conversationsNouvelles).toBe(1);
+    expect(r.messagesEntrants).toBe(1);
+    expect(r.messagesSortants).toBe(0);
+    expect(r.themes).toEqual([]);
+    expect(r.conversationsAnalysees).toBe(0);
   });
 
   it('les thèmes sont regroupés sans tenir compte de la casse, et bornés à cinq', async () => {

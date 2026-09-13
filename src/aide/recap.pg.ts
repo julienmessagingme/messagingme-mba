@@ -24,6 +24,14 @@ import { STATS_TZ, BOUNDS_CTE, addDays, isValidDateStr } from '../stats/range';
  * de chiffres visiblement incohérent qui aurait fait douter de tout l'écran. Les ouvertures restent comptées
  * à part (`conversationsNouvelles`), parce que « dont 3 nouvelles » est justement ce qu'on veut savoir.
  *
+ * 🔴 `not c.is_test` SUR CHAQUE REQUÊTE, AU MÊME TITRE QUE `tenant_id`. La colonne existe depuis la
+ * migration 0053 pour exactement ce cas : « ce fil vient d'un test interne, pas d'un vrai client [...] sert
+ * à exclure ces conversations de l'analyse et des statistiques, pour qu'un essai ne ressemble pas à un lead
+ * dans le tableau de bord ». TOUTES les requêtes soeurs la filtrent (`src/stats/store.pg.ts`,
+ * `src/stats/conversation-stats.pg.ts`). L'oublier ici ferait entrer les essais du client depuis son propre
+ * téléphone dans « hier : X conversations », et sur un petit espace quelques échanges de test suffisent à
+ * fausser le chiffre visiblement, voire à déclencher un appel de modèle sur un écart qui n'existe pas.
+ *
  * ⚠️ `tenant_id = $1` sur CHAQUE requête : `conversation_messages` n'a PAS de `tenant_id`, l'isolation passe
  * donc obligatoirement par la jointure sur `conversations`. C'est la PREMIÈRE lecture des données d'un
  * client par le bot d'aide, qui ne lisait jusqu'ici que `aide_fiches` (même corpus pour tout le monde).
@@ -99,14 +107,14 @@ const VOLUME_SQL = `with ${BOUNDS_CTE},
            from conversation_messages m
            join conversations c on c.id = m.conversation_id
           cross join bounds b
-          where c.tenant_id = $1
+          where c.tenant_id = $1 and not c.is_test
             and m.created_at >= b.start_ts and m.created_at < b.end_ts
        )
        select (select count(distinct conversation_id) from msgs)::int as conversations,
               (select count(*) from msgs where direction = 'in')::int as entrants,
               (select count(*) from msgs where direction = 'out')::int as sortants,
               (select count(*) from conversations c cross join bounds b
-                where c.tenant_id = $1
+                where c.tenant_id = $1 and not c.is_test
                   and c.created_at >= b.start_ts and c.created_at < b.end_ts)::int as nouvelles`;
 
 /**
@@ -126,7 +134,7 @@ const THEMES_SQL = `with ${BOUNDS_CTE},
            from conversation_messages m
            join conversations c on c.id = m.conversation_id
           cross join bounds b
-          where c.tenant_id = $1
+          where c.tenant_id = $1 and not c.is_test
             and m.created_at >= b.start_ts and m.created_at < b.end_ts
        ),
        analysees as (

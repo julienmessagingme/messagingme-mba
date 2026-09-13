@@ -119,11 +119,41 @@ describe('le gabarit', () => {
 });
 
 describe('les nombres que le modèle a le droit d écrire', () => {
-  it('ceux du récap, plus la date, plus l écart déjà écrit par le gabarit', () => {
+  it('ceux du récap, plus l écart déjà écrit par le gabarit', () => {
     const n = nombresDuRecap(recap());
-    for (const attendu of [42, 6, 25, 17, 128, 96, 12, 40, 130, 2026, 9, 12]) {
+    for (const attendu of [42, 6, 25, 17, 128, 96, 12, 40, 130]) {
       expect(n.has(attendu), String(attendu)).toBe(true);
     }
+  });
+
+  /**
+   * 🔴 LA DATE N'EST PAS AUTORISÉE, ET C'EST LE POINT. Le jour du mois (1 à 31) et le numéro du mois
+   * (1 à 12) recouvrent la plage des pourcentages qu'un modèle invente : les autoriser comme jetons libres
+   * perçait la garde sur toute cette plage. Le modèle reçoit la date en toutes lettres, il n'a donc aucune
+   * raison légitime d'écrire un chiffre de date.
+   */
+  it('🔴 les chiffres de la DATE ne sont pas autorisés', () => {
+    // 2026 (l'année) et 9 (le mois de septembre) n'ont rien à faire dans un récap.
+    const n = nombresDuRecap(recap());
+    expect(n.has(2026)).toBe(false);
+    expect(n.has(9)).toBe(false);
+  });
+
+  it('🔴 un pourcentage qui COÏNCIDE avec le jour du mois est quand même repéré', () => {
+    // Le récap porte sur le 20 : avant ce durcissement, « +20 % » passait parce que 20 était le jour.
+    const donnees = recap({ themes: [{ topic: 'retard de livraison', n: 3 }], jour: '2026-09-20' });
+    expect(nombresInventes('Hausse de 20 % cette semaine.', nombresDuRecap(donnees))).toEqual([20]);
+  });
+
+  /**
+   * ⚠️ LA CONTREPARTIE, ASSUMÉE : une date écrite en CHIFFRES est désormais refusée, et le récap retombe
+   * alors sur le gabarit. C'est pour ça que le modèle reçoit la date en toutes lettres et qu'on le lui dit :
+   * il n'a aucune raison d'en écrire une, et si ça arrive on paie un appel pour rien, on ne ment pas.
+   */
+  it('⚠️ une date en chiffres est refusée, et c est le prix du durcissement', () => {
+    expect(nombresInventes('Le 12/09, 42 conversations.', nombresDuRecap(recap({
+      themes: [{ topic: 'retard de livraison', n: 3 }],
+    })))).toEqual([12, 9]);
   });
 
   it('🔴 un pourcentage calculé par le modèle est repéré', () => {
@@ -143,6 +173,15 @@ describe('les nombres que le modèle a le droit d écrire', () => {
     const r = recap({ messagesEntrants: 1234 });
     expect(nombresInventes('1 234 messages reçus.', nombresDuRecap(r))).toEqual([]);
     expect(nombresInventes('1 234 messages reçus.', nombresDuRecap(r))).toEqual([]);
+  });
+
+  /**
+   * ⚠️ UN RETOUR À LA LIGNE N'EST PAS UN SÉPARATEUR DE MILLIERS. Avec `\s`, « 42 » en fin de ligne suivi de
+   * « 128 » au début de la suivante se lisait comme 42128, donc comme un nombre inventé : un texte
+   * parfaitement juste était refusé, et on payait un appel de modèle pour rien.
+   */
+  it('⚠️ deux nombres justes séparés par un retour à la ligne ne deviennent pas un nombre inventé', () => {
+    expect(nombresInventes('Conversations : 42\n128 messages reçus.', nombresDuRecap(recap()))).toEqual([]);
   });
 
   it('une comparaison EN MOTS passe, c est ce qu on demande au modèle', () => {

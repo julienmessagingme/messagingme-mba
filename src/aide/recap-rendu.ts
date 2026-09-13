@@ -119,12 +119,17 @@ export function gabarit(r: Recap, langue: 'fr' | 'en'): string {
 /**
  * TOUT NOMBRE QUE LE MODÈLE A LE DROIT D'ÉCRIRE.
  *
- * ⚠️ La date en fait partie (le jour du mois, le mois, l'année) : le modèle a le droit de dire « le
- * 12 septembre ». L'écart entre conversations et conversations analysées aussi, parce que le gabarit lui-même
- * le cite et qu'on veut que le modèle puisse le dire.
+ * 🔴 LA DATE N'EN FAIT PAS PARTIE, ET C'EST DÉLIBÉRÉ. Le jour du mois (1 à 31) et le numéro du mois (1 à 12)
+ * recouvrent exactement la plage des pourcentages qu'un modèle invente le plus volontiers (« hausse de 9 % »,
+ * « +12 % »). Les autoriser comme jetons libres n'importe où dans le texte perçait la garde sur toute cette
+ * plage, et le jour où le récap tombe un 20, « +20 % » passerait sans bruit. Le modèle reçoit la date DÉJÀ
+ * ÉCRITE EN TOUTES LETTRES et n'a donc aucune raison légitime d'écrire un chiffre de date ; s'il en écrit un
+ * quand même, on retombe sur le gabarit, ce qui ne coûte qu'un appel.
+ *
+ * ⚠️ L'écart entre conversations et conversations ANALYSÉES en fait partie, lui, parce que le gabarit le cite
+ * déjà et qu'on veut que le modèle puisse dire la même chose.
  */
 export function nombresDuRecap(r: Recap): Set<number> {
-  const [annee, mois, jourDuMois] = r.jour.split('-').map(Number) as [number, number, number];
   return new Set<number>([
     0,
     r.conversations,
@@ -137,9 +142,6 @@ export function nombresDuRecap(r: Recap): Set<number> {
     ...r.themes.map((t) => t.n),
     r.semainePrecedente.conversations,
     r.semainePrecedente.messagesEntrants,
-    annee,
-    mois,
-    jourDuMois,
   ]);
 }
 
@@ -151,11 +153,21 @@ export function nombresDuRecap(r: Recap): Set<number> {
  *
  * ⚠️ Les séparateurs de milliers sont retirés avant lecture (« 1 234 » est UN nombre, pas deux), y compris
  * l'espace insécable et l'espace fine que les rendus français emploient.
+ *
+ * ⚠️ ET LA CLASSE DES SÉPARATEURS EXCLUT LE RETOUR À LA LIGNE, délibérément : avec `\s`, « 42 » en fin de
+ * ligne suivi de « 128 » au début de la suivante se lisait comme le nombre 42128, donc comme un nombre
+ * inventé, et un texte parfaitement juste était refusé. Un séparateur de milliers est une espace, jamais
+ * une fin de ligne.
+ *
+ * ⚠️ CE QU'ELLE N'ATTRAPE PAS, ET C'EST ASSUMÉ : un petit nombre qui se trouve déjà dans l'entrée pour une
+ * autre raison (le jour du mois, le numéro du mois, un compte de sujets) passe même employé à tort. Elle
+ * arrête les ORDRES DE GRANDEUR inventés, c'est-à-dire les pourcentages et les volumes, qui sont ce sur
+ * quoi quelqu'un agirait.
  */
 export function nombresInventes(texte: string, autorises: Set<number>): number[] {
-  const trouves = texte.match(/\d+(?:[\s  ]\d{3})*/g) ?? [];
+  const trouves = texte.match(/\d+(?:[   ]\d{3})*/g) ?? [];
   return trouves
-    .map((s) => Number(s.replace(/[\s  ]/g, '')))
+    .map((s) => Number(s.replace(/[   ]/g, '')))
     .filter((n) => Number.isFinite(n) && !autorises.has(n));
 }
 
@@ -199,6 +211,8 @@ function consigne(langue: 'fr' | 'en'): string {
     'fournies. Pas de pourcentage, pas de moyenne, pas de différence que tu aurais calculée. Pour comparer,',
     'écris-le en mots (« deux fois plus », « nettement moins »), jamais en chiffres inventés.',
     '',
+    'La date t’est donnée EN TOUTES LETTRES : recopie-la telle quelle, n’écris jamais une date en chiffres.',
+    '',
     'Dis ce qui est REMARQUABLE : un volume qui s’écarte du même jour la semaine précédente, un sujet qui',
     'n’était pas là la semaine d’avant. Si des conversations ne sont pas encore analysées, dis-le.',
     'N’invente aucun fait, aucune cause, aucune recommandation.',
@@ -225,7 +239,16 @@ export function creerRedacteurRecap(deps: DepsRedacteurRecap): (r: Recap, langue
         messages: [
           { role: 'system', content: consigne(langue) },
           // Les données arrivent dans un bloc DÉLIMITÉ, jamais concaténées à la consigne.
-          { role: 'user', content: `<<<DONNEES>>>\n${JSON.stringify(r)}\n<<<FIN DONNEES>>>` },
+          /**
+           * ⚠️ `jour` part EN TOUTES LETTRES et non en `YYYY-MM-DD` : sans ça, le modèle recopierait des
+           * chiffres de date, qu'il faudrait alors autoriser dans `nombresDuRecap`, ce qui rouvrirait la
+           * garde sur toute la plage 1-31, celle des pourcentages.
+           */
+          {
+            role: 'user',
+            content: `<<<DONNEES>>>\n${JSON.stringify({ ...r, jour: jourEnToutesLettres(r.jour, langue) })}`
+              + '\n<<<FIN DONNEES>>>',
+          },
         ],
         outils: [{ name: OUTIL_RECAP, description: 'Rends le récap rédigé.', parameters: SCHEMA_RECAP }],
         toolChoice: OUTIL_RECAP,
