@@ -15,6 +15,9 @@ import { repeterAvecGigue } from '@/lib/poll';
 import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
 import { estAnnulation } from '@/lib/http';
 import { langueSortanteParDefaut, nomDeLangue } from '@/lib/langue-nom';
+import {
+  cibleDeLecture, ecrireTraductionActive, lireTraductionActive, marqueTraduction, texteDeBulle, texteDuVocal,
+} from '@/lib/traduction-lecture';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import { InboxDossiers, libelleDossier, type DossierInbox } from '@/components/InboxDossiers';
@@ -161,6 +164,43 @@ function InboundPayload({ body, payload }: { body: string | null; payload: strin
           {String(v)}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * LA MARQUE D'UNE BULLE : « traduit », « traduction échouée », ou RIEN.
+ *
+ * 🔴 LES DEUX DERNIERS ÉTATS NE SE CONFONDENT PAS, et c'est la règle du lot. Une traduction TENTÉE qui
+ * n'est pas revenue le dit ; un message au-delà du plafond de 40 n'a jamais été tenté, donc il ne dit
+ * rien. Marquer le second comme un échec ferait chercher une panne inexistante sur tout l'historique
+ * ancien d'une conversation, à chaque ouverture.
+ *
+ * ⚠️ UNE TRADUCTION EST MARQUÉE COMME TELLE, exactement comme la transcription d'un vocal : c'est la
+ * lecture d'un modèle, pas ce que le client a écrit. L'original reste lisible au survol, ce qui est la
+ * seule façon de le retrouver sans éteindre le réglage.
+ */
+function MarqueDeTraduction({ message }: { message: InboxMessage }) {
+  const t = useT();
+  const marque = marqueTraduction(message);
+  if (marque === 'aucune') return null;
+  if (marque === 'traduit') {
+    return (
+      <div
+        data-testid={`bulle-traduite-${message.id}`}
+        title={message.body ?? undefined}
+        className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-400"
+      >
+        {t('traduit', 'translated')}
+      </div>
+    );
+  }
+  return (
+    <div
+      data-testid={`bulle-traduction-echouee-${message.id}`}
+      className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700"
+    >
+      {t('traduction échouée', 'translation failed')}
     </div>
   );
 }
@@ -774,10 +814,29 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
  * la presenter comme une citation ferait prendre une supposition pour un fait, et un operateur qui reprend
  * une conversation menee par l'IA n'aurait aucun moyen de le savoir. Le vocal reste ecoutable a cote.
  */
-function VocalMessage({ session, conversationId, message }: { session: Session; conversationId: string; message: InboxMessage }) {
+function VocalMessage({ session, conversationId, message, traduire }: {
+  session: Session; conversationId: string; message: InboxMessage;
+  /**
+   * La langue de lecture, ou `null` quand le réglage est éteint.
+   *
+   * 🔴 UN SEUL GESTE POUR L'OPÉRATEUR : un vocal espagnol revient dans sa langue sans qu'il ait à
+   * transcrire puis à traduire. Le serveur sait déjà le faire (`transcrireMessage` prend la cible) ; ce
+   * qui manquait, c'est que l'écran la lui dise.
+   */
+  traduire: 'fr' | 'en' | null;
+}) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(null);
-  const [texte, setTexte] = useState<string | null>(message.transcription ?? null);
+  /**
+   * Ce qui s'affiche sous le lecteur, et s'il s'agit de notre lecture.
+   *
+   * ⚠️ La traduction d'une transcription DÉJÀ rangée arrive avec le fil (`affiche`), pas avec un clic :
+   * au rechargement d'une conversation dont le vocal avait été transcrit, elle doit revenir traduite,
+   * sinon une bulle resterait en espagnol au milieu d'un fil français sans raison visible.
+   */
+  const initial = texteDuVocal(message);
+  const [texte, setTexte] = useState<string | null>(initial.texte);
+  const [traduit, setTraduit] = useState<boolean>(initial.traduit);
   const [occupe, setOccupe] = useState<'audio' | 'texte' | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -797,7 +856,14 @@ function VocalMessage({ session, conversationId, message }: { session: Session; 
   async function transcrire(): Promise<void> {
     setOccupe('texte'); setErreur(null);
     try {
-      setTexte((await transcrireMessage(session.tenantId, conversationId, message.id)).texte);
+      const r = await transcrireMessage(session.tenantId, conversationId, message.id, traduire);
+      /**
+       * ⚠️ `texte` RESTE CE QUI A ÉTÉ DIT, et la traduction est un champ à part : on affiche la seconde
+       * quand elle existe, mais on ne confond pas les deux. Une traduction qui échoue (`null`) laisse
+       * donc la transcription, jamais une bulle vide.
+       */
+      setTexte(r.traduction ?? r.texte);
+      setTraduit(r.traduction !== null && r.traduction !== undefined);
     } catch {
       setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
     } finally { setOccupe(null); }
@@ -832,7 +898,11 @@ function VocalMessage({ session, conversationId, message }: { session: Session; 
       )}
       {texte !== null && (
         <p className="rounded-lg bg-white/60 px-2 py-1 text-xs text-ink-700" data-testid={`vocal-texte-${message.id}`}>
-          <span className="mr-1 font-medium uppercase tracking-wide text-ink-400">{t('transcription', 'transcript')}</span>
+          {/* L'étiquette DIT laquelle des deux lectures on montre. « transcription » sur un texte traduit
+              ferait passer notre lecture pour ce qui a été dit, et le fil sert de trace. */}
+          <span className="mr-1 font-medium uppercase tracking-wide text-ink-400">
+            {traduit ? t('transcription traduite', 'translated transcript') : t('transcription', 'transcript')}
+          </span>
           {texte}
         </p>
       )}
@@ -953,6 +1023,20 @@ function Thread({ session, conversation, dossier, onSent }: {
   const [langueContact, setLangueContact] = useState<string | null>(null);
   const [traduction, setTraduction] = useState<{ origine: string; traduit: string } | null>(null);
   const [traduisant, setTraduisant] = useState(false);
+  /**
+   * LIRE LES MESSAGES REÇUS DANS SA LANGUE (2026-09-13), par NAVIGATEUR comme le choix de langue.
+   *
+   * ⚠️ LU AU PREMIER RENDU, et c'est possible ici SANS risque d'hydratation : `Thread` n'existe que
+   * lorsqu'une conversation est sélectionnée, donc jamais pendant le rendu serveur (qui affiche
+   * « Sélectionne une conversation »). Le lire dans un effet, comme le fait `LocaleProvider` qui lui
+   * est rendu côté serveur, coûterait un chargement de fil EN VO avant le vrai, donc un aller-retour
+   * complet pour rien à chaque ouverture de conversation.
+   */
+  const [traduireRecus, setTraduireRecus] = useState<boolean>(() => lireTraductionActive());
+  /** Cet espace n'a pas de crédit de modèle. Rendu par le serveur SEULEMENT quand on demande `traduire`. */
+  const [traductionIndisponible, setTraductionIndisponible] = useState(false);
+  /** La langue demandée au serveur, ou `undefined` : c'est celle de la console, jamais une question de plus. */
+  const cibleLecture = cibleDeLecture(traduireRecus, locale);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showScenario, setShowScenario] = useState(false);
   const [showRcs, setShowRcs] = useState(false);
@@ -1006,6 +1090,21 @@ function Thread({ session, conversation, dossier, onSent }: {
    * un changement de conversation ou la sortie de l'écran : là, la réponse ne nous intéresse plus.
    */
   const enCoursRef = useRef(false);
+  /**
+   * 🔴 LE PROCHAIN CHARGEMENT REMPLACE LE FIL AU LIEU DE S'Y AJOUTER. Posé quand la langue de lecture
+   * change, et seulement là.
+   *
+   * Sans lui, remettre `bornRef` à zéro ne suffirait PAS : le serveur renverrait bien le fil entier,
+   * mais l'écran n'ajoute que les identifiants qu'il ne connaît pas encore (c'est sa garde anti-doublon).
+   * Les bulles déjà affichées garderaient donc leur langue d'avant pour toujours, et l'opérateur verrait
+   * un fil à moitié traduit sans pouvoir rien y faire.
+   *
+   * ⚠️ EXPLICITE, et jamais déduit de « `bornRef` est nul ». Un fil dont le serveur ne rend pas de
+   * curseur repart du fil entier à CHAQUE tour : remplacer à chaque fois donnerait un nouveau tableau
+   * toutes les 4 secondes, donc une nouvelle référence, donc l'effet de défilement relancé en boucle.
+   * C'est cette référence stable qui rend le fil calme.
+   */
+  const remplacerAuProchainRef = useRef(false);
 
   const load = useCallback(async (o?: { passerSiEnVol?: boolean }) => {
     if (o?.passerSiEnVol === true && enCoursRef.current) return;
@@ -1018,11 +1117,22 @@ function Thread({ session, conversation, dossier, onSent }: {
       // se rafraîchit toutes les 4 s ; il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
       const res = await getConversationMessages(session.tenantId, conversation.id, {
         ...(bornRef.current ? { apres: bornRef.current } : {}),
+        // La langue de LECTURE, celle de la console. Absente = la réponse est mot pour mot celle
+        // d'avant ce lot, et aucun appel de modèle n'est payé.
+        ...(cibleLecture ? { traduire: cibleLecture } : {}),
         signal: ctrl.signal,
       });
-      // ⚠️ On AJOUTE, on ne remplace plus. Conséquence assumée : un message effacé côté serveur reste à
-      // l'écran jusqu'au prochain changement de conversation. Le produit n'efface pas de message, et le fil
-      // se remonte à chaque sélection (`key={selected.id}`), donc l'écart ne survit pas à un clic.
+      // ⚠️ CONSOMMÉ ICI, après la réponse et pas avant : une requête qui échoue ou qui est annulée doit
+      // laisser le remplacement DÛ, sinon le fil resterait à moitié traduit jusqu'au prochain clic.
+      const remplacer = remplacerAuProchainRef.current;
+      remplacerAuProchainRef.current = false;
+      // 🔴 REMPLACEMENT INTÉGRAL : les bulles déjà à l'écran viennent de changer de langue, et leurs
+      // identifiants n'ont pas bougé. L'ajout dédoublonné ci-dessous les laisserait telles quelles.
+      if (remplacer) setMessages(res.messages);
+      // ⚠️ On AJOUTE, SAUF au changement de langue de lecture traité juste au-dessus. Conséquence assumée
+      // de l'ajout : un message effacé côté serveur reste à l'écran jusqu'au prochain changement de
+      // conversation. Le produit n'efface pas de message, et le fil se remonte à chaque sélection
+      // (`key={selected.id}`), donc l'écart ne survit pas à un clic.
       if (res.messages.length > 0) {
         const arrivee = res.messages[res.messages.length - 1]!;
         // 🔴 LE CURSEUR VIENT DU SERVEUR ET REPART TEL QUEL. Il valait `createdAt`, qui a traversé un `Date`
@@ -1032,20 +1142,25 @@ function Thread({ session, conversation, dossier, onSent }: {
         // tour suivant redemande le fil entier. C'est le repli sûr de cette route, trop de messages plutôt
         // que trop peu, et le dédoublonnage ci-dessous le rend invisible.
         bornRef.current = arrivee.curseur ? { at: arrivee.curseur, id: arrivee.id } : null;
-        // Toujours en AJOUT : au premier chargement `prev` est vide, donc l'ajout rend le fil entier. Le
-        // composant est remonté à chaque conversation (`key={selected.id}`), donc `prev` ne mélange jamais
-        // deux fils.
+        // En AJOUT : au premier chargement `prev` est vide, donc l'ajout rend le fil entier. Le composant
+        // est remonté à chaque conversation (`key={selected.id}`), donc `prev` ne mélange jamais deux fils.
+        //
+        // ⚠️ SAUTÉ QUAND LE FIL VIENT D'ÊTRE REMPLACÉ, et c'est obligatoire : les bulles reviennent avec
+        // les mêmes identifiants et un AUTRE texte, donc le dédoublonnage ci-dessous les rejetterait et
+        // ré-écraserait le remplacement par l'ancienne langue.
         //
         // ⚠️ Et en AJOUT DÉDOUBLONNÉ : un message n'apparaît qu'une fois dans un fil, quoi qu'il arrive en
         // face. Cette garde-ci ne dépend d'aucune hypothèse sur le curseur, donc elle tient aussi le jour où
         // le serveur renvoie deux fois la même bulle pour une autre raison. Et quand tout est déjà connu,
         // `prev` est rendu TEL QUEL : la référence ne change pas, donc l'effet de défilement ne se
         // redéclenche pas. C'est ce qui rend le fil calme.
-        setMessages((prev) => {
-          const connus = new Set(prev.map((m) => m.id));
-          const nouveaux = res.messages.filter((m) => !connus.has(m.id));
-          return nouveaux.length === 0 ? prev : [...prev, ...nouveaux];
-        });
+        if (!remplacer) {
+          setMessages((prev) => {
+            const connus = new Set(prev.map((m) => m.id));
+            const nouveaux = res.messages.filter((m) => !connus.has(m.id));
+            return nouveaux.length === 0 ? prev : [...prev, ...nouveaux];
+          });
+        }
         // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
         // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
         if (arrivee.id !== dernierVuRef.current) {
@@ -1056,12 +1171,20 @@ function Thread({ session, conversation, dossier, onSent }: {
         }
       }
       // Rien de nouveau -> `messages` garde sa référence, donc l'effet de scroll ne se redéclenche pas : c'est
-      // la garde anti-saut de scroll d'avant, obtenue ici gratuitement par le delta.
+      // la garde anti-saut de scroll d'avant, obtenue ici gratuitement par le delta. (Un REMPLACEMENT en
+      // change forcément la référence, mais il n'arrive qu'au changement de langue de lecture, donc sur un
+      // geste délibéré de l'opérateur et pas à chaque tour.)
       setWindowOpen(res.windowOpen);
       setControlOwner(res.controlOwner);
       // La langue APPRISE du contact. Elle arrive a CHAQUE tour, y compris sur un delta vide : c'est
       // elle qui nomme la cible du bouton de traduction, et elle peut changer en cours de conversation.
       setLangueContact(res.langueContact ?? null);
+      /**
+       * 🔴 PAS DE CRÉDIT, ET ON LE DIT PLUTÔT QUE DE RESTER MUET. Le serveur ne rend ce champ que
+       * lorsqu'on a demandé `traduire` : absent, il vaut faux, ce qui éteint le bandeau dès que
+       * l'opérateur coupe le réglage. Ce n'est pas une panne et c'est un 200 : le fil s'affiche, en VO.
+       */
+      setTraductionIndisponible(res.traductionIndisponible === true);
     } catch (err) {
       // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
       // un bandeau rouge à chaque clic serait absurde.
@@ -1073,10 +1196,34 @@ function Thread({ session, conversation, dossier, onSent }: {
       // laisser finir.
       if (enVolRef.current === ctrl) enCoursRef.current = false;
     }
-  }, [session.tenantId, conversation.id, t]);
+    // ⚠️ `cibleLecture` EST UNE DÉPENDANCE, et c'est ce qui recharge le fil quand on bascule le réglage
+    // (ou quand la console change de langue, ce qui change la cible sans qu'on ait rien basculé).
+  }, [session.tenantId, conversation.id, t, cibleLecture]);
 
   // Annule la requête en vol au démontage (changement de conversation, sortie de l'inbox).
   useEffect(() => () => { enVolRef.current?.abort(); }, []);
+
+  /**
+   * 🔴 LA LANGUE DE LECTURE A CHANGÉ : LE PROCHAIN CHARGEMENT REPREND LE FIL ENTIER, ET IL REMPLACE.
+   *
+   * Les deux gestes sont nécessaires, et pour deux raisons différentes. `bornRef` porte le curseur du
+   * delta : sans sa remise à zéro, on ne demanderait que les messages arrivés DEPUIS le dernier tour, et
+   * l'historique déjà à l'écran resterait dans sa langue d'origine pour toujours. Et le remplacement
+   * parce que l'ajout de `load` est DÉDOUBLONNÉ PAR IDENTIFIANT : les bulles reviennent avec les mêmes
+   * identifiants et un autre texte, donc elles seraient ignorées.
+   *
+   * ⚠️ DANS UN EFFET SUR LA CIBLE, et pas dans le gestionnaire du bouton, parce que la cible change
+   * AUSSI quand la console change de langue alors que le réglage, lui, n'a pas bougé. Deux causes, un
+   * seul endroit. Il est déclaré AVANT l'effet de chargement : React exécute les effets dans l'ordre de
+   * déclaration, donc les deux marques sont posées avant que `load` ne parte.
+   *
+   * ⚠️ Il se déclenche aussi au MONTAGE, et c'est sans conséquence : remplacer une liste vide par le fil
+   * entier est exactement ce que faisait l'ajout.
+   */
+  useEffect(() => {
+    bornRef.current = null;
+    remplacerAuProchainRef.current = true;
+  }, [cibleLecture]);
 
   useEffect(() => {
     void load();
@@ -1130,6 +1277,20 @@ function Thread({ session, conversation, dossier, onSent }: {
    * contact francophone qui répond « ok » ou par un emoji), et l'opérateur le voit AVANT d'envoyer.
    */
   const cibleSortante = langueContact ?? langueSortanteParDefaut(locale);
+
+  /**
+   * ALLUMER OU ÉTEINDRE LA LECTURE TRADUITE. Le rechargement du fil n'est PAS fait ici : il découle de
+   * l'effet sur `cibleLecture`, qui couvre aussi le changement de langue de la console.
+   *
+   * ⚠️ Le réglage est rangé TOUT DE SUITE : un opérateur qui bascule puis change de conversation doit
+   * retrouver son choix, et `Thread` est remonté à chaque sélection.
+   */
+  function basculerTraduction(actif: boolean): void {
+    setTraduireRecus(actif);
+    ecrireTraductionActive(actif);
+    // Éteindre fait disparaître le bandeau sans attendre la réponse : le serveur ne rendra plus le champ.
+    if (!actif) setTraductionIndisponible(false);
+  }
 
   /**
    * TRADUIRE ce qui est dans la zone de saisie. N'ENVOIE RIEN.
@@ -1243,12 +1404,43 @@ function Thread({ session, conversation, dossier, onSent }: {
 
   return (
     <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white shadow-sm lg:h-full">
-      <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
-        <div>
+      {/* ⚠️ `flex-wrap` sur l'en-tête et sur son groupe de droite : un 13 pouces laisse environ 700 px à
+          cette colonne, et les commandes y sont déjà nombreuses. Sans lui, la dernière arrivée pousse les
+          autres hors du cadre au lieu de passer à la ligne, ce qui ne se voit ni comme un débordement de
+          page ni comme un chevauchement (les rectangles restent disjoints), donc aucune des deux gardes de
+          largeur ne l'attraperait. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-ink-100 px-4 py-2.5">
+        <div className="min-w-0">
           <span className="text-sm font-semibold">{conversation.profileName ?? `+${conversation.waId}`}</span>
           <span className="ml-2 font-mono text-xs text-ink-400">+{conversation.waId}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+          {/*
+            🔴 LIRE LES MESSAGES REÇUS DANS SA LANGUE, ET C'EST LA LANGUE DE LA CONSOLE. Pas une question
+            de plus : on sait déjà dans quelle langue la personne lit son produit, et deux réglages pour
+            une même chose finissent par se contredire.
+
+            ⚠️ PAR NAVIGATEUR (`localStorage`), comme le choix de langue, et jamais par espace : deux
+            collègues lisent le même fil, l'un en français l'autre en anglais, et c'est ce cas-là qui a
+            fait naître cette fonctionnalité.
+
+            ⚠️ IL RESTE VISIBLE MÊME SANS CRÉDIT. Un interrupteur qui disparaît quand il ne sert à rien
+            laisse croire à une panne de l'écran ; le bandeau juste en dessous dit la vraie raison.
+          */}
+          <label
+            data-testid="toggle-traduction"
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-ink-200 px-2 py-1 text-[11px] font-medium text-ink-600 transition hover:bg-ink-50"
+            title={t('Les messages reçus sont traduits dans la langue de la console', 'Incoming messages are translated into the console language')}
+          >
+            <input
+              type="checkbox"
+              role="switch"
+              checked={traduireRecus}
+              onChange={(e) => basculerTraduction(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-ink-300 accent-brand-500"
+            />
+            {t('Traduire les messages reçus', 'Translate incoming messages')}
+          </label>
           {/* Affectation : à côté du contrôle du fil, mais ce sont DEUX choses différentes. Le badge de
               contrôle dit ce qui parle (scénario, humain, agent Meta) ; celui-ci dit qui s'en occupe. */}
           <AffectationControl
@@ -1315,6 +1507,28 @@ function Thread({ session, conversation, dossier, onSent }: {
         </div>
       </div>
 
+      {/*
+        🔴 SANS CRÉDIT, L'ÉCRAN LE DIT AU LIEU DE RESTER MUET. La traduction est payée par le crédit
+        PRÉPAYÉ du client (clé Gateway de l'espace, migration 0124), contrairement au bot d'aide qui est
+        sur notre clé : un espace sans crédit ne traduit pas, et le fil s'affiche en VO. Sans ce bandeau,
+        l'opérateur verrait un interrupteur allumé et des messages en espagnol, sans aucune explication,
+        et il conclurait à une panne du produit.
+
+        ⚠️ CE N'EST PAS UNE ERREUR, donc ni bandeau rouge ni `error` : la route répond 200, le fil est
+        complet, il est simplement dans sa langue d'origine.
+      */}
+      {traduireRecus && traductionIndisponible && (
+        <p
+          data-testid="traduction-indisponible"
+          className="mx-4 mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          {t(
+            'Traduction indisponible : le crédit de cet espace est épuisé. Les messages restent dans leur langue d’origine, un administrateur peut le recharger.',
+            'Translation unavailable: this workspace has run out of credit. Messages stay in their original language, an admin can top it up.',
+          )}
+        </p>
+      )}
+
       <div ref={filRef} data-testid="fil-messages" className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {messages.map((m, i) => {
           // Séparateur de jour (fuseau Paris) quand le jour change vs le message précédent.
@@ -1339,16 +1553,22 @@ function Thread({ session, conversation, dossier, onSent }: {
                   }`}
                   title={m.channel === 'rcs' ? 'RCS' : undefined}
                 >
+                  {/* 🔴 `texteDeBulle` ET PAS `m.body` : quand le fil a été demandé traduit, le texte à
+                      afficher est `affiche`, qui porte notre lecture pour un entrant et la RÉDACTION
+                      D'ORIGINE pour un sortant (sur un sortant traduit, `body` porte ce qui est PARTI,
+                      donc l'opérateur y verrait sa propre phrase en espagnol). Sans `traduire`, le champ
+                      est absent et tout retombe sur `body`, mot pour mot comme avant. */}
                   {m.type === 'template' ? (
-                    <span className="italic opacity-90">📋 {m.body}</span>
+                    <span className="italic opacity-90">📋 {texteDeBulle(m)}</span>
                   ) : m.type === 'audio' && m.aMedia === true && m.direction === 'in' ? (
                     // Le vocal remplace le libellé `[audio]`, qui ne disait rien de ce que le client a dit.
-                    <VocalMessage session={session} conversationId={conversation.id} message={m} />
+                    <VocalMessage session={session} conversationId={conversation.id} message={m} traduire={cibleLecture ?? null} />
                   ) : m.buttonPayload && m.direction === 'in' ? (
-                    <InboundPayload body={m.body} payload={m.buttonPayload} />
+                    <InboundPayload body={texteDeBulle(m)} payload={m.buttonPayload} />
                   ) : (
-                    m.body ?? <span className="italic opacity-70">[{m.type}]</span>
+                    texteDeBulle(m) ?? <span className="italic opacity-70">[{m.type}]</span>
                   )}
+                  <MarqueDeTraduction message={m} />
                   <div className={`mt-0.5 text-right text-[10px] ${m.direction === 'out' ? 'text-white/70' : 'text-ink-400'}`}>{hourMin(m.createdAt, locale)}</div>
                 </div>
                 {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur, legacy ou réponse auto). */}
