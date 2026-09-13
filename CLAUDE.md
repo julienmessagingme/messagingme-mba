@@ -79,9 +79,32 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0138**, le 2026-09-13 au soir (`contacts.opt_out_at` : QUAND un contact s'est
+**Dernière appliquée : 0139**, le 2026-09-13 dans la nuit (`tenant_settings.optout_request_id` : QUEL
+connecteur prévenir quand quelqu'un se désabonne, plus son index partiel).
+**Prochaine libre = 0140.**
+
+🔴 **LUE EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE**, et les quatre points l'ont été : la colonne
+dans `information_schema`, le PRÉDICAT EXACT de l'index partiel dans `pg_indexes`, `confdeltype = 'n'` sur la
+clé étrangère (c'est-à-dire `on delete set null`, et surtout pas `restrict`), et `schema_migrations` relue.
+
+🔴 **ELLE DÉSIGNE UNE REQUÊTE, PAS UN OUTIL D'AGENT, et la nuance décide de tout.** Un « outil » est une
+surface exposée à un MODÈLE : nom exposé, description destinée au modèle, paramètres que le modèle remplit.
+Il n'y a aucun modèle ici. C'est exactement le cas du bloc « Appel HTTP » d'un scénario, qui DÉSIGNE une
+requête de la bibliothèque : les trois appelants passent donc par `creerAppelConnecteur`, avec les mêmes sept
+gardes. ⚠️ Trois commentaires de ce fichier-là disaient « DEUX appelants » : le compte n'y est plus écrit.
+
+🔴 **`on delete set null` EST LA CEINTURE, LE REFUS LISIBLE EST DANS LA ROUTE.** Le compteur `outils` d'une
+requête ne voit que les outils d'agent : une requête branchée sur le consentement y compte ZÉRO, donc elle se
+supprimait, et la cascade débranchait la conformité EN SILENCE. La suppression rend désormais 409. La
+contrainte reste `set null` et surtout pas `restrict` : une contrainte qui BLOQUERAIT rendrait 500 sur un
+geste ordinaire, donc une page Cloudflare sans explication.
+
+⚠️ **`null` PAR DÉFAUT POUR TOUS LES ESPACES** : personne n'est prévenu tant que personne ne l'a demandé. Un
+défaut qui enverrait quoi que ce soit à un système tiers sans qu'on l'ait choisi serait l'inverse de ce que
+le centre de sécurité garantit.
+
+Avant elle : **0138**, le 2026-09-13 au soir (`contacts.opt_out_at` : QUAND un contact s'est
 désabonné, plus l'index partiel `contacts_opted_out_idx` qui sert la liste du centre de Sécurité).
-**Prochaine libre = 0139.**
 
 🔴 **LUE EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE** : la colonne dans `information_schema`, le
 PRÉDICAT EXACT de l'index partiel dans `pg_indexes` (il doit reprendre mot pour mot le `where` de

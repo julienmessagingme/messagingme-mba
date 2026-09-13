@@ -14,39 +14,36 @@
 
 | | |
 |---|---|
-| `origin/main` | `6aa83df` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `ec8d5de` |
-| L'écart entre les deux | **deux `.md`** (`CLAUDE.md`, `wip.md`) : aucun redéploiement dû |
-| Dernière CI de CODE (`ec8d5de`) | ✅ verte, quatre jobs |
+| `origin/main` | `87b153c` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `87b153c`, déployé et vérifié en public |
+| Dernière CI de CODE (`87b153c`) | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
-| Migrations | **0138 appliquée** le 2026-09-13 au soir, vérifiée en base. **Prochaine libre : 0139** |
+| Migrations | **0139 appliquée** dans la nuit du 2026-09-13, vérifiée en base. **Prochaine libre : 0140** |
 
 ⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Neuf déploiements le 2026-09-13, neuf fois le
 même : conteneurs `healthy`, appel interne à 200, appel public à 502. Réparation :
 `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`.
 
-🔴 **ET UN SEUL RELOAD NE SUFFIT PAS TOUJOURS** (vu une fois le 2026-09-13) : le contrôle public juste après
-rendait encore 502, le second l'a réglé. Le reload rend `0` dans les deux cas, donc il ne dit rien. La
-séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer si besoin.
+🔴 **ET UN SEUL RELOAD NE SUFFIT PAS TOUJOURS** (vu DEUX fois le 2026-09-13, dont le déploiement de la
+tâche 7) : le contrôle public juste après rendait encore 502, le second reload l'a réglé. Le reload rend `0`
+dans les deux cas, donc il ne dit rien. La séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer
+si besoin.
 
 ## 🔴 CE QUI EST EN COURS : chantier 6, le centre de Sécurité & compliance
 
 [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) ·
 [plan](docs/superpowers/plans/2026-09-13-centre-securite.md)
 
-**Tâches 1 à 6 livrées, relues et déployées** (`ec8d5de`). Le menu, la page d'accueil, l'écran Consentement,
-le blocage réel de l'opt-out sur tous les chemins automatiques, et la règle élargie en observation.
+**Tâches 1 à 7 livrées, relues et déployées** (`87b153c`). Le menu, la page d'accueil, l'écran Consentement,
+le blocage réel de l'opt-out sur tous les chemins automatiques, la règle élargie en observation, et la
+poussée du refus vers le système du client.
 
-**Restent trois tâches, dans cet ordre :**
+**Restent deux tâches, dans cet ordre :**
 
-1. **Tâche 7, l'opt-out déclenche un APPEL D'OUTIL.** Au moment où un refus est déclaré, l'espace pousse
-   l'information vers son propre système via un connecteur déjà déclaré dans Tools. C'est ce qui rend le
-   refus opposable ailleurs que chez nous. 🔴 **L'appel ne doit JAMAIS bloquer l'écriture de l'opt-out** :
-   on écrit d'abord, on appelle ensuite, un connecteur en panne ne fait pas échouer le respect d'un refus.
-2. **Tâche 8, le sous-menu IA.** Remonter « l'IA se déclare comme telle » de la fiche d'agent au niveau de
+1. **Tâche 8, le sous-menu IA.** Remonter « l'IA se déclare comme telle » de la fiche d'agent au niveau de
    l'ESPACE, sans changer le comportement des agents existants. ⚠️ Le Meta Business Agent n'est pas concerné,
    Meta écrit déjà « IA » sous ses messages.
-3. **Tâche 9, la moitié SYSTÈME du journal des erreurs.** La moitié client existe et a déménagé. Inventorier
+2. **Tâche 9, la moitié SYSTÈME du journal des erreurs.** La moitié client existe et a déménagé. Inventorier
    d'abord ce qui est DÉJÀ journalisé (DLQ, `/ops`, alertes Telegram, `workflow_advance_failures`) : la
    question n'est pas « que journaliser » mais « qu'est-ce qui est écrit quelque part et que personne ne
    montre au client ».
@@ -68,6 +65,11 @@ exercé par un humain sur un vrai téléphone.
   `redaction_origine` ce que l'opérateur a écrit.
 - **Créer un scénario depuis une campagne** : le publier, vérifier qu'il apparaît dans l'onglet Scénario, et
   lancer la campagne sur un vrai numéro.
+- **La poussée d'un opt-out vers un système tiers** (tâche 7, déployée) : déclarer un appel dans
+  Tools > Connecteurs API vers un point de réception qu'on peut observer, le brancher depuis
+  Sécurité > Consentement, écrire « stop » depuis un vrai téléphone, et **constater l'appel arrivé avec le
+  bon numéro**. Puis l'essai qui compte autant : **débrancher le connecteur, ou le casser, et vérifier que
+  l'opt-out est quand même posé**. C'est la promesse du lot, et elle ne vaut que mesurée.
 
 ⚠️ **UN POINT À REGARDER au premier essai d'un étage RCS avec scénario** : le contact reçoit le message de
 l'étage **puis** le premier message du scénario, puisque les scénarios proposés là ouvrent par un envoi.
@@ -121,6 +123,21 @@ test de blocage porte son TÉMOIN dans l'autre sens**, sinon il ne prouve que sa
 ⚠️ **« Par cohérence » n'est pas une raison de transporter une donnée.** Les variables du rang 1 partaient
 avec le scénario d'un étage de repli, parce que la branche voisine le faisait. Elles décrivent un autre
 modèle : Meta refuse, ou remplit le bon nombre de trous avec les mauvaises valeurs.
+
+🔴 **UN NOMBRE ÉCRIT À LA MAIN DANS UN COMMENTAIRE EST FAUX AVANT D'ÊTRE LU.** Trois exemplaires trouvés en
+une soirée : « DEUX appelants » de `creerAppelConnecteur` quand il y en avait trois, « 9 clés » dans une
+fixture qui en listait huit (l'ajout de ce lot l'a rendue vraie PAR ACCIDENT), et le compte de files. La
+parade n'est pas de les corriger, c'est de **ne pas les écrire** : on nomme la source, on ne la recopie pas.
+
+🔴 **UNE JUSTIFICATION FAUSSE SE RECOPIE, ET C'EST COMME ÇA QU'ELLE SE PROPAGE.** Le docblock de
+`registerSettings` annonçait « GET ouvert (lecture), PUT admin-only » ; le module entier est monté avec
+`requireAdmin` depuis longtemps. J'ai repris la phrase telle quelle dans une route neuve, en toute confiance,
+et seul le TEST l'a montrée. **Un docblock voisin n'est pas une source, c'est un témoignage.**
+
+⚠️ **`reuseExistingServer` DE PLAYWRIGHT PEUT FAIRE MENTIR UNE MUTATION.** Le serveur laissé vivant par le
+tour précédent est réutilisé, donc on teste le build d'AVANT : après avoir restauré le code muté, le test
+est resté rouge, et il a fallu relancer pour le voir vert. Dans l'autre sens, une mutation passerait pour
+« non attrapée ». Sur un e2e, **la mutation se juge sur un serveur neuf**.
 
 ⚠️ **Le hook de rayon de souffle trouve ce que la revue manque**, et l'inverse est vrai aussi : la revue de
 ce soir a trouvé deux défauts réels qu'aucun test ne voyait, et le hook a attrapé un commentaire devenu faux
