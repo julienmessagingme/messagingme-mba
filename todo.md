@@ -1795,3 +1795,34 @@ se font. Le piège est donc armé là où on teste, et zéro campagne y est bloq
 doit-il être traité comme « toujours ouvert » pour l'envoi initial ? Cela alignerait le comportement
 sur celui du rattrapage (`fenetreDeRattrapageOuverte` rend déjà `true` dans ce cas). C'est plus
 cohérent, mais cela change un comportement d'ENVOI : ça ne se fait pas sans décision explicite.
+
+## 🟡 Le choix de l'EXPÉDITEUR a disparu avec l'ancien formulaire (relevé au lot 8, 2026-09-13)
+
+L'assistant pose `phoneNumberId` sans le faire choisir. `CampaignCreateForm`, lui, le proposait quand
+l'espace en avait plusieurs.
+
+⚠️ **MESURÉ : régression LATENTE, pas vivante.** Les deux espaces de production ont **un seul numéro
+chacun** au 2026-09-13, donc personne ne peut constater la perte aujourd'hui. Elle mordra au premier
+client à deux numéros, et ce jour-là elle se manifestera par « mes campagnes partent du mauvais
+numéro », pas par une erreur.
+
+**À reposer dans l'assistant** : un sélecteur à l'étape Canal, visible seulement quand l'espace a plus
+d'un numéro. Le montrer à un espace mono-numéro serait une question dont la réponse est déjà connue.
+
+## 🔴 DEUX FOIS LE MÊME MOTIF : l'écran affiche ce que la requête n'envoie pas (2026-09-13)
+
+Deux défauts trouvés à deux lots d'intervalle, de la même famille, dans le même assistant :
+
+- **lot 7** : `entreeDeCreation` posait `contactTarget: { filters }` **quoi qu'on ait coché**. Une
+  sélection ligne à ligne était affichée, comptée, et la campagne partait à tout ce que les filtres
+  décrivaient, donc à plus de monde que ce que l'opérateur avait validé ;
+- **lot 8** : le constructeur de message RCS était un littéral `kind: 'text'`. L'écran affichait le
+  visuel, le téléversait, le montrait en aperçu, et n'en envoyait rien.
+
+🔴 **LA CAUSE COMMUNE EST LA MÉTHODE DE CONSTRUCTION, PAS L'INATTENTION.** Un écran bâti écran d'abord
+a deux moitiés qui avancent à des vitesses différentes : ce qu'il MONTRE et ce qu'il ENVOIE. Les tests
+d'interface ne voient que la première, et ils sont verts pendant que la seconde ment.
+
+⚠️ **LA PARADE, ET ELLE EST BON MARCHÉ** : pour tout écran qui construit une requête, au moins un test
+lit le **CORPS DE LA REQUÊTE**, pas le rendu. C'est le seul qui prouve quelque chose. À appliquer à
+l'assistant de traduction et au récap avant qu'ils ne reproduisent le motif une troisième fois.
