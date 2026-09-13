@@ -12,6 +12,20 @@
 >
 > **Au-delà de cent lignes, ce fichier a recommencé à être une archive.**
 
+## 🔴 L'ÉTAT EXACT, AU 2026-09-13 AU SOIR
+
+| | |
+|---|---|
+| `origin/main` | `9136414` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `444b509` |
+| L'écart entre les deux | **un commentaire et des `.md`** : aucun redéploiement dû |
+| Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
+
+⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Cinq déploiements le 2026-09-13, cinq fois le
+même : conteneurs `healthy`, appel interne à 200, appel public à 502 sur les trois chemins d'API, réglé
+par `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`. **Le contrôle public après CHAQUE
+`up --build` est la seule façon de ne pas laisser la réception des messages coupée sans le savoir.**
+
 ## 🔴 LA FILE DE TRAVAIL (à jour au 2026-09-13, après le lot 8)
 
 | Rang | Chantier | Spec | Plan | État |
@@ -39,8 +53,10 @@ données. Zéro campagne à deux étages, zéro ligne de journal, zéro joignabi
 base le 2026-09-12). **L'essai réel est LA chose qui manque**, et le plan le nomme : une campagne à
 deux étages sur le numéro de Julien, avec un destinataire volontairement injoignable en WhatsApp.
 
-⚠️ **L'espace « Demo » a ZÉRO jour ouvert** (mesuré). Cocher « heures ouvrées » y condamne une
-campagne, cf. `todo.md`.
+⚠️ **Les heures d'ouverture de l'espace Demo sont RÉGLÉES depuis le 2026-09-13** (Julien y a ouvert le
+dimanche). Ce fichier a affirmé le contraire. ⚠️ Et le piège qui reste : changer ses horaires ne réveille
+PAS une campagne déjà en pause, `paused_until` ayant été calculé au moment de la pause. Le bouton
+« Reprendre » de la liste est le geste qui rattrape ça, cf. `todo.md`.
 
 ### Ce que les huit lots ont appris, et qui vaut pour les deux chantiers suivants
 
@@ -62,16 +78,44 @@ le chemin des accusés, deux commentaires affirmant que le code survivait à une
 étage e-mail configurable et inerte, une arithmétique fausse dans le sens rassurant, et les deux
 défauts du motif ci-dessus. Julien a dû la réclamer trois fois ; elle n'est jamais une économie.
 
+### Ce que la session du 2026-09-13 a appris
+
+🔴 **`abort()` n'annule pas ce que le SERVEUR a déjà lancé.** Le fil d'Inbox se rafraîchit toutes les
+4 secondes ; sa traduction s'accorde jusqu'à 20. Chaque tour annulait la requête en vol, ce qui ferme la
+connexion du navigateur mais PAS l'appel au modèle, déjà parti et déjà facturé. Mesuré par mutation :
+**quatre traductions payées en treize secondes** là où une suffisait, en boucle tant que la conversation
+reste ouverte. **Dès qu'un rafraîchissement périodique déclenche un traitement plus long que sa période,
+le tour suivant PASSE SON TOUR, il n'annule pas.** (Aussi dans `brain/LEARNINGS.md` : c'est transversal.)
+
+🔴 **Un test qui désigne un élément par son TEXTE ne nomme aucun symbole.** En retirant une case à
+cocher, trois `grep` (le champ, le `data-testid`, la fonction) ont rendu zéro reste. Deux e2e la
+gardaient pourtant, via un libellé qui RESSEMBLAIT à celui de la case qui reste. **Quand on retire un
+élément d'interface, chercher aussi son LIBELLÉ.** C'est la CI qui l'a dit, pas la revue.
+
+🔴 **`features.md` peut affirmer une capacité qui n'existe pas, et c'est pire qu'un silence.** Il disait
+« l'écran de la campagne dit pourquoi elle est en pause et vers quand elle repartira ». Faux depuis
+toujours. C'est cette phrase qui a fait chercher une panne là où il n'y en avait pas.
+
+🔴 **Le motif de l'écran qui affiche ce que la requête n'envoie pas s'est produit une TROISIÈME fois** :
+le réessai, masqué sur une chaîne de repli mais toujours envoyé. La parade reste la même, et elle n'est
+toujours pas systématique : **pour tout écran qui construit une requête, au moins un test lit le CORPS
+de la requête.**
+
+⚠️ **Le hook de rayon de souffle a trouvé deux défauts que la revue avait manqués** : la carte du bot
+d'aide devenue périmée en déplaçant une entrée de menu, et un texte d'écran devenu faux au moment même
+où la colonne d'à côté apparaissait.
+
+⚠️ **La classification de méthode se RÉVISE en cours de route.** « Réponse = engagement » était classé
+« en direct » ; en cherchant d'où venait le compte, il a fallu une requête SQL neuve sur le chemin d'un
+chiffre affiché et deux définitions à trancher avec Julien. **Une complexité découverte en cours de
+tâche fait monter la méthode d'un cran, elle ne se contourne pas.**
+
 ### Où en est le chantier 2, exactement
 
-Les six tâches sont écrites. Les cinq premières sont déployées et **la migration 0137 est appliquée**.
-La sixième (l'interrupteur « Traduire les messages reçus », l'affichage des trois états, le bandeau
-« pas de crédit », la cible passée à la transcription d'un vocal) est **commitée et pas déployée**.
+✅ **LES SIX TÂCHES SONT DÉPLOYÉES ET LA FONCTIONNALITÉ EST ALLUMÉE.** Migration 0137 appliquée,
+`TRADUCTION_MODELE=google/gemini-2.5-flash` posée en production le 2026-09-13 (choix validé par Julien).
 
-🔴 **LA FONCTIONNALITÉ EST ÉTEINTE TANT QUE `TRADUCTION_MODELE` EST VIDE**, et c'est délibéré : le
-choix du modèle se mesure, il ne se suppose pas. Sans lui, le fil sort en VO avec son drapeau et le
-bouton sortant répond 422. **Rien n'a donc encore tourné sur de vraies données**, et l'essai réel que
-le plan nomme reste dû : un message espagnol reçu sur le numéro de service, lu en français, puis une
+🔴 **RIEN N'A ENCORE TOURNÉ SUR DE VRAIES DONNÉES**, et l'essai réel que le plan nomme reste dû : un message espagnol reçu sur le numéro de service, lu en français, puis une
 réponse traduite, avec le contrôle EN BASE que `body` porte ce qui est PARTI et `redaction_origine` ce
 que l'opérateur a écrit.
 
@@ -86,46 +130,19 @@ Tout plan doit porter une section `## Méthode de livraison` qui nomme la métho
 nomme **l'essai réel qui clôt la feature**. `tests/plan-methode.test.ts` le vérifie, et le
 `CLAUDE.md` global porte les quatre méthodes et les quatre questions qui tranchent.
 
-## Les deux lots du 2026-09-11 au soir : ce qui RESTE
+## Ce que le bot d'aide ne sait pas encore
 
-Quinze demandes en deux vagues (onze, puis quatre), toutes traitées et déployées le soir même, plus deux
-revues passées après coup qui ont produit quinze constats de plus, tous corrigés. ⚠️ Ce qui suit n'est que
-le RESTE : le livré est dans [features.md](features.md) et son récit dans
-[docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md).
-
-⚠️ **LEÇON DE LA SOIRÉE, ET ELLE EST SUR LA MÉTHODE :** la revue de code a dû être RÉCLAMÉE deux fois, et
-les deux fois elle a trouvé un défaut réel qu'aucun test ne voyait (un réglage muet de bout en bout, puis un
-champ qui débordait de son panneau de 12 px). Elle n'est pas une formalité de fin de lot, et elle ne doit
-pas attendre qu'on la demande.
-
-### 🔴 Le bac à sable de l'agent : la question est CLOSE, mais autre chose est sorti
-
-Julien pensait que le bac à sable n'actionnait pas les outils tant que l'agent n'était pas activé
-globalement. **C'est faux, et c'est mesuré** : `agent_test_runs` garde chaque essai, et les trois siens
-montrent `mba_chercher_connaissance` appelé à chaque fois, avant comme après l'activation. Ce qui changeait
-était la QUESTION, pas l'activation.
-
-La vraie cause était la recherche, sourde aux mots sans accent. **Migration 0132 appliquée et déployée le
-2026-09-11 au soir**, vérifiée en base et par le vrai code : « prevoyance » et « prévoyance » rendent
-désormais exactement le même résultat.
-
-⚠️ **IL RESTE À LE REVÉRIFIER AVEC LUI, sur une vraie question.** Si l'agent rate encore une réponse que sa
-base contient, ce sera un AUTRE défaut, et il faudra repartir des essais enregistrés (`agent_test_runs`)
-plutôt que d'une hypothèse. C'est ainsi que celui-ci a été trouvé.
-
-### 🔴 Le bot d'aide ne connaît AUCUNE des nouveautés du 2026-09-11
-
-Les fiches du mode d'emploi (`docs/aide/fiches/`) ne parlent ni du bilan d'un contact, ni du choix des blocs,
-ni du réglage de silence, ni du funnel sans accusé, ni de la création d'un champ à la volée. Un client qui
-pose la question au bouton d'aide obtiendra « je ne trouve pas la réponse dans le mode d'emploi », ce qui est
-honnête mais inutile.
+Les fiches (`docs/aide/fiches/`) ne parlent ni du bilan d'un contact, ni du choix des blocs, ni du
+réglage de silence, ni du funnel sans accusé, ni de la création d'un champ à la volée. Un client qui
+pose la question obtiendra « je ne trouve pas la réponse dans le mode d'emploi » : honnête, inutile.
 
 ⚠️ **Les fiches ne se régénèrent PAS toutes seules, et c'est délibéré** : une régénération automatique
-remplacerait un texte RELU par un texte que personne n'a validé, et le bot se mettrait à parler aux clients
-avec des phrases non relues. `features.md` porte désormais toutes ces sections ; il reste à en tirer des
-fiches et à les relire. ⚠️ La détection de dérive, elle, a fait son travail DEUX fois dans la soirée
-(`importer-mes-contacts` puis `repondre-dans-l-inbox`), et la seconde fiche a été enrichie du cas que le lot
-changeait.
+remplacerait un texte RELU par un texte que personne n'a validé, et le bot parlerait aux clients avec
+des phrases non relues. `features.md` porte les sections ; il reste à en tirer des fiches et à les relire.
+
+⚠️ **La détection de dérive fait son travail** : elle a rougi QUATRE fois depuis sa création, dont deux
+le 2026-09-13 (une par section de `features.md` touchée). Chaque fois, la fiche a été relue et enrichie
+du cas que le lot changeait, pas seulement ré-empreintée.
 
 ### Ce qui demande une décision de Julien, pas du code
 
@@ -163,9 +180,6 @@ changeait.
   client lit « un conseiller arrive » sans que personne ne soit prévenu.
 - **Poser une photo de profil sur le numéro WhatsApp** : la pastille de l'Accueil n'affiche rien tant qu'il
   n'y en a pas, et aucun des deux numéros du parc n'en a (mesuré).
-- **Régler les heures d'ouverture dans Paramètres** avant d'utiliser la case « heures ouvrées » d'une
-  campagne ou le bloc Attente « jusqu'aux prochaines heures ouvrées » : sans aucun jour ouvert, la campagne se
-  met en pause et le dit, mais ne repart pas toute seule, et le bloc Attente ne retient personne.
 - 🔴 **Copier `ENCRYPTION_KEY` dans le coffre**, hors de toute infrastructure. Elle n'existe QUE dans
   `.env.prod` sur le VPS : si la machine disparaît, la base survit mais ses 8 secrets chiffrés deviennent
   illisibles pour toujours. Deux minutes, et c'est le seul point du plan RSSI qui ne demande ni code ni budget.
