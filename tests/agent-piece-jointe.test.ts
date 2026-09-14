@@ -57,6 +57,19 @@ describe('reconnaissance par la SIGNATURE', () => {
     const zipQuelconque = Buffer.from(zipSync({ 'notes.txt': strToU8('coucou') }));
     expect(reconnaitre(zipQuelconque)).toBeNull();
   });
+
+  it('🔴 une archive qui annonce un contenu ÉNORME n’est pas un document Word', () => {
+    /**
+     * Le taux de compression d'un ZIP n'est pas borné : quelques kilo-octets d'archive peuvent déclarer des
+     * centaines de méga à l'intérieur. Sans garde, c'est le fichier téléversé qui décide de la mémoire du
+     * process, donc un arrêt de l'API offert à qui joint un document. On le refuse AVANT d'allouer.
+     *
+     * ⚠️ Le contenu est fait de zéros, donc l'archive reste minuscule : c'est exactement la forme du piège.
+     */
+    const enorme = Buffer.from(zipSync({ 'word/document.xml': new Uint8Array(70 * 1024 * 1024) }));
+    expect(enorme.length).toBeLessThan(1024 * 1024); // l'archive, elle, tient dans un méga
+    expect(reconnaitre(enorme)).toBeNull();
+  });
 });
 
 describe('extraction du texte', () => {

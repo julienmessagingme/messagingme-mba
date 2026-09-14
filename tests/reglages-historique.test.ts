@@ -40,6 +40,17 @@ describe('la table d’historique tient ses promesses dans le SCHÉMA', () => {
     expect(SQL).toContain('acteur_email text');
   });
 
+  it('🔴 et la colonne dénormalisée est REMPLIE, sinon la promesse ci-dessus est un texte', () => {
+    /**
+     * Ce test existe parce que le précédent PASSAIT alors que personne n'écrivait jamais `acteur_email` :
+     * il vérifiait le schéma, c'est-à-dire la place prévue, pas ce qui s'y met. L'écran affichait donc
+     * « auteur inconnu » sur toutes les lignes, y compris pour un compte bien vivant.
+     */
+    const pg = readFileSync(resolve(__dirname, '../src/reglages/historique.pg.ts'), 'utf8');
+    const insert = pg.slice(pg.indexOf('insert into reglages_historique'));
+    expect(insert).toContain('coalesce($11, (select email from users where id = $12::uuid and tenant_id = $1))');
+  });
+
   it('⚠️ un espace supprimé emporte son historique, jamais l’inverse', () => {
     expect(SQL).toContain('tenant_id   uuid not null references tenants(id) on delete cascade');
   });

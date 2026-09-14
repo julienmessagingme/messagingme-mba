@@ -28,6 +28,16 @@ import { EXTENSIONS_FICHIER, extensionCoherente, MAX_FICHIER } from '../../http/
 export const DUREE_PIECE_MS = 2 * 60 * 60 * 1000;
 /** Par espace. Au-delà, la plus ancienne part : un magasin non borné est une fuite mémoire dans l'API. */
 export const MAX_PIECES_PAR_ESPACE = 5;
+/**
+ * 🔴 ET UNE BORNE GLOBALE, parce que la borne par espace ne borne RIEN : elle plafonne 5 x 20 Mo PAR CLIENT,
+ * donc un total qui grandit avec le nombre de clients, dans un process dont la mémoire, elle, ne grandit pas.
+ * C'est le motif « une limite qui a l'air d'en être une ».
+ *
+ * ⚠️ ELLE ÉVINCE LA PLUS ANCIENNE, TOUS ESPACES CONFONDUS, et c'est assumé : entre faire perdre un dépôt
+ * vieux de deux heures et arrêter l'API, le premier a un symptôme lisible et un geste de réparation évident
+ * (« redéposez-le »).
+ */
+export const MAX_OCTETS_MAGASIN = 64 * 1024 * 1024;
 
 export interface PieceJointePrete {
   nom: string;
@@ -109,6 +119,19 @@ export function magasinPiecesJointes(maintenant: () => number = () => Date.now()
       }
       const jeton = randomBytes(16).toString('hex');
       pieces.set(`${tenantId}\n${jeton}`, { ...piece, tenantId, deposeeLe: maintenant() });
+      /**
+       * La borne globale se pose APRÈS l'insertion, sur le total réel. La poser avant, sur une
+       * estimation, laisserait passer le dépôt qui fait justement déborder, c'est-à-dire le seul qui
+       * compte.
+       */
+      let total = [...pieces.values()].reduce((n, x) => n + x.octets.length, 0);
+      for (const [cle, x] of [...pieces.entries()].sort((u, v) => u[1].deposeeLe - v[1].deposeeLe)) {
+        if (total <= MAX_OCTETS_MAGASIN) break;
+        // ⚠️ Jamais celle qu'on vient de ranger : l'évincer rendrait un jeton mort dans la seconde.
+        if (cle === `${tenantId}\n${jeton}`) continue;
+        pieces.delete(cle);
+        total -= x.octets.length;
+      }
       return jeton;
     },
     contient(tenantId, jeton) {

@@ -41,6 +41,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
   const t = useT();
   const { locale } = useLocale();
   const [lignes, setLignes] = useState<LigneHistoriqueVue[]>([]);
+  const [tronquee, setTronquee] = useState(false);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
   const [ouvert, setOuvert] = useState<string | null>(null);
@@ -49,8 +50,9 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
     setChargement(true);
     try {
       const q = new URLSearchParams({ surface, ...(agentId ? { agentId } : {}) });
-      const r = await request<{ lignes: LigneHistoriqueVue[] }>(`/tenants/${tenantId}/historique?${q}`);
+      const r = await request<{ lignes: LigneHistoriqueVue[]; tronquee: boolean }>(`/tenants/${tenantId}/historique?${q}`);
       setLignes(r.lignes);
+      setTronquee(r.tronquee);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t('Historique indisponible', 'History unavailable'));
     } finally {
@@ -76,6 +78,15 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
       </p>
 
       {erreur && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+
+      {/* 🔴 On le DIT quand la liste est coupée : sans cette ligne, chercher une modification ancienne et ne
+          pas la voir se lirait comme « elle n'a pas eu lieu ». */}
+      {tronquee && (
+        <p className="mt-3 text-xs text-ink-400">
+          {t(`Les ${lignes.length} modifications les plus récentes sont affichées. Les précédentes sont conservées, elles ne sont pas purgées.`,
+            `Showing the ${lignes.length} most recent changes. Earlier ones are kept, they are not purged.`)}
+        </p>
+      )}
 
       {lignes.length === 0 ? (
         <p className="mt-4 text-sm text-ink-500">{t('Rien n’a encore été modifié.', 'Nothing has been changed yet.')}</p>

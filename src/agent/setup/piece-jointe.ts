@@ -65,6 +65,23 @@ const SIGNATURES: ReadonlyArray<{ nature: NaturePieceJointe; mime: string; octet
 /** `PK\x03\x04` : une archive ZIP. Un `.docx` en est une ; on ne le conclut qu'après avoir trouvé son
  *  `word/document.xml`, sans quoi n'importe quel zip passerait pour un document Word. */
 const ZIP = [0x50, 0x4b, 0x03, 0x04];
+
+/**
+ * 🔴 CE QU'UN `.docx` A LE DROIT DE PESER UNE FOIS DÉCOMPRESSÉ, ET C'EST UNE GARDE DE DISPONIBILITÉ.
+ *
+ * Un ZIP est un format à TAUX DE COMPRESSION NON BORNÉ : quelques méga d'archive peuvent déclarer plusieurs
+ * gigaoctets à l'intérieur. Décompresser sans regarder ce chiffre revient à laisser un fichier téléversé
+ * décider de la mémoire du process, c'est-à-dire à offrir un arrêt de l'API à qui joint un document.
+ *
+ * ⚠️ LE CHIFFRE EST CELUI QUE L'ARCHIVE DÉCLARE, donc il est fourni par celui qui l'envoie : il ne prouve
+ * rien, mais il permet de REFUSER avant d'allouer. Une archive qui ment en annonçant petit fait échouer
+ * l'inflation dans `fflate`, qui écrit dans un tampon de la taille annoncée : l'exception est attrapée juste
+ * en dessous, et le fichier n'est alors pas reconnu comme un document Word.
+ *
+ * 64 Mo : un `word/document.xml` est du XML, très compressible ; un manuel de plusieurs centaines de pages
+ * reste largement sous ce seuil.
+ */
+const MAX_DOCX_DECOMPRESSE = 64 * 1024 * 1024;
 /** `RIFF????WEBP`. Accepté ICI et pas dans `src/rcs/image.ts` : là-bas la liste est celle que l'opérateur RCS
  *  accepte, ici c'est celle qu'un modèle vision sait lire, et une capture d'écran moderne est souvent en webp. */
 const WEBP_RIFF = [0x52, 0x49, 0x46, 0x46];
@@ -85,7 +102,9 @@ function commencePar(bytes: Buffer, octets: readonly number[], decalage = 0): bo
 function texteDocx(bytes: Buffer): string | null {
   let fichiers: Record<string, Uint8Array>;
   try {
-    fichiers = unzipSync(new Uint8Array(bytes), { filter: (f) => f.name === 'word/document.xml' });
+    fichiers = unzipSync(new Uint8Array(bytes), {
+      filter: (f) => f.name === 'word/document.xml' && f.originalSize <= MAX_DOCX_DECOMPRESSE,
+    });
   } catch {
     return null; // archive illisible : ce n'est pas un document Word exploitable
   }

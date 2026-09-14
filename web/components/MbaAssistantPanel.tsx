@@ -218,7 +218,10 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
         <button
           type="button"
           onClick={() => champFichier.current?.click()}
-          disabled={busy || budgetEpuise}
+          /* ⚠️ PAS `budgetEpuise` ICI : le plafond borne NOTRE dépense de modèle, or un dépôt n'appelle aucun
+             modèle. Le bloquer refuserait un geste gratuit au nom d'une limite qui ne le concerne pas, et le
+             document déposé reste applicable, « Appliquer » ne consultant pas le modèle non plus. */
+          disabled={busy}
           data-testid="mba-assistant-joindre"
           title={t('Joindre un document', 'Attach a document')}
           className="shrink-0 rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-600 hover:bg-ink-50 disabled:opacity-50"

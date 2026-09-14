@@ -5,7 +5,8 @@ import Fastify from 'fastify';
 import { registerMbaAssistant, type MbaAssistantDeps } from '../src/http/mba-assistant';
 import { calculerCompletion } from '../src/mba/completion';
 import {
-  magasinPiecesJointes, typeMetaDuContenu, DUREE_PIECE_MS, MAX_PIECES_PAR_ESPACE, MAX_FICHIER,
+  magasinPiecesJointes, typeMetaDuContenu, DUREE_PIECE_MS, MAX_PIECES_PAR_ESPACE, MAX_OCTETS_MAGASIN,
+  MAX_FICHIER,
 } from '../src/mba/assistant/pieces-jointes';
 import { appliquer, ERREUR_PIECE_ABSENTE, raisonLisible, type ApplicationDeps } from '../src/mba/assistant/application';
 import { MBA_ASSISTANT_FILE_ACCEPT, MBA_FILE_ACCEPT } from '../web/lib/mba-files';
@@ -212,6 +213,28 @@ describe('le jeton', () => {
     expect(pieces.contient('t1', jetons[0]!)).toBe(false); // la plus ancienne est partie
     expect(pieces.contient('t1', jetons[jetons.length - 1]!)).toBe(true);
     expect(pieces.contient('t2', chezLAutre)).toBe(true);
+  });
+});
+
+describe('la borne GLOBALE du magasin', () => {
+  it('🔴 elle existe : la borne par espace grandit avec le nombre de clients, pas la mémoire du process', () => {
+    const pieces = magasinPiecesJointes();
+    const gros = Buffer.alloc(16 * 1024 * 1024);
+    // Six espaces différents, donc hors d'atteinte de la borne PAR ESPACE (5 pièces chacun).
+    const jetons = Array.from({ length: 6 }, (_, i) =>
+      [`t${i}`, pieces.deposer(`t${i}`, { nom: 'g.pdf', mime: 'application/pdf', octets: gros })] as const);
+    // 6 x 16 Mo = 96 Mo > 64 Mo : les plus anciennes sont parties, la dernière est là.
+    expect(pieces.contient(...jetons[0]!)).toBe(false);
+    expect(pieces.contient(...jetons[jetons.length - 1]!)).toBe(true);
+    expect(MAX_OCTETS_MAGASIN).toBe(64 * 1024 * 1024);
+  });
+
+  it('⚠️ et elle n’évince JAMAIS la pièce qu’on vient de déposer', () => {
+    // Sinon le jeton rendu serait mort dans la seconde, sur le seul dépôt dont on est sûr qu'il sert.
+    const pieces = magasinPiecesJointes();
+    const enorme = Buffer.alloc(MAX_OCTETS_MAGASIN + 1);
+    const jeton = pieces.deposer('t1', { nom: 'g.pdf', mime: 'application/pdf', octets: enorme });
+    expect(pieces.contient('t1', jeton)).toBe(true);
   });
 });
 

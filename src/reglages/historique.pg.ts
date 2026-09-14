@@ -22,11 +22,29 @@ export class PgHistoriqueStore implements HistoriqueStore {
     const probleme = problemeDeLigne(l);
     if (probleme !== null) throw new Error(`historique : ${probleme}`);
 
+    /**
+     * 🔴 L'E-MAIL SE RÉSOUT ICI, DANS L'INSERT, ET C'EST CE QUI REND VRAIE LA JUSTIFICATION DU SCHÉMA.
+     * La migration 0146 annonce une colonne DÉNORMALISÉE « pour que le départ d'un collaborateur ne rende
+     * pas l'historique anonyme ». Aucun appelant ne la renseignait : elle était donc nulle DÈS L'ÉCRITURE,
+     * l'écran affichait « auteur inconnu » sur toutes les lignes, et la justification inscrite dans le
+     * schéma était fausse, donc recopiable.
+     *
+     * 🔴 ELLE EST ICI ET PAS CHEZ LES APPELANTS parce qu'ils sont TROIS (l'assistant, les formulaires du
+     * MBA, et l'agent IA), et que la capacité câblée sur un consommateur sur trois est le défaut que ce
+     * dépôt a payé le plus souvent. Un quatrième appelant l'aura sans rien faire.
+     *
+     * ⚠️ UNE SEULE REQUÊTE, pas deux : la résolution est un sous-`select`, donc aucun aller-retour de plus.
+     * Il porte `tenant_id = $1` comme le reste, un identifiant d'acteur d'un autre espace ne résolvant alors
+     * rien. Et un `acteurEmail` fourni explicitement GAGNE, pour qu'un appelant puisse écrire l'adresse d'un
+     * compte déjà parti.
+     */
     await this.pool.query(
       `insert into reglages_historique
          (tenant_id, surface, surface_id, element, operation, cible, libelle, avant, apres,
           origine, acteur_email, acteur_id)
-       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12)`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10,
+               coalesce($11, (select email from users where id = $12::uuid and tenant_id = $1)),
+               $12::uuid)`,
       [
         tenantId, l.surface, l.surfaceId, l.element, l.operation, l.cible, l.libelle,
         l.avant === undefined ? null : JSON.stringify(l.avant),

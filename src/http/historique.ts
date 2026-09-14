@@ -19,6 +19,14 @@ export interface HistoriqueRouteDeps {
   historique: HistoriqueStore;
 }
 
+/**
+ * Ce que l'écran reçoit sans le demander.
+ *
+ * ⚠️ IL EST PLUS PETIT QUE LE PLAFOND DE LECTURE, et l'écart est ce qui permet de DIRE qu'on tronque : la
+ * réponse annonce `tronquee` plutôt que de rendre une liste coupée qui se lit comme une liste complète.
+ */
+export const LIGNES_HISTORIQUE_PAR_DEFAUT = 200;
+
 const requete = z.object({
   surface: z.enum(['mba', 'agent']),
   /** L'agent visé. Requis pour la surface `agent`, refusé pour `mba` (il est unique par espace). */
@@ -51,11 +59,17 @@ export function registerHistorique(app: FastifyInstance, deps: HistoriqueRouteDe
       return reply.code(400).send({ error: 'le Meta Business Agent est unique par espace' });
     }
 
+    const plafond = limite ?? LIGNES_HISTORIQUE_PAR_DEFAUT;
     const lignes = await deps.historique.lister(tenant, {
       surface,
       ...(surface === 'agent' ? { surfaceId: agentId ?? null } : {}),
-      ...(limite ? { limite } : {}),
+      limite: plafond,
     });
-    return reply.code(200).send({ lignes });
+    /**
+     * 🔴 UNE TRONCATURE SILENCIEUSE SE LIT COMME UNE LISTE COMPLÈTE, et sur un journal c'est le pire des
+     * malentendus : on y cherche une modification ancienne, on ne la voit pas, et on en conclut qu'elle n'a
+     * pas eu lieu. L'écran le dit, plutôt que de laisser croire.
+     */
+    return reply.code(200).send({ lignes, tronquee: lignes.length >= plafond });
   });
 }

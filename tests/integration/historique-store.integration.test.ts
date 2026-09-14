@@ -107,12 +107,46 @@ describe.skipIf(!url)('l historique des reglages', () => {
     expect([...dates].sort().reverse()).toEqual(dates);
   });
 
+  it('🔴 l’e-mail est RÉSOLU quand l’appelant ne le connaît pas', async () => {
+    /**
+     * Le cas RÉEL : aucun appelant ne connaît l'e-mail. La session ne porte qu'un `userId`, et les trois
+     * écrivains (assistant, formulaires MBA, agent IA) passaient donc `acteurEmail: null`. La colonne était
+     * vide dès l'écriture, l'écran affichait « auteur inconnu » partout, et le test voisin passait quand même
+     * parce qu'il fournissait l'adresse lui-même.
+     */
+    const userId = (await pool.query<{ id: string }>(
+      `insert into users (tenant_id, email, role) values ($1, 'present@itest.test', 'admin') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    await store.ecrire(tenantId, ligne({ libelle: 'sans e-mail fourni', acteurId: userId, acteurEmail: null }));
+    const lu = (await store.lister(tenantId, { surface: 'mba' })).find((l) => l.libelle === 'sans e-mail fourni');
+    expect(lu?.acteurEmail).toBe('present@itest.test');
+  });
+
+  it('🔴 mais jamais celui d’un compte d’un AUTRE espace', async () => {
+    /**
+     * ⚠️ LA CLÉ ÉTRANGÈRE NE PORTE PAS L'ESPACE : `acteur_id references users(id)` accepte n'importe quel
+     * compte du parc, y compris celui d'un autre client. C'est le sous-`select` qui refuse de résoudre, avec
+     * son `tenant_id = $1`, et c'est le seul contrôle. Sans lui, l'adresse d'un collaborateur d'un autre
+     * client apparaîtrait dans cet historique.
+     */
+    const voisin = (await pool.query<{ id: string }>(
+      `insert into users (tenant_id, email, role) values ($1, 'voisin@itest.test', 'admin') returning id`,
+      [autreTenant],
+    )).rows[0]!.id;
+    await store.ecrire(tenantId, ligne({ libelle: 'croisement', acteurId: voisin, acteurEmail: null }));
+    const lu = (await store.lister(tenantId, { surface: 'mba' })).find((l) => l.libelle === 'croisement');
+    expect(lu?.acteurEmail).toBeNull();
+  });
+
   it('⚠️ le départ d’un collaborateur garde son e-mail sur la ligne', async () => {
     const userId = (await pool.query<{ id: string }>(
       `insert into users (tenant_id, email, role) values ($1, 'partant@itest.test', 'agent') returning id`,
       [tenantId],
     )).rows[0]!.id;
-    await store.ecrire(tenantId, ligne({ libelle: 'fait par le partant', acteurId: userId, acteurEmail: 'partant@itest.test' }));
+    // ⚠️ L'e-mail n'est PAS fourni : c'est la chaîne réelle qu'on éprouve, résolution à l'écriture COMPRISE.
+    // Le fournir ici est ce qui faisait passer ce test sur un code qui ne remplissait jamais la colonne.
+    await store.ecrire(tenantId, ligne({ libelle: 'fait par le partant', acteurId: userId, acteurEmail: null }));
     await pool.query(`delete from users where id = $1`, [userId]);
     const lu = (await store.lister(tenantId, { surface: 'mba' })).find((l) => l.libelle === 'fait par le partant');
     // 🔴 L'identifiant part (`on delete set null`), l'e-mail RESTE : sans lui, supprimer un compte effacerait
