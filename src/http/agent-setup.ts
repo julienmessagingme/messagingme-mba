@@ -128,6 +128,11 @@ function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): {
   // L'INVENTAIRE entre ici parce qu'il change la QUESTION du moyen, pas la liste des points : le compte et
   // l'ordre sont les mêmes, mais la question posée montre ce qui est réellement branché.
   const inv = ctx ? inventaireDe(ctx) : undefined;
+  /**
+   * ⚠️ UN CHAMP VIDÉ N'ENTRE PAS DANS CE COMPTE, et ce n'est pas un oubli : cette couverture-là RETIENT la
+   * proposition, or un champ ne se remplit qu'en appliquant une proposition. L'y faire entrer enfermerait
+   * l'entretien dans un cycle. Le champ vidé est SIGNALÉ dans la consigne d'évolution, pas recompté ici.
+   */
   const manquants = manquesDeCouverture(etat, inv);
   return {
     manquants,

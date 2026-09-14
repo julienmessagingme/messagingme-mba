@@ -1,3 +1,5 @@
+import type { FicheAgentContenu } from '../fiche';
+
 /**
  * L'ORDRE DU JOUR DE L'ENTRETIEN, ET QUI LE CONDUIT.
  *
@@ -360,7 +362,49 @@ function moyenDemande(action: Action, inv: Inventaire): string {
   return 'que doit-il faire exactement ?';
 }
 
-/** Ce qui reste à couvrir, dans l'ordre. Un point compte comme couvert s'il a été POSÉ **et** répondu. */
+/**
+ * LES POINTS DONT LE CONTENU A DISPARU DE LA FICHE.
+ *
+ * 🔴 LE GRAIN EST L'ÉLÉMENT, PAS L'ENTRETIEN (décision de Julien du 2026-09-14). Vider les règles d'arrêt
+ * dans le formulaire fait parler de CE point-là, et de lui seul : relancer tout l'entretien pour un champ
+ * effacé reposerait neuf questions déjà tranchées, et personne ne le ferait deux fois.
+ *
+ * 🔴 ET CE QUE ÇA PRODUIT EST UN SIGNALEMENT, PAS UNE QUESTION. La réponse du client est toujours là, dans
+ * `reponses` : c'est le CHAMP qui a été effacé. Rouvrir le point le ferait compter comme non couvert, donc
+ * retiendrait la proposition, donc empêcherait de remplir le champ qu'on vient de constater vide. Voir
+ * `manquesDeCouverture`.
+ *
+ * ⚠️ TOUS LES POINTS N'ONT PAS DE CHAMP À SURVEILLER, et les absents de cette table ne sont pas un oubli :
+ * `silence` et `annonce_ia` portent toujours une valeur (un défaut existe), `connaissance` peut légitimement
+ * être vide (« rien pour l'instant » est une réponse), `perimetre` et `bascules` vivent dans l'entretien.
+ * Surveiller un champ qui n'a pas d'état « vide » signifiant rouvrirait une question sans raison.
+ */
+export function pointsSansContenu(fiche: FicheAgentContenu): string[] {
+  const vide = (t: string): boolean => t.trim() === '';
+  const out: string[] = [];
+  if (vide(fiche.objectif)) out.push('mission');
+  if (fiche.sorties.length === 0) out.push('aboutissements');
+  if (vide(fiche.reglesTransfert)) out.push('humain');
+  // `identite` couvre le NOM et les traits : il n'est vide que si les deux le sont, un agent sans nom mais
+  // avec une personnalité ayant bien répondu à la question.
+  if (vide(fiche.nom) && vide(fiche.personnalite)) out.push('identite');
+  if (vide(fiche.ton)) out.push('ton');
+  return out;
+}
+
+/**
+ * Ce qui reste à couvrir, dans l'ordre. Un point compte comme couvert s'il a été POSÉ **et** répondu.
+ *
+ * 🔴 UN CHAMP VIDÉ NE ROUVRE PAS SON POINT, ET C'EST UN VERROU CONTRE UN BLOCAGE. La couverture est ce qui
+ * RETIENT la proposition (« tant que l'ordre du jour n'est pas épuisé, aucun champ n'est montré ») ; or un
+ * champ ne se remplit qu'en APPLIQUANT une proposition. Rouvrir un point sur un champ vide enfermerait donc
+ * l'entretien dans un cycle : le champ est vide, donc pas de proposition, donc le champ reste vide. Mesuré
+ * en écrivant ce lot, sur un agent dont l'entretien était fini et la fiche pas encore écrite.
+ *
+ * ⚠️ Ce qu'un champ vidé produit est un SIGNALEMENT, pas une question : la réponse du client est toujours
+ * dans `reponses`, c'est le champ qui a été effacé ailleurs. Voir `pointsSansContenu`, `ordreDuJour` et la
+ * consigne d'évolution.
+ */
 export function manquesDeCouverture(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): string[] {
   const poses = new Set(etat.poses);
   const repondus = new Set(retenues(etat.reponses).map((r) => r.point));
@@ -450,7 +494,9 @@ export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly 
  * pouvoir constater qu'une réponse déjà donnée rend la question suivante inutile à reposer telle quelle, et
  * revenir sur un point si la suite le contredit.
  */
-export function ordreDuJour(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): string {
+export function ordreDuJour(
+  etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE, vides: readonly string[] = [],
+): string {
   const gardees = new Map(retenues(etat.reponses).map((r) => [r.point, r.valeur]));
   // Ce qu'on sait des points ENGENDRÉS ne vit pas dans `reponses` mais sur la bascule elle-même : on le
   // reprojette ici pour que le modèle voie l'ordre du jour d'un seul tenant.
@@ -464,9 +510,16 @@ export function ordreDuJour(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VI
   return effectif
     .map((p) => {
       const su = gardees.get(p.code);
-      const etatDuPoint = su === undefined
-        ? 'À POSER'
-        : poses.has(p.code) ? 'couvert' : 'répondu d’avance, À FAIRE CONFIRMER';
+      /**
+       * ⚠️ « VIDÉ DEPUIS » PLUTÔT QUE « À POSER », et la nuance compte pour le modèle : la réponse du client
+       * est toujours là, c'est le CHAMP qui a été effacé ailleurs. Lui dire « à poser » lui ferait reposer la
+       * question comme si elle n'avait jamais été traitée.
+       */
+      const etatDuPoint = vides.includes(p.code) && su !== undefined
+        ? 'VIDÉ DEPUIS, à reproposer'
+        : su === undefined
+          ? 'À POSER'
+          : poses.has(p.code) ? 'couvert' : 'répondu d’avance, À FAIRE CONFIRMER';
       return `  ${p.code.padEnd(large)} [${etatDuPoint}] : ${p.aObtenir}${su ? ` -> « ${su} »` : ''}`;
     })
     .join('\n');
