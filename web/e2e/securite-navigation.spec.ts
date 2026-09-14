@@ -76,6 +76,13 @@ async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: 
     }
     if (chemin.endsWith('/audit')) return json({ entries: [], total: 0 });
     if (chemin.endsWith('/erreurs-livraison')) return json({ erreurs: [], total: 0 });
+    // La moitie SYSTEME (migration 0142) : ce que les systemes du CLIENT ont repondu de travers.
+    if (chemin.endsWith('/erreurs-systeme')) {
+      return json({ erreurs: [
+        { id: 'ap1', nom: 'Desabonner dans le CRM', source: 'optout', statut: 'erreur_outil', httpStatus: 500, erreur: 'http_500', dureeMs: 120, at: '2026-09-14T08:00:00.000Z' },
+        { id: 'ap2', nom: 'Chercher une commande', source: 'scenario', statut: 'timeout', httpStatus: null, erreur: 'indispo', dureeMs: 10000, at: '2026-09-14T07:00:00.000Z' },
+      ] });
+    }
     if (chemin.endsWith('/unread-count')) return json({ count: 0 });
     if (chemin.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (chemin.endsWith('/settings')) {
@@ -253,6 +260,34 @@ test.describe('Centre de sécurité & compliance', () => {
     // Et le selecteur d avant n est plus la : sans ce cas, on aurait pu AJOUTER le renvoi sans RETIRER le
     // reglage, donc laisser deux verites cote a cote, dont une qui n ecrit plus rien.
     await expect(page.getByTestId('agent-mention-frequence')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 LES DEUX MOITIES SONT LA, ET ELLES SONT DISTINGUEES. Tranche par Julien le 2026-09-13 : « on a deja
+   * un log d erreurs [...] donc il faut les 2 ». Les fondre ferait chercher un numero de telephone la ou il
+   * n y en a jamais eu, et le dire en francais est tout l interet de l ecran.
+   */
+  test('🔴 le journal porte ses DEUX moities, distinguees', async ({ page }) => {
+    await monter(page);
+    await page.goto('/securite/erreurs');
+    await expect(page.getByTestId('erreurs-livraison')).toBeVisible();
+    await expect(page.getByTestId('erreurs-systeme')).toBeVisible();
+    await expect(page.getByTestId('erreur-systeme-ligne')).toHaveCount(2);
+  });
+
+  /**
+   * ⚠️ « N A PAS REPONDU A TEMPS » ET « A REPONDU 500 » SE DISENT DIFFEREMMENT, et c est le signal le plus
+   * utile du journal : le premier se regle chez l hebergeur, le second dans le code. Un ecran qui rendrait
+   * les deux par « erreur » ferait chercher au mauvais endroit.
+   */
+  test('⚠️ il dit QUI appelait et CE QUE le systeme du client a repondu', async ({ page }) => {
+    await monter(page);
+    await page.goto('/securite/erreurs');
+    const lignes = page.getByTestId('erreur-systeme-ligne');
+    await expect(lignes.nth(0)).toContainText('la poussée d’un désabonnement');
+    await expect(lignes.nth(0)).toContainText('votre système a répondu 500');
+    await expect(lignes.nth(1)).toContainText('un bloc « Appel HTTP » d’un scénario');
+    await expect(lignes.nth(1)).toContainText('n’a pas répondu à temps');
   });
 
   test('rien ne deborde en 13 pouces', async ({ page }) => {

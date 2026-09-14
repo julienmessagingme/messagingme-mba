@@ -252,7 +252,7 @@ Revue `/revue` systématique, plus le rayon de souffle :
 | 6. La regle elargie EN OBSERVATION | ✅ `623e6a5` |
 | 7. L opt-out declenche un APPEL D OUTIL | ✅ (migration 0139) |
 | 8. Le sous-menu IA | ✅ (migration 0140, puis 0141 APRES le deploiement) |
-| 9. Le journal des erreurs, les DEUX | pas commence |
+| 9. Le journal des erreurs, les DEUX | ✅ (migration 0142) |
 
 ### Les ecarts avec ce plan, et pourquoi
 
@@ -293,7 +293,17 @@ Revue `/revue` systématique, plus le rayon de souffle :
    SILENCE : sans garde explicite, un onglet reste ouvert sur l ancienne console aurait continue d envoyer
    `mentionIaFrequence` sur le PATCH d agent, aurait recu 200, et le choix du client aurait ete perdu sans
    que personne ne l apprenne. La route rend desormais 400 en DISANT ou le reglage est parti.
-10. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
+10. 🔴 **L INVENTAIRE DE LA TACHE 9 A CORRIGE LE PLAN LUI-MEME.** Il annoncait qu il restait a montrer les
+    echecs d avance de parcours (`workflow_advance_failures`) : ils sont DEJA dans le journal client depuis
+    le lot 4 du plan post-audit, sous l origine `scenario`. Et il ne voyait pas le vrai trou, qui etait
+    ailleurs : `agent_tool_calls` est ecrite a chaque appel d outil depuis 0086 et n est LUE PAR PERSONNE.
+    **L etape « inventorier avant de journaliser plus » n etait pas une precaution, c est elle qui a trouve
+    le sujet.**
+11. 🔴 **ET LE DEFAUT DE FOND ETAIT UNE EXHAUSTIVITE MANQUANTE.** `creerAppelConnecteur` a trois appelants,
+    un seul journalisait. Les DLQ, elles, ne sont pas attribuables a un client sur la file qui compte (le job
+    `webhook` porte le corps brut de Meta, sans `tenantId`) : les y chercher aurait produit un ecran qui ment
+    par omission, et c est pourquoi elles restent une surface d exploitation.
+12. 🔴 **UN DEFAUT DE LA REGLE QUI AGIT, TROUVE EN ECRIVANT LE TEST DE LA TACHE 6.** « arret maladie »,
    « arret du traitement », « stop covid » et « stopper la commande » DESABONNENT aujourd hui, alors que le
    docblock citait « arret de bus » comme un cas evite. Sur un espace d assureur, c est un message ordinaire.
    La regle n est PAS modifiee (resserrer l ancrage ferait perdre « stop merci ») : c est un arbitrage pose a

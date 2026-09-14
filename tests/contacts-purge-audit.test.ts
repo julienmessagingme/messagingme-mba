@@ -29,6 +29,7 @@ function app(over: Partial<ContactsRouteDeps> = {}) {
   const journal: Trace[] = [];
   const filtresAudit: Array<Record<string, unknown>> = [];
   const filtresErreurs: Array<Record<string, unknown>> = [];
+  const limitesSysteme: Array<number | undefined> = [];
   const purges: string[][] = [];
   const editsRecus: unknown[] = [];
   const deps = {
@@ -45,6 +46,13 @@ function app(over: Partial<ContactsRouteDeps> = {}) {
       filtresErreurs.push(f);
       return [{ recipientId: 'r1', campaignId: 'camp1', campaignName: 'Promo', telephone: '+33611', contactId: 'c1', contactNom: 'Julie', code: 131026, message: 'Receiver is unable to receive message', origine: 'livraison', at: '2026-09-01T10:00:00.000Z' }];
     },
+    listErreursSysteme: async (_t: string, limit?: number) => {
+      limitesSysteme.push(limit);
+      return [{
+        id: 'ap1', nom: 'Desabonner dans le CRM', source: 'optout', statut: 'erreur_outil',
+        httpStatus: 500, erreur: 'http_500', dureeMs: 120, at: '2026-09-14T08:00:00.000Z',
+      }];
+    },
     listUserFields: async () => [],
     contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
     purgeMany: async (_t: string, ids: readonly string[]) => {
@@ -56,7 +64,7 @@ function app(over: Partial<ContactsRouteDeps> = {}) {
     },
     ...over,
   } as unknown as ContactsRouteDeps;
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme };
 }
 
 const url = '/tenants/t1/contacts/purge';
@@ -386,20 +394,45 @@ describe('recherche dans les journaux', () => {
     await server.close();
   });
 
-  it('🔴 les deux journaux sont réservés aux ADMINISTRATEURS', async () => {
+  /**
+   * 🔴 LA MOITIÉ SYSTÈME (migration 0142) : les appels vers les systèmes du CLIENT qui n'ont pas abouti.
+   * Une route À PART, et pas un champ de plus sur la précédente : les deux moitiés n'ont pas les mêmes
+   * colonnes, et les fondre obligerait chaque ligne à porter les champs vides de l'autre.
+   */
+  it('🔴 le journal SYSTÈME rend ses lignes, avec qui appelait et ce que le client a répondu', async () => {
     const { server } = app();
-    for (const url of ['/tenants/t1/audit', '/tenants/t1/erreurs-livraison']) {
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-systeme', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().erreurs[0]).toMatchObject({ source: 'optout', statut: 'erreur_outil', httpStatus: 500 });
+    await server.close();
+  });
+
+  it('la limite est transmise quand elle est donnée, et absente sinon', async () => {
+    const { server, limitesSysteme } = app();
+    await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-systeme?limit=25', ...h(adminTok) });
+    await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-systeme', ...h(adminTok) });
+    expect(limitesSysteme).toEqual([25, undefined]);
+    await server.close();
+  });
+
+  it('🔴 les TROIS journaux sont réservés aux ADMINISTRATEURS', async () => {
+    const { server } = app();
+    for (const url of ['/tenants/t1/audit', '/tenants/t1/erreurs-livraison', '/tenants/t1/erreurs-systeme']) {
       expect((await server.inject({ method: 'GET', url, ...h(agentTok) })).statusCode, url).toBe(403);
     }
     await server.close();
   });
 
-  it('sans la dépendance, le journal des erreurs le DIT (503) au lieu de rendre une liste vide', async () => {
+  it('sans la dépendance, les DEUX moitiés le DISENT (503) au lieu de rendre une liste vide', async () => {
     // Une liste vide ferait croire qu'il n'y a aucune erreur, ce qui est exactement l'inverse de ce que cet
-    // écran doit permettre de constater.
-    const { server } = app({ listErreursLivraison: undefined } as never);
-    const res = await server.inject({ method: 'GET', url: '/tenants/t1/erreurs-livraison', ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
-    await server.close();
+    // écran doit permettre de constater. Les deux moitiés portent la même garde : ne couvrir que l'une
+    // laisserait l'autre libre de mentir par omission le jour où son câblage disparaîtrait.
+    const sansLivraison = app({ listErreursLivraison: undefined } as never);
+    expect((await sansLivraison.server.inject({ method: 'GET', url: '/tenants/t1/erreurs-livraison', ...h(adminTok) })).statusCode).toBe(503);
+    await sansLivraison.server.close();
+
+    const sansSysteme = app({ listErreursSysteme: undefined } as never);
+    expect((await sansSysteme.server.inject({ method: 'GET', url: '/tenants/t1/erreurs-systeme', ...h(adminTok) })).statusCode).toBe(503);
+    await sansSysteme.server.close();
   });
 });
