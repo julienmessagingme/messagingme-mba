@@ -47,10 +47,11 @@ import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesCo
  * second répondent sans qu'aucun scénario ne les prenne. La garde vit dans la lib parce que la MÊME
  * fonction tranche au point d'envoi : ce qu'on cache ici est exactement ce qu'on n'envoie pas là-bas.
  *
- * ⚠️ TOUS LES CADRES SONT REPLIÉS À L'ARRIVÉE, un seul s'ouvre à la fois. Deux raisons, et la seconde est
- * la plus utile : on voit d'abord la FORME de sa chaîne (combien d'étages, dans quel ordre) avant de
- * plonger dans l'un d'eux ; et un cadre replié se résume à son en-tête, donc le cadre entier est une
- * cible de clic sans ambiguïté, pour un utilisateur comme pour un test.
+ * ⚠️ TOUS LES CADRES SONT REPLIÉS À L'ARRIVÉE, mais PLUSIEURS PEUVENT ÊTRE OUVERTS ENSEMBLE depuis le
+ * 2026-09-14. Le repli initial garde sa raison (on voit d'abord la FORME de sa chaîne, combien d'étages et
+ * dans quel ordre, avant de plonger dans l'un d'eux) ; la fermeture AUTOMATIQUE du voisin, elle, n'en avait
+ * pas de bonne et Julien l'a relevée à l'usage : sur une chaîne de repli, le message de l'étage 2 s'écrit
+ * en regard de celui de l'étage 1, et le replier oblige à le rédiger de mémoire.
  */
 
 const LIBELLE_CANAL: Record<CanalEtage, string> = {
@@ -122,8 +123,16 @@ export function EtapeContenu({
    */
   onContenu: (rang: number, patch: Partial<ContenuEtage>) => void;
 }) {
-  /** Le cadre déplié, ou `null`. Un seul à la fois : l'état est local, il ne décrit pas la campagne. */
-  const [ouvert, setOuvert] = useState<number | null>(null);
+  /**
+   * Les cadres dépliés. L'état est local, il ne décrit pas la campagne.
+   *
+   * 🔴 PLUSIEURS À LA FOIS DEPUIS LE 2026-09-14, et c'est une correction, pas un réglage. Ouvrir l'étage 2
+   * repliait l'étage 1 : Julien, après son essai, « quand tu passes de l'étage 1 à l'étage 2, je veux que
+   * tout l'étage 1 reste visible, on ne voit plus le contenu du WhatsApp ou du RCS de l'étape 1, je trouve
+   * ça dommage (car ça permet d'ajuster éventuellement l'étage 2) ». C'est le cœur d'une chaîne de repli :
+   * le message de repli s'écrit EN REGARD du premier, sinon on le rédige de mémoire.
+   */
+  const [ouverts, setOuverts] = useState<ReadonlySet<number>>(new Set());
 
   return (
     <section data-testid="etape-contenu" className="w-full">
@@ -152,8 +161,15 @@ export function EtapeContenu({
           key={etage.rang}
           tenantId={tenantId}
           etage={etage}
-          ouvert={ouvert === etage.rang}
-          onToggle={() => setOuvert((o) => (o === etage.rang ? null : etage.rang))}
+          ouvert={ouverts.has(etage.rang)}
+          onToggle={() => setOuverts((o) => {
+            // Une COPIE, jamais une mutation : muter le Set en place garderait la même référence et React
+            // ne rendrait rien, ce qui donnerait un cadre qui ne s'ouvre pas une fois sur deux.
+            const suivant = new Set(o);
+            if (suivant.has(etage.rang)) suivant.delete(etage.rang);
+            else suivant.add(etage.rang);
+            return suivant;
+          })}
           contenu={etat.contenus[etage.rang] ?? contenuVide()}
           references={references}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
