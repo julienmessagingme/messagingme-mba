@@ -22,9 +22,18 @@
  *
  * ⚠️ LES DEUX GESTES NE SONT PAS SYMÉTRIQUES POUR AUTANT. Rendre est un droit (« you must currently hold
  * thread control »), prendre est un PRIVILÈGE : Meta le réserve au « configured escalation partner », notion
- * qu'il ne définit nulle part. Un refus de `take` est donc un cas normal, et la porte de secours reste
- * vraie dans tous les cas : ÉCRIRE prend le fil à coup sûr (mesuré le 2026-09-10, l'entrant suivant arrive
- * en `field: "messages"` et non plus en `standby`).
+ * qu'il ne définit nulle part. Un refus de `take` est donc un cas normal.
+ *
+ * 🔴 ET « ÉCRIRE PREND LE FIL À COUP SÛR » ÉTAIT ÉCRIT ICI COMME UNE PORTE DE SECOURS UNIVERSELLE. C'EST
+ * FAUX, MESURÉ LE 2026-09-14. La mesure du 2026-09-10 qui le fondait portait sur un message de SESSION
+ * envoyé depuis l'Inbox ; elle ne vaut pas pour un TEMPLATE de campagne. Chronologie relevée en production
+ * sur la campagne « test4 » : template parti à 16:47:47, le contact répond à 16:48:14, et c'est l'agent de
+ * Meta qui lui répond à 16:48:24 avant de rendre la main à 16:48:25. Écrire n'avait rien pris du tout.
+ *
+ * ⚠️ La leçon est la même que pour le corpus OpenAPI juste au-dessus, et elle se répète : une mesure vaut
+ * pour LE CAS MESURÉ. Généralisée en règle (« à coup sûr », « dans tous les cas »), elle devient une
+ * justification fausse, et une justification fausse est pire qu'aucune parce qu'elle sera recopiée. Celle-ci
+ * a servi à ne pas appeler `take` là où il fallait.
  */
 
 /**

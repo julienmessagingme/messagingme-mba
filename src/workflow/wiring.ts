@@ -46,7 +46,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // La MÊME décision que sur le chemin des campagnes : un template tracé exige ses composants de bouton, quel
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
-import { creerRendreLeFil } from '../inbox/controle-du-fil';
+import { creerRendreLeFil, creerPrendreLeFil } from '../inbox/controle-du-fil';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -264,6 +264,21 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   });
 
   /**
+   * PRENDRE le fil chez Meta, le jumeau de `releaseThreadChezMeta`, ajouté le 2026-09-14.
+   *
+   * 🔴 IL MANQUAIT, ET SON ABSENCE A FAIT RÉPONDRE L'AGENT DE META À LA PLACE D'UN SCÉNARIO. Le correctif
+   * du 2026-09-11 a posé ce geste sur le BOUTON « Reprendre la main » de l'Inbox, et seulement sur lui.
+   * `reclaimControl`, juste en dessous, continuait de n'écrire que NOTRE colonne, alors que son commentaire
+   * annonçait qu'on reprenait le fil « même tenu par MBA ». Meta n'en savait rien et continuait de router
+   * les entrants vers son agent. C'est le motif « une capacité câblée sur un consommateur sur deux », déjà
+   * payé plusieurs fois dans ce dépôt.
+   */
+  const takeThreadChezMeta = creerPrendreLeFil({
+    numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
+    clientMba: (t) => metaFactory.mbaClientForTenant(t),
+  });
+
+  /**
    * Envoi réel du bloc « Envoi de mail » (Task 8). Résout le modèle et la boîte SMTP, calcule le destinataire,
    * rend les variables `{{champ}}` (sujet toujours en texte, corps en HTML seulement si le modèle est 'html'),
    * envoie via SMTP. `apply` (executor.ts) est la SEULE garante du best-effort (try/catch autour de cet appel) :
@@ -357,9 +372,42 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Le groupe est l'ESPACE (lot 6 du plan post-audit) : sans lui, un client bavard occupe toutes les places
     // de la file et les conversations des autres attendent derrière les siennes.
     enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job, { groupId: job.tenantId }),
-    // Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
-    // humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
-    reclaimControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_workflow'); },
+    /**
+     * Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
+     * humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
+     *
+     * 🔴 ELLE N'ÉCRIVAIT QUE NOTRE COLONNE, ET C'EST CE QUI A FAIT RÉPONDRE L'AGENT DE META À LA PLACE D'UN
+     * SCÉNARIO (campagne « test4 », 2026-09-14). Chez Meta, le Meta Business Agent est le répondeur PRIMAIRE
+     * du numéro : tant qu'on ne lui a pas pris le fil par `thread_control`, il reçoit la réponse du contact
+     * et répond, quoi que dise notre base. Mesuré : template parti à 16:47:47, contact qui répond à 16:48:14,
+     * agent de Meta qui répond à 16:48:24, puis qui rend la main à 16:48:25 avec le motif
+     * `business_missing_info`. Le scénario, lui, n'a jamais avancé.
+     *
+     * 🔴 L'ORDRE EST META D'ABORD, NOUS ENSUITE, ET IL NE S'INVERSE PAS. Écrire notre colonne sans que Meta
+     * ait confirmé produirait le pire des deux mondes : le scénario se croirait maître et répondrait
+     * PAR-DESSUS l'agent de Meta, donc deux messages au contact. C'est la doctrine de
+     * `src/inbox/controle-du-fil.ts` (« un état local qui annonce ce que Meta n'a pas fait »), appliquée ici.
+     *
+     * ⚠️ UN REFUS DE META EST UN CAS NORMAL, pas une anomalie : `take` est réservé au « configured escalation
+     * partner ». On journalise et on LAISSE le fil à son détenteur, ce qui fait échouer proprement le
+     * démarrage du scénario plus haut au lieu d'en démarrer un qui serait gelé sans trace.
+     *
+     * ⚠️ ET ON NE TENTE RIEN SI L'AGENT DE META EST ÉTEINT CHEZ CE CLIENT : sans lui, il n'y a personne à qui
+     * prendre le fil, et un appel Meta par destinataire de campagne serait payé pour rien.
+     */
+    reclaimControl: async (tenant, waId): Promise<boolean> => {
+      if ((await settingsStore.get(tenant)).mbaEnabled) {
+        try {
+          await takeThreadChezMeta(tenant, waId);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`reclaimControl: Meta a REFUSÉ de nous rendre le fil pour ${waId} (${tenant}), le détenteur ne change pas :`, err instanceof Error ? err.message : err);
+          return false;
+        }
+      }
+      await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+      return true;
+    },
     // L'agent de Meta est-il allumé chez ce client ? Décide de deux choses : qu'une étape sans choix cesse de
     // bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Faux partout aujourd'hui, donc rien
     // ne change tant qu'aucun client n'a MBA.

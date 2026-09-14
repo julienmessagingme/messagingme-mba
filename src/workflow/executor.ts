@@ -248,7 +248,20 @@ export interface WorkflowExecutorDeps {
    * un envoi VOULU par un opérateur, donc le scénario reprend la conduite du fil. Sans ça, le scénario
    * partirait et se bloquerait à la première réponse du contact.
    */
-  reclaimControl?: (tenantId: string, waId: string) => Promise<void>;
+  /**
+   * Reprend le fil pour l'app. Rend `false` quand la reprise a ÉCHOUÉ (Meta a refusé de nous rendre le fil),
+   * `true` ou `void` quand elle a abouti.
+   *
+   * 🔴 LE BOOLÉEN A ÉTÉ AJOUTÉ LE 2026-09-14, ET IL PORTE TOUT LE CORRECTIF. Cette dépendance rendait `void`,
+   * donc un échec de reprise était indiscernable d'un succès : le parcours démarrait quand même, puis se
+   * faisait GELER à la première réponse du contact pendant que l'agent de Meta répondait à sa place. Un
+   * démarrage qu'on sait condamné doit échouer TOUT DE SUITE, avec sa raison, plutôt que de produire un
+   * parcours mort sans trace.
+   *
+   * ⚠️ `void` reste accepté pour les câblages qui ne savent pas le dire (tests, e2e) : traité comme un
+   * succès, c'est-à-dire le comportement historique.
+   */
+  reclaimControl?: (tenantId: string, waId: string) => Promise<boolean | void>;
   /**
    * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent
    * de Meta (`mba`) le détient. OPTIONNEL : absent, tout est permis, ce qui préserve le comportement des
@@ -1184,7 +1197,16 @@ export class WorkflowExecutor {
     // par mot-clé ne le passe pas, sinon n'importe quel message écraserait l'opérateur qui répond.
     // Gardé dans les deux sens par `tests/automation-chaine-reprend-la-main.test.ts`.
     if (opts.ignoreHumanControl) {
-      if (this.deps.reclaimControl) await this.deps.reclaimControl(tenantId, contact.waId);
+      // 🔴 UNE REPRISE QUI ÉCHOUE ARRÊTE LE DÉMARRAGE (2026-09-14). Avant, on ignorait son résultat : le
+      // parcours démarrait sur un fil que l'agent de Meta tenait toujours, et il était gelé sans un mot à la
+      // première réponse du contact, qui recevait entre-temps la réponse de l'agent de Meta. Mesuré sur la
+      // campagne « test4 ». Échouer ici fait remonter la raison jusqu'au destinataire (`campaign_recipients.error`),
+      // qui est le seul endroit où quelqu'un ira la lire.
+      if (this.deps.reclaimControl && (await this.deps.reclaimControl(tenantId, contact.waId)) === false) {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow ${workflowId}: fil NON repris pour ${contact.waId}, run non démarré (l'agent de Meta le tient et Meta a refusé de le rendre)`);
+        return "le fil est tenu par l'agent de Meta et Meta a refusé de le rendre : le scénario n'a pas démarré, il aurait été bloqué dès la première réponse du contact.";
+      }
     } else if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {
       // eslint-disable-next-line no-console
       console.log(`workflow ${workflowId}: fil détenu par un humain ou par MBA, run non démarré pour ${contact.waId}`);
@@ -1578,10 +1600,28 @@ export class WorkflowExecutor {
       return ecrit;
     };
     // Le fil est-il encore à nous ? Placé APRÈS la recherche du run pour ne pas payer une requête sur les
-    // messages qui n'attendent aucun parcours (le cas le plus fréquent). Le run reste `waiting` : le gel
-    // est transitoire, il repart tout seul dès que le contrôle revient (fin d'échange humain, ou garde-fou
-    // d'inactivité). On ne le clôt PAS, sinon un aller-retour avec un opérateur tuerait le parcours.
-    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) return;
+    // messages qui n'attendent aucun parcours (le cas le plus fréquent). On ne clôt PAS le run, sinon un
+    // aller-retour avec un opérateur tuerait le parcours.
+    //
+    // 🔴 CE GEL ÉTAIT MUET, ET IL A COÛTÉ UNE ENQUÊTE ENTIÈRE (2026-09-14). Toutes les autres sorties de
+    // cette fonction journalisent (réservation perdue, bail perdu, avance perdue, discordance de canal) ;
+    // celle-ci était un `return` nu. Symptôme vécu : une campagne à scénario dont le contact répond, le
+    // MBA qui répond à sa place, et un parcours resté `waiting` avec un `updated_at` intact et ZÉRO ligne
+    // dans `workflow_advance_failures`. Il n'existait littéralement aucune trace à lire, ni dans les
+    // journaux ni en base, et c'est ce qui a rendu le défaut incompréhensible pour le client comme pour
+    // nous. Un chemin qui décide de NE PAS agir doit le dire, au même titre que celui qui échoue.
+    //
+    // ⚠️ ET LE COMMENTAIRE QUI VIVAIT ICI PROMETTAIT UNE REPRISE QUI N'EXISTE PAS. Il affirmait « le gel
+    // est transitoire, il repart tout seul dès que le contrôle revient ». VÉRIFIÉ : `handover.ts` ne
+    // relance aucun parcours au `control_passed` de Meta. Le gel ne se lève qu'au PROCHAIN message du
+    // contact, qui n'a aucune raison d'écrire une seconde fois puisqu'il vient d'être servi par quelqu'un
+    // d'autre. Un parcours gelé est donc mort en pratique, et le dire est le minimum tant que personne ne
+    // le relance.
+    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
+      // eslint-disable-next-line no-console
+      console.warn(`workflow ${run.workflowId}: avance GELEE pour ${waId} (run ${run.id}), le fil ne nous appartient pas (opérateur ou Meta Business Agent) sur le bloc ${run.currentNode ?? 'null'} (message ${messageId}) ; le run reste waiting et ne repartira qu'au prochain message du contact`);
+      return;
+    }
     const graph = run.currentNode ? await this.deps.getGraph(run.workflowId, tenantId) : null;
     // Bloc RCS en attente : la réponse du contact reprend par la sortie « envoyé », pas par un payload de
     // bouton. Et le repli conditionnel suit la règle du bloc Condition : tant qu'une sortie TYPÉE existe, on
