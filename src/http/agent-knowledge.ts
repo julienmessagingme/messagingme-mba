@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../agent/knowledge';
@@ -31,6 +31,22 @@ export interface AgentKnowledgeRouteDeps {
   creer(tenantId: string, agentId: string, fiche: FicheAEcrire): Promise<FicheConnaissance | null>;
   modifier(tenantId: string, agentId: string, ficheId: string, patch: { titre?: string; corps?: string }): Promise<FicheConnaissance | null>;
   supprimer(tenantId: string, agentId: string, ficheId: string): Promise<boolean>;
+  /**
+   * Journalise une fiche EFFACÉE, dans l'historique de l'agent (migration 0146).
+   *
+   * 🔴 IL N'Y A PAS DE CORBEILLE ICI NON PLUS. Une fiche supprimée disparaît de `agent_knowledge` : cette
+   * ligne en est le seul exemplaire, exactement comme pour le Meta Business Agent. C'est aussi le seul
+   * endroit qui réponde à « qui a retiré ça de ce que le robot sait dire ? ».
+   *
+   * ⚠️ OPTIONNEL : une instance sans historique continue de fonctionner. La route ne DOIT pas échouer parce
+   * qu'un journal manque.
+   */
+  journaliserSuppression?(tenantId: string, agentId: string, ligne: {
+    cible: string;
+    libelle: string;
+    avant: unknown;
+    acteurId: string | null;
+  }): Promise<void>;
   remplacerSource(tenantId: string, agentId: string, source: SourceFiche, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
   /** Lecture d'une page distante. Injectée pour rester testable sans réseau ; absente, l'import ET
    *  l'aperçu répondent 503. */
@@ -142,13 +158,37 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
     return reply.code(200).send({ fiche });
   });
 
+  /**
+   * LE CONTENU EST LU AVANT LA SUPPRESSION, jamais après : c'est le seul exemplaire qui en restera.
+   *
+   * ⚠️ BEST-EFFORT SUR LA LECTURE, comme côté MBA : si elle échoue, on supprime quand même et on journalise
+   * l'identifiant seul. Refuser un geste ordinaire parce qu'une lecture de journal a raté serait pire.
+   */
+  const ficheAvant = async (ctx: { tenant: string; agentId: string }, ficheId: string): Promise<FicheConnaissance | undefined> => {
+    if (!deps.journaliserSuppression) return undefined;
+    return (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).find((f) => f.id === ficheId);
+  };
+  const journaliser = async (
+    ctx: { tenant: string; agentId: string }, req: FastifyRequest, ficheId: string, avant: FicheConnaissance | undefined,
+  ): Promise<void> => {
+    await deps.journaliserSuppression?.(ctx.tenant, ctx.agentId, {
+      cible: ficheId,
+      libelle: `Fiche de connaissance : ${avant?.titre ?? ficheId}`,
+      avant: avant ?? { id: ficheId },
+      acteurId: req.auth?.userId ?? null,
+    });
+  };
+
   app.delete(`${base}/:ficheId`, opts, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const { ficheId } = req.params as { ficheId: string };
     if (!estUuid(ficheId)) return reply.code(404).send({ error: 'fiche introuvable' });
+    const avant = await ficheAvant(ctx, ficheId);
     const supprime = await deps.supprimer(ctx.tenant, ctx.agentId, ficheId);
     if (!supprime) return reply.code(404).send({ error: 'fiche introuvable' });
+    // ⚠️ APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une cause inexistante.
+    await journaliser(ctx, req, ficheId, avant);
     return reply.code(204).send();
   });
 
@@ -171,8 +211,24 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
     const ids = parse.data.ids.filter((id) => estUuid(id));
     if (ids.length === 0) return reply.code(400).send({ error: 'aucun identifiant valide' });
 
+    /**
+     * 🔴 LA SUPPRESSION EN MASSE SE JOURNALISE AUSSI, et c'est elle qui compte le plus : c'est le geste qui
+     * peut effacer deux cents fiches d'un coup. La journaliser sur un seul des deux chemins, c'est le motif
+     * « une capacité câblée sur un consommateur sur deux », déjà payé plusieurs fois dans ce dépôt.
+     *
+     * ⚠️ UNE SEULE LECTURE pour toute la fournée, pas une par fiche : `ficheAvant` ferait N listes.
+     */
+    const avantParId = new Map(
+      deps.journaliserSuppression
+        ? (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).map((f) => [f.id, f] as const)
+        : [],
+    );
     let supprimees = 0;
-    for (const id of ids) if (await deps.supprimer(ctx.tenant, ctx.agentId, id)) supprimees += 1;
+    for (const id of ids) {
+      if (!(await deps.supprimer(ctx.tenant, ctx.agentId, id))) continue;
+      supprimees += 1;
+      await journaliser(ctx, req, id, avantParId.get(id));
+    }
     // ⚠️ On rend le COMPTE REEL, pas la taille de la demande : une fiche deja supprimee par un collegue ne
     // doit pas etre annoncee comme supprimee par ce clic.
     return reply.code(200).send({ supprimees, demandees: ids.length });

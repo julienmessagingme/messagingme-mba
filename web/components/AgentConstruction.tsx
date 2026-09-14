@@ -33,6 +33,11 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
 }) {
   const t = useT();
   const [tours, setTours] = useState<TourConstruction[]>([]);
+  /**
+   * QUI a écrit chaque tour, parallèle à `tours` (migration 0147). Le fil est PARTAGÉ entre les admins d'un
+   * espace : « qui a demandé ça ? » doit avoir une réponse, et c'est la seule qui existe.
+   */
+  const [auteurs, setAuteurs] = useState<Array<string | null>>([]);
   const [saisie, setSaisie] = useState('');
   const [busy, setBusy] = useState(false);
   const [charge, setCharge] = useState(false);
@@ -56,6 +61,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
         // Défensif sur la FORME : cette réponse traverse un proxy et un cache, et un corps inattendu ne doit
         // pas casser l'écran là où une page blanche suffit.
         setTours(Array.isArray(r?.messages) ? r.messages : []);
+        setAuteurs(Array.isArray(r?.auteurs) ? r.auteurs : []);
         setResteACouvrir(r?.couverture?.manquants?.length ?? 0);
         setTotal(r?.couverture?.total ?? 0);
       } catch {
@@ -78,6 +84,10 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
     const propre = texte.trim();
     if (propre === '' || busy) return;
     setTours((avant) => [...avant, { role: 'user', content: propre }]);
+    // ⚠️ L'AUTEUR SUIT LE MESSAGE, sinon les deux tableaux se décalent et chaque tour affiche le nom du
+    // précédent. `null` pour l'optimiste : le serveur rendra notre adresse à la relecture, et l'afficher tout
+    // de suite sur la phrase qu'on vient de taper n'apprend rien.
+    setAuteurs((avant) => [...avant, null]);
     setSaisie('');
     setBusy(true);
     setErreur(null);
@@ -86,6 +96,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
     try {
       const r = await parlerAuConstructeur(tenantId, agentId, propre);
       setTours((avant) => [...avant, { role: 'assistant', content: r.message }]);
+      setAuteurs((avant) => [...avant, null]);
       setProposition(r.proposition);
       setChangements(r.changements);
       setResteACouvrir(r.couverture?.manquants.length ?? 0);
@@ -153,6 +164,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
     try {
       const r = await effacerEntretien(tenantId, agentId);
       setTours([]);
+    setAuteurs([]);
       setChangements(null);
       setProposition(null);
       setResteACouvrir(r.couverture.manquants.length);
@@ -256,6 +268,13 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
                 : 'max-w-[85%] self-start whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-800 shadow-sm'}
             >
               {tour.content}
+              {/* 🔴 L'AUTEUR, SUR LES TOURS DU CLIENT ET SEULEMENT QUAND ON LE CONNAIT. Le fil est PARTAGE
+                  entre les admins d'un espace : « qui a demande ca ? » doit avoir une reponse. Un tour sans
+                  auteur (un message d'avant la migration 0147, ou un compte supprime) n'en affiche aucun :
+                  inventer un nom serait faux. Les reponses de l'assistant n'en ont par definition pas. */}
+              {tour.role === 'user' && auteurs[i] && (
+                <span className="mt-1 block text-[11px] text-white/70">{auteurs[i]}</span>
+              )}
             </div>
           ))}
 

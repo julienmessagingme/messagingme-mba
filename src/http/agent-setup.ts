@@ -47,6 +47,18 @@ export interface AgentSetupRouteDeps {
   /** L'état courant de l'agent, ou `null` s'il n'existe pas ou appartient à un autre tenant. */
   etatCourant(tenantId: string, agentId: string): Promise<ContexteConstruction | null>;
   /**
+   * QUI a écrit chaque message : les adresses des membres de l'espace, par identifiant.
+   *
+   * 🔴 RÉSOLU CÔTÉ SERVEUR, jamais par le navigateur. Le fil ne porte que des identifiants (migration 0147,
+   * et c'est le bon choix : recopier une adresse dans un jsonb que personne ne purge serait pire). L'écran,
+   * lui, ne peut afficher qu'un nom : le faire résoudre par le navigateur ajouterait un appel à chaque
+   * ouverture d'onglet, et donnerait à voir la liste des comptes de l'espace pour afficher deux adresses.
+   *
+   * ⚠️ OPTIONNEL : sans lui, le fil s'affiche avec « auteur inconnu », ce qui est le comportement des tours
+   * d'avant la migration. Un journal sans auteur reste lisible ; un écran qui refuse de s'ouvrir, non.
+   */
+  emailsDesMembres?(tenantId: string): Promise<Record<string, string>>;
+  /**
    * Écrit une fiche de connaissance. Sert aux PIÈCES JOINTES : un document joint devient des fiches, c'est
    * tout l'intérêt de pouvoir en joindre un. Absente, la route de pièce jointe n'est pas montée.
    */
@@ -190,9 +202,21 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * que le reste n'existe plus.
      */
     const recents = entretien.messages.slice(-MAX_MESSAGES_AFFICHES);
+    const auteurs = entretien.auteurs.slice(-MAX_MESSAGES_AFFICHES);
+    /**
+     * ⚠️ ON NE RÉSOUT QUE S'IL Y A QUELQUE CHOSE À RÉSOUDRE : un fil entièrement anonyme (les tours d'avant
+     * la migration 0147, et les réponses de l'assistant) ne doit pas coûter une requête à chaque ouverture.
+     */
+    const emails = auteurs.some((a) => a !== null) && deps.emailsDesMembres
+      ? await deps.emailsDesMembres(ctx.tenant).catch(() => ({} as Record<string, string>))
+      : {};
     return reply.code(200).send({
       messages: recents,
-      auteurs: entretien.auteurs.slice(-MAX_MESSAGES_AFFICHES),
+      /**
+       * 🔴 DES ADRESSES, PAS DES IDENTIFIANTS, et `null` quand on ne sait pas : un compte supprimé laisse un
+       * tour sans auteur, et lui en inventer un serait faux. L'écran dit alors « auteur inconnu ».
+       */
+      auteurs: auteurs.map((a) => (a === null ? null : emails[a] ?? null)),
       total: entretien.messages.length,
       couverture: avancement(entretien, ctx.etat),
     });

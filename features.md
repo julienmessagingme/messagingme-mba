@@ -1747,7 +1747,7 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   chaque ligne de la liste** (2026-08-31) autant que dans la fiche : jeter un agent d'essai n'oblige plus à
   entrer dedans d'abord.
 
-### Les huit onglets de sa fiche
+### Les neuf onglets de sa fiche
 
 | Onglet | Ce qu'on y fait |
 |---|---|
@@ -1758,6 +1758,7 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 | **Outils** | Ce qu'il a le droit de FAIRE, en plus de parler |
 | **Périmètre et garde-fous** | Ses plafonds, et ce qu'il peut faire face à un contact inconnu |
 | **Modèle** | Le moteur qui le fait parler, et le budget d'une conversation |
+| **Historique** | Ce qui a changé, et le contenu de ce qui a été effacé |
 | **Tester** | Lui parler avant de l'activer |
 
 - ✅ **Chaque champ s'enregistre à la sortie du champ**, comme les écrans MBA : pas de bouton par champ.
@@ -1963,6 +1964,22 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
 - ⚠️ **Il inventait des réglages jusqu'au 2026-08-29**, et la cause était dans nos propres consignes, pas dans
   le modèle : on lui ordonnait de déduire plutôt que de demander, et on lui imposait de remplir « quand ne pas
   l'appeler » même quand personne n'en avait parlé. Corrigé dans les deux sens.
+
+### Onglet « Historique » d'un agent (2026-09-15)
+
+Le même écran que côté Meta Business Agent, pour l'agent IA : **ce qui a changé, et ce qui a été effacé**.
+
+- ✅ **Une fiche de connaissance supprimée y laisse son CONTENU**, y compris quand on en supprime cinquante
+  d'un coup. Il n'y a pas de corbeille : cette ligne en est le seul exemplaire.
+- ✅ **Chaque ligne dit qui, quand, et d'où** (l'assistant ou un formulaire).
+- ✅ **Rien n'est purgé**, contrairement au journal d'audit RGPD.
+- ⚠️ **Réservé aux administrateurs.**
+
+### Qui a écrit quoi dans la conversation de construction (2026-09-15)
+
+La conversation est **partagée entre les administrateurs de l'espace** : chaque message porte donc l'adresse de
+celui qui l'a écrit. Un message d'avant le 2026-09-14, ou écrit par un compte depuis supprimé, n'en affiche
+aucune plutôt qu'un nom inventé.
 
 ### Ce qui manque à l'agent, dit dès l'ouverture (2026-09-08)
 

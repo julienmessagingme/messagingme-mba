@@ -1408,6 +1408,14 @@ async function main(): Promise<void> {
           })),
         };
       },
+      /**
+       * Les adresses des membres, par identifiant, pour afficher QUI a ecrit chaque tour du fil.
+       *
+       * ⚠️ UNE SEULE REQUETE, et seulement si le fil porte au moins un auteur : `list` rend les membres de
+       * l espace, ce qui suffit puisqu un tour ne peut avoir ete ecrit que par l un d eux.
+       */
+      emailsDesMembres: async (tenant: string) =>
+        Object.fromEntries((await userStore.list(tenant)).map((u) => [u.id, u.email])),
       // Les PIECES JOINTES ecrivent des fiches de connaissance, par le MEME store que l onglet Connaissance :
       // ce que le client joint est ensuite relisible et modifiable la-bas, comme une page importee.
       ecrireFichesDocument: (tenant, agentId, nom, fiches) =>
@@ -1489,6 +1497,16 @@ async function main(): Promise<void> {
       modifier: (tenant, agentId, ficheId, patch) => knowledgeStore.modifier(tenant, agentId, ficheId, patch),
       supprimer: (tenant, agentId, ficheId) => knowledgeStore.supprimer(tenant, agentId, ficheId),
       remplacerSource: (tenant, agentId, source, fiches) => knowledgeStore.remplacerSource(tenant, agentId, source, fiches),
+      /**
+       * 🔴 IL N Y A PAS DE CORBEILLE ICI NON PLUS. Une fiche supprimee disparait de `agent_knowledge` : cette
+       * ligne est le seul exemplaire de ce que le robot savait dire, et le seul endroit qui reponde a « qui
+       * l a retire ? ». Meme choix que pour le MBA : les SUPPRESSIONS d abord, une creation ratee se refait.
+       */
+      journaliserSuppression: (tenant, agentId, l) => historiqueStore.ecrire(tenant, {
+        surface: 'agent', surfaceId: agentId, element: 'connaissance', operation: 'suppression',
+        cible: l.cible, libelle: l.libelle, avant: l.avant, apres: null,
+        origine: 'formulaire', acteurEmail: null, acteurId: l.acteurId,
+      }),
       fetchUrl: fetchUrlBorne(),
     },
     // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posees : la migration 0086

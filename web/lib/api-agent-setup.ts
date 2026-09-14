@@ -189,10 +189,16 @@ export async function parlerAuConstructeur(
   });
 }
 
-/** L'entretien déjà tenu, pour rouvrir l'onglet là où on l'avait laissé. */
+/**
+ * L'entretien déjà tenu, pour rouvrir l'onglet là où on l'avait laissé.
+ *
+ * `auteurs` est PARALLÈLE à `messages` (migration 0147), et porte des ADRESSES résolues par le serveur, ou
+ * `null` : les réponses de l'assistant, les tours d'avant la migration, et les comptes supprimés. L'écran
+ * affiche alors « auteur inconnu » plutôt qu'un nom inventé.
+ */
 export async function lireEntretien(
   tenantId: string, agentId: string,
-): Promise<{ messages: TourConstruction[]; couverture: Couverture }> {
+): Promise<{ messages: TourConstruction[]; auteurs?: Array<string | null>; couverture: Couverture }> {
   return request(`/tenants/${tenantId}/agents/${agentId}/setup`);
 }
 

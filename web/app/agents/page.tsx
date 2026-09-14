@@ -18,6 +18,7 @@ import { AgentConnaissance } from '@/components/AgentConnaissance';
 import { AgentOutils } from '@/components/AgentOutils';
 import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
+import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { appliquerProposition, lireManques, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 import { consommationAgent, listerModeles, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
@@ -52,9 +53,11 @@ function libellePrix(m: ModeleProposable, locale: Locale, t: (fr: string, en?: s
  * un interrupteur d'accueil comme l'agent de Meta, qui lui est unique par workspace.
  */
 
-type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele' | 'tester';
+type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele'
+  | 'historique' | 'tester';
 
-const ONGLETS: Onglet[] = ['construction', 'identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele', 'tester'];
+const ONGLETS: Onglet[] = ['construction', 'identite', 'objectif', 'connaissance', 'outils', 'perimetre',
+  'modele', 'historique', 'tester'];
 // 🔴 « Construire en parlant » EST l'entrée par défaut, pas « Identité et ton ». Julien, 2026-08-31 : « je
 // voudrais que la fenêtre Construire en parlant apparaisse en premier ». L'ordre des onglets le disait déjà,
 // mais le défaut ouvrait le formulaire : on tombait sur des champs vides à remplir seul, alors que tout
@@ -280,6 +283,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             { key: 'outils', label: t('Outils', 'Tools') },
             { key: 'perimetre', label: t('Périmètre et garde-fous', 'Scope and guardrails') },
             { key: 'modele', label: t('Modèle', 'Model') },
+            { key: 'historique', label: t('Historique', 'History') },
             { key: 'tester', label: t('Tester', 'Test') },
           ]}
         />
@@ -319,6 +323,10 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {onglet === 'modele' && <OngletModele agent={ouvert} tenantId={tenantId} busy={busy} onSave={enregistrer} />}
         {/* Le bac a sable fait tourner le VRAI cerveau, sans session ni run : il n ecrit rien, il ne passe
             donc pas non plus par `enregistrer`. */}
+        {/* 🔴 LE MEME PANNEAU QUE LE MBA, avec la surface `agent` : deux implementations du meme journal
+            auraient diverge, et c est le genre d ecran qu on ne regarde que le jour ou quelque chose a
+            disparu, donc trop tard pour s apercevoir qu il ment. */}
+        {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="agent" agentId={ouvert.id} />}
         {onglet === 'tester' && <AgentTest tenantId={tenantId} agentId={ouvert.id} />}
       </div>
     );
