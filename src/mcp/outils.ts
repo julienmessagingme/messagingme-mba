@@ -258,9 +258,25 @@ export const OUTILS: OutilMcp[] = [
       'Les membres de l’espace, avec leur identifiant. À appeler avant assign_conversation, qui a besoin de '
       + 'cet identifiant et non du nom.',
     scope: 'mcp:read',
-    entree: { type: 'object', properties: {} },
-    async executer(deps, tenantId) {
-      return { members: await deps.listerMembres(tenantId) };
+    entree: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', description: 'Nombre de membres (1 à 200, défaut 100).' },
+      },
+    },
+    /**
+     * 🔴 IL N'AVAIT AUCUNE BORNE, ET C'ÉTAIT LE SEUL (trouvé le 2026-09-14, absent de l'audit). Ses trois
+     * voisins bornent leur `limit` entre 1 et 100 ou 200 ; celui-ci ne prenait aucun paramètre et rendait
+     * l'équipe ENTIÈRE. Sur nos espaces d'aujourd'hui, c'est trois lignes ; sur un client à plusieurs
+     * centaines de comptes, c'est une réponse que personne n'a dimensionnée, servie à chaque appel.
+     *
+     * ⚠️ `tronque` EST RENDU, comme sur les messages : sans lui, un modèle qui reçoit exactement `limit`
+     * membres n'a aucun moyen de savoir s'il les a tous, et il conclura que oui.
+     */
+    async executer(deps, tenantId, args) {
+      const limit = entierBorne(args, 'limit', 100, 1, 200);
+      const tous = await deps.listerMembres(tenantId);
+      return { members: tous.slice(0, limit), tronque: tous.length > limit };
     },
   },
   {

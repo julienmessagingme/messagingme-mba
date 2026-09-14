@@ -36,7 +36,7 @@ interface Traces {
   journal: Array<{ origine: string; auteur: string | null | undefined }>;
 }
 
-function app(over: Partial<DepsMcp> = {}) {
+function app(over: Partial<DepsMcp> & { membres?: Array<{ id: string; name: string; email: string; role: string }> } = {}) {
   const traces: Traces = { contexte: [], envois: [], listes: [], journal: [] };
   const mcp: DepsMcp = {
     listConversations: async (tenant) => {
@@ -63,7 +63,7 @@ function app(over: Partial<DepsMcp> = {}) {
     chercherContacts: async () => [],
     contactParTelephone: async () => null,
     ajouterTags: async () => ({ touched: 1, added: ['chaud'] }),
-    listerMembres: async () => [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
+    listerMembres: async () => over.membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
     ...over,
   };
   const keys = new FakeApiKeys()
@@ -210,6 +210,32 @@ describe('serveur MCP : les outils', () => {
     const { conversations } = JSON.parse(contenu(res).texte) as { conversations: Array<{ conversation_id: string; phone: string }> };
     expect(conversations).toHaveLength(1);
     expect(conversations[0]).toMatchObject({ conversation_id: 'cv1', phone: '33600000001' });
+    await server.close();
+  });
+
+  /**
+   * 🔴 `list_members` N'AVAIT AUCUNE BORNE, ET C'ÉTAIT LE SEUL (trouvé le 2026-09-14, absent de l'audit).
+   * Ses trois voisins bornent leur `limit` entre 1 et 100 ou 200 ; celui-ci ne prenait aucun paramètre et
+   * rendait l'équipe ENTIÈRE. Sur nos espaces d'aujourd'hui, c'est trois lignes ; sur un client à
+   * plusieurs centaines de comptes, c'est une réponse que personne n'a dimensionnée, servie à chaque appel
+   * et payée en jetons par le modèle qui la lit.
+   */
+  it('🔴 list_members est BORNÉ, et il dit quand il tronque', async () => {
+    const { server } = app({ membres: Array.from({ length: 30 }, (_, i) => ({ id: `u${i}`, name: `M${i}`, email: `m${i}@test.fr`, role: 'agent' })) });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_members', { limit: 5 }) });
+    const corps = JSON.parse(contenu(res).texte) as { members: unknown[]; tronque: boolean };
+    expect(corps.members).toHaveLength(5);
+    // ⚠️ SANS `tronque`, un modèle qui reçoit exactement `limit` membres conclut qu'il les a tous.
+    expect(corps.tronque).toBe(true);
+    await server.close();
+  });
+
+  it('⚠️ une demande démesurée est RAMENÉE à la borne, pas refusée', async () => {
+    // Même convention que ses voisins : on borne en silence plutôt que de renvoyer une erreur à un modèle,
+    // qui n'a aucun moyen de deviner le plafond et rejouerait le même appel.
+    const { server } = app({ membres: Array.from({ length: 500 }, (_, i) => ({ id: `u${i}`, name: `M${i}`, email: `m${i}@test.fr`, role: 'agent' })) });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_members', { limit: 100000 }) });
+    expect((JSON.parse(contenu(res).texte) as { members: unknown[] }).members).toHaveLength(200);
     await server.close();
   });
 

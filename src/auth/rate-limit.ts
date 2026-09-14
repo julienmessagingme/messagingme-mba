@@ -1,7 +1,16 @@
 import type { FastifyReply } from 'fastify';
 
 /**
- * Limiteur de débit en mémoire (fenêtre glissante par clé). Aucune dépendance de RUNTIME : le seul import de
+ * Limiteur de débit en mémoire, par clé.
+ *
+ * 🔴 SA FENÊTRE EST FIXE, PAS GLISSANTE, et cet en-tête a dit le contraire jusqu'au 2026-09-14. La
+ * différence n'est pas théorique : la fenêtre est ANCRÉE sur le premier appel, donc les N requêtes du
+ * plafond peuvent tomber dans la même milliseconde, et N autres juste après la bascule. Un lecteur qui
+ * croit à une fenêtre glissante en déduit une régularité que ce limiteur ne donne pas, et dimensionne le
+ * plafond en conséquence. Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
+ *
+ * ⚠️ C'EST CE QUI A RENDU NÉCESSAIRE LE PLAFOND D'OPÉRATIONS LOURDES SIMULTANÉES (`ApiUsageGuard`) : dix
+ * requêtes d'une même fenêtre suffisent à saturer le pool sans jamais franchir le plafond affiché. Aucune dépendance de RUNTIME : le seul import de
  * ce fichier est un `import type`, effacé à la compilation. À garder ainsi, pour que le limiteur reste
  * chargeable depuis n'importe quel contexte, y compris hors du serveur HTTP.
  *
