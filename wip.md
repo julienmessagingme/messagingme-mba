@@ -10,13 +10,13 @@
 >
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.**
 
-## 🔴 L'ÉTAT EXACT, AU 2026-09-13 AU SOIR
+## 🔴 L'ÉTAT EXACT, AU 2026-09-14
 
 | | |
 |---|---|
-| `origin/main` | `17fe3e2` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1` : l'écart est **trois `.md`**, aucun redéploiement dû |
-| Dernière CI de CODE (`930b9d1`) | ✅ verte, quatre jobs |
+| `origin/main` | `436547d` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1` : l'écart ne porte **aucun fichier de `src/`**, aucun redéploiement dû |
+| Dernière CI de CODE (`436547d`) | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 | Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
 
@@ -33,10 +33,9 @@ tâche 7) : le contrôle public juste après rendait encore 502, le second reloa
 dans les deux cas, donc il ne dit rien. La séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer
 si besoin.
 
-## 🔴 CE QUI VIENT ENSUITE, DANS CET ORDRE
+## 🔴 CE QUI VIENT ENSUITE
 
-1. **Une correction sur l'écran Campagne**, demandée par Julien le 2026-09-14. Elle passe AVANT l'audit.
-2. **[Le plan de protection de l'API publique](docs/superpowers/plans/2026-09-14-protection-api-publique.md)**,
+**[Le plan de protection de l'API publique](docs/superpowers/plans/2026-09-14-protection-api-publique.md)**,
    dix tâches, **rien de commencé**. Il est écrit sur des MESURES : l'audit Codex du 2026-09-13 a été
    vérifié affirmation par affirmation (94 constats, 76 vrais, 9 faux, 7 partiels, 2 périmés), et le plan
    ne retient que ce qui tient. Il dit aussi ce qu'il REFUSE, avec sa raison.
@@ -48,6 +47,27 @@ et `/mcp`**, et le geste qui le pose vivra sur `/ops`.
 ⚠️ **ET DEUX MESURES ONT CHANGÉ LA FORME DU TRAVAIL.** Le verrou `locked` est LU dans `makeRequireAuth`
 mais **écrit nulle part** : « l'étendre » demande donc aussi de créer le moyen de le poser. Et le repli RCS
 sur notre clé smsmode **n'est pas réalisé** : un seul agent en production, et il a sa propre clé.
+
+## ✅ CE QUI VIENT D'ÊTRE FINI : une question à la fois dans l'assistant de campagne (2026-09-14)
+
+Correction demandée par Julien, livrée avant l'audit comme il l'avait rangée. Trois changements de
+parcours, plus une garde au point d'envoi :
+
+- **l'étape Canal ouvre sur sa seule question**, sans réponse pré-cochée. Le canal n'a plus de défaut, le
+  bouton « Suivant » y est gardé et l'écran dit pourquoi. Le réessai et la question des heures ouvrées
+  n'apparaissent qu'ensuite ;
+- **la question du devenir attend TOUT le contenu**, étage de repli compris (elle ne regardait que le
+  rang 1) ;
+- **elle disparaît quand chaque étage ouvre un scénario**, avec sa raison à la place : « la logique qui
+  répond, est-ce un agent IA ou un collab, est gérée dans le scénario ». Un seul étage hors scénario la
+  repose ;
+- 🔴 **et `entreeDeCreation` n'emporte plus l'assignation quand la question n'est pas posée**. Masquer
+  n'efface pas : le serveur applique ce réglage à l'arrivée de chaque réponse, scénario ou pas.
+
+⚠️ **RELEVÉ EN PASSANT, ET IL ATTEND TON ARBITRAGE** (porté dans `todo.md`) : sur les trois réponses de
+cette question, **une seule voyage jusqu'au serveur**. `devenir` et `agentId` ne sortent pas de l'écran,
+`campaigns` n'a aucune colonne pour eux. Choisir « un agent IA prend la main » ne change donc rien
+aujourd'hui, et l'écran fait pourtant désigner un agent dans une liste.
 
 ## ✅ CE QUI VIENT D'ÊTRE FINI : chantier 6, le centre de Sécurité & compliance
 
