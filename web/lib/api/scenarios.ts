@@ -222,9 +222,11 @@ export function estEnLigne(w: WorkflowSummary): boolean {
  * serait pire que pas d'essai du tout. Le résultat arrive toujours en 200, échec compris : la faute du
  * client est le RÉSULTAT de l'essai, pas une panne de la route.
  */
-export function essayerFonctionJs(tenantId: string, code: string, valeur: string): Promise<EssaiJs> {
+export function essayerFonctionJs(tenantId: string, code: string, valeur: string, champSource?: string): Promise<EssaiJs> {
   return request<EssaiJs>(`/tenants/${tenantId}/workflows/js-test`, {
-    method: 'POST', body: JSON.stringify({ code, valeur }),
+    // ⚠️ `champSource` DONNE SON NOM AU PARAMÈTRE de la fonction, comme à l'exécution. L'omettre faisait
+    // échouer l'essai sur un code que la production accepte, ce qui démentait la promesse ci-dessus.
+    method: 'POST', body: JSON.stringify({ code, valeur, ...(champSource ? { champSource } : {}) }),
   });
 }
 

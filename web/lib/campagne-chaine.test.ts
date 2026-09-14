@@ -11,6 +11,7 @@ import {
   DEBIT_MAX,
   DEBIT_MIN,
   assignationProposable,
+  devenirParDefaut,
 } from './campagne-chaine';
 
 /**
@@ -281,5 +282,24 @@ describe('la question « à qui va la conversation ? »', () => {
   // inatteignable ; le défaut prudent est de ne rien proposer plutôt que de proposer sur du vide.
   it('une chaine vide ne pose pas la question', () => {
     expect(assignationProposable([], {})).toBe(false);
+  });
+});
+
+/**
+ * 🔴 LE DÉFAUT DU DEVENIR SUIT L'ESPACE (relevé en revue le 2026-09-14).
+ *
+ * Sans l'agent de Meta, un défaut `mba` désignait une option que l'écran GRISE au même moment : le client
+ * ne pouvait en sortir sans y penser, et ses réponses n'allaient nulle part (ni robot pour répondre, ni
+ * équipe à qui les confier). C'est le pire des trois états possibles.
+ */
+describe('le defaut du devenir suit l espace', () => {
+  it('🔴 sans agent de Meta, l assignation est demandee d emblee', () => {
+    const CHAINE = [{ rang: 1, canal: 'whatsapp' as const }];
+    expect(assignationProposable(CHAINE, { 1: { formule: 'seul', devenir: devenirParDefaut(false), templateName: 'p' } }))
+      .toBe(true);
+  });
+
+  it('avec agent de Meta, le defaut le laisse repondre', () => {
+    expect(devenirParDefaut(true)).toBe('mba');
   });
 });

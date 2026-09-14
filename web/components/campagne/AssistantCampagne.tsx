@@ -616,7 +616,7 @@ export function AssistantCampagne({
    */
   const modifierContenu = (rang: number, patch: Partial<ContenuEtage>): void => setEtat((e) => ({
     ...e,
-    contenus: { ...e.contenus, [rang]: { ...(e.contenus[rang] ?? contenuVide()), ...patch } },
+    contenus: { ...e.contenus, [rang]: { ...(e.contenus[rang] ?? contenuVide(capacites.mbaEnabled)), ...patch } },
   }));
 
   /**

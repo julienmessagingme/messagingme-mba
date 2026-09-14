@@ -94,14 +94,26 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
   app.post('/tenants/:tenantId/workflows/js-test', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    const b = (req.body ?? {}) as { code?: unknown; valeur?: unknown };
+    const b = (req.body ?? {}) as { code?: unknown; valeur?: unknown; champSource?: unknown };
     if (typeof b.code !== 'string') return reply.code(400).send({ error: 'code requis' });
     // La valeur d'essai est une CHAÎNE, comme le sera le champ source à l'exécution : accepter un nombre ici
     // ferait réussir un essai que le parcours ne saurait pas reproduire.
     const valeur = typeof b.valeur === 'string' ? b.valeur : '';
     // 200 même en cas d'échec : l'erreur est le RÉSULTAT de l'essai, pas une panne de la route. Un 4xx ferait
     // afficher un message d'infrastructure là où le client attend la faute de SON code.
-    return reply.code(200).send(await executerFonctionJs(b.code, valeur));
+    /**
+     * 🔴 LE CHAMP SOURCE VOYAGE JUSQU'ICI, ET SON ABSENCE ÉTAIT UN DÉFAUT (relevé en revue le 2026-09-14).
+     * Le paramètre de la fonction porte le nom du champ choisi ; sans lui, l'essai échouait sur
+     * « adresse is not defined » alors que le MÊME code marche en production. C'est exactement le symptôme
+     * que ce lot répare, laissé intact sur le seul chemin où le client le vérifie, et ça démentait la
+     * promesse écrite juste à côté (« le même bac à sable que l'exécution »).
+     *
+     * ⚠️ NON VALIDÉ ICI, et ce n'est pas un oubli : `nomDeParametreSur` refuse déjà tout ce qui n'est pas un
+     * identifiant JavaScript sûr, et retombe sur `valeur`. Une garde de plus ne ferait que dupliquer la règle.
+     */
+    const champSource = typeof b.champSource === 'string' ? b.champSource : undefined;
+    return reply.code(200).send(await executerFonctionJs(b.code, valeur,
+      champSource ? { nomParametre: champSource } : {}));
   });
 
   app.post('/tenants/:tenantId/workflows', opts, async (req, reply) => {

@@ -1097,7 +1097,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
   async function essayer(): Promise<void> {
     setEnCours(true);
     try {
-      setResultat(await essayerFonctionJs(tenantId, code, valeurEssai));
+      setResultat(await essayerFonctionJs(tenantId, code, valeurEssai, champSource));
     } catch (err) {
       setResultat({ ok: false, valeur: '', erreur: err instanceof Error ? err.message : 'essai impossible' });
     } finally {

@@ -9,7 +9,7 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
-import { assignationProposable, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
+import { assignationProposable, devenirParDefaut, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { scenariosPourEtage } from '@/lib/campagne-scenario';
 import { CreationScenarioEnLigne } from '@/components/campagne/CreationScenarioEnLigne';
@@ -170,7 +170,7 @@ export function EtapeContenu({
             else suivant.add(etage.rang);
             return suivant;
           })}
-          contenu={etat.contenus[etage.rang] ?? contenuVide()}
+          contenu={etat.contenus[etage.rang] ?? contenuVide(capacites.mbaEnabled)}
           references={references}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
           {...(rechargerScenarios ? { rechargerScenarios } : {})}
@@ -215,11 +215,10 @@ export function EtapeContenu({
 }
 
 /** Un contenu d'étage vierge. Les suggestions partent VIDES : cf. `CadreRcs`. */
-export function contenuVide(): ContenuEtage {
-  // ⚠️ `mba` PAR DÉFAUT, et c'est le comportement RÉEL sans réglage : l'agent de Meta est le répondeur
-  // primaire du numéro, donc ne rien faire revient à le laisser répondre. Un défaut `inbox` ferait prendre
-  // le fil sur toute campagne dont personne n'a touché la question, ce qui changerait le produit en silence.
-  return { formule: 'seul', devenir: 'mba', suggestions: [] };
+export function contenuVide(mbaEnabled = true): ContenuEtage {
+  // ⚠️ LA RÈGLE DU DÉFAUT VIT DANS `lib/campagne-chaine.ts` (`devenirParDefaut`), pas ici : c'est la seule
+  // façon de l'éprouver, la suite unitaire du front étant scopée aux fonctions pures de `lib/`.
+  return { formule: 'seul', devenir: devenirParDefaut(mbaEnabled), suggestions: [] };
 }
 
 function CadreEtage({

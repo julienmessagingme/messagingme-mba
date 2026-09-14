@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { executerFonctionJs, MAX_CODE_JS } from '../src/workflow/fonction-js';
 import { walk } from '../src/workflow/engine';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -225,5 +227,23 @@ describe('le nom du paramètre suit le champ source', () => {
     const r = await executerFonctionJs('return new Date(naissance).getFullYear();', '1978-04-12',
       { nomParametre: 'naissance' });
     expect(r).toMatchObject({ ok: true, valeur: '1978' });
+  });
+});
+
+/**
+ * 🔴 L'ESSAI ET L'EXÉCUTION DOIVENT DONNER LE MÊME VERDICT, et ce cas garde la promesse écrite dans
+ * `essayerFonctionJs` : « le même bac à sable que l'exécution ; un essai qui réussirait là où le parcours
+ * échoue serait pire que pas d'essai du tout ».
+ *
+ * Relevé en revue le 2026-09-14, dans l'AUTRE sens : la route d'essai n'envoyait pas le champ source, donc
+ * l'essai échouait sur « adresse is not defined » alors que le même code marche en production. C'est
+ * exactement le symptôme que ce lot repare, laisse intact sur le seul chemin où le client le vérifie.
+ */
+describe('la route d’essai passe le champ source, comme l’exécution', () => {
+  it('🔴 le corps de la route porte `champSource` et le transmet', () => {
+    const src = readFileSync(resolve(__dirname, '../src/http/workflows.ts'), 'utf8');
+    const bloc = src.slice(src.indexOf("workflows/js-test"), src.indexOf("workflows/js-test") + 2500);
+    expect(bloc).toContain('champSource');
+    expect(bloc).toContain('nomParametre');
   });
 });
