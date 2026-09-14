@@ -21,7 +21,8 @@ présenté n'est jamais écrit nulle part.
 `mba.messagingme.app` est **en prod LIVE** (`DRY_RUN=false`, numéro Zadarma réel). Console de gestion
 WhatsApp/Meta, 3 rôles : **admin** (tout), **manager** et **agent** (inbox seule).
 ⚠️ **Manager est un STATUT, pas encore des droits** (2026-08-20) : il s'attribue, mais il donne exactement les
-mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas été décidé.
+mêmes accès qu'un agent, PLUS les écrans de conformité depuis le 2026-09-14 (voir « Sécurité & compliance »).
+Le reste de ses prérogatives n'est toujours pas décidé.
 
 ## Navigation (trois onglets en haut, barre latérale par onglet)
 
@@ -1595,6 +1596,14 @@ scénario, comment importer des contacts.
 Un menu au bas de la barre, à côté de Paramètres et Support, qui rassemble **tout ce qui sert à rendre des
 comptes** : ce qui a été fait, ce qui a échoué, et ce que les gens ont accepté. Sa page d'accueil porte une
 boîte par sous-menu.
+
+- ✅ **Un MANAGER y accède, en plus de l'Inbox** (2026-09-14). C'est le premier endroit où ce rôle sert à
+  quelque chose : il voit les désabonnés, la politique d'annonce d'IA, le journal des actions et celui des
+  erreurs. Sa barre latérale ne porte que ça : on ne lui montre pas des dossiers qui le renverraient à
+  l'Inbox.
+  - 🔴 **Mais il ne RÈGLE rien.** Brancher un connecteur sur le consentement, ou changer la politique
+    d'annonce d'IA, engagent la marque : ces deux gestes restent réservés à un administrateur, refusés par le
+    serveur et absents de son écran. Rendre des comptes et décider ne sont pas le même métier.
 
 - ✅ **Consentement** (2026-09-13) : la liste des personnes qui ont demandé à ne plus être contactées, avec
   **depuis quand** et **par quel chemin** le refus est arrivé (saisi par l'équipe, posé par un scénario, coché

@@ -190,15 +190,14 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * L'ENCADREMENT, ET PAS TOUT LE MONDE : `admin` et `manager`. La liste des désabonnés nomme des personnes
    * avec leur numéro ; c'est un artefact de conformité, pas un outil de traitement quotidien.
    *
-   * 🔴 ET AUCUN MANAGER NE PEUT L'ATTEINDRE AUJOURD'HUI, ce que ce commentaire laissait croire. Relevé en
-   * revue du chantier complet, le 2026-09-14 : `web/components/AppShell.tsx` redirige vers `/inbox` tout
-   * compte qui n'est pas `admin`, pour TOUTE page autre que l'inbox, et le menu Sécurité ne lui est même pas
-   * rendu. Cette garde est donc la seule du dépôt à nommer `manager`, et elle est INERTE côté console.
+   * 🔴 ELLE A ÉTÉ INERTE UNE JOURNÉE, ET C'EST CE QUE LA REVUE DU CHANTIER A TROUVÉ : `AppShell` renvoyait à
+   * l'inbox tout compte non-admin, sur toute page, donc aucun manager n'atteignait cet écran. Tranché par
+   * Julien le 2026-09-14 (« ouvre la console aux managers sur les écrans de conformité ») : la console et
+   * le serveur bougent désormais ensemble, et `web/lib/nav.ts` porte la liste des écrans ouverts.
    *
-   * ⚠️ ELLE RESTE TELLE QUELLE, ET CE N'EST PAS UN OUBLI. « Ce qu'un manager a le droit de faire » est un
-   * arbitrage OUVERT depuis le 2026-08-20 (`todo.md`), en attente de Julien : l'ouvrir ici reviendrait à le
-   * trancher en silence, et le refermer jetterait un travail que l'arbitrage validera peut-être. Ce qui
-   * était faux, c'est de l'écrire comme une capacité livrée.
+   * ⚠️ ELLE COUVRE LES LECTURES DE CONFORMITÉ, ET ELLES SEULES : les désabonnés, les refus possibles, le
+   * journal des actions et les deux moitiés du journal des erreurs. Consulter n'est pas décider : brancher
+   * un connecteur sur le consentement, purger un contact ou bloquer quelqu'un restent `forbidNonAdmin`.
    */
   const gardeEncadrement = gardeEtendue(guard, makeRequireRole(['admin', 'manager']));
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
@@ -510,10 +509,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * Monté ici et pas dans un fichier à part : toutes les actions journalisées sont des actions de CONTACT,
    * et ce fichier est déjà leur périmètre admin. `targetId` filtre sur un contact précis (fiche).
    */
-  app.get('/tenants/:tenantId/audit', opts, async (req, reply) => {
+  app.get('/tenants/:tenantId/audit', gardeEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
     if (!deps.listAudit) return reply.code(503).send({ error: 'journal indisponible sur cette instance' });
     const q = (req.query ?? {}) as { limit?: unknown; targetId?: unknown; q?: unknown; acteur?: unknown; telephone?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
@@ -537,10 +535,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * arrivé » sans dire « à qui » ne répond à rien. Il n'a rien d'immuable, il se lit depuis les destinataires
    * de campagne, et il disparaît avec le contact quand on le purge.
    */
-  app.get('/tenants/:tenantId/erreurs-livraison', opts, async (req, reply) => {
+  app.get('/tenants/:tenantId/erreurs-livraison', gardeEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
     if (!deps.listErreursLivraison) return reply.code(503).send({ error: 'journal des erreurs indisponible sur cette instance' });
     const q = (req.query ?? {}) as { limit?: unknown; q?: unknown; telephone?: unknown; code?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
@@ -568,10 +565,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * ⚠️ ADMIN-ONLY, comme la précédente : elle nomme les systèmes internes d'un client et ce qu'ils ont
    * répondu.
    */
-  app.get('/tenants/:tenantId/erreurs-systeme', opts, async (req, reply) => {
+  app.get('/tenants/:tenantId/erreurs-systeme', gardeEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
     if (!deps.listErreursSysteme) return reply.code(503).send({ error: 'journal système indisponible sur cette instance' });
     const q = (req.query ?? {}) as { limit?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;

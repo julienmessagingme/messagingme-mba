@@ -430,8 +430,16 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   agent**), `identities` (le mot de passe vit sur l'ADRESSE, pas sur le compte : « une adresse = UN mot de
   passe » est exprimé par la structure), `auth_tokens` (invite | reset, `token_hash` sha256, consommation
   atomique dans le `update ... returning`).
-- ⚠️ **Trois rôles, mais un seul niveau de droits** : tout ce qui est réservé l'est à `admin`. Un `manager` a
-  aujourd'hui les accès d'un `agent` ; c'est un statut, pas encore des droits.
+- ⚠️ **Trois rôles, et DEUX niveaux de droits depuis le 2026-09-14.** Un `agent` n'a que l'Inbox. Un
+  `manager` y ajoute les écrans de CONFORMITÉ (Sécurité : accueil, Consentement, IA, Audit trails, Journal
+  des erreurs) : il consulte, il ne règle rien. Tout le reste est `admin`.
+  🔴 **La liste est UNE, et trois choses en dérivent** : `ECRANS_ENCADREMENT` / `accesAutorise`
+  (`web/lib/nav.ts`) servent la garde d'accès de la console, le FILTRAGE du menu, et la carte du bot d'aide.
+  Côté serveur, la garde correspondante est `requireEncadrement` (`src/server.ts`). Les deux moitiés doivent
+  bouger ensemble : une garde serveur qui nomme un rôle sans que la console y mène n'est pas une capacité,
+  c'est une promesse, et c'est exactement ce que la revue du chantier 6 a trouvé.
+  ⚠️ **Le reste des prérogatives d'un manager n'est pas décidé** (campagnes, contacts, scénarios, réglages) :
+  ça se décide écriture par écriture, cf. `todo.md`.
 - 🔴 **La connexion multi-espace est en deux temps.** Un seul espace -> session directe. Plusieurs -> le
   serveur rend la LISTE et un jeton de CHOIX, jamais une session. Ce jeton ne peut pas tenir lieu de session
   (pas de `tenantId` ni de `role` à la racine, `kind` vérifié) et il PORTE la liste signée des espaces

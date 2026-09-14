@@ -193,15 +193,6 @@ qu'elle n'avait pas relevé. Les deux, à chaque fois.
   accents ni mots de la marque. C'est ce que LIT le client au moment du transfert.
 - **Poser une photo de profil sur le numéro WhatsApp** : la pastille de l'Accueil n'affiche rien sans elle,
   et aucun des deux numéros du parc n'en a.
-- 🔴 **L'arbitrage « ce qu'un manager a le droit de faire »**, ouvert dans [todo.md](todo.md) depuis le
-  2026-08-20, et le chantier 6 vient de le rendre concret. La route des désabonnés est la PREMIÈRE du dépôt
-  à nommer `manager` (`admin` + `manager`), et elle est INERTE : `AppShell` redirige vers l'inbox tout compte
-  non-admin, sur toute page. Deux sorties, et c'est à toi de choisir :
-  - ouvrir la console à un manager sur les écrans de conformité (Consentement, Audit trails), ce qui donne un
-    sens au rôle et à ce qui a été écrit ;
-  - ou retirer `manager` de cette garde, et acter que le rôle reste un agent tant que rien n'est tranché.
-  ⚠️ Ne rien faire est la troisième, et c'est la seule mauvaise : une garde qui nomme un rôle sans lui ouvrir
-  la porte finira par être lue comme une capacité livrée, exactement ce que la revue vient de corriger.
 - **L'arbitrage « arrêt maladie »** ci-dessus.
 - Le détail des décisions produit en attente (coût du MBA, allowlist, lancer un autre scénario depuis un
   agent) vit dans [todo.md](todo.md).

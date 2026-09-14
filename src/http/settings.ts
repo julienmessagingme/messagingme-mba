@@ -91,9 +91,25 @@ function normalizeBusinessHours(raw: unknown): BusinessHours | null {
  * « GET ouvert (lecture), PUT admin-only » pendant longtemps : c'était faux, et la phrase a été recopiée
  * telle quelle dans une route neuve le 2026-09-13. Le paramètre s'appelle `requireAuth` par héritage, mais
  * ce qu'on lui passe est la garde d'administration.
+ *
+ * ⚠️ UNE SEULE EXCEPTION DEPUIS LE 2026-09-14 : `GET /settings/mention-ia`, la LECTURE de la politique
+ * d'annonce d'IA, ouverte à l'encadrement par `requireEncadrement`. C'est un écran de conformité, et son
+ * ÉCRITURE reste admin.
  */
-export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, requireAuth?: Guard): void {
+export function registerSettings(
+  app: FastifyInstance,
+  deps: SettingsRouteDeps,
+  requireAuth?: Guard,
+  /**
+   * La garde de l'ENCADREMENT (`admin` + `manager`), pour les seules LECTURES de conformité.
+   *
+   * ⚠️ Absente -> on retombe sur la garde d'administration, donc le comportement d'avant. Un module monté
+   * sans elle ne s'ouvre à personne de plus.
+   */
+  requireEncadrement?: Guard,
+): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  const gardeEncadrement = requireEncadrement ? { preHandler: requireEncadrement } : guard;
 
   app.get('/tenants/:tenantId/settings', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -128,14 +144,14 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
   /**
    * LE CONNECTEUR PRÉVENU À CHAQUE DÉSABONNEMENT : lecture.
    *
-   * ⚠️ ADMIN SEULEMENT, COMME TOUT CE MODULE, et ce n'était PAS ce que ce commentaire disait d'abord : il
-   * annonçait « ouverte à tout compte authentifié, comme `GET /settings` », en se fiant au docblock de
-   * `registerSettings` (« GET ouvert (lecture) »). Les deux étaient faux, mesuré en écrivant le test :
-   * `src/server.ts` monte ce module entier avec `requireAdmin`. L'écran du Consentement, lui, est ouvert à
-   * l'encadrement : il n'affiche donc ce bloc QUE pour un administrateur, plutôt que de montrer à un manager
-   * un réglage dont la lecture lui rendrait 403.
+   * ⚠️ ADMIN SEULEMENT, ALORS QUE SA VOISINE `mention-ia` EST OUVERTE À L'ENCADREMENT, et l'écart est le
+   * sujet : brancher un connecteur, c'est décider que des données de contact partent chez un tiers. Un
+   * manager CONSULTE, il ne décide pas. L'écran du Consentement n'affiche donc ce bloc que pour un
+   * administrateur, plutôt que de montrer à un manager un réglage dont la lecture lui rendrait 403.
    *
-   * Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée : celle-ci l'a été d'un
+   * ⚠️ CE COMMENTAIRE A ANNONCÉ « ouverte à tout compte authentifié, comme `GET /settings` », en se fiant au
+   * docblock de `registerSettings` (« GET ouvert (lecture) »). Les deux étaient faux, mesuré en écrivant le
+   * test. Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée : celle-ci l'a été d'un
    * docblock voisin, lui-même faux depuis longtemps.
    */
   app.get('/tenants/:tenantId/settings/poussee-optout', guard, async (req, reply) => {
@@ -191,7 +207,7 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
    * sous les messages de son agent. Lui appliquer notre déclaration par symétrie en ferait deux. L'écran le
    * dit, plutôt que de laisser croire que la politique couvre tout ce qui parle sur l'espace.
    */
-  app.get('/tenants/:tenantId/settings/mention-ia', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/settings/mention-ia', gardeEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { mentionIaFrequence } = await deps.getSettings(tenant);

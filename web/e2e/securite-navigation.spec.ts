@@ -12,18 +12,20 @@ import { TREIZE_POUCES, pasDeDebordement } from './aide/largeur';
  * autre qu'ils sont bien ici : sans le second, « déplacer » et « supprimer » se ressembleraient.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
+/** La MEME session, en manager : c est le seul moyen d exercer l ouverture du 2026-09-14 pour de vrai. */
+const SESSION_MANAGER = { ...SESSION, email: 'manager@e2e.test', role: 'manager' };
 
 /** Les PATCH captés par le faux serveur : c'est ce qui prouve qu'un choix est bien ENVOYÉ, pas seulement affiché. */
 type Ecriture = { chemin: string; corps: unknown };
 
-async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: string }>; branche?: string | null; ecritures?: Ecriture[]; mentionIa?: string | null; agentsIa?: Array<{ id: string; label: string; status: string; mentionIa: string }> } = {}): Promise<void> {
+async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: string }>; branche?: string | null; ecritures?: Ecriture[]; mentionIa?: string | null; agentsIa?: Array<{ id: string; label: string; status: string; mentionIa: string }>; session?: Record<string, unknown> } = {}): Promise<void> {
   const requetes = opts.requetes ?? [{ id: 'rq-1', label: 'Desabonner dans le CRM' }];
   let branche = opts.branche ?? null;
   let mentionIa = opts.mentionIa === undefined ? null : opts.mentionIa;
   const agentsIa = opts.agentsIa ?? [
     { id: 'ag-1', label: 'Conseiller sejours', status: 'active', mentionIa: 'Vous echangez avec un assistant automatique.' },
   ];
-  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), opts.session ?? SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const chemin = new URL(route.request().url()).pathname.replace('/api/backend', '');
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
@@ -288,6 +290,65 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(lignes.nth(0)).toContainText('votre système a répondu 500');
     await expect(lignes.nth(1)).toContainText('un bloc « Appel HTTP » d’un scénario');
     await expect(lignes.nth(1)).toContainText('n’a pas répondu à temps');
+  });
+
+  /**
+   * 🔴 L OUVERTURE AUX MANAGERS, EXERCEE PAR LE VRAI PARCOURS (tranche par Julien le 2026-09-14).
+   *
+   * La route des desabonnes nommait `admin` et `manager` depuis le 2026-09-13, et elle etait INERTE :
+   * `AppShell` renvoyait a l inbox tout compte non-admin. Une garde serveur qui nomme un role sans que la
+   * console y mene n est pas une capacite, c est une promesse. Ce cas est le seul qui le prouve : les tests
+   * de route, eux, passaient deja.
+   */
+  test('🔴 un MANAGER atteint les ecrans de conformite', async ({ page }) => {
+    await monter(page, { session: SESSION_MANAGER });
+    await page.goto('/securite/consentement');
+    await expect(page.getByTestId('securite-consentement')).toBeVisible();
+    await expect(page.getByTestId('desabonne-ligne')).toHaveCount(2);
+
+    await page.goto('/securite/erreurs');
+    await expect(page.getByTestId('erreurs-livraison')).toBeVisible();
+    await page.goto('/securite/ia');
+    await expect(page.getByTestId('securite-ia')).toBeVisible();
+  });
+
+  /**
+   * 🔴 MAIS IL NE DECIDE PAS. Consulter et regler ne sont pas le meme geste : brancher un connecteur sur le
+   * consentement envoie des donnees de contact chez un tiers, et changer la politique d IA engage la marque.
+   * Les deux restent admin, cote serveur ET cote ecran.
+   */
+  test('🔴 ...mais il ne REGLE rien : ni le connecteur, ni la politique d IA', async ({ page }) => {
+    await monter(page, { session: SESSION_MANAGER });
+    await page.goto('/securite/consentement');
+    await expect(page.getByTestId('poussee-optout'), 'le branchement est une decision, pas une consultation').toHaveCount(0);
+
+    await page.goto('/securite/ia');
+    // L ecran s affiche et montre la politique, mais les trois choix sont desactives.
+    await expect(page.getByTestId('mention-ia-session').locator('input')).toBeDisabled();
+  });
+
+  /**
+   * ⚠️ ET ON NE LUI MONTRE QUE CE QU IL PEUT OUVRIR. Une barre laterale pleine de dossiers qui le
+   * renverraient tous a l inbox serait pire qu une barre courte : on lui promettrait des portes fermees.
+   */
+  test('⚠️ sa barre laterale ne porte QUE Securite', async ({ page }) => {
+    await monter(page, { session: SESSION_MANAGER });
+    await page.goto('/securite');
+    const bas = page.getByTestId('nav-bas');
+    await expect(bas.getByRole('link', { name: 'Consentement' })).toBeVisible();
+    // Parametres, Support et Developers sont dans le MEME bloc bas, et ils ne sont pas pour lui.
+    await expect(bas.getByRole('link', { name: 'Paramètres' })).toHaveCount(0);
+    await expect(bas.getByRole('link', { name: 'Support' })).toHaveCount(0);
+  });
+
+  /**
+   * ⚠️ LE TEMOIN DANS L AUTRE SENS : un AGENT, lui, n a toujours que l inbox. Sans ce cas, on aurait pu
+   * ouvrir la console a tout ce qui n est pas admin sans que rien ne rougisse.
+   */
+  test('⚠️ un AGENT reste renvoye a l inbox', async ({ page }) => {
+    await monter(page, { session: { ...SESSION, email: 'agent@e2e.test', role: 'agent' } });
+    await page.goto('/securite/consentement');
+    await expect(page).toHaveURL(/\/inbox/);
   });
 
   test('rien ne deborde en 13 pouces', async ({ page }) => {

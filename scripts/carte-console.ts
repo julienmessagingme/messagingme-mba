@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { arbresNav, type NavEntree } from '../web/lib/nav';
+import { accesAutorise, arbresNav, type NavEntree } from '../web/lib/nav';
 import type { EcranAide } from '../src/aide/carte';
 
 /**
@@ -21,14 +21,20 @@ const fr = (f: string) => f;
 const en = (_f: string, e: string) => e;
 
 /**
- * L'accès à un écran, DÉDUIT de la règle unique de `AppShell` (`const adminOnly = active !== 'inbox'`).
+ * L'accès à un écran, DÉRIVÉ de `accesAutorise` (`web/lib/nav.ts`), la règle que la console applique.
  *
  * 🔴 CALCULÉ, JAMAIS RECOPIÉ PAR ENTRÉE. Un drapeau posé sur chaque entrée de la barre serait une seconde
  * expression de la même règle, et elle finirait par la contredire sans que rien ne le dise : une entrée
- * ajoutée sans le drapeau deviendrait visible d'un agent. Le prix de ce choix est un test qui LIT la ligne
- * de `AppShell` et casse le jour où elle change (`tests/aide-carte.test.ts`).
+ * ajoutée sans le drapeau deviendrait visible d'un agent.
+ *
+ * ⚠️ LA RÈGLE A QUITTÉ `AppShell` LE 2026-09-14, ET C'EST UN GAIN. Elle vivait dans un composant React,
+ * donc le seul test possible LISAIT sa ligne source et cassait à la moindre reformulation. C'est désormais
+ * une fonction PURE, que la console, la carte et le test appellent tous les trois.
  */
-const reserveAuxAdmins = (cle: string): boolean => cle !== 'inbox';
+const accesDe = (cle: string): 'tous' | 'encadrement' | 'admin' => {
+  if (accesAutorise(cle, 'agent')) return 'tous';
+  return accesAutorise(cle, 'manager') ? 'encadrement' : 'admin';
+};
 
 /** Les libellés anglais, par clé, pour les apparier aux entrées françaises. */
 function libellesAnglais(): Map<string, string> {
@@ -53,7 +59,7 @@ function aplatir(entrees: NavEntree[], anglais: Map<string, string>, chemin: str
         href: e.href,
         fr: e.label,
         en: anglais.get(e.key) ?? e.label,
-        adminOnly: reserveAuxAdmins(e.key),
+        acces: accesDe(e.key),
         chemin,
       });
     }
@@ -101,5 +107,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const ecrans = construireCarte();
   writeFileSync(cible, rendre(ecrans), 'utf8');
   // eslint-disable-next-line no-console
-  console.log(`carte émise : ${ecrans.length} écrans, dont ${ecrans.filter((e) => !e.adminOnly).length} ouverts aux agents`);
+  const par = (a: string) => ecrans.filter((e) => e.acces === a).length;
+  console.log(`carte émise : ${ecrans.length} écrans, dont ${par('tous')} ouverts à tous et ${par('encadrement')} à l'encadrement`);
 }

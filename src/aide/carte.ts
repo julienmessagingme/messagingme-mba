@@ -21,7 +21,15 @@ export interface EcranAide {
   /** Le libellé affiché dans la barre, en français puis en anglais. */
   fr: string;
   en: string;
-  adminOnly: boolean;
+  /**
+   * QUI peut ouvrir cet écran. Trois niveaux depuis le 2026-09-14, où les écrans de conformité se sont
+   * ouverts à l'encadrement : `tous` (l'Inbox), `encadrement` (admin + manager), `admin`.
+   *
+   * ⚠️ IL Y AVAIT UN BOOLÉEN, ET IL NE POUVAIT PLUS DIRE LA VÉRITÉ. `adminOnly` n'exprimait que deux
+   * niveaux : un écran ouvert au manager aurait été soit fermé à lui, soit ouvert aux agents. Un booléen
+   * qui doit répondre à trois questions ment à la troisième.
+   */
+  acces: 'tous' | 'encadrement' | 'admin';
   /** Les groupes qui mènent à l'écran, pour dire « AI Agent > MBA » plutôt que le seul nom de la page. */
   chemin: string[];
 }
@@ -33,12 +41,13 @@ export function chargerCarte(): EcranAide[] {
 /**
  * Les écrans que cette personne a le droit d'atteindre.
  *
- * ⚠️ TOUT RÔLE QUI N'EST PAS `admin` EST TRAITÉ COMME UN AGENT, et c'est délibéré : un rôle ajouté plus
- * tard, mal orthographié ou vide doit voir MOINS, jamais plus. C'est la même prudence que la règle
- * d'affichage de la console, qui réserve tout sauf l'Inbox.
+ * ⚠️ TOUT RÔLE INCONNU EST TRAITÉ COMME UN AGENT, et c'est délibéré : un rôle ajouté plus tard, mal
+ * orthographié ou vide doit voir MOINS, jamais plus. La liste est fermée, l'inconnu tombe au plancher.
  */
 export function carteVisiblePar(role: string): EcranAide[] {
-  return role === 'admin' ? chargerCarte() : chargerCarte().filter((e) => !e.adminOnly);
+  if (role === 'admin') return chargerCarte();
+  if (role === 'manager') return chargerCarte().filter((e) => e.acces !== 'admin');
+  return chargerCarte().filter((e) => e.acces === 'tous');
 }
 
 /**

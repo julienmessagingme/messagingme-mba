@@ -100,6 +100,61 @@ export function ongletDeLaPage(arbres: Record<Onglet, NavEntree[]>, key: string)
 }
 
 /**
+ * LES ÉCRANS OUVERTS À L'ENCADREMENT (`manager`), EN PLUS DE L'INBOX.
+ *
+ * 🔴 UNE SEULE LISTE, ET DEUX CHOSES EN VIVENT : la garde d'accès de `AppShell` et le FILTRAGE du menu. Les
+ * écrire séparément produirait exactement le défaut que la revue du 2026-09-14 a trouvé dans l'autre sens :
+ * une garde serveur qui nomme `manager` pendant que la console ne l'y mène jamais. Une entrée de menu qui
+ * renvoie à l'inbox est aussi mauvaise qu'une porte fermée qu'on annonce.
+ *
+ * 🔴 CE QUE CETTE OUVERTURE DONNE, ET CE QU'ELLE NE DONNE PAS (tranché par Julien le 2026-09-14 :
+ * « ouvre la console aux managers sur les écrans de conformité »). Un manager CONSULTE : la liste des
+ * désabonnés, la politique d'annonce d'IA, les deux journaux. Il ne RÈGLE rien : brancher un connecteur sur
+ * le consentement ou changer la politique d'IA restent des décisions de la marque, refusées côté serveur et
+ * masquées côté écran. « Rendre des comptes » et « décider » ne sont pas le même geste.
+ *
+ * ⚠️ LE JOURNAL DE LIVRAISON PORTE LES NUMÉROS DE TÉLÉPHONE, et il est dans cette liste. Le plan du chantier
+ * 6 le gardait admin-only ; l'ouvrir est un choix explicite, pas un glissement. Il se défend : un manager
+ * voit déjà des numéros dans l'Inbox, qui est son écran de tous les jours, et « quel message n'est pas
+ * arrivé » sans dire « à qui » ne répond à rien.
+ */
+export const ECRANS_ENCADREMENT: readonly string[] = [
+  'securite', 'securite-consentement', 'securite-ia', 'securite-audit', 'securite-erreurs',
+];
+
+/**
+ * Ce rôle peut-il ouvrir cet écran ?
+ *
+ * ⚠️ C'est un CONFORT, pas un contrôle : la barrière est le `preHandler` du serveur. Elle existe pour ne pas
+ * promettre une porte fermée, ce qui est exactement ce que l'ancien `adminOnly` faisait à l'envers.
+ */
+export function accesAutorise(ecran: string, role: string): boolean {
+  if (role === 'admin') return true;
+  if (ecran === 'inbox') return true;
+  return role === 'manager' && ECRANS_ENCADREMENT.includes(ecran);
+}
+
+/**
+ * L'arbre de nav réduit à ce que ce rôle peut ouvrir.
+ *
+ * ⚠️ UN GROUPE DONT PLUS AUCUN ENFANT N'EST OUVERT DISPARAÎT, sinon on afficherait un dossier vide. Un
+ * groupe dont la clé elle-même est autorisée (la page d'accueil de Sécurité) est gardé même si ses enfants
+ * sont filtrés : c'est le cas d'une page qui existe par elle-même.
+ */
+export function navPourRole(items: NavEntree[], role: string): NavEntree[] {
+  if (role === 'admin') return items;
+  const garder = (liste: NavEntree[]): NavEntree[] => liste.flatMap((item) => {
+    if (item.children) {
+      const enfants = garder(item.children);
+      if (enfants.length === 0 && !accesAutorise(item.key, role)) return [];
+      return [{ ...item, children: enfants }];
+    }
+    return accesAutorise(item.key, role) ? [item] : [];
+  });
+  return garder(items);
+}
+
+/**
  * Le traducteur de la console, tel que la barre l'utilise.
  *
  * ⚠️ `en` est OBLIGATOIRE ICI, alors que `useT()` le déclare facultatif, et ce n'est pas un oubli à

@@ -10,7 +10,7 @@ import { AccountMenu } from './AccountMenu';
 import { BoutonAide } from './BoutonAide';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
-import { arbresNav, groupesAOuvrir, ongletDeLaPage, type NavEntree, type Onglet } from '@/lib/nav';
+import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, type NavEntree, type Onglet } from '@/lib/nav';
 
 type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'outils-espace' | 'parametres' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs';
 
@@ -78,8 +78,20 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     () => Object.fromEntries(chemin.map((k) => [k, true])),
   );
 
-  // Fail-safe : tout ce qui n'est pas l'inbox est réservé aux admins.
-  const adminOnly = active !== 'inbox';
+  /**
+   * L'ACCÈS À CET ÉCRAN, DÉRIVÉ DE `accesAutorise` (`lib/nav.ts`) ET DE RIEN D'AUTRE.
+   *
+   * 🔴 CETTE GARDE DISAIT « tout ce qui n'est pas l'inbox est réservé aux admins », ET C'ÉTAIT TROP LARGE
+   * DEPUIS LE 2026-09-13. Le centre de Sécurité a livré une route ouverte à `admin` ET `manager` (la liste
+   * des désabonnés), la PREMIÈRE du dépôt à nommer ce rôle : elle était INERTE, parce qu'un manager était
+   * renvoyé à l'inbox avant même que la page ne se monte. Trouvé en revue du chantier complet le
+   * 2026-09-14, tranché par Julien le même jour : « ouvre la console aux managers sur les écrans de
+   * conformité ».
+   *
+   * ⚠️ C'EST UN CONFORT, PAS UN CONTRÔLE : la barrière est le `preHandler` du serveur, et elle seule.
+   * Celle-ci existe pour ne pas promettre une porte fermée.
+   */
+  const autorise = (role: string): boolean => accesAutorise(active, role);
 
   useEffect(() => {
     const s = getSession();
@@ -87,12 +99,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       router.replace('/login');
       return;
     }
-    if (adminOnly && s.role !== 'admin') {
+    if (!accesAutorise(active, s.role)) {
       router.replace('/inbox');
       return;
     }
     setSession(s);
-  }, [router, adminOnly]);
+  }, [router, active]);
 
   // Pastille de non-lus : relevée à l'arrivée puis toutes les 30 s. Échec silencieux (0) : une pastille est
   // une information d'appoint, elle ne doit jamais faire apparaître une erreur en travers du menu.
@@ -117,7 +129,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   }, [session]);
 
   if (!session) return null;
-  if (adminOnly && session.role !== 'admin') return null;
+  if (!autorise(session.role)) return null;
 
   function logout() {
     clearSession();
@@ -134,7 +146,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * un sélecteur résolvant à deux éléments.
    */
   const NAV_DU_CORPS: Record<Onglet, NavEntree[]> = { console: NAV_CONSOLE, inbox: NAV_INBOX, perf: NAV_PERF };
-  const nav = NAV_DU_CORPS[onglet];
+  // 🔴 FILTRÉ PAR RÔLE, PAR LA MÊME FONCTION QUE LA GARDE. Un manager ne doit pas voir une liste de dossiers
+  // qui le renverraient tous à l'inbox : une porte annoncée et fermée est pire qu'une porte absente.
+  const nav = navPourRole(NAV_DU_CORPS[onglet], session.role);
+  const navBas = navPourRole(NAV_ADMIN_BAS, session.role);
 
   const itemCls = (on: boolean) =>
     `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'}`;
@@ -228,11 +243,18 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/performance' },
   ];
   /**
-   * 🔴 Un compte `agent` n'a accès QU'À l'inbox (`adminOnly` plus haut, et le serveur derrière lui). Lui
-   * montrer trois onglets dont deux le renverraient aussitôt à l'inbox serait pire que la barre unique
-   * d'avant : on lui promettrait deux portes fermées.
+   * 🔴 ON NE MONTRE QU'UNE PORTE QU'ON PEUT OUVRIR. Un compte `agent` n'a que l'inbox : lui montrer trois
+   * onglets dont deux le renverraient aussitôt serait pire que la barre unique d'avant.
+   *
+   * ⚠️ UN `manager` GARDE LA CONSOLE, parce que c'est par elle qu'on atteint le centre de Sécurité (le menu
+   * y vit, en bas de la colonne). Sa barre latérale, elle, est filtrée par `navPourRole` : il n'y verra que
+   * ce qu'il peut ouvrir, jamais une liste de dossiers fermés.
    */
-  const ongletsVisibles = session.role === 'admin' ? ONGLETS_UI : ONGLETS_UI.filter((o) => o.cle === 'inbox');
+  const ongletsVisibles = ONGLETS_UI.filter((o) =>
+    // ⚠️ DÉRIVÉ DE L'ARBRE, pas d'une correspondance onglet -> écran écrite à la main : un onglet se montre
+    // quand il MÈNE quelque part pour ce rôle. L'inbox n'a pas d'arbre (son écran porte son propre menu),
+    // elle est donc nommée à part, et c'est le seul cas particulier.
+    o.cle === 'inbox' || navPourRole(ARBRES[o.cle], session.role).length > 0);
 
   /**
    * L'onglet Inbox n'a PAS de menu de navigation : son écran porte son propre menu de dossiers (lot B).
@@ -250,10 +272,15 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       {/* flex-1 pousse le bloc bas vers le bas ; overflow-y-auto fait scroller le CORPS de la nav sur un écran
           court, au lieu de faire déborder la colonne et de rendre le bloc bas inatteignable. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2">{renderNav(nav)}</div>
-      {/* Le bloc bas (Developers) appartient à la CONSOLE : le montrer sous le menu du Performance Lab y
-          rangerait une entrée qui n'est pas de cet onglet. */}
-      {session.role === 'admin' && onglet === 'console' && (
-        <div data-testid="nav-bas" className="border-t border-ink-100 px-2 py-3">{renderNav(NAV_ADMIN_BAS)}</div>
+      {/* Le bloc bas appartient à la CONSOLE : le montrer sous le menu du Performance Lab y rangerait une
+          entrée qui n'est pas de cet onglet.
+          🔴 LA CONDITION PORTAIT `session.role === 'admin'`, UN SECOND CONTRÔLE DE RÔLE ÉCRIT EN DUR, et
+          c'est exactement le motif « une capacité câblée sur deux consommateurs sur trois » : ouvrir les
+          écrans de conformité aux managers a filtré `navBas` sans rien montrer, parce que ce bloc restait
+          fermé. Il se décide désormais sur le CONTENU (`navBas.length`), donc un rôle qui n'a rien à voir
+          ici ne voit pas un séparateur vide, et un rôle qui a quelque chose le voit, sans nouvelle règle. */}
+      {onglet === 'console' && navBas.length > 0 && (
+        <div data-testid="nav-bas" className="border-t border-ink-100 px-2 py-3">{renderNav(navBas)}</div>
       )}
     </div>
   );

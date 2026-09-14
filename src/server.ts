@@ -428,6 +428,19 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
   // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
   const requireAdmin = requireAuth ? [requireAuth, makeRequireRole(['admin'])] : undefined;
+  /**
+   * L'ENCADREMENT : `admin` ET `manager`.
+   *
+   * 🔴 OUVERT AUX ÉCRANS DE CONFORMITÉ LE 2026-09-14, sur décision de Julien. Le rôle `manager` existait
+   * depuis la migration 0065 et donnait exactement les accès d'un agent ; le centre de Sécurité a livré la
+   * première route qui le nomme, et la revue du chantier a montré qu'elle était INERTE (la console renvoyait
+   * tout compte non-admin à l'inbox). Les deux moitiés bougent donc ensemble, ici et dans `web/lib/nav.ts`.
+   *
+   * ⚠️ CONSULTER N'EST PAS DÉCIDER. Un manager LIT la liste des désabonnés, la politique d'annonce d'IA et
+   * les deux journaux ; il ne branche aucun connecteur et ne change aucune politique. Ces écritures-là
+   * restent sur `requireAdmin`, et l'écran masque ce qu'il ne peut pas faire.
+   */
+  const requireEncadrement = requireAuth ? [requireAuth, makeRequireRole(['admin', 'manager'])] : undefined;
   if (deps.auth) registerAuth(app, deps.auth, requireAuth);
   if (deps.import) registerImport(app, deps.import, requireAdmin, limiteCouteuse);
   if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin, limiteCouteuse);
@@ -449,7 +462,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.inbox) registerInbox(app, deps.inbox, requireAuth, requireAdmin, limiteCouteuse);
   if (deps.hubspotEvents) registerHubspotEvents(app, deps.hubspotEvents);
   if (deps.stats) registerStats(app, deps.stats, requireAdmin);
-  if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
+  if (deps.settings) registerSettings(app, deps.settings, requireAdmin, requireEncadrement);
   if (deps.admin) registerUsers(app, deps.admin, requireAdmin);
   if (deps.flows) registerFlows(app, deps.flows, requireAdmin);
   if (deps.agents) registerAgents(app, deps.agents, requireAdmin);

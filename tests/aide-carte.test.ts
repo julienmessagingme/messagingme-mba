@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { construireCarte } from '../scripts/carte-console';
 import { CARTE_CONSOLE } from '../src/aide/carte-console';
 import { chargerCarte, carteVisiblePar, resoudre } from '../src/aide/carte';
+import { accesAutorise } from '../web/lib/nav';
 
 /**
  * LA CARTE DE LA CONSOLE, telle que le serveur la lit.
@@ -52,18 +53,38 @@ describe('la carte émise', () => {
 });
 
 describe('qui voit quoi', () => {
-  it('🔴 la règle d’accès est celle d’`AppShell`, et ce test casse le jour où elle bouge', () => {
-    // La carte CALCULE `adminOnly` depuis cette règle au lieu de porter un drapeau par entrée : un drapeau
-    // recopié finirait par contredire la vraie règle sans que rien ne le dise. Le prix de ce choix est ce
-    // test : la règle vit dans un composant React, donc on la lit dans sa source.
-    const shell = readFileSync(new URL('../web/components/AppShell.tsx', import.meta.url), 'utf8');
-    expect(shell, "la règle d'accès de la console a changé : mettre `scripts/carte-console.ts` d'accord")
-      .toContain("const adminOnly = active !== 'inbox';");
+  /**
+   * 🔴 LA RÈGLE EST LA MÊME FONCTION DES DEUX CÔTÉS, ET C'EST UN GAIN DU 2026-09-14.
+   *
+   * Elle vivait dans un composant React (`const adminOnly = active !== 'inbox'`), donc le seul test
+   * possible LISAIT sa ligne source et cassait à la moindre reformulation, sans rien prouver du
+   * comportement. C'est désormais `accesAutorise` (`web/lib/nav.ts`), une fonction PURE que la console, le
+   * générateur de carte et ce test appellent tous les trois. On compare donc deux CALCULS, plus deux textes.
+   */
+  it('🔴 la carte du bot dit exactement ce que la console autorise', () => {
+    for (const e of chargerCarte()) {
+      for (const role of ['admin', 'manager', 'agent', 'inconnu']) {
+        const vueParLeBot = carteVisiblePar(role).some((x) => x.cle === e.cle);
+        // ⚠️ `accesAutorise` ne connaît pas « inconnu » : il retombe sur le plancher, comme la carte.
+        expect(vueParLeBot, `${e.cle} / ${role} : la carte et la console ne disent pas la même chose`)
+          .toBe(accesAutorise(e.cle, role));
+      }
+    }
   });
 
   it('🔴 un agent ne voit QUE l’Inbox', () => {
     const vue = carteVisiblePar('agent');
     expect(vue.map((e) => e.cle)).toEqual(['inbox']);
+  });
+
+  /**
+   * 🔴 UN MANAGER VOIT L'INBOX ET LES ÉCRANS DE CONFORMITÉ, ET RIEN D'AUTRE (tranché par Julien le
+   * 2026-09-14). Sans ce cas, le bot d'aide emmènerait un manager sur des écrans qui le renverraient à
+   * l'inbox, ou lui cacherait ceux qu'on vient de lui ouvrir.
+   */
+  it('🔴 un manager voit l’Inbox et les écrans de conformité, et rien de plus', () => {
+    const vue = carteVisiblePar('manager').map((e) => e.cle).sort();
+    expect(vue).toEqual(['inbox', 'securite-audit', 'securite-consentement', 'securite-erreurs', 'securite-ia'].sort());
   });
 
   it('un admin voit tout', () => {
@@ -74,7 +95,11 @@ describe('qui voit quoi', () => {
 
   it('⚠️ un rôle INCONNU voit le moins, jamais le plus', () => {
     // Un rôle ajouté plus tard, ou corrompu, ne doit pas ouvrir la console entière par défaut.
-    expect(carteVisiblePar('manager').map((e) => e.cle)).toEqual(['inbox']);
+    //
+    // ⚠️ CE CAS CITAIT `manager` COMME EXEMPLE D'INCONNU, et il a cessé de l'être le 2026-09-14, quand les
+    // écrans de conformité se sont ouverts à l'encadrement. Le CAS est conservé (c'est ce qui compte), son
+    // exemple a changé : il fallait un rôle qui ne soit vraiment dans aucune liste.
+    expect(carteVisiblePar('superviseur').map((e) => e.cle)).toEqual(['inbox']);
     expect(carteVisiblePar('').map((e) => e.cle)).toEqual(['inbox']);
   });
 });

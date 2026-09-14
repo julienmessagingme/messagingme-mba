@@ -1219,9 +1219,17 @@ Concerne les mesures par bloc, et probablement les autres agrégats datés d'Ana
 
 ## Ouvert au 2026-08-20 (traçage des liens + statut manager)
 
-- 🔲 **Décider ce qu'un MANAGER a le droit de faire.** Le statut existe et s'attribue (migration 0065), mais
-  il donne exactement les mêmes accès qu'un agent : tout ce qui n'est pas admin reste fermé. Ouvrir des routes
-  à ce rôle se décide écriture par écriture, ça ne se devine pas. **En attente d'une décision de Julien.**
+- ✅ **TRANCHÉ le 2026-09-14 : un MANAGER consulte les écrans de conformité.** Julien : « ouvre la console aux
+  managers sur les écrans de conformité ». Il atteint désormais Sécurité (accueil, Consentement, IA, Audit
+  trails, Journal des erreurs) en plus de l'Inbox, et **il ne règle rien** : brancher un connecteur sur le
+  consentement ou changer la politique d'annonce d'IA restent des décisions de la marque, refusées côté
+  serveur ET masquées côté écran. Consulter et décider ne sont pas le même geste.
+  ⚠️ **La liste vit dans `web/lib/nav.ts` (`ECRANS_ENCADREMENT`), et deux choses en dérivent** : la garde
+  d'accès de la console et le FILTRAGE du menu. Les écrire séparément reproduirait le défaut que la revue du
+  chantier 6 a trouvé dans l'autre sens : une garde serveur qui nomme `manager` pendant que la console ne
+  l'y mène jamais.
+  ⚠️ **Le reste des prérogatives d'un manager n'est toujours pas décidé** : campagnes, contacts, scénarios,
+  réglages. Ça se décide écriture par écriture, comme avant.
 - 🔲 **Premier test RÉEL du traçage des liens, de bout en bout.** La redirection est vérifiée en prod (302 +
   clic compté) et la substitution est vérifiée en test contre un faux Meta, mais **personne n'a encore créé un
   template avec un lien depuis la console**. Le maillon création -> approbation Meta -> envoi -> clic ->
