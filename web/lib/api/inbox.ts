@@ -244,6 +244,28 @@ export function setPolitiqueMentionIa(tenantId: string, frequence: FrequenceMent
   return request(`/tenants/${tenantId}/settings/mention-ia`, { method: 'PATCH', body: JSON.stringify({ frequence }) });
 }
 
+/**
+ * LA MOITIÉ SYSTÈME DU JOURNAL DES ERREURS (migration 0142) : un appel vers un système du CLIENT qui n'a
+ * pas abouti, quel que soit ce qui l'a déclenché.
+ *
+ * 🔴 D'UNE AUTRE NATURE QUE LA MOITIÉ CLIENT, et c'est pour ça qu'elle a sa propre route et sa propre
+ * section. Là-bas, Meta refuse un message vers un CONTACT ; ici, le système du client refuse un appel que
+ * nous lui passons. Ni destinataire, ni campagne, ni code Meta : les mêmes colonnes n'auraient aucun sens.
+ */
+export interface EchecAppelSysteme {
+  id: string;
+  nom: string;
+  source: 'agent' | 'scenario' | 'optout' | string;
+  statut: string;
+  httpStatus: number | null;
+  erreur: string | null;
+  dureeMs: number | null;
+  at: string;
+}
+export function listErreursSysteme(tenantId: string, limit?: number): Promise<{ erreurs: EchecAppelSysteme[] }> {
+  return request(`/tenants/${tenantId}/erreurs-systeme${limit ? `?limit=${limit}` : ''}`);
+}
+
 /** Contacts bloqués : la SEULE porte de sortie d'un blocage, puisqu'ils sont invisibles partout ailleurs. */
 export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
   return request(`/tenants/${tenantId}/contacts/blocked`);

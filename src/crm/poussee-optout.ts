@@ -1,4 +1,5 @@
 import { creerAppelConnecteur, type DepsResolveurHttp } from '../agent/resolvers/http';
+import type { JournalAppels } from '../agent/catalog';
 
 /**
  * POUSSER UN REFUS VERS LE SYSTÈME DU CLIENT, au moment où il est déclaré.
@@ -143,6 +144,18 @@ export interface DepsTravailPousseeOptOut extends DepsResolveurHttp {
   requeteConfiguree(tenantId: string): Promise<string | null>;
   /** Projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`. */
   projectionContact(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
+  /**
+   * Le journal des appels de connecteur (migration 0142).
+   *
+   * 🔴 SANS LUI, UN REFUS NON POUSSÉ EST INVISIBLE DU CLIENT. C'est le pire des trois cas d'appel : il croit
+   * son CRM prévenu, et il répond d'un manquement qu'il ne peut pas voir. Les réessais de pg-boss puis la
+   * DLQ sont NOTRE filet, pas le sien.
+   *
+   * ⚠️ Optionnel : absent, on retombe sur le journal serveur seul, c'est-à-dire le comportement d'avant.
+   */
+  journalAppels?: JournalAppels;
+  /** Le LIBELLÉ de la requête branchée, pour que le journal nomme ce qu'un humain reconnaît. */
+  libelleRequete?(tenantId: string, requestId: string): Promise<string | null>;
   log?(message: string): void;
 }
 
@@ -178,6 +191,10 @@ export function creerTravailPousseeOptOut(deps: DepsTravailPousseeOptOut) {
       return;
     }
 
+    // Le libellé est lu UNE FOIS pour tout le lot : deux cents refus ne doivent pas coûter deux cents
+    // lectures de la même requête.
+    const nom = (deps.libelleRequete ? await deps.libelleRequete(job.tenantId, requestId) : null) ?? requestId;
+
     const echecs: string[] = [];
     for (const waId of job.waIds) {
       try {
@@ -193,6 +210,9 @@ export function creerTravailPousseeOptOut(deps: DepsTravailPousseeOptOut) {
           // sinon sans la valeur qui le rend juste.
           args: {},
           signal: AbortSignal.timeout(DELAI_POUSSEE_OPTOUT_MS),
+          journal: deps.journalAppels
+            ? { journal: deps.journalAppels, source: 'optout', nom, sessionId: null, toolId: null }
+            : null,
         });
         if (r.ok === false) echecs.push(`${waId}: ${r.erreur ?? 'sans raison'}`);
       } catch (err) {

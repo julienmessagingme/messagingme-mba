@@ -1,4 +1,5 @@
 import { creerAppelConnecteur, type DepsResolveurHttp } from '../agent/resolvers/http';
+import type { JournalAppels } from '../agent/catalog';
 
 /**
  * Le bloc « Appel HTTP » d'un scénario : jouer un appel DÉJÀ mis au point dans Tools > Connecteurs API, et
@@ -55,6 +56,19 @@ export function valeurPourChamp(contenu: unknown): string {
 /** Ce que le câblage doit fournir en plus des dépendances du connecteur. */
 export interface DepsAppelHttpScenario extends DepsResolveurHttp {
   /**
+   * Le journal des appels de connecteur (migration 0142).
+   *
+   * 🔴 IL MANQUAIT, ET LE CLIENT NE VOYAIT RIEN. Un connecteur qui refusait l'appel d'un scénario ne
+   * laissait qu'un `console.warn` sur nos serveurs : le champ du contact restait vide, le parcours
+   * continuait, et personne chez le client ne pouvait savoir que son système avait dit non.
+   *
+   * ⚠️ Optionnel : absent, on retombe exactement sur le comportement d'avant (le `console.warn` seul). Un
+   * harnais de test qui ne le câble pas ne change donc rien.
+   */
+  journalAppels?: JournalAppels;
+  /** Le LIBELLÉ de la requête jouée, pour que le journal nomme ce qu'un humain reconnaît. */
+  libelleRequete?(tenantId: string, requestId: string): Promise<string | null>;
+  /**
    * La projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`.
    *
    * ⚠️ Elle est chargée À CHAQUE appel plutôt que portée par le contexte du parcours : le bloc peut suivre un
@@ -85,6 +99,19 @@ export function creerAppelHttpScenario(deps: DepsAppelHttpScenario) {
         // variable `modele` REQUISE sera refusée avec sa raison, ce qui est le bon comportement.
         args: {},
         signal: AbortSignal.timeout(DELAI_APPEL_HTTP_MS),
+        journal: deps.journalAppels
+          ? {
+            journal: deps.journalAppels,
+            source: 'scenario',
+            // Le libellé si on sait le lire, l'identifiant sinon : une ligne de journal incomplète vaut
+            // mieux que pas de ligne, c'est la même doctrine que `workflow_advance_failures`.
+            nom: (deps.libelleRequete ? await deps.libelleRequete(tenantId, requestId) : null) ?? requestId,
+            // Un scénario n'ouvre aucune session d'agent, et n'a aucun outil : c'est exactement ce que la
+            // migration 0142 a rendu possible en relâchant `session_id`.
+            sessionId: null,
+            toolId: null,
+          }
+          : null,
       });
       if (r.ok === false) {
         // eslint-disable-next-line no-console

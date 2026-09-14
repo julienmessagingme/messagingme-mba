@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { listErreursLivraison, type ErreurLivraison } from '@/lib/api';
+import { listErreursLivraison, listErreursSysteme, type ErreurLivraison, type EchecAppelSysteme } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
@@ -141,6 +141,91 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
               </span>
               <span className="w-full text-xs text-ink-600">
                 {sens(e.code) || e.message || t('sans détail', 'no detail')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * LA MOITIÉ SYSTÈME DU JOURNAL : ce que VOS systèmes nous ont répondu de travers.
+ *
+ * 🔴 UNE SECTION À PART, ET PAS DES LIGNES DE PLUS DANS LA PRÉCÉDENTE. Les deux moitiés répondent à des
+ * questions opposées : là-haut, « mon message n'est pas arrivé chez mon client » ; ici, « mon CRM a refusé
+ * l'appel que Engage Me lui a passé ». Les mélanger obligerait chaque ligne à porter les colonnes vides de
+ * l'autre, et ferait chercher un numéro de téléphone là où il n'y en a jamais eu.
+ *
+ * 🔴 CE QUE CETTE SECTION RÉVÈLE ET QUE PERSONNE NE VOYAIT. Ces lignes sont écrites depuis la migration
+ * 0086 et n'étaient LUES PAR PERSONNE. Depuis la 0142, elles couvrent aussi les deux appelants qui ne
+ * journalisaient rien du tout : le bloc « Appel HTTP » d'un scénario, et la poussée d'un désabonnement vers
+ * votre système.
+ */
+export function ErreursSysteme({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [erreurs, setErreurs] = useState<EchecAppelSysteme[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivant = true;
+    listErreursSysteme(tenantId)
+      .then((r) => { if (vivant) setErreurs(r.erreurs); })
+      // ⚠️ Une lecture en échec n'est PAS « aucune erreur » : les deux se lisent de façon opposée, et
+      // confondre les deux ferait croire que tout va bien.
+      .catch((e: unknown) => { if (vivant) setError(e instanceof Error ? e.message : t('Lecture impossible', 'Unable to read')); });
+    return () => { vivant = false; };
+  }, [tenantId, t]);
+
+  /** QUI a passé l'appel, dit en français : c'est ce qui permet de savoir où aller corriger. */
+  const quiAppelait = (source: string): string => {
+    if (source === 'agent') return t('un agent IA', 'an AI agent');
+    if (source === 'scenario') return t('un bloc « Appel HTTP » d’un scénario', 'a scenario’s HTTP block');
+    if (source === 'optout') return t('la poussée d’un désabonnement', 'an unsubscribe push');
+    return source;
+  };
+
+  /** L'issue, dite en français. `timeout` et « refusé » appellent des corrections opposées. */
+  const issue = (statut: string, httpStatus: number | null): string => {
+    if (statut === 'timeout') return t('votre système n’a pas répondu à temps', 'your system did not answer in time');
+    if (statut === 'budget') return t('budget de l’agent épuisé', 'agent budget exhausted');
+    if (statut === 'erreur_protocole') return t('réponse inexploitable', 'unusable response');
+    if (httpStatus !== null) return `${t('votre système a répondu', 'your system answered')} ${httpStatus}`;
+    return t('l’appel n’a pas abouti', 'the call did not succeed');
+  };
+
+  return (
+    <section className={cardCls} data-testid="erreurs-systeme">
+      <div className="border-b border-ink-100 px-4 py-3">
+        <span className="text-sm font-semibold text-ink-900">{t('Erreurs système', 'System errors')}</span>
+        <p className="mt-1 text-xs text-ink-500">
+          {t(
+            'Les appels que Engage Me passe vers VOS systèmes (CRM, ERP, back-office) et qui n’ont pas abouti. Rien à voir avec les messages ci-dessus : ici, personne n’attend au bout d’un téléphone.',
+            'Calls Engage Me makes to YOUR systems (CRM, ERP, back-office) that did not succeed. Nothing to do with the messages above: nobody is waiting at the end of a phone here.',
+          )}
+        </p>
+      </div>
+
+      {error !== null && <p className="px-4 py-3 text-sm text-red-700" data-testid="erreurs-systeme-erreur">{error}</p>}
+      {error === null && erreurs === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+      {error === null && erreurs !== null && erreurs.length === 0 && (
+        <p className="px-4 py-3 text-sm text-ink-500" data-testid="erreurs-systeme-vide">
+          {t('Aucun appel en échec. Vos connecteurs répondent.', 'No failed call. Your connectors are answering.')}
+        </p>
+      )}
+
+      {erreurs !== null && erreurs.length > 0 && (
+        <ul className="divide-y divide-ink-100">
+          {erreurs.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2" data-testid="erreur-systeme-ligne">
+              <span className="text-xs text-ink-400">{formatDate(e.at, locale)} {hourMin(e.at, locale)}</span>
+              <span className="text-sm text-ink-800">{e.nom}</span>
+              <span className="text-xs text-ink-500">{quiAppelait(e.source)}</span>
+              <span className="w-full text-xs text-ink-600">
+                {issue(e.statut, e.httpStatus)}
+                {e.erreur ? ` · ${e.erreur}` : ''}
               </span>
             </li>
           ))}

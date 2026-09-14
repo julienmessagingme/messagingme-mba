@@ -720,6 +720,13 @@ async function main(): Promise<void> {
     sources: new PgSourceStore(pool),
     requetes: new PgRequeteStore(pool),
     requeteConfiguree: async (tenant) => (await settingsStore.get(tenant)).optoutRequestId,
+    /**
+     * 🔴 LE JOURNAL (migration 0142), ET C EST LE CAS LE PLUS IMPORTANT DES TROIS. Un refus non pousse est
+     * invisible du client : il croit son CRM prevenu, et il repond d un manquement qu il ne peut pas voir.
+     * Les reessais de pg-boss puis la DLQ sont NOTRE filet, pas le sien.
+     */
+    journalAppels: new PgJournalAppels(pool),
+    libelleRequete: async (t, id) => (await new PgRequeteStore(pool).parId(t, id))?.label ?? null,
     derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     // Relue a chaque appel, comme pour le bloc « Appel HTTP » d un scenario : la fiche a pu bouger entre le

@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type {
   JournalAppels, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, RisqueOutil,
   ToolAdminStore, ToolCatalog,
+  SourceAppel,
 } from './catalog';
 import { NomOutilDejaPris } from './catalog';
 import { asRecord } from '../webhooks/json';
@@ -455,14 +456,15 @@ export class PgJournalAppels implements JournalAppels {
   constructor(private readonly pool: Pool) {}
 
   async ouvrir(input: {
-    tenantId: string; sessionId: string; toolId: string | null; toolName: string; origin: string; argsRediges: unknown;
+    tenantId: string; sessionId: string | null; toolId: string | null; toolName: string; origin: string;
+    argsRediges: unknown; source: SourceAppel;
   }): Promise<string> {
     // `refuse` à l'ouverture : une ligne que rien ne vient clore (process tué en plein appel) reste ainsi
     // lisible comme « tentée, jamais aboutie » plutôt que de se faire passer pour un succès.
     const res = await this.pool.query<{ id: string }>(
-      `insert into agent_tool_calls (tenant_id, session_id, tool_id, tool_name, origin, args_rediges, status)
-       values ($1, $2, $3, $4, $5, $6::jsonb, 'refuse') returning id`,
-      [input.tenantId, input.sessionId, input.toolId, input.toolName, input.origin, JSON.stringify(input.argsRediges ?? null)],
+      `insert into agent_tool_calls (tenant_id, session_id, tool_id, tool_name, origin, args_rediges, status, source)
+       values ($1, $2, $3, $4, $5, $6::jsonb, 'refuse', $7) returning id`,
+      [input.tenantId, input.sessionId, input.toolId, input.toolName, input.origin, JSON.stringify(input.argsRediges ?? null), input.source],
     );
     return res.rows[0]!.id;
   }

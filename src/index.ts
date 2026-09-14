@@ -1698,6 +1698,9 @@ async function main(): Promise<void> {
       // Le journal des ERREURS de livraison. Separe du journal d actions : celui-ci porte les numeros (sans
       // eux il ne repond a rien), celui-la n en porte jamais (y ecrire un numero annulerait une purge).
       listErreursLivraison: (tenant, f) => erreursLivraison.lister(tenant, f),
+      // La moitie SYSTEME : les appels vers les systemes du CLIENT qui n ont pas abouti. Ecrite depuis 0086,
+      // lue par personne jusqu a la migration 0142.
+      listErreursSysteme: (tenant, limit) => erreursLivraison.listerEchecsSysteme(tenant, limit),
       listUserFields: (tenant) => fieldStore.list(tenant),
       // Champ socle absent -> on le crée au premier usage (idempotent). Aucun chemin d'inscription ne les
       // créait, donc un espace neuf refusait « Prénom » alors que l'écran le propose.

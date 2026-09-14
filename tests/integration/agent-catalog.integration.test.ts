@@ -135,7 +135,7 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
     // Ouvrir en `refuse` fait qu'une ligne que rien ne vient clore (process tué en plein appel) reste lisible
     // comme « tentée, jamais aboutie » plutôt que de se faire passer pour un succès.
     const id = await journal.ouvrir({
-      tenantId, sessionId, toolId: null, toolName: 'lire_commande', origin: 'mba', argsRediges: { reference: 'X' },
+      tenantId, sessionId, toolId: null, toolName: 'lire_commande', origin: 'mba', argsRediges: { reference: 'X' }, source: 'agent',
     });
     const avant = await pool.query<{ status: string }>('select status from agent_tool_calls where id = $1', [id]);
     expect(avant.rows[0]?.status).toBe('refuse');
@@ -149,7 +149,7 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
   });
 
   it('🔴 clore avec un AUTRE tenant ne touche pas la ligne (isolation)', async () => {
-    const id = await journal.ouvrir({ tenantId, sessionId, toolId: null, toolName: 'x', origin: 'mba', argsRediges: null });
+    const id = await journal.ouvrir({ tenantId, sessionId, toolId: null, toolName: 'x', origin: 'mba', argsRediges: null, source: 'agent' });
     await journal.clore({ tenantId: autreTenantId, id, status: 'ok', dureeMs: 1 });
     const res = await pool.query<{ status: string }>('select status from agent_tool_calls where id = $1', [id]);
     expect(res.rows[0]?.status).toBe('refuse'); // inchangée

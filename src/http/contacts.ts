@@ -68,6 +68,13 @@ export interface ContactsRouteDeps {
    * purge d'un contact). Optionnel : absent -> 503, plutôt qu'une liste vide qui ferait croire qu'il n'y a
    * aucune erreur.
    */
+  /**
+   * La moitié SYSTÈME du journal des erreurs : les appels vers les systèmes du client qui n'ont pas abouti.
+   *
+   * ⚠️ Optionnelle, comme sa voisine : absente, la route rend 503 en le disant, plutôt que de rendre une
+   * liste vide qui se lirait « tout va bien ».
+   */
+  listErreursSysteme?(tenantId: string, limit?: number): Promise<unknown[]>;
   listErreursLivraison?(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
@@ -538,6 +545,27 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       ...(code !== undefined ? { code } : {}),
     });
     return reply.code(200).send({ erreurs });
+  });
+
+  /**
+   * LA MOITIÉ SYSTÈME DU JOURNAL : les appels vers VOS systèmes qui n'ont pas abouti (migration 0142).
+   *
+   * 🔴 UNE ROUTE À PART, ET PAS UN CHAMP DE PLUS SUR LA PRÉCÉDENTE. Les deux moitiés sont de NATURE
+   * différente (Meta refuse un message vers un contact / le système du client refuse un appel que nous lui
+   * passons), elles n'ont pas les mêmes colonnes, et les fondre obligerait chacune à porter les champs vides
+   * de l'autre. L'écran les montre côte à côte, distinguées, pas mélangées.
+   *
+   * ⚠️ ADMIN-ONLY, comme la précédente : elle nomme les systèmes internes d'un client et ce qu'ils ont
+   * répondu.
+   */
+  app.get('/tenants/:tenantId/erreurs-systeme', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.listErreursSysteme) return reply.code(503).send({ error: 'journal système indisponible sur cette instance' });
+    const q = (req.query ?? {}) as { limit?: unknown };
+    const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
+    return reply.code(200).send({ erreurs: await deps.listErreursSysteme(tenant, limit) });
   });
 
   /**

@@ -1,4 +1,5 @@
 import type { EntreeResolveur, ResolveurOutil, SortieResolveur } from '../executor';
+import type { JournalAppels, SourceAppel, StatutAppel } from '../catalog';
 import type { SourceStore } from '../sources';
 import type { RequeteStore } from '../requetes';
 import { construireCible, enTetesAuthSource } from '../http-cible';
@@ -111,6 +112,32 @@ export interface AppelConnecteur {
    */
   args: Record<string, unknown>;
   signal: AbortSignal;
+  /**
+   * Où journaliser CET appel, ou `null` quand l'appelant le fait déjà lui-même.
+   *
+   * 🔴 OBLIGATOIRE, ET C'EST TOUT L'INTÉRÊT. Un champ OPTIONNEL se serait oublié au prochain appelant, et
+   * c'est exactement ce qui s'est passé : jusqu'au 2026-09-14, l'agent IA journalisait ses échecs (depuis
+   * son exécuteur, au-dessus) pendant que le bloc « Appel HTTP » d'un scénario et la poussée d'un opt-out
+   * n'écrivaient qu'un `console.warn`. Un connecteur qui refusait l'appel d'un scénario, ou qui ne recevait
+   * jamais le refus d'un contact, ne laissait AUCUNE trace consultable par le client.
+   *
+   * ⚠️ `null` EST UNE DÉCISION, pas un oubli : l'appelant doit l'écrire, donc se demander pourquoi. Le
+   * résolveur d'agent le passe parce que son exécuteur journalise déjà, et le double compte serait pire que
+   * l'absence.
+   */
+  journal: JournalDAppel | null;
+}
+
+/** De quoi ouvrir et clore UNE ligne de journal pour un appel de connecteur (migration 0142). */
+export interface JournalDAppel {
+  journal: JournalAppels;
+  source: SourceAppel;
+  /** Le nom lisible de l'appel. Pour un scénario ou une poussée, le LIBELLÉ de la requête : c'est ce qu'un
+   *  humain reconnaît, là où un uuid ne dit rien. */
+  nom: string;
+  /** La session d'agent, ou `null` : un scénario et une poussée d'opt-out n'en ouvrent pas. */
+  sessionId: string | null;
+  toolId: string | null;
 }
 
 /**
@@ -123,7 +150,40 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
   const appeler = deps.fetchImpl ?? fetch;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
-  return async (p: AppelConnecteur): Promise<SortieResolveur> => {
+  /**
+   * L'enveloppe de journal, BEST-EFFORT DANS LES DEUX SENS : un journal muet est un désagrément, un appel qui
+   * meurt parce qu'une insertion a trébuché est un incident. Même doctrine que l'exécuteur d'agent.
+   */
+  const journaliser = async (p: AppelConnecteur, faire: () => Promise<SortieResolveur>): Promise<SortieResolveur> => {
+    if (p.journal === null) return faire();
+    const j = p.journal;
+    const debut = Date.now();
+    let ligne: string | null = null;
+    try {
+      ligne = await j.journal.ouvrir({
+        tenantId: p.tenantId, sessionId: j.sessionId, toolId: j.toolId, toolName: j.nom,
+        origin: 'http', argsRediges: p.args, source: j.source,
+      });
+    } catch {
+      ligne = null; // journal indisponible : l'appel part quand même.
+    }
+    const sortie = await faire();
+    if (ligne !== null) {
+      // ⚠️ `timeout` SE DISTINGUE d'une panne du client, et c'est le signal le plus utile du journal : « votre
+      // système n'a pas répondu à temps » et « votre système a refusé » appellent des corrections opposées.
+      const statut: StatutAppel = sortie.ok === false
+        ? (p.signal.aborted ? 'timeout' : 'erreur_outil')
+        : 'ok';
+      await j.journal.clore({
+        tenantId: p.tenantId, id: ligne, status: statut, dureeMs: Date.now() - debut,
+        ...(sortie.httpStatus !== undefined ? { httpStatus: sortie.httpStatus } : {}),
+        ...(sortie.erreur !== undefined ? { erreur: sortie.erreur } : {}),
+      }).catch(() => {});
+    }
+    return sortie;
+  };
+
+  return async (p: AppelConnecteur): Promise<SortieResolveur> => journaliser(p, async () => {
     const { args, signal } = p;
     // Les deux locales gardent leur nom d'avant l'extraction : le corps ci-dessous n'a pas changé d'une ligne,
     // et c'est ce qui rend ce déplacement relisable.
@@ -313,7 +373,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     }
     await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
     return { contenu, httpStatus: res.status };
-  };
+  });
 }
 
 /**
@@ -332,5 +392,10 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     maxBytes: entree.outil.maxBytes,
     args: entree.args,
     signal: entree.signal,
+    // 🔴 `null` EST UNE DÉCISION : l'exécuteur d'agent ouvre et clôt DÉJÀ sa ligne autour de ce résolveur
+    // (`src/agent/executor.ts`), avec le nom d'outil exposé au modèle et la session. Journaliser ici aussi
+    // écrirait DEUX lignes pour un seul appel, et fausserait le compte du jour où la facturation lira cette
+    // table.
+    journal: null,
   });
 }

@@ -5,6 +5,7 @@ import { creerAppelHttpScenario } from './appel-http';
 import { executerFonctionJs } from './fonction-js';
 import { PgSourceStore } from '../agent/sources.pg';
 import { PgRequeteStore } from '../agent/requetes.pg';
+import { PgJournalAppels } from '../agent/catalog.pg';
 import { PgWorkflowStore } from './store.pg';
 import { PgWorkflowNodeEventStore } from './node-events.pg';
 import { PgTagStore } from '../crm/tag-store.pg';
@@ -429,6 +430,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     appelHttp: creerAppelHttpScenario({
       sources: new PgSourceStore(pool),
       requetes: new PgRequeteStore(pool),
+      /**
+       * 🔴 LE JOURNAL, QUI MANQUAIT (migration 0142). Un connecteur qui refusait l appel d un bloc de
+       * scenario ne laissait qu un `console.warn` sur nos serveurs : le champ restait vide, le parcours
+       * continuait, et le client ne pouvait pas savoir que SON systeme avait dit non.
+       */
+      journalAppels: new PgJournalAppels(pool),
+      libelleRequete: async (t, id) => (await new PgRequeteStore(pool).parId(t, id))?.label ?? null,
       derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
       fuseau: async (t) => (await settingsStore.get(t)).timezone,
       // 🔴 RELUE A CHAQUE APPEL, pas portee par le contexte du parcours : le bloc peut suivre un bloc qui

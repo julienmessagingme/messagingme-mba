@@ -16,6 +16,16 @@ export type OrigineOutil = 'mba' | 'http' | 'mcp';
  *  administrateur, qui décide (tranché le 2026-08-26). */
 export type RisqueOutil = 'read' | 'write' | 'irreversible';
 
+/**
+ * QUI a déclenché un appel de connecteur (migration 0142). Fermé, et gardé par un CHECK en base.
+ *
+ * ⚠️ CE N'EST PAS `OrigineOutil`. Celle-ci dit de quelle NATURE est l'outil (`mba`, `http`, `mcp`) ;
+ * celle-là dit quel CHEMIN du produit a passé l'appel. Un connecteur `http` peut être appelé par les trois.
+ */
+export type SourceAppel = 'agent' | 'scenario' | 'optout';
+
+export const SOURCES_APPEL: readonly SourceAppel[] = ['agent', 'scenario', 'optout'];
+
 /** Les statuts de `agent_tool_calls.status`. `erreur_protocole` est le seul qui arrête le tour. */
 export type StatutAppel = 'ok' | 'erreur_outil' | 'refuse' | 'timeout' | 'erreur_protocole' | 'budget';
 
@@ -230,13 +240,27 @@ export interface JournalAppels {
    */
   ouvrir(input: {
     tenantId: string;
-    sessionId: string;
+    /**
+     * La session d'agent, ou `null` quand l'appel n'appartient à aucune (migration 0142).
+     *
+     * 🔴 NULLABLE DEPUIS QUE LE JOURNAL A TROIS APPELANTS. `creerAppelConnecteur` est le point de passage
+     * unique des appels vers le système d'un client : l'agent IA, le bloc « Appel HTTP » d'un scénario, et
+     * la poussée d'un opt-out. Les deux derniers n'ouvrent pas de session, et c'est exactement ce qui les
+     * empêchait d'écrire ici : leurs échecs ne laissaient qu'un `console.warn`.
+     */
+    sessionId: string | null;
     /** `null` quand l'outil n'a pas été résolu (nom inconnu) : la tentative se journalise quand même. */
     toolId: string | null;
     toolName: string;
     origin: string;
     /** Arguments RÉDIGÉS. Le tronc commun n'y met que ce que le modèle a fourni, jamais les valeurs injectées. */
     argsRediges: unknown;
+    /**
+     * QUI a appelé (migration 0142). Sans cette colonne, la ligne d'un scénario et celle d'un agent sont
+     * indiscernables, et le jour où la facturation lira cette table (son commentaire de 0086 le promet, et
+     * rien ne la lit aujourd'hui, vérifié) elle compterait les unes pour les autres.
+     */
+    source: SourceAppel;
   }): Promise<string>;
 
   /** Clôt la ligne avec son issue. Best-effort chez l'appelant : un journal muet ne doit pas tuer un tour. */

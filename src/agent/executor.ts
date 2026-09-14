@@ -208,6 +208,10 @@ export async function executeTool(
         toolName: appel.name,
         origin: outil?.origin ?? 'inconnu',
         argsRediges: args,
+        // C'est le chemin de l'AGENT, et c'est le seul de cet exécuteur : les deux autres appelants de
+        // `creerAppelConnecteur` (le bloc HTTP d'un scénario, la poussée d'un opt-out) journalisent depuis
+        // leur propre module, avec leur propre source.
+        source: 'agent',
       });
     } catch (err) {
       // eslint-disable-next-line no-console

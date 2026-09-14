@@ -89,8 +89,71 @@ interface Ligne {
   delivery_status: string | null; at: Date | null;
 }
 
+/**
+ * LA MOITIÉ SYSTÈME : un appel vers UN SYSTÈME DU CLIENT qui n'a pas abouti (migration 0142).
+ *
+ * 🔴 ELLE EST D'UNE AUTRE NATURE QUE LA MOITIÉ CLIENT, et c'est pour ça qu'elle ne se mélange pas à elle.
+ * Au-dessus, c'est Meta qui refuse un message vers un CONTACT ; ici, c'est le système du CLIENT (son CRM,
+ * son ERP, son back-office) qui refuse un appel que NOUS lui passons. Les mêmes colonnes n'auraient aucun
+ * sens pour les deux : il n'y a ici ni destinataire, ni campagne, ni code Meta.
+ *
+ * 🔴 CE QUE L'INVENTAIRE DE LA TÂCHE 9 A TROUVÉ. `agent_tool_calls` est écrite à CHAQUE appel d'outil depuis
+ * la migration 0086 et n'est LUE PAR PERSONNE, pas même par la facturation dont son propre commentaire dit
+ * qu'elle la sert. Tout ce que le système d'un client nous a répondu de travers y dort depuis des semaines.
+ */
+export interface EchecAppelSysteme {
+  id: string;
+  /** Le nom lisible de l'appel : le nom d'outil exposé au modèle, ou le libellé de la requête. */
+  nom: string;
+  /** QUI a appelé : l'agent IA, un bloc de scénario, ou la poussée d'un opt-out. */
+  source: string;
+  /** L'issue : `erreur_outil`, `timeout`, `refuse`, `erreur_protocole`, `budget`. */
+  statut: string;
+  /** Le code HTTP rendu par le système du client, quand il y en a eu un. */
+  httpStatus: number | null;
+  /** La raison, telle que le résolveur l'a notée. JAMAIS le corps brut de l'erreur du client. */
+  erreur: string | null;
+  dureeMs: number | null;
+  at: string;
+}
+
 export class PgErreursLivraisonStore {
   constructor(private readonly pool: Pool) {}
+
+  /**
+   * Les appels de connecteur EN ÉCHEC d'un espace, du plus récent au plus ancien.
+   *
+   * ⚠️ `status <> 'ok'` ET RIEN D'AUTRE dans le `where`, parce que c'est le PRÉDICAT EXACT de l'index
+   * partiel `agent_tool_calls_echecs_idx` (0142). En sortir ne produirait aucune erreur, juste un balayage
+   * complet du journal d'appels à chaque ouverture de l'écran.
+   *
+   * ⚠️ `tenant_id = $1` : le pooler est superuser, la RLS est contournée, le filtrage en code est le seul
+   * contrôle. Ce journal nomme les systèmes internes d'un client.
+   */
+  async listerEchecsSysteme(tenantId: string, limit = 100): Promise<EchecAppelSysteme[]> {
+    const n = Math.min(Math.max(limit, 1), 500);
+    const res = await this.pool.query<{
+      id: string; tool_name: string; source: string; status: string;
+      http_status: number | null; erreur: string | null; duree_ms: number | null; at: Date;
+    }>(
+      `select id, tool_name, source, status, http_status, erreur, duree_ms, at
+         from agent_tool_calls
+        where tenant_id = $1 and status <> 'ok'
+        order by at desc
+        limit $2`,
+      [tenantId, n],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      nom: r.tool_name,
+      source: r.source,
+      statut: r.status,
+      httpStatus: r.http_status,
+      erreur: r.erreur,
+      dureeMs: r.duree_ms,
+      at: r.at.toISOString(),
+    }));
+  }
 
   /**
    * Les échecs d'un espace, du plus récent au plus ancien.
