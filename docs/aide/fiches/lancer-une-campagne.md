@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: fc76b5
+source_empreinte: 9f4e0e
 ---
 # Lancer une campagne
 
@@ -14,11 +14,12 @@ revenir en arrière à tout moment sans rien perdre.
 « Marketing », qui n'envoie qu'aux contacts ayant donné leur consentement, ou « Service », pour une
 information liée à une commande, un rendez-vous ou un compte.
 
-**2. Le canal.** Un canal seul (WhatsApp ou RCS), ou une chaîne : le message part sur un premier canal, et
-les contacts qu'il n'a pas atteints sont repris sur un second, puis éventuellement par e-mail. Sur un canal
-seul, vous pouvez demander de réessayer les envois qui échouent ; avec une chaîne, la question ne se pose
-pas, puisque le repli EST le rattrapage. Vous décidez enfin si la campagne n'envoie que pendant vos heures
-d'ouverture : cette case vaut pour les premiers envois comme pour les relances.
+**2. Le canal.** L'écran ouvre sur cette seule question, sans réponse pré-cochée : un canal seul (WhatsApp
+ou RCS), ou une chaîne, où le message part sur un premier canal et où les contacts qu'il n'a pas atteints
+sont repris sur un second, puis éventuellement par e-mail. Le reste de l'étape apparaît une fois votre choix
+fait. Sur un canal seul, vous pouvez demander de réessayer les envois qui échouent ; avec une chaîne, la
+question ne se pose pas, puisque le repli EST le rattrapage. Vous décidez enfin si la campagne n'envoie que
+pendant vos heures d'ouverture : cette case vaut pour les premiers envois comme pour les relances.
 
 Lancée hors de ces heures, la campagne n'est pas refusée : elle se met en pause et repart d'elle-même à la
 prochaine ouverture. Attention, la liste ne dit pas encore pourquoi une campagne est en pause ni quand elle
@@ -29,15 +30,20 @@ pas toute seule : utilisez son bouton « Reprendre ».
 modèle approuvé, vous voyez tout de suite un aperçu de ce que le contact recevra, et vous dites d'où vient
 chaque variable du modèle. Si le modèle qu'il vous faut n'existe pas encore, vous le créez sans quitter la
 campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. Tant qu'un
-étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer. Une fois le premier étage
-rempli, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
+étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer. Une fois TOUS les étages
+remplis, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
 Meta, un agent IA, ou votre Inbox.
 
 Un étage peut aussi partir en scénario plutôt qu'en simple message. Sur WhatsApp, c'est le scénario qui
-fournit le modèle d'ouverture ; sur RCS, votre message part d'abord et le scénario démarre juste après. Comme
-pour les modèles, si le scénario qu'il vous faut n'existe pas, vous le créez sans quitter la campagne :
-l'éditeur s'ouvre dans une fenêtre, et le scénario publié est choisi tout seul pour cet étage. Vous le
-retrouvez ensuite dans l'onglet Scénario comme les autres.
+fournit le modèle d'ouverture ; sur RCS, votre message part d'abord et le scénario démarre juste après.
+Comme pour les modèles, si le scénario qu'il vous faut n'existe pas, vous le créez sans quitter la
+campagne : l'éditeur s'ouvre dans une fenêtre, et le scénario publié est choisi tout seul pour cet étage.
+Vous le retrouvez ensuite dans l'onglet Scénario comme les autres.
+
+Quand chaque étage ouvre un scénario, la question de ce qui se passe à la réponse ne vous est pas posée :
+c'est le scénario qui en décide, et l'écran vous le dit à sa place. Il suffit qu'un seul étage envoie un
+message simple pour qu'elle revienne, parce que les contacts joints par celui-là répondront hors de tout
+scénario.
 
 **4. L'audience.** À qui. Le plus courant est de piocher dans votre liste de contacts, avec des filtres que
 vous combinez (un ou plusieurs tags, le consentement marketing, le début ou un morceau du numéro, la valeur
