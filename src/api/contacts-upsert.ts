@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { normalizePhone } from '../crm/phone';
 import { validateFieldValue, canonicalizeFieldValue, ensureFieldByKey } from '../crm/fields';
 import { normaliserDate, raisonDateLisible } from '../crm/date-iso';
@@ -8,21 +9,91 @@ import type { PgUserFieldStore } from '../crm/field-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { CountryCode } from 'libphonenumber-js';
 
-/** Un contact poussé par l'API : téléphone + attributs optionnels. `fields` adressés par clé technique OU code. */
-export interface ApiContactInput {
-  phone: string;
-  name?: string;
-  fields?: Record<string, string>;
-  tags?: string[];
-  optIn?: boolean;
-  /**
-   * D'où vient le consentement, quand `optIn` est vrai. Tracé dans `contacts.opt_in_source`, comme
-   * `csv_import` pour l'import et `hubspot_list` pour une liste : c'est ce qui permet de savoir PAR OÙ un
-   * consentement est entré, et donc de le justifier. Absent -> `api`, le comportement d'origine.
-   */
-  optInSource?: string;
-  /** Identifiant WhatsApp d'un client sans numéro partagé. Optionnel ; unique par espace côté base. */
-  bsuid?: string;
+/**
+ * LES BORNES DE FORME D'UN CONTACT POUSSÉ PAR L'API.
+ *
+ * 🔴 ELLES SONT LARGES, ET LEUR VALEUR VIENT D'UNE MESURE, pas d'une intuition (base de production,
+ * le 2026-09-14) : 10 définitions de champs en tout sur l'ensemble des espaces, l'espace le plus fourni
+ * en porte 9, la clé la plus longue fait 11 caractères, aucun contact ne porte plus de 6 champs, et
+ * `opt_in_source` ne dépasse pas 12 caractères. Chacune de ces bornes est donc entre 5 et 8 fois
+ * au-dessus de l'usage réel : un intégrateur normal ne peut pas les rencontrer, une boucle d'appels s'y
+ * heurte tout de suite.
+ *
+ * ⚠️ CE N'EST PAS LE PLAFOND PAR ESPACE, qui est un autre sujet (le nombre total de définitions qu'une
+ * série d'appels peut faire naître). Ici on borne UN contact, dans le corps d'UNE requête.
+ */
+export const MAX_CLE_CHAMP = 64;
+export const MAX_CHAMPS_PAR_CONTACT = 50;
+export const MAX_OPT_IN_SOURCE = 100;
+
+/**
+ * ⚠️ UN NOMBRE ET UN BOOLÉEN RESTENT ACCEPTÉS, convertis en texte. Le service faisait déjà `String(...)`
+ * sur la valeur : les refuser casserait toute intégration qui envoie `{age: 42}` pour aucun gain. Ce
+ * qu'on refuse, c'est ce dont il n'existe pas de texte SENSÉ : un objet (stocké « [object Object] »,
+ * donnée irrécupérable), un tableau, `null`.
+ */
+const valeurDeChamp = z.union([z.string(), z.number(), z.boolean()]).transform(String);
+
+/**
+ * CE QU'UN CONTACT POUSSÉ PAR L'API A LE DROIT D'ÊTRE.
+ *
+ * 🔴 IL EXISTE PARCE QUE LA ROUTE CASTAIT (`as ApiContactInput[]`) APRÈS AVOIR COMPTÉ LES ÉLÉMENTS.
+ * Le `as` est un mensonge au compilateur : tout le contenu arrivait non vérifié dans un service écrit
+ * pour des objets bien formés. Quatre gestes ordinaires d'un intégrateur suffisaient à faire des dégâts,
+ * dont deux définitifs (un champ personnalisé par caractère dans l'espace du client, une valeur stockée
+ * « [object Object] ») et un opaque (un `null` au milieu d'un lot emportait le LOT ENTIER en 500, dont
+ * Cloudflare remplace le corps par sa page).
+ *
+ * ⚠️ LES CLÉS INCONNUES SONT ÉCARTÉES, PAS REFUSÉES (comportement par défaut de Zod, vérifié) : un
+ * intégrateur qui laisse traîner un champ de son propre modèle ne doit pas être bloqué pour ça.
+ */
+export const schemaContactApi = z.object({
+  phone: z.string().trim().min(1),
+  name: z.string().optional(),
+  fields: z.record(z.string().max(MAX_CLE_CHAMP), valeurDeChamp)
+    .refine((r) => Object.keys(r).length <= MAX_CHAMPS_PAR_CONTACT)
+    .optional(),
+  tags: z.array(z.union([z.string(), z.number()]).transform(String)).optional(),
+  optIn: z.boolean().optional(),
+  optInSource: z.string().max(MAX_OPT_IN_SOURCE).optional(),
+  bsuid: z.string().optional(),
+});
+
+/**
+ * UN CONTACT POUSSÉ PAR L'API : téléphone + attributs optionnels. `fields` adressés par clé technique OU code.
+ *
+ * 🔴 IL EST DÉRIVÉ DU SCHÉMA, ET C'EST TOUT L'INTÉRÊT. Écrit à la main à côté, il redeviendrait une
+ * seconde vérité : le jour où l'un des deux gagne un champ, l'autre le refuse ou le laisse passer sans
+ * que rien ne le signale. Le type est ce que la validation REND, jamais ce qu'on espère recevoir.
+ */
+export type ApiContactInput = z.infer<typeof schemaContactApi>;
+
+/**
+ * CE QU'ON DIT À L'INTÉGRATEUR QUAND SON ÉLÉMENT EST REFUSÉ.
+ *
+ * 🔴 LE CHEMIN AVANT LE MESSAGE, parce que c'est le chemin qui le fait corriger : « fields.adresse »
+ * lui désigne la ligne à reprendre, là où « Invalid input » l'envoie relire son lot entier.
+ *
+ * ⚠️ LES MESSAGES DE ZOD SONT EN ANGLAIS ET PEU PARLANTS (mesuré : une clé de champ trop longue rend
+ * « Invalid key in record », une valeur imbriquée rend « Invalid input »). Le reste de cette API répond
+ * en français à des intégrateurs français : on traduit donc les cas qu'on provoque nous-mêmes, et on
+ * garde le message d'origine pour les autres plutôt que d'inventer une phrase qui pourrait être fausse.
+ */
+export function raisonDeValidation(err: z.ZodError): string {
+  const i = err.issues[0];
+  if (!i) return 'contact invalide';
+  const chemin = i.path.join('.');
+  if (chemin === '') return 'chaque contact doit être un objet';
+  if (i.code === 'invalid_key') return `« ${chemin} » : clé de champ invalide (texte, ${MAX_CLE_CHAMP} caractères au plus)`;
+  if (chemin === 'fields') {
+    return i.code === 'custom'
+      ? `« fields » : un contact ne peut pas porter plus de ${MAX_CHAMPS_PAR_CONTACT} champs`
+      : '« fields » : un objet { clé: valeur } est attendu';
+  }
+  if (chemin.startsWith('fields.')) return `« ${chemin} » : texte, nombre ou booléen attendu`;
+  if (chemin === 'phone') return '« phone » : un numéro de téléphone (texte non vide) est attendu';
+  if (chemin === 'optInSource') return `« optInSource » : ${MAX_OPT_IN_SOURCE} caractères au plus`;
+  return `« ${chemin} » : ${i.message}`;
 }
 
 export interface ApiUpsertOutcome {

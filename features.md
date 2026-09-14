@@ -1473,6 +1473,12 @@ scénario, comment importer des contacts.
 - ✅ **Créer / mettre à jour des contacts** : `POST /v1/contacts` (un contact) et `/v1/contacts/batch` (jusqu'à
   500). Champs de base ou perso, adressés par leur clé OU leur code ; un champ perso inconnu est créé
   automatiquement. Sert à pré-charger des contacts avant une campagne.
+  🔴 **Un contact mal formé est refusé À SA LIGNE, et les autres passent** (2026-09-14) : la réponse nomme
+  le champ fautif (« fields.adresse ») plutôt que de renvoyer une erreur globale. Une ligne vide au milieu
+  d'un lot ne fait plus perdre les 499 autres, et une valeur de champ qui n'est pas du texte (un objet,
+  une liste) est refusée au lieu d'être enregistrée illisible. Un nombre ou un oui/non reste accepté.
+  ⚠️ **Trois bornes larges** encadrent un contact : 64 caractères pour le nom d'un champ, 50 champs par
+  contact, 100 caractères pour l'origine du consentement. Un intégrateur normal ne les rencontre pas.
 - ✅ **Lancer un envoi** : `POST /v1/sends` envoie un **scénario** (par code ou par nom) ou un **template** à un
   lot de destinataires (jusqu'à 50). L'API crée les contacts absents à la volée puis envoie. Réponse
   **détaillée** : combien créés / retrouvés, et la liste des numéros écartés **avec la raison** (non opt-in,
