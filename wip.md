@@ -14,11 +14,11 @@
 
 | | |
 |---|---|
-| `origin/main` | `79415a8` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `79415a8`, déployé et vérifié en public |
-| Dernière CI de CODE (`79415a8`) | ✅ verte, quatre jobs |
+| `origin/main` | `f897720` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `f897720`, déployé et vérifié en public |
+| Dernière CI de CODE (`f897720`) | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
-| Migrations | **0139 à 0142 appliquées**, vérifiées en base. **Prochaine libre : 0143** |
+| Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
 
 ⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Neuf déploiements le 2026-09-13, neuf fois le
 même : conteneurs `healthy`, appel interne à 200, appel public à 502. Réparation :
@@ -127,6 +127,18 @@ test de blocage porte son TÉMOIN dans l'autre sens**, sinon il ne prouve que sa
 ⚠️ **« Par cohérence » n'est pas une raison de transporter une donnée.** Les variables du rang 1 partaient
 avec le scénario d'un étage de repli, parce que la branche voisine le faisait. Elles décrivent un autre
 modèle : Meta refuse, ou remplit le bon nombre de trous avec les mauvaises valeurs.
+
+🔴 **UNE JUSTIFICATION CRUE PLUTÔT QUE MESURÉE A TENU UNE JOURNÉE ENTIÈRE, ET C'EST LE DÉFAUT LE PLUS GRAVE
+DU CHANTIER.** Un commentaire de câblage affirmait « scénario, automation et agent IA passent par cet
+exécuteur ». C'était faux pour l'agent, dont la réponse part par `client.sendText` directement. Cette phrase
+a été RECOPIÉE dans le verdict du test d'inventaire, dans `features.md`, et sur l'écran de conformité que le
+client lit. Elle a survécu à une revue, à un test de câblage et à un déploiement. **Un chemin d'envoi se
+SUIT, il ne se déduit pas d'un voisinage.**
+
+🔴 **ET UN INVENTAIRE NE PROUVE QUE LA LISTE, JAMAIS LES VERDICTS.** `tests/optout-chemins.test.ts` avait
+bien TROUVÉ le fichier fautif ; il l'avait classé « bloqué » avec la justification fausse. Le test garde
+l'exhaustivité, pas la justesse, parce qu'il a été écrit par la même main, dans la même heure, depuis la
+même croyance.
 
 🔴 **`git checkout <fichier>` SUR UN FICHIER NON COMMITÉ DÉTRUIT LE TRAVAIL, ET JE L'AI FAIT.** En restaurant
 trois fichiers après une mutation, j'ai effacé une heure de travail non commité. Deux ont été récupérés

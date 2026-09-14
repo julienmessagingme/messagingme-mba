@@ -79,9 +79,20 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0142**, le 2026-09-14 au matin (le journal des appels de connecteur s'ouvre à SES
+**Dernière appliquée : 0143**, le 2026-09-14 au matin (elle RETIRE `tenant_settings_optout_request_idx`, un
+index partiel que 0139 avait créé et qui ne servait AUCUNE requête). **Prochaine libre = 0144.**
+
+🔴 **UN INDEX PARTIEL EST UN CONTRAT AVEC UNE REQUÊTE PRÉCISE, ET CELUI-LÀ N'EN AVAIT AUCUNE.** 0139
+l'annonçait comme servant « quelles requêtes sont branchées sur le consentement ? » ; cette question n'est
+jamais posée ainsi, `brancheeSurConsentement` lit les réglages de l'espace par CLÉ PRIMAIRE. Ce qu'on retire
+n'est pas un coût (`tenant_settings` porte une ligne par espace) : **c'est une justification fausse inscrite
+dans le schéma**, que le prochain lecteur aurait crue, et qui l'aurait autorisé à élargir un `where` en
+pensant rester dans son contrat. Vérifié en base après coup : l'index inutile est parti, les DEUX qui servent
+vraiment (`contacts_opted_out_idx`, `agent_tool_calls_echecs_idx`) sont là, et aucun réglage n'a bougé.
+
+Avant elle : **0142**, le 2026-09-14 au matin (le journal des appels de connecteur s'ouvre à SES
 TROIS APPELANTS : `agent_tool_calls.session_id` devient NULLABLE, une colonne `source` dit qui appelait, et
-un index PARTIEL sert la lecture des échecs). **Prochaine libre = 0143.**
+un index PARTIEL sert la lecture des échecs).
 
 🔴 **CE QU'ELLE RÉPARE EST UNE EXHAUSTIVITÉ, PAS UNE FONCTIONNALITÉ.** `creerAppelConnecteur`
 (`src/agent/resolvers/http.ts`) est le point de passage unique des appels vers le système d'un client, et il
