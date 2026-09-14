@@ -14,15 +14,19 @@
 
 | | |
 |---|---|
-| `origin/main` | `f897720` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `f897720`, déployé et vérifié en public |
-| Dernière CI de CODE (`f897720`) | ✅ verte, quatre jobs |
+| `origin/main` | `930b9d1` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1`, déployé et vérifié en public |
+| Dernière CI de CODE (`930b9d1`) | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 | Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
 
-⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Neuf déploiements le 2026-09-13, neuf fois le
-même : conteneurs `healthy`, appel interne à 200, appel public à 502. Réparation :
+⚠️ **LE 502 PUBLIC EST QUASI SYSTÉMATIQUE.** Douze déploiements sur treize entre le 2026-09-13 et le
+2026-09-14 : conteneurs `healthy`, appel interne à 200, appel public à 502. Réparation :
 `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload`.
+
+⚠️ **ET LE TREIZIÈME N'EN A PAS EU**, sans qu'on sache pourquoi. C'est la première fois. Ça ne change rien à
+la règle : le contrôle public après CHAQUE `up --build` reste obligatoire, puisque c'est la seule façon de
+voir ce défaut.
 
 🔴 **ET UN SEUL RELOAD NE SUFFIT PAS TOUJOURS** (vu DEUX fois le 2026-09-13, dont le déploiement de la
 tâche 7) : le contrôle public juste après rendait encore 502, le second reload l'a réglé. Le reload rend `0`
@@ -95,6 +99,31 @@ y est un message ordinaire, et la personne cesserait de recevoir sans que person
 ⚠️ **La règle n'a PAS été modifiée** : resserrer l'ancrage ferait perdre « stop merci », qui est un vrai
 refus. C'est un choix produit. Le docblock faux est corrigé, et `tests/consentement-observation.test.ts` fige
 le comportement ACTUEL en NOMMANT chaque cas, pour que celui qui le changera voie la liste de ce qu'il change.
+
+## 🔴 CE QUE LA REVUE DU CHANTIER 6 A TROUVÉ (2026-09-14)
+
+Cinq défauts, tous déployés, tous corrigés. Ils se ressemblent tous.
+
+🔴 **UNE JUSTIFICATION CRUE PLUTÔT QUE MESURÉE, ET ELLE S'EST PROPAGÉE.** Un commentaire de câblage
+affirmait « scénario, automation et agent IA passent par cet exécuteur ». Faux pour l'agent : sa réponse part
+par `client.sendText` directement. **Un contact désabonné recevait donc encore les réponses de l'agent IA.**
+La phrase avait été recopiée dans le verdict du test d'inventaire, dans `features.md`, et sur l'écran de
+conformité que le client lit. Elle a survécu à une revue, à un test de câblage et à un déploiement.
+
+🔴 **UN INVENTAIRE NE PROUVE QUE LA LISTE, JAMAIS LES VERDICTS.** `tests/optout-chemins.test.ts` avait bien
+TROUVÉ le fichier fautif, et l'avait classé « bloqué ». Le classement a été écrit par la même main que la
+garde, dans la même heure, depuis la même croyance.
+
+🔴 **UNE GARDE SERVEUR QUI NOMME UN RÔLE SANS QUE LA CONSOLE Y MÈNE N'EST PAS UNE CAPACITÉ, C'EST UNE
+PROMESSE.** La route des désabonnés nommait `manager` et aucun manager ne pouvait l'atteindre. Trouvé par le
+relecteur indépendant, pas par moi. Tranché par Julien le jour même, et corrigé des deux côtés.
+
+🔴 **UN INDEX PARTIEL SANS REQUÊTE EST UNE JUSTIFICATION FAUSSE INSCRITE DANS LE SCHÉMA.** Celui de 0139 ne
+servait rien. Le coût n'était pas le sujet : le prochain lecteur l'aurait cru et se serait autorisé à
+élargir un `where` en pensant rester dans son contrat.
+
+⚠️ **ET LE MÊME MOTIF, UNE FOIS DE PLUS, EN CORRIGEANT** : ouvrir la console aux managers a filtré la barre
+sans rien montrer, parce qu'un SECOND contrôle de rôle était écrit en dur dans le rendu. Seul l'e2e l'a vu.
 
 ## Ce que la session du 2026-09-13 a appris
 
