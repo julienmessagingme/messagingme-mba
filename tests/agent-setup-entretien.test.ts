@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
-  bornerPourModele, lireEtat, MAX_TOURS_CONSERVES,
+  auteurDuTour, bornerPourModele, lireEtat, MAX_TOURS_CONSERVES,
 } from '../src/agent/setup/entretien-store';
 import { MAX_TOURS_HISTORIQUE } from '../src/agent/setup/conversation';
 
@@ -40,5 +42,47 @@ describe('le fil conserve tout, le prompt reste borné', () => {
     const enorme = fil(MAX_TOURS_CONSERVES + 10);
     // Au-delà, on retombe sur l'entretien vierge plutôt que d'écrire un document sans limite.
     expect(lireEtat({ messages: enorme }).messages).toHaveLength(0);
+  });
+});
+
+/**
+ * 🔴 CE QUE LA REVUE DU LOT A A TROUVÉ, ET QUI ANNULAIT LA TÂCHE ENTIÈRE.
+ *
+ * La route construisait l'état ÉCRIT à partir du fil BORNÉ (`historique`), pas du fil complet : la
+ * troncature était donc seulement DÉPLACÉE de l'écriture vers la construction du prompt, jamais supprimée.
+ * La base recevait un fil amputé à chaque tour, et « le fil perdure » était faux.
+ *
+ * ⚠️ NI LE COMPILATEUR NI UN TEST NE POUVAIENT LE VOIR : les deux tableaux ont exactement le même type, et
+ * un test qui monte un faux store voit ce que le faux lui rend. Seule une relecture qui SUIT la donnée l'a vu.
+ */
+describe('le fil ÉCRIT n’est pas le fil ENVOYÉ', () => {
+  it('🔴 la route écrit le fil COMPLET, pas sa version bornée', () => {
+    const src = readFileSync(resolve(__dirname, '../src/http/agent-setup.ts'), 'utf8');
+    // Le fil complet part de `avant.messages`, jamais de `bornerPourModele(...)`.
+    expect(src).toContain('const filComplet: TourEntretien[] = [...avant.messages');
+    // Et c'est LUI que l'état écrit reprend.
+    expect(src).toContain('messages: [...filComplet');
+    // ⚠️ La garde qui compte : l'état écrit ne doit JAMAIS repartir de `historique`.
+    expect(src).not.toContain('messages: [...historique');
+  });
+
+  it('🔴 l’écran ne reçoit pas le fil entier : une réponse HTTP ne grossit pas sans fin', () => {
+    const src = readFileSync(resolve(__dirname, '../src/http/agent-setup.ts'), 'utf8');
+    expect(src).toContain('MAX_MESSAGES_AFFICHES');
+    // Le total part avec, sinon l'écran laisserait croire que le reste n'existe plus.
+    expect(src).toContain('total: entretien.messages.length');
+  });
+
+  it('🔴 l’auteur de chaque message est CONSERVÉ, pas seulement déclaré', () => {
+    const store = readFileSync(resolve(__dirname, '../src/agent/setup/entretien-store.pg.ts'), 'utf8');
+    // Une colonne ajoutée que personne n'écrit ni ne lit est une capacité câblée sur zéro consommateur.
+    expect(store).toContain('auteurs = excluded.auteurs');
+    expect(store).toMatch(/select messages, reponses, poses, bascules, auteurs/);
+  });
+
+  it('⚠️ un fil d’avant la migration se relit sans auteurs, et n’en invente pas', () => {
+    const relu = lireEtat({ messages: [{ role: 'user', content: 'x' }], reponses: [], poses: [], bascules: [] });
+    expect(relu.auteurs).toEqual([]);
+    expect(auteurDuTour(relu, 0)).toBeNull();
   });
 });

@@ -24,10 +24,27 @@ export interface EntretienComplet {
   /** Les moments de bascule et leur traitement. À part des `reponses` parce que c'est une LISTE : il y a
    *  autant de moments que le client en cite, chacun avec sa propre action et son propre moyen. */
   bascules: Bascule[];
+  /**
+   * QUI A ÉCRIT CHAQUE MESSAGE : l'IDENTIFIANT du membre, dans le même ordre que `messages`
+   * (migration 0147). `null` pour les réponses de l'assistant, et pour les tours d'avant cette migration.
+   *
+   * 🔴 UN TABLEAU PARALLÈLE, PAS UNE CLÉ DANS `messages`, et ce n'est pas un détour : `tourSchema` est
+   * strict, donc y ajouter une clé obligatoire ferait échouer la relecture de TOUS les entretiens existants,
+   * qui retomberaient sur l'entretien vierge. Le client perdrait sa conversation, en silence.
+   *
+   * ⚠️ PLUS COURT QUE `messages` EST NORMAL : les tours d'avant le 2026-09-14 n'ont pas d'auteur connu, et
+   * leur en inventer un serait pire que de n'en afficher aucun. `auteurDuTour` rend `null` pour ceux-là.
+   *
+   * ⚠️ UN IDENTIFIANT, PAS UN E-MAIL, contrairement à `audit_log.actor_email` qui le DÉNORMALISE. L'écart est
+   * voulu : ce journal-là doit PROUVER qui a agi, même après la suppression du compte ; ici, un fil de
+   * conversation dont l'auteur a quitté l'espace affiche « auteur inconnu », ce qui est suffisant et évite
+   * de recopier une adresse dans un jsonb que personne ne purge.
+   */
+  auteurs: Array<string | null>;
 }
 
 /** Un entretien vierge. C'est aussi ce qu'on rend d'un état illisible : on ne bloque jamais l'écran. */
-export const ENTRETIEN_VIERGE: EntretienComplet = { messages: [], reponses: [], poses: [], bascules: [] };
+export const ENTRETIEN_VIERGE: EntretienComplet = { messages: [], reponses: [], poses: [], bascules: [], auteurs: [] };
 
 const tourSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -65,6 +82,7 @@ const etatSchema = z.object({
     action: z.enum(ACTIONS).optional(),
     moyen: z.string().max(2000).optional(),
   })).max(MAX_BASCULES).default([]),
+  auteurs: z.array(z.string().max(320).nullable()).max(MAX_TOURS_CONSERVES).default([]),
 });
 
 
@@ -94,6 +112,17 @@ export function bornerPourModele(messages: readonly TourEntretien[]): TourEntret
   return messages
     .slice(-MAX_TOURS_HISTORIQUE * 2)
     .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_CARACTERES_MESSAGE) }));
+}
+
+/**
+ * L'AUTEUR DU TOUR `i`, ou `null` quand on ne le sait pas.
+ *
+ * ⚠️ ELLE TOLÈRE UN TABLEAU PLUS COURT, et c'est le cas NORMAL : un fil commencé avant la migration 0147
+ * porte des tours sans auteur. Rendre `undefined` ferait afficher « undefined » à l'écran ; rendre le
+ * premier auteur venu attribuerait à quelqu'un des phrases qu'il n'a pas écrites.
+ */
+export function auteurDuTour(etat: Pick<EntretienComplet, 'auteurs'>, i: number): string | null {
+  return etat.auteurs[i] ?? null;
 }
 
 export interface EntretienStore {

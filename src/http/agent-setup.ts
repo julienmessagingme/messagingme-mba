@@ -34,6 +34,15 @@ import { scopeTenant, estUuid } from './scope';
  * discrétion du modèle, qui sautait le ton, l'identité et la base de connaissance.
  */
 
+/**
+ * Combien de messages l'écran reçoit d'un coup.
+ *
+ * ⚠️ CE N'EST PAS `MAX_TOURS_HISTORIQUE` (ce qu'on envoie au MODÈLE) ni `MAX_TOURS_CONSERVES` (ce que la
+ * base garde) : trois plafonds, trois raisons. Celui-ci borne le POIDS D'UNE RÉPONSE HTTP, et il est
+ * généreux parce qu'un fil de travail se relit.
+ */
+export const MAX_MESSAGES_AFFICHES = 200;
+
 export interface AgentSetupRouteDeps {
   /** L'état courant de l'agent, ou `null` s'il n'existe pas ou appartient à un autre tenant. */
   etatCourant(tenantId: string, agentId: string): Promise<ContexteConstruction | null>;
@@ -153,7 +162,23 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
     const entretien = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
-    return reply.code(200).send({ messages: entretien.messages, couverture: avancement(entretien, ctx.etat) });
+    /**
+     * 🔴 L'ÉCRAN NE REÇOIT PAS LE FIL ENTIER, ET C'EST UN DÉFAUT RELEVÉ EN REVUE (2026-09-14). Depuis que le
+     * fil PERDURE, la base n'en tronque plus rien : envoyer `entretien.messages` tel quel ferait grossir
+     * cette réponse sans fin, sur une route appelée à CHAQUE ouverture de l'onglet. Avant, la troncature à
+     * l'écriture masquait le problème ; en la retirant, on l'a créé.
+     *
+     * ⚠️ LE FIL RESTE ENTIER EN BASE : c'est bien l'AFFICHAGE qui est borné, pas la conservation. Le total
+     * part avec, pour que l'écran puisse dire « 340 messages, les 200 derniers » plutôt que de laisser croire
+     * que le reste n'existe plus.
+     */
+    const recents = entretien.messages.slice(-MAX_MESSAGES_AFFICHES);
+    return reply.code(200).send({
+      messages: recents,
+      auteurs: entretien.auteurs.slice(-MAX_MESSAGES_AFFICHES),
+      total: entretien.messages.length,
+      couverture: avancement(entretien, ctx.etat),
+    });
   });
 
   /**
@@ -262,10 +287,19 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * ⚠️ On borne ce qui PART, jamais ce qu'on GARDE : le fil conserve tout, le prompt reste borné. Un
      * historique sans fin dans le contexte pousserait la fiche courante hors de la fenêtre du modèle.
      */
-    const historique: TourEntretien[] = [
-      ...bornerPourModele(avant.messages),
-      { role: 'user', content: parse.data.message },
-    ];
+    /**
+     * 🔴 DEUX FILS, ET LES CONFONDRE ANNULE TOUT LE LOT. `filComplet` est ce qu'on CONSERVE ; `historique`
+     * est ce qu'on ENVOIE au modèle. Une première version construisait l'état écrit à partir du fil BORNÉ :
+     * la troncature était alors seulement DÉPLACÉE, pas supprimée, et la base recevait un fil amputé à
+     * chaque tour. Relevé en revue, jamais par un test ni par le compilateur, les deux tableaux ayant
+     * exactement le même type.
+     *
+     * ⚠️ L'AUTEUR EST POSÉ ICI, sur le message de l'utilisateur, et `null` pour la réponse de l'assistant :
+     * le fil est partagé entre les admins d'un espace, donc « qui a demandé ça ? » doit avoir une réponse.
+     */
+    const filComplet: TourEntretien[] = [...avant.messages, { role: 'user', content: parse.data.message }];
+    const auteursComplets: Array<string | null> = [...avant.auteurs, req.auth?.userId ?? null];
+    const historique: TourEntretien[] = bornerPourModele(filComplet);
     // 🔴 Le point du tour est arrêté AVANT l'appel, sur l'état serveur : c'est ce qui rend la séquence des
     // questions non négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
     const pointDuTour = prochainPoint(avant, inventaireDe(ctx.etat));
@@ -340,7 +374,11 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
 
     const apres: EntretienComplet = {
-      messages: [...historique, { role: 'assistant', content: message }],
+      // 🔴 `filComplet`, JAMAIS `historique` : voir la note plus haut. C'est la ligne qui décide si le fil
+      // perdure ou se fait amputer par sa propre sauvegarde.
+      messages: [...filComplet, { role: 'assistant', content: message }],
+      // L'assistant n'a pas d'auteur humain : `null`, et l'écran l'affiche comme venant de l'assistant.
+      auteurs: [...auteursComplets, null],
       reponses,
       bascules: listeBascules,
       poses: relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses,

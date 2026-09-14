@@ -37,7 +37,7 @@ const BASE = AGENDA.map((p) => p.code);
 const toutesLesReponses = () => BASE.map((point) => ({ point, valeur: 'ce qu’il a dit' }));
 
 /** Un entretien DÉJÀ MENÉ : tous les points de base posés et répondus. */
-const ENTRETIEN_FINI: EntretienComplet = { messages: [], poses: [...BASE], reponses: toutesLesReponses(), bascules: [] };
+const ENTRETIEN_FINI: EntretienComplet = { messages: [], auteurs: [], poses: [...BASE], reponses: toutesLesReponses(), bascules: [] };
 
 class FakeEntretiens implements EntretienStore {
   constructor(private etat: EntretienComplet | null = null) {}
@@ -251,7 +251,7 @@ describe('conversation de construction', () => {
   it('🔴 « il appelle un outil » ouvre la question du MOYEN : lequel ?', async () => {
     // « L'agent le fait tout seul » n'est pas une réponse, c'est le début d'une question.
     const avecAction: EntretienComplet = {
-      messages: [], poses: [...BASE, 'bascule_1_action'], reponses: toutesLesReponses(),
+      messages: [], auteurs: [], poses: [...BASE, 'bascule_1_action'], reponses: toutesLesReponses(),
       bascules: [{ moment: 'le client veut prendre rendez-vous' }],
     };
     const r = reponse(JSON.stringify({
@@ -267,7 +267,7 @@ describe('conversation de construction', () => {
   it('🔴 un code de point INVENTÉ ne débloque rien', async () => {
     // Les réponses viennent d'un modèle, donc d'une source non fiable. Un code hors ordre du jour est ignoré ;
     // s'il passait, il suffirait d'en inventer neuf pour contourner l'entretien.
-    const fini: EntretienComplet = { messages: [], poses: [...BASE], reponses: toutesLesReponses().slice(0, -1), bascules: [] };
+    const fini: EntretienComplet = { messages: [], auteurs: [], poses: [...BASE], reponses: toutesLesReponses().slice(0, -1), bascules: [] };
     const r = reponse(JSON.stringify({
       message: 'Voilà.',
       reponses: [{ point: 'tout_le_reste', valeur: 'oui' }],
@@ -299,6 +299,8 @@ describe('conversation de construction', () => {
   it('GET rend l’entretien déjà tenu, et son avancement', async () => {
     const etat: EntretienComplet = {
       messages: [{ role: 'user', content: 'Bonjour' }, { role: 'assistant', content: 'À quoi sert-il ?' }],
+      // ⚠️ L'auteur du tour utilisateur, `null` pour la réponse de l'assistant : c'est la forme réelle.
+      auteurs: ['u1', null],
       poses: ['mission'], reponses: [], bascules: [],
     };
     const res = await app({ entretien: etat }).srv.inject({ method: 'GET', url: url('t1'), ...h(adminTok) });
