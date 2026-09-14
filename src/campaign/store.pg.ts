@@ -158,6 +158,19 @@ export interface CampaignSummary {
   counts: RecipientCounts;
 }
 export interface CampaignDetail extends CampaignSummary {
+  /**
+   * LA CHAÎNE TELLE QU'ELLE A ÉTÉ LANCÉE, étage par étage.
+   *
+   * 🔴 DEMANDÉE PAR JULIEN LE 2026-09-14 : « un truc qui me gêne, c'est qu'on ne retrouve pas les détails
+   * de comment est foutue une campagne une fois qu'on l'a lancée ; on doit pouvoir savoir quel message on
+   * a lancé, ou quel scénario, s'il y a un fallback quel message ou quel scénario ». Le détail ne rendait
+   * que des compteurs et des destinataires : ce qui avait été ENVOYÉ n'était consultable nulle part après
+   * coup, alors que c'est la première question qu'on se pose devant un résultat.
+   *
+   * ⚠️ Toute campagne en a au moins un étage (le rang 1 est écrit même sans repli, cf. `insertCampaign`),
+   * donc ce tableau n'est jamais vide pour une campagne créée par ce code.
+   */
+  chaine: Etage[];
   /** Mapping des variables du template (positions -> source). Sert au front F7 (savoir quel champ corriger). */
   paramMapping: TemplateParam[];
   recipients: Array<{
@@ -404,8 +417,9 @@ export class PgCampaignRepo {
       email_template_id: string | null;
       email_champ: string | null;
       workflow_id: string | null;
+      devenir: 'mba' | 'inbox' | null;
     }>(
-      `select campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id
+      `select campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id, devenir
        from campaign_etages where campaign_id = any($1::uuid[]) order by campaign_id, rang`,
       [campaignIds],
     );
@@ -419,6 +433,7 @@ export class PgCampaignRepo {
         ...(e.email_template_id !== null ? { emailTemplateId: e.email_template_id } : {}),
         ...(e.email_champ !== null ? { emailChamp: e.email_champ } : {}),
         ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
+        ...(e.devenir !== null ? { devenir: e.devenir } : {}),
       };
       const deja = parCampagne.get(e.campaign_id);
       if (deja) deja.push(etage); else parCampagne.set(e.campaign_id, [etage]);
@@ -623,8 +638,12 @@ export class PgCampaignRepo {
        from campaign_recipients where campaign_id = $1 order by status, id limit 500`,
       [campaignId],
     );
+    // ⚠️ MÊME LECTURE QUE LE RESTE DU STORE (`lireChainesDe`), pas une seconde traduction des mêmes
+    // colonnes : le jour où un étage gagne un champ, il n'y a qu'un endroit à changer.
+    const chaines = await this.lireChainesDe([campaignId]);
     return {
       ...rowToSummary(h),
+      chaine: chaines.get(campaignId) ?? [],
       // jsonb renvoyé déjà parsé par node-pg (comme getCampaign) ; null -> [].
       paramMapping: h.param_mapping ?? [],
       recipients: recs.rows.map((r) => ({

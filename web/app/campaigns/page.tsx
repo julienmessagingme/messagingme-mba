@@ -502,6 +502,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
         </div>
         <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
       </div>
+      <CeQuiAEteLance chaine={detail.chaine} />
       {detail.recipients.length === 0 ? (
         <p className="px-4 py-4 text-sm text-ink-500">{t('Aucun destinataire.', 'No recipients.')}</p>
       ) : (
@@ -597,6 +598,68 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
         </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * CE QUI A ÉTÉ LANCÉ : la chaîne telle qu'elle est partie, étage par étage.
+ *
+ * 🔴 DEMANDÉ PAR JULIEN LE 2026-09-14 : « un truc en termes d'UX qui me gêne, c'est qu'on ne retrouve pas
+ * les détails de comment est foutue une campagne une fois qu'on l'a lancée ; on doit pouvoir savoir quel
+ * message on a lancé, ou quel scénario, s'il y a un fallback quel message ou quel scénario ». Le panneau
+ * ne montrait que des compteurs et des destinataires : la première question qu'on se pose devant un
+ * résultat n'avait aucune réponse à l'écran.
+ *
+ * ⚠️ IL NOMME, IL NE RÉSOUT PAS. Le nom du template est celui qui a été envoyé (colonne de l'étage), et
+ * l'identifiant d'un scénario s'affiche tel quel : aller chercher son libellé demanderait un appel par
+ * étage, pour une information que l'écran des scénarios donne déjà. Ce qui compte ici est de pouvoir dire
+ * « c'est bien CE message qui est parti, et CE scénario derrière ».
+ */
+function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
+  const t = useT();
+  // ⚠️ Une campagne d'avant la migration 0134 n'a aucun étage : le dire plutôt que d'afficher un cadre vide.
+  if (chaine.length === 0) return null;
+
+  const canal = (c: string) => (c === 'whatsapp' ? 'WhatsApp' : c === 'rcs' ? 'RCS' : t('E-mail', 'Email'));
+  const devenir = (d?: string) => (d === 'inbox'
+    ? t('les réponses reviennent à l’équipe', 'replies come back to the team')
+    : d === 'mba'
+      ? t('l’agent de Meta répond', 'Meta’s agent replies')
+      : null);
+
+  return (
+    <div className="border-b border-ink-100 px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{t('Ce qui a été lancé', 'What was launched')}</p>
+      <ul className="mt-2 space-y-1.5">
+        {chaine.map((e) => {
+          const suite = devenir(e.devenir);
+          return (
+            <li key={e.rang} className="text-sm text-ink-700">
+              <span className="font-medium">
+                {chaine.length > 1 ? `${t('Étage', 'Stage')} ${e.rang} · ` : ''}{canal(e.canal)}
+              </span>
+              {' : '}
+              {e.templateName
+                ? <span className="font-mono text-xs">{e.templateName}{e.templateLanguage ? ` (${e.templateLanguage})` : ''}</span>
+                : e.rcsMessage
+                  ? t('message RCS', 'RCS message')
+                  : e.emailTemplateId
+                    ? t('modèle d’e-mail', 'email template')
+                    : t('contenu inconnu', 'unknown content')}
+              {e.workflowId && (
+                <span className="text-ink-600">
+                  {' '}·{' '}{t('puis le scénario', 'then scenario')}{' '}
+                  <span className="font-mono text-xs">{e.workflowId.slice(0, 8)}</span>
+                </span>
+              )}
+              {/* ⚠️ Le devenir n'est affiché QUE s'il a été réglé : une campagne d'avant le câblage n'en a
+                  pas, et en inventer un dirait ce qui ne s'est pas passé. */}
+              {!e.workflowId && suite && <span className="text-ink-500">{' '}· {suite}</span>}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

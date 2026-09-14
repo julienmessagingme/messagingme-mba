@@ -58,10 +58,34 @@ export interface CampaignRecipient {
   deliveryStatus: string | null;
   deliveryError: string | null;
 }
+export interface EtageLance {
+  rang: number;
+  canal: CanalEtage;
+  templateName?: string;
+  templateLanguage?: string;
+  rcsMessage?: unknown;
+  emailTemplateId?: string;
+  emailChamp?: string;
+  workflowId?: string;
+  /** Cf. `ContenuEtage.devenir`. Absent = campagne d'avant le 2026-09-14. */
+  devenir?: 'mba' | 'inbox';
+}
+
 export interface CampaignDetail extends CampaignSummary {
   /** Mapping des variables du template (sert au bouton F7 : savoir quels champs corriger). */
   paramMapping: TemplateParam[];
   recipients: CampaignRecipient[];
+  /**
+   * LA CHAÎNE TELLE QU'ELLE A ÉTÉ LANCÉE.
+   *
+   * 🔴 Demandée par Julien le 2026-09-14 : « on ne retrouve pas les détails de comment est foutue une
+   * campagne une fois qu'on l'a lancée ; on doit pouvoir savoir quel message on a lancé, ou quel scénario,
+   * s'il y a un fallback quel message ou quel scénario ».
+   *
+   * ⚠️ Peut être VIDE sur une campagne très ancienne, d'avant la migration 0134 : l'écran le dit alors au
+   * lieu d'afficher un cadre sans contenu.
+   */
+  chaine: EtageLance[];
 }
 export interface PhoneNumber {
   id: string;
