@@ -33,16 +33,28 @@ tâche 7) : le contrôle public juste après rendait encore 502, le second reloa
 dans les deux cas, donc il ne dit rien. La séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer
 si besoin.
 
-## 🔴 CE QUI VIENT ENSUITE : l'essai réel de l'API, et il n'est pas du code
+## ✅ LE PLAN DE L'API EST FINI, essai réel compris (2026-09-14 au soir)
 
-**[Le plan de protection de l'API publique](docs/superpowers/plans/2026-09-14-protection-api-publique.md)**
-est livré aux neuf dixièmes : **les neuf tâches de CODE sont faites, relues, mutées et poussées** (quatre
-lots, `66fbff7` à `c1f1284`). Il reste la **tâche 10**, qui ne s'écrit pas : six gestes hostiles depuis un
-poste extérieur, avec une vraie clé sur un espace de test, plus le témoin qui protège l'usage (un
-intégrateur normal doit passer sans rien voir de tout cela).
+🔴 **L'ESSAI RÉEL A TROUVÉ CE QU'AUCUN TEST VERT NE MONTRAIT**, et c'est la seule chose qui justifie de le
+faire. Dix lots de 500 lancés simultanément sur la production : cinq refusés en 429, comme prévu, mais
+`/ops/usage` affichait **`refusees = 0` et 5 005 unités dont 2 500 n'avaient jamais été travaillées**. Le
+commentaire du code promettait exactement l'inverse. Corrigé (`ef42289`), figé par trois cas, redéployé,
+puis **re-mesuré sur la vraie API** : trois refusés, `refusees = 3`, `unites = 3 500`.
 
-🔴 **RIEN DE CE PLAN N'EST ÉPROUVÉ TANT QUE ÇA N'A PAS TOURNÉ.** Un mécanisme vert n'est pas un
-mécanisme éprouvé, et c'est la leçon que ce dépôt a payée le plus souvent.
+⚠️ **UN SEUL GESTE N'A PAS ÉTÉ FAIT, DÉLIBÉRÉMENT** : l'envoi de 50 destinataires. `DRY_RUN=false`, donc
+ce serait de vrais messages à de vraies personnes. Il demande un numéro de test et des destinataires
+consentants, c'est-à-dire une décision de Julien.
+
+⚠️ **ET LA CLÉ D'ESSAI (`testsecu2`, espace Demo) EST À RÉVOQUER** : elle a circulé en clair. Écran
+Developers > Clés d'API, bouton « Révoquer ».
+
+Les contacts et le champ personnalisé créés par l'essai ont été retirés de la base.
+
+## 🔴 CE QUI VIENT ENSUITE
+
+Les arbitrages ci-dessous, et les **huit essais réels** qui n'ont toujours pas été faits (opt-out, poussée
+vers un système tiers, politique d'annonce d'IA, journal des erreurs système, chaîne de repli, traduction,
+récap d'hier, créer un scénario depuis une campagne). Celui de l'API vient de montrer ce que ça rapporte.
 
 ✅ **DÉPLOYÉ le 2026-09-14 au soir**, sans migration (aucune n'est en jeu, la base reste à 0143). Contrôlé
 après coup plutôt que déduit : le code neuf est DANS l'image (`usage-guard.ts`, `FORMAT_CLE`, la route du

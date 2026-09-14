@@ -296,14 +296,36 @@ tsconfig racine ni celui de `web/` n'activent le contrôle.
 🔴 **RIEN DE CE PLAN N'EST ÉPROUVÉ TANT QUE CECI N'A PAS TOURNÉ.** Un mécanisme vert n'est pas un
 mécanisme éprouvé, et c'est la leçon que ce dépôt a payée le plus souvent.
 
-Depuis un poste extérieur, avec une vraie clé sur un espace de test :
-- [ ] un lot avec un `null` au milieu → **400 déterministe**, les autres lignes traitées, l'ordre conservé
-- [ ] `fields` en chaîne → **refusé**, et **aucun champ créé** (vérifier `user_fields` EN BASE)
-- [ ] une rafale de fausses clés → freinée, et **le nombre de requêtes Postgres ne suit pas**
-- [ ] dix lots de 500 en parallèle → **429 avec `Retry-After`**, et l'Inbox reste réactive pendant ce temps
-- [ ] l'espace verrouillé depuis `/ops` → **403 sur `/v1` et sur `/mcp`**
-- [ ] 🔴 **le témoin qui protège l'usage** : un intégrateur normal (200 contacts bien formés, un envoi de
-      50 destinataires) passe **sans rien voir de tout cela**
+**FAIT LE 2026-09-14 AU SOIR**, depuis un poste extérieur, avec une vraie clé (`testsecu2`) sur l'espace
+Demo. Les contacts et le champ personnalisé créés par l'essai ont été retirés de la base après coup.
+
+- [x] un lot avec un `null` au milieu → **200, l'erreur à SON index, les deux autres lignes créées**.
+      ⚠️ Le plan annonçait « 400 déterministe » : c'était imprécis, et le comportement observé est le bon.
+      Le contrat du batch est justement qu'un élément fautif ne fait pas tomber le lot ; seul un
+      CONTENEUR malformé rend 400. Avant ce chantier, ce lot partait entier en 500.
+- [x] `fields` en chaîne → **refusé** (« ⟪ fields ⟫ : un objet { clé: valeur } est attendu »), **aucun
+      champ créé**, vérifié EN BASE : `user_fields` ne porte aucune clé d'un caractère.
+- [x] `fields` imbriqué → refusé en nommant le champ fautif (« ⟪ fields.adresse ⟫ »), et un élément qui
+      est une chaîne → « chaque contact doit être un objet », au lieu de « téléphone invalide ».
+- [x] une rafale de fausses clés → **les 30 premières en 401, les 10 suivantes en 429**, donc refusées
+      AVANT la base. ⚠️ Un premier essai n'a rien prouvé : mes fausses clés faisaient 42 caractères, donc
+      le contrôle de FORMAT les refusait avant le budget. Il a fallu les refaire au bon format.
+- [x] dix lots de 500 en parallèle → **5 refusés en 429 avec `Retry-After: 2`**, aucun échec d'acquisition
+      de connexion, aucune attente de huit secondes.
+- [x] l'espace verrouillé depuis `/ops` → **403 `tenant_locked` sur `/v1` ET sur `/mcp`**, et retour à 200
+      dès le verrou retiré.
+- [x] le témoin : un lot bien formé passe sans rien voir (un nombre en valeur de champ y est accepté et
+      converti en texte).
+- [ ] 🔴 **CE QUI N'A PAS ÉTÉ FAIT, ET POURQUOI : l'envoi de 50 destinataires.** `DRY_RUN=false` en
+      production : cet essai enverrait de vrais messages WhatsApp à de vraies personnes. Il demande un
+      numéro de test et des destinataires consentants, c'est-à-dire une décision de Julien, pas un geste
+      de vérification.
+
+🔴 **ET L'ESSAI A TROUVÉ UN DÉFAUT QU'AUCUN TEST VERT NE MONTRAIT** : les cinq lots refusés étaient
+comptés comme ACCEPTÉS (`refusees` à zéro, 5 005 unités annoncées dont 2 500 jamais travaillées), alors
+qu'un commentaire du code promettait l'inverse. Corrigé (`ef42289`), figé par trois cas dont un en HTTP,
+redéployé, et **re-mesuré sur la vraie API** : dix lots, trois refusés, `refusees=3`, `unites=3500` pour
+les sept acceptés. C'est exactement ce que cette tâche existe pour produire.
 
 ---
 
