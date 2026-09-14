@@ -38,8 +38,23 @@ const tourSchema = z.object({
  *  d'être un entretien. Un client qui en a davantage les regroupe, ou les ajoute ensuite à la main. */
 export const MAX_BASCULES = 12;
 
+/**
+ * Plafond de ce que le FIL conserve. Sans rapport avec `MAX_TOURS_HISTORIQUE`, qui borne ce qu'on ENVOIE.
+ *
+ * ⚠️ Il existe pour qu'un jsonb ne grossisse pas sans fin, pas pour décider d'un contexte : à 4 000 tours,
+ * une conversation d'assistant a largement de quoi couvrir des années, et la mémoire longue des décisions
+ * vit de toute façon dans l'onglet Historique.
+ */
+export const MAX_TOURS_CONSERVES = 4000;
+
 const etatSchema = z.object({
-  messages: z.array(tourSchema).max(MAX_TOURS_HISTORIQUE * 2).default([]),
+  /**
+   * 🔴 PLAFONNÉ LARGE, PLUS À LA TAILLE DU CONTEXTE (2026-09-14). Il valait `MAX_TOURS_HISTORIQUE * 2`,
+   * c'est-à-dire que la RELECTURE elle-même rejetait un fil plus long que ce qu'on envoie au modèle : un fil
+   * conservé au-delà serait retombé sur l'entretien vierge, donc perdu. Le plafond qui reste est une garde
+   * contre un jsonb qui grossirait sans fin, pas une politique de contexte.
+   */
+  messages: z.array(tourSchema).max(MAX_TOURS_CONSERVES).default([]),
   reponses: z.array(z.object({
     point: z.string().max(64),
     valeur: z.string().max(2000),
@@ -60,13 +75,22 @@ export function lireEtat(brut: unknown): EntretienComplet {
 }
 
 /**
- * Borne l'historique AVANT écriture.
+ * Borne l'historique ENVOYÉ AU MODÈLE. Ce qui est CONSERVÉ ne l'est pas.
  *
- * On garde les derniers tours, pas les premiers : c'est la fin de l'entretien qui porte le contexte utile, et
- * les réponses déjà obtenues sont de toute façon conservées à part, dans `reponses`. Un entretien long ne perd
- * donc rien de ce qui compte, seulement sa transcription ancienne.
+ * 🔴 ELLE ÉTAIT APPELÉE À L'ÉCRITURE JUSQU'AU 2026-09-14, ET ELLE DÉTRUISAIT. Sa documentation affirmait
+ * qu'« un entretien long ne perd rien de ce qui compte, seulement sa transcription ancienne » : c'était vrai
+ * pour un entretien de CONSTRUCTION, qui se termine. Ça cesse de l'être pour un fil qui PERDURE (décision de
+ * Julien : « toute la conversation avec l'assistant doit perdurer »), où la transcription ancienne EST ce
+ * qu'on vient relire des semaines plus tard.
+ *
+ * ⚠️ CONSERVER N'EST PAS ENVOYER, et l'écart est délibéré : le fil garde tout, le prompt reste borné. Un
+ * historique sans fin dans le contexte finirait par pousser la fiche courante hors de la fenêtre du modèle,
+ * donc par dégrader ce qu'on cherche à améliorer. La mémoire longue des DÉCISIONS vit dans l'onglet
+ * Historique (migration 0146), qui est fait pour ça et se lit d'un coup d'œil.
+ *
+ * On garde les DERNIERS tours, pas les premiers : c'est la fin du fil qui porte le contexte utile.
  */
-export function bornerMessages(messages: readonly TourEntretien[]): TourEntretien[] {
+export function bornerPourModele(messages: readonly TourEntretien[]): TourEntretien[] {
   return messages
     .slice(-MAX_TOURS_HISTORIQUE * 2)
     .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_CARACTERES_MESSAGE) }));

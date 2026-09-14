@@ -10,7 +10,7 @@ import {
 import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
 import { agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
-import { ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
+import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { scopeTenant, estUuid } from './scope';
 
 /**
@@ -253,7 +253,19 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     if (!parse.success) return reply.code(400).send({ error: 'message requis (texte non vide)' });
 
     const avant = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
-    const historique: TourEntretien[] = [...avant.messages, { role: 'user', content: parse.data.message }];
+    /**
+     * 🔴 LA BORNE EST ICI, À LA CONSTRUCTION DU PROMPT, ET PLUS À L'ÉCRITURE (2026-09-14). Elle était posée
+     * dans `PgEntretienStore.ecrire` : les tours anciens n'étaient donc pas seulement absents du contexte du
+     * modèle, ils étaient DÉTRUITS. Un fil qui perdure (décision de Julien : « toute la conversation avec
+     * l'assistant doit perdurer ») ne peut pas se faire amputer par sa propre sauvegarde.
+     *
+     * ⚠️ On borne ce qui PART, jamais ce qu'on GARDE : le fil conserve tout, le prompt reste borné. Un
+     * historique sans fin dans le contexte pousserait la fiche courante hors de la fenêtre du modèle.
+     */
+    const historique: TourEntretien[] = [
+      ...bornerPourModele(avant.messages),
+      { role: 'user', content: parse.data.message },
+    ];
     // 🔴 Le point du tour est arrêté AVANT l'appel, sur l'état serveur : c'est ce qui rend la séquence des
     // questions non négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
     const pointDuTour = prochainPoint(avant, inventaireDe(ctx.etat));
