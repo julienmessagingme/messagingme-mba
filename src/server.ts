@@ -22,6 +22,8 @@ import { registerAgentKnowledge } from './http/agent-knowledge';
 import { registerAgentTools } from './http/agent-tools';
 import { registerAgentCatalogue } from './http/agent-catalogue';
 import { registerMbaPublication } from './http/mba-publication';
+import { registerMbaAssistant } from './http/mba-assistant';
+import type { MbaAssistantDeps } from './http/mba-assistant';
 import type { MbaPublicationDeps } from './http/mba-publication';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
@@ -172,6 +174,8 @@ export interface ServerDeps {
   agentCatalogue?: AgentCatalogueRouteDeps;
   /** Publication du catalogue d'outils chez Meta : l'aperçu, puis l'exécution. */
   mbaPublication?: MbaPublicationDeps;
+  /** L'assistant conversationnel du Meta Business Agent. Absent -> la route n'existe pas. */
+  mbaAssistant?: MbaAssistantDeps;
   agentSources?: AgentSourcesRouteDeps;
   agentRequetes?: AgentRequetesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
@@ -428,6 +432,10 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('agentTools', 'tenant', deps.agentTools, (app, d, g) => registerAgentTools(app, d, g.admin)),
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
     entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),
+    // ⚠️ `g.admin` COMME LES ÉCRITURES MBA : la conversation ne doit pas être un chemin plus permissif que
+    // le formulaire, sinon elle devient un contournement du contrôle d'accès. La route repose la garde
+    // elle-même (`forbidNonAdmin`), les deux étant voulues : celle-ci monte, celle-là explique.
+    entree('mbaAssistant', 'tenant', deps.mbaAssistant, (app, d, g) => registerMbaAssistant(app, d, g.admin)),
     entree('agentSources', 'tenant', deps.agentSources, (app, d, g) => registerAgentSources(app, d, g.admin)),
     // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
     // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.

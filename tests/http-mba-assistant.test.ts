@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import Fastify from 'fastify';
 import { registerMbaAssistant, type MbaAssistantDeps } from '../src/http/mba-assistant';
 import { calculerCompletion, type EntreeCompletion } from '../src/mba/completion';
@@ -46,11 +48,17 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
     }),
     completer: async () => {
       journal.appelsModele += 1;
+      // ⚠️ LA FORME RÉELLE : les arguments arrivent en JSON BRUT (`argumentsJson`), pas en objet. Un faux
+      // qui rendrait un objet ferait passer un test que le vrai câblage échouerait.
       return {
         texte: null,
-        appelsOutils: [{ nom: 'proposer', arguments: { message: 'Très bien.', operations: [{ type: 'faq.ajouter', question: 'Horaires ?', reponse: '9h-18h' }] } }],
-        usage: { coutDollars: 0.01 },
-      };
+        finish: 'tool_calls',
+        appelsOutils: [{
+          id: 'c1', nom: 'proposer',
+          argumentsJson: JSON.stringify({ message: 'Très bien.', operations: [{ type: 'faq.ajouter', question: 'Horaires ?', reponse: '9h-18h' }] }),
+        }],
+        usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.01 },
+      } as never;
     },
     ...sur,
   };
@@ -63,7 +71,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
   return { app, journal, lireFil: () => fil };
 }
 
-const post = (app: ReturnType<typeof monter>['app'], url: string, payload: unknown) =>
+const post = (app: ReturnType<typeof monter>['app'], url: string, payload: Record<string, unknown>) =>
   app.inject({ method: 'POST', url, payload });
 
 describe('le contrôle d’accès', () => {
@@ -123,7 +131,7 @@ describe('un tour', () => {
   it('⚠️ un modèle qui répond de travers ne casse PAS le fil', async () => {
     // Refuser en 422 laisserait un écran mort sur une erreur que le client ne peut pas corriger.
     const m = monter({
-      completer: async () => ({ texte: 'Hmm.', appelsOutils: [], usage: { coutDollars: 0.001 } }),
+      completer: async () => ({ texte: 'Hmm.', finish: 'stop', appelsOutils: [], usage: { tokensIn: 5, tokensOut: 2, coutDollars: 0.001 } } as never),
     });
     const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
     expect(r.statusCode).toBe(200);
@@ -186,5 +194,41 @@ describe('appliquer', () => {
     const m = monter({}, { role: 'agent' });
     const r = await post(m.app, '/tenants/t1/mba/assistant/appliquer', { operations: [] });
     expect(r.statusCode).toBe(403);
+  });
+});
+
+/**
+ * 🔴 LA GARDE QUE LA REVUE DU LOT B A RENDUE NÉCESSAIRE.
+ *
+ * Tout le moteur était écrit, testé, vert — et MORT : `registerMbaAssistant` n'était appelé nulle part, et
+ * rien ne construisait l'inventaire. Treize tests passaient sur du code qu'aucune requête ne pouvait
+ * atteindre. C'est le motif « capacité câblée sur zéro consommateur », déjà attrapé au lot A avec la colonne
+ * `auteurs`, et aucun test unitaire ne peut le voir : un faux câblage ne dit rien du vrai.
+ */
+describe('le vrai câblage : la route EXISTE', () => {
+  const serveur = readFileSync(resolve(__dirname, '../src/server.ts'), 'utf8');
+  const index = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8');
+
+  it('🔴 elle est montée dans le registre de modules', () => {
+    expect(serveur).toContain("entree('mbaAssistant'");
+    expect(serveur).toContain('registerMbaAssistant');
+  });
+
+  it('🔴 elle est montée en ADMIN, comme les écritures MBA', () => {
+    // La conversation ne doit pas être un chemin plus permissif que le formulaire.
+    const ligne = serveur.split('\n').find((l) => l.includes("entree('mbaAssistant'")) ?? '';
+    expect(ligne).toContain('g.admin');
+  });
+
+  it('🔴 ses dépendances sont fournies, sinon la route n’existe pas', () => {
+    expect(index).toContain('mbaAssistant: {');
+    // L'inventaire a un producteur réel : sans lui, le moteur n'a rien à lire.
+    expect(index).toContain('lireInventaireMba');
+  });
+
+  it('🔴 elle passe par NOTRE clé, jamais par le crédit du client', () => {
+    const bloc = index.slice(index.indexOf('mbaAssistant: {'), index.indexOf('mba: {', index.indexOf('mbaAssistant: {')));
+    expect(bloc).toContain('gatewayAide.completer');
+    expect(bloc).toContain('AUCUN_ESPACE_PAYEUR');
   });
 });

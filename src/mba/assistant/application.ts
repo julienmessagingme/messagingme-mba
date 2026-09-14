@@ -45,7 +45,12 @@ export interface ClientMbaEcriture {
   listFiles(p: string): Promise<Array<{ id?: string; name?: string }>>;
   uploadFile(p: string, nom: string, contenu: Blob): Promise<unknown>;
   deleteFile(p: string, id: string): Promise<void>;
-  getBusinessInfo(p: string): Promise<Record<string, unknown>>;
+  /**
+   * ⚠️ `unknown` ET NON `Record<string, unknown>` : le vrai `MbaClient` rend un type NOMMÉ (`BusinessInfo`),
+   * qui n'a pas d'index de chaîne et n'est donc pas assignable. Resserrer ici obligerait à élargir là-bas,
+   * c'est-à-dire à affaiblir un type juste pour satisfaire un contrat de test.
+   */
+  getBusinessInfo(p: string): Promise<unknown>;
   putBusinessInfo(p: string, info: unknown): Promise<unknown>;
   getSettings(p: string): Promise<unknown>;
   putSettings(p: string, s: unknown, agentId?: string): Promise<unknown>;
@@ -218,7 +223,7 @@ async function executer(
       // ⚠️ LECTURE PUIS FUSION : `putBusinessInfo` REMPLACE. Envoyer le seul champ modifié effacerait tous
       // les autres, c'est-à-dire la description de l'activité, sur un geste annoncé comme « changer les
       // horaires ». Même règle que `fusionnerBusinessInfo` (`src/mba/client.ts`).
-      const actuel = await client.getBusinessInfo(numero);
+      const actuel = (await client.getBusinessInfo(numero)) as Record<string, unknown>;
       await client.putBusinessInfo(numero, { ...actuel, [champMeta(o.champ)]: o.valeur });
       return;
     }

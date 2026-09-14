@@ -12,6 +12,7 @@ import { appliquer, libelleDe, type ApplicationDeps } from '../mba/assistant/app
 import { accueilMba } from '../mba/assistant/couverture';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
+import type { ChatMessage, GatewayChatClient, OutilExpose, ReponseChat } from '../agent/llm/chat-client';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : la conversation qui règle l'agent, et qui le MET À JOUR.
@@ -37,13 +38,14 @@ export interface MbaAssistantDeps {
   entretiens: EntretienMbaStore;
   depenses: DepenseStore;
   plafondEuros: number;
-  /** Le client de modèle. Absent -> l'assistant est indisponible, et il le dit en 503. */
-  completer?(entree: {
-    modele: string;
-    messages: Array<{ role: string; content: string }>;
-    outils?: unknown[];
-    tenantId: string;
-  }): Promise<{ texte: string | null; appelsOutils: Array<{ nom: string; arguments: unknown }>; usage: { coutDollars: number } }>;
+  /**
+   * Le client de modèle. Absent -> l'assistant est indisponible, et il le dit en 503.
+   *
+   * ⚠️ LE TYPE VIENT DU CLIENT DE CHAT, il n'est pas réécrit ici. Une signature plus lâche (`role: string`)
+   * compilait de son côté et refusait le vrai câblage : un contrat recopié approximativement ne protège de
+   * rien et fait diverger les deux moitiés.
+   */
+  completer?(entree: Parameters<GatewayChatClient['completer']>[0]): Promise<ReponseChat>;
   modele: string;
   /** Tout ce qu'il faut pour écrire chez Meta. */
   application(tenantId: string, acteur: { id: string | null; email: string | null }): ApplicationDeps;
@@ -136,13 +138,13 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
     const filComplet: TourMba[] = [...avant.messages, { role: 'user', content: parse.data.message }];
     const auteurs: Array<string | null> = [...avant.auteurs, ctx.acteur.id];
     const point = pointDuTourMba(inv, avant.poses);
-    const messages = construireMessagesMba(inv, bornerPourModeleMba(filComplet), avant.poses);
+    const messages = construireMessagesMba(inv, bornerPourModeleMba(filComplet), avant.poses) as ChatMessage[];
 
     const reponse = await deps.completer({
       modele: deps.modele,
       messages,
       tenantId: '',
-      outils: [outilProposer()],
+      outils: [outilProposer()] as OutilExpose[],
     });
 
     // ⚠️ LA DÉPENSE EST NOTÉE APRÈS L'APPEL, avec le coût RÉEL : une estimation avant serait fausse, et le
@@ -150,8 +152,15 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
     await deps.depenses.ajouter(ctx.tenant, mois,
       microEurosDepuisDollars(reponse.usage.coutDollars, deps.tauxEurParDollar));
 
+    /**
+     * ⚠️ LES ARGUMENTS ARRIVENT EN JSON BRUT (`argumentsJson`), et un modèle peut en rendre du mal formé.
+     * Un `JSON.parse` nu léverait, donc casserait le tour sur une faute qui n'est pas celle du client :
+     * on retombe sur un objet vide, que le schéma refusera proprement juste en dessous.
+     */
     const appel = reponse.appelsOutils[0];
-    const propose = propositionMbaSchema.safeParse(appel?.arguments ?? {});
+    let brut: unknown = {};
+    try { brut = appel ? JSON.parse(appel.argumentsJson) : {}; } catch { brut = {}; }
+    const propose = propositionMbaSchema.safeParse(brut);
     if (!propose.success) {
       /**
        * ⚠️ UN MODÈLE QUI RÉPOND DE TRAVERS NE CASSE PAS LE FIL. On rend ce qu'il a dit en texte, sans

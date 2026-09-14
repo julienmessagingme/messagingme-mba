@@ -121,6 +121,11 @@ import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
+import { PgEntretienMbaStore } from './mba/assistant/entretien-store';
+import { lireInventaireMba } from './mba/assistant/inventaire';
+import { PgDepenseStore } from './assistant/budget';
+import { PgHistoriqueStore } from './reglages/historique.pg';
+import type { LigneHistorique } from './reglages/historique';
 import { PgTestRunStore } from './agent/test-runs.pg';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
@@ -278,6 +283,13 @@ async function main(): Promise<void> {
    * de la route (`src/http/aide.ts`), qui empeche un seul client de la consommer pour tout le monde.
    */
   const gatewayAide = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
+
+  /**
+   * L'HISTORIQUE DES RÉGLAGES (migration 0146). Partagé par les DEUX assistants et par les formulaires :
+   * un historique qui ignorerait les gestes d'écran mentirait par omission, et on y chercherait une cause
+   * qui ne s'y trouve pas.
+   */
+  const historiqueStore = new PgHistoriqueStore(pool);
   /** Il n y a aucun espace pour le compte de qui l aide est appelee : la depense est la NOTRE. */
   const AUCUN_ESPACE_PAYEUR = '';
   /**
@@ -1190,6 +1202,44 @@ async function main(): Promise<void> {
     // ⚠️ `PUT /tenants/:id/mba-activation` fait EXCEPTION, et c'est sa raison d'être : elle résout le numéro
     // elle-même et s'isole par `scopeTenant`. Exiger le numéro de l'appelant est précisément ce qui a fait
     // sauter l'appel à Meta trois fois le 2026-09-10, la dernière parce que le navigateur ne l'avait pas encore.
+    /**
+     * L'ASSISTANT DU META BUSINESS AGENT (lot B du plan des assistants conversationnels).
+     *
+     * 🔴 IL PASSE PAR `gatewayAide`, DONC PAR NOTRE CLÉ, comme l'assistant d'agent IA depuis le 2026-09-14 :
+     * facturer quelqu'un pour apprendre à se servir du produit se retourne contre nous. Et c'est pourquoi
+     * `ASSISTANT_PLAFOND_EUROS_MOIS` l'accompagne : sur le crédit du client, un bavardage se payait tout
+     * seul ; sur le nôtre, rien ne le borne.
+     *
+     * ⚠️ ABSENT SANS CLÉ DE MODÈLE : la route n'est alors pas montée du tout, plutôt que montée et
+     * inopérante. Un écran qui appelle une route absente reçoit un 404 lisible ; une route qui répond 503 à
+     * chaque tour ressemble à une panne intermittente.
+     */
+    ...(gatewayAide ? {
+      mbaAssistant: {
+        inventaire: async (tenant: string) => {
+          const phoneNumberId = await repo.getTenantPhoneNumberId(tenant);
+          if (!phoneNumberId) return null;
+          // ⚠️ L'« agentId » des routes MBA EST le `phone_number_id` : c'est ce que fait déjà `src/http/mba.ts`
+          // (`listSkills(phoneNumberId, agentId)` y reçoit le même identifiant). Inventer un second champ
+          // créerait une seconde vérité pour la même chose.
+          return lireInventaireMba(await metaFactory.mbaClientForTenant(tenant), phoneNumberId, phoneNumberId);
+        },
+        entretiens: new PgEntretienMbaStore(pool),
+        depenses: new PgDepenseStore(pool),
+        plafondEuros: config.ASSISTANT_PLAFOND_EUROS_MOIS,
+        modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
+        tauxEurParDollar: config.EUR_PER_USD,
+        agentIdDuTenant: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
+        completer: (i: Parameters<GatewayChatClient['completer']>[0]) =>
+          gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
+        application: (tenant: string, acteur: { id: string | null; email: string | null }) => ({
+          numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
+          client: (t: string) => metaFactory.mbaClientForTenant(t),
+          journaliser: (t: string, ligne: LigneHistorique) => historiqueStore.ecrire(t, ligne),
+          acteur,
+        }),
+      },
+    } : {}),
     mba: {
       clientFor: (tenant) => metaFactory.mbaClientForTenant(tenant),
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
