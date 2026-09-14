@@ -40,7 +40,11 @@ describe.skipIf(!url)('l historique des reglages', () => {
       `insert into tenants (name) values ('itest-historique-autre') returning id`,
     )).rows[0]!.id;
     agentId = (await pool.query<{ id: string }>(
-      `insert into agents (tenant_id, label) values ($1, 'agent d essai') returning id`, [tenantId],
+      // ⚠️ `mention_ia` et `modele` sont NOT NULL SANS défaut (migration 0086) : les omettre fait échouer tout
+      // le fichier dans son `beforeAll`, ce qu'aucun test unitaire ne peut voir. Même forme que les fixtures
+      // de `agent-catalog.integration.test.ts`, qui tournent, elles.
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'agent d essai', 'Je suis une IA.', 'm') returning id`,
+      [tenantId],
     )).rows[0]!.id;
   });
 
