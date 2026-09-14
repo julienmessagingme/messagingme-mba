@@ -747,7 +747,8 @@ toutes pièces. Vide = aucun en-tête CORS n'est posé du tout, ce qui est le bo
 🔴 **LES ROUTES AUTHENTIFIÉES ONT UN PLAFOND DE DÉBIT, et 0 le désactive** (2026-09-07). Deux plafonds :
 `RATE_LIMIT_USER_PAR_MINUTE` (défaut 300, clé = utilisateur, posé DANS `makeRequireAuth` donc hérité par les
 36 modules gardés) et `RATE_LIMIT_COUTEUX_PAR_MINUTE` (défaut 10, clé = ESPACE) sur import, aperçu, action en
-masse, purge, export d'historique et lancement de campagne. **Mettre l'une à 0 la désactive**, et c'est le
+masse, purge, export d'historique, lancement de campagne, et les QUATRE routes lourdes de la connaissance d'un
+agent (suppression en masse, import d'un document, aperçu et import d'un site, ajoutées le 2026-09-15). **Mettre l'une à 0 la désactive**, et c'est le
 levier d'urgence : ces plafonds touchent les 235 routes d'un produit en production, un mauvais calibrage
 couperait la console de tous les clients, et un `--force-recreate` va plus vite qu'un déploiement de code.
 ⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance, à lever avant le multi-replica.

@@ -24,10 +24,12 @@ const AG = '11111111-1111-1111-1111-111111111111';
 const F1 = '22222222-2222-2222-2222-222222222222';
 const F2 = '33333333-3333-3333-3333-333333333333';
 
+/** ⚠️ `as unknown as` : la vraie fiche porte plus de champs que ce test n'en regarde, et les lui ajouter ne
+ *  prouverait rien de plus. Ce qui compte ici est que le CORPS traverse jusqu'au journal. */
 const fiche = (id: string, titre: string): FicheConnaissance => ({
   id, titre, corps: `corps de ${titre}`, sourceUrl: null, sourceType: null, sourceNom: null,
   createdAt: '2026-09-15T08:00:00.000Z', updatedAt: '2026-09-15T08:00:00.000Z',
-} as FicheConnaissance);
+} as unknown as FicheConnaissance);
 
 function monterConnaissance(opts: { sansJournal?: boolean } = {}) {
   const lignes: Array<{ tenant: string; agentId: string; cible: string; libelle: string; avant: unknown; acteurId: string | null }> = [];
@@ -37,15 +39,17 @@ function monterConnaissance(opts: { sansJournal?: boolean } = {}) {
     lister: async () => base,
     creer: async () => null,
     modifier: async () => null,
-    supprimer: async (_t, _a, id) => {
+    supprimer: async (_t: string, _a: string, id: string) => {
       const avant = base.length;
       base = base.filter((f) => f.id !== id);
       return base.length < avant;
     },
     ...(opts.sansJournal ? {} : {
-      journaliserSuppression: async (tenant, agentId, l) => { lignes.push({ tenant, agentId, ...l }); },
+      journaliserSuppression: async (
+        tenant: string, agentId: string, l: { cible: string; libelle: string; avant: unknown; acteurId: string | null },
+      ) => { lignes.push({ tenant, agentId, ...l }); },
     }),
-  } as AgentKnowledgeRouteDeps;
+  } as unknown as AgentKnowledgeRouteDeps;
 
   const app = Fastify();
   app.addHook('preHandler', async (req) => {

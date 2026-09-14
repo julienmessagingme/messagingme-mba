@@ -432,7 +432,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('admin', 'tenant', deps.admin, (app, d, g) => registerUsers(app, d, g.admin)),
     entree('flows', 'tenant', deps.flows, (app, d, g) => registerFlows(app, d, g.admin)),
     entree('agents', 'tenant', deps.agents, (app, d, g) => registerAgents(app, d, g.admin)),
-    entree('agentKnowledge', 'tenant', deps.agentKnowledge, (app, d, g) => registerAgentKnowledge(app, d, g.admin)),
+    entree('agentKnowledge', 'tenant', deps.agentKnowledge, (app, d, g) => registerAgentKnowledge(app, d, g.admin, g.limiteCouteuse)),
     entree('agentTools', 'tenant', deps.agentTools, (app, d, g) => registerAgentTools(app, d, g.admin)),
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
     entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),

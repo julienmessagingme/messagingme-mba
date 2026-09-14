@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Guard } from '../auth/middleware';
+import type { Guard, PreHandler } from '../auth/middleware';
 import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../agent/knowledge';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFiches } from '../agent/scrape';
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
@@ -88,8 +88,23 @@ const importSchema = z.object({
   pages: z.array(z.string().trim().min(1).max(2000)).max(PAGES_MAX).optional(),
 });
 
-export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledgeRouteDeps, guard?: Guard): void {
+export function registerAgentKnowledge(
+  app: FastifyInstance, deps: AgentKnowledgeRouteDeps, guard?: Guard, limiteCouteuse?: PreHandler,
+): void {
   const opts = guard ? { preHandler: guard } : {};
+  /**
+   * 🔴 LE PLAFOND DES OPÉRATIONS LOURDES, sur les QUATRE routes de ce module qui en sont (2026-09-15) : la
+   * suppression en masse (jusqu'à 200 fiches, et autant de lignes d'historique depuis ce jour), l'import
+   * d'un document (extraction d'un PDF de 8 Mo dans le process) et le crawl d'un site (aperçu et import : des
+   * dizaines de requêtes réseau sortantes par appel). Elles étaient sous le seul plafond par UTILISATEUR, soit 300 par
+   * minute : de quoi lancer trois cents crawls en une minute sans rien enfreindre.
+   *
+   * ⚠️ PAS SUR LES LECTURES NI SUR L'ÉDITION D'UNE FICHE : ce plafond est par ESPACE et vaut 10 par minute
+   * par défaut, il rendrait l'écran inutilisable si on le posait sur des gestes ordinaires.
+   */
+  const optsLourds = limiteCouteuse
+    ? { preHandler: guard ? [...(Array.isArray(guard) ? guard : [guard]), limiteCouteuse] : [limiteCouteuse] }
+    : opts;
   const base = '/tenants/:tenantId/agents/:agentId/knowledge';
 
   /**
@@ -203,7 +218,7 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
    * ⚠️ Les identifiants MAL FORMES sont ecartes ici, pas envoyes en base : un uuid invalide fait LEVER la
    * requete entiere, donc une seule faute de frappe annulerait la suppression des cinquante autres.
    */
-  app.post(`${base}/supprimer`, opts, async (req, reply) => {
+  app.post(`${base}/supprimer`, optsLourds, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const parse = suppressionSchema.safeParse(req.body ?? {});
@@ -249,7 +264,7 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
    * le dire est plus honnête que de traîner un client LLM dans un module d'administration, et la
    * conversation de construction, elle, l'a déjà.
    */
-  app.post(`${base}/document`, opts, async (req, reply) => {
+  app.post(`${base}/document`, optsLourds, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const parse = documentSchema.safeParse(req.body ?? {});
@@ -297,7 +312,7 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
    * « 50 pages » n'est pas « tout le site », et un écran qui ne le dirait pas laisserait croire à une base
    * complète alors qu'il en manque la moitié.
    */
-  app.post(`${base}/apercu`, opts, async (req, reply) => {
+  app.post(`${base}/apercu`, optsLourds, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     if (!deps.fetchUrl) return reply.code(503).send({ error: 'import depuis une URL indisponible' });
@@ -339,7 +354,7 @@ export function registerAgentKnowledge(app: FastifyInstance, deps: AgentKnowledg
    * Toutes les issues d'échec sont en 4xx, jamais en 5xx : un site injoignable, une page vide ou un PDF ne
    * sont pas des incidents de la console, ce sont des choses que le client doit lire et corriger lui-même.
    */
-  app.post(`${base}/import`, opts, async (req, reply) => {
+  app.post(`${base}/import`, optsLourds, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     if (!deps.fetchUrl) return reply.code(503).send({ error: 'import depuis une URL indisponible' });

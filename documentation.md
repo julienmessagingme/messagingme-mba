@@ -716,7 +716,8 @@ toutes pièces. Vide = aucun en-tête CORS n'est posé, ce qui est le bon défau
 
 🔴 **Deux plafonds de débit, et 0 les désactive.** `RATE_LIMIT_USER_PAR_MINUTE` (clé = utilisateur, posé DANS
 `makeRequireAuth` donc hérité par tous les modules gardés) et `RATE_LIMIT_COUTEUX_PAR_MINUTE` (clé = ESPACE)
-sur import, aperçu, action en masse, purge, export et lancement de campagne. Mettre l'une à 0 est le levier
+sur import, aperçu, action en masse, purge, export, lancement de campagne, et les routes lourdes de la
+connaissance d'un agent (suppression en masse, import d'un document, aperçu et import d'un site). Mettre l'une à 0 est le levier
 d'urgence : un mauvais calibrage couperait la console de tous les clients, et un `--force-recreate` va plus
 vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance,
 à lever avant le multi-replica.
