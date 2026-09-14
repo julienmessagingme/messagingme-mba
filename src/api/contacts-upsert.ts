@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { config } from '../config';
 import { normalizePhone } from '../crm/phone';
 import { validateFieldValue, canonicalizeFieldValue, ensureFieldByKey } from '../crm/fields';
 import { normaliserDate, raisonDateLisible } from '../crm/date-iso';
@@ -22,8 +23,13 @@ import type { CountryCode } from 'libphonenumber-js';
  * ⚠️ CE N'EST PAS LE PLAFOND PAR ESPACE, qui est un autre sujet (le nombre total de définitions qu'une
  * série d'appels peut faire naître). Ici on borne UN contact, dans le corps d'UNE requête.
  */
-export const MAX_CLE_CHAMP = 64;
-export const MAX_CHAMPS_PAR_CONTACT = 50;
+export const MAX_CLE_CHAMP = config.API_MAX_CLE_CHAMP;
+export const MAX_CHAMPS_PAR_CONTACT = config.API_MAX_CHAMPS_PAR_CONTACT;
+/**
+ * ⚠️ CELLE-CI N'EST PAS CONFIGURABLE, et c'est un choix : `optInSource` JUSTIFIE un consentement
+ * (`crm`, `csv_import`, `webhook:<nom>`, 12 caractères au plus en production). Aucun réglage d'exploitation
+ * n'a de raison de la desserrer, là où les deux autres peuvent gêner un intégrateur légitime.
+ */
 export const MAX_OPT_IN_SOURCE = 100;
 
 /**
@@ -127,13 +133,41 @@ const ECRITURES_EN_VOL = 4;
 export async function upsertContactsFromApi(
   tenantId: string,
   items: ApiContactInput[],
-  deps: { contacts: PgContactStore; fields: PgUserFieldStore; defaultCountry?: CountryCode },
+  deps: {
+    contacts: PgContactStore;
+    fields: PgUserFieldStore;
+    defaultCountry?: CountryCode;
+    /**
+     * COMBIEN DE DÉFINITIONS DE CHAMPS UN ESPACE PEUT PORTER. Défaut : `API_MAX_CHAMPS_PAR_ESPACE`, 0 désactive.
+     *
+     * ⚠️ INJECTABLE PLUTÔT QUE LUE ICI, pour que les tests l'exercent sans remonter le module : une borne
+     * qu'on ne peut pas faire varier ne se teste que sur sa valeur du jour, donc pas du tout.
+     */
+    maxChampsParEspace?: number;
+  },
 ): Promise<ApiUpsertOutcome[]> {
   // Défs chargées UNE fois (cache mutable) : évite un list() par champ/par item. Un champ auto-créé y est
   // ajouté pour que les items suivants le voient sans re-lister.
   const defs = await deps.fields.list(tenantId);
   const cache: FieldLister = { list: async () => defs };
   const ensured = new Set<string>();
+  /**
+   * 🔴 LE PLAFOND SE COMPTE SUR `defs`, QUI GROSSIT AU FIL DU LOT, et c'est ce qui en fait une borne.
+   * Compté sur la seule photo d'avant, un unique appel de 500 contacts portant 500 clés distinctes
+   * passerait entièrement : le plafond ne serait qu'un compteur d'historique.
+   *
+   * ⚠️ IL VAUT POUR LES TROIS APPELANTS DE CE CHEMIN, PAS SEULEMENT POUR `/v1` (relevé au commit) :
+   * l'API publique, le webhook entrant (`src/webhook-entrant/chemin.ts`) et l'import de listes passent
+   * tous par ici. C'est voulu, l'amplification est la même ; et le webhook y est le moins exposé,
+   * puisque ses clés de champs viennent d'un mapping qu'un ADMIN de l'espace a configuré, pas du payload
+   * d'un tiers.
+   *
+   * ⚠️ ET IL NE REFUSE QUE LA CRÉATION. Un contact qui n'utilise que des champs DÉJÀ déclarés passe, même
+   * au plafond, y compris dans le lot où un autre contact vient d'être refusé. Un plafond qui bloquerait
+   * l'espace entier une fois atteint changerait une protection en panne.
+   */
+  const plafondEspace = deps.maxChampsParEspace ?? config.API_MAX_CHAMPS_PAR_ESPACE;
+  const plafondAtteint = (): boolean => plafondEspace > 0 && defs.length >= plafondEspace;
 
   // DEUX TEMPS (lot 6 du programme II), et l'ordre n'est pas indifférent.
   //
@@ -158,6 +192,12 @@ export async function upsertContactsFromApi(
       const resolved = await resolveFieldKey(tenantId, ref, cache);
       if (!resolved.ok) { fieldError = `champ inconnu : ${ref}`; break; }
       if (!resolved.known && !ensured.has(resolved.key)) {
+        if (plafondAtteint()) {
+          // La raison NOMME le geste qui débloque : l'intégrateur ne peut pas deviner qu'un champ se crée
+          // aussi depuis la console, et un refus sans issue se transforme en ticket de support.
+          fieldError = `« ${resolved.key} » : cet espace a atteint son plafond de ${plafondEspace} champs personnalisés. Créez-le depuis la console, puis relancez.`;
+          break;
+        }
         await ensureFieldByKey(deps.fields, tenantId, resolved.key, resolved.key, 'text');
         ensured.add(resolved.key);
         defs.push({ key: resolved.key, label: resolved.key, type: 'text' } as UserFieldDef);

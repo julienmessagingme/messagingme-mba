@@ -72,6 +72,27 @@ export const schema = z.object({
    */
   RATE_LIMIT_COUTEUX_PAR_MINUTE: z.coerce.number().int().min(0).default(10),
   /**
+   * LES TROIS BORNES DES CHAMPS PERSONNALISÉS POUSSÉS PAR L'API PUBLIQUE.
+   *
+   * 🔴 LEURS VALEURS VIENNENT D'UNE MESURE, PAS D'UNE INTUITION (base de production, 2026-09-14) :
+   * 10 définitions de champs sur l'ensemble des espaces, l'espace le plus fourni en porte 9, la clé la
+   * plus longue fait 11 caractères, et aucun contact ne porte plus de 6 champs. Chaque défaut ci-dessous
+   * est donc entre 5 et 20 fois au-dessus de l'usage réel : un intégrateur normal ne peut pas les
+   * rencontrer, une boucle d'appels à clés aléatoires s'y heurte tout de suite.
+   *
+   * 🔴 ELLES SONT CONFIGURABLES POUR LA MÊME RAISON QUE LES PLAFONDS DE DÉBIT : elles s'appliquent à
+   * une API qu'utilisent de vrais intégrateurs, un calibrage trop serré casserait leur production, et
+   * changer une variable d'environnement (`compose up -d --force-recreate`) va nettement plus vite qu'un
+   * déploiement de code.
+   *
+   * ⚠️ `API_MAX_CHAMPS_PAR_ESPACE` À 0 DÉSACTIVE le plafond, exactement comme les plafonds de débit. Les
+   * deux autres bornent la FORME d'un corps de requête : elles n'ont pas de sens à 0, et le schéma les
+   * refuserait (`min(1)`).
+   */
+  API_MAX_CLE_CHAMP: z.coerce.number().int().min(1).default(64),
+  API_MAX_CHAMPS_PAR_CONTACT: z.coerce.number().int().min(1).default(50),
+  API_MAX_CHAMPS_PAR_ESPACE: z.coerce.number().int().min(0).default(200),
+  /**
    * Provider du canal RCS. `fake` = provider factice : le canal est complet de bout en bout (campagne, bloc de
    * scénario, joignabilité, opt-out) mais rien ne part vers un opérateur. `google` (API RBM) arrive au lot 2 et
    * LÈVE au démarrage tant qu'il n'est pas implémenté : un serveur qui croit envoyer du vrai RCS et envoie dans
