@@ -14,9 +14,9 @@
 
 | | |
 |---|---|
-| `origin/main` | `436547d` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1` : l'écart ne porte **aucun fichier de `src/`**, aucun redéploiement dû |
-| Dernière CI de CODE (`436547d`) | ✅ verte, quatre jobs |
+| `origin/main` | `c1f1284` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1` : 🔴 **l'écart porte désormais tout le lot API**, un déploiement est DÛ |
+| Dernière CI de CODE | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 | Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
 
@@ -33,10 +33,43 @@ tâche 7) : le contrôle public juste après rendait encore 502, le second reloa
 dans les deux cas, donc il ne dit rien. La séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer
 si besoin.
 
-## 🔴 CE QUI VIENT ENSUITE
+## 🔴 CE QUI VIENT ENSUITE : l'essai réel de l'API, et il n'est pas du code
 
-**[Le plan de protection de l'API publique](docs/superpowers/plans/2026-09-14-protection-api-publique.md)**,
-   dix tâches, **rien de commencé**. Il est écrit sur des MESURES : l'audit Codex du 2026-09-13 a été
+**[Le plan de protection de l'API publique](docs/superpowers/plans/2026-09-14-protection-api-publique.md)**
+est livré aux neuf dixièmes : **les neuf tâches de CODE sont faites, relues, mutées et poussées** (quatre
+lots, `66fbff7` à `c1f1284`). Il reste la **tâche 10**, qui ne s'écrit pas : six gestes hostiles depuis un
+poste extérieur, avec une vraie clé sur un espace de test, plus le témoin qui protège l'usage (un
+intégrateur normal doit passer sans rien voir de tout cela).
+
+🔴 **RIEN DE CE PLAN N'EST ÉPROUVÉ TANT QUE ÇA N'A PAS TOURNÉ.** Un mécanisme vert n'est pas un
+mécanisme éprouvé, et c'est la leçon que ce dépôt a payée le plus souvent.
+
+⚠️ **ET RIEN N'EST DÉPLOYÉ** : tout ce lot est côté API, donc il attend un `git pull` + `compose up -d
+--build` sur le VPS. Aucune migration n'est en jeu.
+
+### Ce que les quatre lots ont fermé
+
+| Lot | Ce qui était ouvert | Ce qui le ferme |
+|---|---|---|
+| 1 | la route **castait** le corps du batch : un `null` emportait le lot entier en 500, `fields` en chaîne créait un champ perso PAR CARACTÈRE | un schéma Zod, le type DÉRIVÉ de lui, l'erreur rendue à SON index |
+| 1 | l'auto-création de champs n'avait **aucune borne** | trois bornes configurables, mesurées sur la production (défauts 5 à 20 fois au-dessus de l'usage réel) |
+| 2 | une fausse clé coûtait un SHA-256 **et une requête Postgres**, comptée par aucun plafond | le format exact avant la base, plus un budget global de lookups spéculatifs |
+| 3 | **aucun compteur d'usage n'existait** : la seule trace était un `last_used_at` écrasé | le garde d'usage, en OBSERVATION, lisible sur `GET /ops/usage` |
+| 4 | rien ne comptait les requêtes lourdes **en vol** (8 connexions au pool, 4 demandées par lot) | un plafond de 2 lourdes simultanées, 429 + `Retry-After` |
+| 4 | le verrou d'espace n'était **lu ni par `/v1` ni par `/mcp`**, et **écrit nulle part** | la garde de clé le lit, `POST /ops/verrou/:tenantId` le pose, le runbook dit ce qu'il ne coupe pas |
+
+🔴 **DEUX FOIS, L'EXÉCUTION A CORRIGÉ LE PLAN, ET LE PLAN LE DIT MAINTENANT.** Sa tâche 3 demandait un
+limiteur « indexé sur l'empreinte du bearer » : mesuré faux par un test (trente clés différentes font
+trente compteurs à 1, et les trente requêtes partent). Et son compte de symboles morts (34) valait pour un
+autre jour : le compte réel était 17 côté serveur, dont 12 dans les tests.
+
+### Les arbitrages qui t'attendent
+
+- **les seuils de quota** : le garde compte, il ne refuse rien. Les chiffres viendront de ce que
+  `GET /ops/usage` montrera des vrais clients, pas d'une intuition ;
+- **le plafond de clés par espace**, et **les coûts à notre charge** (dont la recherche sémantique sans
+  compteur) ;
+- **les garde-fous RCS**, restés ouverts depuis l'arbitrage du 2026-09-14. Il est écrit sur des MESURES : l'audit Codex du 2026-09-13 a été
    vérifié affirmation par affirmation (94 constats, 76 vrais, 9 faux, 7 partiels, 2 périmés), et le plan
    ne retient que ce qui tient. Il dit aussi ce qu'il REFUSE, avec sa raison.
 

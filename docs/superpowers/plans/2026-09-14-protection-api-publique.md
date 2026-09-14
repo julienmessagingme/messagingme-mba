@@ -206,11 +206,15 @@ bout de 8 secondes, et pendant ce temps l'Inbox et le worker se disputent les m�
 ⚠️ Et le limiteur est une **fenêtre fixe** : les 60 requêtes peuvent tomber dans la même milliseconde. Dix
 d'entre elles suffisent à saturer le pool **sans jamais franchir le plafond affiché**.
 
-- [ ] **Étape 1 : le test** : trop de lots concurrents obtiennent un **429 contrôlé avec `Retry-After`**,
+- [x] **Étape 1 : le test** : trop de lots concurrents obtiennent un **429 contrôlé avec `Retry-After`**,
       jamais une erreur d'acquisition de connexion, jamais une attente HTTP illimitée.
-- [ ] **Étape 2 : implémenter le plafond d'opérations lourdes SIMULTANÉES**, porté par le garde central,
-      configurable, et démarré prudemment.
-- [ ] **Étape 3 : MUTER, commit**
+- [x] **Étape 2 : implémenter le plafond d'opérations lourdes SIMULTANÉES**, porté par le garde central,
+      configurable, et démarré prudemment (`API_MAX_LOURDES_SIMULTANEES`, défaut **2**, et le chiffre se
+      calcule : 8 connexions au pool, 4 demandées par lot, donc deux lots le saturent exactement).
+      ⚠️ **La libération est accrochée à la RÉPONSE**, pas à un `finally` de handler : celui de
+      `/v1/sends` fait deux cents lignes et plusieurs sorties anticipées. Une place qui fuit ne se voit
+      pas tout de suite, elle rétrécit le plafond jusqu'à ce que plus rien ne passe.
+- [x] **Étape 3 : MUTER, commit**
 
 ---
 
@@ -232,13 +236,13 @@ Donc « étendre le verrou » veut dire deux gestes : le faire lire par la garde
 de le poser**. `/ops` est le bon endroit : c'est la surface cross-tenant protégée par `OPS_TOKEN`, et elle
 porte déjà des écritures (`POST /ops/credits/:tenantId`, `DELETE /ops/cle-modele/:tenantId`).
 
-- [ ] **Étape 1 : les tests** (un espace verrouillé rend 403 sur `/v1` ET sur `/mcp` ; un espace actif
+- [x] **Étape 1 : les tests** (un espace verrouillé rend 403 sur `/v1` ET sur `/mcp` ; un espace actif
       passe ; le geste `/ops` pose et retire le verrou, et il est tracé)
-- [ ] **Étape 2 : implémenter**, en réutilisant `loadState` plutôt qu'en ajoutant une requête au chemin chaud
-- [ ] **Étape 3 : le RUNBOOK**, dans `DEPLOY.md` : ⚠️ **verrouiller n'arrête PAS les campagnes déjà
+- [x] **Étape 2 : implémenter**, en réutilisant `loadState` plutôt qu'en ajoutant une requête au chemin chaud
+- [x] **Étape 3 : le RUNBOOK**, dans `DEPLOY.md` : ⚠️ **verrouiller n'arrête PAS les campagnes déjà
       enfilées** (mesuré). La procédure doit dire comment les identifier et les mettre en pause, sinon on
       croit avoir coupé et les messages continuent de partir.
-- [ ] **Étape 4 : MUTER, commit**
+- [x] **Étape 4 : MUTER, commit**
 
 ---
 
@@ -255,9 +259,9 @@ Trouvés à la vérification du 2026-09-14, absents de l'audit :
 - ⚠️ **Le commentaire d'en-tête de `rate-limit.ts` annonce « fenêtre glissante ».** C'est une **fenêtre
   fixe ancrée sur le premier appel**. Une justification fausse est pire qu'aucune : elle sera recopiée.
 
-- [ ] Borner `list_members` comme ses voisins, et le tenir par un test
-- [ ] Corriger le commentaire, en disant ce que la fenêtre fait VRAIMENT
-- [ ] Commit
+- [x] Borner `list_members` comme ses voisins, et le tenir par un test
+- [x] Corriger le commentaire, en disant ce que la fenêtre fait VRAIMENT
+- [x] Commit
 
 ---
 
@@ -277,10 +281,13 @@ tsconfig racine ni celui de `web/` n'activent le contrôle.
 - `mbaEnabled` : deux appelants font un **appel réseau** (`getSettings`) pour passer un drapeau à un
   composant qui ne le lit pas.
 
-- [ ] **Étape 1 : une PR de nettoyage SANS aucun changement fonctionnel**
-- [ ] **Étape 2 : le contrôle en CI**, ciblé sur le code de production. ⚠️ Ne pas rendre toute la suite
+- [x] **Étape 1 : une PR de nettoyage SANS aucun changement fonctionnel**
+      ⚠️ **LE COMPTE DU JOUR EST 17 CÔTÉ SERVEUR (dont 12 dans `tests/` et `scripts/`) ET 12 CÔTÉ
+      CONSOLE**, pas 34 : le chiffre du plan avait été compté autrement, et plusieurs lots ont passé
+      depuis. ⚠️ `mbaEnabled` n'est plus reproductible et n'a donc PAS été « corrigé » : le code a bougé.
+- [x] **Étape 2 : le contrôle en CI**, ciblé sur le code de production. ⚠️ Ne pas rendre toute la suite
       rouge à cause des scripts et des tests historiques.
-- [ ] **Étape 3 : commit**
+- [x] **Étape 3 : commit**
 
 ---
 
