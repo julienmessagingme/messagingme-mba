@@ -1331,7 +1331,24 @@ async function main(): Promise<void> {
       // visites de l onglet, et surtout qui rend la sequence des questions deterministe (la couverture
       // cesse d etre une declaration du modele pour devenir un fait).
       entretiens: new PgEntretienStore(pool),
-      ...(gateway ? { completer: (i: Parameters<GatewayChatClient['completer']>[0]) => gateway.completer(i) } : {}),
+      /**
+       * 🔴 `gatewayAide`, ET PLUS `gateway` (tranché par Julien le 2026-09-14). Cet assistant tournait sur le
+       * CRÉDIT PRÉPAYÉ DU CLIENT : configurer son propre robot lui était facturé. Il passe sur notre clé
+       * maison, comme le bot d'aide de la console, et pour la raison déjà écrite dans ce dépôt : facturer
+       * quelqu'un pour apprendre à se servir du produit se retourne contre nous.
+       *
+       * ⚠️ `AUCUN_ESPACE_PAYEUR` n'est pas décoratif : `gatewayAide` est construit SANS résolveur de clé par
+       * espace, donc cette valeur n'est jamais lue pour en choisir une. La nommer évite qu'on la prenne pour
+       * un oubli et qu'on y remette le tenant, ce qui refacturerait le client sans que rien ne le signale.
+       *
+       * 🔴 ET C'EST CE QUI REND LE PLAFOND OBLIGATOIRE : sur le crédit du client, un bavardage se payait tout
+       * seul ; sur le nôtre, rien ne le borne. Les deux moitiés de cette décision vont ensemble
+       * (`ASSISTANT_PLAFOND_EUROS_MOIS`), l'une sans l'autre est dangereuse.
+       */
+      ...(gatewayAide ? {
+        completer: (i: Parameters<GatewayChatClient['completer']>[0]) =>
+          gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
+      } : {}),
       modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
       // Le modele de VISION est distinct : mesure du 2026-08-31, `zai/glm-4.7` (le modele d entretien de la
       // production) refuse une part image en 400. Vide -> les images sont refusees explicitement, les

@@ -637,6 +637,27 @@ export const schema = z.object({
    */
   EUR_PER_USD: z.coerce.number().positive().default(0.92),
   /**
+   * Ce que NOUS acceptons de dépenser par ESPACE et par mois calendaire pour les assistants de
+   * configuration (MBA et agents IA), en euros.
+   *
+   * 🔴 C'EST NOTRE ARGENT (tranché par Julien le 2026-09-14) : les deux assistants passent par la clé
+   * maison, comme le bot d'aide, parce que facturer quelqu'un pour apprendre à se servir du produit se
+   * retourne contre nous. C'est précisément ce qui rend ce plafond nécessaire : sur le crédit du client, un
+   * bavardage se payait tout seul ; sur le nôtre, rien ne le borne.
+   *
+   * 🔴 LE PLAFOND D'ÉQUIPE VERCEL N'EST PAS CE GARDE-FOU, et s'y fier serait une panne : il coupe TOUS les
+   * projets du Gateway d'un coup, bots clients en production compris. Celui-ci ne coupe qu'une conversation
+   * d'assistant, sur un seul espace.
+   *
+   * ⚠️ PAR ESPACE, PAS PAR ASSISTANT : un plafond par assistant multiplierait notre exposition par le nombre
+   * d'agents, c'est-à-dire par un chiffre que le client contrôle lui-même.
+   *
+   * Calibrage : le modèle d'entretien en production revient à environ un centime le tour, et un setup
+   * complet en demande une trentaine. 2 € valent donc environ 200 tours par mois. 0 désactive le plafond,
+   * comme les limiteurs de débit, et c'est le levier d'urgence.
+   */
+  ASSISTANT_PLAFOND_EUROS_MOIS: z.coerce.number().min(0).default(2),
+  /**
    * Notre commission sur le tarif des modèles, en POURCENT, telle qu'elle est ANNONCÉE au client dans la
    * liste déroulante de l'onglet Modèle (2026-09-09).
    *
