@@ -24,10 +24,12 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 class FauxStore implements ApiKeyLookup {
   appels = 0;
   touches: string[] = [];
-  constructor(private readonly valide: string | null = null) {}
+  /** Révoquer en cours de route, comme un admin le ferait depuis la console. */
+  revoquee = false;
+  constructor(private valide: string | null = null) {}
   async findActiveByHash(hash: string) {
     this.appels += 1;
-    if (this.valide && hash === sha256Hex(this.valide)) return { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] };
+    if (!this.revoquee && this.valide && hash === sha256Hex(this.valide)) return { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] };
     return null;
   }
   async touchLastUsed(id: string) { this.touches.push(id); }
@@ -142,6 +144,32 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
     expect(r.code()).toBeNull();
     expect(req.auth).toMatchObject({ tenantId: 't1', role: 'api' });
     expect(store.appels).toBe(1);
+  });
+
+  /**
+   * 🔴 UN TROU RELEVÉ EN REVUE, ET QU'AUCUN CAS NE COUVRAIT. L'exception des empreintes déjà résolues
+   * est un laissez-passer : si elle survivait à la RÉVOCATION, le porteur d'une clé coupée échapperait au
+   * budget spéculatif (il est « connu ») tout en échouant au lookup à chaque appel. Il pourrait donc
+   * marteler Postgres sans qu'aucun plafond ne le compte, puisque le plafond métier n'est atteint
+   * qu'après un lookup RÉUSSI. Un ancien client, ou une intégration qu'on vient de couper, rouvrait
+   * exactement ce que ce lot ferme.
+   */
+  it('🔴 une clé RÉVOQUÉE perd son laissez-passer et repasse sous le budget', async () => {
+    const { store, garde } = monter(VRAIE, { maxPreAuth: 2 });
+    await garde(requete(VRAIE), fausseReponse().reply);
+    store.revoquee = true;
+
+    // Le premier appel après révocation consomme le budget (elle est encore « connue »), le suivant la
+    // trouve oubliée, et le budget finit par la refuser AVANT la base.
+    const avant = store.appels;
+    let refus = 0;
+    for (let i = 0; i < 10; i += 1) {
+      const r = fausseReponse();
+      await garde(requete(VRAIE), r.reply);
+      if (r.code() === 429) refus += 1;
+    }
+    expect(refus, 'une clé révoquée doit finir par être freinée avant la base').toBeGreaterThan(0);
+    expect(store.appels - avant, 'elle ne doit plus pouvoir marteler le lookup').toBeLessThanOrEqual(3);
   });
 
   it('🔴 le plafond MÉTIER par clé reste actif EN PLUS du pré-filtre', async () => {

@@ -71,14 +71,14 @@ Ce qu'un intégrateur maladroit provoque aujourd'hui, mesuré :
 | `fields` imbriqué | stocké `[object Object]`, **donnée irrécupérable**, aucun signal |
 | `["+33612345678"]` au lieu de `[{phone:…}]` | 200 avec « numéro vide » ligne par ligne, sans jamais dire que la FORME est fausse |
 
-- [ ] **Étape 1 : les tests d'abord, un par forme hostile** (`null`, chaîne, tableau, `fields` non-objet,
+- [x] **Étape 1 : les tests d'abord, un par forme hostile** (`null`, chaîne, tableau, `fields` non-objet,
       `fields` imbriqué, clé de champ très longue, trop de champs, `optInSource` très long, et le mélange
       valides/invalides avec l'ORDRE des résultats conservé)
-- [ ] **Étape 2 : un schéma Zod `safeParse`**, jamais `parse`, jamais `as`. Le conteneur malformé rend 400 ;
+- [x] **Étape 2 : un schéma Zod `safeParse`**, jamais `parse`, jamais `as`. Le conteneur malformé rend 400 ;
       un ÉLÉMENT malformé rend son erreur À SON INDEX et **les autres lignes passent**. C'est le contrat
       actuel du batch et il ne doit pas changer.
-- [ ] **Étape 3 : MUTER** : retirer la validation d'UN élément, constater que seul son test rougit
-- [ ] **Étape 4 : commit**
+- [x] **Étape 3 : MUTER** : retirer la validation d'UN élément, constater que seul son test rougit
+- [x] **Étape 4 : commit**
 
 ---
 
@@ -95,13 +95,13 @@ choix produit utile et ne change pas pour un intégrateur normal. Ce qui change,
 total de définitions d'un espace, et la longueur d'une clé de champ. Une boucle d'appels avec des clés
 aléatoires fait grossir `user_fields` **sans limite** pour l'espace visé.
 
-- [ ] **Étape 1 : les tests** (dépassement de chacune des trois bornes, et le témoin : un intégrateur
+- [x] **Étape 1 : les tests** (dépassement de chacune des trois bornes, et le témoin : un intégrateur
       normal qui crée trois champs continue de passer)
-- [ ] **Étape 2 : implémenter.** ⚠️ Le dépassement du plafond d'espace **ne casse pas les champs
+- [x] **Étape 2 : implémenter.** ⚠️ Le dépassement du plafond d'espace **ne casse pas les champs
       existants** : il refuse la CRÉATION d'un nouveau, et les valeurs des champs déjà déclarés passent.
-- [ ] **Étape 3 : la valeur des bornes est CONFIGURABLE**, avec un défaut large. On ne devine pas un
+- [x] **Étape 3 : la valeur des bornes est CONFIGURABLE**, avec un défaut large. On ne devine pas un
       plafond serré sur un produit dont on ne connaît pas encore l'usage.
-- [ ] **Étape 4 : MUTER, commit**
+- [x] **Étape 4 : MUTER, commit**
 
 ---
 
@@ -117,16 +117,29 @@ aléatoires fait grossir `user_fields` **sans limite** pour l'espace visé.
 RÉUSSI** : une rafale de fausses clés `mba_x` n'est comptée par AUCUN plafond, et chacune coûte un
 SHA-256 et une requête Postgres indexée.
 
-- [ ] **Étape 1 : les tests** (une clé au bon préfixe mais au mauvais FORMAT est refusée SANS toucher le
+- [x] **Étape 1 : les tests** (une clé au bon préfixe mais au mauvais FORMAT est refusée SANS toucher le
       store — le faux store compte ses appels ; et une rafale de fausses clés est freinée)
-- [ ] **Étape 2 : deux gardes, dans cet ordre.** D'abord le format exact (`mba_` puis exactement le nombre
-      de caractères que la génération produit) ; ensuite un limiteur pré-authentification **indexé sur
-      l'empreinte SHA-256 du bearer, JAMAIS sur sa valeur**, et dont la table mémoire est BORNÉE en nombre
-      de clés, comme celle des routes d'authentification.
-- [ ] **Étape 3 : le limiteur métier par `found.id` RESTE**, après la résolution. Les deux se complètent :
+- [x] **Étape 2 : deux gardes, dans cet ordre.** D'abord le format exact (`mba_` puis exactement le nombre
+      de caractères que la génération produit) ; ensuite un limiteur pré-authentification.
+
+      🔴 **CETTE ÉTAPE A ÉTÉ CORRIGÉE À L'EXÉCUTION (2026-09-14), ET LA CONSIGNE D'ORIGINE ÉTAIT FAUSSE.**
+      Elle demandait un limiteur « indexé sur l'empreinte SHA-256 du bearer ». Écrit, puis MESURÉ par un
+      test : trente fausses clés TOUTES DIFFÉRENTES produisent trente compteurs à 1, dont aucun n'atteint
+      son plafond, et les trente requêtes Postgres partent quand même. Or la rafale de clés distinctes EST
+      le scénario. Ce qui est livré borne donc le **nombre de lookups spéculatifs par minute, toutes
+      empreintes confondues** (`API_KEY_PREFILTRE_MAX`, défaut 30).
+
+      ⚠️ **Et une empreinte DÉJÀ RÉSOLUE échappe à ce budget**, sinon une attaque qui l'épuise couperait
+      aussi les clients légitimes. Ce n'est pas un cache de validité : le lookup a lieu à chaque appel, et
+      une clé qui cesse de se résoudre perd son laissez-passer (relevé en revue : sans cela, une clé
+      RÉVOQUÉE pouvait marteler la base sans qu'aucun plafond ne la compte).
+
+      ⚠️ **La borne en nombre de clés devient sans objet** : la clé du budget étant fixe, la table du
+      limiteur ne grossit pas avec le nombre de bearers distincts.
+- [x] **Étape 3 : le limiteur métier par `found.id` RESTE**, après la résolution. Les deux se complètent :
       l'un protège la base, l'autre le travail applicatif.
-- [ ] **Étape 4 : MUTER** (retirer le contrôle de format : le test qui compte les appels au store rougit)
-- [ ] **Étape 5 : commit**
+- [x] **Étape 4 : MUTER** (retirer le contrôle de format : le test qui compte les appels au store rougit)
+- [x] **Étape 5 : commit**
 
 ---
 

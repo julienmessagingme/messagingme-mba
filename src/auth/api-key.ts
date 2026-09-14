@@ -57,6 +57,15 @@ class EmpreintesConnues {
   private readonly vues = new Set<string>();
   constructor(private readonly max: number) {}
   connait(empreinte: string): boolean { return this.vues.has(empreinte); }
+  /**
+   * 🔴 UNE EMPREINTE QUI CESSE DE SE RÉSOUDRE EST OUBLIÉE, ET C'EST UN TROU RELEVÉ EN REVUE. Sans cela,
+   * une clé RÉVOQUÉE gardait son laissez-passer : son porteur échappait au budget spéculatif (il est
+   * « déjà connu ») tout en échouant au lookup à chaque appel, donc il pouvait marteler Postgres sans
+   * qu'aucun plafond ne le compte, le plafond métier n'étant atteint qu'après un lookup RÉUSSI. Un ancien
+   * client mécontent, ou une intégration qu'on vient de couper, suffisait à rouvrir exactement ce que ce
+   * lot ferme.
+   */
+  oublier(empreinte: string): void { this.vues.delete(empreinte); }
   retenir(empreinte: string): void {
     if (this.vues.has(empreinte)) return;
     if (this.vues.size >= this.max) {
@@ -122,6 +131,9 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
     if (!connues.connait(empreinte) && !(await consommerAvecEntetes(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
     const found = await store.findActiveByHash(empreinte);
     if (!found) {
+      // Elle ne se résout plus (révoquée, ou jamais valide) : elle perd son laissez-passer et repasse
+      // sous le budget dès l'appel suivant.
+      connues.oublier(empreinte);
       await reply.code(401).send({ error: 'clé d’API invalide ou révoquée' });
       return;
     }
