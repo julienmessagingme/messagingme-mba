@@ -79,8 +79,31 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0144**, le 2026-09-14 au soir (`campaign_etages.devenir` et `.agent_id` : CE QUI SE
-PASSE QUAND LE CONTACT RÉPOND, étage par étage). **Prochaine libre = 0145.**
+**Dernière appliquée : 0148**, le 2026-09-15 dans la nuit (`mba_assistant_conversations` : le fil de
+l'assistant du Meta Business Agent, un par espace). **Prochaine libre = 0149.**
+
+⚠️ **CETTE LIGNE AVAIT DÉRIVÉ UNE HUITIÈME FOIS**, relevée par la revue finale du chantier des assistants :
+elle annonçait 0144 quand la base en portait CINQ de plus, toutes appliquées la même nuit. Même cause que les
+sept précédentes, et même parade : **la base tranche**, on RELIT `schema_migrations` juste après `migrate`,
+jamais après avoir écrit le fichier SQL.
+
+Avant elle, dans l'ordre d'application : **0147** (`agent_setup_conversations.auteurs` : QUI a écrit chaque
+tour du fil, tableau PARALLÈLE à `messages` et pas une clé dedans, `tourSchema` étant strict — l'y ajouter
+aurait fait échouer la relecture de TOUS les entretiens existants, qui seraient retombés sur l'entretien
+vierge, donc le client aurait perdu sa conversation en silence) ; **0146** (`reglages_historique`, à rétention
+ILLIMITÉE, et `assistant_depense_mois`, NOTRE dépense d'assistants, PAR ESPACE et pas par assistant) ;
+**0145** (`campaign_etages.devenir` retombe à DEUX valeurs et perd `agent_id`) ; **0144** (`campaign_etages.devenir`
+et `.agent_id` : ce qui se passe quand le contact répond, étage par étage).
+
+🔴 **0145 RETIRE CE QUE 0144 VENAIT D'AJOUTER, et le désordre est délibéré** : 0144 ouvrait le devenir à
+trois choix dont « un agent IA prend la main », arbitré ensuite à deux. Les deux sont passées la même nuit,
+avant le déploiement, sur une colonne qu'aucun code déployé ne lisait encore.
+
+🔴 **0146 PORTE DEUX TABLES QUE LE CODE ÉCRIT, donc elle passe AVANT le déploiement.** `reglages_historique`
+n'est PAS `audit_log` : ce dernier est PURGÉ (deux ans), quand la rétention demandée ici est illimitée parce
+que ces lignes portent le seul exemplaire d'un contenu que Meta ne garde pas. ⚠️ Elle ne porte AUCUN index
+sur `at` seul, délibérément : un tel index ne sert qu'à une purge par date, et son absence est ce qui dit au
+prochain lecteur que cette table ne se purge pas.
 
 🔴 **ELLE CÂBLE UNE QUESTION QUI EXISTAIT DÉJÀ À L'ÉCRAN ET DONT DEUX RÉPONSES SUR TROIS N'ALLAIENT NULLE
 PART.** Seule « la conversation arrive dans l'Inbox » avait une traduction serveur (`campaigns.assignation`) ;
