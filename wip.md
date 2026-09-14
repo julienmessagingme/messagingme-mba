@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | `origin/main` | `c1f1284` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1` : 🔴 **l'écart porte désormais tout le lot API**, un déploiement est DÛ |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `449254f` : **déployé le 2026-09-14 au soir**, aucun écart |
 | Dernière CI de CODE | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 | Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
@@ -44,8 +44,16 @@ intégrateur normal doit passer sans rien voir de tout cela).
 🔴 **RIEN DE CE PLAN N'EST ÉPROUVÉ TANT QUE ÇA N'A PAS TOURNÉ.** Un mécanisme vert n'est pas un
 mécanisme éprouvé, et c'est la leçon que ce dépôt a payée le plus souvent.
 
-⚠️ **ET RIEN N'EST DÉPLOYÉ** : tout ce lot est côté API, donc il attend un `git pull` + `compose up -d
---build` sur le VPS. Aucune migration n'est en jeu.
+✅ **DÉPLOYÉ le 2026-09-14 au soir**, sans migration (aucune n'est en jeu, la base reste à 0143). Contrôlé
+après coup plutôt que déduit : le code neuf est DANS l'image (`usage-guard.ts`, `FORMAT_CLE`, la route du
+verrou), le format de clé refuse `mba_x` en 401 depuis l'extérieur, `GET /ops/usage` répond avec le jeton
+et 401 sans, le webhook Meta rend bien 403 sur un jeton faux (donc la route vit), et les journaux des deux
+conteneurs ne portent aucune erreur depuis le redémarrage.
+
+🔴 **LE 502 EST REVENU, ET IL A FALLU DEUX RELOADS** : conteneurs `healthy`, appel interne à 200, appels
+publics à 502 sur les deux noms. Le premier `nginx -s reload` n'a réparé que `mba.` ; le second a réparé
+`api.`. C'est exactement le cas documenté (« un seul reload ne suffit pas toujours »), et c'est pour ça que
+la séquence est : contrôler, réparer, RE-CONTRÔLER, recommencer.
 
 ### Ce que les quatre lots ont fermé
 
