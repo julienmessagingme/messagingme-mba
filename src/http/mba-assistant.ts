@@ -1,0 +1,246 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { forbidNonAdmin, type Guard } from '../auth/middleware';
+import { scopeTenant } from './scope';
+import {
+  bornerPourModeleMba, ENTRETIEN_MBA_VIERGE,
+  type EntretienMba, type EntretienMbaStore, type TourMba,
+} from '../mba/assistant/entretien-store';
+import { construireMessagesMba, pointDuTourMba, type InventaireMba } from '../mba/assistant/conversation';
+import { propositionMbaSchema, type Operation } from '../mba/assistant/proposition';
+import { appliquer, libelleDe, type ApplicationDeps } from '../mba/assistant/application';
+import { accueilMba } from '../mba/assistant/couverture';
+import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
+import { microEurosDepuisDollars } from '../agent/devise';
+
+/**
+ * L'ASSISTANT DU META BUSINESS AGENT : la conversation qui règle l'agent, et qui le MET À JOUR.
+ *
+ * 🔴 CETTE ROUTE N'ÉCRIT RIEN CHEZ META PAR ELLE-MÊME. Elle rend une proposition et le diff qu'elle
+ * produirait ; l'écriture passe par `appliquer`, sur un geste explicite du client. C'est la même règle que
+ * `src/http/agent-setup.ts`, et elle a la même raison : le jour où l'onglet « Create » a disparu de
+ * l'interface d'OpenAI, des GPT sont devenus non modifiables du jour au lendemain. Ici, la conversation
+ * n'est JAMAIS le seul chemin d'édition, et elle n'a aucun pouvoir que les onglets n'aient déjà.
+ *
+ * 🔴 ADMINS SEULEMENT (décision de Julien du 2026-09-14). Dans Engage Me, les écritures sont déjà réservées
+ * aux admins : un collaborateur qui ne peut pas modifier le MBA au formulaire ne doit pas pouvoir le faire
+ * en le demandant à un robot, sinon la conversation devient un contournement du contrôle d'accès.
+ *
+ * 🔴 C'EST NOUS QUI PAYONS, DONC UN PLAFOND BORNE. Voir `src/assistant/budget.ts` : au plafond, l'assistant
+ * le DIT et les onglets restent utilisables. Un message d'indisponibilité générique ferait passer une limite
+ * volontaire pour une panne.
+ */
+
+export interface MbaAssistantDeps {
+  /** L'inventaire de l'agent, LU CHEZ META. Voir `lireInventaireMba` dans le câblage. */
+  inventaire(tenantId: string): Promise<InventaireMba | null>;
+  entretiens: EntretienMbaStore;
+  depenses: DepenseStore;
+  plafondEuros: number;
+  /** Le client de modèle. Absent -> l'assistant est indisponible, et il le dit en 503. */
+  completer?(entree: {
+    modele: string;
+    messages: Array<{ role: string; content: string }>;
+    outils?: unknown[];
+    tenantId: string;
+  }): Promise<{ texte: string | null; appelsOutils: Array<{ nom: string; arguments: unknown }>; usage: { coutDollars: number } }>;
+  modele: string;
+  /** Tout ce qu'il faut pour écrire chez Meta. */
+  application(tenantId: string, acteur: { id: string | null; email: string | null }): ApplicationDeps;
+  /** L'identifiant de l'agent Meta de cet espace (`agentId` des routes MBA). */
+  agentIdDuTenant(tenantId: string): Promise<string | null>;
+  tauxEurParDollar: number;
+}
+
+/** Ce que l'écran reçoit d'un coup. Trois plafonds distincts, cf. `entretien-store.ts`. */
+export const MAX_MESSAGES_AFFICHES_MBA = 200;
+
+const corpsTour = z.object({ message: z.string().trim().min(1).max(4000) });
+const corpsAppliquer = z.object({ operations: z.array(z.unknown()).max(20) });
+
+export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDeps, guard?: Guard): void {
+  const opts = guard ? { preHandler: guard } : {};
+
+  /** Contrôle d'accès commun : tenant du jeton, ADMIN, et un agent Meta rattaché. */
+  const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) { reply.code(403).send({ error: 'tenant interdit' }); return null; }
+    if (forbidNonAdmin(req, reply)) return null;
+    const agentId = await deps.agentIdDuTenant(tenant);
+    if (!agentId) { reply.code(404).send({ error: 'aucun agent Meta sur cet espace' }); return null; }
+    return { tenant, agentId, acteur: { id: req.auth?.userId ?? null, email: null } };
+  };
+
+  /**
+   * LE FIL ET L'ÉTAT D'OUVERTURE.
+   *
+   * 🔴 QUAND LE FIL EST VIDE, LE SERVEUR RÉDIGE L'ACCUEIL, pas le modèle (décision de Julien : « il dit ce
+   * qui manque et propose »). Un modèle à qui l'on demanderait de résumer un inventaire en inventerait la
+   * moitié, et c'est précisément le moment où le client décide s'il peut faire confiance à l'assistant.
+   */
+  app.get('/tenants/:tenantId/mba/assistant', opts, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    const inv = await deps.inventaire(ctx.tenant);
+    const fil = (await deps.entretiens.lire(ctx.tenant)) ?? ENTRETIEN_MBA_VIERGE;
+    const reste = resteDuBudget(await deps.depenses.lire(ctx.tenant, moisDe(new Date())), deps.plafondEuros);
+    return reply.code(200).send({
+      messages: fil.messages.slice(-MAX_MESSAGES_AFFICHES_MBA),
+      auteurs: fil.auteurs.slice(-MAX_MESSAGES_AFFICHES_MBA),
+      total: fil.messages.length,
+      // ⚠️ L'accueil n'est rendu QUE sur un fil vide : le renvoyer à chaque ouverture ferait répéter à
+      // l'écran un bilan que la conversation a déjà dépassé.
+      accueil: fil.messages.length === 0 && inv ? accueilMba(inv.completion) : null,
+      completion: inv?.completion ?? null,
+      // Le client doit pouvoir voir venir la limite plutôt que de la découvrir en plein travail.
+      budgetEpuise: reste <= 0,
+    });
+  });
+
+  /** Repartir de zéro. Le fil est effacé ; RIEN de ce qui a été appliqué chez Meta ne l'est. */
+  app.delete('/tenants/:tenantId/mba/assistant', opts, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    await deps.entretiens.effacer(ctx.tenant);
+    return reply.code(204).send();
+  });
+
+  /** UN TOUR de conversation. N'écrit rien chez Meta : il PROPOSE. */
+  app.post('/tenants/:tenantId/mba/assistant', opts, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    if (!deps.completer) return reply.code(503).send({ error: 'assistant indisponible' });
+    const parse = corpsTour.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'message requis' });
+
+    /**
+     * 🔴 LE PLAFOND EST VÉRIFIÉ AVANT L'APPEL, ET IL REND 200. Ce n'est pas une panne : c'est une limite
+     * volontaire, et l'assistant la DIT. Un 4xx ferait afficher un message d'infrastructure là où le client
+     * attend une phrase, et un 5xx serait remplacé par la page d'erreur de Cloudflare.
+     */
+    const mois = moisDe(new Date());
+    const reste = resteDuBudget(await deps.depenses.lire(ctx.tenant, mois), deps.plafondEuros);
+    if (reste <= 0) {
+      return reply.code(200).send({ message: MESSAGE_PLAFOND, operations: [], budgetEpuise: true, ongletsUtilisables: true });
+    }
+
+    const inv = await deps.inventaire(ctx.tenant);
+    if (!inv) return reply.code(502).send({ error: 'état de l’agent illisible chez Meta pour l’instant' });
+
+    const avant = (await deps.entretiens.lire(ctx.tenant)) ?? ENTRETIEN_MBA_VIERGE;
+    /**
+     * 🔴 DEUX FILS : `filComplet` est ce qu'on CONSERVE, `historique` ce qu'on ENVOIE. Les confondre
+     * annulerait la conservation, et c'est exactement le défaut qu'a connu l'assistant d'agent IA : la
+     * troncature s'y était déplacée sans disparaître, et la base recevait un fil amputé à chaque tour.
+     */
+    const filComplet: TourMba[] = [...avant.messages, { role: 'user', content: parse.data.message }];
+    const auteurs: Array<string | null> = [...avant.auteurs, ctx.acteur.id];
+    const point = pointDuTourMba(inv, avant.poses);
+    const messages = construireMessagesMba(inv, bornerPourModeleMba(filComplet), avant.poses);
+
+    const reponse = await deps.completer({
+      modele: deps.modele,
+      messages,
+      tenantId: '',
+      outils: [outilProposer()],
+    });
+
+    // ⚠️ LA DÉPENSE EST NOTÉE APRÈS L'APPEL, avec le coût RÉEL : une estimation avant serait fausse, et le
+    // dépassement du dernier tour est assumé, borné par le coût d'un tour.
+    await deps.depenses.ajouter(ctx.tenant, mois,
+      microEurosDepuisDollars(reponse.usage.coutDollars, deps.tauxEurParDollar));
+
+    const appel = reponse.appelsOutils[0];
+    const propose = propositionMbaSchema.safeParse(appel?.arguments ?? {});
+    if (!propose.success) {
+      /**
+       * ⚠️ UN MODÈLE QUI RÉPOND DE TRAVERS NE CASSE PAS LE FIL. On rend ce qu'il a dit en texte, sans
+       * opérations : le client relance, et sa conversation n'est pas perdue. Refuser en 422 laisserait un
+       * écran mort sur une erreur qu'il ne peut pas corriger.
+       */
+      const texte = reponse.texte ?? 'Je n’ai pas compris. Pouvez-vous reformuler ?';
+      await deps.entretiens.ecrire(ctx.tenant, {
+        ...avant, messages: [...filComplet, { role: 'assistant', content: texte }],
+        auteurs: [...auteurs, null],
+      });
+      return reply.code(200).send({ message: texte, operations: [] });
+    }
+
+    const apres: EntretienMba = {
+      messages: [...filComplet, { role: 'assistant', content: propose.data.message }],
+      auteurs: [...auteurs, null],
+      reponses: [...avant.reponses, ...propose.data.reponses],
+      // Le point du tour est noté POSÉ : sans ça, le tour d'après le reposerait.
+      poses: point && !avant.poses.includes(point.cle) ? [...avant.poses, point.cle] : avant.poses,
+    };
+    await deps.entretiens.ecrire(ctx.tenant, apres);
+
+    return reply.code(200).send({
+      message: propose.data.message,
+      // Le diff, tel que l'écran l'affichera : une ligne par opération, déjà rédigée.
+      operations: propose.data.operations.map((o) => ({ ...o, libelle: libelleDe(o) })),
+    });
+  });
+
+  /**
+   * APPLIQUER LE DIFF.
+   *
+   * 🔴 L'ACCEPTATION DU DIFF SUFFIT : pas de seconde confirmation (décision de Julien). Une confirmation qui
+   * suit une acceptation n'ajoute pas de sécurité, elle apprend à cliquer sans lire.
+   */
+  app.post('/tenants/:tenantId/mba/assistant/appliquer', opts, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    const parse = corpsAppliquer.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'operations requises' });
+
+    /**
+     * 🔴 LES OPÉRATIONS SONT REVALIDÉES ICI, et ce n'est pas de la redondance : ce corps vient du
+     * NAVIGATEUR, pas du modèle. Sans cette passe, n'importe qui pourrait poster une opération que le
+     * schéma de proposition interdit, et la frontière de sécurité ne servirait plus à rien.
+     */
+    const valides = propositionMbaSchema.safeParse({ message: 'application', operations: parse.data.operations });
+    if (!valides.success) return reply.code(422).send({ error: 'ces opérations ne sont pas applicables' });
+
+    const r = await appliquer(
+      deps.application(ctx.tenant, ctx.acteur), ctx.tenant, ctx.agentId,
+      valides.data.operations as Operation[],
+    );
+    return reply.code(200).send({
+      passees: r.passees.map((o) => libelleDe(o)),
+      echec: r.echec ? { libelle: libelleDe(r.echec.operation), message: r.echec.message } : null,
+      nonTentees: r.nonTentees.map((o) => libelleDe(o)),
+    });
+  });
+}
+
+/** La définition de l'outil exposée au modèle. Il rend TOUJOURS sa réponse par là, jamais en texte libre. */
+function outilProposer(): unknown {
+  return {
+    type: 'function',
+    function: {
+      name: 'proposer',
+      description: 'Répondre au client et, s’il y a lieu, proposer des modifications de son agent Meta.',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', description: 'Ce que tu dis au client, en français.' },
+          reponses: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { point: { type: 'string' }, valeur: { type: 'string' } },
+              required: ['point'],
+            },
+          },
+          operations: {
+            type: 'array',
+            description: 'Les modifications à appliquer chez Meta. Vide si tu poses seulement une question.',
+            items: { type: 'object', properties: { type: { type: 'string' } }, required: ['type'] },
+          },
+        },
+        required: ['message'],
+      },
+    },
+  };
+}
