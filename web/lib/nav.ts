@@ -297,7 +297,9 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
        * sans appartenir à un canal », ou en restant dans la liste du haut. Il a choisi « juste après
        * Email », à plat. Ne pas le « ranger » ailleurs par cohérence de structure sans le lui demander.
        */
-      { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
+      // ⚠️ SANS ICÔNE, demandé par Julien le 2026-09-14 (« enlever la petite icône devant scénario dans la
+      // sidebar »). `d` est optionnel dans `NavEntree` : le rendu s'en passe sans réserver la place.
+      { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario') },
       // « Bibliothèque » : ce qui se RÉUTILISE, sans appartenir à un canal.
       // ⚠️ Le groupe reste bancal, et le nom n'y peut rien : « Blocs » est du contenu, « Étiquettes » et
       // « Champs » sont de la donnée de CONTACT. Ils sont ici par héritage, leur place logique serait le

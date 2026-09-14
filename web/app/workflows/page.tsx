@@ -55,6 +55,17 @@ function WorkflowsInner({ session }: { session: Session }) {
   const [newName, setNewName] = useState('');
   const [editing, setEditing] = useState<WorkflowSummary | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * LES SCÉNARIOS COCHÉS, pour l'action groupée.
+   *
+   * 🔴 DEMANDÉ PAR JULIEN LE 2026-09-14 : « il faut que je puisse sélectionner plusieurs scénarios avec des
+   * petites cases à cocher à côté et que je puisse appliquer une bulk action (pour l'instant "supprimer"
+   * juste) ». Supprimer dix scénarios d'essai demandait dix ouvertures de menu et dix confirmations.
+   *
+   * ⚠️ UN `Set` RECOPIÉ À CHAQUE CHANGEMENT, jamais muté en place : muter garderait la même référence et
+   * React ne rendrait rien, ce qui donnerait une case qui ne se coche qu'une fois sur deux.
+   */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
   // Menu « 3 points » ouvert (id de la ligne) + renommage en cours.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<WorkflowSummary | null>(null);
@@ -135,6 +146,40 @@ function WorkflowsInner({ session }: { session: Session }) {
       setError(err instanceof Error ? err.message : t('Ouverture impossible', 'Unable to open'));
     }
   }
+  /**
+   * SUPPRIME TOUS LES SCÉNARIOS COCHÉS.
+   *
+   * ⚠️ UN PAR UN, EN SÉRIE, ET PAS EN PARALLÈLE. Il n'existe pas de route de suppression groupée : dix
+   * appels simultanés sur un plafond de débit partagé avec toute la console se feraient refuser au milieu,
+   * et l'écran annoncerait un échec sur des scénarios pourtant supprimés.
+   *
+   * ⚠️ ON S'ARRÊTE À LA PREMIÈRE ERREUR et on recharge : la liste dit alors exactement ce qui reste, plutôt
+   * que de laisser croire que tout est parti.
+   */
+  async function removeSelection() {
+    const ids = [...selection];
+    if (ids.length === 0) return;
+    const noms = workflows.filter((w) => selection.has(w.id)).map((w) => w.name);
+    // 🔴 LA CONFIRMATION NOMME CE QU'ELLE DÉTRUIT, comme la suppression unitaire : « Supprimer 7 éléments ? »
+    // ne permet pas de vérifier qu'on n'a pas coché une ligne de trop.
+    const liste = noms.slice(0, 5).join(', ') + (noms.length > 5 ? `, … (+${noms.length - 5})` : '');
+    if (!window.confirm(t(
+      `Supprimer ${ids.length} scénario(s) ? ${liste}`,
+      `Delete ${ids.length} scenario(s)? ${liste}`,
+    ))) return;
+    setError(null);
+    setBusy(true);
+    try {
+      for (const id of ids) await deleteWorkflow(session.tenantId, id);
+      setSelection(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Suppression impossible', 'Unable to delete'));
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  }
+
   async function remove(w: WorkflowSummary) {
     setMenuFor(null);
     if (!window.confirm(t(`Supprimer le scénario « ${w.name} » ?`, `Delete the scenario "${w.name}"?`))) return;
@@ -226,8 +271,11 @@ function WorkflowsInner({ session }: { session: Session }) {
     );
   }
 
+  // ⚠️ `max-w-6xl` ET NON `3xl` (demandé par Julien le 2026-09-14, même raison que l'écran MBA le
+  // 2026-09-10) : la liste porte quatre colonnes plus une case à cocher, et une ligne de scénario au nom
+  // long y passait à la ligne dans une colonne étroite au milieu d'un écran vide.
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
+    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Scénarios', 'Scenarios')}</h2>
         <p className="mt-1 text-sm text-ink-500">{t("Construis des automatisations en blocs : ajout d’étiquette, envoi d'un template, formulaire, arrivée en inbox. Un scénario s'attache à une campagne et s'exécute pour chaque contact.", 'Build automations in blocks: add a tag, send a template, form, arrival in the inbox. A scenario attaches to a campaign and runs for each contact.')}</p>
@@ -252,9 +300,48 @@ function WorkflowsInner({ session }: { session: Session }) {
         ) : workflows.length === 0 ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun scénario. Crée-en un ci-dessus.', 'No scenarios yet. Create one above.')}</p>
         ) : (
+          <>
+          {/*
+            🔴 LA BARRE N'APPARAÎT QUE QUAND QUELQUE CHOSE EST COCHÉ. Un bouton « Supprimer » toujours
+            visible et grisé occuperait la place et ferait chercher pourquoi il ne réagit pas ; ici, il
+            n'existe que lorsqu'il a un objet.
+          */}
+          {selection.size > 0 && (
+            <div className="mb-3 flex items-center justify-between rounded-lg bg-ink-50 px-4 py-2" data-testid="workflows-barre-selection">
+              <span className="text-sm text-ink-700">
+                {selection.size === 1
+                  ? t('1 scénario sélectionné', '1 scenario selected')
+                  : t(`${selection.size} scénarios sélectionnés`, `${selection.size} scenarios selected`)}
+              </span>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setSelection(new Set())} className="text-sm text-ink-500 hover:text-ink-800">
+                  {t('Annuler', 'Cancel')}
+                </button>
+                <button
+                  onClick={() => { void removeSelection(); }}
+                  disabled={busy}
+                  data-testid="workflows-supprimer-selection"
+                  className="rounded-lg bg-coral px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {t('Supprimer', 'Delete')}
+                </button>
+              </div>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+                <th className="w-10 px-3 py-2">
+                  {/* ⚠️ « Tout cocher » porte sur la LISTE AFFICHÉE, ce qui est la seule promesse tenable :
+                      une liste filtrée un jour ne devrait pas cocher ce qu'elle ne montre pas. */}
+                  <input
+                    type="checkbox"
+                    aria-label={t('Tout sélectionner', 'Select all')}
+                    data-testid="workflows-tout-cocher"
+                    checked={workflows.length > 0 && selection.size === workflows.length}
+                    onChange={(e) => setSelection(e.target.checked ? new Set(workflows.map((w) => w.id)) : new Set())}
+                  />
+                </th>
                 <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-5 py-2 font-medium">{t('Blocs', 'Blocks')}</th>
                 <th className="px-5 py-2 font-medium">{t('Créé le', 'Created')}</th>
@@ -262,8 +349,23 @@ function WorkflowsInner({ session }: { session: Session }) {
               </tr>
             </thead>
             <tbody>
-              {workflows.map((w) => (
+              {workflows.map((w, i) => (
                 <tr key={w.id} className="border-b border-ink-50 last:border-0">
+                  <td className="w-10 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label={t(`Sélectionner ${w.name}`, `Select ${w.name}`)}
+                      data-testid={`workflow-cocher-${w.id}`}
+                      checked={selection.has(w.id)}
+                      onChange={() => setSelection((s) => {
+                        // Une COPIE, jamais une mutation : muter garderait la même référence et React ne
+                        // rendrait rien.
+                        const suivant = new Set(s);
+                        if (suivant.has(w.id)) suivant.delete(w.id); else suivant.add(w.id);
+                        return suivant;
+                      })}
+                    />
+                  </td>
                   <td className="px-5 py-3">
                     <button onClick={() => open(w)} className="font-medium text-brand-600 hover:underline">{w.name}</button>
                     {w.code && <div className="font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{w.code}</div>}
@@ -296,7 +398,19 @@ function WorkflowsInner({ session }: { session: Session }) {
                         {menuFor === w.id && (
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
-                            <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-left text-sm shadow-lg">
+                            {/*
+                              🔴 LE MENU S'OUVRE VERS LE HAUT SUR LES DERNIÈRES LIGNES (2026-09-14). Julien :
+                              « quand je clique sur les 3 petits points, sur le dernier scénario, la fenêtre
+                              s'ouvre vers le bas donc on ne voit rien ». Le menu fait cinq entrées, soit
+                              environ quatre lignes de tableau : les DEUX dernières suffisent à le couvrir.
+
+                              ⚠️ Et seulement si la liste est assez longue : sur trois scénarios, ouvrir vers
+                              le haut ferait sortir le menu par le haut du tableau, ce qui déplace le défaut
+                              au lieu de le corriger.
+                            */}
+                            <div className={`absolute right-0 z-20 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-left text-sm shadow-lg ${
+                              workflows.length > 3 && i >= workflows.length - 2 ? 'bottom-full mb-1' : 'mt-1'
+                            }`}>
                               <button onClick={() => { void openTest(w); }} data-testid={`workflow-test-${w.id}`} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Tester le scénario', 'Test scenario')}</button>
                               <button onClick={() => startRename(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Renommer', 'Rename')}</button>
                               <button onClick={() => duplicate(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Dupliquer', 'Duplicate')}</button>
@@ -312,6 +426,7 @@ function WorkflowsInner({ session }: { session: Session }) {
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
 
