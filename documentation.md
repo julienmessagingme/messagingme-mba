@@ -404,7 +404,9 @@ La connexion passe par un pooler dont le rôle est superuser : **la RLS serait c
 
 `scopeTenant` (`src/http/scope.ts`) est ce contrôle, pour plus de 230 routes, et il **ÉCHOUE FERMÉ** : sans
 `req.auth`, il refuse au lieu de rendre le tenant pris dans l'URL. Un garde-fou de `buildServer` couvre les
-modules à routes `:tenantId`, tenu par `tests/scope-tenant.test.ts`.
+modules à routes `:tenantId`, tenu par `tests/scope-tenant.test.ts`. Sa couverture est **dérivée** du registre
+des modules de routes (`modulesDeRoutes`, `src/server.ts`), où chaque module déclare sa classe d'accès : il n'y
+a aucune liste de modules à tenir à jour.
 
 ### Identité d'un contact : un numéro OU un BSUID
 

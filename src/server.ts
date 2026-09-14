@@ -61,6 +61,7 @@ import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole, makeLimiteParTenant } from './auth/middleware';
+import type { Guard, PreHandler } from './auth/middleware';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
 import { MetaApiError } from './meta/errors';
@@ -253,36 +254,248 @@ export interface ServerDeps {
 }
 
 /**
+ * CE QUI AUTORISE UN APPEL sur les routes d'un module. Chaque entrée du registre le DÉCLARE.
+ *
+ * 🔴 UNE UNION, ET SURTOUT PAS UN BOOLÉEN, et c'est le cœur de ce registre. Un `porteDeTenant: false`
+ * serait un désengagement SILENCIEUX : on peut l'écrire sans y penser, et rien ne demande de quoi le module
+ * se protège À LA PLACE. L'union force l'auteur du 41e module à choisir un mot, donc à répondre à la
+ * question. C'est la même propriété que ce registre apporte au reste : rendre l'oubli impossible plutôt que
+ * détectable.
+ *
+ * ⚠️ Il y a SIX classes, pas deux, et le découvrir est déjà un résultat : l'inventaire écrit à la main ne
+ * connaissait que « tenant ou pas ».
+ */
+export type ClasseDAcces =
+  /** JWT, ET l'espace de l'URL doit être celui du jeton. C'est `scopeTenant` qui le vérifie, dans chaque route. */
+  | 'tenant'
+  /** Avant toute session : `/auth/*`. Ses propres plafonds de débit sont posés dans son module. */
+  | 'anonyme'
+  /**
+   * Un code opaque dans l'adresse autorise l'appel : lien tracé (`/r/:code`), rappel du fournisseur RCS
+   * (`/rcs/callback/:code`), webhook entrant (`/w/:code`).
+   *
+   * ⚠️ Le webhook entrant accepte EN PLUS un secret d'en-tête quand le client en a posé un
+   * (`x-webhook-secret`, facultatif) : le code reste ce qui autorise, le secret durcit.
+   */
+  | 'code-url'
+  /** La signature de Meta sur le corps de la requête, avec le secret de l'application Meta. */
+  | 'signature-meta'
+  /**
+   * Une signature HMAC entre NOS services, avec un secret partagé (`x-mm-service-signature`) : c'est ainsi
+   * que le connecteur HubSpot pousse ses événements.
+   *
+   * 🔴 DISTINCTE DE `signature-meta`, ET LA REVUE A TROUVÉ QUE JE L'AVAIS CLASSÉE `code-url`. Ce n'est pas
+   * un détail de nommage : son adresse ne porte AUCUN code, donc la classe annoncée était vérifiablement
+   * fausse, et une justification fausse inscrite ici aurait été recopiée par le prochain lecteur, qui en
+   * aurait déduit qu'une adresse devinable suffit à autoriser un appel.
+   */
+  | 'signature-service'
+  /** Le secret d'exploitation, autorité SÉPARÉE du JWT. */
+  | 'jeton-ops'
+  /** Une clé d'API de client, autorité séparée elle aussi. */
+  | 'cle-api';
+
+/** Les gardes que `buildServer` construit une fois et distribue aux modules. */
+interface Gardes {
+  /**
+   * Tout compte authentifié. `PreHandler` et non `Guard` : c'est UN prehandler, pas une liste, et
+   * `registerInbox` en dépend (il la compose lui-même avec sa garde d'effacement). Le déclarer `Guard`
+   * ici compilait pour 28 modules sur 29 et échouait sur celui-là, ce qui est exactement le genre d'écart
+   * qu'un contrat trop large cache.
+   */
+  readonly auth?: PreHandler;
+  /** Compte `admin` seulement. Une LISTE (`[auth, role]`), d'où `Guard`. */
+  readonly admin?: Guard;
+  /** `admin` ou `manager` : consulter n'est pas décider (écrans de conformité). */
+  readonly encadrement?: Guard;
+  /** Le second plafond de débit, composé route par route sur les seules routes coûteuses. */
+  readonly limiteCouteuse?: PreHandler;
+}
+
+/** Une entrée du registre, une fois son type de dépendances effacé (voir `entree`). */
+export interface ModuleMonte {
+  readonly nom: string;
+  readonly acces: ClasseDAcces;
+  /** Ses dépendances ont-elles été fournies ? C'est ce qui décide s'il se monte. */
+  readonly fourni: boolean;
+  readonly monte: (app: FastifyInstance, gardes: Gardes) => void;
+}
+
+/**
+ * Déclare un module montable. `D` est inféré depuis `deps`, donc `monter` le reçoit NON NUL.
+ *
+ * 🔴 C'EST CE QUI SUPPRIME LES `deps.x!` ET LES 49 `if (deps.x)` D'UN COUP. Le test de présence vit ICI, en
+ * un seul endroit, et la closure capture `D` : un module ne peut plus être monté avec des dépendances
+ * absentes, et personne n'a plus à l'écrire. L'entrée rendue a un type UNIFORME, ce qui permet de les
+ * ranger dans une seule liste malgré 48 types de dépendances différents.
+ *
+ * ⚠️ La variance d'arité reste DANS la closure (de 2 à 5 paramètres selon le module, `registerInbox` en
+ * prend 5) : elle est ainsi visible au point de montage, au lieu d'être aplatie dans un contrat commun qui
+ * aurait forcé 45 signatures à changer.
+ *
+ * ⚠️ LE TEST EST `!== undefined`, PAS LA VÉRACITÉ, et la nuance est délibérée. Les 49 `if (deps.x)` d'avant
+ * montaient sur la véracité : un module dont les dépendances auraient valu `null` ne se montait pas, en
+ * silence. Ici il se monterait, et échouerait au montage, ce qui est le bon sens de l'échec (`null` n'est pas
+ * « absent », c'est un câblage fautif). Vérifié : aucun appelant du dépôt ne passe une valeur fausse mais
+ * définie, donc le changement est inerte aujourd'hui.
+ */
+function entree<D>(
+  nom: string,
+  acces: ClasseDAcces,
+  deps: D | undefined,
+  monter: (app: FastifyInstance, deps: D, gardes: Gardes) => void,
+): ModuleMonte {
+  return {
+    nom,
+    acces,
+    fourni: deps !== undefined,
+    monte: (app, gardes) => {
+      if (deps !== undefined) monter(app, deps, gardes);
+    },
+  };
+}
+
+/**
+ * LE REGISTRE DES MODULES DE ROUTES. Il remplace 49 `if (deps.x) registerX(...)` et une liste de 40 noms
+ * recopiée à la main.
+ *
+ * 🔴 CE QUI CHANGE VRAIMENT : la couverture du garde-fou d'authentification se DÉRIVE de ce registre. Avant,
+ * elle était une seconde liste, écrite à côté des montages, et il fallait penser à l'allonger : elle a déjà
+ * couvert 18 modules sur 36 (audit de surface publique du 2026-09-03), les 18 autres se montant sans garde en
+ * silence, `scopeTenant` distribuant alors à chacun l'espace qu'il demandait dans l'URL. Mesuré le
+ * 2026-09-14 : les 40 noms d'alors étaient exacts, donc il n'y avait pas de trou VIVANT. Le défaut était dans
+ * la forme, et il attendait le 41e module.
+ *
+ * 🔴 ELLE EST EXPORTÉE POUR ÊTRE EXERCÉE, et c'est la moitié qui manquait. Le garde-fou était vérifié par un
+ * test qui relisait le TEXTE de ce fichier, avec sa propre copie de la liste : il prouvait une orthographe,
+ * pas un comportement, et sa liste pouvait dériver comme l'autre. `tests/scope-tenant.test.ts` monte
+ * désormais CHAQUE module tenant, un par un, et vérifie que le serveur refuse de démarrer sans garde.
+ *
+ * ⚠️ Ce garde-fou et la fermeture de `scopeTenant` (`src/http/scope.ts`) restent les DEUX moitiés du même
+ * correctif.
+ *
+ * ⚠️ L'ORDRE DE CETTE LISTE EST L'ORDRE DE MONTAGE, et il reproduit exactement celui d'avant le registre :
+ * les cinq surfaces sans session d'abord (webhook, exploitation, liens tracés, webhooks entrants, rappels
+ * RCS), puis les modules gardés. La table de routes produite est identique au caractère, vérifié.
+ */
+export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): readonly ModuleMonte[] {
+  return [
+    // La réception des webhooks Meta : autorité = la signature du corps, vérifiée dans le module.
+    entree('receiver', 'signature-meta', deps.queue, (app, queue) => registerReceiver(app, queue, {
+      verifyToken: deps.verifyToken ?? config.META_VERIFY_TOKEN,
+      appSecret: deps.appSecret ?? config.META_APP_SECRET,
+    })),
+    // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
+    // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
+    // ⚠️ LE GARDE D'USAGE EST INJECTÉ DANS `/ops` COMME DANS LES ROUTES `/v1` : c'est la même instance, donc
+    // l'écran d'exploitation montre exactement ce que les routes ont compté, sans second exemplaire.
+    entree('ops', 'jeton-ops', deps.ops, (app, d) => registerOps(app, { ...d, usage: usageApi }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps)),
+    // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
+    // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
+    entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),
+    // Réception des webhooks entrants : PUBLIQUE elle aussi, montée ici avant les gardes d'auth. Aucune session
+    // n'est possible (l'appelant est un outil tiers, pas un humain).
+    entree('webhookEntrant', 'code-url', deps.webhookEntrant, (app, d) => registerWebhookEntrant(app, d)),
+    // Rappels du fournisseur RCS : PUBLIQUE aussi, et pour la même raison (l'appelant est smsmode, pas un
+    // humain). Ce qui l'autorise est le code opaque de l'URL, pas une session ; voir `registerRcsCallback`.
+    entree('rcsCallback', 'code-url', deps.rcsCallback, (app, d) => registerRcsCallback(app, d)),
+    entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth)),
+    entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
+    entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
+    // Bibliothèque RCS : montée avec `auth` et non `admin`, car la LISTE doit être lisible par un
+    // agent (le bloc de scénario et l'assistant de campagne la proposent). Les écritures sont gardées dans les
+    // handlers par `forbidNonAdmin`, comme pour les templates.
+    entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth)),
+    entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth)),
+    // Visuels RCS. Monté avec `auth` alors qu'il porte AUSSI une route publique `/m/<code>.<ext>` : les
+    // gardes de ce projet sont posées par route (`preHandler`), pas par groupe, donc la route de lecture
+    // reste ouverte comme elle doit l'être. C'est l'opérateur télécom qui télécharge l'image, sans session.
+    entree('rcsMedia', 'tenant', deps.rcsMedia, (app, d, g) => registerRcsMedia(app, d, g.auth)),
+    // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
+    // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
+    // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.
+    entree('templates', 'tenant', deps.templates, (app, d, g) => registerTemplates(app, d, g.auth)),
+    // Deux gardes : l'inbox est ouverte a tout compte authentifie, mais l'effacement du contenu d'une
+    // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
+    entree('inbox', 'tenant', deps.inbox, (app, d, g) => registerInbox(app, d, g.auth, g.admin, g.limiteCouteuse)),
+    entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
+    entree('stats', 'tenant', deps.stats, (app, d, g) => registerStats(app, d, g.admin)),
+    entree('settings', 'tenant', deps.settings, (app, d, g) => registerSettings(app, d, g.admin, g.encadrement)),
+    entree('admin', 'tenant', deps.admin, (app, d, g) => registerUsers(app, d, g.admin)),
+    entree('flows', 'tenant', deps.flows, (app, d, g) => registerFlows(app, d, g.admin)),
+    entree('agents', 'tenant', deps.agents, (app, d, g) => registerAgents(app, d, g.admin)),
+    entree('agentKnowledge', 'tenant', deps.agentKnowledge, (app, d, g) => registerAgentKnowledge(app, d, g.admin)),
+    entree('agentTools', 'tenant', deps.agentTools, (app, d, g) => registerAgentTools(app, d, g.admin)),
+    entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
+    entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),
+    entree('agentSources', 'tenant', deps.agentSources, (app, d, g) => registerAgentSources(app, d, g.admin)),
+    // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
+    // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.
+    entree('agentRequetes', 'tenant', deps.agentRequetes, (app, d, g) => registerAgentRequetes(app, d, g.admin)),
+    entree('agentSetup', 'tenant', deps.agentSetup, (app, d, g) => registerAgentSetup(app, d, g.admin)),
+    entree('agentTest', 'tenant', deps.agentTest, (app, d, g) => registerAgentTest(app, d, g.admin)),
+    entree('media', 'tenant', deps.media, (app, d, g) => registerMedia(app, d, g.admin)),
+    entree('tags', 'tenant', deps.tags, (app, d, g) => registerTags(app, d, g.admin)),
+    entree('fields', 'tenant', deps.fields, (app, d, g) => registerFields(app, d, g.admin)),
+    entree('support', 'tenant', deps.support, (app, d, g) => registerSupport(app, d, g.auth)),
+    entree('aide', 'tenant', deps.aide, (app, d, g) => registerAide(app, d, g.auth)),
+    entree('contacts', 'tenant', deps.contacts, (app, d, g) => registerContacts(app, d, g.admin, g.limiteCouteuse)),
+    entree('workflows', 'tenant', deps.workflows, (app, d, g) => registerWorkflows(app, d, g.admin)),
+    entree('workflowReports', 'tenant', deps.workflowReports, (app, d, g) => registerWorkflowReports(app, d, g.admin)),
+    entree('automations', 'tenant', deps.automations, (app, d, g) => registerAutomations(app, d, g.auth)),
+    // `auth` et non `admin` : les ecrans de la chaine se LISENT avec un compte agent, et les six
+    // ecritures sont fermees dans la route par `forbidNonAdmin`.
+    entree('channelsMe', 'tenant', deps.channelsMe, (app, d, g) => registerChannelsMeRoutes(app, d, g.auth)),
+    entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin)),
+    entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
+    entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
+    entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),
+    entree('mba', 'tenant', deps.mba, (app, d, g) => registerMba(app, d, g.admin)),
+    entree('email', 'tenant', deps.email, (app, d, g) => registerEmailRoutes(app, d, g.admin)),
+    entree('apiKeys', 'tenant', deps.apiKeys, (app, d, g) => registerApiKeys(app, d, g.admin)),
+    entree('webhooksAdmin', 'tenant', deps.webhooksAdmin, (app, d, g) => registerWebhooksAdmin(app, d, g.admin)),
+    /**
+     * API publique /v1 et serveur MCP : UNE SEULE entrée pour les trois montages, et c'est délibéré.
+     *
+     * 🔴 LES TROIS PARTAGENT UNE AUTORITÉ ET UN LIMITEUR, et c'est un invariant, pas une commodité : une
+     * seconde instance de limiteur aurait doublé le quota d'une clé selon la porte empruntée, ce qui
+     * n'aurait été visible de personne. Les séparer en trois entrées aurait permis de les monter
+     * indépendamment, donc de casser ça sans le voir.
+     */
+    entree('v1', 'cle-api', deps.v1, (app, v1) => {
+      const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
+      /**
+       * 🔴 LE PRÉ-FILTRE : indexé sur l'EMPREINTE du bearer présenté, donc sur une clé choisie par
+       * l'APPELANT. Sa table porte le même plafond de 10 000 clés que les limiteurs d'authentification, et
+       * pour la même raison : la purge ne retire que les entrées EXPIRÉES, donc sous flot rien n'expire et
+       * la table grossirait pendant toute la fenêtre. Au-delà, une empreinte NEUVE est refusée pendant que
+       * les porteurs déjà connus continuent d'être servis.
+       */
+      const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
+      const requireApiKey = makeRequireApiKey(v1.apiKeys, apiLimiter, apiPrefiltre);
+      registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, [requireApiKey, requireScope('contacts:write')]);
+      if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
+      // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
+      // `requireApiKey` déjà construit.
+      //
+      // Pas de `requireScope` ici : le serveur MCP a DEUX scopes (lecture, écriture) et c'est l'outil appelé
+      // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
+      // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
+      if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi);
+    }),
+    // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
+    // compte authentifié (générique, lit req.auth.userId).
+    entree('account', 'tenant', deps.account, (app, d, g) => registerAccount(app, d, g.admin)),
+    entree('me', 'tenant', deps.me, (app, d, g) => registerMe(app, d, g.auth)),
+  ];
+}
+
+/**
  * Construit l'instance Fastify (le bouclier). La file et les stores sont injectés pour
  * rester testable sans DB. Les routes tenant (import/campaigns) EXIGENT l'auth : le tenant
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  /**
-   * 🔴 AUCUNE ROUTE PORTANT `:tenantId` NE SE MONTE SANS AUTHENTIFICATION. La liste couvrait 18 modules sur
-   * 36 (audit de surface publique du 2026-09-03) : les 18 autres se seraient montés sans garde, en silence,
-   * et `scopeTenant` aurait alors distribué à chacun l'espace qu'il demandait dans l'URL.
-   *
-   * ⚠️ Ce garde-fou et la fermeture de `scopeTenant` (`src/http/scope.ts`) sont les DEUX moitiés du même
-   * correctif, et il faut les deux. Sans le garde-fou, l'oubli passe au démarrage et se voit en 403 partout,
-   * c'est-à-dire trop tard. Sans la fermeture, le garde-fou ne couvre que les modules qu'on a pensé à y
-   * inscrire, et il faudra y penser encore au 37e. `tests/scope-tenant.test.ts` garde la liste complète.
-   */
-  const modulesTenant = [
-    deps.import, deps.campaigns, deps.admin, deps.flows, deps.templates, deps.support, deps.contacts,
-    deps.account, deps.me, deps.workflows, deps.embeddedSignup, deps.apiKeys, deps.hubspotImport,
-    deps.hubspotInstall, deps.hubspotPipelines, deps.mba, deps.email, deps.webhooksAdmin, deps.agentCatalogue, deps.mbaPublication,
-    deps.inbox, deps.stats, deps.settings, deps.rcsMessages, deps.rcsChannel, deps.rcsMedia, deps.media,
-    deps.tags, deps.fields, deps.workflowReports, deps.automations, deps.agents, deps.agentKnowledge,
-    deps.agentTools, deps.agentSources, deps.agentRequetes, deps.agentSetup, deps.agentTest,
-    deps.channelsMe, deps.aide,
-  ];
-  if (modulesTenant.some((m) => m !== undefined) && !deps.auth) {
-    // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant refuse tout et le service est mort
-    // en silence. Mieux vaut refuser de démarrer que servir 403 sur tout un espace.
-    throw new Error('buildServer: `auth` est requis dès qu’un module exposant des routes `:tenantId` est monté');
-  }
-
   /**
    * 🔴 LE GARDE D'USAGE DE L'API PUBLIQUE, UNE SEULE INSTANCE POUR TOUTE LA SURFACE. Il compte le TRAVAIL,
    * là où les limiteurs comptent les requêtes : avec 60 requêtes par minute, une clé fait accepter 30 000
@@ -292,10 +505,27 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * ⚠️ EN OBSERVATION : construit sans plafond. Les seuils viendront d'une mesure et d'un arbitrage de
    * Julien, jamais d'un plan. Un seuil deviné qui mord est une panne qu'on s'inflige.
    *
-   * ⚠️ IL EST CRÉÉ ICI, AVANT LE MONTAGE DE `/ops`, parce que l'écran d'exploitation et les routes `/v1`
-   * doivent regarder LE MÊME compteur.
+   * ⚠️ IL EST CRÉÉ AVANT LE REGISTRE, parce que l'entrée `/ops` et l'entrée `/v1` le capturent toutes les
+   * deux : l'écran d'exploitation et les routes publiques doivent regarder LE MÊME compteur.
    */
   const usageApi = deps.usage ?? new GardeUsageMemoire(120, 0, () => Date.now(), config.API_MAX_LOURDES_SIMULTANEES);
+
+  // Le registre vit au niveau du module (`modulesDeRoutes`) pour qu'un test puisse l'exercer sans monter
+  // le serveur entier. C'est ce qui remplace le test qui relisait le texte de ce fichier.
+  const registre = modulesDeRoutes(deps, usageApi);
+
+  /**
+   * 🔴 AUCUNE ROUTE PORTANT `:tenantId` NE SE MONTE SANS AUTHENTIFICATION.
+   *
+   * La couverture est DÉRIVÉE du registre : tout module déclaré `acces: 'tenant'` y entre, sans que personne
+   * ait à l'inscrire ailleurs. C'est la seule différence avec la version d'avant, et c'est toute la valeur du
+   * lot : l'oubli n'est plus détectable, il est impossible.
+   */
+  if (registre.some((m) => m.acces === 'tenant' && m.fourni) && !deps.auth) {
+    // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant refuse tout et le service est mort
+    // en silence. Mieux vaut refuser de démarrer que servir 403 sur tout un espace.
+    throw new Error('buildServer: `auth` est requis dès qu’un module exposant des routes `:tenantId` est monté');
+  }
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
 
@@ -410,29 +640,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
   });
 
-  registerReceiver(app, deps.queue, {
-    verifyToken: deps.verifyToken ?? config.META_VERIFY_TOKEN,
-    appSecret: deps.appSecret ?? config.META_APP_SECRET,
-  });
-
-  // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
-  // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
-  // ⚠️ LE GARDE D'USAGE EST INJECTÉ DANS `/ops` COMME DANS LES ROUTES `/v1` : c'est la même instance, donc
-  // l'écran d'exploitation montre exactement ce que les routes ont compté, sans second exemplaire.
-  if (deps.ops) registerOps(app, { ...deps.ops, usage: usageApi }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps);
-
-  // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
-  // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
-  if (deps.links) registerLinks(app, deps.links);
-
-  // Réception des webhooks entrants : PUBLIQUE elle aussi, montée ici avant les gardes d'auth. Aucune session
-  // n'est possible (l'appelant est un outil tiers, pas un humain).
-  if (deps.webhookEntrant) registerWebhookEntrant(app, deps.webhookEntrant);
-
-  // Rappels du fournisseur RCS : PUBLIQUE aussi, et pour la même raison (l'appelant est smsmode, pas un
-  // humain). Ce qui l'autorise est le code opaque de l'URL, pas une session ; voir `registerRcsCallback`.
-  if (deps.rcsCallback) registerRcsCallback(app, deps.rcsCallback);
-
   /**
    * LES DEUX PLAFONDS DE DÉBIT DES ROUTES AUTHENTIFIÉES.
    *
@@ -478,99 +685,26 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * restent sur `requireAdmin`, et l'écran masque ce qu'il ne peut pas faire.
    */
   const requireEncadrement = requireAuth ? [requireAuth, makeRequireRole(['admin', 'manager'])] : undefined;
-  if (deps.auth) registerAuth(app, deps.auth, requireAuth);
-  if (deps.import) registerImport(app, deps.import, requireAdmin, limiteCouteuse);
-  if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin, limiteCouteuse);
-  // Bibliothèque RCS : montée avec `requireAuth` et non `requireAdmin`, car la LISTE doit être lisible par un
-  // agent (le bloc de scénario et l'assistant de campagne la proposent). Les écritures sont gardées dans les
-  // handlers par `forbidNonAdmin`, comme pour les templates.
-  if (deps.rcsMessages) registerRcsMessages(app, deps.rcsMessages, requireAuth);
-  if (deps.rcsChannel) registerRcsChannel(app, deps.rcsChannel, requireAuth);
-  // Visuels RCS. Monté ICI (avec `requireAuth`) alors qu'il porte AUSSI une route publique `/m/<code>.<ext>` :
-  // les gardes de ce projet sont posées par route (`preHandler`), pas par groupe, donc la route de lecture
-  // reste ouverte comme elle doit l'être. C'est l'opérateur télécom qui télécharge l'image, sans session.
-  if (deps.rcsMedia) registerRcsMedia(app, deps.rcsMedia, requireAuth);
-  // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
-  // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
-  // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.
-  if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
-  // Deux gardes : l'inbox est ouverte a tout compte authentifie, mais l'effacement du contenu d'une
-  // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
-  if (deps.inbox) registerInbox(app, deps.inbox, requireAuth, requireAdmin, limiteCouteuse);
-  if (deps.hubspotEvents) registerHubspotEvents(app, deps.hubspotEvents);
-  if (deps.stats) registerStats(app, deps.stats, requireAdmin);
-  if (deps.settings) registerSettings(app, deps.settings, requireAdmin, requireEncadrement);
-  if (deps.admin) registerUsers(app, deps.admin, requireAdmin);
-  if (deps.flows) registerFlows(app, deps.flows, requireAdmin);
-  if (deps.agents) registerAgents(app, deps.agents, requireAdmin);
-  if (deps.agentKnowledge) registerAgentKnowledge(app, deps.agentKnowledge, requireAdmin);
-  if (deps.agentTools) registerAgentTools(app, deps.agentTools, requireAdmin);
-  if (deps.agentCatalogue) registerAgentCatalogue(app, deps.agentCatalogue, requireAdmin);
-  if (deps.mbaPublication) registerMbaPublication(app, deps.mbaPublication, requireAdmin);
-  if (deps.agentSources) registerAgentSources(app, deps.agentSources, requireAdmin);
-  // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
-  // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.
-  if (deps.agentRequetes) registerAgentRequetes(app, deps.agentRequetes, requireAdmin);
-  if (deps.agentSetup) registerAgentSetup(app, deps.agentSetup, requireAdmin);
-  if (deps.agentTest) registerAgentTest(app, deps.agentTest, requireAdmin);
-  if (deps.media) registerMedia(app, deps.media, requireAdmin);
-  if (deps.tags) registerTags(app, deps.tags, requireAdmin);
-  if (deps.fields) registerFields(app, deps.fields, requireAdmin);
-  if (deps.support) registerSupport(app, deps.support, requireAuth);
-  if (deps.aide) registerAide(app, deps.aide, requireAuth);
-  if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin, limiteCouteuse);
-  if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
-  if (deps.workflowReports) registerWorkflowReports(app, deps.workflowReports, requireAdmin);
-  if (deps.automations) registerAutomations(app, deps.automations, requireAuth);
-  // requireAuth et non requireAdmin : les ecrans de la chaine se LISENT avec un compte agent, et les six
-  // ecritures sont fermees dans la route par `forbidNonAdmin`.
-  if (deps.channelsMe) registerChannelsMeRoutes(app, deps.channelsMe, requireAuth);
-  if (deps.embeddedSignup) registerEmbeddedSignup(app, deps.embeddedSignup, requireAdmin);
-  if (deps.hubspotImport) registerHubspotImport(app, deps.hubspotImport, requireAdmin);
-  if (deps.hubspotInstall) registerHubspotInstall(app, deps.hubspotInstall, requireAdmin);
-  if (deps.hubspotPipelines) registerHubspotPipelines(app, deps.hubspotPipelines, requireAdmin);
-  if (deps.mba) registerMba(app, deps.mba, requireAdmin);
-  if (deps.email) registerEmailRoutes(app, deps.email, requireAdmin);
-  if (deps.apiKeys) registerApiKeys(app, deps.apiKeys, requireAdmin);
-  if (deps.webhooksAdmin) registerWebhooksAdmin(app, deps.webhooksAdmin, requireAdmin);
-  // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Les DEUX limiteurs sont des
-  // SINGLETONS (partagés entre requêtes) : celui du travail par clé résolue, et le budget de lookups
-  // spéculatifs qui protège la base. Chaque route compose [requireApiKey, requireScope('<scope>')].
-  if (deps.v1) {
-    const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
-    /**
-     * 🔴 LE PRÉ-FILTRE : indexé sur l'EMPREINTE du bearer présenté, donc sur une clé choisie par
-     * l'APPELANT. Sa table porte le même plafond de 10 000 clés que les limiteurs d'authentification, et
-     * pour la même raison : la purge ne retire que les entrées EXPIRÉES, donc sous flot rien n'expire et
-     * la table grossirait pendant toute la fenêtre. Au-delà, une empreinte NEUVE est refusée pendant que
-     * les porteurs déjà connus continuent d'être servis.
-     */
-    const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
-    const requireApiKey = makeRequireApiKey(deps.v1.apiKeys, apiLimiter, apiPrefiltre);
-    /**
-     * 🔴 LE GARDE D'USAGE, UNE SEULE INSTANCE POUR TOUTE LA SURFACE PUBLIQUE. Il compte le TRAVAIL, là où
-     * les limiteurs comptent les requêtes : avec 60 requêtes par minute, une clé fait accepter 30 000
-     * contacts ou 3 000 destinataires, donc le débit ne borne pas la charge. Deux instances auraient
-     * donné deux moitiés de compteurs selon la porte empruntée, ce qui n'aurait été visible de personne.
-     *
-     * ⚠️ EN OBSERVATION : aucun plafond (le second argument vaut 0). Les seuils viendront d'une mesure et
-     * d'un arbitrage de Julien, jamais d'un plan. Un seuil deviné qui mord est une panne qu'on s'inflige.
-     */
-    registerV1Contacts(app, { ...deps.v1.contacts, usage: usageApi }, [requireApiKey, requireScope('contacts:write')]);
-    if (deps.v1.sends) registerV1Sends(app, { ...deps.v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
-    // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
-    // `requireApiKey` déjà construit : une seconde instance de limiteur aurait doublé le quota d'une clé
-    // selon la porte empruntée, ce qui n'aurait été visible de personne.
-    //
-    // Pas de `requireScope` ici : le serveur MCP a DEUX scopes (lecture, écriture) et c'est l'outil appelé
-    // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
-    // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
-    if (deps.v1.mcp) registerMcp(app, deps.v1.mcp, [requireApiKey], usageApi);
-  }
-  // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
-  // compte authentifié (générique, lit req.auth.userId).
-  if (deps.account) registerAccount(app, deps.account, requireAdmin);
-  if (deps.me) registerMe(app, deps.me, requireAuth);
+
+  /**
+   * LE MONTAGE, en une seule boucle sur le registre.
+   *
+   * 🔴 IL N'Y A PLUS DE LISTE D'APPELS À TENIR ICI. Avant, chaque module apparaissait sous la forme
+   * `if (deps.x) registerX(app, deps.x, <la bonne garde>)`, et TROIS choses pouvaient s'y perdre sans que
+   * rien ne le signale : le module lui-même (simplement oublié, la route n'existe alors pas), sa garde
+   * (passée `undefined`, donc dégradée en silence par le module), et son inscription dans la liste de
+   * couverture tenant. Les trois vivent désormais dans son entrée de registre, et le type les exige.
+   *
+   * ⚠️ L'ordre de montage est celui du registre, et il reproduit l'ancien exactement : c'est ce que vérifie
+   * l'essai de ce lot (la table de routes, avant contre après).
+   */
+  const gardes: Gardes = {
+    auth: requireAuth,
+    admin: requireAdmin,
+    encadrement: requireEncadrement,
+    limiteCouteuse,
+  };
+  for (const m of registre) m.monte(app, gardes);
 
   return app;
 }

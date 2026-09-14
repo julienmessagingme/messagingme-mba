@@ -724,8 +724,20 @@ Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `t
 et la RLS est contournée (pooler superuser). Elle rendait auparavant le tenant PRIS DANS L'URL quand
 `req.auth` était absent : elle n'était donc un contrôle que tant que la garde d'authentification avait été
 posée au montage, dans un autre fichier, chaque module la recevant en paramètre OPTIONNEL et la dégradant en
-silence. Ce n'était pas un trou vivant, mais la panne aurait été MUETTE. Le garde-fou de `buildServer` couvre
-désormais les 36 modules à routes `:tenantId` (il en énumérait 18), gardé par `tests/scope-tenant.test.ts`.
+silence. Ce n'était pas un trou vivant, mais la panne aurait été MUETTE.
+
+🔴 **LA COUVERTURE DU GARDE-FOU NE S'ÉCRIT PLUS À LA MAIN, ELLE SE DÉRIVE (2026-09-14, lot 1 du plan
+`docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md`).** `src/server.ts` porte un REGISTRE
+(`modulesDeRoutes`) où chaque module de routes déclare sa classe d'accès, et le garde-fou filtre sur
+`acces: 'tenant'`. Avant, c'était une seconde liste écrite à côté des montages, qu'il fallait penser à
+allonger : elle a déjà couvert 18 modules sur 36, et un test relisait le TEXTE de `server.ts` avec sa PROPRE
+copie de la liste, qui avait trois noms de retard. Mesuré avant de commencer : les 40 noms d'alors étaient
+exacts, donc il n'y avait pas de trou vivant, le défaut était dans la FORME et il attendait le 41e module.
+⚠️ **Ne recopiez pas de compte ici** : `tests/scope-tenant.test.ts` monte désormais chaque module tenant un
+par un, et une parité compare la classe DÉCLARÉE aux adresses réellement montées par Fastify (les deux
+mutations ont été vérifiées). La `ClasseDAcces` en compte **six**, pas deux : `tenant`, `anonyme`, `code-url`,
+`signature-meta`, `signature-service`, `jeton-ops`. ⚠️ `jeton-ops` porte AUSSI des `:tenantId`
+(`/ops/credits/:tenantId`) et c'est correct, l'exploitation est délibérément cross-espace.
 
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
 CHARGEMENT de la configuration. Et jamais `credentials: true` : la session voyage dans un en-tête

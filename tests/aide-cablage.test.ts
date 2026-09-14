@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { modulesDeRoutes } from '../src/server';
+import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
 
 /**
  * LE CÂBLAGE DU BOT D'AIDE, lu dans la source.
@@ -93,10 +95,15 @@ describe('câblage du bot d’aide', () => {
   });
 
   it('🔴 la route d’aide est couverte par le garde-fou d’authentification', () => {
-    // `src/server.ts` refuse de démarrer si un module à routes `:tenantId` se monte sans `auth`. En ajouter
-    // un sans l'inscrire dans cette liste, c'est rouvrir la porte pour lui seul.
-    const server = readFileSync(new URL('../src/server.ts', import.meta.url), 'utf8');
-    const bloc = server.slice(server.indexOf('const modulesTenant'), server.indexOf('const app = Fastify'));
-    expect(bloc).toContain('deps.aide');
+    // `src/server.ts` refuse de démarrer si un module à routes `:tenantId` se monte sans `auth`, et la
+    // couverture se dérive désormais du registre : c'est la classe d'accès DÉCLARÉE qui y fait entrer le
+    // module. Ce cas lisait auparavant le texte de `src/server.ts` à la recherche de `deps.aide` dans une
+    // liste écrite à la main ; il interroge maintenant le registre lui-même, ce qui est le même cas, mieux
+    // asserté (`tests/scope-tenant.test.ts` exerce la propriété pour les 40 modules).
+    const usage = new GardeUsageMemoire(120, 0, () => Date.now(), 0);
+    const toutPresent = new Proxy({}, { get: () => ({}) }) as never;
+    const aide = modulesDeRoutes(toutPresent, usage).find((m) => m.nom === 'aide');
+    expect(aide, 'le module d’aide doit figurer au registre des modules de routes').toBeDefined();
+    expect(aide?.acces).toBe('tenant');
   });
 });

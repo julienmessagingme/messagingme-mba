@@ -23,6 +23,14 @@
  *
  * ⚠️ Le pendant : une route tenant montée SANS garde rend désormais 403 au lieu de servir. C'est le
  * comportement voulu. Si un jour une route à `:tenantId` doit être publique, elle ne passe pas par ici.
+ *
+ * ⚠️ MISE À JOUR DU 2026-09-14, PARCE QUE CE TEXTE ÉTAIT DEVENU FAUX. Il disait que le garde-fou « ne couvre
+ * que les modules qu'on a pensé à y inscrire, et qu'il faudra y penser encore au 37e ». Ce n'est plus vrai :
+ * sa couverture est DÉRIVÉE du registre de `src/server.ts`, où chaque module déclare sa classe d'accès. Il
+ * n'y a plus de liste à allonger, donc plus rien à oublier au 41e. Ce qui reste vrai, et que le lot 2 du plan
+ * `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md` corrigera, est la phrase d'à côté : la
+ * garde arrive encore en paramètre OPTIONNEL dans 29 modules (le compte de « 38 fichiers » ci-dessus a
+ * dérivé, mesuré à 29 déclarations et 30 occurrences du motif).
  */
 export function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
   const { tenantId } = req.params as { tenantId: string };
