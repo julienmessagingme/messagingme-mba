@@ -288,7 +288,7 @@ async function main(): Promise<void> {
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
-    releaseThreadChezMeta, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
+    releaseThreadChezMeta, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
@@ -504,6 +504,19 @@ async function main(): Promise<void> {
         membres: (t) => inboxStore.membresAffectables(t),
         prendreUnRang: (t, campaignId) => repo.prendreUnRangDeTourDeRole(t, campaignId),
         assigner: (t, w, userId) => inboxStore.assignerSiLibre(t, w, userId),
+        /**
+         * 🔴 CE QUI REND « LA CONVERSATION ARRIVE DANS L'INBOX » VRAI (migration 0144). Sans ce geste, la
+         * phrase était fausse sur tout espace ayant l'agent de Meta allumé : il est le répondeur PRIMAIRE
+         * du numéro, donc il répondait au contact avant que l'équipe ne voie quoi que ce soit, et
+         * l'assignation ne faisait que ranger une conversation qu'un robot avait déjà menée.
+         *
+         * ⚠️ ON RÉUTILISE LE GESTE DU SCÉNARIO, on n'en écrit pas un second : `reclaimControl` porte déjà
+         * la prise du fil chez Meta, son rejeu unique sur échec transitoire et l'écriture de notre colonne
+         * dans le bon ordre. Le recopier ici en ferait le troisième exemplaire de cette famille, après le
+         * constructeur de composants Meta et la préparation des visuels de carousel, qui ont chacun cassé
+         * la production le 2026-08-15.
+         */
+        prendreLeFil: (t, w) => reprendreLeFilPourLApp(t, w),
       }),
     });
     // 🔴 CONCURRENCE DES ENTRANTS (lot 3 du programme II), et les deux options vont ENSEMBLE.

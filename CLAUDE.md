@@ -79,8 +79,36 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0143**, le 2026-09-14 au matin (elle RETIRE `tenant_settings_optout_request_idx`, un
-index partiel que 0139 avait créé et qui ne servait AUCUNE requête). **Prochaine libre = 0144.**
+**Dernière appliquée : 0144**, le 2026-09-14 au soir (`campaign_etages.devenir` et `.agent_id` : CE QUI SE
+PASSE QUAND LE CONTACT RÉPOND, étage par étage). **Prochaine libre = 0145.**
+
+🔴 **ELLE CÂBLE UNE QUESTION QUI EXISTAIT DÉJÀ À L'ÉCRAN ET DONT DEUX RÉPONSES SUR TROIS N'ALLAIENT NULLE
+PART.** Seule « la conversation arrive dans l'Inbox » avait une traduction serveur (`campaigns.assignation`) ;
+« l'agent de Meta prend la main » et « un agent IA prend la main » ne quittaient pas le navigateur, alors que
+la seconde fait CHOISIR un agent précis dans une liste. C'est le motif « offert-et-inerte », que le produit
+s'interdit ailleurs. Le défaut était décrit dans `todo.md` et attendait un arbitrage, tranché par Julien le
+2026-09-14 : on câble les trois.
+
+⚠️ **PAR ÉTAGE, ET L'ASSIGNATION RESTE SUR LA CAMPAGNE.** Une chaîne de repli peut servir un modèle seul en
+WhatsApp (réponses à l'équipe) et un scénario en RCS (qui décide lui-même), d'où le devenir sur l'étage. Mais
+« qui, dans l'équipe » reste une politique de campagne : le tour de rôle compte ses réponses sur un rang
+unique (`campaigns.tour_de_role_rang`), et un rang par étage ferait tourner deux roulements indépendants sur
+la même équipe, donc servirait deux fois la même personne.
+
+⚠️ **AUCUNE REPRISE DE DONNÉES, délibérément.** `null` = campagne d'avant, qui retombe sur l'ancien
+comportement. Écrire 'inbox' sur les étages des campagnes qui portent déjà une assignation paraîtrait plus
+propre, mais inventerait une intention : ces campagnes sont parties SANS que personne ne prenne le fil à
+l'agent de Meta, et leur donner rétroactivement un devenir qui change ce comportement ferait diverger ce qui
+s'est passé de ce que la fiche annonce.
+
+🔴 **LUE EN BASE APRÈS `migrate`** : les deux colonnes dans `information_schema`, le `on delete set null` de
+la clé étrangère (une cascade détruirait l'étage, donc la chaîne, pour la suppression d'un agent), les deux
+CHECK avec leur définition exacte, et `schema_migrations` relue. ⚠️ Le CHECK `agent_id is null or devenir =
+'agent'` ne contraint QU'UN SENS : `devenir = 'agent'` avec `agent_id` à null est un état ATTEIGNABLE (agent
+supprimé après coup), et le refuser ferait échouer la suppression d'un agent sur une contrainte de campagne.
+
+Avant elle : **0143**, le 2026-09-14 au matin (elle RETIRE `tenant_settings_optout_request_idx`, un
+index partiel que 0139 avait créé et qui ne servait AUCUNE requête).
 
 🔴 **UN INDEX PARTIEL EST UN CONTRAT AVEC UNE REQUÊTE PRÉCISE, ET CELUI-LÀ N'EN AVAIT AUCUNE.** 0139
 l'annonçait comme servant « quelles requêtes sont branchées sur le consentement ? » ; cette question n'est

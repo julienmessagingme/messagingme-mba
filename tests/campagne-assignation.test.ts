@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { assignerReponse, prochainAssigne } from '../src/inbox/assignation-campagne';
+import { assignerReponse, devenirEffectif, prochainAssigne } from '../src/inbox/assignation-campagne';
+import type { CampagneAssignante } from '../src/inbox/assignation-campagne';
 
 describe('prochainAssigne', () => {
   it('tourne sur les membres', () => {
@@ -45,7 +46,8 @@ describe('prochainAssigne', () => {
  */
 describe('assignerReponse', () => {
   const faux = (sur: {
-    campagne?: { campaignId: string; assignation: 'personne' | 'tour_de_role'; assignationUserId: string | null } | null;
+    campagne?: CampagneAssignante | null;
+    prendLeFil?: boolean;
     membres?: string[];
     rang?: number;
     assigne?: boolean;
@@ -64,7 +66,7 @@ describe('assignerReponse', () => {
   };
 
   it('assigne a la personne designee, sans consommer de rang', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', assignation: 'personne', assignationUserId: 'u-fixe' } });
+    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'personne', assignationUserId: 'u-fixe' } });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBe('u-fixe');
     expect(f.journal.assignations).toEqual([['33600000001', 'u-fixe']]);
     // 🔴 UNE ASSIGNATION FIXE NE FAIT PAS TOURNER LE ROULEMENT. Consommer un rang ici décalerait le tour
@@ -75,7 +77,7 @@ describe('assignerReponse', () => {
   });
 
   it('sur un tour de role, prend un rang et suit le roulement', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', assignation: 'tour_de_role', assignationUserId: null }, rang: 1 });
+    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'tour_de_role', assignationUserId: null }, rang: 1 });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBe('b');
     expect(f.journal.rangsPris).toEqual(['c1']);
   });
@@ -96,7 +98,7 @@ describe('assignerReponse', () => {
   // ⚠️ Une équipe VIDE (tous les comptes révoqués) ne doit rien assigner : la conversation tombe dans
   // « À traiter ». On ne consomme pas de rang non plus, puisque personne ne l'a reçu.
   it('sans membre, n assigne personne', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', assignation: 'tour_de_role', assignationUserId: null }, membres: [] });
+    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'tour_de_role', assignationUserId: null }, membres: [] });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
     expect(f.journal.assignations).toEqual([]);
   });
@@ -108,7 +110,7 @@ describe('assignerReponse', () => {
    * « assignée à une personne ».
    */
   it('une personne designee qui a quitte l espace n assigne personne', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', assignation: 'personne', assignationUserId: null } });
+    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'personne', assignationUserId: null } });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
     expect(f.journal.assignations).toEqual([]);
   });
@@ -119,7 +121,77 @@ describe('assignerReponse', () => {
    * conversation n'a pas été assignée », plutôt que le nom de quelqu'un qui ne l'a pas reçue.
    */
   it('une ecriture refusee rend null, pas un faux succes', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', assignation: 'tour_de_role', assignationUserId: null }, assigne: false });
+    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'tour_de_role', assignationUserId: null }, assigne: false });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
+  });
+});
+
+/**
+ * CE QUI SE PASSE QUAND LE CONTACT RÉPOND, ÉTAGE PAR ÉTAGE (migration 0144).
+ *
+ * 🔴 LE CHOIX DE L'OPÉRATEUR EST EXCLUSIF, ET C'EST TOUTE LA RÈGLE. Julien, le 2026-09-14 : « si le user
+ * répond "la conversation arrive dans l'Inbox", eh bien ça arrive dans l'Inbox, et s'il répond "l'agent IA
+ * prend la main", eh bien l'agent IA prend la main ». Avant ce lot, deux des trois réponses ne quittaient
+ * pas le navigateur.
+ */
+describe('le devenir d’un étage décide qui répond', () => {
+  const campagne = (sur: Partial<CampagneAssignante> = {}): CampagneAssignante => ({
+    campaignId: 'c1', devenir: null, assignation: null, assignationUserId: null, ...sur,
+  });
+
+  describe('devenirEffectif (pur)', () => {
+    it('« MBA » ne prend le fil à personne : c’est lui le répondeur du numéro', () => {
+      expect(devenirEffectif(campagne({ devenir: 'mba' }))).toEqual({ devenir: 'mba', prendreLeFil: false });
+    });
+
+    it('🔴 « Inbox » PREND le fil : un humain reprend, pas un robot qui a déjà répondu', () => {
+      expect(devenirEffectif(campagne({ devenir: 'inbox', assignation: 'tour_de_role' })))
+        .toEqual({ devenir: 'inbox', prendreLeFil: true });
+    });
+
+    it('🔴 une campagne D’AVANT ne prend JAMAIS le fil, et garde son comportement', () => {
+      // Sans reprise de données, `devenir` vaut null sur les campagnes existantes. Leur faire prendre le
+      // fil aujourd'hui changerait, après coup, ce qui se passe sur des conversations déjà en cours.
+      expect(devenirEffectif(campagne({ assignation: 'tour_de_role' })))
+        .toEqual({ devenir: 'inbox', prendreLeFil: false });
+      expect(devenirEffectif(campagne())).toEqual({ devenir: 'mba', prendreLeFil: false });
+    });
+  });
+
+  describe('application', () => {
+    const monter = (c: CampagneAssignante, opts: { filPris?: boolean } = {}) => {
+      const journal = { filsPris: [] as string[], assignations: [] as Array<[string, string]> };
+      const deps = {
+        campagneDeLaReponse: async () => c,
+        membres: async () => ['a', 'b', 'c'],
+        prendreUnRang: async () => 1,
+        assigner: async (_t: string, waId: string, userId: string) => { journal.assignations.push([waId, userId]); return true; },
+        prendreLeFil: async (_t: string, waId: string) => { journal.filsPris.push(waId); return opts.filPris ?? true; },
+      };
+      return { deps, journal };
+    };
+
+    it('« MBA » : on ne touche à rien du tout', async () => {
+      const f = monter(campagne({ devenir: 'mba' }));
+      expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
+      expect(f.journal.filsPris).toEqual([]);
+      expect(f.journal.assignations).toEqual([]);
+    });
+
+
+    it('« Inbox » : le fil est pris, personne ne répond, la conversation est répartie', async () => {
+      const f = monter(campagne({ devenir: 'inbox', assignation: 'tour_de_role' }));
+      expect(await assignerReponse('t1', '33600000001', f.deps)).toBe('b');
+      expect(f.journal.filsPris).toEqual(['33600000001']);
+    });
+
+    it('🔴 Meta refuse le fil : on n’applique RIEN, ni agent ni assignation', async () => {
+      // Son agent répondra quoi qu'on fasse. Lancer le nôtre par-dessus ferait deux messages au contact ;
+      // assigner ferait hériter un humain d'un échange qu'un robot a commencé sans qu'il le sache.
+      const f = monter(campagne({ devenir: 'inbox', assignation: 'tour_de_role' }), { filPris: false });
+      expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
+      expect(f.journal.assignations).toEqual([]);
+    });
+
   });
 });

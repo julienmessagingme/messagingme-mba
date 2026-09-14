@@ -46,12 +46,73 @@ export function prochainAssigne(membres: string[], rang: number): string | null 
   return membres[i] ?? null;
 }
 
-/** La campagne à laquelle cette réponse se rattache, et ce qu'elle demande comme répartition. */
+/**
+ * Ce qui se passe quand le contact répond. Les deux valeurs sont EXCLUSIVES.
+ *
+ * 🔴 IL N'Y A PAS DE TROISIÈME VALEUR « agent IA », ET C'EST UN FAIT D'ARCHITECTURE, PAS UN OUBLI.
+ * `agent_sessions.run_id` est `NOT NULL` et référence `workflow_runs` : un agent IA de ce produit ne sait
+ * pas exister hors d'un scénario. Pour qu'un agent reprenne une campagne, le chemin est « modèle +
+ * scénario », qui existe et qui est éprouvé (tranché par Julien le 2026-09-14).
+ */
+export type Devenir = 'mba' | 'inbox';
+
+/**
+ * La campagne à laquelle cette réponse se rattache, et ce qu'elle demande.
+ *
+ * ⚠️ ELLE DIT DEUX CHOSES DEPUIS LA MIGRATION 0144, et ce commentaire n'en nommait qu'une : QUI RÉPOND
+ * (`devenir`, propriété de l'étage) et, quand la conversation revient à l'équipe, À QUI elle va
+ * (`assignation`, propriété de la campagne). Les deux se lisent en un seul aller-retour.
+ */
 export interface CampagneAssignante {
   campaignId: string;
-  assignation: 'personne' | 'tour_de_role';
+  /**
+   * Le devenir de l'ÉTAGE où se trouvait ce destinataire (migration 0144).
+   *
+   * ⚠️ `null` = campagne créée AVANT le câblage du devenir. Elle n'a alors jamais rien pris à l'agent de
+   * Meta, et son seul réglage qui voyageait était l'assignation : `devenirEffectif` reproduit exactement
+   * ce qu'elle faisait, cf. la justification là-bas.
+   */
+  devenir: Devenir | null;
+  /**
+   * Comment la conversation se répartit dans l'équipe, quand elle lui revient.
+   *
+   * ⚠️ ELLE RESTE UNE POLITIQUE DE CAMPAGNE, pas d'étage, et ce n'est pas une inconséquence : le tour de
+   * rôle compte ses réponses sur un rang unique (`campaigns.tour_de_role_rang`), et un rang par étage
+   * ferait tourner deux roulements indépendants sur la même équipe, donc servirait deux fois la même
+   * personne.
+   */
+  assignation: 'personne' | 'tour_de_role' | null;
   /** La personne, quand `assignation` vaut `personne`. `null` = elle a quitté l'espace depuis. */
   assignationUserId: string | null;
+}
+
+/** Ce qu'il faut faire de cette réponse, une fois la campagne trouvée. */
+export interface DecisionDevenir {
+  devenir: Devenir;
+  /**
+   * Faut-il PRENDRE le fil à l'agent de Meta avant d'agir ?
+   *
+   * 🔴 FAUX POUR TOUTE CAMPAGNE D'AVANT LE CÂBLAGE, et c'est ce qui rend la migration 0144 sans effet
+   * rétroactif. Ces campagnes sont parties sans que personne ne prenne le fil : leur faire prendre le fil
+   * aujourd'hui changerait, après coup, ce qui se passe sur des conversations déjà en cours.
+   */
+  prendreLeFil: boolean;
+}
+
+/**
+ * CE QUI DOIT SE PASSER, déduit de ce que la campagne porte. PURE.
+ *
+ * 🔴 LE CHOIX DE L'OPÉRATEUR EST EXCLUSIF, ET C'EST TOUTE LA RÈGLE (tranché par Julien le 2026-09-14 :
+ * « si le user répond "la conversation arrive dans l'Inbox", eh bien ça arrive dans l'Inbox »). Donc :
+ *
+ *  - `mba`    : on ne prend rien, l'agent de Meta répond, c'est lui le répondeur primaire du numéro ;
+ *  - `inbox`  : on PREND le fil, et personne ne répond automatiquement. « Arrive dans l'Inbox » veut dire
+ *               qu'un humain reprend, pas qu'un robot a déjà répondu avant lui.
+ */
+export function devenirEffectif(c: CampagneAssignante): DecisionDevenir {
+  if (c.devenir !== null) return { devenir: c.devenir, prendreLeFil: c.devenir !== 'mba' };
+  // Campagne d'avant 0144 : on reproduit à l'identique ce qu'elle faisait, sans jamais toucher au fil.
+  return { devenir: c.assignation !== null ? 'inbox' : 'mba', prendreLeFil: false };
 }
 
 export interface AssignationDeps {
@@ -68,6 +129,13 @@ export interface AssignationDeps {
   prendreUnRang(tenantId: string, campaignId: string): Promise<number>;
   /** Écrit l'affectation. `false` = elle n'a pas été posée (déjà assignée, membre hors espace). */
   assigner(tenantId: string, waId: string, userId: string): Promise<boolean>;
+  /**
+   * Prend le fil à l'agent de Meta. `false` = Meta a refusé, ou il n'y avait rien à prendre.
+   *
+   * ⚠️ OPTIONNELLE : absente, aucun fil n'est jamais pris, ce qui est le comportement d'avant la migration
+   * 0144. Les câblages de test n'ont donc rien à déclarer pour continuer d'exercer l'assignation seule.
+   */
+  prendreLeFil?(tenantId: string, waId: string): Promise<boolean>;
 }
 
 /**
@@ -93,6 +161,29 @@ export async function assignerReponse(
 ): Promise<string | null> {
   const campagne = await deps.campagneDeLaReponse(tenantId, waId);
   if (!campagne) return null;
+
+  const decision = devenirEffectif(campagne);
+
+  /**
+   * 🔴 LE FIL SE PREND AVANT TOUT LE RESTE, ET SON ÉCHEC ARRÊTE TOUT. Si Meta refuse de nous le céder,
+   * son agent répondra quoi qu'on fasse : lancer notre agent IA par-dessus ferait recevoir DEUX messages
+   * au contact, et assigner la conversation à un humain lui ferait hériter d'un échange qu'un robot a
+   * déjà commencé sans qu'il le sache. Dans les deux cas, mieux vaut ne rien faire et le dire.
+   */
+  if (decision.prendreLeFil && deps.prendreLeFil && !(await deps.prendreLeFil(tenantId, waId))) {
+    // eslint-disable-next-line no-console
+    console.warn(`devenir de campagne ${campagne.campaignId} non appliqué pour ${waId} : Meta n’a pas cédé le fil, son agent répond`);
+    return null;
+  }
+
+  /**
+   * L'AGENT DE META : on ne fait rien, et c'est exactement l'intention. Il est le répondeur primaire du
+   * numéro, donc ne rien prendre suffit à ce qu'il réponde.
+   */
+  if (decision.devenir === 'mba') return null;
+
+  // Reste `inbox` : le fil est à nous, personne ne répond automatiquement, on répartit.
+  if (campagne.assignation === null) return null;
 
   let userId: string | null;
   if (campagne.assignation === 'personne') {

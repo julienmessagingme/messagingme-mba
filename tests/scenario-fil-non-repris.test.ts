@@ -101,7 +101,13 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
  */
 describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
-  const bloc = wiring.slice(wiring.indexOf('reclaimControl: async'), wiring.indexOf('mbaActifPour:'));
+  /**
+   * ⚠️ LE GESTE A ÉTÉ EXTRAIT le 2026-09-14 : il a désormais DEUX consommateurs (le démarrage d'un
+   * parcours, et le devenir « la conversation arrive dans l'Inbox » d'un étage de campagne). Ces gardes
+   * lisent donc le geste lui-même, plus le bloc `reclaimControl` qui s'y délègue. Le cas exercé est
+   * inchangé : Meta d'abord, notre colonne ensuite, et rien d'écrit chez nous si Meta refuse.
+   */
+  const bloc = wiring.slice(wiring.indexOf('const reprendreLeFilPourLApp'), wiring.indexOf('Envoi réel du bloc'));
   /**
    * ⚠️ LA PRISE DU FIL EST PASSÉE DANS UNE FONCTION D'AIDE le 2026-09-14 (le rejeu unique sur un échec
    * transitoire, relevé en revue). Ces gardes lisaient `takeThreadChezMeta` DANS le bloc `reclaimControl` ;
@@ -109,7 +115,7 @@ describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', 
    * rien tout en restant vertes. Le cas exercé est inchangé : Meta d'abord, notre colonne ensuite, et rien
    * d'écrit chez nous si Meta refuse.
    */
-  const aide = wiring.slice(wiring.indexOf('const prendreLeFilAvecUnRejeu'), wiring.indexOf('reclaimControl: async'));
+  const aide = wiring.slice(wiring.indexOf('const prendreLeFilAvecUnRejeu'), wiring.indexOf('const reprendreLeFilPourLApp'));
 
   it('appelle bien Meta', () => {
     expect(bloc).toContain('prendreLeFilAvecUnRejeu');
@@ -126,6 +132,12 @@ describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', 
     // Le `return false` doit précéder l'écriture locale : c'est la doctrine de `controle-du-fil.ts`,
     // « un état local qui annonce ce que Meta n'a pas fait ».
     expect(bloc.indexOf('return false')).toBeLessThan(bloc.indexOf('setControlOwner'));
+  });
+
+  it('🔴 le démarrage de parcours DÉLÈGUE au geste partagé, il ne le réimplémente pas', () => {
+    // Deux exemplaires de cette prise de fil divergeraient : c'est le motif qui a cassé la production le
+    // 2026-08-15 (constructeur de composants Meta, préparation des visuels de carousel).
+    expect(wiring).toContain('reclaimControl: reprendreLeFilPourLApp,');
   });
 
   it('🔴 rejoue UNE fois un échec transitoire, et jamais un refus définitif', () => {

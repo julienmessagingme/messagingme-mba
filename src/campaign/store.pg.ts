@@ -6,6 +6,7 @@ import type { BuildContact, BuiltRecipient } from './build';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
+import type { CampagneAssignante } from '../inbox/assignation-campagne';
 import { RANG_INITIAL, normaliserChaine, type CanalEtage, type Etage, type EtageEntrant } from './etages';
 import type { EntreeDeDecision } from './bascule';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
@@ -849,23 +850,48 @@ export class PgCampaignRepo {
    * plus tard est encore attribué à cette campagne. Une fenêtre serait un nombre inventé, et la garde
    * `assigned_to is null` borne déjà le dégât à UNE affectation par conversation.
    */
+  /**
+   * ⚠️ ELLE LIT L'ÉTAGE OÙ SE TROUVAIT LE DESTINATAIRE, PAS LA CAMPAGNE (migration 0144). Le devenir est
+   * une propriété de l'étage : une chaîne de repli peut servir un modèle seul en WhatsApp (réponses à
+   * l'équipe) et un scénario en RCS. `campaign_recipients.etage_courant` est la jointure qui le dit.
+   *
+   * 🔴 ET `cv.assigned_to is null` A ÉTÉ RETIRÉ DU `where`, délibérément. Il y filtrait quand cette
+   * requête ne servait QUE l'assignation ; elle sert maintenant aussi « l'agent IA prend la main », qui
+   * n'a rien à voir avec le fait qu'un humain soit déjà sur la conversation. La garde n'est pas perdue,
+   * elle est descendue au seul endroit qui en a besoin : `assigner` refuse une conversation déjà
+   * affectée, et c'est lui qui tranche.
+   */
   async campagneAssignanteDuContact(
     tenantId: string,
     waId: string,
-  ): Promise<{ campaignId: string; assignation: 'personne' | 'tour_de_role'; assignationUserId: string | null } | null> {
-    const res = await this.pool.query<{ id: string; assignation: 'personne' | 'tour_de_role'; assignation_user_id: string | null }>(
-      `select c.id, c.assignation, c.assignation_user_id
+  ): Promise<CampagneAssignante | null> {
+    const res = await this.pool.query<{
+      id: string;
+      assignation: 'personne' | 'tour_de_role' | null;
+      assignation_user_id: string | null;
+      devenir: 'mba' | 'inbox' | null;
+    }>(
+      `select c.id, c.assignation, c.assignation_user_id, e.devenir
          from conversations cv
          join campaign_recipients r on r.contact_id = cv.contact_id
          join campaigns c on c.id = r.campaign_id
-        where cv.tenant_id = $1 and cv.wa_id = $2 and cv.assigned_to is null
-          and c.tenant_id = $1 and c.assignation is not null and r.sent_at is not null
+         left join campaign_etages e on e.campaign_id = c.id and e.rang = r.etage_courant
+        where cv.tenant_id = $1 and cv.wa_id = $2
+          and c.tenant_id = $1 and r.sent_at is not null
+          and (c.assignation is not null or e.devenir is not null)
         order by r.sent_at desc
         limit 1`,
       [tenantId, waId],
     );
     const row = res.rows[0];
-    return row ? { campaignId: row.id, assignation: row.assignation, assignationUserId: row.assignation_user_id } : null;
+    return row
+      ? {
+        campaignId: row.id,
+        devenir: row.devenir,
+        assignation: row.assignation,
+        assignationUserId: row.assignation_user_id,
+      }
+      : null;
   }
 
   /**
