@@ -1,5 +1,31 @@
 # todo.md : backlog
 
+## 🔴 « L'agent de Meta prend la main » et « Un agent IA prend la main » NE PARTENT NULLE PART (2026-09-14)
+
+Relevé en revue du lot « une question à la fois », en suivant ce que `devenir` devient. La question
+« Que se passe-t-il quand le contact répond ? » de l'assistant de campagne propose trois réponses, et
+**une seule voyage jusqu'au serveur** : « La conversation arrive dans l'Inbox », par `assignation` et
+`assignationUserId`.
+
+Mesuré, pas supposé : `devenir` et `agentId` n'apparaissent que dans l'écran et dans le brouillon
+(`web/lib/campagne-brouillon.ts`) ; `CreateCampaignInput` (`web/lib/api/campagnes.ts`) ne porte aucun
+champ pour eux ; `campaigns` n'a aucune colonne qui dise quel agent reprend la conversation.
+
+**Choisir « Un agent IA prend la main » ne change donc rien à ce qui se passera**, et l'écran fait
+pourtant désigner un agent précis dans une liste. C'est le motif « offert-et-inerte », que le produit
+s'interdit ailleurs (un canal sans agent RCS est grisé AVEC sa raison plutôt que d'accepter un choix
+sans effet).
+
+Deux sorties possibles, et c'est un arbitrage de Julien :
+
+- **le câbler** : une colonne sur `campaigns`, lue à l'arrivée d'une réponse, au même endroit que
+  `assignationDeLaCampagne` (`src/campaign/store.pg.ts`) ;
+- **ou retirer les deux options** et dire ce qui se passe réellement aujourd'hui (l'agent de l'espace
+  répond s'il est actif, sinon la conversation tombe dans l'Inbox).
+
+⚠️ Ne pas trancher à notre main : la première option est un vrai chantier, la seconde retire une
+promesse qui a peut-être été faite à un client.
+
 ## ✅ LIVRÉ : traduction des conversations (tranché le 2026-09-12, livré et déployé le 2026-09-13)
 
 > ⚠️ **CE TITRE A DIT « RIEN DE COMMENCÉ » PENDANT QUE C'ÉTAIT EN PRODUCTION** (migration 0137,
