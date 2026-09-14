@@ -21,7 +21,7 @@ Agent via `src/mba/client.ts`, les modèles via le résolveur maison `gatewayAid
 
 Valeurs exactes, recopiées de la spec. Elles s'appliquent à TOUTES les tâches.
 
-- **Prochaine migration libre : 0144.** 🔴 La base tranche, pas le CLAUDE.md. Relire
+- **Prochaine migration libre : 0146.** 🔴 La base tranche, pas le CLAUDE.md. Relire
   `select name from public.schema_migrations order by name desc` APRÈS `migrate`, jamais avant.
 - **`tenant_id = $1` sur CHAQUE requête**, y compris là où une autre colonne est déjà clé primaire. Le
   pooler est superuser, la RLS est contournée, ce filtrage EST le contrôle d'accès.
@@ -79,7 +79,7 @@ produit aucun test rouge, il produit un pouvoir qu'on n'a pas voulu donner.
 
 | Fichier | Responsabilité |
 |---|---|
-| `db/migrations/0144_historique_reglages_et_plafond.sql` | La table d'historique et le compteur de dépense |
+| `db/migrations/0146_historique_reglages_et_plafond.sql` | La table d'historique et le compteur de dépense |
 | `src/reglages/historique.ts` | Le contrat `HistoriqueStore` et les types (PUR, sans IO) |
 | `src/reglages/historique.pg.ts` | L'implémentation Postgres |
 | `src/assistant/budget.ts` | Le plafond : lire la dépense du mois, décider, incrémenter |
@@ -117,7 +117,7 @@ produit aucun test rouge, il produit un pouvoir qu'on n'a pas voulu donner.
 ## Tâche 1 : la table d'historique
 
 **Fichiers :**
-- Créer : `db/migrations/0144_historique_reglages_et_plafond.sql`
+- Créer : `db/migrations/0146_historique_reglages_et_plafond.sql`
 - Créer : `src/reglages/historique.ts`, `src/reglages/historique.pg.ts`
 - Test : `tests/reglages-historique.test.ts`, `tests/integration/historique-store.test.ts`
 
@@ -216,7 +216,7 @@ select indexdef from pg_indexes where tablename = 'reglages_historique';
 select name from public.schema_migrations order by name desc limit 3;
 ```
 
-Attendu : les cinq CHECK avec leur définition exacte, **un seul** index en plus de la clé primaire, et 0144
+Attendu : les cinq CHECK avec leur définition exacte, **un seul** index en plus de la clé primaire, et 0146
 en tête. 🔴 Si un index sur `at` seul apparaît, c'est qu'il a été ajouté par réflexe : le retirer.
 
 - [ ] **Étape 3 : écrire le test du contrat AVANT le store**
@@ -228,7 +228,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const SQL = readFileSync(
-  resolve(__dirname, '../db/migrations/0144_historique_reglages_et_plafond.sql'), 'utf8');
+  resolve(__dirname, '../db/migrations/0146_historique_reglages_et_plafond.sql'), 'utf8');
 
 describe('la table d historique tient ses promesses dans le SCHÉMA', () => {
   it('interdit une suppression sans son contenu', () => {
@@ -342,8 +342,8 @@ store ET par la base ; un espace ne voit pas les lignes d'un autre.
 - [ ] **Étape 8 : commit**
 
 ```bash
-git add -N db/migrations/0144_historique_reglages_et_plafond.sql src/reglages/historique.ts src/reglages/historique.pg.ts tests/reglages-historique.test.ts tests/integration/historique-store.test.ts
-git commit --only db/migrations/0144_historique_reglages_et_plafond.sql src/reglages/historique.ts src/reglages/historique.pg.ts tests/reglages-historique.test.ts tests/integration/historique-store.test.ts -m "feat(historique): ce qui a change, et ce qui a ete efface"
+git add -N db/migrations/0146_historique_reglages_et_plafond.sql src/reglages/historique.ts src/reglages/historique.pg.ts tests/reglages-historique.test.ts tests/integration/historique-store.test.ts
+git commit --only db/migrations/0146_historique_reglages_et_plafond.sql src/reglages/historique.ts src/reglages/historique.pg.ts tests/reglages-historique.test.ts tests/integration/historique-store.test.ts -m "feat(historique): ce qui a change, et ce qui a ete efface"
 ```
 
 ---
@@ -352,7 +352,7 @@ git commit --only db/migrations/0144_historique_reglages_et_plafond.sql src/regl
 
 **Fichiers :**
 - Modifier : `src/agent/setup/entretien-store.ts`, `src/agent/setup/entretien-store.pg.ts`
-- Créer : `db/migrations/0145_entretien_fil_continu.sql`
+- Créer : `db/migrations/0147_entretien_fil_continu.sql`
 - Test : `tests/agent-setup-entretien.test.ts`
 
 **Interfaces :**
@@ -386,7 +386,7 @@ it('garde les tours anciens, et n en envoie au modèle que les derniers', async 
 - [ ] **Étape 2 : le vérifier rouge** (`npx vitest run tests/integration/agent-setup-entretien.test.ts`).
 Attendu : `expect(60).toHaveLength(...)` échoue à 40, parce que l'écriture a tronqué.
 
-- [ ] **Étape 3 : la migration 0145**
+- [ ] **Étape 3 : la migration 0147**
 
 ```sql
 -- L'auteur d'un message du fil. Le fil est partagé entre les admins d'un espace : sans cette colonne,
@@ -950,7 +950,7 @@ supprimer la relecture d'inventaire, retirer le `avant` de la suppression. Chacu
 **Fichiers :**
 - Créer : `src/mba/assistant/conversation.ts`, `src/mba/assistant/entretien-store.ts` + `.pg.ts`,
   `src/http/mba-assistant.ts`
-- Créer : `db/migrations/0146_mba_assistant_conversation.sql`
+- Créer : `db/migrations/0148_mba_assistant_conversation.sql`
 - Modifier : `src/index.ts` (câblage), `src/http/routes.ts` ou l'endroit où les modules sont montés
 - Test : `tests/mba-assistant-route.test.ts`
 
@@ -965,7 +965,7 @@ supprimer la relecture d'inventaire, retirer le `avant` de la suppression. Chacu
 pour la même raison : le jour où l'onglet « Create » a disparu d'OpenAI, des GPT sont devenus non
 modifiables.
 
-- [ ] **Étape 1 : la migration 0146**
+- [ ] **Étape 1 : la migration 0148**
 
 ```sql
 -- Le fil de l'assistant du MBA. UN par espace : le MBA est unique par espace.
@@ -1291,7 +1291,7 @@ pour les messages d'avant la migration.
 
 - [ ] **`gh run list` puis `gh run view <id> --json jobs`**, job par job. 🔴 `gh run watch --exit-status`
       ment : il a déjà rendu 0 sur un run en échec.
-- [ ] **Migrations d'abord** : 0144, 0145 et 0146 AJOUTENT des colonnes et des tables que le code écrit,
+- [ ] **Migrations d'abord** : 0146, 0147 et 0148 AJOUTENT des colonnes et des tables que le code écrit,
       donc `compose build mba-api`, puis `compose run --rm --no-deps mba-api npm run migrate`, puis
       `up -d --build`.
 - [ ] **Contrôle public après CHAQUE `up --build`**, sur le BON chemin. 502 avec des conteneurs `healthy` =
