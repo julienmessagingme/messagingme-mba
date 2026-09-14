@@ -14,11 +14,11 @@
 
 | | |
 |---|---|
-| `origin/main` | `8c22d96` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `8c22d96`, déployé et vérifié en public |
-| Dernière CI de CODE (`19367d2`) | ✅ verte, quatre jobs |
+| `origin/main` | `79415a8` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `79415a8`, déployé et vérifié en public |
+| Dernière CI de CODE (`79415a8`) | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
-| Migrations | **0139, 0140 et 0141 appliquées** dans la nuit du 2026-09-13, vérifiées en base. **Prochaine libre : 0142** |
+| Migrations | **0139 à 0142 appliquées**, vérifiées en base. **Prochaine libre : 0143** |
 
 ⚠️ **LE 502 PUBLIC EST SYSTÉMATIQUE, PLUS INTERMITTENT.** Neuf déploiements le 2026-09-13, neuf fois le
 même : conteneurs `healthy`, appel interne à 200, appel public à 502. Réparation :
@@ -29,21 +29,18 @@ tâche 7) : le contrôle public juste après rendait encore 502, le second reloa
 dans les deux cas, donc il ne dit rien. La séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer
 si besoin.
 
-## 🔴 CE QUI EST EN COURS : chantier 6, le centre de Sécurité & compliance
+## ✅ CE QUI VIENT D'ÊTRE FINI : chantier 6, le centre de Sécurité & compliance
 
 [spec](docs/superpowers/specs/2026-09-13-centre-securite-design.md) ·
 [plan](docs/superpowers/plans/2026-09-13-centre-securite.md)
 
-**Tâches 1 à 8 livrées, relues et déployées** (`8c22d96`). Le menu, la page d'accueil, l'écran Consentement,
-le blocage réel de l'opt-out sur tous les chemins automatiques, la règle élargie en observation, la poussée
-du refus vers le système du client, et le sous-menu IA.
+🔴 **LES NEUF TÂCHES SONT LIVRÉES, RELUES ET DÉPLOYÉES** (`79415a8`). Le menu et sa page d'accueil, les deux
+journaux déménagés, l'inventaire des chemins d'envoi, le blocage réel de l'opt-out sur tous les chemins
+automatiques, l'écran Consentement, la règle élargie en observation, la poussée du refus vers le système du
+client, le sous-menu IA au niveau de l'espace, et la moitié SYSTÈME du journal des erreurs.
 
-**Reste une tâche :**
-
-1. **Tâche 9, la moitié SYSTÈME du journal des erreurs.** La moitié client existe et a déménagé. Inventorier
-   d'abord ce qui est DÉJÀ journalisé (DLQ, `/ops`, alertes Telegram, `workflow_advance_failures`) : la
-   question n'est pas « que journaliser » mais « qu'est-ce qui est écrit quelque part et que personne ne
-   montre au client ».
+⚠️ **CE QUI RESTE DÛ EST ENTIÈREMENT DES ESSAIS RÉELS**, ci-dessous. Rien de ce chantier n'a jamais été
+exercé par un humain sur un vrai téléphone ni contre un vrai système tiers.
 
 ## 🔴 CE QUI N'A JAMAIS TOURNÉ SUR DE VRAIES DONNÉES
 
@@ -62,6 +59,12 @@ exercé par un humain sur un vrai téléphone.
   `redaction_origine` ce que l'opérateur a écrit.
 - **Créer un scénario depuis une campagne** : le publier, vérifier qu'il apparaît dans l'onglet Scénario, et
   lancer la campagne sur un vrai numéro.
+- **Le journal des erreurs système** (tâche 9, déployée) : casser volontairement un connecteur (une adresse
+  fausse dans Tools), faire jouer un bloc « Appel HTTP » d'un scénario, et **constater la ligne dans
+  Sécurité > Journal des erreurs**, section « Erreurs système », avec le bon appelant et le bon code. Puis le
+  même essai avec une adresse qui ne répond jamais, pour voir « n'a pas répondu à temps » plutôt qu'une
+  erreur. ⚠️ Le journal est VIDE en production (mesuré : zéro ligne partout), donc l'écran n'a jamais été vu
+  avec des données.
 - **La politique d'annonce d'IA** (tâche 8, déployée) : ouvrir Sécurité > IA, passer l'espace à
   « à chaque message », écrire à l'agent depuis un vrai téléphone et **constater la phrase à chaque réponse**.
   Puis repasser à « une fois par conversation » et vérifier qu'elle ne part qu'au premier tour. ⚠️ Ce chemin
@@ -124,6 +127,17 @@ test de blocage porte son TÉMOIN dans l'autre sens**, sinon il ne prouve que sa
 ⚠️ **« Par cohérence » n'est pas une raison de transporter une donnée.** Les variables du rang 1 partaient
 avec le scénario d'un étage de repli, parce que la branche voisine le faisait. Elles décrivent un autre
 modèle : Meta refuse, ou remplit le bon nombre de trous avec les mauvaises valeurs.
+
+🔴 **`git checkout <fichier>` SUR UN FICHIER NON COMMITÉ DÉTRUIT LE TRAVAIL, ET JE L'AI FAIT.** En restaurant
+trois fichiers après une mutation, j'ai effacé une heure de travail non commité. Deux ont été récupérés
+depuis des copies `/tmp` prises avant la mutation ; le troisième a dû être réécrit. **La parade est de
+commiter AVANT de muter**, pas de se fier à `git checkout` comme à un « annuler » : pour du travail non
+commité, il n'annule pas la mutation, il annule TOUT.
+
+🔴 **UNE ÉTAPE « INVENTORIER AVANT D'AGIR » N'EST PAS UNE PRÉCAUTION, C'EST ELLE QUI TROUVE LE SUJET.**
+Celle de la tâche 9 a corrigé le plan sur deux points : ce qu'il demandait d'ajouter y était déjà, et le vrai
+trou était ailleurs (une table écrite depuis des semaines et lue par personne). Sans elle, on aurait
+journalisé plus, à côté.
 
 🔴 **DEUX MIGRATIONS POUSSÉES ENSEMBLE NE S'APPLIQUENT PAS ENSEMBLE.** 0140 ajoute et reprend (avant le
 déploiement), 0141 retire (après). Mais les migrations vivent DANS L'IMAGE et `migrate` applique TOUT ce

@@ -79,9 +79,34 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0141**, le 2026-09-13 dans la nuit (elle RETIRE `agents.mention_ia_frequence`, que
+**Dernière appliquée : 0142**, le 2026-09-14 au matin (le journal des appels de connecteur s'ouvre à SES
+TROIS APPELANTS : `agent_tool_calls.session_id` devient NULLABLE, une colonne `source` dit qui appelait, et
+un index PARTIEL sert la lecture des échecs). **Prochaine libre = 0143.**
+
+🔴 **CE QU'ELLE RÉPARE EST UNE EXHAUSTIVITÉ, PAS UNE FONCTIONNALITÉ.** `creerAppelConnecteur`
+(`src/agent/resolvers/http.ts`) est le point de passage unique des appels vers le système d'un client, et il
+a TROIS appelants : l'agent IA, le bloc « Appel HTTP » d'un scénario, et la poussée d'un opt-out. UN SEUL
+journalisait ses échecs. Les deux autres n'écrivaient qu'un `console.warn` : un connecteur qui refusait
+l'appel d'un scénario, ou qui ne recevait jamais le refus d'un contact, ne laissait AUCUNE trace
+consultable. C'est le motif « une capacité câblée sur un consommateur sur trois », payé plusieurs fois ici.
+
+🔴 **DEUX VERROUS DE SCHÉMA LES EN EMPÊCHAIENT, ET C'EST POUR ÇA QU'ILS NE LE FAISAIENT PAS.** `session_id`
+était `NOT NULL` et référençait `agent_sessions` : un scénario n'ouvre pas de session, une poussée non plus.
+Et rien ne disait QUI appelait, donc les lignes auraient été indiscernables. **Le champ `journal` est
+désormais OBLIGATOIRE dans `AppelConnecteur`** : un quatrième appelant devra écrire `null` et se demander
+pourquoi, au lieu de l'oublier. Un test garde cette propriété, qu'un `journal?:` ferait disparaître sans bruit.
+
+⚠️ **ET LA JUSTIFICATION DE `JOURNAL_MUET` A CESSÉ D'ÊTRE VRAIE** : elle invoquait précisément ce `NOT NULL`.
+Corrigée. Ce qui reste est un choix produit (les essais du bac à sable n'ont pas à apparaître comme des
+pannes dans le journal que le client consulte), plus une contrainte.
+
+🔴 **LU EN BASE APRÈS `migrate`, ET LE CHEMIN COMPLET EXÉCUTÉ PAR LE VRAI CODE** : `session_id` nullable, la
+colonne `source` et son défaut, le PRÉDICAT EXACT de l'index partiel, puis une ligne SANS session d'agent
+ÉCRITE par `PgJournalAppels` et RELUE par `PgErreursLivraisonStore.listerEchecsSysteme`. La sonde a été
+effacée ensuite : le journal d'un client n'a pas à porter nos essais.
+
+Avant elle : **0141**, le 2026-09-13 dans la nuit (elle RETIRE `agents.mention_ia_frequence`, que
 0140 venait de remonter au niveau de l'ESPACE dans `tenant_settings.mention_ia_frequence`).
-**Prochaine libre = 0142.**
 
 🔴 **0140 ET 0141 SONT UNE PAIRE, ET ELLES N'ONT PAS ÉTÉ APPLIQUÉES AU MÊME MOMENT.** 0140 AJOUTE et
 REPREND, donc avant le déploiement ; 0141 RETIRE une colonne que le code déployé lisait encore, donc APRÈS.
