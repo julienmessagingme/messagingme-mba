@@ -65,6 +65,44 @@ async function surCanal(page: Page, sur: { rcsEnabled?: boolean; businessHours?:
   await expect(page.getByTestId('etape-canal')).toBeVisible();
 }
 
+/**
+ * 🔴 A L'OUVERTURE, UNE SEULE QUESTION : LE CANAL (2026-09-14, demande de Julien). « Tu poses d'abord
+ * la question du canal, avant de faire apparaitre (ou pas) Reessayer les envois qui echouent, car ce truc
+ * ne doit apparaitre que si la personne choisit WhatsApp ou choisit RCS ; de meme Envoyer uniquement
+ * pendant les heures ouvrees, tu le fais apparaitre quand on a rempli le reste. »
+ *
+ * 🔴 ET LE CANAL N'A PLUS DE DEFAUT : aucune des trois entrees n'est cochee. C'est ce qui rend le
+ * parcours honnete, et c'est le cas le plus facile a perdre en reintroduisant un `formule: 'whatsapp'`
+ * dans l'etat initial : l'ecran redeviendrait celui d'avant sans qu'aucun autre test ne le voie.
+ */
+test('🔴 a l ouverture, seule la question du canal est posee', async ({ page }) => {
+  await surCanal(page);
+  await expect(page.getByRole('radio', { name: 'WhatsApp', exact: true })).not.toBeChecked();
+  await expect(page.getByRole('radio', { name: 'RCS', exact: true })).not.toBeChecked();
+  await expect(page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' })).toHaveCount(0);
+  await expect(page.getByTestId('bloc-horaires')).toHaveCount(0);
+  // 🔴 UN BOUTON GRISE DIT POURQUOI IL L'EST : sans canal, on n'avance pas, et l'ecran l'explique.
+  await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
+  await expect(page.getByTestId('canal-a-choisir')).toBeVisible();
+});
+
+test('🔴 le choix du canal fait apparaitre la suite, et elle disparait avec lui', async ({ page }) => {
+  await surCanal(page);
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
+  await expect(page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' })).toBeVisible();
+  await expect(page.getByTestId('bloc-horaires')).toBeVisible();
+  await expect(page.getByTestId('canal-a-choisir')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Suivant' })).toBeEnabled();
+
+  // ⚠️ LE REPLI N'EST PAS UN CANAL SEUL : le reessai s'en va, la question horaire reste. Sans ce second
+  // temps, le cas ci-dessus passerait aussi sur un ecran qui montrerait tout des le premier clic.
+  await page.getByRole('radio', { name: 'WhatsApp et RCS, avec repli' }).check();
+  await expect(page.getByRole('checkbox', { name: 'Réessayer les envois qui échouent' })).toHaveCount(0);
+  await expect(page.getByTestId('choix-ordre')).toBeVisible();
+  await expect(page.getByTestId('bloc-horaires')).toBeVisible();
+});
+
 test('les trois entrees de canal, et la sous-question du premier canal', async ({ page }) => {
   await monter(page);
   await page.getByLabel('Nom de la campagne').fill('Essai');
@@ -167,6 +205,9 @@ test('le second canal du repli s AFFICHE et suit le premier', async ({ page }) =
  */
 test('une seule question horaire sur l envoi, et plus aucune intention de cadence', async ({ page }) => {
   await surCanal(page);
+  // ⚠️ LE CANAL D'ABORD, DEPUIS LE 2026-09-14 : la question horaire ne s'affiche qu'une fois le canal
+  // choisi. Sans ce clic, ce cas chercherait une case que l'ecran masque a juste titre.
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   await expect(page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' })).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Au plus vite' })).toHaveCount(0);
   await expect(page.getByRole('radio', { name: 'Étalé sur la journée' })).toHaveCount(0);
@@ -188,6 +229,7 @@ test('une seule question horaire sur l envoi, et plus aucune intention de cadenc
  */
 test('la case des heures ouvrees previent quand l espace n a AUCUN horaire', async ({ page }) => {
   await surCanal(page, { businessHours: {} });
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   await expect(page.getByTestId('horaires-absentes')).toHaveCount(0);
   await page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' }).check();
   await expect(page.getByTestId('horaires-absentes')).toContainText(/sans jamais la reprendre/);
@@ -196,6 +238,7 @@ test('la case des heures ouvrees previent quand l espace n a AUCUN horaire', asy
 test('un espace QUI a des horaires ne recoit pas cet avertissement', async ({ page }) => {
   // L'autre sens : sans ce cas, un avertissement affiche en permanence passerait le test precedent.
   await surCanal(page);
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   await page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' }).check();
   await expect(page.getByTestId('horaires-absentes')).toHaveCount(0);
 });

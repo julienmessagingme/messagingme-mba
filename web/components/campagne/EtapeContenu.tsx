@@ -9,7 +9,7 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
-import { RANG_INITIAL, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
+import { devenirProposable, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { scenariosPourEtage } from '@/lib/campagne-scenario';
 import { CreationScenarioEnLigne } from '@/components/campagne/CreationScenarioEnLigne';
@@ -35,10 +35,17 @@ import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesCo
  * par lequel le message est parti, et un contact joint au second étage ne doit pas tomber dans un autre
  * traitement que son voisin joint au premier.
  *
- * ⚠️ ET IL VAUT POUR LES DEUX FORMULES, modèle seul comme modèle plus scénario. Un scénario finit, lui
- * aussi, et la conversation doit alors aller quelque part. Ne poser la question que pour la campagne
- * simple laisserait le cas « scénario » sans réponse, c'est-à-dire des conversations qui retombent dans
- * un défaut que personne n'a choisi.
+ * 🔴 ET ELLE N'EST PAS POSÉE QUAND TOUT PART EN SCÉNARIO (2026-09-14, tranché par Julien) : « la
+ * logique qui répond, est-ce un agent IA ou un collab, est gérée dans le scénario ». Ce fichier
+ * affirmait EXACTEMENT L'INVERSE la veille (« un scénario finit lui aussi, la conversation doit bien
+ * aller quelque part »), et l'argument était sans objet : ce qui suit la fin d'un parcours se règle dans
+ * le parcours. Deux réglages du même événement, c'est un opérateur qui croit avoir décidé ici pendant que
+ * le graphe décide ailleurs.
+ *
+ * ⚠️ UN SEUL ÉTAGE HORS SCÉNARIO LA REPOSE (`devenirProposable`), et ce n'est pas une subtilité : sur une
+ * chaîne dont l'étage 1 ouvre un parcours et l'étage 2 envoie un modèle seul, les contacts joints au
+ * second répondent sans qu'aucun scénario ne les prenne. La garde vit dans la lib parce que la MÊME
+ * fonction tranche au point d'envoi : ce qu'on cache ici est exactement ce qu'on n'envoie pas là-bas.
  *
  * ⚠️ TOUS LES CADRES SONT REPLIÉS À L'ARRIVÉE, un seul s'ouvre à la fois. Deux raisons, et la seconde est
  * la plus utile : on voit d'abord la FORME de sa chaîne (combien d'étages, dans quel ordre) avant de
@@ -145,23 +152,35 @@ export function EtapeContenu({
       ))}
 
       {/*
-        🔴 LA QUESTION DU DEVENIR N'APPARAÎT QU'UNE FOIS L'ÉTAGE 1 REMPLI (2026-09-13, demande de Julien
-        après son essai réel). Demander « que se passe-t-il quand le contact répond ? » avant de savoir ce
-        que le contact REÇOIT pose la question dans le désordre : la réponse dépend de ce qu'on envoie, et
-        l'écran donnait à croire que l'étape était finie alors que rien n'avait été choisi.
+        🔴 LA QUESTION DU DEVENIR N'APPARAÎT QU'UNE FOIS TOUT LE CONTENU CHOISI (2026-09-13, demande de
+        Julien après son essai réel, ÉLARGIE par lui le 2026-09-14). Demander « que se passe-t-il quand le
+        contact répond ? » avant de savoir ce que le contact REÇOIT pose la question dans le désordre : la
+        réponse dépend de ce qu'on envoie.
 
-        ⚠️ ELLE SE LIT SUR LE RANG 1 SEUL, pas sur la chaîne entière, et la nuance compte : sur une chaîne
-        de repli, on remplit son premier étage puis on veut régler le devenir sans avoir à descendre
-        remplir d'abord l'étage 2. La conversation, elle, n'a qu'un devenir pour toute la campagne.
+        ⚠️ ELLE SE LISAIT SUR LE RANG 1 SEUL, ELLE LIT MAINTENANT TOUTE LA CHAÎNE : « d'abord se
+        concentrer sur le contenu, étage 1, étage 2 si campagne avec fallback ; ne pas faire apparaître de
+        suite la question ». L'ancienne justification (pouvoir régler le devenir sans descendre remplir
+        l'étage 2) décrivait un confort que personne n'avait demandé, contre l'ordre de lecture que Julien
+        demande, lui, deux fois.
+
+        🔴 ET ELLE DISPARAÎT QUAND TOUT PART EN SCÉNARIO : c'est le scénario qui dit qui répond. Le dire
+        plutôt que de laisser un vide, sans quoi l'écran ressemble à une question qu'on aurait oubliée.
       */}
-      {!rangsIncomplets.includes(RANG_INITIAL) && (
-        <BlocDevenir
-          etat={etat}
-          references={references}
-          capacites={capacites}
-          nbDestinataires={nbDestinataires}
-          onChange={onChange}
-        />
+      {rangsIncomplets.length === 0 && (
+        devenirProposable(chaine, etat.contenus) ? (
+          <BlocDevenir
+            etat={etat}
+            references={references}
+            capacites={capacites}
+            nbDestinataires={nbDestinataires}
+            onChange={onChange}
+          />
+        ) : (
+          <p className="mt-6 w-full rounded-xl border border-ink-200 p-4 text-sm text-ink-600" data-testid="devenir-dans-le-scenario">
+            Ce qui se passe quand le contact répond est réglé dans le scénario : c&apos;est lui qui décide
+            si un agent IA prend la main ou si la conversation revient à l&apos;équipe.
+          </p>
+        )
       )}
 
       {/* Ce qui reste à remplir, nommé. Un bouton grisé sans sa raison est le défaut qu'on vient de
@@ -737,12 +756,16 @@ function CadreEmail({
     <div className="w-full space-y-3">
       {/* ⚠️ PAS DE SCÉNARIO À CET ÉTAGE, et ce n'est pas un oubli : un scénario est une CONVERSATION, et
           l'e-mail n'en ouvre pas. Proposer le choix ici promettrait un enchaînement qui n'existe pas. */}
+      {/* ⚠️ UNE CLÉ DE TEST SANS RANG, comme `rcs-texte` juste au-dessus : un seul cadre est déplié à la
+          fois, donc il n'y a jamais deux de ces champs à l'écran. Désigner celui-ci par son libellé
+          buterait sur « Modèle » et « Modèle d'e-mail », que les requêtes par étiquette confondent. */}
       <Selecteur
         libelle="Modèle d'e-mail"
         valeur={contenu.emailTemplateId ?? ''}
         onChange={(v) => onChange({ emailTemplateId: v })}
         options={references.emailTemplates.map((t) => ({ valeur: t.id, libelle: t.name }))}
         vide="Aucun modèle d'e-mail sur cet espace."
+        testId="email-modele"
       />
       {/*
         🔴 QUEL CHAMP PORTE L'ADRESSE ? LA QUESTION SE POSE PARCE QU'IL N'Y A AUCUNE CONVENTION. `contacts`

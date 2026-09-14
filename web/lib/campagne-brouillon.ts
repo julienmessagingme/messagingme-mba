@@ -56,7 +56,14 @@ export interface ContenuBrouillon {
  */
 export interface EtatBrouillon {
   category: CampaignCategory;
-  formule: FormuleCanal;
+  /**
+   * LE CANAL, ou `null` quand la question n'a pas encore reçu de réponse (cf. `EtatCampagne.formule`).
+   *
+   * ⚠️ IL S'ÉCRIT TEL QUEL ET SE RELIT PAR OMISSION : `dans(null, [...])` ne reconnaît pas `null`, donc la
+   * clé n'est pas reposée à la reprise et le défaut de l'assistant (aucun canal) l'emporte. Un brouillon
+   * abandonné avant le choix du canal repose donc la question, au lieu d'en inventer une réponse.
+   */
+  formule: FormuleCanal | null;
   premier: CanalPremier;
   troisieme: TroisiemeNiveau;
   reessayer: boolean;

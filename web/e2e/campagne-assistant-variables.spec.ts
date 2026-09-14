@@ -57,7 +57,13 @@ async function monter(
     }
     if (chemin.endsWith('/param-hints')) return json({ hints: sur.indices ?? [] });
     if (chemin.endsWith('/contacts/count')) return json({ total: 120 });
-    if (chemin.endsWith('/email-templates')) return json({ templates: [] });
+    /**
+     * 🔴 L'ADRESSE RÉELLE EST `/email/templates`, PAS `/email-templates` (corrigé le 2026-09-14). Ce faux
+     * a porté la mauvaise adresse depuis sa création : l'appel retombait sur la règle `/templates` juste
+     * en dessous, et la console recevait donc la liste des modèles WHATSAPP comme gabarits d'e-mail. Rien
+     * ne le signalait tant qu'aucun test ne remplissait un étage e-mail.
+     */
+    if (chemin.endsWith('/email/templates')) return json({ templates: [] });
     if (chemin.endsWith('/templates')) return json({ templates: TEMPLATES });
     if (chemin.endsWith('/workflows/wf1')) return json({ workflow: { id: 'wf1', name: 'Prise de RDV', graph: GRAPHE_SCENARIO } });
     if (chemin.endsWith('/workflows')) return json({ workflows: WORKFLOWS });

@@ -34,6 +34,9 @@ async function jusquAuRecap(
   await page.getByTestId('assistant-nom').fill('Campagne E2E');
   await page.getByRole('button', { name: 'Suivant' }).click(); // -> canal
   await expect(page.getByTestId('etape-canal')).toBeVisible({ timeout: 15_000 });
+  // ⚠️ LE CANAL SE CHOISIT, DEPUIS LE 2026-09-14 : il n'a plus de defaut, et « Suivant » est garde tant
+  // qu'aucune des trois entrees n'est cochee. Ce parcours traversait l'etape sans rien y toucher.
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   if (surLeCanal) await surLeCanal(page);
   await page.getByRole('button', { name: 'Suivant' }).click(); // -> contenu
   await page.getByTestId('etage-1').click();

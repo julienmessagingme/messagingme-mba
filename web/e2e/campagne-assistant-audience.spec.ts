@@ -169,6 +169,9 @@ test('🔴 ce qui est coche est ce qui PART', async ({ page }) => {
   await page.getByLabel('Nom de la campagne').fill('Essai audience');
   await page.getByRole('button', { name: 'Suivant' }).click(); // -> canal
   await expect(page.getByTestId('etape-canal')).toBeVisible();
+  // ⚠️ LE CANAL SE CHOISIT, DEPUIS LE 2026-09-14 : il n'a plus de defaut, et « Suivant » est garde tant
+  // qu'aucune des trois entrees n'est cochee. Ce parcours traversait l'etape sans rien y toucher.
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   await page.getByRole('button', { name: 'Suivant' }).click(); // -> contenu
   await expect(page.getByTestId('etape-contenu')).toBeVisible();
   // ⚠️ Le cadre d'un étage est REPLIÉ tant qu'on ne l'ouvre pas : sans ce clic, le sélecteur de modèle

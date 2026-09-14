@@ -30,6 +30,9 @@ async function jusquAuContenu(page: Page): Promise<void> {
   await ouvrirAssistant(page, { etape: 'nom' });
   await page.getByTestId('assistant-nom').fill('Campagne E2E');
   await page.getByRole('button', { name: 'Suivant' }).click();
+  // ⚠️ LE CANAL SE CHOISIT, DEPUIS LE 2026-09-14 : il n'a plus de defaut, et « Suivant » est garde tant
+  // qu'aucune des trois entrees n'est cochee. Ce parcours traversait l'etape sans rien y toucher.
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   await page.getByRole('button', { name: 'Suivant' }).click();
   await expect(page.getByTestId('etape-contenu')).toBeVisible({ timeout: 15_000 });
 }

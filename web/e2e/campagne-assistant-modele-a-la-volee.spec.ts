@@ -54,7 +54,13 @@ async function faux(page: Page, statutFixe?: string, approuveApres = 1): Promise
     if (chemin.includes('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33525680250', verifiedName: 'Demo' }] });
     if (chemin.endsWith('/rcs-agents')) return json({ agents: [] });
     if (chemin.endsWith('/rcs-messages')) return json({ messages: [] });
-    if (chemin.endsWith('/email-templates')) return json({ templates: [] });
+    /**
+     * 🔴 L'ADRESSE RÉELLE EST `/email/templates`, PAS `/email-templates` (corrigé le 2026-09-14). Ce faux
+     * a porté la mauvaise adresse depuis sa création : l'appel retombait sur la règle `/templates` juste
+     * en dessous, et la console recevait donc la liste des modèles WHATSAPP comme gabarits d'e-mail. Rien
+     * ne le signalait tant qu'aucun test ne remplissait un étage e-mail.
+     */
+    if (chemin.endsWith('/email/templates')) return json({ templates: [] });
     if (chemin.endsWith('/workflows')) return json({ workflows: [] });
     if (chemin.endsWith('/users')) return json({ users: [] });
     if (chemin.endsWith('/agents')) return json({ agents: [] });

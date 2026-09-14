@@ -93,7 +93,19 @@ export interface EtatCampagne {
    * donc le plus RESTRICTIF, et la question est posée quand même.
    */
   category: CampaignCategory;
-  formule: FormuleCanal;
+  /**
+   * LE CANAL, ET IL N'A PAS DE DÉFAUT : `null` = LA QUESTION N'A PAS ENCORE ÉTÉ POSÉE.
+   *
+   * 🔴 C'EST CE QUI PERMET DE POSER LA QUESTION SEULE (2026-09-14, demande de Julien) : « tu poses
+   * d'abord la question du canal, avant de faire apparaître (ou pas) Réessayer les envois qui échouent ».
+   * Une valeur par défaut rendrait ce parcours IMPOSSIBLE à tenir honnêtement : l'écran montrerait
+   * « WhatsApp » coché tout en cachant la suite, c'est-à-dire un choix que personne n'a fait et dont on
+   * masque pourtant les conséquences. Et sans clic, la campagne serait partie en WhatsApp.
+   *
+   * ⚠️ ELLE REND LA CHAÎNE VIDE, et le gardien de l'étape Canal s'appuie sur elle : on ne passe pas à
+   * l'étape Contenu sans canal, sinon il n'y aurait aucun étage à remplir.
+   */
+  formule: FormuleCanal | null;
   premier: CanalPremier;
   troisieme: TroisiemeNiveau;
   /**
@@ -276,7 +288,10 @@ export const ETAT_INITIAL: EtatCampagne = {
   nom: '',
   // 🔴 LE DÉFAUT LE PLUS RESTRICTIF : `marketing` exige le consentement, `utility` non.
   category: 'marketing',
-  formule: 'whatsapp',
+  // 🔴 AUCUN CANAL CHOISI : la question se pose seule, et rien d'autre n'apparaît avant la réponse.
+  formule: null,
+  // ⚠️ CEUX-CI GARDENT LEUR DÉFAUT : ce sont des SOUS-questions du repli, elles n'apparaissent qu'une fois
+  // « avec repli » choisi, donc leur valeur d'ouverture est vue au moment où elle commence à compter.
   premier: 'whatsapp',
   troisieme: 'aucun',
   // 🔴 COCHÉE PAR DÉFAUT : sans chaîne de repli, c'est le SEUL rattrapage disponible.
@@ -517,7 +532,12 @@ export function AssistantCampagne({
   };
 
   const chaine: EtageAssistant[] = useMemo(
-    () => chaineDeLaFormule({ formule: etat.formule, premier: etat.premier, troisieme: etat.troisieme }),
+    // ⚠️ SANS CANAL, AUCUN ÉTAGE, et surtout pas un étage par défaut : tout ce qui se dérive de la chaîne
+    // (les cadres de contenu, le réessai, le récapitulatif) doit rester muet tant que la question n'a pas
+    // reçu sa réponse. Le gardien de l'étape Canal interdit d'aller plus loin dans cet état.
+    () => (etat.formule === null
+      ? []
+      : chaineDeLaFormule({ formule: etat.formule, premier: etat.premier, troisieme: etat.troisieme })),
     [etat.formule, etat.premier, etat.troisieme],
   );
 
@@ -534,9 +554,19 @@ export function AssistantCampagne({
    * moment où l'on peut encore le corriger, et non trois écrans plus loin.
    */
   const rangsIncomplets = useMemo(() => rangsSansContenu(chaine, etat.contenus), [chaine, etat.contenus]);
+  /**
+   * LE GARDIEN DE CHAQUE ÉTAPE.
+   *
+   * 🔴 L'ÉTAPE CANAL EN A UN DEPUIS LE 2026-09-14, et il vient avec le retrait du canal par défaut :
+   * sans lui, « Suivant » emmènerait à l'étape Contenu avec une chaîne VIDE, donc un écran sans aucun
+   * cadre à remplir, et `rangsSansContenu([])` rendrait la liste vide, c'est-à-dire « rien ne manque ».
+   * Le parcours entier se serait laissé traverser jusqu'au récapitulatif.
+   */
   const peutAvancer = etape === 'nom'
     ? etat.nom.trim() !== ''
-    : etape !== 'contenu' || rangsIncomplets.length === 0;
+    : etape === 'canal'
+      ? etat.formule !== null
+      : etape !== 'contenu' || rangsIncomplets.length === 0;
 
   const modifier = (patch: Partial<EtatCampagne>): void => setEtat((e) => ({ ...e, ...patch }));
 
@@ -664,10 +694,11 @@ export function AssistantCampagne({
           nbDestinataires={null}
           /**
            * 🔴 CE QUI MANQUE, TRANSMIS À L'ÉTAPE, parce qu'elle en fait DEUX choses : masquer la question
-           * du devenir de la conversation tant que l'étage 1 est vide (demande de Julien du 2026-09-13 :
-           * on ne demande pas ce qui se passe quand le contact répond avant de savoir ce qu'il reçoit),
-           * et nommer les étages à remplir. La même liste sert au gardien du bouton : une seconde règle
-           * écrite ici aurait pu dire l'inverse de celle qui bloque.
+           * du devenir de la conversation tant qu'un étage reste vide (demande de Julien du 2026-09-13,
+           * ÉLARGIE le 2026-09-14 de l'étage 1 à TOUS les étages : « d'abord se concentrer sur le
+           * contenu, étage 1, étage 2 si campagne avec fallback ; ne pas faire apparaître de suite la
+           * question »), et nommer les étages à remplir. La même liste sert au gardien du bouton : une
+           * seconde règle écrite ici aurait pu dire l'inverse de celle qui bloque.
            */
           rangsIncomplets={rangsIncomplets}
           onChange={modifier}

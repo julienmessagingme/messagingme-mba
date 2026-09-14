@@ -58,7 +58,13 @@ async function monter(
         timezone: 'Europe/Paris', businessHours: {},
       });
     }
-    if (chemin.endsWith('/email-templates')) return json({ templates: EMAIL_TEMPLATES });
+    /**
+     * 🔴 L'ADRESSE RÉELLE EST `/email/templates`, PAS `/email-templates` (corrigé le 2026-09-14). Ce faux
+     * a porté la mauvaise adresse depuis sa création : l'appel retombait sur la règle `/templates` juste
+     * en dessous, et la console recevait donc la liste des modèles WHATSAPP comme gabarits d'e-mail. Rien
+     * ne le signalait tant qu'aucun test ne remplissait un étage e-mail.
+     */
+    if (chemin.endsWith('/email/templates')) return json({ templates: EMAIL_TEMPLATES });
     if (chemin.endsWith('/templates')) return json({ templates: TEMPLATES });
     if (chemin.endsWith('/workflows')) return json({ workflows: WORKFLOWS });
     if (chemin.endsWith('/users')) return json({ users: sur.users ?? USERS });
@@ -69,20 +75,34 @@ async function monter(
   await page.goto(`/campaigns/nouvelle?${q.toString()}`);
   await expect(page.getByTestId('etape-contenu')).toBeVisible();
   /**
-   * 🔴 L'ETAGE 1 EST REMPLI PAR DEFAUT DEPUIS LE 2026-09-13, et ce n'est pas du confort : le bloc du
-   * devenir de la conversation n'apparait QUE lorsqu'il l'est (demande de Julien, on ne demande pas ce
-   * qui se passe quand le contact repond avant de savoir ce qu'il recoit). Sans ce remplissage, une
-   * dizaine de cas ci-dessous chercheraient un bloc que l'ecran a legitimement masque, et rougiraient
-   * en accusant le devenir alors que c'est le contenu qui manque.
+   * 🔴 TOUTE LA CHAINE EST REMPLIE PAR DEFAUT, ET C'EST UN ELARGISSEMENT DU 2026-09-14. Le bloc du
+   * devenir de la conversation n'apparait QUE lorsque plus aucun etage ne manque (demande de Julien :
+   * « d'abord se concentrer sur le contenu, etage 1, etage 2 si campagne avec fallback ; ne pas faire
+   * apparaitre de suite la question »). Remplir l'etage 1 ne suffit plus : une dizaine de cas ci-dessous
+   * chercheraient un bloc que l'ecran masque a juste titre, et rougiraient en accusant le devenir alors
+   * que c'est le contenu de l'etage 2 qui manque.
    *
    * ⚠️ ON REPLIE LE CADRE APRES, pour rendre l'ecran exactement dans l'etat d'avant : les deux cas de
    * largeur deplient eux-memes celui qu'ils mesurent, et un cadre deja ouvert changerait ce qu'ils
    * mesurent sans qu'on l'ait voulu.
    */
   if (sur.sansContenu !== true) {
+    const canal = sur.canal ?? 'repli';
     await page.getByTestId('etage-1').click();
-    await page.getByTestId('modele-1').selectOption('promo_rentree');
+    if (canal === 'rcs') await page.getByTestId('rcs-texte').fill('coucou');
+    else await page.getByTestId('modele-1').selectOption('promo_rentree');
     await page.getByTestId('etage-1').click();
+    // L'etage 2 d'une chaine « avec repli » part en RCS : le second canal se deduit du premier.
+    if (canal === 'repli') {
+      await page.getByTestId('etage-2').click();
+      await page.getByTestId('rcs-texte').fill('repli RCS');
+      await page.getByTestId('etage-2').click();
+    }
+    if (sur.troisieme === 'email') {
+      await page.getByTestId('etage-3').click();
+      await page.getByTestId('email-modele').selectOption('em1');
+      await page.getByTestId('etage-3').click();
+    }
   }
 }
 
@@ -104,21 +124,58 @@ test('le devenir de la conversation est demande UNE SEULE FOIS, pas par etage', 
   await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toHaveCount(1);
 });
 
-// 🔴 Il vaut pour les DEUX formules, modèle seul comme modèle plus scénario.
-test('le devenir est demande aussi quand un scenario est choisi', async ({ page }) => {
-  await monter(page);
+/**
+ * 🔴 CE CAS DISAIT L'INVERSE JUSQU'AU 2026-09-14, ET C'EST JULIEN QUI L'A RETOURNE : « si la personne
+ * choisit Modele + scenario, il ne faut PAS faire apparaitre la question Que se passe-t-il quand le
+ * contact repond ; en effet, la logique qui repond, est-ce un agent IA ou un collab, est geree dans le
+ * scenario ». L'ancien titre etait « le devenir est demande aussi quand un scenario est choisi ».
+ *
+ * ⚠️ ON NE LAISSE PAS UN VIDE A LA PLACE : l'ecran DIT que le scenario s'en charge. Une question qui
+ * disparait sans un mot se lit comme un bug, et le produit grise ailleurs ses options indisponibles AVEC
+ * leur raison plutot que de les faire disparaitre.
+ *
+ * 🔴 LE SCENARIO EST CHOISI, ET CE CLIC N'EST PAS DE LA CEREMONIE : basculer la formule sans choisir de
+ * scenario laisse l'etage sans rien a envoyer, donc le bloc se masquerait de toute facon, pour l'AUTRE
+ * raison. Le test ne prouverait alors rien de ce qu'il annonce.
+ */
+test('🔴 « Modele et scenario » RETIRE la question du devenir, et dit pourquoi', async ({ page }) => {
+  await monter(page, { canal: 'whatsapp' });
   await page.getByTestId('etage-1').click(); // deplie le cadre WhatsApp
   await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
-  /**
-   * 🔴 LE SCENARIO EST CHOISI, ET CE CLIC N'EST PAS DE LA CEREMONIE (2026-09-13). En formule
-   * « modele et scenario », c'est le SCENARIO qui dit ce qui part : basculer la formule sans en choisir
-   * un laisse l'etage sans rien a envoyer, et le bloc du devenir se masque, a juste titre. Ce test
-   * exercait donc un ecran a mi-chemin, dans un etat que personne ne garde plus de trois secondes.
-   */
   await page.getByTestId('scenario-1').selectOption('wf1');
-  await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toBeVisible();
-  // ⚠️ Et il reste demandé UNE fois : un scénario ne le déplace pas dans le cadre de l'étage.
-  await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toHaveCount(1);
+  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await expect(page.getByTestId('devenir-dans-le-scenario')).toContainText(/réglé dans le scénario/i);
+});
+
+/**
+ * 🔴 L'AUTRE SENS, ET IL EST INDISPENSABLE : sans lui, un ecran qui aurait perdu le bloc pour de bon
+ * passerait le cas ci-dessus sans rien garantir. « Modele seul » repose la question, immediatement.
+ */
+test('🔴 « Modele seul » repose la question du devenir', async ({ page }) => {
+  await monter(page, { canal: 'whatsapp' });
+  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  await page.getByTestId('etage-1').click();
+  await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  await page.getByTestId('scenario-1').selectOption('wf1');
+  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Modèle seul' }).check();
+  await page.getByTestId('modele-1').selectOption('promo_rentree');
+  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+});
+
+/**
+ * 🔴 UN SEUL ETAGE HORS SCENARIO SUFFIT A REPOSER LA QUESTION, et c'est le cas que la regle « tout en
+ * scenario » ferait perdre si elle etait ecrite trop large : sur une chaine dont l'etage 1 ouvre un
+ * parcours et l'etage 2 envoie un modele seul, les contacts joints au SECOND repondent sans qu'aucun
+ * scenario ne les prenne.
+ */
+test('🔴 un etage de repli hors scenario garde la question', async ({ page }) => {
+  await monter(page); // chaine « avec repli », les deux etages remplis
+  await page.getByTestId('etage-1').click();
+  await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  await page.getByTestId('scenario-1').selectOption('wf1');
+  // L'etage 2 reste un message RCS direct : la question reste posee.
+  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
 });
 
 test('l assignation a une personne affiche le NOMBRE avant de valider', async ({ page }) => {
@@ -216,8 +273,10 @@ test('un membre actif n est ni grise ni annote', async ({ page }) => {
  * ⚠️ LES DEUX SENS DANS LE MEME CAS, ET C'EST VOLONTAIRE : un test qui ne verifierait que l'absence
  * passerait aussi sur un ecran qui aurait perdu le bloc pour de bon.
  */
-test('🔴 le devenir n apparait qu une fois l etage 1 rempli', async ({ page }) => {
-  await monter(page, { sansContenu: true });
+test('🔴 le devenir n apparait qu une fois le contenu choisi', async ({ page }) => {
+  // ⚠️ SUR UN CANAL SEUL, pour que « le contenu » et « l'etage 1 » soient la meme chose : la chaine de
+  // repli a son propre cas juste en dessous, et il exerce l'elargissement du 2026-09-14.
+  await monter(page, { canal: 'whatsapp', sansContenu: true });
   await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
   await expect(page.getByTestId('contenu-incomplet')).toBeVisible();
   // Le bouton de l'assistant refuse aussi d'avancer, et c'est la MEME regle qui le decide.
@@ -229,14 +288,27 @@ test('🔴 le devenir n apparait qu une fois l etage 1 rempli', async ({ page })
 });
 
 /**
- * ⚠️ UN ETAGE DE REPLI VIDE BLOQUE AUSSI, mais il ne masque PAS le devenir : la conversation n'a qu'un
- * devenir pour toute la campagne, et on doit pouvoir le regler sans descendre remplir l'etage 2 d'abord.
+ * 🔴 UN ETAGE DE REPLI VIDE MASQUE AUSSI LE DEVENIR DEPUIS LE 2026-09-14, et ce cas disait le contraire
+ * la veille (« il ne masque PAS le devenir : on doit pouvoir le regler sans descendre remplir l'etage 2 »).
+ * Julien a tranche dans l'autre sens : « d'abord se concentrer sur le contenu, etage 1, etage 2 si
+ * campagne avec fallback ». Le confort que l'ancienne regle protegeait n'avait ete demande par personne.
+ *
+ * ⚠️ LES DEUX SENS DANS LE MEME CAS : on remplit l'etage manquant et le bloc revient, sans quoi ce test
+ * passerait aussi sur un ecran qui aurait perdu le bloc pour de bon.
  */
-test('un etage de repli vide bloque le passage sans masquer le devenir', async ({ page }) => {
-  await monter(page); // etage 1 rempli, etages 2 et 3 vides
-  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+test('🔴 un etage de repli vide bloque le passage ET masque le devenir', async ({ page }) => {
+  await monter(page, { sansContenu: true });
+  await page.getByTestId('etage-1').click();
+  await page.getByTestId('modele-1').selectOption('promo_rentree');
+  await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
   await expect(page.getByTestId('contenu-incomplet')).toContainText('2');
   await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
+
+  await page.getByTestId('etage-2').click();
+  await page.getByTestId('rcs-texte').fill('repli RCS');
+  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Suivant' })).toBeEnabled();
 });
 
 /**

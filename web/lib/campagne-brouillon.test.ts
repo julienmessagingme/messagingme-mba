@@ -235,6 +235,16 @@ describe('la relecture defensive', () => {
   });
 
   // ⚠️ Une valeur d'énumération inconnue n'écrase pas le défaut : elle est simplement absente du patch.
+  /**
+   * 🔴 UN BROUILLON ABANDONNÉ AVANT LE CHOIX DU CANAL REPOSE LA QUESTION (2026-09-14). Depuis que
+   * `formule` n'a plus de défaut, elle s'écrit `null` dans le brouillon : la relecture ne doit pas la
+   * reposer, sinon l'assistant rouvrirait sur un canal coché que personne n'a choisi, et la révélation
+   * progressive de l'étape 2 se retrouverait franchie sans un clic.
+   */
+  it('🔴 un brouillon sans canal ne repose aucun canal', () => {
+    expect('formule' in etatDeBrouillon({ assistant: 1, formule: null })).toBe(false);
+  });
+
   it('une formule inconnue laisse le defaut en place', () => {
     expect('formule' in etatDeBrouillon({ assistant: 1, formule: 'telepathie' })).toBe(false);
   });

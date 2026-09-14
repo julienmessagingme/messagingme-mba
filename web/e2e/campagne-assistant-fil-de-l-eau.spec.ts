@@ -26,6 +26,9 @@ async function jusquALAudience(page: Page): Promise<void> {
   await ouvrirAssistant(page, { etape: 'nom' });
   await page.getByTestId('assistant-nom').fill('Leads en continu');
   await page.getByRole('button', { name: 'Suivant' }).click(); // canal
+  // ⚠️ LE CANAL SE CHOISIT, DEPUIS LE 2026-09-14 : il n'a plus de defaut, et « Suivant » est garde tant
+  // qu'aucune des trois entrees n'est cochee. Ce parcours traversait l'etape sans rien y toucher.
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
   await page.getByRole('button', { name: 'Suivant' }).click(); // contenu
   await page.getByTestId('etage-1').click();
   await page.getByTestId('modele-1').selectOption('promo');

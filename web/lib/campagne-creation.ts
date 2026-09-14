@@ -6,7 +6,7 @@ import type { RcsOutbound, RcsSuggestion } from './rcs-types';
 import { maxTexteRcs, versMessageRcs } from './rcs';
 import { boutonPret } from './rcs-boutons';
 import type { EtageAssistant } from './campagne-chaine';
-import { RANG_INITIAL, debitBorne, reessaiProposable } from './campagne-chaine';
+import { RANG_INITIAL, debitBorne, devenirProposable, reessaiProposable } from './campagne-chaine';
 import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
 import { varCountOf } from './fields';
 
@@ -253,7 +253,13 @@ export function problemeAvantLancement(
     return 'Aucun contact n’est sélectionné : cochez au moins une personne à l’étape Audience.';
   }
   const premier = [...chaine].sort((a, b) => a.rang - b.rang)[0];
-  if (!premier) return 'Cette campagne n’a aucun étage.';
+  /**
+   * ⚠️ CE REFUS EST DEVENU ATTEIGNABLE LE 2026-09-14, ET SON TEXTE A CHANGÉ POUR LE DIRE. Le canal
+   * n'a plus de défaut : une adresse ouverte directement sur le récapitulatif (`?etape=recap`) ou un
+   * brouillon abandonné avant le choix du canal arrivent ici avec une chaîne VIDE. « Cette campagne n'a
+   * aucun étage » décrivait la structure interne ; ce qui manque, vu de l'opérateur, c'est un canal.
+   */
+  if (!premier) return 'Aucun canal n’est choisi : revenez à l’étape Canal.';
   if (premier.canal === 'whatsapp' && ctx.phoneNumberId === '') {
     return 'Aucun numéro WhatsApp n’est disponible sur cet espace.';
   }
@@ -391,6 +397,8 @@ export function entreeDeCreation(
   const contenuPremier = etat.contenus[premier.rang];
   const rcsPremier = premier.canal === 'rcs';
   const scenarioPremier = contenuPremier?.formule === 'avec_scenario' && !!contenuPremier.workflowId;
+  /** La question « que se passe-t-il quand le contact répond ? » a-t-elle été posée à l'écran ? */
+  const devenirDemande = devenirProposable(tries, etat.contenus);
 
   /**
    * ⚠️ LES ÉTAGES AU-DELÀ DU PREMIER PORTENT LEUR CONTENU ; le rang 1 n'en porte pas, et ce n'est pas un
@@ -476,7 +484,20 @@ export function entreeDeCreation(
      * Le serveur n'a pas bougé d'une ligne, c'est la question qui a disparu.
      */
     rattrapageHorsHoraires: !etat.heuresOuvrees,
-    ...(etat.assignation === 'aucune' ? {} : { assignation: etat.assignation }),
-    ...(etat.assignation === 'personne' ? { assignationUserId: etat.assignationUserId } : {}),
+    /**
+     * 🔴 UNE CAMPAGNE DONT TOUT PART EN SCÉNARIO N'EMPORTE AUCUNE ASSIGNATION, ET LA GARDE EST ICI, AU
+     * POINT D'ENVOI (2026-09-14). L'écran ne pose plus la question quand chaque étage ouvre un parcours,
+     * mais MASQUER N'EFFACE PAS : régler « assignée à une personne » en modèle seul puis basculer sur
+     * « modèle et scénario » laissait la valeur dans l'état, et ce corps l'emportait telle quelle. Le
+     * serveur, lui, l'applique à l'arrivée de CHAQUE réponse (`assignationDeLaCampagne`,
+     * `src/campaign/store.pg.ts`), scénario ou pas : les conversations auraient donc été attribuées par
+     * un réglage que plus aucun écran ne montrait.
+     *
+     * ⚠️ MÊME MOTIF QUE `reessayer` JUSTE AU-DESSUS, ET C'EST LA TROISIÈME FOIS : ce qu'on cache doit être
+     * exactement ce qu'on n'envoie pas, et la seule façon de le tenir est d'appeler LA MÊME fonction des
+     * deux côtés.
+     */
+    ...(devenirDemande && etat.assignation !== 'aucune' ? { assignation: etat.assignation } : {}),
+    ...(devenirDemande && etat.assignation === 'personne' ? { assignationUserId: etat.assignationUserId } : {}),
   };
 }

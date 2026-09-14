@@ -10,6 +10,7 @@ import {
   DEBIT_DEFAUT,
   DEBIT_MAX,
   DEBIT_MIN,
+  devenirProposable,
 } from './campagne-chaine';
 
 /**
@@ -197,5 +198,56 @@ describe('les heures d ouverture de l espace', () => {
     expect(heuresDOuvertureReglees({ '1': jour('', '') })).toBe(false);
     expect(heuresDOuvertureReglees({ '1': jour('18:00', '09:00') })).toBe(false);
     expect(heuresDOuvertureReglees({ '1': jour('09:00', '09:00') })).toBe(false);
+  });
+});
+
+describe('la question « que se passe-t-il quand le contact repond ? »', () => {
+  const CHAINE = [{ rang: 1, canal: 'whatsapp' as const }, { rang: 2, canal: 'rcs' as const }];
+
+  it('elle se pose sur une campagne de modele seul', () => {
+    expect(devenirProposable(CHAINE, {
+      1: { formule: 'seul', templateName: 'promo' },
+      2: { formule: 'seul', texteRcs: 'coucou' },
+    })).toBe(true);
+  });
+
+  /**
+   * 🔴 LE CAS QUE JULIEN A TRANCHÉ LE 2026-09-14 : « la logique qui répond, est-ce un agent IA ou un
+   * collab, est gérée dans le scénario ». Sans ce cas, l'écran reposerait une question à laquelle le
+   * graphe répond déjà, et le point d'envoi emporterait une assignation que personne ne voit plus.
+   */
+  it('🔴 elle ne se pose plus quand TOUS les etages ouvrent un scenario', () => {
+    expect(devenirProposable(CHAINE, {
+      1: { formule: 'avec_scenario', workflowId: 'wf-1' },
+      2: { formule: 'avec_scenario', workflowId: 'wf-2' },
+    })).toBe(false);
+  });
+
+  /**
+   * 🔴 UN SEUL ÉTAGE HORS SCÉNARIO SUFFIT À LA REPOSER. Les contacts joints au second étage répondent
+   * sans qu'aucun parcours ne les prenne : masquer la question les laisserait dans un défaut que
+   * personne n'a choisi, ce qui est exactement le reproche fait à l'ancien comportement.
+   */
+  it('🔴 un seul etage hors scenario la repose, quel que soit son rang', () => {
+    expect(devenirProposable(CHAINE, {
+      1: { formule: 'avec_scenario', workflowId: 'wf-1' },
+      2: { formule: 'seul', texteRcs: 'coucou' },
+    })).toBe(true);
+    expect(devenirProposable(CHAINE, {
+      1: { formule: 'seul', templateName: 'promo' },
+      2: { formule: 'avec_scenario', workflowId: 'wf-2' },
+    })).toBe(true);
+  });
+
+  // ⚠️ UN ÉTAGE VIDE N'EST PAS UN SCÉNARIO : tant qu'on ne sait pas, on ne retire pas la question. C'est
+  // `rangsSansContenu` qui décide si l'écran est prêt à la poser, pas celle-ci.
+  it('un etage encore vide compte comme hors scenario', () => {
+    expect(devenirProposable(CHAINE, { 1: { formule: 'avec_scenario', workflowId: 'wf-1' } })).toBe(true);
+  });
+
+  // ⚠️ SANS CHAÎNE, AUCUNE QUESTION. Le cas n'arrive qu'avant le choix du canal, où l'étape Contenu est
+  // inatteignable ; le défaut prudent est de ne rien proposer plutôt que de proposer sur du vide.
+  it('une chaine vide ne pose pas la question', () => {
+    expect(devenirProposable([], {})).toBe(false);
   });
 });

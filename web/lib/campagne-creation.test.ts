@@ -126,6 +126,58 @@ describe('entreeDeCreation', () => {
     expect(e.assignationUserId).toBeUndefined();
   });
 
+  /**
+   * 🔴 UNE CAMPAGNE 100 % SCÉNARIO N'EMPORTE AUCUNE ASSIGNATION (2026-09-14). L'écran ne pose plus la
+   * question quand chaque étage ouvre un parcours, mais MASQUER N'EFFACE PAS : l'état garde le dernier
+   * choix, et sans cette garde il partait au serveur, qui l'applique à l'arrivée de chaque réponse. Les
+   * conversations auraient été attribuées par un réglage que plus aucun écran ne montrait.
+   *
+   * ⚠️ MÊME MOTIF QUE `reessayer`, TROISIÈME OCCURRENCE : ce qu'on cache doit être exactement ce qu'on
+   * n'envoie pas, et la seule façon de le tenir est d'appeler la MÊME fonction des deux côtés.
+   */
+  it('🔴 tout en scenario : l assignation ne part pas, meme reglee', () => {
+    const e = entreeDeCreation(
+      {
+        ...ETAT,
+        assignation: 'personne',
+        assignationUserId: 'u-1',
+        contenus: {
+          1: { formule: 'avec_scenario', workflowId: 'wf-1', modeleDuScenario: { name: 'promo', language: 'fr' }, suggestions: [] },
+          2: { formule: 'avec_scenario', workflowId: 'wf-2', suggestions: [] },
+          3: { formule: 'avec_scenario', workflowId: 'wf-3', suggestions: [] },
+        },
+      },
+      CHAINE,
+      CTX,
+    );
+    expect(e.assignation).toBeUndefined();
+    expect(e.assignationUserId).toBeUndefined();
+  });
+
+  /**
+   * 🔴 LE TÉMOIN DANS L'AUTRE SENS, ET IL SÉPARE LA GARDE JUSTE DE LA GARDE TROP LARGE : dès qu'un étage
+   * envoie un modèle seul, des contacts répondent hors de tout parcours, l'écran repose la question, donc
+   * l'assignation doit repartir. Sans ce cas, « ne jamais envoyer d'assignation » passerait aussi.
+   */
+  it('🔴 un seul etage hors scenario, et l assignation repart', () => {
+    const e = entreeDeCreation(
+      {
+        ...ETAT,
+        assignation: 'personne',
+        assignationUserId: 'u-1',
+        contenus: {
+          1: { formule: 'avec_scenario', workflowId: 'wf-1', modeleDuScenario: { name: 'promo', language: 'fr' }, suggestions: [] },
+          2: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
+          3: { formule: 'avec_scenario', workflowId: 'wf-3', suggestions: [] },
+        },
+      },
+      CHAINE,
+      CTX,
+    );
+    expect(e.assignation).toBe('personne');
+    expect(e.assignationUserId).toBe('u-1');
+  });
+
   it('sans assignation, aucune assignation n est envoyee', () => {
     const e = entreeDeCreation(ETAT, CHAINE, CTX);
     expect(e.assignation).toBeUndefined();

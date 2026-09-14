@@ -213,3 +213,32 @@ export function heuresDOuvertureReglees(
   if (!hours) return false;
   return Object.values(hours).some((j) => j && !j.closed && !!j.open && !!j.close && j.close > j.open);
 }
+
+/**
+ * LA QUESTION « QUE SE PASSE-T-IL QUAND LE CONTACT RÉPOND ? » A-T-ELLE LIEU D'ÊTRE ?
+ *
+ * 🔴 NON QUAND TOUT PART EN SCÉNARIO, ET C'EST UN RENVERSEMENT ASSUMÉ (2026-09-14, tranché par Julien) :
+ * « si la personne choisit Modèle + scénario, il ne faut PAS faire apparaître la question, en effet la
+ * logique qui répond, est-ce un agent IA ou un collab, est gérée dans le scénario ». Poser la question
+ * deux fois, une fois ici et une fois dans le graphe, c'est offrir deux réglages du même événement dont
+ * le second gagne toujours : l'opérateur croit avoir décidé ici, et c'est le scénario qui décide.
+ *
+ * ⚠️ CE FICHIER AFFIRMAIT L'INVERSE JUSQU'À CE JOUR (« il vaut pour les deux formules, un scénario finit
+ * lui aussi »). L'argument n'était pas absurde, il était SANS OBJET : ce qui suit la fin d'un scénario se
+ * règle dans le scénario, pas dans la campagne qui l'a ouvert.
+ *
+ * 🔴 UN SEUL ÉTAGE HORS SCÉNARIO SUFFIT À LA REPOSER, et la nuance n'est pas cosmétique : sur une chaîne
+ * de repli dont l'étage 1 ouvre un parcours et l'étage 2 envoie un modèle seul, les contacts joints au
+ * second étage répondent SANS qu'aucun scénario ne les prenne. Masquer la question les laisserait dans
+ * un défaut que personne n'a choisi, ce qui est précisément le reproche fait à l'ancien comportement.
+ *
+ * ⚠️ ELLE NE REGARDE PAS SI LES ÉTAGES SONT REMPLIS : c'est `rangsSansContenu` qui répond à cela, et
+ * l'écran combine les deux. Un étage vide n'est pas un scénario, il compte donc comme « hors scénario »,
+ * ce qui est le bon défaut : tant qu'on ne sait pas, on ne retire pas la question.
+ */
+export function devenirProposable(
+  chaine: EtageAssistant[],
+  contenus: Record<number, ContenuMinimal | undefined>,
+): boolean {
+  return chaine.some((e) => contenus[e.rang]?.formule !== 'avec_scenario');
+}

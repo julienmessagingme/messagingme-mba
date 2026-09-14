@@ -13,6 +13,17 @@ import type { CapacitesEspace, EtatCampagne } from '@/components/campagne/Assist
 /**
  * ÉTAPE 2 : le canal, le repli, le réessai, et UNE question d'horaire.
  *
+ * 🔴 UNE QUESTION À LA FOIS, ET LA PREMIÈRE EST LE CANAL (2026-09-14, demande de Julien) : « tu poses
+ * d'abord la question du canal, avant de faire apparaître (ou pas) Réessayer les envois qui échouent, car
+ * ce truc ne doit apparaître que si la personne choisit WhatsApp ou choisit RCS ; de même Envoyer
+ * uniquement pendant les heures ouvrées, tu le fais apparaître quand on a rempli le reste ». L'écran
+ * ouvrait sur quatre blocs d'un coup, dont trois dépendaient d'une réponse pas encore donnée.
+ *
+ * ⚠️ CE N'EST PAS QU'UN MASQUAGE : LE CANAL N'A PLUS DE DÉFAUT (`EtatCampagne.formule` vaut `null` à
+ * l'ouverture). Garder « WhatsApp » coché tout en cachant ses conséquences aurait montré un choix que
+ * personne n'a fait, et laissé partir une campagne WhatsApp sans un seul clic. Le bouton « Suivant » est
+ * donc gardé, et il dit pourquoi.
+ *
  * 🔴 UNE SEULE QUESTION D'HORAIRE, ET C'EST UN RETOUR EN ARRIÈRE ASSUMÉ (2026-09-13). L'écran en a porté
  * DEUX pendant une journée, avec l'argument qu'elles parlaient de moments différents : l'envoi initial
  * que l'opérateur choisit, et le rattrapage que personne ne choisit. L'argument était juste et la
@@ -39,7 +50,14 @@ export function EtapeCanal({
 }) {
   const rcsIndisponible = !capacites.rcsEnabled;
   const second: CanalPremier = etat.premier === 'whatsapp' ? 'rcs' : 'whatsapp';
-  const montreReessai = reessaiProposable(chaine);
+  const canalChoisi = etat.formule !== null;
+  /**
+   * ⚠️ `canalChoisi` EST DANS LA CONDITION, ET PAS SEULEMENT DANS L'ENVELOPPE QUI L'ENTOURE.
+   * `reessaiProposable([])` rend VRAI (une chaîne vide n'a pas de repli), donc la seule lecture de la
+   * chaîne proposerait le réessai avant même qu'un canal existe. La fonction n'est pas fautive, c'est sa
+   * question qui n'a pas de sens sans chaîne : on ne la pose donc pas.
+   */
+  const montreReessai = canalChoisi && reessaiProposable(chaine);
   const horairesReglees = heuresDOuvertureReglees(capacites.businessHours);
 
   return (
@@ -83,6 +101,16 @@ export function EtapeCanal({
           </p>
         )}
       </fieldset>
+
+      {/* 🔴 UN BOUTON GRISÉ DIT POURQUOI IL L'EST. C'est la règle du produit (un canal indisponible est
+          grisé AVEC sa raison, un étage sans contenu est nommé), et elle vaut ici : sans canal, « Suivant »
+          est gardé, et rien d'autre n'apparaît à l'écran. Sans cette phrase, l'écran ressemblerait à une
+          page à moitié chargée. */}
+      {!canalChoisi && (
+        <p className="mt-3 text-sm text-ink-600" data-testid="canal-a-choisir">
+          Choisissez un canal : la suite des questions en dépend.
+        </p>
+      )}
 
       {etat.formule === 'repli' && (
         <fieldset data-testid="choix-ordre" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
@@ -193,40 +221,47 @@ export function EtapeCanal({
         à la FIN du parcours (étape 5), là où l'audience est connue : c'est le seul endroit où une durée
         estimée veut dire quelque chose. Ce qui reste ici, c'est la seule question horaire demandée.
       */}
-      <div data-testid="bloc-horaires" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-        <Case
-          libelle="Envoyer uniquement pendant les heures ouvrées"
-          description="Lancée hors créneau, la campagne attend la prochaine ouverture (onglet Paramètres) au lieu de partir. Un envoi que la fermeture interrompt reprend tout seul au créneau suivant, sans perdre un destinataire."
-          coche={etat.heuresOuvrees}
-          onChange={(v) => onChange({ heuresOuvrees: v })}
-        />
-        {/*
-          🔴 SANS AUCUN JOUR OUVERT, CETTE CASE NE RETARDE PAS L'ENVOI : ELLE L'ANNULE. Vérifié dans le
-          code, pas déduit du libellé : `withinBusinessHours` rend faux sur des horaires vides, le moteur
-          met donc la campagne en pause `hors_horaires`, et `prochaineOuverture` ne trouvant aucune
-          reprise, `paused_until` reste nul. Or le balayage de reprise exige `paused_until is not null`
-          (`reprendreCampagnesDues`) : la campagne reste en pause POUR TOUJOURS, sans qu'aucune erreur ne
-          le dise.
+      {/* 🔴 EN DERNIER, ET SEULEMENT UNE FOIS LE CANAL CHOISI (2026-09-14) : « tu le fais apparaître
+          quand on a rempli le reste ». Tout ce qui précède (l'ordre du repli, son troisième niveau, le
+          réessai) découle du canal et porte déjà sa réponse par défaut une fois le canal connu ; cette
+          case-ci, elle, ne dépend d'aucune des autres, c'est pourquoi elle ferme la marche plutôt que
+          d'attendre un clic de plus. */}
+      {canalChoisi && (
+        <div data-testid="bloc-horaires" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+          <Case
+            libelle="Envoyer uniquement pendant les heures ouvrées"
+            description="Lancée hors créneau, la campagne attend la prochaine ouverture (onglet Paramètres) au lieu de partir. Un envoi que la fermeture interrompt reprend tout seul au créneau suivant, sans perdre un destinataire."
+            coche={etat.heuresOuvrees}
+            onChange={(v) => onChange({ heuresOuvrees: v })}
+          />
+          {/*
+            🔴 SANS AUCUN JOUR OUVERT, CETTE CASE NE RETARDE PAS L'ENVOI : ELLE L'ANNULE. Vérifié dans le
+            code, pas déduit du libellé : `withinBusinessHours` rend faux sur des horaires vides, le moteur
+            met donc la campagne en pause `hors_horaires`, et `prochaineOuverture` ne trouvant aucune
+            reprise, `paused_until` reste nul. Or le balayage de reprise exige `paused_until is not null`
+            (`reprendreCampagnesDues`) : la campagne reste en pause POUR TOUJOURS, sans qu'aucune erreur ne
+            le dise.
 
-          ⚠️ CE FUT L'INVERSE DE LA CASE DU RATTRAPAGE, qui vivait juste au-dessus jusqu'au 2026-09-13 et
-          pour qui l'absence d'horaires rendait la fenêtre TOUJOURS ouverte. Deux cases voisines, deux
-          comportements opposés sur la même absence : c'est une des raisons pour lesquelles la seconde a
-          été retirée. Le dire au moment où l'on coche reste la seule façon de ne pas se faire avoir.
+            ⚠️ CE FUT L'INVERSE DE LA CASE DU RATTRAPAGE, qui vivait juste au-dessus jusqu'au 2026-09-13 et
+            pour qui l'absence d'horaires rendait la fenêtre TOUJOURS ouverte. Deux cases voisines, deux
+            comportements opposés sur la même absence : c'est une des raisons pour lesquelles la seconde a
+            été retirée. Le dire au moment où l'on coche reste la seule façon de ne pas se faire avoir.
 
-          ⚠️ ET CE CAS EXISTE VRAIMENT : l'espace de démonstration n'avait AUCUNE heure réglée en base le
-          2026-09-13, ce qui ne se voyait pas à l'écran parce que l'API rend des heures PAR DÉFAUT
-          (lundi-vendredi 9 h-18 h, `DEFAULT_BUSINESS_HOURS`) quand la colonne est nulle. Cet
-          avertissement ne s'affiche donc JAMAIS aujourd'hui : `heuresDOuvertureReglees` reçoit le défaut
-          et répond « oui ». La console ne sait pas distinguer « réglé » de « jamais réglé », et c'est
-          une limite connue, pas un oubli de câblage.
-        */}
-        {etat.heuresOuvrees && !horairesReglees && (
-          <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700" data-testid="horaires-absentes">
-            Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : cochée, cette case mettrait la
-            campagne en pause sans jamais la reprendre. Réglez vos horaires dans Paramètres, ou décochez.
-          </p>
-        )}
-      </div>
+            ⚠️ ET CE CAS EXISTE VRAIMENT : l'espace de démonstration n'avait AUCUNE heure réglée en base le
+            2026-09-13, ce qui ne se voyait pas à l'écran parce que l'API rend des heures PAR DÉFAUT
+            (lundi-vendredi 9 h-18 h, `DEFAULT_BUSINESS_HOURS`) quand la colonne est nulle. Cet
+            avertissement ne s'affiche donc JAMAIS aujourd'hui : `heuresDOuvertureReglees` reçoit le défaut
+            et répond « oui ». La console ne sait pas distinguer « réglé » de « jamais réglé », et c'est
+            une limite connue, pas un oubli de câblage.
+          */}
+          {etat.heuresOuvrees && !horairesReglees && (
+            <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700" data-testid="horaires-absentes">
+              Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : cochée, cette case mettrait la
+              campagne en pause sans jamais la reprendre. Réglez vos horaires dans Paramètres, ou décochez.
+            </p>
+          )}
+        </div>
+      )}
 
     </section>
   );

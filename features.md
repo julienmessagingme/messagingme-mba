@@ -688,8 +688,21 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   chaîne n'a pas son modèle, son message RCS ou son gabarit d'e-mail, le bouton « Suivant » reste
   inactif et l'écran **nomme les étages qui manquent**. Avant, on atteignait le récapitulatif avec une
   campagne vide et le refus n'arrivait qu'au dernier écran, loin de l'endroit où on pouvait le corriger.
-  La question « Que se passe-t-il quand le contact répond ? » n'apparaît qu'une fois le **premier**
-  étage rempli : on ne demande pas ce qui suit avant de savoir ce que le contact reçoit.
+  La question « Que se passe-t-il quand le contact répond ? » n'apparaît qu'une fois **tout le contenu
+  choisi**, étage de repli compris : on ne demande pas ce qui suit avant de savoir ce que le contact
+  reçoit. (Elle ne regardait que le premier étage jusqu'au 2026-09-14.)
+- ✅ **Une question à la fois, aux étapes Canal et Contenu** (2026-09-14). L'étape du canal ouvre sur la
+  seule question du canal, **sans réponse pré-cochée** : le réessai et la question des heures ouvrées
+  n'apparaissent qu'une fois WhatsApp, RCS ou le repli choisi, et « Suivant » reste inactif d'ici là en
+  disant pourquoi. Aucune campagne ne peut donc partir sur un canal que personne n'a choisi.
+- ✅ **Un étage « modèle et scénario » ne redemande pas ce que devient la conversation** (2026-09-14).
+  Quand chaque étage ouvre un scénario, la question « Que se passe-t-il quand le contact répond ? »
+  disparaît, et l'écran dit à sa place que **le scénario s'en charge** : c'est lui qui décide si un
+  agent IA prend la main ou si la conversation revient à l'équipe. La poser ici aussi aurait donné deux
+  réglages du même moment, dont c'est toujours le scénario qui gagne.
+  ⚠️ **Un seul étage hors scénario la repose** : sur une chaîne dont le premier étage ouvre un parcours
+  et dont le repli envoie un message simple, les contacts joints par le repli répondent sans qu'aucun
+  scénario ne les prenne, et il faut bien dire où va leur conversation.
 - ✅ **Réessayer les envois qui échouent : sur un canal seul uniquement** (2026-09-13). Avec une chaîne
   de repli, la question ne se pose plus : **le repli EST le rattrapage**, et le premier échec bascule
   déjà vers le canal suivant. Réessayer en plus, ce serait repartir sur le tuyau dont on sait qu'il ne

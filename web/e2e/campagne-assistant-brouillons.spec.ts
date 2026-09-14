@@ -28,6 +28,19 @@ function audienceDu(f: Faux): Record<string, unknown> {
   return (etatDu(f).audience ?? {}) as Record<string, unknown>;
 }
 
+/**
+ * Passe l'étape Canal en y choisissant WhatsApp.
+ *
+ * 🔴 LE CANAL N'A PLUS DE DEFAUT DEPUIS LE 2026-09-14 : « Suivant » y est garde tant qu'aucune des
+ * trois entrees n'est cochee. Trois parcours de ce fichier la traversaient sans rien y toucher et
+ * restaient bloques sur l'etape, en echouant plus loin sur un selecteur de modele jamais monte.
+ */
+async function passerLeCanal(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Suivant' }).click(); // -> canal
+  await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
+  await page.getByRole('button', { name: 'Suivant' }).click(); // -> contenu
+}
+
 /** Ouvre une création neuve et lui donne un nom, ce qui déclenche le premier enregistrement. */
 async function nommer(page: Page, nom = 'Promo été'): Promise<void> {
   await ouvrirAssistant(page, { etape: 'nom' });
@@ -85,8 +98,7 @@ test.describe('Assistant : l’enregistrement du brouillon', () => {
   test('🔴 une sélection PARTIELLE part dans le brouillon, sans retoucher au nom', async ({ page }) => {
     const f = await poserFaux(page);
     await nommer(page);
-    await page.getByRole('button', { name: 'Suivant' }).click(); // canal
-    await page.getByRole('button', { name: 'Suivant' }).click(); // contenu
+    await passerLeCanal(page);
     // ⚠️ LE MODELE EST DESORMAIS EXIGE POUR SORTIR DE L'ETAPE CONTENU (2026-09-13) : l'assistant laissait
     // passer une campagne sans contenu, et ce parcours en profitait sans le savoir. Le cas exerce par ce
     // test ne change pas d'un pouce : c'est toujours la selection PARTIELLE d'audience qui est mesuree.
@@ -106,8 +118,7 @@ test.describe('Assistant : l’enregistrement du brouillon', () => {
     // Même raison : tout ce qui suit le nom était perdu. Le modèle est la seconde chose qu'on choisit.
     const f = await poserFaux(page);
     await nommer(page);
-    await page.getByRole('button', { name: 'Suivant' }).click();
-    await page.getByRole('button', { name: 'Suivant' }).click();
+    await passerLeCanal(page);
     await page.getByTestId('etage-1').click();
     await page.getByTestId('modele-1').selectOption('promo');
     await expect
@@ -122,8 +133,7 @@ test.describe('Assistant : l’enregistrement du brouillon', () => {
   test('🔴 lancer la campagne RETIRE son brouillon', async ({ page }) => {
     const f = await poserFaux(page);
     await nommer(page);
-    await page.getByRole('button', { name: 'Suivant' }).click();
-    await page.getByRole('button', { name: 'Suivant' }).click();
+    await passerLeCanal(page);
     await page.getByTestId('etage-1').click();
     await page.getByTestId('modele-1').selectOption('promo');
     await page.getByRole('button', { name: 'Suivant' }).click();
@@ -149,6 +159,9 @@ test.describe('Assistant : la reprise d’un brouillon', () => {
     await ouvrirAssistant(page, { etape: 'nom', brouillon: 'd1' });
     await expect(page.getByTestId('assistant-nom')).toHaveValue('Promo été', { timeout: 15_000 });
     await page.getByRole('button', { name: 'Suivant' }).click();
+    // ⚠️ CE BROUILLON N'A PAS DE CANAL, et depuis le 2026-09-14 c'est un etat LEGITIME : la question se
+    // repose a la reprise plutot que d'inventer une reponse. Le parcours la reprend donc ici.
+    await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
     await page.getByRole('button', { name: 'Suivant' }).click();
     await page.getByTestId('etage-1').click();
     await expect(page.getByTestId('modele-1')).toHaveValue('promo');
