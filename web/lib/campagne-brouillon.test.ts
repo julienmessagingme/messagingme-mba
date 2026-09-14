@@ -266,3 +266,29 @@ describe('la relecture defensive', () => {
     expect(relu.audience?.selection.selected.size).toBe(0);
   });
 });
+
+/**
+ * L'ÉCRAN OÙ L'OPÉRATEUR EN ÉTAIT, gardé avec le reste.
+ *
+ * 🔴 Julien, 2026-09-14 : « dans l'onglet campagne, cela ne retient pas quel est le dernier écran qu'on a
+ * rempli, et quand on revient c'est toujours depuis le point de démarrage ». Le brouillon suivait déjà tout
+ * le contenu ; il ne gardait pas l'endroit.
+ */
+describe('le brouillon retient l’écran courant', () => {
+  it('l’étape fait l’aller-retour', () => {
+    const corps = brouillonDeLEtat({ ...ETAT, etape: 'contenu' });
+    expect(etatDeBrouillon(corps).etape).toBe('contenu');
+  });
+
+  it('⚠️ une étape inconnue est IGNORÉE, elle ne fait pas échouer la relecture', () => {
+    // Même doctrine que le reste de ce module : un brouillon écrit par une version ultérieure, ou bricolé,
+    // ne doit jamais rendre une campagne irrécupérable. On retombe sur le début.
+    expect(etatDeBrouillon({ ...brouillonDeLEtat(ETAT), etape: 'nawak' }).etape).toBeUndefined();
+  });
+
+  it('⚠️ un brouillon d’AVANT ce champ se relit sans étape', () => {
+    const ancien = brouillonDeLEtat(ETAT);
+    delete (ancien as Record<string, unknown>).etape;
+    expect(etatDeBrouillon(ancien).etape).toBeUndefined();
+  });
+});

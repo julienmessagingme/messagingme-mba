@@ -57,6 +57,18 @@ export interface ContenuBrouillon {
  * où ils divergent, c'est celui que personne ne voit qui reviendrait à la reprise.
  */
 export interface EtatBrouillon {
+  /**
+   * L'ÉCRAN OÙ L'OPÉRATEUR EN ÉTAIT.
+   *
+   * 🔴 DEMANDÉ PAR JULIEN LE 2026-09-14 : « dans l'onglet campagne, cela ne retient pas quel est le
+   * dernier écran qu'on a rempli, et quand on revient c'est toujours depuis le point de démarrage ». Le
+   * brouillon suivait déjà TOUT le contenu ; il ne gardait pas l'endroit, donc reprendre une campagne à
+   * moitié remplie obligeait à recliquer « Suivant » jusqu'à retrouver sa place.
+   *
+   * ⚠️ ABSENT = brouillon d'avant ce champ, ou reprise par une adresse (`?etape=`). On repart alors du
+   * début, ce qui est le comportement d'avant : aucune reprise à inventer.
+   */
+  etape?: 'nom' | 'canal' | 'contenu' | 'audience' | 'recap';
   category: CampaignCategory;
   /**
    * LE CANAL, ou `null` quand la question n'a pas encore reçu de réponse (cf. `EtatCampagne.formule`).
@@ -92,6 +104,9 @@ export const VERSION_ASSISTANT = 1;
 export function brouillonDeLEtat(etat: EtatBrouillon): Record<string, unknown> {
   return {
     assistant: VERSION_ASSISTANT,
+    // ⚠️ L'étape voyage AVEC le contenu : c'est la même sauvegarde, donc aucun déclencheur de plus à
+    // câbler, et changer d'écran suffit à la rafraîchir.
+    ...(etat.etape ? { etape: etat.etape } : {}),
     category: etat.category,
     formule: etat.formule,
     premier: etat.premier,
@@ -224,6 +239,8 @@ function etatDepuisAssistant(o: Record<string, unknown>): Partial<EtatBrouillon>
     contenus,
     ...(dans(o.assignation, ['aucune', 'personne', 'tour_de_role'] as const) ? { assignation: o.assignation as 'aucune' | 'personne' | 'tour_de_role' } : {}),
     assignationUserId: texte(o, 'assignationUserId') ?? null,
+    ...(dans(o.etape, ['nom', 'canal', 'contenu', 'audience', 'recap'] as const)
+      ? { etape: o.etape as 'nom' | 'canal' | 'contenu' | 'audience' | 'recap' } : {}),
     ...(dans(o.quand, ['maintenant', 'plus_tard'] as const) ? { quand: o.quand as 'maintenant' | 'plus_tard' } : {}),
     ...(texte(o, 'dateLocale') !== undefined ? { dateLocale: texte(o, 'dateLocale')! } : {}),
     audience: audienceDe(o.audience),

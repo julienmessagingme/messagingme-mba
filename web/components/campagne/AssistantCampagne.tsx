@@ -430,7 +430,14 @@ export function AssistantCampagne({
     // d'ouverture posées par l'adresse (`?canal=repli`), qui ne servent qu'à une création neuve.
     ...(brouillon ? { ...etatDeBrouillon(brouillon.state), nom: brouillon.name } : {}),
   });
-  const [etape, setEtape] = useState<EtapeAssistant>(etapeInitiale);
+  /**
+   * ⚠️ LE BROUILLON PRIME SUR LE DÉFAUT, MAIS PAS SUR L'ADRESSE. Un `?etape=` explicite est une intention
+   * de l'utilisateur (un lien partagé, un test d'écran) : la reprise automatique ne doit pas l'écraser.
+   * Sans brouillon ni adresse, on repart du début, comme avant.
+   */
+  const [etape, setEtape] = useState<EtapeAssistant>(
+    etapeInitiale !== 'nom' ? etapeInitiale : (brouillon?.state as { etape?: EtapeAssistant } | undefined)?.etape ?? 'nom',
+  );
   /**
    * LE MODÈLE QU'ON VIENT DE SOUMETTRE À META, et qui passe en revue.
    *
@@ -492,7 +499,7 @@ export function AssistantCampagne({
    */
   const enregistrerBrouillon = async (nom: string, etatCourant: EtatCampagne): Promise<void> => {
     if (nom === '' || abandonne.current) return;
-    const corps = brouillonDeLEtat(etatCourant);
+    const corps = brouillonDeLEtat({ ...etatCourant, etape });
     // Sérialisé sur la sauvegarde précédente : sans cette file, deux écritures rapprochées partiraient en
     // parallèle, toutes deux sans identifiant, et créeraient deux brouillons pour une seule campagne.
     const suite = (sauvegardeEnVol.current ?? Promise.resolve()).then(async () => {
@@ -525,7 +532,9 @@ export function AssistantCampagne({
    * ⚠️ LE DÉLAI N'EST PAS DE LA COQUETTERIE : sans lui, cocher dix contacts ferait dix écritures, et le
    * plafond de débit des routes authentifiées est partagé avec tout le reste de la console.
    */
-  const serialise = JSON.stringify(brouillonDeLEtat(etat));
+  // ⚠️ L'ÉTAPE ENTRE DANS LA SÉRIALISATION, donc changer d'écran déclenche une sauvegarde au même titre
+  // qu'une frappe. C'est ce qui permet de retrouver sa place en revenant, sans ajouter de déclencheur.
+  const serialise = JSON.stringify(brouillonDeLEtat({ ...etat, etape }));
   const nomEcrit = etat.nom.trim();
   useEffect(() => {
     if (nomEcrit === '' || abandonne.current) return;
