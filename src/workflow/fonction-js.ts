@@ -59,17 +59,24 @@ function enTexte(v: unknown): string {
  * a raté, et l'écran de mise au point a besoin du message, pas d'une pile.
  */
 /**
- * LA CLÉ DU CHAMP SYSTÈME « MAINTENANT ».
+ * LA SOURCE « MAINTENANT », ET C'EST CELLE QUI EXISTE DÉJÀ.
  *
- * 🔴 ELLE VIT ICI ET L'ÉCRAN EN PORTE UNE COPIE NOMMÉE, avec la mention qu'elle en est le miroir : le front
- * et l'API sont deux projets séparés, il n'y a pas d'import possible. Une valeur en dur des deux côtés
- * dériverait sans bruit ; une constante nommée des deux côtés se retrouve d'un `grep`.
+ * 🔴 PAS DE DOUBLON : `now` EST LA CLÉ DU DÉPÔT, relevée par Julien le 2026-09-14 (« je crois qu'on avait
+ * dev un champ système qui donne l'heure et la date actuelle, pas de doublon hein ! »). Elle vit dans
+ * `ParamSource` (`src/crm/template.ts`, `{ type: 'now' }`) et dans le sélecteur de variables du front
+ * (`web/lib/variables-template.ts`, `sel === 'now'`). En créer une seconde sous un autre nom aurait été le
+ * pire cas : deux notions pour la même chose, avec deux orthographes.
  *
- * ⚠️ LE PRÉFIXE `sys:` EST CELUI QUE LE DÉPÔT EMPLOIE DÉJÀ pour ce qui ne vient pas de la fiche contact
- * (cf. les variables de template, `sys:prenom`). Une clé sans préfixe pourrait entrer en collision avec un
- * champ personnalisé qu'un client aurait appelé « now ».
+ * ⚠️ LA MISE EN FORME, ELLE, DIFFÈRE, ET C'EST VOULU. `formatNow` rend « 12/04/2026 », un affichage
+ * français destiné à un message ; `new Date('12/04/2026')` ne le relit pas. Le bloc JS reçoit donc l'ISO
+ * UTC, la seule forme qu'un script relit sans ambiguïté. Mettre en forme est justement le travail que ce
+ * bloc existe pour faire.
+ *
+ * ⚠️ UN CHAMP PERSONNALISÉ NOMMÉ « now » SERAIT MASQUÉ par celui-ci. Le cas est théorique (aucun espace
+ * n'en a, vérifié) et l'écran range la source système dans un groupe à part, mais la précédence est ici :
+ * le système gagne.
  */
-export const CHAMP_MAINTENANT = 'sys:now';
+export const CHAMP_MAINTENANT = 'now';
 
 /**
  * Un nom de paramètre JavaScript sûr, ou `null`.

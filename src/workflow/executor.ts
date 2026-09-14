@@ -676,7 +676,7 @@ export class WorkflowExecutor {
       else if (a.kind === 'fonctionJs') {
         if (this.deps.executerJs) {
           /**
-           * 🔴 `sys:now` EST L'INSTANT DU PASSAGE, ET IL NE VIENT PAS DE LA FICHE. Demandé par Julien le
+           * 🔴 `now` EST L'INSTANT DU PASSAGE, ET IL NE VIENT PAS DE LA FICHE. Demandé par Julien le
            * 2026-09-14 : « dans la liste des champs à transformer, il faut qu'on puisse transformer aussi
            * le NOW, c'est l'heure et la date du bot au moment où on passe sur le node ». Aucun champ de
            * contact ne peut porter ça : la valeur change à chaque passage, et l'écrire sur la fiche pour
@@ -685,7 +685,7 @@ export class WorkflowExecutor {
            * ⚠️ EN ISO UTC, parce que c'est la seule forme que `new Date(valeur)` relit sans ambiguïté dans
            * le bac à sable. Mettre en forme est justement le travail que ce bloc existe pour faire.
            */
-          // ⚠️ Le contexte n'est lu QUE pour un vrai champ : `sys:now` ne touche pas la base.
+          // ⚠️ Le contexte n'est lu QUE pour un vrai champ : « maintenant » ne touche pas la base.
           const evalCtxFields = a.champSource === CHAMP_MAINTENANT || !this.deps.evalContext
             ? null
             : (await this.deps.evalContext(tenantId, waId))?.fields;

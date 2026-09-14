@@ -18,11 +18,12 @@ import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
 import { useState } from 'react';
 
 /**
- * LA CLÉ DU CHAMP SYSTÈME « MAINTENANT ». ⚠️ MIROIR de `CHAMP_MAINTENANT` (`src/workflow/fonction-js.ts`) :
- * le front et l'API sont deux projets séparés, il n'y a pas d'import possible. Une valeur en dur des deux
- * côtés dériverait sans bruit ; une constante nommée des deux côtés se retrouve d'un `grep`.
+ * LA SOURCE « MAINTENANT ». ⚠️ C'est la clé QUE LE DÉPÔT EMPLOIE DÉJÀ (`sel === 'now'` dans
+ * `web/lib/variables-template.ts`, `{ type: 'now' }` dans `src/crm/template.ts`), pas une nouvelle : en
+ * créer une seconde sous un autre nom donnerait deux notions pour la même chose. Miroir de
+ * `CHAMP_MAINTENANT` (`src/workflow/fonction-js.ts`), le front et l'API étant deux projets séparés.
  */
-const CHAMP_MAINTENANT = 'sys:now';
+const CHAMP_MAINTENANT = 'now';
 
 /**
  * Le nom que portera le paramètre de la fonction, ou `null` quand la clé ne peut pas en être un.
