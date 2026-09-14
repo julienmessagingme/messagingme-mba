@@ -133,6 +133,20 @@ export function EtapeContenu({
         remplir.
       </p>
 
+      {/*
+        🔴 SANS CANAL, IL N'Y A AUCUN ETAGE A REMPLIR, ET L'ECRAN DOIT LE DIRE (releve en revue le
+        2026-09-14, introduit le jour meme). Le bouton « Suivant » de l'etape Canal est garde, mais
+        l'adresse, elle, ne l'est pas : `?etape=contenu` sans canal, ou un brouillon abandonne avant le
+        choix, arrivent ici avec une chaine VIDE. On y voyait un titre, une phrase d'aide qui parle de
+        cadres, et rien d'autre : exactement l'allure d'une page a moitie chargee.
+      */}
+      {chaine.length === 0 && (
+        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="contenu-sans-canal">
+          Aucun canal n&apos;est choisi : revenez à l&apos;étape Canal pour dire par où partent les
+          messages, et les étages à remplir apparaîtront ici.
+        </p>
+      )}
+
       {chaine.map((etage) => (
         <CadreEtage
           key={etage.rang}
@@ -177,8 +191,11 @@ export function EtapeContenu({
           />
         ) : (
           <p className="mt-6 w-full rounded-xl border border-ink-200 p-4 text-sm text-ink-600" data-testid="devenir-dans-le-scenario">
-            Ce qui se passe quand le contact répond est réglé dans le scénario : c&apos;est lui qui décide
-            si un agent IA prend la main ou si la conversation revient à l&apos;équipe.
+            {/* ⚠️ LE PLURIEL EST CALCULE, PAS DEVINE : une chaine de repli porte un scenario PAR ETAGE, et
+                une phrase au singulier devant deux scenarios ferait chercher lequel des deux decide. */}
+            {chaine.length > 1
+              ? 'Ce qui se passe quand le contact répond est réglé dans les scénarios : ce sont eux qui décident si un agent IA prend la main ou si la conversation revient à l’équipe.'
+              : 'Ce qui se passe quand le contact répond est réglé dans le scénario : c’est lui qui décide si un agent IA prend la main ou si la conversation revient à l’équipe.'}
           </p>
         )
       )}
@@ -727,12 +744,16 @@ function CadreRcs({
       <p className="text-[11px] text-amber-700">
         Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport.
       </p>
-      {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant. */}
+      {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant.
+          ⚠️ SON `testId` MANQUAIT (ajouté le 2026-09-14) : l'étage WhatsApp le posait, pas celui-ci, donc
+          aucun test ne pouvait choisir un scénario sur un étage RCS. Le trou ne se voyait pas, faute de
+          cas qui en ait eu besoin. */}
       {contenu.formule === 'avec_scenario' && (
         <SelecteurScenario
           contenu={contenu}
           references={references}
           canal="rcs"
+          testId={`scenario-${rang}`}
           onChange={(v) => onChange({ workflowId: v })}
           tenantId={tenantId}
           capacites={capacites}

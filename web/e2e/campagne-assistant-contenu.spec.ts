@@ -45,7 +45,7 @@ const USERS = [
 
 async function monter(
   page: Page,
-  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean } = {},
+  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean; sansCanal?: boolean } = {},
 ): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -71,7 +71,13 @@ async function monter(
     if (chemin.endsWith('/agents')) return json({ agents: sur.agents ?? [{ id: 'ag1', label: 'Conseiller', status: 'actif', sorties: [] }] });
     return json({});
   });
-  const q = new URLSearchParams({ etape: 'contenu', canal: sur.canal ?? 'repli', ...(sur.troisieme ? { troisieme: sur.troisieme } : {}) });
+  const q = new URLSearchParams({
+    etape: 'contenu',
+    // ⚠️ `sansCanal` OUVRE L'ETAPE AVEC UNE CHAINE VIDE : c'est ce qu'on obtient en tapant l'adresse a la
+    // main, ou en reprenant un brouillon abandonne avant le choix du canal.
+    ...(sur.sansCanal === true ? {} : { canal: sur.canal ?? 'repli' }),
+    ...(sur.troisieme ? { troisieme: sur.troisieme } : {}),
+  });
   await page.goto(`/campaigns/nouvelle?${q.toString()}`);
   await expect(page.getByTestId('etape-contenu')).toBeVisible();
   /**
@@ -341,4 +347,33 @@ test('et « Modele seul » le repropose : on peut revenir en arriere', async ({ 
   await expect(page.getByTestId('modele-1')).toHaveCount(0);
   await page.getByRole('radio', { name: 'Modèle seul' }).check();
   await expect(page.getByTestId('modele-1')).toBeVisible();
+});
+
+/**
+ * 🔴 SANS CANAL, L'ETAPE CONTENU N'A AUCUN ETAGE A MONTRER, ET ELLE LE DIT (releve en revue le
+ * 2026-09-14). Le canal n'ayant plus de defaut, l'adresse `?etape=contenu` seule, ou un brouillon
+ * abandonne avant le choix, arrivent ici avec une chaine VIDE. L'ecran affichait alors son titre, une
+ * phrase qui parle de cadres, et rien : l'allure exacte d'une page a moitie chargee.
+ */
+test('🔴 l etape Contenu sans canal dit ce qui manque, au lieu de rester vide', async ({ page }) => {
+  await monter(page, { sansCanal: true, sansContenu: true });
+  await expect(page.getByTestId('contenu-sans-canal')).toContainText(/revenez à l.étape Canal/i);
+  await expect(page.getByTestId('etage-1')).toHaveCount(0);
+  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+});
+
+/**
+ * ⚠️ DEUX SCENARIOS, DEUX FOIS « SCENARIO » AU PLURIEL. Une chaine de repli porte un scenario PAR ETAGE :
+ * une phrase au singulier devant deux d'entre eux ferait chercher lequel des deux decide.
+ */
+test('la phrase du scenario se met au pluriel quand la chaine en porte deux', async ({ page }) => {
+  await monter(page);
+  await page.getByTestId('etage-1').click();
+  await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
+  await page.getByTestId('scenario-1').selectOption('wf1');
+  await page.getByTestId('etage-1').click();
+  await page.getByTestId('etage-2').click();
+  await page.getByRole('radio', { name: 'Message et scénario' }).check();
+  await page.getByTestId('scenario-2').selectOption('wf1');
+  await expect(page.getByTestId('devenir-dans-le-scenario')).toContainText(/dans les scénarios/i);
 });

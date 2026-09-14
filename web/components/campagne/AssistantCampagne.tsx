@@ -142,11 +142,26 @@ export interface EtatCampagne {
    * signale. Le rang est ce que la base stocke (`campaign_etages.rang`), c'est donc la bonne clé.
    */
   contenus: Record<number, ContenuEtage>;
-  /** Où va la conversation quand le contact répond. */
+  /**
+   * Où va la conversation quand le contact répond.
+   *
+   * 🔴 DEUX DE SES TROIS VALEURS NE SORTENT PAS DE L'ÉCRAN, et il faut le savoir avant de s'appuyer
+   * dessus (mesuré le 2026-09-14) : seul `inbox` a une traduction serveur, par `assignation`.
+   * `CreateCampaignInput` n'a aucun champ pour `mba` ni `agent`, et `campaigns` aucune colonne. Choisir
+   * « un agent IA prend la main » ne change donc rien à ce qui se passera. C'est un défaut connu, décrit
+   * dans `todo.md`, et il attend un arbitrage : le câbler, ou retirer les deux options.
+   */
   devenir: Devenir;
-  /** L'agent IA qui prend la main, quand `devenir` vaut `agent`. */
+  /** L'agent IA qui prend la main, quand `devenir` vaut `agent`. ⚠️ Ne voyage pas non plus, cf. ci-dessus. */
   agentId: string | null;
-  /** La répartition, quand la conversation tombe dans l'Inbox. */
+  /**
+   * La répartition, quand la conversation tombe dans l'Inbox.
+   *
+   * ⚠️ SA VALEUR N'EST PAS SA CONSÉQUENCE, exactement comme `reessayer` : quand tous les étages ouvrent
+   * un scénario, l'écran ne pose plus la question et `entreeDeCreation` n'envoie RIEN, quoi qu'il y ait
+   * ici (`devenirProposable`). Ce champ garde donc le dernier choix de l'opérateur pour le lui rendre
+   * s'il revient à un modèle seul, au lieu de l'effacer sous ses pieds.
+   */
   assignation: Assignation;
   /** La personne, quand `assignation` vaut `personne`. */
   assignationUserId: string | null;
