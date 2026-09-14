@@ -1,4 +1,4 @@
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /**
  * LE GARDE D'USAGE DE L'API PUBLIQUE : ce que le produit compte, et ce qu'il déciderait d'en faire.
@@ -99,6 +99,10 @@ export function unitesDe(operation: OperationApi, taille = 1): number {
 /**
  * DEMANDER AU GARDE, ET REFUSER SI BESOIN, EN UN SEUL GESTE.
  *
+ * ⚠️ ELLE N'EST PLUS EXPORTÉE (revue du 2026-09-14) : les six routes passent par `compterOuRefuser` juste
+ * en dessous, et un symbole exporté que personne n'importe finit par être appelé de travers, sans la
+ * résolution d'identité que l'autre fait.
+ *
  * 🔴 POINT DE PASSAGE UNIQUE DES SIX ROUTES. Recopié six fois, le couple « compter puis refuser »
  * finirait par diverger : une route qui compte sans refuser, ou qui refuse en 500 au lieu de 429, et
  * personne ne le verrait avant l'incident. C'est le motif qui a déjà coûté cher ici avec les en-têtes de
@@ -110,7 +114,7 @@ export function unitesDe(operation: OperationApi, taille = 1): number {
  * ⚠️ `import type` UNIQUEMENT : ce fichier ne dépend d'aucun runtime HTTP, exactement comme
  * `rate-limit.ts`. C'est ce qui le garde chargeable depuis n'importe quel contexte, tests compris.
  */
-export async function demanderOuRefuser(
+async function demanderOuRefuser(
   usage: ApiUsageGuard,
   reply: FastifyReply,
   demande: DemandeUsage,
@@ -119,4 +123,38 @@ export async function demanderOuRefuser(
   if (verdict.accepte) return true;
   await reply.code(429).send({ error: verdict.raison ?? 'quota d’usage atteint' });
   return false;
+}
+
+/**
+ * COMPTER LE TRAVAIL D'UNE REQUÊTE AUTHENTIFIÉE, EN UN SEUL APPEL.
+ *
+ * 🔴 ELLE EXISTE PARCE QUE LES SIX ROUTES RECOPIAIENT LE MÊME OBJET (relevé en revue), dont le repli
+ * `req.apiKeyId ?? 'inconnue'`. Six copies d'un repli, c'est six endroits où il peut diverger, et surtout
+ * un compteur qui se rangerait sous « inconnue » sans que personne ne se demande pourquoi.
+ *
+ * ⚠️ ELLE REND `false` SI LA REQUÊTE N'EST PAS AUTHENTIFIÉE, sans rien compter : on ne mesure pas ce
+ * qu'on a refusé à la porte, sinon les compteurs mélangeraient l'usage d'un client et le bruit d'un
+ * robot, et un seuil posé plus tard mordrait sur le mauvais.
+ */
+export async function compterOuRefuser(
+  usage: ApiUsageGuard,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  operation: OperationApi,
+  taille = 1,
+): Promise<boolean> {
+  const tenantId = req.auth?.tenantId;
+  if (!tenantId) {
+    await reply.code(401).send({ error: 'clé d’API requise' });
+    return false;
+  }
+  return demanderOuRefuser(usage, reply, {
+    tenantId,
+    // ⚠️ « inconnue » NE DEVRAIT JAMAIS ARRIVER : le préhandler pose `apiKeyId` en même temps que
+    // `req.auth`. Le repli est là pour que le compteur reste honnête si un jour une route est montée
+    // derrière une AUTRE autorité, plutôt que de mentir sur l'identité de la clé.
+    cleId: req.apiKeyId ?? 'inconnue',
+    operation,
+    unites: unitesDe(operation, taille),
+  });
 }

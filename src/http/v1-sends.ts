@@ -12,7 +12,7 @@ import { validateParamMapping } from '../crm/template';
 import type { ResolveResult } from '../ids/resolve';
 import type { WorkflowNodeType } from '../workflow/graph';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
-import { demanderOuRefuser, unitesDe, type ApiUsageGuard } from '../api/usage-guard';
+import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -112,9 +112,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
      * 24 h, numéro). Compter après laisserait ce travail-là hors des compteurs, c'est-à-dire la partie
      * qu'une boucle d'appels à cible introuvable ferait payer sans jamais envoyer un message.
      */
-    if (!await demanderOuRefuser(deps.usage, reply, {
-      tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'sends.create', unites: unitesDe('sends.create', b.recipients.length),
-    })) return reply;
+    if (!await compterOuRefuser(deps.usage, req, reply, 'sends.create', b.recipients.length)) return reply;
     // Même validation que la route console (campaigns.ts) : sans elle, une source malformée ne casse qu'au
     // moment de résoudre les variables, en 500 sur un endpoint public au lieu d'un 400 déterministe.
     const params = validateParamMapping(b.params ?? []);
@@ -291,9 +289,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     // ⚠️ UNE LECTURE COMPTE AUSSI, POUR UNE UNITÉ. Elle interroge la base : un intégrateur qui sonde
     // l'avancement de son envoi toutes les secondes est exactement le genre d'usage qu'on veut VOIR,
     // même si on ne le refuse pas.
-    if (!await demanderOuRefuser(deps.usage, reply, {
-      tenantId: req.auth.tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'sends.read', unites: unitesDe('sends.read'),
-    })) return reply;
+    if (!await compterOuRefuser(deps.usage, req, reply, 'sends.read')) return reply;
     const { sendId } = req.params as { sendId: string };
     const detail = await deps.getSendDetail(sendId, req.auth.tenantId);
     if (!detail) return reply.code(404).send({ error: 'envoi inconnu' });

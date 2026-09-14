@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import { traiterMessage, erreurDeParsing, lotRefuse, VERSION_PROTOCOLE } from '../mcp/serveur';
 import type { DepsMcp } from '../mcp/outils';
-import { demanderOuRefuser, unitesDe, type ApiUsageGuard } from '../api/usage-guard';
+import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 
 /**
  * La route MCP : `POST /mcp`, un seul chemin, sans état.
@@ -29,9 +29,7 @@ export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: Pr
 
     // ⚠️ UN MESSAGE PAR REQUÊTE, DONC UNE UNITÉ : le lot JSON-RPC est refusé plus bas, et c'est ce refus
     // qui rend ce compte honnête. S'il tombait, une requête vaudrait autant d'outils qu'elle en porte.
-    if (!await demanderOuRefuser(usage, reply, {
-      tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'mcp.call', unites: unitesDe('mcp.call'),
-    })) return reply;
+    if (!await compterOuRefuser(usage, req, reply, 'mcp.call')) return reply;
 
     reply.header('MCP-Protocol-Version', VERSION_PROTOCOLE);
 
@@ -78,9 +76,7 @@ export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: Pr
   app.get('/mcp', opts, async (req, reply) => {
     const tenantId = req.auth?.tenantId;
     if (!tenantId) return reply.code(401).send({ error: 'clé d’API requise' });
-    if (!await demanderOuRefuser(usage, reply, {
-      tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'mcp.refus', unites: unitesDe('mcp.refus'),
-    })) return reply;
+    if (!await compterOuRefuser(usage, req, reply, 'mcp.refus')) return reply;
     return reply.code(405).send({ error: 'ce serveur MCP ne pousse rien : utilise POST' });
   });
 }

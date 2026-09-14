@@ -141,6 +141,25 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     await server.close();
   });
 
+  /**
+   * 🔴 LE BATCH COMPTE CE QUE L'APPELANT DEMANDE, MÊME QUAND TOUT EST INVALIDE, et l'écart avec la route
+   * unitaire est VOULU (relevé en revue, qui l'a d'abord pris pour une incohérence). Valider un objet est
+   * négligeable ; valider 500 lignes est un travail réel, que l'appelant a bel et bien fait faire. Sans
+   * ce cas, une boucle de lots malformés resterait invisible des compteurs, c'est-à-dire exactement le
+   * comportement qu'on surveille.
+   */
+  it('🔴 un lot ENTIÈREMENT invalide compte quand même : la validation de 500 lignes est du travail', async () => {
+    const { server, usage } = monter();
+    const res = await server.inject({
+      method: 'POST', url: '/v1/contacts/batch', headers: entetes,
+      payload: { contacts: Array.from({ length: 200 }, () => null) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ errors: number }>().errors).toBe(200);
+    expect(usage.compteurs().find((c) => c.operation === 'contacts.batch')).toMatchObject({ appels: 1, unites: 200 });
+    await server.close();
+  });
+
   it('⚠️ un corps REFUSÉ par la validation ne compte pas comme du travail accepté', async () => {
     // La validation passe avant le comptage sur la route unitaire : un corps malformé n'a pas coûté
     // d'écriture, et le compter gonflerait artificiellement l'usage d'un client maladroit.
