@@ -502,7 +502,10 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
         </div>
         <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
       </div>
-      <CeQuiAEteLance chaine={detail.chaine} />
+      {/* ⚠️ `?? []` N'EST PAS DE LA PRUDENCE DÉCORATIVE : le front part sur Vercel au push et l'API sur le
+          VPS plus tard, donc pendant cette fenêtre un écran NEUF interroge une API qui ne rend pas encore
+          `chaine`. Sans ce repli, le panneau de détail entier tombait. */}
+      <CeQuiAEteLance chaine={detail.chaine ?? []} />
       {detail.recipients.length === 0 ? (
         <p className="px-4 py-4 text-sm text-ink-500">{t('Aucun destinataire.', 'No recipients.')}</p>
       ) : (
@@ -618,8 +621,9 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
  */
 function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
   const t = useT();
-  // ⚠️ Une campagne d'avant la migration 0134 n'a aucun étage : le dire plutôt que d'afficher un cadre vide.
-  if (chaine.length === 0) return null;
+  // ⚠️ Vide = campagne d'avant la migration 0134, ou API pas encore déployée : on n'affiche RIEN plutôt
+  // qu'un cadre sans contenu, et surtout on ne tombe pas.
+  if (!chaine || chaine.length === 0) return null;
 
   const canal = (c: string) => (c === 'whatsapp' ? 'WhatsApp' : c === 'rcs' ? 'RCS' : t('E-mail', 'Email'));
   const devenir = (d?: string) => (d === 'inbox'
