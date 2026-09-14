@@ -14,8 +14,8 @@
 
 | | |
 |---|---|
-| `origin/main` | `930b9d1` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1`, déployé et vérifié en public |
+| `origin/main` | `17fe3e2` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `930b9d1` : l'écart est **trois `.md`**, aucun redéploiement dû |
 | Dernière CI de CODE (`930b9d1`) | ✅ verte, quatre jobs |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 | Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
@@ -32,6 +32,22 @@ voir ce défaut.
 tâche 7) : le contrôle public juste après rendait encore 502, le second reload l'a réglé. Le reload rend `0`
 dans les deux cas, donc il ne dit rien. La séquence est : contrôler, réparer, **RE-CONTRÔLER**, recommencer
 si besoin.
+
+## 🔴 CE QUI VIENT ENSUITE, DANS CET ORDRE
+
+1. **Une correction sur l'écran Campagne**, demandée par Julien le 2026-09-14. Elle passe AVANT l'audit.
+2. **[Le plan de protection de l'API publique](docs/superpowers/plans/2026-09-14-protection-api-publique.md)**,
+   dix tâches, **rien de commencé**. Il est écrit sur des MESURES : l'audit Codex du 2026-09-13 a été
+   vérifié affirmation par affirmation (94 constats, 76 vrais, 9 faux, 7 partiels, 2 périmés), et le plan
+   ne retient que ce qui tient. Il dit aussi ce qu'il REFUSE, avec sa raison.
+
+🔴 **TROIS ARBITRAGES DE JULIEN Y SONT INSCRITS** (2026-09-14) : tout le niveau A d'affilée ; les champs
+personnalisés créés par l'API restent auto-créés mais **bornés** ; le verrou d'espace est **étendu à `/v1`
+et `/mcp`**, et le geste qui le pose vivra sur `/ops`.
+
+⚠️ **ET DEUX MESURES ONT CHANGÉ LA FORME DU TRAVAIL.** Le verrou `locked` est LU dans `makeRequireAuth`
+mais **écrit nulle part** : « l'étendre » demande donc aussi de créer le moyen de le poser. Et le repli RCS
+sur notre clé smsmode **n'est pas réalisé** : un seul agent en production, et il a sa propre clé.
 
 ## ✅ CE QUI VIENT D'ÊTRE FINI : chantier 6, le centre de Sécurité & compliance
 
