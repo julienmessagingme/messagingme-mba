@@ -1,4 +1,4 @@
-import type { ApiUsageGuard, CompteurUsage, DemandeUsage, VerdictUsage } from './usage-guard';
+import type { ApiUsageGuard, CompteurUsage, DemandeUsage, LiberationLourde, VerdictUsage } from './usage-guard';
 
 /**
  * LE GARDE D'USAGE, EN MÉMOIRE, AGRÉGÉ PAR MINUTE.
@@ -38,7 +38,39 @@ export class GardeUsageMemoire implements ApiUsageGuard {
      */
     private readonly plafondUnitesParEspace = 0,
     private readonly maintenant: () => number = () => Date.now(),
+    /**
+     * COMBIEN D'OPÉRATIONS LOURDES PEUVENT ÊTRE EN VOL EN MÊME TEMPS. `0` = pas de plafond.
+     *
+     * 🔴 DEUX, ET LE CHIFFRE SE CALCULE : le pool porte 8 connexions pour tout le process
+     * (`DB_POOL_MAX`), et un lot de contacts en demande jusqu'à 4 à la fois (`ECRITURES_EN_VOL`). Deux
+     * lots en vol saturent donc exactement le pool ; le troisième obtient un 429 avec `Retry-After`
+     * plutôt qu'une attente de huit secondes suivie d'une erreur d'acquisition, pendant laquelle l'Inbox
+     * et le worker se battent pour les mêmes emplacements.
+     *
+     * ⚠️ RELEVER CE NOMBRE DEMANDE DE REFAIRE CETTE ARITHMÉTIQUE, pas seulement de changer la variable :
+     * c'est la même règle que pour `DB_POOL_MAX` lui-même.
+     */
+    private readonly maxLourdesSimultanees = 2,
   ) {}
+
+  /** Combien d'opérations lourdes sont en vol à cet instant. */
+  private lourdesEnVol = 0;
+
+  entrerLourde(): LiberationLourde | null {
+    if (this.maxLourdesSimultanees > 0 && this.lourdesEnVol >= this.maxLourdesSimultanees) return null;
+    this.lourdesEnVol += 1;
+    /**
+     * ⚠️ IDEMPOTENTE : la fermeture porte son propre drapeau. Une réponse peut être close deux fois (un
+     * client qui coupe puis le cycle normal), et rendre deux places pour une prise ferait monter le
+     * plafond tout seul, ce qui ne se verrait qu'un jour de charge.
+     */
+    let rendue = false;
+    return () => {
+      if (rendue) return;
+      rendue = true;
+      this.lourdesEnVol -= 1;
+    };
+  }
 
   demander(demande: DemandeUsage): VerdictUsage {
     const minute = Math.floor(this.maintenant() / 60_000) * 60_000;

@@ -182,7 +182,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
    */
   it('🔴 un double maison suffit aux six routes : aucune ne connaît l’implémentation', async () => {
     const vues: string[] = [];
-    const double = { demander: (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: () => [] };
+    const double = { demander: (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: () => [], entrerLourde: () => () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'sends:create'] });
     const server = buildServer({
       queue: new FakeQueue(),
@@ -204,7 +204,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
   it('🔴 un garde qui REFUSE fait rendre 429 aux routes, pas 500', async () => {
     // Le jour où un seuil existera, c'est ce chemin qui servira. Un 5xx serait remplacé par la page
     // Cloudflare et l'intégrateur ne saurait même pas ce qu'on lui reproche.
-    const refusant = { demander: () => ({ accepte: false, raison: 'quota d’essai atteint' }), compteurs: () => [] };
+    const refusant = { demander: () => ({ accepte: false, raison: 'quota d’essai atteint' }), compteurs: () => [], entrerLourde: () => () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
       queue: new FakeQueue(),
@@ -257,6 +257,87 @@ describe('ce que /ops montre de l’usage', () => {
     const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: { 'x-ops-token': 'jeton-ops' } });
     expect(res.body).not.toMatch(/mba_/);
     expect(res.body).not.toMatch(/[0-9a-f]{64}/);
+    await server.close();
+  });
+});
+
+describe('le plafond des opérations LOURDES en vol', () => {
+  /**
+   * 🔴 CE QUE CE PLAFOND REMPLACE : une attente de huit secondes suivie d'une erreur d'acquisition de
+   * connexion. Le pool sert 8 connexions pour TOUT le process API, et un lot de contacts en demande
+   * jusqu'à 4 : dix lots simultanés mettent quarante acquisitions en file derrière huit places, pendant
+   * que l'Inbox et le worker se disputent les mêmes emplacements. Un 429 avec `Retry-After` est une
+   * réponse ; une attente qui finit en erreur n'en est pas une.
+   */
+  function monterLent(max = 2) {
+    const usage = new GardeUsageMemoire(120, 0, () => Date.now(), max);
+    const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'sends:create'] });
+    let debloquer: () => void = () => {};
+    const enVol = new Promise<void>((r) => { debloquer = r; });
+    const server = buildServer({
+      queue: new FakeQueue(),
+      usage,
+      v1: {
+        apiKeys: cles,
+        contacts: {
+          upsertContacts: async (_t, items) => {
+            await enVol;
+            return items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` }));
+          },
+        },
+        sends: sendsMuets,
+      },
+    });
+    return { server, debloquer: () => debloquer() };
+  }
+
+  const lot = (server: ReturnType<typeof monterLent>['server']) => server.inject({
+    method: 'POST', url: '/v1/contacts/batch', headers: entetes, payload: { contacts: [{ phone: '+33612345678' }] },
+  });
+
+  it('🔴 au-delà du plafond, un 429 CONTRÔLÉ avec Retry-After, jamais une attente sans fin', async () => {
+    const { server, debloquer } = monterLent(2);
+    const enCours = [lot(server), lot(server)];
+    // Laisse les deux premiers entrer dans le handler (donc prendre leur place) avant d'en lancer un troisième.
+    await new Promise((r) => setImmediate(r));
+    const refuse = await lot(server);
+
+    expect(refuse.statusCode).toBe(429);
+    expect(refuse.headers['retry-after']).toBeDefined();
+    expect(refuse.json<{ error: string }>().error).toMatch(/opérations lourdes/i);
+
+    debloquer();
+    const finis = await Promise.all(enCours);
+    expect(finis.map((r) => r.statusCode)).toEqual([200, 200]);
+    await server.close();
+  });
+
+  it('🔴 la place est RENDUE quand la réponse part : sans quoi le plafond se referme tout seul', async () => {
+    /**
+     * 🔴 LE CAS ANTI-FUITE, ET C'EST LE PLUS IMPORTANT DES DEUX. Une place qui ne revient pas ne se voit
+     * pas tout de suite : elle rétrécit le plafond jusqu'à ce que plus aucune requête lourde ne passe, et
+     * le redémarrage efface la preuve. Ici, quatre lots SÉQUENTIELS sur un plafond de 1 doivent tous
+     * passer.
+     */
+    const { server, debloquer } = monterLent(1);
+    debloquer();
+    for (let i = 0; i < 4; i += 1) {
+      const res = await lot(server);
+      expect(res.statusCode, `le lot ${i + 1} aurait dû passer : la place du précédent n’a pas été rendue`).toBe(200);
+    }
+    await server.close();
+  });
+
+  it('🔴 une LECTURE passe pendant que les places lourdes sont prises', async () => {
+    // Soumettre les lectures au même plafond ferait tomber une consultation pendant qu'un lot écrit :
+    // une protection du pool transformée en panne d'écran.
+    const { server, debloquer } = monterLent(1);
+    const enCours = lot(server);
+    await new Promise((r) => setImmediate(r));
+    const lecture = await server.inject({ method: 'GET', url: '/v1/sends/inconnu', headers: entetes });
+    expect(lecture.statusCode).toBe(404); // refusé par le métier, PAS par le plafond
+    debloquer();
+    await enCours;
     await server.close();
   });
 });

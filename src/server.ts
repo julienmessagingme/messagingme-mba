@@ -295,7 +295,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * ⚠️ IL EST CRÉÉ ICI, AVANT LE MONTAGE DE `/ops`, parce que l'écran d'exploitation et les routes `/v1`
    * doivent regarder LE MÊME compteur.
    */
-  const usageApi = deps.usage ?? new GardeUsageMemoire();
+  const usageApi = deps.usage ?? new GardeUsageMemoire(120, 0, () => Date.now(), config.API_MAX_LOURDES_SIMULTANEES);
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
 

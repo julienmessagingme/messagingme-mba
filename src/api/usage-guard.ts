@@ -69,6 +69,15 @@ export interface CompteurUsage {
   refusees: number;
 }
 
+/**
+ * LIBÉRER UNE PLACE D'OPÉRATION LOURDE. Rendue par `entrerLourde`, appelée quand la réponse est partie.
+ *
+ * ⚠️ IDEMPOTENTE PAR CONTRAT : elle peut être appelée deux fois (une réponse annulée puis fermée) sans
+ * rendre une place de plus que ce qui a été pris. Une place rendue en double, c'est un plafond qui monte
+ * tout seul, et ça ne se voit qu'un jour de charge.
+ */
+export type LiberationLourde = () => void;
+
 export interface ApiUsageGuard {
   /**
    * Compte une demande et dit si elle passe.
@@ -79,6 +88,20 @@ export interface ApiUsageGuard {
   demander(demande: DemandeUsage): VerdictUsage;
   /** Les compteurs agrégés encore en mémoire, du plus récent au plus ancien. */
   compteurs(): CompteurUsage[];
+  /**
+   * RÉSERVE UNE PLACE POUR UNE OPÉRATION LOURDE. Rend `null` quand il n'y en a plus.
+   *
+   * 🔴 LE CHIFFRE QUI REND CETTE PLACE NÉCESSAIRE : le pool sert **8 connexions pour TOUT le process
+   * API**, et `upsertContactsFromApi` en demande jusqu'à 4 par requête. Rien ne comptait les requêtes
+   * lourdes EN VOL : dix lots simultanés mettent quarante acquisitions en file derrière huit places,
+   * échouent au bout de huit secondes, et pendant ce temps l'Inbox et le worker se disputent les mêmes
+   * huit emplacements.
+   *
+   * ⚠️ ET LE LIMITEUR DE DÉBIT NE PROTÈGE PAS DE ÇA : c'est une fenêtre FIXE, donc les 60 requêtes d'une
+   * minute peuvent tomber dans la même milliseconde. Dix d'entre elles saturent le pool sans jamais
+   * franchir le plafond affiché.
+   */
+  entrerLourde(): LiberationLourde | null;
 }
 
 /**
@@ -126,6 +149,20 @@ async function demanderOuRefuser(
 }
 
 /**
+ * LES OPÉRATIONS QUI PÈSENT SUR LE POOL, et elles seules.
+ *
+ * ⚠️ UNE LECTURE N'EST PAS LOURDE : `sends.read` fait une requête, `mcp.call` en fait quelques-unes. Les
+ * soumettre à ce plafond ferait refuser une consultation pendant qu'un lot écrit, ce qui transformerait
+ * une protection du pool en panne d'écran.
+ */
+const LOURDES: ReadonlySet<OperationApi> = new Set<OperationApi>(['contacts.batch', 'sends.create']);
+
+/** Cette opération pèse-t-elle sur le pool au point de mériter une place ? */
+export function estLourde(operation: OperationApi): boolean {
+  return LOURDES.has(operation);
+}
+
+/**
  * COMPTER LE TRAVAIL D'UNE REQUÊTE AUTHENTIFIÉE, EN UN SEUL APPEL.
  *
  * 🔴 ELLE EXISTE PARCE QUE LES SIX ROUTES RECOPIAIENT LE MÊME OBJET (relevé en revue), dont le repli
@@ -136,6 +173,33 @@ async function demanderOuRefuser(
  * qu'on a refusé à la porte, sinon les compteurs mélangeraient l'usage d'un client et le bruit d'un
  * robot, et un seuil posé plus tard mordrait sur le mauvais.
  */
+/**
+ * RÉSERVER UNE PLACE LOURDE, ET LA RENDRE QUAND LA RÉPONSE EST PARTIE.
+ *
+ * 🔴 LA LIBÉRATION EST ACCROCHÉE À LA RÉPONSE, PAS À UN `finally` DE HANDLER, et c'est ce qui la rend
+ * sûre : le handler de `/v1/sends` fait deux cents lignes et plusieurs sorties anticipées, donc un
+ * `finally` y serait un invariant à tenir à la main. Une place qui fuit ne se voit pas tout de suite :
+ * elle rétrécit le plafond jusqu'à ce que plus aucune requête lourde ne passe, et le redémarrage efface
+ * la preuve.
+ *
+ * ⚠️ `Retry-After` EST POSÉ, parce qu'un 429 sans lui fait réessayer tout de suite, donc redemander la
+ * place qui vient d'être refusée. C'est la même règle que sur les plafonds de débit.
+ */
+async function reserverPlaceLourde(
+  usage: ApiUsageGuard,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<boolean> {
+  const liberer = usage.entrerLourde();
+  if (!liberer) {
+    reply.header('retry-after', '2');
+    await reply.code(429).send({ error: 'trop d’opérations lourdes en cours sur cette instance, réessayez dans un instant' });
+    return false;
+  }
+  reply.raw.on('close', liberer);
+  return true;
+}
+
 export async function compterOuRefuser(
   usage: ApiUsageGuard,
   req: FastifyRequest,
@@ -148,7 +212,9 @@ export async function compterOuRefuser(
     await reply.code(401).send({ error: 'clé d’API requise' });
     return false;
   }
-  return demanderOuRefuser(usage, reply, {
+  // ⚠️ LA PLACE SE PREND APRÈS LE COMPTAGE, jamais avant : un refus de place doit apparaître dans les
+  // compteurs, sinon la seule trace d'une saturation serait un 429 que personne ne voit passer.
+  const compte = await demanderOuRefuser(usage, reply, {
     tenantId,
     // ⚠️ « inconnue » NE DEVRAIT JAMAIS ARRIVER : le préhandler pose `apiKeyId` en même temps que
     // `req.auth`. Le repli est là pour que le compteur reste honnête si un jour une route est montée
@@ -157,4 +223,7 @@ export async function compterOuRefuser(
     operation,
     unites: unitesDe(operation, taille),
   });
+  if (!compte) return false;
+  if (!estLourde(operation)) return true;
+  return reserverPlaceLourde(usage, req, reply);
 }

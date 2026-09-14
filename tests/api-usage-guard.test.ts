@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { unitesDe, type ApiUsageGuard, type DemandeUsage } from '../src/api/usage-guard';
+import { estLourde, unitesDe, type ApiUsageGuard, type DemandeUsage } from '../src/api/usage-guard';
 import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
 
 /**
@@ -159,5 +159,58 @@ describe('la politique de refus, quand un seuil EXISTE', () => {
     expect(g.demander(demande({ unites: 1 })).accepte).toBe(false);
     h.avancerDeMinutes(1);
     expect(g.demander(demande({ unites: 1 })).accepte).toBe(true);
+  });
+});
+
+describe('les opérations LOURDES ont un plafond de places simultanées', () => {
+  /**
+   * 🔴 LE CHIFFRE QUI REND CE PLAFOND NÉCESSAIRE : le pool sert 8 connexions pour TOUT le process API, et
+   * un lot de contacts en demande jusqu'à 4 à la fois. Rien ne comptait les requêtes lourdes EN VOL : dix
+   * lots simultanés mettent quarante acquisitions en file derrière huit places, échouent au bout de huit
+   * secondes, et pendant ce temps l'Inbox et le worker se disputent les mêmes emplacements.
+   *
+   * ⚠️ ET LE LIMITEUR DE DÉBIT N'Y CHANGE RIEN : c'est une fenêtre FIXE, donc les 60 requêtes d'une minute
+   * peuvent tomber dans la même milliseconde.
+   */
+  it('🔴 au-delà du plafond, plus aucune place n’est donnée', () => {
+    const g = new GardeUsageMemoire(120, 0, horloge().maintenant, 2);
+    expect(g.entrerLourde()).not.toBeNull();
+    expect(g.entrerLourde()).not.toBeNull();
+    expect(g.entrerLourde()).toBeNull();
+  });
+
+  it('🔴 une place rendue rouvre une place, et pas deux', () => {
+    const g = new GardeUsageMemoire(120, 0, horloge().maintenant, 1);
+    const liberer = g.entrerLourde();
+    expect(g.entrerLourde()).toBeNull();
+    liberer!();
+    expect(g.entrerLourde()).not.toBeNull();
+  });
+
+  it('🔴 libérer DEUX FOIS ne rend qu’une place : un plafond ne monte pas tout seul', () => {
+    // Une réponse peut être close deux fois (un client qui coupe, puis le cycle normal). Sans cette
+    // garde, chaque double fermeture agrandirait le plafond, et ça ne se verrait qu'un jour de charge.
+    const g = new GardeUsageMemoire(120, 0, horloge().maintenant, 1);
+    const liberer = g.entrerLourde()!;
+    liberer();
+    liberer();
+    expect(g.entrerLourde()).not.toBeNull();
+    expect(g.entrerLourde()).toBeNull();
+  });
+
+  it('⚠️ 0 désactive le plafond, comme les autres', () => {
+    const g = new GardeUsageMemoire(120, 0, horloge().maintenant, 0);
+    for (let i = 0; i < 50; i += 1) expect(g.entrerLourde()).not.toBeNull();
+  });
+
+  it('🔴 seules les écritures de masse sont LOURDES : une lecture ne prend pas de place', () => {
+    // Soumettre `sends.read` ou `mcp.call` à ce plafond ferait refuser une consultation pendant qu'un lot
+    // écrit, ce qui transformerait une protection du pool en panne d'écran.
+    expect(estLourde('contacts.batch')).toBe(true);
+    expect(estLourde('sends.create')).toBe(true);
+    expect(estLourde('contacts.upsert')).toBe(false);
+    expect(estLourde('sends.read')).toBe(false);
+    expect(estLourde('mcp.call')).toBe(false);
+    expect(estLourde('mcp.refus')).toBe(false);
   });
 });
