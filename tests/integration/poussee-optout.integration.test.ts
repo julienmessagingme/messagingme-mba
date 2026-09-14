@@ -116,15 +116,21 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
   });
 
   /**
-   * 🔴 L'INDEX PARTIEL DE 0139 EXISTE ET PORTE LE BON PRÉDICAT. Il sert la question « quelles requêtes sont
-   * branchées sur le consentement ? », posée avant d'accepter une suppression. Un prédicat qui aurait dérivé
-   * ne produirait AUCUNE erreur, juste un balayage complet de la table des réglages.
+   * 🔴 L'INDEX DE 0139 A ÉTÉ RETIRÉ PAR 0143, ET CE CAS GARDE LE RETRAIT.
+   *
+   * Il avait été créé en annonçant qu'il servirait « quelles requêtes sont branchées sur le consentement ? ».
+   * Relevé en revue du chantier complet : cette question n'est jamais posée ainsi. `brancheeSurConsentement`
+   * lit les réglages de l'ESPACE et compare l'identifiant, donc par la clé primaire de `tenant_settings`.
+   * L'index n'a jamais été emprunté.
+   *
+   * ⚠️ CE QU'ON RETIRE N'EST PAS UN COÛT, C'EST UNE JUSTIFICATION FAUSSE INSCRITE DANS LE SCHÉMA. Le
+   * prochain lecteur aurait cru qu'une requête le sert, et aurait pu élargir un `where` en croyant rester
+   * dans son contrat.
    */
-  it('🔴 l’index partiel est là, avec son prédicat', async () => {
-    const idx = await pool.query<{ indexdef: string }>(
-      `select indexdef from pg_indexes where tablename = 'tenant_settings' and indexname = 'tenant_settings_optout_request_idx'`,
+  it('🔴 l’index inutile de 0139 n’est plus là (retiré par 0143)', async () => {
+    const idx = await pool.query(
+      `select 1 from pg_indexes where tablename = 'tenant_settings' and indexname = 'tenant_settings_optout_request_idx'`,
     );
-    expect(idx.rowCount, 'index absent : la migration 0139 n’a pas tout appliqué').toBe(1);
-    expect(idx.rows[0]!.indexdef).toMatch(/WHERE \(optout_request_id IS NOT NULL\)/i);
+    expect(idx.rowCount, 'l’index est revenu : un index sans requête est un contrat sans partie').toBe(0);
   });
 });

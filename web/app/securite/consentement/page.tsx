@@ -152,9 +152,12 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
           <p className="px-4 py-3 text-sm text-ink-500" data-testid="refus-possibles-vide">
             {/* ⚠️ ON DIT SUR QUOI ON A REGARDÉ. « rien trouvé » et « rien lu » ne veulent pas dire la même
                 chose, et sur un écran de conformité la différence compte. */}
+            {/* ⚠️ « PORTEURS DE TEXTE », et pas « reçus » : la relecture écarte les messages sans corps
+                (images, vocaux, accusés) avant de compter. Dire « les N derniers messages reçus » gonflerait
+                l'assurance donnée, sur un écran où elle se lit comme une garantie de conformité. */}
             {t('Rien à signaler sur les ', 'Nothing to report across the last ')}
             {aRelire.scannes}
-            {t(' derniers messages reçus.', ' inbound messages.')}
+            {t(' derniers messages reçus porteurs de texte.', ' inbound messages carrying text.')}
           </p>
         )}
         {aRelire !== null && aRelire.refus.length > 0 && (

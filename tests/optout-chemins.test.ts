@@ -73,8 +73,14 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
   },
   'src/workflow/wiring.ts': {
     verdict: 'bloque',
-    pourquoi: '🔴 LE POINT DE PASSAGE DE TOUT CE QUI EST AUTOMATIQUE. Scénario, automation et agent IA '
-      + 'envoient tous par ici : une seule garde les couvre les trois, là où trois gardes auraient divergé.',
+    pourquoi: '🔴 LE POINT DE PASSAGE DES ENVOIS D’UN PARCOURS (scénario, automation) : la garde est posée '
+      + 'une fois dans `WorkflowExecutor.apply`, là où trois gardes auraient divergé. '
+      + '⚠️ CETTE RAISON A DIT « ET AGENT IA », ET C’ÉTAIT FAUX : la réponse d’un agent part par '
+      + '`envoyerTexteAgent`, qui appelle `client.sendText` DIRECTEMENT, sans passer par l’exécuteur. '
+      + 'L’agent a donc sa propre garde, au rang de ses plafonds, dans `src/agent/run-turn.ts`. '
+      + '🔴 LA LEÇON EST SUR CE TEST LUI-MÊME : un inventaire prouve que la LISTE est complète, jamais que '
+      + 'les VERDICTS sont justes. Celui-ci a été écrit par la même main que la garde, dans la même heure, '
+      + 'depuis la même croyance. Un verdict se MESURE en suivant l’appel, il ne se déduit pas d’un voisinage.',
   },
   'src/index.ts': {
     verdict: 'bloque',

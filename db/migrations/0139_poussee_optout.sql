@@ -26,9 +26,11 @@
 alter table tenant_settings
   add column if not exists optout_request_id uuid references connector_requests(id) on delete set null;
 
--- Sert la question « quelles requetes sont branchees sur le consentement ? », posee par la route de
--- suppression avant d accepter d effacer une requete. Index PARTIEL : la colonne est nulle sur la quasi
--- totalite des espaces, et un index complet couterait sa taille pour ne servir que quelques lignes.
+-- 🔴 CET INDEX N A SERVI AUCUNE REQUETE, ET IL EST RETIRE PAR LA MIGRATION 0143. Il a ete cree ici en
+-- annoncant qu il servirait « quelles requetes sont branchees sur le consentement ? ». C etait faux : la
+-- route de suppression lit les REGLAGES DE L ESPACE et compare l identifiant, donc par la cle primaire de
+-- `tenant_settings`. Le bloc est garde tel quel parce que la migration est deja appliquee en production ;
+-- ce qui suit est l histoire, pas l etat.
 create index if not exists tenant_settings_optout_request_idx
   on tenant_settings (optout_request_id)
   where optout_request_id is not null;
