@@ -1,7 +1,7 @@
 import { request } from './http';
 import { patchAgent, type PatchAgent, type SortieAgent } from './api-agent';
 import { setPolitiqueMentionIa } from './api';
-import { ajouterOutil, listOutils, patchOutil } from './api-agent-tools';
+import { ajouterOutil, getBibliothequeOutils, listOutils, patchOutil, rattacherOutil } from './api-agent-tools';
 
 /**
  * La conversation de construction : elle propose, le client corrige.
@@ -36,6 +36,15 @@ export interface PropositionConstruction {
   outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
   /** Les MOTS de connecteurs DÉJÀ déclarés. L'assistant n'en crée jamais : voir l'application ci-dessous. */
   connecteurs?: Array<{ nom: string; description: string; nePasUtiliser: string }>;
+  /**
+   * Les outils de la BIBLIOTHÈQUE de l'espace à brancher ou débrancher sur cet agent, par leur NOM.
+   *
+   * 🔴 BRANCHER N'ACTIVE PAS. Rattacher rend l'outil disponible ; l'exposer au modèle reste un second geste,
+   * fait par le client dans l'onglet Outils. Les fondre exposerait au modèle un outil dont personne n'a relu
+   * les mots.
+   */
+  outilsBranches?: string[];
+  outilsDebranches?: string[];
 }
 
 /**
@@ -152,6 +161,19 @@ export function restreindreProposition(
         description: retenu(`connecteur.${c.nom}.description`, c.description),
         nePasUtiliser: retenu(`connecteur.${c.nom}.nePasUtiliser`, c.nePasUtiliser),
       })),
+    /**
+     * 🔴 LE BRANCHEMENT SUIT LA MEME REGLE QUE LE RESTE : une ligne JETEE ne part pas. L oublier ici serait le
+     * defaut deja paye deux fois dans ce fichier, celui d une capacite proposee, affichee, puis silencieuse.
+     *
+     * ⚠️ Un branchement n a qu UNE ligne de diff (`outil.<nom>.rattachement`), donc pas de `garde` a plusieurs
+     * cles : il est retenu s il n a pas ete jete.
+     */
+    outilsBranches: (proposition.outilsBranches ?? []).filter(
+      (n) => !avantDe.has(`outil.${n}.rattachement`) || gardees.has(`outil.${n}.rattachement`),
+    ),
+    outilsDebranches: (proposition.outilsDebranches ?? []).filter(
+      (n) => !avantDe.has(`outil.${n}.rattachement`) || gardees.has(`outil.${n}.rattachement`),
+    ),
   };
 }
 
@@ -259,6 +281,31 @@ export async function appliquerProposition(
    */
   if (proposition.mentionIaFrequence !== undefined) {
     await setPolitiqueMentionIa(tenantId, proposition.mentionIaFrequence);
+  }
+  /**
+   * LE BRANCHEMENT, AVANT les mots : un outil qu on vient de brancher doit exister sur l agent pour que le
+   * patch de ses mots le trouve. L ordre inverse ecrirait les mots d un outil encore non rattache, donc
+   * rien du tout.
+   *
+   * 🔴 LES NOMS SE RESOLVENT SUR LA BIBLIOTHEQUE, PAS SUR LES OUTILS DE L AGENT : un outil a BRANCHER n y
+   * figure justement pas encore. Le chercher au mauvais endroit rendrait le branchement silencieusement
+   * inoperant, ce qui est le mode de panne de ce fichier.
+   */
+  const aBrancher = proposition.outilsBranches ?? [];
+  const aDebrancher = proposition.outilsDebranches ?? [];
+  if (aBrancher.length > 0 || aDebrancher.length > 0) {
+    const { outils: bibliotheque } = await getBibliothequeOutils(tenantId);
+    const idDe = (nom: string): string | undefined => bibliotheque.find((o) => o.name === nom)?.id;
+    for (const nom of aBrancher) {
+      const id = idDe(nom);
+      // Un nom inconnu est IGNORE, jamais cree : le serveur a deja filtre, cette seconde ceinture tient si
+      // la proposition vieillit entre son calcul et le clic (un administrateur a pu retirer la definition).
+      if (id) await rattacherOutil(tenantId, agentId, id, true);
+    }
+    for (const nom of aDebrancher) {
+      const id = idDe(nom);
+      if (id) await rattacherOutil(tenantId, agentId, id, false);
+    }
   }
   const connecteurs = proposition.connecteurs ?? [];
   if (proposition.outils.length === 0 && connecteurs.length === 0) return;

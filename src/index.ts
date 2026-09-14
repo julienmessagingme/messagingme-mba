@@ -1368,13 +1368,17 @@ async function main(): Promise<void> {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        const [outils, fiches, sources] = await Promise.all([
+        const [outils, fiches, sources, catalogue] = await Promise.all([
           toolCatalog.listToutes(tenant, agentId),
           knowledgeStore.lister(tenant, agentId),
           // La BIBLIOTHEQUE de l espace : ce qui est declare, branche sur cet agent ou non. Sert a repondre
           // honnetement << vous avez declare votre ERP, il reste a y brancher l appel >> au lieu de
           // << rien n existe >> a un client qui vient justement de le declarer.
           agentSources.lister(tenant),
+          // 🔴 LA BIBLIOTHEQUE de l ESPACE, pas les outils de cet agent : c est elle qui borne ce que l
+          // assistant peut BRANCHER. La definition appartient a l espace depuis 0127, le consentement au
+          // couple (outil, consommateur) ; l assistant n agit que sur le second, et ne cree jamais rien.
+          toolCatalog.listCatalogue(tenant),
         ]);
         return {
           label: fiche.label,
@@ -1394,6 +1398,14 @@ async function main(): Promise<void> {
             .map((o) => ({ nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser })),
           titresConnaissance: fiches.map((f) => f.titre),
           sources: sources.map((s) => ({ label: s.label, kind: s.kind, status: s.status })),
+          // ⚠️ `branche` se lit sur les CONSOMMATEURS de la definition, pas sur `outils` ci-dessus : les deux
+          // repondent a la meme question, mais seul le catalogue connait les outils NON branches, qui sont
+          // justement ceux que l assistant peut proposer de brancher.
+          catalogue: catalogue.map((c) => ({
+            nom: c.name,
+            titre: c.title,
+            branche: c.consommateurs.some((x) => x.agentId === agentId),
+          })),
         };
       },
       // Les PIECES JOINTES ecrivent des fiches de connaissance, par le MEME store que l onglet Connaissance :

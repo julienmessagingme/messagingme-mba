@@ -1944,6 +1944,19 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
   bouton dit combien de lignes partiront. Seules les règles d'arrêt se gardent ou se jettent en bloc, parce
   qu'elles sont plusieurs dans une même ligne : elles se corrigent dans l'onglet Objectif.
 - ✅ **Tout ce qu'il écrit reste modifiable dans les autres onglets**, champ par champ.
+- ✅ **Il ne se tait plus une fois l'agent construit : il écoute** (2026-09-15). Avant, l'entretien terminé le
+  faisait basculer en « j'écris les champs » ; rouvrir l'onglet le lendemain le faisait donc repartir en
+  proposant des changements dont personne n'avait parlé. Désormais il rappelle l'état actuel, dit ce qu'il
+  peut changer, et **attend votre demande**. Il ne propose plus rien de lui-même.
+  Et si un champ réglé pendant l'entretien a été **vidé depuis** dans un autre onglet, il le signale et vous
+  demande si c'est voulu, au lieu de refaire tout l'entretien.
+- ✅ **Il peut BRANCHER ou DÉBRANCHER un outil de votre bibliothèque sur cet agent** (2026-09-15), en le
+  demandant en français (« branche-lui l'outil de suivi de commande »). Il ne peut **pas en créer** : déclarer
+  un outil, c'est écrire une adresse et un secret, et cela reste un geste d'administrateur. Un nom qui n'est
+  pas dans votre bibliothèque est refusé.
+  ⚠️ **Brancher n'active pas** : l'outil devient disponible, c'est vous qui l'activez ensuite dans l'onglet
+  Outils, après avoir relu ses mots. Et **débrancher ne supprime rien** : la définition reste dans votre
+  bibliothèque et sur vos autres agents, le diff le dit.
 - ✅ **Ce qu'il n'a pas le droit d'écrire** : la mention légale d'IA, les plafonds, le budget, le modèle, et
   surtout **l'activation d'un outil**. Il peut proposer les mots d'un outil du catalogue ou d'un connecteur
   déjà déclaré, jamais créer un système, une adresse ou un secret.

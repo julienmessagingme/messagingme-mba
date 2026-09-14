@@ -139,7 +139,9 @@ describe('conversation de construction', () => {
     const body = res.json();
     expect(body.message).toContain('réserver');
     expect(body.changements).toEqual([]);
-    expect(body.proposition).toEqual({ fiche: {}, outils: [], connecteurs: [] });
+    // ⚠️ Les DEUX listes de branchement en font partie : « rien n'est montré » doit rester vrai pour tout
+    // ce que la proposition peut porter, sinon un pouvoir neuf échapperait à la retenue de l'entretien.
+    expect(body.proposition).toEqual({ fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] });
     // `mission` est répondu ET c'était le point du tour, donc posé : il ne manque plus.
     expect(body.couverture.manquants).toEqual(BASE.filter((c) => c !== 'mission'));
     expect(body.couverture.total).toBe(BASE.length);

@@ -161,6 +161,19 @@ export function getBibliothequeOutils(tenantId: string): Promise<{ outils: Outil
   return request<{ outils: OutilBibliotheque[] }>(`/tenants/${tenantId}/agent-tools`);
 }
 
+/**
+ * Branche ou débranche un outil de la bibliothèque sur cet agent.
+ *
+ * 🔴 RATTACHER N'EST PAS ACTIVER, et les deux routes sont séparées exprès : rattacher rend l'outil
+ * DISPONIBLE, activer l'expose au modèle. Un seul geste qui ferait les deux exposerait au modèle un outil
+ * dont personne n'a relu les mots, ce que la migration 0086 existe pour empêcher.
+ */
+export function rattacherOutil(tenantId: string, agentId: string, outilId: string, valeur: boolean): Promise<{ rattache: boolean }> {
+  return request<{ rattache: boolean }>(`/tenants/${tenantId}/agents/${agentId}/outils/${outilId}/rattachement`, {
+    method: 'PUT', body: JSON.stringify({ valeur }),
+  });
+}
+
 /** Supprime la DÉFINITION, donc pour tout le monde. Le serveur REFUSE en 409 tant qu'elle est rattachée. */
 export async function supprimerDefinitionOutil(tenantId: string, outilId: string): Promise<void> {
   await request<void>(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'DELETE' });

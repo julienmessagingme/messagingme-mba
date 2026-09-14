@@ -12,11 +12,13 @@ import { ACTIONS, CHOIX_ACTION, CODES_POINTS } from './couverture';
  * l'orienter. Ce qu'elle peut écrire est donc énuméré ici, et rien d'autre ne passe :
  *
  *  - la FICHE (jsonb) : objectif, ton, identité, règles de transfert, règles d'arrêt ;
- *  - les OUTILS MAISON du catalogue, par leur handler, avec leurs MOTS.
+ *  - les OUTILS MAISON du catalogue, par leur handler, avec leurs MOTS ;
+ *  - le BRANCHEMENT d'un outil de la bibliothèque de l'espace sur cet agent, par son nom (2026-09-15),
+ *    c'est-à-dire le CONSENTEMENT du couple (outil, consommateur), jamais la définition de l'outil.
  *
  * Ce qu'elle ne peut PAS écrire, et la liste est aussi importante que la précédente : la mention légale
  * d'IA (AI Act, article 50), les plafonds de tours, d'appels et de dépense, le modèle de l'agent, le RISQUE
- * d'un outil, et surtout son ACTIVATION. Compromettre la conversation de setup ne compromet donc pas
+ * d'un outil, la CRÉATION d'un outil ou d'une source, et surtout son ACTIVATION. Compromettre la conversation de setup ne compromet donc pas
  * l'agent : au pire, elle propose des mots que le client voit passer dans un diff et refuse.
  *
  * ⚠️ Ces clés sont ABSENTES du schéma, elles ne sont pas « refusées » : `safeParse` d'un objet Zod sans
@@ -123,6 +125,23 @@ export const propositionSchema = z.object({
   connecteurs: z.array(connecteurProposeSchema).max(20)
     .refine((o) => new Set(o.map((x) => x.nom)).size === o.length, 'un connecteur proposé deux fois')
     .optional(),
+  /**
+   * BRANCHER ou DÉBRANCHER un outil de la bibliothèque de l'espace, par son NOM EXPOSÉ.
+   *
+   * 🔴 DES NOMS, ET RIEN QUE DES NOMS. Le schéma ne porte ni adresse, ni secret, ni gabarit de chemin, ni
+   * risque, ni activation : brancher agit sur le CONSENTEMENT du couple (outil, consommateur), jamais sur la
+   * définition. Un objet que le modèle enrichirait d'une `baseUrl` verrait ce champ tomber en silence, ce
+   * qui est le comportement voulu de ce fichier.
+   *
+   * 🔴 ET BRANCHER N'ACTIVE PAS. Un outil rattaché est DISPONIBLE ; l'exposer au modèle reste un second
+   * geste humain, celui que la migration 0086 rend incontournable. Les fondre ferait exposer au modèle un
+   * outil dont personne n'a relu les mots.
+   *
+   * L'EXISTENCE du nom n'est pas vérifiable ici (le schéma ne connaît pas le catalogue) : elle l'est à
+   * l'APPLICATION, qui ne branche qu'un outil existant et n'en crée jamais.
+   */
+  outilsBranches: z.array(z.string().trim().regex(/^[a-z0-9_]{1,64}$/)).max(20).optional(),
+  outilsDebranches: z.array(z.string().trim().regex(/^[a-z0-9_]{1,64}$/)).max(20).optional(),
 });
 
 export type Proposition = z.infer<typeof propositionSchema>;
@@ -246,6 +265,19 @@ export const SCHEMA_PROPOSITION = {
         required: ['nom', 'description'],
       },
     },
+    outilsBranches: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Les NOMS EXACTS d’outils de la bibliothèque de l’espace à BRANCHER sur cet agent. '
+        + 'Uniquement ceux de la liste qu’on te montre : tu ne peux pas en créer, et un nom qui n’y figure '
+        + 'pas sera refusé. Brancher rend l’outil disponible ; l’ACTIVER reste un geste du client.',
+    },
+    outilsDebranches: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Les NOMS EXACTS d’outils de la bibliothèque à DÉBRANCHER de cet agent. La définition '
+        + 'reste dans l’espace et sur les autres agents : tu ne supprimes rien.',
+    },
     outils: {
       type: 'array',
       description: 'Les outils du catalogue que tu proposes, avec leurs mots.',
@@ -274,6 +306,13 @@ export interface Changement {
 }
 
 /** L'état courant contre lequel le diff se calcule. */
+/** Un outil de la BIBLIOTHÈQUE de l'espace, et si CET agent y est branché. */
+export interface OutilDuCatalogue {
+  nom: string;
+  titre: string;
+  branche: boolean;
+}
+
 export interface EtatCourant {
   fiche: FicheAgentContenu;
   /**
@@ -290,6 +329,15 @@ export interface EtatCourant {
   /** Les CONNECTEURS déjà déclarés par un administrateur, par leur nom exposé. L'assistant ne peut proposer
    *  que leurs mots, et seulement pour ceux-là : il n'en invente pas. */
   connecteurs?: Array<{ nom: string; titre: string; description: string; nePasUtiliser: string }>;
+  /**
+   * LA BIBLIOTHÈQUE DE L'ESPACE (migration 0127), avec l'état de branchement de CET agent.
+   *
+   * 🔴 C'EST CE QUI REND LE BRANCHEMENT PROPOSABLE SANS RIEN CRÉER. Julien, 2026-09-14 : « il n'a pas la
+   * main pour créer des outils puisqu'il n'a que la liste d'outils déjà setuppés, donc au pire il en
+   * débranche un ». La définition appartient à l'ESPACE, le consentement au couple (outil, consommateur) :
+   * l'assistant n'agit que sur le second.
+   */
+  catalogue?: OutilDuCatalogue[];
 }
 
 const LABELS_FICHE: Record<string, string> = {
@@ -374,6 +422,40 @@ export function differences(courant: EtatCourant, proposition: Omit<Proposition,
       label: 'Silence du contact : quand l’agent lâche',
       avant: dureeEnClair(courant.inactiviteMinutes),
       apres: dureeEnClair(proposition.inactiviteMinutes),
+    });
+  }
+
+  /**
+   * LE BRANCHEMENT, une ligne par outil, et SEULEMENT quand l'état change vraiment.
+   *
+   * 🔴 UN NOM ABSENT DU CATALOGUE NE PRODUIT AUCUNE LIGNE. Le schéma ne peut pas vérifier l'existence (il
+   * ne connaît pas la bibliothèque) : c'est ici que ça se joue, et une ligne de diff sur un outil
+   * inexistant promettrait au client un branchement que l'application ne pourrait pas faire.
+   *
+   * ⚠️ LE LIBELLÉ DIT « disponible », PAS « activé ». Brancher rattache ; exposer l'outil au modèle reste un
+   * second geste humain (migration 0086). Un diff qui dirait « activé » ferait croire l'inverse.
+   */
+  const catalogue = courant.catalogue ?? [];
+  for (const nom of proposition.outilsBranches ?? []) {
+    const outil = catalogue.find((c) => c.nom === nom);
+    if (!outil || outil.branche) continue;
+    out.push({
+      champ: `outil.${nom}.rattachement`,
+      label: `${outil.titre} : brancher sur cet agent`,
+      avant: 'non branché',
+      apres: 'branché (disponible, à activer ensuite)',
+    });
+  }
+  for (const nom of proposition.outilsDebranches ?? []) {
+    const outil = catalogue.find((c) => c.nom === nom);
+    if (!outil || !outil.branche) continue;
+    out.push({
+      champ: `outil.${nom}.rattachement`,
+      label: `${outil.titre} : débrancher de cet agent`,
+      avant: 'branché',
+      // ⚠️ On le DIT : la définition reste dans l'espace et sur les autres agents. Sans cette phrase, le
+      // client croirait supprimer un outil qu'un autre agent utilise peut-être.
+      apres: 'non branché (la définition reste dans votre bibliothèque)',
     });
   }
 

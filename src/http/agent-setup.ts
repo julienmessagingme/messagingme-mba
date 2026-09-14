@@ -141,6 +141,18 @@ function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): {
   };
 }
 
+/**
+ * Les noms d'outils RETENUS : ceux qui existent dans la bibliothèque de l'espace ET dont le branchement
+ * changerait vraiment d'état. `brancheAttendu` dit l'état dans lequel l'outil doit être AUJOURD'HUI pour que
+ * le geste ait un sens (`false` pour brancher, `true` pour débrancher).
+ */
+export function brancheables(
+  catalogue: ContexteConstruction['catalogue'], noms: readonly string[] | undefined, brancheAttendu: boolean,
+): string[] {
+  const par = new Map((catalogue ?? []).map((c) => [c.nom, c]));
+  return (noms ?? []).filter((n) => par.get(n)?.branche === brancheAttendu);
+}
+
 export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
 
@@ -407,12 +419,24 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     return reply.code(200).send({
       message,
       couverture: suivi,
-      proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [] } : {
+      proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] } : {
         fiche: propose.data.fiche ?? {},
         outils: propose.data.outils ?? [],
         // Les connecteurs proposés sont filtrés sur ceux qui EXISTENT : l'assistant n'en crée pas, et un nom
         // inventé ne doit pas atteindre l'application, qui tenterait un patch sur un outil inconnu.
         connecteurs: (propose.data.connecteurs ?? []).filter((c) => (ctx.etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
+        /**
+         * 🔴 LE BRANCHEMENT EST FILTRÉ SUR LA BIBLIOTHÈQUE DE L'ESPACE, et c'est LE contrôle : le schéma ne
+         * connaît pas le catalogue, donc il ne peut pas refuser un nom inventé. Julien, 2026-09-14 : « il
+         * n'a pas la main pour créer des outils puisqu'il n'a que la liste d'outils déjà setuppés, donc au
+         * pire il en débranche un ».
+         *
+         * ⚠️ ON FILTRE AUSSI SUR L'ÉTAT COURANT : brancher ce qui l'est déjà, ou débrancher ce qui ne l'est
+         * pas, n'est pas une erreur mais ne doit produire AUCUN geste, sans quoi l'écran annoncerait une
+         * modification qui n'en est pas une. Même règle que le diff, qui ne montre que ce qui change.
+         */
+        outilsBranches: brancheables(ctx.etat.catalogue, propose.data.outilsBranches, false),
+        outilsDebranches: brancheables(ctx.etat.catalogue, propose.data.outilsDebranches, true),
       },
       changements: enEntretien ? [] : differences(ctx.etat, propose.data),
       usage: { tokensIn: reponse.usage.tokensIn, tokensOut: reponse.usage.tokensOut },

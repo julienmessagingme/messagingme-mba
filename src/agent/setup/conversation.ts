@@ -115,6 +115,11 @@ Règles d'écriture, une fois au temps 2 :
 - Les règles d'arrêt sont les aboutissements de la conversation, pas des sujets. Leur code est en minuscules
   avec des tirets bas, il commence et finit par une lettre ou un chiffre.
 - Une description d'outil dit QUAND l'appeler, en une à trois phrases, avec un exemple de tournure du client.
+- Tu peux BRANCHER ou DÉBRANCHER un outil de la bibliothèque de l'espace sur cet agent (champs
+  outilsBranches et outilsDebranches), par son NOM EXACT tel qu'il figure dans la liste. Tu ne peux pas en CRÉER : déclarer un
+  outil, c'est écrire une adresse réseau et un secret, et cela reste un geste d'administrateur. Un nom absent
+  de la liste est refusé. Débrancher ne supprime rien : la définition reste dans l'espace et sur les autres
+  agents. Et brancher ne suffit pas à s'en servir : c'est le client qui ACTIVE, ensuite.
 - 🔴 SI SES RÉPONSES DE FOND VIENNENT D'UNE SOURCE (son site, un document, des fiches qu'il écrira), l'outil
   « chercher_connaissance » est OBLIGATOIRE dans ta proposition. Sans lui, l'agent ne peut pas LIRE sa base :
   il transfère toutes les questions de fond, avec une base bien remplie sous les yeux. C'est arrivé en
@@ -256,6 +261,25 @@ function outilsPoses(outils: ContexteConstruction['outils']): string {
  * ne peut pas en créer : sans cette limite écrite, il proposerait des connecteurs imaginaires, et le client
  * verrait un diff qui promet un branchement qui n'existe pas.
  */
+/**
+ * LA BIBLIOTHÈQUE DE L'ESPACE, et l'état de branchement de CET agent.
+ *
+ * 🔴 ELLE EST MONTRÉE POUR QUE LE BRANCHEMENT SOIT PROPOSABLE SANS RIEN CRÉER. L'assistant ne peut brancher
+ * qu'un nom de cette liste : la lui cacher reviendrait à lui demander de deviner, donc à le pousser à
+ * inventer. Et le mot « disponible » y est écrit : brancher rattache, activer reste un geste du client.
+ */
+function catalogueDeLEspace(catalogue: NonNullable<ContexteConstruction['catalogue']>): string {
+  if (catalogue.length === 0) {
+    return 'Bibliothèque d’outils de l’espace : (vide ; tu ne peux pas en créer, c’est un geste d’administrateur)';
+  }
+  const lignes = catalogue.map((c) => `  - ${c.nom} (${c.titre}) : ${c.branche ? 'BRANCHÉ sur cet agent' : 'pas branché'}`);
+  return [
+    'Bibliothèque d’outils de l’espace (tu peux BRANCHER ou DÉBRANCHER ceux-ci sur cet agent, PAS en créer ;',
+    'brancher rend l’outil disponible, l’ACTIVER reste un geste du client) :',
+    ...lignes,
+  ].join('\n');
+}
+
 function connecteursPoses(connecteurs: NonNullable<ContexteConstruction['connecteurs']>): string {
   if (connecteurs.length === 0) {
     return 'Connecteurs vers le système du client : (aucun déclaré ; tu ne peux pas en créer, c’est un geste d’administrateur)';
@@ -293,6 +317,7 @@ function etat(ctx: ContexteConstruction): string {
     `Silence du contact : l'agent lâche au bout de ${dureeEnClair(ctx.inactiviteMinutes)}`,
     outilsPoses(ctx.outils),
     connecteursPoses(ctx.connecteurs ?? []),
+    catalogueDeLEspace(ctx.catalogue ?? []),
     `Outils disponibles au catalogue : ${OUTILS_MAISON.map((o) => o.handler).join(', ')}`,
     `Fiches de connaissance (titres) : ${ctx.titresConnaissance.length === 0
       ? '(aucune, l’agent transférera toutes les questions de fond)'
