@@ -1443,6 +1443,15 @@ async function main(): Promise<void> {
           gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
       } : {}),
       modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
+      /**
+       * 🔴 LE MEME COMPTEUR QUE L ASSISTANT DU MBA, ET LE MEME PLAFOND. Le commentaire ci-dessus annonce que
+       * « les deux moities de cette decision vont ensemble, l une sans l autre est dangereuse » : la moitie
+       * qui manquait etait celle-ci. Le compteur est PAR ESPACE (migration 0146), donc les deux assistants
+       * d un meme client se partagent la meme enveloppe mensuelle, ce qui est le sens de la decision.
+       */
+      depenses: new PgDepenseStore(pool),
+      plafondEuros: config.ASSISTANT_PLAFOND_EUROS_MOIS,
+      tauxEurParDollar: config.EUR_PER_USD,
       // Le modele de VISION est distinct : mesure du 2026-08-31, `zai/glm-4.7` (le modele d entretien de la
       // production) refuse une part image en 400. Vide -> les images sont refusees explicitement, les
       // documents continuent de passer.

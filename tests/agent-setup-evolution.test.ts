@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { consigneDuTour, construireMessages, type ContexteConstruction } from '../src/agent/setup/conversation';
 import {
   AGENDA, INVENTAIRE_VIDE, manquesDeCouverture, pointsSansContenu, prochainsPoints,
@@ -139,5 +141,58 @@ describe('un point redevenu vide', () => {
     const consigne = consigneDuTour(debut, INVENTAIRE_VIDE, vides);
     expect(consigne).toContain('LE POINT OUVERT : perimetre');
     expect(consigne).not.toContain('VIDÉ depuis');
+  });
+});
+
+/**
+ * 🔴 LE PLAFOND DE NOTRE DÉPENSE, CÔTÉ ASSISTANT D'AGENT.
+ *
+ * Cet assistant est passé sur NOTRE clé le 2026-09-14, et le commentaire du câblage annonçait lui-même que
+ * « les deux moitiés de cette décision vont ensemble, l'une sans l'autre est dangereuse ». Le plafond n'a été
+ * câblé que sur l'assistant du Meta Business Agent : un espace pouvait donc bavarder sans limite avec
+ * l'assistant d'agent IA, à nos frais. Relevé par la revue FINALE des quatre lots.
+ */
+describe('le plafond de dépense', () => {
+  const index = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8');
+  const route = readFileSync(resolve(__dirname, '../src/http/agent-setup.ts'), 'utf8');
+
+  it('🔴 le compteur et le plafond sont FOURNIS à l’assistant d’agent', () => {
+    const bloc = index.slice(index.indexOf('agentSetup: {'), index.indexOf('agentKnowledge: {'));
+    expect(bloc).toContain('depenses: new PgDepenseStore(pool)');
+    expect(bloc).toContain('plafondEuros: config.ASSISTANT_PLAFOND_EUROS_MOIS');
+    expect(bloc).toContain('tauxEurParDollar: config.EUR_PER_USD');
+  });
+
+  it('🔴 c’est le MÊME compteur que l’assistant du MBA : par ESPACE, pas par assistant', () => {
+    // Un plafond par assistant multiplierait notre exposition par le nombre de robots, c'est-à-dire par un
+    // chiffre que le client contrôle lui-même (migration 0146).
+    const mba = index.slice(index.indexOf('mbaAssistant: {'), index.indexOf('historique: {'));
+    expect(mba).toContain('plafondEuros: config.ASSISTANT_PLAFOND_EUROS_MOIS');
+  });
+
+  it('🔴 il est vérifié AVANT l’appel, et il rend 200 avec une phrase', () => {
+    // Un 4xx afficherait un message d'infrastructure là où le client attend une phrase, et un 5xx serait
+    // remplacé par la page d'erreur de Cloudflare.
+    expect(route).toContain('if (!(await budgetOuvert(deps, ctx.tenant)))');
+    expect(route).toContain('message: MESSAGE_PLAFOND');
+  });
+
+  it('🔴 la dépense est notée même quand le modèle répond de travers', () => {
+    // La noter seulement sur le chemin heureux rendrait le plafond contournable par un modèle bavard et
+    // inexploitable : l'appel a eu lieu, donc il est payé.
+    const apresAppel = route.slice(route.indexOf('reponse = await deps.completer('));
+    const note = apresAppel.indexOf('await noterDepense(deps, ctx.tenant, reponse.usage.coutDollars)');
+    const sortie = apresAppel.indexOf("if (!appel) return reply.code(422)");
+    // ⚠️ L'EXISTENCE D'ABORD, l'ordre ENSUITE : `indexOf` rend -1 quand la ligne a disparu, et « -1 < n »
+    // est vrai. Sans cette assertion, retirer la dépense ferait PASSER ce test, qui prouverait l'inverse de
+    // ce qu'il annonce. Mesuré en le mutant.
+    expect(note).toBeGreaterThan(-1);
+    expect(sortie).toBeGreaterThan(-1);
+    expect(note).toBeLessThan(sortie);
+  });
+
+  it('🔴 et la LECTURE D’IMAGE compte aussi : elle part chez un fournisseur qui la facture', () => {
+    expect(route).toContain('await noterDepense(deps, ctx.tenant, lu.coutDollars)');
+    expect(route).toContain('coutDollars: r.usage.coutDollars');
   });
 });

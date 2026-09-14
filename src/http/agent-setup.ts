@@ -12,6 +12,8 @@ import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } fr
 import { agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { scopeTenant, estUuid } from './scope';
+import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
+import { microEurosDepuisDollars } from '../agent/devise';
 
 /**
  * La conversation de CONSTRUCTION d'un agent : elle propose, le client corrige.
@@ -58,6 +60,25 @@ export interface AgentSetupRouteDeps {
    * d'avant la migration. Un journal sans auteur reste lisible ; un écran qui refuse de s'ouvrir, non.
    */
   emailsDesMembres?(tenantId: string): Promise<Record<string, string>>;
+  /**
+   * LE COMPTEUR DE NOTRE DÉPENSE, partagé avec l'assistant du Meta Business Agent.
+   *
+   * 🔴 IL MANQUAIT, ET LE COMMENTAIRE DU CÂBLAGE L'AVAIT ANNONCÉ : « c'est ce qui rend le plafond
+   * obligatoire [...] les deux moitiés de cette décision vont ensemble, l'une sans l'autre est dangereuse ».
+   * Cet assistant est passé sur NOTRE clé le 2026-09-14 ; le plafond, lui, n'a été câblé que sur l'autre.
+   * Un espace pouvait donc bavarder sans limite avec l'assistant d'agent, à nos frais.
+   *
+   * 🔴 LE COMPTEUR EST PAR ESPACE, PAS PAR ASSISTANT (migration 0146) : un plafond par assistant
+   * multiplierait notre exposition par le nombre de robots, c'est-à-dire par un chiffre que le client
+   * contrôle lui-même.
+   *
+   * ⚠️ OPTIONNEL : sans lui, l'assistant fonctionne SANS plafond, exactement comme avant. C'est le
+   * comportement qu'il faut pour un serveur de test, et c'est aussi pourquoi le câblage est gardé par un test.
+   */
+  depenses?: DepenseStore;
+  /** Le plafond mensuel, en euros. 0 ou absent = pas de plafond. */
+  plafondEuros?: number;
+  tauxEurParDollar?: number;
   /**
    * Écrit une fiche de connaissance. Sert aux PIÈCES JOINTES : un document joint devient des fiches, c'est
    * tout l'intérêt de pouvoir en joindre un. Absente, la route de pièce jointe n'est pas montée.
@@ -112,8 +133,12 @@ const CONSIGNE_IMAGE = 'Relève TOUT le texte lisible de cette image, tel quel, 
   + 'si un passage est flou, écris [illisible]. Si l’image ne contient aucun texte, décris en une phrase ce '
   + 'qu’elle montre, sans plus.';
 
-/** Lit une image par le modèle et rend son texte. Isolé pour que la route reste lisible. */
-async function lireImage(deps: AgentSetupRouteDeps, tenantId: string, modele: string, dataUrl: string, nom: string): Promise<string | null> {
+/** Lit une image par le modèle et rend son texte AVEC son coût. Isolé pour que la route reste lisible.
+ *  ⚠️ Le coût remonte parce que cet appel-là compte dans le plafond : le jeter rendrait la lecture d'image
+ *  gratuite du point de vue du compteur, donc contournable. */
+async function lireImage(
+  deps: AgentSetupRouteDeps, tenantId: string, modele: string, dataUrl: string, nom: string,
+): Promise<{ texte: string | null; coutDollars: number }> {
   const r = await deps.completer!({
     tenantId,
     modele,
@@ -128,11 +153,36 @@ async function lireImage(deps: AgentSetupRouteDeps, tenantId: string, modele: st
     toolChoice: '',
     signal: AbortSignal.timeout(DELAI_MS),
   });
-  return r.texte;
+  // ⚠️ LE COÛT REMONTE AVEC LE TEXTE : une image part chez un fournisseur qui la facture, sur NOTRE clé.
+  // Le jeter ici rendrait la lecture d'image gratuite du point de vue du plafond, donc le contournerait.
+  return { texte: r.texte, coutDollars: r.usage.coutDollars };
 }
 
 /** Un tour de construction est un appel de modèle, pas une requête de base : il faut le borner ici aussi. */
 const DELAI_MS = 45_000;
+
+/**
+ * LE PLAFOND, LU AVANT L'APPEL. `true` = on peut parler.
+ *
+ * ⚠️ Un dépôt de dépense ABSENT laisse passer : une instance sans compteur doit fonctionner, et c'est le
+ * câblage, gardé par un test, qui garantit qu'il est là en production.
+ */
+async function budgetOuvert(deps: AgentSetupRouteDeps, tenantId: string): Promise<boolean> {
+  if (!deps.depenses || !deps.plafondEuros) return true;
+  return resteDuBudget(await deps.depenses.lire(tenantId, moisDe(new Date())), deps.plafondEuros) > 0;
+}
+
+/**
+ * LA DÉPENSE, NOTÉE APRÈS L'APPEL, avec le coût RÉEL.
+ *
+ * ⚠️ Une estimation avant serait fausse, et le dépassement du dernier tour est assumé : il est borné par le
+ * coût d'UN tour. Même règle que l'assistant du Meta Business Agent.
+ */
+async function noterDepense(deps: AgentSetupRouteDeps, tenantId: string, coutDollars: number): Promise<void> {
+  if (!deps.depenses) return;
+  await deps.depenses.ajouter(tenantId, moisDe(new Date()),
+    microEurosDepuisDollars(coutDollars, deps.tauxEurParDollar ?? 1));
+}
 
 /** L'avancement, tel que l'écran l'affiche. Le total est celui de l'ordre du jour EFFECTIF : un client dont
  *  l'agent n'appellera jamais d'outil ne doit pas se voir annoncer un point qui n'existera jamais pour lui. */
@@ -281,8 +331,15 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       if (!deps.completer || vision === '') {
         return reply.code(503).send({ error: 'lecture d’image indisponible sur ce serveur (aucun modèle de vision configuré) ; les documents texte, PDF et Word passent quand même' });
       }
+      if (!(await budgetOuvert(deps, ctx.tenant))) {
+        // 422 et pas 200 : ici le client attend un IMPORT, pas une phrase. Lui dire que ce n'est pas parti
+        // est le seul comportement honnête, et les documents texte, eux, continuent de passer.
+        return reply.code(422).send({ error: `${MESSAGE_PLAFOND} Les documents texte, PDF et Word passent quand même.` });
+      }
       try {
-        texte = await lireImage(deps, ctx.tenant, vision, parse.data.dataUrl, parse.data.nom);
+        const lu = await lireImage(deps, ctx.tenant, vision, parse.data.dataUrl, parse.data.nom);
+        await noterDepense(deps, ctx.tenant, lu.coutDollars);
+        texte = lu.texte;
       } catch (err) {
         return reply.code(502).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
       }
@@ -345,6 +402,26 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     // questions non négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
     const pointDuTour = prochainPoint(avant, inventaireDe(ctx.etat));
 
+    /**
+     * 🔴 LE PLAFOND EST VÉRIFIÉ AVANT L'APPEL, ET IL REND 200. Ce n'est pas une panne : c'est une limite
+     * volontaire, et l'assistant la DIT. Un 4xx afficherait un message d'infrastructure là où le client
+     * attend une phrase, et un 5xx serait remplacé par la page d'erreur de Cloudflare.
+     *
+     * ⚠️ LA FORME DE LA RÉPONSE NE CHANGE PAS : l'écran attend `message`, `couverture`, `proposition` et
+     * `changements`. Un corps amputé ferait planter le rendu sur ce qui doit être le cas le plus doux.
+     */
+    if (!(await budgetOuvert(deps, ctx.tenant))) {
+      return reply.code(200).send({
+        message: MESSAGE_PLAFOND,
+        couverture: avancement(avant, ctx.etat),
+        proposition: { fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] },
+        changements: [],
+        budgetEpuise: true,
+        ongletsUtilisables: true,
+        usage: { tokensIn: 0, tokensOut: 0 },
+      });
+    }
+
     let reponse: ReponseChat;
     try {
       reponse = await deps.completer({
@@ -364,6 +441,11 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       // et un 5xx verrait son corps remplacé par la page d'erreur de Cloudflare.
       return reply.code(502).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
     }
+
+    // ⚠️ AVANT toute sortie d'erreur : l'appel a eu lieu, donc il est payé, même si sa réponse est
+    // inexploitable. Le noter seulement sur le chemin heureux rendrait le plafond contournable par un modèle
+    // qui répond de travers.
+    await noterDepense(deps, ctx.tenant, reponse.usage.coutDollars);
 
     const appel = reponse.appelsOutils.find((a) => a.nom === OUTIL_PROPOSER);
     if (!appel) return reply.code(422).send({ error: 'l’assistant n’a pas rendu de proposition exploitable' });

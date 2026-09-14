@@ -650,13 +650,19 @@ Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `t
   `gh run view <id> --json jobs`, job par job, jamais sur le code de sortie du watch.
   ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
   de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.
-- 🔴 **QUI PAIE QUOI, ET LES TROIS NE SONT PAS SUR LA MÊME CLÉ.** La **traduction** des conversations
-  (`TRADUCTION_MODELE`, `google/gemini-2.5-flash`) tombe sur le **crédit prépayé du client** : elle passe
-  par `gateway`, celui qui porte le résolveur de clé PAR ESPACE. La **transcription** d'un vocal et le
-  **bot d'aide** de la console sont sur **notre** clé maison : le premier par décision du 2026-09-09
-  (« on le paie nous-mêmes, on verra après si je le refacture »), le second parce que facturer quelqu'un
-  pour apprendre à se servir du produit se retourne contre nous. Le bot d'aide est construit SANS
-  résolveur (`gatewayAide`, `src/index.ts`), et cet écart ne se « corrige » pas.
+- 🔴 **QUI PAIE QUOI, ET TOUT N'EST PAS SUR LA MÊME CLÉ.** La **traduction** des conversations
+  (`TRADUCTION_MODELE`, `google/gemini-2.5-flash`) et les **tours d'agent** tombent sur le **crédit prépayé
+  du client** : ils passent par `gateway`, celui qui porte le résolveur de clé PAR ESPACE. Sur **notre** clé
+  maison (`gatewayAide`, construit SANS résolveur) : la **transcription** d'un vocal (décision du 2026-09-09,
+  « on le paie nous-mêmes, on verra après si je le refacture »), le **bot d'aide** de la console, et depuis le
+  2026-09-14 les **DEUX assistants de configuration** (Meta Business Agent et agent IA) : facturer quelqu'un
+  pour apprendre à se servir du produit se retourne contre nous. Cet écart ne se « corrige » pas.
+  🔴 **ET CE QUI EST SUR NOTRE CLÉ DOIT PORTER UN PLAFOND, SANS EXCEPTION.** Sur le crédit du client, un
+  bavardage se paie tout seul ; sur le nôtre, rien ne le borne. `ASSISTANT_PLAFOND_EUROS_MOIS` (défaut 2 €)
+  est compté PAR ESPACE et PARTAGÉ par les deux assistants (`assistant_depense_mois`, migration 0146) ;
+  0 le désactive. ⚠️ Il a été câblé sur UN SEUL des deux pendant tout le chantier, alors que le commentaire
+  du câblage annonçait lui-même que « les deux moitiés vont ensemble » : relevé par la revue finale du
+  2026-09-15, gardé depuis par `tests/agent-setup-evolution.test.ts`.
   ⚠️ `TRADUCTION_MODELE` vide = traduction ÉTEINTE, et l'écran le dit avec la cause `instance` (rien à
   faire côté client) plutôt qu'en parlant d'un crédit qui n'est pas en cause.
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
