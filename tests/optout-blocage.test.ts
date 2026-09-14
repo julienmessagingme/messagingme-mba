@@ -165,7 +165,12 @@ describe('la définition de « envoyer » ne peut pas dériver', () => {
     // Les `kind` passés aux dépendances d'envoi : `this.deps.sendX(` est précédé, dans le dispatch, du test
     // `a.kind === 'sendX'`. On lit donc les noms des dépendances appelées, qui portent le même nom.
     const appels = [...src.matchAll(/this\.deps\.(send[A-Za-z]+)[?.(]/g)].map((m) => m[1]!);
-    const envoyes = new Set(appels.filter((n) => n !== 'sendEmail' || true));
+    // ⚠️ AUCUN FILTRE, ET C'EST LE POINT. Cette ligne a porté `filter((n) => n !== 'sendEmail' || true)`
+    // pendant une journée : une TAUTOLOGIE, donc un filtre qui ne filtrait rien, reste d'une hésitation sur
+    // `sendEmail`. Elle ne cachait aucun trou (`sendEmail` est bien dans `EST_UN_ENVOI`), mais un filtre qui
+    // a l'air de retirer quelque chose est pire qu'aucun filtre : le prochain lecteur se demanderait quelle
+    // exception il porte. Relevée par le relecteur du chantier complet, le 2026-09-14.
+    const envoyes = new Set(appels);
     for (const dep of envoyes) {
       expect(EST_UN_ENVOI.has(dep), `« ${dep} » fait partir un message et n’est pas dans EST_UN_ENVOI`).toBe(true);
     }

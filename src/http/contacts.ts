@@ -189,6 +189,16 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   /**
    * L'ENCADREMENT, ET PAS TOUT LE MONDE : `admin` et `manager`. La liste des désabonnés nomme des personnes
    * avec leur numéro ; c'est un artefact de conformité, pas un outil de traitement quotidien.
+   *
+   * 🔴 ET AUCUN MANAGER NE PEUT L'ATTEINDRE AUJOURD'HUI, ce que ce commentaire laissait croire. Relevé en
+   * revue du chantier complet, le 2026-09-14 : `web/components/AppShell.tsx` redirige vers `/inbox` tout
+   * compte qui n'est pas `admin`, pour TOUTE page autre que l'inbox, et le menu Sécurité ne lui est même pas
+   * rendu. Cette garde est donc la seule du dépôt à nommer `manager`, et elle est INERTE côté console.
+   *
+   * ⚠️ ELLE RESTE TELLE QUELLE, ET CE N'EST PAS UN OUBLI. « Ce qu'un manager a le droit de faire » est un
+   * arbitrage OUVERT depuis le 2026-08-20 (`todo.md`), en attente de Julien : l'ouvrir ici reviendrait à le
+   * trancher en silence, et le refermer jetterait un travail que l'arbitrage validera peut-être. Ce qui
+   * était faux, c'est de l'écrire comme une capacité livrée.
    */
   const gardeEncadrement = gardeEtendue(guard, makeRequireRole(['admin', 'manager']));
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).

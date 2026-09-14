@@ -181,7 +181,13 @@ export interface ContactDesabonne {
   desabonneLe: string | null;
   source: string | null;
 }
-/** La liste des désabonnés du centre de Sécurité. Réservée aux rôles `admin` et `manager` côté serveur. */
+/**
+ * La liste des désabonnés du centre de Sécurité.
+ *
+ * ⚠️ LA ROUTE L'OUVRE À `admin` ET `manager`, MAIS LA CONSOLE N'Y MÈNE QU'UN ADMIN : `AppShell` redirige
+ * vers l'inbox tout compte non-admin, sur toute page. La garde serveur est donc prête pour un arbitrage qui
+ * n'est pas encore rendu (`todo.md`, ouvert depuis le 2026-08-20), pas pour une capacité livrée.
+ */
 export function listeDesabonnes(tenantId: string): Promise<{ contacts: ContactDesabonne[] }> {
   return request(`/tenants/${tenantId}/contacts/desabonnes`);
 }

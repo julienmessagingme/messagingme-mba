@@ -145,7 +145,11 @@ it('mais un operateur PEUT encore repondre a la main dans l Inbox', async () => 
 - [x] Un clic de plus ouvre **la conversation dans l'Inbox**
 - [x] Le **téléchargement de la conversation entière** qui a abouti à l'opt-out
 - [x] ⚠️ **`tenant_id = $1` sur CHAQUE requête**, et le contrôle d'accès : cet écran donne des
-      conversations complètes. Réservé aux admins et managers.
+      conversations complètes. Route ouverte aux admins et aux managers.
+      🔴 **MAIS SEUL UN ADMIN Y ACCÈDE EN PRATIQUE**, relevé en revue du chantier complet le 2026-09-14 :
+      `AppShell` redirige vers l'inbox tout compte non-admin, sur toute page. La garde serveur est prête,
+      la console n'y mène pas. « Ce qu'un manager a le droit de faire » est un arbitrage ouvert (`todo.md`)
+      qui n'a pas été tranché ici.
 - [x] Tests, mutation, commit
 
 ---
