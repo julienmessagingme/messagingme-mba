@@ -74,6 +74,24 @@ export interface RunTurnDeps {
   debiterTenant?(tenantId: string, montantMicroEur: number, sessionId: string): Promise<void>;
   /** Le fil est-il encore à nous ? Absent -> considéré comme oui (suites à deps minimales). */
   mayAct?(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * Ce contact a-t-il demandé à ne plus rien recevoir ?
+   *
+   * 🔴 ELLE MANQUAIT, ET C'ÉTAIT LE TROU DU CHANTIER 6. La garde d'opt-out a été posée le 2026-09-13 dans
+   * `WorkflowExecutor.apply`, sur les actions d'envoi d'un parcours, avec cette justification dans
+   * `src/workflow/wiring.ts` : « scénario, automation et agent IA passent par cet exécuteur, ce branchement
+   * les couvre les trois ». C'était FAUX pour l'agent : sa réponse ne passe PAS par `apply`, elle part par
+   * `deps.envoyer` (`envoyerTexteAgent`, qui appelle `client.sendText` directement). Un contact désabonné
+   * continuait donc de recevoir les réponses de l'agent IA, pendant que l'écran Consentement affirmait au
+   * client le contraire. Relevé en revue du chantier complet, le 2026-09-14.
+   *
+   * ⚠️ LUE AU RANG DES PLAFONDS, DONC AVANT LE MODÈLE. La poser juste avant l'envoi aurait payé un appel
+   * dont on jette la réponse, ce que l'étape 3 existe précisément pour éviter.
+   *
+   * ⚠️ Absente -> considéré comme joignable, donc comportement d'avant. C'est un défaut PERMISSIF, tenu par
+   * le test de câblage, exactement comme `estDesabonne` sur l'exécuteur de scénario.
+   */
+  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie le texte de l'agent. MÊME dépendance que le reste du scénario, donc DRY_RUN honoré et
    *  message journalisé dans le fil. */
   envoyer(tenantId: string, waId: string, texte: string): Promise<ResultatEnvoi>;
@@ -95,7 +113,7 @@ export interface ReposApresTour {
 
 /** Ce que le tour a fait, pour le journal et les tests. Jamais une exception sur un cas métier. */
 export interface ResultatTour {
-  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'repondu' | 'sorti' | 'erreur';
+  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'repondu' | 'sorti' | 'erreur';
   sortie?: string;
   /**
    * Le repos posé sur le parcours, quand le tour s'est terminé en attente.
@@ -295,6 +313,24 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     || session.coutMicroEur >= fiche.plafonds.budgetMicroEur) {
     await cloreEtSortir(job, session.id, 'plafond', SORTIE_PLAFOND, deps);
     return { fait: 'plafond', sortie: SORTIE_PLAFOND };
+  }
+
+  /**
+   * 3bis. LE REFUS DU CONTACT, AU MÊME RANG QUE LES PLAFONDS.
+   *
+   * 🔴 LA MACHINE SE TAIT, LA PERSONNE PEUT ENCORE RÉPONDRE À LA PERSONNE. On ne clôt PAS la session et on
+   * ne sort PAS par une branche d'échec : le message du contact reste dans l'Inbox, où un opérateur le voit
+   * et peut lui répondre à la main. C'est exactement l'exemption tranchée par Julien le 2026-09-13, et la
+   * refuser ici empêcherait d'accuser réception d'un désabonnement.
+   *
+   * ⚠️ MÊME FORME QUE `mayAct` : on pose l'échéance d'inactivité et on finit le tour proprement. Sans elle,
+   * le parcours resterait en attente pour toujours sur ce bloc, et le balayage ne le ramasserait jamais.
+   */
+  if (deps.estDesabonne && await deps.estDesabonne(job.tenantId, job.waId)) {
+    const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
+    await poserEcheance(job, repos, maintenant, deps);
+    await finirLeTour(job, session.id, deps);
+    return { fait: 'desabonne', repos };
   }
 
   // 4. LE CERVEAU, sous une échéance dure. Une conversation qui pend coûte plus cher qu'une sortie propre.

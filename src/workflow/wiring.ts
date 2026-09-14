@@ -458,10 +458,21 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // (`crm`) ou coche par la personne dans un Flow (`flow`). Utile quand il faut savoir d'ou vient un opt-out.
     setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario'); },
     /**
-     * 🔴 LA GARDE D'OPT-OUT DE TOUT CE QUI EST AUTOMATIQUE. Scénario, automation et agent IA passent par
-     * cet exécuteur : ce branchement les couvre les trois. Sans lui, un contact qui a écrit STOP continuait
-     * de recevoir les messages d'un parcours, et c'est exactement le manquement que le centre de sécurité
-     * existe pour empêcher.
+     * 🔴 LA GARDE D'OPT-OUT DES ENVOIS D'UN PARCOURS. Sans elle, un contact qui a écrit STOP continuait de
+     * recevoir les messages d'un scénario ou d'une automation, et c'est exactement le manquement que le
+     * centre de sécurité existe pour empêcher.
+     *
+     * 🔴 CE COMMENTAIRE A DIT « scénario, automation ET AGENT IA passent par cet exécuteur : ce branchement
+     * les couvre les trois », ET C'ÉTAIT FAUX. Mesuré en revue du chantier complet, le 2026-09-14 : la
+     * réponse d'un agent IA ne passe PAS par `apply`, elle part par `envoyerTexteAgent` (plus bas dans ce
+     * fichier), qui appelle `client.sendText` directement. Seuls ses OUTILS y passent (`mba_envoyer_bloc`
+     * fait `walk` + `apply`). L'agent a donc sa propre garde, au rang de ses plafonds, dans
+     * `src/agent/run-turn.ts`, et elle est branchée sur le MÊME dépôt depuis `src/worker.ts`.
+     *
+     * ⚠️ La leçon vaut plus que la ligne : **une justification fausse est pire qu'aucune**, parce qu'elle
+     * fait croire qu'un inventaire a été fait. Celle-ci a survécu à une revue, à un test de câblage et à un
+     * déploiement, et c'est elle qui a fait écrire dans `features.md` et sur l'écran Consentement que
+     * l'agent IA était bloqué.
      */
     estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
     // Mesure par bloc (Analytics > Mes tableaux). L'executeur l'appelle en best-effort : une panne ici ne doit

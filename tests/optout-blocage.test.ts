@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { runTurn, type RunTurnDeps } from '../src/agent/run-turn';
+import { FakeAgentBrain } from '../src/agent/brain.fake';
+import type { FicheAgent } from '../src/agent/agent-store';
+import type { AgentTurnJob } from '../src/agent/turn-job';
 import { WorkflowExecutor, EST_UN_ENVOI } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -9,7 +13,15 @@ import type { WorkflowGraph } from '../src/workflow/graph';
  *
  * 🔴 CE QUE CE FICHIER FERME. Mesuré le 2026-09-13 : `optInAllows` n'était appelée qu'aux deux points de
  * départ des campagnes et de l'API publique. Un SCÉNARIO, une AUTOMATION ou un AGENT IA atteignaient donc
- * quelqu'un qui avait écrit STOP. Les trois passent par le même exécuteur : la garde y est posée une fois.
+ * quelqu'un qui avait écrit STOP.
+ *
+ * 🔴 ET CE FICHIER A AFFIRMÉ, PENDANT UNE JOURNÉE, QUE « LES TROIS PASSENT PAR LE MÊME EXÉCUTEUR : LA GARDE
+ * Y EST POSÉE UNE FOIS ». C'ÉTAIT FAUX POUR L'AGENT. Mesuré en revue du chantier complet, le 2026-09-14 :
+ * la réponse d'un agent IA ne passe PAS par `WorkflowExecutor.apply`, elle part par `envoyerTexteAgent`, qui
+ * appelle `client.sendText` directement. Seuls ses OUTILS passent par l'exécuteur (`mba_envoyer_bloc` fait
+ * `walk` + `apply`). Un contact désabonné continuait donc de recevoir les réponses de l'agent, pendant que
+ * l'écran Consentement affirmait au client le contraire. **La garde de l'agent vit dans `run-turn.ts`, au
+ * rang de ses plafonds, et elle a ses cas ici, en bas de ce fichier.**
  *
  * 🔴 ET LE CAS QUI PROTÈGE L'USAGE EST AUSSI IMPORTANT QUE LES AUTRES. Sans lui, un opérateur ne pourrait
  * même plus accuser réception d'un opt-out, ni répondre à une réclamation posée juste après. Bloquer
@@ -228,5 +240,104 @@ describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () =
     expect(src, 'la garde ne doit viser que l’origine machine').toMatch(/origine === 'mcp'/);
     const outils = readFileSync(new URL('../src/mcp/outils.ts', import.meta.url), 'utf8');
     expect(outils, 'l’agent doit recevoir la raison exacte, pas « fenêtre fermée »').toMatch(/contact_desabonne/);
+  });
+});
+
+/**
+ * L'AGENT IA : SA PROPRE GARDE, PARCE QU'IL A SON PROPRE CHEMIN D'ENVOI.
+ *
+ * 🔴 CES CAS MANQUAIENT, ET LEUR ABSENCE N'ÉTAIT PAS VISIBLE. Le plan de la tâche 4 listait bien
+ * « l'agent IA non plus », mais la couverture a été considérée acquise parce qu'un commentaire de câblage
+ * affirmait que l'agent passait par l'exécuteur. Personne n'a exécuté ce chemin-là. C'est le motif exact que
+ * ce dépôt paie le plus souvent : **une justification crue plutôt que mesurée**.
+ */
+describe('l’agent IA se tait devant un contact désabonné', () => {
+  const JOB: AgentTurnJob = {
+    tenantId: 't1', runId: 'r1', sessionId: 's1', workflowId: 'wf1',
+    nodeId: 'a', waId: '33600', raison: 'message', tours: 0,
+  };
+  const SESSION = {
+    id: 's1', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600',
+    tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours', ouvertLe: '2026-09-14T08:00:00.000Z',
+  };
+  const FICHE: FicheAgent = {
+    id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session', modele: 'm',
+    status: 'active', plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000 },
+    inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
+  };
+
+  function tour(over: Partial<RunTurnDeps> = {}) {
+    const envois: string[] = [];
+    const clotures: string[] = [];
+    const brain = new FakeAgentBrain({ texte: 'Bonjour', sortie: null });
+    const deps = {
+      sessions: {
+        prendreLeTour: async () => SESSION,
+        clore: async (_t: string, _id: string, status: string) => { clotures.push(status); },
+        ajouterAuTranscript: async () => {},
+        ajouterCout: async () => {},
+      },
+      brain,
+      lireRun: async () => ({ status: 'waiting', currentNode: 'a' }),
+      lireFiche: async () => FICHE,
+      envoyer: async (_t: string, _w: string, texte: string) => { envois.push(texte); },
+      ...over,
+    } as unknown as RunTurnDeps;
+    return { deps, brain, envois, clotures };
+  }
+
+  /**
+   * 🔴 LE CAS QUI MANQUAIT. Un contact écrit STOP, puis réécrit ; le parcours l'amène au bloc agent. Sans
+   * cette garde, l'agent lui répond, et le client répond d'un manquement que son écran de conformité lui
+   * dit ne pas exister.
+   */
+  it('🔴 un contact désabonné ne reçoit RIEN de l’agent', async () => {
+    const { deps, brain, envois } = tour({ estDesabonne: async () => true });
+    const r = await runTurn(JOB, deps);
+    expect(r.fait).toBe('desabonne');
+    expect(envois, 'l’agent doit se taire').toEqual([]);
+    // 🔴 ET LE MODÈLE N'EST MÊME PAS APPELÉ : payer une réponse qu'on jette serait absurde, et c'est ce que
+    // le rang des plafonds existe pour éviter.
+    expect(brain.appels, 'le modèle ne doit pas être appelé du tout').toEqual([]);
+  });
+
+  /**
+   * ⚠️ LE TÉMOIN DANS L'AUTRE SENS, et sans lui le cas précédent passerait aussi sur un tour qui n'envoie
+   * JAMAIS rien. C'est la leçon du 2026-09-13, payée sur ce fichier même.
+   */
+  it('⚠️ ...et un contact JOIGNABLE reçoit normalement', async () => {
+    const { deps, brain, envois } = tour({ estDesabonne: async () => false });
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    expect(envois).toEqual(['Bonjour']);
+    expect(brain.appels).toHaveLength(1);
+  });
+
+  /**
+   * 🔴 LA SESSION N'EST PAS CLOSE, ET C'EST L'EXEMPTION DE L'OPÉRATEUR. La machine se tait ; le message du
+   * contact reste dans l'Inbox, où un humain le voit et peut lui répondre à la main. Clore par une branche
+   * d'échec ferait sortir le parcours et effacerait ce point d'attente.
+   */
+  it('🔴 la session n’est PAS close : un opérateur peut encore répondre', async () => {
+    const { deps, clotures } = tour({ estDesabonne: async () => true });
+    await runTurn(JOB, deps);
+    expect(clotures, 'aucune clôture : le fil reste vivant pour l’humain').toEqual([]);
+  });
+
+  /**
+   * ⚠️ DÉFAUT PERMISSIF, comme sur l'exécuteur de scénario : sans la dépendance, rien ne change. C'est le
+   * test de câblage ci-dessous qui garantit qu'elle est branchée en production.
+   */
+  it('⚠️ sans la dépendance câblée, le comportement d’avant est conservé', async () => {
+    const { deps, envois } = tour();
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    expect(envois).toEqual(['Bonjour']);
+  });
+
+  it('🔴 `worker.ts` branche bien `estDesabonne` sur le tour d’agent', () => {
+    // Le câblage n'a par construction aucun dépendant : la seule question à lui poser est l'inverse,
+    // « fournit-il ce que le module attend ? ». Un grep, mais sur le bon fichier et le bon voisinage.
+    const src = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const bloc = src.slice(src.indexOf('envoyer: (t, waId, texte) => envoyerTexteAgent') - 2000, src.indexOf('envoyer: (t, waId, texte) => envoyerTexteAgent') + 200);
+    expect(bloc, 'la garde d’opt-out a disparu du câblage du tour d’agent').toMatch(/estDesabonne: \(t, waId\) => contactStore\.estDesabonneParWaId/);
   });
 });

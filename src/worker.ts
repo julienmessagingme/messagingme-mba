@@ -1630,6 +1630,18 @@ async function main(): Promise<void> {
       majRun: async (t, runId, nodeId, state) => { await runStore.setStateSiEncoreSur(t, runId, nodeId, state); },
       // Le fil est-il encore à nous ? Relu par le tour JUSTE avant l'envoi, pas seulement à son entrée.
       mayAct: async (t, waId) => (await inboxStore.getControlOwner(t, waId)) === 'app_workflow',
+      /**
+       * 🔴 LA GARDE D OPT-OUT DE L AGENT IA, QUI MANQUAIT. Elle a ete posee le 2026-09-13 sur
+       * `WorkflowExecutor.apply`, avec la justification « scenario, automation et agent IA passent par cet
+       * executeur ». C etait FAUX pour l agent : sa reponse part par `envoyerTexteAgent`, qui appelle
+       * `client.sendText` directement. Un contact desabonne recevait donc encore les reponses de l agent,
+       * pendant que l ecran Consentement affirmait le contraire au client. Trouve en revue du chantier
+       * complet, le 2026-09-14.
+       *
+       * ⚠️ LA MEME dependance que l executeur de scenario, sur le MEME depot : deux lectures differentes du
+       * meme fait finiraient par ne plus dire la meme chose.
+       */
+      estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
       envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),
       mesurer: ({ tenantId, workflowId, nodeId, waId, kind }) =>
         nodeEventStore.record({ tenantId, workflowId, nodeId, waId, kind }),
