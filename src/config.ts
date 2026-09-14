@@ -437,14 +437,37 @@ export const schema = z.object({
   HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS: z.coerce.number().default(10 * 60 * 1000),
   /** Cadence du sweep d'auto-relance des échecs (F6). 15 min : assez fin pour la fenêtre matinale des 131049. */
   AUTO_RETRY_SWEEP_INTERVAL_MS: z.coerce.number().default(15 * 60 * 1000),
-  /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR revient au scénario. 2 h : assez long pour
+  /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR lui est repris. 2 h : assez long pour
    *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
    *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre
-   *  seule soupape. 0 désactive la reprise (le contrôle reste alors humain indéfiniment, à vos risques). */
+   *  seule soupape. 0 désactive la reprise (le contrôle reste alors humain indéfiniment, à vos risques).
+   *  ⚠️ IL REVIENT À L'AGENT DE META quand le client l'a allumé, au scénario sinon. Ce commentaire disait
+   *  « revient au scénario » tout court, ce qui est faux depuis que le balayage choisit sa destination.
+   *  ⚠️ Réglable PAR CLIENT (`tenant_settings`), contrairement aux deux délais ci-dessous. */
   CONTROL_HUMAN_TIMEOUT_MS: z.coerce.number().default(2 * 60 * 60 * 1000),
   /** Idem pour un fil tenu par MBA. Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte
    *  qu'en cas de silence anormal. */
   CONTROL_MBA_TIMEOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
+  /**
+   * Inactivité au bout de laquelle un fil tenu par un SCÉNARIO revient à l'agent de Meta. 24 h.
+   *
+   * 🔴 C'EST LA SOUPAPE DU GESTE `take`, AJOUTÉE LE 2026-09-14 AVEC LUI. Tant qu'un scénario n'écrivait que
+   * notre colonne, Meta gardait le fil et son agent reprenait la main tout seul ; c'était d'ailleurs le
+   * bug que `take` répare. Depuis qu'on prend le fil pour de vrai, un parcours abandonné (le contact ne
+   * répond jamais, le run reste `waiting`) le garderait à jamais, et l'agent de Meta ne répondrait plus
+   * jamais sur cette conversation. La fin NORMALE d'un parcours le rend déjà (`releaseToMba`) : ce délai ne
+   * couvre que les parcours qui ne finissent pas.
+   *
+   * ⚠️ FIXE, JAMAIS RÉGLABLE PAR CLIENT (tranché par Julien le 2026-09-14), contrairement au délai humain.
+   * C'est un garde-fou technique et non un arbitrage métier : personne ne sait répondre à « combien de
+   * temps mon scénario doit-il garder le fil ». Et c'est ce qui permet de le filtrer EN SQL, donc de ne pas
+   * saturer le lot du balayage avec des conversations saines.
+   *
+   * ⚠️ 24 h ET PAS 2 h comme l'humain : un scénario attend légitimement longtemps (une relance le
+   * lendemain). Le couper à deux heures rendrait le fil à l'agent de Meta, qui répondrait à la place du
+   * bloc suivant. 0 désactive la reprise.
+   */
+  CONTROL_WORKFLOW_TIMEOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
   /** Anti-rebond par défaut d'une automation (Lot E) : délai minimum entre deux déclenchements de la MÊME
    *  automation pour le MÊME contact, quand le client n'a rien réglé. 1 h : assez long pour absorber un client
    *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une

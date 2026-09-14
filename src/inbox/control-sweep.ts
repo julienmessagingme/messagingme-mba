@@ -2,8 +2,14 @@ import type { ControlOwner } from './store.pg';
 
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
+  /**
+   * Les conversations dont le fil est détenu. `ageScenarioMs` borne ce qu'on ramène des fils tenus par un
+   * SCÉNARIO : seuls les plus vieux que ce délai entrent, parce que `app_workflow` est l'état normal de
+   * toute conversation et que les ramener tous saturerait le lot au détriment des fils humains à rendre.
+   */
   listHeldControl(
     limit?: number,
+    ageScenarioMs?: number,
   ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>>;
   setControlOwner(
     tenantId: string,
@@ -53,10 +59,17 @@ export interface ControlSweepDeps {
 export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   const now = deps.now ?? (() => Date.now());
 
-  // Le lot ramène TOUTES les conversations détenues, sans filtre d'âge : le délai humain est réglable par
-  // client et peut être plus court que le défaut du serveur, donc un filtre SQL basé sur le défaut
-  // raterait silencieusement les conversations des clients pressés.
-  const held = await deps.listHeldControl();
+  // Le lot ramène toutes les conversations tenues par un HUMAIN ou par l'agent de Meta sans aucun filtre
+  // d'âge : ces délais-là sont réglables par client et peuvent être plus courts que le défaut du serveur,
+  // donc un filtre SQL basé sur le défaut raterait silencieusement les conversations des clients pressés.
+  //
+  // ⚠️ LES FILS DE SCÉNARIO, EUX, SONT FILTRÉS PAR ÂGE EN SQL, et l'écart est voulu : leur délai est FIXE,
+  // donc il peut voyager jusqu'à la requête. Sans ce filtre, `app_workflow` étant l'état NORMAL de toute
+  // conversation, le lot serait saturé de fils parfaitement sains et les fils humains à rendre, plus
+  // anciens, ne seraient jamais atteints.
+  // Le délai des fils de scénario est FIXE (jamais réglable par client), donc il peut voyager jusqu'au SQL
+  // et y borner ce qu'on ramène. 0 ou absent = on n'en ramène aucun, c'est-à-dire le comportement d'avant.
+  const held = await deps.listHeldControl(undefined, deps.timeouts.app_workflow ?? 0);
   if (held.length === 0) return 0;
 
   // Un seul aller-retour pour tous les clients du lot, au lieu d'une requête par conversation.
@@ -83,7 +96,17 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // qui reprend la main juste à cet instant), la garde refuse et on ne détruit pas un contrôle tout neuf.
     // Destination : l'agent de Meta quand il est allumé chez ce client, le scénario sinon. Rien à arbitrer, la
     // règle se déduit de l'état du compte, ce qui est tout l'objet de la suppression du réglage de reprise.
-    const versMba = c.owner === 'app_human' && avecMba.has(c.tenantId);
+    /**
+     * 🔴 `app_workflow` REND AUSSI LA MAIN DEPUIS LE 2026-09-14, et c'est la soupape du geste `take`.
+     * Avant, un scénario n'écrivait que notre colonne et Meta gardait le fil : son agent reprenait tout
+     * seul. Depuis qu'on le prend pour de vrai, un parcours abandonné (le contact ne répond jamais, le run
+     * reste `waiting`) garderait le fil à jamais.
+     *
+     * ⚠️ Sans MBA chez ce client, la destination vaut `app_workflow`, donc la valeur que la conversation
+     * porte déjà : `setControlOwner` refuse une écriture qui ne change rien, la boucle passe au suivant, et
+     * rien ne bouge. Ce cas est inoffensif par construction, pas par précaution.
+     */
+    const versMba = (c.owner === 'app_human' || c.owner === 'app_workflow') && avecMba.has(c.tenantId);
     const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
     if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
     rendues += 1;

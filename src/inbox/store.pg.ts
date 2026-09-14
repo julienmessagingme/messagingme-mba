@@ -457,14 +457,42 @@ export class PgInboxStore implements InboxStore {
    */
   async listHeldControl(
     limit = 500,
+    ageScenarioMs = 0,
   ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>> {
+    /**
+     * 🔴 LES FILS TENUS PAR UN SCÉNARIO ENTRENT ICI DEPUIS LE 2026-09-14, ET SEULEMENT LES VIEUX.
+     *
+     * Ils en étaient exclus (`control_owner <> 'app_workflow'`), ce qui était sans conséquence tant que
+     * `reclaimControl` n'écrivait que notre colonne : Meta gardait le fil, son agent reprenait la main tout
+     * seul. Depuis qu'on le prend POUR DE VRAI (`thread_control` action `take`), un parcours abandonné le
+     * garderait à jamais et l'agent de Meta ne répondrait plus jamais sur cette conversation.
+     *
+     * 🔴 ET LE FILTRE D'ÂGE EST EN SQL ICI, ALORS QUE LE DÉLAI HUMAIN N'Y EST PAS. Ce n'est pas une
+     * incohérence, c'est ce que le choix « délai FIXE » autorise (tranché par Julien le 2026-09-14) : le
+     * délai humain est réglable PAR CLIENT et peut être plus court que le défaut du serveur, donc un filtre
+     * SQL raterait silencieusement les conversations des clients pressés. Celui du scénario ne se règle pas,
+     * donc il se filtre.
+     *
+     * ⚠️ SANS CE FILTRE, LE BALAYAGE HUMAIN CESSERAIT DE FONCTIONNER. `app_workflow` est l'état NORMAL de
+     * toute conversation : les ramener toutes saturerait le lot de 500 avec des fils parfaitement sains, et
+     * les `app_human` à rendre, plus anciens, ne seraient jamais atteints. La régression serait invisible,
+     * puisque le balayage continuerait de tourner et de ne rien trouver.
+     *
+     * ⚠️ `control_changed_at is null` reste EXCLU, et c'est voulu : c'est la marque d'une conversation qui
+     * n'a JAMAIS basculé, donc d'un fil que personne n'a pris. Il n'y a rien à rendre.
+     */
     const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null }>(
       `select tenant_id, wa_id, control_owner, control_changed_at
        from conversations
        where control_owner <> 'app_workflow'
+          or (
+            $2::bigint > 0
+            and control_changed_at is not null
+            and control_changed_at < now() - make_interval(secs => $2::bigint / 1000.0)
+          )
        order by control_changed_at nulls first
        limit $1`,
-      [limit],
+      [limit, Math.max(0, Math.floor(ageScenarioMs))],
     );
     return res.rows.map((r) => ({
       tenantId: r.tenant_id,

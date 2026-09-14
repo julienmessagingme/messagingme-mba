@@ -1151,7 +1151,7 @@ async function main(): Promise<void> {
         listHeldControl: (limit) => inboxStore.listHeldControl(limit),
         setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
         // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
-        timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS },
+        timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS, app_workflow: config.CONTROL_WORKFLOW_TIMEOUT_MS },
         // Réglage par client du gel humain : c'est lui qui décide combien de temps on laisse un
         // opérateur travailler tranquille avant que la conversation reparte.
         handbackMsByTenant: (ids) => settingsStore.handbackMsByTenant(ids),
