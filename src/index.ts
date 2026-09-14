@@ -122,7 +122,6 @@ import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { PgTestRunStore } from './agent/test-runs.pg';
-import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';

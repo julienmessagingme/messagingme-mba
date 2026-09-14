@@ -1,0 +1,9 @@
+{
+  "//": "Même contrôle que le tsconfig.prod.json de la racine, côté console. Il ne couvre que le code rendu : app, components, lib. Cf. les commentaires de celui de la racine.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": true,
+    "noUnusedParameters": false
+  },
+  "include": ["app", "components", "lib", "next-env.d.ts", ".next/types/**/*.ts"]
+}

@@ -1,0 +1,20 @@
+{
+  "//": [
+    "LE CONTRÔLE DES SYMBOLES MORTS, CIBLÉ SUR LE CODE DE PRODUCTION.",
+    "",
+    "🔴 IL EXISTE PARCE QUE RIEN NE L'ATTRAPAIT : ni ce tsconfig ni celui de web/ n'activaient",
+    "`noUnusedLocals`, et aucun des symboles morts mesurés le 2026-09-14 ne faisait échouer un build.",
+    "Trois d'entre eux MENTAIENT, ce qui est le vrai coût : un composant importé jamais rendu, un schéma",
+    "Zod dont un long commentaire décrivait une garde qui ne s'appliquait à aucun appel, et des imports",
+    "qui laissaient croire à des dépendances inexistantes.",
+    "",
+    "⚠️ IL NE COUVRE QUE `src` : les tests et les scripts en portent une douzaine, historiques, dont le",
+    "nettoyage n'apprendrait rien et rendrait la suite rouge sans rapport avec le code qui tourne."
+  ],
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": true,
+    "noUnusedParameters": false
+  },
+  "include": ["src"]
+}

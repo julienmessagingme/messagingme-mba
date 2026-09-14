@@ -7,26 +7,20 @@ import type { Session } from '@/lib/session';
 import {
   listContacts,
   queryContacts,
-  updateContact,
   listUserFields,
-  createUserField,
   listTags,
-  contactIdentity,
   bulkContactAction,
   deleteContacts,
   createContact,
   type Contact,
   type UserFieldDef,
-  type UserFieldKind,
   type ContactFilters,
   type BulkTarget,
   type BulkAction,
 } from '@/lib/api';
 import { filtersActive } from '@/lib/contact-filters';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
-import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
-import { useT, useLocale } from '@/lib/i18n';
-import { formatDate } from '@/lib/day';
+import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { fieldValue } from '@/lib/fields';
 import { ContactDetail, OPT_IN_LABEL } from '@/components/ContactDetail';

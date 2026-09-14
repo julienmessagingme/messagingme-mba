@@ -214,7 +214,7 @@ export function deactivateRcsChannel(tenantId: string): Promise<{ active: false 
 // Modèle du message RCS : dans `./rcs-types`, module PUR, pour que la bascule TEXTE/CARTE (`./rcs`) soit
 // testable depuis la suite racine sans tirer `window`. Ré-exporté ici : les écrans l'importent toujours d'`api`.
 export type { RcsSuggestion, RcsCard, RcsOutbound } from '../rcs-types';
-import type { RcsSuggestion, RcsOutbound } from '../rcs-types';
+import type { RcsOutbound } from '../rcs-types';
 
 export interface RcsMessage {
   id: string;

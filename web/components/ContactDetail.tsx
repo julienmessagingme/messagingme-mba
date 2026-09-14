@@ -10,9 +10,7 @@
  */
 import { useState } from 'react';
 import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
-import { MbaTabs } from '@/components/MbaTabs';
 import { useT, useLocale } from '@/lib/i18n';
-import { inputCls } from '@/lib/ui';
 import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
 import { formatDate } from '@/lib/day';
 import { verdictWhatsApp, type Verdict } from '@/lib/joignabilite';

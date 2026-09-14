@@ -15,8 +15,7 @@ import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 import { BAIL_SECONDES, type CampaignRunLock } from './run-lock';
 import { TokenInvalidError } from '../meta/credentials';
-import type { OutboundCarouselCard } from '../meta/template-components';
-import type { Campaign, GuardrailThresholds, RunReport } from './types';
+import type { Campaign, RunReport } from './types';
 import type { CampaignSender } from './sender';
 
 /**

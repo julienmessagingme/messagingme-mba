@@ -5,7 +5,6 @@ import type { AgentResume } from '@/lib/api-agent';
 import { useT } from '@/lib/i18n';
 import { MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
-import { isCampaignEligible } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonsDepuisNode } from '@/lib/rcs-boutons';

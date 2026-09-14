@@ -1,5 +1,5 @@
 import type { HttpTransport, RetryOpts } from './http';
-import { withRetry, RateLimiter, type PorteDeDebit, parseRetryAfter } from './http';
+import { withRetry, type PorteDeDebit, parseRetryAfter } from './http';
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import { messagingTarget } from './types';

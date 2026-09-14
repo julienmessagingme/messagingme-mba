@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useT, useLocale } from '@/lib/i18n';
 import { Logo } from '@/components/Logo';
 import { inputCls } from '@/lib/ui';
-import { demanderAide, demanderRecap, type ReponseAide } from '@/lib/api-aide';
+import { demanderAide, demanderRecap } from '@/lib/api-aide';
 import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib/aide-fil';
 
 /**

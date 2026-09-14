@@ -5,7 +5,6 @@ import type { Guard } from '../auth/middleware';
 import type { OutilComplet, PatchOutil } from '../agent/catalog';
 import { NomOutilDejaPris } from '../agent/catalog';
 import { OUTILS_MAISON, outilExpose, outilMaison, paramsInitiaux, type OutilExpose } from '../agent/outils-maison';
-import { CHAMPS_CONTACT_AUTORISES } from '../agent/champs-contact';
 import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
 import { scopeTenant, estUuid } from './scope';
@@ -83,25 +82,6 @@ const patchSchema = z.object({
   enums: z.record(z.string(), z.array(z.string().trim().min(1).max(120)).max(50)).optional(),
 });
 const drapeauSchema = z.object({ valeur: z.boolean() });
-
-/**
- * Un paramètre d'outil de connecteur.
- *
- * 🔴 `contactPath` est une liste FERMÉE (`src/agent/champs-contact.ts`). Un chemin libre ferait dériver un
- * paramètre de n'importe quelle clé de la projection du contact, y compris d'une qu'on y ajouterait plus
- * tard pour tout autre chose. Et c'est ce champ qui empêche le modèle de désigner la ressource d'un autre :
- * `wa_id` vient du tour, authentifié par la signature du webhook Meta.
- */
-const paramConnecteurSchema = z.object({
-  name: z.string().trim().regex(/^[a-z0-9_]{1,64}$/),
-  type: z.enum(['string', 'number', 'integer', 'boolean']),
-  source: z.enum(['modele', 'contact', 'fixe']),
-  description: TEXTE(500).optional(),
-  required: z.boolean().optional(),
-  enum: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
-  contactPath: z.enum(CHAMPS_CONTACT_AUTORISES).optional(),
-  value: z.union([z.string().max(200), z.number(), z.boolean()]).optional(),
-});
 
 /**
  * Brancher une REQUÊTE de la bibliothèque sur cet agent (migration 0105).
