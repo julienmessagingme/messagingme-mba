@@ -23,6 +23,8 @@ import { registerAgentTools } from './http/agent-tools';
 import { registerAgentCatalogue } from './http/agent-catalogue';
 import { registerMbaPublication } from './http/mba-publication';
 import { registerMbaAssistant } from './http/mba-assistant';
+import { registerHistorique } from './http/historique';
+import type { HistoriqueRouteDeps } from './http/historique';
 import type { MbaAssistantDeps } from './http/mba-assistant';
 import type { MbaPublicationDeps } from './http/mba-publication';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
@@ -176,6 +178,8 @@ export interface ServerDeps {
   mbaPublication?: MbaPublicationDeps;
   /** L'assistant conversationnel du Meta Business Agent. Absent -> la route n'existe pas. */
   mbaAssistant?: MbaAssistantDeps;
+  /** L'historique des réglages, partagé par le MBA et les agents IA. */
+  historique?: HistoriqueRouteDeps;
   agentSources?: AgentSourcesRouteDeps;
   agentRequetes?: AgentRequetesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
@@ -436,6 +440,9 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     // le formulaire, sinon elle devient un contournement du contrôle d'accès. La route repose la garde
     // elle-même (`forbidNonAdmin`), les deux étant voulues : celle-ci monte, celle-là explique.
     entree('mbaAssistant', 'tenant', deps.mbaAssistant, (app, d, g) => registerMbaAssistant(app, d, g.admin)),
+    // ⚠️ ADMIN comme ce qu'il journalise : ce journal porte le CONTENU des éléments supprimés, un accès plus
+    // large que les écritures qu'il décrit serait une fuite.
+    entree('historique', 'tenant', deps.historique, (app, d, g) => registerHistorique(app, d, g.admin)),
     entree('agentSources', 'tenant', deps.agentSources, (app, d, g) => registerAgentSources(app, d, g.admin)),
     // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
     // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.

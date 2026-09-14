@@ -1240,7 +1240,18 @@ async function main(): Promise<void> {
         }),
       },
     } : {}),
+    historique: { historique: historiqueStore },
     mba: {
+      /**
+       * ⚠️ SEULES LES SUPPRESSIONS SONT JOURNALISÉES DEPUIS LES ONGLETS, pas encore les créations ni les
+       * modifications. Ce n'est pas un oubli mais un ordre de priorité : chez Meta une suppression est
+       * DÉFINITIVE, et cette ligne en est le seul exemplaire ; une création ratée se refait.
+       */
+      journaliserSuppression: (tenant, l) => historiqueStore.ecrire(tenant, {
+        surface: 'mba', surfaceId: null, element: l.element, operation: 'suppression',
+        cible: l.cible, libelle: l.libelle, avant: l.avant, apres: null,
+        origine: 'formulaire', acteurEmail: null, acteurId: l.acteurId,
+      }),
       clientFor: (tenant) => metaFactory.mbaClientForTenant(tenant),
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       fetchUrl: fetchUrlBorne(),

@@ -9,6 +9,7 @@ import { getAccountStatus } from '@/lib/api';
 import { getMbaStatus, type MbaSettings, type MbaStatus } from '@/lib/api-mba';
 import { MbaTabs } from '@/components/MbaTabs';
 import { MbaAssistantPanel } from '@/components/MbaAssistantPanel';
+import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { MbaNotice } from '@/components/MbaNotice';
 import { MbaGateBanner } from '@/components/MbaGateBanner';
 import { MbaOverviewPanel } from '@/components/MbaOverviewPanel';
@@ -37,7 +38,7 @@ export default function MbaSettingsPage() {
 
 // ⚠️ « assistant » EN DEUXIÈME, après l'aperçu : un onglet parmi les autres (décision de Julien), pas la
 // porte d'entrée. En faire le premier déplacerait les repères de ceux qui utilisent déjà l'écran.
-const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test'] as const;
+const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'fichiers', 'sites', 'historique', 'test'] as const;
 type Onglet = (typeof ONGLETS)[number];
 
 function lireOnglet(v: string | null): Onglet {
@@ -131,6 +132,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
           { key: 'competences', label: t('Compétences', 'Skills') },
           { key: 'fichiers', label: t('Fichiers', 'Files') },
           { key: 'sites', label: t('Sites web', 'Websites') },
+          { key: 'historique', label: t('Historique', 'History') },
           { key: 'test', label: t('Tester', 'Test') },
         ]}
       />
@@ -143,6 +145,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
       {onglet === 'competences' && <MbaSkillsPanel {...props} />}
       {onglet === 'fichiers' && <MbaFilesPanel {...props} />}
       {onglet === 'sites' && <MbaWebsitesPanel {...props} />}
+      {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="mba" />}
       {onglet === 'test' && <MbaTestPanel {...props} />}
     </>,
   );
