@@ -28,6 +28,15 @@ export interface OpsRouteDeps {
    */
   usage?: { compteurs(): unknown[] };
   /**
+   * POSE OU RETIRE LE VERROU D'UN ESPACE (`tenants.status`). Rend `false` si l'espace est inconnu.
+   *
+   * 🔴 IL N'EXISTAIT AUCUN MOYEN DE POSER CE VERROU (mesuré le 2026-09-14) : il était lu par la garde de
+   * session, et écrit par personne. Aucune route, aucun script, aucun écran. Un interrupteur sans bouton.
+   *
+   * ⚠️ Optionnel : une instance qui ne l'a pas câblé répond 503 plutôt que de laisser croire au geste.
+   */
+  verrouillerEspace?(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
+  /**
    * Ouvre une session d'OBSERVATION dans l'espace d'un client : rend un jeton de session en LECTURE SEULE.
    *
    * Optionnelle : absente, la route n'est pas montée. C'est volontaire : une instance qui n'a pas
@@ -99,7 +108,7 @@ export interface OpsRouteDeps {
 }
 
 /**
- * Monte `/ops/overview`, `/ops/usage`, `/ops/dlq`, `/ops/observe` et `/ops/credits`. ⚠️ Cette liste a
+ * Monte `/ops/overview`, `/ops/usage`, `/ops/verrou`, `/ops/dlq`, `/ops/observe` et `/ops/credits`. ⚠️ Cette liste a
  * vécu incomplète (elle ignorait `/ops/dlq`) : une énumération écrite à la main dérive au premier ajout,
  * et celle-ci décrit une surface d'exploitation, donc ce qu'un porteur du jeton peut atteindre.
  * Protégé par `x-ops-token` == `opsToken`
@@ -110,8 +119,10 @@ export interface OpsRouteDeps {
  *  n'existe aucune route de débit pour la rattraper. */
 const MAX_RECHARGE_MICRO_EUR = 1_000_000_000;
 
-/** Longueur minimale de la note d'un rechargement. Trois caractères ne prouvent rien, mais ils empêchent le
- *  champ d'être rempli par un espace pour passer la garde. */
+/** Longueur minimale de la note d'une écriture d'exploitation : rechargement de crédit ET verrou d'espace.
+ *  Trois caractères ne prouvent rien, mais ils empêchent le champ d'être rempli par un espace pour passer
+ *  la garde. ⚠️ Elle sert désormais à DEUX routes : la nommer « note d'un rechargement » était vrai le jour
+ *  où elle a été écrite, et faux dès la seconde. */
 const MIN_NOTE = 3;
 
 /** Plafond d'un rejeu en une fois. Rejouer mille traitements d'un coup sur une cause non corrigée, c'est
@@ -148,6 +159,33 @@ export function registerOps(
    */
   app.get('/ops/usage', guard, async (_req, reply) => {
     return reply.code(200).send({ compteurs: deps.usage ? deps.usage.compteurs() : [] });
+  });
+
+  /**
+   * L'ARRÊT D'URGENCE D'UN ESPACE (plan du 2026-09-14, tâche 7).
+   *
+   * 🔴 CE QU'IL FERME, ET CE QU'IL NE FERME PAS. Il ferme les PORTES : la console (garde de session) et
+   * l'API publique (garde de clé, `/v1` et `/mcp`). Il n'arrête PAS les campagnes déjà enfilées, qui sont
+   * du travail EN VOL dans le worker. Le runbook de `DEPLOY.md` dit comment les mettre en pause : sans
+   * cela, on croit avoir coupé et les messages continuent de partir.
+   *
+   * ⚠️ LA NOTE EST EXIGÉE, comme sur le rechargement de crédit : une écriture d'exploitation sans trace de
+   * qui l'a faite et pourquoi ne se relit pas six mois plus tard.
+   */
+  app.post('/ops/verrou/:tenantId', guard, async (req, reply) => {
+    if (!deps.verrouillerEspace) return reply.code(503).send({ error: 'verrou non disponible sur cette instance' });
+    const { tenantId } = req.params as { tenantId: string };
+    if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
+    const corps = (req.body ?? {}) as { verrouille?: unknown; note?: unknown };
+    if (typeof corps.verrouille !== 'boolean') return reply.code(400).send({ error: 'verrouille (booléen) requis' });
+    const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui verrouille, et pourquoi' });
+
+    const fait = await deps.verrouillerEspace(tenantId, corps.verrouille, note);
+    if (!fait) return reply.code(404).send({ error: 'espace inconnu' });
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_verrou_espace', tenantId, verrouille: corps.verrouille, note, at: new Date().toISOString() }));
+    return reply.code(200).send({ tenantId, verrouille: corps.verrouille });
   });
 
   app.get('/ops/overview', guard, async (_req, reply) => {

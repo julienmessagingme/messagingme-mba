@@ -2062,6 +2062,18 @@ async function main(): Promise<void> {
       },
     },
     ops: {
+      /**
+       * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE. Il ferme la console ET l'API publique (`/v1`, `/mcp`) ; il
+       * n'arrête PAS les campagnes déjà enfilées, cf. le runbook de `DEPLOY.md`.
+       *
+       * ⚠️ LA NOTE EST JOURNALISÉE ICI EN PLUS DE LA ROUTE : c'est la seule trace durable du POURQUOI, et
+       * une écriture d'exploitation sans motif ne se relit pas six mois plus tard.
+       */
+      verrouillerEspace: async (tenantId, verrouille, note) => {
+        const fait = await opsStore.verrouillerEspace(tenantId, verrouille);
+        if (fait) app.log.warn({ tenantId, verrouille, note }, 'ops_verrou_espace');
+        return fait;
+      },
       getTenantOverview: () => opsStore.getTenantOverview(),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),

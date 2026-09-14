@@ -148,6 +148,22 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
     // Elle a été résolue : elle ne sert pas à sonder. Le lookup reste fait à chaque appel, donc une
     // révocation prend effet tout de suite.
     connues.retenir(empreinte);
+    /**
+     * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE, ÉTENDU À LA SURFACE PUBLIQUE (tranché par Julien le 2026-09-14).
+     * `tenants.status = 'locked'` était lu par la garde de SESSION et par elle seule : un espace suspendu
+     * gardait donc `/v1` et `/mcp`, c'est-à-dire les deux portes par lesquelles des messages partent.
+     *
+     * ⚠️ 403 ET NON 401 : la clé est bonne, c'est l'espace qui est suspendu. Un 401 enverrait
+     * l'intégrateur régénérer une clé parfaitement valide. Le code `tenant_locked` est le même que celui
+     * de la console, pour qu'un client n'ait pas deux vocabulaires à connaître.
+     *
+     * ⚠️ ON NE BLOQUE QUE SUR `locked` EXPLICITE : bloquer sur « tout ce qui n'est pas active » fermerait
+     * l'API de tous les espaces le jour où un statut est ajouté.
+     */
+    if (found.tenantStatus === 'locked') {
+      await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
+      return;
+    }
     // Séquence en-têtes + 429 partagée avec les deux plafonds de `middleware.ts` : elle vit dans
     // `rate-limit.ts`, elle ne se recopie pas (c'en était la troisième copie).
     if (!(await consommerAvecEntetes(limiteurMetier, found.id, reply, 'trop de requêtes'))) return;

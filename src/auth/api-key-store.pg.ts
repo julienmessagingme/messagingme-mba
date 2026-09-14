@@ -13,7 +13,17 @@ export interface ApiKeyRow {
 
 /** Ce que le preHandler /v1 a besoin de résoudre pour authentifier une requête (interface étroite). */
 export interface ApiKeyLookup {
-  findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[] } | null>;
+  /**
+   * Résout une clé par son empreinte. `tenantStatus` porte le statut de l'ESPACE (`tenants.status`).
+   *
+   * 🔴 IL VOYAGE AVEC LE LOOKUP, PAS DANS UNE SECONDE REQUÊTE, et c'est ce qui rend l'arrêt d'urgence
+   * gratuit sur le chemin chaud : la jointure coûte le même aller-retour. Une requête de plus par appel
+   * d'API aurait été payée par tous les clients, tous les jours, pour un verrou qui ne sert presque jamais.
+   *
+   * ⚠️ OPTIONNEL DANS LE TYPE : les faux de tests ne le posent pas, et un statut absent doit PASSER. On ne
+   * bloque que sur `locked` explicite, comme la garde de session.
+   */
+  findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[]; tenantStatus?: string } | null>;
   touchLastUsed(id: string): Promise<void>;
 }
 
@@ -38,13 +48,21 @@ export class PgApiKeyStore implements ApiKeyLookup {
     return { id: res.rows[0]!.id, key };
   }
 
-  async findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[] } | null> {
-    const res = await this.pool.query<{ id: string; tenant_id: string; scopes: string[] }>(
-      `select id, tenant_id, scopes from api_keys where key_hash = $1 and revoked_at is null limit 1`,
+  async findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[]; tenantStatus?: string } | null> {
+    // ⚠️ LA JOINTURE NE COÛTE PAS UN ALLER-RETOUR DE PLUS : c'est tout l'intérêt de faire voyager le statut
+    // avec le lookup plutôt que de le lire à part. `tenants.id` est la clé primaire.
+    const res = await this.pool.query<{ id: string; tenant_id: string; scopes: string[]; tenant_status: string | null }>(
+      `select k.id, k.tenant_id, k.scopes, t.status as tenant_status
+         from api_keys k join tenants t on t.id = k.tenant_id
+        where k.key_hash = $1 and k.revoked_at is null limit 1`,
       [hash],
     );
     const r = res.rows[0];
-    return r ? { id: r.id, tenantId: r.tenant_id, scopes: r.scopes ?? [] } : null;
+    if (!r) return null;
+    return {
+      id: r.id, tenantId: r.tenant_id, scopes: r.scopes ?? [],
+      ...(r.tenant_status === null ? {} : { tenantStatus: r.tenant_status }),
+    };
   }
 
   async touchLastUsed(id: string): Promise<void> {

@@ -954,6 +954,11 @@ gelé.
 
 ### Surveillance
 
+`/ops/verrou/:tenantId` (jeton d'exploitation, POST, note obligatoire) : pose ou retire le verrou d'un
+espace (`tenants.status`). Il ferme la console ET l'API publique (`/v1`, `/mcp` rendent 403
+`tenant_locked`). 🔴 Il n'arrête PAS les campagnes déjà enfilées : la séquence complète (verrouiller,
+lister les campagnes en cours, les mettre en pause) est dans le runbook de `DEPLOY.md`.
+
 `/ops/usage` (jeton d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
 par opération, avec le TRAVAIL demandé (un lot de 500 contacts y compte 500, pas 1). En mémoire du process
 qui sert la requête, jamais en base : une ligne SQL par appel ferait amplifier par la journalisation la

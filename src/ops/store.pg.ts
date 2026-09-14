@@ -127,6 +127,24 @@ export class PgOpsStore {
     return res.rows[0]?.name ?? null;
   }
 
+  /**
+   * POSE OU RETIRE LE VERROU D'UN ESPACE. Rend `false` si l'espace n'existe pas.
+   *
+   * 🔴 `locked` ET `active`, PAS AUTRE CHOSE : la colonne porte un CHECK (`trial`, `active`, `locked`,
+   * migration 0026), et déverrouiller vers `trial` ferait retomber un client payant dans un statut d'essai
+   * dont personne ne saurait d'où il vient. `active` est le seul retour sûr.
+   *
+   * ⚠️ CE VERROU FERME LES PORTES, PAS LE TRAVAIL EN VOL : les campagnes déjà enfilées continuent. Le
+   * runbook de `DEPLOY.md` dit comment les mettre en pause, et c'est la moitié de la procédure.
+   */
+  async verrouillerEspace(tenantId: string, verrouille: boolean): Promise<boolean> {
+    const res = await this.pool.query(
+      `update tenants set status = $2 where id = $1`,
+      [tenantId, verrouille ? 'locked' : 'active'],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async getTenantOverview(): Promise<TenantOverviewRow[]> {
     const res = await this.pool.query<{
       id: string; name: string; created_at: Date; mba_enabled: boolean;
