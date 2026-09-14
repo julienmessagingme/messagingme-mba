@@ -273,7 +273,7 @@ test('dix variables ne font pas deborder l ecran en 13 pouces', async ({ page })
     await page.getByTestId(`variable-1-${i}`).selectOption('literal');
   }
   await pasDeDebordement(page);
-  await pasDeChevauchement(page, ['etage-1', 'bloc-devenir']);
+  await pasDeChevauchement(page, ['etage-1']);
 
   /**
    * 🔴 UN CONTRÔLE DE DÉGÂT NE REMPLACE PAS UN CONTRÔLE DE DISPOSITION (leçon du lot 4). Trois cadres

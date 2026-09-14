@@ -45,7 +45,7 @@ const USERS = [
 
 async function monter(
   page: Page,
-  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean; sansCanal?: boolean } = {},
+  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean; sansCanal?: boolean; mbaEnabled?: boolean } = {},
 ): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -53,7 +53,7 @@ async function monter(
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (chemin.endsWith('/settings')) {
       return json({
-        controlHandbackSeconds: null, mbaHandoffMode: null, mbaEnabled: true, rcsEnabled: true,
+        controlHandbackSeconds: null, mbaHandoffMode: null, mbaEnabled: sur.mbaEnabled ?? true, rcsEnabled: true,
         hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: true,
         timezone: 'Europe/Paris', businessHours: {},
       });
@@ -125,9 +125,21 @@ test('🔴 un canal SEUL ne montre qu un cadre : la chaine commande, pas un nomb
   await expect(page.getByTestId('etage-2')).toHaveCount(0);
 });
 
-test('le devenir de la conversation est demande UNE SEULE FOIS, pas par etage', async ({ page }) => {
+/**
+ * 🔴 CE CAS DISAIT L'INVERSE JUSQU'AU 2026-09-14, ET C'EST JULIEN QUI L'A RETOURNE. Son titre etait « le
+ * devenir est demande UNE SEULE FOIS, pas par etage ». Sa demande : « il faut qu'a l'ecran Contenu, quand
+ * tu demandes Etage 1, admettons WhatsApp, si la personne choisit modele tu fais apparaitre la question,
+ * qui s'appliquera alors QUE pour le WhatsApp ; et ensuite tu passes a l'etage 2, admettons RCS, et
+ * pareil ». Une chaine de repli peut donc laisser l'agent de Meta repondre en WhatsApp et renvoyer le RCS
+ * a l'equipe.
+ */
+test('🔴 le devenir est demande PAR ETAGE, un par etage sans scenario', async ({ page }) => {
   await monter(page, { troisieme: 'email' });
-  await expect(page.getByText('Que se passe-t-il quand le contact répond ?')).toHaveCount(1);
+  // Les trois cadres sont replies a l'arrivee : on les ouvre pour voir leurs questions.
+  await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('bloc-devenir-1')).toBeVisible();
+  await page.getByTestId('etage-2').click();
+  await expect(page.getByTestId('bloc-devenir-2')).toBeVisible();
 });
 
 /**
@@ -149,8 +161,8 @@ test('🔴 « Modele et scenario » RETIRE la question du devenir, et dit pourqu
   await page.getByTestId('etage-1').click(); // deplie le cadre WhatsApp
   await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
   await page.getByTestId('scenario-1').selectOption('wf1');
-  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
-  await expect(page.getByTestId('devenir-dans-le-scenario')).toContainText(/réglé dans le scénario/i);
+  await expect(page.getByTestId('bloc-devenir-1')).toHaveCount(0);
+  await expect(page.getByTestId('devenir-scenario-1')).toContainText(/réglé dans le scénario/i);
 });
 
 /**
@@ -159,14 +171,14 @@ test('🔴 « Modele et scenario » RETIRE la question du devenir, et dit pourqu
  */
 test('🔴 « Modele seul » repose la question du devenir', async ({ page }) => {
   await monter(page, { canal: 'whatsapp' });
-  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
   await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('bloc-devenir-1')).toBeVisible();
   await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
   await page.getByTestId('scenario-1').selectOption('wf1');
-  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await expect(page.getByTestId('bloc-devenir-1')).toHaveCount(0);
   await page.getByRole('radio', { name: 'Modèle seul' }).check();
   await page.getByTestId('modele-1').selectOption('promo_rentree');
-  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  await expect(page.getByTestId('bloc-devenir-1')).toBeVisible();
 });
 
 /**
@@ -175,17 +187,34 @@ test('🔴 « Modele seul » repose la question du devenir', async ({ page }) =>
  * parcours et l'etage 2 envoie un modele seul, les contacts joints au SECOND repondent sans qu'aucun
  * scenario ne les prenne.
  */
-test('🔴 un etage de repli hors scenario garde la question', async ({ page }) => {
+test('🔴 un etage de repli hors scenario garde SA question, l autre non', async ({ page }) => {
   await monter(page); // chaine « avec repli », les deux etages remplis
   await page.getByTestId('etage-1').click();
   await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
   await page.getByTestId('scenario-1').selectOption('wf1');
-  // L'etage 2 reste un message RCS direct : la question reste posee.
-  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  // 🔴 C'est le coeur du lot : les deux etages DIVERGENT. Le WhatsApp passe au scenario et perd sa
+  // question ; le RCS reste un message direct et garde la sienne.
+  await expect(page.getByTestId('bloc-devenir-1')).toHaveCount(0);
+  await page.getByTestId('etage-2').click();
+  await expect(page.getByTestId('bloc-devenir-2')).toBeVisible();
 });
+
+/**
+ * ⚠️ IL FAUT DEMANDER L'INBOX D'ABORD, DEPUIS LE 2026-09-14. La question « a qui va la conversation ? » n'a
+ * d'objet que si un etage renvoie vers l'equipe ; le defaut est « l'agent de Meta prend la main », qui ne
+ * renvoie rien. Ce geste n'est pas de la ceremonie : sans lui, le cas testerait un bloc qui n'existe pas.
+ */
+async function demanderLInbox(page: Page): Promise<void> {
+  await page.getByTestId('etage-1').click();
+  // ⚠️ CIBLÉ SUR LE BLOC DE L'ÉTAGE 1 : depuis que la question vit dans chaque cadre, un sélecteur global
+  // en trouve autant qu'il y a d'étages ouverts, et Playwright refuse l'ambiguïté (« strict mode »).
+  await page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /Inbox/ }).check();
+  await page.getByTestId('etage-1').click();
+}
 
 test('l assignation a une personne affiche le NOMBRE avant de valider', async ({ page }) => {
   await monter(page);
+  await demanderLInbox(page);
   await page.getByRole('radio', { name: 'Assignée à une personne' }).check();
   await expect(page.getByText(/conversations lui seront attribuées/)).toBeVisible();
 });
@@ -202,10 +231,22 @@ test('le RCS garde ses suggestions, il ne se reduit pas a un lien', async ({ pag
   await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toBeVisible();
 });
 
-test('🔴 un agent IA absent est grise AVEC SA RAISON, pas masque', async ({ page }) => {
-  await monter(page, { agents: [] });
-  await expect(page.getByRole('radio', { name: 'Un agent IA prend la main' })).toBeDisabled();
-  await expect(page.getByText(/aucun agent IA actif/i)).toBeVisible();
+/**
+ * 🔴 CE CAS REMPLACE « un agent IA absent est grise AVEC SA RAISON, pas masque », devenu SANS OBJET le
+ * 2026-09-14 : l'option « Un agent IA prend la main » a ete RETIREE. Elle ne produisait aucun effet (ni
+ * `devenir` ni `agentId` ne quittaient le navigateur) et elle ne pouvait pas en produire :
+ * `agent_sessions.run_id` est NOT NULL, un agent IA ne sait pas exister hors d'un scenario. Julien : « si
+ * le user veut que ca aille vers son autre agent IA, il faut qu il fasse un scenario ».
+ *
+ * Ce qui reste a garantir : l'option a bien disparu, et l'agent de Meta est grise AVEC SA RAISON quand il
+ * n'est pas actif, ce qui est la regle que l'ancien cas protegeait vraiment.
+ */
+test('🔴 plus d option « agent IA », et l agent de Meta est grise AVEC SA RAISON', async ({ page }) => {
+  await monter(page, { agents: [], mbaEnabled: false });
+  await page.getByTestId('etage-1').click();
+  await expect(page.getByRole('radio', { name: 'Un agent IA prend la main' })).toHaveCount(0);
+  await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /agent de Meta/ })).toBeDisabled();
+  await expect(page.getByTestId('bloc-devenir-1').getByText(/agent de Meta n.est pas activ/i)).toBeVisible();
 });
 
 // 🔴 L'ÉTAPE LA PLUS EXPOSÉE AU DÉBORDEMENT : trois cadres d'étage, un éditeur de modèle, un
@@ -215,7 +256,7 @@ test('les cadres d etage sont EMPILES, jamais cote a cote, et rien ne deborde en
   await monter(page, { troisieme: 'email' });
   await page.getByTestId('etage-1').click(); // deplie le premier
   await pasDeDebordement(page);
-  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3', 'bloc-devenir']);
+  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3']);
 
   // Les cadres sont empiles : chacun commence SOUS le precedent, jamais a sa droite.
   const un = (await page.getByTestId('etage-1').boundingBox())!;
@@ -236,7 +277,7 @@ test('onze suggestions RCS ne font pas deborder le cadre', async ({ page }) => {
   // que les onze clics ont bien produit onze suggestions, et non dix plus un clic tombé dans le vide.
   await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toHaveCount(0);
   await pasDeDebordement(page);
-  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3', 'bloc-devenir']);
+  await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3']);
 });
 
 /**
@@ -249,6 +290,7 @@ test('onze suggestions RCS ne font pas deborder le cadre', async ({ page }) => {
  */
 test('les membres non actives sont la, grises, avec leur raison', async ({ page }) => {
   await monter(page, { canal: 'whatsapp' });
+  await demanderLInbox(page);
   await page.getByRole('radio', { name: 'Assignée à une personne' }).check();
   const select = page.getByTestId('assignation-personne');
   await expect(select.locator('option')).toHaveCount(4); // « Choisir... » + les trois membres
@@ -265,6 +307,7 @@ test('les membres non actives sont la, grises, avec leur raison', async ({ page 
  */
 test('un membre actif n est ni grise ni annote', async ({ page }) => {
   await monter(page, { canal: 'whatsapp', users: [USERS[0]!] });
+  await demanderLInbox(page);
   await page.getByRole('radio', { name: 'Assignée à une personne' }).check();
   const select = page.getByTestId('assignation-personne');
   await expect(select.locator('option')).toHaveCount(2);
@@ -279,18 +322,22 @@ test('un membre actif n est ni grise ni annote', async ({ page }) => {
  * ⚠️ LES DEUX SENS DANS LE MEME CAS, ET C'EST VOLONTAIRE : un test qui ne verifierait que l'absence
  * passerait aussi sur un ecran qui aurait perdu le bloc pour de bon.
  */
-test('🔴 le devenir n apparait qu une fois le contenu choisi', async ({ page }) => {
-  // ⚠️ SUR UN CANAL SEUL, pour que « le contenu » et « l'etage 1 » soient la meme chose : la chaine de
-  // repli a son propre cas juste en dessous, et il exerce l'elargissement du 2026-09-14.
+test('🔴 l assignation n apparait qu une fois le contenu choisi', async ({ page }) => {
+  // ⚠️ CE CAS VISAIT `bloc-devenir` JUSQU'AU 2026-09-14. La question du devenir est descendue DANS le
+  // cadre de l'etage ; ce qui reste propre a la campagne, et que ce cas protege, c'est « a qui va la
+  // conversation ». Meme regle, meme intention : on ne demande pas la suite avant de savoir ce qu'on envoie.
   await monter(page, { canal: 'whatsapp', sansContenu: true });
-  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await expect(page.getByTestId('bloc-assignation')).toHaveCount(0);
   await expect(page.getByTestId('contenu-incomplet')).toBeVisible();
   // Le bouton de l'assistant refuse aussi d'avancer, et c'est la MEME regle qui le decide.
   await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
 
   await page.getByTestId('etage-1').click();
   await page.getByTestId('modele-1').selectOption('promo_rentree');
-  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  // ⚠️ ET IL FAUT DEMANDER L'INBOX : sans elle, personne ne revient a l'equipe et la question n'a pas
+  // d'objet. C'est le defaut (« l'agent de Meta prend la main ») qui la tient masquee.
+  await page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /Inbox/ }).check();
+  await expect(page.getByTestId('bloc-assignation')).toBeVisible();
 });
 
 /**
@@ -302,18 +349,19 @@ test('🔴 le devenir n apparait qu une fois le contenu choisi', async ({ page }
  * ⚠️ LES DEUX SENS DANS LE MEME CAS : on remplit l'etage manquant et le bloc revient, sans quoi ce test
  * passerait aussi sur un ecran qui aurait perdu le bloc pour de bon.
  */
-test('🔴 un etage de repli vide bloque le passage ET masque le devenir', async ({ page }) => {
+test('🔴 un etage de repli vide bloque le passage ET masque l assignation', async ({ page }) => {
   await monter(page, { sansContenu: true });
   await page.getByTestId('etage-1').click();
   await page.getByTestId('modele-1').selectOption('promo_rentree');
+  await page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /Inbox/ }).check();
   await page.getByTestId('etage-1').click();
-  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await expect(page.getByTestId('bloc-assignation')).toHaveCount(0);
   await expect(page.getByTestId('contenu-incomplet')).toContainText('2');
   await expect(page.getByRole('button', { name: 'Suivant' })).toBeDisabled();
 
   await page.getByTestId('etage-2').click();
   await page.getByTestId('rcs-texte').fill('repli RCS');
-  await expect(page.getByTestId('bloc-devenir')).toBeVisible();
+  await expect(page.getByTestId('bloc-assignation')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Suivant' })).toBeEnabled();
 });
 
@@ -359,21 +407,23 @@ test('🔴 l etape Contenu sans canal dit ce qui manque, au lieu de rester vide'
   await monter(page, { sansCanal: true, sansContenu: true });
   await expect(page.getByTestId('contenu-sans-canal')).toContainText(/revenez à l.étape Canal/i);
   await expect(page.getByTestId('etage-1')).toHaveCount(0);
-  await expect(page.getByTestId('bloc-devenir')).toHaveCount(0);
+  await expect(page.getByTestId('bloc-assignation')).toHaveCount(0);
 });
 
 /**
- * ⚠️ DEUX SCENARIOS, DEUX FOIS « SCENARIO » AU PLURIEL. Une chaine de repli porte un scenario PAR ETAGE :
- * une phrase au singulier devant deux d'entre eux ferait chercher lequel des deux decide.
+ * 🔴 CE CAS REMPLACE « la phrase du scenario se met au pluriel quand la chaine en porte deux », devenu
+ * SANS OBJET le 2026-09-14. Le pluriel existait parce qu'UNE phrase globale parlait de tous les etages a
+ * la fois ; depuis que la question vit DANS chaque cadre, chaque etage parle de LUI, donc toujours au
+ * singulier. Ce qui reste a garantir est plus fort : les deux etages portent CHACUN leur phrase.
  */
-test('la phrase du scenario se met au pluriel quand la chaine en porte deux', async ({ page }) => {
+test('🔴 chaque etage a scenario porte SA propre phrase', async ({ page }) => {
   await monter(page);
   await page.getByTestId('etage-1').click();
   await page.getByRole('radio', { name: 'Modèle et scénario' }).check();
   await page.getByTestId('scenario-1').selectOption('wf1');
-  await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('devenir-scenario-1')).toContainText(/réglé dans le scénario/i);
   await page.getByTestId('etage-2').click();
   await page.getByRole('radio', { name: 'Message et scénario' }).check();
   await page.getByTestId('scenario-2').selectOption('wf1');
-  await expect(page.getByTestId('devenir-dans-le-scenario')).toContainText(/dans les scénarios/i);
+  await expect(page.getByTestId('devenir-scenario-2')).toContainText(/réglé dans le scénario/i);
 });
