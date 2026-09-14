@@ -102,20 +102,38 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
 describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
   const bloc = wiring.slice(wiring.indexOf('reclaimControl: async'), wiring.indexOf('mbaActifPour:'));
+  /**
+   * ⚠️ LA PRISE DU FIL EST PASSÉE DANS UNE FONCTION D'AIDE le 2026-09-14 (le rejeu unique sur un échec
+   * transitoire, relevé en revue). Ces gardes lisaient `takeThreadChezMeta` DANS le bloc `reclaimControl` ;
+   * elles suivent maintenant l'indirection au lieu d'être affaiblies, sinon elles ne vérifieraient plus
+   * rien tout en restant vertes. Le cas exercé est inchangé : Meta d'abord, notre colonne ensuite, et rien
+   * d'écrit chez nous si Meta refuse.
+   */
+  const aide = wiring.slice(wiring.indexOf('const prendreLeFilAvecUnRejeu'), wiring.indexOf('reclaimControl: async'));
 
   it('appelle bien Meta', () => {
-    expect(bloc).toContain('takeThreadChezMeta');
+    expect(bloc).toContain('prendreLeFilAvecUnRejeu');
+    expect(aide).toContain('takeThreadChezMeta');
   });
 
   it('🔴 appelle Meta AVANT d’écrire notre colonne', () => {
     // L'ordre inverse produirait le pire des deux mondes : le scénario se croirait maître et répondrait
     // PAR-DESSUS l'agent de Meta, donc deux messages au contact.
-    expect(bloc.indexOf('takeThreadChezMeta')).toBeLessThan(bloc.indexOf('setControlOwner'));
+    expect(bloc.indexOf('prendreLeFilAvecUnRejeu')).toBeLessThan(bloc.indexOf('setControlOwner'));
   });
 
   it('🔴 n’écrit PAS notre colonne quand Meta refuse', () => {
     // Le `return false` doit précéder l'écriture locale : c'est la doctrine de `controle-du-fil.ts`,
     // « un état local qui annonce ce que Meta n'a pas fait ».
     expect(bloc.indexOf('return false')).toBeLessThan(bloc.indexOf('setControlOwner'));
+  });
+
+  it('🔴 rejoue UNE fois un échec transitoire, et jamais un refus définitif', () => {
+    // Ce geste est passé d'un appel par clic d'opérateur à UN PAR DESTINATAIRE de campagne, sur un client
+    // MBA qui ne rejoue rien. Sans rejeu, un 429 de Meta au milieu d'une campagne ferait échouer le
+    // scénario de tous les destinataires suivants ; avec une boucle, un refus définitif (Meta réserve
+    // `take` au « configured escalation partner ») ajouterait N appels inutiles.
+    expect(aide).toContain('err.retryable');
+    expect(aide).toContain('tentative < 2');
   });
 });

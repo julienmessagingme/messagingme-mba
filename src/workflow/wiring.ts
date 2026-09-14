@@ -47,6 +47,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
 import { creerRendreLeFil, creerPrendreLeFil } from '../inbox/controle-du-fil';
+import { MetaApiError } from '../meta/errors';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -279,6 +280,42 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   });
 
   /**
+   * Prendre le fil, avec UN rejeu sur un échec TRANSITOIRE. Rend `false` quand Meta n'a pas cédé.
+   *
+   * 🔴 RELEVÉ EN REVUE LE 2026-09-14, ET C'EST UN DÉFAUT DE RAYON DE SOUFFLE, PAS DU CODE ÉCRIT. Ce geste
+   * existait pour UN appel à la fois (le bouton « Reprendre la main » de l'Inbox, actionné par un humain).
+   * En le câblant sur `reclaimControl`, il devient UN APPEL PAR DESTINATAIRE de campagne. Or le client MBA
+   * ne rejoue RIEN : `appel()` lève sur tout `!res.ok`, 429 compris. Sans ce rejeu, un plafond de débit
+   * atteint au milieu d'une campagne de masse ferait échouer le scénario de TOUS les destinataires
+   * suivants, pour une raison purement transitoire et sans qu'ils y soient pour rien.
+   *
+   * ⚠️ UN SEUL REJEU, JAMAIS UNE BOUCLE. `take` est un privilège que Meta réserve au « configured escalation
+   * partner » : un refus DÉFINITIF (`retryable` faux) est un cas normal, et insister dessus n'ajouterait que
+   * des appels inutiles à une campagne déjà en cours. C'est `classify` (`src/meta/errors.ts`) qui tranche,
+   * la même règle que pour les envois, importée plutôt que réécrite.
+   */
+  const prendreLeFilAvecUnRejeu = async (tenant: string, waId: string): Promise<boolean> => {
+    for (let tentative = 0; tentative < 2; tentative += 1) {
+      try {
+        await takeThreadChezMeta(tenant, waId);
+        return true;
+      } catch (err) {
+        const derniere = tentative === 1;
+        const rejouable = err instanceof MetaApiError && err.retryable;
+        if (!rejouable || derniere) {
+          // eslint-disable-next-line no-console
+          console.warn(`reclaimControl: Meta a REFUSÉ de nous rendre le fil pour ${waId} (${tenant}) après ${tentative + 1} tentative(s), le détenteur ne change pas :`, err instanceof Error ? err.message : err);
+          return false;
+        }
+        // Le `Retry-After` de Meta quand il le donne, sinon une demi-seconde : on est dans la boucle d'envoi
+        // d'une campagne, une attente longue retarderait tous les destinataires suivants.
+        await new Promise((r) => setTimeout(r, Math.min(err.retryAfterMs ?? 500, 2000)));
+      }
+    }
+    return false;
+  };
+
+  /**
    * Envoi réel du bloc « Envoi de mail » (Task 8). Résout le modèle et la boîte SMTP, calcule le destinataire,
    * rend les variables `{{champ}}` (sujet toujours en texte, corps en HTML seulement si le modèle est 'html'),
    * envoie via SMTP. `apply` (executor.ts) est la SEULE garante du best-effort (try/catch autour de cet appel) :
@@ -373,8 +410,14 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // de la file et les conversations des autres attendent derrière les siennes.
     enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job, { groupId: job.tenantId }),
     /**
-     * Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
-     * humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
+     * Reprise de main par l'app quand un parcours est lancé DÉLIBÉRÉMENT (sans `only` : on reprend même un
+     * fil tenu par un humain ou par l'agent de Meta, puisque c'est un geste voulu qui déclenche l'envoi).
+     *
+     * ⚠️ QUATRE CHEMINS L'EMPRUNTENT, PAS SEULEMENT LES CAMPAGNES, et ce commentaire n'en nommait qu'un
+     * (relevé en revue le 2026-09-14). Tous ceux qui posent `ignoreHumanControl` : le moteur de campagne,
+     * le lancement depuis l'Inbox (`src/index.ts`), une automation dont l'option « reprendre la main » est
+     * cochée (`src/worker.ts`), et `/v1/sends` de l'API publique. Le coût de ce geste et son risque de
+     * refus valent donc pour les quatre.
      *
      * 🔴 ELLE N'ÉCRIVAIT QUE NOTRE COLONNE, ET C'EST CE QUI A FAIT RÉPONDRE L'AGENT DE META À LA PLACE D'UN
      * SCÉNARIO (campagne « test4 », 2026-09-14). Chez Meta, le Meta Business Agent est le répondeur PRIMAIRE
@@ -396,21 +439,19 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * prendre le fil, et un appel Meta par destinataire de campagne serait payé pour rien.
      */
     reclaimControl: async (tenant, waId): Promise<boolean> => {
-      if ((await settingsStore.get(tenant)).mbaEnabled) {
-        try {
-          await takeThreadChezMeta(tenant, waId);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(`reclaimControl: Meta a REFUSÉ de nous rendre le fil pour ${waId} (${tenant}), le détenteur ne change pas :`, err instanceof Error ? err.message : err);
-          return false;
-        }
-      }
+      if ((await settingsStore.get(tenant)).mbaEnabled && !(await prendreLeFilAvecUnRejeu(tenant, waId))) return false;
       await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
       return true;
     },
-    // L'agent de Meta est-il allumé chez ce client ? Décide de deux choses : qu'une étape sans choix cesse de
-    // bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Faux partout aujourd'hui, donc rien
-    // ne change tant qu'aucun client n'a MBA.
+    // L'agent de Meta est-il allumé chez ce client ? Décide de TROIS choses : qu'une étape sans choix cesse
+    // de bloquer le parcours, qu'on rende le fil à Meta en fin de chaîne, et depuis le 2026-09-14 qu'on le
+    // lui PRENNE au démarrage (`reclaimControl` plus haut).
+    //
+    // 🔴 CE COMMENTAIRE DISAIT « FAUX PARTOUT AUJOURD'HUI, DONC RIEN NE CHANGE TANT QU'AUCUN CLIENT N'A
+    // MBA ». C'est FAUX : mesuré le 2026-09-14, UN espace sur UN a l'agent de Meta allumé, celui du numéro
+    // de production. Cette phrase faisait croire que tout ce chemin était inerte, et c'est exactement
+    // l'erreur de raisonnement qui a laissé `reclaimControl` n'écrire que notre colonne pendant des
+    // semaines : on ne durcit pas un chemin qu'on croit mort.
     mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
     // Rend le fil à l'agent de Meta. La bascule LOCALE d'abord, et seulement si le fil était encore au
     // scénario : Meta exige de détenir le fil pour le relâcher, et cette condition le prouve.
