@@ -8,6 +8,7 @@ import { kickerCls } from '@/lib/ui';
 import { getAccountStatus } from '@/lib/api';
 import { getMbaStatus, type MbaSettings, type MbaStatus } from '@/lib/api-mba';
 import { MbaTabs } from '@/components/MbaTabs';
+import { MbaAssistantPanel } from '@/components/MbaAssistantPanel';
 import { MbaNotice } from '@/components/MbaNotice';
 import { MbaGateBanner } from '@/components/MbaGateBanner';
 import { MbaOverviewPanel } from '@/components/MbaOverviewPanel';
@@ -34,7 +35,9 @@ export default function MbaSettingsPage() {
   );
 }
 
-const ONGLETS = ['apercu', 'activation', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test'] as const;
+// ⚠️ « assistant » EN DEUXIÈME, après l'aperçu : un onglet parmi les autres (décision de Julien), pas la
+// porte d'entrée. En faire le premier déplacerait les repères de ceux qui utilisent déjà l'écran.
+const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test'] as const;
 type Onglet = (typeof ONGLETS)[number];
 
 function lireOnglet(v: string | null): Onglet {
@@ -121,6 +124,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
         onSelect={choisirOnglet}
         tabs={[
           { key: 'apercu', label: t('Vue d’ensemble', 'Overview') },
+          { key: 'assistant', label: t('Assistant', 'Assistant') },
           { key: 'activation', label: t('Activation', 'Activation') },
           { key: 'business', label: t('Informations', 'Business info') },
           { key: 'faq', label: t('FAQ', 'FAQ') },
@@ -132,6 +136,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
       />
 
       {onglet === 'apercu' && <MbaOverviewPanel {...props} status={status} onChange={majReglages} />}
+      {onglet === 'assistant' && <MbaAssistantPanel tenantId={tenantId} />}
       {onglet === 'activation' && <MbaActivationPanel tenantId={tenantId} />}
       {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
       {onglet === 'faq' && <MbaFaqPanel {...props} />}

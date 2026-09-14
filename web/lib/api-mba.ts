@@ -303,3 +303,59 @@ export function putMbaActivation(tenantId: string, enabled: boolean): Promise<Re
     method: 'PUT', body: JSON.stringify({ enabled }),
   });
 }
+
+/**
+ * L'ASSISTANT CONVERSATIONNEL DU META BUSINESS AGENT.
+ *
+ * ⚠️ SES ADRESSES NE PORTENT PAS LE NUMÉRO, contrairement au reste de ce fichier (`base()` l'inclut). Le
+ * serveur le résout lui-même : c'est la leçon de l'activation, où le faire côté navigateur a produit trois
+ * pannes le 2026-09-10, la dernière parce que l'état du compte n'était pas encore arrivé au moment du clic.
+ */
+export interface TourAssistantMba { role: 'user' | 'assistant'; content: string }
+
+export interface FilAssistantMba {
+  messages: TourAssistantMba[];
+  auteurs: Array<string | null>;
+  /** Le total CONSERVÉ, qui peut dépasser ce qui est rendu : l'écran le dit plutôt que de le taire. */
+  total: number;
+  /** Rédigé par le SERVEUR, et seulement sur un fil vide. */
+  accueil: string | null;
+  completion: CompletionMba | null;
+  budgetEpuise: boolean;
+}
+
+/** Une opération du diff, déjà rédigée par le serveur. `libelle` est ce que l'écran montre. */
+export interface OperationAssistantMba { type: string; libelle: string; [k: string]: unknown }
+
+export interface TourRenduMba {
+  message: string;
+  operations: OperationAssistantMba[];
+  budgetEpuise?: boolean;
+  ongletsUtilisables?: boolean;
+}
+
+export interface ResultatApplicationMba {
+  passees: string[];
+  echec: { libelle: string; message: string } | null;
+  nonTentees: string[];
+}
+
+export function lireFilAssistantMba(tenantId: string): Promise<FilAssistantMba> {
+  return request<FilAssistantMba>(`/tenants/${tenantId}/mba/assistant`);
+}
+
+export function parlerAssistantMba(tenantId: string, message: string): Promise<TourRenduMba> {
+  return request<TourRenduMba>(`/tenants/${tenantId}/mba/assistant`, {
+    method: 'POST', body: JSON.stringify({ message }),
+  });
+}
+
+export function appliquerAssistantMba(tenantId: string, operations: unknown[]): Promise<ResultatApplicationMba> {
+  return request<ResultatApplicationMba>(`/tenants/${tenantId}/mba/assistant/appliquer`, {
+    method: 'POST', body: JSON.stringify({ operations }),
+  });
+}
+
+export function effacerFilAssistantMba(tenantId: string): Promise<void> {
+  return request<void>(`/tenants/${tenantId}/mba/assistant`, { method: 'DELETE' });
+}

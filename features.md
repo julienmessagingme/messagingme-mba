@@ -2068,7 +2068,7 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   guide) ; **prérequis + transparence des coûts** ; encart **« bientôt configurable ici »**. Page de PRÉPARATION :
   la config live s'ouvrira quand Meta rendra l'agent disponible pour le numéro (gating vertical + ToS).
 - ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
-  l'agent MBA, en **huit onglets**, branché pour de vrai sur la configuration Meta du numéro.
+  l'agent MBA, en **neuf onglets**, branché pour de vrai sur la configuration Meta du numéro.
   **Aperçu** (l'état de l'agent), **Activation** (qui parle au client, cf. ci-dessous),
   **Business** (les informations de l'entreprise), **FAQ** (saisie question par question **et
   import en masse** depuis un CSV, un Excel, un PDF ou une URL, avec aperçu avant écriture et
@@ -2303,7 +2303,7 @@ Les envois WhatsApp ne sont pas concernés : leur débit se règle campagne par 
   éprouvé depuis le 2026-08-17** (voir la section Accueil) : un vrai numéro d’un business tiers est passé
   connecté et vérifié. Ce qui reste ouvert, c’est de proposer un numéro quand le client n’en a aucun.
 - 🚧 **Allumer l'agent MBA en production** : la configuration est LIVE (menu **AI Agent > MBA,
-  paramètres**, huit onglets branchés) et l'agent répond dans le bac à sable, mais Meta refuse de
+  paramètres**, neuf onglets branchés) et l'agent répond dans le bac à sable, mais Meta refuse de
   l'activer sur le numéro tant qu'un **moyen de paiement** n'est pas posé sur le compte WhatsApp
   Business. Le numéro de test est déjà dans la liste d'autorisation, l'activation se fait en une
   commande le moment venu.
