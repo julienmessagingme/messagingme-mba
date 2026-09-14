@@ -1,6 +1,12 @@
 # todo.md : backlog
 
-## Traduction des conversations (tranché le 2026-09-12, RIEN de commencé)
+## ✅ LIVRÉ : traduction des conversations (tranché le 2026-09-12, livré et déployé le 2026-09-13)
+
+> ⚠️ **CE TITRE A DIT « RIEN DE COMMENCÉ » PENDANT QUE C'ÉTAIT EN PRODUCTION** (migration 0137,
+> `TRADUCTION_MODELE` posée, six tâches livrées). Relevé le 2026-09-14 en répondant à « il reste quoi à
+> faire ? », c'est-à-dire par quelqu'un qui allait s'en servir. **Un backlog qui garde une entrée livrée ne
+> vieillit pas, il MENT** : il fait rouvrir un chantier fini. Ce qui suit est le CADRAGE d'origine, gardé
+> parce qu'il porte les décisions ; le fonctionnel vit dans `features.md`.
 
 **Deux langues, FR et EN, et c'est ce qui rend le dessin simple.** « Traduire » veut dire « dans
 l'autre », donc **aucun sélecteur de langue nulle part** : ni sur le contact, ni sur la conversation.

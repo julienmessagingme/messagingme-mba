@@ -48,8 +48,10 @@ exercé par un humain sur un vrai téléphone ni contre un vrai système tiers.
 
 ## 🔴 CE QUI N'A JAMAIS TOURNÉ SUR DE VRAIES DONNÉES
 
-C'est le seul vrai risque du moment : quatre chantiers sont déployés et verts sans qu'aucun n'ait été
-exercé par un humain sur un vrai téléphone.
+🔴 **C'EST LA SEULE CHOSE QUI RESTE VRAIMENT À FAIRE, ET C'EST LE SEUL VRAI RISQUE.** Tous les lots sont
+livrés, relus, déployés et verts. HUIT essais attendent, dont aucun ne demande de code : il faut un
+téléphone, un compte, et quelqu'un qui regarde. Un mécanisme qui n'a jamais tourné sur de vraies données
+n'est pas éprouvé, il est seulement vert.
 
 - **L'opt-out** : écrire « stop » depuis un vrai téléphone, constater le passage en opt-out, **puis tenter
   d'atteindre ce contact par un scénario ET par une automation**. Puis l'essai inverse, celui qui protège
