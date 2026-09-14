@@ -166,6 +166,24 @@ export const schema = z.object({
   /** Rate limit de l'API publique /v1 : requêtes par clé et par fenêtre (en mémoire, par process). */
   API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(60),
   API_KEY_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  /**
+   * LE PRÉ-FILTRE DES CLÉS D'API : ce qu'un porteur NON RÉSOLU peut coûter, par minute.
+   *
+   * 🔴 IL EXISTE PARCE QUE LE PLAFOND CI-DESSUS EST INDEXÉ SUR `found.id`, DONC INATTEIGNABLE SANS
+   * LOOKUP RÉUSSI : une rafale de fausses clés n'était comptée par AUCUN plafond, et chacune coûtait un
+   * SHA-256 et une requête Postgres. Le budget de ce process est de 8 connexions, partagé avec la console
+   * et le worker : c'est là que l'amplification fait mal, pas dans le CPU.
+   *
+   * 🔴 IL EST GLOBAL, PAS PAR CLÉ, ET C'EST UN TEST QUI L'A IMPOSÉ. Un compteur indexé sur l'empreinte
+   * du bearer ne freine RIEN : trente fausses clés toutes différentes produisent trente compteurs à 1, et
+   * les trente requêtes Postgres partent quand même. Ce qu'on borne est donc le nombre de LOOKUPS
+   * SPÉCULATIFS par minute, toutes empreintes confondues.
+   *
+   * ⚠️ 30 EST TRÈS LARGE POUR L'USAGE LÉGITIME : une empreinte déjà résolue n'y est PLUS soumise, donc ce
+   * budget ne sert qu'aux PREMIERS appels (mesuré le 2026-09-14 : 2 clés existent en tout, 1 active). 0 le
+   * désactive, comme les autres plafonds.
+   */
+  API_KEY_PREFILTRE_MAX: z.coerce.number().int().min(0).default(30),
   /** Plafond de débit d'UN webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
    *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
   WEBHOOK_IN_RATE_LIMIT_MAX: z.coerce.number().default(120),

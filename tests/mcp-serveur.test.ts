@@ -6,6 +6,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { DepsMcp } from '../src/mcp/outils';
 import { OUTILS } from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
+import { cleApiDeTest } from './aide/cle-api';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -24,9 +25,9 @@ class FakeApiKeys implements ApiKeyLookup {
   async touchLastUsed() { /* rien */ }
 }
 
-const CLE_TOUT = 'mba_tout';
-const CLE_LECTURE = 'mba_lecture';
-const CLE_AUTRE_ESPACE = 'mba_autre';
+const CLE_TOUT = cleApiDeTest('tout');
+const CLE_LECTURE = cleApiDeTest('lecture');
+const CLE_AUTRE_ESPACE = cleApiDeTest('autre');
 
 interface Traces {
   contexte: Array<{ id: string; tenant: string }>;
@@ -87,7 +88,7 @@ describe('serveur MCP : autorisation', () => {
   it('sans clé -> 401 ; clé inconnue -> 401', async () => {
     const { server } = app();
     expect((await server.inject({ method: 'POST', url: '/mcp', payload: rpc('tools/list') })).statusCode).toBe(401);
-    expect((await server.inject({ method: 'POST', url: '/mcp', ...auth('mba_inconnue'), payload: rpc('tools/list') })).statusCode).toBe(401);
+    expect((await server.inject({ method: 'POST', url: '/mcp', ...auth(cleApiDeTest('inconnue')), payload: rpc('tools/list') })).statusCode).toBe(401);
     await server.close();
   });
 

@@ -4,6 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { ApiContactInput, ApiUpsertOutcome } from '../src/api/contacts-upsert';
+import { cleApiDeTest } from './aide/cle-api';
 
 /** Fake du lookup de clé : mappe des clés claires -> {tenantId, scopes} via leur hash sha256. */
 class FakeApiKeys implements ApiKeyLookup {
@@ -14,8 +15,8 @@ class FakeApiKeys implements ApiKeyLookup {
   async touchLastUsed(id: string) { this.touched.push(id); }
 }
 
-const VALID = 'mba_valid_key';
-const NOSCOPE = 'mba_noscope_key';
+const VALID = cleApiDeTest('valide');
+const NOSCOPE = cleApiDeTest('sans_scope');
 
 function app(over: Partial<{ upsertContacts: (t: string, items: ApiContactInput[]) => Promise<ApiUpsertOutcome[]> }> = {}) {
   const cap = { calls: [] as Array<{ tenant: string; items: ApiContactInput[] }> };
@@ -45,7 +46,7 @@ describe('POST /v1/contacts', () => {
     const { server } = app();
     expect((await server.inject({ method: 'POST', url: '/v1/contacts', headers: { 'content-type': 'application/json' }, payload: { phone: '+336' } })).statusCode).toBe(401);
     expect((await server.inject({ method: 'POST', url: '/v1/contacts', ...auth('jwt_or_whatever'), payload: { phone: '+336' } })).statusCode).toBe(401);
-    expect((await server.inject({ method: 'POST', url: '/v1/contacts', ...auth('mba_inconnue'), payload: { phone: '+336' } })).statusCode).toBe(401);
+    expect((await server.inject({ method: 'POST', url: '/v1/contacts', ...auth(cleApiDeTest('inconnue')), payload: { phone: '+336' } })).statusCode).toBe(401);
     await server.close();
   });
 

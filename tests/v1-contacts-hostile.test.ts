@@ -4,6 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { ApiContactInput, ApiUpsertOutcome } from '../src/api/contacts-upsert';
+import { cleApiDeTest } from './aide/cle-api';
 
 /**
  * CE QU'UN CORPS HOSTILE OU MALADROIT PROVOQUE SUR `/v1/contacts`, ET CE QU'IL DOIT PROVOQUER.
@@ -32,7 +33,7 @@ class FakeApiKeys implements ApiKeyLookup {
   async touchLastUsed() { /* sans objet ici */ }
 }
 
-const VALID = 'mba_valid_key';
+const VALID = cleApiDeTest('valide');
 
 function app() {
   const cap = { calls: [] as Array<{ tenant: string; items: ApiContactInput[] }> };

@@ -7,6 +7,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import type { IdempotencyClaim } from '../src/api/idempotency-store.pg';
+import { cleApiDeTest } from './aide/cle-api';
 
 class FakeApiKeys implements ApiKeyLookup {
   private readonly byHash = new Map<string, { id: string; tenantId: string; scopes: string[] }>();
@@ -14,8 +15,8 @@ class FakeApiKeys implements ApiKeyLookup {
   async findActiveByHash(hash: string) { return this.byHash.get(hash) ?? null; }
   async touchLastUsed() {}
 }
-const SEND_KEY = 'mba_send';
-const NOSCOPE_KEY = 'mba_noscope';
+const SEND_KEY = cleApiDeTest('envoi');
+const NOSCOPE_KEY = cleApiDeTest('sans_scope');
 
 const contact = (id: string, optIn: BuildContact['optInStatus'] = 'opted_in'): BuildContact => ({
   id, phone_e164: `+3361234567${id.slice(-1)}`, bsuid: null, profile_name: null, fields: {}, optInStatus: optIn,

@@ -496,11 +496,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.email) registerEmailRoutes(app, deps.email, requireAdmin);
   if (deps.apiKeys) registerApiKeys(app, deps.apiKeys, requireAdmin);
   if (deps.webhooksAdmin) registerWebhooksAdmin(app, deps.webhooksAdmin, requireAdmin);
-  // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Le rate limiter est un SINGLETON
-  // (partagé entre requêtes). Chaque route compose [requireApiKey, requireScope('<scope>')].
+  // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Les DEUX limiteurs sont des
+  // SINGLETONS (partagés entre requêtes) : celui du travail par clé résolue, et le budget de lookups
+  // spéculatifs qui protège la base. Chaque route compose [requireApiKey, requireScope('<scope>')].
   if (deps.v1) {
     const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
-    const requireApiKey = makeRequireApiKey(deps.v1.apiKeys, apiLimiter);
+    /**
+     * 🔴 LE PRÉ-FILTRE : indexé sur l'EMPREINTE du bearer présenté, donc sur une clé choisie par
+     * l'APPELANT. Sa table porte le même plafond de 10 000 clés que les limiteurs d'authentification, et
+     * pour la même raison : la purge ne retire que les entrées EXPIRÉES, donc sous flot rien n'expire et
+     * la table grossirait pendant toute la fenêtre. Au-delà, une empreinte NEUVE est refusée pendant que
+     * les porteurs déjà connus continuent d'être servis.
+     */
+    const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
+    const requireApiKey = makeRequireApiKey(deps.v1.apiKeys, apiLimiter, apiPrefiltre);
     registerV1Contacts(app, deps.v1.contacts, [requireApiKey, requireScope('contacts:write')]);
     if (deps.v1.sends) registerV1Sends(app, deps.v1.sends, [requireApiKey, requireScope('sends:create')]);
     // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
