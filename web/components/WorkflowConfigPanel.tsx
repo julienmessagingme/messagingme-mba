@@ -18,6 +18,31 @@ import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
 import { useState } from 'react';
 
 /**
+ * LA CLÉ DU CHAMP SYSTÈME « MAINTENANT ». ⚠️ MIROIR de `CHAMP_MAINTENANT` (`src/workflow/fonction-js.ts`) :
+ * le front et l'API sont deux projets séparés, il n'y a pas d'import possible. Une valeur en dur des deux
+ * côtés dériverait sans bruit ; une constante nommée des deux côtés se retrouve d'un `grep`.
+ */
+const CHAMP_MAINTENANT = 'sys:now';
+
+/**
+ * Le nom que portera le paramètre de la fonction, ou `null` quand la clé ne peut pas en être un.
+ *
+ * ⚠️ MIROIR de `nomDeParametreSur` (`src/workflow/fonction-js.ts`), et la règle doit rester la MÊME des
+ * deux côtés : l'écran annoncerait sinon un nom que le moteur n'injecte pas. Une clé de champ comme
+ * « mail pro » ou « class » est valide côté contact et illégale comme paramètre JavaScript.
+ */
+function nomParametreJs(cle: string | undefined): string | null {
+  if (!cle || cle === CHAMP_MAINTENANT || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
+  const RESERVES = new Set(['valeur', 'arguments', 'await', 'break', 'case', 'catch', 'class', 'const',
+    'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends', 'false',
+    'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let',
+    'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
+    'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield']);
+  return RESERVES.has(cle) ? null : cle;
+}
+
+
+/**
  * Le panneau de DROITE : la configuration du bloc sélectionné, un cas par nature de bloc.
  *
  * Sorti de `WorkflowBuilder.tsx` le 2026-09-01 (lot 7), et c'est la moitié du fichier qui part. Le découpage
@@ -1094,18 +1119,40 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
         onChange={(e) => onPatch({ champSource: e.target.value })}
       >
         <option value="">{t('choisir un champ…', 'choose a field…')}</option>
-        {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+        {/*
+          🔴 « MAINTENANT » N'EST PAS UN CHAMP DE LA FICHE, et c'est pour ça qu'il est listé à part.
+          Demandé par Julien le 2026-09-14 : « dans la liste des champs à transformer, il faut qu'on puisse
+          transformer aussi le NOW, c'est l'heure et la date du bot au moment où on passe sur le node ».
+          Sa valeur change à chaque passage : aucun champ de contact ne peut la porter, et l'écrire sur la
+          fiche pour la relire aussitôt créerait une donnée que personne n'a demandée.
+        */}
+        <optgroup label={t('Système', 'System')}>
+          <option value={CHAMP_MAINTENANT}>{t('Maintenant (date et heure du passage)', 'Now (date and time of passage)')}</option>
+        </optgroup>
+        <optgroup label={t('Champs du contact', 'Contact fields')}>
+          {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+        </optgroup>
       </select>
 
       <label className="text-xs font-medium text-ink-700">{t('Votre transformation', 'Your transformation')}</label>
       {/**
         * 🔴 L'ENVELOPPE EST MONTRÉE, PLUS SEULEMENT DÉCRITE (2026-09-11). Le serveur exécute ce texte comme
-        * le CORPS d'une fonction qui reçoit `valeur` : c'était déjà vrai, c'était écrit en une phrase, et
+        * le CORPS d'une fonction qui reçoit la valeur du champ : c'était déjà vrai, c'était écrit en une
+        * phrase, et
         * Julien a quand même cru qu'il fallait taper `function (valeur) { … }` en entier. Une phrase se lit
         * ou ne se lit pas ; deux lignes grises au-dessus et en dessous du champ ne se contournent pas. Le
         * libellé disait « Votre fonction », ce qui invitait précisément à écrire la fonction entière.
         */}
-      <div className="font-mono text-[11px] leading-tight text-ink-400">function (valeur) {'{'}</div>
+      {/*
+        🔴 LA SIGNATURE PORTE LE NOM DU CHAMP CHOISI (2026-09-14). Julien a écrit
+        `function (valeur) {return new Date(adresse).getFullYear();}` en croyant que le paramètre suivait le
+        champ : « j'ai l'impression que ce n'est pas dynamique ». L'enveloppe montrait `valeur` quel que
+        soit le champ, ce qui n'aidait pas à le deviner. Le moteur passe désormais la donnée sous LES DEUX
+        noms, donc les blocs déjà écrits avec `valeur` continuent de marcher.
+      */}
+      <div className="font-mono text-[11px] leading-tight text-ink-400">
+        function ({nomParametreJs(champSource) ?? 'valeur'}) {'{'}
+      </div>
       {/* ⚠️ LE RETRAIT EST SUR L'ENVELOPPE, PAS SUR LE CHAMP. `ml-3` posé sur un élément déjà en `w-full`
           S'AJOUTE à sa largeur (une marge n'entre jamais dans le calcul de `width`, quel que soit le
           `box-sizing`) : mesuré le 2026-09-11, le champ débordait de 12 px de son parent dans un panneau qui
@@ -1123,7 +1170,11 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
       <div className="font-mono text-[11px] leading-tight text-ink-400">{'}'}</div>
       <p className="text-[11px] text-ink-500">
         {t('Écrivez seulement l’intérieur : la valeur du champ arrive dans', 'Write only the inside: the field value comes in as')}
-        {' '}<code>valeur</code>, {t('et il faut', 'and you must')} <code>return</code> {t('le résultat.', 'the result.')}
+        {' '}<code>{nomParametreJs(champSource) ?? 'valeur'}</code>
+        {/* ⚠️ On NOMME les deux : un bloc écrit avant aujourd'hui emploie `valeur`, et il continue de
+            marcher. Le taire ferait croire qu'il faut tout réécrire. */}
+        {nomParametreJs(champSource) && <>{' '}({t('ou', 'or')} <code>valeur</code>)</>}
+        , {t('et il faut', 'and you must')} <code>return</code> {t('le résultat.', 'the result.')}
       </p>
 
       <label className="text-xs font-medium text-ink-700">{t('Essayer avec cette valeur', 'Try with this value')}</label>

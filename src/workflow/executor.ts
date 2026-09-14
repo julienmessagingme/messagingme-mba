@@ -3,6 +3,7 @@ import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMo
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow, LienBouton } from './engine';
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
+import { CHAMP_MAINTENANT } from './fonction-js';
 import { renderText } from '../crm/render';
 import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow, RunChannel, RunStatus } from './run-store.pg';
@@ -311,7 +312,7 @@ export interface WorkflowExecutorDeps {
    * 🔴 INJECTÉE, comme l'appel HTTP : elle charge un module WebAssembly, ce qu'une suite de tests de scénario
    * n'a aucune raison de payer. Absente -> le bloc ne fait RIEN et le parcours continue.
    */
-  executerJs?(code: string, valeur: string): Promise<{ ok: boolean; valeur: string }>;
+  executerJs?(code: string, valeur: string, champSource?: string): Promise<{ ok: boolean; valeur: string }>;
   /**
    * Table de substitution des variables `{{champ}}` du contact, pour les messages WhatsApp d'un scénario
    * (message rapide, question).
@@ -674,10 +675,27 @@ export class WorkflowExecutor {
        */
       else if (a.kind === 'fonctionJs') {
         if (this.deps.executerJs) {
-          const evalCtx = this.deps.evalContext ? await this.deps.evalContext(tenantId, waId) : null;
-          const brut = evalCtx?.fields?.[a.champSource];
-          const entree = brut === null || brut === undefined ? '' : String(brut);
-          const r = await this.deps.executerJs(a.code, entree);
+          /**
+           * 🔴 `sys:now` EST L'INSTANT DU PASSAGE, ET IL NE VIENT PAS DE LA FICHE. Demandé par Julien le
+           * 2026-09-14 : « dans la liste des champs à transformer, il faut qu'on puisse transformer aussi
+           * le NOW, c'est l'heure et la date du bot au moment où on passe sur le node ». Aucun champ de
+           * contact ne peut porter ça : la valeur change à chaque passage, et l'écrire sur la fiche pour
+           * la relire aussitôt créerait une donnée que personne n'a demandée.
+           *
+           * ⚠️ EN ISO UTC, parce que c'est la seule forme que `new Date(valeur)` relit sans ambiguïté dans
+           * le bac à sable. Mettre en forme est justement le travail que ce bloc existe pour faire.
+           */
+          // ⚠️ Le contexte n'est lu QUE pour un vrai champ : `sys:now` ne touche pas la base.
+          const evalCtxFields = a.champSource === CHAMP_MAINTENANT || !this.deps.evalContext
+            ? null
+            : (await this.deps.evalContext(tenantId, waId))?.fields;
+          const entree = a.champSource === CHAMP_MAINTENANT
+            ? new Date().toISOString()
+            : (() => {
+              const brut = evalCtxFields?.[a.champSource];
+              return brut === null || brut === undefined ? '' : String(brut);
+            })();
+          const r = await this.deps.executerJs(a.code, entree, a.champSource);
           await this.deps.setField(tenantId, waId, a.champCible, r.ok ? r.valeur : '');
         }
       }

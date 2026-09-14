@@ -58,10 +58,42 @@ function enTexte(v: unknown): string {
  * tout ressort en `{ok: false, erreur}`. Un parcours de contact ne s'arrête pas parce qu'une transformation
  * a raté, et l'écran de mise au point a besoin du message, pas d'une pile.
  */
+/**
+ * LA CLÉ DU CHAMP SYSTÈME « MAINTENANT ».
+ *
+ * 🔴 ELLE VIT ICI ET L'ÉCRAN EN PORTE UNE COPIE NOMMÉE, avec la mention qu'elle en est le miroir : le front
+ * et l'API sont deux projets séparés, il n'y a pas d'import possible. Une valeur en dur des deux côtés
+ * dériverait sans bruit ; une constante nommée des deux côtés se retrouve d'un `grep`.
+ *
+ * ⚠️ LE PRÉFIXE `sys:` EST CELUI QUE LE DÉPÔT EMPLOIE DÉJÀ pour ce qui ne vient pas de la fiche contact
+ * (cf. les variables de template, `sys:prenom`). Une clé sans préfixe pourrait entrer en collision avec un
+ * champ personnalisé qu'un client aurait appelé « now ».
+ */
+export const CHAMP_MAINTENANT = 'sys:now';
+
+/**
+ * Un nom de paramètre JavaScript sûr, ou `null`.
+ *
+ * 🔴 IL SE VÉRIFIE, IL NE SE SUPPOSE PAS. Le nom vient d'une CLÉ DE CHAMP que le client a créée lui-même :
+ * « mail pro », « date-naissance », « prénom » ou « class » sont des clés parfaitement valides côté contact
+ * et des paramètres illégaux côté JavaScript. Injecter l'un d'eux produirait une erreur de syntaxe sur un
+ * code que le client a pourtant bien écrit, ce qui est le pire message possible.
+ */
+export function nomDeParametreSur(cle: string | undefined): string | null {
+  if (!cle || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
+  // Les mots réservés, plus `valeur` qui est déjà pris : un doublon de paramètre est une erreur de syntaxe.
+  const RESERVES = new Set(['valeur', 'arguments', 'await', 'break', 'case', 'catch', 'class', 'const',
+    'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends', 'false',
+    'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let',
+    'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
+    'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield']);
+  return RESERVES.has(cle) ? null : cle;
+}
+
 export async function executerFonctionJs(
   code: string,
   valeur: string,
-  opts: { delaiMs?: number; memoireOctets?: number } = {},
+  opts: { delaiMs?: number; memoireOctets?: number; nomParametre?: string } = {},
 ): Promise<ResultatJs> {
   if (code.trim() === '') return { ok: false, valeur: '', erreur: 'aucun code' };
   if (code.length > MAX_CODE_JS) return { ok: false, valeur: '', erreur: `code trop long (${MAX_CODE_JS} caractères maximum)` };
@@ -79,7 +111,24 @@ export async function executerFonctionJs(
       // La valeur d'entrée voyage en JSON, donc sans aucune référence à un objet de NOTRE tas : c'est la
       // seule façon de passer une donnée sans ouvrir un pont entre les deux mondes.
       const entree = JSON.stringify(valeur);
-      const res = ctx.evalCode(`(function(valeur){\n${code}\n})(${entree})`);
+      /**
+       * 🔴 LA VALEUR ARRIVE SOUS DEUX NOMS, ET `valeur` RESTE TOUJOURS VALIDE. Julien, le 2026-09-14,
+       * après avoir écrit `function (valeur) {return new Date(adresse).getFullYear();}` : « j’ai
+       * l’impression que ce n’est pas dynamique ; il faut que ta function soit plutôt comme ça
+       * function (adresse) ». Il a raison sur l’intention, et l’écran montre désormais le nom du champ.
+       *
+       * ⚠️ MAIS `valeur` NE PEUT PAS DISPARAÎTRE : des blocs écrits avant aujourd’hui l’emploient et
+       * tournent en production. Renommer le paramètre les casserait TOUS, en silence, sur un chemin qu’on
+       * n’emprunte qu’au passage d’un contact. Les deux noms désignent la même donnée.
+       */
+      const alias = nomDeParametreSur(opts.nomParametre);
+      const res = ctx.evalCode(alias
+        ? `(function(valeur, ${alias}){
+${code}
+})(${entree}, ${entree})`
+        : `(function(valeur){
+${code}
+})(${entree})`);
       if (res.error) {
         const details = ctx.dump(res.error) as unknown;
         res.error.dispose();

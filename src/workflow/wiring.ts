@@ -519,7 +519,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * ⚠️ ELLE NE LEVE JAMAIS : une faute du client ressort en `{ok: false}`, que l executeur traduit en champ
      * vide. Un parcours ne s arrete pas parce qu une transformation a rate.
      */
-    executerJs: (code, valeur) => executerFonctionJs(code, valeur),
+    // ⚠️ Le CHAMP SOURCE voyage jusqu'au moteur : c'est lui qui donne son nom au paramètre, en plus de
+    // `valeur` qui reste toujours valide (des blocs écrits avant l'emploient et tournent en production).
+    executerJs: (code, valeur, champSource) => executerFonctionJs(code, valeur, champSource ? { nomParametre: champSource } : {}),
     /**
      * LES VARIABLES `{{champ}}` d un message rapide ou d une question.
      *

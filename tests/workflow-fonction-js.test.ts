@@ -151,7 +151,10 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
     });
     const ex = new WorkflowExecutor(deps({ setField, executerJs, evalContext }) as WorkflowExecutorDeps);
     await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: null });
-    expect(executerJs).toHaveBeenCalledWith('return valeur + "!";', 'frais');
+    // ⚠️ LE CHAMP SOURCE VOYAGE JUSQU'AU MOTEUR depuis le 2026-09-14 : c'est lui qui donne son nom au
+    // paramètre de la fonction, en plus de `valeur`. Le cas exercé ici est inchangé (la valeur est RELUE
+    // à l'exécution, pas prise au walk) ; seule l'attente suit le troisième argument.
+    expect(executerJs).toHaveBeenCalledWith('return valeur + "!";', 'frais', 'brut');
     expect(setField).toHaveBeenCalledWith('t1', '33600000001', 'propre', 'FRAIS!');
   });
 
@@ -178,5 +181,49 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
     const ex = new WorkflowExecutor(deps({ setField }) as WorkflowExecutorDeps);
     await expect(ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: null })).resolves.toBeDefined();
     expect(setField).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * LE PARAMÈTRE PORTE LE NOM DU CHAMP, ET `valeur` RESTE VALIDE.
+ *
+ * 🔴 Julien, 2026-09-14, après avoir écrit `function (valeur) {return new Date(adresse).getFullYear();}` :
+ * « j'ai l'impression que ce n'est pas dynamique ; il faut que ta function soit plutôt comme ça
+ * function (adresse) ». Il a raison sur l'intention. Mais renommer le paramètre casserait TOUS les blocs
+ * écrits avant, en silence, sur un chemin qu'on n'emprunte qu'au passage d'un contact.
+ */
+describe('le nom du paramètre suit le champ source', () => {
+  it('🔴 le champ est lisible sous SON nom', async () => {
+    const r = await executerFonctionJs('return adresse.toUpperCase();', 'paris', { nomParametre: 'adresse' });
+    expect(r).toMatchObject({ ok: true, valeur: 'PARIS' });
+  });
+
+  it('🔴 et `valeur` marche TOUJOURS, sinon les blocs existants tombent', async () => {
+    const r = await executerFonctionJs('return valeur.toUpperCase();', 'paris', { nomParametre: 'adresse' });
+    expect(r).toMatchObject({ ok: true, valeur: 'PARIS' });
+  });
+
+  it('⚠️ une clé qui n’est pas un identifiant JS est ignorée, pas injectée', async () => {
+    // « mail pro » est une clé de champ parfaitement valide et un paramètre illégal : l'injecter produirait
+    // une erreur de syntaxe sur un code que le client a pourtant bien écrit.
+    const r = await executerFonctionJs('return valeur + "!";', 'ok', { nomParametre: 'mail pro' });
+    expect(r).toMatchObject({ ok: true, valeur: 'ok!' });
+  });
+
+  it('⚠️ un mot réservé est ignoré aussi', async () => {
+    const r = await executerFonctionJs('return valeur + "!";', 'ok', { nomParametre: 'class' });
+    expect(r).toMatchObject({ ok: true, valeur: 'ok!' });
+  });
+
+  it('⚠️ `valeur` comme nom de champ ne crée pas un doublon de paramètre', async () => {
+    // Deux paramètres du même nom sont une erreur de syntaxe.
+    const r = await executerFonctionJs('return valeur + "!";', 'ok', { nomParametre: 'valeur' });
+    expect(r).toMatchObject({ ok: true, valeur: 'ok!' });
+  });
+
+  it('le cas de Julien, de bout en bout', async () => {
+    const r = await executerFonctionJs('return new Date(naissance).getFullYear();', '1978-04-12',
+      { nomParametre: 'naissance' });
+    expect(r).toMatchObject({ ok: true, valeur: '1978' });
   });
 });
