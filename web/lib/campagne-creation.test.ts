@@ -36,9 +36,9 @@ const ETAT: EtatPourCreation = {
   quand: 'maintenant',
   dateLocale: '',
   contenus: {
-    1: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
-    2: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
-    3: { formule: 'seul', emailTemplateId: 'em-1', suggestions: [] },
+    1: { formule: 'seul', devenir: 'inbox', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
+    2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] },
+    3: { formule: 'seul', devenir: 'inbox', emailTemplateId: 'em-1', suggestions: [] },
   },
 };
 
@@ -96,8 +96,8 @@ describe('entreeDeCreation', () => {
     const etat: EtatPourCreation = {
       ...ETAT,
       contenus: {
-        1: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
-        2: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
+        1: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] },
+        2: { formule: 'seul', devenir: 'inbox', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
       },
     };
     const e = entreeDeCreation(etat, rcsDAbord, CTX);
@@ -167,7 +167,7 @@ describe('entreeDeCreation', () => {
         assignationUserId: 'u-1',
         contenus: {
           1: { formule: 'avec_scenario', workflowId: 'wf-1', modeleDuScenario: { name: 'promo', language: 'fr' }, suggestions: [] },
-          2: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
+          2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] },
           3: { formule: 'avec_scenario', workflowId: 'wf-3', suggestions: [] },
         },
       },
@@ -279,12 +279,12 @@ describe('problemeAvantLancement', () => {
 
   // 🔴 Chaque étage est contrôlé, pas seulement le premier : un repli sans contenu partirait vide.
   it('refuse un etage e-mail sans modele', () => {
-    const etat: EtatPourCreation = { ...ETAT, contenus: { ...ETAT.contenus, 3: { formule: 'seul', suggestions: [] } } };
+    const etat: EtatPourCreation = { ...ETAT, contenus: { ...ETAT.contenus, 3: { formule: 'seul', devenir: 'inbox', suggestions: [] } } };
     expect(problemeAvantLancement(etat, CHAINE, CTX)).toMatch(/étage 3/);
   });
 
   it('refuse un etage RCS sans message', () => {
-    const etat: EtatPourCreation = { ...ETAT, contenus: { ...ETAT.contenus, 2: { formule: 'seul', texteRcs: '  ', suggestions: [] } } };
+    const etat: EtatPourCreation = { ...ETAT, contenus: { ...ETAT.contenus, 2: { formule: 'seul', devenir: 'inbox', texteRcs: '  ', suggestions: [] } } };
     expect(problemeAvantLancement(etat, CHAINE, CTX)).toMatch(/étage 2/);
   });
 
@@ -418,8 +418,8 @@ describe('les variables du modèle', () => {
     const etat: EtatPourCreation = {
       ...ETAT,
       contenus: {
-        1: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
-        2: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [], variables: DEUX_LIGNES },
+        1: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] },
+        2: { formule: 'seul', devenir: 'inbox', templateName: 'promo', templateLanguage: 'fr', suggestions: [], variables: DEUX_LIGNES },
       },
     };
     const v = problemeAvantLancement(etat, rcsDAbord, { ...CTX, variablesDuModele: { 2: 2 } });
@@ -434,8 +434,8 @@ describe('les variables du modèle', () => {
     const etat: EtatPourCreation = {
       ...ETAT,
       contenus: {
-        1: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
-        2: { formule: 'seul', templateName: 'simple', templateLanguage: 'fr', suggestions: [] },
+        1: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] },
+        2: { formule: 'seul', devenir: 'inbox', templateName: 'simple', templateLanguage: 'fr', suggestions: [] },
       },
     };
     expect(problemeAvantLancement(etat, rcsDAbord, { ...CTX, variablesDuModele: { 2: 0 } })).toBeNull();
@@ -451,8 +451,8 @@ describe('les variables du modèle', () => {
     const etat: EtatPourCreation = {
       ...ETAT,
       contenus: {
-        1: { formule: 'seul', texteRcs: 'coucou', suggestions: [] },
-        2: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [], variables: DEUX_LIGNES },
+        1: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] },
+        2: { formule: 'seul', devenir: 'inbox', templateName: 'promo', templateLanguage: 'fr', suggestions: [], variables: DEUX_LIGNES },
       },
     };
     expect(entreeDeCreation(etat, rcsDAbord, CTX).paramMapping).toEqual([]);
@@ -493,7 +493,7 @@ describe('modeleDeLEtage et variablesParRang', () => {
   const MODELES = [{ name: 'promo', body: 'Bonjour {{1}}, voici {{2}}' }, { name: 'simple', body: 'Bonjour' }];
 
   it('en formule « seul », c est le modele de l etage', () => {
-    expect(modeleDeLEtage({ formule: 'seul', templateName: 'promo', suggestions: [] })).toEqual({ name: 'promo' });
+    expect(modeleDeLEtage({ formule: 'seul', devenir: 'inbox', templateName: 'promo', suggestions: [] })).toEqual({ name: 'promo' });
   });
 
   // 🔴 EN FORMULE « SCÉNARIO », CE N'EST PAS LE MODÈLE DU SÉLECTEUR : la campagne ne l'envoie pas, elle
@@ -510,20 +510,20 @@ describe('modeleDeLEtage et variablesParRang', () => {
   });
 
   it('compte les variables du modele de chaque etage WhatsApp', () => {
-    const table = variablesParRang(CHAINE, { 1: { formule: 'seul', templateName: 'promo', suggestions: [] } }, MODELES);
+    const table = variablesParRang(CHAINE, { 1: { formule: 'seul', devenir: 'inbox', templateName: 'promo', suggestions: [] } }, MODELES);
     expect(table).toEqual({ 1: 2 });
   });
 
   // ⚠️ UN MODÈLE INTROUVABLE N'ENTRE PAS DANS LA TABLE, il n'y entre pas à zéro : « on ne sait pas » et
   // « il n'en a pas » appellent des décisions opposées côté garde.
   it('un modele introuvable est ABSENT de la table, pas a zero', () => {
-    const table = variablesParRang(CHAINE, { 1: { formule: 'seul', templateName: 'inconnu', suggestions: [] } }, MODELES);
+    const table = variablesParRang(CHAINE, { 1: { formule: 'seul', devenir: 'inbox', templateName: 'inconnu', suggestions: [] } }, MODELES);
     expect(table).toEqual({});
     expect(1 in table).toBe(false);
   });
 
   it('un modele sans variable y entre bien a zero', () => {
-    const table = variablesParRang(CHAINE, { 1: { formule: 'seul', templateName: 'simple', suggestions: [] } }, MODELES);
+    const table = variablesParRang(CHAINE, { 1: { formule: 'seul', devenir: 'inbox', templateName: 'simple', suggestions: [] } }, MODELES);
     expect(table).toEqual({ 1: 0 });
   });
 });
@@ -665,8 +665,8 @@ describe('le visuel d un etage RCS', () => {
   const avecRcs = (rcs: Record<string, unknown>): EtatPourCreation => ({
     ...ETAT,
     contenus: {
-      1: { formule: 'seul', texteRcs: 'coucou', suggestions: [], ...rcs },
-      2: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
+      1: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [], ...rcs },
+      2: { formule: 'seul', devenir: 'inbox', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
     },
   });
 

@@ -6,7 +6,7 @@ import type { RcsOutbound, RcsSuggestion } from './rcs-types';
 import { maxTexteRcs, versMessageRcs } from './rcs';
 import { boutonPret } from './rcs-boutons';
 import type { EtageAssistant } from './campagne-chaine';
-import { RANG_INITIAL, debitBorne, devenirProposable, reessaiProposable } from './campagne-chaine';
+import { RANG_INITIAL, assignationProposable, debitBorne, reessaiProposable } from './campagne-chaine';
 import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
 import { varCountOf } from './fields';
 
@@ -77,6 +77,8 @@ export interface EtatPourCreation {
     modeleDuScenario?: { name: string; language: string };
     /** Par quoi le scénario de cet étage ouvre. Cf. `ContenuEtage.canalOuvertureDuScenario`. */
     canalOuvertureDuScenario?: 'whatsapp' | 'rcs' | null;
+    /** Cf. `ContenuEtage.devenir`. N'est envoyé que pour un étage SANS scénario. */
+    devenir?: 'mba' | 'inbox';
   }>;
 }
 
@@ -397,8 +399,13 @@ export function entreeDeCreation(
   const contenuPremier = etat.contenus[premier.rang];
   const rcsPremier = premier.canal === 'rcs';
   const scenarioPremier = contenuPremier?.formule === 'avec_scenario' && !!contenuPremier.workflowId;
-  /** La question « que se passe-t-il quand le contact répond ? » a-t-elle été posée à l'écran ? */
-  const devenirDemande = devenirProposable(tries, etat.contenus);
+  /**
+   * La question « à qui va la conversation ? » a-t-elle été posée à l'écran ?
+   *
+   * ⚠️ ELLE NE L'EST QUE SI UN ÉTAGE RENVOIE VERS L'INBOX (2026-09-14). Le DEVENIR, lui, est descendu dans
+   * les étages : il voyage par étage, plus au niveau de la campagne.
+   */
+  const devenirDemande = assignationProposable(tries, etat.contenus);
 
   /**
    * ⚠️ LES ÉTAGES AU-DELÀ DU PREMIER PORTENT LEUR CONTENU ; le rang 1 n'en porte pas, et ce n'est pas un
@@ -411,6 +418,9 @@ export function entreeDeCreation(
     const c = etat.contenus[e.rang];
     return {
       rang: e.rang,
+      // ⚠️ Même garde que pour le premier étage : un étage à scénario n'envoie AUCUN devenir, c'est le
+      // scénario qui décide. Ce qu'on cache à l'écran doit être exactement ce qu'on n'envoie pas.
+      ...(c?.formule === 'seul' && c.devenir ? { devenir: c.devenir } : {}),
       canal: e.canal,
       ...(e.canal === 'whatsapp' && c?.templateName ? { templateName: c.templateName, templateLanguage: c.templateLanguage ?? 'fr' } : {}),
       ...(e.canal === 'rcs' ? { rcsMessage: messageRcs(c) } : {}),
@@ -499,5 +509,17 @@ export function entreeDeCreation(
      */
     ...(devenirDemande && etat.assignation !== 'aucune' ? { assignation: etat.assignation } : {}),
     ...(devenirDemande && etat.assignation === 'personne' ? { assignationUserId: etat.assignationUserId } : {}),
+    /**
+     * CE QUI SE PASSE QUAND LE CONTACT RÉPOND AU PREMIER ÉTAGE (migration 0144).
+     *
+     * 🔴 IL VIT AU NIVEAU DE LA CAMPAGNE ET NON DANS `chaine`, et c'est l'invariant de la migration 0134 :
+     * le rang 1 EST la campagne, ses colonnes en sont la seule source. C'est aussi ce qui permet à une
+     * campagne SANS repli (qui n'envoie aucune `chaine`) de dire ce que devient sa réponse.
+     *
+     * ⚠️ RIEN N'EST ENVOYÉ QUAND CET ÉTAGE OUVRE UN SCÉNARIO : c'est lui qui décide qui répond, et l'écran
+     * ne pose alors pas la question. Masquer n'efface pas, c'est la troisième fois que ce motif se pose
+     * ici (`reessayer`, `assignation`) : ce qu'on cache doit être exactement ce qu'on n'envoie pas.
+     */
+    ...(contenuPremier?.formule === 'seul' && contenuPremier.devenir ? { devenir: contenuPremier.devenir } : {}),
   };
 }

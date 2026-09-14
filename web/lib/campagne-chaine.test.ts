@@ -10,7 +10,7 @@ import {
   DEBIT_DEFAUT,
   DEBIT_MAX,
   DEBIT_MIN,
-  devenirProposable,
+  assignationProposable,
 } from './campagne-chaine';
 
 /**
@@ -201,14 +201,33 @@ describe('les heures d ouverture de l espace', () => {
   });
 });
 
-describe('la question « que se passe-t-il quand le contact repond ? »', () => {
+/**
+ * ⚠️ CE BLOC A CHANGÉ DE SUJET LE 2026-09-14, ET C'EST UNE DÉCISION PRODUIT, PAS UNE RÉGRESSION. La
+ * question « que se passe-t-il quand le contact répond ? » est DESCENDUE dans chaque cadre d'étage
+ * (demande de Julien : « qui s'appliquera alors QUE pour le WhatsApp, et ensuite tu passes à l'étage 2 »).
+ * Ce qui reste propre à la CAMPAGNE, et que cette fonction décide, c'est « à qui va la conversation »,
+ * qui n'a d'objet que si un étage renvoie vers l'Inbox. Les cas exercés sont conservés, transposés.
+ */
+describe('la question « à qui va la conversation ? »', () => {
   const CHAINE = [{ rang: 1, canal: 'whatsapp' as const }, { rang: 2, canal: 'rcs' as const }];
 
-  it('elle se pose sur une campagne de modele seul', () => {
-    expect(devenirProposable(CHAINE, {
-      1: { formule: 'seul', templateName: 'promo' },
-      2: { formule: 'seul', texteRcs: 'coucou' },
+  it('elle se pose des qu un etage renvoie vers l Inbox', () => {
+    expect(assignationProposable(CHAINE, {
+      1: { formule: 'seul', devenir: 'inbox', templateName: 'promo' },
+      2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou' },
     })).toBe(true);
+  });
+
+  /**
+   * 🔴 L'AGENT DE META N'EST PAS UNE ASSIGNATION. Si tous les étages le laissent répondre, la conversation
+   * ne revient à personne : poser « à qui va-t-elle ? » ferait choisir un destinataire pour un objet qui
+   * n'arrive jamais, et le point d'envoi emporterait une assignation que plus aucun écran ne montre.
+   */
+  it('🔴 elle ne se pose PAS quand tout reste a l agent de Meta', () => {
+    expect(assignationProposable(CHAINE, {
+      1: { formule: 'seul', devenir: 'mba', templateName: 'promo' },
+      2: { formule: 'seul', devenir: 'mba', texteRcs: 'coucou' },
+    })).toBe(false);
   });
 
   /**
@@ -217,7 +236,7 @@ describe('la question « que se passe-t-il quand le contact repond ? »', () => 
    * graphe répond déjà, et le point d'envoi emporterait une assignation que personne ne voit plus.
    */
   it('🔴 elle ne se pose plus quand TOUS les etages ouvrent un scenario', () => {
-    expect(devenirProposable(CHAINE, {
+    expect(assignationProposable(CHAINE, {
       1: { formule: 'avec_scenario', workflowId: 'wf-1' },
       2: { formule: 'avec_scenario', workflowId: 'wf-2' },
     })).toBe(false);
@@ -228,26 +247,39 @@ describe('la question « que se passe-t-il quand le contact repond ? »', () => 
    * sans qu'aucun parcours ne les prenne : masquer la question les laisserait dans un défaut que
    * personne n'a choisi, ce qui est exactement le reproche fait à l'ancien comportement.
    */
-  it('🔴 un seul etage hors scenario la repose, quel que soit son rang', () => {
-    expect(devenirProposable(CHAINE, {
+  it('🔴 un seul etage vers l Inbox la repose, quel que soit son rang', () => {
+    expect(assignationProposable(CHAINE, {
       1: { formule: 'avec_scenario', workflowId: 'wf-1' },
-      2: { formule: 'seul', texteRcs: 'coucou' },
+      2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou' },
     })).toBe(true);
-    expect(devenirProposable(CHAINE, {
-      1: { formule: 'seul', templateName: 'promo' },
+    expect(assignationProposable(CHAINE, {
+      1: { formule: 'seul', devenir: 'inbox', templateName: 'promo' },
       2: { formule: 'avec_scenario', workflowId: 'wf-2' },
     })).toBe(true);
   });
 
-  // ⚠️ UN ÉTAGE VIDE N'EST PAS UN SCÉNARIO : tant qu'on ne sait pas, on ne retire pas la question. C'est
-  // `rangsSansContenu` qui décide si l'écran est prêt à la poser, pas celle-ci.
-  it('un etage encore vide compte comme hors scenario', () => {
-    expect(devenirProposable(CHAINE, { 1: { formule: 'avec_scenario', workflowId: 'wf-1' } })).toBe(true);
+  /**
+   * 🔴 LE CAS QUI FAIT TOUT L'INTÉRÊT DU LOT : deux étages peuvent DIVERGER. Julien, le 2026-09-14 :
+   * « admettons WhatsApp, si la personne dit Modèle + scénario tu ne poses pas la question ; et ensuite tu
+   * passes à l'étage 2, admettons RCS, et pareil ». Ici le WhatsApp laisse l'agent de Meta répondre et le
+   * RCS revient à l'équipe : il faut donc bien demander à qui.
+   */
+  it('🔴 deux etages peuvent diverger, et un seul suffit', () => {
+    expect(assignationProposable(CHAINE, {
+      1: { formule: 'seul', devenir: 'mba', templateName: 'promo' },
+      2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou' },
+    })).toBe(true);
+  });
+
+  // ⚠️ UN ÉTAGE VIDE N'A PAS ENCORE DE DEVENIR, donc il ne réclame aucune assignation. C'est
+  // `rangsSansContenu` qui empêche l'écran d'avancer tant qu'il est vide, pas cette fonction.
+  it('un etage encore vide ne reclame pas d assignation', () => {
+    expect(assignationProposable(CHAINE, { 1: { formule: 'avec_scenario', workflowId: 'wf-1' } })).toBe(false);
   });
 
   // ⚠️ SANS CHAÎNE, AUCUNE QUESTION. Le cas n'arrive qu'avant le choix du canal, où l'étape Contenu est
   // inatteignable ; le défaut prudent est de ne rien proposer plutôt que de proposer sur du vide.
   it('une chaine vide ne pose pas la question', () => {
-    expect(devenirProposable([], {})).toBe(false);
+    expect(assignationProposable([], {})).toBe(false);
   });
 });

@@ -105,6 +105,8 @@ export function reessaiProposable(chaine: EtageAssistant[]): boolean {
  */
 export interface ContenuMinimal {
   formule: 'seul' | 'avec_scenario';
+  /** Cf. `ContenuEtage.devenir`. Seul `inbox` fait revenir la conversation à l'équipe. */
+  devenir?: string | undefined;
   templateName?: string | undefined;
   workflowId?: string | undefined;
   texteRcs?: string | undefined;
@@ -236,9 +238,12 @@ export function heuresDOuvertureReglees(
  * l'écran combine les deux. Un étage vide n'est pas un scénario, il compte donc comme « hors scénario »,
  * ce qui est le bon défaut : tant qu'on ne sait pas, on ne retire pas la question.
  */
-export function devenirProposable(
+export function assignationProposable(
   chaine: EtageAssistant[],
   contenus: Record<number, ContenuMinimal | undefined>,
 ): boolean {
-  return chaine.some((e) => contenus[e.rang]?.formule !== 'avec_scenario');
+  return chaine.some((e) => {
+    const c = contenus[e.rang];
+    return c?.formule !== 'avec_scenario' && c?.devenir === 'inbox';
+  });
 }

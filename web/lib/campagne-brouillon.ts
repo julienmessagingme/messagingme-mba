@@ -34,6 +34,8 @@ import type { VarRow } from './variables-template';
 /** Le contenu d'un étage, tel qu'un brouillon le porte. Miroir structurel de `ContenuEtage`. */
 export interface ContenuBrouillon {
   formule: 'seul' | 'avec_scenario';
+  /** Cf. `ContenuEtage.devenir`. Le brouillon le garde par ÉTAGE depuis le 2026-09-14. */
+  devenir: 'mba' | 'inbox';
   templateName?: string;
   templateLanguage?: string;
   workflowId?: string;
@@ -70,8 +72,6 @@ export interface EtatBrouillon {
   heuresOuvrees: boolean;
   debitParMinute: number;
   contenus: Record<number, ContenuBrouillon>;
-  devenir: 'mba' | 'agent' | 'inbox';
-  agentId: string | null;
   assignation: 'aucune' | 'personne' | 'tour_de_role';
   assignationUserId: string | null;
   audience: AudienceChoix;
@@ -100,8 +100,6 @@ export function brouillonDeLEtat(etat: EtatBrouillon): Record<string, unknown> {
     heuresOuvrees: etat.heuresOuvrees,
     debitParMinute: etat.debitParMinute,
     contenus: etat.contenus,
-    devenir: etat.devenir,
-    agentId: etat.agentId,
     assignation: etat.assignation,
     assignationUserId: etat.assignationUserId,
     quand: etat.quand,
@@ -162,6 +160,9 @@ function contenuDe(v: unknown): ContenuBrouillon {
   const modele = objet(o.modeleDuScenario);
   return {
     formule: dans(o.formule, ['seul', 'avec_scenario'] as const) ?? 'seul',
+    // ⚠️ `mba` EN REPLI, comme `contenuVide()` : c'est le comportement réel sans réglage (l'agent de Meta
+    // est le répondeur primaire du numéro). Un brouillon d'avant le 2026-09-14 n'a pas ce champ.
+    devenir: dans(o.devenir, ['mba', 'inbox'] as const) ?? 'mba',
     ...(texte(o, 'templateName') ? { templateName: texte(o, 'templateName')! } : {}),
     ...(texte(o, 'templateLanguage') ? { templateLanguage: texte(o, 'templateLanguage')! } : {}),
     ...(texte(o, 'workflowId') ? { workflowId: texte(o, 'workflowId')! } : {}),
@@ -221,8 +222,6 @@ function etatDepuisAssistant(o: Record<string, unknown>): Partial<EtatBrouillon>
     ...(booleen(o, 'heuresOuvrees') !== undefined ? { heuresOuvrees: booleen(o, 'heuresOuvrees')! } : {}),
     ...(typeof o.debitParMinute === 'number' ? { debitParMinute: debitBorne(o.debitParMinute) } : {}),
     contenus,
-    ...(dans(o.devenir, ['mba', 'agent', 'inbox'] as const) ? { devenir: o.devenir as 'mba' | 'agent' | 'inbox' } : {}),
-    agentId: texte(o, 'agentId') ?? null,
     ...(dans(o.assignation, ['aucune', 'personne', 'tour_de_role'] as const) ? { assignation: o.assignation as 'aucune' | 'personne' | 'tour_de_role' } : {}),
     assignationUserId: texte(o, 'assignationUserId') ?? null,
     ...(dans(o.quand, ['maintenant', 'plus_tard'] as const) ? { quand: o.quand as 'maintenant' | 'plus_tard' } : {}),
@@ -258,6 +257,8 @@ function etatDepuisAncien(o: Record<string, unknown>): Partial<EtatBrouillon> {
   const vars = lignes(o.vars);
   const contenu: ContenuBrouillon = {
     formule: mode === 'workflow' ? 'avec_scenario' : 'seul',
+    // ⚠️ L'ancien formulaire ne connaissait pas cette question : `mba` est ce qu'il FAISAIT réellement.
+    devenir: 'mba',
     suggestions: [],
     ...(mode === 'rcs'
       ? {

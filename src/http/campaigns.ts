@@ -14,7 +14,7 @@ import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
-import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type EtageEntrant } from '../campaign/etages';
+import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type DevenirEtage, type EtageEntrant } from '../campaign/etages';
 // Le MÊME analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
 import { parseBulkTarget } from './contacts';
@@ -277,6 +277,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       rattrapageHorsHoraires: unknown;
       assignation: unknown;
       assignationUserId: unknown;
+      devenir: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
@@ -583,8 +584,26 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       }
     }
 
+    /**
+     * CE QUI SE PASSE QUAND LE CONTACT RÉPOND AU PREMIER ÉTAGE (migration 0144).
+     *
+     * ⚠️ REFUSÉ ICI PLUTÔT QU'EN BASE : le CHECK `campaign_etages_devenir_chk` le refuserait aussi, mais
+     * une violation de contrainte LÈVE, donc sortirait en 500, donc derrière une page Cloudflare qui
+     * n'expliquerait rien. Un corps mal formé est un message destiné à l'utilisateur.
+     *
+     * ⚠️ Les étages SUIVANTS portent le leur dans `chaine[].devenir`, validé par `problemeDeChaine`.
+     */
+    let devenir: DevenirEtage | undefined;
+    if (b.devenir !== undefined && b.devenir !== null) {
+      if (b.devenir !== 'mba' && b.devenir !== 'inbox') {
+        return reply.code(400).send({ error: 'devenir invalide (mba|inbox)' });
+      }
+      devenir = b.devenir;
+    }
+
     const input: CreateCampaignInput = {
       tenantId: effectiveTenant,
+      ...(devenir ? { devenir } : {}),
       phoneNumberId: isRcs ? '' : (b.phoneNumberId as string),
       name: b.name,
       category: b.category,

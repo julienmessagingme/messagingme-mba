@@ -9,7 +9,7 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
-import { devenirProposable, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
+import { assignationProposable, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { scenariosPourEtage } from '@/lib/campagne-scenario';
 import { CreationScenarioEnLigne } from '@/components/campagne/CreationScenarioEnLigne';
@@ -182,38 +182,22 @@ export function EtapeContenu({
       ))}
 
       {/*
-        🔴 LA QUESTION DU DEVENIR N'APPARAÎT QU'UNE FOIS TOUT LE CONTENU CHOISI (2026-09-13, demande de
-        Julien après son essai réel, ÉLARGIE par lui le 2026-09-14). Demander « que se passe-t-il quand le
-        contact répond ? » avant de savoir ce que le contact REÇOIT pose la question dans le désordre : la
-        réponse dépend de ce qu'on envoie.
+        🔴 LA QUESTION DU DEVENIR A QUITTÉ CET ENDROIT LE 2026-09-14 : elle vit maintenant DANS chaque cadre
+        d'étage, et seulement pour les étages sans scénario (demande de Julien : « qui s'appliquera alors QUE
+        pour le WhatsApp, et ensuite tu passes à l'étage 2, et pareil »). Ce qui reste ici est la seule
+        question qui demeure propre à la CAMPAGNE : à qui la conversation revient quand elle revient à
+        l'équipe. Le tour de rôle compte sur un rang unique, il ne peut pas être réglé deux fois.
 
-        ⚠️ ELLE SE LISAIT SUR LE RANG 1 SEUL, ELLE LIT MAINTENANT TOUTE LA CHAÎNE : « d'abord se
-        concentrer sur le contenu, étage 1, étage 2 si campagne avec fallback ; ne pas faire apparaître de
-        suite la question ». L'ancienne justification (pouvoir régler le devenir sans descendre remplir
-        l'étage 2) décrivait un confort que personne n'avait demandé, contre l'ordre de lecture que Julien
-        demande, lui, deux fois.
-
-        🔴 ET ELLE DISPARAÎT QUAND TOUT PART EN SCÉNARIO : c'est le scénario qui dit qui répond. Le dire
-        plutôt que de laisser un vide, sans quoi l'écran ressemble à une question qu'on aurait oubliée.
+        ⚠️ ELLE N'APPARAÎT QU'UNE FOIS TOUT LE CONTENU CHOISI, et seulement si au moins un étage renvoie
+        vers l'Inbox : sinon personne ne revient à l'équipe et la question n'a pas d'objet.
       */}
-      {rangsIncomplets.length === 0 && (
-        devenirProposable(chaine, etat.contenus) ? (
-          <BlocDevenir
-            etat={etat}
-            references={references}
-            capacites={capacites}
-            nbDestinataires={nbDestinataires}
-            onChange={onChange}
-          />
-        ) : (
-          <p className="mt-6 w-full rounded-xl border border-ink-200 p-4 text-sm text-ink-600" data-testid="devenir-dans-le-scenario">
-            {/* ⚠️ LE PLURIEL EST CALCULE, PAS DEVINE : une chaine de repli porte un scenario PAR ETAGE, et
-                une phrase au singulier devant deux scenarios ferait chercher lequel des deux decide. */}
-            {chaine.length > 1
-              ? 'Ce qui se passe quand le contact répond est réglé dans les scénarios : ce sont eux qui décident si un agent IA prend la main ou si la conversation revient à l’équipe.'
-              : 'Ce qui se passe quand le contact répond est réglé dans le scénario : c’est lui qui décide si un agent IA prend la main ou si la conversation revient à l’équipe.'}
-          </p>
-        )
+      {rangsIncomplets.length === 0 && assignationProposable(chaine, etat.contenus) && (
+        <BlocAssignation
+          etat={etat}
+          references={references}
+          nbDestinataires={nbDestinataires}
+          onChange={onChange}
+        />
       )}
 
       {/* Ce qui reste à remplir, nommé. Un bouton grisé sans sa raison est le défaut qu'on vient de
@@ -232,7 +216,10 @@ export function EtapeContenu({
 
 /** Un contenu d'étage vierge. Les suggestions partent VIDES : cf. `CadreRcs`. */
 export function contenuVide(): ContenuEtage {
-  return { formule: 'seul', suggestions: [] };
+  // ⚠️ `mba` PAR DÉFAUT, et c'est le comportement RÉEL sans réglage : l'agent de Meta est le répondeur
+  // primaire du numéro, donc ne rien faire revient à le laisser répondre. Un défaut `inbox` ferait prendre
+  // le fil sur toute campagne dont personne n'a touché la question, ce qui changerait le produit en silence.
+  return { formule: 'seul', devenir: 'mba', suggestions: [] };
 }
 
 function CadreEtage({
@@ -318,7 +305,81 @@ function CadreEtage({
             />
           )}
           {etage.canal === 'email' && <CadreEmail contenu={contenu} references={references} onChange={onChange} />}
+
+          {/*
+            🔴 LA QUESTION DU DEVENIR EST ICI, DANS L'ÉTAGE, ET SEULEMENT SI CET ÉTAGE PART SANS SCÉNARIO
+            (2026-09-14, demande de Julien après son essai) : « si la personne dit Modèle + scénario, tu ne
+            fais pas apparaître cette question, et si elle choisit modèle tu fais apparaître la question, qui
+            s'appliquera alors QUE pour le WhatsApp ; et ensuite tu passes à l'étage 2, admettons RCS, et
+            pareil ».
+
+            ⚠️ AVEC UN SCÉNARIO, C'EST LUI QUI DÉCIDE, donc on ne pose rien : la phrase le dit plutôt que de
+            laisser un vide, sans quoi l'écran ressemble à une question qu'on aurait oubliée.
+          */}
+          <div className="mt-4 border-t border-ink-100 pt-4">
+            {contenu.formule === 'avec_scenario' ? (
+              <p className="text-sm text-ink-600" data-testid={`devenir-scenario-${etage.rang}`}>
+                Ce qui se passe quand le contact répond à cet étage est réglé dans le scénario.
+              </p>
+            ) : (
+              <BlocDevenirEtage rang={etage.rang} contenu={contenu} capacites={capacites} onChange={onChange} />
+            )}
+          </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * QUI RÉPOND QUAND LE CONTACT RÉPOND À CET ÉTAGE. Deux choix, exclusifs.
+ *
+ * 🔴 IL N'Y A PAS DE TROISIÈME OPTION « un agent IA prend la main », et son retrait est une CORRECTION.
+ * Elle existait, faisait choisir un agent précis dans une liste, et ne produisait aucun effet : ni
+ * `devenir` ni `agentId` ne quittaient le navigateur. En allant la câbler, le fait qui l'interdit est
+ * apparu : `agent_sessions.run_id` est `NOT NULL`, un agent IA ne sait pas exister hors d'un scénario. Le
+ * chemin pour qu'un agent reprenne une campagne existe déjà, c'est « modèle + scénario ».
+ */
+function BlocDevenirEtage({
+  rang,
+  contenu,
+  capacites,
+  onChange,
+}: {
+  rang: number;
+  contenu: ContenuEtage;
+  capacites: CapacitesEspace;
+  onChange: (patch: Partial<ContenuEtage>) => void;
+}) {
+  return (
+    <div data-testid={`bloc-devenir-${rang}`}>
+      <p className="text-sm font-medium text-ink-800">Que se passe-t-il quand le contact répond ?</p>
+      <div className="mt-3 space-y-2">
+        <Radio
+          groupe={`devenir-${rang}`}
+          libelle="L'agent de Meta prend la main"
+          coche={contenu.devenir === 'mba'}
+          desactive={!capacites.mbaEnabled}
+          onCheck={() => onChange({ devenir: 'mba' })}
+        />
+        <Radio
+          groupe={`devenir-${rang}`}
+          libelle="La conversation arrive dans l'Inbox"
+          coche={contenu.devenir === 'inbox'}
+          onCheck={() => onChange({ devenir: 'inbox' })}
+        />
+      </div>
+      {/* ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire
+          que la fonctionnalité n'existe pas. */}
+      {!capacites.mbaEnabled && (
+        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+          L’agent de Meta n’est pas activé sur cet espace.
+        </p>
+      )}
+      {contenu.devenir === 'inbox' && (
+        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+          L’agent de Meta ne répondra pas : la conversation revient à votre équipe.
+        </p>
       )}
     </div>
   );
@@ -938,68 +999,29 @@ function SelecteurScenario({
 }
 
 /**
- * LE DEVENIR DE LA CONVERSATION, posé une fois pour toute la campagne.
+ * À QUI VA LA CONVERSATION, quand elle revient à l'équipe.
+ *
+ * 🔴 ELLE RESTE UNE POLITIQUE DE CAMPAGNE, PAS D'ÉTAGE, alors que le devenir, lui, est descendu dans les
+ * étages le 2026-09-14. Ce n'est pas une inconséquence : le tour de rôle compte ses réponses sur un rang
+ * unique (`campaigns.tour_de_role_rang`), et un rang par étage ferait tourner deux roulements indépendants
+ * sur la même équipe, donc servirait deux fois la même personne.
+ *
+ * ⚠️ Elle n'est posée QUE si au moins un étage renvoie vers l'Inbox : sinon personne ne revient à l'équipe,
+ * et la question n'a pas d'objet.
  */
-function BlocDevenir({
+function BlocAssignation({
   etat,
   references,
-  capacites,
   nbDestinataires,
   onChange,
 }: {
   etat: EtatCampagne;
   references: ReferencesContenu;
-  capacites: CapacitesEspace;
   nbDestinataires: number | null;
   onChange: (patch: Partial<EtatCampagne>) => void;
 }) {
-  const sansAgent = references.agents.length === 0;
   return (
-    <div data-testid="bloc-devenir" className="mt-6 w-full rounded-xl border border-ink-200 p-4">
-      <p className="text-sm font-medium text-ink-800">Que se passe-t-il quand le contact répond ?</p>
-      <div className="mt-3 space-y-2">
-        <Radio
-          groupe="devenir"
-          libelle="L'agent de Meta prend la main"
-          coche={etat.devenir === 'mba'}
-          desactive={!capacites.mbaEnabled}
-          onCheck={() => onChange({ devenir: 'mba' })}
-        />
-        <Radio
-          groupe="devenir"
-          libelle="Un agent IA prend la main"
-          coche={etat.devenir === 'agent'}
-          desactive={sansAgent}
-          onCheck={() => onChange({ devenir: 'agent' })}
-        />
-        <Radio
-          groupe="devenir"
-          libelle="La conversation arrive dans l'Inbox"
-          coche={etat.devenir === 'inbox'}
-          onCheck={() => onChange({ devenir: 'inbox' })}
-        />
-      </div>
-      {/* ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire
-          que la fonctionnalité n'existe pas. */}
-      {sansAgent && (
-        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
-          Aucun agent IA actif sur cet espace.
-        </p>
-      )}
-
-      {etat.devenir === 'agent' && !sansAgent && (
-        <div className="mt-3">
-          <Selecteur
-            libelle="Agent"
-            valeur={etat.agentId ?? ''}
-            onChange={(v) => onChange({ agentId: v })}
-            options={references.agents.map((a) => ({ valeur: a.id, libelle: a.label }))}
-            vide="Aucun agent IA actif sur cet espace."
-          />
-        </div>
-      )}
-
-      {etat.devenir === 'inbox' && (
+    <div data-testid="bloc-assignation" className="mt-6 w-full rounded-xl border border-ink-200 p-4">
         <div className="mt-4 border-t border-ink-100 pt-4">
           <p className="text-sm font-medium text-ink-700">À qui va la conversation ?</p>
           <div className="mt-2 space-y-2">
@@ -1079,7 +1101,6 @@ function BlocDevenir({
             </p>
           )}
         </div>
-      )}
     </div>
   );
 }

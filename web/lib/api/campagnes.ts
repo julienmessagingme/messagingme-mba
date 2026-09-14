@@ -97,6 +97,12 @@ export interface RcsAgent {
 export interface EtageCreation {
   rang: number;
   canal: CanalEtage;
+  /**
+   * CE QUI SE PASSE QUAND LE CONTACT RÉPOND À CET ÉTAGE (migration 0144), pour les étages AUTRES que le
+   * premier. Celui du rang 1 voyage au niveau de la campagne (`devenir`), parce que le rang 1 EST la
+   * campagne : c'est l'invariant de la migration 0134.
+   */
+  devenir?: 'mba' | 'inbox';
   templateName?: string;
   templateLanguage?: string;
   rcsMessage?: RcsOutbound;
@@ -162,6 +168,8 @@ export interface CreateCampaignInput {
    * aperçu avant la recette.
    */
   chaine?: EtageCreation[];
+  /** Cf. `EtageCreation.devenir` : celui du PREMIER étage, qui est la campagne elle-même. */
+  devenir?: 'mba' | 'inbox';
   /** « Réessayer les envois qui échouent ». Absent = le défaut du serveur (vrai). */
   reessayer?: boolean;
   /** Le rattrapage (réessai ou repli) peut-il partir hors des heures d'ouverture ? Absent = non. */

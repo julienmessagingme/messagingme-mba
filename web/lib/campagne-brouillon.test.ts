@@ -24,12 +24,10 @@ const ETAT: EtatBrouillon = {
   heuresOuvrees: true,
   debitParMinute: 42,
   contenus: {
-    1: { formule: 'seul', templateName: 'promo', templateLanguage: 'fr', suggestions: [], variables: [{ sel: 'sys:prenom', value: '' }] },
-    2: { formule: 'seul', texteRcs: 'coucou', imageRcs: 'https://exemple.fr/v.jpg', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'p1' }] },
-    3: { formule: 'seul', emailTemplateId: 'em-1', emailChamp: 'mail_pro', suggestions: [] },
+    1: { formule: 'seul', devenir: 'mba', templateName: 'promo', templateLanguage: 'fr', suggestions: [], variables: [{ sel: 'sys:prenom', value: '' }] },
+    2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', imageRcs: 'https://exemple.fr/v.jpg', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'p1' }] },
+    3: { formule: 'seul', devenir: 'mba', emailTemplateId: 'em-1', emailChamp: 'mail_pro', suggestions: [] },
   },
-  devenir: 'agent',
-  agentId: 'ag-1',
   assignation: 'personne',
   assignationUserId: 'u-1',
   audience: {
@@ -110,7 +108,7 @@ describe('un brouillon de l ANCIEN formulaire', () => {
     const e = etatDeBrouillon(ANCIEN_TEMPLATE);
     expect(e.formule).toBe('whatsapp');
     expect(e.contenus?.[1]).toMatchObject({
-      formule: 'seul', templateName: 'promo_rentree', templateLanguage: 'fr',
+      formule: 'seul', devenir: 'mba', templateName: 'promo_rentree', templateLanguage: 'fr',
       variables: [{ sel: 'field:prenom', value: '' }, { sel: 'literal', value: 'Paris' }],
     });
   });
@@ -145,7 +143,7 @@ describe('un brouillon de l ANCIEN formulaire', () => {
       ...ANCIEN_TEMPLATE, mode: 'workflow', workflowId: 'wf-1', templateName: 'ouverture', templateLanguage: 'en',
     });
     expect(e.contenus?.[1]).toMatchObject({
-      formule: 'avec_scenario',
+      formule: 'avec_scenario', devenir: 'mba',
       workflowId: 'wf-1',
       modeleDuScenario: { name: 'ouverture', language: 'en' },
     });
@@ -225,7 +223,7 @@ describe('la relecture defensive', () => {
    * et `problemeDAssociation` appelle `.trim()` dessus sans détour.
    */
   it('une ligne de variable mal formee est jetee', () => {
-    const e = etatDeBrouillon({ assistant: 1, contenus: { 1: { formule: 'seul', variables: [{ sel: 'sys:name' }] } } });
+    const e = etatDeBrouillon({ assistant: 1, contenus: { 1: { formule: 'seul', devenir: 'mba', variables: [{ sel: 'sys:name' }] } } });
     expect(e.contenus?.[1]?.variables).toBeUndefined();
   });
 

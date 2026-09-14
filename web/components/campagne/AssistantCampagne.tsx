@@ -143,18 +143,6 @@ export interface EtatCampagne {
    */
   contenus: Record<number, ContenuEtage>;
   /**
-   * Où va la conversation quand le contact répond.
-   *
-   * 🔴 DEUX DE SES TROIS VALEURS NE SORTENT PAS DE L'ÉCRAN, et il faut le savoir avant de s'appuyer
-   * dessus (mesuré le 2026-09-14) : seul `inbox` a une traduction serveur, par `assignation`.
-   * `CreateCampaignInput` n'a aucun champ pour `mba` ni `agent`, et `campaigns` aucune colonne. Choisir
-   * « un agent IA prend la main » ne change donc rien à ce qui se passera. C'est un défaut connu, décrit
-   * dans `todo.md`, et il attend un arbitrage : le câbler, ou retirer les deux options.
-   */
-  devenir: Devenir;
-  /** L'agent IA qui prend la main, quand `devenir` vaut `agent`. ⚠️ Ne voyage pas non plus, cf. ci-dessus. */
-  agentId: string | null;
-  /**
    * La répartition, quand la conversation tombe dans l'Inbox.
    *
    * ⚠️ SA VALEUR N'EST PAS SA CONSÉQUENCE, exactement comme `reessayer` : quand tous les étages ouvrent
@@ -183,6 +171,19 @@ export interface EtatCampagne {
 export interface ContenuEtage {
   /** `seul` = le contenu part tel quel ; `avec_scenario` = il ouvre un parcours. */
   formule: 'seul' | 'avec_scenario';
+  /**
+   * CE QUI SE PASSE QUAND LE CONTACT RÉPOND À CET ÉTAGE (migration 0144).
+   *
+   * 🔴 PAR ÉTAGE DEPUIS LE 2026-09-14, demandé par Julien : « si la personne dit Modèle + scénario, tu ne
+   * fais pas apparaître cette question, et si elle choisit modèle tu fais apparaître la question, qui
+   * s'appliquera alors QUE pour le WhatsApp ; et ensuite tu passes à l'étage 2 ». Une chaîne de repli peut
+   * donc laisser l'agent de Meta répondre en WhatsApp et renvoyer le RCS à l'équipe.
+   *
+   * ⚠️ N'A DE SENS QUE POUR `formule: 'seul'`. Avec un scénario, c'est LUI qui décide qui répond, et la
+   * question n'est pas posée : la valeur reste alors celle du dernier choix, pour la rendre à l'opérateur
+   * s'il revient en arrière, mais elle n'est PAS envoyée (`entreeDeCreation`).
+   */
+  devenir: Devenir;
   templateName?: string;
   templateLanguage?: string;
   workflowId?: string;
@@ -244,7 +245,16 @@ export interface ContenuEtage {
 }
 
 /** Où va la conversation quand le contact répond. */
-export type Devenir = 'mba' | 'agent' | 'inbox';
+/**
+ * Ce qui se passe quand le contact répond à un étage. DEUX valeurs, plus trois.
+ *
+ * 🔴 « UN AGENT IA PREND LA MAIN » A ÉTÉ RETIRÉ LE 2026-09-14, et ce n'est pas un renoncement : c'est un
+ * fait d'architecture mesuré. `agent_sessions.run_id` est `NOT NULL` et référence `workflow_runs`, donc un
+ * agent IA de ce produit ne sait pas exister hors d'un scénario. Julien : « si le user veut que ça aille
+ * vers son autre agent IA, il faut qu'il fasse un scénario et qu'il utilise l'option modèle + scénario ».
+ * L'option existait à l'écran et ne produisait AUCUN effet, en faisant pourtant choisir un agent précis.
+ */
+export type Devenir = 'mba' | 'inbox';
 /** Comment la conversation se répartit, quand elle tombe dans l'Inbox. */
 export type Assignation = 'aucune' | 'personne' | 'tour_de_role';
 
@@ -322,8 +332,6 @@ export const ETAT_INITIAL: EtatCampagne = {
    * l'Inbox tant que personne n'a décidé autre chose. Prendre l'agent de Meta ou une IA par défaut
    * ferait répondre une machine à la place de l'équipe sans que quiconque l'ait choisi.
    */
-  devenir: 'inbox',
-  agentId: null,
   /** Sans assignation : la conversation arrive dans « À traiter », comme aujourd'hui. */
   assignation: 'aucune',
   assignationUserId: null,

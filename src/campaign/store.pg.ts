@@ -7,12 +7,21 @@ import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
 import type { CampagneAssignante } from '../inbox/assignation-campagne';
-import { RANG_INITIAL, normaliserChaine, type CanalEtage, type Etage, type EtageEntrant } from './etages';
+import { RANG_INITIAL, normaliserChaine, type CanalEtage, type DevenirEtage, type Etage, type EtageEntrant } from './etages';
 import type { EntreeDeDecision } from './bascule';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
   tenantId: string;
+  /**
+   * CE QUI SE PASSE QUAND LE CONTACT RÉPOND AU PREMIER ÉTAGE (migration 0144).
+   *
+   * ⚠️ IL VIT ICI ET PAS DANS `chaine`, et c'est l'invariant de la migration 0134 : le rang 1 EST la
+   * campagne elle-même, ses colonnes en sont la seule source. Les étages suivants portent le leur dans
+   * `chaine[].devenir`. Une campagne sans repli n'envoie pas de `chaine` du tout, et doit pourtant
+   * pouvoir dire ce que devient sa réponse : c'est ce champ qui le permet.
+   */
+  devenir?: DevenirEtage;
   /** '' pour une campagne RCS : il n'y a pas de numéro Meta (colonne nullable depuis la migration 0056). */
   phoneNumberId: string;
   name: string;
@@ -1396,7 +1405,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       ? { rang: RANG_INITIAL, canal, ...(templateName !== null && templateName !== undefined ? { templateName } : {}),
           ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
           ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
-          ...(input.workflowId ? { workflowId: input.workflowId } : {}) }
+          ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+          ...(input.devenir ? { devenir: input.devenir } : {}) }
       : e))
     : [{
       rang: RANG_INITIAL, canal,
@@ -1404,13 +1414,14 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
       ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
       ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+      ...(input.devenir ? { devenir: input.devenir } : {}),
     }];
   // ⚠️ UNE SEULE REQUÊTE POUR TOUTE LA CHAÎNE (`unnest`), sur le modèle de `bulkInsertRecipients` : trois
   // allers-retours pour trois étages au milieu d'une transaction tiennent le client ouvert pour rien.
   await q.query(
-    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id)
-     select $1, r, c, tn, tl, rm::jsonb, et::uuid, ec, wf::uuid
-     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[]) as u(r, c, tn, tl, rm, et, ec, wf)
+    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id, devenir)
+     select $1, r, c, tn, tl, rm::jsonb, et::uuid, ec, wf::uuid, dv
+     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[]) as u(r, c, tn, tl, rm, et, ec, wf, dv)
      on conflict (campaign_id, rang) do nothing`,
     [
       id,
@@ -1425,6 +1436,7 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       etages.map((e) => e.emailTemplateId ?? null),
       etages.map((e) => e.emailChamp ?? null),
       etages.map((e) => e.workflowId ?? null),
+      etages.map((e) => e.devenir ?? null),
     ],
   );
   return id;
