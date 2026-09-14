@@ -72,8 +72,15 @@ describe('un espace VERROUILLÉ n’a plus d’API', () => {
      * ⚠️ ON NE BLOQUE QUE SUR `locked` EXPLICITE, exactement comme la garde de session. Bloquer sur « tout
      * ce qui n'est pas active » fermerait l'API de tous les espaces le jour où un statut est ajouté, et
      * l'`undefined` (un faux de test, un serveur plus ancien) doit rester passant pour la même raison.
+     *
+     * 🔴 `trial` EST DANS CETTE LISTE PARCE QU'UNE MUTATION L'A EXIGÉ. Le cas d'origine n'exerçait que
+     * `active` et `undefined` : remplacer la garde par « tout ce qui n'est pas active » le laissait donc
+     * PASSER, alors que ce changement aurait coupé l'API de tous les espaces en essai. Un test qui ne
+     * contient pas le cas qu'il annonce protège la phrase, pas le comportement.
+     *
+     * ⚠️ Les trois statuts viennent du CHECK de la migration 0026 : `trial`, `active`, `locked`.
      */
-    for (const statut of ['active', undefined]) {
+    for (const statut of ['active', 'trial', undefined]) {
       const server = monter(statut);
       const res = await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
       expect(res.statusCode, `statut « ${String(statut)} » aurait dû passer`).toBe(200);
