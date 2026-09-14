@@ -65,7 +65,16 @@ export interface CompteurUsage {
   /** Nombre d'APPELS acceptés, et le travail qu'ils demandaient. */
   appels: number;
   unites: number;
-  /** Nombre d'appels refusés par le garde (0 tant qu'aucun seuil n'est posé). */
+  /**
+   * Nombre d'appels REFUSÉS, quota d'espace comme place d'opération lourde.
+   *
+   * 🔴 IL COMPTE LES DEUX DEPUIS L'ESSAI RÉEL DU 2026-09-14, et c'est ce que cet essai a trouvé : un refus
+   * de place n'y apparaissait pas, alors que le commentaire du point de passage promettait le contraire.
+   * Mesuré en production : dix lots simultanés, cinq refusés en 429, `refusees` à ZÉRO. Pire, les cinq
+   * refusés étaient comptés comme ACCEPTÉS, donc les compteurs annonçaient 5 005 unités de travail dont
+   * 2 500 n'avaient jamais été faites. Un compteur d'observation qui surcompte le travail et efface les
+   * refus est exactement l'inverse de ce qu'il sert à voir.
+   */
   refusees: number;
 }
 
@@ -102,6 +111,13 @@ export interface ApiUsageGuard {
    * franchir le plafond affiché.
    */
   entrerLourde(): LiberationLourde | null;
+  /**
+   * NOTE UN REFUS QUE LE GARDE N'A PAS PRONONCÉ LUI-MÊME (aujourd'hui : la place d'opération lourde).
+   *
+   * ⚠️ ELLE N'AJOUTE NI APPEL NI UNITÉ : un appel refusé n'a pas travaillé. C'est toute la différence avec
+   * `demander`, qui compte ce qui est entrepris.
+   */
+  noterRefus(demande: DemandeUsage): void;
 }
 
 /**
@@ -189,9 +205,13 @@ async function reserverPlaceLourde(
   usage: ApiUsageGuard,
   req: FastifyRequest,
   reply: FastifyReply,
+  demande: DemandeUsage,
 ): Promise<boolean> {
   const liberer = usage.entrerLourde();
   if (!liberer) {
+    // 🔴 LE REFUS EST NOTÉ AVANT D'ÊTRE RENDU : sans cela, une saturation ne laisse pour trace qu'un 429
+    // chez l'appelant, et rien du tout chez nous. Mesuré en production le 2026-09-14.
+    usage.noterRefus(demande);
     reply.header('retry-after', '2');
     await reply.code(429).send({ error: 'trop d’opérations lourdes en cours sur cette instance, réessayez dans un instant' });
     return false;
@@ -212,9 +232,7 @@ export async function compterOuRefuser(
     await reply.code(401).send({ error: 'clé d’API requise' });
     return false;
   }
-  // ⚠️ LA PLACE SE PREND APRÈS LE COMPTAGE, jamais avant : un refus de place doit apparaître dans les
-  // compteurs, sinon la seule trace d'une saturation serait un 429 que personne ne voit passer.
-  const compte = await demanderOuRefuser(usage, reply, {
+  const demande: DemandeUsage = {
     tenantId,
     // ⚠️ « inconnue » NE DEVRAIT JAMAIS ARRIVER : le préhandler pose `apiKeyId` en même temps que
     // `req.auth`. Le repli est là pour que le compteur reste honnête si un jour une route est montée
@@ -222,8 +240,17 @@ export async function compterOuRefuser(
     cleId: req.apiKeyId ?? 'inconnue',
     operation,
     unites: unitesDe(operation, taille),
-  });
-  if (!compte) return false;
-  if (!estLourde(operation)) return true;
-  return reserverPlaceLourde(usage, req, reply);
+  };
+  /**
+   * 🔴 LA PLACE SE PREND AVANT LE COMPTAGE, ET L'ORDRE A ÉTÉ INVERSÉ APRÈS L'ESSAI RÉEL DU 2026-09-14.
+   * Il était l'inverse, avec un commentaire qui affirmait qu'un refus de place « apparaîtrait dans les
+   * compteurs ». Il n'y apparaissait pas : le comptage avait déjà eu lieu, donc l'appel était enregistré
+   * comme ACCEPTÉ avec tout son travail, puis refusé. Dix lots simultanés en production ont montré cinq
+   * refus, `refusees` à zéro, et 2 500 unités comptées pour du travail jamais fait.
+   *
+   * ⚠️ UNE PLACE PRISE EST RENDUE MÊME SI LE QUOTA REFUSE ENSUITE : la libération est accrochée à la
+   * réponse dès l'obtention, donc elle part avec elle quel que soit le verdict.
+   */
+  if (estLourde(operation) && !(await reserverPlaceLourde(usage, req, reply, demande))) return false;
+  return demanderOuRefuser(usage, reply, demande);
 }

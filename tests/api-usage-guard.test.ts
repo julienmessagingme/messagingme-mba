@@ -214,3 +214,31 @@ describe('les opérations LOURDES ont un plafond de places simultanées', () => 
     expect(estLourde('mcp.refus')).toBe(false);
   });
 });
+
+describe('un refus de PLACE se voit dans les compteurs', () => {
+  /**
+   * 🔴 CE QUE L'ESSAI RÉEL DU 2026-09-14 A TROUVÉ, ET QU'AUCUN TEST VERT NE MONTRAIT. Dix lots simultanés
+   * en production : cinq refusés en 429, et `refusees` à ZÉRO. Pire, les cinq refusés étaient comptés
+   * comme ACCEPTÉS, avec tout leur travail : les compteurs annonçaient 5 005 unités dont 2 500 n'avaient
+   * jamais été faites.
+   *
+   * ⚠️ LE COMMENTAIRE DU CODE PROMETTAIT L'INVERSE (« un refus de place doit apparaître dans les
+   * compteurs ») : c'est une justification fausse, et il a fallu un essai sur la vraie API pour la voir.
+   * Un mécanisme vert n'est pas un mécanisme éprouvé.
+   */
+  it('🔴 un refus noté compte un refus, et AUCUNE unité', () => {
+    const g = new GardeUsageMemoire(120, 0, horloge().maintenant, 1);
+    g.noterRefus(demande({ unites: 500 }));
+    expect(g.compteurs()[0]).toMatchObject({ appels: 0, unites: 0, refusees: 1 });
+  });
+
+  it('🔴 il se range sur la MÊME ligne que le travail accepté', () => {
+    // Sinon `/ops/usage` montrerait deux lignes pour un même (minute, espace, clé, opération), et il
+    // faudrait les additionner de tête pour savoir ce qui s'est passé.
+    const g = new GardeUsageMemoire(120, 0, horloge().maintenant, 1);
+    g.demander(demande({ unites: 500 }));
+    g.noterRefus(demande({ unites: 500 }));
+    expect(g.compteurs()).toHaveLength(1);
+    expect(g.compteurs()[0]).toMatchObject({ appels: 1, unites: 500, refusees: 1 });
+  });
+});

@@ -87,6 +87,16 @@ export class GardeUsageMemoire implements ApiUsageGuard {
     return verdict;
   }
 
+  /**
+   * ⚠️ ELLE N'AJOUTE NI APPEL NI UNITÉ, et c'est le point : un appel refusé n'a pas travaillé. Compter son
+   * travail ferait surestimer l'usage d'un client precisément les jours où il est bridé.
+   */
+  noterRefus(demande: DemandeUsage): void {
+    const minute = Math.floor(this.maintenant() / 60_000) * 60_000;
+    this.oublierLeVieux(minute);
+    this.ligneDe(minute, demande).refusees += 1;
+  }
+
   compteurs(): CompteurUsage[] {
     return [...this.lignes.values()].sort((a, b) => b.minute - a.minute);
   }

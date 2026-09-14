@@ -182,7 +182,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
    */
   it('🔴 un double maison suffit aux six routes : aucune ne connaît l’implémentation', async () => {
     const vues: string[] = [];
-    const double = { demander: (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: () => [], entrerLourde: () => () => {} };
+    const double = { demander: (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: () => [], entrerLourde: () => () => {}, noterRefus: () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'sends:create'] });
     const server = buildServer({
       queue: new FakeQueue(),
@@ -204,7 +204,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
   it('🔴 un garde qui REFUSE fait rendre 429 aux routes, pas 500', async () => {
     // Le jour où un seuil existera, c'est ce chemin qui servira. Un 5xx serait remplacé par la page
     // Cloudflare et l'intégrateur ne saurait même pas ce qu'on lui reproche.
-    const refusant = { demander: () => ({ accepte: false, raison: 'quota d’essai atteint' }), compteurs: () => [], entrerLourde: () => () => {} };
+    const refusant = { demander: () => ({ accepte: false, raison: 'quota d’essai atteint' }), compteurs: () => [], entrerLourde: () => () => {}, noterRefus: () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
       queue: new FakeQueue(),
@@ -325,6 +325,43 @@ describe('le plafond des opérations LOURDES en vol', () => {
       const res = await lot(server);
       expect(res.statusCode, `le lot ${i + 1} aurait dû passer : la place du précédent n’a pas été rendue`).toBe(200);
     }
+    await server.close();
+  });
+
+  /**
+   * 🔴 LE CAS QUE L'ESSAI RÉEL A EXIGÉ (2026-09-14). En production, dix lots simultanés ont donné cinq
+   * 429 et `refusees` à ZÉRO : le comptage avait lieu AVANT la prise de place, donc un lot refusé était
+   * enregistré comme accepté, avec tout son travail. Les compteurs annonçaient 5 005 unités dont 2 500
+   * n'avaient jamais été travaillées, et la saturation ne laissait aucune trace chez nous.
+   */
+  it('🔴 un lot refusé faute de place est COMPTÉ COMME REFUSÉ, et son travail n’est pas compté', async () => {
+    const usage = new GardeUsageMemoire(120, 0, () => Date.now(), 1);
+    const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
+    let debloquer: () => void = () => {};
+    const enVol = new Promise<void>((r) => { debloquer = r; });
+    const server = buildServer({
+      queue: new FakeQueue(),
+      usage,
+      v1: {
+        apiKeys: cles,
+        contacts: { upsertContacts: async (_t, items) => { await enVol; return items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` })); } },
+      },
+    });
+    const gros = { contacts: Array.from({ length: 10 }, () => ({ phone: '+33612345678' })) };
+    const enCours = server.inject({ method: 'POST', url: '/v1/contacts/batch', headers: entetes, payload: gros });
+    await new Promise((r) => setImmediate(r));
+    const refuse = await server.inject({ method: 'POST', url: '/v1/contacts/batch', headers: entetes, payload: gros });
+    expect(refuse.statusCode).toBe(429);
+
+    const ligne = usage.compteurs().find((c) => c.operation === 'contacts.batch')!;
+    expect(ligne.refusees, 'le refus de place doit se voir').toBe(1);
+    // 🔴 ET SON TRAVAIL N'EST PAS COMPTÉ : un appel refusé n'a rien fait. Sans cette assertion, la
+    // correction pourrait se contenter d'incrémenter `refusees` en laissant les unités gonflées.
+    expect(ligne.unites, 'un appel refusé n’a pas travaillé').toBe(10);
+    expect(ligne.appels).toBe(1);
+
+    debloquer();
+    await enCours;
     await server.close();
   });
 
