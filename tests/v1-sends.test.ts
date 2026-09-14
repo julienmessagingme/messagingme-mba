@@ -29,7 +29,11 @@ function app(over: Partial<V1SendsRouteDeps> = {}) {
     .add(SEND_KEY, { id: 'k1', tenantId: 't1', scopes: ['sends:create'] })
     .add(NOSCOPE_KEY, { id: 'k2', tenantId: 't1', scopes: ['contacts:write'] });
 
-  const sends: V1SendsRouteDeps = {
+  /**
+   * ⚠️ `Omit<..., 'usage'>` : le garde d'usage est injecté par `buildServer`, pas par l'appelant (2026-09-14).
+   * Le contrat de la ROUTE l'exige, ce qui empêche de l'oublier ; le câblage le fournit, une seule fois.
+   */
+  const sends: Omit<V1SendsRouteDeps, 'usage'> = {
     resolveScenario: async (_t, ref) => (ref === 'scn_ok' || ref === 'Onboarding' ? { ok: true, value: { id: 'wf1', name: 'Onboarding' } } : ref === 'Ambigu' ? { ok: false, reason: 'ambiguous', matches: [{ id: 'a', name: 'Ambigu' }, { id: 'b', name: 'Ambigu' }] } : { ok: false, reason: 'not_found' }),
     getTenantPhoneNumberId: async () => 'pn-default',
     phoneNumberBelongsToTenant: async (pn) => pn === 'pn-mine',

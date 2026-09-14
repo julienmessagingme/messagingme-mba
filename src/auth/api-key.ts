@@ -8,6 +8,14 @@ import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
 declare module 'fastify' {
   interface FastifyRequest {
     apiScopes?: string[];
+    /**
+     * `api_keys.id` de la clé résolue. Jamais la clé, jamais son empreinte.
+     *
+     * ⚠️ IL EST POSÉ ICI PLUTÔT QUE DÉDUIT DE `req.auth.userId`, qui vaut `apikey:<id>` : une route qui
+     * découperait cette chaîne dépendrait d'un format d'identifiant synthétique, et se tromperait le jour
+     * où il change. Le garde d'usage a besoin de cet identifiant, pas d'une convention de nommage.
+     */
+    apiKeyId?: string;
   }
 }
 
@@ -147,6 +155,7 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
     void store.touchLastUsed(found.id).catch(() => { /* best-effort */ });
     req.auth = { userId: `apikey:${found.id}`, tenantId: found.tenantId, role: 'api' };
     req.apiScopes = found.scopes;
+    req.apiKeyId = found.id;
   };
 }
 

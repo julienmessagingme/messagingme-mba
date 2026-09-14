@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import { traiterMessage, erreurDeParsing, lotRefuse, VERSION_PROTOCOLE } from '../mcp/serveur';
 import type { DepsMcp } from '../mcp/outils';
+import { demanderOuRefuser, unitesDe, type ApiUsageGuard } from '../api/usage-guard';
 
 /**
  * La route MCP : `POST /mcp`, un seul chemin, sans état.
@@ -16,7 +17,7 @@ import type { DepsMcp } from '../mcp/outils';
  * consentement, révocation par utilisateur) : le poser à moitié aurait donné l'illusion d'un contrôle
  * d'accès par personne alors qu'il n'y en aurait pas.
  */
-export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: PreHandler[]): void {
+export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: PreHandler[], usage: ApiUsageGuard): void {
   const opts = { preHandler: prehandlers };
 
   app.post('/mcp', opts, async (req, reply) => {
@@ -25,6 +26,12 @@ export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: Pr
     const tenantId = req.auth?.tenantId;
     if (!tenantId) return reply.code(401).send({ error: 'clé d’API requise' });
     const ctx = { tenantId, scopes: req.apiScopes ?? [] };
+
+    // ⚠️ UN MESSAGE PAR REQUÊTE, DONC UNE UNITÉ : le lot JSON-RPC est refusé plus bas, et c'est ce refus
+    // qui rend ce compte honnête. S'il tombait, une requête vaudrait autant d'outils qu'elle en porte.
+    if (!await demanderOuRefuser(usage, reply, {
+      tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'mcp.call', unites: unitesDe('mcp.call'),
+    })) return reply;
 
     reply.header('MCP-Protocol-Version', VERSION_PROTOCOLE);
 
@@ -63,5 +70,17 @@ export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: Pr
    * et le protocole autorise explicitement à répondre 405 dans ce cas. Le dire est plus honnête que de
    * laisser un client attendre un flux qui ne viendra jamais.
    */
-  app.get('/mcp', opts, async (_req, reply) => reply.code(405).send({ error: 'ce serveur MCP ne pousse rien : utilise POST' }));
+  /**
+   * 🔴 CELLE-CI COMPTE AUSSI, ET L'AUDIT L'AVAIT MANQUÉE. Elle rend 405, donc elle paraît gratuite : elle
+   * ne l'est pas. Elle traverse le préhandler de clé d'API, donc un lookup, et une boucle dessus serait
+   * invisible de tous les compteurs précisément parce qu'elle « ne fait rien ».
+   */
+  app.get('/mcp', opts, async (req, reply) => {
+    const tenantId = req.auth?.tenantId;
+    if (!tenantId) return reply.code(401).send({ error: 'clé d’API requise' });
+    if (!await demanderOuRefuser(usage, reply, {
+      tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'mcp.refus', unites: unitesDe('mcp.refus'),
+    })) return reply;
+    return reply.code(405).send({ error: 'ce serveur MCP ne pousse rien : utilise POST' });
+  });
 }

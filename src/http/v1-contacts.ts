@@ -2,10 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { raisonDeValidation, schemaContactApi } from '../api/contacts-upsert';
 import type { ApiContactInput, ApiUpsertOutcome } from '../api/contacts-upsert';
+import { demanderOuRefuser, unitesDe, type ApiUsageGuard } from '../api/usage-guard';
 
 export interface V1ContactsRouteDeps {
   /** Upsert d'un lot de contacts (tenant issu de la clé d'API). Renvoie un outcome par item. */
   upsertContacts(tenantId: string, items: ApiContactInput[]): Promise<ApiUpsertOutcome[]>;
+  /**
+   * Le garde d'usage, injecté au bootstrap.
+   *
+   * 🔴 OBLIGATOIRE, comme le pré-filtre des clés : optionnel, il manquerait un jour à une route et le
+   * compteur de cette route disparaîtrait sans bruit. Ce qu'on veut voir est précisément ce qu'on oublie.
+   */
+  usage: ApiUsageGuard;
 }
 
 const MAX_BATCH = 500;
@@ -49,6 +57,9 @@ export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDe
      */
     const valide = schemaContactApi.safeParse(req.body);
     if (!valide.success) return reply.code(400).send({ error: raisonDeValidation(valide.error) });
+    if (!await demanderOuRefuser(deps.usage, reply, {
+      tenantId: req.auth.tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'contacts.upsert', unites: unitesDe('contacts.upsert'),
+    })) return reply;
     const [outcome] = await deps.upsertContacts(req.auth.tenantId, [valide.data]);
     if (!outcome || outcome.status === 'error') return reply.code(400).send({ error: outcome?.reason ?? 'échec' });
     return reply.code(200).send({ contactId: outcome.contactId, status: outcome.status });
@@ -59,6 +70,15 @@ export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDe
     const body = req.body as { contacts?: unknown };
     if (!Array.isArray(body?.contacts) || body.contacts.length === 0) return reply.code(400).send({ error: 'contacts (tableau non vide) requis' });
     if (body.contacts.length > MAX_BATCH) return reply.code(400).send({ error: `maximum ${MAX_BATCH} contacts par lot` });
+
+    /**
+     * ⚠️ LE TRAVAIL EST COMPTÉ SUR CE QUE L'APPELANT DEMANDE, pas sur ce qui survit à la validation. Un lot
+     * de 500 lignes dont 400 sont malformées a bel et bien coûté 500 validations : compter 100 laisserait
+     * une boucle de corps invalides invisible des compteurs, c'est-à-dire exactement le cas qu'on surveille.
+     */
+    if (!await demanderOuRefuser(deps.usage, reply, {
+      tenantId: req.auth.tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'contacts.batch', unites: unitesDe('contacts.batch', body.contacts.length),
+    })) return reply;
 
     const { valides, refus } = trierLeLot(body.contacts);
     const ecrits = valides.length === 0

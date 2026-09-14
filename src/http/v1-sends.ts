@@ -12,6 +12,7 @@ import { validateParamMapping } from '../crm/template';
 import type { ResolveResult } from '../ids/resolve';
 import type { WorkflowNodeType } from '../workflow/graph';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
+import { demanderOuRefuser, unitesDe, type ApiUsageGuard } from '../api/usage-guard';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -46,6 +47,11 @@ export function exigeFenetre24h(type: WorkflowNodeType | null): boolean {
 }
 
 export interface V1SendsRouteDeps {
+  /**
+   * Le garde d'usage, injecté au bootstrap. OBLIGATOIRE, comme sur `/v1/contacts` : optionnel, il
+   * manquerait un jour à une route et le compteur de cette route disparaîtrait sans bruit.
+   */
+  usage: ApiUsageGuard;
   resolveScenario(tenantId: string, ref: string): Promise<ResolveResult<{ id: string; name: string }>>;
   /** Résout un code `nod_...` en (scénario, bloc). Absent -> la cible node reste refusée (422). */
   /** `type` = le type du bloc visé : c'est lui qui dit si la fenêtre de service WhatsApp s'applique.
@@ -101,6 +107,14 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     if (!isObj(b.target)) return reply.code(400).send({ error: 'target requis' });
     if (!Array.isArray(b.recipients) || b.recipients.length === 0) return reply.code(400).send({ error: 'recipients (tableau non vide) requis' });
     if (b.recipients.length > MAX_RECIPIENTS) return reply.code(400).send({ error: `maximum ${MAX_RECIPIENTS} destinataires par envoi` });
+    /**
+     * ⚠️ COMPTÉ AVANT LA RÉSOLUTION DE LA CIBLE, qui fait déjà des requêtes (scénario, bloc, fenêtre de
+     * 24 h, numéro). Compter après laisserait ce travail-là hors des compteurs, c'est-à-dire la partie
+     * qu'une boucle d'appels à cible introuvable ferait payer sans jamais envoyer un message.
+     */
+    if (!await demanderOuRefuser(deps.usage, reply, {
+      tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'sends.create', unites: unitesDe('sends.create', b.recipients.length),
+    })) return reply;
     // Même validation que la route console (campaigns.ts) : sans elle, une source malformée ne casse qu'au
     // moment de résoudre les variables, en 500 sur un endpoint public au lieu d'un 400 déterministe.
     const params = validateParamMapping(b.params ?? []);
@@ -274,6 +288,12 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
 
   app.get('/v1/sends/:sendId', opts, async (req, reply) => {
     if (!req.auth) return reply.code(401).send({ error: 'clé d’API requise' });
+    // ⚠️ UNE LECTURE COMPTE AUSSI, POUR UNE UNITÉ. Elle interroge la base : un intégrateur qui sonde
+    // l'avancement de son envoi toutes les secondes est exactement le genre d'usage qu'on veut VOIR,
+    // même si on ne le refuse pas.
+    if (!await demanderOuRefuser(deps.usage, reply, {
+      tenantId: req.auth.tenantId, cleId: req.apiKeyId ?? 'inconnue', operation: 'sends.read', unites: unitesDe('sends.read'),
+    })) return reply;
     const { sendId } = req.params as { sendId: string };
     const detail = await deps.getSendDetail(sendId, req.auth.tenantId);
     if (!detail) return reply.code(404).send({ error: 'envoi inconnu' });

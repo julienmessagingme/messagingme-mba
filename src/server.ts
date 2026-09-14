@@ -105,6 +105,8 @@ import type { EmailRoutesDeps } from './http/email';
 import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
 import { ENTETES_SECURITE_API } from './http/entetes-securite';
+import type { ApiUsageGuard } from './api/usage-guard';
+import { GardeUsageMemoire } from './api/usage-guard.memoire';
 
 export interface ServerDeps {
   /**
@@ -204,7 +206,26 @@ export interface ServerDeps {
   /** CRUD des clés d'API (console admin, JWT) — réservé aux admins. */
   apiKeys?: ApiKeysRouteDeps;
   /** API publique /v1 (authentifiée par clé d'API, autorité SÉPARÉE du JWT, comme /ops). */
-  v1?: { apiKeys: ApiKeyLookup; contacts: V1ContactsRouteDeps; sends?: V1SendsRouteDeps; mcp?: DepsMcp };
+  /**
+   * L'API publique. ⚠️ `usage` EST RETIRÉ DES DEUX DÉPENDANCES DE ROUTES, et c'est ce qui rend le garde
+   * d'usage OBLIGATOIRE sans le faire écrire par chaque appelant : le contrat des routes l'exige, et
+   * c'est `buildServer` qui l'injecte, une seule fois, comme il injecte déjà les limiteurs de débit.
+   * L'appelant (le câblage, les tests) ne peut donc ni l'oublier ni en fournir un second.
+   */
+  v1?: {
+    apiKeys: ApiKeyLookup;
+    contacts: Omit<V1ContactsRouteDeps, 'usage'>;
+    sends?: Omit<V1SendsRouteDeps, 'usage'>;
+    mcp?: DepsMcp;
+  };
+  /**
+   * Le garde d'usage de l'API publique. ABSENT -> une instance MÉMOIRE en OBSERVATION est construite ici.
+   *
+   * ⚠️ INJECTABLE POUR ÊTRE OBSERVÉ, pas pour être remplacé à la légère : c'est ainsi qu'un test vérifie
+   * que les six routes comptent vraiment. Le jour du multi-replica, c'est par ici que passera
+   * l'implémentation partagée, sans qu'aucune route ne bouge.
+   */
+  usage?: ApiUsageGuard;
   /** Import de listes HubSpot (3e source de campagne) — réservé aux admins. */
   hubspotImport?: HubspotImportRouteDeps;
   /** Émission du lien d'install/re-consentement HubSpot signé — réservé aux admins. */
@@ -261,6 +282,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // en silence. Mieux vaut refuser de démarrer que servir 403 sur tout un espace.
     throw new Error('buildServer: `auth` est requis dès qu’un module exposant des routes `:tenantId` est monté');
   }
+
+  /**
+   * 🔴 LE GARDE D'USAGE DE L'API PUBLIQUE, UNE SEULE INSTANCE POUR TOUTE LA SURFACE. Il compte le TRAVAIL,
+   * là où les limiteurs comptent les requêtes : avec 60 requêtes par minute, une clé fait accepter 30 000
+   * contacts ou 3 000 destinataires, donc le débit ne borne pas la charge. Deux instances auraient donné
+   * deux moitiés de compteurs selon la porte empruntée, ce qui n'aurait été visible de personne.
+   *
+   * ⚠️ EN OBSERVATION : construit sans plafond. Les seuils viendront d'une mesure et d'un arbitrage de
+   * Julien, jamais d'un plan. Un seuil deviné qui mord est une panne qu'on s'inflige.
+   *
+   * ⚠️ IL EST CRÉÉ ICI, AVANT LE MONTAGE DE `/ops`, parce que l'écran d'exploitation et les routes `/v1`
+   * doivent regarder LE MÊME compteur.
+   */
+  const usageApi = deps.usage ?? new GardeUsageMemoire();
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
 
@@ -382,7 +417,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
   // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
-  if (deps.ops) registerOps(app, deps.ops, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps);
+  // ⚠️ LE GARDE D'USAGE EST INJECTÉ DANS `/ops` COMME DANS LES ROUTES `/v1` : c'est la même instance, donc
+  // l'écran d'exploitation montre exactement ce que les routes ont compté, sans second exemplaire.
+  if (deps.ops) registerOps(app, { ...deps.ops, usage: usageApi }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps);
 
   // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
   // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
@@ -510,8 +547,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
      */
     const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
     const requireApiKey = makeRequireApiKey(deps.v1.apiKeys, apiLimiter, apiPrefiltre);
-    registerV1Contacts(app, deps.v1.contacts, [requireApiKey, requireScope('contacts:write')]);
-    if (deps.v1.sends) registerV1Sends(app, deps.v1.sends, [requireApiKey, requireScope('sends:create')]);
+    /**
+     * 🔴 LE GARDE D'USAGE, UNE SEULE INSTANCE POUR TOUTE LA SURFACE PUBLIQUE. Il compte le TRAVAIL, là où
+     * les limiteurs comptent les requêtes : avec 60 requêtes par minute, une clé fait accepter 30 000
+     * contacts ou 3 000 destinataires, donc le débit ne borne pas la charge. Deux instances auraient
+     * donné deux moitiés de compteurs selon la porte empruntée, ce qui n'aurait été visible de personne.
+     *
+     * ⚠️ EN OBSERVATION : aucun plafond (le second argument vaut 0). Les seuils viendront d'une mesure et
+     * d'un arbitrage de Julien, jamais d'un plan. Un seuil deviné qui mord est une panne qu'on s'inflige.
+     */
+    registerV1Contacts(app, { ...deps.v1.contacts, usage: usageApi }, [requireApiKey, requireScope('contacts:write')]);
+    if (deps.v1.sends) registerV1Sends(app, { ...deps.v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
     // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
     // `requireApiKey` déjà construit : une seconde instance de limiteur aurait doublé le quota d'une clé
     // selon la porte empruntée, ce qui n'aurait été visible de personne.
@@ -519,7 +565,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // Pas de `requireScope` ici : le serveur MCP a DEUX scopes (lecture, écriture) et c'est l'outil appelé
     // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
     // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
-    if (deps.v1.mcp) registerMcp(app, deps.v1.mcp, [requireApiKey]);
+    if (deps.v1.mcp) registerMcp(app, deps.v1.mcp, [requireApiKey], usageApi);
   }
   // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
   // compte authentifié (générique, lit req.auth.userId).

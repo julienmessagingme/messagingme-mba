@@ -954,6 +954,11 @@ gelé.
 
 ### Surveillance
 
+`/ops/usage` (jeton d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
+par opération, avec le TRAVAIL demandé (un lot de 500 contacts y compte 500, pas 1). En mémoire du process
+qui sert la requête, jamais en base : une ligne SQL par appel ferait amplifier par la journalisation la
+charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERVENT.
+
 `/ops/overview` (jeton d'exploitation) : rollup par tenant, charge des files, heartbeat du worker. Les DLQ non
 vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md](docs/SLO-2026-09-01.md).
 

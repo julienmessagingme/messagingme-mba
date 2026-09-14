@@ -20,6 +20,14 @@ import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
  */
 export interface OpsRouteDeps {
   /**
+   * Les compteurs d'usage de l'API publique. ABSENT -> `/ops/usage` rend une liste vide.
+   *
+   * ⚠️ OPTIONNEL ICI, ET OBLIGATOIRE SUR LES ROUTES `/v1` : la différence n'est pas une inattention. Une
+   * route publique qui oublierait de compter perdrait une mesure en silence ; `/ops`, lui, est monté par
+   * des tests qui n'ont aucun usage à montrer, et une liste vide y est une réponse honnête.
+   */
+  usage?: { compteurs(): unknown[] };
+  /**
    * Ouvre une session d'OBSERVATION dans l'espace d'un client : rend un jeton de session en LECTURE SEULE.
    *
    * Optionnelle : absente, la route n'est pas montée. C'est volontaire : une instance qui n'a pas
@@ -91,7 +99,10 @@ export interface OpsRouteDeps {
 }
 
 /**
- * Monte `/ops/overview` (GET), `/ops/observe` et `/ops/credits`. Protégé par `x-ops-token` == `opsToken`
+ * Monte `/ops/overview`, `/ops/usage`, `/ops/dlq`, `/ops/observe` et `/ops/credits`. ⚠️ Cette liste a
+ * vécu incomplète (elle ignorait `/ops/dlq`) : une énumération écrite à la main dérive au premier ajout,
+ * et celle-ci décrit une surface d'exploitation, donc ce qu'un porteur du jeton peut atteindre.
+ * Protégé par `x-ops-token` == `opsToken`
  * (constant-time). Si `opsToken` est vide, tout répond 401 (surface désactivée par défaut). N'utilise jamais
  * `req.auth` : c'est une autorité SÉPARÉE du JWT tenant.
  */
@@ -119,6 +130,25 @@ export function registerOps(
   surveillance?: SurveillanceOps,
 ): void {
   const guard = { preHandler: makeRequireOps(opsToken, surveillance) };
+
+  /**
+   * L'USAGE DE L'API PUBLIQUE, agrégé par minute (plan du 2026-09-14, tâche 5).
+   *
+   * 🔴 IL N'Y AVAIT RIEN AVANT, ET C'EST MESURÉ : la seule trace d'usage était un `api_keys.last_used_at`
+   * ÉCRASÉ à chaque appel. Impossible de répondre à « qui consomme quoi », ni de savoir si un seuil
+   * mordrait sur un vrai client. ⚠️ L'audit du 2026-09-13 affirmait que `/ops` montrait déjà les erreurs
+   * de livraison : c'est FAUX, vérifié route par route.
+   *
+   * 🔴 EN OBSERVATION : ces compteurs ne refusent rien aujourd'hui. Ils existent pour qu'un seuil soit un
+   * jour arbitré sur des chiffres plutôt que deviné.
+   *
+   * ⚠️ LU EN MÉMOIRE, PAS EN BASE, et c'est une décision : une ligne SQL par requête ferait amplifier par
+   * la journalisation la charge qu'elle observe. Corollaire à connaître : ces compteurs décrivent CE
+   * process, donc avec deux instances d'API on en verrait deux moitiés.
+   */
+  app.get('/ops/usage', guard, async (_req, reply) => {
+    return reply.code(200).send({ compteurs: deps.usage ? deps.usage.compteurs() : [] });
+  });
 
   app.get('/ops/overview', guard, async (_req, reply) => {
     const [tenants, daily, queues, worker, queuesParGroupe, attentesPool, latences] = await Promise.all([
