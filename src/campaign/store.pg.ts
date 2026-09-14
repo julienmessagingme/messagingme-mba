@@ -883,11 +883,15 @@ export class PgCampaignRepo {
    * une propriété de l'étage : une chaîne de repli peut servir un modèle seul en WhatsApp (réponses à
    * l'équipe) et un scénario en RCS. `campaign_recipients.etage_courant` est la jointure qui le dit.
    *
-   * 🔴 ET `cv.assigned_to is null` A ÉTÉ RETIRÉ DU `where`, délibérément. Il y filtrait quand cette
-   * requête ne servait QUE l'assignation ; elle sert maintenant aussi « l'agent IA prend la main », qui
-   * n'a rien à voir avec le fait qu'un humain soit déjà sur la conversation. La garde n'est pas perdue,
-   * elle est descendue au seul endroit qui en a besoin : `assigner` refuse une conversation déjà
-   * affectée, et c'est lui qui tranche.
+   * 🔴 `cv.assigned_to is null` EST DANS LE `where`, ET J'AI ESSAYÉ DE L'EN RETIRER. Le raisonnement
+   * paraissait bon (« `assigner` refuse déjà une conversation affectée, la garde est descendue au seul
+   * endroit qui en a besoin ») et il était FAUX : le RANG DU TOUR DE RÔLE EST PRIS AVANT `assigner`. Sans
+   * ce filtre, chaque nouveau message d'un contact déjà assigné retrouvait sa campagne et consommait un
+   * rang pour rien, donc décalait la répartition de toute l'équipe à chaque bavardage.
+   *
+   * ⚠️ TROUVÉ PAR LE TEST D'INTÉGRATION, PAS PAR LA RELECTURE NI PAR LES UNITAIRES : ceux-ci montent un
+   * faux `prendreUnRang` et ne comptent rien en base (« un test unitaire monte un faux câblage, et le faux
+   * bouge avec le code »). Le cas s'appelle « un second message du même contact ne consomme aucun rang ».
    */
   async campagneAssignanteDuContact(
     tenantId: string,
@@ -904,7 +908,7 @@ export class PgCampaignRepo {
          join campaign_recipients r on r.contact_id = cv.contact_id
          join campaigns c on c.id = r.campaign_id
          left join campaign_etages e on e.campaign_id = c.id and e.rang = r.etage_courant
-        where cv.tenant_id = $1 and cv.wa_id = $2
+        where cv.tenant_id = $1 and cv.wa_id = $2 and cv.assigned_to is null
           and c.tenant_id = $1 and r.sent_at is not null
           and (c.assignation is not null or e.devenir is not null)
         order by r.sent_at desc

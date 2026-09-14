@@ -185,13 +185,43 @@ describe('le devenir d’un étage décide qui répond', () => {
       expect(f.journal.filsPris).toEqual(['33600000001']);
     });
 
-    it('🔴 Meta refuse le fil : on n’applique RIEN, ni agent ni assignation', async () => {
-      // Son agent répondra quoi qu'on fasse. Lancer le nôtre par-dessus ferait deux messages au contact ;
-      // assigner ferait hériter un humain d'un échange qu'un robot a commencé sans qu'il le sache.
+    it('🔴 Meta refuse le fil : on n’applique RIEN', async () => {
+      // Son agent répondra quoi qu'on fasse. Assigner malgré tout ferait hériter un humain d'un échange
+      // qu'un robot a commencé sans qu'il le sache, sur un écran qui annonce « la conversation arrive dans
+      // l'Inbox ». Mieux vaut ne rien faire et le dire dans les journaux.
       const f = monter(campagne({ devenir: 'inbox', assignation: 'tour_de_role' }), { filPris: false });
       expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
       expect(f.journal.assignations).toEqual([]);
     });
 
+  });
+});
+
+/**
+ * 🔴 LE RANG EST PRIS AVANT L'ÉCRITURE, ET C'EST POURQUOI LA GARDE NE PEUT PAS DESCENDRE DANS `assigner`.
+ *
+ * Défaut introduit puis retiré le 2026-09-14 : en câblant le devenir, `cv.assigned_to is null` a été ôté du
+ * `where` de `campagneAssignanteDuContact`, au motif que « `assigner` refuse déjà une conversation
+ * affectée ». C'est vrai et insuffisant : le rang du tour de rôle est consommé AVANT cet appel, donc chaque
+ * nouveau message d'un contact déjà assigné décalait la répartition de toute l'équipe.
+ *
+ * ⚠️ TROUVÉ PAR LE TEST D'INTÉGRATION, pas ici : un unitaire monte un faux `prendreUnRang` et ne compte rien
+ * en base. Ce cas-ci ne remplace donc pas l'autre, il NOMME l'invariant pour qu'on ne le retire pas deux fois.
+ */
+describe('l’ordre des deux gestes est l’invariant', () => {
+  it('🔴 un rang est consommé DÈS que le roulement est en jeu, avant toute écriture', async () => {
+    const journal: string[] = [];
+    const deps = {
+      campagneDeLaReponse: async () => ({
+        campaignId: 'c1', devenir: 'inbox' as const, assignation: 'tour_de_role' as const, assignationUserId: null,
+      }),
+      membres: async () => ['a', 'b', 'c'],
+      prendreUnRang: async () => { journal.push('rang'); return 1; },
+      // L'écriture REFUSE (conversation déjà affectée) : le rang est pourtant déjà parti.
+      assigner: async () => { journal.push('assigner'); return false; },
+      prendreLeFil: async () => true,
+    };
+    expect(await assignerReponse('t1', '33600000001', deps)).toBeNull();
+    expect(journal).toEqual(['rang', 'assigner']);
   });
 });
