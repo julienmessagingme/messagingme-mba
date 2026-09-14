@@ -356,6 +356,18 @@ export function appliquerAssistantMba(tenantId: string, operations: unknown[]): 
   });
 }
 
+/**
+ * DÉPOSER UN DOCUMENT DANS LA CONVERSATION.
+ *
+ * 🔴 ELLE N'ENVOIE RIEN CHEZ META : elle rend l'opération `fichier.ajouter` à poser dans le diff, que le
+ * client accepte ou non comme le reste. Le contenu, lui, reste côté serveur, il ne traverse pas le modèle.
+ */
+export function deposerPieceAssistantMba(tenantId: string, nom: string, dataUrl: string): Promise<{ operation: OperationAssistantMba }> {
+  return request<{ operation: OperationAssistantMba }>(`/tenants/${tenantId}/mba/assistant/piece-jointe`, {
+    method: 'POST', body: JSON.stringify({ nom, dataUrl }),
+  });
+}
+
 export function effacerFilAssistantMba(tenantId: string): Promise<void> {
   return request<void>(`/tenants/${tenantId}/mba/assistant`, { method: 'DELETE' });
 }

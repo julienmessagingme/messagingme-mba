@@ -10,6 +10,8 @@ import { construireMessagesMba, pointDuTourMba, type InventaireMba } from '../mb
 import { propositionMbaSchema, type Operation } from '../mba/assistant/proposition';
 import { appliquer, libelleDe, type ApplicationDeps } from '../mba/assistant/application';
 import { accueilMba } from '../mba/assistant/couverture';
+import { MAX_FICHIER, typeMetaDuContenu, type MagasinPiecesJointes } from '../mba/assistant/pieces-jointes';
+import { octetsDepuisDataUrl } from '../rcs/image';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
 import type { ChatMessage, GatewayChatClient, OutilExpose, ReponseChat } from '../agent/llm/chat-client';
@@ -52,6 +54,11 @@ export interface MbaAssistantDeps {
   /** L'identifiant de l'agent Meta de cet espace (`agentId` des routes MBA). */
   agentIdDuTenant(tenantId: string): Promise<string | null>;
   tauxEurParDollar: number;
+  /**
+   * Le magasin des pièces jointes déposées dans le fil. Absent -> le dépôt répond 503 et le reste de la
+   * conversation continue : un assistant sans dépôt de document reste un assistant.
+   */
+  pieces?: MagasinPiecesJointes;
 }
 
 /** Ce que l'écran reçoit d'un coup. Trois plafonds distincts, cf. `entretien-store.ts`. */
@@ -59,6 +66,11 @@ export const MAX_MESSAGES_AFFICHES_MBA = 200;
 
 const corpsTour = z.object({ message: z.string().trim().min(1).max(4000) });
 const corpsAppliquer = z.object({ operations: z.array(z.unknown()).max(20) });
+const corpsPiece = z.object({
+  /** Le nom tel que Meta le gardera. Son EXTENSION doit correspondre à la signature du contenu. */
+  nom: z.string().trim().min(1).max(200),
+  dataUrl: z.string().min(1),
+});
 
 export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
@@ -192,6 +204,41 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
   });
 
   /**
+   * DÉPOSER UNE PIÈCE JOINTE.
+   *
+   * 🔴 ELLE N'ENVOIE RIEN CHEZ META. Elle range le contenu et rend une opération `fichier.ajouter` qui entre
+   * dans le diff, comme tout le reste : sans ce détour, le dépôt serait le seul geste de la conversation qui
+   * agirait avant d'avoir été relu.
+   *
+   * 🔴 LE TYPE VIENT DE LA SIGNATURE, pas de ce que le navigateur déclare. Voir `typeMetaDuContenu`.
+   *
+   * `bodyLimit` dédié : les octets transitent en base64 (+33 %), comme l'upload de l'onglet Documents.
+   */
+  const optsPiece = { ...opts, bodyLimit: Math.ceil(MAX_FICHIER * 1.4) };
+  app.post('/tenants/:tenantId/mba/assistant/piece-jointe', optsPiece, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    if (!deps.pieces) return reply.code(503).send({ error: 'dépôt de document indisponible sur ce serveur' });
+    const parse = corpsPiece.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'nom et dataUrl requis' });
+
+    const octets = octetsDepuisDataUrl(parse.data.dataUrl);
+    if (!octets) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendue)' });
+    // ⚠️ La TAILLE se mesure sur les octets décodés, jamais sur la longueur du base64 : c'est ce que Meta
+    // recevra, et c'est ce que le message annonce.
+    if (octets.length > MAX_FICHIER) {
+      return reply.code(413).send({ error: `fichier trop lourd (${Math.round(MAX_FICHIER / 1024 / 1024)} Mo maximum)` });
+    }
+    const type = typeMetaDuContenu(octets, parse.data.nom);
+    // 415 et pas 400 : le corps est bien formé, c'est le TYPE du contenu qu'on refuse.
+    if ('refus' in type) return reply.code(415).send({ error: type.refus });
+
+    const jeton = deps.pieces.deposer(ctx.tenant, { nom: parse.data.nom, mime: type.mime, octets });
+    const operation: Operation = { type: 'fichier.ajouter', jeton, nom: parse.data.nom };
+    return reply.code(201).send({ operation: { ...operation, libelle: libelleDe(operation) } });
+  });
+
+  /**
    * APPLIQUER LE DIFF.
    *
    * 🔴 L'ACCEPTATION DU DIFF SUFFIT : pas de seconde confirmation (décision de Julien). Une confirmation qui
@@ -210,6 +257,20 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
      */
     const valides = propositionMbaSchema.safeParse({ message: 'application', operations: parse.data.operations });
     if (!valides.success) return reply.code(422).send({ error: 'ces opérations ne sont pas applicables' });
+
+    /**
+     * 🔴 LES JETONS SE VÉRIFIENT AVANT D'AVOIR RIEN ÉCRIT. C'est une lecture locale, gratuite, et elle évite
+     * le pire enchaînement : appliquer trois opérations chez Meta puis s'arrêter sur un document expiré,
+     * c'est-à-dire laisser un état à moitié posé pour une cause qui était connue d'avance.
+     */
+    const jetonMort = (valides.data.operations as Operation[]).find(
+      (o) => o.type === 'fichier.ajouter' && !(deps.pieces?.contient(ctx.tenant, o.jeton) ?? false),
+    );
+    if (jetonMort) {
+      return reply.code(422).send({
+        error: `Le document « ${jetonMort.type === 'fichier.ajouter' ? jetonMort.nom : ''} » n’est plus disponible : redéposez-le, puis réessayez.`,
+      });
+    }
 
     const r = await appliquer(
       deps.application(ctx.tenant, ctx.acteur), ctx.tenant, ctx.agentId,

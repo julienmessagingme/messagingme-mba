@@ -5,9 +5,11 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import {
-  appliquerAssistantMba, effacerFilAssistantMba, lireFilAssistantMba, parlerAssistantMba,
+  appliquerAssistantMba, deposerPieceAssistantMba, effacerFilAssistantMba, lireFilAssistantMba,
+  parlerAssistantMba,
   type OperationAssistantMba, type ResultatApplicationMba, type TourAssistantMba,
 } from '@/lib/api-mba';
+import { MBA_ASSISTANT_FILE_ACCEPT, MBA_FILE_MAX_BYTES } from '@/lib/mba-files';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : on lui parle, il propose, on accepte.
@@ -36,6 +38,7 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [budgetEpuise, setBudgetEpuise] = useState(false);
   const finDuFil = useRef<HTMLDivElement>(null);
+  const champFichier = useRef<HTMLInputElement>(null);
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -73,6 +76,46 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
       if (r.budgetEpuise) setBudgetEpuise(true);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t('Réponse impossible', 'Unable to answer'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * DÉPOSER UN DOCUMENT.
+   *
+   * 🔴 LE DÉPÔT N'ENVOIE RIEN CHEZ META : il ajoute une ligne au diff, comme une proposition de l'assistant.
+   * C'est ce qui fait qu'aucun geste de cette conversation n'agit avant d'avoir été relu.
+   *
+   * ⚠️ LE NOM GARDE SON EXTENSION, contrairement à la pièce jointe de l'agent IA qui la RETIRE. Là-bas le nom
+   * devient le titre d'une fiche ; ici c'est le `file_name` que Meta garde, et il doit correspondre au
+   * contenu, sinon l'ingestion échoue en silence.
+   */
+  async function deposer(fichier: File) {
+    if (busy) return;
+    // Contrôle LOCAL du poids : faire monter 20 Mo de base64 pour se faire refuser après l'attente est une
+    // mauvaise expérience, et la limite de la route coupe le corps sans message lisible.
+    if (fichier.size > MBA_FILE_MAX_BYTES) {
+      setErreur(t(
+        `« ${fichier.name} » est trop lourd (${Math.round(MBA_FILE_MAX_BYTES / 1024 / 1024)} Mo maximum).`,
+        `“${fichier.name}” is too large (${Math.round(MBA_FILE_MAX_BYTES / 1024 / 1024)} MB maximum).`,
+      ));
+      return;
+    }
+    setBusy(true);
+    setErreur(null);
+    setResultat(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const lecteur = new FileReader();
+        lecteur.onerror = () => reject(new Error('lecture impossible'));
+        lecteur.onload = () => resolve(String(lecteur.result));
+        lecteur.readAsDataURL(fichier);
+      });
+      const r = await deposerPieceAssistantMba(tenantId, fichier.name, dataUrl);
+      setDiff((d) => [...d, r.operation]);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : t('Document refusé', 'Document refused'));
     } finally {
       setBusy(false);
     }
@@ -157,6 +200,31 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
       {resultat && <Resultat resultat={resultat} />}
 
       <div className="mt-4 flex gap-2">
+        {/* ⚠️ Le champ de fichier est CACHÉ et déclenché par le bouton : un `input file` nu ne se met pas au
+            style du reste et affiche « Aucun fichier sélectionné » en permanence. */}
+        <input
+          ref={champFichier}
+          type="file"
+          accept={MBA_ASSISTANT_FILE_ACCEPT}
+          className="hidden"
+          data-testid="mba-assistant-fichier"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            // La valeur est remise à zéro : sans ça, redéposer le MÊME fichier ne déclenche aucun événement.
+            e.target.value = '';
+            if (f) void deposer(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => champFichier.current?.click()}
+          disabled={busy || budgetEpuise}
+          data-testid="mba-assistant-joindre"
+          title={t('Joindre un document', 'Attach a document')}
+          className="shrink-0 rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-600 hover:bg-ink-50 disabled:opacity-50"
+        >
+          {t('Joindre', 'Attach')}
+        </button>
         <input
           className={inputCls}
           data-testid="mba-assistant-saisie"

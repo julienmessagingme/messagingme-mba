@@ -2069,14 +2069,15 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   la config live s'ouvrira quand Meta rendra l'agent disponible pour le numéro (gating vertical + ToS).
 - ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
   l'agent MBA, en **dix onglets**, branché pour de vrai sur la configuration Meta du numéro.
-  **Aperçu** (l'état de l'agent), **Activation** (qui parle au client, cf. ci-dessous),
+  **Aperçu** (l'état de l'agent), **Assistant** (régler l'agent en lui parlant, cf. ci-dessous),
+  **Activation** (qui parle au client, cf. ci-dessous),
   **Business** (les informations de l'entreprise), **FAQ** (saisie question par question **et
   import en masse** depuis un CSV, un Excel, un PDF ou une URL, avec aperçu avant écriture et
   sans jamais dupliquer une question déjà posée), **Compétences** (le ton, les procédures et les
   interdits, par exemple « ne jamais inventer un horaire »), **Fichiers** (jusqu'à 100 Mo de
   documents de connaissance : PDF, Word, CSV, Excel), **Sites web** (les pages que l'agent va
-  lire) et **Tester** (un bac à sable où l'on parle à l'agent sans consommer de conversation
-  facturée).
+  lire), **Historique** (ce qui a changé et ce qui a été effacé, cf. ci-dessous) et **Tester**
+  (un bac à sable où l'on parle à l'agent sans consommer de conversation facturée).
   Deux situations, deux bandeaux distincts, parce qu'elles ne se règlent pas au même endroit :
   **aucun numéro rattaché** (renvoie à l'Accueil) et **Meta n'a pas encore ouvert l'agent sur ce
   numéro** (renvoie au Guide ; Meta ouvre Business AI progressivement, par pays et par secteur, et
@@ -2096,6 +2097,51 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   traiter la demande. Mesuré le 21/08/2026 : une réclamation qui décrit un incident ET demande un dédommagement
   obtient de l'agent une réponse **vide**, ce qui rend d'autant plus nécessaire de voir ces conversations
   remonter dans « À traiter ».
+
+### Onglet « Assistant » : régler l'agent en lui parlant (2026-09-15)
+
+**À quoi ça sert.** Décrire ce qu'on veut changer en français (« ajoute mes horaires du samedi », « retire la
+FAQ sur les livraisons du dimanche »), et l'assistant propose. Il ne fait rien tout seul : il affiche **ce
+qu'il va faire, une ligne par modification**, et rien ne part chez Meta tant qu'on n'a pas cliqué sur
+**Appliquer**.
+
+- ✅ **Il connaît l'état réel de l'agent** : il lit chez Meta ce qui existe déjà (FAQ, compétences, sites,
+  documents, fiche d'activité) avant de proposer, et il relit juste avant d'appliquer. Les autres onglets
+  restent donc utilisables pendant la conversation.
+- ✅ **Le fil ne se perd pas.** On peut fermer la page et reprendre la conversation plus tard, au même endroit.
+  Le bouton **« Repartir de zéro »** efface la conversation ; **il n'annule rien de ce qui a déjà été appliqué**.
+- ✅ **Joindre un document** : le bouton **« Joindre »** dépose un PDF, un Word (.docx), une image (PNG/JPEG) ou
+  un CSV, jusqu'à 20 Mo. Le document **entre dans la liste des modifications comme le reste** et ne part chez
+  Meta qu'à l'acceptation. Il y part **tel quel**, sans découpage : c'est Meta qui l'indexe.
+  ⚠️ **La liste des formats est plus courte que celle de l'onglet Fichiers** (ni `.doc`, ni `.xlsx`) : ici le
+  type est reconnu **dans le contenu du fichier**, pas dans son nom, et ces deux formats-là ne s'y reconnaissent
+  pas. Le message de refus le dit et renvoie vers l'onglet Fichiers.
+- ⚠️ **Une seule suppression par proposition.** Meta n'a ni corbeille ni annulation : une demande en lot
+  (« nettoie mes FAQ ») obtient une liste et une question, jamais une purge qu'une acceptation rapide rendrait
+  définitive. Une suppression est signalée à part dans la liste, en rouge.
+- ⚠️ **Ce qu'il ne fera jamais** : retirer l'agent du service (ça se fait à la main, sur la première page), ni
+  créer un connecteur. Et **tout ce qu'il fait reste faisable à la main dans les autres onglets** : la
+  conversation n'est jamais le seul chemin.
+- ⚠️ **Réservé aux administrateurs**, comme toutes les modifications du MBA.
+- ⚠️ **Il a une limite mensuelle** (c'est nous qui payons le modèle). Une fois atteinte, il le dit clairement et
+  **tous les onglets restent utilisables** : ce n'est pas une panne.
+- ⚠️ **Si Meta refuse une modification au milieu de la liste**, on voit exactement ce qui est passé, ce qui a
+  échoué et ce qui n'a pas été tenté. Meta n'offre aucune annulation d'ensemble.
+
+### Onglet « Historique » : ce qui a changé, et ce qui a été effacé (2026-09-15)
+
+**À quoi ça sert.** Meta n'a pas de corbeille. Une FAQ, une compétence ou un document supprimé est perdu chez
+lui : cette page en garde **le seul exemplaire**.
+
+- ✅ **Tout y figure** : ce que l'assistant a appliqué comme ce qui a été fait à la main dans les onglets. Chaque
+  ligne dit quoi, quand, par qui, et si ça vient de l'assistant ou d'un formulaire.
+- ✅ **Le contenu effacé est consultable** : sur une suppression, « voir le contenu effacé » ouvre ce qui a été
+  perdu.
+  ⚠️ **Le remettre le RECRÉE, ça ne le ressuscite pas** : on recopie le contenu dans l'onglet concerné, ce qui
+  crée un élément neuf. L'identifiant Meta de l'original est perdu pour toujours, et l'écran le dit.
+- ✅ **Rien n'est purgé.** C'est ce qui le distingue du journal d'audit RGPD, qui, lui, a une durée de rétention.
+- ⚠️ **Réservé aux administrateurs** : il porte le contenu des éléments supprimés, donc il ne peut pas être plus
+  lisible que ce qu'il décrit.
 
 ### Reprendre la main sur l'agent de Meta
 

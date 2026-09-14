@@ -23,7 +23,14 @@ export interface ApplicationDeps {
   client(tenantId: string): Promise<ClientMbaEcriture>;
   /** Écrit une ligne d'historique. Voir `src/reglages/historique.ts`. */
   journaliser(tenantId: string, ligne: LigneHistorique): Promise<void>;
-  /** Le contenu d'une pièce jointe déposée dans le fil, par son jeton. `null` = jeton inconnu ou expiré. */
+  /**
+   * Le contenu d'une pièce jointe déposée dans le fil, par son jeton. `null` = jeton inconnu, expiré, ou
+   * appartenant à un AUTRE espace.
+   *
+   * 🔴 LE TENANT EST UN ARGUMENT, PAS UNE DÉCORATION : c'est lui qui rend un jeton inutilisable ailleurs.
+   * Il a été passé vide pendant une révision, ce qui aurait fait chercher toutes les pièces sous l'espace
+   * `''`, donc rendu tout dépôt introuvable au moment de l'appliquer.
+   */
   pieceJointe?(tenantId: string, jeton: string): Promise<{ nom: string; contenu: Blob } | null>;
   /** Qui agit, pour l'historique. */
   acteur: { id: string | null; email: string | null };
@@ -55,6 +62,9 @@ export interface ClientMbaEcriture {
   getSettings(p: string): Promise<unknown>;
   putSettings(p: string, s: unknown, agentId?: string): Promise<unknown>;
 }
+
+/** Le message d'erreur INTERNE d'un jeton de pièce jointe qui ne résout plus. Jamais montré tel quel. */
+export const ERREUR_PIECE_ABSENTE = 'piece jointe introuvable ou expiree';
 
 export interface EchecOperation {
   operation: Operation;
@@ -111,6 +121,13 @@ export function operationDe(o: Operation): LigneHistorique['operation'] {
  */
 export function raisonLisible(err: unknown): string {
   const brut = err instanceof Error ? err.message : String(err);
+  /**
+   * 🔴 LE SEUL ÉCHEC QUI NE VIENT PAS DE META, et le confondre avec les siens ferait chercher la panne du
+   * mauvais côté : le document déposé a expiré chez NOUS. Il se teste en premier, avant les motifs de Meta.
+   */
+  if (brut === ERREUR_PIECE_ABSENTE) {
+    return 'Le document déposé n’est plus disponible : redéposez-le, puis réessayez.';
+  }
   if (/blocked/i.test(brut)) return 'Meta a refusé ce contenu. Reformulez-le, puis réessayez.';
   if (/rate|429|limit/i.test(brut)) return 'Meta nous a demandé de ralentir. Réessayez dans un instant.';
   if (/not found|404/i.test(brut)) return 'Cet élément n’existe plus chez Meta : quelqu’un l’a peut-être supprimé entre-temps.';
@@ -146,7 +163,7 @@ export async function appliquer(
     const o = operations[i]!;
     try {
       const avant = await etatAvant(client, numero, agentId, o);
-      await executer(deps, client, numero, agentId, o);
+      await executer(deps, tenantId, client, numero, agentId, o);
       passees.push(o);
       await deps.journaliser(tenantId, {
         surface: 'mba',
@@ -196,7 +213,7 @@ function apresDe(o: Operation): unknown {
 }
 
 async function executer(
-  deps: ApplicationDeps, client: ClientMbaEcriture, numero: string, agentId: string, o: Operation,
+  deps: ApplicationDeps, tenantId: string, client: ClientMbaEcriture, numero: string, agentId: string, o: Operation,
 ): Promise<void> {
   switch (o.type) {
     case 'faq.ajouter': await client.createFaq(numero, { question: o.question, answer: o.reponse }); return;
@@ -214,8 +231,8 @@ async function executer(
        * est une erreur LISIBLE, pas un silence : le client vient de déposer quelque chose et doit savoir
        * que ce n'est pas parti.
        */
-      const piece = deps.pieceJointe ? await deps.pieceJointe('', o.jeton) : null;
-      if (!piece) throw new Error('piece jointe introuvable ou expiree');
+      const piece = deps.pieceJointe ? await deps.pieceJointe(tenantId, o.jeton) : null;
+      if (!piece) throw new Error(ERREUR_PIECE_ABSENTE);
       await client.uploadFile(numero, piece.nom, piece.contenu);
       return;
     }

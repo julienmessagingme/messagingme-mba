@@ -29,6 +29,18 @@ export const MBA_FILE_MAX_BYTES = 20 * 1024 * 1024;
 /** Extensions à proposer dans le sélecteur de fichier. */
 export const MBA_FILE_ACCEPT = '.pdf,.doc,.docx,.png,.jpg,.jpeg,.csv,.xlsx';
 
+/**
+ * La liste de l'ASSISTANT, plus COURTE que celle de l'onglet Documents, et l'écart est voulu.
+ *
+ * 🔴 LÀ-BAS LE TYPE EST DÉCLARÉ PAR LE NAVIGATEUR, ICI IL EST LU DANS LES OCTETS (`typeMetaDuContenu`,
+ * serveur). Un `.doc` et un `.xlsx` n'ont pas de signature que `reconnaitre()` sache nommer : les proposer
+ * dans ce sélecteur-ci ferait choisir un fichier que le serveur refuserait juste après.
+ *
+ * ⚠️ Les deux listes sont tenues alignées par `tests/mba-assistant-piece-jointe.test.ts`, qui pose la même
+ * question aux deux côtés : ce qui est proposé ici doit être accepté là-bas, et réciproquement.
+ */
+export const MBA_ASSISTANT_FILE_ACCEPT = '.pdf,.docx,.png,.jpg,.jpeg,.csv';
+
 export function mbaFileExtensionOk(fileName: string, mime: string): boolean {
   const attendue = MBA_FILE_TYPES[mime.toLowerCase()];
   if (attendue === undefined) return false;

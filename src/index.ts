@@ -125,6 +125,7 @@ import { PgEntretienMbaStore } from './mba/assistant/entretien-store';
 import { lireInventaireMba } from './mba/assistant/inventaire';
 import { PgDepenseStore } from './assistant/budget';
 import { PgHistoriqueStore } from './reglages/historique.pg';
+import { magasinPiecesJointes } from './mba/assistant/pieces-jointes';
 import type { LigneHistorique } from './reglages/historique';
 import { PgTestRunStore } from './agent/test-runs.pg';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
@@ -290,6 +291,14 @@ async function main(): Promise<void> {
    * qui ne s'y trouve pas.
    */
   const historiqueStore = new PgHistoriqueStore(pool);
+  /**
+   * LES PIECES JOINTES DEPOSEES DANS LA CONVERSATION DU MBA.
+   *
+   * 🔴 UNE SEULE INSTANCE, PARTAGEE ENTRE LE DEPOT ET L APPLICATION. En construire deux (une par lambda de
+   * cablage) rendrait tout jeton introuvable au moment de l appliquer, sans aucune erreur visible : le
+   * depot reussirait, le diff porterait le jeton, et l application dirait « document plus disponible ».
+   */
+  const piecesJointesMba = magasinPiecesJointes();
   /** Il n y a aucun espace pour le compte de qui l aide est appelee : la depense est la NOTRE. */
   const AUCUN_ESPACE_PAYEUR = '';
   /**
@@ -1230,12 +1239,15 @@ async function main(): Promise<void> {
         modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
         tauxEurParDollar: config.EUR_PER_USD,
         agentIdDuTenant: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
+        pieces: piecesJointesMba,
         completer: (i: Parameters<GatewayChatClient['completer']>[0]) =>
           gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
         application: (tenant: string, acteur: { id: string | null; email: string | null }) => ({
           numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
           client: (t: string) => metaFactory.mbaClientForTenant(t),
           journaliser: (t: string, ligne: LigneHistorique) => historiqueStore.ecrire(t, ligne),
+          // ⚠️ `t` et non `tenant` : c'est l'espace que `appliquer` transmet, le seul qui fasse foi ici.
+          pieceJointe: async (t: string, jeton: string) => piecesJointesMba.reprendre(t, jeton),
           acteur,
         }),
       },
