@@ -31,6 +31,12 @@ export const MAX_CHAMPS_PAR_CONTACT = config.API_MAX_CHAMPS_PAR_CONTACT;
  * n'a de raison de la desserrer, là où les deux autres peuvent gêner un intégrateur légitime.
  */
 export const MAX_OPT_IN_SOURCE = 100;
+/**
+ * ⚠️ LE SERVICE EN GARDE 50 APRÈS DÉDUPLICATION : cette borne-ci est celle du CORPS REÇU, volontairement
+ * plus haute (une liste de 60 tags dont 15 doublons reste légitime). Ce qu'elle refuse, c'est le tableau
+ * démesuré, pas l'appel un peu bavard.
+ */
+export const MAX_TAGS_PAR_CONTACT = 200;
 
 /**
  * ⚠️ UN NOMBRE ET UN BOOLÉEN RESTENT ACCEPTÉS, convertis en texte. Le service faisait déjà `String(...)`
@@ -59,7 +65,12 @@ export const schemaContactApi = z.object({
   fields: z.record(z.string().max(MAX_CLE_CHAMP), valeurDeChamp)
     .refine((r) => Object.keys(r).length <= MAX_CHAMPS_PAR_CONTACT)
     .optional(),
-  tags: z.array(z.union([z.string(), z.number()]).transform(String)).optional(),
+  /**
+   * ⚠️ BORNÉE ICI AUSSI (relevé en revue) : le service coupe déjà à 50 tags, mais il coupe APRÈS avoir
+   * reçu la liste. Un tableau de 100 000 entrées traversait donc la validation entière pour finir
+   * tronqué. On refuse au lieu de tronquer, comme partout ailleurs dans ce schéma.
+   */
+  tags: z.array(z.union([z.string(), z.number()]).transform(String)).max(MAX_TAGS_PAR_CONTACT).optional(),
   optIn: z.boolean().optional(),
   optInSource: z.string().max(MAX_OPT_IN_SOURCE).optional(),
   bsuid: z.string().optional(),
@@ -88,7 +99,13 @@ export type ApiContactInput = z.infer<typeof schemaContactApi>;
 export function raisonDeValidation(err: z.ZodError): string {
   const i = err.issues[0];
   if (!i) return 'contact invalide';
-  const chemin = i.path.join('.');
+  /**
+   * ⚠️ LE CHEMIN EST BORNÉ AVANT D'ÊTRE RECOPIÉ (relevé en revue). Il contient la CLÉ envoyée par
+   * l'appelant : sans cette coupe, une clé de 5 000 caractères reviendrait telle quelle dans la réponse,
+   * multipliée par le nombre de lignes fautives. Ce n'est pas une fuite, c'est une amplification, et
+   * c'est précisément ce que ce lot existe pour fermer.
+   */
+  const chemin = i.path.join('.').slice(0, 80);
   if (chemin === '') return 'chaque contact doit être un objet';
   if (i.code === 'invalid_key') return `« ${chemin} » : clé de champ invalide (texte, ${MAX_CLE_CHAMP} caractères au plus)`;
   if (chemin === 'fields') {
@@ -99,6 +116,7 @@ export function raisonDeValidation(err: z.ZodError): string {
   if (chemin.startsWith('fields.')) return `« ${chemin} » : texte, nombre ou booléen attendu`;
   if (chemin === 'phone') return '« phone » : un numéro de téléphone (texte non vide) est attendu';
   if (chemin === 'optInSource') return `« optInSource » : ${MAX_OPT_IN_SOURCE} caractères au plus`;
+  if (chemin === 'tags') return `« tags » : une liste de ${MAX_TAGS_PAR_CONTACT} étiquettes au plus, en texte`;
   return `« ${chemin} » : ${i.message}`;
 }
 

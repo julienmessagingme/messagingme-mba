@@ -112,6 +112,27 @@ describe('POST /v1/contacts/batch : les formes hostiles', () => {
     expect(recus).toHaveLength(0);
   });
 
+  it('une liste d’étiquettes démesurée est refusée (relevé en revue)', async () => {
+    // Le service coupait déjà à 50, mais APRÈS avoir reçu la liste : un tableau de 100 000 entrées
+    // traversait la validation entière pour finir tronqué.
+    const { corps, recus } = await envoyer([{ phone: '+33611', tags: Array.from({ length: 5000 }, (_, i) => `t${i}`) }]);
+    expect(corps!.errors).toBe(1);
+    expect(recus).toHaveLength(0);
+  });
+
+  it('⚠️ mais une liste un peu bavarde passe : on refuse le démesuré, pas le verbeux', async () => {
+    const { corps, recus } = await envoyer([{ phone: '+33611', tags: Array.from({ length: 60 }, (_, i) => `t${i}`) }]);
+    expect(corps!.errors).toBe(0);
+    expect(recus).toHaveLength(1);
+  });
+
+  it('⚠️ une clé démesurée ne revient pas EN ENTIER dans la réponse (relevé en revue)', async () => {
+    // Sans la coupe du chemin, la clé envoyée revenait telle quelle, multipliée par le nombre de lignes
+    // fautives : une amplification de réponse, exactement ce que ce lot ferme ailleurs.
+    const { corps } = await envoyer([{ phone: '+33611', fields: { ['k'.repeat(5000)]: 'v' } }]);
+    expect(corps!.results[0]!.reason!.length).toBeLessThan(200);
+  });
+
   it('un `optInSource` démesuré est refusé : il justifie un consentement, il ne se tronque pas', async () => {
     const { corps, recus } = await envoyer([{ phone: '+33611', optIn: true, optInSource: 'x'.repeat(5000) }]);
     expect(corps!.errors).toBe(1);
