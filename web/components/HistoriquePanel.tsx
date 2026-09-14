@@ -72,9 +72,18 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
   return (
     <div className={cardCls}>
       <h3 className="text-sm font-semibold text-ink-900">{t('Historique', 'History')}</h3>
+      {/* 🔴 CE TEXTE DIT CE QUE LA PAGE CONTIENT VRAIMENT, et il a été corrigé le 2026-09-15. Il annonçait
+          « tout ce qui a été changé » ; depuis les ONGLETS, seules les SUPPRESSIONS sont journalisées (choix
+          délibéré : chez Meta une suppression est définitive, une création ratée se refait). Une page qui
+          promet plus qu'elle ne montre fait conclure « ça n'a pas eu lieu » là où il faudrait lire « ce
+          n'est pas encore journalisé », et c'est le pire malentendu possible sur un journal. */}
       <p className="mt-1 text-sm text-ink-500">
-        {t('Tout ce qui a été changé, par l’assistant comme depuis les onglets. Rien n’est purgé.',
-          'Everything that changed, by the assistant or from the tabs. Nothing is purged.')}
+        {t('Ce que l’assistant a appliqué, et ce qui a été SUPPRIMÉ depuis les onglets, avec son contenu. Rien n’est purgé.',
+          'What the assistant applied, and what was DELETED from the tabs, with its content. Nothing is purged.')}
+      </p>
+      <p className="mt-1 text-xs text-ink-400">
+        {t('Les créations et les modifications faites à la main dans les onglets n’y figurent pas encore.',
+          'Creations and edits made by hand in the tabs are not listed yet.')}
       </p>
 
       {erreur && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}

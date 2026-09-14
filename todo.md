@@ -348,6 +348,15 @@ contient pas ; la promesse est retirée du document. Il faut : deux espaces sur 
 bavard et l'autre discret, et la mesure de l'attente du DISCRET, seuil 5 minutes. ⚠️ Il exige un Postgres
 jetable ET un worker en face, sinon il mesure une file morte.
 
+**Ajouté le 2026-09-15 (revue finale des assistants) : journaliser les CRÉATIONS et les MODIFICATIONS faites
+depuis les onglets**, sur les deux surfaces. Aujourd'hui l'historique porte tout ce que les assistants
+appliquent, plus les SUPPRESSIONS des formulaires (les quatre du MBA, les fiches de connaissance d'un agent).
+C'est un ordre de priorité assumé : chez Meta une suppression est définitive et la ligne d'historique en est le
+seul exemplaire, quand une création ratée se refait. ⚠️ En attendant, **l'écran le DIT** (`HistoriquePanel`),
+parce qu'un journal qui promet plus qu'il ne montre fait conclure « ça n'a pas eu lieu » là où il faudrait lire
+« ce n'est pas encore journalisé ». Les routes à couvrir : `PATCH /tenants/:t/agents/:id` (la fiche), les
+écritures d'outils (`agent-tools.ts`), et les créations de FAQ, compétences, sites et documents du MBA.
+
 Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
 ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.
 

@@ -1972,6 +1972,8 @@ Le même écran que côté Meta Business Agent, pour l'agent IA : **ce qui a cha
 - ✅ **Une fiche de connaissance supprimée y laisse son CONTENU**, y compris quand on en supprime cinquante
   d'un coup. Il n'y a pas de corbeille : cette ligne en est le seul exemplaire.
 - ✅ **Chaque ligne dit qui, quand, et d'où** (l'assistant ou un formulaire).
+  ⚠️ Comme côté MBA, **les créations et modifications faites à la main n'y figurent pas encore** : l'écran le
+  dit plutôt que de laisser croire à un journal complet.
 - ✅ **Rien n'est purgé**, contrairement au journal d'audit RGPD.
 - ⚠️ **Réservé aux administrateurs.**
 
@@ -2163,8 +2165,11 @@ qu'il va faire, une ligne par modification**, et rien ne part chez Meta tant qu'
 **À quoi ça sert.** Meta n'a pas de corbeille. Une FAQ, une compétence ou un document supprimé est perdu chez
 lui : cette page en garde **le seul exemplaire**.
 
-- ✅ **Tout y figure** : ce que l'assistant a appliqué comme ce qui a été fait à la main dans les onglets. Chaque
-  ligne dit quoi, quand, par qui, et si ça vient de l'assistant ou d'un formulaire.
+- ✅ **Ce que l'assistant a appliqué y figure en entier**, et **ce qui a été SUPPRIMÉ depuis les onglets**.
+  Chaque ligne dit quoi, quand, par qui, et si ça vient de l'assistant ou d'un formulaire.
+  ⚠️ **Les créations et modifications faites à la main dans les onglets n'y figurent pas encore**, et l'écran
+  le dit : chez Meta une suppression est définitive, une création ratée se refait. C'est un ordre de priorité,
+  pas un oubli.
 - ✅ **Le contenu effacé est consultable** : sur une suppression, « voir le contenu effacé » ouvre ce qui a été
   perdu.
   ⚠️ **Le remettre le RECRÉE, ça ne le ressuscite pas** : on recopie le contenu dans l'onglet concerné, ce qui
