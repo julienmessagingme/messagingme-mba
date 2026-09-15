@@ -45,7 +45,7 @@ const TEST_OK = {
   risqueMinimum: 'read',
 };
 
-async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown }> }, over: { requetes?: unknown[]; test?: unknown } = {}) {
+async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown }> }, over: { requetes?: unknown[]; test?: unknown; creationRefusee?: string } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -54,7 +54,13 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     if (req.method() === 'POST' || req.method() === 'PATCH' || req.method() === 'DELETE') {
       capture.posts.push({ url, body: req.postDataJSON() ?? null });
       if (url.includes('/test')) return json(over.test ?? TEST_OK);
-      if (url.includes('/agent-requetes')) return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ requete: REQUETE }) });
+      if (url.includes('/agent-requetes')) {
+        // Un REFUS du serveur, pour éprouver ce que l'écran fait de la saisie quand l'enregistrement échoue.
+        if (over.creationRefusee !== undefined && req.method() === 'POST') {
+          return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: over.creationRefusee }) });
+        }
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ requete: REQUETE }) });
+      }
       return json({ ok: true });
     }
     if (url.includes('/agent-requetes')) {
@@ -239,6 +245,53 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     await expect(page.getByTestId('requete-enregistrer')).toBeDisabled();
     await page.getByTestId('requete-label').fill('Lister les scénarios');
     await expect(page.getByTestId('requete-enregistrer')).toBeEnabled();
+  });
+
+  test('🔴 un REFUS du serveur ne fait pas perdre la saisie', async ({ page }) => {
+    /**
+     * 🔴 LE DÉFAUT LE PLUS COÛTEUX DE CET ÉCRAN, vécu par Julien le 2026-09-15. Le formulaire de création se
+     * refermait DANS LA FOULÉE de l'appel, sans attendre son résultat : un refus affichait donc son message
+     * au-dessus d'un formulaire disparu, avec tout le travail dedans. « ça a pas enregistré les données que
+     * j'avais saisi et il faut tout refaire ».
+     *
+     * ⚠️ Le formulaire d'ÉDITION n'avait pas le défaut : il ne touchait que la création, c'est-à-dire le
+     * moment où l'on a le plus à perdre et le moins l'habitude de l'écran.
+     */
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { creationRefusee: 'chemin refusé : quelque chose ne va pas' });
+    await page.getByTestId('requete-nouvelle').click();
+    await page.getByTestId('requete-label').fill('Mon appel');
+    await page.getByTestId('requete-chemin').fill('/subscriber/add-tag');
+    await page.getByTestId('requete-enregistrer').click();
+    // Le refus se voit...
+    await expect(page.getByTestId('requetes-erreur')).toContainText(/chemin refusé/);
+    // ...ET la saisie est toujours là, au caractère près.
+    await expect(page.getByTestId('requete-nouvelle-form')).toBeVisible();
+    await expect(page.getByTestId('requete-label')).toHaveValue('Mon appel');
+    await expect(page.getByTestId('requete-chemin')).toHaveValue('/subscriber/add-tag');
+  });
+
+  test('🔴 un chemin qui recommence par l’adresse du système le dit, et se corrige d’un bouton', async ({ page }) => {
+    // Coller l'adresse entière est le réflexe de qui a sa documentation sous les yeux. L'écran le refusait
+    // APRÈS l'envoi du formulaire, avec un message qui ne disait pas le geste.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await page.getByTestId('requete-chemin').fill('https://api.client.fr/v1/commandes/{ref}');
+    await expect(page.getByTestId('chemin-avertissement')).toContainText(/ce qui la suit|what follows/i);
+    await page.getByTestId('chemin-corriger').click();
+    await expect(page.getByTestId('requete-chemin')).toHaveValue('/commandes/{ref}');
+    await expect(page.getByTestId('chemin-avertissement')).toHaveCount(0);
+  });
+
+  test('⚠️ une adresse d’un AUTRE hôte est signalée SANS proposer de correction', async ({ page }) => {
+    // Il n'y a rien à déduire : proposer quoi que ce soit ici serait deviner à la place du client.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await page.getByTestId('requete-chemin').fill('https://autre.test/x');
+    await expect(page.getByTestId('chemin-avertissement')).toBeVisible();
+    await expect(page.getByTestId('chemin-corriger')).toHaveCount(0);
   });
 
   test('🔴 une requête UTILISÉE par un agent ne se supprime pas', async ({ page }) => {

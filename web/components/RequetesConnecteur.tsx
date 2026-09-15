@@ -11,6 +11,7 @@ import {
   type OrigineVariable, type Paire, type RequeteApi, type ResultatTest, type VariableRequete,
 } from '@/lib/api-agent-requetes';
 import { lireGabarit, pastillesDe } from '@/lib/gabarit-pastilles';
+import { lireChemin } from '@/lib/chemin-relatif';
 
 /**
  * METTRE AU POINT UN APPEL vers le système du client, et l'ÉPROUVER avant de l'ouvrir aux agents.
@@ -94,15 +95,27 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
 
-  async function agir(travail: () => Promise<void>) {
-    if (busy) return;
+  /**
+   * 🔴 ELLE REND DÉSORMAIS UN VERDICT, et c'est ce qui empêche de perdre une saisie (2026-09-15). Elle ne
+   * rendait rien : le formulaire de création se refermait DANS LA FOULÉE de l'appel, sans attendre son
+   * résultat. Un refus du serveur (« chemin refusé », « variable non déclarée »...) affichait donc son
+   * message au-dessus d'un formulaire DISPARU, avec tout le travail dedans. Vécu par Julien le jour même :
+   * « ça a pas enregistré les données que j'avais saisi et il faut tout refaire ».
+   *
+   * ⚠️ Le formulaire d'ÉDITION, lui, restait ouvert : le défaut ne touchait que la création, c'est-à-dire
+   * exactement le moment où l'on a le plus à perdre et le moins l'habitude de l'écran.
+   */
+  async function agir(travail: () => Promise<void>): Promise<boolean> {
+    if (busy) return false;
     setBusy(true);
     setErreur(null);
     try {
       await travail();
       await charger();
+      return true;
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -210,7 +223,9 @@ function NouvelleRequete({ tenantId, sources, champs, catalogue, busy, sourcePar
   busy: boolean;
   /** Le système déjà ouvert : un appel créé depuis SA section lui appartient, ne pas le redemander. */
   sourceParDefaut?: string;
-  onCreer: (b: Brouillon) => void;
+  /** 🔴 REND SI L'ENREGISTREMENT A RÉUSSI : le formulaire ne se referme que dans ce cas, sinon la saisie
+   *  serait perdue sur un refus du serveur. */
+  onCreer: (b: Brouillon) => Promise<boolean>;
 }) {
   const t = useT();
   const [ouvert, setOuvert] = useState(false);
@@ -230,7 +245,7 @@ function NouvelleRequete({ tenantId, sources, champs, catalogue, busy, sourcePar
         <Editeur
           tenantId={tenantId} requeteId={null} sources={sources} champs={champs} catalogue={catalogue}
           brouillon={brouillon} setBrouillon={setBrouillon as (b: Brouillon) => void} busy={busy}
-          onEnregistrer={() => { onCreer(brouillon); setOuvert(false); }}
+          onEnregistrer={() => { void onCreer(brouillon).then((ok) => { if (ok) setOuvert(false); }); }}
         />
       )}
       <button onClick={() => setOuvert(false)} className="self-start text-xs text-ink-500 hover:underline">{t('Annuler', 'Cancel')}</button>
@@ -308,6 +323,8 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
     ...(brouillon.corps.mode === 'champs' ? brouillon.corps.champs.map((c) => c.valeur) : []),
   ];
   const nonDeclarees = [...new Set(gabarits.flatMap(pastillesDe))].filter((n) => !declarees.has(n));
+  /** Le chemin porte-t-il une adresse ? Lu contre le système RÉELLEMENT choisi, pas contre le premier. */
+  const problemeChemin = lireChemin(brouillon.chemin, sources.find((x) => x.id === brouillon.sourceId)?.baseUrl ?? '');
 
   const ongletCls = (o: Onglet): string =>
     `border-b-2 px-2 pb-1 text-xs ${onglet === o ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-700'}`;
@@ -352,6 +369,37 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
           {essai ? t('Essai…', 'Trying…') : t('Essayer', 'Try')}
         </button>
       </div>
+
+      {/**
+        * 🔴 COLLER L'ADRESSE ENTIÈRE EST LE RÉFLEXE NORMAL, et l'écran le refusait APRÈS l'envoi du
+        * formulaire, avec « le chemin doit être relatif à l'adresse de base ». Le refus est juste, le moment
+        * est faux, et le message ne disait pas le geste : la base est déjà déclarée sur le système, il ne
+        * faut garder que ce qui la suit. Vécu par Julien le 2026-09-15.
+        * ⚠️ On PROPOSE, on ne corrige pas en silence : une adresse d'un AUTRE hôte n'a rien à rattraper.
+        */}
+      {problemeChemin.probleme !== null && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="chemin-avertissement">
+          <p className="text-[11px] text-coral">
+            {problemeChemin.probleme === 'base-recopiee'
+              ? t(
+                `Le chemin recommence par l’adresse du système. Gardez seulement ce qui la suit : ${problemeChemin.propose ?? ''}`,
+                `The path repeats the system’s address. Keep only what follows it: ${problemeChemin.propose ?? ''}`,
+              )
+              : t(
+                'Le chemin ne peut pas porter une adresse complète : il est relatif au système choisi ci-dessus.',
+                'The path cannot carry a full address: it is relative to the system picked above.',
+              )}
+          </p>
+          {problemeChemin.propose !== null && (
+            <button
+              data-testid="chemin-corriger" onClick={() => maj({ chemin: problemeChemin.propose! })}
+              className="rounded border border-brand-500 px-2 py-0.5 text-[11px] font-semibold text-brand-600 hover:bg-brand-50"
+            >
+              {t('Corriger', 'Fix it')}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-1 border-b border-ink-200">
         <button className={ongletCls('variables')} data-testid="onglet-variables" onClick={() => setOnglet('variables')}>{t('Données envoyées', 'Data sent')}</button>

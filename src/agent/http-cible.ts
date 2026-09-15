@@ -98,7 +98,14 @@ export function construireCible(input: {
   // plutôt que rattaché sous la base. Le rattacher en silence transformerait `//evil.test/x` en segment de
   // chemin : personne n'a voulu ça, c'est une faute de saisie de l'administrateur, et on la lui dit.
   if (/^[a-z][a-z0-9+.-]*:/i.test(chemin) || chemin.startsWith('//')) {
-    return { ok: false, raison: 'le chemin doit être relatif à l’adresse de base' };
+    // ⚠️ LE MESSAGE DIT LE GESTE, PAS SEULEMENT LA RÈGLE (2026-09-15). « Le chemin doit être relatif à
+    // l'adresse de base » est vrai et n'apprend rien à qui vient de coller l'adresse de sa documentation :
+    // l'adresse de base est DÉJÀ déclarée sur le système, il ne faut garder que ce qui la suit.
+    return {
+      ok: false,
+      raison: 'le chemin ne doit pas contenir d’adresse complète : l’adresse du système est déjà déclarée, '
+        + 'ne gardez que ce qui la suit (par exemple « /subscriber/add-tag »)',
+    };
   }
 
   // 3. La cible. `new URL(chemin, base)` résout les `..` du gabarit ET une adresse absolue : les deux sont
