@@ -10,15 +10,57 @@
 >
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.**
 
-## 🔴 L'ÉTAT EXACT, AU 2026-09-14
+## 🔴 L'ÉTAT EXACT, AU 2026-09-15 AU MATIN
 
 | | |
 |---|---|
-| `origin/main` | `c1f1284` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `449254f` : **déployé le 2026-09-14 au soir**, aucun écart |
-| Dernière CI de CODE | ✅ verte, quatre jobs |
+| `origin/main` | `4474dd9` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `4474dd9` : **déployé le 2026-09-15 vers 2 h**, aucun écart |
+| Dernière CI de CODE | ✅ verte, **quatre jobs lus un par un** (`integration` compris) |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
-| Migrations | **0139 à 0143 appliquées**, vérifiées en base. **Prochaine libre : 0144** |
+| Migrations | **0144 à 0148 appliquées**, relues en base après `migrate`. **Prochaine libre : 0149** |
+| Contrôle public | ✅ les quatre noms à 200, **aucun 502 sur les deux déploiements** |
+
+## ✅ LES QUATRE LOTS DES ASSISTANTS SONT LIVRÉS ET DÉPLOYÉS (2026-09-15, en autonomie)
+
+Le plan : [docs/superpowers/plans/2026-09-14-assistants-conversationnels-evolution.md](docs/superpowers/plans/2026-09-14-assistants-conversationnels-evolution.md).
+Treize tâches, quatre lots, une revue entre chaque et une revue finale. Le fonctionnel est dans
+`features.md` ; ce qui suit est ce qu'il faut savoir pour reprendre.
+
+🔴 **CE QUE LA REVUE FINALE A TROUVÉ, ET QUI VALAIT LE PLUS CHER** : l'assistant d'agent IA dépensait NOTRE
+argent **sans plafond**. Il est passé sur la clé maison au lot A, et le plafond n'a été câblé que sur
+l'assistant du MBA, alors que le commentaire du câblage annonçait lui-même que « les deux moitiés de cette
+décision vont ensemble, l'une sans l'autre est dangereuse ». Les deux partagent désormais la même enveloppe
+(`ASSISTANT_PLAFOND_EUROS_MOIS`, 2 € par ESPACE et par mois, `assistant_depense_mois`).
+
+🔴 **ET UNE SONDE SUR LA PRODUCTION A TROUVÉ CE QU'AUCUN TEST NE POUVAIT VOIR** : le branchement d'outil
+proposé par l'assistant appelait `/outils/...` quand la route s'appelle `/tools/...`. Tous les tests montent
+le module Fastify directement, donc aucun n'emprunte le chemin HTTP. Corrigé, et tenu par un test qui compare
+segment pour segment ce que le serveur déclare et ce que le navigateur appelle.
+
+⚠️ **LE FICHIER D'INTÉGRATION DU LOT A N'AVAIT JAMAIS TOURNÉ** : son `beforeAll` créait un agent sans
+`mention_ia` (NOT NULL sans défaut), donc TOUT le fichier échouait, et un second défaut se cachait derrière
+(un `insert` à sept colonnes et six valeurs, qui faisait passer un test pour la mauvaise raison). Les deux
+sont réparés, `integration` est vert.
+
+### 🔴 CE QUI RESTE : L'ESSAI RÉEL
+
+Rien n'a été essayé sur un vrai numéro. À faire sur **+33 5 25 68 02 50**, dans cet ordre :
+
+1. **Onglet Assistant du MBA** : lui demander d'ajouter une FAQ, vérifier que le diff la nomme, appliquer,
+   la retrouver dans l'onglet FAQ. Puis lui demander d'en supprimer une : le diff doit la signaler à part.
+2. **Joindre un document** (PDF ou .docx) depuis l'assistant : rien ne doit partir chez Meta avant
+   « Appliquer », et le fichier doit apparaître dans l'onglet Fichiers après.
+3. **Onglet Historique** (MBA puis agent) : les gestes ci-dessus doivent y figurer, avec **votre adresse**.
+4. **Onglet Construire en parlant** d'un agent DÉJÀ construit : il ne doit plus proposer d'écrire des champs
+   dont personne n'a parlé. Lui demander de brancher un outil de la bibliothèque, et vérifier dans l'onglet
+   Outils qu'il est branché mais **PAS activé**.
+5. **Vider un champ** (le ton, par exemple) dans l'onglet Identité, puis rouvrir la conversation : il doit le
+   signaler, sans reposer tout l'entretien.
+
+⚠️ **Ce qui n'est PAS encore journalisé** : les créations et modifications faites à la main dans les onglets.
+Seules les suppressions le sont, par ordre de priorité assumé, et **l'écran le dit**. Détail et liste des
+routes à couvrir : `todo.md`.
 
 ⚠️ **LE 502 PUBLIC EST QUASI SYSTÉMATIQUE.** Douze déploiements sur treize entre le 2026-09-13 et le
 2026-09-14 : conteneurs `healthy`, appel interne à 200, appel public à 502. Réparation :
