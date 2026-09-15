@@ -345,52 +345,40 @@ export async function processInbound(
 /**
  * Remet notre `control_owner` d'accord avec Meta, à partir du `field` du webhook.
  *
- * 🔴 META FAIT AUTORITÉ, ET C'EST LE SEUL MOYEN DE LE SAVOIR. `standby` veut dire « l'agent de Meta tient
- * ce fil », `messages` veut dire « nous le tenons ». Ces deux mots arrivent sur CHAQUE message entrant,
- * alors que l'événement `messaging_handovers`, sur lequel reposait toute notre détection de bascule, n'a
- * JAMAIS été observé (zéro sur 58 payloads réels, 2026-09-10). Sans cette correction, un fil rendu au MBA
- * restait `app_workflow` chez nous, nos scénarios se croyaient maîtres, et l'écran mentait à l'opérateur.
+ * 🔴 CE COMMENTAIRE A AFFIRMÉ UNE SÉMANTIQUE FAUSSE PENDANT CINQ JOURS, ET LE CODE LA SUIVAIT. Il disait :
+ * « `standby` veut dire « l'agent de Meta tient ce fil », `messages` veut dire « nous le tenons ». Ces deux
+ * mots arrivent sur CHAQUE message entrant. » Mesuré sur 30 jours de webhooks RÉELS le 2026-09-15 :
  *
- * ⚠️ LES DEUX SENS NE SONT PAS SYMÉTRIQUES, et c'est tout le soin de cette fonction :
+ *   - 126 messages ENTRANTS du client, **100 % en `messages`**, ZÉRO en `standby` ;
+ *   - 23 payloads `standby`, **aucun ne porte d'expéditeur**, tous portent un `message` SORTANT.
  *
- *  - `standby` écrase SANS condition. Meta a tranché, y compris contre un `app_human` : si l'agent de Meta
- *    répond, un opérateur qui se croit maître du fil se ferait doubler sans comprendre.
- *  - `messages` ne corrige QUE si nous croyions `mba`. Ce mot dit seulement que Meta nous laisse répondre,
- *    il ne dit RIEN de qui, chez nous, tient le fil. Sans le `only`, chaque message d'un client rendrait la
- *    main au scénario par-dessus l'opérateur en train de lui écrire.
+ * Autrement dit : `standby` n'est PAS un canal d'entrants, c'est l'ÉCHO de ce que l'agent de Meta a envoyé.
+ * Un entrant arrive toujours sur `messages`, que l'agent tienne le fil ou non.
  *
- * 🔴 ET IL POSE `app_human`, PAS `app_workflow` (constaté par Julien le 2026-09-15, mesuré en base).
- * `app_workflow` veut dire « UN SCÉNARIO GÈRE CE FIL », et c'est la seule valeur que le dossier « À traiter »
- * EXCLUT. Or ce cas est exactement l'inverse : le scénario est FINI, Meta nous rend la parole, et personne
- * ne s'en occupe. Le fil devenait donc invisible de la liste de travail, et y restait 24 h, le temps que la
- * soupape `CONTROL_WORKFLOW_TIMEOUT_MS` le libère. Mesuré sur le numéro de production : run `done` à 06:16,
- * le client réécrit à 06:17, `control_owner` repassé à `app_workflow`, zéro pastille.
+ * 🔴 CE QUE LA BRANCHE `messages` FAISAIT DONC VRAIMENT : elle se déclenchait sur CHAQUE message du client et
+ * écrasait l'état `mba`, c'est-à-dire l'inverse de ce qu'elle croyait faire. C'est elle qui rendait une
+ * conversation invisible du dossier « À traiter » après un scénario (constaté par Julien le 2026-09-15) :
+ * elle écrivait `app_workflow`, la seule valeur que ce dossier exclut, sur un fil qu'aucun scénario ne gérait.
  *
- * ⚠️ AUCUNE DES TROIS VALEURS NE DIT « PERSONNE N'EST DESSUS », et `app_human` est la moins fausse des trois :
- * elle met le fil dans « À traiter » (ce qu'on veut : quelqu'un attend une réponse), elle n'affiche pas la
- * marque du robot de Meta sur un fil qu'il ne tient pas, et elle démarre le compte à rebours de
- * `CONTROL_HUMAN_TIMEOUT_MS` (2 h par défaut) au bout duquel la soupape rend la main au MBA. C'est-à-dire
- * exactement le réglage « quand un humain répond, il garde la main pendant N minutes ».
+ * ⚠️ LA CORRECTION EST UNE SUPPRESSION. Un entrant ne dit RIEN du détenteur : on n'en déduit plus rien. Il
+ * reste DEUX signaux, et ils sont tous les deux observés dans les vraies données :
+ *   - un `standby` : l'agent de Meta vient de parler, donc il tient le fil ;
+ *   - un `messaging_handovers` / `control_passed` : il nous passe la main (`src/webhooks/handover.ts`).
+ * Le filet, si les deux manquent, est le balayage de reprise (`src/inbox/control-sweep.ts`).
  *
- * ⚠️ ELLE N'EMPÊCHE AUCUN SCÉNARIO DE DÉMARRER : `reprendreLeFilPourLApp` pose `app_workflow` SANS `only`,
- * donc un parcours qui démarre reprend le fil quel que soit l'ordre des deux écritures.
- *
- * ⚠️ Un `field` absent (`null`) ne corrige rien : c'est une forme de payload qu'on ne sait pas interpréter,
- * et deviner vaudrait moins que se taire.
+ * ⚠️ `standby` ÉCRASE SANS CONDITION, y compris un `app_human` : Meta a tranché, et un opérateur qui se croit
+ * maître du fil se ferait doubler sans comprendre.
  *
  * BEST-EFFORT : un échec ici ne doit pas faire échouer l'enregistrement du message, qui est la donnée
  * métier. Il reste visible en console.
  */
 async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: InboundMessage): Promise<void> {
-  if (!store.setControlOwner || m.field === null) return;
+  if (!store.setControlOwner || m.field !== 'standby') return;
   try {
-    if (m.field === 'standby') {
-      await store.setControlOwner(tenantId, m.waId, 'mba');
-    } else if (m.field === 'messages') {
-      await store.setControlOwner(tenantId, m.waId, 'app_human', { only: ['mba'] });
-    }
+    await store.setControlOwner(tenantId, m.waId, 'mba');
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('processInbound: détenteur du fil non corrigé:', err instanceof Error ? err.message : err);
   }
 }
+

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { processInbound, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
 import { creerRendreLeFil, creerPrendreLeFil } from '../src/inbox/controle-du-fil';
 
@@ -52,17 +54,19 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     });
   });
 
-  it('🔴 un `messages` ne corrige QUE si on croyait `mba`, et il pose `app_human`', async () => {
-    // Ce mot dit seulement que Meta nous laisse répondre. Il ne dit RIEN de qui, chez nous, tient le fil.
-    // Sans le `only`, chaque message d'un client rendrait la main au scénario par-dessus l'opérateur en
-    // train de lui écrire.
-    //
-    // 🔴 ET LA VALEUR POSÉE EST `app_human`, PAS `app_workflow`. Cette dernière veut dire « un scénario gère
-    // ce fil », et c'est la SEULE que le dossier « À traiter » exclut : la poser ici rendait invisible un fil
-    // dont le scénario est fini et où le client attend une réponse. Mesuré en production le 2026-09-15.
+  it('🔴 un `messages` n’écrit RIEN : un entrant ne dit rien du détenteur', async () => {
+    /**
+     * 🔴 CE TEST FIGEAIT UNE SÉMANTIQUE FAUSSE, et le code la suivait. Mesuré sur 30 jours de webhooks réels
+     * le 2026-09-15 : 126 messages ENTRANTS du client, 100 % en `messages`, ZÉRO en `standby`. Et les 23
+     * payloads `standby` ne portent AUCUN expéditeur, tous un `message` sortant : `standby` est l'ÉCHO de ce
+     * que l'agent de Meta envoie, pas un canal d'entrants.
+     *
+     * La branche `messages` se déclenchait donc sur CHAQUE message du client et écrasait l'état `mba`. C'est
+     * elle qui rendait une conversation invisible du dossier « À traiter » après un scénario.
+     */
     const { store, ecrits } = fauxStore();
     await processInbound(PAYLOAD('messages'), store);
-    expect(ecrits).toEqual([{ owner: 'app_human', only: ['mba'] }]);
+    expect(ecrits).toEqual([]);
   });
 
   it('🔴 un `field` absent ne corrige RIEN', async () => {
@@ -182,11 +186,16 @@ describe('la valeur posée doit rester VISIBLE du dossier « À traiter »', () 
   const dansATraiter = (owner: string, derniereDirection: string) =>
     owner !== 'app_workflow' && derniereDirection !== 'out';
 
-  it('🔴 après un `messages`, un client qui écrit est DANS la liste de travail', async () => {
+  it('🔴 après un `messages`, l’état n’est pas TOUCHÉ, donc il reste visible', async () => {
+    /**
+     * C'est la propriété qui compte, et elle tient maintenant par l'ABSENCE d'écriture. Après un scénario,
+     * le fil vaut `mba` (posé par la fin du parcours) : un client qui écrit le laisse à `mba`, qui EST dans
+     * le dossier. C'est l'écriture parasite de `app_workflow` qui l'en sortait.
+     */
     const { store, ecrits } = fauxStore();
     await processInbound(PAYLOAD('messages'), store);
-    const pose = ecrits[0]?.owner ?? '';
-    expect(dansATraiter(pose, 'in')).toBe(true);
+    expect(ecrits).toEqual([]);
+    expect(dansATraiter('mba', 'in')).toBe(true);
   });
 
   it('⚠️ et `app_workflow` est précisément ce qui l’en sortirait', () => {
@@ -195,5 +204,28 @@ describe('la valeur posée doit rester VISIBLE du dossier « À traiter »', () 
     expect(dansATraiter('app_workflow', 'in')).toBe(false);
     expect(dansATraiter('app_human', 'in')).toBe(true);
     expect(dansATraiter('mba', 'in')).toBe(true);
+  });
+});
+
+/**
+ * 🔴 QUAND L'AGENT DE META PASSE LA MAIN À UN HUMAIN.
+ *
+ * C'est le chemin qui compte le plus : l'agent vient de dire au client « un membre de l'équipe va vous
+ * répondre », et il nous rend le fil (`messaging_handovers` / `control_passed`, 4 observés en production).
+ * Le code écrivait `app_workflow`, la SEULE valeur que le dossier « À traiter » exclut : la conversation
+ * était rangée hors de la liste de travail à l'instant exact où quelqu'un attend une réponse humaine.
+ */
+describe('le passage de main de l’agent de Meta', () => {
+  const handover = readFileSync(resolve(__dirname, '../src/webhooks/handover.ts'), 'utf8');
+
+  it('🔴 pose `app_human`, pas `app_workflow`', () => {
+    expect(handover).toContain("if (precedent === 'meta_business_agent') return 'app_human';");
+    expect(handover).not.toContain("if (precedent === 'meta_business_agent') return 'app_workflow';");
+  });
+
+  it('🔴 et c’est ce qui le rend visible du dossier', () => {
+    const dansATraiter = (owner: string) => owner !== 'app_workflow';
+    expect(dansATraiter('app_human')).toBe(true);
+    expect(dansATraiter('app_workflow')).toBe(false);
   });
 });

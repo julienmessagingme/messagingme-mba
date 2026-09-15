@@ -79,10 +79,21 @@ export function ownerFromHandover(value: Record<string, unknown>): ControlOwner 
   if (str(value['type']) !== 'control_passed') return null;
   const passe = asRecord(value['control_passed']);
   const precedent = str(passe['previous_owner_app_role']);
-  // On ne reconnaît QUE ce qu'on a vu : l'agent de Meta nous rend la main. Une autre app qui passerait le fil
-  // à l'agent produirait le même `type` avec un rôle différent, et le nouveau détenteur ne serait alors PAS
-  // nous ; rien dans le payload ne permet de trancher, donc on rend `null` et on journalise tout.
-  if (precedent === 'meta_business_agent') return 'app_workflow';
+  /**
+   * On ne reconnaît QUE ce qu'on a vu : l'agent de Meta nous rend la main. Une autre app qui passerait le fil
+   * à l'agent produirait le même `type` avec un rôle différent, et le nouveau détenteur ne serait alors PAS
+   * nous ; rien dans le payload ne permet de trancher, donc on rend `null` et on journalise tout.
+   *
+   * 🔴 `app_human`, ET NON `app_workflow` (corrigé le 2026-09-15). Les deux valeurs veulent dire « nous »,
+   * mais pas le même nous : `app_workflow` veut dire « un SCÉNARIO gère ce fil », et c'est la SEULE valeur
+   * que le dossier « À traiter » exclut. Or ce webhook-ci arrive précisément quand l'agent de Meta vient de
+   * dire au client « un membre de l'équipe va vous répondre » : écrire `app_workflow` rangeait donc la
+   * conversation hors de la liste de travail à l'instant exact où quelqu'un attend une réponse humaine.
+   *
+   * ⚠️ Et ça n'empêche aucun scénario : `reprendreLeFilPourLApp` pose `app_workflow` SANS condition quand un
+   * parcours démarre.
+   */
+  if (precedent === 'meta_business_agent') return 'app_human';
   return null;
 }
 

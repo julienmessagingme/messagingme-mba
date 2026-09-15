@@ -182,17 +182,40 @@ Où regarder avant de modifier quoi que ce soit.
 
 ### 4.1 Un message arrive
 
-🔴 **DEUX FORMES DE PAYLOAD, ET LA SECONDE EST IMBRIQUÉE.** Quand le Meta Business Agent tient le fil,
-Meta n'envoie plus `field: "messages"` mais `field: "standby"`, et il place `contacts`, `messages`,
-`statuses` et `message_echoes` **sous `value.standby`**, en laissant `metadata` au premier niveau. Tout
-lecteur d'un `change` passe donc par **`valeurEffective` (`src/webhooks/change.ts`)**, qui remonte le
-contenu ; sur un payload normal, elle le rend inchangé. Lire `value.messages` en direct est un défaut :
-il ne lève rien, il rend un tableau vide, et le job se termine « avec succès ».
+🔴 **DEUX FORMES DE PAYLOAD, ET LA SECONDE EST IMBRIQUÉE.** Un `change` de champ `standby` place son
+contenu **sous `value.standby`**, en laissant `metadata` au premier niveau. Tout lecteur d'un `change` passe
+donc par **`valeurEffective` (`src/webhooks/change.ts`)**, qui remonte le contenu ; sur un payload normal,
+elle le rend inchangé. Lire `value.messages` en direct est un défaut : il ne lève rien, il rend un tableau
+vide, et le job se termine « avec succès ».
 
-⚠️ **`field` reste rendu TEL QUEL, et c'est la moitié qui fait tenir la première.** Ce qui doit se TAIRE
-quand le MBA tient le fil (déclencheurs d'automation, avance de scénario, jeton de test) teste
-`field !== 'messages'` : répondre reprendrait implicitement le fil à l'agent de Meta. L'Inbox et les
-accusés de livraison, eux, enregistrent les deux formes. **Enregistrer n'est pas répondre.**
+🔴 **CE QUE `standby` VEUT DIRE, MESURÉ, ET CETTE PAGE A DIT L'INVERSE PENDANT DES SEMAINES.** Elle
+affirmait : « quand le Meta Business Agent tient le fil, Meta n'envoie plus `field: "messages"` mais
+`field: "standby"` ». **Faux.** Relevé sur 30 jours de webhooks réels le 2026-09-15 :
+
+| | |
+|---|---|
+| messages ENTRANTS du client | **126, tous en `messages`** |
+| entrants arrivés en `standby` | **zéro** |
+| payloads `standby` | **23, aucun ne porte d'expéditeur**, tous un `message` SORTANT |
+
+`standby` est donc **l'ÉCHO de ce que l'agent de Meta ENVOIE**, pas un canal d'entrants. Le cas décisif est
+daté : le 2026-09-15 à 07:58:39 un message du client est arrivé en `messages` alors que l'agent de Meta
+tenait le fil, ce que prouve sa réponse sept secondes plus tard. **Un entrant arrive toujours sur
+`messages`, que l'agent tienne le fil ou non.**
+
+⚠️ **CONSÉQUENCE SUR LA GARDE `field !== 'messages'`, ET ELLE EST OUVERTE.** Ce qui doit se TAIRE quand le
+MBA tient le fil (déclencheurs d'automation, avance de scénario, jeton de test) teste `field !== 'messages'`.
+Puisqu'un entrant est toujours `messages`, **cette garde ne fait rien taire du tout**. Le risque est
+aujourd'hui borné par le fait qu'un scénario qui démarre PREND le fil explicitement
+(`reprendreLeFilPourLApp`), donc il ne parle plus par-dessus l'agent : c'est un garde-fou de ceinture qui
+s'est révélé inerte, pas un trou vivant. À retrancher sur un signal vrai, cf. `todo.md`.
+
+⚠️ **ET ON N'EN DÉDUIT PLUS LE DÉTENTEUR** (2026-09-15). `accorderLeDetenteur` écrivait `app_workflow` sur
+chaque entrant qu'on croyait tenu par l'agent, donc sur chaque message de chaque client : c'est la valeur que
+le dossier « À traiter » EXCLUT, et elle rendait invisible toute conversation dont le scénario venait de
+finir. Les deux seuls signaux fiables sont un `standby` (l'agent vient de parler) et un
+`messaging_handovers` / `control_passed` (il nous passe la main). L'Inbox et les accusés de livraison, eux,
+enregistrent les deux formes. **Enregistrer n'est pas répondre.**
 
 ⚠️ **Un écho porte son contenu sous `message`** : `{id, timestamp, message: {to, text: {body}, recipient}}`.
 `message.to` est le `wa_id`, `message.recipient` est le BSUID : les intervertir rattache le message de

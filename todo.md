@@ -357,6 +357,14 @@ parce qu'un journal qui promet plus qu'il ne montre fait conclure « ça n'a pas
 « ce n'est pas encore journalisé ». Les routes à couvrir : `PATCH /tenants/:t/agents/:id` (la fiche), les
 écritures d'outils (`agent-tools.ts`), et les créations de FAQ, compétences, sites et documents du MBA.
 
+**Ajouté le 2026-09-15 : la garde `field !== 'messages'` est INERTE, lui donner un signal vrai.** Mesuré sur
+30 jours de webhooks : un message entrant arrive TOUJOURS sur `messages`, même quand l'agent de Meta tient le
+fil (cas daté : 2026-09-15 07:58:39). Tout ce qui devait se taire quand l'agent tient le fil (déclencheurs
+d'automation, avance de scénario, jeton de test) teste ce champ, et ne se tait donc jamais. ⚠️ Ce n'est pas un
+trou vivant : un scénario qui démarre PREND le fil explicitement, donc il ne parle plus par-dessus l'agent. Le
+signal vrai est notre colonne `control_owner` (alimentée par `standby` et `messaging_handovers`), pas le
+`field` de l'entrant. À retrancher là-dessus.
+
 Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
 ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.
 

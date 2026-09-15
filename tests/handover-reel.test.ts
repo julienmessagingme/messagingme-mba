@@ -37,9 +37,16 @@ const VALEUR = HANDOVER_REEL.entry[0]!.changes[0]!.value as unknown as Record<st
 
 describe('ownerFromHandover', () => {
   it('🔴 le MBA nous PASSE le fil : le nouveau détenteur, c’est NOUS', () => {
-    // Le code d'avant retombait sur « le texte contient business_agent, donc le MBA détient » et rendait
-    // `mba` : exactement l'INVERSE. `previous_owner_app_role` nomme le détenteur PRÉCÉDENT.
-    expect(ownerFromHandover(VALEUR)).toBe('app_workflow');
+    /**
+     * Le code d'avant retombait sur « le texte contient business_agent, donc le MBA détient » et rendait
+     * `mba` : exactement l'INVERSE. `previous_owner_app_role` nomme le détenteur PRÉCÉDENT.
+     *
+     * 🔴 ET « NOUS » S'ÉCRIT `app_human`, PAS `app_workflow` (corrigé le 2026-09-15). Les deux valeurs
+     * veulent dire « nous », mais pas le même nous : `app_workflow` veut dire « un SCÉNARIO gère ce fil »,
+     * et c'est la SEULE valeur que le dossier « À traiter » exclut. Or ce webhook arrive précisément quand
+     * l'agent de Meta vient de dire au client « un membre de l'équipe va vous répondre ».
+     */
+    expect(ownerFromHandover(VALEUR)).toBe('app_human');
   });
 
   it('🔴 ne reconnaît PAS un rôle précédent inconnu', () => {
@@ -72,7 +79,7 @@ describe('processHandovers sur la bascule réelle', () => {
       phoneNumberTenant: async (pn) => (pn === '1234840649713976' ? 'tenant-1' : null),
       setControlOwner: async (t, w, o) => { poses.push([t, w, o]); return true; },
     });
-    expect(poses).toEqual([['tenant-1', '33633921577', 'app_workflow']]);
+    expect(poses).toEqual([['tenant-1', '33633921577', 'app_human']]);
   });
 
   it('🔴 le numéro BUSINESS se lit dans `recipient` quand il n’y a pas de `metadata`', async () => {
