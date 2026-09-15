@@ -311,6 +311,9 @@ describe('outils d’un agent : brancher une requête de connecteur', () => {
   const corps = (over: Record<string, unknown> = {}) => ({
     requeteId: RQ, name: 'lire_commande', title: 'Lire une commande',
     description: 'Donne le statut d’une commande.', nePasUtiliser: 'Jamais pour annuler.',
+    // ⚠️ OBLIGATOIRES depuis la migration 0150 : l'écran POSE la question plutôt que de la deviner, donc
+    // le serveur l'exige. Un défaut côté serveur aurait vidé la question de son sens.
+    nature: 'integre', outputPaths: ['statut'],
     ...over,
   });
 
@@ -345,23 +348,52 @@ describe('outils d’un agent : brancher une requête de connecteur', () => {
     ]);
   });
 
-  it('🔴 une requête SANS champ de sortie est refusée ICI (409), plus à l’enregistrement', async () => {
+  it('🔴 un appel SANS champ de sortie se donne quand même, en « pousse » : c’était le cas impossible', async () => {
     /**
-     * 🔴 LA GARANTIE A CHANGÉ DE PLACE LE 2026-09-15, ELLE N'A PAS DISPARU. Elle vivait à l'enregistrement
-     * de l'appel, ce qui rendait un brouillon impossible à mettre de côté : les champs de sortie se cochent
-     * dans la réponse d'un essai, donc un appel qu'on n'avait pas encore réussi à faire marcher était perdu
-     * en quittant l'écran. Ici, elle mord au bon moment : tant qu'un appel n'est rattaché à aucun agent, il
-     * n'envoie rien et ne lit rien.
-     *
-     * ⚠️ 409 ET PAS 5xx : Cloudflare remplace le corps de toute 5xx par sa page d'erreur, et ce message doit
-     * arriver au client AVEC le geste qui débloque.
+     * 🔴 CE TEST ATTENDAIT UN REFUS (409) JUSQU'À LA MIGRATION 0150, ET LE CAS EXERCÉ EST CONSERVÉ : un
+     * appel dont la requête ne déclare aucun champ, donné à un agent. Seul le verdict change, parce que la
+     * QUESTION a changé. Le refus disait « cet appel n'est pas terminé » ; c'était vrai tant qu'on supposait
+     * que tout appel rend quelque chose. Un `POST /subscriber/add-tag` ne rend rien d'utile et n'est pas
+     * inachevé pour autant : il POUSSE. C'est exactement ce sur quoi Julien a buté le 2026-09-15.
      */
     const { cap, srv } = app(SORTIES, [OUTIL], { outputPaths: [] });
-    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/Essayer/);
-    // Rien d'écrit : un refus qui laisserait un outil à moitié créé serait pire que pas de refus du tout.
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: corps({ nature: 'pousse', outputPaths: [] }),
+    });
+    expect(res.statusCode).toBe(201);
+    expect(cap.connecteurs[0]!.outil).toMatchObject({ nature: 'pousse', outputPaths: [] });
+  });
+
+  it('🔴 « intègre » sans aucun champ est refusé, là où le client peut corriger', async () => {
+    // L'outil refuserait chaque appel en pleine conversation : le dire ICI, c'est le dire au bon moment.
+    const { cap, srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: corps({ nature: 'integre', outputPaths: [] }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/au moins une information/);
     expect(cap.connecteurs).toEqual([]);
+  });
+
+  it('🔴 et des champs cochés sur un « pousse » sont refusés aussi : l’écran ne promet pas une lecture qui n’a pas lieu', async () => {
+    // Le magasin les force déjà à vide ; refuser ici en plus fait qu'aucun des deux ne porte seul la cohérence.
+    const { srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: corps({ nature: 'pousse', outputPaths: ['statut'] }),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('🔴 `nature` est EXIGÉE : sans elle, la question serait devinée au lieu d’être posée', async () => {
+    const { srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: { ...corps(), nature: undefined },
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   it('🔴 une requête d’un AUTRE tenant rend 404, et rien n’est écrit', async () => {

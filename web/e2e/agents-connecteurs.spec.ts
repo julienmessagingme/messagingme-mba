@@ -58,6 +58,18 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     if (req.method() === 'POST' || req.method() === 'PATCH' || req.method() === 'DELETE') {
       capture.posts.push({ url, body: req.postDataJSON() ?? null });
       if (url.includes('/epreuve')) return json(over.epreuve ?? { ok: true, httpStatus: 200 });
+      // L ESSAI depuis l ecran de l agent (migration 0150) : il rend les chemins REELLEMENT trouves dans la
+      // reponse du systeme du client, que l on coche ensuite. Meme route que le bouton Essayer des
+      // connecteurs, parce que c est le meme geste.
+      if (url.includes('/agent-requetes/test')) {
+        return json({
+          ok: true, httpStatus: 200, dureeMs: 12,
+          envoye: { url: 'https://api.client.fr/v1/commandes/CMD-1', methode: 'GET', corps: null },
+          apercu: '{"statut":"expediee","lignes":[1,2]}',
+          chemins: ['statut', 'lignes'],
+          risqueMinimum: 'read',
+        });
+      }
       if (url.includes('/agent-sources')) {
         // La source créée entre dans la liste : c'est ce qui permet de vérifier qu'à la relecture, le champ
         // du secret est VIDE. Le serveur ne le renvoie jamais.
@@ -153,18 +165,24 @@ test.describe('Agent : brancher le système du client', () => {
     await page.getByTestId('outil-titre').fill('Lire une commande');
     await page.getByTestId('outil-description').fill('Quand le client demande ou en est sa commande.');
     await page.getByTestId('outil-nepasutiliser').fill('Jamais pour annuler.');
-    await page.getByTestId('envoi-confirme').check();
     await page.getByTestId('outil-creer').click();
 
     await expect.poll(() => capture.posts.some((p) => p.url.includes('/tools/connecteur'))).toBe(true);
     const envoi = capture.posts.find((p) => p.url.includes('/tools/connecteur'))!;
     expect(envoi.body).toMatchObject({ requeteId: RQ, name: 'lire_commande', title: 'Lire une commande' });
-    // Ni methode, ni chemin, ni champs a lire : ils ne sont plus du ressort de l agent.
+    // NI METHODE NI CHEMIN : l appel n est plus decrit ici, il est DESIGNE.
     expect(envoi.body).not.toHaveProperty('methode');
-    expect(envoi.body).not.toHaveProperty('outputPaths');
+    expect(envoi.body).not.toHaveProperty('chemin');
+    /**
+     * ⚠️ MAIS `outputPaths` EST BIEN ENVOYE DEPUIS LA MIGRATION 0150, et cette ligne attendait l inverse.
+     * Ce que l agent LIT est redevenu du ressort de l agent : c est le sens meme du chantier. Ce qui reste
+     * hors de son ressort, c est la DESCRIPTION de l appel, et c est ce que les deux lignes au-dessus gardent.
+     * Ici les champs de l appel pre-remplissent, donc on retrouve ceux de la requete.
+     */
+    expect(envoi.body).toMatchObject({ nature: 'integre', outputPaths: ['statut', 'livraison.date'] });
   });
 
-  test('🔴 l’ecran DIT ce qui partira, et la confirmation est BLOQUANTE', async ({ page }) => {
+  test('🔴 l’ecran DIT ce qui partira, sans rien a cocher', async ({ page }) => {
     // Julien : « il faut bien faire confirmer au client, on envoie telle et telle valeur ». C est le seul
     // moment ou il peut s apercevoir qu un appel enverra le dernier message de ses contacts a un tiers.
     // Sans le caractere bloquant, le resume ne serait qu une decoration qu on survole.
@@ -177,41 +195,89 @@ test.describe('Agent : brancher le système du client', () => {
     await expect(resume).toContainText('ref');
     await expect(resume).toContainText(/décidée par l’agent|decided by the agent/);
     await expect(resume).toContainText(/dernier message du contact|contact’s last message/);
-    // Et ce qu il lira en retour, qui est l autre moitie de la question.
-    await expect(resume).toContainText('statut');
+    /**
+     * ⚠️ CE QU IL LIRA EN RETOUR A CHANGE DE PLACE (migration 0150), ET LE CAS EST CONSERVE. Le resume le
+     * listait en toutes lettres ; c est desormais la SECONDE QUESTION qui le montre, en cases a cocher, parce
+     * qu il n est plus une information a lire mais un choix a faire. Le verifier encore dans le resume
+     * passerait pour la mauvaise raison : il n y est plus, et c est voulu.
+     */
+    await expect(page.getByTestId('nature-integre')).toBeChecked();
+    await expect(page.getByTestId('outil-champ-statut')).toBeChecked();
 
     await page.getByTestId('outil-nom').fill('lire_commande');
     await page.getByTestId('outil-titre').fill('Lire');
     await page.getByTestId('outil-description').fill('d');
     await page.getByTestId('outil-nepasutiliser').fill('n');
-    // Tout est rempli, mais la case n est pas cochee : le bouton reste inactif.
-    await expect(page.getByTestId('outil-creer')).toBeDisabled();
     /**
-     * 🔴 ET IL DIT POURQUOI, VISIBLEMENT (2026-09-15). Julien : « je n arrive pas a l associer avec mon
-     * agent IA, ca reste grise en bas ». Le bouton avait CINQ conditions et n en nommait aucune ; sa case de
-     * confirmation n etait pas cochee, ce qui ne se devine pas devant quatre champs remplis. Une infobulle
-     * n aurait pas suffi : personne ne survole un bouton gris, on cherche ailleurs ce qu on a rate.
+     * 🔴 LA CASE DE CONFIRMATION A DISPARU (migration 0150), ET LE CAS EXERCÉ EST CONSERVÉ : quatre champs
+     * remplis, et le bouton final. Ce qui change est la RAISON du gris. Julien, 2026-09-15 : « si on rajoute
+     * un outil c est qu on est d accord pour l utiliser », la case demandait un consentement acquis par
+     * construction. La question posée à la place est un FAIT que seul le client connaît.
+     *
+     * ⚠️ Le RÉSUMÉ de ce qui part, lui, reste : c est la seule fois où l on voit qu un appel enverra une
+     * donnée de ses contacts à un système tiers, et il n a jamais eu besoin d une case pour être lu.
      */
-    await expect(page.getByTestId('outil-creer-manque')).toContainText(/C’est bien ce que je veux envoyer|This is what I want to send/);
-    await page.getByTestId('envoi-confirme').check();
+    await expect(page.getByTestId('envoi-confirme')).toHaveCount(0);
     await expect(page.getByTestId('outil-creer')).toBeEnabled();
     await expect(page.getByTestId('outil-creer-manque')).toHaveCount(0);
   });
 
-  test('🔴 un appel « a finir » ne se donne pas a un agent, et l ecran le dit AVANT de faire remplir', async ({ page }) => {
+  test('🔴 « ça pousse » : aucune question de plus, et rien n est lu en retour', async ({ page }) => {
+    // Le cas qui etait impossible a brancher : un appel qui agit et ne rend rien d utile.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await ongletOutils(page);
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
+    await page.getByTestId('nature-pousse').check();
+    // La seconde question disparait : elle ne se pose que quand on integre.
+    await expect(page.getByTestId('outil-champs')).toHaveCount(0);
+    await page.getByTestId('outil-nom').fill('poser_etiquette');
+    await page.getByTestId('outil-titre').fill('Poser');
+    await page.getByTestId('outil-description').fill('pose une etiquette');
+    await page.getByTestId('outil-nepasutiliser').fill('jamais pour retirer');
+    await page.getByTestId('outil-creer').click();
+    const envoi = capture.posts.find((p) => p.url.includes('/connecteur'));
+    expect(envoi?.body).toMatchObject({ nature: 'pousse', outputPaths: [] });
+  });
+
+  test('🔴 « ça intègre » : on essaie, on coche, et le bouton dit ce qui manque en attendant', async ({ page }) => {
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await ongletOutils(page);
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
+    await page.getByTestId('nature-integre').check();
+    // Les champs de l APPEL pre-remplissent, ils ne verrouillent pas : on peut tout decocher.
+    await page.getByTestId('outil-champ-statut').uncheck();
+    await page.getByTestId('outil-champ-livraison.date').uncheck();
+    await page.getByTestId('outil-nom').fill('lire_commande');
+    await page.getByTestId('outil-titre').fill('Lire');
+    await page.getByTestId('outil-description').fill('lit');
+    await page.getByTestId('outil-nepasutiliser').fill('jamais');
+    await expect(page.getByTestId('outil-creer')).toBeDisabled();
+    await expect(page.getByTestId('outil-creer-manque')).toContainText(/au moins une information|at least one piece/);
+    // L essai montre ce que le systeme repond VRAIMENT, et on coche la-dedans.
+    await page.getByTestId('outil-essayer').click();
+    await page.getByTestId('outil-champ-lignes').check();
+    await page.getByTestId('outil-creer').click();
+    const envoi = capture.posts.find((p) => p.url.includes('/connecteur'));
+    expect(envoi?.body).toMatchObject({ nature: 'integre', outputPaths: ['lignes'] });
+  });
+
+  test('🔴 un appel sans champ de reponse est pre-repondu « ça pousse », plus refuse', async ({ page }) => {
     /**
-     * 🔴 LE PRIX D AVOIR OUVERT L ENREGISTREMENT AUX BROUILLONS, paye ici. Depuis le meme jour, un appel
-     * s enregistre sans champ de reponse ; le resume affichait alors un `<code>` VIDE, et le client
-     * remplissait quatre champs avant de se prendre le refus du serveur (409). On le dit d entree.
+     * 🔴 CE TEST ATTENDAIT UN REFUS LE MATIN MEME, ET LE CAS EXERCE EST CONSERVE : une requete qui ne
+     * declare aucun champ, ouverte dans l ecran de l agent. Seul le verdict change, parce que la QUESTION a
+     * change. « A finir » supposait que tout appel rend quelque chose ; un POST /subscriber/add-tag ne rend
+     * rien d utile et n est pas inacheve pour autant. L ecran le pre-repond donc, au lieu de bloquer.
      */
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { requetes: [{ ...REQUETE, outputPaths: [] }] });
     await ongletOutils(page);
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
-    await expect(page.getByTestId('envoi-sans-sortie')).toContainText(/Connecteurs API|API connectors/);
-    await expect(page.getByTestId('outil-creer')).toBeDisabled();
-    // Et la raison NOMME le brouillon, pas un champ a remplir : remplir ne debloquerait rien.
-    await expect(page.getByTestId('outil-creer-manque')).toContainText(/ne lit rien en retour|reads nothing back/);
+    await expect(page.getByTestId('nature-pousse')).toBeChecked();
+    await expect(page.getByTestId('outil-champs')).toHaveCount(0);
+    // Et il ne reste que les mots a saisir : rien ne bloque.
+    await expect(page.getByTestId('outil-creer-manque')).toContainText(/nom technique|technical name/);
   });
 
   test('🔴 la bibliothèque dit combien d’AGENTS tapent dans un système', async ({ page }) => {

@@ -86,8 +86,18 @@ export async function listOutils(tenantId: string, agentId: string): Promise<Vue
  * Rend AUSSI `envoi` : ce qui partira, en français, pour le faire confirmer au client. C'est le seul moment
  * où il peut s'apercevoir qu'un connecteur enverra le dernier message de ses contacts à un système tiers.
  */
+/** Ce qu'un agent fait de la réponse d'un connecteur. MÊMES valeurs que `src/agent/catalog.ts`. */
+export type NatureOutil = 'pousse' | 'integre';
+
 export async function ajouterConnecteur(tenantId: string, agentId: string, outil: {
   requeteId: string; name: string; title: string; description: string; nePasUtiliser: string;
+  /**
+   * Ce que CET agent fait de la réponse, et les champs qu'il lit (migration 0150).
+   *
+   * 🔴 OBLIGATOIRES, comme côté serveur. Les rendre optionnels ici ferait retomber l'écran sur une
+   * dérivation silencieuse, c'est-à-dire sur la question qu'on a précisément décidé de POSER.
+   */
+  nature: NatureOutil; outputPaths: string[];
   risk?: RisqueOutil;
 }): Promise<{ outil: OutilAgent; envoi: Array<{ nom: string; libelle: string }> }> {
   return request(`${base(tenantId, agentId)}/connecteur`, { method: 'POST', body: JSON.stringify(outil) });

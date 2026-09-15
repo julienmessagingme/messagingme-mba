@@ -98,13 +98,15 @@ const ajoutConnecteurSchema = z.object({
   /**
    * Ce que CET agent fait de la réponse, et les champs qu'il lit (migration 0150).
    *
-   * 🔴 OPTIONNELS PENDANT LA FENÊTRE DE DÉPLOIEMENT, ET PAS APRÈS. L'API et la console se déploient
-   * SÉPARÉMENT (VPS à la main, Vercel au push) : entre les deux, la console encore en place n'envoie pas ces
-   * champs. Absents, on retombe donc EXACTEMENT sur le comportement d'avant, dérivé de la requête. Le lot 3
-   * les rend obligatoires en même temps que l'écran qui les pose.
+   * 🔴 OBLIGATOIRES DEPUIS QUE L'ÉCRAN LES POSE. Ils ont été optionnels le temps d'un déploiement, parce que
+   * l'API et la console partent séparément : l'ordre est donc CONSOLE D'ABORD (Vercel, automatique au push),
+   * API ENSUITE. L'inverse rendrait 400 à chaque rattachement tant que la console n'a pas suivi.
+   *
+   * ⚠️ `nature` N'A PAS DE DÉFAUT, ET C'EST LE POINT. Un défaut ferait retomber un appelant distrait sur
+   * `integre`, c'est-à-dire sur la question qu'on a précisément décidé de POSER plutôt que de deviner.
    */
-  nature: z.enum(['pousse', 'integre']).optional(),
-  outputPaths: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  nature: z.enum(['pousse', 'integre']),
+  outputPaths: z.array(z.string().trim().min(1).max(120)).max(50).default([]),
   name: NOM,
   title: TEXTE(120).min(1),
   description: TEXTE(2000).min(1),
@@ -210,22 +212,23 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     // dérivent, et ils doivent décrire l'appel RÉEL, pas ce que le corps de la requête HTTP prétend.
     const requete = await deps.requetePourOutil(ctx.tenant, d.requeteId);
     if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
+
     /**
-     * 🔴 C'EST ICI QUE VIT LA GARANTIE « le client décide ce que l'agent lit », depuis le 2026-09-15.
+     * 🔴 UNE GARDE DE COHÉRENCE, PAS DEUX CHAMPS INDÉPENDANTS. « Intègre » sans champ produirait un outil qui
+     * refuse chaque appel en pleine conversation (`resolvers/http.ts` le refuse alors proprement, mais loin
+     * de l'écran où le geste a été fait). Le refuser ICI, c'est le dire là où le client peut corriger.
      *
-     * Elle vivait à l'enregistrement de l'appel, ce qui rendait un brouillon impossible à mettre de côté :
-     * les champs de sortie se cochent dans la réponse d'un essai, donc un appel qu'on n'avait pas encore
-     * réussi à faire marcher ne pouvait pas être sauvé. Ici, elle mord au bon moment : tant qu'un appel
-     * n'est rattaché à aucun agent, il n'envoie rien et ne lit rien.
-     *
-     * ⚠️ 409 ET PAS 500 : Cloudflare remplace le corps de toute 5xx par sa page d'erreur, et ce message-ci
-     * doit arriver jusqu'au client, avec le geste qui débloque.
+     * ⚠️ L'INVERSE AUSSI, ET IL EST MOINS ÉVIDENT : des champs cochés sur un « pousse » seraient ignorés en
+     * silence par le résolveur, donc l'écran promettrait une lecture qui n'a pas lieu. Le magasin les force
+     * déjà à vide ; refuser ici en plus fait qu'aucun des deux ne porte seul la cohérence.
      */
-    if (requete.outputPaths.length === 0) {
-      return reply.code(409).send({
-        error: 'cet appel n’est pas terminé : aucun champ de réponse n’est coché. Ouvrez-le dans Connecteurs, '
-          + 'lancez « Essayer », puis cochez ce que l’agent a le droit de lire.',
+    if (d.nature === 'integre' && d.outputPaths.length === 0) {
+      return reply.code(400).send({
+        error: 'choisissez au moins une information à récupérer, ou déclarez que cet appel pousse seulement',
       });
+    }
+    if (d.nature === 'pousse' && d.outputPaths.length > 0) {
+      return reply.code(400).send({ error: 'un appel qui pousse ne lit aucun champ' });
     }
 
     const plancher = risqueSelonMethode(requete.methode as MethodeConnecteur);
@@ -252,13 +255,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
         title: d.title,
         description: d.description,
         nePasUtiliser: d.nePasUtiliser,
-        /**
-         * ⚠️ LE REPLI REPRODUIT L'ANCIEN COMPORTEMENT, IL N'EN INVENTE PAS UN. Avant 0150, le résolveur
-         * lisait les champs de la REQUÊTE : une requête qui en déclarait était donc « intègre », une requête
-         * sans champ ne pouvait pas exister. Dériver ainsi, c'est écrire ce qui se passait déjà.
-         */
-        nature: d.nature ?? (requete.outputPaths.length > 0 ? 'integre' : 'pousse'),
-        outputPaths: d.outputPaths ?? requete.outputPaths,
+        nature: d.nature,
+        outputPaths: d.outputPaths,
         params,
         risk,
       });
