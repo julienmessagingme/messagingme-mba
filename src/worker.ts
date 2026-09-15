@@ -296,7 +296,7 @@ async function main(): Promise<void> {
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
-    releaseThreadChezMeta, remiseMbaSurAccuse, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
+    releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
@@ -416,6 +416,16 @@ async function main(): Promise<void> {
        * câblée sur un consommateur sur deux », déjà payé plusieurs fois dans ce dépôt.
        */
       remiseMba: remiseMbaSurAccuse,
+      /**
+       * 🔴 SUR CETTE FILE ET PAS SUR L'AUTRE, contrairement à `remiseMba` juste au-dessus. Un message
+       * ENTRANT n'arrive jamais par `webhook-status` : le receveur n'y route que les lots d'accusés purs.
+       * La câbler là-bas serait un câblage mort, et la câbler ici est le seul endroit où elle voit ce
+       * qu'elle attend.
+       */
+      remiseMbaEntrant: {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        remettre: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
+      },
       inbox: inboxStore,
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
       // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.

@@ -329,6 +329,41 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     await rendreLeFilMaintenant(cible.tenantId, cible.waId);
   };
 
+  /**
+   * UN CLIENT REVIENT ET PERSONNE NE SUIT : le fil repart chez l'agent de Meta (2026-09-15).
+   *
+   * 🔴 LES TROIS GARDES SONT DES REFUS, ET CHACUNE RÉPARE UN DÉFAUT PIRE QUE CELUI QU'ON CORRIGE.
+   *
+   * 1. **L'agent doit être allumé.** Sans ça, on émettrait un appel Meta pour un espace qui n'a pas d'agent,
+   *    et on écrirait `mba` sur une conversation que PERSONNE ne prendrait : l'inverse du but.
+   * 2. **Aucun parcours ne doit attendre la réponse de ce contact.** Un scénario qui pose une question doit
+   *    la recevoir ; la donner à l'agent de Meta serait un défaut bien plus grave que le silence qu'on
+   *    répare. C'est la garde qui protège l'existant, et c'est celle dont l'échec coûterait le plus cher.
+   * 3. **`only` EXCLUT `app_human`.** Un opérateur qui travaille dans l'Inbox ne se fait pas doubler au
+   *    milieu d'un échange ; c'est déjà `CONTROL_HUMAN_TIMEOUT_MS` qui borne sa tenue, et le balayage qui
+   *    rend le fil ensuite.
+   *
+   * ⚠️ `app_workflow` EST DANS `only`, ET C'EST TOUT L'INCIDENT 2. C'est la valeur par DÉFAUT de la colonne :
+   * une conversation née d'un envoi sortant y reste avec `control_changed_at` à null, alors qu'envoyer prend
+   * le fil chez Meta. Sans elle dans cette liste, la conversation resterait invisible (`A_TRAITER` exclut
+   * `app_workflow`) et muette. La garde 2 est ce qui rend son inclusion sûre : un parcours VIVANT est protégé
+   * par l'absence de run en attente, pas par la valeur de cette colonne.
+   *
+   * ⚠️ `mba` EST DANS `only` AUSSI, et ce n'est pas une redondance : c'est l'incident 1. Notre colonne peut
+   * dire `mba` quand Meta pense l'inverse, et l'écriture ne bougera rien (`is distinct from`) tandis que
+   * l'appel à Meta, lui, répare la divergence. C'est l'appel qui compte ici, pas l'écriture.
+   *
+   * ⚠️ BEST-EFFORT : un refus de Meta laisse le fil où il est, donc visible, et le balayage reste le filet.
+   * Faire échouer le traitement d'un message entrant parce qu'une passation a raté serait échanger un silence
+   * contre une perte.
+   */
+  const remiseMbaSiPersonneNeSuit = async (tenant: string, waId: string): Promise<void> => {
+    if (!(await settingsStore.get(tenant)).mbaEnabled) return;
+    if (await runStore.findWaitingByWaId(tenant, waId)) return;
+    await releaseThreadChezMeta(tenant, waId);
+    await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow', 'mba'] });
+  };
+
   const prendreLeFilAvecUnRejeu = creerPrendreLeFilAvecUnRejeu({
     prendre: creerPrendreLeFil({
       numeroDuTenant: (t) => numeroDeLEspace(t),
@@ -917,5 +952,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, remiseMbaSurAccuse, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
 }

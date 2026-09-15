@@ -4,6 +4,7 @@ import type { NodeStatusSink, RemiseMbaSurAccuse } from './delivery';
 import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
+import { processRemiseMbaEntrant, type RemiseMbaEntrantDeps } from './remise-mba-entrant';
 import { processHandovers } from './handover';
 import { processTriggers } from './triggers';
 import { processTestTokens } from './test-token';
@@ -51,6 +52,13 @@ export interface WebhookJobDeps {
   inbox?: InboxStore;
   flowMapping?: FlowMappingDeps;
   workflowAdvance?: WorkflowAdvanceDeps;
+  /**
+   * Rend le fil à l'agent de Meta quand un client revient et que personne ne suit (2026-09-15).
+   *
+   * ABSENT -> aucune remise, donc le comportement d'avant. Câblé sur la file `webhook` UNIQUEMENT : un
+   * message entrant n'arrive jamais par `webhook-status`, qui ne porte que des accusés de livraison.
+   */
+  remiseMbaEntrant?: RemiseMbaEntrantDeps;
   inboundContactUpsert?: InboundContactUpsert;
   handover?: HandoverDeps;
   /** Automations (Lot E). `isNewContact` est fourni ICI : il vient de l'upsert d'inbound, pas d'une requête. */
@@ -79,7 +87,7 @@ export interface WebhookJobDeps {
 
 export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
-    store, delivery, inbox, flowMapping, workflowAdvance, inboundContactUpsert,
+    store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
   } = deps;
   const events = parseWebhook(raw);
@@ -173,6 +181,25 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: avance workflow ignorée:', err instanceof Error ? err.message : err);
+    }
+  }
+  /**
+   * UN CLIENT REVIENT ET PERSONNE NE SUIT : le fil repart chez l'agent de Meta (2026-09-15).
+   *
+   * 🔴 APRÈS L'AVANCE, ET L'ORDRE EST LE CORRECTIF LUI-MÊME. `processWorkflowAdvance` peut faire avancer un
+   * parcours, donc laisser un run EN ATTENTE de la prochaine réponse : c'est précisément ce que la garde du
+   * câblage lit pour refuser la remise. Placé AVANT, ce bloc lirait l'état d'avant l'avance et donnerait à
+   * l'agent de Meta un fil qu'un scénario vivant s'apprête à utiliser.
+   *
+   * ⚠️ ISOLÉ comme ses voisins : ce webhook porte aussi les statuts, l'inbox et les flows. Une passation
+   * ratée ne doit pas les emporter, et le balayage de contrôle reste le filet.
+   */
+  if (remiseMbaEntrant) {
+    try {
+      await processRemiseMbaEntrant(raw, remiseMbaEntrant, consumed);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handleWebhookJob: remise à l’agent de Meta ignorée:', err instanceof Error ? err.message : err);
     }
   }
   // Bascules de contrôle et messages de l'agent Meta (pré-câblage MBA). INERTE tant que MBA n'est activé
