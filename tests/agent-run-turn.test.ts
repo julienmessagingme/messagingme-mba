@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { runTurn } from '../src/agent/run-turn';
 import { creerCerveauGateway } from '../src/agent/brain.gateway';
@@ -50,6 +51,7 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
   const transcript: unknown[] = [];
   const brain = new FakeAgentBrain(decision ?? { texte: 'Bonjour', sortie: null });
   const deps: RunTurnDeps = {
+    estDesabonne: jamaisDesabonne,
     sessions: {
       ...sessionsOk(),
       clore: async (_t: string, _id: string, status: string, sortie?: string) => { clotures.push({ status, ...(sortie ? { sortie } : {}) }); },

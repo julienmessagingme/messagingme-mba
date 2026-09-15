@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { parseGraph } from '../src/workflow/graph';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -46,6 +47,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
   const quickWhatsApp: string[] = [];
   const fil: Array<{ body: string; messageId: string }> = [];
   const deps: WorkflowExecutorDeps = {
+    estDesabonne: jamaisDesabonne,
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => {
       tags.push(tag);

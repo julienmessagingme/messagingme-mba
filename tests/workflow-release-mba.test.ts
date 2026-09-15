@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import { runControlSweep } from '../src/inbox/control-sweep';
@@ -25,6 +26,7 @@ function executeur(graph: WorkflowGraph, opts: { mbaActif?: boolean; run?: Recor
   const etats: Array<Record<string, unknown>> = [];
   const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null, ...opts.run };
   const ex = new WorkflowExecutor({
+    estDesabonne: jamaisDesabonne,
     runs: {
       findWaitingByWaId: async (): Promise<typeof run> => run,
       setState: async (_id: string, state: Record<string, unknown>): Promise<void> => { etats.push(state); },

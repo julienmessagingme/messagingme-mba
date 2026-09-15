@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { walk } from '../src/workflow/engine';
 import { WorkflowExecutor } from '../src/workflow/executor';
@@ -41,6 +42,7 @@ function executeur(graph: WorkflowGraph, opts: { envoiRate?: boolean; sansDep?: 
   const mesures: Array<Record<string, unknown>> = [];
   const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
   const deps: Record<string, unknown> = {
+    estDesabonne: jamaisDesabonne,
     // Requis par le contrat : un demarrage remplace le parcours en cours. Ce faux n exerce que l avance.
     runs: { findWaitingByWaId: async () => run, setState: async () => {}, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) },
     getGraph: async () => graph,
@@ -130,6 +132,7 @@ describe('garde-fous', () => {
     const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
     const envoyes: string[] = [];
     const ex = new WorkflowExecutor({
+      estDesabonne: jamaisDesabonne,
       runs: { findWaitingByWaId: async () => run, setState: async (_id: string, st: Record<string, unknown>) => { etats.push(st); }, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) },
       getGraph: async () => graphe(),
       applyTag: async () => {}, setField: async () => {}, removeTag: async () => {}, clearField: async () => {},

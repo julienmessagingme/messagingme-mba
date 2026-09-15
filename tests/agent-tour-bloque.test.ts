@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runTourBloqueSweep, AGE_TOUR_MORT_S, LOT_TOURS_BLOQUES } from '../src/agent/tour-bloque-sweep';
@@ -153,6 +154,7 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     /** L'ORDRE des écritures, qui est tout l'objet du correctif de la transition terminale. */
     const journal: string[] = [];
     const deps: RunTurnDeps = {
+      estDesabonne: jamaisDesabonne,
       sessions: {
         prendreLeTour: async () => SESSION,
         clore: async (_t: string, id: string, _st: string, _so?: string, opts?: { sortieDue?: boolean }) => {

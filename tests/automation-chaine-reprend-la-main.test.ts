@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -56,6 +57,7 @@ function monter(rows: AutomationRow[]) {
   const envois: string[] = [];
   const reprises: string[] = [];
   const execDeps: WorkflowExecutorDeps = {
+    estDesabonne: jamaisDesabonne,
     runs: {
       start: async () => ({ id: 'r1' }),
       findWaitingByWaId: async () => null,

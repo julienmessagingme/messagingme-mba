@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -52,6 +53,7 @@ function makeDeps(
   recordNodeEvent?: WorkflowExecutorDeps['recordNodeEvent'],
 ): WorkflowExecutorDeps {
   return {
+    estDesabonne: jamaisDesabonne,
     ...(recordNodeEvent ? { recordNodeEvent } : {}),
     runs: new FakeRuns(),
     getGraph: async () => graph,

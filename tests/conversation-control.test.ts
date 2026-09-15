@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -36,6 +37,7 @@ function executor(mayAct: boolean | undefined, trace: Trace) {
     currentNode: 'n1', status: 'waiting', lastMessageId: null,
   } as WorkflowRunRow;
   const deps: WorkflowExecutorDeps = {
+    estDesabonne: jamaisDesabonne,
     runs: {
       start: async () => ({ id: 'r1' }),
       findWaitingByWaId: async () => run,

@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from '../consentement';
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
@@ -1539,6 +1540,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     const sends: string[] = [];
     const ex = new WorkflowExecutor({
+      estDesabonne: jamaisDesabonne,
       runs: runStore,
       getGraph: async (id, t) => (await wfStore.getById(id, t))?.graph ?? null,
       applyTag: (t, w, tag) => contactStore.addTagsByPhoneReturningNew(t, w, [tag]).then(() => undefined),

@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -20,6 +21,7 @@ function app(over: Partial<InboxRouteDeps> = {}, windowOpen = false) {
   const journal: Journal = [];
   const priseDeControle: string[] = [];
   const deps: InboxRouteDeps = {
+    estDesabonne: jamaisDesabonne,
     listConversations: async () => [],
     getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen, lastInboundAt: null } : null),
     getMessages: async () => [],

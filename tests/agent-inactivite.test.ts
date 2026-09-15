@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { runTurn, reposApresReponse } from '../src/agent/run-turn';
 import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
@@ -40,6 +41,7 @@ const MAINTENANT = 1_700_000_000_000;
 function make(fiche: FicheAgent = FICHE, decision?: DecisionAgent, session: AgentSession = SESSION) {
   const etats: Array<{ runId: string; nodeId: string; state: RunState }> = [];
   const deps: RunTurnDeps = {
+    estDesabonne: jamaisDesabonne,
     sessions: {
       prendreLeTour: async () => session,
       clore: async () => {},

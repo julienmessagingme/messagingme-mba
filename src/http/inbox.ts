@@ -235,12 +235,13 @@ export interface InboxRouteDeps {
   /** Envoie un template (autorisé hors fenêtre). `tenantId` -> token Meta PAR TENANT. Retourne le message_id. */
   sendTemplateMessage(tenantId: string, phoneNumberId: string, to: string, tpl: OutboundTemplate): Promise<string>;
   /**
-   * Ce contact a-t-il demandé à ne plus être contacté ? Absente = aucun blocage (câblages de test).
+   * Ce contact a-t-il demandé à ne plus être contacté ? REQUISE depuis le lot 3 du plan 2026-09-14 : elle
+   * valait « aucun blocage » quand elle manquait, ce qui faisait dépendre la garde d'un câblage lointain.
    *
    * ⚠️ Elle ne sert PAS à la réponse texte de cette route, qui reste exemptée : seul l'envoi d'un MODÈLE la
    * consulte, parce qu'un modèle ROUVRE une conversation au lieu de répondre dans une conversation ouverte.
    */
-  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
+  estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**
    * La catégorie RÉELLE d'un modèle, telle que Meta la connaît. `null` = indéterminable.
    *
@@ -989,7 +990,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * ⚠️ RIEN DE TOUT CECI N'EST PAYÉ PAR LE CAS ORDINAIRE : la lecture chez Meta n'a lieu que si le
      * contact est effectivement désabonné, ce qui est rare.
      */
-    if (deps.estDesabonne && await deps.estDesabonne(tenant, ctx.waId)) {
+    if (await deps.estDesabonne(tenant, ctx.waId)) {
       const categorie = deps.categorieDuModele
         ? await deps.categorieDuModele(tenant, b.templateName, b.language).catch(() => null)
         : null;

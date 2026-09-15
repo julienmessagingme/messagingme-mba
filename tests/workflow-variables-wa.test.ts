@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -35,6 +36,7 @@ class FakeRuns {
 
 function deps(over: Partial<WorkflowExecutorDeps>): WorkflowExecutorDeps {
   return {
+    estDesabonne: jamaisDesabonne,
     runs: new FakeRuns() as unknown as WorkflowExecutorDeps['runs'],
     getGraph: async () => graphe('quick_message', {}),
     applyTag: async () => {},

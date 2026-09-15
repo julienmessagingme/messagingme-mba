@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -33,6 +34,7 @@ function exec(over: Partial<WorkflowExecutorDeps> = {}) {
   const envois: string[] = [];
   const reprises: string[] = [];
   const ex = new WorkflowExecutor({
+    estDesabonne: jamaisDesabonne,
     // 🔴 PAS DE `as unknown as` ICI. Cette fabrique en portait un, et il a fait exactement ce qu un double
     // transtypage fait : il a efface le contrat. Quand `closeActiveByWaId` y est devenue requise, le
     // compilateur a nomme les six autres fabriques a completer et a laisse passer celle-ci, qui a plante a

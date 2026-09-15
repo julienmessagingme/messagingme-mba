@@ -49,10 +49,12 @@ export interface DepsRepondre {
   /**
    * Ce contact a-t-il demandé à ne plus être contacté ?
    *
-   * ⚠️ LU SEULEMENT POUR UNE ORIGINE MACHINE, donc la réponse d'un opérateur ne paie aucune requête. Absente
-   * = aucun blocage (câblages de test) ; le câblage réel la fournit, et un test le garde.
+   * ⚠️ LU SEULEMENT POUR UNE ORIGINE MACHINE, donc la réponse d'un opérateur ne paie aucune requête.
+   *
+   * 🔴 REQUISE depuis le lot 3 du plan 2026-09-14 : elle valait « aucun blocage » quand elle manquait, et un
+   * test qui relisait le source en tenait lieu de garantie.
    */
-  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
+  estDesabonne(tenantId: string, waId: string): Promise<boolean>;
 }
 
 /**
@@ -112,7 +114,7 @@ export async function repondreDansLaFenetre(
    * ⚠️ LA REQUÊTE N'EST PAYÉE QUE PAR L'ORIGINE MACHINE : le chemin de la console, qui est le plus
    * fréquent de loin, ne lit rien de plus qu'avant.
    */
-  if (origine === 'mcp' && deps.estDesabonne && await deps.estDesabonne(tenantId, ctx.waId)) {
+  if (origine === 'mcp' && await deps.estDesabonne(tenantId, ctx.waId)) {
     return { refus: { motif: 'contact_desabonne' } };
   }
 

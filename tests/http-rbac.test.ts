@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -38,6 +39,7 @@ const campaigns: CampaignRouteDeps = {
   listPhoneNumbers: async () => [],
 };
 const inbox: InboxRouteDeps = {
+  estDesabonne: jamaisDesabonne,
   listConversations: async () => [],
   getConversationContext: async () => null,
   getMessages: async () => [],

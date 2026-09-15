@@ -88,10 +88,12 @@ export interface RunTurnDeps {
    * ⚠️ LUE AU RANG DES PLAFONDS, DONC AVANT LE MODÈLE. La poser juste avant l'envoi aurait payé un appel
    * dont on jette la réponse, ce que l'étape 3 existe précisément pour éviter.
    *
-   * ⚠️ Absente -> considéré comme joignable, donc comportement d'avant. C'est un défaut PERMISSIF, tenu par
-   * le test de câblage, exactement comme `estDesabonne` sur l'exécuteur de scénario.
+   * 🔴 REQUISE DEPUIS LE LOT 3 DU PLAN 2026-09-14. Elle était optionnelle, et son absence valait
+   * « joignable » : un défaut PERMISSIF dont la seule garantie était un test qui relisait le source. C'est
+   * exactement ce qui a laissé passer l'incident décrit juste au-dessus. Le compilateur le tient désormais,
+   * et les tests déclarent `jamaisDesabonne` (`tests/consentement.ts`) au lieu d'omettre la dépendance.
    */
-  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
+  estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie le texte de l'agent. MÊME dépendance que le reste du scénario, donc DRY_RUN honoré et
    *  message journalisé dans le fil. */
   envoyer(tenantId: string, waId: string, texte: string): Promise<ResultatEnvoi>;
@@ -326,7 +328,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
    * ⚠️ MÊME FORME QUE `mayAct` : on pose l'échéance d'inactivité et on finit le tour proprement. Sans elle,
    * le parcours resterait en attente pour toujours sur ce bloc, et le balayage ne le ramasserait jamais.
    */
-  if (deps.estDesabonne && await deps.estDesabonne(job.tenantId, job.waId)) {
+  if (await deps.estDesabonne(job.tenantId, job.waId)) {
     const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
     await poserEcheance(job, repos, maintenant, deps);
     await finirLeTour(job, session.id, deps);

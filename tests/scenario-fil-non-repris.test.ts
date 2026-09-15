@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -36,6 +37,7 @@ function monter(reclaim: boolean | void) {
   const envois: string[] = [];
   const demarrages: string[] = [];
   const deps: WorkflowExecutorDeps = {
+    estDesabonne: jamaisDesabonne,
     runs: {
       start: async () => { demarrages.push('r1'); return { id: 'r1' }; },
       findWaitingByWaId: async () => null,

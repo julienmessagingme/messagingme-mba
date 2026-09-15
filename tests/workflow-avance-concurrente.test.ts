@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -95,6 +96,7 @@ class RunsConditionnels {
 function exec(runs: RunsConditionnels, over: Partial<WorkflowExecutorDeps> = {}) {
   const calls: string[] = [];
   const ex = new WorkflowExecutor({
+    estDesabonne: jamaisDesabonne,
     // Sans transtypage : c est le compilateur qui doit nommer ce faux quand le contrat bouge, pas
     // l execution. Un `as unknown as` ici avait deja laisse passer une methode manquante.
     runs,

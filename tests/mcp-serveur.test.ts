@@ -1,3 +1,4 @@
+import { jamaisDesabonne, toujoursDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -39,6 +40,7 @@ interface Traces {
 function app(over: Partial<DepsMcp> & { membres?: Array<{ id: string; name: string; email: string; role: string }> } = {}) {
   const traces: Traces = { contexte: [], envois: [], listes: [], journal: [] };
   const mcp: DepsMcp = {
+    estDesabonne: jamaisDesabonne,
     listConversations: async (tenant) => {
       traces.listes.push(tenant);
       return tenant === 't1'
@@ -275,6 +277,27 @@ describe('serveur MCP : les outils', () => {
     expect(c.isError).toBe(true); // un refus métier, lisible par l'agent
     expect(c.texte).toMatch(/fenêtre de 24 h fermée/);
     expect(traces.envois).toHaveLength(0); // et RIEN n'est parti
+    await server.close();
+  });
+
+  /**
+   * 🔴 LE CAS QUI MANQUAIT À CE CHEMIN (lot 3 du plan 2026-09-14). L'opt-out du MCP n'était gardé que par un
+   * test qui relisait le source de `src/inbox/repondre.ts` à la recherche du motif : il prouvait qu'une
+   * chaîne de caractères existait, jamais qu'un contact désabonné restait tranquille. Or c'est LE chemin où
+   * une machine parle en notre nom, et la garde y vise `origine === 'mcp'` précisément pour ça.
+   *
+   * ⚠️ La fenêtre de 24 h est OUVERTE dans ce cas : sans quoi le refus viendrait d'elle, et ce test passerait
+   * même si la garde d'opt-out avait disparu.
+   */
+  it('🔴 un contact DÉSABONNÉ ne reçoit rien du MCP, et le refus a son propre motif', async () => {
+    const { server, traces } = app({ estDesabonne: toujoursDesabonne });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'coucou' }) });
+    expect(res.statusCode).toBe(200);
+    const c = contenu(res);
+    expect(c.isError).toBe(true);
+    expect(c.texte, 'l’agent doit lire la VRAIE raison').toMatch(/ne plus recevoir/i);
+    expect(c.texte, 'le refus ne doit PAS se déguiser en fenêtre fermée : l’agent réessaierait plus tard').not.toMatch(/fenêtre/i);
+    expect(traces.envois, 'un message est parti à un contact qui a dit STOP').toHaveLength(0);
     await server.close();
   });
 

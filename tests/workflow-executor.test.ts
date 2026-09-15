@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -41,6 +42,7 @@ function make(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
   const calls: string[] = [];
   const escalations: string[] = []; // capture séparée : les assertions `calls` existantes restent inchangées
   const ex = new WorkflowExecutor({
+    estDesabonne: jamaisDesabonne,
     runs,
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
@@ -339,6 +341,7 @@ describe('WorkflowExecutor', () => {
     const runs = new FakeRuns();
     const captured: Array<string[] | undefined> = [];
     const ex = new WorkflowExecutor({
+      estDesabonne: jamaisDesabonne,
       runs,
       getGraph: async () => graph,
       applyTag: async () => {},
@@ -442,6 +445,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     const runs = new FakeRuns();
     const calls: string[] = [];
     const ex = new WorkflowExecutor({
+      estDesabonne: jamaisDesabonne,
       runs,
       getGraph: async () => graph,
       applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
@@ -599,6 +603,7 @@ describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’
   function exec(over: Partial<WorkflowExecutorDeps> = {}) {
     const emitted: string[] = [];
     const deps: WorkflowExecutorDeps = {
+      estDesabonne: jamaisDesabonne,
       runs: { start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {}, closeActiveByWaId: async () => [] },
       getGraph: async () => graphe,
       applyTag: async () => true, // le tag est réellement nouveau
@@ -656,6 +661,7 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
     const escalations: string[] = [];
     const emis: string[] = []; // événements d'automation publiés (tag ajouté)
     const ex = new WorkflowExecutor({
+      estDesabonne: jamaisDesabonne,
       runs,
       getGraph: async () => graph,
       applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); return true; },

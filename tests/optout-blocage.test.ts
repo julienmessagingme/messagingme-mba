@@ -147,11 +147,13 @@ describe('la garde d’opt-out des envois automatiques', () => {
     expect(estDesabonne).toHaveBeenCalledTimes(1);
   });
 
-  it('⚠️ sans la dépendance câblée, rien ne change : c’est un défaut PERMISSIF, tenu par le test de câblage', async () => {
-    const d = deps();
-    await demarrer(d, graphe('template', { templateName: 'promo', language: 'fr' }));
-    expect(d.sendTemplate).toHaveBeenCalledTimes(1);
-  });
+  /**
+   * ⚠️ UN CAS A ÉTÉ RETIRÉ ICI, ET IL N'A PAS DE REMPLAÇANT PARCE QU'IL N'A PLUS D'OBJET (lot 3 du plan
+   * 2026-09-14). Il s'appelait « sans la dépendance câblée, rien ne change : c'est un défaut PERMISSIF » et
+   * il exerçait exactement ce que ce lot supprime : `estDesabonne` était optionnelle, et son absence ne
+   * bloquait rien. Elle est désormais REQUISE par le type, donc l'état qu'il décrivait ne peut plus exister.
+   * Un test qui vérifierait « ce qui se passe quand elle manque » ne compilerait pas.
+   */
 });
 
 describe('la définition de « envoyer » ne peut pas dériver', () => {
@@ -180,16 +182,15 @@ describe('la définition de « envoyer » ne peut pas dériver', () => {
 
 describe('le câblage réel fournit la garde', () => {
   /**
-   * 🔴 LA DÉPENDANCE EST OPTIONNELLE POUR LES TESTS, DONC SON ABSENCE NE BLOQUE RIEN. C'est acceptable
-   * UNIQUEMENT parce que ce test vérifie que la vraie construction la fournit : sans lui, un oubli de
-   * branchement rouvrirait le trou en silence, et aucun test de comportement ne le verrait.
+   * ⚠️ UN CAS A ÉTÉ RETIRÉ ICI, ET SON REMPLAÇANT EST NOMMÉ (lot 3 du plan 2026-09-14). Il relisait le TEXTE
+   * de `src/workflow/wiring.ts` pour vérifier que le vrai câblage fournissait `estDesabonne`, et il portait
+   * cette justification : « la dépendance est optionnelle pour les tests, donc son absence ne bloque rien ;
+   * c'est acceptable UNIQUEMENT parce que ce test vérifie que la vraie construction la fournit ».
+   *
+   * Cette prémisse est fausse depuis que la dépendance est REQUISE : un câblage qui l'omet ne compile plus,
+   * et `npm run typecheck` tourne en CI. Le remplaçant est donc le compilateur, qui ne casse pas quand on
+   * reformule une flèche.
    */
-  it('🔴 `wiring.ts` branche bien `estDesabonne`', () => {
-    const src = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
-    const sansCommentaires = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    expect(sansCommentaires, 'la garde d’opt-out n’est plus câblée dans le vrai exécuteur')
-      .toMatch(/estDesabonne:\s*\(tenant, waId\)\s*=>\s*contactStore\.estDesabonneParWaId\(tenant, waId\)/);
-  });
 
   /**
    * ⚠️ ET LA RÉPONSE MANUELLE DE L'OPÉRATEUR RESTE EXEMPTE. L'Inbox a son propre envoi, câblé à part dans
@@ -332,17 +333,17 @@ describe('l’agent IA se tait devant un contact désabonné', () => {
    * ⚠️ DÉFAUT PERMISSIF, comme sur l'exécuteur de scénario : sans la dépendance, rien ne change. C'est le
    * test de câblage ci-dessous qui garantit qu'elle est branchée en production.
    */
-  it('⚠️ sans la dépendance câblée, le comportement d’avant est conservé', async () => {
-    const { deps, envois } = tour();
-    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
-    expect(envois).toEqual(['Bonjour']);
-  });
-
-  it('🔴 `worker.ts` branche bien `estDesabonne` sur le tour d’agent', () => {
-    // Le câblage n'a par construction aucun dépendant : la seule question à lui poser est l'inverse,
-    // « fournit-il ce que le module attend ? ». Un grep, mais sur le bon fichier et le bon voisinage.
-    const src = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
-    const bloc = src.slice(src.indexOf('envoyer: (t, waId, texte) => envoyerTexteAgent') - 2000, src.indexOf('envoyer: (t, waId, texte) => envoyerTexteAgent') + 200);
-    expect(bloc, 'la garde d’opt-out a disparu du câblage du tour d’agent').toMatch(/estDesabonne: \(t, waId\) => contactStore\.estDesabonneParWaId/);
-  });
+  /**
+   * ⚠️ DEUX CAS ONT ÉTÉ RETIRÉS ICI (lot 3 du plan 2026-09-14), et leur remplaçant est NOMMÉ.
+   *
+   * Le premier, « sans la dépendance câblée, le comportement d'avant est conservé », exerçait le défaut
+   * permissif que ce lot supprime : il n'a pas de remplaçant parce que l'état qu'il décrivait ne peut plus
+   * exister.
+   *
+   * Le second relisait le TEXTE de `src/worker.ts` pour vérifier que le câblage du tour d'agent fournissait
+   * bien `estDesabonne`. Son remplaçant est le COMPILATEUR : la dépendance est requise dans `RunTurnDeps`,
+   * donc un câblage qui l'omet ne compile pas, et `npm run typecheck` tourne en CI (`.github/workflows/ci.yml`).
+   * C'est la même bascule qu'aux lots 1 et 2 : ce qu'un type peut exiger cesse d'être vérifié par un grep,
+   * qui prouvait une orthographe et cassait à la moindre reformulation.
+   */
 });

@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -48,6 +49,7 @@ interface Capture {
 
 function monter(graph: WorkflowGraph, run: WorkflowRunRow | null, cap: Capture, over: Partial<WorkflowExecutorDeps> = {}) {
   const deps: WorkflowExecutorDeps = {
+    estDesabonne: jamaisDesabonne,
     runs: {
       start: async (_t: string, _w: string, _wa: string, _c: string | null, state: RunState) => { cap.etats.push({ id: 'r1', state }); return { id: 'r1' }; },
       findWaitingByWaId: async () => run,

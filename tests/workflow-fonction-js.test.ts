@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -128,6 +129,7 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
     async setState(): Promise<void> {}
   }
   const deps = (over: Partial<WorkflowExecutorDeps>): WorkflowExecutorDeps => ({
+    estDesabonne: jamaisDesabonne,
     runs: new FakeRuns() as unknown as WorkflowExecutorDeps['runs'],
     getGraph: async () => graph,
     applyTag: async () => {},

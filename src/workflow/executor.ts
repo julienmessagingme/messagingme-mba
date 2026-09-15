@@ -148,16 +148,22 @@ export interface WorkflowExecutorDeps {
   /**
    * CE CONTACT A-T-IL DEMANDÉ À NE PLUS ÊTRE CONTACTÉ ?
    *
-   * 🔴 C'EST LA GARDE D'OPT-OUT DE TOUT CE QUI EST AUTOMATIQUE. Scénario, automation et agent IA passent
-   * tous par cet exécuteur : une seule question posée ici les couvre les trois, là où trois gardes posées
-   * à trois endroits auraient fini par diverger. La campagne et l'API publique, elles, filtrent en amont
+   * 🔴 C'EST LA GARDE D'OPT-OUT DES ENVOIS QUI PASSENT PAR CET EXÉCUTEUR : le scénario et l'automation.
+   *
+   * ⚠️ CE TEXTE A DIT « scénario, automation ET AGENT IA », ET C'ÉTAIT FAUX. L'agent IA répond par
+   * `envoyerTexteAgent`, donc par le client Meta en direct, jamais par `apply` : il porte sa PROPRE garde
+   * (`src/agent/run-turn.ts`). C'est précisément ce que l'incident du 14 septembre a montré, la garde ayant
+   * été posée ici en croyant couvrir les trois. La campagne et l'API publique, elles, filtrent en amont
    * (`optInAllows`), à la construction de leur liste.
    *
-   * ⚠️ OPTIONNELLE POUR LES CÂBLAGES DE TEST, et c'est un défaut PERMISSIF : absente, rien n'est bloqué.
-   * Ce n'est acceptable que parce qu'un test de câblage vérifie que la vraie construction la fournit
-   * (`tests/optout-chemins.test.ts`) : sans lui, un oubli de branchement rouvrirait le trou en silence.
+   * 🔴 REQUISE DEPUIS LE LOT 3 DU PLAN 2026-09-14. Elle était OPTIONNELLE « pour les câblages de test », et
+   * c'était un défaut PERMISSIF : absente, rien n'était bloqué. La garde tenait donc sur un test de câblage
+   * qui relisait le source, et ce test écrivait lui-même sa limite : « un inventaire prouve que la LISTE est
+   * complète, jamais que les VERDICTS sont justes ». Un câblage qui l'oubliait compilait, se déployait, et
+   * écrivait au contact qui avait répondu STOP. C'est arrivé deux fois en 48 heures, les 13 et 14 septembre.
+   * Les tests passent désormais `jamaisDesabonne` (`tests/consentement.ts`), qui DIT leur hypothèse.
    */
-  estDesabonne?(tenantId: string, waId: string): Promise<boolean>;
+  estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie un message hors template : interactif (texte + 2-3 réponses rapides, OU un bouton de lien),
    *  image légendée, ou simple texte, selon ce que porte le bloc. Atteint via `advance` (après réponse du
    *  contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
@@ -629,7 +635,7 @@ export class WorkflowExecutor {
        * question à chacun paierait une requête par message pour une réponse qui ne change pas pendant ces
        * quelques secondes.
        */
-      if (EST_UN_ENVOI.has(a.kind) && this.deps.estDesabonne) {
+      if (EST_UN_ENVOI.has(a.kind)) {
         desabonne ??= await this.deps.estDesabonne(tenantId, waId);
         if (desabonne) {
           refus ??= 'contact désabonné : il a demandé à ne plus recevoir de messages';

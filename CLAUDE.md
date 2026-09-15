@@ -794,6 +794,23 @@ dont les options s'écrivaient `{ ...garde, bodyLimit }` au lieu de `{ ...opts, 
 garde. ⚠️ La garde « ouverte » des tests vit dans `tests/gardes.ts`, **jamais dans `src/`** : elle y serait
 importable par le câblage de production.
 
+🔴 **« A-T-IL DIT STOP ? » N'EST PLUS UNE DÉPENDANCE OPTIONNELLE (2026-09-15, lot 3 du même plan).**
+`estDesabonne` était déclarée `estDesabonne?()` dans les QUATRE interfaces qui la consomment (scénario, agent
+IA, Inbox, MCP) : absente, la garde ne tournait pas, et un câblage qui l'oubliait compilait, se déployait et
+écrivait au contact qui avait répondu STOP. **C'est arrivé deux fois en 48 heures**, les 13 et 14 septembre.
+Elle est requise ; les fixtures déclarent `jamaisDesabonne` (`tests/consentement.ts`), qui reproduit
+exactement l'ancien comportement et DIT l'hypothèse au lieu de la cacher.
+⚠️ **Trois fixtures mentaient au compilateur** (`as never`, `Record<string, unknown>`) : elles n'ont pas
+échoué au typecheck mais au RUNTIME, avec `estDesabonne is not a function`. C'est la preuve, dans les deux
+sens et sans l'avoir cherchée, que la garde s'exécute désormais là où elle était sautée.
+🔴 **`optInAllows` RESTE DEHORS, et c'est mesuré** : deux appelants seulement, tous deux à la CONSTRUCTION
+de la liste (campagne, API publique), quand `estDesabonne` se pose À L'ENVOI. Deux questions distinctes ;
+les réunir ferait entrer une décision qui dépend du chemin dans une dépendance partagée (invariant §12.7).
+⚠️ **`tests/optout-chemins.test.ts` est GARDÉ**, alors que le plan prévoyait de le remplacer : l'inventaire
+couvre ce que le type ne peut pas voir, un CINQUIÈME chemin d'envoi qui ne déclarerait aucune des quatre
+interfaces. Ce qui a été retiré, ce sont les cas qui affirmaient le défaut permissif disparu et les greps qui
+vérifiaient un câblage que le compilateur impose (`npm run typecheck` tourne en CI).
+
 🔴 **LA COUVERTURE DU GARDE-FOU NE S'ÉCRIT PLUS À LA MAIN, ELLE SE DÉRIVE (2026-09-14, lot 1 du plan
 `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md`).** `src/server.ts` porte un REGISTRE
 (`modulesDeRoutes`) où chaque module de routes déclare sa classe d'accès, et le garde-fou filtre sur

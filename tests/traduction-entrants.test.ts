@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -256,6 +257,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
+    estDesabonne: jamaisDesabonne,
     listConversations: async () => [],
     getConversationContext: async (id) => (id === 'c1'
       ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }

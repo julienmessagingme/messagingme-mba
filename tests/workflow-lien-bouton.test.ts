@@ -1,3 +1,4 @@
+import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { walk, etapeOffreUnChoix, problemeLienBouton } from '../src/workflow/engine';
@@ -32,6 +33,7 @@ class FakeRuns {
 
 function deps(over: Partial<WorkflowExecutorDeps>): WorkflowExecutorDeps {
   return {
+    estDesabonne: jamaisDesabonne,
     runs: new FakeRuns() as unknown as WorkflowExecutorDeps['runs'],
     getGraph: async () => graphe({}),
     applyTag: async () => {},
