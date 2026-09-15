@@ -465,11 +465,30 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // l'erreur de raisonnement qui a laissé `reclaimControl` n'écrire que notre colonne pendant des
     // semaines : on ne durcit pas un chemin qu'on croit mort.
     mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
-    // Rend le fil à l'agent de Meta. La bascule LOCALE d'abord, et seulement si le fil était encore au
-    // scénario : Meta exige de détenir le fil pour le relâcher, et cette condition le prouve.
+    /**
+     * Rend le fil à l'agent de Meta, en fin de parcours. La bascule LOCALE d'abord, et seulement si le fil
+     * était encore au scénario : Meta exige de détenir le fil pour le relâcher, et cette condition le prouve.
+     *
+     * 🔴 ET SI META REFUSE, ON REVIENT EN ARRIÈRE (2026-09-15). Avant, la colonne restait à `mba` : l'écran
+     * affirmait que le robot de Meta tenait un fil que Meta nous laissait, la conversation portait sa marque,
+     * et la SEULE trace du refus était une ligne de console dans le worker. Autrement dit, le mode de panne
+     * le plus coûteux qui soit : invisible, et démenti par l'écran.
+     *
+     * ⚠️ ON REPASSE À `app_human`, PAS À `app_workflow`. Le parcours est fini, personne ne gère : `app_human`
+     * met le fil dans « À traiter », donc le refus de Meta devient une ligne de travail au lieu d'un silence.
+     * `app_workflow` l'en sortirait, ce qui est précisément le défaut réparé le même jour.
+     *
+     * ⚠️ ON RELÈVE L'ERREUR : l'appelant (`rendreLaMainAMba`) l'attrape et la journalise, et il ne doit pas
+     * faire échouer le parcours pour autant. Ce qui change est qu'on ne ment plus en même temps.
+     */
     releaseToMba: async (tenant, waId) => {
       if (!(await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow'] }))) return;
-      await releaseThreadChezMeta(tenant, waId);
+      try {
+        await releaseThreadChezMeta(tenant, waId);
+      } catch (err) {
+        await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['mba'] });
+        throw err;
+      }
     },
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.

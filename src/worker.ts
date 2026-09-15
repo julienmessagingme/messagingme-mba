@@ -1161,7 +1161,25 @@ async function main(): Promise<void> {
   const controlSweep = async (): Promise<void> => {
     try {
       const rendues = await runControlSweep({
-        listHeldControl: (limit) => inboxStore.listHeldControl(limit),
+        /**
+         * 🔴 LES DEUX ARGUMENTS, ET LE SECOND MANQUAIT (mesuré en production le 2026-09-15).
+         *
+         * Cette flèche n'en déclarait qu'UN. Le balayage appelle pourtant
+         * `listHeldControl(undefined, timeouts.app_workflow)` : TypeScript accepte une flèche à un
+         * paramètre là où le contrat en déclare deux, et le second était AVALÉ EN SILENCE. Le magasin
+         * retombait donc sur son défaut `ageScenarioMs = 0`, or son SQL teste `$2::bigint > 0` : la
+         * branche qui ramasse les fils tenus par un scénario ne se déclenchait JAMAIS.
+         *
+         * 🔴 CONSÉQUENCE MESURÉE : la soupape des 24 h sur `app_workflow`, écrite le 2026-09-14, n'a
+         * jamais rien ramassé. Avec 0 elle rendait 0 conversation ; avec la valeur prévue, 10, toutes
+         * gelées depuis. Un parcours terminé gardait le fil INDÉFINIMENT, pas 24 h.
+         *
+         * ⚠️ C'est exactement le piège écrit dans le CLAUDE.md du dépôt (« une flèche à deux paramètres
+         * est assignable à un contrat qui en déclare trois, et le troisième est avalé en silence »), et
+         * il s'est reproduit ici. Aucun test ne pouvait le voir : ils montent tous un faux `listHeldControl`
+         * dont ils contrôlent la signature.
+         */
+        listHeldControl: (limit, ageScenarioMs) => inboxStore.listHeldControl(limit, ageScenarioMs),
         setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
         // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
         timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS, app_workflow: config.CONTROL_WORKFLOW_TIMEOUT_MS },
