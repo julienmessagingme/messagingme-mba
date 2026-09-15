@@ -52,13 +52,17 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     });
   });
 
-  it('🔴 un `messages` ne corrige QUE si on croyait `mba`', async () => {
+  it('🔴 un `messages` ne corrige QUE si on croyait `mba`, et il pose `app_human`', async () => {
     // Ce mot dit seulement que Meta nous laisse répondre. Il ne dit RIEN de qui, chez nous, tient le fil.
     // Sans le `only`, chaque message d'un client rendrait la main au scénario par-dessus l'opérateur en
     // train de lui écrire.
+    //
+    // 🔴 ET LA VALEUR POSÉE EST `app_human`, PAS `app_workflow`. Cette dernière veut dire « un scénario gère
+    // ce fil », et c'est la SEULE que le dossier « À traiter » exclut : la poser ici rendait invisible un fil
+    // dont le scénario est fini et où le client attend une réponse. Mesuré en production le 2026-09-15.
     const { store, ecrits } = fauxStore();
     await processInbound(PAYLOAD('messages'), store);
-    expect(ecrits).toEqual([{ owner: 'app_workflow', only: ['mba'] }]);
+    expect(ecrits).toEqual([{ owner: 'app_human', only: ['mba'] }]);
   });
 
   it('🔴 un `field` absent ne corrige RIEN', async () => {
@@ -163,5 +167,33 @@ describe('prendre le fil à Meta', () => {
       }),
     });
     await expect(prendre('tenant-1', '33633921577')).rejects.toThrow('escalation partner');
+  });
+});
+
+/**
+ * 🔴 LE DÉFAUT QUE CE CHOIX DE VALEUR RÉPARE, ÉNONCÉ COMME UNE PROPRIÉTÉ DU DOSSIER.
+ *
+ * Mesuré sur le numéro de production le 2026-09-15 : scénario terminé (`status = done`) à 06:16, le client
+ * réécrit « D accord » à 06:17, et `control_owner` repasse à `app_workflow`. Le dossier « À traiter » exclut
+ * exactement cette valeur : la conversation devenait invisible, sans pastille, pour 24 h.
+ */
+describe('la valeur posée doit rester VISIBLE du dossier « À traiter »', () => {
+  /** Le prédicat du dossier, recopié de `A_TRAITER_SQL` (`src/inbox/store.pg.ts`). */
+  const dansATraiter = (owner: string, derniereDirection: string) =>
+    owner !== 'app_workflow' && derniereDirection !== 'out';
+
+  it('🔴 après un `messages`, un client qui écrit est DANS la liste de travail', async () => {
+    const { store, ecrits } = fauxStore();
+    await processInbound(PAYLOAD('messages'), store);
+    const pose = ecrits[0]?.owner ?? '';
+    expect(dansATraiter(pose, 'in')).toBe(true);
+  });
+
+  it('⚠️ et `app_workflow` est précisément ce qui l’en sortirait', () => {
+    // La garde dit POURQUOI cette valeur est interdite ici, au lieu de se contenter de figer celle qu'on a
+    // choisie : le jour où quelqu'un la rechange, c'est cette phrase qu'il doit lire.
+    expect(dansATraiter('app_workflow', 'in')).toBe(false);
+    expect(dansATraiter('app_human', 'in')).toBe(true);
+    expect(dansATraiter('mba', 'in')).toBe(true);
   });
 });

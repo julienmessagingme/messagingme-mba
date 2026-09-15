@@ -956,3 +956,53 @@ describe('signaler à la main, et prendre le fil', () => {
     expect(pris).toEqual(['33611']);
   });
 });
+
+/**
+ * 🔴 LES FILTRES DE DOSSIER TRAVERSENT-ILS VRAIMENT LA ROUTE ?
+ *
+ * Constaté par Julien le 2026-09-15 : cliquer sur un membre dans l'Inbox ne filtrait rien, toutes les
+ * conversations restaient affichées. Le magasin SUPPORTAIT `affectee`, l'écran l'ENVOYAIT, et cette
+ * route-ci ne le LISAIT pas. Le motif « une capacité câblée sur deux consommateurs sur trois », avec le
+ * maillon du milieu manquant : aucun test ne regardait ce que la route TRANSMET au magasin.
+ */
+describe('les filtres de la liste arrivent au magasin', () => {
+  const vus: Array<Record<string, unknown>> = [];
+  const espion = () => app({
+    listConversations: async (_t, opts) => { vus.push({ ...(opts ?? {}) }); return []; },
+  });
+
+  it('🔴 le filtre par MEMBRE est transmis', async () => {
+    vus.length = 0;
+    const a = espion();
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?affectee=u2', ...auth() });
+    expect(vus[0]?.affectee).toBe('u2');
+    await a.close();
+  });
+
+  it('🔴 « aucune » est une VALEUR, c’est le dossier « Non affectées »', async () => {
+    // La confondre avec un paramètre absent rendrait ce dossier identique à « Tout ».
+    vus.length = 0;
+    const a = espion();
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?affectee=aucune', ...auth() });
+    expect(vus[0]?.affectee).toBe('aucune');
+    await a.close();
+  });
+
+  it('⚠️ absent ou vide ne pose AUCUN filtre : la page normale, jamais une page vide', async () => {
+    vus.length = 0;
+    const a = espion();
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...auth() });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?affectee=', ...auth() });
+    expect(vus[0]).not.toHaveProperty('affectee');
+    expect(vus[1]).not.toHaveProperty('affectee');
+    await a.close();
+  });
+
+  it('les autres dossiers passent toujours, eux aussi', async () => {
+    vus.length = 0;
+    const a = espion();
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?aTraiter=1&signalees=1&archivees=1', ...auth() });
+    expect(vus[0]).toMatchObject({ aTraiter: true, signalees: true, archivees: true });
+    await a.close();
+  });
+});

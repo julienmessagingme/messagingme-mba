@@ -337,7 +337,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
-    const q = (req.query ?? {}) as { limit?: unknown; beforeAt?: unknown; beforeId?: unknown; aTraiter?: unknown; signalees?: unknown; archivees?: unknown };
+    const q = (req.query ?? {}) as {
+      limit?: unknown; beforeAt?: unknown; beforeId?: unknown;
+      aTraiter?: unknown; signalees?: unknown; archivees?: unknown; affectee?: unknown;
+    };
     const opts: ListConversationsOptions = {};
     const limit = Number(q.limit);
     if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
@@ -346,6 +349,17 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // Le dossier ARCHIVÉ. Absent = les dossiers ordinaires, qui excluent les archivées : c'est le défaut,
     // et c'est celui qu'un appelant qui ne connaît pas ce paramètre doit obtenir.
     if (q.archivees === '1' || q.archivees === 'true') opts.archivees = true;
+    /**
+     * 🔴 LE FILTRE PAR MEMBRE ÉTAIT JETÉ ICI, ET NULLE PART AILLEURS (constaté par Julien le 2026-09-15).
+     * Le magasin le SUPPORTE (`ListConversationsOptions.affectee`, `store.pg.ts`), l'écran l'ENVOIE
+     * (`dossierEnParams`, `?affectee=<id>`), et cette route ne le LISAIT pas : cliquer sur un membre
+     * n'avait aucun effet, la liste entière restait affichée. Le motif « une capacité câblée sur deux
+     * consommateurs sur trois », et c'est la route, au milieu, qui manquait.
+     *
+     * ⚠️ `'aucune'` EST UNE VALEUR, pas une absence : c'est le dossier « Non affectées ». Le confondre avec
+     * un paramètre absent rendrait ce dossier-là identique à « Tout ».
+     */
+    if (typeof q.affectee === 'string' && q.affectee !== '') opts.affectee = q.affectee;
     // Le curseur n'a de sens qu'ENTIER : une moitié rendrait une page arbitraire, donc on exige les deux.
     if (typeof q.beforeAt === 'string' && q.beforeAt !== '' && typeof q.beforeId === 'string' && q.beforeId !== '') {
       opts.before = { at: q.beforeAt, id: q.beforeId };

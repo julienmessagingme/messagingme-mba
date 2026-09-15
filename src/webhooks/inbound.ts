@@ -359,6 +359,22 @@ export async function processInbound(
  *    il ne dit RIEN de qui, chez nous, tient le fil. Sans le `only`, chaque message d'un client rendrait la
  *    main au scénario par-dessus l'opérateur en train de lui écrire.
  *
+ * 🔴 ET IL POSE `app_human`, PAS `app_workflow` (constaté par Julien le 2026-09-15, mesuré en base).
+ * `app_workflow` veut dire « UN SCÉNARIO GÈRE CE FIL », et c'est la seule valeur que le dossier « À traiter »
+ * EXCLUT. Or ce cas est exactement l'inverse : le scénario est FINI, Meta nous rend la parole, et personne
+ * ne s'en occupe. Le fil devenait donc invisible de la liste de travail, et y restait 24 h, le temps que la
+ * soupape `CONTROL_WORKFLOW_TIMEOUT_MS` le libère. Mesuré sur le numéro de production : run `done` à 06:16,
+ * le client réécrit à 06:17, `control_owner` repassé à `app_workflow`, zéro pastille.
+ *
+ * ⚠️ AUCUNE DES TROIS VALEURS NE DIT « PERSONNE N'EST DESSUS », et `app_human` est la moins fausse des trois :
+ * elle met le fil dans « À traiter » (ce qu'on veut : quelqu'un attend une réponse), elle n'affiche pas la
+ * marque du robot de Meta sur un fil qu'il ne tient pas, et elle démarre le compte à rebours de
+ * `CONTROL_HUMAN_TIMEOUT_MS` (2 h par défaut) au bout duquel la soupape rend la main au MBA. C'est-à-dire
+ * exactement le réglage « quand un humain répond, il garde la main pendant N minutes ».
+ *
+ * ⚠️ ELLE N'EMPÊCHE AUCUN SCÉNARIO DE DÉMARRER : `reprendreLeFilPourLApp` pose `app_workflow` SANS `only`,
+ * donc un parcours qui démarre reprend le fil quel que soit l'ordre des deux écritures.
+ *
  * ⚠️ Un `field` absent (`null`) ne corrige rien : c'est une forme de payload qu'on ne sait pas interpréter,
  * et deviner vaudrait moins que se taire.
  *
@@ -371,7 +387,7 @@ async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: Inbou
     if (m.field === 'standby') {
       await store.setControlOwner(tenantId, m.waId, 'mba');
     } else if (m.field === 'messages') {
-      await store.setControlOwner(tenantId, m.waId, 'app_workflow', { only: ['mba'] });
+      await store.setControlOwner(tenantId, m.waId, 'app_human', { only: ['mba'] });
     }
   } catch (err) {
     // eslint-disable-next-line no-console
