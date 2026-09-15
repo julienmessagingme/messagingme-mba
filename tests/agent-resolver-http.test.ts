@@ -25,7 +25,16 @@ const OUTIL: OutilDefini = {
   id: 'to1', tenantId: 't1', origin: 'http', sourceId: 'src1', requestId: 'rq1', nePasUtiliser: '',
   name: 'lire_commande', description: 'lit une commande', params: [],
   binding: {},
-  nature: 'integre' as const, outputPaths: [],
+  /**
+   * 🔴 L'OUTIL PORTE SES CHAMPS DEPUIS LA MIGRATION 0150, et cette fixture les avait à VIDE parce que c'est
+   * la requête qui les portait. Le résolveur lit désormais l'outil : les laisser vides ferait refuser chaque
+   * appel de ce fichier, ce qui est exactement ce que le compilateur ne pouvait pas dire.
+   *
+   * ⚠️ Volontairement IDENTIQUES à ceux de la requête ci-dessous, pour que les tests existants continuent
+   * d'exercer ce qu'ils exerçaient. Le cas où les deux DIVERGENT, lui, est le sujet d'un fichier à part
+   * (`tests/agent-resolveur-http-nature.test.ts`), parce que c'est là que le changement se voit.
+   */
+  nature: 'integre' as const, outputPaths: ['statut', 'livraison.date'],
   risk: 'read', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
 };
 
@@ -286,12 +295,16 @@ describe('résolveur http : les refus, tous sans lever', () => {
     expect(String(r.erreur)).toMatch(/redirig/i);
   });
 
-  it('sans `outputPaths`, rien ne part : le filtre est la règle, pas l’exception', async () => {
-    // La décision D-L2-2 : la réponse appartient au client. Une requête sans filtre est une déclaration
-    // incomplète, refusée à l'écriture ; s'il en existait une, elle ne doit RIEN divulguer.
-    // ⚠️ Le filtre vit sur la REQUÊTE depuis la migration 0105, plus sur l'outil : ce que l'agent a le droit
-    // de lire dans une réponse est une propriété de l'APPEL, pas de l'agent qui le déclenche.
-    const { resolveur, entree } = harnais({ requete: { ...REQUETE, outputPaths: [] } });
+  it('un outil qui INTÈGRE sans aucun champ ne divulgue RIEN : le filtre est la règle, pas l’exception', async () => {
+    /**
+     * La décision D-L2-2 : la réponse appartient au client. Une déclaration incomplète ne doit RIEN
+     * divulguer plutôt que tout.
+     *
+     * ⚠️ LE CAS EXERCÉ EST CONSERVÉ, LA SOURCE DU FILTRE A CHANGÉ (migration 0150). Ce test vidait la liste
+     * de la REQUÊTE ; il vide désormais celle de l'OUTIL, parce que c'est elle que le résolveur lit. Vider
+     * la requête ne prouverait plus rien : un outil qui porte ses champs n'en dépend plus.
+     */
+    const { resolveur, entree } = harnais({ outil: { ...OUTIL, outputPaths: [] } });
     const r = await resolveur(entree);
     expect(r.ok).toBe(false);
   });

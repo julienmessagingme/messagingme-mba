@@ -98,6 +98,12 @@ export function creerAppelHttpScenario(deps: DepsAppelHttpScenario) {
         // ⚠️ AUCUN ARGUMENT DE MODÈLE : un scénario n'a pas de modèle qui décide. Une requête qui déclare une
         // variable `modele` REQUISE sera refusée avec sa raison, ce qui est le bon comportement.
         args: {},
+        /**
+         * 🔴 UN SCÉNARIO INTÈGRE, ET IL LIT CEUX DE LA REQUÊTE (`champs: null`). Il n'a pas d'outil, donc pas
+         * de liste à lui : la requête reste sa seule source, exactement comme avant la migration 0150. Le
+         * bloc range ensuite la valeur dans un champ du contact, donc il lit pour de bon.
+         */
+        lecture: { nature: 'integre', champs: null } as const,
         signal: AbortSignal.timeout(DELAI_APPEL_HTTP_MS),
         journal: deps.journalAppels
           ? {

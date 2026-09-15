@@ -55,6 +55,7 @@ describe('l’appel de connecteur journalise, et le journal dit QUI appelait', (
     const r = await appel({
       tenantId: 't1', waId: '33600', contact: null, requestId: 'rq1', maxBytes: 4096, args: {},
       signal: AbortSignal.timeout(5000),
+      lecture: { nature: 'integre', champs: null } as const,
       journal: { journal, source: 'scenario', nom: 'Desabonner dans le CRM', sessionId: null, toolId: null },
     });
     expect(r.ok).not.toBe(false);
@@ -74,6 +75,7 @@ describe('l’appel de connecteur journalise, et le journal dit QUI appelait', (
     await appel({
       tenantId: 't1', waId: '33600', contact: null, requestId: 'rq1', maxBytes: 4096, args: {},
       signal: AbortSignal.timeout(5000),
+      lecture: { nature: 'pousse' } as const,
       journal: { journal, source: 'optout', nom: 'Desabonner', sessionId: null, toolId: null },
     });
     expect(clotures[0]).toMatchObject({ status: 'erreur_outil', httpStatus: 500 });
@@ -96,6 +98,7 @@ describe('l’appel de connecteur journalise, et le journal dit QUI appelait', (
     await appel({
       tenantId: 't1', waId: '33600', contact: null, requestId: 'rq1', maxBytes: 4096, args: {},
       signal: controleur.signal,
+      lecture: { nature: 'integre', champs: null } as const,
       journal: { journal, source: 'scenario', nom: 'X', sessionId: null, toolId: null },
     });
     expect(clotures[0]).toMatchObject({ status: 'timeout' });
@@ -117,7 +120,7 @@ describe('l’appel de connecteur journalise, et le journal dit QUI appelait', (
     }) as unknown as typeof fetch));
     const r = await appel({
       tenantId: 't1', waId: '33600', contact: null, requestId: 'rq1', maxBytes: 4096, args: {},
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(5000), lecture: { nature: 'integre', champs: null } as const,
       journal: { journal: casse, source: 'scenario', nom: 'X', sessionId: null, toolId: null },
     });
     expect(parti, 'l’appel doit partir malgré le journal en panne').toBe(true);
@@ -134,7 +137,7 @@ describe('l’appel de connecteur journalise, et le journal dit QUI appelait', (
     const appel = creerAppelConnecteur(depsConnecteur(repond(200)));
     await appel({
       tenantId: 't1', waId: '33600', contact: null, requestId: 'rq1', maxBytes: 4096, args: {},
-      signal: AbortSignal.timeout(5000), journal: null,
+      signal: AbortSignal.timeout(5000), lecture: { nature: 'integre', champs: null } as const, journal: null,
     });
     expect(ouvertures).toEqual([]);
     expect(journal).toBeDefined(); // le journal existe, il n'est simplement pas passé

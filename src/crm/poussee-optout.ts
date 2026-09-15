@@ -209,6 +209,13 @@ export function creerTravailPousseeOptOut(deps: DepsTravailPousseeOptOut) {
           // `modele` REQUISE sera refusée avec sa raison, ce qui est le bon comportement : l'appel partirait
           // sinon sans la valeur qui le rend juste.
           args: {},
+          /**
+           * 🔴 UNE POUSSÉE NE LIT RIEN, ET CE N'EST PAS UN OUBLI. Elle prévient le système du client qu'un
+           * contact s'est désabonné ; la réponse ne sert qu'à savoir si c'est passé, et ce code ne lit
+           * effectivement que `r.ok`. Le déclarer ici évite que la réponse d'un système tiers traverse pour
+           * rien, et c'est ce que le champ obligatoire force à écrire.
+           */
+          lecture: { nature: 'pousse' } as const,
           signal: AbortSignal.timeout(DELAI_POUSSEE_OPTOUT_MS),
           journal: deps.journalAppels
             ? { journal: deps.journalAppels, source: 'optout', nom, sessionId: null, toolId: null }

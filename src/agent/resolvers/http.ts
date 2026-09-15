@@ -126,6 +126,22 @@ export interface AppelConnecteur {
    * l'absence.
    */
   journal: JournalDAppel | null;
+  /**
+   * CE QUE L'APPELANT FAIT DE LA RÉPONSE (migration 0150).
+   *
+   * 🔴 OBLIGATOIRE, POUR LA MÊME RAISON QUE `journal` JUSTE AU-DESSUS. Un champ optionnel se serait oublié
+   * au prochain appelant, et ce module en a DÉJÀ TROIS : l'outil d'un agent, le bloc « Appel HTTP » d'un
+   * scénario, et la poussée d'un opt-out. Un quatrième devra écrire ce qu'il lit, donc se demander s'il lit
+   * quelque chose. C'est exactement ce que le champ `journal` a coûté d'apprendre le 2026-09-14.
+   *
+   * ⚠️ `champs: null` VEUT DIRE « CEUX DE LA REQUÊTE », et c'est le cas d'un scénario : il n'a pas d'outil,
+   * donc pas de liste à lui, et la requête reste sa seule source. Un outil d'agent, lui, porte la sienne
+   * depuis 0150, et c'est tout l'objet du changement : un appel est partagé, ce qu'un agent en lit ne l'est
+   * pas.
+   */
+  lecture:
+    | { nature: 'pousse' }
+    | { nature: 'integre'; champs: readonly string[] | null };
 }
 
 /** De quoi ouvrir et clore UNE ligne de journal pour un appel de connecteur (migration 0142). */
@@ -196,9 +212,21 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     const requete = requestId === '' ? null : await deps.requetes.parId(ctx.tenantId, requestId);
     if (!requete) return { ok: false, contenu: { erreur: 'ce connecteur n’est pas configuré' }, erreur: 'requête introuvable' };
 
-    // 2. LE FILTRE DE SORTIE, AVANT TOUT LE RESTE. Une requête sans `outputPaths` est une déclaration
-    // incomplète (la route l'exige) : si l'on en trouve une quand même, elle ne divulgue RIEN plutôt que tout.
-    if (!Array.isArray(requete.outputPaths) || requete.outputPaths.length === 0) {
+    /**
+     * 2. LE FILTRE DE SORTIE, AVANT TOUT LE RESTE, et il vient désormais de L'APPELANT (migration 0150).
+     *
+     * 🔴 CE QUI A CHANGÉ : il était lu sur la REQUÊTE, qui est PARTAGÉE entre agents. Restreindre ce qu'un
+     * agent lisait restreignait donc pour tous, et l'élargir élargissait pour tous. Un outil porte sa propre
+     * liste depuis 0150 ; un scénario, qui n'a pas d'outil, passe `null` et retombe sur celle de la requête.
+     *
+     * ⚠️ UN `integre` SANS AUCUN CHAMP RESTE UN REFUS : c'est une déclaration incomplète, et ne rien
+     * divulguer vaut mieux que tout divulguer. Un `pousse`, lui, n'a rien à déclarer, et c'est le cas que
+     * cette garde rendait impossible à brancher jusqu'ici.
+     */
+    const champsLus = p.lecture.nature === 'integre'
+      ? (p.lecture.champs ?? requete.outputPaths)
+      : [];
+    if (p.lecture.nature === 'integre' && (!Array.isArray(champsLus) || champsLus.length === 0)) {
       return { ok: false, contenu: { erreur: 'ce connecteur ne déclare aucun champ à lire' }, erreur: 'outputPaths vide' };
     }
 
@@ -358,6 +386,25 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       };
     }
 
+    /**
+     * 9bis. UN APPEL QUI POUSSE NE LIT PAS LE CORPS DU TOUT (migration 0150).
+     *
+     * 🔴 ET C'EST UNE GARANTIE, PAS UNE ÉCONOMIE. La réponse d'un `POST` de succès porte très souvent la
+     * ressource entière qu'on vient de créer ou de modifier : la fiche du client, son e-mail, ses
+     * identifiants internes. Un agent qui n'a rien à en faire n'a aucune raison de l'envoyer au fournisseur
+     * du modèle, et personne ne l'aurait décidé. On rend donc le VERDICT, et lui seul.
+     *
+     * ⚠️ L'ÉCHEC EST DÉJÀ TRAITÉ À L'ÉTAPE 8, avec son message sûr : un `pousse` qui rate y passe comme les
+     * autres. Le plan de ce lot prévoyait de renvoyer en plus le message d'erreur DU SYSTÈME DU CLIENT ;
+     * l'étape 8 s'y refuse délibérément (« une trace de 500 porte des chemins internes, parfois des
+     * identifiants »), et ce refus l'emporte : élargir ce qui fuit vers le fournisseur du modèle mérite sa
+     * propre décision, pas un effet de bord d'un lot sur les connecteurs.
+     */
+    if (p.lecture.nature === 'pousse') {
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
+      return { contenu: { ok: true, statut: res.status }, httpStatus: res.status };
+    }
+
     // 9. LE FILTRE. Ce qui repart au modèle est EXACTEMENT ce que le client a listé, et rien d'autre.
     let json: unknown;
     try {
@@ -367,7 +414,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       return { ok: false, contenu: { erreur: MESSAGES.illisible }, erreur: 'illisible', httpStatus: res.status };
     }
     const contenu: Record<string, unknown> = {};
-    for (const chemin of requete.outputPaths) {
+    for (const chemin of champsLus) {
       const v = extraire(json, chemin);
       if (v !== undefined) contenu[chemin] = v;
     }
@@ -390,6 +437,14 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     contact: entree.ctx.contact,
     requestId: typeof entree.outil.requestId === 'string' ? entree.outil.requestId : '',
     maxBytes: entree.outil.maxBytes,
+    /**
+     * 🔴 L'OUTIL, PAS LA REQUÊTE (migration 0150). C'est la traduction du changement : ce que CET agent a le
+     * droit de lire est une propriété de son outil. Deux agents peuvent piocher dans le même appel et lire
+     * des choses différentes, ce qui était impossible tant que la liste vivait sur l'appel partagé.
+     */
+    lecture: entree.outil.nature === 'pousse'
+      ? { nature: 'pousse' }
+      : { nature: 'integre', champs: entree.outil.outputPaths },
     args: entree.args,
     signal: entree.signal,
     // 🔴 `null` EST UNE DÉCISION : l'exécuteur d'agent ouvre et clôt DÉJÀ sa ligne autour de ce résolveur
