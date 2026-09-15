@@ -1087,6 +1087,16 @@ suit est la règle, en une formulation courte.
 25. **Changer la NATURE d'une entrée de nav casse ses appelants**, comme un changement de signature : `href`
     et `children` s'excluent dans `NavEntree`, donc passer de l'un à l'autre change le rôle ARIA rendu, et
     tout ce qui visait l'entrée par son rôle vise désormais le mauvais.
+26. 🔴 **Une règle qui doit tenir PARTOUT ne voyage jamais dans une dépendance optionnelle.** Un consommateur
+    qui la reçoit absente la dégrade en silence : le programme est valide, rien ne le signale, et la règle ne
+    s'applique pas sur ce chemin. C'est vrai de la garde d'authentification comme du consentement, et les
+    deux ont été fermées pour cette raison. Le corollaire est dans les tests : une fixture qui OMET la
+    dépendance cache son hypothèse, une fixture qui déclare `gardeOuverte` ou `jamaisDesabonne` la dit.
+27. 🔴 **Un type qui EXIGE une dépendance ne dit pas qu'elle est POSÉE.** Un module peut la recevoir et ne
+    pas s'en servir : des options de route écrites `{ ...garde }` au lieu de `{ ...opts }` répandent la garde
+    au lieu de l'objet qui la porte, et la route part sans `preHandler`. Le compilateur ne voit rien, et le
+    symptôme est un 403 sur un geste légitime (ou une porte ouverte, dans l'autre sens). C'est ce que vérifie
+    `tests/scope-tenant.test.ts` en inspectant ce que Fastify a réellement enregistré.
 
 ### Sur la méthode
 
@@ -1125,6 +1135,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | Module | Ce qu'il porte |
 |---|---|
 | `src/http/scope.ts` | `scopeTenant` (le contrôle d'accès tenant), `nonEmpty`, `estUuid` |
+| `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée. Monter une route ailleurs la sort du garde-fou sans qu'aucune erreur ne le dise |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
