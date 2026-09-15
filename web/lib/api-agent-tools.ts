@@ -169,7 +169,10 @@ export function getBibliothequeOutils(tenantId: string): Promise<{ outils: Outil
  * dont personne n'a relu les mots, ce que la migration 0086 existe pour empêcher.
  */
 export function rattacherOutil(tenantId: string, agentId: string, outilId: string, valeur: boolean): Promise<{ rattache: boolean }> {
-  return request<{ rattache: boolean }>(`/tenants/${tenantId}/agents/${agentId}/outils/${outilId}/rattachement`, {
+  // ⚠️ `base(...)`, PAS un chemin recopié : la route s'appelle `/tools` et non `/outils`, et la recopier de
+  // mémoire a produit un 404 que seule une sonde sur la PRODUCTION a montré. Le branchement aurait échoué à
+  // chaque fois, avec un message parlant d'un outil « qui n'a pas pu être enregistré ».
+  return request<{ rattache: boolean }>(`${base(tenantId, agentId)}/${outilId}/rattachement`, {
     method: 'PUT', body: JSON.stringify({ valeur }),
   });
 }

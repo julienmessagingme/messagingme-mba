@@ -149,6 +149,22 @@ describe('le vrai câblage', () => {
     expect(route).toContain('outilsDebranches: brancheables(ctx.etat.catalogue');
   });
 
+  /**
+   * 🔴 DEUX CHEMINS DANS DEUX FICHIERS, ET C'EST LEUR ÉCART QUI CASSE. La route s'appelle `/tools` côté
+   * serveur ; le navigateur l'avait recopiée `/outils`, et le branchement rendait 404 à chaque fois, avec un
+   * message parlant d'un outil « qui n'a pas pu être enregistré ». Aucun test unitaire ne pouvait le voir :
+   * ils montent tous le module Fastify directement. Seule une sonde sur la PRODUCTION l'a montré.
+   */
+  it('🔴 le chemin du navigateur est celui du serveur, segment pour segment', () => {
+    const serveurTools = readFileSync(resolve(__dirname, '../src/http/agent-tools.ts'), 'utf8');
+    const frontTools = readFileSync(resolve(__dirname, '../web/lib/api-agent-tools.ts'), 'utf8');
+    const segment = /const base = '\/tenants\/:tenantId\/agents\/:agentId\/([a-z]+)'/.exec(serveurTools)?.[1];
+    expect(segment).toBe('tools');
+    expect(frontTools).toContain(`/agents/${'$'}{agentId}/${segment}`);
+    // Et AUCUN chemin écrit à la main à côté du constructeur commun.
+    expect(frontTools).not.toContain('/agents/${agentId}/outils');
+  });
+
   it('🔴 le navigateur APPELLE la route de rattachement', () => {
     expect(front).toContain('rattacherOutil(tenantId, agentId, id, true)');
     expect(front).toContain('rattacherOutil(tenantId, agentId, id, false)');
