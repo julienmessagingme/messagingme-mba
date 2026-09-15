@@ -7,7 +7,7 @@ import type { VolumeCampagneRow } from './cost';
 // Valeur SEULE, pas un type : le plafond doit etre le meme des deux cotes (le SQL en garde une de plus, la
 // fonction pure tranche et l'annonce). Deux nombres ecrits separement divergeraient au premier reglage.
 import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
-import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE } from '../inbox/origine';
+import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { EnvoisCampagneRow } from './cout-campagne';
@@ -190,6 +190,26 @@ export interface DashboardStats {
    * lisible à côté de la courbe : un écart voudrait dire qu'un message échappe au classement.
    */
   serviceParOrigine: { ia: number; scenario: number; humain: number; indeterminee: number };
+  /**
+   * LE DETAIL SOUS « IA » : laquelle des trois (demande de Julien, 2026-09-15).
+   *
+   * 🔴 L'INFORMATION EXISTAIT DEJA EN BASE, elle etait ecrasee a l'affichage. La colonne `origin` distingue
+   * `ia` (notre agent), `mba` (l'agent de Meta) et `mcp` (un agent tiers branche par MCP) depuis la
+   * migration 0099 ; `THEME_DE_ORIGINE` les versait toutes dans un theme unique parce que trois lignes
+   * avaient ete demandees et pas six. Aucune migration, aucune reprise : c'est le meme historique, lu plus
+   * finement.
+   *
+   * 🔴 `agent + mba + mcp` EGALE `serviceParOrigine.ia`, ET C'EST UN INVARIANT TENU PAR UN TEST. Les deux
+   * sont derives de la MEME boucle, sur les memes lignes : les calculer separement en ferait deux verites
+   * qui deriveraient au premier chemin d'ecriture ajoute, et un detail qui ne retombe pas sur son total est
+   * pire qu'aucun detail.
+   *
+   * ⚠️ LA SEPARATION N'EST EXACTE QUE DEPUIS `BASCULE_ORIGINE` (2026-09-01). Avant, la colonne n'etait
+   * remplie par personne et la derivation range tout en `scenario`, ce qui a ete MESURE et non supposé :
+   * aucun tour d'agent n'avait jamais tourné. Ces trois compteurs valent donc zero sur l'historique ancien,
+   * et c'est juste.
+   */
+  serviceIaDetail: { agent: number; mba: number; mcp: number };
 }
 
 /**
@@ -580,11 +600,17 @@ export class PgStatsStore {
       [tenantId, from, to, TZ],
     );
     const serviceParOrigine = { ia: 0, scenario: 0, humain: 0, indeterminee: 0 };
+    const serviceIaDetail = { agent: 0, mba: 0, mcp: 0 };
     for (const ligne of parOrigine.rows) {
       // Une valeur d'origine inconnue de la table de correspondance tombe en « indéterminée » plutôt que
       // d'être perdue : c'est le seul comportement qui garde le total juste.
       const theme = THEME_DE_ORIGINE[ligne.origine] ?? 'indeterminee';
       serviceParOrigine[theme] += Number(ligne.n);
+      // 🔴 LE DETAIL SORT DE LA MEME BOUCLE QUE LE TOTAL, sur la meme ligne : une seconde boucle, ou pire une
+      // seconde requete, ferait deux verites qui derivent. `agent` porte NOTRE agent (`origin = 'ia'`), dont
+      // le nom de code est justement celui du theme, d'ou le renommage ici : `ia.ia` serait illisible.
+      const detail = DETAIL_IA[ligne.origine];
+      if (detail) serviceIaDetail[detail] += Number(ligne.n);
     }
 
     const utility: DailyPoint[] = [];
@@ -601,6 +627,7 @@ export class PgStatsStore {
       exchanged: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
       service: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.sortants) })),
       serviceParOrigine,
+      serviceIaDetail,
     };
   }
 

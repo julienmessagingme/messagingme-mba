@@ -51,6 +51,23 @@ export const ORIGINE_EFFECTIVE_SQL = `coalesce(
 /** Les trois themes demandes a l'ecran, et ce que chaque origine y verse. `mba` est une IA (l'agent de
  *  Meta), il rejoint donc l'IA ; `campagne` n'apparait pas ici parce qu'une campagne part en template et
  *  qu'un template n'est pas un message de service. */
+/**
+ * LE DÉTAIL SOUS LE THÈME « IA » : laquelle des trois (demande de Julien, 2026-09-15).
+ *
+ * 🔴 IL VIT ICI, À CÔTÉ DE `THEME_DE_ORIGINE`, ET PAS DANS L'AGRÉGAT. Les deux tables répondent à la même
+ * question sur la même valeur, et les séparer de fichier ferait diverger le jour où une quatrième IA
+ * apparaît : on ajouterait la ligne dans l'une et pas dans l'autre, et le détail cesserait de retomber sur
+ * son total sans qu'aucune erreur ne le dise. `tests/origine-messages.test.ts` tient l'invariant.
+ *
+ * ⚠️ `agent` ET NON `ia`, délibérément : la valeur en base s'appelle `ia`, mais elle désigne NOTRE agent, pas
+ * la famille. Garder le même mot aux deux niveaux donnerait `ia.ia`, illisible à l'écran comme au code.
+ */
+export const DETAIL_IA: Record<string, 'agent' | 'mba' | 'mcp' | undefined> = {
+  ia: 'agent',
+  mba: 'mba',
+  mcp: 'mcp',
+};
+
 export const THEME_DE_ORIGINE: Record<string, 'ia' | 'scenario' | 'humain' | 'indeterminee'> = {
   ia: 'ia',
   mba: 'ia',

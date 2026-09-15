@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
-import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, ORIGINES, BASCULE_ORIGINE } from '../src/inbox/origine';
+import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA, ORIGINES, BASCULE_ORIGINE } from '../src/inbox/origine';
 import { PgInboxStore } from '../src/inbox/store.pg';
 
 /** Fake pool : capture les requêtes, rend une conversation pour l'upsert par wa_id. */
@@ -139,5 +139,34 @@ describe('origine d’un message de service', () => {
       // contre l'oubli est le paramètre obligatoire côté TypeScript, qui ne coûte rien en exploitation.
       expect(sql).not.toMatch(/origin text[^;]*not null/i);
     });
+  });
+});
+
+describe('le détail sous le thème « IA » (2026-09-15)', () => {
+  /**
+   * 🔴 L'INVARIANT QUI EMPÊCHE LE DÉTAIL DE MENTIR : chaque origine versée dans le thème `ia` doit avoir une
+   * entrée dans `DETAIL_IA`, et réciproquement. Sans ce test, ajouter une quatrième IA demain la ferait
+   * compter dans le total « IA » sans apparaître dans le détail : la somme des sous-lignes cesserait de
+   * retomber sur sa ligne, et un tableau dont le détail ne fait pas le total est pire qu'un tableau sans
+   * détail. C'est exactement pourquoi les deux tables vivent dans le même fichier.
+   */
+  it('🔴 toute origine du thème IA a son détail, et aucune autre', () => {
+    const duTheme = Object.keys(THEME_DE_ORIGINE).filter((o) => THEME_DE_ORIGINE[o] === 'ia').sort();
+    const duDetail = Object.keys(DETAIL_IA).sort();
+    expect(duDetail).toEqual(duTheme);
+  });
+
+  it('🔴 les trois IA restent DISTINCTES en base, c’est ce qui rend le détail possible', () => {
+    // Elles auraient pu être écrites `ia` toutes les trois : l'historique serait alors irrécupérable, et
+    // cette demande aurait coûté une migration plus une reprise au lieu d'un changement d'affichage.
+    expect(DETAIL_IA.ia).toBe('agent');
+    expect(DETAIL_IA.mba).toBe('mba');
+    expect(DETAIL_IA.mcp).toBe('mcp');
+  });
+
+  it('⚠️ une origine qui n’est PAS une IA n’a pas de détail', () => {
+    expect(DETAIL_IA.humain).toBeUndefined();
+    expect(DETAIL_IA.scenario).toBeUndefined();
+    expect(DETAIL_IA.campagne).toBeUndefined();
   });
 });

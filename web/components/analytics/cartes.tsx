@@ -13,7 +13,7 @@
  * sans rien dire.
  */
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { BoutonPdf } from '@/components/BoutonPdf';
 import { useT, useLocale } from '@/lib/i18n';
@@ -395,13 +395,39 @@ export function SelecteurMultiple({ libelleTous, options, selection, onChange, t
  * a envoyé sans dire qui il était. Elle est affichée, et seulement quand elle n'est pas nulle, précisément
  * pour que ça se voie au lieu d'être versé en silence dans un des trois thèmes.
  */
-export function OrigineServiceCard({ repartition }: { repartition?: { ia: number; scenario: number; humain: number; indeterminee: number } }) {
+export function OrigineServiceCard({ repartition, detailIa }: {
+  repartition?: { ia: number; scenario: number; humain: number; indeterminee: number };
+  /**
+   * LE DÉTAIL SOUS « IA » : laquelle des trois (demande de Julien, 2026-09-15).
+   *
+   * ⚠️ OPTIONNEL, comme `repartition` et pour la même raison : pendant le déploiement, l'API d'avant ne le
+   * connaît pas. Absent, la ligne « IA » reste seule, ce qui était le comportement d'hier. Inventer un
+   * détail à zéro ferait croire qu'aucune IA n'a écrit, ce qui est une mesure FAUSSE et non une mesure
+   * manquante.
+   */
+  detailIa?: { agent: number; mba: number; mcp: number };
+}) {
   const t = useT();
   const { locale } = useLocale();
   // Absente = l'API ne connaît pas encore ce champ (déploiement en cours). Rien plutôt qu'une fausse mesure.
   if (!repartition) return null;
+  /**
+   * Les sous-lignes de « IA », dans l'ordre où elles comptent pour l'exploitation, et SEULEMENT celles qui
+   * ont écrit quelque chose.
+   *
+   * ⚠️ ON MASQUE LES ZÉROS, et ce n'est pas de la cosmétique : un client qui n'a pas branché l'agent de Meta
+   * n'a aucune raison de lire « Agent de Meta : 0 » sous chaque tableau. Le thème « IA », lui, reste affiché
+   * même à zéro, parce que son absence dirait quelque chose de différent de sa valeur nulle.
+   */
+  const sousIa = detailIa
+    ? ([
+      { cle: 'agent', label: t('Agent IA de la console', 'Console AI agent'), valeur: detailIa.agent },
+      { cle: 'mba', label: t('Agent de Meta', 'Meta agent'), valeur: detailIa.mba },
+      { cle: 'mcp', label: t('Agent tiers (MCP)', 'Third-party agent (MCP)'), valeur: detailIa.mcp },
+    ]).filter((l) => l.valeur > 0)
+    : [];
   const lignes = [
-    { cle: 'ia', label: t('IA', 'AI'), aide: t('agent IA de la console, et agent de Meta', 'console AI agent, and Meta agent'), valeur: repartition.ia, couleur: 'bg-violet' },
+    { cle: 'ia', label: t('IA', 'AI'), aide: t('agent IA de la console, agent de Meta, agent tiers', 'console AI agent, Meta agent, third-party agent'), valeur: repartition.ia, couleur: 'bg-violet' },
     { cle: 'scenario', label: t('Scripté', 'Scripted'), aide: t('envoyé par un bloc de scénario', 'sent by a scenario block'), valeur: repartition.scenario, couleur: 'bg-brand-500' },
     { cle: 'humain', label: t('Humain', 'Human'), aide: t('écrit par un opérateur depuis l’inbox', 'written by an operator from the inbox'), valeur: repartition.humain, couleur: 'bg-mint-400' },
     ...(repartition.indeterminee > 0
@@ -432,7 +458,8 @@ export function OrigineServiceCard({ repartition }: { repartition?: { ia: number
           </thead>
           <tbody>
             {lignes.map((l) => (
-              <tr key={l.cle} data-testid={`origine-${l.cle}`} className="border-b border-ink-50">
+              <Fragment key={l.cle}>
+              <tr data-testid={`origine-${l.cle}`} className="border-b border-ink-50">
                 <td className="px-2 py-2">
                   <div className="font-medium text-ink-800">{l.label}</div>
                   <div className="text-[11px] text-ink-400">{l.aide}</div>
@@ -445,6 +472,28 @@ export function OrigineServiceCard({ repartition }: { repartition?: { ia: number
                   </div>
                 </td>
               </tr>
+              {/**
+                * LE DÉTAIL, EN RETRAIT SOUS LA SEULE LIGNE « IA ». Julien : « je veux avoir le détail sous IA
+                * des messages écrits par le MBA ou par l'agent IA ».
+                *
+                * ⚠️ La part est calculée sur le MÊME total que les lignes principales, pas sur le total des
+                * IA : autrement deux pourcentages voisins se liraient sur deux bases différentes, et la somme
+                * de la colonne cesserait de faire cent.
+                */}
+              {l.cle === 'ia' && sousIa.map((d) => (
+                <tr key={d.cle} data-testid={`origine-ia-${d.cle}`} className="border-b border-ink-50">
+                  <td className="py-1.5 pl-6 pr-2">
+                    <div className="flex items-center gap-2 text-[11px] text-ink-500">
+                      <span className="h-1 w-1 rounded-full bg-violet" aria-hidden="true" />
+                      {d.label}
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5 tabular-nums text-[11px] text-ink-500">{fmtNum(d.valeur, locale)}</td>
+                  <td className="px-2 py-1.5 tabular-nums text-[11px] text-ink-400">{fmtPct(d.valeur, total, locale)}</td>
+                  <td className="px-2 py-1.5" />
+                </tr>
+              ))}
+              </Fragment>
             ))}
           </tbody>
         </table>

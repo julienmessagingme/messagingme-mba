@@ -37,6 +37,7 @@ function MessagesInner({ session }: { session: Session }) {
         // Laisse `undefined` si l'API ne l'envoie pas : la carte se masque alors, au lieu d'afficher trois
         // zeros qu'on prendrait pour une mesure (meme raison que le `?? []` des series, un cran plus loin).
         ...(s?.serviceParOrigine ? { serviceParOrigine: s.serviceParOrigine } : {}),
+        ...(s?.serviceIaDetail ? { serviceIaDetail: s.serviceIaDetail } : {}),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
@@ -97,7 +98,7 @@ function MessagesInner({ session }: { session: Session }) {
             />
           </div>
           <div className="lg:col-span-2">
-            <OrigineServiceCard repartition={stats.serviceParOrigine} />
+            <OrigineServiceCard repartition={stats.serviceParOrigine} detailIa={stats.serviceIaDetail} />
           </div>
         </div>
       ) : null}

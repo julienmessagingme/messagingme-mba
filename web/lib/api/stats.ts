@@ -32,6 +32,14 @@ export interface DashboardStats {
    * masquer le tableau plutot que d'afficher trois zeros qui passeraient pour une mesure.
    */
   serviceParOrigine?: { ia: number; scenario: number; humain: number; indeterminee: number };
+  /**
+   * Le detail sous le theme « IA » : notre agent, celui de Meta, un agent tiers branche par MCP.
+   *
+   * ⚠️ OPTIONNEL comme son voisin, et pour la meme raison : pendant un deploiement, l'API d'avant ne le
+   * connait pas. Absent, la carte n'affiche pas de detail, ce qui est une mesure MANQUANTE ; inventer des
+   * zeros serait une mesure FAUSSE, qui ferait croire qu'aucune IA n'a ecrit.
+   */
+  serviceIaDetail?: { agent: number; mba: number; mcp: number };
 }
 /** Plage de dates des stats (YYYY-MM-DD, Europe/Paris). Absente -> le backend retombe sur 30 jours. */
 export interface StatsRange {

@@ -30,6 +30,9 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       service: [{ date: '2026-07-09', count: 2 }],
       // Le total retombe sur celui de `service` : c'est l'invariant de la ventilation (cf. store).
       serviceParOrigine: { ia: 1, scenario: 1, humain: 0, indeterminee: 0 },
+      // ⚠️ ET LE DÉTAIL RETOMBE SUR LE THÈME : `agent + mba + mcp` vaut `ia`. Une fixture qui s'en écarterait
+      // décrirait un état que le store ne peut pas produire, donc ferait passer les tests sur une fiction.
+      serviceIaDetail: { agent: 1, mba: 0, mcp: 0 },
     }),
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
