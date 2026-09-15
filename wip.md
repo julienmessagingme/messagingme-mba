@@ -14,12 +14,33 @@
 
 | | |
 |---|---|
-| `origin/main` | `4474dd9` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `4474dd9` : **déployé le 2026-09-15 vers 2 h**, aucun écart |
+| `origin/main` | `00632c4` |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `00632c4` : **déployé le 2026-09-15 au matin**, aucun écart |
 | Dernière CI de CODE | ✅ verte, **quatre jobs lus un par un** (`integration` compris) |
 | Vercel (`engageme`) | suit `origin/main` tout seul, à chaque push |
 | Migrations | **0144 à 0148 appliquées**, relues en base après `migrate`. **Prochaine libre : 0149** |
-| Contrôle public | ✅ les quatre noms à 200, **aucun 502 sur les deux déploiements** |
+| Contrôle public | ✅ les quatre noms à 200, **après un reload NPM** (502 au premier contrôle, un seul reload a suffi) |
+
+### La revue GLOBALE du diff complet (2026-09-15 au matin)
+
+Les revues par lot et la revue finale de la nuit étaient ciblées. Une relecture du diff ENTIER (26 commits,
+53 fichiers) a trouvé cinq choses de plus, dont trois rouges :
+
+- 🔴 **L'appel au modèle du MBA n'était ni borné ni rattrapé**, quand son jumeau de `agent-setup.ts` l'était
+  des deux côtés. Une panne du fournisseur rendait 500, donc une page Cloudflare sans explication ; un
+  fournisseur lent tenait la requête ouverte indéfiniment.
+- 🔴 **Un journal muet tuait un geste déjà passé chez Meta.** `journaliser` était dans le `try` de la boucle,
+  APRÈS l'écriture : une panne de notre base affichait la même opération sous « Fait » ET sous « Arrêté sur »,
+  accusait Meta, et abandonnait la suite.
+- 🔴 **Le commentaire de l'inventaire décrivait l'inverse du code, sur ses deux moitiés.** Le comportement
+  réel était le bon, c'est le texte qui était à reprendre.
+- 🟡 `JSON.parse` au lieu de `secureJsonParse` sur les arguments du modèle, là où le jumeau fait l'inverse.
+- 🟡 Une assertion qui ne discriminait pas, et deux fonctions pures qui décident du contenu de l'historique
+  sans aucun test. Les deux sont épinglées.
+
+⚠️ **CE QUE CETTE REVUE APPREND** : les deux assistants sont des JUMEAUX, et trois des cinq constats sont des
+écarts entre eux. Quand un comportement est écrit deux fois, la question à poser n'est pas « est-ce correct ? »
+mais « les deux font-ils pareil, et si non, est-ce écrit pourquoi ? ».
 
 ## ✅ LES QUATRE LOTS DES ASSISTANTS SONT LIVRÉS ET DÉPLOYÉS (2026-09-15, en autonomie)
 
