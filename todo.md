@@ -1,5 +1,57 @@
 # todo.md : backlog
 
+## 🔴 Un échec du JOURNAL fait échouer une réponse DÉJÀ PARTIE (Inbox et MCP, 2026-09-15)
+
+`src/inbox/repondre.ts:139` appelle `deps.recordOutbound(...)` **sans `try/catch`**, après que Meta a accepté
+le message et rendu son `messageId`. Un échec d'écriture du journal (pool saturé, hoquet réseau) remonte donc
+en erreur alors que **le message est parti**.
+
+Ce que voit l'opérateur : un échec. Ce qu'il fait : il renvoie. Ce que reçoit le client : deux fois le même
+message.
+
+⚠️ **Le contraste est dans la ligne juste au-dessus** : `takeControl` porte `.catch(() => {})`. Le journal,
+non. C'est le SEUL des quatre chemins d'envoi où l'écriture du journal n'est pas best-effort (campagne :
+`engine.ts:1038-1050` ; scénario et agent : `try/catch` dans `wiring.ts`). Cette asymétrie ressemble à un
+oubli plutôt qu'à une décision, et aucun commentaire ne la justifie.
+
+**À faire** : entourer l'appel, en journalisant l'échec côté serveur. ⚠️ L'invariant §12.11 dit « un envoi qui
+est parti se journalise toujours » : le rendre best-effort le relâche, donc il faut que l'échec soit VISIBLE
+quelque part (une alerte), pas avalé.
+
+## 🟠 Trois lectures qu'un point d'envoi unique perdrait, à savoir avant de le construire (2026-09-15)
+
+Relevé par l'audit du coût des règles d'envoi, à garder sous la main le jour du candidat 6 :
+
+- `recordOutboundByWaId` (`src/inbox/store.pg.ts:603`) code `sender_user_id` **en dur à `null`** et n'a pas
+  `redaction_origine` dans sa signature. Un envoi unifié sur cette fonction ferait disparaître **en silence**
+  la pastille d'auteur et la rédaction d'origine (migration 0137) ;
+- la fenêtre de 24 h, le `waId` et la langue détectée arrivent **ensemble** dans `getConversationContext`
+  (`src/inbox/store.pg.ts:981-1006`). Un sas qui redemanderait l'un des trois doublerait une requête déjà
+  payée ;
+- `listPending` (`src/campaign/store.pg.ts:1615`) ramène déjà `contact_id`, `to_e164` et `resolved_params`
+  pour tout le run. Un sas dont la signature serait `(tenantId, waId, texte)` devrait re-résoudre le contact :
+  une requête unique deviendrait une par destinataire.
+
+## 🟠 La route de traduction pose DEUX FOIS la même requête par appui (2026-09-15)
+
+`src/http/inbox.ts:602` appelle `traductionDisponible`, puis `:607` appelle `traduireSortant`, dont
+`src/traduction/traduire.ts:264` refait `await disponible(tenantId)`. Deux `select` identiques sur
+`agent_gateway_keys` (`src/agent/cles-gateway.pg.ts:43`) par clic sur le bouton de traduction.
+
+Sans gravité (geste humain, pas une boucle), mais c'est une requête pour rien sur un pool de 8.
+
+## 🟠 Le contrôle des symboles morts n'est branché NULLE PART (2026-09-15)
+
+`tsconfig.prod.json` active `noUnusedLocals` sur `src` et existe depuis le 2026-09-14, mais aucun script npm
+ni aucun job de CI ne l'exécute. C'est le constat A8 du contre-audit du 2026-09-14, toujours ouvert.
+
+🔴 **Sa valeur vient d'être démontrée** : le 2026-09-15, il a attrapé un import mort (`creerWabaDeLEspace`
+dans `wiring.ts`) que `npm run typecheck` laissait passer sans rien dire. Un import mort n'est pas cosmétique,
+il fait croire à une dépendance qui n'existe pas.
+
+**À faire** : un script `npm run morts` et une étape dans le job `unit` de `.github/workflows/ci.yml`.
+
+
 ## 🟠 Ce qu'il faudra lever AVANT d'ajouter un second worker (2026-09-15)
 
 Rien ne presse : le worker tourne à **16 requêtes par minute** et le pool encaisse environ 700 requêtes par
