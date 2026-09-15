@@ -1,5 +1,27 @@
 # todo.md : backlog
 
+## 🟠 Une conversation que l'agent de Meta n'a pas résolue en 24 h DISPARAÎT de « À traiter » (2026-09-15)
+
+Trouvé en vérifiant le lot « l'agent répond après un silence » sur les vraies données, pas en le cherchant.
+**Défaut PRÉEXISTANT**, aucun rapport avec ce lot, mais il le rencontre.
+
+`CONTROL_MBA_TIMEOUT_MS` (24 h) reprend les fils tenus par l'agent de Meta et les repose en `app_workflow`.
+Or `app_workflow` est **la seule valeur que le dossier « À traiter » exclut**. Donc une conversation où le
+client a écrit en dernier, que l'agent n'a pas su résoudre, est une ligne de travail visible pendant 24 h,
+puis **disparaît de l'écran** sans que rien ne se soit passé.
+
+⚠️ **MESURÉ LE 2026-09-15** : onze conversations sont dans ce cas, dont `33685973811`, dont le client attend
+une réponse depuis 15:28. Elle est aujourd'hui dans « À traiter » ; demain matin à 07:35 elle n'y sera plus.
+
+🔴 **LA QUESTION À TRANCHER EST PRODUIT, PAS TECHNIQUE** : quand l'agent de Meta n'a pas conclu en 24 h,
+qui doit reprendre ? Le repli sur `app_workflow` suppose qu'un scénario prendra la suite, ce qui est vrai
+quand un scénario existe et faux sinon. `app_human` serait l'état honnête d'un fil que personne n'a résolu et
+qui attend quelqu'un, et il garderait la conversation visible.
+
+⚠️ Ne PAS régler ça en changeant `A_TRAITER` : ce dossier exclut `app_workflow` pour une bonne raison (une
+conversation qu'un scénario mène n'est pas une ligne de travail). C'est la DESTINATION de la reprise qui est
+discutable, pas le filtre.
+
 ## 🟠 Le rapport d'architecture du 2026-09-14 : huit candidats restants sur onze (2026-09-15)
 
 Une revue de PROFONDEUR (« quel levier une interface donne-t-elle par unité de complexité à apprendre ? »),
