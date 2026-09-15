@@ -100,9 +100,21 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
                     {c.profileName ?? c.phoneE164 ?? t('sans nom', 'no name')}
                     {c.profileName && c.phoneE164 && <span className="ml-2 text-xs text-ink-400">{c.phoneE164}</span>}
                   </td>
+                  {/**
+                    * 🔴 LA DATE **ET L'HEURE** (demande de Julien, 2026-09-15). Un écran de conformité doit
+                    * pouvoir répondre « à quel moment exactement ce refus est-il arrivé ? », et un jour
+                    * calendaire ne le permet pas : deux messages envoyés le même jour, l'un avant et l'autre
+                    * après le refus, deviennent indiscernables. La colonne `opt_out_at` porte l'instant
+                    * depuis la migration 0138, il n'était simplement pas affiché.
+                    *
+                    * ⚠️ `date inconnue` reste, et ce n'est pas un défaut : les refus antérieurs à 0138 n'ont
+                    * aucun instant enregistré, et `updated_at` ne répond PAS à la question (il bouge à la
+                    * moindre modification de la fiche). Afficher une date fausse sur un écran de conformité
+                    * serait pire que de n'en afficher aucune.
+                    */}
                   <td className="px-4 py-2 text-ink-600" data-testid="desabonne-date">
                     {c.desabonneLe
-                      ? new Date(c.desabonneLe).toLocaleDateString()
+                      ? new Date(c.desabonneLe).toLocaleString()
                       : <span className="text-ink-400">{t('date inconnue', 'date unknown')}</span>}
                   </td>
                   <td className="px-4 py-2 text-ink-600">{sourceDite(c.source, t)}</td>

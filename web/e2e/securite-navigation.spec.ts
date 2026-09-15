@@ -170,6 +170,16 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(page.getByTestId('desabonne-ligne')).toHaveCount(2);
     await expect(page.getByTestId('desabonnes-compte')).toContainText('2');
     await expect(page.getByTestId('desabonne-date').nth(1)).toContainText(/date inconnue/i);
+    /**
+     * 🔴 L'HEURE, PAS SEULEMENT LE JOUR (demande de Julien, 2026-09-15). Un écran de conformité doit pouvoir
+     * dire à quel MOMENT le refus est arrivé : deux messages envoyés le même jour, l'un avant et l'autre
+     * après, sont indiscernables sur une date calendaire.
+     *
+     * ⚠️ On assère le SÉPARATEUR d'heure et non un format : `toLocaleString` rend un texte différent selon la
+     * langue du navigateur, et figer « 12/09/2026 12:00:00 » ferait tomber ce test sur une autre locale sans
+     * qu'aucun comportement n'ait changé. Le deux-points, lui, est présent dans toutes.
+     */
+    await expect(page.getByTestId('desabonne-date').first()).toContainText(/\d:\d/);
   });
 
   /**
