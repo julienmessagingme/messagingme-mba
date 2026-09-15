@@ -64,90 +64,15 @@ il fait croire à une dépendance qui n'existe pas.
 **À faire** : un script `npm run morts` et une étape dans le job `unit` de `.github/workflows/ci.yml`.
 
 
-## 🟠 Ce qu'il faudra lever AVANT d'ajouter un second worker (2026-09-15)
+## 🟠 Bascule Scaleway : tout est dans UN document (2026-09-15)
 
-Rien ne presse : le worker tourne à **16 requêtes par minute** et le pool encaisse environ 700 requêtes par
-seconde et par processus (mesuré). Mais ces deux points-là ne se découvriraient qu'EN PRODUCTION le jour où
-l'on double le worker, et c'est exactement le genre de découverte qu'on paie cher.
+Les trois chantiers à finir avant de multiplier les processus (l API qui réserve une connexion, les balayages
+à sérialiser, les plafonds de débit en mémoire), le sort du connecteur HubSpot, la question Redis et la
+séquence du jour J vivent désormais dans **[docs/ARCHITECTURE-CIBLE.md](docs/ARCHITECTURE-CIBLE.md)**.
 
-- 🔴 **Les balayages tourneraient EN DOUBLE.** Les 23 tâches de `registreDeTaches` vivent dans le process :
-  deux workers, deux exemplaires de chaque balayage, donc deux reprises de contrôle, deux réveils de parcours,
-  deux relances d'échecs. Certains sont idempotents, d'autres non. Il faut un verrou d'exécution, et le modèle
-  existe déjà dans le dépôt : `src/campaign/run-lock.ts` (bail + jeton de garde + drapeau de relance), dont
-  les trois pièces sont chacune là pour une raison écrite. ⚠️ Le lissage des départs (2026-09-15) ne protège
-  de rien ici : il décale, il ne sérialise pas.
-- 🔴 **Les plafonds de débit sont comptés PAR PROCESS.** `RATE_LIMIT_USER_PAR_MINUTE` et
-  `RATE_LIMIT_COUTEUX_PAR_MINUTE` vivent en mémoire : deux instances doublent le plafond réellement servi,
-  sans que l'écran ni la configuration ne le disent. Déjà signalé dans `CLAUDE.md`, répété ici parce que
-  c'est au moment d'ajouter une instance qu'on le lira.
-
-⚠️ **Le signal qui dira que ce jour est arrivé est déjà à l'écran** : la carte « latence réelle des files »
-de `/ops` sépare l'ATTENTE du TRAITEMENT. Une file dont l'attente monte alors que son traitement ne bouge pas
-manque de bras. Tant que l'attente vient de la cadence de sondage, un second worker ne changerait rien.
-
-⚠️ **CE QUI NE LIMITE PAS, ET CE QUI LIMITE VRAIMENT** (mesuré le 2026-09-15). Trois ressources, une seule
-est un mur. Le pool APPLICATIF passe par le pooler en mode TRANSACTION : il MULTIPLEXE, douze connexions
-Postgres réelles servent aujourd'hui tous nos clients, donc ajouter un processus ajoute des clients
-élastiques et pas des connexions Postgres. Le pool PG-BOSS, lui, est en mode SESSION et ne multiplexe RIEN :
-chaque processus retient `PGBOSS_MAX` connexions Postgres réelles pour toute sa vie, sur un budget d'environ
-15 partagé avec mm-hubspot, dont 8 déjà pris. **Un second worker coûte donc 2 des 7 qui restent.** Et le
-troisième frein n'est pas technique : à 131 transactions par minute mesurées AUJOURD'HUI (soit ~2,5 Go
-d'egress par mois, la moitié du forfait gratuit, sans un seul client), un second worker ajoute son propre
-sondage sur les neuf files et fait franchir les 5 Go. C'est la FACTURE qui tranchera avant Postgres.
-
-## 🟠 La base part avec le calcul le jour de Scaleway, ce n'est pas un projet séparé (2026-09-15)
-
-Décision de Julien du 2026-09-15 : quand le calcul déménagera chez Scaleway, **la base déménage avec**. La
-raison n'est pas la portabilité, c'est la **co-location** : calcul à Paris et base à Londres, chaque requête
-traverse internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien
-pire, et il serait payé sur chacune des 131 transactions par minute mesurées au repos. Latence ET egress, des
-deux côtés. **La règle est : le calcul et la base dans la même région, toujours.**
-
-🔴 **CE QUI EST DÉJÀ VRAI, VÉRIFIÉ LE 2026-09-15, ET QU'IL FAUT SURTOUT NE PAS CASSER.** Ce dépôt n'a **aucune
-dépendance spécifique à Supabase** : pas de `supabase-js`, pas de `createClient`, ni Storage, ni Auth, ni
-PostgREST, ni Edge Function. `supabase_vault` est présente sur la base mais nous ne l'utilisons nulle part.
-C'est du **Postgres nu**, et c'est ce qui rend le déménagement possible sans réécriture.
-
-⚠️ **LA PRÉPARATION EST DONC UNE DISCIPLINE, PAS UN CHANTIER** : n'ajouter aucune de ces briques. Le jour où
-quelqu'un branche le Storage Supabase pour un média ou son Auth pour un login, la base cesse d'être portable
-et personne ne s'en apercevra avant le devis de migration.
-
-⚠️ **ET LE SCHÉMA N'EST PAS DANS LE TABLEAU DE BORD SUPABASE, IL EST DANS `db/migrations/`.** Une base neuve
-plus `npm run migrate` reproduit tout, y compris la configuration de recherche `french_sans_accent`. Le
-déménagement se réduit donc à : créer la base, migrer, restaurer les données, changer deux variables d'env.
-
-**Les trois extensions dont on dépend, à vérifier chez la destination AVANT de s'engager** : `vector`
-(pgvector, `agent_knowledge.embedding` et les fiches d'aide) est la seule qui ne soit pas universelle ;
-`pg_trgm` et `unaccent` sont des contribs standard, présentes partout. `pgcrypto` ne sert qu'à
-`gen_random_uuid()`, natif depuis PostgreSQL 13 de toute façon.
-
-⚠️ **CE QU'ON PERD EN PARTANT, et il faut le savoir avant** : les sauvegardes automatiques et le tableau de
-bord de Supabase. Une base managée Scaleway a les siennes, mais ce n'est pas la même interface, et la
-procédure de reprise de `DEPLOY.md` devra être réécrite pour elle.
-
-## 🔴 Avant de rendre l'API élastique (conteneurs serverless), lui retirer ses connexions SESSION (2026-09-15)
-
-Décision de Julien du 2026-09-15 : la trajectoire passe par des conteneurs serverless avec multiplication des
-exemplaires de l'API. **Il y a un mur exactement là, et il n'est visible nulle part dans l'écran.**
-
-`src/index.ts` construit un `PgBossQueue` sur `DATABASE_URL`, c'est-à-dire le pooler en mode **SESSION**, pour
-la seule raison qu'elle EMPILE des jobs (`supervise: false`, elle n'en dépile aucun et ne fait aucune
-maintenance). Une connexion de session ne se multiplexe pas : elle tient un backend Postgres réel tant que le
-processus vit. **Chaque exemplaire d'API coûte donc jusqu'à `PGBOSS_MAX` connexions réelles**, sur un budget
-d'environ 15 partagé avec mm-hubspot.
-
-🔴 **Dix exemplaires élastiques = vingt connexions de session pour un budget de quinze.** Et l'erreur qui en
-résulte est DÉJÀ documentée dans `DEPLOY.md` : `EMAXCONNSESSION` au démarrage à froid, observé avec DEUX
-processus seulement quand le pooler tient encore les sessions des conteneurs qu'on vient de tuer. L'élasticité
-transformerait un incident transitoire de déploiement en panne de démarrage permanente.
-
-Ce qu'il faudra trancher ce jour-là : empiler un job est un `insert` dans `pgboss.job`, qui n'a besoin
-d'aucune session ; c'est le CLIENT pg-boss qui en exige une. Les pistes sont donc de faire empiler l'API par
-le pooler en mode transaction sans passer par le client pg-boss, ou de passer par le worker. ⚠️ Rien à faire
-tant que l'API est à un exemplaire : c'est une question à régler AVANT le premier `scale`, pas avant.
-
-⚠️ **Le reste de l'API est prêt pour l'élasticité** : aucun état en mémoire qui doive survivre, sauf les
-plafonds de débit, comptés par processus (voir l'entrée précédente, même défaut, mêmes conséquences).
+🔴 **Ne rien recopier ici.** Cette matière était éparpillée entre trois entrées de ce fichier, `CLAUDE.md` et
+`documentation.md`, et elle commençait déjà à diverger. Le document est la source unique ; ceci est un
+pointeur, et il doit le rester.
 
 ## 🔴 L'essai réel du lot « consentement » reste DÛ (2026-09-15)
 
