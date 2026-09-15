@@ -20,6 +20,23 @@ dépôt de contacts (`estDesabonneParWaId` exécutée depuis l'image déployée 
 corrects). Le chemin est vivant et la requête est juste sur le schéma. Ce qui manque est la preuve du REFUS,
 faute d'un désabonné pour le déclencher.
 
+## 🟠 Côté Meta, les champs cochés ne s'appliquent pas, et l'écran se tait (2026-09-15)
+
+Depuis la migration 0150, chaque agent choisit ce qu'il lit de la réponse d'un appel, et l'écran promet que
+« seuls les champs cochés partent chez le fournisseur du modèle ». **C'est vrai pour un agent IA, et faux pour
+le Meta Business Agent.** On publie chez Meta l'adresse du système et le chemin de l'appel ; **Meta appelle le
+système du client EN DIRECT et lit toute la réponse.** Nous ne sommes pas dans la boucle, donc ni la nature
+« pousse » ni les champs cochés ne s'y appliquent.
+
+La case « Exposé à l'agent de Meta » (Tools > Outils) ne le dit pas. Arbitrage de Julien du 2026-09-15, à qui
+la question a été posée : **on n'affiche rien**. C'est donc un trou ASSUMÉ, pas un oubli, et il est écrit ici
+pour qu'il reste discutable.
+
+⚠️ **Ce qu'il coûte, précisément** : quelqu'un qui restreint les champs pour son agent IA, par prudence sur
+une réponse qui porte des données personnelles, peut croire que la même prudence vaut pour Meta. Elle ne vaut
+pas. Une phrase sous la case suffirait (« Meta appelle votre système en direct et lit toute la réponse : ce
+que vous avez choisi ici ne s'y applique pas »).
+
 ## 🟠 L'adresse d'origine du VPS n'est protégée que par le SILENCE (2026-09-15)
 
 Tous les sous-domaines `messagingme.app` sont proxifiés par Cloudflare, donc l'adresse du serveur est masquée,

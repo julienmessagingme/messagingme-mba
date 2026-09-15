@@ -292,22 +292,16 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     const pb = verifier(effectif, await deps.clesDeChamps(tenant));
     if (pb) return reply.code(400).send({ error: pb });
     /**
-     * 🔴 ON PEUT CRÉER UN APPEL SANS CHAMP DE SORTIE, ON NE PEUT PAS EN VIDER UN QUI SERT (2026-09-15).
+     * ⚠️ IL Y AVAIT ICI UNE GARDE QUI REFUSAIT DE VIDER LES CHAMPS D'UN APPEL DÉJÀ UTILISÉ (2026-09-15,
+     * matin). Elle est partie l'après-midi même, avec la migration 0150, et pas par relâchement : ces champs
+     * ne gouvernent PLUS l'exécution. Chaque outil porte désormais sa propre liste, copiée au rattachement ;
+     * celle de l'appel n'est qu'un DÉFAUT de pré-remplissage. La vider ne rend donc plus aucun agent muet,
+     * elle ne change que ce qui sera proposé au prochain rattachement.
      *
-     * Relevé par le hook « rayon de souffle » en ouvrant l'enregistrement aux brouillons : la garde d'entrée
-     * n'est rien si la même valeur peut être retirée APRÈS coup. Un appel déjà rattaché à des agents et vidé
-     * de ses champs rendrait ces agents muets sur ce connecteur (`resolvers/http.ts` refuse alors l'appel
-     * proprement, donc rien ne fuit, mais plus personne ne sait pourquoi le robot ne répond plus).
-     *
-     * ⚠️ CALCULÉE SUR L'ÉTAT EFFECTIF (`effectif`), jamais sur le corps de la requête : sinon un patch qui ne
-     * renvoie pas `outputPaths` passerait la garde en laissant la valeur courante, et un patch qui les vide
-     * sans toucher au reste y échapperait aussi. C'est la règle du dépôt sur les gardes de validation.
+     * 🔴 ET C'EST BIEN CE QUE JULIEN A DEMANDÉ : « changer le défaut ne touche aucun agent en service ».
+     * Une garde qui protégerait encore ici protégerait contre un effet qui n'existe plus, et ferait croire
+     * au prochain lecteur que le défaut se propage.
      */
-    if (effectif.outputPaths.length === 0 && actuelle.outils > 0) {
-      return reply.code(409).send({
-        error: `${actuelle.outils} outil(s) d’agent utilisent cet appel : retirez-les d’abord, ou gardez au moins un champ de réponse.`,
-      });
-    }
     try {
       const requete = await deps.patch(tenant, id, parse.data);
       if (!requete) return reply.code(404).send({ error: 'requête introuvable' });

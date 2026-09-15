@@ -1556,15 +1556,14 @@ scénario, comment importer des contacts.
   ce que la personne vient de demander, mot pour mot.
 - ✅ **Essayer l'appel** avec des valeurs de test, et voir la vraie réponse : le statut, la durée, ce qui est
   parti, et le contenu reçu.
-- ✅ **Cocher les champs à garder** dans la réponse reçue, au lieu d'écrire des chemins de mémoire. La réponse
-  de votre système ne part chez le fournisseur du modèle que par cette liste.
+- ✅ **Cocher les champs à garder** dans la réponse reçue, au lieu d'écrire des chemins de mémoire. ⚠️ Depuis
+  le 2026-09-15, ce que vous cochez ici est le **défaut proposé** quand vous donnerez l'appel à un agent :
+  c'est dans l'écran de l'agent que se décide ce que LUI a le droit de lire (voir plus bas).
 - ✅ **Un appel à moitié écrit s'ENREGISTRE** (2026-09-15). Vous mettez un appel de côté et vous y revenez plus
-  tard, même sans avoir réussi à le faire marcher. La liste le marque alors **« à finir »**.
+  tard, même sans avoir réussi à le faire marcher.
   🔴 **Avant, enregistrer exigeait un champ de réponse coché, et ces champs se cochent dans le résultat d'un
   essai réussi.** Un appel qu'on n'avait pas encore fait marcher était donc perdu en quittant l'écran, et il
   fallait tout retaper. C'est le cycle que le bouton Essayer sert justement à ouvrir.
-  ⚠️ **Ce qui n'a pas changé** : un appel sans champ de réponse coché **ne peut pas être ouvert à un agent**.
-  L'écran des Outils le refuse et dit quoi faire. Tant qu'il n'est ouvert à personne, un appel n'envoie rien.
 - ✅ **Les pastilles de variable se voient AVANT d'avoir déclaré quoi que ce soit** (2026-09-15). La ligne
   « Insérer : » est toujours là, et quand elle est vide elle renvoie vers l'onglet où l'on déclare une donnée.
   Avant, elle n'apparaissait qu'une fois une donnée déclarée : on ne découvrait le mécanisme qu'après s'en
@@ -1581,8 +1580,25 @@ scénario, comment importer des contacts.
 - ✅ **Dans CHAQUE agent** (onglet Outils), choisir un appel de la bibliothèque et lui donner SES mots : le nom
   vu par l'agent, à quoi ça sert, quand ne pas l'appeler. Deux agents peuvent utiliser le même appel avec des
   consignes différentes, et le corriger une fois le corrige partout.
-- ✅ **L'écran vous fait confirmer ce qui partira** avant de brancher l'appel sur un agent : la liste des
-  données envoyées, en français, et ce qui sera lu en retour. La case à cocher est obligatoire.
+- ✅ **« Ça pousse ou ça intègre ? »**, la question posée quand vous donnez un appel à un agent (2026-09-15).
+  Deux réponses possibles, et la seconde question n'apparaît que si elle sert :
+  - **Il POUSSE de l'information** vers votre système (poser une étiquette, créer une fiche). Rien de plus à
+    répondre. L'agent saura seulement si c'est passé, jamais ce que votre système a répondu.
+  - **Il RÉCUPÈRE de l'information** que l'agent intègre à la conversation. L'écran demande alors **quoi** :
+    un bouton **Essayer** montre ce que votre système répond vraiment, et vous cochez là-dedans.
+  🔴 **Ça remplace une case « C'est bien ce que je veux envoyer » qui ne servait à rien** : on est d'accord
+  pour utiliser un outil par construction, puisqu'on est en train de l'ajouter. La vraie question, que seul
+  vous pouvez trancher, est ce que l'appel FAIT. Et elle ne se devine pas de la méthode HTTP : un `POST` peut
+  très bien être une recherche.
+  🔴 **Ce que l'agent lit se décide AGENT PAR AGENT.** Deux agents peuvent piocher dans le même appel et lire
+  des choses différentes. Les champs cochés sur l'appel ne font que pré-remplir, et **changer ce défaut ne
+  touche aucun agent déjà en service**.
+  ⚠️ **Un appel qui pousse ne rend RIEN à l'agent, même en cas de succès.** C'est volontaire : la réponse d'une
+  création ou d'une modification porte souvent la fiche entière de votre client, son e-mail, ses identifiants
+  internes. Un agent qui n'en a pas besoin n'a aucune raison de les envoyer au fournisseur du modèle.
+- ✅ **L'écran vous montre ce qui partira** avant de brancher l'appel sur un agent : la liste des données
+  envoyées, en français. C'est la seule fois où vous voyez qu'un appel enverra une donnée de vos contacts,
+  voire leur dernier message, à un système tiers.
 - ✅ Un outil de connecteur naît **inactif**, comme un outil maison : c'est un administrateur qui l'active
   après l'avoir relu.
 - ✅ **Un appel utilisé par un agent ne se supprime pas** : l'écran dit combien d'agents s'en servent et refuse,

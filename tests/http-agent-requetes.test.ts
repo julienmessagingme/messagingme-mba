@@ -157,23 +157,30 @@ describe('requêtes : déclarer', () => {
     expect(cap.creations[0]?.outputPaths).toEqual([]);
   });
 
-  it('🔴 mais on ne VIDE pas les champs d’un appel que des agents utilisent (409)', async () => {
+  it('🔴 vider les champs d’un appel UTILISÉ est permis : ce n’est plus qu’un défaut', async () => {
     /**
-     * 🔴 RELEVÉ PAR LE HOOK « RAYON DE SOUFFLE » EN OUVRANT L'ENREGISTREMENT AUX BROUILLONS, et c'est le
-     * défaut classique : une garde d'entrée ne vaut rien si la même valeur peut être retirée APRÈS coup.
-     * Vider un appel déjà rattaché rendrait les agents muets sur ce connecteur, sans que personne sache
-     * pourquoi (l'exécution refuse proprement, mais loin de l'écran où le geste a été fait).
+     * 🔴 CE TEST ATTENDAIT UN REFUS (409) LE MATIN MÊME, ET LE CAS QU'IL EXERCE EST INCHANGÉ : vider les
+     * champs d'un appel que deux agents utilisent. Seul le verdict change, parce que ces champs ont changé
+     * de rôle avec la migration 0150.
+     *
+     * Le matin, ils gouvernaient l'exécution : les vider rendait les agents muets sur ce connecteur, d'où le
+     * refus. L'après-midi, chaque outil porte SA propre liste, copiée au rattachement ; celle de l'appel
+     * n'est plus qu'un DÉFAUT de pré-remplissage. La vider ne change donc rien à aucun agent en service,
+     * seulement ce qui sera proposé au prochain rattachement.
+     *
+     * ⚠️ ET C'EST EXACTEMENT LA GARANTIE DEMANDÉE PAR JULIEN : « changer le défaut ne touche aucun agent en
+     * service ». Une garde qui refuserait encore ici protégerait contre un effet qui n'existe plus, et ferait
+     * croire au prochain lecteur que le défaut se propage.
      */
     const { cap, srv } = app({ outils: 2 });
     const res = await srv.inject({ method: 'PATCH', url: `${base()}/${RQ}`, ...h(adminTok), payload: { outputPaths: [] } });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/2 outil/);
-    expect(cap.patches).toEqual([]);
+    expect(res.statusCode).toBe(200);
+    expect(cap.patches[0]).toMatchObject({ outputPaths: [] });
   });
 
-  it('⚠️ un appel que PERSONNE n’utilise se vide sans problème : c’est un retour au brouillon', async () => {
-    // La garde porte sur l'USAGE, pas sur la valeur : sinon on ne pourrait plus remettre en chantier un
-    // appel qu'on avait fini et qu'aucun agent n'a jamais pris.
+  it('⚠️ et un appel que personne n’utilise se vide aussi : le compte d’outils n’entre plus en jeu', async () => {
+    // Gardé pour que la disparition de la garde soit VISIBLE des deux côtés : si quelqu'un la remettait sur
+    // l'usage, ce test-ci resterait vert et l'autre tomberait, ce qui dit exactement ce qui a bougé.
     const { srv } = app({ outils: 0 });
     const res = await srv.inject({ method: 'PATCH', url: `${base()}/${RQ}`, ...h(adminTok), payload: { outputPaths: [] } });
     expect(res.statusCode).toBe(200);

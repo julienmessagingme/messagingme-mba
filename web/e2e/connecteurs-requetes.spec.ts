@@ -107,27 +107,30 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     expect((envoi.body as { outputPaths: string[] }).outputPaths).toEqual(['statut', 'livraison.date']);
   });
 
-  test('🔴 sans champ coché, on enregistre QUAND MÊME, et la liste dit « à finir »', async ({ page }) => {
+  test('🔴 sans champ coché, on enregistre quand même, et RIEN ne le signale comme inachevé', async ({ page }) => {
     /**
-     * 🔴 CE TEST ATTENDAIT L'INVERSE JUSQU'AU 2026-09-15, ET LE CAS QU'IL EXERÇAIT EST CONSERVÉ : un appel
-     * sans champ de sortie, ouvert dans l'éditeur. Seul le verdict change. Exiger le champ ICI refermait le
-     * cycle que l'essai existe pour ouvrir, et surtout faisait PERDRE son travail à qui quittait l'écran sans
-     * avoir réussi son appel. Julien, le jour même : « je peux pas enregistrer pour commencer, quand je vais
-     * revenir je vais devoir repartir de zéro ».
+     * 🔴 CE TEST A CHANGÉ DE VERDICT DEUX FOIS DANS LA MÊME JOURNÉE, ET LE CAS QU'IL EXERCE EST INCHANGÉ
+     * DEPUIS LE DÉBUT : un appel sans champ de sortie, ouvert dans l'éditeur.
      *
-     * ⚠️ LA GARANTIE N'A PAS DISPARU : le serveur refuse de RATTACHER à un agent un appel sans champ de
-     * sortie (409, `tests/http-agent-tools.test.ts`). Tant qu'il n'est rattaché à personne, il n'envoie rien.
+     * Le matin il attendait un REFUS d'enregistrer, ce qui faisait perdre son travail à qui quittait
+     * l'écran (« je peux pas enregistrer pour commencer, quand je vais revenir je vais devoir repartir de
+     * zéro »). On l'a autorisé, avec un badge « à finir ».
+     *
+     * L'après-midi, la migration 0150 a rendu ce badge FAUX : un appel qui POUSSE ne rend rien d'utile et
+     * n'est pas inachevé pour autant. Le badge est parti. Ce qu'un agent lit se décide désormais à son
+     * rattachement, dans son écran à lui.
+     *
+     * ⚠️ Le test GARDE l'assertion d'absence : sans elle, remettre le badge un jour ne réveillerait rien.
      */
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { requetes: [{ ...REQUETE, outputPaths: [] }] });
-    // La liste le DIT avant même d'ouvrir : deux appels affichés pareil feraient croire l'un prêt.
-    await expect(page.getByTestId(`requete-a-finir-${RQ}`)).toBeVisible();
+    await expect(page.getByTestId(`requete-a-finir-${RQ}`)).toHaveCount(0);
     await page.getByTestId(`requete-editer-${RQ}`).click();
     await expect(page.getByTestId('requete-enregistrer')).toBeEnabled();
-    // Et cocher un champ fait disparaître la marque une fois l'appel rechargé : c'est la liste qui la porte.
-    await page.getByTestId('requete-essayer').click();
-    await page.getByTestId('chemin-statut').check();
-    await expect(page.getByTestId('requete-enregistrer')).toBeEnabled();
+    // Et l'onglet dit qu'il ne pose qu'un DÉFAUT, pas ce que l'agent verra.
+    await page.getByTestId('onglet-reponse').click();
+    await expect(page.getByTestId('requete-nouvelle-form').or(page.locator('body')))
+      .toContainText(/DÉFAUT proposé|DEFAULT offered/);
   });
 
   test('🔴 les pastilles se voient AVANT d’avoir déclaré la moindre donnée', async ({ page }) => {

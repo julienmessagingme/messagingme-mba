@@ -158,15 +158,11 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
                 <p className="text-sm font-medium text-ink-800">
                   <span className="mr-2 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px]">{r.methode}</span>
                   {r.label}
-                  {/* 🔴 UN BROUILLON SE DIT. Depuis qu'un appel s'enregistre sans champ de sortie, la liste
-                      contient deux choses différentes : des appels utilisables et des appels en cours. Les
-                      afficher pareil ferait croire à un client qu'un appel est prêt alors qu'aucun agent ne
-                      pourra s'en servir, et le refus n'arriverait qu'au rattachement. */}
-                  {r.outputPaths.length === 0 && (
-                    <span data-testid={`requete-a-finir-${r.id}`} className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
-                      {t('à finir', 'unfinished')}
-                    </span>
-                  )}
+                  {/* ⚠️ IL Y AVAIT ICI UN BADGE « à finir » (2026-09-15, matin), retiré l'après-midi même
+                      avec la migration 0150. Il signalait un appel sans champ de réponse, sur l'idée que tout
+                      appel doit rendre quelque chose. C'est faux : un appel qui POUSSE ne rend rien d'utile
+                      et n'est pas inachevé pour autant. Un appel est complet dès qu'il a un chemin, et ce
+                      qu'un agent en lit se décide maintenant à son rattachement. */}
                 </p>
                 {/* ⚠️ Le nom du système n'est répété que si l'écran montre PLUSIEURS systèmes. Sous la section
                     d'un système déplié, il est déjà écrit deux fois au-dessus. */}
@@ -406,7 +402,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         <button className={ongletCls('url')} data-testid="onglet-url" onClick={() => setOnglet('url')}>{t('Paramètres d’URL', 'URL params')}</button>
         <button className={ongletCls('corps')} data-testid="onglet-corps" onClick={() => setOnglet('corps')}>{t('Corps', 'Body')}</button>
         <button className={ongletCls('entetes')} data-testid="onglet-entetes" onClick={() => setOnglet('entetes')}>{t('En-têtes', 'Headers')}</button>
-        <button className={ongletCls('reponse')} data-testid="onglet-reponse" onClick={() => setOnglet('reponse')}>{t('Réponse', 'Response')}</button>
+        <button className={ongletCls('reponse')} data-testid="onglet-reponse" onClick={() => setOnglet('reponse')}>{t('Réponse (défaut)', 'Response (default)')}</button>
       </div>
 
       {/**
@@ -775,10 +771,17 @@ function OngletReponse({ brouillon, maj, resultat }: {
 
   return (
     <div className="flex flex-col gap-2">
+      {/**
+        * 🔴 CE TEXTE DISAIT « LA SEULE PARTIE QUE L'AGENT VERRA », ET C'EST DEVENU FAUX (migration 0150).
+        * Ce qu'un agent lit se choisit désormais quand on lui DONNE l'appel, agent par agent : cet écran-ci
+        * ne pose plus qu'un DÉFAUT de pré-remplissage. Laisser l'ancienne phrase ferait croire à une
+        * garantie que cet écran n'apporte plus, ce qui est pire qu'une phrase absente sur un sujet de fuite
+        * de données.
+        */}
       <MbaNotice kind="warning">
         {t(
-          'Ce que vous cochez ici est la SEULE partie de la réponse que l’agent verra, et donc la seule qui part chez le fournisseur du modèle. Tout le reste est écarté.',
-          'What you tick here is the ONLY part of the response the agent will see, and therefore the only part sent to the model provider. Everything else is dropped.',
+          'Ce que vous cochez ici est le DÉFAUT proposé quand vous donnerez cet appel à un agent : chacun recoche pour lui, et seuls ses champs à lui partent chez le fournisseur du modèle. Changer ce défaut ne touche aucun agent déjà en service.',
+          'What you tick here is the DEFAULT offered when you give this call to an agent: each one ticks its own, and only its own fields reach the model provider. Changing this default does not affect any agent already in service.',
         )}
       </MbaNotice>
 
