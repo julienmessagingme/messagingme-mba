@@ -1,22 +1,34 @@
 # todo.md : backlog
 
-## 🔴 Un échec du JOURNAL fait échouer une réponse DÉJÀ PARTIE (Inbox et MCP, 2026-09-15)
+## 🟠 Un échec du JOURNAL fait échouer une réponse DÉJÀ PARTIE, et les trois correctifs évidents sont faux (2026-09-15)
 
 `src/inbox/repondre.ts:139` appelle `deps.recordOutbound(...)` **sans `try/catch`**, après que Meta a accepté
-le message et rendu son `messageId`. Un échec d'écriture du journal (pool saturé, hoquet réseau) remonte donc
-en erreur alors que **le message est parti**.
+le message et rendu son `messageId`. Un échec d'écriture du journal remonte donc en erreur alors que le
+message est parti. L'opérateur voit un échec, renvoie, et le client reçoit deux fois le même message.
 
-Ce que voit l'opérateur : un échec. Ce qu'il fait : il renvoie. Ce que reçoit le client : deux fois le même
-message.
+⚠️ **CLASSÉ 🔴 LE MATIN MÊME, PUIS RÉTROGRADÉ APRÈS ANALYSE.** Les trois correctifs qui viennent à l'esprit
+échouent chacun pour une raison différente, et c'est ce qui fait de ce point un LOT et pas un patch :
 
-⚠️ **Le contraste est dans la ligne juste au-dessus** : `takeControl` porte `.catch(() => {})`. Le journal,
-non. C'est le SEUL des quatre chemins d'envoi où l'écriture du journal n'est pas best-effort (campagne :
-`engine.ts:1038-1050` ; scénario et agent : `try/catch` dans `wiring.ts`). Cette asymétrie ressemble à un
-oubli plutôt qu'à une décision, et aucun commentaire ne la justifie.
+1. **Un `try/catch` nu ne corrige rien.** Le fil se rafraîchit depuis la base toutes les 4 secondes. Si le
+   journal a échoué, le message n'y est pas : l'opérateur verrait « envoyé », puis son message s'effacerait
+   sous ses yeux, et il le renverrait. Le doublon chez le client arrive quand même, on a seulement déplacé le
+   symptôme et perdu la trace au passage.
+2. **Rejouer l'écriture n'est pas sûr en l'état.** L'insert du journal sortant
+   (`src/inbox/store.pg.ts:1317`) est un `insert ... values` **sans `on conflict`**, et l'index unique sur
+   `meta_message_id` porte sur `webhook_events` (les ENTRANTS), pas sur `conversation_messages`. Un rejeu
+   ferait apparaître le message deux fois dans le fil.
+3. **L'échec bruyant actuel n'est pas absurde.** Les trois autres chemins sont best-effort, mais ce sont des
+   chemins MACHINE, où personne ne peut réagir. Ici il y a un humain. Le vrai défaut n'est pas le `throw`,
+   c'est que le message d'erreur **ne dit pas que le message est parti**.
 
-**À faire** : entourer l'appel, en journalisant l'échec côté serveur. ⚠️ L'invariant §12.11 dit « un envoi qui
-est parti se journalise toujours » : le rendre best-effort le relâche, donc il faut que l'échec soit VISIBLE
-quelque part (une alerte), pas avalé.
+**La forme juste, le jour où on le prend** : rendre l'insert sortant idempotent (index unique sur
+`meta_message_id` + `on conflict do nothing`, migration sur une table chaude), rejouer une fois, et si ça
+échoue encore rendre un résultat distinct (« parti, non enregistré ») que les DEUX appelants traduisent pour
+leur public : « votre message est parti, ne le renvoyez pas » côté Inbox, et la même chose côté MCP pour que
+l'agent ne réessaie pas.
+
+⚠️ **Ce jour-là, en profiter** : `recordOutboundByWaId` (`src/inbox/store.pg.ts:603`) code `sender_user_id`
+en dur à `null` et n'a pas `redaction_origine`, cf. la dette voisine sur le point d'envoi unique.
 
 ## 🟠 Trois lectures qu'un point d'envoi unique perdrait, à savoir avant de le construire (2026-09-15)
 
