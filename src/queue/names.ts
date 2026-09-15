@@ -125,6 +125,49 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
 export const SEUIL_RAFALE = 20;
 
 /**
+ * SEUIL DE RAFALE **PAR FILE**, quand le défaut ci-dessus ne convient pas. Absente d'ici = `SEUIL_RAFALE`.
+ *
+ * 🔴 CE QUE LE SEUIL UNIQUE RATAIT, ET CE N'EST PAS LE CAS QU'IL VISAIT. `SEUIL_RAFALE` a été calibré sur
+ * l'avalanche d'une campagne (15 000 accusés) : au-delà de vingt en attente, la file se vide à plein régime,
+ * et ce cas-là fonctionne. Mais l'usage ORDINAIRE de `webhook-status` n'est pas une avalanche, c'est un
+ * PAQUET : Meta rend trois accusés par message (`sent`, `delivered`, `read`), donc trois à douze jobs
+ * arrivent en une seconde puis plus rien. Un paquet de douze n'atteint jamais vingt, la rafale ne s'engage
+ * donc JAMAIS, et il se vide à un job toutes les trente secondes, soit six minutes.
+ *
+ * 🔴 MESURÉ EN PRODUCTION LE 2026-09-15, pas déduit : sur 24 h, p50 d'attente à 96,8 s et pire cas à 316,6 s,
+ * pour un traitement de 0,058 s. **Le retard est à 100 % de l'attente.** Et la correction ne s'invente pas
+ * non plus : la rafale du 2026-09-10 à 16:06 a vidé vingt accusés en 1,2 s, soit dix-sept par seconde, avec
+ * des écarts de 47 à 111 ms lisibles tels quels dans `pgboss.job`.
+ *
+ * ⚠️ **LA COMPARAISON EST STRICTE (`readyCount > seuil`), DONC LE NOMBRE EST CELUI D'AVANT LE DÉCLENCHEMENT.**
+ * `2` veut dire « à partir de TROIS en attente », c'est-à-dire exactement les trois accusés d'un seul message.
+ * Écrire `3` en pensant « dès trois » laisserait le cas le plus fréquent du produit hors rafale, sans aucun
+ * symptôme visible. Lu dans la source de pg-boss (`manager.js`, `getReadyCount() > burstWhenReadyExceeds`).
+ *
+ * 🔴 CE QUI REND L'ABAISSEMENT SÛR N'EST PAS LE CHIFFRE, C'EST LA GARDE ANTI-BOUCLE DE pg-boss : la rafale
+ * exige que la DERNIÈRE PRISE AIT RAMENÉ UN JOB (`fullBatch`). Une prise à vide la coupe et rend la cadence
+ * lente. Un seuil bas ne peut donc pas faire tourner la boucle sur une file vide, quel que soit sa valeur :
+ * l'egress au repos est strictement inchangé, ce qui est la seule chose que la cadence de 30 s protégeait.
+ *
+ * ⚠️ ET LA CONCURRENCE NE BOUGE PAS, c'est elle qui protège les entrants. Un accusé à la fois, avec des
+ * requêtes enchaînées l'une après l'autre : cette file occupe au maximum UNE connexion du pool applicatif,
+ * quelle que soit la taille de l'avalanche. Le plafond est dans la construction, pas dans un réglage.
+ *
+ * ⚠️ LES QUATRE AUTRES FILES DE FOND (`analyze-conversation`, `push-analysis`, `hubspot-catchup`,
+ * `optout-poussee`) portent le MÊME piège, à la même cadence de 30 s. Elles restent au défaut délibérément :
+ * personne n'a mesuré leurs paquets, et un réglage posé sans mesure est exactement ce que cette page reproche
+ * au seuil unique. La mécanique est désormais par file, donc les régler sera un nombre, pas un chantier.
+ */
+export const SEUILS_RAFALE: Partial<Record<(typeof BASE_QUEUES)[number], number>> = {
+  'webhook-status': 2,
+};
+
+/** Le seuil de rafale d'une file : le sien s'il existe, le défaut sinon. Point de passage unique. */
+export function seuilRafalePour(nom: string): number {
+  return SEUILS_RAFALE[nom as (typeof BASE_QUEUES)[number]] ?? SEUIL_RAFALE;
+}
+
+/**
  * FILET de sondage, en secondes, QUAND la notification est active.
  *
  * 🔴 LA CONCURRENCE EST UN MULTIPLICATEUR DE SONDAGE, ET PERSONNE NE LE SAVAIT. Dans pg-boss, chaque unité de

@@ -601,9 +601,18 @@ et worker, mm-hubspot api et worker) produisait 663 000 requêtes et 249 Mo d'eg
 table, soit 7,5 Go par mois contre 5 Go inclus. L'egress d'un sondage à vide est du pur overhead.
 
 **Deux mécanismes corrigent la lenteur sans la supprimer** : les files dont la latence se RESSENT sont
-réveillées par LISTEN/NOTIFY (`FILES_NOTIFIEES`), et toute file qui accumule au-delà de `SEUIL_RAFALE` cesse
-d'attendre entre deux prises jusqu'à s'être vidée. ⚠️ La concurrence, elle, ne bouge pas : c'est elle qui
+réveillées par LISTEN/NOTIFY (`FILES_NOTIFIEES`), et toute file qui accumule au-delà de son seuil de rafale
+cesse d'attendre entre deux prises jusqu'à s'être vidée. ⚠️ La concurrence, elle, ne bouge pas : c'est elle qui
 protège les entrants, pas la cadence. Rendre une rafale rapide n'autorise pas à en traiter deux ensemble.
+
+🔴 **LE SEUIL DE RAFALE EST PAR FILE** (`SEUILS_RAFALE`, défaut `SEUIL_RAFALE`), et la distinction qui l'impose
+est celle entre une AVALANCHE et un PAQUET. Le défaut est calibré sur l'avalanche d'une campagne ; l'usage
+ordinaire d'une file d'accusés est un paquet de trois à douze, qui n'atteint jamais ce défaut et se vide donc
+au rythme de l'horloge. ⚠️ La comparaison de pg-boss est STRICTE (`readyCount > seuil`) : le nombre écrit est
+celui d'AVANT le déclenchement, et un seuil de `3` posé en pensant « dès trois » laisserait hors rafale le cas
+le plus fréquent, sans aucun symptôme. ⚠️ Ce qui rend un seuil bas SÛR n'est pas sa valeur, c'est la garde
+anti-boucle de pg-boss : la rafale exige que la dernière prise ait ramené un job, donc une file vide retombe
+toujours sur sa cadence lente et l'egress au repos ne bouge pas.
 
 🔴 **LA CONCURRENCE MULTIPLIE LE SONDAGE, et le tableau ci-dessus ne se lit pas sans elle.** Chaque unité de
 concurrence est un worker pg-boss avec SA PROPRE boucle : une file sonde `concurrence / cadence` fois par
@@ -665,6 +674,17 @@ Tous en `unref()`, chacun avec sa variable de cadence (les valeurs sont dans `sr
 PROGRAMMÉES enfile puis marque : un échec d'enfilement laisse la campagne `scheduled`, reprise au tour
 suivant. Celui des REPRISES marque d'abord, parce que c'est l'écriture qui RÉCLAME la ligne, sinon deux
 balayages enfileraient deux runs. On échange un double envoi possible contre un retard d'une minute.
+
+🔴 **LES DÉPARTS SONT LISSÉS, et ce n'est pas une optimisation de latence.** Toutes ces tâches sont
+programmées au démarrage, donc elles partent de t=0, et leurs cadences sont des multiples les unes des autres :
+elles se REJOIGNENT périodiquement, et une minute de rendez-vous demande deux fois plus de connexions qu'une
+minute ordinaire sur un pool qui n'en a que huit. `registreDeTaches` décale donc le premier tour de chaque
+tâche selon son RANG d'enregistrement (`decalageDeLissage`, déterministe, borné par la minute ET par la
+cadence de la tâche, donc aucune ne tourne moins souvent qu'on l'a demandée). ⚠️ Ce qu'on protège est un
+INDICATEUR, pas une latence : l'attente sur pool saturé est le seul signal de saturation du produit, et un
+signal allumé en permanence par une cause structurelle ne signale plus rien (même leçon que la migration
+0111). ⚠️ Le décalage ne lance AUCUNE passe : la première arrive à `décalage + cadence`, le registre ne
+déclenchant toujours pas de passe implicite.
 
 ### Deux pools Postgres
 

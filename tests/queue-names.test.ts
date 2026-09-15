@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE, SONDAGE_FILET_NOTIFIE } from '../src/queue/names';
+import { BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE, SEUILS_RAFALE, seuilRafalePour, SONDAGE_FILET_NOTIFIE } from '../src/queue/names';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -218,10 +218,37 @@ describe('cadence de polling par file', () => {
     // le `toMatch` sans rien brancher. Un test de câblage qui survit à la neutralisation du câblage ne
     // prouve rien.
     expect(wrapper, 'le seuil de rafale doit être une propriété DIRECTE des options de boss.work')
-      .toMatch(/^\s{8}burstWhenReadyExceeds: SEUIL_RAFALE,$/m);
+      .toMatch(/^\s{8}burstWhenReadyExceeds: seuilRafalePour\(name\),$/m);
     // Un seuil qui vaut zéro ferait tourner la file en continu même à vide : c'est l'egress que la cadence
     // par file avait justement supprimé.
     expect(SEUIL_RAFALE).toBeGreaterThan(0);
+  });
+
+  it('🔴 le seuil de rafale est PAR FILE, et `webhook-status` déclenche dès TROIS accusés', () => {
+    // 🔴 L'OFF-BY-ONE EST LE SUJET DE CE TEST. pg-boss compare `readyCount > burstWhenReadyExceeds` (lu dans
+    // sa source, `manager.js`), donc la valeur est celle d'AVANT le déclenchement. Meta rend exactement trois
+    // accusés par message : un seuil écrit `3` en croyant dire « dès trois » laisserait le cas le plus
+    // fréquent du produit hors rafale, à un accusé toutes les trente secondes, sans aucun symptôme visible.
+    expect(seuilRafalePour('webhook-status')).toBe(2);
+    const paquetDUnMessage = 3;
+    expect(paquetDUnMessage > seuilRafalePour('webhook-status'), 'les 3 accusés d’un message doivent rafaler').toBe(true);
+  });
+
+  it('⚠️ les autres files gardent le défaut, y compris celles qu’on n’a pas mesurées', () => {
+    // La mécanique devient par file ; le RÉGLAGE des quatre autres files de fond ne bouge pas, parce que
+    // personne n'a mesuré leurs paquets. Poser un seuil sans mesure serait refaire l'erreur qu'on corrige.
+    for (const file of ['webhook', 'agent-turn', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'optout-poussee']) {
+      expect(seuilRafalePour(file), `${file} doit rester au défaut`).toBe(SEUIL_RAFALE);
+    }
+    // Une file inconnue retombe sur le défaut plutôt que sur `undefined`, qui désactiverait la rafale en
+    // silence : `burstWhenReadyExceeds: undefined` est accepté par pg-boss et ne rafale JAMAIS.
+    expect(seuilRafalePour('file-hypothetique')).toBe(SEUIL_RAFALE);
+  });
+
+  it('🔴 aucun seuil par file ne vaut zéro : ce serait la boucle à vide que la cadence avait fermée', () => {
+    for (const [file, seuil] of Object.entries(SEUILS_RAFALE)) {
+      expect(seuil, `${file} : un seuil nul ferait rafaler une file vide`).toBeGreaterThan(0);
+    }
   });
 
   it('🔴 la rafale ne touche PAS la concurrence : c’est elle qui protège les entrants', () => {

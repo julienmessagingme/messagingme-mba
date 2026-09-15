@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import type { ConstructorOptions, MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
-import { dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, SEUIL_RAFALE } from './names';
+import { dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, seuilRafalePour } from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -263,9 +263,12 @@ export class PgBossQueue implements Queue {
         // ⚠️ Le facteur `concurrence` a longtemps manqué à cette phrase, et il n'est pas cosmétique : c'est
         // lui qui a fait sonder `agent-turn` six fois par seconde (cf. `SONDAGE_FILET_NOTIFIE` dans
         // `names.ts`). Chaque unité de concurrence est un worker avec sa propre boucle. La cadence lente reste juste au REPOS et devient absurde sous retard. Détail et
-        // chiffres dans `names.ts` (`SEUIL_RAFALE`). S'applique à toutes les files : celles qui n'ont jamais
-        // vingt jobs en attente ne la déclenchent simplement jamais.
-        burstWhenReadyExceeds: SEUIL_RAFALE,
+        // chiffres dans `names.ts` (`SEUIL_RAFALE`, `SEUILS_RAFALE`).
+        // ⚠️ LE SEUIL EST PAR FILE DEPUIS LE 2026-09-15, et le défaut ne convient pas partout : calibré sur
+        // l'avalanche d'une campagne, il laissait les PAQUETS ordinaires (trois accusés par message) hors
+        // rafale, donc à un job toutes les trente secondes. Une file sans entrée dans `SEUILS_RAFALE` garde
+        // le défaut, et une file qui n'atteint jamais son seuil ne déclenche simplement jamais la rafale.
+        burstWhenReadyExceeds: seuilRafalePour(name),
         ...workConcurrencyOptions(opts ?? {}),
       },
       async (jobs) => {

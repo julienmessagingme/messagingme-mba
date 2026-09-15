@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { registreDeTaches } from '../src/worker/taches';
+import { registreDeTaches, decalageDeLissage } from '../src/worker/taches';
 
 afterEach(() => vi.useRealTimers());
 
@@ -28,13 +28,79 @@ describe('registre des tâches périodiques', () => {
     registre.programmer('a', 1000, () => { compte.a += 1; });
     registre.programmer('b', 1000, () => { compte.b += 1; });
     registre.programmer('c', 1000, () => { compte.c += 1; });
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(compte).toEqual({ a: 1, b: 1, c: 1 });
+    // ⚠️ DEUX SECONDES, ET PAS UNE : depuis le lissage (2026-09-15), `b` et `c` démarrent décalées, donc
+    // leur première passe tombe à `décalage + 1000`. Le cas que ce test exerce est « arreterTout arrête TOUT,
+    // y compris celle qu'on aurait oubliée » : il faut donc que les trois aient VRAIMENT démarré avant
+    // d'arrêter, sinon on prouverait seulement qu'une tâche jamais partie ne part pas.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(compte.a, 'a doit avoir tourné').toBeGreaterThanOrEqual(1);
+    expect(compte.b, 'b doit avoir tourné').toBeGreaterThanOrEqual(1);
+    expect(compte.c, 'c doit avoir tourné').toBeGreaterThanOrEqual(1);
+    const gele = { ...compte };
 
     registre.arreterTout();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(compte).toEqual({ a: 1, b: 1, c: 1 }); // plus rien ne part
+    expect(compte).toEqual(gele); // plus rien ne part
     expect(registre.noms()).toEqual([]);
+  });
+
+  it('🔴 arreterTout() arrête aussi une tâche ENCORE DANS SON DÉCALAGE, jamais démarrée', async () => {
+    // 🔴 LE PIÈGE QUE LE LISSAGE A OUVERT, et il est invisible du test précédent. Une tâche en attente de son
+    // décalage n'a pas encore de minuterie : n'arrêter que les minuteries la laisserait DÉMARRER après la
+    // fermeture, donc une passe qui part pendant qu'on ferme le pool. C'est exactement l'erreur que ce
+    // registre existe pour rendre impossible, réintroduite par la petite porte.
+    vi.useFakeTimers();
+    const registre = registreDeTaches();
+    let partie = 0;
+    registre.programmer('premiere', 60_000, () => {});   // rang 0 : décalage nul
+    registre.programmer('decalee', 60_000, () => { partie += 1; }); // rang 1 : décalage non nul
+
+    // On arrête AVANT que le décalage soit écoulé : la minuterie de `decalee` n'existe pas encore.
+    registre.arreterTout();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(partie, 'une tâche arrêtée pendant son décalage ne doit JAMAIS démarrer').toBe(0);
+    expect(registre.noms()).toEqual([]);
+  });
+
+  it('🔴 une tâche dans son décalage est DÉJÀ inscrite : noms() la voit, un doublon est refusé', () => {
+    // Sans l'inscription immédiate, `noms()` raterait la tâche pendant sa première minute (diagnostic faux),
+    // et surtout le refus de doublon laisserait passer un second enregistrement du même nom, dont la
+    // minuterie deviendrait impossible à arrêter.
+    vi.useFakeTimers();
+    const registre = registreDeTaches();
+    registre.programmer('premiere', 60_000, () => {});
+    registre.programmer('decalee', 60_000, () => {});
+    expect(registre.noms()).toEqual(['premiere', 'decalee']);
+    expect(() => registre.programmer('decalee', 60_000, () => {})).toThrow(/déjà programmée/);
+    registre.arreterTout();
+  });
+
+  it('🔴 le lissage étale les départs, sinon les tâches se rejoignent toutes les 5 minutes', () => {
+    // Mesuré en production le 2026-09-15 : une minute ordinaire coûte 13 requêtes et zéro attente, une minute
+    // de rendez-vous 26 requêtes et 5 à 10 attentes sur un pool de 8. Les 23 tâches partent toutes de t=0 et
+    // leurs cadences sont des multiples les unes des autres, donc elles se retrouvent périodiquement.
+    const decalages = Array.from({ length: 23 }, (_, i) => decalageDeLissage(i, 60_000));
+    expect(new Set(decalages).size, 'les 23 tâches doivent avoir 23 départs distincts').toBe(23);
+    // Et aucune ne retombe sur le battement de coeur (20 s) : c'est ce que le pas non rond achète.
+    for (const d of decalages.slice(1)) expect(d % 20_000, 'aucun départ en face du battement de coeur').not.toBe(0);
+  });
+
+  it('🔴 le décalage ne DÉPASSE jamais l’intervalle : une tâche ne peut pas tourner moins souvent', () => {
+    // La seule façon dont ce lissage pourrait faire un dégât réel. Un décalage supérieur à l'intervalle
+    // retarderait la première passe au-delà d'un tour complet, ce qui n'est plus un lissage mais une panne
+    // de cadence. Éprouvé sur les cadences réelles du worker, de la plus courte à la plus longue.
+    for (const interval of [20_000, 60_000, 5 * 60_000, 15 * 60_000, 20 * 60_000, 60 * 60_000, 6 * 60 * 60_000]) {
+      for (let i = 0; i < 40; i += 1) {
+        expect(decalageDeLissage(i, interval), `rang ${i}, cadence ${interval}`).toBeLessThan(interval);
+      }
+    }
+    // Et il reste borné à la minute : décaler un balayage de 6 h de plusieurs heures serait un changement de
+    // comportement, pas un lissage.
+    expect(decalageDeLissage(39, 6 * 60 * 60_000)).toBeLessThan(60_000);
+  });
+
+  it('⚠️ la première tâche n’est PAS décalée : le cas le plus courant garde le comportement d’avant', () => {
+    expect(decalageDeLissage(0, 60_000)).toBe(0);
   });
 
   it('les noms sont rendus dans l’ordre de programmation (diagnostic)', () => {
