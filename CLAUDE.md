@@ -79,8 +79,34 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0149**, le 2026-09-15 au matin (`conversations.release_mba_apres_message` : le fil
-attend l'accusé de NOTRE dernier envoi avant de repartir chez l'agent de Meta). **Prochaine libre = 0150.**
+**Dernière appliquée : 0150**, le 2026-09-15 après-midi (`agent_tools.nature` : un outil dit si l'agent
+POUSSE de l'info ou s'il INTÈGRE la réponse). **Prochaine libre = 0151.** Relue en base juste après `migrate` :
+`schema_migrations` rend bien 0150 en tête, la colonne est `text NOT NULL DEFAULT 'integre'`, le CHECK borne
+à `pousse`/`integre`, et les 4 outils existants sont tous en `integre`, donc aucun comportement n'a bougé.
+
+🔴 **ELLE RÉPARE UNE QUESTION QU'ON NE POSAIT PAS.** Tout appel de connecteur était supposé RENDRE quelque
+chose : la déclaration exigeait des champs de réponse et le résolveur refusait un appel sans. Or la moitié des
+appels qu'un client veut brancher ne rendent rien d'utile (poser une étiquette, créer une fiche, pousser un
+opt-out). Julien, bloqué sur un `POST /subscriber/add-tag` : « la question c'est qu'est-ce que cet appel
+fait ? pousser de l'info, ou avoir un retour de payload qui enrichirait la discussion ».
+
+🔴 **ELLE NE SE DÉDUIT PAS DE LA MÉTHODE HTTP**, d'où une colonne et pas un calcul : un `POST` peut être une
+RECHERCHE (l'API de UChat en a). Dériver du verbe rangerait ces appels en « pousse » et rendrait leur réponse
+invisible à l'agent, sans aucune erreur.
+
+🔴 **ET ELLE DÉPLACE LE FILTRE DE SORTIE DE L'APPEL VERS L'OUTIL, ce qui est le vrai changement.** Un appel est
+PARTAGÉ entre agents ; ce que CET agent a le droit de lire ne l'est pas. Tant que `output_paths` vivait sur
+`connector_requests`, restreindre pour un agent restreignait pour tous. La requête garde la sienne comme
+DÉFAUT de pré-remplissage, et ne gouverne plus rien à l'exécution.
+
+⚠️ **`agent_tools.output_paths` EXISTAIT DÉJÀ (0086) ET ÉTAIT DÉLIBÉRÉMENT LAISSÉE VIDE**, avec une
+justification (« la REQUÊTE les porte, les remplir en double créerait deux vérités ») juste pour l'ancienne
+conception. Deux vérités existaient pourtant : `connecteurSimule` bouclait DÉJÀ sur cette colonne vide et
+rendait zéro champ, alors que le bac à sable promet « exactement ce que l'agent recevra ». **Il mentait depuis
+le 2026-09-02** ; remplir la colonne le répare, et deux tests empêchent la promesse de redevenir fausse.
+
+Avant elle : **0149**, le 2026-09-15 au matin (`conversations.release_mba_apres_message` : le fil
+attend l'accusé de NOTRE dernier envoi avant de repartir chez l'agent de Meta).
 Relue en base juste après `migrate`, pas en écrivant cette ligne : `schema_migrations` rend bien 0149 en tête,
 la colonne est `text` et nullable dans `information_schema`, et `pg_indexes` n'en porte AUCUN, comme prévu.
 
