@@ -1,5 +1,43 @@
 # todo.md : backlog
 
+## 🟠 Le rapport d'architecture du 2026-09-14 : huit candidats restants sur onze (2026-09-15)
+
+Une revue de PROFONDEUR (« quel levier une interface donne-t-elle par unité de complexité à apprendre ? »),
+rendue en HTML dans le scratchpad de session, donc NON DURABLE : `architecture-review-20260914-210220.html`.
+Ce qui compte est recopié ici, parce qu'un fichier de session disparaît.
+
+**Trois sont faits et déployés** (registre de montage, garde requise, consentement requis, plus le rejeu de
+prise du fil extrait), racontés dans `docs/JOURNAL-TECHNIQUE.md`.
+
+**Les huit restants**, du plus fort au plus spéculatif :
+
+1. **`buildWorkflowRuntime` reste un câblage ET le domicile de onze comportements.** 906 lignes, deux
+   appelants, zéro test ne l'importe, alors que 17 fichiers de tests montent l'exécuteur qu'il câble. Le rejeu
+   de prise du fil en est sorti le 2026-09-15 et établit le patron. Les trois suivants à sortir, dans cet
+   ordre : le cache de corps de modèle (il décide CE QU'ON ENVOIE), `buildEvalContext` (il alimente les
+   conditions d'un scénario), `sendEmail`. Les autres ne font que composer.
+2. **Le point d'envoi unique**, rétrogradé après l'audit du coût des règles : il doit se placer SOUS les
+   règles (là où `metaFactory.clientForTenant` réunit déjà les quatre chemins) et porter seulement le JOURNAL
+   et la frontière d'import, pas les sept règles. Cf. les deux dettes voisines.
+3. **~52 interfaces de store pour 4 seconds adaptateurs**, compensées par 146 `as unknown as` dans 58 fichiers
+   de tests. Ne pas supprimer les 52 : cesser d'en créer, et en compléter cinq (les plus moqués).
+4. **Le barrel `web/lib/api.ts`** : l'implémentation a été découpée en 9 modules (324 symboles) mais
+   **92 fichiers importent encore le barrel**, donc l'interface vue par les appelants n'a pas bougé d'un
+   symbole. À faire au fil des touches, écran par écran ; le barrel se vide seul.
+5. **Le câblage MCP recopie 11 des 15 clés du bloc Inbox** dans `src/index.ts`, à 1600 lignes d'écart, dans le
+   fichier le plus modifié du dépôt. Le module partagé (`repondreDansLaFenetre`) est bien fait ; c'est le
+   CÂBLAGE qui est dupliqué. ⚠️ L'asymétrie est VOULUE (`estDesabonne` branchée sur MCP, absente côté console)
+   et portée par un commentaire de huit lignes plutôt que par un type.
+6. **158 dépendances optionnelles sur 388 membres** dans les 49 contrats de routes, dont ~10 seulement sont
+   réellement conditionnelles en production. Les autres le sont pour que 73 câblages de test puissent en
+   omettre : le coût est payé en production, par tous les lecteurs. À découper par domaine.
+7. **385 flèches passe-plat** dans les trois câblages (288 dans `index.ts`, 86 dans `worker.ts`, 11 dans
+   `wiring.ts`). Une flèche à deux paramètres est assignable à un contrat qui en déclare trois. À tenter sur
+   UN domaine avant de généraliser.
+8. **`web/app/inbox/page.tsx`**, 2110 lignes, 72 `useState`/`useEffect`. ⚠️ EXPLICITEMENT REFUSÉ par les trois
+   audits externes et par ce rapport : personne n'a su nommer quelle interface devient plus petite pour qui.
+   Ne pas le rouvrir sans cette réponse.
+
 ## 🟠 Un échec du JOURNAL fait échouer une réponse DÉJÀ PARTIE, et les trois correctifs évidents sont faux (2026-09-15)
 
 `src/inbox/repondre.ts:139` appelle `deps.recordOutbound(...)` **sans `try/catch`**, après que Meta a accepté

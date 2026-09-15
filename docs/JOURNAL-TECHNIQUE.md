@@ -5619,3 +5619,80 @@ qu'on a sous les yeux.**
 - TLS pooler en vérif complète (pinner la CA Supabase).
 - Unicité email globale (décision produit).
 - Pagination contacts UI, quality rating alimenté par webhook, tests DLQ/CI intégration.
+
+---
+
+## Cinq lots contre une même cause, livrés et déployés le 2026-09-14 et le 2026-09-15
+
+Point d'entrée : le rapport d'architecture du 2026-09-14 (onze candidats, produits par une revue de
+profondeur : « quel levier une interface donne-t-elle par unité de complexité à apprendre ? »). Trois lots en
+sont sortis sous un plan commun, `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md`, puis
+deux autres de performance.
+
+**La cause, nommée une fois pour toutes.** Le dépôt écrivait depuis des semaines « une capacité câblée sur un
+consommateur sur trois » sans nommer la cause. C'est une FORME D'INTERFACE : quand une règle qui doit tenir
+partout est portée par une dépendance déclarée OPTIONNELLE, un câblage qui l'oublie compile, passe les tests,
+se déploie, et la règle ne s'applique pas sur ce chemin. Rien ne le signale parce qu'il n'y a rien à signaler,
+le programme est valide.
+
+**Lot 1, `cb63450`** : le montage des routes passe par un registre (`modulesDeRoutes`), 48 entrées déclarant
+chacune leur `ClasseDAcces` (six classes, pas deux). La couverture du garde-fou d'authentification se DÉRIVE
+au lieu d'être une seconde liste de 40 noms recopiée. Essai : la table de routes de Fastify, capturée avant et
+après, identique au caractère (220 routes). Trouvé en chemin : `hubspotEvents` était déclaré autorisé par un
+code d'URL alors qu'il l'est par une SIGNATURE, et son adresse ne porte aucun code.
+
+🔴 **Et le registre a passé son premier essai réel sans son auteur, en douze heures.** Une autre session a
+ajouté deux modules de routes la nuit suivante, sans avoir lu le plan : les deux ont dû déclarer leur classe,
+sont entrés sous le garde-fou tout seuls, et ont ajouté leurs deux cas de test sans que personne y pense.
+
+**Lot 2, `0fd9b4e`** : la garde d'authentification devient REQUISE dans 46 modules, sous un seul nom. Le motif
+`garde ? { preHandler: garde } : {}` (45 endroits) disparaît, et `gardeEtendue`, point de passage partagé de
+sept modules, cesse d'accepter `undefined` en rendant des options vides. Quand `deps.auth` manque, `buildServer`
+fabrique une garde qui REFUSE au lieu de `undefined`.
+
+🔴 **Un type qui EXIGE une dépendance ne dit pas qu'elle est POSÉE**, et ce lot l'a prouvé sur lui-même : des
+options de route écrites `{ ...garde, bodyLimit }` au lieu de `{ ...opts, bodyLimit }` répandaient la garde au
+lieu de l'objet qui la porte. La route partait sans `preHandler` et rendait 403 sur un geste légitime. Le
+compilateur ne voyait rien ; un test qui inspecte ce que Fastify a RÉELLEMENT enregistré l'a vu.
+
+**Lot 3, `150dc25`** : `estDesabonne` devient requise dans les quatre interfaces qui la consomment. Trois
+fixtures mentaient au compilateur (`as never`, `Record<string, unknown>`) et ont échoué au RUNTIME, sur
+`estDesabonne is not a function` : c'est la preuve, obtenue sans la chercher, que la garde s'exécute désormais
+là où elle était sautée. ⚠️ Son essai en production reste DÛ (cf. `todo.md`).
+
+**Lot 4, `fc6fe80`** : le rejeu de prise du fil sort de la fermeture de `buildWorkflowRuntime` et rejoint le
+geste qu'il rejoue (`src/inbox/controle-du-fil.ts`). Ses quatre règles (un rejeu et jamais deux, la
+classification du refus, le `Retry-After`, son plafond) étaient invérifiables. Le câblage ne détient plus que
+la version qui rejoue, donc « il appelle bien le module extrait » est vrai par construction.
+
+🔴 **Une mutation qui ne casse rien ne prouve pas que le test est bon, elle prouve que la mutation était
+inerte.** Porter la boucle de 2 à 3 tentatives ne cassait aucun test : `derniere` codait en dur
+`tentative === 1`, donc la troisième n'existait pas. Deux constantes qui devaient rester cohérentes, dans le
+même fichier, remplacées par `REJEU_TENTATIVES`.
+
+**Lots 5 et 6, `3dd9650` et `486f814`** : le numéro Meta de l'espace, son WABA et la note de qualité passent
+d'une lecture PAR DESTINATAIRE à une par process. Sur le chemin scénario, jusqu'à trois requêtes de moins par
+message, à comparer aux ~7 que coûte déjà un message sur un pool de 8 connexions.
+
+🔴 **On ne met en cache que les réponses POSITIVES, et c'est ce qui autorise à mettre en cache une DÉCISION.**
+`cache-court.ts` prévient qu'il ne convient pas à une décision. L'asymétrie lève l'objection : une réponse
+positive ne devient fausse que si le numéro change d'espace (et l'envoi échouerait alors VISIBLEMENT chez
+Meta), tandis qu'une réponse nulle devient fausse à l'instant où un client branche son premier numéro, et le
+cache étant par process, aucune invalidation ne traverse l'API et le worker.
+
+🔴 **Mettre en cache une valeur qui commande un ARRÊT demande une mesure, pas une intuition.** La note de
+qualité met la campagne en pause au ROUGE. Ce qui l'autorise : la colonne n'est pas écrite en temps réel, elle
+est rafraîchie par le balayage `statut-numeros` toutes les VINGT MINUTES. Un test épingle désormais l'ÉCART
+entre les deux constantes, invariant qui ne vit dans aucun des deux fichiers.
+
+**Ce que l'audit du coût des règles d'envoi a établi, et qui a changé la conception du candidat 6.** Un point
+d'envoi unique NAÏF, appliquant les sept règles par message, aurait ajouté jusqu'à **15 000 requêtes et 10 000
+appels Graph** sur une campagne de 5 000, parce que la plupart de ces règles sont délibérément HISSÉES hors de
+la boucle (filtre pur sur une colonne jointe, requête groupée, `Map` en mémoire, mémoïsation par liste
+d'effets). Le sas doit donc se placer SOUS les règles, là où `metaFactory.clientForTenant` réunit déjà les
+quatre chemins, et porter ce qui reste : le journal et la frontière d'import.
+
+⚠️ **Le 502 de NPM après un `up --build` s'est manifesté deux fois sur cinq déploiements**, et son mécanisme
+est devenu clair : seuls les conteneurs RECRÉÉS perdent leur IP. `mba.messagingme.app/` répondait 200 pendant
+que tout le reste était à 502, parce que `mba-web` n'avait pas été recréé. Il touche le webhook, donc les
+messages entrants.
