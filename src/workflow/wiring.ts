@@ -46,8 +46,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // La MÊME décision que sur le chemin des campagnes : un template tracé exige ses composants de bouton, quel
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
-import { creerRendreLeFil, creerPrendreLeFil } from '../inbox/controle-du-fil';
-import { MetaApiError } from '../meta/errors';
+import { creerRendreLeFil, creerPrendreLeFil, creerPrendreLeFilAvecUnRejeu } from '../inbox/controle-du-fil';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -274,26 +273,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * les entrants vers son agent. C'est le motif « une capacité câblée sur un consommateur sur deux », déjà
    * payé plusieurs fois dans ce dépôt.
    */
-  const takeThreadChezMeta = creerPrendreLeFil({
-    numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
-    clientMba: (t) => metaFactory.mbaClientForTenant(t),
-  });
-
   /**
-   * Prendre le fil, avec UN rejeu sur un échec TRANSITOIRE. Rend `false` quand Meta n'a pas cédé.
-   *
-   * 🔴 RELEVÉ EN REVUE LE 2026-09-14, ET C'EST UN DÉFAUT DE RAYON DE SOUFFLE, PAS DU CODE ÉCRIT. Ce geste
-   * existait pour UN appel à la fois (le bouton « Reprendre la main » de l'Inbox, actionné par un humain).
-   * En le câblant sur `reclaimControl`, il devient UN APPEL PAR DESTINATAIRE de campagne. Or le client MBA
-   * ne rejoue RIEN : `appel()` lève sur tout `!res.ok`, 429 compris. Sans ce rejeu, un plafond de débit
-   * atteint au milieu d'une campagne de masse ferait échouer le scénario de TOUS les destinataires
-   * suivants, pour une raison purement transitoire et sans qu'ils y soient pour rien.
-   *
-   * ⚠️ UN SEUL REJEU, JAMAIS UNE BOUCLE. `take` est un privilège que Meta réserve au « configured escalation
-   * partner » : un refus DÉFINITIF (`retryable` faux) est un cas normal, et insister dessus n'ajouterait que
-   * des appels inutiles à une campagne déjà en cours. C'est `classify` (`src/meta/errors.ts`) qui tranche,
-   * la même règle que pour les envois, importée plutôt que réécrite.
+   * ⚠️ LA PRISE NUE N'EST PLUS DANS CETTE PORTÉE, et c'est délibéré (2026-09-15). Elle n'avait qu'un seul
+   * usage ici, à l'intérieur du rejeu ; la garder nommée aurait laissé de quoi l'appeler sans rejeu par
+   * inadvertance. Le câblage ne détient donc que la version qui rejoue, ce qui rend « ce câblage appelle bien
+   * le module extrait » vrai PAR CONSTRUCTION, sans test qui relise ce fichier.
    */
+
   /**
    * RELÂCHE le fil chez Meta MAINTENANT, et n'écrit `mba` chez nous que si Meta n'a pas protesté.
    *
@@ -328,26 +314,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     await rendreLeFilMaintenant(cible.tenantId, cible.waId);
   };
 
-  const prendreLeFilAvecUnRejeu = async (tenant: string, waId: string): Promise<boolean> => {
-    for (let tentative = 0; tentative < 2; tentative += 1) {
-      try {
-        await takeThreadChezMeta(tenant, waId);
-        return true;
-      } catch (err) {
-        const derniere = tentative === 1;
-        const rejouable = err instanceof MetaApiError && err.retryable;
-        if (!rejouable || derniere) {
-          // eslint-disable-next-line no-console
-          console.warn(`reclaimControl: Meta a REFUSÉ de nous rendre le fil pour ${waId} (${tenant}) après ${tentative + 1} tentative(s), le détenteur ne change pas :`, err instanceof Error ? err.message : err);
-          return false;
-        }
-        // Le `Retry-After` de Meta quand il le donne, sinon une demi-seconde : on est dans la boucle d'envoi
-        // d'une campagne, une attente longue retarderait tous les destinataires suivants.
-        await new Promise((r) => setTimeout(r, Math.min(err.retryAfterMs ?? 500, 2000)));
-      }
-    }
-    return false;
-  };
+  const prendreLeFilAvecUnRejeu = creerPrendreLeFilAvecUnRejeu({
+    prendre: creerPrendreLeFil({
+      numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
+      clientMba: (t) => metaFactory.mbaClientForTenant(t),
+    }),
+    attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+  });
 
   /**
    * REPRENDRE LE FIL POUR L'APP, geste partagé par tout ce qui démarre DÉLIBÉRÉMENT une prise de parole.

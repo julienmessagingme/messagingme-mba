@@ -121,7 +121,11 @@ describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', 
 
   it('appelle bien Meta', () => {
     expect(bloc).toContain('prendreLeFilAvecUnRejeu');
-    expect(aide).toContain('takeThreadChezMeta');
+    // ⚠️ Le REJEU a été extrait dans `src/inbox/controle-du-fil.ts` le 2026-09-15 : le câblage ne nomme donc
+    // plus une prise intermédiaire, il passe la VRAIE prise du fil au module qui rejoue. Cette garde suit
+    // l'indirection au lieu d'être affaiblie, sinon elle ne vérifierait plus rien tout en restant verte.
+    expect(aide).toContain('creerPrendreLeFilAvecUnRejeu');
+    expect(aide, 'le rejeu doit recevoir la VRAIE prise du fil chez Meta').toContain('creerPrendreLeFil({');
   });
 
   it('🔴 appelle Meta AVANT d’écrire notre colonne', () => {
@@ -142,12 +146,16 @@ describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', 
     expect(wiring).toContain('reclaimControl: reprendreLeFilPourLApp,');
   });
 
-  it('🔴 rejoue UNE fois un échec transitoire, et jamais un refus définitif', () => {
-    // Ce geste est passé d'un appel par clic d'opérateur à UN PAR DESTINATAIRE de campagne, sur un client
-    // MBA qui ne rejoue rien. Sans rejeu, un 429 de Meta au milieu d'une campagne ferait échouer le
-    // scénario de tous les destinataires suivants ; avec une boucle, un refus définitif (Meta réserve
-    // `take` au « configured escalation partner ») ajouterait N appels inutiles.
-    expect(aide).toContain('err.retryable');
-    expect(aide).toContain('tentative < 2');
-  });
+  /**
+   * ⚠️ UN CAS A ÉTÉ RETIRÉ ICI, ET SON REMPLAÇANT EST NOMMÉ (lot du 2026-09-15).
+   *
+   * Il s'appelait « rejoue UNE fois un échec transitoire, et jamais un refus définitif » et il cherchait les
+   * chaînes `err.retryable` et `tentative < 2` dans le TEXTE de `wiring.ts`. Il prouvait donc qu'un motif
+   * était ÉCRIT : ni qu'on rejoue une fois, ni qu'on ne rejoue pas un refus définitif, ni combien on attend.
+   *
+   * Le rejeu vit désormais dans `src/inbox/controle-du-fil.ts`, avec ses vraies dépendances injectées, et
+   * `tests/controle-du-fil-cablage.test.ts` l'EXERCE : un seul appel du premier coup, un rejeu qui réussit au
+   * second, deux appels au maximum, aucun rejeu sur un refus définitif, l'attente qui vaut le `Retry-After`
+   * de Meta plafonné à 2 s, et le contrat « aucun numéro connecté » qui était implicite.
+   */
 });

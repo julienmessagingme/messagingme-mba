@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { creerPrendreLeFilAvecUnRejeu, REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS } from '../src/inbox/controle-du-fil';
+import { MetaApiError } from '../src/meta/errors';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runControlSweep } from '../src/inbox/control-sweep';
@@ -115,5 +117,94 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
     const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
     const ligne = worker.split('\n').find((l) => l.includes('releaseToMba:')) ?? '';
     expect(ligne).toContain('releaseThreadChezMeta(tenant, waId)');
+  });
+});
+
+/**
+ * LE REJEU DE PRISE DU FIL, ENFIN EXERÇABLE (lot du 2026-09-15, plan `2026-09-15-rejeu-prise-du-fil.md`).
+ *
+ * 🔴 CES CAS REMPLACENT UN GREP, et c'est tout l'intérêt du lot. Le rejeu vivait dans une fermeture de
+ * `buildWorkflowRuntime` : il n'avait aucune interface, donc personne ne pouvait l'appeler, donc ses quatre
+ * règles étaient gardées par `tests/scenario-fil-non-repris.test.ts` qui cherchait les chaînes
+ * `err.retryable` et `tentative < 2` dans le TEXTE de `wiring.ts`. Ce grep prouvait qu'un motif était écrit ;
+ * il ne prouvait ni qu'on rejoue UNE fois, ni qu'on ne rejoue pas un refus définitif, ni combien on attend.
+ */
+describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
+  const rejouable = (retryAfterMs?: number) => new MetaApiError(429, null, retryAfterMs);
+  const definitif = () => new MetaApiError(400, null);
+
+  /** Un banc qui compte les appels et les attentes, sans jamais dormir. */
+  function banc(resultats: Array<'ok' | Error>) {
+    const attentes: number[] = [];
+    let appels = 0;
+    const prendre = creerPrendreLeFilAvecUnRejeu({
+      prendre: async () => {
+        const r = resultats[appels] ?? 'ok';
+        appels += 1;
+        if (r !== 'ok') throw r;
+        return true;
+      },
+      attendre: async (ms) => { attentes.push(ms); },
+    });
+    return { prendre, attentes, appels: () => appels };
+  }
+
+  it('du premier coup : un seul appel, aucune attente', async () => {
+    const b = banc(['ok']);
+    expect(await b.prendre('t1', '33600000001')).toBe(true);
+    expect(b.appels()).toBe(1);
+    expect(b.attentes).toEqual([]);
+  });
+
+  it('🔴 un refus REJOUABLE est rejoué UNE fois, et le second essai réussit', async () => {
+    const b = banc([rejouable(), 'ok']);
+    expect(await b.prendre('t1', '33600000001')).toBe(true);
+    expect(b.appels()).toBe(2);
+    expect(b.attentes).toHaveLength(1);
+  });
+
+  it('🔴 deux refus rejouables : on s’arrête à DEUX appels, on ne boucle pas', async () => {
+    // Meta réserve `take` au « configured escalation partner » : insister ajouterait N appels inutiles au
+    // milieu d'une campagne, un par destinataire.
+    const b = banc([rejouable(), rejouable(), 'ok']);
+    expect(await b.prendre('t1', '33600000001')).toBe(false);
+    expect(b.appels()).toBe(2);
+  });
+
+  it('🔴 un refus DÉFINITIF n’est jamais rejoué', async () => {
+    const b = banc([definitif(), 'ok']);
+    expect(await b.prendre('t1', '33600000001')).toBe(false);
+    expect(b.appels(), 'un 400 de Meta a été rejoué').toBe(1);
+    expect(b.attentes, 'on a attendu avant de renoncer').toEqual([]);
+  });
+
+  it('🔴 l’attente vaut le `Retry-After` de Meta, PLAFONNÉ à 2 s', async () => {
+    // Le plafond est la vraie règle : on est dans la boucle d'envoi d'une campagne, et une attente longue ne
+    // retarde pas ce destinataire-là, elle retarde tous les suivants.
+    expect((await (async () => { const b = banc([rejouable(1200), 'ok']); await b.prendre('t', 'w'); return b.attentes; })())).toEqual([1200]);
+    expect((await (async () => { const b = banc([rejouable(30_000), 'ok']); await b.prendre('t', 'w'); return b.attentes; })())).toEqual([REJEU_ATTENTE_MAX_MS]);
+  });
+
+  it('⚠️ sans `Retry-After`, on attend le défaut du dépôt', async () => {
+    const b = banc([rejouable(), 'ok']);
+    await b.prendre('t1', '33600000001');
+    expect(b.attentes).toEqual([REJEU_ATTENTE_DEFAUT_MS]);
+  });
+
+  it('🔴 AUCUN NUMÉRO CONNECTÉ rend `true`, et ce contrat était implicite', async () => {
+    // `prendre` rend `false` quand aucun numéro n'est connecté. La boucle d'origine jetait ce booléen et
+    // rendait `true` : le résultat est juste (sans numéro il n'y a aucun agent Meta à qui prendre le fil,
+    // donc écrire notre état local est correct) mais il l'était par accident. `true` signifie « Meta n'a pas
+    // protesté », ce qui couvre les deux cas. L'appelant garde exactement le comportement qu'il avait.
+    const prendre = creerPrendreLeFilAvecUnRejeu({
+      prendre: async () => false,
+      attendre: async () => { throw new Error('ne doit pas attendre'); },
+    });
+    expect(await prendre('t1', '33600000001')).toBe(true);
+  });
+
+  it('⚠️ il ne LÈVE jamais : l’appelant décide d’écrire ou non son état local', async () => {
+    const b = banc([definitif()]);
+    await expect(b.prendre('t1', '33600000001')).resolves.toBe(false);
   });
 });
