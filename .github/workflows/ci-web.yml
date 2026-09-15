@@ -1,0 +1,95 @@
+name: CI front (console Next)
+
+# 🔴 LE JOB DU FRONT VIT DANS SON PROPRE FICHIER POUR NE TOURNER QUE QUAND LE FRONT BOUGE (2026-09-15).
+# Mesure sur les 300 runs du 2 au 15 septembre : 141 d'entre eux (47 %) ne touchaient QUE le backend, et ce
+# job y a tourne 8,8 minutes en moyenne, soit 1 241 minutes passees a re-verifier un front identique au
+# precedent. Il etait aussi le POTEAU LE PLUS LONG : un correctif de backend attendait douze minutes son
+# verdict au lieu de quatre.
+#
+# 🔴 CE N'EST PAS UN GARDE-FOU AFFAIBLI, ET C'EST VERIFIABLE. Ce job ne PEUT PAS voir un changement de
+# backend : aucun fichier de `web/` n'importe quoi que ce soit de `src/` (verifie), et les E2E INTERCEPTENT
+# tous les appels `/api/backend/**` par `page.route` (aucun spec ne nomme un vrai backend, verifie). Sur un
+# push qui ne touche pas `web/`, ses entrees sont identiques au run precedent : c'est le meme controle sur
+# les memes octets.
+#
+# ⚠️ L'INVERSE EST FAUX, ET C'EST LE PIEGE A NE PAS REPRODUIRE : 43 tests de la RACINE lisent des fichiers de
+# `web/` (les tests de parite, qui comparent une liste du serveur a sa jumelle du navigateur). Le job `unit`
+# doit donc continuer de tourner sur un changement purement front, et c'est pour ca que `ci.yml` garde son
+# `paths-ignore: '**.md'` plutot qu'un filtre positif sur le backend.
+#
+# ⚠️ Tient parce qu'on n'a pas de branch protection avec check requis (solo sur main, pas de PR) : sinon un
+# run sauté laisserait le check « en attente », comme pour `paths-ignore`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '!web/**.md'
+      - '.github/workflows/ci-web.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - '!web/**.md'
+      - '.github/workflows/ci-web.yml'
+
+# Groupe DISTINCT de celui de `ci.yml` : un groupe partage ferait s'annuler les deux moities de la CI.
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          # Même version que l'image de production (node:22-alpine, web/Dockerfile).
+          node-version: 22
+          cache: npm
+          # Sans ce chemin, la clé de cache serait calculée sur le lockfile RACINE et raterait
+          # l'invalidation quand les deps de web/ changent.
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # Build AVANT tsc : next build régénère next-env.d.ts (gitignore) et .next/types, sans lesquels
+      # tsc plante sur des types fantômes. Le build fait déjà le type-check ET la passe ESLint de Next
+      # (qui n'échoue que sur des erreurs, pas des warnings). Aucun BACKEND_URL requis (fallback next.config.mjs).
+      - name: Build Next (type-check + lint inclus)
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Lint (next/core-web-vitals)
+        run: npm run lint
+      - name: Type-check exhaustif
+        run: npx tsc --noEmit
+      - name: Tests unitaires front (vitest)
+        run: npm test
+      # E2E : les appels /api/backend/* sont mockés par page.route -> aucun backend ni base requis. Le webServer
+      # de Playwright build + sert le Next ; on installe juste le navigateur (avec ses deps système).
+      - name: Installer le navigateur E2E
+        run: npx playwright install --with-deps chromium
+      - name: Tests E2E (Playwright)
+        run: npm run test:e2e
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      # 🔴 LA TOPOLOGIE REELLEMENT LIVREE, QUE RIEN NE VERIFIAIT. Tout ce qui precede construit et exerce la
+      # console en mode PROXY : le build ci-dessus n'a pas `NEXT_PUBLIC_API_URL`, et les specs Playwright
+      # interceptent `/api/backend/**`, le chemin du proxy Next. Depuis la bascule Vercel, le navigateur
+      # appelle `api.messagingme.app` en DIRECT et ne traverse plus ce proxy : la console livree n'etait donc
+      # couverte par aucun test.
+      #
+      # ⚠️ EN DERNIER, et ce n'est pas cosmetique : `npm run build` ecrase `.next`, et le serveur de
+      # Playwright reutilise ce repertoire. Construire en mode Vercel AVANT les E2E ferait appeler `api.` par
+      # la console, donc plus aucune interception, donc toutes les specs rouges.
+      - name: Build dans la topologie Vercel
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_API_URL: https://api.messagingme.app
+      # Un build qui passe ne prouve QUE la compilation. La variable est figee AU BUILD : la changer sans
+      # reconstruire ne fait rien, en silence. On verifie donc qu'elle est bien SCELLEE dans le bundle client.
+      - name: La base d API est scellee dans le bundle
+        run: node scripts/verifier-base-api.mjs https://api.messagingme.app

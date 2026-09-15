@@ -2289,7 +2289,7 @@ Vue chronologique par lot. La vue thématique correspondante est dans les sectio
 - **Champ masqué (visible/If) ou vide = OMIS du payload `complete`** (sondé) : le mapping webhook (`hasOwnProperty`) suffit tel quel, AUCUN risque d'écrasement de champ contact par du vide. Un `required` caché ne bloque ni navigate ni complete. Refs globales `${screen.<ID>.form.<clé>}` : payloads d'action SEULEMENT (non résolues dans les textes affichés).
 - **`flows.elements` = jsonb POLYMORPHE sans migration** : null legacy / tableau plat (mono-écran historique) / `{screens:[...]}` (Lot 7), normalisé par `screensOf` à la LECTURE. Toute nouvelle lecture de la colonne passe par `screensOf`, jamais un cast direct.
 - **Garde fenêtre 24 h** : un scénario ne peut pas OUVRIR sur un node flow/quick_message (`opensOutsideServiceWindow` -> 400 au save + skip défensif `start()` + badge UI sur le node d'ouverture réel, calculé en traversant les blocs synchrones tag/field). ⚠️ Contrat de test CHANGÉ sciemment : « quick_message en entrée envoyé par start » assertait la faille -> réécrit.
-- **Sonde LIVE committée** : `MBA_TOKEN=$(ssh ubuntu@146.59.233.252 "grep '^META_ACCESS_TOKEN=' /home/ubuntu/mba/.env.prod | cut -d= -f2-") WABA_ID=1695646181671929 npx tsx scripts/sonde-flow-live.mts` : à rejouer à CHAQUE évolution du générateur flow_json (crée un draft sur le vrai WABA, exige `validation_errors == []`, se nettoie).
+- **Sonde LIVE committée** : `MBA_TOKEN=$(ssh ubuntu@$VPS "grep '^META_ACCESS_TOKEN=' /home/ubuntu/mba/.env.prod | cut -d= -f2-") WABA_ID=1695646181671929 npx tsx scripts/sonde-flow-live.mts` : à rejouer à CHAQUE évolution du générateur flow_json (crée un draft sur le vrai WABA, exige `validation_errors == []`, se nettoie).
 - **Preview interactive Meta** = banc de test runtime sans device : `GET /{flow_id}?fields=preview.invalidate(false)` puis `?interactive=true&debug=true&flow_action=navigate&flow_action_payload={"screen":"FORM"}` (les 2 derniers params REQUIS ensemble) ; le panneau debug affiche le payload exact de chaque action.
 
 ### Gotchas / décisions (2026-07-17, Lot 9 : ConvAnalyzer light)
@@ -5577,10 +5577,10 @@ correctif, ce qui est exactement la garantie qu'il prétend apporter.
 ```bash
 # 1. Le conteneur. L'image PGVECTOR, la même que la CI : sur l'image nue, la migration 0110 échoue
 #    (« extension "vector" is not available ») et on s'arrête à mi-chemin sans base utilisable.
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252   "sudo docker run -d --name pg-itest -e POSTGRES_PASSWORD=itest -e POSTGRES_DB=itest      -p 127.0.0.1:55432:5432 pgvector/pgvector:pg16"
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS   "sudo docker run -d --name pg-itest -e POSTGRES_PASSWORD=itest -e POSTGRES_DB=itest      -p 127.0.0.1:55432:5432 pgvector/pgvector:pg16"
 
 # 2. Le tunnel, à laisser tourner.
-ssh -i ~/.ssh/id_ed25519 -N -L 55432:127.0.0.1:55432 ubuntu@146.59.233.252
+ssh -i ~/.ssh/id_ed25519 -N -L 55432:127.0.0.1:55432 ubuntu@$VPS
 
 # 3. Les migrations, puis les tests. `DB_SSL=off` est OBLIGATOIRE : sans lui, `pgSsl()` force un objet SSL
 #    et le Postgres local répond « the server does not support SSL connections ».
@@ -5588,7 +5588,7 @@ DATABASE_URL="postgres://postgres:itest@127.0.0.1:55432/itest" DB_SSL=off npm ru
 DATABASE_URL="postgres://postgres:itest@127.0.0.1:55432/itest" DB_SSL=off   ENCRYPTION_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"   npx vitest run --config vitest.integration.config.ts
 
 # 4. Et on le retire quand on a fini.
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252 "sudo docker rm -f pg-itest"
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS "sudo docker rm -f pg-itest"
 ```
 
 ⚠️ **`ENCRYPTION_KEY` est nécessaire même pour un test qui ne chiffre rien** : neuf tests des suites

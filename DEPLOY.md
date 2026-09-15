@@ -4,6 +4,17 @@ Trois conteneurs sur le réseau `mcp-robot_default` : `mba-api` (Fastify :8095),
 (pg-boss), `mba-web` (Next.js :3000). NPM expose `mba.messagingme.app` -> `mba-web:3000` ;
 le front proxifie `/api/backend/*` -> `mba-api:8095` (interne, pas de CORS, backend non public).
 
+🔴 **`$VPS` N'EST PAS UNE VARIABLE D'ENVIRONNEMENT, C'EST UNE CAVITÉ VOLONTAIRE.** L'adresse IP du VPS ne
+figure plus dans ce dépôt : elle vit dans le `CLAUDE.md` global du poste, hors dépôt. Raison, et elle est
+concrète : tous les sous-domaines `messagingme.app` sont **proxifiés par Cloudflare**, ce qui masque l'adresse
+d'ORIGINE. La publier annulerait ce masquage, et permettrait de frapper le serveur en direct, donc de
+contourner d'un coup le WAF, la protection anti-déni de service et les règles de Cloudflare. Un dépôt privé
+peut redevenir public (c'est arrivé le 2026-09-15) ; une adresse d'origine publiée, elle, ne se reprend pas.
+
+⚠️ **ELLE RESTE DANS L'HISTORIQUE GIT**, ce nettoyage ne porte que sur l'état courant. La parade DURABLE
+n'est pas documentaire, c'est côté serveur : n'accepter en entrée que les plages de Cloudflare
+(`Authenticated Origin Pulls`, ou un filtrage des adresses sources sur le pare-feu). Noté dans `todo.md`.
+
 ## 0. Déjà fait (pré-staging sur le VPS)
 
 - Repo cloné dans `/home/ubuntu/mba`, les 3 images Docker **buildées et validées** sur le VPS.
@@ -14,7 +25,7 @@ le front proxifie `/api/backend/*` -> `mba-api:8095` (interne, pas de CORS, back
 
 ## 1. La SEULE entrée humaine restante : DNS
 
-Créer dans Cloudflare `mba.messagingme.app` -> A `146.59.233.252`, **Proxied** (orange).
+Créer dans Cloudflare `mba.messagingme.app` -> A `$VPS`, **Proxied** (orange).
 
 ## 2. Démarrer (une commande)
 
@@ -27,7 +38,7 @@ Créer dans Cloudflare `mba.messagingme.app` -> A `146.59.233.252`, **Proxied** 
 > dépôt est encore public, et seulement ensuite le passer en privé. L'inverse coupe le déploiement.
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS
 cd /home/ubuntu/mba
 git pull            # si nouveau code
 sudo docker compose up -d --build
@@ -46,7 +57,7 @@ sudo docker compose run --rm --env-file .env.prod \
 
 ## 4. NPM (proxy host + HTTPS)
 
-Via l'UI http://146.59.233.252:81 ou l'API (cf CLAUDE.md) :
+Via l'UI http://$VPS:81 ou l'API (cf CLAUDE.md) :
 - Domain `mba.messagingme.app`, Forward `http` -> host `mba-web`, port `3000`.
 - Block exploits ON, Websocket ON.
 - SSL : Let's Encrypt (`certificate_id="new"`, `ssl_forced=true`, `letsencrypt_agree=true`)

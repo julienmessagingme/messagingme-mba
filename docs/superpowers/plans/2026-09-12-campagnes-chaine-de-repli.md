@@ -1673,7 +1673,7 @@ Ordre imposé par le type de migration : **0133 et 0134 AJOUTENT des colonnes qu
 donc elles passent AVANT le déploiement.**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS
 cd /home/ubuntu/mba && git pull
 sudo docker compose build mba-api
 sudo docker compose run --rm --no-deps mba-api npm run migrate

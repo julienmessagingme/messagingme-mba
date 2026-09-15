@@ -1102,7 +1102,7 @@ npx vitest run tests/ && npx tsc --noEmit && (cd web && npx tsc --noEmit && npx 
 Séquence de déploiement pour ce lot, la migration 0131 AJOUTANT une table que le code écrit :
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252 "cd /home/ubuntu/mba && git pull && sudo docker compose build mba-api && sudo docker compose run --rm --no-deps mba-api npm run migrate && sudo docker compose run --rm --no-deps mba-api npm run aide:charger && sudo docker compose up -d --build"
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS "cd /home/ubuntu/mba && git pull && sudo docker compose build mba-api && sudo docker compose run --rm --no-deps mba-api npm run migrate && sudo docker compose run --rm --no-deps mba-api npm run aide:charger && sudo docker compose up -d --build"
 ```
 
 Puis `nginx -s reload`, le contrôle interne contre public, et `node scripts/fumee.mjs`.

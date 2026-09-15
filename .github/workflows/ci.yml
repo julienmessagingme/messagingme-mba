@@ -145,58 +145,8 @@ jobs:
       - name: Tests d'intégration (pg-boss + stores + e2e contre Postgres éphémère)
         run: npm run test:integration
 
-  web:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          # Même version que l'image de production (node:22-alpine, web/Dockerfile).
-          node-version: 22
-          cache: npm
-          # Sans ce chemin, la clé de cache serait calculée sur le lockfile RACINE et raterait
-          # l'invalidation quand les deps de web/ changent.
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      # Build AVANT tsc : next build régénère next-env.d.ts (gitignore) et .next/types, sans lesquels
-      # tsc plante sur des types fantômes. Le build fait déjà le type-check ET la passe ESLint de Next
-      # (qui n'échoue que sur des erreurs, pas des warnings). Aucun BACKEND_URL requis (fallback next.config.mjs).
-      - name: Build Next (type-check + lint inclus)
-        run: npm run build
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'
-      - name: Lint (next/core-web-vitals)
-        run: npm run lint
-      - name: Type-check exhaustif
-        run: npx tsc --noEmit
-      - name: Tests unitaires front (vitest)
-        run: npm test
-      # E2E : les appels /api/backend/* sont mockés par page.route -> aucun backend ni base requis. Le webServer
-      # de Playwright build + sert le Next ; on installe juste le navigateur (avec ses deps système).
-      - name: Installer le navigateur E2E
-        run: npx playwright install --with-deps chromium
-      - name: Tests E2E (Playwright)
-        run: npm run test:e2e
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'
-      # 🔴 LA TOPOLOGIE REELLEMENT LIVREE, QUE RIEN NE VERIFIAIT. Tout ce qui precede construit et exerce la
-      # console en mode PROXY : le build ci-dessus n'a pas `NEXT_PUBLIC_API_URL`, et les specs Playwright
-      # interceptent `/api/backend/**`, le chemin du proxy Next. Depuis la bascule Vercel, le navigateur
-      # appelle `api.messagingme.app` en DIRECT et ne traverse plus ce proxy : la console livree n'etait donc
-      # couverte par aucun test.
-      #
-      # ⚠️ EN DERNIER, et ce n'est pas cosmetique : `npm run build` ecrase `.next`, et le serveur de
-      # Playwright reutilise ce repertoire. Construire en mode Vercel AVANT les E2E ferait appeler `api.` par
-      # la console, donc plus aucune interception, donc toutes les specs rouges.
-      - name: Build dans la topologie Vercel
-        run: npm run build
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'
-          NEXT_PUBLIC_API_URL: https://api.messagingme.app
-      # Un build qui passe ne prouve QUE la compilation. La variable est figee AU BUILD : la changer sans
-      # reconstruire ne fait rien, en silence. On verifie donc qu'elle est bien SCELLEE dans le bundle client.
-      - name: La base d API est scellee dans le bundle
-        run: node scripts/verifier-base-api.mjs https://api.messagingme.app
+# 🔴 LE JOB `web` A DEMENAGE dans `.github/workflows/ci-web.yml` le 2026-09-15, pour ne tourner que quand
+# `web/**` bouge. Il ne peut pas voir un changement de backend (aucun import de `src/` depuis `web/`, et les
+# E2E interceptent tous les appels `/api/backend/**`), et il coutait 8,8 minutes a 47 % des pushs qui ne
+# touchaient que le backend. ⚠️ NE PAS le remettre ici : il tournerait DEUX fois sur un push au front.
+# ⚠️ Et ne PAS filtrer ce fichier-ci sur le backend : 43 tests de `unit` lisent des fichiers de `web/`.

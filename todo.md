@@ -1,5 +1,23 @@
 # todo.md : backlog
 
+## 🟠 L'adresse d'origine du VPS n'est protégée que par le SILENCE (2026-09-15)
+
+Tous les sous-domaines `messagingme.app` sont proxifiés par Cloudflare, donc l'adresse du serveur est masquée,
+et c'est ce masquage qui met le WAF et la protection anti-déni de service sur le chemin. Mais **rien n'empêche
+de frapper le serveur en direct** une fois l'adresse connue : il n'y a aucun filtrage des adresses sources.
+
+Le dépôt est repassé PUBLIC le 2026-09-15 (pour rendre GitHub Actions gratuit). L'adresse a été retirée des
+fichiers courants le même jour, mais **elle reste dans l'historique git**, désormais lisible par tout le monde.
+Le nettoyage documentaire ne vaut donc que contre un balayage automatique, pas contre quelqu'un qui cherche.
+
+La parade durable est côté serveur, pas dans la doc : **Authenticated Origin Pulls** de Cloudflare (le serveur
+n'accepte que les connexions portant le certificat client de Cloudflare), ou à défaut un filtrage des plages
+d'adresses de Cloudflare sur le pare-feu du VPS.
+
+⚠️ **À faire AVANT d'ouvrir d'autres services au public sur cette machine**, et de toute façon avant que le
+dépôt ne reste public longtemps. Ce n'est pas urgent au sens d'une fuite ouverte : c'est une couche de défense
+qu'on croit avoir et qu'on n'a plus.
+
 ## 🟠 Le bouton « Rendre la main » de l'Inbox garde la course que la fin de parcours vient de perdre (2026-09-15)
 
 Le correctif du 2026-09-15 (migration 0149) fait attendre à la fin d'un parcours l'accusé de son dernier
