@@ -1172,6 +1172,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut) |
 | `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts |
 | `src/lib/cache-court.ts` | le micro-cache du dépôt : durée de vie ET mutualisation des appels en vol |
+| `src/meta/numero-espace.ts` | le numéro Meta d'un espace, mis en cache. 🔴 Il ne garde QUE les réponses POSITIVES : une réponse nulle devient fausse à l'instant où un client branche son premier numéro, et le cache étant par process, aucune invalidation ne traverse l'API et le worker. C'est ce qui rend acceptable de mettre en cache une décision |
 | `src/lib/http-get.ts` | une lecture GET injectable, testable sans réseau |
 | `src/lib/heures-ouvrees.ts` -> `prochaineOuverture` | « quand est le prochain créneau ouvert ? », pour le bloc Attente et les campagnes |
 | `src/lib/heures-ouvrees.ts` -> `fenetreDeRattrapageOuverte` | « a-t-on le droit de RATTRAPER maintenant ? ». 🔴 Autre question que `business_hours_only` (l'envoi initial, côté moteur), et une semaine entièrement fermée y rend `true` : sinon ses rattrapages gèlent pour toujours |

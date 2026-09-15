@@ -47,6 +47,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
 import { creerRendreLeFil, creerPrendreLeFil, creerPrendreLeFilAvecUnRejeu } from '../inbox/controle-du-fil';
+import { creerNumeroDeLEspace } from '../meta/numero-espace';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -96,6 +97,20 @@ export interface WorkflowRuntimeDeps {
 /** Construit l'exécuteur et ce qui l'accompagne. Une seule fois par process (les caches vivent dedans). */
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver } = deps;
+  /**
+   * 🔴 UNE SEULE LECTURE DU NUMÉRO DE L'ESPACE POUR TOUT LE PROCESS, et plus une PAR DESTINATAIRE.
+   *
+   * Cinq des huit lectures de ce fichier étaient DANS la boucle d'envoi : sur une campagne de 5 000
+   * destinataires, cela faisait 5 000 requêtes pour une réponse qui ne bouge pas, prises sur un pool de 8
+   * connexions partagé avec les tours d'agent et les webhooks.
+   *
+   * ⚠️ C'est le SEUL endroit de ce fichier qui a le droit d'appeler `repo.getTenantPhoneNumberId`. Les huit
+   * lectures passent par l'accesseur, ce qui rend « tout est mis en cache » vrai par construction plutôt que
+   * par discipline. La raison qui rend ce cache sûr (seules les réponses POSITIVES y entrent) est écrite
+   * dans `src/meta/numero-espace.ts`.
+   */
+  const numeroDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantPhoneNumberId(t));
+
   const nodeEvents = new PgWorkflowNodeEventStore(pool);
   const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
@@ -168,7 +183,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * visuel servant aux deux usages ne se téléverse qu'une fois.
    */
   const templateMedia = new TemplateMediaPreparer({
-    getPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+    getPhoneNumberId: (tenant) => numeroDeLEspace(tenant),
     mediaClientFor: async (tenant) => {
       const { token } = await metaCredentials.resolveForTenant(tenant);
       return new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
@@ -259,7 +274,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // pouvait pas l'appeler, ce qui a laissé Meta croire que NOUS tenions le fil pendant que l'écran annonçait
   // le contraire. Le module est le point de passage des deux processus.
   const releaseThreadChezMeta = creerRendreLeFil({
-    numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
+    numeroDuTenant: (t) => numeroDeLEspace(t),
     clientMba: (t) => metaFactory.mbaClientForTenant(t),
   });
 
@@ -316,7 +331,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
 
   const prendreLeFilAvecUnRejeu = creerPrendreLeFilAvecUnRejeu({
     prendre: creerPrendreLeFil({
-      numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
+      numeroDuTenant: (t) => numeroDeLEspace(t),
       clientMba: (t) => metaFactory.mbaClientForTenant(t),
     }),
     attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
@@ -614,7 +629,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     recordNodeEvent: (e) => nodeEvents.record(e),
     sendTemplate: async (tenant, waId, name, language, buttons, explicitParams) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
-      const pn = await repo.getTenantPhoneNumberId(tenant);
+      const pn = await numeroDeLEspace(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: aucun numéro pour le tenant ${tenant}, template « ${name} » non envoyé`);
@@ -746,7 +761,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // de la saisie plutôt qu'après coup.
       const problemeLien = lien ? problemeLienBouton(lien) : null;
       if (problemeLien) return problemeLien;
-      const pn = await repo.getTenantPhoneNumberId(tenant);
+      const pn = await numeroDeLEspace(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendQuickMessage: aucun numéro pour le tenant ${tenant}, message rapide non envoyé à ${waId}`);
@@ -805,7 +820,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     sendQuestion: async (tenant, waId, body, buttonLabel, rows) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (body.trim() === '') return 'le bloc « question » n\'a pas de texte'; // défense, actionOf filtre déjà
-      const pn = await repo.getTenantPhoneNumberId(tenant);
+      const pn = await numeroDeLEspace(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendQuestion: aucun numéro pour le tenant ${tenant}, question non envoyée à ${waId}`);
@@ -849,7 +864,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     sendFlow: async (tenant, waId, flowId, body, cta) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (flowId.trim() === '') return 'le bloc « formulaire » ne désigne aucun formulaire'; // défense, actionOf filtre déjà
-      const pn = await repo.getTenantPhoneNumberId(tenant);
+      const pn = await numeroDeLEspace(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendFlow: aucun numéro pour le tenant ${tenant}, formulaire non envoyé à ${waId}`);
@@ -881,7 +896,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    */
   const envoyerTexteAgent = async (tenant: string, waId: string, texte: string): Promise<string | void> => {
     if (dryRun) return; // DRY_RUN : aucun appel Meta
-    const pn = await repo.getTenantPhoneNumberId(tenant);
+    const pn = await numeroDeLEspace(tenant);
     if (!pn) {
       // eslint-disable-next-line no-console
       console.error(`agent: aucun numéro pour le tenant ${tenant}, réponse non envoyée à ${waId}`);

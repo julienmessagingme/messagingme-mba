@@ -107,9 +107,18 @@ export interface RunJobDeps {
   /**
    * LE NUMÉRO META DE CET ESPACE, pour un étage WhatsApp de REPLI sur une campagne qui n'en a pas.
    *
-   * ⚠️ MÊME NOM ET MÊME CONTRAT QUE LES TROIS AUTRES `numeroDuTenant` DU DÉPÔT (`src/http/mba.ts`,
-   * `mba-publication.ts`, `agent-catalogue.ts`), tous câblés sur `repo.getTenantPhoneNumberId`. Un
-   * quatrième nom pour la même dépendance aurait obligé à chercher laquelle on lit.
+   * ⚠️ MÊME CONTRAT QUE LES AUTRES `numeroDuTenant` DU DÉPÔT (`src/http/mba.ts`, `mba-publication.ts`,
+   * `agent-catalogue.ts`), tous câblés sur `repo.getTenantPhoneNumberId`. Un nom de plus pour la même
+   * dépendance obligerait à chercher laquelle on lit.
+   *
+   * ⚠️ CE TEXTE DISAIT « LES TROIS AUTRES », ET LE COMPTE ÉTAIT FAUX (mesuré le 2026-09-14). La même question
+   * est posée sous QUATRE noms dans le dépôt (`numeroDuTenant`, `getTenantPhoneNumberId`, `phoneNumberFor`,
+   * `getPhoneNumberId`). Le compte n'est plus écrit ici : il dérivait, et c'est précisément ce qu'un compte
+   * écrit à la main finit par faire.
+   *
+   * 🔴 ET LA MISE EN CACHE NE VIT PAS ICI. Le chemin chaud (le runtime de scénario) lisait ce numéro par
+   * DESTINATAIRE ; il passe depuis le 2026-09-15 par `src/meta/numero-espace.ts`, qui ne met en cache que les
+   * réponses positives. Ce repli-ci est hors boucle, une fois par étage, donc il n'a rien à économiser.
    *
    * 🔴 UNE CAMPAGNE RCS A `phone_number_id` VIDE (migration 0056), et c'est correct : elle part d'un agent
    * de marque. Son repli WhatsApp, lui, a besoin d'un numéro, et le seul honnête est celui que l'écran de
