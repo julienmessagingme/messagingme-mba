@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appliquer, libelleDe, raisonLisible, type ApplicationDeps, type ClientMbaEcriture } from '../src/mba/assistant/application';
+import { appliquer, elementDe, libelleDe, operationDe, raisonLisible, type ApplicationDeps, type ClientMbaEcriture } from '../src/mba/assistant/application';
 import type { Operation } from '../src/mba/assistant/proposition';
 import type { LigneHistorique } from '../src/reglages/historique';
 
@@ -206,5 +206,35 @@ describe('quand le journal est indisponible', () => {
   it('🔴 et on n’accuse pas Meta d’une panne qui vient de chez nous', async () => {
     const r = await appliquer(deps(), 't1', 'ag-1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
     expect(r.echec?.message ?? '').not.toMatch(/Meta/);
+  });
+});
+
+/**
+ * CE QUE LA LIGNE D'HISTORIQUE DIT DE L'OPÉRATION.
+ *
+ * 🔴 DEUX FONCTIONS PURES QUI N'AVAIENT AUCUN TEST, et une seule de leurs huit sorties était exercée
+ * indirectement (`faq.ajouter`). Elles décident de ce qu'un client lit dans un journal à rétention
+ * ILLIMITÉE : une opération rangée sous le mauvais élément y reste pour toujours.
+ */
+describe('l’élément et l’opération d’une ligne', () => {
+  const cas: Array<[Operation, string, string]> = [
+    [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }, 'faq', 'ajout'],
+    [{ type: 'faq.modifier', cible: 'f1', question: 'Q', reponse: 'R' }, 'faq', 'modification'],
+    [{ type: 'faq.supprimer', cible: 'f1', libelle: 'A' }, 'faq', 'suppression'],
+    [{ type: 'competence.ajouter', nom: 'n', instruction: 'i' }, 'competence', 'ajout'],
+    [{ type: 'site.supprimer', cible: 's1', libelle: 'S' }, 'site', 'suppression'],
+    [{ type: 'fichier.ajouter', jeton: 'a'.repeat(32), nom: 'd.pdf' }, 'fichier', 'ajout'],
+    // ⚠️ La famille s'appelle `business`, l'élément `business_info` : la table de correspondance n'est pas
+    // l'identité, et c'est exactement le genre de mapping qu'on recopie de travers.
+    [{ type: 'business.modifier', champ: 'horaires', valeur: '9h-18h' }, 'business_info', 'modification'],
+    // 🔴 Mettre en service est un AJOUT, pas une modification : sans la clause explicite, le suffixe de son
+    // type (`.mettreEnService`) le rangerait en « modification ».
+    [{ type: 'activation.mettreEnService' }, 'activation', 'ajout'],
+  ];
+
+  it('🔴 chaque opération tombe sur le bon élément et la bonne nature', () => {
+    for (const [o, element, operation] of cas) {
+      expect(`${o.type} -> ${elementDe(o)}/${operationDe(o)}`).toBe(`${o.type} -> ${element}/${operation}`);
+    }
   });
 });
