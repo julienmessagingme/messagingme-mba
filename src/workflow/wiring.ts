@@ -294,6 +294,40 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * des appels inutiles à une campagne déjà en cours. C'est `classify` (`src/meta/errors.ts`) qui tranche,
    * la même règle que pour les envois, importée plutôt que réécrite.
    */
+  /**
+   * RELÂCHE le fil chez Meta MAINTENANT, et n'écrit `mba` chez nous que si Meta n'a pas protesté.
+   *
+   * 🔴 META D'ABORD, NOTRE COLONNE ENSUITE, l'inverse de ce que faisait ce chemin. Avant, on écrivait `mba`
+   * puis on appelait Meta : sur un refus, la colonne restait à `mba`, l'écran affirmait que le robot tenait
+   * un fil que Meta nous laissait, et la seule trace était une ligne de console. Ici l'état d'attente
+   * (`app_human`) est déjà un état HONNÊTE et visible, donc il n'y a plus rien à protéger par une bascule
+   * anticipée : en cas de refus on ne bouge pas, et le fil reste une ligne de travail.
+   *
+   * ⚠️ LA RÉPONSE DE META NE DIT RIEN (`{"messaging_product":"whatsapp"}`), mesuré le 2026-09-15. « Meta n'a
+   * pas protesté » est donc tout ce qu'on peut savoir, et c'est pour ça que le balayage reste le filet.
+   */
+  const rendreLeFilMaintenant = async (tenant: string, waId: string): Promise<void> => {
+    await releaseThreadChezMeta(tenant, waId);
+    await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_human'] });
+  };
+
+  /**
+   * L'ACCUSÉ D'UN DE NOS ENVOIS EST ARRIVÉ : si un fil l'attendait, on le rend maintenant (migration 0149).
+   *
+   * ⚠️ APPELÉE POUR CHAQUE STATUT REÇU, donc sur un chemin très chaud : quand personne n'attend ce message,
+   * l'`update` ne touche aucune ligne et on repart aussitôt.
+   *
+   * 🔴 LE MARQUEUR EST CONSOMMÉ AVANT L'APPEL À META, ET C'EST ASSUMÉ. Si Meta refuse, on ne réessaie pas
+   * ici : le fil reste `app_human`, donc visible dans « À traiter », et le balayage de contrôle le reprendra.
+   * Garder le marqueur ferait retenter la remise à CHAQUE statut suivant du même message, c'est-à-dire
+   * insister trois fois sur un refus en quelques minutes.
+   */
+  const remiseMbaSurAccuse = async (messageId: string): Promise<void> => {
+    const cible = await inboxStore.consommerReleaseMba(messageId);
+    if (!cible) return;
+    await rendreLeFilMaintenant(cible.tenantId, cible.waId);
+  };
+
   const prendreLeFilAvecUnRejeu = async (tenant: string, waId: string): Promise<boolean> => {
     for (let tentative = 0; tentative < 2; tentative += 1) {
       try {
@@ -466,29 +500,34 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // semaines : on ne durcit pas un chemin qu'on croit mort.
     mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
     /**
-     * Rend le fil à l'agent de Meta, en fin de parcours. La bascule LOCALE d'abord, et seulement si le fil
-     * était encore au scénario : Meta exige de détenir le fil pour le relâcher, et cette condition le prouve.
+     * Fin de parcours : DEMANDE que le fil soit rendu à l'agent de Meta, et le rend pour de vrai quand notre
+     * dernier envoi est acquitté (migration 0149).
      *
-     * 🔴 ET SI META REFUSE, ON REVIENT EN ARRIÈRE (2026-09-15). Avant, la colonne restait à `mba` : l'écran
-     * affirmait que le robot de Meta tenait un fil que Meta nous laissait, la conversation portait sa marque,
-     * et la SEULE trace du refus était une ligne de console dans le worker. Autrement dit, le mode de panne
-     * le plus coûteux qui soit : invisible, et démenti par l'écran.
+     * 🔴 ON NE RELÂCHE PLUS DANS LA SECONDE QUI SUIT L'ENVOI, ET C'EST LE DÉFAUT QUE ÇA RÉPARE. Mesuré le
+     * 2026-09-15 sur le numéro de production : Meta acquitte nos envois AVEC DEUX MINUTES DE RETARD, et sa
+     * documentation dit qu'envoyer un message PREND le fil implicitement. Notre release partait donc avant
+     * que l'envoi ne soit traité, et l'envoi reprenait le fil juste derrière : l'agent de Meta restait muet,
+     * le client parlait dans le vide, et rien n'apparaissait dans « À traiter ». Trois releases émis deux
+     * secondes après un envoi ont échoué, celui émis quatorze minutes après a marché.
      *
-     * ⚠️ ON REPASSE À `app_human`, PAS À `app_workflow`. Le parcours est fini, personne ne gère : `app_human`
-     * met le fil dans « À traiter », donc le refus de Meta devient une ligne de travail au lieu d'un silence.
-     * `app_workflow` l'en sortirait, ce qui est précisément le défaut réparé le même jour.
+     * 🔴 L'ÉTAT D'ATTENTE EST `app_human`, ET C'EST DÉLIBÉRÉ. Tant que Meta n'a pas confirmé, écrire `mba`
+     * serait mentir (l'écran afficherait la marque du robot sur un fil que nous tenons encore) et laisser
+     * `app_workflow` serait pire : c'est la SEULE valeur que le dossier « À traiter » exclut, donc un client
+     * qui écrit pendant cette fenêtre ne produirait aucune ligne de travail. `app_human` ne se voit pas tant
+     * que le dernier message est SORTANT, et devient une ligne de travail dès que le client répond.
      *
-     * ⚠️ ON RELÈVE L'ERREUR : l'appelant (`rendreLaMainAMba`) l'attrape et la journalise, et il ne doit pas
-     * faire échouer le parcours pour autant. Ce qui change est qu'on ne ment plus en même temps.
+     * ⚠️ ET C'EST AUSSI CE QUI ARME LE FILET : le balayage de contrôle reprend les fils `app_human` restés
+     * immobiles et, chez un client qui a l'agent de Meta allumé, les lui rend EN APPELANT META. Un accusé qui
+     * n'arriverait jamais n'enterre donc pas la conversation, il retarde la remise.
+     *
+     * ⚠️ RIEN N'A ÉTÉ ENVOYÉ : on relâche tout de suite. Il n'y a aucune course à éviter, et attendre un
+     * accusé qui ne viendra jamais gèlerait le fil jusqu'au balayage.
      */
     releaseToMba: async (tenant, waId) => {
-      if (!(await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow'] }))) return;
-      try {
-        await releaseThreadChezMeta(tenant, waId);
-      } catch (err) {
-        await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['mba'] });
-        throw err;
-      }
+      if (!(await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }))) return;
+      const attendu = await inboxStore.demanderReleaseMba(tenant, waId);
+      if (attendu) return;
+      await rendreLeFilMaintenant(tenant, waId);
     },
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
@@ -890,5 +929,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, remiseMbaSurAccuse, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
 }

@@ -441,6 +441,62 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * MARQUE un fil « à rendre à l'agent de Meta dès que notre DERNIER envoi sera acquitté » (0149), et rend
+   * l'identifiant de ce message, ou `null` s'il n'y en a aucun.
+   *
+   * 🔴 ON NE RELÂCHE PLUS DANS LA FOULÉE DE L'ENVOI, et c'est tout le sujet. Mesuré le 2026-09-15 : Meta
+   * acquitte nos envois avec DEUX MINUTES de retard, et sa documentation dit qu'envoyer un message prend le
+   * fil implicitement. Un release émis deux secondes après un envoi relâche donc un fil que cet envoi
+   * reprend juste derrière. Trois échecs sur trois, contre un succès à quatorze minutes d'écart.
+   *
+   * 🔴 LE DERNIER, ET NON « UN » : un parcours envoie plusieurs messages, et l'accusé du PREMIER arrive
+   * souvent APRÈS que le dernier soit parti. Attendre n'importe quel accusé reproduirait la course.
+   *
+   * ⚠️ `null` EN RETOUR N'EST PAS UNE PANNE : un parcours peut se terminer sans avoir rien envoyé (toutes ses
+   * branches sautées, un envoi refusé). Il n'y a alors AUCUNE course à éviter, et l'appelant relâche tout de
+   * suite. La colonne est laissée à `null` dans ce cas, sans quoi elle attendrait un accusé qui ne viendra
+   * jamais.
+   */
+  async demanderReleaseMba(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ release_mba_apres_message: string | null }>(
+      `update conversations c
+          set release_mba_apres_message = (
+            select m.meta_message_id from conversation_messages m
+             where m.conversation_id = c.id and m.direction = 'out' and m.meta_message_id is not null
+             order by m.created_at desc limit 1)
+        where c.tenant_id = $1 and c.wa_id = $2
+       returning c.release_mba_apres_message`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.release_mba_apres_message ?? null;
+  }
+
+  /**
+   * CONSOMME la demande de remise que ce message portait, et rend le fil concerné. `null` = ce message
+   * n'était attendu par personne, ce qui est le cas de l'écrasante majorité des statuts.
+   *
+   * 🔴 UNE SEULE REQUÊTE, ET C'EST CE QUI REND L'OPÉRATION UNIQUE. Meta envoie PLUSIEURS statuts par message
+   * (`sent`, puis `delivered`, puis `read`) : lire puis écrire relâcherait plusieurs fois, et les fois
+   * suivantes nous ne détenons plus le fil, donc hors contrat. L'`update ... returning` conditionné sur
+   * l'égalité ne rend une ligne qu'au PREMIER appelant.
+   *
+   * ⚠️ `tenant_id` N'EST PAS DANS LE `where`, ET C'EST LE SEUL ENDROIT OÙ C'EST JUSTE : l'appelant est un
+   * webhook de Meta, qui ne connaît qu'un identifiant de message et aucun espace. C'est justement la colonne
+   * `tenant_id` RENDUE qui lui apprend de quel espace il s'agit. L'identifiant est unique dans toute la base
+   * (`conversation_messages_wamid_uidx`), donc il ne peut désigner qu'une conversation d'un seul espace.
+   */
+  async consommerReleaseMba(messageId: string): Promise<{ tenantId: string; waId: string } | null> {
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string }>(
+      `update conversations c set release_mba_apres_message = null
+        where c.release_mba_apres_message = $1
+       returning c.tenant_id, c.wa_id`,
+      [messageId],
+    );
+    const r = res.rows[0];
+    return r ? { tenantId: r.tenant_id, waId: r.wa_id } : null;
+  }
+
+  /**
    * TOUTES les conversations dont le contrôle est détenu (hors `app_workflow`), les plus anciennes d'abord.
    *
    * Alimente le garde-fou d'inactivité : il n'existe AUCUN release automatique côté Meta, donc un contrôle

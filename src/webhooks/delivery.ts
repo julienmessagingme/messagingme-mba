@@ -49,6 +49,24 @@ export interface NodeStatusSink {
 }
 
 /**
+ * LA REMISE DU FIL À L'AGENT DE META, DÉCLENCHÉE PAR L'ACCUSÉ DE NOTRE DERNIER ENVOI (migration 0149).
+ *
+ * 🔴 C'EST ICI QUE LE SIGNAL VRAI ARRIVE, ET NULLE PART AILLEURS. Meta acquitte nos envois avec DEUX MINUTES
+ * de retard (mesuré le 2026-09-15) et envoyer un message PREND le fil implicitement : relâcher dans la foulée
+ * d'un envoi relâche donc un fil que cet envoi reprend juste derrière. Le seul moment où l'on SAIT que Meta a
+ * fini de traiter notre envoi est celui où son statut nous revient.
+ *
+ * ⚠️ APPELÉE POUR CHAQUE STATUT, y compris les millions qui n'attendent rien : l'implémentation rend la main
+ * tout de suite quand aucun fil n'attend ce message (un `update ... where` qui ne touche aucune ligne).
+ *
+ * ⚠️ OPTIONNELLE : absente, les fils sont rendus par le balayage de contrôle, plus tard. C'est une accélération
+ * du chemin nominal, pas la seule garantie.
+ */
+export interface RemiseMbaSurAccuse {
+  (messageId: string): Promise<void>;
+}
+
+/**
  * Applique les événements de statut aux destinataires (par message_id). Ignore le reste.
  *
  * `nodeEvents` (optionnel) reçoit le MÊME statut pour la mesure par bloc. Les accusés Meta ne parlent que d'un
@@ -63,12 +81,32 @@ export async function processStatuses(
   events: WebhookEvent[],
   delivery: DeliveryStore,
   nodeEvents?: NodeStatusSink,
+  remiseMba?: RemiseMbaSurAccuse,
 ): Promise<void> {
   for (const ev of events) {
     if (ev.source !== 'statuses') continue;
     const d = extractDelivery(ev.data);
     if (!d) continue;
     await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode);
+    /**
+     * 🔴 TOUS LES STATUTS, PAS SEULEMENT `sent`, ET PAS SEULEMENT LES SUCCÈS. Ce qu'on attend n'est pas une
+     * bonne nouvelle, c'est la PREUVE que Meta a fini de traiter cet envoi : un `failed` la porte aussi, et
+     * un fil qui attendrait un `sent` qui ne viendra jamais resterait gelé jusqu'au balayage. Plusieurs
+     * statuts arrivent pour le même message : c'est la consommation atomique, côté base, qui fait qu'un seul
+     * déclenche la remise.
+     *
+     * ⚠️ BEST-EFFORT, comme la mesure par bloc juste en dessous : une remise ratée est rattrapée par le
+     * balayage de contrôle, tandis qu'une exception ici ferait rejouer TOUT le job par pg-boss, donc
+     * re-traiterait des statuts déjà appliqués pour un motif secondaire.
+     */
+    if (remiseMba) {
+      try {
+        await remiseMba(d.messageId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('remise du fil à l’agent de Meta ignorée:', err instanceof Error ? err.message : err);
+      }
+    }
     if (nodeEvents && d.status !== 'sent') {
       try {
         await nodeEvents.recordStatusForMessage(d.messageId, d.status);

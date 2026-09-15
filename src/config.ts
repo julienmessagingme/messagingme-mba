@@ -443,7 +443,12 @@ export const schema = z.object({
    *  seule soupape. 0 désactive la reprise (le contrôle reste alors humain indéfiniment, à vos risques).
    *  ⚠️ IL REVIENT À L'AGENT DE META quand le client l'a allumé, au scénario sinon. Ce commentaire disait
    *  « revient au scénario » tout court, ce qui est faux depuis que le balayage choisit sa destination.
-   *  ⚠️ Réglable PAR CLIENT (`tenant_settings`), contrairement aux deux délais ci-dessous. */
+   *  ⚠️ Réglable PAR CLIENT (`tenant_settings`), contrairement aux deux délais ci-dessous.
+   *  🔴 ET IL EST DEVENU LE FILET DE LA REMISE À L'AGENT DE META (migration 0149). Depuis que la fin d'un
+   *  parcours attend l'accusé de son dernier envoi pour rendre le fil, elle laisse la conversation en
+   *  `app_human` pendant cette attente (quelques minutes en temps normal). Si l'accusé n'arrive jamais, c'est
+   *  CE délai qui reprend le fil et le rend pour de vrai à l'agent de Meta. Le mettre à 0 chez un client qui
+   *  a l'agent allumé ne « garde pas la main », ça supprime aussi ce rattrapage. */
   CONTROL_HUMAN_TIMEOUT_MS: z.coerce.number().default(2 * 60 * 60 * 1000),
   /** Idem pour un fil tenu par MBA. Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte
    *  qu'en cas de silence anormal. */
@@ -457,6 +462,10 @@ export const schema = z.object({
    * répond jamais, le run reste `waiting`) le garderait à jamais, et l'agent de Meta ne répondrait plus
    * jamais sur cette conversation. La fin NORMALE d'un parcours le rend déjà (`releaseToMba`) : ce délai ne
    * couvre que les parcours qui ne finissent pas.
+   *
+   * ⚠️ « LE REND DÉJÀ » SE FAIT EN DEUX TEMPS DEPUIS LA MIGRATION 0149 : la fin de parcours marque le fil et
+   * le passe en `app_human`, et la remise part quand Meta acquitte notre dernier envoi. Un fil sorti de
+   * `app_workflow` n'est donc plus du ressort de CE délai mais du délai humain juste au-dessus.
    *
    * ⚠️ FIXE, JAMAIS RÉGLABLE PAR CLIENT (tranché par Julien le 2026-09-14), contrairement au délai humain.
    * C'est un garde-fou technique et non un arbitrage métier : personne ne sait répondre à « combien de

@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 6077d9
+source_empreinte: f2dcb4
 ---
 # Répondre à un client dans l'Inbox
 
@@ -29,6 +29,11 @@ sont deux questions différentes.
 que si vous le lui rendez explicitement, avec le bouton prévu, ou après un délai sans réponse de votre part.
 C'est voulu : rien n'est plus déroutant pour un client qu'un robot qui reprend la parole au milieu d'un
 échange avec une personne.
+
+**Quand un scénario arrive au bout**, si l'agent de Meta est allumé chez vous, la conversation lui revient et
+il répond de nouveau tout seul. Comptez une à deux minutes après le dernier message du scénario : la remise
+n'est demandée à Meta qu'une fois son dernier envoi acquitté. Pendant cette courte attente, la conversation
+est à vous, donc une réponse du client s'y affiche bien dans « À traiter ».
 
 **Sur un fil tenu par l'agent de Meta**, le même bouton le lui prend pour de bon, sans qu'aucun message ne
 parte chez le client : l'agent se tait jusqu'à la reprise prévue, même si vous n'écrivez rien. Ces

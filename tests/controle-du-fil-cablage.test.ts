@@ -59,30 +59,61 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
 });
 
 /**
- * 🔴 UN REFUS DE META NE DOIT PLUS ÊTRE INVISIBLE.
+ * 🔴 LA FIN D'UN PARCOURS NE RELÂCHE PLUS LE FIL DANS LA FOULÉE DE SON DERNIER ENVOI (migration 0149).
  *
- * `releaseToMba` écrivait `mba` dans notre colonne PUIS appelait Meta. Si Meta refusait, la colonne restait
- * à `mba` : l'écran affirmait que le robot tenait un fil que Meta nous laissait, et la seule trace du refus
- * était une ligne de console. Le mode de panne le plus coûteux : invisible, et démenti par l'écran.
+ * Mesuré en production le 2026-09-15 : Meta acquitte nos envois avec DEUX MINUTES de retard, et sa
+ * documentation dit qu'envoyer un message PREND le fil implicitement. Le release partait donc avant que Meta
+ * ne traite l'envoi, et l'envoi reprenait le fil juste derrière. Trois releases émis deux secondes après un
+ * envoi ont échoué, celui émis quatorze minutes après a marché.
  */
-describe('le refus de Meta revient en arrière', () => {
+describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
   const bloc = wiring.slice(wiring.indexOf('releaseToMba: async (tenant, waId)'), wiring.indexOf('evalContext:'));
 
-  it('🔴 sur échec, la colonne repasse à `app_human`, jamais laissée à `mba`', () => {
-    expect(bloc).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['mba'] })");
+  it('🔴 la fin de parcours MARQUE, elle n’appelle pas Meta', () => {
+    expect(bloc).toContain('demanderReleaseMba(tenant, waId)');
+    // C'est l'assertion qui porte tout le correctif : plus aucun appel à Meta sur ce chemin.
+    expect(bloc).not.toContain('releaseThreadChezMeta');
   });
 
-  it('🔴 et `app_human` est la SEULE valeur qui garde le fil dans « À traiter »', () => {
-    // `app_workflow` l'en sortirait, ce qui est le défaut réparé le même jour ; `mba` afficherait la marque
-    // du robot sur un fil qu'il ne tient pas.
+  it('🔴 l’état d’attente est `app_human`, la SEULE valeur qui garde le fil dans « À traiter »', () => {
+    // `app_workflow` l'en sortirait (c'est le défaut réparé la veille), et `mba` afficherait la marque du
+    // robot sur un fil que nous tenons encore.
+    expect(bloc).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] })");
     const dansATraiter = (owner: string) => owner !== 'app_workflow';
     expect(dansATraiter('app_human')).toBe(true);
     expect(dansATraiter('app_workflow')).toBe(false);
-    expect(bloc).not.toContain("'app_workflow', { only: ['mba'] }");
   });
 
-  it('⚠️ l’erreur est RELEVÉE : l’appelant la journalise, et n’échoue pas le parcours pour autant', () => {
-    expect(bloc).toContain('throw err;');
+  it('🔴 rien n’a été envoyé -> on relâche TOUT DE SUITE, sinon le fil attend un accusé qui ne viendra pas', () => {
+    const compact = bloc.replace(/\s+/g, ' ');
+    expect(compact).toContain('if (attendu) return; await rendreLeFilMaintenant(tenant, waId);');
+  });
+
+  it('🔴 la remise écrit `mba` APRÈS l’accord de Meta, jamais avant', () => {
+    // L'ordre inverse est celui qui mentait : la colonne restait à `mba` sur un refus, et la seule trace
+    // était une ligne de console. Ici l'état d'attente est déjà honnête, donc il n'y a rien à anticiper.
+    const geste = wiring.slice(wiring.indexOf('const rendreLeFilMaintenant'), wiring.indexOf('const remiseMbaSurAccuse'));
+    expect(geste.indexOf('releaseThreadChezMeta(tenant, waId)')).toBeGreaterThan(-1);
+    expect(geste.indexOf('releaseThreadChezMeta(tenant, waId)'))
+      .toBeLessThan(geste.indexOf("setControlOwner(tenant, waId, 'mba', { only: ['app_human'] })"));
+  });
+
+  it('🔴 les DEUX files qui voient des statuts reçoivent la remise', () => {
+    // Une capacité câblée sur un consommateur sur deux est un correctif à moitié : un accusé arrive par
+    // `webhook` ou par `webhook-status` selon le lot que Meta nous envoie, et ce découpage ne nous
+    // appartient pas.
+    const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
+    const lignes = worker.split('\n').filter((l) => l.includes('remiseMba:'));
+    expect(lignes).toHaveLength(2);
+    expect(lignes.every((l) => l.includes('remiseMbaSurAccuse'))).toBe(true);
+  });
+
+  it('⚠️ le BALAYAGE, lui, appelle Meta directement, et c’est correct', () => {
+    // Il tourne loin de tout envoi : il n'y a aucune course à éviter, et passer par le marqueur ferait
+    // attendre un accusé qui n'arrivera jamais sur une conversation sans envoi récent.
+    const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
+    const ligne = worker.split('\n').find((l) => l.includes('releaseToMba:')) ?? '';
+    expect(ligne).toContain('releaseThreadChezMeta(tenant, waId)');
   });
 });

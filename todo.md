@@ -1,5 +1,26 @@
 # todo.md : backlog
 
+## 🟠 Le bouton « Rendre la main » de l'Inbox garde la course que la fin de parcours vient de perdre (2026-09-15)
+
+Le correctif du 2026-09-15 (migration 0149) fait attendre à la fin d'un parcours l'accusé de son dernier
+envoi avant de rendre le fil à l'agent de Meta, parce qu'envoyer un message PREND le fil chez Meta et que
+l'accusé arrive DEUX MINUTES plus tard. **Le bouton « Rendre la main » de l'Inbox, lui, appelle toujours Meta
+tout de suite** (`src/index.ts`, `rendreLeFilAuMba`). Un opérateur qui répond au client puis rend la main dans
+la foulée relâche donc un fil que son propre message vient de reprendre : l'agent de Meta restera muet, comme
+il l'était en fin de scénario.
+
+🔴 **Ce n'est pas le même geste, et c'est pour ça que ça n'a pas été corrigé dans la foulée.** La route est
+SYNCHRONE et rend un verdict à l'écran (« le fil est rendu, à qui »). Le différer jusqu'à l'accusé ferait
+mentir le bouton, ou obligerait à afficher un état « remise en cours » qui n'existe nulle part aujourd'hui.
+
+Deux pistes, à arbitrer : afficher l'attente (le bouton répond « rendu d'ici deux minutes ») et passer par le
+même marqueur ; ou ne différer QUE quand notre dernier envoi date de moins de deux minutes et n'a pas encore
+son accusé, et relâcher tout de suite sinon. La seconde ne change rien au cas courant, où l'opérateur rend la
+main sans avoir écrit.
+
+⚠️ Le filet existe déjà dans les deux cas : le balayage de contrôle reprend les fils immobiles et les rend
+pour de vrai. Le coût d'aujourd'hui est un retard, pas une perte.
+
 ## 🔴 « L'agent de Meta prend la main » et « Un agent IA prend la main » NE PARTENT NULLE PART (2026-09-14)
 
 Relevé en revue du lot « une question à la fois », en suivant ce que `devenir` devient. La question

@@ -288,7 +288,7 @@ async function main(): Promise<void> {
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
-    releaseThreadChezMeta, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
+    releaseThreadChezMeta, remiseMbaSurAccuse, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
@@ -401,6 +401,13 @@ async function main(): Promise<void> {
     await handleWebhookJob(data, {
       store: eventStore,
       delivery: recipientStore,
+      /**
+       * 🔴 LES DEUX FILES QUI VOIENT DES STATUTS LA REÇOIVENT, celle-ci et `webhook-status`. Un accusé peut
+       * arriver par l'une ou par l'autre selon le lot que Meta nous envoie : la câbler sur une seule ferait
+       * dépendre la remise du fil d'un découpage qui ne nous appartient pas. C'est le motif « une capacité
+       * câblée sur un consommateur sur deux », déjà payé plusieurs fois dans ce dépôt.
+       */
+      remiseMba: remiseMbaSurAccuse,
       inbox: inboxStore,
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
       // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
@@ -547,7 +554,7 @@ async function main(): Promise<void> {
     // Trois dépendances NOMMÉES là où il y avait sept `undefined` d'affilée : ce qui est absent l'est
     // volontairement (aucune conversation, aucune automation, aucun scénario ne se déclenche sur un accusé),
     // et ça se lit maintenant sans compter les virgules.
-    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore });
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse });
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT

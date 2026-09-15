@@ -1,0 +1,28 @@
+-- Rendre le fil à l'agent de Meta QUAND NOTRE DERNIER ENVOI EST ACQUITTÉ, pas dans la foulée de l'envoi.
+--
+-- 🔴 CE QUE ÇA RÉPARE, MESURÉ LE 2026-09-15 SUR LE NUMÉRO DE PRODUCTION. La fin d'un parcours relâchait le
+-- fil dans la seconde qui suit son dernier envoi. Or Meta acquitte nos envois AVEC DEUX MINUTES DE RETARD
+-- (corrélation par identifiant de message : envoi 07:42:17 -> `sent` 07:44:04, envoi 08:26:47 -> `sent`
+-- 08:28:42), et sa documentation dit qu'ENVOYER UN MESSAGE PREND LE FIL IMPLICITEMENT. Notre release partait
+-- donc AVANT que Meta ne traite l'envoi, et l'envoi reprenait le fil juste derrière.
+--
+-- Quatre observations, sans exception : trois releases émis deux secondes après un envoi ont échoué (l'agent
+-- de Meta est resté muet), celui émis quatorze minutes après le dernier envoi a marché (il a répondu en sept
+-- secondes).
+--
+-- 🔴 UN MARQUEUR, PAS UNE TEMPORISATION. Un délai fixe serait un nombre deviné, faux le jour où Meta ralentit.
+-- Le signal VRAI existe déjà et il arrive par webhook : le statut de notre dernier message.
+--
+-- 🔴 ELLE PORTE L'IDENTIFIANT DU MESSAGE ATTENDU, PAS UN HORODATAGE, et ce n'est pas un détail de forme.
+-- Un parcours envoie PLUSIEURS messages : avec un simple « quelque chose est en attente », le statut du
+-- PREMIER message (qui arrive deux minutes après lui, donc souvent après que le parcours se soit terminé)
+-- déclencherait la remise alors que le DERNIER envoi vient juste de partir. On reproduirait exactement la
+-- course qu'on répare. En nommant le message attendu, seul SON accusé libère le fil.
+--
+-- ⚠️ N'IMPORTE LEQUEL DE SES STATUTS SUFFIT (`sent`, `delivered`, `read`, `failed`). Ce qu'on attend n'est
+-- pas une bonne nouvelle, c'est la PREUVE que Meta a fini de traiter cet envoi. Un `failed` la porte aussi.
+--
+-- ⚠️ AUCUN INDEX, délibérément. Le seul lecteur part d'un identifiant de message et frappe cette colonne en
+-- égalité sur une ligne déjà désignée : aucune requête ne la BALAIE, et un index partiel serait un contrat
+-- avec une requête qui n'existe pas (c'est la leçon de 0143).
+alter table conversations add column if not exists release_mba_apres_message text;

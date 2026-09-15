@@ -1,6 +1,6 @@
 import { parseWebhook } from './parse';
 import { processStatuses } from './delivery';
-import type { NodeStatusSink } from './delivery';
+import type { NodeStatusSink, RemiseMbaSurAccuse } from './delivery';
 import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
@@ -70,12 +70,17 @@ export interface WebhookJobDeps {
    * Absente -> aucune affectation automatique, la conversation tombe dans « À traiter » comme avant.
    */
   inboundAssignation?: InboundAssignation;
+  /**
+   * Remise du fil à l'agent de Meta quand l'accusé de notre dernier envoi arrive (migration 0149). Absente ->
+   * les fils sont rendus par le balayage de contrôle, plus tard.
+   */
+  remiseMba?: RemiseMbaSurAccuse;
 }
 
 export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, inboundContactUpsert,
-    handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation,
+    handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
   } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -87,7 +92,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
-  if (delivery) await processStatuses(events, delivery, nodeEvents);
+  if (delivery) await processStatuses(events, delivery, nodeEvents, remiseMba);
   // Contacts CRÉÉS par ce webhook (clé `tenant:waId`). Le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert : une fois la fiche créée, plus rien ne le distingue d'un habitué. On le capture
   // donc au vol, pour la durée de CE job (aucun état global, aucune requête supplémentaire).

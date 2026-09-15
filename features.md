@@ -1054,6 +1054,19 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   la conversation bascule côté opérateur. Le badge le dit tout de suite et la conversation apparaît dans
   « À traiter ». Avant, le scénario s'arrêtait en silence pendant que le badge affichait encore « scénario », et
   personne ne voyait que le client attendait.
+- ✅ **Un scénario terminé rend le fil à l'agent de Meta, quand il est allumé** (corrigé le 2026-09-15). À la
+  fin du parcours, la conversation retourne à l'agent de Meta, qui répond de nouveau tout seul dès que le
+  client écrit. **Comptez une à deux minutes** après le dernier message du scénario : la remise n'est demandée
+  à Meta qu'une fois notre dernier envoi acquitté par lui.
+  🔴 **Avant ce correctif, l'agent de Meta ne repartait PAS.** La remise était demandée dans la seconde suivant
+  le dernier envoi ; or envoyer un message reprend le fil chez Meta, et son accusé arrive deux minutes plus
+  tard. L'envoi reprenait donc le fil juste après la remise : l'agent restait muet, le client parlait dans le
+  vide, et la conversation n'apparaissait pas non plus dans « À traiter ». Mesuré sur le numéro de production,
+  trois fois sur trois.
+  ⚠️ **Pendant cette attente, la conversation est « à vous »**, donc une réponse du client pendant ces deux
+  minutes allume bien la pastille « À traiter » au lieu de disparaître. Et si Meta ne répond jamais, le délai
+  de reprise (deux heures par défaut) rend le fil malgré tout.
+
 - ✅ **Bouton « Rendre la main »** dans le fil, quand un opérateur détient la conversation. Le scénario
   repart immédiatement, sans attendre le délai.
 - ✅ **Un bouton de chaîne cliqué reprend la main lui aussi** (2026-09-08), pour la même raison qu'une
