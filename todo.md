@@ -31,6 +31,36 @@ troisième frein n'est pas technique : à 131 transactions par minute mesurées 
 d'egress par mois, la moitié du forfait gratuit, sans un seul client), un second worker ajoute son propre
 sondage sur les neuf files et fait franchir les 5 Go. C'est la FACTURE qui tranchera avant Postgres.
 
+## 🟠 La base part avec le calcul le jour de Scaleway, ce n'est pas un projet séparé (2026-09-15)
+
+Décision de Julien du 2026-09-15 : quand le calcul déménagera chez Scaleway, **la base déménage avec**. La
+raison n'est pas la portabilité, c'est la **co-location** : calcul à Paris et base à Londres, chaque requête
+traverse internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien
+pire, et il serait payé sur chacune des 131 transactions par minute mesurées au repos. Latence ET egress, des
+deux côtés. **La règle est : le calcul et la base dans la même région, toujours.**
+
+🔴 **CE QUI EST DÉJÀ VRAI, VÉRIFIÉ LE 2026-09-15, ET QU'IL FAUT SURTOUT NE PAS CASSER.** Ce dépôt n'a **aucune
+dépendance spécifique à Supabase** : pas de `supabase-js`, pas de `createClient`, ni Storage, ni Auth, ni
+PostgREST, ni Edge Function. `supabase_vault` est présente sur la base mais nous ne l'utilisons nulle part.
+C'est du **Postgres nu**, et c'est ce qui rend le déménagement possible sans réécriture.
+
+⚠️ **LA PRÉPARATION EST DONC UNE DISCIPLINE, PAS UN CHANTIER** : n'ajouter aucune de ces briques. Le jour où
+quelqu'un branche le Storage Supabase pour un média ou son Auth pour un login, la base cesse d'être portable
+et personne ne s'en apercevra avant le devis de migration.
+
+⚠️ **ET LE SCHÉMA N'EST PAS DANS LE TABLEAU DE BORD SUPABASE, IL EST DANS `db/migrations/`.** Une base neuve
+plus `npm run migrate` reproduit tout, y compris la configuration de recherche `french_sans_accent`. Le
+déménagement se réduit donc à : créer la base, migrer, restaurer les données, changer deux variables d'env.
+
+**Les trois extensions dont on dépend, à vérifier chez la destination AVANT de s'engager** : `vector`
+(pgvector, `agent_knowledge.embedding` et les fiches d'aide) est la seule qui ne soit pas universelle ;
+`pg_trgm` et `unaccent` sont des contribs standard, présentes partout. `pgcrypto` ne sert qu'à
+`gen_random_uuid()`, natif depuis PostgreSQL 13 de toute façon.
+
+⚠️ **CE QU'ON PERD EN PARTANT, et il faut le savoir avant** : les sauvegardes automatiques et le tableau de
+bord de Supabase. Une base managée Scaleway a les siennes, mais ce n'est pas la même interface, et la
+procédure de reprise de `DEPLOY.md` devra être réécrite pour elle.
+
 ## 🔴 Avant de rendre l'API élastique (conteneurs serverless), lui retirer ses connexions SESSION (2026-09-15)
 
 Décision de Julien du 2026-09-15 : la trajectoire passe par des conteneurs serverless avec multiplication des
