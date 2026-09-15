@@ -91,8 +91,11 @@ describe.skipIf(!url)('l historique des reglages', () => {
       [tenantId],
     )).rejects.toThrow(/reglages_historique_surface_id_chk/);
     await expect(pool.query(
+      // ⚠️ SEPT colonnes, SEPT valeurs : il en manquait une (`operation`), donc Postgres refusait pour une
+      // raison qui n'était PAS le CHECK qu'on voulait éprouver. Le test passait pour la mauvaise cause, et
+      // ne l'a montré que le jour où le fichier a enfin pu s'exécuter.
       `insert into reglages_historique (tenant_id, surface, surface_id, element, operation, libelle, origine)
-       values ($1, 'mba', $2, 'faq', 'avec agent', 'formulaire')`,
+       values ($1, 'mba', $2, 'faq', 'ajout', 'avec agent', 'formulaire')`,
       [tenantId, agentId],
     )).rejects.toThrow(/reglages_historique_surface_id_chk/);
   });
