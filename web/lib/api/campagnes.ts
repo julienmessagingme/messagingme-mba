@@ -67,6 +67,13 @@ export interface EtageLance {
   emailTemplateId?: string;
   emailChamp?: string;
   workflowId?: string;
+  /**
+   * Le NOM du scénario de cet étage, joint à la LECTURE côté serveur (2026-09-15).
+   *
+   * ⚠️ ABSENT quand le scénario a été supprimé depuis. L'écran retombe alors sur l'identifiant et le DIT :
+   * inventer un nom pour un parcours effacé serait pire qu'un code laid.
+   */
+  workflowName?: string;
   /** Cf. `ContenuEtage.devenir`. Absent = campagne d'avant le 2026-09-14. */
   devenir?: 'mba' | 'inbox';
 }

@@ -417,10 +417,19 @@ export class PgCampaignRepo {
       email_template_id: string | null;
       email_champ: string | null;
       workflow_id: string | null;
+      workflow_name: string | null;
       devenir: 'mba' | 'inbox' | null;
     }>(
-      `select campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id, devenir
-       from campaign_etages where campaign_id = any($1::uuid[]) order by campaign_id, rang`,
+      /**
+       * ⚠️ LA JOINTURE EST EXTERNE, ET C'EST LE POINT : un scénario supprimé depuis ne doit pas faire
+       * DISPARAÎTRE l'étage de l'écran. Un `join` simple ferait perdre la ligne entière, donc la campagne
+       * paraîtrait n'avoir jamais rien envoyé.
+       */
+      `select e.campaign_id, e.rang, e.canal, e.template_name, e.template_language, e.rcs_message,
+              e.email_template_id, e.email_champ, e.workflow_id, w.name as workflow_name, e.devenir
+         from campaign_etages e
+         left join workflows w on w.id = e.workflow_id
+        where e.campaign_id = any($1::uuid[]) order by e.campaign_id, e.rang`,
       [campaignIds],
     );
     for (const e of res.rows) {
@@ -433,6 +442,7 @@ export class PgCampaignRepo {
         ...(e.email_template_id !== null ? { emailTemplateId: e.email_template_id } : {}),
         ...(e.email_champ !== null ? { emailChamp: e.email_champ } : {}),
         ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
+        ...(e.workflow_name !== null ? { workflowName: e.workflow_name } : {}),
         ...(e.devenir !== null ? { devenir: e.devenir } : {}),
       };
       const deja = parCampagne.get(e.campaign_id);

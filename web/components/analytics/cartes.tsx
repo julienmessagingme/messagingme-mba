@@ -272,12 +272,26 @@ function VentilationParCanal({ funnel }: { funnel: CampaignFunnel }) {
  * de Julien (« au moins 2 tableaux »), et c'est un DÉFAUT d'affichage, pas une contrainte : la sélection
  * reste libre, y compris à une seule campagne.
  */
-export function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaigns: CampaignSummary[] }) {
+export function CampaignFunnelCard({ tenantId, campaigns, initiale }: {
+  tenantId: string;
+  campaigns: CampaignSummary[];
+  /**
+   * La campagne à montrer d'emblée, quand on arrive depuis son écran de détail (2026-09-15).
+   *
+   * ⚠️ C'EST UN DÉFAUT, PAS UN VERROU : dès que l'utilisateur touche aux cases, son choix gagne, comme
+   * avec le défaut ordinaire. Un filtre qu'on ne pourrait pas défaire serait pire que pas de filtre.
+   */
+  initiale?: string[];
+}) {
   const t = useT();
   const [choisies, setChoisies] = useState<string[]>([]);
   // `campaigns` arrive APRÈS le premier rendu : un `useState` initialisé sur lui resterait vide pour
   // toujours. Le défaut se calcule donc au rendu, et disparaît dès que l'utilisateur choisit lui-même.
-  const selection = choisies.length > 0 ? choisies : campaigns.slice(0, 2).map((c) => c.id);
+  // ⚠️ La campagne demandée par l'adresse n'est retenue que si elle EXISTE dans la liste : un identifiant
+  // périmé dans un lien doit rendre l'écran normal, jamais un entonnoir vide qui se lirait « zéro envoi ».
+  const demandees = (initiale ?? []).filter((id) => campaigns.some((c) => c.id === id));
+  const parDefaut = demandees.length > 0 ? demandees : campaigns.slice(0, 2).map((c) => c.id);
+  const selection = choisies.length > 0 ? choisies : parDefaut;
   const affichees = selection
     .map((id) => campaigns.find((c) => c.id === id))
     .filter((c): c is CampaignSummary => c !== undefined);

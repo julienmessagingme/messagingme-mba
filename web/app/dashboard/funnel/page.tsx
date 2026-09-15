@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { CampaignFunnelCard } from '@/components/analytics/cartes';
 import type { Session } from '@/lib/session';
@@ -16,11 +17,29 @@ import { useT } from '@/lib/i18n';
  * C'était déjà vrai quand la carte vivait dans la page unique, où la barre de période ne l'affectait pas.
  */
 export default function FunnelPage() {
-  return <AppShell active="quanti-funnel">{(session) => <FunnelInner session={session} />}</AppShell>;
+  /**
+   * ⚠️ `Suspense` PARCE QUE `useSearchParams` L'EXIGE dans l'App Router : sans lui, la page entière bascule
+   * en rendu client au build et Next le signale. Le repli est l'écran sans filtre, donc exactement ce qu'on
+   * avait avant l'adresse filtrée.
+   */
+  return (
+    <AppShell active="quanti-funnel">
+      {(session) => (
+        <Suspense fallback={null}>
+          <FunnelInner session={session} />
+        </Suspense>
+      )}
+    </AppShell>
+  );
 }
 
 function FunnelInner({ session }: { session: Session }) {
   const t = useT();
+  /**
+   * LA CAMPAGNE DEMANDÉE PAR L'ADRESSE (`?campagne=<id>`), posée par le bouton « Voir les résultats » de
+   * l'écran des campagnes. Absente = le comportement d'avant, les deux dernières campagnes.
+   */
+  const demandee = useSearchParams().get('campagne');
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +81,7 @@ function FunnelInner({ session }: { session: Session }) {
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
       ) : (
-        <CampaignFunnelCard tenantId={session.tenantId} campaigns={campaigns} />
+        <CampaignFunnelCard tenantId={session.tenantId} campaigns={campaigns} initiale={demandee ? [demandee] : undefined} />
       )}
     </div>
   );

@@ -76,6 +76,18 @@ export interface Etage {
   /** Étage à SCÉNARIO : démarre ce parcours au lieu d'envoyer un contenu propre. */
   workflowId?: string;
   /**
+   * LE NOM du scénario, EN LECTURE SEULE (2026-09-15).
+   *
+   * 🔴 IL N'EST JAMAIS ÉCRIT : `campaign_etages` ne porte pas cette colonne, et c'est volontaire. Le nom
+   * d'un scénario se RENOMME ; le figer dans la campagne créerait une seconde vérité qui vieillirait, et
+   * l'écran d'une campagne lancée il y a un mois afficherait un nom que plus personne ne reconnaît. Il
+   * vient d'une jointure sur `workflows`, au moment de la lecture.
+   *
+   * ⚠️ ABSENT quand le scénario a été SUPPRIMÉ depuis. L'écran retombe alors sur l'identifiant, qui est
+   * laid mais vrai : inventer un nom pour un parcours effacé serait pire.
+   */
+  workflowName?: string;
+  /**
    * CE QUI SE PASSE QUAND LE CONTACT RÉPOND À CET ÉTAGE (migration 0144).
    *
    * 🔴 PROPRE À L'ÉTAGE, ET C'EST TOUT L'INTÉRÊT : une chaîne de repli peut servir un modèle seul en

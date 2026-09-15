@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
@@ -500,7 +501,25 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
           <span className="text-xs text-ink-500">{campaignSendLabel(detail, locale)}</span>
           <span className="text-xs text-ink-400">{t('coût estimé', 'estimated cost')} {cost != null ? `≈ ${fmtCost(cost, locale, pricing?.currency)}${pricing?.currency ? '' : ` (${t('devise du compte', 'account currency')})`}` : t('indisponible', 'unavailable')}</span>
         </div>
-        <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+        <div className="flex items-center gap-3">
+          {/*
+            🔴 LE CHEMIN VERS LES RÉSULTATS, depuis l'écran où on se pose la question (demande de Julien,
+            2026-09-15). Sans lui, il fallait retenir le nom de la campagne, changer de menu, trouver le
+            Funnel, puis la rechercher dans une liste déroulante : quatre gestes pour une question qu'on se
+            pose en regardant le détail.
+
+            ⚠️ C'est un LIEN, pas un bouton à `onClick` : il s'ouvre dans un nouvel onglet au clic du milieu,
+            se copie, et se partage. Un `router.push` perdrait les trois.
+          */}
+          <Link
+            href={`/dashboard/funnel?campagne=${encodeURIComponent(detail.id)}`}
+            data-testid="campagne-voir-funnel"
+            className="rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
+          >
+            {t('Voir les résultats', 'See results')}
+          </Link>
+          <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+        </div>
       </div>
       {/* ⚠️ `?? []` N'EST PAS DE LA PRUDENCE DÉCORATIVE : le front part sur Vercel au push et l'API sur le
           VPS plus tard, donc pendant cette fenêtre un écran NEUF interroge une API qui ne rend pas encore
@@ -644,17 +663,32 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
                 {chaine.length > 1 ? `${t('Étage', 'Stage')} ${e.rang} · ` : ''}{canal(e.canal)}
               </span>
               {' : '}
+              {/*
+                🔴 UN ÉTAGE À SCÉNARIO N'A PAS DE « CONTENU INCONNU », LE SCÉNARIO EST LE CONTENU (constaté
+                par Julien le 2026-09-15). Une campagne « modèle + scénario » ne stocke AUCUN nom de modèle
+                dans `campaign_etages` : le modèle est le premier bloc du parcours. L'écran annonçait donc
+                « contenu inconnu · puis le scénario », c'est-à-dire un aveu d'ignorance juste à côté de la
+                réponse.
+              */}
               {e.templateName
                 ? <span className="font-mono text-xs">{e.templateName}{e.templateLanguage ? ` (${e.templateLanguage})` : ''}</span>
                 : e.rcsMessage
                   ? t('message RCS', 'RCS message')
                   : e.emailTemplateId
                     ? t('modèle d’e-mail', 'email template')
-                    : t('contenu inconnu', 'unknown content')}
+                    : e.workflowId
+                      ? t('le scénario', 'the scenario')
+                      : t('contenu inconnu', 'unknown content')}
               {e.workflowId && (
                 <span className="text-ink-600">
-                  {' '}·{' '}{t('puis le scénario', 'then scenario')}{' '}
-                  <span className="font-mono text-xs">{e.workflowId.slice(0, 8)}</span>
+                  {' '}{e.templateName || e.rcsMessage || e.emailTemplateId ? `· ${t('puis le scénario', 'then scenario')} ` : ''}
+                  {/* 🔴 LE NOM, PAS LE CODE. « 40f4a189 » ne désigne rien pour qui a écrit le parcours. Le nom
+                      vient d'une jointure à la LECTURE : il suit les renommages, et il manque seulement si le
+                      scénario a été supprimé depuis, auquel cas l'identifiant reste le seul repère vrai. */}
+                  <span className={e.workflowName ? 'font-medium' : 'font-mono text-xs'}>
+                    {e.workflowName ? `« ${e.workflowName} »` : e.workflowId.slice(0, 8)}
+                  </span>
+                  {!e.workflowName && <span className="text-ink-400">{' '}({t('supprimé', 'deleted')})</span>}
                 </span>
               )}
               {/* ⚠️ Le devenir n'est affiché QUE s'il a été réglé : une campagne d'avant le câblage n'en a
