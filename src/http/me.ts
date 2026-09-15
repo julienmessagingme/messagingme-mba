@@ -7,10 +7,10 @@ export interface MeRouteDeps {
   getUser(userId: string): Promise<{ email: string; name: string | null; role: string } | null>;
 }
 
-export function registerMe(app: FastifyInstance, deps: MeRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerMe(app: FastifyInstance, deps: MeRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/me', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/me', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const userId = req.auth?.userId;

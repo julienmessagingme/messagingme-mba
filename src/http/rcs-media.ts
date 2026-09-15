@@ -34,16 +34,16 @@ export interface RcsMediaRouteDeps {
  * classique de transformer un hébergeur d'images en hébergeur de pages. Trois formats seulement, `nosniff`
  * posé, et `Content-Disposition: inline` avec un nom neutre (le nom d'origine en dirait trop sur le client).
  */
-export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/rcs/media', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/rcs/media', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ media: await deps.list(tenant) });
   });
 
-  app.post('/tenants/:tenantId/rcs/media', { ...guard, bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
+  app.post('/tenants/:tenantId/rcs/media', { ...opts, bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -69,7 +69,7 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     return reply.code(201).send({ media, url });
   });
 
-  app.delete('/tenants/:tenantId/rcs/media/:id', guard, async (req, reply) => {
+  app.delete('/tenants/:tenantId/rcs/media/:id', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

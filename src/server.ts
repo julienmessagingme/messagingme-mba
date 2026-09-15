@@ -304,18 +304,22 @@ export type ClasseDAcces =
   | 'cle-api';
 
 /** Les gardes que `buildServer` construit une fois et distribue aux modules. */
-interface Gardes {
+export interface Gardes {
   /**
    * Tout compte authentifié. `PreHandler` et non `Guard` : c'est UN prehandler, pas une liste, et
    * `registerInbox` en dépend (il la compose lui-même avec sa garde d'effacement). Le déclarer `Guard`
    * ici compilait pour 28 modules sur 29 et échouait sur celui-là, ce qui est exactement le genre d'écart
    * qu'un contrat trop large cache.
+   *
+   * 🔴 LES TROIS GARDES SONT REQUISES DEPUIS LE LOT 2 (plan 2026-09-14). Elles étaient optionnelles, et un
+   * module qui en recevait une absente montait ses routes SANS CONTRÔLE, en silence. Quand
+   * l'authentification n'est pas câblée, elles valent un refus, jamais `undefined`.
    */
-  readonly auth?: PreHandler;
+  readonly auth: PreHandler;
   /** Compte `admin` seulement. Une LISTE (`[auth, role]`), d'où `Guard`. */
-  readonly admin?: Guard;
+  readonly admin: Guard;
   /** `admin` ou `manager` : consulter n'est pas décider (écrans de conformité). */
-  readonly encadrement?: Guard;
+  readonly encadrement: Guard;
   /** Le second plafond de débit, composé route par route sur les seules routes coûteuses. */
   readonly limiteCouteuse?: PreHandler;
 }
@@ -683,10 +687,27 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     ? makeLimiteParTenant(limiteurCouteux, 'trop d’opérations lourdes sur cet espace, patientez une minute')
     : undefined;
 
-  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState, plafondUtilisateur) : undefined;
+  /**
+   * 🔴 SANS `deps.auth`, LA GARDE VAUT UN REFUS, JAMAIS `undefined` (lot 2 du plan 2026-09-14).
+   *
+   * C'est la différence entre « personne ne s'en sert » et « quelqu'un s'en sert et elle ne fait rien ».
+   * Avant, ces trois gardes étaient `undefined` quand l'authentification n'était pas câblée, et chaque module
+   * de routes les recevait en paramètre OPTIONNEL puis les dégradait en silence (`garde ? { preHandler } :
+   * {}`, le motif était dans 45 endroits) : une route montée sans garde était servie SANS AUCUN CONTRÔLE.
+   *
+   * ⚠️ AUCUN CHEMIN N'Y MÈNE AUJOURD'HUI, et ce n'est pas une raison de s'en passer. Le garde-fou plus haut
+   * refuse déjà de démarrer si un module `acces: 'tenant'` est monté sans `deps.auth`, et le seul module non
+   * tenant qui prend une garde est `auth` lui-même, qui n'est pas monté dans ce cas. Ce refus est donc
+   * inatteignable : il existe pour que l'inatteignabilité cesse de dépendre d'un raisonnement, et pour que
+   * le type puisse exiger une garde partout.
+   */
+  const refuseTout: PreHandler = async (_req, reply) => {
+    await reply.code(401).send({ error: 'authentification non configurée' });
+  };
+  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState, plafondUtilisateur) : refuseTout;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
   // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
-  const requireAdmin = requireAuth ? [requireAuth, makeRequireRole(['admin'])] : undefined;
+  const requireAdmin: Guard = [requireAuth, makeRequireRole(['admin'])];
   /**
    * L'ENCADREMENT : `admin` ET `manager`.
    *
@@ -699,7 +720,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * les deux journaux ; il ne branche aucun connecteur et ne change aucune politique. Ces écritures-là
    * restent sur `requireAdmin`, et l'écran masque ce qu'il ne peut pas faire.
    */
-  const requireEncadrement = requireAuth ? [requireAuth, makeRequireRole(['admin', 'manager'])] : undefined;
+  const requireEncadrement: Guard = [requireAuth, makeRequireRole(['admin', 'manager'])];
 
   /**
    * LE MONTAGE, en une seule boucle sur le registre.

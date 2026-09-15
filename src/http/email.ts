@@ -17,9 +17,11 @@ import type {
 
 /**
  * Routes des boîtes SMTP et modèles d'email (node « Envoi de mail »), admin-only. Calqué sur
- * `src/http/workflows.ts` : `guard` (optionnel, posé au montage) porte l'auth/rôle en prod ; `scopeTenant` puis
- * `forbidNonAdmin` défendent chaque écriture dans la route elle-même, comme workflows.ts (utile aussi en test,
- * où `registerEmailRoutes` peut être monté sans guard). Les lectures ne posent que `scopeTenant`.
+ * `src/http/workflows.ts` : `garde` (REQUISE depuis le lot 2 du plan 2026-09-14, posée au montage) porte
+ * l'auth et le rôle ; `scopeTenant` puis `forbidNonAdmin` défendent EN PLUS chaque écriture dans la route
+ * elle-même. ⚠️ Ce texte disait que le module « peut être monté sans garde » en test : ce n'est plus vrai,
+ * les tests passent `gardeOuverte` (`tests/gardes.ts`). La défense en profondeur dans la route, elle, ne
+ * change pas : elle ne dépendait déjà pas de la garde. Les lectures ne posent que `scopeTenant`.
  *
  * Le mot de passe SMTP n'est JAMAIS renvoyé : `EmailAccount` (email/types.ts) ne le porte déjà pas ; seul
  * `DecryptedEmailAccount` (jamais sérialisé ici) l'ajoute. `publicAccount` se contente d'annoncer `hasPassword`.
@@ -83,8 +85,8 @@ export interface EmailRoutesDeps {
   resolver: EmailResolverDep;
 }
 
-export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   // ---- Boîtes SMTP ----
   app.get('/tenants/:tenantId/email/accounts', opts, async (req, reply) => {

@@ -12,10 +12,10 @@
  * 🔴 ELLE ÉCHOUE FERMÉ, ET C'EST UN CORRECTIF (audit de surface publique du 2026-09-03). Elle rendait
  * auparavant le tenant PRIS DANS L'URL quand `req.auth` était absent. Autrement dit, elle n'était un contrôle
  * d'accès que tant que la garde d'authentification avait bien été posée au montage, ailleurs, dans un autre
- * fichier. Or chaque module de routes reçoit sa garde en paramètre OPTIONNEL et la dégrade en silence
- * (`guard ? { preHandler: guard } : {}`, le motif est dans 38 fichiers) : un câblage qui aurait oublié
- * `auth` aurait monté ces routes sans aucun contrôle, et cette fonction aurait alors distribué à chacun le
- * tenant qu'il demandait. C'est-à-dire tous les espaces, à tout le monde, sans une ligne d'erreur.
+ * fichier. Or chaque module de routes recevait alors sa garde en paramètre OPTIONNEL et la dégradait en
+ * silence (`garde ? { preHandler: garde } : {}`, le motif était dans 45 endroits) : un câblage qui aurait
+ * oublié `auth` aurait monté ces routes sans aucun contrôle, et cette fonction aurait alors distribué à
+ * chacun le tenant qu'il demandait. C'est-à-dire tous les espaces, à tout le monde, sans une ligne d'erreur.
  *
  * Ce n'était pas un trou vivant : `src/index.ts` fournit toujours `auth`. Mais un contrôle d'accès dont la
  * sûreté dépend d'un appelant lointain n'est pas un contrôle d'accès, c'est une convention. Et le prix d'une
@@ -24,13 +24,21 @@
  * ⚠️ Le pendant : une route tenant montée SANS garde rend désormais 403 au lieu de servir. C'est le
  * comportement voulu. Si un jour une route à `:tenantId` doit être publique, elle ne passe pas par ici.
  *
- * ⚠️ MISE À JOUR DU 2026-09-14, PARCE QUE CE TEXTE ÉTAIT DEVENU FAUX. Il disait que le garde-fou « ne couvre
- * que les modules qu'on a pensé à y inscrire, et qu'il faudra y penser encore au 37e ». Ce n'est plus vrai :
- * sa couverture est DÉRIVÉE du registre de `src/server.ts`, où chaque module déclare sa classe d'accès. Il
- * n'y a plus de liste à allonger, donc plus rien à oublier au 41e. Ce qui reste vrai, et que le lot 2 du plan
- * `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md` corrigera, est la phrase d'à côté : la
- * garde arrive encore en paramètre OPTIONNEL dans 29 modules (le compte de « 38 fichiers » ci-dessus a
- * dérivé, mesuré à 29 déclarations et 30 occurrences du motif).
+ * 🔴 LES DEUX MOITIÉS DU DÉFAUT SONT FERMÉES DEPUIS LE 2026-09-15, et le paragraphe ci-dessus est désormais
+ * au PASSÉ pour cette raison. Plan `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md`.
+ *
+ * - Lot 1 : la couverture du garde-fou de `buildServer` ne s'écrit plus à la main, elle se DÉRIVE du registre
+ *   (`modulesDeRoutes`, `src/server.ts`), où chaque module déclare sa classe d'accès. Ce texte disait qu'il
+ *   « faudra y penser encore au 37e » : il n'y a plus de liste à allonger.
+ * - Lot 2 : la garde n'est plus optionnelle NULLE PART. Mesuré après coup : zéro signature de module de
+ *   routes portant une garde optionnelle, zéro occurrence du motif de dégradation. `gardeEtendue` elle-même
+ *   exige désormais une garde et rend toujours un `preHandler`, là où elle acceptait `undefined` et rendait
+ *   un objet vide pour sept modules.
+ *
+ * ⚠️ CE QUI RESTE VRAI, ET POURQUOI CETTE FONCTION NE BOUGE PAS : elle échoue toujours fermé. Une garde
+ * requise par le type se pose au montage ; elle ne dit rien de ce qu'un module en fait. C'est
+ * `tests/scope-tenant.test.ts` qui vérifie que toute route portant `:tenantId` a bien un `preHandler`, et ce
+ * test a déjà attrapé une route qui avait perdu le sien.
  */
 export function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
   const { tenantId } = req.params as { tenantId: string };

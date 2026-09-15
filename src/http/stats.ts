@@ -95,7 +95,7 @@ export interface StatsRouteDeps {
   getWorkflowNodeCounts?(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
 }
 
-/** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (guard passé par server.ts). Plage de dates
+/** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (garde passé par server.ts). Plage de dates
  *  via ?from&?to (YYYY-MM-DD, Europe/Paris) ou repli ?days= ; invalide/futur/span>366 -> 400. */
 /**
  * Liste CSV d'un query param : découpée, nettoyée, dédupliquée et PLAFONNÉE. Le plafond n'est pas décoratif :
@@ -129,10 +129,10 @@ function idsCampagnes(v: unknown): string[] | null {
   return ids.every(estUuid) ? ids : null;
 }
 
-export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/stats', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const r = parseRange(req.query as Record<string, unknown>);
@@ -142,7 +142,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
 
   // Breakdown par template + prix Meta (pricing_analytics). Séparé de /stats : peut appeler Meta
   // (plus lent) et n'est chargé que par la section « Templates envoyés » du dashboard.
-  app.get('/tenants/:tenantId/stats/templates', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/templates', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const r = parseRange(req.query as Record<string, unknown>);
@@ -153,7 +153,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
 
   // Funnel d'UNE campagne (envoyés/délivrés/lus/répondus). ?campaignId=... requis. Pas de plage
   // (le funnel porte sur toute la campagne). Le scope tenant est aussi appliqué en SQL (pas de fuite).
-  app.get('/tenants/:tenantId/stats/campaign-funnel', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/campaign-funnel', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const campaignId = (req.query as Record<string, unknown>).campaignId;
@@ -162,7 +162,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
   });
 
   // Breakdown des codes d'erreur Meta sur la plage, filtrable ?templateName=.
-  app.get('/tenants/:tenantId/stats/errors', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/errors', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const q = req.query as Record<string, unknown>;
@@ -184,7 +184,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
    * puisse le savoir ; on la retire avant d'envoyer, sans quoi l'écran afficherait 201 lignes en annonçant
    * un plafond de 200.
    */
-  app.get('/tenants/:tenantId/stats/errors/:code/contacts', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/errors/:code/contacts', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.getErrorContacts) return reply.code(503).send({ error: 'contacts touches non configures' });
@@ -222,7 +222,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
    * ⚠️ Ces mesures n'existent QUE depuis la mise en place de l'instrumentation : une plage antérieure rend
    * une liste vide, et c'est le comportement juste, pas un bug.
    */
-  app.get('/tenants/:tenantId/stats/workflow/:workflowId', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/workflow/:workflowId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.getWorkflowNodeCounts) return reply.code(503).send({ error: 'mesures de scénario non configurées' });
@@ -233,7 +233,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
   });
 
   // Graphe de coût estimé/jour, filtrable ?campaignId= / ?templateName= (peut appeler Meta pour le tarif).
-  app.get('/tenants/:tenantId/stats/cost', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/cost', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const q = req.query as Record<string, unknown>;
@@ -258,7 +258,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
    * population d'envois facturables. Un client qui compare les deux totaux doit pouvoir se dire qu'ils
    * viennent du même endroit, et ils en viennent.
    */
-  app.get('/tenants/:tenantId/stats/cost/campaigns', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/cost/campaigns', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.getCoutParCampagne) return reply.code(503).send({ error: 'cout par campagne non configure' });
@@ -267,7 +267,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     return reply.code(200).send(await deps.getCoutParCampagne(tenant, r.range));
   });
 
-  app.get('/tenants/:tenantId/stats/conversations', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/conversations', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const r = parseRange(req.query as Record<string, unknown>);
@@ -282,7 +282,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
    * de synthèse n'a besoin QUE de ce damier, et le résumé quali transporte une vingtaine de compteurs plus
    * les dix sujets fréquents. Les fondre ferait payer à chaque écran ce dont l'autre a besoin.
    */
-  app.get('/tenants/:tenantId/stats/conversations/nuage', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/conversations/nuage', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.getNuageQualitatif) return reply.code(503).send({ error: 'nuage qualitatif non configure' });
@@ -301,7 +301,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
    * paramètre lié dans une requête `uuid`, et un texte quelconque y ferait lever Postgres (donc un 500 dont
    * Cloudflare mangerait le corps) au lieu du 400 que mérite une adresse mal formée.
    */
-  app.get('/tenants/:tenantId/stats/cost/campaigns/:campaignId', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/cost/campaigns/:campaignId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.getDetailCoutCampagne) return reply.code(503).send({ error: 'detail de campagne non configure' });
@@ -319,7 +319,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
   });
 
   // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&topic=&limit=.
-  app.get('/tenants/:tenantId/stats/conversations/list', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/stats/conversations/list', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const q = req.query as Record<string, unknown>;

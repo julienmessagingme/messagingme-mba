@@ -157,8 +157,8 @@ function urlPublique(baseUrl: string, code: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/w/${code}`;
 }
 
-export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const avecUrl = (w: WebhookRow): WebhookRow & { url: string } => ({ ...w, url: urlPublique(deps.baseUrl, w.code) });
 
   app.get('/tenants/:tenantId/webhooks', opts, async (req, reply) => {

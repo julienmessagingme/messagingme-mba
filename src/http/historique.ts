@@ -34,8 +34,8 @@ const requete = z.object({
   limite: z.coerce.number().int().min(1).max(MAX_LIGNES_HISTORIQUE).optional(),
 });
 
-export function registerHistorique(app: FastifyInstance, deps: HistoriqueRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerHistorique(app: FastifyInstance, deps: HistoriqueRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/historique', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

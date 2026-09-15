@@ -42,10 +42,10 @@ function trierLeLot(bruts: unknown[]): { valides: Array<{ index: number; contact
 
 /**
  * Routes publiques /v1 des contacts. Le tenant vient à 100% de `req.auth` (posé par makeRequireApiKey via le
- * guard) — pas d'`:tenantId` dans l'URL. Guard attendu : [makeRequireApiKey, requireScope('contacts:write')].
+ * garde) — pas d'`:tenantId` dans l'URL. Guard attendu : [makeRequireApiKey, requireScope('contacts:write')].
  */
-export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.post('/v1/contacts', opts, async (req, reply) => {
     if (!req.auth) return reply.code(401).send({ error: 'clé d’API requise' });

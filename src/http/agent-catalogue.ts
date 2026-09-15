@@ -31,11 +31,13 @@ export interface AgentCatalogueRouteDeps {
   activerConsommateur?(tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<unknown>;
 }
 
-export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogueRouteDeps, guard?: Guard): void {
-  // Même forme que `registerAgentTools` : le garde est OPTIONNEL pour que les tests montent le module avec
-  // des dépendances minimales. En production il est TOUJOURS câblé, et `buildServer` refuse de démarrer si
-  // un module à routes `:tenantId` est monté sans authentification.
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogueRouteDeps, garde: Guard): void {
+  // Même forme que `registerAgentTools` : la garde est REQUISE depuis le lot 2 du plan 2026-09-14. Elle
+  // était optionnelle « pour que les tests montent le module avec des dépendances minimales », et ce confort
+  // d'écriture se payait en sûreté : un câblage qui l'omettait montait ces routes sans aucun contrôle, sans
+  // qu'aucune erreur ne le dise. Les tests passent désormais `gardeOuverte` (`tests/gardes.ts`), qui DIT
+  // qu'ils se moquent de l'authentification au lieu de le laisser deviner.
+  const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/agent-tools';
 
   app.get(base, opts, async (req, reply) => {

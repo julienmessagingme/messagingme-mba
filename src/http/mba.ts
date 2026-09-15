@@ -22,7 +22,7 @@ import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/acti
  * contrôle d'isolation ici, au même titre que `scopeTenant`. Sans lui, un admin authentifié pourrait piloter
  * l'agent du numéro d'un autre client en changeant l'id dans l'URL.
  *
- * Groupe admin-only (guard posé par le serveur) : ces routes écrivent la connaissance publique de la marque.
+ * Groupe admin-only (garde posé par le serveur) : ces routes écrivent la connaissance publique de la marque.
  */
 
 export interface MbaRouteDeps {
@@ -188,8 +188,8 @@ async function extraire(
   return { error: 'source requise : items, csv ou url', code: 400 };
 }
 
-export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Guard): void {
-  const g = guard ? { preHandler: guard } : {};
+export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Guard): void {
+  const g = { preHandler: garde };
   const base = '/tenants/:tenantId/mba/:phoneNumberId';
 
   // ---------- État général ----------

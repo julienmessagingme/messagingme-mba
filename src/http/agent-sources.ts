@@ -73,8 +73,8 @@ function authCoherente(authKind: string, secret: string | undefined, entete: str
   return null;
 }
 
-export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/agent-sources';
 
   app.get(base, opts, async (req, reply) => {

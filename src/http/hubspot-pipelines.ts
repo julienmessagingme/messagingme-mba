@@ -26,8 +26,8 @@ const estNonConnecte = (err: unknown): boolean => err instanceof HubspotServiceE
  * Un portail non lié rend `{connected:false}` en 200 : l'écran affiche « connecte HubSpot d'abord », pas une
  * erreur rouge. Toute autre panne remonte (500), on ne fait pas passer une indisponibilité pour une absence.
  */
-export function registerHubspotPipelines(app: FastifyInstance, deps: HubspotPipelinesRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerHubspotPipelines(app: FastifyInstance, deps: HubspotPipelinesRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/hubspot/deal-stages', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

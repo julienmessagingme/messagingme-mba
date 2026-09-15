@@ -57,12 +57,12 @@ const MAX_NOM = 60;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Gestion des comptes (onglet Admin). Le GROUPE est réservé aux admins via `guard`
- * (`[requireAuth, makeRequireRole(['admin'])]`) : pas de garde de rôle en plus ici, la barrière
+ * Gestion des comptes (onglet Admin). Le GROUPE est réservé aux admins via `garde`
+ * (`[garde, makeRequireRole(['admin'])]`) : pas de garde de rôle en plus ici, la barrière
  * est au preHandler. On ne renvoie jamais le hash ; les mots de passe ne sont jamais journalisés.
  */
-export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/users', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

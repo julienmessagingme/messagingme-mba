@@ -21,8 +21,8 @@ export interface FieldsRouteDeps {
  * Gestion des user fields (menu Contenu), admin-only. On édite libellé + type ; la CLÉ est immuable
  * (la renommer casserait les paramMapping de campagnes et les valeurs `contacts.fields` indexées par clé).
  */
-export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   /**
    * Combien de fiches ont chaque champ rempli. Sert au sélecteur de destinataire du bloc « Envoi de mail » :

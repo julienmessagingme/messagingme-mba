@@ -82,12 +82,12 @@ const MAX_ECHANGES_RECUS = 4;
 /** Une réponse du bot tient largement là-dedans ; au-delà, c'est un appelant qui gonfle le prompt. */
 const REPONSE_MAX_CARACTERES = 4_000;
 
-export function registerAide(app: FastifyInstance, deps: AideRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const limiter = new RateLimiter(PAR_MINUTE, 60_000);
   const cacheRecap = creerCacheRecap<RecapTexte>();
 
-  app.post('/tenants/:tenantId/aide', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/aide', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!limiter.take(tenant)) {
@@ -160,7 +160,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, requireA
    * cache, y compris ceux qui arrivent pendant que le premier calcule. Ce qu'il faut borner, c'est donc
    * l'entrée commune vers notre clé, pas ce chemin-ci en particulier.
    */
-  app.post('/tenants/:tenantId/aide/recap', gardeEtendue(requireAuth, makeRequireRole(ROLES_RECAP)), async (req, reply) => {
+  app.post('/tenants/:tenantId/aide/recap', gardeEtendue(garde, makeRequireRole(ROLES_RECAP)), async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!limiter.take(tenant)) {

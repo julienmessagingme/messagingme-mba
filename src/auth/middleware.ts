@@ -176,9 +176,14 @@ export function makeLimiteParTenant(limiteur: RateLimiter, message?: string): Pr
  * écrire `[garde, extra]` produirait un tableau IMBRIQUÉ, que Fastify n'exécute pas. Le bug serait muet, la
  * garde ajoutée ne tournerait simplement jamais. C'est pour ça que la composition passe par ici plutôt que
  * d'être recopiée dans chaque module de routes.
+ *
+ * 🔴 LA GARDE EST REQUISE, ET C'EST LE POINT DE PASSAGE QUI PORTAIT LA DÉGRADATION (lot 2 du plan
+ * 2026-09-14). Elle acceptait `undefined` et rendait alors `{}` : autrement dit, le helper PARTAGÉ par sept
+ * modules savait produire des options de route SANS AUCUN `preHandler`, en silence. Le type l'interdit
+ * désormais, et le retour n'est plus optionnel non plus : `{ preHandler }` est toujours posé, donc un
+ * appelant ne peut plus recevoir un objet vide sans s'en apercevoir.
  */
-export function gardeEtendue(garde: Guard | undefined, extra?: PreHandler): { preHandler?: Guard } {
-  const base = garde === undefined ? [] : Array.isArray(garde) ? garde : [garde];
-  const chaine = extra ? [...base, extra] : base;
-  return chaine.length > 0 ? { preHandler: chaine } : {};
+export function gardeEtendue(garde: Guard, extra?: PreHandler): { preHandler: Guard } {
+  const base = Array.isArray(garde) ? garde : [garde];
+  return { preHandler: extra ? [...base, extra] : base };
 }

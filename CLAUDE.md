@@ -781,6 +781,19 @@ et la RLS est contournée (pooler superuser). Elle rendait auparavant le tenant 
 posée au montage, dans un autre fichier, chaque module la recevant en paramètre OPTIONNEL et la dégradant en
 silence. Ce n'était pas un trou vivant, mais la panne aurait été MUETTE.
 
+🔴 **LA GARDE N'EST PLUS OPTIONNELLE NULLE PART (2026-09-15, lot 2 du même plan).** Les modules de routes la
+déclaraient `guard?` ou `requireAuth?` (deux noms pour un rôle) et l'appliquaient par
+`garde ? { preHandler: garde } : {}`, motif présent à **45 endroits** : une route montée sans garde était
+servie SANS AUCUN CONTRÔLE. Elle est désormais REQUISE par le type, sous un seul nom (`garde`), et
+`gardeEtendue` aussi, qui acceptait `undefined` et rendait alors des options vides pour sept modules. Quand
+l'authentification n'est pas câblée, `buildServer` fabrique une garde qui **refuse**, jamais `undefined` :
+c'est la différence entre « personne ne s'en sert » et « quelqu'un s'en sert et elle ne fait rien ».
+⚠️ **Un type qui exige une garde ne dit pas qu'elle est POSÉE** : `tests/scope-tenant.test.ts` vérifie que
+toute route portant `:tenantId` a un `preHandler`, et ce test a attrapé, pendant le lot lui-même, une route
+dont les options s'écrivaient `{ ...garde, bodyLimit }` au lieu de `{ ...opts, bodyLimit }`, donc partie sans
+garde. ⚠️ La garde « ouverte » des tests vit dans `tests/gardes.ts`, **jamais dans `src/`** : elle y serait
+importable par le câblage de production.
+
 🔴 **LA COUVERTURE DU GARDE-FOU NE S'ÉCRIT PLUS À LA MAIN, ELLE SE DÉRIVE (2026-09-14, lot 1 du plan
 `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md`).** `src/server.ts` porte un REGISTRE
 (`modulesDeRoutes`) où chaque module de routes déclare sa classe d'accès, et le garde-fou filtre sur

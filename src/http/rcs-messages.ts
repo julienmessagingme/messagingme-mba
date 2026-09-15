@@ -28,16 +28,16 @@ function lireNom(body: unknown): string | null {
  * Le contenu est validé en `safeParse` À CHAQUE écriture : c'est la frontière où un message malformé doit être
  * refusé, pas au moment de l'envoi devant un client.
  */
-export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/rcs-messages', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/rcs-messages', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ messages: await deps.list(tenant) });
   });
 
-  app.post('/tenants/:tenantId/rcs-messages', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/rcs-messages', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -48,7 +48,7 @@ export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteD
     return reply.code(201).send({ message: await deps.create(tenant, nom, contenu.data) });
   });
 
-  app.patch('/tenants/:tenantId/rcs-messages/:id', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/rcs-messages/:id', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -62,7 +62,7 @@ export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteD
     return reply.code(200).send({ ok: true });
   });
 
-  app.delete('/tenants/:tenantId/rcs-messages/:id', guard, async (req, reply) => {
+  app.delete('/tenants/:tenantId/rcs-messages/:id', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

@@ -184,8 +184,8 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
   return lu();
 }
 
-export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard, limiteCouteuse?: PreHandler): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+  const opts = { preHandler: garde };
   /**
    * L'ENCADREMENT, ET PAS TOUT LE MONDE : `admin` et `manager`. La liste des désabonnés nomme des personnes
    * avec leur numéro ; c'est un artefact de conformité, pas un outil de traitement quotidien.
@@ -199,9 +199,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * journal des actions et les deux moitiés du journal des erreurs. Consulter n'est pas décider : brancher
    * un connecteur sur le consentement, purger un contact ou bloquer quelqu'un restent `forbidNonAdmin`.
    */
-  const gardeEncadrement = gardeEtendue(guard, makeRequireRole(['admin', 'manager']));
+  const optsEncadrement = gardeEtendue(garde, makeRequireRole(['admin', 'manager']));
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
-  const couteux = gardeEtendue(guard, limiteCouteuse);
+  const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 
   /**
@@ -220,7 +220,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * ⚠️ `tenant_id = $1` dans la requête, EN PLUS de `scopeTenant` : le pooler est superuser, la RLS est
    * contournée, et le filtrage en code est donc le seul contrôle.
    */
-  app.get('/tenants/:tenantId/contacts/desabonnes', gardeEncadrement, async (req, reply) => {
+  app.get('/tenants/:tenantId/contacts/desabonnes', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.listeDesabonnes) return reply.code(503).send({ error: 'liste des désabonnés indisponible' });
@@ -238,7 +238,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * quoi il a regardé. Une liste vide obtenue en n'ayant rien lu et une liste vide obtenue après avoir tout
    * lu ne veulent pas dire la même chose.
    */
-  app.get('/tenants/:tenantId/contacts/refus-possibles', gardeEncadrement, async (req, reply) => {
+  app.get('/tenants/:tenantId/contacts/refus-possibles', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.messagesARelire) return reply.code(503).send({ error: 'relecture des refus indisponible' });
@@ -354,7 +354,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * concurrence de routage avec les GET statiques `/contacts/count` et `/contacts/ids` de src/http/import.ts.
    * Fastify tranche en faveur du statique, mais c'est une ambiguïté gratuite.
    *
-   * Admin-only, comme tout ce fichier (`registerContacts` est monté avec `requireAdmin`). Un agent voit déjà
+   * Admin-only, comme tout ce fichier (`registerContacts` est monté avec `gardeAdmin`). Un agent voit déjà
    * les mêmes conversations dans l'inbox, mais pas l'historique de campagnes, qui est une vue de pilotage.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/history', opts, async (req, reply) => {
@@ -509,7 +509,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * Monté ici et pas dans un fichier à part : toutes les actions journalisées sont des actions de CONTACT,
    * et ce fichier est déjà leur périmètre admin. `targetId` filtre sur un contact précis (fiche).
    */
-  app.get('/tenants/:tenantId/audit', gardeEncadrement, async (req, reply) => {
+  app.get('/tenants/:tenantId/audit', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.listAudit) return reply.code(503).send({ error: 'journal indisponible sur cette instance' });
@@ -535,7 +535,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * arrivé » sans dire « à qui » ne répond à rien. Il n'a rien d'immuable, il se lit depuis les destinataires
    * de campagne, et il disparaît avec le contact quand on le purge.
    */
-  app.get('/tenants/:tenantId/erreurs-livraison', gardeEncadrement, async (req, reply) => {
+  app.get('/tenants/:tenantId/erreurs-livraison', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.listErreursLivraison) return reply.code(503).send({ error: 'journal des erreurs indisponible sur cette instance' });
@@ -565,7 +565,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * ⚠️ ADMIN-ONLY, comme la précédente : elle nomme les systèmes internes d'un client et ce qu'ils ont
    * répondu.
    */
-  app.get('/tenants/:tenantId/erreurs-systeme', gardeEncadrement, async (req, reply) => {
+  app.get('/tenants/:tenantId/erreurs-systeme', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.listErreursSysteme) return reply.code(503).send({ error: 'journal système indisponible sur cette instance' });

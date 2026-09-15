@@ -238,8 +238,8 @@ function verifier(r: ARegler, clesDeChamps: readonly string[]): string | null {
   return null;
 }
 
-export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/agent-requetes';
   const appeler = deps.fetchImpl ?? fetch;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));

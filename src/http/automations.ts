@@ -177,8 +177,8 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
  * ÉCRITURES admin-only (une automation active écrit au client sans qu'un humain relise : c'est un pouvoir
  * d'envoi, au même titre qu'une campagne).
  */
-export function registerAutomations(app: FastifyInstance, deps: AutomationRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAutomations(app: FastifyInstance, deps: AutomationRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/automations', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

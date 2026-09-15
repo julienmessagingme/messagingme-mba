@@ -140,7 +140,7 @@ export function registerOps(
    */
   surveillance?: SurveillanceOps,
 ): void {
-  const guard = { preHandler: makeRequireOps(opsToken, surveillance) };
+  const opts = { preHandler: makeRequireOps(opsToken, surveillance) };
 
   /**
    * L'USAGE DE L'API PUBLIQUE, agrégé par minute (plan du 2026-09-14, tâche 5).
@@ -157,7 +157,7 @@ export function registerOps(
    * la journalisation la charge qu'elle observe. Corollaire à connaître : ces compteurs décrivent CE
    * process, donc avec deux instances d'API on en verrait deux moitiés.
    */
-  app.get('/ops/usage', guard, async (_req, reply) => {
+  app.get('/ops/usage', opts, async (_req, reply) => {
     return reply.code(200).send({ compteurs: deps.usage ? deps.usage.compteurs() : [] });
   });
 
@@ -172,7 +172,7 @@ export function registerOps(
    * ⚠️ LA NOTE EST EXIGÉE, comme sur le rechargement de crédit : une écriture d'exploitation sans trace de
    * qui l'a faite et pourquoi ne se relit pas six mois plus tard.
    */
-  app.post('/ops/verrou/:tenantId', guard, async (req, reply) => {
+  app.post('/ops/verrou/:tenantId', opts, async (req, reply) => {
     if (!deps.verrouillerEspace) return reply.code(503).send({ error: 'verrou non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
@@ -188,7 +188,7 @@ export function registerOps(
     return reply.code(200).send({ tenantId, verrouille: corps.verrouille });
   });
 
-  app.get('/ops/overview', guard, async (_req, reply) => {
+  app.get('/ops/overview', opts, async (_req, reply) => {
     const [tenants, daily, queues, worker, queuesParGroupe, attentesPool, latences] = await Promise.all([
       deps.getTenantOverview(),
       deps.getGlobalDaily(14),
@@ -238,7 +238,7 @@ export function registerOps(
    * qui ont échoué pour une raison qu'on n'a pas corrigée.
    */
   if (deps.listerJobsMorts) {
-    app.get('/ops/dlq', guard, async (req, reply) => {
+    app.get('/ops/dlq', opts, async (req, reply) => {
       const brut = (req.query as { limit?: unknown }).limit;
       const limite = typeof brut === 'string' && /^\d+$/.test(brut) ? Number(brut) : 50;
       return reply.code(200).send({ jobs: await deps.listerJobsMorts!(limite) });
@@ -246,7 +246,7 @@ export function registerOps(
   }
 
   if (deps.listerJobsMorts && deps.reenfiler && deps.oublierJobsMorts) {
-    app.post('/ops/dlq/replay', guard, async (req, reply) => {
+    app.post('/ops/dlq/replay', opts, async (req, reply) => {
       const b = (req.body ?? {}) as { queue?: unknown; limit?: unknown };
       // La file est OBLIGATOIRE : un rejeu « tout » relancerait des campagnes et des webhooks d'un coup,
       // sur des causes d'échec différentes qu'on n'a pas toutes corrigées.
@@ -282,7 +282,7 @@ export function registerOps(
     });
   }
 
-  app.post('/ops/observe', guard, async (req, reply) => {
+  app.post('/ops/observe', opts, async (req, reply) => {
     if (!deps.observerTenant) return reply.code(503).send({ error: 'observation non disponible sur cette instance' });
     const tenantId = (req.body as { tenantId?: unknown } | null)?.tenantId;
     if (typeof tenantId !== 'string' || tenantId.trim() === '') {
@@ -299,7 +299,7 @@ export function registerOps(
   });
 
   /** Le solde prépayé d'un workspace et son journal. Lecture, comme le reste de la surface. */
-  app.get('/ops/credits/:tenantId', guard, async (req, reply) => {
+  app.get('/ops/credits/:tenantId', opts, async (req, reply) => {
     if (!deps.soldeAgent) return reply.code(503).send({ error: 'solde agent non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     // Un identifiant mal formé part tel quel dans un `where id = $1` sur une colonne `uuid` : Postgres LÈVE
@@ -332,7 +332,7 @@ export function registerOps(
    * qu'elle fait. Journalisé en `warn` comme le rechargement : le jeton est partagé, donc cette ligne est la
    * seule trace qu'un geste irréversible a eu lieu.
    */
-  app.delete('/ops/cle-modele/:tenantId', guard, async (req, reply) => {
+  app.delete('/ops/cle-modele/:tenantId', opts, async (req, reply) => {
     if (!deps.revoquerCleModele) return reply.code(503).send({ error: 'revocation non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
@@ -349,7 +349,7 @@ export function registerOps(
     }
   });
 
-  app.post('/ops/credits/:tenantId', guard, async (req, reply) => {
+  app.post('/ops/credits/:tenantId', opts, async (req, reply) => {
     if (!deps.rechargerAgent) return reply.code(503).send({ error: 'rechargement non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });

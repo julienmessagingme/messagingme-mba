@@ -17,8 +17,8 @@ const VIDEO_MAX = 16 * 1024 * 1024; // 16 Mo (limite en-tête vidéo Meta)
  * un data URL base64, décode, valide type/poids, renvoie le handle Meta (resumable upload). GROUPE admin-only.
  * bodyLimit élevé (le média transite en base64, +33% -> ~22 Mo pour une vidéo de 16 Mo).
  */
-export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, guard?: Guard): void {
-  const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 24 * 1024 * 1024 };
+export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, garde: Guard): void {
+  const opts = { ...({ preHandler: garde }), bodyLimit: 24 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/media', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

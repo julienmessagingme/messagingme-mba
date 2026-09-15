@@ -82,7 +82,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
  * Routes d'authentification PUBLIQUES : login, inscription libre, mot de passe perdu/réinitialisé, plus le
- * changement de mot de passe (gardé par `requireAuth` si fourni). Chaque endpoint a son propre rate-limiter
+ * changement de mot de passe (gardé par `garde` si fourni). Chaque endpoint a son propre rate-limiter
  * (ne pas partager l'instance du login). Anti-énumération : login/forgot ne révèlent jamais l'existence d'un email.
  */
 /**
@@ -127,7 +127,7 @@ function rateKey(req: { ip: string }, discriminant: string): string {
  */
 const MAX_CLES = 10_000;
 
-export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireAuth?: Guard): void {
+export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: Guard): void {
   // ⚠️ Le 3e argument est l'horloge, le 4e le plafond de clés : il faut passer le défaut de l'horloge pour
   // atteindre le plafond. Les six limiteurs le portent, aucune exception, parce que les six ont une clé
   // choisie par l'appelant.
@@ -339,8 +339,8 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   });
 
   // Changement de mot de passe (compte connecté) : vérifie le mdp courant.
-  if (requireAuth) {
-    app.post('/auth/change-password', { preHandler: requireAuth }, async (req, reply) => {
+  if (garde) {
+    app.post('/auth/change-password', { preHandler: garde }, async (req, reply) => {
       if (!deps.getPasswordHash || !deps.setPassword) return reply.code(503).send({ error: 'indisponible' });
       const userId = req.auth?.userId;
       if (!userId) return reply.code(401).send({ error: 'authentification requise' });

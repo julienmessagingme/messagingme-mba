@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
+import { gardesOuvertes } from './gardes';
 import { scopeTenant } from '../src/http/scope';
 import { buildServer, modulesDeRoutes } from '../src/server';
 import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
@@ -89,6 +90,40 @@ describe('le garde-fou de buildServer : aucune route tenant sans authentificatio
    * est délibérément CROSS-espace, autorisée par un secret d'environnement, et elle ne passe donc pas par
    * `scopeTenant`. C'est exactement la nuance qu'un booléen `porteDeTenant` aurait écrasée.
    */
+  /**
+   * 🔴 L'ESSAI DU LOT 2 : AUCUNE ROUTE D'ESPACE NE SE MONTE SANS `preHandler`.
+   *
+   * Le type exige désormais une garde à chaque module, mais il ne dit RIEN de ce que le module en fait : rien
+   * ne l'empêche de la recevoir et de ne pas la poser. C'est exactement le défaut que ce lot a produit et que
+   * seul un test a vu : sur `POST /tenants/:tenantId/rcs/media`, les options de route s'écrivaient
+   * `{ ...garde, bodyLimit }`, où `garde` désignait désormais la GARDE au lieu de l'OBJET D'OPTIONS. La route
+   * partait donc sans `preHandler`, `req.auth` n'était jamais posé, et `scopeTenant` rendait 403 sur un geste
+   * légitime. Une route peut aussi bien perdre sa garde dans l'autre sens, et s'ouvrir.
+   *
+   * ⚠️ Ce test regarde ce que FASTIFY a enregistré, pas ce que le module croit avoir passé.
+   */
+  it('🔴 toute route portant :tenantId a un preHandler', async () => {
+    const bouchon = (): unknown => new Proxy(function () {} as never, {
+      get: (_c, p) => (typeof p === 'symbol' || p === 'then' ? undefined : bouchon()),
+      apply: () => bouchon(),
+    });
+    const toutBouchonne = new Proxy({}, { get: (_c, p) => (typeof p === 'symbol' ? undefined : bouchon()) }) as never;
+
+    const nues: string[] = [];
+    for (const m of modulesDeRoutes(toutBouchonne, usage)) {
+      // `/ops` porte des `:tenantId` mais son autorité est un secret d'environnement, posé dans le module.
+      if (m.acces !== 'tenant') continue;
+      const app = Fastify({ logger: false });
+      app.addHook('onRoute', (r) => {
+        if (r.path.includes(':tenantId') && r.preHandler === undefined) nues.push(`${m.nom} ${r.method} ${r.path}`);
+      });
+      m.monte(app, gardesOuvertes);
+      await app.ready();
+      await app.close();
+    }
+    expect(nues, `ces routes d’espace se montent sans aucune garde : ${nues.join(', ')}`).toEqual([]);
+  });
+
   it('🔴 la classe d’accès déclarée correspond aux adresses réellement montées', async () => {
     const bouchon = (): unknown => new Proxy(function () {} as never, {
       get: (_c, p) => (typeof p === 'symbol' || p === 'then' ? undefined : bouchon()),
@@ -100,7 +135,7 @@ describe('le garde-fou de buildServer : aucune route tenant sans authentificatio
       const app = Fastify({ logger: false });
       const chemins: string[] = [];
       app.addHook('onRoute', (r) => { chemins.push(r.path); });
-      m.monte(app, {});
+      m.monte(app, gardesOuvertes);
       await app.ready();
       const porteUnEspace = chemins.some((c) => c.includes(':tenantId'));
       if (m.acces === 'tenant') {

@@ -21,11 +21,11 @@ export interface HubspotImportRouteDeps {
 }
 
 /**
- * Import de listes HubSpot comme destinataires (3e source de campagne). Admin-only via `guard`. Tenant du JWT.
+ * Import de listes HubSpot comme destinataires (3e source de campagne). Admin-only via `garde`. Tenant du JWT.
  * Proxifie le connecteur mm-hubspot (canal service signé). Toggle OFF -> `available:false` SANS aucun appel réseau.
  */
-export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/hubspot/lists', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

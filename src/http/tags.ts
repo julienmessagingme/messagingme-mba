@@ -12,8 +12,8 @@ export interface TagsRouteDeps {
 
 /** Gestion des tags (menu Contenu), admin-only. Modèle mixte : table `tags` (tags déclarés, créés à vide)
  *  + tags portés par les contacts (`contacts.tags`). listTags = union des deux (cf. PgTagStore). */
-export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/tags', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

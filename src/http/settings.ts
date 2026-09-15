@@ -87,31 +87,32 @@ function normalizeBusinessHours(raw: unknown): BusinessHours | null {
 /**
  * Réglages tenant.
  *
- * ⚠️ TOUT CE MODULE EST MONTÉ AVEC `requireAdmin` (`src/server.ts`), y compris les GET. Ce docblock a dit
+ * ⚠️ TOUT CE MODULE EST MONTÉ AVEC `gardeAdmin` (`src/server.ts`), y compris les GET. Ce docblock a dit
  * « GET ouvert (lecture), PUT admin-only » pendant longtemps : c'était faux, et la phrase a été recopiée
- * telle quelle dans une route neuve le 2026-09-13. Le paramètre s'appelle `requireAuth` par héritage, mais
+ * telle quelle dans une route neuve le 2026-09-13. Le paramètre s'appelle `garde` par héritage, mais
  * ce qu'on lui passe est la garde d'administration.
  *
  * ⚠️ UNE SEULE EXCEPTION DEPUIS LE 2026-09-14 : `GET /settings/mention-ia`, la LECTURE de la politique
- * d'annonce d'IA, ouverte à l'encadrement par `requireEncadrement`. C'est un écran de conformité, et son
+ * d'annonce d'IA, ouverte à l'encadrement par `gardeEncadrement`. C'est un écran de conformité, et son
  * ÉCRITURE reste admin.
  */
 export function registerSettings(
   app: FastifyInstance,
   deps: SettingsRouteDeps,
-  requireAuth?: Guard,
+  garde: Guard,
   /**
    * La garde de l'ENCADREMENT (`admin` + `manager`), pour les seules LECTURES de conformité.
    *
-   * ⚠️ Absente -> on retombe sur la garde d'administration, donc le comportement d'avant. Un module monté
-   * sans elle ne s'ouvre à personne de plus.
+   * ⚠️ ELLE NE PEUT PLUS ÊTRE ABSENTE (lot 2 du plan 2026-09-14). Elle était optionnelle et retombait alors
+   * sur la garde d'administration, ce qui n'ouvrait à personne de plus et était donc le bon sens de l'échec.
+   * Le type l'exige désormais, et le repli n'a plus d'objet.
    */
-  requireEncadrement?: Guard,
+  gardeEncadrement: Guard,
 ): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
-  const gardeEncadrement = requireEncadrement ? { preHandler: requireEncadrement } : guard;
+  const opts = { preHandler: garde };
+  const optsEncadrement = { preHandler: gardeEncadrement };
 
-  app.get('/tenants/:tenantId/settings', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/settings', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const settings = await deps.getSettings(tenant);
@@ -119,7 +120,7 @@ export function registerSettings(
     return reply.code(200).send({ ...settings, rcsEnabled });
   });
 
-  app.put('/tenants/:tenantId/settings', guard, async (req, reply) => {
+  app.put('/tenants/:tenantId/settings', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -131,7 +132,7 @@ export function registerSettings(
 
   // Toggle « Campagnes via données HubSpot » (admin-only). Route dédiée pour ne pas surcharger le PUT ci-dessus
   // (qui exige mbaEnabled). OFF -> aucun appel au connecteur ; ON -> le client devra re-consentir crm.lists.read.
-  app.patch('/tenants/:tenantId/settings/hubspot-lists', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/hubspot-lists', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -154,7 +155,7 @@ export function registerSettings(
    * test. Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée : celle-ci l'a été d'un
    * docblock voisin, lui-même faux depuis longtemps.
    */
-  app.get('/tenants/:tenantId/settings/poussee-optout', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/settings/poussee-optout', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.listerRequetesConnecteur) return reply.code(503).send({ error: 'connecteurs indisponibles' });
@@ -173,7 +174,7 @@ export function registerSettings(
    * uuid pris ailleurs pointerait sur le connecteur d'un AUTRE client, et la poussée partirait chez lui. La
    * clé étrangère de la migration 0139 ne suffirait pas, elle ignore le tenant.
    */
-  app.patch('/tenants/:tenantId/settings/poussee-optout', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/poussee-optout', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -207,7 +208,7 @@ export function registerSettings(
    * sous les messages de son agent. Lui appliquer notre déclaration par symétrie en ferait deux. L'écran le
    * dit, plutôt que de laisser croire que la politique couvre tout ce qui parle sur l'espace.
    */
-  app.get('/tenants/:tenantId/settings/mention-ia', gardeEncadrement, async (req, reply) => {
+  app.get('/tenants/:tenantId/settings/mention-ia', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { mentionIaFrequence } = await deps.getSettings(tenant);
@@ -230,7 +231,7 @@ export function registerSettings(
    * ⚠️ IL N'Y A PAS DE RETOUR À « non réglé » : le client choisit entre trois régimes, dont `jamais`. Lui
    * offrir de revenir à « rien » le ferait retomber sur un défaut qu'il n'a pas choisi.
    */
-  app.patch('/tenants/:tenantId/settings/mention-ia', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/mention-ia', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -245,7 +246,7 @@ export function registerSettings(
   });
 
   // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).
-  app.patch('/tenants/:tenantId/settings/auto-retry', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/auto-retry', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -267,7 +268,7 @@ export function registerSettings(
    * n'apparaîtrait nulle part comme problématique. Mieux vaut refuser que d'accepter en silence une
    * valeur qui casse la promesse « le client finit toujours par avoir une réponse ».
    */
-  app.patch('/tenants/:tenantId/settings/control-handback', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/control-handback', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -296,7 +297,7 @@ export function registerSettings(
    * ⚠️ `enabled` ne décide PAS si l'agent transfère (il décide seul), mais s'il LÂCHE le fil ensuite. C'est
    * pourquoi « jamais » ne coupe pas les transferts : il laisse l'agent garder la conversation.
    */
-  app.patch('/tenants/:tenantId/settings/mba-handoff', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/mba-handoff', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -328,7 +329,7 @@ export function registerSettings(
 
 
   // Fuseau horaire du tenant (admin-only). Base de NOW / weekday / heures d'ouverture du node condition.
-  app.patch('/tenants/:tenantId/settings/timezone', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/timezone', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -339,7 +340,7 @@ export function registerSettings(
   });
 
   // Heures d'ouverture par jour (admin-only). Corps { '0'..'6': { closed, open 'HH:MM', close 'HH:MM' } }.
-  app.patch('/tenants/:tenantId/settings/business-hours', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/settings/business-hours', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

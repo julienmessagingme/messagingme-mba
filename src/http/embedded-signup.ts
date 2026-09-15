@@ -36,8 +36,8 @@ export interface EmbeddedSignupRouteDeps {
  *    numéro neuf (jamais pour un numéro déjà CONNECTED), stocke le token chiffré. Les étapes NON bloquantes qui
  *    échouent remontent en `warnings` (jamais de demi-échec silencieux).
  */
-export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

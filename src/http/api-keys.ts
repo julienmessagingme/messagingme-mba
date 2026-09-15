@@ -22,11 +22,11 @@ export interface ApiKeysRouteDeps {
 }
 
 /**
- * CRUD des clés d'API (console admin, JWT). Admin-only via `guard` + forbidNonAdmin. Le tenant vient du JWT.
+ * CRUD des clés d'API (console admin, JWT). Admin-only via `garde` + forbidNonAdmin. Le tenant vient du JWT.
  * La création renvoie la clé EN CLAIR UNE SEULE FOIS (jamais re-affichable) ; la liste n'expose jamais le hash.
  */
-export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.post('/tenants/:tenantId/api-keys', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

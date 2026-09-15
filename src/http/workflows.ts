@@ -72,12 +72,12 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
 }
 
 /**
- * Routes du bot builder (workflows). Admin-only via `guard`. Tenant dérivé du JWT. Le graphe est TOUJOURS
+ * Routes du bot builder (workflows). Admin-only via `garde`. Tenant dérivé du JWT. Le graphe est TOUJOURS
  * validé/sanitisé par `parseGraph` avant persistance (400 si invalide). bodyLimit relevé : un graphe peut
  * porter plusieurs blocs avec de la config. PB1 : CRUD + graphe. Pas d'exécution (PB2).
  */
-export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps, guard?: Guard): void {
-  const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 2 * 1024 * 1024 };
+export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps, garde: Guard): void {
+  const opts = { ...({ preHandler: garde }), bodyLimit: 2 * 1024 * 1024 };
   const journal = makeJournal(deps.audit);
 
   /**

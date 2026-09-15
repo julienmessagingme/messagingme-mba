@@ -36,8 +36,8 @@ function normaliserMesures(v: unknown): MesureRetenue[] {
     .slice(0, 100);
 }
 
-export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowReportsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowReportsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/workflow-reports', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

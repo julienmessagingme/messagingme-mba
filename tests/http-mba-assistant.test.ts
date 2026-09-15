@@ -1,3 +1,4 @@
+import { gardeOuverte } from './gardes';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -67,7 +68,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: opts.role ?? 'admin' };
   });
-  registerMbaAssistant(app, deps);
+  registerMbaAssistant(app, deps, gardeOuverte);
   return { app, journal, lireFil: () => fil };
 }
 

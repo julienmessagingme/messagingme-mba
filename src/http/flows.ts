@@ -181,15 +181,15 @@ async function deriveAndMap(
 const INVALID_ELEMENTS = 'screens/elements invalide (1 à 10 écrans, chacun >= 1 élément ; au moins 1 champ au global ; texte non vide ; image base64 <= 300KB ; type de champ valide ; visibleIf {field, op eq/neq, value})';
 
 /**
- * Routes Flows (constructeur de formulaire RICHE). GROUPE admin-only via `guard`. Le tenant vient du JWT.
+ * Routes Flows (constructeur de formulaire RICHE). GROUPE admin-only via `garde`. Le tenant vient du JWT.
  * Création : dérive les clés, génère un `ref` (discriminant au retour), construit le mapping, crée chez Meta
  * puis persiste. Édition (DRAFT only) : réécrit le flow_json via /assets + met à jour le store, MÊME ref.
  * Duplication : clone un flow (source publié ou draft) en un nouveau DRAFT avec un ref FRAIS.
  */
-export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?: Guard): void {
+export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: Guard): void {
   // bodyLimit relevé (défaut global = 1 Mo) : un flow riche peut embarquer plusieurs images base64
   // (~400 Ko chacune) dans le body. Aligné sur la route media. S'applique aussi à GET/publish (sans effet).
-  const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 7 * 1024 * 1024 };
+  const opts = { ...({ preHandler: garde }), bodyLimit: 7 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/flows', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

@@ -161,8 +161,8 @@ function journaliserDistant(tenant: string, etape: string, err: unknown): void {
   }));
 }
 
-export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/channels-me';
   // Un limiteur PROPRE a cet endpoint (jamais l'instance d'un autre : regle deja posee dans
   // src/auth/routes.ts). Cle = userId, PAS req.ip : la route est authentifiee, et Fastify n'est pas

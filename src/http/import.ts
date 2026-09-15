@@ -75,11 +75,11 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
  * POST /tenants/:tenantId/contacts/import — importe un CSV brut : parse, reconnaît les
  * colonnes (si pas de mapping fourni), upsert les contacts. Retourne un ImportReport.
  */
-export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard, limiteCouteuse?: PreHandler): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+  const opts = { preHandler: garde };
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace. `gardeEtendue` aplatit la
-  // chaîne, parce que `requireAdmin` est déjà un tableau et qu'un tableau imbriqué ne serait pas exécuté.
-  const couteux = gardeEtendue(requireAuth, limiteCouteuse);
+  // chaîne, parce que `gardeAdmin` est déjà un tableau et qu'un tableau imbriqué ne serait pas exécuté.
+  const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
   // Le CSV COMPLET transite dans le corps : le plafond global de 1 Mo tombait vers 14 000 lignes, en anglais
   // et sans dire quoi faire. 8 Mo, soit environ 150 000 contacts, très au-delà de tout import réel. Pas plus,
@@ -93,7 +93,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   // (accents = 2 octets, échappement JSON) sans jamais laisser passer un fichier entier.
   const optsApercuCouteux = { ...couteux, bodyLimit: 2 * 1024 * 1024 };
 
-  app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/contacts', opts, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const q = req.query as Record<string, unknown>;
@@ -115,7 +115,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   });
 
   // Compteur seul (rapide) : « N contacts correspondent » avant de fixer le débit / lancer.
-  app.get('/tenants/:tenantId/contacts/count', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/contacts/count', opts, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const total = await deps.countContacts(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
@@ -130,7 +130,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   // envoie désormais l'INTENTION de sélection (`contactTarget`), résolue en base.
   // La route reste montée parce qu'elle est une primitive de lecture légitime, bornée et testée ; la retirer
   // est une décision à prendre à part, elle est notée dans `todo.md`.
-  app.get('/tenants/:tenantId/contacts/ids', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/contacts/ids', opts, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const ids = await deps.contactIdsForFilters(effectiveTenant, parseFilters(req.query as Record<string, unknown>));

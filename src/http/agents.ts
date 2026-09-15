@@ -110,8 +110,8 @@ const patchSchema = z.object({
 });
 const creationSchema = z.object({ label: LABEL });
 
-export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   /**
    * Le solde prépayé du workspace. En LECTURE seulement : c'est ce qui reste à dépenser, et un client qui

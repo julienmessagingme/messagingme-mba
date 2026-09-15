@@ -302,10 +302,10 @@ async function flowButtonOk(deps: TemplateRouteDeps, tenant: string, buttons: Te
 }
 
 /** Routes de templates : liste + création + édition + suppression (soumission à validation Meta). */
-export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/templates', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/templates', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const wabaId = await deps.getWabaId(tenant);
@@ -314,7 +314,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     return reply.code(200).send({ templates: await rehabillerTemplates(deps, tenant, templates) });
   });
 
-  app.post('/tenants/:tenantId/templates', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/templates', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -358,7 +358,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
   });
 
   // Indices variable -> champ d'un template (pour pré-remplir le mapping d'une campagne). Lecture seule.
-  app.get('/tenants/:tenantId/templates/:templateName/param-hints', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/templates/:templateName/param-hints', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { templateName } = req.params as { templateName: string };
@@ -369,7 +369,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
   });
 
   // Édition d'un template SIMPLE (body/boutons/category). Carousel non supporté (header_handle non récupérable).
-  app.patch('/tenants/:tenantId/templates/:templateName', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/templates/:templateName', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -424,7 +424,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
   });
 
   // Suppression par nom = TOUTES les langues chez Meta -> garde-fou toutes langues (langue omise).
-  app.delete('/tenants/:tenantId/templates/:templateName', guard, async (req, reply) => {
+  app.delete('/tenants/:tenantId/templates/:templateName', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

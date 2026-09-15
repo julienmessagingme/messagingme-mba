@@ -89,9 +89,9 @@ const importSchema = z.object({
 });
 
 export function registerAgentKnowledge(
-  app: FastifyInstance, deps: AgentKnowledgeRouteDeps, guard?: Guard, limiteCouteuse?: PreHandler,
+  app: FastifyInstance, deps: AgentKnowledgeRouteDeps, garde: Guard, limiteCouteuse?: PreHandler,
 ): void {
-  const opts = guard ? { preHandler: guard } : {};
+  const opts = { preHandler: garde };
   /**
    * 🔴 LE PLAFOND DES OPÉRATIONS LOURDES, sur les QUATRE routes de ce module qui en sont (2026-09-15) : la
    * suppression en masse (jusqu'à 200 fiches, et autant de lignes d'historique depuis ce jour), l'import
@@ -103,7 +103,7 @@ export function registerAgentKnowledge(
    * par défaut, il rendrait l'écran inutilisable si on le posait sur des gestes ordinaires.
    */
   const optsLourds = limiteCouteuse
-    ? { preHandler: guard ? [...(Array.isArray(guard) ? guard : [guard]), limiteCouteuse] : [limiteCouteuse] }
+    ? { preHandler: garde ? [...(Array.isArray(garde) ? garde : [garde]), limiteCouteuse] : [limiteCouteuse] }
     : opts;
   const base = '/tenants/:tenantId/agents/:agentId/knowledge';
 

@@ -25,17 +25,17 @@ export interface RcsChannelRouteDeps {
  * inutilisable en RCS. Sans ce contrôle, l'opérateur croirait avoir activé le canal et ne le découvrirait
  * qu'au premier envoi raté.
  */
-export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/rcs/channel', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const etat = await deps.etat(tenant);
     return reply.code(200).send({ active: etat !== null, ...(etat ? { channel: etat } : {}) });
   });
 
-  app.post('/tenants/:tenantId/rcs/channel', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -54,7 +54,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
     return reply.code(200).send({ active: true, channel: check.channel });
   });
 
-  app.delete('/tenants/:tenantId/rcs/channel', guard, async (req, reply) => {
+  app.delete('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

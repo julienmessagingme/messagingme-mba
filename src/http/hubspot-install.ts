@@ -20,8 +20,8 @@ const ALLOWED_GRANTS = new Set(['lists']);
  * un JETON SIGNÉ (le tenant est dans la signature, plus dans un `?tenant=` en clair forgeable). Le front ouvre l'URL
  * renvoyée. Le tenant vient du JWT (scopeTenant), jamais du corps. Body optionnel : `{ grant?: 'lists' }`.
  */
-export function registerHubspotInstall(app: FastifyInstance, deps: HubspotInstallRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerHubspotInstall(app: FastifyInstance, deps: HubspotInstallRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const now = deps.now ?? (() => Date.now());
 
   app.post('/tenants/:tenantId/hubspot/install-link', opts, async (req, reply) => {

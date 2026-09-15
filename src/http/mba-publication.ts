@@ -39,8 +39,8 @@ export interface MbaPublicationDeps {
   appliquer(tenantId: string, phoneNumberId: string, geste: Geste, ctx: Map<string, unknown>): Promise<void>;
 }
 
-export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicationDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicationDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/mba-publication';
 
   async function planifier(tenantId: string, pn: string): Promise<Geste[]> {

@@ -83,8 +83,8 @@ const corpsPiece = z.object({
   dataUrl: z.string().min(1),
 });
 
-export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   /** Contrôle d'accès commun : tenant du jeton, ADMIN, et un agent Meta rattaché. */
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {

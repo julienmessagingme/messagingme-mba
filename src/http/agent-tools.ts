@@ -100,8 +100,8 @@ const ajoutConnecteurSchema = z.object({
   risk: z.enum(['read', 'write', 'irreversible']).optional(),
 });
 
-export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/agents/:agentId/tools';
 
   function contexte(req: { params: unknown; auth?: { tenantId: string; userId: string } }):
@@ -110,8 +110,11 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if (tenant === null) return { code: 403, error: 'tenant interdit' };
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return { code: 404, error: 'agent introuvable' };
-    // L'identité de l'activateur vient du JETON. Sans jeton (montage sans garde), il n'y a personne à nommer
-    // et l'activation est refusée plus bas : la contrainte de la base dit la même chose.
+    // L'identité de l'activateur vient du JETON. Sans jeton, il n'y a personne à nommer et l'activation est
+    // refusée plus bas : la contrainte de la base dit la même chose.
+    // ⚠️ Ce commentaire citait « montage sans garde » comme cause possible : ce n'est plus une cause depuis
+    // le lot 2 du plan 2026-09-14, la garde est requise. Le repli reste juste pour les tests qui montent avec
+    // `gardeOuverte` et n'ont donc pas de `req.auth`.
     return { tenant, agentId, userId: req.auth?.userId ?? '' };
   }
 

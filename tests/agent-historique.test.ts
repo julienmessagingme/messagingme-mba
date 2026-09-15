@@ -1,3 +1,4 @@
+import { gardeOuverte } from './gardes';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -55,7 +56,7 @@ function monterConnaissance(opts: { sansJournal?: boolean } = {}) {
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: 'admin' };
   });
-  registerAgentKnowledge(app, deps);
+  registerAgentKnowledge(app, deps, gardeOuverte);
   return { app, lignes, reste: () => base };
 }
 
@@ -126,7 +127,7 @@ function monterSetup(opts: { entretien?: EntretienComplet; emails?: Record<strin
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: 'admin' };
   });
-  registerAgentSetup(app, deps);
+  registerAgentSetup(app, deps, gardeOuverte);
   return { app, appels: () => appels };
 }
 

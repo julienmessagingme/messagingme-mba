@@ -90,8 +90,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
  * `nod_`, D-1 : uniquement dans la fenêtre 24 h, hors fenêtre -> skipped out_of_window, jamais d'envoi).
  * Idempotency-Key OBLIGATOIRE (D-4). Rapport skipped détaillé par numéro (D-5). Upsert-then-send (D-3).
  */
-export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   app.post('/v1/sends', opts, async (req, reply) => {
     if (!req.auth) return reply.code(401).send({ error: 'clé d’API requise' });

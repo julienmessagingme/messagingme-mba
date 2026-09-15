@@ -84,12 +84,12 @@ export interface AccountStatusResponse {
 /**
  * Statut du compte WhatsApp (page Accueil) : numéro + pastille vert/ambre/rouge/gris + champs Meta enrichis
  * + drapeau HubSpot. Pull Graph live à chaque appel, persiste le résultat (rafraîchit en base), puis compose.
- * Un échec de pull ne fait JAMAIS échouer la route (statut gris/rouge). Route admin-only (guard de groupe).
+ * Un échec de pull ne fait JAMAIS échouer la route (statut gris/rouge). Route admin-only (garde de groupe).
  */
-export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
-  app.get('/tenants/:tenantId/account-status', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/account-status', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
 
@@ -209,7 +209,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
 
   // Toggle HubSpot PAR numéro (admin-only) : coupe/active vraiment la synchro (le push d'analyse est gaté par
   // ce drapeau côté worker). Scopé tenant en SQL (un admin ne peut pas flipper le numéro d'un autre client).
-  app.patch('/tenants/:tenantId/phone-numbers/:phoneNumberId/hubspot', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/phone-numbers/:phoneNumberId/hubspot', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

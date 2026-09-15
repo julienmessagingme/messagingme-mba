@@ -21,8 +21,8 @@ const MESSAGE_MAX = 5000;
 
 /** Formulaire de support : POST le sujet + message, envoyé par email (Resend) à l'équipe. Auth requise ;
  *  le tenant + l'user (authentifiés) sont inclus, l'email du compte sert de reply-to. */
-export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, requireAuth?: Guard): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   // Un limiteur PROPRE à cet endpoint (jamais l'instance d'un autre : c'est la règle déjà posée dans
   // src/auth/routes.ts). Cadence calquée sur /auth/forgot-password, l'autre endpoint qui déclenche un email.
@@ -33,7 +33,7 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, re
   // qu'un seul utilisateur suffirait à épuiser pour tous les autres.
   const limiter = new RateLimiter(5, 60_000);
 
-  app.post('/tenants/:tenantId/support', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/support', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const userId = req.auth?.userId ?? null;

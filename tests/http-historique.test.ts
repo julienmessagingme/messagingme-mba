@@ -1,3 +1,4 @@
+import { gardeOuverte } from './gardes';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -36,7 +37,7 @@ function monter(opts: { role?: string; tenantId?: string; lignes?: LigneHistoriq
       ecrire: async () => {},
       lister: async (_t, f) => { vus.push(f); return opts.lignes ?? [ligne()]; },
     },
-  });
+  }, gardeOuverte);
   return { app, vus };
 }
 

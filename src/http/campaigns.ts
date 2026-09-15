@@ -144,16 +144,16 @@ function isCategory(v: unknown): v is CampaignCategory {
 }
 
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
-export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: Guard, limiteCouteuse?: PreHandler): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+  const opts = { preHandler: garde };
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
-  const couteux = gardeEtendue(requireAuth, limiteCouteuse);
+  const couteux = gardeEtendue(garde, limiteCouteuse);
 
   /**
    * Brouillons de COMPOSITION. Montés seulement si la dépendance est câblée.
    *
    * Ces routes n'ont AUCUN effet d'envoi : elles n'écrivent qu'un nom et l'état d'un écran. Elles restent
-   * pourtant réservées aux admins, comme tout ce groupe (`registerCampaigns` est monté avec `requireAdmin`) :
+   * pourtant réservées aux admins, comme tout ce groupe (`registerCampaigns` est monté avec `gardeAdmin`) :
    * un brouillon de campagne est une campagne en devenir, il n'y a pas de raison d'ouvrir l'un sans l'autre.
    */
   const drafts = deps.drafts;
@@ -173,13 +173,13 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return s as Record<string, unknown>;
     };
 
-    app.get('/tenants/:tenantId/campaign-drafts', guard, async (req, reply) => {
+    app.get('/tenants/:tenantId/campaign-drafts', opts, async (req, reply) => {
       const tenant = scopeTenant(req);
       if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
       return reply.code(200).send({ drafts: await drafts.list(tenant) });
     });
 
-    app.post('/tenants/:tenantId/campaign-drafts', guard, async (req, reply) => {
+    app.post('/tenants/:tenantId/campaign-drafts', opts, async (req, reply) => {
       const tenant = scopeTenant(req);
       if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
       const nom = lireNom(req.body);
@@ -189,7 +189,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(201).send({ draft: await drafts.create(tenant, nom, etat) });
     });
 
-    app.put('/tenants/:tenantId/campaign-drafts/:draftId', guard, async (req, reply) => {
+    app.put('/tenants/:tenantId/campaign-drafts/:draftId', opts, async (req, reply) => {
       const tenant = scopeTenant(req);
       if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
       const nom = lireNom(req.body);
@@ -204,7 +204,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(200).send({ updated: true, draftId });
     });
 
-    app.delete('/tenants/:tenantId/campaign-drafts/:draftId', guard, async (req, reply) => {
+    app.delete('/tenants/:tenantId/campaign-drafts/:draftId', opts, async (req, reply) => {
       const tenant = scopeTenant(req);
       if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
       const { draftId } = req.params as { draftId: string };
@@ -214,7 +214,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     });
   }
 
-  app.get('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/campaigns', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     // `?archived=1` bascule sur la corbeille. Valeur venue de la query string, donc `unknown` : on n'accepte
@@ -224,7 +224,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     return reply.code(200).send({ campaigns: await deps.listCampaigns(tenant, { archived }) });
   });
 
-  app.get('/tenants/:tenantId/campaigns/:campaignId', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/campaigns/:campaignId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { campaignId } = req.params as { campaignId: string };
@@ -233,7 +233,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     return reply.code(200).send(detail);
   });
 
-  app.get('/tenants/:tenantId/phone-numbers', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/phone-numbers', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ phoneNumbers: await deps.listPhoneNumbers(tenant) });
@@ -243,13 +243,13 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   // numéros Meta : c'est le même besoin (« depuis quoi j'envoie ? »), vu du même écran, avec la même garde
   // de scope tenant. Absent du câblage -> liste vide, pas d'erreur (le canal RCS est alors simplement
   // inutilisable, ce que l'UI affiche).
-  app.get('/tenants/:tenantId/rcs-agents', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/rcs-agents', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ agents: deps.listRcsAgents ? await deps.listRcsAgents(tenant) : [] });
   });
 
-  app.post('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/campaigns', opts, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) {
       return reply.code(403).send({ error: 'tenant interdit' });
@@ -695,7 +695,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
    * pas de nouveau chemin d'envoi). Gardes : famille de codes variables, statut `failed`, appartenance tenant. 422 si la
    * variable est TOUJOURS manquante (on ne renvoie pas le même échec). Admin-only, tenant du JWT.
    */
-  app.post('/campaigns/:campaignId/recipients/:recipientId/retry', guard, async (req, reply) => {
+  app.post('/campaigns/:campaignId/recipients/:recipientId/retry', opts, async (req, reply) => {
     if (forbidNonAdmin(req, reply)) return;
     const authTenant = req.auth?.tenantId ?? '';
     const { campaignId, recipientId } = req.params as { campaignId: string; recipientId: string };
@@ -725,7 +725,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
    * 404 « inconnue » et 409 « n'envoie pas » sont DISTINCTS : contrôler l'appartenance d'abord est la seule
    * façon honnête de séparer « pas à toi » de « pas dans le bon état », comme pour l'archivage plus bas.
    */
-  app.post('/tenants/:tenantId/campaigns/:campaignId/pause', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/campaigns/:campaignId/pause', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -742,7 +742,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   // Annule une campagne programmée : elle repasse en brouillon (le job différé n'a jamais été enfilé, rien à tuer).
-  app.post('/campaigns/:campaignId/cancel-schedule', guard, async (req, reply) => {
+  app.post('/campaigns/:campaignId/cancel-schedule', opts, async (req, reply) => {
     if (forbidNonAdmin(req, reply)) return;
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
@@ -759,7 +759,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
    * 404 sur une campagne ordinaire ou déjà arrêtée : le bouton ne s'affiche que là où il agit, et un appel
    * direct ne doit pas répondre « arrêté » sur une campagne qui ne l'était pas.
    */
-  app.post('/tenants/:tenantId/campaigns/:campaignId/stop', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/campaigns/:campaignId/stop', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -773,7 +773,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   // Archivage : masque la campagne de la liste sans rien effacer. Les trois routes ci-dessous contrôlent
   // l'appartenance AVANT d'agir, ce qui est la seule façon de distinguer honnêtement « pas à toi » (404) de
   // « pas dans le bon état » (200 idempotent pour l'archive, 409 pour la suppression).
-  app.post('/tenants/:tenantId/campaigns/:campaignId/archive', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/campaigns/:campaignId/archive', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -787,7 +787,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     return reply.code(200).send({ archived: true, campaignId });
   });
 
-  app.post('/tenants/:tenantId/campaigns/:campaignId/unarchive', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/campaigns/:campaignId/unarchive', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -802,7 +802,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   // Suppression DÉFINITIVE, réservée aux campagnes qui n'ont jamais rien envoyé. Une campagne partie porte
   // l'historique qui alimente les analytics : elle s'archive, elle ne s'efface pas. 409 (et non 404) quand la
   // garde refuse, pour que l'interface puisse proposer l'archivage à la place.
-  app.delete('/tenants/:tenantId/campaigns/:campaignId', guard, async (req, reply) => {
+  app.delete('/tenants/:tenantId/campaigns/:campaignId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

@@ -215,8 +215,8 @@ export function brancheables(
   return (noms ?? []).filter((n) => par.get(n)?.branche === brancheAttendu);
 }
 
-export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   /** Contrôle d'accès commun aux trois routes : tenant du jeton, agent existant DE CE TENANT. */
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {

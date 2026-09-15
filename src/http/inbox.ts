@@ -283,8 +283,8 @@ export interface InboxRouteDeps {
  * Boîte de réception : lister/lire une conversation, répondre (texte dans la fenêtre 24 h,
  * template hors fenêtre). Lectures + réponse ouvertes à tout compte authentifié.
  */
-export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requireAuth?: PreHandler, requireAdmin?: Guard, limiteCouteuse?: PreHandler): void {
-  const guard = requireAuth ? { preHandler: requireAuth } : {};
+export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde: PreHandler, gardeAdmin: Guard, limiteCouteuse?: PreHandler): void {
+  const opts = { preHandler: garde };
   /**
    * 🔴 LA GARDE DES GESTES QUI COÛTENT DE L'ARGENT RÉEL (2026-09-09). L'Inbox n'en avait aucun jusqu'à la
    * transcription : tous ses gestes écrivent en base et rien de plus. Celui-ci appelle un modèle, et il est
@@ -292,15 +292,16 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * script pourrait donc transcrire trois cents vocaux la minute à nos frais. L'idempotence ne protège que
    * du re-clic sur LE MÊME message, pas de trois cents messages différents.
    */
-  const couteux = gardeEtendue(requireAuth, limiteCouteuse);
+  const couteux = gardeEtendue(garde, limiteCouteuse);
   /**
    * La garde des gestes RÉSERVÉS AUX ADMINISTRATEURS de cet écran. Il n'y en a qu'un : effacer le contenu
    * d'une conversation. Un opérateur répond aux clients, il n'efface pas des traces.
    *
-   * ⚠️ Repli sur `guard` si aucune garde admin n'est fournie, et non sur « pas de garde » : un montage
-   * incomplet doit rendre la route MOINS accessible, jamais plus.
+   * ⚠️ IL N'Y A PLUS DE REPLI, ET IL N'EN FAUT PLUS (lot 2 du plan 2026-09-14). Ce paramètre était optionnel
+   * et retombait sur la garde générale quand il manquait, ce qui était le bon sens de l'échec tant que
+   * l'oubli était possible. Il ne l'est plus : le type l'exige.
    */
-  const gardeAdmin = requireAdmin ? { preHandler: requireAdmin } : guard;
+  const optsAdmin = { preHandler: gardeAdmin };
   const journal = makeJournal(deps.audit);
   // Micro-cache des compteurs (R7). Instancié ici, donc un par serveur construit : deux instances de test ne
   // se partagent rien, et il meurt avec le process.
@@ -332,7 +333,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     compteursMenu.invalider(cleMenu(tenant));
   };
 
-  app.get('/tenants/:tenantId/conversations', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
@@ -382,7 +383,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * ⚠️ Rend un objet à ZÉROS quand la dépendance n'est pas câblée, jamais une erreur : un menu sans chiffres
    * reste un menu utilisable, alors qu'une 503 rendrait tout l'écran indisponible pour un ornement.
    */
-  app.get('/tenants/:tenantId/conversations/counts', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations/counts', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.compterConversations) return reply.code(200).send(COMPTEURS_VIDES);
@@ -398,11 +399,11 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * DEUX routes et non un PATCH à drapeau : l'intention se lit dans l'adresse, et un corps mal formé ne peut
    * pas transformer un archivage en son contraire.
    *
-   * Ouvert aux OPÉRATEURS comme aux admins (`guard` et non `gardeAdmin`) : ranger sa boîte est le geste de
+   * Ouvert aux OPÉRATEURS comme aux admins (`garde` et non `gardeAdmin`) : ranger sa boîte est le geste de
    * celui qui la traite, pas une décision d'administration.
    */
   for (const [chemin, archive] of [['archive', true], ['unarchive', false]] as const) {
-    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, guard, async (req, reply) => {
+    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
       const tenant = scopeTenant(req);
       if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
       if (!deps.archiverConversation) return reply.code(503).send({ error: 'archivage indisponible sur cette instance' });
@@ -428,7 +429,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * laisserait signaler au nom d'un collègue, sur une conversation de client.
    */
   for (const [chemin, signale] of [['signaler', true], ['ne-plus-signaler', false]] as const) {
-    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, guard, async (req, reply) => {
+    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
       const tenant = scopeTenant(req);
       if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
       if (!deps.signalerConversation) return reply.code(503).send({ error: 'signalement indisponible sur cette instance' });
@@ -452,7 +453,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * de bascule ne doit pas le faire passer pour raté). Ici c'est l'inverse : la bascule EST le geste, un
    * échec doit se voir. On ne l'avale donc pas.
    */
-  app.post('/tenants/:tenantId/conversations/:conversationId/prendre', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/prendre', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -496,7 +497,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * l'écran et n'ont pas du tout le même prix : les mettre sous la même garde aurait rationné le geste
    * gratuit pour protéger le payant.
    */
-  app.get('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/media', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/media', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
@@ -580,7 +581,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * est sa propre borne. Et ce plafond-là est par ESPACE : à 10 par minute, une équipe de cinq
    * opérateurs qui traduisent chacun deux réponses le saturerait, sur un geste délibéré.
    */
-  app.post('/tenants/:tenantId/conversations/:conversationId/traduire', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/traduire', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -610,7 +611,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   /**
    * Déclarée AVANT `/conversations/:conversationId` : `todo-count` n'est pas un identifiant.
    */
-  app.get('/tenants/:tenantId/conversations/todo-count', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations/todo-count', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.countATraiter) return reply.code(200).send({ count: 0 });
@@ -625,7 +626,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * monté sur toutes les pages et la rafraîchit régulièrement, il ne doit pas rapatrier 100 conversations.
    * Déclarée AVANT `/conversations/:conversationId/...` : `unread-count` n'est pas un identifiant.
    */
-  app.get('/tenants/:tenantId/conversations/unread-count', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations/unread-count', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.countUnread) return reply.code(200).send({ count: 0 });
@@ -635,7 +636,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   });
 
   /** Un opérateur vient d'OUVRIR le fil : il est lu. C'est le seul événement qui éteint la pastille. */
-  app.post('/tenants/:tenantId/conversations/:conversationId/read', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/read', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -663,7 +664,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * La trace part au Journal des actions, SANS le numéro ni le texte : y écrire ce qu'on vient d'effacer
    * annulerait l'effacement, dans une table conçue pour ne jamais être modifiée.
    */
-  app.delete('/tenants/:tenantId/conversations/:conversationId/messages', gardeAdmin, async (req, reply) => {
+  app.delete('/tenants/:tenantId/conversations/:conversationId/messages', optsAdmin, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -677,7 +678,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     return reply.code(200).send({ effaces });
   });
 
-  app.get('/tenants/:tenantId/conversations/:conversationId/messages', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations/:conversationId/messages', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -791,7 +792,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * Affecter une conversation à un membre, ou la libérer. Réservé aux managers et aux admins : c'est la
    * première prérogative réelle du rôle `manager`, qui n'accordait rien depuis sa création.
    */
-  app.patch('/tenants/:tenantId/conversations/:conversationId/assignee', guard, async (req, reply) => {
+  app.patch('/tenants/:tenantId/conversations/:conversationId/assignee', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.setAssignee) return reply.code(503).send({ error: 'affectation indisponible' });
@@ -809,7 +810,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     return reply.code(200).send({ conversationId, assignee });
   });
 
-  app.post('/tenants/:tenantId/conversations/:conversationId/reply', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/reply', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -876,7 +877,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * composer une carte, un visuel et des boutons dans une barre de réponse. Ses variables sont résolues sur la
    * fiche du contact, exactement comme dans une campagne.
    */
-  app.post('/tenants/:tenantId/conversations/:conversationId/send-rcs', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/send-rcs', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -921,7 +922,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * (`template_param_hints`, posés à la création). On rend donc les valeurs DÉJÀ remplies, avec le libellé du
    * champ à côté, et elles restent modifiables.
    */
-  app.get('/tenants/:tenantId/conversations/:conversationId/template-params', guard, async (req, reply) => {
+  app.get('/tenants/:tenantId/conversations/:conversationId/template-params', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -939,7 +940,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   });
 
   // Envoi d'un template dans une conversation (le seul moyen de ré-engager hors fenêtre 24 h).
-  app.post('/tenants/:tenantId/conversations/:conversationId/send-template', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/send-template', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -1035,7 +1036,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * liste proposée est filtrée côté navigateur, mais un fil peut sortir de la fenêtre entre l'affichage et
    * le clic. Le serveur reste le juge.
    */
-  app.post('/tenants/:tenantId/conversations/:conversationId/workflow', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/workflow', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
@@ -1063,7 +1064,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
    * Sans cette route, le seul chemin de retour serait le garde-fou d'inactivité : un opérateur qui règle
    * une question en deux minutes devrait attendre le délai configuré avant que l'automatisme reparte.
    */
-  app.post('/tenants/:tenantId/conversations/:conversationId/release', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/conversations/:conversationId/release', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };

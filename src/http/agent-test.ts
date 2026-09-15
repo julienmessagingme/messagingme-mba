@@ -91,8 +91,8 @@ async function debiterEssai(tenantId: string, coutMicroEur: number, deps: AgentT
   }
 }
 
-export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps, guard?: Guard): void {
-  const opts = guard ? { preHandler: guard } : {};
+export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps, garde: Guard): void {
+  const opts = { preHandler: garde };
 
   /**
    * Les derniers essais de cet agent, du plus recent au plus ancien.
