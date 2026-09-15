@@ -1217,10 +1217,18 @@ async function main(): Promise<void> {
         // Destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres. Plus
         // rien à arbitrer, la règle se déduit de l'état du compte.
         mbaActifParTenant: (ids) => settingsStore.mbaActifParTenant(ids),
-        // ⚠️ Le verdict de `rendreLeFil` est IGNORÉ ici, et seulement ici : le balayage est best-effort, un
-        // fil ne doit pas rester gelé pour toujours à cause d'un hoquet réseau. La route de l'Inbox, elle,
-        // s'en sert pour refuser d'écrire un état que Meta n'a pas confirmé.
-        releaseToMba: async (tenant, waId) => { await releaseThreadChezMeta(tenant, waId); },
+        /**
+         * 🔴 LE VERDICT DE `rendreLeFil` EST RELAYÉ DEPUIS LE 2026-09-15, il était JETÉ ICI.
+         *
+         * Le commentaire d'avant l'assumait : « le verdict est IGNORÉ ici, et seulement ici : le balayage est
+         * best-effort, un fil ne doit pas rester gelé pour toujours à cause d'un hoquet réseau. » C'est
+         * précisément ce best-effort qui a produit l'incident : neuf conversations annonçant `mba` alors que
+         * Meta pensait le contraire, donc deux systèmes qui se croyaient chacun déchargés du client.
+         *
+         * ⚠️ Et la crainte ne se réalisait pas : refuser d'écrire ne GÈLE rien. La conversation reste dans
+         * l'état où elle est, donc VISIBLE dans « À traiter », et ce balayage repasse toutes les cinq minutes.
+         */
+        releaseToMba: (tenant, waId) => releaseThreadChezMeta(tenant, waId),
       });
       // eslint-disable-next-line no-console
       if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);

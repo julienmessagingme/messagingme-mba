@@ -514,7 +514,7 @@ export class PgInboxStore implements InboxStore {
   async listHeldControl(
     limit = 500,
     ageScenarioMs = 0,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>> {
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null }>> {
     /**
      * 🔴 LES FILS TENUS PAR UN SCÉNARIO ENTRENT ICI DEPUIS LE 2026-09-14, ET SEULEMENT LES VIEUX.
      *
@@ -534,17 +534,46 @@ export class PgInboxStore implements InboxStore {
      * les `app_human` à rendre, plus anciens, ne seraient jamais atteints. La régression serait invisible,
      * puisque le balayage continuerait de tourner et de ne rien trouver.
      *
-     * ⚠️ `control_changed_at is null` reste EXCLU, et c'est voulu : c'est la marque d'une conversation qui
-     * n'a JAMAIS basculé, donc d'un fil que personne n'a pris. Il n'y a rien à rendre.
+     * 🔴 `control_changed_at is null` ÉTAIT EXCLU AVEC UNE JUSTIFICATION FAUSSE, CORRIGÉE LE 2026-09-15.
+     * Elle disait : « c'est la marque d'une conversation qui n'a JAMAIS basculé, donc d'un fil que personne
+     * n'a pris. Il n'y a rien à rendre. » L'équivalence ne tient pas : `app_workflow` est la valeur PAR
+     * DÉFAUT de la colonne, et **envoyer un message PREND le fil chez Meta implicitement**. Une conversation
+     * née d'un envoi sortant porte donc `app_workflow` + `null` alors que nous tenons le fil pour de vrai.
+     *
+     * 🔴 MESURÉ SUR UN CAS RÉEL (`33634264992`, 2026-09-15) : deux envois sortants le 09-08, `null` depuis,
+     * et le résultat est une conversation que ce balayage ignore ET que « À traiter » exclut (ce dossier
+     * écarte `app_workflow`). Invisible et muette, sans le moindre symptôme.
+     *
+     * 🔴 C'EST LA FENÊTRE QUI BORNE, PAS L'ÂGE DU CONTRÔLE, et l'ordre des deux conditions n'est pas
+     * cosmétique. Une première version écrivait `coalesce(control_changed_at, last_message_at) < now() - âge`
+     * ET `last_message_at > now() - 24 h` : pour une conversation jamais basculée, le `coalesce` retombe sur
+     * `last_message_at`, et les deux conditions exigent alors ce message à la fois PLUS VIEUX et PLUS RÉCENT
+     * que 24 h. La branche était donc MORTE, pendant qu'un test affirmait le contraire. Relevé en revue, le
+     * jour même. Une conversation qui n'a jamais basculé n'a pas d'âge de contrôle : elle est éligible dès
+     * que sa fenêtre est ouverte, point.
+     *
+     * ⚠️ ET LE GARDE-FOU DE VOLUME DU COMMENTAIRE D'ORIGINE RESTE TENU, par la fenêtre elle-même : seules
+     * les conversations actives dans les dernières 24 h entrent, jamais l'historique entier. Sans elle,
+     * `app_workflow` étant l'état normal de tout le monde, le lot de 500 serait saturé de fils sains et les
+     * fils humains à rendre, plus anciens, ne seraient jamais atteints. La régression serait invisible.
+     *
+     * 🔴 LA BORNE DE FENÊTRE EST UN PROXY À SENS UNIQUE, et c'est ce qui la rend sûre. Un dernier message
+     * vieux de plus de 24 h PROUVE que la fenêtre de Meta est fermée (le dernier entrant est au plus vieux
+     * que lui), donc qu'il n'y a rien à transmettre. L'inverse n'est pas vrai : un dernier message RÉCENT
+     * mais SORTANT peut recouvrir une fenêtre fermée. C'est le balayage qui absorbe cette imprécision, en
+     * appelant Meta AVANT d'écrire.
      */
-    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null }>(
-      `select tenant_id, wa_id, control_owner, control_changed_at
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; last_message_at: Date | null }>(
+      `select tenant_id, wa_id, control_owner, control_changed_at, last_message_at
        from conversations
        where control_owner <> 'app_workflow'
           or (
             $2::bigint > 0
-            and control_changed_at is not null
-            and control_changed_at < now() - make_interval(secs => $2::bigint / 1000.0)
+            and last_message_at > now() - interval '24 hours'
+            and (
+              control_changed_at is null
+              or control_changed_at < now() - make_interval(secs => $2::bigint / 1000.0)
+            )
           )
        order by control_changed_at nulls first
        limit $1`,
@@ -555,6 +584,7 @@ export class PgInboxStore implements InboxStore {
       waId: r.wa_id,
       owner: r.control_owner,
       changedAt: r.control_changed_at,
+      lastMessageAt: r.last_message_at,
     }));
   }
 

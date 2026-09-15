@@ -115,7 +115,7 @@ function sweepDeps(
     rendues,
     lu,
     deps: {
-      listHeldControl: async () => { lu.push(new Date(T0)); return stale; },
+      listHeldControl: async () => { lu.push(new Date(T0)); return stale.map((c) => ({ ...c, lastMessageAt: new Date(T0 - 1 * H) })); },
       setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
       timeouts,
       now: () => T0,
@@ -180,7 +180,7 @@ describe('garde-fou d’inactivité', () => {
     // Un opérateur qui reprend la main entre la lecture et l'écriture : le store refuse, et le compteur
     // ne doit pas prétendre avoir rendu la conversation.
     const deps: ControlSweepDeps = {
-      listHeldControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H) }],
+      listHeldControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H), lastMessageAt: ago(1 * H) }],
       setControlOwner: async () => false,
       timeouts: { app_human: 2 * H },
       now: () => T0,
@@ -202,7 +202,9 @@ describe('durée du gel réglable PAR CLIENT', () => {
       rendues,
       demandes,
       deps: {
-        listHeldControl: async () => stale,
+        // Un dernier message RECENT : ces tests ne portent pas sur la fenetre de Meta, et aucun de leurs
+        // clients n a l agent allume (pas de mbaActifParTenant), donc la garde de fenetre ne s y applique pas.
+        listHeldControl: async () => stale.map((c) => ({ ...c, lastMessageAt: new Date(T0 - 1 * H) })),
         setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
         handbackMsByTenant: async (ids) => { demandes.push([...ids]); return new Map(Object.entries(reglages)); },
         timeouts: defauts,
@@ -289,7 +291,7 @@ describe('reprise après un gel humain : une seule règle, sans exception', () =
   function sweep(held: Array<{ tenantId: string; waId: string; owner: 'app_workflow' | 'app_human' | 'mba'; changedAt: Date | null }>, reglages: Record<string, number> = {}) {
     const rendues: string[] = [];
     const deps: ControlSweepDeps = {
-      listHeldControl: async () => held,
+      listHeldControl: async () => held.map((c) => ({ ...c, lastMessageAt: new Date(T0 - 1 * H) })),
       setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
       handbackMsByTenant: async () => new Map(Object.entries(reglages)),
       timeouts: { app_human: 2 * H, mba: 24 * H },

@@ -1,5 +1,15 @@
 import type { ControlOwner } from './store.pg';
 
+/**
+ * La fenetre de service client de Meta : 24 h depuis le DERNIER message ENTRANT. Au-dela, aucun echange
+ * n est possible sans template, et surtout aucune passation de fil n a de sens puisqu il n y a plus de
+ * session a transmettre.
+ *
+ * Une constante et pas un reglage : ce delai appartient a Meta, pas a nous, et un client ne peut pas le
+ * changer. Le rendre reglable donnerait l illusion d une prise sur une regle qui nous est imposee.
+ */
+const FENETRE_META_MS = 24 * 60 * 60 * 1000;
+
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
   /**
@@ -10,7 +20,7 @@ export interface ControlSweepDeps {
   listHeldControl(
     limit?: number,
     ageScenarioMs?: number,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>>;
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null }>>;
   setControlOwner(
     tenantId: string,
     waId: string,
@@ -37,10 +47,14 @@ export interface ControlSweepDeps {
   mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
   /**
    * Rend effectivement le fil à Meta (`thread_control` action `release`). Appelé UNIQUEMENT quand la
-   * destination est `mba`. Best-effort : un échec ne doit pas empêcher la bascule locale, sinon un fil resterait
-   * gelé pour toujours à cause d'un hoquet réseau, ce que ce balayage existe précisément pour éviter.
+   * destination est `mba`, et UNIQUEMENT sur une fenêtre encore ouverte.
+   *
+   * 🔴 SON VERDICT GOUVERNE L'ÉCRITURE LOCALE DEPUIS LE 2026-09-15. `false` (aucun numéro connecté) et une
+   * exception (Meta refuse) empêchent tous deux la bascule locale. Le commentaire d'avant annonçait
+   * l'inverse (« un échec ne doit pas empêcher la bascule locale ») : c'est ce best-effort qui a produit neuf
+   * conversations annonçant `mba` alors que Meta pensait le contraire.
    */
-  releaseToMba?(tenantId: string, waId: string): Promise<void>;
+  releaseToMba?(tenantId: string, waId: string): Promise<boolean>;
   now?: () => number;
 }
 
@@ -106,20 +120,60 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
      * porte déjà : `setControlOwner` refuse une écriture qui ne change rien, la boucle passe au suivant, et
      * rien ne bouge. Ce cas est inoffensif par construction, pas par précaution.
      */
+    /**
+     * 🔴 ON NE PASSE PAS LA MAIN SUR UNE FENÊTRE FERMÉE, ET C'EST LE CORRECTIF DU 2026-09-15.
+     *
+     * L'agent de Meta ne peut prendre un fil que s'il existe une session ouverte. Mesuré ce jour-là : ce
+     * balayage a rendu DIX conversations d'un coup, toutes muettes depuis 166 à 281 heures, donc toutes hors
+     * fenêtre. Il n'y avait rien à transmettre, et le message suivant de l'une d'elles est arrivé en
+     * `messages` (donc chez NOUS) au lieu de `standby` : notre colonne disait `mba`, Meta pensait l'inverse,
+     * et personne n'a répondu au client.
+     *
+     * ⚠️ ON SAUTE, ON NE REPLIE PAS SUR `app_workflow`. Ce serait échanger un défaut contre un pire : c'est
+     * la SEULE valeur que le dossier « À traiter » exclut, donc une conversation `app_human` abandonnée
+     * deviendrait invisible au lieu d'être une ligne de travail. Sauter la laisse telle quelle, donc visible,
+     * et le message entrant la reprendra (`remiseMbaSiPersonneNeSuit`) le jour où le client revient.
+     *
+     * ⚠️ `lastMessageAt` EST UN PROXY À SENS UNIQUE : un dernier message vieux de plus de 24 h PROUVE que la
+     * fenêtre est fermée ; un dernier message récent mais SORTANT ne prouve pas qu'elle est ouverte. C'est
+     * l'ordre inversé ci-dessous qui absorbe cette imprécision.
+     */
+    const fenetreOuverte = c.lastMessageAt !== null && now() - c.lastMessageAt.getTime() < FENETRE_META_MS;
     const versMba = (c.owner === 'app_human' || c.owner === 'app_workflow') && avecMba.has(c.tenantId);
+    /**
+     * ⚠️ LA GARDE PORTE SUR `versMba`, PAS SUR « ce client a l'agent allumé », ET LA NUANCE A ÉTÉ TROUVÉE EN
+     * REVUE. Une première version sautait dès que le client avait l'agent, ce qui bloquait aussi les
+     * transitions qui ne parlent PAS à Meta : un fil déjà détenu par l'agent, repris vers le scénario au bout
+     * de 24 h, n'émet aucun appel et n'a donc rien à faire d'une fenêtre. La garde n'a de sens que là où un
+     * appel Meta allait partir.
+     */
+    if (versMba && !fenetreOuverte) continue;
+    /**
+     * 🔴 META D'ABORD, L'ÉCRITURE ENSUITE, ET L'ORDRE EST INVERSÉ DEPUIS LE 2026-09-15.
+     *
+     * Il était l'inverse, avec cette raison : « la bascule locale d'abord, l'appel Meta en best-effort :
+     * l'inverse laisserait un fil gelé pour toujours sur un hoquet réseau ». Cette crainte ne tient plus, et
+     * elle ne tenait déjà pas tout à fait : refuser d'écrire ne GÈLE rien, ça laisse la conversation dans
+     * l'état où elle est, donc VISIBLE, et ce balayage repasse toutes les cinq minutes. Ce qui l'emporte,
+     * c'est qu'écrire un état que Meta n'a pas confirmé produit exactement la panne du 2026-09-15 : deux
+     * systèmes qui se croient chacun déchargés du client.
+     *
+     * ⚠️ `rendreLeFil` LÈVE quand Meta refuse et rend `false` quand il n'y a aucun numéro connecté. Les deux
+     * empêchent l'écriture, pour la même raison, et seul le refus mérite une trace : l'absence de numéro est
+     * un état de configuration, pas une panne.
+     */
+    if (versMba && deps.releaseToMba) {
+      try {
+        if (!(await deps.releaseToMba(c.tenantId, c.waId))) continue;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`release vers MBA REFUSÉ pour ${c.waId}, l’état local n’a pas été écrit:`, err instanceof Error ? err.message : err);
+        continue;
+      }
+    }
     const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
     if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
     rendues += 1;
-    // Bascule locale d'ABORD, appel Meta ensuite et en best-effort : l'inverse laisserait un fil gelé pour
-    // toujours sur un hoquet réseau, ce que ce balayage existe pour éviter.
-    if (versMba && deps.releaseToMba) {
-      try {
-        await deps.releaseToMba(c.tenantId, c.waId);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`release vers MBA ignoré pour ${c.waId}:`, err instanceof Error ? err.message : err);
-      }
-    }
   }
   return rendues;
 }

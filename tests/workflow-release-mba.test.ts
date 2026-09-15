@@ -91,19 +91,20 @@ describe('release : la minuterie de reprise après un humain', () => {
   const T0 = Date.parse('2026-08-18T12:00:00Z');
   const ago = (ms: number) => new Date(T0 - ms);
 
-  function sweep(avecMba: string[], releaseKo = false) {
+  function sweep(avecMba: string[], releaseKo = false, dernierMessage: Date = ago(1 * H)) {
     const rendues: Array<{ waId: string; dest: string }> = [];
     const releases: string[] = [];
     const deps: ControlSweepDeps = {
       listHeldControl: async () => [
-        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H) },
-        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H) },
+        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage },
+        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage },
       ],
       setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; },
       mbaActifParTenant: async () => new Set(avecMba),
       releaseToMba: async (_t, waId) => {
         releases.push(waId);
         if (releaseKo) throw new Error('529 chez Meta');
+        return true;
       },
       timeouts: { app_human: 2 * H, mba: 24 * H },
       now: () => T0,
@@ -119,11 +120,36 @@ describe('release : la minuterie de reprise après un humain', () => {
     expect(releases).toEqual(['a']);
   });
 
-  it('🔴 un release en échec ne regèle PAS la conversation', async () => {
-    // La bascule locale passe d'abord, exprès. L'inverse laisserait un fil gelé pour toujours sur un hoquet
-    // réseau, ce que ce balayage existe précisément pour éviter.
+  it('🔴 un release REFUSÉ n’écrit AUCUN état local, et c’est l’inverse d’avant', async () => {
+    /**
+     * 🔴 CE TEST REMPLACE SON CONTRAIRE, ET LE DIT. Il affirmait « un release en échec ne regèle PAS la
+     * conversation », c'est-à-dire que la bascule locale passait quand même. C'était un choix assumé (ne pas
+     * geler un fil sur un hoquet réseau), et c'est ce choix qui a produit l'incident du 2026-09-15 : neuf
+     * conversations annonçant `mba` alors que Meta pensait le contraire, donc deux systèmes qui se croyaient
+     * chacun déchargés du client.
+     *
+     * ⚠️ La crainte d'origine ne se réalise pas : refuser d'écrire ne GÈLE rien. La conversation reste dans
+     * l'état où elle est, donc VISIBLE dans « À traiter », et ce balayage repasse toutes les cinq minutes.
+     */
     const { deps, rendues } = sweep(['avec'], true);
-    expect(await runControlSweep(deps)).toBe(2);
-    expect(rendues.find((r) => r.waId === 'a')?.dest).toBe('mba');
+    // Seul `b` bascule : son client n'a pas d'agent de Meta, donc aucun appel Meta sur son chemin.
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues.find((r) => r.waId === 'a'), 'un refus de Meta ne doit rien écrire').toBeUndefined();
+    expect(rendues.find((r) => r.waId === 'b')?.dest).toBe('app_workflow');
+  });
+
+  it('🔴 une fenêtre FERMÉE ne déclenche aucune passation, et ne replie pas sur app_workflow', async () => {
+    /**
+     * 🔴 LE CŒUR DE L'INCIDENT DU 2026-09-15. Ce balayage a rendu dix conversations d'un coup, toutes muettes
+     * depuis 166 à 281 heures. L'agent de Meta ne peut prendre un fil que s'il existe une session ouverte :
+     * il n'y avait rien à transmettre, et le message suivant de l'une d'elles est arrivé chez NOUS.
+     *
+     * ⚠️ ON SAUTE, ON NE REPLIE PAS. `app_workflow` est la seule valeur que « À traiter » exclut : y basculer
+     * un `app_human` abandonné le rendrait invisible, soit un défaut pire que celui qu'on répare.
+     */
+    const { deps, rendues, releases } = sweep(['avec'], false, ago(200 * H));
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(releases, 'aucun appel Meta sur une fenêtre fermée').toEqual([]);
+    expect(rendues.find((r) => r.waId === 'a'), 'la conversation reste telle quelle, donc visible').toBeUndefined();
   });
 });
