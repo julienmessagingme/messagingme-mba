@@ -342,6 +342,25 @@ describe('outils d’un agent : brancher une requête de connecteur', () => {
     ]);
   });
 
+  it('🔴 une requête SANS champ de sortie est refusée ICI (409), plus à l’enregistrement', async () => {
+    /**
+     * 🔴 LA GARANTIE A CHANGÉ DE PLACE LE 2026-09-15, ELLE N'A PAS DISPARU. Elle vivait à l'enregistrement
+     * de l'appel, ce qui rendait un brouillon impossible à mettre de côté : les champs de sortie se cochent
+     * dans la réponse d'un essai, donc un appel qu'on n'avait pas encore réussi à faire marcher était perdu
+     * en quittant l'écran. Ici, elle mord au bon moment : tant qu'un appel n'est rattaché à aucun agent, il
+     * n'envoie rien et ne lit rien.
+     *
+     * ⚠️ 409 ET PAS 5xx : Cloudflare remplace le corps de toute 5xx par sa page d'erreur, et ce message doit
+     * arriver au client AVEC le geste qui débloque.
+     */
+    const { cap, srv } = app(SORTIES, [OUTIL], { outputPaths: [] });
+    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/Essayer/);
+    // Rien d'écrit : un refus qui laisserait un outil à moitié créé serait pire que pas de refus du tout.
+    expect(cap.connecteurs).toEqual([]);
+  });
+
   it('🔴 une requête d’un AUTRE tenant rend 404, et rien n’est écrit', async () => {
     const { cap, srv } = app();
     const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ requeteId: AUTRE }) });

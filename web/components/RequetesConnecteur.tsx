@@ -10,6 +10,7 @@ import {
   type CatalogueVariables, type CorpsRequete, type CreationRequete, type MethodeRequete,
   type OrigineVariable, type Paire, type RequeteApi, type ResultatTest, type VariableRequete,
 } from '@/lib/api-agent-requetes';
+import { lireGabarit, pastillesDe } from '@/lib/gabarit-pastilles';
 
 /**
  * METTRE AU POINT UN APPEL vers le système du client, et l'ÉPROUVER avant de l'ouvrir aux agents.
@@ -144,6 +145,15 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
                 <p className="text-sm font-medium text-ink-800">
                   <span className="mr-2 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px]">{r.methode}</span>
                   {r.label}
+                  {/* 🔴 UN BROUILLON SE DIT. Depuis qu'un appel s'enregistre sans champ de sortie, la liste
+                      contient deux choses différentes : des appels utilisables et des appels en cours. Les
+                      afficher pareil ferait croire à un client qu'un appel est prêt alors qu'aucun agent ne
+                      pourra s'en servir, et le refus n'arriverait qu'au rattachement. */}
+                  {r.outputPaths.length === 0 && (
+                    <span data-testid={`requete-a-finir-${r.id}`} className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                      {t('à finir', 'unfinished')}
+                    </span>
+                  )}
                 </p>
                 {/* ⚠️ Le nom du système n'est répété que si l'écran montre PLUSIEURS systèmes. Sous la section
                     d'un système déplié, il est déjà écrit deux fois au-dessus. */}
@@ -283,6 +293,22 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
     }
   };
 
+  /**
+   * Les pastilles écrites quelque part dans l'appel et qui ne correspondent à aucune donnée déclarée.
+   *
+   * ⚠️ Les noms VIDES sont écartés des deux côtés : une ligne de variable qu'on vient d'ajouter n'a pas
+   * encore de nom, et la compter comme déclarée ferait taire l'avertissement au moment où il sert.
+   */
+  const declarees = new Set(brouillon.variables.map((v) => v.nom.trim()).filter((n) => n !== ''));
+  const gabarits = [
+    brouillon.chemin,
+    ...brouillon.parametres.flatMap((x) => [x.cle, x.valeur]),
+    ...brouillon.entetes.map((x) => x.valeur),
+    brouillon.corps.mode === 'json' ? brouillon.corps.gabarit : '',
+    ...(brouillon.corps.mode === 'champs' ? brouillon.corps.champs.map((c) => c.valeur) : []),
+  ];
+  const nonDeclarees = [...new Set(gabarits.flatMap(pastillesDe))].filter((n) => !declarees.has(n));
+
   const ongletCls = (o: Onglet): string =>
     `border-b-2 px-2 pb-1 text-xs ${onglet === o ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-700'}`;
 
@@ -335,14 +361,57 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         <button className={ongletCls('reponse')} data-testid="onglet-reponse" onClick={() => setOnglet('reponse')}>{t('Réponse', 'Response')}</button>
       </div>
 
-      {/* Les pastilles d'insertion, visibles sur tous les onglets où l'on écrit un gabarit. Elles remplacent
-          le fait de retenir la syntaxe : on clique, ça s'insère au curseur. */}
-      {onglet !== 'reponse' && brouillon.variables.length > 0 && (
+      {/**
+        * Les pastilles d'insertion, sur tous les onglets où l'on écrit un gabarit : on clique, ça s'insère au
+        * curseur, plutôt que de retenir la syntaxe.
+        *
+        * 🔴 ELLE S'AFFICHE MÊME QUAND IL N'Y A AUCUNE VARIABLE, et c'est le correctif du 2026-09-15. Avant,
+        * elle n'apparaissait qu'une fois une donnée déclarée : celui qui débute ne voyait donc JAMAIS que le
+        * mécanisme existait, et tapait les accolades à la main dans un onglet où rien ne l'attendait. Vécu
+        * par Julien le jour même. Une capacité qu'on ne découvre qu'après s'en être passé n'existe pas.
+        */}
+      {onglet !== 'reponse' && (
         <div className="flex flex-wrap items-center gap-1" data-testid="pastilles-variables">
           <span className="text-[11px] text-ink-500">{t('Insérer :', 'Insert:')}</span>
-          {brouillon.variables.map((v) => (
+          {brouillon.variables.filter((v) => v.nom.trim() !== '').map((v) => (
             <button key={v.nom} data-testid={`pastille-${v.nom}`} onClick={() => insererVariable(v.nom)} className="rounded bg-brand-100 px-1.5 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-200">
               {v.nom}
+            </button>
+          ))}
+          {brouillon.variables.every((v) => v.nom.trim() === '') && (
+            <button
+              data-testid="pastilles-vides" onClick={() => setOnglet('variables')}
+              className="text-[11px] text-brand-600 hover:underline"
+            >
+              {t(
+                'aucune donnée déclarée. Commencez par l’onglet « Données envoyées ».',
+                'no data declared yet. Start with the “Data sent” tab.',
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/**
+        * 🔴 UNE PASTILLE QUI NE DÉSIGNE RIEN, DITE PENDANT QU'ON L'ÉCRIT. Le serveur refuse l'appel au
+        * moment de le passer (`construireCorps` nomme les manquantes), mais c'est trop tard : l'écran
+        * restait muet pendant toute la saisie, et le client découvrait le problème en conversation.
+        * ⚠️ On regarde TOUT ce qui porte des gabarits, pas seulement le corps : le chemin, les paramètres
+        * d'URL et les en-têtes en portent aussi, et n'en couvrir qu'un serait un demi-contrôle.
+        */}
+      {onglet !== 'reponse' && nonDeclarees.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 text-[11px] text-amber-700" data-testid="pastilles-inconnues">
+          <span>{t('Utilisées mais pas déclarées :', 'Used but not declared:')}</span>
+          {nonDeclarees.map((nom) => (
+            <button
+              key={nom} data-testid={`declarer-${nom}`}
+              onClick={() => {
+                maj({ variables: [...brouillon.variables.filter((v) => v.nom.trim() !== ''), { nom, type: 'string', origine: { type: 'modele' } }] });
+                setOnglet('variables');
+              }}
+              className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 hover:bg-amber-200"
+            >
+              {t(`déclarer ${nom}`, `declare ${nom}`)}
             </button>
           ))}
         </div>
@@ -380,8 +449,19 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
 
       <button
         data-testid="requete-enregistrer"
-        disabled={busy || brouillon.label.trim() === '' || brouillon.chemin.trim() === '' || brouillon.outputPaths.length === 0}
-        title={brouillon.outputPaths.length === 0 ? t('Cochez au moins un champ à lire dans l’onglet Réponse.', 'Tick at least one field to read in the Response tab.') : ''}
+        /**
+         * 🔴 UN APPEL À MOITIÉ ÉCRIT S'ENREGISTRE, depuis le 2026-09-15. Ce bouton exigeait un champ de
+         * sortie coché ; or ces champs se cochent dans la RÉPONSE d'un essai, donc un appel qu'on n'avait
+         * pas encore réussi à faire marcher ne pouvait pas être mis de côté. Julien, le jour même : « je
+         * peux pas enregistrer pour commencer, quand je vais revenir je vais devoir repartir de zéro ».
+         * La garantie « le client décide ce que l'agent lit » n'a pas disparu, elle a bougé d'un cran : le
+         * serveur refuse de RATTACHER à un agent un appel sans champ de sortie (409).
+         */
+        disabled={busy || brouillon.label.trim() === '' || brouillon.chemin.trim() === ''}
+        title={brouillon.outputPaths.length === 0
+          ? t('Enregistré comme brouillon : il faudra cocher un champ dans l’onglet Réponse avant de l’ouvrir à un agent.',
+            'Saved as a draft: you will need to tick a field in the Response tab before opening it to an agent.')
+          : ''}
         onClick={onEnregistrer}
         className="self-start rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
       >
@@ -540,22 +620,58 @@ function OngletCorps({ brouillon, maj, cible }: {
             onChange={(e) => maj({ corps: { mode: 'json', gabarit: e.target.value } })}
             placeholder={'{\n  "ville": "{{ville}}"\n}'}
           />
-          <ApercuJson gabarit={gabarit} />
+          <ApercuJson gabarit={gabarit} onReparer={(repare) => maj({ corps: { mode: 'json', gabarit: repare } })} />
         </>
       )}
     </div>
   );
 }
 
-/** Dit tout de suite si le JSON tient debout. Le serveur refuse aussi, mais après un aller-retour. */
-function ApercuJson({ gabarit }: { gabarit: string }) {
+/**
+ * Dit tout de suite si le JSON tient debout. Le serveur refuse aussi, mais après un aller-retour.
+ *
+ * 🔴 ET QUAND LA CAUSE EST IDENTIFIABLE, IL LA NOMME (2026-09-15). « Ce n'est pas du JSON valide » était vrai
+ * et inutilisable : le client regardait `"user_ns": {{user_ns}}` sans pouvoir deviner que la pastille se met
+ * DANS la chaîne. Une erreur qui décrit le symptôme sans nommer le geste laisse quelqu'un bloqué devant sa
+ * propre faute.
+ *
+ * ⚠️ ET LES GUILLEMETS NE FORCENT PAS UNE CHAÎNE, sans quoi le conseil serait faux : le serveur remplace une
+ * chaîne valant EXACTEMENT `"{{x}}"` par la valeur AVEC SON TYPE déclaré. Le message le dit, parce que c'est
+ * la question suivante de quiconque envoie un identifiant numérique.
+ */
+function ApercuJson({ gabarit, onReparer }: { gabarit: string; onReparer: (repare: string) => void }) {
   const t = useT();
   if (gabarit.trim() === '') return null;
   try {
     JSON.parse(gabarit);
     return <p className="text-[11px] text-emerald-700" data-testid="corps-json-etat">{t('JSON valide', 'Valid JSON')}</p>;
   } catch {
-    return <p className="text-[11px] text-coral" data-testid="corps-json-etat">{t('Ce n’est pas du JSON valide.', 'This is not valid JSON.')}</p>;
+    const { horsGuillemets, repare } = lireGabarit(gabarit);
+    // Le correctif n'est proposé que s'il MARCHE : un gabarit cassé pour une autre raison (accolade
+    // manquante) ne doit pas recevoir un bouton qui ne le répare pas, sinon le bouton devient un mensonge.
+    let reparable = false;
+    if (horsGuillemets.length > 0) {
+      try { JSON.parse(repare); reparable = true; } catch { reparable = false; }
+    }
+    if (!reparable) {
+      return <p className="text-[11px] text-coral" data-testid="corps-json-etat">{t('Ce n’est pas du JSON valide.', 'This is not valid JSON.')}</p>;
+    }
+    return (
+      <div className="flex flex-wrap items-center gap-2" data-testid="corps-json-etat">
+        <p className="text-[11px] text-coral">
+          {t(
+            `Une pastille se met entre guillemets : "{{${horsGuillemets[0]!}}}". Elle garde son type déclaré, un nombre part bien en nombre.`,
+            `A chip goes inside quotes: "{{${horsGuillemets[0]!}}}". It keeps its declared type, a number is still sent as a number.`,
+          )}
+        </p>
+        <button
+          data-testid="corps-json-reparer" onClick={() => onReparer(repare)}
+          className="rounded border border-brand-500 px-2 py-0.5 text-[11px] font-semibold text-brand-600 hover:bg-brand-50"
+        >
+          {t('Corriger', 'Fix it')}
+        </button>
+      </div>
+    );
   }
 }
 

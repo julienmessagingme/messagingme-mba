@@ -195,6 +195,23 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     // dérivent, et ils doivent décrire l'appel RÉEL, pas ce que le corps de la requête HTTP prétend.
     const requete = await deps.requetePourOutil(ctx.tenant, d.requeteId);
     if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
+    /**
+     * 🔴 C'EST ICI QUE VIT LA GARANTIE « le client décide ce que l'agent lit », depuis le 2026-09-15.
+     *
+     * Elle vivait à l'enregistrement de l'appel, ce qui rendait un brouillon impossible à mettre de côté :
+     * les champs de sortie se cochent dans la réponse d'un essai, donc un appel qu'on n'avait pas encore
+     * réussi à faire marcher ne pouvait pas être sauvé. Ici, elle mord au bon moment : tant qu'un appel
+     * n'est rattaché à aucun agent, il n'envoie rien et ne lit rien.
+     *
+     * ⚠️ 409 ET PAS 500 : Cloudflare remplace le corps de toute 5xx par sa page d'erreur, et ce message-ci
+     * doit arriver jusqu'au client, avec le geste qui débloque.
+     */
+    if (requete.outputPaths.length === 0) {
+      return reply.code(409).send({
+        error: 'cet appel n’est pas terminé : aucun champ de réponse n’est coché. Ouvrez-le dans Connecteurs, '
+          + 'lancez « Essayer », puis cochez ce que l’agent a le droit de lire.',
+      });
+    }
 
     const plancher = risqueSelonMethode(requete.methode as MethodeConnecteur);
     const risk = d.risk ?? plancher;

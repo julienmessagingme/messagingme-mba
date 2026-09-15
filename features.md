@@ -1556,8 +1556,28 @@ scénario, comment importer des contacts.
   ce que la personne vient de demander, mot pour mot.
 - ✅ **Essayer l'appel** avec des valeurs de test, et voir la vraie réponse : le statut, la durée, ce qui est
   parti, et le contenu reçu.
-- ✅ **Cocher les champs à garder** dans la réponse reçue, au lieu d'écrire des chemins de mémoire. Ces champs
-  sont obligatoires : la réponse de votre système ne part chez le fournisseur du modèle que par cette liste.
+- ✅ **Cocher les champs à garder** dans la réponse reçue, au lieu d'écrire des chemins de mémoire. La réponse
+  de votre système ne part chez le fournisseur du modèle que par cette liste.
+- ✅ **Un appel à moitié écrit s'ENREGISTRE** (2026-09-15). Vous mettez un appel de côté et vous y revenez plus
+  tard, même sans avoir réussi à le faire marcher. La liste le marque alors **« à finir »**.
+  🔴 **Avant, enregistrer exigeait un champ de réponse coché, et ces champs se cochent dans le résultat d'un
+  essai réussi.** Un appel qu'on n'avait pas encore fait marcher était donc perdu en quittant l'écran, et il
+  fallait tout retaper. C'est le cycle que le bouton Essayer sert justement à ouvrir.
+  ⚠️ **Ce qui n'a pas changé** : un appel sans champ de réponse coché **ne peut pas être ouvert à un agent**.
+  L'écran des Outils le refuse et dit quoi faire. Tant qu'il n'est ouvert à personne, un appel n'envoie rien.
+- ✅ **Les pastilles de variable se voient AVANT d'avoir déclaré quoi que ce soit** (2026-09-15). La ligne
+  « Insérer : » est toujours là, et quand elle est vide elle renvoie vers l'onglet où l'on déclare une donnée.
+  Avant, elle n'apparaissait qu'une fois une donnée déclarée : on ne découvrait le mécanisme qu'après s'en
+  être passé, en tapant les accolades à la main.
+- ✅ **Une pastille mal placée dans un JSON dit ce qui ne va pas, et se corrige d'un bouton** (2026-09-15).
+  Une pastille se met **entre guillemets** (`"{{user_ns}}"`), sinon le corps n'est plus du JSON. L'écran
+  disait seulement « Ce n'est pas du JSON valide », ce qui est vrai et inutilisable. Il nomme désormais la
+  cause et propose **Corriger**.
+  ⚠️ **Les guillemets ne transforment pas votre valeur en texte** : une donnée déclarée « nombre » part bien
+  en nombre. Les guillemets ne servent qu'à garder le gabarit lisible comme du JSON.
+- ✅ **Une pastille qui ne désigne aucune donnée est signalée pendant que vous écrivez**, avec un bouton pour
+  la déclarer sur place. Avant, le problème n'apparaissait qu'au moment où l'agent passait l'appel, donc en
+  pleine conversation avec un client.
 - ✅ **Dans CHAQUE agent** (onglet Outils), choisir un appel de la bibliothèque et lui donner SES mots : le nom
   vu par l'agent, à quoi ça sert, quand ne pas l'appeler. Deux agents peuvent utiliser le même appel avec des
   consignes différentes, et le corriger une fois le corrige partout.

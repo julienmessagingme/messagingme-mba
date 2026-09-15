@@ -21,8 +21,17 @@ import { lireCorpsBorne } from '../lib/corps-borne';
  *  2. **Un en-tête réservé est refusé**, `authorization` en tête. L'authentification vit sur la SOURCE, où
  *     elle est chiffrée. La laisser saisir ici en ferait le chemin le plus naturel, donc le plus utilisé, et
  *     le secret serait stocké en clair dans la configuration.
- *  3. **`outputPaths` est obligatoire et non vide.** La réponse appartient au client et part chez le
- *     fournisseur de modèle : c'est ici, et seulement ici, qu'on décide ce que l'agent en lit.
+ *  3. **`outputPaths` décide de ce que l'agent LIT de la réponse.** Elle appartient au client et part chez
+ *     le fournisseur de modèle : c'est ici, et seulement ici, qu'on choisit ce qui en sort.
+ *     🔴 **ELLE N'EST PLUS EXIGÉE À L'ENREGISTREMENT (2026-09-15), ET LA GARANTIE N'A PAS BOUGÉ POUR AUTANT.**
+ *     Elle l'était, et ça refermait exactement le cycle que la route d'essai existe pour ouvrir : les champs
+ *     de sortie se cochent dans la réponse d'un essai, l'essai suppose un appel au point, et un appel à
+ *     moitié écrit ne pouvait donc pas être MIS DE CÔTÉ. Julien, le 2026-09-15 : « je peux pas enregistrer
+ *     pour commencer, quand je vais revenir je vais devoir repartir de zéro ». Un écran qui perd le travail
+ *     de quelqu'un parce qu'il n'est pas fini est le pire des garde-fous : on ne revient pas.
+ *     La garantie s'est déplacée d'un cran, là où elle mord vraiment : **un appel sans champ de sortie ne
+ *     peut pas être RATTACHÉ à un agent** (409 dans `agent-tools.ts`). Tant qu'il n'est rattaché à personne,
+ *     il n'envoie rien et ne lit rien : c'est un brouillon, pas un risque.
  *  4. **Supprimer une requête que des outils désignent est refusé** (409), comme pour une source : la cascade
  *     rendrait un agent muet sans bruit.
  */
@@ -113,8 +122,9 @@ const CHAMPS = {
   entetes: z.array(enteteSchema).max(30),
   corps: corpsSchema,
   variables: z.array(variableSchema).max(50),
-  /** 🔴 NON VIDE : voir la garde 3 ci-dessus. */
-  outputPaths: z.array(z.string().trim().min(1).max(120)).min(1).max(50),
+  /** 🔴 PEUT ÊTRE VIDE, et c'est ce qui rend un brouillon enregistrable : voir la garde 3 ci-dessus. Le
+   *  refus vit au RATTACHEMENT à un agent, pas ici. Chaque chemin coché, lui, reste borné. */
+  outputPaths: z.array(z.string().trim().min(1).max(120)).max(50),
   valeursTest: z.record(z.string(), z.union([z.string().max(2000), z.number(), z.boolean()])),
 };
 
@@ -281,6 +291,23 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     const effectif = { ...actuelle, ...parse.data } as z.infer<typeof corpsRequete>;
     const pb = verifier(effectif, await deps.clesDeChamps(tenant));
     if (pb) return reply.code(400).send({ error: pb });
+    /**
+     * 🔴 ON PEUT CRÉER UN APPEL SANS CHAMP DE SORTIE, ON NE PEUT PAS EN VIDER UN QUI SERT (2026-09-15).
+     *
+     * Relevé par le hook « rayon de souffle » en ouvrant l'enregistrement aux brouillons : la garde d'entrée
+     * n'est rien si la même valeur peut être retirée APRÈS coup. Un appel déjà rattaché à des agents et vidé
+     * de ses champs rendrait ces agents muets sur ce connecteur (`resolvers/http.ts` refuse alors l'appel
+     * proprement, donc rien ne fuit, mais plus personne ne sait pourquoi le robot ne répond plus).
+     *
+     * ⚠️ CALCULÉE SUR L'ÉTAT EFFECTIF (`effectif`), jamais sur le corps de la requête : sinon un patch qui ne
+     * renvoie pas `outputPaths` passerait la garde en laissant la valeur courante, et un patch qui les vide
+     * sans toucher au reste y échapperait aussi. C'est la règle du dépôt sur les gardes de validation.
+     */
+    if (effectif.outputPaths.length === 0 && actuelle.outils > 0) {
+      return reply.code(409).send({
+        error: `${actuelle.outils} outil(s) d’agent utilisent cet appel : retirez-les d’abord, ou gardez au moins un champ de réponse.`,
+      });
+    }
     try {
       const requete = await deps.patch(tenant, id, parse.data);
       if (!requete) return reply.code(404).send({ error: 'requête introuvable' });

@@ -12,8 +12,11 @@ import { LabelRequeteDejaPris, type RequeteConnecteur } from '../src/agent/reque
  * 🔴 CE QUE CES ROUTES ACCORDENT. Décrire une requête, c'est décider ce qu'on ENVOIE au système d'un client et
  * ce qu'on a le droit d'en LIRE. Quatre gardes se vérifient ici et nulle part ailleurs : le gabarit est éprouvé
  * À L'ÉCRITURE (une variable non déclarée ne doit pas se découvrir en pleine conversation), un en-tête
- * `authorization` est refusé (l'authentification vit sur la source, chiffrée), `outputPaths` est obligatoire,
- * et supprimer une requête que des outils désignent est refusé.
+ * `authorization` est refusé (l'authentification vit sur la source, chiffrée), et supprimer une requête que
+ * des outils désignent est refusé.
+ *
+ * ⚠️ `outputPaths` N'EST PLUS EXIGÉ NON VIDE ICI depuis le 2026-09-15 : un appel à moitié écrit doit pouvoir
+ * être mis de côté. Le refus vit au RATTACHEMENT à un agent (`tests/http-agent-tools.test.ts`).
  */
 const SECRET = 'test-secret';
 const RQ = '11111111-1111-4111-8111-111111111111';
@@ -135,12 +138,53 @@ describe('requêtes : déclarer', () => {
     expect(res.json().error).toContain('JSON');
   });
 
-  it('🔴 sans `outputPaths`, la requête est refusée : le filtre de sortie n’est pas facultatif', async () => {
+  it('🔴 `outputPaths` VIDE est accepté : c’est un brouillon, et il devait pouvoir être mis de côté', async () => {
+    /**
+     * 🔴 CE TEST ATTENDAIT 400 JUSQU'AU 2026-09-15, ET LE CAS QU'IL EXERÇAIT EST CONSERVÉ : c'est le verdict
+     * qui change, pas la situation. Exiger un champ de sortie ICI refermait le cycle que la route d'essai
+     * existe pour ouvrir : ces champs se cochent dans la RÉPONSE d'un essai, donc un appel qu'on n'avait pas
+     * encore réussi à faire marcher ne pouvait pas être enregistré, et quitter l'écran perdait tout. Julien,
+     * le jour même : « je peux pas enregistrer pour commencer, quand je vais revenir je vais devoir repartir
+     * de zéro ».
+     *
+     * ⚠️ LA GARANTIE N'A PAS DISPARU, ELLE A BOUGÉ D'UN CRAN, et son test aussi : le refus vit désormais au
+     * RATTACHEMENT à un agent (409), dans `tests/http-agent-tools.test.ts`. Tant qu'un appel n'est rattaché
+     * à personne, il n'envoie rien et ne lit rien.
+     */
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'POST', url: base(), ...h(adminTok), payload: corps({ outputPaths: [] }) });
+    expect(res.statusCode).toBe(201);
+    expect(cap.creations[0]?.outputPaths).toEqual([]);
+  });
+
+  it('🔴 mais on ne VIDE pas les champs d’un appel que des agents utilisent (409)', async () => {
+    /**
+     * 🔴 RELEVÉ PAR LE HOOK « RAYON DE SOUFFLE » EN OUVRANT L'ENREGISTREMENT AUX BROUILLONS, et c'est le
+     * défaut classique : une garde d'entrée ne vaut rien si la même valeur peut être retirée APRÈS coup.
+     * Vider un appel déjà rattaché rendrait les agents muets sur ce connecteur, sans que personne sache
+     * pourquoi (l'exécution refuse proprement, mais loin de l'écran où le geste a été fait).
+     */
+    const { cap, srv } = app({ outils: 2 });
+    const res = await srv.inject({ method: 'PATCH', url: `${base()}/${RQ}`, ...h(adminTok), payload: { outputPaths: [] } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/2 outil/);
+    expect(cap.patches).toEqual([]);
+  });
+
+  it('⚠️ un appel que PERSONNE n’utilise se vide sans problème : c’est un retour au brouillon', async () => {
+    // La garde porte sur l'USAGE, pas sur la valeur : sinon on ne pourrait plus remettre en chantier un
+    // appel qu'on avait fini et qu'aucun agent n'a jamais pris.
+    const { srv } = app({ outils: 0 });
+    const res = await srv.inject({ method: 'PATCH', url: `${base()}/${RQ}`, ...h(adminTok), payload: { outputPaths: [] } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('⚠️ mais `outputPaths` ABSENT reste refusé : omettre la clé est un défaut d’appelant, pas un brouillon', async () => {
+    // Un brouillon DIT qu'il ne lit rien encore (`[]`). Une clé manquante ne dit rien du tout, et l'accepter
+    // ferait passer pour un brouillon un appelant qui a simplement oublié le champ.
     const { srv } = app();
-    for (const p of [corps({ outputPaths: [] }), { ...corps(), outputPaths: undefined }]) {
-      const res = await srv.inject({ method: 'POST', url: base(), ...h(adminTok), payload: p });
-      expect(res.statusCode).toBe(400);
-    }
+    const res = await srv.inject({ method: 'POST', url: base(), ...h(adminTok), payload: { ...corps(), outputPaths: undefined } });
+    expect(res.statusCode).toBe(400);
   });
 
   it('une méthode inconnue et un chemin qui sort de la base sont refusés', async () => {

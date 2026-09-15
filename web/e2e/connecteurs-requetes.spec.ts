@@ -7,8 +7,11 @@ import { test, expect } from '@playwright/test';
  *  - après l'essai, les champs de la réponse RÉELLE apparaissent EN CASES À COCHER. C'est ce qui remplace
  *    « écris `livraison.date` de tête », et une faute de frappe écrite de tête ne se verrait qu'en pleine
  *    conversation avec un contact ;
- *  - on ne peut PAS enregistrer sans avoir coché au moins un champ : le filtre de sortie n'est pas facultatif,
- *    c'est lui qui décide ce qui part chez le fournisseur du modèle ;
+ *  - un appel À MOITIÉ ÉCRIT s'enregistre, et la liste le marque « à finir ». Exiger un champ de sortie pour
+ *    enregistrer refermait le cycle que l'essai ouvre, et faisait perdre son travail à qui quittait l'écran.
+ *    Le filtre de sortie reste obligatoire, mais pour RATTACHER l'appel à un agent, pas pour l'enregistrer ;
+ *  - les pastilles se voient AVANT d'avoir déclaré quoi que ce soit, sinon personne ne découvre qu'elles
+ *    existent, et une pastille mal placée dans un JSON dit ce qui ne va pas plutôt que « JSON invalide » ;
  *  - les deux façons de saisir un corps existent, et la bascule vers le JSON brut REPREND le travail fait ;
  *  - un appel PAS ENCORE ENREGISTRÉ s'essaie : sans ça, le premier appel d'un client était impossible à
  *    créer (enregistrer exige un champ de sortie, qui se coche dans la réponse d'un essai) ;
@@ -98,16 +101,70 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     expect((envoi.body as { outputPaths: string[] }).outputPaths).toEqual(['statut', 'livraison.date']);
   });
 
-  test('🔴 sans champ coché, on ne peut pas enregistrer', async ({ page }) => {
-    // Le filtre de sortie décide ce qui part chez le fournisseur du modèle. Le rendre facultatif reviendrait
-    // à laisser passer la réponse entière par défaut, ce que personne n'aurait décidé.
+  test('🔴 sans champ coché, on enregistre QUAND MÊME, et la liste dit « à finir »', async ({ page }) => {
+    /**
+     * 🔴 CE TEST ATTENDAIT L'INVERSE JUSQU'AU 2026-09-15, ET LE CAS QU'IL EXERÇAIT EST CONSERVÉ : un appel
+     * sans champ de sortie, ouvert dans l'éditeur. Seul le verdict change. Exiger le champ ICI refermait le
+     * cycle que l'essai existe pour ouvrir, et surtout faisait PERDRE son travail à qui quittait l'écran sans
+     * avoir réussi son appel. Julien, le jour même : « je peux pas enregistrer pour commencer, quand je vais
+     * revenir je vais devoir repartir de zéro ».
+     *
+     * ⚠️ LA GARANTIE N'A PAS DISPARU : le serveur refuse de RATTACHER à un agent un appel sans champ de
+     * sortie (409, `tests/http-agent-tools.test.ts`). Tant qu'il n'est rattaché à personne, il n'envoie rien.
+     */
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { requetes: [{ ...REQUETE, outputPaths: [] }] });
+    // La liste le DIT avant même d'ouvrir : deux appels affichés pareil feraient croire l'un prêt.
+    await expect(page.getByTestId(`requete-a-finir-${RQ}`)).toBeVisible();
     await page.getByTestId(`requete-editer-${RQ}`).click();
-    await expect(page.getByTestId('requete-enregistrer')).toBeDisabled();
+    await expect(page.getByTestId('requete-enregistrer')).toBeEnabled();
+    // Et cocher un champ fait disparaître la marque une fois l'appel rechargé : c'est la liste qui la porte.
     await page.getByTestId('requete-essayer').click();
     await page.getByTestId('chemin-statut').check();
     await expect(page.getByTestId('requete-enregistrer')).toBeEnabled();
+  });
+
+  test('🔴 les pastilles se voient AVANT d’avoir déclaré la moindre donnée', async ({ page }) => {
+    // Elles n'apparaissaient qu'une fois une donnée déclarée : celui qui débute ne voyait donc jamais que le
+    // mécanisme existait, et tapait les accolades à la main. Vécu par Julien le 2026-09-15.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { requetes: [{ ...REQUETE, variables: [] }] });
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await page.getByTestId('onglet-corps').click();
+    await expect(page.getByTestId('pastilles-variables')).toBeVisible();
+    // Et elle renvoie là où l'on déclare, plutôt que de laisser deviner.
+    await page.getByTestId('pastilles-vides').click();
+    await expect(page.getByTestId('var-ajouter')).toBeVisible();
+  });
+
+  test('🔴 une pastille HORS guillemets dit ce qui ne va pas, et se corrige d’un bouton', async ({ page }) => {
+    // « Ce n'est pas du JSON valide » était vrai et inutilisable : le client regardait la cause sans pouvoir
+    // la reconnaître. Le corps exact qui a bloqué Julien le 2026-09-15.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await page.getByTestId('onglet-corps').click();
+    await page.getByTestId('corps-mode-json').check();
+    await page.getByTestId('corps-json').fill('{\n  "user_ns": {{user_ns}}\n}');
+    await expect(page.getByTestId('corps-json-etat')).toContainText(/entre guillemets|inside quotes/i);
+    await page.getByTestId('corps-json-reparer').click();
+    await expect(page.getByTestId('corps-json')).toHaveValue(/"user_ns": "\{\{user_ns\}\}"/);
+    await expect(page.getByTestId('corps-json-etat')).toContainText(/valide|valid/i);
+  });
+
+  test('🔴 une pastille qui ne désigne rien est signalée PENDANT la saisie, et se déclare d’un clic', async ({ page }) => {
+    // Le serveur refuse l'appel au moment de le passer, mais c'est trop tard : le client le découvrirait en
+    // pleine conversation avec un contact.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await page.getByTestId('onglet-corps').click();
+    await page.getByTestId('corps-mode-json').check();
+    await page.getByTestId('corps-json').fill('{"a": "{{inconnue}}"}');
+    await expect(page.getByTestId('pastilles-inconnues')).toBeVisible();
+    await page.getByTestId('declarer-inconnue').click();
+    // Le clic AMÈNE sur l'onglet où l'on dit d'où vient la valeur, la ligne déjà nommée.
+    await expect(page.getByTestId('var-nom-1')).toHaveValue('inconnue');
   });
 
   test('les DEUX façons de saisir un corps, et la bascule reprend le travail fait', async ({ page }) => {
