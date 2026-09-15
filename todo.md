@@ -1,5 +1,26 @@
 # todo.md : backlog
 
+## 🟠 Ce qu'il faudra lever AVANT d'ajouter un second worker (2026-09-15)
+
+Rien ne presse : le worker tourne à **16 requêtes par minute** et le pool encaisse environ 700 requêtes par
+seconde et par processus (mesuré). Mais ces deux points-là ne se découvriraient qu'EN PRODUCTION le jour où
+l'on double le worker, et c'est exactement le genre de découverte qu'on paie cher.
+
+- 🔴 **Les balayages tourneraient EN DOUBLE.** Les 23 tâches de `registreDeTaches` vivent dans le process :
+  deux workers, deux exemplaires de chaque balayage, donc deux reprises de contrôle, deux réveils de parcours,
+  deux relances d'échecs. Certains sont idempotents, d'autres non. Il faut un verrou d'exécution, et le modèle
+  existe déjà dans le dépôt : `src/campaign/run-lock.ts` (bail + jeton de garde + drapeau de relance), dont
+  les trois pièces sont chacune là pour une raison écrite. ⚠️ Le lissage des départs (2026-09-15) ne protège
+  de rien ici : il décale, il ne sérialise pas.
+- 🔴 **Les plafonds de débit sont comptés PAR PROCESS.** `RATE_LIMIT_USER_PAR_MINUTE` et
+  `RATE_LIMIT_COUTEUX_PAR_MINUTE` vivent en mémoire : deux instances doublent le plafond réellement servi,
+  sans que l'écran ni la configuration ne le disent. Déjà signalé dans `CLAUDE.md`, répété ici parce que
+  c'est au moment d'ajouter une instance qu'on le lira.
+
+⚠️ **Le signal qui dira que ce jour est arrivé est déjà à l'écran** : la carte « latence réelle des files »
+de `/ops` sépare l'ATTENTE du TRAITEMENT. Une file dont l'attente monte alors que son traitement ne bouge pas
+manque de bras. Tant que l'attente vient de la cadence de sondage, un second worker ne changerait rien.
+
 ## 🔴 L'essai réel du lot « consentement » reste DÛ (2026-09-15)
 
 Le consentement (`estDesabonne`) est une dépendance REQUISE depuis le 2026-09-15, livrée et déployée
