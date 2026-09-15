@@ -21,6 +21,40 @@ l'on double le worker, et c'est exactement le genre de découverte qu'on paie ch
 de `/ops` sépare l'ATTENTE du TRAITEMENT. Une file dont l'attente monte alors que son traitement ne bouge pas
 manque de bras. Tant que l'attente vient de la cadence de sondage, un second worker ne changerait rien.
 
+⚠️ **CE QUI NE LIMITE PAS, ET CE QUI LIMITE VRAIMENT** (mesuré le 2026-09-15). Trois ressources, une seule
+est un mur. Le pool APPLICATIF passe par le pooler en mode TRANSACTION : il MULTIPLEXE, douze connexions
+Postgres réelles servent aujourd'hui tous nos clients, donc ajouter un processus ajoute des clients
+élastiques et pas des connexions Postgres. Le pool PG-BOSS, lui, est en mode SESSION et ne multiplexe RIEN :
+chaque processus retient `PGBOSS_MAX` connexions Postgres réelles pour toute sa vie, sur un budget d'environ
+15 partagé avec mm-hubspot, dont 8 déjà pris. **Un second worker coûte donc 2 des 7 qui restent.** Et le
+troisième frein n'est pas technique : à 131 transactions par minute mesurées AUJOURD'HUI (soit ~2,5 Go
+d'egress par mois, la moitié du forfait gratuit, sans un seul client), un second worker ajoute son propre
+sondage sur les neuf files et fait franchir les 5 Go. C'est la FACTURE qui tranchera avant Postgres.
+
+## 🔴 Avant de rendre l'API élastique (conteneurs serverless), lui retirer ses connexions SESSION (2026-09-15)
+
+Décision de Julien du 2026-09-15 : la trajectoire passe par des conteneurs serverless avec multiplication des
+exemplaires de l'API. **Il y a un mur exactement là, et il n'est visible nulle part dans l'écran.**
+
+`src/index.ts` construit un `PgBossQueue` sur `DATABASE_URL`, c'est-à-dire le pooler en mode **SESSION**, pour
+la seule raison qu'elle EMPILE des jobs (`supervise: false`, elle n'en dépile aucun et ne fait aucune
+maintenance). Une connexion de session ne se multiplexe pas : elle tient un backend Postgres réel tant que le
+processus vit. **Chaque exemplaire d'API coûte donc jusqu'à `PGBOSS_MAX` connexions réelles**, sur un budget
+d'environ 15 partagé avec mm-hubspot.
+
+🔴 **Dix exemplaires élastiques = vingt connexions de session pour un budget de quinze.** Et l'erreur qui en
+résulte est DÉJÀ documentée dans `DEPLOY.md` : `EMAXCONNSESSION` au démarrage à froid, observé avec DEUX
+processus seulement quand le pooler tient encore les sessions des conteneurs qu'on vient de tuer. L'élasticité
+transformerait un incident transitoire de déploiement en panne de démarrage permanente.
+
+Ce qu'il faudra trancher ce jour-là : empiler un job est un `insert` dans `pgboss.job`, qui n'a besoin
+d'aucune session ; c'est le CLIENT pg-boss qui en exige une. Les pistes sont donc de faire empiler l'API par
+le pooler en mode transaction sans passer par le client pg-boss, ou de passer par le worker. ⚠️ Rien à faire
+tant que l'API est à un exemplaire : c'est une question à régler AVANT le premier `scale`, pas avant.
+
+⚠️ **Le reste de l'API est prêt pour l'élasticité** : aucun état en mémoire qui doive survivre, sauf les
+plafonds de débit, comptés par processus (voir l'entrée précédente, même défaut, mêmes conséquences).
+
 ## 🔴 L'essai réel du lot « consentement » reste DÛ (2026-09-15)
 
 Le consentement (`estDesabonne`) est une dépendance REQUISE depuis le 2026-09-15, livrée et déployée
