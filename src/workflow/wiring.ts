@@ -360,6 +360,19 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const remiseMbaSiPersonneNeSuit = async (tenant: string, waId: string): Promise<void> => {
     if (!(await settingsStore.get(tenant)).mbaEnabled) return;
     if (await runStore.findWaitingByWaId(tenant, waId)) return;
+    /**
+     * 🔴 LE DÉTENTEUR SE LIT AVANT D'APPELER META, ET PAS SEULEMENT DANS `only`. Trouvé en revue le
+     * 2026-09-15, quelques heures après avoir livré ce geste, et c'était un défaut GRAVE.
+     *
+     * `only` ne protège que NOTRE colonne. L'appel à Meta, lui, transfère le fil POUR DE VRAI. Un opérateur
+     * en train de répondre dans l'Inbox (`app_human`) se faisait donc prendre le fil au message suivant du
+     * client : l'écriture était bien refusée, mais Meta avait déjà basculé, et l'agent répondait par-dessus
+     * lui. C'est exactement ce que le commentaire de cette fonction annonçait empêcher.
+     *
+     * ⚠️ La leçon est celle du dépôt, une fois de plus : une garde posée APRÈS l'effet de bord ne garde rien.
+     */
+    const detenteur = await inboxStore.getControlOwner(tenant, waId);
+    if (detenteur === 'app_human') return;
     await releaseThreadChezMeta(tenant, waId);
     await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow', 'mba'] });
   };

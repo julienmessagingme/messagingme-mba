@@ -156,6 +156,27 @@ describe('le câblage, qui porte les gardes que ce module ne peut pas porter', (
     expect(bloc, 'la remise doit appeler Meta, pas seulement écrire').toMatch(/releaseThreadChezMeta\(/);
   });
 
+  it('🔴 un humain sur la conversation est lu AVANT l’appel Meta, pas seulement dans `only`', () => {
+    /**
+     * 🔴 DÉFAUT GRAVE TROUVÉ EN REVUE LE 2026-09-15, quelques heures après la livraison de ce geste.
+     *
+     * `only: ['app_workflow', 'mba']` ne protège que NOTRE colonne. L'appel à Meta, lui, transfère le fil
+     * POUR DE VRAI. Un opérateur en train de répondre dans l'Inbox se faisait donc prendre le fil au message
+     * suivant du client : l'écriture locale était bien refusée, mais Meta avait déjà basculé et l'agent
+     * répondait par-dessus lui. Exactement ce que ce geste annonçait empêcher.
+     *
+     * ⚠️ CE TEST VÉRIFIE L'ORDRE, pas la présence : une garde posée APRÈS l'effet de bord ne garde rien.
+     */
+    const w = sansCommentaires(lire('../src/workflow/wiring.ts'));
+    const debut = w.indexOf('const remiseMbaSiPersonneNeSuit');
+    const bloc = w.slice(debut, debut + 900);
+    const lecture = bloc.indexOf('getControlOwner');
+    const appelMeta = bloc.indexOf('releaseThreadChezMeta');
+    expect(lecture, 'le détenteur doit être lu').toBeGreaterThan(-1);
+    expect(bloc, 'un humain doit faire SORTIR, pas seulement bloquer l’écriture').toMatch(/=== 'app_human'\)\s*return;/);
+    expect(lecture, 'la lecture doit précéder l’appel Meta').toBeLessThan(appelMeta);
+  });
+
   it('🔴 `only` contient app_workflow et mba, et surtout PAS app_human', () => {
     /**
      * Les trois valeurs comptent, chacune pour une raison différente, et se tromper sur une seule rouvre un

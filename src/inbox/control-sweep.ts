@@ -161,6 +161,15 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
      * ⚠️ `rendreLeFil` LÈVE quand Meta refuse et rend `false` quand il n'y a aucun numéro connecté. Les deux
      * empêchent l'écriture, pour la même raison, et seul le refus mérite une trace : l'absence de numéro est
      * un état de configuration, pas une panne.
+     *
+     * ⚠️ RÉSIDU ASSUMÉ, RELEVÉ EN REVUE LE 2026-09-15, ET C'EST LE PRIX DE L'INVERSION. L'ordre d'avant
+     * protégeait d'une course : la garde `only` refusait l'écriture si un opérateur avait repris la main
+     * entre la lecture du lot et l'écriture, et l'appel Meta était alors sauté. Avec Meta d'abord, cette
+     * course reste ouverte pendant la durée de l'appel. Le calcul est délibéré : la course demande un clic
+     * « Reprendre la main » dans la fraction de seconde où ce balayage traite CETTE conversation, et son
+     * remède est un second clic ; le défaut qu'on ferme, lui, a laissé neuf conversations dans un état faux
+     * pendant des heures, sans recours. ⚠️ Le geste du chemin entrant (`remiseMbaSiPersonneNeSuit`), lui,
+     * relit bien le détenteur avant d'appeler Meta : là-bas le risque est permanent, pas fugace.
      */
     if (versMba && deps.releaseToMba) {
       try {
