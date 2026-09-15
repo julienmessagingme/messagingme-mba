@@ -91,6 +91,8 @@ import { hubspotCatchupJob } from './analysis/catchup-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
+import { creerNoteDeQualite } from './campaign/note-qualite';
+import { creerWabaDeLEspace } from './meta/numero-espace';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
@@ -240,10 +242,16 @@ async function main(): Promise<void> {
 
   // Résolution du token Meta PAR TENANT (B1). En SOMMEIL tant qu'aucun WABA n'a de credentials propres : le
   // résolveur retombe alors sur config.META_ACCESS_TOKEN -> comportement identique au token global d'avant.
+  // Le WABA de l'espace, UNE lecture par process au lieu d'une par construction de client Meta : le cache de
+  // jeton est indexe par WABA, donc cette requete-la etait payee AVANT lui, a chaque envoi. Seules les
+  // reponses positives entrent en cache (voir le module).
+  const wabaDeLEspace = creerWabaDeLEspace((t) => repo.getTenantWabaId(t));
+  const qualiteStore = new PgQualityProvider(pool);
+  const noteDeQualite = creerNoteDeQualite((pn) => qualiteStore.getRating(pn));
   const esStore = new PgEmbeddedSignupStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
-    getWabaIdForTenant: (t) => repo.getTenantWabaId(t),
+    getWabaIdForTenant: wabaDeLEspace,
     getCredentialsByWaba: (w) => esStore.getCredentialsByWaba(w),
     markTokenInvalid: (w) => esStore.markTokenInvalid(w),
     decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
@@ -586,7 +594,10 @@ async function main(): Promise<void> {
       recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
-      quality: new PgQualityProvider(pool),
+      // La note de qualite du numero, lue une fois par process et non par destinataire. Elle commande une mise
+      // en PAUSE de la campagne : la justification du cache est dans le module, et elle tient a un chiffre
+      // mesure (la colonne n'est rafraîchie que toutes les 20 minutes par le balayage `statut-numeros`).
+      quality: { getRating: noteDeQualite },
       // Frein par défaut des campagnes sans ratePerMinute (0 = opt-out). Injecté ICI seulement : les tests de
       // câblage de run-job ne le passent pas, donc une campagne à rate null y reste en opt-out (aucun frein).
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,

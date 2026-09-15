@@ -131,6 +131,7 @@ import { PgTestRunStore } from './agent/test-runs.pg';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';
+import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurMba } from './agent/consommateur';
 import { corpsConnecteurMeta, corpsOutilMeta, corpsApiKey } from './http/mba-publication';
@@ -350,9 +351,12 @@ async function main(): Promise<void> {
 
   // Résolution du token Meta PAR TENANT (B1). SOMMEIL : repli sur le token global tant qu'aucun WABA n'a de
   // credentials propres -> le numéro Zadarma reste sur config.META_ACCESS_TOKEN, comportement identique.
+  // Le WABA de l'espace, une lecture par process : le cache de jeton etant indexe par WABA, cette requete
+  // etait payee AVANT lui a chaque construction de client Meta. Reponses positives seulement.
+  const wabaDeLEspace = creerWabaDeLEspace((t) => repo.getTenantWabaId(t));
   const esCredentialsStore = new PgEmbeddedSignupStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
-    getWabaIdForTenant: (t) => repo.getTenantWabaId(t),
+    getWabaIdForTenant: wabaDeLEspace,
     getCredentialsByWaba: (w) => esCredentialsStore.getCredentialsByWaba(w),
     markTokenInvalid: (w) => esCredentialsStore.markTokenInvalid(w),
     decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
