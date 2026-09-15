@@ -192,3 +192,48 @@ Toutes tranchées par Julien le 14 septembre 2026, en quatre rounds :
 | Nom du paramètre de garde | un seul, `garde` |
 | Essai du lot 3 | contact de test désabonné, 4 chemins, en production |
 | `optInAllows` | hors lot |
+
+---
+
+## Journal de livraison
+
+Les trois lots sont livrés et déployés. Ce qui suit est constaté, pas annoncé.
+
+| Lot | Commit | Déployé | Essai réel |
+|---|---|---|---|
+| 1, le registre de montage | `cb63450`, 2026-09-14 | oui, `6f0057d` | **fait** : table de routes identique au caractère (220 routes), plus contrôle public sur les six classes d'accès |
+| 2, la garde requise | `0fd9b4e`, 2026-09-15 | oui | **fait** : toute route `:tenantId` rend 401 en production, y compris `POST /rcs/media` qui avait perdu sa garde pendant le lot |
+| 3, le consentement requis | `150dc25`, 2026-09-15 | oui | 🔴 **NON FAIT**, voir ci-dessous |
+
+Ce que chaque lot a trouvé en chemin, et qui ne figurait pas au plan :
+
+- **lot 1** : `hubspotEvents` était autorisé par une SIGNATURE, pas par un code d'URL. La classe d'accès
+  déclarée était vérifiablement fausse. Le registre a ensuite passé son premier essai réel sans moi : une
+  autre session a ajouté deux modules de routes dans la nuit, tous deux ont dû déclarer leur classe, et les
+  deux cas de test correspondants sont apparus seuls.
+- **lot 2** : le point de passage partagé `gardeEtendue` portait la dégradation dans sa propre signature, pour
+  sept modules. Et le lot a introduit un défaut qu'aucun type ne pouvait voir (`{ ...garde }` au lieu de
+  `{ ...opts }`, une route partie sans `preHandler`), attrapé par le test écrit pour ça.
+- **lot 3** : trois fixtures mentaient au compilateur et n'ont échoué qu'au RUNTIME, ce qui prouve, sans
+  l'avoir cherché, que la garde s'exécute désormais là où elle était sautée. Et `tests/optout-chemins.test.ts`
+  a été GARDÉ contre ce que le plan prévoyait : l'inventaire couvre un cinquième chemin d'envoi que le type
+  ne voit pas.
+
+## 🔴 L'essai réel du lot 3 reste DÛ
+
+Décision de Julien, 2026-09-15 : on s'arrête là pour cette session.
+
+Ce qui l'a bloqué, et qu'il faudra trancher le jour venu :
+
+- l'espace de production ne contient **que de vraies personnes** (17 contacts, tous avec un nom et un numéro
+  réels) et **zéro contact en `opted_out`**, mesuré en base. L'essai suppose donc de CRÉER un contact de test,
+  et le numéro choisi est précisément celui qui recevrait un message si une garde échouait : ce choix
+  appartient à Julien ;
+- déclencher les quatre chemins demande un jeton de console ou une clé d'API, ou les clics de Julien.
+
+**Ce qui a quand même été vérifié en production** : la garde déployée interroge réellement le dépôt de
+contacts (`estDesabonneParWaId` exécutée depuis l'image déployée contre la vraie base, deux verdicts
+corrects). Cela prouve que le chemin est vivant et que la requête est juste sur le schéma de production. Cela
+ne prouve PAS le refus, faute d'un désabonné pour le déclencher.
+
+⚠️ **Ne pas confondre les deux.** Le suivi de ce qui reste à faire vit dans `todo.md`, et lui seul.

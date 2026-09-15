@@ -1,5 +1,25 @@
 # todo.md : backlog
 
+## 🔴 L'essai réel du lot « consentement » reste DÛ (2026-09-15)
+
+Le consentement (`estDesabonne`) est une dépendance REQUISE depuis le 2026-09-15, livrée et déployée
+(`150dc25`, plan `docs/superpowers/plans/2026-09-14-dependances-non-optionnelles.md`). Les quatre chemins
+sont couverts par des tests de comportement. **L'essai en production, lui, n'a pas été fait**, et Julien a
+tranché ce jour-là qu'on s'arrêtait après le déploiement.
+
+Ce qu'il demanderait :
+
+- **un contact de test, et son numéro est la décision** : l'espace de production ne contient que de vraies
+  personnes (17 contacts) et **zéro `opted_out`**, mesuré en base. Il faut donc en créer un, et si une garde
+  échouait, c'est ce numéro-là qui recevrait le message ;
+- **un moyen de déclencher les quatre chemins** : un jeton de console pour le scénario et l'Inbox, une clé
+  d'API pour MCP, ou les clics de Julien.
+
+⚠️ **Ce qui A été vérifié en production, pour ne pas le refaire** : la garde déployée interroge réellement le
+dépôt de contacts (`estDesabonneParWaId` exécutée depuis l'image déployée contre la vraie base, deux verdicts
+corrects). Le chemin est vivant et la requête est juste sur le schéma. Ce qui manque est la preuve du REFUS,
+faute d'un désabonné pour le déclencher.
+
 ## 🟠 L'adresse d'origine du VPS n'est protégée que par le SILENCE (2026-09-15)
 
 Tous les sous-domaines `messagingme.app` sont proxifiés par Cloudflare, donc l'adresse du serveur est masquée,
