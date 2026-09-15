@@ -111,10 +111,22 @@ Relue en base juste après `migrate`, pas en écrivant cette ligne : `schema_mig
 la colonne est `text` et nullable dans `information_schema`, et `pg_indexes` n'en porte AUCUN, comme prévu.
 
 🔴 **ELLE RÉPARE UNE COURSE, ET C'EST LA MESURE QUI L'A MONTRÉE.** La fin d'un parcours relâchait le fil dans
-la seconde suivant son dernier envoi. Or Meta acquitte nos envois avec DEUX MINUTES de retard (corrélation par
-identifiant : envoi 07:42:17 -> `sent` 07:44:04 ; 08:26:47 -> 08:28:42) et sa documentation dit qu'ENVOYER UN
-MESSAGE PREND LE FIL implicitement : l'envoi reprenait donc le fil juste après notre remise. Trois releases
-émis deux secondes après un envoi ont échoué, celui émis quatorze minutes après a marché.
+la seconde suivant son dernier envoi. Or la documentation de Meta dit qu'ENVOYER UN MESSAGE PREND LE FIL
+implicitement : l'envoi reprenait donc le fil juste après notre remise. Trois releases émis deux secondes
+après un envoi ont échoué, celui émis quatorze minutes après a marché.
+
+🔴 **ET LA CAUSE DES « DEUX MINUTES » A ÉTÉ MAL ATTRIBUÉE PENDANT TOUTE LA JOURNÉE DU 2026-09-15.** Cette page
+a affirmé que « Meta acquitte nos envois avec DEUX MINUTES de retard », sur une corrélation par identifiant
+(envoi 07:42:17 -> 07:44:04 ; 08:26:47 -> 08:28:42). **C'était une erreur de lecture** : les heures d'arrivée
+étaient celles où NOTRE worker traitait l'accusé, pas celles où Meta l'envoyait. Vérifié le soir même dans le
+journal brut des webhooks : l'horodatage que Meta inscrit dans l'accusé du message de 08:26:47 vaut
+**08:26:47**, et son webhook nous parvient à **08:26:48**. Meta acquitte en UNE SECONDE ; les deux minutes
+venaient de la file `webhook-status`, qui se vidait à deux accusés par minute.
+
+⚠️ **LE MARQUEUR RESTE JUSTE, ET C'EST CE QUI COMPTE** : ce qu'on attend n'est pas un délai, c'est la PREUVE
+que Meta a fini de traiter l'envoi. Seul l'accusé la porte, qu'il arrive en une seconde ou en deux minutes.
+La leçon est ailleurs : **un écart mesuré ne dit pas à qui il appartient**, et attribuer le sien à un tiers
+est la façon la plus sûre de ne jamais le corriger.
 
 🔴 **UN MARQUEUR, PAS UNE TEMPORISATION, et il NOMME le message attendu.** Un délai fixe serait un nombre
 deviné, faux le jour où Meta ralentit. Et un simple « quelque chose est en attente » ne suffirait pas : un

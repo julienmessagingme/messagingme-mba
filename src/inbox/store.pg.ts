@@ -444,10 +444,17 @@ export class PgInboxStore implements InboxStore {
    * MARQUE un fil « à rendre à l'agent de Meta dès que notre DERNIER envoi sera acquitté » (0149), et rend
    * l'identifiant de ce message, ou `null` s'il n'y en a aucun.
    *
-   * 🔴 ON NE RELÂCHE PLUS DANS LA FOULÉE DE L'ENVOI, et c'est tout le sujet. Mesuré le 2026-09-15 : Meta
-   * acquitte nos envois avec DEUX MINUTES de retard, et sa documentation dit qu'envoyer un message prend le
-   * fil implicitement. Un release émis deux secondes après un envoi relâche donc un fil que cet envoi
-   * reprend juste derrière. Trois échecs sur trois, contre un succès à quatorze minutes d'écart.
+   * 🔴 ON NE RELÂCHE PLUS DANS LA FOULÉE DE L'ENVOI, et c'est tout le sujet. Sa documentation dit qu'envoyer
+   * un message PREND le fil implicitement : un release émis deux secondes après un envoi relâche donc un fil
+   * que cet envoi reprend juste derrière. Trois échecs sur trois, contre un succès à quatorze minutes d'écart.
+   *
+   * ⚠️ LE RETARD DE DEUX MINUTES N'EST PAS CELUI DE META, CORRIGÉ LE 2026-09-15 AU SOIR. Cette page l'a
+   * affirmé toute la journée, et c'était une erreur de lecture : l'horodatage que Meta inscrit dans l'accusé
+   * du message de 08:26:47 vaut **08:26:47**, et son webhook nous parvient à 08:26:48. Meta acquitte en une
+   * seconde. Les deux minutes étaient les NÔTRES, celles de la file `webhook-status` qui se vidait à deux
+   * accusés par minute ; ce qu'on lisait comme « l'heure de Meta » était l'heure à laquelle notre worker
+   * traitait l'accusé. Le marqueur reste néanmoins juste : ce qu'on attend n'est pas un délai, c'est la
+   * PREUVE que Meta a fini de traiter l'envoi, et seul l'accusé la porte.
    *
    * 🔴 LE DERNIER, ET NON « UN » : un parcours envoie plusieurs messages, et l'accusé du PREMIER arrive
    * souvent APRÈS que le dernier soit parti. Attendre n'importe quel accusé reproduirait la course.

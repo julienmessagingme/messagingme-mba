@@ -539,12 +539,17 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * Fin de parcours : DEMANDE que le fil soit rendu à l'agent de Meta, et le rend pour de vrai quand notre
      * dernier envoi est acquitté (migration 0149).
      *
-     * 🔴 ON NE RELÂCHE PLUS DANS LA SECONDE QUI SUIT L'ENVOI, ET C'EST LE DÉFAUT QUE ÇA RÉPARE. Mesuré le
-     * 2026-09-15 sur le numéro de production : Meta acquitte nos envois AVEC DEUX MINUTES DE RETARD, et sa
-     * documentation dit qu'envoyer un message PREND le fil implicitement. Notre release partait donc avant
-     * que l'envoi ne soit traité, et l'envoi reprenait le fil juste derrière : l'agent de Meta restait muet,
-     * le client parlait dans le vide, et rien n'apparaissait dans « À traiter ». Trois releases émis deux
-     * secondes après un envoi ont échoué, celui émis quatorze minutes après a marché.
+     * 🔴 ON NE RELÂCHE PLUS DANS LA SECONDE QUI SUIT L'ENVOI, ET C'EST LE DÉFAUT QUE ÇA RÉPARE. Sa
+     * documentation dit qu'envoyer un message PREND le fil implicitement : notre release partait donc avant
+     * que l'envoi ne soit traité, et l'envoi reprenait le fil juste derrière. L'agent de Meta restait muet,
+     * le client parlait dans le vide, et rien n'apparaissait dans « À traiter ». Mesuré sur le numéro de
+     * production le 2026-09-15 : trois releases émis deux secondes après un envoi ont échoué, celui émis
+     * quatorze minutes après a marché.
+     *
+     * ⚠️ CE COMMENTAIRE A ATTRIBUÉ CE DÉLAI À META (« DEUX MINUTES DE RETARD »), ET C'ÉTAIT FAUX. Corrigé le
+     * 2026-09-15 au soir : Meta acquitte en une seconde, les deux minutes étaient celles de notre file
+     * d'accusés. Ce qui ne change pas, c'est qu'on attend une PREUVE et non un délai. Détail dans
+     * `PgInboxStore.demanderReleaseMba`.
      *
      * 🔴 L'ÉTAT D'ATTENTE EST `app_human`, ET C'EST DÉLIBÉRÉ. Tant que Meta n'a pas confirmé, écrire `mba`
      * serait mentir (l'écran afficherait la marque du robot sur un fil que nous tenons encore) et laisser

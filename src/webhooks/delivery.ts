@@ -51,10 +51,15 @@ export interface NodeStatusSink {
 /**
  * LA REMISE DU FIL À L'AGENT DE META, DÉCLENCHÉE PAR L'ACCUSÉ DE NOTRE DERNIER ENVOI (migration 0149).
  *
- * 🔴 C'EST ICI QUE LE SIGNAL VRAI ARRIVE, ET NULLE PART AILLEURS. Meta acquitte nos envois avec DEUX MINUTES
- * de retard (mesuré le 2026-09-15) et envoyer un message PREND le fil implicitement : relâcher dans la foulée
- * d'un envoi relâche donc un fil que cet envoi reprend juste derrière. Le seul moment où l'on SAIT que Meta a
- * fini de traiter notre envoi est celui où son statut nous revient.
+ * 🔴 C'EST ICI QUE LE SIGNAL VRAI ARRIVE, ET NULLE PART AILLEURS. Envoyer un message PREND le fil
+ * implicitement : relâcher dans la foulée d'un envoi relâche donc un fil que cet envoi reprend juste
+ * derrière. Le seul moment où l'on SAIT que Meta a fini de traiter notre envoi est celui où son statut nous
+ * revient.
+ *
+ * ⚠️ CE COMMENTAIRE A ANNONCÉ « DEUX MINUTES DE RETARD CHEZ META » : c'était FAUX, corrigé le 2026-09-15 au
+ * soir. L'horodatage que Meta met dans ses accusés vaut la seconde de l'envoi, et son webhook arrive une
+ * seconde après. Les deux minutes étaient celles de NOTRE file d'accusés. Le détail dans
+ * `PgInboxStore.demanderReleaseMba`.
  *
  * ⚠️ APPELÉE POUR CHAQUE STATUT, y compris les millions qui n'attendent rien : l'implémentation rend la main
  * tout de suite quand aucun fil n'attend ce message (un `update ... where` qui ne touche aucune ligne).
