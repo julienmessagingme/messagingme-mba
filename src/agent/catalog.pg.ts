@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import type {
-  JournalAppels, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, RisqueOutil,
+  JournalAppels, NatureOutil, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, RisqueOutil,
   ToolAdminStore, ToolCatalog,
   SourceAppel,
 } from './catalog';
@@ -20,6 +20,7 @@ interface Ligne {
   source_id: string | null;
   request_id: string | null;
   output_paths: string[] | null;
+  nature: string | null;
   risk: OutilDefini['risk'];
   timeout_ms: number;
   max_bytes: number;
@@ -44,7 +45,7 @@ const JOINTURE = `from agent_tools t
  * la base non plus.
  */
 const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
-                  t.binding, t.source_id, t.request_id, t.output_paths, t.risk, t.timeout_ms, t.max_bytes,
+                  t.binding, t.source_id, t.request_id, t.output_paths, t.nature, t.risk, t.timeout_ms, t.max_bytes,
                   c.autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
@@ -68,6 +69,10 @@ function versOutil(r: Ligne): OutilDefini {
     // c'est une cle etrangere, pas une donnee libre, donc la base garantit qu'elle designe quelque chose.
     requestId: r.request_id,
     outputPaths: r.output_paths ?? [],
+    // ⚠️ `?? 'integre'` ET PAS UN `as` : une ligne écrite avant la migration 0150 n'a pas de nature, et la
+    // valeur par défaut de la colonne la donne de toute façon. Le repli est là pour les faux de test et
+    // pour une lecture faite pendant le déploiement, pas pour couvrir une donnée douteuse.
+    nature: r.nature === 'pousse' ? 'pousse' : 'integre',
     risk: r.risk,
     timeoutMs: r.timeout_ms,
     maxBytes: r.max_bytes,
@@ -170,19 +175,35 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   async ajouterConnecteur(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
+    /**
+     * 🔴 OBLIGATOIRES TOUS LES DEUX, ET C'EST DÉLIBÉRÉ (2026-09-15). Les rendre optionnels ferait retomber un
+     * appelant distrait sur `integre` avec une liste vide, c'est-à-dire sur un outil qui refuse chaque appel
+     * en pleine conversation. Un champ obligatoire force à répondre ; un champ optionnel se laisse oublier.
+     */
+    nature: NatureOutil; outputPaths: readonly string[];
   }): Promise<OutilComplet | null> {
     return this.enTransaction(async (client) => {
       const res = await client.query<{ id: string }>(
-        // ⚠️ L'appel n'est PLUS décrit ici (migration 0105) : `binding` reste vide et `output_paths` aussi,
-        // parce que la REQUÊTE les porte. Les remplir en double créerait deux vérités, dont une que le
-        // résolveur ne lit pas, donc une que personne ne verrait diverger.
-        //
-        // Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
-        // tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
+        /**
+         * ⚠️ `binding` RESTE VIDE : l'appel n'est plus décrit ici depuis la migration 0105, la requête le
+         * porte, et le redécrire par agent est précisément le défaut que 0105 a corrigé.
+         *
+         * 🔴 MAIS `output_paths` EST DÉSORMAIS REMPLI, ET LA JUSTIFICATION D'À CÔTÉ S'EST INVERSÉE
+         * (2026-09-15). Elle disait « les remplir en double créerait deux vérités, dont une que le résolveur
+         * ne lit pas » : c'était juste tant que ce qu'un agent lisait était une propriété de l'APPEL. Ça ne
+         * l'est plus, parce qu'un appel est partagé et que restreindre pour un agent restreignait pour tous.
+         * La requête garde sa liste comme DÉFAUT de pré-remplissage, l'outil porte celle qui s'applique.
+         *
+         * ⚠️ ET LA « VÉRITÉ QUE PERSONNE NE LISAIT » EXISTAIT BEL ET BIEN : le bac à sable bouclait déjà sur
+         * cette colonne vide et rendait un objet VIDE, en promettant « exactement ce que l'agent recevra ».
+         *
+         * Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
+         * tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
+         */
         `insert into agent_tools
-           (tenant_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, risk)
-         select $1, 'http', $2, $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, '{}'::text[], $9
-          where exists (select 1 from agents where id = $10 and tenant_id = $1)
+           (tenant_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, nature, risk)
+         select $1, 'http', $2, $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, $9::text[], $10, $11
+          where exists (select 1 from agents where id = $12 and tenant_id = $1)
             and exists (select 1 from agent_tool_sources where id = $2 and tenant_id = $1)
             and exists (select 1 from connector_requests where id = $3 and tenant_id = $1)
          returning id`,
@@ -190,6 +211,10 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
           tenantId, outil.sourceId, outil.requestId,
           outil.name, outil.title, outil.description, outil.nePasUtiliser,
           JSON.stringify(outil.params ?? []),
+          // ⚠️ Un `pousse` force la liste à VIDE plutôt que de faire confiance à l'appelant : deux champs qui
+          // doivent rester cohérents et que l'on écrit indépendamment finissent par diverger.
+          outil.nature === 'pousse' ? [] : [...outil.outputPaths],
+          outil.nature,
           outil.risk, agentId,
         ],
       ).catch(surNomDejaPris);

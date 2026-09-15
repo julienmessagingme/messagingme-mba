@@ -22,7 +22,7 @@ const OUTIL: OutilDefini = {
     { name: 'boutique', type: 'string', source: 'fixe', value: 'FR-01' },
   ],
   binding: { handler: 'peu_importe' }, sourceId: null, requestId: null,
-  outputPaths: [],
+  nature: 'integre' as const, outputPaths: [],
   risk: 'read',
   timeoutMs: 5_000,
   maxBytes: 16_384,
@@ -332,7 +332,7 @@ describe('tronc commun : journaliser, appeler, assainir, clore (étapes 5 à 8)'
 
   it('output_paths : seuls les chemins declares repartent au modele', async () => {
     const { deps } = harnais({
-      outil: { ...OUTIL, outputPaths: ['data.statut', 'data.absent'] },
+      outil: { ...OUTIL, nature: 'integre' as const, outputPaths: ['data.statut', 'data.absent'] },
       resolveur: async () => ({ contenu: { data: { statut: 'expediee', secret: 'ne pas exposer' }, meta: { taille: 12 } } }),
     });
     const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, deps);

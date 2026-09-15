@@ -42,6 +42,8 @@ export interface AgentToolsRouteDeps {
   ajouterConnecteur?(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: OutilComplet['risk'];
+    /** Ce que CET agent fait de la réponse, et les champs qu'il lit quand il l'intègre (migration 0150). */
+    nature: OutilComplet['nature']; outputPaths: readonly string[];
   }): Promise<OutilComplet | null>;
   /**
    * La REQUÊTE que l'outil va désigner (migration 0105), ou `null` si elle n'est pas de ce tenant.
@@ -93,6 +95,16 @@ const drapeauSchema = z.object({ valeur: z.boolean() });
  */
 const ajoutConnecteurSchema = z.object({
   requeteId: z.string().uuid(),
+  /**
+   * Ce que CET agent fait de la réponse, et les champs qu'il lit (migration 0150).
+   *
+   * 🔴 OPTIONNELS PENDANT LA FENÊTRE DE DÉPLOIEMENT, ET PAS APRÈS. L'API et la console se déploient
+   * SÉPARÉMENT (VPS à la main, Vercel au push) : entre les deux, la console encore en place n'envoie pas ces
+   * champs. Absents, on retombe donc EXACTEMENT sur le comportement d'avant, dérivé de la requête. Le lot 3
+   * les rend obligatoires en même temps que l'écran qui les pose.
+   */
+  nature: z.enum(['pousse', 'integre']).optional(),
+  outputPaths: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
   name: NOM,
   title: TEXTE(120).min(1),
   description: TEXTE(2000).min(1),
@@ -240,6 +252,13 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
         title: d.title,
         description: d.description,
         nePasUtiliser: d.nePasUtiliser,
+        /**
+         * ⚠️ LE REPLI REPRODUIT L'ANCIEN COMPORTEMENT, IL N'EN INVENTE PAS UN. Avant 0150, le résolveur
+         * lisait les champs de la REQUÊTE : une requête qui en déclarait était donc « intègre », une requête
+         * sans champ ne pouvait pas exister. Dériver ainsi, c'est écrire ce qui se passait déjà.
+         */
+        nature: d.nature ?? (requete.outputPaths.length > 0 ? 'integre' : 'pousse'),
+        outputPaths: d.outputPaths ?? requete.outputPaths,
         params,
         risk,
       });

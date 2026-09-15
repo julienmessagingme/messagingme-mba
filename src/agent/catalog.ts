@@ -77,11 +77,32 @@ export interface OutilDefini {
    */
   requestId: string | null;
   /**
-   * Chemins d'extraction de la réponse. Vide = la réponse entière (bornée par `maxBytes`).
+   * CE QUE CET AGENT FAIT DE LA RÉPONSE (migration 0150, décision de Julien du 2026-09-15).
    *
-   * ⚠️ Pour un connecteur, c'est la REQUÊTE qui porte cette liste, et c'est elle que le résolveur lit : ce
-   * qu'un agent a le droit de lire dans une réponse est une propriété de l'appel, pas de l'agent. Ce champ-ci
-   * ne sert plus qu'aux outils maison.
+   * 🔴 `pousse` : l'appel AGIT (poser une étiquette, créer une fiche) et son corps ne sert à rien. L'agent
+   * reçoit le VERDICT (`ok`, statut, et le message d'erreur quand ça rate), jamais le contenu d'un succès :
+   * une réponse de succès peut porter la fiche entière d'un client, qui partirait sinon chez le fournisseur
+   * du modèle sans que personne l'ait demandé.
+   *
+   * 🔴 `integre` : l'agent lit les champs listés dans `outputPaths`, et rien d'autre.
+   *
+   * ⚠️ ELLE NE SE DÉDUIT PAS DE LA MÉTHODE HTTP, et c'est pour ça qu'on la demande : un `POST` peut
+   * parfaitement être une RECHERCHE (l'API de UChat en a). Dériver la nature du verbe classerait ces
+   * appels-là en « pousse » et rendrait leur réponse invisible à l'agent.
+   */
+  nature: NatureOutil;
+  /**
+   * Chemins d'extraction de la réponse, quand la nature est `integre`. Vide sur un `pousse`.
+   *
+   * 🔴 C'EST L'OUTIL QUI LES PORTE DEPUIS LE 2026-09-15, PLUS LA REQUÊTE, et l'inversion est le cœur du
+   * chantier. Un appel est PARTAGÉ entre agents ; ce que CET agent a le droit de lire ne l'est pas. Tant que
+   * la liste vivait sur l'appel, restreindre pour un agent restreignait pour tous, et l'élargir pour un
+   * autre élargissait pour tous. La requête garde la sienne, mais comme simple DÉFAUT de pré-remplissage au
+   * moment du rattachement.
+   *
+   * ⚠️ Cette colonne existait déjà (migration 0086) et était délibérément laissée VIDE pour les connecteurs.
+   * Conséquence mesurée le 2026-09-15 : le bac à sable (`connecteurSimule`) bouclait dessus et rendait `{}`,
+   * alors que son commentaire promettait « exactement ce que l'agent recevra ». La remplir répare ça.
    */
   outputPaths: string[];
   risk: RisqueOutil;
@@ -90,6 +111,12 @@ export interface OutilDefini {
   /** Le client autorise cet outil à agir seul, même sur une action irréversible. */
   autonome: boolean;
 }
+
+/**
+ * Ce qu'un agent fait de la réponse d'un connecteur. DEUX valeurs, et pas trois : « pousse et lit quand
+ * même » n'existe pas, c'est `integre` avec les champs qu'on veut.
+ */
+export type NatureOutil = 'pousse' | 'integre';
 
 export interface ToolCatalog {
   /**

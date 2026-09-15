@@ -40,7 +40,7 @@ const OUTIL: OutilComplet = {
   id: OUT, tenantId: 't1', origin: 'mba', name: 'mba_terminer',
   title: 'Terminer', description: 'Termine la conversation.', nePasUtiliser: 'Pas pour escalader.',
   params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],
-  binding: { handler: 'terminer' }, sourceId: null, requestId: null, outputPaths: [], risk: 'read',
+  binding: { handler: 'terminer' }, sourceId: null, requestId: null, nature: 'integre' as const, outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false, actif: false, activeLe: null, autonomeLe: null,
 };
 
@@ -102,7 +102,10 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
     ajouterConnecteur: async (tenant, agentId, outil) => {
       cap.connecteurs.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
       if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
-      return agentId === AG ? { ...OUTIL, ...outil, origin: 'http', sourceId: outil.sourceId } : null;
+      // ⚠️ `[...outil.outputPaths]` : le contrat expose une liste EN LECTURE SEULE (on ne veut pas qu un
+      // magasin modifie la liste de son appelant), et l outil rendu en porte une mutable. Le faux doit donc
+      // la RECOPIER, comme le vrai magasin le fait en base.
+      return agentId === AG ? { ...OUTIL, ...outil, outputPaths: [...outil.outputPaths], origin: 'http', sourceId: outil.sourceId } : null;
     },
     requetePourOutil: async (tenant, id) => (tenant === 't1' && id === RQ ? { ...REQUETE, ...requeteOver } : null),
     sortiesDeLAgent: async (_t, agentId) => (agentId === AG ? sorties : null),

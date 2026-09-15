@@ -25,7 +25,7 @@ const OUTIL: OutilDefini = {
   id: 'to1', tenantId: 't1', origin: 'http', sourceId: 'src1', requestId: 'rq1', nePasUtiliser: '',
   name: 'lire_commande', description: 'lit une commande', params: [],
   binding: {},
-  outputPaths: [],
+  nature: 'integre' as const, outputPaths: [],
   risk: 'read', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
 };
 
