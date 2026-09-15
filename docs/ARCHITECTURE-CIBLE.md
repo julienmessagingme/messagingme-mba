@@ -72,6 +72,12 @@ multiple.** Aucun ne se voit aujourd'hui ; tous les trois se découvriraient en 
 
 ### 3.1 L'API ne doit plus réserver de connexion (le seul BLOQUANT)
 
+⚠️ **RIEN N'EST CASSÉ AUJOURD'HUI, et il faut le dire avant tout le reste.** L'API réserve deux connexions
+pour rien : c'est du gaspillage, pas une panne, et ça ne coûte aucune performance tant qu'il y a UN exemplaire.
+Ce chantier est **facultatif maintenant, obligatoire avant de multiplier l'API**. Le faire tôt n'a qu'un
+avantage, mais il est réel : le chemin touché est celui du dépôt de TOUTES les tâches, donc de l'arrivée de
+tous les messages, et c'est plus sûr de l'éprouver sans trafic que le jour de la bascule.
+
 **Le problème.** `src/index.ts` construit un client pg-boss sur `DATABASE_URL`, donc en mode SESSION, pour la
 seule raison qu'elle EMPILE des tâches. Elle n'en dépile aucune et ne fait aucune maintenance
 (`supervise: false`). Chaque copie d'API retient donc jusqu'à `PGBOSS_MAX` connexions réservées. Dix copies
@@ -150,10 +156,22 @@ HubSpot ne prend pas de lignes » n'est donc pas réalisable tel quel, il faudra
 
 L'intention est juste, et elle s'obtient par deux gestes distincts :
 
-**a) Sa propre base (la réponse structurelle).** Le connecteur a DÉJÀ son schéma séparé (`mmhs`). À la
-bascule, il prend sa propre base. À partir de là **il peut consommer ce qu'il veut, plus aucun client n'est
-impacté, jamais.** Le couplage devient impossible au lieu d'être géré. ⚠️ Vérifier avant : `mba` lit `mmhs` en
-cross-schéma aujourd'hui (voir `CLAUDE.md`), il faut savoir OÙ et remplacer ces lectures par un appel.
+**a) Sa propre base (la réponse structurelle).** Le connecteur a DÉJÀ son schéma séparé (`mmhs`), mais un
+schéma est un DOSSIER : les connexions, la mémoire et le processeur appartiennent au SERVEUR, pas au dossier.
+C'est pour ça que le partage se voit malgré la séparation déjà faite.
+
+🔴 **« Sa propre base » veut donc dire SA PROPRE MACHINE, et une seconde base sur le MÊME serveur ne règle
+rien** : la limite de connexions est celle du serveur. La nuance décide de tout, et elle a un prix, un second
+serveur managé.
+
+⚠️ **LA QUESTION N'EST DONC PAS TECHNIQUE, ELLE EST COMMERCIALE.** Mesuré le 2026-09-15 : **un seul portail
+branché**, le portail cobaye. Tant que le connecteur est une démo à un portail, lui payer une machine pour
+libérer quelques connexions serait absurde ; on baisse sa consommation, c'est une variable d'environnement. Le
+jour où il porte de vrais clients, il prend sa machine et le couplage disparaît pour toujours. **C'est la
+présence de clients réels qui déclenche, pas la bascule Scaleway.**
+
+⚠️ Vérifier avant, dans les deux cas : `mba` lit `mmhs` en cross-schéma aujourd'hui (voir `CLAUDE.md`), il
+faut savoir OÙ et remplacer ces lectures par un appel.
 
 **b) L'endormir (l'économie, en bonus).** Un conteneur serverless peut descendre à zéro copie et se réveiller
 à la première requête. Zéro portail branché, zéro copie, zéro connexion ; un client s'y branche, ça se
