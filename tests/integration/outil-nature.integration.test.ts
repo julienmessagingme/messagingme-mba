@@ -36,12 +36,19 @@ describe.skipIf(!url)('la nature d un outil de connecteur (Postgres)', () => {
       `insert into tenants (name) values ('itest-outil-nature') returning id`,
     )).rows[0]!.id;
 
-    // ⚠️ `mention_ia` et `modele` sont NOT NULL SANS défaut (migration 0086) : les omettre lève en 23502 et
-    // fait échouer TOUT le fichier dans son `beforeAll`, ce qui est arrivé le 2026-09-15 sur un autre test.
+    /**
+     * ⚠️ `mention_ia` et `modele` sont NOT NULL SANS défaut (migration 0086) : les omettre lève en 23502 et
+     * fait échouer TOUT le fichier dans son `beforeAll`, ce qui est arrivé le 2026-09-15 sur un autre test.
+     *
+     * ⚠️ ET IL N'Y A PAS DE COLONNE `objectif` : l'objectif vit dans le jsonb `fiche`, que l'assistant de
+     * construction écrit. Cette fixture en inventait une, et la CI l'a dit en `42703` (première version de ce
+     * fichier, le 2026-09-15). Les colonnes d'une table se LISENT dans sa migration, elles ne se devinent pas
+     * du nom des champs qu'on voit à l'écran.
+     */
     agentId = (await pool.query<{ id: string }>(
-      `insert into agents (tenant_id, label, objectif, mention_ia, modele)
-       values ($1, 'itest', 'aider', 'Je suis une IA.', 'test/modele') returning id`,
-      [tenantId],
+      `insert into agents (tenant_id, label, fiche, mention_ia, modele)
+       values ($1, 'itest', $2::jsonb, 'Je suis une IA.', 'test/modele') returning id`,
+      [tenantId, JSON.stringify({ objectif: 'aider' })],
     )).rows[0]!.id;
 
     sourceId = (await pool.query<{ id: string }>(
