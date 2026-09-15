@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { parse as secureJsonParse } from 'secure-json-parse';
 import { forbidNonAdmin, type Guard } from '../auth/middleware';
 import { scopeTenant } from './scope';
 import {
@@ -63,6 +64,16 @@ export interface MbaAssistantDeps {
 
 /** Ce que l'écran reçoit d'un coup. Trois plafonds distincts, cf. `entretien-store.ts`. */
 export const MAX_MESSAGES_AFFICHES_MBA = 200;
+
+/**
+ * LE DÉLAI D'UN TOUR. Un appel de modèle n'est pas une requête de base : sans borne, un fournisseur qui
+ * traîne tient la requête ouverte indéfiniment, et le navigateur avec.
+ *
+ * ⚠️ `src/http/agent-setup.ts` en a un du même ordre, et les deux n'ont AUCUNE raison de rester égaux : ce
+ * n'est pas un invariant partagé, c'est deux routes qui doivent chacune être bornée. Les lier créerait une
+ * dépendance entre deux modules de routes pour une valeur qui ne veut rien dire en commun.
+ */
+const DELAI_MS = 45_000;
 
 const corpsTour = z.object({ message: z.string().trim().min(1).max(4000) });
 const corpsAppliquer = z.object({ operations: z.array(z.unknown()).max(20) });
@@ -152,12 +163,27 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
     const point = pointDuTourMba(inv, avant.poses);
     const messages = construireMessagesMba(inv, bornerPourModeleMba(filComplet), avant.poses) as ChatMessage[];
 
-    const reponse = await deps.completer({
-      modele: deps.modele,
-      messages,
-      tenantId: '',
-      outils: [outilProposer()] as OutilExpose[],
-    });
+    /**
+     * 🔴 L'APPEL EST BORNÉ ET IL EST RATTRAPÉ, et les deux manquaient. Une panne du fournisseur, un délai
+     * dépassé ou une clé refusée levaient ici : Fastify rendait alors 500, et **Cloudflare remplace le corps
+     * de toute 5xx par sa page d'erreur**, donc le client voyait un écran qui n'explique rien. Rien de tout
+     * ça n'est un incident de la console. Même traitement que `src/http/agent-setup.ts`.
+     *
+     * ⚠️ AVANT d'écrire quoi que ce soit : le fil n'est écrit qu'après une réponse. Un tour qui n'a pas eu
+     * lieu ne doit pas laisser le message du client dans le fil, sans réponse en face.
+     */
+    let reponse: ReponseChat;
+    try {
+      reponse = await deps.completer({
+        modele: deps.modele,
+        messages,
+        tenantId: '',
+        outils: [outilProposer()] as OutilExpose[],
+        signal: AbortSignal.timeout(DELAI_MS),
+      });
+    } catch (err) {
+      return reply.code(502).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+    }
 
     // ⚠️ LA DÉPENSE EST NOTÉE APRÈS L'APPEL, avec le coût RÉEL : une estimation avant serait fausse, et le
     // dépassement du dernier tour est assumé, borné par le coût d'un tour.
@@ -171,7 +197,11 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
      */
     const appel = reponse.appelsOutils[0];
     let brut: unknown = {};
-    try { brut = appel ? JSON.parse(appel.argumentsJson) : {}; } catch { brut = {}; }
+    // ⚠️ `secureJsonParse` et non `JSON.parse`, comme `src/http/agent-setup.ts` : ce JSON vient d'un modèle,
+    // donc d'une source non fiable, et un `__proto__` dedans n'a rien à faire dans l'objet qu'on manipule
+    // avant même la validation. Deux traitements du MÊME flux, c'est le motif « câblé sur un consommateur
+    // sur deux », et c'est la moitié la plus exposée qui était restée en `JSON.parse`.
+    try { brut = appel ? secureJsonParse(appel.argumentsJson) : {}; } catch { brut = {}; }
     const propose = propositionMbaSchema.safeParse(brut);
     if (!propose.success) {
       /**

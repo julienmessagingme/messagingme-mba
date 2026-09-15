@@ -161,3 +161,50 @@ describe('les libellés et les raisons', () => {
     expect(raisonLisible(new Error('inattendu'))).toMatch(/refusé cette modification/i);
   });
 });
+
+/**
+ * 🔴 UN JOURNAL MUET NE DOIT PAS TUER UN GESTE QUI A EU LIEU (revue globale du 2026-09-15).
+ *
+ * `journaliser` était appelé DANS le `try` de la boucle, après que Meta ait accepté l'écriture. Une panne de
+ * NOTRE base produisait donc trois choses fausses d'un coup : l'opération apparaissait sous « Fait » ET sous
+ * « Arrêté sur », le message accusait META d'un défaut venu de chez nous, et les opérations suivantes étaient
+ * abandonnées.
+ */
+describe('quand le journal est indisponible', () => {
+  const clientMuet = () => ({
+    listFaqs: async () => [], createFaq: async () => ({}), updateFaq: async () => ({}), deleteFaq: async () => {},
+    listSkills: async () => [], createSkill: async () => ({}), updateSkill: async () => ({}), deleteSkill: async () => {},
+    listWebsites: async () => [], createWebsite: async () => ({}), deleteWebsite: async () => {},
+    listFiles: async () => [], uploadFile: async () => ({}), deleteFile: async () => {},
+    getBusinessInfo: async () => ({}), putBusinessInfo: async () => ({}),
+    getSettings: async () => ({}), putSettings: async () => ({}),
+  } as never);
+
+  const deps = (): ApplicationDeps => ({
+    numeroDuTenant: async () => '123',
+    client: async () => clientMuet(),
+    journaliser: async () => { throw new Error('base indisponible'); },
+    acteur: { id: 'u1', email: null },
+  });
+
+  it('🔴 les opérations passent quand même, et la SUITE est appliquée', async () => {
+    const r = await appliquer(deps(), 't1', 'ag-1', [
+      { type: 'faq.ajouter', question: 'Horaires ?', reponse: '9h-18h' },
+      { type: 'faq.ajouter', question: 'Livraison ?', reponse: 'Sous 48 h' },
+    ]);
+    expect(r.echec).toBeNull();
+    expect(r.passees).toHaveLength(2);
+    expect(r.nonTentees).toEqual([]);
+  });
+
+  it('🔴 et JAMAIS la même opération sous « fait » et sous « arrêté sur »', async () => {
+    const r = await appliquer(deps(), 't1', 'ag-1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
+    const arretee = r.echec?.operation;
+    expect(arretee === undefined || !r.passees.includes(arretee)).toBe(true);
+  });
+
+  it('🔴 et on n’accuse pas Meta d’une panne qui vient de chez nous', async () => {
+    const r = await appliquer(deps(), 't1', 'ag-1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
+    expect(r.echec?.message ?? '').not.toMatch(/Meta/);
+  });
+});

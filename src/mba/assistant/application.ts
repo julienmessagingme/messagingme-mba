@@ -165,19 +165,7 @@ export async function appliquer(
       const avant = await etatAvant(client, numero, agentId, o);
       await executer(deps, tenantId, client, numero, agentId, o);
       passees.push(o);
-      await deps.journaliser(tenantId, {
-        surface: 'mba',
-        surfaceId: null,
-        element: elementDe(o),
-        operation: operationDe(o),
-        cible: 'cible' in o ? o.cible : null,
-        libelle: libelleDe(o),
-        avant,
-        apres: apresDe(o),
-        origine: 'assistant',
-        acteurEmail: deps.acteur.email,
-        acteurId: deps.acteur.id,
-      });
+      await journaliserOuTaire(deps, tenantId, o, avant);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(`assistant MBA : « ${libelleDe(o)} » refusée par Meta (${tenantId}) :`, err instanceof Error ? err.message : err);
@@ -185,6 +173,44 @@ export async function appliquer(
     }
   }
   return { passees, echec: null, nonTentees: [] };
+}
+
+/**
+ * ÉCRIT LA LIGNE D'HISTORIQUE, ET NE FAIT JAMAIS ÉCHOUER L'OPÉRATION.
+ *
+ * 🔴 ELLE ÉTAIT DANS LE `try` DE LA BOUCLE, ET C'EST UN DÉFAUT À TROIS TÊTES. Une panne de NOTRE base
+ * (journal indisponible) survenait APRÈS que Meta ait accepté l'écriture, donc :
+ *  - l'opération se retrouvait à la fois dans `passees` et dans `echec.operation`, et l'écran l'affichait
+ *    sous « Fait » ET sous « Arrêté sur » ;
+ *  - `raisonLisible` rendait « Meta a refusé cette modification », c'est-à-dire qu'on accusait Meta d'une
+ *    panne qui vient de chez nous, exactement ce que la traduction des erreurs existe pour éviter ;
+ *  - les opérations suivantes étaient abandonnées, pour un journal muet.
+ *
+ * ⚠️ BEST-EFFORT, comme `JournalAppels.clore` : un journal muet ne doit pas tuer un geste qui a eu lieu. Ce
+ * qu'on perd est une ligne d'historique ; ce qu'on éviterait en levant est pire, puisque le geste, lui, est
+ * déjà passé chez Meta et ne se défait pas.
+ */
+async function journaliserOuTaire(
+  deps: ApplicationDeps, tenantId: string, o: Operation, avant: unknown,
+): Promise<void> {
+  try {
+    await deps.journaliser(tenantId, {
+      surface: 'mba',
+      surfaceId: null,
+      element: elementDe(o),
+      operation: operationDe(o),
+      cible: 'cible' in o ? o.cible : null,
+      libelle: libelleDe(o),
+      avant,
+      apres: apresDe(o),
+      origine: 'assistant',
+      acteurEmail: deps.acteur.email,
+      acteurId: deps.acteur.id,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`assistant MBA : « ${libelleDe(o)} » appliquée mais NON journalisée (${tenantId}) :`, err instanceof Error ? err.message : err);
+  }
 }
 
 /**

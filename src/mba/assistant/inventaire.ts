@@ -9,10 +9,19 @@ import type { InventaireMba } from './conversation';
  * Traiter un échec comme un tableau vide afficherait « FAQ à faire » sur un agent qui en a trente, et
  * enverrait le client en écrire une de plus.
  *
- * 🔴 ELLE EST LUE UNE FOIS À L'OUVERTURE, PUIS RELUE AVANT D'APPLIQUER (spec du 2026-09-14), jamais à chaque
- * tour : six appels chez Meta par phrase échangée rendraient la conversation lente et coûteuse, pour une
- * information qui ne bouge pas au rythme d'une phrase. La relecture avant application n'est pas une
- * optimisation, c'est le contrôle de concurrence : les onglets restent utilisables pendant la conversation.
+ * 🔴 ELLE EST LUE À CHAQUE TOUR, ET CE TEXTE DISAIT L'INVERSE (corrigé par la revue globale du 2026-09-15).
+ * Il annonçait « une fois à l'ouverture, puis relue avant d'appliquer, jamais à chaque tour » : les deux
+ * moitiés étaient fausses. `POST /mba/assistant` l'appelle à chaque phrase, et `/appliquer` ne l'appelle pas
+ * du tout. Une justification fausse inscrite à côté du code est pire qu'aucune, parce qu'elle sera recopiée.
+ *
+ * ⚠️ ET LE COMPORTEMENT RÉEL EST LE BON, c'est le texte qui était à reprendre. Les six lectures sont
+ * PARALLÈLES, donc un aller-retour, sur un geste déclenché par un humain qui tape : la conversation voit
+ * toujours l'état frais, ce dont elle a besoin puisque les onglets restent utilisables pendant qu'elle dure.
+ *
+ * 🔴 LE CONTRÔLE DE CONCURRENCE À L'APPLICATION N'EST PAS UNE RELECTURE, C'EST META LUI-MÊME. Si un autre
+ * administrateur supprime la FAQ entre la proposition et le clic, l'écriture échoue chez Meta en 404 et
+ * `raisonLisible` rend « Cet élément n'existe plus chez Meta : quelqu'un l'a peut-être supprimé entre-temps ».
+ * Une relecture de plus juste avant n'ajouterait rien : elle laisserait la même fenêtre entre elle et l'appel.
  */
 
 /** Ce que l'assistant a besoin de savoir lire. Sous-ensemble STRICT de `MbaClient`. */

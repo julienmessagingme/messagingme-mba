@@ -232,3 +232,59 @@ describe('le vrai câblage : la route EXISTE', () => {
     expect(bloc).toContain('AUCUN_ESPACE_PAYEUR');
   });
 });
+
+/**
+ * 🔴 CE QUE LA REVUE GLOBALE DU 2026-09-15 A TROUVÉ SUR CETTE ROUTE.
+ *
+ * L'appel au modèle n'était ni BORNÉ ni RATTRAPÉ, alors que son jumeau de `src/http/agent-setup.ts` l'était
+ * des deux côtés. Une panne du fournisseur levait donc ici, Fastify rendait 500, et Cloudflare remplace le
+ * corps de toute 5xx par sa page d'erreur : le client voyait un écran qui n'explique rien.
+ */
+describe('quand le fournisseur de modèle lâche', () => {
+  it('🔴 502 avec un message, JAMAIS une exception qui remonte en 500', async () => {
+    const m = monter({ completer: async () => { throw new Error('upstream 503'); } });
+    const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+    expect(r.statusCode).toBe(502);
+    expect(r.json().error).toMatch(/n’a pas répondu/);
+  });
+
+  it('🔴 et le fil n’est PAS écrit : un tour qui n’a pas eu lieu ne laisse rien', async () => {
+    // Sinon le message du client resterait dans le fil, sans réponse en face, et le tour suivant
+    // repartirait d'une conversation qui a l'air d'avoir été ignorée.
+    const m = monter({ completer: async () => { throw new Error('upstream 503'); } });
+    await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+    expect(m.journal.ecrits).toHaveLength(0);
+    expect(m.lireFil()).toBeNull();
+  });
+
+  it('🔴 l’appel est BORNÉ dans le temps', async () => {
+    // Sans signal, un fournisseur qui traîne tient la requête ouverte indéfiniment, et le navigateur avec.
+    let vu: unknown = null;
+    const m = monter({
+      completer: async (i: { signal?: AbortSignal }) => {
+        vu = i.signal;
+        return { texte: 'ok', finish: 'stop', appelsOutils: [], usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 } } as never;
+      },
+    } as never);
+    await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+    expect(vu).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('le JSON du modèle', () => {
+  it('⚠️ un `__proto__` dans les arguments ne casse pas le tour', async () => {
+    // `secureJsonParse` REFUSE ce JSON là où `JSON.parse` l'acceptait : dans les deux cas rien ne doit
+    // atteindre l'objet manipulé, et dans les deux cas la conversation doit survivre.
+    const m = monter({
+      completer: async () => ({
+        texte: 'Hmm.', finish: 'tool_calls',
+        appelsOutils: [{ id: 'c1', nom: 'proposer', argumentsJson: '{"__proto__":{"pollue":1},"message":"x"}' }],
+        usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 },
+      } as never),
+    });
+    const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+    expect(r.statusCode).toBe(200);
+    expect(({} as Record<string, unknown>).pollue).toBeUndefined();
+    expect(r.json().operations).toEqual([]);
+  });
+});

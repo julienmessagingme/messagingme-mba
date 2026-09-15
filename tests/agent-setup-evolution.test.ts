@@ -83,9 +83,15 @@ describe('un point redevenu vide', () => {
     const vides = pointsSansContenu(ficheComplete({ sorties: [] }));
     expect(vides).toEqual(['aboutissements']);
     const consigne = consigneDuTour(etat, INVENTAIRE_VIDE, vides);
-    expect(consigne).toContain('VIDÉ depuis votre entretien : aboutissements');
-    // 🔴 LUI SEUL : relancer tout l'entretien pour un champ effacé reposerait neuf questions tranchées.
-    expect(consigne).not.toContain('ton,');
+    /**
+     * 🔴 LUI SEUL : relancer tout l'entretien pour un champ effacé reposerait neuf questions tranchées.
+     *
+     * ⚠️ ON ASSERTE LA LISTE ENTIÈRE, PAS L'ABSENCE D'UN VOISIN. Ce test disait `not.toContain('ton,')`,
+     * qui ne discrimine pas : si `ton` était le DERNIER de la liste, la chaîne serait « …, ton » sans
+     * virgule finale, et l'assertion passerait sur le défaut même qu'elle vise. Mesuré en la mutant.
+     */
+    const liste = /VIDÉ depuis votre entretien : ([^.]*)\./.exec(consigne)?.[1];
+    expect(liste).toBe('aboutissements');
     // ⚠️ Et ce n'est PAS une question d'entretien : la réponse du client est toujours connue.
     expect(consigne).toContain('Ne repose pas la question');
   });
