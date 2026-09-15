@@ -186,8 +186,32 @@ test.describe('Agent : brancher le système du client', () => {
     await page.getByTestId('outil-nepasutiliser').fill('n');
     // Tout est rempli, mais la case n est pas cochee : le bouton reste inactif.
     await expect(page.getByTestId('outil-creer')).toBeDisabled();
+    /**
+     * 🔴 ET IL DIT POURQUOI, VISIBLEMENT (2026-09-15). Julien : « je n arrive pas a l associer avec mon
+     * agent IA, ca reste grise en bas ». Le bouton avait CINQ conditions et n en nommait aucune ; sa case de
+     * confirmation n etait pas cochee, ce qui ne se devine pas devant quatre champs remplis. Une infobulle
+     * n aurait pas suffi : personne ne survole un bouton gris, on cherche ailleurs ce qu on a rate.
+     */
+    await expect(page.getByTestId('outil-creer-manque')).toContainText(/C’est bien ce que je veux envoyer|This is what I want to send/);
     await page.getByTestId('envoi-confirme').check();
     await expect(page.getByTestId('outil-creer')).toBeEnabled();
+    await expect(page.getByTestId('outil-creer-manque')).toHaveCount(0);
+  });
+
+  test('🔴 un appel « a finir » ne se donne pas a un agent, et l ecran le dit AVANT de faire remplir', async ({ page }) => {
+    /**
+     * 🔴 LE PRIX D AVOIR OUVERT L ENREGISTREMENT AUX BROUILLONS, paye ici. Depuis le meme jour, un appel
+     * s enregistre sans champ de reponse ; le resume affichait alors un `<code>` VIDE, et le client
+     * remplissait quatre champs avant de se prendre le refus du serveur (409). On le dit d entree.
+     */
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { requetes: [{ ...REQUETE, outputPaths: [] }] });
+    await ongletOutils(page);
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
+    await expect(page.getByTestId('envoi-sans-sortie')).toContainText(/Connecteurs API|API connectors/);
+    await expect(page.getByTestId('outil-creer')).toBeDisabled();
+    // Et la raison NOMME le brouillon, pas un champ a remplir : remplir ne debloquerait rien.
+    await expect(page.getByTestId('outil-creer-manque')).toContainText(/ne lit rien en retour|reads nothing back/);
   });
 
   test('🔴 la bibliothèque dit combien d’AGENTS tapent dans un système', async ({ page }) => {

@@ -162,6 +162,23 @@ function NouvelAppel({ requete, busy, onCreer }: {
   const [nePasUtiliser, setNePasUtiliser] = useState('');
   const [confirme, setConfirme] = useState(false);
 
+  /**
+   * CE QUI MANQUE, NOMMÉ, ou `null` quand tout est là. Une seule source pour l'état grisé ET pour la
+   * raison : deux listes tenues à la main divergeraient au premier champ ajouté, et le bouton redeviendrait
+   * muet sans que personne le remarque.
+   */
+  const manque: string | null =
+    requete.outputPaths.length === 0
+      ? t('Cet appel ne lit rien en retour : finissez-le dans Tools > Connecteurs API.',
+        'This call reads nothing back: finish it in Tools > API connectors.')
+      : name.trim() === '' ? t('Donnez un nom technique.', 'Give it a technical name.')
+        : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
+          : description.trim() === '' ? t('Dites à quoi ça sert.', 'Say what it does.')
+            : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
+              : !confirme ? t('Cochez « C’est bien ce que je veux envoyer » au-dessus.', 'Tick “This is what I want to send” above.')
+                : busy ? t('Enregistrement en cours…', 'Saving…')
+                  : null;
+
   return (
     <div className="mt-1 flex flex-col gap-2 rounded-lg border border-ink-200 p-3">
       {/* 🔴 CE QUI PARTIRA, montré AVANT de valider. Julien : « il faut bien faire confirmer au client, on
@@ -181,9 +198,25 @@ function NouvelAppel({ requete, busy, onCreer }: {
             ))}
           </ul>
         )}
-        <p className="mt-2 text-xs text-ink-600">
-          {t('Il lira en retour :', 'It will read back:')} <code>{requete.outputPaths.join(', ')}</code>
-        </p>
+        {/**
+          * 🔴 UN APPEL SANS CHAMP DE RÉPONSE NE SE DONNE PAS À UN AGENT, ET ÇA SE DIT ICI (2026-09-15).
+          * Depuis qu'un appel s'enregistre à moitié écrit, cette ligne pouvait afficher un `<code>` VIDE :
+          * le client remplissait alors quatre champs, cochait la confirmation, et se prenait le refus du
+          * serveur. Vécu par Julien le jour même, juste après le correctif qui a rendu le brouillon possible.
+          * C'est le prix d'avoir ouvert l'enregistrement, et il se paie ici, pas en laissant remplir pour rien.
+          */}
+        {requete.outputPaths.length === 0 ? (
+          <p className="mt-2 text-xs text-coral" data-testid="envoi-sans-sortie">
+            {t(
+              'Cet appel ne lit encore RIEN en retour : il est à finir. Ouvrez-le dans Tools > Connecteurs API, lancez « Essayer », puis cochez ce que l’agent a le droit de lire.',
+              'This call reads NOTHING back yet: it is unfinished. Open it in Tools > API connectors, run “Try”, then tick what the agent may read.',
+            )}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-ink-600">
+            {t('Il lira en retour :', 'It will read back:')} <code>{requete.outputPaths.join(', ')}</code>
+          </p>
+        )}
         <label className="mt-2 flex items-start gap-2 text-xs text-ink-700">
           <input type="checkbox" data-testid="envoi-confirme" checked={confirme} onChange={(e) => setConfirme(e.target.checked)} className="mt-0.5" />
           <span>{t('C’est bien ce que je veux envoyer.', 'This is what I want to send.')}</span>
@@ -207,15 +240,27 @@ function NouvelAppel({ requete, busy, onCreer }: {
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>
 
+      {/* 🔴 LA RAISON EST VISIBLE, PAS SEULEMENT EN INFOBULLE. Une infobulle suppose qu'on survole un bouton
+          gris, ce que personne ne fait : on cherche ailleurs ce qu'on a raté. Le titre reste, pour le clavier. */}
+      <div className="flex flex-wrap items-center gap-2">
       <button
         data-testid="outil-creer"
         // La confirmation est BLOQUANTE : sans elle, le résumé ne serait qu'une décoration qu'on survole.
-        disabled={busy || !confirme || name.trim() === '' || title.trim() === '' || description.trim() === '' || nePasUtiliser.trim() === ''}
+        disabled={manque !== null}
+        /**
+         * 🔴 UN BOUTON GRIS QUI NE DIT PAS POURQUOI EST UNE IMPASSE, et celui-ci avait CINQ conditions
+         * (2026-09-15). Julien : « je n'arrive pas à l'associer avec mon agent IA, ça reste grisé en bas ».
+         * Sa case de confirmation n'était pas cochée, ce qui ne se devine pas en regardant quatre champs
+         * remplis. C'est le même défaut que le bouton Enregistrer des connecteurs, réparé le même jour.
+         */
+        title={manque ?? ''}
         onClick={() => onCreer({ name: name.trim(), title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim() })}
         className="self-start rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
       >
         {t('Donner cet appel à l’agent', 'Give this call to the agent')}
       </button>
+      {manque !== null && <span className="text-[11px] text-ink-500" data-testid="outil-creer-manque">{manque}</span>}
+      </div>
     </div>
   );
 }
