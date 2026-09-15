@@ -3,6 +3,7 @@ import type { Guard } from '../auth/middleware';
 import type { OutilBibliotheque } from '../agent/catalog';
 import { consommateurMba } from '../agent/consommateur';
 import { scopeTenant, estUuid } from './scope';
+import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 
 /**
  * La BIBLIOTHÈQUE d'outils d'un espace (migration 0127).
@@ -29,6 +30,19 @@ export interface AgentCatalogueRouteDeps {
   rattacherConsommateur?(tenantId: string, consommateur: string, outilId: string): Promise<boolean>;
   detacherConsommateur?(tenantId: string, consommateur: string, outilId: string): Promise<boolean>;
   activerConsommateur?(tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<unknown>;
+  /**
+   * Crée un outil de connecteur rattaché DIRECTEMENT au Meta Business Agent, sans passer par un agent IA.
+   *
+   * 🔴 IL N'Y AVAIT AUCUN CHEMIN POUR ÇA, et c'est ce que ce lot ouvre. Un outil naissait en le donnant à un
+   * agent IA : exposer un appel à Meta obligeait donc à créer un agent dont on n'a pas besoin, et à répondre
+   * pour lui à des questions que Meta ignore. Julien, 2026-09-15 : « je ne sais pas où l'affecter pour le MBA ».
+   */
+  creerPourMba?(tenantId: string, phoneNumberId: string, outil: {
+    sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: 'read' | 'write' | 'irreversible';
+  }): Promise<{ id: string } | null>;
+  /** La REQUÊTE que l'outil désignera, LUE côté serveur : le risque plancher et la source en dérivent. */
+  requetePourOutil?(tenantId: string, requeteId: string): Promise<{ id: string; sourceId: string; methode: string; variables: Array<{ nom: string; type: string; origine: { type: string }; description?: string; requis?: boolean; enum?: string[] }> } | null>;
 }
 
 export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogueRouteDeps, garde: Guard): void {
@@ -96,6 +110,77 @@ export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogu
     const actif = await deps.activerConsommateur(tenant, cle, outilId, true, userId);
     if (!rattache && actif === null) return reply.code(404).send({ error: 'outil introuvable' });
     return reply.code(200).send({ expose: true, consommateur: cle });
+  });
+
+  /**
+   * CRÉER un outil et l'exposer à l'agent de Meta, d'un seul geste, sans agent IA.
+   *
+   * 🔴 AUCUNE QUESTION « POUSSE OU INTÈGRE » ICI, ET CE N'EST PAS UN OUBLI. Meta appelle le système du
+   * client EN DIRECT et lit toute la réponse : notre filtre de sortie ne s'y applique pas, et la nature non
+   * plus. Poser la question donnerait un réglage sans effet, c'est-à-dire le motif « offert-et-inerte » que
+   * ce produit s'interdit ailleurs.
+   *
+   * 🔴 CRÉER **ET** EXPOSER EN UN SEUL GESTE, comme la case de la bibliothèque juste au-dessus, et pour la
+   * même raison : le MBA n'a pas d'écran de relecture chez nous, donc un état « créé mais éteint » ne
+   * s'afficherait nulle part.
+   *
+   * ⚠️ LA REQUÊTE EST LUE, PAS CRUE SUR PAROLE : le risque plancher en dérive, exactement comme sur la route
+   * jumelle de `agent-tools.ts`. Un client qui déclarerait « read » sur un DELETE désarmerait une garde.
+   */
+  app.post(`${base}/connecteur-mba`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    if (!deps.numeroDuTenant || !deps.creerPourMba || !deps.requetePourOutil || !deps.activerConsommateur) {
+      return reply.code(503).send({ error: 'exposition au MBA indisponible sur cette instance' });
+    }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const texte = (v: unknown, max: number): string | null =>
+      (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v.trim() : null);
+    const requeteId = typeof b.requeteId === 'string' && estUuid(b.requeteId) ? b.requeteId : null;
+    const name = typeof b.name === 'string' && /^[a-z0-9_]{1,64}$/.test(b.name) ? b.name : null;
+    const title = texte(b.title, 120);
+    const description = texte(b.description, 2000);
+    const nePasUtiliser = texte(b.nePasUtiliser, 2000);
+    if (!requeteId || !name || !title || !description || !nePasUtiliser) {
+      return reply.code(400).send({ error: 'requête, nom technique et les trois textes sont requis' });
+    }
+
+    const userId = (req as { auth?: { userId?: string } }).auth?.userId ?? '';
+    if (userId === '') return reply.code(403).send({ error: 'exposition impossible sans utilisateur identifié' });
+
+    const pn = await deps.numeroDuTenant(tenant);
+    if (!pn) {
+      return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté : il n’y a pas d’agent Meta à qui exposer cet outil.' });
+    }
+    const requete = await deps.requetePourOutil(tenant, requeteId);
+    if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
+
+    // Ce que le MODÈLE de Meta remplira : les variables dont l'origine est `modele`, comme pour un agent IA.
+    // Les autres sont résolues par notre serveur, et les exposer inviterait à désigner la ressource d'un autre.
+    const params = requete.variables
+      .filter((v) => v.origine.type === 'modele')
+      .map((v) => ({
+        name: v.nom, type: v.type, source: 'modele' as const,
+        ...(v.description ? { description: v.description } : {}),
+        ...(v.requis ? { required: true } : {}),
+        ...(v.enum && v.enum.length > 0 ? { enum: v.enum } : {}),
+      }));
+
+    try {
+      const outil = await deps.creerPourMba(tenant, pn, {
+        sourceId: requete.sourceId, requestId: requete.id,
+        name, title, description, nePasUtiliser,
+        params, risk: risqueSelonMethode(requete.methode as MethodeConnecteur),
+      });
+      if (!outil) return reply.code(404).send({ error: 'requête introuvable' });
+      await deps.activerConsommateur(tenant, consommateurMba(pn), outil.id, true, userId);
+      return reply.code(201).send({ id: outil.id, expose: true, consommateur: consommateurMba(pn) });
+    } catch (err) {
+      // Un nom déjà pris est un cas ordinaire, pas une panne : 409 avec le message, jamais une 5xx dont
+      // Cloudflare remplacerait le corps.
+      if (err instanceof Error && /nom/i.test(err.message)) return reply.code(409).send({ error: err.message });
+      throw err;
+    }
   });
 
   /**

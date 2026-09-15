@@ -188,6 +188,21 @@ export function rattacherOutil(tenantId: string, agentId: string, outilId: strin
 }
 
 /** Supprime la DÉFINITION, donc pour tout le monde. Le serveur REFUSE en 409 tant qu'elle est rattachée. */
+/**
+ * Crée un outil de connecteur rattaché DIRECTEMENT à l'agent de Meta, sans passer par un agent IA.
+ *
+ * 🔴 IL N'Y AVAIT AUCUN CHEMIN POUR ÇA. Un outil naissait en le donnant à un agent IA : exposer un appel à
+ * Meta obligeait à créer un agent dont on n'a pas besoin, et à répondre pour lui à des questions que Meta
+ * ignore (il appelle le système du client en direct et lit toute la réponse).
+ *
+ * ⚠️ AUCUNE NATURE NI AUCUN CHAMP ICI, délibérément : ils n'auraient aucun effet de ce côté.
+ */
+export async function creerOutilPourMba(tenantId: string, outil: {
+  requeteId: string; name: string; title: string; description: string; nePasUtiliser: string;
+}): Promise<{ id: string; expose: boolean }> {
+  return request(`/tenants/${tenantId}/agent-tools/connecteur-mba`, { method: 'POST', body: JSON.stringify(outil) });
+}
+
 export async function supprimerDefinitionOutil(tenantId: string, outilId: string): Promise<void> {
   await request<void>(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'DELETE' });
 }

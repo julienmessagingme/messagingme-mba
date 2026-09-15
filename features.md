@@ -1599,6 +1599,12 @@ scénario, comment importer des contacts.
 - ✅ **L'écran vous montre ce qui partira** avant de brancher l'appel sur un agent : la liste des données
   envoyées, en français. C'est la seule fois où vous voyez qu'un appel enverra une donnée de vos contacts,
   voire leur dernier message, à un système tiers.
+- ✅ **Un outil pour l'agent de Meta, sans passer par un agent IA** (2026-09-15), depuis **Tools > Outils**.
+  Vous choisissez l'appel, vous donnez les mots, et l'outil est créé ET exposé à Meta d'un seul geste.
+  🔴 **Avant, un outil naissait en le donnant à un agent IA.** Exposer un appel à Meta obligeait donc à créer
+  un agent dont vous n'aviez pas besoin, et à répondre pour lui à des questions que Meta ignore.
+  ⚠️ **Aucune question « pousse ou intègre » ici, et c'est normal** : Meta appelle votre système en direct et
+  lit toute la réponse. La poser donnerait un réglage sans effet.
 - ✅ Un outil de connecteur naît **inactif**, comme un outil maison : c'est un administrateur qui l'active
   après l'avoir relu.
 - ✅ **Un appel utilisé par un agent ne se supprime pas** : l'écran dit combien d'agents s'en servent et refuse,

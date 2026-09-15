@@ -6,7 +6,7 @@ import type {
 } from './catalog';
 import { NomOutilDejaPris } from './catalog';
 import { asRecord } from '../webhooks/json';
-import { agentDuConsommateur, consommateurAgent } from './consommateur';
+import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 
 interface Ligne {
   id: string;
@@ -182,6 +182,19 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
      */
     nature: NatureOutil; outputPaths: readonly string[];
   }): Promise<OutilComplet | null> {
+    return this.creerOutilConnecteur(tenantId, consommateurAgent(agentId), outil);
+  }
+
+  /**
+   * LE GESTE COMMUN aux deux portes d'entrée : celle d'un agent IA, et celle du Meta Business Agent.
+   *
+   * 🔴 UN SEUL `insert`, DEUX APPELANTS. Le recopier ferait diverger les gardes d'isolation au premier
+   * ajustement, et c'est le motif que ce dépôt a payé une centaine de fois à l'audit du 2026-08-18.
+   */
+  private async creerOutilConnecteur(tenantId: string, consommateur: string, outil: {
+    sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: RisqueOutil; nature: NatureOutil; outputPaths: readonly string[];
+  }): Promise<OutilComplet | null> {
     return this.enTransaction(async (client) => {
       const res = await client.query<{ id: string }>(
         /**
@@ -203,7 +216,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
         `insert into agent_tools
            (tenant_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, nature, risk)
          select $1, 'http', $2, $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, $9::text[], $10, $11
-          where exists (select 1 from agents where id = $12 and tenant_id = $1)
+          where ($12::uuid is null or exists (select 1 from agents where id = $12 and tenant_id = $1))
             and exists (select 1 from agent_tool_sources where id = $2 and tenant_id = $1)
             and exists (select 1 from connector_requests where id = $3 and tenant_id = $1)
          returning id`,
@@ -215,16 +228,43 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
           // doivent rester cohérents et que l'on écrit indépendamment finissent par diverger.
           outil.nature === 'pousse' ? [] : [...outil.outputPaths],
           outil.nature,
-          outil.risk, agentId,
+          outil.risk, agentDuConsommateur(consommateur),
         ],
       ).catch(surNomDejaPris);
       const id = res.rows[0]?.id;
       if (!id) return null;
       await client.query(
         'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, consommateurAgent(agentId)],
+        [tenantId, id, consommateur],
       );
-      return this.completAvecClient(client, tenantId, consommateurAgent(agentId), id);
+      return this.completAvecClient(client, tenantId, consommateur, id);
+    });
+  }
+
+  /**
+   * LE MÊME GESTE, POUR UN CONSOMMATEUR QUI N'EST PAS UN AGENT (2026-09-15).
+   *
+   * 🔴 ET IL NE DEMANDE AUCUNE MIGRATION, ce qui a été MESURÉ et non déduit : `agent_tools.agent_id` n'existe
+   * plus depuis la migration 0128. Un outil appartient déjà à l'ESPACE ; seule la ligne
+   * `agent_tool_consommateurs` le rattache à quelqu'un, et le Meta Business Agent y est un consommateur
+   * comme un autre (`mba:<numero>`). Le plan de ce lot prévoyait de rendre une colonne nullable : elle
+   * n'était plus là.
+   *
+   * 🔴 POURQUOI CE CHEMIN EXISTE. Un outil naissait en le donnant à un agent IA : exposer un appel au Meta
+   * Business Agent obligeait donc à créer un agent dont on n'a pas besoin, et à répondre pour lui à des
+   * questions que Meta ignore (il appelle le système du client en direct et lit toute la réponse). Julien,
+   * 2026-09-15 : « je ne sais pas où l'affecter pour le MBA ».
+   *
+   * ⚠️ `nature` VAUT TOUJOURS `integre` ICI, et ce n'est pas un défaut paresseux : la question ne se pose pas
+   * pour Meta, qui lit tout quoi qu'on déclare. Écrire `pousse` laisserait croire à un réglage qui n'a aucun
+   * effet de ce côté.
+   */
+  async ajouterConnecteurPourMba(tenantId: string, phoneNumberId: string, outil: {
+    sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: RisqueOutil;
+  }): Promise<OutilComplet | null> {
+    return this.creerOutilConnecteur(tenantId, consommateurMba(phoneNumberId), {
+      ...outil, nature: 'integre', outputPaths: [],
     });
   }
 

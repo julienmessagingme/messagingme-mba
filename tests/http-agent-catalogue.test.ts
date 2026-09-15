@@ -47,6 +47,7 @@ const BIB: OutilBibliotheque = {
 function monter(verdict: 'ok' | 'rattachee' | 'introuvable', numero: string | null = '1234840649713976') {
   const supprimes: string[][] = [];
   const gestes: string[] = [];
+  const crees: Array<{ pn: string; outil: Record<string, unknown> }> = [];
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -60,10 +61,91 @@ function monter(verdict: 'ok' | 'rattachee' | 'introuvable', numero: string | nu
         gestes.push(`active:${cle}:${id}:${actif}:${par}`);
         return {};
       },
+      creerPourMba: async (_t, pn, outil) => {
+        crees.push({ pn, outil: outil as unknown as Record<string, unknown> });
+        return { id: CREE };
+      },
+      requetePourOutil: async (_t, id) => (id === REQ ? REQUETE : null),
     },
   });
-  return { app, supprimes, gestes };
+  return { app, supprimes, gestes, crees };
 }
+
+const REQ = '33333333-3333-4333-8333-333333333333';
+const CREE = '44444444-4444-4444-8444-444444444444';
+
+/** ⚠️ Un DELETE, volontairement : c'est ce qui prouve que le risque plancher est DÉRIVÉ de la méthode. */
+const REQUETE = {
+  id: REQ, sourceId: '55555555-5555-4555-8555-555555555555', methode: 'DELETE',
+  variables: [
+    { nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true },
+    { nom: 'ville', type: 'string', origine: { type: 'champ' } },
+  ],
+};
+
+const corpsMba = (over: Record<string, unknown> = {}) => ({
+  requeteId: REQ, name: 'poser_etiquette', title: 'Poser',
+  description: 'pose une étiquette', nePasUtiliser: 'jamais pour retirer',
+  ...over,
+});
+
+describe('créer un outil DIRECTEMENT pour l’agent de Meta', () => {
+  /**
+   * 🔴 CE CHEMIN N'EXISTAIT PAS, ET SON ABSENCE SE PAYAIT EN CORVÉE. Un outil naissait en le donnant à un
+   * agent IA : exposer un appel à Meta obligeait donc à créer un agent dont on n'a pas besoin, puis à
+   * répondre pour lui à des questions que Meta ignore. Julien, 2026-09-15 : « je ne sais pas où l'affecter
+   * pour le MBA ».
+   *
+   * ⚠️ ET IL N'A DEMANDÉ AUCUNE MIGRATION, ce qui a été MESURÉ en base : `agent_tools.agent_id` n'existe plus
+   * depuis 0128, un outil appartient déjà à l'espace, et seule la ligne de consommateur le rattache.
+   */
+  it('🔴 crée l’outil ET l’expose, en un seul geste', async () => {
+    // Le MBA n'a pas d'écran de relecture chez nous : un état « créé mais éteint » ne s'afficherait nulle part.
+    const { app, gestes, crees } = monter('ok');
+    const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/agent-tools/connecteur-mba`, ...h(), payload: corpsMba() });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ id: CREE, expose: true, consommateur: 'mba:1234840649713976' });
+    expect(gestes).toContain(`active:mba:1234840649713976:${CREE}:true:u1`);
+  });
+
+  it('🔴 le risque est DÉRIVÉ de la méthode, jamais accepté du navigateur', async () => {
+    // Un client qui déclarerait « read » sur un DELETE désarmerait la garde d'autonomie.
+    const { app, crees } = monter('ok');
+    await app.inject({ method: 'POST', url: `/tenants/${TENANT}/agent-tools/connecteur-mba`, ...h(), payload: corpsMba({ risk: 'read' }) });
+    expect(crees[0]!.outil).toMatchObject({ risk: 'irreversible' });
+  });
+
+  it('🔴 le MODÈLE ne voit que les variables qu’il doit remplir', async () => {
+    // Exposer une variable résolue par le serveur (un champ du contact) inviterait le modèle de Meta à la
+    // fournir lui-même, donc à désigner la ressource de quelqu'un d'autre. C'est la garde anti-IDOR.
+    const { app, crees } = monter('ok');
+    await app.inject({ method: 'POST', url: `/tenants/${TENANT}/agent-tools/connecteur-mba`, ...h(), payload: corpsMba() });
+    expect(crees[0]!.outil.params).toEqual([{ name: 'ref', type: 'string', source: 'modele', required: true }]);
+  });
+
+  it('🔴 sans numéro connecté, 409 avec la raison, et RIEN n’est créé', async () => {
+    const { app, crees } = monter('ok', null);
+    const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/agent-tools/connecteur-mba`, ...h(), payload: corpsMba() });
+    expect(res.statusCode).toBe(409);
+    expect(crees).toEqual([]);
+  });
+
+  it('🔴 une requête d’un AUTRE espace rend 404, et rien n’est écrit', async () => {
+    const { app, crees } = monter('ok');
+    const res = await app.inject({
+      method: 'POST', url: `/tenants/${TENANT}/agent-tools/connecteur-mba`, ...h(),
+      payload: corpsMba({ requeteId: '66666666-6666-4666-8666-666666666666' }),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(crees).toEqual([]);
+  });
+
+  it('⚠️ un nom technique mal formé est refusé : c’est ce que le modèle de Meta verra', async () => {
+    const { app } = monter('ok');
+    const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/agent-tools/connecteur-mba`, ...h(), payload: corpsMba({ name: 'Poser Étiquette' }) });
+    expect(res.statusCode).toBe(400);
+  });
+});
 
 describe('la bibliothèque d’outils', () => {
   it('rend les définitions de l’espace, avec QUI s’en sert', async () => {

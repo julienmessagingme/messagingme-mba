@@ -1553,6 +1553,17 @@ async function main(): Promise<void> {
       rattacherConsommateur: (tenant, cle, id) => toolCatalog.rattacherConsommateur(tenant, cle, id),
       detacherConsommateur: (tenant, cle, id) => toolCatalog.detacherConsommateur(tenant, cle, id),
       activerConsommateur: (tenant, cle, id, actif, par) => toolCatalog.activerConsommateur(tenant, cle, id, actif, par),
+      /**
+       * Creer un outil DIRECTEMENT pour l agent de Meta, sans agent IA (2026-09-15).
+       *
+       * ⚠️ AUCUNE MIGRATION derriere : `agent_tools.agent_id` n existe plus depuis 0128, un outil appartient
+       * a l ESPACE, et seule la ligne de consommateur le rattache a quelqu un. Mesure en base avant de
+       * l ecrire, le plan prevoyait une colonne a rendre nullable qui n etait plus la.
+       */
+      creerPourMba: (tenant, pn, outil) => toolCatalog.ajouterConnecteurPourMba(tenant, pn, outil),
+      // La REQUETE est LUE, pas crue sur parole : le risque plancher et la source en derivent, comme sur la
+      // route jumelle des outils d un agent.
+      requetePourOutil: (tenant, id) => agentRequetes.parId(tenant, id),
     },
     /**
      * Publication du catalogue chez Meta (lot 4).

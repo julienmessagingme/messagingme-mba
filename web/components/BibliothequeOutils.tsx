@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import {
-  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba,
+  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, creerOutilPourMba,
   apercuPublicationMba, publierChezMeta,
   type OutilBibliotheque, type GestePublication,
 } from '@/lib/api-agent-tools';
+import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
+import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
 
 /**
@@ -25,6 +27,10 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   const [erreur, setErreur] = useState<string | null>(null);
   const [plan, setPlan] = useState<GestePublication[] | null>(null);
   const [publie, setPublie] = useState(false);
+
+  const recharger = async (): Promise<void> => {
+    try { setOutils((await getBibliothequeOutils(tenantId)).outils); } catch { setOutils([]); }
+  };
 
   useEffect(() => {
     let vivant = true;
@@ -150,6 +156,12 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
       </header>
 
       {erreur && <p className="text-xs text-coral" data-testid="bibliotheque-erreur">{erreur}</p>}
+
+      {/* 🔴 CREER UN OUTIL POUR META SANS PASSER PAR UN AGENT IA (2026-09-15). Un outil naissait en le
+          donnant a un agent : exposer un appel a Meta obligeait a creer un agent dont on n a pas besoin, et
+          a repondre pour lui a des questions que Meta ignore. Julien : « je ne sais pas ou l affecter pour
+          le MBA ». */}
+      {isAdmin && <OutilPourMba tenantId={tenantId} onCree={() => { void recharger(); }} />}
 
       {/* La publication chez Meta. Elle vit ICI et pas dans les paramètres MBA : ce qu'on publie, c'est
           cette bibliothèque-là, et le geste doit être à côté de ce qu'il emporte. */}
@@ -277,6 +289,120 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/**
+ * CRÉER UN OUTIL POUR L'AGENT DE META, sans agent IA.
+ *
+ * 🔴 AUCUNE QUESTION « POUSSE OU INTÈGRE » ICI, ET C'EST DÉLIBÉRÉ. Meta appelle le système du client EN
+ * DIRECT et lit toute la réponse : ni la nature, ni les champs cochés ne s'y appliquent. Poser la question
+ * donnerait un réglage sans effet, c'est-à-dire le motif « offert-et-inerte » que ce produit s'interdit.
+ *
+ * ⚠️ Les appels sont chargés À L'OUVERTURE du formulaire, pas au montage de l'écran : cette page sert
+ * d'abord à voir qui utilise quoi, et la plupart des visites n'ouvrent jamais ce bloc.
+ */
+function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => void }) {
+  const t = useT();
+  const [ouvert, setOuvert] = useState(false);
+  const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
+  const [requeteId, setRequeteId] = useState('');
+  const [name, setName] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [nePasUtiliser, setNePasUtiliser] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const ouvrir = async (): Promise<void> => {
+    setOuvert(true);
+    if (requetes !== null) return;
+    try {
+      const r = await listRequetes(tenantId);
+      setRequetes(r.requetes);
+      setRequeteId(r.requetes[0]?.id ?? '');
+    } catch { setRequetes([]); }
+  };
+
+  const manque: string | null =
+    requeteId === '' ? t('Choisissez un appel.', 'Pick a call.')
+      : !/^[a-z0-9_]{1,64}$/.test(name) ? t('Un nom technique en minuscules, chiffres et tirets bas.', 'A technical name in lowercase, digits and underscores.')
+        : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
+          : description.trim() === '' ? t('Dites à quoi ça sert.', 'Say what it does.')
+            : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
+              : busy ? t('Enregistrement en cours…', 'Saving…')
+                : null;
+
+  if (!ouvert) {
+    return (
+      <button type="button" data-testid="outil-mba-ouvrir" onClick={() => { void ouvrir(); }}
+        className="self-start text-sm text-brand-600 hover:underline">
+        {t('+ un outil pour l’agent de Meta', '+ a tool for Meta’s agent')}
+      </button>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-2 rounded-2xl border border-ink-200 p-4" data-testid="outil-mba-form">
+      <p className="text-sm font-medium text-ink-800">
+        {t('Un outil pour l’agent de Meta', 'A tool for Meta’s agent')}
+      </p>
+      <p className="text-xs text-ink-500">
+        {t('Meta appelle votre système en direct : il n’y a rien à choisir sur ce qu’il lit en retour, il lit toute la réponse.',
+          'Meta calls your system directly: there is nothing to pick about what it reads back, it reads the whole response.')}
+      </p>
+      {erreur !== null && <p className="text-xs text-coral" data-testid="outil-mba-erreur">{erreur}</p>}
+      <label className="text-xs text-ink-600">
+        {t('Quel appel ?', 'Which call?')}
+        <select className={`${inputCls} mt-1`} data-testid="outil-mba-requete" value={requeteId} onChange={(e) => setRequeteId(e.target.value)}>
+          {(requetes ?? []).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+        </select>
+      </label>
+      {requetes !== null && requetes.length === 0 && (
+        <p className="text-xs text-ink-500" data-testid="outil-mba-sans-appel">
+          {t('Aucun appel déclaré : mettez-en un au point dans Tools > Connecteurs API.',
+            'No call declared yet: set one up in Tools > API connectors.')}
+        </p>
+      )}
+      <label className="text-xs text-ink-600">
+        {t('Nom technique (vu par l’agent de Meta)', 'Technical name (seen by Meta’s agent)')}
+        <input className={`${inputCls} mt-1`} data-testid="outil-mba-nom" value={name} onChange={(e) => setName(e.target.value)} placeholder="poser_etiquette" />
+      </label>
+      <label className="text-xs text-ink-600">
+        {t('Titre lisible', 'Readable title')}
+        <input className={`${inputCls} mt-1`} data-testid="outil-mba-titre" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <label className="text-xs text-ink-600">
+        {t('À quoi ça sert', 'What it does')}
+        <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-mba-description" value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label className="text-xs text-ink-600">
+        {t('Quand NE PAS l’appeler', 'When NOT to call it')}
+        <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-mba-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button" data-testid="outil-mba-creer" disabled={manque !== null} title={manque ?? ''}
+          className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+          onClick={() => {
+            setBusy(true);
+            setErreur(null);
+            creerOutilPourMba(tenantId, { requeteId, name, title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim() })
+              .then(() => { setOuvert(false); setName(''); setTitle(''); setDescription(''); setNePasUtiliser(''); onCree(); })
+              // 🔴 LE FORMULAIRE NE SE FERME QUE SUR UN SUCCÈS : le refermer sur un refus perdrait la saisie,
+              // défaut payé deux fois le 2026-09-15 sur les deux autres écrans de ce chantier.
+              .catch((err: unknown) => { setErreur(err instanceof Error ? err.message : t('Création impossible', 'Creation failed')); })
+              .finally(() => { setBusy(false); });
+          }}
+        >
+          {t('Créer et exposer à Meta', 'Create and expose to Meta')}
+        </button>
+        {manque !== null && <span className="text-[11px] text-ink-500" data-testid="outil-mba-manque">{manque}</span>}
+        <button type="button" onClick={() => setOuvert(false)} className="text-xs text-ink-500 hover:underline">
+          {t('Annuler', 'Cancel')}
+        </button>
+      </div>
     </section>
   );
 }
