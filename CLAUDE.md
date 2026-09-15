@@ -79,8 +79,34 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0148**, le 2026-09-15 dans la nuit (`mba_assistant_conversations` : le fil de
-l'assistant du Meta Business Agent, un par espace). **Prochaine libre = 0149.**
+**Dernière appliquée : 0149**, le 2026-09-15 au matin (`conversations.release_mba_apres_message` : le fil
+attend l'accusé de NOTRE dernier envoi avant de repartir chez l'agent de Meta). **Prochaine libre = 0150.**
+Relue en base juste après `migrate`, pas en écrivant cette ligne : `schema_migrations` rend bien 0149 en tête,
+la colonne est `text` et nullable dans `information_schema`, et `pg_indexes` n'en porte AUCUN, comme prévu.
+
+🔴 **ELLE RÉPARE UNE COURSE, ET C'EST LA MESURE QUI L'A MONTRÉE.** La fin d'un parcours relâchait le fil dans
+la seconde suivant son dernier envoi. Or Meta acquitte nos envois avec DEUX MINUTES de retard (corrélation par
+identifiant : envoi 07:42:17 -> `sent` 07:44:04 ; 08:26:47 -> 08:28:42) et sa documentation dit qu'ENVOYER UN
+MESSAGE PREND LE FIL implicitement : l'envoi reprenait donc le fil juste après notre remise. Trois releases
+émis deux secondes après un envoi ont échoué, celui émis quatorze minutes après a marché.
+
+🔴 **UN MARQUEUR, PAS UNE TEMPORISATION, et il NOMME le message attendu.** Un délai fixe serait un nombre
+deviné, faux le jour où Meta ralentit. Et un simple « quelque chose est en attente » ne suffirait pas : un
+parcours envoie plusieurs messages, l'accusé du PREMIER arrive souvent après que le DERNIER soit parti, donc
+il reproduirait la course. N'importe lequel des statuts de ce message la lève (`sent`, `delivered`, `read`,
+`failed`) : ce qu'on attend n'est pas une bonne nouvelle, c'est la preuve que Meta a fini de traiter l'envoi.
+
+⚠️ **L'ÉTAT D'ATTENTE EST `app_human`, ET AUCUNE AUTRE VALEUR NE CONVIENT.** `mba` mentirait tant que Meta n'a
+pas confirmé, et `app_workflow` est la SEULE valeur que le dossier « À traiter » exclut : un client qui écrit
+pendant cette fenêtre ne produirait alors aucune ligne de travail, ce qui est exactement le symptôme signalé.
+C'est aussi ce qui arme le filet, `CONTROL_HUMAN_TIMEOUT_MS` reprenant les fils `app_human` immobiles et les
+rendant pour de vrai.
+
+🔴 **LE `sous-select` A ÉTÉ EXÉCUTÉ SUR LES VRAIES DONNÉES, faute de CI.** GitHub Actions refuse de démarrer
+le moindre job depuis ce commit (« recent account payments have failed or your spending limit needs to be
+increased »), donc le job `integration` n'a PAS tourné, et c'est le seul qui voit une base. La moitié LECTURE
+de la requête a donc été jouée en production, en lecture seule : sur la conversation d'essai, elle désigne
+bien l'envoi de 08:26:47, c'est-à-dire précisément celui dont l'accusé est arrivé à 08:28:42.
 
 ⚠️ **CETTE LIGNE AVAIT DÉRIVÉ UNE HUITIÈME FOIS**, relevée par la revue finale du chantier des assistants :
 elle annonçait 0144 quand la base en portait CINQ de plus, toutes appliquées la même nuit. Même cause que les
