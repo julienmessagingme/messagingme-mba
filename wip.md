@@ -12,17 +12,23 @@
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`) | `237853b` — 🔴 **EN RETARD**, le lot « tester depuis un bloc » n'est PAS déployé |
-| Vercel (`engageme`) | suit `origin/main` tout seul, donc **déjà à `ab898e8`** |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `279dc2a`, déployé le 2026-09-16 en fin d'après-midi, aucun écart |
+| Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | **0151** (`workflow_runs.graphe_fige`), appliquée le 2026-09-16 et relue en base. **Prochaine libre : 0152** |
 | CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
-| Contrôle public | ⏳ à refaire après le déploiement du VPS |
+| Revue finale | ✅ `COUVERT` sur `279dc2a` (0 rouge, 15 jaunes), première du dépôt |
+| Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu, aucun 502 (pas de reload NPM raté cette fois) |
 
-🔴 **L'ÉCART FRONT / API EST UNE FENÊTRE OUVERTE, ET ELLE SE VOIT.** Vercel a déployé le bouton lecture ;
-l'API du VPS ne sait pas encore lire le suffixe de bloc. Un lien cliqué maintenant n'est donc PAS reconnu
-comme un jeton de test : il n'est pas consommé, et il part à l'agent de Meta comme un message de client
-ordinaire, qui y répondra. Rien n'est cassé pour un vrai client, mais le bouton ne marche pas tant que
-`mba-api` et `mba-worker` n'ont pas `ab898e8`. La migration est DÉJÀ passée : il n'y a rien à migrer.
+⚠️ **LA FENÊTRE FRONT / API EST REFERMÉE, et elle mérite d'être racontée.** Entre le push du bouton lecture et
+le déploiement de l'API, Vercel servait un bouton que le serveur ne savait pas lire : le mot n'était pas
+reconnu comme un jeton, donc pas consommé, et il descendait jusqu'à l'agent de Meta, qui répondait au
+testeur. 🔴 **Règle pour la prochaine feature qui traverse cette frontière : ordonner les lots pour que le
+FRONT parte en dernier.**
+
+⚠️ **CE QUI A ÉTÉ VÉRIFIÉ DANS LE CONTENEUR, pas déduit du push.** Le module déployé a été exécuté dans
+`mba-worker` : un lien sans suffixe rend `nodeId: null` (les liens déjà distribués marchent toujours), un
+lien avec suffixe est lu, un mot recopié EN CAPITALES donne le bon bloc après résolution, et un message de
+client ordinaire rend `null`, donc ne coûte aucune requête.
 
 ## CE QU'UNE SESSION SUIVANTE DOIT SAVOIR
 
