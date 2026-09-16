@@ -72,7 +72,7 @@ Un second essai contre un serveur tiers reste souhaitable (lui seul mesure la pr
 - Consumes: `BibliothequeOutils({ tenantId, isAdmin })`, composant existant, inchangé.
 - Produces: rien pour les tâches suivantes.
 
-- [ ] **Step 1 : écrire l'essai qui échoue**
+- [x] **Step 1 : écrire l'essai qui échoue**
 
 `web/e2e/mba-onglet-outils.spec.ts` :
 
@@ -90,7 +90,7 @@ test('le paramétrage du MBA porte un onglet Outils qui montre la bibliothèque'
 });
 ```
 
-- [ ] **Step 2 : le lancer, vérifier qu'il échoue**
+- [x] **Step 2 : le lancer, vérifier qu'il échoue**
 
 ```bash
 cd web && npx playwright test e2e/mba-onglet-outils.spec.ts
@@ -98,7 +98,7 @@ cd web && npx playwright test e2e/mba-onglet-outils.spec.ts
 
 Attendu : ÉCHEC, `mba-tab-outils` introuvable.
 
-- [ ] **Step 3 : ajouter l'onglet**
+- [x] **Step 3 : ajouter l'onglet**
 
 Dans `web/app/mba/parametres/page.tsx`, ajouter l'entrée après `'competences'` (l'outillage suit les compétences, qui sont les procédures) :
 
@@ -117,13 +117,13 @@ et le rendu correspondant, avec le commentaire qui dit pourquoi le même écran 
 {onglet === 'outils' && <BibliothequeOutils tenantId={session.tenantId} isAdmin={session.role === 'admin'} />}
 ```
 
-- [ ] **Step 4 : relancer, vérifier que ça passe**
+- [x] **Step 4 : relancer, vérifier que ça passe**
 
 ```bash
 cd web && npx playwright test e2e/mba-onglet-outils.spec.ts
 ```
 
-- [ ] **Step 5 : commiter**
+- [x] **Step 5 : commiter**
 
 ```bash
 git commit --only web/app/mba/parametres/page.tsx web/e2e/mba-onglet-outils.spec.ts -m "feat(mba): un onglet Outils dans le parametrage, la ou on le cherche"
@@ -131,7 +131,7 @@ git commit --only web/app/mba/parametres/page.tsx web/e2e/mba-onglet-outils.spec
 
 ---
 
-## Task 2 : le client MCP (transport pur)
+## Task 2 : le client MCP (transport pur)  ✅ `af277a0`
 
 **Files:**
 - Create: `src/mcp/client.ts`
@@ -146,7 +146,7 @@ export interface CibleMcp {
   url: string;
   enTetes: Record<string, string>;   // l'authentification, construite par l'appelant
   timeoutMs: number;
-  maxBytes: number;
+  maxOctets: number;
 }
 
 export interface OutilAnnonce {
@@ -165,8 +165,16 @@ export type EchecMcp =
   | { genre: 'refus'; code: number; message: string };
 
 export interface SessionMcp {
-  /** Les outils annoncés, TOUTES les pages suivies. `tronque` dit qu'on a buté sur la borne. */
-  lister(): Promise<{ outils: OutilAnnonce[]; tronque: boolean }>;
+  /**
+   * TOUTES les pages suivies. `tronque` dit qu'on a buté sur la borne.
+   *
+   * 🔴 UNE PAGE QUI ÉCHOUE REND UN ÉCHEC, JAMAIS LA LISTE PARTIELLE (défaut trouvé en écrivant la tâche 2,
+   * que les tests d'origine ne voyaient pas). Rendre la page 1 après un échec en page 2 ferait prendre
+   * cette moitié pour le catalogue ENTIER : le rafraîchissement marquerait « disparus » tous les autres
+   * outils et ferait tomber leur consentement. Une panne réseau d'une seconde débrancherait la moitié des
+   * outils d'un client.
+   */
+  lister(): Promise<{ outils: OutilAnnonce[]; tronque: boolean } | { echec: EchecMcp }>;
   appeler(nom: string, arguments_: Record<string, unknown>):
     Promise<{ texte: string; estErreur: boolean } | { echec: EchecMcp }>;
   fermer(): Promise<void>;
@@ -179,7 +187,7 @@ export function ouvrirSessionMcp(
 ): Promise<SessionMcp | { echec: EchecMcp }>;
 ```
 
-- [ ] **Step 1 : écrire les tests qui échouent**
+- [x] **Step 1 : écrire les tests qui échouent**
 
 `tests/mcp-client.test.ts`. Cinq cas, un par fait de la spec :
 
@@ -265,7 +273,7 @@ describe('le client MCP', () => {
 });
 ```
 
-- [ ] **Step 2 : les lancer, vérifier qu'ils échouent**
+- [x] **Step 2 : les lancer, vérifier qu'ils échouent**
 
 ```bash
 npx vitest run tests/mcp-client.test.ts
@@ -273,7 +281,7 @@ npx vitest run tests/mcp-client.test.ts
 
 Attendu : ÉCHEC, `Cannot find module '../src/mcp/client'`.
 
-- [ ] **Step 3 : écrire le client**
+- [x] **Step 3 : écrire le client**
 
 `src/mcp/client.ts`. Points obligatoires, chacun adossé à une phrase de la spec :
 
@@ -303,13 +311,13 @@ Attendu : ÉCHEC, `Cannot find module '../src/mcp/client'`.
 - `appeler()` concatène les blocs `content` de type `text` ; tout bloc non textuel devient `[image]`, `[audio]`, `[ressource]`. `isError: true` rend `{ texte, estErreur: true }`, une erreur JSON-RPC rend `{ echec: { genre: 'refus', ... } }`. **Aucun de ces cas ne lève.**
 - `fermer()` envoie le `DELETE` avec `Mcp-Session-Id` si le serveur en a assigné un, et ignore un `405` (le serveur a le droit de refuser).
 
-- [ ] **Step 4 : relancer, vérifier que les cinq passent**
+- [x] **Step 4 : relancer, vérifier que les cinq passent**
 
 ```bash
 npx vitest run tests/mcp-client.test.ts && npm run typecheck
 ```
 
-- [ ] **Step 5 : commiter**
+- [x] **Step 5 : commiter**
 
 ```bash
 git commit --only src/mcp/client.ts tests/mcp-client.test.ts -m "feat(mcp): un client MCP, cycle de vie, session, flux d evenements et pagination"
