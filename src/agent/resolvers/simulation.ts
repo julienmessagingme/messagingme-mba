@@ -1,4 +1,5 @@
 import type { ResolveurOutil, SortieResolveur } from '../executor';
+import type { OrigineOutil } from '../catalog';
 import type { KnowledgeStore } from '../knowledge';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 
@@ -52,14 +53,57 @@ function simule(quoi: string, details: Record<string, unknown> = {}): SortieReso
  * le client voulait un `GET`) ferait un dégât réel pendant qu'on croit essayer. Le bac à sable rend donc les
  * champs DEMANDÉS avec une valeur d'exemple : le client voit exactement ce que l'agent recevra, sans l'appel.
  */
-export function connecteurSimule(outil: { binding: Record<string, unknown>; outputPaths: string[] }): SortieResolveur {
-  const b = outil.binding as { methode?: unknown; chemin?: unknown };
+export function connecteurSimule(
+  outil: { origin?: string; binding: Record<string, unknown>; outputPaths: string[] },
+): SortieResolveur {
+  const b = outil.binding as { methode?: unknown; chemin?: unknown; outilDistant?: unknown };
+
+  /**
+   * ⚠️ UN OUTIL MCP N'A NI MÉTHODE NI CHEMIN, et ce libellé affichait donc « l'appel ? ? vers votre
+   * système » : un bac à sable qui promet de montrer ce qui va se passer et qui affiche deux points
+   * d'interrogation est pire qu'un bac à sable absent, parce qu'il a l'air de fonctionner.
+   *
+   * ⚠️ ET IL NE DÉCLARE AUCUN CHAMP À LIRE, par construction : un serveur MCP rend du TEXTE, et le filtre
+   * par chemins ne s'applique pas à lui (voir la garde de `src/agent/executor.ts`). Boucler sur
+   * `outputPaths` rendrait donc `{}`, c'est-à-dire exactement le défaut que 0150 a corrigé pour les
+   * connecteurs HTTP. On rend un texte d'exemple, qui est la forme réelle de sa réponse.
+   */
+  if (outil.origin === 'mcp') {
+    const nom = String(b.outilDistant ?? '?');
+    return simule(`l'appel de l'outil « ${nom} » sur votre serveur MCP`, {
+      texte: `exemple de ce que « ${nom} » répondrait`,
+    });
+  }
+
   const contenu: Record<string, unknown> = {};
   for (const chemin of outil.outputPaths) contenu[chemin] = `exemple(${chemin})`;
   return simule(
     `l'appel ${String(b.methode ?? '?')} ${String(b.chemin ?? '?')} vers votre système`,
     { champs: contenu },
   );
+}
+
+/**
+ * Le bac à sable pour TOUTES les origines, en un objet que le compilateur complète.
+ *
+ * 🔴 CE QUE ÇA RÉPARE, ET C'ÉTAIT UN DÉFAUT VIVANT (trouvé par la revue du 2026-09-16). Le câblage du bac
+ * à sable (`src/index.ts`) n'enregistrait ce résolveur que sous la clé `mba`. Or l'exécuteur dispatche sur
+ * `resolveurs[outil.origin]` : un outil de CONNECTEUR y produisait donc `erreur_protocole` avec
+ * `fatal: true`, c'est-à-dire un essai qui s'arrête net, alors que la fonction juste au-dessus savait
+ * parfaitement le simuler. La branche `origin !== 'mba'` était INATTEIGNABLE par le câblage.
+ *
+ * ⚠️ ET SES TESTS NE POUVAIENT PAS LE VOIR : ils appelaient `connecteurSimule` directement, donc ils
+ * éprouvaient la fonction et jamais le chemin. C'est la raison pour laquelle la promesse de 0150 (« le
+ * client voit exactement ce que l'agent recevra ») restait fausse après avoir été réparée : elle l'avait
+ * été dans la fonction, pas dans le câblage.
+ *
+ * 🔴 `Record<OrigineOutil, ...>` EST LA GARDE : une quatrième origine ajoutée à `OrigineOutil` ne
+ * compilerait plus tant que le bac à sable ne l'aurait pas. C'est ce qui rend l'oubli impossible plutôt que
+ * simplement improbable.
+ */
+export function resolveursSimulation(deps: DepsResolveurSimulation): Record<OrigineOutil, ResolveurOutil> {
+  const simulation = creerResolveurSimulation(deps);
+  return { mba: simulation, http: simulation, mcp: simulation };
 }
 
 export function creerResolveurSimulation(deps: DepsResolveurSimulation): ResolveurOutil {

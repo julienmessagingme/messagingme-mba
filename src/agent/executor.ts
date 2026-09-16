@@ -423,7 +423,20 @@ export async function executeTool(
   // module rend une VALEUR, et c'est le constructeur de prompt du tour qui la met en forme. L'encadrer deux
   // fois serait pire que pas du tout. La règle maison (une entrée non fiable entre dans un prompt par un bloc
   // délimité, jamais concaténée) s'applique donc à l'appelant, sur `ResultatOutil.contenu`.
-  const { contenu, taille } = borner(extraire(sortie.contenu, outil.outputPaths), outil.maxBytes);
+  /**
+   * 🔴 LE FILTRE PAR CHEMINS NE S'APPLIQUE PAS À UN OUTIL MCP, ET C'EST UNE GARDE, PAS UNE OPTIMISATION.
+   * Un serveur MCP rend du TEXTE : il n'y a aucun chemin JSON à y choisir. Or `extraire` filtre la valeur
+   * dès que `outputPaths` n'est pas vide, et rendrait donc `{}` à l'agent, sans erreur et sans trace.
+   * C'est MOT POUR MOT le défaut que la migration 0150 a corrigé ailleurs (une liste vide qui rendait zéro
+   * champ pendant que le bac à sable promettait « exactement ce que l'agent recevra »).
+   *
+   * ⚠️ POURQUOI ICI ET PAS À L'IMPORT. L'import écrit bien `outputPaths: []` sur un outil MCP, ce qui
+   * suffirait aujourd'hui. Mais cette garantie-là vit trois fichiers plus loin et repose sur un seul
+   * écrivain : une écriture SQL directe, ou un second chemin d'import ajouté un jour, la ferait sauter en
+   * silence. L'invariant se tient au point de passage, là où le filtre s'applique.
+   */
+  const aFiltrer = outil.origin === 'mcp' ? sortie.contenu : extraire(sortie.contenu, outil.outputPaths);
+  const { contenu, taille } = borner(aFiltrer, outil.maxBytes);
 
   // 8. CLORE : statut, durée, taille, et compteur de session.
   const status: StatutAppel = sortie.ok === false ? 'erreur_outil' : 'ok';

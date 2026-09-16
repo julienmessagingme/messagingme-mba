@@ -732,7 +732,7 @@ git commit --only src/agent/champs-contact.ts src/agent/executor.ts src/http/age
 
 ---
 
-## Task 6 : le résolveur MCP
+## Task 6 : le résolveur MCP  ✅
 
 **Files:**
 - Create: `src/agent/resolvers/mcp.ts`
@@ -745,7 +745,7 @@ git commit --only src/agent/champs-contact.ts src/agent/executor.ts src/http/age
 
 🔴 **Sans cette tâche, un outil `origin='mcp'` fait ARRÊTER LE TOUR.** L'exécuteur dispatche sur `deps.resolveurs[outil.origin]` et, faute de résolveur, rend `erreur_protocole` avec `fatal: true` (`src/agent/executor.ts:341`). Le résolveur doit donc être câblé dans le même lot que l'import.
 
-- [ ] **Step 1 : écrire les tests qui échouent**
+- [x] **Step 1 : écrire les tests qui échouent**
 
 Quatre cas, plus la recomposition :
 
@@ -832,17 +832,17 @@ describe('le resolveur MCP', () => {
 });
 ```
 
-- [ ] **Step 2 : les lancer, vérifier qu'ils échouent**
+- [x] **Step 2 : les lancer, vérifier qu'ils échouent**
 
 ```bash
 npx vitest run tests/agent-resolveur-mcp.test.ts
 ```
 
-- [ ] **Step 3 : écrire le résolveur**
+- [x] **Step 3 : écrire le résolveur**
 
 Il relit la source **à chaque appel** (une source désactivée doit cesser d'être appelée sans attendre un redémarrage, comme le fait déjà le résolveur `http`), vérifie `resolutionPublique` sur `base_url`, ouvre une session, recompose les arguments depuis `cheminMcp`, appelle, et ferme. `nature: 'pousse'` rend le verdict seul, jamais le contenu d'un succès.
 
-- [ ] **Step 4 : câbler, et réparer le bac à sable**
+- [x] **Step 4 : câbler, et réparer le bac à sable**
 
 Dans `src/worker.ts`, ajouter `mcp: creerResolveurMcp({...})` au dictionnaire des résolveurs. ⚠️ Le contrôle des propriétés en trop **ne traverse pas un spread** : poser la garde `satisfies` sur l'objet intérieur, comme `tests/campagne-cablage.test.ts` l'impose déjà pour les campagnes.
 
@@ -854,13 +854,13 @@ Dans `simulation.ts`, `connecteurSimule` reçoit l'origine et rend un libellé j
 // affiche deux points d'interrogation est pire qu'un bac à sable absent.
 ```
 
-- [ ] **Step 5 : relancer la suite complète**
+- [x] **Step 5 : relancer la suite complète**
 
 ```bash
 npm test && npm run typecheck
 ```
 
-- [ ] **Step 6 : commiter**
+- [x] **Step 6 : commiter**
 
 ```bash
 git commit --only src/agent/resolvers/mcp.ts src/agent/resolvers/simulation.ts src/worker.ts tests/agent-resolveur-mcp.test.ts -m "feat(mcp): le resolveur d execution, et le bac a sable qui nomme enfin l appel"

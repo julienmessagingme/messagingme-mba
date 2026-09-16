@@ -536,3 +536,50 @@ describe('un parametre cloue a un champ personnalise (source: champ)', () => {
     expect(vus[0]?.args).toEqual({ ville: 'Lyon', email_client: null });
   });
 });
+
+describe('un outil MCP dans le tronc commun', () => {
+  const MCP: OutilDefini = {
+    ...OUTIL,
+    origin: 'mcp',
+    sourceId: 'src1',
+    binding: { outilDistant: 'search' },
+    params: [],
+    // 🔴 LE CAS QUI COMPTE : des chemins de sortie NON VIDES sur un outil MCP. Ils ne devraient jamais
+    // exister, mais une ecriture SQL directe ou un second chemin d import les produirait, et le filtre
+    // rendrait alors `{}` a l agent, sans erreur et sans trace.
+    outputPaths: ['statut'],
+  };
+
+  it('🔴 un outil `mcp` sans resolveur ARRETE le tour : c est pour ca que le cablage est une condition', async () => {
+    // L executeur dispatche sur `resolveurs[outil.origin]`. Sans entree `mcp`, il rend `erreur_protocole`
+    // avec `fatal: true`, et le tour de l agent s arrete net. Ce cas fige la raison d etre du cablage.
+    const { deps } = harnais({ outil: MCP, origines: { mba: async () => ({ contenu: {} }) } });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
+    expect(r.status).toBe('erreur_protocole');
+    expect(r.fatal).toBe(true);
+  });
+
+  it('🔴 le filtre par chemins NE S APPLIQUE PAS a un outil MCP', async () => {
+    // 🔴 Sans la garde de l executeur, `extraire({texte}, ['statut'])` rendrait `{}` : l agent recevrait
+    // RIEN, en croyant avoir recu la reponse. C est mot pour mot le defaut de 0150, par une autre porte.
+    const { deps } = harnais({
+      outil: MCP,
+      origines: { mcp: async () => ({ ok: true, contenu: { texte: 'la vraie reponse' } }) },
+    });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
+    expect(r.status).toBe('ok');
+    expect(JSON.stringify(r.contenu)).toContain('la vraie reponse');
+  });
+
+  it('⚠️ et il s applique toujours a un outil HTTP : on ne retire pas le filtre pour tout le monde', async () => {
+    // Elargir une reparation sans regarder ce qu elle emporte est le motif n°1 de ce depot.
+    const http: OutilDefini = { ...OUTIL, origin: 'http', sourceId: 'src1', params: [], outputPaths: ['statut'] };
+    const { deps } = harnais({
+      outil: http,
+      origines: { http: async () => ({ ok: true, contenu: { statut: 'ok', interne: 'CRM-9182' } }) },
+    });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
+    expect(r.contenu).toEqual({ statut: 'ok' });
+    expect(JSON.stringify(r.contenu)).not.toContain('CRM-9182');
+  });
+});

@@ -76,6 +76,7 @@ import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { creerAnnonceOptOut, creerTravailPousseeOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { creerResolveurHttp } from './agent/resolvers/http';
+import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { PgEmailAccountStore } from './email/account-store.pg';
@@ -1678,6 +1679,14 @@ async function main(): Promise<void> {
             derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
             fuseau: async (t) => (await settingsStore.get(t)).timezone,
           }),
+          /**
+           * 🔴 SANS CETTE LIGNE, UN OUTIL `origin = 'mcp'` ARRÊTE LE TOUR. L'exécuteur dispatche sur
+           * `resolveurs[outil.origin]` et rend `erreur_protocole` avec `fatal: true` quand il n'en trouve
+           * pas. C'est la question à poser à un câblage, qui n'a par construction aucun dépendant : « que
+           * suppose-t-il du module que je viens de changer ? ». Ici, que les trois origines déclarées dans
+           * `OrigineOutil` ont chacune leur résolveur.
+           */
+          mcp: creerResolveurMcp({ sources: agentSources }),
         },
         compterAppel: (t, sessionId) => agentSessions.compterAppel(t, sessionId),
       },

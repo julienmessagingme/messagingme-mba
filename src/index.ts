@@ -135,7 +135,7 @@ import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurMba } from './agent/consommateur';
 import { corpsConnecteurMeta, corpsOutilMeta, corpsApiKey } from './http/mba-publication';
-import { creerResolveurSimulation } from './agent/resolvers/simulation';
+import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
@@ -1503,7 +1503,12 @@ async function main(): Promise<void> {
             journal: JOURNAL_MUET,
             // Le bac a sable recoit la MEME recherche que la production : il n'a de valeur que s'il rend
             // exactement ce qu'elle rendrait.
-            resolveurs: { mba: creerResolveurSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }) },
+            // 🔴 LES TROIS ORIGINES, PAS SEULEMENT `mba` (défaut trouvé par la revue du 2026-09-16). Un
+            // outil de connecteur produisait ici `erreur_protocole` avec `fatal: true`, donc un essai qui
+            // s'arrête net, alors que la simulation savait parfaitement le rendre : la branche
+            // `origin !== 'mba'` était inatteignable par le câblage. Le type impose désormais la liste
+            // complète, et une quatrième origine ne compilerait plus sans être traitée.
+            resolveurs: resolveursSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }),
             // Rien a compter : sans session, il n y a pas de compteur a incrementer. Le plafond d appels du
             // tour est tenu en memoire par la boucle du cerveau.
             compterAppel: async () => {},
