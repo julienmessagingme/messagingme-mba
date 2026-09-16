@@ -12,11 +12,12 @@
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `279dc2a`, déployé le 2026-09-16 en fin d'après-midi, aucun écart |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | `cda2e69`, déployé le 2026-09-16 au soir, aucun écart |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | **0151** (`workflow_runs.graphe_fige`), appliquée le 2026-09-16 et relue en base. **Prochaine libre : 0152** |
 | CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
-| Revue finale | ✅ `COUVERT` sur `279dc2a` (0 rouge, 15 jaunes), première du dépôt |
+| Revue finale | ⚠️ attestée sur `279dc2a` (0 rouge, 15 jaunes), mais **TROIS commits déployés depuis ne sont
+  pas couverts** : `79d4121`, `cda2e69` et le suivant. Une passe de relecture à froid leur est due |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu, aucun 502 (pas de reload NPM raté cette fois) |
 
 ⚠️ **LA FENÊTRE FRONT / API EST REFERMÉE, et elle mérite d'être racontée.** Entre le push du bouton lecture et
@@ -67,20 +68,22 @@ Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et o
 quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
 ailleurs que dans la colonne auteur**.
 
-### 3. 🔴 Tester un scénario À PARTIR D'UN BLOC — ESSAI FAIT LE 2026-09-16, ET IL A ÉCHOUÉ
+### 3. Tester un scénario À PARTIR D'UN BLOC — ✅ ÇA MARCHE depuis le 2026-09-16 au soir
 
-🔴 **CE QUE L'ESSAI RÉEL A TROUVÉ, ET QU'AUCUN TEST N'AURAIT TROUVÉ.** Julien a scanné le QR d'un bloc :
-l'agent de Meta tenait le fil, il a répondu « je n'ai pas bien compris votre message », et le test n'a
-JAMAIS démarré. Mesuré en base : zéro parcours créé, conversation même pas marquée comme test, fil passé
-à `mba` 46 ms après le message. Corrigé le jour même : un jeton REPREND le fil quel que soit son
-détenteur, et rien ne le rend à l'agent de Meta sur une conversation de test.
+✅ **CONFIRMÉ PAR JULIEN le 2026-09-16 au soir : « ça a marché, le scénario est parti ».** C'est le geste 1
+de la liste ci-dessous, et il a fallu DEUX essais ratés pour y arriver.
 
-⚠️ **ET LA CAUSE EXACTE N'EST TOUJOURS PAS CONNUE.** Le chemin du jeton avait QUATRE sorties muettes : le
-parcours n'existait pas, la conversation n'était pas marquée, les journaux étaient vides, et il était
-impossible de dire laquelle avait servi. Elles parlent désormais toutes. **Le prochain scan la nommera en
-une ligne** (`sudo docker logs mba-worker | grep test-token`).
+🔴 **CE QUE CES DEUX ESSAIS ONT TROUVÉ, ET QU'AUCUN TEST N'AURAIT TROUVÉ.** L'agent de Meta tenait le fil,
+il répondait « je n'ai pas bien compris votre message », et le test ne démarrait jamais. Mesuré en base :
+zéro parcours créé, conversation même pas marquée comme test. **Cause réelle : le message arrivait sur le
+canal `standby`**, que le chemin du jeton refusait. Or `standby`, c'est Meta qui dit « mon agent tient ce
+fil » : exactement la situation où il faut la lui reprendre.
 
-Les quatre gestes restent dus, et le premier n'a toujours pas abouti :
+⚠️ **ET LE PREMIER ESSAI N'AVAIT LAISSÉ AUCUNE TRACE** : quatre sorties muettes, cause indéterminable. Ce
+qui a résolu l'affaire n'est pas un correctif, c'est de rendre ces sorties bavardes : le scan suivant a
+nommé la cause en une ligne. Les trois leçons transversales sont dans `brain/LEARNINGS.md` au 2026-09-16.
+
+**Les trois gestes qui restent dus** (le 1 est fait) :
 
 ⚠️ **La revue finale du 2026-09-16 a attesté le CODE, pas l'usage.** L'essai ci-dessous est matériellement
 impossible avant le déploiement du VPS, et la skill refusait d'écrire l'attestation tant qu'il manquait :
