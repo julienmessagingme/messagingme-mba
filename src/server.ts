@@ -29,6 +29,7 @@ import type { MbaAssistantDeps } from './http/mba-assistant';
 import type { MbaPublicationDeps } from './http/mba-publication';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
+import { registerAgentMcp, type AgentMcpRouteDeps } from './http/agent-mcp';
 import { registerAgentRequetes, type AgentRequetesRouteDeps } from './http/agent-requetes';
 import { registerAgentSetup } from './http/agent-setup';
 import { registerAgentTest } from './http/agent-test';
@@ -181,6 +182,7 @@ export interface ServerDeps {
   /** L'historique des réglages, partagé par le MBA et les agents IA. */
   historique?: HistoriqueRouteDeps;
   agentSources?: AgentSourcesRouteDeps;
+  agentMcp?: AgentMcpRouteDeps;
   agentRequetes?: AgentRequetesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
   agentTest?: AgentTestRouteDeps;
@@ -448,6 +450,9 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     // large que les écritures qu'il décrit serait une fuite.
     entree('historique', 'tenant', deps.historique, (app, d, g) => registerHistorique(app, d, g.admin)),
     entree('agentSources', 'tenant', deps.agentSources, (app, d, g) => registerAgentSources(app, d, g.admin)),
+    // Les CONNECTEURS MCP. `acces: 'tenant'` n'est pas décoratif : c'est de cette déclaration que le
+    // garde-fou d'authentification DÉRIVE sa couverture, plutôt que d'une seconde liste écrite à côté.
+    entree('agentMcp', 'tenant', deps.agentMcp, (app, d, g) => registerAgentMcp(app, d, g.admin, g.limiteCouteuse)),
     // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
     // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.
     entree('agentRequetes', 'tenant', deps.agentRequetes, (app, d, g) => registerAgentRequetes(app, d, g.admin)),

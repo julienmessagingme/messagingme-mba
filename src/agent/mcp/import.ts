@@ -1,4 +1,8 @@
 import type { OutilAnnonce } from '../../mcp/client';
+import type { RisqueOutil } from '../catalog';
+import type { ParamOutil } from '../llm/tool-schema';
+import { aplatirSchema } from './aplatir';
+import { normaliserNom, nomUnique } from './nommer';
 
 /**
  * Comparer le catalogue d'un serveur MCP à ce qu'on en avait, et rendre un PLAN.
@@ -108,4 +112,83 @@ export function planifierImport(
   }
 
   return plan;
+}
+
+/**
+ * Ce qu'un outil annoncé devient chez nous, avant toute écriture.
+ *
+ * 🔴 PUR, COMME LE RESTE DE CE MODULE. La traduction d'une annonce en ligne d'`agent_tools` est ce qui
+ * décide de tout (le nom exposé au modèle, les paramètres, l'activabilité) : la faire dans une route la
+ * rendrait intestable sans monter un serveur, et c'est précisément ce qui n'a jamais été éprouvé ailleurs.
+ */
+export interface OutilAImporter {
+  /** Le nom chez le serveur. C'est LUI qu'on renvoie à l'appel, et lui qui apparie au rafraîchissement. */
+  nomDistant: string;
+  /** Notre nom local, préfixé et unique dans l'espace. */
+  name: string;
+  title: string;
+  description: string;
+  nePasUtiliser: string;
+  params: ParamOutil[];
+  annonce: OutilAnnonce;
+  /** `null` = activable. Sinon la raison, telle qu'elle partira à l'écran. */
+  nonActivable: string | null;
+  risk: RisqueOutil;
+}
+
+/**
+ * Le risque PROPOSÉ pour un outil annoncé.
+ *
+ * 🔴 PRÉ-REMPLI, JAMAIS DÉCIDÉ. La spec MCP dit en toutes lettres que les annotations d'un outil sont à
+ * considérer comme NON FIABLES sauf serveur de confiance : un serveur qui se déclarerait `readOnlyHint`
+ * désarmerait la garde d'autonomie sur une action irréversible. Elles servent donc à proposer, et c'est le
+ * client qui confirme, exactement comme il le fait déjà pour l'autonomie d'un outil.
+ *
+ * ⚠️ LE DÉFAUT EST `write`, PAS `read`. Quand le serveur ne dit rien, on ne sait pas : le défaut penche vers
+ * la prudence, parce qu'entre les deux erreurs possibles, une seule se rattrape.
+ */
+export function risquePropose(annonce: OutilAnnonce): RisqueOutil {
+  const a = annonce.annotations;
+  if (a && a.destructiveHint === true) return 'irreversible';
+  if (a && a.readOnlyHint === true) return 'read';
+  return 'write';
+}
+
+export function outilDepuisAnnonce(
+  annonce: OutilAnnonce,
+  libelleSource: string,
+  pris: ReadonlySet<string>,
+): OutilAImporter {
+  const aplati = aplatirSchema(annonce.inputSchema);
+  return {
+    nomDistant: annonce.name,
+    // 🔴 PRÉFIXÉ PAR LE SERVEUR. Le nom est unique par ESPACE depuis 0127 : deux serveurs qui exposent
+    // chacun un `search` entreraient sinon en collision, et le second échouerait à l'import sur une
+    // contrainte de base, ce qui est illisible pour le client. Le modèle y gagne aussi : il VOIT d'où
+    // vient l'outil quand il en a quinze sous les yeux.
+    name: nomUnique(`${normaliserNom(libelleSource)}_${normaliserNom(annonce.name)}`, pris),
+    title: (annonce.title ?? annonce.name).slice(0, 120),
+    description: (annonce.description ?? '').slice(0, 2000),
+    // ⚠️ VIDE À L'IMPORT, et c'est au client de l'écrire : « quand NE PAS l'appeler » est le seul levier qui
+    // décide quand un outil se déclenche, et le serveur distant n'en sait rien.
+    nePasUtiliser: '',
+    /**
+     * ⚠️ TOUT ARRIVE EN `modele`, ET C'EST LE POINT DE DÉPART, PAS L'ARRIVÉE. Le client cloue ensuite ce qui
+     * doit l'être. Un import qui devinerait qu'un paramètre nommé `email` doit venir de la fiche poserait
+     * une garde d'identité que personne n'a demandée, sur une correspondance de nom : le jour où elle se
+     * trompe, l'appel part sur la mauvaise ressource sans que rien ne le dise.
+     */
+    params: aplati.feuilles.map((f) => ({
+      name: f.name,
+      type: f.type,
+      source: 'modele' as const,
+      cheminMcp: f.cheminMcp,
+      ...(f.description ? { description: f.description } : {}),
+      ...(f.required ? { required: true } : {}),
+      ...(f.enum ? { enum: f.enum } : {}),
+    })),
+    annonce,
+    nonActivable: aplati.raisonNonActivable,
+    risk: risquePropose(annonce),
+  };
 }
