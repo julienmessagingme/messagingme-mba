@@ -1,5 +1,31 @@
 # todo.md : backlog
 
+## 🟠 La rafale de `webhook-status` à « dès 3 » est en production et NE SERT PRESQUE PAS (2026-09-16)
+
+`48ddf92` (15/09, déployé vers 18 h) a posé `SEUILS_RAFALE['webhook-status'] = 2` pour que les PAQUETS
+d'accusés (3 à 12) partent ensemble. **Mesuré le 16/09 dans `pgboss.job`** : 11 accusés en 3 paquets, pris un
+par un à **30,000 s d'écart**, comme avant ; la rafale ne s'est engagée qu'UNE fois, pour le dernier accusé
+d'un paquet, 85 s après son arrivée. La baisse de la médiane (97-105 s -> 47-70 s) vient de paquets plus
+petits, pas du réglage.
+
+🔴 **LA CAUSE EST DANS pg-boss 12.25.1, lue dans `dist/manager.js` et `dist/boss.js`** : la rafale consulte
+`readyCount`, un chiffre RECOMPTÉ par la maintenance toutes les `monitorIntervalSeconds` (60 s) puis RELU par
+le worker toutes les `queueCacheIntervalSeconds` (60 s). Jusqu'à deux minutes de retard, plus que la durée
+d'un paquet (un accusé toutes les 30 s). L'avalanche d'une campagne n'est pas concernée : elle dure assez
+pour que le compteur la voie. ⚠️ Les tests de `48ddf92` vérifiaient la VALEUR du seuil, pas son EFFET.
+
+**Deux voies, à arbitrer par Julien** (détail et chiffres : artifact « La plomberie d'Engage Me », § 7) :
+- **par lots (recommandé)** : `batchSize` ~12 sur cette seule file, traitement SÉQUENTIEL dans l'ordre
+  d'arrivée, un verdict par job via `perJobResults` (supporté par pg-boss 12.25). Zéro requête ajoutée, paquet
+  traité en 30 s au plus. ⚠️ Touche l'invariant `batchSize: 1` de `PgBossQueue.work` (`src/queue/pgboss.ts`),
+  et un worker tué en plein lot laisse jusqu'à 12 jobs attendre leur expiration. Chemin des accusés : revue
+  humaine sur le diff, essai réel = lire dans `pgboss.job` des accusés d'un même paquet pris à quelques ms.
+- **regarder plus souvent** : `QUEUE_POLLING_SECONDS['webhook-status']` de 30 à 5. Un nombre, mais
+  +14 400 requêtes/jour à vide.
+
+⚠️ Dans les deux cas, corriger le commentaire de `SEUILS_RAFALE` (`src/queue/names.ts`) et le paragraphe du
+seuil par file dans `documentation.md` : ils laissent croire que le seuil règle les paquets.
+
 ## 🟠 Une conversation que l'agent de Meta n'a pas résolue en 24 h DISPARAÎT de « À traiter » (2026-09-15)
 
 Trouvé en vérifiant le lot « l'agent répond après un silence » sur les vraies données, pas en le cherchant.
