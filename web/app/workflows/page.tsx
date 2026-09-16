@@ -71,7 +71,16 @@ function WorkflowsInner({ session }: { session: Session }) {
   const [renaming, setRenaming] = useState<WorkflowSummary | null>(null);
   const [renameVal, setRenameVal] = useState('');
   // Lien de test (Lot F) : jeton stable + lien wa.me + QR (rendu en data-URL par la lib, aucun appel réseau).
-  const [testing, setTesting] = useState<{ wf: WorkflowSummary; link: WorkflowTestLink; qr: string | null } | null>(null);
+  const [testing, setTesting] = useState<{
+    wf: WorkflowSummary;
+    /** Le MOT à envoyer : le jeton seul, ou `jeton.<identifiant du bloc>` quand on teste à partir d'un bloc. */
+    mot: string;
+    /** Le lien wa.me pré-rempli avec ce mot. `null` = aucun numéro WhatsApp connecté. */
+    lien: string | null;
+    /** Teste-t-on à partir d'un bloc précis ? Change ce que le panneau PROMET, donc il doit le dire. */
+    depuisUnBloc: boolean;
+    qr: string | null;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Date + heure de création (fuseau Paris). Vide/invalide (objet transitoire juste après création) -> '-'.
@@ -199,19 +208,33 @@ function WorkflowsInner({ session }: { session: Session }) {
    * QR du lien wa.me. Le QR est calculé DANS le navigateur (data-URL), aucun service externe n'est appelé :
    * un lien de test ne doit pas transiter par un tiers.
    */
-  async function openTest(w: WorkflowSummary) {
+  async function openTest(w: WorkflowSummary, nodeId?: string) {
     setMenuFor(null);
     setError(null);
     setBusy(true);
     setCopied(false);
     try {
       const link = await createWorkflowTestLink(session.tenantId, w.id);
-      let qr: string | null = null;
-      if (link.link) {
-        const QRCode = (await import('qrcode')).default;
-        qr = await QRCode.toDataURL(link.link, { width: 220, margin: 1 });
+      // 🔴 L'IDENTIFIANT DU BLOC EST COLLÉ TEL QUEL, sans aucune transformation. Le serveur compare par
+      // ÉGALITÉ (`lireJetonDeTest`, côté `src/`). Normaliser ici (retirer les tirets, tronquer) créerait un
+      // invariant partagé de part et d'autre d'une frontière que ce dépôt interdit de franchir (aucun fichier
+      // de `web/` n'importe `src/`), donc recopié à la main des deux côtés, donc voué à diverger en silence.
+      const mot = nodeId ? `${link.token}.${nodeId}` : link.token;
+      // ⚠️ ON RÉÉCRIT LE PARAMÈTRE `text` DU LIEN RENDU PAR LE SERVEUR, on ne refabrique pas l'adresse. Le
+      // format de `wa.me` (le numéro sans `+` ni espaces) vit dans `src/lib/wa-me.ts` et doit y rester : le
+      // recopier ici en ferait une seconde vérité, sur une adresse qui part dans de vrais messages.
+      let lien = link.link;
+      if (lien !== null && nodeId) {
+        const u = new URL(lien);
+        u.searchParams.set('text', mot);
+        lien = u.toString();
       }
-      setTesting({ wf: w, link, qr });
+      let qr: string | null = null;
+      if (lien) {
+        const QRCode = (await import('qrcode')).default;
+        qr = await QRCode.toDataURL(lien, { width: 220, margin: 1 });
+      }
+      setTesting({ wf: w, mot, lien, depuisUnBloc: Boolean(nodeId), qr });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Lien de test indisponible', 'Test link unavailable'));
     } finally {
@@ -254,6 +277,79 @@ function WorkflowsInner({ session }: { session: Session }) {
     }
   }
 
+  /**
+   * LE PANNEAU DE TEST, calculé AVANT la sortie anticipée du constructeur et rendu dans les DEUX vues.
+   *
+   * 🔴 IL NE VIVAIT QUE DANS LA LISTE, et c'est ce qui a cassé le bouton lecture des blocs : `if (editing)`
+   * rend le constructeur et sort, donc le panneau n'était jamais monté depuis là. Le recopier dans les deux
+   * branches aurait créé deux vérités à tenir alignées à la main, sur un écran qui porte un lien envoyé à de
+   * vrais téléphones.
+   */
+  const panneauDeTest = testing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setTesting(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="workflow-test-panel">
+            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Tester « ', 'Test "')}{testing.wf.name}{t(' »', '"')}</h3>
+            <p className="mt-1 text-sm text-ink-500">
+              {t(
+                'Scanne ce QR code avec ton téléphone, ou ouvre le lien. WhatsApp s’ouvre avec le mot déjà écrit : appuie sur Envoyer et le scénario démarre sur ton propre numéro.',
+                'Scan this QR code with your phone, or open the link. WhatsApp opens with the word already typed: press Send and the scenario starts on your own number.',
+              )}
+            </p>
+            {/* Le panneau promettait « le scénario démarre » : à partir d'un bloc, cette phrase est fausse, et
+                elle l'est dans le sens qui coûte (le testeur attend le premier message et en reçoit un autre).
+                Ce qui est SAUTÉ ne se rattrape pas : les tags et les champs des étapes précédentes n'ont pas
+                été posés, c'est une décision assumée, et la dire évite une enquête. */}
+            {testing.depuisUnBloc && (
+              <p className="mt-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800" data-testid="workflow-test-depuis-bloc">
+                {t(
+                  'Le test démarrera À CE BLOC, pas au début du scénario. Les étapes précédentes sont sautées : leurs tags, leurs champs et leurs envois n’auront pas lieu.',
+                  'The test will start AT THIS BLOCK, not at the beginning of the scenario. Earlier steps are skipped: their tags, fields and messages will not happen.',
+                )}
+              </p>
+            )}
+
+            {testing.lien ? (
+              <>
+                {testing.qr && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={testing.qr} alt={t('QR code du lien de test', 'Test link QR code')} className="mx-auto my-4 h-[220px] w-[220px] rounded-lg border border-ink-200" />
+                )}
+                <div className="flex items-center gap-2">
+                  <input readOnly value={testing.lien} data-testid="workflow-test-lien" className="w-full rounded-lg border border-ink-300 bg-ink-50 px-3 py-1.5 text-xs text-ink-600" />
+                  <button
+                    onClick={() => { void navigator.clipboard.writeText(testing.lien ?? '').then(() => setCopied(true)); }}
+                    className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50"
+                  >
+                    {copied ? t('Copié', 'Copied') : t('Copier', 'Copy')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="my-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {t(
+                  'Aucun numéro WhatsApp connecté : envoie le mot ci-dessous à ton numéro professionnel pour lancer le test.',
+                  'No WhatsApp number connected: send the word below to your business number to start the test.',
+                )}
+              </p>
+            )}
+
+            <p className="mt-3 text-xs text-ink-500">
+              {t('Mot à envoyer : ', 'Word to send: ')}
+              <code data-testid="workflow-test-mot" className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-ink-800">{testing.mot}</code>
+            </p>
+            <p className="mt-2 text-xs text-ink-400">
+              {t(
+                'Ce lien est permanent pour ce scénario. La conversation de test est marquée comme telle : ses messages ne comptent ni dans les statistiques, ni dans l’analyse. Le numéro qui teste apparaît en revanche comme un contact du mini-CRM, comme n’importe quel numéro qui écrit.',
+                'This link is permanent for this scenario. The test conversation is flagged as such: its messages count neither in statistics nor in analysis. The testing number does appear as a mini-CRM contact, like any number that writes in.',
+              )}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => setTesting(null)} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600">{t('Fermer', 'Close')}</button>
+            </div>
+          </div>
+        </div>
+  );
+
   if (editing) {
     return (
       <div className="flex flex-col gap-3 p-3 lg:h-full">
@@ -265,8 +361,9 @@ function WorkflowsInner({ session }: { session: Session }) {
         <div className="min-h-0 flex-1">
           {/* L'éditeur ouvre le BROUILLON s'il y en a un (lot 7) : c'est le travail en cours de l'auteur, pas
               forcément ce qui tourne. `brouillonInitial` allume le bouton « Publier » dès l'ouverture. */}
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} requetes={requetes} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} requetes={requetes} onTesterBloc={(nodeId) => { void openTest(editing, nodeId); }} />
         </div>
+        {panneauDeTest}
       </div>
     );
   }
@@ -430,58 +527,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         )}
       </div>
 
-      {testing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setTesting(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="workflow-test-panel">
-            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Tester « ', 'Test "')}{testing.wf.name}{t(' »', '"')}</h3>
-            <p className="mt-1 text-sm text-ink-500">
-              {t(
-                'Scanne ce QR code avec ton téléphone, ou ouvre le lien. WhatsApp s’ouvre avec le mot déjà écrit : appuie sur Envoyer et le scénario démarre sur ton propre numéro.',
-                'Scan this QR code with your phone, or open the link. WhatsApp opens with the word already typed: press Send and the scenario starts on your own number.',
-              )}
-            </p>
-
-            {testing.link.link ? (
-              <>
-                {testing.qr && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={testing.qr} alt={t('QR code du lien de test', 'Test link QR code')} className="mx-auto my-4 h-[220px] w-[220px] rounded-lg border border-ink-200" />
-                )}
-                <div className="flex items-center gap-2">
-                  <input readOnly value={testing.link.link} className="w-full rounded-lg border border-ink-300 bg-ink-50 px-3 py-1.5 text-xs text-ink-600" />
-                  <button
-                    onClick={() => { void navigator.clipboard.writeText(testing.link.link ?? '').then(() => setCopied(true)); }}
-                    className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50"
-                  >
-                    {copied ? t('Copié', 'Copied') : t('Copier', 'Copy')}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="my-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                {t(
-                  'Aucun numéro WhatsApp connecté : envoie le mot ci-dessous à ton numéro professionnel pour lancer le test.',
-                  'No WhatsApp number connected: send the word below to your business number to start the test.',
-                )}
-              </p>
-            )}
-
-            <p className="mt-3 text-xs text-ink-500">
-              {t('Mot à envoyer : ', 'Word to send: ')}
-              <code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-ink-800">{testing.link.token}</code>
-            </p>
-            <p className="mt-2 text-xs text-ink-400">
-              {t(
-                'Ce lien est permanent pour ce scénario. La conversation de test est marquée comme telle : ses messages ne comptent ni dans les statistiques, ni dans l’analyse. Le numéro qui teste apparaît en revanche comme un contact du mini-CRM, comme n’importe quel numéro qui écrit.',
-                'This link is permanent for this scenario. The test conversation is flagged as such: its messages count neither in statistics nor in analysis. The testing number does appear as a mini-CRM contact, like any number that writes in.',
-              )}
-            </p>
-            <div className="mt-5 flex justify-end">
-              <button onClick={() => setTesting(null)} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600">{t('Fermer', 'Close')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {panneauDeTest}
 
       {renaming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setRenaming(null)}>

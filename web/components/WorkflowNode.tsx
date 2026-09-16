@@ -108,12 +108,24 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
  */
 export const TemplatesCtx = createContext<TemplateSummary[]>([]);
 
+/**
+ * « TESTER LE SCÉNARIO À PARTIR DE CE BLOC » : le rappel que le bouton lecture appelle. `null` quand l'hôte
+ * ne propose pas de test (le constructeur monté depuis une campagne, par exemple), et le bouton disparaît
+ * alors au lieu de mener nulle part.
+ *
+ * ⚠️ UN CONTEXTE ET NON UNE PROPRIÉTÉ DE `data`, pour la MÊME raison que `TemplatesCtx` juste au-dessus :
+ * `data` est sérialisé tel quel par `fromRF` et part au serveur à chaque enregistrement. Y glisser une
+ * fonction la ferait voyager dans le graphe, où elle n'a rien à faire.
+ */
+export const TestDepuisBlocCtx = createContext<((nodeId: string) => void) | null>(null);
+
 /** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` montre l'APERÇU du message et
  *  expose UNE SORTIE PAR BOUTON quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire
  *  sont montrés grisés, non reliables (ils sortent de WhatsApp). Les autres blocs ont une seule sortie (bas). */
 function WFNode({ id, data, selected }: NodeProps) {
   const t = useT();
   const templates = useContext(TemplatesCtx);
+  const testDepuisBloc = useContext(TestDepuisBlocCtx);
   const updateNodeInternals = useUpdateNodeInternals();
   const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
   const meta = nodeMetaOf(wfType); // tolérant : un type pas encore connu du front (ex. condition) -> repli neutre
@@ -243,10 +255,29 @@ function WFNode({ id, data, selected }: NodeProps) {
       {extremite && (
         <span
           data-testid={`wf-extremite-${extremite}`}
-          className="absolute -top-2 left-2 z-10 rounded-full bg-brand-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide text-white shadow"
+          // `left-5` quand le bouton lecture est là : sans ce décalage, l'étiquette passerait SOUS le bouton
+          // (qui déborde de 8 px à gauche et fait 20 px de large), et on ne lirait plus « départ » / « arrivée ».
+          className={`absolute -top-2 z-10 rounded-full bg-brand-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide text-white shadow ${testDepuisBloc ? 'left-5' : 'left-2'}`}
         >
           {extremite === 'depart' ? t('départ', 'from') : t('arrivée', 'to')}
         </span>
+      )}
+      {/* TESTER À PARTIR D'ICI. Même gabarit et mêmes gardes que le ✕ d'en face : `nodrag` + `stopPropagation`
+          sur `mousedown` (sans quoi tirer depuis le bouton déplacerait le bloc) et sur `click` (sans quoi le
+          clic sélectionnerait aussi le bloc et ouvrirait son panneau de configuration par-dessus le panneau
+          de test). */}
+      {testDepuisBloc && (
+        <button
+          type="button"
+          data-testid={`node-test-${id}`}
+          title={t('Tester le scénario à partir de ce bloc', 'Test the scenario from this block')}
+          aria-label={t('Tester le scénario à partir de ce bloc', 'Test the scenario from this block')}
+          className="nodrag absolute -left-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-brand-600 shadow hover:bg-brand-50"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); testDepuisBloc(id); }}
+        >
+          <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+        </button>
       )}
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
       {/* Suppression directe du bloc (sans passer par le menu de droite). nodrag + stopPropagation : ne déclenche ni

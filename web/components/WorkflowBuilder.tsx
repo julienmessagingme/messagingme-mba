@@ -18,7 +18,7 @@ import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, e
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { EDGE_OPTS, toRF, fromRF, type RFNode, type RFEdge } from '@/lib/workflow-canevas';
 import { useEnregistrementScenario } from '@/lib/use-enregistrement-scenario';
-import { TemplatesCtx, nodeTypes, edgeTypes } from '@/components/WorkflowNode';
+import { TemplatesCtx, TestDepuisBlocCtx, nodeTypes, edgeTypes } from '@/components/WorkflowNode';
 import { ConfigPanel } from '@/components/WorkflowConfigPanel';
 
 function uid(): string {
@@ -58,7 +58,7 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
  * contacts : il écrit une version de travail, et seul le bouton « Publier » la met en ligne. Avant ce lot, une
  * retouche partait en production dans la seconde, y compris pour les parcours déjà en cours.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null, requetes = null, canalExige, onPublie }: { tenantId: string; workflowId: string;
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [], membres = null, requetes = null, canalExige, onPublie, onTesterBloc }: { tenantId: string; workflowId: string;
   /** Ce que l'éditeur ouvre : le brouillon s'il existe, sinon la version en ligne (cf. `grapheEditable`). */
   initialGraph: WorkflowGraph;
   /** Un brouillon non publié attendait-il déjà à l'ouverture ? Pilote l'état initial du bouton « Publier ». */
@@ -81,7 +81,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
    */
   canalExige?: 'whatsapp' | 'rcs';
   /** Appelé après une publication réussie. Sert à l'hôte qui doit refermer sa fenêtre et choisir le scénario. */
-  onPublie?: () => void }) {
+  onPublie?: () => void;
+  /**
+   * L'hôte ouvre son panneau de test SUR CE BLOC. Absent : aucun bouton lecture n'apparaît sur les blocs,
+   * ce qui est le bon défaut pour un constructeur monté ailleurs que dans l'onglet Scénarios.
+   */
+  onTesterBloc?: (nodeId: string) => void }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -344,6 +349,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
   const [publication, setPublication] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
   /** Le refus d'ouverture, quand l'éditeur est monté depuis une campagne. `null` = rien à signaler. */
   const [refusOuverture, setRefusOuverture] = useState<string | null>(null);
+  /** Pourquoi le test n'a pas pu s'ouvrir. Aujourd'hui une seule cause : le brouillon n'est pas parti. */
+  const [refusTest, setRefusTest] = useState<string | null>(null);
   const [publieA, setPublieA] = useState<string | null>(publieLe);
   const publier = useCallback(async () => {
     /**
@@ -385,6 +392,34 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       setPublication({ enCours: false, erreur: err instanceof Error ? err.message : t('Publication impossible', 'Could not publish') });
     }
   }, [tenantId, workflowId, enregistrement, t, canalExige, nodes, edges, onPublie]);
+
+  /**
+   * 🔴 ON VIDE LA FILE D'ENREGISTREMENT AVANT D'OUVRIR LE PANNEAU, et c'est la seule chose qui rend le
+   * bouton juste sur un bloc qu'on vient de poser. Le lien fait jouer le BROUILLON tel que le SERVEUR le
+   * connaît ; l'enregistrement automatique attend 1,2 s. Sans ce vidage, tester dans la seconde qui suit une
+   * modification ferait jouer la version PRÉCÉDENTE, et l'écran n'en dirait rien. Même raison, et même
+   * geste, que pour « Publier ».
+   *
+   * ⚠️ ET UN ÉCHEC D'ENREGISTREMENT ARRÊTE TOUT. Ouvrir quand même donnerait un lien qui joue l'avant-dernier
+   * brouillon : le testeur essaierait une version qu'il ne voit plus à l'écran, sans aucun moyen de le savoir.
+   */
+  const testerDepuisBloc = useCallback(async (nodeId: string): Promise<void> => {
+    setRefusTest(null);
+    if (!(await enregistrement.enregistrerMaintenant())) {
+      setRefusTest(t('Modifications pas encore enregistrées : le test n’a pas été ouvert, il aurait joué la version précédente.',
+        'Changes not saved yet: the test was not opened, it would have played the previous version.'));
+      return;
+    }
+    onTesterBloc?.(nodeId);
+  }, [enregistrement, onTesterBloc, t]);
+
+  // Mémoïsé : la valeur d'un contexte re-rend TOUS ses consommateurs quand elle change d'identité, et ici
+  // les consommateurs sont tous les blocs du canevas. Une flèche écrite en ligne dans le JSX les ferait
+  // re-rendre à chaque frappe du panneau de configuration.
+  const rappelTest = useMemo(
+    () => (onTesterBloc ? (nodeId: string) => { void testerDepuisBloc(nodeId); } : null),
+    [onTesterBloc, testerDepuisBloc],
+  );
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -590,6 +625,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         </div>
       )}
 
+      {refusTest !== null && (
+        <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="workflow-test-bloc-erreur">
+          {refusTest}
+        </div>
+      )}
+
       {montageImpossible && (() => {
         const attente = attenteDite(montageImpossible.waitNodeId);
         return (
@@ -618,6 +659,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
             Mesuré le 2026-08-28 : sans elle, la tolérance de visée est de ±2 px sur un point de 5,7 px. */}
         <div data-canevas-edition className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
           <TemplatesCtx.Provider value={templates}>
+          <TestDepuisBlocCtx.Provider value={rappelTest}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -640,6 +682,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
             <Background color="#cbd5e1" gap={18} />
             <Controls showInteractive={false} />
           </ReactFlow>
+          </TestDepuisBlocCtx.Provider>
           </TemplatesCtx.Provider>
           {/* Choix de la NATURE du bloc qu'on vient de créer. Consomme les TROIS listes de la palette, avec les
               MÊMES grisages : n'en lire qu'une rendait `email` et `rcs_message` inatteignables dès qu'on créait
