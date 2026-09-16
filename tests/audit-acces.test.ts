@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerUsers } from '../src/http/users';
 import { registerApiKeys } from '../src/http/api-keys';
 import { registerWebhooksAdmin } from '../src/http/webhooks-admin';
 import { registerAgentSources } from '../src/http/agent-sources';
 import type { AuditSink } from '../src/audit/journal';
+import { detailSansDonneesPersonnelles, PgAuditStore } from '../src/audit/store.pg';
 import type { PreHandler } from '../src/auth/middleware';
 
 /**
@@ -231,5 +232,95 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
     expect(JSON.stringify(h.lignes[0])).not.toContain('jeton-du-client');
     expect(JSON.stringify(h.lignes[0])).not.toContain('secret-path');
     await app.close();
+  });
+});
+
+describe('la garde qui interdit les données personnelles dans le détail (lot 3)', () => {
+  /**
+   * 🔴 POURQUOI UNE GARDE MÉCANIQUE ET PAS UNE CONVENTION. La règle « détail non identifiant » est écrite
+   * dans la migration 0061 et respectée par les dix-neuf points d'écriture d'aujourd'hui. Mais c'est une
+   * CONVENTION : le vingtième l'ignorera, et personne ne le verra, parce qu'écrire un email de plus ne casse
+   * rien et ne remonte nulle part. Or `audit_log` n'est JAMAIS purgée par la rétention des contacts : une
+   * donnée personnelle qui y entre devient ineffaçable, et annule l'effacement qu'une autre ligne du même
+   * journal certifie.
+   */
+  it('🔴 une clé interdite est RETIRÉE, et le retrait est VISIBLE', () => {
+    // Filtrer plutôt que lever : lever ferait perdre la ligne entière, donc échangerait une donnée de trop
+    // contre une trace manquante. Et le retrait est annoncé, parce qu'une transformation silencieuse ferait
+    // croire à son auteur que sa trace est complète.
+    const r = detailSansDonneesPersonnelles({ role: 'admin', email: 'client@exemple.fr' });
+    expect(r.detail).toEqual({ role: 'admin', __refuses: ['email'] });
+    expect(r.refuses).toEqual(['email']);
+  });
+
+  it('🔴 `emailSent` SURVIT : la comparaison porte sur la clé EXACTE, jamais en sous-chaîne', () => {
+    /**
+     * 🔴 LE PIÈGE DE CETTE GARDE, ET IL EST DÉJÀ DANS LE CODE. L'invitation journalise `emailSent`, qui
+     * contient « email » sans être une donnée personnelle. Une garde en sous-chaîne l'aurait effacé en
+     * silence : elle aurait cassé une trace utile au nom de la protection d'une donnée absente.
+     */
+    const r = detailSansDonneesPersonnelles({ role: 'agent', emailSent: true });
+    expect(r.detail).toEqual({ role: 'agent', emailSent: true });
+    expect(r.refuses).toEqual([]);
+  });
+
+  it('🔴 un numéro, un texte de message et un nom de personne sont tous refusés', () => {
+    const r = detailSansDonneesPersonnelles({
+      waId: '33600000000', body: 'bonjour', profileName: 'Alice', displayPhoneNumber: '+33 6 00 00 00 00', ok: 1,
+    });
+    expect(r.detail.ok).toBe(1);
+    expect(new Set(r.refuses)).toEqual(new Set(['waId', 'body', 'profileName', 'displayPhoneNumber']));
+    expect(JSON.stringify(r.detail)).not.toContain('33600000000');
+    expect(JSON.stringify(r.detail)).not.toContain('Alice');
+  });
+
+  it('⚠️ `name` reste AUTORISÉ : un libellé n’est pas une personne', () => {
+    // L'interdire empêcherait de tracer ce qu'on vient de nommer (un webhook, une clé). Ce qui est interdit,
+    // ce sont les identités : l'adresse, le numéro, le contenu d'un message.
+    expect(detailSansDonneesPersonnelles({ name: 'Zapier' }).refuses).toEqual([]);
+  });
+
+  it('⚠️ la casse et les tirets bas ne contournent pas la garde', () => {
+    const r = detailSansDonneesPersonnelles({ Email: 'x@y.z', WA_ID: '336', Telephone: '06' });
+    expect(r.detail).toEqual({ __refuses: ['Email', 'WA_ID', 'Telephone'] });
+  });
+
+  it('⚠️ un détail propre traverse INCHANGÉ, sans `__refuses` parasite', () => {
+    // Sinon toutes les lignes du journal porteraient un champ vide qui ne dit rien.
+    const r = detailSansDonneesPersonnelles({ scopes: ['contacts:write'], lot: 3 });
+    expect(r.detail).toEqual({ scopes: ['contacts:write'], lot: 3 });
+    expect(Object.keys(r.detail)).not.toContain('__refuses');
+  });
+});
+
+describe('le filtre est BRANCHÉ sur l’écriture, pas seulement disponible', () => {
+  /**
+   * 🔴 CE TEST EST NÉ D'UNE MUTATION QUI N'A RIEN CASSÉ. En débranchant le filtre du `insert` (écrire
+   * `detail` au lieu de `propre.detail`), la suite restait VERTE : les tests d'à côté n'éprouvaient que la
+   * fonction pure. Une garde qu'on peut débrancher sans qu'aucun test ne tombe n'est pas une garde, c'est une
+   * fonction que quelqu'un a écrite un jour.
+   *
+   * ⚠️ On lit les PARAMÈTRES envoyés à Postgres, pas le retour : c'est ce qui part vers la base qui décide, et
+   * c'est le seul endroit où le débranchement se voit.
+   */
+  it('🔴 record() écrit le détail FILTRÉ, pas celui qu’on lui a donné', async () => {
+    const envoyes: unknown[][] = [];
+    const pool = { query: async (_sql: string, params: unknown[]) => { envoyes.push(params); return { rows: [], rowCount: 1 }; } };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const store = new PgAuditStore(pool as never);
+
+    await store.record('t1', { userId: 'u1', email: 'moi@ici.fr' }, 'contact.exporte', { kind: 'contact', id: 'c1' }, {
+      envois: 12, email: 'client@exemple.fr',
+    });
+
+    const detailEcrit = JSON.parse(String(envoyes[0]![6]));
+    expect(detailEcrit.envois).toBe(12);
+    expect(detailEcrit.email, 'l’adresse ne doit JAMAIS atteindre la base').toBeUndefined();
+    expect(detailEcrit.__refuses).toEqual(['email']);
+    // ⚠️ `actor_email` reste, lui : il est dénormalisé EXPRÈS pour rester lisible après le départ du
+    // collaborateur (migration 0061). C'est la seule adresse que cette table a le droit de porter.
+    expect(envoyes[0]![2]).toBe('moi@ici.fr');
+    expect(spy, 'le retrait doit être bruyant').toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

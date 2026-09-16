@@ -3,8 +3,21 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-store.pg';
 import { scopeTenant, nonEmpty } from './scope';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 export interface EmbeddedSignupRouteDeps {
+  /**
+   * Journal d'audit (2026-09-16). Optionnel : absent -> aucune trace (câblages de test).
+   *
+   * 🔴 RATTACHER UN NUMÉRO, C'EST DONNER UNE VOIX. À partir de cet instant, le produit parle aux clients SOUS
+   * CETTE IDENTITÉ, et un token business chiffré est conservé. C'est le geste le plus structurant de tout
+   * l'embarquement, et il ne laissait aucune trace.
+   *
+   * 🔴 LE `detail` NE PORTE PAS LE NUMÉRO AFFICHÉ (`displayPhoneNumber`), qui est un numéro de téléphone,
+   * donc une donnée personnelle dans une table jamais purgée. Il porte les IDENTIFIANTS META, qui désignent
+   * le compte et le numéro sans être le numéro.
+   */
+  audit?: AuditSink;
   /** config_id de la configuration ES (dashboard Meta, Facebook Login for Business). Vide -> feature OFF. */
   configId: string;
   /** App ID Meta (public : sert au FB.init du front). */
@@ -37,6 +50,7 @@ export interface EmbeddedSignupRouteDeps {
  *    échouent remontent en `warnings` (jamais de demi-échec silencieux).
  */
 export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard): void {
+  const journal = makeJournal(deps.audit);
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
@@ -171,6 +185,12 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     // 6. Token business conservé (chiffré au repos par le câblage).
     await deps.saveCredentials(wabaId, tenant, businessToken, pin);
 
+    // ⚠️ APRÈS l'enregistrement des identifiants : avant, on tracerait une intention, pas un rattachement.
+    // `avertissements` est journalisé parce qu'un numéro rattaché AVEC des avertissements est un état réel,
+    // et la question « pourquoi les statuts n'arrivent pas ? » se pose des semaines plus tard.
+    await journal(tenant, req, 'numero.connecte', { kind: 'phone_number', id: phoneNumberId }, {
+      wabaId, avertissements: warnings.length,
+    });
     return reply.code(200).send({
       connected: true,
       wabaId,

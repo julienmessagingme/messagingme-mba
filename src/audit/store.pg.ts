@@ -81,7 +81,9 @@ export type AuditAction =
   | 'webhook.secret_change'
   | 'connecteur.cree'
   | 'connecteur.modifie'
-  | 'connecteur.supprime';
+  | 'connecteur.supprime'
+  | 'numero.connecte'
+  | 'contact.exporte';
 
 export interface AuditEntry {
   id: string;
@@ -99,6 +101,55 @@ export interface AuditActor {
   email: string | null;
 }
 
+/**
+ * LES CLÉS QU'UN `detail` N'A PAS LE DROIT DE PORTER (2026-09-16, lot 3).
+ *
+ * 🔴 POURQUOI UNE GARDE MÉCANIQUE ET PAS UNE CONVENTION. La règle « détail non identifiant » est écrite dans
+ * la migration 0061 et respectée par les dix-neuf points d'écriture d'aujourd'hui, vérifié un par un. Mais
+ * c'est une convention : le vingtième l'ignorera, et personne ne le verra, parce qu'écrire un email de plus
+ * ne casse rien et ne remonte nulle part. Or cette table n'est JAMAIS purgée par la rétention des contacts :
+ * une donnée personnelle qui y entre devient ineffaçable, et annule l'effacement qu'une autre ligne du même
+ * journal certifie.
+ *
+ * 🔴 COMPARAISON SUR LA CLÉ EXACTE, JAMAIS EN SOUS-CHAÎNE, et ce n'est pas un détail d'implémentation :
+ * `emailSent` (déjà écrit par l'invitation) contient « email » sans être une donnée personnelle. Une garde en
+ * sous-chaîne l'aurait effacé en silence, c'est-à-dire aurait cassé une trace utile au nom de la protection
+ * d'une donnée absente.
+ *
+ * ⚠️ `name` N'EST PAS DANS LA LISTE, délibérément. Le libellé d'un webhook ou d'une clé d'API n'est pas une
+ * personne, et l'interdire empêcherait de tracer ce qu'on vient de nommer. Ce qui est interdit, ce sont les
+ * identités : l'adresse, le numéro, le contenu d'un message.
+ */
+export const CLES_INTERDITES = new Set([
+  'email', 'mail', 'e_mail', 'emails',
+  'phone', 'phonee164', 'phone_e164', 'telephone', 'tel', 'numero', 'number', 'msisdn',
+  'waid', 'wa_id', 'recipient', 'recipient_id',
+  'body', 'text', 'texte', 'contenu', 'message', 'messages_texte',
+  'nom', 'prenom', 'profilename', 'profile_name', 'displayphonenumber', 'display_phone_number',
+  'adresse', 'address',
+]);
+
+/**
+ * Retire du `detail` ce qui ne doit pas s'y trouver, et DIT ce qu'il a retiré.
+ *
+ * 🔴 ON FILTRE, ON NE REFUSE PAS. Lever ferait perdre la ligne d'audit entière : on échangerait une donnée
+ * personnelle de trop contre une trace manquante, ce qui est pire pour exactement la même raison.
+ *
+ * 🔴 ET LE RETRAIT EST VISIBLE (`__refuses`), parce qu'une transformation silencieuse est un piège : celui
+ * qui vient d'écrire `email` doit apprendre que ça n'a pas été gardé, sinon il croira sa trace complète.
+ */
+export function detailSansDonneesPersonnelles(
+  detail: Record<string, unknown>,
+): { detail: Record<string, unknown>; refuses: string[] } {
+  const refuses: string[] = [];
+  const propre: Record<string, unknown> = {};
+  for (const [cle, valeur] of Object.entries(detail)) {
+    if (CLES_INTERDITES.has(cle.toLowerCase())) refuses.push(cle);
+    else propre[cle] = valeur;
+  }
+  return refuses.length === 0 ? { detail: propre, refuses } : { detail: { ...propre, __refuses: refuses }, refuses };
+}
+
 export class PgAuditStore {
   constructor(private readonly pool: Pool) {}
 
@@ -114,10 +165,20 @@ export class PgAuditStore {
     target: { kind: string; id: string },
     detail: Record<string, unknown> = {},
   ): Promise<void> {
+    /**
+     * 🔴 LE FILTRE EST ICI, AU POINT DE PASSAGE UNIQUE, ET NULLE PART AILLEURS. Les dix-neuf appelants
+     * passent tous par cette méthode : la poser plus haut (dans `makeJournal`, ou pire dans chaque route)
+     * ferait dix-neuf endroits où l'oublier, et le vingtième appelant ne l'aurait pas.
+     */
+    const propre = detailSansDonneesPersonnelles(detail);
+    if (propre.refuses.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(`audit ${action} : champ(s) NON journalisé(s) car identifiant(s) : ${propre.refuses.join(', ')}`);
+    }
     await this.pool.query(
       `insert into audit_log (tenant_id, actor_user_id, actor_email, action, target_kind, target_id, detail)
        values ($1, $2, $3, $4, $5, $6, $7)`,
-      [tenantId, actor.userId, actor.email, action, target.kind, target.id, JSON.stringify(detail)],
+      [tenantId, actor.userId, actor.email, action, target.kind, target.id, JSON.stringify(propre.detail)],
     );
   }
 

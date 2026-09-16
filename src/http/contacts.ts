@@ -396,6 +396,15 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const { contactId } = req.params as { contactId: string };
     const sends = await deps.listSendsForExport(tenant, contactId);
     if (!sends) return reply.code(404).send({ error: 'contact inconnu' });
+    /**
+     * 🔴 UNE EXTRACTION DE DONNÉES PERSONNELLES NE LAISSAIT AUCUNE TRACE (choix de Julien, 2026-09-15). Ce
+     * qui sort d'ici, c'est l'historique d'envois d'une personne, destiné à un fichier qui vit ensuite hors
+     * du produit. C'est précisément le geste qu'un DPO veut pouvoir retracer.
+     *
+     * ⚠️ LE NOMBRE, PAS LE CONTENU : le détail dit combien de lignes sont parties, jamais lesquelles. Les y
+     * écrire recopierait dans une table jamais purgée ce que l'export est censé simplement montrer.
+     */
+    await journal(tenant, req, 'contact.exporte', { kind: 'contact', id: contactId }, { envois: sends.length });
     return reply.code(200).send({ sends });
   });
 

@@ -1903,6 +1903,7 @@ async function main(): Promise<void> {
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
       return {
+        audit: auditSink,
         configId: config.META_ES_CONFIG_ID,
         appId: config.META_APP_ID,
         graphVersion: config.META_GRAPH_VERSION,
