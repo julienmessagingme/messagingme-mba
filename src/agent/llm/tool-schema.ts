@@ -32,6 +32,16 @@ export interface ParamOutil {
   contactPath?: string;
   /** `source: 'fixe'` : la constante du tenant. Jamais exposée. */
   value?: string | number | boolean;
+  /**
+   * Outil MCP : le CHEMIN de ce paramètre dans le schéma du serveur distant (`filtres.ville`), tel qu'il y
+   * est écrit, casse comprise.
+   *
+   * 🔴 IL N'EST JAMAIS EXPOSÉ AU MODÈLE, et il n'est pas décoratif : `name` est une étiquette LOCALE, plate
+   * et normalisée, quand le chemin est la donnée de PROTOCOLE qui permet de recomposer l'objet imbriqué au
+   * moment de l'appel. Sans lui, un paramètre imbriqué n'aurait aucune case où poser son marquage
+   * `contact` / `fixe`, donc il serait forcément rempli par le modèle, donc influençable par le contact.
+   */
+  cheminMcp?: string;
 }
 
 /** Schéma d'objet, forme commune à tous les fournisseurs. Pas de `$schema` : aucun ne l'attend. */
@@ -76,6 +86,9 @@ function coercer(brut: unknown): ParamOutil | null {
     ...(enumeration && enumeration.length > 0 ? { enum: enumeration } : {}),
     ...(typeof o.contactPath === 'string' && o.contactPath.trim() !== '' ? { contactPath: o.contactPath.trim() } : {}),
     ...(valeurFixe !== undefined ? { value: valeurFixe } : {}),
+    // ⚠️ NON TRIMÉ, contrairement aux autres : c'est un chemin du schéma DISTANT, et un espace y appartient
+    // au nom de la propriété du serveur. Le nettoyer ferait viser une clé qui n'existe pas chez lui.
+    ...(typeof o.cheminMcp === 'string' && o.cheminMcp !== '' ? { cheminMcp: o.cheminMcp } : {}),
   };
 }
 

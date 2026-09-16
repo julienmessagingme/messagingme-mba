@@ -110,6 +110,24 @@ export interface OutilDefini {
   maxBytes: number;
   /** Le client autorise cet outil à agir seul, même sur une action irréversible. */
   autonome: boolean;
+  /**
+   * CE QU'UN OUTIL IMPORTÉ D'UN SERVEUR MCP GARDE DE SON ANNONCE (migration 0152).
+   *
+   * 🔴 LES QUATRE SONT REQUIS, PAS OPTIONNELS, et c'est ce qui les fait voyager. Un câblage qui les
+   * oublierait ne compile pas : c'est exactement ce qui a fait tenir `grapheFige` jusque dans le balayage
+   * des parcours endormis, là où un `?:` l'aurait laissé se perdre en silence sur un chemin sur deux.
+   *
+   * `mcpAnnonce` est l'annonce BRUTE du serveur. Elle n'est pas un doublon de `params` : elle est la seule
+   * façon de DIRE CE QUI A CHANGÉ au rafraîchissement, quand le consentement tombe parce que le schéma a
+   * bougé. Sans elle, le client devrait réautoriser à l'aveugle.
+   */
+  mcpAnnonce: unknown;
+  /** `null` = activable. Sinon la raison en clair, affichée telle quelle : le client ne peut pas la corriger. */
+  mcpNonActivable: string | null;
+  /** L'outil a disparu du catalogue distant. On ne supprime PAS la ligne : elle trace ce qui a tourné. */
+  mcpIndisponibleLe: Date | null;
+  /** Dernier rafraîchissement où le serveur l'annonçait encore. */
+  mcpVuLe: Date | null;
 }
 
 /**

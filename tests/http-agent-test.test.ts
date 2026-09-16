@@ -10,6 +10,7 @@ import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catal
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import { ficheVide } from '../src/agent/fiche';
 import { ESSAIS_AFFICHES, RETENTION_ESSAIS_JOURS, type EssaiAEcrire, type EssaiAgent, type TestRunStore } from '../src/agent/test-runs';
+import { SANS_MCP } from './outils-mcp';
 
 /**
  * Le bac à sable : parler à son agent depuis la console.
@@ -30,7 +31,7 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-const OUTIL: OutilDefini = {
+const OUTIL: OutilDefini = { ...SANS_MCP,
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag',
   description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'poser_tag' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',

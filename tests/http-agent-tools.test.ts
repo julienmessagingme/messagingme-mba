@@ -8,6 +8,7 @@ import type { OutilComplet, PatchOutil } from '../src/agent/catalog';
 import { NomOutilDejaPris } from '../src/agent/catalog';
 import type { SortieAgent } from '../src/agent/agent-store';
 import type { RequeteConnecteur } from '../src/agent/requetes';
+import { SANS_MCP } from './outils-mcp';
 
 /**
  * Routes des outils d'un agent IA.
@@ -36,7 +37,7 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-const OUTIL: OutilComplet = {
+const OUTIL: OutilComplet = { ...SANS_MCP,
   id: OUT, tenantId: 't1', origin: 'mba', name: 'mba_terminer',
   title: 'Terminer', description: 'Termine la conversation.', nePasUtiliser: 'Pas pour escalader.',
   params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],

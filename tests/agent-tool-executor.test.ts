@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeTool, type ContexteAppel, type ResolveurOutil, type ToolExecutorDeps } from '../src/agent/executor';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
+import { SANS_MCP } from './outils-mcp';
 
 /**
  * Tâche 16 : le tronc commun d'exécution d'outil (§3.3 du cadrage).
@@ -9,7 +10,7 @@ import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catal
  * une raison lisible au modèle, qui peut se corriger au tour suivant.
  */
 
-const OUTIL: OutilDefini = {
+const OUTIL: OutilDefini = { ...SANS_MCP,
   id: 'to1',
   tenantId: 't1',
   origin: 'mba',

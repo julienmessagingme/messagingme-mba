@@ -79,8 +79,32 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0151**, le 2026-09-16 (`workflow_runs.graphe_fige` : le graphe qu'un parcours de test
-joue, figé à son démarrage). **Prochaine libre = 0152.** Relue en base juste après `migrate`, pas en écrivant
+**Dernière appliquée : 0152**, le 2026-09-16 (les quatre colonnes MCP d'`agent_tools` plus la garde de
+`kind`). **Prochaine libre = 0153.** Relue en base juste après `migrate`, pas en écrivant cette ligne :
+`schema_migrations` rend bien `0152_outils_mcp.sql` en tête, les cinq colonnes sont nullables SANS défaut,
+`pg_indexes` n'en porte AUCUN, la clé étrangère composite existe en `confmatchtype = 's'`, et **zéro ligne
+sur quatre n'en porte une valeur**, donc aucun comportement n'a bougé.
+
+🔴 **ELLE EST DÉLIBÉRÉMENT PERMISSIVE, ET C'EST LA LEÇON DE 0128 APPLIQUÉE À L'AVANCE.** Elle NE POSE PAS le
+CHECK qui exigerait `source_kind`. Le code DÉPLOYÉ au moment où elle s'applique ignore cette colonne : un
+CHECK strict aurait fait échouer **toute création d'outil de connecteur** pendant la fenêtre censée être la
+plus sûre, celle où l'on peut encore revenir en arrière. Le CHECK strict fera l'objet d'une migration
+SUIVANTE, appliquée APRÈS le déploiement du code qui renseigne la colonne. « Avant ou après le déploiement »
+ne se décide pas sur *ajoute / retire*, mais sur **« l'ancien code survit-il à ce changement ? »**.
+
+🔴 **LA GARDE DE `kind` SE TIENT PAR UNE CLÉ ÉTRANGÈRE COMPOSITE, PAS PAR UN DÉCLENCHEUR.** Rien n'empêchait
+un outil `origin = 'mcp'` de pointer vers une source `kind = 'http'`, ni l'inverse : `agent_tools_origin_src_chk`
+(0088) vérifie qu'une source EXISTE, pas LAQUELLE, et le résolveur serait parti dans la mauvaise branche. Un
+déclencheur est le réflexe et c'est le mauvais : il se teste mal et ne se voit pas quand on lit le schéma.
+⚠️ Le trou était nommé depuis des semaines dans `AGENT-IA-PLAN-L4.md` (« le trou n°3 »), un plan MCP
+antérieur que le cadrage du 2026-09-16 a été écrit **sans connaître**.
+
+⚠️ **MESURÉE EN BASE AVANT D'ÊTRE ÉCRITE** : 4 outils, tous `origin='mba'` et sans source ; 1 source
+`kind='http'` en brouillon ; ZÉRO croisement `origin`/`kind` déjà faux. Sans cette mesure, la clé étrangère
+aurait pu échouer à l'application, en production, sur une donnée qu'on n'avait pas regardée.
+
+Avant elle : **0151**, le 2026-09-16 (`workflow_runs.graphe_fige` : le graphe qu'un parcours de test
+joue, figé à son démarrage). Relue en base juste après `migrate`, pas en écrivant
 cette ligne : `schema_migrations` rend bien `0151_run_graphe_fige.sql` en tête, la colonne est `jsonb`
 nullable SANS défaut dans `information_schema`, `pg_indexes` n'en porte AUCUN (délibéré), et zéro parcours
 existant n'en porte un, donc aucun comportement n'a bougé.

@@ -7,6 +7,7 @@ import {
 import { SORTIE_SANS_SOURCE } from '../src/agent/sorties';
 import type { ContexteAppel } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
+import { SANS_MCP } from './outils-mcp';
 
 /**
  * Tâche 16bis : le garde-fou anti-hallucination, et il est DÉTERMINISTE.
@@ -23,7 +24,7 @@ const CTX: ContexteAppel = {
   contactInconnu: 'tous', appelsRestants: 5, budgetRestantMicroEur: 10_000, deadline: Date.now() + 30_000,
 };
 
-const OUTIL: OutilDefini = {
+const OUTIL: OutilDefini = { ...SANS_MCP,
   id: 'to1', tenantId: 't1', origin: 'mba', name: 'mba_chercher_connaissance', description: '',
   params: [], binding: { handler: 'chercher_connaissance' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [],
   risk: 'read', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,

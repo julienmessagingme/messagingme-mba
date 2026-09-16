@@ -22,6 +22,10 @@ interface Ligne {
   output_paths: string[] | null;
   nature: string | null;
   risk: OutilDefini['risk'];
+  mcp_annonce: unknown;
+  mcp_non_activable: string | null;
+  mcp_indisponible_le: Date | null;
+  mcp_vu_le: Date | null;
   timeout_ms: number;
   max_bytes: number;
   autonome: boolean;
@@ -46,6 +50,7 @@ const JOINTURE = `from agent_tools t
  */
 const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
                   t.binding, t.source_id, t.request_id, t.output_paths, t.nature, t.risk, t.timeout_ms, t.max_bytes,
+                  t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_vu_le,
                   c.autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
@@ -77,6 +82,12 @@ function versOutil(r: Ligne): OutilDefini {
     timeoutMs: r.timeout_ms,
     maxBytes: r.max_bytes,
     autonome: r.autonome,
+    // ⚠️ `null` ET PAS `undefined`, pour les quatre. La distinction a déjà coûté un défaut de bascule sur
+    // l'écran MBA : un champ absent et un champ vide se lisent pareil à l'oeil, et pas dans le code.
+    mcpAnnonce: r.mcp_annonce ?? null,
+    mcpNonActivable: r.mcp_non_activable,
+    mcpIndisponibleLe: r.mcp_indisponible_le,
+    mcpVuLe: r.mcp_vu_le,
   };
 }
 
@@ -213,11 +224,21 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
          * Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
          * tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
          */
+        /**
+         * 🔴 `source_kind` EST ÉCRIT ICI, ET LA SOURCE EST CONTRAINTE À `kind = 'http'` (migration 0152).
+         * Les deux vont ensemble : la colonne porte la garde en base (clé étrangère composite vers
+         * `agent_tool_sources (id, kind)`), et le `kind = 'http'` du `exists` refuse dès l'écriture qu'un
+         * outil HTTP se branche sur un serveur MCP. Sans lui, la ligne passerait la clé étrangère (elle
+         * serait cohérente) mais le résolveur partirait dans la mauvaise branche à l'exécution.
+         *
+         * ⚠️ Le refus prend la forme d'un `insert` qui ne rend AUCUNE ligne, donc le `null` que l'appelant
+         * traite déjà, et pas une erreur de contrainte en 500 dont Cloudflare remplace le corps.
+         */
         `insert into agent_tools
-           (tenant_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, nature, risk)
-         select $1, 'http', $2, $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, $9::text[], $10, $11
+           (tenant_id, origin, source_id, source_kind, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, nature, risk)
+         select $1, 'http', $2, 'http', $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, $9::text[], $10, $11
           where ($12::uuid is null or exists (select 1 from agents where id = $12 and tenant_id = $1))
-            and exists (select 1 from agent_tool_sources where id = $2 and tenant_id = $1)
+            and exists (select 1 from agent_tool_sources where id = $2 and tenant_id = $1 and kind = 'http')
             and exists (select 1 from connector_requests where id = $3 and tenant_id = $1)
          returning id`,
         [

@@ -473,7 +473,7 @@ git commit --only src/agent/mcp/aplatir.ts tests/mcp-aplatir.test.ts -m "feat(mc
 
 ---
 
-## Task 4 : la migration et le contrat de store
+## Task 4 : la migration et le contrat de store  ✅ 0152 appliquée en base
 
 **Files:**
 - Create: `db/migrations/0152_outils_mcp.sql`
@@ -484,7 +484,7 @@ git commit --only src/agent/mcp/aplatir.ts tests/mcp-aplatir.test.ts -m "feat(mc
 **Interfaces:**
 - Produces : `OutilDefini` et `OutilBibliotheque` gagnent `mcpAnnonce: unknown | null`, `mcpNonActivable: string | null`, `mcpIndisponibleLe: Date | null`, `mcpVuLe: Date | null`. `ParamOutil` gagne `cheminMcp?: string`.
 
-- [ ] **Step 1 : écrire la migration**
+- [x] **Step 1 : écrire la migration**
 
 ```sql
 -- 0152 : ce qu'un outil IMPORTE d un serveur MCP garde de son annonce.
@@ -539,17 +539,35 @@ alter table agent_tools drop constraint if exists agent_tools_source_kind_fk;
 alter table agent_tools add constraint agent_tools_source_kind_fk
   foreign key (source_id, source_kind) references agent_tool_sources (id, kind);
 
-alter table agent_tools drop constraint if exists agent_tools_origin_kind_chk;
+```
+
+🔴 **LE CHECK STRICT N'EST PAS DANS 0152, ET C'EST LA LEÇON DE 0128 APPLIQUÉE À L'AVANCE.** Le plan le
+prévoyait ici :
+
+```sql
+-- ⛔ PAS MAINTENANT :
 alter table agent_tools add constraint agent_tools_origin_kind_chk
   check ((origin = 'mba' and source_kind is null) or (origin <> 'mba' and source_kind = origin));
 ```
+
+Le code **DÉPLOYÉ** au moment où 0152 s'applique ignore `source_kind` et l'écrit donc à `null` : ce CHECK
+aurait fait échouer **toute création d'outil de connecteur** pendant la fenêtre censée être la plus sûre,
+celle où l'on peut encore revenir en arrière. C'est mot pour mot ce qui est arrivé avec 0128.
+
+**Il fait donc l'objet d'une migration SUIVANTE**, à appliquer **APRÈS** le déploiement du code de ce lot.
+Jusque-là, la garde repose sur deux pièces déjà en place : le `kind = 'http'` de l'`insert` (un refus
+lisible) et la clé étrangère composite, en `MATCH SIMPLE`, qui tient dès que `source_kind` est renseigné.
+
+⚠️ **À faire dans la tâche 9, au moment du déploiement**, et pas avant : écrire `0153_outil_source_kind_strict.sql`,
+l'appliquer APRÈS le `up -d --build`, et vérifier en base que zéro ligne `origin <> 'mba'` reste à
+`source_kind is null`.
 
 ⚠️ **La reprise (`update`) passe AVANT la contrainte, et l'ordre n'est pas cosmétique** : les outils
 existants portent `origin = 'http'` et une source, donc leur `source_kind` doit être renseigné avant que le
 CHECK ne le réclame. Vérifier en base, après `migrate`, que **zéro ligne** reste à `source_kind is null`
 avec un `origin <> 'mba'`.
 
-- [ ] **Step 2 : appliquer, PUIS relire la base**
+- [x] **Step 2 : appliquer, PUIS relire la base**
 
 ```bash
 npm run migrate
@@ -557,17 +575,23 @@ npm run migrate
 
 Puis, dans la base, vérifier les quatre points **et pas seulement l'absence d'erreur** : `schema_migrations` rend `0152_outils_mcp.sql` en tête ; les quatre colonnes sont dans `information_schema` avec le bon type et sans défaut ; `pg_indexes` n'en porte aucun ; et zéro ligne existante n'en porte une valeur, donc aucun comportement n'a bougé.
 
-- [ ] **Step 3 : mettre à jour le compteur de `CLAUDE.md`**
+- [x] **Step 3 : mettre à jour le compteur de `CLAUDE.md`**
 
 Section Déploiement : **Dernière appliquée : 0152 / Prochaine libre = 0153**, avec ce qu'elle répare. La ligne se relit **depuis la base**, jamais depuis le fichier SQL qu'on vient d'écrire : ce compteur a dérivé huit fois, toujours pour cette raison.
 
-- [ ] **Step 4 : porter les colonnes dans le contrat et le store**
+- [x] **Step 4 : porter les colonnes dans le contrat et le store**
 
-`OutilDefini` et `OutilBibliotheque` gagnent les quatre champs, **requis** (pas optionnels) : un câblage qui les oublierait ne doit pas compiler, c'est ce qui a fait tenir `grapheFige` sur `WorkflowRunRow`. Les quatre sites de lecture de `catalog.pg.ts` les sélectionnent.
+⚠️ **`OutilBibliotheque` NE les gagne PAS dans cette tâche, contrairement à ce que ce plan disait.** Sa
+requête (`listCatalogue`) a sa propre liste de colonnes, et rien ne peut encore produire une valeur non nulle :
+les y ajouter maintenant remplirait l'écran de `null` sans lecteur, c'est-à-dire le motif « offert-et-inerte »
+que ce produit s'interdit. **C'est la tâche 8 qui les ajoute, avec l'écran qui les lit**, et ce paragraphe est
+là pour que l'oubli soit impossible.
+
+`OutilDefini` gagne les quatre champs, **requis** (pas optionnels) : un câblage qui les oublierait ne doit pas compiler, c'est ce qui a fait tenir `grapheFige` sur `WorkflowRunRow`. Les quatre sites de lecture de `catalog.pg.ts` les sélectionnent.
 
 `ParamOutil` gagne `cheminMcp?: string`, avec sa coercion dans `coercer()` sur le même patron que `contactPath`.
 
-- [ ] **Step 5 : écrire et lancer le test de parité**
+- [x] **Step 5 : écrire et lancer le test de parité**
 
 `tests/mcp-catalogue.test.ts` vérifie qu'un outil sans annonce MCP rend `mcpAnnonce: null` et non `undefined` (la distinction a déjà coûté un bug de toggle), et que `paramsOutil` conserve `cheminMcp`.
 
@@ -575,7 +599,7 @@ Section Déploiement : **Dernière appliquée : 0152 / Prochaine libre = 0153**,
 npx vitest run tests/mcp-catalogue.test.ts tests/migration-directives.test.ts && npm run typecheck
 ```
 
-- [ ] **Step 6 : commiter**
+- [x] **Step 6 : commiter**
 
 ```bash
 git commit --only db/migrations/0152_outils_mcp.sql src/agent/catalog.ts src/agent/catalog.pg.ts src/agent/llm/tool-schema.ts tests/mcp-catalogue.test.ts CLAUDE.md -m "feat(mcp): ce qu un outil importe garde de son annonce (migration 0152)"

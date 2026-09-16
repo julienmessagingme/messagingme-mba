@@ -6,6 +6,7 @@ import type { ResolveurOutil } from '../src/agent/executor';
 import { ficheVide } from '../src/agent/fiche';
 import { SORTIE_PLAFOND } from '../src/agent/sorties';
 import { TourInterrompu } from '../src/agent/brain';
+import { SANS_MCP } from './outils-mcp';
 
 /**
  * Le CERVEAU : la boucle qui transforme un historique en une décision.
@@ -19,7 +20,7 @@ import { TourInterrompu } from '../src/agent/brain';
  * dans le message d'un contact chercherait à obtenir.
  */
 
-const OUTIL: OutilDefini = {
+const OUTIL: OutilDefini = { ...SANS_MCP,
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag',
   description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'poser_tag' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
