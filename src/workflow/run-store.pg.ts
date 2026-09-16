@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import type { WorkflowGraph } from './graph';
 
 /** `sleeping` = le run attend que le TEMPS passe (bloc Attente), `waiting` qu'un CONTACT réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
@@ -27,6 +28,15 @@ export interface WorkflowRunRow {
   lastMessageId: string | null;
   /** Canal courant. Absent (ligne d'avant la migration) -> WhatsApp, le comportement historique. */
   channel?: RunChannel;
+  /**
+   * LE GRAPHE QUE CE PARCOURS JOUE, figé à son démarrage (migration 0151). `null` = on lit le publié.
+   *
+   * 🔴 REQUISE, JAMAIS OPTIONNELLE, et `null` est le cas NORMAL (aucun parcours réel n'en porte). Optionnelle,
+   * un dépôt qui oublierait de la lire rendrait `undefined`, la préférence retomberait sur le publié, et on
+   * retrouverait exactement le défaut qu'elle répare : un test qui change de version au premier bloc d'attente,
+   * en silence. Le compilateur doit énumérer les lectures à compléter, c'est tout son intérêt ici.
+   */
+  grapheFige: WorkflowGraph | null;
 }
 
 export interface RunState {
@@ -43,14 +53,21 @@ export interface RunState {
 export class PgWorkflowRunStore {
   constructor(private readonly pool: Pool) {}
 
-  async start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState): Promise<{ id: string }> {
+  /**
+   * `grapheFige` est un paramètre À PART, et pas un champ de `RunState` : il s'écrit UNE SEULE FOIS, à la
+   * naissance du parcours. Le poser dans `RunState` l'aurait rendu acceptable par `setState`,
+   * `setStateSiVivant` et `setStateSiEncoreSur`, qui l'auraient silencieusement ignoré : c'est le motif
+   * « offert-et-inerte » que ce dépôt s'interdit ailleurs.
+   */
+  async start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState, grapheFige: WorkflowGraph | null): Promise<{ id: string }> {
     // `resume_at` est écrit DÈS LA CRÉATION : un scénario dont le tout premier passage tombe sur un bloc
     // Attente naît directement en sommeil. L'omettre laissait un run `sleeping` SANS échéance, que le balayage
     // (qui exige `resume_at <= now()`) n'aurait jamais réveillé : parcours mort en silence.
     const res = await this.pool.query<{ id: string }>(
-      `insert into workflow_runs (workflow_id, tenant_id, contact_id, wa_id, current_node, status, resume_at, channel)
-       values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-      [workflowId, tenantId, contactId, waId, state.currentNode, state.status, state.resumeAt ?? null, state.channel ?? 'whatsapp'],
+      `insert into workflow_runs (workflow_id, tenant_id, contact_id, wa_id, current_node, status, resume_at, channel, graphe_fige)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+      [workflowId, tenantId, contactId, waId, state.currentNode, state.status, state.resumeAt ?? null, state.channel ?? 'whatsapp',
+       grapheFige === null ? null : JSON.stringify(grapheFige)],
     );
     return { id: res.rows[0]!.id };
   }
@@ -60,9 +77,9 @@ export class PgWorkflowRunStore {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string;
       current_node: string | null; status: 'waiting' | 'inbox' | 'done'; last_message_id: string | null;
-      channel: RunChannel | null;
+      channel: RunChannel | null; graphe_fige: WorkflowGraph | null;
     }>(
-      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel
+      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
        from workflow_runs where tenant_id = $1 and wa_id = $2 and status = 'waiting'
        order by created_at desc limit 1`,
       [tenantId, waId],
@@ -71,7 +88,7 @@ export class PgWorkflowRunStore {
     return r ? {
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
       currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp',
+      channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
     } : null;
   }
 
@@ -88,9 +105,9 @@ export class PgWorkflowRunStore {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string;
       current_node: string | null; status: RunStatus; last_message_id: string | null;
-      channel: RunChannel | null;
+      channel: RunChannel | null; graphe_fige: WorkflowGraph | null;
     }>(
-      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel
+      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
        from workflow_runs where tenant_id = $1 and id = $2`,
       [tenantId, id],
     );
@@ -98,7 +115,7 @@ export class PgWorkflowRunStore {
     return r ? {
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
       currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp',
+      channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
     } : null;
   }
 
@@ -298,6 +315,7 @@ export class PgWorkflowRunStore {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
       current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
+      graphe_fige: WorkflowGraph | null;
     }>(
       // BAIL, pas changement de statut : on repousse l'échéance en RESTANT `sleeping` (durée fixée plus bas).
       //  - passer à `waiting` mettrait le run à portée de `findWaitingByWaId`, donc de `advance` : un message
@@ -323,12 +341,12 @@ export class PgWorkflowRunStore {
          limit $1
        ) due
        where r.id = due.id
-       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel`,
+       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel, r.graphe_fige`,
       [limit],
     );
     return res.rows.map((r) => ({
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp',
+      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
     }));
   }
 
@@ -357,6 +375,7 @@ export class PgWorkflowRunStore {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
       current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
+      graphe_fige: WorkflowGraph | null;
     }>(
       // Même borne de 90 jours que le sommeil : au-delà, un parcours n'a plus de sens métier, et la fenêtre
       // de service est de toute façon fermée depuis longtemps. Même durée de bail, aussi : elle doit couvrir
@@ -371,12 +390,12 @@ export class PgWorkflowRunStore {
          limit $1
        ) due
        where r.id = due.id
-       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel`,
+       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel, r.graphe_fige`,
       [limit],
     );
     return res.rows.map((r) => ({
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'waiting' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp',
+      currentNode: r.current_node, status: 'waiting' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
     }));
   }
 

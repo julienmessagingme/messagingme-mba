@@ -61,9 +61,36 @@ export const EST_UN_ENVOI: ReadonlySet<string> = new Set([
   'sendTemplate', 'sendQuickMessage', 'sendQuestion', 'sendFlow', 'sendEmail',
 ]);
 
+/**
+ * LE GRAPHE QUE CE PARCOURS JOUE : le sien s'il en porte un, le publié sinon.
+ *
+ * 🔴 UN SEUL POINT DE PASSAGE, ET C'EST TOUT L'INTÉRÊT. L'exécuteur demandait le graphe à TROIS endroits
+ * (`resume`, `runEnAttenteSur`, `advance`) et recevait le publié aux trois, alors qu'un parcours de test
+ * avait DÉMARRÉ sur le brouillon : il changeait donc de version en cours de route, en silence, et se figeait
+ * sans un mot si son bloc courant n'existait pas dans le publié. Poser la préférence dans chacun des trois
+ * serait trois endroits où l'oublier, et le quatrième point de reprise ajouté demain ne l'aurait pas.
+ *
+ * ⚠️ `grapheFige` À NULL EST LE CAS NORMAL, pas une exception : aucun parcours réel n'en porte, et la
+ * lecture du publié reste alors exactement ce qu'elle était.
+ *
+ * ⚠️ Le parcours n'est lu QUE pour son graphe figé : déclarer ici son `workflowId` laisserait croire à une
+ * recherche par identifiant qui n'a pas lieu, et le publié est justement ce que l'appelant va chercher.
+ */
+export async function grapheDuRun(
+  run: { grapheFige: WorkflowGraph | null },
+  lirePublie: () => Promise<WorkflowGraph | null>,
+): Promise<WorkflowGraph | null> {
+  return run.grapheFige ?? await lirePublie();
+}
+
 export interface WorkflowExecutorDeps {
   runs: {
-    start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState): Promise<{ id: string }>;
+    /**
+     * Crée le parcours. `grapheFige` est un paramètre À PART, et pas un champ de `RunState` : il s'écrit UNE
+     * SEULE FOIS, ici. Le poser dans `RunState` l'aurait rendu acceptable par les trois écritures d'état, qui
+     * l'auraient silencieusement ignoré.
+     */
+    start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState, grapheFige: WorkflowGraph | null): Promise<{ id: string }>;
     findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null>;
     setState(id: string, state: RunState): Promise<void>;
     /**
@@ -842,6 +869,12 @@ export class WorkflowExecutor {
   async resume(run: {
     id: string; workflowId: string; tenantId: string; waId: string;
     contactId?: string | null; currentNode: string | null;
+    /**
+     * Le graphe figé du parcours, `null` pour tout parcours réel. REQUIS et non optionnel : c'est ce qui
+     * oblige le balayage des parcours endormis à le transporter jusqu'ici. Optionnel, un réveil l'aurait
+     * perdu en silence et la reprise serait retombée sur le publié, c'est-à-dire sur le défaut réparé.
+     */
+    grapheFige: WorkflowGraph | null;
     /** Canal courant du parcours. Absent -> WhatsApp (runs d'avant la migration 0082). */
     channel?: RunChannel;
     /**
@@ -861,7 +894,7 @@ export class WorkflowExecutor {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
       return false;
     }
-    const graph = await this.deps.getGraph(run.workflowId, tenantId);
+    const graph = await grapheDuRun(run, () => this.deps.getGraph(run.workflowId, tenantId));
     if (!graph || !run.currentNode) {
       await this.cloreSessionDuRun(tenantId, run.id, 'erreur');
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
@@ -1203,7 +1236,7 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean; ignoreHumanControl?: boolean; figerLeGraphe?: boolean } = {},
   ): Promise<StartOutcome> {
     // Un scénario n'écrit JAMAIS dans un fil détenu par un opérateur ou par MBA. Ce garde est ici, et pas
     // seulement dans `advance`, parce que `start` et `startFromNode` passent par `runFrom` : sans lui, une
@@ -1319,8 +1352,12 @@ export class WorkflowExecutor {
     // NOT NULL vers `workflow_runs`, donc la session ne peut pas naître avant le run. C'est ce qui interdit
     // d'ouvrir la session plus tôt, dans `walkResolved` par exemple. Ordre obligatoire : apply, puis start en
     // capturant l'id, puis la session, puis l'enfilage.
+    //
+    // 🔴 LE FIGEAGE SE DEMANDE, IL N'EST JAMAIS IMPLICITE. Seuls les démarrages de TEST le posent : figer le
+    // graphe de chaque destinataire d'une campagne de 5 000 personnes recopierait 5 000 fois le même objet en
+    // base, pour répondre à une question que personne ne pose sur un parcours réel.
     const cree = state.status !== 'done'
-      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state)
+      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, opts.figerLeGraphe === true ? graph : null)
       : null;
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
     if (rest.status === 'inbox' && this.deps.escalateToHuman) {
@@ -1370,7 +1407,7 @@ export class WorkflowExecutor {
   async startInWindow(
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; figerLeGraphe?: boolean } = {},
   ): Promise<StartOutcome> {
     const entry = entryNode(graph);
     if (!entry) return 'le scénario est vide';
@@ -1381,11 +1418,14 @@ export class WorkflowExecutor {
    * Démarre un run à un bloc ARBITRAIRE du graphe (cible `node` de /v1/sends, D-1). La garde fenêtre 24 h n'est
    * PAS appliquée ici : l'appelant a déjà écarté les contacts hors fenêtre (`out_of_window`), et l'intérêt même
    * de la cible node est d'envoyer un message de session (quick_message/flow) à quelqu'un qui vient d'écrire.
+   *
+   * ⚠️ `figerLeGraphe` est réservé aux démarrages de TEST, qui jouent le BROUILLON : sans lui, le parcours
+   * reprendrait sur le publié à la première réponse du contact. `start` (campagne) ne l'offre pas.
    */
   async startFromNode(
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null }, startNodeId: string,
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; figerLeGraphe?: boolean } = {},
   ): Promise<StartOutcome> {
     return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true, ...opts });
   }
@@ -1530,7 +1570,7 @@ export class WorkflowExecutor {
   ): Promise<{ run: WorkflowRunRow; graph: WorkflowGraph; node: WorkflowNode } | null> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || !run.currentNode) return null;
-    const graph = await this.deps.getGraph(run.workflowId, tenantId);
+    const graph = await grapheDuRun(run, () => this.deps.getGraph(run.workflowId, tenantId));
     const node = graph?.nodes.find((n) => n.id === run.currentNode);
     return graph && node?.type === type ? { run, graph, node } : null;
   }
@@ -1646,7 +1686,7 @@ export class WorkflowExecutor {
       console.warn(`workflow ${run.workflowId}: avance GELEE pour ${waId} (run ${run.id}), le fil ne nous appartient pas (opérateur ou Meta Business Agent) sur le bloc ${run.currentNode ?? 'null'} (message ${messageId}) ; le run reste waiting et ne repartira qu'au prochain message du contact`);
       return;
     }
-    const graph = run.currentNode ? await this.deps.getGraph(run.workflowId, tenantId) : null;
+    const graph = run.currentNode ? await grapheDuRun(run, () => this.deps.getGraph(run.workflowId, tenantId)) : null;
     // Bloc RCS en attente : la réponse du contact reprend par la sortie « envoyé », pas par un payload de
     // bouton. Et le repli conditionnel suit la règle du bloc Condition : tant qu'une sortie TYPÉE existe, on
     // ne prend JAMAIS la 1re arête venue, sinon « non joignable » volerait la suite d'un envoi réussi.

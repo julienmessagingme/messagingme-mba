@@ -79,8 +79,35 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0150**, le 2026-09-15 après-midi (`agent_tools.nature` : un outil dit si l'agent
-POUSSE de l'info ou s'il INTÈGRE la réponse). **Prochaine libre = 0151.** Relue en base juste après `migrate` :
+**Dernière appliquée : 0151**, le 2026-09-16 (`workflow_runs.graphe_fige` : le graphe qu'un parcours de test
+joue, figé à son démarrage). **Prochaine libre = 0152.** Relue en base juste après `migrate`, pas en écrivant
+cette ligne : `schema_migrations` rend bien `0151_run_graphe_fige.sql` en tête, la colonne est `jsonb`
+nullable SANS défaut dans `information_schema`, `pg_indexes` n'en porte AUCUN (délibéré), et zéro parcours
+existant n'en porte un, donc aucun comportement n'a bougé.
+
+🔴 **ELLE RÉPARE UN DÉFAUT EXISTANT, PAS SEULEMENT LA NOUVELLE FONCTIONNALITÉ.** Un test DÉMARRE sur le
+brouillon (`startTestRun` passe `grapheEditable(wf)`) et REPRENAIT sur le publié : les trois points de reprise
+de l'exécuteur (`resume`, `runEnAttenteSur`, `advance`) demandaient le graphe à `getGraph`, que le câblage
+résout en `row.graph`. Un test qui atteignait un bloc d'attente et recevait une réponse CHANGEAIT donc de
+version en cours de route, en silence ; si le bloc courant n'existait pas dans le publié, le parcours se
+figeait sans un mot.
+
+🔴 **UN SEUL POINT DE PASSAGE, ET C'EST TOUT L'INTÉRÊT** : `grapheDuRun(run, lirePublie)`
+(`src/workflow/executor.ts`). Poser la préférence dans chacun des trois points de reprise ferait trois
+endroits où l'oublier, et le quatrième point ajouté demain ne l'aurait pas. Le figeage se DEMANDE
+(`runFrom(..., { figerLeGraphe: true })`), il n'est jamais implicite.
+
+⚠️ **NULLABLE, ET `null` EST LE CAS NORMAL** : aucun parcours réel n'en porte. Figer le graphe de chaque
+destinataire d'une campagne de 5 000 personnes recopierait 5 000 fois le même objet. `null` = on lit le
+publié, c'est-à-dire exactement le comportement d'avant pour tout ce qui n'est pas un test. La colonne est
+REQUISE dans `WorkflowRunRow` et dans `DueRun` : un câblage qui l'oublierait ne compile pas, et c'est ce qui
+garantit que le graphe figé survit AUSSI au balayage des parcours endormis.
+
+⚠️ **RIEN À PURGER EN PLUS** : `purgeTerminesOlderThan` supprime les parcours terminés, le graphe figé part
+avec eux.
+
+Avant elle : **0150**, le 2026-09-15 après-midi (`agent_tools.nature` : un outil dit si l'agent
+POUSSE de l'info ou s'il INTÈGRE la réponse). Relue en base juste après `migrate` :
 `schema_migrations` rend bien 0150 en tête, la colonne est `text NOT NULL DEFAULT 'integre'`, le CHECK borne
 à `pousse`/`integre`, et les 4 outils existants sont tous en `integre`, donc aucun comportement n'a bougé.
 

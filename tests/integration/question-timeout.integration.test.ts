@@ -44,7 +44,7 @@ describe.skipIf(!url)('bloc Question : la réclamation de l’échéance', () =>
 
   /** Crée un run par le CHEMIN RÉEL (`start`), puis force son échéance dans le passé. */
   async function runDu(waId: string, echeance: 'passee' | 'future' | 'aucune', status: 'waiting' | 'sleeping' = 'waiting'): Promise<string> {
-    const { id } = await store.start(tenantId, workflowId, waId, null, { currentNode: 'q', status });
+    const { id } = await store.start(tenantId, workflowId, waId, null, { currentNode: 'q', status }, null);
     const quand = echeance === 'passee' ? "now() - interval '1 minute'" : echeance === 'future' ? "now() + interval '1 hour'" : 'null';
     await pool.query(`update workflow_runs set status = $2, resume_at = ${quand} where id = $1`, [id, status]);
     return id;

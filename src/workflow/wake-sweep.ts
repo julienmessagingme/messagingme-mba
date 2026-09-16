@@ -1,4 +1,5 @@
 import type { RunStatus } from './run-store.pg';
+import type { WorkflowGraph } from './graph';
 
 /** Un parcours au repos que le balayage vient de réserver. */
 export interface DueRun {
@@ -8,6 +9,15 @@ export interface DueRun {
   waId: string;
   contactId?: string | null;
   currentNode: string | null;
+  /**
+   * Le graphe figé du parcours (migration 0151), `null` pour tout parcours réel.
+   *
+   * 🔴 IL TRAVERSE LE BALAYAGE, ET C'EST POUR ÇA QU'IL EST ICI. Un parcours de test qui s'endort sur un bloc
+   * Attente est réveillé par CE chemin : si la réclamation ne rapportait pas la colonne, la reprise retomberait
+   * sur le publié, c'est-à-dire exactement sur le défaut que 0151 répare. Requis, jamais optionnel : c'est le
+   * compilateur qui oblige les deux réclamations du dépôt à la lire.
+   */
+  grapheFige: WorkflowGraph | null;
   /**
    * Ce qui est arrivé à échéance, donc par où reprendre : `sleeping` = bloc Attente (reprise au bloc
    * suivant), `waiting` = délai « pas de réponse » d'un bloc Question (sortie `timeout`). Absent =

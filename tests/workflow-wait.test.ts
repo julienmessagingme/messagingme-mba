@@ -65,7 +65,7 @@ describe('walk : un bloc Attente endort le parcours', () => {
 });
 
 describe('runWorkflowWakeSweep', () => {
-  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w' });
+  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null });
 
   it('reprend chaque parcours réservé et compte les reprises effectives', async () => {
     const repris: string[] = [];
@@ -197,7 +197,7 @@ describe('waitBeforeSessionMessage (montage impossible, détecté pour l’UI)',
 });
 
 describe('runWorkflowWakeSweep : nettoyage des parcours dormants trop vieux', () => {
-  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w' });
+  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null });
 
   it('clôt les vieux AVANT de réveiller les dus', async () => {
     const ordre: string[] = [];

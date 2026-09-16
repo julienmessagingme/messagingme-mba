@@ -73,7 +73,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
       // Requis par le contrat : un demarrage remplace le parcours en cours.
       closeActiveByWaId: async () => [],
       findWaitingByWaId: async () => (enAttenteSur
-        ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null, channel: canal }
+        ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null, channel: canal, grapheFige: null }
         : null),
     },
     ...(avecRcs

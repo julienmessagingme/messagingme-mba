@@ -39,7 +39,7 @@ describe.skipIf(!url)('réservation du tour d’avance (Postgres)', () => {
 
   /** Un run en attente sur le bloc `a`. */
   async function runEnAttente(waId: string): Promise<string> {
-    const { id } = await store.start(tenantId, workflowId, waId, null, { currentNode: 'a', status: 'waiting' });
+    const { id } = await store.start(tenantId, workflowId, waId, null, { currentNode: 'a', status: 'waiting' }, null);
     return id;
   }
 

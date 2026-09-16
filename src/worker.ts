@@ -502,7 +502,14 @@ async function main(): Promise<void> {
           // 🔴 LE TEST JOUE LE BROUILLON (lot 7), et c'est le seul chemin d'exécution qui le fait. Essayer sa
           // version avant de la mettre en ligne est TOUTE la raison d'être du brouillon : jouer le publié ici
           // obligerait à publier pour tester, ce qui rend le bouton « Publier » inutile.
-          return workflowExecutor.startInWindow(tenant, workflowId, grapheEditable(wf), { waId, contactId }, { emitEvents: true });
+          //
+          // 🔴 ET IL LE FIGE DANS LE PARCOURS (migration 0151). Le démarrage jouait le brouillon, mais les
+          // trois points de reprise relisaient le PUBLIÉ : un test qui atteignait un bloc d'attente et
+          // recevait une réponse changeait de version en cours de route, en silence, et se figeait sans un
+          // mot si son bloc courant n'existait pas dans le publié. C'est le SEUL appelant qui fige, et c'est
+          // voulu : figer le graphe de chaque destinataire d'une campagne recopierait le même objet autant
+          // de fois qu'elle a de contacts.
+          return workflowExecutor.startInWindow(tenant, workflowId, grapheEditable(wf), { waId, contactId }, { emitEvents: true, figerLeGraphe: true });
         },
       },
       // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le

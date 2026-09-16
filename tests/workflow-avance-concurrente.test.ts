@@ -20,7 +20,7 @@ const graphe: WorkflowGraph = {
  */
 class RunsConditionnels {
   run: WorkflowRunRow | null = {
-    id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting', lastMessageId: null,
+    id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting', lastMessageId: null, grapheFige: null,
   };
   aBouge = false;
   /** Ce que la garde a reçu comme bloc de DÉPART, appel par appel. */
