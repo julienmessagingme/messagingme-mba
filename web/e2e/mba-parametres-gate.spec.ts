@@ -21,10 +21,13 @@ test.describe('MBA Paramètres : blocages', () => {
     await expect(page.getByTestId('mba-tab-faq')).toHaveCount(0);
   });
 
-  test('numéro ouvert : les 7 onglets sont là, et PAS d’onglet pour les numéros de test', async ({ page }) => {
+  // ⚠️ LE TITRE DISAIT « les 7 onglets », ET IL N'A JAMAIS COMPTÉ : la boucle en nomme sept alors que
+  // l'écran en porte onze. Un titre qui annonce un compte que le test ne vérifie pas vieillit à chaque
+  // onglet ajouté, et c'est arrivé deux fois. Il dit désormais ce que le test fait vraiment.
+  test('numéro ouvert : les onglets de configuration sont là, et PAS d’onglet pour les numéros de test', async ({ page }) => {
     await mockMba(page);
     await page.goto('/mba/parametres');
-    for (const cle of ['apercu', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test']) {
+    for (const cle of ['apercu', 'business', 'faq', 'competences', 'outils', 'fichiers', 'sites', 'test']) {
       await expect(page.getByTestId(`mba-tab-${cle}`), cle).toBeVisible();
     }
     // La liste d'autorisation n'est PAS une étape de configuration : elle vit dans la vue d'ensemble, sous le

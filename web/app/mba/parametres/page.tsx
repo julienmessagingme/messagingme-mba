@@ -21,6 +21,7 @@ import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
 import { MbaCompletion } from '@/components/MbaCompletion';
+import { BibliothequeOutils } from '@/components/BibliothequeOutils';
 
 export default function MbaSettingsPage() {
   // `useSearchParams` impose une frontière Suspense au build (règle Next 15), sinon la page bascule en rendu
@@ -29,7 +30,10 @@ export default function MbaSettingsPage() {
     <AppShell active="mba-settings">
       {(session) => (
         <Suspense fallback={null}>
-          <MbaSettings tenantId={session.tenantId} />
+          {/* `isAdmin` descend d'ici parce que l'onglet Outils en a besoin : la création d'un outil pour
+              Meta et la publication chez Meta sont réservées aux administrateurs, exactement comme sur
+              `Tools > Outils`. Le déduire plus bas aurait fait deux vérités sur un même droit. */}
+          <MbaSettings tenantId={session.tenantId} isAdmin={session.role === 'admin'} />
         </Suspense>
       )}
     </AppShell>
@@ -38,7 +42,9 @@ export default function MbaSettingsPage() {
 
 // ⚠️ « assistant » EN DEUXIÈME, après l'aperçu : un onglet parmi les autres (décision de Julien), pas la
 // porte d'entrée. En faire le premier déplacerait les repères de ceux qui utilisent déjà l'écran.
-const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'fichiers', 'sites', 'historique', 'test'] as const;
+// ⚠️ « outils » APRÈS « competences », et le voisinage est le bon : une compétence dit QUOI FAIRE en
+// langage naturel, un outil est ce que l'agent peut APPELER. Les deux répondent à « de quoi il est capable ».
+const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'outils', 'fichiers', 'sites', 'historique', 'test'] as const;
 type Onglet = (typeof ONGLETS)[number];
 
 function lireOnglet(v: string | null): Onglet {
@@ -52,7 +58,7 @@ function lireOnglet(v: string | null): Onglet {
  * pas encore ouvert par Meta, et le cas normal. `onboarded: false` n'est PAS un blocage : seules les
  * compétences exigent que Meta ait créé la configuration, tout le reste s'édite déjà.
  */
-function MbaSettings({ tenantId }: { tenantId: string }) {
+function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const t = useT();
   const router = useRouter();
   const params = useSearchParams();
@@ -130,6 +136,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
           { key: 'business', label: t('Informations', 'Business info') },
           { key: 'faq', label: t('FAQ', 'FAQ') },
           { key: 'competences', label: t('Compétences', 'Skills') },
+          { key: 'outils', label: t('Outils', 'Tools') },
           { key: 'fichiers', label: t('Fichiers', 'Files') },
           { key: 'sites', label: t('Sites web', 'Websites') },
           { key: 'historique', label: t('Historique', 'History') },
@@ -143,6 +150,14 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
       {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
       {onglet === 'faq' && <MbaFaqPanel {...props} />}
       {onglet === 'competences' && <MbaSkillsPanel {...props} />}
+      {/* 🔴 LE MÊME ÉCRAN QUE `Tools > Outils`, ET C'EST VOULU. La bibliothèque appartient à l'ESPACE : elle
+          est partagée par tous les consommateurs, donc sa place est bien dans Tools. Mais c'est là, et nulle
+          part ailleurs, qu'on décide ce que l'agent de Meta peut appeler (`exposerOutilAuMba`), qu'on crée un
+          outil pour lui sans passer par un agent IA, et qu'on publie chez Meta (`publierChezMeta`) : les
+          trois n'ont chacun qu'un seul appelant, ce fichier-ci. Un client qui configure son MBA cherche ses
+          outils dans les onglets du MBA, et il n'y en avait aucun. Deux chemins vers un écran unique, pas
+          deux écrans. */}
+      {onglet === 'outils' && <BibliothequeOutils tenantId={tenantId} isAdmin={isAdmin} />}
       {onglet === 'fichiers' && <MbaFilesPanel {...props} />}
       {onglet === 'sites' && <MbaWebsitesPanel {...props} />}
       {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="mba" />}
