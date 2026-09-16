@@ -325,7 +325,7 @@ git commit --only src/mcp/client.ts tests/mcp-client.test.ts -m "feat(mcp): un c
 
 ---
 
-## Task 3 : l'aplatissement d'un schéma distant
+## Task 3 : l'aplatissement d'un schéma distant  ✅ `7504536`
 
 **Files:**
 - Create: `src/agent/mcp/aplatir.ts`
@@ -347,14 +347,21 @@ export interface FeuilleMcp {
   enum?: string[];
 }
 
-/** `null` en `raisonNonActivable` = l'outil est activable. */
-export function aplatirSchema(inputSchema: unknown): {
+export interface SchemaAplati {
+  /**
+   * 🔴 VIDE quand l'outil n'est pas activable, MÊME si certaines feuilles étaient valides. Un appelant qui
+   * recevrait un jeu partiel avec une raison de refus pourrait s'en servir, et l'outil partirait chez le
+   * serveur avec la moitié de ses paramètres.
+   */
   feuilles: FeuilleMcp[];
+  /** `null` = activable. Sinon TOUS les obstacles, nommés, joints par ` ; `. */
   raisonNonActivable: string | null;
-};
+}
+
+export function aplatirSchema(inputSchema: unknown): SchemaAplati;
 ```
 
-- [ ] **Step 1 : écrire les tests qui échouent**
+- [x] **Step 1 : écrire les tests qui échouent**
 
 `tests/mcp-aplatir.test.ts` :
 
@@ -421,13 +428,13 @@ describe('aplatir un schema MCP', () => {
 });
 ```
 
-- [ ] **Step 2 : les lancer, vérifier qu'ils échouent**
+- [x] **Step 2 : les lancer, vérifier qu'ils échouent**
 
 ```bash
 npx vitest run tests/mcp-aplatir.test.ts
 ```
 
-- [ ] **Step 3 : écrire l'aplatisseur**
+- [x] **Step 3 : écrire l'aplatisseur**
 
 ```ts
 /**
@@ -450,13 +457,15 @@ npx vitest run tests/mcp-aplatir.test.ts
 
 Règles : profondeur maximale **5** (au delà, refus nommé). Le nom d'une feuille est le chemin normalisé en `[a-z0-9_]`, tronqué à 64, suffixé en cas de collision. `required` est vrai si **tous** les maillons du chemin le sont. Un `enum` de chaînes est conservé (une énumération fermée empêche le modèle d'inventer une valeur hors domaine).
 
-- [ ] **Step 4 : relancer**
+⚠️ **Deux idiomes acceptés, tranchés en écrivant la tâche, et ce ne sont pas des assouplissements.** `anyOf: [T, null]` et `type: ['T', 'null']` ne décrivent pas deux formes de valeur : ils décrivent UNE forme plus l'absence de valeur, et c'est ce que produisent la plupart des générateurs de schéma pour un paramètre facultatif. Les refuser rendrait non activables des outils parfaitement représentables. De vraies alternatives restent refusées, et un cas le vérifie. De même, un `enum` de chaînes SANS `type` déclaré est une chaîne : JSON Schema l'autorise, et refuser reviendrait à jeter une information qu'on a sous les yeux.
+
+- [x] **Step 4 : relancer**
 
 ```bash
 npx vitest run tests/mcp-aplatir.test.ts && npm run typecheck
 ```
 
-- [ ] **Step 5 : commiter**
+- [x] **Step 5 : commiter**
 
 ```bash
 git commit --only src/agent/mcp/aplatir.ts tests/mcp-aplatir.test.ts -m "feat(mcp): aplatir un schema distant en feuilles, pour que la garde d identite y descende"
