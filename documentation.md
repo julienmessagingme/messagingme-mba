@@ -565,6 +565,15 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   annulerait la suppression. `actor_email` est DÉNORMALISÉ pour que l'historique reste lisible après le départ
   d'un collaborateur ; acteur `null` = le système. Écriture best-effort : une panne de journal ne doit pas
   empêcher un client d'exercer son droit à l'effacement.
+  🔴 **LA RÈGLE « PAS DE DONNÉE PERSONNELLE » EST MÉCANIQUE, PLUS UNE CONVENTION** : `PgAuditStore.record` est
+  le point de passage unique de toutes les écritures, et il FILTRE les clés interdites (`CLES_INTERDITES`)
+  avant l'`insert`. Il filtre au lieu de lever, parce que lever ferait perdre la ligne entière, donc
+  échangerait une donnée de trop contre une trace manquante ; et le retrait est ANNONCÉ (`__refuses` dans le
+  détail, plus une erreur en console), parce qu'une transformation silencieuse ferait croire à son auteur que
+  sa trace est complète. ⚠️ La comparaison porte sur la **clé exacte**, jamais en sous-chaîne : `emailSent`
+  contient « email » sans être une donnée personnelle, et une garde en sous-chaîne l'effacerait.
+  ⚠️ `action` est un `text` LIBRE, sans CHECK : le type `AuditAction` est la SEULE garde contre une faute de
+  frappe, et un nom mal orthographié s'écrirait sans que rien ne proteste.
 
 ### Les identifiants publics
 

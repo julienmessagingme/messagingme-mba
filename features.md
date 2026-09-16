@@ -1214,6 +1214,12 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   la mesure du travail réellement économisé. ⚠️ Une quatrième ligne, **« origine non enregistrée »**,
   n'apparaît que si elle n'est pas nulle : c'est un signal d'anomalie (un envoi qui n'a pas déclaré d'où il
   venait), pas une catégorie normale.
+  - ✅ **LE DÉTAIL SOUS « IA »** (2026-09-16) : sous la ligne IA, en retrait, laquelle des trois a écrit :
+    **l'agent IA de la console**, **l'agent de Meta**, ou **un agent tiers branché par MCP**. Les parts se
+    lisent sur le même total que les lignes principales, pour que la colonne fasse toujours cent, et une
+    sous-ligne à zéro ne s'affiche pas (un client sans agent de Meta n'a pas à lire « Agent de Meta : 0 »).
+    ⚠️ Le détail est exact **depuis le 2026-09-01** : avant, rien n'enregistrait qui écrivait, et tout
+    l'historique plus ancien est rangé en « scripté ».
 - ✅ **Le qualitatif est ACTIONNABLE** (2026-09-01). Quatre gestes, là où le tableau ne faisait qu'afficher :
   **cliquer le chiffre d'une action suggérée** ouvre la liste des conversations concernées (et de là, on va
   dans l'inbox) ; **cliquer un sujet fréquent** restreint le détail à ce sujet, recliquer le relâche ;
@@ -1682,6 +1688,9 @@ boîte par sous-menu.
 - ✅ **Consentement** (2026-09-13) : la liste des personnes qui ont demandé à ne plus être contactées, avec
   **depuis quand** et **par quel chemin** le refus est arrivé (saisi par l'équipe, posé par un scénario, coché
   par la personne dans un formulaire, reçu d'un système tiers). Réservée aux rôles administrateur et manager.
+  - ✅ **La DATE et l'HEURE** (2026-09-15) : l'instant exact où le refus est arrivé, et pas seulement le jour.
+    Sur un écran de conformité, deux messages envoyés le même jour, l'un avant et l'autre après le refus,
+    seraient indiscernables sur une date calendaire.
   - ⚠️ **La date peut manquer, et l'écran le dit** : elle n'est enregistrée que depuis le 2026-09-13. Pour les
     refus antérieurs, l'écran affiche « date inconnue » au lieu d'inventer une date à partir de la dernière
     modification de la fiche, qui n'aurait rien à voir.
@@ -1722,6 +1731,17 @@ boîte par sous-menu.
 - ✅ **Journal des actions** : qui a ajouté, supprimé, effacé ou basculé un consentement, et quand. Les
   contacts y figurent par identifiant interne, **jamais par numéro** : y écrire un numéro annulerait la
   suppression d'un contact, dans un registre fait pour ne jamais être modifié.
+  - ✅ **Il couvre aussi les ACCÈS et les PORTES depuis le 2026-09-16** : qui a invité un collaborateur,
+    changé son rôle, révoqué ou supprimé son compte ; qui a créé ou révoqué une clé d'API ; les échecs de
+    connexion ; qui a créé, modifié ou supprimé un webhook entrant ou un connecteur, et qui a touché à leur
+    secret ; qui a rattaché un numéro WhatsApp ; et **qui a exporté l'historique d'un contact**. Avant, le
+    journal ne savait répondre qu'aux questions sur les personnes, jamais à « qui a donné les droits admin ? ».
+  - 🔴 **Ce qu'il ne contient JAMAIS**, et c'est vérifié à l'écriture par le produit lui-même : aucune adresse
+    e-mail (sauf celle de l'auteur de l'action), aucun numéro, aucun texte de message, ni le code d'un
+    webhook, ni le secret d'un connecteur, ni une clé d'API. Un champ interdit est retiré avant l'écriture, et
+    la ligne dit qu'il a été retiré plutôt que de le taire.
+  - ⚠️ **Les échecs de connexion ne sont enregistrés que pour des comptes qui existent.** Une tentative sur une
+    adresse inventée n'appartient à aucun espace et ne peut donc pas y figurer.
 - ✅ **Journal des erreurs de livraison** (2026-09-02), juste en dessous : ce que Meta a répondu quand un
   message n'est pas parti, ou n'est pas arrivé. Le code, sa signification en français pour les plus courants,
   la campagne, le numéro, et surtout **d'où vient l'échec** : « jamais parti » (Meta a refusé notre appel) ou
@@ -2145,6 +2165,17 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   n'a de valeur qu'une fois qu'il existe des conversations.
 
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
+
+- ✅ **Il répond quand un client revient après un silence** (2026-09-16), même trois mois plus tard, et même
+  si le dernier échange était passé par un autre canal. C'est la raison d'être de cet agent : répondre quand
+  rien n'a été préparé pour cette conversation.
+  - Le fil lui repasse **au moment où le message arrive**, et pas avant : Meta ne peut confier une
+    conversation que s'il en existe une d'ouverte, et elle s'ouvre exactement quand la personne écrit.
+  - 🔴 **Il ne prend jamais la place de quelqu'un d'autre.** Si un scénario attend une réponse, c'est le
+    scénario qui l'obtient ; si un opérateur travaille sur la conversation dans l'Inbox, il n'est pas doublé.
+  - ⚠️ **Avant le 2026-09-16**, deux conversations sur trois pouvaient rester sans réponse dans ce cas : soit
+    parce que le produit croyait avoir confié le fil à Meta sans que Meta l'ait accepté, soit parce que la
+    conversation n'apparaissait dans aucun dossier. Les deux sont corrigés.
 
 - ✅ **Page de guidage `/mba`** (2026-07-28) : page de contenu **côté client** (ton produit) qui explique
   l'**agent MBA** (le répondeur intelligent WhatsApp de Meta). Sections : ce qu'il fait (répond seul, passe la

@@ -5696,3 +5696,105 @@ quatre chemins, et porter ce qui reste : le journal et la frontière d'import.
 est devenu clair : seuls les conteneurs RECRÉÉS perdent leur IP. `mba.messagingme.app/` répondait 200 pendant
 que tout le reste était à 502, parce que `mba-web` n'avait pas été recréé. Il touche le webhook, donc les
 messages entrants.
+
+---
+
+## Deux incidents MBA, la rafale des accusés, et seize actions d'audit : 2026-09-15 au soir et 2026-09-16
+
+Quinze commits, tous déployés, CI verte sur ses trois jobs à chaque fois. **Aucune migration** : le compteur
+reste à 0150.
+
+### La file des accusés se vidait à deux par minute, et personne ne le savait
+
+Point de départ : Julien lit la carte de latence de `/ops` et trouve `webhook-status` anormale (p50 à 2 min,
+pire cas 5 min). Mesuré dans `pgboss.job` : le traitement d'un accusé dure **0,058 s**, tout le reste est de
+l'attente. La file sonde toutes les 30 s, prend UN job, sans notification : **deux accusés par minute**.
+
+Le garde-fou existant (`burstWhenReadyExceeds: 20`) ne servait que l'avalanche d'une campagne. L'usage
+ordinaire est un PAQUET (Meta rend trois accusés par message), qui n'atteint jamais vingt. Le seuil est
+devenu **par file**, `webhook-status` à 2, donc « dès trois en attente ». ⚠️ La comparaison de pg-boss est
+stricte : écrire `3` en pensant « dès trois » aurait laissé le cas le plus fréquent hors rafale.
+
+Rafale mesurée le 2026-09-10 à 16:06 : **vingt accusés en 1,2 seconde**, soit dix-sept par seconde.
+
+### Les « deux minutes de Meta » n'existaient pas
+
+🔴 **La correction la plus importante de la session, et elle porte sur une mesure que j'avais faite la veille.**
+Quatre endroits affirmaient que « Meta acquitte nos envois avec DEUX MINUTES de retard », sur une corrélation
+par identifiant de message. C'était une **erreur de lecture** : les heures relevées étaient celles où notre
+worker TRAITAIT l'accusé. Vérifié dans le journal brut des webhooks : l'horodatage que Meta inscrit dans
+l'accusé du message de 08:26:47 vaut **08:26:47**, et son webhook arrive à **08:26:48**.
+
+Le marqueur de la migration 0149 reste juste (on attend une PREUVE, pas un délai), seule la cause était mal
+attribuée.
+
+### Le lissage des tâches minutées, qui répare un INDICATEUR et pas une latence
+
+Les 23 tâches du worker partaient toutes de t=0 avec des cadences multiples les unes des autres, donc elles se
+rejoignaient. Mesuré : une minute ordinaire coûte **13 requêtes et zéro attente**, une minute de rendez-vous
+**26 requêtes et 5 à 10 attentes** sur un pool de huit. Sur 1 763 attentes de la journée, 1 393 venaient de
+là. Le registre décale désormais le premier tour selon le rang d'enregistrement.
+
+⚠️ Ce qu'on répare n'est pas 240 ms sur des balayages que personne n'attend, c'est que **la saturation du pool
+est le seul signal de saturation du produit** et qu'il était allumé 272 minutes par jour pour une cause
+permanente. Vérification après déploiement : la minute de rendez-vous est passée de 5-7 attentes à **zéro**.
+⚠️ La minute du REDÉMARRAGE garde son pic, par construction : le registre ne lance pas la première passe, ce
+sont les appelants qui le font.
+
+### Deux incidents MBA, et la preuve tenait dans le mode de livraison de Meta
+
+**Incident 1 (`33685973811`)** : un client écrit à 15:28, personne ne répond. La preuve : Meta livre un
+message en `messages` quand NOUS tenons le fil, et en `standby` quand son agent le tient. Le matin même, sur
+un autre numéro, on recevait des `standby` ; à 15:28 on a reçu `messages`. **Meta nous croyait maîtres du fil,
+notre base disait `mba` depuis 07:35.** Cause : le balayage avait rendu **dix** conversations d'un coup,
+toutes muettes depuis 166 à 281 heures, donc hors fenêtre de 24 h, et il jetait le verdict de Meta.
+
+**Incident 2 (`33634264992`)** : `app_workflow` avec `control_changed_at` à null. `listHeldControl` excluait
+délibérément ce cas, avec une justification fausse (« null = personne n'a jamais pris ce fil ») : or
+`app_workflow` est la valeur PAR DÉFAUT et envoyer un message prend le fil implicitement. Résultat : ni dans
+« À traiter » (ce dossier exclut `app_workflow`), ni chez l'agent. **Invisible et muette.**
+
+Trois tâches, un commit chacune : le fil repasse à l'agent **à l'arrivée du message** (seul instant où la
+fenêtre est ouverte) ; le balayage ne passe plus la main sur une fenêtre fermée et appelle Meta AVANT
+d'écrire ; l'angle mort du null est fermé, borné par la fenêtre pour ne pas saturer le lot de 500.
+
+### 🔴 Trois défauts trouvés par la revue dans mes propres correctifs
+
+1. **Une garde posée après l'effet de bord.** `only: ['app_workflow', 'mba']` protégeait notre colonne, pas
+   l'appel à Meta : un opérateur en train de répondre se faisait prendre le fil au message suivant du client.
+   Le détenteur se lit désormais AVANT l'appel.
+2. **Un `coalesce` MORT.** Combiné à la borne de fenêtre, il exigeait le dernier message à la fois plus vieux
+   et plus récent que 24 h. Et un test affirmait le contraire, parce qu'il cherchait le mot `coalesce` au lieu
+   de l'effet.
+3. **Une garde trop large.** La garde de fenêtre portait sur « ce client a un agent » au lieu de « on allait
+   appeler Meta » : elle bloquait aussi les transitions qui ne parlent pas à Meta, ce qui aurait éteint en
+   silence le garde-fou des 24 h.
+
+### Le journal d'audit passe de 7 à 23 actions
+
+Trois lots, choisis par Julien dans un inventaire des 28 modules d'écriture : les **accès** (comptes, clés
+d'API, connexions échouées), les **portes** (webhooks entrants, connecteurs), puis le **numéro connecté** et
+**l'export d'un contact**. Aucune migration, `audit_log.action` étant un `text` libre.
+
+⚠️ **Le plan confondait deux familles sous « webhooks sortants »**, relevé en lisant le code : un webhook est
+une adresse que NOUS exposons, donc une porte d'ENTRÉE ; un connecteur porte l'adresse du système du client,
+donc la SORTIE. Corrigé dans le type, pas seulement dans la conversation.
+
+🔴 **Et une mutation qui n'a rien cassé a révélé le vrai trou.** En débranchant le filtre de données
+personnelles du `insert`, la suite restait verte : les tests n'éprouvaient que la fonction pure. Un test lit
+désormais les paramètres envoyés à Postgres.
+
+### Un défaut PRÉEXISTANT trouvé en vérifiant sur les vraies données
+
+`CONTROL_MBA_TIMEOUT_MS` repose les fils de l'agent en `app_workflow`, la seule valeur que « À traiter »
+exclut. Une conversation où le client attend est donc une ligne de travail visible **pendant 24 h**, puis elle
+disparaît. Onze conversations dans ce cas au moment de la mesure. Sans rapport avec les lots du jour, écrit
+dans `todo.md` : la question (qui reprend quand l'agent n'a pas conclu ?) est produit, pas technique.
+
+### La cible Scaleway, écrite parce qu'elle a été demandée
+
+`docs/ARCHITECTURE-CIBLE.md` : la règle des deux tiers (l'API élastique, le worker permanent) et ses trois
+conséquences indépendantes de tout fournisseur, les trois chantiers à finir avant de multiplier les processus,
+le sort du connecteur HubSpot, la question Redis avec son déclencheur, et la séquence du jour J. Mesures qui
+l'accompagnent : base à **30 Mo**, **25 connexions ouvertes sur 60 dont une active**, **131 transactions par
+minute au repos**, et **aucune dépendance spécifique à Supabase** dans le dépôt.

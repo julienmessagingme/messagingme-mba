@@ -4,61 +4,66 @@
 > [features.md](features.md), sa technique durable dans [documentation.md](documentation.md), son RÉCIT dans
 > [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md), ce qui reste à faire dans [todo.md](todo.md).
 >
-> 🔴 **VIDÉ POUR LA CINQUIÈME FOIS le 2026-09-13 au soir**, et le chiffre est le sujet. Il avait atteint
-> 245 lignes en portant SIX chantiers déjà déployés, c'est-à-dire en redevenant une archive. La règle n'est
-> pas « y penser », c'est : **un lot déployé n'a aucune raison d'attendre ici**.
->
-> ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.**
+> ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
+> il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## 🔴 L'ÉTAT EXACT, AU 2026-09-15 EN FIN DE JOURNÉE
+## L'ÉTAT EXACT, AU 2026-09-16 AU MATIN
 
 | | |
 |---|---|
-| `origin/main` | `93a10c4` |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `93a10c4`, aucun écart |
-| Vercel (`engageme`) | `93a10c4`, suit `origin/main` tout seul |
-| Migrations | **0149 et 0150 appliquées**, relues en base après `migrate`. **Prochaine libre : 0151** |
-| CI | ✅ verte, les DEUX workflows (voir le découpage ci-dessous) |
-| Contrôle public | ✅ les quatre noms à 200, après un reload NPM (le 502 est arrivé à trois déploiements sur quatre) |
+| `origin/main` | `237853b` |
+| VPS (`mba-api`, `mba-worker`) | `237853b`, aucun écart |
+| Vercel (`engageme`) | suit `origin/main` tout seul |
+| Migrations | **0150**, inchangée. Aucune migration depuis le 2026-09-15. **Prochaine libre : 0151** |
+| CI | ✅ verte sur les trois jobs (`unit`, `securite`, `integration`) à chacun des quinze commits |
+| Contrôle public | ✅ les trois noms à 200, après un reload NPM (le 502 est arrivé à trois déploiements sur cinq) |
 
-## 🔴 CE QUI A CHANGÉ DANS LE FONCTIONNEMENT, ET QU'UNE SESSION SUIVANTE DOIT SAVOIR
+## CE QU'UNE SESSION SUIVANTE DOIT SAVOIR
 
-- 🔴 **LE DÉPÔT EST PUBLIC depuis le 2026-09-15**, décision de Julien pour rendre GitHub Actions gratuit
-  (20 € consommés en 10 jours, mesurés : 4 524 minutes facturées sur 13 jours, dont 58 % pour le seul job du
-  front). Il redeviendra privé « à un moment ». **Conséquence immédiate : plus rien de sensible ne s'écrit
-  dans ce dépôt**, y compris dans ce fichier. L'adresse d'origine du VPS en a été retirée le jour même (elle
-  reste dans l'historique git, cf. `todo.md`).
-- 🔴 **LA CI EST DÉCOUPÉE EN DEUX WORKFLOWS.** `ci.yml` porte `securite`, `unit` et `integration` ;
-  `ci-web.yml` porte le job du front et ne se déclenche que sur `web/**`. Mesuré : 47 % des pushs ne
-  touchaient que le backend et payaient 8,8 minutes pour re-vérifier un front identique. ⚠️ **L'inverse est
-  FAUX** : 43 tests de la racine LISENT des fichiers de `web/`, donc `ci.yml` garde un `paths-ignore` et
-  jamais un filtre positif. `tests/ci-decoupage.test.ts` tient l'asymétrie ET sa raison.
-- ⚠️ **UNE AUTRE SESSION TRAVAILLE DANS LE MÊME DOSSIER** (renommage `requireAuth` -> `garde` sur 47 fichiers
-  de `src/http`). Tant qu'elle tourne, `npm test` à la racine est rouge sans que ça veuille rien dire, et
-  `git commit --only <chemins>` n'est pas une précaution mais la seule façon de ne pas emporter son travail.
+- 🔴 **LE DÉPÔT EST PUBLIC** depuis le 2026-09-15 (GitHub Actions gratuit). Rien de sensible ne s'écrit ici.
+- 🔴 **LA CI EST DÉCOUPÉE EN DEUX WORKFLOWS**, et l'asymétrie est volontaire : `ci-web.yml` ne part que sur
+  `web/**`, mais `ci.yml` garde un `paths-ignore` et jamais un filtre positif, parce que 43 tests de la
+  racine LISENT des fichiers de `web/`. `tests/ci-decoupage.test.ts` tient la règle ET sa raison.
+- ⚠️ **LA MESURE DU 2026-09-15 SUR META ÉTAIT FAUSSE, ET LA CORRECTION COMPTE PLUS QUE L'ERREUR.** Ce fichier,
+  trois commentaires de code et `CLAUDE.md` ont affirmé toute une journée que « Meta acquitte nos envois avec
+  DEUX MINUTES de retard ». C'était une erreur de LECTURE : les heures relevées étaient celles où NOTRE worker
+  traitait l'accusé. L'horodatage que Meta inscrit vaut la seconde de l'envoi, et son webhook arrive une
+  seconde après. Les deux minutes venaient de la file `webhook-status`, qui se vidait à deux accusés par
+  minute. Corrigé partout le 2026-09-15 au soir.
 
-## Ce qui attend UN ESSAI RÉEL de Julien
+## CE QUI ATTEND UN ESSAI RÉEL
 
-Deux chantiers sont livrés, déployés et verts, mais **aucun n'a encore été éprouvé sur un vrai échange**. Un
-mécanisme qui n'a jamais tourné sur de vraies données n'est pas éprouvé, il est seulement vert.
+🔴 **Aucun des chemins livrés le 2026-09-15 et le 2026-09-16 n'a tourné sur un vrai échange.** Ils sont verts,
+déployés, et éprouvés par mutation ; aucun n'est éprouvé tout court. ⚠️ Et Julien a signalé le 2026-09-16 que
+les numéros des deux incidents ne sont pas les siens : **il ne peut pas rejouer ces deux cas-là**, ce qui
+déplace le poids sur la revue et sur les vérifications faites contre les vraies données.
 
-### 1. La remise du fil à l'agent de Meta (migration 0149)
+### 1. L'agent de Meta répond après un silence
 
-Relancer un scénario, attendre sa fin, puis **attendre deux à trois minutes** avant d'écrire en tant que
-client. L'agent de Meta doit répondre. Écrire PENDANT l'attente doit allumer la pastille « À traiter ».
+Écrire depuis un numéro dont la conversation dort depuis des jours : l'agent doit répondre, quel que soit le
+délai et quel que soit le canal du dernier échange. Puis **répondre à un scénario qui pose une question** : le
+scénario doit avancer et l'agent rester MUET. C'est cette troisième vérification qui prouve qu'on n'a rien
+cassé, et c'est la plus importante des trois.
 
-Ce qui a été mesuré et qui explique le correctif : Meta acquitte nos envois avec DEUX MINUTES de retard, et
-envoyer un message PREND le fil implicitement. La remise partait donc avant que l'envoi ne soit traité, et
-l'envoi reprenait le fil juste derrière. Trois releases émis deux secondes après un envoi ont échoué, celui
-émis quatorze minutes après a marché.
+⚠️ **Ce qui peut être rejoué sans les numéros des clients** : mettre la conversation d'un numéro qu'on
+contrôle dans l'état exact de l'incident (`app_workflow` + `control_changed_at` à null), ce qui est une
+écriture réversible, puis écrire depuis ce numéro.
 
-### 2. « Ça pousse ou ça intègre » (migration 0150)
+### 2. Le journal d'audit
 
-- Donner `testadd` (`POST /subscriber/add-tag`) à un agent IA en répondant **« ça pousse »**, l'essayer depuis
-  le bac à sable, puis **vérifier DANS UChat que l'étiquette est réellement posée**.
-- Refaire avec un appel qui **intègre**, cocher un champ, et vérifier que la valeur remonte mot pour mot.
-- Et par le chemin direct : **Tools > Outils > « + un outil pour l'agent de Meta »**, sans agent IA.
+Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et ouvrir Sécurité > Audit : les
+quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
+ailleurs que dans la colonne auteur**.
 
-⚠️ **Le bac à sable est à revérifier en particulier** : il rendait zéro champ pour tout outil de connecteur
-depuis le 2026-09-02, en promettant « exactement ce que l'agent recevra ». Le lot 1 le répare, mais la
-réparation n'a jamais tourné sur de vraies données.
+### 3. « Ça pousse ou ça intègre » (migration 0150), toujours dû depuis le 2026-09-15
+
+Donner `testadd` (`POST /subscriber/add-tag`) à un agent IA en « ça pousse », l'essayer depuis le bac à sable,
+puis **vérifier dans UChat que l'étiquette est réellement posée**. Refaire avec un appel qui intègre, cocher un
+champ, vérifier que la valeur remonte mot pour mot. ⚠️ Le bac à sable est à revérifier en particulier : il
+rendait zéro champ pour tout outil de connecteur depuis le 2026-09-02.
+
+## UN POINT D'ÉCRAN QUI RESTE À FAIRE
+
+La section des connexions échouées devra **dire qu'elle ne montre que les tentatives sur des comptes
+existants**. `audit_log.tenant_id` est NOT NULL : une tentative sur une adresse inconnue n'appartient à aucun
+espace et ne peut pas s'écrire. Sans cette phrase, on lira « aucune tentative » alors qu'il y en a eu.
