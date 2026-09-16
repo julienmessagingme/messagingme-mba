@@ -3,6 +3,20 @@
 > Décidé avec Julien le 2026-09-16 par `grilling`, cinq rounds, vingt et une décisions.
 > Le plan d'exécution qui en découle : `docs/superpowers/plans/2026-09-16-connecteurs-mcp.md`.
 
+> 🔴 **IL EXISTAIT DÉJÀ UN PLAN SUR CE SUJET, ET CE CADRAGE A ÉTÉ ÉCRIT SANS LE CONNAÎTRE.**
+> [AGENT-IA-PLAN-L4.md](../../../AGENT-IA-PLAN-L4.md), « MCP en jeton statique, sur allowlist », issu de la
+> décision **D3** du cadrage du 2026-08-23. Trouvé par la revue du 2026-09-16, après que les vingt et une
+> décisions aient été prises. Ce qu'il faut en savoir :
+>
+> - **sa décision centrale est la même que la nôtre** : traduire le schéma distant en `ParamOutil[]` plutôt
+>   que de le repasser au modèle. C'est rassurant, et ça vaut confirmation croisée.
+> - **trois de ses décisions sont SUPPLANTÉES**, en connaissance de cause cette fois : l'allowlist gelée de
+>   serveurs (arbitrée par Julien le 2026-09-16 : URL libre, parce que la garde SSRF en deux temps
+>   n'existait pas encore quand L4 a été écrit et qu'elle ferme ce que l'allowlist fermait) ; la règle
+>   « propriété non représentable et facultative : ignorée » (arbitrée : on garde la règle stricte, un outil
+>   dont une forme résiste n'est pas activable) ; le plafond de dix outils par serveur.
+> - **il nomme un trou que ce cadrage n'avait pas vu** : la garde de `kind`, reprise ci-dessous.
+
 ## Objectif
 
 Un client branche Engage Me sur un **serveur MCP tiers**, Engage Me en récupère le catalogue d'outils,
@@ -110,6 +124,31 @@ sur le même patron que `binding.handler` d'un outil maison.
 d'être de cette colonne. Sans elle, on saurait qu'un schéma a bougé sans pouvoir dire en quoi.
 
 Aucun index nouveau : les lectures passent par `source_id`, qui porte déjà `agent_tools_source_idx`.
+
+### 🔴 La garde de `kind`, que L4 appelait « le trou n°3 »
+
+Rien n'empêche aujourd'hui un outil `origin = 'mcp'` de pointer vers une source `kind = 'http'`, ni l'inverse.
+La contrainte `agent_tools_origin_src_chk` (0088) vérifie seulement qu'une source EXISTE, pas laquelle. Le
+résolveur partirait alors dans la mauvaise branche : un outil MCP traité comme un appel HTTP, ou l'inverse.
+
+**Elle se tient EN BASE, sans déclencheur**, par une clé étrangère composite :
+
+```sql
+alter table agent_tool_sources add constraint agent_tool_sources_id_kind_key unique (id, kind);
+alter table agent_tools add column if not exists source_kind text;
+alter table agent_tools add constraint agent_tools_source_kind_fk
+  foreign key (source_id, source_kind) references agent_tool_sources (id, kind);
+alter table agent_tools add constraint agent_tools_origin_kind_chk
+  check (source_kind is null or source_kind = case when origin = 'mba' then null else origin end);
+```
+
+⚠️ **Un déclencheur aurait été le réflexe, et c'est le mauvais** : il s'écrit, se teste mal, et ne se voit pas
+quand on lit le schéma. Une clé étrangère composite dit la même chose, la base la fait respecter, et le
+prochain lecteur la trouve là où il cherche déjà les contraintes.
+
+⚠️ **`source_kind` est une donnée DÉRIVÉE, donc une seconde vérité**, ce que ce dépôt évite d'ordinaire. Elle
+est acceptée ici parce que c'est le seul moyen de faire porter l'invariant par la base plutôt que par une
+vigilance, et parce que la clé étrangère composite la rend impossible à faire diverger.
 
 ### Le nom d'un outil importé
 

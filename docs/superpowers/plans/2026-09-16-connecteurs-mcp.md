@@ -520,7 +520,34 @@ alter table agent_tools add column if not exists mcp_vu_le timestamptz;
 
 -- AUCUN INDEX, delibere : les lectures passent par `source_id`, qui porte deja `agent_tools_source_idx`.
 -- Un index partiel est un contrat avec une requete precise, et aucune requete de ce lot n en demande un.
+
+-- 🔴 LA GARDE DE `kind` (le « trou n°3 » de AGENT-IA-PLAN-L4.md, releve par la revue du 2026-09-16).
+-- Rien n empechait un outil origin='mcp' de pointer vers une source kind='http', ni l inverse :
+-- `agent_tools_origin_src_chk` (0088) verifie qu une source EXISTE, pas LAQUELLE. Le resolveur serait
+-- alors parti dans la mauvaise branche.
+--
+-- ⚠️ PAS DE DECLENCHEUR, une cle etrangere COMPOSITE : elle dit la meme chose, la base la fait respecter,
+-- et le prochain lecteur la trouve la ou il cherche deja les contraintes.
+alter table agent_tool_sources drop constraint if exists agent_tool_sources_id_kind_key;
+alter table agent_tool_sources add constraint agent_tool_sources_id_kind_key unique (id, kind);
+
+alter table agent_tools add column if not exists source_kind text;
+update agent_tools t set source_kind = s.kind
+  from agent_tool_sources s where s.id = t.source_id and t.source_kind is null;
+
+alter table agent_tools drop constraint if exists agent_tools_source_kind_fk;
+alter table agent_tools add constraint agent_tools_source_kind_fk
+  foreign key (source_id, source_kind) references agent_tool_sources (id, kind);
+
+alter table agent_tools drop constraint if exists agent_tools_origin_kind_chk;
+alter table agent_tools add constraint agent_tools_origin_kind_chk
+  check ((origin = 'mba' and source_kind is null) or (origin <> 'mba' and source_kind = origin));
 ```
+
+⚠️ **La reprise (`update`) passe AVANT la contrainte, et l'ordre n'est pas cosmétique** : les outils
+existants portent `origin = 'http'` et une source, donc leur `source_kind` doit être renseigné avant que le
+CHECK ne le réclame. Vérifier en base, après `migrate`, que **zéro ligne** reste à `source_kind is null`
+avec un `origin <> 'mba'`.
 
 - [ ] **Step 2 : appliquer, PUIS relire la base**
 
@@ -888,7 +915,21 @@ it('un catalogue TRONQUE le DIT : un plafond silencieux se lit comme une couvert
   // et l ecran l affiche. Un import qui s arrete a 500 outils sans le dire donnerait un client
   // convaincu d avoir tout son catalogue.
 });
+
+it('🔴 sur un catalogue TRONQUE, l import n annonce AUCUNE disparition', async () => {
+  // 🔴 LE MEME DANGER QUE LA LISTE PARTIELLE, PAR L AUTRE PORTE (revue du 2026-09-16). `tronque` veut
+  // dire que la liste EST partielle, legitimement. Un import qui marque « disparu » ce qui n y figure
+  // pas fait donc tomber le consentement de tout ce qui vivait au dela de la borne.
+  //
+  // Le contrat, ecrit sur `lister()` : sur `tronque`, on AJOUTE et on MET A JOUR, on ne RETIRE jamais.
+  const plan = planifierImport([annonce('search', SCHEMA_A)], [existant('search', SCHEMA_A), existant('autre', SCHEMA_A)] as never, { tronque: true });
+  expect(plan.some((c) => c.type === 'disparu')).toBe(false);
+});
 ```
+
+⚠️ **`planifierImport` prend donc `tronque` en TROISIÈME paramètre, et il est REQUIS.** Un booléen optionnel
+qui vaut `false` par défaut ferait exactement ce qu'on cherche à empêcher le jour où un appelant l'oublie :
+c'est le motif « dépendance optionnelle » que ce dépôt a déjà payé trois fois.
 
 - [ ] **Step 2 : les lancer, vérifier qu'ils échouent**
 
