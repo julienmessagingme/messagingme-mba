@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jamaisDesabonne } from './consentement';
@@ -193,15 +194,25 @@ describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () 
    * qu'un jour quelqu'un trouve pratique d'ouvrir le lancement depuis l'Inbox sur le brouillon pour qu'une
    * version de travail parte à un vrai client, sans erreur et sans trace.
    */
-  it('🔴 SEUL le lien de test joue le BROUILLON, dans les deux câblages d’exécution', () => {
-    expect(worker.split('grapheEditable(').length - 1,
-      'un second appelant de grapheEditable dans le worker : est-ce bien un chemin de TEST ?').toBe(1);
-    expect(cablageDuLienDeTest()).toContain('grapheEditable(wf)');
+  it('🔴 SEUL le lien de test joue le BROUILLON, dans TOUT `src/`', () => {
+    // ⚠️ L'INVENTAIRE EST DÉRIVÉ, PAS ÉCRIT (correction de la revue finale, 2026-09-16). Il ne regardait que
+    // `src/worker.ts` et `src/index.ts` : un futur chemin d'exécution posé dans `src/workflow/wiring.ts` ou
+    // dans un module de routes serait passé sans être vu, alors que `documentation.md` énonce l'invariant
+    // sans cette réserve. On balaie donc TOUT `src/` et on compare à un inventaire nommé.
+    const attendus = new Map([
+      ['src/workflow/store.pg.ts', 'la DÉFINITION de `grapheEditable`'],
+      ['src/http/workflows.ts', 'la DUPLICATION d’un scénario : on recopie le travail en cours, on n’exécute rien'],
+      ['src/worker.ts', 'le LIEN DE TEST, seul chemin d’exécution qui joue le brouillon'],
+    ]);
+    const trouves = execSync('git grep -l "grapheEditable" -- src/', { cwd: process.cwd(), encoding: 'utf8' })
+      .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    expect(new Set(trouves),
+      `un nouvel appelant de grapheEditable dans src/ : est-ce un chemin d’EXÉCUTION ? S’il l’est, il ferait jouer un BROUILLON à un vrai contact. Inventaire attendu : ${[...attendus].map(([f, r]) => `${f} (${r})`).join(' | ')}`)
+      .toEqual(new Set(attendus.keys()));
 
-    // Le lancement depuis l'Inbox part d'un geste d'OPÉRATEUR vers un vrai contact : il joue le publié.
-    const index = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf8');
-    expect(index.split('grapheEditable').length - 1,
-      'le lancement depuis l’Inbox écrit à un vrai contact : il ne doit jamais jouer un brouillon').toBe(0);
+    // Et dans le worker, c'est bien le bloc du lien de test qui le porte, une seule fois.
+    expect(worker.split('grapheEditable(').length - 1).toBe(1);
+    expect(cablageDuLienDeTest()).toContain('grapheEditable(wf)');
   });
 
   it('🔴 et il démarre AU BLOC quand le jeton en désigne un', () => {

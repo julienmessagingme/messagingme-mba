@@ -33,36 +33,10 @@ export function newTestToken(): string {
 }
 
 /**
- * Longueur maximale du suffixe qui désigne un BLOC. Un identifiant de bloc est un `crypto.randomUUID()`, donc
- * 36 caractères ; 64 laisse de la marge sans ouvrir la porte à un corps de message arbitraire.
+ * Forme attendue du JETON, c'est-à-dire de la partie GAUCHE. Le suffixe de bloc, lui, n'a pas de forme :
+ * voir `lireJetonDeTest`.
  */
-const NODE_MAX = 64;
-
-/**
- * Forme attendue d'un jeton, avec un suffixe de BLOC facultatif (2026-09-16). Sert à éviter d'interroger la
- * base pour chaque message entrant : seuls les messages qui RESSEMBLENT à un jeton déclenchent une
- * résolution. C'est le filtre du chemin chaud.
- *
- * 🔴 CE QUI DISCRIMINE EST LA PARTIE GAUCHE, PAS LE SUFFIXE. `test-` suivi de 8 caractères Crockford est ce
- * qu'un message de client n'écrit jamais par hasard ; le suffixe ne décide que du sort d'un texte qui est
- * DÉJÀ un jeton. L'ouvrir ne coûte donc aucune requête de plus, et le refermer trop fort coûterait des blocs
- * intestables en silence. Il reste borné (`NODE_MAX`) et NON VIDE : un point suivi de rien est refusé.
- *
- * 🔴 L'IDENTIFIANT ENTIER, ET C'EST UN CHANGEMENT PAR RAPPORT AU PREMIER JET DU PLAN. Il proposait un préfixe
- * de huit caractères, plus court dans le lien. Mais le navigateur aurait dû RETIRER les tirets de l'UUID pour
- * fabriquer le suffixe, et le serveur comparer sur la même normalisation : un invariant partagé de part et
- * d'autre d'une frontière que ce dépôt interdit justement de franchir (aucun fichier de `web/` n'importe
- * `src/`), donc recopié à la main des deux côtés, donc voué à diverger sans qu'aucun test ne le voie.
- * L'identifiant entier supprime la question : la comparaison devient une ÉGALITÉ, et le cas « deux blocs
- * correspondent » n'existe plus. Le lien est plus long, mais il est pré-rempli.
- *
- * ⚠️ LA CLASSE DU SUFFIXE EST MESURÉE, pas devinée : les 64 blocs de production portent tous un UUID
- * minuscule (2026-09-16). Elle accepte en plus la forme de repli de `uid()`
- * (`web/components/WorkflowBuilder.tsx`, `id-<base36>-<horodatage>`), qui sort quand `crypto.randomUUID`
- * n'existe pas. La borner à la FORME d'un UUID rendrait ces blocs intestables SANS erreur : le message
- * partirait comme un message ordinaire.
- */
-const TOKEN_RE = new RegExp(`^${PREFIX}[0-9a-hjkmnp-tv-z]{${RANDOM_LEN}}(\\.[0-9a-z_-]{1,${NODE_MAX}})?$`);
+const JETON_RE = new RegExp(`^${PREFIX}[0-9a-hjkmnp-tv-z]{${RANDOM_LEN}}$`);
 
 /**
  * Le jeton et le BLOC qu'il désigne, ou `null` si ce n'en est pas un. C'EST LE FILTRE DU CHEMIN CHAUD :
@@ -71,28 +45,40 @@ const TOKEN_RE = new RegExp(`^${PREFIX}[0-9a-hjkmnp-tv-z]{${RANDOM_LEN}}(\\.[0-9
  * ⚠️ UNE SEULE FONCTION POUR FILTRER ET POUR LIRE. Il y avait un prédicat `looksLikeTestToken` à côté,
  * retiré le 2026-09-16 : deux portes sur la même forme divergent, et la divergence serait MUETTE dans le
  * sens le plus coûteux (le filtre accepte, la lecture rend `null`, le message est consommé, rien ne démarre).
- * Lecture sur le texte NORMALISÉ :
- * WhatsApp peut ajouter des espaces, et un téléphone peut capitaliser la première lettre automatiquement.
  *
- * Volontairement STRICT (message entier, pas « contient ») : un client qui écrirait « je teste test-abc » ne
- * doit pas déclencher un test, et une phrase ne doit jamais être confondue avec un jeton.
+ * 🔴 LE SUFFIXE N'A AUCUNE FORME IMPOSÉE, ET C'EST UNE CORRECTION DE LA REVUE FINALE (2026-09-16). Il était
+ * borné à `[0-9a-z_-]{1,64}`, sur une MESURE d'un jour (« les 64 blocs de production portent tous un UUID
+ * minuscule »). Or `parseGraph` (`src/workflow/graph.ts`) accepte comme `node.id` n'importe quelle chaîne non
+ * vide : majuscules, point, deux-points, accents, longueur libre. Un identifiant hors de cette classe faisait
+ * rendre `null` ici, donc le message N'ÉTAIT PAS CONSOMMÉ, et il descendait jusqu'à l'agent de Meta, qui
+ * répondait au testeur. Le mauvais sens : une supposition qui échoue doit donner un refus LISIBLE, jamais une
+ * fuite silencieuse.
+ *
+ * Ce qui discrimine est donc la partie GAUCHE, et elle seule : `test-` plus huit caractères Crockford, ce
+ * qu'un message de client n'écrit jamais par hasard. Tout ce qui suit le PREMIER point est un POINTEUR, rendu
+ * tel quel à l'appelant. Un bloc introuvable est alors refusé par `runFrom`, avec sa raison et sa trace.
+ *
+ * 🔴 ET LA CASSE DU SUFFIXE EST PRÉSERVÉE. Le texte entier était mis en minuscules : un identifiant portant
+ * une majuscule passait le filtre puis échouait à l'égalité, donc un refus pour une raison invisible. Seul le
+ * JETON est mis en minuscules, parce que lui seul a une forme connue, et parce que c'est sur la première
+ * lettre du message qu'un clavier de téléphone met une majuscule tout seul.
+ *
+ * ⚠️ Les espaces restent retirés PARTOUT : WhatsApp en ajoute, et un copier-coller en laisse. Conséquence
+ * assumée et documentée : un `node.id` contenant une espace ne peut pas voyager. Il donne alors le refus
+ * lisible du bloc introuvable, pas une fuite.
  *
  * ⚠️ `nodeId` À NULL EST LE CAS D'AVANT, pas une erreur : les liens déjà distribués n'ont pas de point, et
  * ils doivent continuer de démarrer le scénario à son entrée.
  */
 export function lireJetonDeTest(body: string | null): { jeton: string; nodeId: string | null } | null {
-  const texte = normalizeTestToken(body);
-  if (!TOKEN_RE.test(texte)) return null;
+  const texte = (body ?? '').trim().replace(/\s+/g, '');
   const point = texte.indexOf('.');
-  return point === -1
-    ? { jeton: texte, nodeId: null }
-    : { jeton: texte.slice(0, point), nodeId: texte.slice(point + 1) };
-}
-
-
-/** Minuscules + espaces retirés : la forme sous laquelle un jeton est comparé et stocké. */
-export function normalizeTestToken(body: string | null): string {
-  return (body ?? '').trim().toLowerCase().replace(/\s+/g, '');
+  const jeton = (point === -1 ? texte : texte.slice(0, point)).toLowerCase();
+  if (!JETON_RE.test(jeton)) return null;
+  if (point === -1) return { jeton, nodeId: null };
+  const nodeId = texte.slice(point + 1);
+  // Un point suivi de rien ne DÉSIGNE rien : ce n'est pas un lien que ce produit fabrique.
+  return nodeId === '' ? null : { jeton, nodeId };
 }
 
 /**

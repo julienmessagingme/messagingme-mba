@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 9487e0
+source_empreinte: 18896a
 ---
 # Créer un scénario
 
@@ -33,5 +33,5 @@ Pour l'essayer avant de le mettre en service, utilisez le lien de test : il ouvr
 numéro et fait partir le scénario depuis le début.
 
 Vous pouvez aussi l'essayer **à partir d'un bloc précis**, sans dérouler tout ce qui précède : le petit
-bouton lecture en haut à gauche d'un bloc ouvre le même lien, mais le scénario démarrera à ce bloc-là. Les
-étapes sautées ne sont pas rattrapées : leurs tags, leurs champs et leurs envois n'ont pas lieu.
+bouton lecture en haut à gauche d'un bloc ouvre le même lien, mais le scénario démarrera à ce bloc-là. Ce
+qui précède ce bloc n'est pas rejoué : les tags et les champs de ces étapes ne sont pas posés.

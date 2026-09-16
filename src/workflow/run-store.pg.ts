@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { WorkflowGraph } from './graph';
+import { parseGraph } from './graph';
 
 /** `sleeping` = le run attend que le TEMPS passe (bloc Attente), `waiting` qu'un CONTACT réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
@@ -30,6 +31,13 @@ export interface WorkflowRunRow {
   channel?: RunChannel;
   /**
    * LE GRAPHE QUE CE PARCOURS JOUE, figé à son démarrage (migration 0151). `null` = on lit le publié.
+   *
+   * 🔴 RELUE PAR `parseGraph`, JAMAIS RENDUE TELLE QUELLE (correction de la revue finale, 2026-09-16). Ce
+   * jsonb est une entrée que le code d'aujourd'hui ne contrôle pas : une ligne écrite par une version
+   * antérieure, ou un objet arrivé par un chemin qu'on n'a pas prévu, partait droit dans
+   * `graph.nodes.find(...)` sur le chemin chaud d'un message entrant. `parseGraph` rend `null` sur tout ce
+   * qui n'est pas un graphe, ce qui fait retomber proprement sur le publié. C'est la règle du dépôt :
+   * `safeParse`, jamais `as`, sur toute entrée non fiable.
    *
    * 🔴 REQUISE, JAMAIS OPTIONNELLE, et `null` est le cas NORMAL (aucun parcours réel n'en porte). Optionnelle,
    * un dépôt qui oublierait de la lire rendrait `undefined`, la préférence retomberait sur le publié, et on
@@ -88,7 +96,7 @@ export class PgWorkflowRunStore {
     return r ? {
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
       currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
+      channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
     } : null;
   }
 
@@ -115,7 +123,7 @@ export class PgWorkflowRunStore {
     return r ? {
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
       currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
+      channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
     } : null;
   }
 
@@ -346,7 +354,7 @@ export class PgWorkflowRunStore {
     );
     return res.rows.map((r) => ({
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
+      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
     }));
   }
 
@@ -395,7 +403,7 @@ export class PgWorkflowRunStore {
     );
     return res.rows.map((r) => ({
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'waiting' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: r.graphe_fige ?? null,
+      currentNode: r.current_node, status: 'waiting' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
     }));
   }
 

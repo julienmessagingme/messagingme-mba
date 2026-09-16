@@ -77,8 +77,6 @@ function WorkflowsInner({ session }: { session: Session }) {
     mot: string;
     /** Le lien wa.me pré-rempli avec ce mot. `null` = aucun numéro WhatsApp connecté. */
     lien: string | null;
-    /** Teste-t-on à partir d'un bloc précis ? Change ce que le panneau PROMET, donc il doit le dire. */
-    depuisUnBloc: boolean;
     qr: string | null;
   } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -220,9 +218,15 @@ function WorkflowsInner({ session }: { session: Session }) {
       // invariant partagé de part et d'autre d'une frontière que ce dépôt interdit de franchir (aucun fichier
       // de `web/` n'importe `src/`), donc recopié à la main des deux côtés, donc voué à diverger en silence.
       const mot = nodeId ? `${link.token}.${nodeId}` : link.token;
-      // ⚠️ ON RÉÉCRIT LE PARAMÈTRE `text` DU LIEN RENDU PAR LE SERVEUR, on ne refabrique pas l'adresse. Le
-      // format de `wa.me` (le numéro sans `+` ni espaces) vit dans `src/lib/wa-me.ts` et doit y rester : le
-      // recopier ici en ferait une seconde vérité, sur une adresse qui part dans de vrais messages.
+      // ⚠️ ON RÉÉCRIT LE PARAMÈTRE `text` DU LIEN RENDU PAR LE SERVEUR, on ne refabrique pas l'adresse : le
+      // format de `wa.me` (le numéro sans `+` ni espaces) vit dans `src/lib/wa-me.ts` et doit y rester.
+      //
+      // ⚠️ MAIS L'ENCODAGE DU TEXTE, LUI, EST CELUI DU NAVIGATEUR, PAS LE NÔTRE (précisé en revue finale) :
+      // `searchParams.set` puis `toString()` RE-SÉRIALISENT toute la requête, donc `encodeTexteWaMe`
+      // (`src/lib/wa-me.ts`) est contourné, pas réutilisé. Les deux diffèrent sur `!'()*` et sur l'espace.
+      // Sans conséquence ici, et c'est mesurable : le mot vaut `test-` + 8 caractères Crockford, plus un
+      // identifiant de bloc dont les espaces ont déjà été retirés. Si un jour ce mot pouvait porter autre
+      // chose, c'est cette ligne qu'il faudrait reprendre, pas le module serveur.
       let lien = link.link;
       if (lien !== null && nodeId) {
         const u = new URL(lien);
@@ -234,7 +238,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         const QRCode = (await import('qrcode')).default;
         qr = await QRCode.toDataURL(lien, { width: 220, margin: 1 });
       }
-      setTesting({ wf: w, mot, lien, depuisUnBloc: Boolean(nodeId), qr });
+      setTesting({ wf: w, mot, lien, qr });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Lien de test indisponible', 'Test link unavailable'));
     } finally {
@@ -295,18 +299,10 @@ function WorkflowsInner({ session }: { session: Session }) {
                 'Scan this QR code with your phone, or open the link. WhatsApp opens with the word already typed: press Send and the scenario starts on your own number.',
               )}
             </p>
-            {/* Le panneau promettait « le scénario démarre » : à partir d'un bloc, cette phrase est fausse, et
-                elle l'est dans le sens qui coûte (le testeur attend le premier message et en reçoit un autre).
-                Ce qui est SAUTÉ ne se rattrape pas : les tags et les champs des étapes précédentes n'ont pas
-                été posés, c'est une décision assumée, et la dire évite une enquête. */}
-            {testing.depuisUnBloc && (
-              <p className="mt-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800" data-testid="workflow-test-depuis-bloc">
-                {t(
-                  'Le test démarrera À CE BLOC, pas au début du scénario. Les étapes précédentes sont sautées : leurs tags, leurs champs et leurs envois n’auront pas lieu.',
-                  'The test will start AT THIS BLOCK, not at the beginning of the scenario. Earlier steps are skipped: their tags, fields and messages will not happen.',
-                )}
-              </p>
-            )}
+            {/* ⚠️ AUCUN AVERTISSEMENT SUR LES ÉTAPES SAUTÉES, et c'est une DÉCISION, pas un oubli. Julien, le
+                2026-09-16 : « si on saute des étapes parce que la personne a décidé de tester qu'un bout du
+                scénario, et bien tant pis ! il ne se passe rien ». Un bandeau a été ajouté ici puis RETIRÉ le
+                jour même, quand la revue finale a montré qu'il inversait cette décision en silence. */}
 
             {testing.lien ? (
               <>

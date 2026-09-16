@@ -11,11 +11,11 @@
 
 | | |
 |---|---|
-| `origin/main` | `ab898e8` |
-| VPS (`mba-api`, `mba-worker`) | `237853b` — 🔴 **TROIS COMMITS DE RETARD**, le lot « tester depuis un bloc » n'est PAS déployé |
+| `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
+| VPS (`mba-api`, `mba-worker`) | `237853b` — 🔴 **EN RETARD**, le lot « tester depuis un bloc » n'est PAS déployé |
 | Vercel (`engageme`) | suit `origin/main` tout seul, donc **déjà à `ab898e8`** |
 | Migrations | **0151** (`workflow_runs.graphe_fige`), appliquée le 2026-09-16 et relue en base. **Prochaine libre : 0152** |
-| CI | ✅ verte job par job sur les trois commits (`unit`/`securite`/`integration` pour les deux premiers, `web` pour le troisième, qui ne touche que `web/`) |
+| CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
 | Contrôle public | ⏳ à refaire après le déploiement du VPS |
 
 🔴 **L'ÉCART FRONT / API EST UNE FENÊTRE OUVERTE, ET ELLE SE VOIT.** Vercel a déployé le bouton lecture ;
@@ -61,7 +61,12 @@ Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et o
 quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
 ailleurs que dans la colonne auteur**.
 
-### 3. Tester un scénario À PARTIR D'UN BLOC (livré le 2026-09-16, à faire APRÈS le déploiement du VPS)
+### 3. 🔴 Tester un scénario À PARTIR D'UN BLOC — OBLIGATION OUVERTE, la feature n'est pas close sans
+
+⚠️ **La revue finale du 2026-09-16 a attesté le CODE, pas l'usage.** L'essai ci-dessous est matériellement
+impossible avant le déploiement du VPS, et la skill refusait d'écrire l'attestation tant qu'il manquait :
+Julien a tranché « on atteste le code, l'essai reste dû ». Tant que ces quatre gestes n'ont pas eu lieu,
+**cette feature n'est pas close**, et personne ne doit écrire le contraire ailleurs.
 
 Quatre gestes, et le troisième est le seul qu'aucun test ne remplace :
 

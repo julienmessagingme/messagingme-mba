@@ -43,6 +43,54 @@ physique. Avant de croire une phrase trouvée ici, vérifier qu'elle existe enco
 
 ---
 
+## 2026-09-16 : tester un scénario À PARTIR D'UN BLOC, et le défaut que ça a fait sortir
+
+**Ce qui a été livré.** Un bouton lecture en haut à gauche de chaque bloc du constructeur, qui ouvre le
+panneau de test existant avec un lien `wa.me` et un QR démarrant le scénario à CE bloc. Le jeton du scénario
+gagne un suffixe facultatif, `test-xxxxxxxx.<identifiant du bloc>` ; le secret reste celui du scénario, le
+suffixe n'est qu'un pointeur. Trois commits, plus deux passes de revue : `f4f70d2`, `7f31dd6`, `ab898e8`,
+`638156f`, et les correctifs de la revue finale.
+
+**🔴 LE VRAI SUJET N'ÉTAIT PAS LA FONCTIONNALITÉ, C'ÉTAIT UN DÉFAUT EXISTANT.** En cartographiant le code
+avant d'écrire le plan, on a trouvé qu'un test DÉMARRAIT sur le brouillon (`startTestRun` passe
+`grapheEditable(wf)`) mais REPRENAIT sur le publié : les trois points de reprise de l'exécuteur (`resume`,
+`runEnAttenteSur`, `advance`) demandaient le graphe à `getGraph`, que le câblage résout en `row.graph`. Un
+test qui atteignait un bloc d'attente et recevait une réponse changeait donc de version EN SILENCE, et si son
+bloc courant n'existait pas dans le publié, le parcours se figeait sans un mot. Le défaut vivait là depuis la
+séparation brouillon / publié (lot 7, 2026-09-01). Réparé par la migration 0151 (`workflow_runs.graphe_fige`)
+et un point de passage unique, `grapheDuRun`.
+
+**Ce que la revue de chaque lot n'a pas pu voir.** Les trois lots ont chacun eu leur revue avant commit. Une
+revue GLOBALE, passée ensuite sur les trois ensemble, a trouvé six défauts de plus, dont deux réels : la
+couture navigateur / serveur n'était testée nulle part (l'E2E utilisait `n1` et `n2` comme identifiants de
+bloc, jamais un UUID), et l'invariant « un contact réel ne tombe jamais dans un brouillon » était vrai mais
+gardé nulle part. **La leçon : sur un plan à plusieurs commits, la revue par lot ne remplace pas la revue
+d'ensemble, parce que ce qui vit ENTRE les lots n'appartient à aucun d'eux.**
+
+**Et ce que la revue FINALE, faite par un relecteur séparé, a trouvé de plus.** Quatre rouges, dont deux que
+l'auteur du code ne pouvait pas voir :
+- **Une décision produit inversée en silence.** Julien avait tranché « pas d'avertissement sur les étapes
+  sautées, le panneau reste le QR et le lien ». Un bandeau avait été ajouté, et même vendu dans `features.md`
+  et dans la fiche du bot d'aide. Retiré le jour même, sur sa confirmation.
+- **Une classe de caractères supposée sur une valeur que le schéma ne contraint pas.** Le suffixe de bloc
+  était borné à `[0-9a-z_-]{1,64}`, sur une MESURE d'un jour (« les 64 blocs de production portent tous un
+  UUID minuscule »). Or `parseGraph` accepte n'importe quelle chaîne non vide comme `node.id`. Un identifiant
+  hors de cette classe faisait rendre `null` à la lecture du jeton, donc **le message n'était pas consommé**
+  et descendait jusqu'à l'agent de Meta, qui répondait au testeur. Une supposition qui échoue doit donner un
+  refus LISIBLE, jamais une fuite silencieuse : le suffixe n'a plus de forme imposée, et sa casse est
+  préservée (le texte entier était mis en minuscules, ce qui faisait échouer l'égalité sur un identifiant
+  portant une majuscule).
+
+**⚠️ ET UNE FENÊTRE DE DÉSYNCHRONISATION QUI N'APPARTIENT À AUCUN LOT.** `engageme.messagingme.app` part sur
+Vercel à chaque `git push`, `api.messagingme.app` demande un déploiement manuel. Le bouton lecture a donc été
+VISIBLE en production pendant que le serveur ne savait pas lire le suffixe. Conséquence exacte, pire qu'une
+panne visible : l'ancien filtre refuse le point, le mot n'est pas reconnu comme un jeton, il n'est pas
+consommé, et il descend jusqu'à l'agent de Meta. La conversation n'est pas non plus marquée « test », donc
+elle compte dans les statistiques. **Règle pour la prochaine feature qui traverse cette frontière : ordonner
+les lots pour que le front parte EN DERNIER.**
+
+---
+
 # documentation.md : technique
 
 ## Où tourne quoi (depuis la bascule du 2026-09-03)

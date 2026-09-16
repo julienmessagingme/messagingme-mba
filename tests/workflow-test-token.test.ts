@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newTestToken, lireJetonDeTest, normalizeTestToken, waMeTestLink } from '../src/workflow/test-token';
+import { newTestToken, lireJetonDeTest, waMeTestLink } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
 
 /**
@@ -30,7 +30,10 @@ describe('forme du jeton', () => {
 
   it('tolère la casse et les espaces (clavier de téléphone, copier-coller)', () => {
     expect(lireJetonDeTest('  TEST-A7K2M9P3 ')).toEqual({ jeton: 'test-a7k2m9p3', nodeId: null });
-    expect(normalizeTestToken(' Test-A7K2 M9P3 ')).toBe('test-a7k2m9p3');
+    // ⚠️ CE CAS ÉTAIT PORTÉ PAR `normalizeTestToken`, retirée le 2026-09-16 (elle n'avait plus d'appelant de
+    // production, et sa documentation affirmait qu'elle était le filtre du chemin chaud, ce qui était devenu
+    // faux). Le cas, lui, est conservé : espaces INTERNES retirés, casse du jeton ramenée en minuscules.
+    expect(lireJetonDeTest(' Test-A7K2 M9P3 ')).toEqual({ jeton: 'test-a7k2m9p3', nodeId: null });
   });
 
   it('refuse tout ce qui n’est pas EXACTEMENT un jeton', () => {

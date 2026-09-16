@@ -586,10 +586,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Tester À PARTIR D'UN BLOC précis** (2026-09-16) : chaque bloc du constructeur porte un **petit bouton
   lecture** en haut à gauche. Il ouvre le même panneau (QR + lien), mais le scénario démarrera **à ce
   bloc-là**, pas au début. On teste ainsi un bout de parcours sans avoir à dérouler tout ce qui précède, et
-  sans envoyer de template. Les étapes sautées **ne se rattrapent pas** : leurs tags, leurs champs et leurs
-  envois n'ont pas lieu, et le panneau le dit. Le lien reste permanent ; si le bloc a été supprimé depuis,
-  le test **ne démarre pas** plutôt que de repartir du début. Les variables comme `{{prenom}}` sortent
-  normalement : elles viennent de la fiche du contact qui teste, pas du parcours.
+  sans envoyer de template. Le lien reste permanent ; si le bloc a été supprimé depuis, le test **ne démarre
+  pas** plutôt que de repartir du début. Les variables comme `{{prenom}}` sortent normalement : elles
+  viennent de la fiche du contact qui teste, pas du parcours. ⚠️ Ce qui précède le bloc n'est pas rejoué et
+  **le panneau ne prévient pas** : décision de Julien, « tant pis, il ne se passe rien ».
 - ✅ **Un test joue LA MÊME version du début à la fin** (2026-09-16) : le brouillon est figé dans le parcours
   au démarrage. Avant, un test démarrait sur le brouillon mais **repartait sur la version en ligne** dès que
   le testeur répondait à une question ou qu'une attente se réveillait : on essayait deux versions sans le

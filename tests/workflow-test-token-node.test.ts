@@ -38,10 +38,16 @@ describe('un jeton de test qui désigne un bloc', () => {
     expect(accepte('test-abc12345')).toBe(true);
     expect(accepte(`test-abc12345.${NODE}`)).toBe(true);
     expect(accepte('bonjour je teste test-abc12345')).toBe(false);
-    expect(accepte('test-abc12345.')).toBe(false); // un point suivi de rien
-    expect(accepte(`test-abc12345.${NODE}.${NODE}`)).toBe(false); // deux suffixes
-    expect(accepte(`test-abc12345.${'a'.repeat(65)}`)).toBe(false); // au-delà de la borne
-    expect(accepte('test-abc12345 ' + NODE)).toBe(false); // un espace n'est pas un point
+    expect(accepte('test-abc12345.')).toBe(false); // un point suivi de rien ne DÉSIGNE rien
+    expect(accepte('test-abc12345 ' + NODE)).toBe(false); // sans point, le tout doit être un jeton
+
+    // ⚠️ DEUX CAS ONT CHANGÉ DE RÈGLE LE 2026-09-16, et le changement est le correctif d'un rouge de la
+    // revue finale. « Deux suffixes » et « au-delà de 64 caractères » étaient REFUSÉS, sur une classe
+    // supposée pour l'identifiant de bloc. Or `parseGraph` n'en impose aucune : un identifiant hors classe
+    // faisait rendre `null`, donc le message n'était pas CONSOMMÉ et descendait jusqu'à l'agent de Meta.
+    // Ils sont désormais LUS, et c'est `runFrom` qui refuse un bloc introuvable, avec sa raison et sa trace.
+    expect(accepte(`test-abc12345.${NODE}.${NODE}`)).toBe(true);
+    expect(accepte(`test-abc12345.${'a'.repeat(300)}`)).toBe(true);
   });
 
   it('🔴 LE FILTRE N’A PAS ÉTÉ AFFAIBLI : ce qu’il refusait AVANT, il le refuse encore', () => {
@@ -54,16 +60,21 @@ describe('un jeton de test qui désigne un bloc', () => {
     expect(accepte(`xtest-abc12345.${NODE}`)).toBe(false); // le préfixe est ancré
   });
 
-  it('⚠️ la normalisation d’avant tient toujours : majuscules et espaces', () => {
-    expect(lireJetonDeTest(`  TEST-ABC12345.${NODE.toUpperCase()} `))
+  it('🔴 le JETON se met en minuscules, le SUFFIXE garde sa casse', () => {
+    // Le texte entier était mis en minuscules. Un identifiant de bloc portant une majuscule passait donc le
+    // filtre puis échouait à l'égalité : un refus pour une raison parfaitement invisible. Seul le jeton a une
+    // forme connue, et c'est sur la PREMIÈRE lettre du message qu'un clavier de téléphone met une majuscule
+    // tout seul. Les espaces, eux, restent retirés des deux côtés.
+    expect(lireJetonDeTest(`  TEST-ABC12345.${NODE} `))
       .toEqual({ jeton: 'test-abc12345', nodeId: NODE });
+    expect(lireJetonDeTest('test-abc12345.Bloc-Majuscule'))
+      .toEqual({ jeton: 'test-abc12345', nodeId: 'Bloc-Majuscule' });
   });
 
-  it('⚠️ l’identifiant de repli du constructeur passe aussi, et c’est mesuré', () => {
-    // Les 64 blocs en production portent tous un UUID minuscule (mesuré le 2026-09-16). Mais `uid()`
-    // (`web/components/WorkflowBuilder.tsx`) retombe sur `id-<base36>-<horodatage>` quand `crypto.randomUUID`
-    // n'existe pas : borner le suffixe à la FORME d'un UUID rendrait ces blocs intestables EN SILENCE, le
-    // message partant alors comme un message ordinaire.
+  it('⚠️ l’identifiant de repli du constructeur passe aussi', () => {
+    // `uid()` (`web/components/WorkflowBuilder.tsx`) retombe sur `id-<base36>-<horodatage>` quand
+    // `crypto.randomUUID` n'existe pas (contexte non sécurisé). ⚠️ L'inventaire complet des formes qui
+    // doivent voyager vit dans `tests/web-jeton-test-parite.test.ts`, qui lit le navigateur ET le serveur.
     expect(lireJetonDeTest('test-abc12345.id-k3f9x2p-1758012345678'))
       .toEqual({ jeton: 'test-abc12345', nodeId: 'id-k3f9x2p-1758012345678' });
   });

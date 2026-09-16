@@ -33,15 +33,6 @@ const GRAPHE = {
   edges: [{ id: 'e1', source: N1, target: N2 }],
 };
 
-/**
- * LE FILTRE DU SERVEUR, RECOPIÉ ICI EXPRÈS, et c'est la seule copie assumée de ce lot.
- *
- * Aucun fichier de `web/` n'a le droit d'importer `src/` : la vérification de bout en bout ne peut donc pas
- * appeler `lireJetonDeTest`. Plutôt que de faire confiance, on rejoue sa forme sur le texte RÉELLEMENT
- * produit par le navigateur. Si les deux divergent un jour, c'est ICI que ça se verra, au lieu de se voir
- * sur le téléphone de quelqu'un.
- */
-const FILTRE_SERVEUR = /^test-[0-9a-hjkmnp-tv-z]{8}(\.[0-9a-z_-]{1,64})?$/;
 
 async function ouvrirBuilder(page: import('@playwright/test').Page) {
   /** L'ORDRE des appels au serveur : c'est lui, et lui seul, qui prouve que le brouillon part AVANT le test. */
@@ -87,12 +78,13 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
     // Le mot et le lien portent le suffixe du bloc : sans lui, le test démarrerait à l'entrée du scénario.
     await expect(page.getByTestId('workflow-test-mot')).toHaveText(`${MOT_TEST}.${N2}`);
     await expect(page.getByTestId('workflow-test-lien')).toHaveValue(`https://wa.me/33525680250?text=${MOT_TEST}.${N2}`);
-    // 🔴 ET LE TEXTE PRODUIT PASSE LE FILTRE DU SERVEUR. Sans cette ligne, les deux moitiés du lot sont
-    // vertes chacune de son côté et personne ne vérifie qu'elles se parlent.
-    const mot = await page.getByTestId('workflow-test-mot').textContent();
-    expect(mot, 'le mot composé par le navigateur doit passer le filtre du chemin chaud').toMatch(FILTRE_SERVEUR);
-    // Et le panneau le DIT : il promettait « le scénario démarre », ce qui est faux à partir d'un bloc.
-    await expect(page.getByTestId('workflow-test-depuis-bloc')).toBeVisible();
+    // ⚠️ QUE LE SERVEUR SACHE LIRE CE MOT SE VÉRIFIE AILLEURS, et c'est une correction de la revue finale :
+    // la forme du serveur était recopiée ici, mais `ci-web.yml` ne lance ce fichier que sur `web/**`, donc un
+    // commit qui resserrait la lecture côté serveur ne le déclenchait pas. La parité vit désormais dans
+    // `tests/web-jeton-test-parite.test.ts`, à la racine, qui tourne sur tous les pushs et importe la VRAIE
+    // lecture au lieu d'en recopier la forme.
+    // ⚠️ AUCUN bandeau sur les étapes sautées : décision de Julien, gardée dans ce sens-là.
+    await expect(page.getByTestId('workflow-test-depuis-bloc')).toHaveCount(0);
     // Le QR est recalculé sur le lien AVEC le suffixe (data-URL, aucun service externe).
     await expect(panneau.locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/);
   });
