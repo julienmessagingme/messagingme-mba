@@ -3,6 +3,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { ApiKeyRow } from '../auth/api-key-store.pg';
 import { scopeTenant, nonEmpty } from './scope';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 /** Scopes d'API reconnus en V1. Une clé demande un sous-ensemble non vide. */
 /**
@@ -16,6 +17,17 @@ import { scopeTenant, nonEmpty } from './scope';
 export const VALID_API_SCOPES = ['contacts:write', 'sends:create', 'mcp:read', 'mcp:write'] as const;
 
 export interface ApiKeysRouteDeps {
+  /**
+   * Journal d'audit (2026-09-15). Optionnel : absent -> aucune trace (câblages de test).
+   *
+   * 🔴 UNE CLÉ D'API LIT LES CONTACTS D'UN ESPACE SANS PASSER PAR UN COMPTE. Savoir qui l'a créée et quand
+   * est la seule façon de répondre à « d'où vient cet accès ? », et la clé elle-même n'est montrée qu'UNE
+   * fois : après ça, plus rien ne relie le porteur à celui qui la lui a donnée.
+   *
+   * 🔴 LE `detail` NE PORTE JAMAIS LA CLÉ, NI SON EMPREINTE, seulement les DROITS accordés. Une empreinte
+   * dans un journal jamais purgé donnerait de quoi reconnaître une clé bien après sa révocation.
+   */
+  audit?: AuditSink;
   createKey(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }>;
   listKeys(tenantId: string): Promise<ApiKeyRow[]>;
   revokeKey(tenantId: string, id: string): Promise<boolean>;
@@ -27,6 +39,7 @@ export interface ApiKeysRouteDeps {
  */
 export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
+  const journal = makeJournal(deps.audit);
 
   app.post('/tenants/:tenantId/api-keys', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -40,6 +53,8 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     if (invalid.length > 0) return reply.code(400).send({ error: `scope(s) inconnu(s) : ${invalid.join(', ')}` });
     const { id, key } = await deps.createKey(tenant, b.name.trim().slice(0, 100), scopes);
     // key = clair, montré UNE fois. Le client doit le stocker maintenant.
+    // ⚠️ LES DROITS, PAS LA CLÉ : `scopes` dit ce qui a été accordé, et c'est toute la question.
+    await journal(tenant, req, 'cle_api.creee', { kind: 'api_key', id }, { scopes });
     return reply.code(201).send({ id, key, name: b.name.trim().slice(0, 100), scopes });
   });
 
@@ -56,6 +71,8 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     const { id } = req.params as { id: string };
     const ok = await deps.revokeKey(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'clé inconnue ou déjà révoquée' });
+    // APRÈS le succès : une révocation refusée (clé inconnue, déjà révoquée) n'a rien révoqué.
+    await journal(tenant, req, 'cle_api.revoquee', { kind: 'api_key', id });
     return reply.code(200).send({ id, revoked: true });
   });
 }

@@ -4,8 +4,19 @@ import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
 import { renderInvitationEmail } from '../support/email-templates';
 import { scopeTenant } from './scope';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 export interface UsersRouteDeps {
+  /**
+   * Journal d'audit des ACCÈS (2026-09-15). Optionnel : absent -> aucune trace, ce qui est le comportement
+   * des câblages de test qui ne montent pas de base.
+   *
+   * 🔴 LE `detail` NE PORTE JAMAIS D'EMAIL NI DE NOM, seulement le RÔLE avant et après. Cette table n'est
+   * jamais purgée par la rétention des contacts : y écrire une donnée personnelle la rendrait ineffaçable, et
+   * annulerait l'effacement qu'une autre ligne du même journal certifie (migration 0061). `actor_email` est
+   * la seule exception, dénormalisée exprès pour rester lisible après le départ du collaborateur.
+   */
+  audit?: AuditSink;
   listUsers(tenantId: string): Promise<UserRow[]>;
   /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
   setUserRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
@@ -62,6 +73,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * est au preHandler. On ne renvoie jamais le hash ; les mots de passe ne sont jamais journalisés.
  */
 export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde: Guard): void {
+  const journal = makeJournal(deps.audit);
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/users', opts, async (req, reply) => {
@@ -117,6 +129,15 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
           // L'invitation (compte + lien) est déjà créée ; l'admin pourra ré-inviter si l'email a échoué.
         }
       }
+      /**
+       * ⚠️ LE RÔLE INVITÉ, PAS L'ADRESSE. C'est le rôle qui dit ce qu'on vient d'accorder, et une adresse
+       * e-mail est une donnée personnelle que cette table ne purge jamais. La cible porte l'identifiant
+       * interne du compte créé : il suffit à retrouver qui, sans le graver.
+       *
+       * ⚠️ `emailSent` est journalisé parce qu'une invitation créée mais NON envoyée est un état réel, et la
+       * question « pourquoi n'a-t-il jamais reçu le lien ? » se pose des semaines après.
+       */
+      await journal(tenant, req, 'utilisateur.invite', { kind: 'user', id: user.id }, { role: b.role, emailSent });
       return reply.code(201).send({ user, emailSent });
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'email déjà utilisé' });
@@ -171,6 +192,9 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const result = await deps.setUserRole(tenant, userId, role);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur est requis' });
+    // ⚠️ APRÈS le succès, jamais avant : journaliser une intention qui a été REFUSÉE (404, 409) ferait lire
+    // le journal comme un registre de changements alors qu'il serait un registre de tentatives.
+    await journal(tenant, req, 'utilisateur.role_change', { kind: 'user', id: userId }, { role });
     return reply.code(200).send({ id: userId, role });
   });
 
@@ -186,6 +210,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const result = await deps.setUserDisabled(tenant, userId, disabled);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
+    await journal(tenant, req, 'utilisateur.desactive', { kind: 'user', id: userId }, { disabled });
     return reply.code(200).send({ id: userId, disabled });
   });
 
@@ -199,6 +224,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const result = await deps.deleteUser(tenant, userId);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
+    await journal(tenant, req, 'utilisateur.retire', { kind: 'user', id: userId });
     return reply.code(200).send({ id: userId, deleted: true });
   });
 }

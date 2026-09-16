@@ -9,6 +9,24 @@ import type { GoogleIdentity } from './google';
 import { DuplicateEmailError } from '../user/store.pg';
 
 export interface AuthRouteDeps {
+  /**
+   * Journal d'audit des CONNEXIONS ÉCHOUÉES (2026-09-15). Optionnel : absent -> aucune trace.
+   *
+   * 🔴 IL N'EST ÉCRIT QUE POUR UN COMPTE QUI EXISTE, et c'est une limite de CONCEPTION, pas un oubli.
+   * `audit_log.tenant_id` est NOT NULL et référence `tenants` : une tentative sur une adresse INCONNUE
+   * n'appartient à aucun espace et n'a nulle part où s'écrire. ⚠️ L'écran devra le DIRE, sans quoi on y lira
+   * « aucune tentative » alors qu'il y en a eu des milliers sur des adresses inventées.
+   *
+   * 🔴 ET C'EST LE SEUL POINT DE CE JOURNAL SUR UN CHEMIN NON AUTHENTIFIÉ. Ce qui le rend sûr n'est pas
+   * l'écriture elle-même, c'est le frein juste au-dessus : dix tentatives par minute et par clé, qui rend
+   * 429 AVANT la vérification du mot de passe. Un attaquant freiné n'atteint jamais cette ligne. Sans ce
+   * frein, ajouter un journal ici aurait offert une amplification, pas une trace.
+   *
+   * ⚠️ L'ACTEUR EST LE COMPTE VISÉ, pas l'auteur : personne n'est authentifié ici, par définition. Le
+   * `detail` ne porte ni l'adresse ni l'IP, seulement la CAUSE du refus, parce que cette table n'est jamais
+   * purgée et qu'une IP est une donnée personnelle.
+   */
+  auditConnexion?: (tenantId: string, userId: string, cause: 'mot_de_passe' | 'compte_desactive') => Promise<void>;
   users: UserAuthStore;
   secret: string;
   /** Rate-limit du login (par IP). Défaut : 10 tentatives / minute. */
@@ -155,6 +173,22 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     // TOUJOURS vérifier un hash (leurre si l'adresse est inconnue) : même temps CPU -> pas de fuite d'existence.
     const ok = await verifyPassword(b.password, identite?.passwordHash ?? DUMMY_HASH);
     if (!identite || !ok) {
+      /**
+       * 🔴 ON N'ATTEND PAS CETTE ÉCRITURE, ET C'EST LA SEULE FAÇON DE NE PAS ROUVRIR LA FUITE D'EXISTENCE.
+       *
+       * Une adresse INCONNUE ne produit aucune ligne (aucun espace où l'écrire) ; une adresse CONNUE en
+       * produit une. Attendre l'écriture ferait donc durer la réponse plus longtemps dans le second cas, et
+       * cet écart se mesure : il dirait « ce compte existe » à qui le chronomètre. Ce serait défaire, par
+       * l'ajout d'un journal, exactement ce que le hash-leurre trois lignes plus haut protège au prix d'un
+       * scrypt inutile.
+       *
+       * ⚠️ Le `.catch` n'est pas décoratif : une promesse flottante qui rejette tue le process depuis Node 15.
+       * ⚠️ L'ACTEUR EST LE COMPTE VISÉ, pas l'auteur : personne n'est authentifié ici, par définition.
+       */
+      const cible = identite?.comptes[0];
+      if (cible && deps.auditConnexion) {
+        void deps.auditConnexion(cible.tenantId, cible.id, 'mot_de_passe').catch(() => {});
+      }
       return reply.code(401).send({ error: 'identifiants invalides' });
     }
 

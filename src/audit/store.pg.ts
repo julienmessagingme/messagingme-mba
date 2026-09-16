@@ -29,7 +29,35 @@ export type AuditAction =
    * l'identifiant interne de la conversation et le nombre de messages effacés. Y écrire le contenu
    * annulerait l'effacement qu'on vient de faire, dans une table conçue pour ne jamais être modifiée.
    */
-  | 'conversation.effacee';
+  | 'conversation.effacee'
+  /**
+   * LES ACCÈS (2026-09-15, lot 1 du plan `2026-09-15-audit-des-actions-sensibles.md`).
+   *
+   * 🔴 CE QUE CE GROUPE AJOUTE, ET POURQUOI C'ÉTAIT LE PREMIER TROU. Les sept actions du dessus tracent ce
+   * qui touche aux PERSONNES ; aucune ne tracait ce qui donne du POUVOIR. Personne ne pouvait dire qui avait
+   * nommé un admin, créé une clé d'API, ou révoqué un compte. C'est la première question d'un questionnaire
+   * sécurité, et la réponse était « on ne sait pas ».
+   *
+   * 🔴 AUCUNE MIGRATION NE LES BORNE : `audit_log.action` est un `text` LIBRE (0061), sans CHECK. Ce type est
+   * donc la SEULE garde contre une faute de frappe, et une action mal orthographiée s'écrirait en base sans
+   * que rien ne proteste, puis manquerait à l'écran pour toujours.
+   *
+   * ⚠️ `numero.deconnecte` N'EXISTE PAS, et c'est un constat : aucune route ne détache un numéro aujourd'hui.
+   * La déclarer produirait une action que rien n'écrit, c'est-à-dire le motif « offert-et-inerte ».
+   */
+  | 'utilisateur.invite'
+  | 'utilisateur.role_change'
+  | 'utilisateur.desactive'
+  | 'utilisateur.retire'
+  /**
+   * ⚠️ UNIQUEMENT SUR UN COMPTE QUI EXISTE, et c'est une limite de CONCEPTION, pas un oubli.
+   * `audit_log.tenant_id` est NOT NULL et référence `tenants` : une tentative sur une adresse inconnue
+   * n'appartient à aucun espace et n'a donc nulle part où s'écrire. L'écran devra le DIRE, sans quoi on y
+   * lira « aucune tentative » alors qu'il y en a eu.
+   */
+  | 'connexion.echouee'
+  | 'cle_api.creee'
+  | 'cle_api.revoquee';
 
 export interface AuditEntry {
   id: string;

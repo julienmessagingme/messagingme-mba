@@ -481,6 +481,14 @@ async function main(): Promise<void> {
     // Readiness : `select 1` (timeout court 2 s) -> /health 503 si la DB est injoignable. /live reste trivial.
     checkReadiness: makeDbReadinessCheck(pool, 2000),
     auth: {
+      /**
+       * ⚠️ L'ACTEUR EST LE COMPTE VISÉ, pas l'auteur : personne n'est authentifié sur une connexion échouée.
+       * L'email est donc résolu depuis CE compte, comme le fait `auditSink` pour un acteur ordinaire.
+       */
+      auditConnexion: async (tenant, userId, cause) => {
+        const email = (await userStore.getSessionUser(userId))?.email ?? null;
+        await auditStore.record(tenant, { userId, email }, 'connexion.echouee', { kind: 'user', id: userId }, { cause });
+      },
       users: new PgUserAuthStore(pool),
       secret: config.AUTH_SECRET,
       // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
@@ -1194,6 +1202,7 @@ async function main(): Promise<void> {
       serviceSecret: config.HUBSPOT_SERVICE_SECRET,
     },
     admin: {
+      audit: auditSink,
       listUsers: (tenant) => userStore.list(tenant),
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
       setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
@@ -2324,6 +2333,7 @@ async function main(): Promise<void> {
       },
     },
     apiKeys: {
+      audit: auditSink,
       createKey: (tenant, name, scopes) => apiKeyStore.create(tenant, name, scopes),
       listKeys: (tenant) => apiKeyStore.listByTenant(tenant),
       revokeKey: (tenant, id) => apiKeyStore.revoke(tenant, id),
