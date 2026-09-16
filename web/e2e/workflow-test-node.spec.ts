@@ -14,14 +14,34 @@ const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', te
 const MOT_TEST = 'test-a7k2m9p3';
 const LIEN = `https://wa.me/33525680250?text=${MOT_TEST}`;
 
+/**
+ * 🔴 DE VRAIS IDENTIFIANTS, c'est-à-dire des UUID, et ce n'est PAS cosmétique. Le constructeur les produit
+ * avec `crypto.randomUUID()` (mesuré : les 64 blocs de production en portent un), ils traversent un
+ * paramètre d'URL, puis `normalizeTestToken` côté serveur. Avec des identifiants courts comme « n1 », ce
+ * fichier ne prouvait RIEN de la forme réelle : ni que `searchParams.set` laisse les tirets intacts, ni que
+ * le texte obtenu passe le filtre du chemin chaud. C'est le seul endroit où les deux moitiés se rencontrent.
+ */
+const N1 = '0f7c9a21-4d3e-4b18-9a55-1c2e3f4a5b6c';
+const N2 = '7b2d4e60-91af-4c73-8e15-6d0a9f3b2c48';
+
 /** Scénario à DEUX blocs : sans le second, on ne pourrait pas distinguer « ce bloc » de « le début ». */
 const GRAPHE = {
   nodes: [
-    { id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'promo' } },
-    { id: 'n2', type: 'quick_message', position: { x: 0, y: 160 }, data: { body: 'Et ensuite ?' } },
+    { id: N1, type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'promo' } },
+    { id: N2, type: 'quick_message', position: { x: 0, y: 160 }, data: { body: 'Et ensuite ?' } },
   ],
-  edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+  edges: [{ id: 'e1', source: N1, target: N2 }],
 };
+
+/**
+ * LE FILTRE DU SERVEUR, RECOPIÉ ICI EXPRÈS, et c'est la seule copie assumée de ce lot.
+ *
+ * Aucun fichier de `web/` n'a le droit d'importer `src/` : la vérification de bout en bout ne peut donc pas
+ * appeler `lireJetonDeTest`. Plutôt que de faire confiance, on rejoue sa forme sur le texte RÉELLEMENT
+ * produit par le navigateur. Si les deux divergent un jour, c'est ICI que ça se verra, au lieu de se voir
+ * sur le téléphone de quelqu'un.
+ */
+const FILTRE_SERVEUR = /^test-[0-9a-hjkmnp-tv-z]{8}(\.[0-9a-z_-]{1,64})?$/;
 
 async function ouvrirBuilder(page: import('@playwright/test').Page) {
   /** L'ORDRE des appels au serveur : c'est lui, et lui seul, qui prouve que le brouillon part AVANT le test. */
@@ -60,13 +80,17 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
   test('🔴 le bouton d’un bloc ouvre le panneau de test avec le lien de CE bloc', async ({ page }) => {
     await ouvrirBuilder(page);
 
-    await page.getByTestId('node-test-n2').click();
+    await page.getByTestId(`node-test-${N2}`).click();
 
     const panneau = page.getByTestId('workflow-test-panel');
     await expect(panneau).toBeVisible();
     // Le mot et le lien portent le suffixe du bloc : sans lui, le test démarrerait à l'entrée du scénario.
-    await expect(page.getByTestId('workflow-test-mot')).toHaveText(`${MOT_TEST}.n2`);
-    await expect(page.getByTestId('workflow-test-lien')).toHaveValue(`https://wa.me/33525680250?text=${MOT_TEST}.n2`);
+    await expect(page.getByTestId('workflow-test-mot')).toHaveText(`${MOT_TEST}.${N2}`);
+    await expect(page.getByTestId('workflow-test-lien')).toHaveValue(`https://wa.me/33525680250?text=${MOT_TEST}.${N2}`);
+    // 🔴 ET LE TEXTE PRODUIT PASSE LE FILTRE DU SERVEUR. Sans cette ligne, les deux moitiés du lot sont
+    // vertes chacune de son côté et personne ne vérifie qu'elles se parlent.
+    const mot = await page.getByTestId('workflow-test-mot').textContent();
+    expect(mot, 'le mot composé par le navigateur doit passer le filtre du chemin chaud').toMatch(FILTRE_SERVEUR);
     // Et le panneau le DIT : il promettait « le scénario démarre », ce qui est faux à partir d'un bloc.
     await expect(page.getByTestId('workflow-test-depuis-bloc')).toBeVisible();
     // Le QR est recalculé sur le lien AVEC le suffixe (data-URL, aucun service externe).
@@ -80,7 +104,7 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
     const invite = page.getByText('Clique un bloc pour le configurer', { exact: false });
     await expect(invite).toBeVisible();
 
-    await page.getByTestId('node-test-n2').click();
+    await page.getByTestId(`node-test-${N2}`).click();
 
     await expect(page.getByTestId('workflow-test-panel')).toBeVisible();
     await expect(invite, 'aucun bloc ne doit avoir été sélectionné').toBeVisible();
@@ -90,8 +114,8 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
     // Décision de Julien : TOUS les blocs portent le bouton, le bloc d'entrée compris. Le suffixe doit donc
     // suivre le bloc cliqué, pas être une constante.
     await ouvrirBuilder(page);
-    await page.getByTestId('node-test-n1').click();
-    await expect(page.getByTestId('workflow-test-mot')).toHaveText(`${MOT_TEST}.n1`);
+    await page.getByTestId(`node-test-${N1}`).click();
+    await expect(page.getByTestId('workflow-test-mot')).toHaveText(`${MOT_TEST}.${N1}`);
   });
 
   test('🔴 une modification NON ENREGISTRÉE part AVANT que le panneau s’ouvre', async ({ page }) => {
@@ -109,7 +133,7 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
     // Sélectionne le bloc par un clic sur son corps (pas sur le bouton lecture), puis modifie son message.
     await page.locator('.react-flow__node').nth(1).click();
     await page.getByTestId('quick-node-body').fill('version toute fraiche');
-    await page.getByTestId('node-test-n2').click();
+    await page.getByTestId(`node-test-${N2}`).click();
 
     await expect(page.getByTestId('workflow-test-panel')).toBeVisible();
     const rangPatch = appels.findIndex((a) => a.includes('version toute fraiche'));

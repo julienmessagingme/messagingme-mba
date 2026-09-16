@@ -185,6 +185,25 @@ describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () 
     expect(cablageDuLienDeTest()).toContain('figerLeGraphe: true');
   });
 
+  /**
+   * 🔴 L'INVARIANT LE PLUS CHER DU LOT, ET IL N'ÉTAIT GARDÉ NULLE PART (relevé en revue globale, 2026-09-16).
+   *
+   * « Un contact RÉEL ne tombe jamais dans un brouillon. » Le lien de test est le SEUL chemin d'exécution qui
+   * joue `grapheEditable(wf)` ; tous les autres jouent le PUBLIÉ. Rien dans le langage ne le dit : il suffirait
+   * qu'un jour quelqu'un trouve pratique d'ouvrir le lancement depuis l'Inbox sur le brouillon pour qu'une
+   * version de travail parte à un vrai client, sans erreur et sans trace.
+   */
+  it('🔴 SEUL le lien de test joue le BROUILLON, dans les deux câblages d’exécution', () => {
+    expect(worker.split('grapheEditable(').length - 1,
+      'un second appelant de grapheEditable dans le worker : est-ce bien un chemin de TEST ?').toBe(1);
+    expect(cablageDuLienDeTest()).toContain('grapheEditable(wf)');
+
+    // Le lancement depuis l'Inbox part d'un geste d'OPÉRATEUR vers un vrai contact : il joue le publié.
+    const index = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf8');
+    expect(index.split('grapheEditable').length - 1,
+      'le lancement depuis l’Inbox écrit à un vrai contact : il ne doit jamais jouer un brouillon').toBe(0);
+  });
+
   it('🔴 et il démarre AU BLOC quand le jeton en désigne un', () => {
     // Le câblage est la seule pièce qui traduit `nodeId` en chemin d'exécution, et aucun test unitaire ne
     // peut monter `main()`. Sans cette garde, revenir à un `startInWindow` inconditionnel ferait démarrer

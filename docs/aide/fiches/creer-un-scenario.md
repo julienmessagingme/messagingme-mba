@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: c59977
+source_empreinte: 9487e0
 ---
 # Créer un scénario
 
@@ -31,3 +31,7 @@ quand la dernière sauvegarde a eu lieu.
 
 Pour l'essayer avant de le mettre en service, utilisez le lien de test : il ouvre une conversation avec votre
 numéro et fait partir le scénario depuis le début.
+
+Vous pouvez aussi l'essayer **à partir d'un bloc précis**, sans dérouler tout ce qui précède : le petit
+bouton lecture en haut à gauche d'un bloc ouvre le même lien, mais le scénario démarrera à ce bloc-là. Les
+étapes sautées ne sont pas rattrapées : leurs tags, leurs champs et leurs envois n'ont pas lieu.

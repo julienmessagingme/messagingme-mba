@@ -506,6 +506,17 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 - 🔴 **Un run endormi est CLOS par le démarrage suivant, pas préservé.** `closeActiveByWaId` couvre `waiting`
   ET `sleeping` et efface `resume_at`. Sans les deux, une automation lancerait un second parcours en parallèle
   et les deux écriraient au réveil.
+- 🔴 **UN PARCOURS JOUE LE MÊME GRAPHE DU DÉBUT À LA FIN**, et un seul point de passage le décide :
+  `grapheDuRun(run, lirePublie)` (`src/workflow/executor.ts`), lu par les TROIS reprises (`resume`,
+  `runEnAttenteSur`, `advance`). Il rend `workflow_runs.graphe_fige` s'il y en a un, le publié sinon.
+  `graphe_fige` est `null` pour tout parcours réel : seul le LIEN DE TEST le pose, parce qu'il est le seul
+  chemin d'exécution à jouer le brouillon. La poser par campagne recopierait le même objet une fois par
+  destinataire. La colonne est REQUISE dans `WorkflowRunRow` et dans `DueRun`, donc le compilateur oblige
+  chaque lecture de parcours à la transporter, balayage des endormis compris.
+- 🔴 **UN CONTACT RÉEL NE TOMBE JAMAIS DANS UN BROUILLON.** `grapheEditable(wf)` n'apparaît qu'à UN endroit
+  des câblages d'exécution (`startTestRun`, `src/worker.ts`) ; le lancement depuis l'Inbox (`src/index.ts`)
+  et les campagnes jouent `wf.graph`. Rien dans le langage ne le dit, `tests/workflow-graphe-fige.test.ts`
+  le tient.
 
 **Conversations**
 

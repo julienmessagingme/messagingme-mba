@@ -11,12 +11,18 @@
 
 | | |
 |---|---|
-| `origin/main` | `237853b` |
-| VPS (`mba-api`, `mba-worker`) | `237853b`, aucun écart |
-| Vercel (`engageme`) | suit `origin/main` tout seul |
-| Migrations | **0150**, inchangée. Aucune migration depuis le 2026-09-15. **Prochaine libre : 0151** |
-| CI | ✅ verte sur les trois jobs (`unit`, `securite`, `integration`) à chacun des quinze commits |
-| Contrôle public | ✅ les trois noms à 200, après un reload NPM (le 502 est arrivé à trois déploiements sur cinq) |
+| `origin/main` | `ab898e8` |
+| VPS (`mba-api`, `mba-worker`) | `237853b` — 🔴 **TROIS COMMITS DE RETARD**, le lot « tester depuis un bloc » n'est PAS déployé |
+| Vercel (`engageme`) | suit `origin/main` tout seul, donc **déjà à `ab898e8`** |
+| Migrations | **0151** (`workflow_runs.graphe_fige`), appliquée le 2026-09-16 et relue en base. **Prochaine libre : 0152** |
+| CI | ✅ verte job par job sur les trois commits (`unit`/`securite`/`integration` pour les deux premiers, `web` pour le troisième, qui ne touche que `web/`) |
+| Contrôle public | ⏳ à refaire après le déploiement du VPS |
+
+🔴 **L'ÉCART FRONT / API EST UNE FENÊTRE OUVERTE, ET ELLE SE VOIT.** Vercel a déployé le bouton lecture ;
+l'API du VPS ne sait pas encore lire le suffixe de bloc. Un lien cliqué maintenant n'est donc PAS reconnu
+comme un jeton de test : il n'est pas consommé, et il part à l'agent de Meta comme un message de client
+ordinaire, qui y répondra. Rien n'est cassé pour un vrai client, mais le bouton ne marche pas tant que
+`mba-api` et `mba-worker` n'ont pas `ab898e8`. La migration est DÉJÀ passée : il n'y a rien à migrer.
 
 ## CE QU'UNE SESSION SUIVANTE DOIT SAVOIR
 
@@ -55,7 +61,21 @@ Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et o
 quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
 ailleurs que dans la colonne auteur**.
 
-### 3. « Ça pousse ou ça intègre » (migration 0150), toujours dû depuis le 2026-09-15
+### 3. Tester un scénario À PARTIR D'UN BLOC (livré le 2026-09-16, à faire APRÈS le déploiement du VPS)
+
+Quatre gestes, et le troisième est le seul qu'aucun test ne remplace :
+
+1. **Cliquer le bouton lecture d'un bloc AU MILIEU d'un scénario**, scanner le QR, envoyer : c'est CE
+   message-là qui doit arriver, pas le premier du scénario.
+2. **Modifier le brouillon SANS publier**, recliquer le même bloc : le test doit suivre la modification.
+3. 🔴 **Atteindre un bloc d'attente ou une question et RÉPONDRE** : le parcours doit continuer sur le
+   BROUILLON. C'est la vérification du défaut que la migration 0151 répare, et elle ne se fait qu'à la main.
+4. **Cliquer un bloc d'un scénario publié SANS brouillon en attente** : ce cas ne doit rien casser.
+
+⚠️ **Et regarder la bulle WhatsApp** : `test-a7k2m9p3.<uuid>` ressemble à un nom de domaine, WhatsApp va
+probablement l'afficher en lien bleu. Ça ne change pas le texte envoyé, mais personne ne l'a encore vu.
+
+### 4. « Ça pousse ou ça intègre » (migration 0150), toujours dû depuis le 2026-09-15
 
 Donner `testadd` (`POST /subscriber/add-tag`) à un agent IA en « ça pousse », l'essayer depuis le bac à sable,
 puis **vérifier dans UChat que l'étiquette est réellement posée**. Refaire avec un appel qui intègre, cocher un
