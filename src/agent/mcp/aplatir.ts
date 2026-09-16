@@ -1,11 +1,13 @@
 import type { TypeParam } from '../llm/tool-schema';
+import { nomUnique } from './nommer';
 
 /**
  * Aplatir un `inputSchema` MCP en FEUILLES scalaires.
  *
  * 🔴 CE MODULE EST CE QUI PERMET À LA GARDE D'IDENTITÉ DE DESCENDRE DANS LES SOUS-OBJETS, et c'est sa seule
- * raison d'être. Nos paramètres portent une `source` (`modele` / `contact` / `fixe`) qui décide si le MODÈLE
- * remplit la valeur ou si le runtime l'injecte depuis le numéro authentifié par la signature Meta. Un
+ * raison d'être. Nos paramètres portent une `source` (`modele` / `contact` / `champ` / `fixe`) qui décide si
+ * le MODÈLE remplit la valeur ou si le runtime l'injecte depuis le numéro authentifié par la signature Meta,
+ * ou depuis un champ que le client a déclaré pour ses contacts. Un
  * paramètre imbriqué n'aurait aucune case où poser ce marquage : il serait donc forcément rempli par le
  * modèle, donc influençable par le contact, et un `filtres.client_id` deviendrait un IDOR offert au premier
  * venu qui écrit sur le numéro. En énumérant les feuilles, chacune reçoit sa source comme n'importe quel
@@ -55,9 +57,6 @@ export interface SchemaAplati {
  * les rendre indistinguables. Cinq niveaux couvrent très largement ce qu'une API expose.
  */
 const PROFONDEUR_MAX = 5;
-
-/** Longueur maximale d'un nom de paramètre exposé au modèle (contrainte de `agent_tools.params`). */
-const NOM_MAX = 64;
 
 const TYPES: Record<string, TypeParam> = {
   string: 'string',
@@ -114,15 +113,6 @@ function typeScalaire(noeud: Record<string, unknown>): TypeParam | null {
   return null;
 }
 
-/** Normalise un chemin distant en nom exposable au modèle. */
-function normaliser(chemin: string): string {
-  const plat = chemin
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return (plat === '' ? 'param' : plat).slice(0, NOM_MAX);
-}
-
 export function aplatirSchema(inputSchema: unknown): SchemaAplati {
   const racine = objet(inputSchema);
   if (racine === null) {
@@ -137,23 +127,15 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
   const prisNoms = new Set<string>();
 
   function ajouter(chemin: string, type: TypeParam, noeud: Record<string, unknown>, estRequis: boolean): void {
-    let nom = normaliser(chemin);
-    if (prisNoms.has(nom)) {
-      // Deux chemins distincts peuvent se normaliser pareil (`a.b_c` et `a.b.c`), ou se collisionner après
-      // troncature. Sans suffixe, le second écraserait le premier dans le schéma envoyé au modèle, et une
-      // valeur partirait dans le mauvais champ, sans aucune erreur.
-      // ⚠️ LA BASE SE RECALCULE À CHAQUE TOUR, sur la longueur RÉELLE du suffixe. Une base figée à
-      // `NOM_MAX - 2` tient pour `_2` à `_9`, puis déborde à la dixième collision (62 + « _10 » = 65),
-      // c'est-à-dire exactement la borne que ce module annonce respecter.
-      let n = 2;
-      let candidat = '';
-      do {
-        const suffixe = `_${n}`;
-        candidat = `${nom.slice(0, NOM_MAX - suffixe.length)}${suffixe}`;
-        n += 1;
-      } while (prisNoms.has(candidat));
-      nom = candidat;
-    }
+    // Deux chemins distincts peuvent se normaliser pareil (`a.b_c` et `a.b.c`), ou se collisionner après
+    // troncature. Sans suffixe, le second écraserait le premier dans le schéma envoyé au modèle, et une
+    // valeur partirait dans le mauvais champ, sans aucune erreur.
+    //
+    // ⚠️ LA MISE EN FORME ET LA DÉSAMBIGUÏSATION VIVENT DANS `./nommer`, PARTAGÉES AVEC L'IMPORT. Les deux
+    // portées d'unicité diffèrent (ici l'outil, là l'espace), la contrainte de forme et le piège de
+    // troncature sont identiques : les écrire deux fois ferait diverger la seconde le jour où l'on corrige
+    // la première.
+    const nom = nomUnique(chemin, prisNoms);
     prisNoms.add(nom);
     const enumeration = Array.isArray(noeud.enum) && noeud.enum.every((v) => typeof v === 'string')
       ? noeud.enum as string[]
