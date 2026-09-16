@@ -90,6 +90,37 @@ describe('aplatir un schema MCP : ce qui passe', () => {
     expect(r.feuilles.map((f) => f.cheminMcp).sort()).toEqual(['a.b.c', 'a.b_c']);
   });
 
+  it('🔴 le suffixe de desambiguation ne fait JAMAIS deborder la borne de 64', () => {
+    // Une base figee a 62 caracteres tient pour `_2` a `_9`, puis deborde a la dixieme collision
+    // (62 + « _10 » = 65), c est-a-dire exactement la borne que ce module annonce respecter.
+    const props: Record<string, unknown> = {};
+    for (let i = 0; i < 15; i += 1) props[`${'z'.repeat(70)}${i}`] = { type: 'string' };
+    const r = aplatirSchema({ type: 'object', properties: props });
+    expect(r.raisonNonActivable).toBeNull();
+    expect(r.feuilles).toHaveLength(15);
+    for (const f of r.feuilles) expect(f.name.length).toBeLessThanOrEqual(64);
+    expect(new Set(r.feuilles.map((f) => f.name)).size).toBe(15);
+  });
+
+  it('un enum de NOMBRES est ecarte, et la feuille garde son type', () => {
+    // Notre schema d objet ne porte que des enumerations de chaines. La perdre n ouvre pas de trou chez
+    // nous (le serveur distant valide ce qu il recoit), mais ce cas existe pour que le comportement soit
+    // ECRIT plutot que constate un jour par surprise.
+    const r = aplatirSchema({ type: 'object', properties: { note: { type: 'integer', enum: [1, 2, 3] } } });
+    expect(r.raisonNonActivable).toBeNull();
+    expect(r.feuilles[0]!.type).toBe('integer');
+    expect(r.feuilles[0]!.enum).toBeUndefined();
+  });
+
+  it('un $ref est refuse NOMMEMENT, et pas par accident', () => {
+    // 🔴 La spec MCP interdit de dereferencer un `$ref`, et beaucoup de serveurs reels en emettent
+    // (tout ce qui est genere depuis des modeles typés). Le refus existait deja, mais par ricochet du
+    // cas « type non declare » : ce test le fixe pour qu un remaniement ne le transforme pas en
+    // acceptation silencieuse.
+    const r = aplatirSchema({ type: 'object', properties: { client: { $ref: '#/$defs/Client' } } });
+    expect(r.raisonNonActivable).toContain('client');
+  });
+
   it('normalise un nom hors charset et le borne a 64 caracteres', () => {
     const long = 'T'.repeat(80);
     const r = aplatirSchema({ type: 'object', properties: { 'Filtres.Ville-2': { type: 'string' }, [long]: { type: 'string' } } });

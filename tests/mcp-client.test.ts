@@ -11,7 +11,7 @@ import { ouvrirSessionMcp, type OutilAnnonce, type SessionMcp } from '../src/mcp
  * `tools/list`, qu'on ne suivrait pas sans le savoir.
  */
 
-const CIBLE = { url: 'https://exemple.test/mcp', enTetes: {}, timeoutMs: 5000, maxOctets: 65536 };
+const CIBLE = { url: 'https://exemple.test/mcp', enTetes: {}, timeoutMs: 5000, budgetTotalMs: 30000, maxOctets: 65536 };
 
 type Reponse =
   | { result: unknown; sse?: boolean; enTetes?: Record<string, string> }
@@ -24,8 +24,9 @@ interface Vue { corps: Record<string, unknown> | null; enTetes: Record<string, s
  * Un faux serveur MCP. Il ÉCHO l'identifiant reçu au lieu d'en inventer un : le client choisit ses
  * identifiants, et un faux qui en fixerait un en dur testerait le faux, pas l'appariement.
  */
-function faussaire(scenario: Reponse[]): { impl: typeof fetch; vues: Vue[] } {
+function faussaire(scenario: Reponse[]): { impl: typeof fetch; vues: Vue[]; reponses: Response[] } {
   const vues: Vue[] = [];
+  const reponses: Response[] = [];
   let i = 0;
   const impl = (async (_url: string, init: RequestInit = {}) => {
     const enTetes = Object.fromEntries(
@@ -38,22 +39,26 @@ function faussaire(scenario: Reponse[]): { impl: typeof fetch; vues: Vue[] } {
 
     const r = scenario[i++] ?? scenario[scenario.length - 1]!;
     if ('statut' in r) {
-      return new Response(r.corps ?? '', { status: r.statut, headers: { 'content-type': r.type ?? 'text/plain' } });
+      const brute = new Response(r.corps ?? '', { status: r.statut, headers: { 'content-type': r.type ?? 'text/plain' } });
+      reponses.push(brute);
+      return brute;
     }
     const id = corps?.id;
     const enveloppe = JSON.stringify(
       'erreur' in r ? { jsonrpc: '2.0', id, error: r.erreur } : { jsonrpc: '2.0', id, result: r.result },
     );
     const sse = 'sse' in r && r.sse === true;
-    return new Response(sse ? `event: message\ndata: ${enveloppe}\n\n` : enveloppe, {
+    const rep = new Response(sse ? `event: message\ndata: ${enveloppe}\n\n` : enveloppe, {
       status: 200,
       headers: {
         'content-type': sse ? 'text/event-stream' : 'application/json',
         ...('enTetes' in r ? r.enTetes ?? {} : {}),
       },
     });
+    reponses.push(rep);
+    return rep;
   }) as unknown as typeof fetch;
-  return { impl, vues };
+  return { impl, vues, reponses };
 }
 
 const INIT = { result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'x', version: '1' } } };
@@ -116,6 +121,48 @@ describe('le client MCP : le cycle de vie', () => {
     const f = faussaire([{ statut: 405, corps: 'Method Not Allowed' }]);
     const s = await ouvrirSessionMcp(CIBLE, { fetchImpl: f.impl });
     expect(s).toEqual({ echec: { genre: 'transport_ancien' } });
+  });
+
+  it('🔴 un en-tete du CLIENT ne peut pas ecraser un en-tete de PROTOCOLE', async () => {
+    // 🔴 `auth_header_name` est un texte que le client SAISIT. Etale en dernier, il ecraserait `Accept`,
+    // et nous deviendrions incapables de lire une reponse en flux sans qu aucune erreur ne le dise.
+    // La casse compte aussi : un `Accept` majuscule ne collisionne avec rien dans un objet, et partirait
+    // EN DOUBLE a cote du notre.
+    const f = faussaire([INIT, ACCUSE]);
+    await ouvrirSessionMcp(
+      { ...CIBLE, enTetes: { Accept: 'text/plain', 'Content-Type': 'text/plain', authorization: 'Bearer x' } },
+      { fetchImpl: f.impl },
+    );
+    expect(f.vues[0]!.enTetes.accept).toContain('text/event-stream');
+    expect(f.vues[0]!.enTetes['content-type']).toBe('application/json');
+    // Ce qui n est PAS reserve passe, evidemment : c est tout l interet de ces en-tetes.
+    expect(f.vues[0]!.enTetes.authorization).toBe('Bearer x');
+  });
+
+  it('une reponse dont l identifiant ne correspond pas est REFUSEE, en JSON comme en flux', async () => {
+    // Le chemin en flux verifiait deja l identifiant, le chemin JSON non : l asymetrie n avait aucune
+    // raison d etre, et un serveur qui repond a cote rendrait un resultat qu on prendrait pour le notre.
+    const f = faussaire([{ statut: 200, type: 'application/json', corps: JSON.stringify({ jsonrpc: '2.0', id: 999, result: {} }) }]);
+    const s = await ouvrirSessionMcp(CIBLE, { fetchImpl: f.impl });
+    expect(s).toEqual({ echec: { genre: 'protocole', message: expect.stringContaining('ne correspond pas') } });
+  });
+
+  it('le budget de l OPERATION borne la suite, pas seulement chaque requete', async () => {
+    // Sans budget total, vingt pages valent vingt fois l echeance d une requete. L horloge est injectee
+    // pour que ce cas soit reproductible plutot que dependant de la vitesse de la machine.
+    const f = faussaire([INIT, ACCUSE, { result: { tools: [] } }]);
+    let t = 1_000_000;
+    const s = await ouvrirSessionMcp({ ...CIBLE, budgetTotalMs: 5000 }, { fetchImpl: f.impl, now: () => t });
+    if ('echec' in s) throw new Error('ouverture refusée');
+    t += 6000; // le budget est epuise avant la liste
+    expect(await s.lister()).toEqual({ echec: { genre: 'protocole', message: expect.stringContaining('budget') } });
+  });
+
+  it('le corps d une reponse qu on n exploite pas est JETE, sinon la connexion reste retenue', async () => {
+    const f = faussaire([{ statut: 500, corps: 'boom' }]);
+    await ouvrirSessionMcp(CIBLE, { fetchImpl: f.impl });
+    // `bodyUsed` passe a vrai des que le flux est consomme OU annule. Sans le `cancel`, il reste faux.
+    expect(f.reponses[0]!.bodyUsed).toBe(true);
   });
 
   it('un 401 n est PAS l ancien transport : c est un refus, et le client doit pouvoir le dire', async () => {

@@ -142,10 +142,17 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
       // Deux chemins distincts peuvent se normaliser pareil (`a.b_c` et `a.b.c`), ou se collisionner après
       // troncature. Sans suffixe, le second écraserait le premier dans le schéma envoyé au modèle, et une
       // valeur partirait dans le mauvais champ, sans aucune erreur.
+      // ⚠️ LA BASE SE RECALCULE À CHAQUE TOUR, sur la longueur RÉELLE du suffixe. Une base figée à
+      // `NOM_MAX - 2` tient pour `_2` à `_9`, puis déborde à la dixième collision (62 + « _10 » = 65),
+      // c'est-à-dire exactement la borne que ce module annonce respecter.
       let n = 2;
-      const base = nom.slice(0, NOM_MAX - 2);
-      while (prisNoms.has(`${base}_${n}`)) n += 1;
-      nom = `${base}_${n}`;
+      let candidat = '';
+      do {
+        const suffixe = `_${n}`;
+        candidat = `${nom.slice(0, NOM_MAX - suffixe.length)}${suffixe}`;
+        n += 1;
+      } while (prisNoms.has(candidat));
+      nom = candidat;
     }
     prisNoms.add(nom);
     const enumeration = Array.isArray(noeud.enum) && noeud.enum.every((v) => typeof v === 'string')

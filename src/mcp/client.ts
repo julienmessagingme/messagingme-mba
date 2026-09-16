@@ -32,7 +32,19 @@ export interface CibleMcp {
   /** L'adresse du POINT MCP (l'endpoint unique), pas une racine sous laquelle on composerait un chemin. */
   url: string;
   enTetes: Record<string, string>;
+  /** Échéance d'UNE requête. */
   timeoutMs: number;
+  /**
+   * Échéance de toute l'OPÉRATION, et elle est REQUISE.
+   *
+   * 🔴 SANS ELLE, `lister()` VAUT VINGT FOIS `timeoutMs`. L'échéance de `fetch` est par requête : un
+   * catalogue paginé sur vingt pages à huit secondes tiendrait la route d'import cent soixante secondes,
+   * bien au delà de ce qu'une passerelle laisse passer, et l'appelant n'aurait rien pour le borner.
+   *
+   * ⚠️ Elle n'a pas de défaut, délibérément : seul l'appelant sait son budget, et il n'est pas le même
+   * pour un tour d'agent en conversation et pour un import déclenché par un administrateur.
+   */
+  budgetTotalMs: number;
   maxOctets: number;
 }
 
@@ -70,6 +82,12 @@ export interface SessionMcp {
    * catalogue ENTIER : le rafraîchissement marquerait alors « disparus » tous les outils de la page 2 et
    * ferait tomber leur consentement. Une panne réseau d'une seconde débrancherait la moitié des outils
    * d'un client, sans que rien ne le dise.
+   *
+   * 🔴 ET `tronque: true` PORTE EXACTEMENT LE MÊME DANGER PAR L'AUTRE PORTE. La liste est alors RÉELLEMENT
+   * partielle, légitimement (le serveur annonce plus d'outils que nos bornes), mais elle reste partielle :
+   * **un appelant qui supprime ou marque « disparu » ce qui n'y figure pas se trompe de la même façon.**
+   * Le contrat est donc : sur `tronque`, on AJOUTE et on MET À JOUR, on ne RETIRE jamais. Ce n'est pas une
+   * recommandation, c'est la seule lecture correcte de ce drapeau, et un test de l'import la tient.
    */
   lister(): Promise<{ outils: OutilAnnonce[]; tronque: boolean } | { echec: EchecMcp }>;
   appeler(nom: string, args: Record<string, unknown>): Promise<ResultatAppel>;
@@ -85,6 +103,14 @@ export interface SessionMcp {
  */
 const MAX_PAGES = 20;
 const MAX_OUTILS = 500;
+
+/**
+ * Les en-têtes que la configuration d'un client ne peut pas poser.
+ *
+ * ⚠️ Ce ne sont pas des interdits de politesse : chacun porte une décision de PROTOCOLE, et un client qui
+ * en écraserait un casserait la connexion sans qu'aucune erreur ne le nomme.
+ */
+const RESERVES = ['content-type', 'accept', 'mcp-protocol-version', 'mcp-session-id'] as const;
 
 /** Ce qu'un bloc de contenu non textuel devient dans le texte rendu au modèle. */
 const MENTION: Record<string, string> = {
@@ -125,7 +151,14 @@ async function lireReponse(
     if (corps.casse) return { echec: { genre: 'protocole', message: 'la réponse a été coupée en cours de lecture' } };
     try {
       const m = objet(JSON.parse(corps.texte));
-      return m ?? { echec: { genre: 'protocole', message: 'réponse JSON-RPC attendue' } };
+      if (m === null) return { echec: { genre: 'protocole', message: 'réponse JSON-RPC attendue' } };
+      // ⚠️ L'IDENTIFIANT SE VÉRIFIE ICI AUSSI. Le chemin en flux le fait déjà, parce qu'il doit choisir
+      // parmi plusieurs messages ; celui-ci ne le faisait pas, et l'asymétrie n'avait aucune raison d'être.
+      // Un serveur qui répond à côté rendrait alors un résultat qu'on prendrait pour le nôtre.
+      if (m.id !== id) {
+        return { echec: { genre: 'protocole', message: 'la réponse ne correspond pas à la requête envoyée' } };
+      }
+      return m;
     } catch {
       return { echec: { genre: 'protocole', message: 'corps JSON illisible' } };
     }
@@ -186,25 +219,44 @@ async function lireReponse(
 
 export function ouvrirSessionMcp(
   cible: CibleMcp,
-  opts: { fetchImpl?: typeof fetch } = {},
+  /** `now` est injectée pour que le budget soit reproductible en test, comme ailleurs dans ce dépôt. */
+  opts: { fetchImpl?: typeof fetch; now?: () => number } = {},
 ): Promise<SessionMcp | { echec: EchecMcp }> {
-  return ouvrir(cible, opts.fetchImpl ?? fetch);
+  return ouvrir(cible, opts.fetchImpl ?? fetch, opts.now ?? (() => Date.now()));
 }
 
-async function ouvrir(cible: CibleMcp, appeler: typeof fetch): Promise<SessionMcp | { echec: EchecMcp }> {
+async function ouvrir(
+  cible: CibleMcp,
+  appeler: typeof fetch,
+  maintenant: () => number,
+): Promise<SessionMcp | { echec: EchecMcp }> {
   let prochainId = 1;
   let sessionId: string | null = null;
   let version = VERSION_PROTOCOLE;
+  // L'échéance de l'OPÉRATION ENTIÈRE, posée une fois : l'initialisation, la pagination et les appels
+  // puisent dedans. C'est elle qui empêche vingt pages de valoir vingt fois l'échéance d'une requête.
+  const finAbsolue = maintenant() + cible.budgetTotalMs;
 
-  /** Les en-têtes d'une requête. `apresInit` ajoute ce que la spec n'autorise qu'ensuite. */
+  /**
+   * Les en-têtes d'une requête. `apresInit` ajoute ce que la spec n'autorise qu'ensuite.
+   *
+   * 🔴 LES EN-TÊTES DE PROTOCOLE SONT POSÉS EN DERNIER, ET L'ORDRE EST LA GARDE. Ceux de l'appelant
+   * viennent de la configuration du CLIENT (`auth_header_name` est un texte qu'il saisit) : étalés en
+   * dernier, ils écraseraient `Accept`, et nous deviendrions incapables de lire une réponse en flux sans
+   * qu'aucune erreur ne le dise. Leurs clés sont mises en minuscules avant d'être posées, sinon un
+   * `Accept` majuscule ne collisionnerait avec rien dans l'objet et partirait EN DOUBLE.
+   */
   function enTetes(apresInit: boolean): Record<string, string> {
+    const duClient: Record<string, string> = {};
+    for (const [k, v] of Object.entries(cible.enTetes)) duClient[k.toLowerCase()] = v;
+    for (const reserve of RESERVES) delete duClient[reserve];
     return {
+      ...duClient,
       'content-type': 'application/json',
       // 🔴 LES DEUX, TOUJOURS. La spec l'impose (« MUST include an Accept header, listing both »), et c'est
       // ce qui autorise le serveur à répondre en flux : ne pas l'annoncer ferait échouer des serveurs
       // parfaitement conformes.
       accept: 'application/json, text/event-stream',
-      ...cible.enTetes,
       ...(apresInit ? { 'mcp-protocol-version': version } : {}),
       // Jamais d'en-tête vide : un serveur qui exige une session répondrait 400 à un identifiant vide,
       // et notre propre serveur, sans état, n'en assigne aucun.
@@ -218,13 +270,18 @@ async function ouvrir(cible: CibleMcp, appeler: typeof fetch): Promise<SessionMc
     apresInit: boolean,
   ): Promise<Record<string, unknown> | { echec: EchecMcp }> {
     const id = prochainId++;
+    const restant = finAbsolue - maintenant();
+    if (restant <= 0) {
+      return { echec: { genre: 'protocole', message: 'le budget de l’opération est épuisé' } };
+    }
     let res: Response;
     try {
       res = await appeler(cible.url, {
         method: 'POST',
         headers: enTetes(apresInit),
         body: JSON.stringify({ jsonrpc: '2.0', id, method: methode, ...(params ? { params } : {}) }),
-        signal: AbortSignal.timeout(cible.timeoutMs),
+        // Le plus court des deux : l'échéance de CETTE requête, et ce qui reste du budget de l'opération.
+        signal: AbortSignal.timeout(Math.min(cible.timeoutMs, restant)),
         // Une API qui redirige est une anomalie, et la suivre rouvrirait la porte que la garde d'adresse
         // vient de fermer : le premier saut est validé, le second ne l'est plus.
         redirect: 'error',
@@ -233,6 +290,9 @@ async function ouvrir(cible: CibleMcp, appeler: typeof fetch): Promise<SessionMc
       return { echec: { genre: 'reseau', message: err instanceof Error ? err.message : 'appel impossible' } };
     }
     if (!res.ok) {
+      // Le corps d'une réponse qu'on n'exploite pas se JETTE explicitement : sans ça, la connexion reste
+      // retenue jusqu'au ramasse-miettes, et un import qui enchaîne vingt pages en laisse vingt derrière lui.
+      await res.body?.cancel().catch(() => {});
       return { echec: { genre: 'refus', code: res.status, message: `le serveur a répondu ${res.status}` } };
     }
     return lireReponse(res, id, cible.maxOctets);
@@ -241,13 +301,16 @@ async function ouvrir(cible: CibleMcp, appeler: typeof fetch): Promise<SessionMc
   /** Une NOTIFICATION : pas d'identifiant, donc pas de réponse. Le serveur doit rendre 202 sans corps. */
   async function notifier(methode: string): Promise<void> {
     try {
-      await appeler(cible.url, {
+      const res = await appeler(cible.url, {
         method: 'POST',
         headers: enTetes(true),
         body: JSON.stringify({ jsonrpc: '2.0', method: methode }),
         signal: AbortSignal.timeout(cible.timeoutMs),
         redirect: 'error',
       });
+      // La réponse attendue est un 202 SANS corps, mais un serveur peut en mettre un. On le jette, sinon
+      // la connexion reste retenue pour une réponse qu'on n'a par définition pas à lire.
+      await res.body?.cancel().catch(() => {});
     } catch { /* une notification perdue n'empêche pas la suite : le serveur n'y répond rien */ }
   }
 
@@ -268,7 +331,7 @@ async function ouvrir(cible: CibleMcp, appeler: typeof fetch): Promise<SessionMc
           clientInfo: { name: IDENTITE_PRODUIT.name, title: IDENTITE_PRODUIT.title, version: IDENTITE_PRODUIT.version },
         },
       }),
-      signal: AbortSignal.timeout(cible.timeoutMs),
+      signal: AbortSignal.timeout(Math.min(cible.timeoutMs, Math.max(1, finAbsolue - maintenant()))),
       redirect: 'error',
     });
   } catch (err) {
@@ -276,6 +339,7 @@ async function ouvrir(cible: CibleMcp, appeler: typeof fetch): Promise<SessionMc
   }
 
   if (!premiereReponse.ok) {
+    await premiereReponse.body?.cancel().catch(() => {});
     // 🔴 405 ET 404 SONT LA SIGNATURE DE L'ANCIEN TRANSPORT, et la spec la décrit telle quelle : un serveur
     // resté en 2024-11-05 n'accepte pas de POST sur son endpoint, il attend un GET qui ouvre un flux. On le
     // NOMME plutôt que d'échouer en silence ou de basculer sur un transport qu'on a choisi de ne pas parler.
