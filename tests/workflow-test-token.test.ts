@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newTestToken, looksLikeTestToken, normalizeTestToken, waMeTestLink } from '../src/workflow/test-token';
+import { newTestToken, lireJetonDeTest, normalizeTestToken, waMeTestLink } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
 
 /**
@@ -23,19 +23,19 @@ describe('forme du jeton', () => {
   it('newTestToken produit un jeton reconnu, préfixé et non devinable', () => {
     const t = newTestToken();
     expect(t).toMatch(/^test-[0-9a-hjkmnp-tv-z]{8}$/);
-    expect(looksLikeTestToken(t)).toBe(true);
+    expect(lireJetonDeTest(t)).toEqual({ jeton: t, nodeId: null });
     // 20 tirages sans doublon : l'aléa est réel (un compteur ou une constante échouerait ici).
     expect(new Set(Array.from({ length: 20 }, () => newTestToken())).size).toBe(20);
   });
 
   it('tolère la casse et les espaces (clavier de téléphone, copier-coller)', () => {
-    expect(looksLikeTestToken('  TEST-A7K2M9P3 ')).toBe(true);
+    expect(lireJetonDeTest('  TEST-A7K2M9P3 ')).toEqual({ jeton: 'test-a7k2m9p3', nodeId: null });
     expect(normalizeTestToken(' Test-A7K2 M9P3 ')).toBe('test-a7k2m9p3');
   });
 
   it('refuse tout ce qui n’est pas EXACTEMENT un jeton', () => {
     for (const body of ['bonjour', 'test', 'test-', 'test-court', 'test-a7k2m9p33', 'je teste test-a7k2m9p3', '', null]) {
-      expect(looksLikeTestToken(body), String(body)).toBe(false);
+      expect(lireJetonDeTest(body), String(body)).toBeNull();
     }
   });
 });

@@ -1,5 +1,5 @@
 import { extractInbound } from './inbound';
-import { looksLikeTestToken, normalizeTestToken } from '../workflow/test-token';
+import { lireJetonDeTest } from '../workflow/test-token';
 
 /**
  * Déclenche un scénario en MODE TEST quand le testeur envoie le jeton de son lien wa.me / QR (Lot F).
@@ -29,9 +29,15 @@ export interface TestTokenDeps {
    * Termine le parcours éventuellement en attente pour ce contact. Un testeur qui relance son lien veut
    * repartir du début : sans ça, un run resté en attente d'une réponse resterait orphelin à vie.
    */
-  /** Démarre le scénario depuis son entrée. Le contact vient d'écrire, la fenêtre 24 h est donc ouverte. */
-  /** true = parti ; `false` ou une chaîne (la raison) = pas parti. L'appelant ne consomme que le fait. */
-  startTestRun(tenantId: string, workflowId: string, waId: string): Promise<boolean | string>;
+  /**
+   * Démarre le scénario. Le contact vient d'écrire, la fenêtre 24 h est donc ouverte.
+   *
+   * `nodeId` = le BLOC désigné par le suffixe du jeton (2026-09-16), `null` = l'entrée du scénario, c'est-à-dire
+   * le comportement de tous les liens déjà distribués.
+   *
+   * true = parti ; `false` ou une chaîne (la raison) = pas parti, et la raison est JOURNALISÉE par l'appelant.
+   */
+  startTestRun(tenantId: string, workflowId: string, waId: string, nodeId: string | null): Promise<boolean | string>;
 }
 
 /**
@@ -53,11 +59,18 @@ export async function processTestTokens(
     if (m.field && m.field !== 'messages') continue; // standby : le MBA tient le fil
     // Filtre du chemin chaud : seuls les messages qui RESSEMBLENT à un jeton interrogent la base. Un message
     // client ordinaire ne coûte donc rien de plus qu'avant.
-    if (!looksLikeTestToken(m.body)) continue;
+    //
+    // ⚠️ UNE SEULE LECTURE, ET C'EST VOULU. Le filtre et l'extraction étaient deux appels (`looksLikeTestToken`
+    // puis `normalizeTestToken`) : deux occasions de diverger sur la forme acceptée. `lireJetonDeTest` rend les
+    // deux d'un coup, donc ce qui a passé le filtre est exactement ce qu'on lit.
+    const lu = lireJetonDeTest(m.body);
+    if (!lu) continue;
     try {
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (!tenantId) continue;
-      const wf = await deps.findByTestToken(normalizeTestToken(m.body));
+      // 🔴 LE JETON SEUL, SANS LE SUFFIXE DE BLOC. Le suffixe n'est pas stocké : chercher le texte entier ne
+      // trouverait jamais rien, et le test ne démarrerait pas du tout.
+      const wf = await deps.findByTestToken(lu.jeton);
       // Jeton inconnu, ou appartenant à un AUTRE client : on ne déclenche rien. Le jeton désigne le scénario,
       // mais c'est le numéro qui fait autorité sur le tenant ; un jeton fuité ne doit pas traverser les clients.
       if (!wf || wf.tenantId !== tenantId) continue;
@@ -86,7 +99,16 @@ export async function processTestTokens(
       // donc elle pouvait tuer un parcours pour un test qui n'allait pas démarrer (scénario vide, fil tenu) ;
       // et elle ne voyait que `waiting`, laissant vivre un parcours ENDORMI qui se serait réveillé par-dessus
       // le test. `closeActiveByWaId` couvre les deux statuts et efface l'échéance.
-      await deps.startTestRun(tenantId, wf.workflowId, m.waId);
+      // 🔴 LE REFUS EST JOURNALISÉ, parce qu'un chemin qui décide de NE PAS agir doit le dire. Le résultat
+      // était jeté : un test qui ne partait pas ne laissait AUCUNE trace, ni en base ni dans les journaux, et
+      // le testeur ne voyait qu'un silence. C'est le défaut relevé sur le gel d'avance le 2026-09-14, et le
+      // lien PERMANENT le rend ordinaire : un lien collé il y a trois semaines peut désigner un bloc supprimé
+      // depuis, et l'exécuteur le refuse alors avec sa raison.
+      const issue = await deps.startTestRun(tenantId, wf.workflowId, m.waId, lu.nodeId);
+      if (issue !== true) {
+        // eslint-disable-next-line no-console
+        console.warn(`test-token: test NON démarré pour ${m.waId} sur le scénario ${wf.workflowId}${lu.nodeId ? ` au bloc ${lu.nodeId}` : ''} : ${issue === false ? 'refus sans raison' : issue}`);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processTestTokens: jeton ignoré:', err instanceof Error ? err.message : err);

@@ -400,6 +400,35 @@ npm run typecheck && npx vitest run
 git commit --only src/workflow/test-token.ts src/webhooks/test-token.ts src/worker.ts tests/workflow-test-token-node.test.ts -m "feat(scenario): le jeton de test designe un bloc, et le demarrage s y fait"
 ```
 
+### Ce qui a ete fait AUTREMENT que ce plan, et pourquoi (2026-09-16, a l execution)
+
+Trois ecarts, tous constates en ecrivant le code. Le plan reste le document de decision ; ces lignes evitent
+qu un lecteur qui le rejouerait refasse le mauvais geste.
+
+1. **AUCUNE garde `graphe.nodes.some(...)` dans `src/worker.ts`.** Le step 6 en demandait une : elle aurait ete
+   une SECONDE verite. `runFrom` porte deja cette garde pour ses quatre chemins de demarrage, elle journalise,
+   et elle rend une raison lisible. Elle vit dans l executeur, donc elle est exercee par des tests ; posee dans
+   le cablage du worker, elle n aurait ete exercee par aucun. Son message a ete GENERALISE au passage : il
+   disait « supprime depuis la creation de la campagne », ce qui est faux pour un lien de test.
+
+2. **Le suffixe accepte `[0-9a-z_-]{1,64}`, pas la forme d un UUID.** Mesure faite avant d ecrire la regle :
+   les 64 blocs de production portent tous un UUID minuscule, mais `uid()`
+   (`web/components/WorkflowBuilder.tsx`) retombe sur `id-<base36>-<horodatage>` quand `crypto.randomUUID` n
+   existe pas. Borner a la forme d un UUID rendrait ces blocs intestables EN SILENCE. Ce qui discrimine sur le
+   chemin chaud est la partie GAUCHE (`test-` + 8 caracteres Crockford), pas le suffixe.
+
+3. **`looksLikeTestToken` a ete RETIREE**, et le filtre du chemin chaud est desormais `lireJetonDeTest` seule.
+   Deux portes sur la meme forme divergent, et la divergence serait muette dans le sens le plus couteux (le
+   filtre accepte, la lecture rend `null`, le message est consomme et rien ne demarre). Ses cas ont ete
+   conserves, portes par la nouvelle lecture.
+
+⚠️ **Et un effet de bord que le plan n avait pas vu** : DEUX tests lisent le texte de `src/worker.ts`
+(`tests/campagne-controle-humain.test.ts`, `tests/workflow-graphe-fige.test.ts`) et s ancraient sur la ligne
+`startInWindow(tenant, workflowId, grapheEditable(wf)`, que ce lot reecrit. Ils ont ete rancres sur le BLOC de
+cablage `startTestRun`, en conservant le cas que chacun exercait.
+
+---
+
 ---
 
 ## Task 3 : le bouton lecture sur chaque bloc

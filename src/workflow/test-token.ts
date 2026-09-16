@@ -33,21 +33,62 @@ export function newTestToken(): string {
 }
 
 /**
- * Forme attendue d'un jeton. Sert à éviter d'interroger la base pour chaque message entrant : seuls les
- * messages qui RESSEMBLENT à un jeton déclenchent une résolution. C'est le filtre du chemin chaud.
+ * Longueur maximale du suffixe qui désigne un BLOC. Un identifiant de bloc est un `crypto.randomUUID()`, donc
+ * 36 caractères ; 64 laisse de la marge sans ouvrir la porte à un corps de message arbitraire.
  */
-const TOKEN_RE = new RegExp(`^${PREFIX}[0-9a-hjkmnp-tv-z]{${RANDOM_LEN}}$`);
+const NODE_MAX = 64;
 
 /**
- * Le corps d'un message est-il (exactement) un jeton de test ? Comparaison sur le texte NORMALISÉ : WhatsApp
- * peut ajouter des espaces, et un téléphone peut capitaliser la première lettre automatiquement.
+ * Forme attendue d'un jeton, avec un suffixe de BLOC facultatif (2026-09-16). Sert à éviter d'interroger la
+ * base pour chaque message entrant : seuls les messages qui RESSEMBLENT à un jeton déclenchent une
+ * résolution. C'est le filtre du chemin chaud.
+ *
+ * 🔴 CE QUI DISCRIMINE EST LA PARTIE GAUCHE, PAS LE SUFFIXE. `test-` suivi de 8 caractères Crockford est ce
+ * qu'un message de client n'écrit jamais par hasard ; le suffixe ne décide que du sort d'un texte qui est
+ * DÉJÀ un jeton. L'ouvrir ne coûte donc aucune requête de plus, et le refermer trop fort coûterait des blocs
+ * intestables en silence. Il reste borné (`NODE_MAX`) et NON VIDE : un point suivi de rien est refusé.
+ *
+ * 🔴 L'IDENTIFIANT ENTIER, ET C'EST UN CHANGEMENT PAR RAPPORT AU PREMIER JET DU PLAN. Il proposait un préfixe
+ * de huit caractères, plus court dans le lien. Mais le navigateur aurait dû RETIRER les tirets de l'UUID pour
+ * fabriquer le suffixe, et le serveur comparer sur la même normalisation : un invariant partagé de part et
+ * d'autre d'une frontière que ce dépôt interdit justement de franchir (aucun fichier de `web/` n'importe
+ * `src/`), donc recopié à la main des deux côtés, donc voué à diverger sans qu'aucun test ne le voie.
+ * L'identifiant entier supprime la question : la comparaison devient une ÉGALITÉ, et le cas « deux blocs
+ * correspondent » n'existe plus. Le lien est plus long, mais il est pré-rempli.
+ *
+ * ⚠️ LA CLASSE DU SUFFIXE EST MESURÉE, pas devinée : les 64 blocs de production portent tous un UUID
+ * minuscule (2026-09-16). Elle accepte en plus la forme de repli de `uid()`
+ * (`web/components/WorkflowBuilder.tsx`, `id-<base36>-<horodatage>`), qui sort quand `crypto.randomUUID`
+ * n'existe pas. La borner à la FORME d'un UUID rendrait ces blocs intestables SANS erreur : le message
+ * partirait comme un message ordinaire.
+ */
+const TOKEN_RE = new RegExp(`^${PREFIX}[0-9a-hjkmnp-tv-z]{${RANDOM_LEN}}(\\.[0-9a-z_-]{1,${NODE_MAX}})?$`);
+
+/**
+ * Le jeton et le BLOC qu'il désigne, ou `null` si ce n'en est pas un. C'EST LE FILTRE DU CHEMIN CHAUD :
+ * `null` veut dire « message ordinaire », et le webhook passe au suivant sans rien coûter.
+ *
+ * ⚠️ UNE SEULE FONCTION POUR FILTRER ET POUR LIRE. Il y avait un prédicat `looksLikeTestToken` à côté,
+ * retiré le 2026-09-16 : deux portes sur la même forme divergent, et la divergence serait MUETTE dans le
+ * sens le plus coûteux (le filtre accepte, la lecture rend `null`, le message est consommé, rien ne démarre).
+ * Lecture sur le texte NORMALISÉ :
+ * WhatsApp peut ajouter des espaces, et un téléphone peut capitaliser la première lettre automatiquement.
  *
  * Volontairement STRICT (message entier, pas « contient ») : un client qui écrirait « je teste test-abc » ne
  * doit pas déclencher un test, et une phrase ne doit jamais être confondue avec un jeton.
+ *
+ * ⚠️ `nodeId` À NULL EST LE CAS D'AVANT, pas une erreur : les liens déjà distribués n'ont pas de point, et
+ * ils doivent continuer de démarrer le scénario à son entrée.
  */
-export function looksLikeTestToken(body: string | null): boolean {
-  return TOKEN_RE.test(normalizeTestToken(body));
+export function lireJetonDeTest(body: string | null): { jeton: string; nodeId: string | null } | null {
+  const texte = normalizeTestToken(body);
+  if (!TOKEN_RE.test(texte)) return null;
+  const point = texte.indexOf('.');
+  return point === -1
+    ? { jeton: texte, nodeId: null }
+    : { jeton: texte.slice(0, point), nodeId: texte.slice(point + 1) };
 }
+
 
 /** Minuscules + espaces retirés : la forme sous laquelle un jeton est comparé et stocké. */
 export function normalizeTestToken(body: string | null): string {

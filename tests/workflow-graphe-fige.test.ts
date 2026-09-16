@@ -167,10 +167,32 @@ describe('les points de reprise jouent le graphe figé', () => {
 describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () => {
   const worker = readFileSync(join(process.cwd(), 'src', 'worker.ts'), 'utf8');
 
+  /**
+   * ⚠️ L'ANCRE EST LE BLOC DE CÂBLAGE, PAS UNE LIGNE D'APPEL. Elle a d'abord désigné
+   * `startInWindow(tenant, workflowId, grapheEditable(wf)`, que le lot du 2026-09-16 a réécrit en deux
+   * branches : le test tombait alors sur un changement parfaitement légitime. Un test qui lit la source
+   * doit s'accrocher à ce qu'il mesure (« ce câblage-ci »), pas à la forme d'une ligne.
+   */
+  const cablageDuLienDeTest = (): string => {
+    const debut = worker.indexOf('startTestRun: async (');
+    expect(debut, 'le câblage du lien de test a disparu de worker.ts').toBeGreaterThan(-1);
+    const fin = worker.indexOf('\n        },', debut);
+    expect(fin, 'fin du bloc startTestRun introuvable').toBeGreaterThan(debut);
+    return worker.slice(debut, fin);
+  };
+
   it('🔴 le lien de test fige', () => {
-    const ancre = worker.indexOf('startInWindow(tenant, workflowId, grapheEditable(wf)');
-    expect(ancre).toBeGreaterThan(-1);
-    expect(worker.slice(ancre, ancre + 200)).toContain('figerLeGraphe: true');
+    expect(cablageDuLienDeTest()).toContain('figerLeGraphe: true');
+  });
+
+  it('🔴 et il démarre AU BLOC quand le jeton en désigne un', () => {
+    // Le câblage est la seule pièce qui traduit `nodeId` en chemin d'exécution, et aucun test unitaire ne
+    // peut monter `main()`. Sans cette garde, revenir à un `startInWindow` inconditionnel ferait démarrer
+    // TOUS les tests à l'entrée du scénario, en silence : le bouton d'un bloc enverrait le premier message.
+    const bloc = cablageDuLienDeTest();
+    expect(bloc).toContain('nodeId === null');
+    expect(bloc).toContain('startFromNode');
+    expect(bloc).toContain('startInWindow');
   });
 
   it('🔴 et c’est le SEUL : une campagne ne recopie pas son graphe par destinataire', () => {

@@ -1275,7 +1275,11 @@ export class WorkflowExecutor {
     if (!graph.nodes.some((n) => n.id === startNodeId)) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: bloc de départ ${startNodeId} introuvable, run non démarré pour ${contact.waId}`);
-      return 'le bloc de départ du scénario a été supprimé depuis la création de la campagne';
+      // ⚠️ LE TEXTE NE PARLE PLUS DE CAMPAGNE. Il disait « supprimé depuis la création de la campagne », ce qui
+      // était vrai du seul chemin qui l'affichait alors. Depuis le 2026-09-16, le LIEN DE TEST d'un scénario
+      // désigne lui aussi un bloc, et son lien est PERMANENT : la raison la plus courante est désormais un lien
+      // collé il y a trois semaines qui pointe un bloc supprimé depuis, sans aucune campagne en jeu.
+      return 'le bloc de départ n’existe plus dans le scénario';
     }
     const ctx = await this.buildCtx(tenantId, contact.waId, graph);
     // `sendKey` aléatoire : à ce stade le run n'existe pas encore en base (runs.start vient plus bas), donc

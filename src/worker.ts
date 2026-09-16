@@ -495,7 +495,7 @@ async function main(): Promise<void> {
         markConversationTest: (tenant, waId) => inboxStore.markConversationTest(tenant, waId),
         // Un testeur qui relance son lien veut repartir du DÉBUT : on clôt le parcours resté en attente,
         // sinon il resterait orphelin (l'avance ne retrouve qu'un run à la fois par contact).
-        startTestRun: async (tenant, workflowId, waId) => {
+        startTestRun: async (tenant, workflowId, waId, nodeId) => {
           const wf = await workflowStore.getById(workflowId, tenant);
           if (!wf) return false;
           const contactId = await contactStore.findIdByWaId(tenant, waId);
@@ -509,7 +509,14 @@ async function main(): Promise<void> {
           // mot si son bloc courant n'existait pas dans le publié. C'est le SEUL appelant qui fige, et c'est
           // voulu : figer le graphe de chaque destinataire d'une campagne recopierait le même objet autant
           // de fois qu'elle a de contacts.
-          return workflowExecutor.startInWindow(tenant, workflowId, grapheEditable(wf), { waId, contactId }, { emitEvents: true, figerLeGraphe: true });
+          const graphe = grapheEditable(wf);
+          const options = { emitEvents: true, figerLeGraphe: true };
+          // ⚠️ AUCUNE GARDE « ce bloc existe-t-il ? » ICI, et c'est délibéré : `runFrom` la porte déjà pour ses
+          // quatre chemins de démarrage, elle journalise, et elle rend une raison lisible. La redoubler ici
+          // serait une seconde vérité à tenir alignée à la main, sur un chemin où la première est éprouvée.
+          return nodeId === null
+            ? workflowExecutor.startInWindow(tenant, workflowId, graphe, { waId, contactId }, options)
+            : workflowExecutor.startFromNode(tenant, workflowId, graphe, { waId, contactId }, nodeId, options);
         },
       },
       // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le
