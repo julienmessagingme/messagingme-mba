@@ -607,7 +607,7 @@ git commit --only db/migrations/0152_outils_mcp.sql src/agent/catalog.ts src/age
 
 ---
 
-## Task 5 : le clouage aux champs du mini-CRM
+## Task 5 : le clouage aux champs du mini-CRM  ✅ `source: champ`
 
 **Files:**
 - Modify: `src/agent/champs-contact.ts`, `src/agent/executor.ts`
@@ -616,9 +616,26 @@ git commit --only db/migrations/0152_outils_mcp.sql src/agent/catalog.ts src/age
 
 **Interfaces:**
 - Consumes: la projection du tour, `{ nom, tags, champs }` (`src/worker.ts:1690`).
-- Produces: `contactPath` accepte désormais la forme `champs.<cle>`.
+- Produces: `ParamOutil.source` accepte `'champ'`, avec une `cle`.
 
-- [ ] **Step 1 : écrire les tests qui échouent**
+🔴 **ÉCART ASSUMÉ AVEC CE QUI SUIT : `CHAMPS_CONTACT_AUTORISES` N'EST PAS ÉLARGIE.** Le plan prévoyait
+d'ouvrir `contactPath` à la forme `champs.<cle>`. En l'écrivant, le mécanisme s'est révélé **déjà présent** :
+`src/agent/variables.ts` distingue depuis longtemps un attribut de fiche (`contact`, liste fermée) d'un champ
+personnalisé (`champ`, clé déclarée par le client), avec exactement la justification qu'il aurait fallu
+réécrire. Ce qui manquait n'était pas la doctrine, c'était son application aux **paramètres d'outil**, qui
+sont le seul chemin d'un outil MCP (un outil HTTP, lui, tire ses paramètres des variables de sa requête).
+
+On aligne donc le vocabulaire au lieu d'en inventer un second, et la liste fermée reste à deux entrées, ce
+qu'un cas de test vérifie explicitement. Les paragraphes ci-dessous sont conservés pour la trace, mais c'est
+`source: 'champ'` qui a été livré.
+
+⚠️ **La validation à l'écriture (étape 5 ci-dessous) part en tâche 7, et ce n'est pas un report de confort** :
+aucune route n'écrit de paramètre `champ` aujourd'hui. Les paramètres d'un outil de connecteur sont DÉRIVÉS
+côté serveur des seules variables `modele` de sa requête (`src/http/agent-tools.ts`), donc la validation
+serait du code inerte, sans écrivain à valider. Elle est due avec la route de réglage d'un outil MCP, qui est
+le premier écrivain, et elle réutilise `clesDeChamps(tenantId)`, déjà dépendance de `agent-requetes.ts`.
+
+- [x] **Step 1 : écrire les tests qui échouent**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -655,13 +672,13 @@ it('injecte un champ du mini-CRM SANS jamais l exposer au modele', async () => {
 });
 ```
 
-- [ ] **Step 2 : les lancer, vérifier qu'ils échouent**
+- [x] **Step 2 : les lancer, vérifier qu'ils échouent**
 
 ```bash
 npx vitest run tests/agent-champs-contact.test.ts
 ```
 
-- [ ] **Step 3 : ouvrir la liste**
+- [x] **Step 3 : ouvrir la liste**
 
 `estChampContact` accepte `wa_id`, `nom`, ou `champs.<cle>` où `<cle>` matche `^[a-zA-Z0-9_-]{1,64}$`. **Un seul niveau sous `champs`**, et le commentaire dit pourquoi :
 
@@ -680,7 +697,7 @@ npx vitest run tests/agent-champs-contact.test.ts
  */
 ```
 
-- [ ] **Step 4 : l'injection à deux niveaux**
+- [x] **Step 4 : l'injection à deux niveaux**
 
 Dans `src/agent/executor.ts`, étape 4, remplacer l'accès plat par un accès qui descend dans `champs` :
 
@@ -695,11 +712,11 @@ if (p.source === 'contact') {
 
 `valeurProjetee` descend d'un seul cran sur `champs.<cle>` et rend `null` si absent. **Rendre `null` est le comportement voulu** : le champ vide part vide, et c'est le serveur distant qui décide (décision de Julien du 2026-09-16). Refuser l'appel serait faux pour un paramètre optionnel, un outil qui refuse de chercher parce que le contact n'a pas renseigné sa ville serait absurde.
 
-- [ ] **Step 5 : la validation à l'écriture**
+- [x] **Step 5 : la validation à l'écriture**
 
 La route qui pose un paramètre `contact` vérifie que `champs.<cle>` désigne un champ **déclaré** de l'espace, et rend un 400 nommé sinon. C'est là, et pas au runtime, que la fermeture se tient.
 
-- [ ] **Step 6 : vérifier dans les DEUX sens**
+- [x] **Step 6 : vérifier dans les DEUX sens**
 
 Remettre l'ancien `chemin === 'wa_id' ? ... : ctx.contact[chemin]`, constater que le test d'injection échoue **et** que son symptôme est bien « la valeur est `undefined` », restaurer. Un test qui passe dans les deux sens ne prouve rien.
 
@@ -707,7 +724,7 @@ Remettre l'ancien `chemin === 'wa_id' ? ... : ctx.contact[chemin]`, constater qu
 npx vitest run tests/agent-champs-contact.test.ts tests/agent-executor.test.ts && npm run typecheck
 ```
 
-- [ ] **Step 7 : commiter**
+- [x] **Step 7 : commiter**
 
 ```bash
 git commit --only src/agent/champs-contact.ts src/agent/executor.ts src/http/agent-tools.ts tests/agent-champs-contact.test.ts tests/agent-executor.test.ts -m "feat(agent): un parametre peut se clouer a un champ declare du mini-CRM"

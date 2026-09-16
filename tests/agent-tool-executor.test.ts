@@ -479,3 +479,60 @@ describe('tronc commun : les issues coûteuses se comptent aussi (revue tâche 1
     expect(vus[0]?.args).toEqual({});
   });
 });
+
+describe('un parametre cloue a un champ personnalise (source: champ)', () => {
+  const AVEC_CHAMP: OutilDefini = {
+    ...OUTIL,
+    params: [
+      { name: 'ville', type: 'string', source: 'modele' },
+      { name: 'email_client', type: 'string', source: 'champ', cle: 'email' },
+    ],
+  };
+  const CTX_AVEC_CHAMPS: ContexteAppel = {
+    ...CTX,
+    contact: { nom: 'Julien', tags: [], champs: { email: 'vrai@client.fr', ref: 'CLI-42' } },
+  };
+
+  it('🔴 la valeur vient de la FICHE, pas de ce que le modele a propose', async () => {
+    // 🔴 LE TEST QUI COMPTE, ET IL LIT CE QUI PART. Une fonction pure qui rend la bonne valeur ne prouve
+    // rien : c'est l'INJECTION de l'executeur qui est la garde, et on ne la voit qu'en regardant les
+    // arguments reellement transmis au resolveur. Le modele tente ici l'adresse de quelqu'un d'autre.
+    const { deps, vus } = harnais({ outil: AVEC_CHAMP });
+    const r = await executeTool(
+      { name: OUTIL.name, argumentsJson: args({ ville: 'Lyon', email_client: 'ennemi@ailleurs.fr' }) },
+      CTX_AVEC_CHAMPS,
+      deps,
+    );
+    expect(r.status).toBe('ok');
+    expect(vus[0]?.args).toEqual({ ville: 'Lyon', email_client: 'vrai@client.fr' });
+  });
+
+  it('🔴 le champ n est meme pas VISIBLE du modele : il est retire avant validation', async () => {
+    // Deux ceintures, et celle-ci est la premiere : `z.object` retire les cles inconnues, donc l argument
+    // du modele disparait avant meme qu on parle d injection.
+    const { deps, vus } = harnais({ outil: AVEC_CHAMP });
+    await executeTool({ name: OUTIL.name, argumentsJson: args({ ville: 'Lyon' }) }, CTX_AVEC_CHAMPS, deps);
+    expect(vus[0]?.args).toEqual({ ville: 'Lyon', email_client: 'vrai@client.fr' });
+  });
+
+  it('⚠️ un champ ABSENT part a null, et l appel a bien lieu', async () => {
+    // Decision de Julien du 2026-09-16 : on envoie vide, le serveur decide. Refuser serait faux pour un
+    // parametre facultatif.
+    const { deps, vus } = harnais({ outil: AVEC_CHAMP });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ ville: 'Lyon' }) }, CTX, deps);
+    expect(r.status).toBe('ok');
+    expect(vus[0]?.args).toEqual({ ville: 'Lyon', email_client: null });
+  });
+
+  it('🔴 un contact INCONNU ne fait pas retomber le parametre sur le modele', async () => {
+    // Le cas le plus dangereux : sans projection, un code naif pourrait laisser la valeur du modele en
+    // place. Elle doit etre ECRASEE par null, parce que l injection ecrit EN DERNIER.
+    const { deps, vus } = harnais({ outil: AVEC_CHAMP });
+    await executeTool(
+      { name: OUTIL.name, argumentsJson: args({ ville: 'Lyon', email_client: 'ennemi@ailleurs.fr' }) },
+      { ...CTX, contact: null, contactInconnu: 'tous' },
+      deps,
+    );
+    expect(vus[0]?.args).toEqual({ ville: 'Lyon', email_client: null });
+  });
+});

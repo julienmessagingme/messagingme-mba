@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { JournalAppels, OrigineOutil, OutilDefini, StatutAppel, ToolCatalog } from './catalog';
 import { paramsOutil, type ParamOutil } from './llm/tool-schema';
+import { champDuContact } from './champs-contact';
 
 /**
  * Le tronc commun d'exécution d'un outil : les huit étapes du §3.3 du cadrage, dans l'ordre, chacune étant
@@ -326,6 +327,13 @@ export async function executeTool(
       // l'opt-in. Le lire là rendrait `null`, donc un appel de connecteur sans identifiant, c'est-à-dire sur
       // la mauvaise ressource ou sur aucune. `ctx.waId` est authentifié par la signature du webhook Meta.
       args[p.name] = chemin === 'wa_id' ? ctx.waId : (ctx.contact ? (ctx.contact[chemin] ?? null) : null);
+    } else if (p.source === 'champ') {
+      // 🔴 UN CHAMP PERSONNALISÉ DU CLIENT, ET LE MODÈLE NE SAIT MÊME PAS QU'IL EXISTE. C'est ce qui permet
+      // de clouer un identifiant que le serveur distant attend (un e-mail, une référence client) à la fiche
+      // du contact qui écrit, plutôt que de le laisser remplir par un texte que ce contact influence.
+      // ⚠️ Un champ absent rend `null` et l'appel part quand même : le serveur décide. Refuser serait faux
+      // pour un paramètre facultatif (décision de Julien du 2026-09-16).
+      args[p.name] = champDuContact(ctx.contact, p.cle ?? '');
     } else if (p.source === 'fixe') {
       args[p.name] = p.value ?? null;
     }

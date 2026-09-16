@@ -14,7 +14,15 @@
  * `fixe` sont injectés par le runtime au moment de l'appel, jamais négociés avec le modèle.
  */
 
-export type SourceParam = 'modele' | 'contact' | 'fixe';
+/**
+ * ⚠️ `champ` EST ARRIVÉE LE 2026-09-16, ET ELLE ALIGNE UN VOCABULAIRE QUI EXISTAIT DÉJÀ. Les variables de
+ * requête (`src/agent/variables.ts`) distinguent depuis longtemps un attribut de fiche (`contact`, liste
+ * fermée) d'un CHAMP PERSONNALISÉ (`champ`, clé déclarée par le client). Les paramètres d'outil n'avaient
+ * que le premier, ce qui suffisait tant qu'un connecteur décrivait son appel dans une requête. Un outil MCP
+ * n'a PAS de requête : ses paramètres viennent du schéma distant et passent par ici. Sans `champ`, un
+ * paramètre que le serveur identifie par e-mail retomberait sur le modèle, donc sur le contact.
+ */
+export type SourceParam = 'modele' | 'contact' | 'champ' | 'fixe';
 
 /** Types portables entre fournisseurs. Volontairement réduit : pas d'objet imbriqué ni de tableau tant que
  *  personne n'en a besoin (le cadrage borne la profondeur à 10, on est très en deçà). */
@@ -30,6 +38,13 @@ export interface ParamOutil {
   enum?: string[];
   /** `source: 'contact'` : le champ de la fiche contact d'où vient la valeur (`wa_id` compris). Jamais exposé. */
   contactPath?: string;
+  /**
+   * `source: 'champ'` : la CLÉ du champ personnalisé déclaré par le client. Jamais exposée.
+   *
+   * 🔴 UN `champ` SANS `cle` EST ÉCARTÉ par la coercion, et ce n'est pas de la rigueur de forme : il ne
+   * désignerait rien, donc l'appel partirait chez le client avec un trou à la place d'un identifiant.
+   */
+  cle?: string;
   /** `source: 'fixe'` : la constante du tenant. Jamais exposée. */
   value?: string | number | boolean;
   /**
@@ -69,8 +84,12 @@ function coercer(brut: unknown): ParamOutil | null {
   const o = brut as Record<string, unknown>;
   const name = typeof o.name === 'string' ? o.name.trim() : '';
   const type = TYPES.find((t) => t === o.type);
-  const source = (['modele', 'contact', 'fixe'] as const).find((s) => s === o.source);
+  const source = (['modele', 'contact', 'champ', 'fixe'] as const).find((s) => s === o.source);
   if (!name || !type || !source) return null;
+  const cle = typeof o.cle === 'string' ? o.cle.trim() : '';
+  // 🔴 Un `champ` sans clé ne désigne RIEN. Le garder produirait un argument que personne ne remplit, donc
+  // un appel au système du client avec un trou à la place d'un identifiant.
+  if (source === 'champ' && cle === '') return null;
   const enumeration = Array.isArray(o.enum)
     ? o.enum.filter((v): v is string => typeof v === 'string' && v !== '')
     : undefined;
@@ -86,6 +105,7 @@ function coercer(brut: unknown): ParamOutil | null {
     ...(enumeration && enumeration.length > 0 ? { enum: enumeration } : {}),
     ...(typeof o.contactPath === 'string' && o.contactPath.trim() !== '' ? { contactPath: o.contactPath.trim() } : {}),
     ...(valeurFixe !== undefined ? { value: valeurFixe } : {}),
+    ...(source === 'champ' ? { cle } : {}),
     // ⚠️ NON TRIMÉ, contrairement aux autres : c'est un chemin du schéma DISTANT, et un espace y appartient
     // au nom de la propriété du serveur. Le nettoyer ferait viser une clé qui n'existe pas chez lui.
     ...(typeof o.cheminMcp === 'string' && o.cheminMcp !== '' ? { cheminMcp: o.cheminMcp } : {}),
@@ -102,15 +122,20 @@ function coercer(brut: unknown): ParamOutil | null {
  */
 export function paramsOutil(params: unknown): ParamOutil[] {
   const liste = Array.isArray(params) ? params : [];
-  // 🔴 Noms RÉSERVÉS par le runtime, lus sur le BRUT et non sur la coercion. Une entrée `contact` ou `fixe`
-  // inutilisable (type absent, mal orthographié) est écartée par `coercer` ; si le même nom est aussi déclaré
-  // en `modele`, il resterait alors exposé, validé, et plus rien ne viendrait l'écraser à l'injection : le
-  // modèle reprendrait la main sur la cible, c'est-à-dire exactement l'IDOR que ce module ferme. Une
-  // déclaration ambiguë se tranche donc TOUJOURS en faveur du runtime, y compris quand elle est cassée.
+  // 🔴 Noms RÉSERVÉS par le runtime, lus sur le BRUT et non sur la coercion. Une entrée `contact`, `champ`
+  // ou `fixe` inutilisable (type absent, clé manquante, mal orthographiée) est écartée par `coercer` ; si le
+  // même nom est aussi déclaré en `modele`, il resterait alors exposé, validé, et plus rien ne viendrait
+  // l'écraser à l'injection : le modèle reprendrait la main sur la cible, c'est-à-dire exactement l'IDOR que
+  // ce module ferme. Une déclaration ambiguë se tranche donc TOUJOURS en faveur du runtime, y compris quand
+  // elle est cassée.
+  //
+  // ⚠️ `champ` A DÛ ENTRER ICI EN MÊME TEMPS QUE DANS `SourceParam`, et c'est le genre d'oubli qui ne se
+  // voit ni du compilateur ni d'un test qui n'aurait pas été écrit pour ça : une capacité ajoutée à un
+  // endroit et câblée sur deux consommateurs sur trois est un correctif à moitié, pas un correctif.
   const reserves = new Set(
     liste
       .filter((b): b is Record<string, unknown> => !!b && typeof b === 'object')
-      .filter((b) => b.source === 'contact' || b.source === 'fixe')
+      .filter((b) => b.source === 'contact' || b.source === 'champ' || b.source === 'fixe')
       .map((b) => (typeof b.name === 'string' ? b.name.trim() : ''))
       .filter((n) => n !== ''),
   );
