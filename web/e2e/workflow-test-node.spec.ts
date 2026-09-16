@@ -5,9 +5,15 @@ import { test, expect } from '@playwright/test';
  * haut à gauche, qui ouvre le panneau de test avec un lien pointant CE bloc.
  *
  * 🔴 CE QU'AUCUN TEST UNITAIRE NE VOIT, et qui est tout l'intérêt de ce fichier :
- *  - le suffixe arrive VRAIMENT dans le lien affiché (le serveur le lira par égalité, sans normalisation) ;
+ *  - le suffixe arrive VRAIMENT dans le lien affiché, et dans le QR ;
  *  - le clic n'ouvre PAS le panneau de configuration du bloc par-dessus (c'est le `stopPropagation`) ;
- *  - le panneau DIT que le test démarre à ce bloc, au lieu de promettre le début du scénario.
+ *  - le brouillon non enregistré part AVANT que le panneau s'ouvre ;
+ *  - le panneau NE PRÉVIENT PAS des étapes sautées, et c'est gardé dans ce sens-là : décision de Julien du
+ *    2026-09-16, « tant pis, il ne se passe rien ». Un bandeau a été ajouté puis retiré le jour même.
+ *
+ * ⚠️ Ce que le SERVEUR fait du mot (retrait des espaces, minuscules sur le jeton seul, tolérance de casse
+ * sur le bloc) se vérifie dans `tests/web-jeton-test-parite.test.ts`, à la racine : ce fichier-ci ne tourne
+ * que sur les pushs qui touchent `web/`.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 // Jeton FICTIF (aucun secret) : valeur figée pour rendre les assertions lisibles.
@@ -17,20 +23,28 @@ const LIEN = `https://wa.me/33525680250?text=${MOT_TEST}`;
 /**
  * 🔴 DE VRAIS IDENTIFIANTS, c'est-à-dire des UUID, et ce n'est PAS cosmétique. Le constructeur les produit
  * avec `crypto.randomUUID()` (mesuré : les 64 blocs de production en portent un), ils traversent un
- * paramètre d'URL, puis `normalizeTestToken` côté serveur. Avec des identifiants courts comme « n1 », ce
+ * paramètre d'URL, puis la lecture du serveur. Avec des identifiants courts comme « n1 », ce
  * fichier ne prouvait RIEN de la forme réelle : ni que `searchParams.set` laisse les tirets intacts, ni que
  * le texte obtenu passe le filtre du chemin chaud. C'est le seul endroit où les deux moitiés se rencontrent.
  */
 const N1 = '0f7c9a21-4d3e-4b18-9a55-1c2e3f4a5b6c';
 const N2 = '7b2d4e60-91af-4c73-8e15-6d0a9f3b2c48';
+/**
+ * ⚠️ UN BLOC À MAJUSCULE, et il est là pour une raison mesurée. `parseGraph` n'impose aucune forme à
+ * `node.id` : l'API peut en créer un qui en porte. Sans lui, la chaîne de bout en bout n'exerçait QUE des
+ * identifiants minuscules, alors que la casse est précisément ce que les deux passes de revue ont fait
+ * bouger. C'est le seul endroit où la sortie RÉELLE du navigateur est observée sur ce cas.
+ */
+const N3 = 'Bloc-MAJUSCULE-3';
 
-/** Scénario à DEUX blocs : sans le second, on ne pourrait pas distinguer « ce bloc » de « le début ». */
+/** Scénario à TROIS blocs : sans le second, on ne pourrait pas distinguer « ce bloc » de « le début ». */
 const GRAPHE = {
   nodes: [
     { id: N1, type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'promo' } },
     { id: N2, type: 'quick_message', position: { x: 0, y: 160 }, data: { body: 'Et ensuite ?' } },
+    { id: N3, type: 'quick_message', position: { x: 0, y: 320 }, data: { body: 'Et pour finir ?' } },
   ],
-  edges: [{ id: 'e1', source: N1, target: N2 }],
+  edges: [{ id: 'e1', source: N1, target: N2 }, { id: 'e2', source: N2, target: N3 }],
 };
 
 
@@ -100,6 +114,15 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
 
     await expect(page.getByTestId('workflow-test-panel')).toBeVisible();
     await expect(invite, 'aucun bloc ne doit avoir été sélectionné').toBeVisible();
+  });
+
+  test('🔴 un identifiant de bloc À MAJUSCULE voyage TEL QUEL jusqu’au lien', async ({ page }) => {
+    // La casse du suffixe est préservée par la lecture serveur, et c'est `blocDesigne` qui tolère l'écart au
+    // moment de résoudre le bloc. Ici on observe la seule moitié que le serveur ne voit pas : ce que le
+    // navigateur COMPOSE. S'il minusculait, plus rien ne le dirait.
+    await ouvrirBuilder(page);
+    await page.getByTestId(`node-test-${N3}`).click();
+    await expect(page.getByTestId('workflow-test-mot')).toHaveText(`${MOT_TEST}.${N3}`);
   });
 
   test('⚠️ chaque bloc a SON bouton, et le premier donne son propre suffixe', async ({ page }) => {

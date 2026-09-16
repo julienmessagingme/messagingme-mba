@@ -82,6 +82,32 @@ export function lireJetonDeTest(body: string | null): { jeton: string; nodeId: s
 }
 
 /**
+ * LE BLOC QUE CE SUFFIXE DÉSIGNE, dans un graphe donné : son identifiant EXACT, ou le suffixe tel quel quand
+ * rien ne correspond (l'exécuteur rendra alors son refus lisible, avec sa trace).
+ *
+ * 🔴 LA CASSE EST TOLÉRÉE ICI, ET NULLE PART AILLEURS (seconde passe de revue finale, 2026-09-16). Le premier
+ * correctif mettait tout le message en minuscules : un identifiant de bloc portant une majuscule passait le
+ * filtre puis échouait à l'égalité. Le second préservait la casse du suffixe, ce qui réparait ce cas-là mais
+ * cassait le cas COURANT, mesuré par le relecteur : un testeur qui recopie son mot en capitales ne trouvait
+ * plus son bloc. Les deux cas se ferment en résolvant ici, en deux temps : l'égalité d'abord, la tolérance
+ * ensuite.
+ *
+ * ⚠️ ET LA COMPARAISON DE `runFrom` NE BOUGE PAS. Elle sert aussi la cible `node` de `/v1/sends`, qui reçoit
+ * un identifiant EXACT résolu depuis un code `nod_`. Élargir une comparaison partagée pour le confort d'un
+ * seul appelant est le motif que ce dépôt paie le plus cher. On lui donne donc l'identifiant canonique, et
+ * c'est elle qui garde le dernier mot sur un bloc introuvable.
+ *
+ * ⚠️ DEUX BLOCS QUI NE DIFFÈRENT QUE PAR LA CASSE : on n'en choisit AUCUN, et le refus lisible reprend la
+ * main. Deviner lequel enverrait au testeur une séquence qu'il n'a pas demandée.
+ */
+export function blocDesigne(graphe: { nodes: Array<{ id: string }> }, nodeId: string): string {
+  if (graphe.nodes.some((n) => n.id === nodeId)) return nodeId;
+  const bas = nodeId.toLowerCase();
+  const proches = graphe.nodes.filter((n) => n.id.toLowerCase() === bas);
+  return proches.length === 1 ? proches[0]!.id : nodeId;
+}
+
+/**
  * Lien WhatsApp qui ouvre une conversation avec le jeton DÉJÀ saisi. `displayPhoneNumber` arrive tel que Meta
  * l'affiche (« +33 5 25 68 02 50 ») : wa.me n'accepte que des chiffres, sans + ni espaces.
  * null si le tenant n'a pas encore de numéro (rien à proposer, on ne fabrique pas un lien cassé).

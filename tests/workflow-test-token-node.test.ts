@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { lireJetonDeTest } from '../src/workflow/test-token';
+import { blocDesigne, lireJetonDeTest } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
 
 /**
@@ -77,6 +77,35 @@ describe('un jeton de test qui désigne un bloc', () => {
     // doivent voyager vit dans `tests/web-jeton-test-parite.test.ts`, qui lit le navigateur ET le serveur.
     expect(lireJetonDeTest('test-abc12345.id-k3f9x2p-1758012345678'))
       .toEqual({ jeton: 'test-abc12345', nodeId: 'id-k3f9x2p-1758012345678' });
+  });
+});
+
+describe('blocDesigne : le bloc que le suffixe désigne', () => {
+  const g = (...ids: string[]) => ({ nodes: ids.map((id) => ({ id })) });
+
+  it('🔴 l’identifiant EXACT gagne toujours', () => {
+    expect(blocDesigne(g('Bloc-A', 'bloc-a'), 'Bloc-A')).toBe('Bloc-A');
+  });
+
+  it('🔴 un testeur qui recopie son mot en CAPITALES retrouve son bloc', () => {
+    // Le cas mesuré par la seconde passe de revue : préserver la casse du suffixe réparait l'identifiant à
+    // majuscule (inatteignable depuis l'écran) et cassait celui-là, qui est le courant.
+    expect(blocDesigne(g(NODE), NODE.toUpperCase())).toBe(NODE);
+  });
+
+  it('🔴 un identifiant de bloc À MAJUSCULE se retrouve aussi', () => {
+    // Inatteignable depuis le constructeur, atteignable par l'API : `parseGraph` n'impose rien à `node.id`.
+    expect(blocDesigne(g('Bloc-Majuscule'), 'bloc-majuscule')).toBe('Bloc-Majuscule');
+  });
+
+  it('⚠️ DEUX blocs qui ne diffèrent que par la casse : on n’en choisit aucun', () => {
+    // Deviner enverrait au testeur une séquence qu'il n'a pas demandée. Le suffixe ressort tel quel, et
+    // `runFrom` rend son refus lisible.
+    expect(blocDesigne(g('Bloc-A', 'bloc-a'), 'BLOC-A')).toBe('BLOC-A');
+  });
+
+  it('⚠️ un bloc introuvable ressort tel quel : le refus appartient à l’exécuteur', () => {
+    expect(blocDesigne(g('autre'), 'disparu')).toBe('disparu');
   });
 });
 

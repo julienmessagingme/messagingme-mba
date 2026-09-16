@@ -346,6 +346,17 @@ function WorkflowsInner({ session }: { session: Session }) {
         </div>
   );
 
+  /**
+   * ⚠️ STABLE, ET C'EST LA MOITIÉ QUI VIT ICI (seconde passe de revue finale, 2026-09-16). Le constructeur
+   * mémoïse la valeur du contexte que TOUS ses blocs consomment ; une flèche écrite en ligne dans le JSX
+   * ci-dessous changeait d'identité à chaque rendu de cette page, ce qui rendait cette mémoïsation inerte
+   * et faisait re-rendre le canevas entier. Les deux moitiés doivent tenir.
+   */
+  const ouvrirTestDepuisBloc = useCallback((nodeId: string) => {
+    if (editing) void openTest(editing, nodeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
   if (editing) {
     return (
       <div className="flex flex-col gap-3 p-3 lg:h-full">
@@ -357,7 +368,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         <div className="min-h-0 flex-1">
           {/* L'éditeur ouvre le BROUILLON s'il y en a un (lot 7) : c'est le travail en cours de l'auteur, pas
               forcément ce qui tourne. `brouillonInitial` allume le bouton « Publier » dès l'ouverture. */}
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} requetes={requetes} onTesterBloc={(nodeId) => { void openTest(editing, nodeId); }} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} membres={membres} requetes={requetes} onTesterBloc={ouvrirTestDepuisBloc} />
         </div>
         {panneauDeTest}
       </div>

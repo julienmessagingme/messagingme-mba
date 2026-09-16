@@ -2,6 +2,30 @@ import type { Pool } from 'pg';
 import type { WorkflowGraph } from './graph';
 import { parseGraph } from './graph';
 
+/**
+ * Relit le graphe figé d'un parcours. `null` = ce parcours n'en porte pas, le cas de TOUS les parcours réels.
+ *
+ * 🔴 UN REFUS SE DIT (seconde passe de revue finale, 2026-09-16). `parseGraph` rendait `null` sur un jsonb
+ * qu'il refuse, et la lecture retombait alors sur le publié SANS UN MOT : c'est exactement le symptôme que
+ * la migration 0151 répare, reproduit par sa propre garde. Ce dépôt énonce la règle inverse à deux pas d'ici
+ * (`src/webhooks/test-token.ts`, « un chemin qui décide de NE PAS agir doit le dire »).
+ *
+ * ⚠️ POURQUOI `workflows.graph` ET `.draft_graph` NE SONT PAS PARSÉES, ELLES. Ces deux colonnes sont la
+ * SOURCE : rien ne les écrit sans passer par `parseGraph` (`src/http/workflows.ts`), et si l'une d'elles
+ * devenait illisible, la retomber sur autre chose n'aurait aucun sens, il n'y a pas d'« autre chose ». Ici
+ * au contraire, le repli EXISTE et il est correct : on rejoue le publié. C'est cette asymétrie qui justifie
+ * la garde d'un seul côté, pas un durcissement à moitié.
+ */
+function relireGrapheFige(brut: unknown, runId: string): WorkflowGraph | null {
+  if (brut === null || brut === undefined) return null;
+  const graphe = parseGraph(brut);
+  if (graphe === null) {
+    // eslint-disable-next-line no-console
+    console.error(`workflow_runs ${runId}: graphe_fige illisible, le parcours retombe sur le scénario PUBLIÉ (il peut donc changer de version en cours de route)`);
+  }
+  return graphe;
+}
+
 /** `sleeping` = le run attend que le TEMPS passe (bloc Attente), `waiting` qu'un CONTACT réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
 
@@ -96,7 +120,7 @@ export class PgWorkflowRunStore {
     return r ? {
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
       currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
+      channel: r.channel ?? 'whatsapp', grapheFige: relireGrapheFige(r.graphe_fige, r.id),
     } : null;
   }
 
@@ -123,7 +147,7 @@ export class PgWorkflowRunStore {
     return r ? {
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
       currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
+      channel: r.channel ?? 'whatsapp', grapheFige: relireGrapheFige(r.graphe_fige, r.id),
     } : null;
   }
 

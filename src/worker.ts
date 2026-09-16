@@ -48,6 +48,7 @@ import {
   CTWA_AD_ID_FIELD_KEY, CTWA_AD_ID_FIELD_LABEL, CTWA_AD_TITLE_FIELD_KEY, CTWA_AD_TITLE_FIELD_LABEL,
 } from './crm/fields';
 import { PgWorkflowStore, grapheEditable } from './workflow/store.pg';
+import { blocDesigne } from './workflow/test-token';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
@@ -516,7 +517,9 @@ async function main(): Promise<void> {
           // serait une seconde vérité à tenir alignée à la main, sur un chemin où la première est éprouvée.
           return nodeId === null
             ? workflowExecutor.startInWindow(tenant, workflowId, graphe, { waId, contactId }, options)
-            : workflowExecutor.startFromNode(tenant, workflowId, graphe, { waId, contactId }, nodeId, options);
+            // `blocDesigne` rend l'identifiant EXACT du bloc, en tolérant la casse du suffixe ; il rend le
+            // suffixe tel quel quand rien ne correspond, et c'est alors `runFrom` qui refuse, lisiblement.
+            : workflowExecutor.startFromNode(tenant, workflowId, graphe, { waId, contactId }, blocDesigne(graphe, nodeId), options);
         },
       },
       // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le

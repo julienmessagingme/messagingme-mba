@@ -40,6 +40,12 @@ export interface TestTokenDeps {
   startTestRun(tenantId: string, workflowId: string, waId: string, nodeId: string | null): Promise<boolean | string>;
 }
 
+/** Ce qu'on met d'un identifiant de bloc dans une trace : de quoi le reconnaître, jamais un message entier. */
+const BLOC_TRACE_MAX = 80;
+function extraitDeBloc(nodeId: string): string {
+  return nodeId.length <= BLOC_TRACE_MAX ? nodeId : `${nodeId.slice(0, BLOC_TRACE_MAX)}… (${nodeId.length} caractères)`;
+}
+
 /**
  * Traite les jetons de test d'un payload. Renvoie les `messageId` CONSOMMÉS (à ignorer par les étapes
  * suivantes du même webhook).
@@ -107,7 +113,10 @@ export async function processTestTokens(
       const issue = await deps.startTestRun(tenantId, wf.workflowId, m.waId, lu.nodeId);
       if (issue !== true) {
         // eslint-disable-next-line no-console
-        console.warn(`test-token: test NON démarré pour ${m.waId} sur le scénario ${wf.workflowId}${lu.nodeId ? ` au bloc ${lu.nodeId}` : ''} : ${issue === false ? 'refus sans raison' : issue}`);
+        // ⚠️ LE BLOC EST TRONQUÉ DANS LA TRACE. Le suffixe n'a plus de forme imposée (c'est ce qui évite
+        // qu'un identifiant inattendu fuie jusqu'à l'agent de Meta), donc sa LONGUEUR n'est bornée par rien :
+        // le recopier tel quel mettrait un message entier dans une ligne de journal.
+        console.warn(`test-token: test NON démarré pour ${m.waId} sur le scénario ${wf.workflowId}${lu.nodeId ? ` au bloc ${extraitDeBloc(lu.nodeId)}` : ''} : ${issue === false ? 'refus sans raison' : issue}`);
       }
     } catch (err) {
       // eslint-disable-next-line no-console

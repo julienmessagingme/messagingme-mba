@@ -204,8 +204,16 @@ describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () 
       ['src/http/workflows.ts', 'la DUPLICATION d’un scénario : on recopie le travail en cours, on n’exécute rien'],
       ['src/worker.ts', 'le LIEN DE TEST, seul chemin d’exécution qui joue le brouillon'],
     ]);
-    const trouves = execSync('git grep -l "grapheEditable" -- src/', { cwd: process.cwd(), encoding: 'utf8' })
+    // ⚠️ `--untracked` N'EST PAS DÉCORATIF (mesuré par la seconde passe de revue) : sans lui, `git grep` ne
+    // voit que les fichiers SUIVIS, et un nouvel appelant pas encore `git add` passait en VERT chez son
+    // auteur, c'est-à-dire précisément au moment où il l'écrit. En CI, tout est suivi, donc le trou ne
+    // s'ouvrait que là où il coûte le plus cher.
+    //
+    // ⚠️ Et l'inventaire suit le SYMBOLE, pas la QUESTION : quelqu'un qui écrirait `wf.draftGraph ?? wf.graph`
+    // en ligne ne serait pas vu. C'est une limite assumée, pas une garantie.
+    const trouves = execSync('git grep -l --untracked "grapheEditable" -- src/', { cwd: process.cwd(), encoding: 'utf8' })
       .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    expect(trouves.length, 'git grep n’a rien trouvé du tout : la sonde est cassée, pas l’invariant').toBeGreaterThan(0);
     expect(new Set(trouves),
       `un nouvel appelant de grapheEditable dans src/ : est-ce un chemin d’EXÉCUTION ? S’il l’est, il ferait jouer un BROUILLON à un vrai contact. Inventaire attendu : ${[...attendus].map(([f, r]) => `${f} (${r})`).join(' | ')}`)
       .toEqual(new Set(attendus.keys()));
@@ -213,6 +221,13 @@ describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () 
     // Et dans le worker, c'est bien le bloc du lien de test qui le porte, une seule fois.
     expect(worker.split('grapheEditable(').length - 1).toBe(1);
     expect(cablageDuLienDeTest()).toContain('grapheEditable(wf)');
+  });
+
+  it('🔴 et il résout le bloc avant de démarrer, en tolérant la casse', () => {
+    // `blocDesigne` est une fonction pure, testée à part ; ce qui ne se voit nulle part ailleurs, c'est qu'elle
+    // est bien POSÉE sur le chemin du lien de test. Sans elle, un testeur qui recopie son mot en capitales ne
+    // retrouve pas son bloc, et un identifiant à majuscule non plus.
+    expect(cablageDuLienDeTest()).toContain('blocDesigne(graphe, nodeId)');
   });
 
   it('🔴 et il démarre AU BLOC quand le jeton en désigne un', () => {

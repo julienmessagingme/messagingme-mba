@@ -344,10 +344,11 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
   // Enregistrement automatique du scénario : debounce, un seul PATCH en vol, vidage au démontage et à la
   // fermeture d'onglet. Tout est dans `useEnregistrementScenario` (aucun de ces états ne touche le canevas).
   const enregistrement = useEnregistrementScenario(tenantId, workflowId, nodes, edges, brouillonInitial);
-  // ⚠️ LE HOOK REND UN OBJET NEUF À CHAQUE RENDU : toute mémoïsation qui en dépend est inerte. La ref donne
-  // aux rappels un accès STABLE à sa dernière version, sans la faire entrer dans une liste de dépendances.
-  const enregistrementRef = useRef(enregistrement);
-  useEffect(() => { enregistrementRef.current = enregistrement; }, [enregistrement]);
+  // ⚠️ LE HOOK REND UN OBJET NEUF À CHAQUE RENDU : toute mémoïsation qui dépend de LUI est inerte. Ses
+  // fonctions, elles, sont stables (`useCallback` sans dépendance mouvante) : on dépend donc de la FONCTION
+  // dont on a besoin, jamais de l'objet qui la porte. Une ref ferait le travail aussi, mais elle se lit
+  // après la peinture, donc elle ajouterait une fenêtre de péremption pour rien.
+  const { enregistrerMaintenant } = enregistrement;
 
   // Mise en ligne. Deux états seulement : en cours, et le message d'échec.
   const [publication, setPublication] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
@@ -409,23 +410,22 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
    */
   const testerDepuisBloc = useCallback(async (nodeId: string): Promise<void> => {
     setRefusTest(null);
-    if (!(await enregistrementRef.current.enregistrerMaintenant())) {
+    if (!(await enregistrerMaintenant())) {
       setRefusTest(t('Modifications pas encore enregistrées : le test n’a pas été ouvert, il aurait joué la version précédente.',
         'Changes not saved yet: the test was not opened, it would have played the previous version.'));
       return;
     }
     onTesterBloc?.(nodeId);
-  }, [onTesterBloc, t]);
+  }, [enregistrerMaintenant, onTesterBloc, t]);
 
   // Mémoïsé : la valeur d'un contexte re-rend TOUS ses consommateurs quand elle change d'identité, et ici
   // les consommateurs sont tous les blocs du canevas.
   //
-  // 🔴 ET LA MÉMOÏSATION ÉTAIT INERTE (relevé en revue finale, 2026-09-16). `useEnregistrementScenario` rend
-  // un LITTÉRAL D'OBJET NEUF à chaque rendu : dépendre de `enregistrement` faisait changer l'identité du
-  // rappel à chaque frappe, donc celle de la valeur du contexte, donc tous les blocs re-rendaient. C'était
-  // exactement ce que ce commentaire prétendait empêcher, et une régression par rapport à `TemplatesCtx`,
-  // dont la valeur est un état stable. La ref porte la dépendance mouvante ; la liste ne garde que ce qui
-  // change vraiment.
+  // 🔴 ET LA MÉMOÏSATION A ÉTÉ INERTE DEUX FOIS (revue finale, puis sa seconde passe, 2026-09-16). D'abord
+  // parce qu'elle dépendait de `enregistrement`, que le hook recrée à chaque rendu. Puis, une fois cela
+  // corrigé, parce que `onTesterBloc` arrivait comme une flèche écrite EN LIGNE dans le JSX du parent : à
+  // chaque rendu de la page, l'identité changeait quand même, et tous les blocs re-rendaient. Les DEUX
+  // moitiés doivent tenir, et la seconde vit chez l'appelant (`web/app/workflows/page.tsx`).
   const rappelTest = useMemo(
     () => (onTesterBloc ? (nodeId: string) => { void testerDepuisBloc(nodeId); } : null),
     [onTesterBloc, testerDepuisBloc],
