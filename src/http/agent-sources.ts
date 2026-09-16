@@ -4,6 +4,7 @@ import type { Guard } from '../auth/middleware';
 import { LabelSourceDejaPris, type SourceVue } from '../agent/sources';
 import { construireCible } from '../agent/http-cible';
 import { scopeTenant, estUuid } from './scope';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
  * Les SOURCES externes d'outils : déclarer le système du client, et savoir qu'il répond encore.
@@ -22,6 +23,18 @@ import { scopeTenant, estUuid } from './scope';
  */
 
 export interface AgentSourcesRouteDeps {
+  /**
+   * Journal d'audit (2026-09-16). Optionnel : absent -> aucune trace (câblages de test).
+   *
+   * 🔴 UN CONNECTEUR EST LA SORTIE DE L'ESPACE. Il porte l'adresse du système du client et son secret : c'est
+   * par lui que des données quittent le produit, et c'est lui que l'agent de Meta appelle EN DIRECT. Changer
+   * son adresse change la destination de tout ce qui part, sans qu'aucun écran ne le crie.
+   *
+   * 🔴 LE `detail` NE PORTE JAMAIS LE SECRET, ET PAS NON PLUS L'ADRESSE COMPLÈTE : seulement le MODE
+   * d'authentification et l'HÔTE. L'hôte répond à « où partent les données », qui est la question ; le chemin
+   * complet et le secret donneraient de quoi rejouer l'appel depuis une table qu'on ne purge jamais.
+   */
+  audit?: AuditSink;
   lister(tenantId: string): Promise<SourceVue[]>;
   parId(tenantId: string, id: string): Promise<SourceVue | null>;
   creer(tenantId: string, input: { kind: 'http'; label: string; baseUrl: string; authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string }): Promise<SourceVue>;
@@ -73,8 +86,20 @@ function authCoherente(authKind: string, secret: string | undefined, entete: str
   return null;
 }
 
+/**
+ * L'HÔTE d'une adresse, ou `null` si elle est illisible.
+ *
+ * ⚠️ Il ne peut pas lever : ce helper sert un JOURNAL, et une adresse mal formée ne doit pas faire échouer
+ * l'action qu'on observe. Les adresses sont déjà validées par `adresseAcceptable` en amont, donc `null` ne
+ * devrait jamais arriver ; il est là pour que « ne devrait jamais » n'ait pas à être vrai.
+ */
+function hoteDe(url: string): string | null {
+  try { return new URL(url).host; } catch { return null; }
+}
+
 export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
+  const journal = makeJournal(deps.audit);
   const base = '/tenants/:tenantId/agent-sources';
 
   app.get(base, opts, async (req, reply) => {
@@ -100,6 +125,8 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
         ...(authHeaderName ? { authHeaderName } : {}),
         ...(authSecret ? { authSecret } : {}),
       });
+      // ⚠️ L'HÔTE, pas l'adresse complète : il répond à « où partent les données » sans graver le chemin.
+      await journal(tenant, req, 'connecteur.cree', { kind: 'connecteur', id: source.id }, { authKind, hote: hoteDe(baseUrl) });
       return reply.code(201).send({ source });
     } catch (err) {
       if (err instanceof LabelSourceDejaPris) return reply.code(409).send({ error: err.message });
@@ -130,6 +157,11 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     try {
       const source = await deps.patch(tenant, id, p);
       if (!source) return reply.code(404).send({ error: 'source introuvable' });
+      // 🔴 `adresseChangee` est le fait qui compte : c'est le seul geste qui redirige TOUT ce qui part.
+      await journal(tenant, req, 'connecteur.modifie', { kind: 'connecteur', id }, {
+        authKind, adresseChangee: p.baseUrl !== undefined && p.baseUrl !== actuelle.baseUrl,
+        ...(p.baseUrl !== undefined ? { hote: hoteDe(p.baseUrl) } : {}),
+      });
       return reply.code(200).send({ source });
     } catch (err) {
       if (err instanceof LabelSourceDejaPris) return reply.code(409).send({ error: err.message });
@@ -149,7 +181,9 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     if (actuelle.outilsActifs > 0) {
       return reply.code(409).send({ error: `${actuelle.outilsActifs} outil(s) actif(s) utilisent cette source : désactivez-les d’abord` });
     }
-    return reply.code(200).send({ id, deleted: await deps.supprimer(tenant, id) });
+    const supprime = await deps.supprimer(tenant, id);
+    if (supprime) await journal(tenant, req, 'connecteur.supprime', { kind: 'connecteur', id });
+    return reply.code(200).send({ id, deleted: supprime });
   });
 
   app.post(`${base}/:id/epreuve`, opts, async (req, reply) => {

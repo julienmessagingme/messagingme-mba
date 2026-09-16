@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
 import { registerUsers } from '../src/http/users';
 import { registerApiKeys } from '../src/http/api-keys';
+import { registerWebhooksAdmin } from '../src/http/webhooks-admin';
+import { registerAgentSources } from '../src/http/agent-sources';
 import type { AuditSink } from '../src/audit/journal';
 import type { PreHandler } from '../src/auth/middleware';
 
@@ -152,5 +154,82 @@ describe('les CLÉS D’API laissent une trace', () => {
     await rate.close();
 
     expect(h.lignes.map((l) => l.action)).toEqual(['cle_api.revoquee']);
+  });
+});
+
+describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
+  /**
+   * 🔴 DEUX FAMILLES QUI VONT DANS DES SENS OPPOSÉS, et le plan les avait confondues sous « webhooks
+   * sortants ». Relevé en lisant le code : un WEBHOOK est une adresse que NOUS exposons et qu'un tiers
+   * appelle, donc une porte d'ENTRÉE ; un CONNECTEUR porte l'adresse du système du client, donc la SORTIE.
+   * Le risque n'est pas le même, et la justification écrite comptait autant que le câblage.
+   */
+  it('🔴 créer un webhook est tracé, sans son CODE : le code EST le secret de l’adresse', async () => {
+    const h = harnais();
+    const app = Fastify();
+    registerWebhooksAdmin(app, {
+      audit: h.audit,
+      baseUrl: 'https://api.exemple.test',
+      list: async () => [], get: async () => null,
+      create: async () => ({ id: 'w1', code: 'code-tres-secret' }),
+      update: async () => true, remove: async () => true,
+      rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
+      forgetPayload: async () => true,
+      workflowBelongsToTenant: async () => true,
+    } as never, gardeQuiPose);
+    await app.ready();
+    const r = await app.inject({ method: 'POST', url: '/tenants/t1/webhooks', payload: { name: 'Zapier' } });
+    expect(r.statusCode).toBe(201);
+    expect(h.lignes[0]!.action).toBe('webhook.cree');
+    expect(JSON.stringify(h.lignes[0])).not.toContain('code-tres-secret');
+    await app.close();
+  });
+
+  it('🔴 poser puis retirer le secret d’un webhook donne DEUX lignes distinguables', async () => {
+    const h = harnais();
+    const app = Fastify();
+    registerWebhooksAdmin(app, {
+      audit: h.audit, baseUrl: 'https://api.exemple.test',
+      list: async () => [], get: async () => null,
+      create: async () => ({ id: 'w1', code: 'c' }), update: async () => true, remove: async () => true,
+      rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
+      forgetPayload: async () => true, workflowBelongsToTenant: async () => true,
+    } as never, gardeQuiPose);
+    await app.ready();
+    await app.inject({ method: 'POST', url: '/tenants/t1/webhooks/w1/secret' });
+    await app.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/w1/secret' });
+    expect(h.lignes.map((l) => l.action)).toEqual(['webhook.secret_change', 'webhook.secret_change']);
+    expect(h.lignes.map((l) => l.detail.pose)).toEqual([true, false]);
+    // 🔴 Le secret en clair n'est rendu qu'une fois à son porteur : le graver ici le rendrait rejouable.
+    expect(JSON.stringify(h.lignes)).not.toContain('sec-en-clair');
+    await app.close();
+  });
+
+  it('🔴 un connecteur journalise l’HÔTE et le MODE, jamais le secret ni le chemin', async () => {
+    /**
+     * L'hôte répond à « où partent les données », qui est toute la question d'un connecteur. Le chemin complet
+     * et le secret, eux, donneraient de quoi REJOUER l'appel depuis une table qu'on ne purge jamais.
+     */
+    const h = harnais();
+    const app = Fastify();
+    registerAgentSources(app, {
+      audit: h.audit,
+      lister: async () => [],
+      parId: async () => ({ id: 's1', baseUrl: 'https://crm.client.fr/v1/secret-path', authKind: 'bearer', authHeaderName: null, aAuthentification: true, outilsActifs: 0 }) as never,
+      creer: async () => ({ id: 's1' }) as never,
+      patch: async () => ({ id: 's1' }) as never,
+      supprimer: async () => true,
+    } as never, gardeQuiPose);
+    await app.ready();
+    const r = await app.inject({
+      method: 'POST', url: '/tenants/t1/agent-sources',
+      payload: { label: 'CRM', baseUrl: 'https://crm.client.fr/v1/secret-path', authKind: 'bearer', authSecret: 'jeton-du-client' },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(h.lignes[0]!.action).toBe('connecteur.cree');
+    expect(h.lignes[0]!.detail).toEqual({ authKind: 'bearer', hote: 'crm.client.fr' });
+    expect(JSON.stringify(h.lignes[0])).not.toContain('jeton-du-client');
+    expect(JSON.stringify(h.lignes[0])).not.toContain('secret-path');
+    await app.close();
   });
 });

@@ -613,6 +613,7 @@ async function main(): Promise<void> {
       },
     },
     webhooksAdmin: {
+      audit: auditSink,
       list: (tenant) => webhookStore.list(tenant),
       get: (tenant, id) => webhookStore.get(tenant, id),
       create: (tenant, input) => webhookStore.create(tenant, input),
@@ -1726,6 +1727,7 @@ async function main(): Promise<void> {
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
     // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.
     agentSources: {
+      audit: auditSink,
       lister: (tenant) => agentSources.lister(tenant),
       parId: (tenant, id) => agentSources.parId(tenant, id),
       creer: (tenant, input) => agentSources.creer(tenant, input),

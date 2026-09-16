@@ -57,7 +57,31 @@ export type AuditAction =
    */
   | 'connexion.echouee'
   | 'cle_api.creee'
-  | 'cle_api.revoquee';
+  | 'cle_api.revoquee'
+  /**
+   * LES PORTES VERS L'EXTÉRIEUR (2026-09-16, lot 2 du même plan). Deux familles, et elles vont dans des sens
+   * OPPOSÉS : le plan les avait confondues sous « webhooks sortants », relevé en lisant le code.
+   *
+   * 🔴 UN WEBHOOK EST UNE PORTE D'ENTRÉE, PAS UNE SORTIE. C'est une adresse que NOUS exposons et qu'un tiers
+   * appelle : la créer ouvre un canal par lequel des contacts entrent dans l'espace, et une campagne « au fil
+   * de l'eau » peut s'en nourrir. Le risque n'est pas l'exfiltration, c'est l'INGESTION par quelqu'un qui
+   * connaît l'adresse, et la SUPPRESSION, qui tarit une campagne vivante.
+   *
+   * 🔴 UN CONNECTEUR EST LA SORTIE. Il porte l'adresse du système du client et son secret : c'est par lui que
+   * des données quittent l'espace, et c'est lui que l'agent de Meta appellera EN DIRECT. Changer son adresse
+   * change la destination de tout ce qui part.
+   *
+   * ⚠️ `webhook.secret_change` COUVRE LA POSE ET LE RETRAIT, sans les distinguer. Ce qui compte pour
+   * l'exploitation est qu'on a touché à l'authentification de cette porte ; `detail.pose` dit lequel des deux,
+   * sans inventer deux actions dont personne ne lirait la différence.
+   */
+  | 'webhook.cree'
+  | 'webhook.modifie'
+  | 'webhook.supprime'
+  | 'webhook.secret_change'
+  | 'connecteur.cree'
+  | 'connecteur.modifie'
+  | 'connecteur.supprime';
 
 export interface AuditEntry {
   id: string;
