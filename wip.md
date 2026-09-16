@@ -67,7 +67,20 @@ Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et o
 quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
 ailleurs que dans la colonne auteur**.
 
-### 3. 🔴 Tester un scénario À PARTIR D'UN BLOC — OBLIGATION OUVERTE, la feature n'est pas close sans
+### 3. 🔴 Tester un scénario À PARTIR D'UN BLOC — ESSAI FAIT LE 2026-09-16, ET IL A ÉCHOUÉ
+
+🔴 **CE QUE L'ESSAI RÉEL A TROUVÉ, ET QU'AUCUN TEST N'AURAIT TROUVÉ.** Julien a scanné le QR d'un bloc :
+l'agent de Meta tenait le fil, il a répondu « je n'ai pas bien compris votre message », et le test n'a
+JAMAIS démarré. Mesuré en base : zéro parcours créé, conversation même pas marquée comme test, fil passé
+à `mba` 46 ms après le message. Corrigé le jour même : un jeton REPREND le fil quel que soit son
+détenteur, et rien ne le rend à l'agent de Meta sur une conversation de test.
+
+⚠️ **ET LA CAUSE EXACTE N'EST TOUJOURS PAS CONNUE.** Le chemin du jeton avait QUATRE sorties muettes : le
+parcours n'existait pas, la conversation n'était pas marquée, les journaux étaient vides, et il était
+impossible de dire laquelle avait servi. Elles parlent désormais toutes. **Le prochain scan la nommera en
+une ligne** (`sudo docker logs mba-worker | grep test-token`).
+
+Les quatre gestes restent dus, et le premier n'a toujours pas abouti :
 
 ⚠️ **La revue finale du 2026-09-16 a attesté le CODE, pas l'usage.** L'essai ci-dessous est matériellement
 impossible avant le déploiement du VPS, et la skill refusait d'écrire l'attestation tant qu'il manquait :

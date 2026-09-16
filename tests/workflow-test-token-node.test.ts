@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { blocDesigne, lireJetonDeTest } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
 
@@ -130,7 +132,6 @@ describe('processTestTokens transmet le bloc', () => {
       deps: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async (token: string) => { trace.cherche.push(token); return { workflowId: 'wf1', tenantId: 't1' }; },
-        mayStart: async () => true,
         markConversationTest: async () => {},
         startTestRun: async (_t: string, wf: string, _w: string, nodeId: string | null) => {
           trace.demarres.push({ wf, nodeId });
@@ -157,6 +158,18 @@ describe('processTestTokens transmet le bloc', () => {
     expect(trace.demarres).toEqual([{ wf: 'wf1', nodeId: null }]);
   });
 
+  it('🔴 le chemin du jeton PARLE à chacune de ses sorties, une fois qu’il sait que c’est un jeton', async () => {
+    // C'est ce qui manquait le 2026-09-16 : quatre sorties muettes, aucune trace, et il était impossible de
+    // dire laquelle avait servi. Avant de savoir que le texte EST un jeton, se taire reste la seule option
+    // (ce filtre voit chaque message de chaque client) ; après, chaque refus est rare et mérite d'être dit.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { deps: d } = deps({ findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 'AUTRE-ESPACE' }) });
+    await processTestTokens(payload(`test-abc12345.${NODE}`), d);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('appartient à un AUTRE espace');
+    warn.mockRestore();
+  });
+
   it('🔴 un démarrage REFUSÉ est journalisé : un chemin qui n’agit pas doit le dire', async () => {
     // Le cas courant du lien PERMANENT : un lien collé il y a trois semaines pointe un bloc supprimé depuis.
     // L'exécuteur refuse et rend la raison ; sans cette trace, elle n'allait nulle part et le testeur voyait
@@ -168,5 +181,39 @@ describe('processTestTokens transmet le bloc', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('n’existe plus dans le scénario');
     warn.mockRestore();
+  });
+});
+
+/**
+ * UN JETON DÉSENCLENCHE L'AGENT DE META (décision de Julien, 2026-09-16, après son essai réel).
+ *
+ * 🔴 CE QUI S'EST PASSÉ, MESURÉ EN BASE : il a scanné le QR d'un bloc, l'agent de Meta tenait le fil, il a
+ * répondu « je n'ai pas bien compris votre message », et le test n'a JAMAIS démarré (zéro parcours créé, la
+ * conversation même pas marquée comme test). Sa règle : « quand y a un jeton, le MBA ne marche pas ».
+ */
+describe('un jeton de test désenclenche l’agent de Meta', () => {
+  it('🔴 le CÂBLAGE reprend le fil, quel que soit son détenteur', () => {
+    // Aucun test unitaire ne monte `main()` : la seule façon de garder ce câblage est de le lire. Sans ce
+    // drapeau, l'agent de Meta garde le fil et répond au testeur à la place du scénario.
+    const worker = readFileSync(join(process.cwd(), 'src', 'worker.ts'), 'utf8');
+    const debut = worker.indexOf('startTestRun: async (');
+    const bloc = worker.slice(debut, worker.indexOf(String.fromCharCode(10) + '        },', debut));
+    expect(bloc).toContain('ignoreHumanControl: true');
+    expect(bloc, 'la garde `mayStart` a été retirée : elle refusait de démarrer dès que le fil était tenu')
+      .not.toContain('mayStart');
+  });
+
+  it('🔴 et RIEN ne rend le fil à l’agent de Meta sur une conversation de TEST', () => {
+    // Quatre chemins rendent le fil (fin de parcours, accusé du dernier envoi, retour d'un client que personne
+    // ne suit, balayage de contrôle). La garde est posée entre le geste et TOUS ses appelants, dans le câblage :
+    // la poser dans chacun serait quatre endroits où l'oublier. Sans elle, le fil repart entre deux essais et
+    // c'est l'agent de Meta qui répond au scan suivant.
+    const wiring = readFileSync(join(process.cwd(), 'src', 'workflow', 'wiring.ts'), 'utf8');
+    const debut = wiring.indexOf('const releaseThreadChezMeta = async');
+    expect(debut, 'le point de passage unique de la remise du fil a disparu').toBeGreaterThan(-1);
+    expect(wiring.slice(debut, debut + 500)).toContain('estConversationDeTest');
+    // Et le geste NU n'est appelé que par lui : un second appelant contournerait la garde.
+    expect(wiring.split('rendreLeFilChezMeta(').length - 1,
+      'un second appelant du geste nu contournerait la garde des conversations de test').toBe(1);
   });
 });

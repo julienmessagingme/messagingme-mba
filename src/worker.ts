@@ -490,9 +490,6 @@ async function main(): Promise<void> {
           const wf = await workflowStore.findByTestToken(token);
           return wf ? { workflowId: wf.id, tenantId: wf.tenantId } : null;
         },
-        // Même garde que l'exécuteur, mais vérifiée AVANT les écritures : un opérateur (ou MBA) qui tient le
-        // fil garde la priorité, et on ne casse pas l'état du contact pour un test qui ne partira pas.
-        mayStart: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
         markConversationTest: (tenant, waId) => inboxStore.markConversationTest(tenant, waId),
         // Un testeur qui relance son lien veut repartir du DÉBUT : on clôt le parcours resté en attente,
         // sinon il resterait orphelin (l'avance ne retrouve qu'un run à la fois par contact).
@@ -511,7 +508,12 @@ async function main(): Promise<void> {
           // voulu : figer le graphe de chaque destinataire d'une campagne recopierait le même objet autant
           // de fois qu'elle a de contacts.
           const graphe = grapheEditable(wf);
-          const options = { emitEvents: true, figerLeGraphe: true };
+          // 🔴 `ignoreHumanControl` : UN JETON DE TEST REPREND LE FIL, QUEL QUE SOIT SON DÉTENTEUR (décision de
+          // Julien, 2026-09-16, après son essai réel). Sans lui, l'agent de Meta gardait le fil et répondait au
+          // testeur à la place du scénario : « quand y a un jeton, le MBA ne marche pas ». C'est le même geste
+          // que le lancement depuis l'Inbox et que la campagne, pour la même raison : le déclencheur est un
+          // humain qui tient le téléphone, pas un automatisme. La prise échoue lisiblement si Meta la refuse.
+          const options = { emitEvents: true, figerLeGraphe: true, ignoreHumanControl: true };
           // ⚠️ AUCUNE GARDE « ce bloc existe-t-il ? » ICI, et c'est délibéré : `runFrom` la porte déjà pour ses
           // quatre chemins de démarrage, elle journalise, et elle rend une raison lisible. La redoubler ici
           // serait une seconde vérité à tenir alignée à la main, sur un chemin où la première est éprouvée.

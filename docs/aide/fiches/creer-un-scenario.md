@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 18896a
+source_empreinte: db8bec
 ---
 # Créer un scénario
 

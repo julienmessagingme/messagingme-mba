@@ -590,6 +590,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   pas** plutôt que de repartir du début. Les variables comme `{{prenom}}` sortent normalement : elles
   viennent de la fiche du contact qui teste, pas du parcours. ⚠️ Ce qui précède le bloc n'est pas rejoué et
   **le panneau ne prévient pas** : décision de Julien, « tant pis, il ne se passe rien ».
+- ✅ **Un test DÉSENCLENCHE l'agent de Meta** (2026-09-16) : envoyer un lien de test reprend la conversation à
+  l'agent, même s'il la tenait, et le scénario démarre. Avant, l'agent répondait « je n'ai pas bien compris
+  votre message » et le test ne partait jamais. Le fil **reste ensuite côté application** : on enchaîne les
+  essais sans que l'agent s'intercale, et on le réenclenche quand on veut avec le bouton de la conversation
+  dans l'Inbox. Une conversation née d'un test le reste.
 - ✅ **Un test joue LA MÊME version du début à la fin** (2026-09-16) : le brouillon est figé dans le parcours
   au démarrage. Avant, un test démarrait sur le brouillon mais **repartait sur la version en ligne** dès que
   le testeur répondait à une question ou qu'une attente se réveillait : on essayait deux versions sans le

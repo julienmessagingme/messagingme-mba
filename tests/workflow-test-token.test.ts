@@ -140,13 +140,26 @@ describe('processTestTokens', () => {
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
 
-  describe('fil tenu par un humain ou par MBA', () => {
-    it('ne détruit RIEN : ni marquage, ni clôture du parcours en cours, ni démarrage', async () => {
-      // Le trou attrapé en revue : les deux écritures passaient AVANT la garde de contrôle (qui vit dans
-      // l'exécuteur), donc un test sur un fil repris par un opérateur clôturait son parcours pour rien.
-      const { deps: d, trace } = deps({ mayStart: async () => false });
+  describe('fil tenu par l’agent de Meta ou par un humain', () => {
+    /**
+     * 🔴 CE CAS A CHANGÉ DE SENS LE 2026-09-16, ET C'EST UNE DÉCISION DE JULIEN, PAS UNE DÉRIVE.
+     *
+     * Il s'appelait « ne détruit RIEN : ni marquage, ni clôture, ni démarrage », et il gardait une garde
+     * `mayStart` qui refusait de démarrer dès que le fil n'appartenait pas au scénario. Julien a scanné son QR
+     * le 2026-09-16 : l'agent de Meta tenait le fil, il a répondu « je n'ai pas bien compris votre message »,
+     * et le test n'a jamais démarré. Sa règle, mot pour mot : « quand y a un jeton, le MBA ne marche pas. Un
+     * opérateur sera pas en train de répondre au mec qui est en train de faire des tests ».
+     *
+     * Le cas qu'exerçait l'ancien test est donc conservé, RETOURNÉ : le détenteur du fil ne bloque plus rien,
+     * et c'est l'exécuteur qui reprend le fil chez Meta (`ignoreHumanControl`, posé par le câblage). Ce que
+     * l'ancien test protégeait vraiment, lui, n'a pas bougé : on ne casse aucun état pour un test qui ne
+     * partirait pas, puisqu'il part toujours.
+     */
+    it('🔴 le jeton démarre QUOI QU IL ARRIVE : le détenteur du fil ne le bloque plus', async () => {
+      const { deps: d, trace } = deps();
       const consumed = await processTestTokens(payload(MOT_TEST), d);
-      expect(trace).toEqual({ marked: [], started: [] });
+      expect(trace.started).toEqual(['wf1']);
+      expect(trace.marked).toEqual(['33611']);
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true); // le message reste un jeton, pas une réponse
     });
   });

@@ -15,11 +15,13 @@ export interface TestTokenDeps {
   /** Scénario portant ce jeton, avec son tenant (le jeton est unique globalement). null si inconnu. */
   findByTestToken(token: string): Promise<{ workflowId: string; tenantId: string } | null>;
   /**
-   * Le scénario a-t-il le droit d'écrire dans ce fil (`control_owner = app_workflow`) ? Vérifié AVANT toute
-   * écriture : la même garde existe plus bas dans l'exécuteur, mais elle n'agirait qu'après avoir déjà marqué
-   * la conversation et clos le parcours en attente, c'est-à-dire après avoir cassé un état sans rien démarrer.
+   * ⚠️ IL N'Y A PLUS DE GARDE `mayStart` ICI, ET C'EST UNE DÉCISION DE JULIEN (2026-09-16, après son essai
+   * réel). Elle refusait de démarrer dès que le fil n'appartenait pas au scénario, donc en particulier quand
+   * l'agent de Meta le tenait : « quand y a un jeton, le MBA ne marche pas ». Un jeton de test est un geste
+   * DÉLIBÉRÉ de quelqu'un qui tient le téléphone ; le cas « un opérateur répond au type qui est en train de
+   * tester » n'existe pas. La prise du fil est faite par l'exécuteur (`ignoreHumanControl`), qui la refuse
+   * lisiblement si Meta refuse de rendre la main.
    */
-  mayStart(tenantId: string, waId: string): Promise<boolean>;
   /**
    * Marque la conversation comme un fil de TEST : elle sort de l'analyse (donc du push HubSpot) et des
    * statistiques, pour qu'un essai interne ne ressemble pas à un vrai client dans le tableau de bord.
@@ -62,24 +64,48 @@ export async function processTestTokens(
 ): Promise<Set<string>> {
   const consumed = new Set<string>();
   for (const m of extractInbound(payload)) {
-    if (m.field && m.field !== 'messages') continue; // standby : le MBA tient le fil
     // Filtre du chemin chaud : seuls les messages qui RESSEMBLENT à un jeton interrogent la base. Un message
     // client ordinaire ne coûte donc rien de plus qu'avant.
     //
     // ⚠️ UNE SEULE LECTURE, ET C'EST VOULU. Le filtre et l'extraction étaient deux appels (`looksLikeTestToken`
     // puis `normalizeTestToken`) : deux occasions de diverger sur la forme acceptée. `lireJetonDeTest` rend les
     // deux d'un coup, donc ce qui a passé le filtre est exactement ce qu'on lit.
+    //
+    // 🔴 ET IL EST LU AVANT TOUTE AUTRE GARDE, POUR QUE LES AUTRES PUISSENT PARLER. C'est la leçon de l'essai
+    // réel du 2026-09-16 : Julien a scanné son QR, l'agent de Meta a répondu à sa place, et ce chemin n'a
+    // laissé AUCUNE trace. Il avait quatre sorties muettes, et il était impossible de dire laquelle avait
+    // servi : le parcours n'existait pas, la conversation n'était pas marquée, les journaux étaient vides.
+    // Une fois qu'on SAIT que le texte est un jeton, chaque refus est rare et mérite d'être dit ; avant de le
+    // savoir, se taire est la seule option tenable (ce filtre voit chaque message de chaque client).
     const lu = lireJetonDeTest(m.body);
     if (!lu) continue;
+    if (m.field && m.field !== 'messages') {
+      // eslint-disable-next-line no-console
+      console.warn(`test-token: jeton reçu sur le canal « ${m.field} » et non « messages », rien n'est déclenché (message ${m.messageId})`);
+      continue;
+    }
     try {
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
-      if (!tenantId) continue;
+      if (!tenantId) {
+        // eslint-disable-next-line no-console
+        console.warn(`test-token: jeton reçu sur le numéro ${m.phoneNumberId}, qui n'appartient à aucun espace connu (message ${m.messageId})`);
+        continue;
+      }
       // 🔴 LE JETON SEUL, SANS LE SUFFIXE DE BLOC. Le suffixe n'est pas stocké : chercher le texte entier ne
       // trouverait jamais rien, et le test ne démarrerait pas du tout.
       const wf = await deps.findByTestToken(lu.jeton);
       // Jeton inconnu, ou appartenant à un AUTRE client : on ne déclenche rien. Le jeton désigne le scénario,
       // mais c'est le numéro qui fait autorité sur le tenant ; un jeton fuité ne doit pas traverser les clients.
-      if (!wf || wf.tenantId !== tenantId) continue;
+      if (!wf) {
+        // eslint-disable-next-line no-console
+        console.warn(`test-token: le jeton ${lu.jeton} ne correspond à aucun scénario (message ${m.messageId})`);
+        continue;
+      }
+      if (wf.tenantId !== tenantId) {
+        // eslint-disable-next-line no-console
+        console.warn(`test-token: le jeton ${lu.jeton} appartient à un AUTRE espace que le numéro qui l'a reçu, rien n'est déclenché (message ${m.messageId})`);
+        continue;
+      }
 
       // CONSOMMÉ ici, AVANT toute écriture et quoi qu'il arrive ensuite : ce message EST un jeton de test.
       // Le rendre à l'avance de scénario le ferait interpréter comme une réponse du contact, et aux
@@ -89,15 +115,6 @@ export async function processTestTokens(
       // Rejeu du même message : tout a déjà été fait au premier passage. On garde la consommation (le message
       // reste un jeton) mais on ne relance rien.
       if (alreadySeen?.has(m.messageId)) continue;
-
-      // Le fil appartient-il encore au scénario ? Un opérateur (ou MBA) qui tient la conversation a la
-      // priorité. On le vérifie AVANT d'écrire : sinon on marquerait le fil et on clorait son parcours en
-      // attente pour finalement ne rien démarrer, en silence.
-      if (!(await deps.mayStart(tenantId, m.waId))) {
-        // eslint-disable-next-line no-console
-        console.log(`test-token: fil ${m.waId} tenu par un humain ou par MBA, test non démarré`);
-        continue;
-      }
 
       await deps.markConversationTest(tenantId, m.waId);
       // ⚠️ LA FERMETURE DU PARCOURS EN COURS N'EST PLUS ICI. Elle y était (`endWaitingRun`) et elle avait

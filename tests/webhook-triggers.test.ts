@@ -152,7 +152,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
-        mayStart: async () => true,
         markConversationTest: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
@@ -175,7 +174,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => null,
-        mayStart: async () => true,
         markConversationTest: async () => {},
         startTestRun: async () => true,
       },
@@ -213,7 +211,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
-        mayStart: async () => true,
         markConversationTest: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
@@ -229,7 +226,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       testTokens: {
         phoneNumberTenant: async () => { throw new Error('base indisponible'); },
         findByTestToken: async () => null,
-        mayStart: async () => true,
         markConversationTest: async () => {},
         startTestRun: async () => true,
       },

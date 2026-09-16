@@ -611,6 +611,23 @@ export class PgInboxStore implements InboxStore {
     );
   }
 
+  /**
+   * Cette conversation est-elle un fil de TEST ? Absente de la base -> `false`, donc un fil inconnu se
+   * comporte comme un fil ordinaire.
+   *
+   * 🔴 CE QU'ELLE SERT : empêcher que le fil reparte chez l'agent de Meta au milieu d'une série d'essais
+   * (décision de Julien, 2026-09-16, après son essai réel : « ceux qui vont utiliser ce bouton sont des
+   * testeurs ou des super admin du compte ; s'ils veulent le réenclencher, ils pourront le faire en appuyant
+   * sur le bouton de leur conversation dans l’Inbox »).
+   */
+  async estConversationDeTest(tenantId: string, waId: string): Promise<boolean> {
+    const res = await this.pool.query<{ is_test: boolean }>(
+      `select is_test from conversations where tenant_id = $1 and wa_id = $2`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.is_test === true;
+  }
+
   /** `channel` : le fil est unique par contact, c'est la BULLE qui porte le tuyau. Absent -> WhatsApp, donc
    *  tous les appelants historiques écrivent exactement ce qu'ils écrivaient. */
   async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {

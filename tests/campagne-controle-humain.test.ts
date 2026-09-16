@@ -118,7 +118,7 @@ describe('les trois chemins déclenchés par un opérateur passent bien ignoreHu
     // elle désigne `startTestRun`, le lien de test. Un titre plus large que ce qu'un test mesure finit par
     // faire croire à une garantie qu'il n'apporte pas, ce qui est exactement le défaut que ce fichier existe
     // pour corriger.
-    // ⚠️ L'ANCRE A CHANGÉ LE 2026-09-16, LE CAS MESURÉ NON. Elle désignait la ligne
+    // ⚠️ L'ANCRE A CHANGÉ LE 2026-09-16, ET LE CAS MESURÉ AUSSI (voir le commentaire du test). Elle désignait la ligne
     // `startInWindow(tenant, workflowId, grapheEditable(wf)`, que le lot « tester depuis un bloc » a
     // réécrite en deux branches (`startInWindow` ou `startFromNode` selon le bloc désigné). On lit
     // désormais le BLOC de câblage entier, ce qui couvre les deux branches au lieu d'une seule.
@@ -127,7 +127,7 @@ describe('les trois chemins déclenchés par un opérateur passent bien ignoreHu
     expect(debut).toBeGreaterThan(-1);
     const fin = src.indexOf('\n        },', debut);
     expect(fin).toBeGreaterThan(debut);
-    expect(src.slice(debut, fin)).not.toContain('ignoreHumanControl');
+    expect(src.slice(debut, fin)).toContain('ignoreHumanControl: true');
   });
 
   it('🔴 le lancement depuis l’INBOX, dans index.ts', () => {

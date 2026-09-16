@@ -273,10 +273,42 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // donc atteignable du WORKER seulement. Le bouton « rendre la main » de l'Inbox est servi par l'API et ne
   // pouvait pas l'appeler, ce qui a laissé Meta croire que NOUS tenions le fil pendant que l'écran annonçait
   // le contraire. Le module est le point de passage des deux processus.
-  const releaseThreadChezMeta = creerRendreLeFil({
+  const rendreLeFilChezMeta = creerRendreLeFil({
     numeroDuTenant: (t) => numeroDeLEspace(t),
     clientMba: (t) => metaFactory.mbaClientForTenant(t),
   });
+
+  /**
+   * RENDRE le fil à l'agent de Meta, SAUF sur une conversation de TEST (décision de Julien, 2026-09-16, après
+   * son essai réel).
+   *
+   * 🔴 UN SEUL POINT DE PASSAGE, ET C'EST TOUT L'INTÉRÊT. Quatre chemins rendent le fil : la fin d'un parcours
+   * (`releaseToMba` de l'exécuteur), l'accusé du dernier envoi (`remiseMbaSurAccuse`), le retour d'un client
+   * que personne ne suit (`remiseMbaSiPersonneNeSuit`) et le balayage de contrôle. Poser la garde dans chacun
+   * serait quatre endroits où l'oublier, et le cinquième ajouté demain ne l'aurait pas. Elle est donc ICI,
+   * entre le geste et tous ses appelants.
+   *
+   * ⚠️ POURQUOI UN FIL DE TEST NE REPART PAS : celui qui teste enchaîne les essais. Le fil rendu entre deux,
+   * c'est l'agent de Meta qui répond au scan suivant, ce que Julien a vécu le 2026-09-16. Sa règle : « ceux
+   * qui vont utiliser ce bouton sont des testeurs ou des super admin du compte ; s'ils veulent le réenclencher,
+   * ils pourront le faire en appuyant sur le bouton de leur conversation dans l'Inbox ». Le geste de reprise
+   * existe donc, il est explicite, et il appartient à l'humain.
+   *
+   * ⚠️ `is_test` NE SE LÈVE JAMAIS (`markConversationTest` ne sait que poser le drapeau) : une conversation née
+   * d'un test le reste. C'est déjà ce qui la sort de l'analyse et des statistiques, et c'est cohérent : ce
+   * numéro-là est un numéro d'essai, pas un client.
+   *
+   * ⚠️ Rend `false`, comme un espace sans numéro : « il n'y avait rien à rendre ». Les appelants savent déjà
+   * lire ce cas, et aucun n'écrit son état local dessus.
+   */
+  const releaseThreadChezMeta = async (tenantId: string, waId: string): Promise<boolean> => {
+    if (await inboxStore.estConversationDeTest(tenantId, waId)) {
+      // eslint-disable-next-line no-console
+      console.log(`release vers MBA ignoré pour ${waId} : conversation de TEST, le fil reste à l'app`);
+      return false;
+    }
+    return rendreLeFilChezMeta(tenantId, waId);
+  };
 
   /**
    * PRENDRE le fil chez Meta, le jumeau de `releaseThreadChezMeta`, ajouté le 2026-09-14.
