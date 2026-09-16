@@ -1,6 +1,6 @@
 # todo.md : backlog
 
-## 🟠 La rafale de `webhook-status` à « dès 3 » est en production et NE SERT PRESQUE PAS (2026-09-16)
+## 🟡 La rafale de `webhook-status` à « dès 3 » est en production et NE SERT PRESQUE PAS (2026-09-16)
 
 `48ddf92` (15/09, déployé vers 18 h) a posé `SEUILS_RAFALE['webhook-status'] = 2` pour que les PAQUETS
 d'accusés (3 à 12) partent ensemble. **Mesuré le 16/09 dans `pgboss.job`** : 11 accusés en 3 paquets, pris un
@@ -14,7 +14,12 @@ le worker toutes les `queueCacheIntervalSeconds` (60 s). Jusqu'à deux minutes d
 d'un paquet (un accusé toutes les 30 s). L'avalanche d'une campagne n'est pas concernée : elle dure assez
 pour que le compteur la voie. ⚠️ Les tests de `48ddf92` vérifiaient la VALEUR du seuil, pas son EFFET.
 
-**Deux voies, à arbitrer par Julien** (détail et chiffres : artifact « La plomberie d'Engage Me », § 7) :
+⚠️ **ARBITRÉ PAR JULIEN LE 2026-09-16 : NON PRIORITAIRE.** « L'essentiel est que ça marche sur les grosses
+campagnes quand on aura de gros volumes. » C'est le cas : l'avalanche rafale (20 accusés en 1,2 s, mesuré le
+2026-09-10). Le retard des petits paquets est accepté ; ne pas lancer l'une des deux voies sans qu'il le
+redemande.
+
+**Deux voies, si le sujet revient** (détail et chiffres : artifact « La plomberie d'Engage Me », § 7) :
 - **par lots (recommandé)** : `batchSize` ~12 sur cette seule file, traitement SÉQUENTIEL dans l'ordre
   d'arrivée, un verdict par job via `perJobResults` (supporté par pg-boss 12.25). Zéro requête ajoutée, paquet
   traité en 30 s au plus. ⚠️ Touche l'invariant `batchSize: 1` de `PgBossQueue.work` (`src/queue/pgboss.ts`),
