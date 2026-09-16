@@ -352,8 +352,17 @@ export async function processInbound(
  *   - 126 messages ENTRANTS du client, **100 % en `messages`**, ZÉRO en `standby` ;
  *   - 23 payloads `standby`, **aucun ne porte d'expéditeur**, tous portent un `message` SORTANT.
  *
- * Autrement dit : `standby` n'est PAS un canal d'entrants, c'est l'ÉCHO de ce que l'agent de Meta a envoyé.
- * Un entrant arrive toujours sur `messages`, que l'agent tienne le fil ou non.
+ * Autrement dit, SUR CES 30 JOURS-LÀ : `standby` ne portait que l'écho de ce que l'agent de Meta avait envoyé.
+ *
+ * 🔴 ET CETTE CONCLUSION ÉTAIT TROP LARGE, corrigée le 2026-09-16 par DEUX essais réels de Julien. Un entrant
+ * de client arrive BEL ET BIEN en `standby` quand l'agent de Meta tient le fil : il a envoyé un jeton de test,
+ * et le corps reçu en `standby` était SON texte, pas un écho. La mesure de 30 jours n'était pas fausse, elle
+ * était incomplète : sur cette période, l'agent ne tenait presque jamais un fil dont le client repartait.
+ * `src/webhooks/test-token.ts` traite donc désormais ce canal, et lui seul le fait.
+ *
+ * ⚠️ CE QUE ÇA NE CHANGE PAS : la branche `messages` reste supprimée, et l'avance de scénario comme les
+ * automations continuent de refuser le `standby`. Un entrant ne dit toujours RIEN du détenteur ; ce qui a
+ * changé, c'est qu'on sait maintenant qu'un entrant PEUT arriver par ce canal.
  *
  * 🔴 CE QUE LA BRANCHE `messages` FAISAIT DONC VRAIMENT : elle se déclenchait sur CHAQUE message du client et
  * écrasait l'état `mba`, c'est-à-dire l'inverse de ce qu'elle croyait faire. C'est elle qui rendait une

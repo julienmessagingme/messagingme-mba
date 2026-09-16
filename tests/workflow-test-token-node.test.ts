@@ -158,6 +158,18 @@ describe('processTestTokens transmet le bloc', () => {
     expect(trace.demarres).toEqual([{ wf: 'wf1', nodeId: null }]);
   });
 
+  it('🔴 UN JETON REÇU EN « standby » EST TRAITÉ : c’est le cas où l’agent de Meta tient le fil', async () => {
+    // 🔴 LE DÉFAUT QUE DEUX ESSAIS RÉELS ONT TROUVÉ (2026-09-16). `standby`, c'est Meta qui dit « son agent
+    // tient ce fil » : exactement la situation où le testeur a besoin qu'on la lui reprenne. Ce chemin
+    // refusait ce canal, donc le jeton n'était jamais vu et l'agent répondait à la place du scénario.
+    const { deps: d, trace } = deps();
+    const p = payload(`test-abc12345.${NODE}`) as { entry: Array<{ changes: Array<{ field: string }> }> };
+    p.entry[0]!.changes[0]!.field = 'standby';
+    const consumed = await processTestTokens(p, d);
+    expect(trace.demarres).toEqual([{ wf: 'wf1', nodeId: NODE }]);
+    expect(consumed.has('wamid.1'), 'le message reste consommé : il ne doit pas repartir ailleurs').toBe(true);
+  });
+
   it('🔴 le chemin du jeton PARLE à chacune de ses sorties, une fois qu’il sait que c’est un jeton', async () => {
     // C'est ce qui manquait le 2026-09-16 : quatre sorties muettes, aucune trace, et il était impossible de
     // dire laquelle avait servi. Avant de savoir que le texte EST un jeton, se taire reste la seule option

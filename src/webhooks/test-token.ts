@@ -79,10 +79,25 @@ export async function processTestTokens(
     // savoir, se taire est la seule option tenable (ce filtre voit chaque message de chaque client).
     const lu = lireJetonDeTest(m.body);
     if (!lu) continue;
-    if (m.field && m.field !== 'messages') {
+    // 🔴 UN JETON REÇU EN `standby` EST TRAITÉ, ET C'EST LE CAS QUI COMPTE (2026-09-16, second essai réel de
+    // Julien). `standby`, c'est Meta qui dit « son agent tient ce fil » : autrement dit exactement la
+    // situation où le testeur a besoin qu'on la lui reprenne. Ce chemin refusait ce canal, donc le jeton
+    // n'était jamais vu, et l'agent répondait « je n'ai pas bien compris votre message ». Deux essais de
+    // suite, et le premier n'avait laissé aucune trace.
+    //
+    // ⚠️ ET LA MESURE DU 2026-09-15 ÉTAIT INCOMPLÈTE, PAS FAUSSE. `src/webhooks/inbound.ts` a établi sur 30
+    // jours de webhooks réels que 126 entrants sur 126 arrivaient en `messages`, zéro en `standby`. C'était
+    // vrai de ces 30 jours-là, où l'agent de Meta ne tenait presque jamais un fil dont le client repartait.
+    // Un entrant de client arrive BEL ET BIEN en `standby` quand l'agent tient le fil : le corps lu ici est
+    // le texte que Julien a envoyé, pas un écho de ce que l'agent a dit. Les échos, eux, vivent dans
+    // `message_echoes` et sont une autre liste (`src/webhooks/parse.ts`).
+    //
+    // ⚠️ RIEN D'AUTRE NE CHANGE DE CANAL : l'avance de scénario et les automations continuent de refuser le
+    // `standby`. Un jeton est un geste DÉLIBÉRÉ de quelqu'un qui tient le téléphone ; un message ordinaire
+    // reçu pendant que l'agent parle n'est pas une réponse à un parcours.
+    if (m.field === 'standby') {
       // eslint-disable-next-line no-console
-      console.warn(`test-token: jeton reçu sur le canal « ${m.field} » et non « messages », rien n'est déclenché (message ${m.messageId})`);
-      continue;
+      console.log(`test-token: jeton reçu en « standby » (l'agent de Meta tient le fil pour ${m.waId}), le test va le lui reprendre`);
     }
     try {
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);

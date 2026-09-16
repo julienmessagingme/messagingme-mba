@@ -107,11 +107,23 @@ describe('processTestTokens', () => {
     expect(trace.started).toEqual([]);
   });
 
-  it('message STANDBY (le MBA tient le fil) -> aucun déclenchement', async () => {
+  it('🔴 message STANDBY (l’agent de Meta tient le fil) -> le test DÉMARRE et lui reprend le fil', async () => {
+    /**
+     * 🔴 CE CAS A CHANGÉ DE SENS LE 2026-09-16, SUR DEUX ESSAIS RÉELS, ET LE CAS EST CONSERVÉ.
+     *
+     * Il affirmait « message STANDBY -> aucun déclenchement », et c'était le défaut : `standby`, c'est Meta qui
+     * dit « mon agent tient ce fil », donc EXACTEMENT la situation où le testeur a besoin qu'on la lui reprenne.
+     * Julien a scanné deux fois, l'agent a répondu « je n'ai pas bien compris votre message » les deux fois, et
+     * le scénario n'a jamais démarré. Sa règle : « quand y a un jeton, le MBA ne marche pas ».
+     *
+     * ⚠️ CE QUI RESTE VRAI, et que ce test ne doit pas laisser croire disparu : le `standby` reste refusé par
+     * l'avance de scénario et par les automations. Seul le JETON le traverse, parce que lui seul est un geste
+     * délibéré de quelqu'un qui tient le téléphone.
+     */
     const { deps: d, trace } = deps();
     const consumed = await processTestTokens(payload(MOT_TEST, 'standby'), d);
-    expect(trace.started).toEqual([]);
-    expect(consumed.size).toBe(0);
+    expect(trace.started).toEqual(['wf1']);
+    expect(consumed.size).toBe(1); // consommé : il ne doit pas repartir vers l'avance ou les automations
   });
 
   it('numéro inconnu (aucun tenant) -> aucun déclenchement', async () => {
