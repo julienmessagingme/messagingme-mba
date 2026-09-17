@@ -45,6 +45,18 @@ const BLOC = {
   ...TAG, id: 'o2', name: 'mba_envoyer_bloc', title: 'Envoyer un bloc de votre scénario',
   binding: { handler: 'envoyer_bloc' }, risk: 'irreversible', params: [{ name: 'code', type: 'string', source: 'modele', required: true }],
 };
+/**
+ * 🔴 UN OUTIL MCP MORT, SUR L ECRAN OU LE CLIENT REDONNE SON AUTORISATION. Le serveur envoyait deja ces
+ * deux champs, le type front ne les declarait pas : un outil dont le schema n est plus representable, ou
+ * qui a DISPARU du serveur distant, ressemblait exactement a un outil vivant. Or c est precisement
+ * l ecran que le recit anti-IDOR nomme (« le client le redonne depuis AI Agent > Outils, qui n est PAS
+ * l ecran de clouage »), et le client ne l apprenait qu en recevant un refus.
+ */
+const MCP_MORT = {
+  ...TAG, id: 'o4', origin: 'mcp', sourceId: 's1', name: 'notion_lignes', title: 'Lire les lignes',
+  mcpNonActivable: 'le paramètre « lignes » est un tableau', mcpIndisponibleLe: null,
+};
+
 /** Actif, mais le modèle n'en voit RIEN : c'est le cas de « terminer » sans règle d'arrêt sur la fiche. */
 const MUET = {
   ...TAG, id: 'o3', name: 'mba_terminer', title: 'Terminer par une règle d’arrêt',
@@ -118,6 +130,24 @@ test.describe('Agents IA : les outils', () => {
     await page.goto(`/agents?id=${AG}&tab=outils`);
     await page.getByTestId('outil-activer-o1').click();
     await expect.poll(() => appels.some((a) => /o1\/activation$/.test(a.url) && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
+  });
+
+  test('🔴 un outil MCP MORT le DIT, sur l ecran meme ou l on redonne son autorisation', async ({ page }) => {
+    /**
+     * Le serveur envoyait deja l etat MCP, le type front ne le declarait pas : un outil non activable ou
+     * disparu du serveur distant ressemblait exactement a un outil vivant, et le client ne l apprenait
+     * qu en cliquant « activer » et en recevant un 409. C est le motif « une capacite cablee sur deux
+     * consommateurs sur trois » : la bibliotheque de l espace montrait la pastille, cet ecran-ci non.
+     */
+    const appels: Appel[] = [];
+    await mock(page, appels, [TAG, MCP_MORT]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await expect(page.getByTestId('agent-outils-mcp'), 'la section MCP existe').toBeVisible();
+    await expect(page.getByTestId('outil-mcp-mort-o4')).toBeVisible();
+    // La RAISON vient du serveur : le client ne peut pas la corriger, mais il doit pouvoir la montrer.
+    await expect(page.getByTestId('outil-mcp-mort-o4')).toContainText('lignes');
+    // ⚠️ LA PREUVE INVERSE : sans elle, un bandeau affiche en permanence passerait le test.
+    await expect(page.getByTestId('outil-mcp-mort-o1')).toHaveCount(0);
   });
 
   test('🔴 l autonomie n est proposée QUE sur une action irréversible', async ({ page }) => {

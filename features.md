@@ -1679,6 +1679,10 @@ importez ce qu'il propose.
   « Ce qui a changé sans vous ». Sans ça, l’agent perdait une capacité du jour au lendemain sans cause
   visible nulle part. ⚠️ Ça n'empêche PAS d'activer l'agent : un serveur tiers n'a pas à décider ça.
 - ✅ **Un serveur utilisé ne se supprime pas** tant qu'un outil actif en dépend.
+- ✅ **Chaque agent choisit ce qu'il a le droit d'appeler**, dans **AI Agent > Outils**, section « Vos
+  serveurs MCP » : les outils importés y apparaissent à côté des outils maison et des appels de
+  connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
+  Connecteurs MCP.
 - ⛔ **L'agent de Meta ne reçoit PAS ces outils**, et l'écran le dit : le Meta Business Agent n'accepte pas
   encore de connexion MCP. Ils se déclarent aux agents IA, dans **AI Agent > Outils**.
 - ⛔ **Pas encore : OAuth.** L'authentification se fait par jeton ou par en-tête. OAuth viendra ensuite.
@@ -1692,6 +1696,9 @@ importez ce qu'il propose.
   ⚠️ **C'est un écran de PILOTAGE, pas de création** : un outil s'ajoute toujours depuis l'onglet Outils d'un
   agent, là où on lui donne ses mots et ses valeurs autorisées. Ici on voit qui s'en sert, on l'ouvre à
   l'agent de Meta, et on le supprime de l'espace.
+- ✅ **Un outil MCP MORT ne ressemble pas à un outil vivant** : une pastille « a disparu du serveur » ou
+  « non activable », et dans le second cas **la raison écrite en clair**, telle que le serveur l'a donnée.
+  Sans elles, le client ne l'apprenait qu'en cliquant « activer » et en recevant un refus.
 - ✅ **« Utilisé par », sur chaque outil**, et c'est la raison d'être de l'écran : les agents qui s'en servent
   sont nommés, et ceux qui l'ont ajouté sans l'avoir activé sont marqués « (inactif) ». Sans cette ligne, ce
   serait une liste de plus ; avec elle, on voit qu'y toucher touche plusieurs agents à la fois.
@@ -2013,7 +2020,9 @@ d'aide.
   exactement ce qu'il était.
   ⚠️ **Piège de vocabulaire** : le menu **Tools** de la barre de gauche et l'onglet **Outils** d'un agent ne
   parlent pas de la même chose. Le système appartient à l'espace, l'appel appartient à l'agent.
-- ⛔ **Pas encore : MCP.** Aucun code ne sert cette famille aujourd'hui.
+- ➡️ **Les outils d'un serveur MCP se branchent de la même façon**, une fois le serveur déclaré dans
+  **Tools > Connecteurs MCP** et ses outils importés. L'onglet Outils de l'agent les montre à côté des
+  appels de connecteur API.
 
 #### Choisir les blocs que l'agent peut envoyer
 
@@ -2223,7 +2232,8 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ⚠️ **Un bloc agent n'apparaît pas dans Analytics > Mes tableaux.** Les autres blocs qui envoient s'y
   mesurent, pas celui-là. Aucune panne, mais rien à lire sur ce bloc pour l'instant : mesurer un contenu
   produit au fil des tours est une question produit qui n'est pas tranchée.
-- ⛔ **Pas de connexion MCP** (les serveurs d'outils standardisés). Prévu, non développé.
+- ➡️ **La connexion MCP existe** (les serveurs d'outils standardisés), voir « Brancher un serveur MCP ».
+  ⛔ Elle n'accepte pas encore OAuth : l'authentification se fait par jeton ou par en-tête.
 - ⛔ **Pas de « temps 2 »** : l'agent ne relit pas ses vraies conversations pour se corriger tout seul. Cela
   n'a de valeur qu'une fois qu'il existe des conversations.
 

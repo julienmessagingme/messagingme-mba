@@ -140,6 +140,46 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
         </p>
         <AgentConnecteurs tenantId={tenantId} agentId={agentId} outils={vue?.outils ?? []} onChange={charger} />
       </div>
+
+      {/**
+        * 🔴 SANS CETTE SECTION, UN OUTIL MCP N'APPARAÎT NULLE PART SUR CET ÉCRAN, et le chemin de
+        * consentement que le produit annonce n'existe pas. La section « Vos systèmes » groupe par REQUÊTE
+        * de la bibliothèque d'appels API ; un outil MCP n'a pas de requête (`requestId` à `null`), donc
+        * il ne tombait dans aucune des deux listes. On pouvait l'importer, le régler, le voir dans
+        * Tools > Outils, et jamais l'autoriser pour un agent : c'est le même défaut que « déclarer un
+        * serveur », relevé par la première revue à froid, une porte de plus sans producteur.
+        *
+        * ⚠️ TROISIÈME SECTION ET PAS UNE FUSION avec « Vos systèmes » : un serveur MCP n'est pas un
+        * connecteur API, il n'a ni méthode, ni chemin, ni requête à nommer, et les ranger ensemble
+        * obligerait à inventer une ligne vide pour chacun.
+        */}
+      {(vue?.outils ?? []).some((o) => o.origin === 'mcp') && (
+        <div className="border-t border-ink-200 pt-4" data-testid="agent-outils-mcp">
+          <p className="text-sm font-semibold text-ink-800">{t('Vos serveurs MCP', 'Your MCP servers')}</p>
+          <p className="mb-2 text-xs text-ink-500">
+            {t(
+              'Importés depuis Tools > Connecteurs MCP, et partagés par tous vos agents. Ici, vous dites ce que CET agent a le droit d’appeler. Les paramètres se règlent là-bas.',
+              'Imported from Tools > MCP connectors, and shared by all your agents. Here you say what THIS agent may call. Parameters are set over there.',
+            )}
+          </p>
+          <div className="flex flex-col gap-3">
+            {(vue?.outils ?? []).filter((o) => o.origin === 'mcp').map((o) => (
+              <Outil
+                key={o.id}
+                tenantId={tenantId}
+                outil={o}
+                // ⚠️ AUCUN MODÈLE MAISON : les mots d'un outil MCP viennent du serveur distant.
+                modele={undefined}
+                busy={busy}
+                onSave={(patch) => agir(async () => { await patchOutil(tenantId, agentId, o.id, patch); })}
+                onActiver={(v) => agir(async () => { await activerOutil(tenantId, agentId, o.id, v); })}
+                onAutonomie={(v) => agir(async () => { await autonomieOutil(tenantId, agentId, o.id, v); })}
+                onRetirer={() => agir(async () => { await retirerOutil(tenantId, agentId, o.id); })}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -209,6 +249,19 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           </button>
         </div>
       </div>
+
+      {/* 🔴 UN OUTIL MORT NE SE PRÉSENTE PAS COMME UN OUTIL VIVANT sur l'écran où l'on décide de
+          l'autoriser. La raison vient du serveur distant : le client ne peut pas la corriger, mais il
+          doit pouvoir la montrer à son fournisseur. */}
+      {(outil.mcpIndisponibleLe || outil.mcpNonActivable) && (
+        <p data-testid={`outil-mcp-mort-${outil.id}`}
+          className="rounded-lg border border-coral/40 bg-coral/10 px-3 py-2 text-sm text-ink-800">
+          {outil.mcpIndisponibleLe
+            ? t('Cet outil a disparu du serveur MCP : il n’est plus appelable.',
+              'This tool is gone from the MCP server: it can no longer be called.')
+            : t('Cet outil n’est pas activable : ', 'This tool cannot be activated: ') + (outil.mcpNonActivable ?? '')}
+        </p>
+      )}
 
       {outil.risk === 'irreversible' && (
         <label data-testid={`outil-autonomie-${outil.id}`} className="flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-sm text-ink-800">

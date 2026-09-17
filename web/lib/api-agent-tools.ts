@@ -62,6 +62,15 @@ export interface OutilAgent {
   autonome: boolean;
   autonomeLe: string | null;
   expose: OutilExpose | null;
+  /**
+   * 🔴 L'ÉTAT MCP, SUR L'ÉCRAN OÙ LE CLIENT REDONNE SON AUTORISATION. Le serveur les envoyait déjà
+   * (`{ ...outil, expose }` sur un `OutilComplet`), ce type ne les déclarait pas. Or c'est précisément
+   * l'écran que le récit anti-IDOR nomme (« le client le redonne depuis AI Agent > Outils, qui n'est PAS
+   * l'écran de clouage ») : un outil mort y ressemblait encore à un outil vivant, et le client
+   * l'apprenait en recevant un refus.
+   */
+  mcpNonActivable?: string | null;
+  mcpIndisponibleLe?: string | null;
 }
 
 export interface VueOutils {
