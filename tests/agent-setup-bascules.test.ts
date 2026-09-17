@@ -197,14 +197,33 @@ describe('couverture de l’ordre du jour', () => {
     });
 
     it('🔴 MCP : ce qui est BRANCHÉ sur cet agent passe AVANT ce qui est seulement déclaré', () => {
-      // Le jumeau exact de la question des connecteurs API. N annoncer que les serveurs faisait dire
-      // « voici ce qu il peut appeler » en nommant des choses qui n etaient reliees a rien.
-      const q = question('outil_mcp', {
-        outilsApi: [], systemesApi: [], mcp: ['serveur maison'], outilsMcp: ['notion_search'],
-      });
+      /**
+       * Le jumeau exact de la question des connecteurs API. N annoncer que les serveurs faisait dire
+       * « voici ce qu il peut appeler » en nommant des choses qui n etaient reliees a rien.
+       *
+       * 🔴 L INVENTAIRE EST PRODUIT PAR `inventaireDe`, JAMAIS ECRIT A LA MAIN, et la premiere version de
+       * ce test s y trompait. Construire l inventaire soi-meme n eprouve que `question`, donc il ne
+       * pouvait pas voir que `inv.mcp` n excluait PAS les serveurs dont un outil est deja branche : la
+       * phrase se contredisait alors dans sa propre moitie, « Branches sur cet agent : Chercher Notion.
+       * Serveurs dont rien n est encore relie a cet agent : Notion. » C est le motif « le test n eprouve
+       * que la fonction pure alors que le defaut est dans le cablage ».
+       */
+      const ctx: ContexteConstruction = {
+        label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(),
+        outils: [], titresConnaissance: [],
+        connecteurs: [{ nom: 'notion_search', titre: 'Chercher Notion', description: '', nePasUtiliser: '', origine: 'mcp' as const }],
+        sources: [
+          { label: 'Notion', kind: 'mcp', status: 'active' },
+          { label: 'Serveur maison', kind: 'mcp', status: 'active' },
+        ],
+      };
+      const q = question('outil_mcp', inventaireDe(ctx));
       expect(q).toContain('Branchés sur cet agent');
-      expect(q).toContain('notion_search');
-      expect(q).toContain('serveur maison');
+      expect(q).toContain('Chercher Notion');
+      // Celui dont rien n est branche est bien propose...
+      expect(q).toContain('Serveur maison');
+      // ...et celui dont un outil EST branche ne l est PAS une seconde fois.
+      expect(q).not.toContain('relié à cet agent : Notion');
     });
 
     it('🔴 un outil MCP branché n’est PAS annoncé comme un connecteur API', () => {

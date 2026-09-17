@@ -1749,6 +1749,7 @@ async function main(): Promise<void> {
      * chemin de lecture ferait deux facons de dechiffrer un secret.
      */
     agentMcp: {
+      audit: auditSink,
       listerServeurs: (tenant) => mcpStore.listerServeurs(tenant),
       // Le MEME store que les connecteurs API : c est la meme table, et le secret s y chiffre au meme
       // endroit. En ouvrir un second chemin ferait deux facons de chiffrer.

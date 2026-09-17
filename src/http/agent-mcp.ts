@@ -14,6 +14,7 @@ import { resolutionPublique, type VerdictResolution } from '../lib/adresse-prive
 import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-contact';
 import { adresseAcceptable, authCoherente } from './agent-sources';
 import { scopeTenant, estUuid } from './scope';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
  * Les CONNECTEURS MCP : éprouver un serveur, importer son catalogue, régler ce qu'on en expose.
@@ -81,6 +82,21 @@ export interface EcritureImportMcp {
 }
 
 export interface AgentMcpRouteDeps {
+  /**
+   * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test).
+   *
+   * 🔴 UN SERVEUR MCP EST UNE SORTIE DE L'ESPACE, AU MÊME TITRE QU'UN CONNECTEUR API. Le déclarer écrit une
+   * adresse que notre serveur ira appeler et un secret ; le supprimer emporte par cascade ses outils
+   * importés et TOUS les consentements qui allaient avec. Aucun de ces gestes ne laissait la moindre ligne
+   * dans « Sécurité > Audit », alors que le module jumeau en écrit trois et que le commentaire de la route
+   * de suppression annonce « exactement comme un connecteur API ». Relevé par la seconde relecture à froid
+   * du 2026-09-17.
+   *
+   * 🔴 LE `detail` NE PORTE JAMAIS LE SECRET, NI L'ADRESSE COMPLÈTE : seulement le MODE d'authentification
+   * et l'HÔTE. Même règle que son jumeau, et pour la même raison : l'hôte répond à « où partent les
+   * données », le reste donnerait de quoi rejouer l'appel depuis une table qu'on ne purge jamais.
+   */
+  audit?: AuditSink;
   listerServeurs(tenantId: string): Promise<ServeurMcpVue[]>;
   /** L'adresse et le secret DÉCHIFFRÉ. Un seul appelant, comme pour les connecteurs HTTP. */
   pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
@@ -174,6 +190,11 @@ function direEchec(e: EchecMcp): string {
     default:
       return e.message;
   }
+}
+
+/** L'hôte seul : l'adresse complète et le secret n'entrent jamais dans une table qu'on ne purge pas. */
+function hoteDe(url: string): string | null {
+  try { return new URL(url).host; } catch { return null; }
 }
 
 /**
@@ -297,6 +318,7 @@ export function registerAgentMcp(
   limiteCouteuse?: PreHandler,
 ): void {
   const opts = { preHandler: garde };
+  const journal = makeJournal(deps.audit);
   // ⚠️ L'ÉPREUVE, L'APERÇU ET L'IMPORT SONT LOURDS : ils ouvrent une session vers un serveur tiers et
   // paginent son catalogue. Ils portent donc `RATE_LIMIT_COUTEUX_PAR_MINUTE`, comme l'import CSV et
   // l'aperçu d'un site, et pour la même raison : ce sont des gestes qu'un client peut déclencher en
@@ -334,6 +356,9 @@ export function registerAgentMcp(
       ...(authHeaderName ? { authHeaderName } : {}),
       ...(authSecret ? { authSecret } : {}),
     });
+    await journal(tenant, req, 'connecteur.cree', { kind: 'connecteur', id: serveur.id }, {
+      mcp: true, authKind: parse.data.authKind, hote: hoteDe(parse.data.baseUrl),
+    });
     return reply.code(201).send({ serveur });
   });
 
@@ -360,6 +385,7 @@ export function registerAgentMcp(
     if (verdict === 'outils_actifs') {
       return reply.code(409).send({ error: 'ce serveur porte encore des outils actifs : désactivez-les d’abord' });
     }
+    await journal(tenant, req, 'connecteur.supprime', { kind: 'connecteur', id: sourceId }, { mcp: true });
     return reply.code(204).send();
   });
 

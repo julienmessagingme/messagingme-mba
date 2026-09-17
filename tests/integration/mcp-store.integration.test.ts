@@ -273,7 +273,7 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     });
 
     it('🔴 ne touche PAS a un connecteur HTTP : la route MCP contournait sa garde', async () => {
-      // `DELETE /agents/:t/mcp/<id-d-un-connecteur-API>` supprimait ce connecteur en sautant la garde
+      // `DELETE /tenants/:t/mcp/<id-d-un-connecteur-API>` supprimait ce connecteur en sautant la garde
       // `outilsActifs > 0` que sa PROPRE route applique. Le filtre de `kind` ferme cette porte.
       expect(await store.supprimerServeur(tenantId, sourceHttp)).toBe('introuvable');
       const reste = await pool.query(

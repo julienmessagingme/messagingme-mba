@@ -181,3 +181,43 @@ describe('sources externes : qui a le droit', () => {
     expect((await srv.inject({ method: 'GET', url: base() })).statusCode).toBe(401);
   });
 });
+
+describe('🔴 un SERVEUR MCP n est pas un connecteur API, et ces routes le refusent', () => {
+  /**
+   * 🔴 LE MIROIR EXACT DE LA GARDE POSEE COTE MCP le 2026-09-17. `parId` ne filtre pas le `kind` : passer
+   * l identifiant d un SERVEUR MCP a ces routes faisait envoyer une requete HTTP ordinaire sur son point
+   * MCP (avec son secret dans l en-tete et un chemin choisi par l appelant), reecrire son adresse et son
+   * authentification depuis l ecran des connecteurs API, ou le supprimer par un chemin qui n a PAS la
+   * garde transactionnelle du store MCP.
+   *
+   * ⚠️ LE COMPTE DES LECTEURS DE CETTE TABLE EST DE QUATRE, PAS DE TROIS : les deux resolveurs et les
+   * routes MCP passent par `pourAppel`, ces routes-ci par `parId`. C est ce quatrieme lecteur qu on avait
+   * oublie en posant la garde cote MCP, et c est le motif « une capacite cablee sur trois consommateurs
+   * sur quatre » que ce depot paie en boucle. Releve par la seconde relecture a froid.
+   */
+  it('l epreuve : 404, et AUCUN appel sortant', async () => {
+    const { srv, cap } = app({ kind: 'mcp' });
+    const r = await srv.inject({
+      method: 'POST', url: '/tenants/t1/agent-sources/' + SRC + '/epreuve', ...h(adminTok), payload: { chemin: '/x' },
+    });
+    expect(r.statusCode).toBe(404);
+    expect(cap.epreuves, 'rien n est parti chez le client').toEqual([]);
+  });
+
+  it('la modification : 404, l adresse et l authentification ne bougent pas', async () => {
+    const { srv, cap } = app({ kind: 'mcp' });
+    const r = await srv.inject({
+      method: 'PATCH', url: '/tenants/t1/agent-sources/' + SRC, ...h(adminTok),
+      payload: { baseUrl: 'https://ailleurs.test/' },
+    });
+    expect(r.statusCode).toBe(404);
+    expect(cap.patches).toEqual([]);
+  });
+
+  it('la suppression : 404, et elle ne contourne plus la garde du store MCP', async () => {
+    const { srv, cap } = app({ kind: 'mcp' });
+    const r = await srv.inject({ method: 'DELETE', url: '/tenants/t1/agent-sources/' + SRC, ...h(adminTok) });
+    expect(r.statusCode).toBe(404);
+    expect(cap.suppressions).toEqual([]);
+  });
+});

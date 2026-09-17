@@ -20,12 +20,23 @@ import { reglerOutilMcp, type OutilMcp, type ParamMcp, type SourceParamMcp } fro
 /**
  * La valeur fixe, dans le type que le SERVEUR DISTANT a déclaré pour ce paramètre.
  *
- * ⚠️ ELLE RETOMBE SUR LA CHAÎNE quand la saisie ne convient pas (un `number` qui n'est pas un nombre, un
- * `boolean` qui n'est ni vrai ni faux) : envoyer `NaN` ou `false` inventerait une valeur que personne n'a
- * saisie, quand la chaîne produit un refus du serveur que le client peut lire.
+ * 🔴 ELLE NE S'APPLIQUE QU'À L'ENREGISTREMENT, JAMAIS À LA FRAPPE, et la première version s'y trompait.
+ * Le champ est CONTRÔLÉ : convertir à chaque touche faisait que taper « 3 » puis « . » rendait
+ * `Number('3.') === 3`, donc réaffichait « 3 », donc effaçait le point. Un paramètre `number` cloué à 3,5
+ * n'était tout simplement pas saisissable. La saisie reste une CHAÎNE dans l'état local, et c'est
+ * `enregistrer` qui convertit.
+ *
+ * ⚠️ ELLE RETOMBE SUR LA CHAÎNE quand la saisie ne convient pas (un `number` qui n'en est pas un, un
+ * `integer` avec une virgule, un `boolean` qui n'est ni vrai ni faux) : envoyer `NaN` ou `false`
+ * inventerait une valeur que personne n'a saisie, quand la chaîne produit un refus du serveur que le
+ * client peut lire et relier à ce qu'il a tapé.
  */
-function valeurTypee(brut: string, type: string): string | number | boolean {
-  if (type === 'number' || type === 'integer') {
+function valeurTypee(brut: unknown, type: string): string | number | boolean {
+  if (typeof brut !== 'string') return brut as string | number | boolean;
+  if (type === 'integer') {
+    return /^-?\d+$/.test(brut.trim()) ? Number(brut) : brut;
+  }
+  if (type === 'number') {
     const n = Number(brut);
     return brut.trim() !== '' && Number.isFinite(n) ? n : brut;
   }
@@ -97,7 +108,9 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
           source: p.source,
           ...(p.cle ? { cle: p.cle } : {}),
           ...(p.contactPath ? { contactPath: p.contactPath } : {}),
-          ...(p.value !== undefined ? { value: p.value } : {}),
+          // 🔴 LA CONVERSION EST ICI, pas à la frappe, voir la fonction plus haut. Un champ contrôlé qui convertit
+          // à chaque touche efface le point d'un décimal avant qu'on ait pu taper la suite.
+          ...(p.value !== undefined ? { value: valeurTypee(p.value, p.type) } : {}),
         })),
       });
       setEnregistre(true);
@@ -188,7 +201,7 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
                      saisi. ⚠️ Une saisie qui n'est pas un nombre valide reste une CHAÎNE plutôt que de
                      devenir `NaN` : le refus du serveur est alors lisible, un `NaN` ne l'est pas. */
                   <input className={inputCls} value={String(p.value ?? '')} data-testid={`mcp-valeur-${p.name}`}
-                    onChange={(e) => poser(p.name, { value: valeurTypee(e.target.value, p.type) })} />
+                    onChange={(e) => poser(p.name, { value: e.target.value })} />
                 )}
                 {p.cheminMcp && p.cheminMcp !== p.name && (
                   <span className="text-[11px] text-ink-400">{t('chemin distant : ', 'remote path: ')}<code>{p.cheminMcp}</code></span>

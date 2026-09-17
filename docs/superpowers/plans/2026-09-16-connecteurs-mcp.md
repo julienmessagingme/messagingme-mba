@@ -988,10 +988,10 @@ npx vitest run tests/mcp-import.test.ts
 
 | Route | Rôle |
 |---|---|
-| `POST /agents/:tenantId/mcp/eprouver` | `initialize` seul. Rend la version négociée, ou le refus nommé pour l'ancien transport |
-| `POST /agents/:tenantId/mcp/:sourceId/importer` | Suit la pagination, stocke tout, rend le plan appliqué |
-| `POST /agents/:tenantId/mcp/:sourceId/apercu` | Le plan **sans** l'appliquer |
-| `PATCH /agents/:tenantId/mcp/outils/:outilId` | Le réglage : sources des paramètres, risque, `nePasUtiliser` |
+| `POST /tenants/:tenantId/mcp/eprouver` | `initialize` seul. Rend la version négociée, ou le refus nommé pour l'ancien transport |
+| `POST /tenants/:tenantId/mcp/:sourceId/importer` | Suit la pagination, stocke tout, rend le plan appliqué |
+| `POST /tenants/:tenantId/mcp/:sourceId/apercu` | Le plan **sans** l'appliquer |
+| `PATCH /tenants/:tenantId/mcp/outils/:outilId` | Le réglage : sources des paramètres, risque, `nePasUtiliser` |
 
 Elles entrent au registre `modulesDeRoutes` de `src/server.ts` avec `acces: 'tenant'`, sans quoi le garde-fou ne les couvre pas. `tests/scope-tenant.test.ts` monte chaque module un par un et compare la classe DÉCLARÉE aux adresses réellement montées : il doit rester vert.
 

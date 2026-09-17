@@ -5,6 +5,7 @@ import {
   ordreDuJour, pointsSansContenu, prochainsPoints, pistesDe, type EtatEntretien, type Inventaire,
 } from './couverture';
 import { LIBELLES_MENTION, dureeEnClair, type EtatCourant } from './proposition';
+import { normaliserNom } from '../mcp/nommer';
 
 /**
  * Les messages envoyés à l'IA de construction.
@@ -238,7 +239,16 @@ export function inventaireDe(ctx: ContexteConstruction): Inventaire {
     outilsMcp,
     // Un système déjà branché n'a pas à être proposé une seconde fois comme « à relier ».
     systemesApi: actives.filter((s) => s.kind === 'http' && !outilsApi.includes(s.label)).map((s) => s.label),
-    mcp: actives.filter((s) => s.kind === 'mcp').map((s) => s.label),
+    /**
+     * ⚠️ MÊME EXCLUSION QUE SON JUMEAU, et son absence faisait dire à la question deux choses contraires
+     * dans la même phrase : « Branchés sur cet agent : Chercher Notion. Serveurs déclarés dans votre espace
+     * mais dont rien n'est encore relié à cet agent : Notion. » Le nom d'un outil MCP est PRÉFIXÉ par le
+     * libellé du serveur, via la meme normalisation qu a l import, et c'est ce qui permet de savoir lequel est déjà branché.
+     */
+    mcp: actives
+      .filter((s) => s.kind === 'mcp')
+      .filter((s) => !branches.some((c) => c.origine === 'mcp' && c.nom.startsWith(`${normaliserNom(s.label)}_`)))
+      .map((s) => s.label),
   };
 }
 

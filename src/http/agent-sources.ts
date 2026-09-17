@@ -125,6 +125,28 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     return reply.code(200).send({ sources: sources.filter((s) => s.kind === 'http') });
   });
 
+  /**
+   * LA SOURCE DE CETTE ROUTE, ET ELLE EST BIEN UN CONNECTEUR HTTP.
+   *
+   * 🔴 LE MIROIR EXACT DE LA GARDE POSÉE CÔTÉ MCP, et le poser d'un seul côté n'en aurait pas été une.
+   * `parId` ne filtre pas le `kind` : passer l'identifiant d'un SERVEUR MCP à ces routes faisait
+   * envoyer une requête HTTP ordinaire sur son point MCP (avec son secret dans l'en-tête et un chemin
+   * choisi par l'appelant), réécrire son adresse et son authentification depuis l'écran des connecteurs
+   * API, ou le supprimer par un chemin qui n'a pas la garde transactionnelle du store MCP.
+   *
+   * ⚠️ LE COMPTE DES CONSOMMATEURS DE CETTE TABLE EST DE QUATRE, PAS DE TROIS : les deux résolveurs et les
+   * routes MCP passent par `pourAppel`, ces routes-ci passent par `parId`. C'est ce quatrième lecteur
+   * qu'on avait oublié, et c'est exactement le motif « une capacité câblée sur trois consommateurs sur
+   * quatre » que ce dépôt paie en boucle. Relevé par la seconde relecture à froid du 2026-09-17.
+   *
+   * ⚠️ `404` : pour cet écran, un serveur MCP n'est pas un connecteur interdit, c'est un connecteur qui
+   * n'existe pas. La liste le filtre déjà (`kind === 'http'`), donc l'écran ne l'a jamais proposé.
+   */
+  async function connecteurHttp(tenant: string, id: string): Promise<SourceVue | null> {
+    const s = await deps.parId(tenant, id);
+    return s && s.kind === 'http' ? s : null;
+  }
+
   app.post(base, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -164,7 +186,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     }
     // L'état EFFECTIF après écriture, jamais le seul corps : sans ça, passer en `bearer` sans renvoyer le
     // secret (qui existe déjà) serait refusé à tort, et le refus ne fermerait le trou que dans un sens.
-    const actuelle = await deps.parId(tenant, id);
+    const actuelle = await connecteurHttp(tenant, id);
     if (!actuelle) return reply.code(404).send({ error: 'source introuvable' });
     const authKind = p.authKind ?? actuelle.authKind;
     const entete = p.authHeaderName !== undefined ? p.authHeaderName : actuelle.authHeaderName;
@@ -191,7 +213,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'source introuvable' });
-    const actuelle = await deps.parId(tenant, id);
+    const actuelle = await connecteurHttp(tenant, id);
     if (!actuelle) return reply.code(404).send({ error: 'source introuvable' });
     // 🔴 La cascade emporterait les outils SANS BRUIT, et l'agent deviendrait muet sur ces gestes-là, en
     // production. On refuse et on nomme le nombre : le client désactive d'abord, il supprime ensuite.
@@ -210,7 +232,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     if (!estUuid(id)) return reply.code(404).send({ error: 'source introuvable' });
     const parse = epreuveSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'chemin invalide' });
-    if (!(await deps.parId(tenant, id))) return reply.code(404).send({ error: 'source introuvable' });
+    if (!(await connecteurHttp(tenant, id))) return reply.code(404).send({ error: 'source introuvable' });
     // Le résultat d'une épreuve est une INFORMATION, pas une erreur de la console : un connecteur qui ne
     // répond pas rend 200 avec `ok: false`, sinon Cloudflare remplacerait le corps et le client ne saurait
     // même pas ce qui a échoué.

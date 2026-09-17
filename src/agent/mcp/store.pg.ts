@@ -190,11 +190,18 @@ export class PgMcpStore {
    * actifs » ne sortait QUE sur un identifiant inexistant, c'est-à-dire exactement à l'envers. Trois
    * textes affirmaient le contraire, dont `features.md`.
    *
-   * 🔴 ET IL NE SUPPRIME QUE DU `kind = 'mcp'`. Sans ce filtre, `DELETE /agents/:t/mcp/<id-d-un-connecteur-HTTP>`
+   * 🔴 ET IL NE SUPPRIME QUE DU `kind = 'mcp'`. Sans ce filtre, `DELETE /tenants/:t/mcp/<id-d-un-connecteur-HTTP>`
    * supprimait un connecteur API EN CONTOURNANT la garde `outilsActifs > 0` que sa propre route applique.
    *
-   * ⚠️ LE COMPTE ET LA SUPPRESSION SONT DANS LA MÊME TRANSACTION : les lire séparément laisserait la
-   * fenêtre où quelqu'un active un outil entre les deux, et c'est précisément la fenêtre qui coûte cher.
+   * ⚠️ LA TRANSACTION ACHÈTE L'ATOMICITÉ DE L'ÉCRITURE, PAS LA FERMETURE DE LA COURSE, et ce texte a
+   * d'abord affirmé l'inverse. Elle est en `READ COMMITTED` (aucun `for update`, aucun changement
+   * d'isolation) : le `count(*)` prend son instantané au moment de l'instruction, une activation
+   * concurrente peut commiter juste après, et le `delete` emporterait alors un outil devenu actif. La
+   * fermer demanderait un `select ... for update` ici ET que le chemin d'activation prenne le même verrou
+   * (`PgToolCatalog` ne le prend pas), ce qui poserait un verrou d'écriture sur la ligne d'un connecteur à
+   * chaque activation d'outil, pour une course qui exige deux gestes d'administrateur à la seconde près.
+   * Le résidu est donc ASSUMÉ, et il est nommé ici plutôt que caché derrière une phrase rassurante : une
+   * justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
    */
   async supprimerServeur(tenantId: string, id: string): Promise<'supprime' | 'introuvable' | 'outils_actifs'> {
     const client = await this.pool.connect();

@@ -373,9 +373,7 @@ export interface ManqueFiche {
  * BEST-EFFORT chez l'appelant : c'est une aide, pas une condition. Un serveur qui ne sait pas répondre rend
  * une liste vide et l'écran marche.
  */
-export async function lireManques(tenantId: string, agentId: string): Promise<ManqueFiche[]> {
-  return (await lireBandeaux(tenantId, agentId)).manques;
-}
+
 
 /**
  * LES DEUX BANDEAUX D'UNE FICHE D'AGENT, EN UN SEUL ALLER-RETOUR.

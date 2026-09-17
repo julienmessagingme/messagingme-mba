@@ -77,7 +77,9 @@ function harnais(over: {
     appeler: vi.fn(async () => ({ texte: '', estErreur: false })),
     fermer: vi.fn(async () => {}),
   };
+  const traces: Array<{ action: string; detail?: Record<string, unknown> }> = [];
   const deps: AgentMcpRouteDeps = {
+    audit: async (_t, _a, action, _target, detail) => { traces.push({ action, detail }); },
     listerServeurs: async () => [{ ...SERVEUR, ...(over.label ? { label: over.label } : {}) }],
     creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
     supprimerServeur: async () => over.suppression ?? 'supprime',
@@ -94,7 +96,7 @@ function harnais(over: {
   };
   const app = Fastify();
   registerAgentMcp(app, deps, gardeQuiPose);
-  return { app, ecrit, epreuves, regles, session, crees };
+  return { app, ecrit, epreuves, regles, session, crees, traces };
 }
 
 describe('eprouver un serveur MCP', () => {
@@ -177,6 +179,41 @@ describe('🔴 deux noms distants qui se normalisent pareil', () => {
     const nouveaux = h.ecrit[0]!.nouveaux.map((o) => o.name);
     expect(nouveaux, 'le neuf ne reprend pas le nom local de l inchange').not.toContain('notion_get_contact');
     expect(nouveaux[0]).toMatch(/^notion_get_contact_\d+$/);
+  });
+});
+
+describe('🔴 declarer et supprimer un serveur laissent une trace dans l AUDIT', () => {
+  /**
+   * 🔴 UN SERVEUR MCP EST UNE SORTIE DE L ESPACE, au meme titre qu un connecteur API : le declarer ecrit
+   * une adresse sortante et un secret, le supprimer emporte par cascade ses outils et TOUS les
+   * consentements. Aucun de ces gestes ne laissait la moindre ligne dans « Securite > Audit », alors que
+   * le module jumeau en ecrit trois et que le commentaire de la route de suppression annonce « exactement
+   * comme un connecteur API ». Releve par la seconde relecture a froid du 2026-09-17.
+   */
+  it('la creation journalise le MODE et l HOTE, jamais le secret ni l adresse complete', async () => {
+    const h = harnais();
+    await h.app.inject({
+      method: 'POST', url: `/tenants/${TENANT}/mcp`,
+      payload: { label: 'Notion', baseUrl: 'https://exemple.test/mcp/v1?x=1', authKind: 'bearer', authSecret: 'tres-secret' },
+    });
+    expect(h.traces.map((t) => t.action)).toContain('connecteur.cree');
+    const detail = h.traces.find((t) => t.action === 'connecteur.cree')!.detail!;
+    expect(detail.hote).toBe('exemple.test');
+    // 🔴 NI LE SECRET NI LE CHEMIN : cette table ne se purge pas, et le chemin complet donnerait de quoi
+    // rejouer l appel.
+    expect(JSON.stringify(detail)).not.toContain('tres-secret');
+    expect(JSON.stringify(detail)).not.toContain('/mcp/v1');
+  });
+
+  it('la suppression journalise, et un REFUS ne journalise rien', async () => {
+    const ok = harnais();
+    await ok.app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/mcp/${SOURCE}` });
+    expect(ok.traces.map((t) => t.action)).toContain('connecteur.supprime');
+
+    // La preuve inverse : un geste REFUSE ne doit pas laisser croire qu il a eu lieu.
+    const refuse = harnais({ suppression: 'outils_actifs' });
+    await refuse.app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/mcp/${SOURCE}` });
+    expect(refuse.traces).toEqual([]);
   });
 });
 
