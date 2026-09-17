@@ -1129,13 +1129,15 @@ séquencement et le pourquoi de l'ordre sont en §7 de
 - 🟠 **L3 : le « temps 2 ».** L'IA de construction relit les VRAIES conversations, le journal d'outils et le
   signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
   valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
-- 🟠 **L4 : MCP en jeton statique, sur allowlist.** Couvre 70 % du parc mesuré pour un quart du prix de
-  l'OAuth. **Le plan d'exécution est écrit : [AGENT-IA-PLAN-L4.md](AGENT-IA-PLAN-L4.md)** (5 tâches, une
-  colonne de migration au plus, zéro dépendance nouvelle). Il tranche la question qui commandait tout le
-  reste : le schéma d'un outil MCP est TRADUIT dans notre modèle à la déclaration, jamais transmis tel quel,
-  ce qui fait tomber la moitié du lot et récupère au passage la garde anti-IDOR que MCP ne fournit pas.
-  **Deux décisions attendent Julien** : D3 (allowlist seule, l'URL libre restant à L7), et d'où vient le
-  `risk` d'un outil MCP, puisque le plancher dérivé de la méthode HTTP n'existe pas ici.
+- ✅ **L4 : MCP en jeton statique. LIVRÉ le 2026-09-17**, pas encore déployé. Le chantier a suivi son
+  propre plan (`docs/superpowers/plans/2026-09-16-connecteurs-mcp.md`), écrit sans connaître
+  `AGENT-IA-PLAN-L4.md`, qui reste lisible pour ses constats. Ce qui a été tranché AUTREMENT que ce que
+  cette ligne annonçait : **URL libre validée, pas d'allowlist** (décision de Julien du 2026-09-16 ; la
+  garde est la double vérification d'adresse, sur le TEXTE et sur ce vers quoi elle RÉSOUT), et le `risk`
+  est **proposé par les annotations du serveur puis CONFIRMÉ par le client**, jamais dérivé, la spec MCP
+  déclarant ces annotations non fiables. Ce qui a été tenu : le schéma distant est TRADUIT dans notre
+  modèle, jamais transmis tel quel, et c'est ce qui fait descendre la garde anti-IDOR jusqu'aux feuilles.
+  **Reste à faire, dans cet ordre** : le déploiement, l'essai réel, puis la migration `0153` ci-dessous.
   🔴 **ET L4 NE SERVIRA JAMAIS LE MBA, vérifié le 2026-09-10 sur le corpus OpenAPI officiel de Meta**
   (`mba documentation/`, version 2.0.0) : zéro occurrence de « MCP » dans les 16 specs et 12 pages, et
   surtout **aucun champ où le déclarer**. Un `agent_connector` exige `base_url` + `auth_type`
@@ -1144,6 +1146,21 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   NOS agents. Ce constat a sorti le client MCP du programme « catalogue centralisé » du 2026-09-10
   (décision de Julien), il ne l'a pas annulé ici. ⚠️ Corollaire à ne pas perdre : le jour où L4 se fait,
   la case « exposé au MBA » d'un outil MCP doit être **grisée avec la raison**, pas cochable en vain.
+- 🔴 **`0153_outil_source_kind_strict.sql` : le CHECK strict sur `agent_tools.source_kind`, APRÈS le
+  déploiement de L4 et pas avant.** 0152 est délibérément permissive : elle pose la clé étrangère composite
+  en `MATCH SIMPLE`, donc une ligne dont `source_kind` est null lui échappe, ce qui est exactement ce qui
+  permet au code d'AVANT le déploiement de continuer à créer des outils. Le CHECK strict ferme cette
+  échappatoire, et il ne peut passer qu'une fois que tout le code en production renseigne la colonne.
+  ⚠️ **Cette étape ne vivait que dans un plan et dans `CLAUDE.md`** jusqu'au 2026-09-17 : une étape
+  post-déploiement obligatoire qui n'est écrite que dans un plan clos se perd.
+- 🟡 **La description d'un outil distant entre NON DÉLIMITÉE dans le contexte du modèle.** `motsExposes`
+  (`src/agent/outils-maison.ts`) concatène `outil.description`, qui est un texte écrit par le TIERS et
+  importé verbatim depuis son serveur MCP. Le RÉSULTAT d'un appel, lui, est bien protégé
+  (`blocResultatOutil` → `neutraliserDelimiteurs`). L'écart est réel mais partiellement couvert : c'est le
+  client qui déclare le serveur, la description s'affiche à l'écran au réglage, et l'empreinte couvre la
+  description, donc une réécriture ultérieure fait TOMBER le consentement. Relevé par la revue finale du
+  2026-09-17 ; à traiter quand on ouvrira le sujet « instructions dans une description d'outil », qui
+  concerne aussi les connecteurs API.
 - 🔵 **L6 : MCP OAuth.** Quatre à huit fois le coût de L4, et le coût n'est pas dans le développement mais
   dans la SUPERVISION : un jeton mort ne produit aucune erreur applicative, l'agent dégrade en silence au
   milieu d'une conversation. Premier serveur à brancher : Linear. Le pire premier candidat : HubSpot (la

@@ -7,18 +7,42 @@
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
 > il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## L'ÉTAT EXACT, AU 2026-09-16 AU MATIN
+## L'ÉTAT EXACT, AU 2026-09-17
 
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | `cda2e69`, déployé le 2026-09-16 au soir, aucun écart |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | 🔴 `cda2e69`, déployé le 2026-09-16 au soir. **UN ÉCART, ET IL EST GROS** : tout le chantier des connecteurs MCP est sur `main` et PAS en production. Voir la section ci-dessous. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
-| Revue finale | ⚠️ attestée sur `279dc2a` (0 rouge, 15 jaunes), mais **TROIS commits déployés depuis ne sont
-  pas couverts** : `79d4121`, `cda2e69` et le suivant. Une passe de relecture à froid leur est due |
+| Revue finale | 🔴 **PAS ENCORE ATTESTÉE sur le head courant.** Une relecture à froid a été faite le 2026-09-17 sur l'intervalle `279dc2a..8811ef9` (29 commits, 6 rouges et 18 jaunes, tous corrigés), mais les correctifs ont fait AVANCER le head : le script refuse d'attester un commit qui n'a pas été relu, donc l'intervalle se reprend à zéro sur les seuls correctifs |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu, aucun 502 (pas de reload NPM raté cette fois) |
+
+## 🔴 CE QUI EST SUR `main` ET PAS EN PRODUCTION : LES CONNECTEURS MCP
+
+**Engage Me sait se brancher sur un serveur MCP tiers, importer son catalogue et exposer ses outils à un
+agent IA.** Neuf tâches, dont huit livrées ; la neuvième est le déploiement et l'essai réel.
+
+🔴 **LA MIGRATION 0152 EST DÉJÀ APPLIQUÉE EN PRODUCTION, LE CODE QUI L'ÉCRIT NE L'EST PAS.** C'est voulu et
+c'est sans danger : elle est délibérément permissive (clé étrangère composite en `MATCH SIMPLE`, pas de
+CHECK strict), donc le code déployé qui ignore `source_kind` continue de fonctionner. Conséquence pour le
+déploiement : **il n'y a PAS d'étape `migrate` à jouer**, l'ordre habituel ne s'applique pas ici.
+
+🔴 **ET LA MIGRATION `0153` SE JOUE APRÈS LE DÉPLOIEMENT, jamais avant.** Elle pose le CHECK strict sur
+`source_kind` ; l'appliquer avant ferait échouer toute création d'outil de connecteur pendant la fenêtre
+censée être la plus sûre. Elle est inscrite dans `todo.md` pour ne pas se perdre avec ce fichier.
+
+⚠️ **LE FRONT EST DÉJÀ EN LIGNE, L'API NON**, et c'est la fenêtre décrite plus bas. Vercel suit `main` tout
+seul : l'écran « Connecteurs MCP » existe donc sur `engageme.messagingme.app` pendant que l'API du VPS ne
+connaît aucune de ses routes. Rien ne casse (les appels rendent 404), mais un client qui l'ouvrirait
+aujourd'hui verrait un écran qui ne répond pas.
+
+🔴 **CE QUI CLÔT LA FEATURE EST UN ESSAI RÉEL, ET IL N'A PAS ÉTÉ FAIT** : Engage Me branché sur NOTRE propre
+serveur MCP (`/mcp` sur `api.messagingme.app`), puis depuis un vrai WhatsApp, poser à l'agent une question
+dont la réponse exige l'appel, vérifier qu'il répond avec la donnée du BON contact, puis lui demander
+explicitement la donnée d'un AUTRE numéro et vérifier qu'il ne l'obtient pas. C'est la garde anti-IDOR du
+lot, et aucun test ne la remplace. Il est matériellement impossible tant que le VPS est à `cda2e69`.
 
 ⚠️ **LA FENÊTRE FRONT / API EST REFERMÉE, et elle mérite d'être racontée.** Entre le push du bouton lecture et
 le déploiement de l'API, Vercel servait un bouton que le serveur ne savait pas lire : le mot n'était pas

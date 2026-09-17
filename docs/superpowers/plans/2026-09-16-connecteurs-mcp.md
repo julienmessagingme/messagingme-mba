@@ -1021,7 +1021,7 @@ git commit --only src/agent/mcp/import.ts src/http/agent-mcp.ts src/server.ts te
 **Interfaces:**
 - Consumes: les quatre routes de la Task 7.
 
-- [ ] **Step 1 : écrire l'essai qui échoue**
+- [x] **Step 1 : écrire l'essai qui échoue**
 
 ```ts
 test('un serveur MCP se declare, s eprouve, et ses outils non activables disent POURQUOI', async ({ page }) => {
@@ -1034,13 +1034,13 @@ test('l ecran DIT que le MBA ne peut pas recevoir ces outils, il ne grise pas un
 });
 ```
 
-- [ ] **Step 2 : le lancer, vérifier qu'il échoue**
+- [x] **Step 2 : le lancer, vérifier qu'il échoue**
 
 ```bash
 cd web && npx playwright test e2e/connecteurs-mcp.spec.ts
 ```
 
-- [ ] **Step 3 : l'entrée de menu**
+- [x] **Step 3 : l'entrée de menu** (le commentaire qui annonçait « MCP viendra s'ajouter » n'a été corrigé que le 2026-09-17, relevé par la revue finale)
 
 Dans `web/lib/nav.ts`, sous `tools`, après `connecteurs`. Le commentaire du menu annonce déjà MCP (« MCP viendra s'ajouter dans ce menu, à côté ») : le mettre à jour pour qu'il décrive le présent.
 
@@ -1050,7 +1050,7 @@ Dans `web/lib/nav.ts`, sous `tools`, après `connecteurs`. Le commentaire du men
 
 ⚠️ **Ne pas toucher à `Developers > Serveur MCP`**, qui décrit le sens INVERSE (ce que nous exposons). Les deux ne partagent aucun mot à part MCP, et c'est ce qui les distingue.
 
-- [ ] **Step 4 : les écrans**
+- [x] **Step 4 : les écrans**
 
 `McpServeurs` liste les serveurs avec `last_ok_at` / `last_error`, le bouton **Rafraîchir**, et l'aperçu du plan avant application. `McpOutilReglage` montre le schéma complet, la source de chaque feuille (liste déroulante des champs déclarés de l'espace pour `contact`), et **l'avertissement au clouage** sur un paramètre que le schéma distant déclare obligatoire.
 
@@ -1087,7 +1087,7 @@ test('un outil MCP debranche par un rafraichissement apparait, NOMME, dans son p
 });
 ```
 
-- [ ] **Step 6 : réparer les TROIS textes de l'assistant qui annoncent que MCP n'existe pas**
+- [x] **Step 6 : réparer les TROIS textes de l'assistant qui annoncent que MCP n'existe pas** (deux le 2026-09-16, le TROISIÈME seulement le 2026-09-17 : « corriger un compte à deux endroits et le laisser au troisième, c'est le laisser faux »)
 
 🔴 **Rayon de souffle trouvé à l'inventaire, et il serait passé inaperçu.** L'assistant de configuration
 d'agent propose déjà l'action `outil_mcp`, avec des textes qui deviennent **faux** le jour où ce lot est
@@ -1103,13 +1103,13 @@ Les trois se corrigent ensemble, et la branche se met à ressembler à celle d'`
 serveurs déclarés (`inv.mcp`, champ qui existe déjà) et les outils appelables. **Corriger un compte à un
 endroit et le laisser à deux autres, c'est le laisser faux.**
 
-- [ ] **Step 7 : relancer**
+- [x] **Step 7 : relancer**
 
 ```bash
 npx vitest run tests/agent-setup-couverture.test.ts && cd web && npx playwright test e2e/connecteurs-mcp.spec.ts && npm run build
 ```
 
-- [ ] **Step 8 : commiter**
+- [x] **Step 8 : commiter**
 
 ```bash
 git commit --only web/app/connecteurs-mcp/page.tsx web/components/McpServeurs.tsx web/components/McpOutilReglage.tsx web/lib/api-mcp-connecteurs.ts web/lib/nav.ts web/components/AppShell.tsx web/e2e/connecteurs-mcp.spec.ts src/agent/setup/couverture.ts -m "feat(mcp): l ecran Connecteurs MCP, et l assistant cesse de dire que MCP n existe pas"
@@ -1119,11 +1119,11 @@ git commit --only web/app/connecteurs-mcp/page.tsx web/components/McpServeurs.ts
 
 ## Task 9 : revue, déploiement, essai réel
 
-- [ ] **Step 1 : `/revue` sur l'ensemble du diff**, avec la section Rayon de souffle. Corriger 🔴 **et** 🟡 dans la foulée, zéro dette reportée.
+- [x] **Step 1 : `/revue` sur l'ensemble du diff**, avec la section Rayon de souffle. Corriger 🔴 **et** 🟡 dans la foulée, zéro dette reportée.
 
-- [ ] **Step 2 : `gh run view <id> --json jobs`**, job par job. `gh run watch --exit-status` ment, il a déjà rendu 0 sur un run en échec.
+- [x] **Step 2 : `gh run view <id> --json jobs`**, job par job. `gh run watch --exit-status` ment, il a déjà rendu 0 sur un run en échec.
 
-- [ ] **Step 3 : `/revue-finale`** : relecteur à froid séparé, contre-vérification de chaque 🔴, attestation liée au commit exact. La garde `hooks/deploiement-garde.js` refuse un déploiement qui ne la porte pas.
+- [x] **Step 3 : `/revue-finale`** (relecteur à froid du 2026-09-17 : 6 rouges, 18 jaunes, tous corrigés ; attestation à poser sur le head des correctifs) : relecteur à froid séparé, contre-vérification de chaque 🔴, attestation liée au commit exact. La garde `hooks/deploiement-garde.js` refuse un déploiement qui ne la porte pas.
 
 - [ ] **Step 4 : déployer**, dans cet ordre, la migration AJOUTANT des colonnes que le code écrit :
 
