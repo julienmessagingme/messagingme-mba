@@ -112,6 +112,24 @@ La dernière migration du repo doit y figurer. Sinon, l'image est périmée : re
 (En dev, `npm run migrate` local pointe la même base prod via `.env` ; là, « à jour, rien à appliquer » est
 fiable, puisqu'il lit le répertoire réel et non une image.)
 
+🔴 **UNE FICHE DU BOT D'AIDE QUI A CHANGÉ DOIT ÊTRE CHARGÉE, ET RIEN NE LE RAPPELLE.** Le dépôt est la
+SOURCE des fiches (`docs/aide/fiches/*.md`), la table `aide_fiches` n'en est que l'INDEX : un `git pull` +
+`up --build` ne la met pas à jour, et le bot continue de répondre aux clients avec le texte d'avant, sans
+qu'aucune erreur ne le signale. À faire après le déploiement, dès qu'un `.md` de ce dossier a bougé :
+
+```bash
+sudo docker compose run --rm --no-deps mba-api npm run aide:charger
+```
+
+⚠️ **Idempotent par le nom du fichier** : relancer met à jour, ça ne duplique pas, donc le lancer « au cas
+où » ne coûte rien. Il RETIRE aussi les lignes dont le fichier a disparu, sinon le bot répondrait avec une
+page effacée du produit. Il ne vectorise rien : la fiche est trouvable par les MOTS tout de suite, par le
+SENS au passage suivant du balayage.
+
+⚠️ **Le déclencheur n'est pas seulement « j'ai écrit une fiche ».** Modifier une section de `features.md`
+PÉRIME l'empreinte des fiches qui la citent, et `tests/aide-proposer.test.ts` rend la CI rouge tant qu'elles
+n'ont pas été relues. Une fiche relue est une fiche à recharger.
+
 ⚠️ **Exception — migration qui DROP (ou renomme) une colonne encore lue par l'ANCIEN code** (ex. `0030_drop_workflow_status.sql`) : **ordre INVERSÉ**, deploy le code D'ABORD, migrate ENSUITE. Sinon la colonne disparaît pendant que l'ancien conteneur (qui la lit encore) tourne toujours -> 500 « column … does not exist » le temps du rebuild. Règle générale : une migration qui AJOUTE une colonne se fait avant le deploy (le code neuf en a besoin) ; une migration qui RETIRE une colonne se fait après (le code neuf a cessé de la lire, l'ancien en a encore besoin).
 
 ```bash
