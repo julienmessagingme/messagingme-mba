@@ -333,8 +333,19 @@ export function basculesRcs(envois: EnvoiRcs[], reactions: ReactionContact[]): S
 - Consumes: `GrillePrix`, `prixTemplate`, `basculesRcs`.
 - Produces: `coutMessages(entree, grille): CoutMessages` avec
   `CoutMessages = { templates: { marketing: number; utility: number }; service: { envoyes: number;
-  franchiseMois: { consommes: number; plafond: number }; factures: number; cout: number };
-  rcs: { simple: number; conversationnel: number; cout: number }; total: number }`.
+  factures: number; cout: number; parMois: FranchiseMois[] };
+  rcs: { simple: number; conversationnel: number; cout: number }; total: number;
+  nonChiffrables: number; sansCategorie: number; sansTarif: number }`.
+
+🔴 **CORRIGÉ EN COURS D'ÉCRITURE, LE 2026-09-17, ET LA PREMIÈRE VERSION DE CETTE TÂCHE ÉTAIT FAUSSE.** Elle
+prenait en entrée `serviceDeLaPeriode` et `serviceDuMois`, et calculait « ce que le mois dépasse, plafonné à
+ce que la période contient ». Cette formule suppose que **la période est la FIN du mois** : sur les sept
+premiers jours d'un mois qui finit à 1200 envois, elle facturait 200 messages qui étaient **gratuits**, et
+rien à l'écran ne l'aurait signalé. L'entrée porte donc, pour chaque mois traversé, ce qui a été consommé
+**AVANT** la fenêtre (`MoisService = { mois, avantLaPeriode, dansLaPeriode }`), et le calcul est
+l'intersection de la tranche `[avant, avant + dans)` avec `[franchise, +∞)`. Un tableau de mois, et pas un
+seul, parce qu'une période à cheval sur deux mois a **DEUX** franchises : un calcul global en aurait offert
+une seule, donc surfacturé de mille messages.
 
 - [ ] **Step 1 : écrire les tests**
 
