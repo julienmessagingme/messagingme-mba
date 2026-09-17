@@ -378,6 +378,37 @@ describe('conversation de construction', () => {
     }
   });
 
+  /**
+   * 🔴 LA ROUTE ASSAINIT AVANT DE JUGER, ET C'EST ICI QUE ÇA SE VÉRIFIE (2026-09-17).
+   *
+   * Le défaut signalé par Julien (« l'assistant a rendu une proposition hors format », au 9e point sur 10)
+   * venait de bornes que Zod appliquait sans que le modèle en ait jamais été prévenu : un code de règle
+   * d'arrêt de 36 caractères, conforme à toutes les consignes écrites, faisait perdre le tour ENTIER.
+   *
+   * ⚠️ CE TEST EXISTE PARCE QUE LES TESTS UNITAIRES NE SUFFISAIENT PAS. Ils appellent `assainirProposition`
+   * en direct : retirer l'appel de la route les laissait tous verts. C'est mot pour mot la leçon de
+   * `scope-tenant.test.ts` (« un type qui exige une garde ne dit pas qu'elle est POSÉE »), vérifiée ici par
+   * mutation : sans l'appel dans `agent-setup.ts`, ce test rend 422.
+   */
+  it('🔴 une proposition seulement HORS BORNES est ramenée, pas refusée', async () => {
+    const trop_long = 'coordonnees_transmises_au_conseiller'; // 36 caractères, la regex plafonne à 32
+    const { srv, entretiens } = app({
+      entretien: ENTRETIEN_FINI,
+      reponse: reponse(JSON.stringify({
+        message: 'Voici ma proposition.',
+        fiche: { sorties: [{ code: trop_long, label: 'Coordonnées transmises au conseiller' }] },
+      })),
+    });
+    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.statusCode).toBe(200);
+    // Et le code proposé est celui que le FORMULAIRE aurait produit pour la même phrase.
+    expect(res.json().proposition.fiche.sorties).toEqual([
+      { code: 'coordonnees_transmises_au_consei', label: 'Coordonnées transmises au conseiller' },
+    ]);
+    // Le tour a bien vécu : l'entretien est écrit, donc le message du client n'est pas perdu.
+    expect(entretiens.ecrits).toHaveLength(1);
+  });
+
   it('🔴 un tour qui échoue n’écrit RIEN : l’entretien ne garde pas une question jamais posée', async () => {
     const { entretiens, srv } = app({ reponse: new Error('gateway indisponible') });
     const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });

@@ -121,6 +121,10 @@ describe('SCHEMA_PROPOSITION', () => {
   it('🔴 est le miroir de `propositionSchema`', () => {
     // Un champ présent ici et absent là serait promis au modèle puis jeté en silence ; un champ présent là
     // et absent ici ne serait jamais rempli.
+    //
+    // ⚠️ CE TEST NE COMPARE QUE DES NOMS DE CLÉS, et c'est ce qui a laissé passer le défaut du 2026-09-17 :
+    // les BORNES (longueurs, tailles de tableaux, motifs) divergeaient sans que rien ne le voie. Elles sont
+    // comparées ailleurs, dans `tests/agent-setup-bornes.test.ts`.
     const zod = propositionSchema.shape;
     expect(Object.keys(SCHEMA_PROPOSITION.properties).sort()).toEqual(Object.keys(zod).sort());
     const ficheZod = zod.fiche.unwrap().shape;

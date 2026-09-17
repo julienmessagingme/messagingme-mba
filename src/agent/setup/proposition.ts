@@ -1,6 +1,9 @@
 import type { FrequenceMentionIa } from '../agent-store';
 import { z } from 'zod';
-import { fichePatchSchema, type FicheAgentContenu } from '../fiche';
+import {
+  BORNES_FICHE, CODE_SORTIE_RE, fichePatchSchema, MAX_SORTIES, normaliserCodeSortie,
+  type FicheAgentContenu,
+} from '../fiche';
 import { OUTILS_MAISON } from '../outils-maison';
 import { ACTIONS, CHOIX_ACTION, CODES_POINTS } from './couverture';
 
@@ -28,13 +31,55 @@ import { ACTIONS, CHOIX_ACTION, CODES_POINTS } from './couverture';
 
 const HANDLERS = OUTILS_MAISON.map((o) => o.handler) as [string, ...string[]];
 
+/**
+ * LES BORNES, NOMMÉES UNE FOIS. Trois lecteurs en dépendent et devaient jusqu'ici s'accorder de mémoire :
+ * le schéma Zod qui REFUSE, le schéma JSON qu'on ANNONCE au modèle, et l'assainissement qui RAMÈNE une
+ * réponse dedans.
+ *
+ * 🔴 CE SONT LES TROIS QUI ONT DIVERGÉ, ET LE 2026-09-17 ON A MESURÉ L'ÉCART : 31 bornes sur 31 étaient
+ * appliquées par Zod sans qu'AUCUNE ne soit annoncée au modèle. Un modèle parfaitement coopératif, qui
+ * respectait chaque consigne écrite du mandat, voyait son tour refusé en 422 sur une règle qu'il n'avait
+ * jamais reçue.
+ *
+ * ⚠️ `tests/agent-setup-bornes.test.ts` DÉRIVE la liste des bornes de Zod et exige que le schéma annoncé
+ * les porte toutes : ce n'est plus une liste à tenir à la main. Le test de MIROIR voisin
+ * (`agent-setup-proposition.test.ts`) ne pouvait pas voir l'écart, il ne compare que des noms de clés.
+ */
+export const BORNES_PROPOSITION = {
+  message: 4000,
+  /** Deux entrées par point de l'ordre du jour : de quoi corriger une réponse déjà donnée. */
+  reponses: CODES_POINTS.length * 2,
+  point: 64,
+  valeur: 2000,
+  bascules: 24,
+  moment: 400,
+  moyen: 2000,
+  outils: OUTILS_MAISON.length,
+  connecteurs: 20,
+  /** Le nom exposé d'un connecteur, même alphabet que les noms d'outils. */
+  nomConnecteur: 64,
+  description: 2000,
+  nePasUtiliser: 2000,
+  branchements: 20,
+} as const;
+
+/**
+ * Le NOM EXPOSÉ d'un outil, tel que la base l'impose (`agent_tools.name`, migration 0086).
+ *
+ * ⚠️ Construite depuis la borne ci-dessus plutôt qu'écrite en dur : un motif et une longueur qui se
+ * contredisent est exactement le genre d'écart que ce fichier vient de payer. La même règle est écrite à la
+ * main dans `src/http/agent-tools.ts` ; elle n'est pas importée d'ici, un module de schéma n'ayant pas à
+ * dépendre d'un module de routes.
+ */
+const NOM_EXPOSE_RE = new RegExp(`^[a-z0-9_]{1,${BORNES_PROPOSITION.nomConnecteur}}$`);
+
 /** Les mots d'un outil, ceux qui décident si le modèle l'appelle au bon moment. C'est là que se joue le
  *  gain mesuré par Guo et al. : ce sont ces deux textes qu'aucun client n'écrit correctement seul. */
 const outilProposeSchema = z.object({
   /** Énumération FERMÉE sur le catalogue : le modèle ne peut pas inventer un comportement. */
   handler: z.enum(HANDLERS),
-  description: z.string().trim().min(1).max(2000),
-  nePasUtiliser: z.string().trim().max(2000).default(''),
+  description: z.string().trim().min(1).max(BORNES_PROPOSITION.description),
+  nePasUtiliser: z.string().trim().max(BORNES_PROPOSITION.nePasUtiliser).default(''),
 });
 
 /**
@@ -49,15 +94,15 @@ const outilProposeSchema = z.object({
  * l'est à l'APPLICATION, qui ne patche qu'un outil existant et n'en crée jamais.
  */
 const connecteurProposeSchema = z.object({
-  nom: z.string().trim().regex(/^[a-z0-9_]{1,64}$/),
-  description: z.string().trim().min(1).max(2000),
-  nePasUtiliser: z.string().trim().max(2000).default(''),
+  nom: z.string().trim().regex(NOM_EXPOSE_RE),
+  description: z.string().trim().min(1).max(BORNES_PROPOSITION.description),
+  nePasUtiliser: z.string().trim().max(BORNES_PROPOSITION.nePasUtiliser).default(''),
 });
 
 export const propositionSchema = z.object({
   /** Ce que l'assistant dit au client, en clair. Toujours présent : une proposition sans explication est
    *  un diff que personne ne peut juger. */
-  message: z.string().trim().min(1).max(4000),
+  message: z.string().trim().min(1).max(BORNES_PROPOSITION.message),
   /**
    * 🔴 CE QUE LE CLIENT VIENT DE RÉPONDRE, rattaché aux points de l'ordre du jour. Ce n'est plus une
    * déclaration de couverture (« j'ai couvert le ton ») mais une EXTRACTION (« au point ton, il a dit ceci ») :
@@ -70,10 +115,10 @@ export const propositionSchema = z.object({
    * conversation par ailleurs parfaitement valide. Le tri se fait dans `couverture.ts`, qui ignore l'inconnu.
    */
   reponses: z.array(z.object({
-    point: z.string().trim().max(64),
+    point: z.string().trim().max(BORNES_PROPOSITION.point),
     /** Vide = rien retenu pour ce point. Toléré plutôt que refusé : voir la doctrine ci-dessus. */
-    valeur: z.string().trim().max(2000).default(''),
-  })).max(CODES_POINTS.length * 2).default([]),
+    valeur: z.string().trim().max(BORNES_PROPOSITION.valeur).default(''),
+  })).max(BORNES_PROPOSITION.reponses).default([]),
   /**
    * 🔴 LES MOMENTS DE BASCULE, UN PAR UN. C'est une LISTE et pas un champ, parce qu'il y en a autant que le
    * client en cite. Le modèle précédent portait UNE action sur le point `bascules` : Julien en a donné deux
@@ -84,10 +129,10 @@ export const propositionSchema = z.object({
    * complète une bascule déjà connue, sinon il en crée une nouvelle au lieu de compléter l'ancienne.
    */
   bascules: z.array(z.object({
-    moment: z.string().trim().min(1).max(400),
+    moment: z.string().trim().min(1).max(BORNES_PROPOSITION.moment),
     action: z.enum(ACTIONS).optional(),
-    moyen: z.string().trim().max(2000).optional(),
-  })).max(24).default([]),
+    moyen: z.string().trim().max(BORNES_PROPOSITION.moyen).optional(),
+  })).max(BORNES_PROPOSITION.bascules).default([]),
   /** Les champs de fiche proposés. PARTIEL au sens strict : le modèle ne touche qu'à ce dont il parle, et
    *  les champs absents restent ABSENTS (voir `fichePatchSchema`, qui n'applique aucun défaut). */
   fiche: fichePatchSchema.optional(),
@@ -118,11 +163,11 @@ export const propositionSchema = z.object({
   /** 🔴 HANDLERS UNIQUES, même exigence que les codes de sortie de la fiche. Deux entrées pour le même outil
    *  produiraient deux lignes de diff portant la MÊME clé, et l'application tenterait de créer deux fois le
    *  même outil : la seconde création se ferait refuser sur un nom déjà pris, en laissant la première. */
-  outils: z.array(outilProposeSchema).max(OUTILS_MAISON.length)
+  outils: z.array(outilProposeSchema).max(BORNES_PROPOSITION.outils)
     .refine((o) => new Set(o.map((x) => x.handler)).size === o.length, 'un outil proposé deux fois')
     .optional(),
   /** Les MOTS d'un connecteur DÉJÀ déclaré. Même exigence d'unicité, et pour la même raison. */
-  connecteurs: z.array(connecteurProposeSchema).max(20)
+  connecteurs: z.array(connecteurProposeSchema).max(BORNES_PROPOSITION.connecteurs)
     .refine((o) => new Set(o.map((x) => x.nom)).size === o.length, 'un connecteur proposé deux fois')
     .optional(),
   /**
@@ -140,11 +185,167 @@ export const propositionSchema = z.object({
    * L'EXISTENCE du nom n'est pas vérifiable ici (le schéma ne connaît pas le catalogue) : elle l'est à
    * l'APPLICATION, qui ne branche qu'un outil existant et n'en crée jamais.
    */
-  outilsBranches: z.array(z.string().trim().regex(/^[a-z0-9_]{1,64}$/)).max(20).optional(),
-  outilsDebranches: z.array(z.string().trim().regex(/^[a-z0-9_]{1,64}$/)).max(20).optional(),
+  outilsBranches: z.array(z.string().trim().regex(NOM_EXPOSE_RE)).max(BORNES_PROPOSITION.branchements).optional(),
+  outilsDebranches: z.array(z.string().trim().regex(NOM_EXPOSE_RE)).max(BORNES_PROPOSITION.branchements).optional(),
 });
 
 export type Proposition = z.infer<typeof propositionSchema>;
+
+const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Coupe une chaîne à sa borne, en place. Ne crée rien : une valeur absente ou d'un autre type ressort telle
+ *  quelle, et c'est Zod qui la jugera. */
+function couper(o: Record<string, unknown>, cle: string, max: number): void {
+  const v = o[cle];
+  if (typeof v === 'string') o[cle] = v.trim().slice(0, max);
+}
+
+/** Rend une COPIE bornée d'un tableau, ou la valeur telle quelle si ce n'en est pas un. */
+function borner(v: unknown, max: number): unknown {
+  return Array.isArray(v) ? v.slice(0, max) : v;
+}
+
+/**
+ * Retire les clés posées à `undefined` par l'assainissement, c'est-à-dire celles que le modèle n'avait pas
+ * écrites. Appelée à la RACINE et sur la FICHE : n'en faire qu'une des deux rendrait faux le commentaire qui
+ * l'accompagne, et ce dépôt tient qu'une justification fausse est pire qu'aucune.
+ */
+function sansCleAjoutee(apres: Record<string, unknown>, avant: Record<string, unknown>): Record<string, unknown> {
+  for (const cle of Object.keys(apres)) if (apres[cle] === undefined && !(cle in avant)) delete apres[cle];
+  return apres;
+}
+
+/** Les entrées d'un tableau d'objets, nettoyées puis filtrées. Ce qui n'est pas un objet est écarté : Zod
+ *  l'aurait de toute façon refusé, et le garder ferait tomber tout le tour pour une entrée. */
+function entrees(v: unknown, max: number, soin: (e: Record<string, unknown>) => Record<string, unknown> | null): unknown {
+  const tab = borner(v, max);
+  if (!Array.isArray(tab)) return tab;
+  return tab.flatMap((e) => {
+    if (!estObjet(e)) return [];
+    const propre = soin({ ...e });
+    return propre ? [propre] : [];
+  });
+}
+
+/**
+ * RAMÈNE la réponse du modèle DANS les bornes, avant que Zod ne la juge.
+ *
+ * 🔴 CE QU'ELLE RÉPARE, ET CE N'EST PAS UN CONFORT (2026-09-17). Julien, au 9e point sur 10 de l'entretien :
+ * « l'assistant a rendu une proposition hors format ». Ce tour-là est le PREMIER du temps 2, celui où le
+ * mandat demande enfin d'écrire tous les champs : c'est donc le premier où les bornes s'exercent, et
+ * n'importe laquelle d'entre elles faisait perdre le tour ENTIER, message du client compris (la route
+ * n'écrit l'entretien qu'après une réponse valide). Mesuré le jour même : **31 bornes sur 31** étaient
+ * appliquées par Zod sans qu'aucune ne soit annoncée au modèle. Un code de règle d'arrêt de 36 caractères,
+ * parfaitement conforme à tout ce qu'on lui avait écrit, suffisait.
+ *
+ * 🔴 LA FRONTIÈRE DE SÉCURITÉ N'EST PAS CE QU'ON ASSAINIT, et la distinction décide de tout : la frontière,
+ * c'est la LISTE DES CLÉS (ce que l'assistant a le droit de proposer) et les ÉNUMÉRATIONS FERMÉES (le
+ * catalogue de handlers). Une longueur et un alphabet de slug sont de l'HYGIÈNE. Les avoir traités comme la
+ * frontière est précisément ce qui a transformé un détail de forme en perte de tour. Donc : on coupe, on
+ * normalise, on dédoublonne ; on ne touche JAMAIS à une énumération ni n'ajoute une clé, et Zod reste le
+ * juge après coup.
+ *
+ * ⚠️ ELLE NE REND RIEN DE VALIDE, elle rend quelque chose de PLUS PROCHE du valide. Le `safeParse` qui suit
+ * n'est pas décoratif : une réponse structurellement fausse (un handler hors catalogue, un `fiche` qui est
+ * un tableau) doit toujours être refusée, et elle l'est.
+ *
+ * ⚠️ ELLE NE MUTE RIEN DE CE QU'ON LUI DONNE : le `brut` vient de `secure-json-parse`, et le journal du 422
+ * doit pouvoir décrire ce que le modèle a VRAIMENT écrit.
+ */
+export function assainirProposition(brut: unknown): unknown {
+  if (!estObjet(brut)) return brut;
+  const p: Record<string, unknown> = { ...brut };
+
+  couper(p, 'message', BORNES_PROPOSITION.message);
+
+  p.reponses = entrees(p.reponses, BORNES_PROPOSITION.reponses, (r) => {
+    couper(r, 'point', BORNES_PROPOSITION.point);
+    couper(r, 'valeur', BORNES_PROPOSITION.valeur);
+    return r;
+  });
+
+  // Une bascule sans moment n'est appariable à rien (le `moment` EST la clé) : elle part, elle ne fait pas
+  // tomber les autres.
+  p.bascules = entrees(p.bascules, BORNES_PROPOSITION.bascules, (b) => {
+    couper(b, 'moment', BORNES_PROPOSITION.moment);
+    couper(b, 'moyen', BORNES_PROPOSITION.moyen);
+    return b.moment === '' ? null : b;
+  });
+
+  if (estObjet(p.fiche)) {
+    const f: Record<string, unknown> = { ...p.fiche };
+    for (const cle of ['nom', 'objectif', 'ton', 'personnalite', 'reglesTransfert'] as const) {
+      couper(f, cle, BORNES_FICHE[cle]);
+    }
+    /**
+     * 🔴 LE CODE D'UNE RÈGLE D'ARRÊT SE NORMALISE, IL NE SE REFUSE PLUS, et c'est la réparation d'une
+     * asymétrie : le client qui TAPE un code le voit corrigé sous ses yeux (`AgentSorties.tsx`), quand
+     * l'assistant qui PROPOSE le même code perdait tout son tour. Même fonction des deux côtés.
+     *
+     * ⚠️ On dédoublonne APRÈS avoir normalisé : deux libellés distincts peuvent se rejoindre une fois
+     * tronqués à 32 caractères, et le doublon ferait échouer le `refine` d'unicité, donc le tour entier.
+     * C'est déjà ce que fait la LECTURE (`agent-store.pg.ts`, qui écarte un doublon en silence).
+     */
+    const vus = new Set<string>();
+    f.sorties = entrees(f.sorties, MAX_SORTIES, (s) => {
+      if (typeof s.code === 'string') s.code = normaliserCodeSortie(s.code);
+      couper(s, 'label', BORNES_FICHE.label);
+      if (typeof s.code !== 'string' || !CODE_SORTIE_RE.test(s.code) || s.label === '') return null;
+      if (vus.has(s.code)) return null;
+      vus.add(s.code);
+      return s;
+    });
+    /**
+     * 🔴 UNE LISTE DONT PLUS RIEN NE SURVIT DISPARAÎT, ELLE NE DEVIENT PAS UNE LISTE VIDE, et c'est le seul
+     * endroit où l'assainissement pouvait être DESTRUCTEUR. `fiche.sorties` est le seul champ que le patch
+     * REMPLACE au lieu de fusionner : un modèle qui aurait rendu des sorties inexploitables (des chaînes au
+     * lieu d'objets) produisait alors un diff « Règles d'arrêt : avant = les trois de l'agent, après = rien »,
+     * c'est-à-dire une proposition d'EFFACEMENT fabriquée à partir de bruit, qu'il ne restait qu'à valider.
+     * Relevé en revue le 2026-09-17, sur le correctif lui-même.
+     *
+     * ⚠️ VIDE À L'ENTRÉE RESTE VIDE À LA SORTIE : `sorties: []` est une proposition de retrait DÉLIBÉRÉE du
+     * modèle, et la confondre avec du bruit lui retirerait un geste légitime. La différence n'est pas le
+     * résultat, c'est ce qu'il y avait avant.
+     */
+    if (Array.isArray(f.sorties) && f.sorties.length === 0
+      && Array.isArray((p.fiche as Record<string, unknown>).sorties)
+      && ((p.fiche as Record<string, unknown>).sorties as unknown[]).length > 0) {
+      delete f.sorties;
+    }
+    p.fiche = sansCleAjoutee(f, p.fiche);
+  }
+
+  // Un outil proposé deux fois produirait deux lignes de diff sous la même clé : on garde le premier, comme
+  // le fait déjà la lecture du catalogue.
+  const handlers = new Set<string>();
+  p.outils = entrees(p.outils, BORNES_PROPOSITION.outils, (o) => {
+    couper(o, 'description', BORNES_PROPOSITION.description);
+    couper(o, 'nePasUtiliser', BORNES_PROPOSITION.nePasUtiliser);
+    if (typeof o.handler !== 'string' || handlers.has(o.handler)) return null;
+    handlers.add(o.handler);
+    return o;
+  });
+
+  const noms = new Set<string>();
+  p.connecteurs = entrees(p.connecteurs, BORNES_PROPOSITION.connecteurs, (c) => {
+    couper(c, 'description', BORNES_PROPOSITION.description);
+    couper(c, 'nePasUtiliser', BORNES_PROPOSITION.nePasUtiliser);
+    if (typeof c.nom !== 'string' || noms.has(c.nom)) return null;
+    noms.add(c.nom);
+    return c;
+  });
+
+  p.outilsBranches = borner(p.outilsBranches, BORNES_PROPOSITION.branchements);
+  p.outilsDebranches = borner(p.outilsDebranches, BORNES_PROPOSITION.branchements);
+
+  /**
+   * ⚠️ AUCUNE CLÉ AJOUTÉE : les affectations ci-dessus posent `undefined` là où le modèle n'avait rien
+   * écrit, et on les retire. Ni Zod ni `differences` ne les distingueraient d'une absence (les deux lisent
+   * `?? []` / `?? {}`), donc ce n'est PAS ce qui protège le diff : c'est pour que l'objet assaini garde la
+   * FORME de ce que le modèle a écrit, seule chose qu'un lecteur du journal de refus puisse interpréter.
+   */
+  return sansCleAjoutee(p, brut);
+}
 export type OutilPropose = z.infer<typeof outilProposeSchema>;
 export type ConnecteurPropose = z.infer<typeof connecteurProposeSchema>;
 
@@ -174,7 +375,7 @@ const NE_PAS_UTILISER = 'Quand NE PAS l’appeler. À remplir SEULEMENT si le cl
 export const SCHEMA_PROPOSITION = {
   type: 'object',
   properties: {
-    message: { type: 'string', description: 'Ce que tu dis au client, en français, bref.' },
+    message: { type: 'string', minLength: 1, maxLength: BORNES_PROPOSITION.message, description: 'Ce que tu dis au client, en français, bref.' },
     mentionIaFrequence: {
       type: 'string',
       enum: ['jamais', 'session', 'chaque_message'],
@@ -193,24 +394,26 @@ export const SCHEMA_PROPOSITION = {
     },
     bascules: {
       type: 'array',
+      maxItems: BORNES_PROPOSITION.bascules,
       description: 'Les moments où l’agent doit faire autre chose que répondre, un par entrée. Reprends le '
         + '`moment` À L’IDENTIQUE quand tu complètes une bascule déjà citée, sinon tu en crées une nouvelle.',
       items: {
         type: 'object',
         properties: {
-          moment: { type: 'string', description: 'Le moment, dans les mots du client. Ex. « le client veut prendre rendez-vous ».' },
+          moment: { type: 'string', minLength: 1, maxLength: BORNES_PROPOSITION.moment, description: 'Le moment, dans les mots du client. Ex. « le client veut prendre rendez-vous ».' },
           action: {
             type: 'string',
             enum: [...ACTIONS],
             description: `Ce que l’agent fait à ce moment-là, et SEULEMENT si le client l’a tranché : ${CHOIX_ACTION.map((c) => `${c.action} = ${c.libelle}`).join(' ; ')}.`,
           },
-          moyen: { type: 'string', description: 'Le moyen concret (quel scénario, quel connecteur, quoi d’autre), si le client l’a dit.' },
+          moyen: { type: 'string', maxLength: BORNES_PROPOSITION.moyen, description: 'Le moyen concret (quel scénario, quel connecteur, quoi d’autre), si le client l’a dit.' },
         },
         required: ['moment'],
       },
     },
     reponses: {
       type: 'array',
+      maxItems: BORNES_PROPOSITION.reponses,
       description: 'Ce que le client vient de DIRE, rattaché aux points de l’ordre du jour. N’y mets que ce '
         + 'qu’il a réellement exprimé dans son dernier message : un point que tu as seulement supposé n’en fait '
         + 'PAS partie. Tant qu’il manque une réponse, tes champs ne seront pas montrés au client.',
@@ -218,7 +421,7 @@ export const SCHEMA_PROPOSITION = {
         type: 'object',
         properties: {
           point: { type: 'string', enum: [...CODES_POINTS] },
-          valeur: { type: 'string', description: 'Sa réponse, dans tes mots, en une phrase.' },
+          valeur: { type: 'string', maxLength: BORNES_PROPOSITION.valeur, description: 'Sa réponse, dans tes mots, en une phrase.' },
           action: {
             type: 'string',
             enum: [...ACTIONS],
@@ -233,19 +436,25 @@ export const SCHEMA_PROPOSITION = {
       type: 'object',
       description: 'Les champs de la fiche que tu proposes de changer. N’y mets QUE ceux dont tu viens de parler.',
       properties: {
-        nom: { type: 'string', description: 'Le nom que l’agent se donne au contact. Vide, il n’en donne aucun.' },
-        objectif: { type: 'string', description: 'Ce que l’agent est là pour faire, au-delà de répondre.' },
-        ton: { type: 'string', description: 'Vouvoiement, longueur des phrases, emoji ou non.' },
-        personnalite: { type: 'string', description: 'Les quelques traits qui le caractérisent.' },
-        reglesTransfert: { type: 'string', description: 'Quand il passe la main à un humain, en français.' },
+        nom: { type: 'string', maxLength: BORNES_FICHE.nom, description: 'Le nom que l’agent se donne au contact. Vide, il n’en donne aucun.' },
+        objectif: { type: 'string', maxLength: BORNES_FICHE.objectif, description: 'Ce que l’agent est là pour faire, au-delà de répondre.' },
+        ton: { type: 'string', maxLength: BORNES_FICHE.ton, description: 'Vouvoiement, longueur des phrases, emoji ou non.' },
+        personnalite: { type: 'string', maxLength: BORNES_FICHE.personnalite, description: 'Les quelques traits qui le caractérisent.' },
+        reglesTransfert: { type: 'string', maxLength: BORNES_FICHE.reglesTransfert, description: 'Quand il passe la main à un humain, en français.' },
         sorties: {
           type: 'array',
+          maxItems: MAX_SORTIES,
           description: 'Les aboutissements de la conversation. Chacun devient une sortie du bloc dans le scénario.',
           items: {
             type: 'object',
             properties: {
-              code: { type: 'string', description: 'minuscules, chiffres et tirets bas ; commence et finit par une lettre ou un chiffre' },
-              label: { type: 'string', description: 'ce que ça veut dire, en clair' },
+              code: {
+                type: 'string',
+                maxLength: BORNES_FICHE.code,
+                pattern: CODE_SORTIE_RE.source,
+                description: `minuscules, chiffres et tirets bas ; commence et finit par une lettre ou un chiffre ; ${BORNES_FICHE.code} caractères au plus`,
+              },
+              label: { type: 'string', minLength: 1, maxLength: BORNES_FICHE.label, description: 'ce que ça veut dire, en clair' },
             },
             required: ['code', 'label'],
           },
@@ -254,39 +463,43 @@ export const SCHEMA_PROPOSITION = {
     },
     connecteurs: {
       type: 'array',
+      maxItems: BORNES_PROPOSITION.connecteurs,
       description: 'Les connecteurs DÉJÀ déclarés dont tu proposes de réécrire les mots. Tu ne peux pas en créer.',
       items: {
         type: 'object',
         properties: {
-          nom: { type: 'string', description: 'le nom exact du connecteur déjà déclaré' },
-          description: { type: 'string', description: 'Quand l’appeler, avec un exemple de tournure du client.' },
-          nePasUtiliser: { type: 'string', description: NE_PAS_UTILISER },
+          nom: { type: 'string', pattern: NOM_EXPOSE_RE.source, description: 'le nom exact du connecteur déjà déclaré' },
+          description: { type: 'string', minLength: 1, maxLength: BORNES_PROPOSITION.description, description: 'Quand l’appeler, avec un exemple de tournure du client.' },
+          nePasUtiliser: { type: 'string', maxLength: BORNES_PROPOSITION.nePasUtiliser, description: NE_PAS_UTILISER },
         },
         required: ['nom', 'description'],
       },
     },
     outilsBranches: {
       type: 'array',
-      items: { type: 'string' },
+      maxItems: BORNES_PROPOSITION.branchements,
+      items: { type: 'string', pattern: NOM_EXPOSE_RE.source },
       description: 'Les NOMS EXACTS d’outils de la bibliothèque de l’espace à BRANCHER sur cet agent. '
         + 'Uniquement ceux de la liste qu’on te montre : tu ne peux pas en créer, et un nom qui n’y figure '
         + 'pas sera refusé. Brancher rend l’outil disponible ; l’ACTIVER reste un geste du client.',
     },
     outilsDebranches: {
       type: 'array',
-      items: { type: 'string' },
+      maxItems: BORNES_PROPOSITION.branchements,
+      items: { type: 'string', pattern: NOM_EXPOSE_RE.source },
       description: 'Les NOMS EXACTS d’outils de la bibliothèque à DÉBRANCHER de cet agent. La définition '
         + 'reste dans l’espace et sur les autres agents : tu ne supprimes rien.',
     },
     outils: {
       type: 'array',
+      maxItems: BORNES_PROPOSITION.outils,
       description: 'Les outils du catalogue que tu proposes, avec leurs mots.',
       items: {
         type: 'object',
         properties: {
           handler: { type: 'string', enum: [...HANDLERS] },
-          description: { type: 'string', description: 'Quand l’appeler, en une à trois phrases, avec un exemple de tournure du client.' },
-          nePasUtiliser: { type: 'string', description: NE_PAS_UTILISER },
+          description: { type: 'string', minLength: 1, maxLength: BORNES_PROPOSITION.description, description: 'Quand l’appeler, en une à trois phrases, avec un exemple de tournure du client.' },
+          nePasUtiliser: { type: 'string', maxLength: BORNES_PROPOSITION.nePasUtiliser, description: NE_PAS_UTILISER },
         },
         required: ['handler', 'description'],
       },

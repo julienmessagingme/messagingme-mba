@@ -5,9 +5,10 @@
  * alphabet que les noms d'outils, et le serveur refuse tout le reste en 400. Plutôt que de laisser le client
  * découvrir la règle par un message d'erreur, on la lui applique en direct, sous ses yeux.
  *
- * ⚠️ MIROIR de `CODE_SORTIE_RE` et `MAX_SORTIES` (`src/agent/fiche.ts`), qui font AUTORITÉ. Recopié plutôt
- * qu'importé pour ne pas tirer du code serveur dans le bundle client, comme `MAX_DESTINATAIRES_EMAIL` ;
- * `tests/web-agent-code-sortie-parity.test.ts` casse dès que les deux divergent.
+ * ⚠️ MIROIR de `CODE_SORTIE_RE`, `MAX_SORTIES` et `normaliserCodeSortie` (`src/agent/fiche.ts`), qui font
+ * AUTORITÉ. Recopié plutôt qu'importé pour ne pas tirer du code serveur dans le bundle client, comme
+ * `MAX_DESTINATAIRES_EMAIL` ; `tests/web-agent-code-sortie-parity.test.ts` casse dès que les deux divergent,
+ * et il compare désormais les deux FONCTIONS sortie par sortie, plus seulement la regex et le plafond.
  *
  * Posé dans `web/lib/` et non dans le composant : c'est de la logique PURE, et un test de parité ne peut pas
  * importer un composant (il tirerait les alias `@/` et le JSX avec lui).

@@ -8,7 +8,9 @@ import {
   extraireTexte, reconnaitre, texteEnFiches, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
 } from '../agent/setup/piece-jointe';
 import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
-import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
+import {
+  assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
+} from '../agent/setup/proposition';
 import { agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { scopeTenant, estUuid } from './scope';
@@ -459,8 +461,24 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     }
     // `safeParse` : tout ce qui n'est pas au schéma est ÉCARTÉ, silencieusement et sans faire échouer le
     // tour. Un modèle qui tente une clé de sécurité n'obtient rien, il ne casse pas la conversation.
-    const propose = propositionSchema.safeParse(brut);
-    if (!propose.success) return reply.code(422).send({ error: 'l’assistant a rendu une proposition hors format' });
+    //
+    // ⚠️ ASSAINI D'ABORD (2026-09-17) : ce qui relève de l'HYGIÈNE (une longueur, un slug, un doublon) est
+    // ramené dans les bornes au lieu de faire perdre le tour. La FRONTIÈRE, elle, reste jugée par Zod
+    // juste après. Voir `assainirProposition`.
+    const propose = propositionSchema.safeParse(assainirProposition(brut));
+    if (!propose.success) {
+      /**
+       * 🔴 LA RAISON EST JOURNALISÉE, SINON LE DÉFAUT SUIVANT SERA AUSSI AVEUGLE QUE CELUI-CI. Le
+       * 2026-09-17, un 422 « hors format » a été signalé par Julien sans qu'aucune trace ne dise QUEL champ
+       * avait été refusé : il a fallu mesurer l'écart entre les deux schémas pour retrouver le coupable. On
+       * journalise les CHEMINS et les CODES d'erreur, jamais les valeurs : elles portent les mots du client.
+       */
+      req.log.warn({
+        tenantId: ctx.tenant, agentId: ctx.agentId,
+        champs: propose.error.issues.map((i) => `${i.path.join('.') || '(racine)'}:${i.code}`),
+      }, 'proposition de l’assistant de construction refusée par le schéma');
+      return reply.code(422).send({ error: 'l’assistant a rendu une proposition hors format' });
+    }
 
     /**
      * 🔴 L'ÉTAT DE L'ENTRETIEN EST RECALCULÉ ICI, ET NULLE PART AILLEURS.

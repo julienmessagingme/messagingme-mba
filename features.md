@@ -2096,6 +2096,12 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
   bouton dit combien de lignes partiront. Seules les règles d'arrêt se gardent ou se jettent en bloc, parce
   qu'elles sont plusieurs dans une même ligne : elles se corrigent dans l'onglet Objectif.
 - ✅ **Tout ce qu'il écrit reste modifiable dans les autres onglets**, champ par champ.
+- ✅ **Une proposition un peu trop longue est corrigée, plus rejetée** (2026-09-17). Le dernier tour de
+  l'entretien, celui où il écrit enfin tous les champs, pouvait échouer d'un bloc sur « l'assistant a rendu
+  une proposition hors format » : un code de règle d'arrêt un peu long suffisait, et votre message était
+  perdu avec le tour. Un texte trop long est désormais coupé, un code hors alphabet est ramené exactement
+  comme le fait le champ de saisie quand vous tapez le vôtre, et un doublon est écarté. **Ce qu'il n'a pas
+  le droit de proposer reste refusé** : la correction porte sur la forme, jamais sur ses permissions.
 - ✅ **Il ne se tait plus une fois l'agent construit : il écoute** (2026-09-15). Avant, l'entretien terminé le
   faisait basculer en « j'écris les champs » ; rouvrir l'onglet le lendemain le faisait donc repartir en
   proposant des changements dont personne n'avait parlé. Désormais il rappelle l'état actuel, dit ce qu'il
