@@ -209,7 +209,13 @@ export class PgRequeteStore implements RequeteStore {
     const c = corpsEnColonnes(fusion.corps);
     const res = await this.pool.query(
       `update connector_requests set
-         source_id = (select s.id from agent_tool_sources s where s.id = $3 and s.tenant_id = $1),
+         -- 🔴 LA MEME GARDE QUE SUR creer, ET L OUBLIER ICI LA RENDAIT CONTOURNABLE. patchSchema
+         -- accepte sourceId, donc un PATCH avec l identifiant d un serveur MCP ecrivait exactement
+         -- l etat que le commentaire de creer declare impossible : une requete HTTP rattachee a un
+         -- serveur MCP, que le resolveur refuse en pleine conversation. Une garde posee sur une ecriture
+         -- sur deux n est pas une garde.
+         source_id = (select s.id from agent_tool_sources s
+                       where s.id = $3 and s.tenant_id = $1 and s.kind = 'http'),
          label = $4, method = $5, path = $6, query = $7::jsonb, headers = $8::jsonb,
          body_mode = $9, body_json = $10, body_champs = $11::jsonb, variables = $12::jsonb,
          output_paths = $13::text[], valeurs_test = $14::jsonb, updated_at = now()

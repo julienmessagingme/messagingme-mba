@@ -324,15 +324,20 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
       {/**
         * ⚠️ POUR UN OUTIL MCP, « à quoi ça sert » APPARTIENT AU SERVEUR DISTANT. Un rafraîchissement en
         * `schema_change` réécrit `title` et `description` depuis l'annonce (`store.pg.ts`), donc un texte
-        * soigné ici disparaît au prochain import, sans cause visible, pendant que `features.md` promet par
-        * ailleurs que « vos choix SURVIVENT aux rafraîchissements ». `nePasUtiliser`, lui, est PRÉSERVÉ :
-        * c'est le seul des deux qui vous appartient, et c'est le seul qu'on propose.
+        * soigné ici disparaît au prochain import, sans cause visible.
+        *
+        * 🔴 ET LA PREMIÈRE VERSION DE CETTE PHRASE DISAIT « LE NOM », CE QUI ÉTAIT FAUX. Le nom exposé est
+        * au contraire PRÉSERVÉ (`name: avant.name`, `src/http/agent-mcp.ts`), justement parce qu'il est
+        * peut-être déjà écrit dans la consigne d'un agent. Ce qui est écrasé, c'est le TITRE, que cet écran
+        * ne propose même pas d'éditer. Le client lisait donc, sous le champ du nom, qu'il travaillait pour
+        * rien, et personne ne l'avertissait pour « À quoi ça sert », qui disparaît vraiment. Relevé par la
+        * quatrième relecture à froid, quelques heures après l'avoir écrite.
         */}
       {outil.origin === 'mcp' && (
         <p className="text-xs text-ink-500" data-testid={`outil-mcp-mots-${outil.id}`}>
           {t(
-            'Le nom et la description viennent du serveur MCP et sont réécrits à chaque import. Seul « Quand ne pas l’appeler » vous appartient.',
-            'The name and description come from the MCP server and are rewritten on every import. Only "When NOT to call it" is yours.',
+            'Le titre et « À quoi ça sert » viennent du serveur MCP et sont réécrits à chaque import. Le nom d’appel et « Quand ne pas l’appeler » vous appartiennent, eux.',
+            'The title and "What it does" come from the MCP server and are rewritten on every import. The call name and "When NOT to call it" are yours.',
           )}
         </p>
       )}

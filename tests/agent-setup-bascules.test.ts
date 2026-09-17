@@ -258,11 +258,20 @@ describe('couverture de l’ordre du jour', () => {
     it('un système DÉJÀ branché n’est pas proposé une seconde fois comme « à relier »', () => {
       const ctx: ContexteConstruction = {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [],
-        connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '', origine: 'http' as const, sourceId: null }],
+        // 🔴 LE TITRE DE L OUTIL DIFFERE DU LIBELLE DE LA SOURCE, et c est ce qui rend ce test utile.
+        // L ancien rapprochement comparait ces deux champs, qui n ont aucune raison d etre egaux : la
+        // fixture leur donnait le MEME texte, donc elle prouvait le cas facile et cachait le defaut.
+        connecteurs: [{
+          nom: 'erp', titre: 'Lire une commande', description: '', nePasUtiliser: '',
+          origine: 'http' as const, sourceId: 'src-erp-interne',
+        }],
         sources: [{ id: 'src-erp-interne', label: 'ERP interne', kind: 'http', status: 'active' }, { id: 'src-agenda', label: 'Agenda', kind: 'http', status: 'active' }],
       };
       const inv = inventaireDe(ctx);
-      expect(inv.outilsApi).toEqual(['ERP interne']);
+      expect(inv.outilsApi, 'l’outil est nommé par SON titre').toEqual(['Lire une commande']);
+      // 🔴 CE QUI COMPTE : « ERP interne » n'est PAS reproposé comme « à relier », alors que le titre de
+      // son outil ne lui ressemble pas. L'ancien rapprochement par TEXTE le reproposait, donc la phrase se
+      // contredisait dans sa propre moitié, devant le client.
       expect(inv.systemesApi).toEqual(['Agenda']);
     });
 

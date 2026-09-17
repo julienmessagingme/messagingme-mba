@@ -78,8 +78,17 @@ describe('la nature d’une source est vérifiée par CHACUN de ses lecteurs', (
     const trouves = fichiersDeSrc().filter((f) => {
       if (PASSE_PLATS.includes(f)) return false;
       const src = readFileSync(f, 'utf8');
-      // Un appel RÉEL, pas une déclaration de type ni un passe-plat d'une seule ligne.
-      return /await\s+\w+(\.\w+)*\.pourAppel\(/.test(src);
+      /**
+       * ⚠️ LE MOTIF NE PEUT PAS EXIGER `await`, ET C EST UNE MUTATION QUI L A MONTRÉ. La première version
+       * cherchait `await x.pourAppel(` : trois formes lui échappaient, toutes légitimes en TypeScript, et
+       * chacune aurait ajouté un lecteur du secret déchiffré sans faire tomber ce test.
+       *   - `return deps.pourAppel(...)` (promesse retournée, jamais attendue ici)
+       *   - `const { pourAppel } = deps; await pourAppel(...)` (déstructuration)
+       *   - `await deps?.pourAppel?.(...)` (chaînage optionnel)
+       * On cherche donc l IDENTIFIANT, sans rien supposer de ce qui l entoure. Un faux positif ici coûte
+       * une ligne de déclaration ; un faux négatif coûte un secret.
+       */
+      return /\bpourAppel\b/.test(src);
     });
 
     /**

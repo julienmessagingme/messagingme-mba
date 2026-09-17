@@ -243,13 +243,25 @@ export function inventaireDe(ctx: ContexteConstruction): Inventaire {
   return {
     outilsApi,
     outilsMcp,
-    // Un système déjà branché n'a pas à être proposé une seconde fois comme « à relier ».
-    systemesApi: actives.filter((s) => s.kind === 'http' && !outilsApi.includes(s.label)).map((s) => s.label),
+    /**
+     * Un système déjà branché n'a pas à être proposé une seconde fois comme « à relier ».
+     *
+     * 🔴 PAR `sourceId`, COMME SON JUMEAU MCP, et le rapprochement par TEXTE était faux depuis toujours :
+     * il comparait le TITRE d'un outil au LIBELLÉ d'une source, deux champs qui n'ont aucune raison d'être
+     * égaux (un outil s'appelle « Lire une commande », son système « ERP interne »). L'assistant produisait
+     * donc la phrase auto-contradictoire « Branchés sur cet agent : Lire une commande. Systèmes déclarés
+     * mais dont rien n'est encore relié : ERP interne. » Le test ne le voyait pas : sa fixture donnait à
+     * l'outil le titre EXACT de la source.
+     */
+    systemesApi: actives
+      .filter((s) => s.kind === 'http')
+      .filter((s) => !branches.some((c) => c.origine === 'http' && c.sourceId === s.id))
+      .map((s) => s.label),
     /**
      * ⚠️ MÊME EXCLUSION QUE SON JUMEAU, et son absence faisait dire à la question deux choses contraires
      * dans la même phrase : « Branchés sur cet agent : Chercher Notion. Serveurs déclarés dans votre espace
-     * mais dont rien n'est encore relié à cet agent : Notion. » Le nom d'un outil MCP est PRÉFIXÉ par le
-     * libellé du serveur, via la meme normalisation qu a l import, et c'est ce qui permet de savoir lequel est déjà branché.
+     * mais dont rien n'est encore relié à cet agent : Notion. » L'appariement passe par `sourceId` : le nom
+     * exposé est réécrit par le client et se tronque à 64 caractères, donc son préfixe ne prouve rien.
      */
     mcp: actives
       .filter((s) => s.kind === 'mcp')
