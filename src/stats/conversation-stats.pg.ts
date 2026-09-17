@@ -14,6 +14,47 @@ import type { DateRange } from './range';
 
 const TZ = STATS_TZ;
 
+/**
+ * CE QU UNE JOURNEE D ANALYSE VAUT, EN UNE SEULE EXPRESSION SQL, PARTAGEE PAR SES DEUX LECTEURS.
+ *
+ * 🔴 C EST LA CONTREPARTIE DU CHOIX DE JULIEN (2026-09-17) : « les vraies donnees font foi tant qu elles
+ * existent », les agregats au-dela. Deux sources repondent donc a la MEME question sur deux portions de
+ * l axe du temps, et le jour ou elles divergent d une unite, la frontiere des 90 jours fait une MARCHE
+ * dans le graphe, indiscernable d un vrai creux d activite. Personne ne la verrait, et personne ne saurait
+ * laquelle des deux a raison.
+ *
+ * La parade n est pas la vigilance, c est qu il n y ait qu UNE expression : la lecture en direct et
+ * l ecriture de l agregat l importent toutes les deux, elles ne peuvent donc pas se contredire. Meme
+ * mecanique que `ORIGINE_EFFECTIVE_SQL` (`src/inbox/origine.ts`), pour la meme raison, et un test
+ * structurel verifie que les deux requetes la citent au lieu de la recopier.
+ *
+ * ⚠️ DES SOMMES ET DES COMPTES, JAMAIS UNE MOYENNE. Une moyenne stockee ne se re-agrege pas : regrouper
+ * sept journees moyennes sans leur poids donne une moyenne de moyennes, fausse des que les journees n ont
+ * pas le meme nombre de mesures. La moyenne se recalcule a l affichage, a n importe quelle maille.
+ *
+ * ⚠️ LES SIX INTENTIONS SONT COMPTEES UNE PAR UNE, et pas par un `jsonb_object_agg` : celui-ci echouerait
+ * sur des cles dupliquees, et l enumeration est FERMEE de toute facon (`src/analysis/schema.ts`). Une
+ * septieme valeur ferait echouer la validation de l analyse bien avant d arriver ici.
+ *
+ * ⚠️ `ca` EST L ALIAS ATTENDU de `conversation_analysis`, et `$4` le fuseau : les deux requetes qui
+ * l utilisent doivent les fournir.
+ */
+export const AGREGAT_JOUR_SQL = `
+         to_char(date_trunc('day', ca.created_at at time zone $4), 'YYYY-MM-DD') as jour,
+         count(*)::int as n,
+         count(*) filter (where ca.satisfaction is not null and ca.urgence is not null)::int as mes,
+         sum(ca.satisfaction) filter (where ca.satisfaction is not null and ca.urgence is not null)::float as som_sat,
+         sum(ca.urgence) filter (where ca.satisfaction is not null and ca.urgence is not null)::float as som_urg,
+         jsonb_build_object(
+           'demande_devis', count(*) filter (where ca.intent = 'demande_devis'),
+           'sav', count(*) filter (where ca.intent = 'sav'),
+           'reclamation', count(*) filter (where ca.intent = 'reclamation'),
+           'information', count(*) filter (where ca.intent = 'information'),
+           'prise_rdv', count(*) filter (where ca.intent = 'prise_rdv'),
+           'autre', count(*) filter (where ca.intent = 'autre')
+         ) as intentions`;
+
+
 export interface ConversationAnalysisSummary {
   /** Feature d'analyse active côté serveur (config). Distingue « inactif » de « aucune donnée ». */
   enabled: boolean;
@@ -142,6 +183,39 @@ export interface AnalyzedConversationRow {
   origines: string[];
 }
 
+/** La forme brute que rend `AGREGAT_JOUR_SQL`, et celle que rend la table d agregats : la MEME. */
+interface LigneAgregat {
+  jour: string;
+  n: number;
+  mes: number;
+  som_sat: string | number | null;
+  som_urg: string | number | null;
+  intentions: Record<string, number> | null;
+}
+
+/**
+ * D une ligne brute a une journee affichable.
+ *
+ * 🔴 LA MOYENNE SE CALCULE ICI, A PARTIR DE LA SOMME ET DU COMPTE, et jamais en base. C est ce qui permet
+ * de regrouper par semaine sans faire une moyenne de moyennes, qui serait fausse des que deux journees
+ * n ont pas le meme nombre de mesures.
+ *
+ * ⚠️ `null` QUAND AUCUNE MESURE, jamais zero : zero est une note VALIDE et la pire de toutes. Les analyses
+ * d avant la migration 0121 n en portent aucune, et les compter comme zero rangerait tout l historique
+ * dans le coin « clients furieux ».
+ */
+function depuisAgregat(r: LigneAgregat): JourAnalyse {
+  const mesurees = Number(r.mes);
+  const sat = r.som_sat === null ? null : Number(r.som_sat);
+  const urg = r.som_urg === null ? null : Number(r.som_urg);
+  return {
+    jour: r.jour,
+    conversations: Number(r.n),
+    satisfaction: mesurees > 0 && sat !== null ? sat / mesurees : null,
+    urgence: mesurees > 0 && urg !== null ? urg / mesurees : null,
+    mesurees,
+  };
+}
 /** `enabled` injecté (= config.CONVERSATION_ANALYSIS_ENABLED === 'true') : la lecture d'agrégats ne coûte rien,
  *  mais on remonte l'état de la feature pour un empty-state différencié. */
 export class PgConversationStatsStore {
@@ -406,29 +480,22 @@ export class PgConversationStatsStore {
   }
 
   /**
-   * LES JOURNEES DE LA PERIODE, avec leur volume et leurs deux moyennes.
+   * LES JOURNEES DE LA PERIODE, LUES SUR LE CONTENU ENCORE PRESENT.
    *
-   * 🔴 AGREGE EN BASE, PAS EN MEMOIRE. Descendre une ligne par conversation pour les grouper cote console
-   * ferait transiter tout ce que cet ecran existe justement pour ne plus transiter. La reponse est bornee
-   * par le nombre de JOURS de la periode (366 au pire), quel que soit le trafic.
+   * 🔴 ELLE CITE `AGREGAT_JOUR_SQL`, ELLE NE LE RECOPIE PAS, et c est tout ce qui empeche la marche a la
+   * frontiere des 90 jours : le balayage qui remplit `analyse_jour` cite EXACTEMENT la meme expression.
+   * Deux redactions de la meme somme divergeraient au premier changement, et l ecart serait pris pour un
+   * vrai creux d activite.
    *
    * ⚠️ LES JOURNEES SANS AUCUNE CONVERSATION N APPARAISSENT PAS, et ce n est pas un oubli : un `group by`
-   * ne rend que ce qui existe. C est exactement ce que l ecran veut (une ligne a zero n apprend rien et
-   * noie les autres), et c est dit ici pour que personne ne « repare » en densifiant la serie.
-   *
-   * ⚠️ LES MOYENNES SE CALCULENT SUR LES SEULES ANALYSES QUI PORTENT LA NOTE. `avg()` ignore deja les
-   * `null` en SQL ; le compte `mesurees` est remonte a cote pour que l ecran puisse dire sur combien
-   * d analyses la moyenne porte, au lieu de la laisser passer pour la journee entiere.
+   * ne rend que ce qui existe. C est ce que l ecran veut (une ligne a zero n apprend rien et noie les
+   * autres), et c est dit ici pour que personne ne « repare » en densifiant la serie.
    */
   async parJour(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
     const { from, to } = range;
-    const res = await this.pool.query<{ jour: string; n: number; sat: string | null; urg: string | null; mes: number }>(
+    const res = await this.pool.query<LigneAgregat>(
       `with ${BOUNDS_CTE}
-       select to_char(date_trunc('day', ca.created_at at time zone $4), 'YYYY-MM-DD') as jour,
-              count(*)::int as n,
-              avg(ca.satisfaction)::float as sat,
-              avg(ca.urgence)::float as urg,
-              count(*) filter (where ca.satisfaction is not null and ca.urgence is not null)::int as mes
+       select ${AGREGAT_JOUR_SQL}
          from conversation_analysis ca, bounds b
         where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
           and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)
@@ -436,12 +503,96 @@ export class PgConversationStatsStore {
         order by 1 desc`,
       [tenantId, from, to, TZ],
     );
-    return res.rows.map((r) => ({
-      jour: r.jour,
-      conversations: Number(r.n),
-      satisfaction: r.sat !== null ? Number(r.sat) : null,
-      urgence: r.urg !== null ? Number(r.urg) : null,
-      mesurees: Number(r.mes),
-    }));
+    return res.rows.map(depuisAgregat);
+  }
+
+  /**
+   * LES JOURNEES DEJA AGREGEES, celles dont le contenu a ete efface par la retention.
+   *
+   * ⚠️ AUCUN CALCUL ICI : les sommes et les comptes sont stockes tels quels, et la moyenne se refait a
+   * l affichage. Stocker une moyenne aurait interdit de regrouper par semaine sans la fausser.
+   */
+  async parJourAgrege(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ jour: string; n: number; mes: number; som_sat: string | null; som_urg: string | null; intentions: Record<string, number> | null }>(
+      `select to_char(jour, 'YYYY-MM-DD') as jour, conversations as n, mesurees as mes,
+              somme_satisfaction::float as som_sat, somme_urgence::float as som_urg, intentions
+         from analyse_jour
+        where tenant_id = $1 and jour >= $2::date and jour <= $3::date
+        order by jour desc`,
+      [tenantId, from, to],
+    );
+    return res.rows.map(depuisAgregat);
+  }
+
+  /**
+   * LES JOURNEES DE LA PERIODE, D OU QU ELLES VIENNENT.
+   *
+   * 🔴 LES VRAIES DONNEES FONT FOI TANT QU ELLES EXISTENT (choix de Julien du 2026-09-17), les agregats
+   * comblent le reste. Une journee presente des DEUX cotes prend la version vivante : c est la seule
+   * regle qui rende le resultat previsible, et les deux ne peuvent pas se contredire puisqu elles sortent
+   * de la meme expression SQL.
+   *
+   * ⚠️ DEUX LECTURES EN PARALLELE et pas l une puis l autre : elles sont independantes, et cet ecran est
+   * le premier que le client ouvre en arrivant sur l analyse.
+   */
+  async joursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
+    const [vivants, agreges] = await Promise.all([
+      this.parJour(tenantId, range),
+      this.parJourAgrege(tenantId, range),
+    ]);
+    const vus = new Set(vivants.map((j) => j.jour));
+    return [...vivants, ...agreges.filter((j) => !vus.has(j.jour))]
+      .sort((a, b) => b.jour.localeCompare(a.jour));
+  }
+
+  /**
+   * ECRIT LES AGREGATS DE TOUTES LES JOURNEES ENCORE PRESENTES, de TOUS les espaces.
+   *
+   * ⚠️ UN tenantId A NULL VEUT DIRE « TOUS », et c est le cas courant : le balayage n a alors AUCUNE liste
+   * d espaces a tenir, donc aucun espace cree entre deux passages ne peut lui echapper. Le passer sert aux
+   * tests et a un rattrapage cible.
+   *
+   * 🔴 UNE SEULE INSTRUCTION POUR TOUTES LES JOURNEES, ET C EST CE QUI SUPPRIME L ORDRE DE DEPLOIEMENT.
+   * Un balayage qui traiterait « la veille » a chaque passage laisserait, au premier demarrage apres le
+   * passage a 90 jours, neuf mois d historique sans agregat, que la purge effacerait AVANT qu on ait eu le
+   * temps de le calculer. Irrecuperable. Ici, un seul passage couvre tout ce qui existe.
+   *
+   * 🔴 IDEMPOTENTE PAR CONSTRUCTION (`on conflict do update` sur `(tenant_id, jour)`) : elle peut etre
+   * rejouee, interrompue, relancee, sans jamais produire de doublon ni d etat partiel. C est ce qui permet
+   * de l attendre AVANT la purge au demarrage du worker.
+   *
+   * ⚠️ ELLE CITE LE MEME `AGREGAT_JOUR_SQL` que la lecture en direct. Si un jour quelqu un recopie
+   * l expression au lieu de la citer, `tests/agregats-jour.test.ts` le fait echouer.
+   *
+   * Rend le nombre de journees ecrites.
+   */
+  async ecrireAgregats(range: DateRange, tenantId: string | null = null): Promise<number> {
+    const { from, to } = range;
+    const res = await this.pool.query(
+      `with ${BOUNDS_CTE}
+       insert into analyse_jour (tenant_id, jour, conversations, mesurees, somme_satisfaction, somme_urgence, intentions, calcule_le)
+       select j.tenant_id, j.jour::date, j.n, j.mes, j.som_sat, j.som_urg, j.intentions, now()
+         from (
+           select ca.tenant_id as tenant_id, ${AGREGAT_JOUR_SQL}
+             from conversation_analysis ca, bounds b
+            where ($1::uuid is null or ca.tenant_id = $1::uuid)
+              and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
+              and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)
+            group by 1, 2
+         ) j
+       on conflict (tenant_id, jour) do update set
+         conversations = excluded.conversations,
+         mesurees = excluded.mesurees,
+         somme_satisfaction = excluded.somme_satisfaction,
+         somme_urgence = excluded.somme_urgence,
+         intentions = excluded.intentions,
+         calcule_le = excluded.calcule_le`,
+      // ⚠️ LES QUATRE MEMES PARAMETRES QUE LA LECTURE, dans le meme ordre, et TOUS references. Une premiere
+      // version passait un intervalle et laissait $3 sans reference : Postgres refuse un parametre dont il
+      // ne peut pas deduire le type, et aucun typecheck ne le voit.
+      [tenantId, from, to, TZ],
+    );
+    return res.rowCount ?? 0;
   }
 }

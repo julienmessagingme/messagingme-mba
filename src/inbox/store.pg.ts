@@ -778,13 +778,41 @@ export class PgInboxStore implements InboxStore {
    * Effacement BORNÉ par passage : une première purge sur une base qui n'en a jamais eu peut viser beaucoup
    * de lignes, et un `delete` unique tiendrait un verrou et gonflerait le WAL d'un coup. Le balayage repasse.
    */
+  /**
+   * ⚠️ LA RETENTION EST CELLE DE L'ESPACE QUAND IL EN A UNE (migration 0155), SINON CELLE DE L'INSTANCE.
+   *
+   * 🔴 LE RESPONSABLE DE TRAITEMENT EST LE CLIENT : c'est a lui de dire combien de temps ses conversations
+   * se gardent, pas a nous. `days` reste le DEFAUT applique a tout espace qui n'a rien regle, et un espace
+   * a `0` (comme une instance a `0`) n'est jamais purge.
+   *
+   * ⚠️ LE `coalesce` EST DANS LES DEUX MOITIES DE LA CONDITION, et l'oublier dans l'une des deux serait le
+   * genre de defaut qui ne se voit pas : une purge qui filtrerait sur la retention de l'espace mais
+   * calculerait l'age sur celle de l'instance effacerait selon une duree que personne n'a choisie.
+   *
+   * ⚠️ `left join` ET PAS `join` : un espace sans ligne de reglages existe (elle se cree a la premiere
+   * modification), et une jointure stricte l'exclurait de la purge en silence, donc le garderait pour
+   * toujours sans que rien ne le dise.
+   */
   async purgeConversationsOlderThan(days: number, maxParPassage = 500): Promise<number> {
+    /**
+     * 🔴 LE ZERO D'INSTANCE ARRETE TOUT, Y COMPRIS LES ESPACES QUI ONT REGLE LEUR PROPRE RETENTION, ET CE
+     * RETOUR ANTICIPE EST CE QUI LE GARANTIT. Une premiere version l'avait retire au profit du seul
+     * `coalesce` en SQL : un espace ayant choisi 90 jours aurait continue a etre purge alors que
+     * l'exploitation venait de tout couper. `CONVERSATION_RETENTION_DAYS = 0` est le LEVIER D'URGENCE de
+     * la seule operation irreversible du depot ; un levier qui n'arrete pas tout n'est pas un levier.
+     *
+     * ⚠️ Le `0` PAR ESPACE, lui, ne desactive que cet espace : c'est le `coalesce(...) > 0` ci-dessous.
+     * Les deux zeros ne disent pas la meme chose, et c'est voulu.
+     */
     if (days <= 0) return 0;
     const res = await this.pool.query(
       `delete from conversations
         where id in (
-          select id from conversations
-           where last_message_at < now() - make_interval(days => $1)
+          select cv.id
+            from conversations cv
+            left join tenant_settings ts on ts.tenant_id = cv.tenant_id
+           where coalesce(ts.conversation_retention_days, $1::int) > 0
+             and cv.last_message_at < now() - make_interval(days => coalesce(ts.conversation_retention_days, $1::int))
            limit $2
         )`,
       [Math.floor(days), Math.max(1, maxParPassage)],

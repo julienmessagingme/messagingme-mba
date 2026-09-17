@@ -8,6 +8,8 @@ import { PgAuditStore } from './audit/store.pg';
 import { PgTestRunStore } from './agent/test-runs.pg';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
+import { PgConversationStatsStore } from './stats/conversation-stats.pg';
+import { todayParis, addDays } from './stats/range';
 import { handleWebhookJob } from './webhooks/handler';
 import { PgEventStore } from './webhooks/store';
 import {
@@ -1348,6 +1350,69 @@ async function main(): Promise<void> {
   void webhookEventsSweep();
   taches.programmer('retention-evenements-meta', 60 * 60 * 1000, webhookEventsSweep);
 
+  /**
+   * LES AGREGATS JOURNALIERS, ECRITS AVANT QUE LA PURGE N EFFACE CE QUI LES PRODUIT.
+   *
+   * 🔴 L ORDRE EST LE SUJET DE CE BLOC, ET IL EST MECANIQUE, PAS DOCUMENTAIRE. Supprimer une
+   * conversation supprime son analyse EN CASCADE. Descendre la retention a 90 jours avec une table
+   * d agregats vide effacerait donc des mois d historique SANS jamais l avoir agrege, et c est
+   * irrecuperable : on ne reconstruit pas une analyse qu on ne reanalyse pas. Le balayage est donc
+   * ATTENDU ici, et la purge ne part PAS si il a echoue.
+   *
+   * 🔴 UN SEUL PASSAGE COUVRE TOUT, ET C EST CE QUI SUPPRIME LA FENETRE DANGEREUSE. Un balayage qui ne
+   * traiterait que « la veille » laisserait, au premier demarrage apres le changement de retention,
+   * tout l historique anterieur sans agregat. Ici une seule instruction recalcule chaque journee
+   * encore presente, de TOUS les espaces, en `on conflict do update` : idempotente et rejouable.
+   *
+   * ⚠️ UNE TACHE PROGRAMMEE ET PAS UNE FILE pg-boss, contrairement a ce que le plan annoncait. Les
+   * autres retentions de ce worker sont des taches programmees ; inscrire ce balayage dans
+   * `BASE_QUEUES` ferait chercher a `/ops` une file qui n existe pas.
+   *
+   * ⚠️ 400 JOURS EN ARRIERE, un peu plus que la plage maximale d un ecran (366) : ce qui sort de la
+   * fenetre d affichage n a aucun lecteur, et remonter plus loin ferait balayer la table d analyses
+   * entiere a chaque passage pour des journees que personne ne demandera.
+   */
+  const conversationStatsStore = new PgConversationStatsStore(pool, true, config.CONVERSATION_RETENTION_DAYS);
+  const agregatsSweep = async (): Promise<number> => {
+    const jusqua = todayParis();
+    return conversationStatsStore.ecrireAgregats({ from: addDays(jusqua, -400), to: jusqua });
+  };
+
+  /**
+   * 🔴 CE DRAPEAU EST LA GARDE, ET IL EXISTE PARCE QU UN COMMENTAIRE NE GARDE RIEN. Une premiere
+   * redaction attrapait l erreur du balayage et affirmait en commentaire que « la purge ne partira
+   * pas » : le `catch` la laissait partir. Une justification fausse est pire qu aucune, parce qu elle
+   * sera crue. Ici, l echec du balayage EMPECHE reellement la purge de ce demarrage.
+   *
+   * ⚠️ LE WORKER DEMARRE QUAND MEME : l inbox, les campagnes et les scenarios ne doivent pas s arreter
+   * parce qu un agregat manque. Ce qui est suspendu, c est la seule operation IRREVERSIBLE.
+   */
+  let agregatsAJour = false;
+  try {
+    const n = await agregatsSweep();
+    agregatsAJour = true;
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('agregats-analyse erreur:', err instanceof Error ? err.message : err);
+    alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE pour ce demarrage : ${err instanceof Error ? err.message : err}`);
+  }
+  taches.programmer('agregats-analyse', 6 * 60 * 60 * 1000, async () => {
+    try {
+      const n = await agregatsSweep();
+      agregatsAJour = true;
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
+    } catch (err) {
+      // ⚠️ Le drapeau retombe : un balayage en echec doit SUSPENDRE la purge, pas seulement au
+      // demarrage. Sans cela, une panne qui dure verrait la purge continuer a effacer sans trace.
+      agregatsAJour = false;
+      // eslint-disable-next-line no-console
+      console.error('agregats-analyse erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE : ${err instanceof Error ? err.message : err}`);
+    }
+  });
   // RGPD (PLAN.md 5.2, lot 2) : les CONVERSATIONS et, par cascade, leurs messages et leur analyse
   // qualitative. C'est la rétention la plus lourde de conséquence du dépôt, parce qu'elle efface du contenu
   // que le client voit dans son inbox : d'où une durée quatre fois supérieure au plancher demandé, et un
@@ -1356,6 +1421,17 @@ async function main(): Promise<void> {
   // Toutes les 6 heures : la rétention se compte en mois, la minute de balayage n'a aucune importance, et
   // l'effacement est borné par passage de toute façon.
   const conversationSweep = async (): Promise<void> => {
+    /**
+     * 🔴 LA SEULE OPERATION IRREVERSIBLE DU DEPOT NE PART PAS SANS SA CONTREPARTIE. Si le balayage des
+     * agregats a echoue, effacer une conversation detruirait aussi son analyse EN CASCADE, sans que
+     * rien n en garde la trace. On saute ce passage : la retention se compte en mois, six heures de
+     * retard ne coutent rien, quand un effacement ne se rattrape jamais.
+     */
+    if (!agregatsAJour) {
+      // eslint-disable-next-line no-console
+      console.warn('conversation-retention-sweep: SAUTE, les agregats journaliers ne sont pas a jour.');
+      return;
+    }
     try {
       const n = await inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS);
       // eslint-disable-next-line no-console

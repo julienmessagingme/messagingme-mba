@@ -1202,7 +1202,13 @@ async function main(): Promise<void> {
        * de la periode. Descendre une ligne par conversation pour les grouper ensuite ferait transiter tout
        * ce que cet ecran existe justement pour ne plus transiter.
        */
-      getJoursAnalyse: (tenant, range) => conversationStatsStore.parJour(tenant, range),
+      /**
+       * 🔴 `joursAnalyse` ET PAS `parJour` : la lecture FUSIONNÉE. Les vraies données font foi tant
+       * qu'elles existent (choix de Julien du 2026-09-17), les agrégats comblent au-delà de la rétention.
+       * Brancher `parJour` seul ferait disparaître l'historique de l'écran le jour où la purge passe,
+       * c'est-à-dire exactement ce que la table d'agrégats existe pour empêcher.
+       */
+      getJoursAnalyse: (tenant, range) => conversationStatsStore.joursAnalyse(tenant, range),
     },
     workflowReports: {
       listReports: (tenant) => reportStore.list(tenant),

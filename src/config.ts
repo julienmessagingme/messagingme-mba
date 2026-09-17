@@ -215,18 +215,33 @@ export const schema = z.object({
   WEBHOOK_EVENTS_RETENTION_DAYS: z.coerce.number().default(30),
   /**
    * Jours de conservation des CONVERSATIONS (et, par cascade, de leurs messages et de leur analyse
-   * qualitative). 365 par défaut.
+   * qualitative). **90 depuis le 2026-09-17**, contre 365 auparavant.
    *
-   * 🔴 Le chiffre est une DÉCISION, pas un réglage technique. Julien a donné un PLANCHER de 3 mois
-   * (2026-08-31, motif RGPD) ; on prend quatre fois ce plancher, parce que la suppression est IRRÉVERSIBLE et
-   * qu'un an est la durée qu'on défend sans hésiter devant une DSI. Descendre est sans danger, remonter ne
-   * ressuscite rien.
+   * 🔴 LE CHIFFRE EST UNE DÉCISION, PAS UNE RÈGLE RGPD, et il faut le savoir pour la défendre. Le RGPD ne
+   * fixe AUCUNE durée : l'article 5.1.e dit « pas plus longtemps que nécessaire », et la CNIL donne des
+   * repères par finalité, aucun pour un historique de conversation. Le responsable de traitement est LE
+   * CLIENT, pas nous. 90 jours est le plancher que Julien avait donné dès le 2026-08-31 et qu'on applique
+   * enfin ; l'ancien commentaire prenait quatre fois ce plancher « parce que la suppression est
+   * irréversible », ce qui reste vrai mais conservait un an de contenu dont personne n'avait l'usage.
+   *
+   * 🔴 ET LE STOCKAGE N'ENTRE PAS DANS CETTE DÉCISION. Mesuré en production le 2026-09-17 : toute la base
+   * fait 31 Mo. Quiconque rouvrira ce choix doit le rouvrir sur le RGPD, jamais sur le disque.
+   *
+   * 🔴 LA CONTREPARTIE DE CE PASSAGE A 90 JOURS EST LA TABLE `analyse_jour` (migration 0155), et elle n'est
+   * pas optionnelle. Supprimer une conversation supprime son analyse EN CASCADE : sans agrégats, la
+   * Synthèse se viderait à la même vitesse que l'Inbox. Le worker écrit ces agrégats AVANT de purger, et
+   * la purge est SUSPENDUE tant qu'ils ne sont pas à jour. Changer ce nombre sans lire ce paragraphe, c'est
+   * risquer d'effacer un historique qu'on n'a pas gardé.
+   *
+   * ⚠️ RÉGLABLE PAR ESPACE (`tenant_settings.conversation_retention_days`) : le responsable de traitement
+   * est le client, donc il doit pouvoir demander plus court ou plus long. Cette valeur-ci est le DÉFAUT de
+   * l'instance, appliqué à tout espace qui n'a rien réglé.
    *
    * `0` désactive la purge. C'est un choix qu'il faut assumer : les conversations et leurs analyses (qui
    * portent un `topic` et une `justification` en texte libre produits à partir de ce que la personne a
    * raconté) sont alors gardées pour toujours.
    */
-  CONVERSATION_RETENTION_DAYS: z.coerce.number().default(365),
+  CONVERSATION_RETENTION_DAYS: z.coerce.number().default(90),
   /**
    * Rétentions du lot 4 du programme II. Quatre tables qui grossissaient sans fin, et dont deux portent une
    * donnée personnelle. 0 = balayage désactivé pour cette table (comme les rétentions ci-dessus).

@@ -578,15 +578,43 @@ describe('le chiffre unique de la carte Couts', () => {
 - [ ] **Step 3 : `CONVERSATION_RETENTION_DAYS` passe de 365 à 90**, et devient réglable par espace. Le
       commentaire de `src/config.ts` doit dire que 90 est une DÉCISION (le RGPD ne fixe aucune durée) et
       que le stockage n'y entre pas (31 Mo mesurés le 2026-09-17).
-- [ ] **Step 4 : le balayage nocturne** écrit la veille. Il entre dans `BASE_QUEUES`
-      (`src/queue/names.ts`), faute de quoi il serait invisible de `/ops` et sa DLQ ne serait surveillée
-      par personne.
-- [ ] **Step 5 : 🔴 LE TEST QUI COMPTE, ET IL EST LA CONTREPARTIE DU CHOIX DE JULIEN.** Les vraies données
+- [x] **Step 4 : le balayage.**
+
+🔴 **DEUX POINTS DE CETTE TÂCHE ÉTAIENT FAUX DANS LE PLAN, corrigés à l'exécution le 2026-09-17.**
+
+1. **« Il entre dans `BASE_QUEUES` » : non.** `BASE_QUEUES` liste les files **pg-boss**, et les rétentions
+   de ce worker ne sont pas des files : ce sont des tâches programmées (`taches.programmer`). L'y inscrire
+   aurait fait chercher à `/ops` une file qui n'existe pas, et surveiller une DLQ inexistante.
+2. **« écrit la veille » : non, il écrit TOUT.** Un balayage qui ne traiterait que la veille laisserait, au
+   premier démarrage après le passage à 90 jours, tout l'historique antérieur **sans agrégat**, que la purge
+   effacerait avant qu'on ait pu le calculer. Irrécupérable. Une seule instruction couvre donc chaque
+   journée encore présente, de tous les espaces, en `on conflict do update`.
+
+🔴 **ET LE PIÈGE QUE LE PLAN NE NOMMAIT PAS DU TOUT.** Supprimer une conversation supprime son analyse **en
+cascade**. L'ordre balayage-puis-purge n'est donc pas une préférence, c'est la condition pour ne pas perdre
+de données. Il est rendu **mécanique** : le balayage est attendu (`await`) au démarrage, et un drapeau
+`agregatsAJour` **suspend la purge** tant qu'il a échoué. Une première rédaction se contentait d'un
+commentaire affirmant que la purge ne partirait pas ; le `catch` la laissait partir. Trois tests tiennent
+la mécanique.
+- [x] **Step 5 : 🔴 LE TEST QUI COMPTE, ET IL EST LA CONTREPARTIE DU CHOIX DE JULIEN.** Les vraies données
       font foi sous 90 jours, les agrégats au-delà : deux sources répondent donc à la même question. Elles
       doivent passer par LA MÊME fonction de calcul, et un test doit prouver qu'elles tombent d'accord sur
       un jour donné. Sans lui, la frontière des 90 jours fera une marche dans le graphe, indiscernable d'un
       vrai creux d'activité.
-- [ ] **Step 6 : le résumé en champ système du CRM.** 🔴 **DÉRIVÉ À LA LECTURE, pas recopié dans
+- [ ] **Step 6 : le résumé en champ système du CRM. SEUL POINT NON FAIT DE LA TÂCHE 8.**
+
+⚠️ **IL DEMANDE UN ARBITRAGE DE COÛT, ET C'EST POURQUOI IL N'A PAS ÉTÉ POSÉ À LA VA-VITE.** Un contact
+se lit par **deux** chemins (`listContacts` et `queryContacts`), et la liste du mini-CRM peut rendre des
+centaines de lignes. Dériver le résumé à la lecture y ajoute une sous-requête **par contact affiché**,
+pour une valeur que personne ne lit dans une liste. Trois options :
+
+1. **Sur la FICHE et dans l'export seulement** (recommandé) : le geste que Julien décrit (« ouvrir une
+   fiche avant de rappeler quelqu'un ») est servi, et la liste ne paie rien.
+2. **Partout, dérivé** : cohérent, mais une jointure par ligne sur le chemin le plus chaud du mini-CRM.
+3. **Recopié dans `contacts.fields` à chaque analyse** : gratuit à la lecture, mais **deux vérités** à
+   côté de `conversation_analysis.summary`, et le jour où elles divergent c'est la copie, périmée, que
+   la fiche affiche. Écarté par le cadrage, et la raison n'a pas changé.
+ 🔴 **DÉRIVÉ À LA LECTURE, pas recopié dans
       `contacts.fields`** : recopier créerait une seconde vérité à côté de `conversation_analysis.summary`,
       et le jour où les deux divergent c'est la copie, périmée, que la fiche afficherait. Il porte le
       résumé de la DERNIÈRE conversation analysée, avec sa date, et n'est ni renommable ni modifiable.

@@ -81,6 +81,42 @@ describe.skipIf(!url)('rétention des conversations (Postgres)', () => {
     expect(apres).toBe(avant);
   });
 
+  it('🔴 la RETENTION DE L ESPACE gagne sur le defaut d instance (migration 0155)', async () => {
+    // Le responsable de traitement est le CLIENT : quand il a regle une duree, c est la sienne qui
+    // s'applique, pas celle de l'instance. Ici l'espace demande 30 jours alors que l'instance en annonce
+    // 365 : une conversation de 100 jours doit partir.
+    const id = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at)
+       values ($1, $2, now() - make_interval(days => 100)) returning id`,
+      [tenantId, '33600009100'],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into tenant_settings (tenant_id, conversation_retention_days) values ($1, 30)
+       on conflict (tenant_id) do update set conversation_retention_days = 30`,
+      [tenantId],
+    );
+    await store.purgeConversationsOlderThan(365);
+    expect((await pool.query('select 1 from conversations where id = $1', [id])).rowCount).toBe(0);
+  });
+
+  it('🔴 un espace a ZERO n est JAMAIS purge, meme quand l instance purge', async () => {
+    // Le zero PAR ESPACE desactive cet espace seul. Sans le test sur la valeur effective, il retomberait
+    // sur le defaut d'instance et serait purge contre la volonte du client.
+    const id = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at)
+       values ($1, $2, now() - make_interval(days => 500)) returning id`,
+      [tenantId, '33600009200'],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into tenant_settings (tenant_id, conversation_retention_days) values ($1, 0)
+       on conflict (tenant_id) do update set conversation_retention_days = 0`,
+      [tenantId],
+    );
+    await store.purgeConversationsOlderThan(365);
+    expect((await pool.query('select 1 from conversations where id = $1', [id])).rowCount).toBe(1);
+    // On remet l'espace au defaut pour ne pas fausser les cas suivants.
+    await pool.query('update tenant_settings set conversation_retention_days = null where tenant_id = $1', [tenantId]);
+  });
   it('l’effacement est BORNÉ par passage (le balayage repasse)', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i += 1) {
