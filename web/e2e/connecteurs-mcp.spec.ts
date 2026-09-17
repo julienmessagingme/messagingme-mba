@@ -35,7 +35,7 @@ const OUTILS = [
   },
 ];
 
-async function mock(page: Page, over: { plan?: unknown; tronque?: boolean } = {}): Promise<Array<{ method: string; url: string }>> {
+async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean } = {}): Promise<Array<{ method: string; url: string }>> {
   const appels: Array<{ method: string; url: string }> = [];
   await page.addInitScript((s) => {
     window.localStorage.setItem('mba.session', JSON.stringify(s));
@@ -49,7 +49,10 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean } = {}
       // Les deux listes de clouage viennent du SERVEUR : l ecran ne les recopie pas.
       return json({ outils: OUTILS, champs: ['email', 'reference'], champsContact: ['wa_id', 'nom'] });
     }
-    if (url.endsWith(`/agents/${TENANT}/mcp`)) return json({ serveurs: [SERVEUR] });
+    if (url.endsWith(`/agents/${TENANT}/mcp`) && method === 'POST') {
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ serveur: SERVEUR }) });
+    }
+    if (url.endsWith(`/agents/${TENANT}/mcp`)) return json({ serveurs: over.aucun ? [] : [SERVEUR] });
     if (url.includes('/apercu')) {
       return json({
         plan: over.plan ?? [{ type: 'schema_change', nom: 'search', consentementsTombes: 2 }],
@@ -141,5 +144,37 @@ test.describe('Tools > Connecteurs MCP', () => {
     await page.goto('/connecteurs-mcp');
     await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await expect(page.getByTestId('mcp-requis-q')).toBeVisible();
+  });
+});
+
+test.describe('declarer un serveur MCP', () => {
+  test('🔴 le formulaire EXISTE, et l ecran vide y renvoie', async ({ page }) => {
+    // 🔴 SANS LUI, TOUT L ECRAN EST INUTILISABLE. Le formulaire des connecteurs API ecrit « type HTTP » en
+    // dur : tant que cette route n existait pas, la liste restait vide pour toujours, et le seul texte que
+    // voyait le client renvoyait vers un « type MCP » qui n existe nulle part.
+    const appels = await mock(page, { aucun: true });
+    await page.goto('/connecteurs-mcp');
+    await expect(page.getByTestId('mcp-vide')).toContainText('bouton ci-dessus');
+    await expect(page.getByTestId('mcp-vide')).not.toContainText('Connecteurs API');
+
+    await page.getByTestId('mcp-declarer-ouvrir').click();
+    await page.getByTestId('mcp-neuf-label').fill('Notion');
+    await page.getByTestId('mcp-neuf-url').fill('https://exemple.test/mcp');
+    await page.getByTestId('mcp-neuf-secret').fill('jeton-du-client');
+    await page.getByTestId('mcp-neuf-creer').click();
+
+    await expect.poll(() => appels.filter((a) => a.method === 'POST' && a.url.endsWith('/mcp')).length).toBe(1);
+  });
+
+  test('le nom de l en-tete n apparait que pour le mode qui en a besoin', async ({ page }) => {
+    await mock(page, { aucun: true });
+    await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-declarer-ouvrir').click();
+    await expect(page.getByTestId('mcp-neuf-entete')).toHaveCount(0);
+    await page.getByTestId('mcp-neuf-auth').selectOption('header');
+    await expect(page.getByTestId('mcp-neuf-entete')).toBeVisible();
+    // Et le jeton disparait quand il n y a pas d authentification.
+    await page.getByTestId('mcp-neuf-auth').selectOption('none');
+    await expect(page.getByTestId('mcp-neuf-secret')).toHaveCount(0);
   });
 });

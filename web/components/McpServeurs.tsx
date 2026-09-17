@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
-import { cardCls } from '@/lib/ui';
+import { cardCls, inputCls } from '@/lib/ui';
 import { McpOutilReglage } from '@/components/McpOutilReglage';
 import {
-  apercuMcp, eprouverServeurMcp, importerMcp, listerOutilsMcp, listerServeursMcp,
-  type ChangementMcp, type OutilMcp, type ServeurMcp,
+  apercuMcp, creerServeurMcp, eprouverServeurMcp, importerMcp, listerOutilsMcp, listerServeursMcp,
+  supprimerServeurMcp,
+  type AuthMcp, type ChangementMcp, type OutilMcp, type ServeurMcp,
 } from '@/lib/api-mcp-connecteurs';
 
 /**
@@ -29,6 +30,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   const [epreuve, setEpreuve] = useState<{ sourceId: string; ok: boolean; erreur?: string } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [neuf, setNeuf] = useState<{ label: string; baseUrl: string; authKind: AuthMcp; authSecret: string; authHeaderName: string } | null>(null);
 
   useEffect(() => {
     let vivant = true;
@@ -85,10 +87,66 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
 
       {erreur && <p className="text-xs text-coral" data-testid="mcp-erreur">{erreur}</p>}
 
+      {isAdmin && (
+        <div className={cardCls} data-testid="mcp-declarer">
+          {neuf === null ? (
+            <button type="button" className="text-sm text-brand-700 underline" data-testid="mcp-declarer-ouvrir"
+              onClick={() => setNeuf({ label: '', baseUrl: '', authKind: 'bearer', authSecret: '', authHeaderName: '' })}>
+              {t('+ déclarer un serveur MCP', '+ declare an MCP server')}
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <input className={inputCls} value={neuf.label} data-testid="mcp-neuf-label"
+                placeholder={t('Nom (ex. Notion)', 'Name (e.g. Notion)')}
+                onChange={(e) => setNeuf({ ...neuf, label: e.target.value })} />
+              {/* ⚠️ L'ADRESSE DU POINT MCP, PAS UNE RACINE. Un serveur MCP a UNE adresse unique, là où un
+                  connecteur API a une base sous laquelle on compose des chemins. Le dire ici évite de
+                  coller l'adresse d'une API REST et de se demander pourquoi rien ne répond. */}
+              <input className={inputCls} value={neuf.baseUrl} data-testid="mcp-neuf-url"
+                placeholder={t('Adresse du point MCP (https://…/mcp)', 'MCP endpoint address (https://…/mcp)')}
+                onChange={(e) => setNeuf({ ...neuf, baseUrl: e.target.value })} />
+              <select className={inputCls} value={neuf.authKind} data-testid="mcp-neuf-auth"
+                onChange={(e) => setNeuf({ ...neuf, authKind: e.target.value as AuthMcp })}>
+                <option value="bearer">{t('jeton (Bearer)', 'token (Bearer)')}</option>
+                <option value="header">{t('jeton dans un en-tête nommé', 'token in a named header')}</option>
+                <option value="none">{t('aucune authentification', 'no authentication')}</option>
+              </select>
+              {neuf.authKind === 'header' && (
+                <input className={inputCls} value={neuf.authHeaderName} data-testid="mcp-neuf-entete"
+                  placeholder={t('nom de l’en-tête', 'header name')}
+                  onChange={(e) => setNeuf({ ...neuf, authHeaderName: e.target.value })} />
+              )}
+              {neuf.authKind !== 'none' && (
+                <input className={inputCls} type="password" value={neuf.authSecret} data-testid="mcp-neuf-secret"
+                  placeholder={t('jeton', 'token')}
+                  onChange={(e) => setNeuf({ ...neuf, authSecret: e.target.value })} />
+              )}
+              <div className="flex gap-2">
+                <button type="button" disabled={busy} data-testid="mcp-neuf-creer"
+                  className="rounded-lg bg-brand-600 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50"
+                  onClick={() => void agir(async () => {
+                    await creerServeurMcp(tenantId, {
+                      label: neuf.label, baseUrl: neuf.baseUrl, authKind: neuf.authKind,
+                      ...(neuf.authHeaderName ? { authHeaderName: neuf.authHeaderName } : {}),
+                      ...(neuf.authSecret ? { authSecret: neuf.authSecret } : {}),
+                    });
+                    setNeuf(null);
+                    setServeurs((await listerServeursMcp(tenantId)).serveurs);
+                  })}>
+                  {t('Déclarer', 'Declare')}
+                </button>
+                <button type="button" className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs"
+                  onClick={() => setNeuf(null)}>{t('Annuler', 'Cancel')}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {serveurs.length === 0 ? (
         <p className="text-sm text-ink-500" data-testid="mcp-vide">
-          {t('Aucun serveur MCP déclaré. Ajoutez-en un depuis Tools > Connecteurs API, en choisissant le type MCP.',
-            'No MCP server yet. Add one from Tools > API connectors, choosing the MCP type.')}
+          {t('Aucun serveur MCP déclaré. Utilisez le bouton ci-dessus pour en ajouter un : il vous faudra son adresse et son jeton.',
+            'No MCP server yet. Use the button above to add one: you will need its address and its token.')}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -124,6 +182,14 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs disabled:opacity-50"
                     onClick={() => void agir(async () => { setPlan({ sourceId: s.id, ...(await apercuMcp(tenantId, s.id)) }); })}>
                     {t('Voir ce qui va changer', 'Preview changes')}
+                  </button>
+                  <button type="button" disabled={busy} data-testid={`mcp-supprimer-${s.id}`}
+                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs text-coral disabled:opacity-50"
+                    onClick={() => void agir(async () => {
+                      await supprimerServeurMcp(tenantId, s.id);
+                      setServeurs((await listerServeursMcp(tenantId)).serveurs);
+                    })}>
+                    {t('Supprimer', 'Delete')}
                   </button>
                   <button type="button" disabled={busy} data-testid={`mcp-outils-${s.id}`}
                     className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs disabled:opacity-50"

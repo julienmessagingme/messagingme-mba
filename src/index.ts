@@ -1740,6 +1740,10 @@ async function main(): Promise<void> {
      */
     agentMcp: {
       listerServeurs: (tenant) => mcpStore.listerServeurs(tenant),
+      // Le MEME store que les connecteurs API : c est la meme table, et le secret s y chiffre au meme
+      // endroit. En ouvrir un second chemin ferait deux facons de chiffrer.
+      creerServeur: (tenant, input) => agentSources.creer(tenant, { kind: 'mcp', ...input }),
+      supprimerServeur: (tenant, id) => agentSources.supprimer(tenant, id),
       pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
       marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
       outilsPourEcran: (tenant, sourceId) => mcpStore.outilsPourEcran(tenant, sourceId),

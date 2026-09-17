@@ -48,8 +48,10 @@ function harnais(over: {
   reglerOk?: boolean;
   label?: string;
   vues?: never[];
+  supprimerOk?: boolean;
 } = {}) {
   const ecrit: EcritureImportMcp[] = [];
+  const crees: unknown[] = [];
   const epreuves: Array<{ ok: boolean }> = [];
   const regles: unknown[] = [];
   const session = {
@@ -59,6 +61,8 @@ function harnais(over: {
   };
   const deps: AgentMcpRouteDeps = {
     listerServeurs: async () => [{ ...SERVEUR, ...(over.label ? { label: over.label } : {}) }],
+    creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
+    supprimerServeur: async () => over.supprimerOk ?? true,
     pourAppel: async () => POUR_APPEL,
     marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
     outilsDuServeur: async () => over.outils ?? [],
@@ -72,7 +76,7 @@ function harnais(over: {
   };
   const app = Fastify();
   registerAgentMcp(app, deps, gardeQuiPose);
-  return { app, ecrit, epreuves, regles, session };
+  return { app, ecrit, epreuves, regles, session, crees };
 }
 
 describe('eprouver un serveur MCP', () => {
@@ -289,5 +293,60 @@ describe('le clouage `contact`, qui etait INERTE', () => {
     const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/outils` });
     expect(r.json().champs).toEqual(['email', 'reference']);
     expect(r.json().champsContact).toEqual(['wa_id', 'nom']);
+  });
+});
+
+describe('declarer un serveur MCP', () => {
+  it('🔴 LA ROUTE EXISTE : sans elle, personne ne peut declarer de serveur MCP', async () => {
+    // 🔴 LE DEFAUT QUE CE CAS FERME, ET IL RENDAIT TOUT LE LOT INUTILISABLE. La route des connecteurs API
+    // code `kind: 'http'` en dur et n accepte aucun champ `kind` ; c est le SEUL insert dans
+    // `agent_tool_sources` du depot. `listerServeurs` filtrant sur `kind = 'mcp'` rendait donc TOUJOURS
+    // zero ligne, et les quatre autres routes de ce module etaient du cablage sans producteur.
+    const h = harnais();
+    const r = await h.app.inject({
+      method: 'POST', url: `/agents/${TENANT}/mcp`,
+      payload: { label: 'Notion', baseUrl: 'https://exemple.test/mcp', authKind: 'bearer', authSecret: 'jeton' },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(h.crees[0]).toMatchObject({ label: 'Notion', baseUrl: 'https://exemple.test/mcp', authKind: 'bearer' });
+  });
+
+  it('🔴 une adresse non publique ou non HTTPS est refusee A L ECRITURE', async () => {
+    // La refuser au moment de l appel reviendrait a la decouvrir en pleine conversation avec un contact.
+    const h = harnais();
+    for (const mauvaise of ['http://exemple.test/mcp', 'https://localhost/mcp', 'https://127.0.0.1/mcp']) {
+      const r = await h.app.inject({
+        method: 'POST', url: `/agents/${TENANT}/mcp`,
+        payload: { label: 'X', baseUrl: mauvaise, authKind: 'none' },
+      });
+      expect(r.statusCode, mauvaise).toBe(400);
+    }
+    expect(h.crees).toEqual([]);
+  });
+
+  it('un mode d authentification sans secret est refuse', async () => {
+    // Rejoue ici parce que la contrainte de 0088 refuserait de toute facon, mais en 500, dont Cloudflare
+    // remplace le corps.
+    const h = harnais();
+    const r = await h.app.inject({
+      method: 'POST', url: `/agents/${TENANT}/mcp`,
+      payload: { label: 'X', baseUrl: 'https://exemple.test/mcp', authKind: 'bearer' },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(h.crees).toEqual([]);
+  });
+
+  it('⚠️ supprimer un serveur qui porte des outils ACTIFS est refuse en 409', async () => {
+    // La cascade ferait disparaitre les outils sans bruit, et l agent deviendrait muet sur ces gestes-la,
+    // en production, sans que personne ne l ait decide.
+    const h = harnais({ supprimerOk: false });
+    const r = await h.app.inject({ method: 'DELETE', url: `/agents/${TENANT}/mcp/${SOURCE}` });
+    expect(r.statusCode).toBe(409);
+  });
+
+  it('un serveur sans outil actif se supprime', async () => {
+    const h = harnais();
+    const r = await h.app.inject({ method: 'DELETE', url: `/agents/${TENANT}/mcp/${SOURCE}` });
+    expect(r.statusCode).toBe(204);
   });
 });

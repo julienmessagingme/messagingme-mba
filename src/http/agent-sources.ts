@@ -73,13 +73,18 @@ const epreuveSchema = z.object({ chemin: z.string().trim().min(1).max(500).defau
 
 /** L'adresse est-elle acceptable ? MÊME fonction que le résolveur : une seconde définition finirait par
  *  accepter à l'écriture ce que l'appel refuse, donc par promettre un connecteur qui ne marchera jamais. */
-function adresseAcceptable(baseUrl: string): boolean {
+/**
+ * ⚠️ EXPORTÉE POUR LES CONNECTEURS MCP (2026-09-17), qui doivent valider LA MÊME adresse. Une seconde
+ * définition finirait par accepter ici ce que l'appel refuse là-bas, c'est-à-dire par promettre un
+ * connecteur qui ne marchera jamais : le défaut que ce fichier décrit déjà pour son propre résolveur.
+ */
+export function adresseAcceptable(baseUrl: string): boolean {
   return construireCible({ baseUrl, binding: { methode: 'GET', chemin: '/' }, args: {} }).ok;
 }
 
 /** L'authentification déclarée tient-elle debout ? Rejoué ici parce que la contrainte de la 0088 refuserait
  *  de toute façon, mais en 500, dont Cloudflare remplace le corps. */
-function authCoherente(authKind: string, secret: string | undefined, entete: string | null | undefined): string | null {
+export function authCoherente(authKind: string, secret: string | undefined, entete: string | null | undefined): string | null {
   if (authKind === 'none') return null;
   if (!secret) return 'un secret est requis pour ce mode d’authentification';
   if (authKind === 'header' && !entete) return 'le nom de l’en-tête est requis';
@@ -105,7 +110,19 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
   app.get(base, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ sources: await deps.lister(tenant) });
+    /**
+     * 🔴 SEULEMENT LES CONNECTEURS HTTP (2026-09-17). Cet écran s'appelle « Connecteurs API », son
+     * formulaire demande une adresse de BASE sous laquelle on compose des chemins, et son bouton
+     * « éprouver » envoie un GET sur un chemin. Aucun de ces trois gestes n'a de sens pour un serveur MCP,
+     * qui a UNE adresse unique et se parle en JSON-RPC : l'y laisser apparaître offrirait au client des
+     * boutons qui ne peuvent pas marcher.
+     *
+     * ⚠️ LE FILTRE EST ICI ET NON DANS `lister`, délibérément : l'inventaire de l'assistant de
+     * configuration COMPTE les serveurs MCP (`src/agent/setup/couverture.ts`), et filtrer à la source les
+     * lui ferait disparaître.
+     */
+    const sources = await deps.lister(tenant);
+    return reply.code(200).send({ sources: sources.filter((s) => s.kind === 'http') });
   });
 
   app.post(base, opts, async (req, reply) => {

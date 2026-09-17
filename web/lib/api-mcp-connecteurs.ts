@@ -84,7 +84,31 @@ export function listerOutilsMcp(tenantId: string, sourceId: string): Promise<{
   return request<{ outils: OutilMcp[]; champs: string[]; champsContact: string[] }>(`${base(tenantId)}/${sourceId}/outils`);
 }
 
-/** Éprouve le serveur : `initialize` seul, rien n'est importé. */
+/**
+ * Déclare un serveur MCP.
+ *
+ * 🔴 C'EST LE SEUL CHEMIN QUI EN CRÉE UN. Le formulaire des connecteurs API écrit « type HTTP » en dur :
+ * tant que cette route n'existait pas, l'écran MCP ne pouvait rien montrer et tout ce qui vit au-dessus
+ * (import, résolveur, réglage) attendait une ligne qui ne pouvait pas exister.
+ */
+export function creerServeurMcp(tenantId: string, input: {
+  label: string; baseUrl: string; authKind: AuthMcp; authHeaderName?: string; authSecret?: string;
+}): Promise<{ serveur: ServeurMcp }> {
+  return request<{ serveur: ServeurMcp }>(base(tenantId), { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Supprime un serveur. Refusé tant qu'un outil ACTIF en dépend. */
+export function supprimerServeurMcp(tenantId: string, sourceId: string): Promise<void> {
+  return request<void>(`${base(tenantId)}/${sourceId}`, { method: 'DELETE' });
+}
+
+/**
+ * Éprouve le serveur : `initialize` seul, rien n'est importé.
+ *
+ * ⚠️ C'est le seul moyen de voir un jeton mort ou un transport non pris en charge AVANT qu'un contact ne le
+ * découvre. Un serveur inatteignable ne produit aucune erreur applicative : l'agent dégraderait en silence,
+ * au milieu d'une conversation.
+ */
 export function eprouverServeurMcp(tenantId: string, sourceId: string): Promise<{ ok: boolean; erreur?: string }> {
   return request<{ ok: boolean; erreur?: string }>(`${base(tenantId)}/${sourceId}/eprouver`, { method: 'POST' });
 }

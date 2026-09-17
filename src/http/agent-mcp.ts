@@ -12,6 +12,7 @@ import { enTetesAuthSource } from '../agent/http-cible';
 import { ouvrirSessionMcp, type EchecMcp, type OutilAnnonce } from '../mcp/client';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
 import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-contact';
+import { adresseAcceptable, authCoherente } from './agent-sources';
 import { scopeTenant, estUuid } from './scope';
 
 /**
@@ -84,6 +85,19 @@ export interface AgentMcpRouteDeps {
   /** L'adresse et le secret DÉCHIFFRÉ. Un seul appelant, comme pour les connecteurs HTTP. */
   pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
   marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void>;
+  /**
+   * Déclare un serveur MCP. C'est le SEUL chemin qui écrit `kind = 'mcp'`.
+   *
+   * 🔴 IL N'EN EXISTAIT AUCUN JUSQU'AU 2026-09-17, et c'est la revue à froid qui l'a vu : la route des
+   * connecteurs API code `kind: 'http'` en dur, donc `listerServeurs` rendait toujours zéro ligne et tout
+   * ce module était du câblage sans producteur.
+   */
+  creerServeur(tenantId: string, input: {
+    label: string; baseUrl: string;
+    authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string;
+  }): Promise<ServeurMcpVue>;
+  /** Supprime un serveur. Refusé (`false`) tant qu'un outil ACTIF en dépend. */
+  supprimerServeur(tenantId: string, id: string): Promise<boolean>;
   /** Les outils importés, pour l'ÉCRAN. Séparée de la lecture d'import, qui compare et rien de plus. */
   outilsPourEcran(tenantId: string, sourceId: string): Promise<OutilMcpVue[]>;
   /** Les outils MCP déjà importés de ce serveur, avec ce qu'un changement ferait tomber. */
@@ -116,6 +130,15 @@ const BUDGET_IMPORT_MS = 25_000;
 const TIMEOUT_REQUETE_MS = 8_000;
 /** Un catalogue entier peut être gros ; il ne traverse pas le modèle, il s'affiche. */
 const MAX_OCTETS_CATALOGUE = 1_000_000;
+
+const creationSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  /** L'adresse du POINT MCP : une adresse unique, pas une racine sous laquelle on compose des chemins. */
+  baseUrl: z.string().trim().min(1).max(500),
+  authKind: z.enum(['none', 'bearer', 'header']),
+  authHeaderName: z.string().trim().regex(/^[A-Za-z0-9-]{1,64}$/).optional(),
+  authSecret: z.string().trim().min(1).max(500).optional(),
+});
 
 const CLE_CHAMP = z.string().trim().min(1).max(64);
 const reglageSchema = z.object({
@@ -228,6 +251,52 @@ export function registerAgentMcp(
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ serveurs: await deps.listerServeurs(tenant) });
+  });
+
+  /**
+   * Déclarer un serveur MCP.
+   *
+   * 🔴 L'ADRESSE EST VALIDÉE À L'ÉCRITURE, par la MÊME fonction que les connecteurs API. La refuser au
+   * moment de l'appel reviendrait à la découvrir en pleine conversation avec un contact, et deux
+   * définitions de « adresse acceptable » finiraient par accepter ici ce que l'appel refuse là-bas.
+   *
+   * ⚠️ Le secret est chiffré par le store, jamais ici : la couche HTTP ne manipule pas de forme chiffrée.
+   */
+  app.post('/agents/:tenantId/mcp', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const parse = creationSchema.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'libellé, adresse et mode d’authentification requis' });
+    const { label, baseUrl, authKind, authHeaderName, authSecret } = parse.data;
+    if (!adresseAcceptable(baseUrl)) {
+      return reply.code(400).send({ error: 'adresse refusée : elle doit être publique et en HTTPS' });
+    }
+    const pb = authCoherente(authKind, authSecret, authHeaderName);
+    if (pb) return reply.code(400).send({ error: pb });
+    const serveur = await deps.creerServeur(tenant, {
+      label, baseUrl, authKind,
+      ...(authHeaderName ? { authHeaderName } : {}),
+      ...(authSecret ? { authSecret } : {}),
+    });
+    return reply.code(201).send({ serveur });
+  });
+
+  /**
+   * Supprimer un serveur.
+   *
+   * ⚠️ REFUSÉ TANT QU'UN OUTIL ACTIF EN DÉPEND (409), exactement comme un connecteur API. La cascade ferait
+   * disparaître les outils sans bruit, et l'agent deviendrait muet sur ces gestes-là, en production, sans
+   * que personne ne l'ait décidé.
+   */
+  app.delete('/agents/:tenantId/mcp/:sourceId', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { sourceId } = req.params as { sourceId: string };
+    if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
+    const ok = await deps.supprimerServeur(tenant, sourceId);
+    return ok
+      ? reply.code(204).send()
+      : reply.code(409).send({ error: 'ce serveur porte encore des outils actifs : retirez-les d’abord' });
   });
 
   /**
