@@ -738,7 +738,23 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     return requestId !== '' && champCible !== '' ? { kind: 'appelHttp', requestId, champCible } : null;
   }
   if (node.type === 'js') {
-    const code = String(node.data.code ?? '');
+    /**
+     * 🔴 LE SOURCE VIT DANS `data.js`, PAS DANS `data.code`, ET CETTE COLLISION A DÉTRUIT DU TRAVAIL
+     * CLIENT EN PRODUCTION. `data.code` porte le CODE PUBLIC du bloc (`nod_<client>_<ULID>`), que
+     * `mintNodeCodes` re-minte à CHAQUE enregistrement du scénario dès que la valeur ne ressemble pas à un
+     * code valide. Le JavaScript d'un bloc « Fonction JS » n'y ressemble évidemment jamais : il était donc
+     * écrasé par un `nod_...` à la première sauvegarde, silencieusement. À l'exécution, QuickJS répondait
+     * « 'nod_xxx' is not defined », la fonction échouait, et l'exécuteur rangeait une chaîne VIDE dans le
+     * champ cible. Vécu par Julien le 2026-09-17 : « ça a marché en test mais quand je run le scénario, la
+     * valeur n'est pas capturée », et « le contenu de la fonction n'est plus celui que j'avais écrit ».
+     *
+     * ⚠️ LE REPLI SUR `data.code` RÉCUPÈRE LES GRAPHES PAS ENCORE RÉÉCRITS, et il est SÛR : un code minté
+     * est reconnaissable, donc on ne peut pas confondre un identifiant avec du JavaScript. Un graphe déjà
+     * abîmé, lui, est perdu : il n'y a rien à retrouver, la source a été remplacée.
+     */
+    const brutJs = typeof node.data.js === 'string' ? node.data.js : '';
+    const ancien = String(node.data.code ?? '');
+    const code = brutJs !== '' ? brutJs : (/^nod_[a-z0-9]+_[0-9A-HJKMNP-TV-Z]{26}$/.test(ancien) ? '' : ancien);
     const champSource = String(node.data.champSource ?? '').trim();
     const champCible = String(node.data.champCible ?? '').trim();
     // Bloc à moitié réglé -> no-op, comme les autres. Le code VIDE compte comme non réglé : l'exécuter

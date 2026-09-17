@@ -33,7 +33,15 @@ const CHAMP_MAINTENANT = 'now';
  * « mail pro » ou « class » est valide côté contact et illégale comme paramètre JavaScript.
  */
 function nomParametreJs(cle: string | undefined): string | null {
-  if (!cle || cle === CHAMP_MAINTENANT || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
+  /**
+   * 🔴 `now` N EST PAS UNE EXCEPTION, ET L EN FAIRE UNE FAISAIT MENTIR L ECRAN. Cette copie ecartait
+   * `CHAMP_MAINTENANT`, alors que le moteur (`nomDeParametreSur`) l accepte : il injecte donc bien un
+   * parametre `now` que cet ecran annoncait comme inexistant. Le front envoie d ailleurs `champSource`
+   * BRUT a la route d essai, donc l essai et la production etaient d accord entre eux, et seul l affichage
+   * etait faux. Un ecran qui promet MOINS que le moteur n est pas inoffensif : il fait ecrire `valeur` a
+   * quelqu un qui aurait ecrit `now`, et surtout il rend cette copie non miroir de son original.
+   */
+  if (!cle || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
   const RESERVES = new Set(['valeur', 'arguments', 'await', 'break', 'case', 'catch', 'class', 'const',
     'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends', 'false',
     'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let',
@@ -762,7 +770,9 @@ export function ConfigPanel({
       {wfType === 'js' && (
         <FonctionJs
           tenantId={tenantId}
-          code={String(d.code ?? '')}
+          // ⚠️ Le repli sur `d.code` sert les graphes écrits AVANT la séparation, et lui seul : un code
+          // public minté n'est jamais du JavaScript, donc on ne peut pas les confondre.
+          code={String(d.js ?? (/^nod_[a-z0-9]+_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(d.code ?? '')) ? '' : d.code ?? ''))}
           champSource={String(d.champSource ?? '')}
           champCible={String(d.champCible ?? '')}
           fields={fields}
@@ -1164,7 +1174,12 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
           data-testid="js-node-code" rows={6} spellCheck={false}
           className={`${cls} font-mono text-xs`}
           value={code}
-          onChange={(e) => onPatch({ code: e.target.value })}
+          /**
+           * 🔴 `js` ET SURTOUT PAS `code` : `data.code` porte le CODE PUBLIC du bloc, que le serveur
+           * re-minte à chaque enregistrement. Y ranger du JavaScript le faisait détruire à la première
+           * sauvegarde, sans un mot.
+           */
+          onChange={(e) => onPatch({ js: e.target.value })}
           placeholder={'return JSON.parse(valeur).statut;'}
         />
       </div>
