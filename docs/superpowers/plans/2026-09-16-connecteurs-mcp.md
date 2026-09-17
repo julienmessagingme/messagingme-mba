@@ -868,7 +868,7 @@ git commit --only src/agent/resolvers/mcp.ts src/agent/resolvers/simulation.ts s
 
 ---
 
-## Task 7 : l'import, le rafraîchissement et les routes
+## Task 7 : l'import, le rafraîchissement et les routes  ✅
 
 **Files:**
 - Create: `src/agent/mcp/import.ts`, `src/http/agent-mcp.ts`
@@ -899,7 +899,7 @@ export function planifierImport(
 export function nommerOutilImporte(libelleSource: string, nomDistant: string, pris: Set<string>): string;
 ```
 
-- [ ] **Step 1 : écrire les tests qui échouent**
+- [x] **Step 1 : écrire les tests qui échouent**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -972,17 +972,17 @@ it('🔴 sur un catalogue TRONQUE, l import n annonce AUCUNE disparition', async
 qui vaut `false` par défaut ferait exactement ce qu'on cherche à empêcher le jour où un appelant l'oublie :
 c'est le motif « dépendance optionnelle » que ce dépôt a déjà payé trois fois.
 
-- [ ] **Step 2 : les lancer, vérifier qu'ils échouent**
+- [x] **Step 2 : les lancer, vérifier qu'ils échouent**
 
 ```bash
 npx vitest run tests/mcp-import.test.ts
 ```
 
-- [ ] **Step 3 : écrire l'import**
+- [x] **Step 3 : écrire l'import**
 
 `planifierImport` est **pure** : elle compare et rend un plan. L'écriture est séparée, sur le patron de l'aperçu de publication chez Meta, où « écraser n'est acceptable que si l'on montre QUOI avant de le faire ».
 
-- [ ] **Step 4 : les routes**
+- [x] **Step 4 : les routes**
 
 `src/http/agent-mcp.ts`, toutes sous `:tenantId`, garde **requise** par le type (jamais `garde?`), écritures réservées aux admins :
 
@@ -997,13 +997,13 @@ Elles entrent au registre `modulesDeRoutes` de `src/server.ts` avec `acces: 'ten
 
 ⚠️ Les routes d'import et de rafraîchissement sont **lourdes** (réseau, pagination, écritures en masse) : elles portent `RATE_LIMIT_COUTEUX_PAR_MINUTE`, comme l'import CSV et l'aperçu de site.
 
-- [ ] **Step 5 : relancer**
+- [x] **Step 5 : relancer**
 
 ```bash
 npx vitest run tests/mcp-import.test.ts tests/scope-tenant.test.ts && npm run typecheck
 ```
 
-- [ ] **Step 6 : commiter**
+- [x] **Step 6 : commiter**
 
 ```bash
 git commit --only src/agent/mcp/import.ts src/http/agent-mcp.ts src/server.ts tests/mcp-import.test.ts -m "feat(mcp): importer un catalogue, et dire ce qui a change au rafraichissement"

@@ -119,6 +119,7 @@ import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, ty
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
+import { PgMcpStore } from './agent/mcp/store.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { PgEntretienMbaStore } from './mba/assistant/entretien-store';
@@ -228,6 +229,7 @@ async function main(): Promise<void> {
   // cablage du worker (`src/workflow/wiring.ts`) : c'est lui qui les fait avancer, l'API ne fait qu'agreger.
   const agentSessions = new PgAgentSessionStore(pool);
   const agentSources = new PgSourceStore(pool);
+  const mcpStore = new PgMcpStore(pool);
   const agentRequetes = new PgRequeteStore(pool);
   /**
    * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
@@ -1731,6 +1733,23 @@ async function main(): Promise<void> {
     },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
     // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.
+    /**
+     * Les CONNECTEURS MCP. Tout passe par `PgMcpStore` sauf la source elle-meme, qui reste servie par
+     * `agentSources` : c'est la MEME table (`agent_tool_sources`, `kind = 'mcp'`), et en ouvrir un second
+     * chemin de lecture ferait deux facons de dechiffrer un secret.
+     */
+    agentMcp: {
+      listerServeurs: (tenant) => mcpStore.listerServeurs(tenant),
+      pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
+      marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
+      outilsDuServeur: (tenant, sourceId) => mcpStore.outilsDuServeur(tenant, sourceId),
+      nomsPris: (tenant) => mcpStore.nomsPris(tenant),
+      appliquer: (tenant, sourceId, e) => mcpStore.appliquer(tenant, sourceId, e),
+      // La MEME lecture que pour les variables de requete : deux definitions de « ce champ existe »
+      // finiraient par accepter ici ce que l'autre refuse.
+      clesDeChamps: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
+      reglerOutil: (tenant, outilId, patch) => mcpStore.reglerOutil(tenant, outilId, patch),
+    },
     agentSources: {
       audit: auditSink,
       lister: (tenant) => agentSources.lister(tenant),
