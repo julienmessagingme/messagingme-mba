@@ -182,6 +182,32 @@ describe('processTestTokens transmet le bloc', () => {
     warn.mockRestore();
   });
 
+  it('🔴 et AUCUNE de ces traces ne porte le jeton EN CLAIR', async () => {
+    /**
+     * Les deux refus qui NOMMENT le jeton sont les deux plus sensibles. « appartient à un AUTRE espace »
+     * est un jeton VALIDE d un autre client : l écrire en clair dépose le secret vivant d un tiers dans nos
+     * journaux, que lit tout ce qui les expédie ailleurs. Et « ne correspond à aucun scénario » ne vaut
+     * guère mieux : un jeton refusé est presque toujours un secret VOISIN du vrai, une faute de frappe du
+     * testeur. C est mot pour mot la raison pour laquelle `/ops` ne journalise pas le jeton qu on lui
+     * présente ; la règle vaut ici aussi.
+     *
+     * ⚠️ ON VÉRIFIE QUAND MÊME QU IL RESTE DE QUOI RAPPROCHER DEUX LIGNES : une trace muette aurait ferme
+     * la fuite en rouvrant le défaut du 2026-09-16, quatre sorties dont on ne savait pas laquelle servait.
+     */
+    for (const cas of [
+      { nom: 'autre espace', findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 'AUTRE-ESPACE' }) },
+      { nom: 'inconnu', findByTestToken: async () => null },
+    ]) {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { deps: d } = deps({ findByTestToken: cas.findByTestToken });
+      await processTestTokens(payload(`test-abc12345.${NODE}`), d);
+      const ligne = String(warn.mock.calls[0]?.[0]);
+      expect(ligne, cas.nom + ' : le jeton ne doit pas être lisible').not.toContain('abc12345');
+      expect(ligne, cas.nom + ' : il reste de quoi rapprocher deux lignes').toMatch(/jeton #[0-9a-f]{8}/);
+      warn.mockRestore();
+    }
+  });
+
   it('🔴 un démarrage REFUSÉ est journalisé : un chemin qui n’agit pas doit le dire', async () => {
     // Le cas courant du lien PERMANENT : un lien collé il y a trois semaines pointe un bloc supprimé depuis.
     // L'exécuteur refuse et rend la raison ; sans cette trace, elle n'allait nulle part et le testeur voyait

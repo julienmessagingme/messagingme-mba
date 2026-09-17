@@ -1,5 +1,21 @@
 import { extractInbound } from './inbound';
+import { createHash } from 'node:crypto';
 import { lireJetonDeTest } from '../workflow/test-token';
+
+/**
+ * 🔴 UN JETON NE S ÉCRIT JAMAIS EN CLAIR DANS LES JOURNAUX, et les deux refus ci-dessous l ont fait. Le
+ * second est le pire : c est un jeton VALIDE, appartenant à un AUTRE espace, donc le secret vivant d un
+ * client déposé dans nos journaux, que lit tout ce qui les expédie ailleurs. Le premier ne vaut guère
+ * mieux : un jeton refusé est presque toujours un secret VOISIN du vrai (une faute de frappe du testeur),
+ * exactement la raison pour laquelle `/ops` ne journalise déjà pas le jeton qu on lui présente.
+ *
+ * ⚠️ L EMPREINTE GARDE CE QUI SERVAIT VRAIMENT, c est-à-dire de quoi RAPPROCHER deux lignes du journal. Elle
+ * n est pas réversible, et elle reste stable d un message à l autre : un opérateur voit toujours que c est
+ * le même jeton qui revient, sans jamais pouvoir s en servir.
+ */
+function empreinteJeton(jeton: string): string {
+  return createHash('sha256').update(jeton).digest('hex').slice(0, 8);
+}
 
 /**
  * Déclenche un scénario en MODE TEST quand le testeur envoie le jeton de son lien wa.me / QR (Lot F).
@@ -113,12 +129,12 @@ export async function processTestTokens(
       // mais c'est le numéro qui fait autorité sur le tenant ; un jeton fuité ne doit pas traverser les clients.
       if (!wf) {
         // eslint-disable-next-line no-console
-        console.warn(`test-token: le jeton ${lu.jeton} ne correspond à aucun scénario (message ${m.messageId})`);
+        console.warn(`test-token: le jeton #${empreinteJeton(lu.jeton)} ne correspond à aucun scénario (message ${m.messageId})`);
         continue;
       }
       if (wf.tenantId !== tenantId) {
         // eslint-disable-next-line no-console
-        console.warn(`test-token: le jeton ${lu.jeton} appartient à un AUTRE espace que le numéro qui l'a reçu, rien n'est déclenché (message ${m.messageId})`);
+        console.warn(`test-token: le jeton #${empreinteJeton(lu.jeton)} appartient à un AUTRE espace que le numéro qui l'a reçu, rien n'est déclenché (message ${m.messageId})`);
         continue;
       }
 
