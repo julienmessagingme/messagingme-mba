@@ -3,7 +3,7 @@ import { forbidNonAdmin, gardeEtendue, makeRequireRole } from '../auth/middlewar
 import type { Guard, PreHandler } from '../auth/middleware';
 import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
-import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
+import type { ContactHistory, ContactSend, ResumeContact } from '../crm/contact-history.pg';
 import type { CoutContact, NiveauEngagement } from '../stats/cost';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 import { classerDemandeArret } from '../crm/consentement';
@@ -94,6 +94,16 @@ export interface ContactsRouteDeps {
   ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string }>;
   /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
+  /**
+   * Le résumé de la dernière conversation analysée : la ligne « champ de base » de la fiche. null si le
+   * contact n'est pas dans le tenant.
+   *
+   * OPTIONNELLE, et pour une raison qui n'est PAS celle du bilan : elle ne dépend d'aucun tiers, mais les
+   * câblages de test qui n'en ont pas besoin ne doivent pas être forcés de la déclarer. Absente, la route
+   * rend 503 et la fiche n'affiche simplement pas le bloc, exactement comme pour le bilan : mieux vaut une
+   * fiche sans cette ligne qu'une fiche qui refuse de s'ouvrir.
+   */
+  getResumeContact?(tenantId: string, contactId: string): Promise<ResumeContact | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
   listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
   /**
@@ -364,6 +374,28 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const history = await deps.getContactHistory(tenant, contactId);
     if (!history) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(history);
+  });
+
+  /**
+   * LE RÉSUMÉ de la dernière conversation analysée : la ligne « champ de base » de la fiche contact
+   * (demande de Julien : « le résumé de la conversation [...] ça serait un champ de base à partir du moment
+   * où il y a une conversation »).
+   *
+   * ⚠️ ROUTE À PART DE `/history`, ET L'INVERSE DU CAS DU BILAN. Le bilan est séparé parce qu'il est plus
+   * LENT (il appelle Meta) ; celui-ci est séparé parce qu'il doit être plus RAPIDE : il part à l'ouverture de
+   * la fiche, sur l'onglet « Fiche », alors que l'historique n'est chargé que si l'on clique « Historique ».
+   *
+   * Admin-only comme tout ce fichier. Ce texte est une analyse de ce qu'une personne a raconté : il n'a pas
+   * moins de valeur que le fil lui-même, il en a la substance.
+   */
+  app.get('/tenants/:tenantId/contacts/:contactId/resume', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { contactId } = req.params as { contactId: string };
+    if (!deps.getResumeContact) return reply.code(503).send({ error: 'resume indisponible sur cette instance' });
+    const resume = await deps.getResumeContact(tenant, contactId);
+    if (!resume) return reply.code(404).send({ error: 'contact inconnu' });
+    return reply.code(200).send(resume);
   });
 
   /**

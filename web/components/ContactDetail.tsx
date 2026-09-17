@@ -8,18 +8,22 @@
  * l'ouvre au clic sur le nom du contact. Il n'existait qu'à un seul endroit, ce qui obligeait à quitter la
  * conversation pour consulter une fiche, ou à en réécrire une seconde.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { useT, useLocale } from '@/lib/i18n';
 import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
 import { formatDate } from '@/lib/day';
 import { verdictWhatsApp, type Verdict } from '@/lib/joignabilite';
+import { etatResume, phraseResumeAbsent } from '@/lib/resume-conversation';
 import {
   updateContact,
   createUserField,
   setContactBlocked,
   contactIdentity,
+  getContactResume,
   type Contact,
+  type ResumeContact,
   type UserFieldDef,
   type UserFieldKind,
 } from '@/lib/api';
@@ -161,6 +165,29 @@ export function ContactDetail({
   const fieldEntries = Object.entries(contact.fields ?? {}).filter(([k, v]) => !SOCLE_CLES.includes(k) && v != null && String(v).trim() !== '');
   const filledKeys = new Set([...fieldEntries.map(([k]) => k), ...SOCLE_CLES]);
   const addable = userFields.filter((d) => !filledKeys.has(d.key));
+
+  /**
+   * LE RÉSUMÉ DE LA DERNIÈRE CONVERSATION ANALYSÉE, chargé à l'ouverture de la fiche.
+   *
+   * ⚠️ APPEL À PART, ET SON ÉCHEC EST SILENCIEUX (il reste `null`, donc le bloc ne s'affiche pas). Même
+   * arbitrage que le bilan dans l'onglet Historique : une instance qui ne sert pas cette route (503) doit
+   * continuer d'ouvrir des fiches. Une fiche qui refuserait de s'ouvrir pour un bloc en plus échangerait
+   * l'essentiel contre l'accessoire.
+   *
+   * ⚠️ SUR `contact.id`, PAS SUR `contact` : la fiche se ré-rend à CHAQUE édition de champ ou de tag, et
+   * dépendre de l'objet entier rappellerait la route à chaque frappe enregistrée, pour une valeur qu'aucune
+   * édition de fiche ne peut changer.
+   */
+  const [resume, setResume] = useState<ResumeContact | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getContactResume(tenantId, contact.id)
+      .then((r) => { if (alive) setResume(r); })
+      .catch(() => { if (alive) setResume(null); });
+    return () => { alive = false; };
+  }, [tenantId, contact.id]);
+  const etat = etatResume(resume);
+  const phraseAbsent = phraseResumeAbsent(etat, t);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -380,6 +407,56 @@ export function ContactDetail({
           <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>
           <span className="text-ink-900">{formatDate(contact.createdAt, locale)}</span>
         </div>
+
+        {/*
+          LE RÉSUMÉ DE LA CONVERSATION, EN CHAMP DE BASE DU MINI-CRM (demande de Julien : « ça serait un
+          champ de base à partir du moment où il y a une conversation »).
+
+          🔴 IL N'APPARAÎT PAS TANT QU'IL N'Y A PAS DE CONVERSATION, et c'est la demande au mot près. Un
+          bloc « Résumé : - » sur un contact importé d'un CSV qui n'a jamais rien échangé promettrait un
+          contenu à venir sur une fiche où il ne viendra jamais.
+
+          🔴 EN LECTURE SEULE, ET SANS BOUTON MODIFIER. C'est un CONSTAT posé par un modèle, recalculé à
+          chaque analyse : le rendre modifiable ferait disparaître la retouche au passage suivant, sans
+          cause visible. Même séparation que celle déjà tenue entre `conversation_analysis.abusive` (constat)
+          et `contacts.blocked_at` (décision).
+
+          ⚠️ HORS de la grille des champs de base : deux à trois phrases dans une colonne de valeur large de
+          110 px se liraient en escalier. Le bloc garde le libellé, il change de forme.
+        */}
+        {etat !== 'aucune-conversation' && (
+          <div className="mt-4 rounded-lg border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
+                {t('Résumé de la conversation', 'Conversation summary')}
+              </span>
+              {/* La DATE de l'analyse, et le lien vers le fil. Sans la date, un résumé de mars et un résumé
+                  d'hier se lisent pareil ; sans le lien, il faut retrouver la conversation à la main. */}
+              <span className="flex items-center gap-2 text-xs text-ink-400">
+                {resume?.analyseLe && <span>{t('analysé le', 'analyzed on')} {formatDate(resume.analyseLe, locale)}</span>}
+                {resume?.conversationId && (
+                  <Link href={`/inbox?c=${resume.conversationId}`} className="text-brand-600 underline decoration-dotted hover:text-brand-700">
+                    {t('voir le fil', 'open thread')}
+                  </Link>
+                )}
+              </span>
+            </div>
+            {etat === 'resume' ? (
+              <p className="mt-1 whitespace-pre-line text-sm text-ink-700" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
+            ) : (
+              <p className="mt-1 text-sm italic text-ink-400" data-testid="fiche-contact-resume-absent">{phraseAbsent}</p>
+            )}
+            {/* PÉRIMÉ : l'analyse existe, mais un message est arrivé depuis. Le dire vaut mieux que de
+                présenter un résumé partiel comme s'il couvrait tout le fil. Même mot que dans l'onglet
+                Historique, pour que les deux écrans ne décrivent pas le même état de deux façons. */}
+            {resume?.perime && (
+              <p className="mt-1 text-xs text-amber-700" data-testid="fiche-contact-resume-perime">
+                {t('Un message est arrivé depuis : ce résumé ne couvre pas la fin de la conversation.',
+                   'A message has arrived since: this summary does not cover the end of the conversation.')}
+              </p>
+            )}
+          </div>
+        )}
 
         {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 

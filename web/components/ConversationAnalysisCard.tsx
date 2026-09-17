@@ -18,6 +18,7 @@ import { TableJoursAnalyse } from './TableJoursAnalyse';
 import { repondeursDe, libelleRepondeur } from '@/lib/qui-a-repondu';
 import type { LignePeriode } from '@/lib/jours-analyse';
 import { BoutonPdf } from './BoutonPdf';
+import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { entetesQuali, ligneQuali } from '@/lib/quali-export';
 
@@ -340,15 +341,15 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
           <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Résumé de la conversation', 'Conversation summary')}</div>
           {/* Repli ASSUMÉ et NOMMÉ. Les analyses d'avant la migration 0100 n'ont pas de résumé, et
               afficher `justification` à la place serait un mensonge discret : elle explique le classement,
-              pas ce qui s'est dit. Mieux vaut dire qu'il n'y en a pas. */}
+              pas ce qui s'est dit. Mieux vaut dire qu'il n'y en a pas.
+              ⚠️ La PHRASE, elle, vit dans `web/lib/resume-conversation.ts` depuis que la fiche du mini-CRM
+              en a besoin elle aussi : deux endroits qui affirment la même chose finissent par ne plus
+              l'affirmer pareil. Le texte n'a pas changé, seulement son domicile. */}
           {c.summary && c.summary.trim() !== '' ? (
             <p className="mt-0.5 whitespace-pre-line text-sm text-ink-700" data-testid="fiche-resume">{c.summary}</p>
           ) : (
             <p className="mt-0.5 text-sm italic text-ink-400" data-testid="fiche-resume-absent">
-              {t(
-                'Pas de résumé : cette conversation a été analysée avant que le résumé n’existe.',
-                'No summary: this conversation was analyzed before summaries existed.',
-              )}
+              {phraseResumeAbsent('sans-resume', t)}
             </p>
           )}
         </div>

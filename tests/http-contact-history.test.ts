@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
-import type { ContactHistory, ContactSend } from '../src/crm/contact-history.pg';
+import type { ContactHistory, ContactSend, ResumeContact } from '../src/crm/contact-history.pg';
 
 /**
  * Route d'historique d'un contact.
@@ -40,6 +40,7 @@ const FULL: ContactHistory = {
       sentiment: 'positive', intent: 'question', topic: 'livraison', resolved: true,
       handledBy: 'bot', exchangesCount: 4, actionSuggestion: 'none',
       analyzedAt: '2026-07-02T09:10:00.000Z',
+      summary: 'La cliente demandait où en était sa livraison, on lui a donné le suivi.',
     },
     analysisStale: false,
     inboxHref: '/inbox?c=conv-1',
@@ -51,6 +52,7 @@ function app(
   history: (tenantId: string, contactId: string) => Promise<ContactHistory | null>,
   exportSends?: (tenantId: string, contactId: string) => Promise<ContactSend[] | null>,
   bilan?: ContactsRouteDeps['getBilanContact'],
+  resume?: ContactsRouteDeps['getResumeContact'],
 ) {
   const contacts: ContactsRouteDeps = {
     applyEdits: async () => null,
@@ -59,6 +61,7 @@ function app(
     getContactHistory: history,
     listSendsForExport: exportSends ?? (async (_t, id) => (id === 'c1' ? FULL.sends : null)),
     ...(bilan ? { getBilanContact: bilan } : {}),
+    ...(resume ? { getResumeContact: resume } : {}),
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts });
 }
@@ -213,6 +216,83 @@ describe('GET /tenants/:t/contacts/:id/bilan', () => {
     // écarterait ouvrirait le coût de chaque contact aux opérateurs sans que personne l'ait décidé.
     const a = app(known, undefined, async () => BILAN);
     expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/bilan', ...h(agentTok) })).statusCode).toBe(403);
+    await a.close();
+  });
+});
+
+/**
+ * LE RESUME EN CHAMP DE BASE DU MINI-CRM.
+ *
+ * 🔴 L'INVARIANT EST LE MEME QUE POUR L'HISTORIQUE, ET IL COMPTE PLUS ICI. Ce que cette route rend n'est pas
+ * une metadonnee, c'est une analyse de ce qu'une personne a raconte. Un 200 sur un contact d'autrui serait
+ * une fuite de contenu, pas seulement une reponse rassurante sur une ressource interdite.
+ */
+const RESUME: ResumeContact = {
+  texte: 'La cliente demandait ou en etait sa livraison, on lui a donne le suivi.',
+  analyseLe: '2026-07-02T09:10:00.000Z',
+  conversationId: 'conv-1',
+  conversations: 2,
+  analysee: true,
+  perime: false,
+};
+
+describe('GET /tenants/:t/contacts/:id/resume', () => {
+  it('contact connu -> 200 avec le resume, sa date et sa conversation', async () => {
+    const a = app(known, undefined, undefined, async (_t, id) => (id === 'c1' ? RESUME : null));
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<ResumeContact>()).toEqual(RESUME);
+    await a.close();
+  });
+
+  it('contact SANS conversation -> 200, pas un 404', async () => {
+    // Un contact importe et jamais contacte existe : c'est l'ecran qui decide de ne pas afficher le bloc
+    // (`conversations: 0`), pas le serveur de nier le contact.
+    const vide: ResumeContact = { texte: null, analyseLe: null, conversationId: null, conversations: 0, analysee: false, perime: false };
+    const a = app(known, undefined, undefined, async () => vide);
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<ResumeContact>().conversations).toBe(0);
+    await a.close();
+  });
+
+  it('🔴 contact inconnu du compte -> 404, jamais un resume', async () => {
+    const a = app(known, undefined, undefined, async (_t, id) => (id === 'c1' ? RESUME : null));
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/AUTRUI/resume', ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain('livraison');
+    await a.close();
+  });
+
+  it('🔴 tenant de l’URL != tenant du jeton -> 403 SANS toucher au store', async () => {
+    let appele = false;
+    const a = app(known, undefined, undefined, async () => { appele = true; return RESUME; });
+    const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/contacts/c1/resume', ...h(adminTok) });
+    expect(res.statusCode).toBe(403);
+    expect(appele, 'le store ne doit pas etre interroge quand le scope est refuse').toBe(false);
+    await a.close();
+  });
+
+  it('🔴 agent -> 403, comme tout le mini-CRM', async () => {
+    // Verifie plutot que suppose : une route neuve qui s'ecarterait de la regle ouvrirait le resume des
+    // conversations aux operateurs sans que personne l'ait decide.
+    const a = app(known, undefined, undefined, async () => RESUME);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume', ...h(agentTok) })).statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('sans jeton -> 401', async () => {
+    const a = app(known, undefined, undefined, async () => RESUME);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume' })).statusCode).toBe(401);
+    await a.close();
+  });
+
+  it('cablage absent -> 503, et la fiche continue de s’ouvrir', async () => {
+    // Une instance en retard ne sert pas cette route ; l'ecran n'affiche alors pas le bloc, et le reste de
+    // la fiche repond normalement. C'est le meme arbitrage que pour le bilan.
+    const a = app(known);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume', ...h(adminTok) })).statusCode).toBe(503);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history', ...h(adminTok) })).statusCode).toBe(200);
     await a.close();
   });
 });

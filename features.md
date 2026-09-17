@@ -191,6 +191,18 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   reste supprimable. Toujours sur la fiche : on **affecte ou retire un tag** (les tags existants sont suggérés à
   la saisie), on renseigne un champ déjà déclaré, et on peut **créer un champ entièrement nouveau (libellé + type)
   sans quitter la fiche** : il rejoint les champs de l'espace et sa valeur est posée sur ce contact dans la foulée.
+- ✅ **Le résumé de la conversation, en champ de base de la fiche** (2026-09-17) : dès qu'un contact a tenu au
+  moins une conversation, sa fiche porte le **résumé de la dernière conversation analysée**, avec la date de
+  l'analyse et un lien vers le fil. C'est le geste de quelqu'un qui ouvre une fiche avant de rappeler la
+  personne : savoir de quoi on a parlé sans aller relire l'échange. Le champ est en **lecture seule** (c'est un
+  constat posé par l'analyse, recalculé à chaque passage : une retouche disparaîtrait au suivant) et il
+  n'apparaît **pas du tout** tant qu'il n'y a aucune conversation. Quand un message est arrivé depuis
+  l'analyse, la fiche le dit au lieu de présenter un résumé partiel comme s'il couvrait tout. Une conversation
+  analysée avant que les résumés existent (analyses d'avant septembre) le dit aussi, au lieu de laisser un
+  blanc qui ressemblerait à une panne. ⚠️ Le résumé n'est **pas recopié** dans la fiche : il est lu à
+  l'ouverture, donc il **disparaît de lui-même** quand la conversation atteint la durée de conservation de
+  l'espace. Et il n'est **pas utilisable comme variable dans un message** : c'est une note interne, pas du
+  contenu à renvoyer au client.
 - ✅ **Onglet « Historique » sur la fiche contact** (2026-07-20) : deux vues de tout ce que ce contact a vécu.
   **Campagnes reçues** : quelle campagne, quel template ou scénario, quand, et où en est le message (envoyé,
   délivré, lu, non délivré, écarté, envoi en échec avec son motif). Un message parti dont Meta n'a jamais
@@ -201,7 +213,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   avant l'envoi suivant à ce contact, pour que deux campagnes du même jour ne se créditent pas l'une l'autre.
   **Conversations** : chaque
   échange avec son nombre de messages, son dernier aperçu, et son analyse IA quand elle existe (sentiment,
-  sujet, résolu ou non, traité par un humain ou par le bot). Une analyse rendue caduque par un message plus
+  sujet, résolu ou non, traité par un humain ou par le bot), **plus le résumé de chacune** depuis le
+  2026-09-17 : la fiche n'en montre qu'un, ici il y a la place de les montrer tous, ce qui rend l'onglet utile
+  quand un contact a plusieurs fils. Une analyse rendue caduque par un message plus
   récent est signalée « à rafraîchir » plutôt que présentée comme à jour. Un clic ouvre le fil dans l'inbox.
   Un bouton **« Exporter en CSV »** télécharge la totalité des campagnes reçues par ce contact (campagne, statut,
   livraison, type, template ou scénario, date d'envoi, erreur brute et son explication en clair), sans la limite

@@ -601,24 +601,48 @@ la mécanique.
       doivent passer par LA MÊME fonction de calcul, et un test doit prouver qu'elles tombent d'accord sur
       un jour donné. Sans lui, la frontière des 90 jours fera une marche dans le graphe, indiscernable d'un
       vrai creux d'activité.
-- [ ] **Step 6 : le résumé en champ système du CRM. SEUL POINT NON FAIT DE LA TÂCHE 8.**
+- [x] **Step 6 : le résumé en champ de base du mini-CRM.** Fait le 2026-09-17.
 
-⚠️ **IL DEMANDE UN ARBITRAGE DE COÛT, ET C'EST POURQUOI IL N'A PAS ÉTÉ POSÉ À LA VA-VITE.** Un contact
-se lit par **deux** chemins (`listContacts` et `queryContacts`), et la liste du mini-CRM peut rendre des
-centaines de lignes. Dériver le résumé à la lecture y ajoute une sous-requête **par contact affiché**,
-pour une valeur que personne ne lit dans une liste. Trois options :
+**OPTION 1 RETENUE** (fiche seulement, pas la liste paginée), conformément à la recommandation. Ce qui a
+été livré :
 
-1. **Sur la FICHE et dans l'export seulement** (recommandé) : le geste que Julien décrit (« ouvrir une
-   fiche avant de rappeler quelqu'un ») est servi, et la liste ne paie rien.
-2. **Partout, dérivé** : cohérent, mais une jointure par ligne sur le chemin le plus chaud du mini-CRM.
-3. **Recopié dans `contacts.fields` à chaque analyse** : gratuit à la lecture, mais **deux vérités** à
-   côté de `conversation_analysis.summary`, et le jour où elles divergent c'est la copie, périmée, que
-   la fiche affiche. Écarté par le cadrage, et la raison n'a pas changé.
- 🔴 **DÉRIVÉ À LA LECTURE, pas recopié dans
-      `contacts.fields`** : recopier créerait une seconde vérité à côté de `conversation_analysis.summary`,
-      et le jour où les deux divergent c'est la copie, périmée, que la fiche afficherait. Il porte le
-      résumé de la DERNIÈRE conversation analysée, avec sa date, et n'est ni renommable ni modifiable.
-- [ ] **Step 7 : commit.**
+- `PgContactHistoryStore.resumeContact` : UNE requête, UN contact, celui de la fiche ouverte. Route
+  dédiée `GET /tenants/:t/contacts/:id/resume`, admin-only comme tout le mini-CRM.
+- `ContactConversationAnalysis.summary` : l'onglet Historique montre en plus le résumé de CHAQUE
+  conversation, sans une requête de plus (la colonne rejoint un `select` qui tournait déjà).
+
+🔴 **CE QUE L'ARBITRAGE A ÉCARTÉ, ET POURQUOI ÇA TIENT TOUJOURS.** Le résumé ne rejoint NI `ContactRow`
+(la liste du mini-CRM rend des centaines de lignes, une sous-requête par ligne y coûterait une jointure sur
+les deux tables les plus écrites du produit, pour une valeur que personne ne lit dans une liste), NI
+`contactVars` : en faire une variable de message ferait payer une dérivation PAR DESTINATAIRE sur des
+campagnes de plusieurs milliers, et surtout envoyer à quelqu'un le résumé que notre modèle a fait de sa
+propre conversation n'est pas un geste à rendre possible en un clic. Un test le garde.
+
+🔴 **DÉRIVÉ, JAMAIS RECOPIÉ, ET LA TÂCHE 8 A CHANGÉ LA NATURE DE CE CHOIX.** C'était une règle de
+cohérence (deux vérités divergent) ; depuis que la rétention descend à 90 jours, c'est une règle de
+CONFORMITÉ : la purge efface la conversation et son analyse en cascade, une copie posée dans
+`contacts.fields` y survivrait, et on garderait un texte tiré de ce que la personne a raconté au-delà de
+la durée qu'on s'est engagé à tenir. Dérivé, le champ se vide tout seul, au bon moment.
+
+⚠️ **QUATRE ÉTATS, PAS UN VIDE UNIQUE**, portés par le module pur `web/lib/resume-conversation.ts` :
+aucune conversation (le bloc n'existe pas, c'est la demande au mot près), pas encore analysée (au
+présent), analysée sans résumé (au passé, c'est définitif), et le résumé. La phrase du troisième cas a été
+DÉPLACÉE depuis `ConversationAnalysisCard`, qui la portait en dur : deux écrans qui affirment la même
+chose finissent par ne plus l'affirmer pareil.
+
+⚠️ **MESURÉ SUR LA PRODUCTION, EN LECTURE SEULE, PAR LE VRAI CODE.** Cinq contacts, concordance IDENTIQUE
+entre le résumé de la fiche et la première conversation analysée de l'historique ; un contact d'un autre
+espace rend `null`, donc 404. Et **deux des cinq** portent une analyse SANS résumé : l'état « analysée mais
+pas de résumé » fait 40 % de l'échantillon, ce n'est pas un repli rare.
+
+⚠️ **CE QUI N'A PAS ÉTÉ AJOUTÉ, DÉLIBÉRÉMENT** : le CSV de la fiche contact exporte des ENVOIS, une ligne
+par envoi. Y répéter le même résumé sur chaque ligne serait du bruit, et un contact qui n'a reçu aucune
+campagne n'a aucune ligne où le mettre. L'export qui porte les résumés existe déjà et c'est le bon :
+celui de l'Analyse des conversations (`entetesQuali`, colonne « Résumé »).
+
+🔴 **L'ESSAI RÉEL RESTE DÛ** : ouvrir une vraie fiche de contact dans la console et lire le bloc. Les neuf
+cas Playwright pilotent le composant réel (la mutation du câblage l'a prouvé : débrancher l'appel laisse
+les 13 tests du module pur VERTS et ne fait tomber que les tests d'écran), mais personne n'a cliqué.
 
 ---
 

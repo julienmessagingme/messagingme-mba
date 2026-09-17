@@ -70,6 +70,58 @@ export interface ContactConversationAnalysis {
   actionSuggestion: string;
   /** Date de la DERNIÈRE analyse (upsert sur la clé primaire), pas la date de la conversation. */
   analyzedAt: string;
+  /**
+   * CE QUI S'EST DIT, en deux ou trois phrases (migration 0100).
+   *
+   * ⚠️ `null` EST UN CAS NORMAL, ET IL NE VEUT PAS DIRE « CONVERSATION VIDE » : les analyses antérieures à
+   * la migration 0100 n'ont pas de résumé et n'en auront jamais (le reconstruire voudrait dire rappeler le
+   * modèle sur chaque conversation déjà analysée). L'écran le DIT, il ne laisse pas un vide qui passerait
+   * pour une panne. C'est la même règle que sur la fiche d'analyse, et elle a la même formulation :
+   * `web/lib/resume-conversation.ts` la porte une seule fois pour les deux écrans.
+   *
+   * 🔴 ET SURTOUT, IL NE SE SUBSTITUE PAS À `justification` : celle-ci explique le CLASSEMENT
+   * (« pourquoi j'ai proposé de rappeler »), pas ce qui s'est dit. Les échanger serait un mensonge discret.
+   */
+  summary: string | null;
+}
+
+/**
+ * LE RÉSUMÉ QUI DEVIENT UN CHAMP DE BASE DU MINI-CRM (demande de Julien : « le résumé de la conversation,
+ * ce qui serait top c'est que ça devienne un champ du mini CRM, ça serait un champ de base à partir du
+ * moment où il y a une conversation »).
+ *
+ * 🔴 DÉRIVÉ À LA LECTURE, JAMAIS RECOPIÉ DANS `contacts.fields`, et la rétention a fait de ce choix de
+ * cohérence un choix de CONFORMITÉ. Recopier créerait une seconde vérité à côté de
+ * `conversation_analysis.summary` ; depuis que la rétention descend à 90 jours (migration 0155), ce serait
+ * pire : la purge efface la conversation et son analyse EN CASCADE, et la copie, elle, survivrait dans la
+ * fiche du contact. On garderait alors un texte tiré de ce que la personne a raconté, précisément au-delà
+ * de la durée qu'on s'est engagé à tenir. Dérivé, le champ se vide tout seul, au bon moment.
+ *
+ * ⚠️ IL N'EST PAS UNE VARIABLE DE MESSAGE, et ce n'est pas un oubli. Deux raisons, chacune suffisante :
+ * `contactVars` (`src/crm/render.ts`) est le chemin d'envoi d'une CAMPAGNE, donc une jointure par
+ * destinataire sur des envois de plusieurs milliers ; et surtout, envoyer à quelqu'un le résumé que notre
+ * modèle a fait de sa propre conversation n'est pas un geste qu'on veut rendre possible en un clic.
+ */
+export interface ResumeContact {
+  /**
+   * Le texte du résumé. `null` quand il n'y en a pas, et `conversations`/`analysee` disent POURQUOI : ces
+   * trois champs ne se déduisent pas les uns des autres, et les confondre afficherait « pas encore
+   * analysée » sur un contact qui n'a jamais ouvert la moindre conversation.
+   */
+  texte: string | null;
+  /** Date de l'analyse qui porte ce résumé. `null` quand aucune conversation n'a été analysée. */
+  analyseLe: string | null;
+  /** La conversation d'où il vient, pour ouvrir le fil dans l'Inbox. */
+  conversationId: string | null;
+  /** Combien de conversations ce contact a tenues. `0` = le champ ne s'affiche pas du tout. */
+  conversations: number;
+  /** Au moins une conversation est analysée. `false` avec `conversations > 0` = analyse en cours ou échouée. */
+  analysee: boolean;
+  /**
+   * Un message est arrivé APRÈS l'analyse : le résumé ne couvre pas la fin du fil. Même règle
+   * qu'`analysisStale` sur la liste des conversations, et volontairement le même mot à l'écran.
+   */
+  perime: boolean;
 }
 
 export interface ContactConversation {
@@ -94,6 +146,31 @@ export interface ContactHistory {
   sends: ContactSend[];
   conversations: ContactConversation[];
 }
+
+/**
+ * LES IDENTITÉS D'UN CONTACT, DÉRIVÉES EN SQL. Attend `$1` = tenant, `$2` = contact, et se pose en CTE `ct`.
+ *
+ * Les identités ne viennent JAMAIS du client : accepter un `wa_id` envoyé par le front ouvrirait la lecture
+ * des conversations de n'importe qui. `array_remove` s'appuie dessus plus bas, d'où les deux `nullif` : un
+ * contact n'a pas forcément les deux identités, et un `phone_e164` vide donnerait une chaîne vide qui ne
+ * doit surtout pas servir de critère.
+ */
+export const CONTACT_IDENTITES_SQL = `select id,
+                nullif(regexp_replace(coalesce(phone_e164, ''), '[^0-9]', '', 'g'), '') as digits,
+                nullif(bsuid, '') as bsuid
+         from contacts where id = $2 and tenant_id = $1`;
+
+/**
+ * LE RATTACHEMENT D'UNE CONVERSATION À UN CONTACT (`c` = `conversations`, `ct` = le CTE ci-dessus).
+ *
+ * 🔴 FRAGMENT PARTAGÉ, ET CE N'EST PAS UNE COMMODITÉ D'ÉCRITURE. La règle est expliquée en tête de fichier :
+ * `contact_id` seul PERD les conversations ouvertes avant que le contact existe, il faut rattraper par
+ * `wa_id`. DEUX requêtes la portent maintenant, la liste des conversations et le résumé affiché en champ de
+ * base. Recopiée, elle divergerait, et la divergence serait MUETTE : la fiche montrerait le résumé d'une
+ * conversation absente de sa propre liste d'historique, ou l'inverse, sans qu'aucune erreur ne le signale.
+ */
+export const CONVERSATION_DU_CONTACT_SQL =
+  `(c.contact_id = ct.id or c.wa_id = any(array_remove(array[ct.digits, ct.bsuid], null)))`;
 
 /** Bornes de lecture : un historique d'écran, pas un export. Au-delà, l'inbox et le détail de campagne. */
 const MAX_SENDS = 200;
@@ -120,6 +197,85 @@ export class PgContactHistoryStore {
       this.listConversations(tenantId, contactId),
     ]);
     return { sends, conversations };
+  }
+
+  /**
+   * LE RÉSUMÉ DE LA DERNIÈRE CONVERSATION ANALYSÉE, pour la ligne « champ de base » de la fiche contact.
+   * `null` si le contact n'est pas dans cet espace (la route en fait un 404, jamais un 200 rassurant sur une
+   * ressource interdite : c'est la même garde que `getContactHistory`, pour la même raison).
+   *
+   * 🔴 ROUTE À PART, ET C'EST LE POINT DE L'ARBITRAGE. La fiche s'ouvre sur l'onglet « Fiche », qui ne
+   * charge PAS l'historique (200 envois, 100 conversations et un `count(*)` par conversation) : y brancher
+   * ce résumé ferait payer tout l'historique à chaque ouverture. Et il ne rejoint pas non plus `ContactRow` :
+   * la LISTE du mini-CRM se lit par `list` et `query`, qui peuvent rendre des centaines de lignes, et une
+   * sous-requête par ligne y coûterait une jointure sur les deux tables les plus écrites du produit, pour
+   * une valeur que personne ne lit dans une liste. Une seule requête, un seul contact, à l'ouverture.
+   *
+   * 🔴 LA DERNIÈRE ANALYSÉE, PAS LA DERNIÈRE QUI PORTE UN RÉSUMÉ. Remonter à une conversation plus ancienne
+   * parce que la plus récente a été analysée avant la migration 0100 afficherait un texte périmé comme s'il
+   * était d'aujourd'hui. On prend la plus récente analysée et, si elle n'a pas de résumé, l'écran le DIT.
+   *
+   * ⚠️ ET CE CAS N'EST PAS THÉORIQUE : MESURÉ. Sonde en lecture seule du 2026-09-17, jouée PAR CE CODE sur la
+   * base de production, sur les cinq contacts qui portent le plus de conversations : les cinq concordent au
+   * caractère près avec la première conversation analysée de leur historique, un contact d'un autre espace
+   * rend bien `null`, et **DEUX des cinq** ont une analyse SANS résumé. L'état « analysée mais pas de résumé »
+   * représente donc 40 % de l'échantillon mesuré, pas un repli rare.
+   */
+  async resumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null> {
+    const res = await this.pool.query<{
+      connu: boolean; conversations: number; conversation_id: string | null;
+      analysis_status: string | null; analyse_le: Date | null; summary: string | null;
+    }>(
+      // Les deux fragments sont CITÉS, jamais recopiés : leur justification est à leur définition, plus haut.
+      `with ct as (
+         ${CONTACT_IDENTITES_SQL}
+       ),
+       conv as (
+         select c.id, c.last_message_at, c.analysis_status,
+                ca.created_at as analyse_le, ca.sentiment, ca.summary
+           from conversations c
+             cross join ct
+             left join conversation_analysis ca on ca.conversation_id = c.id
+          where c.tenant_id = $1
+            and ${CONVERSATION_DU_CONTACT_SQL}
+       ),
+       derniere as (
+         -- MÊME ORDRE que la liste des conversations de l'onglet Historique : le résumé de la fiche est donc
+         -- celui de la PREMIÈRE conversation analysée de cette liste, et les deux écrans ne peuvent pas se
+         -- contredire. Trier ici par date d'ANALYSE les ferait diverger dès qu'une vieille conversation est
+         -- réanalysée, sans qu'aucune erreur ne le signale.
+         --
+         -- « Analysée » = une ligne d'analyse existe ET porte un sentiment, exactement le test que fait le
+         -- mapping de listConversations. Une seule définition, sinon la fiche et la liste ne compteraient
+         -- pas les mêmes conversations comme analysées.
+         select id, analysis_status, analyse_le, summary
+           from conv
+          where analyse_le is not null and sentiment is not null
+          order by last_message_at desc
+          limit 1
+       )
+       select exists (select 1 from ct) as connu,
+              (select count(*) from conv)::int as conversations,
+              (select id from derniere) as conversation_id,
+              (select analysis_status from derniere) as analysis_status,
+              (select analyse_le from derniere) as analyse_le,
+              (select summary from derniere) as summary`,
+      [tenantId, contactId],
+    );
+    const r = res.rows[0];
+    if (!r || !r.connu) return null;
+    const analysee = r.analyse_le !== null;
+    return {
+      // Chaîne vide = absence, comme à l'écriture et comme dans la liste des conversations.
+      texte: analysee && r.summary !== null && r.summary.trim() !== '' ? r.summary : null,
+      analyseLe: r.analyse_le ? r.analyse_le.toISOString() : null,
+      conversationId: r.conversation_id,
+      conversations: r.conversations,
+      analysee,
+      // Une analyse existe ET le statut est reparti hors 'done' -> un message est arrivé depuis. Même
+      // règle qu'`analysisStale`, et il n'en existe pas de seconde définition.
+      perime: analysee && r.analysis_status !== 'done',
+    };
   }
 
   /**
@@ -340,27 +496,21 @@ export class PgContactHistoryStore {
       analysis_status: string; messages_count: string;
       sentiment: string | null; intent: string | null; topic: string | null; resolved: boolean | null;
       handled_by: string | null; exchanges_count: number | null; action_suggestion: string | null;
-      analyzed_row_at: Date | null;
+      analyzed_row_at: Date | null; summary: string | null;
     }>(
-      // Les identités possibles du contact sont dérivées EN SQL, jamais reçues du client : accepter un wa_id
-      // envoyé par le front ouvrirait la lecture des conversations de n'importe qui.
-      // `array_remove` deux fois : un contact n'a pas forcément les deux identités, et un `phone_e164` vide
-      // donnerait une chaîne vide qui ne doit surtout pas servir de critère.
+      // Les deux fragments sont CITÉS, jamais recopiés : leur justification est à leur définition, plus haut.
       `with ct as (
-         select id,
-                nullif(regexp_replace(coalesce(phone_e164, ''), '[^0-9]', '', 'g'), '') as digits,
-                nullif(bsuid, '') as bsuid
-         from contacts where id = $2 and tenant_id = $1
+         ${CONTACT_IDENTITES_SQL}
        )
        select c.id, c.wa_id, c.last_message_at, c.last_preview, c.analysis_status,
               (select count(*) from conversation_messages m where m.conversation_id = c.id)::text as messages_count,
               ca.sentiment, ca.intent, ca.topic, ca.resolved, ca.handled_by, ca.exchanges_count,
-              ca.action_suggestion, ca.created_at as analyzed_row_at
+              ca.action_suggestion, ca.created_at as analyzed_row_at, ca.summary
        from conversations c
          cross join ct
          left join conversation_analysis ca on ca.conversation_id = c.id
        where c.tenant_id = $1
-         and (c.contact_id = ct.id or c.wa_id = any(array_remove(array[ct.digits, ct.bsuid], null)))
+         and ${CONVERSATION_DU_CONTACT_SQL}
        order by c.last_message_at desc
        limit ${MAX_CONVERSATIONS}`,
       [tenantId, contactId],
@@ -377,6 +527,10 @@ export class PgContactHistoryStore {
               exchangesCount: r.exchanges_count ?? 0,
               actionSuggestion: r.action_suggestion ?? '',
               analyzedAt: r.analyzed_row_at.toISOString(),
+              // ⚠️ Une chaîne VIDE vaut absence, exactement comme à l'écriture (`src/analysis/store.pg.ts`) :
+              // le modèle peut rendre le champ vide plutôt que de l'omettre, et la laisser passer afficherait
+              // un résumé blanc là où l'écran doit dire qu'il n'y en a pas.
+              summary: r.summary !== null && r.summary.trim() !== '' ? r.summary : null,
             }
           : null;
       return {

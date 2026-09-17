@@ -101,6 +101,12 @@ export interface ContactConversation {
   analysis: {
     sentiment: string; intent: string; topic: string; resolved: boolean;
     handledBy: string; exchangesCount: number; actionSuggestion: string; analyzedAt: string;
+    /**
+     * Ce qui s'est dit (migration 0100). OPTIONNEL côté front, et `null` est un cas NORMAL : une instance
+     * antérieure au 2026-09-17 ne le rend pas, et une analyse d'avant 0100 n'en aura jamais. `web/lib/
+     * resume-conversation.ts` porte les quatre états et la phrase de chacun.
+     */
+    summary?: string | null;
   } | null;
   /** L'analyse existe mais un message est arrivé depuis : elle est périmée. */
   analysisStale: boolean;
@@ -134,6 +140,29 @@ export interface BilanContact { cout: CoutContact; entonnoir: NiveauEngagement[]
  */
 export function getContactBilan(tenantId: string, contactId: string): Promise<BilanContact> {
   return request<BilanContact>(`/tenants/${tenantId}/contacts/${contactId}/bilan`);
+}
+/**
+ * Le résumé de la DERNIÈRE conversation analysée d'un contact : la ligne « champ de base » de sa fiche.
+ *
+ * 🔴 DÉRIVÉ, JAMAIS STOCKÉ DANS LA FICHE. Il vit dans `conversation_analysis`, que la purge des
+ * conversations efface en cascade : le champ se vide donc tout seul au bout de la rétention de l'espace,
+ * ce qu'une copie posée dans `contacts.fields` ne ferait pas.
+ *
+ * ⚠️ APPEL À PART, ET DÉLIBÉRÉMENT PLUS LÉGER QUE `getContactHistory` : il part à l'ouverture de la fiche,
+ * quand l'historique n'est chargé que si l'on clique l'onglet.
+ */
+export interface ResumeContact {
+  texte: string | null;
+  analyseLe: string | null;
+  conversationId: string | null;
+  /** 0 = le champ ne s'affiche pas du tout. */
+  conversations: number;
+  analysee: boolean;
+  /** Un message est arrivé depuis l'analyse : le résumé ne couvre pas la fin du fil. */
+  perime: boolean;
+}
+export function getContactResume(tenantId: string, contactId: string): Promise<ResumeContact> {
+  return request<ResumeContact>(`/tenants/${tenantId}/contacts/${contactId}/resume`);
 }
 /** Envois du contact pour l'export CSV (F5), NON capé (contrairement à getContactHistory borné à l'écran). */
 export function getContactSendsForExport(tenantId: string, contactId: string): Promise<{ sends: ContactSend[] }> {

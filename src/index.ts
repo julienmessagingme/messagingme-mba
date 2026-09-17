@@ -2006,6 +2006,9 @@ async function main(): Promise<void> {
       },
       getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
       listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
+      // Le résumé DÉRIVÉ de la dernière conversation analysée : aucune donnée n'est recopiée dans la fiche,
+      // donc rien ne survit à la purge des conversations. Voir `ResumeContact` pour le pourquoi complet.
+      getResumeContact: (tenant, id) => contactHistoryStore.resumeContact(tenant, id),
       /**
        * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement.
        *

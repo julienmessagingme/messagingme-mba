@@ -6,6 +6,7 @@ import { getContactHistory, getContactBilan, getContactSendsForExport, type Cont
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { explainMetaError } from '@/lib/meta-errors';
+import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 
 /**
@@ -246,6 +247,21 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
             <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
               {t('analyse à rafraîchir', 'analysis outdated')}
             </span>
+          )}
+          {/* CE QUI S'EST DIT, conversation par conversation. La fiche n'en montre qu'UN (celui de la
+              dernière conversation analysée) : ici il y a la place de les montrer tous, et c'est ce qui
+              rend l'onglet utile quand un contact a plusieurs fils. La phrase du cas « analysé avant que le
+              résumé existe » vient du module partagé, pour ne pas en écrire une troisième version.
+
+              🔴 `undefined` ET `null` NE VEULENT PAS DIRE LA MÊME CHOSE ICI, et les confondre afficherait un
+              mensonge pendant chaque déploiement. `null` = cette analyse-là n'a pas de résumé, c'est définitif
+              et l'écran le dit ; `undefined` = c'est l'API qui ne rend pas encore le champ, et le front part
+              AVANT elle (Vercel suit `main`, le VPS se déploie à la main). Pendant cette fenêtre, on n'affiche
+              rien plutôt que d'accuser chaque analyse d'être antérieure à la migration 0100. */}
+          {conv.analysis.summary !== undefined && (
+            <p className={conv.analysis.summary ? 'mt-1 whitespace-pre-line text-ink-700' : 'mt-1 italic text-ink-400'}>
+              {conv.analysis.summary ?? phraseResumeAbsent('sans-resume', t)}
+            </p>
           )}
         </div>
       ) : (
