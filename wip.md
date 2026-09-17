@@ -12,12 +12,59 @@
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ à jour, déployé le 2026-09-17 en fin de journée, aucun écart. Le SHA n'est pas recopié ici (`git log` fait foi, ce fichier a menti six fois). Vérifié DANS le conteneur, pas déduit du push : `grep` du correctif dans `mba-api`. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | 🔴 **EN RETARD SUR `origin/main` depuis le lot Performance Lab** (voir la section dédiée : deux migrations à jouer AVANT le code). Le dernier déploiement, celui des connecteurs MCP, date du 2026-09-17 en fin de journée et n'avait aucun écart. Le SHA n'est pas recopié ici (`git log` fait foi, ce fichier a menti six fois). Vérifié DANS le conteneur, pas déduit du push : `grep` du correctif dans `mba-api`. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
-| CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
+| CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
 | Revue finale | ✅ **ATTESTÉE, 0 rouge.** QUATRE passes à froid successives sur le chantier MCP (6, puis 3, puis 2, puis 4 rouges), chacune portant sur les correctifs de la précédente. Rapport complet dans `.git/revue-finale-rapport.md`, qui dit aussi ce qu'il NE couvre pas : les deux derniers commits ont été vérifiés par moi seul |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
+
+## 🔴 PERFORMANCE LAB : LES COÛTS ET L'ANALYSE (2026-09-17, POUSSÉ, RIEN DE DÉPLOYÉ)
+
+Refonte de l'onglet Synthèse demandée par Julien : une carte « Coûts » à gauche (coût moyen par
+engagement, coût total des messages envoyés, coût total IA), les intentions et la matrice
+urgence/satisfaction à droite, l'écran d'analyse en UNE LIGNE PAR JOUR, et « qui a répondu ».
+Spec : `docs/superpowers/specs/2026-09-17-performance-lab-couts-et-analyse-design.md`.
+Plan : `docs/superpowers/plans/2026-09-17-performance-lab-couts.md` (8 tâches).
+
+🔴 **DEUX MIGRATIONS SONT ÉCRITES ET NON APPLIQUÉES : 0154 ET 0155.** Le compteur de `CLAUDE.md` annonce
+donc toujours 0152, et c'est JUSTE : il dit ce que la BASE porte, pas ce que le dépôt contient. Les deux
+AJOUTENT des colonnes que le code écrit, donc elles passent **AVANT** le déploiement, et les migrations
+vivant dans l'image, la séquence commence par `compose build mba-api`. Le compteur ne se met à jour
+qu'après `migrate`, relu dans `schema_migrations`.
+
+- **0154** (`db/migrations/0154_grille_prix_espace.sql`) : les six colonnes de la grille de prix sur
+  `tenant_settings` (marge template, prix du message de service et sa franchise mensuelle, sa date
+  d'effet au 2026-10-01, les deux prix RCS) plus deux CHECK.
+- **0155** (`db/migrations/0155_analyse_jour.sql`) : la table `analyse_jour` (sommes et comptes, jamais
+  de moyenne stockée) et `tenant_settings.conversation_retention_days`.
+
+🔴 **LA RÉTENTION PASSE DE 365 À 90 JOURS, ET L'ORDRE DES DEUX BALAYAGES EST LA SEULE CHOSE
+IRRATTRAPABLE DU LOT.** Supprimer une conversation supprime son analyse EN CASCADE : si la purge part
+avant que les agrégats du jour soient écrits, l'historique est perdu pour toujours. C'est rendu
+MÉCANIQUE dans `src/worker.ts` : le balayage d'agrégats est **attendu** au démarrage, et un drapeau
+`agregatsAJour` **suspend la purge** tant qu'il a échoué. ⚠️ Un espace peut poser SA durée, et `0` chez
+lui veut dire « ne purge jamais cet espace » quand `0` au niveau de l'INSTANCE veut dire « purge
+éteinte partout ». Les deux zéros ne disent pas la même chose et c'est délibéré.
+
+⚠️ **LA CI EST PASSÉE ROUGE SUR CE LOT, ET SEUL LE JOB `integration` POUVAIT LE VOIR.** Un des deux cas
+de rétention par espace que je venais d'ajouter laissait derrière lui une conversation de 500 jours,
+volontairement protégée de la purge : le cas voisin, qui vérifie que l'effacement est BORNÉ à deux par
+passage, en supprimait donc une qui n'était pas à lui. `npm test` en local n'a pas de base et ne
+pouvait rien en dire. Corrigé, les deux cas rendent maintenant la base comme ils l'ont trouvée.
+
+**CE QUI RESTE DÛ SUR CE CHANTIER**, dans l'ordre où ça se pose :
+
+1. 🔴 **L'ESSAI RÉEL, ET IL SEUL CLÔT LA FEATURE.** Ouvrir Performance Lab sur les vraies données :
+   déplier les trois lignes de la carte « Coûts », cliquer une campagne mesurée et vérifier que le
+   funnel et les barres par bloc disent quelque chose de vrai, puis cliquer une journée de l'écran
+   d'analyse. Aucun de ces écrans n'a jamais tourné ailleurs que dans ses propres tests.
+2. **Tâche 8, step 6 : le résumé de conversation en champ système du mini-CRM.** SEUL point non fait de
+   la tâche. Il demande un arbitrage de coût (un contact se lit par DEUX chemins, et la liste peut
+   rendre des centaines de lignes) : les trois options sont écrites dans le plan, la recommandation
+   étant **fiche + export seulement**, pas la liste paginée.
+3. **Lot 3 : les thèmes déclarés par le client et la réanalyse de toute la base**, facturée sur SA clé
+   Gateway. Cadré dans la spec, aucun plan écrit, rien commencé.
 
 ## 🔴 CE QUI RESTE DÛ SUR LES CONNECTEURS MCP (déployés le 2026-09-17)
 
