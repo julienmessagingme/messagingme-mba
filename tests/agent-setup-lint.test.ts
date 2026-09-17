@@ -5,7 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentsRouteDeps } from '../src/http/agents';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
-import { manquesAvantActivation, type EtatPourLint } from '../src/agent/setup/lint';
+import { avertissements, manquesAvantActivation, type EtatPourLint } from '../src/agent/setup/lint';
 import { ficheVide } from '../src/agent/fiche';
 
 /**
@@ -25,6 +25,42 @@ const COMPLET_LINT = (): EtatPourLint => ({
   },
   fichesConnaissance: 3,
   outilsActifs: 2, handlersActifs: ['chercher_connaissance'],
+  outilsMcpDebranches: [],
+});
+
+describe('un outil que le rafraichissement MCP a DEBRANCHE', () => {
+  /**
+   * 🔴 LA PERTE ETAIT MUETTE, et c est tout le sujet. Quand le schema d un outil MCP change, le
+   * consentement TOMBE (0127 : il porte sur un outil PRECIS) ; c est la bonne decision, mais elle se
+   * prenait sans que personne en soit informe. L agent perdait du jour au lendemain une capacite que
+   * quelqu un avait explicitement autorisee, et aucun ecran ne portait la cause.
+   */
+  it('produit un avertissement qui NOMME l outil', () => {
+    const a = avertissements({ ...COMPLET_LINT(), outilsMcpDebranches: ['notion_search'] });
+    expect(a).toHaveLength(1);
+    expect(a[0]!.onglet).toBe('outils');
+    expect(a[0]!.message).toContain('notion_search');
+    expect(a[0]!.message).toContain('réautoriser');
+  });
+
+  it('les nomme TOUS quand il y en a plusieurs : « un outil » enverrait chercher lequel', () => {
+    const a = avertissements({ ...COMPLET_LINT(), outilsMcpDebranches: ['a_un', 'b_deux'] });
+    expect(a[0]!.message).toContain('a_un');
+    expect(a[0]!.message).toContain('b_deux');
+  });
+
+  it('🔴 NE BLOQUE PAS l activation : un serveur tiers n a pas de droit de veto sur l agent d un client', () => {
+    // La separation est MECANIQUE, pas cosmetique : `manquesAvantActivation` est AUSSI la garde dure de
+    // `status = 'active'` (`src/http/agents.ts`), donc tout ce qu on y verse bloque. Un serveur distant
+    // qui change son schema pourrait alors empecher un client d activer son agent.
+    const etat = { ...COMPLET_LINT(), outilsMcpDebranches: ['notion_search'] };
+    expect(manquesAvantActivation(etat)).toEqual([]);
+    expect(avertissements(etat)).toHaveLength(1);
+  });
+
+  it('ne dit rien quand il n y a rien a dire', () => {
+    expect(avertissements(COMPLET_LINT())).toEqual([]);
+  });
 });
 
 describe('manquesAvantActivation', () => {
@@ -51,7 +87,7 @@ describe('manquesAvantActivation', () => {
   });
 
   it('un agent tout neuf accumule les cinq manques', () => {
-    expect(manquesAvantActivation({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] })).toHaveLength(5);
+    expect(manquesAvantActivation({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [], outilsMcpDebranches: [] })).toHaveLength(5);
   });
 
   it('🔴 un outil POSÉ mais inactif ne compte pas', () => {
@@ -95,7 +131,7 @@ function app(etat: EtatPourLint | null, modeles?: AgentsRouteDeps['modelesPropos
 
 describe('le lint BLOQUE l activation', () => {
   it('🔴 un agent incomplet ne peut pas être activé, et rien n’est écrit', async () => {
-    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] });
+    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [], outilsMcpDebranches: [] });
     const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok), payload: { status: 'active' } });
     // 422 et non 500 : c'est une chose que le client doit lire et corriger, et Cloudflare remplace le corps
     // d'une 5xx par sa propre page d'erreur.
@@ -142,7 +178,7 @@ describe('le lint BLOQUE l activation', () => {
   it('🔴 le lint ne bloque QUE l’activation, jamais l’écriture d’un champ', async () => {
     // Un brouillon se remplit dans n'importe quel ordre, et la conversation de construction procède par
     // petites touches : bloquer l'écriture ferait un formulaire impossible à remplir.
-    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] });
+    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [], outilsMcpDebranches: [] });
     for (const payload of [
       { contenu: { objectif: 'Cerner le besoin.' }, ficheVersionAttendue: 1 },
       { label: 'Nouveau nom' },
@@ -213,7 +249,7 @@ describe('les manques se LISENT, sans rien tenter', () => {
   it('🔴 elle NE MODIFIE RIEN : aucun patch n’est écrit', async () => {
     // Une route de lecture qui écrirait serait le pire des deux mondes : l'écran l'appelle à chaque
     // ouverture de fiche.
-    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [] });
+    const { cap, srv } = app({ fiche: ficheVide(), fichesConnaissance: 0, outilsActifs: 0, handlersActifs: [], outilsMcpDebranches: [] });
     await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) });
     expect(cap.patches).toHaveLength(0);
   });

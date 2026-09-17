@@ -378,9 +378,28 @@ export async function lireManques(tenantId: string, agentId: string): Promise<Ma
   return manquesDe(r);
 }
 
+/**
+ * Ce qu'on AVERTIT sans bloquer : aujourd'hui, les outils qu'un rafraîchissement MCP a débranchés.
+ *
+ * 🔴 SÉPARÉ DES MANQUES, ET LA SÉPARATION EST MÉCANIQUE. Côté serveur, la liste des manques est AUSSI la
+ * garde dure de l'activation : y verser ce cas donnerait à un serveur tiers un droit de veto sur
+ * l'activation de l'agent d'un client. Ils s'affichent dans le même bandeau, ils ne décident pas la même
+ * chose.
+ *
+ * BEST-EFFORT, comme son voisin : un serveur qui ne sait pas répondre rend une liste vide.
+ */
+export async function lireAvertissements(tenantId: string, agentId: string): Promise<ManqueFiche[]> {
+  const r = await request<{ avertissements?: unknown }>(`/tenants/${tenantId}/agents/${agentId}/manques`);
+  return listeDeManques((r as { avertissements?: unknown } | null)?.avertissements);
+}
+
 /** Lit la liste des manques d'une erreur 422 d'activation. Défensif : le corps vient du réseau. */
 export function manquesDe(corps: unknown): ManqueFiche[] {
-  const liste = (corps as { manques?: unknown } | null)?.manques;
+  return listeDeManques((corps as { manques?: unknown } | null)?.manques);
+}
+
+/** La lecture DÉFENSIVE partagée par les deux listes : le corps vient du réseau. */
+function listeDeManques(liste: unknown): ManqueFiche[] {
   if (!Array.isArray(liste)) return [];
   return liste.flatMap((brut) => {
     const m = brut as { onglet?: unknown; message?: unknown };

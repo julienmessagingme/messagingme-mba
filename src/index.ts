@@ -134,7 +134,7 @@ import { resolutionPublique } from './lib/adresse-privee';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
-import { consommateurMba } from './agent/consommateur';
+import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { corpsConnecteurMeta, corpsOutilMeta, corpsApiKey } from './http/mba-publication';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
@@ -1318,15 +1318,20 @@ async function main(): Promise<void> {
       etatPourLint: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        const [fiches, outils] = await Promise.all([
+        // ⚠️ LE TROISIEME EST UN AVERTISSEMENT, PAS UN MANQUE : un serveur tiers qui change son schema
+        // eteint le consentement d un outil (c est la bonne decision, cf. 0127), mais il ne doit pas
+        // pouvoir EMPECHER le client d activer son agent. Sans cette lecture, la perte etait muette.
+        const [fiches, outils, debranches] = await Promise.all([
           knowledgeStore.lister(tenant, agentId),
           toolCatalog.listActifs(tenant, agentId),
+          mcpStore.debranchesParRafraichissement(tenant, consommateurAgent(agentId)),
         ]);
         return {
           fiche: fiche.contenu,
           fichesConnaissance: fiches.length,
           outilsActifs: outils.length,
           handlersActifs: outils.map(handlerMaison).filter((h) => h !== ''),
+          outilsMcpDebranches: debranches,
         };
       },
       /**

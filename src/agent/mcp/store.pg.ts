@@ -152,6 +152,32 @@ export class PgMcpStore {
     return res.rows.map((r) => r.name);
   }
 
+  /**
+   * LES OUTILS MCP QU'UN RAFRAÎCHISSEMENT A DÉBRANCHÉS CHEZ CE CONSOMMATEUR, par leur nom.
+   *
+   * 🔴 LA MARQUE EST `actif = false` AVEC `active_par` RENSEIGNÉ, et rien d'autre ne la porte. C'est
+   * exactement ce que `appliquer` écrit quand un schéma change ou qu'un outil disparaît : on éteint le
+   * consentement SANS effacer qui l'avait donné, et c'est ce couple qui distingue « quelqu'un avait dit oui
+   * et ce n'est plus vrai » de « personne n'a jamais dit oui ». Un outil jamais autorisé porte
+   * `active_par is null` et n'apparaît donc pas ici : l'annoncer comme une perte serait faux.
+   *
+   * ⚠️ RESTREINTE À `origin = 'mcp'`. Un outil maison ou de connecteur HTTP n'est jamais débranché par un
+   * tiers ; l'y inclure ferait remonter, comme une panne, un outil que le client a simplement décoché.
+   */
+  async debranchesParRafraichissement(tenantId: string, consommateur: string): Promise<string[]> {
+    const res = await this.pool.query<{ name: string }>(
+      `select t.name
+         from agent_tool_consommateurs c
+         join agent_tools t on t.id = c.tool_id and t.tenant_id = c.tenant_id
+        where c.tenant_id = $1 and c.consommateur = $2
+          and c.actif = false and c.active_par is not null
+          and t.origin = 'mcp'
+        order by t.name`,
+      [tenantId, consommateur],
+    );
+    return res.rows.map((r) => r.name);
+  }
+
   /** Applique un plan d'import. TOUT OU RIEN. */
   async appliquer(tenantId: string, sourceId: string, e: EcritureImportMcp): Promise<void> {
     const client = await this.pool.connect();

@@ -19,7 +19,7 @@ import { AgentOutils } from '@/components/AgentOutils';
 import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
-import { appliquerProposition, lireManques, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
+import { appliquerProposition, lireAvertissements, lireManques, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 import { consommationAgent, listerModeles, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
 import { fmtCost } from '@/lib/format';
@@ -85,6 +85,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
   // Ce qui manque pour ACTIVER, tel que le serveur le rend en 422. Séparé du message d'erreur : ce n'est pas
   // une panne, c'est une liste de choses à faire, et chacune pointe l'onglet où elle se fait.
   const [manques, setManques] = useState<ManqueFiche[]>([]);
+  const [avertissements, setAvertissements] = useState<ManqueFiche[]>([]);
   // Le solde prépayé du workspace. `null` = aucun solde sur cette instance, on n'affiche rien plutôt que
   // d'annoncer « 0 € » à un client dont le compte n'est simplement pas branché.
   const [solde, setSolde] = useState<number | null>(null);
@@ -122,6 +123,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
    */
   const rafraichirManques = useCallback((agentId: string) => {
     void lireManques(tenantId, agentId).then(setManques).catch(() => setManques([]));
+    void lireAvertissements(tenantId, agentId).then(setAvertissements).catch(() => setAvertissements([]));
   }, [tenantId]);
 
   /**
@@ -263,6 +265,28 @@ function Ecran({ tenantId }: { tenantId: string }) {
                 <button
                   key={m.message}
                   data-testid={`agent-manque-${m.onglet}`}
+                  onClick={() => aller(ouvert.id, m.onglet)}
+                  className="block text-left underline decoration-dotted hover:decoration-solid"
+                >
+                  {m.message}
+                </button>
+              ))}
+            </span>
+          </MbaNotice>
+        )}
+        {avertissements.length > 0 && (
+          <MbaNotice kind="warning" testid="agent-avertissements">
+            {/* 🔴 CE BANDEAU EXISTE PARCE QUE LA PERTE ÉTAIT MUETTE. Un rafraîchissement de serveur MCP
+                ÉTEINT le consentement d'un outil dont le schéma a changé (c'est la bonne décision, 0127),
+                mais rien ne le disait à celui qui avait dit oui : son agent perdait une capacité du jour au
+                lendemain, sans cause visible nulle part. Il n'empêche PAS l'activation, délibérément : un
+                serveur tiers n'a pas à décider si le client peut activer son agent. */}
+            <span className="font-medium">{t('Ce qui a changé sans vous :', 'What changed without you:')}</span>
+            <span className="mt-1 block">
+              {avertissements.map((m) => (
+                <button
+                  key={m.message}
+                  data-testid={`agent-avertissement-${m.onglet}`}
                   onClick={() => aller(ouvert.id, m.onglet)}
                   className="block text-left underline decoration-dotted hover:decoration-solid"
                 >

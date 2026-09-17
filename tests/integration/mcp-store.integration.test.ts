@@ -176,6 +176,51 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     expect(apres!.consommateursActifs).toBe(0);
   });
 
+  it('🔴 un outil débranché par le rafraîchissement est RÉCUPÉRABLE, sinon la perte reste muette', async () => {
+    /**
+     * Les deux tests ci-dessus prouvent que le consentement TOMBE. Celui-ci prouve qu'on sait le DIRE :
+     * sans cette lecture, l'agent perdait une capacité que quelqu'un avait explicitement autorisée, et
+     * aucun écran ne portait la cause. La marque est le couple `actif = false` ET `active_par` non nul,
+     * et rien d'autre ne la porte.
+     */
+    // ⚠️ ON MESURE UN DELTA, PAS UNE LISTE ABSOLUE. Les tests précédents de ce fichier ont déjà fait tomber
+    // deux consentements sur le MÊME espace : une assertion absolue passerait ou non selon l'ordre
+    // d'exécution, ce qui en ferait un test instable plutôt qu'un test.
+    const moi = `agent:${agentId}`;
+    expect(await store.debranchesParRafraichissement(tenantId, moi)).not.toContain('notion_muet');
+
+    await store.appliquer(tenantId, sourceMcp, {
+      nouveaux: [aImporter('muet', 'notion_muet')], changes: [], disparus: [], vus: [],
+    });
+    const cible = (await store.outilsDuServeur(tenantId, sourceMcp)).find((o) => o.nomDistant === 'muet')!;
+    await consentir(cible.id);
+    // ⚠️ TANT QU IL EST ACTIF, il n a rien à dire : un outil en service n est pas une perte.
+    expect(await store.debranchesParRafraichissement(tenantId, moi)).not.toContain('notion_muet');
+
+    await store.appliquer(tenantId, sourceMcp, { nouveaux: [], changes: [], disparus: [cible.id], vus: [] });
+    expect(await store.debranchesParRafraichissement(tenantId, moi)).toContain('notion_muet');
+
+    // 🔴 UN AUTRE CONSOMMATEUR NE VOIT PAS LA PERTE DE CELUI-CI. Le consentement porte sur le COUPLE
+    // (outil, consommateur) depuis 0127 : confondre les deux ferait annoncer au Meta Business Agent une
+    // capacité perdue par un agent IA, et réciproquement.
+    expect(await store.debranchesParRafraichissement(tenantId, 'mba:123456')).toEqual([]);
+  });
+
+  it('⚠️ un outil que PERSONNE n avait autorisé n est pas une perte', async () => {
+    // `active_par is null` = personne n a jamais dit oui. L annoncer comme débranché serait faux, et le
+    // client irait « réautoriser » un outil qu il n avait jamais autorisé.
+    await store.appliquer(tenantId, sourceMcp, {
+      nouveaux: [aImporter('jamais', 'notion_jamais')], changes: [], disparus: [], vus: [],
+    });
+    const cible = (await store.outilsDuServeur(tenantId, sourceMcp)).find((o) => o.nomDistant === 'jamais')!;
+    await pool.query(
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif)
+       values ($1, $2, $3, false)`,
+      [tenantId, cible.id, `agent:${agentId}`],
+    );
+    expect(await store.debranchesParRafraichissement(tenantId, `agent:${agentId}`)).not.toContain('notion_jamais');
+  });
+
   it('les noms pris couvrent TOUT l espace, pas seulement ce serveur', async () => {
     // L'unicité de `agent_tools.name` est par ESPACE depuis 0127 : ne regarder que les outils du serveur
     // en cours ferait choisir un nom qu'un connecteur HTTP occupe déjà.

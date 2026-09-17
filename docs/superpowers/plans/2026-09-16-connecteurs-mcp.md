@@ -990,7 +990,7 @@ npx vitest run tests/mcp-import.test.ts
 |---|---|
 | `POST /agents/:tenantId/mcp/eprouver` | `initialize` seul. Rend la version négociée, ou le refus nommé pour l'ancien transport |
 | `POST /agents/:tenantId/mcp/:sourceId/importer` | Suit la pagination, stocke tout, rend le plan appliqué |
-| `GET /agents/:tenantId/mcp/:sourceId/apercu` | Le plan **sans** l'appliquer |
+| `POST /agents/:tenantId/mcp/:sourceId/apercu` | Le plan **sans** l'appliquer |
 | `PATCH /agents/:tenantId/mcp/outils/:outilId` | Le réglage : sources des paramètres, risque, `nePasUtiliser` |
 
 Elles entrent au registre `modulesDeRoutes` de `src/server.ts` avec `acces: 'tenant'`, sans quoi le garde-fou ne les couvre pas. `tests/scope-tenant.test.ts` monte chaque module un par un et compare la classe DÉCLARÉE aux adresses réellement montées : il doit rester vert.
@@ -1065,17 +1065,25 @@ La note MBA est du texte, pas un état grisé :
 </p>
 ```
 
-- [ ] **Step 5 : le bandeau de l'agent doit dire qu'un outil a été désactivé**
+- [x] **Step 5 : le bandeau de l'agent doit dire qu'un outil a été désactivé** (fait le 2026-09-17)
 
 La page d'un agent porte déjà un bandeau de manques (`MbaNotice` de testid `agent-manques`, alimenté par
 `lireManques` / `ManqueFiche`). Un outil dont le consentement est tombé au rafraîchissement doit y produire
 un manque nommé, sans quoi le client ne l'apprend qu'en constatant que son agent ne sait plus faire quelque
 chose.
 
+🔴 **ÉCART ASSUMÉ AVEC CE QUI EST ÉCRIT CI-DESSUS, et la raison est mécanique.** `manquesAvantActivation`
+n'alimente pas seulement ce bandeau : c'est AUSSI la garde dure de `status = 'active'`
+(`src/http/agents.ts`). Y verser ce cas aurait donné à un serveur TIERS un droit de veto sur l'activation
+de l'agent d'un client : il lui aurait suffi de changer son schéma. Livré en DEUX listes, un seul écran :
+`manquesAvantActivation` (bloquante, inchangée) et `avertissements` (nouvelle, non bloquante), rendues
+ensemble par `GET .../manques`, affichées dans deux `MbaNotice` voisines.
+
 ```ts
-test('un outil MCP desactive par un rafraichissement apparait dans le bandeau de l agent', async ({ page }) => {
-  await page.goto('/agents');
-  await expect(page.getByTestId('agent-manques')).toContainText('notion_search');
+test('un outil MCP debranche par un rafraichissement apparait, NOMME, dans son propre bandeau', async ({ page }) => {
+  await page.goto(`/agents?id=${AG}&tab=tester`);
+  await expect(page.getByTestId('agent-avertissement-outils')).toContainText('notion_search');
+  await expect(page.getByTestId('agent-manques')).toHaveCount(0); // il ne se deguise pas en manque
 });
 ```
 

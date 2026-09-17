@@ -4,7 +4,7 @@ import type { Guard } from '../auth/middleware';
 import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
 import { fichePatchSchema } from '../agent/fiche';
-import { manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
+import { avertissements, manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
 import { CreditInsuffisantPourCle, PLAFOND_GATEWAY_MIN_DOLLARS } from '../agent/provisionner-cle';
 import { MODELES_CHOISIS, IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
@@ -229,7 +229,9 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     if (!deps.etatPourLint) return reply.code(503).send({ error: 'lint non configure' });
     const etat = await deps.etatPourLint(tenant, agentId);
     if (!etat) return reply.code(404).send({ error: 'agent introuvable' });
-    return reply.code(200).send({ manques: manquesAvantActivation(etat) });
+    // ⚠️ DEUX LISTES, UN SEUL BANDEAU. Les manques BLOQUENT l'activation, les avertissements non : les
+    // fondre en une seule donnerait à un serveur tiers un droit de veto sur l'activation d'un agent.
+    return reply.code(200).send({ manques: manquesAvantActivation(etat), avertissements: avertissements(etat) });
   });
 
   /**

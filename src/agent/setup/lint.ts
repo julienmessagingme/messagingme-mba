@@ -40,6 +40,35 @@ export interface EtatPourLint {
    * manque, et c'est précisément l'absence d'un outil PRÉCIS qui a rendu un agent muet en production.
    */
   handlersActifs: string[];
+  /**
+   * 🔴 LES OUTILS QU'UN RAFRAÎCHISSEMENT MCP A DÉBRANCHÉS, par leur nom. Le consentement TOMBE quand le
+   * schéma d'un outil change ou quand il disparaît du serveur distant (`actif = false`, `active_par`
+   * conservé) : c'est la bonne décision, mais elle se prenait EN SILENCE. L'agent perdait une capacité que
+   * quelqu'un avait explicitement autorisée, et rien, nulle part, ne le disait à ce quelqu'un.
+   *
+   * 🔴 REQUIS, PAS OPTIONNEL, et ce dépôt a payé la différence plusieurs fois (`estDesabonne?`, `guard?`,
+   * `journal?`) : un champ optionnel qu'un câblage oublie ne casse rien, ne compile pas moins bien, et
+   * désarme simplement la capacité en silence. Un espace sans connecteur MCP passe un tableau VIDE, ce qui
+   * DIT l'hypothèse au lieu de la cacher.
+   */
+  outilsMcpDebranches: string[];
+}
+
+/**
+ * Ce qu'on AVERTIT sans bloquer. Séparé de `manquesAvantActivation` pour une raison mécanique : cette
+ * dernière est aussi la garde dure de l'activation, donc tout ce qu'on y ajoute devient bloquant.
+ */
+export function avertissements(etat: EtatPourLint): ManqueFiche[] {
+  const debranches = etat.outilsMcpDebranches;
+  if (debranches.length === 0) return [];
+  return [{
+    onglet: 'outils',
+    message: debranches.length === 1
+      ? `L’outil « ${debranches[0]} » a été désactivé par un rafraîchissement du serveur MCP (son schéma a changé, `
+        + 'ou il a disparu) : il faut le réautoriser pour que l’agent puisse s’en servir de nouveau.'
+      : `${debranches.length} outils ont été désactivés par un rafraîchissement du serveur MCP `
+        + `(${debranches.join(', ')}) : il faut les réautoriser pour que l’agent puisse s’en servir de nouveau.`,
+  }];
 }
 
 export function manquesAvantActivation(etat: EtatPourLint): ManqueFiche[] {
@@ -76,5 +105,15 @@ export function manquesAvantActivation(etat: EtatPourLint): ManqueFiche[] {
   if (etat.outilsActifs === 0) {
     out.push({ onglet: 'outils', message: 'Aucun outil actif : l’agent peut parler mais ne peut rien faire, pas même terminer.' });
   }
+  /**
+   * 🔴 IL NE BLOQUE PAS L'ACTIVATION, ET C'EST DÉLIBÉRÉ. Un serveur tiers qui change son schéma ne doit pas
+   * pouvoir empêcher un client d'activer son agent : ce serait donner à un tiers un droit de veto sur notre
+   * produit. Ce qu'on doit, c'est le DIRE, parce que personne ne peut deviner qu'un outil autorisé la
+   * semaine dernière ne l'est plus. La liste reste NOMMÉE : « un outil » enverrait chercher lequel.
+   *
+   * ⚠️ ET CE N'EST PAS UN BLOCAGE DÉGUISÉ : `manquesAvantActivation` sert AUSSI de garde dure sur
+   * `status = 'active'` (`src/http/agents.ts`), donc l'ajouter à cette liste bloquerait. Il est donc
+   * rendu à part, et le front l'affiche dans le même bandeau.
+   */
   return out;
 }

@@ -33,7 +33,7 @@ const PROPOSITION = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown; manques?: unknown[] } = {}) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown; manques?: unknown[]; avertissements?: unknown[] } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -62,7 +62,7 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], opts
     if (/\/knowledge/.test(url)) return json({ fiches: [] });
     // Les manques se LISENT désormais à l'ouverture de la fiche (2026-09-08), sans attendre un refus
     // d'activation : un faux qui ignorerait cette route laisserait l'écran croire qu'il ne manque rien.
-    if (/\/manques$/.test(url)) return json({ manques: opts.manques ?? [] });
+    if (/\/manques$/.test(url)) return json({ manques: opts.manques ?? [], avertissements: opts.avertissements ?? [] });
     if (new RegExp(`/agents/${AG}$`).test(url)) {
       if (method === 'DELETE') { appels.push({ method, url, body: null }); return json({ supprime: true }); }
       if (method === 'PATCH') {
@@ -358,11 +358,39 @@ test.describe('Agents IA : construire en parlant', () => {
     await expect(page.getByTestId('agent-manque-outils')).toContainText(/Chercher dans la base/);
   });
 
+  test('🔴 un outil MCP debranche par un rafraichissement apparait, NOMME, dans son propre bandeau', async ({ page }) => {
+    /**
+     * 🔴 LA PERTE ETAIT MUETTE. Quand le schema d un outil MCP change, son autorisation TOMBE (0127 : elle
+     * porte sur un outil PRECIS) ; c est la bonne decision, mais elle se prenait en silence. L agent
+     * perdait une capacite que quelqu un avait explicitement autorisee, sans cause visible nulle part.
+     *
+     * ⚠️ UN BANDEAU A PART, ET LA SEPARATION EST MECANIQUE. Cote serveur, la liste des manques est AUSSI la
+     * garde dure de l activation : y verser ce cas donnerait a un serveur TIERS un droit de veto sur
+     * l activation de l agent d un client. C est l ecart assume avec l etape 5 du plan, qui prescrivait
+     * `agent-manques`.
+     */
+    await mock(page, [], {
+      manques: [],
+      avertissements: [{
+        onglet: 'outils',
+        message: 'L’outil « notion_search » a été désactivé par un rafraîchissement du serveur MCP '
+          + '(son schéma a changé, ou il a disparu) : il faut le réautoriser.',
+      }],
+    });
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    await expect(page.getByTestId('agent-avertissements')).toBeVisible();
+    await expect(page.getByTestId('agent-avertissement-outils')).toContainText('notion_search');
+    // 🔴 IL NE SE DEGUISE PAS EN MANQUE : le bandeau bloquant reste absent, donc l activation reste possible.
+    await expect(page.getByTestId('agent-manques')).toHaveCount(0);
+  });
+
   test('sans manque, aucun bandeau : preuve inverse', async ({ page }) => {
     // Sans ce cas, un bandeau affiché en permanence passerait le test ci-dessus.
     await mock(page, [], { manques: [] });
     await page.goto(`/agents?id=${AG}&tab=tester`);
     await expect(page.getByTestId('agent-manques')).toHaveCount(0);
+    // Sans ce cas, un bandeau d avertissement affiche en permanence passerait le test ci-dessus.
+    await expect(page.getByTestId('agent-avertissements')).toHaveCount(0);
   });
 
   test('🔴 l entretien est PERSISTANT : on rouvre l onglet et la conversation est là', async ({ page }) => {
