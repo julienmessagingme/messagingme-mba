@@ -17,20 +17,38 @@ import { reglerOutilMcp, type OutilMcp, type ParamMcp, type SourceParamMcp } fro
  * distant et ne lui appartiennent pas : les rendre modifiables ferait envoyer au serveur une valeur qu'il
  * refuse, pour une raison invisible.
  */
-export function McpOutilReglage({ tenantId, outil, onChange }: {
+export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChange }: {
   tenantId: string;
   outil: OutilMcp;
+  /** Les clés de champs que le client a créées dans Bibliothèque > Champs. Viennent du serveur. */
+  champs: string[];
+  /** Les attributs de fiche auxquels on peut clouer. Liste FERMÉE côté serveur, jamais recopiée ici. */
+  champsContact: string[];
   onChange: () => void;
 }) {
   const t = useT();
   const [params, setParams] = useState<ParamMcp[]>(outil.params);
+  const [risk, setRisk] = useState<OutilMcp['risk']>(outil.risk);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistre, setEnregistre] = useState(false);
 
   function poser(nom: string, patch: Partial<ParamMcp>): void {
     setEnregistre(false);
-    setParams((v) => v.map((p) => (p.name === nom ? { ...p, ...patch } : p)));
+    setParams((v) => v.map((p) => {
+      if (p.name !== nom) return p;
+      const apres = { ...p, ...patch };
+      /**
+       * 🔴 CHOISIR « contact » POSE UN `contactPath`, SINON L'OPTION EST INERTE. L'exécuteur calcule
+       * `p.contactPath ?? p.name` : pour un paramètre distant nommé `client_id`, il chercherait
+       * `ctx.contact['client_id']`, qui n'existe pas, et enverrait `null`. Le client croirait avoir cloué
+       * l'identifiant, l'appel partirait vide, et la réaction naturelle serait de repasser en « l'agent
+       * décide », c'est-à-dire d'ouvrir exactement le trou qu'il cherchait à fermer.
+       */
+      if (apres.source === 'contact' && !apres.contactPath) apres.contactPath = champsContact[0] ?? 'wa_id';
+      if (apres.source === 'champ' && !apres.cle) apres.cle = champs[0] ?? '';
+      return apres;
+    }));
   }
 
   async function enregistrer(): Promise<void> {
@@ -39,6 +57,13 @@ export function McpOutilReglage({ tenantId, outil, onChange }: {
     setErreur(null);
     try {
       await reglerOutilMcp(tenantId, outil.id, {
+        /**
+         * 🔴 LE RISQUE PART AVEC, ET C'EST CE QUI LE REND CONFIRMÉ PAR UN HUMAIN. Il est PRÉ-REMPLI depuis
+         * les annotations du serveur distant, que la spec MCP déclare NON FIABLES : sans cet envoi, un
+         * serveur qui s'annonce `readOnlyHint` obtenait `risk: 'read'` sans aucun acte du client, donc
+         * devenait appelable même sur un contact inconnu en lecture seule.
+         */
+        risk,
         params: params.map((p) => ({
           name: p.name,
           source: p.source,
@@ -113,9 +138,20 @@ export function McpOutilReglage({ tenantId, outil, onChange }: {
                   {SOURCES.map((s) => <option key={s.v} value={s.v}>{s.libelle}</option>)}
                 </select>
                 {p.source === 'champ' && (
-                  <input className={inputCls} value={p.cle ?? ''} data-testid={`mcp-cle-${p.name}`}
-                    placeholder={t('clé du champ', 'field key')}
-                    onChange={(e) => poser(p.name, { cle: e.target.value })} />
+                  /* ⚠️ UNE LISTE, PAS UNE SAISIE LIBRE. La clé doit désigner un champ qui EXISTE : le
+                     serveur le vérifie, mais proposer un champ libre revient à inviter la faute de frappe
+                     puis à la refuser. La liste vient du serveur, jamais d'une copie locale. */
+                  <select className={inputCls} value={p.cle ?? ''} data-testid={`mcp-cle-${p.name}`}
+                    onChange={(e) => poser(p.name, { cle: e.target.value })}>
+                    {champs.length === 0 && <option value="">{t('aucun champ déclaré', 'no field declared')}</option>}
+                    {champs.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+                {p.source === 'contact' && (
+                  <select className={inputCls} value={p.contactPath ?? ''} data-testid={`mcp-contact-${p.name}`}
+                    onChange={(e) => poser(p.name, { contactPath: e.target.value })}>
+                    {champsContact.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 )}
                 {p.source === 'fixe' && (
                   <input className={inputCls} value={String(p.value ?? '')} data-testid={`mcp-valeur-${p.name}`}
@@ -128,7 +164,20 @@ export function McpOutilReglage({ tenantId, outil, onChange }: {
             ))}
           </ul>
 
-          {params.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-ink-600">{t('Ce que cet outil fait :', 'What this tool does:')}</span>
+            {/* 🔴 PROPOSÉ PAR LE SERVEUR, CONFIRMÉ PAR VOUS. La spec MCP dit que les annotations d'un outil
+                sont à considérer comme NON FIABLES : un serveur qui se déclarerait « lecture seule »
+                désarmerait sinon la garde d'autonomie sur une action irréversible. */}
+            <select className={inputCls} value={risk} data-testid={`mcp-risque-${outil.name}`}
+              onChange={(e) => { setEnregistre(false); setRisk(e.target.value as OutilMcp['risk']); }}>
+              <option value="read">{t('il LIT seulement', 'it only READS')}</option>
+              <option value="write">{t('il ÉCRIT quelque chose', 'it WRITES something')}</option>
+              <option value="irreversible">{t('une action IRRÉVERSIBLE', 'an IRREVERSIBLE action')}</option>
+            </select>
+          </div>
+
+          {(
             <button type="button" disabled={busy} data-testid={`mcp-enregistrer-${outil.name}`}
               className="mt-2 rounded-lg bg-brand-600 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50"
               onClick={() => void enregistrer()}>

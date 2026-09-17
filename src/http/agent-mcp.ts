@@ -11,6 +11,7 @@ import {
 import { enTetesAuthSource } from '../agent/http-cible';
 import { ouvrirSessionMcp, type EchecMcp, type OutilAnnonce } from '../mcp/client';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
+import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-contact';
 import { scopeTenant, estUuid } from './scope';
 
 /**
@@ -195,7 +196,10 @@ function planEtEcriture(
     } else if (c.type === 'schema_change' && annonce && avant) {
       // Le nom LOCAL ne bouge pas : il est peut-être déjà écrit dans une consigne d'agent, et le changer
       // casserait ce que le client a rédigé. Seuls l'annonce, les paramètres et l'activabilité changent.
-      const outil = { ...outilDepuisAnnonce(annonce, libelleSource, pris), name: avant.name };
+      // 🔴 `avant.params` EST CE QUI SAUVE LA GARDE D'IDENTITÉ. Sans lui, un changement de schéma remet
+      // tout en « rempli par le modèle », donc influençable par le contact, pendant que le consentement
+      // tombe et que le client le redonne depuis un autre écran.
+      const outil = { ...outilDepuisAnnonce(annonce, libelleSource, pris, avant.params), name: avant.name };
       pris.add(outil.name);
       ecriture.changes.push({ id: avant.id, outil });
     } else if (c.type === 'disparu' && avant) {
@@ -238,7 +242,17 @@ export function registerAgentMcp(
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { sourceId } = req.params as { sourceId: string };
     if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
-    return reply.code(200).send({ outils: await deps.outilsPourEcran(tenant, sourceId) });
+    /**
+     * 🔴 LES DEUX LISTES DE CLOUAGE PARTENT AVEC, ET C'EST CE QUI EMPÊCHE UNE SECONDE VÉRITÉ. L'écran doit
+     * proposer un CHOIX, pas un champ libre : `CHAMPS_CONTACT_AUTORISES` est fermée exprès, et les clés du
+     * mini-CRM sont celles que le client a créées. Les recopier côté navigateur ferait diverger la liste
+     * proposée de la liste acceptée, et le client verrait un refus sur une valeur qu'on lui a suggérée.
+     */
+    const [outils, champs] = await Promise.all([
+      deps.outilsPourEcran(tenant, sourceId),
+      deps.clesDeChamps(tenant),
+    ]);
+    return reply.code(200).send({ outils, champs, champsContact: [...CHAMPS_CONTACT_AUTORISES] });
   });
 
   /**
@@ -305,6 +319,23 @@ export function registerAgentMcp(
         if (p.source === 'champ') {
           if (!p.cle) return reply.code(400).send({ error: `le paramètre « ${p.name} » doit désigner un champ` });
           if (!cles.includes(p.cle)) return reply.code(400).send({ error: `le champ « ${p.cle} » n’existe pas dans cet espace` });
+        }
+        /**
+         * 🔴 UN CLOUAGE `contact` DÉSIGNE UN ATTRIBUT DE LA LISTE FERMÉE, ET RIEN D'AUTRE. Cette route est
+         * le PREMIER écrivain de `source: 'contact'` du dépôt (les outils HTTP dérivent leurs paramètres
+         * côté serveur), donc la fermeture de `champs-contact.ts` n'était gardée par personne ici : un
+         * `contactPath: 'champs'` aurait fait partir TOUT le jsonb des champs personnalisés du contact
+         * vers le serveur tiers, et `'tags'` le tableau de tags.
+         *
+         * ⚠️ ET SANS `contactPath`, L'OPTION EST INERTE. L'exécuteur calcule `p.contactPath ?? p.name` :
+         * pour un paramètre distant nommé `client_id`, il chercherait `ctx.contact['client_id']`, qui
+         * n'existe pas, et enverrait `null`. Le client croirait avoir cloué l'identifiant.
+         */
+        if (p.source === 'contact') {
+          if (!p.contactPath) return reply.code(400).send({ error: `le paramètre « ${p.name} » doit désigner un attribut de la fiche` });
+          if (!estChampContact(p.contactPath)) {
+            return reply.code(400).send({ error: `« ${p.contactPath} » n’est pas un attribut de fiche autorisé` });
+          }
         }
         // ⚠️ `fixe` SANS VALEUR est refusé pour la même raison qu'un `champ` sans clé : le paramètre
         // partirait vide chez le serveur du client, à chaque appel, sans que rien ne le signale.

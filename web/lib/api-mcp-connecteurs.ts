@@ -70,8 +70,18 @@ export function listerServeursMcp(tenantId: string): Promise<{ serveurs: Serveur
   return request<{ serveurs: ServeurMcp[] }>(base(tenantId));
 }
 
-export function listerOutilsMcp(tenantId: string, sourceId: string): Promise<{ outils: OutilMcp[] }> {
-  return request<{ outils: OutilMcp[] }>(`${base(tenantId)}/${sourceId}/outils`);
+/**
+ * Les outils importés, ET les deux listes auxquelles un paramètre peut se clouer.
+ *
+ * 🔴 LES LISTES VIENNENT DU SERVEUR, ELLES NE SONT PAS RECOPIÉES ICI. `CHAMPS_CONTACT_AUTORISES` est une
+ * liste fermée côté serveur et les clés du mini-CRM appartiennent au client : les redéclarer côté
+ * navigateur ferait diverger ce qu'on PROPOSE de ce qu'on ACCEPTE, et le client verrait un refus sur une
+ * valeur qu'on venait de lui suggérer.
+ */
+export function listerOutilsMcp(tenantId: string, sourceId: string): Promise<{
+  outils: OutilMcp[]; champs: string[]; champsContact: string[];
+}> {
+  return request<{ outils: OutilMcp[]; champs: string[]; champsContact: string[] }>(`${base(tenantId)}/${sourceId}/outils`);
 }
 
 /** Éprouve le serveur : `initialize` seul, rien n'est importé. */

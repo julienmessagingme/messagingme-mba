@@ -24,6 +24,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   const [serveurs, setServeurs] = useState<ServeurMcp[] | null>(null);
   const [ouvert, setOuvert] = useState<string | null>(null);
   const [outils, setOutils] = useState<Record<string, OutilMcp[]>>({});
+  const [champs, setChamps] = useState<{ champs: string[]; champsContact: string[] }>({ champs: [], champsContact: [] });
   const [plan, setPlan] = useState<{ sourceId: string; plan: ChangementMcp[]; tronque: boolean } | null>(null);
   const [epreuve, setEpreuve] = useState<{ sourceId: string; ok: boolean; erreur?: string } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
     try {
       const r = await listerOutilsMcp(tenantId, sourceId);
       setOutils((v) => ({ ...v, [sourceId]: r.outils }));
+      setChamps({ champs: r.champs, champsContact: r.champsContact });
     } catch { setOutils((v) => ({ ...v, [sourceId]: [] })); }
   }, [tenantId]);
 
@@ -187,7 +189,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     ? <li className="text-xs text-ink-500">{t('Aucun outil importé.', 'No imported tool.')}</li>
                     : (outils[s.id] ?? []).map((o) => (
                       <li key={o.id}>
-                        <McpOutilReglage tenantId={tenantId} outil={o} onChange={() => void chargerOutils(s.id)} />
+                        <McpOutilReglage tenantId={tenantId} outil={o} champs={champs.champs}
+                          champsContact={champs.champsContact} onChange={() => void chargerOutils(s.id)} />
                       </li>
                     ))}
                 </ul>

@@ -23,6 +23,13 @@ export interface OutilExistantMcp {
   /** L'annonce d'avant (`agent_tools.mcp_annonce`), ou `null` si la ligne est antérieure à ce lot. */
   mcpAnnonce: unknown;
   mcpIndisponibleLe: Date | null;
+  /**
+   * Les paramètres de la version en place, avec le clouage que le client y a posé.
+   *
+   * 🔴 REQUIS, pas optionnel : un appelant qui l'oublierait ferait silencieusement retomber tous les
+   * paramètres en « remplis par le modèle » au premier changement de schéma.
+   */
+  params: ParamOutil[];
   /** Combien de consommateurs l'ont ACTIVÉ. C'est ce qu'un changement fait tomber. */
   consommateursActifs: number;
 }
@@ -154,10 +161,49 @@ export function risquePropose(annonce: OutilAnnonce): RisqueOutil {
   return 'write';
 }
 
+/**
+ * Reporte sur les paramètres NEUFS le clouage que le client avait posé sur les anciens.
+ *
+ * 🔴 SANS ÇA, UN RAFRAÎCHISSEMENT EFFACE LA GARDE D'IDENTITÉ, EN SILENCE. Une annonce distante ne porte
+ * aucune notion de source : tout en revient en `modele`. Un outil dont le schéma a changé était donc
+ * réécrit avec ses paramètres remis « remplis par le modèle », c'est-à-dire influençables par le contact.
+ * Et comme le consentement tombe au même moment, le client le redonne depuis `AI Agent > Outils`, qui
+ * n'est PAS l'écran de clouage : il réactive un outil dont l'identifiant est redevenu libre sans que rien
+ * ne le lui dise. C'est exactement l'IDOR que ce lot existe pour fermer, par la porte de derrière.
+ *
+ * ⚠️ AGGRAVÉ PAR L'EMPREINTE, qui couvre TOUTE l'annonce : un simple changement de `description` chez le
+ * fournisseur suffisait à déclencher la remise à zéro.
+ *
+ * 🔴 L'APPARIEMENT SE FAIT SUR `cheminMcp`, PAS SUR NOTRE NOM. Le chemin est la donnée de protocole, stable
+ * par construction ; notre nom est une étiquette locale qui peut être recalculée.
+ *
+ * ⚠️ LE CLOUAGE EST REPORTÉ MÊME SI LE TYPE A CHANGÉ, et ce n'est pas une négligence : entre les deux
+ * erreurs possibles, une seule se rattrape. Un paramètre cloué qui devrait être libre produit un appel que
+ * le client corrige en le voyant ; un paramètre libéré qui devrait être cloué produit une fuite que
+ * personne ne voit. Le changement de schéma fait de toute façon tomber le consentement, donc un humain
+ * repassera devant.
+ */
+export function reporterClouage(neufs: ParamOutil[], anciens: readonly ParamOutil[]): ParamOutil[] {
+  const parChemin = new Map(anciens.filter((p) => p.cheminMcp).map((p) => [p.cheminMcp!, p]));
+  return neufs.map((p) => {
+    const avant = p.cheminMcp ? parChemin.get(p.cheminMcp) : undefined;
+    if (!avant || avant.source === 'modele') return p;
+    return {
+      ...p,
+      source: avant.source,
+      ...(avant.cle ? { cle: avant.cle } : {}),
+      ...(avant.contactPath ? { contactPath: avant.contactPath } : {}),
+      ...(avant.value !== undefined ? { value: avant.value } : {}),
+    };
+  });
+}
+
 export function outilDepuisAnnonce(
   annonce: OutilAnnonce,
   libelleSource: string,
   pris: ReadonlySet<string>,
+  /** Les paramètres de la version PRÉCÉDENTE, quand il y en a une. Leur clouage est reporté. */
+  anciens: readonly ParamOutil[] = [],
 ): OutilAImporter {
   const aplati = aplatirSchema(annonce.inputSchema);
   return {
@@ -173,12 +219,13 @@ export function outilDepuisAnnonce(
     // décide quand un outil se déclenche, et le serveur distant n'en sait rien.
     nePasUtiliser: '',
     /**
-     * ⚠️ TOUT ARRIVE EN `modele`, ET C'EST LE POINT DE DÉPART, PAS L'ARRIVÉE. Le client cloue ensuite ce qui
-     * doit l'être. Un import qui devinerait qu'un paramètre nommé `email` doit venir de la fiche poserait
+     * ⚠️ TOUT ARRIVE EN `modele` À LA PREMIÈRE IMPORTATION, et le client cloue ensuite ce qui doit l'être.
+     * Aux rafraîchissements SUIVANTS, `reporterClouage` remet ce qu'il avait posé : sans quoi chaque
+     * changement de schéma rouvrirait la garde d'identité en silence. Un import qui devinerait qu'un paramètre nommé `email` doit venir de la fiche poserait
      * une garde d'identité que personne n'a demandée, sur une correspondance de nom : le jour où elle se
      * trompe, l'appel part sur la mauvaise ressource sans que rien ne le dise.
      */
-    params: aplati.feuilles.map((f) => ({
+    params: reporterClouage(aplati.feuilles.map((f) => ({
       name: f.name,
       type: f.type,
       source: 'modele' as const,
@@ -186,7 +233,7 @@ export function outilDepuisAnnonce(
       ...(f.description ? { description: f.description } : {}),
       ...(f.required ? { required: true } : {}),
       ...(f.enum ? { enum: f.enum } : {}),
-    })),
+    })), anciens),
     annonce,
     nonActivable: aplati.raisonNonActivable,
     risk: risquePropose(annonce),

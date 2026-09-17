@@ -122,7 +122,7 @@ describe('l apercu et l import', () => {
     // consentement de tout ce qui vivait au dela de la borne.
     const existant: OutilExistantMcp = {
       id: OUTIL, name: 'notion_autre', nomDistant: 'autre',
-      mcpAnnonce: annonce('autre'), mcpIndisponibleLe: null, consommateursActifs: 3,
+      mcpAnnonce: annonce('autre'), mcpIndisponibleLe: null, params: [], consommateursActifs: 3,
     };
     const h = harnais({ catalogue: { outils: [annonce('search')], tronque: true }, outils: [existant] });
     const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/importer` });
@@ -150,7 +150,7 @@ describe('l apercu et l import', () => {
     const existant: OutilExistantMcp = {
       id: OUTIL, name: 'notion_search', nomDistant: 'search',
       mcpAnnonce: annonce('search', { type: 'object', properties: {} }),
-      mcpIndisponibleLe: null, consommateursActifs: 1,
+      mcpIndisponibleLe: null, params: [], consommateursActifs: 1,
     };
     const h = harnais({ outils: [existant], label: 'Notion Prod' });
     await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/importer` });
@@ -226,12 +226,68 @@ describe('lister les outils importes', () => {
     const h = harnais();
     const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/outils` });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ outils: [] });
+    expect(r.json().outils).toEqual([]);
   });
 
   it('refuse un identifiant qui n est pas un uuid', async () => {
     const h = harnais();
     const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/pas-un-uuid/outils` });
     expect(r.statusCode).toBe(400);
+  });
+});
+
+describe('le clouage `contact`, qui etait INERTE', () => {
+  it('🔴 un `contact` SANS contactPath est REFUSE', async () => {
+    // 🔴 L executeur calcule `p.contactPath ?? p.name` : pour un parametre distant nomme `client_id`, il
+    // chercherait `ctx.contact['client_id']`, qui n existe pas, et enverrait `null`. Le client croirait
+    // avoir cloue l identifiant, l appel partirait vide, et la reaction naturelle serait de repasser en
+    // « l agent decide », c est-a-dire d ouvrir le trou qu il cherchait a fermer.
+    const h = harnais();
+    const r = await h.app.inject({
+      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      payload: { params: [{ name: 'client_id', source: 'contact' }] },
+    });
+    expect(r.statusCode).toBe(400);
+    // ⚠️ LE MESSAGE COMPTE, PAS SEULEMENT LE CODE. Une mutation l a montre : `estChampContact(undefined)`
+    // rend deja `false`, donc retirer cette garde-la laissait quand meme un 400 partir, avec le message de
+    // l AUTRE cas. Or « vous n avez rien choisi » et « ce que vous avez choisi n existe pas » n envoient
+    // pas le client au meme endroit.
+    expect(r.json().error).toContain('doit désigner');
+    expect(h.regles).toEqual([]);
+  });
+
+  it('🔴 un contactPath HORS de la liste fermee est REFUSE', async () => {
+    // 🔴 Cette route est le PREMIER ecrivain de `source: contact` du depot. Sans cette garde, un
+    // `contactPath: 'champs'` ferait partir TOUT le jsonb des champs personnalises du contact vers le
+    // serveur tiers, et `'tags'` le tableau de tags. `champs-contact.ts` se declare « FERMEE EXPRES ».
+    const h = harnais();
+    for (const mauvais of ['champs', 'tags', 'opt_in']) {
+      const r = await h.app.inject({
+        method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+        payload: { params: [{ name: 'client_id', source: 'contact', contactPath: mauvais }] },
+      });
+      expect(r.statusCode, mauvais).toBe(400);
+      expect(r.json().error, mauvais).toContain('n’est pas un attribut');
+    }
+    expect(h.regles).toEqual([]);
+  });
+
+  it('un contactPath de la liste passe', async () => {
+    const h = harnais();
+    const r = await h.app.inject({
+      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      payload: { params: [{ name: 'client_id', source: 'contact', contactPath: 'wa_id' }] },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(h.regles).toHaveLength(1);
+  });
+
+  it('la route rend les DEUX listes de clouage, pour que l ecran ne les recopie pas', async () => {
+    // Une liste recopiee cote navigateur finirait par proposer ce que le serveur refuse, et le client
+    // verrait un refus sur une valeur qu on venait de lui suggerer.
+    const h = harnais({ cles: ['email', 'reference'] });
+    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/outils` });
+    expect(r.json().champs).toEqual(['email', 'reference']);
+    expect(r.json().champsContact).toEqual(['wa_id', 'nom']);
   });
 });

@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import type { RisqueOutil } from '../catalog';
-import type { SourceParam } from '../llm/tool-schema';
+import { paramsOutil, type SourceParam } from '../llm/tool-schema';
 import type { OutilExistantMcp } from './import';
 import type { EcritureImportMcp, OutilMcpVue, ServeurMcpVue } from '../../http/agent-mcp';
 
@@ -28,6 +28,7 @@ interface LigneServeur {
 
 interface LigneOutil {
   id: string; name: string; binding: { outilDistant?: unknown } | null;
+  params: unknown;
   mcp_annonce: unknown; mcp_indisponible_le: Date | null; actifs: string;
 }
 
@@ -68,7 +69,7 @@ export class PgMcpStore {
    */
   async outilsDuServeur(tenantId: string, sourceId: string): Promise<OutilExistantMcp[]> {
     const res = await this.pool.query<LigneOutil>(
-      `select t.id, t.name, t.binding, t.mcp_annonce, t.mcp_indisponible_le,
+      `select t.id, t.name, t.binding, t.params, t.mcp_annonce, t.mcp_indisponible_le,
               (select count(*) from agent_tool_consommateurs c
                 where c.tool_id = t.id and c.tenant_id = t.tenant_id and c.actif)::text as actifs
          from agent_tools t
@@ -85,6 +86,9 @@ export class PgMcpStore {
       nomDistant: typeof r.binding?.outilDistant === 'string' ? r.binding.outilDistant : r.name,
       mcpAnnonce: r.mcp_annonce,
       mcpIndisponibleLe: r.mcp_indisponible_le,
+      // 🔴 LU PAR LE CHEMIN OFFICIEL. `params` est du jsonb, donc opaque : `paramsOutil` est la SEULE
+      // lecture autorisée, et c'est elle qui porte la séparation des sources.
+      params: paramsOutil(r.params),
       consommateursActifs: Number(r.actifs),
     }));
   }

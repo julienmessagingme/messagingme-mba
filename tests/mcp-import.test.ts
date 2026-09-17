@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { normaliserNom, nomUnique } from '../src/agent/mcp/nommer';
-import { empreinteAnnonce, planifierImport, type OutilExistantMcp } from '../src/agent/mcp/import';
+import { empreinteAnnonce, outilDepuisAnnonce, planifierImport, reporterClouage, type OutilExistantMcp } from '../src/agent/mcp/import';
+import type { ParamOutil } from '../src/agent/llm/tool-schema';
 import type { OutilAnnonce } from '../src/mcp/client';
 
 /**
@@ -22,6 +23,7 @@ const existant = (over: Partial<OutilExistantMcp> & { nomDistant: string }): Out
   name: `notion_${over.nomDistant}`,
   mcpAnnonce: annonce(over.nomDistant, SCHEMA_A),
   mcpIndisponibleLe: null,
+  params: [],
   consommateursActifs: 2,
   ...over,
 });
@@ -143,5 +145,60 @@ describe('planifier un import', () => {
     const sansAnnonce = existant({ nomDistant: 'search', mcpAnnonce: null });
     expect(planifierImport([annonce('search', SCHEMA_A)], [sansAnnonce], { tronque: false }))
       .toEqual([{ type: 'schema_change', nom: 'search', consentementsTombes: 2 }]);
+  });
+});
+
+describe('🔴 le clouage SURVIT a un rafraichissement', () => {
+  /**
+   * 🔴 LE DEFAUT QUE CES CAS FERMENT, ET IL ETAIT LE PLUS GRAVE DU LOT. Une annonce distante ne porte
+   * aucune notion de source : tout en revient en `modele`. Un outil dont le schema changeait etait donc
+   * reecrit avec ses parametres remis « remplis par le modele », c est-a-dire influencables par le contact.
+   * Et comme le consentement tombe au meme moment, le client le redonne depuis `AI Agent > Outils`, qui
+   * n est PAS l ecran de clouage : il reactive un outil dont l identifiant est redevenu libre sans que
+   * rien ne le lui dise.
+   *
+   * ⚠️ Aggrave par l empreinte, qui couvre TOUTE l annonce : un simple changement de `description` chez le
+   * fournisseur suffisait a declencher la remise a zero.
+   */
+  const cloue: ParamOutil = { name: 'client_id', type: 'string', source: 'champ', cle: 'email', cheminMcp: 'client.id' };
+
+  it('un parametre CLOUE a un champ le reste', () => {
+    const neufs: ParamOutil[] = [{ name: 'client_id', type: 'string', source: 'modele', cheminMcp: 'client.id' }];
+    expect(reporterClouage(neufs, [cloue])[0]).toMatchObject({ source: 'champ', cle: 'email' });
+  });
+
+  it("l appariement se fait sur le CHEMIN distant, pas sur notre nom local", () => {
+    // Notre nom est une etiquette locale, qui peut etre recalculee ; le chemin est la donnee de protocole.
+    const neufs: ParamOutil[] = [{ name: 'autre_nom', type: 'string', source: 'modele', cheminMcp: 'client.id' }];
+    expect(reporterClouage(neufs, [cloue])[0]).toMatchObject({ source: 'champ', cle: 'email' });
+  });
+
+  it('un parametre que le client n a PAS cloue reste libre', () => {
+    const neufs: ParamOutil[] = [{ name: 'q', type: 'string', source: 'modele', cheminMcp: 'q' }];
+    const avant: ParamOutil[] = [{ name: 'q', type: 'string', source: 'modele', cheminMcp: 'q' }];
+    expect(reporterClouage(neufs, avant)[0]!.source).toBe('modele');
+  });
+
+  it('un parametre NOUVEAU n herite de rien', () => {
+    const neufs: ParamOutil[] = [{ name: 'page', type: 'integer', source: 'modele', cheminMcp: 'page' }];
+    expect(reporterClouage(neufs, [cloue])[0]!.source).toBe('modele');
+  });
+
+  it('⚠️ le clouage est reporte MEME si le type a change', () => {
+    // Entre les deux erreurs possibles, une seule se rattrape : un parametre cloue qui devrait etre libre
+    // produit un appel que le client corrige en le voyant ; un parametre LIBERE qui devrait etre cloue
+    // produit une fuite que personne ne voit.
+    const neufs: ParamOutil[] = [{ name: 'client_id', type: 'integer', source: 'modele', cheminMcp: 'client.id' }];
+    expect(reporterClouage(neufs, [cloue])[0]).toMatchObject({ source: 'champ', cle: 'email', type: 'integer' });
+  });
+
+  it('🔴 et `outilDepuisAnnonce` le fait AUSSI : c est par la que passe le rafraichissement', () => {
+    // Le test qui compte : la fonction pure ci-dessus est juste, mais c est `outilDepuisAnnonce` que la
+    // route appelle. Une garde qu on peut debrancher sans qu aucun test ne tombe n est pas une garde.
+    const o = outilDepuisAnnonce(
+      annonce('search', { type: 'object', properties: { client: { type: 'object', properties: { id: { type: 'string' } } } } }),
+      'Notion', new Set(), [cloue],
+    );
+    expect(o.params.find((p) => p.cheminMcp === 'client.id')).toMatchObject({ source: 'champ', cle: 'email' });
   });
 });
