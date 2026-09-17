@@ -14,13 +14,31 @@ import type { Locale } from './locale';
  * vérifié avant, et un code fantaisiste retombe sur le nombre nu au lieu de casser l'écran.
  */
 export function fmtCost(n: number, locale: Locale, devise?: string | null): string {
-  const decimales = Math.abs(n) < 1 ? 4 : 2;
+  /**
+   * ⚠️ QUATRE DECIMALES SOUS L'EURO, PARCE QUE C'EST UN TARIF AU MESSAGE ET PAS UN TOTAL : un coût par clic
+   * de 0,0425 € arrondi au centime rendrait « 0,04 € », et la différence se compte en dizaines d'euros sur
+   * une campagne de dix mille envois.
+   *
+   * 🔴 SAUF ZERO, ET C'EST LA CORRECTION DU 2026-09-17. « 0,0000 € » se lit comme un artefact d'arrondi,
+   * pas comme un montant : zéro est exact, il n'a aucune précision à préserver. Vu à l'écran sur la ligne
+   * « Messages de service » de la carte des coûts, où la franchise rend un coût nul en face de trois autres
+   * postes à deux décimales. La justification des quatre décimales ne l'a jamais couvert : elle parle d'un
+   * TARIF, et zéro n'en est pas un.
+   */
+  const decimales = n !== 0 && Math.abs(n) < 1 ? 4 : 2;
+  /**
+   * ⚠️ ET LE ZERO NEGATIF DEVIENT ZERO. `Intl` rend « -0,00 € » pour `-0`, qui est atteignable par arrondi
+   * (`Math.round(-0.0001 * 100) / 100` vaut `-0`) et qui se lit comme une erreur de calcul. `n === 0` est
+   * vrai pour `-0` en JavaScript, donc la branche des décimales le traite déjà comme un zéro : il ne restait
+   * que l'affichage. Trouvé par le test de la correction du 2026-09-17, pas à l'écran.
+   */
+  const valeur = n === 0 ? 0 : n;
   const tag = locale === 'en' ? 'en-GB' : 'fr-FR';
   const options: Intl.NumberFormatOptions = { minimumFractionDigits: decimales, maximumFractionDigits: decimales };
   if (devise && /^[A-Za-z]{3}$/.test(devise)) {
-    return new Intl.NumberFormat(tag, { ...options, style: 'currency', currency: devise.toUpperCase() }).format(n);
+    return new Intl.NumberFormat(tag, { ...options, style: 'currency', currency: devise.toUpperCase() }).format(valeur);
   }
-  return new Intl.NumberFormat(tag, options).format(n);
+  return new Intl.NumberFormat(tag, options).format(valeur);
 }
 
 /** Nombre entier lisible : « 1 000 » (fr) / « 1,000 » (en). */

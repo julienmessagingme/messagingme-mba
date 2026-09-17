@@ -1168,12 +1168,14 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   à l'autre, et que la passe isolée soit verte, écarte une régression du chantier MCP. La piste est la
   même que celle déjà notée sur le plafond de workers du fichier de config : le serveur Next est PARTAGÉ,
   et sous charge une requête de liste arrive après le rendu. ⚠️ NE PAS l'affaiblir pour le faire taire.
-- 🟡 **`web/e2e/inbox-envoi-scenario.spec.ts` est INSTABLE LUI AUSSI, mesuré le 2026-09-17.** Un échec dans
-  la suite complète (« un refus du serveur s'affiche avec sa raison »), puis un échec sur un AUTRE test du
-  même fichier en passe isolée (« fenêtre FERMÉE -> seuls ceux qui ouvrent par un template »), puis **trois
-  passes isolées consécutives à 5/5**. ⚠️ QUANTIFIÉ AVANT D'ÊTRE ATTRIBUÉ, et le fait que la cible CHANGE
-  d'une exécution à l'autre est ce qui écarte une régression : une régression fait tomber toujours le même
-  test. Même piste que ci-dessus (serveur Next partagé, quatre workers). ⚠️ NE PAS l'affaiblir.
+- 🟡 **`web/e2e/inbox-envoi-scenario.spec.ts` est INSTABLE LUI AUSSI, et ce N'EST PAS une découverte du
+  2026-09-17 : le fichier le documente LUI-MÊME depuis le 2026-08-24** (« environ un échec sur six
+  exécutions de ce fichier, sur des tests différents », dans le commentaire de `choisirScenario`). Ce que
+  le 2026-09-17 ajoute, c'est que la parade posée alors (réessayer le clic jusqu'à voir le sélecteur) ne
+  suffit pas : trois échecs observés dans la journée, sur DEUX tests différents, entrecoupés de trois
+  passes isolées à 5/5 et d'un `--repeat-each=6` entièrement vert sur le test le plus souvent fautif.
+  ⚠️ QUANTIFIÉ AVANT D'ÊTRE ATTRIBUÉ : la cible CHANGE d'une exécution à l'autre, ce qui écarte une
+  régression (une régression fait tomber toujours le même test). ⚠️ NE PAS l'affaiblir.
   🔴 **DEUX FICHIERS INSTABLES, C'EST UN MOTIF, PLUS UN ACCIDENT.** Le jour où un troisième apparaît, ce
   n'est plus une spec qu'il faut regarder mais le montage : un serveur Next unique partagé par quatre
   workers, où chaque spec repose ses propres `page.route`. La piste à creuser est l'isolation par worker,

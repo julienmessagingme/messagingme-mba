@@ -131,7 +131,20 @@ describe('fmtCost (la devise vient de Meta, jamais devinée)', () => {
   });
 
   it('sous 1, quatre décimales : c’est un tarif au message, pas un total', () => {
+    // Un coût par clic de 0,0425 € arrondi au centime rendrait « 0,04 € », et l'écart se compte en dizaines
+    // d'euros sur une campagne de dix mille envois.
     expect(fmtCost(0.0425, 'fr')).toBe('0,0425');
-    expect(fmtCost(0, 'fr')).toBe('0,0000');
+    expect(fmtCost(0.9999, 'fr')).toBe('0,9999');
+  });
+
+  it('🔴 ZERO garde DEUX décimales, parce que ce n’est pas un tarif (2026-09-17)', () => {
+    // Ce test exigeait « 0,0000 » jusqu'au 2026-09-17, et sa propre justification plaidait contre : la
+    // règle des quatre décimales parle d'un TARIF AU MESSAGE, or zéro n'en est pas un. « 0,0000 € » se lit
+    // comme un artefact d'arrondi, pas comme un montant. Vu à l'écran sur la ligne « Messages de service »
+    // de la carte des coûts, où la franchise rend un coût nul en face de trois postes à deux décimales.
+    expect(fmtCost(0, 'fr')).toBe('0,00');
+    expect(fmtCost(0, 'fr', 'EUR')).toContain('0,00');
+    // ⚠️ Et le signe ne change rien : -0 est zéro.
+    expect(fmtCost(-0, 'fr')).toBe('0,00');
   });
 });
