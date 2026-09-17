@@ -41,7 +41,7 @@ Le reste de ses prérogatives n'est toujours pas décidé.
 **Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA [MBA, guide /
 MBA, paramètres] / Other AI agent [Agents / Crédit]) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
-RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API)**, puis, collés **en bas** de la barre,
+RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API / Connecteurs MCP / Outils)**, puis, collés **en bas** de la barre,
 **Paramètres · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
 ⚠️ **Paramètres et Support sont descendus en bas le 2026-09-08** : ils ne servent pas le travail quotidien,
 ils le règlent, comme Developers. Aucune adresse n'a changé.
@@ -1633,8 +1633,55 @@ scénario, comment importer des contacts.
   plutôt que de les rendre muets en silence.
 - ⛔ **L'authentification ne se règle pas sur un appel** : elle vit sur le système, où le secret est chiffré. Un
   en-tête `authorization` saisi sur un appel est refusé, en vous disant où le déclarer.
-- ⛔ **Pas encore : MCP** (les serveurs d'outils standardisés). La console les acceptera, aucun code ne les
-  sert aujourd'hui.
+- ➡️ **Les serveurs MCP ont leur propre écran**, voir la section suivante.
+
+## Brancher un serveur MCP (menu « Tools » > Connecteurs MCP)
+
+Un serveur MCP est un catalogue d'outils tenu par quelqu'un d'autre (votre éditeur de CRM, votre outil de
+tickets, un service interne). Plutôt que de décrire chaque appel à la main, vous branchez le serveur et vous
+importez ce qu'il propose.
+
+- ✅ **Déclarer un serveur** : son adresse, et comment on s'y authentifie (rien, un jeton, ou un en-tête que
+  vous nommez). Le secret est chiffré et ne ressort jamais de nos serveurs.
+  ⚠️ **L'adresse est vérifiée deux fois** : sur son texte quand vous l'enregistrez, et sur ce vers quoi elle
+  RÉSOUT à chaque appel. Une adresse publique qui pointe vers un réseau interne est refusée.
+- ✅ **Éprouver** le serveur en un clic : on s'y connecte pour de vrai et on vous dit ce qui se passe. Un
+  serveur injoignable, un jeton refusé ou un protocole trop ancien sont nommés.
+- ✅ **Aperçu avant import** : ce qui sera ajouté, ce qui a changé, ce qui a disparu, et **combien
+  d'autorisations vont tomber**. Rien n'est écrit tant que vous n'avez pas cliqué « Importer ».
+  🔴 **Un outil dont le schéma a changé n'est plus l'outil que vous aviez autorisé**, donc son autorisation
+  tombe et il faut la redonner. C’est ce qui empêche un serveur distant d’élargir en silence ce qu’un outil
+  autorisé sait faire.
+- ✅ **Un outil qui disparaît du serveur est MARQUÉ, jamais supprimé** : la fiche reste, avec la date, et le
+  journal des appels continue d'y renvoyer.
+- ✅ **Un catalogue trop gros le dit**, et l'import n'en RETIRE alors rien : sur une liste partielle, marquer
+  « disparu » ce qui n'y figure pas débrancherait des outils bien vivants.
+- ✅ **Tous les outils sont importés, même ceux qu'on ne sait pas activer.** Un outil dont les paramètres ne
+  se ramènent pas à une liste de champs simples (un tableau, une forme non déclarée, plusieurs formes
+  possibles) apparaît quand même, avec **la raison écrite en clair** : vous pouvez la montrer à votre
+  fournisseur. Il ne peut simplement pas être activé.
+- 🔴 **Pour chaque paramètre, vous décidez QUI le remplit**, et c’est la garde qui compte : **l’agent
+  décide**, **le contact de la conversation** (son numéro, son nom), **un champ de sa fiche**, ou **une
+  valeur fixe**. Seuls les paramètres laissés à l'agent lui sont montrés ; les autres sont remplis par la
+  console, et il ne peut ni les voir ni les changer. C'est ce qui empêche un agent d'aller chercher la
+  commande de quelqu'un d'autre parce qu'un contact a donné un numéro qui n'est pas le sien.
+  ⚠️ **Vos choix SURVIVENT aux rafraîchissements** : un paramètre que vous avez cloué le reste quand le
+  serveur change son schéma, tant que ce paramètre existe encore.
+- ✅ **« Ce que cet outil fait » est proposé par le serveur et confirmé par vous.** La norme MCP dit
+  expressément que ce qu'un serveur déclare sur lui-même n'est pas digne de confiance : un serveur qui
+  s'annonce « lecture seule » ne désarme donc rien tant que vous ne l'avez pas confirmé.
+- ✅ **« Quand NE PAS l'appeler »**, en vos mots : c'est le seul levier qui décide quand un outil se
+  déclenche, et le serveur distant n'en sait rien (sa description dit ce que l'outil FAIT, jamais quand
+  s'en abstenir).
+- ✅ **Les noms sont préfixés par le serveur** (`notion_search`), pour que deux serveurs qui exposent chacun
+  un `search` ne se marchent pas dessus.
+- ✅ **Si un rafraîchissement débranche un outil, la fiche de l’agent le dit**, en le nommant, sous
+  « Ce qui a changé sans vous ». Sans ça, l’agent perdait une capacité du jour au lendemain sans cause
+  visible nulle part. ⚠️ Ça n'empêche PAS d'activer l'agent : un serveur tiers n'a pas à décider ça.
+- ✅ **Un serveur utilisé ne se supprime pas** tant qu'un outil actif en dépend.
+- ⛔ **L'agent de Meta ne reçoit PAS ces outils**, et l'écran le dit : le Meta Business Agent n'accepte pas
+  encore de connexion MCP. Ils se déclarent aux agents IA, dans **AI Agent > Outils**.
+- ⛔ **Pas encore : OAuth.** L'authentification se fait par jeton ou par en-tête. OAuth viendra ensuite.
 
 ## Les outils de l'espace (menu « Tools » > Outils)
 

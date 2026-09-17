@@ -391,6 +391,39 @@ D'EN-TÊTE, qui décident du corps envoyé), et la publication suivante repose l
 secret n'était posé qu'à la CRÉATION du connecteur : faire tourner un jeton cassait l'agent de Meta en
 silence.
 
+🔴 **UN SERVEUR MCP EST UNE SOURCE COMME UNE AUTRE, et c'est ce qui rend le lot petit.** Il n'y a pas de
+table dédiée : un serveur est une ligne d'`agent_tool_sources` avec `kind = 'mcp'`, ses outils sont des
+lignes d'`agent_tools` avec `origin = 'mcp'`, et tout ce qui existe déjà (consentement par consommateur,
+plafonds, journal des appels, risque, autonomie) s’applique sans être réécrit. Ce que l’import ajoute vit
+dans quatre colonnes nullables (`mcp_annonce`, `mcp_non_activable`, `mcp_indisponible_le`, `mcp_vu_le`).
+Le transport est à part (`src/mcp/client.ts`), la traduction d’une annonce en outil est PURE
+(`src/agent/mcp/`), et la route n’orchestre que les deux.
+
+🔴 **LE CROISEMENT origin/kind EST FERMÉ PAR UNE CLÉ ÉTRANGÈRE COMPOSITE, PAS PAR UN DÉCLENCHEUR** (0152) :
+`agent_tools (source_id, source_kind)` référence `agent_tool_sources (id, kind)`. Sans elle, un outil
+`origin='mcp'` pouvait pointer une source `kind='http'`, et le résolveur serait parti dans la mauvaise
+branche, c'est-à-dire aurait POSTé une enveloppe JSON-RPC sur l'API métier d'un client.
+⚠️ **Elle est en `MATCH SIMPLE`** : une ligne dont `source_kind` est null lui échappe, ce qui est exactement
+ce qui permet au code d’avant le déploiement de continuer à créer des outils. Le résolveur porte donc la
+même vérification en ceinture, et le CHECK strict viendra APRÈS le déploiement.
+⚠️ **Elle n’a PAS de clause `on delete`, et la suppression d’un connecteur marche quand même** : sa jumelle
+sur `source_id` seul porte `on delete cascade`, qui s’exécute d’abord, si bien que le `NO ACTION` de la
+composite, différé en fin d’instruction, ne trouve plus rien. Vérifié sur PostgreSQL 17.6 en reconstruisant
+la topologie exacte sur des tables TEMPORAIRES, contre-épreuve comprise (sans la cascade, la composite
+refuse en `23503`) : ce n’est pas de la chance, c’est la cascade qui l’autorise.
+
+🔴 **UNE LISTE PARTIELLE NE FAIT JAMAIS DISPARAÎTRE UN OUTIL.** `tools/list` est paginé ; une page qui
+échoue rend un ÉCHEC, jamais les pages déjà lues, et un catalogue tronqué (bornes atteintes) pose
+`tronque: true`. Dans les deux cas la règle est la même : **on AJOUTE et on MET À JOUR, on ne RETIRE
+jamais**. Un appelant qui prendrait une liste partielle pour le catalogue entier marquerait « disparus » la
+moitié des outils d'un client et ferait tomber leurs consentements, pour une panne réseau d'une seconde.
+
+🔴 **CE QUE LE MODÈLE VOIT EST UN SOUS-ENSEMBLE DE CE QUI PART.** `ParamOutil.source` vaut `modele`,
+`contact`, `champ` ou `fixe` ; seul `modele` entre dans le schéma envoyé au fournisseur, les trois autres
+sont injectés par le runtime à l'appel. C'est la garde anti-IDOR du lot : un paramètre cloué ne peut pas
+être influencé par ce qu’un contact raconte. `reporterClouage` rejoue ces choix à chaque rafraîchissement,
+par `cheminMcp` : sans lui, un changement de schéma rouvrirait la garde en silence.
+
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la
