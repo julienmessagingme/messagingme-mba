@@ -17,6 +17,26 @@ import { reglerOutilMcp, type OutilMcp, type ParamMcp, type SourceParamMcp } fro
  * distant et ne lui appartiennent pas : les rendre modifiables ferait envoyer au serveur une valeur qu'il
  * refuse, pour une raison invisible.
  */
+/**
+ * La valeur fixe, dans le type que le SERVEUR DISTANT a déclaré pour ce paramètre.
+ *
+ * ⚠️ ELLE RETOMBE SUR LA CHAÎNE quand la saisie ne convient pas (un `number` qui n'est pas un nombre, un
+ * `boolean` qui n'est ni vrai ni faux) : envoyer `NaN` ou `false` inventerait une valeur que personne n'a
+ * saisie, quand la chaîne produit un refus du serveur que le client peut lire.
+ */
+function valeurTypee(brut: string, type: string): string | number | boolean {
+  if (type === 'number' || type === 'integer') {
+    const n = Number(brut);
+    return brut.trim() !== '' && Number.isFinite(n) ? n : brut;
+  }
+  if (type === 'boolean') {
+    if (brut === 'true') return true;
+    if (brut === 'false') return false;
+    return brut;
+  }
+  return brut;
+}
+
 export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChange }: {
   tenantId: string;
   outil: OutilMcp;
@@ -162,8 +182,13 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
                   </select>
                 )}
                 {p.source === 'fixe' && (
+                  /* 🔴 ELLE PART DANS LE TYPE QUE LE SERVEUR A DÉCLARÉ, pas en chaîne. Un paramètre
+                     `integer` cloué à 42 partait comme "42", que le serveur distant refuse sur son propre
+                     schéma, avec un message que le client ne pouvait relier à rien de ce qu'il avait
+                     saisi. ⚠️ Une saisie qui n'est pas un nombre valide reste une CHAÎNE plutôt que de
+                     devenir `NaN` : le refus du serveur est alors lisible, un `NaN` ne l'est pas. */
                   <input className={inputCls} value={String(p.value ?? '')} data-testid={`mcp-valeur-${p.name}`}
-                    onChange={(e) => poser(p.name, { value: e.target.value })} />
+                    onChange={(e) => poser(p.name, { value: valeurTypee(e.target.value, p.type) })} />
                 )}
                 {p.cheminMcp && p.cheminMcp !== p.name && (
                   <span className="text-[11px] text-ink-400">{t('chemin distant : ', 'remote path: ')}<code>{p.cheminMcp}</code></span>

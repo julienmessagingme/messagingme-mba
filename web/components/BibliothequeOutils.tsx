@@ -224,8 +224,29 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
                 <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-600">
                   {o.origin === 'mba' ? t('maison', 'built-in') : o.origin === 'http' ? t('connecteur', 'connector') : 'MCP'}
                 </span>
+                {/* 🔴 UN OUTIL MORT NE DOIT PAS RESSEMBLER À UN OUTIL VIVANT. Sans ces deux pastilles, cet
+                    écran affichait un outil disparu du serveur distant, ou dont le schéma n'est pas
+                    représentable, EXACTEMENT comme les autres : le client ne l'apprenait qu'en cliquant
+                    « activer » et en recevant un refus. */}
+                {o.mcpIndisponibleLe && (
+                  <span data-testid={`outil-disparu-${o.id}`}
+                    className="rounded-full bg-coral/10 px-2 py-0.5 text-[11px] font-medium text-coral">
+                    {t('a disparu du serveur', 'gone from the server')}
+                  </span>
+                )}
+                {!o.mcpIndisponibleLe && o.mcpNonActivable && (
+                  <span data-testid={`outil-non-activable-${o.id}`}
+                    className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] font-medium text-ink-700">
+                    {t('non activable', 'not activatable')}
+                  </span>
+                )}
               </div>
               <p className="mt-1 text-sm text-ink-600">{o.description}</p>
+              {/* La RAISON, telle que le serveur l'a écrite : le client ne peut pas la corriger lui-même,
+                  mais il doit pouvoir la montrer à son fournisseur. */}
+              {o.mcpNonActivable && !o.mcpIndisponibleLe && (
+                <p className="mt-1 text-xs text-ink-500" data-testid={`outil-raison-${o.id}`}>{o.mcpNonActivable}</p>
+              )}
 
               {/* 🔴 CE QUE CET ÉCRAN EXISTE POUR MONTRER. Sans cette ligne, la bibliothèque ne serait qu'une
                   liste de plus : c'est elle qui dit qu'un outil est PARTAGÉ, et donc qu'y toucher touche

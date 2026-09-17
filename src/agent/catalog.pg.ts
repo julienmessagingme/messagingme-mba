@@ -458,9 +458,11 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     const res = await this.pool.query<{
       id: string; name: string; title: string; description: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
+      mcp_non_activable: string | null; mcp_indisponible_le: Date | null;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
       `select t.id, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
+              t.mcp_non_activable, t.mcp_indisponible_le,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
                                                      'agent_label', a.label) order by c.consommateur)
@@ -476,6 +478,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     return res.rows.map((r) => ({
       id: r.id, name: r.name, title: r.title, description: r.description,
       origin: r.origin, risk: r.risk, sourceId: r.source_id,
+      mcpNonActivable: r.mcp_non_activable,
+      mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
       consommateurs: (r.consommateurs ?? []).map((c) => ({
         cle: c.cle,
         actif: c.actif,

@@ -171,16 +171,32 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
      * pendant des heures, sans recours. ⚠️ Le geste du chemin entrant (`remiseMbaSiPersonneNeSuit`), lui,
      * relit bien le détenteur avant d'appeler Meta : là-bas le risque est permanent, pas fugace.
      */
+    /**
+     * 🔴 « RIEN À RENDRE » N'EST PAS « RÉESSAYER PLUS TARD », et les confondre faisait boucler ce balayage
+     * pour toujours. `releaseToMba` rend `false` quand il n'y avait RIEN à rendre : une conversation de
+     * TEST (le fil est resté à l'application, délibérément), ou un espace sans numéro. Sauter la ligne
+     * laissait alors la conversation en `app_human` immobile, donc CANDIDATE à la passe suivante, et à
+     * toutes les suivantes : l'ensemble grossissait à chaque essai de Julien.
+     *
+     * ⚠️ UNE EXCEPTION, ELLE, RESTE UN `continue`. C'est le cas où Meta a REFUSÉ : là il y a bien quelque
+     * chose à rendre et on n'y est pas arrivé, donc réessayer est juste. La distinction tient parce que
+     * `rendreLeFil` LÈVE sur un refus de Meta et ne rend `false` que sur une absence de numéro.
+     *
+     * ⚠️ ET LA DESTINATION SUIT LE FAIT, pas l'intention : rien n'est parti chez Meta, donc on n'écrit pas
+     * `mba`. `app_workflow` dit la vérité, c'est-à-dire que l'application garde le fil, exactement comme
+     * pour un espace qui n'a pas d'agent de Meta du tout.
+     */
+    let rendu = true;
     if (versMba && deps.releaseToMba) {
       try {
-        if (!(await deps.releaseToMba(c.tenantId, c.waId))) continue;
+        rendu = await deps.releaseToMba(c.tenantId, c.waId);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`release vers MBA REFUSÉ pour ${c.waId}, l’état local n’a pas été écrit:`, err instanceof Error ? err.message : err);
         continue;
       }
     }
-    const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
+    const dest: ControlOwner = versMba && rendu ? 'mba' : 'app_workflow';
     if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
     rendues += 1;
   }

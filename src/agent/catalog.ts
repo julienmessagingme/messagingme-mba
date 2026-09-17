@@ -219,6 +219,18 @@ export interface OutilBibliotheque {
   origin: OrigineOutil;
   risk: RisqueOutil;
   sourceId: string | null;
+  /**
+   * 🔴 L'ÉTAT MCP VOYAGE AVEC L'OUTIL, sinon la bibliothèque montre un outil mort comme un outil vivant.
+   * Le plan avait posé un paragraphe entier pour que cet oubli soit impossible, et l'oubli a eu lieu quand
+   * même : `listCatalogue` ne sélectionnait pas ces deux colonnes, donc `Tools > Outils` et l'onglet
+   * Outils du MBA affichaient un outil non activable ou disparu du serveur EXACTEMENT comme les autres.
+   * Le client ne l'apprenait qu'en cliquant « activer » et en recevant un 409.
+   *
+   * ⚠️ `null` PARTOUT AILLEURS, et c'est le cas normal : un outil maison ou de connecteur API n'a pas
+   * d'état MCP. Les champs sont REQUIS pour qu'un câblage qui les oublierait ne compile pas.
+   */
+  mcpNonActivable: string | null;
+  mcpIndisponibleLe: string | null;
   consommateurs: Array<{
     cle: string;
     actif: boolean;

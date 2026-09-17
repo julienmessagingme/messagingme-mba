@@ -374,23 +374,33 @@ export interface ManqueFiche {
  * une liste vide et l'écran marche.
  */
 export async function lireManques(tenantId: string, agentId: string): Promise<ManqueFiche[]> {
-  const r = await request<{ manques?: unknown }>(`/tenants/${tenantId}/agents/${agentId}/manques`);
-  return manquesDe(r);
+  return (await lireBandeaux(tenantId, agentId)).manques;
 }
 
 /**
- * Ce qu'on AVERTIT sans bloquer : aujourd'hui, les outils qu'un rafraîchissement MCP a débranchés.
+ * LES DEUX BANDEAUX D'UNE FICHE D'AGENT, EN UN SEUL ALLER-RETOUR.
  *
- * 🔴 SÉPARÉ DES MANQUES, ET LA SÉPARATION EST MÉCANIQUE. Côté serveur, la liste des manques est AUSSI la
- * garde dure de l'activation : y verser ce cas donnerait à un serveur tiers un droit de veto sur
- * l'activation de l'agent d'un client. Ils s'affichent dans le même bandeau, ils ne décident pas la même
- * chose.
+ * 🔴 SÉPARÉS EN DEUX LISTES, ET LA SÉPARATION EST MÉCANIQUE. Côté serveur, `manquesAvantActivation`
+ * n'alimente pas que l'affichage : c'est AUSSI la garde dure de `status = 'active'`. Y verser les
+ * avertissements donnerait à un serveur TIERS un droit de veto sur l'activation de l'agent d'un client.
  *
- * BEST-EFFORT, comme son voisin : un serveur qui ne sait pas répondre rend une liste vide.
+ * ⚠️ UN SEUL APPEL, ET C'EST UNE CORRECTION. Deux fonctions ont d'abord fait chacune leur GET sur la MÊME
+ * route, qui rend déjà les deux listes : la fiche d'un agent tapait donc deux fois la même adresse à
+ * chaque ouverture, sur une route sous plafond de débit.
+ *
+ * BEST-EFFORT chez l'appelant : c'est une aide, pas une condition.
  */
-export async function lireAvertissements(tenantId: string, agentId: string): Promise<ManqueFiche[]> {
-  const r = await request<{ avertissements?: unknown }>(`/tenants/${tenantId}/agents/${agentId}/manques`);
-  return listeDeManques((r as { avertissements?: unknown } | null)?.avertissements);
+export async function lireBandeaux(
+  tenantId: string,
+  agentId: string,
+): Promise<{ manques: ManqueFiche[]; avertissements: ManqueFiche[] }> {
+  const r = await request<{ manques?: unknown; avertissements?: unknown }>(
+    `/tenants/${tenantId}/agents/${agentId}/manques`,
+  );
+  return {
+    manques: manquesDe(r),
+    avertissements: listeDeManques((r as { avertissements?: unknown } | null)?.avertissements),
+  };
 }
 
 /** Lit la liste des manques d'une erreur 422 d'activation. Défensif : le corps vient du réseau. */

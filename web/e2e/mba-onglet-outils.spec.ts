@@ -24,6 +24,8 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     origin: 'http',
     risk: 'read',
     sourceId: 's1',
+    mcpNonActivable: null,
+    mcpIndisponibleLe: null,
     consommateurs: [{ cle: 'agent:AG1', actif: true, agentId: 'AG1', agentLabel: 'Assistant' }],
   };
 
@@ -49,6 +51,33 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     // Les deux gestes qui n'existent QUE là. Sans eux, l'onglet ne serait qu'un raccourci décoratif.
     await expect(page.getByTestId('publication-mba')).toBeVisible();
     await expect(page.getByTestId('outil-suivi_commande')).toBeVisible();
+  });
+
+  test('🔴 un outil MCP MORT ne ressemble pas a un outil vivant, et la raison est LISIBLE', async ({ page }) => {
+    /**
+     * 🔴 LA BIBLIOTHEQUE NE LISAIT PAS L ETAT MCP. `listCatalogue` ne selectionnait ni
+     * `mcp_non_activable` ni `mcp_indisponible_le`, alors que le plan avait pose un paragraphe entier
+     * pour que cet oubli soit impossible. Resultat : un outil dont le schema n est pas representable, ou
+     * qui a DISPARU du serveur distant, s affichait EXACTEMENT comme les autres. Le client ne l apprenait
+     * qu en cliquant « activer » et en recevant un 409.
+     */
+    await mockAvecOutils(page, [
+      { ...OUTIL, id: 'o2', name: 'mcp_tordu', title: 'Schema tordu', origin: 'mcp',
+        mcpNonActivable: 'le parametre « lignes » est un tableau', mcpIndisponibleLe: null },
+      { ...OUTIL, id: 'o3', name: 'mcp_parti', title: 'Parti', origin: 'mcp',
+        mcpNonActivable: null, mcpIndisponibleLe: '2026-09-17T08:00:00.000Z' },
+      OUTIL,
+    ]);
+    await page.goto('/mba/parametres?tab=outils');
+
+    await expect(page.getByTestId('outil-non-activable-o2')).toBeVisible();
+    // La raison vient du SERVEUR : le client ne peut pas la corriger, mais il doit pouvoir la montrer.
+    await expect(page.getByTestId('outil-raison-o2')).toContainText('lignes');
+    await expect(page.getByTestId('outil-disparu-o3')).toBeVisible();
+
+    // ⚠️ LA PREUVE INVERSE : sans elle, des pastilles affichees en permanence passeraient le test.
+    await expect(page.getByTestId('outil-non-activable-o1')).toHaveCount(0);
+    await expect(page.getByTestId('outil-disparu-o1')).toHaveCount(0);
   });
 
   test('l’onglet s’ouvre aussi par l’adresse, comme les dix autres', async ({ page }) => {

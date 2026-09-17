@@ -58,7 +58,15 @@ function direEchec(e: EchecMcp): string {
     case 'reseau':
       return 'le serveur MCP est injoignable';
     default:
-      return 'le serveur MCP a répondu quelque chose d’illisible';
+      /**
+       * ⚠️ LE MESSAGE PART AVEC, il ne se jette pas. Ce genre couvre aussi bien « corps JSON illisible »
+       * (le serveur) que « réponse trop grosse » (NOTRE plafond, `max_bytes`, 16 Ko par défaut depuis
+       * 0086). Les fondre dans une phrase unique attribuait au serveur du client une coupure que nous
+       * avions décidée, c'est-à-dire la mis-attribution que le genre `budget` vient d'éviter trois lignes
+       * plus haut. Aucun de ces messages ne porte de secret : ils sont écrits par nous, dans
+       * `src/mcp/client.ts`.
+       */
+      return `le serveur MCP a répondu quelque chose d’illisible (${e.message})`;
   }
 }
 

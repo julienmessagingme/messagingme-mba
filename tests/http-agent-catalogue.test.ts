@@ -37,7 +37,7 @@ const h = (): { headers: Record<string, string> } => ({
 
 const BIB: OutilBibliotheque = {
   id: OUTIL, name: 'lire_commande', title: 'Lire', description: 'lit une commande',
-  origin: 'mba', risk: 'read', sourceId: null,
+  origin: 'mba', risk: 'read', sourceId: null, mcpNonActivable: null, mcpIndisponibleLe: null,
   consommateurs: [
     { cle: `agent:${OUTIL}`, actif: true, agentId: OUTIL, agentLabel: 'Support' },
     { cle: 'mba:1234840649713976', actif: false, agentId: null, agentLabel: null },

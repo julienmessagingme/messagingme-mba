@@ -158,6 +158,10 @@ export interface OutilBibliotheque {
   origin: OrigineOutil;
   risk: 'read' | 'write' | 'irreversible';
   sourceId: string | null;
+  /** `null` = activable. Sinon la raison, écrite par le serveur MCP et affichée telle quelle. */
+  mcpNonActivable: string | null;
+  /** L'outil a disparu du catalogue distant. La ligne reste, elle est la trace de ce qui a tourné. */
+  mcpIndisponibleLe: string | null;
   consommateurs: Array<{ cle: string; actif: boolean; agentId: string | null; agentLabel: string | null }>;
 }
 

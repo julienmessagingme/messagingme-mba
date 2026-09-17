@@ -71,6 +71,34 @@ describe('un fil pris par un SCÉNARIO revient à l’agent de Meta', () => {
     expect(d.rendus).toHaveLength(1);
   });
 
+  it('🔴 RIEN À RENDRE n’est pas RÉESSAYER : la conversation est RÉSOLUE, pas laissée candidate', async () => {
+    /**
+     * 🔴 LE DÉFAUT QUE CE TEST FERME FAISAIT BOUCLER CE BALAYAGE POUR TOUJOURS. `releaseToMba` rend
+     * `false` quand il n y avait RIEN à rendre : une conversation de TEST (le fil reste à l application,
+     * délibérément depuis le 2026-09-17), ou un espace sans numéro. On sautait alors la ligne, la
+     * conversation restait en `app_human` immobile, donc CANDIDATE à la passe suivante et à toutes les
+     * suivantes. L ensemble grossissait à chaque essai.
+     *
+     * ⚠️ LA DESTINATION SUIT LE FAIT, pas l intention : rien n est parti chez Meta, donc on n écrit pas
+     * `mba`, ce qui ferait mentir la console. `app_workflow` dit la vérité.
+     */
+    const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], {
+      releaseToMba: async () => false,
+    });
+    expect(await runControlSweep(d)).toBe(1);
+    expect(d.ecrits).toEqual([{ owner: 'app_workflow' }]);
+  });
+
+  it('⚠️ mais un REFUS de Meta reste un réessai : là, il y avait bien quelque chose à rendre', async () => {
+    // La distinction tient parce que `rendreLeFil` LÈVE sur un refus de Meta et ne rend `false` que sur
+    // une absence de numéro. Confondre les deux enterrerait un fil que Meta tient encore.
+    const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], {
+      releaseToMba: async () => { throw new Error('Meta a refusé'); },
+    });
+    expect(await runControlSweep(d)).toBe(0);
+    expect(d.ecrits, 'rien n est ecrit : on reessaiera').toEqual([]);
+  });
+
   it('avant le délai, on ne touche à rien', async () => {
     const d = deps([{ owner: 'app_workflow', changedAt: new Date(MAINTENANT - 3 * HEURE) }]);
     expect(await runControlSweep(d)).toBe(0);

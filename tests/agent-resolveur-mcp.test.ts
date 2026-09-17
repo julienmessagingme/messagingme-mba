@@ -98,6 +98,19 @@ describe('le resolveur MCP : ce a quoi il refuse de parler', () => {
     expect(h.appeler).not.toHaveBeenCalled();
   });
 
+  it('🔴 « illisible » PORTE SA CAUSE : « trop grosse » est NOTRE plafond, pas une faute du serveur', async () => {
+    // Le genre `protocole` couvre aussi bien « corps JSON illisible » (le serveur) que « reponse trop
+    // grosse » (notre `max_bytes`, 16 Ko par defaut depuis 0086). Les fondre dans une phrase unique
+    // attribuait au serveur du client une coupure que nous avions decidee, c est-a-dire exactement la
+    // mis-attribution que le genre `budget` vient d eviter.
+    const h = harnais({
+      session: { appeler: vi.fn(async () => ({ echec: { genre: 'protocole' as const, message: 'réponse trop grosse' } })) },
+    });
+    const r = await h.resolveur(entree(OUTIL()));
+    expect(r.ok).toBe(false);
+    expect(r.erreur).toContain('trop grosse');
+  });
+
   it('🔴 un budget epuise se dit comme NOTRE delai, jamais comme une reponse illisible du serveur', async () => {
     // Le budget total vaut l echeance de l outil : un serveur lent peut le consommer des l initialisation.
     // Range sous `protocole`, ce cas ressortait en « le serveur MCP a repondu quelque chose d illisible » :

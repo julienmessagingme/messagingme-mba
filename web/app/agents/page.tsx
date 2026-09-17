@@ -19,7 +19,7 @@ import { AgentOutils } from '@/components/AgentOutils';
 import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
-import { appliquerProposition, lireAvertissements, lireManques, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
+import { appliquerProposition, lireBandeaux, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 import { consommationAgent, listerModeles, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
 import { fmtCost } from '@/lib/format';
@@ -122,8 +122,11 @@ function Ecran({ tenantId }: { tenantId: string }) {
    * plutôt que de laisser à l'écran un avertissement qu'on ne sait plus vérifier.
    */
   const rafraichirManques = useCallback((agentId: string) => {
-    void lireManques(tenantId, agentId).then(setManques).catch(() => setManques([]));
-    void lireAvertissements(tenantId, agentId).then(setAvertissements).catch(() => setAvertissements([]));
+    // ⚠️ UN SEUL APPEL POUR LES DEUX BANDEAUX : la route rend les deux listes, et deux appels sur la même
+    // adresse doublaient la charge d'une route sous plafond de débit à chaque ouverture de fiche.
+    void lireBandeaux(tenantId, agentId)
+      .then((b) => { setManques(b.manques); setAvertissements(b.avertissements); })
+      .catch(() => { setManques([]); setAvertissements([]); });
   }, [tenantId]);
 
   /**
