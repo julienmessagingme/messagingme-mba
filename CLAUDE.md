@@ -191,11 +191,13 @@ pendant cette fenêtre ne produirait alors aucune ligne de travail, ce qui est e
 C'est aussi ce qui arme le filet, `CONTROL_HUMAN_TIMEOUT_MS` reprenant les fils `app_human` immobiles et les
 rendant pour de vrai.
 
-🔴 **LE `sous-select` A ÉTÉ EXÉCUTÉ SUR LES VRAIES DONNÉES, faute de CI.** GitHub Actions refuse de démarrer
-le moindre job depuis ce commit (« recent account payments have failed or your spending limit needs to be
-increased »), donc le job `integration` n'a PAS tourné, et c'est le seul qui voit une base. La moitié LECTURE
-de la requête a donc été jouée en production, en lecture seule : sur la conversation d'essai, elle désigne
-bien l'envoi de 08:26:47, c'est-à-dire précisément celui dont l'accusé est arrivé à 08:28:42.
+🔴 **LE `sous-select` A ÉTÉ EXÉCUTÉ SUR LES VRAIES DONNÉES, faute de CI.** GitHub Actions refusait alors de
+démarrer le moindre job (« recent account payments have failed or your spending limit needs to be
+increased »), donc le job `integration` n'a PAS tourné ce jour-là, et c'est le seul qui voit une base. La
+moitié LECTURE de la requête a donc été jouée en production, en lecture seule : sur la conversation d'essai,
+elle désigne bien l'envoi de 08:26:47, c'est-à-dire précisément celui dont l'accusé est arrivé à 08:28:42.
+⚠️ **CE BLOCAGE EST LEVÉ** : les runs repartent depuis, vérifié le 2026-09-17 (`gh run list`). La phrase
+restait au présent et serait devenue une excuse permanente pour sauter la CI.
 
 ⚠️ **CETTE LIGNE AVAIT DÉRIVÉ UNE HUITIÈME FOIS**, relevée par la revue finale du chantier des assistants :
 elle annonçait 0144 quand la base en portait CINQ de plus, toutes appliquées la même nuit. Même cause que les
@@ -806,6 +808,23 @@ Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `t
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)
+- 🔴 **TOUTE BORNE QU'ON APPLIQUE À LA SORTIE D'UN MODÈLE EST ANNONCÉE DANS LE SCHÉMA QU'ON LUI ENVOIE**
+  (2026-09-17). Deux schémas coexistent dès qu'on impose une sortie structurée : celui qu'on ANNONCE et celui
+  qu'on APPLIQUE. Ce que le second refuse sans que le premier l'annonce est une panne qu'AUCUNE coopération
+  du modèle ne peut éviter. Mesuré sur l'assistant de construction : **31 bornes sur 31** appliquées par Zod
+  sans qu'aucune ne figure dans le schéma envoyé, et un code de règle d'arrêt de 36 caractères (la regex
+  plafonne à 32, nombre écrit nulle part ailleurs qu'en elle) faisait perdre le dernier tour de l'entretien,
+  message du client compris. ⚠️ **La parité se DÉRIVE, elle ne se relit pas** : le test de miroir qui existait
+  comparait des NOMS DE CLÉS et n'a rien vu pendant des semaines. `tests/agent-setup-bornes.test.ts` extrait
+  les bornes de Zod et exige que le schéma annoncé les porte toutes.
+- 🔴 **L'HYGIÈNE SE RAMÈNE, LA FRONTIÈRE SE REFUSE, et les confondre coûte du travail client** (2026-09-17).
+  Dans une validation de sortie de modèle, la FRONTIÈRE DE SÉCURITÉ est la **liste des clés** (ce que le
+  modèle a le droit de proposer) et les **énumérations fermées** (le catalogue de handlers) : elles restent
+  fatales. Une longueur, un alphabet de slug, un doublon sont de l'HYGIÈNE : ils se RAMÈNENT
+  (`assainirProposition`), parce que tout ce qui passe est de toute façon relu par un humain dans un diff.
+  ⚠️ **Sauf quand un champ est REMPLACÉ et non fusionné** : une liste dont plus rien ne survit doit
+  DISPARAÎTRE, pas devenir une liste vide, sinon l'assainissement fabrique une proposition d'effacement à
+  partir de bruit. Vu en revue sur le correctif lui-même, sur `fiche.sorties`.
 
 ### Automation (règles d'archi issues des revues, 2026-08-03)
 

@@ -5846,3 +5846,77 @@ conséquences indépendantes de tout fournisseur, les trois chantiers à finir a
 le sort du connecteur HubSpot, la question Redis avec son déclencheur, et la séquence du jour J. Mesures qui
 l'accompagnent : base à **30 Mo**, **25 connexions ouvertes sur 60 dont une active**, **131 transactions par
 minute au repos**, et **aucune dépendance spécifique à Supabase** dans le dépôt.
+
+## L'assistant de construction refusait sa propre proposition (2026-09-17)
+
+Julien, capture à l'appui, au **9e point sur 10** de l'entretien de construction d'un agent IA :
+« l'assistant a rendu une proposition hors format ». Il venait de répondre « emoji » à la question du ton.
+
+**Ce point-là est le DERNIER de l'ordre du jour.** Le mandat envoyé au modèle se fait en deux temps :
+questions tant qu'il reste un point à couvrir, écriture des champs une fois tout couvert. Le tour qui a
+échoué est donc le **premier du temps 2**, le premier où le modèle écrit la fiche entière, ses règles
+d'arrêt, ses outils. C'est-à-dire le premier où les bornes du schéma s'exercent vraiment : les neuf tours
+précédents ne portaient qu'un message et des réponses, et ne prouvaient rien.
+
+### La mesure
+
+Le schéma JSON envoyé au modèle et le schéma Zod qui juge sa réponse sont écrits à la main, l'un en miroir
+de l'autre, avec un test de parité. Ce test compare des **noms de clés** et leur caractère requis. Extraction
+faite ce jour-là des bornes réellement appliquées par Zod, puis comparaison avec ce que le schéma annonçait :
+
+```
+31 bornes sur 31 refusent une réponse que le modèle n'a jamais été prévenu de borner.
+```
+
+Longueurs de textes, tailles de tableaux, motifs des codes et des noms exposés : rien. Un modèle
+parfaitement coopératif, respectant chaque consigne écrite du mandat, pouvait donc voir son tour refusé sur
+une règle qu'il n'avait jamais reçue. Reproduit sur une proposition de concession automobile :
+
+```
+code "coordonnees_transmises_au_conseiller" : 36 car. -> REFUSÉ
+```
+
+`CODE_SORTIE_RE` plafonne à 32 caractères, et ce nombre n'était écrit **nulle part ailleurs qu'en elle**. En
+français, un aboutissement de conversation dépasse 32 caractères sans effort.
+
+Le coût n'était pas cosmétique : la route n'enregistre l'entretien qu'APRÈS une réponse valide, donc le tour
+entier partait, **message du client compris**, et l'appel au modèle était quand même facturé (sur notre clé
+maison, cet assistant étant à notre charge depuis le 2026-09-14).
+
+L'asymétrie la plus parlante : le client qui **tape** un code dans le formulaire le voit normalisé sous ses
+yeux (`web/lib/agent-sorties.ts`) ; l'assistant qui **propose** le même code voyait toute sa proposition
+jetée. La même règle, deux traitements opposés, et un seul des deux écrit quelque part.
+
+### Ce qui a été livré (`f7a9349`)
+
+- `assainirProposition` ramène la réponse dans les bornes avant que Zod ne juge : couper, normaliser un code,
+  dédoublonner. **La frontière de sécurité ne bouge pas** : c'est la liste des clés et les énumérations
+  fermées, vérifié par deux tests qui exigent qu'un handler hors catalogue reste refusé.
+- Les bornes sont annoncées au modèle (556 caractères, environ 139 tokens par tour), et
+  `tests/agent-setup-bornes.test.ts` les **dérive** de Zod au lieu de les lister à la main.
+- `normaliserCodeSortie` existe côté serveur, autorité dont le front est la copie, parité testée fonction
+  contre fonction.
+- Le 422 journalise chemins et codes d'erreur, jamais les valeurs. Sans cette trace, le défaut signalé n'a pu
+  être attribué qu'en mesurant l'écart entre les deux schémas : **on ne sait toujours pas quel champ exact a
+  échoué dans la session de Julien**, seulement lequel était le plus probable.
+
+### Le défaut trouvé en revue SUR LE CORRECTIF LUI-MÊME
+
+Des règles d'arrêt toutes inexploitables (des chaînes au lieu d'objets) devenaient une liste **vide**. Or
+`fiche.sorties` est le seul champ que le patch REMPLACE au lieu de fusionner : le diff montré au client
+devenait « avant : vos trois règles d'arrêt, après : rien ». Une proposition d'**effacement fabriquée à
+partir de bruit**, qu'il ne restait qu'à valider d'un clic. Avant le correctif, ce cas rendait 422. La clé
+disparaît désormais ; un `[]` explicite reste, lui, un retrait délibéré du modèle.
+
+### Deux choses apprises sur la vérification
+
+**Cinq mutations jouées à la main**, chacune fait tomber son test : route qui n'assainit plus, borne retirée
+du schéma annoncé, normalisation serveur qui dérive du front, handler hors catalogue réécrit, garde
+anti-effacement retirée. La première comptait le plus : les tests unitaires appelaient `assainirProposition`
+en direct, donc **retirer l'appel de la route les laissait tous verts**. C'est mot pour mot la leçon de
+`scope-tenant.test.ts`, « un type qui exige une garde ne dit pas qu'elle est POSÉE ».
+
+Et une **sixième mutation « passait »** : en fait le `sed` ne s'était pas appliqué (indentation différente).
+Une mutation qui passe doit d'abord prouver qu'elle a été POSÉE, sinon elle rend un faux négatif rassurant.
+Corollaire payé le même jour : restaurer un fichier muté se fait par COPIE de sauvegarde, jamais par
+`git checkout --`, qui sur un fichier non commité détruit le travail en cours.

@@ -1233,7 +1233,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/devise.ts` | dollars du Gateway -> micro-euros, en UN endroit |
 | `src/agent/modeles.ts` | les modèles proposables et leur tarif client : le menu ET la garde d'écriture y lisent |
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
-| `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer |
+| `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
 | `src/agent/poser-tag.ts` | les TROIS effets de « poser un tag » depuis un agent |
 | `src/agent/contexte.ts` | ce que le cerveau doit savoir d'un agent (production ET bac à sable) |
 | `src/agent/fiche.ts` | les DEUX schémas de fiche : celui qui LIT, celui qui PATCHE |
