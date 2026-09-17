@@ -471,6 +471,16 @@ export interface CoutMessages {
   service: { envoyes: number; factures: number; cout: number; parMois: FranchiseMois[] };
   rcs: { simple: number; conversationnel: number; cout: number };
   total: number;
+  /**
+   * 🔴 LA DEVISE VOYAGE AVEC CE TOTAL, ET PAS AVEC L APPEL VOISIN. Trouve en revue le 2026-09-17 : la carte
+   * prenait la devise de la route des campagnes, ce qui couplait l AFFICHAGE de deux lignes chargees
+   * separement justement pour qu une panne de l une n abime pas l autre. Le test « les deux autres vivent »
+   * passait quand meme, parce que le nombre s affichait, simplement sans son symbole.
+   *
+   * ⚠️ OPTIONNELLE A LA LECTURE : entre le deploiement de Vercel et celui du VPS, le champ est absent.
+   * L ecran rend alors le nombre nu, ce qui est exactement ce qu il faisait avant.
+   */
+  currency?: string | null;
   nonChiffrables: number;
   sansCategorie: number;
   sansTarif: number;

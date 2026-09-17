@@ -65,7 +65,22 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);
 
-  const devise = campagnes !== null && campagnes !== 'erreur' ? campagnes.currency : null;
+  /**
+   * 🔴 CHAQUE LIGNE PORTE SA PROPRE DEVISE, ET LA PREMIERE VERSION NE LE FAISAIT PAS. Elle prenait celle de
+   * la route des campagnes pour TOUTE la carte : une panne de cette route, ou une période sans campagne,
+   * et les montants de la ligne « messages » s'affichaient sans leur symbole. C'est exactement ce que les
+   * trois appels séparés existent pour éviter, défait au moment de l'affichage. Trouvé en revue le
+   * 2026-09-17, et le test « une panne d'une ligne ne tue pas les deux autres » passait quand même, parce
+   * que le nombre s'affichait.
+   *
+   * ⚠️ LE REPLI SUR L'AUTRE DEVISE NE SERT QU'A LA FENETRE DE DEPLOIEMENT, où l'API du VPS ne rend pas
+   * encore `currency` sur cette route. Les deux viennent du MEME appel Meta (`pricing_analytics`), donc
+   * elles ne peuvent pas se contredire : le repli ne peut jamais afficher une devise fausse.
+   */
+  const deviseCampagnes = campagnes !== null && campagnes !== 'erreur' ? campagnes.currency : null;
+  const deviseMessages = messages !== null && messages !== 'erreur'
+    ? (messages.currency ?? deviseCampagnes)
+    : deviseCampagnes;
   const moyen = campagnes !== null && campagnes !== 'erreur'
     ? coutMoyenParEngagement(campagnes.lignes)
     : null;
@@ -89,7 +104,8 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
           onBascule={() => setOuverte((v) => (v === 'engagement' ? null : 'engagement'))}
           titre={t('Coût par engagement', 'Cost per engagement')}
           etat={campagnes === 'erreur' ? 'erreur' : campagnes === null ? 'charge' : 'pret'}
-          valeur={moyen && moyen.valeur !== null ? fmtCost(moyen.valeur, locale, devise) : null}
+          depliable={campagnes !== null && campagnes !== 'erreur' && campagnes.lignes.length > 0}
+          valeur={moyen && moyen.valeur !== null ? fmtCost(moyen.valeur, locale, deviseCampagnes) : null}
           /* `null` et pas « 0 € » : un zéro se lirait « c'est gratuit », alors que la vérité est qu'aucune
              campagne de la période n'a à la fois un coût chiffrable et une personne engagée. */
           vide={t('Aucune campagne mesurable sur cette période.', 'No measurable campaign over this period.')}
@@ -134,7 +150,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                         <td className={`${TD} text-right tabular-nums`} data-testid={`cout-ratio-engage-${l.campaignId}`}>
                           {l.coutParEngagement === undefined || l.coutParEngagement === null
                             ? <Vide titre={t('Il manque un des deux termes, ou personne ne s’est engagé.', 'One of the two terms is missing, or nobody engaged.')} />
-                            : fmtCost(l.coutParEngagement, locale, devise)}
+                            : fmtCost(l.coutParEngagement, locale, deviseCampagnes)}
                         </td>
                       </tr>
                     ))}
@@ -170,17 +186,17 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
           onBascule={() => setOuverte((v) => (v === 'messages' ? null : 'messages'))}
           titre={t('Coût des messages envoyés', 'Cost of messages sent')}
           etat={messages === 'erreur' ? 'erreur' : messages === null ? 'charge' : 'pret'}
-          valeur={messages !== null && messages !== 'erreur' ? fmtCost(messages.total, locale, devise) : null}
+          valeur={messages !== null && messages !== 'erreur' ? fmtCost(messages.total, locale, deviseMessages) : null}
           vide={t('Aucun envoi sur cette période.', 'Nothing sent over this period.')}
         >
           {messages !== null && messages !== 'erreur' && (
             <>
               <dl className="space-y-1 text-[13px]">
-                <Poste libelle={t('Templates marketing', 'Marketing templates')} valeur={fmtCost(messages.templates.marketing, locale, devise)} />
-                <Poste libelle={t('Templates utility', 'Utility templates')} valeur={fmtCost(messages.templates.utility, locale, devise)} />
+                <Poste libelle={t('Templates marketing', 'Marketing templates')} valeur={fmtCost(messages.templates.marketing, locale, deviseMessages)} />
+                <Poste libelle={t('Templates utility', 'Utility templates')} valeur={fmtCost(messages.templates.utility, locale, deviseMessages)} />
                 <Poste
                   libelle={t('Messages de service', 'Service messages')}
-                  valeur={fmtCost(messages.service.cout, locale, devise)}
+                  valeur={fmtCost(messages.service.cout, locale, deviseMessages)}
                   detail={t(
                     `${fmtNum(messages.service.envoyes, locale)} envoyé(s), ${fmtNum(messages.service.factures, locale)} facturé(s)`,
                     `${fmtNum(messages.service.envoyes, locale)} sent, ${fmtNum(messages.service.factures, locale)} billed`,
@@ -188,7 +204,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 />
                 <Poste
                   libelle={t('RCS', 'RCS')}
-                  valeur={fmtCost(messages.rcs.cout, locale, devise)}
+                  valeur={fmtCost(messages.rcs.cout, locale, deviseMessages)}
                   detail={t(
                     `${fmtNum(messages.rcs.simple, locale)} simple(s), ${fmtNum(messages.rcs.conversationnel, locale)} conversationnel(s)`,
                     `${fmtNum(messages.rcs.simple, locale)} plain, ${fmtNum(messages.rcs.conversationnel, locale)} conversational`,
@@ -325,13 +341,22 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
  * accordéon invisible d'un lecteur d'écran est une fonctionnalité qui n'existe pas pour ceux qui en ont
  * le plus besoin.
  */
-function Ligne({ cle, titre, valeur, vide, etat, ouverte, onBascule, children }: {
+function Ligne({ cle, titre, valeur, vide, etat, depliable = true, ouverte, onBascule, children }: {
   cle: string;
   titre: string;
   /** `null` = rien à montrer. Un « 0 € » se lirait « c'est gratuit », ce qui est une autre affirmation. */
   valeur: string | null;
   vide: string;
   etat: 'charge' | 'erreur' | 'pret';
+  /**
+   * Y a-t-il quelque chose DERRIERE ? Par defaut oui.
+   *
+   * ⚠️ CE N EST PAS `valeur !== null`, ET LA NUANCE COMPTE. Une periode peut porter des campagnes dont
+   * aucune n est mesurable : le chiffre du haut est alors vide, mais le tableau du dessous a toute sa
+   * valeur, il montre lesquelles et pourquoi leur case est vide. Fermer l accordeon sur ce critere
+   * cacherait l explication au moment precis ou on la cherche.
+   */
+  depliable?: boolean;
   ouverte: boolean;
   onBascule: () => void;
   children: React.ReactNode;
@@ -342,13 +367,13 @@ function Ligne({ cle, titre, valeur, vide, etat, ouverte, onBascule, children }:
         type="button"
         onClick={onBascule}
         aria-expanded={ouverte}
-        disabled={etat !== 'pret'}
+        disabled={etat !== 'pret' || !depliable}
         data-testid={`cout-bascule-${cle}`}
         className="flex w-full items-baseline justify-between gap-3 text-left disabled:cursor-default"
       >
         <span className="flex items-center gap-1.5 text-sm text-ink-600">
           {titre}
-          {etat === 'pret' && (
+          {etat === 'pret' && depliable && (
             <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 shrink-0 text-ink-400 transition-transform ${ouverte ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
           )}
         </span>

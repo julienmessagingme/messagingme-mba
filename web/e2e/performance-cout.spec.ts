@@ -43,6 +43,9 @@ const MESSAGES = {
   },
   rcs: { simple: 10, conversationnel: 5, cout: 1 },
   total: 21.37,
+  // 🔴 LA DEVISE VIENT DE CETTE ROUTE-CI, pas de celle des campagnes : c est ce que la revue du
+  // 2026-09-17 a corrige, et le test « les deux autres gardent leur devise » le garde.
+  currency: 'EUR',
   nonChiffrables: 30,
   sansCategorie: 30,
   sansTarif: 0,
@@ -201,6 +204,31 @@ test.describe('Performance Lab : la carte des couts', () => {
     await page.goto('/performance');
     await expect(page.getByTestId('cout-erreur-engagement')).toBeVisible();
     await expect(page.getByTestId('cout-valeur-ia')).toBeVisible();
+  });
+
+  test('🔴 ...et les deux autres gardent leur DEVISE, pas seulement leur nombre', async ({ page }) => {
+    /**
+     * 🔴 CE TEST EXISTE PARCE QUE LE PRECEDENT PASSAIT DEJA SANS LUI, SUR UN ECRAN FAUX. La premiere version
+     * de la carte prenait la devise de la route des campagnes pour TOUTE la carte : quand cette route
+     * tombait, le total des messages s affichait « 21,37 » au lieu de « 21,37 € ». Le nombre etait bien la,
+     * donc « les deux autres vivent » restait vert. Une assertion qui passe dans les deux cas ne prouve
+     * rien, et c est precisement ce que la revue du 2026-09-17 a trouve.
+     *
+     * ⚠️ MUTATION VERIFIEE : en faisant revenir la devise de la route des campagnes, ce test echoue et
+     * l autre reste vert.
+     */
+    await mock(page, { statutCout: 503 });
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-valeur-messages')).toContainText('€');
+  });
+
+  test('⚠️ aucune campagne sur la periode : l accordeon ne s ouvre pas sur un tableau vide', async ({ page }) => {
+    // ⚠️ MAIS IL S OUVRE QUAND DES CAMPAGNES EXISTENT SANS ETRE MESURABLES : le tableau montre alors
+    // lesquelles et pourquoi leur case est vide, ce qui est l explication qu on vient chercher. Le critere
+    // est donc « y a-t-il des lignes », pas « y a-t-il un chiffre ».
+    await mock(page, { cout: { ...COUT, lignes: [] } });
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-bascule-engagement')).toBeDisabled();
   });
 });
 

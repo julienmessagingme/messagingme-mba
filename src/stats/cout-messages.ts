@@ -68,6 +68,17 @@ export interface CoutMessages {
   };
   rcs: { simple: number; conversationnel: number; cout: number };
   total: number;
+  /**
+   * 🔴 LA DEVISE VOYAGE AVEC CE TOTAL, ET PAS AVEC UN AUTRE APPEL. Elle vient du même `pricing_analytics`
+   * de Meta que les tarifs, donc elle est là de toute façon ; la faire venir de la route voisine
+   * (`/stats/cost/campaigns`) couplerait l'AFFICHAGE de deux lignes que la carte charge séparément pour
+   * qu'une panne de l'une n'abîme pas l'autre. Trouvé en revue le 2026-09-17 : la première version le
+   * faisait, et le test « une panne d'une ligne ne tue pas les deux autres » passait quand même, parce que
+   * le nombre s'affichait, simplement sans son symbole.
+   *
+   * `null` = inconnue, et l'écran rend alors le nombre nu plutôt qu'un « € » qui serait faux hors zone euro.
+   */
+  currency: string | null;
   /** Envois comptes dans les volumes mais absents du cout. Somme des deux causes qui suivent. */
   nonChiffrables: number;
   /** ...dont ceux sans categorie enregistree : heritage clos (cf. `CostSeries.sansCategorie`). */
@@ -149,6 +160,7 @@ export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages
     service: { envoyes, factures, cout: coutService, parMois },
     rcs: { simple: e.rcsSimple, conversationnel: e.rcsConversationnel, cout: coutRcs },
     total: round2(templates.marketing + templates.utility + coutService + coutRcs),
+    currency: e.rates.currency ?? null,
     nonChiffrables: sansCategorie + sansTarif,
     sansCategorie,
     sansTarif,
