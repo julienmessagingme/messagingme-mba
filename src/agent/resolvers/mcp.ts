@@ -110,6 +110,15 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
     if (typeof outil.sourceId !== 'string' || outil.sourceId === '') {
       return refus('cet outil n’est rattaché à aucun serveur MCP');
     }
+    /**
+     * 🔴 LA CEINTURE. L'activation est déjà refusée en base, mais une ligne activée AVANT que le
+     * rafraîchissement ne la déclare non activable ou disparue resterait là : le consentement tombe au
+     * rafraîchissement, oui, mais entre les deux un appel peut passer. Un outil non activable partirait
+     * alors au modèle avec ZÉRO paramètre et appellerait le serveur avec `{}` à chaque tour.
+     */
+    if (outil.mcpNonActivable) return refus(`cet outil n’est pas appelable : ${outil.mcpNonActivable}`);
+    if (outil.mcpIndisponibleLe) return refus('cet outil a disparu du serveur MCP');
+
     const source = await deps.sources.pourAppel(ctx.tenantId, outil.sourceId);
     if (!source) return refus('le serveur MCP de cet outil est introuvable');
     if (source.status !== 'active') return refus('le serveur MCP de cet outil n’est pas actif');

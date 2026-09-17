@@ -8,6 +8,7 @@ import { OUTILS_MAISON, outilExpose, outilMaison, paramsInitiaux, type OutilExpo
 import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
 import { scopeTenant, estUuid } from './scope';
+import { OutilNonActivable } from '../agent/catalog';
 
 /**
  * Les outils d'un agent IA : les lui donner, et ne les lui donner que quand un humain l'a dit.
@@ -326,7 +327,19 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if (parse.data.valeur && ctx.userId === '') {
       return reply.code(403).send({ error: 'activation impossible sans utilisateur identifié' });
     }
-    const outil = await ecrire(ctx.tenant, ctx.agentId, outilId, parse.data.valeur, ctx.userId);
+    /**
+     * ⚠️ LE REFUS PORTE SA RAISON, ET ELLE VIENT DU SERVEUR DISTANT. Un outil importé dont le schéma n'est
+     * pas représentable, ou qui a disparu du serveur, ne s'active pas : le client ne peut pas corriger ça
+     * lui-même, mais il doit pouvoir le dire à son fournisseur. Un 404 « outil introuvable » l'enverrait
+     * chercher une ligne qui existe.
+     */
+    let outil: OutilComplet | null;
+    try {
+      outil = await ecrire(ctx.tenant, ctx.agentId, outilId, parse.data.valeur, ctx.userId);
+    } catch (err) {
+      if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
+      throw err;
+    }
     if (!outil) return reply.code(404).send({ error: 'outil introuvable' });
     const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
     return reply.code(200).send({ outil: vue(outil, sorties) });

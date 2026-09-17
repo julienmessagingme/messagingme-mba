@@ -179,6 +179,27 @@ export interface PatchOutil {
 }
 
 /** Le nom exposé d'un outil est unique par ESPACE (index de la migration 0127, il l'était par agent avant). */
+/**
+ * ON NE PEUT PAS ACTIVER UN OUTIL QUE L'IMPORT A DÉCLARÉ NON ACTIVABLE, NI UN OUTIL DISPARU.
+ *
+ * 🔴 CE REFUS N'EXISTAIT NULLE PART, et c'est la revue à froid qui l'a vu. `mcp_non_activable` était écrit
+ * par l'import, rendu par le store, affiché par l'écran MCP... et lu par AUCUNE garde. L'écran qui porte la
+ * case d'activation est `Tools > Outils`, qui ne connaissait pas la colonne : rien n'empêchait donc
+ * d'activer un outil dont l'aplatisseur avait refusé le schéma. Il partait alors au modèle avec ZÉRO
+ * paramètre (`aplatirSchema` rend `feuilles: []` sur un refus) et appelait le serveur avec `{}` à chaque
+ * tour. La spec et le commentaire de la migration 0152 affirment tous les deux « on les IMPORTE et on les
+ * MONTRE, on ne les active pas » : personne ne le tenait.
+ *
+ * 🔴 ELLE PORTE LA RAISON, parce que le client ne peut pas la deviner : elle vient du schéma du serveur
+ * distant, et c'est à son fournisseur qu'il devra la dire.
+ */
+export class OutilNonActivable extends Error {
+  constructor(public readonly raison: string) {
+    super(raison);
+    this.name = 'OutilNonActivable';
+  }
+}
+
 export class NomOutilDejaPris extends Error {
   constructor() { super('un outil de cet espace porte déjà ce nom'); this.name = 'NomOutilDejaPris'; }
 }

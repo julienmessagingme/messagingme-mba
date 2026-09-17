@@ -4,7 +4,7 @@ import type {
   ToolAdminStore, ToolCatalog,
   SourceAppel,
 } from './catalog';
-import { NomOutilDejaPris } from './catalog';
+import { OutilNonActivable, NomOutilDejaPris } from './catalog';
 import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 
@@ -345,6 +345,26 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   async activerConsommateur(
     tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string,
   ): Promise<OutilComplet | null> {
+    /**
+     * 🔴 LE POINT DE PASSAGE UNIQUE DE L'ACTIVATION, ET C'EST POUR ÇA QUE LA GARDE EST ICI. Les deux
+     * chemins y aboutissent : l'onglet Outils d'un agent (`activer`, juste au-dessus) et l'exposition à
+     * l'agent de Meta (`src/http/agent-catalogue.ts`). La poser dans l'un des deux la laisserait absente
+     * de l'autre, ce qui est le motif « capacité câblée sur un consommateur sur deux ».
+     *
+     * ⚠️ SEULEMENT À L'ACTIVATION. Désactiver un outil devenu non activable doit rester possible : c'est
+     * même le seul geste qui reste au client.
+     */
+    if (actif) {
+      const etat = await this.pool.query<{ mcp_non_activable: string | null; mcp_indisponible_le: Date | null }>(
+        'select mcp_non_activable, mcp_indisponible_le from agent_tools where tenant_id = $1 and id = $2',
+        [tenantId, outilId],
+      );
+      const l = etat.rows[0];
+      if (l?.mcp_non_activable) throw new OutilNonActivable(l.mcp_non_activable);
+      if (l?.mcp_indisponible_le) {
+        throw new OutilNonActivable('cet outil a disparu du serveur MCP : il n’est plus appelable');
+      }
+    }
     const res = await this.pool.query(
       `update agent_tool_consommateurs set
          actif = $4,

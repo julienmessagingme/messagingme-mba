@@ -238,3 +238,24 @@ describe('le CABLAGE du bac a sable, qui rendait la simulation inatteignable', (
     expect(JSON.stringify(sortie.contenu)).toContain('n\'a PAS eu lieu');
   });
 });
+
+describe('la CEINTURE a l execution : un outil non activable ne part pas', () => {
+  it('🔴 un outil declare NON ACTIVABLE est refuse AVANT toute connexion', async () => {
+    // 🔴 L activation est deja refusee en base, mais une ligne activee AVANT que le rafraichissement ne la
+    // declare non activable resterait la : le consentement tombe au rafraichissement, oui, mais entre les
+    // deux un appel peut passer. Il partirait alors avec ZERO parametre (`aplatirSchema` rend `feuilles: []`
+    // sur un refus) et appellerait le serveur avec `{}` a chaque tour.
+    const h = harnais();
+    const r = await h.resolveur(entree(OUTIL({ mcpNonActivable: 'le paramètre « lignes » est une liste' })));
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).toContain('lignes');
+    expect(h.ouvrirSession).not.toHaveBeenCalled();
+  });
+
+  it('🔴 un outil DISPARU du serveur est refuse, lui aussi', async () => {
+    const h = harnais();
+    const r = await h.resolveur(entree(OUTIL({ mcpIndisponibleLe: new Date('2026-09-01') })));
+    expect(r.ok).toBe(false);
+    expect(h.ouvrirSession).not.toHaveBeenCalled();
+  });
+});

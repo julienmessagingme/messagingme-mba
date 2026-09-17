@@ -4,6 +4,7 @@ import type { OutilBibliotheque } from '../agent/catalog';
 import { consommateurMba } from '../agent/consommateur';
 import { scopeTenant, estUuid } from './scope';
 import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
+import { OutilNonActivable } from '../agent/catalog';
 
 /**
  * La BIBLIOTHÈQUE d'outils d'un espace (migration 0127).
@@ -107,7 +108,18 @@ export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogu
     const rattache = await deps.rattacherConsommateur(tenant, cle, outilId);
     // `rattacherConsommateur` rend `false` quand la ligne existait DÉJÀ : ce n'est pas un échec, et il faut
     // quand même activer (l'outil pouvait être rattaché et éteint).
-    const actif = await deps.activerConsommateur(tenant, cle, outilId, true, userId);
+    /**
+     * ⚠️ MÊME REFUS QUE POUR UN AGENT IA. Les deux chemins d'activation aboutissent au même point de
+     * passage en base, donc les deux reçoivent la même exception : la traduire ici aussi est ce qui évite
+     * qu'un 500 remonte sur un geste ordinaire.
+     */
+    let actif: unknown;
+    try {
+      actif = await deps.activerConsommateur(tenant, cle, outilId, true, userId);
+    } catch (err) {
+      if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
+      throw err;
+    }
     if (!rattache && actif === null) return reply.code(404).send({ error: 'outil introuvable' });
     return reply.code(200).send({ expose: true, consommateur: cle });
   });

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgMcpStore } from '../../src/agent/mcp/store.pg';
+import { PgToolCatalog } from '../../src/agent/catalog.pg';
 import type { OutilAImporter } from '../../src/agent/mcp/import';
 
 const url = process.env.DATABASE_URL ?? '';
@@ -21,6 +22,7 @@ const url = process.env.DATABASE_URL ?? '';
 describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
   let pool: Pool;
   let store: PgMcpStore;
+  let catalogue: PgToolCatalog;
   let tenantId: string;
   let agentId: string;
   let userId: string;
@@ -46,6 +48,7 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
     store = new PgMcpStore(pool);
+    catalogue = new PgToolCatalog(pool);
 
     tenantId = (await pool.query<{ id: string }>(
       `insert into tenants (name) values ('itest-mcp-store') returning id`,
@@ -196,6 +199,38 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     );
     expect(lu.rows[0]!.params[0]).toMatchObject({ name: 'q', type: 'string', source: 'champ', cle: 'email', cheminMcp: 'q' });
     expect(lu.rows[0]!.risk).toBe('write');
+  });
+
+  it('🔴 ON NE PEUT PAS ACTIVER un outil declare NON ACTIVABLE', async () => {
+    /**
+     * 🔴 CE REFUS N EXISTAIT NULLE PART. `mcp_non_activable` etait ecrit par l import, rendu par le store,
+     * affiche par l ecran MCP... et lu par AUCUNE garde. L ecran qui porte la case d activation est
+     * `Tools > Outils`, qui ne connaissait pas la colonne : rien n empechait donc d activer un outil dont
+     * l aplatisseur avait refuse le schema.
+     *
+     * 🔴 LA GARDE EST AU POINT DE PASSAGE, parce que les DEUX chemins d activation y aboutissent : l onglet
+     * Outils d un agent et l exposition a l agent de Meta. La poser dans l un la laisserait absente de
+     * l autre.
+     */
+    await store.appliquer(tenantId, sourceMcp, {
+      nouveaux: [aImporter('refuse', 'notion_refuse', { nonActivable: 'le paramètre « lignes » est une liste' })],
+      changes: [], disparus: [], vus: [],
+    });
+    const cible = (await store.outilsDuServeur(tenantId, sourceMcp)).find((o) => o.nomDistant === 'refuse')!;
+    await pool.query(
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif) values ($1, $2, $3, false)`,
+      [tenantId, cible.id, `agent:${agentId}`],
+    );
+    await expect(
+      catalogue.activerConsommateur(tenantId, `agent:${agentId}`, cible.id, true, userId),
+    ).rejects.toThrow(/lignes/);
+  });
+
+  it('⚠️ mais on peut toujours le DESACTIVER : c est le seul geste qui reste au client', async () => {
+    const cible = (await store.outilsDuServeur(tenantId, sourceMcp)).find((o) => o.nomDistant === 'refuse')!;
+    await expect(
+      catalogue.activerConsommateur(tenantId, `agent:${agentId}`, cible.id, false, userId),
+    ).resolves.not.toThrow();
   });
 
   it('⚠️ et le réglage refuse un outil qui n est pas MCP', async () => {
