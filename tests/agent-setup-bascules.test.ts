@@ -123,9 +123,19 @@ describe('couverture de l’ordre du jour', () => {
     expect(actions).toContain('continuer');
   });
 
-  it('🔴 MCP est proposé MAIS annoncé comme non branché : on ne promet pas un câblage inexistant', () => {
+  it('🔴 MCP est proposé SANS promesse fausse, dans un sens comme dans l’autre', () => {
+    /**
+     * 🔴 CE CAS A CHANGÉ DE VÉRITÉ, PAS DE RAISON D'ÊTRE (2026-09-17). Il exigeait le mot « pas encore »,
+     * parce que MCP était proposé sans être câblé : promettre un branchement inexistant était le défaut.
+     * Les connecteurs MCP sont livrés, donc c'est l'inverse qui est devenu faux : annoncer « pas encore »
+     * enverrait le client renoncer à un dispositif qui marche.
+     *
+     * Ce que le cas garde, c'est son invariant : le libellé ne dit RIEN de faux sur l'état du câblage.
+     */
     const mcp = CHOIX_ACTION.find((c) => c.action === 'outil_mcp')!;
-    expect(mcp.libelle).toContain('pas encore');
+    expect(mcp.libelle).not.toContain('pas encore');
+    expect(mcp.libelle).not.toContain('disponible');
+    expect(mcp.libelle).toContain('MCP');
   });
 
   /**
@@ -166,13 +176,23 @@ describe('couverture de l’ordre du jour', () => {
       expect(q).toContain('Décrivez ce qu’il faudrait brancher');
     });
 
-    it('🔴 MCP : même déclaré, il n’est PAS appelable, et la question ne le cache pas', () => {
+    it('🔴 MCP : la question NOMME les serveurs déclarés, et dit qu’il n’y en a pas quand c’est le cas', () => {
+      /**
+       * 🔴 MÊME CAS QU'AVANT, VÉRITÉ INVERSÉE (2026-09-17). Il exigeait « n'est PAS encore disponible »,
+       * ce qui était juste tant que MCP n'était pas câblé. Depuis qu'il l'est, la question doit se
+       * comporter comme celle des connecteurs API : énumérer ce qui EXISTE, et ne rien promettre quand il
+       * n'y a rien.
+       *
+       * ⚠️ L'invariant conservé est celui que Julien a formulé le 2026-08-31 : « si c'est pas branché ou
+       * s'il y a rien, ben y a rien et la personne devra choisir autre chose ». C'est le dernier verrou
+       * contre l'outil inventé, et il vaut dans les deux états du câblage.
+       */
       const declare = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: ['serveur maison'] });
-      expect(declare).toContain('n’est PAS encore disponible');
       expect(declare).toContain('serveur maison');
-      expect(declare).toContain('rien ne peut encore l’appeler');
+      expect(declare).not.toContain('PAS encore disponible');
+
       const rien = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: [] });
-      expect(rien).toContain('n’est PAS encore disponible');
+      expect(rien).toContain('AUCUN serveur MCP');
       expect(rien).toContain('choisissez autre chose');
     });
 

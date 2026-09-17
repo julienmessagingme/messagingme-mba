@@ -48,15 +48,16 @@ export type Action = (typeof ACTIONS)[number];
  * répondre »). Les retirer rouvrirait le défaut qu'on venait de fermer, celui de l'action inventée faute de
  * pouvoir dire « rien de spécial ».
  *
- * ⚠️ `outil_mcp` est proposé alors que MCP N'EST PAS ENCORE CÂBLÉ (lot L4, non développé). C'est assumé : le
- * client doit pouvoir dire son intention, et l'assistant a pour consigne de préciser que ce sera à brancher.
- * Le taire donnerait un questionnaire qui ment par omission ; le proposer sans le dire promettrait un
- * branchement inexistant.
+ * ⚠️ `outil_mcp` A ÉTÉ PROPOSÉ PENDANT DES SEMAINES ALORS QUE MCP N'ÉTAIT PAS CÂBLÉ, et ces trois textes
+ * l'annonçaient au client. Ils sont devenus FAUX le 2026-09-17, quand les connecteurs MCP ont été livrés :
+ * une justification qui survit à ce qu'elle justifiait est pire qu'aucune, parce qu'elle sera recopiée. Le
+ * choix reste proposé pour la même raison qu'avant (le client doit pouvoir dire son intention), mais il
+ * ÉNUMÈRE désormais ce qui est réellement branché, comme `outil_api` juste au-dessus.
  */
 export const CHOIX_ACTION: ReadonlyArray<{ action: Action; libelle: string }> = [
   { action: 'scenario', libelle: 'créer et lancer un scénario' },
   { action: 'outil_api', libelle: 'appeler un outil branché par API (un connecteur que vous avez déclaré)' },
-  { action: 'outil_mcp', libelle: 'appeler un outil branché par MCP (pas encore disponible : ce serait à brancher)' },
+  { action: 'outil_mcp', libelle: 'appeler un outil branché par MCP (un serveur MCP que vous avez déclaré)' },
   { action: 'humain', libelle: 'passer la main à un humain' },
   { action: 'continuer', libelle: 'rien de particulier, il continue simplement à répondre' },
   { action: 'autre', libelle: 'autre chose' },
@@ -355,9 +356,14 @@ function moyenDemande(action: Action, inv: Inventaire): string {
       + 'rien à appeler aujourd’hui. Décrivez ce qu’il faudrait brancher, ou choisissez autre chose pour ce moment.';
   }
   if (action === 'outil_mcp') {
-    const declares = inv.mcp.length > 0 ? ` (vous avez déclaré ${enumerer(inv.mcp)}, mais rien ne peut encore l’appeler)` : '';
-    return `MCP n’est PAS encore disponible sur cette console${declares}. Décrivez ce qu’il faudrait brancher, `
-      + 'ou choisissez autre chose pour ce moment.';
+    // ⚠️ MÊME FORME QUE `outil_api`, et c'est le but : les deux familles se branchent pareil depuis le
+    // 2026-09-17, et deux réponses de forme différente feraient croire à deux dispositifs différents.
+    if (inv.mcp.length > 0) {
+      return `lequel doit-il appeler ? Serveurs MCP déclarés dans votre espace : ${enumerer(inv.mcp)}.`;
+    }
+    return 'AUCUN serveur MCP n’est déclaré dans votre espace : il n’y a rien à appeler aujourd’hui. '
+      + 'Vous pouvez en déclarer un depuis le menu Tools > Connecteurs MCP. Décrivez ce qu’il faudrait '
+      + 'brancher, ou choisissez autre chose pour ce moment.';
   }
   return 'que doit-il faire exactement ?';
 }

@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { RisqueOutil } from '../catalog';
 import type { SourceParam } from '../llm/tool-schema';
 import type { OutilExistantMcp } from './import';
-import type { EcritureImportMcp, ServeurMcpVue } from '../../http/agent-mcp';
+import type { EcritureImportMcp, OutilMcpVue, ServeurMcpVue } from '../../http/agent-mcp';
 
 /**
  * Le stockage des outils importés d'un serveur MCP.
@@ -85,6 +85,50 @@ export class PgMcpStore {
       nomDistant: typeof r.binding?.outilDistant === 'string' ? r.binding.outilDistant : r.name,
       mcpAnnonce: r.mcp_annonce,
       mcpIndisponibleLe: r.mcp_indisponible_le,
+      consommateursActifs: Number(r.actifs),
+    }));
+  }
+
+  /**
+   * Les outils importés, TELS QUE L'ÉCRAN LES MONTRE.
+   *
+   * 🔴 SÉPARÉE DE `outilsDuServeur`, ET CE N'EST PAS UN DOUBLON. Celle-là ne lit que ce qu'on COMPARE au
+   * rafraîchissement (le nom distant, l'annonce, ce qu'un changement fait tomber) : lui faire porter le
+   * titre, les paramètres et le risque ferait grossir le chemin de l'import de colonnes qu'il n'utilise
+   * pas, et surtout ferait croire que le planificateur s'en sert.
+   *
+   * ⚠️ `mcp_annonce` EST RENDUE AU CLIENT, et c'est voulu : c'est le schéma QUE LE SERVEUR ANNONCE, donc la
+   * seule chose qu'il puisse montrer à son fournisseur quand un outil est refusé. Elle ne porte aucun
+   * secret : elle vient d'en face.
+   */
+  async outilsPourEcran(tenantId: string, sourceId: string): Promise<OutilMcpVue[]> {
+    const res = await this.pool.query<{
+      id: string; name: string; title: string; description: string; ne_pas_utiliser: string;
+      params: unknown; binding: { outilDistant?: unknown } | null; risk: string;
+      mcp_annonce: unknown; mcp_non_activable: string | null;
+      mcp_indisponible_le: Date | null; actifs: string;
+    }>(
+      `select t.id, t.name, t.title, t.description, t.ne_pas_utiliser, t.params, t.binding, t.risk,
+              t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le,
+              (select count(*) from agent_tool_consommateurs c
+                where c.tool_id = t.id and c.tenant_id = t.tenant_id and c.actif)::text as actifs
+         from agent_tools t
+        where t.tenant_id = $1 and t.source_id = $2 and t.origin = 'mcp'
+        order by t.name`,
+      [tenantId, sourceId],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      nomDistant: typeof r.binding?.outilDistant === 'string' ? r.binding.outilDistant : r.name,
+      title: r.title,
+      description: r.description,
+      nePasUtiliser: r.ne_pas_utiliser,
+      params: Array.isArray(r.params) ? r.params as OutilMcpVue['params'] : [],
+      risk: r.risk as OutilMcpVue['risk'],
+      annonce: r.mcp_annonce,
+      nonActivable: r.mcp_non_activable,
+      indisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
       consommateursActifs: Number(r.actifs),
     }));
   }

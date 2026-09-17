@@ -17,6 +17,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"campagnes","href":"/campaigns","fr":"Campagnes","en":"Campaigns","acces":"admin","chemin":[]},
   {"cle":"chaine","href":"/chaine","fr":"Chaîne","en":"Channel","acces":"admin","chemin":[]},
   {"cle":"connecteurs","href":"/connecteurs","fr":"Connecteurs API","en":"API connectors","acces":"admin","chemin":["Tools"]},
+  {"cle":"connecteurs-mcp","href":"/connecteurs-mcp","fr":"Connecteurs MCP","en":"MCP connectors","acces":"admin","chemin":["Tools"]},
   {"cle":"contacts","href":"/contacts","fr":"mini-CRM","en":"mini-CRM","acces":"admin","chemin":[]},
   {"cle":"dashboard-quali","href":"/dashboard/quali","fr":"Qualitatif","en":"Qualitative","acces":"admin","chemin":[]},
   {"cle":"dashboard-tableaux","href":"/dashboard/tableaux","fr":"Mes tableaux","en":"My reports","acces":"admin","chemin":[]},

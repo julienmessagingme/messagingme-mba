@@ -47,6 +47,7 @@ function harnais(over: {
   cles?: string[];
   reglerOk?: boolean;
   label?: string;
+  vues?: never[];
 } = {}) {
   const ecrit: EcritureImportMcp[] = [];
   const epreuves: Array<{ ok: boolean }> = [];
@@ -61,6 +62,7 @@ function harnais(over: {
     pourAppel: async () => POUR_APPEL,
     marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
     outilsDuServeur: async () => over.outils ?? [],
+    outilsPourEcran: async () => over.vues ?? [],
     nomsPris: async () => [],
     appliquer: async (_t, _s, e) => { ecrit.push(e); },
     clesDeChamps: async () => over.cles ?? ['email', 'reference'],
@@ -213,5 +215,23 @@ describe('regler un outil importe', () => {
       method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`, payload: { risk: 'read' },
     });
     expect(r.statusCode).toBe(404);
+  });
+});
+
+describe('lister les outils importes', () => {
+  it('🔴 la route EXISTE, sinon l ecran ne peut rien regler', async () => {
+    // 🔴 LE MANQUE QUE LA TACHE 8 A REVELE. L import ecrivait des outils que personne ne pouvait ni voir ni
+    // clouer : une capacite ecrite sans son lecteur, c est-a-dire le motif « offert-et-inerte » que ce
+    // produit s interdit ailleurs.
+    const h = harnais();
+    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/outils` });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ outils: [] });
+  });
+
+  it('refuse un identifiant qui n est pas un uuid', async () => {
+    const h = harnais();
+    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/pas-un-uuid/outils` });
+    expect(r.statusCode).toBe(400);
   });
 });

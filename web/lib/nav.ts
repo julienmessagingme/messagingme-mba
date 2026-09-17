@@ -322,6 +322,11 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       // 🔴 « Outils » AU NIVEAU DE L'ESPACE, à côté des connecteurs, depuis la migration 0127. Un connecteur
       // est le SYSTÈME, un outil est l'ACTION qu'on y fait : les deux appartiennent au client, pas à un
       // agent. C'est ici qu'on voit qu'un outil sert à plusieurs agents, ce qu'aucun écran ne disait.
+      // 🔴 « CONNECTEURS MCP », ET PAS « SERVEURS MCP ». `Developers > Serveur MCP` existe deja et decrit
+      // le sens INVERSE (ce que NOUS exposons). Deux entrees a un S pres, pour deux choses opposees,
+      // seraient indistinguables a la lecture. « Connecteurs » dit la meme chose que « Connecteurs API »
+      // juste au-dessus : on va chercher ailleurs.
+      { key: 'connecteurs-mcp', href: '/connecteurs-mcp', label: t('Connecteurs MCP', 'MCP connectors') },
       { key: 'outils-espace', href: '/outils', label: t('Outils', 'Tools') },
     ] },
   ];

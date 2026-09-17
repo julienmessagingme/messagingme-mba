@@ -44,6 +44,29 @@ export interface ServeurMcpVue {
   lastError: string | null;
 }
 
+/**
+ * Un outil importé, tel que l'écran le montre.
+ *
+ * ⚠️ `annonce` PART AU CLIENT, et c'est voulu : c'est le schéma que le SERVEUR annonce, donc la seule chose
+ * qu'il puisse montrer à son fournisseur quand un outil est refusé. Elle ne porte aucun secret, elle vient
+ * d'en face.
+ */
+export interface OutilMcpVue {
+  id: string;
+  name: string;
+  nomDistant: string;
+  title: string;
+  description: string;
+  nePasUtiliser: string;
+  params: Array<{ name: string; type: string; source: SourceParam; required?: boolean; description?: string; cle?: string; contactPath?: string; value?: string | number | boolean; cheminMcp?: string }>;
+  risk: RisqueOutil;
+  annonce: unknown;
+  /** `null` = activable. Sinon la raison, affichée telle quelle. */
+  nonActivable: string | null;
+  indisponibleLe: string | null;
+  consommateursActifs: number;
+}
+
 /** Ce que l'import ÉCRIT, en un seul objet, pour que le store le pose dans une transaction. */
 export interface EcritureImportMcp {
   nouveaux: OutilAImporter[];
@@ -60,6 +83,8 @@ export interface AgentMcpRouteDeps {
   /** L'adresse et le secret DÉCHIFFRÉ. Un seul appelant, comme pour les connecteurs HTTP. */
   pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
   marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void>;
+  /** Les outils importés, pour l'ÉCRAN. Séparée de la lecture d'import, qui compare et rien de plus. */
+  outilsPourEcran(tenantId: string, sourceId: string): Promise<OutilMcpVue[]>;
   /** Les outils MCP déjà importés de ce serveur, avec ce qu'un changement ferait tomber. */
   outilsDuServeur(tenantId: string, sourceId: string): Promise<OutilExistantMcp[]>;
   /** Les noms d'outils DÉJÀ pris dans l'espace : l'unicité est par espace depuis 0127. */
@@ -199,6 +224,21 @@ export function registerAgentMcp(
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ serveurs: await deps.listerServeurs(tenant) });
+  });
+
+  /**
+   * Les outils importés d'un serveur.
+   *
+   * 🔴 SANS ELLE, L'ÉCRAN NE PEUT RIEN RÉGLER, et c'est le manque que la tâche 8 a révélé : l'import
+   * écrivait des outils que personne ne pouvait ni voir ni clouer. Une capacité écrite sans son lecteur
+   * est exactement le motif « offert-et-inerte » que ce produit s'interdit.
+   */
+  app.get('/agents/:tenantId/mcp/:sourceId/outils', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { sourceId } = req.params as { sourceId: string };
+    if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
+    return reply.code(200).send({ outils: await deps.outilsPourEcran(tenant, sourceId) });
   });
 
   /**

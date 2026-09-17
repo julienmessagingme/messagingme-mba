@@ -1742,6 +1742,7 @@ async function main(): Promise<void> {
       listerServeurs: (tenant) => mcpStore.listerServeurs(tenant),
       pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
       marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
+      outilsPourEcran: (tenant, sourceId) => mcpStore.outilsPourEcran(tenant, sourceId),
       outilsDuServeur: (tenant, sourceId) => mcpStore.outilsDuServeur(tenant, sourceId),
       nomsPris: (tenant) => mcpStore.nomsPris(tenant),
       appliquer: (tenant, sourceId, e) => mcpStore.appliquer(tenant, sourceId, e),
