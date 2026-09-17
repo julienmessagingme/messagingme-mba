@@ -49,8 +49,11 @@ ils le règlent, comme Developers. Aucune adresse n'a changé.
   **Crédit**, qui montre le crédit prépayé de l'espace. Le rechargement en ligne n'est pas ouvert : l'écran
   le dit et donne le solde, plutôt que de laisser une entrée de menu mener nulle part.
 
-**Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel / Erreurs) · Qualitatif ·
+**Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel) · Analyse des conversations ·
 Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.
+⚠️ **« Qualitatif » s'appelle « Analyse des conversations » depuis le 2026-09-17**, et le sous-onglet
+**Erreurs** a quitté le Quantitatif le même jour pour rejoindre le journal dans **Console > Sécurité >
+Journal des erreurs**, où sa carte d'agrégat par code Meta vit désormais à côté du journal ligne à ligne.
 **Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte le nuage
 « urgence et satisfaction » et le tableau du coût par engagement.
 
@@ -1215,8 +1218,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ⚠️ **Les analyses sans ces notes sont comptées à part, sous le graphe, et ne valent PAS zéro.** Les
   placer en (0,0) rangerait tout l'historique dans le coin « client furieux, urgence nulle » et ferait
   mentir la moyenne.
-- ✅ **Trois pages** : **Quantitatif** (volumes, coûts, erreurs, funnels), **Qualitatif** (ce que les
-  conversations disent) et **Mes tableaux** (2026-08-19, ci-dessous). Les deux premières ont le **même bandeau
+- ✅ **Trois pages** : **Quantitatif** (volumes, coûts, funnels), **Analyse des conversations** (ce que les
+  conversations disent, appelée « Qualitatif » jusqu'au 2026-09-17) et **Mes tableaux** (2026-08-19,
+  ci-dessous). Les deux premières ont le **même bandeau
   de période** et la **même
   période par défaut** (30 derniers jours). En revanche la plage choisie **ne suit pas** d'une page à l'autre :
   chaque page repart de son défaut, il faut donc la régler des deux côtés pour comparer un chiffre de l'une et
@@ -1311,7 +1315,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   L'ancienne carte « Clics sur les liens, tous envois confondus » de Mes tableaux a été RETIRÉE : cet écran
   pilote un scénario, et un total de template n'y voulait rien dire (il y affichait les clics d'un template
   qui n'avait jamais rien envoyé).
-- ✅ **Conversations (analyse)** (2026-07-17, page **Analytics > Qualitatif** depuis le 2026-07-20) : lecture de l'**analyse automatique des
+- ✅ **Conversations (analyse)** (2026-07-17, page **Analyse des conversations** depuis le 2026-07-20, renommée ainsi le 2026-09-17) : lecture de l'**analyse automatique des
   conversations** (une IA classe chaque conversation). **Quanti** : donut du **sentiment** (positif / neutre /
   négatif), barres par **intention** (demande de devis, SAV, réclamation, info, prise de RDV, autre) et par
   **action suggérée** (créer un devis / rappeler / relancer / escalader / aucune = le pipeline à traiter), **taux
@@ -1325,7 +1329,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Les conversations de test ne polluent aucun chiffre** : une conversation ouverte par « Tester le scénario »
   est marquée comme test et **écartée des statistiques** (messages échangés, templates envoyés, détail par
   template, attribution des réponses du funnel) **et de l'analyse** (elle n'est jamais analysée, donc absente
-  de la page Qualitatif). Tester un scénario depuis son propre téléphone ne déforme donc pas les compteurs.
+  de la page Analyse des conversations). Tester un scénario depuis son propre téléphone ne déforme donc pas les compteurs.
 
 ## L'aide de la console (bouton flottant, sur tous les écrans)
 

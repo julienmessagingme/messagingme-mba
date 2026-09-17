@@ -288,6 +288,18 @@ test.describe('Centre de sécurité & compliance', () => {
   });
 
   /**
+   * 🔴 ET UNE TROISIEME VUE DEPUIS LE 2026-09-17 : l AGREGAT par code d erreur Meta, qui a quitte
+   * Analytics > Quantitatif pour venir ici. Ce n etait pas un doublon du journal : celui-ci rend les
+   * dernieres lignes, l agregat rend un classement par code sur une periode, et c est la seule des deux
+   * vues qui dise s il faut agir.
+   */
+  test('🔴 l AGREGAT par code est la, avec sa barre de periode', async ({ page }) => {
+    await monter(page);
+    await page.goto('/securite/erreurs');
+    await expect(page.locator('#quanti-erreurs')).toBeVisible();
+  });
+
+  /**
    * ⚠️ « N A PAS REPONDU A TEMPS » ET « A REPONDU 500 » SE DISENT DIFFEREMMENT, et c est le signal le plus
    * utile du journal : le premier se regle chez l hebergeur, le second dans le code. Un ecran qui rendrait
    * les deux par « erreur » ferait chercher au mauvais endroit.
@@ -318,6 +330,20 @@ test.describe('Centre de sécurité & compliance', () => {
 
     await page.goto('/securite/erreurs');
     await expect(page.getByTestId('erreurs-livraison')).toBeVisible();
+    /**
+     * 🔴 MAIS PAS L AGREGAT, ET C EST UN DEFAUT ATTRAPE LE JOUR MEME OU IL A ETE INTRODUIT (2026-09-17).
+     *
+     * Tout le module `stats` est monte avec la garde `admin` (`registerStats(app, d, g.admin)`), donc
+     * `getErrorBreakdown` rend 403 a un manager. Amener la carte ici sans condition de role aurait colle un
+     * bandeau rouge en haut d une page qui marchait pour lui la veille, a chaque ouverture. La page ne
+     * l affiche donc pas ET ne lance pas la requete : masquer apres coup produirait un refus par ouverture
+     * d ecran, du bruit dans les journaux d acces pour une page que ce role a le droit d ouvrir.
+     *
+     * ⚠️ LA BARRE DE PERIODE PART AVEC, parce qu elle ne filtre QUE cet agregat. La laisser donnerait un
+     * reglage qui ne change rien a l ecran, motif « offert-et-inerte » que ce produit s interdit ailleurs.
+     */
+    await expect(page.locator('#quanti-erreurs')).toHaveCount(0);
+    await expect(page.getByTestId('range-bar')).toHaveCount(0);
     await page.goto('/securite/ia');
     await expect(page.getByTestId('securite-ia')).toBeVisible();
   });

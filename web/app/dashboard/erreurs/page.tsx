@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/lib/i18n';
 
 /**
  * ADRESSE HISTORIQUE : `Analytics > Quantitatif > Erreurs` a déménagé dans le centre de Sécurité le
@@ -22,10 +23,20 @@ import { useRouter } from 'next/navigation';
  */
 export default function ErreursRedirection() {
   const router = useRouter();
+  const t = useT();
   useEffect(() => { router.replace('/securite/erreurs'); }, [router]);
+  /**
+   * ⚠️ BILINGUE COMME LE RESTE, même pour une page qui ne s'affiche qu'une fraction de seconde. Le
+   * `LocaleProvider` vit dans la mise en page racine, donc `useT` est disponible ici sans l'`AppShell` :
+   * une phrase en français seul serait la seule du produit, et elle se verrait le jour où la redirection
+   * traîne (réseau lent, onglet en arrière-plan).
+   */
   return (
     <p className="p-6 text-sm text-ink-500" data-testid="erreurs-redirection">
-      Le journal des erreurs a déménagé dans Console &gt; Sécurité.
+      {t(
+        'Le journal des erreurs a déménagé dans Console > Sécurité.',
+        'The error log has moved to Console > Security.',
+      )}
     </p>
   );
 }

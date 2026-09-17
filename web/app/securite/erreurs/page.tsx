@@ -51,7 +51,28 @@ function ErreursInner({ session }: { session: Session }) {
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  /**
+   * 🔴 L'AGRÉGAT EST ADMIN-ONLY, LES DEUX JOURNAUX NE LE SONT PAS, ET CET ÉCRAN PORTE LES TROIS.
+   *
+   * Le centre de Sécurité est ouvert aux MANAGERS (`ECRANS_ENCADREMENT`, décision de Julien du 2026-09-14 :
+   * « ouvre la console aux managers sur les écrans de conformité »). Or tout le module `stats` est monté
+   * avec la garde `admin` (`src/server.ts`, `registerStats(app, d, g.admin)`), donc `getErrorBreakdown`
+   * rend **403** à un manager. Sans cette condition, amener la carte ici aurait collé un bandeau rouge en
+   * haut d'une page qui marchait très bien pour lui la veille, et l'aurait fait à CHAQUE ouverture.
+   *
+   * ⚠️ ON N'APPELLE PAS, ON NE CACHE PAS APRÈS COUP. Masquer la carte en laissant partir la requête
+   * produirait un refus par ouverture d'écran, donc du bruit dans les journaux d'accès pour une page que
+   * ce rôle a le droit d'ouvrir. « On ne montre qu'une porte qu'on peut ouvrir » vaut aussi pour les
+   * requêtes qu'on lance sans le dire.
+   *
+   * ⚠️ ET LA BARRE DE PÉRIODE PART AVEC, parce qu'elle ne filtre QUE cet agrégat : la laisser donnerait à
+   * un manager un réglage qui ne change rien à l'écran, ce qui est le motif « offert-et-inerte » que ce
+   * produit s'interdit ailleurs.
+   */
+  const voitAgregat = session.role === 'admin';
+
   const charger = useCallback(async () => {
+    if (!voitAgregat) { setChargement(false); return; }
     setErreur(null);
     try {
       const eb = await getErrorBreakdown(session.tenantId, range);
@@ -61,18 +82,22 @@ function ErreursInner({ session }: { session: Session }) {
     } finally {
       setChargement(false);
     }
-  }, [session.tenantId, range, t]);
+  }, [session.tenantId, range, t, voitAgregat]);
 
   useEffect(() => { void charger(); }, [charger]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
-      <RangeBar title={t('Erreurs de livraison', 'Delivery errors')} range={range} onChange={setRange} />
-      {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
-      {chargement ? (
-        <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
-      ) : (
-        <ErrorBreakdownCard errors={errors} tenantId={session.tenantId} range={range} />
+      {voitAgregat && (
+        <>
+          <RangeBar title={t('Erreurs de livraison', 'Delivery errors')} range={range} onChange={setRange} />
+          {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+          {chargement ? (
+            <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
+          ) : (
+            <ErrorBreakdownCard errors={errors} tenantId={session.tenantId} range={range} />
+          )}
+        </>
       )}
       <ErreursLivraison tenantId={session.tenantId} />
       <ErreursSysteme tenantId={session.tenantId} />
