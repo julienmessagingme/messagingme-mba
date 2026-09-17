@@ -12,37 +12,39 @@
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | 🔴 `cda2e69`, déployé le 2026-09-16 au soir. **UN ÉCART, ET IL EST GROS** : tout le chantier des connecteurs MCP est sur `main` et PAS en production. Voir la section ci-dessous. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ à jour, déployé le 2026-09-17 en fin de journée, aucun écart. Le SHA n'est pas recopié ici (`git log` fait foi, ce fichier a menti six fois). Vérifié DANS le conteneur, pas déduit du push : `grep` du correctif dans `mba-api`. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
-| Revue finale | 🔴 **PAS ENCORE ATTESTÉE sur le head courant.** Une relecture à froid a été faite le 2026-09-17 sur l'intervalle `279dc2a..8811ef9` (29 commits, 6 rouges et 18 jaunes, tous corrigés), mais les correctifs ont fait AVANCER le head : le script refuse d'attester un commit qui n'a pas été relu, donc l'intervalle se reprend à zéro sur les seuls correctifs |
-| Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu, aucun 502 (pas de reload NPM raté cette fois) |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge.** QUATRE passes à froid successives sur le chantier MCP (6, puis 3, puis 2, puis 4 rouges), chacune portant sur les correctifs de la précédente. Rapport complet dans `.git/revue-finale-rapport.md`, qui dit aussi ce qu'il NE couvre pas : les deux derniers commits ont été vérifiés par moi seul |
+| Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 CE QUI EST SUR `main` ET PAS EN PRODUCTION : LES CONNECTEURS MCP
+## 🔴 CE QUI RESTE DÛ SUR LES CONNECTEURS MCP (déployés le 2026-09-17)
 
 **Engage Me sait se brancher sur un serveur MCP tiers, importer son catalogue et exposer ses outils à un
-agent IA.** Neuf tâches, dont huit livrées ; la neuvième est le déploiement et l'essai réel.
+agent IA.** Le lot est EN PRODUCTION : routes montées et gardées (401 et non 404), migration 0152 déjà en
+base (`migrate` a répondu « à jour, rien à appliquer »), contrôle public vert.
 
-🔴 **LA MIGRATION 0152 EST DÉJÀ APPLIQUÉE EN PRODUCTION, LE CODE QUI L'ÉCRIT NE L'EST PAS.** C'est voulu et
-c'est sans danger : elle est délibérément permissive (clé étrangère composite en `MATCH SIMPLE`, pas de
-CHECK strict), donc le code déployé qui ignore `source_kind` continue de fonctionner. Conséquence pour le
-déploiement : **il n'y a PAS d'étape `migrate` à jouer**, l'ordre habituel ne s'applique pas ici.
+🔴 **L'ESSAI RÉEL N'A PAS ÉTÉ FAIT, ET IL SEUL CLÔT LA FEATURE.** Engage Me branché sur NOTRE propre serveur
+MCP (`/mcp` sur `api.messagingme.app`), puis depuis un vrai WhatsApp : poser à l'agent une question dont la
+réponse exige l'appel, vérifier qu'il répond avec la donnée du BON contact, puis lui demander explicitement
+la donnée d'un AUTRE numéro et vérifier qu'il ne l'obtient pas. C'est la garde anti-IDOR du lot, et ni les
+5 555 tests ni les quatre relectures à froid ne la remplacent. ⚠️ Le chemin à emprunter dans l'écran :
+Tools > Connecteurs MCP pour déclarer et importer, puis **AI Agent > Outils, section « Vos serveurs MCP »**,
+où il faut RATTACHER l'outil avant de l'activer. Ces deux gestes sont séparés exprès.
 
-🔴 **ET LA MIGRATION `0153` SE JOUE APRÈS LE DÉPLOIEMENT, jamais avant.** Elle pose le CHECK strict sur
-`source_kind` ; l'appliquer avant ferait échouer toute création d'outil de connecteur pendant la fenêtre
-censée être la plus sûre. Elle est inscrite dans `todo.md` pour ne pas se perdre avec ce fichier.
+🔴 **`0153_outil_source_kind_strict.sql` RESTE À ÉCRIRE ET À JOUER, et seulement une fois que ce déploiement
+a vécu.** 0152 est délibérément permissive : sa clé étrangère composite est en `MATCH SIMPLE`, donc une
+ligne dont `source_kind` est null lui échappe. Le CHECK strict ferme cette échappatoire, et il ne peut
+passer qu'une fois que tout le code en production renseigne la colonne. Détail dans `todo.md`.
 
-⚠️ **LE FRONT EST DÉJÀ EN LIGNE, L'API NON**, et c'est la fenêtre décrite plus bas. Vercel suit `main` tout
-seul : l'écran « Connecteurs MCP » existe donc sur `engageme.messagingme.app` pendant que l'API du VPS ne
-connaît aucune de ses routes. Rien ne casse (les appels rendent 404), mais un client qui l'ouvrirait
-aujourd'hui verrait un écran qui ne répond pas.
-
-🔴 **CE QUI CLÔT LA FEATURE EST UN ESSAI RÉEL, ET IL N'A PAS ÉTÉ FAIT** : Engage Me branché sur NOTRE propre
-serveur MCP (`/mcp` sur `api.messagingme.app`), puis depuis un vrai WhatsApp, poser à l'agent une question
-dont la réponse exige l'appel, vérifier qu'il répond avec la donnée du BON contact, puis lui demander
-explicitement la donnée d'un AUTRE numéro et vérifier qu'il ne l'obtient pas. C'est la garde anti-IDOR du
-lot, et aucun test ne la remplace. Il est matériellement impossible tant que le VPS est à `cda2e69`.
+⚠️ **CE QUE QUATRE RELECTURES À FROID ONT COÛTÉ ET RAPPORTÉ, parce que ça décide de la prochaine fois.**
+15 rouges au total, tous reproduits dans le code avant correction, AUCUN faux positif. Trois d'entre eux
+étaient le MÊME motif : une capacité livrée sans le chemin qui la produit (aucune route ne créait de
+serveur, puis les outils n'apparaissaient sur aucun écran d'agent, puis ils n'y étaient pas rattachables).
+Deux fois, un correctif avait cassé autre chose. Le nombre de rouges n'a PAS convergé vers zéro (6, 3, 2,
+4), mais leur GRAVITÉ s'est effondrée : de la perte de données en production à une phrase fausse à l'écran.
+C'est la gravité qui dit quand s'arrêter, pas le compte.
 
 ⚠️ **LA FENÊTRE FRONT / API EST REFERMÉE, et elle mérite d'être racontée.** Entre le push du bouton lecture et
 le déploiement de l'API, Vercel servait un bouton que le serveur ne savait pas lire : le mot n'était pas
