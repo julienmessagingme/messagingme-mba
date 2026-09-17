@@ -5,7 +5,6 @@ import {
   ordreDuJour, pointsSansContenu, prochainsPoints, pistesDe, type EtatEntretien, type Inventaire,
 } from './couverture';
 import { LIBELLES_MENTION, dureeEnClair, type EtatCourant } from './proposition';
-import { normaliserNom } from '../mcp/nommer';
 
 /**
  * Les messages envoyés à l'IA de construction.
@@ -211,7 +210,14 @@ export interface ContexteConstruction extends EtatCourant {
    * cet agent ou non. Sert à répondre honnêtement « vous avez déclaré votre ERP, il reste à y brancher
    * l'appel » plutôt que « rien n'existe ». Absent = liste vide, l'entretien fonctionne sans.
    */
-  sources?: Array<{ label: string; kind: 'http' | 'mcp'; status: string }>;
+  /**
+   * ⚠️ `id` VOYAGE AVEC, et il n'est pas décoratif : c'est lui qui apparie un outil à son serveur. Le
+   * rapprochement se faisait d'abord sur le PRÉFIXE du nom exposé, que le client peut réécrire à l'écran,
+   * et qui se tronque à 64 caractères : un outil renommé, deux libellés qui se normalisent pareil, ou un
+   * libellé long faisaient alors dire à la question deux choses contraires dans la même phrase. La base a
+   * toujours su répondre (`agent_tools.source_id`), il suffisait de la laisser parler.
+   */
+  sources?: Array<{ id: string; label: string; kind: 'http' | 'mcp'; status: string }>;
 }
 
 /**
@@ -247,7 +253,7 @@ export function inventaireDe(ctx: ContexteConstruction): Inventaire {
      */
     mcp: actives
       .filter((s) => s.kind === 'mcp')
-      .filter((s) => !branches.some((c) => c.origine === 'mcp' && c.nom.startsWith(`${normaliserNom(s.label)}_`)))
+      .filter((s) => !branches.some((c) => c.origine === 'mcp' && c.sourceId === s.id))
       .map((s) => s.label),
   };
 }

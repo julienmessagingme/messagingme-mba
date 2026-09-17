@@ -234,7 +234,7 @@ describe('proposition : les connecteurs', () => {
     inactiviteMinutes: 30,
     fiche: ficheVide(),
     outils: [],
-    connecteurs: [{ nom: 'lire_commande', titre: 'Lire une commande', description: 'ancien', nePasUtiliser: 'ancien non', origine: 'http' as const }],
+    connecteurs: [{ nom: 'lire_commande', titre: 'Lire une commande', description: 'ancien', nePasUtiliser: 'ancien non', origine: 'http' as const, sourceId: null }],
   };
 
   it('réécrit les mots d’un connecteur EXISTANT, et le diff les montre', () => {

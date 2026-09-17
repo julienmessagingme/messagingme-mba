@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
-import type { SourceAppel } from '../agent/sources';
+import { LabelSourceDejaPris, type SourceAppel } from '../agent/sources';
 import type { RisqueOutil } from '../agent/catalog';
 import type { SourceParam } from '../agent/llm/tool-schema';
 import {
@@ -12,7 +12,10 @@ import { enTetesAuthSource } from '../agent/http-cible';
 import { ouvrirSessionMcp, type EchecMcp, type OutilAnnonce } from '../mcp/client';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
 import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-contact';
-import { adresseAcceptable, authCoherente } from './agent-sources';
+// ⚠️ `hoteDe` EST IMPORTÉ, PAS RECOPIÉ : ce module prenait déjà deux fonctions de son jumeau, et une
+// seconde copie d'une normalisation est exactement ce que le manuel interdit (« un fragment SQL, une classe
+// Tailwind ou une normalisation de texte s'y importe, ne se recopie pas »).
+import { adresseAcceptable, authCoherente, hoteDe } from './agent-sources';
 import { scopeTenant, estUuid } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
@@ -192,11 +195,6 @@ function direEchec(e: EchecMcp): string {
   }
 }
 
-/** L'hôte seul : l'adresse complète et le secret n'entrent jamais dans une table qu'on ne purge pas. */
-function hoteDe(url: string): string | null {
-  try { return new URL(url).host; } catch { return null; }
-}
-
 /**
  * LA SOURCE DE CETTE ROUTE, ET ELLE EST BIEN UN SERVEUR MCP.
  *
@@ -351,11 +349,25 @@ export function registerAgentMcp(
     }
     const pb = authCoherente(authKind, authSecret, authHeaderName);
     if (pb) return reply.code(400).send({ error: pb });
-    const serveur = await deps.creerServeur(tenant, {
-      label, baseUrl, authKind,
-      ...(authHeaderName ? { authHeaderName } : {}),
-      ...(authSecret ? { authSecret } : {}),
-    });
+    /**
+     * ⚠️ UN LIBELLÉ DÉJÀ PRIS REND 409, PAS 500. L'index unique de 0088 porte sur
+     * `(tenant_id, lower(label))` TOUS `kind` CONFONDUS : déclarer un serveur MCP qui porte le nom d'un
+     * connecteur API existant levait `LabelSourceDejaPris`, donc un 500, donc une page Cloudflare sans
+     * explication sur un geste parfaitement ordinaire. La route jumelle traduit déjà cette exception.
+     */
+    let serveur: ServeurMcpVue;
+    try {
+      serveur = await deps.creerServeur(tenant, {
+        label, baseUrl, authKind,
+        ...(authHeaderName ? { authHeaderName } : {}),
+        ...(authSecret ? { authSecret } : {}),
+      });
+    } catch (err) {
+      if (err instanceof LabelSourceDejaPris) {
+        return reply.code(409).send({ error: `le nom « ${label} » est déjà pris par un autre connecteur` });
+      }
+      throw err;
+    }
     await journal(tenant, req, 'connecteur.cree', { kind: 'connecteur', id: serveur.id }, {
       mcp: true, authKind: parse.data.authKind, hote: hoteDe(parse.data.baseUrl),
     });

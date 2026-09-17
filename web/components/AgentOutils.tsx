@@ -280,7 +280,14 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
         <div className="flex shrink-0 items-center gap-2">
           <button
             data-testid={`outil-activer-${outil.id}`}
-            disabled={busy}
+            /**
+             * ⚠️ PAS CLIQUABLE SUR UN OUTIL QUE LE BANDEAU VIENT DE DÉCLARER MORT. Le serveur refuse déjà
+             * (409 avec sa raison), donc rien ne cassait ; mais proposer un geste dont on vient d'écrire
+             * qu'il est impossible est le motif « offert-et-inerte » que ce produit s'interdit ailleurs.
+             * ⚠️ La DÉSACTIVATION reste possible : c'est le seul geste qui reste au client sur un outil
+             * qu'un rafraîchissement a rendu inappelable alors qu'il était actif.
+             */
+            disabled={busy || (!outil.actif && Boolean(outil.mcpNonActivable || outil.mcpIndisponibleLe))}
             onClick={() => onActiver(!outil.actif)}
             className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
           >
@@ -311,6 +318,22 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
             ? t('Cet outil a disparu du serveur MCP : il n’est plus appelable.',
               'This tool is gone from the MCP server: it can no longer be called.')
             : t('Cet outil n’est pas activable : ', 'This tool cannot be activated: ') + (outil.mcpNonActivable ?? '')}
+        </p>
+      )}
+
+      {/**
+        * ⚠️ POUR UN OUTIL MCP, « à quoi ça sert » APPARTIENT AU SERVEUR DISTANT. Un rafraîchissement en
+        * `schema_change` réécrit `title` et `description` depuis l'annonce (`store.pg.ts`), donc un texte
+        * soigné ici disparaît au prochain import, sans cause visible, pendant que `features.md` promet par
+        * ailleurs que « vos choix SURVIVENT aux rafraîchissements ». `nePasUtiliser`, lui, est PRÉSERVÉ :
+        * c'est le seul des deux qui vous appartient, et c'est le seul qu'on propose.
+        */}
+      {outil.origin === 'mcp' && (
+        <p className="text-xs text-ink-500" data-testid={`outil-mcp-mots-${outil.id}`}>
+          {t(
+            'Le nom et la description viennent du serveur MCP et sont réécrits à chaque import. Seul « Quand ne pas l’appeler » vous appartient.',
+            'The name and description come from the MCP server and are rewritten on every import. Only "When NOT to call it" is yours.',
+          )}
         </p>
       )}
 

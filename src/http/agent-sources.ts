@@ -98,7 +98,7 @@ export function authCoherente(authKind: string, secret: string | undefined, ente
  * l'action qu'on observe. Les adresses sont déjà validées par `adresseAcceptable` en amont, donc `null` ne
  * devrait jamais arriver ; il est là pour que « ne devrait jamais » n'ait pas à être vrai.
  */
-function hoteDe(url: string): string | null {
+export function hoteDe(url: string): string | null {
   try { return new URL(url).host; } catch { return null; }
 }
 

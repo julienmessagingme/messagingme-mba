@@ -1421,9 +1421,12 @@ async function main(): Promise<void> {
             .map((o) => ({
               nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser,
               origine: o.origin === 'mcp' ? 'mcp' as const : 'http' as const,
+              sourceId: o.sourceId,
             })),
           titresConnaissance: fiches.map((f) => f.titre),
-          sources: sources.map((s) => ({ label: s.label, kind: s.kind, status: s.status })),
+          // ⚠️ `id` PART AVEC : c'est lui qui apparie un outil a son serveur, pas le prefixe de son nom,
+          // que le client peut reecrire.
+          sources: sources.map((s) => ({ id: s.id, label: s.label, kind: s.kind, status: s.status })),
           // ⚠️ `branche` se lit sur les CONSOMMATEURS de la definition, pas sur `outils` ci-dessus : les deux
           // repondent a la meme question, mais seul le catalogue connait les outils NON branches, qui sont
           // justement ceux que l assistant peut proposer de brancher.

@@ -211,10 +211,16 @@ describe('couverture de l’ordre du jour', () => {
       const ctx: ContexteConstruction = {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(),
         outils: [], titresConnaissance: [],
-        connecteurs: [{ nom: 'notion_search', titre: 'Chercher Notion', description: '', nePasUtiliser: '', origine: 'mcp' as const }],
+        // 🔴 L APPARIEMENT SE FAIT PAR `sourceId`, PAS PAR LE PREFIXE DU NOM. Le nom expose est
+        // reecrit par le client a l ecran et se tronque a 64 caracteres : le rapprochement par prefixe se
+        // trompait des qu un outil etait renomme, ou que deux libelles se normalisaient pareil.
+        connecteurs: [{
+          nom: 'renomme_par_le_client', titre: 'Chercher Notion', description: '', nePasUtiliser: '',
+          origine: 'mcp' as const, sourceId: 'src-notion',
+        }],
         sources: [
-          { label: 'Notion', kind: 'mcp', status: 'active' },
-          { label: 'Serveur maison', kind: 'mcp', status: 'active' },
+          { id: 'src-notion', label: 'Notion', kind: 'mcp', status: 'active' },
+          { id: 'src-serveur-maison', label: 'Serveur maison', kind: 'mcp', status: 'active' },
         ],
       };
       const q = question('outil_mcp', inventaireDe(ctx));
@@ -237,8 +243,8 @@ describe('couverture de l’ordre du jour', () => {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(),
         outils: [], titresConnaissance: [],
         connecteurs: [
-          { nom: 'erp_lire', titre: 'Lire l ERP', description: '', nePasUtiliser: '', origine: 'http' as const },
-          { nom: 'notion_search', titre: 'Chercher Notion', description: '', nePasUtiliser: '', origine: 'mcp' as const },
+          { nom: 'erp_lire', titre: 'Lire l ERP', description: '', nePasUtiliser: '', origine: 'http' as const, sourceId: null },
+          { nom: 'notion_search', titre: 'Chercher Notion', description: '', nePasUtiliser: '', origine: 'mcp' as const, sourceId: null },
         ],
         sources: [],
       };
@@ -252,8 +258,8 @@ describe('couverture de l’ordre du jour', () => {
     it('un système DÉJÀ branché n’est pas proposé une seconde fois comme « à relier »', () => {
       const ctx: ContexteConstruction = {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [],
-        connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '', origine: 'http' as const }],
-        sources: [{ label: 'ERP interne', kind: 'http', status: 'active' }, { label: 'Agenda', kind: 'http', status: 'active' }],
+        connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '', origine: 'http' as const, sourceId: null }],
+        sources: [{ id: 'src-erp-interne', label: 'ERP interne', kind: 'http', status: 'active' }, { id: 'src-agenda', label: 'Agenda', kind: 'http', status: 'active' }],
       };
       const inv = inventaireDe(ctx);
       expect(inv.outilsApi).toEqual(['ERP interne']);
@@ -263,7 +269,7 @@ describe('couverture de l’ordre du jour', () => {
     it('une source DÉSACTIVÉE ne compte pas : la proposer promettrait un appel qui échouerait', () => {
       const ctx: ContexteConstruction = {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [], connecteurs: [],
-        sources: [{ label: 'Vieux CRM', kind: 'http', status: 'disabled' }, { label: 'MCP off', kind: 'mcp', status: 'disabled' }],
+        sources: [{ id: 'src-vieux-crm', label: 'Vieux CRM', kind: 'http', status: 'disabled' }, { id: 'src-mcp-off', label: 'MCP off', kind: 'mcp', status: 'disabled' }],
       };
       expect(inventaireDe(ctx)).toEqual({ outilsApi: [], systemesApi: [], mcp: [], outilsMcp: [] });
     });

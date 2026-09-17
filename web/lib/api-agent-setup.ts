@@ -362,21 +362,13 @@ export interface ManqueFiche {
 }
 
 /**
- * Ce qui manque à cet agent, LU sans rien tenter.
+ * LES DEUX BANDEAUX D'UNE FICHE D'AGENT, EN UN SEUL ALLER-RETOUR.
  *
  * 🔴 POURQUOI CET APPEL EXISTE. Les manques étaient déjà calculés côté serveur, mais ils ne sortaient que
  * dans le corps d'un 422, c'est-à-dire APRÈS avoir cliqué « activer ». Un agent en brouillon qu'on essaie
  * dans le bac à sable ne les voyait donc jamais : Julien, le 2026-09-08, a cherché pourquoi son agent ne
  * trouvait rien alors que la réponse (« l'outil de recherche est inactif ») était déjà écrite, derrière un
  * geste qu'il n'avait pas fait.
- *
- * BEST-EFFORT chez l'appelant : c'est une aide, pas une condition. Un serveur qui ne sait pas répondre rend
- * une liste vide et l'écran marche.
- */
-
-
-/**
- * LES DEUX BANDEAUX D'UNE FICHE D'AGENT, EN UN SEUL ALLER-RETOUR.
  *
  * 🔴 SÉPARÉS EN DEUX LISTES, ET LA SÉPARATION EST MÉCANIQUE. Côté serveur, `manquesAvantActivation`
  * n'alimente pas que l'affichage : c'est AUSSI la garde dure de `status = 'active'`. Y verser les

@@ -54,6 +54,15 @@ const BLOC = {
  */
 const MCP_MORT = {
   ...TAG, id: 'o4', origin: 'mcp', sourceId: 's1', name: 'notion_lignes', title: 'Lire les lignes',
+  /**
+   * ⚠️ IL TIENT LE CONTRAT D UN VRAI OUTIL MCP. Construit par `...TAG`, il heritait d un
+   * `binding: { handler: 'poser_tag' }` et d un `expose.name: 'mba_poser_tag'`, c est-a-dire d un outil
+   * MAISON portant un nom MCP. Un faux qui ne tient pas le contrat du vrai masquerait toute logique
+   * indexee sur `binding.handler`, et ce depot a deja paye ce defaut cinq fois aujourd hui.
+   */
+  binding: { outilDistant: 'lignes' },
+  requestId: null,
+  expose: { name: 'notion_lignes', description: 'Lire les lignes', parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } },
   mcpNonActivable: 'le paramètre « lignes » est un tableau', mcpIndisponibleLe: null,
 };
 

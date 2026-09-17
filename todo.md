@@ -1161,6 +1161,13 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   description, donc une réécriture ultérieure fait TOMBER le consentement. Relevé par la revue finale du
   2026-09-17 ; à traiter quand on ouvrira le sujet « instructions dans une description d'outil », qui
   concerne aussi les connecteurs API.
+- 🟡 **`web/e2e/securite-navigation.spec.ts` est INSTABLE SOUS CHARGE, et c'est mesuré.** 1 échec sur 7
+  exécutions le 2026-09-17, sur DEUX tests différents du même fichier (« chaque boite correspond a un
+  sous-menu » et « brancher un connecteur sur le consentement ENVOIE le choix »), et 6 succès sur 6 en
+  passe isolée à un seul worker. ⚠️ QUANTIFIÉ AVANT D'ÊTRE ATTRIBUÉ : le fait que la cible change d'un run
+  à l'autre, et que la passe isolée soit verte, écarte une régression du chantier MCP. La piste est la
+  même que celle déjà notée sur le plafond de workers du fichier de config : le serveur Next est PARTAGÉ,
+  et sous charge une requête de liste arrive après le rendu. ⚠️ NE PAS l'affaiblir pour le faire taire.
 - 🔵 **L6 : MCP OAuth.** Quatre à huit fois le coût de L4, et le coût n'est pas dans le développement mais
   dans la SUPERVISION : un jeton mort ne produit aucune erreur applicative, l'agent dégrade en silence au
   milieu d'une conversation. Premier serveur à brancher : Linear. Le pire premier candidat : HubSpot (la

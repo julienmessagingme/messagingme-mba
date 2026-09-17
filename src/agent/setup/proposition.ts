@@ -334,7 +334,17 @@ export interface EtatCourant {
    * `inventaireDe` les versait tous dans `outilsApi` et l'assistant annonçait un outil MCP comme un
    * connecteur API.
    */
-  connecteurs?: Array<{ nom: string; titre: string; description: string; nePasUtiliser: string; origine: 'http' | 'mcp' }>;
+  connecteurs?: Array<{
+    nom: string; titre: string; description: string; nePasUtiliser: string;
+    origine: 'http' | 'mcp';
+    /**
+     * ⚠️ REQUIS, ET C'EST LUI QUI APPARIE UN OUTIL À SON SERVEUR. Le rapprochement se faisait d'abord sur le
+     * PRÉFIXE du nom exposé, que le client peut réécrire à l'écran et qui se tronque à 64 caractères : un
+     * outil renommé, deux libellés qui se normalisent pareil, ou un libellé long faisaient alors dire à la
+     * question de l'assistant deux choses contraires dans la même phrase. `null` pour un outil maison.
+     */
+    sourceId: string | null;
+  }>;
   /**
    * LA BIBLIOTHÈQUE DE L'ESPACE (migration 0127), avec l'état de branchement de CET agent.
    *
