@@ -96,8 +96,14 @@ export interface AgentMcpRouteDeps {
     label: string; baseUrl: string;
     authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string;
   }): Promise<ServeurMcpVue>;
-  /** Supprime un serveur. Refusé (`false`) tant qu'un outil ACTIF en dépend. */
-  supprimerServeur(tenantId: string, id: string): Promise<boolean>;
+  /**
+   * Supprime un serveur MCP.
+   *
+   * 🔴 TROIS ÉTATS, PAS UN BOOLÉEN. Le booléen d'avant confondait « supprimé » et « introuvable », si bien
+   * que le 409 « porte encore des outils actifs » ne sortait QUE sur un identifiant inexistant, pendant
+   * qu'un serveur réellement utilisé se supprimait avec ses outils et ses consentements, en silence.
+   */
+  supprimerServeur(tenantId: string, id: string): Promise<'supprime' | 'introuvable' | 'outils_actifs'>;
   /** Les outils importés, pour l'ÉCRAN. Séparée de la lecture d'import, qui compare et rien de plus. */
   outilsPourEcran(tenantId: string, sourceId: string): Promise<OutilMcpVue[]>;
   /** Les outils MCP déjà importés de ce serveur, avec ce qu'un changement ferait tomber. */
@@ -170,6 +176,42 @@ function direEchec(e: EchecMcp): string {
   }
 }
 
+/**
+ * LA SOURCE DE CETTE ROUTE, ET ELLE EST BIEN UN SERVEUR MCP.
+ *
+ * 🔴 SANS CE FILTRE, CES ROUTES PARLENT MCP À L'API MÉTIER D'UN CLIENT. `pourAppel` ne filtre pas le
+ * `kind` (un seul appelant à l'origine, le résolveur HTTP), donc un administrateur qui passait
+ * l'identifiant d'un connecteur API à `/eprouver`, `/apercu` ou `/importer` faisait POSTer une enveloppe
+ * JSON-RPC `initialize` sur son propre système, AVEC SON SECRET dans l'en-tête, puis écrivait
+ * `last_error` sur la ligne de ce connecteur. Sur `/importer`, l'`insert` garde `and kind = 'mcp'` :
+ * zéro ligne écrite, AUCUNE erreur, et la route rendait `200` en annonçant N outils créés.
+ *
+ * 🔴 UN POINT DE PASSAGE, PAS TROIS CONTRÔLES. Les deux résolveurs d'exécution portent déjà cette garde
+ * (`resolvers/mcp.ts`, `resolvers/http.ts`) ; les routes étaient le TROISIÈME consommateur de
+ * `pourAppel` et ne l'avaient pas. C'est le motif « une capacité câblée sur deux consommateurs sur
+ * trois », que ce dépôt paie en boucle. Le poser ici, entre les routes et la source, est ce qui évite que
+ * la quatrième route ajoutée demain l'oublie.
+ *
+ * ⚠️ `404`, PAS `403` : pour cet écran, un connecteur API n'est pas un serveur MCP interdit, c'est un
+ * serveur MCP qui n'existe pas. Répondre `403` confirmerait au passage l'existence de la ligne.
+ */
+async function serveurMcp(
+  deps: AgentMcpRouteDeps,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<{ tenant: string; sourceId: string; source: SourceAppel } | null> {
+  const tenant = scopeTenant(req);
+  if (tenant === null) { await reply.code(403).send({ error: 'tenant interdit' }); return null; }
+  const { sourceId } = req.params as { sourceId: string };
+  if (!estUuid(sourceId)) { await reply.code(400).send({ error: 'identifiant invalide' }); return null; }
+  const source = await deps.pourAppel(tenant, sourceId);
+  if (!source || source.kind !== 'mcp') {
+    await reply.code(404).send({ error: 'serveur introuvable' });
+    return null;
+  }
+  return { tenant, sourceId, source };
+}
+
 /** Ouvre une session vers un serveur, après avoir vérifié vers quoi son adresse RÉSOUT. */
 async function connecter(
   deps: AgentMcpRouteDeps,
@@ -207,10 +249,20 @@ function planEtEcriture(
   const plan = planifierImport(annonces, existants, { tronque });
   const parNom = new Map(existants.map((e) => [e.nomDistant, e]));
   const annoncesParNom = new Map(annonces.map((a) => [a.name, a]));
-  // Les noms déjà pris dans l'espace, MOINS ceux des outils de ce serveur qu'on va réécrire : sans ça,
-  // un outil dont le schéma a changé se verrait attribuer un `_2` à chaque rafraîchissement.
+  /**
+   * Les noms déjà pris dans l'espace. Ils le restent TOUS.
+   *
+   * 🔴 CE RETRAIT ÉTAIT UN 500 QUI ATTENDAIT SON JOUR. Il enlevait les noms de TOUS les outils de ce
+   * serveur, `inchange` compris, alors que seuls `nouveau` et `schema_change` les remettent. Un outil
+   * distant NEUF qui se normalise vers le nom local d'un outil INCHANGÉ (`get-contact` à côté de
+   * `get_contact` : `normaliserNom` rend le même) produisait alors un `insert` en violation de l'index
+   * unique par espace de 0127, donc un `rollback` de TOUTE la transaction, donc un import entier perdu
+   * sur un 500 dont Cloudflare remplace le corps.
+   *
+   * ⚠️ ET IL NE SERVAIT À RIEN : le `_2` qu'il prétendait éviter ne peut pas arriver, parce qu'un
+   * `schema_change` ÉCRASE le nom calculé par celui d'avant (`name: avant.name`, juste en dessous).
+   */
   const pris = new Set(nomsPris);
-  for (const e of existants) pris.delete(e.name);
 
   const ecriture: EcritureImportMcp = { nouveaux: [], changes: [], disparus: [], vus: [] };
   for (const c of plan) {
@@ -251,7 +303,7 @@ export function registerAgentMcp(
   // rafale sans s'en rendre compte.
   const lourd = gardeEtendue(garde, limiteCouteuse);
 
-  app.get('/agents/:tenantId/mcp', opts, async (req, reply) => {
+  app.get('/tenants/:tenantId/mcp', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ serveurs: await deps.listerServeurs(tenant) });
@@ -266,7 +318,7 @@ export function registerAgentMcp(
    *
    * ⚠️ Le secret est chiffré par le store, jamais ici : la couche HTTP ne manipule pas de forme chiffrée.
    */
-  app.post('/agents/:tenantId/mcp', opts, async (req, reply) => {
+  app.post('/tenants/:tenantId/mcp', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const parse = creationSchema.safeParse(req.body ?? {});
@@ -291,16 +343,24 @@ export function registerAgentMcp(
    * ⚠️ REFUSÉ TANT QU'UN OUTIL ACTIF EN DÉPEND (409), exactement comme un connecteur API. La cascade ferait
    * disparaître les outils sans bruit, et l'agent deviendrait muet sur ces gestes-là, en production, sans
    * que personne ne l'ait décidé.
+   *
+   * 🔴 CE COMMENTAIRE A ÉTÉ FAUX DU PREMIER JOUR AU 2026-09-17, et c'est la revue à froid qui l'a vu. La
+   * dépendance était câblée sur un `delete` nu : le refus ne se déclenchait jamais sur le cas qu'il
+   * nomme, et se déclenchait sur un identifiant inexistant. Une justification fausse est pire qu'aucune,
+   * parce qu'elle est crue. Le verdict est désormais à trois états et la garde vit dans la même
+   * transaction que la suppression.
    */
-  app.delete('/agents/:tenantId/mcp/:sourceId', opts, async (req, reply) => {
+  app.delete('/tenants/:tenantId/mcp/:sourceId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { sourceId } = req.params as { sourceId: string };
     if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
-    const ok = await deps.supprimerServeur(tenant, sourceId);
-    return ok
-      ? reply.code(204).send()
-      : reply.code(409).send({ error: 'ce serveur porte encore des outils actifs : retirez-les d’abord' });
+    const verdict = await deps.supprimerServeur(tenant, sourceId);
+    if (verdict === 'introuvable') return reply.code(404).send({ error: 'serveur introuvable' });
+    if (verdict === 'outils_actifs') {
+      return reply.code(409).send({ error: 'ce serveur porte encore des outils actifs : désactivez-les d’abord' });
+    }
+    return reply.code(204).send();
   });
 
   /**
@@ -310,7 +370,7 @@ export function registerAgentMcp(
    * écrivait des outils que personne ne pouvait ni voir ni clouer. Une capacité écrite sans son lecteur
    * est exactement le motif « offert-et-inerte » que ce produit s'interdit.
    */
-  app.get('/agents/:tenantId/mcp/:sourceId/outils', opts, async (req, reply) => {
+  app.get('/tenants/:tenantId/mcp/:sourceId/outils', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { sourceId } = req.params as { sourceId: string };
@@ -335,13 +395,10 @@ export function registerAgentMcp(
    * le découvre. Un serveur inatteignable ne produit aucune erreur applicative côté client : l'agent
    * dégraderait en silence, au milieu d'une conversation.
    */
-  app.post('/agents/:tenantId/mcp/:sourceId/eprouver', lourd, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    const { sourceId } = req.params as { sourceId: string };
-    if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
-    const source = await deps.pourAppel(tenant, sourceId);
-    if (!source) return reply.code(404).send({ error: 'serveur introuvable' });
+  app.post('/tenants/:tenantId/mcp/:sourceId/eprouver', lourd, async (req, reply) => {
+    const ciblee = await serveurMcp(deps, req, reply);
+    if (ciblee === null) return reply;
+    const { tenant, sourceId, source } = ciblee;
 
     const ouverte = await connecter(deps, source);
     if ('echec' in ouverte) {
@@ -363,14 +420,14 @@ export function registerAgentMcp(
    * appeler le serveur d'un client et à changer son état affiché, sans que personne ait cliqué. « Sans
    * rien écrire » ne parlait que du catalogue, et c'est ce raccourci qui a fait choisir le verbe.
    */
-  app.post('/agents/:tenantId/mcp/:sourceId/apercu', lourd, async (req, reply) => {
+  app.post('/tenants/:tenantId/mcp/:sourceId/apercu', lourd, async (req, reply) => {
     const r = await calculer(deps, req, reply);
     if (r === null) return reply;
     return reply.code(200).send({ plan: r.plan, tronque: r.tronque });
   });
 
   /** L'import : le même plan, appliqué. */
-  app.post('/agents/:tenantId/mcp/:sourceId/importer', lourd, async (req, reply) => {
+  app.post('/tenants/:tenantId/mcp/:sourceId/importer', lourd, async (req, reply) => {
     const r = await calculer(deps, req, reply);
     if (r === null) return reply;
     await deps.appliquer(r.tenant, r.sourceId, r.ecriture);
@@ -384,7 +441,7 @@ export function registerAgentMcp(
    * voit alors à la configuration plutôt qu'en pleine conversation, et surtout un paramètre ne peut pas
    * être cloué à une clé que personne n'a créée : il partirait vide à chaque appel, en silence.
    */
-  app.patch('/agents/:tenantId/mcp/outils/:outilId', opts, async (req, reply) => {
+  app.patch('/tenants/:tenantId/mcp/outils/:outilId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { outilId } = req.params as { outilId: string };
@@ -444,12 +501,9 @@ async function calculer(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<{ tenant: string; sourceId: string; plan: ChangementMcp[]; ecriture: EcritureImportMcp; tronque: boolean } | null> {
-  const tenant = scopeTenant(req);
-  if (tenant === null) { await reply.code(403).send({ error: 'tenant interdit' }); return null; }
-  const { sourceId } = req.params as { sourceId: string };
-  if (!estUuid(sourceId)) { await reply.code(400).send({ error: 'identifiant invalide' }); return null; }
-  const source = await deps.pourAppel(tenant, sourceId);
-  if (!source) { await reply.code(404).send({ error: 'serveur introuvable' }); return null; }
+  const ciblee = await serveurMcp(deps, req, reply);
+  if (ciblee === null) return null;
+  const { tenant, sourceId, source } = ciblee;
 
   const ouverte = await connecter(deps, source);
   if ('echec' in ouverte) {

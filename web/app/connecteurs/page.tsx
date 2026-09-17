@@ -9,8 +9,8 @@ import type { Session } from '@/lib/session';
  * Menu Tools > Connecteurs API : la BIBLIOTHÈQUE de systèmes du workspace.
  *
  * 🔴 POURQUOI DANS TOOLS, ET PAS DANS UN AGENT. Le menu Tools regroupe ce qui branche la console sur
- * l'extérieur : les webhooks entrants, et maintenant les systèmes que les agents interrogent (MCP viendra
- * s'ajouter ici). Un système appartient au CLIENT : plusieurs agents tapent dans la même bibliothèque, et le
+ * l'extérieur : les webhooks entrants, et les systèmes que les agents interrogent, en HTTP ici et en MCP
+ * dans l'écran voisin. Un système appartient au CLIENT : plusieurs agents tapent dans la même bibliothèque, et le
  * déclarer dans un agent aurait fait croire qu'il lui appartient. En base, `agent_tool_sources` porte déjà
  * `tenant_id` et pas `agent_id` : cet écran ne fait que le rendre visible au bon endroit.
  */

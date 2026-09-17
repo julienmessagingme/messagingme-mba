@@ -154,7 +154,7 @@ describe('couverture de l’ordre du jour', () => {
     };
 
     it('API branchée : elle NOMME les connecteurs appelables', () => {
-      const q = question('outil_api', { outilsApi: ['Agenda', 'Stock'], systemesApi: [], mcp: [] });
+      const q = question('outil_api', { outilsApi: ['Agenda', 'Stock'], systemesApi: [], mcp: [], outilsMcp: [] });
       expect(q).toContain('Agenda');
       expect(q).toContain('Stock');
       expect(q).toContain('Branchés sur cet agent');
@@ -162,7 +162,7 @@ describe('couverture de l’ordre du jour', () => {
 
     it('🔴 système DÉCLARÉ mais pas branché sur cet agent : on le dit, au lieu de « rien n’existe »', () => {
       // Répondre « rien » à un client qui vient de déclarer son ERP lui ferait croire qu'il a mal fait.
-      const q = question('outil_api', { outilsApi: [], systemesApi: ['ERP interne'], mcp: [] });
+      const q = question('outil_api', { outilsApi: [], systemesApi: ['ERP interne'], mcp: [], outilsMcp: [] });
       expect(q).toContain('AUCUN connecteur n’est branché sur cet agent');
       expect(q).toContain('ERP interne');
       expect(q).toContain('Tools > Connecteurs API'); // et où le brancher
@@ -170,7 +170,7 @@ describe('couverture de l’ordre du jour', () => {
 
     it('🔴 RIEN du tout : la question le dit et laisse DEUX issues, jamais un cul-de-sac', () => {
       // Ne laisser aucune issue ferait un entretien qui ne peut plus se terminer.
-      const q = question('outil_api', { outilsApi: [], systemesApi: [], mcp: [] });
+      const q = question('outil_api', { outilsApi: [], systemesApi: [], mcp: [], outilsMcp: [] });
       expect(q).toContain('rien à appeler');
       expect(q).toContain('choisissez autre chose');
       expect(q).toContain('Décrivez ce qu’il faudrait brancher');
@@ -187,19 +187,53 @@ describe('couverture de l’ordre du jour', () => {
        * s'il y a rien, ben y a rien et la personne devra choisir autre chose ». C'est le dernier verrou
        * contre l'outil inventé, et il vaut dans les deux états du câblage.
        */
-      const declare = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: ['serveur maison'] });
+      const declare = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: ['serveur maison'], outilsMcp: [] });
       expect(declare).toContain('serveur maison');
       expect(declare).not.toContain('PAS encore disponible');
 
-      const rien = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: [] });
+      const rien = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: [], outilsMcp: [] });
       expect(rien).toContain('AUCUN serveur MCP');
       expect(rien).toContain('choisissez autre chose');
+    });
+
+    it('🔴 MCP : ce qui est BRANCHÉ sur cet agent passe AVANT ce qui est seulement déclaré', () => {
+      // Le jumeau exact de la question des connecteurs API. N annoncer que les serveurs faisait dire
+      // « voici ce qu il peut appeler » en nommant des choses qui n etaient reliees a rien.
+      const q = question('outil_mcp', {
+        outilsApi: [], systemesApi: [], mcp: ['serveur maison'], outilsMcp: ['notion_search'],
+      });
+      expect(q).toContain('Branchés sur cet agent');
+      expect(q).toContain('notion_search');
+      expect(q).toContain('serveur maison');
+    });
+
+    it('🔴 un outil MCP branché n’est PAS annoncé comme un connecteur API', () => {
+      /**
+       * `connecteurs` est construit en excluant les seuls outils maison, donc il porte les DEUX familles.
+       * Sans la separation par origine, `inventaireDe` les versait toutes dans `outilsApi` et la branche
+       * `outil_api` annoncait un outil MCP comme appelable en HTTP : l assistant promettait un appel de la
+       * mauvaise nature, sur un chemin qui n existe pas.
+       */
+      const ctx: ContexteConstruction = {
+        label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(),
+        outils: [], titresConnaissance: [],
+        connecteurs: [
+          { nom: 'erp_lire', titre: 'Lire l ERP', description: '', nePasUtiliser: '', origine: 'http' as const },
+          { nom: 'notion_search', titre: 'Chercher Notion', description: '', nePasUtiliser: '', origine: 'mcp' as const },
+        ],
+        sources: [],
+      };
+      const inv = inventaireDe(ctx);
+      expect(inv.outilsApi).toEqual(['Lire l ERP']);
+      expect(inv.outilsMcp).toEqual(['Chercher Notion']);
+      expect(question('outil_api', inv)).not.toContain('Chercher Notion');
+      expect(question('outil_mcp', inv)).toContain('Chercher Notion');
     });
 
     it('un système DÉJÀ branché n’est pas proposé une seconde fois comme « à relier »', () => {
       const ctx: ContexteConstruction = {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [],
-        connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '' }],
+        connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '', origine: 'http' as const }],
         sources: [{ label: 'ERP interne', kind: 'http', status: 'active' }, { label: 'Agenda', kind: 'http', status: 'active' }],
       };
       const inv = inventaireDe(ctx);
@@ -212,7 +246,7 @@ describe('couverture de l’ordre du jour', () => {
         label: 'A', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30, fiche: ficheVide(), outils: [], titresConnaissance: [], connecteurs: [],
         sources: [{ label: 'Vieux CRM', kind: 'http', status: 'disabled' }, { label: 'MCP off', kind: 'mcp', status: 'disabled' }],
       };
-      expect(inventaireDe(ctx)).toEqual({ outilsApi: [], systemesApi: [], mcp: [] });
+      expect(inventaireDe(ctx)).toEqual({ outilsApi: [], systemesApi: [], mcp: [], outilsMcp: [] });
     });
   });
 

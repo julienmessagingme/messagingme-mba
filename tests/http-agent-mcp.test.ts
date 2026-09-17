@@ -50,7 +50,17 @@ function harnais(over: {
   reglerOk?: boolean;
   label?: string;
   vues?: never[];
-  supprimerOk?: boolean;
+  /** Le `kind` de la source rendue par `pourAppel` : c est ce qui distingue un serveur MCP d un connecteur API. */
+  kind?: 'mcp' | 'http';
+  /** Les noms DEJA pris dans l espace. L unicite de `agent_tools.name` est par ESPACE depuis 0127. */
+  nomsPris?: string[];
+  /**
+   * ⚠️ LE VERDICT, PAS UN BOOLEEN, et c est ce qui rendait l ancien test DECORATIF. Le faux d avant
+   * rendait `false` pour dire « il reste des outils actifs » ; le vrai store ne rend JAMAIS `false` pour
+   * cette raison-la, il le rendait pour « identifiant inexistant ». Le test passait donc en eprouvant un
+   * comportement que la production n a jamais eu.
+   */
+  suppression?: 'supprime' | 'introuvable' | 'outils_actifs';
 } = {}) {
   const ecrit: EcritureImportMcp[] = [];
   const crees: unknown[] = [];
@@ -70,12 +80,12 @@ function harnais(over: {
   const deps: AgentMcpRouteDeps = {
     listerServeurs: async () => [{ ...SERVEUR, ...(over.label ? { label: over.label } : {}) }],
     creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
-    supprimerServeur: async () => over.supprimerOk ?? true,
-    pourAppel: async () => POUR_APPEL,
+    supprimerServeur: async () => over.suppression ?? 'supprime',
+    pourAppel: async () => ({ ...POUR_APPEL, kind: over.kind ?? 'mcp' }),
     marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
     outilsDuServeur: async () => over.outils ?? [],
     outilsPourEcran: async () => over.vues ?? [],
-    nomsPris: async () => [],
+    nomsPris: async () => over.nomsPris ?? [],
     appliquer: async (_t, _s, e) => { ecrit.push(e); },
     clesDeChamps: async () => over.cles ?? ['email', 'reference'],
     reglerOutil: async (_t, id, patch) => { regles.push({ id, patch }); return over.reglerOk ?? true; },
@@ -90,7 +100,7 @@ function harnais(over: {
 describe('eprouver un serveur MCP', () => {
   it('rend ok et marque la source saine', async () => {
     const h = harnais();
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/eprouver` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/eprouver` });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({ ok: true });
     expect(h.epreuves).toEqual([{ ok: true }]);
@@ -101,10 +111,72 @@ describe('eprouver un serveur MCP', () => {
     // eu lieu, donc le degat aussi. Le texte de l hote est valide a l ecriture ; ce qui se verifie ici est
     // ce vers quoi il RESOUT, qu un texte ne peut pas dire.
     const h = harnais({ resolution: { ok: false, raison: 'adresse privee' } });
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/eprouver` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/eprouver` });
     expect(r.json()).toEqual({ ok: false, erreur: 'adresse privee' });
     expect(h.session.lister).not.toHaveBeenCalled();
     expect(h.epreuves).toEqual([{ ok: false }]);
+  });
+});
+
+describe('🔴 une source qui n est PAS un serveur MCP', () => {
+  /**
+   * 🔴 CE QUE CES TROIS ROUTES FAISAIENT SANS CE FILTRE. `pourAppel` ne filtre pas le `kind` : un
+   * administrateur qui passait l identifiant d un CONNECTEUR API faisait POSTer une enveloppe JSON-RPC
+   * `initialize` sur l API metier de son propre client, AVEC SON SECRET dans l en-tete, puis ecrivait
+   * `last_error` sur la ligne de ce connecteur.
+   *
+   * ⚠️ ET SUR `/importer`, LE SILENCE ETAIT PIRE QUE L ERREUR : l `insert` du store garde
+   * `and kind = 'mcp'`, donc zero ligne ecrite, AUCUNE erreur, et la route rendait 200 en annoncant N
+   * outils crees. Un apercu qui ment sur ce qu il a applique.
+   */
+  for (const [nom, chemin, methode] of [
+    ['eprouver', 'eprouver', 'POST'],
+    ['apercu', 'apercu', 'POST'],
+    ['importer', 'importer', 'POST'],
+  ] as const) {
+    it(`${nom} : 404 et AUCUNE connexion sortante`, async () => {
+      const h = harnais({ kind: 'http' });
+      const r = await h.app.inject({ method: methode, url: `/tenants/${TENANT}/mcp/${SOURCE}/${chemin}` });
+      expect(r.statusCode).toBe(404);
+      // 🔴 L ORDRE EST LA GARDE : une verification posee apres l ouverture serait decorative, la connexion
+      // aurait deja eu lieu, donc le degat aussi.
+      expect(h.session.lister, 'rien n est parti chez le client').not.toHaveBeenCalled();
+      expect(h.epreuves, 'et son connecteur API n a pas ete marque en panne').toEqual([]);
+      expect(h.ecrit, 'rien n a ete ecrit').toEqual([]);
+    });
+  }
+});
+
+describe('🔴 deux noms distants qui se normalisent pareil', () => {
+  it('le nouveau prend un suffixe au lieu de faire tomber TOUT l import en 500', async () => {
+    /**
+     * 🔴 CE DEFAUT ETAIT UN 500 QUI ATTENDAIT SON JOUR. `planEtEcriture` retirait des noms pris ceux de
+     * TOUS les outils du serveur, `inchange` compris, alors que seuls `nouveau` et `schema_change` les
+     * remettent. Un outil distant NEUF se normalisant vers le nom local d un outil INCHANGE
+     * (`get-contact` a cote de `get_contact`) produisait un `insert` en violation de l index unique par
+     * espace de 0127, donc un rollback de TOUTE la transaction : l import entier perdu, et un 500 dont
+     * Cloudflare remplace le corps.
+     */
+    const inchange = {
+      id: '33333333-3333-3333-3333-333333333333',
+      name: 'notion_get_contact',
+      nomDistant: 'get_contact',
+      mcpAnnonce: annonce('get_contact'),
+      mcpIndisponibleLe: null,
+      params: [],
+      consommateursActifs: 0,
+    };
+    const h = harnais({
+      outils: [inchange],
+      nomsPris: ['notion_get_contact'],
+      // Le serveur annonce l ancien A L IDENTIQUE (donc « inchange ») et un NOUVEAU qui se normalise pareil.
+      catalogue: { outils: [annonce('get_contact'), annonce('get-contact')], tronque: false },
+    });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
+    expect(r.statusCode).toBe(200);
+    const nouveaux = h.ecrit[0]!.nouveaux.map((o) => o.name);
+    expect(nouveaux, 'le neuf ne reprend pas le nom local de l inchange').not.toContain('notion_get_contact');
+    expect(nouveaux[0]).toMatch(/^notion_get_contact_\d+$/);
   });
 });
 
@@ -116,7 +188,7 @@ describe('l apercu et l import', () => {
      * automatique ou un robot suffisaient a declencher les deux, sans que personne ait clique.
      */
     const h = harnais();
-    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/apercu` });
+    const r = await h.app.inject({ method: 'GET', url: `/tenants/${TENANT}/mcp/${SOURCE}/apercu` });
     expect(r.statusCode).toBe(404);
     expect(h.session.lister, 'aucune connexion sortante n a eu lieu').not.toHaveBeenCalled();
   });
@@ -125,7 +197,7 @@ describe('l apercu et l import', () => {
     // 🔴 C est tout l interet de la paire : ecraser n est acceptable que si l on montre QUOI avant de le
     // faire, suppressions comprises. Un apercu qui ecrirait serait un import qui ment sur son nom.
     const h = harnais();
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/apercu` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/apercu` });
     expect(r.statusCode).toBe(200);
     expect(r.json().plan).toEqual([{ type: 'nouveau', nom: 'search' }]);
     expect(h.ecrit).toEqual([]);
@@ -135,7 +207,7 @@ describe('l apercu et l import', () => {
     // Deux calculs separes finiraient par diverger, et le client validerait alors un plan qui n est pas
     // celui qui s execute. Les deux routes passent par la meme fonction.
     const h = harnais();
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/importer` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
     expect(r.json().plan).toEqual([{ type: 'nouveau', nom: 'search' }]);
     expect(h.ecrit).toHaveLength(1);
     expect(h.ecrit[0]!.nouveaux.map((o) => [o.nomDistant, o.name])).toEqual([['search', 'notion_search']]);
@@ -149,7 +221,7 @@ describe('l apercu et l import', () => {
       mcpAnnonce: annonce('autre'), mcpIndisponibleLe: null, params: [], consommateursActifs: 3,
     };
     const h = harnais({ catalogue: { outils: [annonce('search')], tronque: true }, outils: [existant] });
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/importer` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
     expect(r.json().tronque).toBe(true);
     expect(r.json().plan.some((c: { type: string }) => c.type === 'disparu')).toBe(false);
     expect(h.ecrit[0]!.disparus).toEqual([]);
@@ -157,7 +229,7 @@ describe('l apercu et l import', () => {
 
   it('un catalogue illisible rend 502 et marque la source, il n ecrit pas', async () => {
     const h = harnais({ catalogue: { echec: { genre: 'reseau', message: 'coupe' } } });
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/importer` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
     expect(r.statusCode).toBe(502);
     expect(h.ecrit).toEqual([]);
     expect(h.epreuves).toEqual([{ ok: false }]);
@@ -177,14 +249,14 @@ describe('l apercu et l import', () => {
       mcpIndisponibleLe: null, params: [], consommateursActifs: 1,
     };
     const h = harnais({ outils: [existant], label: 'Notion Prod' });
-    await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/importer` });
+    await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
     expect(h.ecrit[0]!.changes).toHaveLength(1);
     expect(h.ecrit[0]!.changes[0]!.outil.name).toBe('notion_search');
   });
 
   it('un identifiant qui n est pas un uuid est refuse avant toute lecture', async () => {
     const h = harnais();
-    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/pas-un-uuid/apercu` });
+    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/pas-un-uuid/apercu` });
     expect(r.statusCode).toBe(400);
   });
 });
@@ -195,7 +267,7 @@ describe('regler un outil importe', () => {
     // parametre cloue a une cle que personne n a creee partirait VIDE a chaque appel, en silence.
     const h = harnais({ cles: ['email'] });
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
       payload: { params: [{ name: 'client', source: 'champ', cle: 'referenc' }] },
     });
     expect(r.statusCode).toBe(400);
@@ -206,7 +278,7 @@ describe('regler un outil importe', () => {
   it('un clouage sur un champ DECLARE passe', async () => {
     const h = harnais({ cles: ['email'] });
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
       payload: { params: [{ name: 'client', source: 'champ', cle: 'email' }] },
     });
     expect(r.statusCode).toBe(200);
@@ -216,7 +288,7 @@ describe('regler un outil importe', () => {
   it('🔴 un `champ` SANS cle est refuse : il ne designerait rien', async () => {
     const h = harnais();
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
       payload: { params: [{ name: 'client', source: 'champ' }] },
     });
     expect(r.statusCode).toBe(400);
@@ -226,7 +298,7 @@ describe('regler un outil importe', () => {
   it('🔴 un `fixe` SANS valeur est refuse, pour la meme raison', async () => {
     const h = harnais();
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
       payload: { params: [{ name: 'boutique', source: 'fixe' }] },
     });
     expect(r.statusCode).toBe(400);
@@ -236,7 +308,7 @@ describe('regler un outil importe', () => {
   it('un outil qui n est pas de cet espace rend 404', async () => {
     const h = harnais({ reglerOk: false });
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`, payload: { risk: 'read' },
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`, payload: { risk: 'read' },
     });
     expect(r.statusCode).toBe(404);
   });
@@ -248,14 +320,14 @@ describe('lister les outils importes', () => {
     // clouer : une capacite ecrite sans son lecteur, c est-a-dire le motif « offert-et-inerte » que ce
     // produit s interdit ailleurs.
     const h = harnais();
-    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/outils` });
+    const r = await h.app.inject({ method: 'GET', url: `/tenants/${TENANT}/mcp/${SOURCE}/outils` });
     expect(r.statusCode).toBe(200);
     expect(r.json().outils).toEqual([]);
   });
 
   it('refuse un identifiant qui n est pas un uuid', async () => {
     const h = harnais();
-    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/pas-un-uuid/outils` });
+    const r = await h.app.inject({ method: 'GET', url: `/tenants/${TENANT}/mcp/pas-un-uuid/outils` });
     expect(r.statusCode).toBe(400);
   });
 });
@@ -268,7 +340,7 @@ describe('le clouage `contact`, qui etait INERTE', () => {
     // « l agent decide », c est-a-dire d ouvrir le trou qu il cherchait a fermer.
     const h = harnais();
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
       payload: { params: [{ name: 'client_id', source: 'contact' }] },
     });
     expect(r.statusCode).toBe(400);
@@ -287,7 +359,7 @@ describe('le clouage `contact`, qui etait INERTE', () => {
     const h = harnais();
     for (const mauvais of ['champs', 'tags', 'opt_in']) {
       const r = await h.app.inject({
-        method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+        method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
         payload: { params: [{ name: 'client_id', source: 'contact', contactPath: mauvais }] },
       });
       expect(r.statusCode, mauvais).toBe(400);
@@ -299,7 +371,7 @@ describe('le clouage `contact`, qui etait INERTE', () => {
   it('un contactPath de la liste passe', async () => {
     const h = harnais();
     const r = await h.app.inject({
-      method: 'PATCH', url: `/agents/${TENANT}/mcp/outils/${OUTIL}`,
+      method: 'PATCH', url: `/tenants/${TENANT}/mcp/outils/${OUTIL}`,
       payload: { params: [{ name: 'client_id', source: 'contact', contactPath: 'wa_id' }] },
     });
     expect(r.statusCode).toBe(200);
@@ -310,7 +382,7 @@ describe('le clouage `contact`, qui etait INERTE', () => {
     // Une liste recopiee cote navigateur finirait par proposer ce que le serveur refuse, et le client
     // verrait un refus sur une valeur qu on venait de lui suggerer.
     const h = harnais({ cles: ['email', 'reference'] });
-    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/outils` });
+    const r = await h.app.inject({ method: 'GET', url: `/tenants/${TENANT}/mcp/${SOURCE}/outils` });
     expect(r.json().champs).toEqual(['email', 'reference']);
     expect(r.json().champsContact).toEqual(['wa_id', 'nom']);
   });
@@ -324,7 +396,7 @@ describe('declarer un serveur MCP', () => {
     // zero ligne, et les quatre autres routes de ce module etaient du cablage sans producteur.
     const h = harnais();
     const r = await h.app.inject({
-      method: 'POST', url: `/agents/${TENANT}/mcp`,
+      method: 'POST', url: `/tenants/${TENANT}/mcp`,
       payload: { label: 'Notion', baseUrl: 'https://exemple.test/mcp', authKind: 'bearer', authSecret: 'jeton' },
     });
     expect(r.statusCode).toBe(201);
@@ -336,7 +408,7 @@ describe('declarer un serveur MCP', () => {
     const h = harnais();
     for (const mauvaise of ['http://exemple.test/mcp', 'https://localhost/mcp', 'https://127.0.0.1/mcp']) {
       const r = await h.app.inject({
-        method: 'POST', url: `/agents/${TENANT}/mcp`,
+        method: 'POST', url: `/tenants/${TENANT}/mcp`,
         payload: { label: 'X', baseUrl: mauvaise, authKind: 'none' },
       });
       expect(r.statusCode, mauvaise).toBe(400);
@@ -349,7 +421,7 @@ describe('declarer un serveur MCP', () => {
     // remplace le corps.
     const h = harnais();
     const r = await h.app.inject({
-      method: 'POST', url: `/agents/${TENANT}/mcp`,
+      method: 'POST', url: `/tenants/${TENANT}/mcp`,
       payload: { label: 'X', baseUrl: 'https://exemple.test/mcp', authKind: 'bearer' },
     });
     expect(r.statusCode).toBe(400);
@@ -359,14 +431,26 @@ describe('declarer un serveur MCP', () => {
   it('⚠️ supprimer un serveur qui porte des outils ACTIFS est refuse en 409', async () => {
     // La cascade ferait disparaitre les outils sans bruit, et l agent deviendrait muet sur ces gestes-la,
     // en production, sans que personne ne l ait decide.
-    const h = harnais({ supprimerOk: false });
-    const r = await h.app.inject({ method: 'DELETE', url: `/agents/${TENANT}/mcp/${SOURCE}` });
+    const h = harnais({ suppression: 'outils_actifs' });
+    const r = await h.app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/mcp/${SOURCE}` });
     expect(r.statusCode).toBe(409);
+    expect(r.json().error).toContain('outils actifs');
+  });
+
+  it('🔴 et un serveur INTROUVABLE rend 404, pas le refus qui parle d outils actifs', async () => {
+    // C est le defaut exact que le booleen cachait : les deux cas rendaient le MEME `false`, donc le seul
+    // 409 que la production savait produire etait celui d un identifiant qui n existe pas, pendant qu un
+    // serveur reellement utilise se supprimait avec ses outils. Deux valeurs qui se ressemblaient sous un
+    // meme retour, et elles ne voulaient pas dire la meme chose.
+    const h = harnais({ suppression: 'introuvable' });
+    const r = await h.app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/mcp/${SOURCE}` });
+    expect(r.statusCode).toBe(404);
+    expect(r.json().error).not.toContain('outils actifs');
   });
 
   it('un serveur sans outil actif se supprime', async () => {
     const h = harnais();
-    const r = await h.app.inject({ method: 'DELETE', url: `/agents/${TENANT}/mcp/${SOURCE}` });
+    const r = await h.app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/mcp/${SOURCE}` });
     expect(r.statusCode).toBe(204);
   });
 });

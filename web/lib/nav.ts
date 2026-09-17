@@ -315,7 +315,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // Tools : ce qui BRANCHE la console sur l'extérieur. Les webhooks entrants, et les systèmes que les
     // agents IA interrogent. Les connecteurs sont ICI et pas dans un agent : un système appartient au CLIENT,
     // plusieurs agents tapent dans la même bibliothèque, et le déclarer dans un agent ferait croire qu'il lui
-    // appartient. MCP viendra s'ajouter dans ce menu, à côté.
+    // appartient. Les serveurs MCP y sont depuis le 2026-09-17, à côté des connecteurs API : même place,
+    // même raison, et la même bibliothèque d'outils derrière.
     { key: 'tools', label: t('Tools', 'Tools'), d: icons.tools, children: [
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },

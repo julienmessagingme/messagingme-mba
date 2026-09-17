@@ -1415,8 +1415,13 @@ async function main(): Promise<void> {
             .map((o) => ({ handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser })),
           // Les CONNECTEURS deja declares, par leur nom expose. L assistant peut en reecrire les MOTS, jamais
           // en creer : declarer une source, c est ecrire une adresse reseau et un secret.
+          // ⚠️ L ORIGINE PART AVEC, sinon les deux familles se confondent dans l inventaire de
+          // l assistant : un outil MCP y etait annonce comme un connecteur API.
           connecteurs: outils.filter((o) => o.origin !== 'mba')
-            .map((o) => ({ nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser })),
+            .map((o) => ({
+              nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser,
+              origine: o.origin === 'mcp' ? 'mcp' as const : 'http' as const,
+            })),
           titresConnaissance: fiches.map((f) => f.titre),
           sources: sources.map((s) => ({ label: s.label, kind: s.kind, status: s.status })),
           // ⚠️ `branche` se lit sur les CONSOMMATEURS de la definition, pas sur `outils` ci-dessus : les deux
@@ -1748,7 +1753,9 @@ async function main(): Promise<void> {
       // Le MEME store que les connecteurs API : c est la meme table, et le secret s y chiffre au meme
       // endroit. En ouvrir un second chemin ferait deux facons de chiffrer.
       creerServeur: (tenant, input) => agentSources.creer(tenant, { kind: 'mcp', ...input }),
-      supprimerServeur: (tenant, id) => agentSources.supprimer(tenant, id),
+      // 🔴 PAS `agentSources.supprimer`, qui est un `delete` nu : il rendait `true` en emportant les outils
+      // et les consentements par cascade, et `false` seulement sur un identifiant inexistant.
+      supprimerServeur: (tenant, id) => mcpStore.supprimerServeur(tenant, id),
       pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
       marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
       outilsPourEcran: (tenant, sourceId) => mcpStore.outilsPourEcran(tenant, sourceId),

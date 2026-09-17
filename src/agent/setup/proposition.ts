@@ -328,7 +328,13 @@ export interface EtatCourant {
   outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
   /** Les CONNECTEURS déjà déclarés par un administrateur, par leur nom exposé. L'assistant ne peut proposer
    *  que leurs mots, et seulement pour ceux-là : il n'en invente pas. */
-  connecteurs?: Array<{ nom: string; titre: string; description: string; nePasUtiliser: string }>;
+  /**
+   * ⚠️ `origine` EST REQUISE, et c'est ce qui empêche les deux familles de se confondre. Cette liste est
+   * construite sur `origin !== 'mba'`, donc elle porte les connecteurs API ET les outils MCP ; sans elle,
+   * `inventaireDe` les versait tous dans `outilsApi` et l'assistant annonçait un outil MCP comme un
+   * connecteur API.
+   */
+  connecteurs?: Array<{ nom: string; titre: string; description: string; nePasUtiliser: string; origine: 'http' | 'mcp' }>;
   /**
    * LA BIBLIOTHÈQUE DE L'ESPACE (migration 0127), avec l'état de branchement de CET agent.
    *

@@ -52,7 +52,7 @@ export interface OutilMcp {
   params: ParamMcp[];
   risk: 'read' | 'write' | 'irreversible';
   annonce: unknown;
-  /** `null` = activable. Sinon la raison, telle que le serveur nous l'a value : on l'affiche en clair. */
+  /** `null` = activable. Sinon la raison, telle que le serveur nous l'a annoncée : on l'affiche en clair. */
   nonActivable: string | null;
   indisponibleLe: string | null;
   consommateursActifs: number;
@@ -64,7 +64,7 @@ export type ChangementMcp =
   | { type: 'schema_change'; nom: string; consentementsTombes: number }
   | { type: 'disparu'; nom: string; consentementsTombes: number };
 
-const base = (tenantId: string) => `/agents/${tenantId}/mcp`;
+const base = (tenantId: string) => `/tenants/${tenantId}/mcp`;
 
 export function listerServeursMcp(tenantId: string): Promise<{ serveurs: ServeurMcp[] }> {
   return request<{ serveurs: ServeurMcp[] }>(base(tenantId));

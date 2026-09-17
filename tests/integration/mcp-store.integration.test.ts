@@ -221,6 +221,76 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     expect(await store.debranchesParRafraichissement(tenantId, `agent:${agentId}`)).not.toContain('notion_jamais');
   });
 
+  describe('supprimer un serveur', () => {
+    /**
+     * 🔴 LE DEFAUT QUE CES TESTS FERMENT ETAIT UNE PERTE DE DONNEES EN PRODUCTION. La route etait cablee
+     * sur `PgSourceStore.supprimer`, un `delete` nu : supprimer un serveur PORTANT DES OUTILS ACTIFS
+     * reussissait, et la cascade emportait SANS UN MOT tous ses outils importes et tous les consentements.
+     * Le 409 « porte encore des outils actifs » ne sortait QUE sur un identifiant inexistant.
+     *
+     * ⚠️ ET LE TEST DE ROUTE NE POUVAIT PAS LE VOIR : son faux rendait `false` pour dire « outils
+     * actifs », un verdict que le vrai store n a jamais rendu pour cette raison. La preuve ne pouvait
+     * venir que d ici, contre une vraie base.
+     */
+    it('🔴 REFUSE tant qu un outil ACTIF en depend, et n emporte RIEN', async () => {
+      const serveur = (await pool.query<{ id: string }>(
+        `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+         values ($1, 'mcp', 'itest-a-supprimer', 'https://exemple.test/mcp', 'none', 'active') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
+      await store.appliquer(tenantId, serveur, {
+        nouveaux: [aImporter('garde', 'sup_garde')], changes: [], disparus: [], vus: [],
+      });
+      const outil = (await store.outilsDuServeur(tenantId, serveur))[0]!;
+      await consentir(outil.id);
+
+      expect(await store.supprimerServeur(tenantId, serveur)).toBe('outils_actifs');
+
+      // 🔴 CE QUI COMPTE VRAIMENT : rien n a bouge. Un refus qui aurait quand meme supprime serait pire
+      // qu une absence de refus, parce qu il annoncerait le contraire de ce qu il a fait.
+      expect((await store.outilsDuServeur(tenantId, serveur))).toHaveLength(1);
+      const reste = await pool.query(
+        'select 1 from agent_tool_sources where tenant_id = $1 and id = $2', [tenantId, serveur],
+      );
+      expect(reste.rowCount).toBe(1);
+    });
+
+    it('un serveur dont plus aucun outil n est actif se supprime', async () => {
+      const serveur = (await pool.query<{ id: string }>(
+        `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+         values ($1, 'mcp', 'itest-libre', 'https://exemple.test/mcp', 'none', 'active') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
+      await store.appliquer(tenantId, serveur, {
+        nouveaux: [aImporter('libre', 'sup_libre')], changes: [], disparus: [], vus: [],
+      });
+      // Importe mais JAMAIS active : personne ne perd rien a le voir partir.
+      expect(await store.supprimerServeur(tenantId, serveur)).toBe('supprime');
+      const reste = await pool.query(
+        'select 1 from agent_tool_sources where tenant_id = $1 and id = $2', [tenantId, serveur],
+      );
+      expect(reste.rowCount).toBe(0);
+    });
+
+    it('🔴 ne touche PAS a un connecteur HTTP : la route MCP contournait sa garde', async () => {
+      // `DELETE /agents/:t/mcp/<id-d-un-connecteur-API>` supprimait ce connecteur en sautant la garde
+      // `outilsActifs > 0` que sa PROPRE route applique. Le filtre de `kind` ferme cette porte.
+      expect(await store.supprimerServeur(tenantId, sourceHttp)).toBe('introuvable');
+      const reste = await pool.query(
+        'select 1 from agent_tool_sources where tenant_id = $1 and id = $2', [tenantId, sourceHttp],
+      );
+      expect(reste.rowCount, 'le connecteur HTTP est toujours la').toBe(1);
+    });
+
+    it('⚠️ et un espace VOISIN ne peut pas supprimer ce serveur', async () => {
+      const autre = (await pool.query<{ id: string }>(
+        `insert into tenants (name) values ('itest-mcp-voisin') returning id`,
+      )).rows[0]!.id;
+      expect(await store.supprimerServeur(autre, sourceMcp)).toBe('introuvable');
+      await pool.query('delete from tenants where id = $1', [autre]);
+    });
+  });
+
   it('les noms pris couvrent TOUT l espace, pas seulement ce serveur', async () => {
     // L'unicité de `agent_tools.name` est par ESPACE depuis 0127 : ne regarder que les outils du serveur
     // en cours ferait choisir un nom qu'un connecteur HTTP occupe déjà.

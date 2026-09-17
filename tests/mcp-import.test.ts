@@ -203,6 +203,46 @@ describe('🔴 le clouage SURVIT a un rafraichissement', () => {
   });
 });
 
+describe('🔴 le clouage survit a un ALLER-RETOUR par un schema irreprensentable', () => {
+  /**
+   * 🔴 LA PORTE DE DERRIERE DE L IDOR, trouvee par la revue a froid du 2026-09-17. `reporterClouage`
+   * ferme bien la porte principale (un schema qui change ne remet pas tout en « rempli par le modele »),
+   * mais il ne peut reporter que ce qui est ENCORE EN BASE. Or un schema irreprensentable rendait
+   * `feuilles: []`, donc `params: []`, et `appliquer` ecrit `params = '[]'::jsonb`. Le clouage etait
+   * EFFACE. Le serveur distant n avait plus qu a revenir a son schema d avant pour que tout reparte en
+   * `modele`, pendant que le consentement tombe et que le client le redonne depuis un ECRAN QUI N EST PAS
+   * celui du clouage.
+   */
+  const cloue: ParamOutil = {
+    name: 'client_id', type: 'string', source: 'champ', cle: 'reference', cheminMcp: 'client.id',
+  };
+  const schemaBon = { type: 'object', properties: { client: { type: 'object', properties: { id: { type: 'string' } } } } };
+  // Un TABLEAU : l aplatisseur n a pas de jeu de feuilles fixe a en tirer, donc il refuse.
+  const schemaTordu = { type: 'object', properties: { client: { type: 'array' } } };
+
+  it('le passage par le schema tordu GARDE les parametres au lieu de les effacer', () => {
+    const o = outilDepuisAnnonce(annonce('search', schemaTordu), 'Notion', new Set(), [cloue]);
+    expect(o.nonActivable).not.toBeNull();
+    expect(o.params, 'le clouage est conserve, pas remis a zero').toEqual([cloue]);
+  });
+
+  it('🔴 et au RETOUR du bon schema, le clouage est toujours la', () => {
+    // La chaine complete, telle que la production l enchaine : bon -> tordu -> bon. Sans le correctif, le
+    // troisieme appel recoit un tableau VIDE et rend tout en « rempli par le modele », garde ouverte.
+    const apresTordu = outilDepuisAnnonce(annonce('search', schemaTordu), 'Notion', new Set(), [cloue]);
+    const apresRetour = outilDepuisAnnonce(annonce('search', schemaBon), 'Notion', new Set(), apresTordu.params);
+    expect(apresRetour.nonActivable).toBeNull();
+    expect(apresRetour.params.find((p) => p.cheminMcp === 'client.id'))
+      .toMatchObject({ source: 'champ', cle: 'reference' });
+  });
+
+  it('⚠️ mais un outil NEUF non activable n invente aucun parametre', () => {
+    // La preuve inverse : sans elle, « garder les anciens » passerait aussi en rendant n importe quoi.
+    const neuf = outilDepuisAnnonce(annonce('search', schemaTordu), 'Notion', new Set());
+    expect(neuf.params).toEqual([]);
+  });
+});
+
 describe('un schema que le serveur n a pas su declarer', () => {
   /**
    * 🔴 LE TEST QUI COMPTE EST CELUI DU CABLAGE. `aplatirSchema` refusait deja ces entrees, et six cas le

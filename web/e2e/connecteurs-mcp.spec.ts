@@ -49,10 +49,10 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
       // Les deux listes de clouage viennent du SERVEUR : l ecran ne les recopie pas.
       return json({ outils: OUTILS, champs: ['email', 'reference'], champsContact: ['wa_id', 'nom'] });
     }
-    if (url.endsWith(`/agents/${TENANT}/mcp`) && method === 'POST') {
+    if (url.endsWith(`/tenants/${TENANT}/mcp`) && method === 'POST') {
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ serveur: SERVEUR }) });
     }
-    if (url.endsWith(`/agents/${TENANT}/mcp`)) return json({ serveurs: over.aucun ? [] : [SERVEUR] });
+    if (url.endsWith(`/tenants/${TENANT}/mcp`)) return json({ serveurs: over.aucun ? [] : [SERVEUR] });
     if (url.includes('/apercu')) {
       return json({
         plan: over.plan ?? [{ type: 'schema_change', nom: 'search', consentementsTombes: 2 }],

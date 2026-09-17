@@ -86,12 +86,27 @@ export interface Inventaire {
    *  d'administrateur et non une réponse d'entretien. Les taire ferait dire « rien n'existe » à un client qui
    *  a justement déclaré son ERP la semaine dernière. */
   systemesApi: string[];
-  /** Les serveurs MCP déclarés. ⚠️ MCP n'est PAS exécutable aujourd'hui (lot L4 non développé) : même non
-   *  vide, cette liste ne rend rien appelable, et la question le dit. */
+  /**
+   * Les serveurs MCP DÉCLARÉS dans l'espace, mais dont aucun outil n'est encore branché sur CET agent.
+   *
+   * ⚠️ CE COMMENTAIRE A DIT « MCP n'est PAS exécutable aujourd'hui (lot L4 non développé) » JUSQU'AU
+   * 2026-09-17, alors que le lot était livré. C'était le troisième des trois textes que le plan demandait
+   * de corriger ENSEMBLE, et le seul qu'on avait laissé : corriger un compte à deux endroits et le laisser
+   * au troisième, c'est le laisser faux.
+   */
   mcp: string[];
+  /**
+   * Les outils MCP DÉJÀ branchés sur cet agent, par leur nom exposé.
+   *
+   * 🔴 SANS CETTE SÉPARATION, LES OUTILS MCP ÉTAIENT ANNONCÉS COMME DES CONNECTEURS API. `connecteurs` est
+   * construit sur `origin !== 'mba'`, donc il porte les DEUX familles : la branche `outil_api` les
+   * énumérait tous sous « Branchés sur cet agent », pendant que la branche `outil_mcp` ne savait nommer
+   * que des serveurs. L'assistant promettait donc un appel API sur un outil MCP.
+   */
+  outilsMcp: string[];
 }
 
-export const INVENTAIRE_VIDE: Inventaire = { outilsApi: [], systemesApi: [], mcp: [] };
+export const INVENTAIRE_VIDE: Inventaire = { outilsApi: [], systemesApi: [], mcp: [], outilsMcp: [] };
 
 /** Une énumération lisible, « a, b et c ». */
 function enumerer(noms: readonly string[]): string {
@@ -358,8 +373,20 @@ function moyenDemande(action: Action, inv: Inventaire): string {
   if (action === 'outil_mcp') {
     // ⚠️ MÊME FORME QUE `outil_api`, et c'est le but : les deux familles se branchent pareil depuis le
     // 2026-09-17, et deux réponses de forme différente feraient croire à deux dispositifs différents.
+    // 🔴 DEUX NIVEAUX, comme son jumeau : ce qui est BRANCHÉ sur cet agent d'abord, ce qui est seulement
+    // DÉCLARÉ dans l'espace ensuite. N'annoncer que les serveurs faisait dire « voici ce qu'il peut
+    // appeler » en nommant des choses qui n'étaient reliées à rien.
+    if (inv.outilsMcp.length > 0) {
+      const dispo = `Branchés sur cet agent : ${enumerer(inv.outilsMcp)}.`;
+      const aRelier = inv.mcp.length > 0
+        ? ` Serveurs déclarés dans votre espace mais dont rien n'est encore relié à cet agent : ${enumerer(inv.mcp)}.`
+        : '';
+      return `lequel doit-il appeler ? ${dispo}${aRelier}`;
+    }
     if (inv.mcp.length > 0) {
-      return `lequel doit-il appeler ? Serveurs MCP déclarés dans votre espace : ${enumerer(inv.mcp)}.`;
+      return 'AUCUN outil MCP n’est branché sur cet agent. Vous avez déclaré '
+        + `${enumerer(inv.mcp)} dans votre espace : il reste à en importer les outils (menu Tools > `
+        + 'Connecteurs MCP). En attendant, dites-moi lequel, ou choisissez autre chose pour ce moment.';
     }
     return 'AUCUN serveur MCP n’est déclaré dans votre espace : il n’y a rien à appeler aujourd’hui. '
       + 'Vous pouvez en déclarer un depuis le menu Tools > Connecteurs MCP. Décrivez ce qu’il faudrait '

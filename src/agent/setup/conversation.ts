@@ -225,11 +225,17 @@ export interface ContexteConstruction extends EtatCourant {
  * d'entretien, et les confondre promettrait un appel qui n'aurait pas lieu.
  */
 export function inventaireDe(ctx: ContexteConstruction): Inventaire {
-  const outilsApi = (ctx.connecteurs ?? []).map((c) => c.titre || c.nom);
+  const branches = ctx.connecteurs ?? [];
+  // 🔴 SÉPARÉS PAR ORIGINE, sinon un outil MCP est annoncé comme un connecteur API. La liste porte les
+  // deux familles (elle est construite en excluant les outils maison), et les verser toutes les deux dans
+  // la liste des connecteurs API faisait promettre un appel de la mauvaise nature.
+  const outilsApi = branches.filter((c) => c.origine === 'http').map((c) => c.titre || c.nom);
+  const outilsMcp = branches.filter((c) => c.origine === 'mcp').map((c) => c.titre || c.nom);
   const sources = ctx.sources ?? [];
   const actives = sources.filter((s) => s.status !== 'disabled');
   return {
     outilsApi,
+    outilsMcp,
     // Un système déjà branché n'a pas à être proposé une seconde fois comme « à relier ».
     systemesApi: actives.filter((s) => s.kind === 'http' && !outilsApi.includes(s.label)).map((s) => s.label),
     mcp: actives.filter((s) => s.kind === 'mcp').map((s) => s.label),

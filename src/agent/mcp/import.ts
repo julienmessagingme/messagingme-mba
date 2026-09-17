@@ -225,15 +225,30 @@ export function outilDepuisAnnonce(
      * une garde d'identité que personne n'a demandée, sur une correspondance de nom : le jour où elle se
      * trompe, l'appel part sur la mauvaise ressource sans que rien ne le dise.
      */
-    params: reporterClouage(aplati.feuilles.map((f) => ({
-      name: f.name,
-      type: f.type,
-      source: 'modele' as const,
-      cheminMcp: f.cheminMcp,
-      ...(f.description ? { description: f.description } : {}),
-      ...(f.required ? { required: true } : {}),
-      ...(f.enum ? { enum: f.enum } : {}),
-    })), anciens),
+    /**
+     * 🔴 UN OUTIL DEVENU NON ACTIVABLE GARDE SES PARAMÈTRES D'AVANT, ET C'EST CE QUI SAUVE LA GARDE
+     * D'IDENTITÉ SUR LE CHEMIN LE PLUS SOURNOIS. `aplatirSchema` rend `feuilles: []` quand la forme n'est
+     * pas représentable : écrire ce `[]` en base EFFAÇAIT le clouage pour toujours. Le serveur distant
+     * n'avait alors qu'à publier un schéma irreprésentable, puis à revenir au précédent, pour que
+     * `reporterClouage` n'ait plus rien à reporter et que TOUT reparte en « rempli par le modèle », donc
+     * influençable par le contact. C'est exactement l'IDOR que `reporterClouage` dit fermer, rouvert par la
+     * porte d'à côté. Relevé par la revue à froid du 2026-09-17.
+     *
+     * ⚠️ LES GARDER NE COÛTE RIEN : un outil non activable est refusé À L'ACTIVATION (`OutilNonActivable`)
+     * ET À L'EXÉCUTION (la ceinture du résolveur), donc ces paramètres ne partent nulle part. Ils ne
+     * servent qu'à être RENDUS le jour où le schéma redevient lisible.
+     */
+    params: aplati.raisonNonActivable !== null
+      ? [...anciens]
+      : reporterClouage(aplati.feuilles.map((f) => ({
+        name: f.name,
+        type: f.type,
+        source: 'modele' as const,
+        cheminMcp: f.cheminMcp,
+        ...(f.description ? { description: f.description } : {}),
+        ...(f.required ? { required: true } : {}),
+        ...(f.enum ? { enum: f.enum } : {}),
+      })), anciens),
     annonce,
     nonActivable: aplati.raisonNonActivable,
     risk: risquePropose(annonce),

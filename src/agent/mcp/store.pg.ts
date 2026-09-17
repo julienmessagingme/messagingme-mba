@@ -178,6 +178,57 @@ export class PgMcpStore {
     return res.rows.map((r) => r.name);
   }
 
+  /**
+   * SUPPRIMER UN SERVEUR MCP.
+   *
+   * 🔴 TROIS ÉTATS, PAS UN BOOLÉEN, ET C'EST LE BOOLÉEN QUI A RENDU LE REFUS MENTEUR. Ce chemin était câblé
+   * sur `PgSourceStore.supprimer`, un `delete` nu qui rend `true` dès qu'une ligne part et `false`
+   * seulement quand l'identifiant n'existe pas. Donc : supprimer un serveur PORTANT DES OUTILS ACTIFS
+   * réussissait (204) et la cascade emportait SANS UN MOT tous ses outils importés et tous les
+   * consentements (`agent_tools.source_id` en `on delete cascade` depuis 0088,
+   * `agent_tool_consommateurs.tool_id` de même depuis 0127) ; et le 409 « porte encore des outils
+   * actifs » ne sortait QUE sur un identifiant inexistant, c'est-à-dire exactement à l'envers. Trois
+   * textes affirmaient le contraire, dont `features.md`.
+   *
+   * 🔴 ET IL NE SUPPRIME QUE DU `kind = 'mcp'`. Sans ce filtre, `DELETE /agents/:t/mcp/<id-d-un-connecteur-HTTP>`
+   * supprimait un connecteur API EN CONTOURNANT la garde `outilsActifs > 0` que sa propre route applique.
+   *
+   * ⚠️ LE COMPTE ET LA SUPPRESSION SONT DANS LA MÊME TRANSACTION : les lire séparément laisserait la
+   * fenêtre où quelqu'un active un outil entre les deux, et c'est précisément la fenêtre qui coûte cher.
+   */
+  async supprimerServeur(tenantId: string, id: string): Promise<'supprime' | 'introuvable' | 'outils_actifs'> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const existe = await client.query(
+        "select 1 from agent_tool_sources where tenant_id = $1 and id = $2 and kind = 'mcp'",
+        [tenantId, id],
+      );
+      if (existe.rowCount === 0) { await client.query('rollback'); return 'introuvable'; }
+
+      const actifs = await client.query<{ n: string }>(
+        `select count(*)::text as n
+           from agent_tool_consommateurs c
+           join agent_tools t on t.id = c.tool_id and t.tenant_id = c.tenant_id
+          where c.tenant_id = $1 and t.source_id = $2 and t.origin = 'mcp' and c.actif`,
+        [tenantId, id],
+      );
+      if (Number(actifs.rows[0]!.n) > 0) { await client.query('rollback'); return 'outils_actifs'; }
+
+      await client.query(
+        "delete from agent_tool_sources where tenant_id = $1 and id = $2 and kind = 'mcp'",
+        [tenantId, id],
+      );
+      await client.query('commit');
+      return 'supprime';
+    } catch (e) {
+      await client.query('rollback').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Applique un plan d'import. TOUT OU RIEN. */
   async appliquer(tenantId: string, sourceId: string, e: EcritureImportMcp): Promise<void> {
     const client = await this.pool.connect();
