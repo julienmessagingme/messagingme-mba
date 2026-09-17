@@ -1368,14 +1368,28 @@ async function main(): Promise<void> {
    * autres retentions de ce worker sont des taches programmees ; inscrire ce balayage dans
    * `BASE_QUEUES` ferait chercher a `/ops` une file qui n existe pas.
    *
-   * ⚠️ 400 JOURS EN ARRIERE, un peu plus que la plage maximale d un ecran (366) : ce qui sort de la
-   * fenetre d affichage n a aucun lecteur, et remonter plus loin ferait balayer la table d analyses
-   * entiere a chaque passage pour des journees que personne ne demandera.
+   * ⚠️ 400 JOURS EN ARRIERE AU MINIMUM, un peu plus que la plage maximale d un ecran (366) : ce qui sort
+   * de la fenetre d affichage n a aucun lecteur, et remonter plus loin SANS RAISON ferait balayer la
+   * table d analyses entiere a chaque passage pour des journees que personne ne demandera.
+   *
+   * 🔴 MAIS LA FENETRE DESCEND PLUS BAS DES QUE LA DONNEE L EXIGE, ET C EST UNE CORRECTION DE REVUE
+   * (2026-09-17). 400 etait un nombre en dur, alors qu un espace peut regler sa retention jusqu a 3650
+   * jours et que le levier d urgence peut suspendre la purge aussi longtemps qu on veut. Dans ces deux
+   * cas, des analyses de plus de 400 jours SURVIVENT, sortent de la fenetre, et seraient effacees le jour
+   * ou la purge reprend sans avoir jamais ete agregees : perdues pour toujours, sans une erreur. La borne
+   * basse est donc desormais le PLUS ANCIEN JOUR ENCORE PRESENT quand il est plus vieux que 400 jours.
+   *
+   * ⚠️ ELLE NE GROSSIT QUE QUAND LE RISQUE EXISTE : tant que rien ne depasse 400 jours, elle vaut 400
+   * jours, et le cout ne bouge pas. Elle s etend exactement de ce qui pourrait etre perdu, jamais plus.
    */
   const conversationStatsStore = new PgConversationStatsStore(pool, true, config.CONVERSATION_RETENTION_DAYS);
   const agregatsSweep = async (): Promise<number> => {
     const jusqua = todayParis();
-    return conversationStatsStore.ecrireAgregats({ from: addDays(jusqua, -400), to: jusqua });
+    const plancher = addDays(jusqua, -400);
+    // `null` = aucune analyse en base, il n y a donc rien a agreger plus loin que le plancher.
+    const plusAncien = await conversationStatsStore.plusAncienJourAnalyse();
+    const depuis = plusAncien !== null && plusAncien < plancher ? plusAncien : plancher;
+    return conversationStatsStore.ecrireAgregats({ from: depuis, to: jusqua });
   };
 
   /**

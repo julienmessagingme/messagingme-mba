@@ -53,6 +53,21 @@ volontairement protégée de la purge : le cas voisin, qui vérifie que l'efface
 passage, en supprimait donc une qui n'était pas à lui. `npm test` en local n'a pas de base et ne
 pouvait rien en dire. Corrigé, les deux cas rendent maintenant la base comme ils l'ont trouvée.
 
+🔴 **0155 EST DEVENUE BLOQUANTE POUR UN SECOND CHEMIN, ET C'EST LE PLUS CHAUD DES DEUX.** Depuis le
+correctif de revue du 2026-09-17, `getSummary` LIT `tenant_settings.conversation_retention_days` pour
+annoncer à l'écran la durée réellement appliquée à CET espace. C'est le chemin d'affichage de toute la
+page Synthèse : déployer le code avant la migration ne casserait plus seulement le balayage, ça rendrait
+`42703` sur la page entière, en boucle. Même symptôme que le 2026-08-17. ⚠️ Mesuré : la colonne n'existe
+pas encore en base, une sonde l'a confirmé en rendant `column ts.conversation_retention_days does not
+exist`. Le SQL a donc été validé dans une session isolée par TABLE TEMPORAIRE du même nom (`pg_temp` passe
+avant `public`), sans jamais poser de verrou sur la vraie table.
+
+⚠️ **UNE FICHE DU BOT D'AIDE A CHANGÉ, DONC IL FAUT LA CHARGER** : `npx tsx db/charger-aide.ts` après le
+déploiement. Le dépôt est la source, la table `aide_fiches` n'est que l'index : sans ce chargement, le bot
+continue de répondre avec l'ancien texte. La fiche « importer-mes-contacts » décrit désormais le résumé
+de conversation sur la fiche du contact. ⚠️ Elle a été rattrapée par un test (`aide-proposer`), pas par
+moi : modifier une section de `features.md` PÉRIME l'empreinte des fiches qui la citent, et la CI le dit.
+
 **CE QUI RESTE DÛ SUR CE CHANTIER**, dans l'ordre où ça se pose :
 
 1. 🔴 **L'ESSAI RÉEL, ET IL SEUL CLÔT LA FEATURE.** Ouvrir Performance Lab sur les vraies données :

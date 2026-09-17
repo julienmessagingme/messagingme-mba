@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
+import { retentionEffective } from '../inbox/retention';
 
 /**
  * LECTURE des agrégats d'analyse de conversation (Pièce 1, table `conversation_analysis`). Séparé du store
@@ -59,11 +60,16 @@ export interface ConversationAnalysisSummary {
   /** Feature d'analyse active côté serveur (config). Distingue « inactif » de « aucune donnée ». */
   enabled: boolean;
   /**
-   * Combien de jours une conversation reste consultable (`CONVERSATION_RETENTION_DAYS`, purge du worker).
+   * Combien de jours une conversation reste consultable DANS CET ESPACE, purge du worker comprise. `0` veut
+   * dire « jamais purgée ».
    *
    * Remonté avec les agrégats, comme `enabled`, et pour la même raison : l'écran doit pouvoir DIRE pourquoi
    * une plage ancienne rend moins de lignes que prévu. Sans cette phrase, un export plus court que la
    * période demandée passe pour un bug, et c'est le genre de doute qui coûte un aller-retour de support.
+   *
+   * 🔴 CE N'EST PLUS `CONVERSATION_RETENTION_DAYS` TEL QUEL, et cette ligne l'a affirmé à tort jusqu'au
+   * 2026-09-17 : depuis la migration 0155, un espace peut poser SA durée, et c'est la sienne qui décide.
+   * La règle à deux niveaux vit dans `retentionEffective` (`src/inbox/retention.ts`), partagée avec la purge.
    */
   retentionDays: number;
   total: number;
@@ -233,9 +239,14 @@ export class PgConversationStatsStore {
       avg_ex: string | null; median_ex: string | null;
       a_devis: string; a_rappeler: string; a_relancer: string; a_escalader: string; a_aucune: string;
       c_lt50: string; c_50_70: string; c_70_90: string; c_gte90: string;
+      retention_espace: number | null;
     }>(
       `with ${BOUNDS_CTE}
        select
+         -- LA RETENTION DE CET ESPACE, remontee avec les compteurs plutot que par une requete de plus : la
+         -- phrase qui l'annonce est affichee juste sous eux. null = l'espace n'a rien regle, et c'est
+         -- retentionEffective qui tranche ensuite, pas ce select.
+         (select ts.conversation_retention_days from tenant_settings ts where ts.tenant_id = $1) as retention_espace,
          count(*)::int as total,
          count(*) filter (where sentiment = 'positif')::int as s_pos,
          count(*) filter (where sentiment = 'neutre')::int as s_neu,
@@ -329,7 +340,13 @@ export class PgConversationStatsStore {
     const resolved = Number(r.resolved);
     return {
       enabled: this.enabled,
-      retentionDays: this.retentionDays,
+      /**
+       * 🔴 CELLE DE L'ESPACE QUAND IL EN A UNE, PAS CELLE DE L'INSTANCE. `this.retentionDays` est fige au
+       * demarrage du process et vaut pour tout le monde : l'annoncer tel quel ferait dire « conservees 90
+       * jours » a un espace regle sur 30, pendant que ses donnees disparaissent a 30. La regle a deux
+       * niveaux vit dans `retentionEffective`, partagee avec la purge, pour qu'il n'y en ait pas deux.
+       */
+      retentionDays: retentionEffective(this.retentionDays, r.retention_espace ?? null),
       total,
       sentiment: { positif: Number(r.s_pos), neutre: Number(r.s_neu), negatif: Number(r.s_neg) },
       intent: {
@@ -567,6 +584,29 @@ export class PgConversationStatsStore {
    *
    * Rend le nombre de journees ecrites.
    */
+  /**
+   * LE PLUS ANCIEN JOUR D'ANALYSE ENCORE PRESENT EN BASE, au fuseau des statistiques. `null` si la table est
+   * vide. Format `AAAA-MM-JJ`, celui que `DateRange` attend.
+   *
+   * 🔴 ELLE EXISTE POUR BORNER LE BALAYAGE PAR LA DONNEE, ET PAS PAR UN NOMBRE DEVINE. Le balayage remontait
+   * 400 jours en dur, un peu plus que la plage maximale d'un ecran. Or un espace peut regler sa retention
+   * jusqu'a 3650 jours, et le levier d'urgence (`CONVERSATION_RETENTION_DAYS = 0`) peut suspendre la purge
+   * aussi longtemps qu'on veut : dans ces deux cas, des analyses de plus de 400 jours SURVIVENT, sortent de
+   * la fenetre du balayage, et seraient effacees le jour ou la purge reprend sans avoir jamais ete agregees.
+   * Perdues pour toujours, sans une erreur. Releve en revue le 2026-09-17, non atteignable ce jour-la (la
+   * production envoie depuis le 2026-07-06, donc rien n'a 400 jours), mais ARME.
+   *
+   * ⚠️ ET LA FENETRE NE GROSSIT QUE QUAND LE RISQUE EXISTE : tant que rien ne depasse 400 jours, elle reste
+   * a 400 jours. Elle s'etend exactement de ce qui pourrait etre perdu, jamais plus.
+   */
+  async plusAncienJourAnalyse(): Promise<string | null> {
+    const res = await this.pool.query<{ jour: string | null }>(
+      `select to_char(min(created_at) at time zone $1, 'YYYY-MM-DD') as jour from conversation_analysis`,
+      [TZ],
+    );
+    return res.rows[0]?.jour ?? null;
+  }
+
   async ecrireAgregats(range: DateRange, tenantId: string | null = null): Promise<number> {
     const { from, to } = range;
     const res = await this.pool.query(

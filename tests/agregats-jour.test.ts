@@ -126,3 +126,40 @@ describe('la purge ne part jamais sans ses agregats', () => {
     expect(apresProgrammer.slice(0, 1200)).toContain('agregatsAJour = false;');
   });
 });
+
+/**
+ * LA FENETRE DU BALAYAGE DOIT COUVRIR TOUT CE QUE LA PURGE PEUT EFFACER.
+ *
+ * 🔴 CE QUE CE BLOC PROTEGE, ET QUI A ETE TROUVE EN REVUE (2026-09-17). Le balayage remontait 400 jours en
+ * DUR, un nombre choisi sur la plage maximale d'un ecran. Or deux chemins produisent des analyses plus
+ * vieilles que ca : un espace peut regler sa retention jusqu'a 3650 jours (CHECK de la migration 0155), et
+ * `CONVERSATION_RETENTION_DAYS = 0` suspend la purge aussi longtemps qu'on veut. Ces analyses-la sortaient
+ * de la fenetre, restaient sans agregat, et disparaissaient a la reprise de la purge. Perdues pour toujours,
+ * sans une erreur : le balayage aurait REUSSI, il n'aurait simplement pas vu ces journees.
+ *
+ * ⚠️ NON ATTEIGNABLE LE JOUR DE LA CORRECTION (la production envoie depuis le 2026-07-06, rien n'a 400
+ * jours), mais ARME. C'est exactement le genre de defaut qu'on corrige pendant qu'il ne coute rien.
+ */
+describe('le balayage descend aussi bas que la donnee l exige', () => {
+  it('🔴 la borne basse n est plus un nombre en dur', () => {
+    // La faute qu'on attrape : revenir a `ecrireAgregats({ from: addDays(jusqua, -400), to: jusqua })`.
+    const sweep = WORKER.slice(WORKER.indexOf('const agregatsSweep ='), WORKER.indexOf('let agregatsAJour'));
+    expect(sweep).toContain('plusAncienJourAnalyse()');
+    expect(sweep, 'la fenetre doit partir de `depuis`, pas du plancher').toContain('ecrireAgregats({ from: depuis');
+  });
+
+  it('🔴 le plancher de 400 jours reste, il n est pas remplace', () => {
+    // L'inverse serait aussi faux : partir systematiquement du plus ancien jour ferait balayer toute la
+    // table quand il n'y a rien a rattraper. La fenetre ne s'etend que quand la donnee la depasse.
+    const sweep = WORKER.slice(WORKER.indexOf('const agregatsSweep ='), WORKER.indexOf('let agregatsAJour'));
+    expect(sweep).toContain('addDays(jusqua, -400)');
+    expect(sweep).toContain('plusAncien < plancher');
+  });
+
+  it('⚠️ une base sans aucune analyse retombe sur le plancher, jamais sur une date vide', () => {
+    // `plusAncienJourAnalyse` rend `null` sur une table vide : le traiter comme une date ferait construire
+    // une plage invalide, donc un balayage en echec, donc une purge suspendue sans cause reelle.
+    const sweep = WORKER.slice(WORKER.indexOf('const agregatsSweep ='), WORKER.indexOf('let agregatsAJour'));
+    expect(sweep).toContain('plusAncien !== null');
+  });
+});

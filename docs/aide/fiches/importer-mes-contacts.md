@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 6cbd27
+source_empreinte: 3e0367
 ---
 # Ajouter ou importer mes contacts
 
@@ -10,6 +10,13 @@ personne à la main, ou importer un fichier CSV.
 
 L'import vous fait associer chaque colonne de votre fichier à un champ de la fiche. Les contacts arrivent
 alors dans votre liste, prêts à être ciblés.
+
+Un clic sur une ligne ouvre la fiche de la personne. Vous y modifiez ses champs, ses tags et son
+consentement, et vous y lisez le résumé de sa dernière conversation analysée dès qu'elle en a tenu une :
+de quoi savoir de quoi vous avez parlé avant de la rappeler, sans rouvrir l'échange. Ce résumé est écrit par
+l'analyse, il ne se modifie pas à la main, et il disparaît en même temps que la conversation quand celle-ci
+atteint votre durée de conservation. L'onglet « Historique » de la fiche montre, lui, le résumé de chacune
+de ses conversations.
 
 Une fois vos contacts en place, l'écran sert de moteur de recherche. Vous filtrez par tag, par consentement
 marketing, par nom, par numéro de téléphone, par la valeur d'un champ que vous avez créé, ou par la présence

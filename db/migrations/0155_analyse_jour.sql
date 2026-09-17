@@ -88,6 +88,12 @@ alter table analyse_jour add constraint analyse_jour_mesures_chk
 -- de l'instance. Une valeur par defaut en base aurait FIGE le chiffre du jour de la migration, et changer
 -- la variable d'environnement n'aurait plus rien fait, en silence.
 --
+-- 🔴 CETTE COLONNE EST DEVENUE BLOQUANTE POUR UN SECOND CHEMIN, LE 2026-09-17 : `getSummary` la LIT, dans
+-- une sous-requete, pour annoncer a l'ecran la duree reellement appliquee a CET espace. C'est le chemin
+-- d'affichage de toute la page Synthese. Deployer le code avant cette migration ne casserait donc pas
+-- seulement le balayage, ca rendrait `42703` sur la page entiere, en boucle. Meme symptome que le
+-- 2026-08-17, meme parade : la migration passe AVANT, image construite d'abord.
+--
 -- ⚠️ `0` DESACTIVE LA PURGE POUR CET ESPACE, comme la variable d'instance, et c'est ce qui rend le CHECK
 -- utile : il refuse le negatif, qui n'a aucun sens, et borne a 3650 jours, au-dela desquels le chiffre est
 -- une faute de frappe plutot qu'une politique.
