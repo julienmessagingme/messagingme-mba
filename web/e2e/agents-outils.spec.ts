@@ -74,13 +74,16 @@ const AGENT = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], outils: unknown[]) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], outils: unknown[], bibliotheque: unknown[] = []) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    // La BIBLIOTHEQUE de l espace : c est elle qui porte les outils MCP importes mais pas encore
+    // rattaches a cet agent. Sans cette route, l ecran ne peut pas les proposer.
+    if (/\/agent-tools(\?|$)/.test(url)) return json({ outils: bibliotheque });
     if (/\/tools/.test(url)) {
       if (method === 'GET') return json({ outils, catalogue: CATALOGUE });
       appels.push({ method, url, body: req.postDataJSON() });
@@ -132,6 +135,28 @@ test.describe('Agents IA : les outils', () => {
     await expect.poll(() => appels.some((a) => /o1\/activation$/.test(a.url) && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
   });
 
+  test('🔴 un outil MCP importé mais PAS ENCORE rattaché est proposé, et le clic le rattache', async ({ page }) => {
+    /**
+     * 🔴 SANS CETTE LISTE, LA SECTION « Vos serveurs MCP » EST VIDE POUR TOUJOURS, et c est la troisieme
+     * porte sans producteur de ce chantier. L autorisation se fait en DEUX gestes, rattacher puis
+     * activer : la section ne livrait que le second. Or `listOutils` fait une jointure INTERNE sur les
+     * consommateurs (delibere : cet ecran montre ce que CET agent utilise), et l import n ecrit aucune
+     * ligne de consommateur. Un client declarait son serveur, importait ses outils, ouvrait
+     * AI Agent > Outils, et ne voyait RIEN, sans aucun bouton pour en sortir.
+     */
+    const appels: Appel[] = [];
+    const IMPORTE = { ...MCP_MORT, id: 'o9', name: 'notion_search', title: 'Chercher Notion', mcpNonActivable: null };
+    // La bibliotheque de l espace le porte, la liste de CET agent non : il est importe, pas rattache.
+    await mock(page, appels, [TAG], [IMPORTE]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+
+    await expect(page.getByTestId('mcp-a-rattacher')).toBeVisible();
+    await page.getByTestId('mcp-rattacher-o9').click();
+    await expect
+      .poll(() => appels.some((a) => /o9\/rattachement$/.test(a.url)
+        && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 })
+      .toBe(true);
+  });
   test('🔴 un outil MCP MORT le DIT, sur l ecran meme ou l on redonne son autorisation', async ({ page }) => {
     /**
      * Le serveur envoyait deja l etat MCP, le type front ne le declarait pas : un outil non activable ou

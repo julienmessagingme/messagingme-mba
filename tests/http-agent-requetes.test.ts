@@ -511,6 +511,32 @@ describe('requêtes : le bouton Test', () => {
     expect(String(b.erreur)).toContain('volumineuse');
   });
 
+  it('🔴 un SERVEUR MCP ne se teste pas depuis ici : ce bouton enverrait son secret n importe ou', async () => {
+    /**
+     * 🔴 LE CINQUIEME CHEMIN DU MEME TROU, trouve par la troisieme relecture a froid du 2026-09-17. Cette
+     * route prend `sourceId` DIRECTEMENT dans le corps, et `sourcePourTest` ne filtrait pas le `kind` :
+     * un administrateur y passait l identifiant d un SERVEUR MCP (que `GET /tenants/:t/mcp` lui donne) et
+     * faisait partir une requete HTTP de SA composition (methode, chemin, corps) sur le point MCP de son
+     * client, AVEC LE SECRET DECHIFFRE dans l en-tete, puis recevait 20 ko de reponse.
+     *
+     * ⚠️ LE FAUX REND `null`, COMME LE VRAI : le filtre vit dans le cablage (`src/index.ts`), qui rend
+     * `null` pour une source qui n est pas `http`. Ce test eprouve donc ce que la ROUTE fait de ce
+     * `null`, et `tests/sources-kind.test.ts` tient le filtre lui-meme, sur les cinq lecteurs.
+     */
+    const srvMcp = buildServer({
+      queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
+      agentRequetes: {
+        lister: async () => [REQUETE], parId: async () => REQUETE,
+        creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
+        clesDeChamps: async () => [],
+        sourcePourTest: async () => null,
+      },
+    });
+    const res = await srvMcp.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(String(res.json().erreur ?? res.json().error)).toContain('source');
+  });
+
   it('une source DÉSACTIVÉE ne se teste pas : elle a été coupée exprès', async () => {
     const deps = { sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: {}, status: 'disabled' }) };
     const { srv } = app();

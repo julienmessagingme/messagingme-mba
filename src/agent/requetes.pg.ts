@@ -163,7 +163,12 @@ export class PgRequeteStore implements RequeteStore {
          (tenant_id, source_id, label, method, path, query, headers, body_mode, body_json, body_champs,
           variables, output_paths, valeurs_test)
        select $1,
-              (select s.id from agent_tool_sources s where s.id = $2 and s.tenant_id = $1),
+              -- 🔴 kind = 'http' : une requete HTTP enregistree sur un SERVEUR MCP est une configuration
+              -- offerte-et-inerte, que le resolveur refuse a l execution, donc qui n echoue qu en pleine
+              -- conversation. La sous-requete rend alors null, et le not null de la colonne fait
+              -- echouer l insertion, ce qui est deja le comportement pour une source d un autre espace.
+              (select s.id from agent_tool_sources s
+                where s.id = $2 and s.tenant_id = $1 and s.kind = 'http'),
               $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11::jsonb, $12::text[], $13::jsonb
        returning id`,
       [

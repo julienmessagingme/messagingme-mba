@@ -8,8 +8,9 @@ import { AgentConnecteurs } from '@/components/AgentConnecteurs';
 import { normaliserNomOutil } from '@/lib/agent-outils';
 import { listNodes, type NodeListItem } from '@/lib/api/scenarios';
 import {
-  activerOutil, ajouterOutil, autonomieOutil, listOutils, patchOutil, retirerOutil,
-  type ModeleOutil, type OutilAgent, type TexteBilingue,
+  activerOutil, ajouterOutil, autonomieOutil, getBibliothequeOutils, listOutils, patchOutil,
+  rattacherOutil, retirerOutil,
+  type ModeleOutil, type OutilAgent, type OutilBibliotheque, type TexteBilingue,
 } from '@/lib/api-agent-tools';
 
 /**
@@ -38,10 +39,29 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
   const [vue, setVue] = useState<{ outils: OutilAgent[]; catalogue: ModeleOutil[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [bibliotheque, setBibliotheque] = useState<OutilBibliotheque[]>([]);
 
   const charger = useCallback(async () => {
     try {
-      setVue(await listOutils(tenantId, agentId));
+      /**
+       * 🔴 DEUX LECTURES, ET LA SECONDE EST CE QUI REND LES OUTILS MCP ATTEIGNABLES. `listOutils` fait une
+       * jointure INTERNE sur les consommateurs (délibéré : cet écran montre ce que CET agent utilise, pas
+       * tout le catalogue), donc un outil importé mais jamais rattaché n'y figure PAS. Et l'import n'écrit
+       * aucune ligne de consommateur. Sans la bibliothèque de l'espace, la section « Vos serveurs MCP »
+       * était donc vide POUR TOUJOURS : une porte de plus sans producteur, la troisième de ce chantier.
+       *
+       * ⚠️ BEST-EFFORT : la bibliothèque n'est qu'une aide au rattachement. Si elle échoue, l'écran
+       * continue de montrer ce qui est déjà rattaché plutôt que de ne rien montrer du tout.
+       */
+      const [v, bib] = await Promise.all([
+        listOutils(tenantId, agentId),
+        // ⚠️ `?? []` ET PAS SEULEMENT UN `catch` : un serveur qui rend 200 avec un corps vide ne LEVE
+        // pas, donc `outils` vaut `undefined` et le `filter` plus bas faisait planter tout le rendu de
+        // l onglet. Attrape par un test existant, pas par la relecture.
+        getBibliothequeOutils(tenantId).then((r) => r.outils ?? []).catch(() => []),
+      ]);
+      setVue(v);
+      setBibliotheque(bib);
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     }
@@ -66,6 +86,14 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
 
   const poses = new Set((vue?.outils ?? []).map((o) => String(o.binding.handler ?? '')));
   const restants = (vue?.catalogue ?? []).filter((m) => !poses.has(m.handler));
+  /**
+   * Les outils MCP de l'ESPACE que cet agent n'a pas encore. Le jumeau exact de `restants` pour les outils
+   * maison, et de « + donner cet appel à l'agent » pour les connecteurs API.
+   *
+   * ⚠️ ON RAPPROCHE PAR IDENTIFIANT, jamais par nom : le nom exposé est réécrit par le client.
+   */
+  const rattaches = new Set((vue?.outils ?? []).map((o) => o.id));
+  const mcpARattacher = bibliotheque.filter((o) => o.origin === 'mcp' && !rattaches.has(o.id));
 
   return (
     <div className="flex flex-col gap-4">
@@ -153,7 +181,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
         * connecteur API, il n'a ni méthode, ni chemin, ni requête à nommer, et les ranger ensemble
         * obligerait à inventer une ligne vide pour chacun.
         */}
-      {(vue?.outils ?? []).some((o) => o.origin === 'mcp') && (
+      {((vue?.outils ?? []).some((o) => o.origin === 'mcp') || mcpARattacher.length > 0) && (
         <div className="border-t border-ink-200 pt-4" data-testid="agent-outils-mcp">
           <p className="text-sm font-semibold text-ink-800">{t('Vos serveurs MCP', 'Your MCP servers')}</p>
           <p className="mb-2 text-xs text-ink-500">
@@ -163,6 +191,29 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
             )}
           </p>
           <div className="flex flex-col gap-3">
+            {mcpARattacher.length > 0 && (
+              <div data-testid="mcp-a-rattacher" className="rounded-lg border border-dashed border-ink-300 p-3">
+                <p className="text-xs text-ink-600">
+                  {t('Importés dans l’espace, pas encore donnés à cet agent :', 'Imported in the workspace, not yet given to this agent:')}
+                </p>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {mcpARattacher.map((o) => (
+                    <li key={o.id} className="flex items-center justify-between gap-2 text-sm text-ink-700">
+                      <span className="min-w-0 truncate">{o.title} <code className="text-[11px] text-ink-500">{o.name}</code></span>
+                      <button
+                        data-testid={`mcp-rattacher-${o.id}`}
+                        disabled={busy}
+                        onClick={() => agir(async () => { await rattacherOutil(tenantId, agentId, o.id, true); })}
+                        className="shrink-0 text-xs text-brand-600 hover:underline disabled:opacity-40"
+                      >
+                        {t('+ donner cet outil à l’agent', '+ give this tool to the agent')}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {(vue?.outils ?? []).filter((o) => o.origin === 'mcp').map((o) => (
               <Outil
                 key={o.id}

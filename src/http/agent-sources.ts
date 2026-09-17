@@ -134,10 +134,11 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
    * choisi par l'appelant), réécrire son adresse et son authentification depuis l'écran des connecteurs
    * API, ou le supprimer par un chemin qui n'a pas la garde transactionnelle du store MCP.
    *
-   * ⚠️ LE COMPTE DES CONSOMMATEURS DE CETTE TABLE EST DE QUATRE, PAS DE TROIS : les deux résolveurs et les
-   * routes MCP passent par `pourAppel`, ces routes-ci passent par `parId`. C'est ce quatrième lecteur
-   * qu'on avait oublié, et c'est exactement le motif « une capacité câblée sur trois consommateurs sur
-   * quatre » que ce dépôt paie en boucle. Relevé par la seconde relecture à froid du 2026-09-17.
+   * ⚠️ ET ON N'ÉCRIT PLUS ICI COMBIEN DE LECTEURS A CETTE TABLE, parce que ce compte a dérivé DEUX FOIS
+   * dans la même journée : « trois » quand la garde a été posée côté MCP, puis « quatre » en découvrant
+   * `parId`, et il y en avait encore d'autres (`sourcePourTest`, la publication du secret chez Meta).
+   * Un inventaire écrit à la main dérive dès qu'on ajoute un appelant ; c'est `tests/sources-kind.test.ts`
+   * qui le tient désormais, en énumérant les lecteurs depuis le CODE.
    *
    * ⚠️ `404` : pour cet écran, un serveur MCP n'est pas un connecteur interdit, c'est un connecteur qui
    * n'existe pas. La liste le filtre déjà (`kind === 'http'`), donc l'écran ne l'a jamais proposé.

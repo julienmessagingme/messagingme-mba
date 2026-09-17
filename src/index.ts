@@ -1694,7 +1694,11 @@ async function main(): Promise<void> {
         }
         if (geste.type === 'secret_poser') {
           const s = await sourceParId(geste.sourceId);
-          const secret = await agentSources.pourAppel(tenant, geste.sourceId);
+          // ⚠️ Un serveur MCP n est PAS publiable chez Meta (le MBA n accepte aucune connexion MCP), donc
+          // son secret n a rien a faire dans un `upsertApiKey`. Le filtre evite de poser chez un tiers un
+          // secret qui ne lui servira jamais.
+          const brut = await agentSources.pourAppel(tenant, geste.sourceId);
+          const secret = brut && brut.kind === 'http' ? brut : null;
           const cid = await idDuConnecteur(geste.nom);
           if (s && cid && secret?.authSecret) {
             await client.upsertApiKey(pn, cid, corpsApiKey(
@@ -1785,7 +1789,10 @@ async function main(): Promise<void> {
        */
       eprouver: async (tenant, id, chemin) => {
         const src = await agentSources.pourAppel(tenant, id);
-        if (!src) return { ok: false, erreur: 'source introuvable' };
+        // 🔴 `kind === 'http'` ICI AUSSI, et pas seulement sur la route. Une garde posee au montage, dans un
+        // autre fichier, n en est une que tant que personne ne monte un second appelant : c est exactement
+        // la fragilite que `scopeTenant` a payee le 2026-09-03.
+        if (!src || src.kind !== 'http') return { ok: false, erreur: 'source introuvable' };
         const cible = construireCible({ baseUrl: src.baseUrl, binding: { methode: 'GET', chemin }, args: {} });
         if (!cible.ok) return { ok: false, erreur: cible.raison };
         /**
@@ -1841,7 +1848,21 @@ async function main(): Promise<void> {
        */
       sourcePourTest: async (tenant, sourceId) => {
         const src = await agentSources.pourAppel(tenant, sourceId);
-        return src ? { baseUrl: src.baseUrl, entetes: enTetesAuthSource(src), status: src.status } : null;
+        /**
+         * 🔴 `kind === 'http'`, ET C EST LE CINQUIEME CHEMIN DU MEME TROU. La route de test
+         * (`POST /tenants/:t/agent-requetes/test`) prend `sourceId` DIRECTEMENT dans le corps : sans ce
+         * filtre, un administrateur y passait l identifiant d un SERVEUR MCP (que `GET /tenants/:t/mcp`
+         * lui donne) et faisait partir une requete HTTP de sa composition, methode et chemin compris, sur
+         * le point MCP du client, AVEC SON SECRET DECHIFFRE dans l en-tete, puis recevait 20 ko de
+         * reponse. C est mot pour mot ce que la garde posee sur les routes MCP et sur celles des
+         * connecteurs API pretendait fermer.
+         *
+         * ⚠️ LE REPLI SUR `null` REND DEJA UN 400 LISIBLE (« la source de cet appel n existe plus »), donc
+         * il n y a pas de branche a ajouter chez l appelant.
+         */
+        return src && src.kind === 'http'
+          ? { baseUrl: src.baseUrl, entetes: enTetesAuthSource(src), status: src.status }
+          : null;
       },
       // Les cles des champs DECLARES : une variable `champ` doit en designer une, sinon la faute de frappe ne
       // se verrait qu a l appel, en pleine conversation.
