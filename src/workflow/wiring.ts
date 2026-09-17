@@ -95,6 +95,15 @@ export interface WorkflowRuntimeDeps {
 }
 
 /** Construit l'exécuteur et ce qui l'accompagne. Une seule fois par process (les caches vivent dedans). */
+/**
+ * CE QU UNE REMISE DU FIL A L AGENT DE META A DONNE.
+ *
+ * ⚠️ TROIS ETATS ET PAS UN BOOLEEN : « rendu » et « aucun numero » appellent la meme suite locale (on
+ * ecrit `mba`), « conversation de test » non. Les confondre sous un `false` commun est ce qui a fait
+ * annoncer comme rendus des fils que l application detenait encore.
+ */
+export type IssueRemise = 'rendu' | 'aucun_numero' | 'conversation_de_test';
+
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver } = deps;
   /**
@@ -288,6 +297,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * serait quatre endroits où l'oublier, et le cinquième ajouté demain ne l'aurait pas. Elle est donc ICI,
    * entre le geste et tous ses appelants.
    *
+   * ⚠️ IL EXISTE POURTANT UN CINQUIÈME CHEMIN, ET IL CONTOURNE CETTE GARDE : `src/index.ts` construit son
+   * propre `rendreLeFilAuMba` depuis `creerRendreLeFil`, pour le bouton de l'Inbox. C'est délibéré et c'est
+   * même l'échappatoire que Julien a demandée (« s'ils veulent le réenclencher, ils pourront le faire en
+   * appuyant sur le bouton de leur conversation dans l'Inbox ») : un geste humain explicite doit pouvoir
+   * rendre un fil de test. Le dire ici, parce que le texte affirmait « tous ses appelants » et que le test
+   * de garde ne lit que ce fichier.
+   *
    * ⚠️ POURQUOI UN FIL DE TEST NE REPART PAS : celui qui teste enchaîne les essais. Le fil rendu entre deux,
    * c'est l'agent de Meta qui répond au scan suivant, ce que Julien a vécu le 2026-09-16. Sa règle : « ceux
    * qui vont utiliser ce bouton sont des testeurs ou des super admin du compte ; s'ils veulent le réenclencher,
@@ -298,16 +314,28 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * d'un test le reste. C'est déjà ce qui la sort de l'analyse et des statistiques, et c'est cohérent : ce
    * numéro-là est un numéro d'essai, pas un client.
    *
-   * ⚠️ Rend `false`, comme un espace sans numéro : « il n'y avait rien à rendre ». Les appelants savent déjà
-   * lire ce cas, et aucun n'écrit son état local dessus.
+   * 🔴 TROIS ISSUES, ET PAS UN BOOLÉEN, PARCE QUE DEUX D'ENTRE ELLES N'APPELLENT PAS LA MÊME SUITE. Ce
+   * point de passage rendait `false` aussi bien pour « conversation de test » que pour « aucun numéro », et
+   * ses appelants écrivaient `mba` dans NOTRE colonne quoi qu'il arrive : sur un fil de test, la garde
+   * empêchait bien l'appel à Meta, mais la console affirmait ensuite que l'agent de Meta tenait un fil que
+   * l'application détenait réellement. Le bouton « rendre la main » de l'Inbox lisait alors `mba` et ne
+   * rappelait pas Meta, donc l'échappatoire promise à Julien demandait deux clics. Le commentaire qui vivait
+   * ici affirmait exactement le contraire (« aucun n'écrit son état local dessus »), pour deux appelants sur
+   * quatre. Relevé par la revue à froid du 2026-09-17.
+   *
+   * ⚠️ ET « AUCUN NUMÉRO » GARDE SON COMPORTEMENT, délibérément. Faire aussi dépendre l'écriture de ce
+   * cas-là laisserait la conversation d'un espace sans MBA en `app_workflow`, c'est-à-dire le SEUL état que
+   * le dossier « À traiter » exclut : un client qui écrit ne produirait alors aucune ligne de travail, ce
+   * qui est précisément le symptôme que la migration 0149 a réparé. Les deux `false` se ressemblaient, ils
+   * ne veulent pas dire la même chose.
    */
-  const releaseThreadChezMeta = async (tenantId: string, waId: string): Promise<boolean> => {
+  const releaseThreadChezMeta = async (tenantId: string, waId: string): Promise<IssueRemise> => {
     if (await inboxStore.estConversationDeTest(tenantId, waId)) {
       // eslint-disable-next-line no-console
       console.log(`release vers MBA ignoré pour ${waId} : conversation de TEST, le fil reste à l'app`);
-      return false;
+      return 'conversation_de_test';
     }
-    return rendreLeFilChezMeta(tenantId, waId);
+    return (await rendreLeFilChezMeta(tenantId, waId)) ? 'rendu' : 'aucun_numero';
   };
 
   /**
@@ -340,7 +368,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * pas protesté » est donc tout ce qu'on peut savoir, et c'est pour ça que le balayage reste le filet.
    */
   const rendreLeFilMaintenant = async (tenant: string, waId: string): Promise<void> => {
-    await releaseThreadChezMeta(tenant, waId);
+    // 🔴 SUR UN FIL DE TEST, ON N'ÉCRIT PAS `mba` : le fil est resté à l'application, et le prétendre
+    // rendu ferait mentir la console à celui-là même qui est en train de tester.
+    if (await releaseThreadChezMeta(tenant, waId) === 'conversation_de_test') return;
     await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_human'] });
   };
 
@@ -405,7 +435,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      */
     const detenteur = await inboxStore.getControlOwner(tenant, waId);
     if (detenteur === 'app_human') return;
-    await releaseThreadChezMeta(tenant, waId);
+    // 🔴 MÊME RAISON QUE SON VOISIN : un fil de test n'a pas été rendu, donc il ne s'annonce pas rendu.
+    if (await releaseThreadChezMeta(tenant, waId) === 'conversation_de_test') return;
     await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow', 'mba'] });
   };
 

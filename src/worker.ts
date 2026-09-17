@@ -1248,7 +1248,13 @@ async function main(): Promise<void> {
          * ⚠️ Et la crainte ne se réalisait pas : refuser d'écrire ne GÈLE rien. La conversation reste dans
          * l'état où elle est, donc VISIBLE dans « À traiter », et ce balayage repasse toutes les cinq minutes.
          */
-        releaseToMba: (tenant, waId) => releaseThreadChezMeta(tenant, waId),
+        /**
+         * ⚠️ LE BALAYAGE VEUT SAVOIR SI META A CONFIRMÉ, et rien d'autre : « aucun numéro » comme
+         * « conversation de test » veulent dire « ne compte pas celle-là comme rendue ». C'est bien un
+         * booléen ici, DÉRIVÉ du verdict à trois états plutôt que confondu avec lui : c'est cette confusion
+         * qui a fait annoncer comme rendus des fils que l'application détenait encore.
+         */
+        releaseToMba: async (tenant, waId) => (await releaseThreadChezMeta(tenant, waId)) === 'rendu',
       });
       // eslint-disable-next-line no-console
       if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);

@@ -228,4 +228,38 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
     expect(wiring.split('rendreLeFilChezMeta(').length - 1,
       'un second appelant du geste nu contournerait la garde des conversations de test').toBe(1);
   });
+
+  it('🔴 AUCUN appelant n écrit `mba` dans NOTRE colonne sans avoir lu le verdict', () => {
+    /**
+     * 🔴 CE QUE CE CAS FERME, ET IL ETAIT VIVANT (revue a froid du 2026-09-17). Deux appelants sur quatre
+     * appelaient la remise puis ecrivaient `setControlOwner(..., 'mba', ...)` QUOI QU IL ARRIVE. Sur un fil
+     * de test, la garde empechait bien l appel a Meta, mais la console affirmait ensuite que l agent de
+     * Meta tenait un fil que l application detenait reellement. Le bouton « rendre la main » de l Inbox
+     * lisait alors `mba` et ne rappelait pas Meta : l echappatoire promise a Julien demandait deux clics.
+     *
+     * ⚠️ Et le commentaire du point de passage affirmait exactement le contraire : « aucun n ecrit son etat
+     * local dessus ». Une justification fausse est pire qu aucune, parce qu elle sera recopiee.
+     *
+     * ⚠️ CE TEST EST STRUCTUREL, PAS UNE PRESENCE DE CHAINE : il suit CHAQUE appel a la remise et verifie
+     * que le verdict est lu AVANT la premiere ecriture qui suit. Un troisieme appelant ajoute demain sans
+     * la lire le ferait tomber.
+     */
+    const wiring = readFileSync(join(process.cwd(), 'src', 'workflow', 'wiring.ts'), 'utf8');
+    const corps = wiring.slice(wiring.indexOf('export function buildWorkflowRuntime'));
+    const appels: number[] = [];
+    for (let i = corps.indexOf('await releaseThreadChezMeta('); i !== -1; i = corps.indexOf('await releaseThreadChezMeta(', i + 1)) {
+      appels.push(i);
+    }
+    expect(appels.length, 'plus aucun appelant de la remise : la garde ne garde plus rien').toBeGreaterThan(0);
+
+    for (const i of appels) {
+      const suite = corps.slice(i, i + 400);
+      const ecriture = suite.indexOf("setControlOwner");
+      if (ecriture === -1) continue; // cet appelant n ecrit pas notre colonne : rien a verifier
+      const verdict = suite.indexOf('conversation_de_test');
+      expect(verdict, `un appelant ecrit 'mba' sans lire le verdict de la remise (offset ${i})`).toBeGreaterThan(-1);
+      expect(verdict, 'le verdict est lu APRES l ecriture : une garde posee apres l effet ne garde rien')
+        .toBeLessThan(ecriture);
+    }
+  });
 });

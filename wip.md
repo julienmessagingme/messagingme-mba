@@ -14,7 +14,7 @@
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
 | VPS (`mba-api`, `mba-worker`, `mba-web`) | `cda2e69`, déployé le 2026-09-16 au soir, aucun écart |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
-| Migrations | **0151** (`workflow_runs.graphe_fige`), appliquée le 2026-09-16 et relue en base. **Prochaine libre : 0152** |
+| Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job à chaque commit (`unit`/`securite`/`integration` quand `src/` bouge, `web` quand `web/` bouge) |
 | Revue finale | ⚠️ attestée sur `279dc2a` (0 rouge, 15 jaunes), mais **TROIS commits déployés depuis ne sont
   pas couverts** : `79d4121`, `cda2e69` et le suivant. Une passe de relecture à froid leur est due |
