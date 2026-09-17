@@ -27,12 +27,18 @@ const STATS = { contacts: [], templates: { utility: [], marketing: [] }, exchang
   serviceParOrigine: { ia: 1, scenario: 1, humain: 1, indeterminee: 0 } };
 const ERREURS = { errors: [{ code: 131026, count: 4, templateName: 'tpl-un', campaignId: 'camp-a', campaignName: 'Promo A' }] };
 
-/** Les quatre sous-onglets, avec l'ancre qui prouve que LEUR page a rendu. */
+/**
+ * Les sous-onglets du Quantitatif, avec l'ancre qui prouve que LEUR page a rendu.
+ *
+ * ⚠️ ILS ETAIENT QUATRE JUSQU'AU 2026-09-17 : « Erreurs » est parti dans le centre de Securite, avec sa
+ * carte. Le compte n'est plus ecrit dans ce commentaire, il derive de la liste juste en dessous. Et la
+ * carte n'a PAS perdu sa couverture, elle a change de gardien : erreurs-contacts.spec.ts monte son nouvel
+ * ecran, exports.spec.ts garde son bouton PDF.
+ */
 const SOUS_ONGLETS = [
   { chemin: '/dashboard', ancre: 'quanti-contacts' },
   { chemin: '/dashboard/couts', ancre: 'quanti-cout' },
   { chemin: '/dashboard/funnel', ancre: 'quanti-funnel' },
-  { chemin: '/dashboard/erreurs', ancre: 'quanti-erreurs' },
 ];
 
 /** Le funnel n'a PAS de barre de période, et c'est une décision écrite dans la page : un entonnoir porte sur
@@ -85,7 +91,7 @@ test.describe('Quantitatif : les quatre sous-onglets', () => {
     // commentaire qui promettait « aucune carte perdue » : la moitié des cartes pouvait disparaître, le test
     // restait vert. Un commentaire qui promet plus que son assertion est pire qu'une assertion absente.
     expect([...vues.keys()].sort(), 'une zone a disparu, ou une zone est apparue sans entrer ici').toEqual([
-      'quanti-contacts', 'quanti-cout', 'quanti-echanges', 'quanti-erreurs', 'quanti-facture',
+      'quanti-contacts', 'quanti-cout', 'quanti-echanges', 'quanti-facture',
       'quanti-funnel', 'quanti-messages-envoyes', 'quanti-origine-service', 'quanti-templates',
     ]);
   });

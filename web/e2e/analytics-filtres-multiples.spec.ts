@@ -20,7 +20,7 @@ const COUT = { marketing: [], utility: [], total: 12.5, hasRates: true, currency
  * Monte le sous-onglet DEMANDÉ et rend les URL de la route de coût, dans l'ordre où elles partent.
  *
  * ⚠️ Le chemin est un paramètre depuis le découpage du Quantitatif : les filtres de coût vivent sur
- * `/dashboard/couts`, la carte des erreurs sur `/dashboard/erreurs`. Les CAS exercés n'ont pas bougé.
+ * `/dashboard/couts`, la carte des erreurs sur `/securite/erreurs` (elle a demenage le 2026-09-17). Les CAS exercés n'ont pas bougé.
  */
 async function monter(chemin: string, page: import('@playwright/test').Page) {
   const appelsCout: string[] = [];
@@ -50,7 +50,7 @@ async function monter(chemin: string, page: import('@playwright/test').Page) {
     return json({});
   });
   // ⚠️ Chemin PARAMETRE depuis le decoupage du Quantitatif en quatre sous-onglets : les filtres de cout
-  // vivent sur /dashboard/couts, la carte des erreurs sur /dashboard/erreurs. Les CAS exerces sont
+  // vivent sur /dashboard/couts, la carte des erreurs sur /securite/erreurs (demenagee le 2026-09-17). Les CAS exerces sont
   // inchanges, seule l adresse ou ils se jouent a bouge.
   await page.goto(chemin);
   // L attente de disponibilite suit la PAGE, elle ne peut plus etre celle du graphe de cout : la carte des
@@ -105,7 +105,7 @@ test.describe('Analytics : filtres multiples', () => {
   test('🔴 carte Erreurs : plusieurs templates -> breakdown compilé', async ({ page }) => {
     // Filtre LOCAL (le breakdown est déjà chargé) : ce qui compte est que les deux codes restent visibles
     // quand les deux templates sont retenus, et qu'un seul les réduise.
-    await monter('/dashboard/erreurs', page);
+    await monter('/securite/erreurs', page);
     await expect(page.getByText('131026')).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId('erreurs-templates').selectOption('tpl-un');
@@ -119,7 +119,7 @@ test.describe('Analytics : filtres multiples', () => {
   test('🔴 U7 : la carte Erreurs se filtre AUSSI par campagne', async ({ page }) => {
     // Demande de Julien : les erreurs se requetent par template OU par campagne. Le filtre est LOCAL (chaque
     // ligne porte deja sa campagne), donc ce qui se verifie est le contenu affiche, pas une requete.
-    await monter('/dashboard/erreurs', page);
+    await monter('/securite/erreurs', page);
     await expect(page.getByText('131026')).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId('erreurs-campagnes').selectOption('camp-a');
@@ -130,7 +130,7 @@ test.describe('Analytics : filtres multiples', () => {
   test('🔴 U7 : les deux axes des erreurs sont MUTUELLEMENT EXCLUSIFS', async ({ page }) => {
     // Les croiser decrirait l intersection (campagne A ET template de B), qui ne veut rien dire. Meme regle
     // qu au cout, et elle se verifie sur la PASTILLE : c est la seule trace de ce qui est retenu.
-    await monter('/dashboard/erreurs', page);
+    await monter('/securite/erreurs', page);
     await page.getByTestId('erreurs-campagnes').selectOption('camp-a');
     await expect(page.getByTestId('erreurs-campagnes-retenu')).toHaveText(/Promo A/);
 

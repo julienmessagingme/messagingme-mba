@@ -392,9 +392,22 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
       { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
       { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel') },
-      { key: 'quanti-erreurs', href: '/dashboard/erreurs', label: t('Erreurs', 'Errors') },
+      /**
+       * ⚠️ IL Y AVAIT UNE QUATRIÈME ENTRÉE ICI, « Erreurs », ET ELLE EST PARTIE DANS LE CENTRE DE SÉCURITÉ
+       * le 2026-09-17 (Julien : « l'onglet erreur dans quantitatif n'a plus rien à faire là »). Sa carte
+       * n'a PAS été supprimée pour autant : le journal de Sécurité montre les dernières lignes, cet
+       * agrégat montre quel code d'erreur revient le plus sur une période, et c'est la seule des deux
+       * vues qui dise s'il faut agir. Les deux vivent désormais sur `/securite/erreurs`.
+       */
     ] },
-    { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Qualitatif', 'Qualitative') },
+    /**
+     * ⚠️ LE LIBELLÉ A CHANGÉ LE 2026-09-17, PAS L'ADRESSE. « Qualitatif » ne disait rien à personne ;
+     * « Analyse des conversations » dit ce que l'écran montre. `/dashboard/quali` et la clé `dashboard-quali`
+     * ne bougent pas : trois specs Playwright et d'éventuels signets y pointent, et personne ne lit jamais
+     * cette adresse. Le dépôt vit déjà avec un nom technique qui ne colle plus au produit, il s'appelle
+     * `messagingme-mba` et le produit s'appelle Engage Me.
+     */
+    { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Analyse des conversations', 'Conversation analysis') },
     { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
   ];
 

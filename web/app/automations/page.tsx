@@ -418,8 +418,8 @@ function AutomationsInner({ session }: { session: Session }) {
               </p>
               <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 sm:col-span-2">
                 {t(
-                  'Ce déclencheur repose sur l’analyse de conversation. Si elle n’est pas activée sur ton compte, l’automation s’affichera « active » mais ne partira jamais : vérifie-le dans Analytics > Qualitatif avant de compter dessus.',
-                  'This trigger relies on conversation analysis. If it is not enabled on your account, the automation will show as "enabled" but will never run: check Analytics > Qualitative before relying on it.',
+                  'Ce déclencheur repose sur l’analyse de conversation. Si elle n’est pas activée sur ton compte, l’automation s’affichera « active » mais ne partira jamais : vérifie-le dans Performance Lab > Analyse des conversations avant de compter dessus.',
+                  'This trigger relies on conversation analysis. If it is not enabled on your account, the automation will show as "enabled" but will never run: check Performance Lab > Conversation analysis before relying on it.',
                 )}
               </p>
             </div>

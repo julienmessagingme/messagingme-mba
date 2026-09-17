@@ -14,7 +14,7 @@ const RECAP = {
   sait: true,
   texte: 'Le samedi 12 septembre : 42 conversations (dont 6 nouvelles), 128 messages reçus et 96 envoyés.',
   sources: [],
-  ecrans: [{ cle: 'dashboard-quali', href: '/dashboard/quali', fr: 'Qualitatif', en: 'Qualitative', chemin: [] }],
+  ecrans: [{ cle: 'dashboard-quali', href: '/dashboard/quali', fr: 'Analyse des conversations', en: 'Conversation analysis', chemin: [] }],
 };
 
 async function mock(page: import('@playwright/test').Page, role: string, vues: Array<Record<string, unknown>>) {

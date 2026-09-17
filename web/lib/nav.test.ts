@@ -20,14 +20,16 @@ const NAV: NavEntree[] = [
     { key: 'agents', href: '/agents', label: 'Other AI agent' },
   ] },
   { key: 'analytics', label: 'Analytics', children: [
-    // Quantitatif est passé de PAGE à GROUPE : quatre sous-onglets, donc un troisième niveau de plus.
+    // Quantitatif est passé de PAGE à GROUPE : des sous-onglets, donc un troisième niveau de plus.
+    // ⚠️ Le COMPTE n'est plus écrit ici : il était de quatre jusqu'au 2026-09-17, où « Erreurs » est parti
+    // dans le centre de Sécurité. Un compte recopié dans un commentaire est faux le jour où la nav bouge,
+    // et ce qui est exercé n'est pas le nombre de sous-onglets, c'est la résolution à TROIS niveaux.
     { key: 'quantitatif', label: 'Quantitatif', children: [
       { key: 'quanti-messages', href: '/dashboard', label: 'Messages & contacts' },
       { key: 'quanti-couts', href: '/dashboard/couts', label: 'Coûts' },
       { key: 'quanti-funnel', href: '/dashboard/funnel', label: 'Funnel' },
-      { key: 'quanti-erreurs', href: '/dashboard/erreurs', label: 'Erreurs' },
     ] },
-    { key: 'dashboard-quali', href: '/dashboard/quali', label: 'Qualitatif' },
+    { key: 'dashboard-quali', href: '/dashboard/quali', label: 'Analyse des conversations' },
   ] },
 ];
 
@@ -45,14 +47,18 @@ describe('cheminDeNav', () => {
   });
 
   /**
-   * U1 : les quatre sous-onglets du Quantitatif.
+   * U1 : les sous-onglets du Quantitatif, quel que soit leur nombre.
    *
    * 🔴 Ce que ce test protège : une chaîne d'ancêtres fausse ne casse RIEN de visible tout de suite, elle
    * laisse juste la page active invisible dans un menu replié. C'est la raison d'être du module, et le
-   * découpage du Quantitatif en quatre vient d'ajouter quatre pages à ce risque.
+   * découpage du Quantitatif a ajouté d'un coup plusieurs pages à ce risque.
+   *
+   * ⚠️ IL EN EXERÇAIT QUATRE, DONT `quanti-erreurs`, PARTI DANS LE CENTRE DE SÉCURITÉ LE 2026-09-17. Le CAS
+   * exercé est conservé à l'identique (une clé de troisième niveau rend ses deux ancêtres) : ce qui a
+   * disparu est une clé qui n'existe plus nulle part, pas une situation qu'on cesserait de vérifier.
    */
-  it('🔴 les QUATRE sous-onglets du Quantitatif rendent leurs deux ancêtres', () => {
-    for (const cle of ['quanti-messages', 'quanti-couts', 'quanti-funnel', 'quanti-erreurs']) {
+  it('🔴 les sous-onglets du Quantitatif rendent leurs deux ancêtres', () => {
+    for (const cle of ['quanti-messages', 'quanti-couts', 'quanti-funnel']) {
       expect(cheminDeNav(NAV, cle), `chaîne d’ancêtres de ${cle}`).toEqual(['analytics', 'quantitatif']);
     }
   });

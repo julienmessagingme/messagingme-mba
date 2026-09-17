@@ -150,3 +150,58 @@ export function corpsDuPost(texte: string, waMeUrl: string | null): string {
   // l'affichage qui doit savoir les lire.
   return t.replace(FIN_LIEN_WA_ME, '').trim();
 }
+
+/**
+ * Combien de liens le deroulant du bouton « Discuter » propose d'emblee.
+ *
+ * 🔴 TROIS, PARCE QUE LA LISTE NE SE PURGE JAMAIS (Julien, 2026-09-17 : « il faut que tu gardes en memoire
+ * uniquement les 3 derniers boutons qui ont ete crees »). Un lien de chaine ne se supprime PAS : depuis la
+ * migration 0116 sa PHRASE est sa cle de routage, et les publications deja parties sur la chaine la portent
+ * dans leur texte. Effacer un vieux lien tuerait le bouton de toutes ces publications, definitivement et
+ * sans recours, exactement comme une route `/r/<code>` de lien trace. « Garder les 3 derniers » ne peut donc
+ * signifier que « n'en montrer que 3 ».
+ */
+export const LIENS_PROPOSES = 3;
+
+/**
+ * Les liens que le deroulant montre : les plus RECENTS, plus celui deja choisi.
+ *
+ * 🔴 LE LIEN CHOISI EST TOUJOURS DEDANS, MEME S'IL EST VIEUX, et c'est le cas limite qui compte. Sans lui,
+ * quelqu'un qui deplie tout, choisit un lien de mars, puis replie la liste, verrait son `<select>` retomber
+ * sur « Aucun bouton » alors que son brouillon porte toujours ce lien : l'ecran mentirait sur ce qui va
+ * partir. Un `<select>` dont la valeur n'est dans aucune `<option>` n'affiche rien, il ne previent pas.
+ *
+ * ⚠️ TRIE ICI ET PAS SUPPOSE TRIE : la route rend les liens dans l'ordre qui l'arrange, et « les 3 derniers »
+ * d'une liste non triee ne veut rien dire. Tri DECROISSANT sur la date de creation, identifiant en
+ * departage pour que deux liens crees dans la meme seconde gardent un ordre stable d'un rendu a l'autre.
+ */
+export function liensAProposer<T extends { id: string; createdAt: string }>(
+  liens: readonly T[],
+  selectionne: string,
+  tout: boolean,
+): T[] {
+  const tries = [...liens].sort((a, b) => (b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)));
+  if (tout) return tries;
+  const recents = tries.slice(0, LIENS_PROPOSES);
+  if (selectionne === '' || recents.some((l) => l.id === selectionne)) return recents;
+  const choisi = tries.find((l) => l.id === selectionne);
+  return choisi ? [...recents, choisi] : recents;
+}
+
+/**
+ * Le libelle d'un lien dans le deroulant : sa phrase, ET le scenario qu'il demarre.
+ *
+ * 🔴 C'EST LE VRAI DEFAUT SIGNALE, PAS LA LONGUEUR DE LA LISTE (Julien, 2026-09-17 : « on ne sait plus a
+ * quel scenario chaque bouton a ete associe »). Le deroulant n'affichait que `phrase`. Le raccourcir a trois
+ * sans nommer la destination aurait laisse le probleme entier sur une liste plus courte.
+ *
+ * ⚠️ SCENARIO INTROUVABLE = ON REND LA PHRASE SEULE, jamais « undefined » ni un identifiant. Le cas arrive
+ * pour de vrai : un scenario supprime laisse son lien vivant, parce que le lien ne se supprime pas.
+ */
+export function libelleLien(
+  lien: { phrase: string; workflowId: string },
+  scenarios: readonly { id: string; name: string }[],
+): string {
+  const scenario = scenarios.find((s) => s.id === lien.workflowId);
+  return scenario ? `${lien.phrase} → ${scenario.name}` : lien.phrase;
+}

@@ -31,7 +31,10 @@ function QualiInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-4">
-      <RangeBar title={t('Analytics qualitatif', 'Qualitative analytics')} range={range} onChange={setRange} />
+      {/* ⚠️ « Analyse des conversations » depuis le 2026-09-17, comme l'entrée de menu. Le titre à l'écran
+          et le libellé de la nav doivent dire le MÊME mot : deux noms pour une page, c'est une page qu'on
+          cherche deux fois. L'adresse, elle, reste `/dashboard/quali`. */}
+      <RangeBar title={t('Analyse des conversations', 'Conversation analysis')} range={range} onChange={setRange} />
       <ConversationAnalysisCard tenantId={session.tenantId} range={range} />
     </div>
   );

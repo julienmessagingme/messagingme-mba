@@ -10,7 +10,10 @@ import {
 } from '@/lib/chaine-mise-en-forme';
 import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { ChampImageHebergee } from '@/components/ChampImageHebergee';
-import { imageAffichable, phraseAcceptable, pretAPublier, resteAAfficher, type BrouillonChaine } from '@/lib/chaine-apercu';
+import {
+  imageAffichable, liensAProposer, libelleLien, phraseAcceptable, pretAPublier, resteAAfficher,
+  type BrouillonChaine,
+} from '@/lib/chaine-apercu';
 
 /** Ce que chaque style MONTRE dans la barre. Le style lui-même vit dans `MARQUEURS`, ici c'est l'habillage. */
 const HABILLAGE: Record<StyleBarre, { fr: string; en: string; lettre: string; classe: string }> = {
@@ -50,6 +53,13 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
   const { brouillon, onChange, tenantId, liens, scenarios, phone, busy } = props;
   const [creation, setCreation] = useState(false);
   const [emojis, setEmojis] = useState(false);
+  /**
+   * La liste est-elle dépliée ? Un état LOCAL et volontairement non mémorisé : replier à la prochaine
+   * ouverture de l'écran est le bon défaut, sinon quelqu'un qui a déplié une fois retrouverait la longue
+   * liste pour toujours, ce qui annulerait la limite.
+   */
+  const [tousLesLiens, setTousLesLiens] = useState(false);
+  const proposes = liensAProposer(liens, brouillon.linkId, tousLesLiens);
   const zoneRef = useRef<HTMLTextAreaElement>(null);
 
   /**
@@ -213,10 +223,26 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
                   composition ferait croire que le bouton du futur post ne marchera pas, alors qu'il
                   marchera. L'état compte dans la liste des publications, où un bouton déjà parti peut
                   vraiment être mort, pas ici. */}
-              {liens.map((l) => (
-                <option key={l.id} value={l.id}>{l.phrase}</option>
+              {proposes.map((l) => (
+                <option key={l.id} value={l.id}>{libelleLien(l, scenarios)}</option>
               ))}
             </select>
+
+            {/* 🔴 L'ÉCHAPPATOIRE EST OBLIGATOIRE, ET C'EST CE QUI REND LA LIMITE ACCEPTABLE. Trois liens
+                suffisent au geste courant (réutiliser un bouton qu'on vient de créer), mais rien ne dit
+                qu'on ne veut jamais republier avec un lien de mars : le lien existe toujours, il n'a pas
+                été supprimé, et une liste qui le cacherait POUR TOUJOURS obligerait à en recréer un, donc
+                à fabriquer un doublon de la chose qu'on essaie de limiter. */}
+            {liens.length > proposes.length && (
+              <button
+                type="button"
+                onClick={() => setTousLesLiens(true)}
+                className="mt-1.5 block text-xs font-medium text-ink-500 hover:text-ink-700"
+                data-testid="chaine-tous-les-liens"
+              >
+                {t(`Voir tous les liens (${liens.length})`, `Show all links (${liens.length})`)}
+              </button>
+            )}
 
             <button
               type="button"

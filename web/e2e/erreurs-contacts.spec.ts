@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Un clic sur une ligne d'erreur ouvre LA LISTE DES CONTACTS TOUCHÉS (Analytics > Quantitatif > Erreurs).
+ * Un clic sur une ligne d'erreur ouvre LA LISTE DES CONTACTS TOUCHÉS (Console > Sécurité > Journal des
+ * erreurs, où la carte a déménagé le 2026-09-17 ; elle vivait dans Analytics > Quantitatif > Erreurs).
  *
  * 🔴 CE QUE CET ÉCRAN PEUT ET NE PEUT PAS DIRE, mesuré avant d'être promis. Deux trous, tous deux réels :
  * `error_code` n'existe que sur `campaign_recipients` (un envoi de scénario ou d'inbox ne journalise que son
@@ -49,7 +50,10 @@ async function monter(page: import('@playwright/test').Page, opts: { tronque?: b
     if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
     return json({});
   });
-  await page.goto('/dashboard/erreurs');
+  // ⚠️ L ECRAN A DEMENAGE LE 2026-09-17 : la carte des erreurs a quitte Analytics > Quantitatif pour le
+  // centre de Securite, ou elle rejoint les deux journaux. Le CAS exerce ici n a pas bouge d un mot, seule
+  // l adresse change ; ce test couvre desormais aussi le fait que la carte rend bien a son nouvel endroit.
+  await page.goto('/securite/erreurs');
   await expect(page.getByTestId('erreur-ligne-131026')).toBeVisible({ timeout: 15_000 });
   return { appelsContacts };
 }

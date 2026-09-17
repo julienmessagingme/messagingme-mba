@@ -12,7 +12,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-erreurs' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'outils-espace' | 'parametres' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs';
+type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'outils-espace' | 'parametres' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs';
 
 /** Le RENDU d'une icône de nav. Les TRACÉS, eux, vivent avec les listes dans `lib/nav.ts` : ils sont de la
  *  donnée, et la carte de la console doit pouvoir être lue sans monter de composant React. */
@@ -297,25 +297,47 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
      * valeurs doivent rester d'accord, 3.5rem ÉTANT h-14.
      */
     <div className={`flex flex-col bg-[#F7F8FB] ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
-      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-ink-200 bg-white px-4">
-        {avecBarreLaterale && (
-          <button className="rounded-lg p-1.5 text-ink-600 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-          </button>
-        )}
-        <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex shrink-0 items-center gap-2" title={t('Accueil', 'Home')}>
-          <Logo className="h-8 w-8" />
-          <span className="hidden text-sm font-semibold tracking-tight text-ink-900 sm:inline">Engage Me</span>
-        </Link>
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center border-b border-ink-200 bg-white">
+        {/**
+          * 🔴 LA ZONE DE GAUCHE FAIT EXACTEMENT LA LARGEUR DE LA COLONNE LATÉRALE (`w-60`, soit 240 px), ET
+          * C'EST CE QUI ALIGNE LES ONGLETS SUR SA FIN (2026-09-17, Julien : « console doit demarrer au
+          * niveau de la fin de la colonne de la sidebar, ça doit être aligné sinon c'est pas beau »). Le
+          * séparateur qui ferme cette zone tombe alors sur le `border-r` de la colonne : les deux traits
+          * n'en font plus qu'un, du haut de l'écran jusqu'en bas.
+          *
+          * 🔴 ET ELLE GARDE SA LARGEUR SUR L'ONGLET INBOX, QUI N'A POURTANT AUCUNE COLONNE. C'est la moitié
+          * de l'intérêt d'un alignement : un repère qui SAUTE en changeant d'onglet est pire qu'un repère
+          * décalé. La zone ne se règle donc pas sur `avecBarreLaterale`.
+          *
+          * ⚠️ `lg:` ET PAS UNE LARGEUR FIXE : en dessous de ce point de rupture la colonne est un tiroir et
+          * n'occupe aucune place, donc réserver 240 px pousserait les onglets hors de l'écran sur un
+          * téléphone. Les trois valeurs `w-60` (ici et sur l'`aside`) doivent rester d'accord, comme
+          * `h-14` / `top-14` / `3.5rem` juste au-dessus.
+          */}
+        <div className="flex h-full shrink-0 items-center gap-3 px-4 lg:w-60">
+          {avecBarreLaterale && (
+            <button className="rounded-lg p-1.5 text-ink-600 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
+          )}
+          <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex min-w-0 shrink items-center gap-2" title={t('Accueil', 'Home')}>
+            <Logo className="h-8 w-8 shrink-0" />
+            <span className="hidden truncate text-sm font-semibold tracking-tight text-ink-900 sm:inline">Engage Me</span>
+          </Link>
+        </div>
         {/**
           * ⚠️ LES ONGLETS SE TIENNENT À DISTANCE DU LOGO, ET ILS NE LUI RESSEMBLENT PAS (2026-09-08, Julien :
           * « la police n'est pas assez différenciante et c'est positionné beaucoup trop proche du logo »).
-          * Deux corrections, et les deux comptent : `ml-6` (plus le séparateur vertical) les détache de la
-          * marque, et la casse haute + l'interlettrage les sort de la même famille visuelle que « Engage
-          * Me », qui est un nom, pas un bouton. Un onglet doit se lire comme une SECTION, pas comme la
-          * suite du logo.
+          * Deux corrections, et les deux comptent : le séparateur vertical les détache de la marque, et la
+          * casse haute + l'interlettrage les sortent de la même famille visuelle que « Engage Me », qui est
+          * un nom, pas un bouton. Un onglet doit se lire comme une SECTION, pas comme la suite du logo.
           */}
-        <span aria-hidden="true" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block" />
+        {/* ⚠️ `ml-4 lg:ml-0` : à partir de `lg`, la zone de gauche porte sa largeur et le séparateur DOIT
+            tomber pile sur les 240 px, donc aucune marge. En dessous, cette largeur n'existe pas et une
+            marge nulle collerait le trait au mot « Engage Me » : c'est précisément le reproche de Julien
+            du 2026-09-08 (« positionné beaucoup trop proche du logo »), qu'on réintroduirait sur toute la
+            plage tablette sans le voir depuis un grand écran. */}
+        <span aria-hidden="true" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block lg:ml-0" />
         <nav aria-label={t('Sections', 'Sections')} className="ml-2 flex items-center gap-1 overflow-x-auto" data-testid="onglets">
           {ongletsVisibles.map((o) => (
             <Link
@@ -344,7 +366,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             </Link>
           ))}
         </nav>
-        <div className="ml-auto">
+        {/* `pr-4` rend au menu de compte la marge que l'entête a perdue : le `px-4` est descendu dans la
+            zone de gauche, qui porte désormais une largeur propre. Sans lui, l'avatar colle au bord. */}
+        <div className="ml-auto pr-4">
           <AccountMenu session={session} onLogout={logout} />
         </div>
       </header>

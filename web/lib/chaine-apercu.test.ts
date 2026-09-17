@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { MAX_TEXTE_POST } from './api-chaine';
 import {
-  LIBELLE_BOUTON_DISCUTER, corpsDuPost, imageAffichable, morceauxApercu, phraseAcceptable, pretAPublier,
+  LIBELLE_BOUTON_DISCUTER, corpsDuPost, imageAffichable, liensAProposer, libelleLien, morceauxApercu,
+  phraseAcceptable, pretAPublier,
   resteAAfficher,
   type BrouillonChaine,
 } from './chaine-apercu';
@@ -191,5 +192,89 @@ describe('corpsDuPost', () => {
 
   it('un post sans texte reste vide', () => {
     expect(corpsDuPost('', URL)).toBe('');
+  });
+});
+
+/**
+ * LE DEROULANT DU BOUTON « DISCUTER » : trois liens, et le scenario nomme.
+ *
+ * 🔴 CE QUE CES TESTS PROTEGENT VRAIMENT, ET QUI NE SE VOIT PAS EN LISANT LE COMPOSANT. Un lien de chaine
+ * ne se supprime JAMAIS (sa phrase est sa cle de routage depuis la migration 0116, et les publications
+ * deja parties la portent). La liste ne peut donc que grandir, et « garder les 3 derniers » ne peut vouloir
+ * dire que « n'en montrer que 3 ». Un test qui verifierait une SUPPRESSION passerait au vert en cassant
+ * tous les boutons en circulation.
+ */
+describe('liensAProposer', () => {
+  const L = (id: string, jour: string, workflowId = 'w1') => ({ id, createdAt: `2026-03-${jour}T10:00:00Z`, workflowId, phrase: `p-${id}` });
+  const CINQ = [L('a', '01'), L('b', '02'), L('c', '03'), L('d', '04'), L('e', '05')];
+
+  it('🔴 n’en propose que TROIS, les plus recents', () => {
+    expect(liensAProposer(CINQ, '', false).map((l) => l.id)).toEqual(['e', 'd', 'c']);
+  });
+
+  it('🔴 TRIE lui-meme, il ne suppose pas la liste ordonnee', () => {
+    // La route rend les liens dans l'ordre qui l'arrange. « Les 3 derniers » d'une liste non triee ne veut
+    // rien dire, et le defaut serait invisible : trois liens s'afficheraient, simplement pas les bons.
+    const melange = [CINQ[2]!, CINQ[0]!, CINQ[4]!, CINQ[1]!, CINQ[3]!];
+    expect(liensAProposer(melange, '', false).map((l) => l.id)).toEqual(['e', 'd', 'c']);
+  });
+
+  it('🔴 le lien DEJA CHOISI reste propose, meme s’il est vieux', () => {
+    // Sans lui : on deplie tout, on choisit un lien de mars, on replie, et le `<select>` retombe sur
+    // « Aucun bouton » alors que le brouillon porte toujours ce lien. Un `<select>` dont la valeur n'est
+    // dans aucune `<option>` n'affiche rien et ne previent pas : l'ecran mentirait sur ce qui va partir.
+    expect(liensAProposer(CINQ, 'a', false).map((l) => l.id)).toEqual(['e', 'd', 'c', 'a']);
+  });
+
+  it('un lien choisi qui est DEJA dans les trois ne s’y ajoute pas deux fois', () => {
+    expect(liensAProposer(CINQ, 'd', false).map((l) => l.id)).toEqual(['e', 'd', 'c']);
+  });
+
+  it('un identifiant choisi INTROUVABLE ne fait pas tomber la liste', () => {
+    // Cas reel : un brouillon garde en memoire pointe un lien qu'une autre session a fait disparaitre de
+    // la reponse. Le bon comportement est de rendre les trois recents, pas de jeter.
+    expect(liensAProposer(CINQ, 'jamais-vu', false).map((l) => l.id)).toEqual(['e', 'd', 'c']);
+  });
+
+  it('deplie, il rend TOUT, toujours trie', () => {
+    expect(liensAProposer(CINQ, '', true).map((l) => l.id)).toEqual(['e', 'd', 'c', 'b', 'a']);
+  });
+
+  it('moins de trois liens : il les rend tous, sans inventer de place vide', () => {
+    expect(liensAProposer([CINQ[0]!, CINQ[1]!], '', false).map((l) => l.id)).toEqual(['b', 'a']);
+    expect(liensAProposer([], '', false)).toEqual([]);
+  });
+
+  it('deux liens crees la MEME seconde gardent un ordre stable', () => {
+    // Sans le depart par identifiant, l'ordre depend de l'implementation du tri et peut changer d'un rendu
+    // a l'autre : le deroulant se reordonnerait sous le curseur.
+    const jumeaux = [L('z', '09'), L('y', '09')];
+    expect(liensAProposer(jumeaux, '', false).map((l) => l.id)).toEqual(['y', 'z']);
+    expect(liensAProposer([...jumeaux].reverse(), '', false).map((l) => l.id)).toEqual(['y', 'z']);
+  });
+
+  it('⚠️ il ne SUPPRIME rien : la liste d’entree est rendue intacte', () => {
+    // La garde qui compte. Supprimer un lien tuerait le bouton des publications deja diffusees.
+    const avant = CINQ.map((l) => l.id);
+    liensAProposer(CINQ, '', false);
+    expect(CINQ.map((l) => l.id)).toEqual(avant);
+  });
+});
+
+describe('libelleLien', () => {
+  const SCENARIOS = [{ id: 'w1', name: 'Bienvenue' }, { id: 'w2', name: 'Relance J+3' }];
+
+  it('🔴 nomme le SCENARIO, parce que c’est le defaut signale', () => {
+    // Julien, 2026-09-17 : « on ne sait plus a quel scenario chaque bouton a ete associe ». Le deroulant
+    // n'affichait que la phrase. Raccourcir la liste sans nommer la destination aurait laisse le probleme
+    // entier sur une liste plus courte.
+    expect(libelleLien({ phrase: 'Je veux le guide', workflowId: 'w2' }, SCENARIOS)).toBe('Je veux le guide → Relance J+3');
+  });
+
+  it('🔴 scenario introuvable : la phrase SEULE, jamais « undefined » ni un identifiant', () => {
+    // Le cas arrive pour de vrai : un scenario supprime laisse son lien vivant, puisque le lien ne se
+    // supprime pas.
+    expect(libelleLien({ phrase: 'Je veux le guide', workflowId: 'parti' }, SCENARIOS)).toBe('Je veux le guide');
+    expect(libelleLien({ phrase: 'Je veux le guide', workflowId: 'w1' }, [])).toBe('Je veux le guide');
   });
 });

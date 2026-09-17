@@ -172,7 +172,25 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
   useEffect(() => {
     let vivant = true;
     listErreursSysteme(tenantId)
-      .then((r) => { if (vivant) setErreurs(r.erreurs); })
+      /**
+       * 🔴 LE TYPE MENT SUR UNE DONNÉE DE RÉSEAU, ET CELLE-CI FAISAIT TOMBER LA PAGE ENTIÈRE.
+       * `request()` rend ce que le serveur a envoyé, le type n'est qu'une promesse. Une réponse 200 sans
+       * `erreurs` (une API plus ancienne que ce composant, un proxy qui répond `{}`) posait `undefined`
+       * dans l'état : `erreurs !== null` devenait VRAI, et `erreurs.length` jetait EN PLEIN RENDU. Ce
+       * n'est pas cette carte qui tombe alors, c'est tout le centre de Sécurité, y compris le journal des
+       * erreurs de livraison à côté, qui n'avait rien demandé.
+       *
+       * ⚠️ LE CAS EST RÉEL SUR CE PRODUIT, PAS THÉORIQUE : la console part sur Vercel à chaque push et
+       * l'API se déploie à la main sur le VPS. Entre les deux, le front est en avance sur le serveur.
+       * `ErreursLivraison`, juste au-dessus, se gardait déjà de la même façon ; cette moitié-ci ne l'avait
+       * pas. Trouvé le 2026-09-17 en amenant la carte des erreurs Meta sur cette page : la suite E2E est
+       * passée de verte à « Application error » sur six tests d'un coup.
+       *
+       * ⚠️ `[]` ET PAS UNE ERREUR : un corps illisible n'est pas un échec de lecture, la requête a abouti.
+       * La distinction « aucun appel en échec » contre « lecture impossible » reste tenue par le `catch`,
+       * qui est le seul à savoir que le réseau a vraiment échoué.
+       */
+      .then((r) => { if (vivant) setErreurs(Array.isArray(r?.erreurs) ? r.erreurs : []); })
       // ⚠️ Une lecture en échec n'est PAS « aucune erreur » : les deux se lisent de façon opposée, et
       // confondre les deux ferait croire que tout va bien.
       .catch((e: unknown) => { if (vivant) setError(e instanceof Error ? e.message : t('Lecture impossible', 'Unable to read')); });

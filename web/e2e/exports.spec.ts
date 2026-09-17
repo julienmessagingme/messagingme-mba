@@ -75,7 +75,10 @@ const SOUS_ONGLETS = [
   { chemin: '/dashboard', ancre: 'quanti-contacts' },
   { chemin: '/dashboard/couts', ancre: 'quanti-cout' },
   { chemin: '/dashboard/funnel', ancre: 'quanti-funnel' },
-  { chemin: '/dashboard/erreurs', ancre: 'quanti-erreurs' },
+  // ⚠️ LA CARTE DES ERREURS A QUITTE LE QUANTITATIF LE 2026-09-17 pour le centre de Securite. Elle reste
+  // dans cette liste parce que ce qui est verifie ici est « chaque zone rendue porte son bouton PDF », et
+  // que cette propriete la suit ou qu elle aille. La retirer aurait cesse de garder un export qui existe.
+  { chemin: '/securite/erreurs', ancre: 'quanti-erreurs' },
 ];
 
 test.describe('Analytics quanti : chaque tableau s’exporte en PDF', () => {

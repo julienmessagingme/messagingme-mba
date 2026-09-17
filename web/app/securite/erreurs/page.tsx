@@ -1,13 +1,23 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { RangeBar } from '@/components/RangeBar';
 import { ErreursLivraison, ErreursSysteme } from '@/components/ErreursLivraison';
+import { ErrorBreakdownCard } from '@/components/analytics/cartes';
+import { getErrorBreakdown, type ErrorBreakdownRow, type StatsRange } from '@/lib/api';
+import type { Session } from '@/lib/session';
+import { useT } from '@/lib/i18n';
+import { presetRange } from '@/lib/range';
 
 /**
- * LE JOURNAL DES ERREURS, ET IL EN A DEUX MOITIÉS (tranché par Julien le 2026-09-13 : « on a déjà un log
- * d'erreurs [...] donc il faut les 2 »).
+ * LE JOURNAL DES ERREURS, ET IL EN A TROIS MOITIÉS (tranché par Julien le 2026-09-13 : « on a déjà un log
+ * d'erreurs [...] donc il faut les 2 », puis le 2026-09-17 pour la troisième).
  *
- * 🔴 DEUX MOITIÉS DE NATURE DIFFÉRENTE, DISTINGUÉES ET NON MÉLANGÉES.
+ * 🔴 TROIS VUES DE NATURE DIFFÉRENTE, DISTINGUÉES ET NON MÉLANGÉES.
+ *  - AGRÉGAT : combien d'échecs, par code d'erreur Meta, sur une PÉRIODE. C'est la seule des trois qui
+ *    dise s'il faut agir, et sur quoi : un code qui revient cent fois ce mois-ci est un problème, la même
+ *    erreur vue une fois n'en est pas un.
  *  - CLIENT : ce que META a répondu quand un message vers un CONTACT n'est pas parti ou pas arrivé. Quelqu'un
  *    attend au bout d'un téléphone.
  *  - SYSTÈME : ce que LES SYSTÈMES DU CLIENT (CRM, ERP, back-office) ont répondu aux appels que nous leur
@@ -15,15 +25,57 @@ import { ErreursLivraison, ErreursSysteme } from '@/components/ErreursLivraison'
  * Les fondre obligerait chaque ligne à porter les colonnes vides de l'autre, et ferait chercher un numéro de
  * téléphone là où il n'y en a jamais eu.
  *
+ * 🔴 L'AGRÉGAT VIENT DE `Analytics > Quantitatif > Erreurs`, QUI A DISPARU LE 2026-09-17 (Julien : « l'onglet
+ * erreur dans quantitatif n'a plus rien à faire là, on l'a mis dans Console > securité > journal des
+ * erreurs »). Il a DÉMÉNAGÉ et n'a pas été supprimé, parce que ce n'était PAS un doublon du journal : le
+ * journal rend les 100 dernières lignes, cherchables par numéro ; l'agrégat rend un classement par code sur
+ * une fenêtre choisie. Supprimer le second aurait retiré la seule vue qui répond à « qu'est-ce qui cloche
+ * en ce moment ».
+ *
+ * ⚠️ LA PÉRIODE NE SERT QUE L'AGRÉGAT, et c'est pour ça qu'elle est posée en haut, juste au-dessus de lui.
+ * Les deux journaux n'en ont pas : ils rendent les dernières lignes, point. Une barre de période qui n'en
+ * filtrerait qu'un tiers, sans le dire, ferait croire que les deux autres sont vides sur la fenêtre.
+ *
  * ⚠️ LA MOITIÉ CLIENT PORTE LES NUMÉROS, DÉLIBÉRÉMENT (« quel message n'est pas arrivé » sans dire « à
- * qui » ne répond à rien), et les deux sont admin-only côté serveur. Le déplacer dans un centre de
+ * qui » ne répond à rien), et les trois sont admin-only côté serveur. Le déplacer dans un centre de
  * conformité ne l'ouvre PAS plus largement : la garde est sur la route, pas sur le menu.
  */
 export default function SecuriteErreursPage() {
-  return <AppShell active="securite-erreurs">{(session) => (
+  return <AppShell active="securite-erreurs">{(session) => <ErreursInner session={session} />}</AppShell>;
+}
+
+function ErreursInner({ session }: { session: Session }) {
+  const t = useT();
+  const [range, setRange] = useState<StatsRange>(() => presetRange(30));
+  const [errors, setErrors] = useState<ErrorBreakdownRow[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const charger = useCallback(async () => {
+    setErreur(null);
+    try {
+      const eb = await getErrorBreakdown(session.tenantId, range);
+      setErrors(Array.isArray(eb?.errors) ? eb.errors : []);
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+    } finally {
+      setChargement(false);
+    }
+  }, [session.tenantId, range, t]);
+
+  useEffect(() => { void charger(); }, [charger]);
+
+  return (
     <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+      <RangeBar title={t('Erreurs de livraison', 'Delivery errors')} range={range} onChange={setRange} />
+      {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+      {chargement ? (
+        <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
+      ) : (
+        <ErrorBreakdownCard errors={errors} tenantId={session.tenantId} range={range} />
+      )}
       <ErreursLivraison tenantId={session.tenantId} />
       <ErreursSysteme tenantId={session.tenantId} />
     </div>
-  )}</AppShell>;
+  );
 }
