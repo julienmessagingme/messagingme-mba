@@ -5,6 +5,7 @@ import { getDetailCoutCampagne, getWorkflow, type DetailCoutCampagne } from '@/l
 import { Modale } from '@/components/Modale';
 import { fmtNum, fmtCost } from '@/lib/format';
 import { blocsDuScenario } from '@/lib/mesures-scenario';
+import { FunnelNodes } from '@/components/FunnelNodes';
 import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
@@ -180,8 +181,8 @@ function Contenu({ fiche, titres, locale, t }: {
           </h4>
           <p className="mt-0.5 text-xs text-ink-400">
             {t(
-              'Ce que les gens ont fait à chaque bloc du scénario, en gestes et en personnes. Le coût par interaction rapporte le coût du LANCEMENT aux gestes de l’étape.',
-              'What people did at each block of the scenario, in gestures and in people. Cost per interaction is the LAUNCH cost against the step’s gestures.',
+              'Ce que les gens ont fait à chaque bloc du scénario, lu comme un entonnoir. Le coût par interaction rapporte le coût du LANCEMENT aux gestes de l’étape.',
+              'What people did at each block of the scenario, read as a funnel. Cost per interaction is the LAUNCH cost against the step’s gestures.',
             )}
           </p>
           {fiche.etapes.length === 0 ? (
@@ -192,6 +193,20 @@ function Contenu({ fiche, titres, locale, t }: {
               )}
             </p>
           ) : (
+            <>
+              {/**
+                * 🔴 LES BARRES D ABORD, LE TABLEAU ENSUITE, ET LES DEUX RESTENT. Julien, le 2026-09-17 :
+                * « je veux voir un autre truc que ton tableau pourri [...] un tableau avec des barres
+                * verticales ». Les barres repondent a la question qu on se pose en ouvrant la fiche (ce
+                * qui se perd d un bloc au suivant), le tableau garde les chiffres exacts et les deux
+                * unites. Supprimer le tableau retirerait des colonnes que des tests exercent et qu on ne
+                * peut pas lire sur un graphe, notamment le partage gestes / personnes.
+                */}
+              <FunnelNodes etapes={fiche.etapes} titres={titres} devise={d} />
+              <details className="mt-3" data-testid="detail-etapes-table">
+                <summary className="cursor-pointer text-xs text-ink-500 hover:text-ink-700">
+                  {t('Voir les chiffres exacts', 'Show the exact figures')}
+                </summary>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-[32rem] border-collapse">
                 <thead>
@@ -231,6 +246,8 @@ function Contenu({ fiche, titres, locale, t }: {
                 </tbody>
               </table>
             </div>
+              </details>
+            </>
           )}
           <p className="mt-2 text-xs text-ink-400" data-testid="detail-liens-reserve">
             {t(

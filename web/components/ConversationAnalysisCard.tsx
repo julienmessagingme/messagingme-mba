@@ -14,6 +14,9 @@ import { formatDate, hourMin } from '@/lib/day';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
 import { Modale } from './Modale';
+import { TableJoursAnalyse } from './TableJoursAnalyse';
+import { repondeursDe, libelleRepondeur } from '@/lib/qui-a-repondu';
+import type { LignePeriode } from '@/lib/jours-analyse';
 import { BoutonPdf } from './BoutonPdf';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { entetesQuali, ligneQuali } from '@/lib/quali-export';
@@ -490,9 +493,18 @@ function ListeParAction({ tenantId, range, action, onClose }: {
 }
 
 /** Table quali (fetch séparé, filtrable) : 50 conversations analysées, ligne cliquable vers sa fiche. */
-function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale }: {
+function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journee }: {
   tenantId: string; range: StatsRange; sujet: string | null; onSujet: (sujet: string | null) => void;
   intentionInitiale?: string;
+  /**
+   * La journee (ou la semaine) choisie dans le tableau du dessus. `null` = toute la periode.
+   *
+   * 🔴 LE FILTRE PASSE PAR LA PLAGE, PAS PAR UN FILTRE DE PLUS. Le serveur sait deja borner par dates,
+   * et lui demander la meme chose d une seconde facon ferait deux chemins pour une question, qui
+   * divergeraient au premier changement. Une semaine ouvre du PREMIER au DERNIER de ses jours, pris
+   * dans la ligne elle-meme : recalculer la plage ferait ouvrir des jours qu elle ne comptait pas.
+   */
+  journee?: LignePeriode | null;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -511,10 +523,21 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale }: {
   const [loading, setLoading] = useState(true);
   const [fiche, setFiche] = useState<AnalyzedConversation | null>(null);
 
+  /**
+   * LA PLAGE REELLEMENT DEMANDEE : celle de la journee choisie, sinon celle de l ecran.
+   *
+   * ⚠️ LES JOURS VIENNENT DE LA LIGNE, pas d un calcul : une semaine de bord de periode est PARTIELLE,
+   * et recalculer lundi-dimanche ouvrirait des journees que la ligne ne comptait pas. Le chiffre
+   * affiche et la liste ouverte doivent porter sur exactement le meme ensemble.
+   */
+  const plage = journee && journee.jours.length > 0
+    ? { from: [...journee.jours].sort()[0]!, to: [...journee.jours].sort().slice(-1)[0]! }
+    : range;
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    listAnalyzedConversations(tenantId, range, {
+    listAnalyzedConversations(tenantId, plage, {
       ...(sentiment ? { sentiment } : {}),
       ...(intent ? { intent } : {}),
       ...(action ? { action } : {}),
@@ -527,7 +550,10 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale }: {
       .catch(() => { if (alive) setRows([]); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [tenantId, range.from, range.to, sentiment, intent, action, sujet]);
+  // 🔴 LA PLAGE EST DANS LES DEPENDANCES, sinon cliquer une journee ne redemanderait RIEN : la table
+  // resterait sur toute la periode pendant que le tableau du dessus annonce une journee. Ce sont ses deux
+  // bornes qui y entrent, pas l objet, qui est recree a chaque rendu et relancerait l appel en boucle.
+  }, [tenantId, plage.from, plage.to, sentiment, intent, action, sujet]);
 
   const th = 'px-2 py-2 font-medium whitespace-nowrap';
   const td = 'px-2 py-2 align-top';
@@ -582,6 +608,14 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale }: {
                 <th className={th}>{t('Sentiment', 'Sentiment')}</th>
                 <th className={th}>{t('Intention', 'Intent')}</th>
                 <th className={th}>{t('Sujet', 'Topic')}</th>
+                {/**
+                  * 🔴 QUI A REPONDU, EN BADGES ET PAS EN CASES A COCHER. Julien avait propose des cases
+                  * (2026-09-17). Mais ces quatre etats se LISENT dans `conversation_messages.origin`,
+                  * ecrit au moment de l envoi : une case a cocher promet qu on peut les changer, et
+                  * quelqu un qui decocherait ferait mentir les compteurs de la synthese sans qu aucun
+                  * ecran ne puisse le signaler.
+                  */}
+                <th className={th}>{t('Répondu par', 'Answered by')}</th>
                 <th className={th}>{t('Résolu', 'Resolved')}</th>
                 <th className={th}>{t('Action', 'Action')}</th>
                 <th className={th}>{t('Confiance', 'Confidence')}</th>
@@ -609,6 +643,29 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale }: {
                     </td>
                     <td className={`${td} text-ink-600`}>{intentLabel(r.intent, t)}</td>
                     <td className={`${td} text-ink-600`}>{r.topic}</td>
+                    <td className={td} data-testid="quali-repondeurs">
+                      {/**
+                        * ⚠️ AUCUN BADGE EST UN CAS NORMAL, PAS UN TROU : une conversation dont tous les
+                        * sortants sont anterieurs a la migration 0099 n a pas d origine, et une
+                        * conversation nee d une campagne a laquelle personne n a repondu non plus. Le
+                        * tiret le dit, plutot que d inventer un repondeur par defaut.
+                        */}
+                      {repondeursDe(r.origines ?? []).length === 0
+                        ? <span className="text-ink-300" title={t('Aucun message sortant identifié : personne n’a répondu, ou la conversation est antérieure à la mesure.', 'No identified outbound message: nobody answered, or the conversation predates the measure.')}>—</span>
+                        : (
+                          <span className="flex flex-wrap gap-1">
+                            {repondeursDe(r.origines ?? []).map((rep) => (
+                              <span
+                                key={rep}
+                                data-testid={'quali-badge-' + rep}
+                                className="inline-block rounded-full bg-ink-100 px-2 py-0.5 text-[11px] font-medium text-ink-600"
+                              >
+                                {libelleRepondeur(rep, t)}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                    </td>
                     <td className={td}>{r.resolved ? <span className="text-mint-600">✓</span> : <span className="text-ink-400">✗</span>}</td>
                     <td className={`${td} text-ink-600`}>{actionLabel(r.actionSuggestion, t)}</td>
                     <td className={`${td} tabular-nums ${conf < 50 ? 'text-ink-400' : 'text-ink-700'}`}>{conf}%</td>
@@ -647,6 +704,14 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
   // s'APPLIQUE à la table du dessous. Deux états séparés se seraient désynchronisés au premier oubli.
   const [sujet, setSujet] = useState<string | null>(null);
   const [actionOuverte, setActionOuverte] = useState<string | null>(null);
+  /**
+   * LA JOURNEE (ou la semaine) DEPLIEE, ou `null` quand on regarde toute la periode.
+   *
+   * ⚠️ ELLE VIT ICI ET PAS DANS LA TABLE, pour la meme raison que `sujet` juste au-dessus : elle se
+   * CHOISIT dans le tableau des journees et s APPLIQUE a la table du dessous. Deux etats separes se
+   * seraient desynchronises au premier oubli.
+   */
+  const [journee, setJournee] = useState<LignePeriode | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -680,7 +745,8 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
       ) : (
         <>
           <QuantiBlock summary={summary} sujet={sujet} onSujet={setSujet} onAction={setActionOuverte} />
-          <QualiTable tenantId={tenantId} range={range} sujet={sujet} onSujet={setSujet} intentionInitiale={intentionInitiale} />
+          <TableJoursAnalyse tenantId={tenantId} range={range} choisie={journee} onChoisir={setJournee} />
+          <QualiTable tenantId={tenantId} range={range} sujet={sujet} onSujet={setSujet} intentionInitiale={intentionInitiale} journee={journee} />
           {/* La rétention, DITE. Sans cette ligne, une période qui remonte au-delà d'un an rend moins de
               conversations que prévu et l'écran passe pour cassé. Le nombre vient du serveur (la même
               variable que la purge), il ne peut donc pas dériver de ce qui est réellement appliqué.

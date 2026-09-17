@@ -1195,6 +1195,14 @@ async function main(): Promise<void> {
       getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
       listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
       getNuageQualitatif: (tenant, range) => conversationStatsStore.getNuageQualitatif(tenant, range),
+      /**
+       * LES JOURNEES de l ecran « Analyse des conversations » (2026-09-17).
+       *
+       * ⚠️ AUCUN CALCUL ICI, et c est voulu : l agregation se fait EN BASE, bornee par le nombre de jours
+       * de la periode. Descendre une ligne par conversation pour les grouper ensuite ferait transiter tout
+       * ce que cet ecran existe justement pour ne plus transiter.
+       */
+      getJoursAnalyse: (tenant, range) => conversationStatsStore.parJour(tenant, range),
     },
     workflowReports: {
       listReports: (tenant) => reportStore.list(tenant),

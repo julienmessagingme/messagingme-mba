@@ -10,7 +10,7 @@ import type { CoutIa } from '../stats/cout-ia';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
-import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter, NuageQualitatif } from '../stats/conversation-stats.pg';
+import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter, NuageQualitatif, JourAnalyse } from '../stats/conversation-stats.pg';
 import { scopeTenant, estUuid } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
@@ -105,6 +105,14 @@ export interface StatsRouteDeps {
    * serait « rien n'est branché ». L'écran, lui, distingue déjà « vide » de « pas encore de mesures ».
    */
   getNuageQualitatif?(tenantId: string, range: DateRange): Promise<NuageQualitatif>;
+  /**
+   * Une ligne par JOUR pour l ecran « Analyse des conversations » (2026-09-17).
+   *
+   * OPTIONNELLE -> 503 quand elle manque, comme ses voisines : une liste vide se lirait « aucune
+   * conversation analysee sur la periode », qui est une affirmation, alors que la verite serait
+   * « rien n est branche ».
+   */
+  getJoursAnalyse?(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
   /**
    * Mesures d'un SCÉNARIO, bloc par bloc (« Mes tableaux »). Optionnelle : absente -> 503 plutôt qu'une liste
    * vide, qui se lirait « ce scénario n'a rien produit » alors que rien n'est branché.
@@ -316,6 +324,23 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getCoutIa(tenant, r.range));
+  });
+
+  /**
+   * LES JOURNEES de l'écran « Analyse des conversations » : une ligne par jour, pas par conversation.
+   *
+   * 🔴 ROUTE A PART DE `/stats/conversations`, ET C'EST CE QUI REND L'ECRAN TENABLE. Julien, le
+   * 2026-09-17 : « si un moment il y a 1000 conversations en stock, tu vas pas afficher 1000
+   * conversations dans le tableau ». La réponse est bornée par le nombre de JOURS de la période, jamais
+   * par le trafic du client.
+   */
+  app.get('/tenants/:tenantId/stats/conversations/jours', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getJoursAnalyse) return reply.code(503).send({ error: 'jours d analyse non configure' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send({ jours: await deps.getJoursAnalyse(tenant, r.range) });
   });
 
   app.get('/tenants/:tenantId/stats/conversations', opts, async (req, reply) => {

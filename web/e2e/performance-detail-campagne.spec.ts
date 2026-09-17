@@ -85,6 +85,15 @@ async function mock(page: import('@playwright/test').Page, detail: unknown = DET
  * plus qu un chiffre par ligne, et le detail se deplie. La fiche s ouvre donc en DEUX gestes au lieu d un,
  * et ce helper porte le premier. Les CAS exerces plus bas n ont pas bouge d un mot.
  */
+/**
+ * ⚠️ LES CHIFFRES EXACTS SONT REPLIES DEPUIS LE 2026-09-17 : la fiche montre d abord l entonnoir en
+ * barres, et le tableau derriere un depliant (Julien : « je veux voir un autre truc que ton tableau
+ * pourri »). Les CAS exerces plus bas n ont pas bouge ; seul le geste pour y arriver est nouveau.
+ */
+async function ouvrirChiffres(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByTestId('detail-etapes-table').locator('summary').click();
+}
+
 async function ouvrirEngagement(page: import('@playwright/test').Page): Promise<void> {
   await page.getByTestId('cout-bascule-engagement').click();
 }
@@ -140,6 +149,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.goto('/performance');
     await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
+    await ouvrirChiffres(page);
     await expect(page.getByTestId('detail-etape-n1')).toContainText('bienvenue');
     await expect(page.getByTestId('detail-etape-n3')).toContainText('relance_j3');
   });
@@ -149,6 +159,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.goto('/performance');
     await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
+    await ouvrirChiffres(page);
     // 14 taps par 11 personnes : les deux, parce qu'ils répondent à deux questions.
     await expect(page.getByTestId('detail-etape-n1')).toContainText(/14 \(11/);
     // 6 réponses par 6 personnes : « 6 (6 pers.) » n'ajoute rien et alourdit la colonne.
@@ -162,6 +173,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.goto('/performance');
     await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
+    await ouvrirChiffres(page);
     await expect(page.getByTestId('detail-etape-n3')).toContainText('5');
     await expect(page.getByTestId('detail-ratio-n3')).toHaveText('—');
     await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2119');
@@ -175,6 +187,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.goto('/performance');
     await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
+    await ouvrirChiffres(page);
     await expect(page.getByTestId('detail-liens-n1')).toHaveText('7');
     // 1,43... non : 5,72 / 27 = 0,2119. Le ratio porte bien sur les TROIS natures.
     await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2119');
@@ -187,6 +200,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.goto('/performance');
     await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
+    await ouvrirChiffres(page);
     await expect(page.getByTestId('detail-liens-reserve')).toContainText('4');
     await expect(page.getByTestId('detail-liens-reserve')).toContainText(/2 septembre 2026|2 September 2026/);
     await expect(page.getByTestId('detail-liens-reserve')).not.toContainText(/n’identifie personne|identifies nobody/);
@@ -235,11 +249,51 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.goto('/performance');
     await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
+    await ouvrirChiffres(page);
     await expect(page.getByTestId('detail-etape-n1')).toBeVisible();
     await expect(page.getByTestId('detail-liens-n1')).toHaveText('0');
     await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2860');
   });
 
+  test('🔴 L ENTONNOIR EN BARRES est ce qu on voit d abord, le tableau est replie', async ({ page }) => {
+    // Julien, le 2026-09-17 : « je veux voir un autre truc que ton tableau pourri [...] un tableau avec
+    // des barres verticales ». Les barres repondent a la question qu on se pose en ouvrant la fiche ; le
+    // tableau garde les chiffres exacts, mais derriere un depliant.
+    await mock(page);
+    await page.goto('/performance');
+    await ouvrirEngagement(page);
+    await page.getByTestId('cout-ligne-c-parcours').click();
+    await expect(page.getByTestId('funnel-nodes')).toBeVisible();
+    await expect(page.getByTestId('funnel-node-n1')).toBeVisible();
+    await expect(page.getByTestId('detail-etape-n1')).toBeHidden();
+  });
+
+  test('🔴 les barres comptent des PERSONNES, sauf les liens qui comptent des GESTES et le disent', async ({ page }) => {
+    // EtapeCoutCampagne.liens n a PAS de compte de personnes et n en aura jamais : les clics s agregent
+    // par CODE de lien, pas par contact. Afficher un nombre de personnes y serait une invention, et
+    // aligner silencieusement deux unites dans le meme graphe est exactement le chiffre plausible et faux
+    // que cet ecran doit eviter.
+    await mock(page);
+    await page.goto('/performance');
+    await ouvrirEngagement(page);
+    await page.getByTestId('cout-ligne-c-parcours').click();
+    // n1 : 14 gestes de bouton pour 11 personnes. La barre montre 11.
+    await expect(page.getByTestId('funnel-boutons-n1')).toHaveText('11');
+    await expect(page.getByTestId('funnel-legende')).toContainText(/gestes|gestures/);
+  });
+
+  test('⚠️ une API plus ANCIENNE, sans la colonne des liens, ne fait pas tomber les barres', async ({ page }) => {
+    const ancien = {
+      ...DETAIL_SCENARIO,
+      etapes: [{ nodeId: 'n1', envoyes: { gestes: 40, personnes: 40 }, boutons: { gestes: 14, personnes: 11 }, reponses: { gestes: 6, personnes: 6 }, interactions: 20, coutParInteraction: 0.286 }],
+    };
+    await mock(page, ancien);
+    await page.goto('/performance');
+    await ouvrirEngagement(page);
+    await page.getByTestId('cout-ligne-c-parcours').click();
+    await expect(page.getByTestId('funnel-liens-n1')).toHaveText('0');
+    await expect(page.getByTestId('funnel-envoyes-n1')).toHaveText('40');
+  });
   test('le nom de la campagne est un vrai bouton, donc atteignable au clavier', async ({ page }) => {
     // Un `<tr onClick>` seul est invisible d'un lecteur d'écran et inatteignable sans souris.
     await mock(page);

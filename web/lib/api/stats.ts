@@ -314,6 +314,15 @@ export interface ConversationAnalysisSummary {
   confidence: { lt50: number; from50to70: number; from70to90: number; gte90: number };
 }
 export interface AnalyzedConversation {
+  /**
+   * LES ORIGINES DES MESSAGES SORTANTS, dedoublonnees (migration 0099). C est de la que se derivent les
+   * badges « qui a repondu », et SURTOUT PAS de handledBy, dont la valeur mba est declaree dans
+   * l enumeration mais n est JAMAIS produite (mesure en production : zero ligne sur 14).
+   *
+   * ⚠️ OPTIONNELLE A LA LECTURE : entre le deploiement de Vercel et celui du VPS, le champ est absent, et
+   * l ecran n affiche alors aucun badge plutot que d en inventer.
+   */
+  origines?: string[];
   conversationId: string;
   waId: string;
   profileName: string | null;
@@ -539,6 +548,23 @@ export interface NuageQualitatif {
 }
 export function getNuageQualitatif(tenantId: string, range?: StatsRange): Promise<NuageQualitatif> {
   return request<NuageQualitatif>(`/tenants/${tenantId}/stats/conversations/nuage${rangeQuery(range)}`);
+}
+/**
+ * LES JOURNEES de l ecran « Analyse des conversations » : une ligne par jour, pas par conversation.
+ *
+ * 🔴 ROUTE A PART, et c est ce qui rend l ecran tenable quand le client aura mille conversations : la
+ * reponse est bornee par le nombre de JOURS de la periode, jamais par son trafic.
+ */
+export interface JourAnalyse {
+  jour: string;
+  conversations: number;
+  /** ⚠️ null = aucune analyse de la journee ne porte la note. Ce n est PAS zero, qui est la PIRE note. */
+  satisfaction: number | null;
+  urgence: number | null;
+  mesurees: number;
+}
+export function getJoursAnalyse(tenantId: string, range?: StatsRange): Promise<{ jours: JourAnalyse[] }> {
+  return request<{ jours: JourAnalyse[] }>(`/tenants/${tenantId}/stats/conversations/jours${rangeQuery(range)}`);
 }
 export function getConversationAnalysisSummary(tenantId: string, range?: StatsRange): Promise<ConversationAnalysisSummary> {
   return request<ConversationAnalysisSummary>(`/tenants/${tenantId}/stats/conversations${rangeQuery(range)}`);

@@ -86,6 +86,28 @@ export interface AnalyzedConversationsFilter {
   limit?: number;
 }
 
+/**
+ * UNE JOURNEE D ANALYSE, telle que l ecran « Analyse des conversations » la rend (2026-09-17).
+ *
+ * 🔴 UNE LIGNE PAR JOUR, PAS PAR CONVERSATION, ET C EST LA DEMANDE DE JULIEN. « Si un moment il y a 1000
+ * conversations en stock, tu vas pas afficher 1000 conversations dans le tableau. » La table reste bornee
+ * par la duree de la periode au lieu de croitre avec le trafic du client, et le detail d une journee se
+ * demande en la cliquant.
+ *
+ * ⚠️ LES DEUX MOYENNES SONT NULLABLES, ET `null` N EST PAS `0`. Une journee dont aucune analyse ne porte
+ * les notes (elles sont neuves depuis la migration 0121) n a pas une satisfaction de zero, elle n en a
+ * pas. Les compter comme zero rangerait ces journees dans le coin « clients furieux ».
+ */
+export interface JourAnalyse {
+  /** Le jour, en ISO court, dans le fuseau de l espace. */
+  jour: string;
+  conversations: number;
+  /** Moyenne des analyses de la journee QUI PORTENT la note. `null` si aucune. */
+  satisfaction: number | null;
+  urgence: number | null;
+  /** Combien d analyses de la journee portent les deux notes : c est le denominateur des moyennes. */
+  mesurees: number;
+}
 export interface AnalyzedConversationRow {
   conversationId: string;
   waId: string;
@@ -107,6 +129,17 @@ export interface AnalyzedConversationRow {
   /** Infos extraites par l'analyse (produit, budget, quantité...). Déjà stockées, jamais montrées avant :
    *  c'est la fiche de conversation qui leur donne enfin un endroit où servir. */
   entities: Record<string, unknown>;
+  /**
+   * LES ORIGINES DES MESSAGES SORTANTS de la conversation, dedoublonnees (migration 0099).
+   *
+   * 🔴 C'EST DE LA QUE SE DERIVENT LES BADGES « qui a repondu », ET SURTOUT PAS DE `handledBy`, qui ne rend
+   * que 'humain' ou 'automatise' et dont la valeur 'mba' n'est JAMAIS produite. Une conversation menee par
+   * l'agent de Meta y serait indiscernable d'un scenario, ce qui est exactement la distinction demandee.
+   *
+   * ⚠️ UNE LISTE VIDE EST UN CAS NORMAL : une conversation dont tous les sortants sont anterieurs a la
+   * migration 0099 n'a aucune origine. L'ecran n'affiche alors aucun badge, plutot que d'en inventer un.
+   */
+  origines: string[];
 }
 
 /** `enabled` injecté (= config.CONVERSATION_ANALYSIS_ENABLED === 'true') : la lecture d'agrégats ne coûte rien,
@@ -297,6 +330,21 @@ export class PgConversationStatsStore {
 
   /** N dernières conversations analysées de la plage, filtrables. Join conversations (wa_id) + contacts
    *  (profile_name), lien inbox `/inbox?c=<id>`. Filtres validés côté route (enum), passés en $ nullable. */
+  /**
+   * 🔴 LES ORIGINES DES SORTANTS VOYAGENT AVEC CHAQUE LIGNE, ET C'EST DE LÀ QUE SE DÉRIVENT LES BADGES
+   * « qui a répondu » (2026-09-17).
+   *
+   * SURTOUT PAS depuis `handled_by` : `deduceHandledBy` (`src/analysis/engine.ts`) ne rend que `humain` ou
+   * `automatise`, et sa valeur `mba` est déclarée dans l'énumération mais n'est JAMAIS produite. Mesuré en
+   * production le 2026-09-17 : sur 14 analyses, 8 `automatise` et 6 `humain`, zéro `mba`. Une conversation
+   * menée par l'agent de Meta y est donc indiscernable d'un scénario, ce qui est exactement la distinction
+   * demandée. `conversation_messages.origin` (migration 0099), lui, porte les cinq valeurs pour de vrai.
+   *
+   * ⚠️ SOUS-REQUÊTE CORRÉLÉE plutôt qu'une jointure : une jointure multiplierait la ligne d'analyse par son
+   * nombre de messages, et il faudrait la dégrouper ensuite. Elle sert l'index partiel
+   * `conversation_messages_origin_idx`, dont le prédicat est exactement `(conversation_id, created_at)
+   * where direction = 'out'`.
+   */
   async listAnalyzed(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]> {
     const { from, to } = range;
     // Plafond relevé à 1000 (il était de 200) : c'est cette liste que l'écran exporte en CSV, et un export
@@ -307,13 +355,20 @@ export class PgConversationStatsStore {
       conversation_id: string; wa_id: string; profile_name: string | null;
       sentiment: string; intent: string; topic: string; resolved: boolean; action_suggestion: string;
       confidence: number; justification: string; handled_by: string; exchanges_count: number; created_at: Date;
-      summary: string | null; entities: Record<string, unknown> | null;
+      summary: string | null; entities: Record<string, unknown> | null; origines: string[] | null;
     }>(
       `with ${BOUNDS_CTE}
        select ca.conversation_id, c.wa_id, ct.profile_name,
               ca.sentiment, ca.intent, ca.topic, ca.resolved, ca.action_suggestion,
               ca.confidence, ca.justification, ca.handled_by, ca.exchanges_count, ca.created_at,
-              ca.summary, ca.entities
+              ca.summary, ca.entities,
+              -- QUI A REPONDU : les origines des messages sortants, dedoublonnees (migration 0099).
+              -- La justification complete vit au-dessus de cette requete : elle contient des accents graves,
+              -- qui refermeraient la chaine gabarit si on les ecrivait ici.
+              coalesce((select array_agg(distinct m.origin)
+                          from conversation_messages m
+                         where m.conversation_id = ca.conversation_id and m.direction = 'out'
+                           and m.origin is not null), '{}') as origines
        from conversation_analysis ca
          join conversations c on c.id = ca.conversation_id
          left join contacts ct on ct.id = c.contact_id, bounds b
@@ -345,7 +400,48 @@ export class PgConversationStatsStore {
       analyzedAt: r.created_at.toISOString(),
       inboxHref: `/inbox?c=${r.conversation_id}`,
       summary: r.summary,
+      origines: Array.isArray(r.origines) ? r.origines : [],
       entities: r.entities ?? {},
+    }));
+  }
+
+  /**
+   * LES JOURNEES DE LA PERIODE, avec leur volume et leurs deux moyennes.
+   *
+   * 🔴 AGREGE EN BASE, PAS EN MEMOIRE. Descendre une ligne par conversation pour les grouper cote console
+   * ferait transiter tout ce que cet ecran existe justement pour ne plus transiter. La reponse est bornee
+   * par le nombre de JOURS de la periode (366 au pire), quel que soit le trafic.
+   *
+   * ⚠️ LES JOURNEES SANS AUCUNE CONVERSATION N APPARAISSENT PAS, et ce n est pas un oubli : un `group by`
+   * ne rend que ce qui existe. C est exactement ce que l ecran veut (une ligne a zero n apprend rien et
+   * noie les autres), et c est dit ici pour que personne ne « repare » en densifiant la serie.
+   *
+   * ⚠️ LES MOYENNES SE CALCULENT SUR LES SEULES ANALYSES QUI PORTENT LA NOTE. `avg()` ignore deja les
+   * `null` en SQL ; le compte `mesurees` est remonte a cote pour que l ecran puisse dire sur combien
+   * d analyses la moyenne porte, au lieu de la laisser passer pour la journee entiere.
+   */
+  async parJour(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ jour: string; n: number; sat: string | null; urg: string | null; mes: number }>(
+      `with ${BOUNDS_CTE}
+       select to_char(date_trunc('day', ca.created_at at time zone $4), 'YYYY-MM-DD') as jour,
+              count(*)::int as n,
+              avg(ca.satisfaction)::float as sat,
+              avg(ca.urgence)::float as urg,
+              count(*) filter (where ca.satisfaction is not null and ca.urgence is not null)::int as mes
+         from conversation_analysis ca, bounds b
+        where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
+          and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)
+        group by 1
+        order by 1 desc`,
+      [tenantId, from, to, TZ],
+    );
+    return res.rows.map((r) => ({
+      jour: r.jour,
+      conversations: Number(r.n),
+      satisfaction: r.sat !== null ? Number(r.sat) : null,
+      urgence: r.urg !== null ? Number(r.urg) : null,
+      mesurees: Number(r.mes),
     }));
   }
 }

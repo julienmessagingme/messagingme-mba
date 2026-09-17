@@ -86,7 +86,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       sansMesure: 11,
     }),
     listAnalyzedConversations: async (_t, _r, f) => [
-      { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: 'Le client demande un devis pour 50 unites.', entities: { quantite: 50 } },
+      { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: 'Le client demande un devis pour 50 unites.', entities: { quantite: 50 }, origines: ['humain'] },
     ],
     ...over.stats,
   };
@@ -139,7 +139,7 @@ describe('stats route', () => {
 
   it('GET /stats/conversations/list -> quali + filtres enum valides seulement, inboxHref', async () => {
     const captured: unknown[] = [];
-    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: null, entities: {} }]; } } });
+    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: null, entities: {}, origines: ['humain', 'mba'] }]; } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=negatif&intent=sav&action=escalader&limit=25&junk=xxx', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ conversations: Array<{ inboxHref: string }> }>().conversations[0]?.inboxHref).toBe('/inbox?c=cv1');
