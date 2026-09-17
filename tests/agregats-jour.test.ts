@@ -163,3 +163,32 @@ describe('le balayage descend aussi bas que la donnee l exige', () => {
     expect(sweep).toContain('plusAncien !== null');
   });
 });
+
+/**
+ * L AGREGAT NE DESCEND JAMAIS.
+ *
+ * 🔴 CE QUE CE TEST GARDE, ET QUI A ETE TROUVE EN REVUE FINALE (2026-09-17). Le balayage recalcule chaque
+ * journee depuis les analyses ENCORE PRESENTES. La purge, elle, est BORNEE (500 par passage) et son seuil
+ * est un INSTANT, pas une frontiere de journee civile : TOUTE journee traverse donc un etat partiel. Sans
+ * garde sur le `do update`, le balayage ecrasait le bon compte par le residu de la purge, puis le figeait
+ * quand la journee disparaissait completement (plus aucune ligne produite, donc plus aucune mise a jour).
+ * La table enregistrait exactement le contraire de ce qu'elle promet, et sans une erreur.
+ *
+ * ⚠️ LA PREUVE DE COMPORTEMENT EST EN INTEGRATION (`tests/integration/analyse-jour.integration.test.ts`,
+ * qui efface une conversation et rejoue le balayage, dans les deux sens). Ce test-ci garde la clause
+ * elle-meme : elle tient en une ligne, elle se supprime sans rien casser de visible, et le defaut qu'elle
+ * ferme ne se voit qu'apres 90 jours de production.
+ */
+describe('l agregat garde la memoire de ce que la purge efface', () => {
+  it('🔴 le `do update` est GARDE contre une valeur qui descend', () => {
+    expect(SOURCE).toContain('where excluded.conversations >= analyse_jour.conversations');
+  });
+
+  it('🔴 la garde porte sur l ECRITURE, pas sur la lecture', () => {
+    // Elle doit etre dans `ecrireAgregats`, apres le `on conflict`. Posee ailleurs, elle filtrerait des
+    // lignes a l affichage au lieu de proteger la memoire.
+    const ecriture = SOURCE.slice(SOURCE.indexOf('async ecrireAgregats'));
+    expect(ecriture.slice(0, 3000)).toContain('on conflict (tenant_id, jour) do update set');
+    expect(ecriture.slice(0, 3000)).toContain('where excluded.conversations >= analyse_jour.conversations');
+  });
+});

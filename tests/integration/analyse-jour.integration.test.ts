@@ -139,6 +139,52 @@ describe.skipIf(!url)('agregats journaliers (Postgres)', () => {
     await pool.query('update tenant_settings set conversation_retention_days = null where tenant_id = $1', [tenantId]);
   });
 
+  it('🔴 une conversation EFFACEE ne fait pas retomber l agregat : il garde la memoire de la journee', async () => {
+    /**
+     * 🔴 C EST LA RAISON D ETRE DE LA TABLE, ET ELLE ETAIT DEFAITE. Le balayage recalcule chaque journee
+     * depuis les analyses ENCORE PRESENTES ; la purge, elle, est bornee (500 par passage) et son seuil est
+     * un INSTANT, pas une frontiere de journee civile. Toute journee traverse donc un etat partiel, pendant
+     * lequel le balayage ecrasait le bon compte par le residu, puis le figeait quand la journee disparaissait
+     * completement (plus aucune ligne produite, donc plus aucun `do update`). La table enregistrait le
+     * contraire de ce qu'elle promet.
+     *
+     * Ce test reproduit exactement cette sequence : on agrege, on efface, on rejoue.
+     */
+    const avant = (await store.parJourAgrege(tenantId, plage))[0]!;
+    expect(avant.conversations, 'les quatre analyses du jour sont agregees').toBe(4);
+
+    // La purge efface des CONVERSATIONS ; l analyse part en cascade (migrations 0009 et 0027).
+    const victime = (await pool.query<{ id: string }>(
+      `select conversation_id as id from conversation_analysis where tenant_id = $1 limit 1`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query('delete from conversations where id = $1', [victime]);
+    expect((await store.parJour(tenantId, plage))[0]!.conversations,
+      'la lecture DIRECTE, elle, ne voit plus que trois analyses').toBe(3);
+
+    await store.ecrireAgregats(plage, tenantId);
+    const apres = (await store.parJourAgrege(tenantId, plage))[0]!;
+    expect(apres.conversations, 'l agregat garde QUATRE : il se souvient de ce qui a ete efface').toBe(4);
+    expect(apres.mesurees).toBe(avant.mesurees);
+    expect(apres.satisfaction).toBeCloseTo(avant.satisfaction!, 6);
+  });
+
+  it('🔴 et il remonte quand même quand la journée GROSSIT après coup', async () => {
+    /**
+     * L autre sens, et il compte autant : une garde « ne jamais mettre a jour » protegerait de la purge en
+     * gelant aussi la journee EN COURS, qui recoit des analyses toute la journee. La garde ne doit borner
+     * que le sens DESCENDANT.
+     *
+     * ⚠️ DEUX analyses, et pas une, parce que le test precedent en a efface une : une seule ramenerait le
+     * compte vivant a QUATRE, c est-a-dire exactement le maximum deja memorise, et la mise a jour serait
+     * indiscernable d un refus. Il faut DEPASSER le maximum pour prouver que la garde laisse monter.
+     */
+    await analyse('00905', 6, 6, 'sav');
+    await analyse('00906', 4, 4, 'sav');
+    await store.ecrireAgregats(plage, tenantId);
+    expect((await store.parJourAgrege(tenantId, plage))[0]!.conversations,
+      'trois survivantes plus deux nouvelles = cinq, au-dela des quatre memorisees').toBe(5);
+  });
+
   it('🔴 le plus ancien jour d analyse est celui qui borne le balayage', async () => {
     // `plusAncienJourAnalyse` decide jusqu'ou le balayage remonte : si elle rendait autre chose que le vrai
     // minimum, des journees encore presentes resteraient sans agregat et disparaitraient a la purge.

@@ -627,7 +627,19 @@ export class PgConversationStatsStore {
          somme_satisfaction = excluded.somme_satisfaction,
          somme_urgence = excluded.somme_urgence,
          intentions = excluded.intentions,
-         calcule_le = excluded.calcule_le`,
+         calcule_le = excluded.calcule_le
+       -- 🔴 L AGREGAT NE DESCEND JAMAIS, ET SANS CETTE LIGNE LA TABLE ENREGISTRAIT LE RESIDU DE LA PURGE
+       -- AU LIEU DE LA MEMOIRE DE LA JOURNEE. Le balayage recalcule chaque journee depuis les analyses
+       -- ENCORE PRESENTES, or la purge est BORNEE (500 par passage) et son seuil est un INSTANT, pas une
+       -- frontiere de journee civile : toute journee traverse donc un etat partiel. Sans garde :
+       -- passage N, la journee vaut 800, la purge en efface 500 ; passage N+1, le balayage revoit 300 et
+       -- REMPLACE 800 par 300 ; passage N+2, la journee ne produit plus aucune ligne, la mise a jour ne
+       -- joue pas, et 300 reste pour toujours. La table existe precisement pour que ca n arrive pas.
+       -- ⚠️ Le sens de l erreur residuelle est assume : une journee peut rester legerement SURCOMPTEE si
+       -- un contact est supprime a la main. Surcompter un jour d historique est sans consequence ; le
+       -- perdre est irreversible. Et analyse_jour ne porte aucune donnee personnelle, donc garder le
+       -- compte d une conversation effacee n est pas une conservation deguisee, c est un nombre.
+       where excluded.conversations >= analyse_jour.conversations`,
       // ⚠️ LES QUATRE MEMES PARAMETRES QUE LA LECTURE, dans le meme ordre, et TOUS references. Une premiere
       // version passait un intervalle et laissait $3 sans reference : Postgres refuse un parametre dont il
       // ne peut pas deduire le type, et aucun typecheck ne le voit.

@@ -714,6 +714,15 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
    */
   const [journee, setJournee] = useState<LignePeriode | null>(null);
 
+  /**
+   * 🔴 LA JOURNEE CHOISIE SE RELACHE QUAND LA PERIODE CHANGE, et sans ca l'ecran restait epingle DEHORS.
+   * On cliquait le 10 septembre, on basculait la barre de periode sur « 7 derniers jours », et la liste du
+   * dessous continuait de montrer le 10 septembre, hors de la periode affichee juste au-dessus. L'ecran ne
+   * mentait pas (il nomme la journee retenue), mais il montrait deux periodes differentes en meme temps.
+   * Releve en revue finale le 2026-09-17. Le bouton de bascule jour/semaine, lui, relachait deja son choix.
+   */
+  useEffect(() => { setJournee(null); }, [range.from, range.to]);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);

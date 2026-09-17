@@ -54,8 +54,10 @@ Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans
 ⚠️ **« Qualitatif » s'appelle « Analyse des conversations » depuis le 2026-09-17**, et le sous-onglet
 **Erreurs** a quitté le Quantitatif le même jour pour rejoindre le journal dans **Console > Sécurité >
 Journal des erreurs**, où sa carte d'agrégat par code Meta vit désormais à côté du journal ligne à ligne.
-**Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte le nuage
-« urgence et satisfaction » et le tableau du coût par engagement.
+**Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte une carte
+« Coûts » à trois lignes dépliables (coût moyen par engagement, coût des messages envoyés, coût de l'IA),
+le nuage « urgence et satisfaction » et les conversations par intention. Le tableau du coût par engagement
+existe toujours, replié sous la première ligne.
 
 **Inbox** : **aucune barre de navigation**, ni sur ordinateur ni dans le tiroir mobile. L'écran portera son
 propre menu de dossiers, façon boîte mail.
@@ -145,11 +147,19 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   Une action en masse (et l'import CSV) **ne déclenche aucun scénario** : poser un tag sur 5 000 contacts d'un coup
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
   **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
-- ✅ **Les conversations sont conservées un an** (2026-08-31). Passé douze mois sans le moindre message, une
-  conversation est effacée automatiquement, avec ses messages et son analyse qualitative. La **fiche du
-  contact reste** : c'est l'historique de discussion qui part, pas la personne. Avant, tout était gardé
-  indéfiniment. Cette durée est un réglage de la plateforme : elle peut être raccourcie, jamais rallongée
+- ✅ **Les conversations sont conservées 90 jours** (durée abaissée depuis un an le 2026-09-17). Passé ce
+  délai sans le moindre message, une conversation est effacée automatiquement, avec ses messages et son
+  analyse qualitative. La **fiche du contact reste** : c'est l'historique de discussion qui part, pas la
+  personne. 🔴 **La durée se règle PAR ESPACE**, et c'est le client qui tranche, pas nous : le RGPD ne fixe
+  aucun chiffre (« pas plus longtemps que nécessaire »), donc imposer le nôtre à tout le monde ferait de
+  nous le décideur d'une chose qui ne nous appartient pas. Les 90 jours sont le défaut de qui n'a rien
+  réglé, et **0 veut dire « ne jamais purger cet espace »**. Elle peut être raccourcie, jamais rallongée
   rétroactivement, puisque ce qui est effacé ne revient pas.
+  ⚠️ **Ce qui disparaît, c'est le CONTENU, pas la mémoire de l'activité** : les compteurs de la Synthèse
+  (conversations par jour, satisfaction et urgence moyennes, répartition par intention) sont conservés à
+  part, sous forme de totaux journaliers qui ne portent ni numéro, ni texte, ni résumé, ni identifiant de
+  conversation. Une période « 12 mois » continue donc d'afficher son activité bien après que les échanges
+  eux-mêmes ont été effacés.
 - ✅ **UN seul geste pour ajouter des contacts** (2026-08-20) : un bouton **« + Rajouter des contacts »** ouvre
   un menu à deux choix, **Ajouter un contact** ou **Importer un CSV**. Avant, les deux boutons se disputaient la
   barre à poids égal, alors qu'on cherche d'abord « en ajouter », la façon venant ensuite.
@@ -1263,8 +1273,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ⚠️ **Les conversations analysées AVANT le 2026-09-01 n'ont pas de résumé** et n'en auront jamais (le
   reconstruire voudrait dire rappeler le modèle sur tout l'historique). La fiche le dit franchement au lieu
   d'afficher la justification à la place, qui explique le classement et pas ce qui s'est dit.
-  ⚠️ L'écran **annonce la rétention** (365 jours) : au-delà, une conversation n'est plus consultable ni
-  exportable, et une liste plus courte que la période demandée n'est donc pas un bug.
+  ⚠️ L'écran **annonce la rétention de VOTRE espace** (90 jours par défaut) : au-delà, une conversation
+  n'est plus consultable ni exportable, et une liste plus courte que la période demandée n'est donc pas un
+  bug. Un espace dont la purge est désactivée lit « conservées sans limite de durée » à la place.
 - ✅ **Funnel PAR campagne** : sélecteur de campagne, envoyés → délivrés → **lus** → **répondus** + taux
   (+ échecs). « Répondu » = réponse reçue après l'envoi, attribuée au dernier envoi (pas de double-comptage).
   Sous-estimation des « lus » assumée si le destinataire a coupé les accusés. Campagne-only en V1. **Ce bloc

@@ -1,5 +1,63 @@
 # todo.md : backlog
 
+## 🔴 DEUX MOITIES MANQUANTES DU LOT « PERFORMANCE LAB » (revue finale du 2026-09-17)
+
+Ces deux points sont des ETAPES DU PLAN jamais executees, pas des defauts decouverts : les cases
+`- [ ]` de `docs/superpowers/plans/2026-09-17-performance-lab-couts.md` sont restees ouvertes, et le
+chantier a ete annonce complet alors qu il ne l etait pas. Les deux suivent le meme motif, celui que le
+depot paie le plus souvent : **une capacite livree sans le chemin qui la produit.**
+
+### 1. La grille de prix par espace n est reglable par PERSONNE (tache 1, step 8)
+
+La migration 0154 pose six colonnes sur `tenant_settings` (marge sur le tarif template, prix du message
+de service et sa franchise, sa date d effet, les deux prix RCS). `grilleDepuisLigne` a UN seul appelant,
+en LECTURE. Aucune route, aucun ecran, aucun test ne les ECRIT : un `grep` sur tout le depot ne rend que
+la migration, le module pur et ses tests. La justification ecrite dans la migration (« le tarif smsmode
+se negocie, un grand compte ne se facture pas comme un petit ») n est donc atteignable que par un
+`UPDATE` SQL a la main sur la production.
+
+⚠️ **Rien ne casse en attendant** : les defauts reproduisent exactement le comportement d avant, donc
+deployer 0154 est sans effet visible. Ce qui manque, c est `src/settings/store.pg.ts`, `src/http/settings.ts`
+et `web/app/parametres/page.tsx`, nommes par le plan. 🔴 La grille voyage dans un objet IMBRIQUE `prix`,
+jamais en six champs a plat : c est la regle du `Pick` recopie du `CLAUDE.md`, six champs se desynchronisent.
+
+🟡 **ET UN SECOND DEFAUT DORT DERRIERE CELUI-LA** : la carte des couts porte DEUX prix de template. La
+ligne « messages envoyes » applique `prixTemplate` (donc la marge de l espace), la ligne « cout par
+engagement » et la colonne « Cout/engage » viennent d `estimateCoutParCampagne`, qui utilise le tarif Meta
+BRUT. Avec la marge par defaut a 100 les deux coincident, donc c est invisible aujourd hui. Le jour ou
+quelqu un pose une marge, deux chiffres de la MEME carte divergent en silence. Les deux points se
+corrigent ensemble ou pas du tout.
+
+### 2. Les messages de service ne sont jamais imputes aux campagnes (tache 4, step 6)
+
+`estimateCoutParCampagne` (`src/stats/cost.ts`) n additionne que `count * tarif` par categorie de
+TEMPLATE. Le commit qui porte la tache 4 dit lui-meme « partie pure », et la suite n a jamais ete ecrite.
+Consequence directe : le chiffre de la premiere ligne de la carte des couts EXCLUT les messages de
+service, alors que Julien a demande explicitement que le cout d un engagement les comprenne.
+
+🔴 **L ESSAI REEL DU PLAN NE PEUT PAS PASSER EN L ETAT** : son critere « son cout inclut les messages de
+service qui lui ont ete envoyes » echouera, et ce ne sera pas un defaut de l essai. Tant que ce point
+n est pas fait, l ecran doit DIRE que la ligne 1 ne couvre que les templates, ou le faire pour de vrai.
+
+⚠️ La fenetre d imputation est DEJA decidee et ne se redecide pas : la MEME que `engagementsParCampagne`
+(7 jours apres l envoi recu par le contact). Une seconde fenetre ferait deux verites sur le meme fait.
+
+## 🟡 Trois ecarts mineurs releves par la meme revue (2026-09-17)
+
+- **La traduction tombe sur le credit du client mais n est chiffree NULLE PART.** `src/traduction/`
+  `traduire.pg.ts` n ecrit ni debit ni compteur, et `consommationIa` ne lit que `agent_sessions`. Le
+  libelle de la carte a ete corrige (il promettait la traduction), mais la mesure reste a faire : il
+  faudrait un debit par traduction, sur le modele de ce que `agent_sessions` porte deja.
+- **Les badges « qui a repondu » lisent `conversation_messages.origin` BRUT**, alors que
+  `ORIGINE_EFFECTIVE_SQL` existe pour que l agregat et le detail classent un message de la meme facon. Un
+  sortant anterieur au 2026-09-01 avec `sender_user_id` renseigne compte « humain » dans la Synthese et ne
+  produit AUCUN badge sur l ecran d analyse. Le choix est documente et se resorbe tout seul a 90 jours de
+  retention, mais d ici la les deux ecrans peuvent se contredire sur la meme conversation.
+- **La fenetre de bascule RCS est ouverte vers l AVANT seulement** : les reactions sont lues jusqu a
+  `end_ts + 7 j`, jamais avant `start_ts`. Un echange dont la reaction tombe AVANT le debut de la periode
+  voit ses envois factures en « simple » alors que la regle dit que tout l echange bascule. Le sens de
+  l erreur est favorable au client, d ou le jaune.
+
 ## 🟡 La rafale de `webhook-status` à « dès 3 » est en production et NE SERT PRESQUE PAS (2026-09-16)
 
 `48ddf92` (15/09, déployé vers 18 h) a posé `SEUILS_RAFALE['webhook-status'] = 2` pour que les PAQUETS

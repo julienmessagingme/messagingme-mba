@@ -269,11 +269,19 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
               {/* 🔴 CE QUE CETTE LIGNE NE COMPTE PAS, DIT PLUTOT QUE LAISSE DEVINER. Le Meta Business Agent
                   tourne CHEZ Meta : nous ne payons aucun token pour lui, et Meta le facture au message de
                   service. Son coût est donc dans la ligne du dessus. Sans cette phrase, un lecteur qui voit
-                  son agent Meta répondre toute la journée conclura que la mesure est fausse. */}
+                  son agent Meta répondre toute la journée conclura que la mesure est fausse.
+
+                  🔴 ET « LA TRADUCTION » A ÉTÉ RETIRÉE DE CETTE PHRASE, parce qu'elle était FAUSSE. La
+                  traduction tombe bien sur le crédit du client, mais elle n'enregistre AUCUN coût :
+                  `consommationIa` ne lit que `agent_sessions`, et `src/traduction/traduire.pg.ts` n'écrit
+                  ni débit ni compteur. Un client dont l'Inbox traduit toute la journée lisait donc « 0 € »
+                  sous un libellé qui lui promettait que la traduction était dedans. Relevé en revue finale
+                  le 2026-09-17. Le dire au lieu de le promettre coûte une phrase ; compter la traduction
+                  pour de vrai est un lot à part, il est dans `todo.md`. */}
               <p className="text-xs text-ink-400" data-testid="cout-ia-perimetre">
                 {t(
-                  'Votre crédit prépayé : les tours d’agent IA et la traduction. Le Meta Business Agent n’y est pas, il tourne chez Meta, qui le facture au message de service (ligne ci-dessus).',
-                  'Your prepaid credit: AI agent turns and translation. The Meta Business Agent is not here, it runs at Meta, which bills it per service message (line above).',
+                  'Votre crédit prépayé : les tours d’agent IA. La traduction des conversations tombe sur le même crédit mais n’est pas encore chiffrée ici. Le Meta Business Agent n’y est pas non plus, il tourne chez Meta, qui le facture au message de service (ligne ci-dessus).',
+                  'Your prepaid credit: AI agent turns. Conversation translation draws on the same credit but is not costed here yet. The Meta Business Agent is not here either, it runs at Meta, which bills it per service message (line above).',
                 )}
               </p>
               {ia.tours.length === 0 ? (

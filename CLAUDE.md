@@ -80,7 +80,19 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
 **Dernière appliquée : 0152**, le 2026-09-16 (les quatre colonnes MCP d'`agent_tools` plus la garde de
-`kind`). **Prochaine libre = 0153.** Relue en base juste après `migrate`, pas en écrivant cette ligne :
+`kind`). **Prochaine libre = 0156.**
+
+🔴 **ATTENTION, « DERNIÈRE APPLIQUÉE » ET « PROCHAINE LIBRE » NE SE DÉDUISENT PLUS L'UNE DE L'AUTRE, et
+c'est le seul moment où ce fichier peut vous tromper sans avoir dérivé.** Deux migrations sont ÉCRITES dans
+`db/migrations/` et PAS ENCORE APPLIQUÉES : **`0154_grille_prix_espace.sql`** (la grille de prix par espace)
+et **`0155_analyse_jour.sql`** (les agrégats journaliers et la rétention par espace). Les deux sont
+BLOQUANTES, donc elles passent avant le déploiement du code qui les lit. **`0153` reste RÉSERVÉ** au CHECK
+strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier n'existe
+pas encore, et le runner ne demande aucune continuité. Prendre 0153 « parce qu'il est libre » écraserait
+cette réservation ; prendre 0154 ou 0155 écraserait un fichier existant. Relevé en revue finale le
+2026-09-17, sur une ligne qui se déclare seule source du compteur et prévient qu'elle a déjà dérivé neuf fois.
+
+Relue en base juste après `migrate`, pas en écrivant cette ligne :
 `schema_migrations` rend bien `0152_outils_mcp.sql` en tête, les cinq colonnes sont nullables SANS défaut,
 `pg_indexes` n'en porte AUCUN, la clé étrangère composite existe en `confmatchtype = 's'`, et **zéro ligne
 sur quatre n'en porte une valeur**, donc aucun comportement n'a bougé.
