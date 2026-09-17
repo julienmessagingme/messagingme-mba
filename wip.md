@@ -68,17 +68,20 @@ continue de répondre avec l'ancien texte. La fiche « importer-mes-contacts » 
 de conversation sur la fiche du contact. ⚠️ Elle a été rattrapée par un test (`aide-proposer`), pas par
 moi : modifier une section de `features.md` PÉRIME l'empreinte des fiches qui la citent, et la CI le dit.
 
+✅ **LA TÂCHE 8 EST COMPLÈTE depuis le 2026-09-17 au soir**, step 6 compris : le résumé de la dernière
+conversation analysée est un champ de base de la fiche contact, DÉRIVÉ et jamais recopié (la purge le vide
+d'elle-même, une copie dans `contacts.fields` y survivrait). L'arbitrage de coût a été tranché sur l'option
+recommandée : la fiche, pas la liste paginée, et surtout pas une variable de message. Détail et mesure dans
+le plan. ⚠️ Cette ligne annonçait encore « SEUL point non fait » après la livraison, relevé en revue à
+froid : c'est très exactement la dérive contre laquelle l'en-tête de ce fichier met en garde.
+
 **CE QUI RESTE DÛ SUR CE CHANTIER**, dans l'ordre où ça se pose :
 
 1. 🔴 **L'ESSAI RÉEL, ET IL SEUL CLÔT LA FEATURE.** Ouvrir Performance Lab sur les vraies données :
    déplier les trois lignes de la carte « Coûts », cliquer une campagne mesurée et vérifier que le
    funnel et les barres par bloc disent quelque chose de vrai, puis cliquer une journée de l'écran
    d'analyse. Aucun de ces écrans n'a jamais tourné ailleurs que dans ses propres tests.
-2. **Tâche 8, step 6 : le résumé de conversation en champ système du mini-CRM.** SEUL point non fait de
-   la tâche. Il demande un arbitrage de coût (un contact se lit par DEUX chemins, et la liste peut
-   rendre des centaines de lignes) : les trois options sont écrites dans le plan, la recommandation
-   étant **fiche + export seulement**, pas la liste paginée.
-3. **Lot 3 : les thèmes déclarés par le client et la réanalyse de toute la base**, facturée sur SA clé
+2. **Lot 3 : les thèmes déclarés par le client et la réanalyse de toute la base**, facturée sur SA clé
    Gateway. Cadré dans la spec, aucun plan écrit, rien commencé.
 
 ## 🔴 CE QUI RESTE DÛ SUR LES CONNECTEURS MCP (déployés le 2026-09-17)
