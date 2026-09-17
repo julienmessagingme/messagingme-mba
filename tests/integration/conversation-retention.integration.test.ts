@@ -97,6 +97,10 @@ describe.skipIf(!url)('rétention des conversations (Postgres)', () => {
     );
     await store.purgeConversationsOlderThan(365);
     expect((await pool.query('select 1 from conversations where id = $1', [id])).rowCount).toBe(0);
+    // ⚠️ ON REND L'ESPACE A SON DEFAUT : ces cas partagent un espace, et laisser 30 jours poses ferait
+    // purger, chez le voisin, tout ce qui a plus d'un mois. Un test qui compte sur son successeur pour
+    // nettoyer derriere lui n'est plus un test isole, c'est une sequence.
+    await pool.query('update tenant_settings set conversation_retention_days = null where tenant_id = $1', [tenantId]);
   });
 
   it('🔴 un espace a ZERO n est JAMAIS purge, meme quand l instance purge', async () => {
@@ -114,8 +118,19 @@ describe.skipIf(!url)('rétention des conversations (Postgres)', () => {
     );
     await store.purgeConversationsOlderThan(365);
     expect((await pool.query('select 1 from conversations where id = $1', [id])).rowCount).toBe(1);
-    // On remet l'espace au defaut pour ne pas fausser les cas suivants.
+    /**
+     * 🔴 ON REMET L'ESPACE AU DEFAUT **ET** ON EFFACE LA CONVERSATION, et oublier le second a casse le test
+     * SUIVANT (CI du 2026-09-17). Ces cas partagent un espace : en laissant derriere lui une conversation
+     * de 500 jours que ce test protege volontairement de la purge, il en offrait une de plus a celui qui
+     * verifie le bornage par passage. Ce dernier supprimait donc deux conversations dont UNE seule etait
+     * a lui, et trouvait deux survivantes la ou il en attendait une.
+     *
+     * ⚠️ C'est le corollaire (b) du CLAUDE.md pris a l'envers : un test ne doit pas changer le cas que son
+     * VOISIN exerce. Et seul le job d'integration pouvait le voir, puisque `npm test` en local n'a pas de
+     * base : c'est exactement pour ca qu'on regarde le run apres un push.
+     */
     await pool.query('update tenant_settings set conversation_retention_days = null where tenant_id = $1', [tenantId]);
+    await pool.query('delete from conversations where id = $1', [id]);
   });
   it('l’effacement est BORNÉ par passage (le balayage repasse)', async () => {
     const ids: string[] = [];
