@@ -84,12 +84,27 @@ test.describe('Performance Lab : la page de synthèse', () => {
     await expect(page.getByTestId('nuage-resume')).toContainText('6,8');
   });
 
-  test('🔴 les analyses SANS mesure sont comptées à part, et le disent', async ({ page }) => {
-    // Elles ne sont pas placées en (0,0) : elles n'ont pas de note du tout. Sans cette phrase, un nuage
-    // clairsemé se lirait comme une période calme.
+  /**
+   * 🔴 CE TEST EXIGEAIT L'INVERSE JUSQU'AU 2026-09-17, ET LE RETOURNEMENT EST UNE DECISION DE JULIEN.
+   *
+   * Il vérifiait que le paragraphe « N analyses n'ont pas ces deux notes [...] elles ne valent pas zéro »
+   * s'affiche. Julien l'a fait retirer (« tu peux enlever le blabla en dessous du tableau », puis « rien du
+   * tout, on enlève » quand la question lui a été reposée avec la mesure). Le cas n'a donc PAS de
+   * remplaçant : l'information n'est plus montrée, et c'est assumé.
+   *
+   * ⚠️ CE QUE CA COUTE, MESURE EN PRODUCTION LE JOUR MEME : 2 analyses sur 14 portent les deux notes. Le
+   * nuage montre deux points sur quatorze conversations, et plus rien ne permet de s'en douter. Le risque
+   * est temporaire (chaque nouvelle analyse porte les notes depuis la 0121) mais il est reel aujourd'hui.
+   *
+   * ⚠️ LE TEST GARDE MAINTENANT L'ABSENCE, plutot que de disparaitre : sans lui, quelqu'un remettrait le
+   * paragraphe en croyant reparer un oubli, et la decision serait defaite sans que personne ne s'en
+   * apercoive. `sansMesure` reste calcule et transporte : c'est l'affichage qu'on retire, pas la mesure.
+   */
+  test('🔴 le paragraphe des analyses SANS mesure n’est plus affiché (décision du 2026-09-17)', async ({ page }) => {
     await mock(page);
     await page.goto('/performance');
-    await expect(page.getByTestId('nuage-sans-mesure')).toContainText('12');
+    await expect(page.getByTestId('nuage-resume')).toBeVisible();
+    await expect(page.getByTestId('nuage-sans-mesure')).toHaveCount(0);
   });
 
   test('🔴 aucune conversation mesurée -> le graphe le DIT au lieu de rester vide', async ({ page }) => {
@@ -99,8 +114,14 @@ test.describe('Performance Lab : la page de synthèse', () => {
     await page.goto('/performance');
     await expect(page.getByTestId('nuage-vide')).toBeVisible();
     await expect(page.getByTestId('nuage-moyenne')).toHaveCount(0);
-    // Et il dit quand même ce qu'il ne montre pas : 14 analyses existent, elles n'ont simplement pas de note.
-    await expect(page.getByTestId('nuage-sans-mesure')).toContainText('14');
+    /**
+     * ⚠️ CETTE LIGNE EXIGEAIT L'INVERSE JUSQU'AU 2026-09-17. Elle vérifiait que l'écran DIT quand même ce
+     * qu'il ne montre pas (« 14 analyses existent, elles n'ont simplement pas de note »). Julien a fait
+     * retirer ce paragraphe ; le cas n'a donc pas de remplaçant, et c'est assumé, avec son coût mesuré
+     * (2 analyses sur 14 portent les notes en production). Ce qui reste garde est `nuage-vide`, qui
+     * distingue toujours « aucune mesure » de « aucune conversation ».
+     */
+    await expect(page.getByTestId('nuage-sans-mesure')).toHaveCount(0);
   });
 
   test('un backend qui refuse -> un message d’erreur, pas un nuage vide', async ({ page }) => {

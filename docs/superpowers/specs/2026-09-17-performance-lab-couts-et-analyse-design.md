@@ -23,7 +23,7 @@ datées parce qu'elles vieilliront : ce qui compte n'est pas le chiffre, c'est c
 | Conversations / messages / analyses | 14 / 373 / 14 | L'écran quali n'est pas près de faire tomber quoi que ce soit. La ligne-par-jour est un meilleur écran, pas un correctif de panne. |
 | Analyses portant les DEUX notes | **2 sur 14** | La matrice urgence/satisfaction repose sur deux points. Cf. « arbitrages contre recommandation ». |
 | Topics libres distincts | **13 pour 14 analyses** | L'inflation redoutée est déjà là, et pas où Julien la cherchait. |
-| dont variantes de « consultation tarifs » | **4** | « consultation des tarifs », « consultation tarifs », « consultation tarifs et offres », « consultation tarifs cinéma ». Plus « Prise de rendez-vous agence Bordeaux » en double, à une majuscule près. |
+| dont variantes de « consultation tarifs » | **4** | « consultation des tarifs », « consultation tarifs », « consultation tarifs et offres », « consultation tarifs cinéma » : quatre libellés de SENS voisin, que rien ne rapproche. ⚠️ Les doublons de simple CASSE, eux, sont déjà fondus à l'affichage (`lower(btrim(...))`), donc les deux « Prise de rendez-vous agence Bordeaux » de la base ne font qu'une ligne à l'écran. |
 | `agent_sessions` | **0** | Aucun tour d'agent IA n'a jamais tourné. La carte « coût IA » affichera 0 € au départ, et c'est normal. |
 | Numéros WhatsApp par espace | **1 partout** | La franchise se compte par espace. Voir le piège n°2. |
 | Messages de service (sortants WhatsApp hors template) | 140 | Le compte existe déjà et il est juste. Seul le PRIX manque. |
@@ -230,10 +230,19 @@ topics pour 14 analyses, dont quatre variantes de « consultation tarifs ». Ran
 ces quatre-là seraient dispersés et personne ne verrait qu'ils sont parents. Sous « Information », ils se
 retrouvent côte à côte, et le problème se voit tout seul. C'est l'argument du lot 3, rendu lisible.
 
-⚠️ **CE RANGEMENT N'EST PAS UN REGROUPEMENT.** Aucune normalisation n'est appliquée : « Consultation
-Tarifs » et « consultation tarifs » resteront deux lignes. Une normalisation basique (casse, accents)
-aurait rattrapé les doublons de casse sans rien faire pour « tarifs et offres » contre « tarifs cinéma »,
-donnant l'illusion d'un rangement sans en être un. Le vrai regroupement est le lot 3.
+⚠️ **CE RANGEMENT N'EST PAS UN REGROUPEMENT DE SENS**, et la nuance a été corrigée en cours de route.
+
+🔴 **CE PARAGRAPHE DISAIT « aucune normalisation n'est appliquée », ET C'ÉTAIT FAUX.** Vérifié dans le code
+le 2026-09-17 : la requête des sujets fréquents applique déjà `lower(btrim(topic))` depuis longtemps, donc
+la CASSE et les espaces sont bien regroupés. « Consultation Tarifs » et « consultation tarifs » ne font
+qu'une ligne, et les deux « Prise de rendez-vous agence Bordeaux » de la production se fondent à
+l'affichage même s'ils sont deux en base. Les sujets par intention appliquent **exactement la même**
+normalisation, et surtout pas une autre : deux regroupements différents donneraient deux comptes pour le
+même sujet sur le même écran.
+
+Ce qui reste vrai, et qui est le vrai sujet : **rien ne rapproche deux libellés de SENS voisin.**
+« consultation tarifs et offres » et « consultation tarifs cinéma » restent deux lignes, et c'est
+précisément ce qu'on veut montrer. Le vrai regroupement est le lot 3.
 
 **Cliquer une intention** ouvre `/dashboard/quali` filtré sur **cette intention** et sur **la même
 période**, par paramètres d'adresse.

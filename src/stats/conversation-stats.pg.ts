@@ -33,6 +33,15 @@ export interface ConversationAnalysisSummary {
   exchanges: { avg: number | null; median: number | null };
   actions: { creer_devis: number; rappeler: number; relancer: number; escalader: number; aucune: number };
   topTopics: Array<{ topic: string; count: number }>;
+  /**
+   * Les sujets les plus frequents DE CHAQUE INTENTION, cinq au plus (2026-09-17).
+   *
+   * ⚠️ CE N'EST PAS UNE DÉCOUPE DE `topTopics` : celui-là classe les dix premiers TOUTES intentions
+   * confondues, celui-ci en garde cinq PAR intention, donc il en montre que l'autre n'aurait jamais.
+   * Un sujet fréquent dans une intention rare n'entre pas dans les dix premiers, et c'est justement
+   * celui qu'on veut voir quand on déplie cette intention.
+   */
+  topicsParIntention: Record<string, Array<{ topic: string; count: number }>>;
   confidence: { lt50: number; from50to70: number; from70to90: number; gte90: number };
 }
 
@@ -166,6 +175,48 @@ export class PgConversationStatsStore {
       [tenantId, from, to, TZ],
     );
 
+    /**
+     * LES SUJETS, RANGES SOUS LEUR INTENTION (demande de Julien du 2026-09-17).
+     *
+     * 🔴 CE QUE CE REGROUPEMENT REND VISIBLE, ET QUI EST LE VRAI SUJET. Les six intentions sont une
+     * énumération FERMÉE : le modèle ne peut pas en inventer une septième. Le `topic`, lui, est du texte
+     * LIBRE, et c'est là que vit l'inflation que Julien redoutait. Mesuré en production le 2026-09-17 :
+     * 13 sujets distincts pour 14 analyses, dont QUATRE variantes de « consultation tarifs ». Rangés à plat
+     * dans une liste, ces quatre-là sont dispersés et personne ne voit qu'ils sont parents ; sous
+     * « Information », ils se retrouvent côte à côte et le problème se voit tout seul.
+     *
+     * ⚠️ `lower(btrim(...))` COMME `topTopics` JUSTE AU-DESSUS, et surtout pas une autre normalisation :
+     * deux regroupements différents donneraient deux comptes pour le même sujet sur le même écran. Ce
+     * n'est PAS un rapprochement sémantique pour autant : « tarifs et offres » et « tarifs cinéma »
+     * resteront deux lignes, et c'est exactement ce qu'on veut montrer.
+     *
+     * ⚠️ CINQ PAR INTENTION, borné EN SQL par une fenêtre. Le nombre de sujets distincts n'a aucune borne
+     * naturelle : une année d'échanges en produirait des centaines, dans un accordéon qu'on déplie pour se
+     * faire une idée.
+     */
+    const parIntention = await this.pool.query<{ intent: string; topic: string; n: string }>(
+      `with ${BOUNDS_CTE},
+       brut as (
+         select ca.intent as intent, lower(btrim(ca.topic)) as topic, count(*)::int as n
+           from conversation_analysis ca, bounds b
+          where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
+            and btrim(ca.topic) <> ''
+            and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)
+          group by 1, 2
+       ),
+       classe as (
+         select intent, topic, n,
+                row_number() over (partition by intent order by n desc, topic asc) as rang
+           from brut
+       )
+       select intent, topic, n from classe where rang <= 5 order by intent, rang`,
+      [tenantId, from, to, TZ],
+    );
+    const topicsParIntention: Record<string, Array<{ topic: string; count: number }>> = {};
+    for (const ligne of parIntention.rows) {
+      (topicsParIntention[ligne.intent] ??= []).push({ topic: ligne.topic, count: Number(ligne.n) });
+    }
+
     const r = agg.rows[0]!;
     const total = Number(r.total);
     const resolved = Number(r.resolved);
@@ -186,6 +237,7 @@ export class PgConversationStatsStore {
         escalader: Number(r.a_escalader), aucune: Number(r.a_aucune),
       },
       topTopics: topics.rows.map((t) => ({ topic: t.topic, count: Number(t.n) })),
+      topicsParIntention,
       confidence: { lt50: Number(r.c_lt50), from50to70: Number(r.c_50_70), from70to90: Number(r.c_70_90), gte90: Number(r.c_gte90) },
     };
   }

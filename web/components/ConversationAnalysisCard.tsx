@@ -490,13 +490,22 @@ function ListeParAction({ tenantId, range, action, onClose }: {
 }
 
 /** Table quali (fetch séparé, filtrable) : 50 conversations analysées, ligne cliquable vers sa fiche. */
-function QualiTable({ tenantId, range, sujet, onSujet }: {
+function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale }: {
   tenantId: string; range: StatsRange; sujet: string | null; onSujet: (sujet: string | null) => void;
+  intentionInitiale?: string;
 }) {
   const t = useT();
   const { locale } = useLocale();
   const [sentiment, setSentiment] = useState('');
-  const [intent, setIntent] = useState('');
+  /**
+   * ⚠️ L INTENTION DE L ADRESSE N EST QU UN ETAT INITIAL : elle se pose au premier rendu, puis se change
+   * comme n importe quel filtre. VALIDEE contre l enumeration, sinon une adresse bricolee poserait un
+   * filtre que le serveur refuserait ensuite en silence, et l ecran afficherait « aucun resultat » sans
+   * que rien n explique pourquoi.
+   */
+  const [intent, setIntent] = useState(
+    intentionInitiale && (INTENTS as readonly string[]).includes(intentionInitiale) ? intentionInitiale : '',
+  );
   const [action, setAction] = useState('');
   const [rows, setRows] = useState<AnalyzedConversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -531,7 +540,7 @@ function QualiTable({ tenantId, range, sujet, onSujet }: {
           <option value="">{t('Sentiment : tous', 'Sentiment: all')}</option>
           {SENTIMENTS.map((s) => <option key={s} value={s}>{sentimentLabel(s, t)}</option>)}
         </select>
-        <select value={intent} onChange={(e) => setIntent(e.target.value)} className={SELECT}>
+        <select value={intent} onChange={(e) => setIntent(e.target.value)} className={SELECT} data-testid="quali-filtre-intent">
           <option value="">{t('Intention : toutes', 'Intent: all')}</option>
           {INTENTS.map((i) => <option key={i} value={i}>{intentLabel(i, t)}</option>)}
         </select>
@@ -618,7 +627,19 @@ function QualiTable({ tenantId, range, sujet, onSujet }: {
 }
 
 /** Carte « Conversations (analyse) » : agrégats quanti + table quali. Champs LLM = indicatifs. */
-export function ConversationAnalysisCard({ tenantId, range }: { tenantId: string; range: StatsRange }) {
+export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }: {
+  tenantId: string;
+  range: StatsRange;
+  /**
+   * L intention demandee par l ADRESSE (`?intention=<cle>`), posee par un clic sur une barre de la
+   * carte des intentions de la synthese (2026-09-17).
+   *
+   * ⚠️ C EST UN DEFAUT, PAS UN VERROU : des que l utilisateur touche au selecteur, son choix gagne. Un
+   * filtre qu on ne pourrait pas defaire serait pire que pas de filtre. Meme motif que
+   * `/dashboard/funnel?campagne=<id>`, deja en place.
+   */
+  intentionInitiale?: string;
+}) {
   const t = useT();
   const [summary, setSummary] = useState<ConversationAnalysisSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -659,7 +680,7 @@ export function ConversationAnalysisCard({ tenantId, range }: { tenantId: string
       ) : (
         <>
           <QuantiBlock summary={summary} sujet={sujet} onSujet={setSujet} onAction={setActionOuverte} />
-          <QualiTable tenantId={tenantId} range={range} sujet={sujet} onSujet={setSujet} />
+          <QualiTable tenantId={tenantId} range={range} sujet={sujet} onSujet={setSujet} intentionInitiale={intentionInitiale} />
           {/* La rétention, DITE. Sans cette ligne, une période qui remonte au-delà d'un an rend moins de
               conversations que prévu et l'écran passe pour cassé. Le nombre vient du serveur (la même
               variable que la purge), il ne peut donc pas dériver de ce qui est réellement appliqué.

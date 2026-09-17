@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
-import { CoutParCampagneCard } from '@/components/CoutParCampagneCard';
+import { CarteCouts } from '@/components/CarteCouts';
 import { NuageQualitatifCard } from '@/components/NuageQualitatifCard';
+import { CarteIntentions } from '@/components/CarteIntentions';
 import type { Session } from '@/lib/session';
 import type { StatsRange } from '@/lib/api';
 import { presetRange } from '@/lib/range';
@@ -47,8 +48,14 @@ function SyntheseInner({ session }: { session: Session }) {
         sur une colonne unique, dans le même ordre.
       */}
       <div className="grid items-start gap-4 lg:grid-cols-2">
-        <CoutParCampagneCard tenantId={session.tenantId} range={range} />
-        <NuageQualitatifCard tenantId={session.tenantId} range={range} />
+        <CarteCouts tenantId={session.tenantId} range={range} />
+        {/* ⚠️ LA COLONNE DE DROITE PORTE DEUX CARTES DEPUIS LE 2026-09-17, et l'ordre est celui que Julien
+            a décrit : les intentions D'ABORD, la matrice en dessous. Les intentions se lisent dès la
+            première conversation analysée ; la matrice, elle, a besoin de volume pour dire quelque chose. */}
+        <div className="space-y-4">
+          <CarteIntentions tenantId={session.tenantId} range={range} />
+          <NuageQualitatifCard tenantId={session.tenantId} range={range} />
+        </div>
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ import type { ErreurLivraison } from '../ops/erreurs-livraison.pg';
 import type { FiltreCampagneOuTemplate } from '../stats/store.pg';
 import type { CostSeries, CoutParCampagne } from '../stats/cost';
 import type { DetailCoutCampagne } from '../stats/cout-campagne';
+import type { CoutMessages } from '../stats/cout-messages';
+import type { CoutIa } from '../stats/cout-ia';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
@@ -64,6 +66,21 @@ export interface StatsRouteDeps {
    * n'a envoyé sur la période », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
    */
   getCoutParCampagne?(tenantId: string, range: DateRange): Promise<CoutParCampagne>;
+  /**
+   * Le COUT TOTAL DES MESSAGES de la période (ligne 2 de la carte « Coûts »).
+   *
+   * OPTIONNELLE -> 503 quand elle manque, comme ses voisines. Un total à zéro se lirait « vous n'avez rien
+   * envoyé », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
+   */
+  getCoutMessages?(tenantId: string, range: DateRange): Promise<CoutMessages>;
+  /**
+   * Ce que le client a dépensé en IA sur SON crédit (ligne 3 de la carte « Coûts »), et le détail des tours.
+   *
+   * OPTIONNELLE, même raison. ⚠️ Un total à zéro est ici un état NORMAL et non une panne : aucun tour
+   * d'agent n'a jamais tourné en production (mesuré le 2026-09-17). L'écran doit dire « aucune
+   * consommation », pas afficher un tiret qui se lirait comme une mesure manquante.
+   */
+  getCoutIa?(tenantId: string, range: DateRange): Promise<CoutIa>;
   /**
    * La fiche d'UNE campagne : ce qu'elle a coûté et ce que les gens en ont fait (demande de Julien du
    * 2026-09-09, ouverte en cliquant une ligne du tableau ci-dessus).
@@ -265,6 +282,40 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getCoutParCampagne(tenant, r.range));
+  });
+
+  /**
+   * Le COUT TOTAL DES MESSAGES ENVOYES sur la période : templates margés, messages de service franchise
+   * déduite, RCS à deux tarifs.
+   *
+   * ⚠️ Route SÉPARÉE de `/stats/cost`, alors qu'elle lit la même matière pour les templates, et ce n'est
+   * pas un doublon : le graphe répond « comment ça s'est réparti dans le temps », celle-ci « ce que la
+   * période a coûté, tous canaux ». Elles partagent le calcul (`chiffrer`, `prixTemplate`), pas la forme.
+   */
+  app.get('/tenants/:tenantId/stats/cost/messages', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getCoutMessages) return reply.code(503).send({ error: 'cout des messages non configure' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getCoutMessages(tenant, r.range));
+  });
+
+  /**
+   * CE QUE LE CLIENT A DEPENSE EN IA sur la période, sur SON crédit prépayé, et le détail de ses tours.
+   *
+   * ⚠️ Rien de ce qui est sur NOTRE clé n'apparaît ici (transcription, bot d'aide, assistants de
+   * configuration) : montrer une dépense qu'on ne facture pas ouvrirait une discussion sur un coût interne.
+   * Et le Meta Business Agent n'y est pas non plus, parce qu'il tourne CHEZ Meta et se facture au message
+   * de service : son coût est dans la route au-dessus, pas dans celle-ci.
+   */
+  app.get('/tenants/:tenantId/stats/cost/ia', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getCoutIa) return reply.code(503).send({ error: 'cout ia non configure' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getCoutIa(tenant, r.range));
   });
 
   app.get('/tenants/:tenantId/stats/conversations', opts, async (req, reply) => {

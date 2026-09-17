@@ -18,6 +18,10 @@ import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, estimerCoutContact, entonnoirEngagement, type CategoryRates } from './stats/cost';
 import { assemblerDetailCampagne } from './stats/cout-campagne';
+import { coutMessages } from './stats/cout-messages';
+import { grilleDepuisLigne } from './stats/prix';
+import { basculesRcs, FENETRE_BASCULE_MS } from './stats/rcs-conversationnel';
+import { PLAFOND_TOURS_IA } from './stats/cout-ia';
 import { rangeToUnix, addDays, todayParis } from './stats/range';
 import type { CompteurClic } from './links/mesures';
 
@@ -1033,6 +1037,62 @@ async function main(): Promise<void> {
         ]);
         return estimateCoutParCampagne(volumes, rates, clics, engagements);
       },
+      /**
+       * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.
+       *
+       * 🔴 LES MEMES TARIFS META QUE LE GRAPHE ET QUE LE TABLEAU, par le même `tarifsMeta`. Trois écrans du
+       * même onglet lisent ce chiffre ; deux lectures de tarif différentes produiraient deux totaux que le
+       * client mettrait côte à côte.
+       *
+       * 🔴 LA BASCULE RCS EST CALCULEE ICI, PAR LA FONCTION PURE, ET PAS EN SQL. La règle (« une réaction
+       * dans les sept jours fait passer l'échange ENTIER à 8 cts ») vit dans `basculesRcs`, qui est testée
+       * et mutée dans les deux sens. La recopier en SQL en ferait deux implémentations, et le jour où l'une
+       * changerait l'autre resterait juste assez plausible pour ne pas se voir. Le store, lui, réduit le
+       * transport à une ligne par conversation en gardant TOUS les instants : rien n'est approximé.
+       *
+       * ⚠️ LA FENETRE EST PASSEE AU SQL depuis `FENETRE_BASCULE_MS`, au lieu d'un `interval '7 days'` écrit
+       * à côté : c'est l'invariant « deux constantes de fichiers différents qui doivent rester ordonnées »,
+       * et ce dépôt l'a déjà payé.
+       */
+      getCoutMessages: async (tenant, range) => {
+        const [volumes, rates, service, rcs, ligne] = await Promise.all([
+          statsStore.getCostVolume(tenant, range, {}),
+          tarifsMeta(tenant, range),
+          statsStore.serviceParMois(tenant, range),
+          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS),
+          statsStore.grillePrix(tenant),
+        ]);
+        // Les instants d'envoi redéployés en un envoi par instant : c'est la forme que la fonction pure
+        // attend, et la reconstruire ici coûte des objets éphémères plutôt que des lignes de base.
+        const envoisRcs = rcs.conversations.flatMap((c) =>
+          c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
+        const bascules = basculesRcs(envoisRcs, rcs.reactions);
+        // ⚠️ Le compte se fait sur les ENVOIS de chaque conversation, pas sur le nombre de conversations :
+        // un échange basculé facture TOUS ses RCS au tarif haut, ce qui est précisément la règle.
+        let rcsSimple = 0;
+        let rcsConversationnel = 0;
+        for (const c of rcs.conversations) {
+          if (bascules.has(c.conversationId)) rcsConversationnel += c.envois; else rcsSimple += c.envois;
+        }
+        return coutMessages(
+          {
+            templates: volumes.map((v) => ({ category: v.category, count: v.count })),
+            rates,
+            service,
+            rcsSimple,
+            rcsConversationnel,
+          },
+          grilleDepuisLigne(ligne),
+        );
+      },
+      /**
+       * CE QUE LE CLIENT A DEPENSE EN IA sur SON crédit, et le détail de ses tours.
+       *
+       * ⚠️ RIEN DE CE QUI EST SUR NOTRE CLE N'Y ENTRE (transcription, bot d'aide, assistants de
+       * configuration), et le Meta Business Agent non plus : il tourne chez Meta et se facture au message
+       * de service, donc son coût est dans `getCoutMessages`, pas ici.
+       */
+      getCoutIa: async (tenant, range) => statsStore.consommationIa(tenant, range, PLAFOND_TOURS_IA),
       /**
        * La fiche d'UNE campagne, ouverte en cliquant sa ligne dans le tableau ci-dessus.
        *

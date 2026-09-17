@@ -298,6 +298,19 @@ export interface ConversationAnalysisSummary {
   exchanges: { avg: number | null; median: number | null };
   actions: { creer_devis: number; rappeler: number; relancer: number; escalader: number; aucune: number };
   topTopics: Array<{ topic: string; count: number }>;
+  /**
+   * Les sujets les plus frequents DE CHAQUE INTENTION, cinq au plus (2026-09-17).
+   *
+   * ⚠️ CE N EST PAS UNE DECOUPE DE `topTopics` : celui-la classe les dix premiers TOUTES intentions
+   * confondues, celui-ci en garde cinq PAR intention, donc il en montre que l autre n aurait jamais. Un
+   * sujet frequent dans une intention rare n entre pas dans les dix premiers, et c est justement celui
+   * qu on veut voir en depliant cette intention.
+   *
+   * ⚠️ OPTIONNEL A LA LECTURE, comme `retentionDays` juste au-dessus, et pour la meme raison de RESEAU : la
+   * console part sur Vercel a chaque push quand l API se deploie a la main sur le VPS. Entre les deux, le
+   * champ est absent, et l ecran doit alors ne rien deplier plutot que de boucler sur `undefined`.
+   */
+  topicsParIntention?: Record<string, Array<{ topic: string; count: number }>>;
   confidence: { lt50: number; from50to70: number; from70to90: number; gte90: number };
 }
 export interface AnalyzedConversation {
@@ -436,6 +449,64 @@ export function getDetailCoutCampagne(tenantId: string, campaignId: string): Pro
 
 export function getCoutParCampagne(tenantId: string, range?: StatsRange): Promise<CoutParCampagne> {
   return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${rangeQuery(range)}`);
+}
+
+/**
+ * LE COUT TOTAL DES MESSAGES ENVOYES sur la periode (ligne 2 de la carte « Couts »).
+ *
+ * ⚠️ `parMois` PORTE UNE LIGNE PAR MOIS TRAVERSE, et pas un seul compteur de franchise : la franchise est
+ * MENSUELLE et se remet a zero le 1er. Une periode a cheval sur deux mois en a DEUX, et l'ecran montre
+ * celle du mois qui l'interesse.
+ */
+export interface FranchiseMois {
+  mois: string;
+  /** Total du mois a la fin de la periode : c'est ce qui se lit « 340 / 1000 ». */
+  consommes: number;
+  plafond: number;
+  /** Ceux de ce mois, DANS la periode, qui sont payants. */
+  factures: number;
+}
+export interface CoutMessages {
+  templates: { marketing: number; utility: number };
+  service: { envoyes: number; factures: number; cout: number; parMois: FranchiseMois[] };
+  rcs: { simple: number; conversationnel: number; cout: number };
+  total: number;
+  nonChiffrables: number;
+  sansCategorie: number;
+  sansTarif: number;
+}
+export function getCoutMessages(tenantId: string, range?: StatsRange): Promise<CoutMessages> {
+  return request<CoutMessages>(`/tenants/${tenantId}/stats/cost/messages${rangeQuery(range)}`);
+}
+
+/**
+ * CE QUE LE CLIENT A DEPENSE EN IA sur SON credit (ligne 3 de la carte « Couts »).
+ *
+ * ⚠️ TOUT EST EN MICRO-EUROS, comme en base : aucun arrondi cote serveur, sinon le total divergerait de la
+ * somme de ses lignes. La conversion est un geste d'AFFICHAGE (`eurosDepuisMicro`).
+ *
+ * ⚠️ ZERO EST UN ETAT NORMAL, PAS UNE PANNE : aucun tour d'agent n'a jamais tourne en production. L'ecran
+ * doit dire « aucune consommation », jamais afficher un tiret qui se lirait comme une mesure manquante.
+ */
+export interface TourIa {
+  id: string;
+  agentId: string;
+  tours: number;
+  tokensEntree: number;
+  tokensSortie: number;
+  coutMicroEur: number;
+  at: string;
+}
+export interface CoutIa {
+  coutMicroEur: number;
+  tokensEntree: number;
+  tokensSortie: number;
+  sessions: number;
+  tours: TourIa[];
+  tronque: boolean;
+}
+export function getCoutIa(tenantId: string, range?: StatsRange): Promise<CoutIa> {
+  return request<CoutIa>(`/tenants/${tenantId}/stats/cost/ia${rangeQuery(range)}`);
 }
 
 /**

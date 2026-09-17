@@ -80,10 +80,20 @@ async function mock(page: import('@playwright/test').Page, detail: unknown = DET
   });
 }
 
+/**
+ * ⚠️ LE TABLEAU DES CAMPAGNES EST DANS UN ACCORDEON DEPUIS LE 2026-09-17 : la carte de synthese ne montre
+ * plus qu un chiffre par ligne, et le detail se deplie. La fiche s ouvre donc en DEUX gestes au lieu d un,
+ * et ce helper porte le premier. Les CAS exerces plus bas n ont pas bouge d un mot.
+ */
+async function ouvrirEngagement(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByTestId('cout-bascule-engagement').click();
+}
+
 test.describe('Performance Lab : la fiche d’une campagne', () => {
   test('cliquer une ligne ouvre la fiche, avec le nom de la campagne', async ({ page }) => {
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await expect(page.getByTestId('detail-lancement')).toHaveCount(0);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-lancement')).toBeVisible();
@@ -95,6 +105,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // la même campagne, à deux centimètres l'un de l'autre. Sans la phrase, l'écart se lit comme un bug.
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByRole('dialog')).toContainText(/toute la vie de la campagne|whole life/i);
   });
@@ -104,6 +115,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // coût par construction ; l'écran doit le MONTRER, sinon rien ne distingue « exclus » de « oubliés ».
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-echecs')).toContainText('3');
     await expect(page.getByTestId('detail-cout')).toContainText('5,72');
@@ -112,6 +124,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
   test('🔴 les RELANCES du scénario sont affichées, et hors du ratio', async ({ page }) => {
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-relances')).toContainText('12');
     await expect(page.getByTestId('detail-relances')).toContainText('1,72');
@@ -125,6 +138,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // le tableau afficherait des identifiants techniques à un opérateur.
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-etape-n1')).toContainText('bienvenue');
     await expect(page.getByTestId('detail-etape-n3')).toContainText('relance_j3');
@@ -133,6 +147,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
   test('🔴 les deux unités : gestes, et personnes quand elles diffèrent', async ({ page }) => {
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     // 14 taps par 11 personnes : les deux, parce qu'ils répondent à deux questions.
     await expect(page.getByTestId('detail-etape-n1')).toContainText(/14 \(11/);
@@ -145,6 +160,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // d'un envoi, donc ferait passer une campagne que personne n'a lue pour parfaitement efficace.
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-etape-n3')).toContainText('5');
     await expect(page.getByTestId('detail-ratio-n3')).toHaveText('—');
@@ -157,6 +173,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // jeton, faux de tous les autres. Le test garde la colonne ET son dénominateur commun.
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-liens-n1')).toHaveText('7');
     // 1,43... non : 5,72 / 27 = 0,2119. Le ratio porte bien sur les TROIS natures.
@@ -168,6 +185,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // affirmerait qu'ils viennent d'ici. La phrase dit les deux, et ce qui les rend définitifs.
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-liens-reserve')).toContainText('4');
     await expect(page.getByTestId('detail-liens-reserve')).toContainText(/2 septembre 2026|2 September 2026/);
@@ -177,6 +195,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
   test('une campagne à template DIRECT n’a pas de section « étape par étape »', async ({ page }) => {
     await mock(page, DETAIL_DIRECT);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-promo').click();
     await expect(page.getByTestId('detail-lancement')).toBeVisible();
     await expect(page.getByTestId('detail-etapes')).toHaveCount(0);
@@ -186,6 +205,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
   test('Échap ferme la fiche', async ({ page }) => {
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-lancement')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -195,6 +215,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
   test('🔴 un backend qui refuse -> un message, pas une fiche vide ni une page morte', async ({ page }) => {
     await mock(page, DETAIL_SCENARIO, 500);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-erreur')).toBeVisible();
     // Et le tableau derrière est intact : une fiche qui échoue n'emporte pas l'écran.
@@ -212,6 +233,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     };
     await mock(page, ancien);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ligne-c-parcours').click();
     await expect(page.getByTestId('detail-etape-n1')).toBeVisible();
     await expect(page.getByTestId('detail-liens-n1')).toHaveText('0');
@@ -222,6 +244,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     // Un `<tr onClick>` seul est invisible d'un lecteur d'écran et inatteignable sans souris.
     await mock(page);
     await page.goto('/performance');
+    await ouvrirEngagement(page);
     await page.getByTestId('cout-ouvrir-c-parcours').press('Enter');
     await expect(page.getByTestId('detail-lancement')).toBeVisible();
   });

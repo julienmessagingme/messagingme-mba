@@ -180,14 +180,25 @@ function Graphe({ nuage, t, locale }: { nuage: Nuage; t: (fr: string, en?: strin
             )}
           </p>
         )}
-        {nuage.sansMesure > 0 && (
-          <p className="text-ink-400" data-testid="nuage-sans-mesure">
-            {t(
-              `${fmtNum(nuage.sansMesure, locale)} analyse(s) de la période n’ont pas ces deux notes et ne figurent pas sur le graphe : soit elles sont antérieures à la mise en service des mesures, soit l’analyse ne les a pas rendues. Elles ne valent pas zéro.`,
-              `${fmtNum(nuage.sansMesure, locale)} analysis/analyses over this period have no such scores and are absent from the chart: either they predate the measures, or the analysis did not return them. They do not count as zero.`,
-            )}
-          </p>
-        )}
+        {/**
+          * 🔴 LE PARAGRAPHE DES ANALYSES SANS MESURE A ETE RETIRE LE 2026-09-17, SUR DECISION DE JULIEN, ET
+          * C'EST UN RISQUE ASSUME QU'ON ECRIT PLUTOT QUE DE LE TAIRE.
+          *
+          * Il disait : « N analyse(s) de la période n'ont pas ces deux notes et ne figurent pas sur le
+          * graphe [...] Elles ne valent pas zéro. » Julien, le 2026-09-17 : « tu peux enlever le blabla en
+          * dessous du tableau », puis « rien du tout, on enlève » quand la question lui a été reposée avec
+          * la mesure ci-dessous.
+          *
+          * ⚠️ CE QUE CA COUTE, MESURE LE JOUR MEME EN PRODUCTION : 2 analyses sur 14 portent les deux
+          * notes. Le nuage montre donc DEUX points sur quatorze conversations, et plus rien à l'écran ne
+          * permet de s'en douter. Le risque est REEL mais TEMPORAIRE : chaque nouvelle analyse porte les
+          * deux notes depuis la migration 0121, et la proportion se redresse d'elle-même.
+          *
+          * ⚠️ `sansMesure` RESTE DANS LE CONTRAT et continue d'être calculé : ce n'est pas la mesure qu'on
+          * retire, c'est son affichage. Le jour où l'on veut la remontrer, il n'y a rien à recâbler.
+          * `performance-synthese.spec.ts` garde désormais l'ABSENCE de ce paragraphe, pour que personne ne
+          * le remette sans le vouloir.
+          */}
       </div>
     </>
   );

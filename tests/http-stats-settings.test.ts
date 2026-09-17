@@ -54,6 +54,10 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       exchanges: { avg: 3.5, median: 3 },
       actions: { creer_devis: 2, rappeler: 0, relancer: 0, escalader: 1, aucune: 0 },
       topTopics: [{ topic: 'devis', count: 2 }],
+      // ⚠️ Les sujets RANGES SOUS LEUR INTENTION (2026-09-17). Le champ est REQUIS par le contrat, et c'est
+      // ce qui a fait tomber cette fixture au typecheck plutot qu'au runtime : un `?` l'aurait laissee
+      // passer, et l'ecran aurait boucle sur `undefined` en production.
+      topicsParIntention: { demande_devis: [{ topic: 'devis', count: 2 }] },
       confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
     }),
     getCoutParCampagne: async () => ({

@@ -1140,4 +1140,197 @@ export class PgStatsStore {
     );
     return res.rows.map((r) => ({ date: r.date, category: r.category, count: Number(r.count) }));
   }
+
+  /**
+   * LA GRILLE DE PRIX DE L'ESPACE (migration 0154), telle quelle : c'est `grilleDepuisLigne` qui la lit.
+   *
+   * ⚠️ `select *` PLUTOT QUE LES SIX COLONNES NOMMEES, et c'est le seul endroit du dépôt où c'est le bon
+   * choix : entre le déploiement de Vercel et celui du VPS, la migration n'est pas encore passée, et nommer
+   * une colonne absente ferait échouer la requête en `42703` au lieu de retomber sur les défauts. Le tri
+   * des champs est fait par `grilleDepuisLigne`, qui ignore tout le reste de la ligne de réglages.
+   */
+  async grillePrix(tenantId: string): Promise<Record<string, unknown> | null> {
+    try {
+      const res = await this.pool.query<Record<string, unknown>>(
+        'select * from tenant_settings where tenant_id = $1', [tenantId],
+      );
+      return res.rows[0] ?? null;
+    } catch {
+      // Table ou ligne absente : la grille par défaut fera l'affaire, et elle ne change rien au chiffre.
+      return null;
+    }
+  }
+
+  /**
+   * LES MESSAGES DE SERVICE, MOIS PAR MOIS, avec ce qui a été consommé AVANT la fenêtre affichée.
+   *
+   * 🔴 C'EST CETTE FORME QUI REND LA FRANCHISE JUSTE, et rien d'autre. La franchise est MENSUELLE et la
+   * période affichée n'est pas un mois : savoir seulement « combien le mois a envoyé » ne dit pas si les
+   * messages de la période tombent AVANT ou APRES le millième. Une période sur les sept premiers jours d'un
+   * mois qui finit à 1200 envois est entièrement gratuite ; une période sur les sept derniers est
+   * entièrement payante. Le même total mensuel, deux réponses opposées.
+   *
+   * ⚠️ LE BALAYAGE COMMENCE AU 1er DU MOIS DE LA BORNE BASSE, pas au début de la période : c'est
+   * exactement ce qu'il faut lire pour connaître le « avant ». Comme le scan démarre là, tout message
+   * antérieur à `start_ts` appartient forcément au mois de départ, ce qui rend le `filter` juste sans
+   * condition supplémentaire.
+   *
+   * ⚠️ LE FILTRE EST CELUI DES MESSAGES DE SERVICE, MOT POUR MOT : sortant, WhatsApp, hors template, hors
+   * fil de test. Il a déjà DEUX consommateurs qui doivent rester d'accord (la courbe et sa ventilation par
+   * origine) ; celui-ci est le troisième. Un filtre qui diverge d'un mot ferait mentir les trois.
+   */
+  async serviceParMois(tenantId: string, range: DateRange): Promise<{ mois: string; avantLaPeriode: number; dansLaPeriode: number }[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ mois: string; avant: number; dans: number }>(
+      `with ${BOUNDS_CTE},
+       cadre as (
+         select (date_trunc('month', b.start_ts at time zone $4)) at time zone $4 as depuis,
+                b.start_ts as start_ts, b.end_ts as end_ts
+           from bounds b
+       )
+       select to_char(date_trunc('month', m.created_at at time zone $4), 'YYYY-MM') as mois,
+              count(*) filter (where m.created_at < c.start_ts)::int as avant,
+              count(*) filter (where m.created_at >= c.start_ts)::int as dans
+         from conversation_messages m
+         join conversations cv on cv.id = m.conversation_id
+         cross join cadre c
+        where cv.tenant_id = $1 and not cv.is_test
+          and m.created_at >= c.depuis and m.created_at < c.end_ts
+          and m.direction = 'out' and m.channel = 'whatsapp' and m.type is distinct from 'template'
+        group by 1
+        order by 1`,
+      [tenantId, from, to, TZ],
+    );
+    return res.rows.map((r) => ({ mois: r.mois, avantLaPeriode: Number(r.avant), dansLaPeriode: Number(r.dans) }));
+  }
+
+  /**
+   * LES ENVOIS RCS DE LA PERIODE ET LES REACTIONS QUI PEUVENT LES FAIRE BASCULER.
+   *
+   * 🔴 UNE LIGNE PAR CONVERSATION, PAS PAR MESSAGE, ET C'EST CE QUI REND CETTE LECTURE TENABLE. La règle
+   * de bascule vit dans `basculesRcs` (`src/stats/rcs-conversationnel.ts`), qui est PURE et mutée dans les
+   * deux sens : la recopier en SQL créerait deux implémentations d'une même règle, et le jour où l'une
+   * change l'autre resterait juste assez plausible pour ne pas se voir. Mais la nourrir message par message
+   * ferait transiter une ligne par envoi, soit des dizaines de milliers sur une campagne RCS et un an de
+   * période. Le compromis est `array_agg` : le SQL réduit à une ligne par conversation en gardant TOUS les
+   * instants, et l'appelant les redéploie pour la fonction pure. Rien n'est approximé, et le transport
+   * reste compact.
+   *
+   * 🔴 LES REACTIONS VONT JUSQU'A SEPT JOURS APRES LA FIN DE LA PERIODE, et l'oublier sous-facturerait le
+   * dernier jour de chaque fenêtre : un RCS envoyé le 30 peut basculer le 3 du mois suivant. La fenêtre est
+   * passée en paramètre depuis `FENETRE_BASCULE_MS` plutôt que réécrite en `interval '7 days'` : deux
+   * constantes de fichiers différents qui doivent rester ordonnées, c'est l'invariant que ce dépôt a déjà
+   * payé plusieurs fois.
+   *
+   * ⚠️ UNE REACTION EST UN ENTRANT SUR LE MEME CANAL. Un contact qui répondrait sur WhatsApp à un RCS ne
+   * fait pas basculer l'échange RCS : ce sont deux tuyaux, et Meta comme smsmode facturent le leur.
+   */
+  async envoisEtReactionsRcs(tenantId: string, range: DateRange, fenetreMs: number): Promise<{
+    conversations: { conversationId: string; waId: string; envois: number; instants: string[] }[];
+    reactions: { waId: string; at: string }[];
+  }> {
+    const { from, to } = range;
+    const secondes = Math.round(fenetreMs / 1000);
+    const [envois, reactions] = await Promise.all([
+      this.pool.query<{ conversation_id: string; wa_id: string; envois: number; instants: string[] }>(
+        `with ${BOUNDS_CTE}
+         select cv.id::text as conversation_id, cv.wa_id as wa_id, count(*)::int as envois,
+                array_agg(to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                          order by m.created_at) as instants
+           from conversation_messages m
+           join conversations cv on cv.id = m.conversation_id, bounds b
+          where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'out'
+            and m.created_at >= b.start_ts and m.created_at < b.end_ts
+          group by 1, 2`,
+        [tenantId, from, to, TZ],
+      ),
+      this.pool.query<{ wa_id: string; at: string }>(
+        `with ${BOUNDS_CTE}
+         select cv.wa_id as wa_id,
+                to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
+           from conversation_messages m
+           join conversations cv on cv.id = m.conversation_id, bounds b
+          where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'in'
+            and m.created_at >= b.start_ts
+            and m.created_at < b.end_ts + make_interval(secs => $5::int)`,
+        [tenantId, from, to, TZ, secondes],
+      ),
+    ]);
+    return {
+      conversations: envois.rows.map((r) => ({
+        conversationId: r.conversation_id,
+        waId: r.wa_id,
+        envois: Number(r.envois),
+        instants: Array.isArray(r.instants) ? r.instants : [],
+      })),
+      reactions: reactions.rows.map((r) => ({ waId: r.wa_id, at: r.at })),
+    };
+  }
+
+  /**
+   * CE QUE LE CLIENT A DEPENSE EN IA SUR LA PERIODE, et le detail de ses tours.
+   *
+   * 🔴 SON CREDIT, ET RIEN D'AUTRE (decide avec Julien le 2026-09-17). La transcription des vocaux, le bot
+   * d'aide de la console et les deux assistants de configuration sont sur NOTRE clé : les afficher ici
+   * ferait se demander a un client pourquoi on lui montre une dépense qu'on ne lui facture pas, et
+   * ouvrirait une discussion sur un coût interne. `agent_sessions` porte exactement ce qui est débité de
+   * son crédit prépayé.
+   *
+   * ⚠️ LE COUT DU META BUSINESS AGENT N'EST PAS ICI, ET CE N'EST PAS UN MANQUE : il tourne CHEZ Meta, qui
+   * le facture au message de service. Son coût est donc déjà dans la ligne 2 de la carte. L'écran doit le
+   * DIRE, sinon un lecteur conclura que la mesure manque.
+   *
+   * ⚠️ LA LISTE EST PLAFONNEE et le dit : une periode d'un an sur un espace actif porterait des milliers de
+   * tours, dans un accordéon qu'on ouvre pour se faire une idée. Même règle que partout ailleurs ici.
+   */
+  async consommationIa(tenantId: string, range: DateRange, plafond: number): Promise<{
+    coutMicroEur: number; tokensEntree: number; tokensSortie: number; sessions: number;
+    tours: { id: string; agentId: string; tours: number; tokensEntree: number; tokensSortie: number; coutMicroEur: number; at: string }[];
+    tronque: boolean;
+  }> {
+    const { from, to } = range;
+    const [total, liste] = await Promise.all([
+      this.pool.query<{ sessions: string; tin: string; tout: string; cout: string }>(
+        `with ${BOUNDS_CTE}
+         select count(*)::text as sessions,
+                coalesce(sum(tokens_in), 0)::text as tin,
+                coalesce(sum(tokens_out), 0)::text as tout,
+                coalesce(sum(cout_micro_eur), 0)::text as cout
+           from agent_sessions s, bounds b
+          where s.tenant_id = $1 and s.created_at >= b.start_ts and s.created_at < b.end_ts`,
+        [tenantId, from, to, TZ],
+      ),
+      this.pool.query<{ id: string; agent_id: string; tours: number; tin: string; tout: string; cout: string; at: string }>(
+        `with ${BOUNDS_CTE}
+         select s.id::text as id, s.agent_id::text as agent_id, s.tours as tours,
+                s.tokens_in::text as tin, s.tokens_out::text as tout, s.cout_micro_eur::text as cout,
+                to_char(s.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
+           from agent_sessions s, bounds b
+          where s.tenant_id = $1 and s.created_at >= b.start_ts and s.created_at < b.end_ts
+          order by s.created_at desc
+          limit $5::int`,
+        // ⚠️ Une de PLUS que le plafond : c'est ainsi qu'on sait qu'on tronque sans compter à part, comme
+        // le tableau des campagnes de la synthèse.
+        [tenantId, from, to, TZ, plafond + 1],
+      ),
+    ]);
+    const t = total.rows[0];
+    const lignes = liste.rows.slice(0, plafond).map((r) => ({
+      id: r.id,
+      agentId: r.agent_id,
+      tours: Number(r.tours),
+      tokensEntree: Number(r.tin),
+      tokensSortie: Number(r.tout),
+      coutMicroEur: Number(r.cout),
+      at: r.at,
+    }));
+    return {
+      coutMicroEur: Number(t?.cout ?? 0),
+      tokensEntree: Number(t?.tin ?? 0),
+      tokensSortie: Number(t?.tout ?? 0),
+      sessions: Number(t?.sessions ?? 0),
+      tours: lignes,
+      tronque: liste.rows.length > plafond,
+    };
+  }
 }

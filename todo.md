@@ -1168,6 +1168,16 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   à l'autre, et que la passe isolée soit verte, écarte une régression du chantier MCP. La piste est la
   même que celle déjà notée sur le plafond de workers du fichier de config : le serveur Next est PARTAGÉ,
   et sous charge une requête de liste arrive après le rendu. ⚠️ NE PAS l'affaiblir pour le faire taire.
+- 🟡 **`web/e2e/inbox-envoi-scenario.spec.ts` est INSTABLE LUI AUSSI, mesuré le 2026-09-17.** Un échec dans
+  la suite complète (« un refus du serveur s'affiche avec sa raison »), puis un échec sur un AUTRE test du
+  même fichier en passe isolée (« fenêtre FERMÉE -> seuls ceux qui ouvrent par un template »), puis **trois
+  passes isolées consécutives à 5/5**. ⚠️ QUANTIFIÉ AVANT D'ÊTRE ATTRIBUÉ, et le fait que la cible CHANGE
+  d'une exécution à l'autre est ce qui écarte une régression : une régression fait tomber toujours le même
+  test. Même piste que ci-dessus (serveur Next partagé, quatre workers). ⚠️ NE PAS l'affaiblir.
+  🔴 **DEUX FICHIERS INSTABLES, C'EST UN MOTIF, PLUS UN ACCIDENT.** Le jour où un troisième apparaît, ce
+  n'est plus une spec qu'il faut regarder mais le montage : un serveur Next unique partagé par quatre
+  workers, où chaque spec repose ses propres `page.route`. La piste à creuser est l'isolation par worker,
+  pas le durcissement des attentes une par une.
 - 🔵 **L6 : MCP OAuth.** Quatre à huit fois le coût de L4, et le coût n'est pas dans le développement mais
   dans la SUPERVISION : un jeton mort ne produit aucune erreur applicative, l'agent dégrade en silence au
   milieu d'une conversation. Premier serveur à brancher : Linear. Le pire premier candidat : HubSpot (la
