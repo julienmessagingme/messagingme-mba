@@ -71,27 +71,29 @@ describe('un fil pris par un SCÉNARIO revient à l’agent de Meta', () => {
     expect(d.rendus).toHaveLength(1);
   });
 
-  it('🔴 RIEN À RENDRE n’est pas RÉESSAYER : la conversation est RÉSOLUE, pas laissée candidate', async () => {
+  it('🔴 RIEN À RENDRE ne fait PAS sortir la conversation du dossier « À traiter »', async () => {
     /**
-     * 🔴 LE DÉFAUT QUE CE TEST FERME FAISAIT BOUCLER CE BALAYAGE POUR TOUJOURS. `releaseToMba` rend
-     * `false` quand il n y avait RIEN à rendre : une conversation de TEST (le fil reste à l application,
-     * délibérément depuis le 2026-09-17), ou un espace sans numéro. On sautait alors la ligne, la
-     * conversation restait en `app_human` immobile, donc CANDIDATE à la passe suivante et à toutes les
-     * suivantes. L ensemble grossissait à chaque essai.
+     * 🔴 CE TEST GARDE UN ARBITRAGE QUI A ÉTÉ ROUVERT PUIS REFERMÉ LE MÊME JOUR. Une premiere correction
+     * repliait ce cas sur `app_workflow` pour que la conversation cesse d etre candidate a chaque passe.
+     * Or `app_workflow` est la SEULE valeur que le dossier « À traiter » exclut (`A_TRAITER_SQL`) : sur un
+     * espace `mba_enabled` SANS numero connecte, un client qui vient d ecrire disparaissait du dossier de
+     * travail. C est le symptome exact que la migration 0149 a repare, et le commentaire du bloc voisin
+     * l interdit nommement depuis le 2026-09-15.
      *
-     * ⚠️ LA DESTINATION SUIT LE FAIT, pas l intention : rien n est parti chez Meta, donc on n écrit pas
-     * `mba`, ce qui ferait mentir la console. `app_workflow` dit la vérité.
+     * ⚠️ LE COUT ASSUME EST UN REEXAMEN, PAS UNE FUITE : la conversation reste candidate a la passe
+     * suivante et coute une lecture. Entre les deux erreurs possibles, une seule se rattrape.
      */
     const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], {
       releaseToMba: async () => false,
     });
-    expect(await runControlSweep(d)).toBe(1);
-    expect(d.ecrits).toEqual([{ owner: 'app_workflow' }]);
+    expect(await runControlSweep(d)).toBe(0);
+    expect(d.ecrits, 'rien n est ecrit : la conversation reste visible dans « À traiter »').toEqual([]);
   });
 
-  it('⚠️ mais un REFUS de Meta reste un réessai : là, il y avait bien quelque chose à rendre', async () => {
-    // La distinction tient parce que `rendreLeFil` LÈVE sur un refus de Meta et ne rend `false` que sur
-    // une absence de numéro. Confondre les deux enterrerait un fil que Meta tient encore.
+  it('⚠️ un REFUS de Meta ne s ecrit pas non plus : la, il y avait bien quelque chose a rendre', async () => {
+    // La distinction compte pour la SUITE : `rendreLeFil` LEVE sur un refus de Meta et ne rend `false` que
+    // sur une absence de numero. Ecrire `mba` sur un refus ferait croire que Meta tient un fil qu il a
+    // refuse de prendre, ce qui est le defaut de fond que ce balayage existe pour eviter.
     const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], {
       releaseToMba: async () => { throw new Error('Meta a refusé'); },
     });

@@ -172,31 +172,28 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
      * relit bien le détenteur avant d'appeler Meta : là-bas le risque est permanent, pas fugace.
      */
     /**
-     * 🔴 « RIEN À RENDRE » N'EST PAS « RÉESSAYER PLUS TARD », et les confondre faisait boucler ce balayage
-     * pour toujours. `releaseToMba` rend `false` quand il n'y avait RIEN à rendre : une conversation de
-     * TEST (le fil est resté à l'application, délibérément), ou un espace sans numéro. Sauter la ligne
-     * laissait alors la conversation en `app_human` immobile, donc CANDIDATE à la passe suivante, et à
-     * toutes les suivantes : l'ensemble grossissait à chaque essai de Julien.
+     * 🔴 « RIEN À RENDRE » FAIT SAUTER LA LIGNE, ET LA CONVERSATION RESTE TELLE QUELLE. C'est délibéré, et
+     * ça a été rouvert puis refermé le 2026-09-17 : une première correction repliait ces cas sur
+     * `app_workflow` pour qu'ils cessent d'être candidats, ce qui les faisait SORTIR du dossier
+     * « À traiter » (seule valeur qu'il exclut). Sur un espace `mba_enabled` SANS numéro connecté, un
+     * client qui vient d'écrire disparaissait donc du dossier de travail : le symptôme exact que la
+     * migration 0149 a réparé, et que le commentaire du bloc ci-dessus interdit nommément.
      *
-     * ⚠️ UNE EXCEPTION, ELLE, RESTE UN `continue`. C'est le cas où Meta a REFUSÉ : là il y a bien quelque
-     * chose à rendre et on n'y est pas arrivé, donc réessayer est juste. La distinction tient parce que
-     * `rendreLeFil` LÈVE sur un refus de Meta et ne rend `false` que sur une absence de numéro.
-     *
-     * ⚠️ ET LA DESTINATION SUIT LE FAIT, pas l'intention : rien n'est parti chez Meta, donc on n'écrit pas
-     * `mba`. `app_workflow` dit la vérité, c'est-à-dire que l'application garde le fil, exactement comme
-     * pour un espace qui n'a pas d'agent de Meta du tout.
+     * ⚠️ LE COÛT ASSUMÉ EST UN RÉEXAMEN, PAS UNE FUITE. Une conversation de test, ou un espace sans numéro,
+     * restera candidate à chaque passe et coûtera une lecture. C'est borné par le nombre de ces
+     * conversations, et c'est très exactement le prix à payer pour qu'aucune ligne de travail ne devienne
+     * invisible. Entre les deux erreurs possibles, une seule se rattrape.
      */
-    let rendu = true;
     if (versMba && deps.releaseToMba) {
       try {
-        rendu = await deps.releaseToMba(c.tenantId, c.waId);
+        if (!(await deps.releaseToMba(c.tenantId, c.waId))) continue;
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`release vers MBA REFUSÉ pour ${c.waId}, l’état local n’a pas été écrit:`, err instanceof Error ? err.message : err);
         continue;
       }
     }
-    const dest: ControlOwner = versMba && rendu ? 'mba' : 'app_workflow';
+    const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
     if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
     rendues += 1;
   }
