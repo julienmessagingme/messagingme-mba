@@ -233,6 +233,17 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     // 3. LA SOURCE. Absente, d'un autre tenant, ou pas active : aucun appel réseau ne part.
     const source = await deps.sources.pourAppel(ctx.tenantId, requete.sourceId);
     if (!source) return { ok: false, contenu: { erreur: 'ce connecteur n’est pas configuré' }, erreur: 'source introuvable' };
+    /**
+     * 🔴 LA MÊME GARDE QUE SON JUMEAU MCP, ET LA POSER D'UN SEUL CÔTÉ N'EN AURAIT PAS ÉTÉ UNE. Le
+     * croisement `origin`/`kind` est fermé en base par la clé étrangère composite de 0152, mais en
+     * `MATCH SIMPLE` : une ligne d'avant le déploiement porte `source_kind` à null et lui échappe. Sans
+     * cette ligne, une requête de connecteur rattachée à un serveur MCP partirait en HTTP brut sur son
+     * point MCP, avec le secret du client dans l'en-tête, et sur un gabarit de chemin que
+     * `construireCible` validerait contre la MAUVAISE adresse de base.
+     */
+    if (source.kind !== 'http') {
+      return { ok: false, contenu: { erreur: 'ce connecteur n’est pas un système HTTP' }, erreur: `source kind=${source.kind}` };
+    }
     if (source.status !== 'active') {
       return { ok: false, contenu: { erreur: 'ce connecteur n’est pas actif' }, erreur: `source ${source.status}` };
     }

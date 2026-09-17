@@ -55,6 +55,14 @@ export interface SourceVue {
 /** Ce que le RÉSOLVEUR lit, et lui seul : le secret est déchiffré ici, au moment de l'appel. */
 export interface SourceAppel {
   id: string;
+  /**
+   * 🔴 REQUIS, ET C'EST TOUT L'INTÉRÊT. Un résolveur recevait jusqu'ici une source sans savoir de quelle
+   * NATURE elle était : le résolveur MCP pouvait parler MCP à un connecteur HTTP, et réciproquement. La
+   * migration 0152 ferme le croisement EN BASE pour les lignes qui portent `source_kind`, mais une ligne
+   * d'avant le déploiement le porte à null et échappe à la clé étrangère (MATCH SIMPLE). Le champ est donc
+   * requis par le type : un câblage qui l'oublierait ne compile pas.
+   */
+  kind: KindSource;
   baseUrl: string;
   authKind: AuthSource;
   authHeaderName: string | null;

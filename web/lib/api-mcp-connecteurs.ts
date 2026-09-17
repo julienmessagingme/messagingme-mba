@@ -120,7 +120,9 @@ export function eprouverServeurMcp(tenantId: string, sourceId: string): Promise<
  * QUOI avant de le faire, suppressions et consentements qui tombent compris.
  */
 export function apercuMcp(tenantId: string, sourceId: string): Promise<{ plan: ChangementMcp[]; tronque: boolean }> {
-  return request<{ plan: ChangementMcp[]; tronque: boolean }>(`${base(tenantId)}/${sourceId}/apercu`);
+  // ⚠️ `POST` : ce chemin ouvre une connexion vers le serveur du client et marque l'épreuve. Voir la
+  // raison complète sur la route, côté serveur.
+  return request<{ plan: ChangementMcp[]; tronque: boolean }>(`${base(tenantId)}/${sourceId}/apercu`, { method: 'POST' });
 }
 
 export function importerMcp(tenantId: string, sourceId: string): Promise<{ plan: ChangementMcp[]; tronque: boolean }> {

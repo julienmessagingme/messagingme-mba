@@ -155,7 +155,13 @@ describe('le client MCP : le cycle de vie', () => {
     const s = await ouvrirSessionMcp({ ...CIBLE, budgetTotalMs: 5000 }, { fetchImpl: f.impl, now: () => t });
     if ('echec' in s) throw new Error('ouverture refusée');
     t += 6000; // le budget est epuise avant la liste
-    expect(await s.lister()).toEqual({ echec: { genre: 'protocole', message: expect.stringContaining('budget') } });
+    /**
+     * ⚠️ LE GENRE A CHANGE LE 2026-09-17, ET LE CAS EXERCE EST LE MEME. Range sous `protocole`, ce cas
+     * ressortait chez l appelant en « le serveur MCP a repondu quelque chose d illisible » : on accusait un
+     * tiers de NOTRE minuterie, et le client allait chercher une panne chez lui. Il porte desormais son
+     * genre a lui, que `direEchec` traduit en un delai a augmenter.
+     */
+    expect(await s.lister()).toEqual({ echec: { genre: 'budget' } });
   });
 
   it('le corps d une reponse qu on n exploite pas est JETE, sinon la connexion reste retenue', async () => {
@@ -273,6 +279,28 @@ describe('le client MCP : appeler un outil', () => {
     const r = await session.appeler('capture', {});
     expect(r).toEqual({ texte: expect.stringContaining('voici'), estErreur: false });
     expect((r as { texte: string }).texte).toContain('[image]');
+  });
+
+  it('🔴 un inputSchema absent ou illisible ARRIVE TEL QUEL, le client n en invente jamais un vide', async () => {
+    // Le piege repare : `lireOutil` substituait `{type:"object",properties:{}}` des que `inputSchema`
+    // n etait pas un objet. L outil paraissait alors ACTIVABLE ET SANS PARAMETRE, donc il partait au modele
+    // nu et appelait le serveur avec `{}` a chaque tour, pendant que le refus prevu par l aplatisseur
+    // restait inatteignable sur le chemin reel.
+    const { session } = await doitOuvrir([
+      INIT, ACCUSE,
+      { result: { tools: [
+        { name: 'sans' },
+        { name: 'chaine', inputSchema: 'un objet, promis' },
+        { name: 'tableau', inputSchema: [1, 2] },
+        { name: 'bon', inputSchema: { type: 'object', properties: { q: { type: 'string' } } } },
+      ] } },
+    ]);
+    const { outils } = await doitLister(session);
+    expect(outils.map((o) => o.name)).toEqual(['sans', 'chaine', 'tableau', 'bon']);
+    expect(outils[0]!.inputSchema).toBeUndefined();
+    expect(outils[1]!.inputSchema).toBe('un objet, promis');
+    expect(outils[2]!.inputSchema).toEqual([1, 2]);
+    expect(outils[3]!.inputSchema).toEqual({ type: 'object', properties: { q: { type: 'string' } } });
   });
 
   it('un corps qui depasse le plafond est un echec, jamais un texte tronque', async () => {

@@ -161,10 +161,10 @@ export class PgSourceStore implements SourceStore {
 
   async pourAppel(tenantId: string, id: string): Promise<SourceAppel | null> {
     const res = await this.pool.query<{
-      id: string; base_url: string; auth_kind: string; auth_header_name: string | null;
+      id: string; kind: string; base_url: string; auth_kind: string; auth_header_name: string | null;
       auth_secret_enc: string | null; status: string;
     }>(
-      `select id, base_url, auth_kind, auth_header_name, auth_secret_enc, status
+      `select id, kind, base_url, auth_kind, auth_header_name, auth_secret_enc, status
          from agent_tool_sources where tenant_id = $1 and id = $2`,
       [tenantId, id],
     );
@@ -172,6 +172,7 @@ export class PgSourceStore implements SourceStore {
     if (!r) return null;
     return {
       id: r.id,
+      kind: r.kind as KindSource,
       baseUrl: r.base_url,
       authKind: r.auth_kind as AuthSource,
       authHeaderName: r.auth_header_name,

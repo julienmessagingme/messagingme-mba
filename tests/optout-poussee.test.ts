@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
+import type { SourceAppel } from '../src/agent/sources';
 import { PgContactStore } from '../src/crm/contact-store.pg';
 import {
   lotsDePoussee,
@@ -315,7 +316,16 @@ describe('le travail de poussée', () => {
     variables: [{ nom: 'tel', type: 'string' as const, origine: { type: 'contact' as const, cle: 'wa_id' as const } }],
     outputPaths: ['ok'], valeursTest: {}, outils: 0, updatedAt: '2026-09-13T00:00:00.000Z',
   };
-  const SOURCE = { id: 'src1', baseUrl: 'https://crm.exemple.fr', status: 'active' as const, authMode: 'none' as const };
+  /**
+   * ⚠️ IL SATISFAIT `SourceAppel` EN ENTIER, sans `as never`. Il annonçait un `authMode` qui n'existe dans
+   * AUCUN contrat de ce dépôt, et personne ne l'a jamais vu : le `as never` posé au point d'usage avalait
+   * aussi bien la propriété inventée que le `kind` manquant. C'est la quatrième fois aujourd'hui qu'un de
+   * ces casts cache un faux qui ne tient pas le contrat qu'il prétend jouer.
+   */
+  const SOURCE: SourceAppel = {
+    id: 'src1', kind: 'http', baseUrl: 'https://crm.exemple.fr',
+    authKind: 'none', authHeaderName: null, authSecret: null, status: 'active',
+  };
 
   function deps(over: Partial<Parameters<typeof creerTravailPousseeOptOut>[0]> = {}) {
     const appels: string[] = [];
@@ -323,7 +333,7 @@ describe('le travail de poussée', () => {
     const logs: string[] = [];
     const base = {
       sources: {
-        pourAppel: async () => SOURCE as never,
+        pourAppel: async () => SOURCE,
         marquerEpreuve: async () => {},
       },
       requetes: { parId: async () => REQUETE as never },

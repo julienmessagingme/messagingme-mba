@@ -3,6 +3,7 @@ import { creerResolveurMcp } from '../src/agent/resolvers/mcp';
 import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
+import type { SessionMcp } from '../src/mcp/client';
 import { SANS_MCP } from './outils-mcp';
 
 /**
@@ -19,7 +20,7 @@ import { SANS_MCP } from './outils-mcp';
  */
 
 const SOURCE: SourceAppel = {
-  id: 'src1', baseUrl: 'https://exemple.test/mcp',
+  id: 'src1', kind: 'mcp', baseUrl: 'https://exemple.test/mcp',
   authKind: 'bearer', authHeaderName: null, authSecret: 'jeton-secret', status: 'active',
 };
 
@@ -39,14 +40,22 @@ const CTX = {
   deadline: Date.now() + 30_000,
 };
 
+/**
+ * ⚠️ AUCUN `as never` ICI, ET CE N EST PAS UNE COQUETTERIE. Trois fixtures de ce depot ont deja passe le
+ * typecheck en mentant de cette facon, puis ont echoue AU RUNTIME sur un `... is not a function` : un faux
+ * qui ne satisfait pas le contrat ne prouve rien du vrai. La session par defaut satisfait donc `SessionMcp`
+ * en entier, et les tests n en remplacent qu une methode a la fois.
+ */
 function harnais(over: {
-  session?: Partial<{ lister: unknown; appeler: unknown; fermer: unknown }>;
+  session?: Partial<SessionMcp>;
   source?: SourceAppel | null;
   resolution?: { ok: boolean };
 } = {}) {
   const appeler = vi.fn(async () => ({ texte: 'reponse du serveur', estErreur: false }));
   const fermer = vi.fn(async () => {});
-  const session = { lister: vi.fn(), appeler, fermer, ...over.session };
+  const session: SessionMcp = {
+    lister: vi.fn(async () => ({ outils: [], tronque: false })), appeler, fermer, ...over.session,
+  };
   const ouvrirSession = vi.fn(async () => session);
   const epreuves: Array<{ ok: boolean }> = [];
   const resolveur = creerResolveurMcp({
@@ -54,7 +63,7 @@ function harnais(over: {
       pourAppel: async () => (over.source === undefined ? SOURCE : over.source),
       marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
     },
-    ouvrirSession: ouvrirSession as never,
+    ouvrirSession,
     verifierResolution: async () => over.resolution ?? { ok: true },
   });
   return { resolveur, appeler, fermer, ouvrirSession, epreuves };
@@ -62,6 +71,43 @@ function harnais(over: {
 
 const entree = (outil: OutilDefini, args: Record<string, unknown> = {}): EntreeResolveur => ({
   outil, args, ctx: CTX, signal: AbortSignal.timeout(10_000),
+});
+
+describe('le resolveur MCP : ce a quoi il refuse de parler', () => {
+  it('🔴 refuse une source qui n est PAS un serveur MCP, AVANT d ouvrir quoi que ce soit', async () => {
+    // Sans cette garde, on POSTe une enveloppe JSON-RPC sur l API metier d un client. La cle etrangere
+    // composite de 0152 ferme le croisement en base, mais seulement pour les lignes qui portent
+    // `source_kind` : celles d avant le deploiement le portent a null et lui echappent (MATCH SIMPLE).
+    const h = harnais({ source: { ...SOURCE, kind: 'http' } });
+    const r = await h.resolveur(entree(OUTIL()));
+    expect(r.ok).toBe(false);
+    expect(r.erreur).toContain('pas un serveur MCP');
+    // 🔴 L ORDRE EST LA GARDE : une verification posee apres l ouverture serait decorative.
+    expect(h.ouvrirSession).not.toHaveBeenCalled();
+  });
+
+  it('🔴 refuse un outil qui ne dit pas QUEL outil appeler, au lieu de replier sur notre nom prefixe', async () => {
+    // Le repli etait pire que l absence : notre nom local est PREFIXE par le libelle du serveur
+    // (`notion_search`) justement pour eviter les collisions, donc c est un nom que le serveur ne connait
+    // PAR CONSTRUCTION pas. L appel partait, echouait chez le tiers, et le client lisait un refus du
+    // serveur pour une donnee qui manquait CHEZ NOUS.
+    const h = harnais();
+    const r = await h.resolveur(entree(OUTIL({ binding: {} })));
+    expect(r.ok).toBe(false);
+    expect(r.erreur).toContain('réimporter');
+    expect(h.appeler).not.toHaveBeenCalled();
+  });
+
+  it('🔴 un budget epuise se dit comme NOTRE delai, jamais comme une reponse illisible du serveur', async () => {
+    // Le budget total vaut l echeance de l outil : un serveur lent peut le consommer des l initialisation.
+    // Range sous `protocole`, ce cas ressortait en « le serveur MCP a repondu quelque chose d illisible » :
+    // on accusait un tiers de notre propre minuterie, et le client allait chercher une panne chez lui.
+    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'budget' as const } })) } });
+    const r = await h.resolveur(entree(OUTIL()));
+    expect(r.ok).toBe(false);
+    expect(r.erreur).toContain('délai');
+    expect(r.erreur).not.toContain('illisible');
+  });
 });
 
 describe('le resolveur MCP : ce qui PART chez le serveur', () => {
@@ -102,7 +148,7 @@ describe('le resolveur MCP : ce qui PART chez le serveur', () => {
   });
 
   it('🔴 le jeton de la source part en en-tete, et JAMAIS dans ce qui revient au modele', async () => {
-    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'refus', code: 401, message: 'Unauthorized' } })) } });
+    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'refus' as const, code: 401, message: 'Unauthorized' } })) } });
     const r = await h.resolveur(entree(OUTIL()));
     expect((h.ouvrirSession.mock.calls[0]! as unknown as [{ enTetes: Record<string, string> }])[0].enTetes.authorization).toBe('Bearer jeton-secret');
     expect(JSON.stringify(r)).not.toContain('jeton-secret');
@@ -161,7 +207,7 @@ describe('le resolveur MCP : ce qui REVIENT au modele', () => {
   });
 
   it('une panne de TRANSPORT marque la source, elle', async () => {
-    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'reseau', message: 'ECONNREFUSED' } })) } });
+    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'reseau' as const, message: 'ECONNREFUSED' } })) } });
     const r = await h.resolveur(entree(OUTIL()));
     expect(r.ok).toBe(false);
     expect(h.epreuves).toEqual([{ ok: false }]);
@@ -178,7 +224,7 @@ describe('le resolveur MCP : ce qui REVIENT au modele', () => {
   });
 
   it('la session est FERMEE, y compris quand l appel echoue', async () => {
-    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'reseau', message: 'coupe' } })) } });
+    const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'reseau' as const, message: 'coupe' } })) } });
     await h.resolveur(entree(OUTIL()));
     expect(h.fermer).toHaveBeenCalled();
   });
@@ -225,13 +271,13 @@ describe('le CABLAGE du bac a sable, qui rendait la simulation inatteignable', (
     // eprouvaient la fonction et jamais le chemin. C est pour ca que la promesse de 0150 restait fausse
     // apres avoir ete reparee : elle l avait ete dans la fonction, pas dans le cablage.
     const { resolveursSimulation } = await import('../src/agent/resolvers/simulation');
-    const r = resolveursSimulation({ connaissance: { chercher: async () => [] } as never });
+    const r = resolveursSimulation({ connaissance: { chercher: async () => [] } });
     expect(Object.keys(r).sort()).toEqual(['http', 'mba', 'mcp']);
   });
 
   it('et chacune SIMULE au lieu de tomber : le chemin est reellement branche', async () => {
     const { resolveursSimulation } = await import('../src/agent/resolvers/simulation');
-    const r = resolveursSimulation({ connaissance: { chercher: async () => [] } as never });
+    const r = resolveursSimulation({ connaissance: { chercher: async () => [] } });
     const sortie = await r.mcp!(entree(OUTIL()));
     expect(JSON.stringify(sortie.contenu)).toContain('search');
     // Rien n est parti chez le serveur : c est tout l interet du bac a sable.

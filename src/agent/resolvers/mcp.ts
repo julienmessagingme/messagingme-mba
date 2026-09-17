@@ -47,6 +47,10 @@ function refus(raison: string): SortieResolveur {
 /** Le message qu'on montre pour chaque genre d'échec du transport. Aucun ne porte le secret. */
 function direEchec(e: EchecMcp): string {
   switch (e.genre) {
+    case 'budget':
+      // ⚠️ LE DÉLAI EST LE NÔTRE, on le dit. Le client peut l'augmenter sur la fiche de l'outil ; l'envoyer
+      // enquêter chez son fournisseur sur une réponse « illisible » lui ferait perdre sa journée.
+      return 'l’appel a dépassé le délai fixé pour cet outil';
     case 'transport_ancien':
       return 'ce serveur MCP parle un transport que nous ne prenons pas en charge';
     case 'refus':
@@ -121,6 +125,11 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
 
     const source = await deps.sources.pourAppel(ctx.tenantId, outil.sourceId);
     if (!source) return refus('le serveur MCP de cet outil est introuvable');
+    // 🔴 LA SOURCE EST-ELLE BIEN UN SERVEUR MCP ? La clé étrangère composite de 0152 le garantit en base,
+    // mais seulement pour les lignes qui portent `source_kind` : celles d'avant le déploiement le portent à
+    // null et lui échappent (MATCH SIMPLE, délibéré). Sans cette ligne, on parlerait le protocole MCP à un
+    // connecteur HTTP, donc on POSTerait une enveloppe JSON-RPC sur l'API d'un client.
+    if (source.kind !== 'mcp') return refus('le connecteur de cet outil n’est pas un serveur MCP');
     if (source.status !== 'active') return refus('le serveur MCP de cet outil n’est pas actif');
 
     // 2. L'ADRESSE, AVANT TOUTE CONNEXION. 🔴 L'ORDRE EST LA GARDE : une vérification posée après l'ouverture
@@ -133,6 +142,10 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
 
     // 3. LA SESSION. Le budget TOTAL vaut l'échéance de l'outil : l'initialisation, la notification et
     //    l'appel y puisent ensemble, sinon trois allers-retours vaudraient trois fois l'échéance.
+    //    ⚠️ CONSÉQUENCE ASSUMÉE : un serveur lent peut consommer le budget dès l'initialisation, et l'appel
+    //    n'a alors plus rien. C'est le comportement voulu (l'échéance de l'outil borne l'OPÉRATION, pas
+    //    chaque requête), et c'est pourquoi `budget` porte un genre à lui : ce cas-là se dit au client
+    //    comme un délai à augmenter, jamais comme une faute du serveur.
     const cible: CibleMcp = {
       url: source.baseUrl,
       enTetes: enTetesAuthSource(source),
@@ -150,7 +163,17 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
     const session: SessionMcp = ouverte;
 
     try {
-      const nomDistant = typeof outil.binding.outilDistant === 'string' ? outil.binding.outilDistant : outil.name;
+      /**
+       * 🔴 PAS DE REPLI SUR `outil.name`, ET LE REPLI ÉTAIT PIRE QUE L'ABSENCE. Notre nom local est
+       * PRÉFIXÉ par le libellé du serveur (`notion_search`) précisément pour éviter les collisions entre
+       * deux serveurs : c'est donc un nom que le serveur distant ne connaît PAR CONSTRUCTION pas. L'appel
+       * partait, échouait chez le tiers, et le client lisait un refus du serveur pour une donnée manquante
+       * chez nous. On refuse ici, avec la raison.
+       */
+      const nomDistant = outil.binding.outilDistant;
+      if (typeof nomDistant !== 'string' || nomDistant === '') {
+        return refus('cet outil ne dit pas quel outil appeler sur le serveur MCP, il faut le réimporter');
+      }
       const resultat = await session.appeler(nomDistant, argumentsDistants(paramsOutil(outil.params), entree.args));
 
       if ('echec' in resultat) {

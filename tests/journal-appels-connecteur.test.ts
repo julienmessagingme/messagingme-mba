@@ -4,6 +4,7 @@ import { creerAppelConnecteur } from '../src/agent/resolvers/http';
 import { creerAppelHttpScenario } from '../src/workflow/appel-http';
 import { creerTravailPousseeOptOut } from '../src/crm/poussee-optout';
 import type { JournalAppels } from '../src/agent/catalog';
+import type { SourceAppel } from '../src/agent/sources';
 
 /**
  * LE JOURNAL DES APPELS DE CONNECTEUR, ET SES TROIS APPELANTS (tâche 9, migration 0142).
@@ -22,7 +23,16 @@ const REQUETE = {
   variables: [{ nom: 'tel', type: 'string' as const, origine: { type: 'contact' as const, cle: 'wa_id' as const } }],
   outputPaths: ['ok'], valeursTest: {}, outils: 0, updatedAt: '2026-09-14T00:00:00.000Z',
 };
-const SOURCE = { id: 'src1', baseUrl: 'https://crm.exemple.fr', status: 'active' as const, authMode: 'none' as const };
+/**
+ * ⚠️ IL SATISFAIT `SourceAppel` EN ENTIER, sans `as never`. Il annonçait un `authMode` qui n'existe dans
+ * AUCUN contrat de ce dépôt, et personne ne l'a jamais vu : le `as never` posé au point d'usage avalait
+ * aussi bien la propriété inventée que le `kind` manquant. C'est la quatrième fois aujourd'hui qu'un de
+ * ces casts cache un faux qui ne tient pas le contrat qu'il prétend jouer.
+ */
+const SOURCE: SourceAppel = {
+  id: 'src1', kind: 'http', baseUrl: 'https://crm.exemple.fr',
+  authKind: 'none', authHeaderName: null, authSecret: null, status: 'active',
+};
 
 /** Un journal observable : c'est lui qui rend visible ce qui, jusqu'ici, n'était écrit nulle part. */
 function journalEspion() {
@@ -37,7 +47,7 @@ function journalEspion() {
 
 function depsConnecteur(fetchImpl: typeof fetch) {
   return {
-    sources: { pourAppel: async () => SOURCE as never, marquerEpreuve: async () => {} },
+    sources: { pourAppel: async () => SOURCE, marquerEpreuve: async () => {} },
     requetes: { parId: async () => REQUETE as never },
     fetchImpl,
     verifierResolution: async () => ({ ok: true as const }),

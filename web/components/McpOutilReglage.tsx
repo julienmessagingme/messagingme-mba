@@ -29,6 +29,7 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
   const t = useT();
   const [params, setParams] = useState<ParamMcp[]>(outil.params);
   const [risk, setRisk] = useState<OutilMcp['risk']>(outil.risk);
+  const [nePasUtiliser, setNePasUtiliser] = useState(outil.nePasUtiliser);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistre, setEnregistre] = useState(false);
@@ -64,6 +65,13 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
          * devenait appelable même sur un contact inconnu en lecture seule.
          */
         risk,
+        /**
+         * 🔴 IL PART AVEC LE RESTE, SINON LA CAPACITÉ EST OFFERTE ET INERTE. La route l'accepte depuis le
+         * premier jour et l'import le pose à vide en disant « c'est au client de l'écrire » : aucun écran
+         * ne le lui demandait, donc il restait vide pour toujours. C'est le motif que ce produit
+         * s'interdit ailleurs (migration 0144), relevé par la revue à froid du 2026-09-17.
+         */
+        nePasUtiliser,
         params: params.map((p) => ({
           name: p.name,
           source: p.source,
@@ -175,6 +183,20 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
               <option value="write">{t('il ÉCRIT quelque chose', 'it WRITES something')}</option>
               <option value="irreversible">{t('une action IRRÉVERSIBLE', 'an IRREVERSIBLE action')}</option>
             </select>
+          </div>
+
+          <div className="mt-2">
+            <label className="block text-xs text-ink-600" htmlFor={`mcp-nepasutiliser-${outil.id}`}>
+              {t('Quand NE PAS l’appeler (facultatif)', 'When NOT to call it (optional)')}
+            </label>
+            {/* 🔴 LE SEUL LEVIER QUI DÉCIDE QUAND UN OUTIL SE DÉCLENCHE, et le serveur distant n'en sait
+                rien : sa description dit ce que l'outil FAIT, jamais quand s'en abstenir. */}
+            <textarea id={`mcp-nepasutiliser-${outil.id}`} rows={2} maxLength={2000}
+              data-testid={`mcp-nepasutiliser-${outil.name}`}
+              className={`${inputCls} w-full`} value={nePasUtiliser}
+              placeholder={t('ex. ne pas l’appeler si le contact n’a pas donné son numéro de commande',
+                'e.g. do not call it if the contact has not given their order number')}
+              onChange={(e) => { setEnregistre(false); setNePasUtiliser(e.target.value); }} />
           </div>
 
           {(

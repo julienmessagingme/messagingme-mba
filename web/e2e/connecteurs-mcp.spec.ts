@@ -137,6 +137,24 @@ test.describe('Tools > Connecteurs MCP', () => {
     await expect(page.getByTestId('mcp-risque-notion_search')).toHaveValue('irreversible');
   });
 
+  test('🔴 « quand NE PAS l appeler » EXISTE a l ecran et PART dans le PATCH', async ({ page }) => {
+    // La route l acceptait depuis le premier jour et l import le posait a vide en disant « c est au client
+    // de l ecrire » : aucun ecran ne le lui demandait, donc il restait vide pour toujours. C est le motif
+    // « offert-et-inerte » que ce produit s interdit ailleurs (migration 0144).
+    let corps: unknown = null;
+    await mock(page);
+    await page.route('**/api/backend/**/mcp/outils/**', async (route: Route) => {
+      corps = JSON.parse(route.request().postData() ?? '{}');
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.goto('/connecteurs-mcp');
+    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
+    await page.getByTestId('mcp-nepasutiliser-notion_search').fill('jamais sans numero de commande');
+    await page.getByTestId('mcp-enregistrer-notion_search').click();
+    await expect(page.getByTestId('mcp-reglage-ok-notion_search')).toBeVisible();
+    expect(corps).toMatchObject({ nePasUtiliser: 'jamais sans numero de commande' });
+  });
+
   test('un paramètre obligatoire pour le serveur est signalé AU CLOUAGE', async ({ page }) => {
     // L'avertissement se pose au moment du choix, pas à l'appel : un champ vide part vide, et c'est le
     // serveur qui décide. Le client doit le savoir quand il décide, pas quand ça rate.

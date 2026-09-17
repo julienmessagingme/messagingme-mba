@@ -71,7 +71,7 @@ describe('le câblage du bloc', () => {
   const deps = (over: Record<string, unknown> = {}) => ({
     sources: {
       pourAppel: async () => ({
-        id: 's1', baseUrl: 'https://api.client.fr/v1', authKind: 'none' as const,
+        id: 's1', kind: 'http' as const, baseUrl: 'https://api.client.fr/v1', authKind: 'none' as const,
         authHeaderName: null, authSecret: null, status: 'active' as const,
       }),
       marquerEpreuve: async () => {},
@@ -122,7 +122,7 @@ describe('le câblage du bloc', () => {
     const appel = creerAppelHttpScenario(deps({
       sources: {
         pourAppel: async () => ({
-          id: 's1', baseUrl: 'https://api.client.fr/v1', authKind: 'none' as const,
+          id: 's1', kind: 'http' as const, baseUrl: 'https://api.client.fr/v1', authKind: 'none' as const,
           authHeaderName: null, authSecret: null, status: 'disabled' as const,
         }),
         marquerEpreuve: async () => {},

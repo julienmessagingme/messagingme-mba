@@ -116,7 +116,13 @@ function typeScalaire(noeud: Record<string, unknown>): TypeParam | null {
 export function aplatirSchema(inputSchema: unknown): SchemaAplati {
   const racine = objet(inputSchema);
   if (racine === null) {
-    return { feuilles: [], raisonNonActivable: 'le serveur n’a pas déclaré la forme des paramètres de cet outil' };
+    // ⚠️ DEUX RAISONS DISTINCTES, parce que le client n'a pas la même chose à dire à son fournisseur. « Rien
+    // de déclaré » est une omission ; « déclaré mais illisible » est une réponse mal formée, et confondre
+    // les deux ferait chercher une absence là où il y a une faute de frappe.
+    const raisonNonActivable = inputSchema === undefined || inputSchema === null
+      ? 'le serveur n’a pas déclaré la forme des paramètres de cet outil'
+      : 'le serveur a déclaré les paramètres de cet outil sous une forme illisible';
+    return { feuilles: [], raisonNonActivable };
   }
   if (racine.type !== undefined && racine.type !== 'object') {
     return { feuilles: [], raisonNonActivable: `les paramètres de cet outil ne sont pas un objet (« ${String(racine.type)} »)` };

@@ -161,6 +161,10 @@ function direEchec(e: EchecMcp): string {
       return `le serveur a refusé la connexion (${e.code})`;
     case 'reseau':
       return 'le serveur est injoignable';
+    case 'budget':
+      // ⚠️ NOTRE MINUTERIE, ET ON LE DIT. Ici c'est l'administrateur qui regarde l'écran : lui annoncer une
+      // réponse « illisible » l'enverrait soupçonner son serveur pour un délai que nous avons fixé.
+      return 'le serveur a mis trop de temps à répondre (délai de l’épreuve dépassé)';
     default:
       return e.message;
   }
@@ -350,8 +354,16 @@ export function registerAgentMcp(
     return reply.code(200).send({ ok: true });
   });
 
-  /** L'aperçu : le plan, SANS rien écrire. */
-  app.get('/agents/:tenantId/mcp/:sourceId/apercu', lourd, async (req, reply) => {
+  /**
+   * L'aperçu : le plan, SANS rien écrire DANS LE CATALOGUE.
+   *
+   * 🔴 EN `POST`, ET CE N'EST PAS UNE COQUETTERIE REST. Ce chemin OUVRE UNE CONNEXION SORTANTE vers le
+   * serveur du client et ÉCRIT `marquerEpreuve` : en `GET`, un préchargement de navigateur, un
+   * aperçu de lien, une nouvelle tentative automatique ou un robot d'indexation suffisaient à faire
+   * appeler le serveur d'un client et à changer son état affiché, sans que personne ait cliqué. « Sans
+   * rien écrire » ne parlait que du catalogue, et c'est ce raccourci qui a fait choisir le verbe.
+   */
+  app.post('/agents/:tenantId/mcp/:sourceId/apercu', lourd, async (req, reply) => {
     const r = await calculer(deps, req, reply);
     if (r === null) return reply;
     return reply.code(200).send({ plan: r.plan, tronque: r.tronque });

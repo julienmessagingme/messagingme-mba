@@ -21,7 +21,7 @@ import { SANS_MCP } from './outils-mcp';
  */
 
 const SOURCE: SourceAppel = {
-  id: 'src1', baseUrl: 'https://api.client.fr/v1',
+  id: 'src1', kind: 'http', baseUrl: 'https://api.client.fr/v1',
   authKind: 'none', authHeaderName: null, authSecret: null, status: 'active',
 };
 

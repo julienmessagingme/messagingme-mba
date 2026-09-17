@@ -18,7 +18,7 @@ import { SANS_MCP } from './outils-mcp';
  * `erreur_protocole`, qui arrête le tour, alors que le client peut corriger son outil dans la console.
  */
 const SOURCE: SourceAppel = {
-  id: 'src1', baseUrl: 'https://api.client.fr/v1',
+  id: 'src1', kind: 'http', baseUrl: 'https://api.client.fr/v1',
   authKind: 'bearer', authHeaderName: null, authSecret: 'JETON-SECRET-42', status: 'active',
 };
 
@@ -235,6 +235,19 @@ describe('résolveur http : les refus, tous sans lever', () => {
       expect(r.ok).toBe(false);
       expect(appels).toHaveLength(0); // et surtout : AUCUN appel réseau
     }
+  });
+
+  it('🔴 une source qui n est PAS un systeme HTTP : on ne parle pas HTTP brut a un serveur MCP', async () => {
+    // La garde JUMELLE de celle du resolveur MCP, et la poser d un seul cote n en aurait pas ete une. Le
+    // croisement origin/kind est ferme en base par la cle etrangere composite de 0152, mais en MATCH
+    // SIMPLE : une ligne d avant le deploiement porte `source_kind` a null et lui echappe. Sans ce refus,
+    // l appel partirait sur le point MCP du client, avec son secret dans l en-tete, et `construireCible`
+    // validerait le gabarit de chemin contre la MAUVAISE adresse de base.
+    const { resolveur, entree, appels } = harnais({ source: { ...SOURCE, kind: 'mcp' } });
+    const r = await resolveur(entree);
+    expect(r.ok).toBe(false);
+    expect(r.erreur).toContain('mcp');
+    expect(appels, 'AUCUN appel reseau ne part').toHaveLength(0);
   });
 
   it('gabarit illisible ou cible refusée', async () => {

@@ -202,3 +202,27 @@ describe('🔴 le clouage SURVIT a un rafraichissement', () => {
     expect(o.params.find((p) => p.cheminMcp === 'client.id')).toMatchObject({ source: 'champ', cle: 'email' });
   });
 });
+
+describe('un schema que le serveur n a pas su declarer', () => {
+  /**
+   * 🔴 LE TEST QUI COMPTE EST CELUI DU CABLAGE. `aplatirSchema` refusait deja ces entrees, et six cas le
+   * verifiaient ; mais le client leur substituait un objet vide AVANT, si bien que ce refus n etait atteint
+   * par aucun chemin reel. Ici on part de l annonce telle que `lister()` la rend, et on regarde ce que
+   * `outilDepuisAnnonce` ECRIT : zero parametre ET une raison, jamais zero parametre tout court.
+   */
+  it('ressort NON ACTIVABLE avec sa raison, jamais activable et sans parametre', () => {
+    const absent = outilDepuisAnnonce({ name: 'sans', inputSchema: undefined }, 'Notion', new Set());
+    expect(absent.params).toEqual([]);
+    expect(absent.nonActivable).toContain('n’a pas déclaré');
+
+    const illisible = outilDepuisAnnonce({ name: 'chaine', inputSchema: 'promis' }, 'Notion', new Set());
+    expect(illisible.params).toEqual([]);
+    expect(illisible.nonActivable).toContain('illisible');
+  });
+
+  it('et les DEUX raisons sont distinctes : une omission ne se lit pas comme une reponse mal formee', () => {
+    const absent = outilDepuisAnnonce({ name: 'a', inputSchema: undefined }, 'S', new Set());
+    const illisible = outilDepuisAnnonce({ name: 'b', inputSchema: 42 }, 'S', new Set());
+    expect(absent.nonActivable).not.toEqual(illisible.nonActivable);
+  });
+});

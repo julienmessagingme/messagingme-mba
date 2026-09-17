@@ -53,7 +53,15 @@ export interface OutilAnnonce {
   name: string;
   title?: string;
   description?: string;
-  inputSchema: Record<string, unknown>;
+  /**
+   * 🔴 `unknown` ET PAS `Record<string, unknown>`, PARCE QUE C'EST UN TIERS QUI L'ÉCRIT. La spec le déclare
+   * requis et objet, mais un serveur reste libre de l'omettre ou d'envoyer une chaîne. Le typer en objet
+   * OBLIGEAIT `lireOutil` à substituer un objet vide, c'est-à-dire à transformer « je ne sais pas quels
+   * paramètres cet outil prend » en « cet outil n'en prend aucun » : l'outil paraissait alors activable,
+   * partait au modèle sans un seul paramètre, et appelait le serveur avec `{}` à chaque tour. La valeur
+   * voyage donc telle quelle jusqu'à `aplatirSchema`, seul endroit qui sache la refuser AVEC sa raison.
+   */
+  inputSchema: unknown;
   outputSchema?: Record<string, unknown>;
   /**
    * ⚠️ NON FIABLES, LA SPEC LE DIT EXPRESSÉMENT : « clients MUST consider tool annotations to be untrusted
@@ -68,6 +76,12 @@ export type EchecMcp =
   | { genre: 'transport_ancien' }
   | { genre: 'reseau'; message: string }
   /** Réponse illisible, corps trop gros, flux cassé : ce qui n'est ni un refus ni une panne réseau. */
+  /**
+   * 🔴 NOTRE ÉCHÉANCE, PAS UNE FAUTE DU SERVEUR, et c'est pour ça qu'il a son genre à lui. Rangé sous
+   * `protocole`, il ressortait au client en « le serveur MCP a répondu quelque chose d'illisible » :
+   * on accusait un tiers de notre propre minuterie, et le client allait chercher une panne chez lui.
+   */
+  | { genre: 'budget' }
   | { genre: 'protocole'; message: string }
   | { genre: 'refus'; code: number; message: string };
 
@@ -272,7 +286,7 @@ async function ouvrir(
     const id = prochainId++;
     const restant = finAbsolue - maintenant();
     if (restant <= 0) {
-      return { echec: { genre: 'protocole', message: 'le budget de l’opération est épuisé' } };
+      return { echec: { genre: 'budget' } };
     }
     let res: Response;
     try {
@@ -446,14 +460,15 @@ function lireOutil(brut: unknown): OutilAnnonce | null {
   const o = objet(brut);
   if (o === null) return null;
   if (typeof o.name !== 'string' || o.name.trim() === '') return null;
-  const entree = objet(o.inputSchema);
   return {
     name: o.name,
     ...(typeof o.title === 'string' ? { title: o.title } : {}),
     ...(typeof o.description === 'string' ? { description: o.description } : {}),
-    // Un outil sans schéma d'entrée est un outil sans paramètre : l'objet vide est la lecture juste, et
-    // c'est l'aplatisseur qui dira s'il est activable.
-    inputSchema: entree ?? { type: 'object', properties: {} },
+    // 🔴 AUCUNE SUBSTITUTION ICI, et c'est tout l'intérêt de la ligne. Un `inputSchema` absent ou illisible
+    // passe TEL QUEL : `aplatirSchema` est le seul à savoir le refuser, et sa raison est celle qu'on
+    // affichera au client. Un objet vide posé ici rendait ce refus inatteignable sur le chemin réel, alors
+    // que six tests l'exerçaient sur la fonction pure.
+    inputSchema: o.inputSchema,
     ...(objet(o.outputSchema) !== null ? { outputSchema: objet(o.outputSchema)! } : {}),
     ...(objet(o.annotations) !== null ? { annotations: objet(o.annotations)! } : {}),
   };

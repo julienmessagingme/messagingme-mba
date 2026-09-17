@@ -3,6 +3,8 @@ import Fastify from 'fastify';
 import { registerAgentMcp, type AgentMcpRouteDeps, type EcritureImportMcp } from '../src/http/agent-mcp';
 import type { PreHandler } from '../src/auth/middleware';
 import type { OutilExistantMcp } from '../src/agent/mcp/import';
+import type { SourceAppel } from '../src/agent/sources';
+import type { SessionMcp } from '../src/mcp/client';
 
 /**
  * LES ROUTES DES CONNECTEURS MCP.
@@ -32,9 +34,9 @@ const SERVEUR = {
   authKind: 'bearer' as const, authHeaderName: null, status: 'active',
   lastOkAt: null, lastError: null,
 };
-const POUR_APPEL = {
-  id: SOURCE, baseUrl: 'https://exemple.test/mcp',
-  authKind: 'bearer' as const, authHeaderName: null, authSecret: 'jeton', status: 'active' as const,
+const POUR_APPEL: SourceAppel = {
+  id: SOURCE, kind: 'mcp', baseUrl: 'https://exemple.test/mcp',
+  authKind: 'bearer', authHeaderName: null, authSecret: 'jeton', status: 'active',
 };
 
 const annonce = (name: string, schema: unknown = { type: 'object', properties: { q: { type: 'string' } } }) =>
@@ -42,7 +44,7 @@ const annonce = (name: string, schema: unknown = { type: 'object', properties: {
 
 function harnais(over: {
   outils?: OutilExistantMcp[];
-  catalogue?: unknown;
+  catalogue?: Awaited<ReturnType<SessionMcp['lister']>>;
   resolution?: { ok: boolean; raison?: string };
   cles?: string[];
   reglerOk?: boolean;
@@ -54,9 +56,15 @@ function harnais(over: {
   const crees: unknown[] = [];
   const epreuves: Array<{ ok: boolean }> = [];
   const regles: unknown[] = [];
-  const session = {
+  /**
+   * ⚠️ IL SATISFAIT `SessionMcp` EN ENTIER, sans `as never`. Trois fixtures de ce depot ont deja passe le
+   * typecheck en mentant de cette facon puis ont echoue AU RUNTIME sur un `... is not a function` : un faux
+   * qui ne satisfait pas le contrat ne prouve rien du vrai. `appeler` n est pas exerce ici, mais il rend
+   * quand meme ce que le contrat promet.
+   */
+  const session: SessionMcp = {
     lister: vi.fn(async () => over.catalogue ?? { outils: [annonce('search')], tronque: false }),
-    appeler: vi.fn(),
+    appeler: vi.fn(async () => ({ texte: '', estErreur: false })),
     fermer: vi.fn(async () => {}),
   };
   const deps: AgentMcpRouteDeps = {
@@ -71,8 +79,8 @@ function harnais(over: {
     appliquer: async (_t, _s, e) => { ecrit.push(e); },
     clesDeChamps: async () => over.cles ?? ['email', 'reference'],
     reglerOutil: async (_t, id, patch) => { regles.push({ id, patch }); return over.reglerOk ?? true; },
-    ouvrirSession: (async () => session) as never,
-    verifierResolution: async () => (over.resolution ?? { ok: true }) as never,
+    ouvrirSession: async () => session,
+    verifierResolution: async () => over.resolution ?? { ok: true },
   };
   const app = Fastify();
   registerAgentMcp(app, deps, gardeQuiPose);
@@ -101,11 +109,23 @@ describe('eprouver un serveur MCP', () => {
 });
 
 describe('l apercu et l import', () => {
+  it('🔴 l apercu N EST PAS un GET : il ouvre une connexion sortante et ecrit', async () => {
+    /**
+     * « Sans rien ecrire » ne parlait que du CATALOGUE. Ce chemin appelle le serveur du client et pose
+     * `marquerEpreuve` : en GET, un prechargement de navigateur, un apercu de lien, une nouvelle tentative
+     * automatique ou un robot suffisaient a declencher les deux, sans que personne ait clique.
+     */
+    const h = harnais();
+    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/apercu` });
+    expect(r.statusCode).toBe(404);
+    expect(h.session.lister, 'aucune connexion sortante n a eu lieu').not.toHaveBeenCalled();
+  });
+
   it('🔴 l APERCU n ECRIT RIEN', async () => {
     // 🔴 C est tout l interet de la paire : ecraser n est acceptable que si l on montre QUOI avant de le
     // faire, suppressions comprises. Un apercu qui ecrirait serait un import qui ment sur son nom.
     const h = harnais();
-    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/${SOURCE}/apercu` });
+    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/${SOURCE}/apercu` });
     expect(r.statusCode).toBe(200);
     expect(r.json().plan).toEqual([{ type: 'nouveau', nom: 'search' }]);
     expect(h.ecrit).toEqual([]);
@@ -164,7 +184,7 @@ describe('l apercu et l import', () => {
 
   it('un identifiant qui n est pas un uuid est refuse avant toute lecture', async () => {
     const h = harnais();
-    const r = await h.app.inject({ method: 'GET', url: `/agents/${TENANT}/mcp/pas-un-uuid/apercu` });
+    const r = await h.app.inject({ method: 'POST', url: `/agents/${TENANT}/mcp/pas-un-uuid/apercu` });
     expect(r.statusCode).toBe(400);
   });
 });
