@@ -140,7 +140,7 @@ import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
-import { corpsConnecteurMeta, corpsOutilMeta, corpsApiKey } from './http/mba-publication';
+import { corpsConnecteurMeta, corpsOutilMeta } from './http/mba-publication';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -1846,17 +1846,39 @@ async function main(): Promise<void> {
           return liste.find((s) => s.id === id);
         };
 
+        /**
+         * 🔴 LE SECRET VOYAGE AVEC LE CONNECTEUR, PARCE QUE META L EXIGE (mesure du 2026-09-18). Un
+         * `auth_type` autre que `NONE` sans `auth_config` dans le MEME corps rend 400, a la creation comme
+         * a la modification. Il est lu par `pourAppel`, exactement la ou `secret_poser` le lisait deja :
+         * ce n est pas un nouveau chemin pour le secret, c est le meme, quelques lignes plus haut.
+         *
+         * ⚠️ UN SERVEUR MCP N A PAS DE SECRET PUBLIABLE : le MBA n accepte aucune connexion MCP, donc on
+         * ne lit que `kind === 'http'`, comme le faisait `secret_poser`.
+         */
+        const secretDeLaSource = async (sourceId: string): Promise<string | null> => {
+          const brut = await agentSources.pourAppel(tenant, sourceId);
+          return brut && brut.kind === 'http' ? (brut.authSecret ?? null) : null;
+        };
+
         if (geste.type === 'connecteur_creer') {
           const s = await sourceParId(geste.sourceId);
           if (s) {
-            await client.createConnector(pn, corpsConnecteurMeta(s));
+            const secret = s.authKind === 'none' ? null : await secretDeLaSource(geste.sourceId);
+            await client.createConnector(pn, corpsConnecteurMeta(s, secret));
+            // 🔴 LE SECRET EST POSE PAR LA CREATION ELLE-MEME : on le marque ici, sinon la publication
+            // suivante rejouerait un `secret_poser` pour rien, et la reconciliation ne serait plus stable.
+            if (secret) await agentSources.marquerSecretPublie(tenant, geste.sourceId);
             ctx.delete('connecteurs'); // il vient d apparaitre : la photo d avant ne le contient pas.
           }
           return;
         }
         if (geste.type === 'connecteur_modifier') {
           const s = await sourceParId(geste.sourceId);
-          if (s) await client.updateConnector(pn, geste.connecteurId, corpsConnecteurMeta(s));
+          if (s) {
+            const secret = s.authKind === 'none' ? null : await secretDeLaSource(geste.sourceId);
+            await client.updateConnector(pn, geste.connecteurId, corpsConnecteurMeta(s, secret));
+            if (secret) await agentSources.marquerSecretPublie(tenant, geste.sourceId);
+          }
           return;
         }
         if (geste.type === 'connecteur_supprimer') {
@@ -1866,16 +1888,19 @@ async function main(): Promise<void> {
         }
         if (geste.type === 'secret_poser') {
           const s = await sourceParId(geste.sourceId);
-          // ⚠️ Un serveur MCP n est PAS publiable chez Meta (le MBA n accepte aucune connexion MCP), donc
-          // son secret n a rien a faire dans un `upsertApiKey`. Le filtre evite de poser chez un tiers un
-          // secret qui ne lui servira jamais.
-          const brut = await agentSources.pourAppel(tenant, geste.sourceId);
-          const secret = brut && brut.kind === 'http' ? brut : null;
+          const secretBrut = await secretDeLaSource(geste.sourceId);
           const cid = await idDuConnecteur(geste.nom);
-          if (s && cid && secret?.authSecret) {
-            await client.upsertApiKey(pn, cid, corpsApiKey(
-              { authKind: s.authKind, authHeaderName: s.authHeaderName }, secret.authSecret,
-            ));
+          if (s && cid && secretBrut) {
+            /**
+             * 🔴 C EST UNE MODIFICATION DU CONNECTEUR, PLUS UN `upsertApiKey` (2026-09-18). Cet appel-la
+             * refusait notre corps (« Invalid api_key_config ») parce que l enveloppe n existe pas : chez
+             * Meta l authentification vit dans le connecteur, sous `auth_config.api_key`. Le geste garde
+             * son nom et sa comptabilite (`secretPublie`), il change ce qu il FAIT.
+             *
+             * ⚠️ LE CORPS EST COMPLET, jamais partiel : un PUT qui ne porte que `auth_type` rend 400
+             * « violated JSON schema constraint required », mesure faite le meme jour.
+             */
+            await client.updateConnector(pn, cid, corpsConnecteurMeta(s, secretBrut));
             /**
              * 🔴 MARQUE APRES L ACCUSE DE RECEPTION DE META, jamais avant. Marquer d abord ferait croire un
              * secret publie alors que l appel a echoue, et la publication suivante ne le reposerait plus :

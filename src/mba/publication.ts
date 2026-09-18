@@ -120,8 +120,10 @@ export function planifierPublication(
   for (const s of sources) {
     const chezMeta = parNom.get(s.label);
     if (!chezMeta) {
+      // 🔴 LA CRÉATION PORTE SON AUTHENTIFICATION, donc plus de `secret_poser` derrière elle (2026-09-18).
+      // Meta EXIGE `auth_config` dans le corps dès que `auth_type` n'est pas `NONE` : le poser après coup
+      // était impossible, et c'est ce qui faisait échouer toute création de connecteur authentifié.
       gestes.push({ type: 'connecteur_creer', sourceId: s.id, nom: s.label });
-      if (s.aAuthentification) gestes.push({ type: 'secret_poser', sourceId: s.id, nom: s.label });
       continue;
     }
     // ⚠️ ON NE COMPARE QUE CE QUE META REND, et le connecteur se met à jour AVANT son secret : le passage de
@@ -213,17 +215,48 @@ export function authTypeMeta(authKind: SourceAPublier['authKind']): 'NONE' | 'AP
 }
 
 /**
- * Le corps de `upsertApiKey` pour une source.
+ * L'AUTHENTIFICATION D'UN CONNECTEUR, TELLE QUE META LA VEUT : dans le CORPS du connecteur, sous
+ * `auth_config.api_key`.
+ *
+ * 🔴 ELLE NE PASSE PAS PAR `upsertApiKey`, ET C'EST LE DÉFAUT QUI BLOQUAIT TOUT (mesuré le 2026-09-18).
+ * On créait le connecteur en `auth_type: API_KEY` SANS `auth_config`, puis on posait la clé après, sous une
+ * enveloppe `api_key_config` inventée. Meta refusait la création en 400 « Invalid connector request », sans
+ * nommer le champ. Conséquence : AUCUN connecteur authentifié n'a jamais pu être publié, seuls ceux en
+ * `NONE` passaient, et le symptôme était le même pour tout le monde.
+ *
+ * 🔴 C'EST META QUI A FINI PAR LE DIRE, quand on a tenté de changer l'`auth_type` après coup :
+ * « auth_config is required when changing auth_type ». La spec OpenAPI officielle
+ * (`meta-business-agent_reference_configure_connectors_v2.0.0`) confirme la forme : `auth_config` porte
+ * `api_key`, qui porte `headers` / `query_params` / `body_params`, chaque entrée étant
+ * `{ field_name, value, prefix }`. Vérifié par un 201 sur le vrai compte, sonde effacée ensuite.
  *
  * ⚠️ `bearer` porte le préfixe `Bearer ` DANS le champ `prefix`, pas collé au secret : Meta concatène
  * lui-même, et coller le préfixe au secret produirait `Bearer Bearer <secret>` le jour où quelqu'un règle
  * aussi le préfixe.
  */
-export function corpsApiKey(
+export function authConfigMeta(
   source: Pick<SourceAPublier, 'authKind' | 'authHeaderName'>,
   secret: string,
-): { api_key_config: { headers: Array<{ field_name: string; value: string; prefix: string | null }> } } {
+): { api_key: { headers: Array<{ field_name: string; value: string; prefix: string | null }> } } {
   const champ = source.authKind === 'bearer' ? 'Authorization' : (source.authHeaderName ?? 'X-API-Key');
   const prefixe = source.authKind === 'bearer' ? 'Bearer ' : null;
-  return { api_key_config: { headers: [{ field_name: champ, value: secret, prefix: prefixe }] } };
+  return { api_key: { headers: [{ field_name: champ, value: secret, prefix: prefixe }] } };
+}
+
+/**
+ * LE NOM D'UN CONNECTEUR, TEL QUE META L'ACCEPTE VRAIMENT.
+ *
+ * 🔴 SA PROPRE SPEC DONNE UN EXEMPLE QUE SON SERVEUR REFUSE. Le champ y est décrit comme un « display
+ * name » avec `Shopify Order Management` en exemple ; un nom contenant une ESPACE rend 400, et un TIRET
+ * aussi. Mesuré un par un le 2026-09-18 : `testUCHAT` 201, `sondeauth` 201, `sonde_auth` 201, `Sonde42`
+ * 201, `sonde-auth` 400, `sonde auth` 400. Lettres, chiffres et tiret bas passent, le reste non.
+ *
+ * ⚠️ ELLE EXISTE POUR QUE L'ÉCRAN REFUSE AVANT META, pas pour réécrire le nom du client : renommer sa
+ * source dans son dos ferait diverger ce qu'il lit chez nous de ce qu'il voit chez Meta, et c'est par le
+ * NOM que la réconciliation retrouve un connecteur.
+ */
+export const NOM_CONNECTEUR_META_RE = /^[A-Za-z0-9_]{1,64}$/;
+
+export function nomPubliableChezMeta(nom: string): boolean {
+  return NOM_CONNECTEUR_META_RE.test(nom);
 }

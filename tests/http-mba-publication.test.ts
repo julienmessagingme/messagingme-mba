@@ -59,7 +59,10 @@ describe('l’aperçu de publication', () => {
     const { app, appliques } = monter();
     const res = await app.inject({ method: 'GET', url: `/tenants/${TENANT}/mba-publication`, ...h() });
     expect(res.statusCode).toBe(200);
-    expect(res.json().gestes.map((g: Geste) => g.type)).toEqual(['connecteur_creer', 'secret_poser', 'outil_creer']);
+    // ⚠️ PLUS DE `secret_poser` DERRIÈRE LA CRÉATION depuis le 2026-09-18 : Meta exige `auth_config` dans
+    // le corps du connecteur, donc la création porte son secret. Le geste existe toujours pour une source
+    // déjà créée dont le secret a changé.
+    expect(res.json().gestes.map((g: Geste) => g.type)).toEqual(['connecteur_creer', 'outil_creer']);
     expect(appliques).toEqual([]);
   });
 
@@ -79,13 +82,16 @@ describe('la publication', () => {
     const { app, appliques } = monter();
     const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
     expect(res.statusCode).toBe(200);
-    expect(appliques.map((g) => g.type)).toEqual(['connecteur_creer', 'secret_poser', 'outil_creer']);
+    expect(appliques.map((g) => g.type)).toEqual(['connecteur_creer', 'outil_creer']);
   });
 
   it('🔴 s’ARRÊTE au premier échec, et DIT ce qui a été fait', async () => {
     // Continuer laisserait un état à moitié publié dont personne ne connaît la forme. S'arrêter en le
     // disant permet de rejouer, et la publication étant idempotente, rejouer ne refait pas ce qui a réussi.
-    const { app, appliques } = monter({ echoueSur: 'secret_poser' });
+    // ⚠️ ON FAIT ÉCHOUER LE SECOND GESTE DU PLAN, quel qu'il soit : c'était `secret_poser`, la création
+    // porte désormais son secret, donc c'est `outil_creer`. Le cas exercé est le même, « le premier a
+    // réussi, le suivant échoue, on s'arrête en le disant ».
+    const { app, appliques } = monter({ echoueSur: 'outil_creer' });
     const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toMatch(/Relancez/);

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import {
-  planifierPublication, descriptionPourMeta, authTypeMeta, corpsApiKey,
+  planifierPublication, descriptionPourMeta, authTypeMeta, authConfigMeta,
   type Geste, type SourceAPublier, type OutilAPublier, type EtatMeta,
 } from '../mba/publication';
 import { scopeTenant } from './scope';
@@ -129,15 +129,34 @@ export function corpsOutilMeta(o: OutilAPublier): {
  * `SourceAPublier` entière obligeait ses deux appelants à recopier la source champ par champ, liste qui
  * dérive dès qu'on y ajoute un champ (ce qui vient d'arriver avec `secretPublie`).
  */
-export function corpsConnecteurMeta(s: Pick<SourceAPublier, 'label' | 'baseUrl' | 'authKind'>): {
-  name: string; description: string; base_url: string; auth_type: string;
-} {
+/**
+ * 🔴 `auth_config` VOYAGE AVEC LE CONNECTEUR, ET C'EST NON NÉGOCIABLE CÔTÉ META (mesuré le 2026-09-18).
+ * Sans lui, une création en `auth_type: API_KEY` rend 400 « Invalid connector request », et un changement
+ * d'`auth_type` rend « auth_config is required when changing auth_type ». Le secret arrive donc ici en
+ * PARAMÈTRE : c'est l'exécuteur de la publication qui le déchiffre, exactement là où il le déchiffrait déjà
+ * pour poser la clé. Ce n'est pas un nouveau chemin pour le secret, c'est le même, une ligne plus haut.
+ *
+ * ⚠️ CE FICHIER N'EST PAS UN LECTEUR DE SOURCE, et la nuance compte pour `tests/sources-kind.test.ts` :
+ * ce garde-fou inventorie les fichiers qui DÉCHIFFRENT un secret, en cherchant l'identifiant de la méthode
+ * n'importe où, commentaires compris. Le citer ici ferait entrer ce fichier dans un inventaire dont il ne
+ * relève pas, et un inventaire qui contient un faux devient un inventaire qu'on n'ose plus lire.
+ *
+ * ⚠️ `secret` ABSENT SUR UNE SOURCE AUTHENTIFIÉE REND UN CORPS EN `NONE`, jamais un corps `API_KEY` sans
+ * configuration : le second est refusé par Meta, donc il ferait échouer la publication entière au lieu de
+ * publier ce qui est publiable. Le geste `secret_poser` du plan suivant remettra l'authentification.
+ */
+export function corpsConnecteurMeta(
+  s: Pick<SourceAPublier, 'label' | 'baseUrl' | 'authKind' | 'authHeaderName'>,
+  secret?: string | null,
+): { name: string; description: string; base_url: string; auth_type: string; auth_config?: unknown } {
+  const authentifie = s.authKind !== 'none' && typeof secret === 'string' && secret !== '';
   return {
     name: s.label,
     description: `Système « ${s.label} » déclaré dans Engage Me.`,
     base_url: s.baseUrl,
-    auth_type: authTypeMeta(s.authKind),
+    auth_type: authentifie ? authTypeMeta(s.authKind) : 'NONE',
+    ...(authentifie ? { auth_config: authConfigMeta(s, secret) } : {}),
   };
 }
 
-export { corpsApiKey };
+export { authConfigMeta };

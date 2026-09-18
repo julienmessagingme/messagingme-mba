@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  planifierPublication, descriptionPourMeta, authTypeMeta, corpsApiKey,
+  planifierPublication, descriptionPourMeta, authTypeMeta, authConfigMeta, nomPubliableChezMeta,
   type SourceAPublier, type OutilAPublier, type EtatMeta,
 } from '../src/mba/publication';
 import { corpsConnecteurMeta, corpsOutilMeta } from '../src/http/mba-publication';
@@ -38,9 +38,20 @@ const ALIGNE: EtatMeta = {
 };
 
 describe('planifierPublication', () => {
-  it('un connecteur absent chez Meta est CRÉÉ, avec son secret et ses outils', () => {
+  /**
+   * 🔴 IL ATTENDAIT UN `secret_poser` DERRIÈRE LA CRÉATION, ET CE GESTE NE PEUT PLUS EXISTER (2026-09-18).
+   *
+   * Meta EXIGE `auth_config` dans le CORPS du connecteur dès que `auth_type` n'est pas `NONE` : créer puis
+   * poser la clé après coup était impossible, et c'est ce qui faisait échouer en 400 toute création de
+   * connecteur authentifié. La création porte donc son secret, et le geste séparé disparaît À LA CRÉATION.
+   *
+   * ⚠️ CE QUI EST CONSERVÉ DU CAS D'ORIGINE : le secret part bien avec ce plan, et les outils suivent. Le
+   * geste `secret_poser` existe TOUJOURS pour une source déjà créée dont le secret a changé, et c'est le
+   * test « un secret DÉJÀ POSÉ n'est pas reposé » juste en dessous qui garde cette moitié-là.
+   */
+  it('un connecteur absent chez Meta est CRÉÉ, sa création PORTANT son secret, puis ses outils', () => {
     const g = planifierPublication([SRC], [OUT], VIDE);
-    expect(g.map((x) => x.type)).toEqual(['connecteur_creer', 'secret_poser', 'outil_creer']);
+    expect(g.map((x) => x.type)).toEqual(['connecteur_creer', 'outil_creer']);
   });
 
   it('🔴 PUBLIER DEUX FOIS DE SUITE NE PRODUIT AUCUN GESTE', () => {
@@ -194,34 +205,93 @@ describe('la traduction vers le modèle de Meta', () => {
   it('🔴 le préfixe « Bearer » vit dans `prefix`, JAMAIS collé au secret', () => {
     // Meta concatène lui-même. Coller le préfixe au secret produirait « Bearer Bearer <secret> » le jour où
     // quelqu'un règle aussi le préfixe, et un 401 que personne ne saurait expliquer.
-    const c = corpsApiKey({ authKind: 'bearer', authHeaderName: null }, 'SECRET');
-    expect(c.api_key_config.headers[0]).toEqual({ field_name: 'Authorization', value: 'SECRET', prefix: 'Bearer ' });
+    const c = authConfigMeta({ authKind: 'bearer', authHeaderName: null }, 'SECRET');
+    expect(c.api_key.headers[0]).toEqual({ field_name: 'Authorization', value: 'SECRET', prefix: 'Bearer ' });
   });
 
   it('un en-tête nommé garde son nom, sans préfixe', () => {
-    const c = corpsApiKey({ authKind: 'header', authHeaderName: 'X-Cle' }, 'SECRET');
-    expect(c.api_key_config.headers[0]).toEqual({ field_name: 'X-Cle', value: 'SECRET', prefix: null });
+    const c = authConfigMeta({ authKind: 'header', authHeaderName: 'X-Cle' }, 'SECRET');
+    expect(c.api_key.headers[0]).toEqual({ field_name: 'X-Cle', value: 'SECRET', prefix: null });
+  });
+
+  /**
+   * 🔴 L'ENVELOPPE S'APPELLE `api_key`, ET LA CONFONDRE A BLOQUÉ TOUTE PUBLICATION AUTHENTIFIÉE.
+   * Nous envoyions `api_key_config` à `upsertApiKey`, que Meta refusait en « Invalid api_key_config ». La
+   * spec officielle dit `auth_config.api_key`, et un 201 sur le vrai compte l'a confirmé le 2026-09-18.
+   */
+  it('🔴 l’enveloppe est `api_key`, JAMAIS `api_key_config`', () => {
+    const c = authConfigMeta({ authKind: 'bearer', authHeaderName: null }, 'S');
+    expect(Object.keys(c)).toEqual(['api_key']);
+    expect((c as Record<string, unknown>).api_key_config).toBeUndefined();
+  });
+});
+
+/**
+ * 🔴 LE NOM D'UN CONNECTEUR, ET LA SPEC DE META SE CONTREDIT ELLE-MÊME.
+ *
+ * Son champ `name` est décrit comme un « display name », avec `Shopify Order Management` en exemple. Ce
+ * nom-là est REFUSÉ par son propre serveur. Mesuré un par un le 2026-09-18, sur le vrai compte, sondes
+ * effacées ensuite. Sans cette borne, un client qui nomme sa source « Mon CRM » reçoit un 400 « Invalid
+ * connector request » qui ne nomme aucun champ.
+ */
+describe('le nom qu’un connecteur peut porter chez Meta', () => {
+  it('🔴 lettres, chiffres et tiret bas passent', () => {
+    for (const nom of ['testUCHAT', 'sondeauth', 'sonde_auth', 'Sonde42']) {
+      expect(nomPubliableChezMeta(nom)).toBe(true);
+    }
+  });
+
+  it('🔴 le TIRET et l’ESPACE sont refusés, y compris l’exemple de la spec', () => {
+    for (const nom of ['sonde-auth', 'sonde auth', 'Shopify Order Management', '']) {
+      expect(nomPubliableChezMeta(nom)).toBe(false);
+    }
   });
 });
 
 describe('les deux regles de validation que Meta ecrit noir sur blanc', () => {
-  it('🔴 `auth_config` est ABSENT du corps d’un connecteur', () => {
-    // Meta impose de l'OMETTRE quand `auth_type` vaut `NONE` (400 sinon), et pour les autres cas nous
-    // passons par `upsertApiKey`. Le poser « au cas où » ferait échouer la création d'un connecteur sans
-    // authentification, cas parfaitement banal.
-    for (const kind of ['none', 'bearer', 'header'] as const) {
-      const c = corpsConnecteurMeta({ ...SRC, authKind: kind });
-      expect(Object.keys(c)).toEqual(['name', 'description', 'base_url', 'auth_type']);
+  /**
+   * 🔴 CE TEST AFFIRMAIT L'INVERSE, ET C'ÉTAIT LA CAUSE DU BLOCAGE (corrigé le 2026-09-18).
+   *
+   * Il disait « `auth_config` est ABSENT du corps d'un connecteur », en expliquant que les cas
+   * authentifiés passaient par `upsertApiKey`. C'était faux : Meta EXIGE `auth_config` dans le corps dès
+   * que `auth_type` n'est pas `NONE`, et refusait donc toute création de connecteur authentifié en 400.
+   *
+   * ⚠️ CE QUI EST CONSERVÉ DU CAS D'ORIGINE, et qui reste vrai : un connecteur SANS authentification ne
+   * doit pas porter `auth_config`. Le poser « au cas où » ferait échouer la création d'un connecteur en
+   * `NONE`, cas parfaitement banal. La moitié juste du test d'avant est donc toujours éprouvée ici.
+   */
+  it('🔴 `auth_config` est ABSENT sans authentification, PRÉSENT avec', () => {
+    const sansAuth = corpsConnecteurMeta({ ...SRC, authKind: 'none', authHeaderName: null }, 'PEU_IMPORTE');
+    expect(Object.keys(sansAuth)).toEqual(['name', 'description', 'base_url', 'auth_type']);
+    expect(sansAuth.auth_type).toBe('NONE');
+
+    for (const kind of ['bearer', 'header'] as const) {
+      const c = corpsConnecteurMeta({ ...SRC, authKind: kind, authHeaderName: 'X-Cle' }, 'SECRET');
+      expect(c.auth_type).toBe('API_KEY');
+      expect(c.auth_config).toEqual(authConfigMeta({ authKind: kind, authHeaderName: 'X-Cle' }, 'SECRET'));
     }
   });
 
-  it('🔴 `api_key_config` a TOUJOURS une entrée peuplée', () => {
+  /**
+   * ⚠️ UNE SOURCE AUTHENTIFIÉE SANS SECRET LISIBLE RETOMBE EN `NONE`, jamais en `API_KEY` nu : ce dernier
+   * est refusé par Meta, donc il ferait échouer la publication ENTIÈRE au lieu de publier ce qui est
+   * publiable. Le geste `secret_poser` du plan suivant remettra l'authentification.
+   */
+  it('🔴 authentifiée mais sans secret : on publie en NONE, on n’échoue pas', () => {
+    for (const secret of [null, undefined, '']) {
+      const c = corpsConnecteurMeta({ ...SRC, authKind: 'bearer', authHeaderName: null }, secret);
+      expect(c.auth_type).toBe('NONE');
+      expect(c.auth_config).toBeUndefined();
+    }
+  });
+
+  it('🔴 `auth_config.api_key` a TOUJOURS une entrée peuplée', () => {
     // « At least one of headers, query_params, or body_params must contain a populated entry. The request
     // fails with HTTP 400 if this field is null or missing. »
     for (const kind of ['bearer', 'header'] as const) {
-      const c = corpsApiKey({ authKind: kind, authHeaderName: 'X-Cle' }, 'S');
-      expect(c.api_key_config.headers.length).toBeGreaterThan(0);
-      expect(c.api_key_config.headers[0]!.value).toBe('S');
+      const c = authConfigMeta({ authKind: kind, authHeaderName: 'X-Cle' }, 'S');
+      expect(c.api_key.headers.length).toBeGreaterThan(0);
+      expect(c.api_key.headers[0]!.value).toBe('S');
     }
   });
 

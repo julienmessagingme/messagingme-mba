@@ -58,7 +58,7 @@ const LECTEURS: Array<{ fichier: string; gardes: string[]; pourquoi: string }> =
      */
     gardes: [
       "if (!src || src.kind !== 'http') return { ok: false, erreur: 'source introuvable' };",
-      "brut && brut.kind === 'http' ? brut : null",
+      "brut && brut.kind === 'http' ? (brut.authSecret ?? null) : null",
       "return src && src.kind === 'http'",
     ],
     pourquoi: 'le câblage porte eprouver, sourcePourTest et la pose du secret chez Meta',
