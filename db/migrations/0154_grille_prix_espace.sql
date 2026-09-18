@@ -41,23 +41,27 @@
 -- revue du 2026-09-18.
 alter table tenant_settings add column if not exists prix_marge_template     numeric(6,2) not null default 100;
 
--- 🔴 ET LE TYPE SE CORRIGE INCONDITIONNELLEMENT, PARCE QU'UN `if not exists` PROTEGE DE L'EXISTENCE, PAS DU
--- TYPE. Cette colonne a d'abord ete ecrite en `smallint`, et le fichier a ete corrige AVANT application :
--- sur la base de production, relue le 2026-09-18, ni 0154 ni 0155 ne figurent dans `schema_migrations` et
--- la colonne est absente, donc la correction suffit la-bas. Mais le runner ne rejoue pas un fichier deja
--- inscrit, et une base ou 0154 serait passee en `smallint` garderait ce type pour toujours : `valideGrille`
--- y accepterait 120,5, Postgres infererait `int2` et rejetterait, donc 500 sur un geste ordinaire.
--- Faire dependre la justesse d'une migration d'une PREMISSE (« elle n'est pas encore appliquee ») est
--- exactement ce que ce depot a paye neuf fois sur le compteur de migrations. Cette ligne ne coute rien
--- quand le type est deja bon.
+-- 🔴 ET LE TYPE SE CORRIGE, PARCE QU'UN `if not exists` PROTEGE DE L'EXISTENCE, PAS DU TYPE. Cette colonne
+-- a d'abord ete ecrite en `smallint`, et le fichier a ete corrige AVANT application : sur la base de
+-- production, relue le 2026-09-18, ni 0154 ni 0155 ne figurent dans `schema_migrations` et la colonne est
+-- absente, donc la correction du `add column` suffit la-bas.
 --
--- 🔴 MAIS ELLE NE FERME PAS « TOUTES LES BASES », ET LA PREMIERE REDACTION L'A AFFIRME A TORT. Le runner
--- fait `if (applied.has(file)) continue;` (`db/migrate.ts`) : sur une base ou 0154 est DEJA inscrite dans
--- `schema_migrations`, ce fichier n'est jamais rejoue, donc cette ligne ne s'execute pas et un `smallint`
--- y resterait. Ce qu'elle ferme reellement, c'est le cas d'une base ou la COLONNE existe sans que 0154
--- soit inscrite : creation a la main, reprise partielle, restauration. Une base deja migree en `smallint`
--- se repare a la main. Releve a la sixieme revue : une justification fausse est pire qu'aucune, parce
--- qu'elle sera recopiee, et celle-ci nommait precisement le cas qu'elle ne couvre pas.
+-- ⚠️ CE QUE CETTE LIGNE FERME, EXACTEMENT : une base ou la COLONNE existe deja en `smallint` sans que 0154
+-- soit inscrite dans `schema_migrations` (creation a la main, reprise partielle jouee au `psql -f`,
+-- restauration). Elle ne coute rien quand le type est deja bon.
+--
+-- ⚠️ ET CE QU'ELLE NE FERME PAS, dit ici pour que personne ne le croie : une base ou 0154 est DEJA inscrite.
+-- Le runner fait `if (applied.has(file)) continue;` (`db/migrate.ts`), donc ce fichier n'y est jamais
+-- rejoue et un `smallint` y resterait ; `valideGrille` accepterait 120,5, Postgres infererait `int2` et
+-- rejetterait, soit 500 sur un geste ordinaire. Ce cas-la se repare a la main.
+--
+-- 🔴 LA LECON GENERALE, ET ELLE VAUT POUR TOUTE MIGRATION CORRIGEE APRES COUP : faire dependre la justesse
+-- d'une migration d'une PREMISSE (« elle n'est pas encore appliquee ») est exactement ce que ce depot a
+-- paye neuf fois sur le compteur. La premiere redaction de ce bloc affirmait fermer « toutes les bases »,
+-- puis un second paragraphe la dementait plus bas : un lecteur qui s'arretait avant le dementi repartait
+-- avec la version fausse. Une justification ne se rectifie pas en ajoutant sa refutation dessous, elle se
+-- REECRIT. Releve aux sixieme et septieme revues, la seconde ayant vu que la premiere correction etait
+-- posee au mauvais endroit.
 alter table tenant_settings alter column prix_marge_template type numeric(6,2);
 alter table tenant_settings add column if not exists prix_service_centimes   numeric(6,2) not null default 2.48;
 alter table tenant_settings add column if not exists prix_service_franchise  integer      not null default 1000;

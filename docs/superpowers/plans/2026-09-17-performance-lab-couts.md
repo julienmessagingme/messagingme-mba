@@ -51,7 +51,9 @@ la marge vaut 100 : les deux chiffres coïncident alors, et tous les tests passe
 jamais de marge ne peut donc pas voir le septième consommateur oublié.
 
 ⚠️ **Et vérifier au passage la phrase de la carte « Facturé par Meta »** : sur la page des coûts, elle doit
-nommer la marge comme cause de l'écart, pas le tarif moyen par catégorie.
+nommer la marge comme cause de l'écart, EN PLUS du tarif moyen par catégorie : les deux causes existent,
+l'écran les dit toutes les deux. (Cette ligne a d'abord écrit « pas le tarif moyen », ce qui décrivait une
+première version qui BRANCHAIT entre les deux phrases au lieu de les cumuler. `wip.md` fait foi.)
 
 ## Global Constraints
 

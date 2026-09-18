@@ -55,7 +55,7 @@ describe('la marge est BRANCHEE sur les deux chemins qui rendent un prix', () =>
     expect(i, `l ancre « ${ancre} » a disparu du cablage`).toBeGreaterThan(-1);
     // ⚠️ UNE ANCRE AMBIGUE SE DEPLACE EN SILENCE : `indexOf` prend la PREMIERE occurrence, donc le jour
     // ou une autre propriete porte le meme nom plus haut, la garde change de sujet sans rien dire. C est
-    // le mecanisme exact du faux vert raconte plus bas, sous une autre forme.
+    // le mecanisme exact du faux vert raconte juste au-dessus, sous une autre forme.
     expect(CABLAGE.split(ancre).length - 1, `l ancre « ${ancre} » n est pas unique`).toBe(1);
     const fin = CABLAGE.indexOf('\n', i);
     return CABLAGE.slice(i, fin === -1 ? undefined : fin);
@@ -94,7 +94,7 @@ describe('la marge est BRANCHEE sur les deux chemins qui rendent un prix', () =>
    * `src/stats/` est tenue par `tests/cout-messages.test.ts` (« ce module ne marge PLUS ») et par la garde
    * de `tests/prix-bornes.test.ts` qui interdit un appel a `prixTemplate` hors du module de prix (elle lit
    * le fichier SQL ET fait un `git grep` sur `src/`, contrairement a ce que cette phrase a d abord dit). ⚠️ La
-   * premiere version de ce commentaire attribuait les deux a `prix-bornes`, :
+   * premiere version de ce commentaire attribuait les deux a `prix-bornes` :
    * un fichier neuf qui corrige deux commentaires nommant le mauvais test en introduisait un troisieme.
    */
   it('🔴 le cablage n applique la marge que par ces deux fonctions', () => {
