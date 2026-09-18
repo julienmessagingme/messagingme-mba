@@ -160,23 +160,32 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
    * effacement VOULU) de « absent » (ce patch ne parle pas des gestes), et que le repli de lecture tient sur
    * un contenu que rien n'empêche d'écrire en SQL direct un jour.
    */
+  /**
+   * ⚠️ LA LECTURE PASSE PAR `listToutes`, PAS PAR `byName`, et la nuance a fait rougir la CI. `byName` filtre
+   * sur `actif` (c'est son contrat : un outil éteint est indiscernable d'un outil absent, pour que le
+   * runtime ne puisse pas invoquer ce que personne n'a activé), et `ajouter` crée l'outil ÉTEINT. Le test
+   * lisait donc `null` et comparait `undefined`.
+   */
+  const lireGestesDe = async (nom: string) => (await catalogue.listToutes(tenantId, agentA))
+    .find((o) => o.name === nom)?.gestes;
+
   it('🔴 les gestes font l’aller-retour, et un tableau VIDE efface quand ABSENT ne touche à rien', async () => {
     const o = await catalogue.ajouter(tenantId, agentA, outil('avec_gestes'));
     await catalogue.patch(tenantId, agentA, o!.id, {
       gestes: [{ type: 'tag', valeur: 'rdv_demande' }, { type: 'variable', champ: 'origine', valeur: 'agent' }],
     });
-    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toEqual([
+    expect(await lireGestesDe('avec_gestes')).toEqual([
       { type: 'tag', valeur: 'rdv_demande' },
       { type: 'variable', champ: 'origine', valeur: 'agent' },
     ]);
 
     // ABSENT : le patch ne parle pas des gestes, ils ne bougent pas.
     await catalogue.patch(tenantId, agentA, o!.id, { description: 'autre chose' });
-    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toHaveLength(2);
+    expect(await lireGestesDe('avec_gestes')).toHaveLength(2);
 
     // VIDE : le client les a tous retirés, et c'est un choix qui doit s'écrire.
     await catalogue.patch(tenantId, agentA, o!.id, { gestes: [] });
-    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toEqual([]);
+    expect(await lireGestesDe('avec_gestes')).toEqual([]);
   });
 
   it('🔴 un contenu ILLISIBLE rend AUCUN geste, jamais une exception', async () => {
@@ -187,7 +196,7 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       `update agent_tools set gestes = '[{"type":"inconnu"}]'::jsonb where tenant_id = $1 and name = 'avec_gestes'`,
       [tenantId],
     );
-    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toEqual([]);
+    expect(await lireGestesDe('avec_gestes')).toEqual([]);
   });
 
   it('⚠️ la base refuse ce qui n’est pas un TABLEAU, seule forme qu’elle sait garantir', async () => {
