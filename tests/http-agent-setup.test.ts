@@ -234,6 +234,57 @@ describe('conversation de construction', () => {
     expect(res.json().changements.map((c: { champ: string }) => c.champ)).toEqual(['fiche.ton']);
   });
 
+  /**
+   * 🔴 L'ADRESSE DU SITE CESSE D'ÊTRE PERDUE (2026-09-18).
+   *
+   * L'entretien posait la question, insistait même pour obtenir l'adresse EXACTE, et la réponse restait en
+   * texte libre : l'onglet Base de connaissance restait vide et il fallait la recoller à la main. Julien :
+   * « le bot m'a demandé l'adresse du site web mais je ne retrouve rien dans l'onglet base de connaissance ».
+   */
+  it('🔴 l’adresse du site est RAPPORTÉE, par le champ dédié ou par le texte de la réponse', async () => {
+    const suggestions = async (entretien: EntretienComplet | null) => {
+      const res = await app({ entretien }).srv.inject({
+        method: 'GET', url: `${url('t1')}/suggestions`, ...h(adminTok),
+      });
+      expect(res.statusCode).toBe(200);
+      return res.json().connaissanceUrl as string | null;
+    };
+
+    // Le champ dédié, celui que l'assistant remplit depuis le 2026-09-18.
+    expect(await suggestions({ ...ENTRETIEN_FINI, connaissanceUrl: 'https://dedie.fr' })).toBe('https://dedie.fr');
+
+    /**
+     * 🔴 LE REPLI SUR LE TEXTE, ET C'EST LUI QUI COMPTE POUR LES ENTRETIENS DÉJÀ MENÉS. Sans lui, le
+     * correctif n'aurait rien changé pour les seuls clients qui l'attendaient, dont Julien, dont l'entretien
+     * était terminé avant que le champ n'existe.
+     */
+    expect(await suggestions({
+      ...ENTRETIEN_FINI,
+      reponses: [{ point: 'connaissance', valeur: 'Ses réponses viennent de son site https://exemple.fr/pages.' }],
+    })).toBe('https://exemple.fr/pages');
+
+    // Rien de dit, rien de rapporté : l'écran retombe sur son champ vide, comme avant.
+    expect(await suggestions({
+      ...ENTRETIEN_FINI,
+      reponses: [{ point: 'connaissance', valeur: 'Il remplira les fiches à la main.' }],
+    })).toBeNull();
+    expect(await suggestions(null)).toBeNull();
+  });
+
+  it('⚠️ l’adresse SURVIT aux tours suivants, qui n’en parlent plus', async () => {
+    // Elle est donnée au point `connaissance`, bien avant la fin de l'entretien : l'écraser à chaque tour
+    // la perdrait dès la question d'après.
+    const { entretiens, srv } = app({
+      entretien: { ...ENTRETIEN_PRESQUE_FINI, connaissanceUrl: 'https://deja-dit.fr' },
+      suite: [
+        reponse(JSON.stringify({ message: 'Parfait.', reponses: [{ point: DERNIER, valeur: 'tutoiement' }] })),
+        reponse(JSON.stringify({ message: 'Voici.', fiche: { nom: 'Marie' } })),
+      ],
+    });
+    await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(entretiens.ecrits[0]!.connaissanceUrl).toBe('https://deja-dit.fr');
+  });
+
   it('🔴 TANT QUE L’ORDRE DU JOUR N’EST PAS ÉPUISÉ, aucun champ n’est montré', async () => {
     // Julien, 2026-08-28 : « poser des questions pour couvrir d'abord tout le périmètre [...] je préfère
     // qu'au début on discute avant d'afficher ce que le bot a compris ». Le message passe, la proposition est

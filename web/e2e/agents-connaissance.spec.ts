@@ -51,7 +51,7 @@ const AGENT = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], fiches: unknown[], importe?: { status: number; body: unknown }, apercuKo?: { status: number; body: unknown }) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], fiches: unknown[], importe?: { status: number; body: unknown }, apercuKo?: { status: number; body: unknown }, suggeree?: string) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -82,6 +82,9 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], fich
       if (method === 'GET') return json({ fiches });
       return json({ fiche: { ...MANUELLE, ...(req.postDataJSON() as object) } }, method === 'POST' ? 201 : 200);
     }
+    // Ce que l'entretien a NOTÉ. Sans cette route, l'ecran se comporte comme avant, champ vide : les autres
+    // tests de ce fichier passent donc inchanges, et c'est voulu.
+    if (/\/setup\/suggestions$/.test(url)) return json({ connaissanceUrl: suggeree ?? null });
     if (new RegExp(`/agents/${AG}$`).test(url)) return json({ agent: AGENT });
     if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -97,6 +100,37 @@ test.describe('Agents IA : la base de connaissance', () => {
     await page.goto(`/agents?id=${AG}&tab=connaissance`);
     await expect(page.getByTestId('kb-vide')).toBeVisible();
     await expect(page.getByText('il sort du bloc par « Aucune source »')).toBeVisible();
+  });
+
+  /**
+   * 🔴 L'ADRESSE DONNÉE À L'ASSISTANT ARRIVE JUSQU'ICI (2026-09-18).
+   *
+   * L'entretien demandait « d'où viennent ses réponses de fond », insistait pour obtenir l'adresse EXACTE,
+   * et cette réponse n'allait nulle part : cet écran restait vide et il fallait la recoller à la main.
+   * Julien : « le bot m'a demandé l'adresse du site web mais je ne retrouve rien dans l'onglet base de
+   * connaissance ». C'est le motif « offert-et-inerte » que ce produit s'interdit.
+   */
+  test('🔴 l adresse notée par l assistant PRÉ-REMPLIT le champ, et rien n est importé sans le client', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, [], undefined, undefined, 'https://ganprevoyance.fr');
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+
+    await expect(page.getByTestId('kb-url')).toHaveValue('https://ganprevoyance.fr');
+    await expect(page.getByTestId('kb-url-suggeree')).toContainText('noté cette adresse');
+    /**
+     * 🔴 RIEN N'EST PARTI TOUT SEUL, et c'est l'arbitrage de Julien : « Enregistrer » écrit des champs, il
+     * n'aspire pas cinquante pages d'un site tiers. L'apercu, puis l'import, restent des gestes du client.
+     */
+    expect(appels.filter((a) => /apercu$|import$/.test(a.url))).toHaveLength(0);
+  });
+
+  test('⚠️ une adresse déjà saisie n est JAMAIS écrasée par la suggestion', async ({ page }) => {
+    // La suggestion arrive d'un appel reseau, donc apres le premier rendu : si elle ecrasait la saisie, un
+    // client qui tape vite verrait son adresse remplacee sous ses doigts.
+    await mock(page, [], [], undefined, undefined, 'https://ganprevoyance.fr');
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await page.getByTestId('kb-url').fill('https://autre-site.fr/page');
+    await expect(page.getByTestId('kb-url')).toHaveValue('https://autre-site.fr/page');
   });
 
   test('ajoute une fiche à la main, la corrige, et la supprime', async ({ page }) => {

@@ -558,6 +558,26 @@ export function ordreDuJour(
     .join('\n');
 }
 
+/**
+ * LA PREMIERE ADRESSE http(s) que porte la reponse au point `connaissance`, ou `null`.
+ *
+ * 🔴 C'EST UN REPLI POUR LES ENTRETIENS DEJA MENES, pas le chemin normal. Depuis le 2026-09-18 l'assistant
+ * rend l'adresse dans un champ dedie (`connaissanceUrl`), ce qui est fiable. Mais tous les entretiens
+ * anterieurs, dont celui que Julien avait mene jusqu'au bout, n'ont l'adresse que dans le TEXTE de la
+ * reponse : sans ce repli, le correctif n'aurait rien change pour eux, c'est-a-dire pour les seuls clients
+ * qui l'attendaient.
+ *
+ * ⚠️ LA PONCTUATION FINALE EST RETIREE : une reponse se termine souvent par « ... de son site
+ * https://exemple.fr. », et garder le point produirait une adresse qui ne resout pas.
+ */
+const URL_DANS_LE_TEXTE = /https?:\/\/[^\s<>"'),]+/;
+
+export function urlDeConnaissance(etat: EtatEntretien): string | null {
+  const dit = etat.reponses.find((r) => r.point === 'connaissance')?.valeur ?? '';
+  const trouve = URL_DANS_LE_TEXTE.exec(dit);
+  return trouve ? trouve[0].replace(/[.,;:!?]+$/, '') : null;
+}
+
 /** Les possibilités à montrer pour le point du tour, si on en a. */
 export function pistesDe(point: Point): string {
   return point.pistes && point.pistes.length > 0 ? point.pistes.join(' | ') : '(aucune piste toute faite : fais-le parler)';

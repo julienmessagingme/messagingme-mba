@@ -11,7 +11,10 @@ import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type Contexte
 import {
   assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
 } from '../agent/setup/proposition';
-import { agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
+import {
+  agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint,
+  urlDeConnaissance,
+} from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { scopeTenant, estUuid } from './scope';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
@@ -271,6 +274,27 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       auteurs: auteurs.map((a) => (a === null ? null : emails[a] ?? null)),
       total: entretien.messages.length,
       couverture: avancement(entretien, ctx.etat),
+    });
+  });
+
+  /**
+   * CE QUE L'ENTRETIEN A NOTÉ ET QU'AUCUN ÉCRAN N'A ENCORE UTILISÉ (2026-09-18).
+   *
+   * 🔴 UNE ROUTE À PART, ET LÉGÈRE, PARCE QUE L'APPELANT N'EST PAS L'ONGLET DE CONVERSATION. C'est l'onglet
+   * Base de connaissance qui a besoin de l'adresse du site, et la page des agents la lit à l'ouverture, à
+   * côté des manques. Passer par le `GET /setup` enverrait deux cents messages pour obtenir une chaîne.
+   *
+   * ⚠️ ELLE NE DÉCLENCHE RIEN ET NE RÉCUPÈRE RIEN : elle RAPPORTE ce que le client a dit. L'import, avec son
+   * aperçu, ses contrôles d'adresse privée et son plafond de pages, reste un geste que le client fait.
+   */
+  app.get('/tenants/:tenantId/agents/:agentId/setup/suggestions', opts, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    const entretien = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
+    return reply.code(200).send({
+      // Le champ dédié d'abord, l'extraction depuis le texte ensuite : celle-ci ne sert qu'aux entretiens
+      // menés avant que le champ n'existe, et c'est pour eux que le correctif compte.
+      connaissanceUrl: entretien.connaissanceUrl ?? urlDeConnaissance(entretien),
     });
   });
 
@@ -605,6 +629,13 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       reponses,
       bascules: listeBascules,
       poses: posesApres,
+      /**
+       * ⚠️ ON GARDE L'ANCIENNE QUAND LE TOUR N'EN APPORTE PAS. L'adresse est donnée au point `connaissance`,
+       * bien avant la fin de l'entretien : l'écraser à chaque tour la perdrait dès la question suivante.
+       */
+      ...(propositionFinale.connaissanceUrl ?? avant.connaissanceUrl
+        ? { connaissanceUrl: propositionFinale.connaissanceUrl ?? avant.connaissanceUrl }
+        : {}),
     };
     await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);
 

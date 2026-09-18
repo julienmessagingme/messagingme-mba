@@ -61,6 +61,8 @@ export const BORNES_PROPOSITION = {
   description: 2000,
   nePasUtiliser: 2000,
   branchements: 20,
+  /** L'adresse du site dont le client dit que viennent ses réponses de fond. */
+  connaissanceUrl: 2000,
 } as const;
 
 /**
@@ -72,6 +74,21 @@ export const BORNES_PROPOSITION = {
  * dépendre d'un module de routes.
  */
 const NOM_EXPOSE_RE = new RegExp(`^[a-z0-9_]{1,${BORNES_PROPOSITION.nomConnecteur}}$`);
+
+/**
+ * 🔴 `http` ET `https` SEULEMENT, ET CE N'EST PAS UNE VALIDATION DE CONFORT. Cette adresse est ÉCRITE PAR LE
+ * MODÈLE, qui lit du contenu tiers, et elle finit affichée au client dans un bandeau. Laisser passer un
+ * `javascript:` ou un `data:` mettrait une charge active dans un écran de la console. Le schéma borne donc le
+ * SCHÉMA d'URL ici, et l'import, lui, refera ses propres contrôles (`urlRecuperable`, `resolutionPublique`).
+ *
+ * ⚠️ UN LITTÉRAL, PAS UN `new RegExp` CONSTRUIT PAR GABARIT, et la première version l'était : dans un
+ * littéral de gabarit, `\s` n'est pas une séquence d'échappement connue, donc le backslash DISPARAÎT et la
+ * classe devient « tout sauf la LETTRE s ». Mesuré : `http://exemple.fr/pages` était refusé, quand
+ * `https://ganprevoyance.fr` passait, faute de « s » après les deux barres. Aucune erreur, juste un motif qui
+ * dit autre chose que ce qu'on lit. La longueur, elle, est tenue par le `.max()` de Zod et annoncée au modèle
+ * par `maxLength` : elle n'a rien à faire dans le motif.
+ */
+const URL_PUBLIQUE_RE = /^https?:\/\/[^\s<>"']+$/;
 
 /** Les mots d'un outil, ceux qui décident si le modèle l'appelle au bon moment. C'est là que se joue le
  *  gain mesuré par Guo et al. : ce sont ces deux textes qu'aucun client n'écrit correctement seul. */
@@ -185,6 +202,20 @@ export const propositionSchema = z.object({
    * L'EXISTENCE du nom n'est pas vérifiable ici (le schéma ne connaît pas le catalogue) : elle l'est à
    * l'APPLICATION, qui ne branche qu'un outil existant et n'en crée jamais.
    */
+  /**
+   * L'ADRESSE DU SITE, quand le client dit que ses réponses de fond en viennent (2026-09-18).
+   *
+   * 🔴 ELLE NE DÉCLENCHE RIEN, ET C'EST TOUT SON INTÉRÊT. L'entretien posait la question, insistait même
+   * pour obtenir l'adresse exacte, et la réponse n'allait NULLE PART : elle restait en texte libre dans
+   * `reponses`, l'onglet Base de connaissance restait vide, et le client devait recoller l'adresse à la
+   * main. C'est le motif « offert-et-inerte » que ce produit s'interdit, relevé par Julien le 2026-09-18.
+   *
+   * 🔴 ELLE NE PRODUIT AUCUNE LIGNE DE DIFF, délibérément : « Enregistrer » écrit des champs, et lui faire
+   * aspirer cinquante pages d'un site tiers ferait valider au client un crawl dont il n'a rien vu, alors que
+   * l'écran d'aperçu existe précisément pour qu'il choisisse ses pages. Elle est MÉMORISÉE, et l'onglet Base
+   * de connaissance la propose, pré-remplie. Arbitrage de Julien, 2026-09-18.
+   */
+  connaissanceUrl: z.string().trim().regex(URL_PUBLIQUE_RE).max(BORNES_PROPOSITION.connaissanceUrl).optional(),
   outilsBranches: z.array(z.string().trim().regex(NOM_EXPOSE_RE)).max(BORNES_PROPOSITION.branchements).optional(),
   outilsDebranches: z.array(z.string().trim().regex(NOM_EXPOSE_RE)).max(BORNES_PROPOSITION.branchements).optional(),
 });
@@ -257,6 +288,7 @@ export function assainirProposition(brut: unknown): unknown {
   const p: Record<string, unknown> = { ...brut };
 
   couper(p, 'message', BORNES_PROPOSITION.message);
+  couper(p, 'connaissanceUrl', BORNES_PROPOSITION.connaissanceUrl);
 
   p.reponses = entrees(p.reponses, BORNES_PROPOSITION.reponses, (r) => {
     couper(r, 'point', BORNES_PROPOSITION.point);
@@ -474,6 +506,13 @@ export const SCHEMA_PROPOSITION = {
         },
         required: ['nom', 'description'],
       },
+    },
+    connaissanceUrl: {
+      type: 'string',
+      pattern: URL_PUBLIQUE_RE.source,
+      maxLength: BORNES_PROPOSITION.connaissanceUrl,
+      description: 'L’adresse EXACTE du site d’où viennent ses réponses de fond, et SEULEMENT s’il l’a '
+        + 'donnée. Commence par http:// ou https://. Ne l’invente jamais : sans adresse, tu la demandes.',
     },
     outilsBranches: {
       type: 'array',

@@ -19,7 +19,7 @@ import { AgentOutils } from '@/components/AgentOutils';
 import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
-import { appliquerProposition, lireBandeaux, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
+import { appliquerProposition, lireBandeaux, lireSuggestions, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 import { consommationAgent, listerModeles, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
 import { fmtCost } from '@/lib/format';
@@ -85,6 +85,8 @@ function Ecran({ tenantId }: { tenantId: string }) {
   // Ce qui manque pour ACTIVER, tel que le serveur le rend en 422. Séparé du message d'erreur : ce n'est pas
   // une panne, c'est une liste de choses à faire, et chacune pointe l'onglet où elle se fait.
   const [manques, setManques] = useState<ManqueFiche[]>([]);
+  /** L'adresse notée par l'assistant de construction, pour l'onglet Base de connaissance. */
+  const [urlSuggeree, setUrlSuggeree] = useState<string | null>(null);
   const [avertissements, setAvertissements] = useState<ManqueFiche[]>([]);
   // Le solde prépayé du workspace. `null` = aucun solde sur cette instance, on n'affiche rien plutôt que
   // d'annoncer « 0 € » à un client dont le compte n'est simplement pas branché.
@@ -138,6 +140,25 @@ function Ecran({ tenantId }: { tenantId: string }) {
     if (ouvert === null) { setManques([]); return; }
     rafraichirManques(ouvert.id);
   }, [ouvert?.id, rafraichirManques]);
+
+  /**
+   * CE QUE L'ENTRETIEN A NOTÉ, lu ici plutôt que dans l'onglet (2026-09-18).
+   *
+   * ⚠️ UN APPEL À PART, ET IL NE SE MÉLANGE PAS AUX MANQUES : ces deux listes disent ce qui BLOQUE
+   * l'activation, quand ceci est une suggestion qui ne bloque rien. Les fondre ferait afficher une
+   * proposition d'import dans un bandeau intitulé « ce qui manque à cet agent ».
+   *
+   * ⚠️ UN ÉCHEC NE FAIT RIEN TOMBER : sans suggestion, l'onglet Base de connaissance se comporte comme
+   * avant, avec son champ vide.
+   */
+  useEffect(() => {
+    if (ouvert === null) { setUrlSuggeree(null); return; }
+    let vivant = true;
+    void lireSuggestions(tenantId, ouvert.id)
+      .then((r) => { if (vivant) setUrlSuggeree(r.connaissanceUrl); })
+      .catch(() => { if (vivant) setUrlSuggeree(null); });
+    return () => { vivant = false; };
+  }, [ouvert?.id, tenantId]);
 
   async function creer() {
     const label = nouveau.trim();
@@ -342,7 +363,14 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {onglet === 'objectif' && <OngletObjectif agent={ouvert} busy={busy} onSave={enregistrer} />}
         {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels
             et son propre verrou d'ecriture, il ne passe pas par `enregistrer`. */}
-        {onglet === 'connaissance' && <AgentConnaissance tenantId={tenantId} agentId={ouvert.id} onChange={() => rafraichirManques(ouvert.id)} />}
+        {onglet === 'connaissance' && (
+          <AgentConnaissance
+            tenantId={tenantId}
+            agentId={ouvert.id}
+            urlSuggeree={urlSuggeree}
+            onChange={() => rafraichirManques(ouvert.id)}
+          />
+        )}
         {/* Les outils vivent dans LEUR table, avec leur propre consentement humain : ce panneau ne passe pas
             non plus par `enregistrer`, qui n'ecrit que la fiche. */}
         {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} onChange={() => rafraichirManques(ouvert.id)} />}

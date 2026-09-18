@@ -164,6 +164,47 @@ describe('assainirProposition', () => {
 });
 
 /**
+ * 🔴 L'ADRESSE DU SITE EST ÉCRITE PAR LE MODÈLE ET AFFICHÉE AU CLIENT (2026-09-18).
+ *
+ * Elle finit dans un bandeau de la console, et le modèle qui l'écrit lit du contenu tiers. Un
+ * `javascript:` ou un `data:` y mettrait une charge active. Le motif est donc une garde d'AFFICHAGE autant
+ * qu'une validation, et il se teste dans les deux sens.
+ *
+ * ⚠️ LE CAS QUI A FAILLI PASSER : le motif était construit par `new RegExp` dans un littéral de gabarit, où
+ * `\s` n'est pas une séquence d'échappement connue. Le backslash disparaissait, et la classe devenait « tout
+ * sauf la LETTRE s ». `http://exemple.fr/pages` était refusé, `https://ganprevoyance.fr` passait. Aucune
+ * erreur, juste un motif qui disait autre chose que ce qu'on lisait.
+ */
+describe('proposition : l’adresse du site', () => {
+  const url = (u: string) => propositionSchema.safeParse({ message: 'x', connaissanceUrl: u }).success;
+
+  it('accepte les adresses que les clients donnent VRAIMENT', () => {
+    for (const u of [
+      'https://ganprevoyance.fr',
+      // 🔴 Celle-ci est le cas de la regex cassée : le « s » de « pages » la faisait échouer.
+      'http://exemple.fr/pages',
+      'https://site.fr/a/b?c=1',
+      'https://WWW.SITE.FR',
+    ]) expect(url(u), u).toBe(true);
+  });
+
+  it('🔴 refuse tout ce qui n’est pas http(s), et le reste', () => {
+    for (const u of [
+      'javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'ftp://x.fr',
+      'pas une url', '', 'https://x.fr/ a',
+    ]) expect(url(u), u).toBe(false);
+  });
+
+  it('⚠️ elle ne produit AUCUNE ligne de diff', () => {
+    // « Enregistrer » écrit des champs ; lui faire aspirer cinquante pages d'un site tiers ferait valider au
+    // client un crawl dont il n'a rien vu. L'adresse est mémorisée, et l'onglet la propose.
+    expect(differences(COURANT_AVEC_SORTIES, propositionSchema.parse({
+      message: 'x', connaissanceUrl: 'https://ganprevoyance.fr',
+    }))).toEqual([]);
+  });
+});
+
+/**
  * 🔴 TOUTE BORNE QUE ZOD APPLIQUE EST ANNONCÉE AU MODÈLE. C'est l'invariant que le défaut du 2026-09-17 a
  * violé, et il se MESURE : ce jour-là, 31 bornes sur 31 étaient appliquées sans qu'aucune ne figure dans le
  * schéma envoyé au modèle. Le test de miroir voisin ne pouvait pas le voir : il compare des NOMS DE CLÉS et

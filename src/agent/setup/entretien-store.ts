@@ -41,6 +41,19 @@ export interface EntretienComplet {
    * de recopier une adresse dans un jsonb que personne ne purge.
    */
   auteurs: Array<string | null>;
+  /**
+   * L'ADRESSE DU SITE que le client a donnée au point `connaissance` (2026-09-18).
+   *
+   * 🔴 ELLE EST MÉMORISÉE ICI PARCE QU'ELLE N'ALLAIT NULLE PART. L'entretien posait la question, insistait
+   * même pour obtenir l'adresse exacte, et la réponse restait en texte libre dans `reponses` pendant que
+   * l'onglet Base de connaissance restait vide. Le client devait la recoller à la main, ce qui est
+   * exactement le motif « offert-et-inerte » que ce produit s'interdit.
+   *
+   * ⚠️ OPTIONNELLE, et c'est le cas NORMAL : tous les entretiens antérieurs au 2026-09-18 n'en portent pas,
+   * et `etatSchema` n'étant pas strict, ils se relisent sans rien perdre. Pour eux, la route retombe sur une
+   * extraction depuis la réponse au point `connaissance`.
+   */
+  connaissanceUrl?: string;
 }
 
 /** Un entretien vierge. C'est aussi ce qu'on rend d'un état illisible : on ne bloque jamais l'écran. */
@@ -83,6 +96,9 @@ const etatSchema = z.object({
     moyen: z.string().max(2000).optional(),
   })).max(MAX_BASCULES).default([]),
   auteurs: z.array(z.string().max(320).nullable()).max(MAX_TOURS_CONSERVES).default([]),
+  // ⚠️ SANS `.default()`, contrairement à tout le reste de ce schéma : « absente » et « vide » ne disent pas
+  // la même chose ici, et un défaut ferait écrire une chaîne vide dans le jsonb de chaque entretien existant.
+  connaissanceUrl: z.string().max(2000).optional(),
 });
 
 

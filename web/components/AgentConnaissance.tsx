@@ -29,7 +29,11 @@ import {
  * calculent sur le nombre de fiches (« la base est vide », et « la base est remplie mais l'outil de
  * recherche n'est pas actif »). Sans ce rappel, remplir la base laisse « la base est vide » à l'écran.
  */
-export function AgentConnaissance({ tenantId, agentId, onChange }: { tenantId: string; agentId: string; onChange?: () => void }) {
+export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: {
+  tenantId: string; agentId: string; onChange?: () => void;
+  /** L'adresse que le client a donnée à l'assistant de construction. `null` quand il n'en a donné aucune. */
+  urlSuggeree?: string | null;
+}) {
   const t = useT();
   const [fiches, setFiches] = useState<FicheConnaissance[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,6 +89,7 @@ export function AgentConnaissance({ tenantId, agentId, onChange }: { tenantId: s
         agentId={agentId}
         busy={busy}
         onErreur={setErreur}
+        urlSuggeree={urlSuggeree}
         onImport={(url, pages) => agir(async () => {
         const r = await importerSource(tenantId, agentId, url, pages);
         const ecrites = r.retirees > 0
@@ -199,13 +204,29 @@ export function AgentConnaissance({ tenantId, agentId, onChange }: { tenantId: s
 }
 
 /** Lecture d'une page du site du client. Le prix de la relecture est DIT avant le clic, pas après. */
-function ImportSource({ tenantId, agentId, busy, onImport, onErreur }: {
+function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree }: {
   tenantId: string; agentId: string; busy: boolean;
   onImport: (url: string, pages: string[]) => void;
   onErreur: (message: string) => void;
+  /** L'adresse que le client a donnée à l'assistant de construction, ou `null`. */
+  urlSuggeree?: string | null;
 }) {
   const t = useT();
   const [url, setUrl] = useState('');
+  /**
+   * 🔴 L'ADRESSE DONNÉE À L'ASSISTANT ARRIVE ICI, ET C'EST TOUT LE CORRECTIF DU 2026-09-18. L'entretien
+   * demandait « d'où viennent ses réponses de fond », insistait pour obtenir l'adresse EXACTE, et cette
+   * réponse n'allait nulle part : cet écran restait vide et il fallait la recoller à la main. Julien :
+   * « le bot m'a demandé l'adresse du site web mais je ne retrouve rien dans l'onglet base de connaissance ».
+   *
+   * ⚠️ UN EFFET, PAS UNE VALEUR INITIALE : la suggestion arrive d'un appel réseau, donc APRÈS le premier
+   * rendu, et un `useState(urlSuggeree)` la manquerait une fois sur deux.
+   *
+   * ⚠️ ET ELLE N'ÉCRASE JAMAIS UNE SAISIE : si le client a déjà tapé quelque chose, c'est lui qui a raison.
+   */
+  useEffect(() => {
+    if (urlSuggeree) setUrl((actuel) => (actuel === '' ? urlSuggeree : actuel));
+  }, [urlSuggeree]);
   const [apercu, setApercu] = useState<ApercuImport | null>(null);
   const [occupe, setOccupe] = useState(false);
   const propre = url.trim();
@@ -233,6 +254,14 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur }: {
           )}
         </p>
       </div>
+      {urlSuggeree && (
+        <p data-testid="kb-url-suggeree" className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs leading-relaxed text-ink-700">
+          {t(
+            'L’assistant de construction a noté cette adresse pendant votre entretien. Relisez-la, puis voyez ce qui sera importé : rien n’est écrit avant que vous ne l’ayez vu.',
+            'The setup assistant noted this address during your interview. Check it, then see what will be imported: nothing is written before you have seen it.',
+          )}
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <input
           data-testid="kb-url"

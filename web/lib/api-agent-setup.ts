@@ -408,3 +408,24 @@ function listeDeManques(liste: unknown): ManqueFiche[] {
       : [];
   });
 }
+
+/**
+ * CE QUE L'ENTRETIEN A NOTÉ ET QU'AUCUN ÉCRAN N'A ENCORE UTILISÉ (2026-09-18).
+ *
+ * 🔴 AUJOURD'HUI, UNE SEULE CHOSE : l'adresse du site d'où le client dit que viennent ses réponses de fond.
+ * L'entretien la demandait, insistait même pour l'obtenir exacte, et elle n'allait NULLE PART : l'onglet
+ * Base de connaissance restait vide et il fallait la recoller à la main.
+ *
+ * ⚠️ RIEN N'EST DÉCLENCHÉ PAR CET APPEL : il RAPPORTE. L'import, avec son aperçu et ses contrôles, reste un
+ * geste que le client fait, et c'est ce qui le distingue de « Enregistrer », qui n'écrit que des champs.
+ */
+export async function lireSuggestions(
+  tenantId: string,
+  agentId: string,
+): Promise<{ connaissanceUrl: string | null }> {
+  const r = await request<{ connaissanceUrl?: unknown }>(
+    `/tenants/${tenantId}/agents/${agentId}/setup/suggestions`,
+  );
+  const u = (r as { connaissanceUrl?: unknown } | null)?.connaissanceUrl;
+  return { connaissanceUrl: typeof u === 'string' && u !== '' ? u : null };
+}
