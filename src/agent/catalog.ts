@@ -256,6 +256,12 @@ export interface OutilBibliotheque {
   name: string;
   title: string;
   description: string;
+  /**
+   * ⚠️ IL EST DANS LA LISTE DEPUIS LE 2026-09-18, parce qu'on ne peut pas CORRIGER ce qu'on ne voit pas.
+   * L'écran du MBA doit pré-remplir ce texte pour le retoucher, et le laisser dehors obligerait à le
+   * retaper de mémoire, c'est-à-dire à l'écraser par autre chose.
+   */
+  nePasUtiliser: string;
   origin: OrigineOutil;
   risk: RisqueOutil;
   sourceId: string | null;
@@ -306,6 +312,15 @@ export interface ToolAdminStore {
 
   /** Corrige les mots d'un outil. Rend `null` s'il n'est pas de ce couple (tenant, agent). */
   patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
+  /**
+   * Le même geste pour un consommateur qui n'est pas un agent (le Meta Business Agent).
+   *
+   * ⚠️ REQUIS, PAS OPTIONNEL : un câblage qui l'oublierait laisserait les outils du MBA figés pour
+   * toujours, et c'est exactement l'état dans lequel ils étaient avant le 2026-09-18.
+   */
+  patchConsommateur(
+    tenantId: string, consommateur: string, outilId: string, patch: PatchOutil,
+  ): Promise<OutilComplet | null>;
 
   /** Active ou désactive. `parUtilisateur` vient du jeton. Rend `null` si l'outil n'est pas de ce couple. */
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;

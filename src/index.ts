@@ -1764,6 +1764,10 @@ async function main(): Promise<void> {
        * l ecrire, le plan prevoyait une colonne a rendre nullable qui n etait plus la.
        */
       creerPourMba: (tenant, pn, outil) => toolCatalog.ajouterConnecteurPourMba(tenant, pn, outil),
+      // ⚠️ `consommateurMba(pn)` ET PAS UN AGENT : c'est la clé de consentement du Meta Business Agent, et
+      // c'est elle qui borne la correction à un outil que CE consommateur utilise vraiment.
+      patchPourMba: (tenant, pn, outilId, patch) =>
+        toolCatalog.patchConsommateur(tenant, consommateurMba(pn), outilId, patch),
       // La REQUETE est LUE, pas crue sur parole : le risque plancher et la source en derivent, comme sur la
       // route jumelle des outils d un agent.
       requetePourOutil: (tenant, id) => agentRequetes.parId(tenant, id),

@@ -178,6 +178,8 @@ export interface OutilBibliotheque {
   name: string;
   title: string;
   description: string;
+  /** Miroir du contrat serveur : nécessaire pour PRÉ-REMPLIR la correction, pas seulement l'afficher. */
+  nePasUtiliser: string;
   origin: OrigineOutil;
   risk: 'read' | 'write' | 'irreversible';
   sourceId: string | null;
@@ -228,6 +230,20 @@ export async function creerOutilPourMba(tenantId: string, outil: {
   requeteId: string; name: string; title: string; description: string; nePasUtiliser: string;
 }): Promise<{ id: string; expose: boolean }> {
   return request(`/tenants/${tenantId}/agent-tools/connecteur-mba`, { method: 'POST', body: JSON.stringify(outil) });
+}
+
+/**
+ * Corrige les MOTS d'un outil exposé à l'agent de Meta.
+ *
+ * 🔴 CE CHEMIN N'EXISTAIT PAS, et son absence figeait l'outil : `patchOutil` est scopé par agent, or un
+ * outil du MBA n'en a aucun. Une fois créé, ni son nom technique, ni son titre, ni ce à quoi il sert, ni le
+ * « ne pas utiliser » n'étaient modifiables. Or ce sont précisément les textes qu'on retouche en regardant
+ * l'agent se tromper.
+ */
+export async function patchOutilMba(tenantId: string, outilId: string, patch: {
+  name?: string; title?: string; description?: string; nePasUtiliser?: string;
+}): Promise<{ id: string }> {
+  return request(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 
 export async function supprimerDefinitionOutil(tenantId: string, outilId: string): Promise<void> {

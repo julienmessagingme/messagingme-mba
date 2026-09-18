@@ -311,6 +311,20 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   }
 
   async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
+    return this.patchConsommateur(tenantId, consommateurAgent(agentId), outilId, patch);
+  }
+
+  /**
+   * 🔴 LE MÊME GESTE POUR UN CONSOMMATEUR QUI N'EST PAS UN AGENT (2026-09-18), et son absence rendait un
+   * outil du Meta Business Agent DÉFINITIVEMENT figé. `patch` était scopé par agent, or un outil créé pour
+   * le MBA n'en a aucun : aucune route ne pouvait donc corriger son nom, son titre, ce à quoi il sert ni
+   * quand ne pas l'appeler. Julien : « je ne peux rien changer sur l'outil dans l'onglet outils ». C'est
+   * exactement le motif `activer`/`activerConsommateur` et `detacher`/`detacherConsommateur` du même
+   * fichier : une capacité câblée sur un consommateur sur deux est un correctif à moitié.
+   */
+  async patchConsommateur(
+    tenantId: string, consommateur: string, outilId: string, patch: PatchOutil,
+  ): Promise<OutilComplet | null> {
     // Les énumérations sont réécrites DANS le jsonb, en une instruction : une lecture suivie d'une écriture
     // laisserait deux administrateurs se recouvrir en silence sur la même colonne.
     const res = await this.pool.query<{ id: string }>(
@@ -345,13 +359,13 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
                       where c.tool_id = agent_tools.id and c.tenant_id = agent_tools.tenant_id
                         and c.consommateur = $2)
        returning id`,
-      [tenantId, consommateurAgent(agentId), outilId, patch.name ?? null, patch.title ?? null,
+      [tenantId, consommateur, outilId, patch.name ?? null, patch.title ?? null,
         patch.description ?? null, patch.nePasUtiliser ?? null,
         patch.enums ? JSON.stringify(patch.enums) : null,
         patch.gestes ? JSON.stringify(patch.gestes) : null],
     ).catch(surNomDejaPris);
     const r = res.rows[0];
-    return r ? this.complet(tenantId, consommateurAgent(agentId), r.id) : null;
+    return r ? this.complet(tenantId, consommateur, r.id) : null;
   }
 
   async activer(
@@ -521,12 +535,12 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    */
   async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
     const res = await this.pool.query<{
-      id: string; name: string; title: string; description: string;
+      id: string; name: string; title: string; description: string; ne_pas_utiliser: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
       mcp_non_activable: string | null; mcp_indisponible_le: Date | null;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
-      `select t.id, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
+      `select t.id, t.name, t.title, t.description, t.ne_pas_utiliser, t.origin, t.risk, t.source_id,
               t.mcp_non_activable, t.mcp_indisponible_le,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
@@ -546,7 +560,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       [tenantId],
     );
     return res.rows.map((r) => ({
-      id: r.id, name: r.name, title: r.title, description: r.description,
+      id: r.id, name: r.name, title: r.title, description: r.description, nePasUtiliser: r.ne_pas_utiliser,
       origin: r.origin, risk: r.risk, sourceId: r.source_id,
       mcpNonActivable: r.mcp_non_activable,
       mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,

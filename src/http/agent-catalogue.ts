@@ -42,6 +42,18 @@ export interface AgentCatalogueRouteDeps {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: 'read' | 'write' | 'irreversible';
   }): Promise<{ id: string } | null>;
+  /**
+   * Corrige les MOTS d'un outil du Meta Business Agent.
+   *
+   * 🔴 IL N'Y AVAIT AUCUN CHEMIN POUR ÇA NON PLUS, et l'oubli figeait l'outil pour toujours. `patch` est
+   * scopé par AGENT, or un outil créé pour le MBA n'en a aucun : une fois créé, son nom technique, son
+   * titre, ce à quoi il sert et le « ne pas utiliser » n'étaient plus modifiables par personne. Julien,
+   * 2026-09-18 : « je ne peux rien changer sur l'outil dans l'onglet outils ». Or ces textes sont
+   * exactement ce qu'on règle en observant l'agent se tromper, donc ce qu'on retouche le plus souvent.
+   */
+  patchPourMba?(tenantId: string, phoneNumberId: string, outilId: string, patch: {
+    name?: string; title?: string; description?: string; nePasUtiliser?: string;
+  }): Promise<{ id: string } | null>;
   /** La REQUÊTE que l'outil désignera, LUE côté serveur : le risque plancher et la source en dérivent. */
   requetePourOutil?(tenantId: string, requeteId: string): Promise<{ id: string; sourceId: string; methode: string; variables: Array<{ nom: string; type: string; origine: { type: string }; description?: string; requis?: boolean; enum?: string[] }> } | null>;
 }
@@ -205,6 +217,56 @@ export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogu
    * ⚠️ 409 et pas 500 : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc un
    * message destiné à l'utilisateur n'arriverait jamais.
    */
+  /**
+   * Corriger les mots d'un outil déjà exposé à l'agent de Meta.
+   *
+   * ⚠️ LES MÊMES BORNES QUE LA CRÉATION, et volontairement pas d'autres : un nom technique qui passe à la
+   * création et se fait refuser à la correction serait un piège, et l'inverse laisserait entrer par la
+   * petite porte ce que la grande refuse.
+   *
+   * ⚠️ TOUS LES CHAMPS SONT FACULTATIFS, mais un corps VIDE est refusé : « je n'ai rien demandé » ne doit
+   * pas rendre 200, sinon l'écran croit avoir enregistré.
+   */
+  app.patch(`${base}/:outilId`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    if (!deps.numeroDuTenant || !deps.patchPourMba) {
+      return reply.code(503).send({ error: 'exposition au MBA indisponible sur cette instance' });
+    }
+    const { outilId } = req.params as { outilId: string };
+    if (!estUuid(outilId)) return reply.code(404).send({ error: 'outil introuvable' });
+
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const texte = (v: unknown, max: number): string | null =>
+      (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v.trim() : null);
+    const patch: { name?: string; title?: string; description?: string; nePasUtiliser?: string } = {};
+    if (b.name !== undefined) {
+      if (typeof b.name !== 'string' || !/^[a-z0-9_]{1,64}$/.test(b.name)) {
+        return reply.code(400).send({ error: 'nom technique au format [a-z0-9_], 64 caractères au plus' });
+      }
+      patch.name = b.name;
+    }
+    for (const [cle, max] of [['title', 120], ['description', 2000], ['nePasUtiliser', 2000]] as const) {
+      if (b[cle] === undefined) continue;
+      const v = texte(b[cle], max);
+      if (v === null) return reply.code(400).send({ error: `« ${cle} » ne peut pas être vide` });
+      patch[cle] = v;
+    }
+    if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à corriger' });
+
+    const pn = await deps.numeroDuTenant(tenant);
+    if (!pn) return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté.' });
+    try {
+      const outil = await deps.patchPourMba(tenant, pn, outilId, patch);
+      if (!outil) return reply.code(404).send({ error: 'outil introuvable' });
+      return reply.code(200).send({ id: outil.id });
+    } catch (err) {
+      // Un nom déjà pris est un cas ordinaire, pas une panne : 409 avec le message du serveur.
+      if (err instanceof Error && /nom/i.test(err.message)) return reply.code(409).send({ error: err.message });
+      throw err;
+    }
+  });
+
   app.delete(`${base}/:outilId`, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });

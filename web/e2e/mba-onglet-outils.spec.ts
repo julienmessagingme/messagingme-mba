@@ -23,6 +23,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     name: 'suivi_commande',
     title: 'Suivi de commande',
     description: 'Rend l’état d’une commande.',
+    nePasUtiliser: 'Jamais pour annuler.',
     origin: 'http',
     risk: 'read',
     sourceId: 's1',
@@ -159,4 +160,53 @@ test.describe('MBA Paramètres : onglet Outils', () => {
       nePasUtiliser: 'Jamais pour annuler.',
     });
   });
+  /**
+   * 🔴 ON PEUT CORRIGER LES MOTS D'UN OUTIL DÉJÀ EXPOSÉ (Julien, 2026-09-18).
+   *
+   * « je ne peux rien changer sur l'outil dans l'onglet outils... tu n'as même pas mis de bouton
+   * modifier ». Il avait raison deux fois : il n'y avait ni bouton, ni route derrière. `patch` est scopé
+   * par AGENT, or un outil du Meta Business Agent n'en a aucun, donc il était figé dès sa création. Ces
+   * quatre textes sont pourtant exactement ce qu'on retouche en regardant l'agent choisir mal.
+   *
+   * ⚠️ IL ASSERTE SUR LE CORPS DU PATCH, pas sur l'écran : c'est ce qui PART qui prouve que la correction
+   * a été prise, et les champs pré-remplis qu'on ne réécrit pas de mémoire ce qu'on voulait retoucher.
+   */
+  test('🔴 « Modifier » ouvre les quatre textes PRÉ-REMPLIS, et Enregistrer les envoie', async ({ page }) => {
+    const patchs: Array<Record<string, unknown>> = [];
+    await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
+          return true;
+        }
+        if (method === 'PATCH' && url.includes(`/tenants/${TENANT}/agent-tools/o1`)) {
+          patchs.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>);
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'o1' }) });
+          return true;
+        }
+        return false;
+      },
+    });
+    await page.goto('/mba/parametres?tab=outils');
+
+    await expect(page.getByTestId('outil-edition-o1')).toHaveCount(0);
+    await page.getByTestId('outil-modifier-o1').click();
+
+    // PRÉ-REMPLIS avec l'existant : un formulaire vide ferait écraser par autre chose ce qu'on retouche.
+    await expect(page.getByTestId('outil-edition-nom-o1')).toHaveValue('suivi_commande');
+    await expect(page.getByTestId('outil-edition-titre-o1')).toHaveValue('Suivi de commande');
+    await expect(page.getByTestId('outil-edition-nepasutiliser-o1')).toHaveValue('Jamais pour annuler.');
+
+    await page.getByTestId('outil-edition-description-o1').fill('Quand le client demande où en est sa commande.');
+    await page.getByTestId('outil-edition-enregistrer-o1').click();
+
+    await expect.poll(() => patchs.length, { timeout: 5000 }).toBe(1);
+    expect(patchs[0]).toMatchObject({
+      name: 'suivi_commande',
+      title: 'Suivi de commande',
+      description: 'Quand le client demande où en est sa commande.',
+      nePasUtiliser: 'Jamais pour annuler.',
+    });
+  });
+
 });

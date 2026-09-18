@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, creerOutilPourMba,
+  getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, creerOutilPourMba, patchOutilMba,
   apercuPublicationMba, publierChezMeta,
   type OutilBibliotheque, type GestePublication,
 } from '@/lib/api-agent-tools';
@@ -161,6 +161,15 @@ Continue?`,
   }
 
   /**
+   * ⚠️ UNE CORRECTION NE PART PAS TOUTE SEULE CHEZ META, et c'est délibéré. Les mots corrigés doivent
+   * pouvoir se relire à l'écran avant d'aller chez un tiers, et le bouton « Envoyer » juste au-dessus est
+   * là pour ça. Publier à chaque frappe corrigée écraserait l'état de Meta sur une phrase à moitié écrite.
+   */
+  async function apresCorrection(): Promise<void> {
+    setOutils((await getBibliothequeOutils(tenantId)).outils);
+  }
+
+  /**
    * Ce que fait « Soumettre » du formulaire : l'outil vient d'être créé, il part chez Meta dans la foulée.
    *
    * ⚠️ UN ÉCHEC D'ENVOI NE DOIT PAS FAIRE CROIRE QUE LA CRÉATION A RATÉ : l'outil est enregistré chez nous,
@@ -283,6 +292,10 @@ Continue?`,
                 )}
               </div>
               <p className="mt-1 text-sm text-ink-600">{o.description}</p>
+              {/* 🔴 ON PEUT ENFIN CORRIGER LES MOTS (Julien, 2026-09-18). Il n'y avait aucun bouton, et
+                  aucune route derrière : un outil du MBA était figé dès sa création, alors que ces quatre
+                  textes sont exactement ce qu'on retouche en regardant l'agent se tromper. */}
+              {isAdmin && <Corriger tenantId={tenantId} outil={o} onFait={() => { void apresCorrection(); }} />}
               {/* La RAISON, telle que le serveur l'a écrite : le client ne peut pas la corriger lui-même,
                   mais il doit pouvoir la montrer à son fournisseur. */}
               {o.mcpNonActivable && !o.mcpIndisponibleLe && (
@@ -506,5 +519,108 @@ function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => Pr
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * CORRIGER LES MOTS D'UN OUTIL DÉJÀ EXPOSÉ.
+ *
+ * 🔴 IL N'Y AVAIT NI BOUTON NI ROUTE (Julien, 2026-09-18 : « je ne peux rien changer sur l'outil dans
+ * l'onglet outils... tu n'as même pas mis de bouton modifier »). `patchOutil` est scopé par AGENT, or un
+ * outil créé pour le Meta Business Agent n'en a aucun : une fois créé, son nom technique, son titre, ce à
+ * quoi il sert et le « ne pas utiliser » étaient figés pour toujours. Or ces textes sont précisément ce
+ * qu'on règle par essais successifs, en regardant l'agent choisir mal.
+ *
+ * ⚠️ LES CHAMPS SONT PRÉ-REMPLIS AVEC L'EXISTANT, jamais vides : un formulaire vide obligerait à retaper
+ * de mémoire, donc à écraser par autre chose ce qu'on voulait seulement retoucher.
+ */
+function Corriger({ tenantId, outil, onFait }: {
+  tenantId: string;
+  outil: OutilBibliotheque;
+  onFait: () => void;
+}) {
+  const t = useT();
+  const [ouvert, setOuvert] = useState(false);
+  const [name, setName] = useState(outil.name);
+  const [title, setTitle] = useState(outil.title);
+  const [description, setDescription] = useState(outil.description);
+  const [nePasUtiliser, setNePasUtiliser] = useState(outil.nePasUtiliser);
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const ouvrir = (): void => {
+    setErreur(null);
+    setName(outil.name);
+    setTitle(outil.title);
+    setDescription(outil.description);
+    setNePasUtiliser(outil.nePasUtiliser);
+    setOuvert(true);
+  };
+
+  const manque: string | null =
+    !/^[a-z0-9_]{1,64}$/.test(name) ? t('Un nom technique en minuscules, chiffres et tirets bas.', 'A technical name in lowercase, digits and underscores.')
+      : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
+        : description.trim() === '' ? t('Dites quand l’appeler.', 'Say when to call it.')
+          : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
+            : busy ? t('Enregistrement en cours…', 'Saving…')
+              : null;
+
+  if (!ouvert) {
+    return (
+      <button type="button" data-testid={`outil-modifier-${outil.id}`} onClick={ouvrir}
+        className="mt-2 self-start rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+        {t('Modifier', 'Edit')}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-2 rounded-xl border border-ink-200 bg-ink-50/40 p-3" data-testid={`outil-edition-${outil.id}`}>
+      {erreur !== null && <p className="text-xs text-coral" data-testid={`outil-edition-erreur-${outil.id}`}>{erreur}</p>}
+      <label className="text-xs text-ink-600">
+        {t('Nom technique (vu par l’agent de Meta)', 'Technical name (seen by Meta’s agent)')}
+        <input className={`${inputCls} mt-1`} data-testid={`outil-edition-nom-${outil.id}`} value={name} onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label className="text-xs text-ink-600">
+        {t('Titre lisible', 'Readable title')}
+        <input className={`${inputCls} mt-1`} data-testid={`outil-edition-titre-${outil.id}`} value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <label className="text-xs text-ink-600">
+        {t('Quand l’appeler', 'When to call it')}
+        <textarea className={`${inputCls} mt-1`} rows={2} data-testid={`outil-edition-description-${outil.id}`} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label className="text-xs text-ink-600">
+        {t('Quand NE PAS l’appeler', 'When NOT to call it')}
+        <textarea className={`${inputCls} mt-1`} rows={2} data-testid={`outil-edition-nepasutiliser-${outil.id}`} value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button" data-testid={`outil-edition-enregistrer-${outil.id}`} disabled={manque !== null} title={manque ?? ''}
+          className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+          onClick={() => {
+            setBusy(true);
+            setErreur(null);
+            patchOutilMba(tenantId, outil.id, {
+              name, title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim(),
+            })
+              // Le formulaire ne se referme que sur un succès : le refermer sur un refus perdrait la saisie.
+              .then(() => { setOuvert(false); onFait(); })
+              .catch((err: unknown) => { setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Saving failed')); })
+              .finally(() => { setBusy(false); });
+          }}
+        >
+          {t('Enregistrer', 'Save')}
+        </button>
+        {manque !== null && <span className="text-[11px] text-ink-500">{manque}</span>}
+        <button type="button" onClick={() => setOuvert(false)} className="text-xs text-ink-500 hover:underline">
+          {t('Annuler', 'Cancel')}
+        </button>
+        {/* ⚠️ CE QUE PERSONNE NE DEVINE : enregistrer ne change rien chez Meta tant qu'on n'a pas envoyé. */}
+        <span className="text-[11px] text-ink-500">
+          {t('Enregistré ici. Cliquez « Envoyer » plus haut pour le porter chez Meta.',
+            'Saved here. Click “Send” above to push it to Meta.')}
+        </span>
+      </div>
+    </div>
   );
 }
