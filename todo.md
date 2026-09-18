@@ -1,5 +1,24 @@
 # todo.md : backlog
 
+## 🟡 `queue-group-concurrency` est INSTABLE, mesure le 2026-09-18
+
+`tests/integration/queue-group-concurrency.integration.test.ts` a echoue sur le commit `f8c32b8b`
+(`AssertionError: expected false to be true`, 15 652 ms), puis le REJEU DU MEME COMMIT est passe. Meme
+code, deux verdicts : c est la definition d une instabilite, pas un defaut du commit, qui ne touchait que
+des `.md`, la migration 0154 et deux tests de prix.
+
+⚠️ **NI AFFAIBLI NI RETIRE, ET LA MESURE RESTE A FAIRE.** La regle du depot est de QUANTIFIER une
+instabilite sur la reference avant de s en attribuer la cause, jamais de l affaiblir pour la faire taire.
+Ce qui est mesure aujourd hui : 1 echec sur 2 executions du meme commit, et 8 runs verts sur les commits
+precedents. C est assez pour dire « instable », pas assez pour dire « une fois sur combien ».
+
+Le test dort 250 ms dans son gestionnaire et court contre un vrai pg-boss, avec un plafond de 25 s : il
+depend de l ordonnancement d un Postgres ephemere de CI. Piste a instruire : ce qu il affirme (« borne la
+concurrence par tenant sans affamer les autres ») se verifie peut-etre sur les COMPTEURS d appels plutot
+que sur une fenetre de temps, ce que le test unitaire voisin (`tests/queue-group-concurrency.test.ts`) fait
+deja avec un faux.
+
+
 ## 🟡 Ce que les six revues du Performance Lab ont laisse porter (2026-09-18)
 
 Aucun ne bloque le deploiement, la sixieme revue l a tranche explicitement. Ils sont ranges dans l ordre ou
