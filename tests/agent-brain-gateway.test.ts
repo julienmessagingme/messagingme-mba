@@ -130,6 +130,48 @@ describe('penserTrace', () => {
     expect(r).toMatchObject({ texte: null, sortie: null });
   });
 
+  /**
+   * 🔴 L'ÉQUIPE FERMÉE EST LE SEUL CAS OÙ L'AGENT GARDE LA PAROLE À L'ESCALADE (2026-09-18).
+   *
+   * Le jet systématique du texte avait une raison, et elle tient QUAND L'ÉQUIPE RÉPOND : c'est la branche
+   * `humain` du scénario qui parle ensuite. Elle cesse de tenir quand l'équipe ne répond pas, parce que
+   * cette branche est un bloc STATIQUE : elle ne peut dire ni « c'est fermé » ni « nous reprenons lundi
+   * 9 h ». Seul l'agent le peut, et il vient de recevoir la date dans sa consigne.
+   */
+  it('🔴 l’équipe INDISPONIBLE : la dernière phrase de l’agent est GARDÉE', async () => {
+    const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true });
+    const avecTexte: ReponseChat = {
+      texte: 'Nous sommes fermés, l’équipe vous répond lundi matin.',
+      appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }],
+      finish: 'tool_calls',
+      usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 },
+      generationId: null,
+    };
+    const ferme = { ...AGENT, equipe: { disponible: false, reouverture: 'lundi 21 septembre à 9 h' } };
+    const { d } = deps([avecTexte, texte('jamais atteint')], escalade, ferme);
+    const r = await penserTrace(entree(), TOUR, d);
+    expect(r).toMatchObject({ texte: 'Nous sommes fermés, l’équipe vous répond lundi matin.', sortie: null });
+  });
+
+  it('⚠️ l’équipe DISPONIBLE : le texte reste jeté, comme avant', async () => {
+    // La preuve inverse. Sans elle, garder le texte dans TOUS les cas passerait le test ci-dessus tout en
+    // changeant le comportement de chaque escalade en production.
+    const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true });
+    const avecTexte: ReponseChat = {
+      texte: 'Je vous passe un conseiller.',
+      appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }],
+      finish: 'tool_calls',
+      usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 },
+      generationId: null,
+    };
+    const ouvert = { ...AGENT, equipe: { disponible: true, reouverture: null } };
+    const { d } = deps([avecTexte, texte('jamais atteint')], escalade, ouvert);
+    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: null });
+    // Et sans le champ du tout, c'est-à-dire pour tout câblage qui ne l'a pas encore : même comportement.
+    const { d: d2 } = deps([avecTexte, texte('jamais atteint')], escalade, AGENT);
+    expect(await penserTrace(entree(), TOUR, d2)).toMatchObject({ texte: null });
+  });
+
   it('🔴 une erreur de PROTOCOLE alerte et arrête le tour', async () => {
     // Dette D3(a) : c'est un bug de NOTRE client, pas du modèle. Le lui repasser lui ferait réessayer
     // indéfiniment une chose qu'il ne peut pas corriger.

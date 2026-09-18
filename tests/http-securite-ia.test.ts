@@ -36,7 +36,7 @@ function app(depart: FrequenceMentionIa | null = null) {
   const settings: SettingsRouteDeps = {
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, optoutRequestId: null, mentionIaFrequence: courant,
+      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, optoutRequestId: null, mentionIaFrequence: courant,
       timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
     }),
     setMbaEnabled: async () => {},

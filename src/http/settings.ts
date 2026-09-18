@@ -6,6 +6,9 @@ import type { BusinessHours, DayHours } from '../workflow/conditions';
 import { withinBusinessHours } from '../workflow/conditions';
 import { scopeTenant } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
+import {
+  estModeTransfert, MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert,
+} from '../agent/disponibilite-equipe';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 
 export interface SettingsRouteDeps {
@@ -55,6 +58,13 @@ export interface SettingsRouteDeps {
   setOptoutRequestId?(tenantId: string, requestId: string | null): Promise<void>;
   /** Règle QUAND les agents de cet espace annoncent qu'ils sont des IA (migration 0140). */
   setMentionIaFrequence?(tenantId: string, frequence: FrequenceMentionIa): Promise<void>;
+  /**
+   * QUAND L'ÉQUIPE EST JOIGNABLE POUR LES AGENTS IA (migration 0156).
+   *
+   * ⚠️ Absente -> la route rend 503 plutôt que d'accepter un réglage qui n'irait nulle part. C'est l'idiome
+   * de ses voisines : un écran qui dirait « enregistré » sans rien écrire est pire qu'un écran indisponible.
+   */
+  setAgentTransfertMode?(tenantId: string, mode: ModeTransfert): Promise<void>;
   /**
    * Les agents de l'espace et la PHRASE que chacun dit.
    *
@@ -253,6 +263,44 @@ export function registerSettings(
     }
     await deps.setMentionIaFrequence(tenant, brut);
     return reply.code(200).send({ frequence: brut });
+  });
+
+  /**
+   * QUAND L'ÉQUIPE EST JOIGNABLE, pour les agents IA (lot 1 du plan du 2026-09-18).
+   *
+   * 🔴 MÊMES TROIS VALEURS QUE LE MBA, et c'est délibéré : `mba_handoff_mode` (migration 0067) pose déjà
+   * cette question pour l'agent de Meta. Deux vocabulaires voisins seraient impossibles à rapprocher sur un
+   * écran où les deux agents cohabitent.
+   *
+   * ⚠️ CE RÉGLAGE NE DÉCIDE PAS SI ON TRANSFÈRE : la conversation arrive dans « À traiter » dans tous les
+   * cas. Il décide de ce que l'agent a le droit de PROMETTRE au contact. Une phrase « nous revenons vers
+   * vous » sans ligne de travail derrière serait un mensonge poli.
+   */
+  app.get('/tenants/:tenantId/settings/transfert-agent', optsEncadrement, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { agentTransfertMode } = await deps.getSettings(tenant);
+    return reply.code(200).send({
+      // Le défaut EFFECTIF, celui que le runtime appliquera, jamais une case vide : même raison que sa
+      // voisine, un écran qui ne dirait rien de ce qui se passe ne sert à personne.
+      mode: agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
+      reglee: agentTransfertMode !== null,
+    });
+  });
+
+  /** ...et son écriture, ADMIN SEULEMENT, comme tout ce qui change ce qu'un robot dit à de vrais contacts. */
+  app.patch('/tenants/:tenantId/settings/transfert-agent', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.setAgentTransfertMode) return reply.code(503).send({ error: 'réglage indisponible' });
+    const brut = (req.body as { mode?: unknown } | null)?.mode;
+    if (!estModeTransfert(brut)) {
+      // 400 et non 500 : Cloudflare remplace le corps des 5xx, et c'est un message destiné à l'utilisateur.
+      return reply.code(400).send({ error: `mode requis (${MODES_TRANSFERT.join(' | ')})` });
+    }
+    await deps.setAgentTransfertMode(tenant, brut);
+    return reply.code(200).send({ mode: brut });
   });
 
   // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).

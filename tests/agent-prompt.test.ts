@@ -154,3 +154,46 @@ describe('ressembleAUnBlocOutil', () => {
     expect(ressembleAUnBlocOutil('')).toBe(false);
   });
 });
+
+/**
+ * 🔴 L'ÉQUIPE N'EST PAS JOIGNABLE : CE QUE L'AGENT A LE DROIT DE PROMETTRE (lot 1 du 2026-09-18).
+ *
+ * Le bloc vit dans la CONSIGNE et pas dans un résultat d'outil, parce que l'escalade rend la main : le tour
+ * s'arrête et le modèle ne parle plus après elle. L'information doit lui parvenir AVANT qu'il ne décide.
+ */
+describe('promptSysteme : la disponibilité de l’équipe', () => {
+  const bloc = (over: Parameters<typeof promptSysteme>[0]['equipe']) => promptSysteme(CTX({ equipe: over }));
+
+  it('⚠️ champ ABSENT : rien n’est dit, exactement comme avant le 2026-09-18', () => {
+    // C'est ce qui rend ce champ sûr sur un chemin que chaque message de contact emprunte : un câblage qui
+    // ne le fournit pas produit le prompt d'hier, au caractère près.
+    expect(promptSysteme(CTX())).not.toContain('JOIGNABLE');
+  });
+
+  it('équipe DISPONIBLE : rien n’est dit non plus', () => {
+    expect(bloc({ disponible: true, reouverture: null })).not.toContain('JOIGNABLE');
+  });
+
+  it('🔴 équipe FERMÉE avec une date : la date est DONNÉE, le modèle ne la calcule pas', () => {
+    const p = bloc({ disponible: false, reouverture: 'lundi 21 septembre à 9 h' });
+    expect(p).toContain('L’ÉQUIPE N’EST PAS JOIGNABLE EN CE MOMENT.');
+    expect(p).toContain('lundi 21 septembre à 9 h');
+    // ⚠️ Et on lui demande d'écrire AVANT d'appeler l'outil : après, il n'a plus la parole.
+    expect(p).toContain('AVANT d’appeler l’outil');
+  });
+
+  it('🔴 équipe fermée SANS date : aucun délai n’est promis', () => {
+    // Le mode `never`, et la semaine entièrement fermée. Le commentaire de la migration 0067 l'avait déjà
+    // écrit pour le MBA : un message qui ne promet aucun conseiller, sans quoi le client lit « un conseiller
+    // arrive » alors que personne n'est prévenu.
+    const p = bloc({ disponible: false, reouverture: null });
+    expect(p).toContain('n’annonce ni conseiller ni délai');
+    expect(p).not.toContain('reprendra');
+  });
+
+  it('⚠️ dans tous les cas, l’agent sait que la demande EST transmise', () => {
+    // La conversation arrive dans « À traiter » même hors horaires : sans cette phrase, un agent prudent
+    // dirait au contact de rappeler, alors qu'une ligne de travail existe déjà.
+    expect(bloc({ disponible: false, reouverture: null })).toContain('vue par l’équipe dans tous les cas');
+  });
+});

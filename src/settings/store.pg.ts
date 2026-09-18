@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { BusinessHours } from '../workflow/conditions';
 import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
+import { estModeTransfert, type ModeTransfert } from '../agent/disponibilite-equipe';
 import { grilleDepuisLigne, type GrillePrix } from '../stats/prix';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
@@ -45,6 +46,18 @@ export interface TenantSettings {
    * chez Meta. `null` = jamais réglé : on n'écrit alors RIEN chez Meta, et l'écran montre le défaut usine.
    */
   mbaHandoffMode: MbaHandoffMode | null;
+  /**
+   * Quand un AGENT IA passe la main, l'équipe est-elle joignable ? Mêmes trois valeurs que le MBA, et c'est
+   * délibéré : l'écran montre les deux agents côte à côte, et deux vocabulaires voisins pour la même
+   * question seraient impossibles à rapprocher.
+   *
+   * 🔴 IL NE DÉCIDE PAS SI ON TRANSFÈRE : la conversation arrive dans « À traiter » dans tous les cas. Il
+   * décide de ce que l'agent a le droit de PROMETTRE. Détail : `src/agent/disponibilite-equipe.ts`.
+   *
+   * ⚠️ UNE COLONNE À PART DE `mbaHandoffMode`, qui pilote `handoff.enabled` CHEZ META : les confondre ferait
+   * reconfigurer l'agent de Meta quand le client règle son agent IA, et l'inverse.
+   */
+  agentTransfertMode: ModeTransfert | null;
   /**
    * La requête de connecteur (Tools > Connecteurs API) jouée quand quelqu'un se désabonne, ou `null`.
    *
@@ -130,6 +143,9 @@ export class PgTenantSettingsStore {
       timezone: r?.timezone ?? DEFAULT_TIMEZONE,
       businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
       mbaHandoffMode: r?.mba_handoff_mode ?? null,
+      // ⚠️ Une valeur inconnue vaut `null`, donc le défaut `always`, donc le comportement d'aujourd'hui : une
+      // base en retard sur la migration 0156 se comporte exactement comme avant.
+      agentTransfertMode: estModeTransfert(r?.agent_transfert_mode) ? r.agent_transfert_mode : null,
       optoutRequestId: r?.optout_request_id ?? null,
       // ⚠️ Une valeur inconnue vaut `null`, donc « rien n'a été réglé », donc le défaut `session`. Une base
       // en retard (migration 0140 pas encore passée) se comporte comme avant, sans rien casser.
@@ -181,6 +197,19 @@ export class PgTenantSettingsStore {
     await this.pool.query(
       `insert into tenant_settings (tenant_id, mba_handoff_mode, updated_at) values ($1, $2, now())
        on conflict (tenant_id) do update set mba_handoff_mode = excluded.mba_handoff_mode, updated_at = now()`,
+      [tenantId, mode],
+    );
+  }
+
+  /**
+   * Enregistre quand l'équipe est joignable pour les agents IA. Upsert ciblé : n'écrase aucun autre réglage.
+   *
+   * ⚠️ Rien n'est écrit chez Meta ici, contrairement à son voisin : ce réglage ne concerne QUE nos agents.
+   */
+  async setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, agent_transfert_mode, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set agent_transfert_mode = excluded.agent_transfert_mode, updated_at = now()`,
       [tenantId, mode],
     );
   }

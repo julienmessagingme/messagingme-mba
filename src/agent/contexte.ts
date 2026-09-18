@@ -1,6 +1,7 @@
 import type { AgentStore, FrequenceMentionIa } from './agent-store';
 import type { ToolCatalog } from './catalog';
 import type { ContexteAgentComplet } from './brain.gateway';
+import type { EquipePourPrompt } from './disponibilite-equipe';
 
 /**
  * Tout ce que le cerveau doit savoir d'un agent : sa fiche, ses règles d'arrêt, ses outils ACTIFS.
@@ -29,6 +30,17 @@ export interface DepsContexteAgent {
    * câble pas ne change donc rien.
    */
   politiqueMentionIa?(tenantId: string): Promise<FrequenceMentionIa | null>;
+  /**
+   * L'ÉQUIPE EST-ELLE JOIGNABLE, ET SINON QUAND REPREND-ELLE ? (lot 1 du 2026-09-18)
+   *
+   * 🔴 MÊME FORME ET MÊME RAISON QUE SA VOISINE : c'est un réglage d'ESPACE (migration 0156), lu au point de
+   * passage unique pour que le bac à sable et la production voient la MÊME chose. Un espace fermé doit
+   * produire la même phrase des deux côtés, sans quoi l'essai cesse de prouver quoi que ce soit.
+   *
+   * ⚠️ Absente -> l'équipe est réputée joignable, donc le comportement d'avant le 2026-09-18. Un harnais de
+   * test qui ne la câble pas ne change donc rien.
+   */
+  disponibiliteEquipe?(tenantId: string): Promise<EquipePourPrompt | null>;
 }
 
 export async function lireContexteAgent(
@@ -50,5 +62,8 @@ export async function lireContexteAgent(
     // La politique face à un contact inconnu vient de la FICHE, jamais de l'appelant : c'est ce qui fait que
     // le bac à sable montre le même refus d'outil que la production.
     contactInconnu: fiche.contactInconnu,
+    // ⚠️ `?? undefined` et non `?? { disponible: true }` : le champ ABSENT veut déjà dire « joignable », et
+    // deux façons d'écrire la même chose finiraient par diverger.
+    equipe: (deps.disponibiliteEquipe ? await deps.disponibiliteEquipe(tenantId) : null) ?? undefined,
   };
 }

@@ -251,6 +251,28 @@ export function setPolitiqueMentionIa(tenantId: string, frequence: FrequenceMent
 }
 
 /**
+ * QUAND L'ÉQUIPE EST JOIGNABLE, pour les agents IA (migration 0156).
+ *
+ * 🔴 CE RÉGLAGE NE DÉCIDE PAS SI ON TRANSFÈRE : la conversation arrive dans « À traiter » dans tous les cas.
+ * Il décide de ce que l'agent a le droit de PROMETTRE au contact. Une phrase « nous revenons vers vous »
+ * sans ligne de travail derrière serait un mensonge poli.
+ *
+ * ⚠️ Mêmes trois valeurs que le Meta Business Agent, et c'est voulu : deux vocabulaires voisins pour la même
+ * question seraient impossibles à rapprocher sur un écran où les deux agents cohabitent.
+ */
+export type ModeTransfertAgent = 'always' | 'business_hours' | 'never';
+export interface PolitiqueTransfertAgent {
+  mode: ModeTransfertAgent;
+  reglee: boolean;
+}
+export function politiqueTransfertAgent(tenantId: string): Promise<PolitiqueTransfertAgent> {
+  return request(`/tenants/${tenantId}/settings/transfert-agent`);
+}
+export function setPolitiqueTransfertAgent(tenantId: string, mode: ModeTransfertAgent): Promise<{ mode: ModeTransfertAgent }> {
+  return request(`/tenants/${tenantId}/settings/transfert-agent`, { method: 'PATCH', body: JSON.stringify({ mode }) });
+}
+
+/**
  * LA MOITIÉ SYSTÈME DU JOURNAL DES ERREURS (migration 0142) : un appel vers un système du CLIENT qui n'a
  * pas abouti, quel que soit ce qui l'a déclenché.
  *

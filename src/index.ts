@@ -116,6 +116,7 @@ import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
+import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-equipe';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { transcrireMessage } from './inbox/transcrire';
@@ -1307,6 +1308,7 @@ async function main(): Promise<void> {
        * promettrait une verification qu il ne permet pas de faire.
        */
       setMentionIaFrequence: (tenant, frequence) => settingsStore.setMentionIaFrequence(tenant, frequence),
+      setAgentTransfertMode: (tenant, mode) => settingsStore.setAgentTransfertMode(tenant, mode),
       listerAgentsPourConformite: (tenant) => agentStore.listerPourConformite(tenant),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
@@ -1641,7 +1643,27 @@ async function main(): Promise<void> {
           completer: (i) => gateway.completer(i),
           // Point de lecture PARTAGE avec le tour de production : c est ce qui garantit que le bac a sable
           // montre exactement ce que la production ferait, modele et politiques compris.
-          contexte: (tenant, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog, politiqueMentionIa: async (t) => (await settingsStore.get(t)).mentionIaFrequence }, tenant, agentId),
+          contexte: async (tenant, agentId) => {
+          /**
+           * ⚠️ UNE SEULE LECTURE DES RÉGLAGES POUR LES DEUX POLITIQUES D'ESPACE. Cette fonction est sur le
+           * chemin de CHAQUE tour d'agent : deux `get` y feraient deux allers-retours pour la même ligne,
+           * et la seconde politique est arrivée le 2026-09-18 à côté de la première.
+           */
+          const reglages = await settingsStore.get(tenant);
+          return lireContexteAgent({
+            agents: agentStore,
+            outils: toolCatalog,
+            politiqueMentionIa: async () => reglages.mentionIaFrequence,
+            // L'heure est prise ICI, au moment du tour : une disponibilité calculée plus tôt serait fausse
+            // sur une conversation qui traverse l'heure de fermeture.
+            disponibiliteEquipe: async () => equipePourPrompt(
+              reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
+              new Date(),
+              reglages.timezone,
+              reglages.businessHours,
+            ),
+          }, tenant, agentId);
+        },
           // Meme taux qu en production : un essai doit annoncer ce que la conversation couterait vraiment.
           tauxEurParDollar: config.EUR_PER_USD,
           outils: {

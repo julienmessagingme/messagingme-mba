@@ -8,6 +8,7 @@ import type { SortieAgent } from './agent-store';
 import type { FrequenceMentionIa } from './agent-store';
 import { outilsExposes } from './outils-maison';
 import { blocResultatOutil, ressembleAUnBlocOutil, promptSysteme, type ContexteAgent } from './prompt';
+import type { EquipePourPrompt } from './disponibilite-equipe';
 import { SORTIE_PLAFOND } from './sorties';
 import { microEurosDepuisDollars } from './devise';
 
@@ -88,6 +89,14 @@ export interface ContexteAgentComplet {
   plafonds: { maxAppelsOutils: number; budgetMicroEur: number };
   /** Ce que l'agent a le droit de faire face à un contact inconnu. Vient de sa fiche, jamais de l'appelant. */
   contactInconnu: ContexteAppel['contactInconnu'];
+  /**
+   * L'équipe est-elle joignable, et sinon quand reprend-elle ? (lot 1 du 2026-09-18)
+   *
+   * ⚠️ ABSENTE = DISPONIBLE, donc exactement le comportement d'avant. C'est ce qui rend ce champ sûr sur un
+   * chemin que chaque message de contact emprunte, et c'est aussi pourquoi le bac à sable n'a rien à faire
+   * pour continuer de fonctionner.
+   */
+  equipe?: EquipePourPrompt;
 }
 
 /**
@@ -210,6 +219,7 @@ async function boucler(
           || (agent.mentionIaFrequence === 'session' && !dejaParle(input.transcript)),
         contenu: agent.contenu,
         contactConnu: contact !== null,
+        equipe: agent.equipe,
       }),
     },
     ...versMessages(input.transcript),
@@ -327,7 +337,25 @@ async function boucler(
         return { texte: null, sortie: null, usage, appels };
       }
       // L'escalade a déjà rendu la main : plus rien à dire, et surtout pas un message de plus au contact.
-      if (res.rendu) return { texte: null, sortie: null, usage, appels };
+      if (res.rendu) {
+        /**
+         * 🔴 ON GARDE LA DERNIÈRE PHRASE, MAIS SEULEMENT SI L'ÉQUIPE EST INDISPONIBLE (2026-09-18).
+         *
+         * Le jet systématique du texte avait une raison, écrite ici depuis l'origine : après une escalade
+         * c'est la branche `humain` du scénario qui parle, et deux voix coup sur coup valent mieux qu'une
+         * seule bien placée. Cette raison tient toujours QUAND L'ÉQUIPE RÉPOND : rien ne change alors.
+         *
+         * Elle cesse de tenir quand l'équipe ne répond pas. La branche câblée est un bloc STATIQUE : elle ne
+         * peut dire ni « c'est fermé » ni « nous reprenons lundi 9 h », puisqu'elle dit la même chose à
+         * toute heure. Seul l'agent peut le dire, et il vient précisément de recevoir la date dans sa
+         * consigne. Demande de Julien, 2026-09-18.
+         *
+         * ⚠️ LE RAYON DE SOUFFLE EST BORNÉ AU CAS NEUF, délibérément : un espace qui n'a rien réglé est en
+         * `always`, donc toujours disponible, donc ce `if` ne change rien pour lui.
+         */
+        const equipeMuette = agent.equipe !== undefined && !agent.equipe.disponible;
+        return { texte: equipeMuette ? (reponse.texte ?? null) : null, sortie: null, usage, appels };
+      }
       if (res.sortie) return { texte: reponse.texte ?? null, sortie: res.sortie, usage, appels };
 
       // Dette D3(c) : le résultat repart au modèle DANS UN BLOC DÉLIMITÉ. Il vient d'une base de

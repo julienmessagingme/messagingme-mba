@@ -22,6 +22,7 @@ async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: 
   const requetes = opts.requetes ?? [{ id: 'rq-1', label: 'Desabonner dans le CRM' }];
   let branche = opts.branche ?? null;
   let mentionIa = opts.mentionIa === undefined ? null : opts.mentionIa;
+  let transfert: string | null = null;
   const agentsIa = opts.agentsIa ?? [
     { id: 'ag-1', label: 'Conseiller sejours', status: 'active', mentionIa: 'Vous echangez avec un assistant automatique.' },
   ];
@@ -53,6 +54,15 @@ async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: 
         return json({ frequence: mentionIa });
       }
       return json({ frequence: mentionIa ?? 'session', reglee: mentionIa !== null, agents: agentsIa });
+    }
+    if (chemin.endsWith('/settings/transfert-agent')) {
+      if (route.request().method() === 'PATCH') {
+        const corps = route.request().postDataJSON() as { mode: string };
+        opts.ecritures?.push({ chemin, corps });
+        transfert = corps.mode;
+        return json({ mode: transfert });
+      }
+      return json({ mode: transfert ?? 'always', reglee: transfert !== null });
     }
     if (chemin.endsWith('/settings/poussee-optout')) {
       if (route.request().method() === 'PATCH') {
@@ -243,6 +253,32 @@ test.describe('Centre de sécurité & compliance', () => {
     expect(ecritures).toEqual([{ chemin: '/tenants/t-e2e/settings/mention-ia', corps: { frequence: 'jamais' } }]);
     // ...et la mention « defaut applique » disparait, parce que quelqu un a desormais choisi.
     await expect(page.getByTestId('mention-ia-defaut')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 QUAND L'EQUIPE EST JOIGNABLE, ET CE QUE L'AGENT A LE DROIT DE PROMETTRE (lot 1 du 2026-09-18).
+   *
+   * Demande de Julien : « il faut que le user setup si il veut qu'on transfere a toute heure ou jamais en
+   * dehors des heures ouvrees ». Le reglage vit a cote de l'annonce d'IA parce que les deux decident de ce
+   * qu'un robot DIT au nom de la marque.
+   */
+  test('🔴 le reglage de disponibilite de l equipe s ENVOIE, et l ecran dit qu il ne coupe PAS le transfert', async ({ page }) => {
+    const ecritures: Ecriture[] = [];
+    await monter(page, { ecritures });
+    await page.goto('/securite/ia');
+    await expect(page.getByTestId('transfert-agent')).toBeVisible();
+    await expect(page.getByTestId('transfert-agent-defaut')).toBeVisible();
+
+    /**
+     * 🔴 LA PHRASE QUI EMPECHE LE CONTRESENS, et elle vaut le test. Sans elle un client lit « jamais » et
+     * croit avoir coupe le transfert, alors que la conversation remonte toujours dans « A traiter ».
+     */
+    await expect(page.getByTestId('transfert-agent')).toContainText('ne coupe jamais le transfert');
+
+    await page.getByTestId('transfert-agent-business_hours').locator('input').check();
+    await expect(page.getByTestId('transfert-agent-ok')).toBeVisible();
+    expect(ecritures).toEqual([{ chemin: '/tenants/t-e2e/settings/transfert-agent', corps: { mode: 'business_hours' } }]);
+    await expect(page.getByTestId('transfert-agent-defaut')).toHaveCount(0);
   });
 
   /**

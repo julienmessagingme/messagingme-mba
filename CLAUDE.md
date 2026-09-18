@@ -82,7 +82,7 @@ cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la li
 **Dernière appliquée : 0155**, le 2026-09-18 (`analyse_jour`, les agrégats journaliers qui gardent la
 mémoire de ce que la purge efface, plus `tenant_settings.conversation_retention_days`). Juste avant elle,
 **0154** (la grille de prix par espace : marge sur le tarif Meta, prix du message de service et sa
-franchise, sa date d'effet, les deux prix RCS). **Prochaine libre = 0156**, et **`0153` reste RÉSERVÉ** au
+franchise, sa date d'effet, les deux prix RCS). **Prochaine libre = 0157** : **0156 est ÉCRITE et PAS ENCORE APPLIQUÉE** (`0156_agent_transfert_mode.sql`, quand l'équipe est joignable pour un agent IA). ⚠️ Cette phrase-là a été fausse sept fois dans ce fichier, toujours de la même façon : elle vieillit à la SECONDE où `migrate` tourne. Au prochain déploiement, on la relit EN BASE et on la remplace, et **`0153` reste RÉSERVÉ** au
 CHECK strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier
 n'existe pas, et le runner n'exige aucune continuité.
 

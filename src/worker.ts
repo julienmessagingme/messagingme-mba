@@ -73,6 +73,7 @@ import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { lireContexteAgent } from './agent/contexte';
+import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-equipe';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
@@ -1752,7 +1753,27 @@ async function main(): Promise<void> {
       completer: (i) => gatewayAgent.completer(i),
       // Point de lecture PARTAGÉ avec le bac à sable de la console : un champ ajouté d'un seul côté ferait
       // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
-      contexte: (t, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog, politiqueMentionIa: async (t) => (await settingsStore.get(t)).mentionIaFrequence }, t, agentId),
+      contexte: async (t, agentId) => {
+          /**
+           * ⚠️ UNE SEULE LECTURE DES RÉGLAGES POUR LES DEUX POLITIQUES D'ESPACE. Cette fonction est sur le
+           * chemin de CHAQUE tour d'agent : deux `get` y feraient deux allers-retours pour la même ligne,
+           * et la seconde politique est arrivée le 2026-09-18 à côté de la première.
+           */
+          const reglages = await settingsStore.get(t);
+          return lireContexteAgent({
+            agents: agentStore,
+            outils: toolCatalog,
+            politiqueMentionIa: async () => reglages.mentionIaFrequence,
+            // L'heure est prise ICI, au moment du tour : une disponibilité calculée plus tôt serait fausse
+            // sur une conversation qui traverse l'heure de fermeture.
+            disponibiliteEquipe: async () => equipePourPrompt(
+              reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
+              new Date(),
+              reglages.timezone,
+              reglages.businessHours,
+            ),
+          }, t, agentId);
+        },
       // Le Gateway facture en dollars, tous nos compteurs sont en micro-euros : la conversion se fait a l
       // entree, une seule fois, avec le taux commercial de la configuration.
       tauxEurParDollar: config.EUR_PER_USD,

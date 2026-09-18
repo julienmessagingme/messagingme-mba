@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
-import { politiqueMentionIa, setPolitiqueMentionIa, type FrequenceMentionIa, type PolitiqueMentionIa } from '@/lib/api';
+import {
+  politiqueMentionIa, politiqueTransfertAgent, setPolitiqueMentionIa, setPolitiqueTransfertAgent,
+  type FrequenceMentionIa, type ModeTransfertAgent, type PolitiqueMentionIa, type PolitiqueTransfertAgent,
+} from '@/lib/api';
 import { cardCls } from '@/lib/ui';
 
 /**
@@ -147,6 +150,8 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
         )}
       </section>
 
+      <TransfertEquipe tenantId={tenantId} estAdmin={estAdmin} />
+
       {/*
         🔴 LE META BUSINESS AGENT N'EST PAS GOUVERNÉ PAR CE RÉGLAGE, et le taire serait le plus grave défaut
         possible sur cet écran : un client lirait « mes IA se déclarent » et ce serait faux pour l'une
@@ -200,5 +205,129 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
         </p>
       </section>
     </div>
+  );
+}
+
+/**
+ * QUAND L'ÉQUIPE EST JOIGNABLE, ET CE QUE L'AGENT A LE DROIT DE PROMETTRE (lot 1 du 2026-09-18).
+ *
+ * 🔴 IL NE DÉCIDE PAS SI ON TRANSFÈRE, et l'écran le DIT. La conversation arrive dans « À traiter » dans
+ * tous les cas : une phrase « nous revenons vers vous » sans ligne de travail derrière serait un mensonge
+ * poli, et un client qui croirait couper le transfert laisserait des demandes sans personne.
+ *
+ * 🔴 SA PLACE EST ICI, à côté de l'annonce d'IA, parce que les deux règlent la même chose : ce qu'un robot
+ * DIT au nom de la marque. Ce sont les deux seules lignes de la configuration d'un agent qui engagent autre
+ * chose que son efficacité.
+ */
+function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
+  const t = useT();
+  const [etat, setEtat] = useState<PolitiqueTransfertAgent | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [enregistre, setEnregistre] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    void politiqueTransfertAgent(tenantId)
+      .then((r) => { if (vivant) setEtat(r); })
+      .catch((e) => { if (vivant) setErreur(e instanceof Error ? e.message : 'lecture impossible'); });
+    return () => { vivant = false; };
+  }, [tenantId]);
+
+  async function choisir(mode: ModeTransfertAgent): Promise<void> {
+    if (!etat || etat.mode === mode) return;
+    setErreur(null);
+    setEnregistre(false);
+    // ⚠️ OPTIMISTE, PUIS REMIS EN PLACE SI ÇA ÉCHOUE : sans le retour en arrière, l'écran afficherait un
+    // choix que la base n'a pas, sur un réglage qui décide de ce qu'un robot promet à un contact.
+    const avant = etat;
+    setEtat({ mode, reglee: true });
+    try {
+      await setPolitiqueTransfertAgent(tenantId, mode);
+      setEnregistre(true);
+    } catch (e) {
+      setEtat(avant);
+      setErreur(e instanceof Error ? e.message : 'enregistrement impossible');
+    }
+  }
+
+  const choix: Array<{ valeur: ModeTransfertAgent; titre: string; texte: string }> = [
+    {
+      valeur: 'always',
+      titre: t('À toute heure', 'At any time'),
+      texte: t(
+        'L’agent annonce qu’un conseiller prend le relais, quelle que soit l’heure. À choisir si quelqu’un répond la nuit et le week-end.',
+        'The agent announces that a human is taking over, whatever the time. Choose this if someone answers at night and on weekends.',
+      ),
+    },
+    {
+      valeur: 'business_hours',
+      titre: t('Seulement aux heures d’ouverture', 'Only during business hours'),
+      texte: t(
+        'Hors de vos horaires, l’agent n’annonce pas de conseiller : il dit quand votre équipe reprend, en calculant la vraie prochaine ouverture. Un samedi, il annonce lundi, pas demain.',
+        'Outside your hours, the agent does not announce a human: it says when your team is back, computing the real next opening. On a Saturday it says Monday, not tomorrow.',
+      ),
+    },
+    {
+      valeur: 'never',
+      titre: t('Jamais en direct', 'Never live'),
+      texte: t(
+        'L’agent ne promet ni conseiller ni délai. Il dit simplement que la demande est transmise.',
+        'The agent promises neither a human nor a delay. It simply says the request has been passed on.',
+      ),
+    },
+  ];
+
+  return (
+    <section className={cardCls} data-testid="transfert-agent">
+      <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
+        <span className="text-sm font-semibold text-ink-900">{t('Quand votre équipe est joignable', 'When your team is reachable')}</span>
+        {etat !== null && !etat.reglee && (
+          <span className="text-xs text-ink-400" data-testid="transfert-agent-defaut">
+            {t('défaut appliqué, personne n’a encore choisi', 'default applied, nobody has chosen yet')}
+          </span>
+        )}
+      </div>
+
+      <p className="px-4 pt-3 text-xs text-ink-500">
+        {/* 🔴 LA PHRASE QUI EMPÊCHE LE CONTRESENS. Sans elle, un client lit « jamais » et croit avoir coupé
+            le transfert, alors que la conversation remonte toujours. */}
+        {t(
+          'Ce réglage ne coupe jamais le transfert : la conversation arrive dans « À traiter » dans tous les cas. Il décide de ce que votre agent a le droit de PROMETTRE au contact.',
+          'This setting never disables handover: the conversation always lands in “To handle”. It decides what your agent may PROMISE to the contact.',
+        )}
+      </p>
+
+      {erreur !== null && <p className="px-4 py-3 text-sm text-red-700" data-testid="transfert-agent-erreur">{erreur}</p>}
+      {etat === null && erreur === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+
+      {etat !== null && (
+        <div className="mt-2 divide-y divide-ink-100 border-t border-ink-100">
+          {choix.map((o) => (
+            <label key={o.valeur} className="flex cursor-pointer items-start gap-3 px-4 py-3" data-testid={`transfert-agent-${o.valeur}`}>
+              <input
+                type="radio"
+                name="transfert-agent"
+                className="mt-1"
+                disabled={!estAdmin}
+                checked={etat.mode === o.valeur}
+                onChange={() => { void choisir(o.valeur); }}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm text-ink-800">{o.titre}</span>
+                <span className="block text-xs text-ink-500">{o.texte}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      {enregistre && erreur === null && (
+        <p className="px-4 pb-3 pt-2 text-xs text-emerald-700" data-testid="transfert-agent-ok">{t('Enregistré.', 'Saved.')}</p>
+      )}
+      {etat !== null && !estAdmin && (
+        <p className="px-4 pb-3 pt-2 text-xs text-ink-400">
+          {t('Seul un administrateur peut changer ce réglage.', 'Only an administrator can change this setting.')}
+        </p>
+      )}
+    </section>
   );
 }
