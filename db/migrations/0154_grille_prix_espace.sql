@@ -57,11 +57,17 @@ alter table tenant_settings add column if not exists prix_marge_template     num
 --
 -- 🔴 LA LECON GENERALE, ET ELLE VAUT POUR TOUTE MIGRATION CORRIGEE APRES COUP : faire dependre la justesse
 -- d'une migration d'une PREMISSE (« elle n'est pas encore appliquee ») est exactement ce que ce depot a
--- paye neuf fois sur le compteur. La premiere redaction de ce bloc affirmait fermer « toutes les bases »,
--- puis un second paragraphe la dementait plus bas : un lecteur qui s'arretait avant le dementi repartait
--- avec la version fausse. Une justification ne se rectifie pas en ajoutant sa refutation dessous, elle se
--- REECRIT. Releve aux sixieme et septieme revues, la seconde ayant vu que la premiere correction etait
--- posee au mauvais endroit.
+-- paye neuf fois sur le compteur.
+--
+-- ⚠️ CE BLOC A ETE FAUX DEUX FOIS, DE DEUX FACONS DIFFERENTES, ET LE DIRE EXACTEMENT EST LE SEUL INTERET DE
+-- CETTE PHRASE. Premiere redaction : « elle ferme le cas pour toutes les bases », platement faux, releve a
+-- la sixieme revue. Sa correction a retire cette phrase ET pose la rectification dans un paragraphe
+-- SUIVANT : plus rien de faux, mais le paragraphe du haut continuait de MOTIVER cette ligne par le cas que
+-- le paragraphe du bas declarait non couvert, et la rectification etait orpheline de ce qu'elle rectifiait
+-- (corollaire (d) du CLAUDE.md). Releve a la septieme. La reecriture qui a suivi, elle, racontait cette
+-- histoire de travers, en pretendant que les deux versions avaient coexiste : elles ne l'ont jamais fait,
+-- et la huitieme revue l'a vu en deux `git show`. Une justification ne se rectifie pas en ajoutant sa
+-- refutation dessous, elle se REECRIT ; et le recit de sa propre correction se verifie comme le reste.
 alter table tenant_settings alter column prix_marge_template type numeric(6,2);
 alter table tenant_settings add column if not exists prix_service_centimes   numeric(6,2) not null default 2.48;
 alter table tenant_settings add column if not exists prix_service_franchise  integer      not null default 1000;
