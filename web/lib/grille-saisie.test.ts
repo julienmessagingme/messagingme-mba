@@ -34,9 +34,9 @@ describe('la saisie d une grille de prix reste du TEXTE tant qu on tape', () => 
 
   it('la virgule francaise est acceptee, c est celle que les clients tapent', () => {
     expect(depuisChamps({ ...enChamps(G), serviceCentimes: '2,48' }).serviceCentimes).toBe(2.48);
-    // ⚠️ La conversion ACCEPTE 120,5 ; c est le SERVEUR qui refuse une marge decimale, parce que sa colonne
-    // est un `smallint`. Ce module traduit la saisie, il ne decide pas des bornes : deux endroits qui
-    // decideraient des bornes finiraient par ne plus decider la meme chose.
+    // ⚠️ Ce module TRADUIT la saisie, il ne decide pas des bornes : deux endroits qui decideraient des
+    // bornes finiraient par ne plus decider la meme chose. C est le serveur qui tranche, et il accepte
+    // 120,5 depuis que la colonne de la marge a ete elargie a deux decimales.
     expect(depuisChamps({ ...enChamps(G), margeTemplate: '120,5' }).margeTemplate).toBe(120.5);
   });
 

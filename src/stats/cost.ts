@@ -282,7 +282,7 @@ export function estimateCoutParCampagne(
       ligne.nonChiffrables += r.count;
     } else {
       ligne.chiffres += r.count;
-      // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `tarifsMeta`.
+      // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `prixFactures`.
       ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
     }
     par.set(r.campaignId, ligne);

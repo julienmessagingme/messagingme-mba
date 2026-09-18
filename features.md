@@ -275,7 +275,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à face.
 
-- **Ce qu'il a coûté** : ses envois de campagne, chiffrés au tarif Meta de leur catégorie. C'est un coût
+- **Ce qu'il a coûté** : ses envois de campagne, chiffrés à VOTRE prix (le tarif Meta de leur catégorie,
+  majoré de votre marge). C'est un coût
   **estimé** et un **plancher** : seuls les envois de campagne y entrent, un message de scénario ou une
   réponse d'opérateur dans la fenêtre de service n'y est pas. ⚠️ Quand aucun envoi n'a pu être chiffré, la
   case affiche « — » et jamais « 0 € » : un coût inconnu n'est pas un coût nul. Les envois non chiffrés sont
@@ -937,8 +938,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
     attente, personne n'est envoyé deux fois.
   - À ne pas confondre avec **« Arrêter »**, qui n'existe que sur une campagne au fil de l'eau et qui est
     définitif : la pause est une suspension, l'arrêt est un point final.
-- ✅ **Coût estimé par campagne** : « ≈ X (devise du compte) » par campagne + total, dérivé du tarif Meta
-  (pricing_analytics) × nb envoyés facturables. « indisponible » si le prix Meta ne remonte pas (jamais 0).
+- ✅ **Coût estimé par campagne** : « ≈ X (devise du compte) » par campagne + total, dérivé de VOTRE prix
+  (le tarif Meta de `pricing_analytics`, majoré de votre marge) × nb envoyés facturables. « indisponible »
+  si le prix Meta ne remonte pas (jamais 0).
 - ✅ **Les templates avec un VISUEL d'en-tête partent correctement** (2026-08-17). WhatsApp exige que l'image
   (ou la vidéo, ou le document) d'en-tête soit fournie à chaque envoi : celle déposée à la création du template
   ne sert qu'à sa validation par Meta. **Rien à faire côté utilisateur** : l'image est reprise du template
@@ -1202,7 +1204,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   C'est la question qu'on se pose en arrivant sur l'onglet, et elle se lit sur tout l'historique dès le
   premier jour.
   🔴 **Le coût est une ESTIMATION, pas une facture, et l'écran le dit.** Aucun coût par campagne n'est
-  stocké : il se recalcule (envois × tarif Meta de la catégorie) à partir des tarifs que Meta rend pour la
+  stocké : il se recalcule (envois × votre prix pour la catégorie) à partir des tarifs que Meta rend pour la
   période, exactement comme le graphe de coût de l'onglet Quantitatif, avec lequel il partage sa population
   d'envois et sa lecture des tarifs.
   ⚠️ **Trois cases restent VIDES plutôt que d'afficher zéro**, et chacune dit pourquoi au survol : le coût
@@ -1304,9 +1306,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   La période suit le sélecteur de plage global. (Portée : campagnes ; les envois Inbox/Workflow n'ont pas de suivi
   d'erreur, cf todo.)
 - ✅ **Graphe de coût estimé** : coût/jour (marketing + utility) sur la période, **filtrable par campagne
-  ou par template**, tarif Meta × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
+  ou par template**, votre prix × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
   (jamais de faux coût).
-- ✅ **Coût / breakdown par template** (prix Meta par catégorie).
+- ✅ **Coût / breakdown par template** (votre prix par catégorie : tarif Meta et votre marge).
 - ✅ **Les coûts affichent leur DEVISE** (2026-08-20) : « ≈ 5,68 € » et non plus un nombre nu. La devise vient
   de **Meta** (le compte WhatsApp la déclare, elle arrive avec les tarifs), elle n'est ni devinée ni écrite en
   dur : un compte hors zone euro affichera la sienne, et si Meta ne la donne pas on rend le nombre seul plutôt

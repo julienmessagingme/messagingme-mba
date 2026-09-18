@@ -451,15 +451,17 @@ async function main(): Promise<void> {
    * avait DEPLACE la frontiere de la divergence, pas supprimee. En margeant ici, les CINQ consommateurs
    * sont justes, et le sixieme qu on ajoutera demain le sera aussi sans y penser.
    *
-   * ⚠️ CE QUI SORT N EST PLUS UN TARIF META, C EST UN PRIX DE VENTE, et les commentaires qui disaient
-   * « les memes tarifs Meta » ont ete corrigés en consequence. Un tarif absent (`null`) le reste : marger
+   * ⚠️ ELLE S APPELAIT `tarifsMeta`, ET CE NOM A CAUSE LA PANNE QU ON VIENT DE REPARER. Ce qui sort n est
+   * plus un tarif de Meta, c est un PRIX DE VENTE. L inventaire des consommateurs avait ete fait sur
+   * « qui appelle `tarifsMeta` » plutot que sur « qui affiche un prix a un client », et un sixieme chemin
+   * y a echappe deux revues de suite. Un nom qui decrit ce qu on lit plutot que ce qu on rend fait ca. Un tarif absent (`null`) le reste : marger
    * une absence en ferait un prix, et `chiffrer` ne pourrait plus la compter comme « sans tarif ».
    *
    * ⚠️ La grille est lue PAR ESPACE a chaque appel. Elle vit dans `tenant_settings`, une ligne par espace,
    * lue par cle primaire : ce n est pas la lecture qui coute sur ce chemin, c est l aller-retour chez Meta
    * juste au-dessus.
    */
-  const tarifsMeta = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
+  const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
     const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
     const { startTs, endTs } = rangeToUnix(range);
     const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
@@ -1010,10 +1012,12 @@ async function main(): Promise<void> {
     stats: {
       getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
       getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
+      // La MEME grille que les prix affiches au-dessus : deux lectures donneraient deux marges.
+      margeTemplate: async (tenant) => grilleDepuisLigne(await statsStore.grillePrix(tenant)).margeTemplate,
       /**
        * 🔴 CE CHEMIN AUSSI PORTE LA MARGE, ET IL A ETE OUBLIE DEUX FOIS. Son resultat alimente la carte
        * « Detail par template » du Quantitatif ET le cout affiche sur l ecran Campagnes (total, ligne, et
-       * tiroir de detail). L inventaire des consommateurs avait ete fait sur `tarifsMeta`, alors que la
+       * tiroir de detail). L inventaire des consommateurs avait ete fait sur `prixFactures`, alors que la
        * bonne question etait « qui affiche un prix de template a un client ». Sans marge ici, la MEME
        * campagne valait 1,00 € sur l ecran Campagnes et 1,50 € sur sa fiche Performance Lab, et deux cartes
        * de la MEME page annoncaient deux totaux. Releve a la troisieme revue du 2026-09-18.
@@ -1048,21 +1052,21 @@ async function main(): Promise<void> {
       getCostSeries: async (tenant, range, filter) => {
         const [rows, rates] = await Promise.all([
           statsStore.getCostVolume(tenant, range, filter),
-          tarifsMeta(tenant, range),
+          prixFactures(tenant, range),
         ]);
         return estimateCostSeries(range.from, range.to, rows, rates);
       },
       /**
        * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E).
        *
-       * ⚠️ Les tarifs Meta viennent du MÊME appel que le graphe de coût (`tarifsMeta`) : deux façons de les
+       * ⚠️ Les tarifs Meta viennent du MÊME appel que le graphe de coût (`prixFactures`) : deux façons de les
        * lire donneraient deux coûts sur deux écrans du même onglet, et le client comparerait. Le calcul,
        * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
        */
       getCoutParCampagne: async (tenant, range) => {
         const [volumes, rates, serviceMois, ligne] = await Promise.all([
           statsStore.getVolumeParCampagne(tenant, range),
-          tarifsMeta(tenant, range),
+          prixFactures(tenant, range),
           // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
           // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux
           // lignes d'écart, et le client comparerait. Voir `estimateCoutParCampagne` pour le prorata.
@@ -1093,14 +1097,14 @@ async function main(): Promise<void> {
           grilleDepuisLigne(ligne),
         );
         const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
-        // La marge est DEJA dans `rates` (cf. `tarifsMeta`) : la reappliquer ici la compterait deux fois.
+        // La marge est DEJA dans `rates` (cf. `prixFactures`) : la reappliquer ici la compterait deux fois.
         return estimateCoutParCampagne(volumes, rates, clics, engagements,
           { parCampagne: services, prixUnitaire });
       },
       /**
        * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.
        *
-       * 🔴 LES MEMES TARIFS META QUE LE GRAPHE ET QUE LE TABLEAU, par le même `tarifsMeta`. Trois écrans du
+       * 🔴 LES MEMES TARIFS META QUE LE GRAPHE ET QUE LE TABLEAU, par le même `prixFactures`. Trois écrans du
        * même onglet lisent ce chiffre ; deux lectures de tarif différentes produiraient deux totaux que le
        * client mettrait côte à côte.
        *
@@ -1117,7 +1121,7 @@ async function main(): Promise<void> {
       getCoutMessages: async (tenant, range) => {
         const [volumes, rates, service, rcs, ligne] = await Promise.all([
           statsStore.getCostVolume(tenant, range, {}),
-          tarifsMeta(tenant, range),
+          prixFactures(tenant, range),
           statsStore.serviceParMois(tenant, range),
           statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS),
           statsStore.grillePrix(tenant),
@@ -1156,7 +1160,7 @@ async function main(): Promise<void> {
       /**
        * La fiche d'UNE campagne, ouverte en cliquant sa ligne dans le tableau ci-dessus.
        *
-       * 🔴 LES MÊMES TARIFS QUE LE TABLEAU, par le même `tarifsMeta`, et c'est ce qui empêche les deux
+       * 🔴 LES MÊMES TARIFS QUE LE TABLEAU, par le même `prixFactures`, et c'est ce qui empêche les deux
        * écrans de se contredire au moment précis où on les met côte à côte : le clic sur une ligne ouvre
        * cette fiche, et deux lectures de tarif différentes y afficheraient deux coûts pour la même campagne.
        *
@@ -1176,7 +1180,7 @@ async function main(): Promise<void> {
           statsStore.envoisDeLaCampagne(tenant, campaignId),
           // Les 30 derniers jours, la fenêtre par défaut du tableau : c'est LUI qui sert de référence,
           // parce que c'est de lui qu'on ouvre cette fiche.
-          tarifsMeta(tenant, { from: addDays(todayParis(), -29), to: todayParis() }),
+          prixFactures(tenant, { from: addDays(todayParis(), -29), to: todayParis() }),
           statsStore.getCampaignFunnel(tenant, campaignId),
           campagne.workflowId ? statsStore.mesuresScenarioParCampagne(tenant, campaignId) : Promise.resolve([]),
         ]);
@@ -2075,7 +2079,7 @@ async function main(): Promise<void> {
       /**
        * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement.
        *
-       * 🔴 LES MÊMES TARIFS QUE LES DEUX AUTRES ÉCRANS, par le MÊME `tarifsMeta`, et c'est ce qui les
+       * 🔴 LES MÊMES TARIFS QUE LES DEUX AUTRES ÉCRANS, par le MÊME `prixFactures`, et c'est ce qui les
        * empêche de se contredire au moment précis où on les met côte à côte : un client qui compare le coût
        * d'un contact au coût de la campagne qui le lui a envoyé doit retrouver la même arithmétique.
        *
@@ -2089,7 +2093,7 @@ async function main(): Promise<void> {
         if (!matiere) return null;
         // ⚠️ MÊME fenêtre que la fiche de campagne, écrite de la même façon : trois écrans qui disent un
         // coût doivent lire le même tarif, sinon ils se contredisent sur la même donnée.
-        const rates = await tarifsMeta(tenant, { from: addDays(todayParis(), -29), to: todayParis() });
+        const rates = await prixFactures(tenant, { from: addDays(todayParis(), -29), to: todayParis() });
         return {
           cout: estimerCoutContact(matiere.envois, rates),
           entonnoir: entonnoirEngagement(matiere.profondeurs),

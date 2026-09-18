@@ -9,6 +9,11 @@
   BAS. Le critere du cadrage (la meme fenetre de SEPT JOURS des deux cotes) reste tenu, d ou le jaune :
   ce qui manque est la borne de PERIODE, pas la fenetre d attribution. La corriger veut dire passer `range`
   a `engagementsParCampagne` et borner son CTE, exactement comme `servicesParCampagne`.
+- **ET `coutParClic` a le MEME defaut, en pire.** `clicsParCampagne` n a ni borne de periode ni meme fenetre
+  d attribution de sept jours : elle compte depuis le premier envoi, sans borne haute. On divise donc un
+  cout borne par la periode par des clics de toute la vie de la campagne. C est le corollaire (c) du
+  `CLAUDE.md` : corriger un compte a un endroit et le laisser a un autre, c est le laisser faux. Les deux se
+  corrigent ensemble, avec la meme fenetre partagee (`FENETRE_IMPUTATION`).
 
 - **La traduction tombe sur le credit du client mais n est chiffree NULLE PART.** `src/traduction/`
   `traduire.pg.ts` n ecrit ni debit ni compteur, et `consommationIa` ne lit que `agent_sessions`. Le

@@ -823,6 +823,7 @@ export function FactureCard({ data }: { data: TemplateStats | null }) {
   const t = useT();
   const { locale } = useLocale();
   const pricing = data?.pricing ?? null;
+  const marge = data?.margeTemplate;
   if (!pricing) return null;
 
   return (
@@ -842,11 +843,28 @@ export function FactureCard({ data }: { data: TemplateStats | null }) {
           'All templates and categories combined. This is what Meta actually charged, not an estimate of ours.',
         )}
       </p>
+      {/*
+        🔴 CETTE PHRASE RECONCILIE DEUX CHIFFRES DE LA MEME PAGE, ET ELLE DESIGNAIT LA MAUVAISE CAUSE. Elle
+        attribuait tout l'ecart au tarif moyen par categorie, ce qui etait vrai tant que personne ne posait
+        de marge. Depuis que la marge se regle (2026-09-18), le « cout estime » est un prix de VENTE et ce
+        total est ce que Meta a FACTURE : avec une marge de 150, l'ecart est de 50 % et sa cause dominante
+        n'etait nommee nulle part. Le client lisait deux nombres et la seule explication a l'ecran lui
+        designait un arrondi. Releve a la quatrieme revue.
+
+        ⚠️ LA MARGE N'EST NOMMEE QUE QUAND ELLE EXISTE : a 100, elle n'explique rien et l'ecart redevient
+        celui du tarif moyen. Une phrase qui parlerait de marge a un client qui n'en a pas pose ferait
+        chercher une cause absente.
+      */}
       <p className="mt-2 border-t border-ink-100 pt-2 text-xs text-ink-400">
-        {t(
-          'Le « coût estimé » plus haut ne donnera jamais exactement ce chiffre : c’est notre volume multiplié par un tarif moyen par catégorie, pas une facture.',
-          'The "estimated cost" above will never match this exactly: it is our volume times an average per-category rate, not an invoice.',
-        )}
+        {marge !== undefined && marge !== 100
+          ? t(
+            `Le « coût estimé » plus haut est ce que VOUS facturez : il applique votre marge de ${marge} %. Ce total-ci est ce que Meta vous a compté. Les deux ne se rejoignent pas, et c’est normal.`,
+            `The "estimated cost" above is what YOU charge: it applies your ${marge}% margin. This total is what Meta charged you. The two are not meant to match.`,
+          )
+          : t(
+            'Le « coût estimé » plus haut ne donnera jamais exactement ce chiffre : c’est notre volume multiplié par un tarif moyen par catégorie, pas une facture.',
+            'The "estimated cost" above will never match this exactly: it is our volume times an average per-category rate, not an invoice.',
+          )}
       </p>
     </div>
   );

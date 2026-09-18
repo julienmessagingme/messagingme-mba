@@ -275,6 +275,14 @@ export interface TemplateStats {
   breakdown: TemplateBreakdownRow[];
   /** null si Meta indisponible : afficher le volume seul, jamais un faux prix. */
   pricing: PricingSummary | null;
+  /**
+   * La marge de l espace, en pourcent. Sert a NOMMER la cause de l ecart entre le cout estime (prix de
+   * vente) et le total facture par Meta, sur la page qui pose les deux cote a cote.
+   *
+   * ⚠️ OPTIONNELLE : une instance anterieure au 2026-09-18 ne la rend pas, et l ecran retombe alors sur sa
+   * phrase d avant, qui reste juste tant qu aucune marge n est posee.
+   */
+  margeTemplate?: number;
 }
 export function getTemplateStats(tenantId: string, range?: StatsRange): Promise<TemplateStats> {
   return request<TemplateStats>(`/tenants/${tenantId}/stats/templates${rangeQuery(range)}`);

@@ -42,6 +42,17 @@ personne compte pour 1 engagement**, que **son coût inclut les messages de serv
 envoyés, et que **le funnel node par node montre son parcours**. C'est le seul essai qui prouve que les
 trois calculs parlent de la MÊME personne : chacun peut être juste isolément et désigner quelqu'un d'autre.
 
+🔴 **ET UN SECOND GESTE, AJOUTÉ LE 2026-09-18 PARCE QUE L'ESSAI CI-DESSUS NE L'AURAIT PAS VU.** Poser une
+**marge à 150 %** dans Paramètres > Vos prix, puis vérifier que **cinq écrans annoncent le même prix
+unitaire** : l'écran Campagnes (total, ligne, tiroir de détail), la fiche d'une campagne dans Performance
+Lab, le graphe de coût du Quantitatif, le détail par template, et le bilan d'un contact. Trois revues
+successives ont trouvé ce défaut, chacune sur un consommateur différent, parce qu'il est INVISIBLE tant que
+la marge vaut 100 : les deux chiffres coïncident alors, et tous les tests passent. L'essai qui ne pose
+jamais de marge ne peut donc pas voir le septième consommateur oublié.
+
+⚠️ **Et vérifier au passage la phrase de la carte « Facturé par Meta »** : sur la page des coûts, elle doit
+nommer la marge comme cause de l'écart, pas le tarif moyen par catégorie.
+
 ## Global Constraints
 
 - **Migrations : 0154 et 0155.** La base porte 0152 (relu le 2026-09-17 dans `public.schema_migrations`).

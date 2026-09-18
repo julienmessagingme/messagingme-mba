@@ -128,8 +128,8 @@ export function grilleDepuisLigne(ligne: Record<string, unknown> | null | undefi
  * 🔴 DEUX JEUX DE BORNES POUR UNE MEME VALEUR, C'EST UN 500 AU LIEU D'UN MESSAGE. Si l'ecriture acceptait
  * plus large que le CHECK, Postgres refuserait la ligne et le client verrait une page d'erreur sur un geste
  * ordinaire ; si elle acceptait plus etroit, un reglage legitime serait refuse sans raison lisible. Les
- * deux ecritures de la meme regle vivent donc cote a cote, et `tests/prix-grille.test.ts` RELIT le fichier
- * SQL pour verifier qu'elles ne derivent pas.
+ * deux ecritures de la meme regle vivent donc cote a cote, et `tests/prix-bornes.test.ts` RELIT le fichier
+ * SQL pour verifier qu'elles ne derivent pas (et pas `prix-grille.test.ts`, que cette phrase a nomme a tort).
  *
  * ⚠️ Les plafonds ne sont pas de la prudence, ils attrapent une FAUTE DE FRAPPE : 248 au lieu de 2,48, ou
  * 10000 au lieu de 100. Une valeur plausible et fausse est le pire mode de panne ici, parce qu'un client en
@@ -191,15 +191,15 @@ export function valideGrille(entree: unknown): { ok: true; grille: GrillePrix } 
     typeof v === 'number' && Number.isFinite(v) && Math.abs(v * 100 - Math.round(v * 100)) < 1e-9;
 
   /**
-   * 🔴 LA MARGE EST UN ENTIER, PARCE QUE SA COLONNE EST UN `smallint`. Le commentaire precedent affirmait
-   * `numeric(6,2)`, ce qui etait faux (migration 0154 : `prix_marge_template smallint`), et la garde
-   * acceptait donc une marge decimale. node-postgres l envoie en texte, Postgres infere `int2` depuis la
-   * colonne et rejette : **500 sur un geste ordinaire**, exactement le mode de panne que ce fichier dit
-   * fermer. ⚠️ Et ce cas n etait pas atteignable AVANT : l ancienne saisie convertissait a chaque frappe,
-   * donc on ne pouvait pas ecrire une marge decimale. C est le correctif de saisie, legitime par ailleurs,
-   * qui l a ouvert. Un correctif qui arme un defaut voisin, dans le meme commit.
+   * 🔴 DEUX DECIMALES, COMME SA COLONNE, ET CETTE REGLE A CHANGE DEUX FOIS EN UNE HEURE. Elle a d abord
+   * accepte n importe quel decimal sur la foi d un commentaire qui annoncait `numeric(6,2)` alors que la
+   * colonne etait un `smallint` : Postgres rejetait, donc 500 sur un geste ordinaire. Puis elle a exige un
+   * ENTIER, ce qui tenait le type mais RETRECISSAIT le produit : une marge de 120,5 %, soit +20,5 %, est
+   * banale, et l ecran la refusait sans pouvoir dire pourquoi puisqu elle est dans les bornes annoncees.
+   * La migration n etant pas encore appliquee, c est la COLONNE qui a ete elargie. Un type choisi sans y
+   * penser ne doit pas decider de ce qu un client a le droit de facturer.
    */
-  if (!borne(e.margeTemplate, mt.min, mt.max) || !Number.isInteger(e.margeTemplate)) return { ok: false, champ: 'margeTemplate' };
+  if (!borne(e.margeTemplate, mt.min, mt.max) || !deuxDecimalesMax(e.margeTemplate)) return { ok: false, champ: 'margeTemplate' };
   if (!borne(e.serviceCentimes, c.min, c.max) || !deuxDecimalesMax(e.serviceCentimes)) return { ok: false, champ: 'serviceCentimes' };
   if (!borne(e.serviceFranchise, f.min, f.max) || !Number.isInteger(e.serviceFranchise)) return { ok: false, champ: 'serviceFranchise' };
   if (typeof e.serviceDepuis !== 'string' || !JOUR_ISO.test(e.serviceDepuis) || !jourExiste(e.serviceDepuis)) return { ok: false, champ: 'serviceDepuis' };
@@ -258,13 +258,21 @@ export function tarifsFactures(
  * ⚠️ TYPE STRUCTUREL, PAS LE TYPE DE META. Ce module est PUR et ne connait pas `src/meta/` : accepter la
  * forme plutot que la classe evite de coupler la grille de prix au client de l API.
  */
+/** Les seules categories dont le prix se DERIVE du tarif Meta. Les autres se saisissent, ou ne se vendent pas. */
+const CATEGORIES_MARGEES = new Set(['marketing', 'utility']);
+
 export function pricingFacture<C extends { ratePerMessage: number }, T extends { byCategory: Record<string, C> }>(
   brut: T,
   g: GrillePrix,
 ): T {
   const byCategory: Record<string, C> = {};
   for (const [cle, c] of Object.entries(brut.byCategory)) {
-    byCategory[cle] = { ...c, ratePerMessage: prixTemplate(c.ratePerMessage, g) };
+    // 🔴 SEULES LES CATEGORIES DE TEMPLATE SONT MARGEES. Meta rend aussi `service` et `authentication` sur
+    // le meme appel, et la marge de ce module porte sur le TARIF DE TEMPLATE, pas sur eux : le prix d un
+    // message de service se SAISIT (`serviceCentimes`), il ne se derive d aucun tarif Meta. Les marger
+    // rendrait un prix faux, et sans erreur, au premier ecran qui les lirait. Aucun n'en lit aujourd'hui ;
+    // la doc de cette fonction invite pourtant a la reutiliser, donc la borne se pose maintenant.
+    byCategory[cle] = CATEGORIES_MARGEES.has(cle) ? { ...c, ratePerMessage: prixTemplate(c.ratePerMessage, g) } : c;
   }
   return { ...brut, byCategory };
 }

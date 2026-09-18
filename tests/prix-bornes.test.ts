@@ -237,16 +237,28 @@ describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
   });
 
   /**
-   * 🔴 LA MARGE EST UN ENTIER, PARCE QUE SA COLONNE EST UN `smallint` (migration 0154). Un commentaire a
-   * affirme `numeric(6,2)` pendant une heure, et la garde acceptait donc 120,5 : node-postgres l envoie en
-   * texte, Postgres infere `int2` depuis la colonne et rejette, donc 500 sur un geste ordinaire. ⚠️ Ce cas
-   * n etait pas atteignable avant le correctif de saisie du meme commit, qui a rendu la decimale tapable.
+   * 🔴 UNE MARGE DECIMALE EST ACCEPTEE, ET CETTE REGLE A CHANGE DEUX FOIS. Elle a d abord tout accepte sur
+   * la foi d un commentaire faux (la colonne etait un `smallint`, pas un `numeric`), donc Postgres
+   * rejetait et la route rendait 500. Puis elle a exige un ENTIER, ce qui tenait le type mais refusait une
+   * marge de +20,5 % sans pouvoir l expliquer au client, la valeur etant dans les bornes annoncees. C est
+   * la COLONNE qui a ete elargie, la migration n etant pas encore appliquee.
    */
-  it('🔴 une marge DECIMALE est refusee : sa colonne est un smallint, pas un numeric', () => {
-    const v = valideGrille({ ...bonne, margeTemplate: 120.5 });
-    expect(v.ok, 'Postgres rejetterait 120.5 sur un smallint, et la route n a aucun try/catch').toBe(false);
-    if (!v.ok) expect(v.champ).toBe('margeTemplate');
-    expect(valideGrille({ ...bonne, margeTemplate: 120 }).ok, 'un entier reste accepte').toBe(true);
+  it('🔴 une marge a DEUX decimales est acceptee, comme sa colonne le permet', () => {
+    expect(valideGrille({ ...bonne, margeTemplate: 120.5 }).ok, '+20,5 % est une marge banale').toBe(true);
+    expect(valideGrille({ ...bonne, margeTemplate: 120 }).ok).toBe(true);
+    const trop = valideGrille({ ...bonne, margeTemplate: 120.555 });
+    expect(trop.ok, 'trois decimales seraient arrondies en silence par la base').toBe(false);
+    if (!trop.ok) expect(trop.champ).toBe('margeTemplate');
+  });
+
+  /**
+   * 🔴 LE TYPE DE LA COLONNE EST RELU DANS LE FICHIER SQL, parce que c est LUI qui decide de la regle. Une
+   * validation a deux decimales sur une colonne entiere rendrait 500 ; une validation entiere sur une
+   * colonne decimale retrecirait le produit. Les deux sont arrives, dans cet ordre, en une heure.
+   */
+  it('🔴 la colonne de la marge accepte bien deux decimales', () => {
+    expect(SQL, 'prix_marge_template doit etre un numeric(6,2), pas un smallint')
+      .toContain('prix_marge_template     numeric(6,2)');
   });
 
   it('deux decimales exactement restent acceptees sur les prix en centimes', () => {
@@ -312,5 +324,39 @@ describe('pricingFacture : le resume de Meta devient un prix de vente', () => {
     const p = pricingFacture({ ...brut, currency: 'USD' }, { ...GRILLE_DEFAUT, margeTemplate: 200 });
     expect(p.currency).toBe('USD');
     expect(p.byCategory.marketing!.category, 'les autres champs de la categorie survivent').toBe('marketing');
+  });
+});
+
+/**
+ * 🔴 LA MARGE NE PORTE QUE SUR LES CATEGORIES DE TEMPLATE. Meta rend `service` et `authentication` sur le
+ * meme appel ; le prix d un message de service se SAISIT (`serviceCentimes`), il ne se derive d aucun tarif
+ * Meta. Les marger rendrait un prix faux, sans erreur, au premier ecran qui les lirait. Aucun n en lit
+ * aujourd hui, mais la doc de la fonction invite a la reutiliser : la borne se pose avant, pas apres.
+ * Releve a la quatrieme revue du 2026-09-18.
+ */
+describe('pricingFacture ne marge que ce qui se derive d un tarif Meta', () => {
+  const brutComplet = {
+    byCategory: {
+      marketing: { category: 'marketing', cost: 10, volume: 100, ratePerMessage: 0.1 },
+      utility: { category: 'utility', cost: 2, volume: 100, ratePerMessage: 0.02 },
+      service: { category: 'service', cost: 5, volume: 200, ratePerMessage: 0.025 },
+      authentication: { category: 'authentication', cost: 1, volume: 50, ratePerMessage: 0.02 },
+    },
+    totalCost: 18,
+    currency: 'EUR',
+  };
+
+  it('🔴 service et authentication traversent SANS marge', () => {
+    const p = pricingFacture(brutComplet, { ...GRILLE_DEFAUT, margeTemplate: 200 });
+    expect(p.byCategory.marketing!.ratePerMessage, 'marge').toBeCloseTo(0.2, 6);
+    expect(p.byCategory.utility!.ratePerMessage, 'marge').toBeCloseTo(0.04, 6);
+    expect(p.byCategory.service!.ratePerMessage, 'son prix se saisit, il ne se marge pas').toBeCloseTo(0.025, 6);
+    expect(p.byCategory.authentication!.ratePerMessage, 'pas un template vendu').toBeCloseTo(0.02, 6);
+  });
+
+  it('une categorie inconnue de Meta traverse intacte plutot que margee au hasard', () => {
+    const p = pricingFacture({ byCategory: { nouvelle: { ratePerMessage: 0.5 } }, totalCost: 0, currency: null },
+      { ...GRILLE_DEFAUT, margeTemplate: 200 });
+    expect(p.byCategory.nouvelle!.ratePerMessage).toBe(0.5);
   });
 });

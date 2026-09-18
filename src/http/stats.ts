@@ -39,6 +39,12 @@ export interface StatsRouteDeps {
   getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]>;
   /** Prix Meta (pricing_analytics) par catégorie ; null si indisponible (le front affiche le volume seul). */
   getPricing(tenantId: string, range: DateRange): Promise<PricingSummary | null>;
+  /**
+   * La marge de l espace, en pourcent, pour que l ecran puisse NOMMER la cause de l ecart entre le cout
+   * estime et la facture Meta. OPTIONNELLE : absente, l ecran retombe sur son ancienne phrase, qui reste
+   * juste quand aucune marge n est posee.
+   */
+  margeTemplate?(tenantId: string): Promise<number>;
   /** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
   getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
   /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
@@ -172,8 +178,17 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    const [breakdown, pricing] = await Promise.all([deps.getTemplateBreakdown(tenant, r.range), deps.getPricing(tenant, r.range)]);
-    return reply.code(200).send({ breakdown, pricing });
+    const [breakdown, pricing, marge] = await Promise.all([
+      deps.getTemplateBreakdown(tenant, r.range),
+      deps.getPricing(tenant, r.range),
+      // 🔴 LA MARGE VOYAGE AVEC CE QU ELLE EXPLIQUE. Cette page pose cote a cote un cout ESTIME (prix de
+      // vente, marge comprise) et le total FACTURE par Meta ; la phrase qui reconcilie les deux designait
+      // le tarif moyen par categorie, ce qui etait vrai tant que personne ne posait de marge. Sans ce
+      // chiffre, l ecran ne pourrait pas nommer la cause dominante de l ecart, et le client chercherait un
+      // arrondi la ou il y a 50 %. Un second appel aux reglages pour un seul nombre serait pire.
+      deps.margeTemplate ? deps.margeTemplate(tenant) : Promise.resolve(undefined),
+    ]);
+    return reply.code(200).send({ breakdown, pricing, ...(marge === undefined ? {} : { margeTemplate: marge }) });
   });
 
   // Funnel d'UNE campagne (envoyés/délivrés/lus/répondus). ?campaignId=... requis. Pas de plage

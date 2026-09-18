@@ -33,7 +33,13 @@
 -- poste de travail pointe sur la PRODUCTION, et une migration s'applique sur le VPS, image construite
 -- d'abord (`compose build mba-api`, puis `compose run --rm --no-deps mba-api npm run migrate`).
 
-alter table tenant_settings add column if not exists prix_marge_template     smallint     not null default 100;
+-- 🔴 `numeric(6,2)` ET PAS `smallint`, ET LE CHOIX A ETE CORRIGE AVANT L APPLICATION. Un `smallint`
+-- interdisait une marge de 120,5 %, c est-a-dire +20,5 %, qui est une marge commerciale banale. Pire : la
+-- validation applicative le refusait avec « valeur refusee » sans pouvoir expliquer pourquoi, puisque la
+-- valeur EST dans les bornes annoncees (1 a 1000). On retrecissait le produit pour tenir un type choisi
+-- sans y penser. La migration n'etant pas encore appliquee, l'elargir ne coute rien. Releve a la quatrieme
+-- revue du 2026-09-18.
+alter table tenant_settings add column if not exists prix_marge_template     numeric(6,2) not null default 100;
 alter table tenant_settings add column if not exists prix_service_centimes   numeric(6,2) not null default 2.48;
 alter table tenant_settings add column if not exists prix_service_franchise  integer      not null default 1000;
 alter table tenant_settings add column if not exists prix_service_depuis     date         not null default date '2026-10-01';
