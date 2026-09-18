@@ -152,9 +152,15 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     // qui n'apparaît dans AUCUN écran : ni dans l'agent d'où on vient de le créer, ni ailleurs.
     return this.enTransaction(async (client) => {
       const res = await client.query<{ id: string }>(
+        /**
+         * 🔴 `agent_id` EST RENSEIGNÉ DEPUIS LA MIGRATION 0157 : une ACTION appartient à l'agent, quand un
+         * CONNECTEUR appartient à l'espace. C'est ce qui fait disparaître « un outil de cet espace porte
+         * déjà ce nom » : deux agents peuvent chacun avoir leur « terminer », le nom n'étant plus unique
+         * que par agent pour les actions.
+         */
         `insert into agent_tools
-           (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
-         select $1, 'mba', $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8
+           (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+         select $1, $9, 'mba', $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8
           where exists (select 1 from agents where id = $9 and tenant_id = $1)
          returning id`,
         [
@@ -472,6 +478,11 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
                 '[]'::jsonb) as consommateurs
          from agent_tools t
         where t.tenant_id = $1
+          -- LES ACTIONS D UN AGENT NE SONT PAS DANS LA BIBLIOTHEQUE DE L ESPACE (migration 0157), et
+          -- l oublier introduirait le defaut que ce lot vient corriger : l ecran d un agent proposerait
+          -- de BRANCHER le terminer d un AUTRE agent, c est-a-dire de partager une definition qui ne se
+          -- partage plus. Tools > ne garde que ce qui pointe vers l exterieur (Julien, 2026-09-18).
+          and t.agent_id is null
         order by t.name`,
       [tenantId],
     );
