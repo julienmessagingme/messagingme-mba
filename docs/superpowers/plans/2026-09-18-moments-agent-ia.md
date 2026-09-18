@@ -217,3 +217,58 @@ Listés ici parce qu'ils ne sont visibles dans aucun des fichiers qu'on va touch
 5. **Le compteur de migrations se lit dans `CLAUDE.md`, jamais dans ce plan.**
 6. **Un index partiel est un contrat avec une requête précise.** Élargir un `where` sans élargir le prédicat
    ne produit aucune erreur, juste un balayage.
+
+---
+
+# État d'exécution, au 2026-09-18 au soir
+
+> Écrit ici et pas dans `wip.md` : une autre session y travaille, et ce plan est le seul document que ce
+> chantier possède en propre. Ce qui suit doit suffire à reprendre sans la conversation.
+
+## Livré, poussé, CI verte job par job
+
+| Lot | Commits | Ce qu'il fait |
+|---|---|---|
+| **1. Horaires du transfert** | `4850d234`, `fe4fc12a` | Réglage d'espace à trois valeurs (les mêmes que le MBA). Hors créneau, la conversation arrive quand même dans « À traiter » et l'agent annonce la réouverture, avec la date que NOUS calculons. Il ne garde la parole à l'escalade **que** si l'équipe est fermée. |
+| **2, passe 1. Propriété** | `a7d16f65`, `71c37564` | `agent_id` revient : une ACTION appartient à l'agent, un CONNECTEUR à l'espace. Deux index partiels complémentaires, un CHECK, une cascade. Le 409 disparaît par le haut. |
+| **2, passe 2. Gestes** | `04b89fa6`, `0cd0e2b5` | Un moment porte une réponse principale et des gestes que NOUS exécutons, **avant l'appel** (donc indépendants de sa réussite) et **après les gardes** (donc jamais sur un appel refusé). |
+| **2, passe 3. Écran** | `68083c6e`, `12119894`, `20f0f28d` | L'éditeur de gestes, qui DIT qu'ils partent même si l'appel échoue. Le bouton « Brancher » retiré (sa cause a disparu). Les 7 définitions orphelines supprimées, CHECK strict posé. |
+
+## 🔴 L'ORDRE DE DÉPLOIEMENT, ET IL N'EST PAS UNIFORME
+
+Quatre migrations écrites, **aucune appliquée**. Le compteur fait foi dans `CLAUDE.md`, jamais ici.
+
+- **0156, 0157, 0158 : AVANT le déploiement.** Additives et permissives, l'ancien code y survit.
+- **0159 : APRÈS le déploiement, et elle seule.** Son CHECK strict est violé par l'ancien `ajouter`, qui
+  écrit `agent_id` à null : l'appliquer avant ferait échouer toute création d'outil pendant la fenêtre.
+  C'est la leçon de 0152, appliquée dans l'autre sens.
+
+⚠️ **0159 est la seule opération IRRÉVERSIBLE du chantier.** Sa requête de re-mesure est écrite dans le
+fichier : la jouer avant de l'appliquer, pour revérifier que les orphelines sont toujours à zéro consommateur
+(mesuré le 2026-09-18 : 7 définitions, 0 consommateur, 0 active, 1 agent en brouillon).
+
+## Ce qui RESTE de ce plan
+
+1. **Les gestes dans la trace du bac à sable.** Il n'en exécute aucun, à raison (un essai ne doit pas taguer
+   un vrai contact), mais il promet « exactement ce que l'agent fera » : tant qu'il ne les AFFICHE pas, il
+   ment par omission, exactement comme `connecteurSimule` avant la migration 0150. Dette assumée, pas oubli.
+2. **Lot 3, la parenthèse de scénario.** Rien de commencé. Le seul manque technique réel, et le plus risqué.
+3. **Lot 4, l'entretien écrit les moments.** Rien de commencé.
+4. **Lot 5, le MBA.** À mesurer avant d'écrire quoi que ce soit.
+
+## Trois choses mesurées qui ont changé le plan en cours de route
+
+- **La reprise de données du lot 2 était vide.** 7 définitions, 0 consommateur : rien à dédoubler, rien à
+  éteindre. La partie annoncée comme « la plus dangereuse » n'existait pas.
+- **Aucun outil n'était attaché au Meta Business Agent.** Le préfixe `mba_` que Julien voyait est le NOM PAR
+  DÉFAUT de `outils-maison.ts`, pas une appartenance. Le modèle est poreux, son espace ne l'était pas.
+- **L'agent est MUET à l'escalade** (son texte est jeté délibérément) : ce que le contact lit vient de la
+  branche `humain` du scénario, un bloc statique. La prémisse du lot 1 était donc partiellement fausse.
+
+## Ce que la CI a repris, cinq fois
+
+Toujours le même motif, et il vaut pour la suite : **les tests d'intégration ne tournent qu'en CI**, un
+`npm test` vert en local ne prouve rien de la moitié base. Les cinq : une fixture de réglages non typée, un
+test qui affirmait l'invariant que la passe 1 renversait, deux sondes qui passaient pour la mauvaise raison
+(le bon code `23514`, levé par une autre contrainte), une lecture par `byName` qui filtre sur `actif`, et une
+assertion de cascade dont la vérité avait changé. **Chaque fois le CAS a été conservé, jamais supprimé.**
