@@ -5,6 +5,7 @@ import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
 import type { SessionMcp } from '../src/mcp/client';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * LE RÉSOLVEUR MCP : ce qui se passe quand un agent appelle un outil importé d'un serveur tiers.
@@ -25,7 +26,7 @@ const SOURCE: SourceAppel = {
 };
 
 const OUTIL = (over: Partial<OutilDefini> = {}): OutilDefini => ({
-  ...SANS_MCP,
+  ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'to1', tenantId: 't1', origin: 'mcp', sourceId: 'src1', requestId: null, nePasUtiliser: '',
   name: 'notion_search', description: 'cherche', binding: { outilDistant: 'search' },
   params: [], nature: 'integre', outputPaths: [],

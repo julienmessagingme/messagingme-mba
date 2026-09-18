@@ -7,6 +7,7 @@ import type { FicheTrouvee, KnowledgeStore } from '../src/agent/knowledge';
 import { SORTIE_SANS_SOURCE } from '../src/agent/sorties';
 import { CORPS_MAX } from '../src/agent/resolvers/connaissance';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * PARITÉ de la recherche de connaissance entre la PRODUCTION et le BAC À SABLE (lot 1 du programme,
@@ -29,7 +30,7 @@ const FICHE = (over: Partial<FicheTrouvee> = {}): FicheTrouvee => ({
 const store = (fiches: FicheTrouvee[]): KnowledgeStore => ({ chercher: async () => fiches });
 
 function entree(args: Record<string, unknown>): EntreeResolveur {
-  const outil: OutilDefini = { ...SANS_MCP,
+  const outil: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
     id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_chercher_connaissance',
     description: '', params: [], binding: { handler: 'chercher_connaissance' }, sourceId: null, requestId: null,
     nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'read', timeoutMs: 8000, maxBytes: 16384, autonome: true,

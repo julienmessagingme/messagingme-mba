@@ -10,6 +10,8 @@
  * injection réussie dans le message d'un contact appellerait l'outil d'un autre client.
  */
 
+import type { Geste } from './gestes';
+
 export type OrigineOutil = 'mba' | 'http' | 'mcp';
 
 /** `irreversible` n'est pas refusé en bloc : c'est le drapeau `autonome`, posé outil par outil par un
@@ -54,6 +56,18 @@ export interface OutilDefini {
    * ⚠️ Elle est lue par le RUNTIME, elle appartient donc à `OutilDefini` et pas à `OutilComplet`.
    */
   nePasUtiliser: string;
+  /**
+   * LES GESTES : ce que NOUS faisons quand ce moment se produit, sans le demander au modèle (0158).
+   *
+   * 🔴 REQUIS, pas optionnel, et pour la même raison que les quatre colonnes MCP : un câblage qui les
+   * oublierait ne compile pas. Un `?:` aurait laissé une lecture les perdre en silence, et le symptôme
+   * aurait été un tag qui ne se pose jamais, c'est-à-dire un trou dans le mini-CRM que personne ne relie à
+   * un outil.
+   *
+   * ⚠️ Ils sont INDÉPENDANTS de la réussite de la réponse principale : ils marquent que la SITUATION s'est
+   * produite. Détail et conséquence sur les libellés : `src/agent/gestes.ts`.
+   */
+  gestes: Geste[];
   /** `agent_tools.params`, du jsonb donc OPAQUE : à lire par `paramsOutil` et rien d'autre. */
   params: unknown;
   /** Ce qui dit au résolveur quoi faire (`handler` pour `mba`, gabarit d'URL pour `http`...). Opaque ici. */
@@ -171,6 +185,8 @@ export interface OutilComplet extends OutilDefini {
  *  viennent du catalogue, et les changer ferait un outil dont le comportement ne suit plus le nom. */
 export interface PatchOutil {
   name?: string;
+  /** Les gestes du moment. Absent = inchangé ; `[]` = le client les a tous retirés, ce qui est un choix. */
+  gestes?: Geste[];
   title?: string;
   description?: string;
   nePasUtiliser?: string;

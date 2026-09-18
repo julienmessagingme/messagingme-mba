@@ -9,6 +9,7 @@ import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../ag
 import type { SortieAgent } from '../agent/agent-store';
 import { scopeTenant, estUuid } from './scope';
 import { OutilNonActivable } from '../agent/catalog';
+import { gestesSchema } from '../agent/gestes';
 
 /**
  * Les outils d'un agent IA : les lui donner, et ne les lui donner que quand un humain l'a dit.
@@ -83,6 +84,14 @@ const patchSchema = z.object({
   nePasUtiliser: TEXTE(2000).optional(),
   /** Valeurs autorisées par paramètre. Une liste vide est un effacement volontaire, pas une absence. */
   enums: z.record(z.string(), z.array(z.string().trim().min(1).max(120)).max(50)).optional(),
+  /**
+   * LES GESTES DU MOMENT (migration 0158) : ce que NOUS faisons quand il se produit, sans le demander au
+   * modèle. Un tableau VIDE est un effacement volontaire, l'absence du champ ne touche à rien.
+   *
+   * ⚠️ LE MÊME SCHÉMA QUE LE RUNTIME, importé et non recopié : deux descriptions de la même forme
+   * finiraient par diverger, et c'est l'écriture qui gagnerait, donc une ligne que la lecture jetterait.
+   */
+  gestes: gestesSchema.optional(),
 });
 const drapeauSchema = z.object({ valeur: z.boolean() });
 

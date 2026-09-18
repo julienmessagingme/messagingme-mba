@@ -14,6 +14,7 @@ import { TourInterrompu } from '../src/agent/brain';
 import type { AgentSession } from '../src/agent/session-store';
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
 const JOB: AgentTurnJob = {
   tenantId: 't1', runId: 'r1', sessionId: 's1', workflowId: 'wf1',
@@ -285,7 +286,7 @@ describe('la MÉMOIRE du tour', () => {
  * qui les lie est optionnel.
  */
 describe('le tour, branché sur le VRAI cerveau', () => {
-  const OUTIL: OutilDefini = { ...SANS_MCP,
+  const OUTIL: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
     id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag',
     description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
     binding: { handler: 'poser_tag' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
@@ -306,6 +307,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
         journal: { ouvrir: async () => 'j1', clore: async () => {} },
         resolveurs: { mba: async ({ ctx }: EntreeResolveur) => { cap.tours.push({ sessionId: ctx.sessionId, runId: ctx.runId, waId: ctx.waId }); return { contenu: { ok: true } }; } },
         compterAppel: async () => { cap.appels.push('x'); },
+        executerGeste: GESTE_MUET,
       },
     });
     return { cap, brain };

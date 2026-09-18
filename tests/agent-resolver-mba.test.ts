@@ -3,6 +3,7 @@ import { creerResolveurMba, type DepsResolveurMba } from '../src/agent/resolvers
 import type { ContexteAppel } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * Tâche 16 : les outils maison. Ce sont les seuls outils dont nous écrivons le comportement, donc les seuls
@@ -15,7 +16,7 @@ const CTX: ContexteAppel = {
   contactInconnu: 'tous', appelsRestants: 5, budgetRestantMicroEur: 10_000, deadline: Date.now() + 30_000,
 };
 
-const outil = (handler: string): OutilDefini => ({ ...SANS_MCP,
+const outil = (handler: string): OutilDefini => ({ ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'to1', tenantId: 't1', origin: 'mba', name: `mba_${handler}`, description: '',
   params: [], binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
 });

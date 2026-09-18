@@ -151,4 +151,51 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
     );
     expect(a.rows[0]!.n).toBe('1');
   });
+
+  /**
+   * LES GESTES (migration 0158), ALLER-RETOUR CONTRE UNE VRAIE BASE.
+   *
+   * 🔴 POURQUOI EN INTÉGRATION. Trois choses ne se vérifient que là : que le jsonb fait l'aller-retour sans
+   * se faire réinterpréter par le pilote, que le `coalesce` du patch distingue « tableau vide » (un
+   * effacement VOULU) de « absent » (ce patch ne parle pas des gestes), et que le repli de lecture tient sur
+   * un contenu que rien n'empêche d'écrire en SQL direct un jour.
+   */
+  it('🔴 les gestes font l’aller-retour, et un tableau VIDE efface quand ABSENT ne touche à rien', async () => {
+    const o = await catalogue.ajouter(tenantId, agentA, outil('avec_gestes'));
+    await catalogue.patch(tenantId, agentA, o!.id, {
+      gestes: [{ type: 'tag', valeur: 'rdv_demande' }, { type: 'variable', champ: 'origine', valeur: 'agent' }],
+    });
+    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toEqual([
+      { type: 'tag', valeur: 'rdv_demande' },
+      { type: 'variable', champ: 'origine', valeur: 'agent' },
+    ]);
+
+    // ABSENT : le patch ne parle pas des gestes, ils ne bougent pas.
+    await catalogue.patch(tenantId, agentA, o!.id, { description: 'autre chose' });
+    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toHaveLength(2);
+
+    // VIDE : le client les a tous retirés, et c'est un choix qui doit s'écrire.
+    await catalogue.patch(tenantId, agentA, o!.id, { gestes: [] });
+    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toEqual([]);
+  });
+
+  it('🔴 un contenu ILLISIBLE rend AUCUN geste, jamais une exception', async () => {
+    // Un jsonb corrompu ne doit pas rendre un agent muet sur le chemin de chaque message : il doit ne
+    // produire aucun geste. Écrit en SQL direct, parce que c'est précisément le chemin que le schéma Zod ne
+    // garde pas.
+    await pool.query(
+      `update agent_tools set gestes = '[{"type":"inconnu"}]'::jsonb where tenant_id = $1 and name = 'avec_gestes'`,
+      [tenantId],
+    );
+    expect((await catalogue.byName(tenantId, agentA, 'avec_gestes'))?.gestes).toEqual([]);
+  });
+
+  it('⚠️ la base refuse ce qui n’est pas un TABLEAU, seule forme qu’elle sait garantir', async () => {
+    // Le CHECK ne décrit PAS la forme d'un geste : ce serait une seconde vérité à côté du schéma Zod, et les
+    // deux divergeraient au premier type ajouté. Il garantit ce qu'une base sait garantir.
+    await expect(pool.query(
+      `update agent_tools set gestes = '{"type":"tag"}'::jsonb where tenant_id = $1 and name = 'avec_gestes'`,
+      [tenantId],
+    )).rejects.toMatchObject({ code: '23514', constraint: 'agent_tools_gestes_tableau_chk' });
+  });
 });

@@ -5,6 +5,7 @@ import type { OutilDefini } from '../src/agent/catalog';
 import type { FicheTrouvee, KnowledgeStore } from '../src/agent/knowledge';
 import { SORTIE_SANS_SOURCE } from '../src/agent/sorties';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * Le résolveur du BAC À SABLE.
@@ -25,7 +26,7 @@ const FICHE = (over: Partial<FicheTrouvee> = {}): FicheTrouvee => ({
 });
 
 function entree(handler: string, args: Record<string, unknown> = {}): EntreeResolveur {
-  const outil: OutilDefini = { ...SANS_MCP,
+  const outil: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
     id: 'o1', tenantId: 't1', origin: 'mba', name: `mba_${handler}`,
     description: '', params: [], binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
     timeoutMs: 8000, maxBytes: 16384, autonome: true,

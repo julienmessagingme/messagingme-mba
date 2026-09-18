@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { executeTool, type ContexteAppel, type ResolveurOutil, type ToolExecutorDeps } from '../src/agent/executor';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
+import type { Geste } from '../src/agent/gestes';
 
 /**
  * Tâche 16 : le tronc commun d'exécution d'outil (§3.3 du cadrage).
@@ -10,7 +12,7 @@ import { SANS_MCP } from './outils-mcp';
  * une raison lisible au modèle, qui peut se corriger au tour suivant.
  */
 
-const OUTIL: OutilDefini = { ...SANS_MCP,
+const OUTIL: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'to1',
   tenantId: 't1',
   origin: 'mba',
@@ -52,6 +54,7 @@ const CTX: ContexteAppel = {
 interface LigneJournal { id: string; toolId: string | null; toolName: string; args: unknown; status?: string; dureeMs?: number; erreur?: string; tailleReponse?: number }
 
 function harnais(over: {
+  executerGeste?: ToolExecutorDeps['executerGeste'];
   outil?: OutilDefini | null;
   resolveur?: ResolveurOutil;
   origines?: ToolExecutorDeps['resolveurs'];
@@ -59,6 +62,7 @@ function harnais(over: {
   const journal: LigneJournal[] = [];
   const vus: Array<{ args: Record<string, unknown>; aborte: boolean }> = [];
   const compteur: string[] = [];
+  const gestes: Geste[] = [];
   const outil = over.outil === undefined ? OUTIL : over.outil;
   const catalogue: ToolCatalog = {
     byName: async () => outil,
@@ -84,9 +88,10 @@ function harnais(over: {
     journal: j,
     resolveurs: over.origines ?? { mba: resolveur },
     compterAppel: async (_t, s) => { compteur.push(s); },
+    executerGeste: over.executerGeste ?? (async (_t, _w, g) => { gestes.push(g); }),
     now: () => 1_000_000,
   };
-  return { deps, journal, vus, compteur };
+  return { deps, journal, vus, compteur, gestes };
 }
 
 const args = (o: unknown) => JSON.stringify(o);
@@ -581,5 +586,63 @@ describe('un outil MCP dans le tronc commun', () => {
     const r = await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
     expect(r.contenu).toEqual({ statut: 'ok' });
     expect(JSON.stringify(r.contenu)).not.toContain('CRM-9182');
+  });
+});
+
+/**
+ * LES GESTES DU MOMENT : ce que NOUS faisons, sans le demander au modèle (migration 0158).
+ *
+ * 🔴 CE QU'ILS RÉPARENT. « Quand le client veut un rendez-vous », il faut appeler l'ERP ET poser un tag.
+ * Avec deux OUTILS, le modèle voit deux surfaces décrivant la MÊME situation et en choisit une, ou les
+ * deux, ou aucune. Le moment porte donc UNE réponse principale et des gestes déterministes.
+ */
+describe('les gestes du moment', () => {
+  const AVEC = (...gestes: Geste[]): OutilDefini => ({ ...OUTIL, gestes });
+  const appel = { name: OUTIL.name, argumentsJson: args({ reference: 'X' }) };
+
+  it('exécute les gestes du moment', async () => {
+    const h = harnais({ outil: AVEC({ type: 'tag', valeur: 'rdv_demande' }, { type: 'variable', champ: 'origine', valeur: 'agent' }) });
+    await executeTool(appel, CTX, h.deps);
+    expect(h.gestes).toEqual([
+      { type: 'tag', valeur: 'rdv_demande' },
+      { type: 'variable', champ: 'origine', valeur: 'agent' },
+    ]);
+  });
+
+  it('🔴 ils partent MÊME SI la réponse principale ÉCHOUE', async () => {
+    // Arbitrage de Julien, 2026-09-18 : un geste marque que la SITUATION s'est produite, pas que l'appel a
+    // réussi. Le contact a bien demandé un rendez-vous même si l'ERP n'a pas répondu, et c'est ce tag-là
+    // qui permet de rattraper à la main.
+    const h = harnais({
+      outil: AVEC({ type: 'tag', valeur: 'rdv_demande' }),
+      resolveur: async () => { throw new Error('ERP injoignable'); },
+    });
+    const r = await executeTool(appel, CTX, h.deps);
+    expect(r.status).toBe('erreur_outil');
+    expect(h.gestes).toEqual([{ type: 'tag', valeur: 'rdv_demande' }]);
+  });
+
+  it('🔴 ils ne partent PAS quand l’appel est REFUSÉ par une garde', async () => {
+    // La nuance qui va avec la précédente : un appel refusé est un appel que l'agent n'a PAS fait. Y poser
+    // un tag inscrirait dans le mini-CRM une situation que rien n'a produite.
+    const h = harnais({ outil: AVEC({ type: 'tag', valeur: 'rdv_demande' }) });
+    const r = await executeTool(appel, { ...CTX, appelsRestants: 0 }, h.deps);
+    expect(r.status).not.toBe('ok');
+    expect(h.gestes).toEqual([]);
+  });
+
+  it('⚠️ un geste qui ÉCHOUE ne fait pas tomber le tour', async () => {
+    // Échanger un effet de bord manqué contre une conversation morte serait un très mauvais change.
+    const h = harnais({
+      outil: AVEC({ type: 'tag', valeur: 'rdv_demande' }),
+      executerGeste: async () => { throw new Error('mini-CRM indisponible'); },
+    });
+    expect((await executeTool(appel, CTX, h.deps)).status).toBe('ok');
+  });
+
+  it('un outil SANS geste n’en déclenche aucun', async () => {
+    const h = harnais({});
+    await executeTool(appel, CTX, h.deps);
+    expect(h.gestes).toEqual([]);
   });
 });

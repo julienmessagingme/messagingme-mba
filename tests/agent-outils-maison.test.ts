@@ -4,6 +4,7 @@ import { OUTILS_MAISON, outilExpose, outilMaison, outilsExposes, paramsInitiaux 
 import { HANDLERS_MAISON } from '../src/agent/resolvers/mba';
 import type { OutilDefini } from '../src/agent/catalog';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * Le catalogue des outils maison, et ce que le modèle voit d'un outil.
@@ -15,7 +16,7 @@ import { SANS_MCP } from './outils-mcp';
  * qui remonte en inbox sans que personne comprenne pourquoi.
  */
 
-const outil = (params: unknown, handler = 'terminer'): OutilDefini => ({ ...SANS_MCP,
+const outil = (params: unknown, handler = 'terminer'): OutilDefini => ({ ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_terminer',
   description: 'Termine.', params, binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false,

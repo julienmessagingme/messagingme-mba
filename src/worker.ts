@@ -1779,6 +1779,18 @@ async function main(): Promise<void> {
       tauxEurParDollar: config.EUR_PER_USD,
       outils: {
         catalogue: toolCatalog,
+        /**
+         * LES GESTES DU MOMENT (migration 0158), exécutés par NOUS et pas par le modèle.
+         *
+         * 🔴 IL RÉUTILISE LES MÊMES IMPLÉMENTATIONS QUE LES ACTIONS `poser_tag` et `ecrire_variable`, jamais
+         * une seconde écriture : deux chemins vers `contacts` finiraient par diverger sur la borne, la
+         * normalisation ou l'isolation, et le jour où l'un gère l'opt-in et pas l'autre, c'est le mini-CRM
+         * qui ment.
+         */
+        executerGeste: async (t, waId, geste) => {
+          if (geste.type === 'tag') await poserTagDepuisAgent(t, waId, geste.valeur);
+          else await contactStore.mergeFieldsByPhone(t, waId, { [geste.champ]: geste.valeur });
+        },
         // Le VRAI journal, contrairement au bac à sable : cette table est le grand livre de facturation
         // autant que la trace d'audit, et une session existe bien ici pour la référencer.
         journal: journalAppels,

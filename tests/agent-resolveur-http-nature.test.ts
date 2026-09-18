@@ -6,6 +6,7 @@ import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
 import type { RequeteConnecteur } from '../src/agent/requetes';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * CE QUE L'AGENT FAIT DE LA RÉPONSE : POUSSER OU INTÉGRER (migration 0150).
@@ -35,7 +36,7 @@ const REQUETE: RequeteConnecteur = {
 };
 
 const OUTIL = (over: Partial<OutilDefini> = {}): OutilDefini => ({
-  ...SANS_MCP,
+  ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'to1', tenantId: 't1', origin: 'http', sourceId: 'src1', requestId: 'rq1', nePasUtiliser: '',
   name: 'poser_etiquette', description: 'pose une étiquette', params: [], binding: {},
   nature: 'integre', outputPaths: ['statut'],

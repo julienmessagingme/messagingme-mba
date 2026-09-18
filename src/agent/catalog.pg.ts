@@ -5,10 +5,13 @@ import type {
   SourceAppel,
 } from './catalog';
 import { OutilNonActivable, NomOutilDejaPris } from './catalog';
+import { lireGestes } from './gestes';
 import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 
 interface Ligne {
+  /** jsonb opaque, relu par `lireGestes` : un contenu corrompu rend un tableau vide. */
+  gestes: unknown;
   id: string;
   tenant_id: string;
   origin: OutilDefini['origin'];
@@ -51,6 +54,7 @@ const JOINTURE = `from agent_tools t
 const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
                   t.binding, t.source_id, t.request_id, t.output_paths, t.nature, t.risk, t.timeout_ms, t.max_bytes,
                   t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_vu_le,
+                  t.gestes,
                   c.autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
@@ -63,6 +67,9 @@ function versOutil(r: Ligne): OutilDefini {
     // 🔴 LUE PAR LE RUNTIME depuis le 2026-08-29, et elle ne l'était pas. Elle vivait dans la seule
     // projection d'administration, donc le modèle ne l'a jamais vue. Voir `OutilDefini.nePasUtiliser`.
     nePasUtiliser: r.ne_pas_utiliser,
+    // `safeParse` et repli VIDE : un jsonb corrompu ne doit pas rendre un agent muet sur le chemin de
+    // chaque message, il doit ne produire aucun geste.
+    gestes: lireGestes(r.gestes),
     params: r.params,
     // `binding` est du jsonb, donc opaque : lu par le helper défensif maison plutôt qu'affirmé par un `as`.
     // Un scalaire ou un null donne un objet vide, et le résolveur refuse alors proprement.
@@ -320,6 +327,10 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
              order by ord), '[]'::jsonb)
              from jsonb_array_elements(agent_tools.params) with ordinality as x(p, ord)
          ) end,
+         -- Les GESTES (0158). Un coalesce sur un jsonb ABSENT, jamais sur un tableau VIDE : un tableau
+         -- vide est un CHOIX du client (il a retire tous ses gestes) et doit s ecrire, quand null veut
+         -- dire que ce patch ne parle pas des gestes. Les confondre rendrait un geste ineffacable.
+         gestes = coalesce($9::jsonb, gestes),
          updated_at = now()
        where agent_tools.tenant_id = $1 and agent_tools.id = $3
          and exists (select 1 from agent_tool_consommateurs c
@@ -328,7 +339,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
        returning id`,
       [tenantId, consommateurAgent(agentId), outilId, patch.name ?? null, patch.title ?? null,
         patch.description ?? null, patch.nePasUtiliser ?? null,
-        patch.enums ? JSON.stringify(patch.enums) : null],
+        patch.enums ? JSON.stringify(patch.enums) : null,
+        patch.gestes ? JSON.stringify(patch.gestes) : null],
     ).catch(surNomDejaPris);
     const r = res.rows[0];
     return r ? this.complet(tenantId, consommateurAgent(agentId), r.id) : null;

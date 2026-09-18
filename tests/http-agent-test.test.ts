@@ -11,6 +11,7 @@ import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import { ficheVide } from '../src/agent/fiche';
 import { ESSAIS_AFFICHES, RETENTION_ESSAIS_JOURS, type EssaiAEcrire, type EssaiAgent, type TestRunStore } from '../src/agent/test-runs';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
 /**
  * Le bac à sable : parler à son agent depuis la console.
@@ -31,7 +32,7 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-const OUTIL: OutilDefini = { ...SANS_MCP,
+const OUTIL: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag',
   description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'poser_tag' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
@@ -109,6 +110,7 @@ function app(opts: {
       journal,
       resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
       compterAppel: async () => {},
+      executerGeste: GESTE_MUET,
     },
   };
   const deps: AgentTestRouteDeps = {
@@ -182,7 +184,7 @@ describe('bac à sable de l’agent', () => {
         cerveau: {
           completer: async () => { throw new Error('gateway indisponible'); },
           contexte: async () => AGENT,
-          outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, compterAppel: async () => {} },
+          outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, compterAppel: async () => {}, executerGeste: GESTE_MUET },
         },
       },
     });
@@ -266,6 +268,7 @@ describe('bac à sable de l’agent', () => {
               journal: { ouvrir: async () => '', clore: async () => {} },
               resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
               compterAppel: async () => {},
+              executerGeste: GESTE_MUET,
             },
           },
         },

@@ -1681,6 +1681,18 @@ async function main(): Promise<void> {
             // Rien a compter : sans session, il n y a pas de compteur a incrementer. Le plafond d appels du
             // tour est tenu en memoire par la boucle du cerveau.
             compterAppel: async () => {},
+            /**
+             * 🔴 LE BAC À SABLE N'EXÉCUTE AUCUN GESTE, ET C'EST LA MÊME DOCTRINE QUE `connecteurSimule`.
+             * Un essai depuis la console ne doit pas taper sur les données réelles d'un client : poser un
+             * vrai tag sur un vrai contact, ou écrire dans sa fiche, ferait un dégât réel pendant qu'on
+             * croit essayer.
+             *
+             * ⚠️ ET CE SILENCE EST UNE DETTE ASSUMÉE, PAS UN OUBLI. Le bac à sable promet « exactement ce
+             * que l'agent fera », et il ne montre donc pas encore les gestes qu'un moment déclencherait.
+             * C'est exactement le mensonge que la migration 0150 a corrigé ailleurs : les AFFICHER dans la
+             * trace d'essai est le travail de la passe 3, avec l'écran.
+             */
+            executerGeste: async () => {},
           },
           alerter: (m: string) => console.error(`[agent] ${m}`),
         },

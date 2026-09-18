@@ -7,6 +7,7 @@ import { ficheVide } from '../src/agent/fiche';
 import { SORTIE_PLAFOND } from '../src/agent/sorties';
 import { TourInterrompu } from '../src/agent/brain';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
 /**
  * Le CERVEAU : la boucle qui transforme un historique en une décision.
@@ -20,7 +21,7 @@ import { SANS_MCP } from './outils-mcp';
  * dans le message d'un contact chercherait à obtenir.
  */
 
-const OUTIL: OutilDefini = { ...SANS_MCP,
+const OUTIL: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag',
   description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'poser_tag' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
@@ -73,6 +74,7 @@ function deps(reponses: ReponseChat[], resolveur?: ResolveurOutil, agent: Contex
       journal,
       resolveurs: { mba: resolveur ?? (async () => ({ contenu: { pose: 'vip' } })) },
       compterAppel: async () => { cap.comptes += 1; },
+      executerGeste: GESTE_MUET,
     },
     alerter: (m) => cap.alertes.push(m),
   };

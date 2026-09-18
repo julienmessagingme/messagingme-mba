@@ -5,6 +5,7 @@ import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
 import type { RequeteConnecteur } from '../src/agent/requetes';
 import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE } from './gestes';
 
 /**
  * Le résolveur des outils de CONNECTEUR (lot L2).
@@ -22,7 +23,7 @@ const SOURCE: SourceAppel = {
   authKind: 'bearer', authHeaderName: null, authSecret: 'JETON-SECRET-42', status: 'active',
 };
 
-const OUTIL: OutilDefini = { ...SANS_MCP,
+const OUTIL: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'to1', tenantId: 't1', origin: 'http', sourceId: 'src1', requestId: 'rq1', nePasUtiliser: '',
   name: 'lire_commande', description: 'lit une commande', params: [],
   binding: {},

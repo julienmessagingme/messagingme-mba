@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Geste } from './gestes';
 import type { JournalAppels, OrigineOutil, OutilDefini, StatutAppel, ToolCatalog } from './catalog';
 import { paramsOutil, type ParamOutil } from './llm/tool-schema';
 import { champDuContact } from './champs-contact';
@@ -94,6 +95,18 @@ export interface ToolExecutorDeps {
    * paramètre obligatoire fait poser la question au câblage plutôt qu'à la facture.
    */
   compterAppel(tenantId: string, sessionId: string): Promise<void>;
+  /**
+   * EXÉCUTE UN GESTE du moment (migration 0158) : poser un tag, écrire une valeur sur le contact.
+   *
+   * 🔴 OBLIGATOIRE, comme `compterAppel` juste au-dessus et pour la même raison : la seule façon de désarmer
+   * les gestes serait de ne pas les câbler, en silence. Le symptôme serait un tag qui ne se pose jamais,
+   * c'est-à-dire un trou dans le mini-CRM que personne ne relie à un outil. Un paramètre obligatoire fait
+   * poser la question au câblage.
+   *
+   * ⚠️ IL NE DOIT PAS LEVER : l'appelant l'ignore déjà, mais un geste qui ferait tomber un tour d'agent
+   * échangerait un effet de bord manqué contre une conversation morte.
+   */
+  executerGeste(tenantId: string, waId: string, geste: Geste): Promise<void>;
   now?: () => number;
 }
 
@@ -373,6 +386,31 @@ export async function executeTool(
       console.error('compteur d appels d outils ignoré (best-effort):', err instanceof Error ? err.message : err);
     }
   };
+  /**
+   * LES GESTES DU MOMENT, exécutés ICI et pas dans le résolveur (passe 2 du lot 2, 2026-09-18).
+   *
+   * 🔴 AVANT L'APPEL, ET C'EST CE QUI LES REND INDÉPENDANTS DE SA RÉUSSITE. Un geste marque que la
+   * SITUATION s'est produite, pas que l'appel a réussi : le contact a bien demandé un rendez-vous même si
+   * l'ERP n'a pas répondu, et c'est ce tag-là qui permet de rattraper à la main (arbitrage de Julien,
+   * 2026-09-18). Les placer après l'appel obligerait à les répéter sur les TROIS sorties de la course
+   * (succès, erreur, échéance), et la quatrième ajoutée demain ne les aurait pas.
+   *
+   * 🔴 MAIS APRÈS LES GARDES, ET LA NUANCE EST TOUT AUSSI VOULUE. Un appel REFUSÉ (contact inconnu, plafond
+   * d'appels, échéance déjà dépassée) est un appel que l'agent n'a PAS fait : y poser un tag inscrirait dans
+   * le mini-CRM une situation que rien n'a produite.
+   *
+   * ⚠️ UN GESTE QUI ÉCHOUE NE FAIT PAS TOMBER LE TOUR. Il est journalisé et on continue : échanger un effet
+   * de bord manqué contre une conversation morte serait un très mauvais change.
+   */
+  for (const geste of outil.gestes) {
+    try {
+      await deps.executerGeste(ctx.tenantId, ctx.waId, geste);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`geste ${geste.type} ignoré (best-effort) sur l'outil ${outil.name}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
   const controleur = new AbortController();
   let minuteur: ReturnType<typeof setTimeout> | undefined;
   let sortie: SortieResolveur;
