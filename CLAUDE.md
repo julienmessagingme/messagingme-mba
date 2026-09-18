@@ -79,25 +79,44 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0155**, le 2026-09-18 (`analyse_jour`, les agrégats journaliers qui gardent la
-mémoire de ce que la purge efface, plus `tenant_settings.conversation_retention_days`). Juste avant elle,
-**0154** (la grille de prix par espace : marge sur le tarif Meta, prix du message de service et sa
-franchise, sa date d'effet, les deux prix RCS). **Prochaine libre = 0160** : **0156 à 0159 sont ÉCRITES et PAS ENCORE APPLIQUÉES**, toutes du chantier des
-MOMENTS d'un agent IA. Ce qu'elles portent, et l'ordre, qui n'est PAS uniforme :
-**0156** (`agent_transfert_mode` : quand l'équipe est joignable pour un agent IA), **0157**
-(`outils_par_agent` : une ACTION appartient à l'agent, un CONNECTEUR à l'espace, deux index partiels
-complémentaires) et **0158** (`outil_gestes` : les GESTES d'un moment, ce que NOUS faisons sans le demander
-au modèle) passent **AVANT** le déploiement, chacune ajoutant une colonne que le code écrit.
-🔴 **0159 est la SEULE irréversible du chantier** (elle supprime les définitions d'action orphelines, en
-ADOPTE celles qui servent) et la SEULE qui doive passer **APRÈS** le déploiement, son CHECK strict étant
-violé par l'ancien `ajouter`. ⚠️ **Jouer SES DEUX requêtes de contrôle avant de l'appliquer**, elles sont en
-tête du fichier : la seconde, ajoutée par la revue finale, est celle qui manquait, la première ne mesurant
-que ce qui va être supprimé et pas ce qui ferait ÉCHOUER le CHECK.
-⚠️ Cette phrase-là a été fausse sept fois dans ce fichier, toujours de la même façon : elle vieillit à la
-SECONDE où `migrate` tourne. ⚠️ Et elle venait de le redevenir autrement : trois fragments « Détail : »
-périmés s'y étaient empilés, chacun annonçant un sous-ensemble dépassé (« 0156 ET 0157 », puis « 0156 »
-seule), dans le fichier qui se déclare seule source du compteur. **Une ligne d'état se RÉÉCRIT, elle ne
-s'allonge pas** : ajouter par-dessus laisse l'ancienne version affirmer le contraire juste à côté. Au prochain déploiement, on la relit EN BASE et on la remplace, et **`0153` reste RÉSERVÉ** au
+**Dernière appliquée : 0159**, le 2026-09-18 au soir, avec **0156, 0157 et 0158** le même soir : tout le
+chantier des MOMENTS d'un agent IA. **Prochaine libre = 0160.** Ce qu'elles portent : **0156**
+(`agent_transfert_mode`, quand l'équipe est joignable pour un agent IA), **0157** (`outils_par_agent`, une
+ACTION appartient à l'agent, un CONNECTEUR à l'espace, deux index partiels complémentaires), **0158**
+(`outil_gestes`, les GESTES d'un moment, ce que NOUS faisons sans le demander au modèle) et **0159**
+(`actions_orphelines`, la seule irréversible). Avant elles, **0155** (`analyse_jour`) et **0154** (la grille
+de prix par espace).
+
+🔴 **L'ORDRE N'ÉTAIT PAS UNIFORME, ET 0159 A ÉTÉ MISE DE CÔTÉ SUR LE VPS AVANT LE BUILD.** 0156 à 0158
+ajoutent des colonnes que le code écrit, donc AVANT le déploiement ; 0159 ferme un CHECK que l'ANCIEN
+`ajouter` viole, donc APRÈS. Or les migrations vivent DANS L'IMAGE et `migrate` applique tout ce qu'il y
+trouve : les quatre étant poussées ensemble, un seul `build` puis `migrate` les aurait appliquées d'un bloc.
+Même parade qu'en 0141 : `mv` de 0159 hors du dépôt avant le build, `ls` DANS L'IMAGE pour vérifier qu'elle
+n'y est pas, migrate, déploiement, puis remise, rebuild, et migrate pour elle seule.
+
+🔴 **RELUES EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT.** `schema_migrations` rend bien 0159 puis 0158 en
+tête ; `agent_transfert_mode` est `text` NULLABLE SANS défaut ; `agent_id` est `uuid` nullable avec un
+`on delete cascade` (`confdeltype = 'c'`) ; `gestes` est `jsonb NOT NULL DEFAULT '[]'` ; les quatre CHECK
+sont posés avec leur définition exacte ; et les TROIS index de 0157 existent avec leurs prédicats
+(`agent_tools_nom_espace_uidx` sur `agent_id is null`, `agent_tools_nom_agent_uidx` sur `agent_id is not
+null`, `agent_tools_par_agent_idx`), l'ancien `agent_tools_nom_espace_idx` ayant bien disparu.
+
+⚠️ **AUCUN COMPORTEMENT N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : zéro espace porte un mode de transfert
+(donc tous en `always`, le comportement d'hier), zéro outil porte un geste, zéro outil porte un
+propriétaire.
+
+🔴 **CE QUE 0159 A SUPPRIMÉ, COMPTÉ AVANT ET APRÈS.** Ses DEUX requêtes de contrôle ont été jouées juste
+avant de l'appliquer : la première rend les **7** définitions `mba_*` sans AUCUN consommateur
+(`mba_escalader_humain`, `mba_chercher_connaissance`, `mba_terminer`, `mba_envoyer_bloc`, `mba_poser_tag`,
+`mba_lire_contact`, `mba_ecrire_variable`), la seconde, celle qui dit ce qui BLOQUERAIT le CHECK, rend
+**zéro**. Après : plus aucune action au niveau de l'espace, aucun consentement orphelin laissé derrière, et
+le CHECK strict posé. Aucune de ces 7 n'était rattachée à quoi que ce soit, donc aucun agent n'a rien perdu.
+
+⚠️ **LA SECONDE REQUÊTE DE CONTRÔLE A ÉTÉ AJOUTÉE PAR LA REVUE FINALE, ET ELLE MANQUAIT.** La migration ne
+mesurait que ce qu'elle allait SUPPRIMER, ce qui ne répond pas à la question que pose son CHECK : une action
+créée par l'ancien code porte un consommateur, survit donc au `delete`, et viole le CHECK. La CI a ensuite
+trouvé la suite : le consentement n'est pas une clé étrangère, donc il peut nommer un agent supprimé, et
+l'adoption y aurait écrit un `agent_id` fantôme. **`0153` reste RÉSERVÉ** au
 CHECK strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier
 n'existe pas, et le runner n'exige aucune continuité.
 

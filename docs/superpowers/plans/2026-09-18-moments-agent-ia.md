@@ -236,16 +236,23 @@ Listés ici parce qu'ils ne sont visibles dans aucun des fichiers qu'on va touch
 
 ## 🔴 L'ORDRE DE DÉPLOIEMENT, ET IL N'EST PAS UNIFORME
 
-Quatre migrations écrites, **aucune appliquée**. Le compteur fait foi dans `CLAUDE.md`, jamais ici.
+**FAIT le 2026-09-18 au soir : les quatre sont appliquées et le code est déployé.** Le compteur et la
+relecture en base font foi dans `CLAUDE.md`, jamais ici. Ce qui suit reste écrit parce que c'est le
+RAISONNEMENT, et qu'il resservira au prochain chantier qui mélange les deux sens.
 
 - **0156, 0157, 0158 : AVANT le déploiement.** Additives et permissives, l'ancien code y survit.
 - **0159 : APRÈS le déploiement, et elle seule.** Son CHECK strict est violé par l'ancien `ajouter`, qui
   écrit `agent_id` à null : l'appliquer avant ferait échouer toute création d'outil pendant la fenêtre.
   C'est la leçon de 0152, appliquée dans l'autre sens.
 
-⚠️ **0159 est la seule opération IRRÉVERSIBLE du chantier.** Sa requête de re-mesure est écrite dans le
-fichier : la jouer avant de l'appliquer, pour revérifier que les orphelines sont toujours à zéro consommateur
-(mesuré le 2026-09-18 : 7 définitions, 0 consommateur, 0 active, 1 agent en brouillon).
+⚠️ **0159 est la seule opération IRRÉVERSIBLE du chantier.** Ses DEUX requêtes de contrôle ont été jouées
+juste avant de l'appliquer : 7 définitions à supprimer, toutes à zéro consommateur, et ZÉRO ligne qui
+bloquerait le CHECK. La seconde requête manquait au départ, la revue finale l'a ajoutée.
+
+🔴 **ET LES QUATRE ÉTAIENT POUSSÉES ENSEMBLE, DONC 0159 A DÛ ÊTRE MISE DE CÔTÉ SUR LE VPS AVANT LE BUILD.**
+Les migrations vivent DANS L'IMAGE et `migrate` applique tout ce qu'il y trouve : sans ce geste, l'ordre
+soigneusement raisonné ci-dessus n'aurait servi à rien, les quatre seraient parties d'un bloc. Même parade
+qu'en 0141, et la vérification qui compte est un `ls db/migrations` exécuté DANS L'IMAGE, pas dans le dépôt.
 
 ## Ce qui RESTE de ce plan
 
