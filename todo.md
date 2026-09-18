@@ -1,11 +1,12 @@
 # todo.md : backlog
 
-## 🔴 DEUX MOITIES MANQUANTES DU LOT « PERFORMANCE LAB » (revue finale du 2026-09-17)
+## 🔴 UNE MOITIE MANQUANTE DU LOT « PERFORMANCE LAB » (revue finale du 2026-09-17)
 
-Ces deux points sont des ETAPES DU PLAN jamais executees, pas des defauts decouverts : les cases
+Ce point est une ETAPE DU PLAN jamais executee, pas un defaut decouvert : les cases
 `- [ ]` de `docs/superpowers/plans/2026-09-17-performance-lab-couts.md` sont restees ouvertes, et le
-chantier a ete annonce complet alors qu il ne l etait pas. Les deux suivent le meme motif, celui que le
-depot paie le plus souvent : **une capacite livree sans le chemin qui la produit.**
+chantier a ete annonce complet alors qu il ne l etait pas. C est le motif que le depot paie le plus
+souvent : **une capacite livree sans le chemin qui la produit.** (Le second point de cette section, les
+messages de service non imputes aux campagnes, a ete fait le 2026-09-18.)
 
 ### 1. La grille de prix par espace n est reglable par PERSONNE (tache 1, step 8)
 
@@ -27,20 +28,6 @@ engagement » et la colonne « Cout/engage » viennent d `estimateCoutParCampagn
 BRUT. Avec la marge par defaut a 100 les deux coincident, donc c est invisible aujourd hui. Le jour ou
 quelqu un pose une marge, deux chiffres de la MEME carte divergent en silence. Les deux points se
 corrigent ensemble ou pas du tout.
-
-### 2. Les messages de service ne sont jamais imputes aux campagnes (tache 4, step 6)
-
-`estimateCoutParCampagne` (`src/stats/cost.ts`) n additionne que `count * tarif` par categorie de
-TEMPLATE. Le commit qui porte la tache 4 dit lui-meme « partie pure », et la suite n a jamais ete ecrite.
-Consequence directe : le chiffre de la premiere ligne de la carte des couts EXCLUT les messages de
-service, alors que Julien a demande explicitement que le cout d un engagement les comprenne.
-
-🔴 **L ESSAI REEL DU PLAN NE PEUT PAS PASSER EN L ETAT** : son critere « son cout inclut les messages de
-service qui lui ont ete envoyes » echouera, et ce ne sera pas un defaut de l essai. Tant que ce point
-n est pas fait, l ecran doit DIRE que la ligne 1 ne couvre que les templates, ou le faire pour de vrai.
-
-⚠️ La fenetre d imputation est DEJA decidee et ne se redecide pas : la MEME que `engagementsParCampagne`
-(7 jours apres l envoi recu par le contact). Une seconde fenetre ferait deux verites sur le meme fait.
 
 ## 🟡 Trois ecarts mineurs releves par la meme revue (2026-09-17)
 

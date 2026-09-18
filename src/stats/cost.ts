@@ -236,6 +236,28 @@ export function estimateCoutParCampagne(
    * de la même façon, et c'est la règle que tout ce fichier applique déjà aux trois autres cases.
    */
   engagements?: Map<string, number>,
+  /**
+   * LES MESSAGES DE SERVICE IMPUTES A CHAQUE CAMPAGNE, et le prix effectif de l'un d'eux.
+   *
+   * 🔴 LE NUMERATEUR INCLUT LES MESSAGES DE SERVICE, PAS SEULEMENT LES TEMPLATES (décision du cadrage).
+   * Une campagne qui ouvre une conversation et fait échanger dix messages de service ne coûte pas son seul
+   * template de départ.
+   *
+   * 🔴 LA FRANCHISE MENSUELLE SE REPARTIT AU PRORATA, ET C'EST LE SEUL PARTAGE QUI NE PRIVILEGIE PERSONNE.
+   * Elle appartient à l'ESPACE et au MOIS, pas à une campagne : lui en donner mille gratuits chacune
+   * multiplierait la franchise par le nombre de campagnes, et la donner à la première du mois ferait
+   * apparaître une campagne gratuite à côté d'une campagne chère pour le même geste. Le prix effectif
+   * (`coût total du service / messages de service de la période`) porte donc la franchise déjà déduite, et
+   * chaque campagne le paie sur SA part.
+   *
+   * ⚠️ LA SOMME DES CAMPAGNES RESTE INFERIEURE OU EGALE AU TOTAL DE LA LIGNE « MESSAGES », et c'est
+   * correct : les messages de service d'une conversation qu'aucune campagne n'a ouverte n'appartiennent à
+   * aucune campagne. Ils sont dans le total de l'espace, pas dans le coût d'un envoi.
+   *
+   * ⚠️ ABSENTS = on n'impute rien, et le coût reste celui des templates. Ce n'est pas zéro service : c'est
+   * une instance qui ne sait pas encore les compter, et la carte doit alors le DIRE.
+   */
+  service?: { parCampagne: Map<string, number>; prixUnitaire: number },
 ): CoutParCampagne {
   const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
   for (const r of rows) {
@@ -258,9 +280,19 @@ export function estimateCoutParCampagne(
   }
 
   const lignes = [...par.values()].map((l) => {
+    /**
+     * LE SERVICE S'AJOUTE AU TEMPLATE, et l'ordre des deux gardes compte.
+     *
+     * 🔴 IL NE CREE PAS DE COUT LA OU IL N'Y EN AVAIT PAS. Une campagne dont AUCUN envoi n'est chiffrable
+     * (catégorie inconnue, tarif absent) garde sa case VIDE : afficher le seul coût de ses messages de
+     * service se lirait « voilà ce qu'elle a coûté », alors que la vérité reste « on ne sait pas ». La
+     * règle des trois cases vides de ce fichier ne se contourne pas par une addition.
+     */
+    const services = service?.parCampagne.get(l.campaignId) ?? 0;
+    const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0);
     // Aucun envoi chiffré -> la case COÛT est vide, pas à zéro. Un zéro se lirait « cette campagne n'a rien
     // coûté », alors que la vérité est « on ne sait pas ce qu'elle a coûté ».
-    const cout = l.chiffres > 0 ? Math.round((l.cout ?? 0) * 100) / 100 : null;
+    const cout = l.chiffres > 0 ? Math.round(brut * 100) / 100 : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.

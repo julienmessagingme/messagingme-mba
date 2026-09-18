@@ -1024,18 +1024,41 @@ async function main(): Promise<void> {
        * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
        */
       getCoutParCampagne: async (tenant, range) => {
-        const [volumes, rates] = await Promise.all([
+        const [volumes, rates, serviceMois, ligne] = await Promise.all([
           statsStore.getVolumeParCampagne(tenant, range),
           tarifsMeta(tenant, range),
+          // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
+          // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux
+          // lignes d'écart, et le client comparerait. Voir `estimateCoutParCampagne` pour le prorata.
+          statsStore.serviceParMois(tenant, range),
+          statsStore.grillePrix(tenant),
         ]);
         const ids = [...new Set(volumes.map((v) => v.campaignId))];
-        // ⚠️ LES DEUX ENSEMBLE, pas l'un après l'autre : ce sont deux lectures indépendantes sur la même
+        // ⚠️ LES TROIS ENSEMBLE, pas l'une après l'autre : ce sont des lectures indépendantes sur la même
         // liste d'identifiants, et cette route sert la page d'accueil de Performance lab.
-        const [clics, engagements] = await Promise.all([
+        const [clics, engagements, services] = await Promise.all([
           statsStore.clicsParCampagne(tenant, ids),
           statsStore.engagementsParCampagne(tenant, ids),
+          statsStore.servicesParCampagne(tenant, ids),
         ]);
-        return estimateCoutParCampagne(volumes, rates, clics, engagements);
+        /**
+         * LE PRIX EFFECTIF D'UN MESSAGE DE SERVICE SUR LA PERIODE, franchise déjà déduite.
+         *
+         * ⚠️ IL SE CALCULE, IL NE SE LIT PAS DANS LA GRILLE. Le prix du tarif (2,48 cts) est celui d'un
+         * message FACTURÉ ; la franchise mensuelle en rend une partie gratuite, et une période qui tombe
+         * entièrement sous le millième a un prix effectif de ZÉRO. Prendre le tarif nu surfacturerait
+         * chaque campagne du début de mois.
+         *
+         * ⚠️ `envoyes === 0` -> pas de division, et pas d'imputation : aucun message de service n'existe
+         * sur la période, donc il n'y a rien à répartir.
+         */
+        const cm = coutMessages(
+          { templates: [], rates, service: serviceMois, rcsSimple: 0, rcsConversationnel: 0 },
+          grilleDepuisLigne(ligne),
+        );
+        const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
+        return estimateCoutParCampagne(volumes, rates, clics, engagements,
+          { parCampagne: services, prixUnitaire });
       },
       /**
        * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.

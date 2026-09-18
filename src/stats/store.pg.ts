@@ -1024,6 +1024,62 @@ export class PgStatsStore {
   }
 
   /**
+   * LES MESSAGES DE SERVICE IMPUTES A CHAQUE CAMPAGNE.
+   *
+   * 🔴 SANS CETTE LECTURE, LE « COUT PAR ENGAGEMENT » NE COMPTAIT QUE LES TEMPLATES, ce qui contredit la
+   * demande (« les coûts doivent inclure les templates initiaux ET les messages de service »). Une campagne
+   * qui ouvre une conversation et fait échanger dix messages de service coûtait, à l'écran, le seul template
+   * de départ. Relevé en revue finale le 2026-09-17 : l'étape existait au plan et n'avait jamais été faite.
+   *
+   * 🔴 LA MEME FENETRE QUE `engagementsParCampagne`, SEPT JOURS, ET ELLE N'EST PAS CHOISIE ICI. Numérateur
+   * et dénominateur du ratio doivent parler de la même population sur la même fenêtre ; deux fenêtres
+   * produiraient un rapport dont aucune moitié ne décrit le même ensemble de gens, ce qui est indétectable
+   * à l'écran.
+   *
+   * 🔴 UN MESSAGE N'EST IMPUTE QU'A UNE SEULE CAMPAGNE, LA DERNIERE RECUE AVANT LUI, et c'est ce qui rend
+   * la somme juste. Deux campagnes vers le même contact à trois jours d'écart ont des fenêtres qui SE
+   * CHEVAUCHENT : compter le message dans les deux le facturerait deux fois, et le total des campagnes
+   * dépasserait le coût réel des messages. `engagementsParCampagne`, lui, dédoublonne par (campagne,
+   * contact) et peut légitimement créditer les deux d'un même engagé, parce qu'une personne engagée n'est
+   * pas une dépense. Compter des PERSONNES et compter des EUROS n'obéit pas à la même règle.
+   *
+   * ⚠️ LE FILTRE DE SERVICE EST CELUI DE `serviceParMois`, MOT POUR MOT : sortant, WhatsApp, hors template,
+   * hors fil de test. Il a maintenant QUATRE consommateurs qui doivent rester d'accord ; un filtre qui
+   * diverge d'un mot ferait mentir les quatre.
+   */
+  async servicesParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
+    if (campaignIds.length === 0) return new Map();
+    const res = await this.pool.query<{ campaign_id: string; n: string | null }>(
+      `with envoyes as (
+         select r.campaign_id, r.contact_id, r.sent_at
+           from campaign_recipients r
+           join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
+          where r.campaign_id = any($2::uuid[]) and r.sent_at is not null and r.contact_id is not null
+       ),
+       services as (
+         select cv.contact_id, m.created_at
+           from conversation_messages m
+           join conversations cv on cv.id = m.conversation_id
+          where cv.tenant_id = $1 and not cv.is_test and cv.contact_id is not null
+            and m.direction = 'out' and m.channel = 'whatsapp' and m.type is distinct from 'template'
+       ),
+       impute as (
+         -- LA DERNIERE campagne recue avant ce message, et elle seule. Le tri descendant sur sent_at fait
+         -- le choix ; la fenetre de sept jours le borne.
+         select distinct on (s.contact_id, s.created_at) e.campaign_id
+           from services s
+           join envoyes e
+             on e.contact_id = s.contact_id
+            and s.created_at >= e.sent_at and s.created_at < e.sent_at + interval '7 days'
+          order by s.contact_id, s.created_at, e.sent_at desc
+       )
+       select campaign_id, count(*)::int as n from impute group by campaign_id`,
+      [tenantId, campaignIds],
+    );
+    return new Map(res.rows.map((r) => [r.campaign_id, Number(r.n ?? 0)]));
+  }
+
+  /**
    * Le VOLUME d'envois facturables de la période, par campagne et par catégorie.
    *
    * ⚠️ Même population que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) : c'est ce

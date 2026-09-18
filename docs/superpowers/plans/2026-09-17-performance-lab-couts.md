@@ -482,7 +482,7 @@ describe('le chiffre unique de la carte Couts', () => {
 
 - [ ] **Step 2 : lancer, échec attendu. Step 3 : implémenter. Step 4 : relancer, vert.**
 - [ ] **Step 5 : MUTER** en moyenne des ratios : le premier test doit échouer avec 21 contre 2,0759.
-- [ ] **Step 6 : imputer les messages de service aux campagnes** dans `src/stats/store.pg.ts`, avec la
+- [x] **Step 6 : imputer les messages de service aux campagnes** (fait le 2026-09-18, apres que la revue finale a releve que l etape n avait jamais ete executee) dans `src/stats/store.pg.ts`, avec la
       MÊME requête de fenêtre que `engagementsParCampagne` (7 jours après l'envoi reçu par le contact).
       ⚠️ Vérifier que la requête reste dans les prédicats de `conversation_messages_unread_idx` et de
       `conversations_contact_idx` : en sortir ne produit aucune erreur, seulement un balayage des deux
