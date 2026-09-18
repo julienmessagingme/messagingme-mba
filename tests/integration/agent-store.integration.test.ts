@@ -231,6 +231,15 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
       [tenantId, toolId, `agent:${agent!.id}`],
     );
 
+    // Le TÉMOIN : un AUTRE agent, avec SA propre action. Sans lui, « la cascade emporte tout » passerait
+    // aussi bien que « la cascade emporte ce qu'il faut », et c'est précisément la différence qui compte.
+    const voisin = await agents.create(tenantId, `voisin-${Date.now()}`, 'Je suis une IA.', 'm');
+    const outilVoisin = (await pool.query<{ id: string }>(
+      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+       values ($1, $2, 'mba', 'menage_voisin', 'M', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
+      [tenantId, voisin.id],
+    )).rows[0]!.id;
+
     await agents.remove(tenantId, agent!.id);
 
     const restant = await pool.query(
@@ -238,10 +247,24 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
       [tenantId, `agent:${agent!.id}`],
     );
     expect(restant.rowCount).toBe(0);
-    // ⚠️ Et la DÉFINITION, elle, SURVIT : elle appartient à l'espace, pas à l'agent. La supprimer avec lui
-    // casserait les autres agents qui s'en servent, ce que la migration 0127 existe pour éviter.
-    const def = await pool.query('select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, toolId]);
-    expect(def.rowCount).toBe(1);
-    await pool.query('delete from agent_tools where id = $1', [toolId]);
+
+    /**
+     * 🔴 CETTE ASSERTION DISAIT « LA DÉFINITION SURVIT », ET ELLE A CHANGÉ DE VÉRITÉ LE 2026-09-18.
+     *
+     * Elle était juste tant que TOUTE définition appartenait à l'espace (0127) : la supprimer avec un agent
+     * aurait cassé les autres agents qui s'en servaient. 0157 a séparé les deux régimes, et une ACTION
+     * appartient désormais à SON agent : elle part avec lui, par une cascade qui est cette fois le BON
+     * choix, puisque la laisser derrière créerait un orphelin que rien ne nettoierait jamais.
+     *
+     * ⚠️ CE QUE CE TEST ÉPROUVE N'A PAS BOUGÉ D'UN IOTA : le ménage des lignes de consentement, ci-dessus,
+     * qu'aucune clé étrangère ne fait à notre place. Ce qui est CONSERVÉ du cas d'origine, c'est
+     * « supprimer un agent ne détruit pas ce qui ne lui appartient pas » : on le prouve désormais sur
+     * l'action d'un AUTRE agent, qui n'a aucune raison de disparaître.
+     */
+    const partie = await pool.query('select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, toolId]);
+    expect(partie.rowCount).toBe(0);
+    const voisinRestant = await pool.query('select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, outilVoisin]);
+    expect(voisinRestant.rowCount).toBe(1);
+    await pool.query('delete from agents where id = $1', [voisin.id]);
   });
 });
