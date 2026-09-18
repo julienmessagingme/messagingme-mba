@@ -169,9 +169,23 @@ export function planifierPublication(
         gestes.push({ type: 'outil_modifier', sourceId: s.id, outilMetaId: existant.id, outilId: o.id, nom: o.name });
       }
     }
+    /**
+     * 🔴 UN DOUBLON CHEZ META NE PARTAIT JAMAIS, ET C EST CE QUI L A RENDU PERMANENT (2026-09-18).
+     *
+     * Julien a cliqué « Envoyer » plusieurs fois, faute de retour visible pendant l'aller-retour vers Meta.
+     * Chaque clic a recalculé un plan sur une photo d'AVANT et a recréé le même outil : Meta s'est retrouvé
+     * avec deux `rajouter_une_etiquette` quand nous n'en avions qu'un.
+     *
+     * ⚠️ ET LA RÉCONCILIATION NE POUVAIT PAS L'EFFACER : `parNomOutil` est une Map, donc un nom en double
+     * n'y garde qu'une entrée, et la boucle de suppression ne regardait que les noms ABSENTS de chez nous.
+     * Les deux exemplaires portant un nom que nous avons, aucun n'était candidat, et l'agent de Meta voyait
+     * le même outil deux fois, pour toujours. « Engage Me fait foi » veut dire que la publication CONVERGE :
+     * on compare donc par IDENTIFIANT, et tout exemplaire qui n'est pas celui qu'on a retenu s'en va.
+     */
     const nosNomsOutils = new Set(nosOutils.map((o) => o.name));
     for (const o of dejaLa) {
-      if (!nosNomsOutils.has(o.name)) {
+      const retenu = parNomOutil.get(o.name);
+      if (!nosNomsOutils.has(o.name) || retenu?.id !== o.id) {
         gestes.push({ type: 'outil_supprimer', sourceId: s.id, outilMetaId: o.id, nom: o.name });
       }
     }

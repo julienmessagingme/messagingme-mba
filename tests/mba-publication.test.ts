@@ -54,6 +54,31 @@ describe('planifierPublication', () => {
     expect(g.map((x) => x.type)).toEqual(['connecteur_creer', 'outil_creer']);
   });
 
+  /**
+   * 🔴 UN DOUBLON CHEZ META S'EN VA, ET SANS CE TEST IL RESTAIT POUR TOUJOURS (2026-09-18).
+   *
+   * Julien a cliqué « Envoyer » plusieurs fois, faute de retour visible pendant l'aller-retour : Meta s'est
+   * retrouvé avec DEUX `rajouter_une_etiquette` quand nous n'en avions qu'un. La réconciliation ne pouvait
+   * pas le voir, elle ne cherchait que les noms ABSENTS de chez nous, et les deux exemplaires portaient un
+   * nom présent. L'agent de Meta voyait donc le même outil deux fois, définitivement.
+   *
+   * ⚠️ ELLE COMPARE PAR IDENTIFIANT, pas par nom : c'est la seule façon de distinguer l'exemplaire retenu
+   * de ses copies. Et elle en garde UN, elle ne supprime pas les deux.
+   */
+  it('🔴 un outil EN DOUBLE chez Meta : on en garde un, on supprime la copie', () => {
+    const enDouble: EtatMeta = {
+      ...ALIGNE,
+      outilsParConnecteur: {
+        c1: [
+          ALIGNE.outilsParConnecteur.c1![0]!,
+          { ...ALIGNE.outilsParConnecteur.c1![0]!, id: 't2' },
+        ],
+      },
+    };
+    const g = planifierPublication([SRC], [OUT], enDouble);
+    expect(g).toEqual([{ type: 'outil_supprimer', sourceId: SRC.id, outilMetaId: 't1', nom: 'check_order_status' }]);
+  });
+
   it('🔴 PUBLIER DEUX FOIS DE SUITE NE PRODUIT AUCUN GESTE', () => {
     // C'est le SEUL test qui prouve que la réconciliation marche. Sans lui, une publication idempotente en
     // apparence pourrait recréer ses objets à chaque passage, et personne ne le verrait avant que Meta ne

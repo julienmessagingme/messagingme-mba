@@ -209,4 +209,57 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     });
   });
 
+  /**
+   * 🔴 LE BOUTON QUI NE DIT RIEN FABRIQUE DES DOUBLONS CHEZ META (Julien, 2026-09-18).
+   *
+   * « tu as pas de retour du bouton donc tu sais pas si ça a marché donc t'appuies plusieurs fois ».
+   * L'aller-retour vers Meta prend plusieurs secondes : chaque clic supplémentaire recalculait un plan sur
+   * une photo d'AVANT et recréait le même outil. Meta s'est retrouvé avec deux `rajouter_une_etiquette`
+   * quand nous n'en avions qu'un, et la réconciliation ne savait pas les effacer.
+   *
+   * ⚠️ IL COMPTE LES APPELS, pas les pixels : ce qui compte est qu'un second clic n'envoie RIEN.
+   */
+  test('🔴 pendant l’envoi, le bouton le DIT et un second clic n’envoie rien', async ({ page }) => {
+    let publications = 0;
+    let libere: (() => void) | null = null;
+    const attente = new Promise<void>((r) => { libere = r; });
+    await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
+          return true;
+        }
+        if (url.includes('/mba-publication')) {
+          if (method === 'GET') {
+            // Le plan n'est pas vide, sinon l'envoi s'arrête avant l'appel qui compte.
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify({ gestes: [{ type: 'outil_creer', nom: 'suivi_commande' }], phoneNumberId: '1' }),
+            });
+            return true;
+          }
+          publications += 1;
+          await attente; // on RETIENT Meta, comme la vraie latence le fait
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ faits: [] }) });
+          return true;
+        }
+        return false;
+      },
+    });
+    await page.goto('/mba/parametres?tab=outils');
+
+    await page.getByTestId('publication-publier').click();
+    await expect(page.getByTestId('publication-publier')).toBeDisabled();
+    await expect(page.getByTestId('publication-attente')).toBeVisible();
+
+    // Le second clic, celui qui a créé le doublon. Il ne doit produire AUCUN second envoi.
+    await page.getByTestId('publication-publier').click({ force: true });
+    await page.waitForTimeout(300);
+    expect(publications).toBe(1);
+
+    libere!();
+    await expect(page.getByTestId('publication-publier')).toBeEnabled();
+    expect(publications).toBe(1);
+  });
 });

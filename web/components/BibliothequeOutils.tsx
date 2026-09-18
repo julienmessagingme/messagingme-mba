@@ -34,6 +34,14 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   const [erreur, setErreur] = useState<string | null>(null);
   const [plan, setPlan] = useState<GestePublication[] | null>(null);
   const [publie, setPublie] = useState(false);
+  /**
+   * 🔴 L'ATTENTE EST UN ÉTAT DE L'ÉCRAN, PAS UN DÉTAIL (Julien, 2026-09-18). Le bouton ne disait rien
+   * pendant l'aller-retour vers Meta, qui prend plusieurs secondes : « tu as pas de retour du bouton donc
+   * tu sais pas si ça a marché donc t'appuies plusieurs fois ». Chaque clic recalculait un plan sur une
+   * photo d'AVANT et recréait le même outil, et Meta s'est retrouvé avec des doublons. Un bouton muet sur
+   * une opération lente ne coûte pas une gêne, il fabrique des écritures en double chez un tiers.
+   */
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
 
   useEffect(() => {
     let vivant = true;
@@ -118,8 +126,21 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
    * s'il contient un effacement, en le nommant.
    */
   async function envoyerChezMeta(): Promise<void> {
+    // ⚠️ LA GARDE DE RÉ-ENTRÉE EN PLUS DU BOUTON DÉSACTIVÉ, et les deux sont nécessaires : `disabled` ne
+    // couvre pas un second appel déclenché avant le premier rendu, et c'est exactement la fenêtre où les
+    // doublons se sont créés.
+    if (envoiEnCours) return;
+    setEnvoiEnCours(true);
     setErreur(null);
     setPublie(false);
+    try {
+      await envoyer();
+    } finally {
+      setEnvoiEnCours(false);
+    }
+  }
+
+  async function envoyer(): Promise<void> {
     let gestes: GestePublication[];
     try {
       gestes = (await apercuPublicationMba(tenantId)).gestes;
@@ -223,10 +244,21 @@ Continue?`,
         <section className="rounded-2xl border border-ink-200 bg-ink-50/50 p-4" data-testid="publication-mba">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-ink-800">{t('Envoyer chez Meta', 'Send to Meta')}</span>
-            <button type="button" className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700"
-              data-testid="publication-publier" onClick={() => { void envoyerChezMeta(); }}>
-              {t('Envoyer', 'Send')}
+            <button
+              type="button"
+              className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              data-testid="publication-publier"
+              disabled={envoiEnCours}
+              onClick={() => { void envoyerChezMeta(); }}
+            >
+              {envoiEnCours ? t('Envoi en cours…', 'Sending…') : t('Envoyer', 'Send')}
             </button>
+            {envoiEnCours && (
+              <span className="text-xs text-ink-500" data-testid="publication-attente">
+                {t('Meta répond en quelques secondes. N’appuyez pas une seconde fois.',
+                  'Meta answers within a few seconds. Do not press again.')}
+              </span>
+            )}
           </div>
 
           {/* ⚠️ CE QUE PERSONNE NE DEVINE, ET QUI DOIT ÊTRE ÉCRIT : une modification faite dans WhatsApp
@@ -509,7 +541,9 @@ function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => Pr
                   .finally(() => { setBusy(false); });
               }}
             >
-              {t('Soumettre', 'Submit')}
+              {/* ⚠️ LE LIBELLÉ CHANGE, il ne se contente pas de griser : un bouton grisé sans mot laisse
+                  croire à un refus, et c'est ce qui pousse à recliquer. Ce geste part chez Meta. */}
+              {busy ? t('Envoi en cours…', 'Sending…') : t('Soumettre', 'Submit')}
             </button>
             {manque !== null && <span className="text-[11px] text-ink-500" data-testid="outil-mba-manque">{manque}</span>}
             <button type="button" onClick={() => setChoisi(null)} className="text-xs text-ink-500 hover:underline">
@@ -609,7 +643,7 @@ function Corriger({ tenantId, outil, onFait }: {
               .finally(() => { setBusy(false); });
           }}
         >
-          {t('Enregistrer', 'Save')}
+          {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
         </button>
         {manque !== null && <span className="text-[11px] text-ink-500">{manque}</span>}
         <button type="button" onClick={() => setOuvert(false)} className="text-xs text-ink-500 hover:underline">
