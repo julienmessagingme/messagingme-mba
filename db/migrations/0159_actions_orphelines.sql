@@ -9,8 +9,8 @@
 -- DÉPLOYÉ aujourd'hui crée une action `origin = 'mba'` SANS `agent_id` et lui écrit UN consommateur : une
 -- action créée d'ici au déploiement survit donc au `delete` (elle a un consommateur) ET viole le CHECK
 -- (elle n'a pas d'`agent_id`). L'`alter table` échouait, en fin de déploiement, sur une donnée que la
--- requête de contrôle ne montrait pas. D'où les DEUX gestes ci-dessous, et non un seul : on supprime ce que
--- personne n'utilise, on ADOPTE ce que quelqu'un utilise.
+-- requête de contrôle ne montrait pas. D'où TROIS gestes ci-dessous et non un seul : on débarrasse les
+-- consentements morts, on supprime ce que plus personne n'utilise, on ADOPTE ce que quelqu'un utilise.
 --
 -- ⚠️ LES DEUX REQUÊTES À JOUER AVANT DE L'APPLIQUER, et la seconde est celle qui manquait :
 --
@@ -20,15 +20,37 @@
 --      and not exists (select 1 from agent_tool_consommateurs c
 --                       where c.tool_id = t.id and c.tenant_id = t.tenant_id);
 --
---   -- 2. ce qui BLOQUERAIT le CHECK après le delete et l'adoption, c'est-à-dire les cas ambigus :
+--   -- 2. ce qui BLOQUERAIT le CHECK après les trois gestes, c'est-à-dire les cas AMBIGUS : une définition
+--   -- partagée entre deux agents, ou exposée au Meta Business Agent. Les consentements morts sont exclus,
+--   -- puisque le premier geste les retire.
 --   select t.id, t.name, array_agg(c.consommateur) from agent_tools t
 --     join agent_tool_consommateurs c on c.tool_id = t.id and c.tenant_id = t.tenant_id
 --    where t.origin = 'mba' and t.agent_id is null
+--      and (c.consommateur not like 'agent:%'
+--           or exists (select 1 from agents a
+--                       where a.id = substring(c.consommateur from 7)::uuid and a.tenant_id = c.tenant_id))
 --    group by t.id, t.name having count(*) > 1 or bool_or(c.consommateur not like 'agent:%');
 --
--- Si la seconde rend des lignes, il faut TRANCHER à la main avant d'appliquer : une définition partagée
--- entre deux agents, ou exposée au Meta Business Agent, n'a pas de propriétaire évident et la migration se
--- refuse à en inventer un. C'est exactement la raison pour laquelle l'adoption ci-dessous est conservatrice.
+-- Si la seconde rend des lignes, il faut TRANCHER à la main avant d'appliquer : ces définitions-là n'ont pas
+-- de propriétaire évident et la migration se refuse à en inventer un. C'est exactement la raison pour
+-- laquelle l'adoption ci-dessous est conservatrice.
+
+-- 🔴 UN CONSOMMATEUR PEUT NOMMER UN AGENT QUI N'EXISTE PLUS, ET RIEN DANS LE SCHÉMA NE L'EN EMPÊCHE.
+-- `agent_tool_consommateurs.consommateur` est un TEXTE (`agent:<uuid>` ou `mba:<numero>`), pas une clé
+-- étrangère : supprimer un agent laisse donc ses lignes de consentement derrière lui. Deux conséquences, et
+-- la CI les a trouvées toutes les deux : une telle ligne fait passer une définition pour « encore utilisée »
+-- alors que plus rien ne peut s'en servir, et l'adoption plus bas y lirait un `agent_id` fantôme, qui
+-- violerait `agent_tools_agent_id_fkey` et ferait échouer toute la migration.
+--
+-- ⚠️ ELLE NE TOUCHE QUE LES ACTIONS (`origin = 'mba'`). Un connecteur appartient à l'espace, et le
+-- débarrasser ici d'un consentement mort le rendrait supprimable depuis `Tools >`, ce qui déborde de ce que
+-- cette migration annonce faire.
+delete from agent_tool_consommateurs c
+ where c.consommateur like 'agent:%'
+   and exists (select 1 from agent_tools t
+                where t.id = c.tool_id and t.tenant_id = c.tenant_id and t.origin = 'mba')
+   and not exists (select 1 from agents a
+                    where a.id = substring(c.consommateur from 7)::uuid and a.tenant_id = c.tenant_id);
 
 -- ⚠️ LE PRÉDICAT EST STRICT, ET CHACUNE DE SES TROIS CONDITIONS PORTE SON POIDS. `origin = 'mba'` épargne
 -- les connecteurs, qui appartiennent légitimement à l'espace. `agent_id is null` épargne toutes les actions
@@ -46,9 +68,13 @@ delete from agent_tools t
 -- client. C'est aussi ce qui rend la fenêtre de déploiement sûre : tout ce que l'ancien code peut créer
 -- entre maintenant et le déploiement tombe dans ce cas-là.
 --
--- ⚠️ TROIS GARDES, ET AUCUNE N'EST DÉCORATIVE :
+-- ⚠️ QUATRE GARDES, ET AUCUNE N'EST DÉCORATIVE :
 --   - `count(*) = 1` : deux consommateurs, deux propriétaires possibles, donc on ne tranche pas ;
 --   - `consommateur like 'agent:%'` : le Meta Business Agent n'est pas un agent IA, il n'a pas d'`agent_id` ;
+--   - l'`exists` sur `agents` : le consentement n'est pas une clé étrangère, donc il peut nommer un agent
+--     supprimé. Sans cette garde on écrit un `agent_id` fantôme et `agent_tools_agent_id_fkey` fait échouer
+--     la migration entière. Le nettoyage en tête de fichier a déjà retiré ces lignes, et cette garde reste :
+--     un invariant qui tient à l'ordre de deux instructions tient mal ;
 --   - le `not exists` final : l'agent possède peut-être DÉJÀ une action de ce nom (créée par le code neuf,
 --     entre le déploiement et cette migration). L'adopter violerait `agent_tools_nom_agent_uidx` et ferait
 --     échouer toute la migration sur un index, ce qui est le pire endroit pour l'apprendre.
@@ -64,6 +90,7 @@ update agent_tools t
    and t.tenant_id = proprio.tenant_id
    and t.origin = 'mba'
    and t.agent_id is null
+   and exists (select 1 from agents a where a.id = proprio.agent_id and a.tenant_id = t.tenant_id)
    and not exists (select 1 from agent_tools d
                     where d.tenant_id = t.tenant_id and d.name = t.name
                       and d.agent_id = proprio.agent_id);

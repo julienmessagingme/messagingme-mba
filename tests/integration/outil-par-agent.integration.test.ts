@@ -302,38 +302,70 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
    * exister une fois 0159 appliquée, donc il faut rouvrir la porte le temps de la sonde, et la refermer même
    * si l'assertion échoue.
    */
-  it('🔴 une action créée par l’ANCIEN code est ADOPTÉE par son consommateur, pas supprimée', async () => {
+  it('🔴 les TROIS gestes de données de 0159, joués depuis le fichier de migration', async () => {
     const sql = readFileSync(new URL('../../db/migrations/0159_actions_orphelines.sql', import.meta.url), 'utf8');
-    const debut = sql.indexOf('update agent_tools');
-    const adoption = sql.slice(debut, sql.indexOf(';', debut) + 1);
-    expect(adoption).toContain('agent_tool_consommateurs'); // la requête a bien été trouvée
+    const gestes = sql.replace(/^\s*--.*$/gm, '').split(';')
+      .map((x) => x.trim()).filter((x) => x !== '' && !/^alter table/i.test(x));
+    // Le compte est asserté : une instruction ajoutée au fichier et non couverte ici doit faire ROUGE, pas
+    // passer inaperçue. C'est la seule façon qu'un test qui lit un fichier reste honnête.
+    expect(gestes).toHaveLength(3);
 
+    const mortUuid = '00000000-0000-4000-8000-000000000999';
     const client = await pool.connect();
     try {
       await client.query('begin');
-      await client.query('alter table agent_tools drop constraint agent_tools_action_par_agent_chk');
-      // EXACTEMENT ce que l'ancien `ajouter` écrit : pas d'`agent_id`, et une ligne de consentement.
-      const id = (await client.query<{ id: string }>(
+      // 🔴 DES COPIES TEMPORAIRES, ET C'EST CE QUI REND CETTE SONDE SANS DANGER. `LIKE` ne recopie ni les
+      // CHECK, ni les clés étrangères, ni les index : l'état d'AVANT la migration redevient donc
+      // représentable, alors que le CHECK de 0159 l'interdit sur les vraies tables. Et surtout, on ne pose
+      // aucun verrou sur `public.agent_tools`, que les autres fichiers d'intégration écrivent en parallèle.
+      await client.query('create temp table agent_tools (like public.agent_tools including defaults)');
+      await client.query('create temp table agent_tool_consommateurs (like public.agent_tool_consommateurs including defaults)');
+      // `pg_temp` d'abord : le SQL du fichier, qui nomme les tables sans les qualifier, atteint les copies.
+      // `agents` n'a pas de copie, donc la garde d'existence de l'adoption lit les VRAIS agents.
+      await client.query('set local search_path = pg_temp, public');
+
+      const poser = async (origin: string, nom: string): Promise<string> => (await client.query<{ id: string }>(
         `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
-         values ($1, 'mba', 'creee_par_l_ancien_code', 'T', 't', '', 'read') returning id`,
-        [tenantId],
+         values ($1, $2, $3, 'T', 't', '', 'read') returning id`,
+        [tenantId, origin, nom],
       )).rows[0]!.id;
-      await client.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, `agent:${agentB}`],
-      );
+      const consentir = async (id: string, cle: string): Promise<void> => {
+        await client.query(
+          'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+          [tenantId, id, cle],
+        );
+      };
 
-      await client.query(adoption);
+      // EXACTEMENT ce que l'ancien `ajouter` écrit : pas d'`agent_id`, et une ligne de consentement vivante.
+      const aAdopter = await poser('mba', 'creee_par_l_ancien_code');
+      await consentir(aAdopter, `agent:${agentB}`);
+      // Un reste d'essai : aucune ligne de consentement. C'est la cible du `delete` d'origine.
+      const orpheline = await poser('mba', 'reste_d_essai');
+      // Le cas que la CI a trouvé : le consentement nomme un agent SUPPRIMÉ. `agent_tool_consommateurs` ne
+      // porte aucune clé étrangère vers `agents`, donc rien n'empêche cet état.
+      const fantome = await poser('mba', 'consentement_mort');
+      await consentir(fantome, `agent:${mortUuid}`);
+      // Un CONNECTEUR avec le même consentement mort : la migration ne doit PAS y toucher.
+      const connecteur = await poser('http', 'connecteur_intact');
+      await consentir(connecteur, `agent:${mortUuid}`);
 
-      const apres = await client.query<{ agent_id: string | null }>(
+      for (const geste of gestes) await client.query(geste);
+
+      const agentIdDe = async (id: string): Promise<string | null | undefined> => (await client.query<{ agent_id: string | null }>(
         'select agent_id from agent_tools where id = $1', [id],
-      );
-      // Adoptée par l'agent que sa ligne de consentement désignait, donc le CHECK peut se refermer.
-      expect(apres.rows[0]!.agent_id).toBe(agentB);
-      await client.query(
-        `alter table agent_tools add constraint agent_tools_action_par_agent_chk
-           check (origin <> 'mba' or agent_id is not null)`,
-      );
+      )).rows[0]?.agent_id;
+      const compteConso = async (id: string): Promise<number> => (await client.query(
+        'select 1 from agent_tool_consommateurs where tool_id = $1', [id],
+      )).rowCount ?? 0;
+
+      // ADOPTÉE par l'agent que son consentement désignait : le CHECK peut se refermer sur elle.
+      expect(await agentIdDe(aAdopter)).toBe(agentB);
+      // SUPPRIMÉES toutes les deux : l'une n'avait aucun consommateur, l'autre n'en avait qu'un de mort.
+      expect(await agentIdDe(orpheline)).toBeUndefined();
+      expect(await agentIdDe(fantome)).toBeUndefined();
+      // INTACT : un connecteur appartient à l'espace, et cette migration a annoncé ne pas y toucher.
+      expect(await agentIdDe(connecteur)).toBeNull();
+      expect(await compteConso(connecteur)).toBe(1);
     } finally {
       await client.query('rollback');
       client.release();

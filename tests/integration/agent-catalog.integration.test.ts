@@ -192,7 +192,11 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
    *
    * 🔴 `retirer` FAISAIT LES DEUX EN UN, ET C'EST CE QUE LA MIGRATION 0127 SÉPARE. Ne faire que détacher
    * laisserait les définitions s'accumuler dans l'espace de test, et le test suivant buterait sur l'unicité
-   * du nom PAR ESPACE, avec une erreur qui n'aurait aucun rapport avec ce qu'il vérifie.
+   * du nom, avec une erreur qui n'aurait aucun rapport avec ce qu'il vérifie.
+   *
+   * ⚠️ LE SECOND GESTE EST DEVENU UN NON-ÉVÉNEMENT POUR UNE ACTION, et le garder est délibéré : `detacher`
+   * l'a déjà supprimée (revue du 2026-09-18), `supprimerDefinition` rend donc `introuvable` et ne fait rien.
+   * Ce helper sert AUSSI aux connecteurs, pour qui les deux gestes restent nécessaires.
    */
   const retirerCompletement = async (t: string, a: string, id: string): Promise<void> => {
     await catalogue.detacher(t, a, id);
@@ -465,9 +469,14 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
       await retirerCompletement(tenantId, agentId, outil!.id);
     });
 
-    it('🔴 détacher un outil d’un agent ne le supprime PAS de l’espace', async () => {
+    it('🔴 détacher un outil qu’un AUTRE agent utilise encore ne le supprime pas', async () => {
       // C'est le changement de sens du bouton « supprimer » de l'onglet d'un agent : il retire l'outil DE CET
       // AGENT. Le supprimer pour tout le monde depuis l'écran d'un seul casserait les autres en silence.
+      //
+      // ⚠️ LE TITRE A ÉTÉ RESSERRÉ LE 2026-09-18, parce que la règle générale qu'il annonçait est devenue
+      // fausse : une action dont on détache le DERNIER consommateur s'en va désormais avec lui. Ce qui reste
+      // vrai, et ce que ce test exerce, est le cas du VOISIN : tant que quelqu'un d'autre s'en sert, la
+      // définition tient. Le cas du dernier consommateur est éprouvé plus bas.
       const voisin = (await pool.query<{ id: string }>(
         `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin-garde', 'IA', 'm') returning id`,
         [tenantId],
@@ -481,14 +490,52 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
       await pool.query('delete from agents where id = $1', [voisin]);
     });
 
+    /**
+     * 🔴 LES TROIS VERDICTS SONT CONSERVÉS, SUR UN CONNECTEUR (revue finale du 2026-09-18).
+     *
+     * Il portait sur une ACTION, et `detacher` en supprime désormais une, donc le verdict du milieu serait
+     * devenu `introuvable` : le cas « je peux supprimer ce dont plus personne ne se sert » aurait disparu de
+     * la suite sans que rien ne le remplace. Un test qu'on réécrit doit CONSERVER le cas qu'il exerçait. Le
+     * connecteur est le bon porteur : il appartient à l'espace, se partage, et son détachement ne l'efface
+     * pas, donc les trois verdicts restent atteignables l'un après l'autre. Le cas de l'ACTION est éprouvé
+     * juste en dessous, et c'est sa règle À LUI qui a changé.
+     */
     it('🔴 supprimer une DÉFINITION encore rattachée est REFUSÉ, pas silencieux', async () => {
       // Même doctrine que la suppression d'une source qui porte des outils actifs : ce qui rendrait un agent
       // muet doit se refuser en le disant, pas se faire. La contrainte est en cascade, donc sans ce refus la
       // suppression emporterait le consentement d'agents qu'on ne regardait pas.
-      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'occupee' });
+      //
+      // ⚠️ UNE VRAIE SOURCE : `agent_tools_origin_src_chk` (0088) l'EXIGE dès qu'on sort de `origin = 'mba'`.
+      const source = (await pool.query<{ id: string }>(
+        `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+         values ($1, 'http', 'itest-src-occupee', 'https://exemple.test', 'none', 'brouillon') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
+      const id = (await pool.query<{ id: string }>(
+        `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, risk)
+         values ($1, 'http', $2, 'occupee', 'Occupée', 'o', '', 'read') returning id`,
+        [tenantId, source],
+      )).rows[0]!.id;
+      await pool.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, `agent:${agentId}`],
+      );
+      expect(await catalogue.supprimerDefinition(tenantId, id)).toBe('rattachee');
+      // Détacher un CONNECTEUR ne l'efface pas : il appartient à l'espace, et l'effacer au premier
+      // détachement le ferait disparaître pour tous les autres agents.
+      await catalogue.detacher(tenantId, agentId, id);
+      expect(await catalogue.supprimerDefinition(tenantId, id)).toBe('ok');
+      expect(await catalogue.supprimerDefinition(tenantId, id)).toBe('introuvable');
+      await pool.query('delete from agent_tool_sources where id = $1', [source]);
+    });
+
+    it('🔴 une ACTION, elle, s’en va AVEC son détachement : plus rien à supprimer', async () => {
+      // Le pendant du test ci-dessus, et la règle qui a changé. La bibliothèque de l'espace n'affiche plus
+      // les actions d'agent (0157), or c'est le seul écran d'où l'on supprime une définition : la laisser
+      // derrière ferait un orphelin invisible, ineffaçable, dont le nom resterait pris pour cet agent.
+      const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'action_jetable' });
       expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('rattachee');
-      await catalogue.detacher(tenantId, agentId, outil!.id);
-      expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('ok');
+      expect(await catalogue.detacher(tenantId, agentId, outil!.id)).toBe(true);
       expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('introuvable');
     });
 
