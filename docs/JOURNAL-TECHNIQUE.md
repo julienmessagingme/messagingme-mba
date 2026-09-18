@@ -5,6 +5,77 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-18 : le Performance Lab, les coûts et l'analyse (33 commits, huit revues)
+
+**Livré et déployé le 2026-09-18 au matin**, migrations 0154 et 0155 comprises. Le fonctionnel vu
+utilisateur vit dans [features.md](../features.md), ce qui reste dû dans [wip.md](../wip.md), le compteur
+de migrations dans [CLAUDE.md](../CLAUDE.md). Ce qui suit est le RÉCIT, et il n'a d'intérêt que pour ce
+qu'il a coûté.
+
+### Ce qui a été livré
+
+Refonte de l'onglet Synthèse : une carte « Coûts » à trois lignes dépliables, les conversations par
+intention, l'écran d'analyse en une ligne par jour avec « qui a répondu », le résumé de conversation en
+champ de base du mini-CRM, la rétention abaissée à 90 jours et réglable par espace, et une grille de prix
+par espace. Spec et plan dans `docs/superpowers/`.
+
+### 🔴 CE QUE HUIT REVUES À FROID ONT TROUVÉ, ET CE QUE ÇA DIT DE LA MÉTHODE
+
+Verdicts successifs : **6, 5, 5, 4, 3, 1, 0 puis 1 rouge**. La majorité des rouges des passes 2, 3 et 4
+étaient des défauts **introduits en corrigeant les précédents**. Le motif, quatre fois : un correctif ferme
+le cas qu'on regarde et laisse ouverts ses voisins.
+
+Les quatre défauts qui valaient le prix de la méthode :
+
+1. **L'agrégat enregistrait le résidu de la purge au lieu de la mémoire de la journée.** Le balayage
+   recalcule chaque journée depuis les analyses encore présentes ; la purge est bornée à 500 par passage et
+   son seuil est un INSTANT, pas une frontière de journée. Toute journée traversait donc un état partiel
+   pendant lequel le bon compte était écrasé, puis figé quand la journée disparaissait. La table censée
+   garder ce qu'on efface enregistrait l'effacement. Éprouvé dans les deux sens : sans la garde, 4 devient
+   2 puis reste 2.
+2. **Le même prix affiché différemment sur deux écrans.** Corrigé trois fois, déplacé deux fois. La cause
+   n'était pas l'inattention : l'inventaire avait été fait sur « qui appelle la fonction qui lit les
+   tarifs » au lieu de « qui affiche un prix à un client ». La fonction s'appelait `tarifsMeta` et rendait
+   des prix de vente ; le nom fabriquait l'inventaire faux.
+3. **Une garde qu'aucun test ne voyait.** En remettant le défaut exact qu'un commit venait de corriger,
+   **5683 tests restaient verts**. Les cas appelaient les fonctions en direct : ils prouvaient qu'elles
+   calculent juste, jamais qu'on les appelle.
+4. **Une garde numérique qui refusait 2,47.** `Math.round(v * 100) === v * 100` : 1146 refus sur les 10001
+   valeurs à deux décimales. Invisible parce que les quatre valeurs par défaut tombent du bon côté du
+   flottant.
+
+⚠️ **ET DEUX DÉFAUTS ONT ÉTÉ TROUVÉS PAR UNE SONDE, PAS PAR UN TEST** : une date reculée d'un jour
+(`2026-11-01` écrit, `2026-10-31` relu, node-postgres rendant une colonne `date` à minuit LOCAL), et une
+imputation de coût non bornée par la période. Les deux naissaient de la frontière entre le code et le
+pilote, là où une fonction pure est juste et le tout faux.
+
+### La technique qui a rendu ces sondes possibles
+
+Les requêtes à éprouver nommaient des colonnes que la migration n'avait pas encore créées. Un `alter table`
+dans une transaction annulée aurait pris un verrou ACCESS EXCLUSIVE sur une table lue par les chemins
+chauds. La parade : **`create temporary table <le même nom>`**, `pg_temp` passant avant `public` dans le
+`search_path`, avec un pool à `max: 1`. La requête du vrai code s'exécute telle quelle, les autres tables
+restent les vraies en lecture seule, et rien ne survit à la déconnexion.
+
+### Le déploiement
+
+Séquence tenue dans l'ordre : `git pull`, build de l'image, **vérification que 0154 et 0155 y sont**,
+`migrate`, relecture en base point par point, `up -d --build` des deux images, conteneurs sains PUIS
+rechargement de NPM, 9 fiches d'aide chargées, contrôle public vert sur les six chemins.
+
+🔴 **LE MÉCANISME CENTRAL A ÉTÉ VU, PAS SUPPOSÉ** : au démarrage du worker, `agregats-analyse: 6 journee(s)
+ecrite(s)`, avant toute purge. Puis vérifié en base par le vrai code : sur les deux espaces, lecture
+directe et table d'agrégats rendent des journées IDENTIQUES.
+
+⚠️ **ET LA PURGE N'A RIEN EFFACÉ PARCE QU'ELLE NE LE POUVAIT PAS** : zéro conversation n'a plus de 90 jours
+(la plus ancienne date du 2026-08-18). La seule opération irréversible du dépôt a été allumée au moment où
+elle ne peut rien détruire, ce qui était le bon moment et pas une chance.
+
+### Ce qui reste dû
+
+L'essai réel, dans ses deux moitiés, dont celle qui pose une marge : le défaut « un écran affiche encore le
+tarif brut » est **invisible tant que la marge vaut 100**, ce qui explique qu'il ait échappé à trois revues.
+
 ## Ce que c'est
 
 Le contenu intégral de `documentation.md` **tel qu'il était le 2026-09-09**, avant sa réécriture en manuel
