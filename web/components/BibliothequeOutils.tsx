@@ -7,13 +7,20 @@ import {
   type OutilBibliotheque, type GestePublication,
 } from '@/lib/api-agent-tools';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
+import { normaliserCodeSortie } from '@/lib/agent-sorties';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
 
 /**
- * Les outils de l'ESPACE, et qui s'en sert.
+ * LES OUTILS DE L'AGENT DE META : ce qu'on lui expose, et qui d'autre s'en sert.
  *
- * 🔴 LA COLONNE « UTILISÉ PAR » EST TOUTE LA RAISON DE CET ÉCRAN, et elle n'existait nulle part. Un outil
+ * 🔴 IL N'EST PLUS L'ÉCRAN « OUTILS DE L'ESPACE », ET LA NOTION A DISPARU DU PRODUIT (2026-09-18). Depuis
+ * 0157 une ACTION appartient à son agent, et 0159 INTERDIT en base qu'une action vive au niveau de
+ * l'espace : il ne reste ici que des outils bâtis sur un connecteur. L'entrée `Tools > Outils` a été
+ * retirée à la demande de Julien, cet onglet du MBA est le seul chemin, et l'adresse `/outils` reste
+ * servie pour les liens déjà partagés.
+ *
+ * 🔴 LA COLONNE « UTILISÉ PAR » RESTE TOUTE LA RAISON DE LA LISTE, et elle n'existait nulle part. Un outil
  * déclaré une fois et branché sur trois agents était trois outils qui se ressemblaient : corriger ses mots
  * dans un agent ne les corrigeait pas dans les deux autres, et personne ne pouvait le voir. Depuis la
  * migration 0127, la définition est unique et le consentement est par consommateur.
@@ -27,10 +34,6 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   const [erreur, setErreur] = useState<string | null>(null);
   const [plan, setPlan] = useState<GestePublication[] | null>(null);
   const [publie, setPublie] = useState(false);
-
-  const recharger = async (): Promise<void> => {
-    try { setOutils((await getBibliothequeOutils(tenantId)).outils); } catch { setOutils([]); }
-  };
 
   useEffect(() => {
     let vivant = true;
@@ -103,24 +106,49 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   }
 
   /**
-   * L'APERÇU avant la publication.
+   * ENVOYER CHEZ META, EN UN SEUL GESTE (demande de Julien, 2026-09-18).
    *
-   * 🔴 « ENGAGE ME FAIT FOI, LA PUBLICATION ÉCRASE » (décision de Julien du 2026-09-10). Écraser n'est
-   * acceptable que si l'on montre QUOI avant de le faire : ce bouton n'écrit rien, il demande le plan et
-   * l'affiche en toutes lettres, y compris les suppressions.
+   * 🔴 IL Y AVAIT DEUX BOUTONS, « Voir ce qui va changer » PUIS « Publier ces N changement(s) », et ce
+   * vocabulaire ne disait rien à qui veut simplement soumettre son outil. Un écran qui oblige à comprendre
+   * le mot « plan » avant d'agir est un écran qui ne sert pas.
+   *
+   * ⚠️ LA SEULE CHOSE QU'ON GARDE DE L'APERÇU, C'EST LE REFUS DE SUPPRIMER EN SILENCE. Publier ÉCRASE ce
+   * qui est chez Meta (« Engage Me fait foi », arbitrage du 2026-09-10) : une création n'a besoin d'aucune
+   * cérémonie, une SUPPRESSION oui. On demande donc le plan sans le montrer, et on n'arrête la main que
+   * s'il contient un effacement, en le nommant.
    */
-  async function voirLePlan(): Promise<void> {
+  async function envoyerChezMeta(): Promise<void> {
     setErreur(null);
     setPublie(false);
+    let gestes: GestePublication[];
     try {
-      setPlan((await apercuPublicationMba(tenantId)).gestes);
+      gestes = (await apercuPublicationMba(tenantId)).gestes;
     } catch (e) {
-      setErreur(e instanceof Error ? e.message : t('L’aperçu a échoué.', 'Preview failed.'));
+      setErreur(e instanceof Error ? e.message : t('L’envoi a échoué.', 'Sending failed.'));
+      return;
     }
+    if (gestes.length === 0) { setPlan([]); return; }
+    const effacements = gestes.filter((g) => g.type.endsWith('supprimer'));
+    if (effacements.length > 0) {
+      const liste = effacements.map((g) => `- ${LIBELLE_GESTE[g.type]} : ${g.nom}`).join('\n');
+      const ok = window.confirm(t(
+        `Cet envoi va SUPPRIMER chez Meta :
+
+${liste}
+
+Continuer ?`,
+        `This will DELETE at Meta:
+
+${liste}
+
+Continue?`,
+      ));
+      if (!ok) return;
+    }
+    await publier();
   }
 
   async function publier(): Promise<void> {
-    setErreur(null);
     try {
       await publierChezMeta(tenantId);
       setPublie(true);
@@ -128,9 +156,20 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
       setOutils((await getBibliothequeOutils(tenantId)).outils);
     } catch (e) {
       // Le message du serveur dit combien de gestes ont abouti et qu'on peut relancer sans risque de doublon.
-      setErreur(e instanceof Error ? e.message : t('La publication a échoué.', 'Publishing failed.'));
-      void voirLePlan();
+      setErreur(e instanceof Error ? e.message : t('L’envoi chez Meta a échoué.', 'Sending to Meta failed.'));
     }
+  }
+
+  /**
+   * Ce que fait « Soumettre » du formulaire : l'outil vient d'être créé, il part chez Meta dans la foulée.
+   *
+   * ⚠️ UN ÉCHEC D'ENVOI NE DOIT PAS FAIRE CROIRE QUE LA CRÉATION A RATÉ : l'outil est enregistré chez nous,
+   * et c'est le voyage vers Meta qui a échoué. Le message le dit, et le bouton d'envoi reste là pour
+   * réessayer.
+   */
+  async function apresCreation(): Promise<void> {
+    setOutils((await getBibliothequeOutils(tenantId)).outils);
+    await publier();
   }
 
   const LIBELLE_GESTE: Record<GestePublication['type'], string> = {
@@ -148,10 +187,15 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   return (
     <section data-testid="bibliotheque-outils" className="space-y-4">
       <header>
-        <h1 className="text-lg font-semibold text-ink-900">{t('Outils de l’espace', 'Workspace tools')}</h1>
+        {/* 🔴 « DE L'ESPACE » A DISPARU DU TITRE, PARCE QUE LA NOTION A DISPARU DU PRODUIT (2026-09-18).
+            Depuis 0157 une ACTION appartient à son agent, et 0159 INTERDIT en base qu'une action vive au
+            niveau de l'espace : il ne reste ici que des outils bâtis sur un connecteur. Le titre promettait
+            donc un inventaire que cet écran ne peut plus contenir, et le sous-titre annonçait un partage
+            entre agents qui n'est vrai que de cette moitié-là. */}
+        <h1 className="text-lg font-semibold text-ink-900">{t('Outils de l’agent de Meta', 'Meta’s agent tools')}</h1>
         <p className="mt-1 text-sm text-ink-500">
-          {t('Un outil se déclare une fois ici, puis chaque agent choisit de s’en servir. Le même outil peut servir à plusieurs agents.',
-            'A tool is declared once here, then each agent chooses whether to use it. The same tool can serve several agents.')}
+          {t('Un appel réglé dans Tools > Connecteurs API devient un outil ici, avec les mots que l’agent de Meta lira pour décider quand l’appeler. Il faut ensuite le publier chez Meta.',
+            'A call set up in Tools > API connectors becomes a tool here, with the words Meta’s agent reads to decide when to call it. You then publish it to Meta.')}
         </p>
       </header>
 
@@ -161,24 +205,18 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
           donnant a un agent : exposer un appel a Meta obligeait a creer un agent dont on n a pas besoin, et
           a repondre pour lui a des questions que Meta ignore. Julien : « je ne sais pas ou l affecter pour
           le MBA ». */}
-      {isAdmin && <OutilPourMba tenantId={tenantId} onCree={() => { void recharger(); }} />}
+      {isAdmin && <OutilPourMba tenantId={tenantId} onCree={apresCreation} />}
 
       {/* La publication chez Meta. Elle vit ICI et pas dans les paramètres MBA : ce qu'on publie, c'est
           cette bibliothèque-là, et le geste doit être à côté de ce qu'il emporte. */}
       {isAdmin && (
         <section className="rounded-2xl border border-ink-200 bg-ink-50/50 p-4" data-testid="publication-mba">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium text-ink-800">{t('Publier chez Meta', 'Publish to Meta')}</span>
-            <button type="button" className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs"
-              data-testid="publication-apercu" onClick={() => { void voirLePlan(); }}>
-              {t('Voir ce qui va changer', 'Preview changes')}
+            <span className="text-sm font-medium text-ink-800">{t('Envoyer chez Meta', 'Send to Meta')}</span>
+            <button type="button" className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700"
+              data-testid="publication-publier" onClick={() => { void envoyerChezMeta(); }}>
+              {t('Envoyer', 'Send')}
             </button>
-            {plan !== null && plan.length > 0 && (
-              <button type="button" className="rounded-lg bg-brand-600 px-2 py-0.5 text-xs font-medium text-white"
-                data-testid="publication-publier" onClick={() => { void publier(); }}>
-                {t(`Publier ces ${plan.length} changement(s)`, `Publish these ${plan.length} change(s)`)}
-              </button>
-            )}
           </div>
 
           {/* ⚠️ CE QUE PERSONNE NE DEVINE, ET QUI DOIT ÊTRE ÉCRIT : une modification faite dans WhatsApp
@@ -192,22 +230,24 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
           {plan !== null && plan.length === 0 && !publie && (
             <p className="mt-2 text-xs text-mint-700" data-testid="publication-rien">{t('Rien à changer : Meta est déjà à jour.', 'Nothing to change: Meta is already up to date.')}</p>
           )}
-          {plan !== null && plan.length > 0 && (
-            <ul className="mt-2 space-y-0.5" data-testid="publication-plan">
-              {plan.map((g, i) => (
-                <li key={`${g.type}-${g.nom}-${i}`} className={`text-xs ${g.type.endsWith('supprimer') ? 'text-coral' : 'text-ink-600'}`}>
-                  {LIBELLE_GESTE[g.type]} : <code>{g.nom}</code>
-                </li>
-              ))}
-            </ul>
-          )}
+
         </section>
       )}
 
       {outils.length === 0 ? (
+        /**
+         * 🔴 UN ÉTAT VIDE QUI DÉSIGNE UN AUTRE ÉCRAN PENDANT QUE LE GESTE EST JUSTE AU-DESSUS (2026-09-18).
+         * Il disait « Ajoutez-en un depuis l'onglet Outils d'un agent » : Julien l'a suivi, n'a rien trouvé
+         * là-bas, et a conclu qu'il n'existait AUCUN endroit où nommer et décrire son outil. Le formulaire
+         * était à deux centimètres, derrière un lien discret. Un état vide est une consigne, pas un constat :
+         * il doit nommer le geste de CET écran.
+         */
         <p className="text-sm text-ink-500" data-testid="bibliotheque-vide">
-          {t('Aucun outil déclaré. Ajoutez-en un depuis l’onglet Outils d’un agent.',
-            'No tools declared yet. Add one from an agent’s Tools tab.')}
+          {isAdmin
+            ? t('Aucun outil exposé pour l’instant. Choisissez un appel ci-dessus, puis dites à l’agent de Meta quand s’en servir.',
+              'No tool exposed yet. Pick a call above, then tell Meta’s agent when to use it.')
+            : t('Aucun outil pour l’instant. Un administrateur peut en ajouter un depuis cet écran.',
+              'No tools yet. An administrator can add one from this screen.')}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -317,18 +357,24 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
 /**
  * CRÉER UN OUTIL POUR L'AGENT DE META, sans agent IA.
  *
+ * 🔴 ON CHOISIT L'APPEL D'ABORD, LES DÉTAILS APPARAISSENT ENSUITE (demande de Julien, 2026-09-18, et le
+ * sens comptait). Ce bloc était replié derrière un lien « + un outil », et dedans les quatre champs
+ * arrivaient AVANT le choix : on décrivait donc un outil avant de savoir lequel. Julien a cherché où mettre
+ * ces mots, ne les a pas trouvés, et a conclu qu'il n'existait aucun endroit pour ça. La liste des appels
+ * est désormais la première chose visible, et les champs ne s'ouvrent que sur celui qu'on a pris.
+ *
  * 🔴 AUCUNE QUESTION « POUSSE OU INTÈGRE » ICI, ET C'EST DÉLIBÉRÉ. Meta appelle le système du client EN
  * DIRECT et lit toute la réponse : ni la nature, ni les champs cochés ne s'y appliquent. Poser la question
  * donnerait un réglage sans effet, c'est-à-dire le motif « offert-et-inerte » que ce produit s'interdit.
  *
- * ⚠️ Les appels sont chargés À L'OUVERTURE du formulaire, pas au montage de l'écran : cette page sert
- * d'abord à voir qui utilise quoi, et la plupart des visites n'ouvrent jamais ce bloc.
+ * ⚠️ LES QUATRE TEXTES VIVENT ICI ET PAS SUR L'APPEL, et c'est un arbitrage de Julien du 2026-09-18 :
+ * `Tools > Connecteurs API` règle JUSTE la connexion technique. Les mots que le modèle lit pour décider
+ * quand appeler appartiennent à l'endroit où l'on décide de l'exposer.
  */
-function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => void }) {
+function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => Promise<void> | void }) {
   const t = useT();
-  const [ouvert, setOuvert] = useState(false);
   const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
-  const [requeteId, setRequeteId] = useState('');
+  const [choisi, setChoisi] = useState<RequeteApi | null>(null);
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -336,94 +382,128 @@ function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => vo
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  const ouvrir = async (): Promise<void> => {
-    setOuvert(true);
-    if (requetes !== null) return;
-    try {
-      const r = await listRequetes(tenantId);
-      setRequetes(r.requetes);
-      setRequeteId(r.requetes[0]?.id ?? '');
-    } catch { setRequetes([]); }
+  // ⚠️ AU MONTAGE, PLUS À L'OUVERTURE D'UN REPLI : la liste EST le point d'entrée de cet écran maintenant.
+  useEffect(() => {
+    let vivant = true;
+    listRequetes(tenantId)
+      // 🔴 LECTURE DÉFENSIVE, ET LE E2E L'A PROUVÉE NÉCESSAIRE. Une réponse sans le champ `requetes` passait
+      // la garde `!== null`, puis `requetes.length` levait : la page entière rendait « Application error »,
+      // c'est-à-dire que l'onglet Outils du MBA disparaissait en entier à cause d'une liste secondaire.
+      // Une liste qu'on ne sait pas lire doit être VIDE, jamais fatale.
+      .then((r) => { if (vivant) setRequetes(Array.isArray(r?.requetes) ? r.requetes : []); })
+      .catch(() => { if (vivant) setRequetes([]); });
+    return () => { vivant = false; };
+  }, [tenantId]);
+
+  /**
+   * ⚠️ ON PRÉREMPLIT CE QU'ON SAIT, ET RIEN DE PLUS. Le titre et le nom technique se dérivent du libellé de
+   * l'appel (`normaliserCodeSortie` est le miroir de la règle serveur, on ne réécrit pas un slug à la main).
+   * Les DEUX textes qui disent au modèle quand appeler et quand s'abstenir restent VIDES : les deviner
+   * fabriquerait une consigne que personne n'a écrite, sur laquelle le modèle agirait pourtant.
+   */
+  const choisir = (r: RequeteApi): void => {
+    setErreur(null);
+    setChoisi(r);
+    setTitle(r.label);
+    setName(normaliserCodeSortie(r.label));
+    setDescription('');
+    setNePasUtiliser('');
   };
 
   const manque: string | null =
-    requeteId === '' ? t('Choisissez un appel.', 'Pick a call.')
-      : !/^[a-z0-9_]{1,64}$/.test(name) ? t('Un nom technique en minuscules, chiffres et tirets bas.', 'A technical name in lowercase, digits and underscores.')
-        : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
-          : description.trim() === '' ? t('Dites à quoi ça sert.', 'Say what it does.')
-            : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
-              : busy ? t('Enregistrement en cours…', 'Saving…')
-                : null;
-
-  if (!ouvert) {
-    return (
-      <button type="button" data-testid="outil-mba-ouvrir" onClick={() => { void ouvrir(); }}
-        className="self-start text-sm text-brand-600 hover:underline">
-        {t('+ un outil pour l’agent de Meta', '+ a tool for Meta’s agent')}
-      </button>
-    );
-  }
+    !/^[a-z0-9_]{1,64}$/.test(name) ? t('Un nom technique en minuscules, chiffres et tirets bas.', 'A technical name in lowercase, digits and underscores.')
+      : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
+        : description.trim() === '' ? t('Dites quand l’appeler.', 'Say when to call it.')
+          : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
+            : busy ? t('Envoi en cours…', 'Sending…')
+              : null;
 
   return (
-    <section className="flex flex-col gap-2 rounded-2xl border border-ink-200 p-4" data-testid="outil-mba-form">
+    <section className="flex flex-col gap-3 rounded-2xl border border-ink-200 p-4" data-testid="outil-mba-form">
       <p className="text-sm font-medium text-ink-800">
-        {t('Un outil pour l’agent de Meta', 'A tool for Meta’s agent')}
+        {t('Ajouter un outil pour l’agent de Meta', 'Add a tool for Meta’s agent')}
       </p>
       <p className="text-xs text-ink-500">
-        {t('Meta appelle votre système en direct : il n’y a rien à choisir sur ce qu’il lit en retour, il lit toute la réponse.',
-          'Meta calls your system directly: there is nothing to pick about what it reads back, it reads the whole response.')}
+        {t('Choisissez l’appel à exposer, puis dites à l’agent de Meta quand s’en servir.',
+          'Pick the call to expose, then tell Meta’s agent when to use it.')}
       </p>
       {erreur !== null && <p className="text-xs text-coral" data-testid="outil-mba-erreur">{erreur}</p>}
-      <label className="text-xs text-ink-600">
-        {t('Quel appel ?', 'Which call?')}
-        <select className={`${inputCls} mt-1`} data-testid="outil-mba-requete" value={requeteId} onChange={(e) => setRequeteId(e.target.value)}>
-          {(requetes ?? []).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-        </select>
-      </label>
+
       {requetes !== null && requetes.length === 0 && (
         <p className="text-xs text-ink-500" data-testid="outil-mba-sans-appel">
           {t('Aucun appel déclaré : mettez-en un au point dans Tools > Connecteurs API.',
             'No call declared yet: set one up in Tools > API connectors.')}
         </p>
       )}
-      <label className="text-xs text-ink-600">
-        {t('Nom technique (vu par l’agent de Meta)', 'Technical name (seen by Meta’s agent)')}
-        <input className={`${inputCls} mt-1`} data-testid="outil-mba-nom" value={name} onChange={(e) => setName(e.target.value)} placeholder="poser_etiquette" />
-      </label>
-      <label className="text-xs text-ink-600">
-        {t('Titre lisible', 'Readable title')}
-        <input className={`${inputCls} mt-1`} data-testid="outil-mba-titre" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label className="text-xs text-ink-600">
-        {t('À quoi ça sert', 'What it does')}
-        <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-mba-description" value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <label className="text-xs text-ink-600">
-        {t('Quand NE PAS l’appeler', 'When NOT to call it')}
-        <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-mba-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button" data-testid="outil-mba-creer" disabled={manque !== null} title={manque ?? ''}
-          className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-          onClick={() => {
-            setBusy(true);
-            setErreur(null);
-            creerOutilPourMba(tenantId, { requeteId, name, title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim() })
-              .then(() => { setOuvert(false); setName(''); setTitle(''); setDescription(''); setNePasUtiliser(''); onCree(); })
-              // 🔴 LE FORMULAIRE NE SE FERME QUE SUR UN SUCCÈS : le refermer sur un refus perdrait la saisie,
-              // défaut payé deux fois le 2026-09-15 sur les deux autres écrans de ce chantier.
-              .catch((err: unknown) => { setErreur(err instanceof Error ? err.message : t('Création impossible', 'Creation failed')); })
-              .finally(() => { setBusy(false); });
-          }}
-        >
-          {t('Créer et exposer à Meta', 'Create and expose to Meta')}
-        </button>
-        {manque !== null && <span className="text-[11px] text-ink-500" data-testid="outil-mba-manque">{manque}</span>}
-        <button type="button" onClick={() => setOuvert(false)} className="text-xs text-ink-500 hover:underline">
-          {t('Annuler', 'Cancel')}
-        </button>
-      </div>
+
+      {requetes !== null && requetes.length > 0 && (
+        <ul className="flex flex-col gap-1" data-testid="outil-mba-appels">
+          {requetes.map((r) => (
+            <li key={r.id}
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 ${choisi?.id === r.id ? 'border-brand-400 bg-brand-50' : 'border-ink-200'}`}>
+              <span className="flex flex-wrap items-baseline gap-2">
+                <span className="text-sm text-ink-800">{r.label}</span>
+                <code className="text-[11px] text-ink-500">{r.methode} {r.chemin}</code>
+              </span>
+              <button type="button" data-testid={`outil-mba-choisir-${r.id}`} onClick={() => choisir(r)}
+                className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+                {choisi?.id === r.id ? t('Choisi', 'Picked') : t('Choisir', 'Pick')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {choisi !== null && (
+        <div className="flex flex-col gap-2 border-t border-ink-200 pt-3" data-testid="outil-mba-details">
+          <p className="text-xs text-ink-500">
+            {t('Meta appelle votre système en direct : il n’y a rien à choisir sur ce qu’il lit en retour, il lit toute la réponse.',
+              'Meta calls your system directly: there is nothing to pick about what it reads back, it reads the whole response.')}
+          </p>
+          <label className="text-xs text-ink-600">
+            {t('Nom technique (vu par l’agent de Meta)', 'Technical name (seen by Meta’s agent)')}
+            <input className={`${inputCls} mt-1`} data-testid="outil-mba-nom" value={name} onChange={(e) => setName(e.target.value)} placeholder="poser_etiquette" />
+          </label>
+          <label className="text-xs text-ink-600">
+            {t('Titre lisible', 'Readable title')}
+            <input className={`${inputCls} mt-1`} data-testid="outil-mba-titre" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <label className="text-xs text-ink-600">
+            {t('Quand l’appeler', 'When to call it')}
+            <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-mba-description" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+          <label className="text-xs text-ink-600">
+            {t('Quand NE PAS l’appeler', 'When NOT to call it')}
+            <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-mba-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button" data-testid="outil-mba-creer" disabled={manque !== null} title={manque ?? ''}
+              className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+              onClick={() => {
+                setBusy(true);
+                setErreur(null);
+                creerOutilPourMba(tenantId, { requeteId: choisi.id, name, title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim() })
+                  // 🔴 SOUMETTRE ENVOIE CHEZ META DANS LA FOULÉE (demande de Julien, 2026-09-18). Le geste
+                  // d'avant s'arrêtait à notre base alors que le bouton disait « exposer à Meta » : il
+                  // mentait sur ce qu'il faisait, et il fallait ensuite comprendre deux autres boutons.
+                  .then(() => onCree())
+                  // Le formulaire ne se referme que sur un succès : le refermer sur un refus perdrait la
+                  // saisie, défaut payé deux fois le 2026-09-15 sur les deux autres écrans de ce chantier.
+                  .then(() => { setChoisi(null); setName(''); setTitle(''); setDescription(''); setNePasUtiliser(''); })
+                  .catch((err: unknown) => { setErreur(err instanceof Error ? err.message : t('Création impossible', 'Creation failed')); })
+                  .finally(() => { setBusy(false); });
+              }}
+            >
+              {t('Soumettre', 'Submit')}
+            </button>
+            {manque !== null && <span className="text-[11px] text-ink-500" data-testid="outil-mba-manque">{manque}</span>}
+            <button type="button" onClick={() => setChoisi(null)} className="text-xs text-ink-500 hover:underline">
+              {t('Annuler', 'Cancel')}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

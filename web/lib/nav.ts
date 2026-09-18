@@ -320,15 +320,18 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'tools', label: t('Tools', 'Tools'), d: icons.tools, children: [
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
-      // 🔴 « Outils » AU NIVEAU DE L'ESPACE, à côté des connecteurs, depuis la migration 0127. Un connecteur
-      // est le SYSTÈME, un outil est l'ACTION qu'on y fait : les deux appartiennent au client, pas à un
-      // agent. C'est ici qu'on voit qu'un outil sert à plusieurs agents, ce qu'aucun écran ne disait.
+      // 🔴 « OUTILS » N'EST PLUS ICI (demande de Julien, 2026-09-18). Il y était depuis 0127, quand une
+      // DÉFINITION appartenait à l'espace. Depuis 0157 une ACTION appartient à son agent, et depuis 0159 la
+      // base INTERDIT qu'une action vive au niveau de l'espace : cette entrée ne pouvait donc plus montrer
+      // que des outils de connecteur, sur un écran dont le titre parlait encore de l'espace entier. Les
+      // outils vivent là où on s'en sert, dans `MBA > paramètres > Outils` et dans l'onglet Outils d'un
+      // agent. ⚠️ L'ADRESSE `/outils` RESTE SERVIE : des liens sont déjà partagés, et une entrée de menu
+      // qu'on retire n'est pas une page qu'on casse.
       // 🔴 « CONNECTEURS MCP », ET PAS « SERVEURS MCP ». `Developers > Serveur MCP` existe deja et decrit
       // le sens INVERSE (ce que NOUS exposons). Deux entrees a un S pres, pour deux choses opposees,
       // seraient indistinguables a la lecture. « Connecteurs » dit la meme chose que « Connecteurs API »
       // juste au-dessus : on va chercher ailleurs.
       { key: 'connecteurs-mcp', href: '/connecteurs-mcp', label: t('Connecteurs MCP', 'MCP connectors') },
-      { key: 'outils-espace', href: '/outils', label: t('Outils', 'Tools') },
     ] },
   ];
   // Second tableau, rendu dans son propre conteneur COLLÉ EN BAS de la barre. La nav n'a aucun mécanisme de
