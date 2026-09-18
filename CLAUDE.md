@@ -79,19 +79,31 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0152**, le 2026-09-16 (les quatre colonnes MCP d'`agent_tools` plus la garde de
-`kind`). **Prochaine libre = 0156.**
+**Dernière appliquée : 0155**, le 2026-09-18 (`analyse_jour`, les agrégats journaliers qui gardent la
+mémoire de ce que la purge efface, plus `tenant_settings.conversation_retention_days`). Juste avant elle,
+**0154** (la grille de prix par espace : marge sur le tarif Meta, prix du message de service et sa
+franchise, sa date d'effet, les deux prix RCS). **Prochaine libre = 0156**, et **`0153` reste RÉSERVÉ** au
+CHECK strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier
+n'existe pas, et le runner n'exige aucune continuité.
 
-🔴 **ATTENTION, « DERNIÈRE APPLIQUÉE » ET « PROCHAINE LIBRE » NE SE DÉDUISENT PLUS L'UNE DE L'AUTRE, et
-c'est le seul moment où ce fichier peut vous tromper sans avoir dérivé.** Deux migrations sont ÉCRITES dans
-`db/migrations/` et PAS ENCORE APPLIQUÉES : **`0154_grille_prix_espace.sql`** (la grille de prix par espace)
-et **`0155_analyse_jour.sql`** (les agrégats journaliers et la rétention par espace). Les deux sont
-BLOQUANTES, donc elles passent avant le déploiement du code qui les lit. **`0153` reste RÉSERVÉ** au CHECK
-strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier n'existe
-pas encore, et le runner ne demande aucune continuité. Prendre 0153 « parce qu'il est libre » écraserait
-cette réservation ; prendre 0154 ou 0155 écraserait un fichier existant. Relevé en revue finale le
-2026-09-17, sur une ligne qui se déclare seule source du compteur et prévient qu'elle a déjà dérivé neuf fois.
+🔴 **RELUES EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
+`schema_migrations` rend bien 0155 puis 0154 en tête ; les six colonnes de prix existent, `NOT NULL` avec
+leurs défauts ; `prix_marge_template` est un **`numeric(6,2)`** (précision et échelle relues dans
+`information_schema`, pas déduites) ; les trois CHECK sont posés avec leur définition exacte ;
+`analyse_jour` a sa clé primaire `(tenant_id, jour)` et un `on delete cascade` (`confdeltype = 'c'`) ; et
+`conversation_retention_days` est nullable SANS défaut.
 
+⚠️ **AUCUN COMPORTEMENT N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : zéro espace porte un réglage neuf
+(marge à 100 partout, rétention non réglée), donc chacun lit le même chiffre qu'hier. Et **zéro
+conversation** n'a plus de 90 jours, donc la purge nouvellement abaissée n'efface rien aujourd'hui : la
+seule opération irréversible du dépôt a été allumée au moment où elle ne peut rien détruire.
+
+🔴 **LE BALAYAGE D'AGRÉGATS A TOURNÉ AVANT LA PURGE, ET ON L'A VU.** Au démarrage du worker :
+`agregats-analyse: 6 journee(s) ecrite(s)`. Vérifié ensuite en base par le vrai code : sur les deux espaces,
+la lecture directe et la table d'agrégats rendent des journées **IDENTIQUES**. C'est la propriété qui
+autorise à effacer, et elle est constatée en production, pas seulement en CI.
+
+Avant elles : **0152**, le 2026-09-16 (les quatre colonnes MCP d'`agent_tools` plus la garde de `kind`).
 Relue en base juste après `migrate`, pas en écrivant cette ligne :
 `schema_migrations` rend bien `0152_outils_mcp.sql` en tête, les cinq colonnes sont nullables SANS défaut,
 `pg_indexes` n'en porte AUCUN, la clé étrangère composite existe en `confmatchtype = 's'`, et **zéro ligne

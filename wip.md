@@ -12,7 +12,7 @@
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | 🔴 **EN RETARD SUR `origin/main` depuis le lot Performance Lab** (voir la section dédiée : deux migrations à jouer AVANT le code). Le dernier déploiement, celui des connecteurs MCP, date du 2026-09-17 en fin de journée et n'avait aucun écart. Le SHA n'est pas recopié ici (`git log` fait foi, ce fichier a menti six fois). Vérifié DANS le conteneur, pas déduit du push : `grep` du correctif dans `mba-api`. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-18 au matin** avec le chantier Performance Lab. Le SHA n'est pas recopié ici (`git log` fait foi, cette ligne a menti six fois). Séquence tenue : build de l'image, vérification que 0154 et 0155 y sont, `migrate`, relecture en base point par point, `up -d --build` des DEUX images, conteneurs sains PUIS rechargement de NPM, chargement des 9 fiches d'aide, contrôle public vert sur les six chemins. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
@@ -27,17 +27,17 @@ urgence/satisfaction à droite, l'écran d'analyse en UNE LIGNE PAR JOUR, et « 
 Spec : `docs/superpowers/specs/2026-09-17-performance-lab-couts-et-analyse-design.md`.
 Plan : `docs/superpowers/plans/2026-09-17-performance-lab-couts.md` (8 tâches).
 
-🔴 **DEUX MIGRATIONS SONT ÉCRITES ET NON APPLIQUÉES : 0154 ET 0155.** Le compteur de `CLAUDE.md` annonce
-donc toujours 0152, et c'est JUSTE : il dit ce que la BASE porte, pas ce que le dépôt contient. Les deux
-AJOUTENT des colonnes que le code écrit, donc elles passent **AVANT** le déploiement, et les migrations
-vivant dans l'image, la séquence commence par `compose build mba-api`. Le compteur ne se met à jour
-qu'après `migrate`, relu dans `schema_migrations`.
+✅ **0154 ET 0155 SONT APPLIQUÉES**, le 2026-09-18. Le compteur de [CLAUDE.md](CLAUDE.md) fait foi et porte
+le détail de ce qui a été relu en base ; il n'est pas recopié ici.
 
-- **0154** (`db/migrations/0154_grille_prix_espace.sql`) : les six colonnes de la grille de prix sur
-  `tenant_settings` (marge template, prix du message de service et sa franchise mensuelle, sa date
-  d'effet au 2026-10-01, les deux prix RCS) plus deux CHECK.
-- **0155** (`db/migrations/0155_analyse_jour.sql`) : la table `analyse_jour` (sommes et comptes, jamais
-  de moyenne stockée) et `tenant_settings.conversation_retention_days`.
+🔴 **LE BALAYAGE D'AGRÉGATS A TOURNÉ AVANT LA PURGE, ET ON L'A VU PLUTÔT QUE SUPPOSÉ.** Au démarrage du
+worker : `agregats-analyse: 6 journee(s) ecrite(s)`. Puis vérifié en base par le vrai code : sur les deux
+espaces, la lecture directe et la table d'agrégats rendent des journées **IDENTIQUES**. C'est la propriété
+qui autorise à effacer.
+
+⚠️ **ET LA PURGE N'A RIEN EFFACÉ, PARCE QU'ELLE NE LE POUVAIT PAS** : zéro conversation n'a plus de 90
+jours (la plus ancienne date du 2026-08-18). La seule opération irréversible du dépôt a été allumée au
+moment précis où elle ne peut rien détruire, ce qui était le bon moment pour l'allumer et pas une chance.
 
 🔴 **LA RÉTENTION PASSE DE 365 À 90 JOURS, ET L'ORDRE DES DEUX BALAYAGES EST LA SEULE CHOSE
 IRRATTRAPABLE DU LOT.** Supprimer une conversation supprime son analyse EN CASCADE : si la purge part
