@@ -136,6 +136,39 @@ test.describe('Agents IA : les outils', () => {
     expect(appels.filter((a) => /activation$/.test(a.url))).toHaveLength(0);
   });
 
+  /**
+   * 🔴 LA DÉFINITION APPARTIENT À L'ESPACE, ET CET ÉCRAN L'IGNORAIT (2026-09-18).
+   *
+   * Le nom d'un outil est unique par ESPACE (migrations 0127 et 0128), mais « ce qu'il reste à donner » se
+   * calculait contre les outils de CET AGENT. Un outil maison déjà déclaré pour le Meta Business Agent était
+   * donc proposé à la CRÉATION, et le clic se faisait refuser en 409 « un outil de cet espace porte déjà ce
+   * nom ». Julien, 2026-09-18, bloqué dessus : « ça veut dire quoi ? je dois pouvoir updater cet outil ».
+   */
+  test('🔴 un outil DÉJÀ déclaré dans l espace se BRANCHE, il ne se recrée pas', async ({ page }) => {
+    const appels: Appel[] = [];
+    const deja = {
+      id: 'o7', handler: 'poser_tag', name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
+      description: 'Marque le contact.', origin: 'mba', risk: 'write', sourceId: null,
+      mcpNonActivable: null, mcpIndisponibleLe: null,
+      // Le consommateur sans libellé d'agent EST le Meta Business Agent : c'est le cas qui surprenait.
+      consommateurs: [{ cle: 'mba:1234840649713976', actif: true, agentId: null, agentLabel: null }],
+    };
+    await mock(page, appels, [], [deja]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+
+    // L'écran DIT que la définition est partagée, au lieu de laisser le client le découvrir par une erreur.
+    await expect(page.getByTestId('outil-deja-poser_tag')).toContainText('l’agent de Meta');
+    await expect(page.getByTestId('outil-ajouter-poser_tag')).toHaveCount(0);
+
+    await page.getByTestId('outil-brancher-poser_tag').click();
+    await expect.poll(() => appels.some((a) => /o7\/rattachement$/.test(a.url)
+      && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
+    // 🔴 AUCUNE création : c'est elle qui rendait 409, et c'est tout le sujet de ce test.
+    expect(appels.filter((a) => a.method === 'POST')).toHaveLength(0);
+    // ⚠️ Et brancher n'ACTIVE pas : exposer l'outil au modèle reste un second geste humain.
+    expect(appels.filter((a) => /activation$/.test(a.url))).toHaveLength(0);
+  });
+
   test('l activation est un aller-retour, et le geste porte sur cet outil', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, [TAG]);

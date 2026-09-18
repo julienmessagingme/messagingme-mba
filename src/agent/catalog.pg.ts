@@ -456,12 +456,12 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    */
   async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
     const res = await this.pool.query<{
-      id: string; name: string; title: string; description: string;
+      id: string; handler: string | null; name: string; title: string; description: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
       mcp_non_activable: string | null; mcp_indisponible_le: Date | null;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
-      `select t.id, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
+      `select t.id, t.binding->>'handler' as handler, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
               t.mcp_non_activable, t.mcp_indisponible_le,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
@@ -476,7 +476,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       [tenantId],
     );
     return res.rows.map((r) => ({
-      id: r.id, name: r.name, title: r.title, description: r.description,
+      id: r.id, handler: r.handler, name: r.name, title: r.title, description: r.description,
       origin: r.origin, risk: r.risk, sourceId: r.source_id,
       mcpNonActivable: r.mcp_non_activable,
       mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,

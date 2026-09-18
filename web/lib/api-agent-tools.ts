@@ -161,6 +161,10 @@ export async function retirerOutil(tenantId: string, agentId: string, outilId: s
 /** Une DÉFINITION de l'espace, vue de la bibliothèque : ce qu'elle est, et QUI s'en sert. */
 export interface OutilBibliotheque {
   id: string;
+  /** Le handler d'un outil MAISON, `null` pour un connecteur. Miroir du contrat serveur
+   *  (`src/agent/catalog.ts`) : c'est lui qui dit si l'espace DÉFINIT déjà cet outil, donc s'il faut le
+   *  BRANCHER au lieu d'essayer de le créer. */
+  handler: string | null;
   name: string;
   title: string;
   description: string;

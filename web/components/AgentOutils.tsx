@@ -87,6 +87,22 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
   const poses = new Set((vue?.outils ?? []).map((o) => String(o.binding.handler ?? '')));
   const restants = (vue?.catalogue ?? []).filter((m) => !poses.has(m.handler));
   /**
+   * 🔴 LA DÉFINITION APPARTIENT À L'ESPACE, PAS À L'AGENT, ET CET ÉCRAN L'IGNORAIT (2026-09-18).
+   *
+   * `poses` ne voit que les outils de CET agent (`listOutils` fait une jointure interne sur les
+   * consommateurs), alors que le nom d'un outil est unique par ESPACE depuis les migrations 0127 et 0128.
+   * Un outil maison déjà déclaré dans l'espace pour un autre consommateur, typiquement le Meta Business
+   * Agent, était donc proposé à la CRÉATION, et le clic se faisait refuser en 409 « un outil de cet espace
+   * porte déjà ce nom ». Julien, 2026-09-18 : « ça veut dire quoi ? je dois pouvoir updater cet outil ».
+   *
+   * Le bouton devient donc BRANCHER quand l'espace porte déjà la définition, et le libellé dit qui s'en
+   * sert : c'est la seule réponse honnête à « les outils sont poreux entre le MBA et l'agent IA ? ».
+   * Oui, ils le sont, délibérément, et jusqu'ici l'écran ne le disait nulle part.
+   */
+  const definiesDeLEspace = new Map(
+    bibliotheque.filter((o) => o.handler !== null).map((o) => [o.handler as string, o]),
+  );
+  /**
    * Les outils MCP de l'ESPACE que cet agent n'a pas encore. Le jumeau exact de `restants` pour les outils
    * maison, et de « + donner cet appel à l'agent » pour les connecteurs API.
    *
@@ -133,24 +149,49 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       {restants.length > 0 && (
         <div className={`${cardCls} flex flex-col gap-3`}>
           <p className="text-sm font-medium text-ink-700">{t('Donner un outil de plus', 'Give one more tool')}</p>
-          {restants.map((m) => (
-            <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink-800">
-                  <Bilingue texte={m.titre} /> <Risque risk={m.risk} />
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-ink-500"><Bilingue texte={m.description} /></p>
+          {restants.map((m) => {
+            const deja = definiesDeLEspace.get(m.handler);
+            // Qui s'en sert déjà. Un consommateur sans libellé d'agent est le Meta Business Agent : c'est
+            // exactement le cas qui surprenait, autant le nommer.
+            const usagers = (deja?.consommateurs ?? [])
+              .map((c) => c.agentLabel ?? t('l’agent de Meta', 'Meta’s agent'));
+            return (
+              <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-ink-800">
+                    <Bilingue texte={m.titre} /> <Risque risk={m.risk} />
+                  </p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-ink-500"><Bilingue texte={m.description} /></p>
+                  {deja && (
+                    <p data-testid={`outil-deja-${m.handler}`} className="mt-1 text-xs text-ink-600">
+                      {usagers.length > 0
+                        ? t(
+                          `Déjà déclaré dans votre espace, utilisé par : ${usagers.join(', ')}. Le brancher ici partagera la MÊME définition.`,
+                          `Already declared in your workspace, used by: ${usagers.join(', ')}. Connecting it here shares the SAME definition.`,
+                        )
+                        : t(
+                          'Déjà déclaré dans votre espace. Le brancher ici partagera la MÊME définition.',
+                          'Already declared in your workspace. Connecting it here shares the SAME definition.',
+                        )}
+                    </p>
+                  )}
+                </div>
+                <button
+                  data-testid={deja ? `outil-brancher-${m.handler}` : `outil-ajouter-${m.handler}`}
+                  disabled={busy}
+                  onClick={() => void agir(async () => {
+                    // 🔴 BRANCHER, jamais recréer : le nom est pris dans l'espace, et `ajouterOutil` se ferait
+                    // refuser en 409. Brancher ne l'ACTIVE pas pour autant, c'est un second geste du client.
+                    if (deja) await rattacherOutil(tenantId, agentId, deja.id, true);
+                    else await ajouterOutil(tenantId, agentId, m.handler);
+                  })}
+                  className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+                >
+                  {deja ? t('Brancher', 'Connect') : t('Ajouter', 'Add')}
+                </button>
               </div>
-              <button
-                data-testid={`outil-ajouter-${m.handler}`}
-                disabled={busy}
-                onClick={() => void agir(async () => { await ajouterOutil(tenantId, agentId, m.handler); })}
-                className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
-              >
-                {t('Ajouter', 'Add')}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

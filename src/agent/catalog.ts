@@ -213,6 +213,21 @@ export class NomOutilDejaPris extends Error {
  */
 export interface OutilBibliotheque {
   id: string;
+  /**
+   * 🔴 LE HANDLER D'UN OUTIL MAISON, ET IL EST ICI PARCE QUE L'ÉCRAN D'UN AGENT EN A BESOIN (2026-09-18).
+   *
+   * La DÉFINITION appartient à l'ESPACE depuis la migration 0127, et son nom y est UNIQUE (0128). Mais
+   * l'onglet Outils d'un agent calculait « ce qu'il reste à donner » contre les outils de CET AGENT : un
+   * outil maison déjà déclaré dans l'espace pour un autre consommateur (le Meta Business Agent, par
+   * exemple) y était donc proposé à la CRÉATION, et l'ajout se faisait refuser en 409 « un outil de cet
+   * espace porte déjà ce nom ». Un cul-de-sac : le client voyait un bouton qui ne pouvait pas marcher, et
+   * aucun chemin ne lui proposait de BRANCHER la définition existante.
+   *
+   * ⚠️ `null` pour un outil de connecteur (API ou MCP), qui n'a pas de comportement maison : le handler est
+   * ce que le résolveur maison lit dans `binding`, et lui seul. REQUIS plutôt qu'optionnel, pour qu'un
+   * câblage qui l'oublierait ne compile pas.
+   */
+  handler: string | null;
   name: string;
   title: string;
   description: string;
