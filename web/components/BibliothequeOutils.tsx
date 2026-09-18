@@ -192,11 +192,12 @@ Continue?`,
             niveau de l'espace : il ne reste ici que des outils bâtis sur un connecteur. Le titre promettait
             donc un inventaire que cet écran ne peut plus contenir, et le sous-titre annonçait un partage
             entre agents qui n'est vrai que de cette moitié-là. */}
+        {/* ⚠️ PAS DE SOUS-TITRE ICI, ET C'EST DÉLIBÉRÉ (Julien, 2026-09-18). Il y en avait un qui expliquait
+            le MODÈLE DE DONNÉES (« un outil se déclare une fois ici, puis chaque agent choisit de s'en
+            servir ») : ça ne dit pas quoi faire, ça décrit notre schéma à quelqu'un qui veut exposer un
+            appel. Une consigne utile vit à côté du geste, et celle de cet écran est dans le bloc en dessous.
+            N'en remettez pas un. */}
         <h1 className="text-lg font-semibold text-ink-900">{t('Outils de l’agent de Meta', 'Meta’s agent tools')}</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          {t('Un appel réglé dans Tools > Connecteurs API devient un outil ici, avec les mots que l’agent de Meta lira pour décider quand l’appeler. Il faut ensuite le publier chez Meta.',
-            'A call set up in Tools > API connectors becomes a tool here, with the words Meta’s agent reads to decide when to call it. You then publish it to Meta.')}
-        </p>
       </header>
 
       {erreur && <p className="text-xs text-coral" data-testid="bibliotheque-erreur">{erreur}</p>}
