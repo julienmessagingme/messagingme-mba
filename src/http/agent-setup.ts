@@ -512,7 +512,89 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      */
     const ouvertApres = prochainPoint({ poses, reponses, bascules: listeBascules }, inventaireDe(ctx.etat));
     const relance = ouvertApres && !poseUneQuestion(propose.data.message) ? ouvertApres : null;
-    const message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
+    const posesApres = relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses;
+
+    /**
+     * L'état de ce tour SANS son message : il sert à savoir où en est la couverture, et il faut le savoir
+     * AVANT de connaître le message, puisque c'est la couverture qui décide s'il y a un tour de synthèse.
+     */
+    const etatApres: EntretienComplet = {
+      messages: filComplet, auteurs: auteursComplets, reponses, bascules: listeBascules, poses: posesApres,
+    };
+    const suivi = avancement(etatApres, ctx.etat);
+    const enEntretien = suivi.manquants.length > 0;
+
+    let propositionFinale = propose.data;
+    let message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
+    let tokensIn = reponse.usage.tokensIn;
+    let tokensOut = reponse.usage.tokensOut;
+
+    /**
+     * 🔴 LE TOUR DE SYNTHÈSE : UN SECOND APPEL, ET IL N'A LIEU QU'UNE FOIS PAR ENTRETIEN (2026-09-18).
+     *
+     * Le mandat promettait un « temps 2 » où le modèle écrit les champs une fois tous les points couverts.
+     * Ce tour n'existait pas. La consigne du tour est arrêtée AVANT de lire le client, donc au tour qui
+     * répond au dernier point elle dit encore « LE POINT OUVERT : ton » : le modèle ne parle que du ton, et
+     * c'est pourtant CE tour-là dont le diff est enfin montré. Au tour d'après, la consigne est déjà passée
+     * en ÉVOLUTION, qui interdit toute proposition non sollicitée. Résultat mesuré sur l'entretien de Julien
+     * du 2026-09-18 : seul le ton avait atterri, le nom, l'objectif et la personnalité étaient restés vides.
+     *
+     * 🔴 LA CONDITION EST UNE TRANSITION, PAS UN ÉTAT : « l'ordre du jour vient de se fermer », donc il
+     * manquait des points AVANT ce tour et il n'en manque plus. Sur un état seul, chaque message envoyé
+     * après la fin de l'entretien relancerait une synthèse, et l'assistant reproposerait sans fin des champs
+     * que personne ne lui a demandé de rouvrir.
+     *
+     * ⚠️ IL NE REMPLACE PAS LE PREMIER APPEL, il le COMPLÈTE : c'est le premier qui a extrait les réponses
+     * ayant fermé l'ordre du jour, et elles sont conservées telles quelles. On ne garde du second que ce
+     * qu'il est seul à savoir faire, le message et les CHAMPS ; ses `reponses` et ses `bascules` sont
+     * ignorées, l'ordre du jour étant déjà clos et une seconde extraction ne pouvant que le paraphraser.
+     *
+     * ⚠️ TOUT ÉCHEC RETOMBE SUR LA PROPOSITION DU PREMIER APPEL. Une panne de fournisseur, un plafond
+     * atteint entre les deux appels ou une réponse illisible ne doivent pas faire perdre un tour que le
+     * client a déjà payé de dix questions : il verra un diff pauvre, jamais une erreur.
+     */
+    if (!enEntretien && avancement(avant, ctx.etat).manquants.length > 0) {
+      try {
+        if (await budgetOuvert(deps, ctx.tenant)) {
+          const seconde = await deps.completer({
+            tenantId: ctx.tenant,
+            modele: deps.modele,
+            // `historique` se termine sur le message du CLIENT : la synthèse en accuse elle-même réception,
+            // et y glisser le message du premier appel ferait dire deux fois la même chose.
+            messages: construireMessages(ctx.etat, historique, etatApres, { synthese: true }),
+            outils: [{
+              name: OUTIL_PROPOSER,
+              description: 'Rends ta réponse et, si tu en as une, ta proposition de réglage.',
+              parameters: SCHEMA_PROPOSITION,
+            }],
+            toolChoice: OUTIL_PROPOSER,
+            signal: AbortSignal.timeout(DELAI_MS),
+          });
+          await noterDepense(deps, ctx.tenant, seconde.usage.coutDollars);
+          tokensIn += seconde.usage.tokensIn;
+          tokensOut += seconde.usage.tokensOut;
+          const appelSynthese = seconde.appelsOutils.find((a) => a.nom === OUTIL_PROPOSER);
+          if (appelSynthese) {
+            const proposeSynthese = propositionSchema.safeParse(
+              assainirProposition(secureJsonParse(appelSynthese.argumentsJson)),
+            );
+            if (proposeSynthese.success) {
+              propositionFinale = proposeSynthese.data;
+              message = proposeSynthese.data.message;
+            } else {
+              req.log.warn({
+                tenantId: ctx.tenant, agentId: ctx.agentId,
+                champs: proposeSynthese.error.issues.map((i) => `${i.path.join('.') || '(racine)'}:${i.code}`),
+              }, 'tour de synthèse de l’assistant de construction refusé par le schéma');
+            }
+          }
+        }
+      } catch (err) {
+        req.log.warn({
+          tenantId: ctx.tenant, agentId: ctx.agentId, err: err instanceof Error ? err.message : 'inconnue',
+        }, 'tour de synthèse de l’assistant de construction en échec, on garde la proposition du tour');
+      }
+    }
 
     const apres: EntretienComplet = {
       // 🔴 `filComplet`, JAMAIS `historique` : voir la note plus haut. C'est la ligne qui décide si le fil
@@ -522,7 +604,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       auteurs: [...auteursComplets, null],
       reponses,
       bascules: listeBascules,
-      poses: relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses,
+      poses: posesApres,
     };
     await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);
 
@@ -537,18 +619,17 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * On ne jette pas la proposition, on ne la MONTRE pas : le tour suivant la reformulera avec ce qu'il aura
      * appris entre-temps, et rien de ce que le client n'a pas encore dit n'aura été présenté comme compris.
      */
-    const suivi = avancement(apres, ctx.etat);
-    const enEntretien = suivi.manquants.length > 0;
-
+    // ⚠️ `suivi` est celui de `etatApres`, calculé plus haut : la couverture ne lit que les réponses, les
+    // bascules et les points posés, jamais les messages, donc ajouter celui de l'assistant ne la change pas.
     return reply.code(200).send({
       message,
       couverture: suivi,
       proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] } : {
-        fiche: propose.data.fiche ?? {},
-        outils: propose.data.outils ?? [],
+        fiche: propositionFinale.fiche ?? {},
+        outils: propositionFinale.outils ?? [],
         // Les connecteurs proposés sont filtrés sur ceux qui EXISTENT : l'assistant n'en crée pas, et un nom
         // inventé ne doit pas atteindre l'application, qui tenterait un patch sur un outil inconnu.
-        connecteurs: (propose.data.connecteurs ?? []).filter((c) => (ctx.etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
+        connecteurs: (propositionFinale.connecteurs ?? []).filter((c) => (ctx.etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
         /**
          * 🔴 LE BRANCHEMENT EST FILTRÉ SUR LA BIBLIOTHÈQUE DE L'ESPACE, et c'est LE contrôle : le schéma ne
          * connaît pas le catalogue, donc il ne peut pas refuser un nom inventé. Julien, 2026-09-14 : « il
@@ -559,11 +640,11 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
          * pas, n'est pas une erreur mais ne doit produire AUCUN geste, sans quoi l'écran annoncerait une
          * modification qui n'en est pas une. Même règle que le diff, qui ne montre que ce qui change.
          */
-        outilsBranches: brancheables(ctx.etat.catalogue, propose.data.outilsBranches, false),
-        outilsDebranches: brancheables(ctx.etat.catalogue, propose.data.outilsDebranches, true),
+        outilsBranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsBranches, false),
+        outilsDebranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsDebranches, true),
       },
-      changements: enEntretien ? [] : differences(ctx.etat, propose.data),
-      usage: { tokensIn: reponse.usage.tokensIn, tokensOut: reponse.usage.tokensOut },
+      changements: enEntretien ? [] : differences(ctx.etat, propositionFinale),
+      usage: { tokensIn, tokensOut },
     });
   });
 }

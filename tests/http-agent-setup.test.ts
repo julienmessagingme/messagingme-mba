@@ -39,6 +39,18 @@ const toutesLesReponses = () => BASE.map((point) => ({ point, valeur: 'ce qu’i
 /** Un entretien DÉJÀ MENÉ : tous les points de base posés et répondus. */
 const ENTRETIEN_FINI: EntretienComplet = { messages: [], auteurs: [], poses: [...BASE], reponses: toutesLesReponses(), bascules: [] };
 
+/** Le DERNIER point de l'ordre du jour, tiré de la source : un code recopié ici dériverait le jour où
+ *  l'agenda change d'ordre, et le test se mettrait à exercer un tour quelconque. */
+const DERNIER = BASE[BASE.length - 1]!;
+
+/** L'entretien à UN point de la fin : tout est posé, tout est répondu SAUF le dernier. C'est l'état d'AVANT
+ *  le tour qui ferme l'ordre du jour, donc le seul qui doive déclencher une synthèse. */
+const ENTRETIEN_PRESQUE_FINI: EntretienComplet = {
+  messages: [], auteurs: [], poses: [...BASE],
+  reponses: toutesLesReponses().filter((r) => r.point !== DERNIER),
+  bascules: [],
+};
+
 class FakeEntretiens implements EntretienStore {
   constructor(private etat: EntretienComplet | null = null) {}
   readonly ecrits: EntretienComplet[] = [];
@@ -61,6 +73,9 @@ function reponse(argumentsJson: string, nom = OUTIL_PROPOSER): ReponseChat {
 
 function app(opts: {
   reponse?: ReponseChat | Error;
+  /** Les reponses du modele, dans l'ordre des appels. Le dernier element resert si on appelle encore.
+   *  Necessaire depuis le TOUR DE SYNTHESE (2026-09-18), qui fait DEUX appels dans le meme tour. */
+  suite?: Array<ReponseChat | Error>;
   sansModele?: boolean;
   sansClient?: boolean;
   sansEntretiens?: boolean;
@@ -70,6 +85,7 @@ function app(opts: {
   fiches?: Array<{ titre: string; corps: string }>;
 } = {}) {
   const cap = { appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }> };
+  let rang = 0;
   const entretiens = new FakeEntretiens(opts.entretien ?? null);
   const deps: AgentSetupRouteDeps = {
     etatCourant: async (_t, agentId) => (agentId === AG
@@ -93,6 +109,12 @@ function app(opts: {
     ...(opts.sansClient ? {} : {
       completer: async (i) => {
         cap.appels.push({ modele: i.modele, messages: i.messages, toolChoice: i.toolChoice });
+        if (opts.suite) {
+          const r = opts.suite[Math.min(rang, opts.suite.length - 1)]!;
+          rang += 1;
+          if (r instanceof Error) throw r;
+          return r;
+        }
         if (opts.reponse instanceof Error) throw opts.reponse;
         return opts.reponse ?? reponse(JSON.stringify({
           message: 'Je propose ceci.',
@@ -122,6 +144,94 @@ describe('conversation de construction', () => {
     expect(body.changements[0]).toMatchObject({ champ: 'fiche.objectif', avant: 'Aider.', apres: 'Cerner le besoin puis proposer un essai.' });
     // La sortie structurée est FORCÉE : sans ça le modèle répondrait en prose un jour sur deux.
     expect(cap.appels[0]!.toolChoice).toBe(OUTIL_PROPOSER);
+  });
+
+  /**
+   * 🔴 LE TOUR DE SYNTHÈSE (2026-09-18), ET CE QU'IL RÉPARE.
+   *
+   * Le mandat promettait un « temps 2 » où le modèle écrit les champs une fois tous les points couverts. Ce
+   * tour n'existait pas : la consigne est arrêtée AVANT de lire le client, donc au tour qui répond au
+   * DERNIER point elle parle encore de ce point-là, et c'est pourtant CE tour dont le diff est enfin montré.
+   * Le tour suivant, lui, est déjà passé en ÉVOLUTION, qui interdit toute proposition non sollicitée.
+   *
+   * Julien, 2026-09-18, après un entretien mené jusqu'au bout : le nom, l'objectif et la personnalité
+   * restés vides, le bandeau « ce qui manque » inchangé, et seul le ton (sujet du dernier tour) atterri.
+   */
+  it('🔴 le TOUR DE SYNTHÈSE écrit TOUT l’entretien quand le dernier point vient d’être couvert', async () => {
+    const { cap, srv, entretiens } = app({
+      entretien: ENTRETIEN_PRESQUE_FINI,
+      suite: [
+        // 1er appel : la consigne parlait encore du dernier point, le modèle ne propose donc que celui-là.
+        // C'est exactement ce que Julien a vu, et c'était tout ce que le diff montrait.
+        reponse(JSON.stringify({
+          message: 'Parfait.',
+          reponses: [{ point: DERNIER, valeur: 'tutoiement et phrases courtes' }],
+          fiche: { ton: 'Tutoiement, phrases courtes.' },
+        })),
+        // 2e appel : la synthèse, qui reprend TOUT ce que l'ordre du jour a recueilli.
+        reponse(JSON.stringify({
+          message: 'Voici votre agent.',
+          fiche: { nom: 'Marie Ganne', objectif: 'Qualifier les demandes.', ton: 'Tutoiement, phrases courtes.' },
+        })),
+      ],
+    });
+    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.statusCode).toBe(200);
+
+    expect(cap.appels).toHaveLength(2);
+    /**
+     * Le second appel porte la CONSIGNE de synthèse, et l'assertion vise une phrase qu'elle seule contient.
+     * ⚠️ Chercher « TOUR DE SYNTHÈSE » ne prouvait RIEN : cette chaîne est aussi dans les règles d'écriture
+     * du mandat, donc dans TOUS les prompts. Relevé par mutation, l'assertion passait même en débranchant
+     * `{ synthese: true }`.
+     */
+    const second = JSON.stringify(cap.appels[1]!.messages);
+    expect(second).toContain('MAINTENANT que tu écris');
+    // Et surtout PAS la consigne d'évolution, que `consigneDuTour` rendrait ici puisque l'ordre du jour est
+    // déjà couvert : c'est elle qui interdirait au modèle de proposer quoi que ce soit.
+    expect(second).not.toContain('tu es en ÉVOLUTION');
+
+    const body = res.json();
+    expect(body.message).toBe('Voici votre agent.');
+    // 🔴 LE DIFF VIENT DE LA SYNTHÈSE : trois champs, pas le seul ton du premier appel.
+    expect(body.changements.map((c: { champ: string }) => c.champ).sort())
+      .toEqual(['fiche.nom', 'fiche.objectif', 'fiche.ton']);
+
+    // ⚠️ La réponse extraite par le PREMIER appel est conservée : c'est elle qui a fermé l'ordre du jour, et
+    // la synthèse n'est pas là pour la réécrire.
+    const ecrit = entretiens.ecrits[0]!;
+    expect(ecrit.reponses.find((r) => r.point === DERNIER)?.valeur).toBe('tutoiement et phrases courtes');
+    // Et c'est le message de la SYNTHÈSE que le fil garde, pas celui du premier appel.
+    expect(ecrit.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'Voici votre agent.' });
+  });
+
+  it('🔴 un tour d’ÉVOLUTION ne déclenche AUCUNE synthèse', async () => {
+    // La condition est une TRANSITION, pas un état. Sur un état seul, chaque message envoyé après la fin de
+    // l'entretien relancerait une synthèse, et l'assistant reproposerait sans fin des champs que personne ne
+    // lui a demandé de rouvrir, sur un agent qui répond déjà à de vrais contacts.
+    const { cap, srv } = app({ entretien: ENTRETIEN_FINI });
+    await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(cap.appels).toHaveLength(1);
+  });
+
+  it('🔴 une synthèse qui ÉCHOUE ne fait pas perdre le tour', async () => {
+    // Le client a payé dix questions pour arriver là : une panne du fournisseur sur le second appel doit lui
+    // laisser le diff pauvre du premier, jamais une erreur.
+    const { srv } = app({
+      entretien: ENTRETIEN_PRESQUE_FINI,
+      suite: [
+        reponse(JSON.stringify({
+          message: 'Parfait.',
+          reponses: [{ point: DERNIER, valeur: 'tutoiement' }],
+          fiche: { ton: 'Tutoiement.' },
+        })),
+        new Error('gateway indisponible'),
+      ],
+    });
+    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().message).toBe('Parfait.');
+    expect(res.json().changements.map((c: { champ: string }) => c.champ)).toEqual(['fiche.ton']);
   });
 
   it('🔴 TANT QUE L’ORDRE DU JOUR N’EST PAS ÉPUISÉ, aucun champ n’est montré', async () => {
