@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from '../consentement';
+import { GRILLE_DEFAUT } from '../../src/stats/prix';
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
@@ -1836,7 +1837,48 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   const settingsShape = (over: object = {}) => ({
     mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
     controlHandbackSeconds: null, mbaHandoffMode: null, timezone: DEFAULT_TIMEZONE,
-    businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null, ...over,
+    businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
+    // La grille de prix (migration 0154). Le defaut a marge 100 reproduit exactement le tarif Meta, donc
+    // un espace qui n a jamais ouvert le reglage lit le meme chiffre qu avant.
+    prix: GRILLE_DEFAUT, ...over,
+  });
+
+  /**
+   * LA GRILLE DE PRIX, ALLER-RETOUR CONTRE UNE VRAIE BASE (migration 0154).
+   *
+   * 🔴 CE CAS EXISTE PARCE QU UN DEFAUT DE DATE EST PASSE SOUS TOUS LES TESTS UNITAIRES. node-postgres rend
+   * une colonne `date` en `Date` a MINUIT LOCAL ; `toISOString()` repasse en UTC et rend LA VEILLE des
+   * qu on est a l est de Greenwich. Ecrit 2026-11-01, relu 2026-10-31 : la facturation du service aurait
+   * demarre un jour trop tot, pour tout le monde, et l ecran aurait affiche la date fausse sans rien
+   * trahir. Aucune fonction pure ne pouvait le voir, puisque le defaut nait de la CONVERSION du pilote.
+   *
+   * ⚠️ CE TEST NE DISCRIMINE QUE SUR UNE MACHINE A DECALAGE NON NUL, et la CI tourne en UTC. Ce qu il tient
+   * partout, c est l aller-retour complet des six champs et le fait qu une ecriture de prix n ecrase aucun
+   * autre reglage. La preuve discriminante a ete faite en session isolee, en Europe/Paris.
+   */
+  it('PgTenantSettingsStore : la grille de prix fait un aller-retour EXACT et n ecrase rien', async () => {
+    const store = new PgTenantSettingsStore(pool);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-prix') returning id`)).rows[0]!.id;
+    try {
+      expect((await store.get(t)).prix, 'un espace jamais regle lit les defauts').toEqual(GRILLE_DEFAUT);
+
+      const voulue = {
+        margeTemplate: 135, serviceCentimes: 3.1, serviceFranchise: 500,
+        serviceDepuis: '2026-11-01', rcsSimpleCentimes: 5.5, rcsConversationnelCentimes: 7.25,
+      };
+      await store.setGrillePrix(t, voulue);
+      expect((await store.get(t)).prix, 'les six champs reviennent a l identique').toEqual(voulue);
+
+      // Un autre reglage pose AVANT ne doit pas partir avec l ecriture des prix : l upsert est cible.
+      await store.setTimezone(t, 'Europe/Madrid');
+      await store.setGrillePrix(t, { ...voulue, margeTemplate: 90 });
+      const apres = await store.get(t);
+      expect(apres.timezone, 'le fuseau survit a une ecriture de prix').toBe('Europe/Madrid');
+      expect(apres.prix.margeTemplate).toBe(90);
+      expect(apres.prix.serviceDepuis, 'la date ne bouge pas d un jour au passage').toBe('2026-11-01');
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
   });
 
   it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {
