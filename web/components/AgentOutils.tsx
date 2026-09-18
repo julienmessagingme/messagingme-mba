@@ -10,7 +10,7 @@ import { listNodes, type NodeListItem } from '@/lib/api/scenarios';
 import {
   activerOutil, ajouterOutil, autonomieOutil, getBibliothequeOutils, listOutils, patchOutil,
   rattacherOutil, retirerOutil,
-  type ModeleOutil, type OutilAgent, type OutilBibliotheque, type TexteBilingue,
+  type GesteMoment, type ModeleOutil, type OutilAgent, type OutilBibliotheque, type TexteBilingue,
 } from '@/lib/api-agent-tools';
 
 /**
@@ -87,21 +87,17 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
   const poses = new Set((vue?.outils ?? []).map((o) => String(o.binding.handler ?? '')));
   const restants = (vue?.catalogue ?? []).filter((m) => !poses.has(m.handler));
   /**
-   * 🔴 LA DÉFINITION APPARTIENT À L'ESPACE, PAS À L'AGENT, ET CET ÉCRAN L'IGNORAIT (2026-09-18).
+   * 🔴 LE CONTOURNEMENT DU MATIN A DISPARU, ET C'EST LA BONNE NOUVELLE (2026-09-18, passe 1 du lot 2).
    *
-   * `poses` ne voit que les outils de CET agent (`listOutils` fait une jointure interne sur les
-   * consommateurs), alors que le nom d'un outil est unique par ESPACE depuis les migrations 0127 et 0128.
-   * Un outil maison déjà déclaré dans l'espace pour un autre consommateur, typiquement le Meta Business
-   * Agent, était donc proposé à la CRÉATION, et le clic se faisait refuser en 409 « un outil de cet espace
-   * porte déjà ce nom ». Julien, 2026-09-18 : « ça veut dire quoi ? je dois pouvoir updater cet outil ».
+   * Cet écran a porté quelques heures un bouton « Brancher » : le nom d'un outil étant unique par ESPACE,
+   * « Ajouter » se faisait refuser en 409 dès qu'un autre agent portait déjà le même, et brancher la
+   * définition existante était la seule issue. La migration 0157 a supprimé la CAUSE : une ACTION appartient
+   * désormais à l'agent, deux agents peuvent chacun avoir leur « terminer », et la collision n'existe plus.
    *
-   * Le bouton devient donc BRANCHER quand l'espace porte déjà la définition, et le libellé dit qui s'en
-   * sert : c'est la seule réponse honnête à « les outils sont poreux entre le MBA et l'agent IA ? ».
-   * Oui, ils le sont, délibérément, et jusqu'ici l'écran ne le disait nulle part.
+   * ⚠️ Le geste juste était au mauvais NIVEAU. On le retire plutôt que de le garder « au cas où » : un
+   * chemin qui ne peut plus se produire est un chemin que personne ne relira jamais, et qui mentira le jour
+   * où quelqu'un s'y fiera.
    */
-  const definiesDeLEspace = new Map(
-    bibliotheque.filter((o) => o.handler !== null).map((o) => [o.handler as string, o]),
-  );
   /**
    * Les outils MCP de l'ESPACE que cet agent n'a pas encore. Le jumeau exact de `restants` pour les outils
    * maison, et de « + donner cet appel à l'agent » pour les connecteurs API.
@@ -149,49 +145,24 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       {restants.length > 0 && (
         <div className={`${cardCls} flex flex-col gap-3`}>
           <p className="text-sm font-medium text-ink-700">{t('Donner un outil de plus', 'Give one more tool')}</p>
-          {restants.map((m) => {
-            const deja = definiesDeLEspace.get(m.handler);
-            // Qui s'en sert déjà. Un consommateur sans libellé d'agent est le Meta Business Agent : c'est
-            // exactement le cas qui surprenait, autant le nommer.
-            const usagers = (deja?.consommateurs ?? [])
-              .map((c) => c.agentLabel ?? t('l’agent de Meta', 'Meta’s agent'));
-            return (
-              <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-ink-800">
-                    <Bilingue texte={m.titre} /> <Risque risk={m.risk} />
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-ink-500"><Bilingue texte={m.description} /></p>
-                  {deja && (
-                    <p data-testid={`outil-deja-${m.handler}`} className="mt-1 text-xs text-ink-600">
-                      {usagers.length > 0
-                        ? t(
-                          `Déjà déclaré dans votre espace, utilisé par : ${usagers.join(', ')}. Le brancher ici partagera la MÊME définition.`,
-                          `Already declared in your workspace, used by: ${usagers.join(', ')}. Connecting it here shares the SAME definition.`,
-                        )
-                        : t(
-                          'Déjà déclaré dans votre espace. Le brancher ici partagera la MÊME définition.',
-                          'Already declared in your workspace. Connecting it here shares the SAME definition.',
-                        )}
-                    </p>
-                  )}
-                </div>
-                <button
-                  data-testid={deja ? `outil-brancher-${m.handler}` : `outil-ajouter-${m.handler}`}
-                  disabled={busy}
-                  onClick={() => void agir(async () => {
-                    // 🔴 BRANCHER, jamais recréer : le nom est pris dans l'espace, et `ajouterOutil` se ferait
-                    // refuser en 409. Brancher ne l'ACTIVE pas pour autant, c'est un second geste du client.
-                    if (deja) await rattacherOutil(tenantId, agentId, deja.id, true);
-                    else await ajouterOutil(tenantId, agentId, m.handler);
-                  })}
-                  className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
-                >
-                  {deja ? t('Brancher', 'Connect') : t('Ajouter', 'Add')}
-                </button>
+          {restants.map((m) => (
+            <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink-800">
+                  <Bilingue texte={m.titre} /> <Risque risk={m.risk} />
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-ink-500"><Bilingue texte={m.description} /></p>
               </div>
-            );
-          })}
+              <button
+                data-testid={`outil-ajouter-${m.handler}`}
+                disabled={busy}
+                onClick={() => void agir(async () => { await ajouterOutil(tenantId, agentId, m.handler); })}
+                className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+              >
+                {t('Ajouter', 'Add')}
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -299,7 +270,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
   outil: OutilAgent;
   modele: ModeleOutil | undefined;
   busy: boolean;
-  onSave: (patch: { name?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]> }) => void;
+  onSave: (patch: { name?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]>; gestes?: GesteMoment[] }) => void;
   onActiver: (v: boolean) => void;
   onAutonomie: (v: boolean) => void;
   onRetirer: () => void;
@@ -422,6 +393,8 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
         label={t('Quand NE PAS l’appeler', 'When NOT to call it')}
         valeur={outil.nePasUtiliser} onSave={(v) => onSave({ nePasUtiliser: v })}
       />
+
+      <Gestes outil={outil} busy={busy} onSave={(gestes) => onSave({ gestes })} />
 
       {(modele?.params ?? []).filter((p) => p.edition === 'enum').map((p) => (
         /* 🔴 LE CODE D'UN BLOC NE SE TAPE PAS, IL SE CHOISIT. Ce paramètre demandait des codes « nod_… »
@@ -713,6 +686,114 @@ function Champ({ label, aide, valeur, multi, onSave, testId, busy }: {
       <label className="text-sm font-medium text-ink-700">{label}</label>
       {multi ? <textarea rows={3} {...commun} /> : <input {...commun} />}
       {aide && <p className="text-xs leading-relaxed text-ink-500">{aide}</p>}
+    </div>
+  );
+}
+
+/**
+ * LES GESTES DU MOMENT : ce que NOUS faisons quand il se produit, sans le demander au modèle (0158).
+ *
+ * 🔴 POURQUOI ILS NE SONT PAS DES OUTILS. « Quand le client veut un rendez-vous », il faut appeler l'ERP ET
+ * poser un tag. Avec deux outils, le modèle voit deux surfaces décrivant la MÊME situation et en choisit
+ * une, ou les deux, ou aucune. Ici le modèle appelle UN outil, et les effets de bord sont à nous.
+ *
+ * 🔴 L'ÉCRAN DIT QU'ILS PARTENT MÊME SI L'APPEL ÉCHOUE, et ce n'est pas un détail d'aide : c'est ce qui
+ * explique pourquoi un libellé doit dire « demandé » et jamais « pris ». Un tag « rendez-vous pris » posé
+ * alors que l'ERP n'a pas répondu met dans le mini-CRM une vérité fausse, sur laquelle une automation
+ * partira ensuite.
+ */
+function Gestes({ outil, busy, onSave }: {
+  outil: OutilAgent;
+  busy: boolean;
+  onSave: (gestes: GesteMoment[]) => void;
+}) {
+  const t = useT();
+  const [type, setType] = useState<GesteMoment['type']>('tag');
+  const [valeur, setValeur] = useState('');
+  const [champ, setChamp] = useState('');
+  const gestes = outil.gestes ?? [];
+  const prete = type === 'tag' ? valeur.trim() !== '' : champ.trim() !== '' && valeur.trim() !== '';
+
+  function ajouter(): void {
+    if (!prete) return;
+    const g: GesteMoment = type === 'tag'
+      ? { type: 'tag', valeur: valeur.trim() }
+      : { type: 'variable', champ: champ.trim(), valeur: valeur.trim() };
+    onSave([...gestes, g]);
+    setValeur('');
+    setChamp('');
+  }
+
+  return (
+    <div data-testid={`outil-gestes-${outil.id}`} className="rounded-lg border border-ink-200 px-3 py-2">
+      <p className="text-xs font-medium text-ink-700">{t('Et en plus, faire ceci', 'And also do this')}</p>
+      <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
+        {t(
+          'Ce que nous faisons nous-mêmes quand ce moment se produit, sans le demander au modèle. Ces gestes partent MÊME SI l’appel ci-dessus échoue : ils marquent que la situation s’est produite, pas qu’elle a abouti. Écrivez donc « rendez-vous demandé » plutôt que « rendez-vous pris ».',
+          'What we do ourselves when this moment happens, without asking the model. These fire EVEN IF the call above fails: they record that the situation happened, not that it succeeded. So write “appointment requested” rather than “appointment booked”.',
+        )}
+      </p>
+
+      {gestes.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1">
+          {gestes.map((g, i) => (
+            <li key={`${g.type}-${i}`} data-testid={`outil-geste-${outil.id}-${i}`} className="flex items-center justify-between gap-2 text-xs text-ink-800">
+              <span className="min-w-0 truncate">
+                {g.type === 'tag'
+                  ? t(`Poser le tag « ${g.valeur} »`, `Tag with “${g.valeur}”`)
+                  : t(`Écrire « ${g.valeur} » dans le champ « ${g.champ} »`, `Write “${g.valeur}” into field “${g.champ}”`)}
+              </span>
+              <button
+                data-testid={`outil-geste-retirer-${outil.id}-${i}`}
+                disabled={busy}
+                onClick={() => onSave(gestes.filter((_, j) => j !== i))}
+                className="shrink-0 rounded border border-ink-300 px-2 py-0.5 text-[11px] text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+              >
+                {t('Retirer', 'Remove')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          data-testid={`outil-geste-type-${outil.id}`}
+          className={`${inputClsAuto} text-xs`}
+          value={type}
+          disabled={busy}
+          onChange={(e) => setType(e.target.value as GesteMoment['type'])}
+        >
+          <option value="tag">{t('Poser un tag', 'Tag the contact')}</option>
+          <option value="variable">{t('Écrire dans un champ', 'Write into a field')}</option>
+        </select>
+        {type === 'variable' && (
+          <input
+            data-testid={`outil-geste-champ-${outil.id}`}
+            className={`${inputClsAuto} text-xs`}
+            placeholder={t('nom du champ', 'field name')}
+            value={champ}
+            disabled={busy}
+            onChange={(e) => setChamp(e.target.value)}
+          />
+        )}
+        <input
+          data-testid={`outil-geste-valeur-${outil.id}`}
+          className={`${inputClsAuto} text-xs`}
+          placeholder={type === 'tag' ? t('rendez_vous_demande', 'appointment_requested') : t('la valeur', 'the value')}
+          value={valeur}
+          disabled={busy}
+          onChange={(e) => setValeur(e.target.value)}
+        />
+        <button
+          data-testid={`outil-geste-ajouter-${outil.id}`}
+          disabled={busy || !prete}
+          onClick={ajouter}
+          className="rounded-lg border border-ink-300 px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+        >
+          {t('Ajouter', 'Add')}
+        </button>
+      </div>
     </div>
   );
 }

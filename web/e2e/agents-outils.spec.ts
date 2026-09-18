@@ -137,37 +137,68 @@ test.describe('Agents IA : les outils', () => {
   });
 
   /**
-   * 🔴 LA DÉFINITION APPARTIENT À L'ESPACE, ET CET ÉCRAN L'IGNORAIT (2026-09-18).
+   * 🔴 LE CAS EST CONSERVÉ, SA RÉPONSE A CHANGÉ (2026-09-18).
    *
-   * Le nom d'un outil est unique par ESPACE (migrations 0127 et 0128), mais « ce qu'il reste à donner » se
-   * calculait contre les outils de CET AGENT. Un outil maison déjà déclaré pour le Meta Business Agent était
-   * donc proposé à la CRÉATION, et le clic se faisait refuser en 409 « un outil de cet espace porte déjà ce
-   * nom ». Julien, 2026-09-18, bloqué dessus : « ça veut dire quoi ? je dois pouvoir updater cet outil ».
+   * Ce test vérifiait qu'un outil déjà déclaré dans l'espace se BRANCHE au lieu de se recréer, parce que le
+   * nom était unique par ESPACE et que « Ajouter » se faisait refuser en 409. La migration 0157 a supprimé
+   * la CAUSE : une ACTION appartient désormais à l'agent, deux agents peuvent chacun avoir leur
+   * « terminer », et la collision n'existe plus.
+   *
+   * ⚠️ CE QUI EST CONSERVÉ : la préoccupation du client, « l'écran ne doit pas me proposer un geste qui
+   * échouera ». CE QUI CHANGE : la bonne réponse n'est plus de brancher, c'est de créer, et de réussir.
    */
-  test('🔴 un outil DÉJÀ déclaré dans l espace se BRANCHE, il ne se recrée pas', async ({ page }) => {
+  test('🔴 une définition du MÊME handler dans l espace n empeche plus l ajout', async ({ page }) => {
     const appels: Appel[] = [];
-    const deja = {
+    const dansLEspace = {
       id: 'o7', handler: 'poser_tag', name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
       description: 'Marque le contact.', origin: 'mba', risk: 'write', sourceId: null,
-      mcpNonActivable: null, mcpIndisponibleLe: null,
-      // Le consommateur sans libellé d'agent EST le Meta Business Agent : c'est le cas qui surprenait.
-      consommateurs: [{ cle: 'mba:1234840649713976', actif: true, agentId: null, agentLabel: null }],
+      mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [],
     };
-    await mock(page, appels, [], [deja]);
+    await mock(page, appels, [], [dansLEspace]);
     await page.goto(`/agents?id=${AG}&tab=outils`);
 
-    // L'écran DIT que la définition est partagée, au lieu de laisser le client le découvrir par une erreur.
-    await expect(page.getByTestId('outil-deja-poser_tag')).toContainText('l’agent de Meta');
-    await expect(page.getByTestId('outil-ajouter-poser_tag')).toHaveCount(0);
-
-    await page.getByTestId('outil-brancher-poser_tag').click();
-    await expect.poll(() => appels.some((a) => /o7\/rattachement$/.test(a.url)
-      && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
-    // 🔴 AUCUNE création : c'est elle qui rendait 409, et c'est tout le sujet de ce test.
-    expect(appels.filter((a) => a.method === 'POST')).toHaveLength(0);
-    // ⚠️ Et brancher n'ACTIVE pas : exposer l'outil au modèle reste un second geste humain.
-    expect(appels.filter((a) => /activation$/.test(a.url))).toHaveLength(0);
+    // Pas de bouton « Brancher » : ce chemin n'a plus de raison d'exister, et un chemin qui ne peut plus se
+    // produire est un chemin qui mentira le jour où quelqu'un s'y fiera.
+    await expect(page.getByTestId('outil-brancher-poser_tag')).toHaveCount(0);
+    await page.getByTestId('outil-ajouter-poser_tag').click();
+    await expect.poll(() => appels.some((a) => a.method === 'POST' && (a.body as { handler?: string })?.handler === 'poser_tag'), { timeout: 5000 }).toBe(true);
   });
+
+  /**
+   * 🔴 LES GESTES DU MOMENT, ET LA PHRASE QUI LES ACCOMPAGNE (migration 0158).
+   *
+   * Un moment porte UNE réponse principale, que le modèle appelle, et des gestes que NOUS exécutons. L'écran
+   * doit dire qu'ils partent MÊME SI l'appel échoue, sans quoi le client écrit « rendez-vous pris » et met
+   * dans son mini-CRM une vérité fausse sur laquelle une automation partira ensuite.
+   */
+  test('🔴 on ajoute un geste au moment, et l ecran DIT qu il part meme si l appel echoue', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, [TAG]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+
+    await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('MÊME SI');
+    await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('rendez-vous demandé');
+
+    await page.getByTestId(`outil-geste-valeur-${TAG.id}`).fill('rendez_vous_demande');
+    await page.getByTestId(`outil-geste-ajouter-${TAG.id}`).click();
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH' && (a.body as { gestes?: unknown })?.gestes !== undefined)?.body, { timeout: 5000 })
+      .toEqual({ gestes: [{ type: 'tag', valeur: 'rendez_vous_demande' }] });
+  });
+
+  test('un geste « écrire dans un champ » porte SON champ, pas seulement une valeur', async ({ page }) => {
+    // La preuve inverse du cas précédent : sans le champ, les deux types de geste produiraient le même
+    // corps, et l'écriture partirait dans le vide.
+    const appels: Appel[] = [];
+    await mock(page, appels, [TAG]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await page.getByTestId(`outil-geste-type-${TAG.id}`).selectOption('variable');
+    await page.getByTestId(`outil-geste-champ-${TAG.id}`).fill('origine');
+    await page.getByTestId(`outil-geste-valeur-${TAG.id}`).fill('agent');
+    await page.getByTestId(`outil-geste-ajouter-${TAG.id}`).click();
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH' && (a.body as { gestes?: unknown })?.gestes !== undefined)?.body, { timeout: 5000 })
+      .toEqual({ gestes: [{ type: 'variable', champ: 'origine', valeur: 'agent' }] });
+  });
+
 
   test('l activation est un aller-retour, et le geste porte sur cet outil', async ({ page }) => {
     const appels: Appel[] = [];

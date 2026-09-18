@@ -41,6 +41,12 @@ export interface OutilExpose {
 
 export type OrigineOutil = 'mba' | 'http' | 'mcp';
 
+/** Un geste du moment. Miroir du schéma serveur, recopié comme le reste de ce fichier plutôt que d'importer
+ *  du code serveur dans le bundle client. */
+export type GesteMoment =
+  | { type: 'tag'; valeur: string }
+  | { type: 'variable'; champ: string; valeur: string };
+
 export interface OutilAgent {
   id: string;
   /** D'où vient le comportement : `mba` = outil maison du catalogue, `http` = connecteur du client (L2). */
@@ -54,6 +60,14 @@ export interface OutilAgent {
   title: string;
   description: string;
   nePasUtiliser: string;
+  /**
+   * LES GESTES DU MOMENT (migration 0158) : ce que NOUS faisons quand il se produit, sans le demander au
+   * modèle. Miroir du contrat serveur (`src/agent/gestes.ts`).
+   *
+   * ⚠️ Ils sont INDÉPENDANTS de la réussite de la réponse principale : ils marquent que la SITUATION s'est
+   * produite. D'où les libellés par défaut, qui disent « demandé » et jamais « pris ».
+   */
+  gestes: GesteMoment[];
   params: unknown;
   binding: Record<string, unknown>;
   risk: RisqueOutil;
@@ -123,7 +137,7 @@ export async function ajouterOutil(tenantId: string, agentId: string, handler: s
 
 export async function patchOutil(
   tenantId: string, agentId: string, outilId: string,
-  patch: { name?: string; title?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]> },
+  patch: { name?: string; title?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]>; gestes?: GesteMoment[] },
 ): Promise<OutilAgent> {
   const r = await request<{ outil: OutilAgent }>(`${base(tenantId, agentId)}/${outilId}`, {
     method: 'PATCH', body: JSON.stringify(patch),
