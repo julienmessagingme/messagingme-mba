@@ -1837,6 +1837,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   const settingsShape = (over: object = {}) => ({
     mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
     controlHandbackSeconds: null, mbaHandoffMode: null, timezone: DEFAULT_TIMEZONE,
+    // ⚠️ AJOUTE ICI A LA MAIN, ET C EST LE PIEGE DE CETTE FIXTURE : elle n est pas typee contre
+    // `TenantSettings`, donc le compilateur ne voit PAS un champ manquant, alors qu il a attrape les quatre
+    // fixtures unitaires du meme lot. Seul le job `integration` l a dit, apres le push (migration 0156).
+    agentTransfertMode: null,
     businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
     // La grille de prix (migration 0154). Le defaut a marge 100 reproduit exactement le tarif Meta, donc
     // un espace qui n a jamais ouvert le reglage lit le meme chiffre qu avant.
