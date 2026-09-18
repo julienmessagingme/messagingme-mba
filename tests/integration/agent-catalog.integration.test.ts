@@ -508,7 +508,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
       // ⚠️ UNE VRAIE SOURCE : `agent_tools_origin_src_chk` (0088) l'EXIGE dès qu'on sort de `origin = 'mba'`.
       const source = (await pool.query<{ id: string }>(
         `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
-         values ($1, 'http', 'itest-src-occupee', 'https://exemple.test', 'none', 'brouillon') returning id`,
+         values ($1, 'http', 'itest-src-occupee', 'https://exemple.test', 'none', 'draft') returning id`,
         [tenantId],
       )).rows[0]!.id;
       const id = (await pool.query<{ id: string }>(

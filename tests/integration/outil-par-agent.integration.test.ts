@@ -321,8 +321,20 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       await client.query('create temp table agent_tools (like public.agent_tools including defaults)');
       await client.query('create temp table agent_tool_consommateurs (like public.agent_tool_consommateurs including defaults)');
       // `pg_temp` d'abord : le SQL du fichier, qui nomme les tables sans les qualifier, atteint les copies.
-      // `agents` n'a pas de copie, donc la garde d'existence de l'adoption lit les VRAIS agents.
+      // `agents` n'a pas de copie, donc la jointure de l'adoption lit les VRAIS agents.
       await client.query('set local search_path = pg_temp, public');
+
+      // 🔴 SON PROPRE AGENT, ET LA PREMIÈRE VERSION DE CETTE SONDE RÉUTILISAIT `agentB` (CI du 2026-09-18).
+      // Un test PLUS HAUT dans ce fichier supprime `agentB` pour éprouver la cascade : la sonde nommait donc
+      // un agent mort, le premier geste retirait son consentement à juste titre, et l'échec ressemblait à un
+      // défaut de la migration alors que c'était le contraire, elle faisait exactement son travail. Un
+      // fixture partagé qu'un voisin détruit rend un verdict qui accuse le code.
+      // ⚠️ Créé DANS la transaction, donc annulé avec elle : il ne survit pas à ce test.
+      const agentSonde = (await client.query<{ id: string }>(
+        `insert into public.agents (tenant_id, label, fiche, mention_ia, modele)
+         values ($1, 'itest-sonde-0159', '{}'::jsonb, 'Je suis une IA.', 'test/modele') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
 
       const poser = async (origin: string, nom: string): Promise<string> => (await client.query<{ id: string }>(
         `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
@@ -338,7 +350,7 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
 
       // EXACTEMENT ce que l'ancien `ajouter` écrit : pas d'`agent_id`, et une ligne de consentement vivante.
       const aAdopter = await poser('mba', 'creee_par_l_ancien_code');
-      await consentir(aAdopter, `agent:${agentB}`);
+      await consentir(aAdopter, `agent:${agentSonde}`);
       // Un reste d'essai : aucune ligne de consentement. C'est la cible du `delete` d'origine.
       const orpheline = await poser('mba', 'reste_d_essai');
       // Le cas que la CI a trouvé : le consentement nomme un agent SUPPRIMÉ. `agent_tool_consommateurs` ne
@@ -349,23 +361,35 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       const connecteur = await poser('http', 'connecteur_intact');
       await consentir(connecteur, `agent:${mortUuid}`);
 
-      for (const geste of gestes) await client.query(geste);
-
       const agentIdDe = async (id: string): Promise<string | null | undefined> => (await client.query<{ agent_id: string | null }>(
         'select agent_id from agent_tools where id = $1', [id],
       )).rows[0]?.agent_id;
+      const existe = async (id: string): Promise<boolean> => ((await client.query(
+        'select 1 from agent_tools where id = $1', [id],
+      )).rowCount ?? 0) > 0;
       const compteConso = async (id: string): Promise<number> => (await client.query(
         'select 1 from agent_tool_consommateurs where tool_id = $1', [id],
       )).rowCount ?? 0;
 
+      // ⚠️ ON ASSERTE ENTRE CHAQUE GESTE, PAS SEULEMENT À LA FIN. Trois instructions qui se suivent et un
+      // seul verdict à la sortie, c'est une sonde qui dit « ça n'a pas marché » sans dire OÙ : la premiere
+      // version de ce test a coûté un aller-retour de CI entier pour ça.
+      await client.query(gestes[0]!);
+      expect(await compteConso(aAdopter)).toBe(1);   // agent VIVANT : son consentement reste
+      expect(await compteConso(fantome)).toBe(0);    // agent SUPPRIMÉ : son consentement s'en va
+      expect(await compteConso(connecteur)).toBe(1); // un CONNECTEUR n'est pas touché, même consentement mort
+
+      await client.query(gestes[1]!);
+      expect(await existe(aAdopter)).toBe(true);     // quelqu'un s'en sert encore
+      expect(await existe(orpheline)).toBe(false);   // reste d'essai, aucun consommateur
+      expect(await existe(fantome)).toBe(false);     // libéré par le geste 1, donc ramassé ici
+      expect(await existe(connecteur)).toBe(true);
+
+      await client.query(gestes[2]!);
       // ADOPTÉE par l'agent que son consentement désignait : le CHECK peut se refermer sur elle.
-      expect(await agentIdDe(aAdopter)).toBe(agentB);
-      // SUPPRIMÉES toutes les deux : l'une n'avait aucun consommateur, l'autre n'en avait qu'un de mort.
-      expect(await agentIdDe(orpheline)).toBeUndefined();
-      expect(await agentIdDe(fantome)).toBeUndefined();
+      expect(await agentIdDe(aAdopter)).toBe(agentSonde);
       // INTACT : un connecteur appartient à l'espace, et cette migration a annoncé ne pas y toucher.
       expect(await agentIdDe(connecteur)).toBeNull();
-      expect(await compteConso(connecteur)).toBe(1);
     } finally {
       await client.query('rollback');
       client.release();

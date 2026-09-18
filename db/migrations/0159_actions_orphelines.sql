@@ -28,7 +28,7 @@
 --    where t.origin = 'mba' and t.agent_id is null
 --      and (c.consommateur not like 'agent:%'
 --           or exists (select 1 from agents a
---                       where a.id = substring(c.consommateur from 7)::uuid and a.tenant_id = c.tenant_id))
+--                       where a.tenant_id = c.tenant_id and 'agent:' || a.id = c.consommateur))
 --    group by t.id, t.name having count(*) > 1 or bool_or(c.consommateur not like 'agent:%');
 --
 -- Si la seconde rend des lignes, il faut TRANCHER à la main avant d'appliquer : ces définitions-là n'ont pas
@@ -50,7 +50,7 @@ delete from agent_tool_consommateurs c
    and exists (select 1 from agent_tools t
                 where t.id = c.tool_id and t.tenant_id = c.tenant_id and t.origin = 'mba')
    and not exists (select 1 from agents a
-                    where a.id = substring(c.consommateur from 7)::uuid and a.tenant_id = c.tenant_id);
+                    where a.tenant_id = c.tenant_id and 'agent:' || a.id = c.consommateur);
 
 -- ⚠️ LE PRÉDICAT EST STRICT, ET CHACUNE DE SES TROIS CONDITIONS PORTE SON POIDS. `origin = 'mba'` épargne
 -- les connecteurs, qui appartiennent légitimement à l'espace. `agent_id is null` épargne toutes les actions
@@ -71,29 +71,34 @@ delete from agent_tools t
 -- ⚠️ QUATRE GARDES, ET AUCUNE N'EST DÉCORATIVE :
 --   - `count(*) = 1` : deux consommateurs, deux propriétaires possibles, donc on ne tranche pas ;
 --   - `consommateur like 'agent:%'` : le Meta Business Agent n'est pas un agent IA, il n'a pas d'`agent_id` ;
---   - l'`exists` sur `agents` : le consentement n'est pas une clé étrangère, donc il peut nommer un agent
---     supprimé. Sans cette garde on écrit un `agent_id` fantôme et `agent_tools_agent_id_fkey` fait échouer
---     la migration entière. Le nettoyage en tête de fichier a déjà retiré ces lignes, et cette garde reste :
---     un invariant qui tient à l'ordre de deux instructions tient mal ;
+--   - la JOINTURE sur `agents` : le consentement n'est pas une clé étrangère, donc il peut nommer un agent
+--     supprimé. Sans elle on écrit un `agent_id` fantôme et `agent_tools_agent_id_fkey` fait échouer la
+--     migration entière. Le nettoyage en tête de fichier a déjà retiré ces lignes, et cette jointure reste :
+--     un invariant qui tient à l'ordre de deux instructions tient mal. C'est une JOINTURE et non un
+--     `exists`, parce qu'elle rend AUSSI l'identifiant, donc il n'y a plus rien à convertir ;
+--   - 🔴 ET ON COMPARE DU TEXTE, JAMAIS `substring(...)::uuid`. Un consommateur `mba:<numero>` ne se
+--     convertit pas en uuid, et rien ne garantit qu'un `and` protège un autre : PostgreSQL est libre de
+--     réordonner les conditions, donc le garde-fou `like 'agent:%'` ne met pas la conversion à l'abri. La
+--     comparaison `'agent:' || a.id = c.consommateur` ne peut pas lever, et c'est déjà l'idiome du dépôt
+--     (`listCatalogue`) ;
 --   - le `not exists` final : l'agent possède peut-être DÉJÀ une action de ce nom (créée par le code neuf,
 --     entre le déploiement et cette migration). L'adopter violerait `agent_tools_nom_agent_uidx` et ferait
 --     échouer toute la migration sur un index, ce qui est le pire endroit pour l'apprendre.
 update agent_tools t
-   set agent_id = proprio.agent_id
+   set agent_id = a.id
   from (
-    select c.tool_id, c.tenant_id, substring(min(c.consommateur) from 7)::uuid as agent_id
+    select c.tool_id, c.tenant_id, min(c.consommateur) as cle
       from agent_tool_consommateurs c
      group by c.tool_id, c.tenant_id
     having count(*) = 1 and bool_and(c.consommateur like 'agent:%')
   ) as proprio
+  join agents a on a.tenant_id = proprio.tenant_id and 'agent:' || a.id = proprio.cle
  where t.id = proprio.tool_id
    and t.tenant_id = proprio.tenant_id
    and t.origin = 'mba'
    and t.agent_id is null
-   and exists (select 1 from agents a where a.id = proprio.agent_id and a.tenant_id = t.tenant_id)
    and not exists (select 1 from agent_tools d
-                    where d.tenant_id = t.tenant_id and d.name = t.name
-                      and d.agent_id = proprio.agent_id);
+                    where d.tenant_id = t.tenant_id and d.name = t.name and d.agent_id = a.id);
 
 -- 🔴 LE CHECK STRICT, ET IL NE POUVAIT PAS ÊTRE POSÉ AVANT : c'est la leçon de 0152, appliquée dans l'autre
 -- sens. 0157 a délibérément laissé `agent_id` nullable pour que le code DÉPLOYÉ, qui l'ignorait, continue de
