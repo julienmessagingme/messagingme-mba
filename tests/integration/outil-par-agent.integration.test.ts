@@ -30,6 +30,7 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
   let tenantId: string;
   let agentA: string;
   let agentB: string;
+  let sourceHttp: string;
 
   const outil = (name: string) => ({
     handler: 'terminer', name, title: 'Terminer', description: 'Termine.', nePasUtiliser: '',
@@ -51,6 +52,15 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
     )).rows[0]!.id;
     agentA = await creerAgent('itest-a');
     agentB = await creerAgent('itest-b');
+    // ⚠️ UNE VRAIE SOURCE, parce que `agent_tools_origin_src_chk` (0088) EXIGE un `source_id` des qu'on
+    // sort de `origin = 'mba'`. Sans elle, les deux cas de connecteur ci-dessous echouent sur CETTE
+    // contrainte-la, et l'un d'eux passait meme pour la mauvaise raison : le bon code `23514`, leve par la
+    // mauvaise contrainte. Une sonde qui ne discrimine pas confirme ce qu'on croyait.
+    sourceHttp = (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'http', 'itest-src', 'https://exemple.test/api', 'none', 'active') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
   });
 
   afterAll(async () => {
@@ -96,25 +106,28 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
     // Le CHECK, et il tient même contre un SQL écrit à la main un jour : un connecteur est déclaré dans
     // `Tools >` et se partage, lui donner un propriétaire le rendrait invisible des autres agents sans que
     // rien ne le dise.
+    // 🔴 LA CONTRAINTE EST NOMMEE DANS L'ASSERTION, pas seulement son code : `23514` est le code de TOUT
+    // CHECK, et cette table en porte plusieurs. Sans le nom, ce test passait en violant
+    // `agent_tools_origin_src_chk` (0088) sans jamais atteindre la garde qu'il pretend verifier.
     await expect(pool.query(
-      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, risk)
-       values ($1, $2, 'http', 'lire_commande', 'Lire', 'lit', '', 'read')`,
-      [tenantId, agentA],
-    )).rejects.toMatchObject({ code: '23514' });
+      `insert into agent_tools (tenant_id, agent_id, origin, source_id, name, title, description, ne_pas_utiliser, risk)
+       values ($1, $2, 'http', $3, 'lire_commande', 'Lire', 'lit', '', 'read')`,
+      [tenantId, agentA, sourceHttp],
+    )).rejects.toMatchObject({ code: '23514', constraint: 'agent_tools_agent_origin_chk' });
   });
 
   it('⚠️ l’unicité par ESPACE tient toujours pour une définition SANS agent', async () => {
     // Les deux index partiels ont des prédicats COMPLÉMENTAIRES : retirer l'unicité d'un régime en la
     // retirant à l'autre est l'erreur qu'on ne verrait qu'en production, au deuxième connecteur du client.
     await pool.query(
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
-       values ($1, 'http', 'lire_commande', 'Lire', 'lit', '', 'read')`,
-      [tenantId],
+      `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'http', $2, 'lire_commande', 'Lire', 'lit', '', 'read')`,
+      [tenantId, sourceHttp],
     );
     await expect(pool.query(
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
-       values ($1, 'http', 'lire_commande', 'Lire encore', 'lit', '', 'read')`,
-      [tenantId],
+      `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'http', $2, 'lire_commande', 'Lire encore', 'lit', '', 'read')`,
+      [tenantId, sourceHttp],
     )).rejects.toMatchObject({ code: '23505' });
   });
 

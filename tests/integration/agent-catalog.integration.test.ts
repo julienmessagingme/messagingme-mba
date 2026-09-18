@@ -490,16 +490,32 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
       expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('introuvable');
     });
 
-    it('🔴 un nom d’outil est pris pour tout l’ESPACE, plus seulement pour l’agent', async () => {
-      // ⚠️ IL FAUT UN SECOND AGENT DU MEME ESPACE. Avec l'agent d'un AUTRE tenant, `ajouter` rend `null` sur
-      // sa garde d'isolation AVANT d'atteindre l'index unique : le test passait alors pour la mauvaise
-      // raison, et il n'aurait rien prouvé sur la portée du nom.
+    /**
+     * 🔴 CE TEST AFFIRMAIT L'INVERSE JUSQU'AU 2026-09-18, ET LA GARANTIE A CHANGÉ PAR DÉCISION.
+     *
+     * 0127 avait fait remonter TOUTE définition au niveau de l'espace, parce que le sujet du moment était le
+     * CONSENTEMENT d'un connecteur partagé entre plusieurs agents et le MBA. C'était juste pour un
+     * connecteur, et faux pour une ACTION, qui est une décision propre à un agent. Julien s'est heurté au
+     * symptôme le 2026-09-18 : donner « Terminer par une règle d'arrêt » à un second agent rendait « un
+     * outil de cet espace porte déjà ce nom », sans aucun chemin pour s'en sortir.
+     *
+     * ⚠️ CE QUI EST CONSERVÉ DU CAS D'ORIGINE : le second agent est bien DU MÊME ESPACE. Avec celui d'un
+     * autre tenant, `ajouter` rend `null` sur sa garde d'isolation AVANT d'atteindre l'index unique, et le
+     * test passerait pour la mauvaise raison. CE QUI CHANGE : il obtient désormais son propre outil, et
+     * c'est le MÊME agent qui se fait refuser le doublon.
+     */
+    it('🔴 le nom d’une ACTION est pris PAR AGENT, plus pour tout l’espace', async () => {
       const voisin = (await pool.query<{ id: string }>(
         `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin', 'IA', 'm') returning id`,
         [tenantId],
       )).rows[0]!.id;
       const un = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'unique_espace' });
-      await expect(catalogue.ajouter(tenantId, voisin, { ...modele, name: 'unique_espace' }))
+      const deux = await catalogue.ajouter(tenantId, voisin, { ...modele, name: 'unique_espace' });
+      expect(deux).not.toBeNull();
+      expect(deux!.id).not.toBe(un!.id);
+      // ...et le MÊME agent ne peut toujours pas l'avoir deux fois : il exposerait au modèle deux outils
+      // portant le même nom, ce qu'aucune API d'appel de fonction n'accepte.
+      await expect(catalogue.ajouter(tenantId, agentId, { ...modele, name: 'unique_espace' }))
         .rejects.toBeInstanceOf(NomOutilDejaPris);
       await retirerCompletement(tenantId, agentId, un!.id);
       await pool.query('delete from agents where id = $1', [voisin]);
