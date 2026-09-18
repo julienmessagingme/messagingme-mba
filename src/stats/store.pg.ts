@@ -1010,7 +1010,7 @@ export class PgStatsStore {
          select r.campaign_id, r.contact_id, r.sent_at
            from campaign_recipients r
            join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
-          where r.campaign_id = any($5::uuid[]) and r.sent_at is not null and r.contact_id is not null
+          where r.campaign_id = any($2::uuid[]) and r.sent_at is not null and r.contact_id is not null
        ),
        cliqueurs as (
          select distinct e.campaign_id, k.contact_id
