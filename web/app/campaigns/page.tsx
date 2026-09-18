@@ -33,8 +33,14 @@ import {
 } from '@/lib/api';
 import { LaunchCounts } from '@/components/LaunchCounts';
 
-/** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
- *  indisponible. Sur-estime l'utility en fenêtre de service gratuite -> à présenter comme « ~ estimé ». */
+/**
+ * Coût estimé d'une campagne = envois facturables (counts.sent) × VOTRE PRIX pour la catégorie. null si le
+ * tarif est indisponible. Sur-estime l'utility en fenêtre de service gratuite -> à présenter comme « ~ estimé ».
+ *
+ * ⚠️ CE N'EST PLUS LE TARIF META NU depuis le 2026-09-18 : le serveur applique la marge de l'espace avant de
+ * rendre `ratePerMessage` (cf. `getPricing`). Sans ce changement, la MÊME campagne valait 1,00 € ici et
+ * 1,50 € sur sa fiche Performance Lab, qu'on ouvre en cliquant dessus.
+ */
 function estimateCampaignCost(sent: number, category: CampaignCategory, pricing: PricingSummary | null): number | null {
   const rate = pricing?.byCategory[category]?.ratePerMessage;
   return rate == null ? null : sent * rate;

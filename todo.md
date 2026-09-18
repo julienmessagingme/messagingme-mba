@@ -1,6 +1,14 @@
 # todo.md : backlog
 
-## 🟡 Trois ecarts mineurs releves par la revue finale (2026-09-17)
+## 🟡 Quatre ecarts mineurs releves par les revues finales (2026-09-17 et 18)
+
+- **Le cout par engagement divise un numerateur BORNE par un denominateur qui ne l est pas.** Depuis que
+  les messages de service sont imputes, le numerateur est entierement borne par la periode affichee
+  (templates ET services) ; `engagementsParCampagne`, lui, compte les engages de toute la vie de la
+  campagne. Pour une campagne dont les envois debordent de la fenetre, le cout par engage sort donc TROP
+  BAS. Le critere du cadrage (la meme fenetre de SEPT JOURS des deux cotes) reste tenu, d ou le jaune :
+  ce qui manque est la borne de PERIODE, pas la fenetre d attribution. La corriger veut dire passer `range`
+  a `engagementsParCampagne` et borner son CTE, exactement comme `servicesParCampagne`.
 
 - **La traduction tombe sur le credit du client mais n est chiffree NULLE PART.** `src/traduction/`
   `traduire.pg.ts` n ecrit ni debit ni compteur, et `consommationIa` ne lit que `agent_sessions`. Le

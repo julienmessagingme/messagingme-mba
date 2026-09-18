@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { valideGrille, BORNES_GRILLE, GRILLE_DEFAUT, tarifsFactures } from '../src/stats/prix';
+import { valideGrille, BORNES_GRILLE, GRILLE_DEFAUT, tarifsFactures, pricingFacture } from '../src/stats/prix';
 
 const SQL = readFileSync(join(resolve(__dirname, '..'), 'db', 'migrations', '0154_grille_prix_espace.sql'), 'utf8');
 
@@ -219,8 +219,38 @@ describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
     }
   });
 
-  it('deux decimales exactement restent acceptees, c est la precision de la base', () => {
-    expect(valideGrille({ ...bonne, serviceCentimes: 2.48, margeTemplate: 120.5 }).ok).toBe(true);
+  /**
+   * 🔴 LE CAS QUI A FAIT TOMBER LA GARDE, ET IL EST LA PARCE QUE MES TESTS NE LE VOYAIENT PAS. La premiere
+   * ecriture comparait `Math.round(v * 100) === v * 100`. Or `2.47 * 100` vaut `247.00000000000003` en
+   * virgule flottante : 2,47 etait REFUSE, comme 1,15, 9,95, 8,2, 0,07 et 2,03. Mesure a l epoque : 1146
+   * refus sur les 10001 valeurs a deux decimales entre 0 et 100. Aucun test ne le montrait parce que les
+   * quatre defauts (2,48, 100, 6, 8) et le seul autre cas teste tombaient tous du bon cote. Un test qui
+   * n exerce que des valeurs choisies par son auteur ne prouve rien d une garde numerique.
+   */
+  it('🔴 TOUTES les valeurs a deux decimales sont acceptees, pas seulement celles qui arrangent', () => {
+    const refuses: number[] = [];
+    for (let i = 0; i <= 10_000; i += 1) {
+      const v = i / 100;
+      if (!valideGrille({ ...bonne, serviceCentimes: v }).ok) refuses.push(v);
+    }
+    expect(refuses, `refuses a tort : ${refuses.slice(0, 10).join(', ')}`).toHaveLength(0);
+  });
+
+  /**
+   * 🔴 LA MARGE EST UN ENTIER, PARCE QUE SA COLONNE EST UN `smallint` (migration 0154). Un commentaire a
+   * affirme `numeric(6,2)` pendant une heure, et la garde acceptait donc 120,5 : node-postgres l envoie en
+   * texte, Postgres infere `int2` depuis la colonne et rejette, donc 500 sur un geste ordinaire. ⚠️ Ce cas
+   * n etait pas atteignable avant le correctif de saisie du meme commit, qui a rendu la decimale tapable.
+   */
+  it('🔴 une marge DECIMALE est refusee : sa colonne est un smallint, pas un numeric', () => {
+    const v = valideGrille({ ...bonne, margeTemplate: 120.5 });
+    expect(v.ok, 'Postgres rejetterait 120.5 sur un smallint, et la route n a aucun try/catch').toBe(false);
+    if (!v.ok) expect(v.champ).toBe('margeTemplate');
+    expect(valideGrille({ ...bonne, margeTemplate: 120 }).ok, 'un entier reste accepte').toBe(true);
+  });
+
+  it('deux decimales exactement restent acceptees sur les prix en centimes', () => {
+    expect(valideGrille({ ...bonne, serviceCentimes: 2.47, rcsSimpleCentimes: 9.95 }).ok).toBe(true);
   });
 
   it('un champ vide arrive en NaN depuis l ecran, et NaN est refuse', () => {
@@ -229,5 +259,58 @@ describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
     const v = valideGrille({ ...bonne, serviceCentimes: Number.NaN });
     expect(v.ok).toBe(false);
     if (!v.ok) expect(v.champ).toBe('serviceCentimes');
+  });
+});
+
+/**
+ * LE CHEMIN QUI AVAIT ETE OUBLIE DEUX FOIS.
+ *
+ * 🔴 L INVENTAIRE AVAIT ETE FAIT SUR LA MAUVAISE QUESTION. On avait cherche « qui appelle la fonction qui
+ * lit les tarifs », alors qu il fallait chercher « qui affiche un prix de template a un client ». Le resume
+ * brut de Meta part aussi vers la carte « Detail par template » du Quantitatif et vers l ecran Campagnes :
+ * la MEME campagne valait 1,00 € la-bas et 1,50 € sur sa fiche Performance Lab, et deux cartes de la MEME
+ * page annoncaient deux totaux. Troisieme revue du 2026-09-18, apres deux correctifs qui avaient chacun
+ * deplace la frontiere de la divergence sans la supprimer.
+ */
+describe('pricingFacture : le resume de Meta devient un prix de vente', () => {
+  const brut = {
+    byCategory: {
+      marketing: { category: 'marketing', cost: 10, volume: 100, ratePerMessage: 0.1 },
+      utility: { category: 'utility', cost: 2, volume: 100, ratePerMessage: 0.02 },
+    },
+    totalCost: 12,
+    currency: 'EUR',
+  };
+
+  it('🔴 chaque categorie porte le prix de vente', () => {
+    const p = pricingFacture(brut, { ...GRILLE_DEFAUT, margeTemplate: 150 });
+    expect(p.byCategory.marketing!.ratePerMessage).toBeCloseTo(0.15, 6);
+    expect(p.byCategory.utility!.ratePerMessage).toBeCloseTo(0.03, 6);
+  });
+
+  /**
+   * 🔴 `cost` ET `totalCost` NE BOUGENT PAS, et c est le coeur de la fonction. Ce sont les charges REELLES
+   * que Meta a facturees : les marger en ferait une projection de vente melangee a une depense constatee,
+   * donc un total qui n est ni l un ni l autre.
+   */
+  it('🔴 les charges REELLES de Meta ne sont pas margees', () => {
+    const p = pricingFacture(brut, { ...GRILLE_DEFAUT, margeTemplate: 150 });
+    expect(p.totalCost, 'ce que Meta a facture, pas ce qu on vend').toBe(12);
+    expect(p.byCategory.marketing!.cost).toBe(10);
+    expect(p.byCategory.marketing!.volume, 'et le volume non plus, evidemment').toBe(100);
+  });
+
+  it('une marge de 100 ne change rien, donc les ecrans d avant lisent le meme chiffre', () => {
+    expect(pricingFacture(brut, GRILLE_DEFAUT)).toEqual(brut);
+  });
+
+  it('un resume sans categorie ne casse pas', () => {
+    expect(pricingFacture({ byCategory: {}, totalCost: 0, currency: null }, GRILLE_DEFAUT).byCategory).toEqual({});
+  });
+
+  it('la devise et les champs inconnus traversent', () => {
+    const p = pricingFacture({ ...brut, currency: 'USD' }, { ...GRILLE_DEFAUT, margeTemplate: 200 });
+    expect(p.currency).toBe('USD');
+    expect(p.byCategory.marketing!.category, 'les autres champs de la categorie survivent').toBe('marketing');
   });
 });

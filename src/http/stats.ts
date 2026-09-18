@@ -298,7 +298,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    *
    * ⚠️ Route SÉPARÉE de `/stats/cost`, alors qu'elle lit la même matière pour les templates, et ce n'est
    * pas un doublon : le graphe répond « comment ça s'est réparti dans le temps », celle-ci « ce que la
-   * période a coûté, tous canaux ». Elles partagent le calcul (`chiffrer`, `prixTemplate`), pas la forme.
+   * période a coûté, tous canaux ». Elles partagent le calcul (`chiffrer`, et la marge appliquee EN AMONT par `tarifsFactures`), pas la forme.
    */
   app.get('/tenants/:tenantId/stats/cost/messages', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

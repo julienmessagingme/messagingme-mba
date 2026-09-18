@@ -754,7 +754,7 @@ export function CostChartCard({
             <BoutonPdf zone="quanti-cout" />
           </div>
           <p className="text-xs text-ink-400">
-            {t('par jour, tarif Meta × volume', 'per day, Meta rate × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total, locale, cost.currency)}</span></> : null}
+            {t('par jour, votre prix × volume', 'per day, your price × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total, locale, cost.currency)}</span></> : null}
             {/* 🔴 CE QUE LE COÛT NE COMPTE PAS, DIT PLUTÔT QUE TU. Un envoi sans catégorie connue ne produit
                 aucun coût et disparaissait du calcul en silence : le client lisait zéro là où il avait bien
                 envoyé. Vécu sur 22 envois de scénario, dont la catégorie n'était pas écrite avant le
@@ -898,7 +898,7 @@ export function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) 
           <Metric
             label={t('Prix estimé', 'Estimated price')}
             value={estimated != null ? `≈ ${fmtCost(estimated, locale, pricing?.currency)}` : t('indisponible', 'unavailable')}
-            hint={estimated != null ? t('volume × tarif catégorie (Meta)', 'volume × category rate (Meta)') : t('tarif Meta indisponible', 'Meta rate unavailable')}
+            hint={estimated != null ? t('volume × votre prix (tarif Meta et votre marge)', 'volume × your price (Meta rate and your margin)') : t('tarif Meta indisponible', 'Meta rate unavailable')}
           />
         </div>
       )}

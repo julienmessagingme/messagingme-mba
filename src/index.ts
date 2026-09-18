@@ -19,7 +19,7 @@ import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, estimerCoutContact, entonnoirEngagement, type CategoryRates } from './stats/cost';
 import { assemblerDetailCampagne } from './stats/cout-campagne';
 import { coutMessages } from './stats/cout-messages';
-import { grilleDepuisLigne, tarifsFactures } from './stats/prix';
+import { grilleDepuisLigne, tarifsFactures, pricingFacture } from './stats/prix';
 import { basculesRcs, FENETRE_BASCULE_MS } from './stats/rcs-conversationnel';
 import { PLAFOND_TOURS_IA } from './stats/cout-ia';
 import { rangeToUnix, addDays, todayParis } from './stats/range';
@@ -1010,12 +1010,27 @@ async function main(): Promise<void> {
     stats: {
       getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
       getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
+      /**
+       * 🔴 CE CHEMIN AUSSI PORTE LA MARGE, ET IL A ETE OUBLIE DEUX FOIS. Son resultat alimente la carte
+       * « Detail par template » du Quantitatif ET le cout affiche sur l ecran Campagnes (total, ligne, et
+       * tiroir de detail). L inventaire des consommateurs avait ete fait sur `tarifsMeta`, alors que la
+       * bonne question etait « qui affiche un prix de template a un client ». Sans marge ici, la MEME
+       * campagne valait 1,00 € sur l ecran Campagnes et 1,50 € sur sa fiche Performance Lab, et deux cartes
+       * de la MEME page annoncaient deux totaux. Releve a la troisieme revue du 2026-09-18.
+       *
+       * ⚠️ `cost` ET `totalCost` NE SONT PAS MARGES, et c est delibere : ce sont les charges REELLES que
+       * Meta a facturees sur la periode, pas une projection de vente. Seul `ratePerMessage` devient un prix,
+       * parce que c est le seul que les ecrans multiplient par un volume pour annoncer un montant au client.
+       * Les melanger ferait un total qui n est ni l un ni l autre.
+       */
       getPricing: async (tenant, range) => {
-        const wabaId = await repo.getTenantWabaId(tenant);
+        const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
         if (!wabaId) return null;
         const { startTs, endTs } = rangeToUnix(range);
         const pricing = await metaFactory.pricingClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
-        return pricing.getPricingAnalytics(wabaId, startTs, endTs);
+        const brut = await pricing.getPricingAnalytics(wabaId, startTs, endTs);
+        if (!brut) return brut;
+        return pricingFacture(brut, grilleDepuisLigne(ligne));
       },
       getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
       getErrorBreakdown: (tenant, range, templateName) => statsStore.getErrorBreakdown(tenant, range, templateName),

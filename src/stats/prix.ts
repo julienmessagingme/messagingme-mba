@@ -179,11 +179,27 @@ export function valideGrille(entree: unknown): { ok: true; grille: GrillePrix } 
     typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 
   const { margeTemplate: mt, centimes: c, franchise: f } = BORNES_GRILLE;
-  // 🔴 LA BASE ARRONDIRAIT EN SILENCE, ET CE FICHIER S'INTERDIT DE CORRIGER. `prix_marge_template` est un
-  // `numeric(6,2)` et les centimes aussi : une marge a 100,555 ou un prix a 2,485 seraient ENREGISTRES
-  // arrondis, donc differents de ce qui a ete saisi, sans que personne le sache. Refuser nomme le champ.
-  const deuxDecimalesMax = (v: unknown): boolean => typeof v === 'number' && Math.round(v * 100) === v * 100;
-  if (!borne(e.margeTemplate, mt.min, mt.max) || !deuxDecimalesMax(e.margeTemplate)) return { ok: false, champ: 'margeTemplate' };
+  /**
+   * 🔴 LA COMPARAISON SE FAIT A EPSILON, ET L EGALITE STRICTE REFUSAIT UN PRIX SUR NEUF. `2.47 * 100` vaut
+   * `247.00000000000003` en virgule flottante : `Math.round(v * 100) === v * 100` rendait donc FAUX, et un
+   * client qui tapait 2,47 lisait « champ invalide » sans la moindre explication. Mesure : 1146 refus sur
+   * les 10001 valeurs a deux decimales entre 0 et 100, dont 1,15, 9,95, 8,2, 0,07 et 2,03. Mes propres
+   * tests ne le voyaient pas parce que les quatre defauts (2,48, 100, 6, 8) tombent tous du bon cote du
+   * flottant. Releve en revue le 2026-09-18, une heure apres l avoir ecrit.
+   */
+  const deuxDecimalesMax = (v: unknown): boolean =>
+    typeof v === 'number' && Number.isFinite(v) && Math.abs(v * 100 - Math.round(v * 100)) < 1e-9;
+
+  /**
+   * 🔴 LA MARGE EST UN ENTIER, PARCE QUE SA COLONNE EST UN `smallint`. Le commentaire precedent affirmait
+   * `numeric(6,2)`, ce qui etait faux (migration 0154 : `prix_marge_template smallint`), et la garde
+   * acceptait donc une marge decimale. node-postgres l envoie en texte, Postgres infere `int2` depuis la
+   * colonne et rejette : **500 sur un geste ordinaire**, exactement le mode de panne que ce fichier dit
+   * fermer. ⚠️ Et ce cas n etait pas atteignable AVANT : l ancienne saisie convertissait a chaque frappe,
+   * donc on ne pouvait pas ecrire une marge decimale. C est le correctif de saisie, legitime par ailleurs,
+   * qui l a ouvert. Un correctif qui arme un defaut voisin, dans le meme commit.
+   */
+  if (!borne(e.margeTemplate, mt.min, mt.max) || !Number.isInteger(e.margeTemplate)) return { ok: false, champ: 'margeTemplate' };
   if (!borne(e.serviceCentimes, c.min, c.max) || !deuxDecimalesMax(e.serviceCentimes)) return { ok: false, champ: 'serviceCentimes' };
   if (!borne(e.serviceFranchise, f.min, f.max) || !Number.isInteger(e.serviceFranchise)) return { ok: false, champ: 'serviceFranchise' };
   if (typeof e.serviceDepuis !== 'string' || !JOUR_ISO.test(e.serviceDepuis) || !jourExiste(e.serviceDepuis)) return { ok: false, champ: 'serviceDepuis' };
@@ -223,4 +239,32 @@ export function tarifsFactures(
 ): { marketing: number | null; utility: number | null; currency: string | null } {
   const marge = (tarif: number | null | undefined): number | null => (tarif == null ? null : prixTemplate(tarif, g));
   return { marketing: marge(brut.marketing), utility: marge(brut.utility), currency: brut.currency ?? null };
+}
+
+/**
+ * UN RESUME DE TARIFS DE META, TRANSFORME EN PRIX DE VENTE, CATEGORIE PAR CATEGORIE.
+ *
+ * 🔴 IL EXISTE PARCE QUE `tarifsFactures` NE COUVRAIT PAS TOUT LE MONDE. Le resume brut de Meta part aussi
+ * vers la carte « Detail par template » du Quantitatif et vers l ecran Campagnes (total, ligne, tiroir de
+ * detail), par un AUTRE chemin que les cinq consommateurs deja marges. Sans ce passage, la MEME campagne
+ * valait 1,00 € sur l ecran Campagnes et 1,50 € sur sa fiche Performance Lab, et deux cartes de la MEME
+ * page annoncaient deux totaux. Trouve a la troisieme revue : l inventaire avait ete fait sur la fonction
+ * qui lit les tarifs, alors que la bonne question etait « qui affiche un prix de template a un client ».
+ *
+ * 🔴 SEUL `ratePerMessage` DEVIENT UN PRIX. `cost` et `totalCost` sont les charges REELLES que Meta a
+ * facturees sur la periode : les marger en ferait une projection de vente melangee a une depense constatee,
+ * donc un total qui n est ni l un ni l autre. Cette asymetrie est le coeur de la fonction, pas un oubli.
+ *
+ * ⚠️ TYPE STRUCTUREL, PAS LE TYPE DE META. Ce module est PUR et ne connait pas `src/meta/` : accepter la
+ * forme plutot que la classe evite de coupler la grille de prix au client de l API.
+ */
+export function pricingFacture<C extends { ratePerMessage: number }, T extends { byCategory: Record<string, C> }>(
+  brut: T,
+  g: GrillePrix,
+): T {
+  const byCategory: Record<string, C> = {};
+  for (const [cle, c] of Object.entries(brut.byCategory)) {
+    byCategory[cle] = { ...c, ratePerMessage: prixTemplate(c.ratePerMessage, g) };
+  }
+  return { ...brut, byCategory };
 }

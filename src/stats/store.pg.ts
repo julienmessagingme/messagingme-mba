@@ -337,7 +337,9 @@ const TZ = STATS_TZ;
  * LA FENETRE D ATTRIBUTION D UNE CAMPAGNE : sept jours apres l envoi recu par le contact.
  *
  * 🔴 UNE SEULE ECRITURE, PARCE QU IL Y EN AVAIT TROIS. Elle borne ce qui est attribue a une campagne :
- * les clics, les reponses (`engagementsParCampagne`), et les messages de service (`servicesParCampagne`).
+ * les clics ET les reponses, qui sont les deux moities d `engagementsParCampagne`, et les messages de
+ * service (`servicesParCampagne`). ⚠️ Ne pas la chercher dans `clicsParCampagne`, qui est une AUTRE lecture
+ * et n a aucune fenetre de sept jours : elle compte depuis le premier envoi, sans borne haute.
  * Le cadrage dit « la fenetre de 7 jours n est pas un nombre choisi ici : c est celle
  * d `engagementsParCampagne`, reprise telle quelle », parce que numerateur et denominateur du cout par
  * engagement doivent parler de la MEME population sur la MEME fenetre. Trois litteraux `interval '7 days'`
@@ -1085,8 +1087,13 @@ export class PgStatsStore {
          -- donc plausible et faux, le mode de panne que tout ce lot se donne pour mission d eviter.
          -- Releve en revue finale le 2026-09-18.
          --
-         -- ⚠️ engagementsParCampagne n a PAS de borne, et ce n est pas un precedent : elle compte des
-         -- PERSONNES attribuees a une campagne, et son resultat n est divise par aucun total de periode.
+         -- ⚠️ engagementsParCampagne n a PAS de borne de periode, et cette phrase a d abord dit que « son
+         -- resultat n est divise par aucun total de periode ». C ETAIT FAUX : il EST le denominateur du
+         -- cout par engagement, dont le numerateur est desormais entierement borne. Pour une campagne dont
+         -- les envois debordent de la fenetre affichee, on divise donc un cout de periode par des engages
+         -- de toute la vie de la campagne, et le cout par engage sort trop bas. Le critere du cadrage (la
+         -- MEME fenetre de sept jours des deux cotes) reste tenu, d ou le jaune plutot que le rouge, mais
+         -- la borner reste a faire et c est ecrit dans todo.md. Releve a la troisieme revue du 2026-09-18.
          select cv.contact_id, m.created_at, m.id as message_id
            from conversation_messages m
            join conversations cv on cv.id = m.conversation_id

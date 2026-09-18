@@ -259,18 +259,13 @@ export function estimateCoutParCampagne(
    */
   service?: { parCampagne: Map<string, number>; prixUnitaire: number },
   /**
-   * LA MARGE DE L ESPACE SUR LE TARIF META, en pourcent.
-   *
-   * 🔴 SANS ELLE, LA MEME CARTE PORTE DEUX PRIX DE TEMPLATE. La ligne « messages envoyes » applique la
-   * marge (`prixTemplate`) ; cette ligne-ci utilisait le tarif Meta BRUT. Tant que la marge valait 100,
-   * les deux coincidaient et l ecart etait invisible. Le jour ou la grille est devenue REGLABLE depuis les
-   * reglages (2026-09-18), le defaut est devenu atteignable : deux chiffres de la meme carte auraient
-   * diverge en silence des qu un client posait une marge. Releve en revue finale comme latent, corrige au
-   * moment precis ou il a cesse de l etre.
-   *
-   * ⚠️ ABSENTE = 100, donc le tarif Meta tel quel, donc exactement le comportement d avant.
+   * ⚠️ IL N Y A PLUS DE PARAMETRE DE MARGE ICI, ET C EST VOLONTAIRE. Elle a vecu a cette place quelques
+   * heures, le temps qu une revue montre que deux AUTRES consommateurs des memes tarifs l ignoraient. Elle
+   * est desormais posee UNE SEULE FOIS, a la source (`tarifsFactures`), donc `rates` porte deja le prix de
+   * VENTE quand il arrive ici. Le parametre a ete laisse en place une heure de plus, mort, avec dix lignes
+   * de documentation affirmant qu il s appliquait : un appelant qui l aurait cru et aurait passe 150 aurait
+   * vu sa marge avalee en silence, sans erreur du compilateur (il etait optionnel) ni d aucun test.
    */
-  margeTemplate?: number,
 ): CoutParCampagne {
   const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
   for (const r of rows) {

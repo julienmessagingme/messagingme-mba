@@ -107,7 +107,8 @@ export class PgTenantSettingsStore {
        * avant `migrate` ne cassait plus une page, il reproduisait le 2026-08-17, une heure et demie sans
        * enregistrer un seul message.
        *
-       * ⚠️ ET LE MEME LOT AVAIT DEJA TRANCHE DANS L'AUTRE SENS, dix lignes plus loin : `PgStatsStore.grillePrix`
+       * ⚠️ ET LE MEME LOT AVAIT DEJA TRANCHE DANS L'AUTRE SENS, dans un AUTRE fichier (`PgStatsStore.grillePrix`,
+       * `src/stats/store.pg.ts`) : elle
        * lit ces memes six colonnes en `select *` dans un `try/catch`, avec pour justification ecrite que la
        * migration n'est pas encore passee entre le deploiement de Vercel et celui du VPS. Deux lecteurs des
        * memes colonnes, deux decisions opposees, dans le meme commit. Releve en revue finale le 2026-09-18.
