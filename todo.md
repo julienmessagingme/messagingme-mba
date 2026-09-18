@@ -1,5 +1,31 @@
 # todo.md : backlog
 
+## 🟡 Ce que les six revues du Performance Lab ont laisse porter (2026-09-18)
+
+Aucun ne bloque le deploiement, la sixieme revue l a tranche explicitement. Ils sont ranges dans l ordre ou
+elle recommande de les prendre.
+
+- **La phrase additive de la carte « Facture par Meta » n est couverte par AUCUN test**, ni unitaire ni
+  e2e : la version fautive, celle qui BRANCHAIT entre les deux phrases au lieu de les cumuler, passerait la
+  suite a l identique. `web/e2e/quantitatif-sous-onglets.spec.ts` simule deja `/stats/templates` : y poser
+  `margeTemplate: 150` et affirmer la presence des DEUX phrases coute trois lignes. Plus un cas unitaire
+  `fmtPourcent(120.5, 'fr') === '120,5 %'`.
+- **`fmtPourcent` met une espace avant le `%` dans les DEUX langues**, alors que `fmtPct`, deux fonctions
+  plus haut dans le meme fichier, documente et applique la convention inverse (« 42 % » en francais,
+  « 42% » en anglais). L anglais rendra donc « your 150 % margin » a cote de « 42% » sur la meme page. Elle
+  teste aussi `locale === 'fr'` avec `en-US` la ou le reste du fichier teste `locale === 'en'` avec `en-GB`.
+- **Le cas « la marge est celle de l espace du JETON » ne discrimine pas** : `scopeTenant` rend `null` des
+  que les deux different, donc les deux valeurs sont toujours la meme chaine quand la route continue. Ce
+  qu il prouve reellement, et c est reel, c est qu un espace refuse ne declenche AUCUNE lecture. Le
+  renommer, ou monter un jeton dont le tenant differe.
+- **`tests/prix-grille.test.ts` passe la marge en CHAINE mais n assert jamais dessus** : le cas annonce
+  couvrir « sa forme reelle » et ne le prouve pas. Une ligne, `expect(g.margeTemplate).toBe(120.5)`.
+- **`/stats/templates` lit `tenant_settings` DEUX fois par appel**, une fois dans `getPricing` et une fois
+  pour la marge. Le cout est nul (cle primaire, une ligne par espace), mais les deux lectures peuvent
+  encadrer un `PATCH` de la grille et afficher une marge qui n est pas celle qui a servi au prix. Deriver
+  la marge de la meme lecture que `getPricing` ferme les deux.
+
+
 ## 🟡 Quatre ecarts mineurs releves par les revues finales (2026-09-17 et 18)
 
 - **Le cout par engagement divise un numerateur BORNE par un denominateur qui ne l est pas.** Depuis que

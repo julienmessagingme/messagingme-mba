@@ -77,10 +77,24 @@ froid : c'est très exactement la dérive contre laquelle l'en-tête de ce fichi
 
 **CE QUI RESTE DÛ SUR CE CHANTIER**, dans l'ordre où ça se pose :
 
-1. 🔴 **L'ESSAI RÉEL, ET IL SEUL CLÔT LA FEATURE.** Ouvrir Performance Lab sur les vraies données :
-   déplier les trois lignes de la carte « Coûts », cliquer une campagne mesurée et vérifier que le
-   funnel et les barres par bloc disent quelque chose de vrai, puis cliquer une journée de l'écran
-   d'analyse. Aucun de ces écrans n'a jamais tourné ailleurs que dans ses propres tests.
+1. 🔴 **L'ESSAI RÉEL, ET IL SEUL CLÔT LA FEATURE. IL A DEUX MOITIÉS.**
+
+   **(a) Les écrans.** Ouvrir Performance Lab sur les vraies données : déplier les trois lignes de la carte
+   « Coûts », cliquer une campagne mesurée et vérifier que le funnel et les barres par bloc disent quelque
+   chose de vrai, puis cliquer une journée de l'écran d'analyse. Aucun de ces écrans n'a jamais tourné
+   ailleurs que dans ses propres tests.
+
+   **(b) 🔴 LA MARGE, ET C'EST CELLE QU'ON ALLAIT OUBLIER.** Poser une **marge à 150 %** dans Paramètres >
+   Vos prix, puis vérifier que **cinq écrans annoncent le même prix unitaire** : l'écran Campagnes (total,
+   ligne, tiroir de détail), la fiche d'une campagne dans Performance Lab, le graphe de coût du Quantitatif,
+   le détail par template, et le bilan d'un contact. Vérifier au passage que la carte « Facturé par Meta »
+   nomme la marge comme cause de l'écart, en plus du tarif moyen.
+
+   ⚠️ **POURQUOI CETTE MOITIÉ EXISTE.** Le défaut « un écran affiche encore le tarif brut » a échappé à
+   TROIS revues successives, parce qu'il est **invisible tant que la marge vaut 100** : les deux chiffres
+   coïncident alors, et tous les tests passent. Un essai qui ne pose jamais de marge ne peut donc pas voir
+   le septième consommateur oublié. Elle était écrite dans le plan, que le plan lui-même déclare non fiable ;
+   relevé à la sixième revue, elle est désormais ici, où ce fichier fait foi.
 2. **Lot 3 : les thèmes déclarés par le client et la réanalyse de toute la base**, facturée sur SA clé
    Gateway. Cadré dans la spec, aucun plan écrit, rien commencé.
 

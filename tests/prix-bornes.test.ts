@@ -261,9 +261,10 @@ describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
     // `toContain` pour une raison qui n est pas celle qu il teste.
     expect(SQL, 'prix_marge_template doit etre un numeric(6,2), pas un smallint')
       .toMatch(/prix_marge_template\s+numeric\(6,2\)/);
-    // Et le changement de TYPE doit etre inconditionnel : `add column if not exists` protege de
-    // l existence, pas du type, donc une base ou 0154 est deja passee en smallint garderait ce type.
-    expect(SQL, 'le type doit etre corrige meme sur une base ou 0154 est deja appliquee')
+    // Et le changement de TYPE est inconditionnel : `add column if not exists` protege de l existence, pas
+    // du type. ⚠️ Il ne couvre PAS une base ou 0154 est deja inscrite, que le runner ne rejoue jamais : il
+    // couvre une base ou la colonne existe sans que 0154 le soit (creation a la main, reprise partielle).
+    expect(SQL, 'le type doit etre corrige sur une base ou la colonne existe hors de 0154')
       .toMatch(/alter column prix_marge_template type numeric\(6,2\)/);
   });
 

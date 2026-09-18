@@ -49,7 +49,15 @@ alter table tenant_settings add column if not exists prix_marge_template     num
 -- y accepterait 120,5, Postgres infererait `int2` et rejetterait, donc 500 sur un geste ordinaire.
 -- Faire dependre la justesse d'une migration d'une PREMISSE (« elle n'est pas encore appliquee ») est
 -- exactement ce que ce depot a paye neuf fois sur le compteur de migrations. Cette ligne ne coute rien
--- quand le type est deja bon, et elle ferme le cas pour toutes les bases.
+-- quand le type est deja bon.
+--
+-- 🔴 MAIS ELLE NE FERME PAS « TOUTES LES BASES », ET LA PREMIERE REDACTION L'A AFFIRME A TORT. Le runner
+-- fait `if (applied.has(file)) continue;` (`db/migrate.ts`) : sur une base ou 0154 est DEJA inscrite dans
+-- `schema_migrations`, ce fichier n'est jamais rejoue, donc cette ligne ne s'execute pas et un `smallint`
+-- y resterait. Ce qu'elle ferme reellement, c'est le cas d'une base ou la COLONNE existe sans que 0154
+-- soit inscrite : creation a la main, reprise partielle, restauration. Une base deja migree en `smallint`
+-- se repare a la main. Releve a la sixieme revue : une justification fausse est pire qu'aucune, parce
+-- qu'elle sera recopiee, et celle-ci nommait precisement le cas qu'elle ne couvre pas.
 alter table tenant_settings alter column prix_marge_template type numeric(6,2);
 alter table tenant_settings add column if not exists prix_service_centimes   numeric(6,2) not null default 2.48;
 alter table tenant_settings add column if not exists prix_service_franchise  integer      not null default 1000;
