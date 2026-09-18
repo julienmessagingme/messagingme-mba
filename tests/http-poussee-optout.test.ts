@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { GRILLE_DEFAUT } from '../src/stats/prix';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
@@ -43,7 +44,7 @@ function app(branche: string | null = null) {
   const settings: SettingsRouteDeps = {
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, optoutRequestId: courant, mentionIaFrequence: null,
+      controlHandbackSeconds: null, mbaHandoffMode: null, optoutRequestId: courant, mentionIaFrequence: null, prix: GRILLE_DEFAUT,
       timezone: 'Europe/Paris', businessHours: {},
     }),
     setMbaEnabled: async () => {},

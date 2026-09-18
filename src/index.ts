@@ -1057,8 +1057,10 @@ async function main(): Promise<void> {
           grilleDepuisLigne(ligne),
         );
         const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
+        // 🔴 LA MEME MARGE QUE LA LIGNE « MESSAGES ENVOYES », depuis la MEME grille. Deux prix de template
+        // sur la meme carte divergeraient en silence des qu un client pose une marge.
         return estimateCoutParCampagne(volumes, rates, clics, engagements,
-          { parCampagne: services, prixUnitaire });
+          { parCampagne: services, prixUnitaire }, grilleDepuisLigne(ligne).margeTemplate);
       },
       /**
        * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.
@@ -1246,6 +1248,9 @@ async function main(): Promise<void> {
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
+      // La grille de prix de l'espace. Elle etait posee en base depuis 0154 et AUCUN chemin ne l'ecrivait :
+      // la marge negociee n'etait atteignable que par un `UPDATE` a la main. Releve en revue finale.
+      setGrillePrix: (tenant, grille) => settingsStore.setGrillePrix(tenant, grille),
       setMbaHandoffMode: (tenant, mode) => settingsStore.setMbaHandoffMode(tenant, mode),
       // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
       // de choisir » et « l'heure a changé » écrivent exactement la même chose.

@@ -1,3 +1,4 @@
+import { prixTemplate, GRILLE_DEFAUT } from './prix';
 import type { DailyPoint, CostVolumeRow } from './store.pg';
 
 /** Coût estimé par jour et catégorie, sur la plage. `hasRates=false` si Meta n'a fourni aucun tarif. */
@@ -258,6 +259,19 @@ export function estimateCoutParCampagne(
    * une instance qui ne sait pas encore les compter, et la carte doit alors le DIRE.
    */
   service?: { parCampagne: Map<string, number>; prixUnitaire: number },
+  /**
+   * LA MARGE DE L ESPACE SUR LE TARIF META, en pourcent.
+   *
+   * 🔴 SANS ELLE, LA MEME CARTE PORTE DEUX PRIX DE TEMPLATE. La ligne « messages envoyes » applique la
+   * marge (`prixTemplate`) ; cette ligne-ci utilisait le tarif Meta BRUT. Tant que la marge valait 100,
+   * les deux coincidaient et l ecart etait invisible. Le jour ou la grille est devenue REGLABLE depuis les
+   * reglages (2026-09-18), le defaut est devenu atteignable : deux chiffres de la meme carte auraient
+   * diverge en silence des qu un client posait une marge. Releve en revue finale comme latent, corrige au
+   * moment precis ou il a cesse de l etre.
+   *
+   * ⚠️ ABSENTE = 100, donc le tarif Meta tel quel, donc exactement le comportement d avant.
+   */
+  margeTemplate?: number,
 ): CoutParCampagne {
   const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
   for (const r of rows) {
@@ -274,7 +288,8 @@ export function estimateCoutParCampagne(
       ligne.nonChiffrables += r.count;
     } else {
       ligne.chiffres += r.count;
-      ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
+      // Le prix FACTURE, pas le tarif paye : meme fonction que la ligne « messages envoyes ».
+      ligne.cout = (ligne.cout ?? 0) + r.count * prixTemplate(verdict.tarif, { ...GRILLE_DEFAUT, margeTemplate: margeTemplate ?? 100 });
     }
     par.set(r.campaignId, ligne);
   }

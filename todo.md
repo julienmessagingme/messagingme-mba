@@ -1,35 +1,6 @@
 # todo.md : backlog
 
-## 🔴 UNE MOITIE MANQUANTE DU LOT « PERFORMANCE LAB » (revue finale du 2026-09-17)
-
-Ce point est une ETAPE DU PLAN jamais executee, pas un defaut decouvert : les cases
-`- [ ]` de `docs/superpowers/plans/2026-09-17-performance-lab-couts.md` sont restees ouvertes, et le
-chantier a ete annonce complet alors qu il ne l etait pas. C est le motif que le depot paie le plus
-souvent : **une capacite livree sans le chemin qui la produit.** (Le second point de cette section, les
-messages de service non imputes aux campagnes, a ete fait le 2026-09-18.)
-
-### 1. La grille de prix par espace n est reglable par PERSONNE (tache 1, step 8)
-
-La migration 0154 pose six colonnes sur `tenant_settings` (marge sur le tarif template, prix du message
-de service et sa franchise, sa date d effet, les deux prix RCS). `grilleDepuisLigne` a UN seul appelant,
-en LECTURE. Aucune route, aucun ecran, aucun test ne les ECRIT : un `grep` sur tout le depot ne rend que
-la migration, le module pur et ses tests. La justification ecrite dans la migration (« le tarif smsmode
-se negocie, un grand compte ne se facture pas comme un petit ») n est donc atteignable que par un
-`UPDATE` SQL a la main sur la production.
-
-⚠️ **Rien ne casse en attendant** : les defauts reproduisent exactement le comportement d avant, donc
-deployer 0154 est sans effet visible. Ce qui manque, c est `src/settings/store.pg.ts`, `src/http/settings.ts`
-et `web/app/parametres/page.tsx`, nommes par le plan. 🔴 La grille voyage dans un objet IMBRIQUE `prix`,
-jamais en six champs a plat : c est la regle du `Pick` recopie du `CLAUDE.md`, six champs se desynchronisent.
-
-🟡 **ET UN SECOND DEFAUT DORT DERRIERE CELUI-LA** : la carte des couts porte DEUX prix de template. La
-ligne « messages envoyes » applique `prixTemplate` (donc la marge de l espace), la ligne « cout par
-engagement » et la colonne « Cout/engage » viennent d `estimateCoutParCampagne`, qui utilise le tarif Meta
-BRUT. Avec la marge par defaut a 100 les deux coincident, donc c est invisible aujourd hui. Le jour ou
-quelqu un pose une marge, deux chiffres de la MEME carte divergent en silence. Les deux points se
-corrigent ensemble ou pas du tout.
-
-## 🟡 Trois ecarts mineurs releves par la meme revue (2026-09-17)
+## 🟡 Trois ecarts mineurs releves par la revue finale (2026-09-17)
 
 - **La traduction tombe sur le credit du client mais n est chiffree NULLE PART.** `src/traduction/`
   `traduire.pg.ts` n ecrit ni debit ni compteur, et `consommationIa` ne lit que `agent_sessions`. Le

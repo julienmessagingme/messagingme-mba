@@ -616,6 +616,36 @@ export interface TenantSettings {
   timezone: string;
   /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). */
   businessHours: BusinessHours;
+  /**
+   * CE QUE CET ESPACE FACTURE : marge sur le tarif Meta, prix du message de service et sa franchise
+   * mensuelle, les deux prix RCS.
+   *
+   * ⚠️ OPTIONNEL A LA LECTURE : une instance anterieure au 2026-09-18 ne le rend pas, et l'ecran masque
+   * alors la section plutot que d'afficher un formulaire de zeros. Absent n'est pas « gratuit ».
+   */
+  prix?: GrillePrix;
+}
+
+/** Miroir de `GrillePrix` (src/stats/prix.ts). Les bornes de saisie vivent cote SERVEUR, qui les refuse. */
+export interface GrillePrix {
+  /** En POURCENT du tarif Meta. 100 = on facture le tarif Meta. */
+  margeTemplate: number;
+  serviceCentimes: number;
+  serviceFranchise: number;
+  /** Date d'effet de la facturation du service, 'YYYY-MM-DD'. */
+  serviceDepuis: string;
+  rcsSimpleCentimes: number;
+  rcsConversationnelCentimes: number;
+}
+
+/**
+ * Enregistre la grille de prix. LES SIX CHAMPS D'UN COUP : il n'existe pas de grille partielle, et un
+ * envoi partiel obligerait le serveur a fusionner avec l'existant, ce qui est exactement la ou ce depot
+ * s'est deja fait avoir. Le serveur REFUSE une valeur hors bornes au lieu de la corriger, et nomme le
+ * champ fautif dans `champ`.
+ */
+export function setGrillePrix(tenantId: string, prix: GrillePrix): Promise<{ prix: GrillePrix }> {
+  return request<{ prix: GrillePrix }>(`/tenants/${tenantId}/settings/prix`, { method: 'PATCH', body: JSON.stringify(prix) });
 }
 export function getSettings(tenantId: string): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`);

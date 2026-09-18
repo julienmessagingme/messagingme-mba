@@ -71,3 +71,36 @@ describe('le service s ajoute au template', () => {
     expect(r.lignes.map((l) => l.campaignId)).toEqual(['c1', 'c2']);
   });
 });
+
+/**
+ * LES DEUX LIGNES DE LA CARTE APPLIQUENT LA MEME MARGE.
+ *
+ * 🔴 CE DEFAUT ETAIT LATENT, ET LE CABLAGE DE LA GRILLE L A RENDU ATTEIGNABLE. La ligne « messages
+ * envoyes » applique `prixTemplate` (donc la marge de l espace) ; le tableau des campagnes utilisait le
+ * tarif Meta BRUT. Tant que la marge valait 100, les deux coincidaient et personne ne pouvait le voir.
+ * Depuis que la marge se regle depuis un ecran, deux chiffres de la MEME carte divergeraient en silence.
+ * Corrige au moment precis ou il a cesse d etre theorique.
+ */
+describe('la marge de l espace vaut pour les deux lignes de la carte', () => {
+  it('🔴 une marge de 150 majore le cout du tableau, comme celui des messages', () => {
+    const r = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map(), undefined, 150);
+    // 10 envois a 0,10 majores de 50 % = 1,50, et non 1,00.
+    expect(r.lignes[0]!.cout).toBeCloseTo(1.5, 6);
+  });
+
+  it('une marge absente vaut 100, donc exactement le comportement d avant', () => {
+    const sans = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map());
+    const cent = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map(), undefined, 100);
+    expect(sans.lignes[0]!.cout).toBe(cent.lignes[0]!.cout);
+    expect(sans.lignes[0]!.cout).toBeCloseTo(1, 6);
+  });
+
+  it('la marge porte sur les templates, PAS sur les messages de service', () => {
+    // Le service a son propre prix, saisi, deja au prix de VENTE : le marger une seconde fois le
+    // facturerait deux fois.
+    const r = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map(),
+      { parCampagne: new Map([['c1', 10]]), prixUnitaire: 0.02 }, 150);
+    // 1,50 de templates + 0,20 de service, et non 0,30 de service.
+    expect(r.lignes[0]!.cout).toBeCloseTo(1.7, 6);
+  });
+});

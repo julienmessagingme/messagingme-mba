@@ -6,6 +6,7 @@ import type { BusinessHours, DayHours } from '../workflow/conditions';
 import { withinBusinessHours } from '../workflow/conditions';
 import { scopeTenant } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
+import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 
 export interface SettingsRouteDeps {
   getSettings(tenantId: string): Promise<TenantSettings>;
@@ -22,6 +23,15 @@ export interface SettingsRouteDeps {
   setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
+  /**
+   * Enregistre la grille de prix de l'espace (migration 0154).
+   *
+   * OPTIONNELLE : absente, la route rend 503 et l'ecran masque la section, plutot que d'offrir un
+   * formulaire qui ne mene nulle part. C'est le motif « offert-et-inerte » que le produit s'interdit, et
+   * ce lot l'a precisement paye une fois : la migration a vecu trois semaines sans aucun ecran pour
+   * l'ecrire.
+   */
+  setGrillePrix?(tenantId: string, grille: import('../stats/prix').GrillePrix): Promise<void>;
   /** Quand l'agent de Meta passe la main à un humain (écran « Activation »). */
   setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
   /**
@@ -297,6 +307,29 @@ export function registerSettings(
    * ⚠️ `enabled` ne décide PAS si l'agent transfère (il décide seul), mais s'il LÂCHE le fil ensuite. C'est
    * pourquoi « jamais » ne coupe pas les transferts : il laisse l'agent garder la conversation.
    */
+  /**
+   * CE QUE CET ESPACE FACTURE : la marge sur le tarif Meta, le prix d'un message de service et sa
+   * franchise mensuelle, les deux prix RCS. Admin-only comme ses voisines.
+   *
+   * 🔴 LES SIX CHAMPS D'UN COUP, ET LA VALIDATION REFUSE AU LIEU DE CORRIGER. Ramener une valeur hors
+   * bornes dans les bornes enregistrerait un prix que personne n'a choisi, et le client batirait un budget
+   * dessus sans jamais savoir que sa saisie avait ete reecrite. La reponse NOMME le champ fautif.
+   *
+   * ⚠️ LES BORNES SONT CELLES DES CHECK DE LA MIGRATION 0154, par `valideGrille`. Accepter plus large
+   * rendrait un 500 (Postgres refuse la ligne) sur un geste ordinaire ; accepter plus etroit refuserait un
+   * reglage legitime sans raison lisible.
+   */
+  app.patch('/tenants/:tenantId/settings/prix', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.setGrillePrix) return reply.code(503).send({ error: 'grille de prix indisponible sur cette instance' });
+    const v = valideGrille(req.body);
+    if (!v.ok) return reply.code(400).send({ error: `champ invalide : ${v.champ}`, champ: v.champ, bornes: BORNES_GRILLE });
+    await deps.setGrillePrix(tenant, v.grille);
+    return reply.code(200).send({ prix: v.grille });
+  });
+
   app.patch('/tenants/:tenantId/settings/mba-handoff', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });

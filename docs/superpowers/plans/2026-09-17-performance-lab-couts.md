@@ -215,7 +215,7 @@ export function prixTemplate(tarifMeta: number, g: GrillePrix): number {
 - [ ] **Step 7 : MUTER la marge** (remplacer `g.margeTemplate / 100` par `1`) et vérifier que le cas
       « marge 150 » échoue. Restaurer.
 
-- [ ] **Step 8 : câbler la lecture et l'écriture** dans `src/settings/store.pg.ts` (la grille voyage dans
+- [x] **Step 8 : câbler la lecture et l'écriture** (fait le 2026-09-18, apres que la revue finale a releve que la grille n etait reglable par personne) dans `src/settings/store.pg.ts` (la grille voyage dans
       un objet IMBRIQUÉ `prix`, jamais en six champs à plat : c'est la règle du `Pick` recopié du
       `CLAUDE.md`, et six champs se désynchronisent), puis exposer le réglage dans `web/app/parametres/page.tsx`.
 

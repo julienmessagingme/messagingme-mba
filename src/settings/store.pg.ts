@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { BusinessHours } from '../workflow/conditions';
 import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
+import { grilleDepuisLigne, type GrillePrix } from '../stats/prix';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
 export const DEFAULT_TIMEZONE = 'Europe/Paris';
@@ -56,6 +57,18 @@ export interface TenantSettings {
    */
   optoutRequestId: string | null;
   /**
+   * CE QUE CET ESPACE FACTURE (migration 0154), en objet IMBRIQUE et jamais en six champs a plat.
+   *
+   * 🔴 IMBRIQUE, ET C'EST LA REGLE DU `Pick` RECOPIE DU `CLAUDE.md`. Six champs a plat forment une liste
+   * qu'il faut tenir alignee a la main dans chaque contrat qu'ils traversent, et elle derive : le depot l'a
+   * deja paye en production (deux capacites cablees dans le worker, absentes du contrat, jamais vues par le
+   * moteur). Un objet passe d'un seul tenant.
+   *
+   * ⚠️ JAMAIS `null` : un espace qui n'a rien regle recoit `GRILLE_DEFAUT`, dont la marge a 100 reproduit
+   * exactement le tarif Meta. Le defaut est donc invisible, ce qui est tout son interet.
+   */
+  prix: GrillePrix;
+  /**
    * QUAND les agents IA de cet espace annoncent qu'ils sont des IA (migration 0140). `null` = rien n'a
    * jamais été réglé ici, le code retombe alors sur `session`, exactement le défaut de 0126.
    *
@@ -84,8 +97,14 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode, optout_request_id, mention_ia_frequence from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null } & Record<string, unknown>>(
+      // ⚠️ LES SIX COLONNES DE PRIX RENDENT LA MIGRATION 0154 BLOQUANTE POUR CETTE LECTURE, qui est un chemin
+      // chaud de la console. Elles sont nommees plutot que ramassees par `select *` : une etoile ferait
+      // entrer ici toute colonne future sans qu'on l'ait decide. La sequence de deploiement (migrer AVANT
+      // de deployer) est donc obligatoire, et `DEPLOY.md` la porte.
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode, optout_request_id, mention_ia_frequence,
+              prix_marge_template, prix_service_centimes, prix_service_franchise, prix_service_depuis::text as prix_service_depuis, prix_rcs_centimes, prix_rcs_conv_centimes
+         from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -102,6 +121,10 @@ export class PgTenantSettingsStore {
       // ⚠️ Une valeur inconnue vaut `null`, donc « rien n'a été réglé », donc le défaut `session`. Une base
       // en retard (migration 0140 pas encore passée) se comporte comme avant, sans rien casser.
       mentionIaFrequence: estFrequenceMention(r?.mention_ia_frequence) ? r.mention_ia_frequence : null,
+      // 🔴 LA MEME CONVERSION QUE LA LECTURE DES STATISTIQUES, par la MEME fonction pure. En ecrire une
+      // seconde ici ferait deux facons de lire la meme ligne, et le jour ou l'une gere un `numeric` rendu
+      // en chaine et pas l'autre, l'ecran de reglages et la carte des couts afficheraient deux prix.
+      prix: grilleDepuisLigne(r ?? null),
     };
   }
 
@@ -193,6 +216,35 @@ export class PgTenantSettingsStore {
       `insert into tenant_settings (tenant_id, control_handback_seconds, updated_at) values ($1, $2, now())
        on conflict (tenant_id) do update set control_handback_seconds = excluded.control_handback_seconds, updated_at = now()`,
       [tenantId, seconds],
+    );
+  }
+
+  /**
+   * Enregistre la grille de prix de l'espace. Upsert cible : n'ecrase aucun autre reglage.
+   *
+   * 🔴 LES SIX D'UN COUP, JAMAIS UN SEUL. Il n'existe pas de grille partielle : un `patch` a un champ
+   * obligerait a fusionner avec l'existant a l'ecriture, et c'est precisement la ou le depot s'est deja
+   * fait avoir (une liste REMPLACEE au lieu d'etre fusionnee, qui a detruit du travail client). L'appelant
+   * a valide les six par `valideGrille`, qui refuse tout ce qui n'est pas complet.
+   *
+   * ⚠️ AUCUNE BORNE ICI : elles vivent dans `valideGrille` (pour le message) et dans les CHECK de la
+   * migration 0154 (pour la garantie). Une troisieme copie ici serait la premiere a deriver.
+   */
+  async setGrillePrix(tenantId: string, g: GrillePrix): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, prix_marge_template, prix_service_centimes, prix_service_franchise,
+                                    prix_service_depuis, prix_rcs_centimes, prix_rcs_conv_centimes, updated_at)
+       values ($1, $2, $3, $4, $5::date, $6, $7, now())
+       on conflict (tenant_id) do update set
+         prix_marge_template = excluded.prix_marge_template,
+         prix_service_centimes = excluded.prix_service_centimes,
+         prix_service_franchise = excluded.prix_service_franchise,
+         prix_service_depuis = excluded.prix_service_depuis,
+         prix_rcs_centimes = excluded.prix_rcs_centimes,
+         prix_rcs_conv_centimes = excluded.prix_rcs_conv_centimes,
+         updated_at = now()`,
+      [tenantId, g.margeTemplate, g.serviceCentimes, g.serviceFranchise, g.serviceDepuis,
+       g.rcsSimpleCentimes, g.rcsConversationnelCentimes],
     );
   }
 
