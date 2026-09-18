@@ -207,4 +207,31 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       [tenantId],
     )).rejects.toMatchObject({ code: '23514', constraint: 'agent_tools_gestes_tableau_chk' });
   });
+
+  /**
+   * 🔴 LE CHECK STRICT DE 0159, ET IL NE POUVAIT PAS ÊTRE POSÉ EN 0157. C'est la leçon de 0152 appliquée
+   * dans l'autre sens : 0157 a laissé `agent_id` nullable pour que le code DÉPLOYÉ, qui l'ignorait,
+   * continue de créer ses définitions sans échouer. Une fois ce code remplacé, la contrainte se ferme.
+   *
+   * ⚠️ CE QU'ELLE ACHÈTE : `Tools >` n'a plus besoin de filtrer quoi que ce soit pour ne montrer que les
+   * connecteurs, puisque plus aucune action ne peut y apparaître. Une garantie tenue par la base vaut mieux
+   * qu'un `filter` dans un écran, que le prochain écran oubliera.
+   */
+  it('🔴 une ACTION au niveau de l’ESPACE est désormais REFUSÉE par la base', async () => {
+    await expect(pool.query(
+      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'mba', 'orpheline', 'O', 'o', '', 'read')`,
+      [tenantId],
+    )).rejects.toMatchObject({ code: '23514', constraint: 'agent_tools_action_par_agent_chk' });
+  });
+
+  it('⚠️ un CONNECTEUR au niveau de l’espace reste parfaitement légitime', async () => {
+    // La preuve inverse : le CHECK ne doit pas déborder sur ce qui se partage vraiment. Sans elle, on
+    // pourrait fermer la contrainte sur `agent_id is not null` tout court et rendre `Tools >` inutilisable.
+    await expect(pool.query(
+      `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'http', $2, 'connecteur_espace', 'C', 'c', '', 'read')`,
+      [tenantId, sourceHttp],
+    )).resolves.toBeTruthy();
+  });
 });

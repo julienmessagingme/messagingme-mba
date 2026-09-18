@@ -215,11 +215,15 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     // base, invisibles, et faussent les compteurs « utilisé par N consommateurs » de la bibliothèque.
     const agent = await agents.create(tenantId, `jetable-${Date.now()}`, 'Je suis une IA.', 'm');
     const outil = await pool.query<{ id: string }>(
-      // ⚠️ AUCUN `agent_id` : la colonne est partie avec 0128, et c'est tout le sujet de ce test. Une
-      // définition n'appartient à aucun agent, seule la ligne de liaison ci-dessous les relie.
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
-       values ($1, 'mba', 'menage_consentement', 'M', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
-      [tenantId],
+      /**
+       * ⚠️ CE COMMENTAIRE DISAIT « AUCUN `agent_id`, la colonne est partie avec 0128 », ET C'EST DEVENU FAUX
+       * LE 2026-09-18. 0157 la fait revenir pour les ACTIONS, qui appartiennent à un agent ; 0159 pose le
+       * CHECK qui l'exige. Ce que ce test éprouve N'A PAS CHANGÉ : c'est le MÉNAGE du consentement, donc la
+       * ligne de LIAISON, et elle reste ce qui relie un outil à son consommateur.
+       */
+      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+       values ($1, $2, 'mba', 'menage_consentement', 'M', 'd', 'n', '[]'::jsonb, '{}'::jsonb, 'read') returning id`,
+      [tenantId, agent.id],
     );
     const toolId = outil.rows[0]!.id;
     await pool.query(

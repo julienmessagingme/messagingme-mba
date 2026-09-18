@@ -354,11 +354,12 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     // Ecrit en SQL direct plutot que par le store d outils : ce qu on eprouve est le `where` de
     // `reglerOutil`, pas la route de creation d un outil maison.
     const maison = (await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser,
+      // ⚠️ `agent_id` DEPUIS 0157 : une action appartient à l'agent, et 0159 pose le CHECK qui l'exige.
+      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser,
                                 params, binding, risk)
-       values ($1, 'mba', 'lire_contact_itest', 'x', 'x', 'x', '[]'::jsonb,
+       values ($1, $2, 'mba', 'lire_contact_itest', 'x', 'x', 'x', '[]'::jsonb,
                '{"handler":"mba_lire_contact"}'::jsonb, 'read') returning id`,
-      [tenantId],
+      [tenantId, agentId],
     )).rows[0]!.id;
     expect(await store.reglerOutil(tenantId, maison, { risk: 'write' })).toBe(false);
   });

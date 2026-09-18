@@ -63,13 +63,15 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
     // compris de `byName`. La définition ne porte plus NI `agent_id` NI le consentement : ces colonnes sont
     // parties avec 0128, et les écrire ici ferait échouer le test sur une base à jour.
     const actif = await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser,
+      // ⚠️ `agent_id` DEPUIS 0157 : une ACTION appartient à l'agent, et 0159 pose le CHECK qui l'exige. Un
+      // connecteur, lui, reste au niveau de l'ESPACE et garde `agent_id` à null.
+      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser,
                                 params, binding, output_paths, risk, timeout_ms, max_bytes)
-       values ($1, 'mba', 'lire_commande', 'Lire', 'lit une commande', 'jamais pour annuler',
+       values ($1, $4, 'mba', 'lire_commande', 'Lire', 'lit une commande', 'jamais pour annuler',
                $2::jsonb, $3::jsonb, array['data.statut'], 'read', 4000, 2048) returning id`,
       [tenantId,
         JSON.stringify([{ name: 'reference', type: 'string', source: 'modele', required: true }]),
-        JSON.stringify({ handler: 'lire_contact' })],
+        JSON.stringify({ handler: 'lire_contact' }), agentId],
     );
     await pool.query(
       `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
@@ -77,9 +79,9 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
       [tenantId, actif.rows[0]!.id, `agent:${agentId}`, adminId],
     );
     const eteint = await pool.query<{ id: string }>(
-      `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
-       values ($1, 'mba', 'outil_eteint', 'Éteint', 'inactif', 'jamais', 'read') returning id`,
-      [tenantId],
+      `insert into agent_tools (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, risk)
+       values ($1, $2, 'mba', 'outil_eteint', 'Éteint', 'inactif', 'jamais', 'read') returning id`,
+      [tenantId, agentId],
     );
     await pool.query(
       'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
