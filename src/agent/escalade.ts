@@ -48,15 +48,22 @@ export function creerEscaladeVersHumain(deps: {
   sessions: Pick<AgentSessionStore, 'clore'>;
   /** `WorkflowExecutor.sortirDuBlocAgent`. Rend `false` si aucun parcours n'attendait sur un bloc agent. */
   sortirDuBlocAgent(tenantId: string, waId: string, sessionId: string, sortie: string): Promise<boolean>;
-  /** La bascule du détenteur du fil (`escalateToHuman` du câblage, avec son `only: ['app_workflow']`). */
-  escalateToHuman(tenantId: string, waId: string): Promise<void>;
+  /**
+   * La bascule du détenteur du fil (`escalateToHuman` du câblage, avec son `only: ['app_workflow']`).
+   *
+   * 🔴 ELLE REND `true` UNIQUEMENT SI ELLE A VRAIMENT BASCULÉ, et ce booléen n'est pas décoratif : il est la
+   * seule façon de distinguer « c'est NOUS qui venons de prendre la main » de « un opérateur l'avait déjà
+   * prise ». Le tour s'en sert pour savoir s'il a le droit d'écrire une dernière phrase (`run-turn`), et le
+   * déduire d'une relecture du détenteur rouvrirait la course que ce booléen ferme.
+   */
+  escalateToHuman(tenantId: string, waId: string): Promise<boolean>;
   /** Handle emprunté à la sortie du bloc. Le client le câble vers ce qu'il veut voir après une escalade. */
   sortie?: string;
-}): (input: { tenantId: string; waId: string; runId: string; sessionId: string }) => Promise<void> {
+}): (input: { tenantId: string; waId: string; runId: string; sessionId: string }) => Promise<boolean> {
   const sortie = deps.sortie ?? SORTIE_HUMAIN;
   return async ({ tenantId, waId, sessionId }) => {
     await deps.sessions.clore(tenantId, sessionId, 'sortie', sortie);
     await deps.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);
-    await deps.escalateToHuman(tenantId, waId);
+    return deps.escalateToHuman(tenantId, waId);
   };
 }

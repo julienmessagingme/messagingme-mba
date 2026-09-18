@@ -150,7 +150,7 @@ test.describe('Agents IA : les outils', () => {
   test('🔴 une définition du MÊME handler dans l espace n empeche plus l ajout', async ({ page }) => {
     const appels: Appel[] = [];
     const dansLEspace = {
-      id: 'o7', handler: 'poser_tag', name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
+      id: 'o7', name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
       description: 'Marque le contact.', origin: 'mba', risk: 'write', sourceId: null,
       mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [],
     };

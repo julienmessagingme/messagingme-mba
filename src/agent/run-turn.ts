@@ -403,7 +403,18 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   // L'échéance d'inactivité est posée QUAND MÊME, et c'est voulu : `advance` vient de l'effacer en enfilant ce
   // tour, et sans elle un fil repris par un humain qui ne revient jamais laisserait un run en attente et une
   // session vivante pour toujours. Avec elle, le balayage les ramasse au bout du délai.
-  if (deps.mayAct && !(await deps.mayAct(job.tenantId, job.waId))) {
+  //
+  // 🔴 SAUF QUAND C'EST CE TOUR-CI QUI VIENT DE LA DONNER (revue du 2026-09-18). Une escalade bascule le fil
+  // vers `app_human` AVANT de revenir ici : la garde se retournait donc contre nous, et la dernière phrase de
+  // l'agent (« nous sommes fermés, l'équipe vous répond lundi ») était jetée sans une trace. Le lot des
+  // horaires était intégralement inerte en production, pendant que le bac à sable l'affichait, faute de
+  // passer par ce chemin.
+  //
+  // ⚠️ LA MARQUE VIENT DE L'ÉCRITURE, JAMAIS D'UNE RELECTURE DU DÉTENTEUR. `setControlOwner` ne rend `true`
+  // que s'il a lui-même fait passer `app_workflow` à `app_human` : un opérateur qui avait déjà pris la main
+  // rend `false`, et on se tait, exactement comme avant. C'est ce qui distingue « la garde est fausse à
+  // cause de nous » de « la garde est vraie », sans rouvrir la course qu'elle ferme.
+  if (deps.mayAct && !decision.mainPriseParCeTour && !(await deps.mayAct(job.tenantId, job.waId))) {
     const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
     await poserEcheance(job, repos, maintenant, deps);
     await finirLeTour(job, session.id, deps);

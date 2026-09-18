@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
+import { readFileSync } from 'node:fs';
 import { pgSsl } from '../../src/db/ssl';
 import { PgToolCatalog } from '../../src/agent/catalog.pg';
 import { NomOutilDejaPris } from '../../src/agent/catalog';
@@ -83,6 +84,12 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
     // La preuve inverse. Sans elle, avoir simplement RETIRÉ l'unicité passerait le test précédent tout en
     // laissant un agent exposer au modèle deux outils portant le même nom, ce qu'aucune API n'accepte.
     await expect(catalogue.ajouter(tenantId, agentA, outil('terminer'))).rejects.toBeInstanceOf(NomOutilDejaPris);
+    // 🔴 ET LE MESSAGE DIT « AGENT », PAS « ESPACE » (revue finale du 2026-09-18). C'est la phrase exacte
+    // dont Julien demandait ce qu'elle voulait dire : 0157 a corrigé le conflit, le message désignait encore
+    // l'espace et envoyait chercher chez le voisin un outil qui est chez soi. La portée est lue sur la
+    // contrainte violée, donc elle ne peut pas dériver de la base.
+    await expect(catalogue.ajouter(tenantId, agentA, outil('terminer')))
+      .rejects.toThrow('un outil de cet agent porte déjà ce nom');
   });
 
   it('🔴 l’action porte bien son `agent_id`, ce n’est pas une définition d’espace', async () => {
@@ -233,5 +240,103 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
        values ($1, 'http', $2, 'connecteur_espace', 'C', 'c', '', 'read')`,
       [tenantId, sourceHttp],
     )).resolves.toBeTruthy();
+  });
+
+  /**
+   * 🔴 DÉTACHER UNE ACTION LA SUPPRIME (revue finale du 2026-09-18).
+   *
+   * Conséquence non vue de 0157, et c'est le cul-de-sac que ce lot corrigeait, reproduit un cran plus bas.
+   * La bibliothèque de l'espace exclut désormais les actions d'agent, or c'est le SEUL écran d'où l'on
+   * supprime une définition. Détacher ne retirait que le consentement : la définition survivait, invisible
+   * de partout, ineffaçable, et son nom restait pris pour cet agent. Recréer le même outil rendait 409.
+   *
+   * ⚠️ LES DEUX SENS SONT ICI, et le second est celui qui empêche de « corriger » en supprimant toujours.
+   */
+  it('🔴 détacher une ACTION efface sa définition, et le nom redevient libre', async () => {
+    const cree = await catalogue.ajouter(tenantId, agentA, outil('jetable'));
+    expect(cree).not.toBeNull();
+    expect(await catalogue.detacher(tenantId, agentA, cree!.id)).toBe(true);
+    // Ni consentement, ni définition : rien d'orphelin derrière.
+    const reste = await pool.query(
+      'select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, cree!.id],
+    );
+    expect(reste.rowCount).toBe(0);
+    // Et la preuve qui compte pour le client : il peut le recréer. Sans le correctif, 409 sans issue.
+    await expect(catalogue.ajouter(tenantId, agentA, outil('jetable'))).resolves.not.toBeNull();
+  });
+
+  it('⚠️ détacher un CONNECTEUR ne supprime RIEN : il appartient à l’espace et se partage', async () => {
+    // Posé en SQL direct : ce qui est éprouvé ici est le geste de DÉTACHEMENT, pas la création d'un
+    // connecteur, qui a sa propre suite et demanderait en plus une requête de la bibliothèque.
+    const id = (await pool.query<{ id: string }>(
+      `insert into agent_tools (tenant_id, origin, source_id, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'http', $2, 'connecteur_partage', 'C', 'c', '', 'read') returning id`,
+      [tenantId, sourceHttp],
+    )).rows[0]!.id;
+    await pool.query(
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+      [tenantId, id, `agent:${agentA}`],
+    );
+    expect(await catalogue.detacher(tenantId, agentA, id)).toBe(true);
+    const reste = await pool.query(
+      'select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, id],
+    );
+    // Il DOIT survivre : le supprimer au premier détachement le ferait disparaître pour tous les autres
+    // agents, et c'est exactement ce que 0127 avait corrigé.
+    expect(reste.rowCount).toBe(1);
+  });
+
+  /**
+   * 🔴 L'ADOPTION DE 0159, JOUÉE DEPUIS LE FICHIER DE MIGRATION LUI-MÊME (revue finale du 2026-09-18).
+   *
+   * Le défaut réparé était dans la MESURE de la migration, pas dans son `delete` : elle ne comptait que les
+   * lignes qu'elle allait supprimer, ce qui ne répond pas à la question que pose son CHECK. Le code DÉPLOYÉ
+   * crée une action `origin='mba'` SANS `agent_id` et AVEC un consommateur : une action créée d'ici au
+   * déploiement survivait donc au `delete` et violait le CHECK. L'`alter table` échouait en fin de
+   * déploiement, sur une donnée qu'aucune des requêtes de contrôle ne montrait.
+   *
+   * ⚠️ IL LIT LE `.sql`, IL NE RECOPIE PAS LA REQUÊTE. Une copie divergerait du jour où l'on retoucherait la
+   * migration, et le test continuerait de passer en éprouvant du SQL que personne n'applique.
+   *
+   * ⚠️ ET IL ROULE DANS UNE TRANSACTION ANNULÉE, contrainte comprise : l'état qu'il répare ne peut plus
+   * exister une fois 0159 appliquée, donc il faut rouvrir la porte le temps de la sonde, et la refermer même
+   * si l'assertion échoue.
+   */
+  it('🔴 une action créée par l’ANCIEN code est ADOPTÉE par son consommateur, pas supprimée', async () => {
+    const sql = readFileSync(new URL('../../db/migrations/0159_actions_orphelines.sql', import.meta.url), 'utf8');
+    const debut = sql.indexOf('update agent_tools');
+    const adoption = sql.slice(debut, sql.indexOf(';', debut) + 1);
+    expect(adoption).toContain('agent_tool_consommateurs'); // la requête a bien été trouvée
+
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('alter table agent_tools drop constraint agent_tools_action_par_agent_chk');
+      // EXACTEMENT ce que l'ancien `ajouter` écrit : pas d'`agent_id`, et une ligne de consentement.
+      const id = (await client.query<{ id: string }>(
+        `insert into agent_tools (tenant_id, origin, name, title, description, ne_pas_utiliser, risk)
+         values ($1, 'mba', 'creee_par_l_ancien_code', 'T', 't', '', 'read') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
+      await client.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, `agent:${agentB}`],
+      );
+
+      await client.query(adoption);
+
+      const apres = await client.query<{ agent_id: string | null }>(
+        'select agent_id from agent_tools where id = $1', [id],
+      );
+      // Adoptée par l'agent que sa ligne de consentement désignait, donc le CHECK peut se refermer.
+      expect(apres.rows[0]!.agent_id).toBe(agentB);
+      await client.query(
+        `alter table agent_tools add constraint agent_tools_action_par_agent_chk
+           check (origin <> 'mba' or agent_id is not null)`,
+      );
+    } finally {
+      await client.query('rollback');
+      client.release();
+    }
   });
 });

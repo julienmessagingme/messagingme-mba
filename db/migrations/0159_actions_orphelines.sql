@@ -1,19 +1,35 @@
--- 0159 : les définitions d'action héritées s'en vont, et le CHECK strict prend leur place.
+-- 0159 : les définitions d'action héritées s'en vont, celles qui servent sont ADOPTÉES, et le CHECK strict
+-- prend leur place.
 --
 -- 🔴 LA SEULE OPÉRATION IRRÉVERSIBLE DE TOUT CE CHANTIER, et c'est pour ça qu'elle est mesurée, ciblée,
 -- et posée en dernier. Arbitrage de Julien, 2026-09-18.
 --
--- CE QU'ELLE SUPPRIME, ET POURQUOI CE N'EST PAS DU TRAVAIL DU CLIENT. Avant la migration 0157, « Ajouter un
--- outil » créait une DÉFINITION D'ESPACE plus une ligne de consentement. L'espace de production porte
--- 7 définitions `origin = 'mba'` sans AUCUN consommateur et sans AUCUNE activation : ce sont des créations
--- qui ont échoué à mi-chemin ou des restes d'essais, jamais un outil qui a servi. Mesuré en base avant
--- d'écrire cette migration, et re-mesurable par la requête ci-dessous avant de l'appliquer.
+-- 🔴 ELLE A ÉTÉ CORRIGÉE PAR LA REVUE FINALE, ET LE DÉFAUT ÉTAIT DANS SA PROPRE MESURE. Elle ne comptait
+-- que les lignes qu'elle allait SUPPRIMER, ce qui ne répond pas à la question que pose son CHECK. Le code
+-- DÉPLOYÉ aujourd'hui crée une action `origin = 'mba'` SANS `agent_id` et lui écrit UN consommateur : une
+-- action créée d'ici au déploiement survit donc au `delete` (elle a un consommateur) ET viole le CHECK
+-- (elle n'a pas d'`agent_id`). L'`alter table` échouait, en fin de déploiement, sur une donnée que la
+-- requête de contrôle ne montrait pas. D'où les DEUX gestes ci-dessous, et non un seul : on supprime ce que
+-- personne n'utilise, on ADOPTE ce que quelqu'un utilise.
 --
---   select count(*) from agent_tools t
+-- ⚠️ LES DEUX REQUÊTES À JOUER AVANT DE L'APPLIQUER, et la seconde est celle qui manquait :
+--
+--   -- 1. ce qui va être SUPPRIMÉ (doit rester des restes d'essais, jamais un outil qui a servi) :
+--   select id, name from agent_tools t
 --    where t.origin = 'mba' and t.agent_id is null
 --      and not exists (select 1 from agent_tool_consommateurs c
 --                       where c.tool_id = t.id and c.tenant_id = t.tenant_id);
 --
+--   -- 2. ce qui BLOQUERAIT le CHECK après le delete et l'adoption, c'est-à-dire les cas ambigus :
+--   select t.id, t.name, array_agg(c.consommateur) from agent_tools t
+--     join agent_tool_consommateurs c on c.tool_id = t.id and c.tenant_id = t.tenant_id
+--    where t.origin = 'mba' and t.agent_id is null
+--    group by t.id, t.name having count(*) > 1 or bool_or(c.consommateur not like 'agent:%');
+--
+-- Si la seconde rend des lignes, il faut TRANCHER à la main avant d'appliquer : une définition partagée
+-- entre deux agents, ou exposée au Meta Business Agent, n'a pas de propriétaire évident et la migration se
+-- refuse à en inventer un. C'est exactement la raison pour laquelle l'adoption ci-dessous est conservatrice.
+
 -- ⚠️ LE PRÉDICAT EST STRICT, ET CHACUNE DE SES TROIS CONDITIONS PORTE SON POIDS. `origin = 'mba'` épargne
 -- les connecteurs, qui appartiennent légitimement à l'espace. `agent_id is null` épargne toutes les actions
 -- du nouveau modèle. Et l'absence de consommateur épargne tout ce qu'un agent ou le MBA utilise vraiment :
@@ -23,6 +39,34 @@ delete from agent_tools t
    and t.agent_id is null
    and not exists (select 1 from agent_tool_consommateurs c
                     where c.tool_id = t.id and c.tenant_id = t.tenant_id);
+
+-- 🔴 L'ADOPTION, ET ELLE N'INVENTE RIEN : C'EST LA LIGNE DE CONSENTEMENT QUI NOMME LE PROPRIÉTAIRE. Une
+-- action créée par le code déployé porte exactement UN consommateur, et c'est l'agent depuis l'écran duquel
+-- on l'a créée. Lui donner cet `agent_id`, c'est écrire ce qui était déjà vrai, pas choisir à la place du
+-- client. C'est aussi ce qui rend la fenêtre de déploiement sûre : tout ce que l'ancien code peut créer
+-- entre maintenant et le déploiement tombe dans ce cas-là.
+--
+-- ⚠️ TROIS GARDES, ET AUCUNE N'EST DÉCORATIVE :
+--   - `count(*) = 1` : deux consommateurs, deux propriétaires possibles, donc on ne tranche pas ;
+--   - `consommateur like 'agent:%'` : le Meta Business Agent n'est pas un agent IA, il n'a pas d'`agent_id` ;
+--   - le `not exists` final : l'agent possède peut-être DÉJÀ une action de ce nom (créée par le code neuf,
+--     entre le déploiement et cette migration). L'adopter violerait `agent_tools_nom_agent_uidx` et ferait
+--     échouer toute la migration sur un index, ce qui est le pire endroit pour l'apprendre.
+update agent_tools t
+   set agent_id = proprio.agent_id
+  from (
+    select c.tool_id, c.tenant_id, substring(min(c.consommateur) from 7)::uuid as agent_id
+      from agent_tool_consommateurs c
+     group by c.tool_id, c.tenant_id
+    having count(*) = 1 and bool_and(c.consommateur like 'agent:%')
+  ) as proprio
+ where t.id = proprio.tool_id
+   and t.tenant_id = proprio.tenant_id
+   and t.origin = 'mba'
+   and t.agent_id is null
+   and not exists (select 1 from agent_tools d
+                    where d.tenant_id = t.tenant_id and d.name = t.name
+                      and d.agent_id = proprio.agent_id);
 
 -- 🔴 LE CHECK STRICT, ET IL NE POUVAIT PAS ÊTRE POSÉ AVANT : c'est la leçon de 0152, appliquée dans l'autre
 -- sens. 0157 a délibérément laissé `agent_id` nullable pour que le code DÉPLOYÉ, qui l'ignorait, continue de

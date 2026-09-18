@@ -25,7 +25,7 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
   const journal: string[] = [];
   const deps: DepsResolveurMba = {
     envoyerBloc: async (i) => { journal.push(`bloc:${i.code}`); return { ok: true }; },
-    escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}`); },
+    escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}`); return true; },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
     ecrireChamp: async (_t, _w, cle, valeur) => { journal.push(`champ:${cle}=${valeur}`); },
     // La recherche a sa propre suite (`tests/agent-knowledge.test.ts`) : ici elle ne rend rien.
@@ -77,6 +77,19 @@ describe('résolveur maison (tâche 16)', () => {
     expect(journal).toEqual(['escalade:33600:s1']);
     expect(r.rendu).toBe(true);
     expect(r.sortie).toBeUndefined(); // la dep a DÉJÀ tout fait : une seconde sortie doublerait la reprise
+    // La bascule a EU LIEU, donc c'est nous qui tenons la main : le tour a le droit d'écrire sa dernière
+    // phrase, celle qui dit au contact que l'équipe est fermée (revue du 2026-09-18).
+    expect(r.mainPrise).toBe(true);
+  });
+
+  it('🔴 « escalader » quand un OPÉRATEUR avait déjà la main : `mainPrise` est faux', async () => {
+    // La preuve inverse, et elle est le contrat entier de ce booléen. `setControlOwner` rend `false` quand le
+    // fil n'était pas `app_workflow` : le tour doit alors se taire, exactement comme avant, plutôt que
+    // d'écrire par-dessus la conversation qu'un humain vient de reprendre.
+    const { resolveur } = harnais({ escaladerVersHumain: async () => false });
+    const r = await resolveur(appel('escalader'));
+    expect(r.rendu).toBe(true);
+    expect(r.mainPrise).toBe(false);
   });
 
   it('« envoyer_bloc » passe le code, et rend le refus du parcours au modele', async () => {

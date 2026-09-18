@@ -63,6 +63,13 @@ export interface SortieResolveur {
   sortie?: string;
   /** L'outil a DÉJÀ rendu la main (escalade humaine) : le tour s'arrête, sans envoi ni autre sortie. */
   rendu?: boolean;
+  /**
+   * La main a été prise PAR NOUS pendant cet appel, et pas par quelqu'un d'autre avant lui.
+   *
+   * ⚠️ N'A DE SENS QU'AVEC `rendu`. Le tour s'en sert pour savoir s'il a encore le droit d'écrire une
+   * dernière phrase, sa garde de détenteur étant devenue fausse du fait de cet appel-ci.
+   */
+  mainPrise?: boolean;
 }
 
 export type ResolveurOutil = (entree: EntreeResolveur) => Promise<SortieResolveur>;
@@ -73,6 +80,8 @@ export interface ResultatOutil {
   contenu: unknown;
   sortie?: string;
   rendu?: boolean;
+  /** Voir `SortieResolveur.mainPrise` : c'est NOTRE appel qui vient de prendre la main. */
+  mainPrise?: boolean;
   /**
    * Erreur de PROTOCOLE : bug de notre client, le tour s'arrête et on n'en reparle pas au modèle.
    *
@@ -489,5 +498,6 @@ export async function executeTool(
     contenu,
     ...(sortie.sortie ? { sortie: sortie.sortie } : {}),
     ...(sortie.rendu ? { rendu: true } : {}),
+    ...(sortie.mainPrise ? { mainPrise: true } : {}),
   };
 }

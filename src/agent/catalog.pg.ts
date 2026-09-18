@@ -101,9 +101,14 @@ function versOutil(r: Ligne): OutilDefini {
 /**
  * Lecture du catalogue d'outils (migration 0086).
  *
- * 🔴 `and actif` est dans le SQL des DEUX requêtes, et `tenant_id = $1 and agent_id = $2` aussi. Le nom
- * d'outil vient du modèle, donc d'un texte qu'un contact peut influencer : c'est la clause `where` qui
+ * 🔴 `and actif` est dans le SQL des DEUX requêtes, et `t.tenant_id = $1 and c.consommateur = $2` aussi. Le
+ * nom d'outil vient du modèle, donc d'un texte qu'un contact peut influencer : c'est la clause `where` qui
  * empêche d'appeler l'outil d'un autre agent ou d'un autre client (voir `ToolCatalog.byName`).
+ *
+ * ⚠️ C'EST LA LIAISON QUI ISOLE, PAS `agent_id`, et il ne faut pas les confondre depuis 0157. `agent_id` dit
+ * à QUI APPARTIENT une définition (une action à son agent, un connecteur à personne) ; le consentement dit
+ * QUI A LE DROIT DE S'EN SERVIR, et c'est lui seul qui garde le chemin d'exécution. Filtrer ici sur
+ * `agent_id` laisserait passer un connecteur partagé auquel cet agent n'a jamais été rattaché.
  */
 export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   constructor(private readonly pool: Pool) {}
@@ -278,11 +283,14 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   /**
    * LE MÊME GESTE, POUR UN CONSOMMATEUR QUI N'EST PAS UN AGENT (2026-09-15).
    *
-   * 🔴 ET IL NE DEMANDE AUCUNE MIGRATION, ce qui a été MESURÉ et non déduit : `agent_tools.agent_id` n'existe
-   * plus depuis la migration 0128. Un outil appartient déjà à l'ESPACE ; seule la ligne
-   * `agent_tool_consommateurs` le rattache à quelqu'un, et le Meta Business Agent y est un consommateur
-   * comme un autre (`mba:<numero>`). Le plan de ce lot prévoyait de rendre une colonne nullable : elle
-   * n'était plus là.
+   * 🔴 ET IL NE DEMANDE AUCUNE MIGRATION, ce qui a été MESURÉ et non déduit : un CONNECTEUR appartient à
+   * l'ESPACE, seule la ligne `agent_tool_consommateurs` le rattache à quelqu'un, et le Meta Business Agent y
+   * est un consommateur comme un autre (`mba:<numero>`). Le plan de ce lot prévoyait de rendre une colonne
+   * nullable : elle n'était plus là.
+   *
+   * ⚠️ CETTE JUSTIFICATION DISAIT « `agent_id` N'EXISTE PLUS DEPUIS 0128 », ET C'EST DEVENU FAUX AVEC 0157,
+   * qui l'a remise pour les ACTIONS. Ce qui reste vrai est ce qui compte ici : un connecteur laisse
+   * `agent_id` à `null`, et le CHECK `agent_tools_agent_origin_chk` le lui impose.
    *
    * 🔴 POURQUOI CE CHEMIN EXISTE. Un outil naissait en le donnant à un agent IA : exposer un appel au Meta
    * Business Agent obligeait donc à créer un agent dont on n'a pas besoin, et à répondre pour lui à des
@@ -310,10 +318,10 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       // porte desormais les prefixes `t.` et `c.` de la JOINTURE, qui n existent pas dans un UPDATE. Postgres
       // repond « missing FROM-clause entry for table t », et c est ce qu il a repondu en CI.
       //
-      // ⚠️ LE PERIMETRE A CHANGE : `agent_id = $2` n existe plus (colonne retiree par 0128). C est un
-      // `exists` sur la LIAISON qui le remplace, et il n est pas decoratif : sans lui, l ecran d un agent
-      // pourrait corriger les mots d un outil qu il n utilise pas, donc changer le comportement de l agent
-      // du voisin.
+      // ⚠️ C EST LA LIAISON QUI BORNE LE PERIMETRE, PAS `agent_id`, et l `exists` n est pas decoratif : sans
+      // lui, l ecran d un agent pourrait corriger les mots d un outil qu il n utilise pas, donc changer le
+      // comportement de l agent du voisin. Le consentement est la bonne cle ici meme depuis 0157 : un
+      // CONNECTEUR n a pas d `agent_id`, et c est pourtant bien cet agent-la qui a le droit de le renommer.
       `update agent_tools set
          name = coalesce($4, name),
          title = coalesce($5, title),
@@ -431,8 +439,41 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * 🔴 DÉTACHER UNE ACTION LA SUPPRIME, DÉTACHER UN CONNECTEUR NON (revue finale du 2026-09-18).
+   *
+   * Le défaut était une conséquence non vue de 0157, et c'était le cul-de-sac même que ce lot corrigeait,
+   * reproduit un cran plus bas. `listCatalogue` exclut désormais les actions d'agent de la bibliothèque de
+   * l'espace ; or la bibliothèque est le SEUL écran d'où l'on puisse supprimer une définition. Détacher une
+   * action ne retirait que la ligne de consentement : la définition restait, plus aucun écran ne la
+   * montrait, plus aucun geste ne pouvait l'effacer, et son nom restait pris pour cet agent. Recréer le même
+   * outil rendait 409, sans issue.
+   *
+   * ⚠️ LES DEUX CONDITIONS PORTENT CHACUNE SON POIDS, et il ne faut en retirer aucune. `agent_id = $3`
+   * épargne les CONNECTEURS, qui appartiennent à l'espace et se partagent : les supprimer au premier
+   * détachement les ferait disparaître pour tous les autres agents. Et l'absence de consommateur restant
+   * épargne une définition qu'un second consommateur utiliserait encore, dont la cascade emporterait le
+   * consentement.
+   *
+   * 🔴 UNE TRANSACTION, parce que ce sont DEUX écritures. Entre les deux, la définition est exactement dans
+   * l'état orphelin qu'on veut ne jamais laisser derrière soi.
+   */
   async detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
-    return this.detacherConsommateur(tenantId, consommateurAgent(agentId), outilId);
+    return this.enTransaction(async (client) => {
+      const res = await client.query(
+        'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
+        [tenantId, consommateurAgent(agentId), outilId],
+      );
+      if ((res.rowCount ?? 0) === 0) return false;
+      await client.query(
+        `delete from agent_tools t
+          where t.tenant_id = $1 and t.id = $2 and t.agent_id = $3
+            and not exists (select 1 from agent_tool_consommateurs c
+                             where c.tool_id = t.id and c.tenant_id = t.tenant_id)`,
+        [tenantId, outilId, agentId],
+      );
+      return true;
+    });
   }
 
   async detacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
@@ -471,15 +512,21 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    *
    * ⚠️ `left join` SUR LES CONSOMMATEURS : une définition que plus personne n'utilise doit APPARAÎTRE, c'est
    * même la seule qu'on puisse supprimer. Une jointure interne la cacherait précisément quand elle compte.
+   *
+   * 🔴 ET C'EST EXACTEMENT POURQUOI `detacher` EFFACE UNE ACTION (revue finale du 2026-09-18). Le filtre
+   * `agent_id is null` ci-dessous sort les actions de cet écran, donc du SEUL endroit d'où l'on supprime une
+   * définition : détacher une action y laissait un orphelin que rien ne montrait, que rien ne pouvait
+   * effacer, et dont le nom restait pris pour cet agent. L'invariant de ce commentaire (« ce qui ne sert
+   * plus se voit et se supprime ») est tenu des deux côtés, ici pour l'espace, dans `detacher` pour l'agent.
    */
   async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
     const res = await this.pool.query<{
-      id: string; handler: string | null; name: string; title: string; description: string;
+      id: string; name: string; title: string; description: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
       mcp_non_activable: string | null; mcp_indisponible_le: Date | null;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
-      `select t.id, t.binding->>'handler' as handler, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
+      `select t.id, t.name, t.title, t.description, t.origin, t.risk, t.source_id,
               t.mcp_non_activable, t.mcp_indisponible_le,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
@@ -499,7 +546,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       [tenantId],
     );
     return res.rows.map((r) => ({
-      id: r.id, handler: r.handler, name: r.name, title: r.title, description: r.description,
+      id: r.id, name: r.name, title: r.title, description: r.description,
       origin: r.origin, risk: r.risk, sourceId: r.source_id,
       mcpNonActivable: r.mcp_non_activable,
       mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
@@ -552,15 +599,24 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
 }
 
 /**
- * L'index unique `(tenant_id, name)` de la migration 0127, traduit en erreur métier. Sans ça, deux outils du
- * même nom remontaient en 500, dont Cloudflare remplace le corps : le client ne voyait rien.
+ * Les index uniques de nom, traduits en erreur métier. Sans ça, deux outils du même nom remontaient en 500,
+ * dont Cloudflare remplace le corps : le client ne voyait rien.
  *
- * ⚠️ IL PORTAIT SUR `(agent_id, name)` JUSQU'À 0127. La portée s'est ÉLARGIE : un nom pris par l'agent du
- * voisin bloque désormais la création, ce qui est le comportement voulu (une définition par nom et par
- * espace) mais change ce que le message veut dire. D'où « un outil de cet ESPACE » et non « de cet agent ».
+ * 🔴 IL Y EN A DEUX DEPUIS 0157, ET LE MESSAGE DOIT DIRE LEQUEL A REFUSÉ. `agent_tools_nom_agent_uidx` tient
+ * l'unicité d'une ACTION par agent, `agent_tools_nom_espace_uidx` celle d'une définition d'ESPACE. La portée
+ * a fait l'aller-retour (par agent jusqu'à 0127, par espace jusqu'à 0157, par agent de nouveau pour les
+ * actions) et elle a laissé deux fois un message périmé derrière elle. On la LIT donc sur la contrainte
+ * violée, la seule chose qui ne puisse pas dériver.
+ *
+ * ⚠️ LE REPLI EST « ESPACE », et c'est le bon sens du doute : une contrainte inconnue est plus probablement
+ * une unicité d'espace (le régime historique), et désigner l'espace sur un conflit d'agent fait chercher
+ * trop large, quand l'inverse fait chercher à côté.
  */
 function surNomDejaPris(err: unknown): never {
-  if ((err as { code?: string } | null)?.code === '23505') throw new NomOutilDejaPris();
+  const e = err as { code?: string; constraint?: string } | null;
+  if (e?.code === '23505') {
+    throw new NomOutilDejaPris(e.constraint === 'agent_tools_nom_agent_uidx' ? 'agent' : 'espace');
+  }
   throw err;
 }
 

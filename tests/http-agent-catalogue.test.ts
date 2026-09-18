@@ -36,9 +36,7 @@ const h = (): { headers: Record<string, string> } => ({
 });
 
 const BIB: OutilBibliotheque = {
-  // `null` : un outil de connecteur n'a pas de comportement maison, donc pas de handler. C'est le cas
-  // normal, et le champ est REQUIS pour qu'un câblage qui l'oublierait ne compile pas.
-  id: OUTIL, handler: null, name: 'lire_commande', title: 'Lire', description: 'lit une commande',
+  id: OUTIL, name: 'lire_commande', title: 'Lire', description: 'lit une commande',
   origin: 'mba', risk: 'read', sourceId: null, mcpNonActivable: null, mcpIndisponibleLe: null,
   consommateurs: [
     { cle: `agent:${OUTIL}`, actif: true, agentId: OUTIL, agentLabel: 'Support' },

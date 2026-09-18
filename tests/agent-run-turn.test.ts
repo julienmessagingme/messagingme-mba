@@ -459,3 +459,41 @@ describe('le budget, relié à la consommation', () => {
     expect((await runTurn(JOB, deps)).fait).toBe('repondu');
   });
 });
+
+/**
+ * 🔴 LA DERNIÈRE PHRASE APRÈS UNE ESCALADE (revue finale du chantier des moments, 2026-09-18).
+ *
+ * Ces deux cas existent parce que le lot des horaires était INTÉGRALEMENT INERTE en production et qu'aucun
+ * test ne le voyait. Ceux du lot lisaient ce que le cerveau REND (`penserTrace`), jamais ce qui PART. Or
+ * entre les deux il y a `mayAct`, que l'escalade venait elle-même de rendre faux en basculant le fil vers
+ * `app_human` : la phrase était calculée, gardée, puis jetée sans une trace. Le bac à sable, qui ne passe
+ * pas par ce chemin, l'affichait, donc l'essai montrait une fonctionnalité que le contact n'a jamais reçue.
+ *
+ * ⚠️ ILS ASSERTENT SUR `envois`, ET C'EST LA SEULE CHOSE QUI COMPTE. Une assertion sur la décision rendue
+ * passait déjà avant le correctif.
+ */
+describe('runTurn : la main rendue PAR CE TOUR', () => {
+  it('🔴 escalade + équipe fermée : la phrase PART, alors que le fil n est plus à nous', async () => {
+    // `mayAct` est FAUX : l'escalade vient de faire passer le fil en `app_human`, et c'est exactement la
+    // situation que le correctif traite. La marque dit que ce basculement est le NÔTRE.
+    const { deps, envois, transcript } = make(
+      { mayAct: async () => false },
+      { texte: 'Nous sommes fermés, l’équipe vous répond lundi à 9 h.', sortie: null, mainPriseParCeTour: true },
+    );
+    expect(await runTurn(JOB, deps)).toMatchObject({ fait: 'repondu' });
+    expect(envois).toEqual(['Nous sommes fermés, l’équipe vous répond lundi à 9 h.']);
+    // La phrase entre AUSSI au transcript : sans ça, la session garderait la trace d'un silence.
+    expect(transcript).toEqual([{ role: 'agent', texte: 'Nous sommes fermés, l’équipe vous répond lundi à 9 h.' }]);
+  });
+
+  it('⚠️ la main était DÉJÀ prise par un opérateur : rien ne part, la garde tient', async () => {
+    // La preuve inverse, sans laquelle le correctif ci-dessus serait un trou. `setControlOwner` rend `false`
+    // quand le fil n'était pas `app_workflow`, donc la décision ne porte PAS la marque, et le tour se tait.
+    const { deps, envois } = make(
+      { mayAct: async () => false },
+      { texte: 'Je vous passe un conseiller.', sortie: null },
+    );
+    expect(await runTurn(JOB, deps)).toMatchObject({ fait: 'main_perdue' });
+    expect(envois).toEqual([]);
+  });
+});

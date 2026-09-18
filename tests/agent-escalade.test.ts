@@ -17,7 +17,7 @@ function harnais(over: { sortirRend?: boolean } = {}) {
       journal.push(`sortir:${sessionId}:${sortie}`);
       return over.sortirRend ?? true;
     },
-    escalateToHuman: async (_t, waId) => { journal.push(`bascule:${waId}`); },
+    escalateToHuman: async (_t, waId) => { journal.push(`bascule:${waId}`); return true; },
   });
   return { escalader, journal };
 }

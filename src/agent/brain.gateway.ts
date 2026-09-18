@@ -342,8 +342,8 @@ async function boucler(
          * 🔴 ON GARDE LA DERNIÈRE PHRASE, MAIS SEULEMENT SI L'ÉQUIPE EST INDISPONIBLE (2026-09-18).
          *
          * Le jet systématique du texte avait une raison, écrite ici depuis l'origine : après une escalade
-         * c'est la branche `humain` du scénario qui parle, et deux voix coup sur coup valent mieux qu'une
-         * seule bien placée. Cette raison tient toujours QUAND L'ÉQUIPE RÉPOND : rien ne change alors.
+         * c'est la branche `humain` du scénario qui parle, et une seule voix bien placée vaut mieux que deux
+         * coup sur coup. Cette raison tient toujours QUAND L'ÉQUIPE RÉPOND : rien ne change alors.
          *
          * Elle cesse de tenir quand l'équipe ne répond pas. La branche câblée est un bloc STATIQUE : elle ne
          * peut dire ni « c'est fermé » ni « nous reprenons lundi 9 h », puisqu'elle dit la même chose à
@@ -354,7 +354,20 @@ async function boucler(
          * `always`, donc toujours disponible, donc ce `if` ne change rien pour lui.
          */
         const equipeMuette = agent.equipe !== undefined && !agent.equipe.disponible;
-        return { texte: equipeMuette ? (reponse.texte ?? null) : null, sortie: null, usage, appels };
+        return {
+          texte: equipeMuette ? (reponse.texte ?? null) : null,
+          sortie: null,
+          usage,
+          appels,
+          /**
+           * 🔴 SANS CETTE MARQUE, LE TEXTE CI-DESSUS N'ARRIVE JAMAIS AU CONTACT (revue du 2026-09-18).
+           * L'escalade a basculé le fil vers `app_human` juste avant de revenir ici, et `run-turn` relit
+           * le détenteur avant d'envoyer : il concluait « un opérateur a pris la main » et rendait
+           * `main_perdue` sans un mot. Le bac à sable, lui, n'a pas cette garde et AFFICHAIT la phrase,
+           * donc l'essai montrait une fonctionnalité que la production n'avait pas.
+           */
+          ...(res.mainPrise ? { mainPriseParCeTour: true } : {}),
+        };
       }
       if (res.sortie) return { texte: reponse.texte ?? null, sortie: res.sortie, usage, appels };
 

@@ -1687,10 +1687,13 @@ async function main(): Promise<void> {
              * vrai tag sur un vrai contact, ou écrire dans sa fiche, ferait un dégât réel pendant qu'on
              * croit essayer.
              *
-             * ⚠️ ET CE SILENCE EST UNE DETTE ASSUMÉE, PAS UN OUBLI. Le bac à sable promet « exactement ce
-             * que l'agent fera », et il ne montre donc pas encore les gestes qu'un moment déclencherait.
-             * C'est exactement le mensonge que la migration 0150 a corrigé ailleurs : les AFFICHER dans la
-             * trace d'essai est le travail de la passe 3, avec l'écran.
+             * ⚠️ ET CE SILENCE EST UNE DETTE ASSUMÉE, PAS UN OUBLI, MAIS ELLE N'EST TOUJOURS PAS PAYÉE.
+             * Le bac à sable promet « exactement ce que l'agent fera », et il ne montre pas les gestes
+             * qu'un moment déclencherait : c'est le mensonge par omission que la migration 0150 a corrigé
+             * ailleurs. ⚠️ Ce commentaire a annoncé que la passe 3 s'en chargerait ; la passe 3 est livrée
+             * et elle ne l'a pas fait. Une échéance qu'on laisse passer dans un commentaire finit par
+             * dire que c'est fait : le reste à faire est suivi dans
+             * `docs/superpowers/plans/2026-09-18-moments-agent-ia.md`, section « État d'exécution ».
              */
             executerGeste: async () => {},
           },

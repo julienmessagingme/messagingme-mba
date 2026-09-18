@@ -49,6 +49,20 @@ export interface DecisionAgent {
   sortie: string | null;
   /** Consommation du tour. Absente pour un cerveau bouchonné, qui ne consomme rien. */
   usage?: UsageTour;
+  /**
+   * CE TOUR vient lui-même de passer le fil à un humain (escalade), et il l'a fait à l'instant.
+   *
+   * 🔴 ELLE EXISTE PARCE QUE LA GARDE DE DÉTENTEUR DU TOUR DEVIENT FAUSSE DU FAIT DE CETTE ESCALADE
+   * (revue du 2026-09-18). `run-turn` refuse d'envoyer dès que le fil n'est plus `app_workflow`, ce qui
+   * protège d'un opérateur qui aurait repris la conversation pendant les secondes du modèle. Mais
+   * l'escalade bascule elle-même ce détenteur, donc la garde s'armait contre nous et jetait en silence la
+   * dernière phrase de l'agent, celle qui dit au contact que l'équipe est fermée.
+   *
+   * ⚠️ ELLE VIENT DE L'ÉCRITURE, PAS D'UNE RELECTURE. `setControlOwner` rend `true` seulement s'il a
+   * vraiment basculé `app_workflow` vers `app_human` : un opérateur qui avait déjà la main rend `false`,
+   * et le tour se tait, comme avant. Relire le détenteur ici rouvrirait exactement la course qu'on ferme.
+   */
+  mainPriseParCeTour?: boolean;
 }
 
 /**

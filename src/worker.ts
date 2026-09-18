@@ -1725,7 +1725,12 @@ async function main(): Promise<void> {
        * confondre reviendrait a affecter une conversation a personne, ou a chercher longtemps pourquoi
        * l affectation ne prend pas.
        */
-      escalateToHuman: async (t, waId) => { await inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] }); },
+      // 🔴 LE BOOLÉEN EST RENDU, IL N'EST PLUS AVALÉ (revue du 2026-09-18). `setControlOwner` ne rend `true`
+      // que s'il a VRAIMENT basculé `app_workflow` vers `app_human`, et c'est la seule chose qui permette au
+      // tour de savoir que sa garde de détenteur est fausse à cause de LUI. Le jeter ici rendait muette la
+      // dernière phrase de l'agent quand l'équipe est fermée : la question à poser à un câblage est
+      // « que suppose-t-il du module que je viens de changer ? », et celui-ci en suppose la réponse.
+      escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] }),
     });
 
     // Les VRAIS outils maison. À comparer à `resolvers/simulation.ts`, qui sert le bac à sable : ici chaque

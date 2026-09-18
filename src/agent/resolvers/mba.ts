@@ -29,7 +29,7 @@ export interface DepsResolveurMba {
    * Escalade vers un humain (`mba_escalader_humain`). Implémentée par `creerEscaladeVersHumain`
    * (`src/agent/escalade.ts`), qui ordonne les trois effets et explique pourquoi cet ordre.
    */
-  escaladerVersHumain(input: { tenantId: string; waId: string; runId: string; sessionId: string }): Promise<void>;
+  escaladerVersHumain(input: { tenantId: string; waId: string; runId: string; sessionId: string }): Promise<boolean>;
 
   /** Pose un tag sur le contact (`mba_poser_tag`). */
   poserTag(tenantId: string, waId: string, tag: string): Promise<void>;
@@ -69,12 +69,20 @@ const HANDLERS: Record<string, Handler> = {
     return { contenu: { sortie }, sortie };
   },
 
-  /** Escalader vers un humain. `rendu` dit au tour de s'arrêter : la main n'est plus à nous. */
+  /**
+   * Escalader vers un humain. `rendu` dit au tour de s'arrêter : la main n'est plus à nous.
+   *
+   * 🔴 `mainPrise` DIT QUI L'A PRISE, et sans lui le tour ne peut plus écrire un mot (revue du 2026-09-18).
+   * `run-turn` refuse d'envoyer dès que le fil n'est plus `app_workflow` : c'est une garde juste, mais
+   * l'escalade vient elle-même de le basculer, donc elle l'armait contre nous et la dernière phrase de
+   * l'agent était jetée en silence. Ce booléen sépare les deux cas, et il vient de l'écriture, pas d'une
+   * relecture du détenteur qui rouvrirait la course.
+   */
   escalader: async ({ ctx }, deps) => {
-    await deps.escaladerVersHumain({
+    const mainPrise = await deps.escaladerVersHumain({
       tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId,
     });
-    return { contenu: { escalade: true }, rendu: true };
+    return { contenu: { escalade: true }, rendu: true, mainPrise };
   },
 
   poser_tag: async ({ args, ctx }, deps) => {

@@ -52,7 +52,7 @@ function lesDeux(fiches: FicheTrouvee[]) {
   const connaissance = store(fiches);
   const prod: DepsResolveurMba = {
     envoyerBloc: async () => ({ ok: true }),
-    escaladerVersHumain: async () => {},
+    escaladerVersHumain: async () => true,
     poserTag: async () => {},
     ecrireChamp: async () => {},
     connaissance,

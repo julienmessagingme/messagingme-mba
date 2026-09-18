@@ -82,7 +82,22 @@ cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la li
 **Dernière appliquée : 0155**, le 2026-09-18 (`analyse_jour`, les agrégats journaliers qui gardent la
 mémoire de ce que la purge efface, plus `tenant_settings.conversation_retention_days`). Juste avant elle,
 **0154** (la grille de prix par espace : marge sur le tarif Meta, prix du message de service et sa
-franchise, sa date d'effet, les deux prix RCS). **Prochaine libre = 0160** : **0156 à 0159 sont ÉCRITES et PAS ENCORE APPLIQUÉES**. 🔴 **0159 est la SEULE irréversible du chantier** (elle supprime les définitions d'action orphelines) et la SEULE qui doive passer **APRÈS** le déploiement, son CHECK strict étant violé par l'ancien `ajouter`. Détail : **0156, 0157 ET 0158 sont ÉCRITES et PAS ENCORE APPLIQUÉES** (`0158_outil_gestes.sql` : les GESTES d'un moment, ce que NOUS faisons sans le demander au modèle). Détail : **0156 ET 0157 sont ÉCRITES et PAS ENCORE APPLIQUÉES** (`0157_outils_par_agent.sql` : une ACTION appartient à l'agent, un CONNECTEUR à l'espace, avec deux index partiels complémentaires). Détail : **0156 est ÉCRITE et PAS ENCORE APPLIQUÉE** (`0156_agent_transfert_mode.sql`, quand l'équipe est joignable pour un agent IA). ⚠️ Cette phrase-là a été fausse sept fois dans ce fichier, toujours de la même façon : elle vieillit à la SECONDE où `migrate` tourne. Au prochain déploiement, on la relit EN BASE et on la remplace, et **`0153` reste RÉSERVÉ** au
+franchise, sa date d'effet, les deux prix RCS). **Prochaine libre = 0160** : **0156 à 0159 sont ÉCRITES et PAS ENCORE APPLIQUÉES**, toutes du chantier des
+MOMENTS d'un agent IA. Ce qu'elles portent, et l'ordre, qui n'est PAS uniforme :
+**0156** (`agent_transfert_mode` : quand l'équipe est joignable pour un agent IA), **0157**
+(`outils_par_agent` : une ACTION appartient à l'agent, un CONNECTEUR à l'espace, deux index partiels
+complémentaires) et **0158** (`outil_gestes` : les GESTES d'un moment, ce que NOUS faisons sans le demander
+au modèle) passent **AVANT** le déploiement, chacune ajoutant une colonne que le code écrit.
+🔴 **0159 est la SEULE irréversible du chantier** (elle supprime les définitions d'action orphelines, en
+ADOPTE celles qui servent) et la SEULE qui doive passer **APRÈS** le déploiement, son CHECK strict étant
+violé par l'ancien `ajouter`. ⚠️ **Jouer SES DEUX requêtes de contrôle avant de l'appliquer**, elles sont en
+tête du fichier : la seconde, ajoutée par la revue finale, est celle qui manquait, la première ne mesurant
+que ce qui va être supprimé et pas ce qui ferait ÉCHOUER le CHECK.
+⚠️ Cette phrase-là a été fausse sept fois dans ce fichier, toujours de la même façon : elle vieillit à la
+SECONDE où `migrate` tourne. ⚠️ Et elle venait de le redevenir autrement : trois fragments « Détail : »
+périmés s'y étaient empilés, chacun annonçant un sous-ensemble dépassé (« 0156 ET 0157 », puis « 0156 »
+seule), dans le fichier qui se déclare seule source du compteur. **Une ligne d'état se RÉÉCRIT, elle ne
+s'allonge pas** : ajouter par-dessus laisse l'ancienne version affirmer le contraire juste à côté. Au prochain déploiement, on la relit EN BASE et on la remplace, et **`0153` reste RÉSERVÉ** au
 CHECK strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier
 n'existe pas, et le runner n'exige aucune continuité.
 

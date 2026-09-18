@@ -69,3 +69,29 @@ describe('la disponibilité de l’équipe est câblée', () => {
     });
   }
 });
+
+/**
+ * 🔴 ET LE CÂBLAGE QUI RENDAIT TOUT LE LOT INERTE (revue finale, 2026-09-18).
+ *
+ * `escalateToHuman` était écrit `async (t, waId) => { await inboxStore.setControlOwner(...); }` : les
+ * accolades AVALAIENT le booléen. Or c'est le seul fait qui distingue « c'est nous qui venons de prendre la
+ * main » de « un opérateur l'avait déjà prise », et sans lui `run-turn` jetait la dernière phrase de
+ * l'agent, celle qui dit au contact que l'équipe est fermée. Tout le lot des horaires était calculé,
+ * transporté, affiché dans le bac à sable, et perdu à l'envoi.
+ *
+ * ⚠️ C'EST LA QUESTION QU'ON POSE À UN CÂBLAGE, qui n'a par construction aucun dépendant : « que
+ * suppose-t-il du module que je viens de changer ? ». Ici, que la bascule DIT si elle a eu lieu.
+ */
+describe('la bascule vers un humain rend son verdict', () => {
+  const source = sansCommentaires('../src/worker.ts');
+
+  it('🔴 `escalateToHuman` REND ce que `setControlOwner` a répondu, il ne l’avale pas', () => {
+    expect(source).toContain(
+      "escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] })",
+    );
+  });
+
+  it('⚠️ et il ne reste aucune forme à accolades, qui rendrait `void` sans que rien ne le signale', () => {
+    expect(source).not.toMatch(/escalateToHuman:\s*async\s*\([^)]*\)\s*=>\s*\{/);
+  });
+});

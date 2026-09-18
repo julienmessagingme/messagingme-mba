@@ -216,8 +216,23 @@ export class OutilNonActivable extends Error {
   }
 }
 
+/**
+ * 🔴 LE MESSAGE DIT LA BONNE PORTÉE DEPUIS 0157, ET C'ÉTAIT LE DÉFAUT SIGNALÉ PAR JULIEN LUI-MÊME.
+ *
+ * « un outil de cet espace porte déjà ce nom » est la phrase exacte dont il demandait ce qu'elle voulait
+ * dire. La migration 0157 a corrigé la CAUSE (une action est unique par AGENT, plus par espace), mais le
+ * message est resté à l'ancienne portée : il continuait donc de désigner un conflit qui n'existe plus, et
+ * d'envoyer le client chercher chez le voisin un outil qui est chez lui.
+ *
+ * ⚠️ LA PORTÉE SE LIT SUR LA CONTRAINTE VIOLÉE, elle ne se devine pas à l'appelant. C'est la base qui sait
+ * lequel des deux index partiels a refusé, et `patch` en particulier ne peut pas le savoir autrement : il
+ * renomme un outil sans connaître son origine.
+ */
 export class NomOutilDejaPris extends Error {
-  constructor() { super('un outil de cet espace porte déjà ce nom'); this.name = 'NomOutilDejaPris'; }
+  constructor(portee: 'espace' | 'agent' = 'espace') {
+    super(`un outil de cet ${portee} porte déjà ce nom`);
+    this.name = 'NomOutilDejaPris';
+  }
 }
 
 /**
@@ -229,21 +244,15 @@ export class NomOutilDejaPris extends Error {
  */
 export interface OutilBibliotheque {
   id: string;
-  /**
-   * 🔴 LE HANDLER D'UN OUTIL MAISON, ET IL EST ICI PARCE QUE L'ÉCRAN D'UN AGENT EN A BESOIN (2026-09-18).
-   *
-   * La DÉFINITION appartient à l'ESPACE depuis la migration 0127, et son nom y est UNIQUE (0128). Mais
-   * l'onglet Outils d'un agent calculait « ce qu'il reste à donner » contre les outils de CET AGENT : un
-   * outil maison déjà déclaré dans l'espace pour un autre consommateur (le Meta Business Agent, par
-   * exemple) y était donc proposé à la CRÉATION, et l'ajout se faisait refuser en 409 « un outil de cet
-   * espace porte déjà ce nom ». Un cul-de-sac : le client voyait un bouton qui ne pouvait pas marcher, et
-   * aucun chemin ne lui proposait de BRANCHER la définition existante.
-   *
-   * ⚠️ `null` pour un outil de connecteur (API ou MCP), qui n'a pas de comportement maison : le handler est
-   * ce que le résolveur maison lit dans `binding`, et lui seul. REQUIS plutôt qu'optionnel, pour qu'un
-   * câblage qui l'oublierait ne compile pas.
+  /*
+   * ⚠️ IL N'Y A PLUS DE `handler` ICI, ET SON DÉPART EST LE RÉSULTAT DE 0157 (revue finale du 2026-09-18).
+   * Il avait été ajouté le matin même pour un bouton « Brancher » : l'onglet d'un agent proposait de créer
+   * un outil maison que l'espace définissait déjà, et l'ajout se faisait refuser en 409 sans aucun chemin
+   * pour s'en sortir. 0157 a supprimé la CAUSE (une action appartient à son agent, il n'y a plus rien à
+   * brancher), le bouton est parti avec elle, et ce champ n'était plus lu par personne. Un champ que plus
+   * personne ne lit, dont le commentaire justifie encore un écran qui n'existe plus, est ce qui fait croire
+   * au prochain lecteur qu'un mécanisme est en place.
    */
-  handler: string | null;
   name: string;
   title: string;
   description: string;

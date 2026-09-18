@@ -40,7 +40,7 @@ function harnais(rendu: FicheTrouvee[] | (() => never)) {
   const vues: Array<{ tenantId: string; agentId: string; requete: string; limite: number }> = [];
   const deps: DepsResolveurMba = {
     envoyerBloc: async () => ({ ok: true }),
-    escaladerVersHumain: async () => {},
+    escaladerVersHumain: async () => true,
     poserTag: async () => {},
     ecrireChamp: async () => {},
     connaissance: {
