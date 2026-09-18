@@ -430,17 +430,6 @@ async function main(): Promise<void> {
       }
     : undefined;
   /**
-   * Les TARIFS Meta de la période (par catégorie, plus la devise), pour un espace donné.
-   *
-   * 🔴 UN SEUL LECTEUR DE `pricing_analytics`, parce que DEUX écrans du même onglet en dépendent : le
-   * graphe de coût estimé et le tableau « coût par engagement » de la synthèse. Deux lectures écrites
-   * séparément finiraient par diverger (une qui lit la devise, l'autre non ; une qui retombe sur zéro,
-   * l'autre sur null), et le client comparerait deux totaux qui devraient être le même.
-   *
-   * ⚠️ `null` partout quand l'espace n'a pas de WABA ou que Meta ne rend rien : c'est cette absence qui
-   * fait dire aux deux écrans « tarif indisponible » au lieu d'afficher un coût inventé.
-   */
-  /**
    * LE PRIX FACTURE D UN TEMPLATE, ET C EST LE SEUL ENDROIT OU LA MARGE DE L ESPACE S APPLIQUE.
    *
    * 🔴 UN SEUL POINT DE PASSAGE, ET C EST TOUT L INTERET. La marge a d abord ete posee dans les DEUX
@@ -454,7 +443,9 @@ async function main(): Promise<void> {
    * ⚠️ ELLE S APPELAIT `tarifsMeta`, ET CE NOM A CAUSE LA PANNE QU ON VIENT DE REPARER. Ce qui sort n est
    * plus un tarif de Meta, c est un PRIX DE VENTE. L inventaire des consommateurs avait ete fait sur
    * « qui appelle `tarifsMeta` » plutot que sur « qui affiche un prix a un client », et un sixieme chemin
-   * y a echappe deux revues de suite. Un nom qui decrit ce qu on lit plutot que ce qu on rend fait ca. Un tarif absent (`null`) le reste : marger
+   * y a echappe deux revues de suite. Un nom qui decrit ce qu on lit plutot que ce qu on rend fait ca.
+   *
+   * ⚠️ UN TARIF ABSENT (`null`) LE RESTE : marger
    * une absence en ferait un prix, et `chiffrer` ne pourrait plus la compter comme « sans tarif ».
    *
    * ⚠️ La grille est lue PAR ESPACE a chaque appel. Elle vit dans `tenant_settings`, une ligne par espace,

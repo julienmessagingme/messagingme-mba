@@ -158,3 +158,17 @@ export function campaignSendLabel(
   // Ni template ni scénario : le scénario a été supprimé (on delete set null sur campaigns.workflow_id).
   return locale === 'en' ? 'Deleted scenario' : 'Scénario supprimé';
 }
+
+/**
+ * UN POURCENTAGE DEJA CALCULE, formate selon la langue du lecteur.
+ *
+ * ⚠️ DISTINCT DE `fmtPct`, QUI DIVISE. Celui-ci ne calcule rien : il met en forme un nombre qui EST deja un
+ * pourcentage, comme la marge d un espace. Les confondre donnerait « 12050 % » pour une marge de 120,5.
+ *
+ * ⚠️ ET IL EXISTE PARCE QU UN GABARIT RENDAIT « 120.5 % » EN FRANCAIS. Toute la page formate par `locale` ;
+ * une seule interpolation brute suffisait a y mettre un point decimal anglais. Releve en revue le
+ * 2026-09-18, sur une marge decimale que le meme lot venait de rendre possible.
+ */
+export function fmtPourcent(valeur: number, locale: Locale): string {
+  return `${new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : 'en-US', { maximumFractionDigits: 2 }).format(valeur)} %`;
+}

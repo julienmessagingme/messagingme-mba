@@ -257,8 +257,14 @@ describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
    * colonne decimale retrecirait le produit. Les deux sont arrives, dans cet ordre, en une heure.
    */
   it('🔴 la colonne de la marge accepte bien deux decimales', () => {
+    // ⚠️ UNE REGEXP, PAS CINQ ESPACES LITTERAUX : realigner la colonne du fichier SQL casserait un
+    // `toContain` pour une raison qui n est pas celle qu il teste.
     expect(SQL, 'prix_marge_template doit etre un numeric(6,2), pas un smallint')
-      .toContain('prix_marge_template     numeric(6,2)');
+      .toMatch(/prix_marge_template\s+numeric\(6,2\)/);
+    // Et le changement de TYPE doit etre inconditionnel : `add column if not exists` protege de
+    // l existence, pas du type, donc une base ou 0154 est deja passee en smallint garderait ce type.
+    expect(SQL, 'le type doit etre corrige meme sur une base ou 0154 est deja appliquee')
+      .toMatch(/alter column prix_marge_template type numeric\(6,2\)/);
   });
 
   it('deux decimales exactement restent acceptees sur les prix en centimes', () => {

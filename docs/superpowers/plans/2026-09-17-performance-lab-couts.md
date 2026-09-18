@@ -141,7 +141,7 @@ nommer la marge comme cause de l'écart, pas le tarif moyen par catégorie.
 --
 -- 🔴 BLOQUANTE : le code lit ces colonnes des le deploiement. Elle passe AVANT (cf. CLAUDE.md).
 
-alter table tenant_settings add column if not exists prix_marge_template     smallint not null default 100;
+alter table tenant_settings add column if not exists prix_marge_template     numeric(6,2) not null default 100;  -- corrige le 2026-09-18 : un smallint interdisait +20,5 %
 alter table tenant_settings add column if not exists prix_service_centimes   numeric(6,2) not null default 2.48;
 alter table tenant_settings add column if not exists prix_service_franchise  integer  not null default 1000;
 alter table tenant_settings add column if not exists prix_service_depuis     date     not null default date '2026-10-01';

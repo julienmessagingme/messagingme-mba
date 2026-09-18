@@ -41,10 +41,16 @@ export interface StatsRouteDeps {
   getPricing(tenantId: string, range: DateRange): Promise<PricingSummary | null>;
   /**
    * La marge de l espace, en pourcent, pour que l ecran puisse NOMMER la cause de l ecart entre le cout
-   * estime et la facture Meta. OPTIONNELLE : absente, l ecran retombe sur son ancienne phrase, qui reste
-   * juste quand aucune marge n est posee.
+   * estime et la facture Meta.
+   *
+   * 🔴 REQUISE, ET LA PREMIERE VERSION L AVAIT ECRITE `margeTemplate?`. Le `CLAUDE.md` de ce depot porte
+   * DEUX rouges du 2026-09-15 sur ce mot precis (`estDesabonne?`, `guard?`), avec la formule qui s applique
+   * ici sans changer un terme : la difference entre « personne ne s en sert » et « quelqu un s en sert et
+   * elle ne fait rien ». Optionnelle, un cablage qui l oublierait compilait, et l ecran continuait
+   * d attribuer a un arrondi un ecart de 50 %, sans erreur et sans test rouge. Le comble : le commit qui
+   * l a introduite est celui qui pose une garde mecanique contre « ecrit mais pas branche ».
    */
-  margeTemplate?(tenantId: string): Promise<number>;
+  margeTemplate(tenantId: string): Promise<number>;
   /** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
   getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
   /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
@@ -186,9 +192,9 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
       // le tarif moyen par categorie, ce qui etait vrai tant que personne ne posait de marge. Sans ce
       // chiffre, l ecran ne pourrait pas nommer la cause dominante de l ecart, et le client chercherait un
       // arrondi la ou il y a 50 %. Un second appel aux reglages pour un seul nombre serait pire.
-      deps.margeTemplate ? deps.margeTemplate(tenant) : Promise.resolve(undefined),
+      deps.margeTemplate(tenant),
     ]);
-    return reply.code(200).send({ breakdown, pricing, ...(marge === undefined ? {} : { margeTemplate: marge }) });
+    return reply.code(200).send({ breakdown, pricing, margeTemplate: marge });
   });
 
   // Funnel d'UNE campagne (envoyés/délivrés/lus/répondus). ?campaignId=... requis. Pas de plage

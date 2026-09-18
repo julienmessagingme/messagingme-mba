@@ -51,7 +51,9 @@ describe('la grille de prix d’un espace', () => {
     // Sans conversion, `prix_service_centimes` vaudrait '2.48' et `'2.48' * 100` marcherait par coercition
     // pendant que `'2.48' + 0` rendrait '2.480'. Le bug ne se voit qu'a l'addition, c'est-a-dire au total.
     const g = grilleDepuisLigne({
-      prix_marge_template: 120,
+      // ⚠️ EN CHAINE, comme le pilote la rend depuis que la colonne est un `numeric(6,2)`. Elle etait la
+      // seule colonne numeric que ce test exercait en NOMBRE, donc il ne couvrait pas sa forme reelle.
+      prix_marge_template: '120.50',
       prix_service_centimes: '3.10',
       prix_service_franchise: 500,
       prix_service_depuis: '2026-11-01',

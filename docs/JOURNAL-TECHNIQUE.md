@@ -437,7 +437,8 @@ ligne pour un échec sans code Meta (2 sur 25 en production : template inenvoyab
 (`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif).
 🔴 **Depuis le lot E (2026-09-08), un SECOND écran lit les mêmes tarifs** : le tableau « ce que coûte un
 engagement » de la page de synthèse (`getVolumeParCampagne` + `estimateCoutParCampagne`). Les tarifs
-passent par `tarifsMeta` (`src/index.ts`), UN seul lecteur de `pricing_analytics` pour les deux, parce que
+passent par un seul lecteur de `pricing_analytics` (`tarifsMeta` a l'epoque, renomme `prixFactures` le
+2026-09-18 quand il s'est mis a rendre des prix de VENTE, et qui sert desormais six consommateurs), parce que
 deux lectures écrites séparément divergent (l'une qui lit la devise, l'autre non) et que le client
 comparerait deux totaux qui devraient être le même. Le comptage des clics suit la même règle :
 `clicsParCampagne` sert le funnel d'une campagne ET le tableau de toutes. Le tableau est PLAFONNÉ

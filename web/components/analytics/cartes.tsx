@@ -18,7 +18,7 @@ import { DailyChart } from '@/components/DailyChart';
 import { BoutonPdf } from '@/components/BoutonPdf';
 import { useT, useLocale } from '@/lib/i18n';
 import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
-import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
+import { fmtCost, fmtNum, fmtPct, fmtPourcent } from '@/lib/format';
 import { mesureInconnue, ventilationAffichable } from '@/lib/funnel-canal';
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { formatDate } from '@/lib/day';
@@ -856,15 +856,20 @@ export function FactureCard({ data }: { data: TemplateStats | null }) {
         chercher une cause absente.
       */}
       <p className="mt-2 border-t border-ink-100 pt-2 text-xs text-ink-400">
-        {marge !== undefined && marge !== 100
-          ? t(
-            `Le « coût estimé » plus haut est ce que VOUS facturez : il applique votre marge de ${marge} %. Ce total-ci est ce que Meta vous a compté. Les deux ne se rejoignent pas, et c’est normal.`,
-            `The "estimated cost" above is what YOU charge: it applies your ${marge}% margin. This total is what Meta charged you. The two are not meant to match.`,
-          )
-          : t(
-            'Le « coût estimé » plus haut ne donnera jamais exactement ce chiffre : c’est notre volume multiplié par un tarif moyen par catégorie, pas une facture.',
-            'The "estimated cost" above will never match this exactly: it is our volume times an average per-category rate, not an invoice.',
-          )}
+        {t(
+          'Le « coût estimé » plus haut ne donnera jamais exactement ce chiffre : c’est notre volume multiplié par un tarif moyen par catégorie, pas une facture.',
+          'The "estimated cost" above will never match this exactly: it is our volume times an average per-category rate, not an invoice.',
+        )}
+        {/* ⚠️ LA MARGE S AJOUTE A L EXPLICATION, ELLE NE LA REMPLACE PAS. La premiere version BRANCHAIT
+            entre les deux phrases : a marge 105, la cause dominante restait le tarif moyen et l ecran ne la
+            nommait plus du tout, il designait 5 %. Un correctif qui deplace le defaut au lieu de le
+            supprimer, exactement le motif de ce chantier. Les deux causes existent, on les dit toutes deux. */}
+        {marge !== undefined && marge !== 100 && (
+          <> {t(
+            `Il applique en plus votre marge de ${fmtPourcent(marge, locale)}, alors que ce total-ci est ce que Meta vous a compté.`,
+            `It also applies your ${fmtPourcent(marge, locale)} margin, whereas this total is what Meta charged you.`,
+          )}</>
+        )}
       </p>
     </div>
   );

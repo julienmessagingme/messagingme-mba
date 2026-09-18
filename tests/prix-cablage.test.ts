@@ -38,6 +38,21 @@ describe('la marge est BRANCHEE sur les deux chemins qui rendent un prix', () =>
     return CABLAGE.slice(i, i + 2500);
   };
 
+  /**
+   * LA SEULE LIGNE qui porte l ancre, pour un cablage qui tient sur une ligne.
+   *
+   * 🔴 IL A FALLU CETTE SECONDE FORME PARCE QUE LA PREMIERE A RENDU UN FAUX VERT. La fenetre de 2500
+   * caracteres de `bloc` attrapait un `grillePrix(` appartenant a une propriete VOISINE : en debranchant la
+   * lecture de la marge, le test restait vert. Trouve par mutation, quelques minutes apres avoir ecrit le
+   * test. Une fenetre large est commode tant qu on ne cherche pas un motif que le voisinage porte aussi.
+   */
+  const ligne = (ancre: string): string => {
+    const i = CABLAGE.indexOf(ancre);
+    expect(i, `l ancre « ${ancre} » a disparu du cablage`).toBeGreaterThan(-1);
+    const fin = CABLAGE.indexOf('\n', i);
+    return CABLAGE.slice(i, fin === -1 ? undefined : fin);
+  };
+
   it('🔴 getPricing rend un PRIX DE VENTE, pas le resume brut de Meta', () => {
     // La faute qu on attrape : `return brut;`, ou un retour direct de `getPricingAnalytics`.
     expect(bloc('getPricing:'), 'le resume de Meta doit passer par pricingFacture').toContain('pricingFacture(');
@@ -55,10 +70,23 @@ describe('la marge est BRANCHEE sur les deux chemins qui rendent un prix', () =>
   });
 
   /**
+   * 🔴 LA MARGE QUI EXPLIQUE L ECART EST BRANCHEE, ELLE AUSSI, ET C ETAIT LE COMBLE DE CE FICHIER. Le commit
+   * qui a pose cette garde mecanique contre « ecrit mais pas branche » a laisse hors de la garde la seule
+   * capacite qu il branchait : la lecture de la marge pour la carte « Facture par Meta ». Mesure : en
+   * supprimant cette ligne du cablage, les quatre cas d alors restaient verts, et le typecheck aussi,
+   * puisque la dependance etait declaree optionnelle. Elle est desormais REQUISE, et ancree ici.
+   */
+  it('🔴 la marge qui explique l ecart est lue depuis la MEME grille que les prix', () => {
+    expect(ligne('margeTemplate:'), 'la marge doit venir de la grille de l espace').toContain('grillePrix(');
+  });
+
+  /**
    * 🔴 ET LA MARGE NE S APPLIQUE QU A CES DEUX ENDROITS. Un troisieme point d application la compterait
-   * deux fois sur le chemin qui le traverse, et chaque fonction prise isolement resterait juste : c est
-   * exactement ce que la garde de `tests/prix-bornes.test.ts` empeche cote `src/stats/`. Ici on borne le
-   * cablage, qui est l autre moitie.
+   * deux fois sur le chemin qui le traverse, et chaque fonction prise isolement resterait juste. La moitie
+   * `src/stats/` est tenue par `tests/cout-messages.test.ts` (« ce module ne marge PLUS ») et par la garde
+   * de `tests/prix-bornes.test.ts` qui interdit un appel a `prixTemplate` hors du module de prix. ⚠️ La
+   * premiere version de ce commentaire attribuait les deux a `prix-bornes`, qui ne lit que le fichier SQL :
+   * un fichier neuf qui corrige deux commentaires nommant le mauvais test en introduisait un troisieme.
    */
   it('🔴 le cablage n applique la marge que par ces deux fonctions', () => {
     const appels = (CABLAGE.match(/prixTemplate\(/g) ?? []);

@@ -40,6 +40,17 @@
 -- sans y penser. La migration n'etant pas encore appliquee, l'elargir ne coute rien. Releve a la quatrieme
 -- revue du 2026-09-18.
 alter table tenant_settings add column if not exists prix_marge_template     numeric(6,2) not null default 100;
+
+-- 🔴 ET LE TYPE SE CORRIGE INCONDITIONNELLEMENT, PARCE QU'UN `if not exists` PROTEGE DE L'EXISTENCE, PAS DU
+-- TYPE. Cette colonne a d'abord ete ecrite en `smallint`, et le fichier a ete corrige AVANT application :
+-- sur la base de production, relue le 2026-09-18, ni 0154 ni 0155 ne figurent dans `schema_migrations` et
+-- la colonne est absente, donc la correction suffit la-bas. Mais le runner ne rejoue pas un fichier deja
+-- inscrit, et une base ou 0154 serait passee en `smallint` garderait ce type pour toujours : `valideGrille`
+-- y accepterait 120,5, Postgres infererait `int2` et rejetterait, donc 500 sur un geste ordinaire.
+-- Faire dependre la justesse d'une migration d'une PREMISSE (« elle n'est pas encore appliquee ») est
+-- exactement ce que ce depot a paye neuf fois sur le compteur de migrations. Cette ligne ne coute rien
+-- quand le type est deja bon, et elle ferme le cas pour toutes les bases.
+alter table tenant_settings alter column prix_marge_template type numeric(6,2);
 alter table tenant_settings add column if not exists prix_service_centimes   numeric(6,2) not null default 2.48;
 alter table tenant_settings add column if not exists prix_service_franchise  integer      not null default 1000;
 alter table tenant_settings add column if not exists prix_service_depuis     date         not null default date '2026-10-01';

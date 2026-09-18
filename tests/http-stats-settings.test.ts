@@ -35,6 +35,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       // décrirait un état que le store ne peut pas produire, donc ferait passer les tests sur une fiction.
       serviceIaDetail: { agent: 1, mba: 0, mcp: 0 },
     }),
+    // La marge de l espace, REQUISE : une fixture qui l oublierait ne compile pas, et c est le but.
+    margeTemplate: async () => 100,
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
     getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 2, urlClicks: 4, contactsVises: 10, parCanal: [] }),
@@ -882,6 +884,38 @@ describe('PATCH /tenants/:t/settings/prix', () => {
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ prix?: { margeTemplate: number } }>().prix?.margeTemplate, 'le defaut a 100 ne change rien').toBe(100);
+    await a.close();
+  });
+});
+
+/**
+ * LA MARGE VOYAGE AVEC CE QU ELLE EXPLIQUE.
+ *
+ * 🔴 CE QU ELLE SERT A DIRE. La page des couts pose cote a cote un cout ESTIME (prix de vente, marge
+ * comprise) et le total FACTURE par Meta. La phrase qui reconcilie les deux attribuait tout l ecart au
+ * tarif moyen par categorie : avec une marge de 150, l ecart est de 50 % et sa cause dominante n etait
+ * nommee nulle part. L ecran ne peut la nommer que si le serveur la lui rend.
+ */
+describe('GET /tenants/:t/stats/templates rend la marge de l espace', () => {
+  const h = (tok: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` } });
+
+  it('la marge accompagne le pricing', async () => {
+    const a = app({ stats: { margeTemplate: async () => 150 } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/templates', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ margeTemplate: number }>().margeTemplate).toBe(150);
+    await a.close();
+  });
+
+  it('🔴 la marge est celle de l espace du JETON, pas de celui de l URL', async () => {
+    // Un prix de vente est une donnee commerciale : la lire pour un autre espace serait une fuite.
+    const vus: string[] = [];
+    const a = app({ stats: { margeTemplate: async (t) => { vus.push(t); return 120; } } });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/templates', ...h(adminTok) });
+    expect(vus).toEqual(['t1']);
+    const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/templates', ...h(adminTok) });
+    expect(res.statusCode).toBe(403);
+    expect(vus, 'aucune lecture pour un espace refuse').toEqual(['t1']);
     await a.close();
   });
 });
