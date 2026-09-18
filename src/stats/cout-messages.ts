@@ -1,5 +1,5 @@
 import { chiffrer, type CategoryRates } from './cost';
-import { prixTemplate, type GrillePrix } from './prix';
+import type { GrillePrix } from './prix';
 
 /**
  * LE COUT TOTAL DES MESSAGES ENVOYES SUR UNE PERIODE : templates, messages de service, RCS.
@@ -124,7 +124,11 @@ export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages
       if (verdict.refus === 'sansCategorie') sansCategorie += t.count; else sansTarif += t.count;
       continue;
     }
-    const montant = t.count * prixTemplate(verdict.tarif, g);
+    // 🔴 LA MARGE EST DEJA DANS `rates`, POSEE UNE FOIS PAR `tarifsMeta`. L appliquer ici la compterait
+    // DEUX fois : une marge de 150 facturerait 2,25 fois le tarif Meta. Elle a vecu ici jusqu au
+    // 2026-09-18, jusqu a ce qu une revue montre que deux AUTRES consommateurs des memes tarifs
+    // l ignoraient, faute d un point de passage unique.
+    const montant = t.count * verdict.tarif;
     if (t.category === 'marketing') marketing += montant; else utility += montant;
   }
 

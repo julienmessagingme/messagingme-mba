@@ -6,6 +6,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setAutoRetryEnabled as apiSetAutoRetry, setGrillePrix as apiSetGrillePrix, type BusinessHours, type GrillePrix } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
+import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { BlockedContacts } from '@/components/BlockedContacts';
 import { Toggle } from '@/components/Toggle';
 
@@ -58,7 +59,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
    * des PRIX : afficher « enregistre » avant la reponse du serveur, sur un formulaire dont une valeur peut
    * etre refusee par les bornes, laisserait le client repartir en croyant sa marge posee. Le bouton attend.
    */
-  const [prix, setPrix] = useState<GrillePrix | null>(null);
+  const [prix, setPrix] = useState<Record<string, string> | null>(null);
   const [prixStatus, setPrixStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [prixChamp, setPrixChamp] = useState<string | null>(null);
 
@@ -70,7 +71,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
         setTz(s.timezone ?? DEFAULT_TIMEZONE);
         setHours(normalize(s.businessHours));
         setAutoRetry(s.autoRetryEnabled === true);
-        setPrix(s.prix ?? null);
+        setPrix(s.prix ? enChamps(s.prix) : null);
       })
       .catch(() => {})
       .finally(() => { if (alive) setLoading(false); });
@@ -88,10 +89,20 @@ function Parametres({ tenantId }: { tenantId: string }) {
       .catch(() => { setAutoRetry(!next); setArStatus('error'); });
   }, [autoRetry, tenantId]);
 
-  const onPrix = useCallback((champ: keyof GrillePrix, valeur: string) => {
-    // La saisie reste TEXTE tant qu'on tape : convertir a chaque frappe empecherait d'effacer un champ pour
-    // le retaper (un `Number('')` vaut 0, donc le champ se remplirait tout seul de zeros).
-    setPrix((p) => (p === null ? p : { ...p, [champ]: champ === 'serviceDepuis' ? valeur : Number(valeur) }));
+  /**
+   * 🔴 LA SAISIE RESTE UNE CHAINE, ET LA PREMIERE VERSION FAISAIT L INVERSE DE CE QUE SON COMMENTAIRE
+   * ANNONCAIT. Elle appelait `Number(valeur)` a chaque frappe sur un champ CONTROLE : taper « 3 » puis
+   * « . » donnait `Number('3.') === 3`, le point etait reecrit hors du champ et disparaissait, donc on ne
+   * pouvait JAMAIS creer un separateur decimal ; vider le champ donnait `Number('') === 0` et le champ se
+   * remplissait tout seul de « 0 », c est-a-dire exactement le symptome que le commentaire disait avoir
+   * evite ; et « 3,15 » a la francaise donnait `NaN`, affiche tel quel. Sur un ecran dont un defaut vaut
+   * 2,48, passer de 2,48 a 3,10 rendait 310, refuse par les bornes. Releve en revue finale le 2026-09-18 :
+   * la seule piece non testee de ce lot etait aussi la seule qui etait cassee.
+   *
+   * La conversion se fait donc A L ENREGISTREMENT, une seule fois, et la virgule francaise y est acceptee.
+   */
+  const onPrix = useCallback((champ: string, valeur: string) => {
+    setPrix((p) => (p === null ? p : { ...p, [champ]: valeur }));
     setPrixStatus('idle');
     setPrixChamp(null);
   }, []);
@@ -99,8 +110,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
   const enregistrerPrix = useCallback(() => {
     if (prix === null) return;
     setPrixStatus('saving');
-    apiSetGrillePrix(tenantId, prix)
-      .then((r) => { setPrix(r.prix); setPrixStatus('saved'); setPrixChamp(null); })
+    apiSetGrillePrix(tenantId, depuisChamps(prix))
+      .then((r) => { setPrix(enChamps(r.prix)); setPrixStatus('saved'); setPrixChamp(null); })
       .catch((err: unknown) => {
         // Le serveur NOMME le champ fautif : le montrer vaut mieux qu'un « erreur » qui oblige a chercher
         // lequel des six ne va pas.
@@ -257,37 +268,37 @@ function Parametres({ tenantId }: { tenantId: string }) {
                 <Champ
                   id="marge" label={t('Marge sur le tarif Meta', 'Margin on the Meta rate')}
                   aide={t('En pourcent. 100 = vous facturez exactement le tarif Meta.', 'In percent. 100 = you charge exactly the Meta rate.')}
-                  valeur={String(prix.margeTemplate)} onChange={(v) => onPrix('margeTemplate', v)}
+                  valeur={prix.margeTemplate ?? ''} onChange={(v) => onPrix('margeTemplate', v)}
                   suffixe="%" fautif={prixChamp === 'margeTemplate'}
                 />
                 <Champ
                   id="service" label={t('Message de service', 'Service message')}
                   aide={t('Prix d un message hors template, en centimes.', 'Price of one non-template message, in cents.')}
-                  valeur={String(prix.serviceCentimes)} onChange={(v) => onPrix('serviceCentimes', v)}
+                  valeur={prix.serviceCentimes ?? ''} onChange={(v) => onPrix('serviceCentimes', v)}
                   suffixe={t('cts', 'cts')} fautif={prixChamp === 'serviceCentimes'}
                 />
                 <Champ
                   id="franchise" label={t('Messages de service offerts', 'Free service messages')}
                   aide={t('Par mois et par espace. Au-dela, chaque message est facture.', 'Per month and per workspace. Beyond that, every message is charged.')}
-                  valeur={String(prix.serviceFranchise)} onChange={(v) => onPrix('serviceFranchise', v)}
+                  valeur={prix.serviceFranchise ?? ''} onChange={(v) => onPrix('serviceFranchise', v)}
                   suffixe={t('/ mois', '/ month')} fautif={prixChamp === 'serviceFranchise'}
                 />
                 <Champ
                   id="depuis" label={t('Facture a partir du', 'Charged from')}
                   aide={t('Avant cette date, les messages de service ne comptent pas.', 'Before this date, service messages are not counted.')}
-                  valeur={prix.serviceDepuis} onChange={(v) => onPrix('serviceDepuis', v)}
+                  valeur={prix.serviceDepuis ?? ''} onChange={(v) => onPrix('serviceDepuis', v)}
                   type="date" fautif={prixChamp === 'serviceDepuis'}
                 />
                 <Champ
                   id="rcs" label={t('RCS simple', 'Plain RCS')}
                   aide={t('Un envoi RCS sans echange, en centimes.', 'One RCS send with no exchange, in cents.')}
-                  valeur={String(prix.rcsSimpleCentimes)} onChange={(v) => onPrix('rcsSimpleCentimes', v)}
+                  valeur={prix.rcsSimpleCentimes ?? ''} onChange={(v) => onPrix('rcsSimpleCentimes', v)}
                   suffixe={t('cts', 'cts')} fautif={prixChamp === 'rcsSimpleCentimes'}
                 />
                 <Champ
                   id="rcsconv" label={t('RCS conversationnel', 'Conversational RCS')}
                   aide={t('Des qu une personne repond, TOUT l echange passe a ce prix.', 'As soon as someone replies, the WHOLE exchange moves to this price.')}
-                  valeur={String(prix.rcsConversationnelCentimes)} onChange={(v) => onPrix('rcsConversationnelCentimes', v)}
+                  valeur={prix.rcsConversationnelCentimes ?? ''} onChange={(v) => onPrix('rcsConversationnelCentimes', v)}
                   suffixe={t('cts', 'cts')} fautif={prixChamp === 'rcsConversationnelCentimes'}
                 />
               </div>

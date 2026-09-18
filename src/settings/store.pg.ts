@@ -98,13 +98,25 @@ export class PgTenantSettingsStore {
 
   async get(tenantId: string): Promise<TenantSettings> {
     const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null } & Record<string, unknown>>(
-      // ⚠️ LES SIX COLONNES DE PRIX RENDENT LA MIGRATION 0154 BLOQUANTE POUR CETTE LECTURE, qui est un chemin
-      // chaud de la console. Elles sont nommees plutot que ramassees par `select *` : une etoile ferait
-      // entrer ici toute colonne future sans qu'on l'ait decide. La sequence de deploiement (migrer AVANT
-      // de deployer) est donc obligatoire, et `DEPLOY.md` la porte.
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode, optout_request_id, mention_ia_frequence,
-              prix_marge_template, prix_service_centimes, prix_service_franchise, prix_service_depuis::text as prix_service_depuis, prix_rcs_centimes, prix_rcs_conv_centimes
-         from tenant_settings where tenant_id = $1`,
+      /**
+       * 🔴 `select *`, ET C'EST UN RENVERSEMENT ASSUME. La premiere version NOMMAIT les six colonnes de la
+       * migration 0154, au motif qu'une etoile fait entrer toute colonne future sans qu'on l'ait decide. Ce
+       * motif est reel, mais il pesait infiniment moins que ce qu'il achetait : cette methode est sur le
+       * chemin de CHAQUE MESSAGE ENTRANT (`mbaActifPour`), du fuseau de chaque campagne, et de chaque tour
+       * d'agent. La nommer en clair rendait la migration 0154 bloquante pour l'INGESTION : un deploiement
+       * avant `migrate` ne cassait plus une page, il reproduisait le 2026-08-17, une heure et demie sans
+       * enregistrer un seul message.
+       *
+       * ⚠️ ET LE MEME LOT AVAIT DEJA TRANCHE DANS L'AUTRE SENS, dix lignes plus loin : `PgStatsStore.grillePrix`
+       * lit ces memes six colonnes en `select *` dans un `try/catch`, avec pour justification ecrite que la
+       * migration n'est pas encore passee entre le deploiement de Vercel et celui du VPS. Deux lecteurs des
+       * memes colonnes, deux decisions opposees, dans le meme commit. Releve en revue finale le 2026-09-18.
+       *
+       * ⚠️ AUCUN SECRET DANS CETTE TABLE : verifie colonne par colonne avant d'ouvrir l'etoile. Ce sont des
+       * reglages d'espace, et `grilleDepuisLigne` ne lit que ce qu'elle connait, en retombant sur les
+       * defauts pour le reste.
+       */
+      `select * from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];

@@ -1,4 +1,3 @@
-import { prixTemplate, GRILLE_DEFAUT } from './prix';
 import type { DailyPoint, CostVolumeRow } from './store.pg';
 
 /** Coût estimé par jour et catégorie, sur la plage. `hasRates=false` si Meta n'a fourni aucun tarif. */
@@ -288,8 +287,8 @@ export function estimateCoutParCampagne(
       ligne.nonChiffrables += r.count;
     } else {
       ligne.chiffres += r.count;
-      // Le prix FACTURE, pas le tarif paye : meme fonction que la ligne « messages envoyes ».
-      ligne.cout = (ligne.cout ?? 0) + r.count * prixTemplate(verdict.tarif, { ...GRILLE_DEFAUT, margeTemplate: margeTemplate ?? 100 });
+      // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `tarifsMeta`.
+      ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
     }
     par.set(r.campaignId, ligne);
   }

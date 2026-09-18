@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { valideGrille, BORNES_GRILLE, GRILLE_DEFAUT } from '../src/stats/prix';
+import { valideGrille, BORNES_GRILLE, GRILLE_DEFAUT, tarifsFactures } from '../src/stats/prix';
 
 const SQL = readFileSync(join(resolve(__dirname, '..'), 'db', 'migrations', '0154_grille_prix_espace.sql'), 'utf8');
 
@@ -131,5 +131,103 @@ describe('la date d effet ne recule pas d un jour', () => {
     const { grilleDepuisLigne } = await import('../src/stats/prix');
     expect(grilleDepuisLigne({ prix_service_depuis: new Date('pas une date') }).serviceDepuis)
       .toBe(GRILLE_DEFAUT.serviceDepuis);
+  });
+});
+
+/**
+ * LA MARGE S APPLIQUE UNE SEULE FOIS, A LA SOURCE.
+ *
+ * 🔴 CE BLOC RECUEILLE LE CAS QUE DEUX AUTRES FICHIERS EXERCAIENT, et il dit pourquoi il a demenage. La
+ * marge a d abord ete posee dans les DEUX fonctions qui calculaient un total ; deux AUTRES consommateurs
+ * des memes tarifs l ignoraient donc (le graphe de cout du Quantitatif, le bilan d un contact), et des
+ * qu un client posait une marge de 150 la Synthese annoncait 1,50 € la ou le graphe du meme produit
+ * annoncait 1,00 € pour exactement les memes envois. Le correctif precedent avait DEPLACE la frontiere de
+ * la divergence, pas supprimee. Releve en revue finale le 2026-09-18.
+ */
+describe('tarifsFactures : le point de passage unique de la marge', () => {
+  const brut = { marketing: 0.10, utility: 0.02, currency: 'EUR' };
+
+  it('🔴 une marge de 150 majore le prix, et c est le cas transpose depuis cout-messages', () => {
+    const p = tarifsFactures(brut, { ...GRILLE_DEFAUT, margeTemplate: 150 });
+    expect(p.marketing).toBeCloseTo(0.15, 6);
+    expect(p.utility).toBeCloseTo(0.03, 6);
+  });
+
+  it('une marge de 100 ne change rien, donc un espace qui n a rien regle lit le meme chiffre qu avant', () => {
+    expect(tarifsFactures(brut, GRILLE_DEFAUT)).toEqual({ marketing: 0.1, utility: 0.02, currency: 'EUR' });
+  });
+
+  /**
+   * 🔴 UN TARIF ABSENT LE RESTE. Le marger en ferait un prix, et `chiffrer` ne pourrait plus compter ces
+   * envois comme « sans tarif » : ils passeraient de « on ne sait pas ce que ca coute » a « ca coute
+   * zero », exactement l inversion que tout ce module s interdit.
+   */
+  it('🔴 un tarif ABSENT reste absent, il ne devient pas zero', () => {
+    const p = tarifsFactures({ marketing: null, utility: undefined, currency: null }, { ...GRILLE_DEFAUT, margeTemplate: 150 });
+    expect(p.marketing).toBeNull();
+    expect(p.utility).toBeNull();
+    expect(p.currency).toBeNull();
+  });
+
+  it('la devise traverse sans etre touchee', () => {
+    expect(tarifsFactures({ ...brut, currency: 'USD' }, GRILLE_DEFAUT).currency).toBe('USD');
+  });
+
+  /**
+   * 🔴 ET LA GARDE STRUCTURELLE : `prixTemplate` ne doit etre appelee QUE par le point de passage. Un
+   * second appel ailleurs remettrait la marge deux fois (150 facturerait 2,25 fois le tarif Meta), et
+   * aucun test de comportement ne le verrait, puisque chaque fonction prise isolement resterait juste.
+   */
+  it('🔴 prixTemplate n est appelee nulle part ailleurs dans src/', () => {
+    const { execSync } = require('node:child_process') as typeof import('node:child_process');
+    const sortie = execSync('git grep -n "prixTemplate(" -- src', { cwd: resolve(__dirname, '..'), encoding: 'utf8' });
+    const appels = sortie.split('\n').filter((l) => l.trim() !== '' && !l.includes('src/stats/prix.ts'));
+    expect(appels, `prixTemplate est appelee hors du point de passage :\n${appels.join('\n')}`).toHaveLength(0);
+  });
+});
+
+/**
+ * LE FORMAT NE SUFFIT PAS, ET CE QUI PASSAIT FAISAIT UN 500.
+ *
+ * 🔴 `2026-02-31` passait la validation et partait vers `$5::date`, qui leve
+ * `date/time field value out of range`, non attrape : une page d erreur sur un geste ordinaire, c est-a-dire
+ * exactement ce que les bornes de ce fichier disent avoir ferme. Et la base ARRONDIT en silence un
+ * `numeric(6,2)` : une marge a 100,555 aurait ete enregistree a 100,56, differente de la saisie, sans que
+ * personne le sache. Releve en revue finale le 2026-09-18.
+ */
+describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
+  const bonne = { ...GRILLE_DEFAUT };
+
+  it('🔴 un jour qui n existe pas est refuse, pas transmis a Postgres', () => {
+    for (const impossible of ['2026-02-31', '2026-13-01', '2026-04-31', '2025-02-29']) {
+      const v = valideGrille({ ...bonne, serviceDepuis: impossible });
+      expect(v.ok, `${impossible} doit etre refuse`).toBe(false);
+      if (!v.ok) expect(v.champ).toBe('serviceDepuis');
+    }
+  });
+
+  it('un 29 fevrier d annee BISSEXTILE reste accepte', () => {
+    // La garde doit refuser l impossible, pas le rare.
+    expect(valideGrille({ ...bonne, serviceDepuis: '2028-02-29' }).ok).toBe(true);
+  });
+
+  it('🔴 plus de deux decimales est REFUSE, parce que la base arrondirait en silence', () => {
+    for (const champ of ['margeTemplate', 'serviceCentimes', 'rcsSimpleCentimes', 'rcsConversationnelCentimes']) {
+      const v = valideGrille({ ...bonne, [champ]: 2.485 });
+      expect(v.ok, `${champ} a trois decimales doit etre refuse`).toBe(false);
+      if (!v.ok) expect(v.champ).toBe(champ);
+    }
+  });
+
+  it('deux decimales exactement restent acceptees, c est la precision de la base', () => {
+    expect(valideGrille({ ...bonne, serviceCentimes: 2.48, margeTemplate: 120.5 }).ok).toBe(true);
+  });
+
+  it('un champ vide arrive en NaN depuis l ecran, et NaN est refuse', () => {
+    // C est le contrat avec `depuisChamps` cote front : un champ vide ne devient pas zero, il devient NaN,
+    // et c est ici qu il est refuse en nommant le champ.
+    const v = valideGrille({ ...bonne, serviceCentimes: Number.NaN });
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.champ).toBe('serviceCentimes');
   });
 });

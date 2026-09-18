@@ -117,9 +117,19 @@ describe('le cout total des messages', () => {
     expect(r.rcs.conversationnel).toBe(5);
   });
 
-  it('🔴 le template suit la MARGE de l espace', () => {
+  /**
+   * 🔴 LA MARGE A DEMENAGE, ET CE CAS AVEC ELLE. Ce test verifiait ici qu une marge de 200 doublait le
+   * cout des templates. La marge s applique desormais UNE SEULE FOIS, a la source des tarifs
+   * (`tarifsFactures`), parce que deux AUTRES consommateurs des memes tarifs l ignoraient : le graphe de
+   * cout et le bilan d un contact affichaient le tarif Meta brut. Le cas n est pas supprime, il est
+   * TRANSPOSE dans `tests/prix-bornes.test.ts` (« la marge s applique une seule fois, a la source »).
+   *
+   * Ce qui reste a verifier ICI, et qui est l autre moitie du meme invariant : ce module ne doit PLUS
+   * marger, sinon la marge compterait deux fois (150 facturerait 2,25 fois le tarif Meta).
+   */
+  it('🔴 ce module ne marge PLUS : il facture le tarif qu on lui donne, tel quel', () => {
     const r = coutMessages(BASE, { ...GRILLE_DEFAUT, margeTemplate: 200 });
-    expect(r.templates.marketing).toBe(8); // 100 x 0,04 x 2
+    expect(r.templates.marketing, 'la grille ne doit plus influer sur le template').toBe(4); // 100 x 0,04
   });
 
   it('⚠️ un tarif Meta ABSENT ne produit AUCUN cout, et se COMPTE a part', () => {

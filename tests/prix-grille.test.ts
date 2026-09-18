@@ -64,11 +64,18 @@ describe('la grille de prix d’un espace', () => {
     expect(typeof g.serviceCentimes).toBe('number');
   });
 
+  /**
+   * ⚠️ CONSTRUITE A MINUIT LOCAL, ET C'EST TOUT LE SUJET. Ce cas passait `Date.UTC(...)`, c'est-a-dire
+   * minuit UTC, alors que node-postgres rend une colonne `date` a minuit LOCAL : il n'exercait donc PAS la
+   * propriete qu'il pretendait tenir, et il aurait ECHOUE sur une machine a l'ouest de Greenwich. Aligne le
+   * 2026-09-18 sur `tests/prix-bornes.test.ts`, qui porte le cas complet et dit ce qu'il ne discrimine pas.
+   *
+   * La date d'effet se COMPARE a un mois ('2026-09'), donc elle doit voyager en texte : un objet `Date`
+   * traverserait JSON en ISO complet avec un fuseau, et la comparaison de mois deviendrait fausse d'un jour
+   * pres aux frontieres de mois.
+   */
   it('⚠️ une DATE rendue par le pilote devient une chaine ISO courte, jamais un objet Date', () => {
-    // La date d'effet se COMPARE a un mois ('2026-09'), donc elle doit voyager en texte. Un objet Date
-    // traverserait JSON.stringify en ISO complet avec un fuseau, et la comparaison de mois deviendrait
-    // fausse d'un jour pres aux frontieres de mois.
-    const g = grilleDepuisLigne({ prix_service_depuis: new Date(Date.UTC(2026, 9, 1)) });
+    const g = grilleDepuisLigne({ prix_service_depuis: new Date(2026, 9, 1) });
     expect(g.serviceDepuis).toBe('2026-10-01');
   });
 

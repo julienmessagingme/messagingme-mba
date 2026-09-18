@@ -145,6 +145,24 @@ export const BORNES_GRILLE = {
 const JOUR_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * Le format NE SUFFIT PAS : la date doit EXISTER.
+ *
+ * 🔴 `2026-02-31` PASSE LE FORMAT ET FAIT UN 500. Le `$5::date` de l'ecriture leve alors
+ * `date/time field value out of range`, non attrape, donc une page d'erreur sur un geste ordinaire :
+ * c'est tres exactement le mode de panne que les bornes de ce fichier disent avoir ferme (« un 500 au lieu
+ * d'un message »). L'`input type="date"` protege le navigateur, jamais la route. Releve en revue finale le
+ * 2026-09-18.
+ *
+ * ⚠️ ON RECONSTRUIT LA DATE ET ON COMPARE : `new Date('2026-02-31')` ne leve pas, il DECALE au 3 mars.
+ * C'est le decalage qu'on detecte, pas une exception.
+ */
+function jourExiste(iso: string): boolean {
+  const [a, m, j] = iso.split('-').map(Number) as [number, number, number];
+  const d = new Date(Date.UTC(a, m - 1, j));
+  return d.getUTCFullYear() === a && d.getUTCMonth() === m - 1 && d.getUTCDate() === j;
+}
+
+/**
  * Valide une grille SAISIE et la rend normalisee, ou nomme le champ fautif.
  *
  * 🔴 ELLE REFUSE, ELLE NE CORRIGE PAS. Ramener une valeur hors bornes dans les bornes (« 248 -> 100 »)
@@ -161,12 +179,16 @@ export function valideGrille(entree: unknown): { ok: true; grille: GrillePrix } 
     typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 
   const { margeTemplate: mt, centimes: c, franchise: f } = BORNES_GRILLE;
-  if (!borne(e.margeTemplate, mt.min, mt.max)) return { ok: false, champ: 'margeTemplate' };
-  if (!borne(e.serviceCentimes, c.min, c.max)) return { ok: false, champ: 'serviceCentimes' };
+  // 🔴 LA BASE ARRONDIRAIT EN SILENCE, ET CE FICHIER S'INTERDIT DE CORRIGER. `prix_marge_template` est un
+  // `numeric(6,2)` et les centimes aussi : une marge a 100,555 ou un prix a 2,485 seraient ENREGISTRES
+  // arrondis, donc differents de ce qui a ete saisi, sans que personne le sache. Refuser nomme le champ.
+  const deuxDecimalesMax = (v: unknown): boolean => typeof v === 'number' && Math.round(v * 100) === v * 100;
+  if (!borne(e.margeTemplate, mt.min, mt.max) || !deuxDecimalesMax(e.margeTemplate)) return { ok: false, champ: 'margeTemplate' };
+  if (!borne(e.serviceCentimes, c.min, c.max) || !deuxDecimalesMax(e.serviceCentimes)) return { ok: false, champ: 'serviceCentimes' };
   if (!borne(e.serviceFranchise, f.min, f.max) || !Number.isInteger(e.serviceFranchise)) return { ok: false, champ: 'serviceFranchise' };
-  if (typeof e.serviceDepuis !== 'string' || !JOUR_ISO.test(e.serviceDepuis)) return { ok: false, champ: 'serviceDepuis' };
-  if (!borne(e.rcsSimpleCentimes, c.min, c.max)) return { ok: false, champ: 'rcsSimpleCentimes' };
-  if (!borne(e.rcsConversationnelCentimes, c.min, c.max)) return { ok: false, champ: 'rcsConversationnelCentimes' };
+  if (typeof e.serviceDepuis !== 'string' || !JOUR_ISO.test(e.serviceDepuis) || !jourExiste(e.serviceDepuis)) return { ok: false, champ: 'serviceDepuis' };
+  if (!borne(e.rcsSimpleCentimes, c.min, c.max) || !deuxDecimalesMax(e.rcsSimpleCentimes)) return { ok: false, champ: 'rcsSimpleCentimes' };
+  if (!borne(e.rcsConversationnelCentimes, c.min, c.max) || !deuxDecimalesMax(e.rcsConversationnelCentimes)) return { ok: false, champ: 'rcsConversationnelCentimes' };
 
   return {
     ok: true,
@@ -179,4 +201,26 @@ export function valideGrille(entree: unknown): { ok: true; grille: GrillePrix } 
       rcsConversationnelCentimes: e.rcsConversationnelCentimes as number,
     },
   };
+}
+
+/**
+ * LES TARIFS DE META, TRANSFORMES EN PRIX DE VENTE. C'EST LE POINT DE PASSAGE UNIQUE DE LA MARGE.
+ *
+ * 🔴 UN SEUL ENDROIT, ET C'EST TOUT L'INTERET. La marge a d'abord ete posee dans les deux fonctions qui
+ * calculaient un total (le cout des messages, le tableau des campagnes). Deux AUTRES consommateurs des
+ * memes tarifs l'ignoraient donc : le graphe de cout du Quantitatif et le bilan d'un contact affichaient le
+ * tarif Meta BRUT. Des qu'un client posait une marge de 150, la Synthese annoncait 1,50 € la ou le graphe
+ * du meme produit annoncait 1,00 € pour exactement les memes envois. Releve en revue finale le 2026-09-18.
+ * En margeant a la SOURCE, les cinq consommateurs sont justes, et le sixieme qu'on ajoutera demain aussi.
+ *
+ * 🔴 UN TARIF ABSENT LE RESTE. Marger `null` en ferait un prix, et `chiffrer` ne pourrait plus compter ces
+ * envois comme « sans tarif » : ils passeraient de « on ne sait pas ce que ca coute » a « ca coute zero »,
+ * ce qui est precisement l'inversion que tout ce module s'interdit.
+ */
+export function tarifsFactures(
+  brut: { marketing?: number | null; utility?: number | null; currency?: string | null },
+  g: GrillePrix,
+): { marketing: number | null; utility: number | null; currency: string | null } {
+  const marge = (tarif: number | null | undefined): number | null => (tarif == null ? null : prixTemplate(tarif, g));
+  return { marketing: marge(brut.marketing), utility: marge(brut.utility), currency: brut.currency ?? null };
 }

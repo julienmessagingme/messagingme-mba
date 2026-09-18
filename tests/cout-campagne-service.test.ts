@@ -73,34 +73,35 @@ describe('le service s ajoute au template', () => {
 });
 
 /**
- * LES DEUX LIGNES DE LA CARTE APPLIQUENT LA MEME MARGE.
+ * LA MARGE NE S APPLIQUE PLUS ICI, ET C EST LE CORRECTIF.
  *
- * 🔴 CE DEFAUT ETAIT LATENT, ET LE CABLAGE DE LA GRILLE L A RENDU ATTEIGNABLE. La ligne « messages
- * envoyes » applique `prixTemplate` (donc la marge de l espace) ; le tableau des campagnes utilisait le
- * tarif Meta BRUT. Tant que la marge valait 100, les deux coincidaient et personne ne pouvait le voir.
- * Depuis que la marge se regle depuis un ecran, deux chiffres de la MEME carte divergeraient en silence.
- * Corrige au moment precis ou il a cesse d etre theorique.
+ * 🔴 CE BLOC VERIFIAIT QUE LA MARGE ETAIT APPLIQUEE ICI. Elle l a ete un temps, et c etait deja une
+ * amelioration : la carte portait DEUX prix de template. Mais une revue a montre que le correctif avait
+ * DEPLACE la frontiere de la divergence sans la supprimer : deux AUTRES consommateurs des memes tarifs
+ * (le graphe de cout du Quantitatif, le bilan d un contact) continuaient d afficher le tarif Meta brut.
+ * La marge est donc remontee a la SOURCE (`tarifsFactures`), ou elle vaut pour les cinq consommateurs.
+ *
+ * Le cas « une marge de 150 majore le prix » n est pas perdu : il vit dans `tests/prix-bornes.test.ts`.
+ * Ce qui se garde ICI, c est l autre moitie : cette fonction ne doit PLUS marger, sinon la marge
+ * compterait deux fois.
  */
-describe('la marge de l espace vaut pour les deux lignes de la carte', () => {
-  it('🔴 une marge de 150 majore le cout du tableau, comme celui des messages', () => {
-    const r = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map(), undefined, 150);
-    // 10 envois a 0,10 majores de 50 % = 1,50, et non 1,00.
+describe('la marge ne s applique pas une seconde fois dans le tableau', () => {
+  it('🔴 le tableau facture le tarif qu on lui donne, tel quel', () => {
+    const r = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map());
+    expect(r.lignes[0]!.cout, 'TARIFS porte deja le prix de vente').toBeCloseTo(1, 6);
+  });
+
+  it('🔴 un tarif DEJA marge traverse sans etre majore une seconde fois', () => {
+    // 0,15 = 0,10 majore de 50 % en amont. Le tableau doit rendre 1,50, pas 2,25.
+    const marges = { marketing: 0.15, utility: 0.03, currency: 'EUR' };
+    const r = estimateCoutParCampagne([vol('c1', 10)], marges, new Map(), new Map());
     expect(r.lignes[0]!.cout).toBeCloseTo(1.5, 6);
   });
 
-  it('une marge absente vaut 100, donc exactement le comportement d avant', () => {
-    const sans = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map());
-    const cent = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map(), undefined, 100);
-    expect(sans.lignes[0]!.cout).toBe(cent.lignes[0]!.cout);
-    expect(sans.lignes[0]!.cout).toBeCloseTo(1, 6);
-  });
-
-  it('la marge porte sur les templates, PAS sur les messages de service', () => {
-    // Le service a son propre prix, saisi, deja au prix de VENTE : le marger une seconde fois le
-    // facturerait deux fois.
-    const r = estimateCoutParCampagne([vol('c1', 10)], TARIFS, new Map(), new Map(),
-      { parCampagne: new Map([['c1', 10]]), prixUnitaire: 0.02 }, 150);
-    // 1,50 de templates + 0,20 de service, et non 0,30 de service.
-    expect(r.lignes[0]!.cout).toBeCloseTo(1.7, 6);
+  it('la marge ne touche jamais les messages de service, dont le prix est deja un prix de vente', () => {
+    const marges = { marketing: 0.15, utility: 0.03, currency: 'EUR' };
+    const r = estimateCoutParCampagne([vol('c1', 10)], marges, new Map(), new Map(),
+      { parCampagne: new Map([['c1', 10]]), prixUnitaire: 0.02 });
+    expect(r.lignes[0]!.cout, '1,50 de templates + 0,20 de service').toBeCloseTo(1.7, 6);
   });
 });

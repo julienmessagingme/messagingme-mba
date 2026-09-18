@@ -333,6 +333,23 @@ export interface TemplateBreakdownRow {
 
 const TZ = STATS_TZ;
 
+/**
+ * LA FENETRE D ATTRIBUTION D UNE CAMPAGNE : sept jours apres l envoi recu par le contact.
+ *
+ * 🔴 UNE SEULE ECRITURE, PARCE QU IL Y EN AVAIT TROIS. Elle borne ce qui est attribue a une campagne :
+ * les clics, les reponses (`engagementsParCampagne`), et les messages de service (`servicesParCampagne`).
+ * Le cadrage dit « la fenetre de 7 jours n est pas un nombre choisi ici : c est celle
+ * d `engagementsParCampagne`, reprise telle quelle », parce que numerateur et denominateur du cout par
+ * engagement doivent parler de la MEME population sur la MEME fenetre. Trois litteraux `interval '7 days'`
+ * recopies ne garantissaient rien de tel : le jour ou l un bouge, le ratio rapporte deux ensembles de gens
+ * differents, et rien a l ecran ne le signale. Releve en revue finale le 2026-09-18.
+ *
+ * ⚠️ C EST UN FRAGMENT SQL, pas un nombre : il s interpole dans une requete. Le pendant cote TypeScript
+ * existe deja pour la bascule RCS (`FENETRE_BASCULE_MS`), qui est une AUTRE fenetre, de meme duree mais
+ * d une autre nature (une reaction qui fait basculer un tarif). Les aligner par accident serait une erreur.
+ */
+export const FENETRE_IMPUTATION = "interval '7 days'";
+
 /** Séries « 1 point par jour » pour le dashboard. Buckets jour en tz Europe/Paris.
  *  Plage `range` (from..to INCLUS, Europe/Paris) : bornes SQL calculées via bounds CTE (DST-safe),
  *  borne haute EXCLUSIVE = minuit Paris de (to+1). Params partout : [tenantId, from, to, TZ]. */
@@ -993,14 +1010,14 @@ export class PgStatsStore {
          select r.campaign_id, r.contact_id, r.sent_at
            from campaign_recipients r
            join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
-          where r.campaign_id = any($2::uuid[]) and r.sent_at is not null and r.contact_id is not null
+          where r.campaign_id = any($5::uuid[]) and r.sent_at is not null and r.contact_id is not null
        ),
        cliqueurs as (
          select distinct e.campaign_id, k.contact_id
            from envoyes e
            join tracked_link_clicks k
              on k.tenant_id = $1 and k.contact_id = e.contact_id
-            and k.at >= e.sent_at and k.at < e.sent_at + interval '7 days'
+            and k.at >= e.sent_at and k.at < e.sent_at + ${FENETRE_IMPUTATION}
        ),
        repondeurs as (
          select distinct e.campaign_id, e.contact_id
@@ -1008,7 +1025,7 @@ export class PgStatsStore {
            join conversations cv on cv.tenant_id = $1 and cv.contact_id = e.contact_id
            join conversation_messages m
              on m.conversation_id = cv.id and m.direction = 'in'
-            and m.created_at >= e.sent_at and m.created_at < e.sent_at + interval '7 days'
+            and m.created_at >= e.sent_at and m.created_at < e.sent_at + ${FENETRE_IMPUTATION}
        ),
        engages as (
          select campaign_id, contact_id from cliqueurs
@@ -1047,34 +1064,55 @@ export class PgStatsStore {
    * hors fil de test. Il a maintenant QUATRE consommateurs qui doivent rester d'accord ; un filtre qui
    * diverge d'un mot ferait mentir les quatre.
    */
-  async servicesParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
+  async servicesParCampagne(tenantId: string, campaignIds: string[], range: DateRange): Promise<Map<string, number>> {
     if (campaignIds.length === 0) return new Map();
+    const { from, to } = range;
     const res = await this.pool.query<{ campaign_id: string; n: string | null }>(
-      `with envoyes as (
+      `with ${BOUNDS_CTE},
+       envoyes as (
          select r.campaign_id, r.contact_id, r.sent_at
            from campaign_recipients r
            join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
-          where r.campaign_id = any($2::uuid[]) and r.sent_at is not null and r.contact_id is not null
+          where r.campaign_id = any($5::uuid[]) and r.sent_at is not null and r.contact_id is not null
        ),
        services as (
-         select cv.contact_id, m.created_at
+         -- 🔴 BORNEE PAR LA PERIODE, ET SON ABSENCE RENDAIT LE CHIFFRE FAUX D UN FACTEUR DIX. Le prix
+         -- unitaire applique a ces messages vient de serviceParMois, qui est bornee ; le cout template de
+         -- la meme campagne l est aussi. Sans borne ici, une campagne etalee sur deux jours se voyait
+         -- imputer TOUS ses messages de service depuis toujours, au prix effectif d une seule journee : la
+         -- somme des campagnes depassait le total de la ligne « Messages » de la meme carte. Un chiffre qui
+         -- n etait ni « ce que cette campagne a coute sur la periode » ni « ce qu elle a coute en tout »,
+         -- donc plausible et faux, le mode de panne que tout ce lot se donne pour mission d eviter.
+         -- Releve en revue finale le 2026-09-18.
+         --
+         -- ⚠️ engagementsParCampagne n a PAS de borne, et ce n est pas un precedent : elle compte des
+         -- PERSONNES attribuees a une campagne, et son resultat n est divise par aucun total de periode.
+         select cv.contact_id, m.created_at, m.id as message_id
            from conversation_messages m
            join conversations cv on cv.id = m.conversation_id
+           cross join bounds b
           where cv.tenant_id = $1 and not cv.is_test and cv.contact_id is not null
+            and m.created_at >= b.start_ts and m.created_at < b.end_ts
             and m.direction = 'out' and m.channel = 'whatsapp' and m.type is distinct from 'template'
        ),
        impute as (
          -- LA DERNIERE campagne recue avant ce message, et elle seule. Le tri descendant sur sent_at fait
          -- le choix ; la fenetre de sept jours le borne.
-         select distinct on (s.contact_id, s.created_at) e.campaign_id
+         -- ⚠️ LA CLE EST L IDENTIFIANT DU MESSAGE, pas (contact, instant) : deux messages au meme
+         -- horodatage pour le meme contact n en comptaient qu UN, donc la propriete annoncee etait en
+         -- realite « un INSTANT n est impute qu a une seule campagne ». Peu probable en microsecondes, mais
+         -- lever le doute ne coute rien.
+         select distinct on (s.message_id) e.campaign_id
            from services s
            join envoyes e
              on e.contact_id = s.contact_id
-            and s.created_at >= e.sent_at and s.created_at < e.sent_at + interval '7 days'
-          order by s.contact_id, s.created_at, e.sent_at desc
+            and s.created_at >= e.sent_at and s.created_at < e.sent_at + ${FENETRE_IMPUTATION}
+          order by s.message_id, e.sent_at desc
        )
        select campaign_id, count(*)::int as n from impute group by campaign_id`,
-      [tenantId, campaignIds],
+      // ⚠️ L ORDRE EST CELUI DE `BOUNDS_CTE`, qui reserve $2, $3 et $4 : la liste de campagnes prend
+      // donc $5. Les intervertir ne produirait pas une erreur de type, seulement un resultat vide.
+      [tenantId, from, to, TZ, campaignIds],
     );
     return new Map(res.rows.map((r) => [r.campaign_id, Number(r.n ?? 0)]));
   }

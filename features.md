@@ -201,6 +201,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   reste supprimable. Toujours sur la fiche : on **affecte ou retire un tag** (les tags existants sont suggérés à
   la saisie), on renseigne un champ déjà déclaré, et on peut **créer un champ entièrement nouveau (libellé + type)
   sans quitter la fiche** : il rejoint les champs de l'espace et sa valeur est posée sur ce contact dans la foulée.
+- ✅ **Vos prix, réglables par espace** (2026-09-18, écran Paramètres) : vous y posez **ce que vous
+  facturez**, et non ce que vous payez. Le tarif des templates vient de Meta, vous posez une **marge**
+  dessus (100 % = exactement le tarif Meta, et c'est le défaut, donc rien ne bouge tant que vous n'y touchez
+  pas). Les autres prix se négocient et se saisissent : le **message de service** et le nombre de messages
+  **offerts par mois**, la **date à partir de laquelle** ils sont facturés, et les deux prix **RCS** (simple,
+  et conversationnel dès qu'une personne répond). ⚠️ Ces prix servent à chiffrer ce que vous voyez dans
+  Performance Lab : ils n'émettent aucune facture et ne changent rien chez Meta. Une valeur hors bornes est
+  **refusée en nommant le champ**, jamais ramenée en silence dans les bornes : un prix corrigé à votre insu
+  serait pire qu'un refus, puisque vous en tireriez un budget.
 - ✅ **Le résumé de la conversation, en champ de base de la fiche** (2026-09-17) : dès qu'un contact a tenu au
   moins une conversation, sa fiche porte le **résumé de la dernière conversation analysée**, avec la date de
   l'analyse et un lien vers le fil. C'est le geste de quelqu'un qui ouvre une fiche avant de rappeler la

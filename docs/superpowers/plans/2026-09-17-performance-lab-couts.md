@@ -1,5 +1,13 @@
 # Performance Lab : les coûts et l'analyse des conversations (lot 2)
 
+> 🔴 **CE PLAN N'EST PLUS LA LISTE DE CONTROLE DU LOT, ET IL NE FAUT PAS S'EN SERVIR COMME TELLE.** Il
+> compte une quarantaine de cases `- [ ]` non cochees alors que le lot est livre et pousse : les cases ont
+> ete tenues par tache, pas par etape, et deux etapes reellement OUBLIEES (la grille de prix reglable, les
+> messages de service imputes aux campagnes) n'ont ete retrouvees qu'en revue finale, precisement parce que
+> personne ne pouvait distinguer une case « pas faite » d'une case « pas cochee ». Ce qui fait foi
+> aujourd'hui, c'est **`wip.md`** pour l'etat, et **`todo.md`** pour ce qui reste. Releve en revue finale le
+> 2026-09-18.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended)
 > or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax
 > for tracking.

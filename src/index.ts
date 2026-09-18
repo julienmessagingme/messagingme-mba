@@ -19,7 +19,7 @@ import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries, estimateCoutParCampagne, estimerCoutContact, entonnoirEngagement, type CategoryRates } from './stats/cost';
 import { assemblerDetailCampagne } from './stats/cout-campagne';
 import { coutMessages } from './stats/cout-messages';
-import { grilleDepuisLigne } from './stats/prix';
+import { grilleDepuisLigne, tarifsFactures } from './stats/prix';
 import { basculesRcs, FENETRE_BASCULE_MS } from './stats/rcs-conversationnel';
 import { PLAFOND_TOURS_IA } from './stats/cout-ia';
 import { rangeToUnix, addDays, todayParis } from './stats/range';
@@ -440,16 +440,37 @@ async function main(): Promise<void> {
    * ⚠️ `null` partout quand l'espace n'a pas de WABA ou que Meta ne rend rien : c'est cette absence qui
    * fait dire aux deux écrans « tarif indisponible » au lieu d'afficher un coût inventé.
    */
+  /**
+   * LE PRIX FACTURE D UN TEMPLATE, ET C EST LE SEUL ENDROIT OU LA MARGE DE L ESPACE S APPLIQUE.
+   *
+   * 🔴 UN SEUL POINT DE PASSAGE, ET C EST TOUT L INTERET. La marge a d abord ete posee dans les DEUX
+   * fonctions qui calculaient un total, et deux autres consommateurs des memes tarifs l ont donc ignoree :
+   * le graphe de cout du Quantitatif et le bilan d un contact affichaient le tarif Meta BRUT. Des qu un
+   * client posait une marge de 150, la Synthese annoncait 1,50 € la ou le graphe du meme produit annoncait
+   * 1,00 € pour exactement les memes envois. Releve en revue finale le 2026-09-18 : le correctif precedent
+   * avait DEPLACE la frontiere de la divergence, pas supprimee. En margeant ici, les CINQ consommateurs
+   * sont justes, et le sixieme qu on ajoutera demain le sera aussi sans y penser.
+   *
+   * ⚠️ CE QUI SORT N EST PLUS UN TARIF META, C EST UN PRIX DE VENTE, et les commentaires qui disaient
+   * « les memes tarifs Meta » ont ete corrigés en consequence. Un tarif absent (`null`) le reste : marger
+   * une absence en ferait un prix, et `chiffrer` ne pourrait plus la compter comme « sans tarif ».
+   *
+   * ⚠️ La grille est lue PAR ESPACE a chaque appel. Elle vit dans `tenant_settings`, une ligne par espace,
+   * lue par cle primaire : ce n est pas la lecture qui coute sur ce chemin, c est l aller-retour chez Meta
+   * juste au-dessus.
+   */
   const tarifsMeta = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
-    const wabaId = await repo.getTenantWabaId(tenant);
+    const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
     const { startTs, endTs } = rangeToUnix(range);
     const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
     const pricing = pricingClientT && wabaId ? await pricingClientT.getPricingAnalytics(wabaId, startTs, endTs) : null;
-    return {
-      marketing: pricing?.byCategory['marketing']?.ratePerMessage ?? null,
-      utility: pricing?.byCategory['utility']?.ratePerMessage ?? null,
-      currency: pricing?.currency ?? null,
-    };
+    // La transformation elle-meme vit dans `tarifsFactures`, PURE et testee : ce cablage ne fait que lire
+    // la grille et la lui passer, pour que le cas « une marge de 150 majore le prix » reste eprouvable.
+    return tarifsFactures({
+      marketing: pricing?.byCategory['marketing']?.ratePerMessage,
+      utility: pricing?.byCategory['utility']?.ratePerMessage,
+      currency: pricing?.currency,
+    }, grilleDepuisLigne(ligne));
   };
 
   /** Micro-cache de la pastille du numéro : dix minutes, très en deçà de la durée de vie de l'URL signée. */
@@ -1039,7 +1060,7 @@ async function main(): Promise<void> {
         const [clics, engagements, services] = await Promise.all([
           statsStore.clicsParCampagne(tenant, ids),
           statsStore.engagementsParCampagne(tenant, ids),
-          statsStore.servicesParCampagne(tenant, ids),
+          statsStore.servicesParCampagne(tenant, ids, range),
         ]);
         /**
          * LE PRIX EFFECTIF D'UN MESSAGE DE SERVICE SUR LA PERIODE, franchise déjà déduite.
@@ -1057,10 +1078,9 @@ async function main(): Promise<void> {
           grilleDepuisLigne(ligne),
         );
         const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
-        // 🔴 LA MEME MARGE QUE LA LIGNE « MESSAGES ENVOYES », depuis la MEME grille. Deux prix de template
-        // sur la meme carte divergeraient en silence des qu un client pose une marge.
+        // La marge est DEJA dans `rates` (cf. `tarifsMeta`) : la reappliquer ici la compterait deux fois.
         return estimateCoutParCampagne(volumes, rates, clics, engagements,
-          { parCampagne: services, prixUnitaire }, grilleDepuisLigne(ligne).margeTemplate);
+          { parCampagne: services, prixUnitaire });
       },
       /**
        * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.
