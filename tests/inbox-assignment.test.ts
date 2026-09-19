@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { peutEcrire, peutAffecter } from '../src/inbox/assignment';
+import { peutEcrire, peutAffecter, peutPrendre } from '../src/inbox/assignment';
 
 const agent = (id: string) => ({ userId: id, role: 'agent' });
 const manager = { userId: 'm1', role: 'manager' };
@@ -40,6 +40,33 @@ describe('peutEcrire : qui répond dans une conversation', () => {
   it('un rôle inconnu n’ouvre aucun droit', () => {
     expect(peutEcrire({ userId: 'u9', role: 'superviseur' }, 'u1')).toBe(false);
     expect(peutEcrire({ userId: 'u9', role: 'ADMIN' }, 'u1')).toBe(false); // pas de tolérance de casse
+  });
+});
+
+describe('peutPrendre : un agent se sert dans le pot commun (migration 0160)', () => {
+  it('🔴 réglage COUPÉ : un agent ne prend rien, c’est le comportement d’avant', () => {
+    expect(peutPrendre(agent('u1'), null, false)).toBe(false);
+  });
+
+  it('réglage activé : un agent prend une conversation à PERSONNE', () => {
+    expect(peutPrendre(agent('u1'), null, true)).toBe(true);
+  });
+
+  it('🔴 jamais celle d’un collègue, ni la sienne : prendre n’est pas réaffecter', () => {
+    // L'arbitrage de Julien : « un agent ne peut pas réaffecter de conversations, ni les siennes ».
+    expect(peutPrendre(agent('u1'), 'u2', true)).toBe(false);
+    expect(peutPrendre(agent('u1'), 'u1', true)).toBe(false);
+  });
+
+  it('l’encadrement prend toujours, réglage ou pas : il peut déjà tout affecter', () => {
+    expect(peutPrendre(manager, null, false)).toBe(true);
+    expect(peutPrendre(admin, null, false)).toBe(true);
+    expect(peutPrendre(manager, 'u2', false)).toBe(false);
+  });
+
+  it('🔴 sans identité, personne à qui l’affecter : non (fail-closed)', () => {
+    expect(peutPrendre({ userId: null, role: 'agent' }, null, true)).toBe(false);
+    expect(peutPrendre({ userId: null, role: 'admin' }, null, true)).toBe(false);
   });
 });
 

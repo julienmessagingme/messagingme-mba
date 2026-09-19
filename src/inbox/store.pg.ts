@@ -1086,6 +1086,57 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * PREND une conversation du pot commun : l'affecte à `userId` SEULEMENT si elle n'est à personne
+   * (migration 0160, arbitrage de Julien du 2026-09-19).
+   *
+   * 🔴 LE `assigned_to is null` EST DANS LE `where`, PAS DANS UNE LECTURE PRÉALABLE, pour la même raison que
+   * `assignerSiLibre` : deux agents qui cliquent en même temps liraient tous deux « libre » et écriraient tous
+   * deux, et le second retirerait la conversation au premier, qui est peut-être déjà en train de répondre.
+   * Ici le second ne touche aucune ligne, et l'appelant le dit.
+   *
+   * ⚠️ `assigned_by` VAUT L'AGENT LUI-MÊME : le journal d'affectation distingue ainsi une prise (par soi),
+   * une distribution (par un manager) et un routage automatique (`null`).
+   *
+   * ⚠️ MÊME GARDE D'ESPACE que `setAssignee` : un compte d'un autre espace, ou révoqué, ne prend rien.
+   *
+   * Rend `false` si la conversation est inconnue OU déjà prise : l'appelant relit l'affectation pour dire
+   * lequel des deux (404 ou 409).
+   */
+  async prendreSiLibre(tenantId: string, conversationId: string, userId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = $3
+        where id = $1 and tenant_id = $2 and assigned_to is null
+          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $2 and u.disabled_at is null)`,
+      [conversationId, tenantId, userId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * LES MEMBRES À QUI L'ENCADREMENT PEUT CONFIER UNE CONVERSATION, pour le sélecteur de l'Inbox.
+   *
+   * 🔴 CE SÉLECTEUR LISAIT `GET /users`, RÉSERVÉ AUX ADMINS : chez un MANAGER, qui a pourtant le droit
+   * d'affecter, la liste revenait vide et le menu ne proposait que « Non affectée ». Relevé le 2026-09-19 en
+   * préparant la prise par un agent ; personne ne l'avait vu parce que tous les comptes existants étaient
+   * admin. Cette lecture-ci ne rend que ce dont le sélecteur a besoin : ni rôle, ni état, ni e-mail
+   * au-delà du nom affichable.
+   *
+   * ⚠️ MÊME CRITÈRE QUE `setAssignee` (compte non révoqué), et PAS celui du tour de rôle
+   * (`membresAffectables` exige en plus une première connexion) : un manager peut vouloir confier une
+   * conversation à quelqu'un qu'il vient d'inviter, et l'écriture l'accepterait. Proposer moins que ce que
+   * l'écriture accepte cacherait un geste permis.
+   */
+  async membresPourAffectation(tenantId: string): Promise<Array<{ id: string; nom: string }>> {
+    const res = await this.pool.query<{ id: string; nom: string }>(
+      `select id, coalesce(nullif(name, ''), email) as nom from users
+        where tenant_id = $1 and disabled_at is null
+        order by lower(coalesce(nullif(name, ''), email)) asc, id asc`,
+      [tenantId],
+    );
+    return res.rows;
+  }
+
+  /**
    * À qui cette conversation est-elle confiée ? `undefined` = conversation inconnue pour ce tenant, ce qui
    * n'est PAS la même chose que `null` (connue, mais confiée à personne). Les confondre laisserait écrire
    * dans la conversation d'un autre espace, puisque « personne » vaut « ouverte à tous ».

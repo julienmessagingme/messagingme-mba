@@ -113,13 +113,19 @@ export function ongletDeLaPage(arbres: Record<Onglet, NavEntree[]>, key: string)
  * le consentement ou changer la politique d'IA restent des décisions de la marque, refusées côté serveur et
  * masquées côté écran. « Rendre des comptes » et « décider » ne sont pas le même geste.
  *
+ * 🔴 UNE EXCEPTION, NOMMÉE : `parametres` (2026-09-19). Julien a voulu le réglage « les agents peuvent prendre
+ * une conversation du pot commun » « à la main des admins et des managers ». Un manager y RÈGLE donc une
+ * chose, une seule, et c'est un réglage d'ÉQUIPE (qui distribue le travail), pas une décision de la marque.
+ * L'écran ne lui montre que cette section ; le fuseau, les prix et le reste restent admin, côté écran ET
+ * côté serveur (seule `/settings/agents-peuvent-prendre` est montée sous la garde d'encadrement).
+ *
  * ⚠️ LE JOURNAL DE LIVRAISON PORTE LES NUMÉROS DE TÉLÉPHONE, et il est dans cette liste. Le plan du chantier
  * 6 le gardait admin-only ; l'ouvrir est un choix explicite, pas un glissement. Il se défend : un manager
  * voit déjà des numéros dans l'Inbox, qui est son écran de tous les jours, et « quel message n'est pas
  * arrivé » sans dire « à qui » ne répond à rien.
  */
 export const ECRANS_ENCADREMENT: readonly string[] = [
-  'securite', 'securite-consentement', 'securite-ia', 'securite-audit', 'securite-erreurs',
+  'securite', 'securite-consentement', 'securite-ia', 'securite-audit', 'securite-erreurs', 'parametres',
 ];
 
 /**

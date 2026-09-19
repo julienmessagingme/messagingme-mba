@@ -29,7 +29,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"mba-settings","href":"/mba/parametres","fr":"MBA, paramètres","en":"MBA, settings","acces":"admin","chemin":["AI Agent","MBA"]},
   {"cle":"mcp","href":"/developers/mcp","fr":"Serveur MCP","en":"MCP server","acces":"admin","chemin":["Developers"]},
   {"cle":"nodes","href":"/nodes","fr":"Blocs","en":"Blocks","acces":"admin","chemin":["Contenu","Bibliothèque"]},
-  {"cle":"parametres","href":"/parametres","fr":"Paramètres","en":"Settings","acces":"admin","chemin":[]},
+  {"cle":"parametres","href":"/parametres","fr":"Paramètres","en":"Settings","acces":"encadrement","chemin":[]},
   {"cle":"perf-synthese","href":"/performance","fr":"Synthèse","en":"Summary","acces":"admin","chemin":[]},
   {"cle":"quanti-couts","href":"/dashboard/couts","fr":"Coûts","en":"Costs","acces":"admin","chemin":["Quantitatif"]},
   {"cle":"quanti-funnel","href":"/dashboard/funnel","fr":"Funnel","en":"Funnel","acces":"admin","chemin":["Quantitatif"]},

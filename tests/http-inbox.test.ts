@@ -1065,6 +1065,94 @@ describe('servir une pièce jointe reçue (2026-09-19)', () => {
   });
 });
 
+describe('un agent PREND une conversation du pot commun (migration 0160)', () => {
+  const jetons = { agent: '', manager: '' };
+  beforeAll(async () => {
+    jetons.agent = await signSession({ userId: 'u-agent', tenantId: 't1', role: 'agent' }, SECRET);
+    jetons.manager = await signSession({ userId: 'u-manager', tenantId: 't1', role: 'manager' }, SECRET);
+  });
+  const comme = (jeton: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${jeton}` } });
+  const url = `/tenants/t1/conversations/${CONV}/assignee/moi`;
+
+  function monter(o: { reglage: boolean; assignee?: string | null; prendre?: boolean }) {
+    const prises: Array<{ id: string; userId: string }> = [];
+    const a = app({
+      getAssignee: async () => (o.assignee === undefined ? null : o.assignee),
+      agentsPeuventPrendre: async () => o.reglage,
+      prendreSiLibre: async (_t, id, userId) => { prises.push({ id, userId }); return o.prendre ?? true; },
+    });
+    return { a, prises };
+  }
+
+  it('🔴 réglage activé : l’agent prend, et c’est À LUI, jamais à l’identifiant du corps', async () => {
+    // Un affectataire pris dans le corps ferait de cette route un « donner à un collègue », précisément
+    // ce que le réglage n'autorise pas.
+    const { a, prises } = monter({ reglage: true });
+    const res = await a.inject({ method: 'POST', url, ...comme(jetons.agent), payload: { assignee: 'u-quelqu-un-dautre' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ conversationId: CONV, assignee: 'u-agent' });
+    expect(prises).toEqual([{ id: CONV, userId: 'u-agent' }]);
+  });
+
+  it('🔴 réglage COUPÉ : 403, et rien n’est écrit', async () => {
+    const { a, prises } = monter({ reglage: false });
+    const res = await a.inject({ method: 'POST', url, ...comme(jetons.agent) });
+    expect(res.statusCode).toBe(403);
+    expect(prises).toEqual([]);
+  });
+
+  it('🔴 déjà à un collègue : 409, et rien n’est écrit', async () => {
+    const { a, prises } = monter({ reglage: true, assignee: 'u-collegue' });
+    const res = await a.inject({ method: 'POST', url, ...comme(jetons.agent) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'deja_prise' });
+    expect(prises).toEqual([]);
+  });
+
+  it('🔴 un collègue la prend ENTRE la lecture et l’écriture : 409, pas un faux succès', async () => {
+    // L'écriture conditionnelle ne touche aucune ligne : la route doit le dire, pas annoncer une prise.
+    const { a } = monter({ reglage: true, prendre: false });
+    const res = await a.inject({ method: 'POST', url, ...comme(jetons.agent) });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('conversation inconnue ou identifiant mal formé : 404', async () => {
+    const { a } = monter({ reglage: true, assignee: undefined });
+    const inconnue = app({ getAssignee: async () => undefined, agentsPeuventPrendre: async () => true, prendreSiLibre: async () => true });
+    expect((await inconnue.inject({ method: 'POST', url, ...comme(jetons.agent) })).statusCode).toBe(404);
+    expect((await a.inject({ method: 'POST', url: '/tenants/t1/conversations/pas-un-uuid/assignee/moi', ...comme(jetons.agent) })).statusCode).toBe(404);
+  });
+
+  it('un manager prend, même réglage coupé : il peut déjà tout affecter', async () => {
+    const { a } = monter({ reglage: false });
+    expect((await a.inject({ method: 'POST', url, ...comme(jetons.manager) })).statusCode).toBe(200);
+  });
+
+  it('🔴 la liste dit à l’écran si l’agent peut prendre, par la MÊME règle', async () => {
+    const lire = async (reglage: boolean, jeton: string) => {
+      const { a } = monter({ reglage });
+      return (await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jeton) })).json().peutPrendre;
+    };
+    expect(await lire(true, jetons.agent)).toBe(true);
+    expect(await lire(false, jetons.agent)).toBe(false);
+  });
+
+  it('sans câblage de la prise, la liste ne propose jamais le geste', async () => {
+    // Un bouton qui mènerait à un 503 serait « offert et inerte », ce que le produit s'interdit.
+    const a = app({ agentsPeuventPrendre: async () => true });
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.agent) })).json().peutPrendre).toBe(false);
+  });
+
+  it('🔴 la liste des membres affectables s’ouvre au MANAGER, pas à l’agent', async () => {
+    // Elle était lue sur `GET /users`, réservé aux admins : chez un manager, le sélecteur revenait vide.
+    const a = app({ membresPourAffectation: async () => [{ id: 'u-jean', nom: 'Jean' }] });
+    const m = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/membres-affectables', ...comme(jetons.manager) });
+    expect(m.statusCode).toBe(200);
+    expect(m.json()).toEqual({ membres: [{ id: 'u-jean', nom: 'Jean' }] });
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations/membres-affectables', ...comme(jetons.agent) })).statusCode).toBe(403);
+  });
+});
+
 /**
  * 🔴 LES FILTRES DE DOSSIER TRAVERSENT-ILS VRAIMENT LA ROUTE ?
  *

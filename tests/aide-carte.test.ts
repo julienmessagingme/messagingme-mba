@@ -79,12 +79,14 @@ describe('qui voit quoi', () => {
 
   /**
    * 🔴 UN MANAGER VOIT L'INBOX ET LES ÉCRANS DE CONFORMITÉ, ET RIEN D'AUTRE (tranché par Julien le
-   * 2026-09-14). Sans ce cas, le bot d'aide emmènerait un manager sur des écrans qui le renverraient à
+   * 2026-09-14), plus Paramètres depuis le 2026-09-19, pour le seul réglage d'équipe qu'il y règle. Sans ce cas, le bot d'aide emmènerait un manager sur des écrans qui le renverraient à
    * l'inbox, ou lui cacherait ceux qu'on vient de lui ouvrir.
    */
-  it('🔴 un manager voit l’Inbox et les écrans de conformité, et rien de plus', () => {
+  it('🔴 un manager voit l’Inbox, les écrans de conformité et Paramètres, et rien de plus', () => {
+    // `parametres` depuis le 2026-09-19 : un manager y règle UNE chose, la prise d'une conversation par les
+    // agents (demande de Julien). L'écran ne lui montre que cette section.
     const vue = carteVisiblePar('manager').map((e) => e.cle).sort();
-    expect(vue).toEqual(['inbox', 'securite-audit', 'securite-consentement', 'securite-erreurs', 'securite-ia'].sort());
+    expect(vue).toEqual(['inbox', 'parametres', 'securite-audit', 'securite-consentement', 'securite-erreurs', 'securite-ia'].sort());
   });
 
   it('un admin voit tout', () => {

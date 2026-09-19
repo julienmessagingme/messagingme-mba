@@ -4,7 +4,7 @@ import type { ConversationSummary, ConversationMessage, ListConversationsOptions
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
-import { peutEcrire, peutAffecter } from '../inbox/assignment';
+import { peutEcrire, peutAffecter, peutPrendre } from '../inbox/assignment';
 import { gardeEtendue } from '../auth/middleware';
 import { cacheCourt } from '../lib/cache-court';
 import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
@@ -115,6 +115,21 @@ export interface InboxRouteDeps {
   getAssignee?(tenantId: string, conversationId: string): Promise<string | null | undefined>;
   /** Affecte (ou libère avec `null`). `false` = conversation inconnue, ou membre étranger au tenant. */
   setAssignee?(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
+  /**
+   * PREND une conversation du pot commun pour `userId`, SEULEMENT si elle est à personne (migration 0160).
+   * `false` = inconnue ou déjà prise : la route relit l'affectation pour dire lequel.
+   */
+  prendreSiLibre?(tenantId: string, conversationId: string, userId: string): Promise<boolean>;
+  /**
+   * L'espace autorise-t-il ses agents à PRENDRE une conversation du pot commun ? Absente -> `false`, c'est-à-
+   * dire le comportement d'avant le réglage.
+   */
+  agentsPeuventPrendre?(tenantId: string): Promise<boolean>;
+  /**
+   * Les membres à qui l'encadrement peut confier une conversation (id + nom affichable). Absente -> la route
+   * rend une liste vide, et le sélecteur ne propose que « Non affectée », comme avant.
+   */
+  membresPourAffectation?(tenantId: string): Promise<Array<{ id: string; nom: string }>>;
   /** Marque un fil comme lu (un opérateur vient de l'ouvrir). Optionnel (deps de test minimales). */
   markConversationRead?(tenantId: string, conversationId: string): Promise<void>;
   /**
@@ -381,8 +396,18 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // d'identifiant d'utilisateur, et lui en ajouter un toucherait l'authentification pour un besoin
     // d'affichage. Le serveur, lui, sait déjà qui appelle.
     const moi = req.auth?.userId ?? null;
+    const acteur = { userId: moi, role: req.auth?.role ?? null };
+    /**
+     * PEUT-IL PRENDRE UNE CONVERSATION DU POT COMMUN ? (migration 0160)
+     *
+     * 🔴 CALCULÉ PAR LA MÊME RÈGLE QUE LA ROUTE QUI ÉCRIT (`peutPrendre`), sur une conversation à personne :
+     * l'écran montre le bouton « Je m'en occupe » sur les lignes non affectées quand ce drapeau est vrai. Deux
+     * règles écrites séparément finiraient par proposer un geste que le serveur refuse.
+     */
+    const reglage = deps.agentsPeuventPrendre ? await deps.agentsPeuventPrendre(tenant) : false;
     return reply.code(200).send({
       conversations: conversations.map((c) => ({ ...c, assignedToMe: moi !== null && c.assignedTo === moi })),
+      peutPrendre: deps.prendreSiLibre !== undefined && peutPrendre(acteur, null, reglage),
     });
   });
 
@@ -841,6 +866,61 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (peutEcrire({ userId: req.auth?.userId ?? null, role: req.auth?.role ?? null }, assignee)) return null;
     return 'Cette conversation est affectée à un autre membre de l’équipe.';
   }
+
+  /**
+   * LES MEMBRES QU'ON PEUT AFFECTER, pour le sélecteur de l'encadrement (2026-09-19).
+   *
+   * 🔴 LE SÉLECTEUR LISAIT `GET /users`, RÉSERVÉ AUX ADMINS : chez un MANAGER, la liste revenait vide et il ne
+   * pouvait affecter à personne, alors que la route d'affectation l'y autorise. Cette route-ci suit la MÊME
+   * règle que l'affectation (`peutAffecter`), donc voir la liste et pouvoir s'en servir vont ensemble.
+   *
+   * ⚠️ Déclarée sous `/conversations/membres-affectables` : un segment FIXE, que Fastify sert avant le
+   * paramètre `:conversationId`, comme `counts`.
+   */
+  app.get('/tenants/:tenantId/conversations/membres-affectables', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!peutAffecter({ userId: req.auth?.userId ?? null, role: req.auth?.role ?? null })) {
+      return reply.code(403).send({ error: 'réservé aux managers et aux admins' });
+    }
+    return reply.code(200).send({ membres: deps.membresPourAffectation ? await deps.membresPourAffectation(tenant) : [] });
+  });
+
+  /**
+   * PRENDRE une conversation du pot commun : se l'affecter à SOI (migration 0160, arbitrage de Julien du
+   * 2026-09-19 : « un agent ne peut pas réaffecter [...] en revanche il peut prendre parmi celles du pot
+   * commun »).
+   *
+   * 🔴 L'AFFECTATAIRE EST PRIS DANS LA SESSION, JAMAIS DANS LE CORPS : c'est ce qui fait de cette route une
+   * PRISE et pas une affectation. Un identifiant fourni par l'appelant la transformerait en « donner à un
+   * collègue », précisément ce que le réglage n'autorise pas.
+   *
+   * ⚠️ 409 QUAND UN COLLÈGUE L'A PRISE ENTRE-TEMPS : l'écriture est conditionnelle (`assigned_to is null`
+   * dans le `where`), donc deux clics simultanés ne se volent pas la conversation. Le perdant l'apprend,
+   * avec un message qu'il peut lire (4xx, jamais 5xx : Cloudflare remplacerait le corps).
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/assignee/moi', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.prendreSiLibre || !deps.getAssignee) return reply.code(503).send({ error: 'prise de conversation indisponible' });
+    const { conversationId } = req.params as { conversationId: string };
+    if (!estUuid(conversationId)) return reply.code(404).send({ error: 'conversation inconnue' });
+    const acteur = { userId: req.auth?.userId ?? null, role: req.auth?.role ?? null };
+    const actuel = await deps.getAssignee(tenant, conversationId);
+    if (actuel === undefined) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (actuel !== null) return reply.code(409).send({ error: 'Un collègue s’occupe déjà de cette conversation.', code: 'deja_prise' });
+    const reglage = deps.agentsPeuventPrendre ? await deps.agentsPeuventPrendre(tenant) : false;
+    if (!peutPrendre(acteur, null, reglage)) {
+      return reply.code(403).send({ error: 'Votre espace ne permet pas aux agents de prendre une conversation. Un manager peut vous l’affecter.' });
+    }
+    // `acteur.userId` est non nul ici : `peutPrendre` l'exige.
+    if (!(await deps.prendreSiLibre(tenant, conversationId, acteur.userId!))) {
+      // Prise entre notre lecture et notre écriture : un collègue a été plus rapide.
+      return reply.code(409).send({ error: 'Un collègue s’occupe déjà de cette conversation.', code: 'deja_prise' });
+    }
+    invaliderCompteurs(tenant); // « Non affectées » et la charge de l'agent viennent de changer.
+    return reply.code(200).send({ conversationId, assignee: acteur.userId });
+  });
 
   /**
    * Affecter une conversation à un membre, ou la libérer. Réservé aux managers et aux admins : c'est la

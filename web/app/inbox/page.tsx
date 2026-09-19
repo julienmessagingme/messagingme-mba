@@ -33,7 +33,8 @@ import {
   marquerTraitee,
   type CompteursInbox,
   getSettings,
-  listUsers,
+  listMembresAffectables,
+  prendreConversationPourMoi,
   setConversationAssignee,
   queryContacts,
   listUserFields,
@@ -242,6 +243,12 @@ function InboxInner({ session }: { session: Session }) {
    * geste sans montrer la charge serait incohérent, et c'est le manager que cette section sert.
    */
   const peutAffecter = session.role === 'admin' || session.role === 'manager';
+  /**
+   * Puis-je PRENDRE une conversation du pot commun (migration 0160) ? Rendu par le SERVEUR avec la liste,
+   * calculé par la règle de la route qui écrit : l'écran ne la recalcule pas, sinon il finirait par montrer
+   * un bouton que le serveur refuse.
+   */
+  const [peutPrendre, setPeutPrendre] = useState(false);
   /** Une page de plus est peut-être disponible (la dernière était pleine). */
   const [peutCharger, setPeutCharger] = useState(false);
   const [chargementPage, setChargementPage] = useState(false);
@@ -258,6 +265,7 @@ function InboxInner({ session }: { session: Session }) {
       const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...dossierEnParams(dossier) });
       const liste = Array.isArray(r?.conversations) ? r.conversations : [];
       setConversations(liste);
+      setPeutPrendre(r?.peutPrendre === true);
       /**
        * 🔴 LA CONVERSATION OUVERTE SUIT LA LISTE RECHARGÉE. `selected` était une COPIE prise au clic et
        * jamais rafraîchie : après « Traité », le menu de la conversation ouverte proposait encore « Traité »
@@ -657,7 +665,7 @@ function InboxInner({ session }: { session: Session }) {
 
       <section className="lg:min-h-0">
         {selected ? (
-          <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} onSent={reload} />
+          <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} peutPrendre={peutPrendre} onSent={reload} />
         ) : (
           <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-ink-300 bg-white text-sm text-ink-400">
             {t('Sélectionne une conversation', 'Select a conversation')}
@@ -973,22 +981,48 @@ function VocalMessage({ session, conversationId, message, traduire }: {
   );
 }
 
-function AffectationControl({ session, conversation, onChange }: { session: Session; conversation: Conversation; onChange: () => void }) {
+function AffectationControl({ session, conversation, peutPrendre, onChange }: {
+  session: Session; conversation: Conversation;
+  /** Le serveur dit que je peux PRENDRE une conversation du pot commun (migration 0160). */
+  peutPrendre: boolean;
+  onChange: () => void;
+}) {
   const t = useT();
   const peutAffecter = session.role === 'admin' || session.role === 'manager';
-  const [membres, setMembres] = useState<Array<{ id: string; name: string | null; email: string }>>([]);
+  const [membres, setMembres] = useState<Array<{ id: string; nom: string }>>([]);
   const [busy, setBusy] = useState(false);
+  const [refusPrise, setRefusPrise] = useState<string | null>(null);
   const affecte = conversation.assignedTo ?? null;
 
   useEffect(() => {
     if (!peutAffecter) return;
-    // Silencieux, et surtout VALIDÉ : une réponse 200 sans `users` (backend antérieur, proxy) poserait
-    // `undefined` dans un état typé tableau, et le rendu suivant ferait tomber TOUT le fil de conversation,
-    // pas seulement ce sélecteur. Le try/catch ne suffit pas, il faut vérifier la forme.
-    listUsers(session.tenantId)
-      .then((r) => setMembres(Array.isArray(r?.users) ? r.users : []))
+    /**
+     * 🔴 `listMembresAffectables` ET PLUS `listUsers` (2026-09-19). Ce sélecteur lisait `GET /users`, réservé
+     * aux ADMINS : chez un manager, qui a pourtant le droit d'affecter, la liste revenait vide et il ne
+     * pouvait confier la conversation à personne. Silencieux, et VALIDÉ côté client : une réponse mal formée
+     * ne doit pas faire tomber le fil entier, seulement ce menu.
+     */
+    listMembresAffectables(session.tenantId)
+      .then((m) => setMembres(m))
       .catch(() => setMembres([]));
   }, [session.tenantId, peutAffecter]);
+
+  /**
+   * « JE M'EN OCCUPE » : l'agent se sert dans le pot commun (migration 0160, arbitrage de Julien du
+   * 2026-09-19). Le serveur l'affecte à la SESSION, jamais à un identifiant qu'on lui passerait, et répond
+   * 409 si un collègue a été plus rapide : on le dit, puis la liste rechargée montre qui l'a prise.
+   */
+  async function prendre(): Promise<void> {
+    setBusy(true); setRefusPrise(null);
+    try {
+      await prendreConversationPourMoi(session.tenantId, conversation.id);
+    } catch (err) {
+      setRefusPrise(err instanceof Error ? err.message : t('Impossible de prendre cette conversation.', 'Could not take this conversation.'));
+    } finally {
+      setBusy(false);
+      onChange();
+    }
+  }
 
   async function choisir(valeur: string): Promise<void> {
     setBusy(true);
@@ -1003,6 +1037,24 @@ function AffectationControl({ session, conversation, onChange }: { session: Sess
   }
 
   if (!peutAffecter) {
+    // Personne ne l'a, et l'espace permet aux agents de se servir : le bouton. Rien d'autre n'est offert,
+    // ni la passer à un collègue ni la rendre ensuite : prendre n'est pas réaffecter.
+    if (affecte === null && peutPrendre) {
+      return (
+        <span className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => { void prendre(); }}
+            disabled={busy}
+            data-testid="prendre-conversation"
+            className="rounded-full border border-brand-500 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-50"
+          >
+            {t('Je m’en occupe', 'I’ll take it')}
+          </button>
+          {refusPrise && <span className="text-[11px] text-red-600" data-testid="prendre-refus">{refusPrise}</span>}
+        </span>
+      );
+    }
     if (affecte === null) return null;
     const pourMoi = conversation.assignedToMe === true;
     return (
@@ -1027,16 +1079,18 @@ function AffectationControl({ session, conversation, onChange }: { session: Sess
     >
       <option value="">{t('Non affectée', 'Unassigned')}</option>
       {membres.map((m) => (
-        <option key={m.id} value={m.id}>{m.name ?? m.email}</option>
+        <option key={m.id} value={m.id}>{m.nom}</option>
       ))}
     </select>
   );
 }
 
-function Thread({ session, conversation, dossier, onSent }: {
+function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
   session: Session; conversation: Conversation;
   /** Le dossier OUVERT. Sert au menu de rangement : « Désarchiver » ne se propose que depuis Archivé. */
   dossier: DossierInbox;
+  /** Je peux PRENDRE une conversation du pot commun (rendu par le serveur avec la liste). */
+  peutPrendre: boolean;
   onSent: () => void;
 }) {
   const t = useT();
@@ -1523,6 +1577,7 @@ function Thread({ session, conversation, dossier, onSent }: {
           <AffectationControl
             session={session}
             conversation={conversation}
+            peutPrendre={peutPrendre}
             onChange={onSent}
           />
           <RangerDans

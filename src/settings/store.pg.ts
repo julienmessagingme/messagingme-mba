@@ -93,6 +93,14 @@ export interface TenantSettings {
    * de son agent, et notre propre déclaration en ferait deux. L'écran le dit.
    */
   mentionIaFrequence: FrequenceMentionIa | null;
+  /**
+   * Un AGENT peut-il PRENDRE une conversation du pot commun, c'est-à-dire se l'affecter (migration 0160) ?
+   *
+   * 🔴 PRENDRE, JAMAIS RÉAFFECTER (arbitrage de Julien du 2026-09-19) : la distribution reste le geste de
+   * l'encadrement. `false` par défaut, donc le comportement d'avant le réglage pour tout espace qui n'a rien
+   * choisi. La règle qui l'applique : `peutPrendre` (`src/inbox/assignment.ts`).
+   */
+  agentsPeuventPrendre: boolean;
 }
 
 /**
@@ -154,7 +162,22 @@ export class PgTenantSettingsStore {
       // seconde ici ferait deux facons de lire la meme ligne, et le jour ou l'une gere un `numeric` rendu
       // en chaine et pas l'autre, l'ecran de reglages et la carte des couts afficheraient deux prix.
       prix: grilleDepuisLigne(r ?? null),
+      // ⚠️ `=== true` et pas `?? false` : une base en retard sur 0160 ne rend pas la colonne (`select *`),
+      // et c'est alors le comportement d'avant, que personne ne peut prendre.
+      agentsPeuventPrendre: r?.agents_peuvent_prendre === true,
     };
+  }
+
+  /**
+   * Autorise (ou non) les agents à PRENDRE une conversation du pot commun. Upsert ciblé : n'écrase aucun
+   * autre réglage.
+   */
+  async setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, agents_peuvent_prendre, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set agents_peuvent_prendre = excluded.agents_peuvent_prendre, updated_at = now()`,
+      [tenantId, actif],
+    );
   }
 
   /**

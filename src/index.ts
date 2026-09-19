@@ -749,6 +749,11 @@ async function main(): Promise<void> {
       } : {}),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
+      // La PRISE d'une conversation du pot commun par un agent (migration 0160) : l'écriture conditionnelle,
+      // le réglage de l'espace qui l'autorise, et la liste de l'encadrement que le sélecteur lisait mal.
+      prendreSiLibre: (tenant, id, userId) => inboxStore.prendreSiLibre(tenant, id, userId),
+      agentsPeuventPrendre: async (tenant) => (await settingsStore.get(tenant)).agentsPeuventPrendre,
+      membresPourAffectation: (tenant) => inboxStore.membresPourAffectation(tenant),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id, apres) => inboxStore.getMessages(id, apres),
       /**
@@ -1318,6 +1323,7 @@ async function main(): Promise<void> {
        */
       setMentionIaFrequence: (tenant, frequence) => settingsStore.setMentionIaFrequence(tenant, frequence),
       setAgentTransfertMode: (tenant, mode) => settingsStore.setAgentTransfertMode(tenant, mode),
+      setAgentsPeuventPrendre: (tenant, actif) => settingsStore.setAgentsPeuventPrendre(tenant, actif),
       listerAgentsPourConformite: (tenant) => agentStore.listerPourConformite(tenant),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.

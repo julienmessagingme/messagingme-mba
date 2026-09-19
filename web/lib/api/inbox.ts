@@ -140,7 +140,15 @@ export interface InboxMessage {
 export function listConversations(
   tenantId: string,
   opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean; traitees?: boolean } = {},
-): Promise<{ conversations: Conversation[] }> {
+): Promise<{
+  conversations: Conversation[];
+  /**
+   * Puis-je PRENDRE une conversation du pot commun (migration 0160) ? Calculé par le serveur avec la MÊME
+   * règle que la route qui écrit : le bouton « Je m'en occupe » n'apparaît que s'il est vrai. Absent (backend
+   * antérieur) = lu comme `false`, donc aucun bouton qui mènerait à un refus.
+   */
+  peutPrendre?: boolean;
+}> {
   const p = new URLSearchParams();
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
   if (opts.aTraiter) p.set('aTraiter', '1');
@@ -167,6 +175,25 @@ export function countUnreadConversations(tenantId: string): Promise<{ count: num
  */
 export function setConversationAssignee(tenantId: string, conversationId: string, assignee: string | null): Promise<{ conversationId: string; assignee: string | null }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/assignee`, { method: 'PATCH', body: JSON.stringify({ assignee }) });
+}
+/**
+ * PRENDRE une conversation du pot commun : se l'affecter à SOI (migration 0160). Le serveur prend
+ * l'affectataire dans la session, jamais dans une requête : il n'y a donc rien à lui passer. Rejette une
+ * `ApiError` 409 quand un collègue l'a prise entre-temps.
+ */
+export function prendreConversationPourMoi(tenantId: string, conversationId: string): Promise<{ conversationId: string; assignee: string }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/assignee/moi`, { method: 'POST' });
+}
+/**
+ * Les membres à qui l'encadrement peut confier une conversation.
+ *
+ * 🔴 LE SÉLECTEUR LISAIT `listUsers` (`GET /users`), RÉSERVÉ AUX ADMINS : chez un manager, la liste revenait
+ * vide et il ne pouvait affecter à personne. Cette route-ci suit la règle de l'affectation.
+ */
+export async function listMembresAffectables(tenantId: string): Promise<Array<{ id: string; nom: string }>> {
+  const r = await request<{ membres?: unknown }>(`/tenants/${tenantId}/conversations/membres-affectables`);
+  // Vérifié et non casté : ce tableau vient du réseau, et le sélecteur fait `.map` dessus pendant le rendu.
+  return Array.isArray(r?.membres) ? (r.membres as Array<{ id: string; nom: string }>) : [];
 }
 /**
  * MODÉRATION : bloque ou débloque un contact.
@@ -285,6 +312,20 @@ export function politiqueTransfertAgent(tenantId: string): Promise<PolitiqueTran
 }
 export function setPolitiqueTransfertAgent(tenantId: string, mode: ModeTransfertAgent): Promise<{ mode: ModeTransfertAgent }> {
   return request(`/tenants/${tenantId}/settings/transfert-agent`, { method: 'PATCH', body: JSON.stringify({ mode }) });
+}
+
+/**
+ * LES AGENTS PEUVENT-ILS PRENDRE UNE CONVERSATION DU POT COMMUN ? (migration 0160)
+ *
+ * Lecture ET écriture ouvertes à l'encadrement (admins et managers), et c'est la seule écriture de réglage
+ * qui l'est. PRENDRE, jamais réaffecter : activé, un agent peut s'affecter une conversation que personne
+ * n'a, et rien d'autre.
+ */
+export function agentsPeuventPrendre(tenantId: string): Promise<{ actif: boolean }> {
+  return request(`/tenants/${tenantId}/settings/agents-peuvent-prendre`);
+}
+export function setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<{ actif: boolean }> {
+  return request(`/tenants/${tenantId}/settings/agents-peuvent-prendre`, { method: 'PATCH', body: JSON.stringify({ actif }) });
 }
 
 /**

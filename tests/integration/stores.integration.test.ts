@@ -1841,6 +1841,9 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // `TenantSettings`, donc le compilateur ne voit PAS un champ manquant, alors qu il a attrape les quatre
     // fixtures unitaires du meme lot. Seul le job `integration` l a dit, apres le push (migration 0156).
     agentTransfertMode: null,
+    // Meme piege, meme remede, pour la prise d une conversation par un agent (migration 0160) : `false`
+    // par defaut, donc personne ne prend rien tant qu un admin ou un manager ne l a pas active.
+    agentsPeuventPrendre: false,
     businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
     // La grille de prix (migration 0154). Le defaut a marge 100 reproduit exactement le tarif Meta, donc
     // un espace qui n a jamais ouvert le reglage lit le meme chiffre qu avant.

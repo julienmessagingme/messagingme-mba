@@ -3,15 +3,107 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT, useLocale } from '@/lib/i18n';
-import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setAutoRetryEnabled as apiSetAutoRetry, setGrillePrix as apiSetGrillePrix, type BusinessHours, type GrillePrix } from '@/lib/api';
+import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setAutoRetryEnabled as apiSetAutoRetry, setGrillePrix as apiSetGrillePrix, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours, type GrillePrix } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { BlockedContacts } from '@/components/BlockedContacts';
 import { Toggle } from '@/components/Toggle';
 
+/**
+ * 🔴 DEUX PAGES SOUS LA MÊME ADRESSE, SELON LE RÔLE (2026-09-19). Paramètres était réservé aux admins ; il
+ * s'ouvre aux MANAGERS pour UN réglage, « les agents peuvent prendre une conversation du pot commun », que
+ * Julien a voulu à leur main. Un manager ne voit QUE cette section : lui montrer le fuseau ou les prix pour
+ * les lui refuser ensuite serait promettre une porte fermée. Le serveur tient la même frontière de son côté.
+ */
 export default function ParametresPage() {
-  return <AppShell active="parametres">{(session) => <Parametres tenantId={session.tenantId} />}</AppShell>;
+  return (
+    <AppShell active="parametres">
+      {(session) => (session.role === 'admin'
+        ? <Parametres tenantId={session.tenantId} />
+        : <ParametresEncadrement tenantId={session.tenantId} />)}
+    </AppShell>
+  );
+}
+
+/** Ce qu'un MANAGER voit de Paramètres : la seule section qu'il peut régler. */
+function ParametresEncadrement({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      <header className="space-y-1">
+        <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">{t('Paramètres', 'Settings')}</span>
+        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Votre équipe', 'Your team')}</h2>
+      </header>
+      <SectionPriseAgents tenantId={tenantId} />
+    </div>
+  );
+}
+
+/**
+ * LES AGENTS PEUVENT-ILS PRENDRE UNE CONVERSATION DU POT COMMUN ? (migration 0160)
+ *
+ * 🔴 PRENDRE, JAMAIS RÉAFFECTER (arbitrage de Julien du 2026-09-19) : activé, un agent voit « Je m'en occupe »
+ * sur une conversation que personne n'a, et peut se l'affecter. Il ne peut ni la passer à un collègue ni la
+ * rendre ensuite ; la distribution reste le geste de l'encadrement. Le texte le DIT, parce que « prendre »
+ * se confond facilement avec « réaffecter ».
+ *
+ * ⚠️ OPTIMISTE, comme la relance automatique : on bascule tout de suite, et on revient en arrière si le
+ * serveur refuse. `null` tant que la valeur n'est pas lue : un interrupteur affiché « coupé » avant la
+ * lecture ferait croire à un réglage qui n'existe pas encore.
+ */
+function SectionPriseAgents({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const [actif, setActif] = useState<boolean | null>(null);
+  const [statut, setStatut] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  useEffect(() => {
+    let vivant = true;
+    apiAgentsPeuventPrendre(tenantId)
+      .then((r) => { if (vivant) setActif(r.actif === true); })
+      .catch(() => { if (vivant) setStatut('error'); });
+    return () => { vivant = false; };
+  }, [tenantId]);
+
+  const basculer = useCallback(() => {
+    if (actif === null) return;
+    const suivant = !actif;
+    setActif(suivant);
+    setStatut('saving');
+    apiSetAgentsPeuventPrendre(tenantId, suivant)
+      .then(() => setStatut('saved'))
+      .catch(() => { setActif(!suivant); setStatut('error'); });
+  }, [actif, tenantId]);
+
+  const libelle = statut === 'saving' ? t('enregistrement…', 'saving…') : statut === 'saved' ? t('enregistré', 'saved') : statut === 'error' ? t('erreur', 'error') : '';
+
+  return (
+    <section className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="param-prise-agents">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-ink-900">{t('Les agents peuvent prendre une conversation non affectée', 'Agents can take an unassigned conversation')}</h3>
+          <p className="mt-1 text-sm text-ink-600">
+            {t(
+              'Activé, un agent voit « Je m’en occupe » sur une conversation que personne n’a, et se l’affecte. Il ne peut jamais la passer à un collègue ni la rendre : seuls les managers et les admins distribuent les conversations.',
+              'When on, an agent sees “I’ll take it” on a conversation nobody has, and assigns it to themselves. They can never hand it to a colleague or give it back: only managers and admins distribute conversations.',
+            )}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`text-xs ${statut === 'error' ? 'text-coral' : 'text-ink-400'}`}>{libelle}</span>
+          {actif !== null && (
+            <Toggle
+              testid="param-prise-agents-toggle"
+              checked={actif}
+              onChange={basculer}
+              disabled={statut === 'saving'}
+              title={t('Autoriser les agents à prendre une conversation non affectée', 'Allow agents to take an unassigned conversation')}
+            />
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 // Ordre d'AFFICHAGE Lun -> Dim ; les clés restent '0'..'6' (0 = dimanche), alignées sur le serveur.
@@ -230,8 +322,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className="text-xs text-ink-400">{statusText(arStatus)}</span>
-                {/* Aucune garde de rôle ici : `AppShell` renvoie déjà tout non-admin hors de cet écran
-                    (`adminOnly = active !== 'inbox'`). En ajouter une serait une branche morte. */}
+                {/* Aucune garde de rôle ici : cette section vit dans `Parametres`, que la page ne rend qu'aux
+                    ADMINS. Un manager arrive sur `ParametresEncadrement`, qui ne la contient pas. */}
                 <Toggle
                   testid="param-auto-retry-toggle"
                   checked={autoRetry}
@@ -242,6 +334,9 @@ function Parametres({ tenantId }: { tenantId: string }) {
               </div>
             </div>
           </section>
+
+          {/* La prise d'une conversation par un agent : la même section que celle du manager. */}
+          <SectionPriseAgents tenantId={tenantId} />
 
           {/*
             CE QUE CET ESPACE FACTURE (migration 0154).

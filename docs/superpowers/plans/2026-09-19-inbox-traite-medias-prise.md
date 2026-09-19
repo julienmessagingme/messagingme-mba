@@ -69,11 +69,14 @@ commit `071e4c8d`.
 
 - Migration : `tenant_settings.agents_peuvent_prendre boolean not null default false`. `false` = le
   comportement d'aujourd'hui pour tout le monde.
-- Règle pure dans `src/inbox/assignment.ts` : `peutPrendre(acteur, affectataire, reglage)`, vrai seulement
-  pour un non-encadrant, réglage actif, conversation à personne.
+- Règle pure dans `src/inbox/assignment.ts` : `peutPrendre(acteur, affectataire, reglage)`, vraie pour une
+  conversation à personne, quand l'acteur a une identité ET (réglage actif OU acteur de l'encadrement, qui
+  peut déjà tout affecter).
 - Route `POST .../assignee/moi` : écriture CONDITIONNELLE (`assigned_to is null` dans le `where`), `409` si
-  un collègue l'a prise entre-temps. La réponse de lecture du fil rend `prisePossible` calculé par la même
-  règle, pour que le bouton et le refus ne divergent pas.
+  un collègue l'a prise entre-temps. La LISTE des conversations rend `peutPrendre`, calculé par la même
+  règle, pour que le bouton et le refus ne divergent pas. (Le plan disait « la lecture du fil » : la liste a
+  été préférée à l'implémentation, parce qu'elle est relue toutes les 15 s au lieu de 4, et que le drapeau ne
+  dépend pas de la conversation ouverte.)
 - Réglage : `GET/PATCH /settings/agents-peuvent-prendre` sous `gardeEncadrement`. Paramètres s'ouvre aux
   managers avec cette seule section ; fuseau, prix, relance et contacts bloqués restent admin.
 - Réparation au passage : une liste de membres affectables ouverte à l'encadrement, pour le sélecteur des
@@ -87,8 +90,8 @@ avant le déploiement.** La raison : les trois lots touchent des chemins que la 
 chacun reste petit et ses critères se vérifient par des tests d'intégration en CI, pas par une boucle
 itérative. Pas de feature-loop parce que le critère décisif (le retour en « À traiter » au message suivant)
 vit dans une écriture SQL que seul un test d'intégration voit, et pas de workflow parce que rien n'est
-répétitif. Ordre des migrations : les deux AJOUTENT des colonnes que le code écrit ou nomme, donc AVANT le
-déploiement.
+répétitif. Ordre de la migration : UNE seule (0160) pour les trois lots, qui AJOUTE trois colonnes que le code
+écrit ou nomme, donc AVANT le déploiement.
 
 **Essai réel qui clôt la feature**, à faire par Julien sur son espace après déploiement :
 

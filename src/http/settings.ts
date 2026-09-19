@@ -66,6 +66,12 @@ export interface SettingsRouteDeps {
    */
   setAgentTransfertMode?(tenantId: string, mode: ModeTransfert): Promise<void>;
   /**
+   * Autorise (ou non) les agents à PRENDRE une conversation du pot commun (migration 0160). Absente -> la
+   * route rend 503, comme ses voisines : un écran qui dirait « enregistré » sans rien écrire est pire qu'un
+   * écran indisponible.
+   */
+  setAgentsPeuventPrendre?(tenantId: string, actif: boolean): Promise<void>;
+  /**
    * Les agents de l'espace et la PHRASE que chacun dit.
    *
    * 🔴 LA PHRASE, PAS SEULEMENT LE NOM, et c'est ce qui fait de cet écran autre chose qu'un interrupteur.
@@ -112,9 +118,11 @@ function normalizeBusinessHours(raw: unknown): BusinessHours | null {
  * telle quelle dans une route neuve le 2026-09-13. Le paramètre s'appelle `garde` par héritage, mais
  * ce qu'on lui passe est la garde d'administration.
  *
- * ⚠️ UNE SEULE EXCEPTION DEPUIS LE 2026-09-14 : `GET /settings/mention-ia`, la LECTURE de la politique
- * d'annonce d'IA, ouverte à l'encadrement par `gardeEncadrement`. C'est un écran de conformité, et son
- * ÉCRITURE reste admin.
+ * ⚠️ DES EXCEPTIONS, TOUTES NOMMÉES ICI : `GET /settings/mention-ia` et `GET /settings/transfert-agent`,
+ * des LECTURES ouvertes à l'encadrement par `gardeEncadrement`, dont l'ÉCRITURE reste admin. Et depuis le
+ * 2026-09-19, UNE écriture ouverte à l'encadrement, la seule : `/settings/agents-peuvent-prendre`, parce que
+ * Julien l'a voulue « à la main des admins et des managers ». C'est un réglage d'ÉQUIPE (qui distribue le
+ * travail), pas une décision de la marque.
  */
 export function registerSettings(
   app: FastifyInstance,
@@ -301,6 +309,35 @@ export function registerSettings(
     }
     await deps.setAgentTransfertMode(tenant, brut);
     return reply.code(200).send({ mode: brut });
+  });
+
+  /**
+   * LES AGENTS PEUVENT-ILS PRENDRE UNE CONVERSATION DU POT COMMUN ? (migration 0160, demande de Julien du
+   * 2026-09-19 : « une option à la main des admins et des managers »).
+   *
+   * 🔴 LECTURE ET ÉCRITURE OUVERTES À L'ENCADREMENT, et c'est la seule écriture de ce module qui l'est. Un
+   * manager distribue déjà le travail de son équipe ; décider si ses agents peuvent se servir eux-mêmes est
+   * le prolongement de ce geste, pas une décision de la marque. Le reste de Paramètres lui reste fermé.
+   *
+   * 🔴 PRENDRE, JAMAIS RÉAFFECTER : activé, ce réglage laisse un agent s'affecter une conversation que
+   * personne n'a, et rien d'autre. La règle : `peutPrendre` (`src/inbox/assignment.ts`).
+   */
+  app.get('/tenants/:tenantId/settings/agents-peuvent-prendre', optsEncadrement, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { agentsPeuventPrendre } = await deps.getSettings(tenant);
+    return reply.code(200).send({ actif: agentsPeuventPrendre });
+  });
+
+  app.patch('/tenants/:tenantId/settings/agents-peuvent-prendre', optsEncadrement, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.setAgentsPeuventPrendre) return reply.code(503).send({ error: 'réglage indisponible' });
+    const actif = (req.body as { actif?: unknown } | null)?.actif;
+    // Un booléen, rien d'autre : une valeur bancale ne doit pas se lire « activé » par accident.
+    if (typeof actif !== 'boolean') return reply.code(400).send({ error: 'actif (booléen) requis' });
+    await deps.setAgentsPeuventPrendre(tenant, actif);
+    return reply.code(200).send({ actif });
   });
 
   // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).

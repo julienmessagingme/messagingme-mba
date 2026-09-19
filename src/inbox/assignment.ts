@@ -7,7 +7,9 @@
  * La règle, telle qu'elle a été décidée :
  *   - conversation NON affectée -> tout le monde peut répondre, agents compris ;
  *   - conversation affectée     -> seul l'agent désigné ;
- *   - manager et admin          -> peuvent TOUJOURS reprendre la main.
+ *   - manager et admin          -> peuvent TOUJOURS reprendre la main ;
+ *   - un agent peut PRENDRE une conversation non affectée si l'espace l'y autorise (`peutPrendre`), et
+ *     jamais la passer à quelqu'un d'autre.
  *
  * ⚠️ C'est la seule barrière qui compte. Griser un bouton à l'écran n'empêche personne d'appeler l'API : le
  * refus doit venir du serveur, l'écran n'étant qu'un confort.
@@ -28,6 +30,27 @@ export function peutEcrire(acteur: ActeurConversation, assignedTo: string | null
 /** Peut-on AFFECTER une conversation ? Réservé aux managers et aux admins. */
 export function peutAffecter(acteur: ActeurConversation): boolean {
   return acteur.role === 'admin' || acteur.role === 'manager';
+}
+
+/**
+ * Peut-on PRENDRE cette conversation, c'est-à-dire se l'affecter à SOI (migration 0160) ?
+ *
+ * 🔴 PRENDRE, JAMAIS RÉAFFECTER : c'est l'arbitrage de Julien du 2026-09-19, mot pour mot « un agent ne peut
+ * pas réaffecter de conversations, ni les siennes, ni celles du pot commun, en revanche il peut prendre parmi
+ * celles du pot commun ». Trois conditions, et chacune ferme une porte :
+ *   - la conversation est à PERSONNE : prendre celle d'un collègue serait la lui retirer ;
+ *   - l'espace l'a AUTORISÉ (`tenant_settings.agents_peuvent_prendre`, réglé par un admin ou un manager) ;
+ *   - l'acteur a une IDENTITÉ : sans elle, il n'y a personne à qui l'affecter (fail-closed).
+ *
+ * ⚠️ L'ENCADREMENT PEUT TOUJOURS PRENDRE, réglage ou pas : il peut déjà tout affecter à n'importe qui, se
+ * l'affecter à soi en fait partie. Le réglage ne gouverne QUE les agents.
+ *
+ * ⚠️ UNE SEULE RÈGLE POUR DEUX LECTEURS : la route qui écrit, et le drapeau que la liste rend pour que
+ * l'écran montre le bouton. Écrites deux fois, elles finiraient par proposer un geste que le serveur refuse.
+ */
+export function peutPrendre(acteur: ActeurConversation, assignedTo: string | null, agentsPeuventPrendre: boolean): boolean {
+  if (assignedTo !== null || acteur.userId === null) return false;
+  return peutAffecter(acteur) || agentsPeuventPrendre;
 }
 
 /**
