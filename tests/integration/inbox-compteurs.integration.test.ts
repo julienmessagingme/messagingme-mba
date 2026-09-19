@@ -258,12 +258,15 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     });
   });
 
-  it('🔴 les cinq compteurs portent sur TOUTE la base, et s’accordent entre eux', async () => {
+  it('🔴 les compteurs portent sur TOUTE la base, et s’accordent entre eux', async () => {
     const c = await store.compterConversations(tenantId);
     expect(c.tout).toBe(4);
     expect(c.aTraiter).toBe(2);
     expect(c.signalees).toBe(1);
     expect(c.archivees).toBe(1);
+    // Aucune conversation marquée « Traité » dans ce décor (migration 0160) : le compteur existe et vaut zéro.
+    // Son comportement propre est tenu par `inbox-traite.integration.test.ts`.
+    expect(c.traitees).toBe(0);
     expect(c.nonAffectees).toBe(2);
   });
 
@@ -349,7 +352,7 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     )).rows[0]!.id;
     try {
       const c = await store.compterConversations(autre);
-      expect(c).toEqual({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 0, parMembre: [] });
+      expect(c).toEqual({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
     } finally {
       await pool.query('delete from tenants where id = $1', [autre]);
     }
