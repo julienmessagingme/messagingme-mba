@@ -62,6 +62,8 @@ describe('Inbox, les destinations proposées à une sélection', () => {
     // doctrine de ce menu est de ne proposer que ce qui se voit.
     expect(destinationsEnLot('toutes', false, true, false)).not.toContain('a-traiter');
     expect(destinationsEnLot('toutes', false, true, true)).toContain('a-traiter');
+    // Même règle pour « Traité » : sur des lignes déjà traitées, il ne ferait que réécrire l'horodatage.
+    expect(destinationsEnLot('toutes', false, true, false)).toEqual(['ne-plus-traiter', 'signaler', 'archiver']);
   });
 
   it('🔴 hors de « Traité », « Ne plus marquer traité » n’apparaît que si la sélection en porte une', () => {

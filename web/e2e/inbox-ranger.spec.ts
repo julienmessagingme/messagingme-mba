@@ -261,7 +261,10 @@ test.describe('Inbox : ranger une SÉLECTION', () => {
     // Sur elle, le geste ne ferait rien : on ne propose que ce qui se voit.
     const traitees = [{ ...DEUX[0], traitee: true }, { ...DEUX[1], traitee: true }];
     await monterListe(page, { conversations: traitees });
-    expect(await destinations(page, 'inbox-ranger-selection')).not.toContain('À traiter');
+    const dest = await destinations(page, 'inbox-ranger-selection');
+    expect(dest).not.toContain('À traiter');
+    // Ni « Traité » : sur des lignes déjà traitées, il ne changerait rien à l'écran.
+    expect(dest).not.toContain('Traité');
   });
 
   test('« Traité » en lot part pour CHAQUE ligne cochée', async ({ page }) => {

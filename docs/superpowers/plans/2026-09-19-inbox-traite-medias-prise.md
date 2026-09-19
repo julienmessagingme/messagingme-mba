@@ -5,7 +5,9 @@
 1. « il faudrait créer un nouveau status : Traité. Et si qqun revient pour parler, évidemment on enlève le
    statut et on repasse en à traiter ». Arbitrage : **deux statuts distincts**. « Traité » sort la
    conversation de « À traiter » et la laisse dans « Tout » avec une pastille ; « Archivé » continue de tout
-   cacher. Un message du contact efface les deux.
+   cacher. Un message du contact efface les deux. **Arbitrage complémentaire du même jour** : une RÉACTION
+   emoji (👍) ne retire pas « Traité » et ne change pas qui a parlé en dernier ; elle sort toujours d'Archivé,
+   que l'arbitrage ne visait pas.
 2. « dans les conversations on doit pouvoir recevoir des photos... voire des fichiers ». Arbitrage : **pas de
    copie chez nous**. On affiche ce que Meta garde, puis on dit « expiré ».
 3. « une option à la main des admin et des managers pour que les agents puissent ou non réaffecter la
@@ -39,8 +41,9 @@ commit `071e4c8d`.
 
 - Migration : `conversations.traitee_le timestamptz` nullable, sans défaut, sans index (le dossier est borné
   par l'espace, comme « Signalé » avant son index ; rien ne le justifie à cette échelle).
-- `upsertConversationByWaId` : le booléen `desarchive` devient `rouvre` et efface `archived_at` ET
-  `traitee_le`, dans la même écriture. Seul `recordInbound` le passe à vrai (inchangé).
+- `upsertConversationByWaId` : le booléen `desarchive` devient un objet `rouvre: { archive, traite }`, et le
+  sens accepte `reaction`, qui garde le sens précédent. Seul `recordInbound` rouvre ; une réaction y passe
+  `{ archive: true, traite: false }`.
 - `A_TRAITER_SQL` exclut `traitee_le is not null`. Les trois lecteurs (liste, menu, vieille route) le
   suivent puisqu'ils citent le fragment.
 - Dossier « Traité » : non archivées et `traitee_le is not null`. « Tout » les garde.
@@ -99,6 +102,8 @@ répétitif. Ordre de la migration : UNE seule (0160) pour les trois lots, qui A
 1. Envoyer depuis son téléphone une photo puis un PDF au numéro ; les voir dans le fil (photo affichée,
    PDF téléchargeable avec son nom).
 2. Marquer la conversation « Traité » : elle quitte « À traiter », reste dans « Tout » avec sa pastille.
-   Réécrire un mot depuis le téléphone : elle revient dans « À traiter » et la pastille disparaît.
+   Répondre par un 👍 depuis le téléphone : elle RESTE « Traité » et hors d'« À traiter » (seul endroit où un
+   vrai payload de réaction de Meta traverse ce chemin). Puis réécrire un mot : elle revient dans « À
+   traiter » et la pastille disparaît.
 3. Créer un compte agent, activer le réglage dans Paramètres depuis un compte manager, et vérifier que
    l'agent voit « Je m'en occupe » sur une conversation non affectée, et rien sur celle d'un collègue.

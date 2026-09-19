@@ -10,7 +10,8 @@ import { PgInboxStore } from '../../src/inbox/store.pg';
  *
  * 🔴 CE QUE CES TESTS PROTÈGENT, ET QU'AUCUN TEST UNITAIRE NE PEUT VOIR. Trois écritures SQL décident de tout :
  * le fragment `A_TRAITER_SQL` qui exclut une conversation traitée, le `case when` de l'upsert partagé qui
- * efface le statut au message du CONTACT et seulement à lui, et le compteur du menu. Une chaîne de requête
+ * efface le statut au message du CONTACT et seulement à lui (une réaction emoji exceptée), et le compteur du
+ * menu. Une chaîne de requête
  * relue ne prouve rien de son exécution : seule la vraie base le fait.
  *
  * ⚠️ Ne PAS le lancer en local : le `DATABASE_URL` du `.env` local pointe sur la base de PRODUCTION, et ce
@@ -114,11 +115,41 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
 
   it('une réaction sort quand même d’Archivé : l’arbitrage ne porte que sur « Traité »', async () => {
     await store.archiverConversation(tenantId, convId, true);
+    // Le témoin de départ : sans lui, « elle en sort » ne prouverait rien.
+    expect(await ids({ archivees: true })).toEqual([convId]);
     await store.recordInbound(tenantId, {
       phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce-archive', type: 'reaction', body: '👍',
       buttonPayload: 'wamid.notre-message', profileName: null, field: 'messages',
     });
     expect(await ids({ archivees: true })).toEqual([]);
+  });
+
+  it('🔴 archivée ET traitée, puis 👍 : elle sort d’Archivé et atterrit dans « Traité », pas dans « À traiter »', async () => {
+    // Le cas croisé que l'arbitrage crée : les deux rangements ne réagissent plus pareil à une réaction.
+    await store.marquerTraitee(tenantId, convId, true);
+    await store.archiverConversation(tenantId, convId, true);
+    await store.recordInbound(tenantId, {
+      phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce-croise', type: 'reaction', body: '👍',
+      buttonPayload: 'wamid.notre-message', profileName: null, field: 'messages',
+    });
+    expect(await ids({ archivees: true })).toEqual([]);
+    expect(await ids({ traitees: true })).toEqual([convId]);
+    expect(await ids({ aTraiter: true })).toEqual([]);
+  });
+
+  it('🔴 notre « bonne journée », puis 👍 : la conversation reste HORS d’« À traiter »', async () => {
+    // Le parcours type, sans que personne ait marqué « Traité » : notre réponse l'a sortie du dossier, et le
+    // 👍 ne change pas qui a parlé en dernier. Il l'y remettait avant l'arbitrage.
+    await store.recordOutbound(convId, 'bonne journée', 'wamid.itest-traite-bye', 'humain');
+    expect(await ids({ aTraiter: true })).toEqual([]);
+    await store.recordInbound(tenantId, {
+      phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce-bye', type: 'reaction', body: '👍',
+      buttonPayload: 'wamid.itest-traite-bye', profileName: null, field: 'messages',
+    });
+    expect(await ids({ aTraiter: true })).toEqual([]);
+    // Et un vrai message, lui, l'y remet.
+    await store.recordInbound(tenantId, entrant('wamid.itest-traite-apres-pouce', 'une dernière question'));
+    expect(await ids({ aTraiter: true })).toEqual([convId]);
   });
 
   it('ne plus marquer traité la rend au dossier que son dernier message désigne', async () => {

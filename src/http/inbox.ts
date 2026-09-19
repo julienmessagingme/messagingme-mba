@@ -509,7 +509,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * OPÉRATEURS. Dire « j'ai fini avec ce fil » est le geste de celui qui le traite.
    *
    * ⚠️ AUCUN GESTE INVERSE AUTOMATIQUE ICI : c'est le prochain message du CONTACT qui retire le statut, dans
-   * l'écriture qui l'enregistre (`upsertConversationByWaId`). Cette route ne fait que la pose et le retrait
+   * l'écriture qui l'enregistre (`upsertConversationByWaId`), sauf une réaction emoji, qui le laisse. Cette route ne fait que la pose et le retrait
    * à la main.
    *
    * ⚠️ `estUuid` AVANT la base : un identifiant mal formé ferait lever Postgres (`22P02`), donc un 500

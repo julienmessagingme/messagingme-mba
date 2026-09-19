@@ -255,7 +255,8 @@ const UNREAD_SQL = `exists (
  * (migration 0160). C'est tout l'intérêt du statut : le contact a écrit en dernier (« merci, bonne journée »),
  * il n'y a rien à lui répondre, et sans lui la ligne restait dans le dossier pour toujours. Elle y revient
  * d'elle-même au message SUIVANT du contact, parce que cette écriture-là efface `traitee_le`
- * (`upsertConversationByWaId`).
+ * (`upsertConversationByWaId`). ⚠️ Sauf une RÉACTION (👍), qui ne retire pas le statut ni ne change qui a
+ * parlé en dernier (arbitrage de Julien du 2026-09-19).
  */
 const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out' and c.traitee_le is null`;
 
@@ -304,14 +305,20 @@ export class PgInboxStore implements InboxStore {
      */
     rouvre: { archive: boolean; traite: boolean },
     /**
-     * QUI VIENT DE PARLER : `in` le contact, `out` nous.
+     * QUI VIENT DE PARLER : `in` le contact, `out` nous, `reaction` le contact par un emoji (👍).
+     *
+     * ⚠️ UNE RÉACTION NE CHANGE PAS QUI A PARLÉ EN DERNIER (arbitrage de Julien du 2026-09-19, « une réaction
+     * ne rouvre pas »). Notre « bonne journée » sort la conversation d'« À traiter » ; le 👍 qui y répond l'y
+     * remettait en réécrivant le sens, alors qu'il n'attend rien. Le sens n'est lu QUE par ce dossier
+     * (`A_TRAITER_SQL`). Sur une conversation NEUVE, la réaction compte comme une entrée : il n'y a pas
+     * d'ancien sens à garder.
      *
      * 🔴 OBLIGATOIRE, SANS VALEUR PAR DÉFAUT. C'est ce qui décide du dossier « À traiter », donc un appelant
      * qui l'oublierait rangerait le fil au mauvais endroit, en silence. Sans défaut, l'oubli est une erreur
      * du compilateur : c'est la même raison qui a rendu `origine` obligatoire sur `recordOutbound` (migration
      * 0101), après qu'une valeur DÉDUITE eut marqué « scénario » toutes les réponses du serveur MCP.
      */
-    sens: 'in' | 'out',
+    sens: 'in' | 'out' | 'reaction',
   ): Promise<string> {
     const conv = await this.pool.query<{ id: string }>(
       // UN contact = UNE conversation, quel que soit le canal : c'est le MESSAGE qui porte son canal
@@ -329,7 +336,7 @@ export class PgInboxStore implements InboxStore {
          -- « A traiter » compte encore le fil comme du : l ecran se contredirait lui-meme.
          -- ⚠️ Aucun accent grave dans ce commentaire : il vit DANS un gabarit TypeScript, et un accent grave
          -- y fermerait la chaine. Deja paye une fois dans ce depot (sources.pg.ts).
-         last_direction = excluded.last_direction,
+         last_direction = case when $7::boolean then conversations.last_direction else excluded.last_direction end,
          contact_id = coalesce(conversations.contact_id, excluded.contact_id),
          -- Un nouveau message ROUVRE l'analyse : une conversation déjà analysée (done/failed) qui reçoit un message
          -- redevient 'pending' -> ré-analysée à la prochaine inactivité (sinon un contact qui revient n'est jamais réanalysé).
@@ -343,7 +350,7 @@ export class PgInboxStore implements InboxStore {
          -- tant que la colonne est posee. Drapeau A PART ($6) : une reaction ne le retire pas.
          traitee_le = case when $6::boolean then null else conversations.traitee_le end
        returning id`,
-      [tenantId, waId, preview, rouvre.archive, sens, rouvre.traite],
+      [tenantId, waId, preview, rouvre.archive, sens === 'out' ? 'out' : 'in', rouvre.traite, sens === 'reaction'],
     );
     return conv.rows[0]!.id;
   }
@@ -679,9 +686,11 @@ export class PgInboxStore implements InboxStore {
   async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
     // Un message du CONTACT rouvre la conversation : hors d'Archivé, et plus « Traité ». C'est le seul chemin
-    // qui le fait. ⚠️ Sauf une RÉACTION (👍), qui ne retire pas « Traité » (arbitrage du 2026-09-19).
+    // qui le fait. ⚠️ Sauf une RÉACTION (👍), qui ne retire pas « Traité » et ne change pas qui a parlé en
+    // dernier (arbitrage du 2026-09-19) : elle sort seulement d'Archivé, que l'arbitrage ne visait pas.
+    const reaction = m.type === 'reaction';
     const conversationId = await this.upsertConversationByWaId(
-      tenantId, m.waId, preview, { archive: true, traite: m.type !== 'reaction' }, 'in',
+      tenantId, m.waId, preview, { archive: true, traite: !reaction }, reaction ? 'reaction' : 'in',
     );
     await this.pool.query(
       // ⚠️ `media_id`, `media_mime` et `media_nom` sont ecrits ICI ET NULLE PART AILLEURS (migrations 0125 et
@@ -705,8 +714,9 @@ export class PgInboxStore implements InboxStore {
     waId: string,
     msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
   ): Promise<void> {
-    // `false` : un envoi AUTOMATISÉ (campagne, scénario) ne rouvre pas. Une campagne qui touche mille
-    // contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés, ou marqués « Traité ».
+    // `{ archive: false, traite: false }` : un envoi AUTOMATISÉ (campagne, scénario) ne rouvre rien. Une
+    // campagne qui touche mille contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés, ou
+    // marqués « Traité ».
     const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, { archive: false, traite: false }, 'out');
     await this.pool.query(
       // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,

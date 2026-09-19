@@ -392,8 +392,12 @@ function InboxInner({ session }: { session: Session }) {
        */
       let echecs = 0;
       // Les lignes TRAITÉES qu'« À traiter » laisse de côté : on le DIT à la fin, sans quoi l'opérateur
-      // croirait avoir pris le fil de toute sa sélection.
-      const ecartees = action === 'a-traiter' ? cochees.size - cibles.length : 0;
+      // croirait avoir pris le fil de toute sa sélection. 🔴 COMPTÉES par leur statut, pas par différence :
+      // une ligne cochée qui a quitté la liste rechargée (seconde page, rafraîchissement de 15 s) n'est pas
+      // « traitée », et le dire lui prescrirait un geste impossible (revue du 2026-09-19).
+      const ecartees = action === 'a-traiter'
+        ? conversations.filter((c) => cochees.has(c.id) && c.traitee === true).length
+        : 0;
       for (const id of cibles) {
         try {
           await appliquerRangement(session.tenantId, id, action);
@@ -407,17 +411,21 @@ function InboxInner({ session }: { session: Session }) {
       // 🔴 APRÈS LE RECHARGEMENT, ET C'EST OBLIGATOIRE : `reload` commence par `setError(null)`. Posé avant,
       // le message était effacé une milliseconde plus tard, et l'écran redevenait muet sur des refus bien
       // réels. Attrapé par l'e2e, pas par la relecture.
+      // Les deux constats peuvent coexister : aucun ne doit taire l'autre.
+      const constats: string[] = [];
       if (echecs > 0) {
-        setError(t(
+        constats.push(t(
           `${echecs} conversation(s) sur ${cibles.length} n’ont pas pu être rangées. Rouvrez-les une par une : le détail y est affiché.`,
           `${echecs} of ${cibles.length} conversations could not be filed. Open them one by one: the reason is shown there.`,
         ));
-      } else if (ecartees > 0) {
-        setError(t(
+      }
+      if (ecartees > 0) {
+        constats.push(t(
           `${ecartees} conversation(s) marquée(s) « Traité » laissée(s) de côté : retirez d’abord ce statut pour les remettre à traiter.`,
           `${ecartees} conversation(s) marked “Done” left out: remove that status first to put them back to handle.`,
         ));
       }
+      if (constats.length > 0) setError(constats.join(' '));
     } finally {
       setRangementEnCours(false);
     }
