@@ -220,8 +220,23 @@ test.describe('Centre de sécurité & compliance', () => {
 
     // ⚠️ LE TÉMOIN DANS L'AUTRE SENS : débrancher doit envoyer `null`, pas une chaîne vide. Sans ce cas, un
     // « aucun » qui n'envoie rien laisserait le connecteur branché sans que l'écran le dise.
+    /**
+     * 🔴 ET CETTE ÉCRITURE S'ATTEND, ELLE NE SE CONSTATE PAS. `selectOption` rend la main quand le navigateur
+     * a émis l'événement, PAS quand le PATCH a atteint le faux serveur : `ecritures` vit côté Node et se
+     * remplit 40 à 150 ms plus tard (mesuré). Un `expect` synchrone ici lisait donc `undefined` une fois sur
+     * trois quand ce fichier tourne à 4 workers, à l'identique sur la référence : le défaut était dans
+     * l'assertion, pas dans l'écran, qui envoie bien `requestId: null` à chaque fois.
+     *
+     * ⚠️ LA PREMIÈRE MOITIÉ DU CAS N'EN A PAS BESOIN, et c'est la seule raison pour laquelle elle tient :
+     * elle attend `poussee-optout-ok`, que l'écran n'affiche qu'après la résolution du premier PATCH. Ici
+     * aucune marque d'écran ne conviendrait : « Enregistré » est DÉJÀ là, et la valeur du select repasse
+     * transitoirement à l'ancienne pendant le vol (rendu contrôlé). On attend donc l'écriture elle-même,
+     * et ce qui est exigé d'elle ne bouge pas d'un iota.
+     */
     await page.getByTestId('poussee-optout-choix').selectOption('');
-    expect(ecritures[1]).toEqual({ chemin: '/tenants/t-e2e/settings/poussee-optout', corps: { requestId: null } });
+    await expect
+      .poll(() => ecritures[1], { timeout: 5000 })
+      .toEqual({ chemin: '/tenants/t-e2e/settings/poussee-optout', corps: { requestId: null } });
   });
 
   /**
