@@ -4,8 +4,8 @@ import { test, expect } from '@playwright/test';
  * LES PIÈCES JOINTES REÇUES DANS LE FIL (2026-09-19, demande de Julien : « dans les conversations on doit
  * pouvoir recevoir des photos... voire des fichiers »).
  *
- * 🔴 CE QUE SEUL UN TEST DE BOUT EN BOUT PEUT VOIR ICI : QUAND les octets partent (une photo au rendu, un
- * document au clic), SOUS QUEL NOM le fichier s'enregistre, et surtout qu'un fichier qui se DIT image mais
+ * 🔴 CE QUE SEUL UN TEST DE BOUT EN BOUT PEUT VOIR ICI : QUAND les octets partent (une photo quand elle devient
+ * visible, un document au clic), SOUS QUEL NOM le fichier s'enregistre, et surtout qu'un fichier qui se DIT image mais
  * n'en est pas une ne soit jamais rendu dans la page. Les routes et la base sont tenues ailleurs.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
@@ -57,6 +57,44 @@ async function monter(page: import('@playwright/test').Page, appels: string[] = 
   return appels;
 }
 
+/**
+ * 🔴 UNE PHOTO HORS DE VUE N'EST PAS DEMANDÉE (revue finale du 2026-09-19). Un fil de quarante photos les
+ * tirait toutes à l'ouverture, chacune repassant par Meta et comptant dans le plafond d'appels de
+ * l'opérateur. Le fil s'ouvre EN BAS : une photo tout en haut, au-dessus de quarante messages, reste hors de vue.
+ */
+test('🔴 une photo HORS DE VUE n’est demandée qu’une fois qu’on remonte jusqu’à elle', async ({ page }) => {
+  const appels: string[] = [];
+  const long = [
+    { ...base, id: 'm-photo-haut', type: 'image', body: '[image]', createdAt: '2026-09-19T08:00:00Z' },
+    ...Array.from({ length: 40 }, (_, i) => ({
+      id: `m-t${i}`, direction: 'in', type: 'text', body: `message ${i}`, buttonPayload: null,
+      createdAt: `2026-09-19T08:${String(i + 1).padStart(2, '0')}:00Z`, channel: 'whatsapp',
+    })),
+    { ...base, id: 'm-photo-bas', type: 'image', body: '[image]', createdAt: '2026-09-19T09:30:00Z' },
+  ];
+  await page.addInitScript((s2) => window.localStorage.setItem('mba.session', JSON.stringify(s2)), SESSION);
+  await page.route('**/api/backend/**', async (route) => {
+    const url = route.request().url();
+    appels.push(url);
+    const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (/\/messages\/m-photo-(haut|bas)\/media$/.test(url)) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    if (/\/conversations\/counts/.test(url)) return json({ tout: 1, aTraiter: 1, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 1, parMembre: [] });
+    if (url.endsWith('/c1/messages')) return json({ messages: long, windowOpen: true, controlOwner: 'app_human' });
+    if (/\/conversations\?|\/conversations$/.test(url)) return json({ conversations: [CONV] });
+    if (url.endsWith('/me')) return json({ email: SESSION.email, name: 'Jean Test', role: 'admin' });
+    return json({});
+  });
+  await page.goto('/inbox');
+  await page.getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).first().click();
+  // La photo du BAS est à l'écran : elle est demandée.
+  await expect(page.getByTestId('piece-jointe-image-m-photo-bas')).toBeVisible();
+  expect(appels.filter((a) => /\/m-photo-haut\/media$/.test(a))).toHaveLength(0);
+  // On remonte le fil : la photo du HAUT devient visible, et SEULEMENT alors elle part.
+  await page.getByTestId('fil-messages').evaluate((el) => { el.scrollTop = 0; });
+  await expect(page.getByTestId('piece-jointe-image-m-photo-haut')).toBeVisible();
+  expect(appels.filter((a) => /\/m-photo-haut\/media$/.test(a))).toHaveLength(1);
+});
+
 test.describe('Inbox : les pièces jointes reçues', () => {
   test('🔴 une photo s’AFFICHE dans la bulle, avec la légende de l’expéditeur', async ({ page }) => {
     await monter(page);
@@ -68,7 +106,7 @@ test.describe('Inbox : les pièces jointes reçues', () => {
 
   test('🔴 un document ne part qu’AU CLIC, et s’enregistre sous le nom annoncé par WhatsApp', async ({ page }) => {
     const appels = await monter(page);
-    // La photo se charge au rendu, le document non : un PDF de dix méga ne doit partir que si on le demande.
+    // La photo visible se charge seule, le document non : un PDF de dix méga ne doit partir que si on le demande.
     await expect.poll(() => appels.filter((a) => /\/m-photo\/media$/.test(a)).length, { timeout: 10_000 }).toBe(1);
     expect(appels.filter((a) => /\/m-doc\/media$/.test(a))).toHaveLength(0);
 

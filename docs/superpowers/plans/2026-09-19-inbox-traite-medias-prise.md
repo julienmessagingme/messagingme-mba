@@ -58,7 +58,8 @@ commit `071e4c8d`.
   répond `100/33` ; un plafond PROPRE aux médias (`MEDIA_ENTRANT_TAILLE_MAX_KO`, 25 Mo) au lieu de celui de
   la transcription ; `Content-Disposition: attachment` et `nosniff` pour tout ce qui n'est pas une image
   affichable.
-- Écran : image et sticker affichés dans la bulle (chargés au rendu, image seulement, jamais un document) ;
+- Écran : image et sticker affichés dans la bulle (chargés quand ils deviennent visibles dans le fil, image
+  seulement, jamais un document ; « au rendu » dans la première version, corrigé sur revue) ;
   document et vidéo en bouton « Télécharger » ; vocal inchangé ; les trois disent « expiré » passé le délai.
 - 🔴 Sécurité : un fichier reçu n'est JAMAIS rendu dans l'origine de la console autrement que par `<img>`
   (qui n'exécute rien) ou par un téléchargement forcé. Un `text/html` ou un SVG ouvert dans un onglet depuis

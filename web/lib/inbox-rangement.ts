@@ -88,11 +88,17 @@ export function libelleRangement(a: ActionRangement, t: (fr: string, en?: string
  * « Ne plus marquer traité » n'est proposé que si AU MOINS UNE ligne cochée l'est. « Traité », lui, est
  * proposé partout ailleurs : sur une ligne déjà traitée il ne change rien, mais il reste vrai de la
  * sélection entière, ce qui est la règle d'un menu de lot.
+ *
+ * ⚠️ `avecNonTraitee` dit si AU MOINS UNE ligne cochée N'EST PAS traitée. « À traiter » ne s'applique qu'à
+ * celles-là (prendre le fil d'une conversation traitée ne la ferait pas entrer dans un dossier qui l'exclut) :
+ * sur une sélection entièrement traitée, le proposer serait offrir un geste inerte (revue du 2026-09-19).
  */
-export function destinationsEnLot(dossier: DossierLike, avecSignalementManuel: boolean, avecTraitee: boolean): ActionRangement[] {
+export function destinationsEnLot(
+  dossier: DossierLike, avecSignalementManuel: boolean, avecTraitee: boolean, avecNonTraitee: boolean,
+): ActionRangement[] {
   if (dossier === 'archivees') return ['desarchiver'];
   const dest: ActionRangement[] = [];
-  if (dossier !== 'aTraiter' && dossier !== 'traitees') dest.push('a-traiter');
+  if (dossier !== 'aTraiter' && dossier !== 'traitees' && avecNonTraitee) dest.push('a-traiter');
   if (dossier === 'traitees') {
     dest.push('ne-plus-traiter');
   } else {

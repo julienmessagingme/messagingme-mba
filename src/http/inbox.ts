@@ -360,15 +360,22 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    *
    * 🔴 LA LISTE NE DOIT PAS TOMBER POUR UN RÉGLAGE (revue du 2026-09-19). Lu sans garde, un échec de cette
    * lecture rendait 500 sur la liste ENTIÈRE, c'est-à-dire l'Inbox vide pour tout le monde, pour un bouton.
-   * Un échec vaut donc `false` : on ne propose pas le geste, ce qui est le comportement d'avant. Et
-   * l'encadrement n'en a pas besoin (`peutPrendre` le lui accorde de toute façon) : on ne le lit pas pour lui.
+   * Un échec rend `null` (« illisible ») et il est JOURNALISÉ : avalé en silence, une lecture qui échoue
+   * durablement couperait le bouton de tous les agents sans laisser de trace. La liste le lit comme « non » ;
+   * la route qui écrit refuse, mais en disant la vraie raison. Et l'encadrement n'en a pas besoin
+   * (`peutPrendre` le lui accorde de toute façon) : on ne le lit pas pour lui.
    */
-  async function reglagePrise(tenant: string, acteur: { userId: string | null; role: string | null }): Promise<boolean> {
+  async function reglagePrise(
+    tenant: string,
+    acteur: { userId: string | null; role: string | null },
+    log: { warn(o: object, msg: string): void },
+  ): Promise<boolean | null> {
     if (!deps.agentsPeuventPrendre || peutAffecter(acteur)) return false;
     try {
       return await deps.agentsPeuventPrendre(tenant);
-    } catch {
-      return false;
+    } catch (err) {
+      log.warn({ err, tenant }, 'reglage_prise_illisible');
+      return null;
     }
   }
 
@@ -421,10 +428,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * l'écran montre le bouton « Je m'en occupe » sur les lignes non affectées quand ce drapeau est vrai. Deux
      * règles écrites séparément finiraient par proposer un geste que le serveur refuse.
      */
-    const reglage = await reglagePrise(tenant, acteur);
+    const reglage = await reglagePrise(tenant, acteur, req.log);
     return reply.code(200).send({
       conversations: conversations.map((c) => ({ ...c, assignedToMe: moi !== null && c.assignedTo === moi })),
-      peutPrendre: deps.prendreSiLibre !== undefined && peutPrendre(acteur, null, reglage),
+      peutPrendre: deps.prendreSiLibre !== undefined && peutPrendre(acteur, null, reglage === true),
     });
   });
 
@@ -926,7 +933,12 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const actuel = await deps.getAssignee(tenant, conversationId);
     if (actuel === undefined) return reply.code(404).send({ error: 'conversation inconnue' });
     if (actuel !== null) return reply.code(409).send({ error: 'Un collègue s’occupe déjà de cette conversation.', code: 'deja_prise' });
-    const reglage = await reglagePrise(tenant, acteur);
+    const reglage = await reglagePrise(tenant, acteur, req.log);
+    // Illisible : on refuse, mais sans affirmer que l'espace l'interdit, ce qui serait peut-être faux.
+    // 409 et pas 5xx : Cloudflare remplacerait le corps, et l'agent n'aurait rien à lire.
+    if (reglage === null) {
+      return reply.code(409).send({ error: 'Le réglage de votre espace est momentanément illisible, réessayez dans un instant.', code: 'reglage_illisible' });
+    }
     if (!peutPrendre(acteur, null, reglage)) {
       return reply.code(403).send({ error: 'Votre espace ne permet pas aux agents de prendre une conversation. Un manager peut vous l’affecter.' });
     }

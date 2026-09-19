@@ -1146,6 +1146,28 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
     expect(res.json().peutPrendre).toBe(false);
   });
 
+  it('🔴 un réglage illisible à la PRISE : refus qui dit la vraie raison, et rien d’écrit', async () => {
+    // « Votre espace ne le permet pas » serait peut-être faux : on n'en sait rien, la lecture a échoué.
+    const prises: string[] = [];
+    const a = app({
+      getAssignee: async () => null,
+      agentsPeuventPrendre: async () => { throw new Error('base'); },
+      prendreSiLibre: async (_t, id) => { prises.push(id); return true; },
+    });
+    const res = await a.inject({ method: 'POST', url, ...comme(jetons.agent) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'reglage_illisible' });
+    expect(prises).toEqual([]);
+  });
+
+  it('l’encadrement ne fait pas lire le réglage : il n’en a pas besoin', async () => {
+    let lectures = 0;
+    const a = app({ agentsPeuventPrendre: async () => { lectures += 1; return false; }, prendreSiLibre: async () => true });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.manager) });
+    expect(res.json().peutPrendre).toBe(true);
+    expect(lectures).toBe(0);
+  });
+
   it('sans câblage de la prise, la liste ne propose jamais le geste', async () => {
     // Un bouton qui mènerait à un 503 serait « offert et inerte », ce que le produit s'interdit.
     const a = app({ agentsPeuventPrendre: async () => true });

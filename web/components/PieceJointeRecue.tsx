@@ -52,9 +52,15 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
     // Sans observateur (vieux navigateur, environnement de test), on retombe sur le chargement immédiat :
     // une photo qui ne s'afficherait jamais serait pire qu'un chargement un peu tôt.
     if (!el || typeof IntersectionObserver === 'undefined') { setVue(true); return undefined; }
+    /**
+     * ⚠️ LA RACINE EST LE CONTENEUR QUI DÉFILE, pas la fenêtre (revue du 2026-09-19). Le fil défile dans son
+     * propre conteneur : observée par rapport à la fenêtre, la marge de pré-chargement ne s'appliquait pas, et
+     * une photo n'était demandée qu'une fois réellement à l'écran. Sans conteneur trouvé, la fenêtre.
+     */
+    const racine = el.closest('[data-fil-defilant]');
     const obs = new IntersectionObserver((entrees) => {
       if (entrees.some((e) => e.isIntersecting)) { setVue(true); obs.disconnect(); }
-    }, { rootMargin: '200px' });
+    }, { root: racine, rootMargin: '200px' });
     obs.observe(el);
     return () => obs.disconnect();
   }, [nature, vue]);

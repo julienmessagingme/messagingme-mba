@@ -87,12 +87,13 @@ describe('le délai de Meta sur un média reçu', () => {
 describe('lire un fichier reçu', () => {
   function deps(msg: MessageAvecMedia | null, telecharger?: DepsLireMediaRecu['telecharger']) {
     const appels: Array<{ mediaId: string; max: number }> = [];
+    const lus: unknown[][] = [];
     const d: DepsLireMediaRecu = {
-      lireMessage: async () => msg,
+      lireMessage: async (...args) => { lus.push(args); return msg; },
       telecharger: telecharger ?? (async (mediaId, max) => { appels.push({ mediaId, max }); return { bytes: Buffer.from('x'), mime: 'image/png' }; }),
       tailleMaxOctets: 25 * 1024 * 1024,
     };
-    return { d, appels };
+    return { d, appels, lus };
   }
   const recu = (over: Partial<MessageAvecMedia> = {}): MessageAvecMedia => ({ mediaId: 'm1', mediaMime: 'image/jpeg', mediaNom: null, mediaExpire: false, ...over });
 
@@ -119,6 +120,14 @@ describe('lire un fichier reçu', () => {
     const { d, appels } = deps(recu({ mediaMime: 'image/jpeg', mediaNom: 'photo.jpg' }));
     expect(await lireMediaRecu(d, 't1', 'msg')).toMatchObject({ mime: 'image/jpeg', nom: 'photo.jpg' });
     expect(appels).toEqual([{ mediaId: 'm1', max: 25 * 1024 * 1024 }]);
+  });
+
+  it('🔴 le message est relu dans L’ESPACE et la CONVERSATION de la route', async () => {
+    // C'est là que se joue l'isolation : un appel qui perdrait l'espace ou la conversation ferait mentir
+    // l'URL de la route, même si le SQL filtre de toute façon.
+    const { d, lus } = deps(recu());
+    await lireMediaRecu(d, 't1', 'msg', 'c1');
+    expect(lus).toEqual([['t1', 'msg', 'c1']]);
   });
 
   it('sans type annoncé, on prend celui de Meta', async () => {

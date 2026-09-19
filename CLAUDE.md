@@ -79,9 +79,11 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
+⚠️ **0160 EST ÉCRITE (2026-09-19, chantier Inbox) ET PAS ENCORE APPLIQUÉE : prochaine libre = 0161.** Cette
+ligne se corrige à l'exécution de `migrate`, en relisant la base.
+
 **Dernière appliquée : 0159**, le 2026-09-18 au soir, avec **0156, 0157 et 0158** le même soir : tout le
-chantier des MOMENTS d'un agent IA. ⚠️ **0160 EST ÉCRITE (2026-09-19, chantier Inbox) ET PAS ENCORE APPLIQUÉE :
-prochaine libre = 0161.** Cette ligne se corrige à l'exécution de `migrate`, en relisant la base. Ce qu'elles portent : **0156**
+chantier des MOMENTS d'un agent IA. Ces quatre-là portent : **0156**
 (`agent_transfert_mode`, quand l'équipe est joignable pour un agent IA), **0157** (`outils_par_agent`, une
 ACTION appartient à l'agent, un CONNECTEUR à l'espace, deux index partiels complémentaires), **0158**
 (`outil_gestes`, les GESTES d'un moment, ce que NOUS faisons sans le demander au modèle) et **0159**

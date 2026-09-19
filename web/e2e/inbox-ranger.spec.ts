@@ -253,6 +253,15 @@ test.describe('Inbox : ranger une SÉLECTION', () => {
     await finDuRangement(page);
     expect(appels.filter((a) => /POST .*\/prendre$/.test(a)).length).toBe(1);
     expect(appels.some((a) => /POST .*\/c2\/prendre$/.test(a))).toBe(true);
+    // Et la ligne laissée de côté est DITE : l'opérateur ne doit pas croire avoir pris toute sa sélection.
+    await expect(page.getByText(/laissée\(s\) de côté/)).toBeVisible();
+  });
+
+  test('🔴 une sélection ENTIÈREMENT traitée ne se voit pas proposer « À traiter »', async ({ page }) => {
+    // Sur elle, le geste ne ferait rien : on ne propose que ce qui se voit.
+    const traitees = [{ ...DEUX[0], traitee: true }, { ...DEUX[1], traitee: true }];
+    await monterListe(page, { conversations: traitees });
+    expect(await destinations(page, 'inbox-ranger-selection')).not.toContain('À traiter');
   });
 
   test('« Traité » en lot part pour CHAQUE ligne cochée', async ({ page }) => {

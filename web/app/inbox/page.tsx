@@ -391,6 +391,9 @@ function InboxInner({ session }: { session: Session }) {
        * change est qu'on le DIT à la fin, avec le compte.
        */
       let echecs = 0;
+      // Les lignes TRAITÉES qu'« À traiter » laisse de côté : on le DIT à la fin, sans quoi l'opérateur
+      // croirait avoir pris le fil de toute sa sélection.
+      const ecartees = action === 'a-traiter' ? cochees.size - cibles.length : 0;
       for (const id of cibles) {
         try {
           await appliquerRangement(session.tenantId, id, action);
@@ -408,6 +411,11 @@ function InboxInner({ session }: { session: Session }) {
         setError(t(
           `${echecs} conversation(s) sur ${cibles.length} n’ont pas pu être rangées. Rouvrez-les une par une : le détail y est affiché.`,
           `${echecs} of ${cibles.length} conversations could not be filed. Open them one by one: the reason is shown there.`,
+        ));
+      } else if (ecartees > 0) {
+        setError(t(
+          `${ecartees} conversation(s) marquée(s) « Traité » laissée(s) de côté : retirez d’abord ce statut pour les remettre à traiter.`,
+          `${ecartees} conversation(s) marked “Done” left out: remove that status first to put them back to handle.`,
         ));
       }
     } finally {
@@ -443,6 +451,8 @@ function InboxInner({ session }: { session: Session }) {
   const selectionAvecSignalementManuel = conversations.some((c) => cochees.has(c.id) && c.signaleeMain === true);
   // Même question pour « Ne plus marquer traité » hors du dossier « Traité ».
   const selectionAvecTraitee = conversations.some((c) => cochees.has(c.id) && c.traitee === true);
+  // Et l'inverse, pour « À traiter », qui ne s'applique qu'aux lignes NON traitées.
+  const selectionAvecNonTraitee = conversations.some((c) => cochees.has(c.id) && c.traitee !== true);
 
   return (
     // 🔴 LES DOSSIERS ONT LEUR PROPRE COLONNE (2026-09-09, demande de Julien). Le menu vivait AU-DESSUS de
@@ -510,7 +520,7 @@ function InboxInner({ session }: { session: Session }) {
               className="ml-auto rounded-md border border-brand-300 bg-white px-2 py-1 font-medium text-brand-800 disabled:opacity-40"
             >
               <option value="">{rangementEnCours ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
-              {destinationsEnLot(dossier, selectionAvecSignalementManuel, selectionAvecTraitee).map((a) => (
+              {destinationsEnLot(dossier, selectionAvecSignalementManuel, selectionAvecTraitee, selectionAvecNonTraitee).map((a) => (
                 <option key={a} value={a}>{libelleRangement(a, t)}</option>
               ))}
             </select>
@@ -1693,7 +1703,9 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         </p>
       )}
 
-      <div ref={filRef} data-testid="fil-messages" className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+      {/* `data-fil-defilant` : c'est ce conteneur, et pas la fenêtre, qui fait défiler le fil. Une photo reçue
+          s'y cherche pour se charger quand ELLE y devient visible (`PieceJointeRecue`). */}
+      <div ref={filRef} data-testid="fil-messages" data-fil-defilant="" className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {messages.map((m, i) => {
           // Séparateur de jour (fuseau Paris) quand le jour change vs le message précédent.
           const showSep = i === 0 || dayKey(m.createdAt) !== dayKey(messages[i - 1]!.createdAt);
