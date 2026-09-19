@@ -5,6 +5,58 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-19 : l'Inbox, « Traité », les pièces jointes et « Je m'en occupe » (12 commits, trois revues)
+
+**Livré et déployé le 2026-09-19 après-midi**, migration 0160 comprise. Fonctionnel dans
+[features.md](../features.md), invariants dans [documentation.md](../documentation.md), essai réel dû dans
+[wip.md](../wip.md). Ce qui suit est le récit.
+
+**Quatre demandes de Julien le matin**, dont trois arbitrées par questions avant d'écrire une ligne : un statut
+« Traité » DISTINCT d'Archivé (alors qu'Archivé faisait déjà le retour en « À traiter » au message du
+contact, ce qui a été montré, puis tranché autrement) ; les photos et fichiers reçus SANS copie chez nous ;
+et, pour la « réaffectation » demandée, la précision décisive : « un agent ne peut pas réaffecter [...] en
+revanche il peut prendre parmi celles du pot commun ». La quatrième (deux phrases des connecteurs) a été
+faite en premier, seule.
+
+**Ce que la lecture et la mesure ont appris avant de coder.**
+- Meta ne garde un média REÇU que SEPT jours. La doc de référence porte deux durées sur la même page (30
+  jours pour ce qu'on téléverse, 7 pour les identifiants reçus par webhook) et le dépôt affirmait 30 à trois
+  endroits. Mesuré depuis le conteneur de production : nos deux seuls vocaux, reçus 7,9 et 8,9 jours plus
+  tôt, rendaient `100/33`. Le jeton local ne marchait pas : la sonde a tourné DANS `mba-api`, en lecture.
+- Un manager ne pouvait affecter à personne : le sélecteur lisait `GET /users`, réservé aux admins. Invisible
+  parce que les quatre comptes existants sont admin, et parce que le faux du test d'écran servait `/users`
+  à tout le monde. Le faux refuse désormais comme le vrai.
+
+**La CI de la console était rouge depuis cinq commits de l'autre session** (le test de navigation n'avait
+pas suivi le retrait de Tools > Outils). Réparée à part, en premier, parce qu'une CI rouge masque tout autre
+échec sur son job.
+
+**Un fichier TypeScript a été vu comme BINAIRE par git.** L'expression qui nettoie un nom de fichier
+contenait des octets de contrôle littéraux au lieu de leurs séquences d'échappement : l'outil d'écriture avait
+converti les séquences. Le code marchait, les tests passaient ; seul `Bin 0 -> 5344 bytes` dans un
+`git diff --stat` l'a trahi, juste avant la relecture.
+
+**Trois passes à froid : 3 rouges et 13 jaunes, puis 1 et 7, puis 1 et 7.** Les deux rouges qui comptaient :
+la console déployée par Vercel au `git push` avant que l'API ne le soit (le menu d'affectation était vide,
+même pour un admin, pendant quelques heures, jusqu'au déploiement) ; et un message « N conversations
+traitées laissées de côté » qui comptait par différence, donc pouvait affirmer un statut faux. Les autres
+constats de valeur : la lecture des pièces jointes n'était câblée QUE si la transcription l'était ; et le
+test de câblage écrit pour le garder, par recherche de texte, restait vert avec le câblage remis dedans (un
+conditionnel IMBRIQUÉ portait le même motif de fin) : réécrit avec le compilateur, sa mutation vue.
+
+**Un second arbitrage en cours de route** : une réaction emoji ne rouvre pas une conversation traitée, puis,
+sur la troisième passe, ne change pas non plus « qui a parlé en dernier », sans quoi notre « bonne journée »
+suivie d'un 👍 remettait la conversation dans « À traiter ».
+
+**Julien a arrêté la boucle** après la troisième passe : corriger ses points, pas de quatrième, publier.
+L'attestation le dit, et elle dit aussi que le VPS tournait sur un commit de l'autre session déployé sans
+attestation enregistrée ici.
+
+**Déploiement** : attestation, image construite, 0160 vérifiée DANS l'image, `migrate`, relecture en base
+(trois colonnes conformes, aucun index sur `traitee_le`, rien de changé pour personne), `up -d --build`,
+conteneurs sains puis rechargement de NPM, contrôle public 6/6, et les deux routes neuves en 401 au lieu de
+404.
+
 ## 2026-09-18 : le Performance Lab, les coûts et l'analyse (33 commits, huit revues)
 
 **Livré et déployé le 2026-09-18 au matin**, migrations 0154 et 0155 comprises. Le fonctionnel vu

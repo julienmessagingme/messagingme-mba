@@ -1,7 +1,9 @@
-⚠️ **Manager : un seul droit propre à ce jour** (2026-08-21). Il voit exactement la même chose
-qu'un agent (l'Inbox seule), mais il peut **affecter une conversation à un membre**, ce qu'un
-agent ne peut pas. Le reste des prérogatives d'un manager n'a pas encore été décidé, et l'écran
-d'invitation le dit noir sur blanc.
+⚠️ **Manager : ce qu'il a en propre** (mis à jour le 2026-09-19). Il **affecte une conversation à un
+membre**, ce qu'un agent ne peut pas ; il **consulte** les écrans de conformité (Sécurité, depuis le
+2026-09-14) ; et il **règle UNE chose** dans Paramètres : si les agents peuvent prendre une conversation du pot
+commun (voir « Je m'en occupe » plus bas). 🔴 **Jusqu'au 2026-09-19, son menu d'affectation était vide** : il
+lisait une liste de membres réservée aux admins, si bien qu'un manager ne pouvait confier une conversation à
+personne. Invisible tant que tous les comptes étaient admin ; réparé le même jour.
 
 Statut : 🔲 pas commencé · 🚧 en cours · ✅ live
 
@@ -79,7 +81,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **« Relancer automatiquement les échecs » a rejoint Paramètres** (2026-08-23). Ce réglage était sur
   l'Accueil, dans la carte du Meta Business Agent, où il n'avait rien à faire : il ne dit pas qui répond au
   client, il règle ce qui se passe quand un envoi échoue. C'est un réglage d'espace, comme le fuseau horaire.
-- ✅ **Paramètres (menu « Paramètres », admin)** : le **fuseau horaire** de l'espace et les **heures d'ouverture**
+- ✅ **Paramètres (menu « Paramètres », admin ; un manager n'y voit que le réglage « Je m'en occupe »)** : le
+  **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
   de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »). Un jour dont
   l'heure de fin précède l'heure de début est signalé en rouge et bloque l'enregistrement.
@@ -986,6 +989,37 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   possibles : pas de crédit sur l'espace (un administrateur peut le recharger) ou traduction pas encore
   activée sur le serveur (rien à faire côté client).
 
+- ✅ **LE STATUT « TRAITÉ »** (2026-09-19, déployé le jour même, essai réel à faire). Pour les conversations
+  où le client a écrit en dernier mais où il n'y a plus rien à lui répondre (« merci, bonne journée »). Marquée
+  « Traité », la conversation **sort d'« À traiter »**, **reste dans « Tout »** avec une petite pastille
+  « Traité », et a son propre dossier. **Dès que le client réécrit, le statut saute** et elle revient dans « À
+  traiter », sans que personne ait rien à faire.
+  ⚠️ **Une réaction emoji (👍) ne la rouvre pas** (arbitrage du 2026-09-19) : « merci 👍 » en réponse à votre
+  « bonne journée » est exactement ce que ce statut règle. Elle ne change pas non plus « qui a parlé en
+  dernier » : une conversation que votre réponse avait sortie d'« À traiter » n'y revient pas pour un 👍.
+  ⚠️ **« Traité » n'est pas « Archivé »** : Archivé cache la conversation de tous les dossiers ordinaires,
+  Traité la laisse visible dans « Tout ». Un message du client sort des deux (une réaction, elle, sort
+  seulement d'Archivé). « Ne plus marquer traité » rend la conversation au dossier que son dernier message
+  désigne : si c'est vous qui avez écrit en dernier, elle ne revient donc pas dans « À traiter ».
+- ✅ **LES PHOTOS ET FICHIERS REÇUS S'AFFICHENT** (2026-09-19, déployé le jour même, essai réel à faire). Une
+  photo (ou un sticker) envoyée par le client apparaît dans la bulle, avec sa légende ; un document ou une
+  vidéo devient un bouton **« Télécharger »** qui enregistre le fichier sous le nom que le client lui a donné.
+  Une photo ne se charge que quand elle devient visible dans le fil ; un document ne part qu'au clic.
+  🔴 **WhatsApp ne garde une pièce jointe reçue que SEPT JOURS**, et nous n'en gardons pas de copie (choix du
+  2026-09-19) : passé ce délai, la bulle dit « Fichier expiré » au lieu d'un bouton qui échouerait. Même chose
+  pour un vocal, qui ne propose plus ni « Écouter » ni « Transcrire ». Une transcription faite avant reste
+  lisible. ⚠️ Le produit affirmait trente jours ; la mesure du 2026-09-19 l'a démenti.
+  ⚠️ **Sécurité** : seules les images s'affichent. Un document, même annoncé comme une image par son
+  expéditeur, se télécharge toujours et ne s'ouvre jamais dans la console. Taille maximale d'une pièce jointe
+  ouverte depuis la console : 25 Mo, au-delà l'écran dit la taille.
+- ✅ **« JE M'EN OCCUPE » : UN AGENT PREND UNE CONVERSATION DU POT COMMUN** (2026-09-19, déployé le jour
+  même, essai réel à faire). Réglage dans **Paramètres**, à la main des **admins et des managers** :
+  « Les agents peuvent prendre une conversation non affectée ». Activé, un agent voit **« Je m'en occupe »** sur
+  une conversation que personne n'a, et se l'affecte. Il ne peut **jamais** la passer à un collègue ni la
+  rendre au pot commun : seuls les managers et les admins distribuent (arbitrage du 2026-09-19). Si un
+  collègue l'a prise une seconde avant, l'écran le dit. Coupé (par défaut), rien ne change.
+  ⚠️ Un manager qui ouvre Paramètres n'y voit **que ce réglage** : le fuseau, les horaires, les prix et le
+  reste restent aux admins.
 - ✅ **RANGER LA CONVERSATION OUVERTE** (2026-09-09) : un menu « Ranger dans… » en haut de la conversation,
   à côté de l'affectation. Il propose, selon l'état :
   - **À traiter** : vous reprenez le fil, la conversation entre dans ce dossier. 🔴 **Ce geste n'existait
@@ -1015,7 +1049,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   constat n'est pas effaçable à la main, et prétendre le contraire ferait cliquer deux fois avant de
   conclure que l'écran est cassé.
 - ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08, **réellement à gauche depuis le 2026-09-09**).
-  Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Signalé**, **Archivé**, chacun
+  Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Traité** (depuis le 2026-09-19),
+  **Signalé**, **Archivé**, chacun
   avec son nombre entre parenthèses. Il remplace les trois boutons de filtre d'avant, qui ne portaient qu'un
   compteur sur trois.
   🔴 **Cette ligne annonçait « à gauche de la liste » et c'était FAUX** : le menu vivait AU-DESSUS d'elle,

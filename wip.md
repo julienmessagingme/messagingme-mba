@@ -7,17 +7,40 @@
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
 > il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## L'ÉTAT EXACT, AU 2026-09-17
+## L'ÉTAT EXACT, AU 2026-09-19
 
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-18 au matin** avec le chantier Performance Lab. Le SHA n'est pas recopié ici (`git log` fait foi, cette ligne a menti six fois). Séquence tenue : build de l'image, vérification que 0154 et 0155 y sont, `migrate`, relecture en base point par point, `up -d --build` des DEUX images, conteneurs sains PUIS rechargement de NPM, chargement des 9 fiches d'aide, contrôle public vert sur les six chemins. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-19 après-midi** avec le chantier Inbox. Le SHA n'est pas recopié ici (`git log` fait foi). Séquence tenue : attestation de revue finale, build de l'image, 0160 vérifiée DANS l'image, `migrate`, relecture en base point par point, `up -d --build` des images, conteneurs sains PUIS rechargement de NPM, contrôle public vert sur les six chemins. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
-| Revue finale | ✅ **ATTESTÉE, 0 rouge.** QUATRE passes à froid successives sur le chantier MCP (6, puis 3, puis 2, puis 4 rouges), chacune portant sur les correctifs de la précédente. Rapport complet dans `.git/revue-finale-rapport.md`, qui dit aussi ce qu'il NE couvre pas : les deux derniers commits ont été vérifiés par moi seul |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le chantier Inbox : TROIS passes à froid (3, 1 et 1 rouges), chacune sur les correctifs de la précédente. Le dernier commit n'a PAS été relu à froid, par décision explicite de Julien (« tu corriges les points mais tu ne lances pas de 4e et tu publies ») ; le rapport `.git/revue-finale-rapport.md` le dit. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
+
+## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL DÛ)
+
+Trois demandes de Julien, arbitrées le jour même. Plan :
+`docs/superpowers/plans/2026-09-19-inbox-traite-medias-prise.md`. Fonctionnel dans [features.md](features.md),
+invariants dans [documentation.md](documentation.md) § Conversations, migration 0160 dans le compteur de
+[CLAUDE.md](CLAUDE.md).
+
+🔴 **L'ESSAI RÉEL, À FAIRE PAR JULIEN SUR SON ESPACE** (rien n'est clos avant) :
+
+1. Envoyer depuis son téléphone une photo puis un PDF au numéro : la photo s'affiche dans le fil, le PDF se
+   télécharge sous son nom.
+2. Marquer la conversation « Traité » : elle quitte « À traiter », reste dans « Tout » avec sa pastille.
+   Répondre par un 👍 : elle RESTE « Traité » (c'est le seul endroit où un vrai payload de réaction Meta
+   traverse ce chemin). Puis écrire un mot : elle revient dans « À traiter », la pastille disparaît.
+3. Créer un compte agent, activer « Les agents peuvent prendre une conversation non affectée » dans
+   Paramètres DEPUIS UN COMPTE MANAGER, et vérifier que l'agent voit « Je m'en occupe » sur une conversation
+   non affectée, rien sur celle d'un collègue ; et que le manager peut affecter à quelqu'un (son menu était
+   vide jusqu'au 2026-09-19).
+
+⚠️ **À SIGNALER, HORS DE CE CHANTIER** : le VPS tournait sur `0482ae0` (chantier des moments d'un agent IA,
+déployé le 2026-09-18 au soir par une autre session) alors qu'aucune attestation de revue finale n'était
+enregistrée dans ce dépôt pour ses 25 commits. Ce déploiement-ci n'a fait relire que ce qui le suit.
 
 ## 🔴 PERFORMANCE LAB : LES COÛTS ET L'ANALYSE (2026-09-17, POUSSÉ, RIEN DE DÉPLOYÉ)
 

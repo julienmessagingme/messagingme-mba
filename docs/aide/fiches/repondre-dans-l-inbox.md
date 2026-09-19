@@ -1,21 +1,26 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: f2dcb4
+source_empreinte: 888648
 ---
 # Répondre à un client dans l'Inbox
 
 L'Inbox se lit comme une boîte mail. Une colonne de dossiers à gauche, la liste des conversations au milieu,
 la conversation ouverte à droite.
 
-**Les quatre dossiers :**
+**Les dossiers :**
 
-- **Tout** : toutes les conversations.
+- **Tout** : toutes les conversations, sauf celles que vous avez archivées.
 - **À traiter** : celles où la balle est dans votre camp. Une conversation en sort dès que quelqu'un de
   chez vous, ou le robot, a répondu : on attend alors le client, il n'y a plus rien à faire.
+- **Traité** : celles que vous avez marquées « Traité » parce qu'il n'y a plus rien à répondre, même si le
+  client a écrit en dernier (« merci, bonne journée »). Elles restent aussi dans « Tout », avec une petite
+  pastille. Dès que le client réécrit, le statut saute et la conversation revient dans « À traiter ». Une
+  simple réaction emoji (👍) ne la rouvre pas.
 - **Signalé** : celles où un message insulte l'entreprise, repérées automatiquement, plus celles que vous
   avez signalées vous-même.
-- **Archivé** : ce que vous avez rangé.
+- **Archivé** : ce que vous avez rangé. Contrairement à « Traité », une conversation archivée n'apparaît
+  plus dans « Tout ».
 
 **Pour ranger une conversation**, le menu « Ranger dans… » en haut de la conversation ouverte propose les
 destinations qui auront un effet visible depuis l'endroit où vous êtes. Vous pouvez aussi cocher plusieurs
@@ -23,7 +28,13 @@ conversations dans la liste : le même menu apparaît au-dessus et agit sur tout
 
 **Pour confier une conversation à quelqu'un**, utilisez le sélecteur d'affectation, qui est indépendant du
 rangement. Une conversation peut être confiée à une personne et tenue par un scénario en même temps : ce
-sont deux questions différentes.
+sont deux questions différentes. Seuls les managers et les admins distribuent les conversations. Si votre
+espace l'autorise (réglage dans Paramètres), un agent voit « Je m'en occupe » sur une conversation que
+personne n'a, et peut se l'affecter ; il ne peut ni la passer à un collègue ni la rendre ensuite.
+
+**Quand un client envoie une photo ou un fichier**, la photo s'affiche dans la conversation et un document
+se télécharge sous le nom que le client lui a donné. WhatsApp ne garde ces pièces jointes que sept jours :
+passé ce délai, la conversation indique « Fichier expiré ».
 
 **Quand vous reprenez la main sur un fil que le scénario gérait**, le robot s'arrête. Il ne reprend la parole
 que si vous le lui rendez explicitement, avec le bouton prévu, ou après un délai sans réponse de votre part.

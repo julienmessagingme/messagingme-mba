@@ -488,9 +488,13 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   agent**), `identities` (le mot de passe vit sur l'ADRESSE, pas sur le compte : « une adresse = UN mot de
   passe » est exprimé par la structure), `auth_tokens` (invite | reset, `token_hash` sha256, consommation
   atomique dans le `update ... returning`).
-- ⚠️ **Trois rôles, et DEUX niveaux de droits depuis le 2026-09-14.** Un `agent` n'a que l'Inbox. Un
-  `manager` y ajoute les écrans de CONFORMITÉ (Sécurité : accueil, Consentement, IA, Audit trails, Journal
-  des erreurs) : il consulte, il ne règle rien. Tout le reste est `admin`.
+- ⚠️ **Trois rôles, et DEUX niveaux de droits.** Un `agent` n'a que l'Inbox. Un `manager` y ajoute les écrans
+  de CONFORMITÉ (Sécurité : accueil, Consentement, IA, Audit trails, Journal des erreurs), qu'il CONSULTE, et
+  il affecte les conversations. Il RÈGLE une seule chose : `tenant_settings.agents_peuvent_prendre`, la seule
+  écriture du module de réglages montée sous `gardeEncadrement` (`/settings/agents-peuvent-prendre`) ; l'écran
+  Paramètres ne lui montre que cette section. Tout le reste est `admin`.
+  ⚠️ Le sélecteur d'affectation lit `GET /conversations/membres-affectables` (encadrement), PAS `GET /users`
+  (admin) : avec la seconde, un manager avait un menu vide.
   🔴 **La liste est UNE, et trois choses en dérivent** : `ECRANS_ENCADREMENT` / `accesAutorise`
   (`web/lib/nav.ts`) servent la garde d'accès de la console, le FILTRAGE du menu, et la carte du bot d'aide.
   Côté serveur, la garde correspondante est `requireEncadrement` (`src/server.ts`). Les deux moitiés doivent
@@ -553,14 +557,31 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 **Conversations**
 
-- `conversations` (`control_owner`, `assigned_to`, `archived_at`), `conversation_messages`.
-- 🔴 **LES CINQ DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
-  « Archivé » (`archived_at`) et l'affectation (`assigned_to`) sont des ÉTATS ÉCRITS ; « À traiter » est
-  DÉRIVÉ de `control_owner <> 'app_workflow'`, donc y ranger une conversation veut dire PRENDRE le fil ; et
+- `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`),
+  `conversation_messages` (`media_id`, `media_mime`, `media_nom`).
+- 🔴 **LES DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
+  « Archivé » (`archived_at`), « Traité » (`traitee_le`) et l'affectation (`assigned_to`) sont des ÉTATS
+  ÉCRITS ; « À traiter » est DÉRIVÉ (`A_TRAITER_SQL`, `src/inbox/store.pg.ts` : scénario qui ne tient pas le
+  fil, dernier message qui n'est pas de nous, pas marquée traitée), donc y ranger une conversation veut dire
+  PRENDRE le fil ; et
   « Signalé » réunit DEUX sources, le constat de l'analyse (`conversation_analysis.abusive`) et un
   signalement humain (`signalee_le`, migration 0123). ⚠️ Les deux sources restent SÉPARÉES : `abusive` est
   recalculé à chaque ré-analyse, un signalement humain écrit dedans disparaîtrait au passage suivant. La
   liste rend `signaleeMain` pour que l'écran sache quoi proposer.
+- 🔴 **UN MESSAGE DU CONTACT ROUVRE, DANS L'ÉCRITURE QUI L'ENREGISTRE** (`upsertConversationByWaId`) : il
+  sort d'Archivé et retire « Traité ». Le chemin appelant décide (`rouvre: { archive, traite }`), jamais la
+  dépendance partagée : un envoi automatisé ne rouvre rien. ⚠️ Une RÉACTION emoji sort d'Archivé mais ne
+  retire pas « Traité » ni ne change `last_direction` (arbitrage du 2026-09-19) ; `last_direction` n'est lu
+  QUE par « À traiter ». « Traité » n'est pas exclusif : la conversation reste dans « Tout ».
+- 🔴 **UNE PIÈCE JOINTE REÇUE N'EST PAS COPIÉE CHEZ NOUS** : on garde l'identifiant de Meta et on sert les
+  octets à la demande (`lireMediaRecu`, `src/inbox/media-entrant.ts`). Meta efface un média REÇU au bout de
+  SEPT jours (`DUREE_MEDIA_RECU_JOURS`, mesuré ; trente jours ne vaut que pour ce qu'on téléverse) : le fil
+  rend `mediaExpire`, la route rend 410 `media_expire`. Seules les images matricielles se servent `inline`,
+  tout le reste en `attachment` + `nosniff` (`MIMES_AFFICHABLES`, parité avec l'écran tenue par un test).
+  Plafond propre, `MEDIA_ENTRANT_TAILLE_MAX_KO`, indépendant de la transcription.
+- 🔴 **UN AGENT PEUT PRENDRE, JAMAIS RÉAFFECTER** : `peutPrendre` (`src/inbox/assignment.ts`), conversation à
+  personne et `agents_peuvent_prendre` activé (ou encadrement). L'écriture est CONDITIONNELLE
+  (`prendreSiLibre`, `assigned_to is null` dans le `where`) ; la liste rend `peutPrendre` par la même règle.
 - 🔴 **`control_owner` et `assigned_to` sont ORTHOGONAUX** : le premier dit QU'EST-CE QUI parle (scénario,
   humain, agent Meta), le second QUEL HUMAIN s'en occupe. Une conversation peut être affectée ET tenue par le
   scénario. La règle d'accès vit dans `src/inbox/assignment.ts`, PURE, et ne reçoit même pas `control_owner` :

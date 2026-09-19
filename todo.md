@@ -1,5 +1,20 @@
 # todo.md : backlog
 
+## 🟡 `inbox-envoi-scenario.spec.ts` est INSTABLE, mesuré le 2026-09-19
+
+Les cas `:112` (« fenêtre FERMÉE -> seuls ceux qui ouvrent par un template ») et `:169` (« un refus du serveur
+s'affiche avec sa raison ») sortent « flaky » (passés à la reprise) dans **4 runs de la CI de la console sur
+12** entre le 2026-09-18 matin et le 2026-09-19. Deux de ces runs sont ANTÉRIEURS au chantier Inbox du 19 : il
+n'en est donc pas la cause. `securite-navigation.spec.ts` (« brancher un connecteur sur le consentement ») et
+`agents-connaissance` apparaissent aussi, plus rarement. À instrumenter avant d'en chercher la cause ; ne pas
+affaiblir le test pour le faire taire.
+
+## 🟡 Une fiche d'aide ne dit rien du rôle MANAGER
+
+La fiche `repondre-dans-l-inbox` a été relue le 2026-09-19 (Traité, pièces jointes, « Je m'en occupe »), mais
+aucune fiche ne dit ce qu'un manager peut faire dans Paramètres : la carte du bot le mène à l'écran
+(`acces: encadrement`), sans texte qui explique qu'il n'y trouvera qu'un réglage.
+
 ## 🟡 `queue-group-concurrency` est INSTABLE, mesure le 2026-09-18
 
 `tests/integration/queue-group-concurrency.integration.test.ts` a echoue sur le commit `f8c32b8b`
