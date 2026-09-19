@@ -364,12 +364,16 @@ function InboxInner({ session }: { session: Session }) {
     // l'analyse n'est pas effaçable à la main, et la ligne resterait dans le dossier. On n'écrit donc que là
     // où le geste a un effet, au lieu d'appels qui réussissent sans rien changer. Les lignes du modèle
     // restent visiblement signalées, ce qui est la vérité.
-    // Même raison pour « Ne plus marquer traité » : on n'écrit que sur les lignes qui le sont.
+    // Même raison pour « Ne plus marquer traité » : on n'écrit que sur les lignes qui le sont. Et pour « À
+    // traiter », qu'on n'applique PAS aux lignes traitées : prendre leur fil ne les ferait pas entrer dans un
+    // dossier qui les exclut, et la conversation ouverte ne propose pas ce geste sur elles non plus.
     const cibles = action === 'ne-plus-signaler'
       ? conversations.filter((c) => cochees.has(c.id) && c.signaleeMain === true).map((c) => c.id)
       : action === 'ne-plus-traiter' && dossier !== 'traitees'
         ? conversations.filter((c) => cochees.has(c.id) && c.traitee === true).map((c) => c.id)
-        : [...cochees];
+        : action === 'a-traiter'
+          ? conversations.filter((c) => cochees.has(c.id) && c.traitee !== true).map((c) => c.id)
+          : [...cochees];
     if (cibles.length === 0) return;
     setRangementEnCours(true);
     setError(null);
@@ -1024,6 +1028,14 @@ function AffectationControl({ session, conversation, peutPrendre, onChange }: {
     }
   }
 
+  /**
+   * 🔴 LE REFUS RESTE AFFICHÉ APRÈS LE RECHARGEMENT (revue du 2026-09-19). `onChange` recharge la liste juste
+   * après l'échec : la conversation passe alors « suivie par » le collègue plus rapide, ou le bouton
+   * disparaît si le réglage vient d'être coupé, et le message partait AVEC le bouton. Il vit donc à côté de
+   * tout ce que ce composant rend, pas dans la seule branche du bouton.
+   */
+  const refus = refusPrise ? <span className="text-[11px] text-red-600" data-testid="prendre-refus">{refusPrise}</span> : null;
+
   async function choisir(valeur: string): Promise<void> {
     setBusy(true);
     try {
@@ -1051,20 +1063,23 @@ function AffectationControl({ session, conversation, peutPrendre, onChange }: {
           >
             {t('Je m’en occupe', 'I’ll take it')}
           </button>
-          {refusPrise && <span className="text-[11px] text-red-600" data-testid="prendre-refus">{refusPrise}</span>}
+          {refus}
         </span>
       );
     }
-    if (affecte === null) return null;
+    if (affecte === null) return refus;
     const pourMoi = conversation.assignedToMe === true;
     return (
-      <span
-        data-testid="assignment-badge"
-        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${pourMoi ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-600'}`}
-      >
-        {pourMoi
-          ? t('pour moi', 'assigned to me')
-          : t(`suivi par ${conversation.assignedToName ?? '…'}`, `handled by ${conversation.assignedToName ?? '…'}`)}
+      <span className="flex items-center gap-1.5">
+        <span
+          data-testid="assignment-badge"
+          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${pourMoi ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-600'}`}
+        >
+          {pourMoi
+            ? t('pour moi', 'assigned to me')
+            : t(`suivi par ${conversation.assignedToName ?? '…'}`, `handled by ${conversation.assignedToName ?? '…'}`)}
+        </span>
+        {refus}
       </span>
     );
   }
@@ -1078,6 +1093,12 @@ function AffectationControl({ session, conversation, peutPrendre, onChange }: {
       title={t('Affecter cette conversation', 'Assign this conversation')}
     >
       <option value="">{t('Non affectée', 'Unassigned')}</option>
+      {/* 🔴 L'AFFECTATAIRE ACTUEL EST TOUJOURS DANS LA LISTE (revue du 2026-09-19). La liste ne porte que les
+          comptes ACTIFS : une conversation encore confiée à un membre révoqué n'avait pas son option, et le
+          menu affichait « Non affectée » alors que les agents restaient bloqués en écriture. */}
+      {affecte !== null && !membres.some((m) => m.id === affecte) && (
+        <option value={affecte}>{conversation.assignedToName ?? t('Membre retiré', 'Removed member')}</option>
+      )}
       {membres.map((m) => (
         <option key={m.id} value={m.id}>{m.nom}</option>
       ))}

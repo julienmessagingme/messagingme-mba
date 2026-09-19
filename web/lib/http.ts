@@ -111,12 +111,14 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 /**
  * Le MÊME appel authentifié, mais qui rend des OCTETS.
  *
- * 🔴 POURQUOI IL FAUT PASSER PAR LÀ POUR ÉCOUTER UN VOCAL. Une balise `<audio src="...">` ne sait pas poser
- * d'en-tête `Authorization` : elle ne peut donc atteindre aucune de nos routes. On récupère les octets ici,
- * et l'écran en fabrique une URL d'objet locale. `request` ne convient pas, il parse du JSON.
+ * 🔴 POURQUOI IL FAUT PASSER PAR LÀ POUR ÉCOUTER UN VOCAL OU VOIR UNE PHOTO. Une balise `<audio src="...">`
+ * ou `<img src="...">` ne sait pas poser d'en-tête `Authorization` : elle ne peut donc atteindre aucune de nos
+ * routes. On récupère les octets ici, et l'écran en fabrique une URL d'objet locale. `request` ne convient
+ * pas, il parse du JSON.
  *
- * ⚠️ Aucun rejeu : un média pèse jusqu'à deux méga, et rejouer un téléchargement raté doublerait la bande
- * passante pour un geste que l'opérateur peut relancer d'un clic.
+ * ⚠️ Aucun rejeu : une pièce jointe pèse jusqu'à 25 Mo (`MEDIA_ENTRANT_TAILLE_MAX_KO` côté serveur), et
+ * rejouer un téléchargement raté doublerait la bande passante pour un geste que l'opérateur peut relancer
+ * d'un clic.
  */
 export async function requestBlob(path: string): Promise<Blob> {
   const session = getSession();

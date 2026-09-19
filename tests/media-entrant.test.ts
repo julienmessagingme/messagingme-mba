@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DUREE_MEDIA_RECU_JOURS, MEDIA_EXPIRE_SQL, MIMES_AFFICHABLES, enTetesMedia, estMediaExpireChezMeta, nomDeFichierSur, typeNu,
+  DUREE_MEDIA_RECU_JOURS, MEDIA_EXPIRE_SQL, MIMES_AFFICHABLES, MediaExpire, enTetesMedia, estMediaExpireChezMeta, lireMediaRecu,
+  nomDeFichierSur, typeNu, type DepsLireMediaRecu, type MessageAvecMedia,
 } from '../src/inbox/media-entrant';
 import { MetaApiError } from '../src/meta/errors';
 
@@ -74,5 +75,54 @@ describe('le délai de Meta sur un média reçu', () => {
     expect(estMediaExpireChezMeta(new MetaApiError(400, { code: 100 }))).toBe(false);
     expect(estMediaExpireChezMeta(new MetaApiError(401, { code: 190 }))).toBe(false);
     expect(estMediaExpireChezMeta(new Error('100 33'))).toBe(false);
+  });
+});
+
+/**
+ * LA LECTURE D'UN FICHIER REÇU (`lireMediaRecu`), sortie du câblage sur revue le 2026-09-19.
+ *
+ * 🔴 ELLE VIVAIT EN LIGNE DANS `src/index.ts`, sans aucun test : on pouvait retirer la conversion de
+ * l'erreur de Meta, ou le refus anticipé d'un média expiré, sans que rien ne tombe.
+ */
+describe('lire un fichier reçu', () => {
+  function deps(msg: MessageAvecMedia | null, telecharger?: DepsLireMediaRecu['telecharger']) {
+    const appels: Array<{ mediaId: string; max: number }> = [];
+    const d: DepsLireMediaRecu = {
+      lireMessage: async () => msg,
+      telecharger: telecharger ?? (async (mediaId, max) => { appels.push({ mediaId, max }); return { bytes: Buffer.from('x'), mime: 'image/png' }; }),
+      tailleMaxOctets: 25 * 1024 * 1024,
+    };
+    return { d, appels };
+  }
+  const recu = (over: Partial<MessageAvecMedia> = {}): MessageAvecMedia => ({ mediaId: 'm1', mediaMime: 'image/jpeg', mediaNom: null, mediaExpire: false, ...over });
+
+  it('un message sans média rend null, sans appeler Meta', async () => {
+    const { d, appels } = deps(recu({ mediaId: null }));
+    expect(await lireMediaRecu(d, 't1', 'msg')).toBeNull();
+    expect(appels).toHaveLength(0);
+  });
+
+  it('🔴 un média EXPIRÉ est refusé d’avance : on n’appelle pas Meta pour un échec certain', async () => {
+    const { d, appels } = deps(recu({ mediaExpire: true }));
+    await expect(lireMediaRecu(d, 't1', 'msg')).rejects.toBeInstanceOf(MediaExpire);
+    expect(appels).toHaveLength(0);
+  });
+
+  it('🔴 Meta 100/33 devient MediaExpire, une autre panne reste une panne', async () => {
+    const expire = deps(recu(), async () => { throw new MetaApiError(400, { code: 100, error_subcode: 33 }); });
+    await expect(lireMediaRecu(expire.d, 't1', 'msg')).rejects.toBeInstanceOf(MediaExpire);
+    const panne = deps(recu(), async () => { throw new Error('reseau'); });
+    await expect(lireMediaRecu(panne.d, 't1', 'msg')).rejects.toThrow('reseau');
+  });
+
+  it('le type ANNONCÉ par WhatsApp l’emporte, le nom suit, et le plafond part avec l’appel', async () => {
+    const { d, appels } = deps(recu({ mediaMime: 'image/jpeg', mediaNom: 'photo.jpg' }));
+    expect(await lireMediaRecu(d, 't1', 'msg')).toMatchObject({ mime: 'image/jpeg', nom: 'photo.jpg' });
+    expect(appels).toEqual([{ mediaId: 'm1', max: 25 * 1024 * 1024 }]);
+  });
+
+  it('sans type annoncé, on prend celui de Meta', async () => {
+    const { d } = deps(recu({ mediaMime: null }));
+    expect((await lireMediaRecu(d, 't1', 'msg'))!.mime).toBe('image/png');
   });
 });

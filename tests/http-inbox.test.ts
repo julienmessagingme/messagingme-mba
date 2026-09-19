@@ -1137,6 +1137,15 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
     expect(await lire(false, jetons.agent)).toBe(false);
   });
 
+  it('🔴 un réglage ILLISIBLE ne fait pas tomber la liste : il vaut « non »', async () => {
+    // Sans garde, un échec de cette lecture rendait 500 sur la liste entière, donc l'Inbox vide pour tout le
+    // monde, pour un simple bouton.
+    const a = app({ agentsPeuventPrendre: async () => { throw new Error('base'); }, prendreSiLibre: async () => true });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.agent) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().peutPrendre).toBe(false);
+  });
+
   it('sans câblage de la prise, la liste ne propose jamais le geste', async () => {
     // Un bouton qui mènerait à un 503 serait « offert et inerte », ce que le produit s'interdit.
     const a = app({ agentsPeuventPrendre: async () => true });

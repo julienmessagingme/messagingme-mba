@@ -5,7 +5,8 @@ import { MetaApiError } from '../meta/errors';
  * comment on les sert au navigateur (2026-09-19, demande de Julien : « dans les conversations on doit pouvoir
  * recevoir des photos... voire des fichiers »).
  *
- * Module PUR hors de l'erreur de Meta qu'il reconnaît : aucune IO, testable seul.
+ * Aucune IO propre : les règles sont pures, et la lecture d'un fichier (`lireMediaRecu`) reçoit ses
+ * dépendances, comme `transcrireMessage`. Tout se teste sans réseau ni base.
  */
 
 /**
@@ -100,4 +101,46 @@ export function enTetesMedia(mime: string | null, nom: string | null, repli: str
     // Ces octets sont ceux d'un client : rien à faire dans un cache partagé.
     'cache-control': 'private, no-store',
   };
+}
+
+/** Ce que la lecture d'un média reçu a besoin de savoir du message, relu DANS son espace. */
+export interface MessageAvecMedia {
+  mediaId: string | null;
+  mediaMime: string | null;
+  mediaNom: string | null;
+  mediaExpire: boolean;
+}
+
+export interface DepsLireMediaRecu {
+  /** Le message, relu dans l'espace appelant : c'est là que se joue l'isolation entre clients. */
+  lireMessage(tenantId: string, messageId: string, conversationId?: string): Promise<MessageAvecMedia | null>;
+  telecharger(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }>;
+  tailleMaxOctets: number;
+}
+
+/**
+ * LIT le fichier d'un média reçu, pour le servir à la console.
+ *
+ * 🔴 SORTIE DU CÂBLAGE LE 2026-09-19, SUR REVUE. Elle vivait en ligne dans `src/index.ts`, et deux défauts
+ * s'y cachaient : aucun test ne la voyait (on pouvait retirer la conversion de l'erreur de Meta sans que rien
+ * ne tombe), et elle n'était câblée que si la TRANSCRIPTION l'était. Une instance sans modèle de transcription
+ * aurait répondu 503 sur chaque photo, alors que lire un fichier n'a besoin que du jeton Meta.
+ *
+ * `null` = ce message ne porte aucun média. `MediaExpire` = trop tard, lu d'avance sur l'âge du message
+ * (on n'appelle pas Meta pour un échec certain) ou appris de Meta (`100/33`, effacé plus tôt que prévu).
+ */
+export async function lireMediaRecu(
+  deps: DepsLireMediaRecu,
+  tenantId: string,
+  messageId: string,
+  conversationId?: string,
+): Promise<{ bytes: Buffer; mime: string | null; nom: string | null } | null> {
+  const msg = await deps.lireMessage(tenantId, messageId, conversationId);
+  if (!msg?.mediaId) return null;
+  if (msg.mediaExpire) throw new MediaExpire();
+  const f = await deps.telecharger(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
+    throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
+  });
+  // Le mime du MESSAGE d'abord : c'est celui que WhatsApp a annoncé, et Meta ne le rend pas toujours.
+  return { bytes: f.bytes, mime: msg.mediaMime ?? f.mime, nom: msg.mediaNom };
 }

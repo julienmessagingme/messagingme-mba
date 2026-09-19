@@ -245,6 +245,16 @@ test.describe('Inbox : ranger une SÉLECTION', () => {
     expect(appels.some((a) => /POST .*\/c1\/ne-plus-traiter$/.test(a))).toBe(true);
   });
 
+  test('🔴 « À traiter » en lot épargne les lignes TRAITÉES, comme la conversation ouverte', async ({ page }) => {
+    // Prendre le fil d'une conversation traitée ne la ferait pas entrer dans un dossier qui l'exclut.
+    const mixte = [{ ...DEUX[0], traitee: true }, { ...DEUX[1], traitee: false }];
+    const appels = await monterListe(page, { conversations: mixte });
+    await page.getByTestId('inbox-ranger-selection').selectOption('a-traiter');
+    await finDuRangement(page);
+    expect(appels.filter((a) => /POST .*\/prendre$/.test(a)).length).toBe(1);
+    expect(appels.some((a) => /POST .*\/c2\/prendre$/.test(a))).toBe(true);
+  });
+
   test('« Traité » en lot part pour CHAQUE ligne cochée', async ({ page }) => {
     const appels = await monterListe(page);
     await page.getByTestId('inbox-ranger-selection').selectOption('traiter');

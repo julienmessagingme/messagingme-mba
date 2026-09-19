@@ -120,7 +120,7 @@ import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-e
 import { PgCreditStore } from './agent/credits.pg';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { transcrireMessage } from './inbox/transcrire';
-import { MediaExpire, estMediaExpireChezMeta } from './inbox/media-entrant';
+import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -727,26 +727,20 @@ async function main(): Promise<void> {
             app.log.info({ tenant: t, messageId: m2, coutDollars: cout, secondes }, 'transcription_cout');
           },
         }, tenant, messageId, conversationId, cible),
-        /**
-         * ⚠️ UN PLAFOND DE TAILLE, et depuis le 2026-09-19 c'est LE SIEN (`MEDIA_ENTRANT_TAILLE_MAX_KO`) : il
-         * empruntait les 2 Mo de la transcription, qui auraient refusé une photo haute définition ou un PDF.
-         * Le fichier entre entier en mémoire avant de partir vers le navigateur, d'où la borne.
-         *
-         * 🔴 L'EXPIRATION EST LUE AVANT D'APPELER META : passé sept jours, l'appel échouerait à coup sûr. Et un
-         * refus `100/33` de Meta dit la même chose un appel plus tard (média expiré plus tôt que prévu) : les
-         * deux deviennent `MediaExpire`, que la route rend en 410 et l'écran en « expiré ».
-         */
-        lireMediaMessage: async (tenant: string, messageId: string, conversationId?: string) => {
-          const msg = await inboxStore.lireMessagePourTranscription(tenant, messageId, conversationId);
-          if (!msg?.mediaId) return null;
-          if (msg.mediaExpire) throw new MediaExpire();
-          const f = await mediaClient.telechargerEntrant(msg.mediaId, config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024).catch((err: unknown) => {
-            throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
-          });
-          // Le mime du MESSAGE d'abord : c'est celui que WhatsApp a annoncé, et Meta ne le rend pas toujours.
-          return { bytes: f.bytes, mime: msg.mediaMime ?? f.mime, nom: msg.mediaNom };
-        },
       } : {}),
+      /**
+       * LIRE UNE PIÈCE JOINTE REÇUE (`lireMediaRecu`, `src/inbox/media-entrant.ts`).
+       *
+       * 🔴 HORS DU BLOC DE LA TRANSCRIPTION, et c'est le correctif : elle était câblée seulement si un modèle de
+       * transcription l'était, donc une instance sans lui répondait 503 sur chaque photo. Lire un fichier n'a
+       * besoin que du jeton Meta. Son plafond est le SIEN (`MEDIA_ENTRANT_TAILLE_MAX_KO`), pas les 2 Mo de la
+       * transcription.
+       */
+      lireMediaMessage: (tenant, messageId, conversationId) => lireMediaRecu({
+        lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
+        telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
+        tailleMaxOctets: config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024,
+      }, tenant, messageId, conversationId),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       // La PRISE d'une conversation du pot commun par un agent (migration 0160) : l'écriture conditionnelle,

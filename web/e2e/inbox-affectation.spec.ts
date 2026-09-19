@@ -23,6 +23,8 @@ async function mock(
 ) {
   const patches: Array<Record<string, unknown>> = [];
   const prises: string[] = [];
+  /** Après une prise refusée, le vrai serveur rend la conversation affectée au collègue plus rapide. */
+  let priseParUnCollegue = false;
   const session = { token: 'e2e-token', email: 'moi@e2e.test', role: opts.role, tenantId: 't-e2e' };
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), session);
   await page.route('**/api/backend/**', async (route) => {
@@ -33,16 +35,21 @@ async function mock(
     // La PRISE par un agent (migration 0160). Aucun corps : l'affectataire est la session.
     if (chemin.endsWith('/assignee/moi') && method === 'POST') {
       prises.push(chemin);
-      return opts.priseRefusee
-        ? json({ error: 'Un collègue s’occupe déjà de cette conversation.', code: 'deja_prise' }, 409)
-        : json({ conversationId: 'c1', assignee: 'u-moi' });
+      if (opts.priseRefusee) {
+        priseParUnCollegue = true;
+        return json({ error: 'Un collègue s’occupe déjà de cette conversation.', code: 'deja_prise' }, 409);
+      }
+      return json({ conversationId: 'c1', assignee: 'u-moi' });
     }
     if (chemin.endsWith('/assignee')) {
       patches.push((route.request().postDataJSON() ?? {}) as Record<string, unknown>);
       return json({ conversationId: 'c1', assignee: null });
     }
     if (chemin.endsWith('/conversations/todo-count')) return json({ count: 0 });
-    if (chemin.endsWith('/conversations')) return json({ conversations: [opts.conversation ?? conv()], peutPrendre: opts.peutPrendre === true });
+    if (chemin.endsWith('/conversations')) {
+      const c = priseParUnCollegue ? conv({ assignedTo: 'u-autre', assignedToName: 'Bob Agent' }) : (opts.conversation ?? conv());
+      return json({ conversations: [c], peutPrendre: opts.peutPrendre === true });
+    }
     if (chemin.endsWith('/c1/messages')) {
       return json({ waId: '33600000001', windowOpen: true, lastInboundAt: '2026-08-21T10:00:00Z', controlOwner: 'app_workflow', messages: [] });
     }
@@ -147,11 +154,24 @@ test.describe('Inbox : affectation', () => {
     await expect(page.getByTestId('prendre-conversation')).toHaveCount(0);
   });
 
-  test('un collègue a été plus rapide : l’écran le dit', async ({ page }) => {
+  test('🔴 un collègue a été plus rapide : l’écran le dit, et le dit ENCORE après le rechargement', async ({ page }) => {
+    // Le rechargement qui suit le refus rend la conversation « suivie par Bob » : le bouton disparaît, et le
+    // message partait avec lui. Ce cas le garde, parce que le faux rend désormais ce que rend le vrai serveur.
     await mock(page, { role: 'agent', peutPrendre: true, priseRefusee: true });
     await ouvrir(page);
     await page.getByTestId('prendre-conversation').click();
+    await expect(page.getByTestId('assignment-badge')).toContainText('Bob Agent');
     await expect(page.getByTestId('prendre-refus')).toContainText('collègue');
+  });
+
+  test('🔴 une conversation confiée à un membre RÉVOQUÉ garde son nom dans le sélecteur', async ({ page }) => {
+    // La liste des affectables ne porte que les comptes actifs : sans l'option de l'affectataire actuel, le
+    // menu affichait « Non affectée » alors que les agents restaient bloqués en écriture.
+    await mock(page, { role: 'manager', conversation: conv({ assignedTo: 'u-parti', assignedToName: 'Paul Parti' }) });
+    await ouvrir(page);
+    const select = page.getByTestId('assignment-select');
+    await expect(select).toHaveValue('u-parti');
+    await expect(select.locator('option:checked')).toHaveText('Paul Parti');
   });
 
   test('🔴 un serveur qui ne connaît pas l’affectation ne ferme la réponse à personne', async ({ page }) => {

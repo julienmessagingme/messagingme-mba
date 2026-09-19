@@ -418,13 +418,15 @@ test.describe('Centre de sécurité & compliance', () => {
    * ⚠️ ET ON NE LUI MONTRE QUE CE QU IL PEUT OUVRIR. Une barre laterale pleine de dossiers qui le
    * renverraient tous a l inbox serait pire qu une barre courte : on lui promettrait des portes fermees.
    */
-  test('⚠️ sa barre laterale ne porte QUE Securite', async ({ page }) => {
+  test('⚠️ sa barre laterale ne porte QUE Securite et Parametres', async ({ page }) => {
     await monter(page, { session: SESSION_MANAGER });
     await page.goto('/securite');
     const bas = page.getByTestId('nav-bas');
     await expect(bas.getByRole('link', { name: 'Consentement' })).toBeVisible();
-    // Parametres, Support et Developers sont dans le MEME bloc bas, et ils ne sont pas pour lui.
-    await expect(bas.getByRole('link', { name: 'Paramètres' })).toHaveCount(0);
+    // Parametres est pour lui depuis le 2026-09-19 : il y regle UNE chose, la prise d une conversation par
+    // les agents (demande de Julien). Ce cas affirmait le contraire et a rougi la CI : il suit la decision.
+    await expect(bas.getByRole('link', { name: 'Paramètres' })).toBeVisible();
+    // Support et Developers sont dans le MEME bloc bas, et ils ne sont toujours pas pour lui.
     await expect(bas.getByRole('link', { name: 'Support' })).toHaveCount(0);
   });
 

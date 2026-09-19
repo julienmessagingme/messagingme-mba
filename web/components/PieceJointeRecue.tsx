@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { lireMediaMessage, type InboxMessage } from '@/lib/api';
 import { ApiError } from '@/lib/http';
@@ -21,8 +21,10 @@ import {
  * ⚠️ AUCUNE COPIE CHEZ NOUS (arbitrage de Julien) : passé le délai de WhatsApp, le fichier n'existe plus, et
  * l'écran le DIT au lieu d'afficher un bouton qui échouerait à chaque clic.
  *
- * ⚠️ UNE PHOTO SE CHARGE AU RENDU, un document ou une vidéo AU CLIC : on regarde une photo, on ne la
- * « lance » pas, alors qu'un PDF de dix méga ne doit partir que si on le demande.
+ * ⚠️ UNE PHOTO SE CHARGE QUAND ELLE DEVIENT VISIBLE, un document ou une vidéo AU CLIC : on regarde une
+ * photo, on ne la « lance » pas, alors qu'un PDF de dix méga ne doit partir que si on le demande. « Visible »
+ * et pas « au rendu » (revue du 2026-09-19) : un fil de quarante photos les tirait toutes à l'ouverture, en
+ * parallèle, chacune repassant par Meta et comptant dans le plafond d'appels de l'opérateur.
  */
 export function PieceJointeRecue({ tenantId, conversationId, message, nature, legende }: {
   tenantId: string;
@@ -40,6 +42,22 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [agrandie, setAgrandie] = useState(false);
+  /** La bulle est-elle passée à l'écran ? Tant que non, la photo n'est pas demandée. */
+  const [vue, setVue] = useState(false);
+  const cadre = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (nature !== 'image' || vue) return undefined;
+    const el = cadre.current;
+    // Sans observateur (vieux navigateur, environnement de test), on retombe sur le chargement immédiat :
+    // une photo qui ne s'afficherait jamais serait pire qu'un chargement un peu tôt.
+    if (!el || typeof IntersectionObserver === 'undefined') { setVue(true); return undefined; }
+    const obs = new IntersectionObserver((entrees) => {
+      if (entrees.some((e) => e.isIntersecting)) { setVue(true); obs.disconnect(); }
+    }, { rootMargin: '200px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [nature, vue]);
 
   const direExpire = t(
     `Fichier expiré : WhatsApp ne garde les pièces jointes que ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} jours.`,
@@ -53,7 +71,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
   }
 
   useEffect(() => {
-    if (nature !== 'image' || expire) return undefined;
+    if (nature !== 'image' || expire || !vue) return undefined;
     let vivant = true;
     let url: string | null = null;
     lireMediaMessage(tenantId, conversationId, message.id)
@@ -70,7 +88,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
     // `surEchec` et `t` ne changent pas le fichier à lire : les mettre en dépendance le rechargerait à
     // chaque rendu. Le fichier, lui, est désigné par ces trois identifiants.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId, conversationId, message.id, nature]);
+  }, [tenantId, conversationId, message.id, nature, vue]);
 
   async function telecharger(): Promise<void> {
     setOccupe(true); setErreur(null);
@@ -98,7 +116,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
   const nomAffiche = message.mediaNom ?? (nature === 'video' ? t('Vidéo', 'Video') : nature === 'image' ? t('Photo', 'Photo') : t('Document', 'Document'));
 
   return (
-    <div className="space-y-1" data-testid={`piece-jointe-${message.id}`}>
+    <div ref={cadre} className="space-y-1" data-testid={`piece-jointe-${message.id}`}>
       {expire ? (
         <p className="text-xs italic opacity-80" data-testid={`piece-jointe-expiree-${message.id}`}>
           {nature === 'image' ? '🖼️' : '📎'} {nomAffiche} · {direExpire}

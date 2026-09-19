@@ -375,7 +375,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
   ];
   /**
    * L'onglet Inbox n'a PAS de barre de navigation : cette entrée sert à situer la page, pas à naviguer.
-   * Le menu de dossiers (Tout / À traiter / Signalé / Archivé) vit DANS l'écran, pas dans la barre.
+   * Le menu de dossiers (Tout, À traiter, Traité, Signalé, Archivé, et l'affectation) vit DANS l'écran,
+   * pas dans la barre. Sa liste fait foi dans `web/components/InboxDossiers.tsx`, pas ici.
    */
   const NAV_INBOX: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: badgeInbox }];
 
