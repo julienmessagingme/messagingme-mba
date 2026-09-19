@@ -285,9 +285,14 @@ export class PgInboxStore implements InboxStore {
     /**
      * 🔴 CE MESSAGE ROUVRE-T-IL LA CONVERSATION ? Gouverné par le CHEMIN APPELANT, jamais deviné ici.
      *
-     * « Rouvrir » = la sortir d'Archivé ET lui retirer le statut « Traité » (migration 0160). Les deux
-     * rangements disent « rien à faire pour l'instant », et c'est le même événement qui les rend faux : le
-     * contact a écrit. Le paramètre s'appelait `desarchive` tant qu'il n'y avait qu'un rangement.
+     * DEUX rangements, et ils ne se rouvrent pas pour les mêmes messages : `archive` la sort d'Archivé,
+     * `traite` lui retire le statut « Traité » (migration 0160). Le paramètre était un seul booléen,
+     * `desarchive`, tant qu'il n'y avait qu'un rangement.
+     *
+     * ⚠️ UNE RÉACTION (👍) NE RETIRE PAS « TRAITÉ » (arbitrage de Julien du 2026-09-19) : « merci 👍 » en
+     * réponse à notre « bonne journée » est précisément le cas que ce statut existe pour régler. Un vrai
+     * message du contact, lui, le retire toujours. Archivé n'est pas concerné par cet arbitrage et garde son
+     * comportement : toute entrée du contact le sort d'Archivé.
      *
      * Cet upsert est partagé par l'INBOUND (un message du contact) et par les ENVOIS SORTANTS AUTOMATISÉS
      * (campagne, scénario). Décider dans la dépendance partagée ferait remonter dans l'inbox de tout le
@@ -297,7 +302,7 @@ export class PgInboxStore implements InboxStore {
      * Requis et non optionnel : c'est le compilateur qui doit obliger un futur troisième appelant à
      * trancher, plutôt qu'un défaut qui le laisserait hériter d'un choix qu'il n'a pas fait.
      */
-    rouvre: boolean,
+    rouvre: { archive: boolean; traite: boolean },
     /**
      * QUI VIENT DE PARLER : `in` le contact, `out` nous.
      *
@@ -335,10 +340,10 @@ export class PgInboxStore implements InboxStore {
          archived_at = case when $4::boolean then null else conversations.archived_at end,
          -- Et il lui retire le statut « Traite » (migration 0160), pour la meme raison et dans la meme
          -- ecriture : c'est ce qui la fait revenir dans « A traiter », que le fragment de ce dossier exclut
-         -- tant que la colonne est posee.
-         traitee_le = case when $4::boolean then null else conversations.traitee_le end
+         -- tant que la colonne est posee. Drapeau A PART ($6) : une reaction ne le retire pas.
+         traitee_le = case when $6::boolean then null else conversations.traitee_le end
        returning id`,
-      [tenantId, waId, preview, rouvre, sens],
+      [tenantId, waId, preview, rouvre.archive, sens, rouvre.traite],
     );
     return conv.rows[0]!.id;
   }
@@ -673,9 +678,11 @@ export class PgInboxStore implements InboxStore {
    *  tous les appelants historiques écrivent exactement ce qu'ils écrivaient. */
   async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
-    // `true` : un message du CONTACT rouvre la conversation (hors d'Archivé, et plus « Traité »). C'est le
-    // seul chemin qui le fait.
-    const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true, 'in');
+    // Un message du CONTACT rouvre la conversation : hors d'Archivé, et plus « Traité ». C'est le seul chemin
+    // qui le fait. ⚠️ Sauf une RÉACTION (👍), qui ne retire pas « Traité » (arbitrage du 2026-09-19).
+    const conversationId = await this.upsertConversationByWaId(
+      tenantId, m.waId, preview, { archive: true, traite: m.type !== 'reaction' }, 'in',
+    );
     await this.pool.query(
       // ⚠️ `media_id`, `media_mime` et `media_nom` sont ecrits ICI ET NULLE PART AILLEURS (migrations 0125 et
       // 0160) : c est le seul instant ou le corps du webhook est encore sous la main. Un media non capte a
@@ -700,7 +707,7 @@ export class PgInboxStore implements InboxStore {
   ): Promise<void> {
     // `false` : un envoi AUTOMATISÉ (campagne, scénario) ne rouvre pas. Une campagne qui touche mille
     // contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés, ou marqués « Traité ».
-    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, false, 'out');
+    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, { archive: false, traite: false }, 'out');
     await this.pool.query(
       // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,
       // donc tous les appelants historiques écrivent exactement ce qu'ils écrivaient.

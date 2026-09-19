@@ -100,6 +100,27 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
     expect(await ids({ traitees: true })).toEqual([convId]);
   });
 
+  it('🔴 une RÉACTION du contact (👍) ne retire PAS le statut', async () => {
+    // L'arbitrage de Julien du 2026-09-19 : « merci 👍 » en réponse à notre « bonne journée » est précisément
+    // le cas que « Traité » règle. La conversation reste traitée, donc hors d'« À traiter ».
+    await store.marquerTraitee(tenantId, convId, true);
+    await store.recordInbound(tenantId, {
+      phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce', type: 'reaction', body: '👍',
+      buttonPayload: 'wamid.notre-message', profileName: null, field: 'messages',
+    });
+    expect(await ids({ traitees: true })).toEqual([convId]);
+    expect(await ids({ aTraiter: true })).toEqual([]);
+  });
+
+  it('une réaction sort quand même d’Archivé : l’arbitrage ne porte que sur « Traité »', async () => {
+    await store.archiverConversation(tenantId, convId, true);
+    await store.recordInbound(tenantId, {
+      phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce-archive', type: 'reaction', body: '👍',
+      buttonPayload: 'wamid.notre-message', profileName: null, field: 'messages',
+    });
+    expect(await ids({ archivees: true })).toEqual([]);
+  });
+
   it('ne plus marquer traité la rend au dossier que son dernier message désigne', async () => {
     await store.marquerTraitee(tenantId, convId, true);
     expect(await store.marquerTraitee(tenantId, convId, false)).toBe(true);
