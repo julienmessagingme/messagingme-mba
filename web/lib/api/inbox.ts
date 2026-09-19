@@ -63,6 +63,11 @@ export interface Conversation {
    * signaler » n'aurait aucun effet visible. Absent (backend antérieur) = lu comme `false`.
    */
   signaleeMain?: boolean;
+  /**
+   * Un opérateur l'a marquée « Traité » et le contact n'a rien écrit depuis (migration 0160). Porte la
+   * pastille de la ligne et le geste inverse du menu. Absent (backend antérieur) = lu comme `false`.
+   */
+  traitee?: boolean;
 }
 export interface InboxMessage {
   id: string;
@@ -126,7 +131,7 @@ export interface InboxMessage {
  */
 export function listConversations(
   tenantId: string,
-  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean } = {},
+  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean; traitees?: boolean } = {},
 ): Promise<{ conversations: Conversation[] }> {
   const p = new URLSearchParams();
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
@@ -135,6 +140,8 @@ export function listConversations(
   if (opts.signalees) p.set('signalees', '1');
   // Le dossier ARCHIVÉ. Absent = les dossiers ordinaires, qui excluent les archivées.
   if (opts.archivees) p.set('archivees', '1');
+  // Le dossier « Traité » (migration 0160). Il n'exclut PAS de « Tout », contrairement à Archivé.
+  if (opts.traitees) p.set('traitees', '1');
   // Le curseur part ENTIER ou pas du tout : le serveur ignore une moitié, autant ne pas l'envoyer.
   if (opts.before) { p.set('beforeAt', opts.before.at); p.set('beforeId', opts.before.id); }
   const qs = p.toString();
@@ -301,7 +308,7 @@ export function listBlockedContacts(tenantId: string): Promise<{ contacts: Block
 /**
  * Les chiffres du menu de dossiers, en UNE lecture.
  *
- * ⚠️ Lus ENSEMBLE parce qu'ils sont AFFICHÉS ensemble : six routes, ce seraient six instants différents, et
+ * ⚠️ Lus ENSEMBLE parce qu'ils sont AFFICHÉS ensemble : une route par dossier, ce seraient autant d’instants différents, et
  * un « Tout (12) » au-dessus d'un « À traiter (13) » se remarque tout de suite.
  */
 export interface CompteursInbox {
@@ -309,6 +316,8 @@ export interface CompteursInbox {
   aTraiter: number;
   signalees: number;
   archivees: number;
+  /** Marquées « Traité » et non archivées. Elles sont AUSSI dans `tout`. */
+  traitees: number;
   nonAffectees: number;
   parMembre: Array<{ userId: string; nom: string; n: number }>;
 }
@@ -319,10 +328,18 @@ export async function countConversationsParDossier(tenantId: string): Promise<Co
   const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   return {
     tout: n(r?.tout), aTraiter: n(r?.aTraiter), signalees: n(r?.signalees),
-    archivees: n(r?.archivees), nonAffectees: n(r?.nonAffectees),
+    archivees: n(r?.archivees), traitees: n(r?.traitees), nonAffectees: n(r?.nonAffectees),
     // Vérifié et non casté : ce tableau vient du réseau, et l'écran fait `.map` dessus pendant le rendu.
     parMembre: Array.isArray(r?.parMembre) ? r.parMembre : [],
   };
+}
+
+/**
+ * Marque une conversation « Traité », ou retire ce statut (migration 0160). Le prochain message du contact
+ * le retire de lui-même, côté serveur.
+ */
+export function marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<{ traitee: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/${traitee ? 'traiter' : 'ne-plus-traiter'}`, { method: 'POST' });
 }
 
 /** Range une conversation dans Archivé, ou l'en sort. */

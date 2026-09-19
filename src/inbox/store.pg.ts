@@ -56,6 +56,13 @@ export interface ConversationSummary {
    * Optionnel : les faux de test qui omettent le champ restent valides, et l'écran le lit comme `false`.
    */
   signaleeMain?: boolean;
+  /**
+   * Un opérateur l'a marquée « Traité », et le contact n'a rien écrit depuis (migration 0160).
+   *
+   * Sert à la PASTILLE de la ligne et au choix du geste inverse dans le menu de la conversation ouverte.
+   * Optionnel pour la même raison que `signaleeMain` : un faux de test qui l'omet vaut « pas traitée ».
+   */
+  traitee?: boolean;
 }
 /**
  * Options de lecture de l'inbox. Toutes optionnelles : sans elles, on obtient exactement la première page
@@ -72,6 +79,8 @@ export interface CompteursInbox {
   aTraiter: number;
   signalees: number;
   archivees: number;
+  /** Non archivées et marquées « Traité » (migration 0160). Elles sont AUSSI comptées dans `tout`. */
+  traitees: number;
   /** Non archivées et confiées à personne. */
   nonAffectees: number;
   /** Tous les membres de l'espace, y compris ceux qui n'ont aucune conversation. */
@@ -90,6 +99,13 @@ export interface ListConversationsOptions {
   aTraiter?: boolean;
   /** Le dossier ARCHIVÉ. Absent ou faux = les dossiers ordinaires, qui excluent les archivées. */
   archivees?: boolean;
+  /**
+   * Le dossier « Traité » (migration 0160) : non archivées, marquées « Traité ».
+   *
+   * ⚠️ PAS un dossier EXCLUSIF comme Archivé : une conversation traitée reste aussi dans « Tout », c'est
+   * l'arbitrage de Julien du 2026-09-19 qui distingue les deux statuts.
+   */
+  traitees?: boolean;
   /**
    * Filtrer sur l'affectation : un identifiant de membre, ou `'aucune'` pour les conversations que personne
    * ne s'est vu confier. Absent = toutes, affectées ou non.
@@ -223,8 +239,14 @@ const UNREAD_SQL = `exists (
  * les écrire trois fois les ferait diverger au premier ajustement, et le dossier afficherait un nombre que la
  * liste ne montre pas. C'est déjà la raison d'être d'`UNREAD_SQL` juste au-dessus. `c` = alias de
  * `conversations`.
+ *
+ * 🔴 UNE TROISIÈME CONDITION DEPUIS LE 2026-09-19 : ce qu'un opérateur a marqué « Traité » n'y est plus
+ * (migration 0160). C'est tout l'intérêt du statut : le contact a écrit en dernier (« merci, bonne journée »),
+ * il n'y a rien à lui répondre, et sans lui la ligne restait dans le dossier pour toujours. Elle y revient
+ * d'elle-même au message SUIVANT du contact, parce que cette écriture-là efface `traitee_le`
+ * (`upsertConversationByWaId`).
  */
-const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out'`;
+const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out' and c.traitee_le is null`;
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
@@ -250,7 +272,11 @@ export class PgInboxStore implements InboxStore {
     waId: string,
     preview: string,
     /**
-     * 🔴 CE MESSAGE DÉSARCHIVE-T-IL LA CONVERSATION ? Gouverné par le CHEMIN APPELANT, jamais deviné ici.
+     * 🔴 CE MESSAGE ROUVRE-T-IL LA CONVERSATION ? Gouverné par le CHEMIN APPELANT, jamais deviné ici.
+     *
+     * « Rouvrir » = la sortir d'Archivé ET lui retirer le statut « Traité » (migration 0160). Les deux
+     * rangements disent « rien à faire pour l'instant », et c'est le même événement qui les rend faux : le
+     * contact a écrit. Le paramètre s'appelait `desarchive` tant qu'il n'y avait qu'un rangement.
      *
      * Cet upsert est partagé par l'INBOUND (un message du contact) et par les ENVOIS SORTANTS AUTOMATISÉS
      * (campagne, scénario). Décider dans la dépendance partagée ferait remonter dans l'inbox de tout le
@@ -260,7 +286,7 @@ export class PgInboxStore implements InboxStore {
      * Requis et non optionnel : c'est le compilateur qui doit obliger un futur troisième appelant à
      * trancher, plutôt qu'un défaut qui le laisserait hériter d'un choix qu'il n'a pas fait.
      */
-    desarchive: boolean,
+    rouvre: boolean,
     /**
      * QUI VIENT DE PARLER : `in` le contact, `out` nous.
      *
@@ -295,9 +321,13 @@ export class PgInboxStore implements InboxStore {
          -- Un message du CONTACT sort la conversation d'Archive, dans la MEME ecriture que celle qui avance
          -- last_message_at. Deux ecritures laisseraient une fenetre ou la conversation a un message neuf et
          -- reste rangee dans Archive : precisement l'etat que personne ne regarde.
-         archived_at = case when $4::boolean then null else conversations.archived_at end
+         archived_at = case when $4::boolean then null else conversations.archived_at end,
+         -- Et il lui retire le statut « Traite » (migration 0160), pour la meme raison et dans la meme
+         -- ecriture : c'est ce qui la fait revenir dans « A traiter », que le fragment de ce dossier exclut
+         -- tant que la colonne est posee.
+         traitee_le = case when $4::boolean then null else conversations.traitee_le end
        returning id`,
-      [tenantId, waId, preview, desarchive, sens],
+      [tenantId, waId, preview, rouvre, sens],
     );
     return conv.rows[0]!.id;
   }
@@ -632,7 +662,8 @@ export class PgInboxStore implements InboxStore {
    *  tous les appelants historiques écrivent exactement ce qu'ils écrivaient. */
   async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
-    // `true` : un message du CONTACT désarchive. C'est le seul chemin qui le fait.
+    // `true` : un message du CONTACT rouvre la conversation (hors d'Archivé, et plus « Traité »). C'est le
+    // seul chemin qui le fait.
     const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true, 'in');
     await this.pool.query(
       // ⚠️ `media_id` et `media_mime` sont ecrits ICI ET NULLE PART AILLEURS (migration 0125) : c est le seul
@@ -656,8 +687,8 @@ export class PgInboxStore implements InboxStore {
     waId: string,
     msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
   ): Promise<void> {
-    // `false` : un envoi AUTOMATISÉ (campagne, scénario) ne désarchive pas. Une campagne qui touche mille
-    // contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés.
+    // `false` : un envoi AUTOMATISÉ (campagne, scénario) ne rouvre pas. Une campagne qui touche mille
+    // contacts ferait sinon remonter dans l'inbox tous ceux qu'on avait rangés, ou marqués « Traité ».
     const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, false, 'out');
     await this.pool.query(
       // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,
@@ -697,8 +728,9 @@ export class PgInboxStore implements InboxStore {
     // restent ENREGISTRÉS et le contact est retrouvable dans l'écran des contacts bloqués, qui est la seule
     // porte de sortie : sans lui, un contact bloqué serait perdu pour de bon.
     where.push(`(ct.blocked_at is null)`);
-    // Les quatre dossiers ordinaires excluent les archivées ; le dossier Archivé ne montre qu'elles. Une
-    // conversation n'est donc jamais comptée dans deux dossiers à la fois.
+    // Les dossiers ordinaires excluent les archivées ; le dossier Archivé ne montre qu'elles. Une conversation
+    // archivée n'est donc comptée nulle part ailleurs. ⚠️ « Traité », lui, n'est PAS exclusif : une
+    // conversation traitée est aussi dans « Tout » (arbitrage du 2026-09-19), seul Archivé cache.
     where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
     if (opts.signalees === true) {
       // 🔴 UNION des DEUX sources, et l'ordre des membres compte pour le planificateur : le signalement
@@ -706,6 +738,7 @@ export class PgInboxStore implements InboxStore {
       // constat de l'analyse demande une sous-requête. Le mettre en premier laisse court-circuiter.
       where.push(`(c.signalee_le is not null or exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive))`);
     }
+    if (opts.traitees === true) where.push('c.traitee_le is not null');
     if (opts.affectee === 'aucune') {
       where.push('c.assigned_to is null');
     } else if (opts.affectee !== undefined) {
@@ -723,7 +756,7 @@ export class PgInboxStore implements InboxStore {
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date; curseur: string;
       control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
-      signalee_main: boolean;
+      signalee_main: boolean; traitee: boolean;
     }>(
       // curseur : le même instant que last_message_at, mais en TEXTE à la microseconde. Voir
       // `ConversationSummary.curseur` : ici le défaut de précision faisait SAUTER des conversations, pas les
@@ -736,7 +769,8 @@ export class PgInboxStore implements InboxStore {
               -- ailleurs (charge par membre, selecteur d affectation) : un nom si on en a un, l adresse sinon.
               -- ⚠️ Aucun accent grave dans ce commentaire : il vit DANS un gabarit TypeScript.
               coalesce(u.name, u.email) as assigned_name,
-              (c.signalee_le is not null) as signalee_main
+              (c.signalee_le is not null) as signalee_main,
+              (c.traitee_le is not null) as traitee
        from conversations c
        left join contacts ct on ct.id = c.contact_id
        left join users u on u.id = c.assigned_to
@@ -757,6 +791,7 @@ export class PgInboxStore implements InboxStore {
       assignedTo: r.assigned_to,
       assignedToName: r.assigned_name,
       signaleeMain: r.signalee_main === true,
+      traitee: r.traitee === true,
     }));
   }
 
@@ -854,7 +889,7 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
-   * Les compteurs du menu de dossiers, en UNE requête pour les cinq dossiers et une seconde pour la charge.
+   * Les compteurs du menu de dossiers, en UNE requête pour tous les dossiers et une seconde pour la charge.
    *
    * 🔴 PAS SIX ALLERS-RETOURS, et ce n'est pas de l'optimisation prématurée : six lectures, ce sont six
    * occasions que deux chiffres pris à deux instants différents ne s'accordent pas, et le menu les affiche
@@ -870,7 +905,7 @@ export class PgInboxStore implements InboxStore {
    */
   async compterConversations(tenantId: string): Promise<CompteursInbox> {
     const res = await this.pool.query<{
-      tout: string; a_traiter: string; signalees: string; archivees: string; non_affectees: string;
+      tout: string; a_traiter: string; signalees: string; archivees: string; traitees: string; non_affectees: string;
     }>(
       `select
          count(*) filter (where c.archived_at is null)::text as tout,
@@ -878,6 +913,7 @@ export class PgInboxStore implements InboxStore {
          count(*) filter (where c.archived_at is null and (c.signalee_le is not null or exists (
            select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)))::text as signalees,
          count(*) filter (where c.archived_at is not null)::text as archivees,
+         count(*) filter (where c.archived_at is null and c.traitee_le is not null)::text as traitees,
          count(*) filter (where c.archived_at is null and c.assigned_to is null)::text as non_affectees
          from conversations c
          left join contacts ct on ct.id = c.contact_id
@@ -911,6 +947,7 @@ export class PgInboxStore implements InboxStore {
       aTraiter: Number(r?.a_traiter ?? 0),
       signalees: Number(r?.signalees ?? 0),
       archivees: Number(r?.archivees ?? 0),
+      traitees: Number(r?.traitees ?? 0),
       nonAffectees: Number(r?.non_affectees ?? 0),
       // Le nom AFFICHABLE, jamais vide : un membre sans nom se reconnaît à son e-mail, et une ligne muette
       // dans une liste de charge ne désigne personne.
@@ -930,7 +967,7 @@ export class PgInboxStore implements InboxStore {
       // 🔴 LES MÊMES EXCLUSIONS QUE LE MENU ET QUE LA LISTE (revue du 2026-09-09). Ce compteur-ci les
       // ignorait toutes les deux : il comptait les conversations ARCHIVÉES et celles de contacts BLOQUÉS,
       // donc il rendait un nombre plus grand que le dossier « À traiter » du menu, pour le même espace.
-      // La route qui l'expose n'a plus d'appelant depuis que le menu rend les cinq compteurs en une lecture
+      // La route qui l'expose n'a plus d'appelant depuis que le menu rend tous ses compteurs en une lecture
       // (cf. `todo.md`), mais une route morte qui rend un chiffre FAUX n'est pas du code inerte : c'est un
       // piège armé pour celui qui la rebranchera. Le commentaire de `countUnread` nommait déjà ce défaut.
       `select count(*)::text as n
@@ -962,6 +999,25 @@ export class PgInboxStore implements InboxStore {
       `update conversations set archived_at = case when $3::boolean then now() else null end
         where id = $1 and tenant_id = $2`,
       [conversationId, tenantId, archive],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Marque une conversation « Traité », ou retire ce statut (migration 0160).
+   *
+   * Même contrat que `archiverConversation` juste au-dessus : `false` = inconnue DANS CET ESPACE, donc un
+   * 404, jamais un succès silencieux ; le drapeau passe en PARAMÈTRE ; idempotent dans les deux sens.
+   *
+   * ⚠️ RETIRER LE STATUT NE REMET PAS FORCÉMENT « À TRAITER » : la conversation retourne là où son dernier
+   * message la range. Si c'est NOUS qui avons écrit en dernier, la balle est chez le contact et elle reste
+   * dans « Tout ». C'est pourquoi l'écran dit « Ne plus marquer traité » et non « Remettre à traiter ».
+   */
+  async marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean> {
+    const res = await this.pool.query(
+      `update conversations set traitee_le = case when $3::boolean then now() else null end
+        where id = $1 and tenant_id = $2`,
+      [conversationId, tenantId, traitee],
     );
     return (res.rowCount ?? 0) > 0;
   }

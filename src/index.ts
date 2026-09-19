@@ -687,10 +687,11 @@ async function main(): Promise<void> {
       effacerMessages: (tenant, id) => inboxStore.effacerMessages(tenant, id),
       audit: auditSink,
       countATraiter: (tenant) => inboxStore.countATraiter(tenant),
-      // Les cinq compteurs du menu de dossiers, plus la charge par membre, en une lecture.
+      // Les compteurs du menu de dossiers, plus la charge par membre, en une lecture.
       compterConversations: (tenant) => inboxStore.compterConversations(tenant),
       archiverConversation: (tenant, id, archive) => inboxStore.archiverConversation(tenant, id, archive),
       signalerConversation: (tenant, id, signale, par) => inboxStore.signalerConversation(tenant, id, signale, par),
+      marquerTraitee: (tenant, id, traitee) => inboxStore.marquerTraitee(tenant, id, traitee),
       /**
        * ⚠️ LA CLE MAISON PAIE LA TRANSCRIPTION, decision de Julien du 2026-09-09 : « on va le payer
        * nous-memes sur la cle API generale, et on verra apres si je la refacture au client ». Le resolveur

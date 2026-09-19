@@ -18,7 +18,7 @@ import type { FilTraduit } from '../traduction/fil';
  * Ce que rend la route des compteurs quand la dépendance n'est pas câblée (suites de tests à deps minimales,
  * instance partielle). Des ZÉROS et non une erreur : un menu sans chiffres reste un menu.
  */
-const COMPTEURS_VIDES: CompteursInbox = { tout: 0, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 0, parMembre: [] };
+const COMPTEURS_VIDES: CompteursInbox = { tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 /**
  * Durée de vie du micro-cache des compteurs de l'inbox (AUDIT-SCALE-2026-08-25.md, R7).
@@ -61,7 +61,7 @@ export interface InboxRouteDeps {
   countUnread?(tenantId: string, acteur: { userId: string | null; role: string | null }): Promise<number>;
   /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
   countATraiter?(tenantId: string): Promise<number>;
-  /** Les cinq compteurs du menu de dossiers, plus la charge par membre. */
+  /** Les compteurs du menu de dossiers, plus la charge par membre. */
   compterConversations?(tenantId: string): Promise<CompteursInbox>;
   /** Range une conversation dans Archivé, ou l'en sort. `false` = inconnue dans cet espace -> 404. */
   archiverConversation?(tenantId: string, conversationId: string, archive: boolean): Promise<boolean>;
@@ -72,6 +72,11 @@ export interface InboxRouteDeps {
    * réunit. Absente -> la route rend 503, comme l'archivage.
    */
   signalerConversation?(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean>;
+  /**
+   * Marque une conversation « Traité », ou retire ce statut (migration 0160). `false` = inconnue dans cet
+   * espace -> 404. Absente -> la route rend 503, comme l'archivage.
+   */
+  marquerTraitee?(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean>;
   /**
    * Transcrit le vocal d'un message, à la demande (2026-09-09).
    *
@@ -341,7 +346,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
     const q = (req.query ?? {}) as {
       limit?: unknown; beforeAt?: unknown; beforeId?: unknown;
-      aTraiter?: unknown; signalees?: unknown; archivees?: unknown; affectee?: unknown;
+      aTraiter?: unknown; signalees?: unknown; archivees?: unknown; traitees?: unknown; affectee?: unknown;
     };
     const opts: ListConversationsOptions = {};
     const limit = Number(q.limit);
@@ -351,6 +356,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // Le dossier ARCHIVÉ. Absent = les dossiers ordinaires, qui excluent les archivées : c'est le défaut,
     // et c'est celui qu'un appelant qui ne connaît pas ce paramètre doit obtenir.
     if (q.archivees === '1' || q.archivees === 'true') opts.archivees = true;
+    // Le dossier « Traité » (migration 0160). ⚠️ Lu ICI, sur la route, et c'est la ligne qu'on oublie : le
+    // filtre par membre de juste en dessous a vécu des semaines supporté par le magasin, envoyé par l'écran,
+    // et jeté entre les deux.
+    if (q.traitees === '1' || q.traitees === 'true') opts.traitees = true;
     /**
      * 🔴 LE FILTRE PAR MEMBRE ÉTAIT JETÉ ICI, ET NULLE PART AILLEURS (constaté par Julien le 2026-09-15).
      * Le magasin le SUPPORTE (`ListConversationsOptions.affectee`, `store.pg.ts`), l'écran l'ENVOIE
@@ -440,6 +449,33 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       }
       invaliderCompteurs(tenant); // le dossier « Signalé » vient de changer de contenu.
       return reply.code(200).send({ signalee: signale });
+    });
+  }
+
+  /**
+   * Marquer « Traité » / ne plus marquer traité (migration 0160, demande de Julien du 2026-09-19).
+   *
+   * Même forme que l'archivage et le signalement, et pour les mêmes raisons : deux adresses, ouvertes aux
+   * OPÉRATEURS. Dire « j'ai fini avec ce fil » est le geste de celui qui le traite.
+   *
+   * ⚠️ AUCUN GESTE INVERSE AUTOMATIQUE ICI : c'est le prochain message du CONTACT qui retire le statut, dans
+   * l'écriture qui l'enregistre (`upsertConversationByWaId`). Cette route ne fait que la pose et le retrait
+   * à la main.
+   *
+   * ⚠️ `estUuid` AVANT la base : un identifiant mal formé ferait lever Postgres (`22P02`), donc un 500
+   * qu'aucun opérateur ne sait lire. Une conversation qui n'existe pas se dit en 404.
+   */
+  for (const [chemin, traitee] of [['traiter', true], ['ne-plus-traiter', false]] as const) {
+    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      if (!deps.marquerTraitee) return reply.code(503).send({ error: 'statut « Traité » indisponible sur cette instance' });
+      const { conversationId } = req.params as { conversationId: string };
+      if (!estUuid(conversationId) || !(await deps.marquerTraitee(tenant, conversationId, traitee))) {
+        return reply.code(404).send({ error: 'conversation inconnue' });
+      }
+      invaliderCompteurs(tenant); // « À traiter » et « Traité » viennent de changer de contenu.
+      return reply.code(200).send({ traitee });
     });
   }
 

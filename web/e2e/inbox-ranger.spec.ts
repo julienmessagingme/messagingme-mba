@@ -23,7 +23,7 @@ const THREAD = { messages: [], windowOpen: true, controlOwner: 'app_workflow' };
 const COMPTEURS = { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 1, parMembre: [] };
 
 async function monter(page: import('@playwright/test').Page, opts: {
-  controlOwner?: string; signaleeMain?: boolean; dossier?: string; appels?: string[];
+  controlOwner?: string; signaleeMain?: boolean; traitee?: boolean; dossier?: string; appels?: string[];
 } = {}) {
   const appels = opts.appels ?? [];
   const owner = opts.controlOwner ?? 'app_workflow';
@@ -35,11 +35,12 @@ async function monter(page: import('@playwright/test').Page, opts: {
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (/\/conversations\/counts/.test(url)) return json(COMPTEURS);
     if (/\/(signaler|ne-plus-signaler)$/.test(url)) return json({ signalee: true });
+    if (/\/(traiter|ne-plus-traiter)$/.test(url)) return json({ traitee: true });
     if (/\/prendre$/.test(url)) return json({ controlOwner: 'app_human' });
     if (/\/(archive|unarchive)$/.test(url)) return json({ archived: true });
     if (url.endsWith('/c1/messages')) return json({ ...THREAD, controlOwner: owner });
     if (/\/conversations\?|\/conversations$/.test(url)) {
-      return json({ conversations: [{ ...CONV, controlOwner: owner, signaleeMain: opts.signaleeMain === true }] });
+      return json({ conversations: [{ ...CONV, controlOwner: owner, signaleeMain: opts.signaleeMain === true, traitee: opts.traitee === true }] });
     }
     if (url.includes('/users')) return json({ users: [] });
     if (url.includes('/unread-count')) return json({ count: 0 });
@@ -62,7 +63,8 @@ async function destinations(page: import('@playwright/test').Page, testid = 'ran
 test.describe('Inbox : ranger la conversation ouverte', () => {
   test('🔴 le scénario tient le fil : « À traiter » est proposé, et le bouton « Rendre la main » est ABSENT', async ({ page }) => {
     const appels = await monter(page);
-    expect(await destinations(page)).toEqual(['À traiter', 'Signalé', 'Archivé']);
+    // « Traité » s'est ajouté le 2026-09-19 (migration 0160), juste après « À traiter ».
+    expect(await destinations(page)).toEqual(['À traiter', 'Traité', 'Signalé', 'Archivé']);
     await expect(page.getByTestId('inbox-rendre-la-main')).toHaveCount(0);
 
     await page.getByTestId('ranger-dans').selectOption('a-traiter');
@@ -73,7 +75,7 @@ test.describe('Inbox : ranger la conversation ouverte', () => {
     // La preuve inverse, et c'est elle qui empêche les deux endroits pour le même choix : sans elle, un menu
     // qui proposerait toujours « À traiter » passerait le cas ci-dessus.
     await monter(page, { controlOwner: 'app_human' });
-    expect(await destinations(page)).toEqual(['Signalé', 'Archivé']);
+    expect(await destinations(page)).toEqual(['Traité', 'Signalé', 'Archivé']);
     await expect(page.getByTestId('inbox-rendre-la-main')).toBeVisible();
   });
 
@@ -109,6 +111,21 @@ test.describe('Inbox : ranger la conversation ouverte', () => {
     await expect.poll(() => appels.filter((a) => /POST .*\/archive$/.test(a)).length, { timeout: 10_000 }).toBe(1);
   });
 
+  test('🔴 « Traité » poste sur la bonne adresse', async ({ page }) => {
+    const appels = await monter(page, { controlOwner: 'app_human' });
+    await page.getByTestId('ranger-dans').selectOption('traiter');
+    await expect.poll(() => appels.filter((a) => /POST .*\/c1\/traiter$/.test(a)).length, { timeout: 10_000 }).toBe(1);
+  });
+
+  test('🔴 une conversation TRAITÉE propose son contraire, et jamais « À traiter »', async ({ page }) => {
+    // « À traiter » y serait une prise du fil SANS effet visible : le dossier exclut ce qui est traité. Même
+    // si le scénario tient le fil, c'est « Ne plus marquer traité » qui la rend à son dossier.
+    const appels = await monter(page, { traitee: true });
+    expect(await destinations(page)).toEqual(['Ne plus marquer traité', 'Signalé', 'Archivé']);
+    await page.getByTestId('ranger-dans').selectOption('ne-plus-traiter');
+    await expect.poll(() => appels.filter((a) => /POST .*\/c1\/ne-plus-traiter$/.test(a)).length, { timeout: 10_000 }).toBe(1);
+  });
+
   test('le menu retombe TOUJOURS sur son libellé : il déclenche une action, il ne porte pas un état', async ({ page }) => {
     // Laisser l'option choisie affichée ferait croire à un réglage, et re-choisir la même ne ferait rien.
     await monter(page);
@@ -131,7 +148,7 @@ const DEUX = [
 ];
 
 async function monterListe(page: import('@playwright/test').Page, opts: {
-  dossier?: string; conversations?: typeof DEUX; appels?: string[];
+  dossier?: string; conversations?: Array<(typeof DEUX)[number] & { traitee?: boolean }>; appels?: string[];
 } = {}) {
   const appels = opts.appels ?? [];
   const liste = opts.conversations ?? DEUX;
@@ -143,6 +160,7 @@ async function monterListe(page: import('@playwright/test').Page, opts: {
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (/\/conversations\/counts/.test(url)) return json({ ...COMPTEURS, tout: liste.length });
     if (/\/(signaler|ne-plus-signaler)$/.test(url)) return json({ signalee: true });
+    if (/\/(traiter|ne-plus-traiter)$/.test(url)) return json({ traitee: true });
     if (/\/prendre$/.test(url)) return json({ controlOwner: 'app_human' });
     if (/\/(archive|unarchive)$/.test(url)) return json({ archived: true });
     if (/\/conversations\?|\/conversations$/.test(url)) return json({ conversations: liste });
@@ -176,7 +194,7 @@ async function finDuRangement(page: import('@playwright/test').Page): Promise<vo
 test.describe('Inbox : ranger une SÉLECTION', () => {
   test('🔴 le menu offre les trois destinations, là où il n’y avait que « Archiver »', async ({ page }) => {
     await monterListe(page);
-    expect(await destinations(page, 'inbox-ranger-selection')).toEqual(['À traiter', 'Signalé', 'Archivé']);
+    expect(await destinations(page, 'inbox-ranger-selection')).toEqual(['À traiter', 'Traité', 'Signalé', 'Archivé']);
   });
 
   test('🔴 le geste part pour CHAQUE ligne cochée, pas seulement la première', async ({ page }) => {
@@ -212,6 +230,26 @@ test.describe('Inbox : ranger une SÉLECTION', () => {
     expect(appels.filter((a) => /POST .*\/ne-plus-signaler$/.test(a)).length).toBe(1);
     expect(appels.some((a) => /POST .*\/c1\/ne-plus-signaler$/.test(a))).toBe(true);
     expect(appels.some((a) => /POST .*\/c2\/ne-plus-signaler$/.test(a))).toBe(false);
+  });
+
+  test('🔴 sélection MIXTE dans « Tout » : « Ne plus marquer traité » ne part que sur la ligne traitée', async ({ page }) => {
+    // Même garde que pour le signalement : sans le filtrage, l'appel partirait aussi sur la ligne qui ne
+    // l'est pas, réussirait, et n'aurait rien changé.
+    const mixte = [{ ...DEUX[0], traitee: true }, { ...DEUX[1], traitee: false }];
+    const appels = await monterListe(page, { conversations: mixte });
+    expect(await destinations(page, 'inbox-ranger-selection')).toEqual(['À traiter', 'Traité', 'Ne plus marquer traité', 'Signalé', 'Archivé']);
+
+    await page.getByTestId('inbox-ranger-selection').selectOption('ne-plus-traiter');
+    await finDuRangement(page);
+    expect(appels.filter((a) => /POST .*\/ne-plus-traiter$/.test(a)).length).toBe(1);
+    expect(appels.some((a) => /POST .*\/c1\/ne-plus-traiter$/.test(a))).toBe(true);
+  });
+
+  test('« Traité » en lot part pour CHAQUE ligne cochée', async ({ page }) => {
+    const appels = await monterListe(page);
+    await page.getByTestId('inbox-ranger-selection').selectOption('traiter');
+    await finDuRangement(page);
+    expect(appels.filter((a) => /POST .*\/traiter$/.test(a) && !/ne-plus-traiter$/.test(a)).length).toBe(2);
   });
 
   test('le menu de la sélection retombe lui aussi sur son libellé', async ({ page }) => {

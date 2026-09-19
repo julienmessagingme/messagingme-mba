@@ -28,6 +28,7 @@ import {
   listConversations,
   countConversationsParDossier,
   archiverConversation,
+  marquerTraitee,
   type CompteursInbox,
   getSettings,
   listUsers,
@@ -96,13 +97,18 @@ async function appliquerRangement(tenantId: string, conversationId: string, acti
     await signalerConversation(tenantId, conversationId, action === 'signaler');
     return null;
   }
+  if (action === 'traiter' || action === 'ne-plus-traiter') {
+    await marquerTraitee(tenantId, conversationId, action === 'traiter');
+    return null;
+  }
   await archiverConversation(tenantId, conversationId, action === 'archiver');
   return null;
 }
 
-function dossierEnParams(d: DossierInbox): { aTraiter?: boolean; signalees?: boolean; archivees?: boolean; affectee?: string | 'aucune' } {
+function dossierEnParams(d: DossierInbox): { aTraiter?: boolean; traitees?: boolean; signalees?: boolean; archivees?: boolean; affectee?: string | 'aucune' } {
   if (typeof d === 'object') return { affectee: d.membre };
   if (d === 'aTraiter') return { aTraiter: true };
+  if (d === 'traitees') return { traitees: true };
   if (d === 'signalees') return { signalees: true };
   if (d === 'archivees') return { archivees: true };
   if (d === 'nonAffectees') return { affectee: 'aucune' };
@@ -225,7 +231,7 @@ function InboxInner({ session }: { session: Session }) {
    * sélection faite dans un autre dossier ferait ranger des lignes qu'on ne voit plus.
    */
   const [cochees, setCochees] = useState<Set<string>>(new Set());
-  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 0, parMembre: [] });
+  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
   const [rangementEnCours, setRangementEnCours] = useState(false);
   /**
    * Qui voit la charge par collaborateur.
@@ -250,6 +256,14 @@ function InboxInner({ session }: { session: Session }) {
       const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...dossierEnParams(dossier) });
       const liste = Array.isArray(r?.conversations) ? r.conversations : [];
       setConversations(liste);
+      /**
+       * 🔴 LA CONVERSATION OUVERTE SUIT LA LISTE RECHARGÉE. `selected` était une COPIE prise au clic et
+       * jamais rafraîchie : après « Traité », le menu de la conversation ouverte proposait encore « Traité »
+       * au lieu de son contraire, et le même défaut existait déjà pour « Signalé » et pour l'affectation.
+       * Même identifiant = même `key` du fil, donc rien n'est remonté, seules les propriétés changent. Une
+       * conversation qui a QUITTÉ le dossier reste affichée telle quelle : on ne ferme pas ce qu'on lit.
+       */
+      setSelected((prev) => (prev ? liste.find((c) => c.id === prev.id) ?? prev : prev));
       // Page pleine = il y a peut-être une suite. Pas de compteur total : il coûterait un décompte complet
       // pour dire ce que la longueur dit déjà.
       setPeutCharger(liste.length === TAILLE_PAGE);
@@ -294,7 +308,7 @@ function InboxInner({ session }: { session: Session }) {
   /**
    * Les compteurs du menu, comptés par le SERVEUR sur toute la base (pas sur la page affichée).
    *
-   * ⚠️ Une seule lecture pour les cinq dossiers et la charge : six appels, ce seraient six instants
+   * ⚠️ Une seule lecture pour tous les dossiers et la charge : un appel par dossier, ce seraient autant d'instants
    * différents, et le menu affiche les chiffres les uns sous les autres.
    */
   const rechargerCompteur = useCallback(async () => {
@@ -340,9 +354,12 @@ function InboxInner({ session }: { session: Session }) {
     // l'analyse n'est pas effaçable à la main, et la ligne resterait dans le dossier. On n'écrit donc que là
     // où le geste a un effet, au lieu d'appels qui réussissent sans rien changer. Les lignes du modèle
     // restent visiblement signalées, ce qui est la vérité.
+    // Même raison pour « Ne plus marquer traité » : on n'écrit que sur les lignes qui le sont.
     const cibles = action === 'ne-plus-signaler'
       ? conversations.filter((c) => cochees.has(c.id) && c.signaleeMain === true).map((c) => c.id)
-      : [...cochees];
+      : action === 'ne-plus-traiter' && dossier !== 'traitees'
+        ? conversations.filter((c) => cochees.has(c.id) && c.traitee === true).map((c) => c.id)
+        : [...cochees];
     if (cibles.length === 0) return;
     setRangementEnCours(true);
     setError(null);
@@ -410,6 +427,8 @@ function InboxInner({ session }: { session: Session }) {
   // Au moins une ligne cochée porte-t-elle un signalement HUMAIN ? C'est ce qui décide si « Ne plus
   // signaler » a un sens sur la sélection (cf. `destinationsEnLot`).
   const selectionAvecSignalementManuel = conversations.some((c) => cochees.has(c.id) && c.signaleeMain === true);
+  // Même question pour « Ne plus marquer traité » hors du dossier « Traité ».
+  const selectionAvecTraitee = conversations.some((c) => cochees.has(c.id) && c.traitee === true);
 
   return (
     // 🔴 LES DOSSIERS ONT LEUR PROPRE COLONNE (2026-09-09, demande de Julien). Le menu vivait AU-DESSUS de
@@ -477,7 +496,7 @@ function InboxInner({ session }: { session: Session }) {
               className="ml-auto rounded-md border border-brand-300 bg-white px-2 py-1 font-medium text-brand-800 disabled:opacity-40"
             >
               <option value="">{rangementEnCours ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
-              {destinationsEnLot(dossier, selectionAvecSignalementManuel).map((a) => (
+              {destinationsEnLot(dossier, selectionAvecSignalementManuel, selectionAvecTraitee).map((a) => (
                 <option key={a} value={a}>{libelleRangement(a, t)}</option>
               ))}
             </select>
@@ -490,6 +509,8 @@ function InboxInner({ session }: { session: Session }) {
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
             {dossier === 'aTraiter'
               ? t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')
+              : dossier === 'traitees'
+                ? t('Aucune conversation traitée. Marquez « Traité » celles qui n’attendent plus rien : elles reviennent dans « À traiter » dès que le contact réécrit.', 'No conversation marked as done. Mark as done those that need nothing more: they come back to “To handle” as soon as the contact writes again.')
               : dossier === 'signalees'
                 ? t('Aucune conversation signalée. L’analyse relève les injures environ 15 min après le dernier message.', 'No flagged conversation. The analysis spots abuse about 15 min after the last message.')
                 : dossier === 'archivees'
@@ -588,6 +609,19 @@ function InboxInner({ session }: { session: Session }) {
                       >
                         {c.profileName ?? `+${c.waId}`}
                       </button>
+                      {/* 🔴 LA SEULE PASTILLE DE LA LISTE, et c'est un arbitrage explicite de Julien du 2026-09-19
+                          (« Traité » reste dans « Tout » AVEC une pastille), qui fait exception à celui du
+                          2026-09-11 (« plus aucun badge »). Sans elle, une conversation traitée serait
+                          indiscernable dans « Tout » d'une conversation qui attend. Absente du dossier « Traité »,
+                          dont le titre dit déjà la même chose. */}
+                      {c.traitee === true && dossier !== 'traitees' && (
+                        <span
+                          data-testid={`inbox-traitee-${c.id}`}
+                          className="ml-1.5 shrink-0 rounded-full bg-mint-100 px-1.5 py-px text-[10px] font-medium text-ink-600"
+                        >
+                          {t('Traité', 'Done')}
+                        </span>
+                      )}
                     </span>
                     <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
@@ -752,6 +786,7 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
   const [busy, setBusy] = useState(false);
   const archivee = dossier === 'archivees';
   const signaleeMain = conversation.signaleeMain === true;
+  const traitee = conversation.traitee === true;
 
   async function ranger(action: ActionRangement): Promise<void> {
     setBusy(true);
@@ -783,7 +818,14 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
 
           « À traiter » SEULEMENT quand le scénario tient le fil : sinon la conversation y est déjà, et c'est
           le bouton « Rendre la main » qui offre le geste inverse. */}
-      {controlOwner === 'app_workflow' && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
+      {/* ⚠️ Et jamais sur une conversation TRAITÉE : prendre le fil ne la ferait pas entrer dans « À
+          traiter », que le statut exclut. C'est « Ne plus marquer traité » qui l'y rend. */}
+      {controlOwner === 'app_workflow' && !traitee && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
+      {/* « Traité » ou son contraire, selon l'état de CETTE conversation. Rien depuis Archivé : une
+          conversation archivée n'apparaît dans aucun dossier ordinaire, le statut n'y serait pas visible. */}
+      {!archivee && (traitee
+        ? <option value="ne-plus-traiter">{libelleRangement('ne-plus-traiter', t)}</option>
+        : <option value="traiter">{libelleRangement('traiter', t)}</option>)}
       {signaleeMain
         ? <option value="ne-plus-signaler">{libelleRangement('ne-plus-signaler', t)}</option>
         : <option value="signaler">{libelleRangement('signaler', t)}</option>}

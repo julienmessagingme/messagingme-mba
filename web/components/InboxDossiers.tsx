@@ -23,7 +23,7 @@ import type { CompteursInbox } from '@/lib/api/inbox';
  * d'utilisateur qui vaudrait « archivees » changerait de dossier, et rien ne le signalerait.
  */
 export type DossierInbox =
-  | 'toutes' | 'aTraiter' | 'signalees' | 'archivees' | 'nonAffectees'
+  | 'toutes' | 'aTraiter' | 'traitees' | 'signalees' | 'archivees' | 'nonAffectees'
   | { membre: string };
 
 /** Deux dossiers sont-ils le même ? Les objets ne se comparent pas avec `===`. */
@@ -47,6 +47,7 @@ export function libelleDossier(d: DossierInbox, compteurs: CompteursInbox, t: (f
   const table: Record<Exclude<DossierInbox, { membre: string }>, string> = {
     toutes: t('Tout', 'All'),
     aTraiter: t('À traiter', 'To handle'),
+    traitees: t('Traité', 'Done'),
     signalees: t('Signalé', 'Flagged'),
     archivees: t('Archivé', 'Archived'),
     nonAffectees: t('Non affecté', 'Unassigned'),
@@ -96,6 +97,8 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
         {([
           ['toutes', compteurs.tout],
           ['aTraiter', compteurs.aTraiter],
+          // « Traité » juste sous « À traiter » : c'est son contraire, et on les lit ensemble.
+          ['traitees', compteurs.traitees],
           ['signalees', compteurs.signalees],
           ['archivees', compteurs.archivees],
         ] as const).map(([cle, n]) => (

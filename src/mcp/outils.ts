@@ -120,7 +120,8 @@ export const OUTILS: OutilMcp[] = [
      */
     description:
       'Liste les conversations WhatsApp de l’espace, la plus récemment active en premier. Utilise `a_traiter` '
-      + 'pour ne voir que celles dont le scénario ne s’occupe plus et qui attendent une réponse humaine. '
+      + 'pour ne voir que celles dont le scénario ne s’occupe plus et qui attendent une réponse humaine '
+      + '(une conversation qu’un opérateur a marquée « Traité » n’y figure plus, jusqu’au prochain message du contact). '
       + 'Les conversations ARCHIVÉES depuis l’Inbox ne sont pas listées : elles existent toujours, elles '
       + 'sont simplement rangées, et un message du contact les fait revenir.',
     scope: 'mcp:read',

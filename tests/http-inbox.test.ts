@@ -959,6 +959,58 @@ describe('signaler à la main, et prendre le fil', () => {
   });
 });
 
+describe('marquer « Traité », à la main (migration 0160)', () => {
+  it('« traiter » et « ne-plus-traiter » sont deux adresses, et chacune écrit son sens', async () => {
+    // Même doctrine qu'archive/unarchive et signaler/ne-plus-signaler : l'intention se lit dans l'URL.
+    const vus: Array<{ id: string; traitee: boolean }> = [];
+    const a = app({ marquerTraitee: async (_t, id, traitee) => { vus.push({ id, traitee }); return true; } });
+    const pose = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() });
+    expect(pose.statusCode).toBe(200);
+    expect(pose.json()).toEqual({ traitee: true });
+    const retire = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/ne-plus-traiter`, ...auth() });
+    expect(retire.json()).toEqual({ traitee: false });
+    expect(vus).toEqual([{ id: CONV, traitee: true }, { id: CONV, traitee: false }]);
+  });
+
+  it('🔴 ouvert aux OPÉRATEURS : dire « j’ai fini avec ce fil » est le geste de celui qui le traite', async () => {
+    const a = app({ marquerTraitee: async () => true });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...authAgent() })).statusCode).toBe(200);
+  });
+
+  it('conversation inconnue -> 404, et un identifiant mal formé aussi, SANS toucher la base', async () => {
+    // Un identifiant qui n'est pas un uuid ferait lever Postgres (22P02), donc un 500 illisible. La route
+    // le refuse avant : le magasin ne doit même pas être appelé.
+    let appels = 0;
+    const a = app({ marquerTraitee: async () => { appels += 1; return false; } });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(404);
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/pas-un-uuid/traiter`, ...auth() })).statusCode).toBe(404);
+    expect(appels).toBe(1);
+  });
+
+  it('câblage absent -> 503, tenant croisé -> 403', async () => {
+    expect((await app().inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(503);
+    const a = app({ marquerTraitee: async () => true });
+    expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(403);
+  });
+
+  it('🔴 le geste INVALIDE les compteurs : « À traiter » et « Traité » ne gardent pas l’ancien chiffre', async () => {
+    // Le menu relit ses compteurs juste après le geste. Servis depuis le micro-cache, ils annonceraient
+    // encore la conversation dans « À traiter » pendant la durée du cache, alors que la liste ne la montre plus.
+    let lectures = 0;
+    const a = app({
+      marquerTraitee: async () => true,
+      compterConversations: async () => {
+        lectures += 1;
+        return { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+      },
+    });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations/counts', ...auth() });
+    await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations/counts', ...auth() });
+    expect(lectures).toBe(2);
+  });
+});
+
 /**
  * 🔴 LES FILTRES DE DOSSIER TRAVERSENT-ILS VRAIMENT LA ROUTE ?
  *
@@ -1003,8 +1055,9 @@ describe('les filtres de la liste arrivent au magasin', () => {
   it('les autres dossiers passent toujours, eux aussi', async () => {
     vus.length = 0;
     const a = espion();
-    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?aTraiter=1&signalees=1&archivees=1', ...auth() });
-    expect(vus[0]).toMatchObject({ aTraiter: true, signalees: true, archivees: true });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?aTraiter=1&signalees=1&archivees=1&traitees=1', ...auth() });
+    // `traitees` (migration 0160) : le maillon qu'on oublie est la ROUTE, cf. le docblock de ce bloc.
+    expect(vus[0]).toMatchObject({ aTraiter: true, signalees: true, archivees: true, traitees: true });
     await a.close();
   });
 });

@@ -17,12 +17,12 @@ const OPERATEUR = { token: 'e2e-token', email: 'agent@e2e.test', role: 'agent', 
 
 const CONVERSATIONS = [
   { id: 'c1', waId: '33600000001', profileName: 'Alice', lastPreview: 'bonjour', lastMessageAt: '2026-09-08T10:00:00Z', controlOwner: 'app_workflow', unread: false, curseur: '2026-09-08T10:00:00Z' },
-  { id: 'c2', waId: '33600000002', profileName: 'Bob', lastPreview: 'merci', lastMessageAt: '2026-09-08T09:00:00Z', controlOwner: 'app_human', unread: false, curseur: '2026-09-08T09:00:00Z' },
+  { id: 'c2', waId: '33600000002', profileName: 'Bob', lastPreview: 'merci', lastMessageAt: '2026-09-08T09:00:00Z', controlOwner: 'app_human', unread: false, curseur: '2026-09-08T09:00:00Z', traitee: true },
 ];
 
 /** Des compteurs volontairement CONTRASTÉS : un à zéro, pour que son affichage se prouve. */
 const COMPTEURS = {
-  tout: 2, aTraiter: 1, signalees: 0, archivees: 3, nonAffectees: 1,
+  tout: 2, aTraiter: 1, signalees: 0, archivees: 3, traitees: 4, nonAffectees: 1,
   parMembre: [{ userId: 'u-jean', nom: 'Jean', n: 1 }, { userId: 'u-marie', nom: 'Marie', n: 0 }],
 };
 
@@ -57,6 +57,26 @@ test.describe('Inbox : le menu de dossiers', () => {
     // Le cas qui compte : « Signalé (0) » dit « rien à relire », un libellé nu ferait aller voir.
     await expect(page.getByTestId('dossier-n-signalees')).toHaveText('(0)');
     await expect(page.getByTestId('dossier-n-archivees')).toHaveText('(3)');
+    // « Traité » (migration 0160) a son propre compteur, distinct de « Tout » et d'Archivé.
+    await expect(page.getByTestId('dossier-n-traitees')).toHaveText('(4)');
+  });
+
+  test('🔴 le dossier « Traité » demande son filtre au serveur', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, ADMIN, appels);
+    await page.goto('/inbox');
+    await page.getByTestId('dossier-traitees').click();
+    await expect.poll(() => appels.some((a) => /\/conversations\?.*traitees=1/.test(a.url)), { timeout: 5000 }).toBe(true);
+    await expect(page.getByTestId('inbox-titre-dossier')).toHaveText('Traité');
+  });
+
+  test('🔴 dans « Tout », une conversation traitée porte sa pastille, et elle seule', async ({ page }) => {
+    // L'arbitrage de Julien du 2026-09-19 : « Traité » reste dans « Tout » AVEC une pastille. Sans elle, rien
+    // ne distinguerait une conversation close d'une conversation qui attend.
+    await mock(page, ADMIN);
+    await page.goto('/inbox');
+    await expect(page.getByTestId('inbox-traitee-c2')).toHaveText('Traité');
+    await expect(page.getByTestId('inbox-traitee-c1')).toHaveCount(0);
   });
 
   test('🔴 changer de dossier demande le BON filtre au serveur', async ({ page }) => {
