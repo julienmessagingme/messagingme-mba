@@ -64,12 +64,6 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <MbaNotice kind="warning">
-        {t(
-          'Ce que vous branchez ici sert à TOUS vos agents IA. L’adresse est figée : un agent ne choisit jamais où appeler, seulement quoi demander, et vous décidez quoi dans son onglet Outils.',
-          'What you connect here serves ALL your AI agents. The address is fixed: an agent never chooses where to call, only what to ask, and you decide what in its Tools tab.',
-        )}
-      </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="connecteurs-erreur">{erreur}</MbaNotice>}
 
       <div className="flex flex-wrap items-center justify-between gap-2">

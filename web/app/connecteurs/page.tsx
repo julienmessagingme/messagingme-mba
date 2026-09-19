@@ -25,10 +25,7 @@ function Inner({ session }: { session: Session }) {
       <div>
         <h1 className="text-lg font-semibold text-ink-900">{t('Connecteurs API', 'API connectors')}</h1>
         <p className="mt-1 text-sm text-ink-600">
-          {t(
-            'Les systèmes que vos agents IA peuvent interroger. Déclarés une fois ici, utilisés par tous vos agents : chacun choisit ensuite, dans son onglet Outils, les appels qu’il a le droit d’y faire.',
-            'The systems your AI agents can query. Declared once here, used by all your agents: each one then picks, in its Tools tab, the calls it is allowed to make.',
-          )}
+          {t('Les systèmes que vos agents IA peuvent interroger.', 'The systems your AI agents can query.')}
         </p>
       </div>
       <ConnecteursBibliotheque tenantId={session.tenantId} />
