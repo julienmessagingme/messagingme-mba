@@ -578,8 +578,10 @@ Avant elle : **0125** (`conversation_messages.media_id`, `.media_mime`, `.transc
 🔴 **L'IDENTIFIANT DU MÉDIA ÉTAIT JETÉ À LA PORTE, et c'est le vrai sujet de 0125.** Meta ne transmet pas le
 fichier dans le webhook, il transmet un identifiant avec lequel on va chercher une URL de téléchargement.
 `contentOf` n'en gardait rien : un vocal se réduisait au libellé `[audio]` et devenait **inatteignable pour
-toujours**. Aucun correctif ultérieur ne rattrape ça, et Meta ne garde les médias que **30 jours** : c'est
-pourquoi cette migration passe AVANT que quoi que ce soit sache transcrire.
+toujours**. Aucun correctif ultérieur ne rattrape ça, et Meta ne garde un média REÇU que **sept jours** : c'est
+pourquoi cette migration passe AVANT que quoi que ce soit sache transcrire. ⚠️ Cette ligne a dit « 30 jours »
+jusqu'au 2026-09-19 : c'est le délai des médias qu'on TÉLÉVERSE, et la mesure l'a démenti ce jour-là (deux vocaux
+de 7,9 et 8,9 jours introuvables chez Meta). La constante qui fait foi : `DUREE_MEDIA_RECU_JOURS`.
 
 ⚠️ **`body` NE CHANGE PAS** : il garde la légende, sinon `[audio]`. Tout ce qui le lit (aperçu de l'Inbox,
 historique de l'agent, analyse) continue à l'identique, et la transcription vit dans SA colonne. Même règle

@@ -5,6 +5,8 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
+import { MediaExpire } from '../src/inbox/media-entrant';
+import { MediaTropGros } from '../src/meta/media';
 
 const SECRET = 'test-secret';
 const CONV = '11111111-1111-4111-8111-111111111111';
@@ -1008,6 +1010,58 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
     await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() });
     await a.inject({ method: 'GET', url: '/tenants/t1/conversations/counts', ...auth() });
     expect(lectures).toBe(2);
+  });
+});
+
+describe('servir une pièce jointe reçue (2026-09-19)', () => {
+  const MSG = '22222222-2222-4222-8222-222222222222';
+  const url = `/tenants/t1/conversations/c1/messages/${MSG}/media`;
+
+  it('🔴 une photo s’affiche : inline, son type, et nosniff', async () => {
+    const a = app({ lireMediaMessage: async () => ({ bytes: Buffer.from('jpg'), mime: 'image/jpeg', nom: null }) });
+    const res = await a.inject({ method: 'GET', url, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+    expect(String(res.headers['content-disposition'])).toMatch(/^inline;/);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['cache-control']).toBe('private, no-store');
+  });
+
+  it('🔴 un document reçu se TÉLÉCHARGE sous son nom, même s’il se dit HTML', async () => {
+    // Le type vient de l'EXPÉDITEUR. Servi « inline », un HTML s'exécuterait dans l'origine de la console.
+    const a = app({ lireMediaMessage: async () => ({ bytes: Buffer.from('<script>'), mime: 'text/html', nom: 'devis.html' }) });
+    const res = await a.inject({ method: 'GET', url, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(String(res.headers['content-disposition'])).toMatch(/^attachment; filename="devis\.html"/);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+  });
+
+  it('🔴 un média EXPIRÉ chez Meta rend 410 avec son code, pas une panne', async () => {
+    const a = app({ lireMediaMessage: async () => { throw new MediaExpire(); } });
+    const res = await a.inject({ method: 'GET', url, ...auth() });
+    expect(res.statusCode).toBe(410);
+    expect(res.json()).toMatchObject({ code: 'media_expire' });
+  });
+
+  it('un fichier TROP LOURD rend 422 avec sa taille, pour que l’écran la dise', async () => {
+    const a = app({ lireMediaMessage: async () => { throw new MediaTropGros(40 * 1024 * 1024, 25 * 1024 * 1024); } });
+    const res = await a.inject({ method: 'GET', url, ...auth() });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'media_trop_gros' });
+    expect(res.json().error).toContain('40 Mo');
+  });
+
+  it('une autre panne reste un 422 générique, jamais un 5xx', async () => {
+    // Cloudflare remplacerait le corps d'un 5xx par sa page, et l'écran n'aurait rien à dire.
+    const a = app({ lireMediaMessage: async () => { throw new Error('reseau'); } });
+    expect((await a.inject({ method: 'GET', url, ...auth() })).statusCode).toBe(422);
+  });
+
+  it('🔴 la transcription d’un vocal EXPIRÉ rend 410, pas « réessayez »', async () => {
+    const a = app({ transcrireMessage: async () => { throw new MediaExpire(); } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} });
+    expect(res.statusCode).toBe(410);
+    expect(res.json()).toMatchObject({ code: 'media_expire' });
   });
 });
 

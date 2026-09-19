@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { transcrire, TranscriptionError } from '../src/agent/llm/transcription';
 import { transcrireMessage, RienATranscrire, type DepsTranscrire, type MessageATranscrire } from '../src/inbox/transcrire';
 import type { HttpResponse, HttpTransport } from '../src/meta/http';
+import { MediaExpire } from '../src/inbox/media-entrant';
+import { MetaApiError } from '../src/meta/errors';
 
 /**
  * LA TRANSCRIPTION DES VOCAUX (2026-09-09, demande de Julien).
@@ -210,6 +212,26 @@ describe('Transcrire le message d’une conversation', () => {
     const { d, couts } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: 'deja' });
     await transcrireMessage(d, 't1', 'm1');
     expect(couts).toHaveLength(0);
+  });
+
+  it('🔴 un vocal EXPIRÉ n’appelle pas Meta : il est trop tard, et on le dit', async () => {
+    // Passé sept jours, l'appel échouerait à coup sûr. Le dire avant évite un aller-retour, et surtout
+    // évite de répondre « réessayez » sur un fichier qui ne reviendra jamais.
+    const { d, telechargements } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null, mediaExpire: true });
+    await expect(transcrireMessage(d, 't1', 'm1')).rejects.toBeInstanceOf(MediaExpire);
+    expect(telechargements).toHaveLength(0);
+  });
+
+  it('🔴 un vocal expiré mais DÉJÀ transcrit se relit toujours', async () => {
+    // La transcription faite quand le fichier existait est à nous : l'expiration ne la reprend pas.
+    const { d } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: 'deja dit', mediaExpire: true });
+    expect((await transcrireMessage(d, 't1', 'm1')).texte).toBe('deja dit');
+  });
+
+  it('🔴 Meta répond 100/33 : c’est un vocal EXPIRÉ, pas une panne', async () => {
+    const { d } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
+    d.telecharger = async () => { throw new MetaApiError(400, { code: 100, error_subcode: 33 }); };
+    await expect(transcrireMessage(d, 't1', 'm1')).rejects.toBeInstanceOf(MediaExpire);
   });
 
   it('un message SANS média n’est pas transcriptible', async () => {

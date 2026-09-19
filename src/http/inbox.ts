@@ -8,6 +8,7 @@ import { peutEcrire, peutAffecter } from '../inbox/assignment';
 import { gardeEtendue } from '../auth/middleware';
 import { cacheCourt } from '../lib/cache-court';
 import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
+import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
@@ -105,7 +106,7 @@ export interface InboxRouteDeps {
    * `null` = ce message ne porte aucun média. OPTIONNELLE : absente, la route rend 503, comme les autres
    * capacités de cet écran.
    */
-  lireMediaMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ bytes: Buffer; mime: string | null } | null>;
+  lireMediaMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ bytes: Buffer; mime: string | null; nom?: string | null } | null>;
   /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
@@ -545,11 +546,25 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     try {
       const f = await deps.lireMediaMessage(tenant, messageId, conversationId);
       if (!f) return reply.code(404).send({ error: 'ce message ne porte aucun média' });
-      // `no-store` : ces octets sont ceux d'un client, ils n'ont rien à faire dans un cache partagé.
-      return reply.header('cache-control', 'private, no-store').type(f.mime ?? 'application/octet-stream').send(f.bytes);
+      /**
+       * 🔴 `inline` POUR UNE IMAGE AFFICHABLE, `attachment` POUR TOUT LE RESTE, et `nosniff` partout
+       * (`enTetesMedia`). Un document reçu porte le type que son EXPÉDITEUR annonce : servi tel quel, un
+       * `text/html` ou un SVG s'exécuterait dans l'origine de la console. `no-store` : ces octets sont ceux
+       * d'un client, ils n'ont rien à faire dans un cache partagé.
+       */
+      return reply.headers(enTetesMedia(f.mime, f.nom ?? null, `piece-jointe-${messageId.slice(0, 8)}`)).send(f.bytes);
     } catch (err) {
+      // 4xx, jamais 5xx : Cloudflare remplacerait le corps, et l'écran a besoin de savoir quoi dire. Et les
+      // trois causes ne se disent pas pareil : trop tard (410, rien à faire), trop lourd (422 avec la taille),
+      // panne (422, réessayer).
+      if (err instanceof MediaExpire) return reply.code(410).send({ error: err.message, code: 'media_expire' });
+      if (err instanceof MediaTropGros) {
+        return reply.code(422).send({
+          error: `fichier trop lourd pour être ouvert depuis la console (${Math.round(err.octets / 1024 / 1024)} Mo, maximum ${Math.round(err.plafond / 1024 / 1024)} Mo)`,
+          code: 'media_trop_gros',
+        });
+      }
       req.log.error({ err, tenant, messageId }, 'media_illisible');
-      // 4xx, jamais 5xx : Cloudflare remplacerait le corps, et l'écran a besoin de savoir quoi dire.
       return reply.code(422).send({ error: 'ce média n’a pas pu être récupéré' });
     }
   });
@@ -592,6 +607,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       // rien à transcrire (l'écran n'aurait pas dû proposer le bouton), fichier trop lourd (rien à faire),
       // panne du fournisseur (réessayer).
       if (err instanceof RienATranscrire) return reply.code(422).send({ error: 'ce message ne porte aucun vocal à transcrire' });
+      // Le vocal a disparu chez Meta (sept jours) : rien ne le fera revenir, « réessayez » serait faux.
+      if (err instanceof MediaExpire) return reply.code(410).send({ error: err.message, code: 'media_expire' });
       if (err instanceof MediaTropGros) {
         return reply.code(422).send({ error: `vocal trop long pour être transcrit (${Math.round(err.octets / 1024)} Ko, maximum ${Math.round(err.plafond / 1024)} Ko)` });
       }

@@ -1,5 +1,6 @@
 import { transcrire, TranscriptionError } from '../agent/llm/transcription';
 import { MediaTropGros } from '../meta/media';
+import { MediaExpire, estMediaExpireChezMeta } from './media-entrant';
 import type { HttpTransport } from '../meta/http';
 import type { LangueConsole } from '../traduction/traduire';
 
@@ -28,6 +29,11 @@ export interface MessageATranscrire {
   id: string;
   mediaId: string | null;
   mediaMime: string | null;
+  /**
+   * Le vocal a-t-il dépassé le délai de Meta (sept jours) ? Optionnel : absent vaut « non », et c'est alors
+   * Meta qui le dira (`100/33`), un appel plus tard.
+   */
+  mediaExpire?: boolean;
   /** Déjà transcrit ? On rend l'existant sans repayer. */
   transcription: string | null;
   /**
@@ -143,8 +149,13 @@ export async function transcrireMessage(
     return { texte: msg.transcription, deja: true, langue, traduction: await lire(deps, tenantId, msg, msg.transcription, langue, cible) };
   }
   if (!msg.mediaId) throw new RienATranscrire();
+  // ⚠️ APRÈS le cas « déjà transcrit » ci-dessus, et c'est voulu : une transcription faite quand le vocal
+  // existait encore se relit pour toujours. Seul un NOUVEL appel a besoin du fichier.
+  if (msg.mediaExpire === true) throw new MediaExpire();
 
-  const fichier = await deps.telecharger(msg.mediaId, deps.tailleMaxOctets);
+  const fichier = await deps.telecharger(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
+    throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
+  });
   const mime = msg.mediaMime ?? fichier.mime;
   if (!mime) throw new TranscriptionError(null, 'type de media inconnu');
 

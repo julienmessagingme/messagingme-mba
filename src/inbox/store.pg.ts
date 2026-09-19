@@ -3,6 +3,7 @@ import type { InboxStore, InboundMessage } from '../webhooks/inbound';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { OrigineMessage } from './origine';
 import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
+import { MEDIA_EXPIRE_SQL } from './media-entrant';
 
 /**
  * Qui détient la conversation, et donc qui répond au client.
@@ -157,6 +158,16 @@ export interface ConversationMessage {
    * expire en quelques minutes). L'écran a seulement besoin de savoir s'il doit proposer d'écouter.
    */
   aMedia?: boolean;
+  /**
+   * Le fichier a-t-il dépassé le délai de Meta (`DUREE_MEDIA_RECU_JOURS`, sept jours) ?
+   *
+   * 🔴 L'ÉCRAN DIT « EXPIRÉ » AU LIEU DE PROPOSER UN FICHIER QUI N'EXISTE PLUS. Sans ce drapeau, une photo de
+   * huit jours afficherait un bouton qui échoue à chaque clic, et l'opérateur conclurait à une panne. Vrai
+   * seulement si le message PORTE un média.
+   */
+  mediaExpire?: boolean;
+  /** Le nom de fichier d'un document reçu, tel que WhatsApp l'annonce (migration 0160). */
+  mediaNom?: string | null;
   /**
    * La transcription du vocal, quand un opérateur l'a demandée (migration 0125).
    *
@@ -666,13 +677,13 @@ export class PgInboxStore implements InboxStore {
     // seul chemin qui le fait.
     const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview, true, 'in');
     await this.pool.query(
-      // ⚠️ `media_id` et `media_mime` sont ecrits ICI ET NULLE PART AILLEURS (migration 0125) : c est le seul
-      // instant ou le corps du webhook est encore sous la main. Un media non capte a l insertion est perdu,
-      // aucun chemin en aval ne peut le retrouver.
-      `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id, channel, media_id, media_mime)
-       values ($1, 'in', $2, $3, $4, $5, $6, $7, $8)
+      // ⚠️ `media_id`, `media_mime` et `media_nom` sont ecrits ICI ET NULLE PART AILLEURS (migrations 0125 et
+      // 0160) : c est le seul instant ou le corps du webhook est encore sous la main. Un media non capte a
+      // l insertion est perdu, aucun chemin en aval ne peut le retrouver.
+      `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id, channel, media_id, media_mime, media_nom)
+       values ($1, 'in', $2, $3, $4, $5, $6, $7, $8, $9)
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
-      [conversationId, m.type, m.body, m.buttonPayload, m.messageId, channel, m.media?.id ?? null, m.media?.mime ?? null],
+      [conversationId, m.type, m.body, m.buttonPayload, m.messageId, channel, m.media?.id ?? null, m.media?.mime ?? null, m.media?.nom ?? null],
     );
   }
 
@@ -1188,7 +1199,7 @@ export class PgInboxStore implements InboxStore {
    */
   async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
+      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
     }>(
       // sender_name : name du user, sinon la partie locale de son email ; null si pas d'auteur (legacy/auto).
       // channel : le fil est UNIQUE par contact, c'est chaque bulle qui dit par quel tuyau elle est passée.
@@ -1201,6 +1212,9 @@ export class PgInboxStore implements InboxStore {
       // `42703` et le fil entier tombe, sur la requete la plus appelee du produit (toutes les 4 s).
       `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
               (m.media_id is not null) as a_media, m.transcription, m.transcription_langue,
+              -- 🔴 media_nom (migration 0160) est NOMMEE ici : la migration passe donc AVANT le deploiement,
+              -- sans quoi ce select rend 42703 et le fil entier tombe, toutes les 4 s.
+              (m.media_id is not null and ${MEDIA_EXPIRE_SQL}) as media_expire, m.media_nom,
               m.traduction, m.traduction_langue, m.redaction_origine,
               to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
@@ -1223,6 +1237,8 @@ export class PgInboxStore implements InboxStore {
       // Message d'avant la migration 0056 : `channel` est null en base -> WhatsApp.
       channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',
       aMedia: r.a_media === true,
+      mediaExpire: r.media_expire === true,
+      mediaNom: r.media_nom,
       transcription: r.transcription,
       transcriptionLangue: r.transcription_langue,
       traduction: r.traduction,
@@ -1239,15 +1255,18 @@ export class PgInboxStore implements InboxStore {
    * accès au vocal d'un AUTRE client. La RLS est contournée (pooler superuser), donc ce filtre est le seul
    * contrôle, comme partout ailleurs dans ce dépôt.
    */
-  async lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; transcription: string | null; transcriptionLangue: string | null; traduction: string | null; traductionLangue: string | null } | null> {
+  async lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<{ id: string; mediaId: string | null; mediaMime: string | null; mediaNom: string | null; mediaExpire: boolean; transcription: string | null; transcriptionLangue: string | null; traduction: string | null; traductionLangue: string | null } | null> {
     // ⚠️ `conversationId` est vérifié quand il est fourni : la route le nomme dans son chemin, et transcrire
     // le message d'une AUTRE conversation ferait mentir l'URL. Ce n'est pas une faille (le filtre d'espace
     // tient au-dessus), c'est une route qui ne fait pas ce qu'elle dit, et ça se paie plus tard.
-    const res = await this.pool.query<{ id: string; media_id: string | null; media_mime: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null }>(
+    const res = await this.pool.query<{ id: string; media_id: string | null; media_mime: string | null; media_nom: string | null; media_expire: boolean; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null }>(
       // ⚠️ Les trois dernières colonnes (migration 0137) servent à NE PAS REPAYER : la langue déjà
       // détectée évite de traduire un vocal déjà dans la langue du lecteur, et une traduction déjà
       // rangée dans la bonne langue se relit au lieu de se recalculer.
-      `select m.id, m.media_id, m.media_mime, m.transcription, m.transcription_langue,
+      // `media_expire` : LE MÊME fragment que l'écran (`MEDIA_EXPIRE_SQL`). Lu ici, il évite un appel à Meta
+      // dont on sait d'avance qu'il échouera, et il dit « expiré » plutôt qu'une panne.
+      `select m.id, m.media_id, m.media_mime, m.media_nom, ${MEDIA_EXPIRE_SQL} as media_expire,
+              m.transcription, m.transcription_langue,
               m.traduction, m.traduction_langue
          from conversation_messages m
          join conversations c on c.id = m.conversation_id
@@ -1257,7 +1276,8 @@ export class PgInboxStore implements InboxStore {
     );
     const r = res.rows[0];
     return r ? {
-      id: r.id, mediaId: r.media_id, mediaMime: r.media_mime, transcription: r.transcription,
+      id: r.id, mediaId: r.media_id, mediaMime: r.media_mime, mediaNom: r.media_nom, mediaExpire: r.media_expire === true,
+      transcription: r.transcription,
       transcriptionLangue: r.transcription_langue, traduction: r.traduction, traductionLangue: r.traduction_langue,
     } : null;
   }

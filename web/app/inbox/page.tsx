@@ -13,12 +13,14 @@ import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import { repeterAvecGigue } from '@/lib/poll';
 import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
-import { estAnnulation } from '@/lib/http';
+import { ApiError, estAnnulation } from '@/lib/http';
 import { langueSortanteParDefaut, nomDeLangue } from '@/lib/langue-nom';
 import {
   cibleDeLecture, ecrireTraductionActive, lireTraductionActive, marqueTraduction, texteDeBulle, texteDuVocal,
 } from '@/lib/traduction-lecture';
 import { ContactDetail } from '@/components/ContactDetail';
+import { PieceJointeRecue } from '@/components/PieceJointeRecue';
+import { DUREE_MEDIA_RECU_JOURS_AFFICHEE, legendeDePieceJointe, natureDePieceJointe } from '@/lib/piece-jointe';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import { InboxDossiers, libelleDossier, type DossierInbox } from '@/components/InboxDossiers';
 import {
@@ -881,6 +883,12 @@ function VocalMessage({ session, conversationId, message, traduire }: {
   const [traduit, setTraduit] = useState<boolean>(initial.traduit);
   const [occupe, setOccupe] = useState<'audio' | 'texte' | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * 🔴 LE VOCAL A DISPARU CHEZ WHATSAPP (sept jours, mesuré le 2026-09-19). Les deux boutons échouaient alors
+   * à chaque clic sur « ce vocal n'a pas pu être récupéré », ce qui fait réessayer. Le serveur le dit
+   * d'avance (`mediaExpire`), ou par un 410 si WhatsApp l'a effacé plus tôt.
+   */
+  const [expire, setExpire] = useState(message.mediaExpire === true);
 
   // Révoque l'URL d'objet au démontage : sans ça, chaque vocal écouté garde ses octets en mémoire du
   // navigateur jusqu'au rechargement de la page.
@@ -890,8 +898,9 @@ function VocalMessage({ session, conversationId, message, traduire }: {
     setOccupe('audio'); setErreur(null);
     try {
       setUrl(URL.createObjectURL(await lireMediaMessage(session.tenantId, conversationId, message.id)));
-    } catch {
-      setErreur(t('Ce vocal n’a pas pu être récupéré.', 'This voice note could not be fetched.'));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 410) setExpire(true);
+      else setErreur(t('Ce vocal n’a pas pu être récupéré.', 'This voice note could not be fetched.'));
     } finally { setOccupe(null); }
   }
 
@@ -906,14 +915,25 @@ function VocalMessage({ session, conversationId, message, traduire }: {
        */
       setTexte(r.traduction ?? r.texte);
       setTraduit(r.traduction !== null && r.traduction !== undefined);
-    } catch {
-      setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 410) setExpire(true);
+      else setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
     } finally { setOccupe(null); }
   }
 
   return (
     <div className="space-y-1" data-testid={`vocal-${message.id}`}>
-      {url
+      {/* Expiré : ni « Écouter » ni « Transcrire », qui échoueraient. Une transcription faite AVANT reste
+          affichée plus bas, elle est à nous. */}
+      {expire && !url && (
+        <p className="text-xs italic opacity-80" data-testid={`vocal-expire-${message.id}`}>
+          {t(
+            `🎤 Vocal expiré : WhatsApp ne garde les pièces jointes que ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} jours.`,
+            `🎤 Voice note expired: WhatsApp only keeps attachments for ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} days.`,
+          )}
+        </p>
+      )}
+      {expire && !url ? null : url
         // eslint-disable-next-line jsx-a11y/media-has-caption
         ? <audio src={url} controls autoPlay className="h-8 max-w-[220px]" data-testid={`vocal-lecteur-${message.id}`} />
         : (
@@ -927,7 +947,7 @@ function VocalMessage({ session, conversationId, message, traduire }: {
             {occupe === 'audio' ? t('Chargement…', 'Loading…') : t('▶ Écouter', '▶ Listen')}
           </button>
         )}
-      {texte === null && (
+      {texte === null && !expire && (
         <button
           type="button"
           onClick={() => { void transcrire(); }}
@@ -1631,6 +1651,16 @@ function Thread({ session, conversation, dossier, onSent }: {
                   ) : m.type === 'audio' && m.aMedia === true && m.direction === 'in' ? (
                     // Le vocal remplace le libellé `[audio]`, qui ne disait rien de ce que le client a dit.
                     <VocalMessage session={session} conversationId={conversation.id} message={m} traduire={cibleLecture ?? null} />
+                  ) : natureDePieceJointe(m.type) !== null && m.aMedia === true && m.direction === 'in' ? (
+                    // La photo, le document ou la vidéo remplacent `[image]` / `[document]` (2026-09-19). La
+                    // légende de l'expéditeur, elle, reste affichée dessous, traduite si le fil l'est.
+                    <PieceJointeRecue
+                      tenantId={session.tenantId}
+                      conversationId={conversation.id}
+                      message={m}
+                      nature={natureDePieceJointe(m.type)!}
+                      legende={legendeDePieceJointe(texteDeBulle(m), m.type)}
+                    />
                   ) : m.buttonPayload && m.direction === 'in' ? (
                     <InboundPayload body={texteDeBulle(m)} payload={m.buttonPayload} />
                   ) : (

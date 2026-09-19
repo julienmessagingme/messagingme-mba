@@ -127,7 +127,16 @@ export async function requestBlob(path: string): Promise<Blob> {
     clearSession();
     throw new ApiError(401, 'session expirée');
   }
-  if (!res.ok) throw new ApiError(res.status, `média indisponible (${res.status})`);
+  if (!res.ok) {
+    /**
+     * 🔴 LE CORPS DE L'ERREUR EST LU, PLUS JETÉ (2026-09-19). Le serveur distingue désormais « expiré chez
+     * WhatsApp » (410, `media_expire`) de « trop lourd » (422, avec la taille) : un message générique « média
+     * indisponible » ferait réessayer un fichier qui ne reviendra jamais.
+     */
+    const corps = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    const msg = typeof corps?.error === 'string' ? corps.error : `média indisponible (${res.status})`;
+    throw new ApiError(res.status, msg, corps ?? undefined);
+  }
   return res.blob();
 }
 

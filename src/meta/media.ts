@@ -84,7 +84,8 @@ export class MetaMediaClient {
    * stable : `GET /{media-id}` rend une URL de téléchargement à DURÉE DE VIE COURTE (quelques minutes), qu'il
    * faut ensuite chercher AVEC le jeton, ce qu'aucun navigateur ne fera pour nous. Mettre cette URL en cache
    * ou la donner au front produirait des 401 quelques minutes plus tard, de façon intermittente, donc
-   * difficile à relier à sa cause. L'identifiant, lui, reste valable tant que Meta garde le fichier (30 jours).
+   * difficile à relier à sa cause. L'identifiant, lui, reste valable tant que Meta garde le fichier : SEPT jours
+   * pour un média reçu, et non trente comme ce commentaire l'a dit (`DUREE_MEDIA_RECU_JOURS`, mesuré le 2026-09-19).
    *
    * ⚠️ LE SECOND APPEL PORTE LE JETON LUI AUSSI. L'URL rendue est sur `lookaside.fb.com` et ne s'ouvre pas
    * sans en-tête d'autorisation : la tester dans un navigateur donne un 403 et fait croire à une URL morte.

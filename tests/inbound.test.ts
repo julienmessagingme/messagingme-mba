@@ -105,8 +105,9 @@ describe('extractInbound', () => {
    * 🔴 CE QUI N'EST PAS CAPTÉ ICI EST PERDU POUR TOUJOURS, et c'est ce qui rend ces cas différents des
    * autres de ce fichier. Meta ne transmet pas le fichier dans le webhook : il transmet un identifiant, avec
    * lequel on ira chercher une URL de téléchargement. Avant ce lot, `contentOf` n'en gardait rien, donc tous
-   * les vocaux reçus étaient définitivement inatteignables. Meta ne conserve les fichiers que 30 jours : un
-   * défaut ici ne se rattrape par aucun correctif ultérieur.
+   * les vocaux reçus étaient définitivement inatteignables. Meta ne conserve l'identifiant d'un média reçu
+   * que SEPT jours (et non trente, comme ce commentaire l'a dit jusqu'au 2026-09-19) : un défaut ici ne se
+   * rattrape par aucun correctif ultérieur.
    */
   it('🔴 un vocal porte son identifiant de média ET son mime', () => {
     const r = extractInbound(payload([{ id: 'wamid.v', from: '33611', type: 'audio', audio: { id: 'media-42', mime_type: 'audio/ogg; codecs=opus', voice: true } }]));
@@ -121,6 +122,15 @@ describe('extractInbound', () => {
     const avecLegende = extractInbound(payload([{ id: 'wamid.v3', from: '33611', type: 'image', image: { id: 'm2', caption: 'Ma photo' } }]));
     expect(avecLegende[0]!.body).toBe('Ma photo');
     expect(avecLegende[0]!.media).toEqual({ id: 'm2', mime: null });
+  });
+
+  it('🔴 un DOCUMENT porte son nom de fichier, une photo n’en porte pas', () => {
+    // Le nom n'existe que dans ce corps (migration 0160) : sans lui, un PDF reçu se télécharge sous un nom
+    // inventé et l'opérateur ne sait pas ce qu'il ouvre.
+    const doc = extractInbound(payload([{ id: 'wamid.d', from: '33611', type: 'document', document: { id: 'md', mime_type: 'application/pdf', filename: 'facture-mars.pdf' } }]));
+    expect(doc[0]).toMatchObject({ type: 'document', body: '[document]', media: { id: 'md', mime: 'application/pdf', nom: 'facture-mars.pdf' } });
+    const photo = extractInbound(payload([{ id: 'wamid.p', from: '33611', type: 'image', image: { id: 'mp', mime_type: 'image/jpeg', filename: 'ignore.jpg' } }]));
+    expect(photo[0]!.media).toEqual({ id: 'mp', mime: 'image/jpeg' });
   });
 
   it('un média SANS identifiant ne pose pas de `media` vide', () => {

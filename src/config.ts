@@ -553,6 +553,16 @@ export const schema = z.object({
    */
   TRANSCRIPTION_MODELE: z.string().default('openai/whisper-1'),
   TRANSCRIPTION_TAILLE_MAX_KO: z.coerce.number().int().positive().default(2048),
+  /**
+   * PLAFOND D'UNE PIÈCE JOINTE REÇUE qu'on accepte de servir à la console (2026-09-19).
+   *
+   * 🔴 IL N'EST PLUS CELUI DE LA TRANSCRIPTION. La route de lecture des médias empruntait les 2 Mo pensés
+   * pour un vocal : une photo prise en haute définition ou un PDF de quelques pages aurait été refusé, alors
+   * que Meta accepte 5 Mo pour une image, 16 Mo pour une vidéo et 100 Mo pour un document. 25 Mo couvrent
+   * l'usage courant tout en bornant la mémoire : le fichier entre ENTIER en RAM avant de repartir vers le
+   * navigateur. Au-delà, l'écran le dit avec la taille, plutôt que de faire grossir le processus.
+   */
+  MEDIA_ENTRANT_TAILLE_MAX_KO: z.coerce.number().int().positive().default(25_600),
   VERCEL_API_TOKEN: z.string().default(''),
   VERCEL_TEAM_ID: z.string().default(''),
   /**

@@ -37,13 +37,19 @@ export interface InboundMessage {
    *
    * 🔴 Meta ne transmet PAS le fichier dans le webhook, seulement un identifiant avec lequel on va chercher
    * une URL de téléchargement. Ne pas le capter ICI, c'est perdre le média pour toujours : rien en aval ne
-   * peut le rattraper, et Meta ne garde les fichiers que 30 jours. C'est exactement ce qui se passait avant
-   * cette ligne, où un vocal se réduisait au libellé `[audio]`.
+   * peut le rattraper. C'est exactement ce qui se passait avant cette ligne, où un vocal se réduisait au
+   * libellé `[audio]`.
+   *
+   * ⚠️ ET CET IDENTIFIANT NE VIT QUE SEPT JOURS chez Meta, pas trente comme ce commentaire l'a affirmé
+   * jusqu'au 2026-09-19 (mesuré ce jour-là : `DUREE_MEDIA_RECU_JOURS`, `src/inbox/media-entrant.ts`).
    *
    * `mime` vient du même corps et est EXIGÉ par l'API de transcription : le redemander plus tard ferait
    * dépendre une transcription d'un appel de plus qui peut échouer.
+   *
+   * `nom` : le nom de fichier d'un DOCUMENT tel que WhatsApp l'annonce (migration 0160). Il n'existe que dans
+   * ce corps, comme l'identifiant : sans lui, un PDF reçu se télécharge sous un nom inventé.
    */
-  media?: { id: string; mime: string | null };
+  media?: { id: string; mime: string | null; nom?: string | null };
 }
 
 /**
@@ -122,7 +128,7 @@ function str(v: unknown): string | null {
  * l'historique de l'agent et l'analyse, et il garde exactement ce qu'il portait avant (la légende, sinon un
  * libellé de type).
  */
-function contentOf(msg: Record<string, unknown>): { body: string | null; buttonPayload: string | null; media?: { id: string; mime: string | null } } {
+function contentOf(msg: Record<string, unknown>): { body: string | null; buttonPayload: string | null; media?: { id: string; mime: string | null; nom?: string | null } } {
   const type = str(msg['type']) ?? '';
   if (type === 'text') return { body: str(asRecord(msg['text'])['body']), buttonPayload: null };
   if (type === 'button') {
@@ -161,7 +167,8 @@ function contentOf(msg: Record<string, unknown>): { body: string | null; buttonP
     return {
       body: str(m['caption']) ?? `[${type}]`,
       buttonPayload: null,
-      ...(id ? { media: { id, mime: str(m['mime_type']) } } : {}),
+      // Le nom de fichier n'existe que sur un DOCUMENT : une photo ou un vocal n'en portent pas.
+      ...(id ? { media: { id, mime: str(m['mime_type']), ...(type === 'document' ? { nom: str(m['filename']) } : {}) } } : {}),
     };
   }
   if (type === 'location') {

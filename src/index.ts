@@ -120,6 +120,7 @@ import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-e
 import { PgCreditStore } from './agent/credits.pg';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { transcrireMessage } from './inbox/transcrire';
+import { MediaExpire, estMediaExpireChezMeta } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -727,16 +728,23 @@ async function main(): Promise<void> {
           },
         }, tenant, messageId, conversationId, cible),
         /**
-         * ⚠️ MÊME plafond de taille que la transcription, et pour la même raison : le fichier entre entier en
-         * mémoire du serveur avant de partir vers le navigateur. Sans borne, un média inattendu ferait
-         * grossir le processus au lieu d'échouer proprement.
+         * ⚠️ UN PLAFOND DE TAILLE, et depuis le 2026-09-19 c'est LE SIEN (`MEDIA_ENTRANT_TAILLE_MAX_KO`) : il
+         * empruntait les 2 Mo de la transcription, qui auraient refusé une photo haute définition ou un PDF.
+         * Le fichier entre entier en mémoire avant de partir vers le navigateur, d'où la borne.
+         *
+         * 🔴 L'EXPIRATION EST LUE AVANT D'APPELER META : passé sept jours, l'appel échouerait à coup sûr. Et un
+         * refus `100/33` de Meta dit la même chose un appel plus tard (média expiré plus tôt que prévu) : les
+         * deux deviennent `MediaExpire`, que la route rend en 410 et l'écran en « expiré ».
          */
         lireMediaMessage: async (tenant: string, messageId: string, conversationId?: string) => {
           const msg = await inboxStore.lireMessagePourTranscription(tenant, messageId, conversationId);
           if (!msg?.mediaId) return null;
-          const f = await mediaClient.telechargerEntrant(msg.mediaId, config.TRANSCRIPTION_TAILLE_MAX_KO * 1024);
+          if (msg.mediaExpire) throw new MediaExpire();
+          const f = await mediaClient.telechargerEntrant(msg.mediaId, config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024).catch((err: unknown) => {
+            throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
+          });
           // Le mime du MESSAGE d'abord : c'est celui que WhatsApp a annoncé, et Meta ne le rend pas toujours.
-          return { bytes: f.bytes, mime: msg.mediaMime ?? f.mime };
+          return { bytes: f.bytes, mime: msg.mediaMime ?? f.mime, nom: msg.mediaNom };
         },
       } : {}),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),

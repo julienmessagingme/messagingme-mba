@@ -93,6 +93,14 @@ export interface InboxMessage {
   /** Ce message porte un fichier chez Meta (migration 0125). Le serveur ne rend PAS son identifiant :
    *  celui-ci ne sert qu'a aller chercher les octets, et l'ecran n'en ferait rien. */
   aMedia?: boolean;
+  /**
+   * Le fichier a dépassé le délai de WhatsApp (sept jours) : l'écran dit « expiré » au lieu de proposer un
+   * fichier qui n'existe plus. Absent (backend antérieur) = lu comme `false`, et c'est alors le 410 de la
+   * lecture qui le dira.
+   */
+  mediaExpire?: boolean;
+  /** Le nom de fichier d'un document reçu, tel que WhatsApp l'annonce. */
+  mediaNom?: string | null;
   /** La transcription du vocal, quand un operateur l'a demandee. A afficher MARQUEE comme telle : c'est la
    *  lecture d'un modele, pas ce que le client a ecrit. */
   transcription?: string | null;
@@ -509,8 +517,12 @@ export function sendTemplateToConversation(tenantId: string, conversationId: str
 /**
  * Le fichier d'un message média, en octets (2026-09-09).
  *
- * ⚠️ APPELÉ AU CLIC, jamais au rendu du fil. Un fil de trente messages dont dix vocaux téléchargerait
- * vingt méga à l'ouverture, pour des fichiers que l'opérateur n'écoutera pas.
+ * ⚠️ APPELÉ AU CLIC pour un vocal, un document ou une vidéo, jamais au rendu du fil : un fil de trente
+ * messages dont dix vocaux téléchargerait vingt méga à l'ouverture, pour des fichiers que l'opérateur
+ * n'écoutera pas. Seule une PHOTO se charge au rendu (2026-09-19) : on la regarde, on ne la « lance » pas,
+ * et une vignette qui attend un clic ne montre rien.
+ *
+ * Rejette une `ApiError` de statut 410 quand le fichier a expiré chez WhatsApp (sept jours).
  */
 export function lireMediaMessage(tenantId: string, conversationId: string, messageId: string): Promise<Blob> {
   return requestBlob(`/tenants/${tenantId}/conversations/${conversationId}/messages/${messageId}/media`);
