@@ -22,11 +22,12 @@ export type RisqueOutil = 'read' | 'write' | 'irreversible';
  * QUI a déclenché un appel de connecteur (migration 0142). Fermé, et gardé par un CHECK en base.
  *
  * ⚠️ CE N'EST PAS `OrigineOutil`. Celle-ci dit de quelle NATURE est l'outil (`mba`, `http`, `mcp`) ;
- * celle-là dit quel CHEMIN du produit a passé l'appel. Un connecteur `http` peut être appelé par les trois.
+ * celle-là dit quel CHEMIN du produit a passé l'appel. Un connecteur `http` peut être appelé par chacun
+ * d'eux, l'agent de Meta compris depuis le relais (migration 0161).
  */
-export type SourceAppel = 'agent' | 'scenario' | 'optout';
+export type SourceAppel = 'agent' | 'scenario' | 'optout' | 'mba';
 
-export const SOURCES_APPEL: readonly SourceAppel[] = ['agent', 'scenario', 'optout'];
+export const SOURCES_APPEL: readonly SourceAppel[] = ['agent', 'scenario', 'optout', 'mba'];
 
 /** Les statuts de `agent_tool_calls.status`. `erreur_protocole` est le seul qui arrête le tour. */
 export type StatutAppel = 'ok' | 'erreur_outil' | 'refuse' | 'timeout' | 'erreur_protocole' | 'budget';

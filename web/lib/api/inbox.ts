@@ -339,7 +339,7 @@ export function setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promi
 export interface EchecAppelSysteme {
   id: string;
   nom: string;
-  source: 'agent' | 'scenario' | 'optout' | string;
+  source: 'agent' | 'scenario' | 'optout' | 'mba' | string;
   statut: string;
   httpStatus: number | null;
   erreur: string | null;

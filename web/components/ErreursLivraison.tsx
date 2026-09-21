@@ -202,6 +202,7 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
     if (source === 'agent') return t('un agent IA', 'an AI agent');
     if (source === 'scenario') return t('un bloc « Appel HTTP » d’un scénario', 'a scenario’s HTTP block');
     if (source === 'optout') return t('la poussée d’un désabonnement', 'an unsubscribe push');
+    if (source === 'mba') return t('l’agent de Meta', 'Meta’s agent');
     return source;
   };
 
