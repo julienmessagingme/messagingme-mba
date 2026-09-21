@@ -1068,8 +1068,8 @@ La vérification ci-dessus et `fetch` faisaient DEUX résolutions : un DNS hosti
 première, interne à la seconde. Tout appel HTTP vers une adresse saisie par un client passe par `fetchPublic`
 (`src/lib/connexion-publique.ts`), dont le connecteur juge un littéral tout de suite et fait résoudre un nom
 par un `lookup` qui refuse l'intérieur : la socket s'ouvre sur ce qui a été vérifié. Le SMTP d'une boîte
-d'envoi, seul appel sortant qui n'est pas du HTTP, résout l'hôte par `adressePubliqueDe` et fait connecter
-nodemailer à l'ADRESSE vérifiée, le nom partant à part pour TLS. Le même test d'inventaire exige ces
+d'envoi, seul appel sortant qui n'est pas du HTTP, reçoit sa socket de nous (`getSocket`) : `ouvrirSocketPublique`
+applique la même garde et laisse à nodemailer le nom d'hôte pour TLS. Le même test d'inventaire exige ces
 branchements de chaque chemin, client MCP et SMTP compris. Chacun rend le MÊME message au refus à la
 connexion qu'à la vérification préalable (`estRefusAdresseInterne`) : c'est la même cause, vue plus tard. ⚠️ **`fetch` ET `Agent` viennent du MÊME paquet `undici`** : la
 production tourne en Node 22 (undici 6 embarqué), le poste en Node 24 ; donner un `Agent` d'une version au

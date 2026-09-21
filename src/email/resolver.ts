@@ -10,7 +10,8 @@ export interface EmailAccountResolverDeps {
   now?: () => number;
 }
 
-/** Cache le transport par boîte (une connexion SMTP réutilisable, pas reconstruite à chaque envoi).
+/** Cache le transport par boîte (sa configuration, pas une connexion : chaque envoi ouvre sa propre socket,
+ *  vérifiée, cf. `buildTransport`).
  *  TTL court (5 min par défaut, calqué sur MetaCredentialsResolver, src/meta/credentials.ts) en PLUS de
  *  l'invalidation explicite (routes email, Task 6) : le WORKER construit sa PROPRE instance (voir worker.ts)
  *  et ne reçoit jamais l'invalidation posée par le process API, purement en mémoire. Sans TTL, un mot de passe
