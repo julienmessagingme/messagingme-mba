@@ -1,4 +1,5 @@
 import type { RcsOutbound, RcsSuggestion } from './rcs-types';
+import { boutonPret } from './rcs-boutons';
 
 /**
  * Forme d'ÉDITION d'un message RCS, partagée par la bibliothèque (Contenu > Messages RCS), l'assistant de
@@ -98,4 +99,49 @@ export function versBrouillonRcs(content: RcsOutbound | null): BrouillonRcs | nu
     };
   }
   return null;
+}
+
+/**
+ * CE QUI MANQUE POUR ENREGISTRER UN MESSAGE SIMPLE, en paires `[fr, en]`.
+ *
+ * 🔴 LE BOUTON « CRÉER LE MESSAGE » EST GRISÉ SI ET SEULEMENT SI CETTE LISTE N'EST PAS VIDE. Il se grisait
+ * jusqu'au 2026-09-21 sur ces quatre conditions sans en nommer aucune ; l'écran des templates WhatsApp, dont
+ * celui-ci reprend le dessin, dit ce qu'il attend. Une seule fonction décide des deux, sans quoi le bouton se
+ * grise pour une raison que la liste ne nomme pas.
+ *
+ * Paires `[fr, en]` parce que ce module est pur : `useT()` y est inappelable (convention de `LIBELLE_KIND`).
+ */
+export function manquesMessageRcs(nom: string, b: BrouillonRcs): Array<[string, string]> {
+  const manques: Array<[string, string]> = [];
+  if (nom.trim() === '') manques.push(['le nom du message', 'the message name']);
+  if (b.text.trim() === '') manques.push(['le texte du message', 'the message text']);
+  const max = maxTexteRcs(b.imageUrl);
+  if (b.text.length > max) {
+    manques.push([`un texte plus court (${max} caractères au plus)`, `a shorter text (${max} characters max)`]);
+  }
+  if (!b.suggestions.every(boutonPret)) {
+    manques.push(['un bouton complet (libellé, lien, numéro ou dates)', 'a complete button (label, link, number or dates)']);
+  }
+  return manques;
+}
+
+/** Le FORMAT d'un message de la bibliothèque, pour la colonne « Format » du tableau, en paire `[fr, en]`. */
+export function libelleFormatRcs(content: RcsOutbound | null): [string, string] {
+  if (!content) return ['illisible', 'unreadable'];
+  if (content.kind === 'text') return ['message', 'message'];
+  if (content.kind === 'card') return ['carte', 'card'];
+  const n = content.cards.length;
+  return [`carrousel · ${n} cartes`, `carousel · ${n} cards`];
+}
+
+/**
+ * Le début du texte d'un message, pour la colonne « Texte » du tableau. Même lecture que l'aperçu du fil côté
+ * serveur (`apercuRcsSortant`) : une carte n'a pas de `text`, un carrousel se lit par sa première carte.
+ */
+export function extraitRcs(content: RcsOutbound | null): string {
+  if (!content) return '';
+  if (content.kind === 'text') return content.text;
+  if (content.kind === 'card') return content.card.description ?? content.card.title ?? '';
+  const premiere = content.cards[0];
+  return premiere?.description ?? premiere?.title ?? '';
 }
