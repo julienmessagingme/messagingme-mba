@@ -126,8 +126,9 @@ export class RateLimiter {
  * Consomme un jeton pour `cle` et pose les en-têtes `x-ratelimit-*` sur la réponse. Rend `true` si l'appel
  * est autorisé, `false` s'il a été refusé (auquel cas la réponse 429 est DÉJÀ envoyée).
  *
- * 🔴 POINT DE PASSAGE UNIQUE des trois consommateurs (clé d'API, plafond général par utilisateur, plafond
- * par espace des routes coûteuses). La séquence exacte compte et se recopiait de travers : on lit l'état
+ * 🔴 POINT DE PASSAGE UNIQUE des plafonds qu'on ANNONCE à l'appelant (le compte n'est pas écrit ici : il
+ * dérivait). Un budget PARTAGÉ passe par `consommerEnSilence`, pas par ici. La séquence exacte compte et se
+ * recopiait de travers : on lit l'état
  * AVANT de consommer, parce que `remaining()` d'après-consommation ne dit plus quel était le plafond restant
  * annoncé à l'appelant, et on retire 1 au `remaining` affiché puisque l'appel en cours vient de le prendre.
  *
@@ -149,7 +150,34 @@ export async function consommerAvecEntetes(
   reply.header('x-ratelimit-reset', String(Math.ceil(etat.resetAt / 1000)));
   if (limiteur.take(cle)) return true;
   reply.header('x-ratelimit-remaining', '0');
-  reply.header('retry-after', String(Math.max(1, Math.ceil(etat.attenteMs / 1000))));
-  await reply.code(429).send({ error: message });
+  await refuserTropDeRequetes(reply, etat.attenteMs, message);
   return false;
+}
+
+/**
+ * Consomme un jeton SANS RIEN ANNONCER tant que l'appel passe : pour un budget PARTAGÉ par tous les appelants
+ * (clé constante), comme le budget spéculatif de `/v1`.
+ *
+ * 🔴 SES EN-TÊTES DIRAIENT À N'IMPORTE QUI OÙ EN EST LE BUDGET DE TOUS. Posés par `consommerAvecEntetes`, ils
+ * partaient sur le 401 d'une fausse clé : mesuré en production le 2026-09-21, `x-ratelimit-limit: 30` et
+ * `x-ratelimit-remaining: 29`. Un sondeur y lisait le moment exact où le budget s'épuise, et le trafic des
+ * autres. Un plafond qu'on annonce est celui qui appartient à l'appelant : sa clé, son compte, son espace.
+ *
+ * ⚠️ LE REFUS GARDE SON `Retry-After` : sans lui, un client légitime réessaierait tout de suite, donc
+ * redemanderait la place qu'on vient de lui refuser.
+ */
+export async function consommerEnSilence(
+  limiteur: RateLimiter,
+  cle: string,
+  reply: FastifyReply,
+  message = 'trop de requêtes, patientez un instant',
+): Promise<boolean> {
+  if (limiteur.take(cle)) return true;
+  await refuserTropDeRequetes(reply, limiteur.remaining(cle).attenteMs, message);
+  return false;
+}
+
+async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, message: string): Promise<void> {
+  reply.header('retry-after', String(Math.max(1, Math.ceil(attenteMs / 1000))));
+  await reply.code(429).send({ error: message });
 }

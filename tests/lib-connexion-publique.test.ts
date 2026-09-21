@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { LookupAddress } from 'node:dns';
 import { Agent } from 'undici';
 import {
-  lookupPublic, connecteurPublic, fetchPublicAvec, estRefusAdresseInterne, AdresseInterdite, type ResoudreTout,
+  lookupPublic, connecteurPublic, fetchPublicAvec, estRefusAdresseInterne, estRedirectionRefusee, adressePubliqueDe, AdresseInterdite, type ResoudreTout,
 } from '../src/lib/connexion-publique';
 
 /**
@@ -68,6 +68,7 @@ describe('la connexion vérifiée, contre un vrai serveur local', () => {
   beforeAll(async () => {
     serveur = createServer((req, res) => {
       if (req.url === '/lent') { setTimeout(() => res.end('trop tard'), 2_000).unref(); return; }
+      if (req.url === '/redirige') { res.writeHead(302, { location: '/ailleurs' }); res.end(); return; }
       if (req.url === '/echo') {
         let corps = '';
         req.on('data', (c: Buffer) => { corps += c.toString('utf8'); });
@@ -157,6 +158,25 @@ describe('la connexion vérifiée, contre un vrai serveur local', () => {
     }
   });
 
+  /**
+   * 🔴 LA FORME RÉELLE D'UNE REDIRECTION REFUSÉE, mesurée ici plutôt que supposée : « fetch failed », la raison
+   * dans la cause. Le résolveur de connecteur lisait le seul message et ne la reconnaissait jamais.
+   */
+  it('🔴 une redirection refusée (redirect: error) se reconnaît dans la CAUSE, et n’est pas un refus d’adresse', async () => {
+    const agent = new Agent({ connect: connecteurPublic(resolveur(table), () => false) });
+    try {
+      const erreur = await fetchPublicAvec(agent)(`http://rebind.test:${port}/redirige`, { redirect: 'error' }).then(() => null, (e: unknown) => e);
+      expect(erreur, 'la redirection aurait dû être refusée').not.toBeNull();
+      expect(estRedirectionRefusee(erreur)).toBe(true);
+      expect(estRefusAdresseInterne(erreur)).toBe(false);
+      // Et un refus d'adresse n'est pas une redirection, ni une panne DNS sur un hôte dont le nom contient le mot.
+      expect(estRedirectionRefusee(new TypeError('fetch failed', { cause: new AdresseInterdite() }))).toBe(false);
+      expect(estRedirectionRefusee(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND redirect.client.fr') }))).toBe(false);
+    } finally {
+      await agent.close();
+    }
+  });
+
   it('🔴 une adresse écrite EN CHIFFRES est refusée aussi : elle ne passe jamais par la résolution', async () => {
     const agent = new Agent({ connect: connecteurPublic(resolveur({})) });
     try {
@@ -165,5 +185,36 @@ describe('la connexion vérifiée, contre un vrai serveur local', () => {
     } finally {
       await agent.close();
     }
+  });
+});
+
+describe('l’adresse vérifiée d’un hôte non HTTP (SMTP)', () => {
+  it('rend l’adresse publique d’un nom, celle qu’on a vérifiée', async () => {
+    expect(await adressePubliqueDe('smtp.client.fr', resolveur({ 'smtp.client.fr': ['93.184.216.34'] }))).toBe('93.184.216.34');
+  });
+
+  it('🔴 préfère l’IPv4, comme nodemailer quand il résolvait lui-même', async () => {
+    const r = resolveur({ 'double.test': ['2606:2800:220:1:248:1893:25c8:1946', '93.184.216.34'] });
+    expect(await adressePubliqueDe('double.test', r)).toBe('93.184.216.34');
+    const seulementV6 = resolveur({ 'v6.test': ['2606:2800:220:1:248:1893:25c8:1946'] });
+    expect(await adressePubliqueDe('v6.test', seulementV6)).toBe('2606:2800:220:1:248:1893:25c8:1946');
+  });
+
+  it('🔴 une seule adresse interne condamne le nom', async () => {
+    const r = resolveur({ 'mixte.test': ['93.184.216.34', '172.18.0.1'] });
+    await expect(adressePubliqueDe('mixte.test', r)).rejects.toBeInstanceOf(AdresseInterdite);
+  });
+
+  it('🔴 un littéral interne est refusé sans résolution, un littéral public passe tel quel', async () => {
+    const jamais: ResoudreTout = () => { throw new Error('la résolution ne devait pas être appelée'); };
+    await expect(adressePubliqueDe('127.0.0.1', jamais)).rejects.toBeInstanceOf(AdresseInterdite);
+    await expect(adressePubliqueDe('[::1]', jamais)).rejects.toBeInstanceOf(AdresseInterdite);
+    expect(await adressePubliqueDe('93.184.216.34', jamais)).toBe('93.184.216.34');
+  });
+
+  it('🔴 une résolution qui échoue ou qui TRAÎNE est un refus', async () => {
+    await expect(adressePubliqueDe('inconnu.test', resolveur({}))).rejects.toThrow();
+    const muette: ResoudreTout = () => { /* ne rappelle jamais */ };
+    await expect(adressePubliqueDe('lent.test', muette, undefined, 50)).rejects.toThrow('résolution trop lente');
   });
 });

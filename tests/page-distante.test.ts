@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fetchUrlBorne, urlRecuperable } from '../src/lib/page-distante';
+import { AdresseInterdite } from '../src/lib/connexion-publique';
 
 /**
  * La lecture d'une page distante depuis le serveur, et sa garde.
@@ -62,6 +63,17 @@ describe('fetchUrlBorne', () => {
    */
   const resout = async (): Promise<{ ok: boolean }> => ({ ok: true });
   const borne = (impl: typeof fetch) => fetchUrlBorne(1000, impl, resout);
+
+  it('🔴 un refus d’adresse interne À LA CONNEXION se dit comme celui de la vérification préalable', async () => {
+    // Le nom a résolu public à la vérification, puis vers l'intérieur à la connexion (`fetchPublic`).
+    const refuse = (async () => { throw new TypeError('fetch failed', { cause: new AdresseInterdite() }); }) as unknown as typeof fetch;
+    await expect(borne(refuse)('https://www.exemple.fr/faq')).rejects.toThrow('hôte non autorisé (adresse interne)');
+  });
+
+  it('une panne réseau ordinaire garde son erreur d’origine', async () => {
+    const panne = (async () => { throw new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED') }); }) as unknown as typeof fetch;
+    await expect(borne(panne)('https://www.exemple.fr/faq')).rejects.toThrow('fetch failed');
+  });
 
   it('🔴 une redirection vers un hôte interne est REFUSÉE', async () => {
     // Le contrôle d'origine ne porte que sur l'URL saisie : en suivi automatique, une page publique qui

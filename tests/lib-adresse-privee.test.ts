@@ -308,3 +308,20 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
     });
   }
 });
+
+/**
+ * 🔴 LE SMTP D'UNE BOÎTE D'ENVOI, SEUL APPEL SORTANT VERS UN HÔTE SAISI PAR UN CLIENT QUI N'EST PAS DU HTTP
+ * (2026-09-21). Il n'a pas de `fetch` : l'hôte est résolu et vérifié par `adressePubliqueDe`, et nodemailer se
+ * connecte à l'ADRESSE vérifiée. Ce test tient les deux moitiés, qu'un retour à `host: account.host` défait sans
+ * bruit : la vérification appelée, et le transport construit sur son résultat.
+ */
+describe('inventaire : l’hôte SMTP d’une boîte est vérifié, et la connexion vise l’adresse vérifiée', () => {
+  it('🔴 src/email/smtp.ts résout par adressePubliqueDe et se connecte au résultat', () => {
+    const src = readFileSync(new URL('../src/email/smtp.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(src).toMatch(/adressePubliqueDe\(/);
+    expect(src, 'nodemailer doit viser l’adresse vérifiée, pas le nom saisi').toMatch(/host:\s*adresse\b/);
+    expect(src).not.toMatch(/host:\s*account\.host/);
+  });
+});

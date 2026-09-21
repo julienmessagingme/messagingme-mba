@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { AdresseInterdite } from '../src/lib/connexion-publique';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
@@ -368,6 +369,20 @@ describe('requêtes : le bouton Test', () => {
     // cochable qui ne rendrait jamais rien.
     expect(b.chemins).toEqual(['statut', 'livraison.date', 'lignes']);
     expect(b.envoye.url).toBe('https://api.client.fr/v1/commandes/CMD-1');
+  });
+
+  /**
+   * 🔴 LE REFUS À LA CONNEXION DIT LA MÊME CHOSE QUE LA VÉRIFICATION PRÉALABLE (2026-09-21). Le nom a résolu
+   * public à la vérification, puis vers l'intérieur à la connexion : `fetchPublic` lève « fetch failed » avec
+   * `AdresseInterdite` en cause. Le client lisait « appel impossible : fetch failed » et cherchait une panne
+   * chez lui.
+   */
+  it('🔴 un refus d’adresse interne À LA CONNEXION rend le message de la vérification préalable', async () => {
+    const refuse = (async () => { throw new TypeError('fetch failed', { cause: new AdresseInterdite() }); }) as unknown as typeof fetch;
+    const { srv } = app({}, refuse);
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' });
   });
 
   it('🔴 un nom qui résout vers l’intérieur : le test REFUSE, et aucun appel ne part', async () => {

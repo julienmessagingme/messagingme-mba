@@ -3,7 +3,8 @@ import type { DecryptedEmailAccount } from './types';
 
 export interface EmailAccountResolverDeps {
   getDecrypted(tenantId: string, accountId: string): Promise<DecryptedEmailAccount | null>;
-  buildTransport(account: DecryptedEmailAccount): Transporter;
+  /** Peut LEVER : l'hôte est vérifié avant la connexion (adresse interne refusée, `smtp.ts`). */
+  buildTransport(account: DecryptedEmailAccount): Transporter | Promise<Transporter>;
   /** TTL du cache transport en ms (défaut 5 min, calqué sur MetaCredentialsResolver). */
   cacheTtlMs?: number;
   /** Horloge injectable (tests). */
@@ -60,7 +61,7 @@ export class EmailAccountResolver {
 
     const account = await this.deps.getDecrypted(tenantId, accountId);
     if (!account) return null;
-    const entry = { transport: this.deps.buildTransport(account), account, at: this.now() };
+    const entry = { transport: await this.deps.buildTransport(account), account, at: this.now() };
     this.cache.set(key, entry);
     return { transport: entry.transport, account: entry.account };
   }

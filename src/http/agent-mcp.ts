@@ -186,6 +186,9 @@ function direEchec(e: EchecMcp): string {
       return `le serveur a refusé la connexion (${e.code})`;
     case 'reseau':
       return 'le serveur est injoignable';
+    case 'adresse_interne':
+      // Même phrase que la vérification préalable (`ouvrirPourSource`) : c'est la même cause, vue plus tard.
+      return 'cette adresse ne résout pas vers une adresse publique';
     case 'budget':
       // ⚠️ NOTRE MINUTERIE, ET ON LE DIT. Ici c'est l'administrateur qui regarde l'écran : lui annoncer une
       // réponse « illisible » l'enverrait soupçonner son serveur pour un délai que nous avons fixé.

@@ -3,7 +3,7 @@ import type { PreHandler } from './middleware';
 import type { ApiKeyLookup } from './api-key-store.pg';
 import { API_KEY_PREFIX } from './api-key-store.pg';
 import { sha256Hex } from '../lib/signature';
-import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
+import { consommerAvecEntetes, consommerEnSilence, type RateLimiter } from './rate-limit';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -137,8 +137,11 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * ⚠️ LE COÛT ASSUMÉ : sous attaque soutenue, un client dont l'empreinte n'est pas encore connue de ce
      * process peut attendre la fenêtre suivante. C'est une minute pour une première connexion, contre des
      * milliers de requêtes Postgres épargnées.
+     *
+     * 🔴 EN SILENCE : ce budget est PARTAGÉ par tous les appelants, ses en-têtes n'appartiennent à personne
+     * (`consommerEnSilence`). Les `x-ratelimit-*` qu'un client lit sont ceux de SA clé, posés plus bas.
      */
-    if (!connue && !(await consommerAvecEntetes(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
+    if (!connue && !(await consommerEnSilence(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
     /**
      * 🔴 LE PLAFOND PAR CLÉ NE COMPTE QUE DES CLÉS QUI EXISTENT (2026-09-21, même défaut que sur `/w/:code`
      * et les rappels RCS). Il se prend donc AVANT la base pour une empreinte déjà résolue, APRÈS pour les

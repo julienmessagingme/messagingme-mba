@@ -138,7 +138,7 @@ import type { LigneHistorique } from './reglages/historique';
 import { PgTestRunStore } from './agent/test-runs.pg';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
-import { fetchPublic } from './lib/connexion-publique';
+import { fetchPublic, estRefusAdresseInterne } from './lib/connexion-publique';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
@@ -1938,7 +1938,13 @@ async function main(): Promise<void> {
           const ok = res.ok;
           await agentSources.marquerEpreuve(tenant, id, ok, auth ? 'authentification refusee' : `HTTP ${res.status}`);
           return { ok, httpStatus: res.status, ...(ok ? {} : { erreur: auth ? 'authentification refusee' : `HTTP ${res.status}` }) };
-        } catch {
+        } catch (err) {
+          // Refus A LA CONNEXION (le nom a resolu vers l interieur entre la verification ci-dessus et l appel) :
+          // meme verdict que la verification prealable, c est la meme cause.
+          if (estRefusAdresseInterne(err)) {
+            await agentSources.marquerEpreuve(tenant, id, false, 'adresse non joignable');
+            return { ok: false, erreur: 'cette adresse n est pas joignable depuis notre infrastructure' };
+          }
           // Le message d exception n est PAS repasse : il peut porter l URL complete, donc parfois un jeton
           // en parametre de requete sur un systeme mal concu.
           await agentSources.marquerEpreuve(tenant, id, false, 'injoignable');

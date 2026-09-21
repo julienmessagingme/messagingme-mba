@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { AdresseInterdite } from '../src/lib/connexion-publique';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
@@ -214,6 +215,30 @@ describe('routes email : test d’envoi (4xx, jamais 5xx)', () => {
     expect(res.statusCode).toBe(422);
     expect(res.json().ok).toBe(false);
     await server.close();
+  });
+
+  /**
+   * 🔴 L'HÔTE EST VÉRIFIÉ AVANT LA CONNEXION (2026-09-21) : `buildTransport` refuse un hôte interne, donc
+   * `getTransport` LÈVE. Hors du `try`, ce refus partait en 500, que Cloudflare remplace par sa page. Il se dit.
+   */
+  it('🔴 un hôte SMTP interne : 422 et un message lisible, sans citer l’adresse', async () => {
+    for (const [erreur, attendu] of [
+      [new TypeError('x', { cause: new AdresseInterdite() }), 'cet hôte SMTP n’est pas joignable depuis notre infrastructure'],
+      [Object.assign(new Error('nom introuvable'), { code: 'ENOTFOUND' }), 'hôte SMTP introuvable'],
+    ] as const) {
+      const accounts = fakeAccountsStore();
+      const resolver: EmailResolverDep = { getTransport: async () => { throw erreur; }, invalidate: () => {} };
+      const server = buildServer({
+        queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
+        email: { accounts: accounts.dep, templates: fakeTemplatesStore().dep, resolver },
+      });
+      const created = (await server.inject({ method: 'POST', url: '/tenants/t1/email/accounts', ...h(adminTok), payload: validAccountPayload })).json();
+      const res = await server.inject({ method: 'POST', url: `/tenants/t1/email/accounts/${created.id}/test`, ...h(adminTok), payload: { to: 'destinataire@exemple.fr' } });
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toEqual({ ok: false, error: attendu });
+      expect(accounts.rows.get(created.id)?.verifiedAt ?? null, 'un refus ne vérifie pas la boîte').toBeNull();
+      await server.close();
+    }
   });
 
   it('destinataire invalide -> 400 ; compte inconnu -> 404', async () => {

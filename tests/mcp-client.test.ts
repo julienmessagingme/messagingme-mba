@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ouvrirSessionMcp, type OutilAnnonce, type SessionMcp } from '../src/mcp/client';
+import { AdresseInterdite } from '../src/lib/connexion-publique';
 
 /**
  * Le CLIENT MCP : Engage Me va chercher des outils chez un tiers.
@@ -169,6 +170,14 @@ describe('le client MCP : le cycle de vie', () => {
     await ouvrirSessionMcp(CIBLE, { fetchImpl: f.impl });
     // `bodyUsed` passe a vrai des que le flux est consomme OU annule. Sans le `cancel`, il reste faux.
     expect(f.reponses[0]!.bodyUsed).toBe(true);
+  });
+
+  it('🔴 un refus d adresse interne A LA CONNEXION a son genre, distinct d une panne reseau', async () => {
+    // Le nom a resolu public a la verification, puis vers l interieur a la connexion (`fetchPublic`).
+    const refuse = (async () => { throw new TypeError('fetch failed', { cause: new AdresseInterdite() }); }) as unknown as typeof fetch;
+    expect(await ouvrirSessionMcp(CIBLE, { fetchImpl: refuse })).toEqual({ echec: { genre: 'adresse_interne' } });
+    const panne = (async () => { throw new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED') }); }) as unknown as typeof fetch;
+    expect(await ouvrirSessionMcp(CIBLE, { fetchImpl: panne })).toEqual({ echec: { genre: 'reseau', message: 'fetch failed' } });
   });
 
   it('un 401 n est PAS l ancien transport : c est un refus, et le client doit pouvoir le dire', async () => {

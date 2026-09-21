@@ -1,5 +1,5 @@
 import { isSendableButtonUrl } from '../meta/button-url';
-import { fetchPublic } from './connexion-publique';
+import { fetchPublic, estRefusAdresseInterne } from './connexion-publique';
 import { lireCorpsBorne } from './corps-borne';
 import { resolutionPublique, type VerdictResolution } from './adresse-privee';
 
@@ -71,6 +71,11 @@ export function fetchUrlBorne(
         redirect: 'manual',
         signal: AbortSignal.timeout(timeoutMs),
         headers: { accept: 'text/html,application/json,text/csv;q=0.9,*/*;q=0.8' },
+      }).catch((err: unknown) => {
+        // Refus À LA CONNEXION (le nom a résolu vers l'intérieur entre la vérification ci-dessus et l'appel) :
+        // le même refus que la vérification préalable, pas un « fetch failed » qui ferait chercher une panne.
+        if (estRefusAdresseInterne(err)) throw new Error('hôte non autorisé (adresse interne)');
+        throw err;
       });
       if (res.status >= 300 && res.status < 400) {
         const destination = res.headers.get('location');

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import {
@@ -373,12 +374,19 @@ describe('Route publique des rappels RCS', () => {
  * (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) : un vrai accusé retardé n'est pas perdu.
  */
 describe('Rappels RCS : le plafond par code', () => {
+  const AUTRE_CODE = 'rcs-ffffffffffffffffffffffffffffffff';
   function monterAvec(max: number, maxCles = 0) {
     let lectures = 0;
     const dlrs: RcsDlr[] = [];
     const app = Fastify();
     registerRcsCallback(app, {
-      parCode: async (code) => { lectures += 1; return code === CODE ? { tenantId: 't1', agentId: 'ch-1' } : null; },
+      parCode: async (code) => {
+        lectures += 1;
+        if (code === CODE) return { tenantId: 't1', agentId: 'ch-1' };
+        // Un second code EXISTANT, d'un autre espace (même agent smsmode, pour que le corps partagé passe la
+        // garde du canal) : sans lui, le test « PAR CODE » ne pouvait rien distinguer.
+        return code === AUTRE_CODE ? { tenantId: 't2', agentId: 'ch-1' } : null;
+      },
       onDlr: async (_t, dlr) => { dlrs.push(dlr); },
       onMo: async () => {},
     }, new RateLimiter(max, 60_000, () => 1_000, maxCles));
@@ -413,12 +421,18 @@ describe('Rappels RCS : le plafond par code', () => {
     expect(dlrs).toHaveLength(1);
   });
 
-  it('le plafond est PAR CODE : un code qui déborde ne coupe pas les autres', async () => {
-    const { app } = monterAvec(1);
+  /**
+   * 🔴 LE SECOND CODE EXISTE, ET C'EST TOUT LE CAS (relecture finale du 2026-09-21). La version d'avant vérifiait
+   * qu'un autre code rendait 404 : depuis que le plafond se prend APRÈS la lecture, un code inconnu est refusé
+   * avant lui, et le test passait aussi avec une clé de limiteur CONSTANTE. Un code qui déborde ne doit pas
+   * couper le canal d'un autre espace.
+   */
+  it('🔴 le plafond est PAR CODE : un code qui déborde ne coupe pas un autre code existant', async () => {
+    const { app, dlrs } = monterAvec(1);
     expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(200);
     expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(429);
-    const autre = 'rcs-ffffffffffffffffffffffffffffffff';
-    expect((await app.inject(post(`/rcs/callback/${autre}`, DLR_DELIVERED))).statusCode).toBe(404);
+    expect((await app.inject(post(`/rcs/callback/${AUTRE_CODE}`, DLR_DELIVERED))).statusCode, 'le code d’un autre espace').toBe(200);
+    expect(dlrs).toHaveLength(2);
   });
 
   it('🔴 le plafond de production laisse passer TROIS accusés par message au débit RCS maximal', () => {
@@ -427,5 +441,17 @@ describe('Rappels RCS : le plafond par code', () => {
     expect(config.RCS_CALLBACK_PAR_MINUTE).toBeGreaterThanOrEqual(3 * config.RCS_RATE_PER_MINUTE_MAX);
     // Et au débit le plus haut que la configuration accepte (600), pas seulement à celui d'aujourd'hui.
     expect(config.RCS_CALLBACK_PAR_MINUTE).toBeGreaterThanOrEqual(3 * 600);
+  });
+
+  /**
+   * 🔴 LA SECONDE MOITIÉ DU CALCUL, DANS UN AUTRE FICHIER (relecture du 2026-09-21). Le débit RCS borne UN run ;
+   * le plafond de rappels ne tient que si un seul run tourne à la fois par espace, donc par code d'agent. C'est
+   * `campaign-run` en `groupConcurrency: 1`, groupé par `tenantId`. Relâcher l'un sans l'autre laisserait deux
+   * campagnes additionner leurs accusés sur le même code, et smsmode rejouerait le surplus.
+   */
+  it('🔴 un seul run de campagne à la fois par espace, sans quoi le plafond se calcule faux', () => {
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    expect(worker).toMatch(/\{ concurrency: config\.CAMPAIGN_RUN_CONCURRENCY, groupConcurrency: 1 \}/);
+    expect(worker).toMatch(/queue\.enqueue\('campaign-run', \{ campaignId: id \}, \{ expireInSeconds, groupId: tenantId \}\)/);
   });
 });

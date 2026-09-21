@@ -482,6 +482,19 @@ describe('résolveur http : où le nom mène vraiment', () => {
     expect(h.epreuves.some((e) => e.erreur === 'injoignable')).toBe(true);
   });
 
+  /**
+   * 🔴 UNE REDIRECTION REFUSÉE, TELLE QU'UNDICI LA LÈVE VRAIMENT (2026-09-21). `redirect: 'error'` ne rend pas
+   * la réponse 3xx : il lève « fetch failed », et « unexpected redirect » est dans la CAUSE. La branche lisait
+   * le seul `message`, donc elle n'était jamais prise : une API qui redirige s'affichait « injoignable ». Le cas
+   * du 302 RENDU (plus haut) ne l'exerçait pas, c'est un autre chemin.
+   */
+  it('🔴 une redirection refusée par le fetch réel se dit « redirection », pas « injoignable »', async () => {
+    const h = harnais({ lance: new TypeError('fetch failed', { cause: new Error('unexpected redirect') }) });
+    const res = await h.resolveur(h.entree);
+    expect(res.erreur).toBe('redirige');
+    expect(h.epreuves.some((e) => e.ok === false && e.erreur === 'redirection refusée')).toBe(true);
+  });
+
   it('un nom public laisse l’appel partir normalement', async () => {
     const h = harnais();
     const res = await h.resolveur(h.entree);

@@ -294,3 +294,76 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
     expect(store.appels, 'la base est RE-interrogée : ce n’est pas un cache de validité').toBeGreaterThan(apresPremier);
   });
 });
+
+describe('ce que les en-têtes de plafond disent, et à qui', () => {
+  const VRAIE = cleBienFormee('cle_valide_pour_les_entetes');
+
+  /**
+   * 🔴 LE BUDGET SPÉCULATIF EST PARTAGÉ PAR TOUS, IL NE S'ANNONCE À PERSONNE (2026-09-21). Ses en-têtes
+   * partaient sur le 401 d'une fausse clé : mesuré en production, `x-ratelimit-limit: 30` et
+   * `x-ratelimit-remaining: 29`. N'importe qui y lisait l'état d'un budget commun, donc le moment exact où
+   * l'épuiser. Les plafonds se distinguent ici (7 contre 11) pour qu'un en-tête du budget ne puisse pas se
+   * faire passer pour celui de la clé.
+   */
+  it('🔴 une fausse clé au bon format prend son 401 SANS en-tête de plafond', async () => {
+    const { garde } = monter(VRAIE, { maxPreAuth: 7, maxMetier: 11 });
+    const r = fausseReponse();
+    await garde(requete(cleBienFormee('inventee_pour_les_entetes')), r.reply);
+    expect(r.code()).toBe(401);
+    expect(Object.keys(r.entetes).filter((k) => k.startsWith('x-ratelimit')), 'l’état du budget commun').toEqual([]);
+  });
+
+  it('🔴 le budget épuisé refuse en 429 avec Retry-After, et toujours sans rien annoncer', async () => {
+    const { garde } = monter(VRAIE, { maxPreAuth: 1, maxMetier: 11 });
+    await garde(requete(cleBienFormee('premiere_inventee')), fausseReponse().reply);
+    const r = fausseReponse();
+    await garde(requete(cleBienFormee('seconde_inventee')), r.reply);
+    expect(r.code()).toBe(429);
+    expect(Number(r.entetes['retry-after'])).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(r.entetes).filter((k) => k.startsWith('x-ratelimit'))).toEqual([]);
+  });
+
+  it('une vraie clé lit les en-têtes de SON plafond, au premier appel comme aux suivants', async () => {
+    const { garde } = monter(VRAIE, { maxPreAuth: 7, maxMetier: 11 });
+    for (const [rang, restant] of [[1, '10'], [2, '9']] as const) {
+      const r = fausseReponse();
+      await garde(requete(VRAIE), r.reply);
+      expect(r.code(), `appel ${rang}`).toBeNull();
+      expect(r.entetes['x-ratelimit-limit'], `appel ${rang} : le plafond de la clé, pas celui du budget`).toBe('11');
+      expect(r.entetes['x-ratelimit-remaining'], `appel ${rang}`).toBe(restant);
+    }
+  });
+});
+
+describe('le plafond par clé est PAR clé', () => {
+  /**
+   * 🔴 CE CAS MANQUAIT, ET SANS LUI LA CLÉ DU LIMITEUR POUVAIT DEVENIR UNE CONSTANTE SANS QU'AUCUN TEST NE
+   * TOMBE (relevé par la relecture finale du 2026-09-21). Deux clés réelles : la première au-delà de son
+   * plafond ne doit rien retirer à la seconde. Un intégrateur trop pressé ne coupe pas l'API de ses voisins.
+   */
+  it('🔴 une clé au-delà de son plafond ne freine pas une autre clé', async () => {
+    const A = cleBienFormee('cle_du_client_a');
+    const B = cleBienFormee('cle_du_client_b');
+    const store: ApiKeyLookup = {
+      async findActiveByHash(hash: string) {
+        if (hash === sha256Hex(A)) return { id: 'ka', tenantId: 'ta', scopes: ['contacts:write'] };
+        if (hash === sha256Hex(B)) return { id: 'kb', tenantId: 'tb', scopes: ['contacts:write'] };
+        return null;
+      },
+      async touchLastUsed() {},
+    };
+    const garde = makeRequireApiKey(store, new RateLimiter(2, 60_000), new RateLimiter(100, 60_000));
+    const codesA: Array<number | null> = [];
+    for (let i = 0; i < 4; i += 1) {
+      const r = fausseReponse();
+      await garde(requete(A), r.reply);
+      codesA.push(r.code());
+    }
+    expect(codesA, 'la clé A épuise son propre plafond').toEqual([null, null, 429, 429]);
+    const r = fausseReponse();
+    const req = requete(B);
+    await garde(req, r.reply);
+    expect(r.code(), 'la clé B ne doit rien payer pour A').toBeNull();
+    expect(req.auth?.tenantId).toBe('tb');
+  });
+});

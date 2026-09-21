@@ -4,6 +4,7 @@ import type { Transporter } from 'nodemailer';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { sendSmtpEmail } from '../email/smtp';
+import { estRefusAdresseInterne } from '../lib/connexion-publique';
 import { scopeTenant } from './scope';
 import type {
   EmailAccount,
@@ -140,7 +141,19 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     const parsed = testSendBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'destinataire de test invalide' });
     const { id } = req.params as { id: string };
-    const resolved = await deps.resolver.getTransport(tenant, id);
+    let resolved: Awaited<ReturnType<typeof deps.resolver.getTransport>>;
+    try {
+      resolved = await deps.resolver.getTransport(tenant, id);
+    } catch (err) {
+      // 🔴 L'HÔTE EST VÉRIFIÉ AVANT LA CONNEXION (`buildTransport`) : un refus se DIT, en 422, plutôt que de
+      // partir en 500 (que Cloudflare remplacerait par sa propre page). Sans citer l'adresse résolue.
+      if (estRefusAdresseInterne(err)) {
+        return reply.code(422).send({ ok: false, error: 'cet hôte SMTP n’est pas joignable depuis notre infrastructure' });
+      }
+      // eslint-disable-next-line no-console
+      console.error(`email: hôte SMTP introuvable (compte ${id}):`, err instanceof Error ? err.message : err);
+      return reply.code(422).send({ ok: false, error: 'hôte SMTP introuvable' });
+    }
     if (!resolved) return reply.code(404).send({ error: 'compte introuvable' });
     try {
       await sendSmtpEmail(resolved.transport, resolved.account, {

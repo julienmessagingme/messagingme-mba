@@ -4,7 +4,7 @@ import type { SourceStore } from '../sources';
 import type { RequeteStore } from '../requetes';
 import { construireCible, enTetesAuthSource } from '../http-cible';
 import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-privee';
-import { fetchPublic, estRefusAdresseInterne } from '../../lib/connexion-publique';
+import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../../lib/connexion-publique';
 import { lireCorpsBorne } from '../../lib/corps-borne';
 import { assemblerAppel } from '../requete-http';
 import { resoudreVariable, type ValeurResolue } from '../variables';
@@ -352,7 +352,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
         await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
         return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: 'connexion_interne' };
       }
-      const redirige = String((err as Error)?.message ?? '').toLowerCase().includes('redirect');
+      const redirige = estRedirectionRefusee(err);
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, redirige ? 'redirection refusée' : 'injoignable').catch(() => {});
       const cle = redirige ? 'redirige' : 'indispo';
       return { ok: false, contenu: { erreur: MESSAGES[cle] }, erreur: cle };

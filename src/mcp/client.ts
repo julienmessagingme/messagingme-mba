@@ -1,5 +1,5 @@
 import { lireCorpsBorne } from '../lib/corps-borne';
-import { fetchPublic } from '../lib/connexion-publique';
+import { fetchPublic, estRefusAdresseInterne } from '../lib/connexion-publique';
 // ⚠️ LES DEUX VIENNENT DU SERVEUR, ET C'EST DÉLIBÉRÉ : c'est le MÊME produit, qui parle la MÊME révision du
 // protocole des deux côtés. Les recopier ici créerait deux vérités, et le jour où l'une des deux bouge,
 // on parlerait une révision en serveur et une autre en client sans que rien ne le signale. L'alias dit
@@ -76,6 +76,12 @@ export type EchecMcp =
   /** Le serveur ne parle que l'ancien transport HTTP+SSE de la révision 2024-11-05. */
   | { genre: 'transport_ancien' }
   | { genre: 'reseau'; message: string }
+  /**
+   * 🔴 LE NOM A RÉSOLU VERS L'INTÉRIEUR AU MOMENT DE LA CONNEXION (le « DNS rebinding » que `fetchPublic`
+   * ferme). Son genre à lui, pas `reseau` : la vérification préalable dit « adresse non publique », la
+   * connexion doit dire la même chose, sinon le client cherche une panne de son serveur qui n'existe pas.
+   */
+  | { genre: 'adresse_interne' }
   /** Réponse illisible, corps trop gros, flux cassé : ce qui n'est ni un refus ni une panne réseau. */
   /**
    * 🔴 NOTRE ÉCHÉANCE, PAS UNE FAUTE DU SERVEUR, et c'est pour ça qu'il a son genre à lui. Rangé sous
@@ -232,6 +238,12 @@ async function lireReponse(
   return { echec: { genre: 'protocole', message: 'le flux s’est terminé sans porter la réponse attendue' } };
 }
 
+/** L'échec d'un appel qui a LEVÉ : un refus d'adresse à la connexion, ou une vraie panne réseau. */
+function echecReseau(err: unknown): EchecMcp {
+  if (estRefusAdresseInterne(err)) return { genre: 'adresse_interne' };
+  return { genre: 'reseau', message: err instanceof Error ? err.message : 'appel impossible' };
+}
+
 export function ouvrirSessionMcp(
   cible: CibleMcp,
   /** `now` est injectée pour que le budget soit reproductible en test, comme ailleurs dans ce dépôt. */
@@ -303,7 +315,7 @@ async function ouvrir(
         redirect: 'error',
       });
     } catch (err) {
-      return { echec: { genre: 'reseau', message: err instanceof Error ? err.message : 'appel impossible' } };
+      return { echec: echecReseau(err) };
     }
     if (!res.ok) {
       // Le corps d'une réponse qu'on n'exploite pas se JETTE explicitement : sans ça, la connexion reste
@@ -351,7 +363,7 @@ async function ouvrir(
       redirect: 'error',
     });
   } catch (err) {
-    return { echec: { genre: 'reseau', message: err instanceof Error ? err.message : 'appel impossible' } };
+    return { echec: echecReseau(err) };
   }
 
   if (!premiereReponse.ok) {

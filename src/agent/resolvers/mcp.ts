@@ -57,6 +57,9 @@ function direEchec(e: EchecMcp): string {
       return `le serveur MCP a refusé l’appel (${e.code})`;
     case 'reseau':
       return 'le serveur MCP est injoignable';
+    case 'adresse_interne':
+      // Même phrase que la vérification préalable (plus bas) : c'est la même cause, vue plus tard.
+      return 'l’adresse de ce serveur MCP ne résout pas vers une adresse publique';
     default:
       /**
        * ⚠️ LE MESSAGE PART AVEC, il ne se jette pas. Ce genre couvre aussi bien « corps JSON illisible »

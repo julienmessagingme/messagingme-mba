@@ -199,7 +199,9 @@ export const schema = z.object({
    *
    * ⚠️ LA PLACE EST GLOBALE AU PROCESS, TOUS CLIENTS CONFONDUS. Pendant qu'un lot d'un espace est en vol,
    * l'opération lourde d'un AUTRE espace reçoit le 429 (`Retry-After: 2`). Le pool est partagé par tous, donc
-   * un plafond par espace ne le protégerait pas ; l'équité entre intégrateurs est un chantier à part.
+   * un plafond par espace ne le protégerait pas. **Gardé tel quel par décision de Julien (2026-09-21)** : la
+   * réception des messages passe avant l'équité entre intégrateurs, qui attend dans `todo.md` le jour où
+   * plusieurs d'entre eux se croiseront.
    *
    * ⚠️ LE LIMITEUR DE DÉBIT NE PROTÈGE PAS DE ÇA : sa fenêtre est FIXE, donc les 60 requêtes d'une minute
    * peuvent tomber dans la même milliseconde. Relever ce nombre demande de refaire l'arithmétique du pool,
@@ -310,7 +312,10 @@ export const schema = z.object({
    * 🔴 IL SE CALCULE SUR LE DÉBIT D'ENVOI, ET L'ÉCART EST TENU PAR UN TEST. Un message RCS produit jusqu'à
    * trois accusés, plus les réponses du contact : au débit maximal que la configuration accepte
    * (`RCS_RATE_PER_MINUTE_MAX` borné à 600), c'est 1 800 rappels par minute. 3 000 laisse la marge d'une
-   * rafale, par exemple smsmode qui rejoue d'un coup ce qu'il n'avait pas pu livrer. En dessous du débit réel,
+   * rafale, par exemple smsmode qui rejoue d'un coup ce qu'il n'avait pas pu livrer. ⚠️ Ce débit est celui d'UN
+   * run de campagne, et le calcul tient parce qu'UN SEUL run tourne à la fois par espace (`campaign-run` en
+   * `groupConcurrency: 1` par `tenantId`, `src/worker.ts`) : le code d'un agent ne reçoit donc pas les accusés
+   * de deux campagnes simultanées. Le même test tient les deux moitiés. En dessous du débit réel,
    * smsmode rejouerait tout le trafic d'une campagne ; un refus est un 429, que smsmode REJOUE, donc un accusé
    * retardé, pas perdu.
    */
