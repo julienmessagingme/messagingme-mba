@@ -19,6 +19,28 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le chantier Inbox : TROIS passes à froid (3, 1 et 1 rouges), chacune sur les correctifs de la précédente. Le dernier commit n'a PAS été relu à froid, par décision explicite de Julien (« tu corriges les points mais tu ne lances pas de 4e et tu publies ») ; le rapport `.git/revue-finale-rapport.md` le dit. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
+## 🔴 META BUSINESS AGENT : LES OUTILS CREUX NE PARTENT PLUS, LE RELAIS EST À CADRER (2026-09-21)
+
+**Le diagnostic.** `add_tag` (« Le client demande à rajouter une étiquette ») ne s'est pas déclenché, et
+l'agent de Meta a transféré à l'équipe. La publication n'envoyait chez Meta que `{method, path}` : l'outil y
+existait SANS corps, donc sans `user_ns` ni `tag_ns`. Et Meta appelle le système du client en direct : il ne
+lit pas le mini-CRM, il ne remplit une valeur que par extraction du modèle, une valeur fixe ou trois macros.
+
+**Le correctif immédiat, en direct (petit, réversible, il ne fait que retirer des gestes)** : un outil dont
+l'appel porte un corps, des paramètres, des en-têtes ou un chemin variable n'est plus publié, sa copie creuse
+chez Meta est supprimée, et l'écran le nomme sous « Pas envoyés chez Meta ». Mesuré en production avant
+d'écrire : UN seul outil est exposé au MBA, `add_tag`, donc aucun outil qui fonctionne n'est touché.
+
+🔴 **ESSAI RÉEL, APRÈS DÉPLOIEMENT DE L'API** : Tools > Outils de l'agent de Meta, « Envoyer ». La
+confirmation doit proposer de SUPPRIMER `add_tag` en disant pourquoi (le corps, avec tag et user), puis
+l'écran doit dire « Publié, sauf les outils ci-dessous » et nommer `add_tag`.
+
+**La suite, arbitrée sur le principe avec Julien le même jour** : le RELAIS. Tools > Connecteurs API reste le
+seul endroit où l'on déclare un appel ; à la publication, le connecteur présenté à Meta pointe vers Engage Me,
+qui retrouve le contact, remplit les variables depuis le mini-CRM et fait l'appel par `creerAppelConnecteur`.
+Points à mesurer avant de coder : le format de la macro `WHATSAPP_PHONE_NUMBER` (non documenté), le passage
+des appels de Meta par Cloudflare sans défi anti-robot, et la clé par espace posée chez Meta. Cadrage à faire.
+
 ## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL DÛ)
 
 Trois demandes de Julien, arbitrées le jour même. Plan :

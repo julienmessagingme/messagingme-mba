@@ -384,6 +384,16 @@ renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau », 
 Le plan est PUR (`src/mba/publication.ts`, aucune IO) et il compare la description, la MÉTHODE et le CHEMIN,
 les trois : n'en comparer qu'un rendait la publication silencieusement incomplète.
 
+🔴 **NOUS NE PUBLIONS CHEZ META QUE LA MÉTHODE ET LE CHEMIN, DONC UN APPEL QUI PORTE AUTRE CHOSE N'EST PAS
+PUBLIÉ.** Meta appelle le système du client en direct et ne lit pas notre mini-CRM : le corps, les paramètres d'adresse
+et les en-têtes n'y seraient pas, et une partie variable du chemin partirait telle quelle, accolades comprises.
+Une ligne laissée vide à l'écran (sans clé) ne compte pas, l'appel l'ignore aussi. `pertesChezMeta` dit ce
+qui se perdrait ; un outil exposé qui en a est traité comme absent par le plan (non créé, et sa copie chez
+Meta supprimée), et la route rend la liste `nonPubliables` pour que l'écran la nomme. La garde est répétée
+dans `corpsOutilMeta`, qui prend la REQUÊTE elle-même et refuse de construire un outil creux : aucun appelant
+ne peut la contourner en passant un drapeau. ⚠️ Temporaire par nature : le relais (Meta appelle Engage Me,
+qui fait l'appel avec les valeurs du mini-CRM) la rendra sans objet.
+
 🔴 **UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT.** Meta ne rend jamais le secret d'un connecteur.
 `agent_tool_sources.secret_publie_le` (0129) est l'instant où NOTRE secret courant a été accepté par Meta ; il
 retombe à `null` dès qu'on touche à l'authentification de la source (le secret, mais aussi le MODE et le NOM

@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import {
-  planifierPublication, descriptionPourMeta, authTypeMeta, authConfigMeta,
+  planifierPublication, descriptionPourMeta, authTypeMeta, authConfigMeta, pertesChezMeta, OutilNonPubliable,
   type Geste, type SourceAPublier, type OutilAPublier, type EtatMeta,
 } from '../mba/publication';
+import type { RequeteConnecteur } from '../agent/requetes';
 import { scopeTenant } from './scope';
 
 /**
@@ -43,21 +44,30 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
   const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/mba-publication';
 
-  async function planifier(tenantId: string, pn: string): Promise<Geste[]> {
+  /**
+   * Le plan, et les outils exposés qui n'en font PAS partie parce que Meta en recevrait une version creuse.
+   *
+   * ⚠️ LES SECONDS VOYAGENT AVEC LE PLAN, jamais seuls : l'écran doit pouvoir dire « Publié, sauf add_tag,
+   * parce que… » au lieu de « Meta est à jour », qui était exactement le mensonge du 2026-09-21.
+   */
+  async function planifier(tenantId: string, pn: string): Promise<{ gestes: Geste[]; nonPubliables: NonPubliable[] }> {
     const [sources, outils, meta] = await Promise.all([
       deps.sources(tenantId),
       deps.outilsExposes(tenantId, pn),
       deps.etatMeta(tenantId, pn),
     ]);
-    return planifierPublication(sources, outils, meta);
+    return {
+      gestes: planifierPublication(sources, outils, meta),
+      nonPubliables: outils.filter((o) => o.pertes.length > 0).map((o) => ({ nom: o.name, pertes: o.pertes })),
+    };
   }
 
   app.get(base, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
     const pn = await deps.numeroDuTenant(tenant);
-    if (!pn) return reply.code(200).send({ gestes: [], phoneNumberId: null });
-    return reply.code(200).send({ gestes: await planifier(tenant, pn), phoneNumberId: pn });
+    if (!pn) return reply.code(200).send({ gestes: [], phoneNumberId: null, nonPubliables: [] });
+    return reply.code(200).send({ ...(await planifier(tenant, pn)), phoneNumberId: pn });
   });
 
   /**
@@ -74,7 +84,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     if (!pn) {
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté : il n’y a pas d’agent Meta où publier.' });
     }
-    const gestes = await planifier(tenant, pn);
+    const { gestes, nonPubliables } = await planifier(tenant, pn);
     const faits: Geste[] = [];
     // Vit le temps de CETTE publication, et meurt avec elle : deux publications ne partagent jamais un état
     // lu, ce qui serait précisément la façon d'agir sur une photo périmée.
@@ -86,15 +96,21 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`mba-publication: ${g.type} « ${g.nom} » a échoué (${tenant}):`, err instanceof Error ? err.message : err);
+        // Un refus qui vient de NOUS ne se présente pas comme un refus de Meta.
+        const cause = err instanceof OutilNonPubliable ? err.message : `Meta a refusé « ${g.nom} » (${g.type}).`;
         return reply.code(409).send({
-          error: `Meta a refusé « ${g.nom} » (${g.type}). ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
+          error: `${cause} ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
           faits,
+          nonPubliables,
         });
       }
     }
-    return reply.code(200).send({ faits });
+    return reply.code(200).send({ faits, nonPubliables });
   });
 }
+
+/** Un outil exposé au MBA que la publication laisse de côté, et ce que Meta n'en recevrait pas. */
+export interface NonPubliable { nom: string; pertes: string[] }
 
 /**
  * Le corps d'un outil chez Meta, construit depuis le nôtre.
@@ -102,14 +118,24 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
  * ⚠️ `request_definition` reste MINIMAL : méthode et chemin. Les macros, `transformation_spec` et
  * `user_auth_required: true` de Meta ne sont PAS gérés au premier lot, et on ne prétend pas le contraire :
  * un outil qui les utiliserait serait modifié dans WhatsApp Manager, donc écrasé, et l'aperçu le montre.
+ *
+ * 🔴 IL PREND LA REQUÊTE ELLE-MÊME, ET REFUSE DE CONSTRUIRE UN OUTIL CREUX (2026-09-21). Le plan écarte
+ * déjà ces outils ; la garde est répétée ICI parce que c'est la seule fonction qui fabrique ce qui part
+ * chez Meta, et qu'elle calcule les pertes sur la requête qu'elle publie, pas sur un drapeau qu'on lui
+ * aurait passé. Aucun appelant ne peut donc lui faire publier un outil creux, pas même par oubli.
  */
-export function corpsOutilMeta(o: OutilAPublier): {
+export function corpsOutilMeta(
+  o: Pick<OutilAPublier, 'name' | 'description' | 'nePasUtiliser'>,
+  req: Pick<RequeteConnecteur, 'methode' | 'chemin' | 'parametres' | 'entetes' | 'corps'>,
+): {
   name: string; description: string; request_definition: unknown; user_auth_required: boolean;
 } {
+  const pertes = pertesChezMeta(req);
+  if (pertes.length > 0) throw new OutilNonPubliable(o.name, pertes);
   return {
     name: o.name,
     description: descriptionPourMeta(o),
-    request_definition: { method: o.methode, path: o.chemin },
+    request_definition: { method: req.methode, path: req.chemin },
     // Exigé par le schéma de Meta. `false` est le seul choix honnête : nous ne collectons aucun jeton par
     // utilisateur final. L'omettre ferait échouer la création.
     user_auth_required: false,

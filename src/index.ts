@@ -142,6 +142,7 @@ import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { corpsConnecteurMeta, corpsOutilMeta } from './http/mba-publication';
+import { pertesChezMeta } from './mba/publication';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -1813,6 +1814,8 @@ async function main(): Promise<void> {
           sortie.push({
             id: o.id, sourceId: o.sourceId, name: o.name, description: o.description,
             nePasUtiliser: o.nePasUtiliser, methode: req.methode, chemin: req.chemin,
+            // Ce que Meta ne recevrait pas : un outil qui en a n'est pas publié, et l'écran dit pourquoi.
+            pertes: pertesChezMeta(req),
           });
         }
         return sortie;
@@ -1938,10 +1941,9 @@ async function main(): Promise<void> {
           if (!o || !o.requestId) return;
           const req = await agentRequetes.parId(tenant, o.requestId);
           if (!req) return;
-          const corps = corpsOutilMeta({
-            id: o.id, sourceId: s.id, name: o.name, description: o.description,
-            nePasUtiliser: o.nePasUtiliser, methode: req.methode, chemin: req.chemin,
-          });
+          // La REQUÊTE entière, pas sa méthode et son chemin recopiés : c'est sur elle que `corpsOutilMeta`
+          // calcule ce que Meta perdrait, et refuse de construire un outil creux.
+          const corps = corpsOutilMeta({ name: o.name, description: o.description, nePasUtiliser: o.nePasUtiliser }, req);
           if (geste.type === 'outil_creer') await client.createConnectorTool(pn, cid, corps);
           else await client.updateConnectorTool(pn, cid, geste.outilMetaId, corps);
           return;

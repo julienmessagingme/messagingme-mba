@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   planifierPublication, descriptionPourMeta, authTypeMeta, authConfigMeta, nomPubliableChezMeta,
+  pertesChezMeta, OutilNonPubliable,
   type SourceAPublier, type OutilAPublier, type EtatMeta,
 } from '../src/mba/publication';
 import { corpsConnecteurMeta, corpsOutilMeta } from '../src/http/mba-publication';
@@ -23,6 +24,8 @@ const OUT: OutilAPublier = {
   id: 'o1', sourceId: 's1', name: 'check_order_status',
   description: 'Donne l’état d’une commande.', nePasUtiliser: 'Jamais pour annuler.',
   methode: 'GET', chemin: '/orders/{id}',
+  // Le plan lit `pertes`, il ne les recalcule pas : c'est le câblage qui les dérive de la requête.
+  pertes: [],
 };
 const VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 
@@ -323,6 +326,100 @@ describe('les deux regles de validation que Meta ecrit noir sur blanc', () => {
   it('🔴 `user_auth_required` est TOUJOURS present dans un outil', () => {
     // Il est dans le `required` du schema : l omettre ferait echouer la creation. `false` est le seul choix
     // honnete, nous ne collectons aucun jeton par utilisateur final.
-    expect(corpsOutilMeta(OUT).user_auth_required).toBe(false);
+    expect(corpsOutilMeta(OUT, REQ_FIXE).user_auth_required).toBe(false);
+  });
+});
+
+/** Un appel que Meta reçoit en entier : une méthode et un chemin, rien d'autre. */
+const REQ_FIXE = {
+  methode: 'GET' as const, chemin: '/orders/recent', parametres: [], entetes: [], corps: { mode: 'aucun' as const },
+};
+/** L'appel réel du 2026-09-21, tel qu'il est en base : c'est lui qui partait creux chez Meta. */
+const REQ_ADD_TAG = {
+  methode: 'POST' as const, chemin: '/subscriber/add-tag', parametres: [], entetes: [],
+  corps: { mode: 'json' as const, gabarit: '{"user_ns":"{{user}}","tag_ns":"{{tag}}"}' },
+};
+
+/**
+ * 🔴 CE QUE META NE RECEVRAIT PAS (2026-09-21).
+ *
+ * Nous ne publions que la méthode et le chemin. `add_tag` est parti chez Meta SANS son corps, donc sans
+ * l'utilisateur ni l'étiquette, et l'écran a dit « Publié ». Ces cas gardent la liste de ce qui se perd.
+ */
+describe('pertesChezMeta', () => {
+  it('un appel réduit à sa méthode et son chemin ne perd RIEN', () => {
+    expect(pertesChezMeta(REQ_FIXE)).toEqual([]);
+  });
+
+  it('🔴 le cas réel : le corps de add_tag, et les valeurs qu’il porte', () => {
+    expect(pertesChezMeta(REQ_ADD_TAG)).toEqual(['le corps de la requête (tag, user)']);
+  });
+
+  it('un corps JSON vide ou réduit à {} n’emporte rien', () => {
+    for (const gabarit of ['', '{}', '  { }  ']) {
+      expect(pertesChezMeta({ ...REQ_FIXE, corps: { mode: 'json', gabarit } })).toEqual([]);
+    }
+    expect(pertesChezMeta({ ...REQ_FIXE, corps: { mode: 'champs', champs: [] } })).toEqual([]);
+  });
+
+  it('🔴 une ligne laissée VIDE à l’écran n’est pas une perte', () => {
+    // L'appel l'ignore (paramètre, en-tête ou champ sans clé) : la compter supprimerait chez Meta un outil
+    // qui y fonctionne en entier. Trouvé par la relecture du 2026-09-21.
+    expect(pertesChezMeta({
+      ...REQ_FIXE,
+      parametres: [{ cle: '  ', valeur: '' }], entetes: [{ nom: '', valeur: 'x' }],
+      corps: { mode: 'champs', champs: [{ cle: ' ', valeur: '' }] },
+    })).toEqual([]);
+  });
+
+  it('un corps en liste de champs se perd aussi, même sans variable', () => {
+    const r = pertesChezMeta({ ...REQ_FIXE, corps: { mode: 'champs', champs: [{ cle: 'source', valeur: 'whatsapp' }] } });
+    expect(r).toEqual(['le corps de la requête']);
+  });
+
+  it('🔴 le chemin, les paramètres et les en-têtes se perdent, valeurs FIXES comprises', () => {
+    // Une valeur fixe n'est pas plus publiée qu'une variable : Meta ne reçoit que `{method, path}`.
+    const r = pertesChezMeta({
+      ...REQ_FIXE, chemin: '/orders/{id}',
+      parametres: [{ cle: 'statut', valeur: 'ouvert' }], entetes: [{ nom: 'X-Boutique', valeur: '42' }],
+    });
+    expect(r).toEqual([
+      'la partie variable de l’adresse (id)', 'les paramètres d’adresse (statut)', 'les en-têtes (X-Boutique)',
+    ]);
+  });
+});
+
+describe('un outil qui perdrait quelque chose chez Meta', () => {
+  const CREUX: OutilAPublier = { ...OUT, pertes: ['le corps de la requête (tag, user)'] };
+
+  it('🔴 n’est PAS créé chez Meta', () => {
+    expect(planifierPublication([SRC], [CREUX], VIDE).map((x) => x.type)).toEqual(['connecteur_creer']);
+  });
+
+  it('🔴 sa copie creuse DÉJÀ chez Meta s’en va', () => {
+    // C'est l'état de l'espace de Julien le 2026-09-21 : l'outil est chez Meta, sans corps.
+    expect(planifierPublication([SRC], [CREUX], ALIGNE)).toEqual([
+      { type: 'outil_supprimer', sourceId: 's1', outilMetaId: 't1', nom: 'check_order_status' },
+    ]);
+  });
+
+  it('ne gêne pas ses voisins publiables', () => {
+    const voisin: OutilAPublier = { ...OUT, id: 'o2', name: 'autre_outil' };
+    const g = planifierPublication([SRC], [CREUX, voisin], VIDE);
+    expect(g).toEqual([
+      { type: 'connecteur_creer', sourceId: 's1', nom: 'Shopify' },
+      { type: 'outil_creer', sourceId: 's1', outilId: 'o2', nom: 'autre_outil' },
+    ]);
+  });
+
+  it('🔴 son corps Meta REFUSE de se construire, quelle que soit la façon dont on l’appelle', () => {
+    // La garde vit dans la fonction qui fabrique ce qui part chez Meta, et elle lit la REQUÊTE : aucun
+    // appelant ne peut lui faire publier un outil creux en oubliant de lui passer un drapeau.
+    expect(() => corpsOutilMeta({ ...OUT, name: 'add_tag' }, REQ_ADD_TAG)).toThrow(OutilNonPubliable);
+    expect(() => corpsOutilMeta({ ...OUT, name: 'add_tag' }, REQ_ADD_TAG)).toThrow(/add_tag.*le corps de la requête \(tag, user\)/);
+  });
+
+  it('le corps Meta d’un appel publiable porte la méthode et le chemin DE LA REQUÊTE', () => {
+    expect(corpsOutilMeta(OUT, REQ_FIXE).request_definition).toEqual({ method: 'GET', path: '/orders/recent' });
   });
 });

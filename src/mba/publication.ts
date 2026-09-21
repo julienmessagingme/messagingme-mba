@@ -17,6 +17,9 @@
  * seul test qui prouve que la réconciliation marche.
  */
 
+import type { RequeteConnecteur } from '../agent/requetes';
+import { variablesUtilisees } from '../agent/requete-http';
+
 /** Une SOURCE de chez nous, telle qu'elle devient un connecteur chez Meta. */
 export interface SourceAPublier {
   id: string;
@@ -48,6 +51,63 @@ export interface OutilAPublier {
   nePasUtiliser: string;
   methode: string;
   chemin: string;
+  /**
+   * Ce que Meta NE RECEVRAIT PAS de l'appel, calculé par `pertesChezMeta`. Vide = publiable tel quel.
+   *
+   * 🔴 UN OUTIL QUI A DES PERTES N'EST PAS PUBLIÉ, ET SA COPIE CHEZ META S'EN VA (2026-09-21). Voir
+   * `pertesChezMeta` pour la raison.
+   */
+  pertes: string[];
+}
+
+/**
+ * CE QUE META NE RECEVRAIT PAS D'UN APPEL, en français, pour le dire au client. Vide = publiable tel quel.
+ *
+ * 🔴 NOUS NE PUBLIONS QUE LA MÉTHODE ET LE CHEMIN (`corpsOutilMeta`), ET TOUT LE RESTE ÉTAIT PERDU EN
+ * SILENCE (constaté le 2026-09-21). Julien a exposé `add_tag` (`POST /subscriber/add-tag`, corps
+ * `{"user_ns":"{{user}}","tag_ns":"{{tag}}"}`) : chez Meta, l'outil existait SANS corps, donc sans aucun
+ * moyen d'envoyer l'utilisateur ni l'étiquette, et l'écran disait « Publié ». Meta appelle le système du
+ * client en direct : il ne lit pas notre mini-CRM, et ne remplit une valeur que par ce qu'on lui déclare.
+ *
+ * ⚠️ CE N'EST PAS LA RÉPARATION, C'EST LA FIN DU MENSONGE. La réparation est le relais (Meta nous appelle,
+ * nous faisons l'appel avec les valeurs du mini-CRM), arbitré avec Julien le même jour. Quand il existera,
+ * cette fonction n'aura plus de raison d'être.
+ *
+ * ⚠️ UNE VARIABLE DÉCLARÉE MAIS UTILISÉE NULLE PART NE COMPTE PAS : elle ne part dans aucune requête, chez
+ * nous non plus. Ce qui compte est ce qui PART, donc le chemin, les paramètres, les en-têtes et le corps.
+ */
+export function pertesChezMeta(
+  req: Pick<RequeteConnecteur, 'chemin' | 'parametres' | 'entetes' | 'corps'>,
+): string[] {
+  const pertes: string[] = [];
+  const noms = (liste: readonly string[]): string => (liste.length > 0 ? ` (${liste.join(', ')})` : '');
+  const duChemin = [...req.chemin.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((m) => m[1]!);
+  if (duChemin.length > 0) pertes.push(`la partie variable de l’adresse${noms(duChemin)}`);
+  // ⚠️ UNE LIGNE SANS CLÉ N'EST PAS UNE PERTE : l'écran permet d'en laisser une vide, et l'appel l'ignore
+  // (`construireParametres`, `champsVersJson`, `verifier`). La compter supprimerait chez Meta un outil qui
+  // y fonctionne en entier.
+  const parametres = req.parametres.filter((p) => p.cle.trim() !== '');
+  const entetes = req.entetes.filter((e) => e.nom.trim() !== '');
+  if (parametres.length > 0) pertes.push(`les paramètres d’adresse${noms(parametres.map((p) => p.cle.trim()))}`);
+  if (entetes.length > 0) pertes.push(`les en-têtes${noms(entetes.map((e) => e.nom.trim()))}`);
+  // Un corps JSON réduit à `{}` n'emporte rien : ce n'est pas une perte.
+  const corps = req.corps;
+  const aUnCorps = corps.mode === 'champs'
+    ? corps.champs.some((c) => c.cle.trim() !== '')
+    : corps.mode === 'json' && !['', '{}'].includes(corps.gabarit.replace(/\s/g, ''));
+  if (aUnCorps) pertes.push(`le corps de la requête${noms(variablesUtilisees(corps, []))}`);
+  return pertes;
+}
+
+/**
+ * Un outil que la publication refuse de construire, parce que Meta en recevrait une version creuse.
+ * TYPÉE pour que la route dise « nous avons refusé », et non « Meta a refusé ».
+ */
+export class OutilNonPubliable extends Error {
+  constructor(nom: string, pertes: readonly string[]) {
+    super(`« ${nom} » n’est pas envoyé chez Meta : il n’en recevrait pas ${pertes.join(', ')}.`);
+    this.name = 'OutilNonPubliable';
+  }
 }
 
 /** Ce que Meta a déjà, lu avant de comparer. */
@@ -155,11 +215,15 @@ export function planifierPublication(
   }
 
   // 3. Les outils, connecteur par connecteur.
+  // 🔴 UN OUTIL QUI A DES PERTES EST TRAITÉ COMME ABSENT (2026-09-21) : il n'est pas créé, et sa copie chez
+  // Meta, forcément creuse, s'en va. La laisser serait laisser l'agent de Meta appeler le système du client
+  // sans les valeurs qu'il attend. L'écran confirme toute suppression avant qu'elle parte, et dit pourquoi.
+  const publiables = outils.filter((o) => o.pertes.length === 0);
   for (const s of sources) {
     const chezMeta = parNom.get(s.label);
     const dejaLa = chezMeta ? (meta.outilsParConnecteur[chezMeta.id] ?? []) : [];
     const parNomOutil = new Map(dejaLa.map((o) => [o.name, o]));
-    const nosOutils = outils.filter((o) => o.sourceId === s.id);
+    const nosOutils = publiables.filter((o) => o.sourceId === s.id);
 
     for (const o of nosOutils) {
       const existant = parNomOutil.get(o.name);

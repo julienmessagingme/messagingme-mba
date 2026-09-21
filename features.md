@@ -1794,9 +1794,18 @@ importez ce qu'il propose.
 
 ### Publier chez Meta
 
-- ✅ **« Voir ce qui va changer » n'écrit RIEN** : le bouton affiche le plan en toutes lettres, geste par
-  geste, les suppressions en rouge. Le bouton qui publie n'apparaît qu'ensuite, et seulement s'il y a quelque
-  chose à publier.
+- ✅ **Un seul bouton, « Envoyer »** (depuis le 2026-09-18) : il calcule ce qui va changer chez Meta et ne
+  s'arrête pour demander confirmation que s'il doit y SUPPRIMER quelque chose, en le nommant. Pendant
+  l'aller-retour, le bouton le dit, et un second clic n'envoie rien.
+- 🔴 **Un outil que Meta recevrait incomplet n'est PAS envoyé** (2026-09-21). Nous ne publions chez Meta que
+  la méthode et l'adresse d'un appel. Un appel qui envoie un corps (par exemple l'utilisateur et l'étiquette
+  d'un « ajouter une étiquette »), des paramètres, des en-têtes ou une adresse à partie variable arriverait
+  chez Meta sans ces valeurs :
+  l'écran le range sous **« Pas envoyés chez Meta »**, avec ce qui manquerait, et une copie incomplète déjà
+  présente chez Meta est supprimée (la confirmation dit pourquoi).
+  ⚠️ Jusqu'au 2026-09-21, un tel outil partait vide et l'écran disait « Publié. Meta est à jour. ».
+  ⛔ Un tel outil ne sert donc pas encore à l'agent de Meta. Le relais qui le permettra (Meta appelle Engage
+  Me, qui fait l'appel avec les valeurs du mini-CRM) est en cadrage.
 - ⚠️ **Engage Me fait foi, la publication ÉCRASE.** Un connecteur ou un outil ajouté à la main dans WhatsApp
   Manager sera SUPPRIMÉ à la publication suivante. L'écran le dit, et l'aperçu le montre avant le clic.
 - ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms. Elle

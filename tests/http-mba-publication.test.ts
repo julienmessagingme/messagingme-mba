@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { Geste, SourceAPublier, OutilAPublier, EtatMeta } from '../src/mba/publication';
+import { OutilNonPubliable, type Geste, type SourceAPublier, type OutilAPublier, type EtatMeta } from '../src/mba/publication';
 import { FakeQueue } from '../src/queue/fake';
 
 /**
@@ -31,11 +31,17 @@ const SRC: SourceAPublier = {
 };
 const OUT: OutilAPublier = {
   id: 'o1', sourceId: 's1', name: 'check_order_status', description: 'État d’une commande.',
-  nePasUtiliser: 'Jamais pour annuler.', methode: 'GET', chemin: '/orders/{id}',
+  nePasUtiliser: 'Jamais pour annuler.', methode: 'GET', chemin: '/orders/recent', pertes: [],
 };
 const META_VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 
-function monter(opts: { numero?: string | null; echoueSur?: Geste['type'] } = {}) {
+/** Un outil exposé que Meta recevrait creux : le cas réel du 2026-09-21. */
+const CREUX: OutilAPublier = {
+  ...OUT, id: 'o2', name: 'add_tag', methode: 'POST', chemin: '/subscriber/add-tag',
+  pertes: ['le corps de la requête (tag, user)'],
+};
+
+function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; outils?: OutilAPublier[] } = {}) {
   const appliques: Geste[] = [];
   const app = buildServer({
     queue: new FakeQueue(),
@@ -43,10 +49,10 @@ function monter(opts: { numero?: string | null; echoueSur?: Geste['type'] } = {}
     mbaPublication: {
       numeroDuTenant: async () => (opts.numero === undefined ? '1234840649713976' : opts.numero),
       sources: async () => [SRC],
-      outilsExposes: async () => [OUT],
+      outilsExposes: async () => opts.outils ?? [OUT],
       etatMeta: async () => META_VIDE,
       appliquer: async (_t, _pn, g) => {
-        if (g.type === opts.echoueSur) throw new Error('Meta a refusé');
+        if (g.type === opts.echoueSur) throw opts.erreur ?? new Error('Meta a refusé');
         appliques.push(g);
       },
     },
@@ -72,7 +78,15 @@ describe('l’aperçu de publication', () => {
     const { app } = monter({ numero: null });
     const res = await app.inject({ method: 'GET', url: `/tenants/${TENANT}/mba-publication`, ...h() });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ gestes: [], phoneNumberId: null });
+    expect(res.json()).toEqual({ gestes: [], phoneNumberId: null, nonPubliables: [] });
+  });
+
+  it('🔴 un outil que Meta recevrait creux est ÉCARTÉ du plan, et l’aperçu dit pourquoi', async () => {
+    // Le 2026-09-21, l'écran disait « Publié » pour un outil parti chez Meta sans son corps.
+    const { app } = monter({ outils: [OUT, CREUX] });
+    const res = await app.inject({ method: 'GET', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    expect(res.json().gestes.map((g: Geste) => g.nom)).not.toContain('add_tag');
+    expect(res.json().nonPubliables).toEqual([{ nom: 'add_tag', pertes: ['le corps de la requête (tag, user)'] }]);
   });
 });
 
@@ -98,6 +112,21 @@ describe('la publication', () => {
     expect(res.json().faits).toHaveLength(1);
     // ⚠️ Et surtout : le geste SUIVANT n'a pas été tenté.
     expect(appliques.map((g) => g.type)).toEqual(['connecteur_creer']);
+  });
+
+  it('la publication rend AUSSI les outils écartés, pour que l’écran ne dise pas « Meta est à jour »', async () => {
+    const { app } = monter({ outils: [OUT, CREUX] });
+    const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().nonPubliables).toEqual([{ nom: 'add_tag', pertes: ['le corps de la requête (tag, user)'] }]);
+  });
+
+  it('🔴 un refus qui vient de NOUS ne se présente pas comme un refus de Meta', async () => {
+    const { app } = monter({ echoueSur: 'outil_creer', erreur: new OutilNonPubliable('add_tag', ['le corps de la requête']) });
+    const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).not.toMatch(/Meta a refusé/);
+    expect(res.json().error).toMatch(/« add_tag » n’est pas envoyé chez Meta/);
   });
 
   it('🔴 un échec sort en 409, jamais en 500', async () => {

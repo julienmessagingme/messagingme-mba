@@ -269,12 +269,22 @@ export interface GestePublication {
   nom: string;
 }
 
+/**
+ * Un outil exposé que la publication laisse de côté, et ce que Meta n'en recevrait pas (2026-09-21).
+ *
+ * ⚠️ FACULTATIF DANS LES RÉPONSES, ET C'EST DÉLIBÉRÉ : Vercel déploie la console au `git push`, AVANT que
+ * l'API ne le soit. Pendant cette fenêtre, l'API d'hier ne rend pas ce champ, et l'écran doit tenir.
+ */
+export interface NonPubliable { nom: string; pertes: string[] }
+
 /** L'APERÇU : ce qui changera chez Meta si l'on publie. N'écrit RIEN. */
-export function apercuPublicationMba(tenantId: string): Promise<{ gestes: GestePublication[]; phoneNumberId: string | null }> {
-  return request<{ gestes: GestePublication[]; phoneNumberId: string | null }>(`/tenants/${tenantId}/mba-publication`);
+export function apercuPublicationMba(tenantId: string): Promise<{
+  gestes: GestePublication[]; phoneNumberId: string | null; nonPubliables?: NonPubliable[];
+}> {
+  return request(`/tenants/${tenantId}/mba-publication`);
 }
 
 /** Exécute le plan. Le serveur le RECALCULE : on ne lui renvoie pas celui qu'on a affiché. */
-export function publierChezMeta(tenantId: string): Promise<{ faits: GestePublication[] }> {
-  return request<{ faits: GestePublication[] }>(`/tenants/${tenantId}/mba-publication`, { method: 'POST' });
+export function publierChezMeta(tenantId: string): Promise<{ faits: GestePublication[]; nonPubliables?: NonPubliable[] }> {
+  return request(`/tenants/${tenantId}/mba-publication`, { method: 'POST' });
 }

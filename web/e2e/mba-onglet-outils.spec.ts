@@ -262,4 +262,41 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('publication-publier')).toBeEnabled();
     expect(publications).toBe(1);
   });
+
+  /**
+   * 🔴 UN OUTIL QUE META RECEVRAIT CREUX EST NOMMÉ, AVEC CE QUI MANQUERAIT (2026-09-21).
+   *
+   * L'écran disait « Publié. Meta est à jour. » pour `add_tag`, parti chez Meta sans son corps : l'agent de
+   * Meta ne pouvait envoyer ni l'utilisateur ni l'étiquette. La confirmation d'effacement de la copie creuse
+   * doit dire POURQUOI, et le résultat ne doit plus prétendre que tout est parti.
+   */
+  test('🔴 un outil écarté est NOMMÉ, dans la confirmation comme dans le résultat', async ({ page }) => {
+    const ECARTE = { nom: 'add_tag', pertes: ['le corps de la requête (tag, user)'] };
+    await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
+          return true;
+        }
+        if (url.includes('/mba-publication')) {
+          const corps = method === 'GET'
+            ? { gestes: [{ type: 'outil_supprimer', nom: 'add_tag' }], phoneNumberId: '1', nonPubliables: [ECARTE] }
+            : { faits: [{ type: 'outil_supprimer', nom: 'add_tag' }], nonPubliables: [ECARTE] };
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(corps) });
+          return true;
+        }
+        return false;
+      },
+    });
+    let confirmation = '';
+    page.on('dialog', (d) => { confirmation = d.message(); void d.accept(); });
+    await page.goto('/mba/parametres?tab=outils');
+
+    await page.getByTestId('publication-publier').click();
+
+    await expect(page.getByTestId('publication-non-publiable-add_tag')).toContainText('le corps de la requête (tag, user)');
+    await expect(page.getByTestId('publication-faite')).not.toContainText(/à jour|up to date/);
+    expect(confirmation).toContain('add_tag');
+    expect(confirmation).toContain('le corps de la requête (tag, user)');
+  });
 });
