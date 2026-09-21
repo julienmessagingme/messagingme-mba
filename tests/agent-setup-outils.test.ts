@@ -77,10 +77,12 @@ describe('le diff', () => {
     expect(differences(COURANT(), { message: 'x', outilsDebranches: ['erp_commandes'] })).toEqual([]);
   });
 
-  it('🔴 débrancher DIT que la définition reste : sinon le client croit supprimer', () => {
+  it('🔴 débrancher DIT ce qui reste et ce qui part : sinon le client croit supprimer pour tous', () => {
+    // Depuis le 2026-09-21, un connecteur que plus personne n'utilise part de l'espace : la phrase le dit aussi.
     const d = differences(COURANT(), { message: 'x', outilsDebranches: ['chercher_connaissance'] });
     expect(d).toHaveLength(1);
-    expect(d[0]?.apres).toMatch(/reste dans votre bibliothèque/);
+    expect(d[0]?.apres).toMatch(/reste sur les autres agents/);
+    expect(d[0]?.apres).toMatch(/retiré de l’espace/);
   });
 });
 

@@ -173,6 +173,41 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     expect(await agents.complet(tenantId, a.id)).toBeNull();
   });
 
+  it('🔴 supprimer un agent emporte le connecteur HTTP qu’il était SEUL à utiliser, pas celui d’un voisin ni un MCP', async () => {
+    // Décision du 2026-09-21 : un connecteur que plus personne n'utilise part, sinon il garde son nom pris et
+    // bloque la suppression de sa requête sans écran pour s'en défaire. Même règle que `PgToolCatalog.detacher`.
+    const partant = await agents.create(tenantId, 'itest-partant', 'x', 'modele-x');
+    const voisin = await agents.create(tenantId, 'itest-voisin-reste', 'x', 'modele-x');
+    const http = (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'http', 'itest-src-partant', 'https://exemple.test', 'none', 'active') returning id`, [tenantId],
+    )).rows[0]!.id;
+    const mcp = (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'mcp', 'itest-src-partant-mcp', 'https://exemple.test/mcp', 'none', 'active') returning id`, [tenantId],
+    )).rows[0]!.id;
+    const outil = async (name: string, origin: 'http' | 'mcp', source: string): Promise<string> => (await pool.query<{ id: string }>(
+      `insert into agent_tools (tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, risk)
+       values ($1, $2, $3, $2, $4, 'T', 'd', '', 'read') returning id`, [tenantId, origin, source, name],
+    )).rows[0]!.id;
+    const seul = await outil('itest_seul', 'http', http);
+    const partage = await outil('itest_partage', 'http', http);
+    const importe = await outil('itest_mcp', 'mcp', mcp);
+    await pool.query(
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
+       values ($1, $2, $5), ($1, $3, $5), ($1, $3, $6), ($1, $4, $5)`,
+      [tenantId, seul, partage, importe, `agent:${partant.id}`, `agent:${voisin.id}`],
+    );
+    expect(await agents.remove(tenantId, partant.id)).toBe(true);
+    const restants = (await pool.query<{ name: string }>(
+      'select name from agent_tools where id = any($1::uuid[]) order by name', [[seul, partage, importe]],
+    )).rows.map((r) => r.name);
+    expect(restants).toEqual(['itest_mcp', 'itest_partage']);
+    await pool.query('delete from agent_tools where id = any($1::uuid[])', [[partage, importe]]);
+    await agents.remove(tenantId, voisin.id);
+    await pool.query('delete from agent_tool_sources where id = any($1::uuid[])', [[http, mcp]]);
+  });
+
   it('🔴 un AUTRE tenant ne lit ni n écrit la fiche (le filtrage en code est le seul contrôle)', async () => {
     const a = await agents.create(tenantId, 'itest-isolation', 'x', 'modele-x');
     expect(await agents.complet(autreTenantId, a.id)).toBeNull();

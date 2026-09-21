@@ -194,13 +194,14 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
    * laisserait les définitions s'accumuler dans l'espace de test, et le test suivant buterait sur l'unicité
    * du nom, avec une erreur qui n'aurait aucun rapport avec ce qu'il vérifie.
    *
-   * ⚠️ LE SECOND GESTE EST DEVENU UN NON-ÉVÉNEMENT POUR UNE ACTION, et le garder est délibéré : `detacher`
-   * l'a déjà supprimée (revue du 2026-09-18), `supprimerDefinition` rend donc `introuvable` et ne fait rien.
-   * Ce helper sert AUSSI aux connecteurs, pour qui les deux gestes restent nécessaires.
+   * ⚠️ `supprimerDefinition` N'EXISTE PLUS (2026-09-21) : plus aucun écran ne supprime une définition à la
+   * main, `detacher` efface une action ou un connecteur HTTP que plus personne n'utilise. Le second geste est
+   * donc un nettoyage DE TEST, en SQL : il efface ce qui survit au détachement (une action qu'un voisin
+   * utilisait encore), pour que le test suivant ne bute pas sur un nom déjà pris.
    */
   const retirerCompletement = async (t: string, a: string, id: string): Promise<void> => {
     await catalogue.detacher(t, a, id);
-    await catalogue.supprimerDefinition(t, id);
+    await pool.query('delete from agent_tools where tenant_id = $1 and id = $2', [t, id]);
   };
   let pool: Pool;
   let catalogue: PgToolCatalog;
@@ -491,21 +492,20 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     });
 
     /**
-     * 🔴 LES TROIS VERDICTS SONT CONSERVÉS, SUR UN CONNECTEUR (revue finale du 2026-09-18).
+     * 🔴 UN CONNECTEUR HTTP PART AVEC SON DERNIER UTILISATEUR, PAS AVANT (décision de Julien, 2026-09-21).
      *
-     * Il portait sur une ACTION, et `detacher` en supprime désormais une, donc le verdict du milieu serait
-     * devenu `introuvable` : le cas « je peux supprimer ce dont plus personne ne se sert » aurait disparu de
-     * la suite sans que rien ne le remplace. Un test qu'on réécrit doit CONSERVER le cas qu'il exerçait. Le
-     * connecteur est le bon porteur : il appartient à l'espace, se partage, et son détachement ne l'efface
-     * pas, donc les trois verdicts restent atteignables l'un après l'autre. Le cas de l'ACTION est éprouvé
-     * juste en dessous, et c'est sa règle À LUI qui a changé.
+     * Ce test portait « supprimer une définition encore rattachée est REFUSÉ » : la méthode n'existe plus, parce
+     * que plus aucun écran ne supprime une définition à la main (l'ancienne bibliothèque de l'espace est partie
+     * avec l'onglet Outils refait du MBA). Le cas qu'il protégeait (ne JAMAIS emporter en silence le
+     * consentement d'un autre) est conservé : tant qu'un voisin se sert du connecteur, il reste.
+     *
+     * ⚠️ UNE VRAIE SOURCE : `agent_tools_origin_src_chk` (0088) l'EXIGE dès qu'on sort de `origin = 'mba'`.
      */
-    it('🔴 supprimer une DÉFINITION encore rattachée est REFUSÉ, pas silencieux', async () => {
-      // Même doctrine que la suppression d'une source qui porte des outils actifs : ce qui rendrait un agent
-      // muet doit se refuser en le disant, pas se faire. La contrainte est en cascade, donc sans ce refus la
-      // suppression emporterait le consentement d'agents qu'on ne regardait pas.
-      //
-      // ⚠️ UNE VRAIE SOURCE : `agent_tools_origin_src_chk` (0088) l'EXIGE dès qu'on sort de `origin = 'mba'`.
+    it('🔴 un CONNECTEUR partagé reste tant qu’un voisin s’en sert, et part avec son dernier utilisateur', async () => {
+      const voisin = (await pool.query<{ id: string }>(
+        `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-voisin-connecteur', 'IA', 'm') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
       const source = (await pool.query<{ id: string }>(
         `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
          values ($1, 'http', 'itest-src-occupee', 'https://exemple.test', 'none', 'draft') returning id`,
@@ -517,26 +517,51 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
         [tenantId, source],
       )).rows[0]!.id;
       await pool.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, `agent:${agentId}`],
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3), ($1, $2, $4)',
+        [tenantId, id, `agent:${agentId}`, `agent:${voisin}`],
       );
-      expect(await catalogue.supprimerDefinition(tenantId, id)).toBe('rattachee');
-      // Détacher un CONNECTEUR ne l'efface pas : il appartient à l'espace, et l'effacer au premier
-      // détachement le ferait disparaître pour tous les autres agents.
-      await catalogue.detacher(tenantId, agentId, id);
-      expect(await catalogue.supprimerDefinition(tenantId, id)).toBe('ok');
-      expect(await catalogue.supprimerDefinition(tenantId, id)).toBe('introuvable');
+      const existe = async (): Promise<boolean> =>
+        ((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount ?? 0) > 0;
+
+      expect(await catalogue.detacher(tenantId, agentId, id)).toBe(true);
+      expect(await existe()).toBe(true);
+      expect((await catalogue.listToutes(tenantId, voisin)).map((o) => o.name)).toContain('occupee');
+
+      expect(await catalogue.detacher(tenantId, voisin, id)).toBe(true);
+      expect(await existe()).toBe(false);
+      await pool.query('delete from agents where id = $1', [voisin]);
       await pool.query('delete from agent_tool_sources where id = $1', [source]);
     });
 
-    it('🔴 une ACTION, elle, s’en va AVEC son détachement : plus rien à supprimer', async () => {
-      // Le pendant du test ci-dessus, et la règle qui a changé. La bibliothèque de l'espace n'affiche plus
-      // les actions d'agent (0157), or c'est le seul écran d'où l'on supprime une définition : la laisser
-      // derrière ferait un orphelin invisible, ineffaçable, dont le nom resterait pris pour cet agent.
+    it('🔴 un outil MCP, lui, RESTE après son dernier détachement : il doit rester branchable', async () => {
+      const source = (await pool.query<{ id: string }>(
+        `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+         values ($1, 'mcp', 'itest-src-mcp', 'https://exemple.test/mcp', 'none', 'active') returning id`,
+        [tenantId],
+      )).rows[0]!.id;
+      const id = (await pool.query<{ id: string }>(
+        `insert into agent_tools (tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, risk)
+         values ($1, 'mcp', $2, 'mcp', 'mcp_reste', 'MCP', 'm', '', 'read') returning id`,
+        [tenantId, source],
+      )).rows[0]!.id;
+      await pool.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, `agent:${agentId}`],
+      );
+      expect(await catalogue.detacher(tenantId, agentId, id)).toBe(true);
+      expect((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount).toBe(1);
+      expect((await catalogue.listCatalogue(tenantId)).map((o) => o.name)).toContain('mcp_reste');
+      await pool.query('delete from agent_tools where id = $1', [id]);
+      await pool.query('delete from agent_tool_sources where id = $1', [source]);
+    });
+
+    it('🔴 une ACTION s’en va AVEC son détachement : aucun orphelin', async () => {
+      // La bibliothèque de l'espace n'affiche plus les actions d'agent (0157) : la laisser derrière ferait un
+      // orphelin invisible, ineffaçable, dont le nom resterait pris pour cet agent.
       const outil = await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'action_jetable' });
-      expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('rattachee');
+      expect((await pool.query('select 1 from agent_tools where id = $1', [outil!.id])).rowCount).toBe(1);
       expect(await catalogue.detacher(tenantId, agentId, outil!.id)).toBe(true);
-      expect(await catalogue.supprimerDefinition(tenantId, outil!.id)).toBe('introuvable');
+      expect((await pool.query('select 1 from agent_tools where id = $1', [outil!.id])).rowCount).toBe(0);
     });
 
     /**
