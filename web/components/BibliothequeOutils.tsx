@@ -401,6 +401,31 @@ Continue?`,
 }
 
 /**
+ * CE QUE L'APPEL ENVOIE, ET QUI LE FOURNIT : Engage Me pour le mini-CRM, l'agent de Meta pour le reste.
+ * Dérivé des variables DÉCLARÉES de l'appel, jamais d'une liste tenue à part.
+ */
+function ValeursDeLAppel({ requete }: { requete: RequeteApi }) {
+  const t = useT();
+  const remplies = requete.variables.filter((v) => v.origine.type !== 'modele').map((v) => v.nom);
+  const demandees = requete.variables.filter((v) => v.origine.type === 'modele').map((v) => v.nom);
+  if (remplies.length === 0 && demandees.length === 0) return null;
+  return (
+    <p className="text-xs text-ink-600" data-testid="outil-mba-valeurs">
+      {remplies.length > 0 && (
+        <span data-testid="outil-mba-valeurs-remplies">
+          {t('Engage Me remplit lui-même : ', 'Engage Me fills in: ')}{remplies.join(', ')}.{' '}
+        </span>
+      )}
+      {demandees.length > 0 && (
+        <span data-testid="outil-mba-valeurs-demandees">
+          {t('L’agent de Meta les obtient du client : ', 'Meta’s agent gets these from the customer: ')}{demandees.join(', ')}.
+        </span>
+      )}
+    </p>
+  );
+}
+
+/**
  * CRÉER UN OUTIL POUR L'AGENT DE META, sans agent IA.
  *
  * 🔴 ON CHOISIT L'APPEL D'ABORD, LES DÉTAILS APPARAISSENT ENSUITE (demande de Julien, 2026-09-18, et le
@@ -409,9 +434,14 @@ Continue?`,
  * ces mots, ne les a pas trouvés, et a conclu qu'il n'existait aucun endroit pour ça. La liste des appels
  * est désormais la première chose visible, et les champs ne s'ouvrent que sur celui qu'on a pris.
  *
- * 🔴 AUCUNE QUESTION « POUSSE OU INTÈGRE » ICI, ET C'EST DÉLIBÉRÉ. Meta appelle le système du client EN
- * DIRECT et lit toute la réponse : ni la nature, ni les champs cochés ne s'y appliquent. Poser la question
+ * 🔴 AUCUNE QUESTION « POUSSE OU INTÈGRE » ICI, ET C'EST DÉLIBÉRÉ. Depuis le relais (2026-09-21), l'agent de
+ * Meta appelle ENGAGE ME, qui fait l'appel et lui rend la réponse ENTIÈRE du système du client : c'est un
+ * arbitrage de Julien, qui craint qu'un modèle qui ne voit rien conclue à un échec. Poser la question
  * donnerait un réglage sans effet, c'est-à-dire le motif « offert-et-inerte » que ce produit s'interdit.
+ *
+ * 🔴 LES VALEURS DU MINI-CRM SONT REMPLIES PAR ENGAGE ME, ET L'ÉCRAN LE DIT. C'est tout l'objet du relais :
+ * avant lui, un appel qui envoyait un champ du contact partait vide chez Meta. La ligne sous le choix
+ * sépare ce qu'Engage Me remplit de ce que l'agent de Meta devra obtenir du client.
  *
  * ⚠️ LES QUATRE TEXTES VIVENT ICI ET PAS SUR L'APPEL, et c'est un arbitrage de Julien du 2026-09-18 :
  * `Tools > Connecteurs API` règle JUSTE la connexion technique. Les mots que le modèle lit pour décider
@@ -503,9 +533,10 @@ function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => Pr
       {choisi !== null && (
         <div className="flex flex-col gap-2 border-t border-ink-200 pt-3" data-testid="outil-mba-details">
           <p className="text-xs text-ink-500">
-            {t('Meta appelle votre système en direct : il n’y a rien à choisir sur ce qu’il lit en retour, il lit toute la réponse.',
-              'Meta calls your system directly: there is nothing to pick about what it reads back, it reads the whole response.')}
+            {t('L’agent de Meta passe par Engage Me, qui appelle votre système et lui rend toute la réponse.',
+              'Meta’s agent goes through Engage Me, which calls your system and hands it the whole response.')}
           </p>
+          <ValeursDeLAppel requete={choisi} />
           <label className="text-xs text-ink-600">
             {t('Nom technique (vu par l’agent de Meta)', 'Technical name (seen by Meta’s agent)')}
             <input className={`${inputCls} mt-1`} data-testid="outil-mba-nom" value={name} onChange={(e) => setName(e.target.value)} placeholder="poser_etiquette" />

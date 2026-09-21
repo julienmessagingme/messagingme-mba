@@ -1794,36 +1794,40 @@ importez ce qu'il propose.
 
 ### Publier chez Meta
 
+- 🔴 **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, 2026-09-21, codé et testé, pas encore déployé ;
+  migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
+  l'agent de Meta, c'est Engage Me qu'il appelle : Engage Me reconnaît le client par son numéro WhatsApp
+  (que WhatsApp lui-même transmet, l'agent ne peut pas l'inventer), remplit les valeurs du **carnet de
+  contacts** (un champ comme `tag_ns` ou `user_ns`), puis fait l'appel exactement comme pour vos agents IA,
+  avec les mêmes contrôles et le même journal. L'agent de Meta ne demande au client que les valeurs
+  « décidées par l'agent ».
+  ⚠️ Avant le relais, Meta appelait votre système en direct : un appel qui envoyait un champ du contact
+  arrivait vide, et votre clé d'accès était posée chez Meta. Elle ne quitte plus Engage Me.
+  ⚠️ **L'agent de Meta reçoit la réponse ENTIÈRE de votre système**, plus un « succès : oui » explicite
+  (choix du 2026-09-21 : un agent qui ne voit rien risque de conclure à un échec et de passer la main).
+  ⛔ Les outils MCP ne sont pas encore relayés : un chantier suivant.
+- ✅ **Un seul connecteur chez Meta, « EngageMe »**, créé au premier outil exposé et retiré avec le dernier.
+  Les anciens connecteurs, un par système, sont supprimés au premier « Envoyer » qui suit le déploiement ;
+  la confirmation les nomme avant.
+- ✅ **Une clé « Agent de Meta »** apparaît dans la liste des clés d'API de l'espace. C'est elle que
+  l'agent de Meta présente à Engage Me. Elle ne se crée pas à la main ; la révoquer coupe les outils de
+  l'agent de Meta jusqu'au prochain « Envoyer », qui en pose une neuve (la confirmation de révocation le dit).
+- ✅ **Le formulaire dit qui fournit chaque valeur** : « Engage Me remplit lui-même : … » et « L'agent de
+  Meta les obtient du client : … », dérivés de ce que l'appel déclare.
 - ✅ **Un seul bouton, « Envoyer »** (depuis le 2026-09-18) : il calcule ce qui va changer chez Meta et ne
   s'arrête pour demander confirmation que s'il doit y SUPPRIMER quelque chose, en le nommant. Pendant
   l'aller-retour, le bouton le dit, et un second clic n'envoie rien.
-- 🔴 **Un outil que Meta recevrait incomplet n'est PAS envoyé** (2026-09-21). Nous ne publions chez Meta que
-  la méthode et l'adresse d'un appel. Un appel qui envoie un corps (par exemple l'utilisateur et l'étiquette
-  d'un « ajouter une étiquette »), des paramètres, des en-têtes ou une adresse à partie variable arriverait
-  chez Meta sans ces valeurs :
-  l'écran le range sous **« Pas envoyés chez Meta »**, avec ce qui manquerait, et une copie incomplète déjà
-  présente chez Meta est supprimée (la confirmation dit pourquoi).
-  ⚠️ Jusqu'au 2026-09-21, un tel outil partait vide et l'écran disait « Publié. Meta est à jour. ».
-  ⛔ Un tel outil ne sert donc pas encore à l'agent de Meta. Le relais qui le permettra (Meta appelle Engage
-  Me, qui fait l'appel avec les valeurs du mini-CRM) est en cadrage.
 - ⚠️ **Engage Me fait foi, la publication ÉCRASE.** Un connecteur ou un outil ajouté à la main dans WhatsApp
   Manager sera SUPPRIMÉ à la publication suivante. L'écran le dit, et l'aperçu le montre avant le clic.
-- ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms. Elle
-  compare la description, la clause « quand ne pas l'appeler », la méthode et le chemin. Corollaire :
-  **renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau »**, et l'aperçu l'écrit ainsi.
-- ✅ **Changer le jeton d'un de vos systèmes le fait REPOSER chez Meta** à la publication suivante
-  (2026-09-10). Meta ne rend jamais un secret : nous nous souvenons de celui que nous avons posé, et toute
-  modification de l'authentification d'un système (le secret, mais aussi le mode ou le nom d'en-tête) le
-  remet à publier. ⚠️ **Tant que vous n'avez pas republié, l'agent de Meta présente encore l'ANCIEN jeton**,
-  alors que vos propres agents utilisent déjà le nouveau.
+- ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms, et
+  compare la description, la clause « quand ne pas l'appeler » et ce que l'agent de Meta doit remplir.
+  Corollaire : **renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau »**.
 - ✅ **Un échec en cours de publication s'ARRÊTE et le dit** : ce qui a été fait est listé, le reste n'est pas
-  tenté. Relancer ne refait pas ce qui a réussi, et laisser un état à moitié publié dont personne ne connaît
-  la forme serait pire.
+  tenté. Relancer ne refait pas ce qui a réussi.
 - ⛔ **Sans numéro WhatsApp connecté, il n'y a pas d'agent Meta où publier** : l'aperçu est vide (ce n'est pas
   une panne) et la publication refuse en le disant.
-- ⛔ **Ce que Meta sait faire et que nous ne publions pas encore** : les macros, les transformations de
-  réponse et l'authentification par utilisateur final. Un outil qui les utiliserait devrait être réglé dans
-  WhatsApp Manager, donc serait écrasé, et l'aperçu le montre.
+- ⛔ **Ce que Meta sait faire et que nous n'utilisons pas** : les transformations de réponse et
+  l'authentification par utilisateur final.
 
 ## Sécurité & compliance (menu Sécurité)
 
@@ -2467,6 +2471,16 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   d'en-tête** facultative, des **variables** `{{prenom}}` remplacées par la fiche du contact à l'envoi, des
   **emojis**, et jusqu'à **11 boutons** (réponse, lien, appel). Aperçu en direct. Avec une image, le texte est
   limité à 2000 caractères au lieu de 3072.
+- ✅ **Le même écran que les templates WhatsApp** (2026-09-21, demande de Julien : « la même gueule que les
+  écrans WhatsApp template ») : la liste est un **tableau** (nom, format, début du texte, actions), cliquer sur
+  un nom ouvre son **aperçu**, « + Créer un message » ouvre un encadré avec le choix **« Message simple |
+  Carrousel »**, l'aperçu vit dans un **cadre de téléphone** au nom de la marque, et le formulaire dit **ce qui
+  manque** au lieu de griser son bouton sans explication. Basculer de format ne perd rien de ce qui est saisi.
+- ✅ **Carrousel RCS** : de **2 à 10 cartes** qui défilent à l'horizontale, chacune avec un **visuel** (ou au
+  moins un titre), un **titre** facultatif, un **texte** avec variables (2 000 caractères) et jusqu'à **4
+  boutons** des six formes. Contrairement au carousel WhatsApp, chaque carte a **ses propres boutons**. Les
+  manques sont nommés carte par carte. Un carrousel se modifie dans son formulaire ; changer de format, c'est
+  créer un autre message.
 - ✅ **Six formes de bouton**, les mêmes dans la bibliothèque, la campagne et le scénario : **Réponse** (le
   contact répond en un tap), **Lien**, **Appel**, **Agenda** (ajoute le rendez-vous à l'agenda du téléphone),
   **Voir un lieu** (l'ouvre sur sa carte) et **Demander sa position**. Seul un bouton Réponse ouvre une sortie
@@ -2485,9 +2499,15 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
 - ✅ **En campagne** : choisir « Un message RCS » comme contenu, partir d'un message de la bibliothèque ou écrire
   directement. Les contacts sans numéro (identifiés par BSUID seulement) sont comptés « ignorés » avec leur
   motif : le RCS s'adresse à un numéro **mobile**, une ligne fixe ne peut pas le recevoir.
+- ✅ **Un carrousel en campagne** : « Partir d'un message enregistré » propose aussi les carrousels, marqués
+  « (carrousel) ». Le carrousel est **copié en entier** sur l'étage et s'y montre en aperçu : pour le modifier,
+  on le modifie dans la bibliothèque puis on le choisit à nouveau. « Revenir à un message simple » rend le texte
+  saisi avant. Marche en « Message seul » comme en « Message et scénario », sur n'importe quel étage.
 - ✅ **En scénario** : le bloc « Message RCS » a deux sorties de livraison, **Envoyé** et **Non joignable**, plus
   une sortie par bouton réponse. Relier « Non joignable » à un envoi de template WhatsApp donne la cascade :
-  le RCS d'abord, le WhatsApp pour ceux qu'il n'atteint pas.
+  le RCS d'abord, le WhatsApp pour ceux qu'il n'atteint pas. ⚠️ **Pas encore de carrousel dans un bloc de
+  scénario** : ils y sont proposés grisés, avec leur raison (leurs sorties par bouton de carte restent à
+  construire).
 - ✅ **Réponses** : elles arrivent dans le fil du contact, au même endroit que WhatsApp, la bulle indiquant son
   canal. Un bouton tapé fait avancer le scénario par la branche correspondante. Un contact qui répond **STOP**
   est désabonné du RCS, sans que cela touche son consentement WhatsApp.

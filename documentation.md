@@ -381,25 +381,28 @@ signale.
 réconciliation se fait sur les NOMS, jamais sur un identifiant Meta qu'on stockerait (une table de
 correspondance dériverait dès qu'un client supprime un connecteur dans WhatsApp Manager). Corollaire assumé :
 renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau », et l'aperçu le dit avant le clic.
-Le plan est PUR (`src/mba/publication.ts`, aucune IO) et il compare la description, la MÉTHODE et le CHEMIN,
-les trois : n'en comparer qu'un rendait la publication silencieusement incomplète.
+Le plan est PUR (`src/mba/publication.ts`, aucune IO) et il compare la description et TOUTE la définition
+envoyée (méthode, chemin, en-têtes, corps), normalisée : en comparer une partie rendait la publication
+silencieusement incomplète.
 
-🔴 **NOUS NE PUBLIONS CHEZ META QUE LA MÉTHODE ET LE CHEMIN, DONC UN APPEL QUI PORTE AUTRE CHOSE N'EST PAS
-PUBLIÉ.** Meta appelle le système du client en direct et ne lit pas notre mini-CRM : le corps, les paramètres d'adresse
-et les en-têtes n'y seraient pas, et une partie variable du chemin partirait telle quelle, accolades comprises.
-Une ligne laissée vide à l'écran (sans clé) ne compte pas, l'appel l'ignore aussi. `pertesChezMeta` dit ce
-qui se perdrait ; un outil exposé qui en a est traité comme absent par le plan (non créé, et sa copie chez
-Meta supprimée), et la route rend la liste `nonPubliables` pour que l'écran la nomme. La garde est répétée
-dans `corpsOutilMeta`, qui prend la REQUÊTE elle-même et refuse de construire un outil creux : aucun appelant
-ne peut la contourner en passant un drapeau. ⚠️ Temporaire par nature : le relais (Meta appelle Engage Me,
-qui fait l'appel avec les valeurs du mini-CRM) la rendra sans objet.
-
-🔴 **UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT.** Meta ne rend jamais le secret d'un connecteur.
-`agent_tool_sources.secret_publie_le` (0129) est l'instant où NOTRE secret courant a été accepté par Meta ; il
-retombe à `null` dès qu'on touche à l'authentification de la source (le secret, mais aussi le MODE et le NOM
-D'EN-TÊTE, qui décident du corps envoyé), et la publication suivante repose le secret. Sans cette mémoire, le
-secret n'était posé qu'à la CRÉATION du connecteur : faire tourner un jeton cassait l'agent de Meta en
-silence.
+🔴 **META APPELLE LE RELAIS, PLUS LE SYSTÈME DU CLIENT** (migration 0161, spec
+`docs/superpowers/specs/2026-09-21-relais-mba-design.md`). Un espace qui expose au moins un outil a UN
+connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/relais` ; chaque outil y est un
+`POST /outils/<id>`. Les invariants :
+- **L'espace vient de la CLÉ** (`POST /mba/relais/outils/:outilId`, monté dans l'entrée `v1`, même
+  `requireApiKey` et même limiteur que l'API publique), jamais de l'adresse ; l'outil doit être exposé ET
+  actif pour `mba:<numéro de l'espace>`.
+- **Le contact vient d'un en-tête lié à la macro `WHATSAPP_PHONE_NUMBER`** (`X-Contact-WhatsApp`) : Meta le
+  remplit, son modèle ne le choisit pas. Pas de contact identifié, pas d'appel.
+- **Seules les variables `modele` sont déclarées chez Meta** et lues dans le corps (`lireValeursModele`, Zod) ;
+  les autres viennent du mini-CRM, dans `creerAppelConnecteur`, avec la lecture `entier` (réponse complète,
+  bornée) et le journal sous l'appelant `mba`. Un échec métier rend 200 `{ succes: false, erreur }`.
+- **La clé « Agent de Meta »** est une clé d'API de l'espace au droit `mba:relais`, absent de
+  `VALID_API_SCOPES` : aucun écran ne l'attribue. `tenant_settings.mba_relais_cle_id` retient celle qui est
+  chez Meta (Meta ne rend jamais un secret) ; toute écriture du connecteur pose une clé NEUVE dans l'ordre
+  de `src/mba/cle-relais.ts` (créer, écrire chez Meta, retenir après l'accusé, révoquer l'ancienne).
+- ⚠️ `agent_tool_sources.secret_publie_le` (0129) et `marquerSecretPublie` ne sont plus lus : le secret d'un
+  client ne part plus chez Meta. Colonne morte, à retirer (`todo.md`).
 
 🔴 **UN SERVEUR MCP EST UNE SOURCE COMME UNE AUTRE, et c'est ce qui rend le lot petit.** Il n'y a pas de
 table dédiée : un serveur est une ligne d'`agent_tool_sources` avec `kind = 'mcp'`, ses outils sont des
@@ -1283,6 +1286,9 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/chemin-json.ts` | le miroir de `src/webhook-entrant/chemin.ts` : mêmes chemins d'or dans les deux jeux de tests |
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
 | `web/lib/rcs.ts` | déduire le format d'un message RCS de sa saisie, miroir de `rcsOutboundOf` |
+| `web/lib/rcs-carrousel.ts` | le carrousel RCS côté écran (brouillon, message envoyable, manques carte par carte) et la relecture STRICTE d'un carrousel copié dans un brouillon de campagne : mal formé, il est jeté. Tenu contre `rcsOutboundSchema` par `tests/web-rcs-carrousel.test.ts` |
+| `web/components/Field.tsx` | le libellé de champ des formulaires de contenu (templates, messages RCS). Hors de `TemplateForm` pour ne pas embarquer ce module lourd |
+| `web/components/RcsPhoneFrame.tsx` | le cadre de téléphone des aperçus RCS, pendant de `PhoneFrame` (nom de marque de l'agent, une requête par espace) |
 | `web/lib/flow-mapping.ts` | la cible d'un champ de formulaire, avec la sentinelle `@profile_name` |
 | `web/lib/inbox-rangement.ts` | les gestes de rangement de l'Inbox : leurs libellés, et les destinations qu'une SÉLECTION peut prendre selon le dossier |
 | `web/components/VariableBodyEditor.tsx` | l'éditeur à chips, partagé par les variables Meta (positionnelles) et RCS (nommées) |

@@ -19,27 +19,35 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le chantier Inbox : TROIS passes à froid (3, 1 et 1 rouges), chacune sur les correctifs de la précédente. Le dernier commit n'a PAS été relu à froid, par décision explicite de Julien (« tu corriges les points mais tu ne lances pas de 4e et tu publies ») ; le rapport `.git/revue-finale-rapport.md` le dit. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 META BUSINESS AGENT : LES OUTILS CREUX NE PARTENT PLUS, LE RELAIS EST À CADRER (2026-09-21)
+## 🔴 META BUSINESS AGENT : LE RELAIS (2026-09-21, CODÉ, PAS ENCORE DÉPLOYÉ)
 
 **Le diagnostic.** `add_tag` (« Le client demande à rajouter une étiquette ») ne s'est pas déclenché, et
-l'agent de Meta a transféré à l'équipe. La publication n'envoyait chez Meta que `{method, path}` : l'outil y
-existait SANS corps, donc sans `user_ns` ni `tag_ns`. Et Meta appelle le système du client en direct : il ne
-lit pas le mini-CRM, il ne remplit une valeur que par extraction du modèle, une valeur fixe ou trois macros.
+l'agent de Meta a transféré à l'équipe. La publication n'envoyait chez Meta que `{method, path}`, et Meta
+appelle le système du client en direct sans lire le mini-CRM. Un correctif immédiat (`e5b660b`, déployé)
+a d'abord empêché les outils creux de partir ; le relais le remplace.
 
-**Le correctif immédiat, en direct (petit, réversible, il ne fait que retirer des gestes)** : un outil dont
-l'appel porte un corps, des paramètres, des en-têtes ou un chemin variable n'est plus publié, sa copie creuse
-chez Meta est supprimée, et l'écran le nomme sous « Pas envoyés chez Meta ». Mesuré en production avant
-d'écrire : UN seul outil est exposé au MBA, `add_tag`, donc aucun outil qui fonctionne n'est touché.
+**Le relais** (spec `docs/superpowers/specs/2026-09-21-relais-mba-design.md`, plan
+`docs/superpowers/plans/2026-09-21-relais-mba.md`) : Meta appelle `POST /mba/relais/outils/:id`, Engage Me
+retrouve le contact par la macro `WHATSAPP_PHONE_NUMBER`, remplit les variables du mini-CRM et fait l'appel
+par `creerAppelConnecteur`. Lots 1 à 3 commités ; la CI fait foi.
 
-🔴 **ESSAI RÉEL, APRÈS DÉPLOIEMENT DE L'API** : Tools > Outils de l'agent de Meta, « Envoyer ». La
-confirmation doit proposer de SUPPRIMER `add_tag` en disant pourquoi (le corps, avec tag et user), puis
-l'écran doit dire « Publié, sauf les outils ci-dessous » et nommer `add_tag`.
+🔴 **LE DÉPLOIEMENT (task 10 du plan)** : migration **0161 AVANT** le déploiement (CHECK du journal élargi à
+`mba`, colonne `tenant_settings.mba_relais_cle_id`), relecture en base, `up -d --build`, NPM rechargé, contrôle
+public (`POST /mba/relais/outils/x` sans clé : 401). Puis `CLAUDE.md` : dernière appliquée 0161.
 
-**La suite, arbitrée sur le principe avec Julien le même jour** : le RELAIS. Tools > Connecteurs API reste le
-seul endroit où l'on déclare un appel ; à la publication, le connecteur présenté à Meta pointe vers Engage Me,
-qui retrouve le contact, remplit les variables depuis le mini-CRM et fait l'appel par `creerAppelConnecteur`.
-Points à mesurer avant de coder : le format de la macro `WHATSAPP_PHONE_NUMBER` (non documenté), le passage
-des appels de Meta par Cloudflare sans défi anti-robot, et la clé par espace posée chez Meta. Cadrage à faire.
+🔴 **L'ESSAI RÉEL, PAR JULIEN** (rien n'est clos avant) :
+1. Sur l'appel `testadd`, passer la variable `user` de « décidée par l'agent » à « champ `user_ns` » (elle est
+   aujourd'hui du modèle, alors que la valeur est dans le mini-CRM).
+2. Réassigner `add_tag` à l'agent de Meta, « Envoyer » : la confirmation doit montrer la suppression de
+   `testUCHAT` (et de sa copie creuse d'`add_tag` si elle y est encore) et la création d'`EngageMe`.
+3. Sur WhatsApp, « ajoute-moi l'étiquette X » : l'étiquette apparaît sur la fiche UChat, l'appel dans
+   Sécurité > Journal des erreurs s'il échoue (appelant « l'agent de Meta »).
+4. Un second « Envoyer » ne doit produire AUCUN geste (l'idempotence face à la forme que Meta renvoie).
+5. Lire dans les journaux de `mba-api` la ligne `mba-relais: en-tete du numero len=... plus=...`, consigner
+   le format réel de la macro dans `docs/MBA-API-REFERENCE.md`, puis retirer `journaliserForme` du câblage.
+
+⚠️ **Le seul scénario d'impasse** : une macro que Meta ne remplit jamais. Le relais refuse alors tous les
+appels en le disant (« le client n'est pas identifié »), et on le voit à l'étape 3.
 
 ## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL DÛ)
 

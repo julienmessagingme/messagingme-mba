@@ -39,6 +39,9 @@ function KeysInner({ session }: { session: Session }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  /** Le droit de la clé que la publication pose chez Meta (`src/mba/cle-relais.ts`). */
+  const DROIT_RELAIS = 'mba:relais';
+
   const SCOPE_LABEL: Record<string, string> = {
     'contacts:write': t('Créer et mettre à jour des contacts', 'Create and update contacts'),
     'sends:create': t('Déclencher des envois', 'Trigger sends'),
@@ -72,10 +75,21 @@ function KeysInner({ session }: { session: Session }) {
   }
 
   async function revoke(k: ApiKeyRow) {
-    const ok = window.confirm(t(
-      `Révoquer « ${k.name} » ? Tout appel avec cette clé sera refusé immédiatement, et elle ne peut pas être réactivée.`,
-      `Revoke “${k.name}”? Any call using this key will be refused immediately, and it cannot be reactivated.`,
-    ));
+    /**
+     * ⚠️ LA CLÉ « AGENT DE META » EST POSÉE CHEZ META PAR LA PUBLICATION (relais, 2026-09-21) : la révoquer
+     * coupe les outils de l'agent de Meta jusqu'au prochain « Envoyer », qui en pose une neuve. Le dire ici,
+     * sinon la révocation d'une clé qu'on ne se souvient pas d'avoir créée casse un agent sans explication.
+     */
+    const relais = k.scopes.includes(DROIT_RELAIS);
+    const ok = window.confirm(relais
+      ? t(
+        `Révoquer « ${k.name} » ? L’agent de Meta ne pourra plus appeler vos outils jusqu’au prochain « Envoyer » dans ses outils, qui posera une clé neuve.`,
+        `Revoke “${k.name}”? Meta’s agent will not be able to call your tools until the next “Send” from its tools, which sets a new key.`,
+      )
+      : t(
+        `Révoquer « ${k.name} » ? Tout appel avec cette clé sera refusé immédiatement, et elle ne peut pas être réactivée.`,
+        `Revoke “${k.name}”? Any call using this key will be refused immediately, and it cannot be reactivated.`,
+      ));
     if (!ok) return;
     setError(null);
     try {
@@ -159,7 +173,11 @@ function KeysInner({ session }: { session: Session }) {
                       <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('révoquée', 'revoked')}</span>
                     )}
                   </td>
-                  <td className="px-5 py-2.5 font-mono text-xs text-ink-500">{k.scopes.join(', ')}</td>
+                  <td className="px-5 py-2.5 font-mono text-xs text-ink-500">
+                    {/* `mba:relais` ne se crée pas ici (absent d'`API_SCOPES`) : seule la publication chez Meta
+                        en pose une. On le NOMME pour qu'il se reconnaisse dans la liste. */}
+                    {k.scopes.map((sc) => (sc === DROIT_RELAIS ? t('relais de l’agent de Meta', 'Meta agent relay') : sc)).join(', ')}
+                  </td>
                   <td className={`px-5 py-2.5 ${k.revokedAt ? 'text-ink-400' : 'text-ink-600'}`}>{fmt(k.createdAt)}</td>
                   <td className={`px-5 py-2.5 ${k.revokedAt ? 'text-ink-400' : 'text-ink-600'}`}>
                     {k.lastUsedAt ? fmt(k.lastUsedAt) : t('jamais', 'never')}

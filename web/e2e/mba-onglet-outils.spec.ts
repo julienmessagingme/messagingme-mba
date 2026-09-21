@@ -262,4 +262,47 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('publication-publier')).toBeEnabled();
     expect(publications).toBe(1);
   });
+  /**
+   * 🔴 L'ÉCRAN DIT QUI FOURNIT CHAQUE VALEUR (relais du MBA, 2026-09-21).
+   *
+   * Avant le relais, un appel qui envoyait un champ du contact partait VIDE chez Meta, et rien à l'écran ne
+   * le laissait deviner. Engage Me remplit désormais le mini-CRM ; l'agent de Meta obtient le reste du client.
+   */
+  test('🔴 choisir un appel montre ce qu’Engage Me remplit et ce que l’agent de Meta demandera', async ({ page }) => {
+    await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [] }) });
+          return true;
+        }
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-requetes`)) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              requetes: [{
+                id: 'REQ2', tenantId: TENANT, sourceId: 's1', label: 'Ajouter une étiquette',
+                methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
+                corps: { mode: 'json', gabarit: '{"user_ns":"{{user}}","tag_ns":"{{tag}}"}' },
+                variables: [
+                  { nom: 'user', type: 'string', origine: { type: 'champ', cle: 'user_ns' }, requis: true },
+                  { nom: 'tag', type: 'string', origine: { type: 'modele' }, requis: true },
+                ],
+                outputPaths: [], valeursTest: {},
+              }],
+              champs: [], catalogue: {},
+            }),
+          });
+          return true;
+        }
+        return false;
+      },
+    });
+    await page.goto('/mba/parametres?tab=outils');
+
+    await page.getByTestId('outil-mba-choisir-REQ2').click();
+    await expect(page.getByTestId('outil-mba-valeurs-remplies')).toContainText('user');
+    await expect(page.getByTestId('outil-mba-valeurs-remplies')).not.toContainText('tag');
+    await expect(page.getByTestId('outil-mba-valeurs-demandees')).toContainText('tag');
+  });
 });

@@ -1,5 +1,37 @@
 # todo.md : backlog
 
+## 🟡 Un carrousel RCS dans un scénario (lot 3 de la spec du 2026-09-21)
+
+La bibliothèque compose des carrousels et l'assistant de campagne les envoie ; le bloc « Message RCS » d'un
+scénario les propose GRISÉS (« pas encore dans un scénario »). Cadré dans
+`docs/superpowers/specs/2026-09-21-carrousel-rcs-design.md` § « Lot 3 », trois pièces :
+
+- **le message ENTIER dans le bloc** : `rcsOutboundOf` (`src/workflow/executor.ts`) reconstruit aujourd'hui
+  un texte ou une carte depuis trois champs (`text`, `imageUrl`, `suggestions`), qui ne portent pas de cartes ;
+- **une sortie par bouton Réponse de chaque carte**, comme le carousel WhatsApp le fait déjà pour un modèle ;
+- **`normaliserPostbacks` réécrit les boutons d'un carrousel en `card:<i>:btn:<j>`**, la forme que l'exécuteur
+  route déjà pour le carousel WhatsApp. ⚠️ Il LAISSE les carrousels tels quels aujourd'hui, et leurs
+  `postbackData` enregistrés (`carte<i>_btn<j>`, dérivés à la saisie) peuvent se RÉPÉTER d'une carte à l'autre
+  après un retrait de carte : sans effet tant que rien ne route dessus, mais c'est bien la réécriture à
+  l'envoi qui doit trancher, pas la valeur stockée.
+
+Relevé à côté, et antérieur au carrousel : un envoi de CAMPAGNE RCS en carte ou en carrousel s'inscrit dans le
+fil d'Inbox sous le libellé « Message RCS » (`rcsCampaignBody`, `src/campaign/engine.ts`, qui ne lit que le
+texte d'un message texte), quand l'envoi depuis l'Inbox dit déjà son contenu (`apercuRcsSortant`). Brancher
+`rcsCampaignBody` sur `parseStoredRcsOutbound` puis `apercuRcsSortant` alignerait les deux chemins.
+
+## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
+
+- **`agent_tool_sources.secret_publie_le` et `marquerSecretPublie` sont morts** : le secret d'un client ne part
+  plus chez Meta. Les retirer (migration qui RETIRE une colonne, donc APRÈS le déploiement du relais).
+- **La contrainte de nom « comme Meta » sur les sources n'a plus de raison d'être** (`NOM_CONNECTEUR_META_RE`,
+  `nomPubliableChezMeta`) : seul `EngageMe` part désormais chez Meta. Vérifier si un écran l'impose encore
+  au nom d'un connecteur API, et la retirer.
+- **`listConnectorTools` caste la réponse de Meta** (`r as T[]`, `src/mba/client.ts`) au lieu de la valider :
+  le plan la compare, un `safeParse` la rendrait sûre.
+- **Relayer les outils MCP** : même route, résolveur MCP à la place de `creerAppelConnecteur` (hors du
+  chantier du 2026-09-21, arbitrage de Julien).
+
 ## 🟡 API publique : trois manques relevés par le mémo d'architecture du 2026-09-19
 
 Le reste du mémo est fusionné dans `docs/ARCHITECTURE-CIBLE.md` ; ces trois points n'y ont pas leur place
