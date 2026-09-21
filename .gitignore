@@ -19,3 +19,14 @@ playwright-report/
 
 # feature-loop (artefacts de travail)
 .loop/
+
+# Audits, contre-audits, plans RSSI et mémos d'architecture : ils inventorient des faiblesses (parfois encore
+# ouvertes) et citent des prospects et leurs questionnaires. Le dépôt est PUBLIC depuis le 2026-09-15, donc ils
+# vivent dans `docs/prive/`, jamais committé. Les motifs de la racine rattrapent un nouveau document déposé là
+# par habitude : un `git add -A` ne l'emporte plus. Les audits déjà committés avant cette règle restent suivis.
+docs/prive/
+/AUDIT-*.md
+/CONTRE-AUDIT-*.md
+/BILAN-*.md
+/MEMO-*.md
+/PLAN-REDUCTION-*.md
