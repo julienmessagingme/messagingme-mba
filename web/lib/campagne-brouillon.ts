@@ -5,6 +5,7 @@ import type { CanalPremier, FormuleCanal, TroisiemeNiveau } from './campagne-cha
 import { DEBIT_DEFAUT, debitBorne } from './campagne-chaine';
 import { filtresRepris } from './contact-filters';
 import type { RcsSuggestion } from './rcs-types';
+import { carrouselDepuis, type CarrouselRcs } from './rcs-carrousel';
 import type { VarRow } from './variables-template';
 
 /**
@@ -41,6 +42,8 @@ export interface ContenuBrouillon {
   workflowId?: string;
   texteRcs?: string;
   imageRcs?: string;
+  /** Cf. `ContenuEtage.carrouselRcs`. Relu STRICTEMENT (`carrouselDepuis`) : mal formé, il est jeté. */
+  carrouselRcs?: CarrouselRcs;
   suggestions: RcsSuggestion[];
   emailTemplateId?: string;
   emailChamp?: string;
@@ -173,6 +176,10 @@ function suggestions(v: unknown): RcsSuggestion[] {
 function contenuDe(v: unknown): ContenuBrouillon {
   const o = objet(v);
   const modele = objet(o.modeleDuScenario);
+  // 🔴 UN CARROUSEL MAL FORMÉ EST JETÉ, JAMAIS RÉPARÉ : c'est une copie figée qu'on ne peut pas éditer dans
+  // l'assistant, la « réparer » enverrait un message que personne n'a relu. L'étage redevient vide, et le
+  // récapitulatif le dit.
+  const carrousel = carrouselDepuis(o.carrouselRcs);
   return {
     formule: dans(o.formule, ['seul', 'avec_scenario'] as const) ?? 'seul',
     // ⚠️ `mba` EN REPLI, comme `contenuVide()` : c'est le comportement réel sans réglage (l'agent de Meta
@@ -183,6 +190,7 @@ function contenuDe(v: unknown): ContenuBrouillon {
     ...(texte(o, 'workflowId') ? { workflowId: texte(o, 'workflowId')! } : {}),
     ...(texte(o, 'texteRcs') !== undefined ? { texteRcs: texte(o, 'texteRcs')! } : {}),
     ...(texte(o, 'imageRcs') !== undefined ? { imageRcs: texte(o, 'imageRcs')! } : {}),
+    ...(carrousel ? { carrouselRcs: carrousel } : {}),
     ...(texte(o, 'emailTemplateId') ? { emailTemplateId: texte(o, 'emailTemplateId')! } : {}),
     // ⚠️ UNE CHAÎNE VIDE EST UN CHOIX EXPLICITE ici (« aucun champ »), pas une absence : elle ne retombe
     // donc PAS sur la suggestion automatique, cf. `champEmailEffectif`. D'où le test sur `undefined`.

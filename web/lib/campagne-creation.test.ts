@@ -5,6 +5,7 @@ import {
 } from './campagne-creation';
 import type { EtageAssistant } from './campagne-chaine';
 import { selectionTout, selectionVide } from './audience';
+import type { CarrouselRcs } from './rcs-carrousel';
 
 /**
  * CE QUE LE BOUTON « LANCER » ENVOIE VRAIMENT.
@@ -848,5 +849,59 @@ describe('formule « modele et scenario » : le scenario decide, pas un modele c
     };
     // `null` = rien ne bloque, ce qui est déjà la preuve que la garde WhatsApp n'a pas mordu.
     expect(problemeAvantLancement(etatRcs, [{ rang: 1, canal: 'rcs' }], CTX)).toBeNull();
+  });
+});
+
+/**
+ * UN CARROUSEL SUR UN ÉTAGE RCS (spec du 2026-09-21).
+ *
+ * 🔴 CE QUI SE VÉRIFIE ICI EST CE QUI PART. L'écran masque le texte quand un carrousel est posé ; masquer
+ * n'efface pas, et le texte resté en mémoire ne doit JAMAIS partir à sa place, ni bloquer le lancement.
+ */
+describe('un carrousel sur un etage RCS', () => {
+  const CARROUSEL: CarrouselRcs = {
+    kind: 'carousel',
+    cards: [
+      { title: 'Nice', mediaUrl: 'https://exemple.fr/a.jpg', mediaHeight: 'TALL' },
+      { title: 'Lyon', mediaUrl: 'https://exemple.fr/b.jpg', mediaHeight: 'TALL' },
+    ],
+  };
+  const CHAINE_RCS: EtageAssistant[] = [{ rang: 1, canal: 'rcs' }, { rang: 2, canal: 'whatsapp' }];
+  const avecRcs = (rcs: Record<string, unknown>): EtatPourCreation => ({
+    ...ETAT,
+    contenus: {
+      1: { formule: 'seul', devenir: 'inbox', suggestions: [], ...rcs },
+      2: { formule: 'seul', devenir: 'inbox', templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
+    },
+  });
+
+  it('au rang 1, c est le carrousel qui part, jamais le texte masque', () => {
+    const e = entreeDeCreation(avecRcs({ texteRcs: 'masque', imageRcs: 'https://exemple.fr/v.jpg', carrouselRcs: CARROUSEL }), CHAINE_RCS, CTX);
+    expect(e.rcsMessage).toEqual(CARROUSEL);
+  });
+
+  it('en repli aussi, c est le carrousel qui part', () => {
+    const etat: EtatPourCreation = {
+      ...ETAT,
+      contenus: { ...ETAT.contenus, 2: { formule: 'seul', devenir: 'inbox', texteRcs: 'masque', suggestions: [], carrouselRcs: CARROUSEL } },
+    };
+    expect(entreeDeCreation(etat, CHAINE, CTX).chaine?.[1]?.rcsMessage).toEqual(CARROUSEL);
+  });
+
+  // 🔴 L'AUTRE SENS : retiré, le carrousel ne laisse rien derrière lui, et le texte repart.
+  it('carrousel retire, le texte repart', () => {
+    const e = entreeDeCreation(avecRcs({ texteRcs: 'coucou', carrouselRcs: undefined }), CHAINE_RCS, CTX);
+    expect(e.rcsMessage).toEqual({ kind: 'text', text: 'coucou' });
+  });
+
+  it('un etage porteur d un carrousel se lance sans texte, et ce qu il cache ne le bloque pas', () => {
+    expect(problemeAvantLancement(avecRcs({ carrouselRcs: CARROUSEL }), CHAINE_RCS, CTX)).toBeNull();
+    expect(problemeAvantLancement(avecRcs({
+      carrouselRcs: CARROUSEL,
+      texteRcs: 'a'.repeat(5000),
+      suggestions: [{ kind: 'openUrl', text: 'Voir', url: '', postbackData: 'p' }],
+    }), CHAINE_RCS, CTX)).toBeNull();
+    // Sans le carrousel, le même étage vide reste refusé : la garde n'a pas été retirée.
+    expect(problemeAvantLancement(avecRcs({}), CHAINE_RCS, CTX)).toMatch(/pas de message RCS/);
   });
 });

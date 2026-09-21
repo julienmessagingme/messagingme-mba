@@ -4,6 +4,7 @@ import type { ContactFilters } from './contact-filters';
 import { cibleDeCreation, type SelectionDestinataires } from './audience';
 import type { RcsOutbound, RcsSuggestion } from './rcs-types';
 import { maxTexteRcs, versMessageRcs } from './rcs';
+import type { CarrouselRcs } from './rcs-carrousel';
 import { boutonPret } from './rcs-boutons';
 import type { EtageAssistant } from './campagne-chaine';
 import { RANG_INITIAL, assignationProposable, debitBorne, reessaiProposable } from './campagne-chaine';
@@ -69,6 +70,11 @@ export interface EtatPourCreation {
     texteRcs?: string;
     /** L'URL du VISUEL d'un étage RCS. Renseignée = le message part en CARTE. Cf. `ContenuEtage.imageRcs`. */
     imageRcs?: string;
+    /**
+     * LE CARROUSEL DE LA BIBLIOTHÈQUE COPIÉ SUR CET ÉTAGE. Présent, c'est LUI qui part ; le texte, le visuel et
+     * les suggestions restent en mémoire pour le retour arrière mais ne partent pas. Cf. `ContenuEtage.carrouselRcs`.
+     */
+    carrouselRcs?: CarrouselRcs;
     suggestions: RcsSuggestion[];
     emailTemplateId?: string;
     /** L'association des variables du modèle de cet étage. Cf. `ContenuEtage.variables`. */
@@ -302,7 +308,14 @@ export function problemeAvantLancement(
     if (etage.canal === 'whatsapp' && c?.formule === 'avec_scenario' && c?.workflowId && !c?.modeleDuScenario) {
       return `L’étage ${etage.rang} : ce scénario ne commence pas par un modèle WhatsApp, il ne peut donc pas ouvrir une campagne. Choisissez-en un qui démarre par un modèle approuvé.`;
     }
-    if (etage.canal === 'rcs' && !c?.texteRcs?.trim()) {
+    /**
+     * 🔴 UN ÉTAGE PORTEUR D'UN CARROUSEL N'A PAS DE TEXTE À VÉRIFIER : c'est le carrousel qui part, validé par
+     * le serveur à son enregistrement en bibliothèque, puis relu strictement à la reprise d'un brouillon
+     * (`carrouselDepuis`). Lui demander un texte refuserait un étage rempli ; vérifier le texte qu'il cache
+     * bloquerait le lancement sur ce qui ne part pas. D'où `!carrousel` en tête des trois gardes RCS.
+     */
+    const carrousel = etage.canal === 'rcs' ? c?.carrouselRcs : undefined;
+    if (etage.canal === 'rcs' && !carrousel && !c?.texteRcs?.trim()) {
       return `L’étage ${etage.rang} n’a pas de message RCS.`;
     }
     /**
@@ -311,7 +324,7 @@ export function problemeAvantLancement(
      * texte déjà saisi ne se raccourcit pas tout seul : sans cette garde, ajouter l'image à la fin ferait
      * échouer la création avec un « content invalide » que personne ne saurait relier à ce geste.
      */
-    if (etage.canal === 'rcs' && (c?.texteRcs ?? '').length > maxTexteRcs(c?.imageRcs ?? '')) {
+    if (etage.canal === 'rcs' && !carrousel && (c?.texteRcs ?? '').length > maxTexteRcs(c?.imageRcs ?? '')) {
       return `L’étage ${etage.rang} : le message RCS dépasse ${maxTexteRcs(c?.imageRcs ?? '')} caractères (la limite baisse quand il y a un visuel).`;
     }
     /**
@@ -320,7 +333,7 @@ export function problemeAvantLancement(
      * que les boutons SANS LIBELLÉ ; celui qui a un libellé et rien d'autre part tel quel et se fait
      * refuser. C'est la même garde que l'écran en service (`contentReady`).
      */
-    if (etage.canal === 'rcs' && (c?.suggestions ?? []).some((b) => !boutonPret(b))) {
+    if (etage.canal === 'rcs' && !carrousel && (c?.suggestions ?? []).some((b) => !boutonPret(b))) {
       return `L’étage ${etage.rang} : un bouton RCS est incomplet (libellé, lien, numéro ou dates).`;
     }
     if (etage.canal === 'email' && !c?.emailTemplateId) {
@@ -382,6 +395,9 @@ function problemeDesVariables(
  * quatrième exemplaire, réduit au texte.
  */
 function messageRcs(c: EtatPourCreation['contenus'][number] | undefined): RcsOutbound {
+  // 🔴 LE CARROUSEL D'ABORD, ET ALORS LUI SEUL. Le texte masqué derrière lui ne part JAMAIS : ce qu'on cache à
+  // l'écran doit être exactement ce qu'on n'envoie pas (même motif que `reessayer`, `assignation`, `devenir`).
+  if (c?.carrouselRcs) return c.carrouselRcs;
   return versMessageRcs({
     text: c?.texteRcs ?? '',
     imageUrl: c?.imageRcs ?? '',

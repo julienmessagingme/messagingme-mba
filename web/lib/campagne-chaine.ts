@@ -110,6 +110,8 @@ export interface ContenuMinimal {
   templateName?: string | undefined;
   workflowId?: string | undefined;
   texteRcs?: string | undefined;
+  /** Cf. `ContenuEtage.carrouselRcs`. Présent = l'étage RCS a de quoi partir, même sans texte. */
+  carrouselRcs?: unknown;
   emailTemplateId?: string | undefined;
 }
 
@@ -125,7 +127,7 @@ export function etageRenseigne(canal: CanalEtage, contenu: ContenuMinimal | unde
   if (!contenu) return false;
   if (contenu.formule === 'avec_scenario') return (contenu.workflowId ?? '').trim() !== '';
   if (canal === 'whatsapp') return (contenu.templateName ?? '').trim() !== '';
-  if (canal === 'rcs') return (contenu.texteRcs ?? '').trim() !== '';
+  if (canal === 'rcs') return contenu.carrouselRcs !== undefined || (contenu.texteRcs ?? '').trim() !== '';
   if (canal === 'email') return (contenu.emailTemplateId ?? '').trim() !== '';
   /**
    * ⚠️ UN CANAL QU'ON NE CONNAÎT PAS N'A RIEN À ENVOYER, donc il BLOQUE. Le `return` final valait

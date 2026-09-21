@@ -303,3 +303,10 @@ describe('le defaut du devenir suit l espace', () => {
     expect(devenirParDefaut(true)).toBe('mba');
   });
 });
+
+describe('un etage RCS porteur d un carrousel', () => {
+  it('est renseigne, meme sans texte ; retire, il ne l est plus', () => {
+    expect(etageRenseigne('rcs', { formule: 'seul', carrouselRcs: { kind: 'carousel', cards: [] } })).toBe(true);
+    expect(etageRenseigne('rcs', { formule: 'seul', carrouselRcs: undefined })).toBe(false);
+  });
+});

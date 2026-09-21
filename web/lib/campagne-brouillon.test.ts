@@ -292,3 +292,29 @@ describe('le brouillon retient l’écran courant', () => {
     expect(etatDeBrouillon(ancien).etape).toBeUndefined();
   });
 });
+
+describe('un carrousel copie sur un etage RCS', () => {
+  const CARROUSEL = {
+    kind: 'carousel' as const,
+    cards: [
+      { title: 'Nice', mediaUrl: 'https://exemple.fr/a.jpg', mediaHeight: 'TALL' as const, suggestions: [{ kind: 'reply' as const, text: 'Oui', postbackData: 'p' }] },
+      { title: 'Lyon', mediaUrl: 'https://exemple.fr/b.jpg', mediaHeight: 'TALL' as const },
+    ],
+  };
+
+  it('survit a l aller-retour d un brouillon, JSON compris', () => {
+    const etat: EtatBrouillon = { ...ETAT, contenus: { 2: { formule: 'seul', devenir: 'inbox', suggestions: [], carrouselRcs: CARROUSEL } } };
+    const relu = etatDeBrouillon(JSON.parse(JSON.stringify(brouillonDeLEtat(etat))));
+    expect(relu.contenus?.[2]?.carrouselRcs).toEqual(CARROUSEL);
+  });
+
+  // 🔴 JETÉ, JAMAIS RÉPARÉ : une copie figée qu'on ne peut pas éditer ici ne se devine pas.
+  it('mal forme, il est JETE, et le reste de l etage survit', () => {
+    const relu = etatDeBrouillon({
+      assistant: 1,
+      contenus: { 2: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', carrouselRcs: { kind: 'carousel', cards: [{ title: 'seule' }] } } },
+    });
+    expect(relu.contenus?.[2]?.carrouselRcs).toBeUndefined();
+    expect(relu.contenus?.[2]?.texteRcs).toBe('coucou');
+  });
+});
