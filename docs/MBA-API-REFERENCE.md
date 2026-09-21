@@ -2977,6 +2977,19 @@ Les deux specs déclarent une réponse `default` (« Error response. ») avec le
 
 ### `agent_event` : déclencher l'agent depuis un back-office
 
+**MESURÉ le 2026-09-21, dans une conversation EN COURS** (numéro de Julien, l'agent de Meta tenant le fil,
+plan `docs/superpowers/plans/2026-09-21-outils-maison-mba.md`, Task 1) :
+- `to` au format **E.164 AVEC « + »** (`+336…`) : accepté. Le format sans « + » n'a pas eu à être essayé.
+- Le `POST` rend `200 {"status":"accepted","agent_event_id":"pfbid…"}` ; le `GET {pn}/agent_event/{id}` rend
+  ensuite `{"status":"success","event_type":…,"created_at":…,"updated_at":…}` (traité en 9 secondes).
+- **L'agent a écrit au client 11 secondes après le `POST`**, en suivant la `description` à la lettre (sa réponse
+  commençait par le mot imposé) et en répondant à la question portée par le `payload` (chaîne JSON
+  `{"message": "…"}`). C'est ce qui rend possible la transmission de la réponse « à côté » d'un client.
+- Jeton utilisé : le jeton global de l'app (le WABA de ce numéro ne porte pas de jeton d'entreprise), comme
+  `thread_control`.
+- Non mesuré : l'effet sur une conversation que l'agent ne tient PAS (fil chez nous), et sur une conversation
+  fermée. La transmission du plan n'envoie l'événement qu'une fois le fil rendu, donc seulement le cas mesuré.
+
 #### Ce que fait l'endpoint
 
 Résumé de la spec (`info.description`) : notifier le Meta Business Agent d'un événement survenant dans nos systèmes (achat terminé, vérification d'identité, mise à jour d'expédition) afin que l'agent **prenne l'action appropriée dans la conversation client**. Le `info.summary` précise le cadre : « Trigger an agent action asynchronously **for a specific phone number conversation**. »
