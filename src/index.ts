@@ -136,9 +136,8 @@ import { PgHistoriqueStore } from './reglages/historique.pg';
 import { magasinPiecesJointes } from './mba/assistant/pieces-jointes';
 import type { LigneHistorique } from './reglages/historique';
 import { PgTestRunStore } from './agent/test-runs.pg';
-import { construireCible, enTetesAuthSource } from './agent/http-cible';
-import { resolutionPublique } from './lib/adresse-privee';
-import { fetchPublic, estRefusAdresseInterne } from './lib/connexion-publique';
+import { enTetesAuthSource } from './agent/http-cible';
+import { creerEprouverSource } from './agent/eprouver-source';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
@@ -634,6 +633,7 @@ async function main(): Promise<void> {
     // l'écriture du contact passe par le MÊME chemin partagé que l'API publique et l'import CSV.
     webhookEntrant: {
       limiter: new RateLimiter(config.WEBHOOK_IN_RATE_LIMIT_MAX, config.WEBHOOK_IN_RATE_LIMIT_WINDOW_MS),
+      budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
       getByCode: (code) => webhookStore.getByCode(code),
       recordCall: (tenant, id, payload, cree) => webhookStore.recordCall(tenant, id, payload, cree),
       trouverWaId: async (tenant, waId) => ((await contactStore.findIdByWaId(tenant, waId)) ? waId : null),
@@ -1893,64 +1893,13 @@ async function main(): Promise<void> {
       creer: (tenant, input) => agentSources.creer(tenant, input),
       patch: (tenant, id, p) => agentSources.patch(tenant, id, p),
       supprimer: (tenant, id) => agentSources.supprimer(tenant, id),
-      /**
-       * EPROUVER une source : un appel reel, et le resultat ecrit sur la ligne.
-       *
-       * C est le seul moyen de voir un jeton mort AVANT qu un contact ne le decouvre : un jeton expire ne
-       * produit aucune erreur applicative cote client, l agent degrade en silence au milieu d une
-       * conversation. On passe par les MEMES gardes que le resolveur (`construireCible`), sinon l epreuve
-       * validerait une adresse que l appel refusera.
-       */
-      eprouver: async (tenant, id, chemin) => {
-        const src = await agentSources.pourAppel(tenant, id);
-        // 🔴 `kind === 'http'` ICI AUSSI, et pas seulement sur la route. Une garde posee au montage, dans un
-        // autre fichier, n en est une que tant que personne ne monte un second appelant : c est exactement
-        // la fragilite que `scopeTenant` a payee le 2026-09-03.
-        if (!src || src.kind !== 'http') return { ok: false, erreur: 'source introuvable' };
-        const cible = construireCible({ baseUrl: src.baseUrl, binding: { methode: 'GET', chemin }, args: {} });
-        if (!cible.ok) return { ok: false, erreur: cible.raison };
-        /**
-         * 🔴 OU CE NOM MENE-T-IL VRAIMENT ? (contre-contre-rapport du 2026-09-03, et le constat etait juste.)
-         *
-         * `construireCible` lit le TEXTE de l hote : elle refuse `localhost` et les litteraux prives, et elle
-         * ne peut RIEN contre `crm.exemple.fr` dont l enregistrement A pointe sur `169.254.169.254` (les
-         * metadonnees du fournisseur) ou sur `172.18.x.x` (le reseau Docker du VPS, ou vivent l admin NPM et
-         * tous les conteneurs du parc).
-         *
-         * ⚠️ Ce bouton etait le QUATRIEME chemin de ce genre, et le CLAUDE.md affirmait qu il n y en avait que
-         * TROIS et qu ils etaient tous gardes. L inventaire etait faux, pas la regle. La lecon : un inventaire
-         * de chemins sensibles ecrit a la main derive des qu on ajoute un bouton. Ce qui l a fait rater ici,
-         * c est que les deux boutons « Test » se ressemblent beaucoup et que l AUTRE appelait bien la garde.
-         * L inventaire est desormais tenu par un test (`tests/lib-adresse-privee.test.ts`).
-         */
-        const resolution = await resolutionPublique(cible.url);
-        if (!resolution.ok) {
-          await agentSources.marquerEpreuve(tenant, id, false, 'adresse non joignable');
-          return { ok: false, erreur: 'cette adresse n est pas joignable depuis notre infrastructure' };
-        }
-        // MEME construction d en-tetes que l appel reel : une epreuve qui authentifierait autrement dirait
-        // « ca repond » d une source que les appels ne savent pas authentifier.
-        const headers = enTetesAuthSource(src);
-        try {
-          // Le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding) : `src/lib/connexion-publique.ts`.
-          const res = await fetchPublic(cible.url, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) });
-          const auth = res.status === 401 || res.status === 403;
-          const ok = res.ok;
-          await agentSources.marquerEpreuve(tenant, id, ok, auth ? 'authentification refusee' : `HTTP ${res.status}`);
-          return { ok, httpStatus: res.status, ...(ok ? {} : { erreur: auth ? 'authentification refusee' : `HTTP ${res.status}` }) };
-        } catch (err) {
-          // Refus A LA CONNEXION (le nom a resolu vers l interieur entre la verification ci-dessus et l appel) :
-          // meme verdict que la verification prealable, c est la meme cause.
-          if (estRefusAdresseInterne(err)) {
-            await agentSources.marquerEpreuve(tenant, id, false, 'adresse non joignable');
-            return { ok: false, erreur: 'cette adresse n est pas joignable depuis notre infrastructure' };
-          }
-          // Le message d exception n est PAS repasse : il peut porter l URL complete, donc parfois un jeton
-          // en parametre de requete sur un systeme mal concu.
-          await agentSources.marquerEpreuve(tenant, id, false, 'injoignable');
-          return { ok: false, erreur: 'systeme injoignable' };
-        }
-      },
+      // EPROUVER une source : un appel reel, le resultat ecrit sur la ligne. Toutes ses gardes (nature de la
+      // source, adresse verifiee avant l appel ET a la connexion, redirection refusee) vivent dans le module,
+      // teste a part : `src/agent/eprouver-source.ts`.
+      eprouver: creerEprouverSource({
+        pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
+        marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
+      }),
     },
     // Les REQUETES de connecteur (migration 0105) : un appel mis au point une fois dans la bibliotheque, que
     // l outil d un agent DESIGNE au lieu de le redecrire.

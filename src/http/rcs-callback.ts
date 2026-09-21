@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { parseRcsDlr, parseRcsMo, estDlr } from '../rcs/callback';
 import type { RcsDlr, RcsMo } from '../rcs/callback';
-import { consommerAvecEntetes, type RateLimiter } from '../auth/rate-limit';
+import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from '../auth/rate-limit';
 
 /** Corps d'un rappel : quelques kilo-octets au plus (un message et son statut). Un corps plus gros n'est pas
  *  un rappel smsmode, on refuse avant de l'avoir en mémoire. */
@@ -32,7 +32,7 @@ export interface RcsCallbackRouteDeps {
  * les webhooks entrants, via la réécriture de mba-web : l'API n'a aucun port publié).
  *
  * 🔴 CE QUI AUTORISE L'APPEL. smsmode NE SIGNE PAS ses rappels. Il n'y a donc ni HMAC à vérifier ni jeton à
- * comparer, et trois gardes remplacent la signature :
+ * comparer, et trois gardes remplacent la signature (plus un frein, avant la base, sur les codes jamais vus) :
  *   1. le CODE de l'URL, opaque et propre à un workspace, qui porte le tenant (jamais le corps, jamais un
  *      identifiant deviné dans le JSON) ; il se traite comme un secret (jamais journalisé) ;
  *   2. un PLAFOND de requêtes par code EXISTANT : une adresse qui fuite ne devient pas un robinet d'écritures ;
@@ -59,14 +59,31 @@ export interface RcsCallbackRouteDeps {
  *     événement qu'on n'a pas su traiter. Un accusé de livraison perdu, c'est une cascade de repli qui ne
  *     part jamais.
  */
-export function registerRcsCallback(app: FastifyInstance, deps: RcsCallbackRouteDeps, limiteur: RateLimiter): void {
+export function registerRcsCallback(
+  app: FastifyInstance,
+  deps: RcsCallbackRouteDeps,
+  limiteur: RateLimiter,
+  /** Le budget COMMUN des codes jamais vus, pris avant la base (`CODES_INCONNUS_PAR_MINUTE`). Requis. */
+  budgetInconnus: RateLimiter,
+): void {
+  // Les codes déjà résolus par ce process : ils échappent au budget des codes jamais vus (`ClesResolues`).
+  const connus = new ClesResolues(1000);
   app.post('/rcs/callback/:code', { bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const { code } = req.params as { code: string };
     const normalise = typeof code === 'string' ? code.trim().toLowerCase() : '';
     if (!CODE_RE.test(normalise)) return reply.code(404).send({ error: 'canal introuvable' });
 
+    // 🔴 LE FREIN DES CODES JAMAIS VUS, AVANT LA BASE (décision de Julien du 2026-09-21) : même mécanique que
+    // `/w/:code`. Un code déjà résolu passe toujours ; un refus est un 429, que smsmode rejoue.
+    if (!connus.connait(normalise)
+      && !(await consommerEnSilence(budgetInconnus, 'codes-inconnus', reply, 'trop de rappels, réessayez plus tard'))) return;
+
     const canal = await deps.parCode(normalise);
-    if (!canal) return reply.code(404).send({ error: 'canal introuvable' });
+    if (!canal) {
+      connus.oublier(normalise);
+      return reply.code(404).send({ error: 'canal introuvable' });
+    }
+    connus.retenir(normalise);
 
     /**
      * 🔴 LE PLAFOND NE COMPTE QUE DES CODES QUI EXISTENT, donc APRÈS la base, et c'est une correction de revue.

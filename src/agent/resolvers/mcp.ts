@@ -57,6 +57,8 @@ function direEchec(e: EchecMcp): string {
       return `le serveur MCP a refusé l’appel (${e.code})`;
     case 'reseau':
       return 'le serveur MCP est injoignable';
+    case 'redirection':
+      return 'le serveur MCP a redirigé l’appel, ce qui n’est pas accepté sur un connecteur';
     case 'adresse_interne':
       // Même phrase que la vérification préalable (plus bas) : c'est la même cause, vue plus tard.
       return 'l’adresse de ce serveur MCP ne résout pas vers une adresse publique';

@@ -1,6 +1,8 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { DecryptedEmailAccount } from './types';
-import { adressePubliqueDe } from '../lib/connexion-publique';
+import type { Socket } from 'node:net';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
+import { ouvrirSocketPublique } from '../lib/connexion-publique';
 
 export interface SmtpMessage {
   to: string;
@@ -16,28 +18,25 @@ export interface SmtpMessage {
  * Construit un transport nodemailer à partir d'une boîte SMTP déchiffrée. Le mot de passe en clair ne transite
  * que dans cet appel, jamais journalisé ni renvoyé.
  *
- * 🔴 L'HÔTE EST SAISI PAR UN ADMINISTRATEUR D'ESPACE, DONC IL SE VÉRIFIE COMME UNE URL DE CONNECTEUR (2026-09-21).
- * Il partait tel quel vers nodemailer : `localhost`, `172.18.0.1` (le réseau Docker du VPS) ou un nom public
- * qui y résout ouvraient une connexion depuis notre réseau, et le bouton « Tester » en rapportait le succès ou
- * l'échec. Ici l'hôte est résolu UNE fois, refusé si une seule de ses adresses est interne, et nodemailer se
- * connecte à l'ADRESSE vérifiée : il ne refait donc aucune résolution, et le « DNS rebinding » n'a pas d'écart
- * où se glisser. Le NOM d'origine part à part (`tls.servername`) : c'est sur lui que portent le SNI et la
- * vérification du certificat, en TLS direct comme après STARTTLS.
- *
- * ⚠️ Le transport est mis en cache (`EmailAccountResolver`, 5 minutes) : il reste lié à l'adresse vérifiée
- * pendant ce temps, puis la résolution est refaite.
+ * 🔴 L'HÔTE EST SAISI PAR UN ADMINISTRATEUR D'ESPACE, DONC LA CONNEXION SE VÉRIFIE COMME CELLE D'UN CONNECTEUR
+ * (2026-09-21). Il partait tel quel vers nodemailer : `localhost`, `172.18.0.1` (le réseau Docker du VPS) ou un
+ * nom public qui y résout ouvraient une connexion depuis notre réseau, et le bouton « Tester » en rapportait le
+ * succès ou l'échec. La socket est désormais ouverte par nous (`getSocket`), par `ouvrirSocketPublique` : un hôte
+ * interne est refusé, à chaque envoi, avant qu'un octet ne parte, et le refus se reconnaît à
+ * `estRefusAdresseInterne`. Nodemailer garde le nom d'hôte pour TLS, en TLS direct comme après STARTTLS.
  */
-export async function buildTransport(
+export function buildTransport(
   account: DecryptedEmailAccount,
-  resoudre: (hote: string) => Promise<string> = (hote) => adressePubliqueDe(hote),
-): Promise<Transporter> {
-  const adresse = await resoudre(account.host);
+  ouvrir: (hote: string, port: number) => Promise<Socket> = (hote, port) => ouvrirSocketPublique(hote, port),
+): Transporter {
   return nodemailer.createTransport({
-    host: adresse,
+    host: account.host,
     port: account.port,
     secure: account.secure,
-    tls: { servername: account.host.trim() },
     auth: { user: account.username, pass: account.password },
+    getSocket: (_options: SMTPTransport.Options, rappel: (err: Error | null, socketOptions: unknown) => void) => {
+      ouvrir(account.host, account.port).then((connection) => rappel(null, { connection }), (err: Error) => rappel(err, null));
+    },
   });
 }
 

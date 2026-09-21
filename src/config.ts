@@ -315,11 +315,27 @@ export const schema = z.object({
    * rafale, par exemple smsmode qui rejoue d'un coup ce qu'il n'avait pas pu livrer. ⚠️ Ce débit est celui d'UN
    * run de campagne, et le calcul tient parce qu'UN SEUL run tourne à la fois par espace (`campaign-run` en
    * `groupConcurrency: 1` par `tenantId`, `src/worker.ts`) : le code d'un agent ne reçoit donc pas les accusés
-   * de deux campagnes simultanées. Le même test tient les deux moitiés. En dessous du débit réel,
+   * de deux campagnes simultanées (des tests tiennent le débit, la concurrence par groupe, et le `groupId` de
+   * chaque enfilement). Les envois RCS d'un SCÉNARIO, un message par contact qui avance, ne passent pas par ce
+   * débit : la marge de 3 000 sur 1 800 les absorbe, elle n'est pas calculée pour eux. En dessous du débit réel,
    * smsmode rejouerait tout le trafic d'une campagne ; un refus est un 429, que smsmode REJOUE, donc un accusé
    * retardé, pas perdu.
    */
   RCS_CALLBACK_PAR_MINUTE: z.coerce.number().int().min(0).default(3000),
+  /**
+   * Codes d'URL JAMAIS VUS que `/w/:code` et `/rcs/callback/:code` acceptent d'aller lire en base, par minute et
+   * par porte, TOUS APPELANTS CONFONDUS. `0` le désactive.
+   *
+   * 🔴 C'EST LA BORNE DES CODES INVENTÉS (décision de Julien du 2026-09-21). Un robot qui tire des codes bien
+   * formés coûtait une lecture en base par essai, sur le pool que partagent la console et la réception des
+   * messages. Un code déjà RÉSOLU par ce process n'y est plus soumis (`ClesResolues`) : une attaque qui épuise
+   * ce budget ne coupe donc pas les intégrations en service.
+   *
+   * ⚠️ LE PRIX ASSUMÉ : pendant une telle attaque, un vrai code qui n'a pas servi depuis le dernier démarrage
+   * attend la minute suivante (429 avec `Retry-After`, que smsmode rejoue ; un outil d'intégration peut ne pas
+   * le faire). Le défaut laisse passer largement le premier appel de chaque code après un démarrage.
+   */
+  CODES_INCONNUS_PAR_MINUTE: z.coerce.number().int().min(0).default(120),
   /**
    * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
    *

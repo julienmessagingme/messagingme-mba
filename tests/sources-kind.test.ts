@@ -57,13 +57,18 @@ const LECTEURS: Array<{ fichier: string; gardes: string[]; pourquoi: string }> =
      * satisfaire l'assertion, et le test restait vert. C'est la MUTATION qui l'a montré, pas la relecture.
      */
     gardes: [
-      "if (!src || src.kind !== 'http') return { ok: false, erreur: 'source introuvable' };",
       "return src && src.kind === 'http'",
     ],
     // ⚠️ LA POSE DU SECRET CHEZ META A DISPARU LE 2026-09-21 (relais du MBA, migration 0161) : Meta appelle
     // désormais Engage Me, et le secret d'un client ne quitte plus notre serveur. Son motif a quitté la liste
     // avec elle ; le relais lit ses sources par `creerAppelConnecteur`, déjà inventorié plus haut.
-    pourquoi: 'le câblage porte eprouver et sourcePourTest',
+    // ⚠️ `eprouver` a quitté ce fichier le même jour pour être testé : il y est TRANSMIS, et lu ci-dessous.
+    pourquoi: 'le câblage porte sourcePourTest',
+  },
+  {
+    fichier: 'src/agent/eprouver-source.ts',
+    gardes: ["if (!src || src.kind !== 'http') return { ok: false, erreur: 'source introuvable' };"],
+    pourquoi: 'éprouver une source ouvre une connexion sortante avec son secret',
   },
 ];
 

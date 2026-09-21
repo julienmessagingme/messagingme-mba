@@ -385,6 +385,13 @@ describe('requêtes : le bouton Test', () => {
     expect(res.json()).toEqual({ ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' });
   });
 
+  it('🔴 une redirection refusée se dit comme telle, avec la phrase du résolveur', async () => {
+    const redirige = (async () => { throw new TypeError('fetch failed', { cause: new Error('unexpected redirect') }); }) as unknown as typeof fetch;
+    const { srv } = app({}, redirige);
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    expect(res.json()).toEqual({ ok: false, erreur: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur' });
+  });
+
   it('🔴 un nom qui résout vers l’intérieur : le test REFUSE, et aucun appel ne part', async () => {
     // Ce bouton appelle une URL que le client vient de saisir, depuis notre réseau. C'est le chemin le plus
     // facile à atteindre du produit : il devait porter la même garde que le connecteur en conversation.

@@ -1,5 +1,5 @@
 import { lookup as lookupDns, type LookupAddress } from 'node:dns';
-import { isIP } from 'node:net';
+import { connect as connectTcp, isIP, type Socket } from 'node:net';
 import { Agent, buildConnector, fetch as fetchUndici } from 'undici';
 import { estAdressePrivee } from './adresse-privee';
 
@@ -146,36 +146,46 @@ export function estRedirectionRefusee(err: unknown): boolean {
 }
 
 /**
- * L'ADRESSE PUBLIQUE D'UN HÔTE, VÉRIFIÉE, pour un protocole qui n'est pas du HTTP (le SMTP d'une boîte d'envoi).
+ * UNE SOCKET TCP VÉRIFIÉE, pour un protocole qui n'est pas du HTTP (le SMTP d'une boîte d'envoi, que nodemailer
+ * reçoit par son option `getSocket`).
  *
- * 🔴 ON SE CONNECTE ENSUITE À CETTE ADRESSE-LÀ, EN CHIFFRES. `fetchPublic` place sa garde dans la socket ; un
- * client SMTP fait sa propre résolution, hors de notre portée. Le seul moyen de fermer l'écart entre « vérifier »
- * et « se connecter » est donc de lui donner l'adresse déjà vérifiée, et le NOM d'origine à part, pour TLS (SNI
- * et vérification du certificat portent sur le nom, pas sur l'adresse).
+ * 🔴 LA MÊME GARDE QUE `fetchPublic`, DANS LA SOCKET : un littéral interne est refusé sans rien ouvrir, un nom est
+ * résolu par `lookupPublic`, qui refuse si une seule adresse est interne, et la connexion part sur ce qui a été
+ * vérifié. Il n'y a donc pas d'écart où glisser une autre réponse DNS.
  *
- * Mêmes règles que la connexion vérifiée : une seule adresse interne condamne le nom, un littéral interne est
- * refusé sans résolution, une résolution qui échoue ou qui TRAÎNE est un refus (`dns.lookup` n'accepte aucun
- * signal d'abandon, d'où le plafond).
+ * ⚠️ POURQUOI UNE SOCKET, ET PAS UNE ADRESSE VÉRIFIÉE DONNÉE À NODEMAILER. Lui passer l'IP coupait trois choses
+ * qu'il fait bien : garder le NOM pour TLS (SNI et certificat), basculer sur l'adresse suivante quand la première
+ * ne répond pas, et ne rien mettre dans le SNI quand l'hôte est écrit en chiffres. Ici il garde tout cela :
+ * `autoSelectFamily` essaie les adresses vérifiées l'une après l'autre, et le nom d'hôte reste le sien.
+ *
+ * ⚠️ UN PLAFOND DE TEMPS COUVRE LA RÉSOLUTION ET L'OUVERTURE : nodemailer n'arme le sien qu'une fois la socket
+ * reçue, et `dns.lookup` n'accepte aucun signal d'abandon.
  */
-export function adressePubliqueDe(
+export function ouvrirSocketPublique(
   hote: string,
-  resoudre: ResoudreTout = resoudreParDefaut,
-  estInterdite: (ip: string) => boolean = estAdressePrivee,
-  delaiMs = 3_000,
-): Promise<string> {
+  port: number,
+  opts: { resoudre?: ResoudreTout; estInterdite?: (ip: string) => boolean; delaiMs?: number } = {},
+): Promise<Socket> {
+  const estInterdite = opts.estInterdite ?? estAdressePrivee;
   const nu = hote.trim().replace(/^\[|\]$/g, '');
-  if (isIP(nu) !== 0) return estInterdite(nu) ? Promise.reject(new AdresseInterdite()) : Promise.resolve(nu);
-  return new Promise<string>((ok, ko) => {
-    const echeance = setTimeout(() => ko(Object.assign(new Error('résolution trop lente'), { code: 'ETIMEOUT' })), delaiMs);
-    echeance.unref?.();
-    lookupPublic(resoudre, estInterdite)(nu, { all: true }, (err, adresses) => {
+  if (isIP(nu) !== 0 && estInterdite(nu)) return Promise.reject(new AdresseInterdite());
+  return new Promise<Socket>((ok, ko) => {
+    const socket = connectTcp({
+      host: nu, port, autoSelectFamily: true,
+      lookup: lookupPublic(opts.resoudre ?? resoudreParDefaut, estInterdite) as never,
+    });
+    const echec = (err: Error): void => { clearTimeout(echeance); socket.destroy(); ko(err); };
+    const echeance = setTimeout(
+      () => echec(Object.assign(new Error('connexion trop lente'), { code: 'ETIMEDOUT' })), opts.delaiMs ?? 20_000,
+    );
+    socket.once('error', echec);
+    socket.once('connect', () => {
       clearTimeout(echeance);
-      if (err) return ko(err);
-      const toutes = adresses as LookupAddress[];
-      // 🔴 L'IPv4 D'ABORD, comme nodemailer le faisait en résolvant lui-même (`resolve4` avant `resolve6`). Un
-      // conteneur Docker n'a pas d'IPv6 par défaut : prendre la première adresse rendue, souvent une IPv6,
-      // rendrait injoignables des serveurs qui l'étaient.
-      ok((toutes.find((a) => a.family === 4) ?? toutes[0]!).address);
+      socket.removeListener('error', echec);
+      // Un auditeur neutre le temps que nodemailer pose les siens : une erreur dans l'intervalle ne doit pas
+      // faire tomber le process (un 'error' sans auditeur lève). Nodemailer reçoit aussi l'événement.
+      socket.on('error', () => {});
+      ok(socket);
     });
   });
 }

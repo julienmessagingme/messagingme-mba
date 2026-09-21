@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type Server } from 'node:http';
+import { createServer as createTcpServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import type { LookupAddress } from 'node:dns';
 import { Agent } from 'undici';
 import {
-  lookupPublic, connecteurPublic, fetchPublicAvec, estRefusAdresseInterne, estRedirectionRefusee, adressePubliqueDe, AdresseInterdite, type ResoudreTout,
+  lookupPublic, connecteurPublic, fetchPublicAvec, estRefusAdresseInterne, estRedirectionRefusee, ouvrirSocketPublique, AdresseInterdite, type ResoudreTout,
 } from '../src/lib/connexion-publique';
 
 /**
@@ -188,33 +189,59 @@ describe('la connexion vérifiée, contre un vrai serveur local', () => {
   });
 });
 
-describe('l’adresse vérifiée d’un hôte non HTTP (SMTP)', () => {
-  it('rend l’adresse publique d’un nom, celle qu’on a vérifiée', async () => {
-    expect(await adressePubliqueDe('smtp.client.fr', resolveur({ 'smtp.client.fr': ['93.184.216.34'] }))).toBe('93.184.216.34');
+describe('la socket vérifiée d’un protocole non HTTP (le SMTP d’une boîte d’envoi)', () => {
+  let tcp: ReturnType<typeof createTcpServer>;
+  let portTcp = 0;
+  let connexions = 0;
+  beforeAll(async () => {
+    tcp = createTcpServer((s) => { connexions += 1; s.on('error', () => {}); s.end('220 pret\r\n'); });
+    await new Promise<void>((ok) => tcp.listen(0, '127.0.0.1', () => ok()));
+    portTcp = (tcp.address() as AddressInfo).port;
+  });
+  afterAll(async () => { await new Promise<void>((ok) => tcp.close(() => ok())); });
+
+  const refuser = async (promesse: Promise<unknown>): Promise<unknown> => promesse.then(() => null, (e: unknown) => e);
+
+  it('🔴 un nom qui résout vers l’intérieur est refusé, et le serveur n’est jamais atteint', async () => {
+    const avant = connexions;
+    const erreur = await refuser(ouvrirSocketPublique('smtp.piege.test', portTcp, { resoudre: resolveur({ 'smtp.piege.test': ['127.0.0.1'] }) }));
+    expect(estRefusAdresseInterne(erreur)).toBe(true);
+    expect(connexions).toBe(avant);
   });
 
-  it('🔴 préfère l’IPv4, comme nodemailer quand il résolvait lui-même', async () => {
-    const r = resolveur({ 'double.test': ['2606:2800:220:1:248:1893:25c8:1946', '93.184.216.34'] });
-    expect(await adressePubliqueDe('double.test', r)).toBe('93.184.216.34');
-    const seulementV6 = resolveur({ 'v6.test': ['2606:2800:220:1:248:1893:25c8:1946'] });
-    expect(await adressePubliqueDe('v6.test', seulementV6)).toBe('2606:2800:220:1:248:1893:25c8:1946');
+  it('⚠️ CONTRE-ÉPREUVE : garde levée, la même socket atteint le serveur', async () => {
+    const avant = connexions;
+    const socket = await ouvrirSocketPublique('smtp.piege.test', portTcp, {
+      resoudre: resolveur({ 'smtp.piege.test': ['127.0.0.1'] }), estInterdite: () => false,
+    });
+    socket.destroy();
+    await new Promise((ok) => setTimeout(ok, 50));
+    expect(connexions).toBe(avant + 1);
   });
 
-  it('🔴 une seule adresse interne condamne le nom', async () => {
-    const r = resolveur({ 'mixte.test': ['93.184.216.34', '172.18.0.1'] });
-    await expect(adressePubliqueDe('mixte.test', r)).rejects.toBeInstanceOf(AdresseInterdite);
-  });
-
-  it('🔴 un littéral interne est refusé sans résolution, un littéral public passe tel quel', async () => {
+  it('🔴 un hôte écrit EN CHIFFRES vers l’intérieur est refusé sans résolution', async () => {
     const jamais: ResoudreTout = () => { throw new Error('la résolution ne devait pas être appelée'); };
-    await expect(adressePubliqueDe('127.0.0.1', jamais)).rejects.toBeInstanceOf(AdresseInterdite);
-    await expect(adressePubliqueDe('[::1]', jamais)).rejects.toBeInstanceOf(AdresseInterdite);
-    expect(await adressePubliqueDe('93.184.216.34', jamais)).toBe('93.184.216.34');
+    for (const hote of ['127.0.0.1', '[::1]', '172.18.0.1']) {
+      expect(estRefusAdresseInterne(await refuser(ouvrirSocketPublique(hote, portTcp, { resoudre: jamais }))), hote).toBe(true);
+    }
+  });
+
+  /**
+   * 🔴 LA BASCULE QUE NODEMAILER FAISAIT, GARDÉE (relecture du 2026-09-21). Quand la première adresse vérifiée
+   * ne répond pas, la socket part sur la suivante. Donner à nodemailer une seule adresse vérifiée la supprimait.
+   */
+  it('🔴 si la première adresse vérifiée ne répond pas, la suivante est essayée', async () => {
+    const socket = await ouvrirSocketPublique('double.test', portTcp, {
+      resoudre: resolveur({ 'double.test': ['127.0.0.9', '127.0.0.1'] }), estInterdite: () => false,
+    });
+    expect(socket.remoteAddress).toBe('127.0.0.1');
+    socket.destroy();
   });
 
   it('🔴 une résolution qui échoue ou qui TRAÎNE est un refus', async () => {
-    await expect(adressePubliqueDe('inconnu.test', resolveur({}))).rejects.toThrow();
+    expect(await refuser(ouvrirSocketPublique('inconnu.test', portTcp, { resoudre: resolveur({}) }))).not.toBeNull();
     const muette: ResoudreTout = () => { /* ne rappelle jamais */ };
-    await expect(adressePubliqueDe('lent.test', muette, undefined, 50)).rejects.toThrow('résolution trop lente');
+    const erreur = await refuser(ouvrirSocketPublique('lent.test', portTcp, { resoudre: muette, delaiMs: 50 }));
+    expect((erreur as Error).message).toBe('connexion trop lente');
   });
 });

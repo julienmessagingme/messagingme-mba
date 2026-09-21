@@ -88,8 +88,8 @@ function DocsInner() {
       <Section title={t('Débit', 'Rate limit')}>
         <p>
           {t(
-            'Par défaut 60 requêtes par minute et par clé. Chaque réponse porte l\'état du compteur :',
-            'By default 60 requests per minute per key. Every response carries the counter state:',
+            'Par défaut 60 requêtes par minute et par clé. Chaque réponse comptée sur votre clé porte l\'état de son compteur :',
+            'By default 60 requests per minute per key. Every response counted against your key carries its counter state:',
           )}
         </p>
         <pre className={codeCls}>{`x-ratelimit-limit: 60
@@ -97,8 +97,8 @@ x-ratelimit-remaining: 57
 x-ratelimit-reset: 1750000000`}</pre>
         <p>
           {t(
-            'Au dépassement : 429 avec un en-tête retry-after (en secondes). Le compteur est tenu en mémoire du serveur : il repart à zéro à chaque redéploiement.',
-            'On overflow: 429 with a retry-after header (seconds). The counter is held in server memory: it resets on every redeploy.',
+            'Au dépassement : 429 avec un en-tête retry-after (en secondes). Une clé refusée (401) ne porte aucun de ces en-têtes. Le compteur est tenu en mémoire du serveur : il repart à zéro à chaque redéploiement.',
+            'On overflow: 429 with a retry-after header (seconds). A rejected key (401) carries none of these headers. The counter is held in server memory: it resets on every redeploy.',
           )}
         </p>
       </Section>

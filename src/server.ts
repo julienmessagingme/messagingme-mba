@@ -424,7 +424,8 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     // plafond de clés : la table est bornée par le nombre d'agents, et un plafond de clés y rouvrirait
     // l'éviction d'un vrai code par des codes inventés (cf. `registerRcsCallback`).
     entree('rcsCallback', 'code-url', deps.rcsCallback, (app, d) =>
-      registerRcsCallback(app, d, new RateLimiter(config.RCS_CALLBACK_PAR_MINUTE, 60_000))),
+      registerRcsCallback(app, d, new RateLimiter(config.RCS_CALLBACK_PAR_MINUTE, 60_000),
+        new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000))),
     entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth)),
     entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),

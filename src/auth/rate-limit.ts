@@ -181,3 +181,37 @@ async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, mes
   reply.header('retry-after', String(Math.max(1, Math.ceil(attenteMs / 1000))));
   await reply.code(429).send({ error: message });
 }
+
+/**
+ * LES CLÉS DÉJÀ RÉSOLUES AVEC SUCCÈS PAR CE PROCESS, en nombre borné : l'empreinte d'une clé d'API (`/v1`), le
+ * code d'un webhook entrant (`/w/:code`), celui d'un rappel RCS (`/rcs/callback/:code`).
+ *
+ * 🔴 ELLE EXISTE POUR NE PAS PRENDRE LES CLIENTS EN OTAGE. Chacune de ces portes a un budget COMMUN pour les
+ * clés qu'elle n'a jamais vues, pris AVANT la lecture en base : sans cette exception, une attaque qui épuise le
+ * budget refuserait aussi les appelants légitimes, c'est-à-dire qu'un attaquant couperait le service à notre
+ * place. Une clé déjà reconnue échappe donc au budget.
+ *
+ * 🔴 ELLE NE MET RIEN EN CACHE, ET LA NUANCE EST TOUTE LA SÉCURITÉ. Elle ne dit pas « cette clé est valide »,
+ * elle dit « cette clé a déjà été résolue une fois, elle ne sert pas à sonder » : la lecture en base a lieu À
+ * CHAQUE FOIS, donc une clé révoquée ou un webhook éteint cessent de passer immédiatement. Et une clé qui cesse
+ * de se résoudre est OUBLIÉE : sinon son porteur échapperait au budget tout en échouant à chaque lecture, donc
+ * martèlerait la base sans qu'aucun plafond ne le compte.
+ *
+ * ⚠️ BORNÉE : au plafond, on oublie la plus ancienne. Les vrais appelants reviennent régulièrement, donc ils se
+ * réinscrivent. Ce n'est pas une table indexée sur une valeur que l'appelant choisit : on n'y entre qu'après
+ * une résolution réussie.
+ */
+export class ClesResolues {
+  private readonly vues = new Set<string>();
+  constructor(private readonly max: number) {}
+  connait(cle: string): boolean { return this.vues.has(cle); }
+  oublier(cle: string): void { this.vues.delete(cle); }
+  retenir(cle: string): void {
+    if (this.vues.has(cle)) return;
+    if (this.vues.size >= this.max) {
+      const plusAncienne = this.vues.values().next().value;
+      if (plusAncienne !== undefined) this.vues.delete(plusAncienne);
+    }
+    this.vues.add(cle);
+  }
+}

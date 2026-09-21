@@ -178,6 +178,9 @@ describe('le client MCP : le cycle de vie', () => {
     expect(await ouvrirSessionMcp(CIBLE, { fetchImpl: refuse })).toEqual({ echec: { genre: 'adresse_interne' } });
     const panne = (async () => { throw new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED') }); }) as unknown as typeof fetch;
     expect(await ouvrirSessionMcp(CIBLE, { fetchImpl: panne })).toEqual({ echec: { genre: 'reseau', message: 'fetch failed' } });
+    // Et une redirection refusée (`redirect: 'error'`) a le sien : ni une panne, ni une réponse illisible.
+    const redirige = (async () => { throw new TypeError('fetch failed', { cause: new Error('unexpected redirect') }); }) as unknown as typeof fetch;
+    expect(await ouvrirSessionMcp(CIBLE, { fetchImpl: redirige })).toEqual({ echec: { genre: 'redirection' } });
   });
 
   it('un 401 n est PAS l ancien transport : c est un refus, et le client doit pouvoir le dire', async () => {

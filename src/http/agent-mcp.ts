@@ -186,6 +186,8 @@ function direEchec(e: EchecMcp): string {
       return `le serveur a refusé la connexion (${e.code})`;
     case 'reseau':
       return 'le serveur est injoignable';
+    case 'redirection':
+      return 'le serveur a redirigé l’appel, ce qui n’est pas accepté sur un connecteur';
     case 'adresse_interne':
       // Même phrase que la vérification préalable (`ouvrirPourSource`) : c'est la même cause, vue plus tard.
       return 'cette adresse ne résout pas vers une adresse publique';

@@ -47,6 +47,8 @@ function app(hook: WebhookPublic | null = HOOK, over: Partial<WebhookEntrantRout
     trouverWaId: async () => null,
     ecrireContact: async (tenantId, e) => { cap.ecrits.push({ tenantId, ...e }); return { statut: 'created' }; },
     publish: async (tenantId, ev) => { cap.publies.push({ tenantId, ev }); },
+    // Large par défaut : ces tests éprouvent autre chose que le frein des codes jamais vus (décrit plus bas).
+    budgetInconnus: new RateLimiter(1000, 60_000),
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), webhookEntrant }), cap };
@@ -468,6 +470,60 @@ describe('webhook entrant : le plafond APRÈS la lecture du code', () => {
     // La table est bornée par le nombre de webhooks ACTIFS : un code éteint rend 404 avant le plafond.
     const { server } = app({ ...HOOK, enabled: false }, { limiter: new RateLimiter(1, 60_000) });
     for (let i = 0; i < 5; i += 1) expect((await post(server, CORPS)).statusCode).toBe(404);
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 LE FREIN DES CODES JAMAIS VUS, AVANT LA BASE (décision de Julien du 2026-09-21). Même mécanique que les
+ * rappels RCS : un budget COMMUN borne les lectures que coûtent des codes inventés, sans rien retirer à un code
+ * déjà résolu.
+ */
+describe('webhook entrant : le frein des codes jamais vus', () => {
+  const invente = (i: number): string => String(i).padStart(26, 'y');
+
+  it('🔴 des codes inventés en masse ne coûtent que le budget en lectures, et le refus ne dit rien du budget', async () => {
+    const { server, cap } = app(HOOK, { budgetInconnus: new RateLimiter(5, 60_000) });
+    const refus: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 30; i += 1) {
+      const r = await post(server, CORPS, {}, invente(i));
+      if (r.statusCode === 429) refus.push(r.headers);
+    }
+    expect(cap.lus, 'la base ne voit que le budget').toHaveLength(5);
+    expect(refus).toHaveLength(25);
+    expect(Number(refus[0]!['retry-after'])).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(refus[0]!).filter((k) => k.startsWith('x-ratelimit'))).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un webhook déjà résolu traverse une attaque qui a épuisé le budget', async () => {
+    const { server, cap } = app(HOOK, { budgetInconnus: new RateLimiter(3, 60_000) });
+    expect((await post(server, CORPS)).statusCode).toBe(200);
+    for (let i = 0; i < 20; i += 1) await post(server, CORPS, {}, invente(i));
+    expect((await post(server, CORPS)).statusCode, 'l’intégration du client').toBe(200);
+    expect(cap.ecrits).toHaveLength(2);
+    await server.close();
+  });
+
+  it('🔴 un webhook éteint perd son laissez-passer', async () => {
+    let actif = true;
+    const { server, cap } = app(HOOK, {
+      budgetInconnus: new RateLimiter(2, 60_000),
+      getByCode: async (code) => { cap.lus.push(code); return code === CODE ? { ...HOOK, enabled: actif } : null; },
+    });
+    expect((await post(server, CORPS)).statusCode).toBe(200);
+    actif = false;
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i += 1) codes.push((await post(server, CORPS)).statusCode);
+    expect(codes).toContain(429);
+    expect(cap.lus.length).toBeLessThanOrEqual(4);
+    await server.close();
+  });
+
+  it('à 0, le frein est désactivé : chaque code inventé va en base, comme avant', async () => {
+    const { server, cap } = app(HOOK, { budgetInconnus: new RateLimiter(0, 60_000) });
+    for (let i = 0; i < 10; i += 1) expect((await post(server, CORPS, {}, invente(i))).statusCode).toBe(404);
+    expect(cap.lus).toHaveLength(10);
     await server.close();
   });
 });

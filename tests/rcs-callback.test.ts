@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import {
@@ -375,7 +375,7 @@ describe('Route publique des rappels RCS', () => {
  */
 describe('Rappels RCS : le plafond par code', () => {
   const AUTRE_CODE = 'rcs-ffffffffffffffffffffffffffffffff';
-  function monterAvec(max: number, maxCles = 0) {
+  function monterAvec(max: number, maxCles = 0, budgetInconnus = 1000) {
     let lectures = 0;
     const dlrs: RcsDlr[] = [];
     const app = Fastify();
@@ -389,7 +389,7 @@ describe('Rappels RCS : le plafond par code', () => {
       },
       onDlr: async (_t, dlr) => { dlrs.push(dlr); },
       onMo: async () => {},
-    }, new RateLimiter(max, 60_000, () => 1_000, maxCles));
+    }, new RateLimiter(max, 60_000, () => 1_000, maxCles), new RateLimiter(budgetInconnus, 60_000, () => 1_000));
     return { app, dlrs, lectures: () => lectures };
   }
 
@@ -452,6 +452,89 @@ describe('Rappels RCS : le plafond par code', () => {
   it('🔴 un seul run de campagne à la fois par espace, sans quoi le plafond se calcule faux', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     expect(worker).toMatch(/\{ concurrency: config\.CAMPAIGN_RUN_CONCURRENCY, groupConcurrency: 1 \}/);
-    expect(worker).toMatch(/queue\.enqueue\('campaign-run', \{ campaignId: id \}, \{ expireInSeconds, groupId: tenantId \}\)/);
+  });
+
+  /**
+   * ⚠️ ET CHAQUE ENFILEMENT PORTE SON ESPACE COMME GROUPE (relecture du 2026-09-21). `groupConcurrency` ne sert à
+   * rien sur un job sans `groupId`. Les enfilements ne vivent pas qu'au worker : le lancement par l'opérateur et
+   * `src/campaign/enqueue.ts` en font aussi. On les DÉRIVE de `src/`, au lieu d'en recopier la liste.
+   */
+  it('🔴 tout enfilement de `campaign-run`, où qu’il soit, porte un groupId', () => {
+    const fichiers = ['src/worker.ts', 'src/http/campaigns.ts', 'src/campaign/enqueue.ts'];
+    const enfilements = fichiers.flatMap((f) =>
+      readFileSync(new URL(`../${f}`, import.meta.url), 'utf8').split('\n')
+        .filter((l) => l.includes("enqueue('campaign-run'")).map((l) => ({ f, l: l.trim() })));
+    // Le compte n'est pas écrit : un enfilement ajouté ailleurs doit être ajouté à la liste des fichiers.
+    expect(enfilements.length).toBeGreaterThan(0);
+    for (const { f, l } of enfilements) expect(l, f).toMatch(/groupId: \w+/);
+  });
+
+  it('⚠️ et aucun autre fichier de src/ n’enfile `campaign-run` sans être lu par le test ci-dessus', () => {
+    const racine = new URL('../src/', import.meta.url);
+    const connus = new Set(['worker.ts', 'http/campaigns.ts', 'campaign/enqueue.ts']);
+    const parcourir = (dossier: URL, prefixe: string): string[] =>
+      readdirSync(dossier, { withFileTypes: true }).flatMap((e) => e.isDirectory()
+        ? parcourir(new URL(`${e.name}/`, dossier), `${prefixe}${e.name}/`)
+        : e.name.endsWith('.ts') ? [`${prefixe}${e.name}`] : []);
+    const inconnus = parcourir(racine, '').filter((f) => !connus.has(f)
+      && readFileSync(new URL(f, racine), 'utf8').includes("enqueue('campaign-run'"));
+    expect(inconnus, 'un nouvel enfilement doit porter un groupId et entrer dans la liste').toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LE FREIN DES CODES JAMAIS VUS, AVANT LA BASE (décision de Julien du 2026-09-21). Le plafond par code se prend
+ * APRÈS la lecture (sinon des codes inventés évinceraient le vrai) : un robot qui tire des codes bien formés
+ * coûtait donc une lecture en base par essai. Un budget COMMUN borne ces lectures, sans rien retirer à un code
+ * déjà résolu.
+ */
+describe('Rappels RCS : le frein des codes jamais vus', () => {
+  function monter(budget: number, existe: (code: string) => boolean = (c) => c === CODE) {
+    let lectures = 0;
+    const app = Fastify();
+    registerRcsCallback(app, {
+      parCode: async (code) => { lectures += 1; return existe(code) ? { tenantId: 't1', agentId: 'ch-1' } : null; },
+      onDlr: async () => {}, onMo: async () => {},
+    }, new RateLimiter(10_000, 60_000), new RateLimiter(budget, 60_000));
+    return { app, lectures: () => lectures };
+  }
+  const invente = (i: number): string => `rcs-${i.toString(16).padStart(32, 'b')}`;
+
+  it('🔴 des codes inventés en masse ne coûtent que le budget en lectures, et le refus ne dit rien du budget', async () => {
+    const { app, lectures } = monter(5);
+    const refus: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 30; i += 1) {
+      const r = await app.inject(post(`/rcs/callback/${invente(i)}`, DLR_DELIVERED));
+      if (r.statusCode === 429) refus.push(r.headers);
+    }
+    expect(lectures(), 'la base ne voit que le budget').toBe(5);
+    expect(refus).toHaveLength(25);
+    expect(Number(refus[0]!['retry-after'])).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(refus[0]!).filter((k) => k.startsWith('x-ratelimit')), 'l’état d’un budget commun').toEqual([]);
+  });
+
+  it('🔴 un code déjà résolu traverse une attaque qui a épuisé le budget', async () => {
+    const { app } = monter(3);
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(200);
+    for (let i = 0; i < 20; i += 1) await app.inject(post(`/rcs/callback/${invente(i)}`, DLR_DELIVERED));
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode, 'le vrai canal du client').toBe(200);
+  });
+
+  it('🔴 un code qui ne se résout plus perd son laissez-passer', async () => {
+    let actif = true;
+    const { app, lectures } = monter(2, (c) => c === CODE && actif);
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(200);
+    actif = false;
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i += 1) codes.push((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode);
+    // Le premier refus le trouve encore « connu », les suivants le renvoient au budget, qui finit par l'arrêter.
+    expect(codes).toContain(429);
+    expect(lectures()).toBeLessThanOrEqual(4);
+  });
+
+  it('à 0, le frein est désactivé : chaque code inventé va en base, comme avant', async () => {
+    const { app, lectures } = monter(0);
+    for (let i = 0; i < 10; i += 1) expect((await app.inject(post(`/rcs/callback/${invente(i)}`, DLR_DELIVERED))).statusCode).toBe(404);
+    expect(lectures()).toBe(10);
   });
 });

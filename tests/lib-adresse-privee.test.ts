@@ -246,7 +246,8 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     ['src/agent/resolvers/http.ts', 'le connecteur, en pleine conversation'],
     ['src/http/agent-requetes.ts', 'le bouton Test d’une REQUÊTE'],
     ['src/lib/page-distante.ts', 'la lecture d’une page distante, à chaque saut de redirection'],
-    ['src/index.ts', 'le bouton éprouver une SOURCE, oublié jusqu’au 2026-09-03'],
+    // Câblé dans `src/index.ts` jusqu'au 2026-09-21, sorti depuis dans son module pour être testé.
+    ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE, oublié jusqu’au 2026-09-03'],
   ] as const;
 
   for (const [fichier, quoi] of CHEMINS) {
@@ -281,9 +282,10 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
  * vérifie l'adresse à l'ouverture de la socket. Chaque chemin qui appelle une adresse saisie par un client doit
  * l'utiliser, y compris le CLIENT MCP, venu après l'inventaire ci-dessus et qui n'y figurait pas.
  *
- * ⚠️ Même limite que l'inventaire précédent : ce test lit la SOURCE. Et pour les quatre fichiers qui ne font
- * rien d'autre que ces appels, il interdit en plus un `fetch(` nu, qui contournerait la garde en silence.
- * `src/index.ts` en est exempté : il appelle aussi Meta, Zadarma et d'autres hôtes fixes et de confiance.
+ * ⚠️ Même limite que l'inventaire précédent : ce test lit la SOURCE. Et il interdit en plus, dans chacun de ces
+ * fichiers, un `fetch(` nu, qui contournerait la garde en silence. Aucun n'en est plus exempté depuis que
+ * l'épreuve d'une source a quitté `src/index.ts` (qui appelle aussi Meta, Zadarma et d'autres hôtes fixes) pour
+ * son propre module.
  */
 describe('inventaire : chaque appel vers une URL client passe par le fetch vérifié à la connexion', () => {
   const lireSansCommentaires = (fichier: string): string =>
@@ -297,7 +299,7 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
     ['src/http/agent-requetes.ts', 'le bouton Test d’une REQUÊTE', true],
     ['src/lib/page-distante.ts', 'la lecture d’une page distante', true],
     ['src/mcp/client.ts', 'le client MCP (agent IA et écran des connecteurs MCP)', true],
-    ['src/index.ts', 'le bouton éprouver une SOURCE', false],
+    ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE', true],
   ] as const;
 
   for (const [fichier, quoi, sansFetchNu] of CHEMINS) {
@@ -311,17 +313,16 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
 
 /**
  * 🔴 LE SMTP D'UNE BOÎTE D'ENVOI, SEUL APPEL SORTANT VERS UN HÔTE SAISI PAR UN CLIENT QUI N'EST PAS DU HTTP
- * (2026-09-21). Il n'a pas de `fetch` : l'hôte est résolu et vérifié par `adressePubliqueDe`, et nodemailer se
- * connecte à l'ADRESSE vérifiée. Ce test tient les deux moitiés, qu'un retour à `host: account.host` défait sans
- * bruit : la vérification appelée, et le transport construit sur son résultat.
+ * (2026-09-21). Il n'a pas de `fetch` : c'est nous qui ouvrons la socket (`getSocket`), par `ouvrirSocketPublique`.
+ * Ce test tient les deux moitiés, qu'un retour au transport d'origine défait sans bruit : la socket fournie, et
+ * fournie par la garde.
  */
-describe('inventaire : l’hôte SMTP d’une boîte est vérifié, et la connexion vise l’adresse vérifiée', () => {
-  it('🔴 src/email/smtp.ts résout par adressePubliqueDe et se connecte au résultat', () => {
+describe('inventaire : la socket SMTP d’une boîte est ouverte par la garde', () => {
+  it('🔴 src/email/smtp.ts fournit la socket à nodemailer, et la tient de ouvrirSocketPublique', () => {
     const src = readFileSync(new URL('../src/email/smtp.ts', import.meta.url), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-    expect(src).toMatch(/adressePubliqueDe\(/);
-    expect(src, 'nodemailer doit viser l’adresse vérifiée, pas le nom saisi').toMatch(/host:\s*adresse\b/);
-    expect(src).not.toMatch(/host:\s*account\.host/);
+    expect(src).toMatch(/getSocket:/);
+    expect(src).toMatch(/ouvrirSocketPublique\(/);
   });
 });

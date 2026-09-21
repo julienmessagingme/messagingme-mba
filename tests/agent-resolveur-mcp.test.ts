@@ -237,6 +237,19 @@ describe('le resolveur MCP : ce qui REVIENT au modele', () => {
     expect(JSON.stringify(r.contenu)).not.toContain('fiche complete');
   });
 
+  it('🔴 un refus d adresse interne et une redirection disent CHACUN leur cause au modele', async () => {
+    // Le compilateur impose que chaque genre ait son cas, pas que la phrase soit la bonne.
+    for (const [echec, attendu] of [
+      [{ genre: 'adresse_interne' as const }, 'ne résout pas vers une adresse publique'],
+      [{ genre: 'redirection' as const }, 'a redirigé l’appel'],
+    ] as const) {
+      const h = harnais({ session: { appeler: vi.fn(async () => ({ echec })) } });
+      const r = await h.resolveur(entree(OUTIL()));
+      expect(r.ok).toBe(false);
+      expect(JSON.stringify(r), echec.genre).toContain(attendu);
+    }
+  });
+
   it('la session est FERMEE, y compris quand l appel echoue', async () => {
     const h = harnais({ session: { appeler: vi.fn(async () => ({ echec: { genre: 'reseau' as const, message: 'coupe' } })) } });
     await h.resolveur(entree(OUTIL()));

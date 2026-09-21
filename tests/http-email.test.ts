@@ -218,25 +218,20 @@ describe('routes email : test d’envoi (4xx, jamais 5xx)', () => {
   });
 
   /**
-   * 🔴 L'HÔTE EST VÉRIFIÉ AVANT LA CONNEXION (2026-09-21) : `buildTransport` refuse un hôte interne, donc
-   * `getTransport` LÈVE. Hors du `try`, ce refus partait en 500, que Cloudflare remplace par sa page. Il se dit.
+   * 🔴 UN HÔTE SMTP INTERNE EST REFUSÉ À L'OUVERTURE DE LA SOCKET (2026-09-21), donc à l'envoi : le refus se DIT,
+   * sans citer l'adresse, et la boîte ne passe pas « vérifiée ». Une autre panne garde le message générique.
    */
-  it('🔴 un hôte SMTP interne : 422 et un message lisible, sans citer l’adresse', async () => {
+  it('🔴 un hôte SMTP interne : 422 et un message lisible, la boîte ne passe pas vérifiée', async () => {
     for (const [erreur, attendu] of [
-      [new TypeError('x', { cause: new AdresseInterdite() }), 'cet hôte SMTP n’est pas joignable depuis notre infrastructure'],
-      [Object.assign(new Error('nom introuvable'), { code: 'ENOTFOUND' }), 'hôte SMTP introuvable'],
+      [new AdresseInterdite(), 'cet hôte SMTP n’est pas joignable depuis notre infrastructure'],
+      [new Error('connexion refusée'), 'envoi de test échoué'],
     ] as const) {
-      const accounts = fakeAccountsStore();
-      const resolver: EmailResolverDep = { getTransport: async () => { throw erreur; }, invalidate: () => {} };
-      const server = buildServer({
-        queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
-        email: { accounts: accounts.dep, templates: fakeTemplatesStore().dep, resolver },
-      });
+      const { server, accountRows } = app(vi.fn().mockRejectedValue(erreur));
       const created = (await server.inject({ method: 'POST', url: '/tenants/t1/email/accounts', ...h(adminTok), payload: validAccountPayload })).json();
       const res = await server.inject({ method: 'POST', url: `/tenants/t1/email/accounts/${created.id}/test`, ...h(adminTok), payload: { to: 'destinataire@exemple.fr' } });
       expect(res.statusCode).toBe(422);
       expect(res.json()).toEqual({ ok: false, error: attendu });
-      expect(accounts.rows.get(created.id)?.verifiedAt ?? null, 'un refus ne vérifie pas la boîte').toBeNull();
+      expect(accountRows.get(created.id)?.verifiedAt ?? null).toBeNull();
       await server.close();
     }
   });

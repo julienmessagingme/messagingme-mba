@@ -272,6 +272,18 @@ describe('l apercu et l import', () => {
     expect(h.epreuves).toEqual([{ ok: false }]);
   });
 
+  it('🔴 un refus d adresse interne et une redirection disent CHACUN leur cause a l administrateur', async () => {
+    for (const [echec, attendu] of [
+      [{ genre: 'adresse_interne' as const }, 'ne résout pas vers une adresse publique'],
+      [{ genre: 'redirection' as const }, 'a redirigé l’appel'],
+    ] as const) {
+      const h = harnais({ catalogue: { echec } });
+      const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
+      expect(r.statusCode, echec.genre).toBe(502);
+      expect(r.body, echec.genre).toContain(attendu);
+    }
+  });
+
   it('⚠️ un outil dont le schema a change GARDE son nom local', async () => {
     // Le nom local est peut-etre deja ecrit dans une consigne d agent : le changer casserait ce que le
     // client a redige, pour une raison qui ne le regarde pas.

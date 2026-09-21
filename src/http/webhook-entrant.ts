@@ -4,7 +4,7 @@ import { normalizePhone } from '../crm/phone';
 import { waIdOf } from '../crm/identity';
 import { extraireDuPayload } from '../webhook-entrant/mapping';
 import type { WebhookPublic } from '../webhook-entrant/store.pg';
-import { RateLimiter } from '../auth/rate-limit';
+import { ClesResolues, RateLimiter, consommerEnSilence } from '../auth/rate-limit';
 
 /**
  * Route PUBLIQUE des webhooks entrants : `POST /w/:code`. Un outil tiers (Zapier, Make, un CRM, un formulaire
@@ -70,6 +70,13 @@ export interface WebhookEntrantRouteDeps {
   publish(tenantId: string, ev: { kind: 'webhook'; waId: string; webhookId: string }): Promise<void>;
   /** Plafond de débit par webhook. Absent -> plafond par défaut (voir `registerWebhookEntrant`). */
   limiter?: RateLimiter;
+  /**
+   * Le budget COMMUN des codes jamais vus, pris avant la base (`CODES_INCONNUS_PAR_MINUTE`).
+   *
+   * 🔴 REQUIS, et c'est délibéré : optionnel, il finirait par manquer à un câblage, et la borne disparaîtrait
+   * sans bruit. Le désactiver se fait par la configuration (0), pas en oubliant une dépendance.
+   */
+  budgetInconnus: RateLimiter;
 }
 
 /** Réponse rendue au tiers : elle DIT ce qui s'est passé, puisque tout est en 200. */
@@ -94,6 +101,8 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
   // actifs, donc sa table est bornée par leur nombre. Un plafond de clés y rouvrirait l'éviction d'un vrai
   // code par des codes inventés (cf. la prise du plafond, plus bas).
   const limiter = deps.limiter ?? new RateLimiter(120, 60_000);
+  // Les codes déjà résolus par ce process : ils échappent au budget des codes jamais vus (`ClesResolues`).
+  const connus = new ClesResolues(1000);
 
   app.post('/w/:code', { bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const { code } = req.params as { code: string };
@@ -103,10 +112,22 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     // offrir une requête SQL par essai.
     if (!CODE_RE.test(normalise)) return reply.code(404).send({ error: 'webhook introuvable' });
 
+    // 🔴 LE FREIN DES CODES JAMAIS VUS, AVANT LA BASE (décision de Julien du 2026-09-21). Un code inventé bien
+    // formé coûtait une lecture en base par essai. Il consomme désormais un budget COMMUN, EN SILENCE (ses
+    // en-têtes n'appartiennent à personne). Un code déjà résolu n'y est plus soumis : une attaque qui épuise le
+    // budget ne coupe pas les intégrations en service. La clé du budget est une CONSTANTE : sa table ne grossit
+    // pas, et aucun code inventé ne peut en évincer un vrai.
+    if (!connus.connait(normalise)
+      && !(await consommerEnSilence(deps.budgetInconnus, 'codes-inconnus', reply, 'trop d’appels, réessayez dans une minute'))) return;
+
     const hook = await deps.getByCode(normalise);
     // Code inconnu ET webhook désactivé rendent la MÊME chose : un tiers n'a pas à distinguer « ce webhook
-    // n'existe pas » de « il existe mais il est éteint ».
-    if (!hook || !hook.enabled) return reply.code(404).send({ error: 'webhook introuvable' });
+    // n'existe pas » de « il existe mais il est éteint ». Et un code qui ne se résout plus perd son laissez-passer.
+    if (!hook || !hook.enabled) {
+      connus.oublier(normalise);
+      return reply.code(404).send({ error: 'webhook introuvable' });
+    }
+    connus.retenir(normalise);
 
     // 🔴 LE PLAFOND NE COMPTE QUE DES WEBHOOKS QUI EXISTENT, donc APRÈS la base (2026-09-21, même défaut que
     // celui corrigé sur les rappels RCS). Le programme II l'avait remonté AVANT `getByCode`, pour qu'une rafale

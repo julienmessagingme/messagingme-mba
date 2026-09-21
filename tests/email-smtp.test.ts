@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { sendSmtpEmail, buildTransport } from '../src/email/smtp';
 import { EmailAccountResolver } from '../src/email/resolver';
-import { AdresseInterdite } from '../src/lib/connexion-publique';
+import { estRefusAdresseInterne, ouvrirSocketPublique } from '../src/lib/connexion-publique';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import type { DecryptedEmailAccount } from '../src/email/types';
 
 /** Boîte de référence, toujours avec nom d'expéditeur et reply-to (les variantes sans les deux sont
@@ -86,47 +88,73 @@ describe('sendSmtpEmail', () => {
 });
 
 describe('buildTransport', () => {
-  // La résolution est INJECTÉE : un test unitaire qui interroge le DNS n'en est pas un.
-  const publique = async (): Promise<string> => '93.184.216.34';
-
-  it('construit un transport nodemailer sans effectuer de connexion réseau (paresseux : connexion seulement au sendMail)', async () => {
-    const transport = await buildTransport(account, publique);
+  it('construit un transport nodemailer sans effectuer de connexion réseau (paresseux : connexion seulement au sendMail)', () => {
+    const transport = buildTransport(account);
     expect(typeof transport.sendMail).toBe('function');
     expect(typeof transport.close).toBe('function');
   });
-
-  /**
-   * 🔴 NODEMAILER SE CONNECTE À L'ADRESSE VÉRIFIÉE, PAS AU NOM (2026-09-21). Avec le nom, il refaisait sa propre
-   * résolution à chaque envoi, et la vérification n'aurait rien protégé. Le nom part à part, pour TLS.
-   */
-  it('🔴 le transport vise l’ADRESSE vérifiée, et garde le NOM pour le certificat', async () => {
-    const vus: string[] = [];
-    const transport = await buildTransport({ ...account, host: 'smtp.client.fr' }, async (h) => { vus.push(h); return '93.184.216.34'; });
-    const options = (transport as unknown as { options: { host: string; tls?: { servername?: string } } }).options;
-    expect(vus).toEqual(['smtp.client.fr']);
-    expect(options.host).toBe('93.184.216.34');
-    expect(options.tls?.servername).toBe('smtp.client.fr');
-  });
-
-  it('🔴 un hôte qui résout vers l’intérieur est refusé AVANT toute connexion', async () => {
-    const interne = async (): Promise<string> => { throw new AdresseInterdite(); };
-    await expect(buildTransport({ ...account, host: 'smtp.piege.fr' }, interne)).rejects.toBeInstanceOf(AdresseInterdite);
-  });
-
-  it('🔴 par défaut, un hôte écrit EN CHIFFRES vers l’intérieur est refusé sans résolution', async () => {
-    for (const host of ['127.0.0.1', '172.18.0.1', '169.254.169.254', '[::1]']) {
-      await expect(buildTransport({ ...account, host }), host).rejects.toBeInstanceOf(AdresseInterdite);
-    }
-  });
 });
 
-describe('le bouton « Tester » d’une boîte dont l’hôte est interne', () => {
-  it('🔴 le résolveur de boîtes laisse passer le refus, il ne met rien en cache', async () => {
-    const getDecrypted = vi.fn().mockResolvedValue({ ...account, host: '127.0.0.1' });
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: (a) => buildTransport(a) });
-    await expect(r.getTransport('t1', 'a1')).rejects.toBeInstanceOf(AdresseInterdite);
-    await expect(r.getTransport('t1', 'a1')).rejects.toBeInstanceOf(AdresseInterdite);
-    expect(getDecrypted, 'un refus ne doit pas laisser un transport en cache').toHaveBeenCalledTimes(2);
+/**
+ * 🔴 UN VRAI ENVOI NODEMAILER, CONTRE UN FAUX SERVEUR SMTP LOCAL (2026-09-21). La socket est désormais ouverte par
+ * nous (`getSocket`) : ce qui compte est que nodemailer s'en serve pour tout le dialogue, et qu'un hôte interne
+ * soit refusé AVANT qu'une connexion n'arrive au serveur.
+ */
+describe('buildTransport : la connexion passe par la socket vérifiée', () => {
+  let serveur: ReturnType<typeof createServer>;
+  let port = 0;
+  let connexions = 0;
+  const recus: string[] = [];
+  beforeAll(async () => {
+    serveur = createServer((s) => {
+      connexions += 1;
+      s.on('error', () => {});
+      const dire = (l: string): void => { s.write(l + '\r\n'); };
+      let enDonnees = false;
+      dire('220 faux.smtp pret');
+      let tampon = '';
+      s.on('data', (c: Buffer) => {
+        tampon += c.toString('utf8');
+        let fin = tampon.indexOf('\r\n');
+        while (fin >= 0) {
+          const ligne = tampon.slice(0, fin);
+          tampon = tampon.slice(fin + 2);
+          fin = tampon.indexOf('\r\n');
+          if (enDonnees) { if (ligne === '.') { enDonnees = false; dire('250 accepte'); } continue; }
+          recus.push(ligne.split(' ')[0]!.toUpperCase());
+          if (/^EHLO/i.test(ligne)) s.write('250-faux.smtp\r\n250 AUTH PLAIN\r\n');
+          else if (/^AUTH/i.test(ligne)) dire('235 ok');
+          else if (/^DATA/i.test(ligne)) { enDonnees = true; dire('354 envoyez'); }
+          else if (/^QUIT/i.test(ligne)) { dire('221 bye'); s.end(); }
+          else dire('250 ok');
+        }
+      });
+    });
+    await new Promise<void>((ok) => serveur.listen(0, '127.0.0.1', () => ok()));
+    port = (serveur.address() as AddressInfo).port;
+  });
+  afterAll(async () => { await new Promise<void>((ok) => serveur.close(() => ok())); });
+
+  const boite = (): DecryptedEmailAccount => ({ ...account, host: 'smtp.client.test', port, secure: false });
+
+  it('⚠️ garde levée : l’envoi passe par la socket ouverte, et le dialogue SMTP va à son terme', async () => {
+    const avant = connexions;
+    const ouvrir = (hote: string, p: number) => ouvrirSocketPublique(hote, p, {
+      resoudre: (h, rappel) => rappel(null, h === 'smtp.client.test' ? [{ address: '127.0.0.1', family: 4 }] : []),
+      estInterdite: () => false,
+    });
+    const transport = buildTransport(boite(), ouvrir);
+    await sendSmtpEmail(transport, boite(), { to: 'x@ex.fr', subject: 'S', text: 'corps' });
+    expect(connexions).toBe(avant + 1);
+    expect(recus).toEqual(expect.arrayContaining(['EHLO', 'AUTH', 'MAIL', 'RCPT', 'DATA']));
+  });
+
+  it('🔴 par défaut, un hôte interne est refusé AVANT toute connexion, et le refus se reconnaît', async () => {
+    const avant = connexions;
+    const transport = buildTransport({ ...boite(), host: '127.0.0.1' });
+    const erreur = await sendSmtpEmail(transport, boite(), { to: 'x@ex.fr', subject: 'S', text: 'corps' }).then(() => null, (e: unknown) => e);
+    expect(estRefusAdresseInterne(erreur), 'le bouton « Tester » le traduit en message lisible').toBe(true);
+    expect(connexions, 'le serveur interne ne doit jamais être atteint').toBe(avant);
   });
 });
 

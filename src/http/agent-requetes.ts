@@ -7,7 +7,7 @@ import { assemblerAppel, cheminsDeLaReponse, estEnTeteReserve, variablesUtilisee
 import { CHAMPS_CONTACT_AUTORISES, CLES_SYSTEME } from '../agent/variables';
 import { scopeTenant, estUuid } from './scope';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
-import { fetchPublic, estRefusAdresseInterne } from '../lib/connexion-publique';
+import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
 import { lireCorpsBorne } from '../lib/corps-borne';
 
 /**
@@ -411,6 +411,10 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
       // « appel impossible : fetch failed » et cherchait une panne de son côté.
       if (estRefusAdresseInterne(err)) {
         return { code: 200, body: { ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' } };
+      }
+      // Même phrase que le résolveur de connecteur pour la même cause (`redirect: 'error'` ci-dessus).
+      if (estRedirectionRefusee(err)) {
+        return { code: 200, body: { ok: false, erreur: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur' } };
       }
       return { code: 200, body: { ok: false, erreur: `appel impossible : ${err instanceof Error ? err.message : 'erreur réseau'}` } };
     }

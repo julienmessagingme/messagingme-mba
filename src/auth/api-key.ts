@@ -3,7 +3,7 @@ import type { PreHandler } from './middleware';
 import type { ApiKeyLookup } from './api-key-store.pg';
 import { API_KEY_PREFIX } from './api-key-store.pg';
 import { sha256Hex } from '../lib/signature';
-import { consommerAvecEntetes, consommerEnSilence, type RateLimiter } from './rate-limit';
+import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from './rate-limit';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -47,49 +47,12 @@ const FORMAT_CLE = /^[A-Za-z0-9_-]{43}$/;
 const CLE_BUDGET_SPECULATIF = 'lookups-speculatifs';
 
 /**
- * LES EMPREINTES DÉJÀ RÉSOLUES AVEC SUCCÈS PAR CE PROCESS, en nombre borné.
- *
- * 🔴 ELLE EXISTE POUR NE PAS PRENDRE LES CLIENTS EN OTAGE. Sans elle, une attaque qui épuise le budget
- * spéculatif refuserait aussi les porteurs légitimes, c'est-à-dire qu'un attaquant couperait l'API de
- * tous les clients à notre place. Une empreinte déjà reconnue échappe donc au budget.
- *
- * 🔴 ELLE NE MET RIEN EN CACHE, ET LA NUANCE EST TOUTE LA SÉCURITÉ. Elle ne dit pas « cette clé est
- * valide », elle dit « cette empreinte a déjà été résolue une fois, elle ne sert pas à sonder » : le
- * lookup a lieu À CHAQUE FOIS, donc une clé RÉVOQUÉE cesse de fonctionner immédiatement. Un cache de
- * validité, lui, aurait créé une fenêtre pendant laquelle une clé révoquée passe encore.
- *
- * ⚠️ BORNÉE, comme toutes les tables indexées sur une valeur que l'appelant choisit : au plafond, on
- * oublie la plus ancienne. Les vrais porteurs appellent régulièrement, donc ils se réinscrivent.
- */
-class EmpreintesConnues {
-  private readonly vues = new Set<string>();
-  constructor(private readonly max: number) {}
-  connait(empreinte: string): boolean { return this.vues.has(empreinte); }
-  /**
-   * 🔴 UNE EMPREINTE QUI CESSE DE SE RÉSOUDRE EST OUBLIÉE, ET C'EST UN TROU RELEVÉ EN REVUE. Sans cela,
-   * une clé RÉVOQUÉE gardait son laissez-passer : son porteur échappait au budget spéculatif (il est
-   * « déjà connu ») tout en échouant au lookup à chaque appel, donc il pouvait marteler Postgres sans
-   * qu'aucun plafond ne le compte, le plafond métier n'étant atteint qu'après un lookup RÉUSSI. Un ancien
-   * client mécontent, ou une intégration qu'on vient de couper, suffisait à rouvrir exactement ce que ce
-   * lot ferme.
-   */
-  oublier(empreinte: string): void { this.vues.delete(empreinte); }
-  retenir(empreinte: string): void {
-    if (this.vues.has(empreinte)) return;
-    if (this.vues.size >= this.max) {
-      const plusAncienne = this.vues.values().next().value;
-      if (plusAncienne !== undefined) this.vues.delete(plusAncienne);
-    }
-    this.vues.add(empreinte);
-  }
-}
-
-/**
  * preHandler de la surface `/v1` : authentifie une CLÉ D'API (Bearer `mba_...`). Autorité SÉPARÉE du JWT
  * tenant (montée indépendamment, comme /ops). Sur succès, pose un `req.auth` SYNTHÉTIQUE avec le rôle
  * dédié `'api'` (JAMAIS 'admin' : les routes /v1 gate par SCOPE via requireScope, pas par rôle) et
  * `req.apiScopes`. Le tenant vient à 100% de la clé résolue (pas d'`:tenantId` dans l'URL /v1).
- * Headers x-ratelimit-* sur toute réponse (succès et 429).
+ * En-têtes x-ratelimit-* sur les réponses COMPTÉES SUR LA CLÉ (succès, et 429 du plafond par clé). Un 401 et
+ * le 429 du budget spéculatif commun n'en portent aucun : ce budget n'appartient à personne (`consommerEnSilence`).
  *
  * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'EMPREINTE de la clé et ne
  * compte que des clés qui EXISTENT : il borne le travail qu'un porteur demande, et ce qu'il coûte une fois
@@ -104,7 +67,8 @@ class EmpreintesConnues {
  * (`API_KEY_PREFILTRE_MAX=0`), pas en oubliant un argument.
  */
 export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimiter, prefiltre: RateLimiter): PreHandler {
-  const connues = new EmpreintesConnues(1000);
+  // Les empreintes déjà résolues par ce process : elles échappent au budget spéculatif (`ClesResolues`).
+  const connues = new ClesResolues(1000);
   return async function requireApiKey(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
     const raw = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';

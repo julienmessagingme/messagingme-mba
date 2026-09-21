@@ -141,19 +141,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     const parsed = testSendBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'destinataire de test invalide' });
     const { id } = req.params as { id: string };
-    let resolved: Awaited<ReturnType<typeof deps.resolver.getTransport>>;
-    try {
-      resolved = await deps.resolver.getTransport(tenant, id);
-    } catch (err) {
-      // 🔴 L'HÔTE EST VÉRIFIÉ AVANT LA CONNEXION (`buildTransport`) : un refus se DIT, en 422, plutôt que de
-      // partir en 500 (que Cloudflare remplacerait par sa propre page). Sans citer l'adresse résolue.
-      if (estRefusAdresseInterne(err)) {
-        return reply.code(422).send({ ok: false, error: 'cet hôte SMTP n’est pas joignable depuis notre infrastructure' });
-      }
-      // eslint-disable-next-line no-console
-      console.error(`email: hôte SMTP introuvable (compte ${id}):`, err instanceof Error ? err.message : err);
-      return reply.code(422).send({ ok: false, error: 'hôte SMTP introuvable' });
-    }
+    const resolved = await deps.resolver.getTransport(tenant, id);
     if (!resolved) return reply.code(404).send({ error: 'compte introuvable' });
     try {
       await sendSmtpEmail(resolved.transport, resolved.account, {
@@ -168,6 +156,11 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
       // `req.log` est un no-op silencieux, cf. le même choix dans support.ts/embedded-signup.ts.
       // eslint-disable-next-line no-console
       console.error(`email: test SMTP échoué (compte ${id}):`, err instanceof Error ? err.message : err);
+      // 🔴 L'HÔTE EST REFUSÉ À L'OUVERTURE DE LA SOCKET quand il pointe vers l'intérieur (`buildTransport`) : on
+      // le DIT, sans citer l'adresse, pour que l'administrateur ne cherche pas une panne de sa messagerie.
+      if (estRefusAdresseInterne(err)) {
+        return reply.code(422).send({ ok: false, error: 'cet hôte SMTP n’est pas joignable depuis notre infrastructure' });
+      }
       return reply.code(422).send({ ok: false, error: 'envoi de test échoué' });
     }
   });

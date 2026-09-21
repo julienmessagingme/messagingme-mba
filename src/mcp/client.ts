@@ -1,5 +1,5 @@
 import { lireCorpsBorne } from '../lib/corps-borne';
-import { fetchPublic, estRefusAdresseInterne } from '../lib/connexion-publique';
+import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
 // ⚠️ LES DEUX VIENNENT DU SERVEUR, ET C'EST DÉLIBÉRÉ : c'est le MÊME produit, qui parle la MÊME révision du
 // protocole des deux côtés. Les recopier ici créerait deux vérités, et le jour où l'une des deux bouge,
 // on parlerait une révision en serveur et une autre en client sans que rien ne le signale. L'alias dit
@@ -82,6 +82,9 @@ export type EchecMcp =
    * connexion doit dire la même chose, sinon le client cherche une panne de son serveur qui n'existe pas.
    */
   | { genre: 'adresse_interne' }
+  /** Le serveur a répondu par une redirection, que `redirect: 'error'` refuse de suivre. Ni une panne réseau, ni
+   *  une réponse illisible : le dire autrement enverrait chercher du mauvais côté. */
+  | { genre: 'redirection' }
   /** Réponse illisible, corps trop gros, flux cassé : ce qui n'est ni un refus ni une panne réseau. */
   /**
    * 🔴 NOTRE ÉCHÉANCE, PAS UNE FAUTE DU SERVEUR, et c'est pour ça qu'il a son genre à lui. Rangé sous
@@ -241,6 +244,7 @@ async function lireReponse(
 /** L'échec d'un appel qui a LEVÉ : un refus d'adresse à la connexion, ou une vraie panne réseau. */
 function echecReseau(err: unknown): EchecMcp {
   if (estRefusAdresseInterne(err)) return { genre: 'adresse_interne' };
+  if (estRedirectionRefusee(err)) return { genre: 'redirection' };
   return { genre: 'reseau', message: err instanceof Error ? err.message : 'appel impossible' };
 }
 
