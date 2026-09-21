@@ -141,7 +141,15 @@ export interface AppelConnecteur {
    */
   lecture:
     | { nature: 'pousse' }
-    | { nature: 'integre'; champs: readonly string[] | null };
+    | { nature: 'integre'; champs: readonly string[] | null }
+    /**
+     * LA RÉPONSE ENTIÈRE, bornée à `maxBytes` : le mode du relais du Meta Business Agent (migration 0161).
+     *
+     * ⚠️ ARBITRAGE DE JULIEN DU 2026-09-21 : l'agent de Meta reçoit tout ce que le système du client rend. Un
+     * modèle qui ne voit rien risque de conclure à un échec et de transférer à un humain. Les ÉCHECS, eux,
+     * gardent le message sûr de l'étape 8 : le corps brut d'une erreur ne part jamais.
+     */
+    | { nature: 'entier' };
 }
 
 /** De quoi ouvrir et clore UNE ligne de journal pour un appel de connecteur (migration 0142). */
@@ -414,6 +422,17 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     if (p.lecture.nature === 'pousse') {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
       return { contenu: { ok: true, statut: res.status }, httpStatus: res.status };
+    }
+
+    // 9ter. LA RÉPONSE ENTIÈRE (relais du MBA), déjà bornée à `maxBytes` par la lecture en flux. Un corps vide
+    // (un 204) vaut `null`, un corps qui n'est pas du JSON est rendu en texte : ni l'un ni l'autre n'est un échec.
+    if (p.lecture.nature === 'entier') {
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
+      let reponse: unknown = null;
+      if (brut !== '') {
+        try { reponse = JSON.parse(brut) as unknown; } catch { reponse = brut; }
+      }
+      return { contenu: { reponse }, httpStatus: res.status };
     }
 
     // 9. LE FILTRE. Ce qui repart au modèle est EXACTEMENT ce que le client a listé, et rien d'autre.
