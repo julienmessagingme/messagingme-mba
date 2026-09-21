@@ -8,6 +8,7 @@ import { OutilNonActivable, NomOutilDejaPris } from './catalog';
 import { lireGestes } from './gestes';
 import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
+import { RISQUE_MAISON, type CibleMaison } from '../mba/outils-maison';
 
 interface Ligne {
   /** jsonb opaque, relu par `lireGestes` : un contenu corrompu rend un tableau vide. */
@@ -145,10 +146,18 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    * apparaître, dans chaque agent, les outils de tous les autres.
    */
   async listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]> {
+    return this.listToutesConsommateur(tenantId, consommateurAgent(agentId));
+  }
+
+  /**
+   * Tous les outils d'un consommateur, actifs ou non, avec leurs champs d'écran. Sert l'onglet d'un agent IA
+   * (`listToutes`) et celui de l'agent de Meta (`mba:<numéro>`, spec 2026-09-21-outils-maison-mba).
+   */
+  async listToutesConsommateur(tenantId: string, consommateur: string): Promise<OutilComplet[]> {
     const res = await this.pool.query<LigneAdmin>(
       `select ${COLONNES_ADMIN} ${JOINTURE}
         where t.tenant_id = $1 and c.consommateur = $2 order by t.name`,
-      [tenantId, consommateurAgent(agentId)],
+      [tenantId, consommateur],
     );
     return res.rows.map(versComplet);
   }
@@ -310,6 +319,94 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     });
   }
 
+  /**
+   * UN OUTIL MAISON DE L'AGENT DE META (migration 0162, spec 2026-09-21-outils-maison-mba § 6).
+   *
+   * 🔴 IL NAÎT EXPOSÉ ET ACTIF, AU NOM DE L'ADMINISTRATEUR, dans la même transaction. Il n'a pas d'autre
+   * consommateur possible (`rattacherConsommateur` refuse un agent IA), donc un outil créé mais inactif ne
+   * servirait à personne ; et `atc_actif_humain_chk` exige qu'un humain l'ait activé.
+   *
+   * ⚠️ `params` RESTE VIDE : ce que Meta envoie se dérive de la cible (`variablesPourMeta`), et le recopier ici
+   * ferait une seconde vérité.
+   */
+  async ajouterMaisonPourMba(tenantId: string, phoneNumberId: string, outil: {
+    name: string; title: string; description: string; nePasUtiliser: string; cible: CibleMaison;
+  }, parUtilisateur: string): Promise<OutilComplet | null> {
+    const consommateur = consommateurMba(phoneNumberId);
+    return this.enTransaction(async (client) => {
+      const res = await client.query<{ id: string }>(
+        `insert into agent_tools
+           (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk, pour_agent_meta)
+         values ($1, 'mba', $2, $3, $4, $5, '[]'::jsonb, $6::jsonb, $7, true)
+         returning id`,
+        [tenantId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
+          JSON.stringify(outil.cible), RISQUE_MAISON[outil.cible.handler]],
+      ).catch(surNomDejaPris);
+      const id = res.rows[0]?.id;
+      if (!id) return null;
+      await client.query(
+        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
+         values ($1, $2, $3, true, $4, now())`,
+        [tenantId, id, consommateur, parUtilisateur],
+      );
+      return this.completAvecClient(client, tenantId, consommateur, id);
+    });
+  }
+
+  /**
+   * Corrige les mots ou la cible d'un outil maison de l'agent de Meta. `null` = pas un outil de CET agent.
+   *
+   * ⚠️ LE RISQUE SUIT LA CIBLE : il se recalcule quand elle change, jamais depuis le corps de la requête.
+   */
+  async patchMaisonPourMba(tenantId: string, phoneNumberId: string, outilId: string, patch: {
+    name?: string; title?: string; description?: string; nePasUtiliser?: string; cible?: CibleMaison;
+  }): Promise<OutilComplet | null> {
+    const consommateur = consommateurMba(phoneNumberId);
+    const res = await this.pool.query<{ id: string }>(
+      `update agent_tools set
+          name = coalesce($4, name), title = coalesce($5, title), description = coalesce($6, description),
+          ne_pas_utiliser = coalesce($7, ne_pas_utiliser),
+          binding = coalesce($8::jsonb, binding), risk = coalesce($9, risk),
+          updated_at = now()
+        where agent_tools.tenant_id = $1 and agent_tools.id = $3 and agent_tools.pour_agent_meta
+          and exists (select 1 from agent_tool_consommateurs c
+                       where c.tool_id = agent_tools.id and c.tenant_id = agent_tools.tenant_id
+                         and c.consommateur = $2)
+        returning id`,
+      [tenantId, consommateur, outilId, patch.name ?? null, patch.title ?? null, patch.description ?? null,
+        patch.nePasUtiliser ?? null, patch.cible ? JSON.stringify(patch.cible) : null,
+        patch.cible ? RISQUE_MAISON[patch.cible.handler] : null],
+    ).catch(surNomDejaPris);
+    if (!res.rows[0]) return null;
+    return this.complet(tenantId, consommateur, outilId);
+  }
+
+  /**
+   * « SUPPRIMER » DEPUIS L'ONGLET DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba § 9.1).
+   *
+   * 🔴 L'OUTIL N'EST RETIRÉ QU'À L'AGENT DE META. Un connecteur partagé avec un agent IA reste à cet agent
+   * (`detache`) ; un outil qui n'a plus aucun consommateur part (`supprime`), sinon sa définition resterait
+   * sans écran pour la voir, et son nom resterait pris. `agent_id is null` épargne une action d'agent IA qui
+   * aurait été rattachée au MBA par l'ancienne route.
+   */
+  async retirerDeMba(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'> {
+    const consommateur = consommateurMba(phoneNumberId);
+    return this.enTransaction(async (client) => {
+      const det = await client.query(
+        'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
+        [tenantId, consommateur, outilId],
+      );
+      if ((det.rowCount ?? 0) === 0) return 'introuvable';
+      const sup = await client.query(
+        `delete from agent_tools t
+          where t.tenant_id = $1 and t.id = $2 and t.agent_id is null
+            and not exists (select 1 from agent_tool_consommateurs c where c.tool_id = t.id and c.tenant_id = t.tenant_id)`,
+        [tenantId, outilId],
+      );
+      return (sup.rowCount ?? 0) > 0 ? 'supprime' : 'detache';
+    });
+  }
+
   async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
     return this.patchConsommateur(tenantId, consommateurAgent(agentId), outilId, patch);
   }
@@ -444,9 +541,13 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    * Cloudflare remplace le corps. `do nothing` rend un rattachement répété inoffensif.
    */
   async rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
+    // 🔴 UN OUTIL DE L'AGENT DE META NE S'OUVRE JAMAIS À UN AGENT IA (migration 0162) : son handler n'existe pas
+    // chez eux, et le brancher ferait un outil offert qui refuse à chaque appel.
     const res = await this.pool.query(
       `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
-       select $1, $2, $3 where exists (select 1 from agent_tools where id = $2 and tenant_id = $1)
+       select $1, $2, $3
+        where exists (select 1 from agent_tools
+                       where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%'))
        on conflict (tool_id, consommateur) do nothing`,
       [tenantId, outilId, consommateur],
     );
@@ -556,6 +657,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
           -- de BRANCHER le terminer d un AUTRE agent, c est-a-dire de partager une definition qui ne se
           -- partage plus. Tools > ne garde que ce qui pointe vers l exterieur (Julien, 2026-09-18).
           and t.agent_id is null
+          -- NI LES OUTILS DE L AGENT DE META (0162) : cette liste est celle que les agents IA peuvent brancher.
+          and not t.pour_agent_meta
         order by t.name`,
       [tenantId],
     );
