@@ -58,9 +58,15 @@ Conséquence : **pas de migration, pas de déploiement VPS**. Tout part par Verc
 
 ### Ce que voit l'utilisateur
 
-- En tête de l'éditeur, sous le nom, un choix **« Message | Carrousel »**. « Message » est l'écran actuel,
-  inchangé. Les DEUX brouillons vivent côte à côte pendant l'édition : basculer ne perd rien, et seul le
-  format affiché au moment d'enregistrer est écrit.
+- Tout en haut de l'éditeur, AVANT le nom, un choix **« Message simple | Carrousel »**, sur « Message
+  simple » par défaut. C'est le motif de Contenu > Templates côté WhatsApp (« Template simple | Carousel »
+  au-dessus du formulaire, `web/app/templates/page.tsx`) : les deux bibliothèques se prennent en main de la
+  même façon. « Message simple » est l'écran actuel, inchangé. Les DEUX brouillons vivent côte à côte pendant
+  l'édition : basculer ne perd rien, et seul le format affiché au moment d'enregistrer est écrit. Un message
+  existant s'ouvre sur son format.
+- ⚠️ Deux boutons distincts dans la liste (« + Message simple », « + Carrousel ») ont été écartés : le format
+  y serait choisi avant d'avoir commencé et sans retour possible, et l'écran divergerait de celui des
+  templates.
 - En mode carrousel, des **onglets « Carte 1, Carte 2, … »** et un onglet **« + Carte »** (2 cartes au
   départ, 10 au plus). Pour la carte ouverte :
   - le visuel, par le champ de téléversement partagé (`ChampImageHebergee`) ;
