@@ -2540,6 +2540,11 @@ async function main(): Promise<void> {
         // réel ait mesuré ce que Meta met dans la macro. À retirer ensuite (plan, task 10).
         // eslint-disable-next-line no-console
         journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
+        // Les gestes maison : les MÊMES fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
+        maison: {
+          poserTag: workflowRuntime.poserTagDepuisAgent,
+          ecrireChamp: async (t, waId, champ, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [champ]: valeur }); },
+        },
       },
       contacts: {
         upsertContacts: (tenant, items) => upsertContactsFromApi(tenant, items, { contacts: contactStore, fields: fieldStore }),

@@ -5,6 +5,8 @@ import type { RequeteConnecteur } from '../agent/requetes';
 import type { AppelConnecteur } from '../agent/resolvers/http';
 import type { SortieResolveur } from '../agent/executor';
 import { consommateurMba } from '../agent/consommateur';
+import { lireCibleMaison } from '../mba/outils-maison';
+import { executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
 import {
   ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
   corpsIllisible,
@@ -35,7 +37,7 @@ export interface MbaRelaisDeps {
   outilsActifs(
     tenantId: string,
     consommateur: string,
-  ): Promise<Array<Pick<OutilDefini, 'id' | 'name' | 'origin' | 'requestId' | 'timeoutMs' | 'maxBytes'>>>;
+  ): Promise<Array<Pick<OutilDefini, 'id' | 'name' | 'origin' | 'requestId' | 'timeoutMs' | 'maxBytes' | 'binding'>>>;
   requete(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'variables'> | null>;
   /** La PROJECTION du contact `{nom, tags, champs}`, ou `null` s'il est inconnu. Jamais la ligne brute. */
   contact(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
@@ -43,6 +45,8 @@ export interface MbaRelaisDeps {
   journal: JournalAppels;
   /** La FORME de l'en-tête du numéro, tant que la macro n'est pas mesurée. Jamais sa valeur. */
   journaliserForme?(forme: string): void;
+  /** Les gestes maison (tag, information), exécutés sans système tiers (spec 2026-09-21-outils-maison-mba). */
+  maison: DepsMaison;
 }
 
 export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, garde: Guard): void {
@@ -51,12 +55,17 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     if (!tenant) return reply.code(401).send({ error: 'clé d’API requise' });
     const refus = (erreur: string) => reply.code(200).send({ succes: false, erreur });
 
-    // 1. L'OUTIL : un outil de CET espace, exposé ET actif pour SON agent de Meta, bâti sur un connecteur API.
+    // 1. L'OUTIL : un outil de CET espace, exposé ET actif pour SON agent de Meta. Deux familles : un appel de
+    //    connecteur (`http`), ou un geste maison dont la cible se relit et se valide (`mba`). Une action d'agent
+    //    IA exposée au MBA par l'ancienne route a un handler inconnu ici : refusée, jamais jouée.
+    const PAS_PROPOSE = 'cet outil n’est pas proposé à l’agent de Meta';
     const pn = await deps.numeroDuTenant(tenant);
     const outil = pn === null
       ? undefined
       : (await deps.outilsActifs(tenant, consommateurMba(pn))).find((o) => o.id === req.params.outilId);
-    if (!outil || outil.origin !== 'http' || !outil.requestId) return refus('cet outil n’est pas proposé à l’agent de Meta');
+    if (!outil) return refus(PAS_PROPOSE);
+    const cible = outil.origin === 'mba' ? lireCibleMaison(outil.binding) : null;
+    if (cible === null && (outil.origin !== 'http' || !outil.requestId)) return refus(PAS_PROPOSE);
 
     // 2. LE CONTACT, désigné par l'en-tête que Meta remplit lui-même (macro `WHATSAPP_PHONE_NUMBER`). On
     //    n'appelle JAMAIS le système du client sans contact identifié.
@@ -67,6 +76,38 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     if (waId === null) return refus('le client n’est pas identifié : son numéro WhatsApp manque');
     const contact = await deps.contact(tenant, waId);
     if (contact === null) return refus('ce client est introuvable dans le carnet de contacts');
+
+    // 2 bis. UN GESTE MAISON : exécuté ici, journalisé comme un appel de connecteur (même table, même appelant).
+    if (cible !== null) {
+      if (cible.handler === 'champ_fixe' && corpsIllisible((req as { rawBody?: unknown }).rawBody)) {
+        return refus('le corps de la requête n’est pas du JSON lisible');
+      }
+      const debut = Date.now();
+      const ligne = await deps.journal.ouvrir({
+        tenantId: tenant, sessionId: null, toolId: outil.id, toolName: outil.name, origin: 'mba',
+        // ⚠️ Aucune valeur du client dans le journal : seule la nature du geste, que l'administrateur a fixé.
+        argsRediges: { geste: cible.handler },
+        source: 'mba',
+      }).catch(() => null);
+      let issue: IssueMaison;
+      let panne = false;
+      try {
+        issue = await executerOutilMaison(deps.maison, { tenantId: tenant, waId, cible, corps: req.body });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`mba-relais: geste ${outil.name} en échec :`, err instanceof Error ? err.message : err);
+        panne = true;
+        issue = { ok: false, erreur: 'l’action n’a pas pu être faite, réessayez plus tard' };
+      }
+      if (ligne !== null) {
+        await deps.journal.clore({
+          tenantId: tenant, id: ligne, status: issue.ok ? 'ok' : panne ? 'erreur_outil' : 'refuse',
+          dureeMs: Date.now() - debut, ...(issue.ok ? {} : { erreur: issue.erreur }),
+        }).catch(() => {});
+      }
+      return issue.ok ? reply.code(200).send({ succes: true, reponse: issue.reponse }) : refus(issue.erreur);
+    }
+    if (!outil.requestId) return refus(PAS_PROPOSE);
 
     // 3. LES VALEURS DU MODÈLE, validées contre les variables `modele` déclarées, et elles seules. Le lecteur
     //    de JSON du serveur rend `{}` sur un corps illisible : on relit le corps BRUT pour ne pas le confondre

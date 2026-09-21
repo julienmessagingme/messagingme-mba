@@ -28,10 +28,11 @@ const CLE_RELAIS = cleApiDeTest('relais');
 const CLE_CONTACTS = cleApiDeTest('contacts');
 const CLE_AUTRE_ESPACE = cleApiDeTest('autre_espace');
 
-const OUTIL = { id: 'o1', name: 'add_tag', origin: 'http' as const, requestId: 'rq1', timeoutMs: 5_000, maxBytes: 16_384 };
+const OUTIL = { id: 'o1', name: 'add_tag', origin: 'http' as const, requestId: 'rq1', timeoutMs: 5_000, maxBytes: 16_384, binding: {} };
 
 function monter(over: Partial<MbaRelaisDeps> = {}) {
   const appels: AppelConnecteur[] = [];
+  const gestes: string[] = [];
   const cles = new FakeApiKeys()
     .ajouter(CLE_RELAIS, { id: 'k1', tenantId: 't1', scopes: ['mba:relais'] })
     .ajouter(CLE_CONTACTS, { id: 'k2', tenantId: 't1', scopes: ['contacts:write'] })
@@ -51,6 +52,10 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     contact: async (t, waId) => (t === 't1' && waId === '33612345678' ? { nom: 'Julien', tags: [], champs: { tag_ns: 'vip' } } : null),
     appeler: async (p) => { appels.push(p); return { contenu: { reponse: { success: true } }, httpStatus: 200 }; },
     journal: { ouvrir: async () => 'l1', clore: async () => {} } as unknown as JournalAppels,
+    maison: {
+      poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
+      ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
+    },
     ...over,
   };
   const app = buildServer({
@@ -61,7 +66,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
       mbaRelais,
     },
   });
-  return { app, appels };
+  return { app, appels, gestes };
 }
 
 type App = ReturnType<typeof monter>['app'];
@@ -213,5 +218,94 @@ describe('le relais du Meta Business Agent', () => {
     });
     expect(res.json().succes).toBe(true);
     expect(appels).toHaveLength(1);
+  });
+});
+
+/**
+ * LES GESTES MAISON (spec 2026-09-21-outils-maison-mba) : le relais les exécute lui-même, sans appeler personne.
+ * 🔴 Une action d'agent IA exposée au MBA par l'ancienne route a un handler inconnu ici : refusée, jamais jouée.
+ */
+const TAG = {
+  id: 'o2', name: 'marquer_vip', origin: 'mba' as const, requestId: null, timeoutMs: 5_000, maxBytes: 16_384,
+  binding: { handler: 'tag_fixe', tag: 'vip' },
+};
+const CHAMP = {
+  id: 'o3', name: 'noter_ville', origin: 'mba' as const, requestId: null, timeoutMs: 5_000, maxBytes: 16_384,
+  binding: { handler: 'champ_fixe', champ: 'ville', valeurs: ['Paris', 'Lyon'] },
+};
+const ACTION_IA = {
+  id: 'o4', name: 'mba_poser_tag', origin: 'mba' as const, requestId: null, timeoutMs: 5_000, maxBytes: 16_384,
+  binding: { handler: 'poser_tag' },
+};
+
+describe('les outils maison de l’agent de Meta', () => {
+  const avec = (outils: unknown[], over: Partial<MbaRelaisDeps> = {}) => monter({
+    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    ...over,
+  });
+
+  it('🔴 pose l’étiquette FIXÉE sur le contact de l’en-tête, sans rien appeler d’extérieur', async () => {
+    const { app, appels, gestes } = avec([TAG]);
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o2');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ succes: true, reponse: expect.stringContaining('fiche du client') });
+    expect(gestes).toEqual(['tag t1 33612345678 vip']);
+    expect(appels).toHaveLength(0);
+  });
+
+  it('écrit la valeur envoyée par Meta dans le champ fixé', async () => {
+    const { app, gestes } = avec([CHAMP]);
+    const res = await poster(app, CLE_RELAIS, { valeur: 'Lyon' }, '+33612345678', 'o3');
+    expect(res.json().succes).toBe(true);
+    expect(gestes).toEqual(['champ t1 33612345678 ville=Lyon']);
+  });
+
+  it('🔴 une valeur hors liste est refusée en 200, avec la liste, et RIEN n’est écrit', async () => {
+    const { app, gestes } = avec([CHAMP]);
+    const res = await poster(app, CLE_RELAIS, { valeur: 'Marseille' }, '+33612345678', 'o3');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ succes: false, erreur: expect.stringContaining('Paris, Lyon') });
+    expect(gestes).toEqual([]);
+  });
+
+  it('🔴 une action d’agent IA exposée au MBA n’est PAS exécutée (handler inconnu ici)', async () => {
+    const { app, gestes } = avec([ACTION_IA]);
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o4');
+    expect(res.json()).toEqual({ succes: false, erreur: 'cet outil n’est pas proposé à l’agent de Meta' });
+    expect(gestes).toEqual([]);
+  });
+
+  it('🔴 sans contact identifié, aucun geste', async () => {
+    const { app, gestes } = avec([TAG]);
+    const res = await poster(app, CLE_RELAIS, {}, null, 'o2');
+    expect(res.json().succes).toBe(false);
+    expect(gestes).toEqual([]);
+  });
+
+  it('🔴 l’appel est journalisé sous l’appelant `mba`, sans aucune valeur du client', async () => {
+    const ouverts: Array<Record<string, unknown>> = [];
+    const clos: Array<Record<string, unknown>> = [];
+    const { app } = avec([CHAMP], {
+      journal: {
+        ouvrir: async (e: Record<string, unknown>) => { ouverts.push(e); return 'l1'; },
+        clore: async (e: Record<string, unknown>) => { clos.push(e); },
+      } as unknown as JournalAppels,
+    });
+    await poster(app, CLE_RELAIS, { valeur: 'Lyon' }, '+33612345678', 'o3');
+    expect(ouverts).toEqual([expect.objectContaining({ source: 'mba', origin: 'mba', toolId: 'o3', toolName: 'noter_ville', sessionId: null })]);
+    expect(JSON.stringify(ouverts[0]?.argsRediges)).not.toContain('Lyon');
+    expect(clos).toEqual([expect.objectContaining({ id: 'l1', status: 'ok' })]);
+  });
+
+  it('🔴 un geste qui plante est refusé proprement, et journalisé en échec', async () => {
+    const clos: Array<Record<string, unknown>> = [];
+    const { app } = avec([TAG], {
+      maison: { poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {} },
+      journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
+    });
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o2');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().succes).toBe(false);
+    expect(clos).toEqual([expect.objectContaining({ status: 'erreur_outil' })]);
   });
 });
