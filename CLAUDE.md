@@ -64,6 +64,15 @@ nginx**, `/r/`, `/m/` et `/mcp` y vont directement, tout le reste va à `mba-web
 ⚠️ **`NEXT_PUBLIC_API_URL` est FIGÉE AU BUILD** côté Vercel : la changer sans redéployer ne fait rien, en
 silence. Même piège que `BACKEND_URL` sur l'image Docker.
 
+🔴 **UN ÉCRAN QUI APPELLE UNE ROUTE NEUVE CASSE DÈS LE PUSH, PAS AU DÉPLOIEMENT** (2026-09-21). Vercel publie
+la console à chaque `git push`, l'API attend sa revue finale et son `up -d --build` : entre les deux, l'écran
+appelle une route que la production n'a pas. Vécu avec l'onglet « Outils » de l'agent de Meta, en 404 en
+production pendant plus d'une heure, pour un espace qui avait des outils publiés et à qui l'écran disait
+« Aucun outil ». La parade : pousser l'écran APRÈS le déploiement de l'API qui porte sa route, ou le faire
+tolérer l'absence de la route ; sinon, dire la fenêtre dans le plan et la réduire (revue finale et
+déploiement dans la foulée). ⚠️ La garde de déploiement (`.claude/deploy.json`) couvre le VPS, pas Vercel :
+`pushDeploie` y est délibérément à `false`.
+
 Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
@@ -79,8 +88,17 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0161**, le 2026-09-21 (`relais_mba`, le relais du Meta Business Agent).
-**Prochaine libre = 0162.** 0161 RELÂCHE le CHECK `agent_tool_calls_source_check` (l'appelant `mba` s'ajoute ;
+**Dernière appliquée : 0162**, le 2026-09-21 au soir (`outils_maison_mba`, les outils maison de l'agent de
+Meta, lot 2). **Prochaine libre = 0163.** 0162 AJOUTE `agent_tools.pour_agent_meta` (écrit par la création
+d'un outil maison) et `conversation_messages.accuse_le` (que PERSONNE n'écrit encore : c'est le lot 4 ; les
+messages acquittés d'ici là garderont `null`), et RELÂCHE `agent_tools_action_par_agent_chk` : l'ancien code y
+survit, donc AVANT le déploiement. 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** : 0162 en tête de
+`schema_migrations`, `pour_agent_meta` en `boolean NOT NULL DEFAULT false`, `accuse_le` en `timestamptz`
+nullable SANS défaut, les deux CHECK avec leur définition exacte (`pg_get_constraintdef`), AUCUN index, et rien
+n'a bougé pour personne (zéro outil ne porte le drapeau, zéro message ne porte d'accusé, un seul outil en base).
+
+Avant elle, **0161**, le 2026-09-21 (`relais_mba`, le relais du Meta Business Agent).
+0161 RELÂCHE le CHECK `agent_tool_calls_source_check` (l'appelant `mba` s'ajoute ;
 l'ancien code y survit) et AJOUTE `tenant_settings.mba_relais_cle_id` (la clé posée chez Meta, écrite par la
 publication), donc AVANT le déploiement. 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** : 0161 en tête de
 `schema_migrations`, le CHECK avec `mba`, la colonne `uuid` nullable SANS défaut, sa clé étrangère vers
@@ -463,7 +481,6 @@ divergent, c'est la neuve, vide, que la campagne aurait lue.
 Avant elle : **0134** (la CHAÎNE d'étages : `campaign_etages`, `campaign_envois`,
 `campaign_recipients.etage_courant`, et les cinq réglages de l'assistant sur `campaigns`), et **0133**
 (`contacts.whatsapp_joignable` : garder le verdict qu'on calculait déjà et qu'on jetait dans HubSpot).
-**Prochaine libre = 0138.**
 
 ⚠️ **CETTE LIGNE A DÉRIVÉ UNE SEPTIÈME FOIS, ET DOUBLEMENT, le 2026-09-13.** Elle annonçait à la fois
 « 0137 EST ÉCRITE ET PAS ENCORE APPLIQUÉE » et « 0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE », alors que
@@ -518,7 +535,7 @@ juste après.
 les six colonnes de consentement de `agent_tools`, donc elle devait passer après que le nouveau code ait été
 vu en production, quand 0129 devait passer avant. Le runner applique les fichiers absents de
 `schema_migrations` par ordre de nom, sans exiger que la suite soit continue ni que l'ordre d'application la
-suive. **Prochaine libre = 0133.**
+suive.
 
 🔴 **L'ORDRE DE LA SÉQUENCE S'INVERSE POUR UNE MIGRATION QUI RETIRE** : build, `up -d --build`, PUIS
 `migrate`. La routine documentée (migrer d'abord) vaut pour une migration qui AJOUTE une colonne que le code

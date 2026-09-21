@@ -1,0 +1,8 @@
+{
+  "commentaire": "Lu par ~/.claude/hooks/deploiement-garde.js : aucun deploiement de l'API sur le VPS sans revue finale attestee (/revue-finale). La garde reconnait le deploiement au CHEMIN dans la commande ssh. 'hote' est un alias ssh, jamais l'IP d'origine : ce depot est public. pushDeploie reste a false : la console Vercel se deploie a chaque push, mais exiger une attestation par push serait intenable, plusieurs sessions poussant en continu.",
+  "pushDeploie": false,
+  "branche": "main",
+  "cibles": [
+    { "hote": "ubuntu@mba-vps", "chemin": "/home/ubuntu/mba" }
+  ]
+}

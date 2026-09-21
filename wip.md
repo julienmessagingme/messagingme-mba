@@ -11,15 +11,15 @@
 
 | | |
 |---|---|
-| `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-21** avec le relais du Meta Business Agent (et le correctif RCS `96eebb5a` d'une autre session). Le SHA n'est pas recopié ici (`git log` fait foi). Séquence tenue : attestation, build, 0161 vérifiée DANS l'image, `migrate`, relecture en base point par point, `up -d --build`, conteneurs sains PUIS rechargement de NPM, fumée à 6 sur 6, relais à 401 sans clé. ⚠️ Plus tôt le même jour, `e5b660b` était parti SANS revue finale (`HOTFIX_SANS_REVUE`, décision de Julien) : couvert depuis par la revue du relais. |
+| `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-21 au soir** avec le lot 2 des outils maison de l'agent de Meta (migration 0162), le lot 1 de sécurité (appels sortants vérifiés à la connexion, plafonds RCS, `/w/:code` et `/v1`) et leurs corrections. Le SHA n'est pas recopié ici (`git log` et `.git/revue-finale.json` font foi). Séquence : attestation, build, 0162 vérifiée DANS l'image, `migrate`, relecture en base point par point, `up -d --build`, rechargement de NPM (502 revenu), fumée à 6 sur 6. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
-| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le relais du MBA : TROIS passes à froid (4, 2 et 1 rouges), chacune sur les correctifs de la précédente. Les correctifs de la troisième n'ont PAS été relus, par décision de Julien (même arbitrage que l'Inbox). ⚠️ Le correctif RCS `96eebb5a` d'une autre session est dans le périmètre attesté sans avoir été relu (dépôt partagé) : déployé par `HOTFIX_SANS_REVUE` pour que la prochaine revue finale le relise. Le rapport `.git/revue-finale-rapport.md` dit les deux. |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge, 11 jaunes**, sur les outils maison (lot 2) et le lot 1 de sécurité : trois relectures à froid (4 rouges puis 1, plus celle de la session sécurité). Le seul rouge de la dernière était l'onglet cassé en production, que le déploiement a réparé. Les 11 jaunes partent en petit lot juste après, avec leur relecture. Rapport : `.git/revue-finale-rapport.md`. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 POUSSÉ, RIEN DE DÉPLOYÉ)
+## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 DÉPLOYÉ, ESSAI RÉEL DÛ)
 
 Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 `docs/superpowers/plans/2026-09-21-outils-maison-mba.md` (4 lots, 20 tâches, deux déploiements).
@@ -27,26 +27,31 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 - ✅ **Lot 1, la mesure `agent_event`** : l'agent de Meta répond 11 secondes après l'événement, dans une
   conversation en cours, en suivant la consigne (`docs/MBA-API-REFERENCE.md`). La transmission de la réponse
   « à côté » (lot 4) est donc possible.
-- ✅ **Lot 2, poussé** : migration 0162 ÉCRITE et PAS ENCORE APPLIQUÉE (elle ajoute des colonnes que le code
-  écrit : à passer AVANT le déploiement) ; gestes « Poser un tag » et « Enregistrer une information » exécutés
-  par le relais ; publication ; onglet « Outils » refait d'après le croquis de Julien. Le verdict de la CI se lit
+- ✅ **Lot 2, DÉPLOYÉ le 2026-09-21 au soir** : gestes « Poser un tag » et « Enregistrer une information »
+  exécutés par le relais ; publication ; onglet « Outils » refait d'après le croquis de Julien. Séquence tenue :
+  attestation (trois relectures à froid, `.git/revue-finale-rapport.md`), build, 0162 vue DANS l'image,
+  `migrate`, relecture en base point par point, `up -d --build`, rechargement de NPM (le 502 est revenu),
+  `fumee.mjs` à 6 sur 6, `/mba-outils` à 401 au lieu de 404, relais à 401 sans clé. Le verdict de la CI se lit
   sur le dernier commit de code (`gh run view <id> --json jobs`), jamais dans ce fichier : il y a menti.
 - ✅ **Revue finale à froid du lot 2 (2026-09-21 au soir) : 4 rouges, 16 jaunes, tous traités.** Les rouges :
   un test d'intégration périmé par la règle des orphelins, l'IP d'origine du VPS dans le plan (dépôt public),
   `.env.example` resté à l'ancienne valeur de `API_MAX_LOURDES_SIMULTANEES` (`.env.prod` ne la porte pas : sans
   effet en production), et une note de l'écran qui renvoyait vers « Lancer un scénario », absent du lot 2. Les
   jaunes portant sur le lot de sécurité ont été corrigés par sa propre session.
-- 🔴 **L'ONGLET « OUTILS » DE L'AGENT DE META EST EN PANNE EN PRODUCTION JUSQU'AU DÉPLOIEMENT DE L'API.** Vercel
-  sert déjà le nouvel écran (il suit `origin/main`), qui appelle `/mba-outils`, absent de l'API du VPS. C'est le
-  coût d'un front et d'une API déployés séparément : un écran qui dépend d'une route neuve part avant elle.
+- ✅ **L'onglet « Outils » a été EN PANNE en production** du push de `b30c3a05` au déploiement (Vercel sert
+  la console à chaque push, l'API n'avait pas la route). Réparé par le déploiement ; la règle est dans
+  `CLAUDE.md` § Déploiement.
+- 🔴 **À faire maintenant, dans cet ordre** : l'essai réel du lot 2 avec Julien (créer un tag et une
+  information depuis l'onglet, les voir passer « Chez Meta », les déclencher en conversation ; refaire aussi
+  « rajoute une étiquette » sur le connecteur `add_tag`, qui éprouve `fetchPublic` en conditions réelles), puis
+  le petit lot des 11 jaunes de la troisième relecture (verrou de `remove` à remettre dans le bon ordre, textes,
+  tests du verrou), avec sa propre relecture courte.
 - ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
   connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
   outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.
 - ✅ **Le drapeau « test » de la conversation de Julien est levé** (décision du 2026-09-21, une ligne, relue avant
   et après) : sa conversation revient à l'agent de Meta en fin de scénario, et compte désormais dans les
   statistiques et l'analyse.
-- 🔴 **Avant le premier déploiement** : `/revue-finale`, puis 0162, puis l'essai réel du lot 2 (créer un tag et
-  une information depuis l'onglet, les voir passer « Chez Meta », les déclencher en conversation).
 - ⏳ **Lots 3 et 4** : envoyer un bloc, lancer un scénario ; la réponse « à côté » et la réparation du fil bloqué.
 
 ## ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)

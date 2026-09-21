@@ -1766,7 +1766,7 @@ importez ce qu'il propose.
 ## L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
 
 Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
-§ 9). **Livré, pas encore déployé.**
+§ 9). **Déployé le 2026-09-21 au soir** (migration 0162) ; l'essai réel en conversation reste à faire.
 
 - ✅ **Une liste claire des outils de l'agent de Meta, et d'eux seuls** : pour chacun, son titre, ce qu'il vise
   (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
