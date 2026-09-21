@@ -25,6 +25,11 @@ affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouto
 
 ## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
 
+- **L'écran ne dit pas si un outil est déjà chez Meta** (remarque de Julien pendant l'essai réel) : après un
+  « Envoyer », revenir sur l'onglet Outils ne montre rien, et un essai a échoué parce que l'envoi n'avait pas
+  été fait. Afficher sur chaque outil « chez Meta : à jour » ou « à envoyer », calculé par le même plan que
+  l'aperçu.
+
 - **La sonde d'attaque ne voit pas la porte du relais** (`scripts/auto-attaque.mts`) : son serveur ne monte
   pas l'entrée `v1`, donc `POST /mba/relais/outils/:id` n'est ni inventoriée ni attaquée par le job
   `securite` (`mbaPublication` est absente aussi, c'était déjà le cas). Dériver sa liste de modules du

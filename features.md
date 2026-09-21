@@ -1794,8 +1794,8 @@ importez ce qu'il propose.
 
 ### Publier chez Meta
 
-- 🔴 **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, déployé le 2026-09-21, essai réel à faire ;
-  migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
+- ✅ **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, en service depuis le 2026-09-21, éprouvé le jour
+  même : une étiquette posée dans UChat depuis une conversation WhatsApp ; migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
   l'agent de Meta, c'est Engage Me qu'il appelle : Engage Me reconnaît le client par son numéro WhatsApp
   (que WhatsApp lui-même transmet, l'agent ne peut pas l'inventer), remplit les valeurs du **carnet de
   contacts** (un champ comme `tag_ns` ou `user_ns`), puis fait l'appel exactement comme pour vos agents IA,
@@ -1814,6 +1814,12 @@ importez ce qu'il propose.
   l'agent de Meta jusqu'au prochain « Envoyer », qui en pose une neuve (la confirmation de révocation le dit).
 - ✅ **Le formulaire dit qui fournit chaque valeur** : « Engage Me remplit lui-même : … » et « L'agent de
   Meta les obtient du client : … », dérivés de ce que l'appel déclare.
+- ⚠️ **Écrivez « Quand l'appeler » comme une CONSIGNE, pas comme un constat.** C'est cette phrase qui décide
+  si l'agent de Meta appelle l'outil, et ses compétences (par exemple « passe la main si tu n'as pas de
+  réponse fiable ») peuvent l'emporter sur une description vague. Mesuré le 2026-09-21 : « Le client demande
+  à rajouter une étiquette » n'a jamais déclenché l'outil ; « Appelle cet outil dès que le client demande
+  qu'on lui ajoute une étiquette. Il sait déjà qui est le client et quelle étiquette poser. Confirme-lui que
+  c'est fait. Ne passe pas la main pour cette demande. » l'a déclenché au premier essai.
 - ✅ **Un seul bouton, « Envoyer »** (depuis le 2026-09-18) : il calcule ce qui va changer chez Meta et ne
   s'arrête pour demander confirmation que s'il doit y SUPPRIMER quelque chose, en le nommant. Pendant
   l'aller-retour, le bouton le dit, et un second clic n'envoie rien.

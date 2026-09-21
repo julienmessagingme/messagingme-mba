@@ -47,6 +47,44 @@ reçoit, pas dans nos tests. En local, le front et l'API répondent tous les deu
 voir qu'une adresse portait le mauvais nom. C'est la relecture chez smsmode qui l'a montré, et c'est elle qui
 a clos le correctif.
 
+## 2026-09-21 : le relais du Meta Business Agent (trois lots, trois revues, éprouvé en conversation réelle)
+
+**Livré, déployé et éprouvé le 2026-09-21.** Fonctionnel dans [features.md](../features.md), invariants dans
+[documentation.md](../documentation.md), spec et plan dans `docs/superpowers/`. Ce qui suit est le récit.
+
+**Le point de départ** : l'outil `add_tag` de Julien ne se déclenchait pas, l'agent de Meta passait la main.
+Deux causes superposées. La publication n'envoyait chez Meta que `{method, path}`, donc l'outil y existait sans
+corps ; et Meta appelle le système du client en direct, sans pouvoir lire le mini-CRM, où vivent `user_ns` et
+`tag_ns`. Un correctif du matin (`e5b660b`, déployé SANS revue finale sur décision de Julien) a empêché les
+outils creux de partir ; Julien a ensuite arbitré le principe du relais : un seul endroit pour déclarer un
+appel (Tools > Connecteurs API), et Meta qui appelle Engage Me au lieu du système du client.
+
+**Le relais** : `POST /mba/relais/outils/:id`, derrière une clé d'API de l'espace au droit `mba:relais` (que
+seule la publication attribue) ; le contact désigné par un en-tête que Meta remplit avec la macro
+`WHATSAPP_PHONE_NUMBER` ; les variables du mini-CRM remplies par `creerAppelConnecteur`, comme pour un agent
+IA ; la réponse entière rendue à Meta (arbitrage de Julien). La publication pose un connecteur `EngageMe` par
+espace : le secret UChat de Julien, posé chez Meta dans `testUCHAT`, n'y est plus.
+
+**Trois relectures à froid : 4, 2 puis 1 rouges.** Celui qui comptait le plus avait été INTRODUIT par un
+correctif : révoquer « toutes les autres clés » au succès d'une pose faisait que deux « Envoyer » simultanés se
+révoquaient mutuellement la clé chez Meta. Les publications sont désormais sérialisées par espace. La troisième
+passe a trouvé une garde de la console qui lisait un état React figé au clic. Julien a arrêté la boucle après
+la troisième (même arbitrage que pour l'Inbox).
+
+**Deux incidents de méthode, tous deux consignés dans `brain/LEARNINGS.md`.** Un commit du lot 3 a emporté la
+documentation non commitée de la session voisine (`git commit --only` prend le fichier entier). Et une commande
+de mutation interrompue a laissé sa mutation dans l'arbre, commitée ensuite : la CI l'a trouvée.
+
+**Le déploiement** a embarqué, à la demande de la session voisine, son correctif RCS (`96eebb5a`, rappels
+smsmode perdus depuis le 26 août), sorti en `HOTFIX_SANS_REVUE` parce que la revue du relais ne l'avait pas lu.
+
+**L'essai réel a échoué deux fois avant de réussir, et aucune des deux fois à cause du relais.** La première,
+« Envoyer » n'avait pas été cliqué : Meta ne détenait aucun connecteur. La seconde, tout était en place chez
+Meta, mais l'agent n'a jamais appelé l'outil : sa description (« Le client demande à rajouter une etiquette »)
+a perdu face à sa compétence de transfert. Réécrite en consigne, elle l'a fait appeler au premier essai : ligne
+de journal `add_tag` `ok` appelant `mba`, HTTP 200 de UChat, étiquette posée. La macro du numéro, dernière
+inconnue, vaut le numéro international sans « + ».
+
 ## 2026-09-19 : l'Inbox, « Traité », les pièces jointes et « Je m'en occupe » (12 commits, trois revues)
 
 **Livré et déployé le 2026-09-19 après-midi**, migration 0160 comprise. Fonctionnel dans

@@ -2586,6 +2586,13 @@ Un tool = une opération HTTP sur l'API du client, entièrement décrite en JSON
 
 La spec est explicite : « The agent relies on this description to decide when to invoke the tool during a conversation. Vague or missing descriptions cause the agent to invoke tools incorrectly or not at all. »
 
+**MESURÉ le 2026-09-21, et c'est la phrase qui compte le plus dans ce chapitre.** Un outil décrit par « Le client
+demande à rajouter une etiquette » n'a JAMAIS été appelé (deux essais), alors qu'il était publié et joignable :
+l'agent a suivi sa skill de transfert (« passe la main si tu n'as pas de réponse fiable »). Réécrite en
+consigne (quand l'appeler, ce que l'outil sait déjà, quoi dire après, « ne passe pas la main pour cette
+demande »), la même description l'a fait appeler au premier essai. Les skills sont suivies « telles qu'elles
+sont écrites » : une description de tool doit être au moins aussi impérative qu'elles.
+
 Autrement dit, **le contrôle de ce que l'agent fait ou ne fait pas passe par du texte, pas par une règle déclarative**. Il n'y a dans cette spec aucun champ de type « condition d'activation », « audience », « désactiver ce tool », « demander confirmation avant d'appeler », ni aucun flag d'activation booléen. Un tool existe ou n'existe pas. Conséquences pour mba :
 
 - Le seul interrupteur documenté pour couper une capacité, c'est `DELETE /{tool_id}`. Il faut donc que notre couche sache **recréer à l'identique** un tool supprimé (persister le `BizAIOmniChannelConnectorToolRequest` complet de notre côté), sinon désactiver est une opération à sens unique.
@@ -2733,6 +2740,11 @@ Macros disponibles, **liste exhaustive de l'enum** :
 | `WHATSAPP_CURRENT_STATUS_ID` | (aucune description au-delà du nom) |
 
 ATTENTION : ce sont les **trois seules** macros. La spec ne documente **rien** de leur contenu : ni le format du numéro de téléphone (E.164 avec ou sans `+` ? avec ou sans espaces ?), ni ce qu'est exactement l'`IDENTITY_HASH` (algorithme, stabilité dans le temps, portée), ni ce que désigne `CURRENT_STATUS_ID`. Aucun exemple de valeur n'est fourni. Il faut les observer en conditions réelles avant de construire quoi que ce soit dessus.
+
+**MESURÉ le 2026-09-21** (relais Engage Me, conversation WhatsApp réelle) : `WHATSAPP_PHONE_NUMBER`, lié à un
+**en-tête** d'un tool (`request_definition.headers`), est bien rempli par Meta, et vaut le numéro international
+**SANS « + »**, chiffres seuls (11 caractères pour un numéro français `33…`). Non mesuré : ce que vaut la macro
+dans le bac à sable (`run`, `agent_test`), et pour un client qui n'a qu'un nom d'utilisateur WhatsApp.
 
 ATTENTION, règle bloquante : « This cannot be provided for an "object" or "array" type node ». Un `binding` est interdit sur un nœud `object` ou `array`. Pour figer une valeur imbriquée, il faut poser le binding sur le nœud feuille scalaire.
 

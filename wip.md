@@ -19,38 +19,34 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le relais du MBA : TROIS passes à froid (4, 2 et 1 rouges), chacune sur les correctifs de la précédente. Les correctifs de la troisième n'ont PAS été relus, par décision de Julien (même arbitrage que l'Inbox). ⚠️ Le correctif RCS `96eebb5a` d'une autre session est dans le périmètre attesté sans avoir été relu (dépôt partagé) : déployé par `HOTFIX_SANS_REVUE` pour que la prochaine revue finale le relise. Le rapport `.git/revue-finale-rapport.md` dit les deux. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL DÛ)
-
-**Le diagnostic.** `add_tag` (« Le client demande à rajouter une étiquette ») ne s'est pas déclenché, et
-l'agent de Meta a transféré à l'équipe. La publication n'envoyait chez Meta que `{method, path}`, et Meta
-appelle le système du client en direct sans lire le mini-CRM. Un correctif immédiat (`e5b660b`, déployé)
-a d'abord empêché les outils creux de partir ; le relais le remplace.
+## ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)
 
 **Le relais** (spec `docs/superpowers/specs/2026-09-21-relais-mba-design.md`, plan
 `docs/superpowers/plans/2026-09-21-relais-mba.md`) : Meta appelle `POST /mba/relais/outils/:id`, Engage Me
 retrouve le contact par la macro `WHATSAPP_PHONE_NUMBER`, remplit les variables du mini-CRM et fait l'appel
-par `creerAppelConnecteur`. Lots 1 à 3 commités ; la CI fait foi.
+par `creerAppelConnecteur`. Déployé le 2026-09-21 (0161 appliquée avant, relue en base).
 
-✅ **DÉPLOYÉ le 2026-09-21** : 0161 appliquée AVANT et relue en base, conteneurs relancés, fumée à 6 sur 6,
-`POST /mba/relais/outils/x` sans clé rend 401. Le compteur est à jour dans `CLAUDE.md`.
+✅ **L'ESSAI RÉEL, FAIT PAR JULIEN LE 2026-09-21 À 15 H 04 (heure de Paris)** : « je voudrais rajouter une
+étiquette » sur WhatsApp, l'étiquette est posée sur sa fiche UChat. Preuves relues : ligne de journal
+`add_tag`, `ok`, appelant `mba`, HTTP 200 de UChat en 2,9 s ; clé « Agent de Meta » utilisée à la même
+seconde ; chez Meta, un seul connecteur `EngageMe` (adresse du relais, clé API) et un seul outil `add_tag`.
 
-🔴 **L'ESSAI RÉEL, PAR JULIEN** (rien n'est clos avant) :
-1. Sur l'appel `testadd`, passer la variable `user` de « décidée par l'agent » à « champ `user_ns` » (elle est
-   aujourd'hui du modèle, alors que la valeur est dans le mini-CRM). ⚠️ `tag` vient du champ `tag_ns` : c'est
-   la valeur de CE champ sur la fiche de Julien qui partira, pas un mot dit sur WhatsApp. Renseigner
-   `tag_ns` (et `user_ns`) sur sa fiche avant l'essai. Toutes les valeurs venant alors du mini-CRM, l'outil
-   part chez Meta SANS corps : c'est le cas qu'un test garde désormais (un POST JSON vide passe le relais).
-2. Réassigner `add_tag` à l'agent de Meta, « Envoyer » : la confirmation doit montrer la suppression de
-   `testUCHAT` (et de sa copie creuse d'`add_tag` si elle y est encore) et la création d'`EngageMe`.
-3. Sur WhatsApp, demander à l'agent d'ajouter l'étiquette : elle apparaît sur la fiche UChat. ⚠️ Un SUCCÈS
-   ne s'affiche nulle part dans la console (Sécurité > Journal des erreurs ne montre que les échecs) : ce
-   qui le prouve, c'est UChat, et la date de dernier usage de la clé « Agent de Meta » dans la liste des clés.
-4. Un second « Envoyer » ne doit produire AUCUN geste (l'idempotence face à la forme que Meta renvoie).
-5. Lire dans les journaux de `mba-api` la ligne `mba-relais: en-tete du numero len=... plus=...`, consigner
-   le format réel de la macro dans `docs/MBA-API-REFERENCE.md`, puis retirer `journaliserForme` du câblage.
+**Ce que l'essai a appris** (consigné dans `docs/MBA-API-REFERENCE.md`) :
+- `WHATSAPP_PHONE_NUMBER` est rempli en conversation, et vaut le numéro international SANS « + », chiffres
+  seuls (11 caractères pour un numéro français). Le relais le lisait déjà ; c'était la dernière inconnue.
+- 🔴 **C'est la description de l'outil qui décide si l'agent de Meta l'appelle, et ses compétences peuvent
+  l'emporter.** Deux essais avec « Le client demande à rajouter une etiquette » : l'agent n'a jamais appelé
+  l'outil, sa compétence « passer la main » a gagné. Avec une description DIRECTIVE (quand l'appeler, ce que
+  l'outil sait déjà, confirmer après, « ne passe pas la main, c'est cet outil qui traite »), il l'a appelé au
+  premier essai.
+- Un premier essai a échoué parce que « Envoyer » n'avait pas été cliqué : l'écran ne dit pas si un outil
+  est déjà chez Meta (amélioration notée dans `todo.md`).
 
-⚠️ **Le seul scénario d'impasse** : une macro que Meta ne remplit jamais. Le relais refuse alors tous les
-appels en le disant (« le client n'est pas identifié »), et on le voit à l'étape 3.
+**Reste à faire, sans urgence** :
+- Confirmer d'un clic qu'un « Envoyer » sans changement répond « Rien à changer » (la forme que Meta renvoie
+  est identique, clé pour clé, à celle qu'on publie : aucun geste attendu).
+- `journaliserForme` reste en place (il ne journalise que la FORME du numéro, jamais sa valeur) tant que les
+  refus du relais n'ont pas de ligne de journal (`todo.md`) : c'est aujourd'hui la seule trace d'une macro vide.
 
 ## 🔴 CARROUSEL RCS : EN SERVICE, ESSAI RÉEL EN PARTIE FAIT (2026-09-21)
 
