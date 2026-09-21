@@ -540,7 +540,7 @@ function OutilPourMba({ tenantId, onCree, envoiEnCours }: {
           : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
             : busy ? t('Envoi en cours…', 'Sending…')
               // Un envoi vers Meta tourne : créer maintenant produirait un outil que cet envoi ne contient pas.
-              : envoiEnCours && Date.now() < 0 ? t('Un envoi vers Meta est en cours : attendez qu’il se termine.', 'A send to Meta is running: wait for it to end.')
+              : envoiEnCours ? t('Un envoi vers Meta est en cours : attendez qu’il se termine.', 'A send to Meta is running: wait for it to end.')
                 : null;
 
   return (
