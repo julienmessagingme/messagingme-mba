@@ -27,6 +27,7 @@ import { WorkflowExecutor } from './executor';
 import { problemeLienBouton } from './engine';
 import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
+import { adressesPubliques } from '../lib/adresses-publiques';
 import { waIdOfTarget } from '../crm/identity';
 import { PgRcsAgentStore } from '../rcs/store.pg';
 import { PgTrackedLinkStore } from '../links/tracked-links.pg';
@@ -126,6 +127,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
   const agentsRcs = new PgRcsAgentStore(pool);
   const trackedLinks = new PgTrackedLinkStore(pool);
+  /**
+   * 🔴 LES ADRESSES QUE LE RCS DISTRIBUE SONT DES ADRESSES DE L'API (2026-09-21) : le rappel smsmode et les
+   * liens tracés des boutons. Elles se construisaient ici sur `config.APP_URL`, c'est-à-dire, depuis la bascule
+   * Vercel, sur le front, qui ne relaie pas ces chemins (`404 DNS_HOSTNAME_RESOLVED_PRIVATE`) : plus aucun
+   * rappel n'arrivait depuis le 26 août, et les boutons du premier carrousel ouvraient une page d'erreur. Même
+   * point de passage que les liens WhatsApp et les visuels RCS de `src/index.ts`, garde dans
+   * `tests/rcs-adresses-cablage.test.ts`.
+   */
+  const adressesApi = adressesPubliques(config.APP_URL, config.PUBLIC_API_URL);
   const rcsStack = buildRcsStack(pool, rcsProvider, dryRun, {
     apiKey: config.SMSMODE_RCS_API_KEY,
     // Clé PROPRE au workspace, déchiffrée à la volée. C'est elle qui prime : la clé d'environnement n'est
@@ -138,7 +148,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // message part et l'on n'apprend plus jamais rien de son sort.
     callbackUrlFor: async (tenant) => {
       const code = await agentsRcs.webhookCodePour(tenant);
-      return code ? urlRappelRcs(config.APP_URL, code) : null;
+      return code ? urlRappelRcs(adressesApi.avecPrefixe, code) : null;
     },
   },
   // Variables `{{champ}}` d'une CAMPAGNE RCS. `waIdOfTarget` et pas le E.164 brut : un contact se résout sur
@@ -147,7 +157,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // Traçage des liens des messages RCS (migration 0107), monté ICI et une seule fois : son cache
   // adresse -> code doit être partagé par les campagnes et les scénarios, sinon chaque chemin refait les
   // mêmes allocations. Branché au point d'envoi unique, il couvre les quatre chemins d'un coup.
-  new TraceurLiensRcs(trackedLinks, config.APP_URL, newTrackingCode),
+  new TraceurLiensRcs(trackedLinks, adressesApi.racine, newTrackingCode),
   );
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);

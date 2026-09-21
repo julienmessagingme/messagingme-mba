@@ -5,6 +5,7 @@ import {
   parseRcsDlr, parseRcsMo, estDlr, statutDepuisSmsmode, urlRappelRcs, apercuMo,
 } from '../src/rcs/callback';
 import type { RcsDlr, RcsMo } from '../src/rcs/callback';
+import { adressesPubliques } from '../src/lib/adresses-publiques';
 
 const CODE = 'rcs-0123456789abcdef0123456789abcdef';
 
@@ -233,9 +234,22 @@ describe('Lecture des rappels smsmode', () => {
     expect(parseRcsMo({ messageId: 'x', body: { type: 'TEXT' } })).toBeNull(); // sans expediteur : rien a rattacher
   });
 
-  it('construit une adresse de rappel qui passe par la reecriture du front', () => {
-    expect(urlRappelRcs('https://mba.messagingme.app/', CODE))
+  /**
+   * 🔴 L'ADRESSE DE RAPPEL EST UNE ADRESSE DE L'API, ET ELLE SE CONSTRUIT SUR `avecPrefixe` (2026-09-21).
+   *
+   * Elle se construisait sur `APP_URL` + `/api/backend` : juste tant que le front relayait vers l'API. Depuis
+   * la bascule Vercel, `APP_URL` vaut `engageme.messagingme.app`, et Vercel NE relaie PAS (`BACKEND_URL` n'y
+   * est pas posé, il répond `404 DNS_HOSTNAME_RESOLVED_PRIVATE`, mesuré le 2026-09-21). smsmode appelait donc
+   * une adresse morte : plus aucun rapport de livraison ni aucune réponse RCS n'arrivait depuis le 26 août.
+   */
+  it('sans PUBLIC_API_URL : l adresse d AVANT, au caractere pres (rewrite du front)', () => {
+    expect(urlRappelRcs(adressesPubliques('https://mba.messagingme.app/', '').avecPrefixe, CODE))
       .toBe(`https://mba.messagingme.app/api/backend/rcs/callback/${CODE}`);
+  });
+
+  it('🔴 avec PUBLIC_API_URL : l adresse de l API, jamais celle du front', () => {
+    const adresses = adressesPubliques('https://engageme.messagingme.app', 'https://api.messagingme.app');
+    expect(urlRappelRcs(adresses.avecPrefixe, CODE)).toBe(`https://api.messagingme.app/rcs/callback/${CODE}`);
   });
 });
 

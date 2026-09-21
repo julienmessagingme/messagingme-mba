@@ -23,12 +23,16 @@ import { z } from 'zod';
 /**
  * Adresse publique des rappels d'un workspace.
  *
- * Le `/api/backend` n'est pas un détail : l'API Fastify n'a AUCUN port publié, et la seule chose que le proxy
- * public route est le front, qui réécrit ce préfixe vers elle. Une URL sans lui n'arrive nulle part. Même
- * chemin d'exposition que les webhooks entrants de Tools.
+ * 🔴 `baseApi` EST `adressesPubliques(...).avecPrefixe`, JAMAIS `APP_URL` (2026-09-21). Cette route est servie
+ * par l'API. Avant la bascule Vercel, la seule façon de l'atteindre était le front, qui réécrit `/api/backend`
+ * vers elle, d'où ce préfixe écrit ici en dur. Depuis, `APP_URL` vaut le front sur Vercel, qui ne relaie PAS
+ * (`404 DNS_HOSTNAME_RESOLVED_PRIVATE`) : smsmode appelait une adresse morte, et plus aucun rapport de
+ * livraison ni aucune réponse RCS n'arrivait (le dernier date du 26 août). `avecPrefixe` porte le préfixe
+ * quand l'API n'a pas son propre nom, et ne le porte plus quand elle l'a : c'est la même règle que l'URL d'un
+ * webhook entrant de Tools, écrite une seule fois dans `src/lib/adresses-publiques.ts`.
  */
-export function urlRappelRcs(appUrl: string, code: string): string {
-  return `${appUrl.replace(/\/+$/, '')}/api/backend/rcs/callback/${code}`;
+export function urlRappelRcs(baseApi: string, code: string): string {
+  return `${baseApi.replace(/\/+$/, '')}/rcs/callback/${code}`;
 }
 
 /** Statut de livraison dans NOTRE modèle : la même échelle que les accusés Meta, une seule dans le produit. */
