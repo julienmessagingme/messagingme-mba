@@ -1,370 +1,317 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { mockMba, TENANT } from './support/mba';
 
 /**
- * L'onglet OUTILS du paramétrage MBA.
+ * L'onglet OUTILS du paramétrage MBA, refait le 2026-09-21 (spec 2026-09-21-outils-maison-mba, § 9, d'après le
+ * croquis de Julien) : une liste des outils de l'agent de Meta et d'eux seuls, un gros bouton « Ajouter un
+ * outil », un état chez Meta par ligne, et enregistrer envoie chez Meta.
  *
- * 🔴 CE QU'IL RÉPARE, ET CE N'EST PAS UN CONFORT. La case qui décide ce que l'agent de Meta a le droit
- * d'appeler, le bouton qui crée un outil pour lui sans passer par un agent IA, et la publication chez Meta
- * vivent tous les trois sur UN SEUL écran, `Tools > Outils`, et nulle part ailleurs (`exposerOutilAuMba` et
- * `publierChezMeta` n'ont chacun qu'un appelant). Or le paramétrage du MBA portait dix onglets et aucun ne
- * s'appelait Outils : quelqu'un qui configure son MBA cherche ses outils dans les onglets du MBA.
- * Julien les y a cherchés le 2026-09-16 et ne les a pas trouvés.
- *
- * ⚠️ ET C'EST DÉSORMAIS LE SEUL CHEMIN (2026-09-18). Cette page disait « sa place reste bien dans Tools,
- * deux chemins vers un écran unique » : l'entrée `Tools > Outils` a été retirée à la demande de Julien.
- * Depuis 0157 une ACTION appartient à son agent, et 0159 INTERDIT en base qu'une action vive au niveau de
- * l'espace : il ne restait là-bas qu'un écran dont le titre promettait un inventaire qu'il ne pouvait plus
- * contenir. L'adresse `/outils` reste servie, les liens déjà partagés ne se cassent pas.
+ * ⚠️ LES CAS DE L'ANCIEN FICHIER SONT CONSERVÉS OU REMPLACÉS NOMMÉMENT (plan, Task 9). Un seul est retiré :
+ * « un outil MCP mort est lisible ». Un outil MCP ne peut plus être exposé à l'agent de Meta (Meta n'appelle
+ * que du HTTP), la liste ne peut donc plus en porter ; il est remplacé par « une cible manquante s'affiche en
+ * rouge ».
  */
-test.describe('MBA Paramètres : onglet Outils', () => {
-  const OUTIL = {
-    id: 'o1',
-    name: 'suivi_commande',
-    title: 'Suivi de commande',
-    description: 'Rend l’état d’une commande.',
-    nePasUtiliser: 'Jamais pour annuler.',
-    origin: 'http',
-    risk: 'read',
-    sourceId: 's1',
-    mcpNonActivable: null,
-    mcpIndisponibleLe: null,
-    consommateurs: [{ cle: 'agent:AG1', actif: true, agentId: 'AG1', agentLabel: 'Assistant' }],
-  };
+const OUTIL = {
+  id: 'o1',
+  name: 'suivi_commande',
+  title: 'Suivi de commande',
+  description: 'Appelle cet outil dès que le client demande où en est sa commande.',
+  nePasUtiliser: 'Jamais pour annuler.',
+  type: 'connecteur',
+  cible: { type: 'connecteur', requeteId: 'REQ1', libelle: 'Suivi' },
+  cibleManquante: null,
+  aussiUtilisePar: ['Assistant'],
+  actif: true,
+};
+const REQ = (id: string, label: string, variables: unknown[] = []) => ({
+  id, tenantId: TENANT, sourceId: 's1', label, methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
+  corps: { mode: 'aucun' }, variables, outputPaths: [], valeursTest: {}, outils: 0, updatedAt: '2026-09-21T00:00:00Z',
+});
+const CONSIGNE = 'Appelle cet outil dès que le client demande une étiquette. Ne passe pas la main.';
 
-  async function mockAvecOutils(page: Parameters<typeof mockMba>[0], outils: unknown[]): Promise<void> {
-    await mockMba(page, {
-      custom: async (route, method, url) => {
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils }) });
+interface Monture {
+  outils?: unknown[];
+  gestes?: unknown[] | (() => unknown[]);
+  requetes?: unknown[];
+  tags?: unknown[];
+  fields?: unknown[];
+  retenirPublication?: Promise<void>;
+}
+
+async function monterOutils(page: Page, m: Monture = {}) {
+  const ecrits: Array<{ method: string; url: string; body: Record<string, unknown> | null }> = [];
+  const ordre: string[] = [];
+  let publications = 0;
+  await mockMba(page, {
+    custom: async (route, method, url, body) => {
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.includes('/mba-publication')) {
+        if (method === 'GET') {
+          await json({ gestes: typeof m.gestes === 'function' ? m.gestes() : (m.gestes ?? []), phoneNumberId: 'PN1' });
           return true;
         }
-        return false;
-      },
-    });
-  }
+        publications += 1;
+        ordre.push('publication');
+        if (m.retenirPublication) await m.retenirPublication;
+        await json({ faits: [] });
+        return true;
+      }
+      if (url.includes(`/tenants/${TENANT}/mba-outils`)) {
+        if (method === 'GET') { await json({ outils: m.outils ?? [], phoneNumberId: 'PN1' }); return true; }
+        ecrits.push({ method, url, body });
+        ordre.push(method);
+        if (method === 'POST') { await json({ id: 'nouveau' }, 201); return true; }
+        if (method === 'DELETE') { await route.fulfill({ status: 204, body: '' }); return true; }
+        await json({ id: 'o1', actif: true });
+        return true;
+      }
+      if (url.includes(`/tenants/${TENANT}/agent-requetes`)) { await json({ requetes: m.requetes ?? [], champs: [], catalogue: {} }); return true; }
+      if (url.includes(`/tenants/${TENANT}/tags`)) { await json({ tags: m.tags ?? [] }); return true; }
+      if (url.includes(`/tenants/${TENANT}/user-fields`)) { await json({ fields: m.fields ?? [] }); return true; }
+      return false;
+    },
+  });
+  return { ecrits, ordre, publications: () => publications };
+}
 
-  test('🔴 l’onglet Outils du MBA mène à la bibliothèque, et à ce qui décide ce que Meta peut appeler', async ({ page }) => {
-    await mockAvecOutils(page, [OUTIL]);
+test.describe('MBA Paramètres : onglet Outils', () => {
+  test('🔴 l’onglet Outils mène à la liste des outils de l’agent de Meta, avec « Ajouter un outil »', async ({ page }) => {
+    await monterOutils(page, { outils: [OUTIL] });
     await page.goto('/mba/parametres');
-
     await page.getByTestId('mba-tab-outils').click();
 
-    await expect(page.getByTestId('bibliotheque-outils')).toBeVisible();
-    // Les deux gestes qui n'existent QUE là. Sans eux, l'onglet ne serait qu'un raccourci décoratif.
-    await expect(page.getByTestId('publication-mba')).toBeVisible();
-    await expect(page.getByTestId('outil-suivi_commande')).toBeVisible();
+    await expect(page.getByTestId('mba-outils')).toBeVisible();
+    await expect(page.getByTestId('mba-outils-ajouter')).toBeVisible();
+    await expect(page.getByTestId('mba-outil-suivi_commande')).toBeVisible();
+    await expect(page.getByTestId('mba-outil-type-o1')).toHaveText('Connecteur API');
+    await expect(page.getByTestId('mba-outil-partage-o1')).toContainText('Assistant');
   });
 
-  test('🔴 un outil MCP MORT ne ressemble pas a un outil vivant, et la raison est LISIBLE', async ({ page }) => {
-    /**
-     * 🔴 LA BIBLIOTHEQUE NE LISAIT PAS L ETAT MCP. `listCatalogue` ne selectionnait ni
-     * `mcp_non_activable` ni `mcp_indisponible_le`, alors que le plan avait pose un paragraphe entier
-     * pour que cet oubli soit impossible. Resultat : un outil dont le schema n est pas representable, ou
-     * qui a DISPARU du serveur distant, s affichait EXACTEMENT comme les autres. Le client ne l apprenait
-     * qu en cliquant « activer » et en recevant un 409.
-     */
-    await mockAvecOutils(page, [
-      { ...OUTIL, id: 'o2', name: 'mcp_tordu', title: 'Schema tordu', origin: 'mcp',
-        mcpNonActivable: 'le parametre « lignes » est un tableau', mcpIndisponibleLe: null },
-      { ...OUTIL, id: 'o3', name: 'mcp_parti', title: 'Parti', origin: 'mcp',
-        mcpNonActivable: null, mcpIndisponibleLe: '2026-09-17T08:00:00.000Z' },
-      OUTIL,
-    ]);
+  test('l’onglet s’ouvre aussi par l’adresse, et une liste vide invite à ajouter', async ({ page }) => {
+    await monterOutils(page, { outils: [] });
     await page.goto('/mba/parametres?tab=outils');
-
-    await expect(page.getByTestId('outil-non-activable-o2')).toBeVisible();
-    // La raison vient du SERVEUR : le client ne peut pas la corriger, mais il doit pouvoir la montrer.
-    await expect(page.getByTestId('outil-raison-o2')).toContainText('lignes');
-    await expect(page.getByTestId('outil-disparu-o3')).toBeVisible();
-
-    // ⚠️ LA PREUVE INVERSE : sans elle, des pastilles affichees en permanence passeraient le test.
-    await expect(page.getByTestId('outil-non-activable-o1')).toHaveCount(0);
-    await expect(page.getByTestId('outil-disparu-o1')).toHaveCount(0);
+    await expect(page.getByTestId('mba-outils-vide')).toBeVisible();
   });
 
-  test('l’onglet s’ouvre aussi par l’adresse, comme les dix autres', async ({ page }) => {
-    // ⚠️ `lireOnglet` retombe sur « apercu » pour toute valeur inconnue : un onglet ajouté à la liste des
-    // libellés mais oublié dans `ONGLETS` rendrait un lien partagé silencieusement faux.
-    await mockAvecOutils(page, []);
+  test('🔴 une cible manquante s’affiche en rouge (remplace « un outil MCP mort est lisible »)', async ({ page }) => {
+    await monterOutils(page, { outils: [{ ...OUTIL, cibleManquante: 'l’appel de cet outil a été supprimé dans Connecteurs API' }] });
     await page.goto('/mba/parametres?tab=outils');
-    await expect(page.getByTestId('bibliotheque-outils')).toBeVisible();
+    await expect(page.getByTestId('mba-outil-manque-o1')).toContainText('supprimé');
   });
-  /**
-   * 🔴 L'ORDRE DU FORMULAIRE, ET C'EST TOUT CE QUI COMPTE ICI (Julien, 2026-09-18).
-   *
-   * Les quatre textes que Meta lit arrivaient AVANT le choix de l'appel, et le bloc entier était replié
-   * derrière un lien discret pendant que l'état vide renvoyait vers l'onglet Outils d'un agent. Julien a
-   * suivi ce texte, n'a rien trouvé là-bas, et a conclu qu'il n'existait AUCUN endroit où nommer et décrire
-   * son outil. On choisit donc l'appel d'abord, et les détails n'apparaissent qu'ensuite.
-   *
-   * ⚠️ IL ASSERTE SUR CE QUI PART, pas sur ce que l'écran affiche : c'est le corps du POST qui prouve que le
-   * bon appel a été retenu et que les quatre textes l'accompagnent.
-   */
-  test('🔴 on choisit l’appel D’ABORD, les détails n’apparaissent qu’après, et Soumettre les envoie', async ({ page }) => {
-    const posts: Array<Record<string, unknown>> = [];
-    await mockMba(page, {
-      custom: async (route, method, url) => {
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [] }) });
-          return true;
-        }
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-requetes`)) {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              requetes: [{
-                id: 'REQ1', tenantId: TENANT, sourceId: 's1', label: 'Poser une étiquette',
-                methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
-                corps: { mode: 'aucun' }, variables: [], outputPaths: [], valeursTest: {},
-              }],
-              champs: [], catalogue: {},
-            }),
-          });
-          return true;
-        }
-        if (method === 'POST' && url.includes('/agent-tools/connecteur-mba')) {
-          posts.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>);
-          await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'o9', expose: true }) });
-          return true;
-        }
-        return false;
-      },
+
+  test('🔴 l’état par ligne : « Chez Meta », « À envoyer » sur CE nom, tout « À envoyer » si le connecteur doit repartir', async ({ page }) => {
+    const B = { ...OUTIL, id: 'o2', name: 'autre' };
+    let gestes: unknown[] = [];
+    await monterOutils(page, { outils: [OUTIL, B], gestes: () => gestes });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Chez Meta');
+
+    gestes = [{ type: 'outil_modifier', nom: 'autre' }];
+    await page.reload();
+    await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Chez Meta');
+    await expect(page.getByTestId('mba-outil-envoyer-o2')).toBeVisible();
+
+    gestes = [{ type: 'connecteur_modifier', nom: 'EngageMe' }];
+    await page.reload();
+    await expect(page.getByTestId('mba-outil-envoyer-o1')).toBeVisible();
+    await expect(page.getByTestId('mba-outil-envoyer-o2')).toBeVisible();
+  });
+
+  test('🔴 « Ajouter » propose les types ; le connecteur est grisé, avec le lien, quand aucun appel n’existe', async ({ page }) => {
+    await monterOutils(page, { outils: [], requetes: [] });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await expect(page.getByTestId('mba-type-tag')).toBeEnabled();
+    await expect(page.getByTestId('mba-type-champ')).toBeEnabled();
+    await expect(page.getByTestId('mba-type-connecteur')).toBeDisabled();
+    await expect(page.getByTestId('mba-type-connecteur-lien')).toHaveAttribute('href', '/connecteurs');
+  });
+
+  test('🔴 Ajouter > Connecteur API : l’appel d’abord, Enregistrer crée PUIS publie', async ({ page }) => {
+    const m = await monterOutils(page, {
+      outils: [], requetes: [REQ('REQ1', 'Poser une étiquette')],
+      gestes: [{ type: 'outil_creer', nom: 'poser_une_etiquette' }],
     });
     await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-connecteur').click();
+    await page.getByTestId('mba-cible-appel-REQ1').click();
+    await expect(page.getByTestId('mba-form-titre')).toHaveValue('Poser une étiquette');
+    await expect(page.getByTestId('mba-form-nom')).toHaveValue('poser_une_etiquette');
+    // La consigne pré-remplie garde un trou à compléter : tant qu'il est là, rien ne part.
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeDisabled();
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await page.getByTestId('mba-form-enregistrer').click();
 
-    // L'appel est visible SANS avoir rien déplié, et les détails ne sont PAS encore là.
-    await expect(page.getByTestId('outil-mba-appels')).toContainText('Poser une étiquette');
-    await expect(page.getByTestId('outil-mba-details')).toHaveCount(0);
-
-    await page.getByTestId('outil-mba-choisir-REQ1').click();
-    await expect(page.getByTestId('outil-mba-details')).toBeVisible();
-    // Le titre et le nom technique sont dérivés du libellé : on ne redemande pas ce qu'on sait déjà.
-    await expect(page.getByTestId('outil-mba-titre')).toHaveValue('Poser une étiquette');
-    await expect(page.getByTestId('outil-mba-nom')).toHaveValue('poser_une_etiquette');
-
-    // ⚠️ LES DEUX TEXTES RESTENT VIDES, et le bouton refuse tant qu'ils le sont : les deviner fabriquerait
-    // une consigne que personne n'a écrite, sur laquelle le modèle agirait pourtant.
-    await expect(page.getByTestId('outil-mba-creer')).toBeDisabled();
-    await page.getByTestId('outil-mba-description').fill('Quand le client accepte le rendez-vous.');
-    await page.getByTestId('outil-mba-nepasutiliser').fill('Jamais pour annuler.');
-    await page.getByTestId('outil-mba-creer').click();
-
-    await expect.poll(() => posts.length, { timeout: 5000 }).toBe(1);
-    expect(posts[0]).toMatchObject({
-      requeteId: 'REQ1',
-      name: 'poser_une_etiquette',
-      title: 'Poser une étiquette',
-      description: 'Quand le client accepte le rendez-vous.',
-      nePasUtiliser: 'Jamais pour annuler.',
-    });
-  });
-  /**
-   * 🔴 ON PEUT CORRIGER LES MOTS D'UN OUTIL DÉJÀ EXPOSÉ (Julien, 2026-09-18).
-   *
-   * « je ne peux rien changer sur l'outil dans l'onglet outils... tu n'as même pas mis de bouton
-   * modifier ». Il avait raison deux fois : il n'y avait ni bouton, ni route derrière. `patch` est scopé
-   * par AGENT, or un outil du Meta Business Agent n'en a aucun, donc il était figé dès sa création. Ces
-   * quatre textes sont pourtant exactement ce qu'on retouche en regardant l'agent choisir mal.
-   *
-   * ⚠️ IL ASSERTE SUR LE CORPS DU PATCH, pas sur l'écran : c'est ce qui PART qui prouve que la correction
-   * a été prise, et les champs pré-remplis qu'on ne réécrit pas de mémoire ce qu'on voulait retoucher.
-   */
-  test('🔴 « Modifier » ouvre les quatre textes PRÉ-REMPLIS, et Enregistrer les envoie', async ({ page }) => {
-    const patchs: Array<Record<string, unknown>> = [];
-    await mockMba(page, {
-      custom: async (route, method, url) => {
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
-          return true;
-        }
-        if (method === 'PATCH' && url.includes(`/tenants/${TENANT}/agent-tools/o1`)) {
-          patchs.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>);
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'o1' }) });
-          return true;
-        }
-        return false;
-      },
-    });
-    await page.goto('/mba/parametres?tab=outils');
-
-    await expect(page.getByTestId('outil-edition-o1')).toHaveCount(0);
-    await page.getByTestId('outil-modifier-o1').click();
-
-    // PRÉ-REMPLIS avec l'existant : un formulaire vide ferait écraser par autre chose ce qu'on retouche.
-    await expect(page.getByTestId('outil-edition-nom-o1')).toHaveValue('suivi_commande');
-    await expect(page.getByTestId('outil-edition-titre-o1')).toHaveValue('Suivi de commande');
-    await expect(page.getByTestId('outil-edition-nepasutiliser-o1')).toHaveValue('Jamais pour annuler.');
-
-    await page.getByTestId('outil-edition-description-o1').fill('Quand le client demande où en est sa commande.');
-    await page.getByTestId('outil-edition-enregistrer-o1').click();
-
-    await expect.poll(() => patchs.length, { timeout: 5000 }).toBe(1);
-    expect(patchs[0]).toMatchObject({
-      name: 'suivi_commande',
-      title: 'Suivi de commande',
-      description: 'Quand le client demande où en est sa commande.',
-      nePasUtiliser: 'Jamais pour annuler.',
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ordre).toEqual(['POST', 'publication']);
+    expect(m.ecrits[0]!.body).toMatchObject({
+      name: 'poser_une_etiquette', title: 'Poser une étiquette', description: CONSIGNE,
+      cible: { type: 'connecteur', requeteId: 'REQ1' },
     });
   });
 
-  /**
-   * 🔴 LE BOUTON QUI NE DIT RIEN FABRIQUE DES DOUBLONS CHEZ META (Julien, 2026-09-18).
-   *
-   * « tu as pas de retour du bouton donc tu sais pas si ça a marché donc t'appuies plusieurs fois ».
-   * L'aller-retour vers Meta prend plusieurs secondes : chaque clic supplémentaire recalculait un plan sur
-   * une photo d'AVANT et recréait le même outil. Meta s'est retrouvé avec deux `rajouter_une_etiquette`
-   * quand nous n'en avions qu'un, et la réconciliation ne savait pas les effacer.
-   *
-   * ⚠️ IL COMPTE LES APPELS, pas les pixels : ce qui compte est qu'un second clic n'envoie RIEN.
-   */
-  test('🔴 pendant l’envoi, le bouton le DIT et un second clic n’envoie rien', async ({ page }) => {
-    let publications = 0;
-    let libere: (() => void) | null = null;
-    const attente = new Promise<void>((r) => { libere = r; });
-    await mockMba(page, {
-      custom: async (route, method, url) => {
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
-          return true;
-        }
-        if (url.includes('/mba-publication')) {
-          if (method === 'GET') {
-            // Le plan n'est pas vide, sinon l'envoi s'arrête avant l'appel qui compte.
-            await route.fulfill({
-              status: 200,
-              contentType: 'application/json',
-              body: JSON.stringify({ gestes: [{ type: 'outil_creer', nom: 'suivi_commande' }], phoneNumberId: '1' }),
-            });
-            return true;
-          }
-          publications += 1;
-          await attente; // on RETIENT Meta, comme la vraie latence le fait
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ faits: [] }) });
-          return true;
-        }
-        return false;
-      },
-    });
-    await page.goto('/mba/parametres?tab=outils');
-
-    await page.getByTestId('publication-publier').click();
-    await expect(page.getByTestId('publication-publier')).toBeDisabled();
-    await expect(page.getByTestId('publication-attente')).toBeVisible();
-
-    // Le second clic, celui qui a créé le doublon. Il ne doit produire AUCUN second envoi.
-    await page.getByTestId('publication-publier').click({ force: true });
-    await page.waitForTimeout(300);
-    expect(publications).toBe(1);
-
-    libere!();
-    await expect(page.getByTestId('publication-publier')).toBeEnabled();
-    expect(publications).toBe(1);
-  });
-  /**
-   * 🔴 L'ÉCRAN DIT QUI FOURNIT CHAQUE VALEUR (relais du MBA, 2026-09-21).
-   *
-   * Avant le relais, un appel qui envoyait un champ du contact partait VIDE chez Meta, et rien à l'écran ne
-   * le laissait deviner. Engage Me remplit désormais le mini-CRM ; l'agent de Meta obtient le reste du client.
-   */
   test('🔴 choisir un appel montre ce qu’Engage Me remplit et ce que l’agent de Meta demandera', async ({ page }) => {
-    await mockMba(page, {
-      custom: async (route, method, url) => {
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [] }) });
-          return true;
-        }
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-requetes`)) {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              requetes: [{
-                id: 'REQ2', tenantId: TENANT, sourceId: 's1', label: 'Ajouter une étiquette',
-                methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
-                corps: { mode: 'json', gabarit: '{"user_ns":"{{user}}","tag_ns":"{{tag}}"}' },
-                variables: [
-                  { nom: 'user', type: 'string', origine: { type: 'champ', cle: 'user_ns' }, requis: true },
-                  { nom: 'tag', type: 'string', origine: { type: 'modele' }, requis: true },
-                ],
-                outputPaths: [], valeursTest: {},
-              }],
-              champs: [], catalogue: {},
-            }),
-          });
-          return true;
-        }
-        return false;
-      },
+    await monterOutils(page, {
+      requetes: [REQ('REQ2', 'Poser', [
+        { nom: 'user', type: 'string', origine: { type: 'champ', cle: 'user_ns' } },
+        { nom: 'tag', type: 'string', origine: { type: 'modele' } },
+      ])],
     });
     await page.goto('/mba/parametres?tab=outils');
-
-    await page.getByTestId('outil-mba-choisir-REQ2').click();
-    await expect(page.getByTestId('outil-mba-valeurs-remplies')).toContainText('user');
-    await expect(page.getByTestId('outil-mba-valeurs-remplies')).not.toContainText('tag');
-    await expect(page.getByTestId('outil-mba-valeurs-demandees')).toContainText('tag');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-connecteur').click();
+    await page.getByTestId('mba-cible-appel-REQ2').click();
+    await expect(page.getByTestId('mba-cible-valeurs-remplies')).toContainText('user');
+    await expect(page.getByTestId('mba-cible-valeurs-remplies')).not.toContainText('tag');
+    await expect(page.getByTestId('mba-cible-valeurs-demandees')).toContainText('tag');
   });
 
-  /**
-   * 🔴 PENDANT UN ENVOI, ON NE CRÉE PAS D'OUTIL (revue finale du 2026-09-21).
-   *
-   * Un outil créé pendant un envoi n'en faisait pas partie : sa publication automatique abandonnait sans rien
-   * dire, et l'écran annonçait ensuite « Meta est à jour ». « Soumettre » est désormais désactivé tant qu'un
-   * envoi tourne, et redevient actif à sa fin.
-   */
-  test('🔴 « Soumettre » est désactivé pendant un envoi vers Meta, et revient à sa fin', async ({ page }) => {
-    let libere: (() => void) | null = null;
-    const attente = new Promise<void>((r) => { libere = r; });
-    await mockMba(page, {
-      custom: async (route, method, url) => {
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
-          return true;
-        }
-        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-requetes`)) {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              requetes: [{
-                id: 'REQ3', tenantId: TENANT, sourceId: 's1', label: 'Poser une étiquette',
-                methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
-                corps: { mode: 'aucun' }, variables: [], outputPaths: [], valeursTest: {},
-              }],
-              champs: [], catalogue: {},
-            }),
-          });
-          return true;
-        }
-        if (url.includes('/mba-publication')) {
-          if (method === 'GET') {
-            await route.fulfill({
-              status: 200, contentType: 'application/json',
-              body: JSON.stringify({ gestes: [{ type: 'outil_creer', nom: 'suivi_commande' }], phoneNumberId: '1' }),
-            });
-            return true;
-          }
-          await attente;
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ faits: [] }) });
-          return true;
-        }
-        return false;
-      },
+  test('🔴 « Modifier » ouvre le formulaire pré-rempli ; Enregistrer envoie le PATCH PUIS publie, sans changer d’appel', async ({ page }) => {
+    const m = await monterOutils(page, {
+      outils: [OUTIL], requetes: [REQ('REQ1', 'Suivi')], gestes: [{ type: 'outil_modifier', nom: 'suivi_commande' }],
     });
     await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-modifier-o1').click();
+    await expect(page.getByTestId('mba-form-titre')).toHaveValue('Suivi de commande');
+    await expect(page.getByTestId('mba-form-nom')).toHaveValue('suivi_commande');
+    await expect(page.getByTestId('mba-form-pasquand')).toHaveValue('Jamais pour annuler.');
+    await expect(page.getByTestId('mba-cible-appel-fixe')).toBeVisible();
+    await page.getByTestId('mba-form-quand').fill('Appelle cet outil dès que le client demande sa commande.');
+    await page.getByTestId('mba-form-enregistrer').click();
 
-    await page.getByTestId('outil-mba-choisir-REQ3').click();
-    await page.getByTestId('outil-mba-description').fill('Quand le client demande une étiquette.');
-    await page.getByTestId('outil-mba-nepasutiliser').fill('Jamais pour en retirer une.');
-    await expect(page.getByTestId('outil-mba-creer')).toBeEnabled();
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ordre).toEqual(['PATCH', 'publication']);
+    expect(m.ecrits[0]!.url).toContain('/mba-outils/o1');
+    expect(m.ecrits[0]!.body).toEqual({
+      name: 'suivi_commande', title: 'Suivi de commande',
+      description: 'Appelle cet outil dès que le client demande sa commande.', nePasUtiliser: 'Jamais pour annuler.',
+    });
+  });
 
-    await page.getByTestId('publication-publier').click();
-    await expect(page.getByTestId('publication-attente')).toBeVisible();
-    await expect(page.getByTestId('outil-mba-creer')).toBeDisabled();
+  test('🔴 « À envoyer » : pendant l’envoi l’attente se voit, et un second clic n’envoie rien', async ({ page }) => {
+    let libere: () => void = () => {};
+    const retenir = new Promise<void>((r) => { libere = r; });
+    const m = await monterOutils(page, {
+      outils: [OUTIL], gestes: [{ type: 'outil_modifier', nom: 'suivi_commande' }], retenirPublication: retenir,
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-envoyer-o1').click();
+    await expect(page.getByTestId('mba-outils-attente')).toBeVisible();
+    await expect(page.getByTestId('mba-outil-envoyer-o1')).toBeDisabled();
 
-    libere!();
-    await expect(page.getByTestId('publication-publier')).toBeEnabled();
-    await expect(page.getByTestId('outil-mba-creer')).toBeEnabled();
+    // Le second clic, celui qui a créé des doublons chez Meta le 2026-09-18.
+    await page.getByTestId('mba-outil-envoyer-o1').click({ force: true });
+    await page.waitForTimeout(300);
+    expect(m.publications()).toBe(1);
+
+    libere();
+    await expect(page.getByTestId('mba-outils-attente')).toHaveCount(0);
+    expect(m.publications()).toBe(1);
+  });
+
+  test('🔴 « Enregistrer » est désactivé pendant un envoi vers Meta, et revient à sa fin', async ({ page }) => {
+    let libere: () => void = () => {};
+    const retenir = new Promise<void>((r) => { libere = r; });
+    await monterOutils(page, {
+      outils: [OUTIL], requetes: [REQ('REQ1', 'Suivi')], gestes: [{ type: 'outil_modifier', nom: 'suivi_commande' }],
+      retenirPublication: retenir,
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-modifier-o1').click();
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
+
+    await page.getByTestId('mba-outil-envoyer-o1').click();
+    await expect(page.getByTestId('mba-outils-attente')).toBeVisible();
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeDisabled();
+
+    libere();
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
+  });
+
+  test('🔴 créer un tag : le nom se calcule depuis le titre, et la cible part telle quelle', async ({ page }) => {
+    const m = await monterOutils(page, { outils: [], tags: [{ tag: 'vip', count: 3 }], gestes: [{ type: 'outil_creer', nom: 'marquer_vip' }] });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-tag').click();
+    await expect(page.getByTestId('mba-cible-tag-note')).toContainText('Lancer un scénario');
+    await page.getByTestId('mba-cible-tag').fill('vip');
+    await page.getByTestId('mba-form-titre').fill('Marquer VIP');
+    await expect(page.getByTestId('mba-form-nom')).toHaveValue('marquer_vip');
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeDisabled();
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await page.getByTestId('mba-form-enregistrer').click();
+
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ecrits[0]!.body).toMatchObject({ name: 'marquer_vip', title: 'Marquer VIP', cible: { type: 'tag', tag: 'vip' } });
+  });
+
+  test('créer une information : le champ du mini-CRM, et les valeurs permises une par ligne', async ({ page }) => {
+    const m = await monterOutils(page, {
+      outils: [], fields: [{ key: 'ville', label: 'Ville', type: 'text' }], gestes: [{ type: 'outil_creer', nom: 'noter_ville' }],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-champ').click();
+    await page.getByTestId('mba-cible-champ').selectOption('ville');
+    await page.getByTestId('mba-cible-valeurs').fill('Paris\n\nLyon');
+    await page.getByTestId('mba-form-titre').fill('Noter la ville');
+    await page.getByTestId('mba-form-quand').fill('Appelle cet outil dès que le client te donne sa ville.');
+    await page.getByTestId('mba-form-enregistrer').click();
+
+    await expect.poll(() => m.ecrits.length).toBe(1);
+    expect(m.ecrits[0]!.body).toMatchObject({ cible: { type: 'champ', champ: 'ville', valeurs: ['Paris', 'Lyon'] } });
+  });
+
+  test('🔴 supprimer : une confirmation, un DELETE, puis la publication SANS seconde confirmation pour cet outil', async ({ page }) => {
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    const m = await monterOutils(page, {
+      outils: [OUTIL],
+      gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }, { type: 'connecteur_supprimer', nom: 'EngageMe' }],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ordre).toEqual(['DELETE', 'publication']);
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0]).toContain('Suivi de commande');
+  });
+
+  test('🔴 un effacement IMPRÉVU chez Meta se fait confirmer, en le nommant', async ({ page }) => {
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    const m = await monterOutils(page, {
+      outils: [OUTIL],
+      gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }, { type: 'outil_supprimer', nom: 'main_levee' }],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(dialogues).toHaveLength(2);
+    expect(dialogues[1]).toContain('main_levee');
+    expect(dialogues[1]).not.toContain('suivi_commande');
+  });
+
+  test('🔴 un outil désactivé le dit, et « Réactiver » le rallume puis publie (plan, écart 4)', async ({ page }) => {
+    const m = await monterOutils(page, { outils: [{ ...OUTIL, actif: false }], gestes: [{ type: 'outil_creer', nom: 'suivi_commande' }] });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Désactivé');
+    await expect(page.getByTestId('mba-outil-envoyer-o1')).toHaveCount(0);
+    await page.getByTestId('mba-outil-reactiver-o1').click();
+
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ordre).toEqual(['PUT', 'publication']);
+    expect(m.ecrits[0]!.url).toContain('/mba-outils/o1/actif');
+    expect(m.ecrits[0]!.body).toEqual({ valeur: true });
+  });
+
+  test('`/outils` renvoie vers l’onglet de l’agent de Meta', async ({ page }) => {
+    await monterOutils(page, { outils: [OUTIL] });
+    await page.goto('/outils');
+    await expect(page).toHaveURL(/\/mba\/parametres\?tab=outils/);
+    await expect(page.getByTestId('mba-outils')).toBeVisible();
   });
 });

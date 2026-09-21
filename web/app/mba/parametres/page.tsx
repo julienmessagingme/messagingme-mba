@@ -21,7 +21,7 @@ import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
 import { MbaCompletion } from '@/components/MbaCompletion';
-import { BibliothequeOutils } from '@/components/BibliothequeOutils';
+import { OutilsMba } from '@/components/mba-outils/OutilsMba';
 
 export default function MbaSettingsPage() {
   // `useSearchParams` impose une frontière Suspense au build (règle Next 15), sinon la page bascule en rendu
@@ -150,14 +150,11 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
       {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
       {onglet === 'faq' && <MbaFaqPanel {...props} />}
       {onglet === 'competences' && <MbaSkillsPanel {...props} />}
-      {/* 🔴 LE MÊME ÉCRAN QUE `Tools > Outils`, ET C'EST VOULU. La bibliothèque appartient à l'ESPACE : elle
-          est partagée par tous les consommateurs, donc sa place est bien dans Tools. Mais c'est là, et nulle
-          part ailleurs, qu'on décide ce que l'agent de Meta peut appeler (`exposerOutilAuMba`), qu'on crée un
-          outil pour lui sans passer par un agent IA, et qu'on publie chez Meta (`publierChezMeta`) : les
-          trois n'ont chacun qu'un seul appelant, ce fichier-ci. Un client qui configure son MBA cherche ses
-          outils dans les onglets du MBA, et il n'y en avait aucun. Deux chemins vers un écran unique, pas
-          deux écrans. */}
-      {onglet === 'outils' && <BibliothequeOutils tenantId={tenantId} isAdmin={isAdmin} />}
+      {/* 🔴 LES OUTILS DE L'AGENT DE META, ET EUX SEULS (spec 2026-09-21-outils-maison-mba, § 9). L'ancien
+          écran mélangeait la bibliothèque de l'espace et ce que Meta peut appeler, et Julien l'a trouvé
+          illisible : on y décide désormais seulement ce que fait l'agent de Meta, et enregistrer envoie chez
+          Meta. Les connecteurs d'un agent IA se gèrent depuis sa fiche. */}
+      {onglet === 'outils' && <OutilsMba tenantId={tenantId} isAdmin={isAdmin} />}
       {onglet === 'fichiers' && <MbaFilesPanel {...props} />}
       {onglet === 'sites' && <MbaWebsitesPanel {...props} />}
       {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="mba" />}

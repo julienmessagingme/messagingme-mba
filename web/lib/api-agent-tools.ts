@@ -216,51 +216,10 @@ export function rattacherOutil(tenantId: string, agentId: string, outilId: strin
   });
 }
 
-/** Supprime la DÉFINITION, donc pour tout le monde. Le serveur REFUSE en 409 tant qu'elle est rattachée. */
 /**
- * Crée un outil de connecteur rattaché DIRECTEMENT à l'agent de Meta, sans passer par un agent IA.
- *
- * 🔴 IL N'Y AVAIT AUCUN CHEMIN POUR ÇA. Un outil naissait en le donnant à un agent IA : exposer un appel à
- * Meta obligeait à créer un agent dont on n'a pas besoin, et à répondre pour lui à des questions que Meta
- * ignore (il appelle le système du client en direct et lit toute la réponse).
- *
- * ⚠️ AUCUNE NATURE NI AUCUN CHAMP ICI, délibérément : ils n'auraient aucun effet de ce côté.
+ * ⚠️ LES FONCTIONS PROPRES À L'AGENT DE META (créer, corriger, exposer, supprimer) SONT PARTIES le 2026-09-21
+ * avec l'ancien onglet « Outils » : elles vivent dans `./api-mba-outils`, sur les routes `/mba-outils`.
  */
-export async function creerOutilPourMba(tenantId: string, outil: {
-  requeteId: string; name: string; title: string; description: string; nePasUtiliser: string;
-}): Promise<{ id: string; expose: boolean }> {
-  return request(`/tenants/${tenantId}/agent-tools/connecteur-mba`, { method: 'POST', body: JSON.stringify(outil) });
-}
-
-/**
- * Corrige les MOTS d'un outil exposé à l'agent de Meta.
- *
- * 🔴 CE CHEMIN N'EXISTAIT PAS, et son absence figeait l'outil : `patchOutil` est scopé par agent, or un
- * outil du MBA n'en a aucun. Une fois créé, ni son nom technique, ni son titre, ni ce à quoi il sert, ni le
- * « ne pas utiliser » n'étaient modifiables. Or ce sont précisément les textes qu'on retouche en regardant
- * l'agent se tromper.
- */
-export async function patchOutilMba(tenantId: string, outilId: string, patch: {
-  name?: string; title?: string; description?: string; nePasUtiliser?: string;
-}): Promise<{ id: string }> {
-  return request(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'PATCH', body: JSON.stringify(patch) });
-}
-
-export async function supprimerDefinitionOutil(tenantId: string, outilId: string): Promise<void> {
-  await request<void>(`/tenants/${tenantId}/agent-tools/${outilId}`, { method: 'DELETE' });
-}
-
-/**
- * Expose, ou retire, cet outil au Meta Business Agent.
- *
- * ⚠️ N'ENVOIE PAS LE NUMÉRO : le serveur le résout. Le faire porter au navigateur est exactement ce qui a
- * cassé le toggle MBA trois fois le 2026-09-10.
- */
-export async function exposerOutilAuMba(tenantId: string, outilId: string, valeur: boolean): Promise<{ expose: boolean }> {
-  return request<{ expose: boolean }>(`/tenants/${tenantId}/agent-tools/${outilId}/mba`, {
-    method: 'PUT', body: JSON.stringify({ valeur }),
-  });
-}
 
 /** Un geste du plan de publication, tel que le serveur le rend. */
 export interface GestePublication {
