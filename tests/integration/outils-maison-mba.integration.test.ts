@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgToolCatalog } from '../../src/agent/catalog.pg';
+import { PgAgentStore } from '../../src/agent/agent-store.pg';
 import { NomOutilDejaPris } from '../../src/agent/catalog';
 import { consommateurMba, consommateurAgent } from '../../src/agent/consommateur';
 
@@ -167,29 +168,102 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
   /**
    * 🔴 LE VERROU DE LA DÉFINITION (`verrouillerDefinitions`, revue finale du 2026-09-21). Un rattachement NON
    * VALIDÉ est invisible du `not exists` qui décide de l'effacement : sans verrou, le dernier détachement
-   * effaçait la définition, et la cascade emportait le consentement qu'on venait de poser. Avec lui, le
-   * détachement ATTEND le rattachement, puis le voit.
+   * effaçait la définition, et la cascade emportait le consentement qu'on venait de poser. Avec lui,
+   * l'effacement ATTEND le rattachement, puis le voit.
+   *
+   * ⚠️ ON ATTEND LE BLOCAGE, PAS UN DÉLAI. Une attente fixe ne peut échouer que dans le mauvais sens : sur une
+   * CI lente, l'effacement n'aurait pas encore atteint la définition quand le rattachement valide, le verrou
+   * n'aurait rien eu à faire, et le test passerait même sans lui. `pg_stat_activity` dit quand une connexion
+   * attend VRAIMENT un verrou sur cette table (avec ou sans le correctif, l'effacement finit par y attendre :
+   * c'est ce qui se passe APRÈS qui les distingue).
    */
-  it('🔴 un rattachement EN COURS n’est pas emporté par le dernier détachement', async () => {
-    const id = await connecteurNeuf('course_rattachement');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), id)).toBe(true);
+  const attendreUnVerrou = async (): Promise<void> => {
+    for (let i = 0; i < 200; i += 1) {
+      const r = await pool.query(
+        `select 1 from pg_stat_activity
+          where wait_event_type = 'Lock' and datname = current_database() and pid <> pg_backend_pid()
+            and query ilike '%agent_tool%'`,
+      );
+      if ((r.rowCount ?? 0) > 0) return;
+      await new Promise((ok) => setTimeout(ok, 25));
+    }
+    throw new Error('aucune connexion ne s’est bloquée sur un verrou : le test ne prouverait rien');
+  };
+
+  /** Un consentement posé dans une transaction laissée OUVERTE, le temps de lancer l'effacement concurrent. */
+  const rattachementEnCours = async (id: string, consommateur: string, effacement: () => Promise<unknown>) => {
     const autre = await pool.connect();
     try {
       await autre.query('begin');
       await autre.query(
         'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, consommateurMba(PN)],
+        [tenantId, id, consommateur],
       );
-      const detachement = cat.detacher(tenantId, agentId, id);
-      // Le temps que le détachement atteigne la définition, que le rattachement tient encore.
-      await new Promise((r) => setTimeout(r, 400));
+      const enCours = effacement();
+      await attendreUnVerrou();
       await autre.query('commit');
-      expect(await detachement).toBe(true);
+      return await enCours;
     } finally {
       autre.release();
     }
-    expect((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount).toBe(1);
-    expect((await pool.query('select consommateur from agent_tool_consommateurs where tool_id = $1', [id])).rows)
-      .toEqual([{ consommateur: consommateurMba(PN) }]);
+  };
+  const consommateursDe = async (id: string) =>
+    (await pool.query<{ consommateur: string }>(
+      'select consommateur from agent_tool_consommateurs where tool_id = $1 order by consommateur', [id],
+    )).rows.map((r) => r.consommateur);
+  const existe = async (id: string) =>
+    ((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount ?? 0) > 0;
+
+  it('🔴 un rattachement EN COURS n’est pas emporté par le dernier détachement (`detacher`)', async () => {
+    const id = await connecteurNeuf('course_detacher');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), id)).toBe(true);
+    expect(await rattachementEnCours(id, consommateurMba(PN), () => cat.detacher(tenantId, agentId, id))).toBe(true);
+    expect(await existe(id)).toBe(true);
+    expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
+  });
+
+  it('🔴 … ni par le retrait de l’agent de Meta (`retirerDeMba`)', async () => {
+    const id = await connecteurNeuf('course_retirer_mba');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    expect(await rattachementEnCours(id, consommateurAgent(agentId), () => cat.retirerDeMba(tenantId, PN, id)))
+      .toBe('detache');
+    expect(await existe(id)).toBe(true);
+    expect(await consommateursDe(id)).toEqual([consommateurAgent(agentId)]);
+  });
+
+  it('🔴 … ni par la suppression de son dernier agent (`PgAgentStore.remove`)', async () => {
+    const partant = (await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-partant', 'IA', 'm') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const id = await connecteurNeuf('course_remove');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(partant), id)).toBe(true);
+    const agents = new PgAgentStore(pool);
+    expect(await rattachementEnCours(id, consommateurMba(PN), () => agents.remove(tenantId, partant))).toBe(true);
+    expect(await existe(id)).toBe(true);
+    expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
+  });
+
+  /**
+   * 🔴 LE CAS INVERSE : l'effacement tient déjà la définition quand le rattachement arrive. `for key share`
+   * (`rattacherConsommateur`) le fait ATTENDRE, puis ne rien trouver : `false`, donc un 404 lisible. Sans lui,
+   * l'insertion passait sa lecture, butait ensuite sur la clé étrangère de la définition effacée, et levait
+   * 23503, donc un 500.
+   */
+  it('🔴 un rattachement qui arrive PENDANT un effacement rend `false`, jamais une erreur', async () => {
+    const id = await connecteurNeuf('course_inverse');
+    const effaceur = await pool.connect();
+    try {
+      await effaceur.query('begin');
+      await effaceur.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, id]);
+      const rattachement = cat.rattacherConsommateur(tenantId, consommateurMba(PN), id);
+      await attendreUnVerrou();
+      await effaceur.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, id]);
+      await effaceur.query('commit');
+      expect(await rattachement).toBe(false);
+    } finally {
+      effaceur.release();
+    }
+    expect(await existe(id)).toBe(false);
   });
 });

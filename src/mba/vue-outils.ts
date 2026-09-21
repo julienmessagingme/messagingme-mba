@@ -1,4 +1,4 @@
-import type { OutilComplet, OutilBibliotheque } from '../agent/catalog';
+import type { OutilComplet, OutilBibliotheque, RisqueOutil } from '../agent/catalog';
 import { lireCibleMaison, typeDeLaCible, type TypeOutilMba } from './outils-maison';
 
 /**
@@ -6,7 +6,9 @@ import { lireCibleMaison, typeDeLaCible, type TypeOutilMba } from './outils-mais
  *
  * 🔴 CE QUI MANQUE SE DIT : un champ supprimé, un appel supprimé, un outil illisible. Un outil dont la cible a
  * disparu refuse à chaque appel (le relais refuse d'écrire un champ supprimé) ; sans cette ligne rouge, personne
- * ne le saurait. Un appel supprimé ou un outil illisible ne part plus chez Meta (`publiable`), un champ supprimé si.
+ * ne le saurait. Un outil illisible ne part plus chez Meta (`publiable`), un champ supprimé si.
+ * ⚠️ Un APPEL ne peut pas être supprimé tant qu'un outil l'utilise (`on delete restrict` de 0105, et le 409 de la
+ * route des requêtes) : la branche « appel supprimé » est une défense, pas un cas que l'écran rencontre.
  *
  * ⚠️ `actif` VOYAGE AUSSI : le départ d'un collaborateur éteint les consentements qu'il avait donnés
  * (`PgUserStore.deleteUser`), donc un outil qu'il avait créé sort de la publication. L'écran doit le montrer
@@ -32,6 +34,12 @@ export interface OutilMbaVue {
   aussiUtilisePar: string[];
   actif: boolean;
   /**
+   * Ce que l'outil peut faire (`agent_tools.risk`). 🔴 L'écran le DIT pour `irreversible` : l'agent de Meta
+   * appelle sans aucune validation humaine, et l'ancienne bibliothèque le montrait ; l'onglet refait l'avait
+   * perdu sans que personne l'ait arbitré (relecture du 2026-09-21).
+   */
+  risque: RisqueOutil;
+  /**
    * Cet outil part-il chez Meta quand il est actif ? 🔴 C'est la réponse de `outilsAPublier`, redite ici pour
    * l'écran : sans elle, une ligne jamais publiée s'affichait « ✓ Chez Meta ». La parité est tenue par un test
    * (`tests/mba-outils-parite.test.ts`), qui passe les mêmes outils aux deux fonctions.
@@ -48,6 +56,7 @@ export interface ContexteVue {
 export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
   const base = {
     id: o.id, name: o.name, title: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser, actif: o.actif,
+    risque: o.risk,
   };
   if (o.origin === 'http' && o.requestId) {
     const req = ctx.requetes.get(o.requestId) ?? null;

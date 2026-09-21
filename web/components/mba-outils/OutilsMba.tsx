@@ -5,7 +5,9 @@ import { apercuPublicationMba, publierChezMeta, type GestePublication } from '@/
 import {
   listerOutilsMba, reactiverOutilMba, retirerOutilMba, type OutilMbaVue, type TypeOutilMba,
 } from '@/lib/api-mba-outils';
-import { TEXTES_PAR_TYPE, effacementsImprevus, etatsChezMeta, type EtatChezMeta } from '@/lib/mba-outils';
+import {
+  TEXTES_PAR_TYPE, effacementsImprevus, etatsChezMeta, retraitsSansLigne, type EtatChezMeta,
+} from '@/lib/mba-outils';
 import { ChoixTypeOutil } from './ChoixTypeOutil';
 import { FormulaireOutilMba } from './FormulaireOutilMba';
 import { useT } from '@/lib/i18n';
@@ -13,7 +15,10 @@ import { useT } from '@/lib/i18n';
 type Mode = { vue: 'liste' } | { vue: 'choix' } | { vue: 'form'; type: TypeOutilMba; outil: OutilMbaVue | null };
 type Traduire = (fr: string, en?: string) => string;
 
-/** Le connecteur unique chez Meta : attendu dans tout effacement qui retire le dernier outil. */
+/**
+ * Le connecteur unique chez Meta : attendu dans tout effacement qui retire le dernier outil. Recopie de
+ * `NOM_CONNECTEUR_RELAIS` (`src/mba/publication.ts`), tenue égale par `tests/mba-outils-parite.test.ts`.
+ */
 const CONNECTEUR_RELAIS = 'EngageMe';
 
 /**
@@ -32,6 +37,8 @@ const CONNECTEUR_RELAIS = 'EngageMe';
 export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const t = useT();
   const [outils, setOutils] = useState<OutilMbaVue[] | null>(null);
+  // 🔴 Une lecture RATÉE n'est pas une liste VIDE : les confondre disait « Aucun outil » à un espace qui en a.
+  const [lectureRatee, setLectureRatee] = useState<string | null>(null);
   const [gestes, setGestes] = useState<GestePublication[] | null>(null);
   const [etatsCharges, setEtatsCharges] = useState(false);
   const [mode, setMode] = useState<Mode>({ vue: 'liste' });
@@ -50,16 +57,22 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
     }
   }, [tenantId]);
 
-  const charger = useCallback(async (): Promise<void> => {
+  /** La liste seule. Avant un envoi, c'est tout ce qu'il faut : `envoyer` relit déjà le plan chez Meta. */
+  const chargerListe = useCallback(async (): Promise<void> => {
     try {
       const r = await listerOutilsMba(tenantId);
       setOutils(Array.isArray(r?.outils) ? r.outils : []);
+      setLectureRatee(null);
     } catch (e) {
-      setOutils([]);
-      setErreur(e instanceof Error ? e.message : null);
+      setOutils((avant) => avant ?? []);
+      setLectureRatee(e instanceof Error ? e.message : 'lecture impossible');
     }
+  }, [tenantId]);
+
+  const charger = useCallback(async (): Promise<void> => {
+    await chargerListe();
     await chargerEtats();
-  }, [tenantId, chargerEtats]);
+  }, [chargerListe, chargerEtats]);
 
   useEffect(() => { void charger(); }, [charger]);
 
@@ -100,7 +113,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
    */
   const apresEnregistrement = async (nomsAttendus: Set<string>): Promise<void> => {
     setMode({ vue: 'liste' });
-    await charger();
+    await chargerListe();
     const ok = await envoyer(new Set([...nomsAttendus, CONNECTEUR_RELAIS]));
     if (!ok) {
       setErreur((e) => t(
@@ -119,8 +132,15 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       setErreur(e instanceof Error ? e.message : t('La suppression a échoué.', 'Deletion failed.'));
       return;
     }
-    await charger();
-    await envoyer(new Set([o.name, CONNECTEUR_RELAIS]));
+    await chargerListe();
+    const ok = await envoyer(new Set([o.name, CONNECTEUR_RELAIS]));
+    // 🔴 Un retrait qui n'est pas parti se DIT (spec § 9.3) : l'outil n'a plus de ligne ici, et Meta le liste encore.
+    if (!ok) {
+      setErreur((e) => t(
+        `L’outil est supprimé ici, mais Meta le liste encore${e ? ` (${e})` : ''} : utilisez « Les retirer de chez Meta » ci-dessous.`,
+        `The tool is deleted here, but Meta still lists it${e ? ` (${e})` : ''}: use “Remove them at Meta” below.`,
+      ));
+    }
   };
 
   const reactiver = async (o: OutilMbaVue): Promise<void> => {
@@ -131,13 +151,14 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       setErreur(e instanceof Error ? e.message : t('La réactivation a échoué.', 'Reactivation failed.'));
       return;
     }
-    await charger();
+    await chargerListe();
     await envoyer(new Set());
   };
 
   if (outils === null) return null;
   // Tant que Meta n'a pas été lu, AUCUN état : afficher « Chez Meta » par défaut serait affirmer ce qu'on ignore.
   const etats = etatsCharges ? etatsChezMeta(outils, gestes) : null;
+  const retraits = retraitsSansLigne(outils, gestes);
 
   return (
     <section data-testid="mba-outils" className="space-y-4">
@@ -173,7 +194,31 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
           envoiEnCours={envoiEnCours} onEnregistre={apresEnregistrement} onAnnuler={() => setMode({ vue: 'liste' })} />
       )}
 
-      {outils.length === 0 ? (
+      {retraits.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          data-testid="mba-outils-retraits">
+          <span>
+            {t('Supprimés ici, mais encore chez Meta : ', 'Deleted here, but still at Meta: ')}{retraits.join(', ')}.
+          </span>
+          {isAdmin && (
+            <button type="button" data-testid="mba-outils-retraits-envoyer" disabled={envoiEnCours}
+              onClick={() => { void envoyer(new Set([...retraits, CONNECTEUR_RELAIS])); }}
+              className="rounded-lg border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+              {envoiEnCours ? t('Envoi…', 'Sending…') : t('Les retirer de chez Meta', 'Remove them at Meta')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {lectureRatee !== null ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-coral" data-testid="mba-outils-lecture-ratee">
+          <span>{t('La liste des outils n’a pas pu être lue', 'The tool list could not be read')} ({lectureRatee}).</span>
+          <button type="button" data-testid="mba-outils-relire" onClick={() => { void charger(); }}
+            className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+            {t('Réessayer', 'Retry')}
+          </button>
+        </div>
+      ) : outils.length === 0 ? (
         <p className="text-sm text-ink-500" data-testid="mba-outils-vide">
           {t('Aucun outil pour l’instant. Ajoutez-en un : l’agent de Meta saura quand s’en servir.',
             'No tool yet. Add one: Meta’s agent will know when to use it.')}
@@ -216,8 +261,16 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, o
           </p>
         )}
       </div>
-      <span className="justify-self-start rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-700" data-testid={`mba-outil-type-${o.id}`}>
-        {t(badge[0], badge[1])}
+      <span className="flex flex-wrap items-center gap-1 justify-self-start">
+        <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-700" data-testid={`mba-outil-type-${o.id}`}>
+          {t(badge[0], badge[1])}
+        </span>
+        {o.risque === 'irreversible' && (
+          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-800" data-testid={`mba-outil-irreversible-${o.id}`}
+            title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
+            {t('irréversible', 'irreversible')}
+          </span>
+        )}
       </span>
       <span data-testid={`mba-outil-etat-${o.id}`}>
         {etat === 'chargement' && <span className="text-xs text-ink-400">…</span>}
@@ -268,8 +321,10 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, o
         <span className="flex gap-3 text-xs">
           <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu'} onClick={onModifier}
             className="text-ink-600 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
-          <button type="button" data-testid={`mba-outil-supprimer-${o.id}`} onClick={onSupprimer}
-            className="text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
+          {/* Désactivé pendant un envoi, comme « Enregistrer » et « Réactiver » (spec § 9.2) : sinon le retrait
+              partait pendant qu'un autre envoi lisait encore l'ancien plan, et restait en attente sans le dire. */}
+          <button type="button" data-testid={`mba-outil-supprimer-${o.id}`} disabled={envoiEnCours} onClick={onSupprimer}
+            className="text-coral hover:underline disabled:opacity-40">{t('Supprimer', 'Delete')}</button>
         </span>
       )}
     </li>

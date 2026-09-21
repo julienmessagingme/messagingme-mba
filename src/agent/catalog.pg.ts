@@ -100,14 +100,19 @@ function versOutil(r: Ligne): OutilDefini {
 }
 
 /**
- * 🔴 VERROUILLER LES DÉFINITIONS AVANT D'EN RETIRER UN CONSENTEMENT, quand ce retrait peut les effacer
- * (décision du 2026-09-21 : une action ou un connecteur HTTP que plus personne n'utilise part).
+ * 🔴 VERROUILLER LES DÉFINITIONS AVANT LE `not exists` QUI DÉCIDE DE LES EFFACER (décision du 2026-09-21 :
+ * une action ou un connecteur HTTP que plus personne n'utilise part).
  *
- * Sans ce verrou, un rattachement concurrent posait son consentement entre le retrait et le `not exists` qui
- * décide de l'effacement : invisible de ce dernier (pas encore validé), il partait ensuite dans la cascade de la
- * définition effacée. C'est la raison qu'écrivait déjà l'ancien `supprimerDefinition`, et les trois chemins qui
- * l'ont remplacé l'avaient perdue (revue finale du 2026-09-21). Avec lui, l'un attend l'autre : le rattachement
- * validé d'abord est VU par le `not exists`, qui s'exécute ensuite dans une nouvelle instruction.
+ * Sans ce verrou, un rattachement concurrent posait son consentement juste avant le `not exists` : invisible de
+ * ce dernier (pas encore validé), il partait ensuite dans la cascade de la définition effacée. C'est la raison
+ * qu'écrivait déjà l'ancien `supprimerDefinition`, et les trois chemins qui l'ont remplacé l'avaient perdue
+ * (revue finale du 2026-09-21). Avec lui, l'un attend l'autre : le rattachement validé d'abord est VU par le
+ * `not exists`, qui s'exécute ensuite dans une nouvelle instruction ; celui qui arrive après attend
+ * (`for key share` dans `rattacherConsommateur`) et ne trouve plus rien.
+ *
+ * ⚠️ SEULE CONTRAINTE : le verrou précède le `not exists`. `detacher` et `retirerDeMba` le posent en tête
+ * (une seule définition, transaction courte) ; `PgAgentStore.remove` le pose APRÈS la cascade de l'agent, et
+ * le JSDoc de `remove` dit pourquoi : posé en tête, il pouvait interbloquer avec un appel d'outil en cours.
  *
  * ⚠️ `order by id` : deux effacements qui verrouillent plusieurs définitions le font dans le même ordre, sinon
  * ils pourraient s'attendre l'un l'autre.

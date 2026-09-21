@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { vueOutilMba, type ContexteVue } from '../src/mba/vue-outils';
 import { outilsAPublier } from '../src/mba/outils-a-publier';
 import { HANDLERS_MAISON_MBA, typeDeLaCible, type CibleMaison, type HandlerMaisonMba } from '../src/mba/outils-maison';
-import { TYPES_SAISISSABLES } from '../src/http/mba-outils';
+import { BORNES_OUTIL_MBA, TYPES_SAISISSABLES } from '../src/http/mba-outils';
+import { NOM_CONNECTEUR_RELAIS } from '../src/mba/publication';
 import type { OutilComplet } from '../src/agent/catalog';
 
 /**
@@ -77,6 +78,27 @@ describe('les types, des deux côtés', () => {
       champ_fixe: { handler: 'champ_fixe', champ: 'ville', valeurs: [] },
     };
     for (const h of HANDLERS_MAISON_MBA) expect(TYPES_SAISISSABLES).toContain(typeDeLaCible(EXEMPLES[h]));
+  });
+});
+
+describe('les constantes recopiées dans l’écran', () => {
+  const ecranLib = lire('web/lib/mba-outils.ts');
+  const onglet = lire('web/components/mba-outils/OutilsMba.tsx');
+
+  it('🔴 les bornes de la saisie sont celles de la route', () => {
+    // Plus basses à l'écran, un client ne pourrait pas écrire ce que la route accepte ; plus hautes, il écrirait
+    // pour recevoir un 400.
+    const m = /export const BORNES_OUTIL = (\{[^}]*\})/.exec(ecranLib);
+    expect(m).not.toBeNull();
+    const ecran = Object.fromEntries([...m![1]!.matchAll(/(\w+):\s*(\d+)/g)].map((x) => [x[1]!, Number(x[2])]));
+    expect(ecran).toEqual({ ...BORNES_OUTIL_MBA });
+  });
+
+  it('🔴 le connecteur attendu dans un effacement est celui que la publication pose chez Meta', () => {
+    // Recopié de travers, le dernier retrait déclencherait la confirmation « effacement imprévu » sur notre
+    // propre connecteur.
+    const m = /const CONNECTEUR_RELAIS = '([^']+)'/.exec(onglet);
+    expect(m?.[1]).toBe(NOM_CONNECTEUR_RELAIS);
   });
 });
 

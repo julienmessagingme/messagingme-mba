@@ -1772,12 +1772,14 @@ Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs
   (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
   chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent depuis sa fiche.
 - ✅ **Un gros bouton « + Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
-  information**, **Appeler un connecteur API**. Ce dernier est grisé, avec le lien vers Tools > Connecteurs
-  API, tant que l'espace n'a déclaré aucun appel.
+  information**, **Appeler un connecteur API**. Un type est grisé, avec le lien qui y mène, tant que l'espace
+  n'a rien à y mettre : aucun appel déclaré (Tools > Connecteurs API), aucun champ déclaré (Contenu >
+  Bibliothèque > Champs). Une lecture ratée ne passe pas pour « aucun » : elle le dit, avec « Réessayer ».
 - ✅ **Poser un tag** : l'étiquette est fixée par l'administrateur, l'agent de Meta ne décide que du moment. Elle
-  arrive sur la fiche du mini-CRM et déclenche les automations « tag ajouté ».
-  ⚠️ Une automation qui LANCE UN SCÉNARIO ne démarre pas tant que l'agent de Meta tient la conversation (règle
-  existante : un démarrage automatique n'écrit jamais dans une conversation tenue). L'écran le dit.
+  arrive sur la fiche du mini-CRM (déclarée dans Contenu > Étiquettes si elle est nouvelle).
+  ⚠️ **Ne comptez pas sur les automations « tag ajouté »** : l'agent de Meta tient alors la conversation, et un
+  démarrage automatique n'écrit jamais dans une conversation tenue. Le scénario qu'elles lanceraient ne démarre
+  pas, et il n'est pas rejoué ensuite. L'écran le dit.
 - ✅ **Enregistrer une information** : le champ de la fiche est fixé, l'agent de Meta fournit la valeur, tirée
   de la conversation. En option, une liste de valeurs permises : une autre valeur est refusée, et l'agent le sait.
 - ✅ **Enregistrer, c'est envoyer à Meta.** Créer, modifier ou supprimer un outil le porte chez Meta dans le même
@@ -1789,10 +1791,16 @@ Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs
 - ✅ **Une consigne pré-remplie par type**, directive (« Appelle cet outil dès que le client… ») : tant que le
   trou « [décrivez la situation] » n'est pas complété, l'outil ne s'enregistre pas.
 - ✅ **Le nom technique se calcule depuis le titre**, et reste modifiable.
-- ✅ **Une ligne rouge quand la cible n'existe plus** : un champ supprimé du mini-CRM, un appel supprimé dans
-  Connecteurs API. Un tel outil refuse à chaque appel (l'agent de Meta lit pourquoi, et rien n'est écrit sur la
-  fiche) ; sans cette ligne, personne ne le saurait. Un outil qui ne peut plus partir chez Meta (appel supprimé)
-  y est marqué « Pas chez Meta », jamais « ✓ ».
+- ✅ **Une ligne rouge quand la cible n'existe plus** : un champ supprimé du mini-CRM. Un tel outil refuse à
+  chaque appel (l'agent de Meta lit pourquoi, et rien n'est écrit sur la fiche) ; sans cette ligne, personne ne
+  le saurait. « Modifier » garde le champ disparu affiché et signalé, et corriger les mots seuls reste possible.
+  (Un appel, lui, ne peut pas être supprimé tant qu'un outil l'utilise.) Un outil illisible est marqué « Pas chez
+  Meta », jamais « ✓ ».
+- ✅ **Un appel irréversible le dit** (une méthode `DELETE`) : sur la ligne, et au moment de choisir l'appel, avec
+  l'avertissement que l'agent de Meta l'exécute SANS validation humaine. La mention de l'ancienne bibliothèque
+  était partie avec elle, sans arbitrage : elle revient (2026-09-21).
+- ✅ **Un retrait qui n'est pas parti se voit** : un outil supprimé ici que Meta liste encore apparaît au-dessus
+  de la liste, avec « Les retirer de chez Meta ». « Supprimer » est désactivé pendant un envoi.
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
 - ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses

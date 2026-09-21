@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { listTags, listUserFields, type TagCount, type UserFieldDef } from '@/lib/api';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
+import { BORNES_OUTIL, valeursPermises } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
 
@@ -28,13 +29,13 @@ export function CibleTag({ tenantId, valeur, onChange }: {
   return (
     <label className="text-xs text-ink-600">
       {t('Étiquette à poser', 'Tag to set')}
-      <input className={`${inputCls} mt-1`} list="mba-tags" data-testid="mba-cible-tag" value={valeur}
+      <input className={`${inputCls} mt-1`} list="mba-tags" data-testid="mba-cible-tag" value={valeur} maxLength={BORNES_OUTIL.tag}
         onChange={(e) => onChange(e.target.value)} placeholder="client_vip" />
       <datalist id="mba-tags">{tags.map((x) => <option key={x.tag} value={x.tag} />)}</datalist>
       <span className="mt-1 block text-[11px] text-ink-500" data-testid="mba-cible-tag-note">
         {t(
-          'Elle déclenche vos automations « tag ajouté ». Celles qui lancent un scénario ne démarrent pas tant que l’agent de Meta tient la conversation.',
-          'It triggers your “tag added” automations. Those that start a scenario do not start while Meta’s agent holds the conversation.',
+          'Ne comptez pas sur vos automations « tag ajouté » : l’agent de Meta tient alors la conversation, le scénario qu’elles lanceraient ne démarre pas, et il n’est pas rejoué ensuite.',
+          'Do not rely on your “tag added” automations: Meta’s agent holds the conversation then, the scenario they would start does not start, and it is not replayed later.',
         )}
       </span>
     </label>
@@ -45,16 +46,19 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
   tenantId: string; champ: string; valeurs: string[]; onChange: (champ: string, valeurs: string[]) => void;
 }) {
   const t = useT();
-  const [champs, setChamps] = useState<UserFieldDef[]>([]);
+  const [champs, setChamps] = useState<UserFieldDef[] | null>(null);
   // Le texte brut des valeurs, pour qu'une ligne vide en cours de frappe ne disparaisse pas sous le curseur.
   const [texte, setTexte] = useState(valeurs.join('\n'));
   useEffect(() => {
     let vivant = true;
     listUserFields(tenantId)
       .then((r) => { if (vivant) setChamps(Array.isArray(r?.fields) ? r.fields : []); })
-      .catch(() => {});
+      .catch(() => { if (vivant) setChamps([]); });
     return () => { vivant = false; };
   }, [tenantId]);
+  // 🔴 Un champ supprimé du mini-CRM RESTE affiché, et signalé : le select le montrait « Choisir un champ »
+  // pendant que l'état gardait l'ancienne clé, donc l'écran et ce qui partait divergeaient.
+  const disparu = champs !== null && champ !== '' && !champs.some((f) => f.key === champ);
   return (
     <div className="flex flex-col gap-2">
       <label className="text-xs text-ink-600">
@@ -62,15 +66,22 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
         <select className={`${inputCls} mt-1`} data-testid="mba-cible-champ" value={champ}
           onChange={(e) => onChange(e.target.value, valeurs)}>
           <option value="">{t('Choisir un champ', 'Pick a field')}</option>
-          {champs.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          {disparu && <option value={champ}>{champ} {t('(supprimé du mini-CRM)', '(deleted from the mini-CRM)')}</option>}
+          {(champs ?? []).map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
         </select>
       </label>
+      {disparu && (
+        <p className="text-[11px] text-coral" data-testid="mba-cible-champ-disparu">
+          {t('Ce champ n’existe plus : l’agent de Meta ne peut plus l’enregistrer. Choisissez-en un autre, ou supprimez l’outil.',
+            'This field no longer exists: Meta’s agent can no longer save it. Pick another one, or delete the tool.')}
+        </p>
+      )}
       <label className="text-xs text-ink-600">
         {t('Valeurs permises, une par ligne (facultatif)', 'Allowed values, one per line (optional)')}
         <textarea className={`${inputCls} mt-1`} rows={3} data-testid="mba-cible-valeurs" value={texte}
           onChange={(e) => {
             setTexte(e.target.value);
-            onChange(champ, e.target.value.split('\n').map((v) => v.trim()).filter((v) => v !== ''));
+            onChange(champ, valeursPermises(e.target.value));
           }} />
       </label>
     </div>
@@ -114,6 +125,11 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
             <span className="flex flex-wrap items-baseline gap-2">
               <span className="text-sm text-ink-800">{r.label}</span>
               <code className="text-[11px] text-ink-500">{r.methode} {r.chemin}</code>
+              {r.methode === 'DELETE' && (
+                <span className="rounded bg-amber-50 px-1.5 text-[11px] text-amber-800" data-testid={`mba-cible-appel-irreversible-${r.id}`}>
+                  {t('irréversible', 'irreversible')}
+                </span>
+              )}
             </span>
             <button type="button" data-testid={`mba-cible-appel-${r.id}`} onClick={() => onChoisir(r)}
               className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
@@ -122,6 +138,12 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
           </li>
         ))}
       </ul>
+      {choisie?.methode === 'DELETE' && (
+        <p className="text-[11px] text-amber-800" data-testid="mba-cible-appel-avertissement">
+          {t('Cet appel est irréversible, et l’agent de Meta l’exécute sans validation humaine. Réservez-le à une demande explicite du client, et dites-le dans « Quand l’appeler ».',
+            'This call is irreversible, and Meta’s agent runs it without human approval. Keep it for an explicit customer request, and say so in “When to call it”.')}
+        </p>
+      )}
       {choisie && <ValeursDeLAppel requete={choisie} />}
     </div>
   );

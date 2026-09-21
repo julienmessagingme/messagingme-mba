@@ -3463,6 +3463,12 @@ Lire le run CI job par job.
 dernier message du fil (aucun message ENTRANT plus récent) ET n'est pas acquitté ; `consommerReleaseMba` pose
 `accuse_le` au premier statut.
 
+⚠️ **`accuse_le` VAUT `null` POUR TOUT MESSAGE ACQUITTÉ AVANT CE TASK** (relecture du 2026-09-21) : 0162 est
+appliquée depuis le lot 2, et personne ne l'écrit avant ce Task. `null` ne veut donc PAS dire « pas encore
+acquitté » pour un envoi antérieur au déploiement du lot 4 : la règle doit le traiter comme inconnu (se rabattre
+sur les statuts reçus, ou sur la date de déploiement), sinon elle reposerait le marqueur sur des fils déjà
+réglés. Le balayage des marqueurs reste le filet.
+
 ⚠️ **La règle lit les MESSAGES, pas `conversations.last_direction`.** Les deux disent presque la même chose, mais
 `last_direction` ignore délibérément une réaction (arbitrage du 2026-09-19) et vaut `null` sur les conversations
 d'avant 0130 ; les messages sont la preuve directe (un client qui a réagi ou écrit après notre envoi l'a reçu).

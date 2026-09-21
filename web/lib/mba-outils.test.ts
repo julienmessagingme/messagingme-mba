@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { etatsChezMeta, effacementsImprevus, nomTechniqueDepuisTitre, consigneIncomplete, TEXTES_PAR_TYPE, PLACEHOLDER } from './mba-outils';
+import {
+  etatsChezMeta, effacementsImprevus, nomTechniqueDepuisTitre, consigneIncomplete, TEXTES_PAR_TYPE, PLACEHOLDER,
+  retraitsSansLigne, valeursPermises,
+} from './mba-outils';
 import type { OutilMbaVue } from './api-mba-outils';
 
 /**
@@ -7,7 +10,7 @@ import type { OutilMbaVue } from './api-mba-outils';
  */
 const o = (id: string, name: string, actif = true, publiable = true): OutilMbaVue => ({
   id, name, title: name, description: 'd', nePasUtiliser: 'p', type: 'tag', cible: { type: 'tag', tag: 'x' },
-  cibleManquante: null, aussiUtilisePar: [], actif, publiable,
+  cibleManquante: null, aussiUtilisePar: [], actif, publiable, risque: 'write',
 });
 
 describe('l’état chez Meta, ligne par ligne', () => {
@@ -40,6 +43,28 @@ describe('l’état chez Meta, ligne par ligne', () => {
 
   it('« inconnu » quand Meta n’a pas pu être lu', () => {
     expect(etatsChezMeta([o('1', 'a')], null).get('1')).toBe('inconnu');
+  });
+});
+
+describe('les retraits en attente qui n’ont plus de ligne', () => {
+  it('🔴 un outil supprimé ici et encore chez Meta est remonté ; un outil qui a sa ligne ne l’est pas', () => {
+    // Sans cette liste, le retrait ne se voyait nulle part et n'avait aucun bouton.
+    const g = [
+      { type: 'outil_supprimer' as const, nom: 'parti' },
+      { type: 'outil_supprimer' as const, nom: 'a' },
+      { type: 'outil_modifier' as const, nom: 'b' },
+    ];
+    expect(retraitsSansLigne([o('1', 'a', false), o('2', 'b')], g)).toEqual(['parti']);
+  });
+
+  it('⚠️ Meta illisible : rien à affirmer', () => {
+    expect(retraitsSansLigne([], null)).toEqual([]);
+  });
+});
+
+describe('les valeurs permises', () => {
+  it('🔴 les vides et les DOUBLONS partent, l’ordre de saisie reste', () => {
+    expect(valeursPermises('Paris\n\n Lyon \nParis\nLyon')).toEqual(['Paris', 'Lyon']);
   });
 });
 

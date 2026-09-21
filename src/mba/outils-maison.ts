@@ -81,7 +81,9 @@ export function variablesPourMeta(c: CibleMaison): VariableDeclaree[] {
   }];
 }
 
-const corpsChampSchema = z.object({ valeur: z.string().trim().min(1).max(500) });
+// 🔴 La clé LUE est celle qu'on PUBLIE (`variablesPourMeta`) : écrite en dur ici, un renommage de la variable
+// publiée aurait fait refuser toute valeur envoyée par Meta, sans aucune erreur de compilation.
+const corpsChampSchema = z.object({ [VARIABLE_VALEUR]: z.string().trim().min(1).max(500) });
 
 /** La valeur que l'agent de Meta envoie pour un champ, validée contre la liste permise. */
 export function lireValeurChamp(
@@ -89,7 +91,7 @@ export function lireValeurChamp(
 ): { ok: true; valeur: string } | { ok: false; erreur: string } {
   const r = corpsChampSchema.safeParse(corps);
   if (!r.success) return { ok: false, erreur: 'la valeur à enregistrer manque' };
-  const valeur = r.data.valeur;
+  const valeur = r.data[VARIABLE_VALEUR];
   if (c.valeurs.length > 0 && !c.valeurs.includes(valeur)) {
     return { ok: false, erreur: `valeur refusée : choisir parmi ${c.valeurs.join(', ')}` };
   }

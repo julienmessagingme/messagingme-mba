@@ -31,8 +31,8 @@ export default function MbaSettingsPage() {
       {(session) => (
         <Suspense fallback={null}>
           {/* `isAdmin` descend d'ici parce que l'onglet Outils en a besoin : la création d'un outil pour
-              Meta et la publication chez Meta sont réservées aux administrateurs, exactement comme sur
-              `Tools > Outils`. Le déduire plus bas aurait fait deux vérités sur un même droit. */}
+              Meta et la publication chez Meta sont réservées aux administrateurs, comme toutes les routes de
+              `mba-outils` (`g.admin`). Le déduire plus bas aurait fait deux vérités sur un même droit. */}
           <MbaSettings tenantId={session.tenantId} isAdmin={session.role === 'admin'} />
         </Suspense>
       )}

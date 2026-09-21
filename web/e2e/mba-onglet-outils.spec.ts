@@ -23,6 +23,7 @@ const OUTIL = {
   aussiUtilisePar: ['Assistant'],
   actif: true,
   publiable: true,
+  risque: 'write',
 };
 const REQ = (id: string, label: string, variables: unknown[] = []) => ({
   id, tenantId: TENANT, sourceId: 's1', label, methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
@@ -39,6 +40,10 @@ interface Monture {
   retenirPublication?: Promise<void>;
   /** La publication chez Meta échoue (502), comme quand Meta refuse. */
   publicationEchoue?: boolean;
+  /** Ces lectures échouent (500) : une lecture ratée n'est pas une liste vide. */
+  listeEchoue?: boolean;
+  requetesEchouent?: boolean;
+  fieldsEchouent?: boolean;
 }
 
 async function monterOutils(page: Page, m: Monture = {}) {
@@ -61,7 +66,11 @@ async function monterOutils(page: Page, m: Monture = {}) {
         return true;
       }
       if (url.includes(`/tenants/${TENANT}/mba-outils`)) {
-        if (method === 'GET') { await json({ outils: m.outils ?? [], phoneNumberId: 'PN1' }); return true; }
+        if (method === 'GET') {
+          if (m.listeEchoue) { await json({ error: 'base indisponible' }, 500); return true; }
+          await json({ outils: m.outils ?? [], phoneNumberId: 'PN1' });
+          return true;
+        }
         ecrits.push({ method, url, body });
         ordre.push(method);
         if (method === 'POST') { await json({ id: 'nouveau' }, 201); return true; }
@@ -69,9 +78,17 @@ async function monterOutils(page: Page, m: Monture = {}) {
         await json({ id: 'o1', actif: true });
         return true;
       }
-      if (url.includes(`/tenants/${TENANT}/agent-requetes`)) { await json({ requetes: m.requetes ?? [], champs: [], catalogue: {} }); return true; }
+      if (url.includes(`/tenants/${TENANT}/agent-requetes`)) {
+        if (m.requetesEchouent) { await json({ error: 'base indisponible' }, 500); return true; }
+        await json({ requetes: m.requetes ?? [], champs: [], catalogue: {} });
+        return true;
+      }
       if (url.includes(`/tenants/${TENANT}/tags`)) { await json({ tags: m.tags ?? [] }); return true; }
-      if (url.includes(`/tenants/${TENANT}/user-fields`)) { await json({ fields: m.fields ?? [] }); return true; }
+      if (url.includes(`/tenants/${TENANT}/user-fields`)) {
+        if (m.fieldsEchouent) { await json({ error: 'base indisponible' }, 500); return true; }
+        await json({ fields: m.fields ?? [] });
+        return true;
+      }
       return false;
     },
   });
@@ -122,7 +139,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
   });
 
   test('🔴 « Ajouter » propose les types ; le connecteur est grisé, avec le lien, quand aucun appel n’existe', async ({ page }) => {
-    await monterOutils(page, { outils: [], requetes: [] });
+    await monterOutils(page, { outils: [], requetes: [], fields: [{ key: 'ville', label: 'Ville', type: 'text' }] });
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outils-ajouter').click();
     await expect(page.getByTestId('mba-type-tag')).toBeEnabled();
@@ -238,7 +255,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outils-ajouter').click();
     await page.getByTestId('mba-type-tag').click();
-    await expect(page.getByTestId('mba-cible-tag-note')).toContainText('ne démarrent pas tant que');
+    await expect(page.getByTestId('mba-cible-tag-note')).toContainText('n’est pas rejoué ensuite');
     await page.getByTestId('mba-cible-tag').fill('vip');
     await page.getByTestId('mba-form-titre').fill('Marquer VIP');
     await expect(page.getByTestId('mba-form-nom')).toHaveValue('marquer_vip');
@@ -350,6 +367,83 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await page.getByTestId('mba-form-enregistrer').click();
     await expect(page.getByTestId('mba-outils-erreur')).toContainText('L’outil est enregistré');
     await expect(page.getByTestId('mba-outils-erreur')).toContainText('À envoyer');
+  });
+
+  test('🔴 « Enregistrer une information » est grisé, avec le lien, quand le mini-CRM n’a aucun champ', async ({ page }) => {
+    await monterOutils(page, { outils: [], fields: [] });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await expect(page.getByTestId('mba-type-champ')).toBeDisabled();
+    await expect(page.getByTestId('mba-type-champ-lien')).toHaveAttribute('href', '/fields');
+  });
+
+  test('🔴 une lecture ratée n’est pas « aucun » : elle le dit et propose de relire', async ({ page }) => {
+    await monterOutils(page, { outils: [], requetesEchouent: true, fieldsEchouent: true });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await expect(page.getByTestId('mba-type-connecteur')).toBeDisabled();
+    await expect(page.getByTestId('mba-type-connecteur-lien')).toHaveCount(0);
+    await expect(page.getByTestId('mba-type-connecteur-relire')).toBeVisible();
+    await expect(page.getByTestId('mba-type-champ-relire')).toBeVisible();
+  });
+
+  test('🔴 la liste qui ne se lit pas ne dit JAMAIS « Aucun outil »', async ({ page }) => {
+    await monterOutils(page, { listeEchoue: true });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outils-lecture-ratee')).toBeVisible();
+    await expect(page.getByTestId('mba-outils-vide')).toHaveCount(0);
+    await expect(page.getByTestId('mba-outils-relire')).toBeVisible();
+  });
+
+  test('🔴 un retrait en attente sans ligne se voit, et part sans confirmation par son bouton', async ({ page }) => {
+    const m = await monterOutils(page, { outils: [OUTIL], gestes: [{ type: 'outil_supprimer', nom: 'parti_ici' }] });
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('parti_ici');
+    await page.getByTestId('mba-outils-retraits-envoyer').click();
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(dialogues).toEqual([]);
+  });
+
+  test('🔴 « Supprimer » est désactivé pendant un envoi vers Meta', async ({ page }) => {
+    let liberer: () => void = () => {};
+    const retenue = new Promise<void>((ok) => { liberer = ok; });
+    await monterOutils(page, { outils: [OUTIL], gestes: [{ type: 'outil_modifier', nom: 'suivi_commande' }], retenirPublication: retenue });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-envoyer-o1').click();
+    await expect(page.getByTestId('mba-outils-attente')).toBeVisible();
+    await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeDisabled();
+    liberer();
+    await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeEnabled();
+  });
+
+  test('🔴 un appel irréversible le dit, sur la ligne comme au choix de l’appel', async ({ page }) => {
+    await monterOutils(page, {
+      outils: [{ ...OUTIL, risque: 'irreversible' }], requetes: [REQ('REQ9', 'Effacer la fiche')].map((r) => ({ ...r, methode: 'DELETE' })),
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-irreversible-o1')).toBeVisible();
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-connecteur').click();
+    await expect(page.getByTestId('mba-cible-appel-irreversible-REQ9')).toBeVisible();
+    await page.getByTestId('mba-cible-appel-REQ9').click();
+    await expect(page.getByTestId('mba-cible-appel-avertissement')).toContainText('sans validation humaine');
+  });
+
+  test('🔴 corriger les mots d’un outil dont le champ a disparu n’envoie PAS la cible, et le champ disparu se voit', async ({ page }) => {
+    const INFO = { ...OUTIL, type: 'champ', cible: { type: 'champ', champ: 'code_postal', valeurs: [] },
+      cibleManquante: 'le champ « code_postal » n’existe plus dans le mini-CRM', aussiUtilisePar: [] };
+    const m = await monterOutils(page, { outils: [INFO], fields: [{ key: 'ville', label: 'Ville', type: 'text' }] });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-modifier-o1').click();
+    await expect(page.getByTestId('mba-cible-champ-disparu')).toBeVisible();
+    await expect(page.getByTestId('mba-cible-champ')).toHaveValue('code_postal');
+    await page.getByTestId('mba-form-titre').fill('Suivi retouché');
+    await page.getByTestId('mba-form-enregistrer').click();
+    await expect.poll(() => m.ecrits.length).toBe(1);
+    expect(m.ecrits[0]!.method).toBe('PATCH');
+    expect(m.ecrits[0]!.body).not.toHaveProperty('cible');
   });
 
   test('`/outils` renvoie vers l’onglet de l’agent de Meta', async ({ page }) => {

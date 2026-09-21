@@ -82,8 +82,9 @@ seconde ; chez Meta, un seul connecteur `EngageMe` (adresse du relais, clé API)
   l'outil, sa compétence « passer la main » a gagné. Avec une description DIRECTIVE (quand l'appeler, ce que
   l'outil sait déjà, confirmer après, « ne passe pas la main, c'est cet outil qui traite »), il l'a appelé au
   premier essai.
-- Un premier essai a échoué parce que « Envoyer » n'avait pas été cliqué : l'écran ne dit pas si un outil
-  est déjà chez Meta (amélioration notée dans `todo.md`).
+- Un premier essai a échoué parce que « Envoyer » n'avait pas été cliqué, l'écran ne disant pas si un outil
+  était déjà chez Meta. C'est fait depuis : l'onglet refait du 2026-09-21 donne l'état chez Meta ligne par ligne,
+  et enregistrer envoie.
 
 **Reste à faire, sans urgence** :
 - Confirmer d'un clic qu'un « Envoyer » sans changement répond « Rien à changer » (la forme que Meta renvoie

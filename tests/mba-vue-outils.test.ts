@@ -21,7 +21,7 @@ const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
 describe('la ligne d’un outil dans l’onglet', () => {
   it('un tag : son type et sa cible', () => {
     expect(vueOutilMba(outil({ binding: { handler: 'tag_fixe', tag: 'vip' } }), ctx()))
-      .toMatchObject({ type: 'tag', cible: { type: 'tag', tag: 'vip' }, cibleManquante: null, actif: true });
+      .toMatchObject({ type: 'tag', cible: { type: 'tag', tag: 'vip' }, cibleManquante: null, actif: true, risque: 'write' });
   });
 
   it('🔴 un champ supprimé du mini-CRM est SIGNALÉ', () => {
@@ -53,6 +53,10 @@ describe('la ligne d’un outil dans l’onglet', () => {
   it('🔴 un outil maison illisible est montré comme tel, pas masqué', () => {
     expect(vueOutilMba(outil({ binding: { handler: 'poser_tag' } }), ctx()))
       .toMatchObject({ type: 'inconnu', cible: { type: 'inconnu' }, cibleManquante: expect.stringContaining('supprimez-le') });
+  });
+
+  it('🔴 un appel irréversible le DIT : l’agent de Meta l’exécute sans validation humaine', () => {
+    expect(vueOutilMba(outil({ origin: 'http', requestId: 'rq1', risk: 'irreversible' }), ctx()).risque).toBe('irreversible');
   });
 
   it('🔴 un outil désactivé le dit (son auteur a quitté l’espace)', () => {

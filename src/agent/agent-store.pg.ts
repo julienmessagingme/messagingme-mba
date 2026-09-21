@@ -129,28 +129,27 @@ export class PgAgentStore implements AgentStore {
    * Un bloc de scénario qui le désignait encore devient un passe-plat, et le moteur ne suit alors qu'une
    * arête LIBRE : il ne vole aucune branche typée.
    *
-   * 🔴 LES OUTILS, EUX, NE PARTENT PLUS AVEC LUI, ET C'EST TOUT L'OBJET DE CETTE MÉTHODE DEPUIS 0127. Une
-   * DÉFINITION appartient à l'ESPACE : la supprimer avec l'agent casserait les autres agents qui s'en
-   * servent. Ce qui doit partir, c'est sa ligne de `agent_tool_consommateurs`.
+   * 🔴 CE QUI PART AVEC LUI, ET CE QUI RESTE. Ses ACTIONS (`agent_id` renseigné, 0157) partent par la cascade.
+   * Un connecteur HTTP dont il était le SEUL utilisateur part aussi (décision du 2026-09-21, même règle que
+   * `PgToolCatalog.detacher`). Un connecteur qu'un autre agent ou l'agent de Meta utilise encore RESTE, et
+   * un outil MCP reste toujours : il doit rester branchable.
    *
-   * ⚠️ ET AUCUNE CASCADE NE LE FAIT, parce que `consommateur` est un TEXTE (`agent:<uuid>`), choisi pour que
-   * le Meta Business Agent puisse être un consommateur sans avoir de fiche d'agent. C'est le prix de ce
-   * choix, il se paie ICI, en code, et un test d'intégration le tient. Sans lui, la ligne resterait en base,
-   * invisible, et fausserait les compteurs « utilisé par N consommateurs » de la bibliothèque.
+   * ⚠️ SON CONSENTEMENT, AUCUNE CASCADE NE LE RETIRE, parce que `consommateur` est un TEXTE
+   * (`agent:<uuid>`), choisi pour que le Meta Business Agent puisse être un consommateur sans avoir de fiche
+   * d'agent. C'est le prix de ce choix, il se paie ICI, en code, et un test d'intégration le tient.
    *
-   * ⚠️ UNE TRANSACTION, parce que l'ATOMICITÉ compte même si l'ordre est indifférent (rien ne lit entre les
-   * deux) : la première écriture seule laisserait un orphelin que plus rien ne rattrapera jamais.
+   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX UNE FOIS (revue finale du 2026-09-21). Le verrou des définitions
+   * (`verrouillerDefinitions`) se pose APRÈS la cascade de l'agent et APRÈS le retrait de ses consentements,
+   * juste avant l'effacement des orphelins. Posé en tête, il (1) couvrait une liste lue avant lui, donc
+   * ratait un consentement posé entre les deux, (2) tenait les connecteurs PARTAGÉS pendant toute la cascade,
+   * bloquant chaque appel d'outil que d'autres agents journalisaient, et (3) pouvait interbloquer avec un
+   * appel de CET agent en cours de journalisation (qui tient sa session et attend l'outil, quand la cascade
+   * attend la session). La seule exigence de correction est que le verrou précède le `not exists`.
    */
   async remove(tenantId: string, id: string): Promise<boolean> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      // Verrouiller AVANT de retirer : même raison que `detacher` (`verrouillerDefinitions`).
-      const lies = await client.query<{ tool_id: string }>(
-        'select tool_id from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
-        [tenantId, consommateurAgent(id)],
-      );
-      await verrouillerDefinitions(client, tenantId, lies.rows.map((r) => r.tool_id));
       const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
       const detaches = await client.query<{ tool_id: string }>(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 returning tool_id',
@@ -158,9 +157,9 @@ export class PgAgentStore implements AgentStore {
       );
       // 🔴 UN CONNECTEUR HTTP QUE PLUS PERSONNE N'UTILISE PART AVEC SON DERNIER AGENT (décision du 2026-09-21),
       // même règle que `PgToolCatalog.detacher` : sinon il gardait son nom pris et bloquait la suppression de
-      // sa requête, sans aucun écran pour s'en défaire. Un outil MCP reste, il doit rester branchable ; les
-      // actions de l'agent partent déjà par la cascade de `agent_id`.
+      // sa requête, sans aucun écran pour s'en défaire. Le verrou se pose ICI, voir le JSDoc.
       if (detaches.rows.length > 0) {
+        await verrouillerDefinitions(client, tenantId, detaches.rows.map((r) => r.tool_id));
         await client.query(
           `delete from agent_tools t
             where t.tenant_id = $1 and t.id = any($2::uuid[]) and t.agent_id is null and t.origin = 'http'

@@ -45,13 +45,20 @@ export interface MbaOutilsDeps {
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au format [a-z0-9_], 64 caractères au plus');
 const texte = (max: number) => z.string().trim().min(1).max(max);
 
+/**
+ * Les bornes de la saisie. 🔴 L'écran les applique AVANT l'envoi (`BORNES_OUTIL`, `web/lib/mba-outils.ts`) pour
+ * dire ce qui manque au lieu d'un 400 ; `tests/mba-outils-parite.test.ts` tient les deux listes égales.
+ */
+export const BORNES_OUTIL_MBA = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
+const B = BORNES_OUTIL_MBA;
+
 /** La cible SAISIE à l'écran. `connecteur` désigne un appel ; les autres deviennent un `binding` maison. */
 const cibleSaisieSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('tag'), tag: z.string().trim().min(1).max(64) }).strict(),
+  z.object({ type: z.literal('tag'), tag: z.string().trim().min(1).max(B.tag) }).strict(),
   z.object({
     type: z.literal('champ'),
-    champ: z.string().trim().min(1).max(64),
-    valeurs: z.array(z.string().trim().min(1).max(120)).max(50).default([]),
+    champ: z.string().trim().min(1).max(B.champ),
+    valeurs: z.array(z.string().trim().min(1).max(B.valeur)).max(B.valeurs).default([]),
   }).strict(),
   z.object({ type: z.literal('connecteur'), requeteId: z.string().uuid() }).strict(),
 ]);
@@ -64,11 +71,11 @@ type CibleSaisie = z.infer<typeof cibleSaisieSchema>;
 export const TYPES_SAISISSABLES: readonly string[] = cibleSaisieSchema.options.map((o) => o.shape.type.value);
 
 const creationSchema = z.object({
-  name: NOM, title: texte(120), description: texte(2000), nePasUtiliser: texte(2000), cible: cibleSaisieSchema,
+  name: NOM, title: texte(B.titre), description: texte(B.texte), nePasUtiliser: texte(B.texte), cible: cibleSaisieSchema,
 }).strict();
 const patchSchema = z.object({
-  name: NOM.optional(), title: texte(120).optional(), description: texte(2000).optional(),
-  nePasUtiliser: texte(2000).optional(), cible: cibleSaisieSchema.optional(),
+  name: NOM.optional(), title: texte(B.titre).optional(), description: texte(B.texte).optional(),
+  nePasUtiliser: texte(B.texte).optional(), cible: cibleSaisieSchema.optional(),
 }).strict();
 const reactivationSchema = z.object({ valeur: z.literal(true) }).strict();
 

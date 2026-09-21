@@ -339,7 +339,8 @@ export interface ToolAdminStore {
    * ⚠️ LE RATTACHEMENT ET L'ACTIVATION SONT DEUX GESTES. Les fondre ferait qu'ajouter un outil de la
    * bibliothèque à un agent l'exposerait au modèle dans la foulée, sans que personne ait relu ses mots :
    * exactement ce que la migration 0086 existe pour empêcher.
-   * `false` = l'outil n'existe pas dans cet espace, ou il y est déjà rattaché.
+   * `false` = l'outil n'existe pas dans cet espace, il y est déjà rattaché, c'est un outil de l'agent de Meta
+   * (jamais ouvert à un agent IA, migration 0162), ou un effacement concurrent vient de l'emporter.
    */
   rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
 
@@ -356,7 +357,12 @@ export interface ToolAdminStore {
   activerConsommateur(tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
 
 
-  /** TOUTES les définitions de l'espace, avec qui s'en sert. C'est l'écran Bibliothèque. */
+  /**
+   * Les définitions qu'un agent IA peut BRANCHER, avec qui s'en sert : les connecteurs et les outils MCP de
+   * l'espace. Ni les actions d'un agent (elles lui appartiennent, 0157), ni les outils de l'agent de Meta
+   * (0162). Lue par l'onglet Outils d'un agent, l'assistant de construction et la vue de l'onglet de l'agent
+   * de Meta (« Aussi utilisé par »).
+   */
   listCatalogue(tenantId: string): Promise<OutilBibliotheque[]>;
 }
 

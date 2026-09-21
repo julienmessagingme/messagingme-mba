@@ -445,6 +445,17 @@ détachement, par trois chemins qui portent la même condition (plus aucun conso
 retire l'outil), `PgAgentStore.remove` (un agent est supprimé) et `retirerDeMba` (l'agent de Meta le retire).
 Sans elle, un connecteur orphelin gardait son nom pris et bloquait la suppression de sa requête dans Connecteurs
 API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un import et doit rester branchable.
+- 🔴 **L'effacement VERROUILLE la définition avant son `not exists`** (`verrouillerDefinitions`,
+  `src/agent/catalog.pg.ts`) : sans ce verrou, un rattachement concurrent, pas encore validé donc invisible,
+  partait dans la cascade. Et tout insert de consentement sur une définition existante prend `for key share`
+  (`rattacherConsommateur`) : il attend un effacement en cours et rend `false`, jamais une erreur de clé
+  étrangère. `PgAgentStore.remove` pose le verrou APRÈS la cascade de l'agent (posé en tête, il pouvait
+  interbloquer avec un appel d'outil en cours de journalisation). Tout nouveau chemin d'effacement suit la même
+  règle ; `tests/integration/outils-maison-mba.integration.test.ts` éprouve les trois chemins et le cas inverse.
+- Le relais REFUSE d'écrire un champ supprimé du mini-CRM (`DepsMaison.champExiste`, même liste que la ligne
+  rouge de l'onglet). Un outil « Désactivé » (départ de son auteur) reste LISTÉ chez Meta jusqu'au prochain
+  envoi, rien ne republiant à ce départ : la ligne propose de l'en retirer. La vue porte le RISQUE, et l'onglet
+  dit « irréversible » : l'agent de Meta appelle sans validation humaine.
 
 🔴 **UN SERVEUR MCP EST UNE SOURCE COMME UNE AUTRE, et c'est ce qui rend le lot petit.** Il n'y a pas de
 table dédiée : un serveur est une ligne d'`agent_tool_sources` avec `kind = 'mcp'`, ses outils sont des

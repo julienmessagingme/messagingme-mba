@@ -32,6 +32,12 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
   formulaire reste ouvert, mais la spec § 9.4 le voulait à la saisie. Un contrôle exact demande de lire TOUS les
   outils de l'espace sans agent (connecteurs des agents IA compris, `agent_tools_nom_espace_uidx`), pas la seule
   liste de l'onglet : sinon il promettrait un nom libre qui ne l'est pas.
+- 🟡 **DÉCISION ATTENDUE (Julien) : un outil MCP disparu de son serveur ne se supprime plus qu'avec toute sa
+  source.** Le retrait de `DELETE /agent-tools/:outilId` (lot 2, avec l'ancienne bibliothèque) a emporté le seul
+  geste qui l'effaçait seul ; un outil MCP disparu est marqué (`mcp_indisponible_le`), jamais supprimé, et la
+  règle des orphelins l'épargne exprès. Deux voies : l'effacer au dernier détachement quand il est marqué
+  disparu, ou rendre un bouton dans Tools > Connecteurs MCP. Sans enjeu tant qu'aucun serveur MCP n'est branché
+  en production.
 - 🟡 **L'outil `envoyer_bloc` des AGENTS IA accepte n'importe quel bloc quand sa liste est vide**, alors que
   l'écran annonce « aucun » (`src/workflow/executor.ts`, `envoyerBlocDepuisAgent` ; la liste vit dans
   `agent_tools.params`). Relevé en cadrant les outils de l'agent de Meta (spec § 12).
@@ -376,7 +382,10 @@ le Meta Business Agent.** On publie chez Meta l'adresse du système et le chemin
 système du client EN DIRECT et lit toute la réponse.** Nous ne sommes pas dans la boucle, donc ni la nature
 « pousse » ni les champs cochés ne s'y appliquent.
 
-La case « Exposé à l'agent de Meta » (Tools > Outils) ne le dit pas. Arbitrage de Julien du 2026-09-15, à qui
+⚠️ **Depuis le relais du 2026-09-21, Meta n'appelle plus le système du client en direct** : il appelle Engage Me,
+qui lui rend TOUTE la réponse (arbitrage de Julien, le jour du relais). La conclusion ne change pas, ni la nature
+« pousse » ni les champs cochés ne s'appliquent à l'agent de Meta. L'onglet « Outils » de l'agent de Meta ne le
+dit pas (la case « Exposé » de l'ancien écran n'existe plus). Arbitrage de Julien du 2026-09-15, à qui
 la question a été posée : **on n'affiche rien**. C'est donc un trou ASSUMÉ, pas un oubli, et il est écrit ici
 pour qu'il reste discutable.
 

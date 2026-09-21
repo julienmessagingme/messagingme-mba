@@ -34,6 +34,29 @@ export function etatsChezMeta(
   return etats;
 }
 
+/**
+ * Les outils que Meta liste encore et qui n'ont plus de ligne ici : supprimés, mais leur retrait chez Meta n'est
+ * pas parti (envoi refusé à la confirmation, envoi en échec). 🔴 Sans cette liste, un retrait en attente ne se
+ * voyait nulle part et n'avait aucun bouton : il partait au prochain envoi d'autre chose, après une confirmation
+ * qui surprenait (relecture du 2026-09-21).
+ */
+export function retraitsSansLigne(outils: readonly OutilMbaVue[], gestes: readonly GestePublication[] | null): string[] {
+  if (gestes === null) return [];
+  const noms = new Set(outils.map((o) => o.name));
+  return gestes.filter((g) => g.type === 'outil_supprimer' && !noms.has(g.nom)).map((g) => g.nom);
+}
+
+/** Les valeurs permises saisies une par ligne : les vides et les doublons partent, l'ordre de saisie reste. */
+export function valeursPermises(texte: string): string[] {
+  return [...new Set(texte.split('\n').map((v) => v.trim()).filter((v) => v !== ''))];
+}
+
+/**
+ * Les bornes de la route (`BORNES_OUTIL_MBA`, `src/http/mba-outils.ts`), appliquées AVANT l'envoi pour dire ce
+ * qui manque au lieu d'un 400. `tests/mba-outils-parite.test.ts` tient les deux listes égales.
+ */
+export const BORNES_OUTIL = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
+
 /** Les effacements chez Meta que le geste en cours n'a pas demandés : eux seuls se font confirmer. */
 export function effacementsImprevus(gestes: readonly GestePublication[], attendus: ReadonlySet<string>): GestePublication[] {
   return gestes.filter((g) => g.type.endsWith('supprimer') && !attendus.has(g.nom));

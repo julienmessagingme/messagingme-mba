@@ -31,6 +31,8 @@ export interface OutilMbaVue {
   actif: boolean;
   /** Part-il chez Meta quand il est actif ? Faux pour un appel supprimé ou un outil illisible. */
   publiable: boolean;
+  /** Ce que l'outil peut faire. `irreversible` se DIT à l'écran : l'agent de Meta appelle sans validation humaine. */
+  risque: 'read' | 'write' | 'irreversible';
 }
 
 export type CibleSaisie =
