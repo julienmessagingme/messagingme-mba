@@ -27,10 +27,18 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 - ✅ **Lot 1, la mesure `agent_event`** : l'agent de Meta répond 11 secondes après l'événement, dans une
   conversation en cours, en suivant la consigne (`docs/MBA-API-REFERENCE.md`). La transmission de la réponse
   « à côté » (lot 4) est donc possible.
-- ✅ **Lot 2, poussé et vert en CI** (unitaires, intégration, sécurité, console) : migration 0162 ÉCRITE et PAS
-  ENCORE APPLIQUÉE (elle ajoute des colonnes que le code écrit : à passer AVANT le déploiement) ; gestes
-  « Poser un tag » et « Enregistrer une information » exécutés par le relais ; publication ; onglet « Outils »
-  refait d'après le croquis de Julien (e2e 16 cas, mutation vérifiée).
+- ✅ **Lot 2, poussé** : migration 0162 ÉCRITE et PAS ENCORE APPLIQUÉE (elle ajoute des colonnes que le code
+  écrit : à passer AVANT le déploiement) ; gestes « Poser un tag » et « Enregistrer une information » exécutés
+  par le relais ; publication ; onglet « Outils » refait d'après le croquis de Julien. Le verdict de la CI se lit
+  sur le dernier commit de code (`gh run view <id> --json jobs`), jamais dans ce fichier : il y a menti.
+- ✅ **Revue finale à froid du lot 2 (2026-09-21 au soir) : 4 rouges, 16 jaunes, tous traités.** Les rouges :
+  un test d'intégration périmé par la règle des orphelins, l'IP d'origine du VPS dans le plan (dépôt public),
+  `.env.example` resté à l'ancienne valeur de `API_MAX_LOURDES_SIMULTANEES` (`.env.prod` ne la porte pas : sans
+  effet en production), et une note de l'écran qui renvoyait vers « Lancer un scénario », absent du lot 2. Les
+  jaunes portant sur le lot de sécurité ont été corrigés par sa propre session.
+- 🔴 **L'ONGLET « OUTILS » DE L'AGENT DE META EST EN PANNE EN PRODUCTION JUSQU'AU DÉPLOIEMENT DE L'API.** Vercel
+  sert déjà le nouvel écran (il suit `origin/main`), qui appelle `/mba-outils`, absent de l'API du VPS. C'est le
+  coût d'un front et d'une API déployés séparément : un écran qui dépend d'une route neuve part avant elle.
 - ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
   connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
   outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.

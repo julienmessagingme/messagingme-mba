@@ -93,15 +93,19 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
     }
   };
 
-  /** Un outil enregistré part chez Meta dans le même geste. Un échec d'envoi ne défait pas l'enregistrement. */
+  /**
+   * Un outil enregistré part chez Meta dans le même geste. Un échec d'envoi ne défait pas l'enregistrement.
+   * 🔴 Le message le DIT toujours (spec § 9.3), cause comprise : l'erreur brute seule (« Meta a refusé… ») laissait
+   * croire que l'outil n'avait pas été créé, et invitait à le recréer, donc à buter sur son propre nom.
+   */
   const apresEnregistrement = async (nomsAttendus: Set<string>): Promise<void> => {
     setMode({ vue: 'liste' });
     await charger();
     const ok = await envoyer(new Set([...nomsAttendus, CONNECTEUR_RELAIS]));
     if (!ok) {
-      setErreur((e) => e ?? t(
-        'L’outil est enregistré. L’envoi chez Meta n’a pas abouti : cliquez sur « À envoyer » pour réessayer.',
-        'The tool is saved. Sending to Meta did not go through: click “To send” to retry.',
+      setErreur((e) => t(
+        `L’outil est enregistré, mais l’envoi chez Meta n’a pas abouti${e ? ` (${e})` : ''} : cliquez sur « À envoyer » pour réessayer.`,
+        `The tool is saved, but sending to Meta did not go through${e ? ` (${e})` : ''}: click “To send” to retry.`,
       ));
     }
   };
@@ -180,6 +184,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
             <LigneOutil key={o.id} o={o} t={t} isAdmin={isAdmin} etat={etats === null ? 'chargement' : (etats.get(o.id) ?? 'inconnu')}
               envoiEnCours={envoiEnCours}
               onEnvoyer={() => { void envoyer(new Set()); }}
+              onRetirer={() => { void envoyer(new Set([o.name, CONNECTEUR_RELAIS])); }}
               onModifier={() => { if (o.type !== 'inconnu') setMode({ vue: 'form', type: o.type, outil: o }); }}
               onSupprimer={() => { void supprimer(o); }}
               onReactiver={() => { void reactiver(o); }} />
@@ -190,9 +195,9 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   );
 }
 
-function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onModifier, onSupprimer, onReactiver }: {
+function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, onModifier, onSupprimer, onReactiver }: {
   o: OutilMbaVue; t: Traduire; isAdmin: boolean; etat: EtatChezMeta | 'chargement'; envoiEnCours: boolean;
-  onEnvoyer: () => void; onModifier: () => void; onSupprimer: () => void; onReactiver: () => void;
+  onEnvoyer: () => void; onRetirer: () => void; onModifier: () => void; onSupprimer: () => void; onReactiver: () => void;
 }) {
   const badge = o.type === 'inconnu' ? ['Inconnu', 'Unknown'] as const : TEXTES_PAR_TYPE[o.type].badge;
   return (
@@ -220,15 +225,32 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onModifier, 
         {etat === 'inconnu' && (
           <span className="text-xs text-ink-400" title={t('Meta n’a pas pu être lu.', 'Meta could not be read.')}>?</span>
         )}
-        {etat === 'desactive' && (
+        {etat === 'hors_meta' && (
+          <span className="text-xs text-ink-400"
+            title={t('Cet outil ne peut pas partir chez Meta : la ligne rouge dit pourquoi.',
+              'This tool cannot be sent to Meta: the red line says why.')}>
+            {t('Pas chez Meta', 'Not at Meta')}
+          </span>
+        )}
+        {(etat === 'desactive' || etat === 'desactive_a_retirer') && (
           <span className="flex flex-wrap items-center gap-2 text-xs text-amber-800"
-            title={t('La personne qui l’avait ajouté a quitté l’espace : l’outil n’est plus chez Meta.',
-              'The person who added it left the workspace: the tool is no longer at Meta.')}>
+            title={t('La personne qui l’avait ajouté a quitté l’espace : l’agent de Meta ne peut plus s’en servir.',
+              'The person who added it left the workspace: Meta’s agent can no longer use it.')}>
             {t('Désactivé', 'Disabled')}
             {isAdmin && (
               <button type="button" data-testid={`mba-outil-reactiver-${o.id}`} disabled={envoiEnCours} onClick={onReactiver}
                 className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50">
                 {t('Réactiver', 'Reactivate')}
+              </button>
+            )}
+            {/* Rien ne republie au départ d'un collaborateur : Meta le liste encore, et l'agent l'appellerait pour
+                rien. L'envoi l'en retire ; cet effacement-là est demandé, il ne se fait donc pas confirmer. */}
+            {etat === 'desactive_a_retirer' && (
+              <button type="button" data-testid={`mba-outil-retirer-${o.id}`} disabled={envoiEnCours || !isAdmin} onClick={onRetirer}
+                title={t('Meta le liste encore : l’envoi l’en retire, avec tout ce qui attend.',
+                  'Meta still lists it: sending removes it, along with everything pending.')}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                {envoiEnCours ? t('Envoi…', 'Sending…') : t('À envoyer', 'To send')}
               </button>
             )}
           </span>

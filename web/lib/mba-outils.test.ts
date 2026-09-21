@@ -5,9 +5,9 @@ import type { OutilMbaVue } from './api-mba-outils';
 /**
  * Les aides pures de l'onglet « Outils » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 9).
  */
-const o = (id: string, name: string, actif = true): OutilMbaVue => ({
+const o = (id: string, name: string, actif = true, publiable = true): OutilMbaVue => ({
   id, name, title: name, description: 'd', nePasUtiliser: 'p', type: 'tag', cible: { type: 'tag', tag: 'x' },
-  cibleManquante: null, aussiUtilisePar: [], actif,
+  cibleManquante: null, aussiUtilisePar: [], actif, publiable,
 });
 
 describe('l’état chez Meta, ligne par ligne', () => {
@@ -22,9 +22,20 @@ describe('l’état chez Meta, ligne par ligne', () => {
     expect([e.get('1'), e.get('2')]).toEqual(['a_envoyer', 'a_envoyer']);
   });
 
-  it('🔴 un outil désactivé est « désactivé », jamais « Chez Meta » : il n’est plus publié', () => {
+  it('🔴 un outil désactivé est « désactivé », jamais « Chez Meta »', () => {
     expect(etatsChezMeta([o('1', 'a', false)], []).get('1')).toBe('desactive');
     expect(etatsChezMeta([o('1', 'a', false)], null).get('1')).toBe('desactive');
+  });
+
+  it('🔴 un outil désactivé que Meta liste ENCORE le dit : rien ne republie au départ de son auteur', () => {
+    expect(etatsChezMeta([o('1', 'a', false)], [{ type: 'outil_supprimer', nom: 'a' }]).get('1')).toBe('desactive_a_retirer');
+  });
+
+  it('🔴 un outil qui ne part jamais chez Meta n’y est jamais « ✓ »', () => {
+    // Un appel supprimé, un outil illisible : `outilsAPublier` le saute, donc aucun geste ne le nomme.
+    expect(etatsChezMeta([o('1', 'a', true, false)], []).get('1')).toBe('hors_meta');
+    // Publié avant de devenir impubliable : l'envoi l'en retirera.
+    expect(etatsChezMeta([o('1', 'a', true, false)], [{ type: 'outil_supprimer', nom: 'a' }]).get('1')).toBe('a_envoyer');
   });
 
   it('« inconnu » quand Meta n’a pas pu être lu', () => {

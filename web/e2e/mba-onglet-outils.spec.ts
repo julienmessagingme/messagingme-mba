@@ -22,6 +22,7 @@ const OUTIL = {
   cibleManquante: null,
   aussiUtilisePar: ['Assistant'],
   actif: true,
+  publiable: true,
 };
 const REQ = (id: string, label: string, variables: unknown[] = []) => ({
   id, tenantId: TENANT, sourceId: 's1', label, methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
@@ -36,6 +37,8 @@ interface Monture {
   tags?: unknown[];
   fields?: unknown[];
   retenirPublication?: Promise<void>;
+  /** La publication chez Meta échoue (502), comme quand Meta refuse. */
+  publicationEchoue?: boolean;
 }
 
 async function monterOutils(page: Page, m: Monture = {}) {
@@ -53,6 +56,7 @@ async function monterOutils(page: Page, m: Monture = {}) {
         publications += 1;
         ordre.push('publication');
         if (m.retenirPublication) await m.retenirPublication;
+        if (m.publicationEchoue) { await json({ error: 'Meta a refusé la publication.' }, 502); return true; }
         await json({ faits: [] });
         return true;
       }
@@ -234,7 +238,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outils-ajouter').click();
     await page.getByTestId('mba-type-tag').click();
-    await expect(page.getByTestId('mba-cible-tag-note')).toContainText('Lancer un scénario');
+    await expect(page.getByTestId('mba-cible-tag-note')).toContainText('ne démarrent pas tant que');
     await page.getByTestId('mba-cible-tag').fill('vip');
     await page.getByTestId('mba-form-titre').fill('Marquer VIP');
     await expect(page.getByTestId('mba-form-nom')).toHaveValue('marquer_vip');
@@ -306,6 +310,46 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     expect(m.ordre).toEqual(['PUT', 'publication']);
     expect(m.ecrits[0]!.url).toContain('/mba-outils/o1/actif');
     expect(m.ecrits[0]!.body).toEqual({ valeur: true });
+  });
+
+  test('🔴 un outil désactivé que Meta liste ENCORE propose de l’en retirer, sans confirmation', async ({ page }) => {
+    const m = await monterOutils(page, { outils: [{ ...OUTIL, actif: false }], gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }] });
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Désactivé');
+    await expect(page.getByTestId('mba-outil-reactiver-o1')).toBeVisible();
+    await page.getByTestId('mba-outil-retirer-o1').click();
+
+    await expect.poll(() => m.publications()).toBe(1);
+    // L'effacement de CET outil est ce que le bouton demande : aucune confirmation.
+    expect(dialogues).toEqual([]);
+  });
+
+  test('🔴 un outil qui ne part jamais chez Meta n’y est jamais « ✓ »', async ({ page }) => {
+    await monterOutils(page, {
+      outils: [{ ...OUTIL, publiable: false, cible: { type: 'connecteur', requeteId: 'REQ9', libelle: null },
+        cibleManquante: 'l’appel de cet outil a été supprimé dans Connecteurs API' }],
+      gestes: [],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Pas chez Meta');
+    await expect(page.getByTestId('mba-outil-etat-o1')).not.toContainText('✓');
+  });
+
+  test('🔴 un envoi raté après un enregistrement dit que l’outil EST enregistré', async ({ page }) => {
+    await monterOutils(page, {
+      outils: [], tags: [{ tag: 'vip', count: 3 }], gestes: [{ type: 'outil_creer', nom: 'marquer_vip' }], publicationEchoue: true,
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-tag').click();
+    await page.getByTestId('mba-cible-tag').fill('vip');
+    await page.getByTestId('mba-form-titre').fill('Marquer VIP');
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await page.getByTestId('mba-form-enregistrer').click();
+    await expect(page.getByTestId('mba-outils-erreur')).toContainText('L’outil est enregistré');
+    await expect(page.getByTestId('mba-outils-erreur')).toContainText('À envoyer');
   });
 
   test('`/outils` renvoie vers l’onglet de l’agent de Meta', async ({ page }) => {

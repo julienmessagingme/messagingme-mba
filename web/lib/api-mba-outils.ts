@@ -24,8 +24,13 @@ export interface OutilMbaVue {
   cibleManquante: string | null;
   /** Les agents IA qui partagent cet outil (connecteur seulement). */
   aussiUtilisePar: string[];
-  /** Faux quand le départ de son auteur l'a éteint : il n'est plus publié chez Meta. */
+  /**
+   * Faux quand le départ de son auteur l'a éteint : l'agent de Meta ne peut plus s'en servir (le relais refuse).
+   * ⚠️ Il reste LISTÉ chez Meta jusqu'au prochain envoi : rien ne republie au départ d'un collaborateur.
+   */
   actif: boolean;
+  /** Part-il chez Meta quand il est actif ? Faux pour un appel supprimé ou un outil illisible. */
+  publiable: boolean;
 }
 
 export type CibleSaisie =

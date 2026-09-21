@@ -5,7 +5,8 @@ import { lireCibleMaison, typeDeLaCible, type TypeOutilMba } from './outils-mais
  * LA LIGNE D'UN OUTIL DANS L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9.1).
  *
  * 🔴 CE QUI MANQUE SE DIT : un champ supprimé, un appel supprimé, un outil illisible. Un outil dont la cible a
- * disparu reste publié chez Meta et refuse à chaque appel ; sans cette ligne rouge, personne ne le saurait.
+ * disparu refuse à chaque appel (le relais refuse d'écrire un champ supprimé) ; sans cette ligne rouge, personne
+ * ne le saurait. Un appel supprimé ou un outil illisible ne part plus chez Meta (`publiable`), un champ supprimé si.
  *
  * ⚠️ `actif` VOYAGE AUSSI : le départ d'un collaborateur éteint les consentements qu'il avait donnés
  * (`PgUserStore.deleteUser`), donc un outil qu'il avait créé sort de la publication. L'écran doit le montrer
@@ -30,6 +31,12 @@ export interface OutilMbaVue {
   /** Les agents IA qui partagent cet outil (connecteur seulement). */
   aussiUtilisePar: string[];
   actif: boolean;
+  /**
+   * Cet outil part-il chez Meta quand il est actif ? 🔴 C'est la réponse de `outilsAPublier`, redite ici pour
+   * l'écran : sans elle, une ligne jamais publiée s'affichait « ✓ Chez Meta ». La parité est tenue par un test
+   * (`tests/mba-outils-parite.test.ts`), qui passe les mêmes outils aux deux fonctions.
+   */
+  publiable: boolean;
 }
 
 export interface ContexteVue {
@@ -51,25 +58,25 @@ export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
       ...base, type: 'connecteur',
       cible: { type: 'connecteur', requeteId: o.requestId, libelle: req?.label ?? null },
       cibleManquante: req ? null : 'l’appel de cet outil a été supprimé dans Connecteurs API',
-      aussiUtilisePar,
+      aussiUtilisePar, publiable: req !== null,
     };
   }
   const cible = o.origin === 'mba' ? lireCibleMaison(o.binding) : null;
   if (cible === null) {
     return {
       ...base, type: 'inconnu', cible: { type: 'inconnu' },
-      cibleManquante: 'l’agent de Meta ne peut pas appeler cet outil : supprimez-le', aussiUtilisePar: [],
+      cibleManquante: 'l’agent de Meta ne peut pas appeler cet outil : supprimez-le', aussiUtilisePar: [], publiable: false,
     };
   }
   const type = typeDeLaCible(cible);
   switch (cible.handler) {
     case 'tag_fixe':
-      return { ...base, type, cible: { type: 'tag', tag: cible.tag }, cibleManquante: null, aussiUtilisePar: [] };
+      return { ...base, type, cible: { type: 'tag', tag: cible.tag }, cibleManquante: null, aussiUtilisePar: [], publiable: true };
     case 'champ_fixe':
       return {
         ...base, type, cible: { type: 'champ', champ: cible.champ, valeurs: cible.valeurs },
         cibleManquante: ctx.champs.has(cible.champ) ? null : `le champ « ${cible.champ} » n’existe plus dans le mini-CRM`,
-        aussiUtilisePar: [],
+        aussiUtilisePar: [], publiable: true,
       };
   }
 }

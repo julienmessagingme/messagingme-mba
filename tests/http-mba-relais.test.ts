@@ -55,6 +55,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     maison: {
       poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
       ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
+      champExiste: async () => true,
     },
     ...over,
   };
@@ -300,7 +301,7 @@ describe('les outils maison de l’agent de Meta', () => {
   it('🔴 un geste qui plante est refusé proprement, et journalisé en échec', async () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([TAG], {
-      maison: { poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {} },
+      maison: { poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
     });
     const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o2');

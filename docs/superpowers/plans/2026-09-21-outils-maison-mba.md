@@ -51,14 +51,30 @@ marqueur de 0149 cesse de se poser sur un message déjà acquitté.
    Leurs cas de test sont portés vers `tests/http-mba-outils.test.ts` (table au Task 7).
 4. **Un outil désactivé se voit et se réactive** (trouvé à l'exécution du Task 4, rayon de souffle) : le départ
    d'un collaborateur éteint les consentements qu'il avait donnés (`PgUserStore.deleteUser`), donc un outil de
-   l'agent de Meta qu'il avait créé devient inactif, sort de la publication et disparaît de chez Meta. L'ancienne
+   l'agent de Meta qu'il avait créé devient inactif : le relais le refuse, et il sort de la publication. ⚠️ Il
+   reste pourtant LISTÉ chez Meta jusqu'au prochain envoi, rien ne republiant au départ d'un collaborateur (revue
+   finale du 2026-09-21) : la ligne dit alors « Désactivé » avec un bouton « À envoyer » qui l'en retire. L'ancienne
    case « Exposé » permettait de le rallumer ; elle part avec l'écran. La vue porte donc `actif`, la ligne affiche
-   « Désactivé » (et non un état chez Meta, faux pour un outil qui n'est plus publié), et un bouton
-   « Réactiver » appelle `PUT /tenants/:tenantId/mba-outils/:outilId/actif` (`activerConsommateur`, au nom de
-   l'administrateur qui clique), puis publie.
+   « Désactivé » (et non un état chez Meta), et un bouton « Réactiver » appelle
+   `PUT /tenants/:tenantId/mba-outils/:outilId/actif` (`activerConsommateur`, au nom de l'administrateur qui
+   clique ; 409 avec sa raison sur un outil non activable), puis publie.
 3. **Deux déploiements**, chacun précédé d'une revue finale : après le lot 2 (écran, tag, information), puis
    après les lots 3 et 4. La migration 0162 passe avant le premier ; elle porte déjà `accuse_le`, que seul le
    lot 4 écrit (une colonne nullable que personne ne lit ne gêne rien).
+5. **Un nom déjà pris se signale à l'ENREGISTREMENT, pas à la saisie** (spec § 9.4 ; relevé par la revue finale
+   du 2026-09-21). Le formulaire ne connaît que les outils de l'agent de Meta, alors que l'unicité porte sur tous
+   les outils de l'espace sans agent (`agent_tools_nom_espace_uidx`, connecteurs des agents IA compris) : un
+   contrôle à la saisie sur la seule liste visible aurait laissé passer la moitié des collisions en promettant le
+   contraire. La route rend 409 (« un outil de cet espace porte déjà ce nom »), affiché dans le formulaire, qui
+   reste ouvert avec ce qui a été saisi. Un contrôle exact à la saisie demanderait de lire la bibliothèque de
+   l'espace : noté dans `todo.md`.
+6. **`params` reste vide pour un outil maison** (spec § 6 ; même revue). La variable que l'agent de Meta
+   remplit (`valeur`, pour une information) se DÉRIVE de la cible à la publication (`variablesPourMeta`), et la
+   route la relit à l'exécution (`lireValeurChamp`). L'écrire aussi dans `params` ferait deux vérités sur le
+   même objet, dont une que rien ne lit.
+7. **Le relais refuse d'écrire un champ supprimé du mini-CRM** (même revue). La spec ne le disait pas ; mais
+   l'écran affiche alors « ce champ n'existe plus » en rouge, et écrire quand même rangeait la valeur sous une
+   clé qu'aucun écran ne montre. `DepsMaison.champExiste` lit la même liste que cette ligne rouge.
 
 ## Méthode de livraison
 
@@ -137,7 +153,7 @@ Le résultat s'écrit dans `docs/MBA-API-REFERENCE.md` (§ 6, `agent_event`).
 Lecture seule, sur le VPS (le conteneur connaît la base et la clé de chiffrement) :
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252 "cd /home/ubuntu/mba && sudo docker compose exec -T mba-api node -e \"
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS "cd /home/ubuntu/mba && sudo docker compose exec -T mba-api node -e \"
 const {Pool}=require('pg');const p=new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}});
 (async()=>{const r=await p.query(\\\"select c.tenant_id, c.wa_id, c.is_test, c.control_owner, pn.id as pn from conversations c join phone_numbers pn on pn.tenant_id = c.tenant_id where c.wa_id like '33%' order by c.last_message_at desc limit 5\\\");console.log(r.rows);await p.end();})();\""
 ```
@@ -198,8 +214,8 @@ Protocole, dans cet ordre :
 2. Copier et lancer, forme `avec_plus` d'abord :
 
 ```bash
-scp -i ~/.ssh/id_ed25519 "<scratchpad>/mesure-agent-event.mts" ubuntu@146.59.233.252:/tmp/mesure-agent-event.mts
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252 "cd /home/ubuntu/mba && sudo docker compose run --rm --no-deps -v /tmp/mesure-agent-event.mts:/app/mesure-agent-event.mts mba-api npx tsx mesure-agent-event.mts <PN> <WA> avec_plus"
+scp -i ~/.ssh/id_ed25519 "<scratchpad>/mesure-agent-event.mts" ubuntu@$VPS:/tmp/mesure-agent-event.mts
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS "cd /home/ubuntu/mba && sudo docker compose run --rm --no-deps -v /tmp/mesure-agent-event.mts:/app/mesure-agent-event.mts mba-api npx tsx mesure-agent-event.mts <PN> <WA> avec_plus"
 ```
 
 3. Si la réponse est un 4xx sur `to`, relancer avec `sans_plus`.
@@ -2840,7 +2856,7 @@ git commit --only features.md documentation.md wip.md todo.md -m "docs(mba): les
 - [ ] **Step 3 :** sur le VPS, dans l'ordre (0162 AJOUTE des colonnes que le code écrit, donc AVANT) :
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252 "cd /home/ubuntu/mba && git pull && sudo docker compose build mba-api && sudo docker compose run --rm --no-deps mba-api npm run migrate"
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS "cd /home/ubuntu/mba && git pull && sudo docker compose build mba-api && sudo docker compose run --rm --no-deps mba-api npm run migrate"
 ```
 
 - [ ] **Step 4 : relire la base, point par point** : `schema_migrations` rend 0162 en tête ; `pour_agent_meta` est

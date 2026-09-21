@@ -100,6 +100,27 @@ function versOutil(r: Ligne): OutilDefini {
 }
 
 /**
+ * 🔴 VERROUILLER LES DÉFINITIONS AVANT D'EN RETIRER UN CONSENTEMENT, quand ce retrait peut les effacer
+ * (décision du 2026-09-21 : une action ou un connecteur HTTP que plus personne n'utilise part).
+ *
+ * Sans ce verrou, un rattachement concurrent posait son consentement entre le retrait et le `not exists` qui
+ * décide de l'effacement : invisible de ce dernier (pas encore validé), il partait ensuite dans la cascade de la
+ * définition effacée. C'est la raison qu'écrivait déjà l'ancien `supprimerDefinition`, et les trois chemins qui
+ * l'ont remplacé l'avaient perdue (revue finale du 2026-09-21). Avec lui, l'un attend l'autre : le rattachement
+ * validé d'abord est VU par le `not exists`, qui s'exécute ensuite dans une nouvelle instruction.
+ *
+ * ⚠️ `order by id` : deux effacements qui verrouillent plusieurs définitions le font dans le même ordre, sinon
+ * ils pourraient s'attendre l'un l'autre.
+ */
+export async function verrouillerDefinitions(client: PoolClient, tenantId: string, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await client.query(
+    'select 1 from agent_tools where tenant_id = $1 and id = any($2::uuid[]) order by id for update',
+    [tenantId, ids],
+  );
+}
+
+/**
  * Lecture du catalogue d'outils (migration 0086).
  *
  * 🔴 `and actif` est dans le SQL des DEUX requêtes, et `t.tenant_id = $1 and c.consommateur = $2` aussi. Le
@@ -393,6 +414,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   async retirerDeMba(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'> {
     const consommateur = consommateurMba(phoneNumberId);
     return this.enTransaction(async (client) => {
+      await verrouillerDefinitions(client, tenantId, [outilId]);
       const det = await client.query(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
         [tenantId, consommateur, outilId],
@@ -417,8 +439,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    * outil du Meta Business Agent DÉFINITIVEMENT figé. `patch` était scopé par agent, or un outil créé pour
    * le MBA n'en a aucun : aucune route ne pouvait donc corriger son nom, son titre, ce à quoi il sert ni
    * quand ne pas l'appeler. Julien : « je ne peux rien changer sur l'outil dans l'onglet outils ». C'est
-   * exactement le motif `activer`/`activerConsommateur` et `detacher`/`detacherConsommateur` du même
-   * fichier : une capacité câblée sur un consommateur sur deux est un correctif à moitié.
+   * exactement le motif `activer`/`activerConsommateur` du même fichier : une capacité câblée sur un
+   * consommateur sur deux est un correctif à moitié.
    */
   async patchConsommateur(
     tenantId: string, consommateur: string, outilId: string, patch: PatchOutil,
@@ -485,8 +507,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   ): Promise<OutilComplet | null> {
     /**
      * 🔴 LE POINT DE PASSAGE UNIQUE DE L'ACTIVATION, ET C'EST POUR ÇA QUE LA GARDE EST ICI. Les deux
-     * chemins y aboutissent : l'onglet Outils d'un agent (`activer`, juste au-dessus) et l'exposition à
-     * l'agent de Meta (`src/http/agent-catalogue.ts`). La poser dans l'un des deux la laisserait absente
+     * chemins y aboutissent : l'onglet Outils d'un agent (`activer`, juste au-dessus) et la réactivation d'un
+     * outil de l'agent de Meta (`src/http/mba-outils.ts`). La poser dans l'un des deux la laisserait absente
      * de l'autre, ce qui est le motif « capacité câblée sur un consommateur sur deux ».
      *
      * ⚠️ SEULEMENT À L'ACTIVATION. Désactiver un outil devenu non activable doit rester possible : c'est
@@ -544,11 +566,15 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   async rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
     // 🔴 UN OUTIL DE L'AGENT DE META NE S'OUVRE JAMAIS À UN AGENT IA (migration 0162) : son handler n'existe pas
     // chez eux, et le brancher ferait un outil offert qui refuse à chaque appel.
+    // ⚠️ `for key share` : si un dernier détachement tient la définition (`verrouillerDefinitions`), on l'ATTEND,
+    // puis on ne trouve plus rien et l'on rend `false` (404). Sans lui, l'insertion passait la lecture, butait
+    // ensuite sur la clé étrangère de la définition effacée, et le rattachement rendait 500.
     const res = await this.pool.query(
       `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
        select $1, $2, $3
         where exists (select 1 from agent_tools
-                       where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%'))
+                       where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%')
+                         for key share)
        on conflict (tool_id, consommateur) do nothing`,
       [tenantId, outilId, consommateur],
     );
@@ -582,6 +608,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    */
   async detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
     return this.enTransaction(async (client) => {
+      await verrouillerDefinitions(client, tenantId, [outilId]);
       const res = await client.query(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
         [tenantId, consommateurAgent(agentId), outilId],

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import type { OutilComplet, RisqueOutil } from '../agent/catalog';
-import { NomOutilDejaPris } from '../agent/catalog';
+import { NomOutilDejaPris, OutilNonActivable } from '../agent/catalog';
 import type { RequeteConnecteur } from '../agent/requetes';
 import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import { scopeTenant, estUuid } from './scope';
@@ -56,6 +56,12 @@ const cibleSaisieSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('connecteur'), requeteId: z.string().uuid() }).strict(),
 ]);
 type CibleSaisie = z.infer<typeof cibleSaisieSchema>;
+
+/**
+ * Les types qu'une création accepte, lus sur le schéma lui-même. 🔴 L'écran en propose un sous-ensemble, et un
+ * type proposé que la route refuse serait un bouton qui rend 400 : `tests/mba-outils-parite.test.ts` le tient.
+ */
+export const TYPES_SAISISSABLES: readonly string[] = cibleSaisieSchema.options.map((o) => o.shape.type.value);
 
 const creationSchema = z.object({
   name: NOM, title: texte(120), description: texte(2000), nePasUtiliser: texte(2000), cible: cibleSaisieSchema,
@@ -194,7 +200,16 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     if (userId === '') return reply.code(403).send({ error: 'réactivation impossible sans utilisateur identifié' });
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
-    const fait = await deps.reactiver(tenant, pn, req.params.outilId, userId);
+    // 🔴 `activerConsommateur` LÈVE sur un outil qui ne peut pas s'activer (un MCP marqué non activable, exposé
+    // à l'agent de Meta par l'ancienne bibliothèque). Sans ce `catch`, un 500, donc une page Cloudflare sans un
+    // mot ; l'ancienne route le traduisait déjà en 409, et la garde s'était perdue au portage.
+    let fait: boolean;
+    try {
+      fait = await deps.reactiver(tenant, pn, req.params.outilId, userId);
+    } catch (err) {
+      if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
+      throw err;
+    }
     return fait ? reply.code(200).send({ actif: true }) : reply.code(404).send({ error: 'outil introuvable' });
   });
 }

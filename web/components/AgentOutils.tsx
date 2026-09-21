@@ -308,13 +308,22 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           <button
             data-testid={`outil-retirer-${outil.id}`}
             disabled={busy}
-            onClick={onRetirer}
-            // ⚠️ « DE CET AGENT », et la précision compte depuis la migration 0127 : les autres agents qui s'en
-            // servent ne sont pas touchés. Sans ces mots, un opérateur croit détruire un outil partagé et n'ose
-            // plus cliquer. Depuis le 2026-09-21, un connecteur que plus personne n'utilise part de l'espace, et
-            // l'infobulle le dit aussi.
-            title={t('Retirer cet outil de cet agent (les autres agents le gardent ; s’il ne sert plus à personne, il est retiré de l’espace)',
-              'Remove this tool from this agent (other agents keep it; if nobody uses it anymore, it is removed from the workspace)')}
+            onClick={() => {
+              // Une ACTION appartient à cet agent (0157) : la retirer la SUPPRIME, réglages compris. Ça se confirme.
+              if (outil.origin === 'mba' && !window.confirm(t(
+                `Retirer « ${outil.title} » de cet agent ? L’action et ses réglages seront supprimés.`,
+                `Remove “${outil.title}” from this agent? The action and its settings will be deleted.`,
+              ))) return;
+              onRetirer();
+            }}
+            // ⚠️ L'infobulle dit ce que fait VRAIMENT le retrait, et il dépend de l'outil : une action appartient à
+            // cet agent et part avec son retrait ; un outil MCP appartient à l'espace et reste branchable par les
+            // autres agents. (Les connecteurs HTTP ne s'affichent pas ici, mais dans `AgentConnecteurs`.)
+            title={outil.origin === 'mcp'
+              ? t('Retirer cet outil de cet agent (il reste disponible pour vos autres agents)',
+                'Remove this tool from this agent (it stays available to your other agents)')
+              : t('Retirer cette action de cet agent (elle est supprimée, avec ses réglages)',
+                'Remove this action from this agent (it is deleted, with its settings)')}
             className="rounded px-2 py-1 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
           >
             ✕

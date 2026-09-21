@@ -2546,14 +2546,17 @@ async function main(): Promise<void> {
           fuseau: async (t) => (await settingsStore.get(t)).timezone,
         }),
         journal: new PgJournalAppels(pool),
-        // ⚠️ TEMPORAIRE : la FORME de l'en-tête du numéro, jamais sa valeur, jusqu'à ce que le premier essai
-        // réel ait mesuré ce que Meta met dans la macro. À retirer ensuite (plan, task 10).
+        // La FORME de l'en-tête du numéro, jamais sa valeur. GARDÉ après l'essai réel du relais (décision du
+        // 2026-09-21, `wip.md`) : sans lui, une macro que Meta cesserait de remplir serait invisible.
         // eslint-disable-next-line no-console
         journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
         // Les gestes maison : les MÊMES fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,
           ecrireChamp: async (t, waId, champ, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [champ]: valeur }); },
+          // La même liste que la ligne rouge de l'onglet Outils (`mbaOutils.champs`), sinon l'écran et le relais
+          // ne seraient pas d'accord sur ce qui existe.
+          champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
         },
       },
       contacts: {

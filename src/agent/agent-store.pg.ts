@@ -5,6 +5,7 @@ import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
 import { asArray, asRecord } from '../webhooks/json';
 import { CODE_SORTIE_RE, ficheAgentSchema, ficheVide } from './fiche';
 import { consommateurAgent } from './consommateur';
+import { verrouillerDefinitions } from './catalog.pg';
 
 interface Ligne {
   id: string;
@@ -144,6 +145,12 @@ export class PgAgentStore implements AgentStore {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      // Verrouiller AVANT de retirer : même raison que `detacher` (`verrouillerDefinitions`).
+      const lies = await client.query<{ tool_id: string }>(
+        'select tool_id from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
+        [tenantId, consommateurAgent(id)],
+      );
+      await verrouillerDefinitions(client, tenantId, lies.rows.map((r) => r.tool_id));
       const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
       const detaches = await client.query<{ tool_id: string }>(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 returning tool_id',

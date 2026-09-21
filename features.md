@@ -1790,12 +1790,15 @@ Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs
   trou « [décrivez la situation] » n'est pas complété, l'outil ne s'enregistre pas.
 - ✅ **Le nom technique se calcule depuis le titre**, et reste modifiable.
 - ✅ **Une ligne rouge quand la cible n'existe plus** : un champ supprimé du mini-CRM, un appel supprimé dans
-  Connecteurs API. Un tel outil refuse à chaque appel ; sans cette ligne, personne ne le saurait.
+  Connecteurs API. Un tel outil refuse à chaque appel (l'agent de Meta lit pourquoi, et rien n'est écrit sur la
+  fiche) ; sans cette ligne, personne ne le saurait. Un outil qui ne peut plus partir chez Meta (appel supprimé)
+  y est marqué « Pas chez Meta », jamais « ✓ ».
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
 - ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses
-  consentements s'éteignent et l'outil disparaît de chez Meta. La ligne le dit, et un administrateur le rallume
-  d'un clic.
+  consentements s'éteignent et l'agent de Meta ne peut plus s'en servir. La ligne le dit, et un administrateur le
+  rallume d'un clic. ⚠️ Meta le liste encore jusqu'au prochain envoi : la ligne propose alors « À envoyer », qui
+  l'en retire.
 - ⚠️ **L'appel d'un connecteur ne change pas au « Modifier »** : pour changer d'appel, on crée un autre outil
   (la définition est partagée avec les agents IA qui s'en servent).
 - ⛔ **Réservé aux administrateurs.**
@@ -1806,7 +1809,7 @@ Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs
 ### Publier chez Meta
 
 - ✅ **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, en service depuis le 2026-09-21, éprouvé le jour
-  même : une étiquette posée dans UChat depuis une conversation WhatsApp ; migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
+  même : une étiquette posée dans le CRM d'un client depuis une conversation WhatsApp ; migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
   l'agent de Meta, c'est Engage Me qu'il appelle : Engage Me reconnaît le client par son numéro WhatsApp
   (que WhatsApp lui-même transmet, l'agent ne peut pas l'inventer), remplit les valeurs du **carnet de
   contacts** (un champ comme `tag_ns` ou `user_ns`), puis fait l'appel exactement comme pour vos agents IA,

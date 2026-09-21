@@ -33,8 +33,8 @@ export function CibleTag({ tenantId, valeur, onChange }: {
       <datalist id="mba-tags">{tags.map((x) => <option key={x.tag} value={x.tag} />)}</datalist>
       <span className="mt-1 block text-[11px] text-ink-500" data-testid="mba-cible-tag-note">
         {t(
-          'Elle déclenche vos automations « tag ajouté ». Celles qui lancent un scénario attendent que l’agent de Meta rende la conversation : pour lancer un scénario, ajoutez plutôt un outil « Lancer un scénario ».',
-          'It triggers your “tag added” automations. Those that start a scenario wait until Meta’s agent hands the conversation back: to start a scenario, add a “Start a scenario” tool instead.',
+          'Elle déclenche vos automations « tag ajouté ». Celles qui lancent un scénario ne démarrent pas tant que l’agent de Meta tient la conversation.',
+          'It triggers your “tag added” automations. Those that start a scenario do not start while Meta’s agent holds the conversation.',
         )}
       </span>
     </label>

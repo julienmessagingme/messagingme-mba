@@ -4,7 +4,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import { FakeQueue } from '../src/queue/fake';
 import type { MbaOutilsDeps } from '../src/http/mba-outils';
-import { NomOutilDejaPris, type OutilComplet } from '../src/agent/catalog';
+import { NomOutilDejaPris, OutilNonActivable, type OutilComplet } from '../src/agent/catalog';
 import { risqueSelonMethode } from '../src/agent/http-cible';
 
 /**
@@ -225,6 +225,13 @@ describe('modifier, retirer, réactiver', () => {
     expect(res.statusCode).toBe(200);
     expect(gestes).toEqual([{ geste: 'reactiver', args: [TENANT, PN, OUTIL, 'u1'] }]);
     expect((await app.inject({ method: 'PUT', url: `${url}/${OUTIL}/actif`, ...h(), payload: { valeur: false } })).statusCode).toBe(400);
+  });
+
+  it('🔴 (porté) réactiver un outil qui ne peut pas s’activer rend 409 avec sa raison, jamais 500', async () => {
+    const { app } = monter({ reactiver: async () => { throw new OutilNonActivable('cet outil MCP n’est pas activable'); } });
+    const res = await app.inject({ method: 'PUT', url: `${url}/${OUTIL}/actif`, ...h(), payload: { valeur: true } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'cet outil MCP n’est pas activable' });
   });
 
   it('🔴 (porté) un identifiant qui n’est pas un UUID rend 404, sans toucher au magasin', async () => {

@@ -28,6 +28,10 @@ affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouto
 Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 `docs/superpowers/plans/2026-09-21-outils-maison-mba.md`.
 
+- 🟡 **Un nom d'outil déjà pris ne se signale qu'à l'enregistrement** (plan, écart 5) : la route rend 409 et le
+  formulaire reste ouvert, mais la spec § 9.4 le voulait à la saisie. Un contrôle exact demande de lire TOUS les
+  outils de l'espace sans agent (connecteurs des agents IA compris, `agent_tools_nom_espace_uidx`), pas la seule
+  liste de l'onglet : sinon il promettrait un nom libre qui ne l'est pas.
 - 🟡 **L'outil `envoyer_bloc` des AGENTS IA accepte n'importe quel bloc quand sa liste est vide**, alors que
   l'écran annonce « aucun » (`src/workflow/executor.ts`, `envoyerBlocDepuisAgent` ; la liste vit dans
   `agent_tools.params`). Relevé en cadrant les outils de l'agent de Meta (spec § 12).

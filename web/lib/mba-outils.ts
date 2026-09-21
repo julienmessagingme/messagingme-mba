@@ -5,25 +5,31 @@ import { normaliserCodeSortie } from './agent-sorties';
 /**
  * LES AIDES PURES DE L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9).
  */
-export type EtatChezMeta = 'chez_meta' | 'a_envoyer' | 'inconnu' | 'desactive';
+export type EtatChezMeta = 'chez_meta' | 'a_envoyer' | 'inconnu' | 'desactive' | 'desactive_a_retirer' | 'hors_meta';
 
 /**
  * L'état de chaque ligne, calculé par le PLAN de publication, jamais par un drapeau tenu à part (§ 9.2).
  *
  * 🔴 Un connecteur à renvoyer (clé révoquée, adresse changée) rend TOUTES les lignes « À envoyer » : tous les
  * outils en dépendent, et sans ça aucun bouton ne permettrait de le réparer.
- * 🔴 Un outil DÉSACTIVÉ n'est plus publié : le dire « Chez Meta » serait faux (plan, écart 4).
+ * 🔴 Un outil DÉSACTIVÉ n'est jamais « Chez Meta » (plan, écart 4). ⚠️ Mais il y reste LISTÉ jusqu'au prochain
+ * envoi, rien ne republiant au départ d'un collaborateur : tant que le plan porte son effacement, la ligne le dit
+ * (`desactive_a_retirer`) et propose l'envoi.
+ * 🔴 Un outil qui ne peut pas partir chez Meta (`publiable` faux : appel supprimé, outil illisible) n'y est jamais
+ * « ✓ » : « À envoyer » si Meta le liste encore (l'envoi l'en retire), « Pas chez Meta » sinon.
  */
 export function etatsChezMeta(
   outils: readonly OutilMbaVue[], gestes: readonly GestePublication[] | null,
 ): Map<string, EtatChezMeta> {
   const etats = new Map<string, EtatChezMeta>();
   const connecteur = gestes !== null && gestes.some((g) => g.type === 'connecteur_creer' || g.type === 'connecteur_modifier');
-  const noms = new Set((gestes ?? []).filter((g) => g.type === 'outil_creer' || g.type === 'outil_modifier').map((g) => g.nom));
+  const aEcrire = new Set((gestes ?? []).filter((g) => g.type === 'outil_creer' || g.type === 'outil_modifier').map((g) => g.nom));
+  const aRetirer = new Set((gestes ?? []).filter((g) => g.type === 'outil_supprimer').map((g) => g.nom));
   for (const o of outils) {
-    if (!o.actif) etats.set(o.id, 'desactive');
+    if (!o.actif) etats.set(o.id, aRetirer.has(o.name) ? 'desactive_a_retirer' : 'desactive');
     else if (gestes === null) etats.set(o.id, 'inconnu');
-    else etats.set(o.id, connecteur || noms.has(o.name) ? 'a_envoyer' : 'chez_meta');
+    else if (!o.publiable) etats.set(o.id, aRetirer.has(o.name) ? 'a_envoyer' : 'hors_meta');
+    else etats.set(o.id, connecteur || aEcrire.has(o.name) ? 'a_envoyer' : 'chez_meta');
   }
   return etats;
 }
