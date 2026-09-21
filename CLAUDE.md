@@ -1065,10 +1065,13 @@ qu'on ajoute un bouton : `tests/lib-adresse-privee.test.ts` le vérifie à chaqu
 
 🔴 **ET L'ADRESSE SE REVÉRIFIE À L'OUVERTURE DE LA CONNEXION** (2026-09-21, le « DNS rebinding » est fermé).
 La vérification ci-dessus et `fetch` faisaient DEUX résolutions : un DNS hostile pouvait répondre public à la
-première, interne à la seconde. Tout appel vers une adresse saisie par un client passe par `fetchPublic`
+première, interne à la seconde. Tout appel HTTP vers une adresse saisie par un client passe par `fetchPublic`
 (`src/lib/connexion-publique.ts`), dont le connecteur juge un littéral tout de suite et fait résoudre un nom
-par un `lookup` qui refuse l'intérieur : la socket s'ouvre sur ce qui a été vérifié. Le même test d'inventaire
-l'exige de chaque chemin, client MCP compris. ⚠️ **`fetch` ET `Agent` viennent du MÊME paquet `undici`** : la
+par un `lookup` qui refuse l'intérieur : la socket s'ouvre sur ce qui a été vérifié. Le SMTP d'une boîte
+d'envoi, seul appel sortant qui n'est pas du HTTP, résout l'hôte par `adressePubliqueDe` et fait connecter
+nodemailer à l'ADRESSE vérifiée, le nom partant à part pour TLS. Le même test d'inventaire exige ces
+branchements de chaque chemin, client MCP et SMTP compris. Chacun rend le MÊME message au refus à la
+connexion qu'à la vérification préalable (`estRefusAdresseInterne`) : c'est la même cause, vue plus tard. ⚠️ **`fetch` ET `Agent` viennent du MÊME paquet `undici`** : la
 production tourne en Node 22 (undici 6 embarqué), le poste en Node 24 ; donner un `Agent` d'une version au
 `fetch` intégré d'une autre est le piège. ⚠️ La vérification préalable RESTE : elle donne un refus lisible
 avant l'appel, là où un refus à la connexion ne remonte que comme une panne réseau.

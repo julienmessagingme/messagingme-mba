@@ -7,7 +7,7 @@
 
 ## 2026-09-21 : l'auto-attaque dérive ses modules du registre, et attaque chaque route selon sa classe
 
-**Le constat.** `scripts/auto-attaque.mts` (job `securite` de la CI) montait ses modules depuis une liste
+**Le constat.** `scripts/auto-attaque.mts` (qui tourne dans le job `unit` de la CI) montait ses modules depuis une liste
 écrite à la main, sous un commentaire qui affirmait « jamais écrit à la main ». Comparée au registre
 `modulesDeRoutes` : **huit modules jamais montés, 27 routes jamais attaquées** (218 inventoriées, 245
 depuis), dont toute l'entrée `v1` (`/v1/*`, `/mcp`, le relais du Meta Business Agent), la gestion des

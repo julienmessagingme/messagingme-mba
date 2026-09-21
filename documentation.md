@@ -895,6 +895,27 @@ d'urgence : un mauvais calibrage couperait la console de tous les clients, et un
 vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance,
 à lever avant le multi-replica.
 
+🔴 **Les portes publiques ont leurs propres plafonds, et un plafond ne compte que des clés qui EXISTENT.**
+- `/v1` (avec `/mcp` et le relais du Meta Business Agent) : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé
+  constante) freine les empreintes jamais résolues par ce process AVANT la requête en base ; une empreinte
+  résolue en est exemptée, sinon une attaque qui l'épuise couperait tous les clients. Puis le plafond par clé,
+  compté sur l'EMPREINTE d'une clé résolue : avant la base dès qu'elle est connue, après la lecture la première
+  fois. Une fausse clé n'entre donc jamais dans sa table.
+- `/w/:code` et `/rcs/callback/:code` : plafond par code (`WEBHOOK_IN_RATE_LIMIT_*`, `RCS_CALLBACK_PAR_MINUTE`)
+  pris APRÈS la lecture du code en base. Le second se calcule sur le débit RCS d'un run de campagne, et ne tient
+  que parce qu'un seul run tourne à la fois par espace (un test tient les deux moitiés).
+- La règle qui les unit : un limiteur consulté AVANT la base sur une clé choisie par l'appelant, avec une table
+  bornée, se remplit de clés inventées, et le vrai client, dont l'entrée expire à chaque fenêtre, revient comme
+  une clé neuve et se fait refuser. La protection devient un moyen de couper un client.
+- Un rappel RCS doit désigner l'agent de son code : sans `channelId`, 403. C'est la seule garde qui empêche un
+  corps forgé d'écrire dans le fil d'un contact, smsmode ne signant pas ses rappels.
+- Les en-têtes `x-ratelimit-*` ne décrivent que le plafond de l'appelant (sa clé, son compte, son espace). Un
+  budget partagé se consomme EN SILENCE (`consommerEnSilence`) : ses en-têtes diraient à n'importe qui où en
+  est le budget de tous. Tout limiteur à 0 est désactivé, et ne pose aucun en-tête.
+- UNE opération lourde de l'API publique à la fois (`API_MAX_LOURDES_SIMULTANEES`), pour tout le process : un
+  lot de contacts prend la moitié du pool. Un autre espace attend donc son tour en 429 ; c'est un choix (la
+  réception des messages passe avant l'équité entre intégrateurs).
+
 🔴 **Une URL saisie par un client se vérifie DEUX FOIS : sur son TEXTE, et sur ce vers quoi elle RÉSOUT.**
 `urlRecuperable` lit le texte de l'hôte (elle refuse `localhost`, les littéraux privés et leurs formes
 hexadécimale, entière, IPv6 et IPv4 mappée) ; `resolutionPublique` (`src/lib/adresse-privee.ts`) ferme ce
@@ -906,10 +927,13 @@ est tenu par `tests/lib-adresse-privee.test.ts`, plus par une page qui dérive.
 
 🔴 **L'adresse se revérifie à l'OUVERTURE de la connexion.** La vérification ci-dessus et l'appel faisaient
 deux résolutions distinctes : un DNS hostile pouvait répondre public à la première, interne à la seconde
-(« DNS rebinding »). Tout appel vers une adresse saisie par un client passe donc par `fetchPublic`
+(« DNS rebinding »). Tout appel HTTP vers une adresse saisie par un client passe donc par `fetchPublic`
 (`src/lib/connexion-publique.ts`) : un littéral y est jugé tout de suite, un nom est résolu par un `lookup`
-qui refuse l'intérieur, et la socket s'ouvre sur ce qui a été vérifié. Le même test d'inventaire exige ce
-branchement de chaque chemin, client MCP compris. ⚠️ `fetch` et `Agent` viennent du MÊME paquet `undici` : la
+qui refuse l'intérieur, et la socket s'ouvre sur ce qui a été vérifié. Le SMTP d'une boîte d'envoi, qui n'est
+pas du HTTP, résout son hôte par `adressePubliqueDe` (IPv4 d'abord) et nodemailer se connecte à l'ADRESSE
+vérifiée, le nom partant à part pour TLS. Le même test d'inventaire exige ces branchements de chaque chemin,
+client MCP et SMTP compris, et chacun dit au refus à la connexion ce que dit la vérification préalable.
+⚠️ `fetch` et `Agent` viennent du MÊME paquet `undici` : la
 production tourne en Node 22 (undici 6 embarqué), le poste en Node 24, et mélanger les deux versions est le
 piège. ⚠️ La vérification préalable reste : elle rend un refus lisible, là où un refus à la connexion ne
 remonte que comme une panne réseau. ⚠️ Le pare-feu de l'hôte ne protège pas ce chemin : le trafic reste dans

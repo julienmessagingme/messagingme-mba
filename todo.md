@@ -65,10 +65,11 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 - **Relayer les outils MCP** : même route, résolveur MCP à la place de `creerAppelConnecteur` (hors du
   chantier du 2026-09-21, arbitrage de Julien).
 
-## 🟡 API publique : trois manques relevés par le mémo d'architecture du 2026-09-19
+## 🟡 API publique : ce qui manque encore (mémo d'architecture du 2026-09-19, décision du 2026-09-21)
 
-Le reste du mémo est fusionné dans `docs/ARCHITECTURE-CIBLE.md` ; ces trois points n'y ont pas leur place
-(ils ne dépendent pas de la bascule) et n'étaient consignés nulle part.
+Les trois premiers points viennent du mémo, dont le reste est fusionné dans `docs/ARCHITECTURE-CIBLE.md` : ils
+n'y ont pas leur place (ils ne dépendent pas de la bascule) et n'étaient consignés nulle part. Le quatrième
+vient d'une décision de Julien.
 
 - **Le quota par espace est OBSERVÉ, jamais appliqué** (`plafondUnitesParEspace = 0`,
   `src/api/usage-guard.memoire.ts`). Le plafond par clé ne le remplace pas : plusieurs clés multiplient la
@@ -83,6 +84,10 @@ Le reste du mémo est fusionné dans `docs/ARCHITECTURE-CIBLE.md` ; ces trois po
 - **Aucun moyen de lire QUEL commit tourne** en production. Un identifiant de build dans `/ops/overview`
   (pas dans une réponse publique). C'est aussi un test d'acceptation de la bascule (`ARCHITECTURE-CIBLE.md`
   § 11).
+- **L'opération lourde est UNE pour tout le process, tous clients confondus** (`API_MAX_LOURDES_SIMULTANEES`,
+  gardée ainsi par décision de Julien du 2026-09-21). Pendant le lot d'un espace, l'opération lourde d'un AUTRE
+  reçoit un 429. Sans conséquence avec un seul intégrateur ; le jour où deux se croisent, il faudra une file
+  d'attente courte ou un partage équitable, sans jamais relever le plafond au-delà de la moitié du pool.
 
 ## 🟡 `inbox-envoi-scenario.spec.ts` est INSTABLE, mesuré le 2026-09-19
 

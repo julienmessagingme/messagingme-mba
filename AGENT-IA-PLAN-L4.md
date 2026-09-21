@@ -144,7 +144,9 @@ dessus, exactement comme aujourd'hui. **À valider par Julien, c'est un choix de
 
 ### Deux points d'exploitation, hors du lot mais à décider
 
-- **Le rebinding DNS reste ouvert, et ce n'est pas une ligne.** Mesuré sur ce poste : `setGlobalDispatcher`
+- **Le rebinding DNS reste ouvert, et ce n'est pas une ligne.** *(Fermé le 2026-09-21, par un `fetch` et un
+  `Agent` pris dans le MÊME paquet `undici` et un connecteur qui juge aussi les littéraux :
+  `src/lib/connexion-publique.ts`. Le constat ci-dessous reste juste, c'est lui qui a dicté la forme.)* Mesuré sur ce poste : `setGlobalDispatcher`
   depuis le paquet npm ne s'applique PAS au `fetch` global de Node, et la requête **passe** sans erreur. Un
   correctif écrit comme ça serait un fail-open silencieux qu'une suite de tests verte ne verrait pas. Et
   `connect.lookup` n'est jamais appelé quand l'hôte est un littéral IP. La voie sans dépendance est
