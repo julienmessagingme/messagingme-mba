@@ -23,6 +23,19 @@ const MESSAGES_RCS = [
     },
     createdAt: '', updatedAt: '',
   },
+  // Un CARROUSEL : la bibliothèque sait en composer depuis le 2026-09-21, et ce panneau doit le dessiner.
+  {
+    id: 'lib-2',
+    name: 'Sélection rentrée',
+    content: {
+      kind: 'carousel',
+      cards: [
+        { title: 'Séjour à Nice', mediaUrl: 'https://exemple.test/a.png', mediaHeight: 'TALL' },
+        { title: 'Séjour à Lyon', mediaUrl: 'https://exemple.test/b.png', mediaHeight: 'TALL' },
+      ],
+    },
+    createdAt: '', updatedAt: '',
+  },
 ];
 
 async function mock(
@@ -131,6 +144,18 @@ test.describe('Inbox : envoyer un RCS', () => {
     await page.getByTestId('inbox-rcs-select').selectOption('lib-1');
     await page.getByTestId('inbox-rcs-send').click();
     await expect(page.getByTestId('inbox-rcs-error')).toContainText('désabonné');
+  });
+
+  // Le panneau annonçait « format que l'aperçu ne sait pas dessiner (carrousel) ». Il le dessine désormais.
+  test('un carrousel de la bibliotheque se DESSINE avant de partir', async ({ page }) => {
+    const envois: string[] = [];
+    await mock(page, { windowOpen: false, envois });
+    await ouvrirPanneau(page);
+    await page.getByTestId('inbox-rcs-select').selectOption('lib-2');
+    await expect(page.getByTestId('rcs-carrousel-apercu-carte-1')).toContainText('Séjour à Lyon');
+    await page.getByTestId('inbox-rcs-send').click();
+    await expect.poll(() => envois.length, { timeout: 10_000 }).toBe(1);
+    expect(envois[0]).toBe('lib-2');
   });
 
   // Canal éteint : aucun bouton. Proposer un envoi qui finira en 422 n'aide personne.

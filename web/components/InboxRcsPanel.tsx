@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { listRcsMessages, sendRcsToConversation, type RcsMessage } from '@/lib/api';
 import { versBrouillonRcs } from '@/lib/rcs';
+import { versBrouillonCarrousel } from '@/lib/rcs-carrousel';
 import { RcsPreview } from '@/components/RcsPreview';
+import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { RCS_TEXTE_MAX } from '@/lib/rcs-limits';
@@ -50,6 +52,9 @@ export function InboxRcsPanel({
 
   const sel = messages.find((m) => m.id === selId);
   const brouillon = sel ? versBrouillonRcs(sel.content) : null;
+  // Un carrousel se DESSINE aussi depuis le 2026-09-21 : la bibliothèque sait en composer, et l'opérateur doit
+  // voir les cartes qui partiront plutôt qu'un avertissement.
+  const carrousel = sel ? versBrouillonCarrousel(sel.content) : null;
 
   const libre = mode === 'libre';
   const pretAEnvoyer = libre ? texte.trim() !== '' && texte.trim().length <= RCS_TEXTE_MAX : selId !== '';
@@ -129,16 +134,16 @@ export function InboxRcsPanel({
 
         {sel && !libre && (
           <div className="mt-3">
-            {brouillon ? (
+            {brouillon || carrousel ? (
               <>
-                <RcsPreview brouillon={brouillon} />
+                {brouillon ? <RcsPreview brouillon={brouillon} /> : carrousel && <RcsCarouselPreview brouillon={carrousel} />}
                 <p className="mt-1 text-[11px] text-ink-400">
                   {t('Les variables {{champ}} seront remplacées par la fiche de ce contact à l’envoi.', 'The {{field}} variables will be filled in from this contact at send time.')}
                 </p>
               </>
             ) : (
               <p className="text-xs text-amber-700">
-                {t('Ce message a un format que l’aperçu ne sait pas dessiner (carrousel). Il partira tel qu’il a été enregistré.', 'This message has a format the preview cannot draw (carousel). It will go out as saved.')}
+                {t('Ce message a un format que l’aperçu ne sait pas dessiner (carte à titre). Il partira tel qu’il a été enregistré.', 'This message has a format the preview cannot draw (titled card). It will go out as saved.')}
               </p>
             )}
           </div>

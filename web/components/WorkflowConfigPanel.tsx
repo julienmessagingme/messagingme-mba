@@ -320,6 +320,12 @@ export function ConfigPanel({
               >
                 <option value="">{rcsMessages.length === 0 ? t('Aucun message enregistré', 'No saved message') : t('Choisir…', 'Choose…')}</option>
                 {rcsMessages.filter((m) => versBrouillonRcs(m.content) !== null).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {/* 🔴 GRISÉS AVEC LEUR RAISON, JAMAIS CACHÉS : le produit ne fait pas disparaître une option
+                    indisponible. Un carrousel dans un parcours pose la question de ses SORTIES (une par bouton
+                    de chaque carte) : c'est le lot 3 de la spec du 2026-09-21, pas encore construit. */}
+                {rcsMessages.filter((m) => m.content?.kind === 'carousel').map((m) => (
+                  <option key={m.id} value={m.id} disabled>{m.name} {t('(carrousel : pas encore dans un scénario)', '(carousel: not yet in a scenario)')}</option>
+                ))}
               </select>
               <p className="mt-1 text-[11px] text-ink-400">
                 {t('Le message est COPIÉ dans ce bloc : le modifier ici ne touche pas la bibliothèque, et modifier la bibliothèque ne touche pas ce bloc.', 'The message is COPIED into this block: editing it here does not touch the library, and editing the library does not touch this block.')}

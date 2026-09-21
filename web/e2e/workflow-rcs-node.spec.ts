@@ -13,7 +13,7 @@ const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', te
 
 type Graph = { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
 
-async function mockBuilder(page: import('@playwright/test').Page, initial: Graph, saved: Graph[]) {
+async function mockBuilder(page: import('@playwright/test').Page, initial: Graph, saved: Graph[], messagesRcs: unknown[] = []) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   const wf = { id: 'wf1', name: 'Scénario E2E', graph: initial, createdAt: '', updatedAt: '' };
   await page.route('**/api/backend/**', async (route) => {
@@ -32,7 +32,7 @@ async function mockBuilder(page: import('@playwright/test').Page, initial: Graph
     if (url.includes('/tags')) return json({ tags: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: true, hubspotListsEnabled: false, campaignsPaused: false });
-    if (url.includes('/rcs-messages')) return json({ messages: [] });
+    if (url.includes('/rcs-messages')) return json({ messages: messagesRcs });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
@@ -158,5 +158,24 @@ test.describe('Bloc RCS : message enregistré ou composé ici', () => {
     await page.getByTestId('rcs-node-source-libre').click();
     await expect(page.getByTestId('rcs-node-text')).toBeVisible();
     await expect(page.getByTestId('rcs-node-apercu')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 GRISÉ AVEC SA RAISON, PAS CACHÉ. La bibliothèque compose des carrousels depuis le 2026-09-21, et ce bloc
+   * ne sait pas encore en envoyer (ses sorties par bouton de carte sont le lot 3). Le cacher ferait chercher
+   * pourquoi un message enregistré n'apparaît pas.
+   */
+  test('🔴 un carrousel enregistré est proposé GRISÉ, avec sa raison, au lieu d être caché', async ({ page }) => {
+    await mockBuilder(page, BLOC_RCS, [], [{
+      id: 'car-1', name: 'Sélection rentrée', createdAt: '', updatedAt: '',
+      content: { kind: 'carousel', cards: [{ title: 'A', mediaUrl: 'https://exemple.test/a.png' }, { title: 'B', mediaUrl: 'https://exemple.test/b.png' }] },
+    }]);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+    await page.getByTestId('rcs-node-source-bibliotheque').click();
+    const option = page.getByTestId('rcs-node-library').locator('option', { hasText: 'Sélection rentrée' });
+    await expect(option).toHaveCount(1);
+    await expect(option).toBeDisabled();
+    await expect(option).toContainText('pas encore dans un scénario');
   });
 });
