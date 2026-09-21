@@ -11,7 +11,7 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { RcsPreview } from '@/components/RcsPreview';
 import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
 import { ListeManques } from '@/components/ListeManques';
-import { Field } from '@/components/TemplateForm';
+import { Field } from '@/components/Field';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 

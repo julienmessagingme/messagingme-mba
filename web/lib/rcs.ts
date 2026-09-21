@@ -9,9 +9,9 @@ import { boutonPret } from './rcs-boutons';
  * dès qu'il y a un visuel), et laisser chaque écran refaire cette bascule à sa façon, c'est se garantir trois
  * comportements différents pour la même saisie.
  *
- * Le CARROUSEL (plusieurs cartes défilantes) reste hors de cette forme : il n'a pas de composeur et n'en aura
- * un que si un besoin réel le demande. Un message de ce format est signalé comme non éditable, jamais
- * silencieusement écrasé.
+ * Le CARROUSEL (plusieurs cartes défilantes) reste hors de cette forme : il a SON composeur depuis le
+ * 2026-09-21 (`web/lib/rcs-carrousel.ts`), parce que trois champs ne savent pas porter plusieurs cartes. Ce
+ * composeur-ci le rend `null` (`versBrouillonRcs`) plutôt que de l'ouvrir à moitié et de l'écraser.
  */
 export interface BrouillonRcs {
   text: string;
@@ -80,9 +80,9 @@ export function versMessageRcs(b: BrouillonRcs): RcsOutbound {
 }
 
 /**
- * Message stocké -> brouillon. `null` = format que cet écran ne sait pas éditer (carrousel, ou carte à
- * titre : ce composeur n'expose pas de champ titre). Le signaler vaut mieux que l'ouvrir à moitié et
- * réenregistrer un message amputé.
+ * Message stocké -> brouillon. `null` = format que CE composeur ne sait pas éditer : un carrousel (il a le
+ * sien, `versBrouillonCarrousel`), ou une carte à titre (aucun composeur n'expose de champ titre sur une carte
+ * simple). Le signaler vaut mieux que l'ouvrir à moitié et réenregistrer un message amputé.
  */
 export function versBrouillonRcs(content: RcsOutbound | null): BrouillonRcs | null {
   if (!content) return null;

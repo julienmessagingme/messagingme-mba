@@ -141,6 +141,12 @@ export function InboxRcsPanel({
                   {t('Les variables {{champ}} seront remplacées par la fiche de ce contact à l’envoi.', 'The {{field}} variables will be filled in from this contact at send time.')}
                 </p>
               </>
+            ) : sel.content === null ? (
+              // ⚠️ LE SERVEUR REFUSE CET ENVOI (« son format n'est plus reconnu ») : annoncer qu'il partira serait
+              // une promesse fausse, et c'est ce que ce panneau disait jusqu'au 2026-09-21.
+              <p className="text-xs text-amber-700" data-testid="inbox-rcs-illisible">
+                {t('Ce message n’est plus lisible : son format n’est plus reconnu, il ne peut pas partir. Refaites-le dans Contenu > Messages RCS.', 'This message is no longer readable: its format is not recognised, it cannot be sent. Rebuild it in Content > RCS messages.')}
+              </p>
             ) : (
               <p className="text-xs text-amber-700">
                 {t('Ce message a un format que l’aperçu ne sait pas dessiner (carte à titre). Il partira tel qu’il a été enregistré.', 'This message has a format the preview cannot draw (titled card). It will go out as saved.')}

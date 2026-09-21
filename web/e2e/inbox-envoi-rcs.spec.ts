@@ -36,6 +36,8 @@ const MESSAGES_RCS = [
     },
     createdAt: '', updatedAt: '',
   },
+  // Un contenu que le schéma courant ne relit plus (`content: null`) : le serveur REFUSE de l'envoyer.
+  { id: 'lib-3', name: 'Ancien format', content: null, createdAt: '', updatedAt: '' },
 ];
 
 async function mock(
@@ -156,6 +158,15 @@ test.describe('Inbox : envoyer un RCS', () => {
     await page.getByTestId('inbox-rcs-send').click();
     await expect.poll(() => envois.length, { timeout: 10_000 }).toBe(1);
     expect(envois[0]).toBe('lib-2');
+  });
+
+  // 🔴 Le panneau promettait « il partira tel qu'il a été enregistré » à un message que le serveur refuse.
+  test('un message illisible est dit illisible, pas promis au depart', async ({ page }) => {
+    const envois: string[] = [];
+    await mock(page, { windowOpen: false, envois });
+    await ouvrirPanneau(page);
+    await page.getByTestId('inbox-rcs-select').selectOption('lib-3');
+    await expect(page.getByTestId('inbox-rcs-illisible')).toContainText('ne peut pas partir');
   });
 
   // Canal éteint : aucun bouton. Proposer un envoi qui finira en 422 n'aide personne.

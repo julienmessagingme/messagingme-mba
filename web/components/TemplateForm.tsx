@@ -13,6 +13,7 @@ import { useT } from '@/lib/i18n';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
 import { inputCls } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
+import { Field } from '@/components/Field';
 
 /**
  * Formulaire de creation (et d'edition) d'un template Meta.
@@ -489,15 +490,6 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-3">
-      <label className="mb-1 block text-sm font-medium text-ink-700">{label}</label>
-      {children}
     </div>
   );
 }

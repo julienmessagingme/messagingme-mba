@@ -131,10 +131,13 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
                   className={`${inputClsAuto} w-full`}
                   placeholder={t('Titre de la carte (facultatif)', 'Card title (optional)')}
                 />
+                {/* Le libellé porte le compteur sur SA ligne : sans lui, « 16 / 2000 » flotte sous le titre et
+                    se lit comme le compteur du titre. */}
                 <ChampCorpsVariables
                   valeur={c.text}
                   onChange={(text) => majCarte(c.cle, { text })}
                   fields={fields}
+                  label={t('Texte', 'Text')}
                   placeholder={t('Texte de la carte', 'Card text')}
                   testId={`rcs-carte-${i}-texte`}
                   max={MAX_TEXTE_CARTE}
