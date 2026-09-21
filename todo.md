@@ -1,5 +1,24 @@
 # todo.md : backlog
 
+## 🟡 API publique : trois manques relevés par le mémo d'architecture du 2026-09-19
+
+Le reste du mémo est fusionné dans `docs/ARCHITECTURE-CIBLE.md` ; ces trois points n'y ont pas leur place
+(ils ne dépendent pas de la bascule) et n'étaient consignés nulle part.
+
+- **Le quota par espace est OBSERVÉ, jamais appliqué** (`plafondUnitesParEspace = 0`,
+  `src/api/usage-guard.memoire.ts`). Le plafond par clé ne le remplace pas : plusieurs clés multiplient la
+  capacité, et une requête peut porter 500 contacts ou 50 destinataires. ⚠️ **Les valeurs sont une décision
+  de Julien** (`ARCHITECTURE-CIBLE.md` § 13.1) : observer l'usage réel, fixer des budgets par nature
+  (destinataires, contacts écrits), puis activer un plafond généreux, refusé en `429` lisible, AVANT de
+  distribuer largement des clés.
+- **L'usage de `/v1` ne vit que deux heures, en mémoire** (`/ops/usage`), et rien n'alerte sur une série de
+  `429`, l'épuisement du préfiltre ou la saturation des opérations lourdes. À faire : des agrégats par
+  minute gardés plusieurs jours, et une alerte throttlée. ⚠️ **Jamais une ligne SQL par requête hostile**, et
+  jamais la clé ni son empreinte dans un journal.
+- **Aucun moyen de lire QUEL commit tourne** en production. Un identifiant de build dans `/ops/overview`
+  (pas dans une réponse publique). C'est aussi un test d'acceptation de la bascule (`ARCHITECTURE-CIBLE.md`
+  § 11).
+
 ## 🟡 `inbox-envoi-scenario.spec.ts` est INSTABLE, mesuré le 2026-09-19
 
 Les cas `:112` (« fenêtre FERMÉE -> seuls ceux qui ouvrent par un template ») et `:169` (« un refus du serveur

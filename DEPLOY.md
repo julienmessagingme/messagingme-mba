@@ -6,7 +6,8 @@ le front proxifie `/api/backend/*` -> `mba-api:8095` (interne, pas de CORS, back
 
 🔴 **`$VPS` N'EST PAS UNE VARIABLE D'ENVIRONNEMENT, C'EST UNE CAVITÉ VOLONTAIRE.** L'adresse IP du VPS ne
 figure plus dans ce dépôt : elle vit dans le `CLAUDE.md` global du poste, hors dépôt. Raison, et elle est
-concrète : tous les sous-domaines `messagingme.app` sont **proxifiés par Cloudflare**, ce qui masque l'adresse
+concrète : les noms qui mènent à ce serveur (`api.` et `mba.messagingme.app`) sont **proxifiés par
+Cloudflare** (la console `engageme.` ne l'est pas, elle est servie en direct par Vercel), ce qui masque l'adresse
 d'ORIGINE. La publier annulerait ce masquage, et permettrait de frapper le serveur en direct, donc de
 contourner d'un coup le WAF, la protection anti-déni de service et les règles de Cloudflare. Un dépôt privé
 peut redevenir public (c'est arrivé le 2026-09-15) ; une adresse d'origine publiée, elle, ne se reprend pas.

@@ -72,9 +72,9 @@ sait, et personne ne doit l'affirmer sans avoir posé la question.
 
 ```
         navigateur, Meta, contacts, opérateur télécom
-                             |
-                        Cloudflare (tous les sous-domaines sont Proxied)
-        /                    |                        \
+        |                                    |
+        | (en direct, SANS Cloudflare)   Cloudflare (Proxied : api. et mba.)
+        |                            /                        \
 engageme.messagingme.app  api.messagingme.app   mba.messagingme.app
    la console                 l'API                l'ANCIENNE console
      VERCEL             un NOM, pas une machine    + toutes les adresses
@@ -868,7 +868,8 @@ pas de SVG, qui est du XML exécutable. La réponse porte `nosniff` et le type r
 ### 🔴 Aucun message destiné à l'utilisateur dans un 5xx
 
 Mesuré : par l'URL publique, un `502 {"error":"..."}` revient en `text/html` de 6 429 octets, la page de
-Cloudflare, notre corps disparu. **Tous les sous-domaines `messagingme.app` sont Proxied.** Un refus lisible
+Cloudflare, notre corps disparu. **Les deux noms qui servent l'API (`api.` et `mba.`) sont Proxied** ; la
+console `engageme.`, servie en direct par Vercel, ne l'est pas, et ne porte aucune réponse de l'API. Un refus lisible
 sort donc en **422** (409 pour une ambiguïté, 400 pour une saisie invalide), et il est **journalisé côté
 serveur** en plus : le corps peut être détruit en route, le log reste.
 

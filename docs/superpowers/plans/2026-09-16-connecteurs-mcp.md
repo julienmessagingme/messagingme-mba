@@ -1128,7 +1128,7 @@ git commit --only web/app/connecteurs-mcp/page.tsx web/components/McpServeurs.ts
 - [ ] **Step 4 : déployer**, dans cet ordre, la migration AJOUTANT des colonnes que le code écrit :
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS   # l'adresse ne s'écrit pas ici : cf. DEPLOY.md, « $VPS »
 cd /home/ubuntu/mba && git pull
 sudo docker compose build mba-api
 sudo docker compose run --rm --no-deps mba-api npm run migrate
