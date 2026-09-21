@@ -50,7 +50,10 @@ export interface OutilAPublier {
   description: string;
   /** La clause « quand NE PAS l'appeler », concaténée à la description envoyée à Meta. */
   nePasUtiliser: string;
-  /** Les variables de la requête : seules celles d'origine `modele` partent chez Meta. */
+  /**
+   * Les variables de l'appel : celles de la requête d'un connecteur, ou celle que la cible d'un geste maison
+   * laisse à l'agent (`variablesPourMeta`). Seules celles d'origine `modele` partent chez Meta.
+   */
   variables: VariableDeclaree[];
 }
 

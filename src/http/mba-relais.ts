@@ -22,7 +22,11 @@ import {
  *
  * 🔴 L'APPEL PASSE PAR `creerAppelConnecteur`, exactement comme pour un agent IA : mêmes gardes (adresse de
  * base, résolution publique, variables requises), mêmes variables du mini-CRM, et le journal sous l'appelant
- * `mba`. Ce module ne fait que traduire la demande de Meta en appel de connecteur.
+ * `mba`. Pour un outil de connecteur, ce module ne fait que traduire la demande de Meta en appel.
+ *
+ * 🔴 UN OUTIL MAISON DE L'AGENT DE META N'APPELLE PERSONNE (spec 2026-09-21-outils-maison-mba) : le geste
+ * (poser un tag, écrire un champ) s'exécute ici, par les fonctions qui le font déjà ailleurs
+ * (`src/mba/executer-maison.ts`), et se journalise dans la même table sous le même appelant.
  *
  * ⚠️ UN ÉCHEC MÉTIER SORT EN 200 `{ succes: false, erreur }` : le modèle de Meta doit pouvoir dire au client
  * ce qui ne va pas. Un 4xx ou un 5xx risquerait d'être lu comme une panne de transport (non documenté chez

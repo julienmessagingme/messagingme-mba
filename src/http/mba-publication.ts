@@ -30,7 +30,7 @@ export interface MbaPublicationDeps {
   numeroDuTenant(tenantId: string): Promise<string | null>;
   /** Le relais tel qu'il se présente à Meta. `null` = `PUBLIC_API_URL` vide : Meta ne saurait pas où appeler. */
   relais(tenantId: string): Promise<RelaisAPublier | null>;
-  /** Les outils EXPOSÉS au MBA, avec les variables de leur requête. */
+  /** Les outils EXPOSÉS au MBA, avec ce que Meta doit fournir (`src/mba/outils-a-publier.ts`). */
   outilsExposes(tenantId: string, phoneNumberId: string): Promise<OutilAPublier[]>;
   /** L'état actuel chez Meta. */
   etatMeta(tenantId: string, phoneNumberId: string): Promise<EtatMeta>;
