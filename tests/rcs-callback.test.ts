@@ -6,6 +6,10 @@ import {
 } from '../src/rcs/callback';
 import type { RcsDlr, RcsMo } from '../src/rcs/callback';
 import { adressesPubliques } from '../src/lib/adresses-publiques';
+import Fastify from 'fastify';
+import { registerRcsCallback } from '../src/http/rcs-callback';
+import { RateLimiter } from '../src/auth/rate-limit';
+import { config } from '../src/config';
 
 const CODE = 'rcs-0123456789abcdef0123456789abcdef';
 
@@ -307,6 +311,36 @@ describe('Route publique des rappels RCS', () => {
     expect(dlrs).toHaveLength(0);
   });
 
+  /**
+   * 🔴 LE CORPS FORGÉ : il suffisait d'OMETTRE l'objet `channel` pour que la garde ci-dessus ne se déclenche
+   * pas, et le corps était traité (une bulle dans le fil, un opt-out RCS, un parcours qui avance). Relevé par
+   * l'audit d'étanchéité du 2026-08-25. Le champ est désormais EXIGÉ ; la décision a été prise sur les vrais
+   * rappels (les 11 reçus le 2026-09-21, dont 3 messages entrants, le portaient tous), pas sur une intuition.
+   */
+  it('🔴 REFUSE un rapport de livraison SANS channelId, et ne l’écrit nulle part', async () => {
+    const { app, dlrs, mos } = appWith();
+    const { channel: _retire, ...sansCanal } = DLR_DELIVERED as Record<string, unknown>;
+    const r = await app.inject(post(`/rcs/callback/${CODE}`, sansCanal));
+    expect(r.statusCode).toBe(403);
+    expect(dlrs).toHaveLength(0);
+    expect(mos).toHaveLength(0);
+  });
+
+  it('🔴 REFUSE une réponse entrante SANS channelId, le cas qui écrivait dans le fil', async () => {
+    const { app, mos } = appWith();
+    const { channel: _retire, ...sansCanal } = MO_SUGGESTION as Record<string, unknown>;
+    const r = await app.inject(post(`/rcs/callback/${CODE}`, sansCanal));
+    expect(r.statusCode).toBe(403);
+    expect(mos).toHaveLength(0);
+  });
+
+  it('REFUSE aussi un objet `channel` présent mais vide', async () => {
+    const { app, mos } = appWith();
+    const r = await app.inject(post(`/rcs/callback/${CODE}`, { ...MO_SUGGESTION, channel: {} }));
+    expect(r.statusCode).toBe(403);
+    expect(mos).toHaveLength(0);
+  });
+
   it('ACQUITTE un corps illisible au lieu de le faire rejouer six fois', async () => {
     const { app, dlrs, mos } = appWith();
     const r = await app.inject(post(`/rcs/callback/${CODE}`, { direction: 'MT', pas: 'un rappel' }));
@@ -328,5 +362,50 @@ describe('Route publique des rappels RCS', () => {
     });
     const r = await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED));
     expect(r.statusCode).toBe(500);
+  });
+});
+
+/**
+ * 🔴 LE PLAFOND DE REQUÊTES PAR CODE. Cette route est la seule écriture non signée du produit : son code d'URL
+ * est sa seule authentification, et une adresse qui fuite (journal, capture, ticket) ne doit pas devenir un
+ * robinet ouvert. Le plafond se prend AVANT la base, sur le code, et un refus est un 429, que smsmode REJOUE
+ * (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) : un vrai accusé retardé n'est pas perdu.
+ */
+describe('Rappels RCS : le plafond par code', () => {
+  function monterAvec(max: number) {
+    let lectures = 0;
+    const dlrs: RcsDlr[] = [];
+    const app = Fastify();
+    registerRcsCallback(app, {
+      parCode: async (code) => { lectures += 1; return code === CODE ? { tenantId: 't1', agentId: 'ch-1' } : null; },
+      onDlr: async (_t, dlr) => { dlrs.push(dlr); },
+      onMo: async () => {},
+    }, new RateLimiter(max, 60_000, () => 1_000, 5_000));
+    return { app, dlrs, lectures: () => lectures };
+  }
+
+  it('🔴 au-delà du plafond : 429, et la base n’est plus interrogée', async () => {
+    const { app, dlrs, lectures } = monterAvec(2);
+    const codes: number[] = [];
+    for (let i = 0; i < 5; i += 1) codes.push((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode);
+    expect(codes).toEqual([200, 200, 429, 429, 429]);
+    expect(lectures(), 'un refus au plafond ne doit coûter aucune requête').toBe(2);
+    expect(dlrs).toHaveLength(2);
+  });
+
+  it('le plafond est PAR CODE : un code qui déborde ne coupe pas les autres', async () => {
+    const { app } = monterAvec(1);
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(200);
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(429);
+    const autre = 'rcs-ffffffffffffffffffffffffffffffff';
+    expect((await app.inject(post(`/rcs/callback/${autre}`, DLR_DELIVERED))).statusCode).toBe(404);
+  });
+
+  it('🔴 le plafond de production laisse passer TROIS accusés par message au débit RCS maximal', () => {
+    // Deux constantes de deux endroits, et c'est leur ÉCART qui porte l'invariant : un plafond de rappels
+    // sous le débit réel des accusés ferait rejouer par smsmode tout le trafic d'une campagne.
+    expect(config.RCS_CALLBACK_PAR_MINUTE).toBeGreaterThanOrEqual(3 * config.RCS_RATE_PER_MINUTE_MAX);
+    // Et au débit le plus haut que la configuration accepte (600), pas seulement à celui d'aujourd'hui.
+    expect(config.RCS_CALLBACK_PAR_MINUTE).toBeGreaterThanOrEqual(3 * 600);
   });
 });

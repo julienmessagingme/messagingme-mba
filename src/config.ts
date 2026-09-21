@@ -301,6 +301,17 @@ export const schema = z.object({
    */
   RCS_RATE_PER_MINUTE_MAX: z.coerce.number().int().min(0).max(600).default(60),
   /**
+   * Plafond de RAPPELS smsmode par minute et PAR CODE d'URL (`/rcs/callback/:code`). `0` le désactive.
+   *
+   * 🔴 IL SE CALCULE SUR LE DÉBIT D'ENVOI, ET L'ÉCART EST TENU PAR UN TEST. Un message RCS produit jusqu'à
+   * trois accusés, plus les réponses du contact : au débit maximal que la configuration accepte
+   * (`RCS_RATE_PER_MINUTE_MAX` borné à 600), c'est 1 800 rappels par minute. 3 000 laisse la marge d'une
+   * rafale, par exemple smsmode qui rejoue d'un coup ce qu'il n'avait pas pu livrer. En dessous du débit réel,
+   * smsmode rejouerait tout le trafic d'une campagne ; un refus est un 429, que smsmode REJOUE, donc un accusé
+   * retardé, pas perdu.
+   */
+  RCS_CALLBACK_PAR_MINUTE: z.coerce.number().int().min(0).default(3000),
+  /**
    * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
    *
    * Le but n'est pas d'aller plus vite, c'est de rendre la file ÉQUITABLE : sans découpage, un job traitait
