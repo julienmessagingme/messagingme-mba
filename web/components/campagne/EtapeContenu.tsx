@@ -9,6 +9,9 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
+import { versBrouillonCarrousel } from '@/lib/rcs-carrousel';
+import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
+import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
 import { assignationProposable, devenirParDefaut, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { scenariosPourEtage } from '@/lib/campagne-scenario';
@@ -735,6 +738,8 @@ function CadreRcs({
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
   const image = contenu.imageRcs ?? '';
+  // Le carrousel posé sur l'étage, relu en brouillon pour l'aperçu. `null` = l'étage porte un message simple.
+  const carrousel = contenu.carrouselRcs ? versBrouillonCarrousel(contenu.carrouselRcs) : null;
   return (
     <div className="w-full space-y-3">
       <Formule
@@ -747,25 +752,57 @@ function CadreRcs({
       {/*
         ⚠️ PARTIR D'UN MESSAGE ENREGISTRÉ fait une COPIE, jamais un lien. La campagne garde le message tel
         qu'il était au moment où on l'a repris : modifier la bibliothèque ensuite ne doit pas réécrire une
-        campagne déjà partie. `versBrouillonRcs` rend `null` sur un format que ce composeur ne sait pas
-        éditer (carrousel, carte à titre), et ces messages-là ne sont donc PAS proposés : les ouvrir à
-        moitié réenregistrerait un message amputé.
+        campagne déjà partie. Un message simple se recopie dans les trois champs de ce cadre ; un CARROUSEL
+        se pose EN ENTIER (`carrouselRcs`, depuis le 2026-09-21), parce que trois champs ne savent pas porter
+        plusieurs cartes. La carte à titre, que ce composeur ne sait pas éditer, n'est toujours pas proposée :
+        l'ouvrir à moitié réenregistrerait un message amputé.
       */}
       <Selecteur
         libelle="Partir d’un message enregistré"
         testId={`rcs-bibliotheque-${rang}`}
         valeur=""
         onChange={(id) => {
-          const b = versBrouillonRcs(references.messagesRcs.find((m) => m.id === id)?.content ?? null);
+          const c = references.messagesRcs.find((m) => m.id === id)?.content ?? null;
+          if (c?.kind === 'carousel') {
+            onChange({ carrouselRcs: c });
+            return;
+          }
+          const b = versBrouillonRcs(c);
           // ⚠️ UN SEUL PATCH POUR LES TROIS CHAMPS : trois appels de suite partiraient du même état de
           // rendu et les deux derniers effaceraient le premier. Même règle que le choix d'un modèle.
-          if (b) onChange({ texteRcs: b.text, imageRcs: b.imageUrl, suggestions: b.suggestions });
+          // 🔴 Et choisir un message simple RETIRE le carrousel, sans quoi il continuerait de partir à la
+          // place de ce qu'on vient de choisir.
+          if (b) onChange({ texteRcs: b.text, imageRcs: b.imageUrl, suggestions: b.suggestions, carrouselRcs: undefined });
         }}
         options={references.messagesRcs
-          .filter((m) => versBrouillonRcs(m.content) !== null)
-          .map((m) => ({ valeur: m.id, libelle: m.name }))}
+          .filter((m) => versBrouillonRcs(m.content) !== null || m.content?.kind === 'carousel')
+          .map((m) => ({ valeur: m.id, libelle: m.content?.kind === 'carousel' ? `${m.name} (carrousel)` : m.name }))}
         vide="Aucun message RCS enregistré sur cet espace."
       />
+      {carrousel ? (
+        /*
+          🔴 UN CARROUSEL SE MONTRE, IL NE S'ÉDITE PAS ICI : c'est une copie figée, et les champs du message
+          simple, masqués, restent en mémoire pour « Revenir à un message simple ». Ils ne partent pas tant que
+          le carrousel est posé (`messageRcs`, `campagne-creation.ts`).
+        */
+        <div className="space-y-2" data-testid={`rcs-carrousel-etage-${rang}`}>
+          <RcsPhoneFrame>
+            <RcsCarouselPreview brouillon={carrousel} sansFond />
+          </RcsPhoneFrame>
+          <p className="text-[11px] text-ink-500">
+            {'Copié depuis la bibliothèque : pour le modifier, modifiez-le dans Contenu > Messages RCS, puis choisissez-le à nouveau ici.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => onChange({ carrouselRcs: undefined })}
+            data-testid={`rcs-carrousel-retirer-${rang}`}
+            className="text-xs text-brand-600 hover:underline"
+          >
+            Revenir à un message simple
+          </button>
+        </div>
+      ) : (
+      <>
       {/*
         🔴 LE VISUEL CHANGE LE FORMAT DU MESSAGE, PAS SEULEMENT SON APPARENCE. Dès qu'il y en a un,
         `versMessageRcs` bascule en CARTE : l'image passe au-dessus du texte, les boutons deviennent des
@@ -817,6 +854,8 @@ function CadreRcs({
           />
         </div>
       </div>
+      </>
+      )}
       <p className="text-[11px] text-amber-700">
         Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport.
       </p>

@@ -25,9 +25,17 @@ const MESSAGES_RCS = [
     id: 'm1', name: 'Offre du jour', createdAt: '', updatedAt: '',
     content: { kind: 'card', card: { description: 'Bonjour, votre offre', mediaUrl: 'https://exemple.test/v.jpg', mediaHeight: 'TALL', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'p1' }] } },
   },
-  // ⚠️ UN CARROUSEL : ce composeur ne sait pas l'éditer, il ne doit donc PAS être proposé. L'ouvrir à
-  // moitié réenregistrerait un message amputé.
-  { id: 'm2', name: 'Carrousel promo', createdAt: '', updatedAt: '', content: { kind: 'carousel', cards: [] } },
+  // UN CARROUSEL : proposé depuis le 2026-09-21, et posé EN ENTIER sur l'étage (copie figée).
+  {
+    id: 'm2', name: 'Carrousel promo', createdAt: '', updatedAt: '',
+    content: {
+      kind: 'carousel',
+      cards: [
+        { title: 'Nice', mediaUrl: 'https://exemple.test/a.jpg', mediaHeight: 'TALL' },
+        { title: 'Lyon', mediaUrl: 'https://exemple.test/b.jpg', mediaHeight: 'TALL' },
+      ],
+    },
+  },
 ];
 
 /** Une campagne nommée, sur un canal RCS SEUL, ouverte sur le cadre de son étage. */
@@ -90,15 +98,46 @@ test.describe('Assistant : le canal RCS', () => {
   });
 
   /**
-   * ⚠️ UN FORMAT QUE CE COMPOSEUR NE SAIT PAS ÉDITER N'EST PAS PROPOSÉ. Le signaler vaut mieux que
-   * l'ouvrir à moitié et réenregistrer un message amputé de ses cartes.
+   * 🔴 UN CARROUSEL ENREGISTRÉ EST PROPOSÉ DEPUIS LE 2026-09-21, ET C'EST LUI QUI PART. Il se pose en ENTIER,
+   * en copie figée : l'assistant ne l'édite pas, il le montre. Le texte masqué derrière lui ne part pas.
+   *
+   * ⚠️ CE CAS REMPLACE « un carrousel enregistré n'est PAS proposé » : la règle a changé, et le cas qu'il
+   * exerçait (CE QUI EST PROPOSÉ dans la bibliothèque) est conservé, un message simple et un carrousel.
    */
-  test('un carrousel enregistré n’est PAS proposé dans la bibliothèque', async ({ page }) => {
-    await poserFaux(page, { rcsMessages: MESSAGES_RCS });
+  test('🔴 un carrousel enregistré est proposé, se dessine, et c est LUI qui part', async ({ page }) => {
+    const f = await poserFaux(page, { rcsMessages: MESSAGES_RCS });
     await surLEtageRcs(page);
     const select = page.getByTestId('rcs-bibliotheque-1');
     await expect(select.locator('option', { hasText: 'Offre du jour' })).toHaveCount(1);
-    await expect(select.locator('option', { hasText: 'Carrousel promo' })).toHaveCount(0);
+    await expect(select.locator('option', { hasText: 'Carrousel promo (carrousel)' })).toHaveCount(1);
+    await page.getByTestId('rcs-texte').fill('texte masqué');
+    await select.selectOption('m2');
+    await expect(page.getByTestId('rcs-carrousel-apercu-carte-1')).toContainText('Lyon');
+    await expect(page.getByTestId('rcs-texte')).toHaveCount(0);
+    await lancer(page);
+    await expect.poll(() => f.creations.length, { timeout: 15_000 }).toBe(1);
+    expect(f.creations[0]!.rcsMessage).toEqual(MESSAGES_RCS[1]!.content);
+  });
+
+  test('« Revenir à un message simple » rend le texte saisi, et c est lui qui part', async ({ page }) => {
+    const f = await poserFaux(page, { rcsMessages: MESSAGES_RCS });
+    await surLEtageRcs(page);
+    await page.getByTestId('rcs-texte').fill('Bonjour');
+    await page.getByTestId('rcs-bibliotheque-1').selectOption('m2');
+    await page.getByTestId('rcs-carrousel-retirer-1').click();
+    await expect(page.getByTestId('rcs-texte')).toHaveText('Bonjour');
+    await lancer(page);
+    await expect.poll(() => f.creations.length, { timeout: 15_000 }).toBe(1);
+    expect(f.creations[0]!.rcsMessage).toMatchObject({ kind: 'text', text: 'Bonjour' });
+  });
+
+  test('🔴 à 1280 px, l étage portant un carrousel ne déborde pas', async ({ page }) => {
+    await page.setViewportSize(TREIZE_POUCES);
+    await poserFaux(page, { rcsMessages: MESSAGES_RCS });
+    await surLEtageRcs(page);
+    await page.getByTestId('rcs-bibliotheque-1').selectOption('m2');
+    await expect(page.getByTestId('rcs-carrousel-apercu')).toBeVisible();
+    await pasDeDebordement(page);
   });
 
   /**

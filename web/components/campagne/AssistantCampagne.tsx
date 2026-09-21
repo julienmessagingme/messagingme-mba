@@ -23,6 +23,7 @@ import { audienceInitiale, type AudienceChoix } from '@/lib/audience';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import type { RestaurationSelection } from '@/components/campagne/ListeDestinataires';
 import type { VarRow } from '@/lib/variables-template';
+import type { CarrouselRcs } from '@/lib/rcs-carrousel';
 import type { CampaignCategory, PhoneNumber, RcsAgent, RcsMessage, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
 
 /**
@@ -197,6 +198,17 @@ export interface ContenuEtage {
    * de 3 072 à 2 000 caractères. C'est la forme qu'on reconnaît des grandes campagnes RCS.
    */
   imageRcs?: string;
+  /**
+   * LE CARROUSEL CHOISI DANS LA BIBLIOTHÈQUE, COPIÉ EN ENTIER SUR L'ÉTAGE (spec du 2026-09-21).
+   *
+   * 🔴 PRÉSENT, C'EST LUI QUI PART, ET RIEN D'AUTRE. `texteRcs`, `imageRcs` et `suggestions` restent en mémoire
+   * pour « Revenir à un message simple », mais ne partent pas : ce qu'on cache doit être exactement ce qu'on
+   * n'envoie pas (`messageRcs`, `campagne-creation.ts`).
+   *
+   * ⚠️ UNE COPIE, JAMAIS UN LIEN, comme un message simple : modifier la bibliothèque ensuite ne réécrit pas une
+   * campagne. Pour le changer, on le modifie dans Contenu > Messages RCS, puis on le choisit à nouveau.
+   */
+  carrouselRcs?: CarrouselRcs;
   suggestions: RcsSuggestion[];
   emailTemplateId?: string;
   /**
