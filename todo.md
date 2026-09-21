@@ -60,6 +60,11 @@ n'en est donc pas la cause. `securite-navigation.spec.ts` (« brancher un connec
 `agents-connaissance` apparaissent aussi, plus rarement. À instrumenter avant d'en chercher la cause ; ne pas
 affaiblir le test pour le faire taire.
 
+Mesuré le 2026-09-21 en local, sur un build de production et deux suites complètes à quatre workers : `:112`
+tombe une fois sur deux suites, et `performance-intentions.spec.ts:104` (« une intention BRICOLEE dans
+l'adresse ne pose aucun filtre ») aussi, une fois. Les deux passent **8 sur 8** relancés seuls
+(`--repeat-each 4`). Même signature que ci-dessus : une contention, pas une régression.
+
 ## 🟡 Une fiche d'aide ne dit rien du rôle MANAGER
 
 La fiche `repondre-dans-l-inbox` a été relue le 2026-09-19 (Traité, pièces jointes, « Je m'en occupe »), mais

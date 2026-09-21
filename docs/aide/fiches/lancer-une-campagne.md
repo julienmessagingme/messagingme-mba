@@ -34,6 +34,11 @@ campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès 
 remplis, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
 Meta, un agent IA, ou votre Inbox.
 
+Sur un étage RCS, « Partir d'un message enregistré » propose aussi vos carrousels (plusieurs cartes qui
+défilent, chacune avec son visuel et ses boutons). Le carrousel est copié tel quel sur l'étage et s'affiche en
+aperçu : pour le changer, modifiez-le dans Contenu > Messages RCS puis choisissez-le à nouveau.
+« Revenir à un message simple » rend le texte que vous aviez écrit.
+
 Un étage peut aussi partir en scénario plutôt qu'en simple message. Sur WhatsApp, c'est le scénario qui
 fournit le modèle d'ouverture ; sur RCS, votre message part d'abord et le scénario démarre juste après.
 Comme pour les modèles, si le scénario qu'il vous faut n'existe pas, vous le créez sans quitter la
