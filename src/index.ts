@@ -143,6 +143,7 @@ import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
+import { outilsAPublier } from './mba/outils-a-publier';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -250,23 +251,14 @@ async function main(): Promise<void> {
    */
   const adresseDuRelais = (): string | null => baseDuRelais(config.PUBLIC_API_URL);
   /**
-   * Les outils exposés à l'agent de Meta, avec les variables de leur requête.
-   *
-   * ⚠️ Un outil MAISON (`origin: 'mba'`) ou MCP n'a pas de requête de connecteur : il n'est pas relayé (le
-   * relais ne sait appeler que Tools > Connecteurs API, arbitrage du 2026-09-21). On le filtre ICI plutôt que
-   * de le laisser produire un geste qui échouerait et arrêterait toute la publication.
+   * Les outils exposés à l'agent de Meta, tels qu'ils partent chez Meta : appels de connecteur et gestes maison
+   * (spec 2026-09-21-outils-maison-mba). Le tri de ce qui part vit dans `src/mba/outils-a-publier.ts`, testé.
    */
-  const outilsPourMeta = async (tenant: string, pn: string): Promise<OutilAPublier[]> => {
-    const actifs = await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn));
-    const sortie: OutilAPublier[] = [];
-    for (const o of actifs) {
-      if (o.origin !== 'http' || !o.requestId) continue;
-      const req = await agentRequetes.parId(tenant, o.requestId);
-      if (!req) continue;
-      sortie.push({ id: o.id, name: o.name, description: o.description, nePasUtiliser: o.nePasUtiliser, variables: req.variables });
-    }
-    return sortie;
-  };
+  const outilsPourMeta = async (tenant: string, pn: string): Promise<OutilAPublier[]> =>
+    outilsAPublier(
+      await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn)),
+      (id) => agentRequetes.parId(tenant, id),
+    );
   /** La clé « Agent de Meta », par acteur : la fabrique et son audit vivent dans `src/mba/cle-relais.ts`. */
   const depsCleRelaisPour = depsCleRelaisDepuis({ cles: apiKeyStore, reglages: settingsStore, audit: auditSink });
   /**
