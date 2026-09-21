@@ -199,4 +199,19 @@ describe('le relais du Meta Business Agent', () => {
     expect(res.json()).toEqual({ succes: false, erreur: 'le corps de la requête n’est pas du JSON lisible' });
     expect(appels).toHaveLength(0);
   });
+
+  it('un outil qui ne lit AUCUN corps n’est pas refusé pour un corps illisible', async () => {
+    // Toutes ses valeurs viennent du mini-CRM : le corps n'est pas lu, et ce que Meta envoie alors n'est pas
+    // mesuré. Le refuser casserait l'outil pour un corps qu'on n'aurait de toute façon pas lu.
+    const { app, appels } = monter({
+      requete: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+    });
+    const res = await app.inject({
+      method: 'POST', url: '/mba/relais/outils/o1',
+      headers: { authorization: `Bearer ${CLE_RELAIS}`, 'content-type': 'application/json', 'x-contact-whatsapp': '+33612345678' },
+      payload: '{pas du json',
+    });
+    expect(res.json().succes).toBe(true);
+    expect(appels).toHaveLength(1);
+  });
 });

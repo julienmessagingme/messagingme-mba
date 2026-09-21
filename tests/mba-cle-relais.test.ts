@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleAJour, poserCleNeuve, oublierCle, type DepsCleRelais } from '../src/mba/cle-relais';
+import { cleAJour, poserCleNeuve, oublierCle, depsCleRelaisDepuis, type DepsCleRelais } from '../src/mba/cle-relais';
 
 /**
  * La clé que Meta présente au relais (spec 2026-09-21-relais-mba-design.md, section 2).
@@ -75,5 +75,40 @@ describe('la clé posée chez Meta', () => {
     await oublierCle(f.deps, 't1');
     expect(f.journal).toEqual(['revoquerAutres sauf null', 'retenir null']);
     expect([...f.actives]).toEqual([]);
+  });
+});
+
+describe('la fabrique des dépendances de la clé', () => {
+  it('🔴 l’audit NOMME l’administrateur qui publie, pour la création comme pour les révocations', async () => {
+    const audits: Array<{ acteur: string | null; action: string; id: string }> = [];
+    const pour = depsCleRelaisDepuis({
+      cles: {
+        create: async () => ({ id: 'k1', key: 'mba_K1' }),
+        revoke: async () => true,
+        estActive: async () => true,
+        revoquerDroitSauf: async () => ['k0'],
+      },
+      reglages: { mbaRelaisCleId: async () => 'k0', setMbaRelaisCleId: async () => {} },
+      audit: async (_t, acteur, action, cible) => { audits.push({ acteur: acteur.userId, action, id: cible.id }); },
+    });
+    await poserCleNeuve(pour('u-admin'), 't1', async () => {});
+    expect(audits).toEqual([
+      { acteur: 'u-admin', action: 'cle_api.creee', id: 'k1' },
+      { acteur: 'u-admin', action: 'cle_api.revoquee', id: 'k0' },
+    ]);
+  });
+
+  it('la clé est créée avec le droit du relais, sous le nom « Agent de Meta »', async () => {
+    const creees: Array<{ nom: string; droits: string[] }> = [];
+    const pour = depsCleRelaisDepuis({
+      cles: {
+        create: async (_t, nom, droits) => { creees.push({ nom, droits }); return { id: 'k1', key: 'mba_K1' }; },
+        revoke: async () => true, estActive: async () => true, revoquerDroitSauf: async () => [],
+      },
+      reglages: { mbaRelaisCleId: async () => null, setMbaRelaisCleId: async () => {} },
+      audit: async () => {},
+    });
+    await pour(null).creerCle('t1');
+    expect(creees).toEqual([{ nom: 'Agent de Meta', droits: ['mba:relais'] }]);
   });
 });

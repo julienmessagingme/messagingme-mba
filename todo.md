@@ -34,6 +34,10 @@ affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouto
   espace) : il sérialise les publications d'un espace tant que l'API tourne en UNE instance. Le passer en base
   (bail, sur le modèle de `src/campaign/run-lock.ts`) avant tout multi-réplica de l'API, sinon deux
   publications simultanées sur deux instances se révoqueraient mutuellement la clé du relais.
+- **Les appels de publication à Meta n'ont pas de délai propre** (`MbaClient.appel`, `src/mba/client.ts`) :
+  une Meta muette tient le verrou de publication d'un espace jusqu'au délai par défaut de Node (300 s par
+  appel), et l'écran répond « une publication est déjà en cours » pendant ce temps. Poser un
+  `AbortSignal.timeout` sur les appels de publication, sans toucher à `agent_test` (lent par nature).
 - **Le plafond du relais est celui d'une clé d'API : 60 appels par minute** (`API_KEY_RATE_LIMIT_MAX`), pour
   TOUS les appels d'outils de l'agent de Meta d'un espace. Au-delà, Meta reçoit un 429, pas un
   `succes: false`. Suffisant aujourd'hui ; à dimensionner avec le premier client à fort trafic.

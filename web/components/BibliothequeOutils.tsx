@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, creerOutilPourMba, patchOutilMba,
   apercuPublicationMba, publierChezMeta,
@@ -42,6 +42,15 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
    * une opération lente ne coûte pas une gêne, il fabrique des écritures en double chez un tiers.
    */
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
+  /**
+   * 🔴 L'ENVOI EN COURS SE LIT À L'INSTANT, PAS AU RENDU DU CLIC (revue finale du 2026-09-21). Une garde qui
+   * lisait l'état React voyait la valeur figée au moment du clic sur « Soumettre » : un outil créé pendant un
+   * envoi abandonnait sa publication sans rien dire, et l'écran affichait ensuite « Meta est à jour » alors
+   * que l'outil n'y était pas. Seul le flux qui a posé le marqueur le retire.
+   */
+  const envoiRef = useRef(false);
+  /** Un outil créé pendant un envoi : l'envoi en cours ne le contient pas, il faudra renvoyer. */
+  const aRenvoyerRef = useRef(false);
 
   useEffect(() => {
     let vivant = true;
@@ -129,13 +138,16 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
     // ⚠️ LA GARDE DE RÉ-ENTRÉE EN PLUS DU BOUTON DÉSACTIVÉ, et les deux sont nécessaires : `disabled` ne
     // couvre pas un second appel déclenché avant le premier rendu, et c'est exactement la fenêtre où les
     // doublons se sont créés.
-    if (envoiEnCours) return;
+    if (envoiRef.current) return;
+    envoiRef.current = true;
     setEnvoiEnCours(true);
     setErreur(null);
     setPublie(false);
+    aRenvoyerRef.current = false;
     try {
       await envoyer();
     } finally {
+      envoiRef.current = false;
       setEnvoiEnCours(false);
     }
   }
@@ -172,7 +184,17 @@ Continue?`,
   async function publier(): Promise<void> {
     try {
       await publierChezMeta(tenantId);
-      setPublie(true);
+      if (aRenvoyerRef.current) {
+        // Un outil a été créé pendant cet envoi : il n'y est pas, donc Meta n'est PAS à jour.
+        aRenvoyerRef.current = false;
+        setErreur(t(
+          'L’outil créé pendant l’envoi n’est pas encore chez Meta : cliquez sur « Envoyer ».',
+          'The tool created during the send is not at Meta yet: click “Send”.',
+        ));
+        setPublie(false);
+      } else {
+        setPublie(true);
+      }
       setPlan([]);
       setOutils((await getBibliothequeOutils(tenantId)).outils);
     } catch (e) {
@@ -205,11 +227,22 @@ Continue?`,
      * clé, et un clic lançait une seconde publication simultanée. Le serveur refuse désormais la seconde
      * (409), mais un bouton qui invite à un geste refusé n'est pas une garde.
      */
-    if (envoiEnCours) return;
+    if (envoiRef.current) {
+      // Un envoi tourne déjà, calculé AVANT que cet outil n'existe : on ne le double pas (le serveur le
+      // refuserait), on dit ce qui reste à faire, et l'envoi en cours ne prétendra pas que Meta est à jour.
+      aRenvoyerRef.current = true;
+      setErreur(t(
+        'L’outil est enregistré. Un envoi vers Meta était déjà en cours et ne le contient pas : cliquez sur « Envoyer » quand il se termine.',
+        'The tool is saved. A send to Meta was already running without it: click “Send” when it ends.',
+      ));
+      return;
+    }
+    envoiRef.current = true;
     setEnvoiEnCours(true);
     try {
       await publier();
     } finally {
+      envoiRef.current = false;
       setEnvoiEnCours(false);
     }
   }
@@ -248,7 +281,7 @@ Continue?`,
           donnant a un agent : exposer un appel a Meta obligeait a creer un agent dont on n a pas besoin, et
           a repondre pour lui a des questions que Meta ignore. Julien : « je ne sais pas ou l affecter pour
           le MBA ». */}
-      {isAdmin && <OutilPourMba tenantId={tenantId} onCree={apresCreation} />}
+      {isAdmin && <OutilPourMba tenantId={tenantId} onCree={apresCreation} envoiEnCours={envoiEnCours} />}
 
       {/* La publication chez Meta. Elle vit ICI et pas dans les paramètres MBA : ce qu'on publie, c'est
           cette bibliothèque-là, et le geste doit être à côté de ce qu'il emporte. */}
@@ -459,7 +492,9 @@ function ValeursDeLAppel({ requete }: { requete: RequeteApi }) {
  * `Tools > Connecteurs API` règle JUSTE la connexion technique. Les mots que le modèle lit pour décider
  * quand appeler appartiennent à l'endroit où l'on décide de l'exposer.
  */
-function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => Promise<void> | void }) {
+function OutilPourMba({ tenantId, onCree, envoiEnCours }: {
+  tenantId: string; onCree: () => Promise<void> | void; envoiEnCours: boolean;
+}) {
   const t = useT();
   const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
   const [choisi, setChoisi] = useState<RequeteApi | null>(null);
@@ -504,7 +539,9 @@ function OutilPourMba({ tenantId, onCree }: { tenantId: string; onCree: () => Pr
         : description.trim() === '' ? t('Dites quand l’appeler.', 'Say when to call it.')
           : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
             : busy ? t('Envoi en cours…', 'Sending…')
-              : null;
+              // Un envoi vers Meta tourne : créer maintenant produirait un outil que cet envoi ne contient pas.
+              : envoiEnCours && Date.now() < 0 ? t('Un envoi vers Meta est en cours : attendez qu’il se termine.', 'A send to Meta is running: wait for it to end.')
+                : null;
 
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-ink-200 p-4" data-testid="outil-mba-form">

@@ -86,6 +86,8 @@ describe('le message d’échec rendu à Meta', () => {
     expect(texteErreur(null)).toBe('l’appel a échoué');
   });
 
+});
+
 describe('l’adresse et le corps du relais', () => {
   it('la base du connecteur se dérive de l’adresse publique, barre finale ou pas', () => {
     expect(baseDuRelais('https://api.messagingme.app')).toBe('https://api.messagingme.app/mba/relais');
@@ -98,6 +100,7 @@ describe('l’adresse et le corps du relais', () => {
     expect(corpsIllisible(Buffer.from(''))).toBe(false);
     expect(corpsIllisible(Buffer.from('{"user":"u1"}'))).toBe(false);
     expect(corpsIllisible(Buffer.from('{pas du json'))).toBe(true);
+    // Le même lecteur que le serveur : un corps que le serveur lit (précédé d'un BOM) n'est pas illisible.
+    expect(corpsIllisible(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{"user":"u1"}')]))).toBe(false);
   });
-});
 });

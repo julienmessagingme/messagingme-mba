@@ -38,8 +38,8 @@ export interface MbaPublicationDeps {
    * Applique UN geste. Isolé pour rester testable sans réseau.
    *
    * ⚠️ `ctx` EST UN BAC À MÉMOIRE PARTAGÉ PAR TOUTE UNE PUBLICATION, et il n'est pas décoratif : sans lui,
-   * l'implémentation relisait la liste des connecteurs CHEZ META à chaque geste. La route le crée vide et le
-   * passe tel quel.
+   * l'implémentation relisait la liste des connecteurs CHEZ META à chaque geste. La route l'AMORCE avec les
+   * outils du plan de cette publication (`CTX_OUTILS`) et l'administrateur qui publie (`CTX_ACTEUR`).
    */
   appliquer(tenantId: string, phoneNumberId: string, geste: Geste, ctx: Map<string, unknown>): Promise<void>;
 }
@@ -110,8 +110,8 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     if (plan === null) return reply.code(409).send({ error: SANS_ADRESSE });
     const faits: Geste[] = [];
     // Vit le temps de CETTE publication, et meurt avec elle : deux publications ne partagent jamais un état
-    // lu, ce qui serait précisément la façon d'agir sur une photo périmée. Amorcée avec les outils du PLAN
-    // (les corps publiés sont ceux de l'aperçu) et l'administrateur qui publie (l'audit des clés le nomme).
+    // lu, ce qui serait précisément la façon d'agir sur une photo périmée. Amorcée avec les outils sur lesquels
+    // le plan de CETTE publication a été calculé, et l'administrateur qui publie (l'audit des clés le nomme).
     const ctx = new Map<string, unknown>([[CTX_OUTILS, plan.outils], [CTX_ACTEUR, acteur]]);
     for (const g of plan.gestes) {
       try {
@@ -121,12 +121,12 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
         // eslint-disable-next-line no-console
         console.error(`mba-publication: ${g.type} « ${g.nom} » a échoué (${tenant}):`, err instanceof Error ? err.message : err);
         // « Meta a refusé » seulement quand c'est Meta qui a répondu non ; un refus de notre part se dit tel
-        // quel, et une panne de chez nous (base, clé) ne se met pas sur le dos de Meta.
+        // quel. Le reste est ambigu (Meta injoignable, délai dépassé, ou panne de chez nous) et se dit comme tel.
         const cause = err instanceof ErreurPublication
           ? `« ${g.nom} » : ${err.message}.`
           : err instanceof MetaApiError
             ? `Meta a refusé « ${g.nom} » (${g.type}).`
-            : `« ${g.nom} » (${g.type}) a échoué de notre côté.`;
+            : `« ${g.nom} » (${g.type}) n’a pas abouti (Meta injoignable, ou panne de notre côté).`;
         return reply.code(409).send({
           error: `${cause} ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
           faits,

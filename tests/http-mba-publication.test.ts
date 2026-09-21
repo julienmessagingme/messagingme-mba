@@ -22,8 +22,10 @@ const SECRET = 'test-secret';
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
 let adminTok = '';
+let adminTok2 = '';
 beforeAll(async () => {
   adminTok = await signSession({ userId: 'u1', tenantId: TENANT, role: 'admin' }, SECRET);
+  adminTok2 = await signSession({ userId: 'u2', tenantId: 't2', role: 'admin' }, SECRET);
 });
 /** ⚠️ Une FONCTION : un objet figé au chargement capturerait un jeton encore vide. */
 const h = (): { headers: Record<string, string> } => ({
@@ -139,6 +141,8 @@ describe('la publication', () => {
     expect((await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication` })).statusCode).toBe(401);
   });
 
+});
+
 describe('une publication à la fois, et la vraie cause d’un échec', () => {
   it('🔴 deux publications SIMULTANÉES du même espace : la seconde est refusée, rien ne s’entrelace', async () => {
     // Entrelacées, chacune posait sa clé chez Meta puis révoquait « toutes les autres », donc celle de
@@ -158,6 +162,23 @@ describe('une publication à la fois, et la vraie cause d’un échec', () => {
     expect((await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() })).statusCode).toBe(200);
   });
 
+  it('🔴 le verrou est PAR ESPACE : un autre espace publie pendant que le premier est retenu', async () => {
+    // Un verrou global bloquerait tous les clients derrière la publication d'un seul.
+    let liberer: () => void = () => {};
+    const retenir = new Promise<void>((r) => { liberer = r; });
+    const { app } = monter({ retenir });
+    const premiere = app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    await new Promise((r) => setTimeout(r, 20));
+    const autre = app.inject({
+      method: 'POST', url: '/tenants/t2/mba-publication',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${adminTok2}` },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    liberer();
+    expect((await premiere).statusCode).toBe(200);
+    expect((await autre).statusCode).toBe(200);
+  });
+
   it('« Meta a refusé » seulement quand c’est Meta ; une panne de chez nous le dit', async () => {
     const meta = monter({ echoueSur: 'connecteur_creer', erreur: new MetaApiError(400, { message: 'Invalid connector request' }) });
     expect((await meta.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() })).json().error)
@@ -165,7 +186,7 @@ describe('une publication à la fois, et la vraie cause d’un échec', () => {
     const nous = monter({ echoueSur: 'connecteur_creer', erreur: new Error('connexion à la base perdue') });
     const msg = (await nous.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() })).json().error;
     expect(msg).not.toMatch(/Meta a refusé/);
-    expect(msg).toMatch(/de notre côté/);
+    expect(msg).toMatch(/n’a pas abouti/);
   });
 
   it('🔴 la publication AMORCE les gestes avec les outils du plan et l’administrateur qui publie', async () => {
@@ -174,5 +195,4 @@ describe('une publication à la fois, et la vraie cause d’un échec', () => {
     expect(contextes[0]!.get('outils')).toEqual([ADD_TAG]);
     expect(contextes[0]!.get('acteur')).toBe('u1');
   });
-});
 });

@@ -70,10 +70,15 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
 
     // 3. LES VALEURS DU MODÈLE, validées contre les variables `modele` déclarées, et elles seules. Le lecteur
     //    de JSON du serveur rend `{}` sur un corps illisible : on relit le corps BRUT pour ne pas le confondre
-    //    avec un corps vide (`rawBody` est posé par ce lecteur, `src/webhooks/receiver.ts`).
-    if (corpsIllisible((req as { rawBody?: unknown }).rawBody)) return refus('le corps de la requête n’est pas du JSON lisible');
+    //    avec un corps vide (`rawBody` est posé par ce lecteur, `src/webhooks/receiver.ts`). ⚠️ Seulement si
+    //    l'outil LIT un corps : un outil sans variable du modèle n'en a pas, et ce que Meta envoie alors n'est
+    //    pas mesuré ; le refuser pour un corps qu'on n'aurait pas lu casserait l'outil pour rien.
     const requete = await deps.requete(tenant, outil.requestId);
     if (requete === null) return refus('cet outil n’est pas configuré');
+    const litUnCorps = requete.variables.some((v) => v.origine.type === 'modele');
+    if (litUnCorps && corpsIllisible((req as { rawBody?: unknown }).rawBody)) {
+      return refus('le corps de la requête n’est pas du JSON lisible');
+    }
     const lu = lireValeursModele(requete.variables, req.body);
     if (!lu.ok) return refus(lu.erreur);
 

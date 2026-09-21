@@ -305,4 +305,66 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('outil-mba-valeurs-remplies')).not.toContainText('tag');
     await expect(page.getByTestId('outil-mba-valeurs-demandees')).toContainText('tag');
   });
+
+  /**
+   * 🔴 PENDANT UN ENVOI, ON NE CRÉE PAS D'OUTIL (revue finale du 2026-09-21).
+   *
+   * Un outil créé pendant un envoi n'en faisait pas partie : sa publication automatique abandonnait sans rien
+   * dire, et l'écran annonçait ensuite « Meta est à jour ». « Soumettre » est désormais désactivé tant qu'un
+   * envoi tourne, et redevient actif à sa fin.
+   */
+  test('🔴 « Soumettre » est désactivé pendant un envoi vers Meta, et revient à sa fin', async ({ page }) => {
+    let libere: (() => void) | null = null;
+    const attente = new Promise<void>((r) => { libere = r; });
+    await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-tools`)) {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outils: [OUTIL] }) });
+          return true;
+        }
+        if (method === 'GET' && url.includes(`/tenants/${TENANT}/agent-requetes`)) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              requetes: [{
+                id: 'REQ3', tenantId: TENANT, sourceId: 's1', label: 'Poser une étiquette',
+                methode: 'POST', chemin: '/subscriber/add-tag', parametres: [], entetes: [],
+                corps: { mode: 'aucun' }, variables: [], outputPaths: [], valeursTest: {},
+              }],
+              champs: [], catalogue: {},
+            }),
+          });
+          return true;
+        }
+        if (url.includes('/mba-publication')) {
+          if (method === 'GET') {
+            await route.fulfill({
+              status: 200, contentType: 'application/json',
+              body: JSON.stringify({ gestes: [{ type: 'outil_creer', nom: 'suivi_commande' }], phoneNumberId: '1' }),
+            });
+            return true;
+          }
+          await attente;
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ faits: [] }) });
+          return true;
+        }
+        return false;
+      },
+    });
+    await page.goto('/mba/parametres?tab=outils');
+
+    await page.getByTestId('outil-mba-choisir-REQ3').click();
+    await page.getByTestId('outil-mba-description').fill('Quand le client demande une étiquette.');
+    await page.getByTestId('outil-mba-nepasutiliser').fill('Jamais pour en retirer une.');
+    await expect(page.getByTestId('outil-mba-creer')).toBeEnabled();
+
+    await page.getByTestId('publication-publier').click();
+    await expect(page.getByTestId('publication-attente')).toBeVisible();
+    await expect(page.getByTestId('outil-mba-creer')).toBeDisabled();
+
+    libere!();
+    await expect(page.getByTestId('publication-publier')).toBeEnabled();
+    await expect(page.getByTestId('outil-mba-creer')).toBeEnabled();
+  });
 });

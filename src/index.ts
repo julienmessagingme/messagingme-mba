@@ -143,7 +143,7 @@ import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
-import { cleAJour, NOM_CLE_RELAIS, DROIT_RELAIS, type DepsCleRelais } from './mba/cle-relais';
+import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
 import { resolveursSimulation } from './agent/resolvers/simulation';
@@ -267,39 +267,8 @@ async function main(): Promise<void> {
     }
     return sortie;
   };
-  /**
-   * La clé « Agent de Meta » : une clé d'API de l'espace, retenue dans `tenant_settings.mba_relais_cle_id`.
-   *
-   * ⚠️ CHAQUE CRÉATION ET CHAQUE RÉVOCATION EST AUDITÉE, comme sur la page des clés (`cle_api.creee`,
-   * `cle_api.revoquee`) : c'est la clé au droit le plus large de l'espace. Elle naît du clic « Envoyer » d'un
-   * administrateur, et c'est LUI que l'audit nomme (`acteur`, passé par la route de publication) ; `null`
-   * (« Système ») ne sert qu'à la lecture de `cleAJour`, qui n'écrit rien. Un audit qui échoue ne bloque pas
-   * la publication, mais se voit en console : un journal muet serait indétectable (`makeJournal`).
-   */
-  const depsCleRelaisPour = (acteur: string | null): DepsCleRelais => {
-    const auditerCle = (t: string, action: 'cle_api.creee' | 'cle_api.revoquee', id: string): Promise<void> =>
-      auditSink(t, { userId: acteur, email: null }, action, { kind: 'api_key', id }, { scopes: [DROIT_RELAIS], par: 'publication chez Meta' })
-        // eslint-disable-next-line no-console
-        .catch((err) => { console.error('audit ignoré:', err instanceof Error ? err.message : err); });
-    return {
-      creerCle: async (t) => {
-        const cle = await apiKeyStore.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]);
-        await auditerCle(t, 'cle_api.creee', cle.id);
-        return cle;
-      },
-      revoquer: async (t, id) => {
-        const fait = await apiKeyStore.revoke(t, id);
-        if (fait) await auditerCle(t, 'cle_api.revoquee', id);
-        return fait;
-      },
-      cleRetenue: (t) => settingsStore.mbaRelaisCleId(t),
-      retenir: (t, id) => settingsStore.setMbaRelaisCleId(t, id),
-      estActive: (t, id) => apiKeyStore.estActive(t, id),
-      revoquerAutres: async (t, garder) => {
-        for (const id of await apiKeyStore.revoquerDroitSauf(t, DROIT_RELAIS, garder)) await auditerCle(t, 'cle_api.revoquee', id);
-      },
-    };
-  };
+  /** La clé « Agent de Meta », par acteur : la fabrique et son audit vivent dans `src/mba/cle-relais.ts`. */
+  const depsCleRelaisPour = depsCleRelaisDepuis({ cles: apiKeyStore, reglages: settingsStore, audit: auditSink });
   /**
    * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
    *

@@ -18,6 +18,8 @@
  * le savoir d'ici ; on s'assure donc que la publication SUIVANTE répare : plus aucune clé n'est retenue, donc
  * `cleAJour` rend faux et le plan repose une clé. La route dit déjà « Relancez » sur tout échec.
  */
+import type { AuditSink } from '../audit/journal';
+
 export const NOM_CLE_RELAIS = 'Agent de Meta';
 export const DROIT_RELAIS = 'mba:relais';
 
@@ -30,6 +32,57 @@ export interface DepsCleRelais {
   estActive(tenantId: string, id: string): Promise<boolean>;
   /** Révoque toutes les clés `mba:relais` actives de l'espace, sauf `garderId` (`null` = toutes). */
   revoquerAutres(tenantId: string, garderId: string | null): Promise<void>;
+}
+
+/** Les magasins dont la clé du relais a besoin : clés d'API, réglages de l'espace, journal d'audit. */
+export interface StoresCleRelais {
+  cles: {
+    create(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }>;
+    revoke(tenantId: string, id: string): Promise<boolean>;
+    estActive(tenantId: string, id: string): Promise<boolean>;
+    revoquerDroitSauf(tenantId: string, droit: string, garderId: string | null): Promise<string[]>;
+  };
+  reglages: {
+    mbaRelaisCleId(tenantId: string): Promise<string | null>;
+    setMbaRelaisCleId(tenantId: string, id: string | null): Promise<void>;
+  };
+  audit: AuditSink;
+}
+
+/**
+ * Les dépendances de la clé pour un ACTEUR (l'identifiant de l'administrateur qui publie, `null` = système).
+ *
+ * ⚠️ CHAQUE CRÉATION ET CHAQUE RÉVOCATION EST AUDITÉE, comme sur la page des clés (`cle_api.creee`,
+ * `cle_api.revoquee`) : c'est la clé au droit le plus large de l'espace, et elle naît du clic « Envoyer »
+ * d'un administrateur, que l'audit NOMME. Sortie du câblage (revue finale du 2026-09-21) pour que l'acteur
+ * reçu par le journal se teste : il n'était vérifié que jusqu'à la fabrique. Un audit qui échoue ne bloque
+ * pas la publication, mais se voit en console : un journal muet serait indétectable (`makeJournal`).
+ */
+export function depsCleRelaisDepuis(stores: StoresCleRelais): (acteur: string | null) => DepsCleRelais {
+  return (acteur) => {
+    const auditer = (t: string, action: 'cle_api.creee' | 'cle_api.revoquee', id: string): Promise<void> =>
+      stores.audit(t, { userId: acteur, email: null }, action, { kind: 'api_key', id }, { scopes: [DROIT_RELAIS], par: 'publication chez Meta' })
+        // eslint-disable-next-line no-console
+        .catch((err: unknown) => { console.error('audit ignoré:', err instanceof Error ? err.message : err); });
+    return {
+      creerCle: async (t) => {
+        const cle = await stores.cles.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]);
+        await auditer(t, 'cle_api.creee', cle.id);
+        return cle;
+      },
+      revoquer: async (t, id) => {
+        const fait = await stores.cles.revoke(t, id);
+        if (fait) await auditer(t, 'cle_api.revoquee', id);
+        return fait;
+      },
+      cleRetenue: (t) => stores.reglages.mbaRelaisCleId(t),
+      retenir: (t, id) => stores.reglages.setMbaRelaisCleId(t, id),
+      estActive: (t, id) => stores.cles.estActive(t, id),
+      revoquerAutres: async (t, garder) => {
+        for (const id of await stores.cles.revoquerDroitSauf(t, DROIT_RELAIS, garder)) await auditer(t, 'cle_api.revoquee', id);
+      },
+    };
+  };
 }
 
 /** La clé retenue est-elle toujours active ? Une clé révoquée par le client doit être remplacée chez Meta. */

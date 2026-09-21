@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { parse as secureJsonParse } from 'secure-json-parse';
 import type { VariableDeclaree } from '../agent/requetes';
 
 /**
@@ -44,11 +45,14 @@ export function cheminOutilRelais(outilId: string): string {
  * serveur, `src/webhooks/receiver.ts`) : sans cette vérification, un corps tronqué passait pour un corps vide,
  * et l'appel partait sans les valeurs facultatives, sans aucun signal. Un corps VIDE, lui, est légitime :
  * c'est celui d'un outil dont toutes les valeurs viennent du mini-CRM.
+ *
+ * ⚠️ LE MÊME LECTEUR QUE LE SERVEUR (`secure-json-parse`, mêmes options) : un `JSON.parse` jugeait illisible
+ * un corps que le serveur lit sans erreur (un corps précédé d'un BOM), et le relais le refusait à tort.
  */
 export function corpsIllisible(brut: unknown): boolean {
   if (!(brut instanceof Uint8Array) || brut.length === 0) return false;
   try {
-    JSON.parse(Buffer.from(brut).toString('utf8'));
+    secureJsonParse(Buffer.from(brut).toString('utf8'), { protoAction: 'remove', constructorAction: 'remove' });
     return false;
   } catch {
     return true;

@@ -18,8 +18,8 @@ import { poserCleNeuve, oublierCle, type DepsCleRelais } from './cle-relais';
 
 /**
  * Les clés de la mémoire d'UNE publication (`ctx`), partagées avec la route qui l'amorce.
- * `outils` : la liste d'outils sur laquelle le PLAN a été calculé, pour que les corps publiés soient
- * exactement ceux de l'aperçu, et qu'on ne relise pas la base. `acteur` : l'administrateur qui publie, que
+ * `outils` : la liste d'outils sur laquelle le plan de CETTE publication a été calculé, pour que les corps
+ * publiés soient exactement ceux que le plan a comparés, et qu'on ne relise pas la base. `acteur` : l'administrateur qui publie, que
  * l'audit des clés nomme (une clé au droit `mba:relais` naît de son clic, pas du système).
  */
 export const CTX_OUTILS = 'outils';
