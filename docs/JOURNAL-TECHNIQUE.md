@@ -5,6 +5,40 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-21 : l'auto-attaque dérive ses modules du registre, et attaque chaque route selon sa classe
+
+**Le constat.** `scripts/auto-attaque.mts` (job `securite` de la CI) montait ses modules depuis une liste
+écrite à la main, sous un commentaire qui affirmait « jamais écrit à la main ». Comparée au registre
+`modulesDeRoutes` : **huit modules jamais montés, 27 routes jamais attaquées** (218 inventoriées, 245
+depuis), dont toute l'entrée `v1` (`/v1/*`, `/mcp`, le relais du Meta Business Agent), la gestion des
+utilisateurs (l'entrée s'appelle `admin`, la liste disait `users`, qui ne montait rien), l'assistant MBA,
+l'historique, les connecteurs MCP, le bot d'aide, le rappel RCS et le connecteur HubSpot.
+
+**Ce qui a changé.** Les clés de dépendances sont lues en EXÉCUTANT le registre (un espion note ce que
+`modulesDeRoutes` lit en construisant sa liste), chaque clé est rattachée à son entrée en rejouant le registre
+avec elle seule, et chaque module est monté seul sur une instance jetable pour donner à ses routes la classe
+d'accès que son entrée déclare. Les sondes se choisissent par classe, plus par préfixe : `code-url` reçoit des
+codes inconnus bien formés (sonde 11), `signature-service` une signature absente puis fausse (12), `cle-api`
+une session de console puis une clé inventée (13), `signature-meta` généralise la sonde 6. Les modules hors
+`tenant` exigent une fausse autorité déclarée (`FAUSSES_AUTORITES`) : sans elle, le script refuse de tourner,
+parce que `bidon()` répondrait « trouvé » à une clé inventée. Les sondes 11 et 13 vérifient en outre qu'elles
+ont ATTEINT le magasin, et pas seulement buté sur un contrôle de format.
+
+**Vérifié dans les deux sens, faille par faille** (plantée, détectée, restaurée) : un module sans garde, le
+relais monté sans clé d'API, une clé inconnue acceptée, un lien inconnu qui redirige, un format de code que
+plus aucun candidat n'atteint, la signature HubSpot non vérifiée puis non comparée, la signature Meta
+acceptée, une fausse autorité manquante ou périmée. Résultat sur le code actuel : **aucune trouvaille** ;
+les modules qui manquaient étaient bien gardés.
+
+**Ce que la mesure a révélé en plus.** La sonde 6 ne prouvait rien de la comparaison de signature Meta : le
+receveur lisait `META_APP_SECRET`, vide en CI comme sur ce poste, et refusait tout avant de comparer. Une
+vérification plantée qui accepte toute signature bien formée passait l'ancienne version sans trouvaille. Le
+script pose désormais un secret tiré au hasard.
+
+**La leçon** : une liste d'inventaire ne se recopie pas depuis sa source, elle se DÉRIVE en exécutant la
+source. Et une sonde qui refuse ne prouve rien tant qu'on n'a pas vérifié QUI a refusé : un format, un secret
+vide ou un 403 d'une autre garde donnent le même verdict qu'une vraie vérification.
+
 ## 2026-09-21 : le carrousel RCS, et les rappels smsmode perdus depuis la bascule Vercel
 
 **Livré le 2026-09-21** : le composeur de carrousel dans Contenu > Messages RCS (lot 1) et le choix d'un
