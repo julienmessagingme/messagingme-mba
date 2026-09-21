@@ -36,12 +36,6 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 
 ## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
 
-- **La sonde d'attaque ne voit pas la porte du relais** (`scripts/auto-attaque.mts`) : son serveur ne monte
-  pas l'entrée `v1`, donc `POST /mba/relais/outils/:id` n'est ni inventoriée ni attaquée par le job
-  `securite` (`agentCatalogue`, `mbaPublication` et `mbaOutils` y ont été ajoutés à la main le 2026-09-21 ; huit autres
-  modules du registre y manquent encore, mesuré le même jour). Dériver sa liste de modules du
-  registre `modulesDeRoutes` plutôt que d'une liste écrite à la main. Le relais est couvert en attendant par
-  `tests/http-mba-relais.test.ts` (401, 403, clé d'un autre espace).
 - **Le verrou de publication chez Meta est LOCAL AU PROCESS** (`src/http/mba-publication.ts`, un `Set` par
   espace) : il sérialise les publications d'un espace tant que l'API tourne en UNE instance. Le passer en base
   (bail, sur le modèle de `src/campaign/run-lock.ts`) avant tout multi-réplica de l'API, sinon deux
@@ -568,8 +562,7 @@ et les trois moitiés fausses valaient d'être établies, parce qu'elles auraien
   8 connexions déjà partagé. L'ordre des mesures est écrit dans `docs/SLO-2026-09-01.md`. Ce n'est pas une
   panne d'aujourd'hui : 6 jobs `campaign-run` sur sept jours, attente p95 de 0,11 s.
 
-**Ce qui reste ouvert de ce contre-rapport**, et pourquoi : le « DNS rebinding » (déjà listé sous A3), et le
-retriage des deux réglages de campagne, qui attend le profil de banc `equite` du lot 6, plus bas.
+**Ce qui reste ouvert de ce contre-rapport**, et pourquoi : le retriage des deux réglages de campagne, qui attend le profil de banc `equite` du lot 6, plus bas.
 
 ### Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir)
 
@@ -691,11 +684,9 @@ compte a dit trois pendant un jour, l'épreuve d'une SOURCE manquait) : le
 connecteur en conversation, le bouton « Test » d'une REQUÊTE, le bouton « éprouver » une SOURCE, et la lecture
 de page distante (à chaque saut de redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les
 TROIS qui lisent un corps, en OCTETS et non en unités UTF-16 (l'épreuve d'une source ne regarde que le
-statut : dire « sur les mêmes » après avoir monté le compte à quatre serait faux). ⚠️ **Ce qui reste ouvert, et il faut le dire** : la vérification a lieu AVANT l'appel et `fetch` refait
-sa propre résolution, donc le « DNS rebinding » (répondre public puis privé) n'est pas fermé. Le fermer exige
-de fournir son PROPRE résolveur à la couche HTTP (`undici`, `connect.lookup`), donc une dépendance directe de
-plus. Le scénario suppose un administrateur client hostile, qui a déjà son compte : le rapport ne le justifie
-pas aujourd'hui. Le cas réaliste, un nom public qui pointe vers l'intérieur, est fermé.
+statut : dire « sur les mêmes » après avoir monté le compte à quatre serait faux). Le « DNS rebinding » (répondre public puis privé entre la vérification et l'appel), laissé ouvert ce
+jour-là, est FERMÉ depuis le 2026-09-21 : l'adresse se revérifie à l'ouverture de la connexion (`fetchPublic`,
+`src/lib/connexion-publique.ts`).
 
 ~~**A4 — la preuve de capacité.**~~ **LIVRÉ le 2026-09-03.** La photo compte désormais
 les jobs `active` (elle retombait à zéro sur un job coincé), un VRAI p95 par file est calculé sur 24 h depuis
@@ -1236,23 +1227,6 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
   le point `quel_outil` de l'entretien pose la question au bon endroit, c'est-à-dire dans la QUESTION et non
   sur une ligne de diff dont ça changerait la clé. À rouvrir seulement si l'usage montre que ça manque encore.
 
-## 🟠 SSRF par DNS rebinding : revalider l'IP RÉSOLUE avant l'appel (relevé à la revue du lot L2)
-
-`urlRecuperable` (`src/lib/page-distante.ts`) contrôle le NOM D'HÔTE, jamais l'adresse IP finalement résolue.
-Un administrateur de tenant peut donc déclarer un domaine à lui, passer la validation à l'écriture d'une source
-de connecteur, puis repointer son DNS vers `172.18.0.1` (les autres conteneurs) ou `169.254.169.254` (les
-métadonnées) : l'appel suivant résoudra la nouvelle adresse. Le pare-feu de l'hôte ne couvre pas ce chemin,
-puisque le trafic reste dans le réseau Docker et ne traverse jamais `ens3`.
-
-Le trou est ANCIEN (le scraper de connaissance le porte depuis toujours, et il est documenté dans le module),
-mais le lot L2 en change la conséquence : la réponse peut désormais repartir vers un contact WhatsApp par le
-filtre `outputPaths`. C'est un risque d'ADMINISTRATEUR (celui qui déclare la source), pas de contact ni de
-modèle.
-
-Fermeture : un dispatcher undici avec un `lookup` qui refuse les plages privées, posé sur les DEUX appelants
-(le résolveur de connecteur et `fetchUrlBorne`). À faire d'un bloc, avec un test qui pointe un domaine public
-vers `127.0.0.1` et vérifie le refus.
-
 ## 🟠 Joindre un FICHIER à un message rapide (demandé par Julien le 2026-08-28)
 
 Aujourd'hui un bloc « message rapide » ne porte qu'une IMAGE (`data.imageUrl`, champ partagé avec le bloc RCS).
@@ -1532,14 +1506,9 @@ d'attribution, il faut donc le recopier sur la fiche contact À LA RÉCEPTION.
 ## Étanchéité des canaux : ce que le lot du 2026-08-25 a volontairement laissé
 
 Le lot est livré (voir `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md` et `.loop/etancheite-canaux.md`). Trois points
-ont été écartés sciemment, pas oubliés :
+avaient été écartés sciemment ; les deux premiers sont fermés depuis le 2026-09-21 (le `channelId` est exigé
+sur le rappel smsmode, et un plafond par code existant le protège : `src/http/rcs-callback.ts`). Reste :
 
-- **Exiger le `channelId` sur le rappel smsmode.** La garde d'isolation n'arrête pas un corps FORGÉ qui omet
-  l'objet `channel` ; le code de l'URL reste la seule authentification réelle. Les corps sans `channelId`
-  sont désormais JOURNALISÉS. Quand les journaux montreront que ça n'arrive jamais, exiger le champ (403 sinon).
-  Un seul corps réel est capturé à ce jour : trop peu pour trancher aujourd'hui sur un canal LIVE.
-- **Plafond de requêtes sur `/rcs/callback/:code`**, seule écriture non signée du produit. Le `RateLimiter`
-  maison (`src/auth/rate-limit.ts`) suffit, aucune dépendance nouvelle.
 - **Une série RCS au tableau de bord.** Les envois RCS sont sortis de la série « Service » (qui les annonçait
   comme non facturés) mais ne sont affichés nulle part ailleurs. Leur donner leur propre série, avec le coût
   smsmode en face, est le vrai correctif.

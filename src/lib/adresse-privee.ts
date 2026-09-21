@@ -10,13 +10,12 @@ import { lookup as lookupDns } from 'node:dns/promises';
  * du fournisseur) ou sur `172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les autres
  * conteneurs). Aucun contrôle textuel ne peut voir ça : il faut RÉSOUDRE.
  *
- * ⚠️ CE QUE CE MODULE NE FERME PAS, ET IL FAUT LE SAVOIR. La vérification a lieu AVANT l'appel, et `fetch`
- * refait sa propre résolution : entre les deux, un serveur DNS hostile peut répondre une adresse publique
- * puis une adresse privée (« DNS rebinding »). Fermer CETTE fenêtre demande de fournir à la couche HTTP son
- * PROPRE résolveur (`undici`, option `connect.lookup`), donc d'ajouter une dépendance directe. Le rapport
- * n'est pas là aujourd'hui : le scénario exige que l'attaquant contrôle le domaine que l'ADMINISTRATEUR
- * CLIENT a lui-même saisi dans sa console, c'est-à-dire un administrateur hostile, qui dispose déjà de son
- * propre compte. Le cas RÉALISTE, un nom public qui pointe simplement vers l'intérieur, est fermé ici.
+ * ⚠️ CE MODULE NE FERME PAS À LUI SEUL LE « DNS REBINDING », ET IL N'A PAS À LE FAIRE. Sa vérification a
+ * lieu AVANT l'appel, et une connexion ordinaire referait sa propre résolution : entre les deux, un DNS
+ * hostile pourrait répondre public puis privé. Cette seconde fenêtre est fermée par `fetchPublic`
+ * (`src/lib/connexion-publique.ts`), qui revérifie l'adresse à l'OUVERTURE de la socket avec
+ * `estAdressePrivee`, le prédicat de ce fichier. Les deux restent : la vérification d'ici donne un refus
+ * LISIBLE avant l'appel, celle de la connexion ne remonte que comme une panne réseau.
  *
  * Module PUR côté logique (`estAdressePrivee`) et injectable côté réseau : tout se teste sans DNS.
  */

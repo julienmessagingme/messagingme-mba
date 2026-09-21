@@ -197,6 +197,10 @@ export const schema = z.object({
    * faire attendre tout ce qui le partage, la console des clients ET la réception des webhooks de Meta, donc
    * les messages entrants. Le travail d'un intégrateur ne doit jamais prendre tout le pool.
    *
+   * ⚠️ LA PLACE EST GLOBALE AU PROCESS, TOUS CLIENTS CONFONDUS. Pendant qu'un lot d'un espace est en vol,
+   * l'opération lourde d'un AUTRE espace reçoit le 429 (`Retry-After: 2`). Le pool est partagé par tous, donc
+   * un plafond par espace ne le protégerait pas ; l'équité entre intégrateurs est un chantier à part.
+   *
    * ⚠️ LE LIMITEUR DE DÉBIT NE PROTÈGE PAS DE ÇA : sa fenêtre est FIXE, donc les 60 requêtes d'une minute
    * peuvent tomber dans la même milliseconde. Relever ce nombre demande de refaire l'arithmétique du pool,
    * pas seulement de changer la variable ; un banc isolé qui mesure l'attente du pool en est la condition.

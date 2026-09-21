@@ -16,7 +16,8 @@ import type { FastifyReply } from 'fastify';
  *
  * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :
  * `ip::discriminant` pour les routes d'authentification (`req.ip` seul désignerait le proxy), le CODE pour
- * `/w/:code`, l'identifiant de clé pour `/v1`, l'`userId` pour le plafond général des routes authentifiées
+ * `/w/:code`, l'EMPREINTE de la clé pour `/v1` (calculée avant toute lecture en base, donc une clé inventée
+ * est freinée sans coûter une requête), l'`userId` pour le plafond général des routes authentifiées
  * et le `tenantId` pour celui des routes coûteuses. Le choix de clé décide de QUI partage un quota avec qui,
  * et c'est la seule décision qui compte à l'usage.
  *

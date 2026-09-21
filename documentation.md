@@ -904,10 +904,16 @@ ou sur le réseau Docker. Trois règles la rendent juste : **une seule adresse i
 en préfixe de chaîne** (`fe80::/10` fait dix bits, pas quatre caractères). L'inventaire des chemins concernés
 est tenu par `tests/lib-adresse-privee.test.ts`, plus par une page qui dérive.
 
-⚠️ **Le DNS rebinding reste ouvert** : `urlRecuperable` valide le NOM, pas l'IP finalement résolue par
-`fetch`. Un administrateur de tenant peut déclarer un domaine à lui, passer la validation, puis repointer son
-DNS. C'est un risque d'ADMINISTRATEUR, pas de contact, et il est dans `todo.md`. ⚠️ Le pare-feu de l'hôte ne
-protège pas ce chemin : le trafic reste dans le réseau Docker, il ne traverse jamais l'interface publique.
+🔴 **L'adresse se revérifie à l'OUVERTURE de la connexion.** La vérification ci-dessus et l'appel faisaient
+deux résolutions distinctes : un DNS hostile pouvait répondre public à la première, interne à la seconde
+(« DNS rebinding »). Tout appel vers une adresse saisie par un client passe donc par `fetchPublic`
+(`src/lib/connexion-publique.ts`) : un littéral y est jugé tout de suite, un nom est résolu par un `lookup`
+qui refuse l'intérieur, et la socket s'ouvre sur ce qui a été vérifié. Le même test d'inventaire exige ce
+branchement de chaque chemin, client MCP compris. ⚠️ `fetch` et `Agent` viennent du MÊME paquet `undici` : la
+production tourne en Node 22 (undici 6 embarqué), le poste en Node 24, et mélanger les deux versions est le
+piège. ⚠️ La vérification préalable reste : elle rend un refus lisible, là où un refus à la connexion ne
+remonte que comme une panne réseau. ⚠️ Le pare-feu de l'hôte ne protège pas ce chemin : le trafic reste dans
+le réseau Docker, il ne traverse jamais l'interface publique.
 
 🔴 **Un corps de réponse distante se lit EN FLUX** (`lireCorpsBorne`), jamais avec `res.text()` suivi d'un test
 de taille : le corps entier entrerait en mémoire avant d'être jeté, et `.length` compte des unités UTF-16,
@@ -1151,10 +1157,8 @@ vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md]
 **Elles vivent dans [todo.md](todo.md), et nulle part ailleurs.** Un « reste à faire » qui existe à deux
 endroits en existe zéro : l'un des deux sera fait sans que l'autre le sache.
 
-Les trois qui ont le plus de conséquences aujourd'hui :
+Les deux qui ont le plus de conséquences aujourd'hui :
 
-- **DNS rebinding** sur les URL saisies par un administrateur de tenant (connecteur API, import de
-  connaissance). Le nom est validé, l'IP finalement résolue ne l'est pas.
 - **Plafonds de débit locaux au process** : à lever avant tout multi-replica, sinon le plafond annoncé est
   multiplié par le nombre d'instances.
 - **`web/lib/api.ts`** reste un hub de plus de 200 exports, dette connue et en croissance.
