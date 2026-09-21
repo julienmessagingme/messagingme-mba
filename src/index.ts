@@ -114,7 +114,8 @@ import { creerRecapRedige, creerRedacteurRecap, gabarit } from './aide/recap-ren
 import { creerTraducteur, type LangueConsole } from './traduction/traduire';
 import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
-import { PgToolCatalog } from './agent/catalog.pg';
+import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
+import { creerAppelConnecteur } from './agent/resolvers/http';
 import { lireContexteAgent } from './agent/contexte';
 import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-equipe';
 import { PgCreditStore } from './agent/credits.pg';
@@ -2621,6 +2622,33 @@ async function main(): Promise<void> {
     },
     v1: {
       apiKeys: apiKeyStore,
+      /**
+       * Le relais du Meta Business Agent (migration 0161). Le MÊME point de passage que l'agent IA
+       * (`creerAppelConnecteur`), avec les mêmes lectures paresseuses : un appel de l'agent de Meta passe par
+       * les mêmes gardes, et se journalise sous l'appelant `mba`.
+       */
+      mbaRelais: {
+        numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
+        outilsActifs: (t, c) => toolCatalog.listActifsConsommateur(t, c),
+        requete: (t, id) => agentRequetes.parId(t, id),
+        // 🔴 PROJECTION, jamais la ligne brute : même règle que `lireContact` du worker. Le numéro, le BSUID
+        // et le statut d'opt-in n'ont rien à faire dans ce qui part vers le système du client.
+        contact: async (t, waId) => {
+          const etat = await contactStore.getContactStateByWaId(t, waId);
+          return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
+        },
+        appeler: creerAppelConnecteur({
+          sources: agentSources,
+          requetes: agentRequetes,
+          derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+          fuseau: async (t) => (await settingsStore.get(t)).timezone,
+        }),
+        journal: new PgJournalAppels(pool),
+        // ⚠️ TEMPORAIRE : la FORME de l'en-tête du numéro, jamais sa valeur, jusqu'à ce que le premier essai
+        // réel ait mesuré ce que Meta met dans la macro. À retirer ensuite (plan, task 10).
+        // eslint-disable-next-line no-console
+        journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
+      },
       contacts: {
         upsertContacts: (tenant, items) => upsertContactsFromApi(tenant, items, { contacts: contactStore, fields: fieldStore }),
       },

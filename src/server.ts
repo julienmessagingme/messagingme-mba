@@ -52,6 +52,7 @@ import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
 import { registerMcp } from './http/mcp';
+import { registerMbaRelais, type MbaRelaisDeps } from './http/mba-relais';
 import type { DepsMcp } from './mcp/outils';
 import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
@@ -228,6 +229,8 @@ export interface ServerDeps {
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
     mcp?: DepsMcp;
+    /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1 (migration 0161). */
+    mbaRelais?: MbaRelaisDeps;
   };
   /**
    * Le garde d'usage de l'API publique. ABSENT -> une instance MÉMOIRE en OBSERVATION est construite ici.
@@ -506,6 +509,10 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
       // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
       if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi);
+      // Le relais du Meta Business Agent : le MÊME `requireApiKey`, donc le même limiteur par clé, et un droit
+      // que seule la publication attribue (`mba:relais`, absent de `VALID_API_SCOPES`). Monté ici et pas à
+      // part, pour ne pas ouvrir une seconde autorité.
+      if (v1.mbaRelais) registerMbaRelais(app, v1.mbaRelais, [requireApiKey, requireScope('mba:relais')]);
     }),
     // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
     // compte authentifié (générique, lit req.auth.userId).

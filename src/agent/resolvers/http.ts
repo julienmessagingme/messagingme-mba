@@ -81,8 +81,9 @@ function extraire(source: unknown, chemin: string): unknown {
  *
  * 🔴 CE TYPE EXISTE PARCE QU'IL Y A PLUSIEURS APPELANTS DEPUIS LE 2026-09-11 : l'agent IA (qui a un outil et
  * un modèle qui fournit des arguments), le bloc « appel HTTP » d'un scénario, et depuis le 2026-09-13 la
- * poussée d'un opt-out vers le système du client (`src/crm/poussee-optout.ts`). Les deux derniers n'ont ni
- * outil ni modèle. Réécrire l'appel pour chacun aurait dupliqué SEPT gardes (source active, filtre de sortie,
+ * poussée d'un opt-out vers le système du client (`src/crm/poussee-optout.ts`), et depuis le 2026-09-21 le
+ * relais du Meta Business Agent (`src/http/mba-relais.ts`), qui a un modèle mais pas le nôtre. La poussée et
+ * le scénario n'ont ni outil ni modèle. Réécrire l'appel pour chacun aurait dupliqué SEPT gardes (source active, filtre de sortie,
  * variables requises, adresse interne, redirection, échéance, corps borné), et les copies auraient divergé au
  * premier correctif. La leçon est celle d'`enTetesAuthSource`, payée deux fois dans ce dépôt.
  *
@@ -130,9 +131,10 @@ export interface AppelConnecteur {
    * CE QUE L'APPELANT FAIT DE LA RÉPONSE (migration 0150).
    *
    * 🔴 OBLIGATOIRE, POUR LA MÊME RAISON QUE `journal` JUSTE AU-DESSUS. Un champ optionnel se serait oublié
-   * au prochain appelant, et ce module en a DÉJÀ TROIS : l'outil d'un agent, le bloc « Appel HTTP » d'un
-   * scénario, et la poussée d'un opt-out. Un quatrième devra écrire ce qu'il lit, donc se demander s'il lit
-   * quelque chose. C'est exactement ce que le champ `journal` a coûté d'apprendre le 2026-09-14.
+   * au prochain appelant, et ce module en a PLUSIEURS : l'outil d'un agent, le bloc « Appel HTTP » d'un
+   * scénario, la poussée d'un opt-out, et le relais de l'agent de Meta (qui a ajouté `entier`). Le suivant
+   * devra écrire ce qu'il lit, donc se demander s'il lit quelque chose. C'est exactement ce que le champ
+   * `journal` a coûté d'apprendre le 2026-09-14.
    *
    * ⚠️ `champs: null` VEUT DIRE « CEUX DE LA REQUÊTE », et c'est le cas d'un scénario : il n'a pas d'outil,
    * donc pas de liste à lui, et la requête reste sa seule source. Un outil d'agent, lui, porte la sienne
