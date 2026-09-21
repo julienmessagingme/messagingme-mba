@@ -416,6 +416,29 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
 - ⚠️ `agent_tool_sources.secret_publie_le` (0129) et `marquerSecretPublie` ne sont plus lus : le secret d'un
   client ne part plus chez Meta. Colonne morte, à retirer (`todo.md`).
 
+🔴 **UN OUTIL MAISON DE L'AGENT DE META N'APPELLE PERSONNE** (migration 0162, spec
+`docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`). Il est publié sous `EngageMe` comme un
+connecteur, mais le relais exécute son geste lui-même. Les invariants :
+- **Stockage** : une ligne d'`agent_tools` avec `origin = 'mba'`, `agent_id` null et `pour_agent_meta = true`,
+  exposée par une ligne de consentement `mba:<numéro>` née active au nom de l'administrateur qui crée. La cible
+  (l'étiquette, le champ) vit dans `binding`, validée à CHAQUE lecture par `cibleMaisonSchema`
+  (`src/mba/outils-maison.ts`, `.strict()`) : une cible illisible n'est ni publiée ni exécutée.
+- **Les handlers sont À PART de ceux des agents IA** (`tag_fixe`, `champ_fixe`… contre `poser_tag`…), et un test
+  tient leur disjonction : un outil de l'agent de Meta qui atteindrait un agent IA serait refusé, pas joué.
+- **Jamais proposé ni rattachable à un agent IA** : `listCatalogue` l'exclut, `rattacherConsommateur` refuse un
+  consommateur `agent:` sur un outil `pour_agent_meta`. Son nom partage l'index unique de l'espace
+  (`agent_tools_nom_espace_uidx`) : deux outils ne peuvent pas porter le même nom sous `EngageMe`.
+- **La cible est FIXÉE par l'administrateur** ; Meta ne fournit que la valeur d'un champ (`{"valeur": …}`,
+  bornée à la liste permise). Les gestes réutilisent `creerPoserTagAgent` (déclaration, `tag_added` si nouveau)
+  et `mergeFieldsByPhone`. Le journal ne porte que la nature du geste, jamais une valeur du client.
+- **Ce qui part chez Meta** se calcule dans `src/mba/outils-a-publier.ts` (appels de connecteur ET gestes
+  maison), testé ; un MCP, une action d'agent IA exposée par l'ancienne route ou une cible illisible ne partent pas.
+- **L'onglet « Outils » du MBA** parle aux routes `src/http/mba-outils.ts` (`/tenants/:tenantId/mba-outils`),
+  qui ne voient que le consommateur `mba:<numéro>`. `src/http/agent-catalogue.ts` ne garde que la lecture de la
+  bibliothèque (agents IA, assistant). « Supprimer » retire l'outil à l'agent de Meta (`retirerDeMba` : SUPPRIME
+  un outil qui n'a plus de consommateur, DÉTACHE un connecteur partagé). Le départ d'un collaborateur éteint ses
+  consentements (`deleteUser`) : l'outil passe « Désactivé » et se rallume par `PUT …/:id/actif`.
+
 🔴 **UN SERVEUR MCP EST UNE SOURCE COMME UNE AUTRE, et c'est ce qui rend le lot petit.** Il n'y a pas de
 table dédiée : un serveur est une ligne d'`agent_tool_sources` avec `kind = 'mcp'`, ses outils sont des
 lignes d'`agent_tools` avec `origin = 'mcp'`, et tout ce qui existe déjà (consentement par consommateur,

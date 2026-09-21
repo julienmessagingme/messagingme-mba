@@ -19,6 +19,26 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le relais du MBA : TROIS passes à froid (4, 2 et 1 rouges), chacune sur les correctifs de la précédente. Les correctifs de la troisième n'ont PAS été relus, par décision de Julien (même arbitrage que l'Inbox). ⚠️ Le correctif RCS `96eebb5a` d'une autre session est dans le périmètre attesté sans avoir été relu (dépôt partagé) : déployé par `HOTFIX_SANS_REVUE` pour que la prochaine revue finale le relise. Le rapport `.git/revue-finale-rapport.md` dit les deux. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
+## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 POUSSÉ, RIEN DE DÉPLOYÉ)
+
+Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
+`docs/superpowers/plans/2026-09-21-outils-maison-mba.md` (4 lots, 20 tâches, deux déploiements).
+
+- ✅ **Lot 1, la mesure `agent_event`** : l'agent de Meta répond 11 secondes après l'événement, dans une
+  conversation en cours, en suivant la consigne (`docs/MBA-API-REFERENCE.md`). La transmission de la réponse
+  « à côté » (lot 4) est donc possible.
+- ✅ **Lot 2, poussé et vert en CI** (unitaires, intégration, sécurité, console) : migration 0162 ÉCRITE et PAS
+  ENCORE APPLIQUÉE (elle ajoute des colonnes que le code écrit : à passer AVANT le déploiement) ; gestes
+  « Poser un tag » et « Enregistrer une information » exécutés par le relais ; publication ; onglet « Outils »
+  refait d'après le croquis de Julien (e2e 16 cas, mutation vérifiée).
+- 🔴 **Avant le premier déploiement** : la décision de Julien sur les connecteurs orphelins (`todo.md`, section
+  « Outils maison de l'agent de Meta »), puis `/revue-finale`, puis 0162, puis l'essai réel du lot 2 (créer un
+  tag et une information depuis l'onglet, les voir passer « Chez Meta », les déclencher en conversation).
+- ⚠️ **La conversation de Julien est marquée « de test »** (`conversations.is_test`) : le fil n'y revient jamais
+  à l'agent de Meta en fin de scénario. Sans conséquence pour le lot 2 ; à régler (drapeau levé, ou autre
+  numéro) AVANT les essais des lots 3 et 4.
+- ⏳ **Lots 3 et 4** : envoyer un bloc, lancer un scénario ; la réponse « à côté » et la réparation du fil bloqué.
+
 ## ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)
 
 **Le relais** (spec `docs/superpowers/specs/2026-09-21-relais-mba-design.md`, plan

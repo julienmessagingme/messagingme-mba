@@ -1696,8 +1696,9 @@ scénario, comment importer des contacts.
 - ✅ **L'écran vous montre ce qui partira** avant de brancher l'appel sur un agent : la liste des données
   envoyées, en français. C'est la seule fois où vous voyez qu'un appel enverra une donnée de vos contacts,
   voire leur dernier message, à un système tiers.
-- ✅ **Un outil pour l'agent de Meta, sans passer par un agent IA** (2026-09-15), depuis **Tools > Outils**.
-  Vous choisissez l'appel, vous donnez les mots, et l'outil est créé ET exposé à Meta d'un seul geste.
+- ✅ **Un outil pour l'agent de Meta, sans passer par un agent IA** (2026-09-15), depuis l'onglet **Outils** du
+  Meta Business Agent (« Ajouter un outil » > « Appeler un connecteur API » depuis le 2026-09-21). Vous choisissez
+  l'appel, vous donnez les mots, et l'outil est créé, exposé et envoyé à Meta d'un seul geste.
   🔴 **Avant, un outil naissait en le donnant à un agent IA.** Exposer un appel à Meta obligeait donc à créer
   un agent dont vous n'aviez pas besoin, et à répondre pour lui à des questions que Meta ignore.
   ⚠️ **Aucune question « pousse ou intègre » ici, et c'est normal** : Meta appelle votre système en direct et
@@ -1762,35 +1763,45 @@ importez ce qu'il propose.
   encore de connexion MCP. Ils se déclarent aux agents IA, dans **AI Agent > Outils**.
 - ⛔ **Pas encore : OAuth.** L'authentification se fait par jeton ou par en-tête. OAuth viendra ensuite.
 
-## Les outils de l'espace (menu « Tools » > Outils)
+## L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
 
-- ✅ **La bibliothèque de tout ce que vos agents savent FAIRE** (2026-09-10) : les outils maison, et les
-  appels de vos connecteurs API. Un outil s'y déclare une fois, puis chaque agent choisit de s'en servir. Pour
-  chacun, son nom lisible, le nom technique que le modèle voit, sa description, et son étiquette
-  (**maison**, **connecteur**, ou **MCP**), plus une pastille rouge sur les actions irréversibles.
-  ⚠️ **C'est un écran de PILOTAGE, pas de création** : un outil s'ajoute toujours depuis l'onglet Outils d'un
-  agent, là où on lui donne ses mots et ses valeurs autorisées. Ici on voit qui s'en sert, on l'ouvre à
-  l'agent de Meta, et on le supprime de l'espace.
-- ✅ **Un outil MCP MORT ne ressemble pas à un outil vivant** : une pastille « a disparu du serveur » ou
-  « non activable », et dans le second cas **la raison écrite en clair**, telle que le serveur l'a donnée.
-  Sans elles, le client ne l'apprenait qu'en cliquant « activer » et en recevant un refus.
-- ✅ **« Utilisé par », sur chaque outil**, et c'est la raison d'être de l'écran : les agents qui s'en servent
-  sont nommés, et ceux qui l'ont ajouté sans l'avoir activé sont marqués « (inactif) ». Sans cette ligne, ce
-  serait une liste de plus ; avec elle, on voit qu'y toucher touche plusieurs agents à la fois.
-- ✅ **Supprimer un outil de l'espace, et seulement s'il ne sert à personne.** Le bouton n'apparaît pas tant
-  qu'un agent l'utilise, ni tant qu'il est exposé à l'agent de Meta. Montrer un bouton dont on sait qu'il échouera est une invitation à l'échec, pas une
-  garde : le serveur refuse de toute façon, en disant qui s'en sert.
-- ✅ **« Exposé à l'agent de Meta »** : une case par outil, qui met l'outil à disposition du **Meta Business
-  Agent** sur le numéro WhatsApp de l'espace. Le MBA devient alors un utilisateur d'outil comme un de vos
-  agents, sans avoir de fiche d'agent chez nous.
-  ⚠️ **La case est grisée sur un outil qui n'est pas un appel d'API**, avec la raison écrite à côté : un outil
-  maison n'a aucune adresse que Meta puisse appeler, et un outil MCP ne parle pas HTTP. Une case cochée que la
-  publication ignorerait en silence serait pire qu'une case interdite.
-  ⚠️ **Sur une action irréversible, la case demande une confirmation, et elle est franche** : chez Meta, la
-  validation humaine que vous avez réglée sur l'agent **n'existe pas**. L'outil y sera appelé seul.
-- ⛔ **Réservé aux administrateurs, écran compris** : la route de lecture est admin comme les écritures, et
-  de toute façon un utilisateur non administrateur n'a accès qu'à l'Inbox. Vérifié dans le code, pas supposé :
-  la première version de cette ligne annonçait une lecture ouverte à tous, ce qui était faux.
+Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
+§ 9). **Livré, pas encore déployé.**
+
+- ✅ **Une liste claire des outils de l'agent de Meta, et d'eux seuls** : pour chacun, son titre, ce qu'il vise
+  (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
+  chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent depuis sa fiche.
+- ✅ **Un gros bouton « + Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
+  information**, **Appeler un connecteur API**. Ce dernier est grisé, avec le lien vers Tools > Connecteurs
+  API, tant que l'espace n'a déclaré aucun appel.
+- ✅ **Poser un tag** : l'étiquette est fixée par l'administrateur, l'agent de Meta ne décide que du moment. Elle
+  arrive sur la fiche du mini-CRM et déclenche les automations « tag ajouté ».
+  ⚠️ Une automation qui LANCE UN SCÉNARIO ne démarre pas tant que l'agent de Meta tient la conversation (règle
+  existante : un démarrage automatique n'écrit jamais dans une conversation tenue). L'écran le dit.
+- ✅ **Enregistrer une information** : le champ de la fiche est fixé, l'agent de Meta fournit la valeur, tirée
+  de la conversation. En option, une liste de valeurs permises : une autre valeur est refusée, et l'agent le sait.
+- ✅ **Enregistrer, c'est envoyer à Meta.** Créer, modifier ou supprimer un outil le porte chez Meta dans le même
+  geste ; il n'y a plus de bouton « Envoyer » à retenir (c'est son oubli qui avait fait rater le premier essai
+  du relais). Un envoi qui échoue ne défait pas l'enregistrement : la ligne reste « À envoyer ».
+- ✅ **L'état chez Meta, ligne par ligne** : « ✓ Chez Meta » ou **« À envoyer »**, qui est un bouton. Il envoie
+  TOUT ce qui attend (Meta ne reçoit qu'une publication entière), et le dit au survol. Une ligne passe aussi
+  « À envoyer » quand c'est le connecteur `EngageMe` qui doit repartir (clé « Agent de Meta » révoquée).
+- ✅ **Une consigne pré-remplie par type**, directive (« Appelle cet outil dès que le client… ») : tant que le
+  trou « [décrivez la situation] » n'est pas complété, l'outil ne s'enregistre pas.
+- ✅ **Le nom technique se calcule depuis le titre**, et reste modifiable.
+- ✅ **Une ligne rouge quand la cible n'existe plus** : un champ supprimé du mini-CRM, un appel supprimé dans
+  Connecteurs API. Un tel outil refuse à chaque appel ; sans cette ligne, personne ne le saurait.
+- ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
+  cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
+- ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses
+  consentements s'éteignent et l'outil disparaît de chez Meta. La ligne le dit, et un administrateur le rallume
+  d'un clic.
+- ⚠️ **L'appel d'un connecteur ne change pas au « Modifier »** : pour changer d'appel, on crée un autre outil
+  (la définition est partagée avec les agents IA qui s'en servent).
+- ⛔ **Réservé aux administrateurs.**
+- ⛔ **Pas encore : « Envoyer un bloc » et « Lancer un scénario »** (lot 3 du même plan).
+- ⚠️ **L'ancienne adresse `/outils` renvoie vers cet onglet.** L'écran « bibliothèque de l'espace » qu'elle
+  servait (la case « Exposé à l'agent de Meta », « Supprimer de l'espace ») n'existe plus.
 
 ### Publier chez Meta
 
@@ -1820,9 +1831,9 @@ importez ce qu'il propose.
   à rajouter une étiquette » n'a jamais déclenché l'outil ; « Appelle cet outil dès que le client demande
   qu'on lui ajoute une étiquette. Il sait déjà qui est le client et quelle étiquette poser. Confirme-lui que
   c'est fait. Ne passe pas la main pour cette demande. » l'a déclenché au premier essai.
-- ✅ **Un seul bouton, « Envoyer »** (depuis le 2026-09-18) : il calcule ce qui va changer chez Meta et ne
-  s'arrête pour demander confirmation que s'il doit y SUPPRIMER quelque chose, en le nommant. Pendant
-  l'aller-retour, le bouton le dit, et un second clic n'envoie rien.
+- ✅ **Enregistrer envoie, et « À envoyer » renvoie** (depuis le 2026-09-21, voir l'onglet ci-dessus). L'envoi
+  ne s'arrête pour demander confirmation que s'il doit SUPPRIMER chez Meta quelque chose que ce geste n'a pas
+  demandé, en le nommant. Pendant l'aller-retour, l'écran le dit, et un second clic n'envoie rien.
 - ⚠️ **Engage Me fait foi, la publication ÉCRASE.** Un connecteur ou un outil ajouté à la main dans WhatsApp
   Manager sera SUPPRIMÉ à la publication suivante. L'écran le dit, et l'aperçu le montre avant le clic.
 - ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms, et
@@ -2078,10 +2089,10 @@ d'aide.
   ⚠️ **Sans aucun outil actif, l'agent peut parler mais ne peut rien faire, pas même terminer.**
 - ✅ **L'outil appartient à l'ESPACE, l'autorisation appartient à l'agent** (2026-09-10). Le même outil sert
   plusieurs agents sans être redécrit : ses mots se corrigent une fois et sont corrigés partout. Ce qui reste
-  propre à chaque agent, c'est de s'en servir ou non, et l'activation. La liste de tout ce que l'espace
-  possède, avec qui s'en sert, est dans **Tools > Outils** (section « Les outils de l'espace », plus bas).
+  propre à chaque agent, c'est de s'en servir ou non, et l'activation.
   ⚠️ **Conséquence à connaître** : changer la description d'un outil partagé change ce que voient TOUS les
-  agents qui l'utilisent. L'écran de la bibliothèque les nomme, justement pour qu'on le sache avant.
+  agents qui l'utilisent. L'onglet Outils de l'agent de Meta nomme les agents IA qui partagent un connecteur,
+  justement pour qu'on le sache avant. (L'écran « bibliothèque de l'espace », Tools > Outils, n'existe plus.)
 - ✅ **Sept outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
   - **Chercher dans la base de connaissance** (lecture) : à appeler avant toute question de fond.
   - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs. Jamais la fiche

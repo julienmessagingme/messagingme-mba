@@ -23,16 +23,37 @@ texte d'un message texte), quand l'envoi depuis l'Inbox dit déjà son contenu (
 Relevé par la revue finale du 2026-09-21 : `web/components/InboxRcsPanel.tsx` (vers les lignes 147 et 166)
 affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouton d'envoi reste ACTIF.
 
-## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
+## 🟡 Outils maison de l'agent de Meta : ce qu'ils laissent derrière eux (2026-09-21)
 
-- **L'écran ne dit pas si un outil est déjà chez Meta** (remarque de Julien pendant l'essai réel) : après un
-  « Envoyer », revenir sur l'onglet Outils ne montre rien, et un essai a échoué parce que l'envoi n'avait pas
-  été fait. Afficher sur chaque outil « chez Meta : à jour » ou « à envoyer », calculé par le même plan que
-  l'aperçu.
+Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
+`docs/superpowers/plans/2026-09-21-outils-maison-mba.md`.
+
+- 🔴 **DÉCISION ATTENDUE (Julien) : un outil de connecteur que plus personne n'utilise n'a plus d'écran pour
+  être supprimé.** Un agent IA qui retire un connecteur ne fait que le DÉTACHER (`PgToolCatalog.detacher`,
+  délibéré le 2026-09-18 : un connecteur appartient à l'espace), et supprimer un agent efface ses consentements
+  sans effacer ses connecteurs. L'ancien onglet Outils du MBA (la bibliothèque de l'espace, « Supprimer de
+  l'espace ») était le dernier écran d'où effacer ces orphelins ; il est parti avec le lot 2. Conséquences :
+  un orphelin garde son nom pris (un outil neuf du même nom rend 409) et BLOQUE la suppression de sa requête
+  dans Connecteurs API (« N outil(s) d'agent utilisent cette requête : retirez-les d'abord », sans écran pour
+  le faire). Mesuré le 2026-09-21 : ZÉRO orphelin en production (un seul outil en tout), donc piège armé et
+  pas panne vivante. Recommandation : un connecteur HTTP qui perd son dernier consommateur est supprimé (même
+  règle que `retirerDeMba`), MCP exclu (ses outils restent rattachables) ; à trancher, parce que ça change le
+  geste « retirer » des agents IA.
+- 🟡 **Code mort si la décision ci-dessus est prise** : `PgToolCatalog.supprimerDefinition` et
+  `detacherConsommateur` n'ont plus d'appelant en production depuis le retrait des routes de la bibliothèque
+  (seuls `tests/integration/agent-catalog.integration.test.ts` et l'interface `ToolAdminStore` les nomment).
+- 🟡 **L'outil `envoyer_bloc` des AGENTS IA accepte n'importe quel bloc quand sa liste est vide**, alors que
+  l'écran annonce « aucun » (`src/workflow/executor.ts`, `envoyerBlocDepuisAgent` ; la liste vit dans
+  `agent_tools.params`). Relevé en cadrant les outils de l'agent de Meta (spec § 12).
+- 🟡 **Et il ne vérifie pas la fenêtre de 24 h avant d'envoyer** (même fonction) : Meta refuse alors en 131047,
+  après coup. Le relais de l'agent de Meta, lui, la vérifie avant de prendre le fil (lot 3).
+
+## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
 
 - **La sonde d'attaque ne voit pas la porte du relais** (`scripts/auto-attaque.mts`) : son serveur ne monte
   pas l'entrée `v1`, donc `POST /mba/relais/outils/:id` n'est ni inventoriée ni attaquée par le job
-  `securite` (`mbaPublication` est absente aussi, c'était déjà le cas). Dériver sa liste de modules du
+  `securite` (`agentCatalogue`, `mbaPublication` et `mbaOutils` y ont été ajoutés à la main le 2026-09-21 ; huit autres
+  modules du registre y manquent encore, mesuré le même jour). Dériver sa liste de modules du
   registre `modulesDeRoutes` plutôt que d'une liste écrite à la main. Le relais est couvert en attendant par
   `tests/http-mba-relais.test.ts` (401, 403, clé d'un autre espace).
 - **Le verrou de publication chez Meta est LOCAL AU PROCESS** (`src/http/mba-publication.ts`, un `Set` par

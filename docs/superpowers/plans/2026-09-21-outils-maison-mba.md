@@ -49,6 +49,13 @@ marqueur de 0149 cesse de se poser sur un message déjà acquitté.
    `PATCH /agent-tools/:outilId`, `PUT /agent-tools/:outilId/mba`, `DELETE /agent-tools/:outilId`) : leur seul
    client était l'écran remplacé. `GET /agent-tools` reste (lu par `AgentOutils.tsx` et `api-agent-setup.ts`).
    Leurs cas de test sont portés vers `tests/http-mba-outils.test.ts` (table au Task 7).
+4. **Un outil désactivé se voit et se réactive** (trouvé à l'exécution du Task 4, rayon de souffle) : le départ
+   d'un collaborateur éteint les consentements qu'il avait donnés (`PgUserStore.deleteUser`), donc un outil de
+   l'agent de Meta qu'il avait créé devient inactif, sort de la publication et disparaît de chez Meta. L'ancienne
+   case « Exposé » permettait de le rallumer ; elle part avec l'écran. La vue porte donc `actif`, la ligne affiche
+   « Désactivé » (et non un état chez Meta, faux pour un outil qui n'est plus publié), et un bouton
+   « Réactiver » appelle `PUT /tenants/:tenantId/mba-outils/:outilId/actif` (`activerConsommateur`, au nom de
+   l'administrateur qui clique), puis publie.
 3. **Deux déploiements**, chacun précédé d'une revue finale : après le lot 2 (écran, tag, information), puis
    après les lots 3 et 4. La migration 0162 passe avant le premier ; elle porte déjà `accuse_le`, que seul le
    lot 4 écrit (une colonne nullable que personne ne lit ne gêne rien).
