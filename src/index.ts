@@ -145,7 +145,7 @@ import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
 import { cleAJour, NOM_CLE_RELAIS, DROIT_RELAIS, type DepsCleRelais } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
-import { CHEMIN_RELAIS } from './mba/relais';
+import { baseDuRelais } from './mba/relais';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -248,10 +248,7 @@ async function main(): Promise<void> {
    * `adresseDuRelais` : `null` quand `PUBLIC_API_URL` est vide, et la publication refuse alors en le disant
    * plutôt que de poser chez Meta un connecteur qui n'appelle rien.
    */
-  const adresseDuRelais = (): string | null => {
-    const base = config.PUBLIC_API_URL.trim().replace(/[/]+$/, '');
-    return base === '' ? null : `${base}${CHEMIN_RELAIS}`;
-  };
+  const adresseDuRelais = (): string | null => baseDuRelais(config.PUBLIC_API_URL);
   /**
    * Les outils exposés à l'agent de Meta, avec les variables de leur requête.
    *
@@ -274,30 +271,34 @@ async function main(): Promise<void> {
    * La clé « Agent de Meta » : une clé d'API de l'espace, retenue dans `tenant_settings.mba_relais_cle_id`.
    *
    * ⚠️ CHAQUE CRÉATION ET CHAQUE RÉVOCATION EST AUDITÉE, comme sur la page des clés (`cle_api.creee`,
-   * `cle_api.revoquee`) : c'est la clé au droit le plus large de l'espace, et elle naît sans qu'un humain
-   * ait cliqué sur « Créer une clé ». L'acteur est la publication, pas une personne.
+   * `cle_api.revoquee`) : c'est la clé au droit le plus large de l'espace. Elle naît du clic « Envoyer » d'un
+   * administrateur, et c'est LUI que l'audit nomme (`acteur`, passé par la route de publication) ; `null`
+   * (« Système ») ne sert qu'à la lecture de `cleAJour`, qui n'écrit rien. Un audit qui échoue ne bloque pas
+   * la publication, mais se voit en console : un journal muet serait indétectable (`makeJournal`).
    */
-  const acteurPublication = { userId: null, email: null };
-  const auditerCle = (t: string, action: 'cle_api.creee' | 'cle_api.revoquee', id: string): Promise<void> =>
-    auditSink(t, acteurPublication, action, { kind: 'api_key', id }, { scopes: [DROIT_RELAIS], par: 'publication chez Meta' })
-      .catch(() => {});
-  const depsCleRelais: DepsCleRelais = {
-    creerCle: async (t) => {
-      const cle = await apiKeyStore.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]);
-      await auditerCle(t, 'cle_api.creee', cle.id);
-      return cle;
-    },
-    revoquer: async (t, id) => {
-      const fait = await apiKeyStore.revoke(t, id);
-      if (fait) await auditerCle(t, 'cle_api.revoquee', id);
-      return fait;
-    },
-    cleRetenue: (t) => settingsStore.mbaRelaisCleId(t),
-    retenir: (t, id) => settingsStore.setMbaRelaisCleId(t, id),
-    estActive: (t, id) => apiKeyStore.estActive(t, id),
-    revoquerAutres: async (t, garder) => {
-      for (const id of await apiKeyStore.revoquerDroitSauf(t, DROIT_RELAIS, garder)) await auditerCle(t, 'cle_api.revoquee', id);
-    },
+  const depsCleRelaisPour = (acteur: string | null): DepsCleRelais => {
+    const auditerCle = (t: string, action: 'cle_api.creee' | 'cle_api.revoquee', id: string): Promise<void> =>
+      auditSink(t, { userId: acteur, email: null }, action, { kind: 'api_key', id }, { scopes: [DROIT_RELAIS], par: 'publication chez Meta' })
+        // eslint-disable-next-line no-console
+        .catch((err) => { console.error('audit ignoré:', err instanceof Error ? err.message : err); });
+    return {
+      creerCle: async (t) => {
+        const cle = await apiKeyStore.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]);
+        await auditerCle(t, 'cle_api.creee', cle.id);
+        return cle;
+      },
+      revoquer: async (t, id) => {
+        const fait = await apiKeyStore.revoke(t, id);
+        if (fait) await auditerCle(t, 'cle_api.revoquee', id);
+        return fait;
+      },
+      cleRetenue: (t) => settingsStore.mbaRelaisCleId(t),
+      retenir: (t, id) => settingsStore.setMbaRelaisCleId(t, id),
+      estActive: (t, id) => apiKeyStore.estActive(t, id),
+      revoquerAutres: async (t, garder) => {
+        for (const id of await apiKeyStore.revoquerDroitSauf(t, DROIT_RELAIS, garder)) await auditerCle(t, 'cle_api.revoquee', id);
+      },
+    };
   };
   /**
    * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
@@ -1858,7 +1859,7 @@ async function main(): Promise<void> {
       relais: async (tenant) => {
         const base = adresseDuRelais();
         if (base === null) return null;
-        return { baseUrl: base, cleAJour: await cleAJour(depsCleRelais, tenant) };
+        return { baseUrl: base, cleAJour: await cleAJour(depsCleRelaisPour(null), tenant) };
       },
       outilsExposes: (tenant, pn) => outilsPourMeta(tenant, pn),
       etatMeta: async (tenant, pn) => {
@@ -1877,7 +1878,7 @@ async function main(): Promise<void> {
         client: (tenant) => metaFactory.mbaClientForTenant(tenant),
         adresseDuRelais,
         outils: outilsPourMeta,
-        cle: depsCleRelais,
+        cle: depsCleRelaisPour,
       }),
     },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d

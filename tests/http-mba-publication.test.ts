@@ -5,6 +5,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { Geste, OutilAPublier, EtatMeta, RelaisAPublier } from '../src/mba/publication';
 import { FakeQueue } from '../src/queue/fake';
 import { ErreurPublication } from '../src/mba/appliquer-publication';
+import { MetaApiError } from '../src/meta/errors';
 
 /**
  * Publier le catalogue d'outils chez Meta.
@@ -36,8 +37,9 @@ const ADD_TAG: OutilAPublier = {
 };
 const META_VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 
-function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; relais?: RelaisAPublier | null } = {}) {
+function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; relais?: RelaisAPublier | null; retenir?: Promise<void> } = {}) {
   const appliques: Geste[] = [];
+  const contextes: Array<Map<string, unknown>> = [];
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -46,13 +48,15 @@ function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreu
       relais: async () => (opts.relais === undefined ? RELAIS : opts.relais),
       outilsExposes: async () => [ADD_TAG],
       etatMeta: async () => META_VIDE,
-      appliquer: async (_t, _pn, g) => {
-        if (g.type === opts.echoueSur) throw opts.erreur ?? new Error('Meta a refusé');
+      appliquer: async (_t, _pn, g, ctx) => {
+        if (opts.retenir) await opts.retenir;
+        if (g.type === opts.echoueSur) throw opts.erreur ?? new Error('panne');
         appliques.push(g);
+        contextes.push(ctx);
       },
     },
   });
-  return { app, appliques };
+  return { app, appliques, contextes };
 }
 
 describe('l’aperçu de publication', () => {
@@ -134,4 +138,41 @@ describe('la publication', () => {
     expect((await app.inject({ method: 'GET', url: `/tenants/${TENANT}/mba-publication` })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication` })).statusCode).toBe(401);
   });
+
+describe('une publication à la fois, et la vraie cause d’un échec', () => {
+  it('🔴 deux publications SIMULTANÉES du même espace : la seconde est refusée, rien ne s’entrelace', async () => {
+    // Entrelacées, chacune posait sa clé chez Meta puis révoquait « toutes les autres », donc celle de
+    // l'autre : Meta présentait une clé révoquée, et les deux POST rendaient 200.
+    let liberer: () => void = () => {};
+    const retenir = new Promise<void>((r) => { liberer = r; });
+    const { app, appliques } = monter({ retenir });
+    const premiere = app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    await new Promise((r) => setTimeout(r, 20));
+    const seconde = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    expect(seconde.statusCode).toBe(409);
+    expect(seconde.json().error).toMatch(/déjà en cours/);
+    liberer();
+    expect((await premiere).statusCode).toBe(200);
+    expect(appliques.map((g) => g.type)).toEqual(['connecteur_creer', 'outil_creer']);
+    // Le verrou retombe : une publication suivante passe.
+    expect((await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() })).statusCode).toBe(200);
+  });
+
+  it('« Meta a refusé » seulement quand c’est Meta ; une panne de chez nous le dit', async () => {
+    const meta = monter({ echoueSur: 'connecteur_creer', erreur: new MetaApiError(400, { message: 'Invalid connector request' }) });
+    expect((await meta.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() })).json().error)
+      .toMatch(/Meta a refusé/);
+    const nous = monter({ echoueSur: 'connecteur_creer', erreur: new Error('connexion à la base perdue') });
+    const msg = (await nous.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() })).json().error;
+    expect(msg).not.toMatch(/Meta a refusé/);
+    expect(msg).toMatch(/de notre côté/);
+  });
+
+  it('🔴 la publication AMORCE les gestes avec les outils du plan et l’administrateur qui publie', async () => {
+    const { app, contextes } = monter();
+    await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    expect(contextes[0]!.get('outils')).toEqual([ADD_TAG]);
+    expect(contextes[0]!.get('acteur')).toBe('u1');
+  });
+});
 });

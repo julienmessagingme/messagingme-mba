@@ -199,7 +199,19 @@ Continue?`,
    */
   async function apresCreation(): Promise<void> {
     setOutils((await getBibliothequeOutils(tenantId)).outils);
-    await publier();
+    /**
+     * 🔴 LA MÊME GARDE QUE LE BOUTON (revue finale du 2026-09-21). Cette publication automatique partait sans
+     * poser `envoiEnCours` : le bouton « Envoyer » restait actif pendant qu'elle créait le connecteur et sa
+     * clé, et un clic lançait une seconde publication simultanée. Le serveur refuse désormais la seconde
+     * (409), mais un bouton qui invite à un geste refusé n'est pas une garde.
+     */
+    if (envoiEnCours) return;
+    setEnvoiEnCours(true);
+    try {
+      await publier();
+    } finally {
+      setEnvoiEnCours(false);
+    }
   }
 
   const LIBELLE_GESTE: Record<GestePublication['type'], string> = {

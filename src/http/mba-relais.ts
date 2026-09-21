@@ -7,6 +7,7 @@ import type { SortieResolveur } from '../agent/executor';
 import { consommateurMba } from '../agent/consommateur';
 import {
   ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
+  corpsIllisible,
 } from '../mba/relais';
 
 /**
@@ -23,9 +24,9 @@ import {
  *
  * ⚠️ UN ÉCHEC MÉTIER SORT EN 200 `{ succes: false, erreur }` : le modèle de Meta doit pouvoir dire au client
  * ce qui ne va pas. Un 4xx ou un 5xx risquerait d'être lu comme une panne de transport (non documenté chez
- * Meta, à mesurer au premier essai). Ce que la ROUTE décide sort donc toujours en 200. Restent, AVANT elle :
- * la garde de clé (401, 403 sans le droit, 403 `tenant_locked`, 429 au-delà du plafond de la clé) et le
- * lecteur de corps de Fastify (400 sur un JSON illisible ; un corps VIDE, lui, passe, et un test le garde).
+ * Meta, à mesurer au premier essai). Ce que la ROUTE décide sort donc toujours en 200, y compris un JSON
+ * illisible (`corpsIllisible`). Seule la garde de clé répond AVANT elle : 401, 403 sans le droit, 403
+ * `tenant_locked`, 429 au-delà du plafond de la clé. Un corps VIDE passe, et un test le garde.
  */
 export interface MbaRelaisDeps {
   /** Le numéro Meta de l'espace, `null` = aucun, donc aucun outil exposé. */
@@ -67,7 +68,10 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     const contact = await deps.contact(tenant, waId);
     if (contact === null) return refus('ce client est introuvable dans le carnet de contacts');
 
-    // 3. LES VALEURS DU MODÈLE, validées contre les variables `modele` déclarées, et elles seules.
+    // 3. LES VALEURS DU MODÈLE, validées contre les variables `modele` déclarées, et elles seules. Le lecteur
+    //    de JSON du serveur rend `{}` sur un corps illisible : on relit le corps BRUT pour ne pas le confondre
+    //    avec un corps vide (`rawBody` est posé par ce lecteur, `src/webhooks/receiver.ts`).
+    if (corpsIllisible((req as { rawBody?: unknown }).rawBody)) return refus('le corps de la requête n’est pas du JSON lisible');
     const requete = await deps.requete(tenant, outil.requestId);
     if (requete === null) return refus('cet outil n’est pas configuré');
     const lu = lireValeursModele(requete.variables, req.body);

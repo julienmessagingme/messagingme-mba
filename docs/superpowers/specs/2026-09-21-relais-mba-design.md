@@ -212,5 +212,6 @@ appels au système du client, avec un invariant d'isolation entre espaces.
 
 **L'essai qui clôt le chantier**, par Julien : réassigner `add_tag` à l'agent de Meta, cliquer « Envoyer »
 (la confirmation doit montrer la suppression de `testUCHAT` et la création d'`EngageMe`), puis demander sur
-WhatsApp « ajoute-moi l'étiquette X ». L'étiquette doit apparaître sur sa fiche UChat, et l'appel dans le
-journal sous l'appelant `mba`. Puis un second « Envoyer » qui ne doit produire aucun geste.
+WhatsApp d'ajouter l'étiquette. L'étiquette (valeur du champ `tag_ns` de sa fiche) doit apparaître sur sa
+fiche UChat ; un succès ne s'affiche pas dans le journal des erreurs, la preuve est UChat et la date de
+dernier usage de la clé « Agent de Meta ». Puis un second « Envoyer » qui ne doit produire aucun geste.

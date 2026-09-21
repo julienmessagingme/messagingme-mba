@@ -25,9 +25,13 @@ export type RisqueOutil = 'read' | 'write' | 'irreversible';
  * celle-là dit quel CHEMIN du produit a passé l'appel. Un connecteur `http` peut être appelé par chacun
  * d'eux, l'agent de Meta compris depuis le relais (migration 0161).
  */
-export type SourceAppel = 'agent' | 'scenario' | 'optout' | 'mba';
+export const SOURCES_APPEL = ['agent', 'scenario', 'optout', 'mba'] as const;
 
-export const SOURCES_APPEL: readonly SourceAppel[] = ['agent', 'scenario', 'optout', 'mba'];
+/**
+ * ⚠️ DÉRIVÉ DU TABLEAU, et pas l'inverse : un appelant ajouté au seul type laissait le tableau (donc le test de
+ * parité avec le CHECK de `agent_tool_calls.source`, `tests/sources-appel-parite.test.ts`) sans rien voir.
+ */
+export type SourceAppel = (typeof SOURCES_APPEL)[number];
 
 /** Les statuts de `agent_tool_calls.status`. `erreur_protocole` est le seul qui arrête le tour. */
 export type StatutAppel = 'ok' | 'erreur_outil' | 'refuse' | 'timeout' | 'erreur_protocole' | 'budget';

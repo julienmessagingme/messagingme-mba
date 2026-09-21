@@ -30,6 +30,10 @@ affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouto
   `securite` (`mbaPublication` est absente aussi, c'était déjà le cas). Dériver sa liste de modules du
   registre `modulesDeRoutes` plutôt que d'une liste écrite à la main. Le relais est couvert en attendant par
   `tests/http-mba-relais.test.ts` (401, 403, clé d'un autre espace).
+- **Le verrou de publication chez Meta est LOCAL AU PROCESS** (`src/http/mba-publication.ts`, un `Set` par
+  espace) : il sérialise les publications d'un espace tant que l'API tourne en UNE instance. Le passer en base
+  (bail, sur le modèle de `src/campaign/run-lock.ts`) avant tout multi-réplica de l'API, sinon deux
+  publications simultanées sur deux instances se révoqueraient mutuellement la clé du relais.
 - **Le plafond du relais est celui d'une clé d'API : 60 appels par minute** (`API_KEY_RATE_LIMIT_MAX`), pour
   TOUS les appels d'outils de l'agent de Meta d'un espace. Au-delà, Meta reçoit un 429, pas un
   `succes: false`. Suffisant aujourd'hui ; à dimensionner avec le premier client à fort trafic.

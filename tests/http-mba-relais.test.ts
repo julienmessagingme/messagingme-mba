@@ -7,7 +7,7 @@ import type { MbaRelaisDeps } from '../src/http/mba-relais';
 import type { AppelConnecteur } from '../src/agent/resolvers/http';
 import type { JournalAppels } from '../src/agent/catalog';
 import { cleApiDeTest } from './aide/cle-api';
-import { CHEMIN_RELAIS } from '../src/mba/relais';
+import { baseDuRelais } from '../src/mba/relais';
 import { corpsOutilMeta } from '../src/mba/publication';
 
 /**
@@ -176,13 +176,27 @@ describe('le relais du Meta Business Agent', () => {
     // Trois morceaux dans trois fichiers : si l'un bouge seul, chaque appel de Meta part sur une 404.
     const chemin = corpsOutilMeta({ id: 'o1', name: 'add_tag', description: 'x', nePasUtiliser: '', variables: [] })
       .request_definition.path as string;
+    const base = baseDuRelais('https://api.messagingme.app/');
     const { app, appels } = monter();
     const res = await app.inject({
-      method: 'POST', url: `${CHEMIN_RELAIS}${chemin}`,
+      method: 'POST', url: `${new URL(base!).pathname}${chemin}`,
       headers: { authorization: `Bearer ${CLE_RELAIS}`, 'content-type': 'application/json', 'x-contact-whatsapp': '+33612345678' },
       payload: JSON.stringify({ user: 'u1' }),
     });
     expect(res.statusCode).toBe(200);
     expect(appels).toHaveLength(1);
+  });
+
+  it('🔴 un corps JSON ILLISIBLE est refusé, jamais pris pour un corps vide', async () => {
+    // Le lecteur de JSON du serveur rend `{}` sur un JSON invalide : sans relire le corps brut, l'appel
+    // partait sans ses valeurs facultatives, sans aucun signal.
+    const { app, appels } = monter();
+    const res = await app.inject({
+      method: 'POST', url: '/mba/relais/outils/o1',
+      headers: { authorization: `Bearer ${CLE_RELAIS}`, 'content-type': 'application/json', 'x-contact-whatsapp': '+33612345678' },
+      payload: '{pas du json',
+    });
+    expect(res.json()).toEqual({ succes: false, erreur: 'le corps de la requête n’est pas du JSON lisible' });
+    expect(appels).toHaveLength(0);
   });
 });

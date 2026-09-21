@@ -403,6 +403,9 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
   de `src/mba/cle-relais.ts` (créer, écrire chez Meta, retenir après l'accusé, révoquer TOUTE autre clé
   `mba:relais` de l'espace ; après un échec, plus aucune n'est retenue, donc la publication suivante en
   repose une). Chaque création et révocation est auditée (`cle_api.creee`, `cle_api.revoquee`).
+- 🔴 **Une seule publication à la fois par espace** (`POST /mba-publication` rend 409 à la seconde) : deux
+  poses de clé entrelacées se révoqueraient l'une l'autre. Verrou LOCAL AU PROCESS, suffisant tant que l'API
+  tourne en une instance (`todo.md`).
 - ⚠️ `agent_tool_sources.secret_publie_le` (0129) et `marquerSecretPublie` ne sont plus lus : le secret d'un
   client ne part plus chez Meta. Colonne morte, à retirer (`todo.md`).
 

@@ -18,17 +18,41 @@ import type { VariableDeclaree } from '../agent/requetes';
 export const ENTETE_CONTACT_META = 'X-Contact-WhatsApp';
 
 /**
- * L'ADRESSE DU RELAIS, EN UN SEUL ENDROIT. Elle s'assemble en trois morceaux qui vivent dans trois fichiers :
- * la base du connecteur (`PUBLIC_API_URL` + `CHEMIN_RELAIS`, `src/index.ts`), le chemin de chaque outil
- * (`cheminOutilRelais`, `src/mba/publication.ts`) et la route montée (`src/http/mba-relais.ts`). Écrits trois
- * fois, un seul qui change envoie chaque appel de Meta sur une 404 sans qu'aucun test ne tombe
- * (`tests/http-mba-relais.test.ts` recolle les trois).
+ * L'ADRESSE DU RELAIS, EN UN SEUL ENDROIT. Elle s'assemble en trois morceaux : la base du connecteur
+ * (`baseDuRelais`, appelée par `src/index.ts`), le chemin de chaque outil (`cheminOutilRelais`, appelé par
+ * `src/mba/publication.ts`) et la route montée (`src/http/mba-relais.ts`). Écrits trois fois, un seul qui
+ * change envoie chaque appel de Meta sur une 404 sans qu'aucun test ne tombe : `tests/http-mba-relais.test.ts`
+ * recolle les trois, en passant par ces deux fonctions.
  */
 export const CHEMIN_RELAIS = '/mba/relais';
+
+/** La base du connecteur chez Meta, depuis `PUBLIC_API_URL`. `null` = adresse publique non réglée. */
+export function baseDuRelais(publicApiUrl: string): string | null {
+  const base = publicApiUrl.trim().replace(/[/]+$/, '');
+  return base === '' ? null : `${base}${CHEMIN_RELAIS}`;
+}
 
 /** Le chemin d'un outil, relatif à la base du connecteur chez Meta. */
 export function cheminOutilRelais(outilId: string): string {
   return `/outils/${outilId}`;
+}
+
+/**
+ * Le corps BRUT reçu est-il un JSON illisible ?
+ *
+ * ⚠️ LE LECTEUR DE JSON DU SERVEUR REND `{}` SUR UN JSON INVALIDE (celui du webhook Meta, monté pour tout le
+ * serveur, `src/webhooks/receiver.ts`) : sans cette vérification, un corps tronqué passait pour un corps vide,
+ * et l'appel partait sans les valeurs facultatives, sans aucun signal. Un corps VIDE, lui, est légitime :
+ * c'est celui d'un outil dont toutes les valeurs viennent du mini-CRM.
+ */
+export function corpsIllisible(brut: unknown): boolean {
+  if (!(brut instanceof Uint8Array) || brut.length === 0) return false;
+  try {
+    JSON.parse(Buffer.from(brut).toString('utf8'));
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -63,7 +87,8 @@ export function formeEntete(brut: unknown): string {
 /**
  * Le schéma d'UNE variable du modèle. ⚠️ LES VALEURS PERMISES VALENT AUSSI POUR UN NOMBRE : l'écran d'une
  * requête accepte une liste sur `integer` et `number` (`src/http/agent-requetes.ts`), et la description
- * publiée chez Meta l'annonce. Elles sont stockées en texte, donc comparées en texte.
+ * publiée chez Meta l'annonce. Elles sont stockées en TEXTE mais comparées en NOMBRE : « 1.0 » saisi à
+ * l'écran doit accepter le `1` que le modèle envoie.
  */
 function schemaVariable(v: VariableDeclaree): z.ZodType<unknown> {
   const permises = v.enum && v.enum.length > 0 ? v.enum : null;
@@ -72,7 +97,7 @@ function schemaVariable(v: VariableDeclaree): z.ZodType<unknown> {
   }
   if (v.type === 'integer' || v.type === 'number') {
     const base = v.type === 'integer' ? z.number().int() : z.number();
-    return permises ? base.refine((n) => permises.includes(String(n))) : base;
+    return permises ? base.refine((n) => permises.some((p) => Number(p) === n)) : base;
   }
   return z.boolean();
 }

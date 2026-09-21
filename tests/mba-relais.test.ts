@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur } from '../src/mba/relais';
+import { waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur, baseDuRelais, corpsIllisible } from '../src/mba/relais';
 import type { VariableDeclaree } from '../src/agent/requetes';
 
 /**
@@ -59,6 +59,13 @@ describe('les valeurs que le modèle de Meta envoie', () => {
     expect(lireValeursModele(qte, { qte: 3 })).toEqual({ ok: false, erreur: 'valeur manquante ou invalide pour : qte' });
   });
 
+  it('🔴 une valeur permise saisie « 1.0 » accepte le 1 que le modèle envoie', () => {
+    const prix: VariableDeclaree[] = [{ nom: 'prix', type: 'number', origine: { type: 'modele' }, requis: true, enum: ['1.0', '2.5'] }];
+    expect(lireValeursModele(prix, { prix: 1 })).toEqual({ ok: true, valeurs: { prix: 1 } });
+    expect(lireValeursModele(prix, { prix: 2.5 })).toEqual({ ok: true, valeurs: { prix: 2.5 } });
+    expect(lireValeursModele(prix, { prix: 3 }).ok).toBe(false);
+  });
+
   it('une facultative à null est simplement omise', () => {
     expect(lireValeursModele(VARS, { user: 'u', couleur: null })).toEqual({ ok: true, valeurs: { user: 'u' } });
   });
@@ -78,4 +85,19 @@ describe('le message d’échec rendu à Meta', () => {
     expect(texteErreur({ erreur: 'le système du client est indisponible' })).toBe('le système du client est indisponible');
     expect(texteErreur(null)).toBe('l’appel a échoué');
   });
+
+describe('l’adresse et le corps du relais', () => {
+  it('la base du connecteur se dérive de l’adresse publique, barre finale ou pas', () => {
+    expect(baseDuRelais('https://api.messagingme.app')).toBe('https://api.messagingme.app/mba/relais');
+    expect(baseDuRelais('https://api.messagingme.app//')).toBe('https://api.messagingme.app/mba/relais');
+    expect(baseDuRelais('  ')).toBeNull();
+  });
+
+  it('un corps vide n’est pas illisible ; un JSON tronqué l’est', () => {
+    expect(corpsIllisible(undefined)).toBe(false);
+    expect(corpsIllisible(Buffer.from(''))).toBe(false);
+    expect(corpsIllisible(Buffer.from('{"user":"u1"}'))).toBe(false);
+    expect(corpsIllisible(Buffer.from('{pas du json'))).toBe(true);
+  });
+});
 });

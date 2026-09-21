@@ -1,9 +1,10 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import {
   planifierPublication, type Geste, type RelaisAPublier, type OutilAPublier, type EtatMeta,
 } from '../mba/publication';
-import { ErreurPublication } from '../mba/appliquer-publication';
+import { ErreurPublication, CTX_OUTILS, CTX_ACTEUR } from '../mba/appliquer-publication';
+import { MetaApiError } from '../meta/errors';
 import { scopeTenant } from './scope';
 
 export { corpsOutilMeta, corpsConnecteurRelais } from '../mba/publication';
@@ -50,22 +51,33 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
   const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/mba-publication';
 
-  /** Le plan, ou `null` quand l'adresse publique n'est pas réglée. */
-  async function planifier(tenantId: string, pn: string): Promise<Geste[] | null> {
+  /** Le plan et les outils sur lesquels il a été calculé, ou `null` quand l'adresse publique manque. */
+  async function planifier(tenantId: string, pn: string): Promise<{ gestes: Geste[]; outils: OutilAPublier[] } | null> {
     const relais = await deps.relais(tenantId);
     if (relais === null) return null;
     const [outils, meta] = await Promise.all([deps.outilsExposes(tenantId, pn), deps.etatMeta(tenantId, pn)]);
-    return planifierPublication(relais, outils, meta);
+    return { gestes: planifierPublication(relais, outils, meta), outils };
   }
+
+  /**
+   * 🔴 UNE SEULE PUBLICATION À LA FOIS PAR ESPACE (revue finale du 2026-09-21). Deux publications simultanées
+   * posaient chacune une clé chez Meta puis révoquaient « toutes les autres », donc celle de l'autre : Meta se
+   * retrouvait avec une clé révoquée, chaque appel d'outil sortait en 401, et les deux POST rendaient 200.
+   * Des clics multiples ont DÉJÀ eu lieu en production (le 2026-09-18).
+   *
+   * ⚠️ VERROU LOCAL AU PROCESS, comme les plafonds de débit : il suffit tant que l'API tourne en UNE instance.
+   * Le passer en base (bail, sur le modèle de `src/campaign/run-lock.ts`) avant tout multi-réplica (`todo.md`).
+   */
+  const enCours = new Set<string>();
 
   app.get(base, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) return reply.code(200).send({ gestes: [], phoneNumberId: null });
-    const gestes = await planifier(tenant, pn);
-    if (gestes === null) return reply.code(409).send({ error: SANS_ADRESSE });
-    return reply.code(200).send({ gestes, phoneNumberId: pn });
+    const plan = await planifier(tenant, pn);
+    if (plan === null) return reply.code(409).send({ error: SANS_ADRESSE });
+    return reply.code(200).send({ gestes: plan.gestes, phoneNumberId: pn });
   });
 
   /**
@@ -82,21 +94,39 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     if (!pn) {
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté : il n’y a pas d’agent Meta où publier.' });
     }
-    const gestes = await planifier(tenant, pn);
-    if (gestes === null) return reply.code(409).send({ error: SANS_ADRESSE });
+    if (enCours.has(tenant)) {
+      return reply.code(409).send({ error: 'Une publication est déjà en cours pour cet espace : attendez qu’elle se termine.' });
+    }
+    enCours.add(tenant);
+    try {
+      return await publier(tenant, pn, req.auth?.userId ?? null, reply);
+    } finally {
+      enCours.delete(tenant);
+    }
+  });
+
+  async function publier(tenant: string, pn: string, acteur: string | null, reply: FastifyReply) {
+    const plan = await planifier(tenant, pn);
+    if (plan === null) return reply.code(409).send({ error: SANS_ADRESSE });
     const faits: Geste[] = [];
     // Vit le temps de CETTE publication, et meurt avec elle : deux publications ne partagent jamais un état
-    // lu, ce qui serait précisément la façon d'agir sur une photo périmée.
-    const ctx = new Map<string, unknown>();
-    for (const g of gestes) {
+    // lu, ce qui serait précisément la façon d'agir sur une photo périmée. Amorcée avec les outils du PLAN
+    // (les corps publiés sont ceux de l'aperçu) et l'administrateur qui publie (l'audit des clés le nomme).
+    const ctx = new Map<string, unknown>([[CTX_OUTILS, plan.outils], [CTX_ACTEUR, acteur]]);
+    for (const g of plan.gestes) {
       try {
         await deps.appliquer(tenant, pn, g, ctx);
         faits.push(g);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`mba-publication: ${g.type} « ${g.nom} » a échoué (${tenant}):`, err instanceof Error ? err.message : err);
-        // Un refus qui vient de NOUS ne se présente pas comme un refus de Meta.
-        const cause = err instanceof ErreurPublication ? `« ${g.nom} » : ${err.message}.` : `Meta a refusé « ${g.nom} » (${g.type}).`;
+        // « Meta a refusé » seulement quand c'est Meta qui a répondu non ; un refus de notre part se dit tel
+        // quel, et une panne de chez nous (base, clé) ne se met pas sur le dos de Meta.
+        const cause = err instanceof ErreurPublication
+          ? `« ${g.nom} » : ${err.message}.`
+          : err instanceof MetaApiError
+            ? `Meta a refusé « ${g.nom} » (${g.type}).`
+            : `« ${g.nom} » (${g.type}) a échoué de notre côté.`;
         return reply.code(409).send({
           error: `${cause} ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
           faits,
@@ -104,5 +134,5 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
       }
     }
     return reply.code(200).send({ faits });
-  });
+  }
 }

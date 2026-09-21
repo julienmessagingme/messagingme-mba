@@ -38,7 +38,11 @@ export async function cleAJour(deps: DepsCleRelais, tenantId: string): Promise<b
   return id !== null && (await deps.estActive(tenantId, id));
 }
 
-/** Pose une clé NEUVE chez Meta par `ecrireChezMeta`, dans l'ordre qui ne laisse rien d'orphelin. */
+/**
+ * Pose une clé NEUVE chez Meta par `ecrireChezMeta`, dans l'ordre de l'en-tête. ⚠️ Deux poses SIMULTANÉES
+ * du même espace se révoqueraient l'une l'autre (chacune garde la sienne et révoque « toutes les autres ») :
+ * la route de publication les sérialise par espace, et c'est ce qui rend cet ordre sûr.
+ */
 export async function poserCleNeuve(
   deps: DepsCleRelais,
   tenantId: string,
@@ -58,7 +62,7 @@ export async function poserCleNeuve(
   await deps.revoquerAutres(tenantId, neuve.id).catch(() => {});
 }
 
-/** Le relais quitte Meta : sa clé est révoquée, et plus aucune n'est retenue. */
+/** Le relais quitte Meta : TOUTES les clés du relais de l'espace sont révoquées, et plus aucune n'est retenue. */
 export async function oublierCle(deps: DepsCleRelais, tenantId: string): Promise<void> {
   await deps.revoquerAutres(tenantId, null).catch(() => {});
   await deps.retenir(tenantId, null);

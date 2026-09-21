@@ -36,8 +36,10 @@ l'autre). Raison : une porte publique neuve, une publication chez un tiers et de
 client, avec un invariant d'isolation entre espaces que seule une lecture du diff garantit.
 
 **L'essai réel qui clôt la feature** (Task 10) : Julien réassigne `add_tag` à l'agent de Meta, clique
-« Envoyer », puis demande sur WhatsApp « ajoute-moi l'étiquette X » ; l'étiquette apparaît sur sa fiche UChat
-et l'appel dans le journal sous l'appelant `mba`. Un second « Envoyer » ne produit aucun geste.
+« Envoyer », puis demande sur WhatsApp d'ajouter l'étiquette ; l'étiquette (valeur du champ `tag_ns` de sa
+fiche) apparaît sur sa fiche UChat. Un succès ne s'affiche PAS dans la console (le journal des erreurs ne montre
+que les échecs) : la preuve est dans UChat et dans la date de dernier usage de la clé « Agent de Meta ». Un
+second « Envoyer » ne produit aucun geste. (Aligné sur `wip.md` par la revue finale du 2026-09-21.)
 
 ## Structure des fichiers
 
@@ -1390,8 +1392,9 @@ dit, au lieu d'annoncer « Publié » pour un geste qui n'a rien fait (c'est le 
 - [ ] `CLAUDE.md` : dernière appliquée 0161, prochaine libre 0162, relue en base.
 - [ ] **Essai réel par Julien** : réassigner `add_tag` ; corriger au passage sa variable `user` en « champ
   `user_ns` » (elle est aujourd'hui « modèle ») ; « Envoyer » : la confirmation montre la suppression de
-  `testUCHAT` et la création d'`EngageMe` ; sur WhatsApp, « ajoute-moi l'étiquette X » ; l'étiquette apparaît
-  dans UChat, l'appel dans le journal sous `mba` ; un second « Envoyer » ne produit aucun geste.
+  `testUCHAT` et la création d'`EngageMe` ; sur WhatsApp, demander l'étiquette ; elle apparaît dans UChat (la
+  valeur du champ `tag_ns` de la fiche) ; un succès ne se voit PAS dans le journal des erreurs, la preuve est
+  UChat et la date de dernier usage de la clé ; un second « Envoyer » ne produit aucun geste.
 - [ ] Lire dans les journaux de `mba-api` la forme de l'en-tête (`mba-relais: en-tete du numero ...`), la
   consigner dans `docs/MBA-API-REFERENCE.md` (format mesuré de `WHATSAPP_PHONE_NUMBER`), puis retirer
   `journaliserForme` du câblage.
