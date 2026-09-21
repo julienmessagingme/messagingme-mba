@@ -265,7 +265,14 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
     await expect(catalogue.ajouter(tenantId, agentA, outil('jetable'))).resolves.not.toBeNull();
   });
 
-  it('⚠️ détacher un CONNECTEUR ne supprime RIEN : il appartient à l’espace et se partage', async () => {
+  /**
+   * ⚠️ CE TEST DISAIT « détacher un CONNECTEUR ne supprime RIEN » JUSQU'AU 2026-09-21, et la règle a changé par
+   * décision de Julien : un connecteur HTTP que plus PERSONNE n'utilise part (sans écran pour le supprimer, il
+   * gardait son nom pris et bloquait la suppression de sa requête). Le cas qu'il protégeait est CONSERVÉ :
+   * tant qu'un autre agent s'en sert, le premier détachement ne le fait pas disparaître (ce que 0127 avait
+   * corrigé). Le dernier détachement, lui, l'efface.
+   */
+  it('⚠️ détacher un CONNECTEUR partagé le laisse aux autres, et le dernier détachement l’efface', async () => {
     // Posé en SQL direct : ce qui est éprouvé ici est le geste de DÉTACHEMENT, pas la création d'un
     // connecteur, qui a sa propre suite et demanderait en plus une requête de la bibliothèque.
     const id = (await pool.query<{ id: string }>(
@@ -274,16 +281,18 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       [tenantId, sourceHttp],
     )).rows[0]!.id;
     await pool.query(
-      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-      [tenantId, id, `agent:${agentA}`],
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3), ($1, $2, $4)',
+      [tenantId, id, `agent:${agentA}`, `agent:${agentB}`],
     );
-    expect(await catalogue.detacher(tenantId, agentA, id)).toBe(true);
-    const reste = await pool.query(
+    const reste = async (): Promise<number> => (await pool.query(
       'select 1 from agent_tools where tenant_id = $1 and id = $2', [tenantId, id],
-    );
-    // Il DOIT survivre : le supprimer au premier détachement le ferait disparaître pour tous les autres
-    // agents, et c'est exactement ce que 0127 avait corrigé.
-    expect(reste.rowCount).toBe(1);
+    )).rowCount ?? 0;
+    expect(await catalogue.detacher(tenantId, agentA, id)).toBe(true);
+    // Il DOIT survivre tant que B s'en sert : le supprimer au premier détachement le ferait disparaître
+    // pour tous les autres agents, et c'est exactement ce que 0127 avait corrigé.
+    expect(await reste()).toBe(1);
+    expect(await catalogue.detacher(tenantId, agentB, id)).toBe(true);
+    expect(await reste()).toBe(0);
   });
 
   /**

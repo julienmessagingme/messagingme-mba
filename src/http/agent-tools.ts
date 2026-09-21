@@ -370,10 +370,10 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const { outilId } = req.params as { outilId: string };
     if (!estUuid(outilId)) return reply.code(404).send({ error: 'outil introuvable' });
-    // DÉTACHE un CONNECTEUR, SUPPRIME une ACTION, et c'est le store qui tranche sur `agent_id` (0157).
-    // Un connecteur appartient à l'espace et se partage, donc on ne retire que le consentement ; une action
-    // n'appartient qu'à cet agent, et la laisser derrière ferait un orphelin qu'aucun écran ne montre et
-    // qu'aucun geste n'efface, dont le nom resterait pris. Voir `PgToolCatalog.detacher`.
+    // DÉTACHE l'outil de CET agent, et c'est le store qui tranche (voir `PgToolCatalog.detacher`). Une action
+    // ou un connecteur HTTP que plus PERSONNE n'utilise part avec ce détachement : sinon il resterait un
+    // orphelin qu'aucun écran ne montre ni n'efface, dont le nom resterait pris (décision du 2026-09-21 pour
+    // le connecteur). Un connecteur qu'un autre consommateur utilise encore reste ; un outil MCP reste toujours.
     const detache = await deps.detacher(ctx.tenant, ctx.agentId, outilId);
     if (!detache) return reply.code(404).send({ error: 'outil introuvable' });
     return reply.code(204).send();
