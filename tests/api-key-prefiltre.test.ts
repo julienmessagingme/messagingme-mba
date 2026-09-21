@@ -123,6 +123,20 @@ describe('le pré-filtre des clés d’API', () => {
     expect(vues.join('|')).not.toContain('secret_a_ne_pas_ecrire');
   });
 
+  it('🔴 API_KEY_PREFILTRE_MAX=0 le DÉSACTIVE vraiment : des clés distinctes passent toutes', async () => {
+    // Le levier d'urgence documenté. Avant le correctif du limiteur, la PREMIÈRE empreinte passait et toutes
+    // les suivantes prenaient un 429 : à 0, le préfiltre coupait l'API au lieu de la libérer.
+    const { store, garde } = monter(null, { maxPreAuth: 0 });
+    let refus429 = 0;
+    for (let i = 0; i < 10; i += 1) {
+      const r = fausseReponse();
+      await garde(requete(cleBienFormee(`distincte${i}`)), r.reply);
+      if (r.code() === 429) refus429 += 1;
+    }
+    expect(refus429, 'à 0, le préfiltre ne doit refuser personne').toBe(0);
+    expect(store.appels).toBe(10);
+  });
+
   it('⚠️ le budget global ne fait pas grossir la mémoire : UNE entrée, quel que soit le flot', async () => {
     // Le corollaire heureux du budget global : sa clé est FIXE, donc la table du limiteur ne grossit pas
     // avec le nombre de bearers distincts. La borne en nombre de clés, indispensable quand la clé est
@@ -184,6 +198,46 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
       if (r.code() === 429) refus += 1;
     }
     expect(refus).toBe(3);
+  });
+
+  /**
+   * 🔴 UNE CLÉ VALIDE AU-DELÀ DE SON PLAFOND NE COÛTE PLUS DE LECTURE EN BASE (contre-audit du 2026-09-14).
+   * Le plafond par clé était compté sur l'identifiant de la clé RÉSOLUE, donc APRÈS le lookup : chaque 429
+   * payait quand même une requête Postgres, sur un pool de 8 connexions partagé avec la console et le worker.
+   * Il est désormais compté sur l'EMPREINTE, AVANT la base. Une clé et son empreinte sont en bijection, donc
+   * le quota d'un porteur ne change pas.
+   */
+  it('🔴 une clé valide qui dépasse son plafond est refusée AVANT la base', async () => {
+    const { store, garde } = monter(VRAIE, { maxMetier: 3, maxPreAuth: 1000 });
+    let refus = 0;
+    for (let i = 0; i < 103; i += 1) {
+      const r = fausseReponse();
+      await garde(requete(VRAIE), r.reply);
+      if (r.code() === 429) refus += 1;
+    }
+    expect(refus).toBe(100);
+    expect(store.appels, 'chaque 429 payait une requête Postgres').toBe(3);
+  });
+
+  it('🔴 ce que retient le plafond par clé ne contient pas non plus la valeur du bearer', async () => {
+    const vues: string[] = [];
+    const espion = new RateLimiter(100, 60_000);
+    const vraiTake = espion.take.bind(espion);
+    espion.take = (cle: string) => { vues.push(cle); return vraiTake(cle); };
+    const bearer = cleBienFormee('secret_de_production');
+    const garde = makeRequireApiKey(new FauxStore(bearer), espion, new RateLimiter(100, 60_000));
+    await garde(requete(bearer), fausseReponse().reply);
+    expect(vues).toHaveLength(1);
+    expect(vues.join('|')).not.toContain('secret_de_production');
+  });
+
+  it('🔴 la révocation reste IMMÉDIATE sous le plafond : le lookup a lieu à chaque appel accepté', async () => {
+    const { store, garde } = monter(VRAIE, { maxMetier: 100, maxPreAuth: 1000 });
+    await garde(requete(VRAIE), fausseReponse().reply);
+    store.revoquee = true;
+    const r = fausseReponse();
+    await garde(requete(VRAIE), r.reply);
+    expect(r.code()).toBe(401);
   });
 
   it('🔴 un porteur DÉJÀ RECONNU traverse une attaque qui a épuisé le budget', async () => {

@@ -49,8 +49,21 @@ export class RateLimiter {
     private readonly maxCles = 0,
   ) {}
 
+  /**
+   * 🔴 UN PLAFOND À 0 (OU NÉGATIF) DÉSACTIVE LE LIMITEUR. C'est la convention de toute la configuration du
+   * dépôt, et le levier d'urgence documenté de `API_KEY_PREFILTRE_MAX`. Avant le 2026-09-21, un plafond à 0
+   * laissait passer le PREMIER appel d'une fenêtre (la branche « clé neuve » ne regardait pas `max`) puis
+   * refusait tous les suivants : le levier qui devait libérer l'API la coupait. Le test de ce cas vit dans
+   * `tests/rate-limit-bornes.test.ts`.
+   */
+  get desactive(): boolean {
+    return this.max <= 0;
+  }
+
   /** Enregistre une tentative pour `key`. Retourne true si elle est autorisée, false si bloquée. */
   take(key: string): boolean {
+    // Désactivé : rien n'est compté, donc la table ne grossit pas non plus.
+    if (this.desactive) return true;
     const t = this.now();
     const entry = this.hits.get(key);
     if (!entry || t >= entry.resetAt) {
@@ -117,6 +130,9 @@ export async function consommerAvecEntetes(
   reply: FastifyReply,
   message = 'trop de requêtes, patientez un instant',
 ): Promise<boolean> {
+  // Désactivé : aucun en-tête. Annoncer `x-ratelimit-limit: 0` sur un appel ACCEPTÉ ferait croire à un
+  // intégrateur qu'il est à bout de quota alors qu'il n'y en a aucun.
+  if (limiteur.desactive) return true;
   const etat = limiteur.remaining(cle);
   reply.header('x-ratelimit-limit', String(etat.limit));
   reply.header('x-ratelimit-remaining', String(Math.max(0, etat.remaining - 1)));

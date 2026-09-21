@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { RateLimiter } from '../src/auth/rate-limit';
+import type { FastifyReply } from 'fastify';
+import { RateLimiter, consommerAvecEntetes } from '../src/auth/rate-limit';
 
 /**
  * LES DEUX BORNES DES LIMITEURS D'AUTHENTIFICATION (audit de surface publique du 2026-09-03).
@@ -40,6 +41,53 @@ describe('limiteur : le plafond de clés', () => {
     // La valeur par défaut est 0, donc les appelants qui ne le posent pas ne changent pas de comportement.
     const l = new RateLimiter(10, 60_000, horloge);
     for (let i = 0; i < 50; i += 1) expect(l.take(`k${i}`)).toBe(true);
+  });
+});
+
+/**
+ * 🔴 UN PLAFOND À 0 VEUT DIRE « DÉSACTIVÉ », ET CE N'ÉTAIT PAS LE CAS.
+ *
+ * La configuration documente `0` comme le levier d'urgence (`API_KEY_PREFILTRE_MAX`, et la convention de tout
+ * le dépôt). Le limiteur, lui, laissait passer le PREMIER appel d'une fenêtre puis refusait tous les suivants :
+ * le levier qui devait libérer l'API la coupait. Relevé par le contre-audit du 2026-09-14, corrigé ici, dans le
+ * limiteur lui-même, parce que quatre réglages de la configuration y aboutissent.
+ */
+describe('limiteur : un plafond à 0 le désactive', () => {
+  const horloge = () => 1_000;
+
+  it('🔴 à 0, tout passe, et pas seulement le premier appel', () => {
+    const l = new RateLimiter(0, 60_000, horloge);
+    for (let i = 0; i < 50; i += 1) expect(l.take('meme-cle'), `appel ${i + 1}`).toBe(true);
+    for (let i = 0; i < 50; i += 1) expect(l.take(`cle-${i}`)).toBe(true);
+  });
+
+  it('un plafond négatif est traité comme 0, jamais comme un refus', () => {
+    const l = new RateLimiter(-1, 60_000, horloge);
+    expect(l.take('a')).toBe(true);
+    expect(l.take('a')).toBe(true);
+  });
+
+  it('🔴 désactivé, il ne pose aucun en-tête de plafond et ne refuse jamais', async () => {
+    // Des en-têtes `x-ratelimit-limit: 0` / `remaining: 0` sur un appel ACCEPTÉ diraient à un intégrateur
+    // qu'il est à bout de quota alors qu'il n'y en a aucun.
+    const entetes: Record<string, string> = {};
+    let statut: number | null = null;
+    const reply = {
+      header(n: string, v: string) { entetes[n] = v; return this; },
+      code(c: number) { statut = c; return this; },
+      async send() { return this; },
+    } as unknown as FastifyReply;
+    const l = new RateLimiter(0, 60_000, horloge);
+    for (let i = 0; i < 5; i += 1) expect(await consommerAvecEntetes(l, 'k', reply)).toBe(true);
+    expect(statut).toBeNull();
+    expect(entetes).toEqual({});
+  });
+
+  it('un plafond positif garde exactement son comportement', () => {
+    const l = new RateLimiter(2, 60_000, horloge);
+    expect(l.take('a')).toBe(true);
+    expect(l.take('a')).toBe(true);
+    expect(l.take('a')).toBe(false);
   });
 });
 

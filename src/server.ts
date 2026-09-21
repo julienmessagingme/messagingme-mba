@@ -496,7 +496,9 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
      * indépendamment, donc de casser ça sans le voir.
      */
     entree('v1', 'cle-api', deps.v1, (app, v1) => {
-      const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
+      // Indexé sur l'EMPREINTE du bearer et pris AVANT la base (`api-key.ts`), donc sur une valeur choisie par
+      // l'appelant : même plafond de 10 000 clés vivantes que le pré-filtre, pour la même raison.
+      const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
       /**
        * 🔴 LE PRÉ-FILTRE : indexé sur l'EMPREINTE du bearer présenté, donc sur une clé choisie par
        * l'APPELANT. Sa table porte le même plafond de 10 000 clés que les limiteurs d'authentification, et

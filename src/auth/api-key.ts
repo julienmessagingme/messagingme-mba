@@ -91,10 +91,10 @@ class EmpreintesConnues {
  * `req.apiScopes`. Le tenant vient à 100% de la clé résolue (pas d'`:tenantId` dans l'URL /v1).
  * Headers x-ratelimit-* sur toute réponse (succès et 429).
  *
- * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'identifiant de la
- * clé RÉSOLUE : il borne le travail qu'un porteur légitime demande, et il est donc inatteignable sans un
- * lookup réussi. `prefiltre` borne les LOOKUPS SPÉCULATIFS, c'est-à-dire précisément ce que l'autre ne
- * peut pas voir. Avant ce lot, une rafale de fausses clés n'était comptée par aucun des deux, et chacune
+ * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'EMPREINTE de la clé
+ * présentée et pris AVANT la base : il borne le travail qu'un porteur demande, et ce qu'il coûte une fois
+ * au-delà. Une empreinte par clé : il ne freine donc PAS une rafale de fausses clés toutes différentes.
+ * `prefiltre` borne les LOOKUPS SPÉCULATIFS, c'est-à-dire précisément ce que l'autre ne peut pas voir. Avant ce lot, une rafale de fausses clés n'était comptée par aucun des deux, et chacune
  * coûtait un SHA-256 et une requête Postgres, sur un budget de 8 connexions partagé avec la console et le
  * worker.
  *
@@ -137,6 +137,23 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * milliers de requêtes Postgres épargnées.
      */
     if (!connues.connait(empreinte) && !(await consommerAvecEntetes(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
+    /**
+     * 🔴 LE PLAFOND PAR CLÉ SE PREND AVANT LA BASE, SUR L'EMPREINTE (contre-audit du 2026-09-14). Il était
+     * compté sur l'identifiant de la clé RÉSOLUE, donc après `findActiveByHash` : chaque 429 d'une clé valide
+     * trop pressée payait quand même une requête Postgres. Une clé et son empreinte sont en bijection, le
+     * quota d'un porteur ne change donc pas ; seul son coût change.
+     *
+     * ⚠️ L'EMPREINTE, PAS LA VALEUR, pour la même raison que le budget spéculatif. Et la table de ce limiteur
+     * est indexée sur une valeur que l'appelant choisit : elle porte un plafond de clés (`server.ts`). Sous
+     * attaque, ce sont surtout les empreintes INCONNUES qui y entrent, et elles ont déjà traversé le budget
+     * spéculatif ci-dessus, qui en borne le nombre.
+     *
+     * ⚠️ CONSÉQUENCE ASSUMÉE : un espace suspendu dont la clé dépasse son plafond reçoit 429 avant de
+     * recevoir 403. Les deux refusent, et le 403 revient dès la fenêtre suivante.
+     *
+     * Le lookup reste fait à CHAQUE appel accepté : une révocation prend effet tout de suite.
+     */
+    if (!(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes'))) return;
     const found = await store.findActiveByHash(empreinte);
     if (!found) {
       // Elle ne se résout plus (révoquée, ou jamais valide) : elle perd son laissez-passer et repasse
@@ -164,9 +181,6 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
       await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
       return;
     }
-    // Séquence en-têtes + 429 partagée avec les deux plafonds de `middleware.ts` : elle vit dans
-    // `rate-limit.ts`, elle ne se recopie pas (c'en était la troisième copie).
-    if (!(await consommerAvecEntetes(limiteurMetier, found.id, reply, 'trop de requêtes'))) return;
     // Empreinte de dernier usage : best-effort, ne doit jamais bloquer/échouer la requête.
     void store.touchLastUsed(found.id).catch(() => { /* best-effort */ });
     req.auth = { userId: `apikey:${found.id}`, tenantId: found.tenantId, role: 'api' };
