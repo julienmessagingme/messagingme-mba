@@ -16,9 +16,9 @@ import type { FastifyReply } from 'fastify';
  *
  * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :
  * `ip::discriminant` pour les routes d'authentification (`req.ip` seul désignerait le proxy), le CODE pour
- * `/w/:code`, l'EMPREINTE de la clé pour `/v1` (calculée avant toute lecture en base, donc une clé inventée
- * est freinée sans coûter une requête), l'`userId` pour le plafond général des routes authentifiées
- * et le `tenantId` pour celui des routes coûteuses. Le choix de clé décide de QUI partage un quota avec qui,
+ * `/w/:code`, l'EMPREINTE de la clé pour `/v1` (comptée seulement pour une clé résolue : une clé inventée
+ * n'y entre jamais, c'est le budget spéculatif de `api-key.ts` qui la freine avant la base), l'`userId` pour
+ * le plafond général des routes authentifiées et le `tenantId` pour celui des routes coûteuses. Le choix de clé décide de QUI partage un quota avec qui,
  * et c'est la seule décision qui compte à l'usage.
  *
  * 🔴 EXPLICITEMENT LOCAL AU PROCESS (programme II, lot 8). Le plafond annoncé est celui d'UNE instance : avec
@@ -42,17 +42,19 @@ export class RateLimiter {
      * d'être servies normalement). `0` = pas de plafond, comportement d'origine.
      *
      * 🔴 À poser dès que la clé est choisie par l'APPELANT et non par nous (l'`ip::discriminant` des routes
-     * d'authentification, l'empreinte d'un bearer présenté à `/v1`) : sans plafond, un robot qui tire des clés
-     * au hasard ferait grossir la table pendant toute la fenêtre (la purge ne retire que les entrées EXPIRÉES,
-     * et sous flot rien n'expire). On échange une fuite de mémoire contre un refus.
+     * d'authentification) : sans plafond, un robot qui tire des clés au hasard ferait grossir la table pendant
+     * toute la fenêtre (la purge ne retire que les entrées EXPIRÉES, et sous flot rien n'expire). On échange
+     * une fuite de mémoire contre un refus.
      *
      * 🔴 MAIS CE REFUS FRAPPE AUSSI LES VRAIES CLÉS, et c'est ce qu'il faut peser avant de le poser. L'entrée
      * d'un appelant légitime expire à chaque fenêtre ; s'il revient pendant que la table est pleine, il est une
      * clé NEUVE, donc refusé. Des clés inventées en masse suffisent alors à bloquer un vrai client. Quand la clé
-     * est un identifiant qu'on peut VÉRIFIER en base (le code d'un webhook entrant, celui d'un rappel RCS), la
-     * bonne réponse n'est pas ce plafond : c'est de consulter le limiteur APRÈS la lecture, sur des clés qui
-     * existent, dont le nombre borne la table (cf. `registerWebhookEntrant`, `registerRcsCallback`). Ces deux
-     * limiteurs-là ont d'abord été consultés AVANT la base, et c'est exactement le défaut corrigé le 2026-09-21.
+     * est un identifiant qu'on peut VÉRIFIER en base (le code d'un webhook entrant, celui d'un rappel RCS,
+     * l'empreinte d'une clé d'API), la bonne réponse n'est pas ce plafond : c'est de ne consulter le limiteur
+     * que sur des clés qui existent, dont le nombre borne la table (cf. `registerWebhookEntrant`,
+     * `registerRcsCallback`, et `makeRequireApiKey`, qui le consulte avant la base pour une clé DÉJÀ résolue).
+     * Ces trois limiteurs-là ont d'abord été consultés AVANT la base sur n'importe quelle clé présentée, et
+     * c'est exactement le défaut corrigé le 2026-09-21.
      */
     private readonly maxCles = 0,
   ) {}

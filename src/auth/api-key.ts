@@ -91,12 +91,12 @@ class EmpreintesConnues {
  * `req.apiScopes`. Le tenant vient à 100% de la clé résolue (pas d'`:tenantId` dans l'URL /v1).
  * Headers x-ratelimit-* sur toute réponse (succès et 429).
  *
- * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'EMPREINTE de la clé
- * présentée et pris AVANT la base : il borne le travail qu'un porteur demande, et ce qu'il coûte une fois
- * au-delà. Une empreinte par clé : il ne freine donc PAS une rafale de fausses clés toutes différentes.
- * `prefiltre` borne les LOOKUPS SPÉCULATIFS, c'est-à-dire précisément ce que l'autre ne peut pas voir. Avant ce lot, une rafale de fausses clés n'était comptée par aucun des deux, et chacune
- * coûtait un SHA-256 et une requête Postgres, sur un budget de 8 connexions partagé avec la console et le
- * worker.
+ * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'EMPREINTE de la clé et ne
+ * compte que des clés qui EXISTENT : il borne le travail qu'un porteur demande, et ce qu'il coûte une fois
+ * au-delà. Il ne voit donc PAS une rafale de fausses clés toutes différentes. `prefiltre` borne les LOOKUPS
+ * SPÉCULATIFS, c'est-à-dire précisément ce que l'autre ne peut pas voir. Avant le lot du 2026-09-14, une
+ * rafale de fausses clés n'était comptée par aucun des deux, et chacune coûtait un SHA-256 et une requête
+ * Postgres, sur un budget de 8 connexions partagé avec la console et le worker.
  *
  * 🔴 `prefiltre` EST OBLIGATOIRE, ET C'EST DÉLIBÉRÉ. Optionnel, il aurait fini par manquer à un
  * appelant, et la protection aurait disparu sans bruit : c'est le motif « une capacité câblée sur un
@@ -126,6 +126,8 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * coût que ce lot existe pour réduire.
      */
     const empreinte = sha256Hex(raw);
+    // Lue UNE fois : elle décide à la fois du budget spéculatif et du moment où se prend le plafond par clé.
+    const connue = connues.connait(empreinte);
     /**
      * 🔴 LE BUDGET NE S'APPLIQUE QU'AUX EMPREINTES JAMAIS RÉSOLUES. Un porteur légitime le traverse une
      * seule fois, au premier appel après un démarrage ; ensuite il n'y est plus soumis. Sans cette
@@ -136,24 +138,38 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * process peut attendre la fenêtre suivante. C'est une minute pour une première connexion, contre des
      * milliers de requêtes Postgres épargnées.
      */
-    if (!connues.connait(empreinte) && !(await consommerAvecEntetes(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
+    if (!connue && !(await consommerAvecEntetes(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
     /**
-     * 🔴 LE PLAFOND PAR CLÉ SE PREND AVANT LA BASE, SUR L'EMPREINTE (contre-audit du 2026-09-14). Il était
-     * compté sur l'identifiant de la clé RÉSOLUE, donc après `findActiveByHash` : chaque 429 d'une clé valide
-     * trop pressée payait quand même une requête Postgres. Une clé et son empreinte sont en bijection, le
-     * quota d'un porteur ne change donc pas ; seul son coût change.
+     * 🔴 LE PLAFOND PAR CLÉ NE COMPTE QUE DES CLÉS QUI EXISTENT (2026-09-21, même défaut que sur `/w/:code`
+     * et les rappels RCS). Il se prend donc AVANT la base pour une empreinte déjà résolue, APRÈS pour les
+     * autres, et une seule fois par appel.
      *
-     * ⚠️ L'EMPREINTE, PAS LA VALEUR, pour la même raison que le budget spéculatif. Et la table de ce limiteur
-     * est indexée sur une valeur que l'appelant choisit : elle porte un plafond de clés (`server.ts`). Sous
-     * attaque, ce sont surtout les empreintes INCONNUES qui y entrent, et elles ont déjà traversé le budget
-     * spéculatif ci-dessus, qui en borne le nombre.
+     * Le contre-audit du 2026-09-14 l'avait remonté AVANT la base pour TOUTES les empreintes : compté sur
+     * l'identifiant de la clé résolue, chaque 429 d'une clé valide trop pressée payait une requête Postgres.
+     * Mais la clé de sa table devenait alors choisie par l'APPELANT, et la table porte un plafond de clés.
+     * Tant que le budget spéculatif tourne, il bornait le nombre d'empreintes inconnues qui y entraient ; à
+     * `API_KEY_PREFILTRE_MAX=0`, le levier d'urgence, plus rien. Des bearers inventés remplissaient la table,
+     * et un vrai client qui s'y présentait comme une clé NEUVE (premier appel après un démarrage, ou entrée
+     * expirée puis purgée) recevait 429 : le levier censé libérer l'API permettait d'en couper un client.
+     *
+     * Ce que ce placement garde : une clé déjà résolue qui dépasse son plafond est refusée SANS requête
+     * Postgres, ce qui était l'objet du contre-audit. Ce qu'il coûte, dit tel quel : les appels d'une clé
+     * arrivés avant sa première résolution par ce process (le premier, ou une rafale simultanée au démarrage,
+     * elle-même bornée par le budget spéculatif) sont comptés après leur lecture, donc un 429 y paie une
+     * requête ; dès que l'empreinte est retenue, les refus se prennent avant la base. Et le levier à 0 ne freine
+     * plus une fausse clé RÉPÉTÉE avant la base : ce n'est que ce qu'il faisait déjà pour des fausses clés
+     * toutes différentes, chacune ouvrant son propre compteur.
+     *
+     * ⚠️ L'EMPREINTE, PAS LA VALEUR, pour la même raison que le budget spéculatif. Seules les empreintes
+     * RÉSOLUES entrent dans `connues`, donc la table de ce limiteur est bornée par le nombre de clés qui
+     * existent, sans plafond de clés (`server.ts`) : un tel plafond y rouvrirait l'éviction.
      *
      * ⚠️ CONSÉQUENCE ASSUMÉE : un espace suspendu dont la clé dépasse son plafond reçoit 429 avant de
      * recevoir 403. Les deux refusent, et le 403 revient dès la fenêtre suivante.
      *
      * Le lookup reste fait à CHAQUE appel accepté : une révocation prend effet tout de suite.
      */
-    if (!(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes'))) return;
+    if (connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes'))) return;
     const found = await store.findActiveByHash(empreinte);
     if (!found) {
       // Elle ne se résout plus (révoquée, ou jamais valide) : elle perd son laissez-passer et repasse
@@ -165,6 +181,8 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
     // Elle a été résolue : elle ne sert pas à sonder. Le lookup reste fait à chaque appel, donc une
     // révocation prend effet tout de suite.
     connues.retenir(empreinte);
+    // Première résolution dans ce process : le plafond par clé se prend ici, sur une clé qui existe.
+    if (!connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes'))) return;
     /**
      * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE, ÉTENDU À LA SURFACE PUBLIQUE (tranché par Julien le 2026-09-14).
      * `tenants.status = 'locked'` était lu par la garde de SESSION et par elle seule : un espace suspendu

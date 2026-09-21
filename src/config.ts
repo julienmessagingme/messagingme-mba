@@ -169,8 +169,8 @@ export const schema = z.object({
   /**
    * LE PRÉ-FILTRE DES CLÉS D'API : ce qu'un porteur NON RÉSOLU peut coûter, par minute.
    *
-   * 🔴 IL EXISTE PARCE QUE LE PLAFOND CI-DESSUS EST INDEXÉ SUR `found.id`, DONC INATTEIGNABLE SANS
-   * LOOKUP RÉUSSI : une rafale de fausses clés n'était comptée par AUCUN plafond, et chacune coûtait un
+   * 🔴 IL EXISTE PARCE QUE LE PLAFOND CI-DESSUS NE COMPTE QUE DES CLÉS RÉSOLUES (`api-key.ts`), DONC
+   * AUCUNE FAUSSE CLÉ : une rafale de fausses clés n'était comptée par AUCUN plafond, et chacune coûtait un
    * SHA-256 et une requête Postgres. Le budget de ce process est de 8 connexions, partagé avec la console
    * et le worker : c'est là que l'amplification fait mal, pas dans le CPU.
    *

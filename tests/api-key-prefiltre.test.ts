@@ -53,9 +53,9 @@ const requete = (bearer?: string): FastifyRequest =>
   ({ headers: bearer === undefined ? {} : { authorization: `Bearer ${bearer}` } } as FastifyRequest);
 
 /** Monte le préhandler avec ses deux limiteurs, et rend de quoi observer les deux. */
-function monter(valide: string | null, opts: { maxPreAuth?: number; maxMetier?: number } = {}) {
+function monter(valide: string | null, opts: { maxPreAuth?: number; maxMetier?: number; maxClesMetier?: number } = {}) {
   const store = new FauxStore(valide);
-  const metier = new RateLimiter(opts.maxMetier ?? 100, 60_000);
+  const metier = new RateLimiter(opts.maxMetier ?? 100, 60_000, () => Date.now(), opts.maxClesMetier ?? 0);
   // ⚠️ AUCUN PLAFOND DE CLÉS ICI : la clé du budget spéculatif est FIXE, donc la table ne grossit pas.
   const preAuth = new RateLimiter(opts.maxPreAuth ?? 100, 60_000);
   return { store, metier, preAuth, garde: makeRequireApiKey(store, metier, preAuth) };
@@ -204,8 +204,9 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
    * 🔴 UNE CLÉ VALIDE AU-DELÀ DE SON PLAFOND NE COÛTE PLUS DE LECTURE EN BASE (contre-audit du 2026-09-14).
    * Le plafond par clé était compté sur l'identifiant de la clé RÉSOLUE, donc APRÈS le lookup : chaque 429
    * payait quand même une requête Postgres, sur un pool de 8 connexions partagé avec la console et le worker.
-   * Il est désormais compté sur l'EMPREINTE, AVANT la base. Une clé et son empreinte sont en bijection, donc
-   * le quota d'un porteur ne change pas.
+   * Il est désormais compté sur l'EMPREINTE, AVANT la base dès que la clé a été résolue une fois par ce
+   * process ; son tout premier appel est compté après la lecture (cf. le cas des bearers inventés, plus bas).
+   * Une clé et son empreinte sont en bijection, donc le quota d'un porteur ne change pas.
    */
   it('🔴 une clé valide qui dépasse son plafond est refusée AVANT la base', async () => {
     const { store, garde } = monter(VRAIE, { maxMetier: 3, maxPreAuth: 1000 });
@@ -217,6 +218,36 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
     }
     expect(refus).toBe(100);
     expect(store.appels, 'chaque 429 payait une requête Postgres').toBe(3);
+  });
+
+  /**
+   * 🔴 LE LEVIER D'URGENCE NE DOIT PAS PERMETTRE D'ÉVINCER UN VRAI CLIENT (2026-09-21, même défaut que sur
+   * `/w/:code` et les rappels RCS). Le plafond par clé était pris AVANT la base, sur l'empreinte PRÉSENTÉE,
+   * donc sur une valeur choisie par l'appelant, et sa table porte un plafond de clés. Tant que le pré-filtre
+   * tourne, il borne le nombre d'empreintes inconnues qui l'atteignent ; à `API_KEY_PREFILTRE_MAX=0`, plus
+   * rien. Des bearers inventés remplissaient alors la table, et un vrai client qui s'y présentait comme une clé
+   * NEUVE recevait 429 : c'est son premier appel après un redémarrage, et c'est aussi tout client dont l'entrée
+   * a expiré puis a été purgée, puisqu'il revient comme une clé neuve.
+   *
+   * ⚠️ LES CODES DES BEARERS INVENTÉS SE VÉRIFIENT APRÈS LA VRAIE CLÉ : vérifiés dans la boucle, le code fautif
+   * échouerait sur le troisième bearer inventé (429 au lieu de 401), sans montrer le symptôme qui compte.
+   */
+  it('🔴 préfiltre coupé, des bearers inventés en masse n’évincent pas une vraie clé du plafond par clé', async () => {
+    const { garde } = monter(VRAIE, { maxPreAuth: 0, maxClesMetier: 2 });
+    const codes: Array<number | null> = [];
+    for (let i = 0; i < 50; i += 1) {
+      const r = fausseReponse();
+      await garde(requete(cleBienFormee(`inventee${i}`)), r.reply);
+      codes.push(r.code());
+    }
+
+    const r = fausseReponse();
+    const req = requete(VRAIE);
+    await garde(req, r.reply);
+    expect(r.code(), 'la vraie clé du client').toBeNull();
+    expect(req.auth?.tenantId).toBe('t1');
+    // Refusés comme clés invalides, pas comme clés trop pressées : ils n'ont jamais compté dans la table.
+    expect(codes.filter((c) => c !== 401), 'les bearers inventés').toEqual([]);
   });
 
   it('🔴 ce que retient le plafond par clé ne contient pas non plus la valeur du bearer', async () => {

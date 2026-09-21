@@ -500,17 +500,17 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
      * indépendamment, donc de casser ça sans le voir.
      */
     entree('v1', 'cle-api', deps.v1, (app, v1) => {
-      // Indexé sur l'EMPREINTE du bearer et pris AVANT la base (`api-key.ts`), donc sur une valeur choisie par
-      // l'appelant : même plafond de 10 000 clés vivantes que le pré-filtre, pour la même raison.
-      const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
+      // Indexé sur l'EMPREINTE de la clé, mais consulté seulement sur des clés RÉSOLUES (`api-key.ts`) : sa
+      // table est bornée par le nombre de clés qui existent. AUCUN plafond de clés, délibérément : des bearers
+      // inventés ne peuvent pas la remplir, et un plafond y rouvrirait l'éviction d'un vrai client.
+      const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       /**
-       * 🔴 LE PRÉ-FILTRE : indexé sur l'EMPREINTE du bearer présenté, donc sur une clé choisie par
-       * l'APPELANT. Sa table porte le même plafond de 10 000 clés que les limiteurs d'authentification, et
-       * pour la même raison : la purge ne retire que les entrées EXPIRÉES, donc sous flot rien n'expire et
-       * la table grossirait pendant toute la fenêtre. Au-delà, une empreinte NEUVE est refusée pendant que
-       * les porteurs déjà connus continuent d'être servis.
+       * 🔴 LE PRÉ-FILTRE : le budget GLOBAL des lookups spéculatifs. Sa clé est une CONSTANTE
+       * (`CLE_BUDGET_SPECULATIF`), pas l'empreinte du bearer, donc sa table ne porte qu'une entrée quel que
+       * soit le flot : un plafond de clés y serait sans objet. Ce commentaire a dit le contraire, et le
+       * limiteur portait un plafond de 10 000 clés qui ne pouvait jamais servir.
        */
-      const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS, () => Date.now(), 10_000);
+      const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       const requireApiKey = makeRequireApiKey(v1.apiKeys, apiLimiter, apiPrefiltre);
       registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, [requireApiKey, requireScope('contacts:write')]);
       if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
