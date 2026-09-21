@@ -5,6 +5,48 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-21 : le carrousel RCS, et les rappels smsmode perdus depuis la bascule Vercel
+
+**Livré le 2026-09-21** : le composeur de carrousel dans Contenu > Messages RCS (lot 1) et le choix d'un
+carrousel dans l'assistant de campagne, en copie figée (lot 2). Spec et plan :
+`docs/superpowers/specs/2026-09-21-carrousel-rcs-design.md`, `docs/superpowers/plans/2026-09-21-carrousel-rcs.md`.
+Fonctionnel dans [features.md](../features.md) ; le lot 3 (le carrousel dans un bloc de scénario) est cadré
+dans [todo.md](../todo.md) ; l'essai réel restant est dans [wip.md](../wip.md). Ce qui suit est le récit.
+
+**Le premier envoi réel « n'a pas fonctionné », et ce n'était pas le carrousel.** smsmode l'avait accepté et
+remis. Ce qui était cassé, ce sont deux adresses que le RCS distribue, câblées dans `src/workflow/wiring.ts`
+sur `config.APP_URL` :
+- l'adresse de rappel posée sur chaque envoi (rapports de livraison ET réponses des contacts, STOP compris) ;
+- la base des liens tracés des boutons.
+
+Depuis la bascule du 2026-09-03, `APP_URL` est le nom du front, servi par Vercel, qui ne relaie rien vers
+l'API (`404 DNS_HOSTNAME_RESOLVED_PRIVATE`). Les boutons ouvraient une page d'erreur, et **aucun rappel
+n'était arrivé depuis le 26 août** (`rcs_agents.last_callback_at`) : un STOP reçu par RCS pendant ces trois
+semaines aurait été perdu. Impact réel faible : le canal est en mode TEST (« Messaging Me (TEST) »), et le
+diagnostic comptait quatre envois depuis la bascule. Les visuels s'affichaient, eux : `/m/` avait été
+rebranché sur l'API à la bascule, dans `src/index.ts`. C'est le même rebranchement qui avait sauté le câblage
+du RCS.
+
+**Le correctif (`96eebb5a`)** fait passer les deux adresses par `adressesPubliques`, le point de passage qui
+existait depuis la bascule (`avecPrefixe` pour le rappel, `racine` pour les liens).
+`tests/rcs-adresses-cablage.test.ts` lit le câblage et y refuse `APP_URL` ; sa mutation le fait tomber.
+Déployé le jour même par l'autre session, avec la migration 0161.
+
+**L'essai, mesuré de bout en bout.** Julien a renvoyé le carrousel à 12:46:38 UTC, trois minutes après le
+redémarrage des conteneurs. Relu chez smsmode (`GET /rcs/v1/messages/<id>`, depuis `mba-api`) :
+`callbackUrlStatus` et `callbackUrlMo` sur `api.messagingme.app/rcs/callback/`, les trois boutons sur
+`api.messagingme.app/r/`. Puis l'appui sur « En savoir plus » : clic compté et attribué à 12:46:52.253,
+rappel reçu à .594, message entrant enregistré à .638.
+
+**Ce que l'essai a appris sur smsmode.** L'appui sur un bouton LIEN revient en rappel `SUGGESTION`, avec son
+`postbackData`, exactement comme un bouton Réponse. Il entre donc dans le fil comme une réponse du contact et
+range la conversation dans « À traiter ». Sur WhatsApp, un bouton lien ne produit aucun message entrant.
+
+**La leçon** (`brain/LEARNINGS.md`, 2026-09-21) : une adresse DISTRIBUÉE se vérifie chez le TIERS qui la
+reçoit, pas dans nos tests. En local, le front et l'API répondent tous les deux, donc aucun test ne pouvait
+voir qu'une adresse portait le mauvais nom. C'est la relecture chez smsmode qui l'a montré, et c'est elle qui
+a clos le correctif.
+
 ## 2026-09-19 : l'Inbox, « Traité », les pièces jointes et « Je m'en occupe » (12 commits, trois revues)
 
 **Livré et déployé le 2026-09-19 après-midi**, migration 0160 comprise. Fonctionnel dans

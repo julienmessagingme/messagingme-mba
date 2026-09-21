@@ -108,6 +108,13 @@ filet : le temps que Meta reprenne l'adresse, les messages entrants tombent.
 `mba-web`. C'est ce qui a permis de migrer la console vers Vercel sans toucher à la configuration du webhook
 chez Meta, et ce qui a retiré un conteneur de FRONT du chemin critique de réception des messages clients.
 
+🔴 **`engageme.` NE RELAIE RIEN VERS L'API.** Les rewrites de `web/next.config` (`/api/backend/*`, `/r/`,
+`/m/`) visent `BACKEND_URL`, absente chez Vercel : elles retombent sur `localhost` et rendent
+`404 DNS_HOSTNAME_RESOLVED_PRIVATE` (mesuré sur les trois le 2026-09-21). Une adresse que le produit DISTRIBUE
+(lien tracé, visuel, rappel d'un fournisseur, webhook entrant) se construit donc TOUJOURS par
+`adressesPubliques` (`src/lib/adresses-publiques.ts`), jamais sur `APP_URL`, qui est le nom du front. Le rappel
+smsmode et les boutons RCS l'ont oublié jusqu'au 2026-09-21 : `tests/rcs-adresses-cablage.test.ts` les garde.
+
 ### Les trois conteneurs
 
 Sur le réseau Docker `mcp-robot_default` du VPS :

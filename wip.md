@@ -52,13 +52,31 @@ par `creerAppelConnecteur`. Lots 1 à 3 commités ; la CI fait foi.
 ⚠️ **Le seul scénario d'impasse** : une macro que Meta ne remplit jamais. Le relais refuse alors tous les
 appels en le disant (« le client n'est pas identifié »), et on le voit à l'étape 3.
 
-## 🔴 CARROUSEL RCS : EN SERVICE (CONSOLE), ESSAI RÉEL DÛ (2026-09-21)
+## 🔴 CARROUSEL RCS : EN SERVICE, ESSAI RÉEL EN PARTIE FAIT (2026-09-21)
 
-Chantier d'une autre session, poussé et servi par Vercel depuis le 2026-09-21 (plan
-`docs/superpowers/plans/2026-09-21-carrousel-rcs.md`). La revue finale du relais (même intervalle) a relevé
-qu'**aucun carrousel n'est encore parti pour de vrai** et que rien ici ne le disait. L'essai qui le clôt est
-écrit dans sa spec (`docs/superpowers/specs/2026-09-21-carrousel-rcs-design.md`, § « L'essai réel ») : un
-envoi réel, son rendu sur un téléphone, un clic compté, une campagne.
+Plan `docs/superpowers/plans/2026-09-21-carrousel-rcs.md` ; l'essai qui le clôt est écrit dans la spec
+(`docs/superpowers/specs/2026-09-21-carrousel-rcs-design.md`, § « L'essai réel »). Récit et mesures :
+[docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md), entrée du 2026-09-21.
+
+✅ **FAIT PAR JULIEN, RELU CHEZ SMSMODE ET EN BASE** : un carrousel de 3 cartes renvoyé depuis l'Inbox à
+14 h 46, après le déploiement du correctif `96eebb5a`. smsmode l'accepte, les rappels et les boutons sont sur
+`api.messagingme.app`, et l'appui sur « En savoir plus » est compté ET attribué, son rappel revenant en moins
+d'une seconde. Les envois de 14 h 21 et 14 h 40 gardent des boutons morts (leur adresse est figée chez
+smsmode) : c'est attendu, rien à réparer.
+
+🔴 **CE QUI RESTE DÛ** (rien n'est clos avant) :
+1. Le rendu, dit par Julien : les cartes défilent, les visuels s'affichent, les boutons sont dans les cartes.
+2. Un bouton **Réponse** : ce carrousel n'en portait pas. Son chemin (un rappel `SUGGESTION`) est celui qu'a
+   pris l'appui sur le lien, mais aucune réponse n'a été vue arriver.
+3. Une **campagne** RCS vers lui-même avec ce carrousel : le lot 2 n'est jamais parti pour de vrai.
+
+⚠️ **À ARBITRER PAR JULIEN, MESURÉ PENDANT L'ESSAI** : chez smsmode, l'appui sur un bouton LIEN revient AUSSI
+en rappel `SUGGESTION`, avec son `postbackData`. Il entre donc dans le fil comme une réponse du contact
+(« En savoir plus ») et range la conversation dans « À traiter » ; aucun parcours n'a démarré. Sur WhatsApp,
+un bouton lien ne produit aucun message entrant : le clic, compté sur la fiche, est le seul signal.
+
+⚠️ **QUESTION OUVERTE** : un texte AU-DESSUS des cartes, comme sur un template WhatsApp. smsmode n'en prévoit
+pas dans un carrousel ; l'option proposée est un message texte envoyé juste avant lui. En attente de Julien.
 
 ## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL DÛ)
 
