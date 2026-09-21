@@ -1044,8 +1044,17 @@ aucun signal d'abandon) ; et une **plage d'adresses se compare en ARITHMÉTIQUE,
 
 🔴 **L'INVENTAIRE DE CES CHEMINS EST TENU PAR UN TEST, plus par cette page.** Elle a affirmé qu'il y en avait
 TROIS ; il y en avait QUATRE, et le manquant était le seul non gardé. Un inventaire écrit à la main dérive dès
-qu'on ajoute un bouton : `tests/lib-adresse-privee.test.ts` le vérifie à chaque exécution. ⚠️ Le « DNS
-rebinding » reste ouvert (`fetch` refait sa propre résolution), cf. `todo.md`.
+qu'on ajoute un bouton : `tests/lib-adresse-privee.test.ts` le vérifie à chaque exécution.
+
+🔴 **ET L'ADRESSE SE REVÉRIFIE À L'OUVERTURE DE LA CONNEXION** (2026-09-21, le « DNS rebinding » est fermé).
+La vérification ci-dessus et `fetch` faisaient DEUX résolutions : un DNS hostile pouvait répondre public à la
+première, interne à la seconde. Tout appel vers une adresse saisie par un client passe par `fetchPublic`
+(`src/lib/connexion-publique.ts`), dont le connecteur juge un littéral tout de suite et fait résoudre un nom
+par un `lookup` qui refuse l'intérieur : la socket s'ouvre sur ce qui a été vérifié. Le même test d'inventaire
+l'exige de chaque chemin, client MCP compris. ⚠️ **`fetch` ET `Agent` viennent du MÊME paquet `undici`** : la
+production tourne en Node 22 (undici 6 embarqué), le poste en Node 24 ; donner un `Agent` d'une version au
+`fetch` intégré d'une autre est le piège. ⚠️ La vérification préalable RESTE : elle donne un refus lisible
+avant l'appel, là où un refus à la connexion ne remonte que comme une panne réseau.
 
 🔴 **Un corps de réponse distante se lit EN FLUX** (`lireCorpsBorne`, `src/lib/corps-borne.ts`), jamais avec
 `res.text()` suivi d'un test de taille : le corps entier entrerait en mémoire avant d'être jeté, et `.length`

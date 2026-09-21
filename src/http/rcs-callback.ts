@@ -35,7 +35,7 @@ export interface RcsCallbackRouteDeps {
  * comparer, et trois gardes remplacent la signature :
  *   1. le CODE de l'URL, opaque et propre à un workspace, qui porte le tenant (jamais le corps, jamais un
  *      identifiant deviné dans le JSON) ; il se traite comme un secret (jamais journalisé) ;
- *   2. un PLAFOND de requêtes par code, pris AVANT la base : une adresse qui fuite ne devient pas un robinet ;
+ *   2. un PLAFOND de requêtes par code EXISTANT : une adresse qui fuite ne devient pas un robinet d'écritures ;
  *   3. le `channelId` du corps, EXIGÉ, qui doit être l'agent de CE workspace.
  *
  * 🔴 LE `channelId` EST EXIGÉ DEPUIS LE 2026-09-21, et c'est ce qui rend la troisième garde vraie. Tant qu'il
@@ -65,12 +65,19 @@ export function registerRcsCallback(app: FastifyInstance, deps: RcsCallbackRoute
     const normalise = typeof code === 'string' ? code.trim().toLowerCase() : '';
     if (!CODE_RE.test(normalise)) return reply.code(404).send({ error: 'canal introuvable' });
 
-    // Le plafond se prend AVANT la base : sur un code qui fuite, les refus ne doivent coûter aucune requête.
-    // Il est indexé sur un code choisi par l'appelant, d'où le plafond de clés du limiteur (`server.ts`).
-    if (!(await consommerAvecEntetes(limiteur, normalise, reply, 'trop de rappels, réessayez plus tard'))) return;
-
     const canal = await deps.parCode(normalise);
     if (!canal) return reply.code(404).send({ error: 'canal introuvable' });
+
+    /**
+     * 🔴 LE PLAFOND NE COMPTE QUE DES CODES QUI EXISTENT, donc APRÈS la base, et c'est une correction de revue.
+     * Posé d'abord AVANT la lecture, il comptait n'importe quel code bien formé : un robot qui tire plus de
+     * codes inventés par minute que la table n'en retient la remplissait, et le VRAI code d'un client, dont
+     * l'entrée expire à chaque fenêtre, se voyait alors refusé. La protection devenait un moyen de bloquer
+     * les messages RCS entrants. Ici, la table ne contient que des codes réels, en nombre borné par celui des
+     * agents : aucune éviction possible. Un code inventé coûte une lecture par clé, comme avant ce plafond ;
+     * ce qu'on protège d'un code qui a FUITÉ, ce sont les écritures qui suivent.
+     */
+    if (!(await consommerAvecEntetes(limiteur, normalise, reply, 'trop de rappels, réessayez plus tard'))) return;
 
     const payload = req.body;
     // Tracé AVANT d'essayer de le comprendre : c'est ce corps-là qu'on voudra lire le jour où notre lecture

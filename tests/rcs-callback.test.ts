@@ -372,7 +372,7 @@ describe('Route publique des rappels RCS', () => {
  * (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) : un vrai accusé retardé n'est pas perdu.
  */
 describe('Rappels RCS : le plafond par code', () => {
-  function monterAvec(max: number) {
+  function monterAvec(max: number, maxCles = 0) {
     let lectures = 0;
     const dlrs: RcsDlr[] = [];
     const app = Fastify();
@@ -380,17 +380,32 @@ describe('Rappels RCS : le plafond par code', () => {
       parCode: async (code) => { lectures += 1; return code === CODE ? { tenantId: 't1', agentId: 'ch-1' } : null; },
       onDlr: async (_t, dlr) => { dlrs.push(dlr); },
       onMo: async () => {},
-    }, new RateLimiter(max, 60_000, () => 1_000, 5_000));
+    }, new RateLimiter(max, 60_000, () => 1_000, maxCles));
     return { app, dlrs, lectures: () => lectures };
   }
 
-  it('🔴 au-delà du plafond : 429, et la base n’est plus interrogée', async () => {
-    const { app, dlrs, lectures } = monterAvec(2);
+  it('🔴 au-delà du plafond : 429, et plus RIEN n’est écrit', async () => {
+    const { app, dlrs } = monterAvec(2);
     const codes: number[] = [];
     for (let i = 0; i < 5; i += 1) codes.push((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode);
     expect(codes).toEqual([200, 200, 429, 429, 429]);
-    expect(lectures(), 'un refus au plafond ne doit coûter aucune requête').toBe(2);
-    expect(dlrs).toHaveLength(2);
+    expect(dlrs, 'un code qui fuite ne doit pas devenir un robinet d’écritures').toHaveLength(2);
+  });
+
+  /**
+   * 🔴 LE DÉFAUT QUE LA REVUE A TROUVÉ DANS LA PREMIÈRE VERSION DE CE PLAFOND. Pris AVANT la base, il comptait
+   * n'importe quel code bien formé : des codes inventés en masse remplissaient sa table bornée, et le VRAI code,
+   * dont l'entrée expire à chaque fenêtre, était refusé. Même une table sans borne n'y échapperait pas en
+   * mémoire. Ici, une table de DEUX places et cinquante codes inventés : le vrai doit toujours passer.
+   */
+  it('🔴 des codes inventés en masse n’évincent pas le vrai code', async () => {
+    const { app, dlrs } = monterAvec(100, 2);
+    for (let i = 0; i < 50; i += 1) {
+      const invente = `rcs-${i.toString(16).padStart(32, 'a')}`;
+      expect((await app.inject(post(`/rcs/callback/${invente}`, DLR_DELIVERED))).statusCode).toBe(404);
+    }
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(200);
+    expect(dlrs).toHaveLength(1);
   });
 
   it('le plafond est PAR CODE : un code qui déborde ne coupe pas les autres', async () => {

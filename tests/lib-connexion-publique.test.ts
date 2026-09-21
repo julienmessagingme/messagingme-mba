@@ -66,7 +66,16 @@ describe('la connexion vérifiée, contre un vrai serveur local', () => {
   let serveur: Server;
   let port = 0;
   beforeAll(async () => {
-    serveur = createServer((_req, res) => { res.end('secret interne'); });
+    serveur = createServer((req, res) => {
+      if (req.url === '/lent') { setTimeout(() => res.end('trop tard'), 2_000).unref(); return; }
+      if (req.url === '/echo') {
+        let corps = '';
+        req.on('data', (c: Buffer) => { corps += c.toString('utf8'); });
+        req.on('end', () => res.end(JSON.stringify({ methode: req.method, auth: req.headers.authorization ?? null, corps })));
+        return;
+      }
+      res.end('secret interne');
+    });
     await new Promise<void>((ok) => serveur.listen(0, '127.0.0.1', () => ok()));
     port = (serveur.address() as AddressInfo).port;
   });
@@ -92,6 +101,59 @@ describe('la connexion vérifiée, contre un vrai serveur local', () => {
       expect(await res.text()).toBe('secret interne');
     } finally {
       await agent.close();
+    }
+  });
+
+  /**
+   * 🔴 CE QUE LES APPELANTS PASSENT À CE `fetch`, ÉPROUVÉ POUR DE VRAI. Leurs propres tests injectent un faux
+   * `fetch` : aucun ne fait transiter un délai d'abandon, un corps ou des en-têtes par le `fetch` d'undici. Si
+   * l'un d'eux était refusé (un `AbortSignal` du `globalThis` rejeté par une autre version, par exemple), chaque
+   * appel de connecteur échouerait en production, sans qu'un seul test ne le voie. D'où ces trois cas.
+   */
+  it('🔴 le délai d’abandon de l’appelant (AbortSignal.timeout) est respecté', async () => {
+    const agent = new Agent({ connect: connecteurPublic(resolveur(table), () => false) });
+    try {
+      const debut = Date.now();
+      const erreur = await fetchPublicAvec(agent)(`http://rebind.test:${port}/lent`, { signal: AbortSignal.timeout(100) })
+        .then(() => null, (e: unknown) => e);
+      expect(erreur, 'l’appel aurait dû être abandonné').not.toBeNull();
+      expect((erreur as Error).name).toMatch(/Abort|Timeout/);
+      expect(Date.now() - debut).toBeLessThan(1_500);
+    } finally {
+      await agent.close();
+    }
+  });
+
+  it('🔴 méthode, en-têtes et corps arrivent intacts, comme pour un vrai appel de connecteur', async () => {
+    const agent = new Agent({ connect: connecteurPublic(resolveur(table), () => false) });
+    try {
+      const res = await fetchPublicAvec(agent)(`http://rebind.test:${port}/echo`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer JETON', 'content-type': 'application/json' },
+        body: JSON.stringify({ ref: 'CMD-1' }),
+        redirect: 'error',
+      });
+      expect(await res.json()).toEqual({ methode: 'POST', auth: 'Bearer JETON', corps: '{"ref":"CMD-1"}' });
+    } finally {
+      await agent.close();
+    }
+  });
+
+  it('🔴 en HTTPS aussi, le nom est jugé à la connexion (avant toute poignée de main TLS)', async () => {
+    // Le serveur local parle HTTP : garde levée, l'échec est une erreur TLS (la connexion a bien été ouverte) ;
+    // garde posée, c'est le refus d'adresse interne, AVANT la poignée de main. C'est ce qui prouve que la
+    // résolution vérifiée sert aussi le chemin TLS, celui de presque tous les vrais connecteurs.
+    const garde = new Agent({ connect: connecteurPublic(resolveur(table)) });
+    const levee = new Agent({ connect: connecteurPublic(resolveur(table), () => false) });
+    try {
+      const refus = await fetchPublicAvec(garde)(`https://rebind.test:${port}/`).then(() => null, (e: unknown) => e);
+      expect(estRefusAdresseInterne(refus)).toBe(true);
+      const autre = await fetchPublicAvec(levee)(`https://rebind.test:${port}/`).then(() => null, (e: unknown) => e);
+      expect(autre, 'garde levée, la connexion doit s’ouvrir puis échouer en TLS').not.toBeNull();
+      expect(estRefusAdresseInterne(autre)).toBe(false);
+    } finally {
+      await garde.close();
+      await levee.close();
     }
   });
 
