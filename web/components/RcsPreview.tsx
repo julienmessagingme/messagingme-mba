@@ -14,8 +14,10 @@ import { useT } from '@/lib/i18n';
  * même endroit que `versMessageRcs`, sinon il ment.
  *
  * Composant partagé par la bibliothèque et par l'inbox : deux aperçus divergeraient au premier ajustement.
+ *
+ * `sansFond` : posé dans un `RcsPhoneFrame`, qui porte déjà le fond de conversation.
  */
-export function RcsPreview({ brouillon, vide }: { brouillon: BrouillonRcs; vide?: string }) {
+export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: BrouillonRcs; vide?: string; sansFond?: boolean }) {
   const t = useT();
   const avecImage = brouillon.imageUrl.trim() !== '';
   const remplis = brouillon.suggestions.filter((s) => s.text.trim() !== '');
@@ -23,7 +25,7 @@ export function RcsPreview({ brouillon, vide }: { brouillon: BrouillonRcs; vide?
   const enPastilles = avecImage ? remplis.slice(MAX_BOUTONS_CARTE) : remplis;
 
   return (
-    <div className="rounded-xl bg-ink-50 p-3">
+    <div className={sansFond ? '' : 'rounded-xl bg-ink-50 p-3'}>
       <div className="max-w-[85%] overflow-hidden rounded-2xl bg-mint-100">
         {avecImage && (
           // eslint-disable-next-line @next/next/no-img-element

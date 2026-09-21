@@ -31,7 +31,7 @@ const IMAGE_RE = /\.(jpe?g|png|gif)(\?.*)?$/i;
 const TAILLE_MAX = 2 * 1024 * 1024;
 
 export function ChampImageHebergee({
-  tenantId, valeur, onChange, testIdPrefix = 'rcs-message', compact = false, avertirExtension = true,
+  tenantId, valeur, onChange, testIdPrefix = 'rcs-message', compact = false, avertirExtension = true, apparence = 'ligne',
 }: {
   tenantId: string;
   valeur: string;
@@ -44,6 +44,13 @@ export function ChampImageHebergee({
    * or document » et ne nomme aucune extension. On n'avertit que là où on a mesuré.
    */
   avertirExtension?: boolean;
+  /**
+   * `tuile` : la zone pointillée « Choisir une image » des cartes de `CarouselForm`, avec le visuel dedans une
+   * fois posé. C'est le dessin des cartes d'un carrousel RCS, qui doivent ressembler à celles d'un carousel
+   * WhatsApp (Julien, 2026-09-21). `ligne` (défaut) : le bouton et la vignette, INCHANGÉS, parce que les
+   * autres écrans et leurs specs visent ce rendu-là.
+   */
+  apparence?: 'ligne' | 'tuile';
 }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -79,39 +86,69 @@ export function ChampImageHebergee({
   }
 
   const douteuse = avertirExtension && valeur.trim() !== '' && !IMAGE_RE.test(valeur.trim());
+  const aUneImage = valeur.trim() !== '';
+
+  const retirer = (
+    <button
+      type="button"
+      onClick={() => { onChange(''); setErreur(null); }}
+      data-testid={`${testIdPrefix}-image-clear`}
+      className="shrink-0 text-sm text-ink-400 hover:text-coral"
+    >
+      {t('Retirer', 'Remove')}
+    </button>
+  );
+  const champAdresse = (classe: string) => (
+    <input
+      value={valeur}
+      onChange={(e) => onChange(e.target.value)}
+      data-testid={`${testIdPrefix}-image`}
+      className={classe}
+      placeholder={t('…ou collez l’adresse d’une image déjà en ligne', '…or paste the URL of an image already online')}
+    />
+  );
 
   return (
     <div>
-      <div className="flex items-center gap-2">
+      {apparence === 'tuile' ? (
+        // La zone pointillée des cartes de `CarouselForm` : le visuel s'affiche DEDANS une fois posé.
         <button
           type="button"
           onClick={() => fichierRef.current?.click()}
           disabled={busy}
           data-testid={`${testIdPrefix}-image-upload`}
-          className="shrink-0 rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-40"
+          className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-400 hover:border-brand-400 disabled:cursor-not-allowed"
         >
-          {busy ? t('Envoi…', 'Uploading…') : t('Choisir une image', 'Choose an image')}
+          {busy ? t('Envoi…', 'Uploading…') : aUneImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={valeur.trim()} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+          ) : t('Choisir une image', 'Choose an image')}
         </button>
-        {valeur.trim() !== '' && (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={valeur.trim()}
-              alt=""
-              referrerPolicy="no-referrer"
-              className="h-9 w-14 shrink-0 rounded border border-ink-200 bg-ink-50 object-cover"
-            />
-            <button
-              type="button"
-              onClick={() => { onChange(''); setErreur(null); }}
-              data-testid={`${testIdPrefix}-image-clear`}
-              className="shrink-0 text-sm text-ink-400 hover:text-coral"
-            >
-              {t('Retirer', 'Remove')}
-            </button>
-          </>
-        )}
-      </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fichierRef.current?.click()}
+            disabled={busy}
+            data-testid={`${testIdPrefix}-image-upload`}
+            className="shrink-0 rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-40"
+          >
+            {busy ? t('Envoi…', 'Uploading…') : t('Choisir une image', 'Choose an image')}
+          </button>
+          {aUneImage && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={valeur.trim()}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="h-9 w-14 shrink-0 rounded border border-ink-200 bg-ink-50 object-cover"
+              />
+              {retirer}
+            </>
+          )}
+        </div>
+      )}
       <input
         ref={fichierRef}
         type="file"
@@ -121,13 +158,12 @@ export function ChampImageHebergee({
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void televerser(f); }}
       />
 
-      <input
-        value={valeur}
-        onChange={(e) => onChange(e.target.value)}
-        data-testid={`${testIdPrefix}-image`}
-        className={`${cls} mt-1.5`}
-        placeholder={t('…ou collez l’adresse d’une image déjà en ligne', '…or paste the URL of an image already online')}
-      />
+      {apparence === 'tuile' ? (
+        <div className="mt-1.5 flex items-center gap-2">
+          {champAdresse(cls)}
+          {aUneImage && retirer}
+        </div>
+      ) : champAdresse(`${cls} mt-1.5`)}
 
       {erreur && <p className="mt-1 text-[11px] text-red-700" data-testid={`${testIdPrefix}-image-error`}>{erreur}</p>}
       {douteuse && (

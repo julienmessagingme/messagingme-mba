@@ -493,7 +493,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mt-3">
       <label className="mb-1 block text-sm font-medium text-ink-700">{label}</label>
