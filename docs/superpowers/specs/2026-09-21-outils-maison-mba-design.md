@@ -19,9 +19,11 @@ soulevés), spec à relire.
 5. Approche 1 (le relais exécute lui-même), avec les deux points proposés : « Envoyer un bloc » n'accepte que
    des blocs qui n'attendent pas de réponse, et la transmission du message « à côté » vaut pour **tout**
    scénario qui rend la main sur une réponse libre, avec la réparation du fil bloqué.
+6. **L'onglet « Outils » est refait** d'après son croquis : une liste claire et un gros bouton « Ajouter »
+   (§ 9). Maquette validée, sans bandeau d'envoi.
 
 **Hors périmètre** : le sous-scénario qui rend un résultat à l'agent (un bloc de sortie), évoqué par Julien et
-reporté ; aucun changement aux outils des agents IA, sauf deux défauts consignés au § 11.
+reporté ; aucun changement aux outils des agents IA, sauf deux défauts consignés au § 12.
 
 ## 1. Ce que l'utilisateur obtient
 
@@ -37,7 +39,7 @@ connecteur API (existant), quatre outils prêts à l'emploi :
 
 Chacun porte, comme un outil de connecteur, « Quand l'appeler » et « Quand NE PAS l'appeler », pré-remplis
 avec une consigne **directive** (leçon mesurée le 2026-09-21 : une description vague perd face aux compétences
-de l'agent, cf. `docs/MBA-API-REFERENCE.md`). L'administrateur publie par « Envoyer », comme aujourd'hui.
+de l'agent, cf. `docs/MBA-API-REFERENCE.md`). Enregistrer un outil l'envoie chez Meta dans le même geste (§ 9).
 
 ## 2. L'approche : le relais exécute lui-même
 
@@ -140,7 +142,7 @@ scénario, qu'il ait été lancé par l'agent de Meta, une campagne, une automat
 l'agent de Meta n'est pas allumé, et quand le release échoue. Un événement qui échoue est journalisé et
 n'arrête rien : l'agent de Meta répondra au message suivant du client, comme aujourd'hui.
 
-**Inconnue M2, mesurée AVANT de coder cette partie** (§ 10) : un `agent_event` fait-il répondre l'agent dans une
+**Inconnue M2, mesurée AVANT de coder cette partie** (§ 11) : un `agent_event` fait-il répondre l'agent dans une
 conversation en cours, et sous quel format de `to` ? La documentation ne le dit pas. Si la mesure est négative,
 cette partie tombe et le reste du design ne bouge pas.
 
@@ -222,7 +224,78 @@ Un outil maison se publie comme un outil de connecteur, sous le même connecteur
 fournit (`{valeur}` pour `champ_fixe`, rien pour les trois autres). `planifierPublication` et la comparaison avec
 ce que Meta détient ne changent pas ; seule la liste des outils à publier s'élargit (§ 6).
 
-## 9. Refus
+## 9. L'écran « Outils », refait
+
+**Demande de Julien, 2026-09-21, croquis à l'appui** : « un premier écran très clair qui liste les outils et le
+type d'outil et un gros bouton + rajouter. Et quand on appuie sur +, qu'on choisisse la liste d'outils dispo ».
+Maquette validée le même jour, sans le bandeau d'envoi qu'elle proposait : « au pire le user cliquera dans la
+liste sur le bouton À envoyer ».
+
+### 9.1 Le premier écran
+- Un bouton **« Ajouter un outil »**, bien visible.
+- **La liste des outils de l'agent de Meta, et d'eux seuls.** Par ligne : le titre ; ce que l'outil vise
+  (l'étiquette, le champ, « bloc X du scénario Y », le scénario, l'appel) ; le type (Tag, Information, Bloc,
+  Scénario, Connecteur API) ; l'état chez Meta ; « Modifier » et « Supprimer ».
+- **Disparaissent** : la bibliothèque de tous les outils de l'espace, la colonne « Utilisé par », la case
+  « Exposé à l'agent de Meta » et le panneau « Envoyer chez Meta ». Les outils de connecteur d'un agent IA se
+  gèrent depuis sa fiche.
+- Un outil de connecteur **partagé avec un agent IA** porte une ligne « aussi utilisé par … » : la définition est
+  unique depuis 0127, donc le modifier ici le modifie pour cet agent aussi. « Supprimer » ne le retire alors
+  qu'à l'agent de Meta, et la définition reste à l'agent qui s'en sert.
+- **Une ligne rouge quand la cible n'existe plus** : scénario supprimé ou dépublié, bloc supprimé ou devenu un
+  bloc qui attend une réponse, appel supprimé dans Connecteurs API. Calculée par le serveur, avec la même
+  vérification que celle du relais à l'appel.
+- Rien ne s'affiche tant que la lecture n'a pas abouti (règle de l'écran actuel : une liste vide pendant le
+  chargement dirait « aucun outil » à un espace qui en a).
+
+### 9.2 L'état chez Meta, et le bouton « À envoyer »
+- Par ligne, **« Chez Meta »** ou **« À envoyer »**, calculé par le plan de publication (`planifierPublication`),
+  jamais par un drapeau tenu à part : une ligne est « À envoyer » quand le plan porte un geste sur son outil, ou
+  sur le connecteur `EngageMe` dont tous dépendent (clé révoquée par le client, adresse du relais changée).
+- **« À envoyer » est un bouton, et c'est le seul moyen d'envoyer hors d'un enregistrement.** ⚠️ Il envoie TOUT ce
+  qui attend, pas seulement sa ligne : Meta ne reçoit qu'une publication entière, et le bouton le dit au survol.
+  Quand elle efface quelque chose chez Meta (un outil ajouté à la main dans WhatsApp Manager), la confirmation
+  actuelle, qui nomme ce qui part, est gardée.
+- Pendant l'aller-retour (plusieurs secondes), l'attente se voit et les boutons d'envoi sont désactivés, avec la
+  garde de réentrée actuelle (`envoiRef`). Le serveur refuse de toute façon une seconde publication simultanée.
+- ⚠️ **Ce qui attend sans ligne pour le porter** (un outil ajouté à la main chez Meta, à effacer) part au
+  prochain envoi, quel qu'il soit. C'est la conséquence assumée de l'absence de bandeau.
+
+### 9.3 Enregistrer, c'est envoyer
+Créer, modifier ou supprimer un outil le porte chez Meta **dans le même geste**. La suppression demande une
+confirmation. Un envoi qui échoue ne défait pas l'enregistrement : la ligne reste « À envoyer », et le message dit
+que l'outil est enregistré et que c'est le voyage vers Meta qui a échoué.
+
+⚠️ **C'est un changement délibéré de la règle actuelle**, où une correction ne partait pas seule (« les mots
+corrigés doivent pouvoir se relire à l'écran avant d'aller chez un tiers ») : le formulaire est ce lieu de
+relecture, et le bouton séparé a fait rater le premier essai réel du relais. Le commentaire de l'écran actuel qui
+porte l'ancienne règle part avec lui.
+
+### 9.4 Ajouter, modifier
+- **« Ajouter un outil »** ouvre le choix du type : Poser un tag, Enregistrer une information, Envoyer un bloc,
+  Lancer un scénario, Appeler un connecteur API. Ce dernier est **grisé, avec le lien vers Tools > Connecteurs
+  API**, quand l'espace n'a déclaré aucun appel.
+- **Un formulaire par type**, pour la cible :
+  - l'étiquette, existante ou nouvelle ;
+  - le champ, parmi ceux du mini-CRM, et les valeurs permises en option ;
+  - le scénario puis le bloc, les blocs qui attendent une réponse étant grisés avec leur raison ;
+  - le scénario, parmi les publiés ;
+  - l'appel, avec « Engage Me remplit lui-même » et « l'agent de Meta les obtient du client », comme aujourd'hui.
+- **Puis commun à tous** : le titre, « Quand l'appeler » et « Quand NE PAS l'appeler », pré-remplis d'une consigne
+  directive propre au type.
+- **Le nom technique** vu par l'agent de Meta se calcule à partir du titre (minuscules, chiffres, tirets bas,
+  64 caractères au plus). Il reste modifiable, et un nom déjà pris se signale à la saisie, pas à l'envoi.
+- **« Modifier »** rouvre le même formulaire, cible comprise.
+
+### 9.5 Ce qui part avec l'ancien écran
+- `web/components/BibliothequeOutils.tsx` est remplacé par des composants plus petits : la liste, le choix du
+  type, un formulaire par type.
+- L'adresse `/outils`, gardée pour les liens déjà partagés, renvoie vers cet onglet.
+- La route qui lit la bibliothèque reste servie : l'écran des outils d'un agent IA la lit (`AgentOutils.tsx`).
+- Les cas de `web/e2e/mba-onglet-outils.spec.ts` sont conservés, ou remplacés nommément, jamais perdus en route
+  (dont la garde de l'envoi en cours de la revue finale du 2026-09-21).
+
+## 10. Refus
 
 Tous en `200 {succes: false, erreur}`, dans les mots de l'agent de Meta :
 
@@ -239,26 +312,28 @@ Tous en `200 {succes: false, erreur}`, dans les mots de l'agent de Meta :
 
 Poser un tag ou écrire un champ sur un contact désabonné reste permis : ce n'est pas un message.
 
-## 10. Découpage proposé
+## 11. Découpage proposé
 
 1. **Mesure M2, jetable** : un script sur le VPS envoie un `agent_event` dans la conversation de Julien pendant
    que l'agent de Meta tient le fil, et on regarde s'il répond, et avec quel format de `to`. On vérifie aussi que
    la conversation de Julien n'est pas marquée de TEST (`conversations.is_test`), sans quoi le fil ne lui
    reviendrait jamais pendant l'essai réel. Le résultat décide du lot 4.
-2. **Base, tag et champ** : migration 0162, catalogue et handlers, branche maison du relais, publication,
-   rayon de souffle, écran pour ces deux outils.
-3. **Bloc et scénario** : sélection des blocs admissibles, prise et retour du fil, écran.
+2. **Base, tag et champ, et le nouvel écran** : migration 0162, catalogue et handlers, branche maison du relais,
+   publication, rayon de souffle ; l'onglet refait (§ 9) avec les formulaires tag, information et connecteur API.
+3. **Bloc et scénario** : sélection des blocs admissibles, prise et retour du fil, leurs deux formulaires.
 4. **La réponse « à côté »** : `agentEvent`, transmission, réparation du marqueur et `accuse_le`.
 
 **Méthode de livraison** (à écrire dans le plan) : implémentation par lot avec revue humaine du diff. La
 production emprunte ces chemins (envoi de messages, traitement des statuts, migration) et le marqueur porte un
 invariant invisible (0149). Revue finale avant déploiement.
 
-**L'essai réel qui clôt la feature**, par Julien sur son numéro : les quatre outils déclenchés en conversation ;
+**L'essai réel qui clôt la feature**, par Julien sur son numéro : les quatre outils créés depuis le nouvel
+écran, chacun passant de « À envoyer » à « Chez Meta » sans autre geste que l'enregistrement, puis déclenchés en
+conversation ;
 un scénario lancé par l'agent de Meta et mené à son terme, où l'agent de Meta reprend la parole ; un second où
 Julien répond à côté, et où l'agent de Meta répond à ce qu'il a écrit. M1 se lit pendant cet essai.
 
-## 11. Défauts voisins, consignés et non corrigés ici
+## 12. Défauts voisins, consignés et non corrigés ici
 
 - L'outil `envoyer_bloc` des **agents IA** accepte n'importe quel bloc quand sa liste est vide, alors que
   l'écran annonce « aucun ».
