@@ -345,4 +345,18 @@ test.describe('Contenu : messages RCS', () => {
     await page.getByTestId('rcs-message-image-clear').click();
     await expect(page.getByTestId('rcs-preview-image')).toHaveCount(0);
   });
+
+  // Le bouton se grisait sans rien dire. Le dessin des templates dit ce qu'il attend (2026-09-21).
+  test('le formulaire simple dit ce qui manque', async ({ page }) => {
+    await mock(page, []);
+    await page.goto('/rcs-messages');
+    await page.getByTestId('rcs-message-new').click();
+    const manques = page.getByTestId('rcs-message-manques');
+    await expect(manques).toContainText('le nom du message');
+    await expect(manques).toContainText('le texte du message');
+    await page.getByTestId('rcs-message-name').fill('Offre');
+    await page.getByTestId('rcs-message-text').fill('Bonjour');
+    await expect(manques).toHaveCount(0);
+    await expect(page.getByTestId('rcs-message-save')).toBeEnabled();
+  });
 });
