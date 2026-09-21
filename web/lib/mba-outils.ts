@@ -1,0 +1,116 @@
+import type { GestePublication } from './api-agent-tools';
+import type { OutilMbaVue, TypeOutilMba } from './api-mba-outils';
+import { normaliserCodeSortie } from './agent-sorties';
+
+/**
+ * LES AIDES PURES DE L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9).
+ */
+export type EtatChezMeta = 'chez_meta' | 'a_envoyer' | 'inconnu' | 'desactive';
+
+/**
+ * L'état de chaque ligne, calculé par le PLAN de publication, jamais par un drapeau tenu à part (§ 9.2).
+ *
+ * 🔴 Un connecteur à renvoyer (clé révoquée, adresse changée) rend TOUTES les lignes « À envoyer » : tous les
+ * outils en dépendent, et sans ça aucun bouton ne permettrait de le réparer.
+ * 🔴 Un outil DÉSACTIVÉ n'est plus publié : le dire « Chez Meta » serait faux (plan, écart 4).
+ */
+export function etatsChezMeta(
+  outils: readonly OutilMbaVue[], gestes: readonly GestePublication[] | null,
+): Map<string, EtatChezMeta> {
+  const etats = new Map<string, EtatChezMeta>();
+  const connecteur = gestes !== null && gestes.some((g) => g.type === 'connecteur_creer' || g.type === 'connecteur_modifier');
+  const noms = new Set((gestes ?? []).filter((g) => g.type === 'outil_creer' || g.type === 'outil_modifier').map((g) => g.nom));
+  for (const o of outils) {
+    if (!o.actif) etats.set(o.id, 'desactive');
+    else if (gestes === null) etats.set(o.id, 'inconnu');
+    else etats.set(o.id, connecteur || noms.has(o.name) ? 'a_envoyer' : 'chez_meta');
+  }
+  return etats;
+}
+
+/** Les effacements chez Meta que le geste en cours n'a pas demandés : eux seuls se font confirmer. */
+export function effacementsImprevus(gestes: readonly GestePublication[], attendus: ReadonlySet<string>): GestePublication[] {
+  return gestes.filter((g) => g.type.endsWith('supprimer') && !attendus.has(g.nom));
+}
+
+/** Le nom vu par l'agent de Meta, calculé depuis le titre (même règle que les codes de sortie). */
+export function nomTechniqueDepuisTitre(titre: string): string {
+  return normaliserCodeSortie(titre);
+}
+
+/** Le trou laissé dans une consigne pré-remplie : tant qu'il est là, la consigne n'est pas écrite. */
+export const PLACEHOLDER = '[décrivez la situation]';
+const PLACEHOLDER_EN = '[describe the situation]';
+
+export function consigneIncomplete(texte: string): boolean {
+  return texte.includes(PLACEHOLDER) || texte.includes(PLACEHOLDER_EN);
+}
+
+type Bilingue = readonly [string, string];
+
+interface TextesType { titre: Bilingue; badge: Bilingue; aide: Bilingue; quand: Bilingue; pasQuand: Bilingue }
+
+/**
+ * LES MOTS PAR TYPE D'OUTIL, dont les consignes pré-remplies (spec § 1).
+ *
+ * 🔴 DIRECTIVES, parce que c'est mesuré (2026-09-21) : une description vague perd face aux compétences de
+ * l'agent de Meta, qui passe alors la main au lieu d'appeler l'outil.
+ */
+export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
+  tag: {
+    titre: ['Poser un tag', 'Tag the contact'],
+    badge: ['Tag', 'Tag'],
+    aide: ['Une étiquette précise sur la fiche du client', 'A specific tag on the customer record'],
+    quand: [
+      `Appelle cet outil dès que le client ${PLACEHOLDER}. Il sait déjà qui est le client : ne lui demande rien. Confirme-lui ensuite que c’est pris en compte. Ne passe pas la main pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. It already knows who the customer is: ask nothing. Then confirm it is taken into account. Do not hand over for this request.`,
+    ],
+    pasQuand: ['N’appelle pas cet outil si le client ne l’a pas demandé.', 'Do not call this tool if the customer did not ask for it.'],
+  },
+  champ: {
+    titre: ['Enregistrer une information', 'Save a detail'],
+    badge: ['Information', 'Detail'],
+    aide: ['Un champ de la fiche, rempli par l’agent', 'A record field, filled by the agent'],
+    quand: [
+      `Appelle cet outil dès que le client te donne ${PLACEHOLDER}. Passe la valeur telle qu’il l’a donnée. Confirme-lui ensuite que c’est enregistré. Ne passe pas la main pour cette demande.`,
+      `Call this tool as soon as the customer gives you ${PLACEHOLDER_EN}. Pass the value as given. Then confirm it is saved. Do not hand over for this request.`,
+    ],
+    pasQuand: [
+      'N’appelle pas cet outil tant que le client n’a pas donné l’information : ne l’invente jamais.',
+      'Do not call this tool until the customer has given the detail: never make it up.',
+    ],
+  },
+  bloc: {
+    titre: ['Envoyer un bloc', 'Send a block'],
+    badge: ['Bloc', 'Block'],
+    aide: ['Un message d’un de vos scénarios', 'A message from one of your scenarios'],
+    quand: [
+      `Appelle cet outil dès que le client ${PLACEHOLDER}. Le message part tout seul : n’écris rien de plus au client pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. The message is sent automatically: write nothing more for this request.`,
+    ],
+    pasQuand: ['N’appelle pas cet outil deux fois pour la même demande.', 'Do not call this tool twice for the same request.'],
+  },
+  scenario: {
+    titre: ['Lancer un scénario', 'Start a scenario'],
+    badge: ['Scénario', 'Scenario'],
+    aide: ['Du début, puis la main revient à l’agent', 'From the start, then back to the agent'],
+    quand: [
+      `Appelle cet outil dès que le client ${PLACEHOLDER}. Engage Me prend alors la conversation et te la rend à la fin : n’écris rien au client pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. Engage Me then takes the conversation and hands it back at the end: write nothing for this request.`,
+    ],
+    pasQuand: [
+      'N’appelle pas cet outil si un parcours vient déjà d’être lancé pour cette demande.',
+      'Do not call this tool if a journey was just started for this request.',
+    ],
+  },
+  connecteur: {
+    titre: ['Appeler un connecteur API', 'Call an API connector'],
+    badge: ['Connecteur API', 'API connector'],
+    aide: ['Un appel déclaré dans Connecteurs API', 'A call declared in API connectors'],
+    quand: [
+      `Appelle cet outil dès que le client ${PLACEHOLDER}. Il sait déjà qui est le client. Confirme-lui ensuite ce que la réponse indique. Ne passe pas la main pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. It already knows who the customer is. Then tell them what the response says. Do not hand over for this request.`,
+    ],
+    pasQuand: ['N’appelle pas cet outil si le client ne l’a pas demandé.', 'Do not call this tool if the customer did not ask for it.'],
+  },
+};
