@@ -13,8 +13,32 @@ contourner d'un coup le WAF, la protection anti-déni de service et les règles 
 peut redevenir public (c'est arrivé le 2026-09-15) ; une adresse d'origine publiée, elle, ne se reprend pas.
 
 ⚠️ **ELLE RESTE DANS L'HISTORIQUE GIT**, ce nettoyage ne porte que sur l'état courant. La parade DURABLE
-n'est pas documentaire, c'est côté serveur : n'accepter en entrée que les plages de Cloudflare
-(`Authenticated Origin Pulls`, ou un filtrage des adresses sources sur le pare-feu). Noté dans `todo.md`.
+n'est pas documentaire, elle est côté serveur, et elle est posée depuis le 2026-09-21 :
+
+🔴 **`api.` ET `mba.messagingme.app` N'ACCEPTENT QUE CE QUI ARRIVE PAR CLOUDFLARE.** Deux fichiers
+personnalisés de NPM, que NPM ne réécrit jamais : `/data/nginx/custom/http_top.conf` (la liste des plages
+de Cloudflare, et la table qui ne vise que ces DEUX hôtes) et `/data/nginx/custom/server_proxy.conf` (la
+ligne de refus). Un appel direct sur l'IP est fermé sans réponse (`444`) ; les autres clients du VPS ne sont
+pas touchés.
+- 🔴 **Le filtre lit `$realip_remote_addr`, JAMAIS `$remote_addr`.** NPM réécrit `$remote_addr` avec
+  l'en-tête `X-Real-IP` (`nginx.conf`), que n'importe qui peut envoyer à travers Cloudflare : un filtre
+  posé dessus bloquerait de vrais utilisateurs et se laisserait tromper. Vérifié : un appel direct portant
+  un `X-Real-IP` d'une plage Cloudflare est bien refusé.
+- ⚠️ **`server_proxy.conf` est inclus dans TOUS les hôtes du VPS**, d'où la table qui restreint l'effet aux
+  deux nôtres. Y ajouter quelque chose pour un autre projet se fait À LA SUITE, jamais en écrasant le fichier.
+- ⚠️ **En HTTP simple (port 80), l'appel direct reçoit encore un `301` vers l'adresse HTTPS**, parce que la
+  redirection de NPM passe avant notre ligne. Rien n'atteint l'application par là, et la redirection renvoie
+  vers Cloudflare.
+- ⚠️ **Diagnostic d'un 502 inchangé** : l'appel INTERNE se fait sur `mba-api:8095` dans le réseau Docker,
+  sans passer par NPM. Un appel direct sur l'IP publique rend désormais une connexion fermée, ce qui est le
+  comportement voulu et pas une panne.
+- **Les plages de Cloudflare** (`https://www.cloudflare.com/ips-v4` et `/ips-v6`) changent rarement ; les
+  relire si Cloudflare annonce un changement.
+- **Retour arrière** : supprimer les deux fichiers, puis `nginx -s reload` dans le conteneur NPM.
+- **Éprouvé à la pose, pas seulement écrit** : quatre semaines de journaux relues AVANT (aucun appelant
+  légitime hors Cloudflare), accès direct refusé sur les deux hôtes, service inchangé via Cloudflare, un autre
+  client du VPS intact, un vrai message WhatsApp reçu de bout en bout, et le renouvellement Let's Encrypt
+  simulé à travers le filtre (`certbot renew --dry-run`, validation `webroot`, qui arrive par Cloudflare).
 
 ## 0. Déjà fait (pré-staging sur le VPS)
 

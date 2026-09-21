@@ -788,6 +788,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 
 | Garde | Où | Ce qu'elle ferme |
 |---|---|---|
+| Filtre d'origine Cloudflare | NPM, hôtes `api.` et `mba.` (`DEPLOY.md`) | un appel direct sur l'IP du VPS qui contournerait Cloudflare |
 | Signature du webhook | avant de lire le corps | un tiers qui se ferait passer pour Meta |
 | `scopeTenant` | toute route `:tenantId` | l'accès aux données d'un autre client (IDOR) |
 | `requireAdmin` / `forbidNonAdmin` | écritures | un opérateur d'inbox qui modifierait la configuration |
