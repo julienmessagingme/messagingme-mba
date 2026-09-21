@@ -18,6 +18,20 @@ import type { VariableDeclaree } from '../agent/requetes';
 export const ENTETE_CONTACT_META = 'X-Contact-WhatsApp';
 
 /**
+ * L'ADRESSE DU RELAIS, EN UN SEUL ENDROIT. Elle s'assemble en trois morceaux qui vivent dans trois fichiers :
+ * la base du connecteur (`PUBLIC_API_URL` + `CHEMIN_RELAIS`, `src/index.ts`), le chemin de chaque outil
+ * (`cheminOutilRelais`, `src/mba/publication.ts`) et la route montée (`src/http/mba-relais.ts`). Écrits trois
+ * fois, un seul qui change envoie chaque appel de Meta sur une 404 sans qu'aucun test ne tombe
+ * (`tests/http-mba-relais.test.ts` recolle les trois).
+ */
+export const CHEMIN_RELAIS = '/mba/relais';
+
+/** Le chemin d'un outil, relatif à la base du connecteur chez Meta. */
+export function cheminOutilRelais(outilId: string): string {
+  return `/outils/${outilId}`;
+}
+
+/**
  * Le numéro rempli par Meta, ramené à ce que `getContactStateByWaId` sait chercher.
  *
  * ⚠️ SON FORMAT N'EST PAS DOCUMENTÉ (avec ou sans `+` ?) : on accepte les deux, et la recherche de contact
@@ -46,12 +60,20 @@ export function formeEntete(brut: unknown): string {
   return `len=${v.length} plus=${v.startsWith('+')} chiffres=${/^[0-9]+$/.test(sansPlus)}`;
 }
 
+/**
+ * Le schéma d'UNE variable du modèle. ⚠️ LES VALEURS PERMISES VALENT AUSSI POUR UN NOMBRE : l'écran d'une
+ * requête accepte une liste sur `integer` et `number` (`src/http/agent-requetes.ts`), et la description
+ * publiée chez Meta l'annonce. Elles sont stockées en texte, donc comparées en texte.
+ */
 function schemaVariable(v: VariableDeclaree): z.ZodType<unknown> {
+  const permises = v.enum && v.enum.length > 0 ? v.enum : null;
   if (v.type === 'string') {
-    return v.enum && v.enum.length > 0 ? z.enum(v.enum as [string, ...string[]]) : z.string().max(2000);
+    return permises ? z.enum(permises as [string, ...string[]]) : z.string().max(2000);
   }
-  if (v.type === 'integer') return z.number().int();
-  if (v.type === 'number') return z.number();
+  if (v.type === 'integer' || v.type === 'number') {
+    const base = v.type === 'integer' ? z.number().int() : z.number();
+    return permises ? base.refine((n) => permises.includes(String(n))) : base;
+  }
   return z.boolean();
 }
 

@@ -1821,6 +1821,7 @@ importez ce qu'il propose.
   Manager sera SUPPRIMÉ à la publication suivante. L'écran le dit, et l'aperçu le montre avant le clic.
 - ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms, et
   compare la description, la clause « quand ne pas l'appeler » et ce que l'agent de Meta doit remplir.
+  ⚠️ Vérifié en test ; la forme exacte que Meta renvoie se confirme au premier essai réel du relais.
   Corollaire : **renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau »**.
 - ✅ **Un échec en cours de publication s'ARRÊTE et le dit** : ce qui a été fait est listé, le reste n'est pas
   tenté. Relancer ne refait pas ce qui a réussi.

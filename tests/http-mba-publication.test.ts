@@ -4,6 +4,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { Geste, OutilAPublier, EtatMeta, RelaisAPublier } from '../src/mba/publication';
 import { FakeQueue } from '../src/queue/fake';
+import { ErreurPublication } from '../src/mba/appliquer-publication';
 
 /**
  * Publier le catalogue d'outils chez Meta.
@@ -35,7 +36,7 @@ const ADD_TAG: OutilAPublier = {
 };
 const META_VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 
-function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; relais?: RelaisAPublier | null } = {}) {
+function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; relais?: RelaisAPublier | null } = {}) {
   const appliques: Geste[] = [];
   const app = buildServer({
     queue: new FakeQueue(),
@@ -46,7 +47,7 @@ function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; relai
       outilsExposes: async () => [ADD_TAG],
       etatMeta: async () => META_VIDE,
       appliquer: async (_t, _pn, g) => {
-        if (g.type === opts.echoueSur) throw new Error('Meta a refusé');
+        if (g.type === opts.echoueSur) throw opts.erreur ?? new Error('Meta a refusé');
         appliques.push(g);
       },
     },
@@ -92,6 +93,14 @@ describe('la publication', () => {
     expect(res.json().faits).toHaveLength(1);
     // ⚠️ Et surtout : le geste SUIVANT n'a pas été tenté.
     expect(appliques.map((g) => g.type)).toEqual(['connecteur_creer']);
+  });
+
+  it('🔴 un refus qui vient de NOUS ne se présente pas comme un refus de Meta', async () => {
+    const { app } = monter({ echoueSur: 'outil_creer', erreur: new ErreurPublication('le connecteur EngageMe est introuvable chez Meta') });
+    const res = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).not.toMatch(/Meta a refusé/);
+    expect(res.json().error).toMatch(/introuvable chez Meta/);
   });
 
   it('🔴 un échec sort en 409, jamais en 500', async () => {

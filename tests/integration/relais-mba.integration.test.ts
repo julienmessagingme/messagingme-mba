@@ -76,4 +76,26 @@ describe.skipIf(!url)('migration 0161 : le relais du MBA', () => {
       await pool.query('delete from tenants where id = $1', [autre]);
     }
   });
+
+  it('🔴 révoquer les clés du relais sauf une ne touche ni les autres droits ni les autres espaces', async () => {
+    const cles = new PgApiKeyStore(pool);
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-relais-mba-revoc') returning id`)).rows[0]!.id;
+    try {
+      const garde = await cles.create(tenantId, 'Agent de Meta', ['mba:relais']);
+      const orpheline = await cles.create(tenantId, 'Agent de Meta', ['mba:relais']);
+      const api = await cles.create(tenantId, 'Intégration', ['contacts:write']);
+      const ailleurs = await cles.create(autre, 'Agent de Meta', ['mba:relais']);
+
+      expect(await cles.revoquerDroitSauf(tenantId, 'mba:relais', garde.id)).toEqual([orpheline.id]);
+      expect(await cles.estActive(tenantId, garde.id)).toBe(true);
+      expect(await cles.estActive(tenantId, api.id)).toBe(true);
+      expect(await cles.estActive(autre, ailleurs.id)).toBe(true);
+
+      // `null` = toutes les clés du relais de l'espace (le relais qui part).
+      expect(await cles.revoquerDroitSauf(tenantId, 'mba:relais', null)).toEqual([garde.id]);
+      expect(await cles.estActive(tenantId, api.id)).toBe(true);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
+  });
 });

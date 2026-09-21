@@ -37,17 +37,29 @@ public (`POST /mba/relais/outils/x` sans clé : 401). Puis `CLAUDE.md` : derniè
 
 🔴 **L'ESSAI RÉEL, PAR JULIEN** (rien n'est clos avant) :
 1. Sur l'appel `testadd`, passer la variable `user` de « décidée par l'agent » à « champ `user_ns` » (elle est
-   aujourd'hui du modèle, alors que la valeur est dans le mini-CRM).
+   aujourd'hui du modèle, alors que la valeur est dans le mini-CRM). ⚠️ `tag` vient du champ `tag_ns` : c'est
+   la valeur de CE champ sur la fiche de Julien qui partira, pas un mot dit sur WhatsApp. Renseigner
+   `tag_ns` (et `user_ns`) sur sa fiche avant l'essai. Toutes les valeurs venant alors du mini-CRM, l'outil
+   part chez Meta SANS corps : c'est le cas qu'un test garde désormais (un POST JSON vide passe le relais).
 2. Réassigner `add_tag` à l'agent de Meta, « Envoyer » : la confirmation doit montrer la suppression de
    `testUCHAT` (et de sa copie creuse d'`add_tag` si elle y est encore) et la création d'`EngageMe`.
-3. Sur WhatsApp, « ajoute-moi l'étiquette X » : l'étiquette apparaît sur la fiche UChat, l'appel dans
-   Sécurité > Journal des erreurs s'il échoue (appelant « l'agent de Meta »).
+3. Sur WhatsApp, demander à l'agent d'ajouter l'étiquette : elle apparaît sur la fiche UChat. ⚠️ Un SUCCÈS
+   ne s'affiche nulle part dans la console (Sécurité > Journal des erreurs ne montre que les échecs) : ce
+   qui le prouve, c'est UChat, et la date de dernier usage de la clé « Agent de Meta » dans la liste des clés.
 4. Un second « Envoyer » ne doit produire AUCUN geste (l'idempotence face à la forme que Meta renvoie).
 5. Lire dans les journaux de `mba-api` la ligne `mba-relais: en-tete du numero len=... plus=...`, consigner
    le format réel de la macro dans `docs/MBA-API-REFERENCE.md`, puis retirer `journaliserForme` du câblage.
 
 ⚠️ **Le seul scénario d'impasse** : une macro que Meta ne remplit jamais. Le relais refuse alors tous les
 appels en le disant (« le client n'est pas identifié »), et on le voit à l'étape 3.
+
+## 🔴 CARROUSEL RCS : EN SERVICE (CONSOLE), ESSAI RÉEL DÛ (2026-09-21)
+
+Chantier d'une autre session, poussé et servi par Vercel depuis le 2026-09-21 (plan
+`docs/superpowers/plans/2026-09-21-carrousel-rcs.md`). La revue finale du relais (même intervalle) a relevé
+qu'**aucun carrousel n'est encore parti pour de vrai** et que rien ici ne le disait. L'essai qui le clôt est
+écrit dans sa spec (`docs/superpowers/specs/2026-09-21-carrousel-rcs-design.md`, § « L'essai réel ») : un
+envoi réel, son rendu sur un téléphone, un clic compté, une campagne.
 
 ## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL DÛ)
 

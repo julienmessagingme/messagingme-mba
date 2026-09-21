@@ -317,6 +317,13 @@ le Gateway de Vercel, HubSpot, les connecteurs des clients. **Sans passerelle de
 Il faut une **Public Gateway** sur le réseau privé (sortie seule, aucune entrée), et son coût. ⚠️ Le mémo du
 2026-09-19 l'avait oubliée : c'est la pièce qui aurait manqué le jour J.
 
+⚠️ **L'API APPELLE AUSSI LES CONNECTEURS DES CLIENTS, depuis le relais du Meta Business Agent (2026-09-21,
+migration 0161).** Meta appelle `POST /mba/relais/outils/:id` et attend la réponse pendant que l'API fait
+l'appel au système du client, de façon SYNCHRONE (`src/http/mba-relais.ts`). Deux conséquences pour la cible :
+l'API a besoin elle aussi d'une sortie vers Internet, et le temps de ces appels (jusqu'au `timeoutMs` de
+l'outil) occupe une requête de l'API, donc compte dans son dimensionnement, pas seulement dans celui des
+workers.
+
 ### 7.5 Le budget de connexions se recalcule, il ne se recopie pas
 
 ```

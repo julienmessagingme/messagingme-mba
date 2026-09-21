@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import {
-  planifierPublication, authConfigRelais, NOM_CONNECTEUR_RELAIS,
-  type Geste, type RelaisAPublier, type OutilAPublier, type EtatMeta,
+  planifierPublication, type Geste, type RelaisAPublier, type OutilAPublier, type EtatMeta,
 } from '../mba/publication';
+import { ErreurPublication } from '../mba/appliquer-publication';
 import { scopeTenant } from './scope';
 
-export { corpsOutilMeta } from '../mba/publication';
+export { corpsOutilMeta, corpsConnecteurRelais } from '../mba/publication';
 
 /**
  * Publier le catalogue d'outils de l'espace chez Meta.
@@ -95,32 +95,14 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`mba-publication: ${g.type} « ${g.nom} » a échoué (${tenant}):`, err instanceof Error ? err.message : err);
+        // Un refus qui vient de NOUS ne se présente pas comme un refus de Meta.
+        const cause = err instanceof ErreurPublication ? `« ${g.nom} » : ${err.message}.` : `Meta a refusé « ${g.nom} » (${g.type}).`;
         return reply.code(409).send({
-          error: `Meta a refusé « ${g.nom} » (${g.type}). ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
+          error: `${cause} ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
           faits,
         });
       }
     }
     return reply.code(200).send({ faits });
   });
-}
-
-/**
- * Le connecteur unique de l'espace chez Meta : l'adresse du RELAIS, et la clé « Agent de Meta » dans son
- * corps.
- *
- * 🔴 `auth_config` VOYAGE AVEC LE CONNECTEUR, ET C'EST NON NÉGOCIABLE CÔTÉ META (mesuré le 2026-09-18) : une
- * création ou une modification en `API_KEY` sans lui rend 400. La clé arrive donc ici en paramètre, à chaque
- * écriture, et c'est pourquoi toute modification du connecteur pose une clé neuve (`src/mba/cle-relais.ts`).
- */
-export function corpsConnecteurRelais(baseUrl: string, cle: string): {
-  name: string; description: string; base_url: string; auth_type: 'API_KEY'; auth_config: ReturnType<typeof authConfigRelais>;
-} {
-  return {
-    name: NOM_CONNECTEUR_RELAIS,
-    description: 'Engage Me : les outils de cet espace, appelés avec les valeurs de son carnet de contacts.',
-    base_url: baseUrl,
-    auth_type: 'API_KEY',
-    auth_config: authConfigRelais(cle),
-  };
 }

@@ -25,7 +25,7 @@
  */
 
 import type { VariableDeclaree } from '../agent/requetes';
-import { ENTETE_CONTACT_META } from './relais';
+import { ENTETE_CONTACT_META, cheminOutilRelais } from './relais';
 
 /** Le nom du connecteur unique d'un espace chez Meta. Il passe `NOM_CONNECTEUR_META_RE`. */
 export const NOM_CONNECTEUR_RELAIS = 'EngageMe';
@@ -138,7 +138,7 @@ export function corpsOutilMeta(o: OutilAPublier): CorpsOutilMeta {
     description: descriptionPourMeta(o),
     request_definition: {
       method: 'POST',
-      path: `/outils/${o.id}`,
+      path: cheminOutilRelais(o.id),
       headers: {
         [ENTETE_CONTACT_META]: {
           type: 'string',
@@ -254,6 +254,26 @@ export function authConfigRelais(cle: string): {
   api_key: { headers: Array<{ field_name: string; value: string; prefix: string }> };
 } {
   return { api_key: { headers: [{ field_name: 'Authorization', value: cle, prefix: 'Bearer ' }] } };
+}
+
+/**
+ * Le connecteur unique de l'espace chez Meta : l'adresse du RELAIS, et la clé « Agent de Meta » dans son
+ * corps.
+ *
+ * 🔴 `auth_config` VOYAGE AVEC LE CONNECTEUR, ET C'EST NON NÉGOCIABLE CÔTÉ META (mesuré le 2026-09-18) : une
+ * création ou une modification en `API_KEY` sans lui rend 400. La clé arrive donc ici en paramètre, à chaque
+ * écriture, et c'est pourquoi toute modification du connecteur pose une clé neuve (`src/mba/cle-relais.ts`).
+ */
+export function corpsConnecteurRelais(baseUrl: string, cle: string): {
+  name: string; description: string; base_url: string; auth_type: 'API_KEY'; auth_config: ReturnType<typeof authConfigRelais>;
+} {
+  return {
+    name: NOM_CONNECTEUR_RELAIS,
+    description: 'Engage Me : les outils de cet espace, appelés avec les valeurs de son carnet de contacts.',
+    base_url: baseUrl,
+    auth_type: 'API_KEY',
+    auth_config: authConfigRelais(cle),
+  };
 }
 
 /**

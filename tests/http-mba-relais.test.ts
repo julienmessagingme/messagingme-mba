@@ -7,6 +7,8 @@ import type { MbaRelaisDeps } from '../src/http/mba-relais';
 import type { AppelConnecteur } from '../src/agent/resolvers/http';
 import type { JournalAppels } from '../src/agent/catalog';
 import { cleApiDeTest } from './aide/cle-api';
+import { CHEMIN_RELAIS } from '../src/mba/relais';
+import { corpsOutilMeta } from '../src/mba/publication';
 
 /**
  * La route du relais du Meta Business Agent (spec 2026-09-21-relais-mba-design.md).
@@ -150,5 +152,37 @@ describe('le relais du Meta Business Agent', () => {
       payload: JSON.stringify({ phone: '+33612345678', name: 'Marc' }),
     });
     expect(res.statusCode).toBe(403);
+  });
+  it('🔴 un POST annoncé en JSON mais SANS corps passe : c’est le cas d’un outil sans variable du modèle', async () => {
+    // Un outil dont toutes les valeurs viennent du mini-CRM est publié SANS corps chez Meta. Le lecteur de JSON
+    // par défaut de Fastify refuse un corps vide en 400, avant la route : c'est celui du webhook Meta, monté
+    // pour tout le serveur, qui le laisse passer. Ce test tombe le jour où l'on change de lecteur.
+    const { app, appels } = monter({
+      requete: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+    });
+    for (const payload of [undefined, '']) {
+      const res = await app.inject({
+        method: 'POST', url: '/mba/relais/outils/o1',
+        headers: { authorization: `Bearer ${CLE_RELAIS}`, 'content-type': 'application/json', 'x-contact-whatsapp': '+33612345678' },
+        ...(payload === undefined ? {} : { payload }),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().succes).toBe(true);
+    }
+    expect(appels).toHaveLength(2);
+  });
+
+  it('🔴 l’adresse PUBLIÉE chez Meta (base du connecteur + chemin de l’outil) tombe sur la route montée', async () => {
+    // Trois morceaux dans trois fichiers : si l'un bouge seul, chaque appel de Meta part sur une 404.
+    const chemin = corpsOutilMeta({ id: 'o1', name: 'add_tag', description: 'x', nePasUtiliser: '', variables: [] })
+      .request_definition.path as string;
+    const { app, appels } = monter();
+    const res = await app.inject({
+      method: 'POST', url: `${CHEMIN_RELAIS}${chemin}`,
+      headers: { authorization: `Bearer ${CLE_RELAIS}`, 'content-type': 'application/json', 'x-contact-whatsapp': '+33612345678' },
+      payload: JSON.stringify({ user: 'u1' }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(appels).toHaveLength(1);
   });
 });

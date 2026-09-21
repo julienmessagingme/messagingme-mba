@@ -52,6 +52,13 @@ describe('les valeurs que le modèle de Meta envoie', () => {
     expect(lireValeursModele(VARS, { user: 'u', qte: 1.5 })).toEqual({ ok: false, erreur: 'valeur manquante ou invalide pour : qte' });
   });
 
+  it('🔴 les valeurs permises valent AUSSI pour un nombre', () => {
+    // L'écran d'une requête accepte une liste sur un entier, et la description publiée chez Meta l'annonce.
+    const qte: VariableDeclaree[] = [{ nom: 'qte', type: 'integer', origine: { type: 'modele' }, requis: true, enum: ['1', '2'] }];
+    expect(lireValeursModele(qte, { qte: 2 })).toEqual({ ok: true, valeurs: { qte: 2 } });
+    expect(lireValeursModele(qte, { qte: 3 })).toEqual({ ok: false, erreur: 'valeur manquante ou invalide pour : qte' });
+  });
+
   it('une facultative à null est simplement omise', () => {
     expect(lireValeursModele(VARS, { user: 'u', couleur: null })).toEqual({ ok: true, valeurs: { user: 'u' } });
   });

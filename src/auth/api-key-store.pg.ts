@@ -81,6 +81,20 @@ export class PgApiKeyStore implements ApiKeyLookup {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Révoque toutes les clés actives de l'espace qui portent `droit`, sauf `garderId` (`null` = toutes).
+   * Sert au relais du MBA : une seule clé `mba:relais` doit rester vivante, celle que Meta présente.
+   */
+  async revoquerDroitSauf(tenantId: string, droit: string, garderId: string | null): Promise<string[]> {
+    const res = await this.pool.query<{ id: string }>(
+      `update api_keys set revoked_at = now()
+        where tenant_id = $1 and $2 = any(scopes) and revoked_at is null and ($3::uuid is null or id <> $3::uuid)
+        returning id`,
+      [tenantId, droit, garderId],
+    );
+    return res.rows.map((r) => r.id);
+  }
+
   /** Révoque une clé du tenant (idempotent : false si déjà révoquée ou inconnue). */
   async revoke(tenantId: string, id: string): Promise<boolean> {
     const res = await this.pool.query(

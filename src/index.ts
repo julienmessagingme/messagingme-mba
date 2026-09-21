@@ -142,9 +142,10 @@ import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
-import { corpsConnecteurRelais, corpsOutilMeta } from './http/mba-publication';
-import { NOM_CONNECTEUR_RELAIS, type OutilAPublier } from './mba/publication';
-import { cleAJour, poserCleNeuve, oublierCle, NOM_CLE_RELAIS, DROIT_RELAIS, type DepsCleRelais } from './mba/cle-relais';
+import { type OutilAPublier } from './mba/publication';
+import { cleAJour, NOM_CLE_RELAIS, DROIT_RELAIS, type DepsCleRelais } from './mba/cle-relais';
+import { creerAppliquerGeste } from './mba/appliquer-publication';
+import { CHEMIN_RELAIS } from './mba/relais';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -249,7 +250,7 @@ async function main(): Promise<void> {
    */
   const adresseDuRelais = (): string | null => {
     const base = config.PUBLIC_API_URL.trim().replace(/[/]+$/, '');
-    return base === '' ? null : `${base}/mba/relais`;
+    return base === '' ? null : `${base}${CHEMIN_RELAIS}`;
   };
   /**
    * Les outils exposés à l'agent de Meta, avec les variables de leur requête.
@@ -269,13 +270,34 @@ async function main(): Promise<void> {
     }
     return sortie;
   };
-  /** La clé « Agent de Meta » : une clé d'API de l'espace, retenue dans `tenant_settings.mba_relais_cle_id`. */
+  /**
+   * La clé « Agent de Meta » : une clé d'API de l'espace, retenue dans `tenant_settings.mba_relais_cle_id`.
+   *
+   * ⚠️ CHAQUE CRÉATION ET CHAQUE RÉVOCATION EST AUDITÉE, comme sur la page des clés (`cle_api.creee`,
+   * `cle_api.revoquee`) : c'est la clé au droit le plus large de l'espace, et elle naît sans qu'un humain
+   * ait cliqué sur « Créer une clé ». L'acteur est la publication, pas une personne.
+   */
+  const acteurPublication = { userId: null, email: null };
+  const auditerCle = (t: string, action: 'cle_api.creee' | 'cle_api.revoquee', id: string): Promise<void> =>
+    auditSink(t, acteurPublication, action, { kind: 'api_key', id }, { scopes: [DROIT_RELAIS], par: 'publication chez Meta' })
+      .catch(() => {});
   const depsCleRelais: DepsCleRelais = {
-    creerCle: (t) => apiKeyStore.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]),
-    revoquer: (t, id) => apiKeyStore.revoke(t, id),
+    creerCle: async (t) => {
+      const cle = await apiKeyStore.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]);
+      await auditerCle(t, 'cle_api.creee', cle.id);
+      return cle;
+    },
+    revoquer: async (t, id) => {
+      const fait = await apiKeyStore.revoke(t, id);
+      if (fait) await auditerCle(t, 'cle_api.revoquee', id);
+      return fait;
+    },
     cleRetenue: (t) => settingsStore.mbaRelaisCleId(t),
     retenir: (t, id) => settingsStore.setMbaRelaisCleId(t, id),
     estActive: (t, id) => apiKeyStore.estActive(t, id),
+    revoquerAutres: async (t, garder) => {
+      for (const id of await apiKeyStore.revoquerDroitSauf(t, DROIT_RELAIS, garder)) await auditerCle(t, 'cle_api.revoquee', id);
+    },
   };
   /**
    * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
@@ -1850,56 +1872,13 @@ async function main(): Promise<void> {
         for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
         return { connecteurs, outilsParConnecteur };
       },
-      appliquer: async (tenant, pn, geste, ctx) => {
-        const client = await metaFactory.mbaClientForTenant(tenant);
-        const base = adresseDuRelais();
-        if (base === null) throw new Error('adresse publique de l API non reglee');
-        /**
-         * La liste des connecteurs CHEZ META, lue une fois par publication. 🔴 INVALIDEE des qu on en cree
-         * ou supprime un, sinon le geste suivant chercherait le relais dans une photo prise AVANT sa creation.
-         */
-        const idDuRelais = async (): Promise<string | null> => {
-          let vus = ctx.get('connecteurs') as Array<{ id: string; name: string }> | undefined;
-          if (!vus) { vus = await client.listConnectors(pn); ctx.set('connecteurs', vus); }
-          return vus.find((c) => c.name === NOM_CONNECTEUR_RELAIS)?.id ?? null;
-        };
-
-        // 🔴 TOUTE ECRITURE DU CONNECTEUR POSE UNE CLE NEUVE : Meta exige `auth_config` a chaque fois, et
-        // nous ne gardons que l empreinte de l ancienne. L ordre (creer, ecrire, retenir, revoquer) vit dans
-        // `poserCleNeuve` et il est teste la-bas.
-        if (geste.type === 'connecteur_creer') {
-          await poserCleNeuve(depsCleRelais, tenant, async (cle) => { await client.createConnector(pn, corpsConnecteurRelais(base, cle)); });
-          ctx.delete('connecteurs');
-          return;
-        }
-        if (geste.type === 'connecteur_modifier') {
-          await poserCleNeuve(depsCleRelais, tenant, async (cle) => { await client.updateConnector(pn, geste.connecteurId, corpsConnecteurRelais(base, cle)); });
-          return;
-        }
-        if (geste.type === 'connecteur_supprimer') {
-          await client.deleteConnector(pn, geste.connecteurId);
-          // Le relais part parce que plus aucun outil n est expose : sa cle ne doit pas lui survivre.
-          if (geste.oublierCle) await oublierCle(depsCleRelais, tenant);
-          ctx.delete('connecteurs');
-          return;
-        }
-        if (geste.type === 'outil_creer' || geste.type === 'outil_modifier') {
-          const cid = await idDuRelais();
-          /**
-           * ⚠️ ON LEVE AU LIEU DE `return` : l ancien cablage rendait la main en silence sur un outil ou un
-           * connecteur introuvable, et le POST annoncait « Publie » pour un geste qui n avait rien fait. Une
-           * erreur arrete la publication en 409 et le DIT.
-           */
-          if (!cid) throw new Error('le connecteur EngageMe est introuvable chez Meta');
-          const o = (await outilsPourMeta(tenant, pn)).find((x) => x.id === geste.outilId);
-          if (!o) throw new Error(`l outil « ${geste.nom} » n est plus expose`);
-          const corps = corpsOutilMeta(o);
-          if (geste.type === 'outil_creer') await client.createConnectorTool(pn, cid, corps);
-          else await client.updateConnectorTool(pn, cid, geste.outilMetaId, corps);
-          return;
-        }
-        if (geste.type === 'outil_supprimer') await client.deleteConnectorTool(pn, geste.connecteurId, geste.outilMetaId);
-      },
+      /** Sorti en module pour être testé contre des faux (`src/mba/appliquer-publication.ts`). */
+      appliquer: creerAppliquerGeste({
+        client: (tenant) => metaFactory.mbaClientForTenant(tenant),
+        adresseDuRelais,
+        outils: outilsPourMeta,
+        cle: depsCleRelais,
+      }),
     },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
     // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.

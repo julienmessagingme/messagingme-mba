@@ -5,7 +5,9 @@ import type { RequeteConnecteur } from '../agent/requetes';
 import type { AppelConnecteur } from '../agent/resolvers/http';
 import type { SortieResolveur } from '../agent/executor';
 import { consommateurMba } from '../agent/consommateur';
-import { ENTETE_CONTACT_META, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur } from '../mba/relais';
+import {
+  ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
+} from '../mba/relais';
 
 /**
  * LA ROUTE DU RELAIS : Meta l'appelle à la place du système du client (spec
@@ -21,7 +23,9 @@ import { ENTETE_CONTACT_META, waIdDepuisEntete, formeEntete, lireValeursModele, 
  *
  * ⚠️ UN ÉCHEC MÉTIER SORT EN 200 `{ succes: false, erreur }` : le modèle de Meta doit pouvoir dire au client
  * ce qui ne va pas. Un 4xx ou un 5xx risquerait d'être lu comme une panne de transport (non documenté chez
- * Meta, à mesurer au premier essai). Seule l'authentification sort en 401 / 403, par la garde existante.
+ * Meta, à mesurer au premier essai). Ce que la ROUTE décide sort donc toujours en 200. Restent, AVANT elle :
+ * la garde de clé (401, 403 sans le droit, 403 `tenant_locked`, 429 au-delà du plafond de la clé) et le
+ * lecteur de corps de Fastify (400 sur un JSON illisible ; un corps VIDE, lui, passe, et un test le garde).
  */
 export interface MbaRelaisDeps {
   /** Le numéro Meta de l'espace, `null` = aucun, donc aucun outil exposé. */
@@ -41,7 +45,7 @@ export interface MbaRelaisDeps {
 }
 
 export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, garde: Guard): void {
-  app.post<{ Params: { outilId: string } }>('/mba/relais/outils/:outilId', { preHandler: garde }, async (req, reply) => {
+  app.post<{ Params: { outilId: string } }>(`${CHEMIN_RELAIS}/outils/:outilId`, { preHandler: garde }, async (req, reply) => {
     const tenant = req.auth?.tenantId;
     if (!tenant) return reply.code(401).send({ error: 'clé d’API requise' });
     const refus = (erreur: string) => reply.code(200).send({ succes: false, erreur });

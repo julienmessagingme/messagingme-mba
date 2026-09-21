@@ -20,7 +20,22 @@ fil d'Inbox sous le libellé « Message RCS » (`rcsCampaignBody`, `src/campaign
 texte d'un message texte), quand l'envoi depuis l'Inbox dit déjà son contenu (`apercuRcsSortant`). Brancher
 `rcsCampaignBody` sur `parseStoredRcsOutbound` puis `apercuRcsSortant` alignerait les deux chemins.
 
+Relevé par la revue finale du 2026-09-21 : `web/components/InboxRcsPanel.tsx` (vers les lignes 147 et 166)
+affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouton d'envoi reste ACTIF.
+
 ## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
+
+- **La sonde d'attaque ne voit pas la porte du relais** (`scripts/auto-attaque.mts`) : son serveur ne monte
+  pas l'entrée `v1`, donc `POST /mba/relais/outils/:id` n'est ni inventoriée ni attaquée par le job
+  `securite` (`mbaPublication` est absente aussi, c'était déjà le cas). Dériver sa liste de modules du
+  registre `modulesDeRoutes` plutôt que d'une liste écrite à la main. Le relais est couvert en attendant par
+  `tests/http-mba-relais.test.ts` (401, 403, clé d'un autre espace).
+- **Le plafond du relais est celui d'une clé d'API : 60 appels par minute** (`API_KEY_RATE_LIMIT_MAX`), pour
+  TOUS les appels d'outils de l'agent de Meta d'un espace. Au-delà, Meta reçoit un 429, pas un
+  `succes: false`. Suffisant aujourd'hui ; à dimensionner avec le premier client à fort trafic.
+- **Les refus du relais ne laissent aucune ligne de journal** (outil non proposé, numéro absent, contact
+  introuvable, valeur invalide). Une fois `journaliserForme` retiré, une macro jamais remplie serait invisible
+  côté produit : journaliser ces refus (appelant `mba`, statut `refuse`) avant de retirer la mesure.
 
 - **`agent_tool_sources.secret_publie_le` et `marquerSecretPublie` sont morts** : le secret d'un client ne part
   plus chez Meta. Les retirer (migration qui RETIRE une colonne, donc APRÈS le déploiement du relais).

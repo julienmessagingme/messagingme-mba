@@ -110,8 +110,11 @@ fois ne produit aucun geste » se vérifie sur le vrai compte à l'essai réel**
   révoquée. (Écart à l'implémentation, 2026-09-21 : pas de geste `cle_poser` séparé. Meta exige
   `auth_config` à CHAQUE écriture du connecteur et nous ne gardons que l'empreinte : toute modification
   porte donc une clé NEUVE.) Dans cet ordre : créer la nouvelle clé, écrire le connecteur chez Meta avec
-  elle, écrire la colonne APRÈS l'accusé de Meta, révoquer l'ancienne. Si Meta refuse, la nouvelle clé est
-  révoquée tout de suite (rien d'orphelin). La création du connecteur porte sa clé de la même façon, et un
+  elle, écrire la colonne APRÈS l'accusé de Meta, révoquer toute autre clé `mba:relais` de l'espace (revue
+  finale : une orpheline d'un échec passé part aussi). Si Meta refuse, la nouvelle clé est
+  révoquée tout de suite et plus aucune n'est retenue, pour que la publication suivante en repose une (un
+  échec peut être ambigu : Meta a écrit, nous avons reçu une erreur). La création du connecteur porte sa clé
+  de la même façon, et un
   relais qui part (plus aucun outil exposé) emporte la révocation de sa clé.
 
 ## 3. Le relais

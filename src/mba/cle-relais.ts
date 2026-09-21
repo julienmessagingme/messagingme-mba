@@ -10,8 +10,13 @@
  * l'empreinte : `tenant_settings.mba_relais_cle_id` (migration 0161) dit laquelle est chez Meta. Meta exige
  * `auth_config` à chaque écriture du connecteur, donc toute écriture pose une clé NEUVE.
  *
- * 🔴 L'ORDRE NE LAISSE RIEN D'ORPHELIN : créer, écrire chez Meta, retenir APRÈS son accusé, puis révoquer
- * l'ancienne. Si Meta refuse, la neuve est révoquée tout de suite et l'ancienne reste la bonne.
+ * 🔴 L'ORDRE : créer, écrire chez Meta, retenir APRÈS son accusé, puis révoquer TOUTE AUTRE clé `mba:relais`
+ * de l'espace (pas seulement l'ancienne retenue : une orpheline laissée par un échec passé part aussi).
+ *
+ * ⚠️ UN ÉCHEC PEUT ÊTRE AMBIGU : Meta a écrit le connecteur, mais nous recevons une erreur (délai dépassé).
+ * La clé neuve est alors révoquée alors que Meta la détient, et ses appels sortent en 401. On ne peut pas
+ * le savoir d'ici ; on s'assure donc que la publication SUIVANTE répare : plus aucune clé n'est retenue, donc
+ * `cleAJour` rend faux et le plan repose une clé. La route dit déjà « Relancez » sur tout échec.
  */
 export const NOM_CLE_RELAIS = 'Agent de Meta';
 export const DROIT_RELAIS = 'mba:relais';
@@ -23,6 +28,8 @@ export interface DepsCleRelais {
   cleRetenue(tenantId: string): Promise<string | null>;
   retenir(tenantId: string, id: string | null): Promise<void>;
   estActive(tenantId: string, id: string): Promise<boolean>;
+  /** Révoque toutes les clés `mba:relais` actives de l'espace, sauf `garderId` (`null` = toutes). */
+  revoquerAutres(tenantId: string, garderId: string | null): Promise<void>;
 }
 
 /** La clé retenue est-elle toujours active ? Une clé révoquée par le client doit être remplacée chez Meta. */
@@ -37,21 +44,22 @@ export async function poserCleNeuve(
   tenantId: string,
   ecrireChezMeta: (cle: string) => Promise<void>,
 ): Promise<void> {
-  const ancienne = await deps.cleRetenue(tenantId);
   const neuve = await deps.creerCle(tenantId);
   try {
     await ecrireChezMeta(neuve.key);
   } catch (err) {
     await deps.revoquer(tenantId, neuve.id).catch(() => false);
+    // L'échec est peut-être ambigu (voir l'en-tête) : ne plus rien retenir force la publication suivante à
+    // reposer une clé, au lieu de croire à jour une clé que Meta ne présente peut-être plus.
+    await deps.retenir(tenantId, null).catch(() => {});
     throw err;
   }
   await deps.retenir(tenantId, neuve.id);
-  if (ancienne !== null && ancienne !== neuve.id) await deps.revoquer(tenantId, ancienne).catch(() => false);
+  await deps.revoquerAutres(tenantId, neuve.id).catch(() => {});
 }
 
 /** Le relais quitte Meta : sa clé est révoquée, et plus aucune n'est retenue. */
 export async function oublierCle(deps: DepsCleRelais, tenantId: string): Promise<void> {
-  const id = await deps.cleRetenue(tenantId);
-  if (id !== null) await deps.revoquer(tenantId, id).catch(() => false);
+  await deps.revoquerAutres(tenantId, null).catch(() => {});
   await deps.retenir(tenantId, null);
 }
