@@ -131,4 +131,65 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
     expect((await pool.query('select 1 from agent_tools where id = $1', [connecteur])).rowCount).toBe(1);
     expect(await cat.retirerDeMba(tenantId, PN, connecteur)).toBe('introuvable');
   });
+
+  const connecteurNeuf = async (name: string): Promise<string> => (await pool.query<{ id: string }>(
+    `insert into agent_tools (tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, params, binding, risk)
+     values ($1, 'http', $2, 'http', $3, 'x', 'x', 'x', '[]'::jsonb, '{}'::jsonb, 'write') returning id`,
+    [tenantId, sourceId, name],
+  )).rows[0]!.id;
+
+  it('🔴 un connecteur dont l’agent de Meta était le SEUL utilisateur part avec lui (décision du 2026-09-21)', async () => {
+    const id = await connecteurNeuf('seul_mba');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    expect(await cat.retirerDeMba(tenantId, PN, id)).toBe('supprime');
+    expect((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount).toBe(0);
+  });
+
+  it('🔴 un outil MCP RESTE quand l’agent de Meta le retire : il doit rester branchable', async () => {
+    const sourceMcp = (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'mcp', 'itest-src-mcp-mba', 'https://exemple.test/mcp', 'none', 'active') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const id = (await pool.query<{ id: string }>(
+      `insert into agent_tools (tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, risk)
+       values ($1, 'mcp', $2, 'mcp', 'mcp_mba_reste', 'MCP', 'm', '', 'read') returning id`,
+      [tenantId, sourceMcp],
+    )).rows[0]!.id;
+    await pool.query(
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+      [tenantId, id, consommateurMba(PN)],
+    );
+    expect(await cat.retirerDeMba(tenantId, PN, id)).toBe('detache');
+    expect((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount).toBe(1);
+  });
+
+  /**
+   * 🔴 LE VERROU DE LA DÉFINITION (`verrouillerDefinitions`, revue finale du 2026-09-21). Un rattachement NON
+   * VALIDÉ est invisible du `not exists` qui décide de l'effacement : sans verrou, le dernier détachement
+   * effaçait la définition, et la cascade emportait le consentement qu'on venait de poser. Avec lui, le
+   * détachement ATTEND le rattachement, puis le voit.
+   */
+  it('🔴 un rattachement EN COURS n’est pas emporté par le dernier détachement', async () => {
+    const id = await connecteurNeuf('course_rattachement');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), id)).toBe(true);
+    const autre = await pool.connect();
+    try {
+      await autre.query('begin');
+      await autre.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, consommateurMba(PN)],
+      );
+      const detachement = cat.detacher(tenantId, agentId, id);
+      // Le temps que le détachement atteigne la définition, que le rattachement tient encore.
+      await new Promise((r) => setTimeout(r, 400));
+      await autre.query('commit');
+      expect(await detachement).toBe(true);
+    } finally {
+      autre.release();
+    }
+    expect((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount).toBe(1);
+    expect((await pool.query('select consommateur from agent_tool_consommateurs where tool_id = $1', [id])).rows)
+      .toEqual([{ consommateur: consommateurMba(PN) }]);
+  });
 });
