@@ -69,6 +69,18 @@ export class PgApiKeyStore implements ApiKeyLookup {
     await this.pool.query(`update api_keys set last_used_at = now() where id = $1`, [id]);
   }
 
+  /**
+   * La clé existe-t-elle, pour CET espace, sans être révoquée ? Sert au relais du MBA : une clé « Agent de
+   * Meta » révoquée par le client doit être remplacée chez Meta à la publication suivante.
+   */
+  async estActive(tenantId: string, id: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `select 1 from api_keys where id = $1 and tenant_id = $2 and revoked_at is null`,
+      [id, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Révoque une clé du tenant (idempotent : false si déjà révoquée ou inconnue). */
   async revoke(tenantId: string, id: string): Promise<boolean> {
     const res = await this.pool.query(

@@ -5,109 +5,53 @@
  * que « écraser » ne soit jamais une surprise : il compare ce que nous avons à ce que Meta a, et rend la
  * liste des gestes en toutes lettres. L'écran la montre, le client décide, et alors seulement on écrit.
  *
+ * 🔴 DEPUIS LE 2026-09-21, META APPELLE LE RELAIS, PLUS LE SYSTÈME DU CLIENT (spec
+ * docs/superpowers/specs/2026-09-21-relais-mba-design.md). Un espace a UN connecteur chez Meta, `EngageMe`,
+ * dont l'adresse est notre relais et la clé une clé d'API de l'espace. Chaque outil exposé y devient un
+ * appel au relais, qui retrouve le contact et fait l'appel déclaré dans Tools > Connecteurs API avec les
+ * valeurs du mini-CRM. Avant, un connecteur par source partait chez Meta avec le SECRET du client, et Meta
+ * ne recevait que la méthode et le chemin : un outil qui envoyait un champ du contact arrivait vide.
+ *
  * 🔴 PUR : aucune IO. C'est ce qui rend la décision testable sans réseau, et c'est la moitié qui compte. La
  * moitié qui appelle Meta est mécanique ; celle-ci porte tous les arbitrages.
  *
- * ⚠️ LA RÉCONCILIATION SE FAIT SUR LE NOM, jamais sur un identifiant Meta qu'on stockerait. Deux raisons :
- * on ne veut pas d'une table de correspondance à tenir à jour (elle dériverait dès qu'un client supprime un
- * connecteur dans WhatsApp Manager), et le nom est précisément ce que le modèle voit. Corollaire : renommer
- * un outil chez nous se lit comme « supprimer l'ancien, créer le nouveau », et l'aperçu le dit.
+ * ⚠️ LA RÉCONCILIATION SE FAIT SUR LE NOM, jamais sur un identifiant Meta qu'on stockerait : une table de
+ * correspondance dériverait dès qu'un client supprime un connecteur dans WhatsApp Manager, et le nom est
+ * précisément ce que le modèle voit. Corollaire : renommer un outil chez nous se lit « supprimer l'ancien,
+ * créer le nouveau », et l'aperçu le dit.
  *
  * ⚠️ IDEMPOTENTE : publier deux fois de suite ne doit produire AUCUN geste au second passage, et c'est le
  * seul test qui prouve que la réconciliation marche.
  */
 
-import type { RequeteConnecteur } from '../agent/requetes';
-import { variablesUtilisees } from '../agent/requete-http';
+import type { VariableDeclaree } from '../agent/requetes';
+import { ENTETE_CONTACT_META } from './relais';
 
-/** Une SOURCE de chez nous, telle qu'elle devient un connecteur chez Meta. */
-export interface SourceAPublier {
-  id: string;
-  label: string;
+/** Le nom du connecteur unique d'un espace chez Meta. Il passe `NOM_CONNECTEUR_META_RE`. */
+export const NOM_CONNECTEUR_RELAIS = 'EngageMe';
+
+/** Le relais, tel que la publication le présente à Meta. */
+export interface RelaisAPublier {
+  /** `PUBLIC_API_URL` suivi de `/mba/relais`. */
   baseUrl: string;
-  /** `none` devient `NONE`, `bearer` et `header` deviennent `API_KEY`. */
-  authKind: 'none' | 'bearer' | 'header';
-  /** Nom d'en-tête pour `header`. `bearer` utilise `Authorization` avec le préfixe `Bearer `. */
-  authHeaderName: string | null;
-  /** Le secret EXISTE-t-il ? Sa valeur ne transite pas par ce module. */
-  aAuthentification: boolean;
   /**
-   * Le secret ACTUEL a-t-il déjà été posé chez Meta ?
+   * La clé retenue (`tenant_settings.mba_relais_cle_id`) est-elle toujours active ?
    *
-   * 🔴 C'EST LE SEUL MOYEN DE FAIRE TOURNER UN SECRET, et il manquait. Meta ne rend jamais le sien : on ne
-   * peut pas comparer, seulement se souvenir de ce qu'on a posé. Le drapeau retombe à `false` dès qu'on
-   * touche à l'authentification de la source, et la publication suivante repose le secret.
+   * 🔴 UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT : Meta ne rend jamais la clé. Une clé révoquée par le
+   * client fait modifier le connecteur, et toute modification en pose une NEUVE (`src/mba/cle-relais.ts`).
    */
-  secretPublie: boolean;
+  cleAJour: boolean;
 }
 
-/** Un OUTIL de chez nous, exposé au MBA, tel qu'il devient un tool de connecteur. */
+/** Un OUTIL de chez nous, exposé au MBA, tel qu'il devient un outil du connecteur `EngageMe`. */
 export interface OutilAPublier {
   id: string;
-  sourceId: string;
   name: string;
   description: string;
   /** La clause « quand NE PAS l'appeler », concaténée à la description envoyée à Meta. */
   nePasUtiliser: string;
-  methode: string;
-  chemin: string;
-  /**
-   * Ce que Meta NE RECEVRAIT PAS de l'appel, calculé par `pertesChezMeta`. Vide = publiable tel quel.
-   *
-   * 🔴 UN OUTIL QUI A DES PERTES N'EST PAS PUBLIÉ, ET SA COPIE CHEZ META S'EN VA (2026-09-21). Voir
-   * `pertesChezMeta` pour la raison.
-   */
-  pertes: string[];
-}
-
-/**
- * CE QUE META NE RECEVRAIT PAS D'UN APPEL, en français, pour le dire au client. Vide = publiable tel quel.
- *
- * 🔴 NOUS NE PUBLIONS QUE LA MÉTHODE ET LE CHEMIN (`corpsOutilMeta`), ET TOUT LE RESTE ÉTAIT PERDU EN
- * SILENCE (constaté le 2026-09-21). Julien a exposé `add_tag` (`POST /subscriber/add-tag`, corps
- * `{"user_ns":"{{user}}","tag_ns":"{{tag}}"}`) : chez Meta, l'outil existait SANS corps, donc sans aucun
- * moyen d'envoyer l'utilisateur ni l'étiquette, et l'écran disait « Publié ». Meta appelle le système du
- * client en direct : il ne lit pas notre mini-CRM, et ne remplit une valeur que par ce qu'on lui déclare.
- *
- * ⚠️ CE N'EST PAS LA RÉPARATION, C'EST LA FIN DU MENSONGE. La réparation est le relais (Meta nous appelle,
- * nous faisons l'appel avec les valeurs du mini-CRM), arbitré avec Julien le même jour. Quand il existera,
- * cette fonction n'aura plus de raison d'être.
- *
- * ⚠️ UNE VARIABLE DÉCLARÉE MAIS UTILISÉE NULLE PART NE COMPTE PAS : elle ne part dans aucune requête, chez
- * nous non plus. Ce qui compte est ce qui PART, donc le chemin, les paramètres, les en-têtes et le corps.
- */
-export function pertesChezMeta(
-  req: Pick<RequeteConnecteur, 'chemin' | 'parametres' | 'entetes' | 'corps'>,
-): string[] {
-  const pertes: string[] = [];
-  const noms = (liste: readonly string[]): string => (liste.length > 0 ? ` (${liste.join(', ')})` : '');
-  const duChemin = [...req.chemin.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((m) => m[1]!);
-  if (duChemin.length > 0) pertes.push(`la partie variable de l’adresse${noms(duChemin)}`);
-  // ⚠️ UNE LIGNE SANS CLÉ N'EST PAS UNE PERTE : l'écran permet d'en laisser une vide, et l'appel l'ignore
-  // (`construireParametres`, `champsVersJson`, `verifier`). La compter supprimerait chez Meta un outil qui
-  // y fonctionne en entier.
-  const parametres = req.parametres.filter((p) => p.cle.trim() !== '');
-  const entetes = req.entetes.filter((e) => e.nom.trim() !== '');
-  if (parametres.length > 0) pertes.push(`les paramètres d’adresse${noms(parametres.map((p) => p.cle.trim()))}`);
-  if (entetes.length > 0) pertes.push(`les en-têtes${noms(entetes.map((e) => e.nom.trim()))}`);
-  // Un corps JSON réduit à `{}` n'emporte rien : ce n'est pas une perte.
-  const corps = req.corps;
-  const aUnCorps = corps.mode === 'champs'
-    ? corps.champs.some((c) => c.cle.trim() !== '')
-    : corps.mode === 'json' && !['', '{}'].includes(corps.gabarit.replace(/\s/g, ''));
-  if (aUnCorps) pertes.push(`le corps de la requête${noms(variablesUtilisees(corps, []))}`);
-  return pertes;
-}
-
-/**
- * Un outil que la publication refuse de construire, parce que Meta en recevrait une version creuse.
- * TYPÉE pour que la route dise « nous avons refusé », et non « Meta a refusé ».
- */
-export class OutilNonPubliable extends Error {
-  constructor(nom: string, pertes: readonly string[]) {
-    super(`« ${nom} » n’est pas envoyé chez Meta : il n’en recevrait pas ${pertes.join(', ')}.`);
-    this.name = 'OutilNonPubliable';
-  }
+  /** Les variables de la requête : seules celles d'origine `modele` partent chez Meta. */
+  variables: VariableDeclaree[];
 }
 
 /** Ce que Meta a déjà, lu avant de comparer. */
@@ -123,22 +67,21 @@ export interface OutilChezMeta {
   name: string;
   description?: string;
   /**
-   * 🔴 COMPARÉ, ET IL NE L'ÉTAIT PAS. Le plan ne regardait que la `description` : changer la MÉTHODE ou le
-   * CHEMIN d'une requête chez nous ne produisait AUCUN geste, et l'agent de Meta continuait d'appeler
-   * l'ancienne adresse indéfiniment. Le symptôme aurait été un outil qui « ne marche plus » sans qu'aucun
-   * écran ne montre d'écart, puisque l'aperçu aurait dit « rien à changer ».
+   * 🔴 COMPARÉ EN ENTIER, et il ne l'était pas : la description seule d'abord, puis méthode et chemin. Une
+   * variable ajoutée chez nous aurait sinon été invisible chez Meta pour toujours, avec un aperçu qui annonce
+   * « rien à changer ».
    */
-  request_definition?: { method?: string; path?: string };
+  request_definition?: Record<string, unknown>;
 }
 
 export type Geste =
-  | { type: 'connecteur_creer'; sourceId: string; nom: string }
-  | { type: 'connecteur_modifier'; connecteurId: string; sourceId: string; nom: string }
-  | { type: 'connecteur_supprimer'; connecteurId: string; nom: string }
-  | { type: 'secret_poser'; sourceId: string; nom: string }
-  | { type: 'outil_creer'; sourceId: string; outilId: string; nom: string }
-  | { type: 'outil_modifier'; sourceId: string; outilMetaId: string; outilId: string; nom: string }
-  | { type: 'outil_supprimer'; sourceId: string; outilMetaId: string; nom: string };
+  | { type: 'connecteur_creer'; nom: string }
+  | { type: 'connecteur_modifier'; connecteurId: string; nom: string }
+  /** `oublierCle` : le relais part parce que plus aucun outil n'est exposé, sa clé est révoquée avec lui. */
+  | { type: 'connecteur_supprimer'; connecteurId: string; nom: string; oublierCle: boolean }
+  | { type: 'outil_creer'; outilId: string; nom: string }
+  | { type: 'outil_modifier'; outilMetaId: string; outilId: string; nom: string }
+  | { type: 'outil_supprimer'; connecteurId: string; outilMetaId: string; nom: string };
 
 export interface EtatMeta {
   connecteurs: ConnecteurChezMeta[];
@@ -158,180 +101,167 @@ export function descriptionPourMeta(o: { description: string; nePasUtiliser: str
   return clause === '' ? o.description : `${o.description}\n\nNe pas l'utiliser : ${clause}`;
 }
 
+/** Le corps d'un outil chez Meta. */
+export interface CorpsOutilMeta {
+  name: string;
+  description: string;
+  request_definition: Record<string, unknown>;
+  user_auth_required: false;
+}
+
+/**
+ * Le corps d'un outil chez Meta : un appel au RELAIS, jamais au système du client.
+ *
+ * 🔴 L'EN-TÊTE DU NUMÉRO EST LIÉ À LA MACRO `WHATSAPP_PHONE_NUMBER` : c'est Meta qui le remplit, son modèle ne
+ * peut ni le choisir ni l'inventer. C'est ce qui permet au relais de retrouver le contact sans faire
+ * confiance au modèle.
+ *
+ * ⚠️ SEULES LES VARIABLES `modele` SONT DÉCLARÉES : les autres viennent du mini-CRM, chez nous. Meta n'a pas
+ * de champ pour une liste de valeurs permises (`BodyNode` n'a ni `enum` ni équivalent) : elle s'écrit à la
+ * fin de la description, et le relais la vérifie. Les types de nos variables (`string`, `number`,
+ * `integer`, `boolean`) sont tous acceptés tels quels par un `BodyNode`.
+ *
+ * ⚠️ `user_auth_required: false` est exigé par le schéma de Meta : nous ne collectons aucun jeton par
+ * utilisateur final. L'omettre ferait échouer la création.
+ */
+export function corpsOutilMeta(o: OutilAPublier): CorpsOutilMeta {
+  const modele = o.variables.filter((v) => v.origine.type === 'modele');
+  const params: Record<string, { type: string; description: string }> = {};
+  for (const v of modele) {
+    const base = (v.description ?? '').trim() || v.nom;
+    const permises = v.enum && v.enum.length > 0 ? ` Valeurs possibles : ${v.enum.join(', ')}.` : '';
+    params[v.nom] = { type: v.type, description: `${base}${permises}` };
+  }
+  const requises = modele.filter((v) => v.requis === true).map((v) => v.nom);
+  return {
+    name: o.name,
+    description: descriptionPourMeta(o),
+    request_definition: {
+      method: 'POST',
+      path: `/outils/${o.id}`,
+      headers: {
+        [ENTETE_CONTACT_META]: {
+          type: 'string',
+          description: 'Le numéro WhatsApp du client, rempli par WhatsApp.',
+          binding: { kind: 'macro', macro: 'WHATSAPP_PHONE_NUMBER' },
+        },
+      },
+      ...(modele.length > 0
+        ? { body: { content_type: 'application/json', params, ...(requises.length > 0 ? { required: requises } : {}) } }
+        : {}),
+    },
+    user_auth_required: false,
+  };
+}
+
 /**
  * Le plan de publication : ce qui sera créé, modifié, supprimé.
  *
  * ⚠️ L'ORDRE DES GESTES EST CELUI DE L'EXÉCUTION, et il n'est pas indifférent : un outil ne peut pas être
- * créé avant son connecteur, un connecteur ne peut pas être supprimé avant ses outils, et un secret ne se
- * pose pas avant que son connecteur porte le bon `auth_type`. La liste est donc lisible de haut en bas comme
- * une recette, et l'écran l'affiche telle quelle.
+ * créé avant son connecteur, un connecteur ne peut pas être supprimé avant ses outils. La liste se lit de
+ * haut en bas comme une recette, et l'écran l'affiche telle quelle.
  */
-export function planifierPublication(
-  sources: SourceAPublier[],
-  outils: OutilAPublier[],
-  meta: EtatMeta,
-): Geste[] {
+export function planifierPublication(relais: RelaisAPublier, outils: OutilAPublier[], meta: EtatMeta): Geste[] {
   const gestes: Geste[] = [];
-  const parNom = new Map(meta.connecteurs.map((c) => [c.name, c]));
-  const nosNoms = new Set(sources.map((s) => s.label));
+  const doitExister = outils.length > 0;
+  const retenu = doitExister ? meta.connecteurs.find((c) => c.name === NOM_CONNECTEUR_RELAIS) : undefined;
 
-  // 1. Les connecteurs : créer ce qui manque, modifier ce qui a bougé, et poser le secret quand il n'est
-  //    pas encore chez Meta (à la création, ou parce qu'on l'a changé chez nous depuis).
-  for (const s of sources) {
-    const chezMeta = parNom.get(s.label);
-    if (!chezMeta) {
-      // 🔴 LA CRÉATION PORTE SON AUTHENTIFICATION, donc plus de `secret_poser` derrière elle (2026-09-18).
-      // Meta EXIGE `auth_config` dans le corps dès que `auth_type` n'est pas `NONE` : le poser après coup
-      // était impossible, et c'est ce qui faisait échouer toute création de connecteur authentifié.
-      gestes.push({ type: 'connecteur_creer', sourceId: s.id, nom: s.label });
-      continue;
-    }
-    // ⚠️ ON NE COMPARE QUE CE QUE META REND, et le connecteur se met à jour AVANT son secret : le passage de
-    // « aucune authentification » à `bearer` change les DEUX, et poser une clé sur un connecteur encore
-    // déclaré `NONE` chez Meta est une écriture qu'il n'a aucune raison d'accepter. C'est le même ordre qu'à
-    // la création (créer, puis poser le secret), et il se lit de haut en bas comme une recette.
-    if (chezMeta.base_url !== s.baseUrl || chezMeta.auth_type !== authTypeMeta(s.authKind)) {
-      gestes.push({ type: 'connecteur_modifier', connecteurId: chezMeta.id, sourceId: s.id, nom: s.label });
-    }
-    // 🔴 LE SECRET SE REPOSE QUAND IL A CHANGÉ CHEZ NOUS, jamais « au cas où ». Meta ne rend pas le sien,
-    // donc on ne compare pas : on se souvient de ce qu'on a posé (`secretPublie`), et toute écriture sur
-    // l'authentification de la source remet ce drapeau à zéro. Le reposer à CHAQUE publication marcherait
-    // aussi, mais on perdrait le seul test qui prouve que la réconciliation fonctionne (« publier deux fois
-    // ne produit aucun geste ») ; ne jamais le reposer laissait un secret périmé pour toujours, et c'était
-    // le comportement d'avant le 2026-09-10.
-    if (s.aAuthentification && !s.secretPublie) {
-      gestes.push({ type: 'secret_poser', sourceId: s.id, nom: s.label });
-    }
-  }
-
-  // 2. Les connecteurs de Meta que nous n'avons plus : ils partent, avec leurs outils.
+  // 1. Tout connecteur qui n'est pas LE relais retenu s'en va, ses outils d'abord : les anciens (un par
+  //    source, qui portaient le SECRET du client chez Meta), les doublons du relais, et le relais lui-même
+  //    quand plus aucun outil n'est exposé, auquel cas sa clé est oubliée avec lui.
   for (const c of meta.connecteurs) {
-    if (!nosNoms.has(c.name)) {
-      for (const o of meta.outilsParConnecteur[c.id] ?? []) {
-        gestes.push({ type: 'outil_supprimer', sourceId: '', outilMetaId: o.id, nom: o.name });
-      }
-      gestes.push({ type: 'connecteur_supprimer', connecteurId: c.id, nom: c.name });
+    if (retenu && c.id === retenu.id) continue;
+    for (const o of meta.outilsParConnecteur[c.id] ?? []) {
+      gestes.push({ type: 'outil_supprimer', connecteurId: c.id, outilMetaId: o.id, nom: o.name });
     }
+    gestes.push({
+      type: 'connecteur_supprimer', connecteurId: c.id, nom: c.name,
+      oublierCle: c.name === NOM_CONNECTEUR_RELAIS && !doitExister,
+    });
+  }
+  if (!doitExister) return gestes;
+
+  // 2. Le relais : créé, ou modifié. Toute modification porte une clé NEUVE (Meta exige `auth_config` à
+  //    chaque écriture du connecteur, et nous ne gardons que l'empreinte de l'ancienne).
+  if (!retenu) {
+    gestes.push({ type: 'connecteur_creer', nom: NOM_CONNECTEUR_RELAIS });
+  } else if (retenu.base_url !== relais.baseUrl || retenu.auth_type !== 'API_KEY' || !relais.cleAJour) {
+    gestes.push({ type: 'connecteur_modifier', connecteurId: retenu.id, nom: NOM_CONNECTEUR_RELAIS });
   }
 
-  // 3. Les outils, connecteur par connecteur.
-  // 🔴 UN OUTIL QUI A DES PERTES EST TRAITÉ COMME ABSENT (2026-09-21) : il n'est pas créé, et sa copie chez
-  // Meta, forcément creuse, s'en va. La laisser serait laisser l'agent de Meta appeler le système du client
-  // sans les valeurs qu'il attend. L'écran confirme toute suppression avant qu'elle parte, et dit pourquoi.
-  const publiables = outils.filter((o) => o.pertes.length === 0);
-  for (const s of sources) {
-    const chezMeta = parNom.get(s.label);
-    const dejaLa = chezMeta ? (meta.outilsParConnecteur[chezMeta.id] ?? []) : [];
-    const parNomOutil = new Map(dejaLa.map((o) => [o.name, o]));
-    const nosOutils = publiables.filter((o) => o.sourceId === s.id);
-
-    for (const o of nosOutils) {
-      const existant = parNomOutil.get(o.name);
-      if (!existant) {
-        gestes.push({ type: 'outil_creer', sourceId: s.id, outilId: o.id, nom: o.name });
-      } else if (aChange(existant, o)) {
-        gestes.push({ type: 'outil_modifier', sourceId: s.id, outilMetaId: existant.id, outilId: o.id, nom: o.name });
-      }
-    }
-    /**
-     * 🔴 UN DOUBLON CHEZ META NE PARTAIT JAMAIS, ET C EST CE QUI L A RENDU PERMANENT (2026-09-18).
-     *
-     * Julien a cliqué « Envoyer » plusieurs fois, faute de retour visible pendant l'aller-retour vers Meta.
-     * Chaque clic a recalculé un plan sur une photo d'AVANT et a recréé le même outil : Meta s'est retrouvé
-     * avec deux `rajouter_une_etiquette` quand nous n'en avions qu'un.
-     *
-     * ⚠️ ET LA RÉCONCILIATION NE POUVAIT PAS L'EFFACER : `parNomOutil` est une Map, donc un nom en double
-     * n'y garde qu'une entrée, et la boucle de suppression ne regardait que les noms ABSENTS de chez nous.
-     * Les deux exemplaires portant un nom que nous avons, aucun n'était candidat, et l'agent de Meta voyait
-     * le même outil deux fois, pour toujours. « Engage Me fait foi » veut dire que la publication CONVERGE :
-     * on compare donc par IDENTIFIANT, et tout exemplaire qui n'est pas celui qu'on a retenu s'en va.
-     */
-    const nosNomsOutils = new Set(nosOutils.map((o) => o.name));
-    for (const o of dejaLa) {
-      const retenu = parNomOutil.get(o.name);
-      if (!nosNomsOutils.has(o.name) || retenu?.id !== o.id) {
-        gestes.push({ type: 'outil_supprimer', sourceId: s.id, outilMetaId: o.id, nom: o.name });
-      }
+  // 3. Les outils du relais.
+  const dejaLa = retenu ? (meta.outilsParConnecteur[retenu.id] ?? []) : [];
+  const parNom = new Map(dejaLa.map((o) => [o.name, o]));
+  for (const o of outils) {
+    const existant = parNom.get(o.name);
+    if (!existant) gestes.push({ type: 'outil_creer', outilId: o.id, nom: o.name });
+    else if (aChange(existant, corpsOutilMeta(o))) {
+      gestes.push({ type: 'outil_modifier', outilMetaId: existant.id, outilId: o.id, nom: o.name });
     }
   }
-
+  /**
+   * 🔴 UN DOUBLON CHEZ META S'EN VA (2026-09-18). Plusieurs clics sur « Envoyer » avaient créé deux fois le
+   * même outil. `parNom` est une Map : un nom en double n'y garde qu'une entrée, donc on compare par
+   * IDENTIFIANT, et tout exemplaire qui n'est pas celui qu'on a retenu s'en va.
+   */
+  const nosNoms = new Set(outils.map((o) => o.name));
+  for (const o of dejaLa) {
+    if (!nosNoms.has(o.name) || parNom.get(o.name)?.id !== o.id) {
+      gestes.push({ type: 'outil_supprimer', connecteurId: retenu!.id, outilMetaId: o.id, nom: o.name });
+    }
+  }
   return gestes;
+}
+
+/** Une valeur ramenée à ses seules clés non nulles, triées : deux formes équivalentes deviennent égales. */
+function normaliser(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(normaliser);
+  if (v !== null && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v).sort()) {
+      const x = (v as Record<string, unknown>)[k];
+      if (x !== null && x !== undefined) out[k] = normaliser(x);
+    }
+    return out;
+  }
+  return v;
 }
 
 /**
  * Cet outil a-t-il bougé depuis la dernière publication ?
  *
- * 🔴 LES TROIS CHAMPS COMPTENT, et n'en comparer qu'un est la faute qui rend une publication silencieusement
- * incomplète : la DESCRIPTION (qui porte aussi la clause « ne pas utiliser », seul levier qui décide quand
- * l'outil se déclenche), la MÉTHODE et le CHEMIN (sans quoi Meta appellerait l'ancienne adresse pour
- * toujours, avec un aperçu qui annonce « rien à changer »).
+ * 🔴 ON COMPARE TOUTE LA DÉFINITION QUE NOUS ENVOYONS, normalisée (clés triées, `null` = absent).
  *
- * ⚠️ Un `request_definition` ABSENT de la réponse de Meta ne vaut PAS « identique » : on ne peut pas
- * comparer ce qu'on n'a pas reçu, donc on demande la mise à jour. Le prix est un geste de trop à chaque
- * publication si Meta cessait un jour de rendre ce champ ; le prix de l'inverse est un outil cassé pour
- * toujours, en silence.
+ * ⚠️ LA FORME QUE META RENVOIE N'EST PAS GARANTIE (sa spec dit « roundtripped » sans le promettre) : une clé
+ * non nulle qu'il ajouterait produirait un geste à CHAQUE publication. L'idempotence se vérifie donc aussi
+ * sur le vrai compte, à l'essai réel. ⚠️ Une définition ABSENTE de la réponse ne vaut pas « identique » : on
+ * demande la mise à jour, parce que le prix de l'inverse est un outil cassé pour toujours, en silence.
  */
-function aChange(chezMeta: OutilChezMeta, chezNous: OutilAPublier): boolean {
-  if (chezMeta.description !== descriptionPourMeta(chezNous)) return true;
-  const rd = chezMeta.request_definition;
-  if (!rd) return true;
-  return rd.method !== chezNous.methode || rd.path !== chezNous.chemin;
+function aChange(chezMeta: OutilChezMeta, attendu: CorpsOutilMeta): boolean {
+  if (chezMeta.description !== attendu.description) return true;
+  if (!chezMeta.request_definition) return true;
+  return JSON.stringify(normaliser(chezMeta.request_definition)) !== JSON.stringify(normaliser(attendu.request_definition));
 }
 
 /**
- * Notre `authKind` traduit dans l'énumération de Meta.
+ * L'AUTHENTIFICATION DU CONNECTEUR, TELLE QUE META LA VEUT : dans le CORPS du connecteur, sous
+ * `auth_config.api_key` (mesuré le 2026-09-18 : sans elle, la création rend 400 « Invalid connector
+ * request », et un changement d'`auth_type` rend « auth_config is required when changing auth_type »).
  *
- * ⚠️ `bearer` ET `header` DEVIENNENT TOUS DEUX `API_KEY`, et ce n'est pas un raccourci : Meta n'a pas de
- * type « bearer », il a un mécanisme d'en-têtes où `Authorization: Bearer <secret>` est un cas particulier.
- * La différence se joue dans `upsertApiKey`, pas dans `auth_type`.
- *
- * ⚠️ La spec dit que seuls `NONE`, `API_KEY` et `OAUTH2_CLIENT_CREDENTIALS` sont réellement supportés
- * aujourd'hui : on n'émet donc jamais `BASIC` ni `CUSTOM`, même si l'énumération les accepte.
+ * ⚠️ Le préfixe `Bearer ` va dans le champ `prefix`, pas collé à la clé : Meta concatène lui-même.
  */
-export function authTypeMeta(authKind: SourceAPublier['authKind']): 'NONE' | 'API_KEY' {
-  return authKind === 'none' ? 'NONE' : 'API_KEY';
-}
-
-/**
- * L'AUTHENTIFICATION D'UN CONNECTEUR, TELLE QUE META LA VEUT : dans le CORPS du connecteur, sous
- * `auth_config.api_key`.
- *
- * 🔴 ELLE NE PASSE PAS PAR `upsertApiKey`, ET C'EST LE DÉFAUT QUI BLOQUAIT TOUT (mesuré le 2026-09-18).
- * On créait le connecteur en `auth_type: API_KEY` SANS `auth_config`, puis on posait la clé après, sous une
- * enveloppe `api_key_config` inventée. Meta refusait la création en 400 « Invalid connector request », sans
- * nommer le champ. Conséquence : AUCUN connecteur authentifié n'a jamais pu être publié, seuls ceux en
- * `NONE` passaient, et le symptôme était le même pour tout le monde.
- *
- * 🔴 C'EST META QUI A FINI PAR LE DIRE, quand on a tenté de changer l'`auth_type` après coup :
- * « auth_config is required when changing auth_type ». La spec OpenAPI officielle
- * (`meta-business-agent_reference_configure_connectors_v2.0.0`) confirme la forme : `auth_config` porte
- * `api_key`, qui porte `headers` / `query_params` / `body_params`, chaque entrée étant
- * `{ field_name, value, prefix }`. Vérifié par un 201 sur le vrai compte, sonde effacée ensuite.
- *
- * ⚠️ `bearer` porte le préfixe `Bearer ` DANS le champ `prefix`, pas collé au secret : Meta concatène
- * lui-même, et coller le préfixe au secret produirait `Bearer Bearer <secret>` le jour où quelqu'un règle
- * aussi le préfixe.
- */
-export function authConfigMeta(
-  source: Pick<SourceAPublier, 'authKind' | 'authHeaderName'>,
-  secret: string,
-): { api_key: { headers: Array<{ field_name: string; value: string; prefix: string | null }> } } {
-  const champ = source.authKind === 'bearer' ? 'Authorization' : (source.authHeaderName ?? 'X-API-Key');
-  const prefixe = source.authKind === 'bearer' ? 'Bearer ' : null;
-  return { api_key: { headers: [{ field_name: champ, value: secret, prefix: prefixe }] } };
+export function authConfigRelais(cle: string): {
+  api_key: { headers: Array<{ field_name: string; value: string; prefix: string }> };
+} {
+  return { api_key: { headers: [{ field_name: 'Authorization', value: cle, prefix: 'Bearer ' }] } };
 }
 
 /**
  * LE NOM D'UN CONNECTEUR, TEL QUE META L'ACCEPTE VRAIMENT.
  *
- * 🔴 SA PROPRE SPEC DONNE UN EXEMPLE QUE SON SERVEUR REFUSE. Le champ y est décrit comme un « display
- * name » avec `Shopify Order Management` en exemple ; un nom contenant une ESPACE rend 400, et un TIRET
- * aussi. Mesuré un par un le 2026-09-18 : `testUCHAT` 201, `sondeauth` 201, `sonde_auth` 201, `Sonde42`
- * 201, `sonde-auth` 400, `sonde auth` 400. Lettres, chiffres et tiret bas passent, le reste non.
- *
- * ⚠️ ELLE EXISTE POUR QUE L'ÉCRAN REFUSE AVANT META, pas pour réécrire le nom du client : renommer sa
- * source dans son dos ferait diverger ce qu'il lit chez nous de ce qu'il voit chez Meta, et c'est par le
- * NOM que la réconciliation retrouve un connecteur.
+ * 🔴 SA PROPRE SPEC DONNE UN EXEMPLE QUE SON SERVEUR REFUSE : un nom contenant une ESPACE ou un TIRET rend 400.
+ * Mesuré un par un le 2026-09-18. Lettres, chiffres et tiret bas passent, le reste non. Depuis le relais, un
+ * seul nom part chez Meta (`NOM_CONNECTEUR_RELAIS`), et un test vérifie qu'il passe.
  */
 export const NOM_CONNECTEUR_META_RE = /^[A-Za-z0-9_]{1,64}$/;
 

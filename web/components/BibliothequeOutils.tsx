@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   getBibliothequeOutils, supprimerDefinitionOutil, exposerOutilAuMba, creerOutilPourMba, patchOutilMba,
   apercuPublicationMba, publierChezMeta,
-  type OutilBibliotheque, type GestePublication, type NonPubliable,
+  type OutilBibliotheque, type GestePublication,
 } from '@/lib/api-agent-tools';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
 import { normaliserCodeSortie } from '@/lib/agent-sorties';
@@ -34,11 +34,6 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
   const [erreur, setErreur] = useState<string | null>(null);
   const [plan, setPlan] = useState<GestePublication[] | null>(null);
   const [publie, setPublie] = useState(false);
-  /**
-   * 🔴 LES OUTILS QUE L'ENVOI LAISSE DE CÔTÉ, ET POURQUOI (2026-09-21). Sans eux, l'écran disait « Publié.
-   * Meta est à jour. » pour `add_tag`, parti chez Meta sans son corps, donc incapable de poser l'étiquette.
-   */
-  const [nonPubliables, setNonPubliables] = useState<NonPubliable[]>([]);
   /**
    * 🔴 L'ATTENTE EST UN ÉTAT DE L'ÉCRAN, PAS UN DÉTAIL (Julien, 2026-09-18). Le bouton ne disait rien
    * pendant l'aller-retour vers Meta, qui prend plusieurs secondes : « tu as pas de retour du bouton donc
@@ -138,7 +133,6 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
     setEnvoiEnCours(true);
     setErreur(null);
     setPublie(false);
-    setNonPubliables([]);
     try {
       await envoyer();
     } finally {
@@ -148,26 +142,16 @@ export function BibliothequeOutils({ tenantId, isAdmin }: { tenantId: string; is
 
   async function envoyer(): Promise<void> {
     let gestes: GestePublication[];
-    let ecartes: NonPubliable[];
     try {
-      const apercu = await apercuPublicationMba(tenantId);
-      gestes = apercu.gestes;
-      ecartes = apercu.nonPubliables ?? [];
+      gestes = (await apercuPublicationMba(tenantId)).gestes;
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t('L’envoi a échoué.', 'Sending failed.'));
       return;
     }
-    setNonPubliables(ecartes);
     if (gestes.length === 0) { setPlan([]); return; }
     const effacements = gestes.filter((g) => g.type.endsWith('supprimer'));
     if (effacements.length > 0) {
-      // Une copie creuse qui s'en va doit dire POURQUOI : sans la raison, la confirmation ressemblerait à un
-      // effacement arbitraire d'un outil que le client vient de créer.
-      const raison = (nom: string): string => {
-        const e = ecartes.find((x) => x.nom === nom);
-        return e ? t(` (Meta n’en recevrait pas ${e.pertes.join(', ')})`, ` (Meta would not get ${e.pertes.join(', ')})`) : '';
-      };
-      const liste = effacements.map((g) => `- ${LIBELLE_GESTE[g.type]} : ${g.nom}${raison(g.nom)}`).join('\n');
+      const liste = effacements.map((g) => `- ${LIBELLE_GESTE[g.type]} : ${g.nom}`).join('\n');
       const ok = window.confirm(t(
         `Cet envoi va SUPPRIMER chez Meta :
 
@@ -187,8 +171,7 @@ Continue?`,
 
   async function publier(): Promise<void> {
     try {
-      const r = await publierChezMeta(tenantId);
-      setNonPubliables(r.nonPubliables ?? []);
+      await publierChezMeta(tenantId);
       setPublie(true);
       setPlan([]);
       setOutils((await getBibliothequeOutils(tenantId)).outils);
@@ -221,9 +204,9 @@ Continue?`,
 
   const LIBELLE_GESTE: Record<GestePublication['type'], string> = {
     connecteur_creer: t('créer le connecteur', 'create connector'),
-    connecteur_modifier: t('modifier le connecteur', 'update connector'),
+    // Depuis le relais (2026-09-21), toute modification du connecteur Engage Me pose une clé neuve.
+    connecteur_modifier: t('renouveler la clé du connecteur', 'renew the connector key'),
     connecteur_supprimer: t('SUPPRIMER le connecteur', 'DELETE connector'),
-    secret_poser: t('poser le secret', 'set the secret'),
     outil_creer: t('créer l’outil', 'create tool'),
     outil_modifier: t('modifier l’outil', 'update tool'),
     outil_supprimer: t('SUPPRIMER l’outil', 'DELETE tool'),
@@ -285,36 +268,9 @@ Continue?`,
               'What you have here replaces what is at Meta. A connector or tool added by hand in WhatsApp Manager will be deleted.')}
           </p>
 
-          {publie && (
-            <p className="mt-2 text-xs text-mint-700" data-testid="publication-faite">
-              {nonPubliables.length === 0
-                ? t('Publié. Meta est à jour.', 'Published. Meta is up to date.')
-                : t('Publié, sauf les outils ci-dessous.', 'Published, except the tools below.')}
-            </p>
-          )}
+          {publie && <p className="mt-2 text-xs text-mint-700" data-testid="publication-faite">{t('Publié. Meta est à jour.', 'Published. Meta is up to date.')}</p>}
           {plan !== null && plan.length === 0 && !publie && (
-            <p className="mt-2 text-xs text-mint-700" data-testid="publication-rien">
-              {nonPubliables.length === 0
-                ? t('Rien à changer : Meta est déjà à jour.', 'Nothing to change: Meta is already up to date.')
-                : t('Rien d’autre à changer chez Meta.', 'Nothing else to change at Meta.')}
-            </p>
-          )}
-          {/* 🔴 CE QUI N'EST PAS PARTI, ET POURQUOI (2026-09-21). Nous ne publions chez Meta que la méthode et
-              l'adresse d'un appel : un outil qui envoie un corps, des paramètres ou des en-têtes arriverait
-              creux, et l'agent de Meta appellerait le système du client sans les valeurs attendues. */}
-          {nonPubliables.length > 0 && (
-            <div className="mt-2 rounded-lg border border-coral/30 bg-coral/5 p-3 text-xs text-ink-700" data-testid="publication-non-publiables">
-              <p className="font-medium text-ink-800">{t('Pas envoyés chez Meta :', 'Not sent to Meta:')}</p>
-              <ul className="mt-1 space-y-1">
-                {nonPubliables.map((n) => (
-                  <li key={n.nom} data-testid={`publication-non-publiable-${n.nom}`}>
-                    <code>{n.nom}</code>{' : '}
-                    {t('l’agent de Meta n’en recevrait que la méthode et l’adresse, sans ', 'Meta’s agent would only get the method and address, without ')}
-                    {n.pertes.join(', ')}.
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <p className="mt-2 text-xs text-mint-700" data-testid="publication-rien">{t('Rien à changer : Meta est déjà à jour.', 'Nothing to change: Meta is already up to date.')}</p>
           )}
 
         </section>

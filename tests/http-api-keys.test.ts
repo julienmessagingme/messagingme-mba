@@ -47,6 +47,16 @@ describe('routes api-keys (admin)', () => {
     await server.close();
   });
 
+  it('🔴 le droit `mba:relais` N’EST PAS attribuable : seule la publication crée cette clé', async () => {
+    // Son porteur appelle les outils de l'espace au nom de n'importe lequel de ses contacts (c'est l'en-tête
+    // qui désigne le contact) : il ne doit exister que chez Meta, posé par la publication (migration 0161).
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['mba:relais'] } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.created).toEqual([]);
+    await server.close();
+  });
+
   it('GET liste (sans hash)', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/api-keys', ...h(adminTok) });

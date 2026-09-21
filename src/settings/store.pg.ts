@@ -169,6 +169,29 @@ export class PgTenantSettingsStore {
   }
 
   /**
+   * La clé d'API posée chez Meta pour le relais du MBA (migration 0161), ou `null`.
+   *
+   * ⚠️ HORS DE `get()`, délibérément : seule la publication la lit, et l'ajouter au type des réglages aurait
+   * obligé toutes les fixtures qui en construisent un à la déclarer.
+   */
+  async mbaRelaisCleId(tenantId: string): Promise<string | null> {
+    const r = await this.pool.query<{ id: string | null }>(
+      `select mba_relais_cle_id as id from tenant_settings where tenant_id = $1`,
+      [tenantId],
+    );
+    return r.rows[0]?.id ?? null;
+  }
+
+  /** Retient la clé posée chez Meta (`null` = aucune). Upsert ciblé : n'écrase aucun autre réglage. */
+  async setMbaRelaisCleId(tenantId: string, id: string | null): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, mba_relais_cle_id, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set mba_relais_cle_id = excluded.mba_relais_cle_id, updated_at = now()`,
+      [tenantId, id],
+    );
+  }
+
+  /**
    * Autorise (ou non) les agents à PRENDRE une conversation du pot commun. Upsert ciblé : n'écrase aucun
    * autre réglage.
    */

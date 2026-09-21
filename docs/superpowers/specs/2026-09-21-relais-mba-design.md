@@ -42,7 +42,7 @@ Ce que ça apporte en plus de la réparation :
 
 ## 1. Ce qui part chez Meta
 
-### Un connecteur par espace, plus un par source
+### Un connecteur par espace, et non plus un par source
 
 Les connecteurs cessent de suivre les sources. Un espace qui a AU MOINS un outil exposé au MBA reçoit
 **un seul connecteur chez Meta**, nommé `EngageMe` (le nom doit passer `NOM_CONNECTEUR_META_RE`, lettres,
@@ -87,10 +87,12 @@ tolère déjà absent, puisqu'elle est déployée avant l'API).
 ### La comparaison du plan
 
 `aChange` compare désormais toute la `request_definition` que nous envoyons (méthode, chemin, en-têtes,
-corps), normalisée : on ne compare que les clés que nous envoyons, et une valeur `null` rendue par Meta
-vaut une clé absente. ⚠️ La spec de Meta dit « roundtripped » sans garantir la forme rendue : **la
-propriété « publier deux fois ne produit aucun geste » se vérifie sur le vrai compte à l'essai réel**, pas
-seulement en test.
+corps), normalisée : clés triées, et une valeur `null` rendue par Meta vaut une clé absente. (Écart à
+l'implémentation, 2026-09-21 : on NORMALISE au lieu de projeter sur nos seules clés. Une clé non nulle que
+Meta ajouterait produirait donc un geste à chaque publication ; l'essai réel le montrera.)
+
+⚠️ La spec de Meta dit « roundtripped » sans garantir la forme rendue : **la propriété « publier deux
+fois ne produit aucun geste » se vérifie sur le vrai compte à l'essai réel**, pas seulement en test.
 
 ## 2. La clé « Agent de Meta »
 
@@ -104,10 +106,13 @@ seulement en test.
 - **On retient quelle clé est posée chez Meta**, parce que Meta ne rend jamais un secret et que nous ne
   gardons que l'empreinte : colonne `tenant_settings.mba_relais_cle_id` (`uuid`, nullable, clé étrangère
   vers `api_keys(id)`, `on delete set null`). Même principe que `secretPublie` (0129).
-- Le plan pose la clé (geste `cle_poser`) quand la colonne est vide ou désigne une clé révoquée. Le geste,
-  dans cet ordre : créer la nouvelle clé, modifier le connecteur chez Meta avec elle, écrire la colonne
-  APRÈS l'accusé de Meta, révoquer l'ancienne. Si Meta refuse, la nouvelle clé est révoquée tout de suite
-  (rien d'orphelin). La création du connecteur porte sa clé de la même façon.
+- Le plan MODIFIE le connecteur (`connecteur_modifier`) quand la colonne est vide ou désigne une clé
+  révoquée. (Écart à l'implémentation, 2026-09-21 : pas de geste `cle_poser` séparé. Meta exige
+  `auth_config` à CHAQUE écriture du connecteur et nous ne gardons que l'empreinte : toute modification
+  porte donc une clé NEUVE.) Dans cet ordre : créer la nouvelle clé, écrire le connecteur chez Meta avec
+  elle, écrire la colonne APRÈS l'accusé de Meta, révoquer l'ancienne. Si Meta refuse, la nouvelle clé est
+  révoquée tout de suite (rien d'orphelin). La création du connecteur porte sa clé de la même façon, et un
+  relais qui part (plus aucun outil exposé) emporte la révocation de sa clé.
 
 ## 3. Le relais
 

@@ -291,13 +291,13 @@ export class MbaClient {
   }
 
   async createConnector(phoneNumberId: string, corps: {
-    name: string; description: string; base_url: string; auth_type: string;
+    name: string; description: string; base_url: string; auth_type: string; auth_config?: unknown;
   }): Promise<{ id: string }> {
     return this.appel<{ id: string }>('POST', `${phoneNumberId}/agent_connectors`, corps);
   }
 
   async updateConnector(phoneNumberId: string, connectorId: string, corps: {
-    name?: string; description?: string; base_url?: string; auth_type?: string;
+    name?: string; description?: string; base_url?: string; auth_type?: string; auth_config?: unknown;
   }): Promise<unknown> {
     return this.appel<unknown>('PUT', `${phoneNumberId}/agent_connectors/${connectorId}`, corps);
   }
@@ -326,9 +326,11 @@ export class MbaClient {
    * réconciliation ne marche plus.
    */
   async listConnectorTools(phoneNumberId: string, connectorId: string): Promise<Array<{
-    id: string; name: string; description?: string; request_definition?: { method?: string; path?: string };
+    id: string; name: string; description?: string; request_definition?: Record<string, unknown>;
   }>> {
-    type T = { id: string; name: string; description?: string; request_definition?: { method?: string; path?: string } };
+    // ⚠️ Toute la définition, pas seulement `method` et `path` : depuis le relais (2026-09-21), le plan
+    // compare aussi les en-têtes et le corps.
+    type T = { id: string; name: string; description?: string; request_definition?: Record<string, unknown> };
     const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors/${connectorId}/tools`);
     return Array.isArray(r) ? r as T[] : ((r as { data?: unknown })?.data as T[]) ?? [];
   }

@@ -3,6 +3,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgJournalAppels } from '../../src/agent/catalog.pg';
+import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
+import { PgTenantSettingsStore } from '../../src/settings/store.pg';
 
 /**
  * La migration 0161 : le relais du Meta Business Agent (spec 2026-09-21-relais-mba-design.md).
@@ -49,5 +51,29 @@ describe.skipIf(!url)('migration 0161 : le relais du MBA', () => {
     );
     // `n` = on delete set null : une clé supprimée redevient « aucune clé posée ».
     expect(fk.rows[0]!.confdeltype).toBe('n');
+  });
+
+  it('🔴 la clé retenue se lit, s’écrit, et retombe à null quand la clé disparaît', async () => {
+    const cles = new PgApiKeyStore(pool);
+    const reglages = new PgTenantSettingsStore(pool);
+    expect(await reglages.mbaRelaisCleId(tenantId)).toBeNull();
+    const { id } = await cles.create(tenantId, 'Agent de Meta', ['mba:relais']);
+    await reglages.setMbaRelaisCleId(tenantId, id);
+    expect(await reglages.mbaRelaisCleId(tenantId)).toBe(id);
+    expect(await cles.estActive(tenantId, id)).toBe(true);
+    await cles.revoke(tenantId, id);
+    expect(await cles.estActive(tenantId, id)).toBe(false);
+    await pool.query('delete from api_keys where id = $1', [id]);
+    expect(await reglages.mbaRelaisCleId(tenantId)).toBeNull();
+  });
+
+  it('🔴 `estActive` ne voit pas la clé d’un autre espace', async () => {
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-relais-mba-autre') returning id`)).rows[0]!.id;
+    try {
+      const { id } = await new PgApiKeyStore(pool).create(autre, 'Agent de Meta', ['mba:relais']);
+      expect(await new PgApiKeyStore(pool).estActive(tenantId, id)).toBe(false);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
   });
 });

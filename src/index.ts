@@ -142,8 +142,9 @@ import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
-import { corpsConnecteurMeta, corpsOutilMeta } from './http/mba-publication';
-import { pertesChezMeta } from './mba/publication';
+import { corpsConnecteurRelais, corpsOutilMeta } from './http/mba-publication';
+import { NOM_CONNECTEUR_RELAIS, type OutilAPublier } from './mba/publication';
+import { cleAJour, poserCleNeuve, oublierCle, NOM_CLE_RELAIS, DROIT_RELAIS, type DepsCleRelais } from './mba/cle-relais';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
@@ -239,6 +240,43 @@ async function main(): Promise<void> {
   const agentSources = new PgSourceStore(pool);
   const mcpStore = new PgMcpStore(pool);
   const agentRequetes = new PgRequeteStore(pool);
+
+  /**
+   * LE RELAIS DU META BUSINESS AGENT (migration 0161) : trois aides partagées par la publication.
+   *
+   * `adresseDuRelais` : `null` quand `PUBLIC_API_URL` est vide, et la publication refuse alors en le disant
+   * plutôt que de poser chez Meta un connecteur qui n'appelle rien.
+   */
+  const adresseDuRelais = (): string | null => {
+    const base = config.PUBLIC_API_URL.trim().replace(/[/]+$/, '');
+    return base === '' ? null : `${base}/mba/relais`;
+  };
+  /**
+   * Les outils exposés à l'agent de Meta, avec les variables de leur requête.
+   *
+   * ⚠️ Un outil MAISON (`origin: 'mba'`) ou MCP n'a pas de requête de connecteur : il n'est pas relayé (le
+   * relais ne sait appeler que Tools > Connecteurs API, arbitrage du 2026-09-21). On le filtre ICI plutôt que
+   * de le laisser produire un geste qui échouerait et arrêterait toute la publication.
+   */
+  const outilsPourMeta = async (tenant: string, pn: string): Promise<OutilAPublier[]> => {
+    const actifs = await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn));
+    const sortie: OutilAPublier[] = [];
+    for (const o of actifs) {
+      if (o.origin !== 'http' || !o.requestId) continue;
+      const req = await agentRequetes.parId(tenant, o.requestId);
+      if (!req) continue;
+      sortie.push({ id: o.id, name: o.name, description: o.description, nePasUtiliser: o.nePasUtiliser, variables: req.variables });
+    }
+    return sortie;
+  };
+  /** La clé « Agent de Meta » : une clé d'API de l'espace, retenue dans `tenant_settings.mba_relais_cle_id`. */
+  const depsCleRelais: DepsCleRelais = {
+    creerCle: (t) => apiKeyStore.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]),
+    revoquer: (t, id) => apiKeyStore.revoke(t, id),
+    cleRetenue: (t) => settingsStore.mbaRelaisCleId(t),
+    retenir: (t, id) => settingsStore.setMbaRelaisCleId(t, id),
+    estActive: (t, id) => apiKeyStore.estActive(t, id),
+  };
   /**
    * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
    *
@@ -1784,52 +1822,29 @@ async function main(): Promise<void> {
       requetePourOutil: (tenant, id) => agentRequetes.parId(tenant, id),
     },
     /**
-     * Publication du catalogue chez Meta (lot 4).
+     * Publication du catalogue chez Meta (lot 4), traduite en RELAIS le 2026-09-21 (migration 0161).
      *
      * 🔴 LE PLAN EST RECALCULE AU MOMENT D APPLIQUER, jamais transmis par le navigateur : le lui faire
      * porter ouvrirait une fenetre ou Meta a change entre l apercu et le clic.
+     *
+     * 🔴 CE QUI PART CHEZ META EST LE RELAIS : un connecteur `EngageMe` par espace, son adresse est notre API
+     * et sa cle une cle d API de l espace (`src/mba/cle-relais.ts`). Le secret du client ne quitte plus notre
+     * serveur, et les valeurs du mini-CRM sont remplies par le relais (`src/http/mba-relais.ts`).
      */
     mbaPublication: {
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
-      sources: async (tenant) => (await agentSources.lister(tenant))
-        .filter((s) => s.kind === 'http' && s.status === 'active')
-        .map((s) => ({
-          id: s.id, label: s.label, baseUrl: s.baseUrl, authKind: s.authKind,
-          authHeaderName: s.authHeaderName, aAuthentification: s.aAuthentification,
-          secretPublie: s.secretPublie,
-        })),
-      /**
-       * Les outils EXPOSES au MBA, avec leur methode et leur chemin.
-       *
-       * ⚠️ Un outil MAISON (`origin: 'mba'`) n a ni source ni requete : il n est pas publiable chez Meta,
-       * qui ne sait appeler que du HTTP. On le filtre ICI plutot que de le laisser produire un geste qui
-       * echouerait, ce qui arreterait toute la publication sur un cas parfaitement normal.
-       */
-      outilsExposes: async (tenant, pn) => {
-        const actifs = await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn));
-        const sortie = [];
-        for (const o of actifs) {
-          if (o.origin !== 'http' || !o.sourceId || !o.requestId) continue;
-          const req = await agentRequetes.parId(tenant, o.requestId);
-          if (!req) continue;
-          sortie.push({
-            id: o.id, sourceId: o.sourceId, name: o.name, description: o.description,
-            nePasUtiliser: o.nePasUtiliser, methode: req.methode, chemin: req.chemin,
-            // Ce que Meta ne recevrait pas : un outil qui en a n'est pas publié, et l'écran dit pourquoi.
-            pertes: pertesChezMeta(req),
-          });
-        }
-        return sortie;
+      relais: async (tenant) => {
+        const base = adresseDuRelais();
+        if (base === null) return null;
+        return { baseUrl: base, cleAJour: await cleAJour(depsCleRelais, tenant) };
       },
+      outilsExposes: (tenant, pn) => outilsPourMeta(tenant, pn),
       etatMeta: async (tenant, pn) => {
         const client = await metaFactory.mbaClientForTenant(tenant);
         const connecteurs = await client.listConnectors(pn);
         /**
-         * 🔴 LE TYPE VIENT DU CLIENT, il n est pas RECOPIE ici. L annotation ecrite a la main omettait
-         * `request_definition`, que le client rend et que le plan COMPARE depuis la revue du 2026-09-10 :
-         * la donnee passait quand meme (c est la meme reference), mais le type disait le contraire. Le
-         * premier « menage » qui aurait projete les champs un a un aurait donc silencieusement remis le
-         * defaut que cette revue venait de corriger, avec un compilateur d accord.
+         * 🔴 LE TYPE VIENT DU CLIENT, il n est pas RECOPIE ici : le plan COMPARE `request_definition`, et une
+         * annotation ecrite a la main l a deja omise une fois.
          */
         const outilsParConnecteur: Record<string, Awaited<ReturnType<typeof client.listConnectorTools>>> = {};
         for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
@@ -1837,125 +1852,53 @@ async function main(): Promise<void> {
       },
       appliquer: async (tenant, pn, geste, ctx) => {
         const client = await metaFactory.mbaClientForTenant(tenant);
+        const base = adresseDuRelais();
+        if (base === null) throw new Error('adresse publique de l API non reglee');
         /**
-         * ⚠️ DEUX LECTURES MEMORISEES POUR TOUTE LA PUBLICATION. Sans ce contexte, chaque geste relisait la
-         * liste des connecteurs CHEZ META et les sources EN BASE : quarante lectures pour un plan de vingt
-         * gestes, dont la moitie sur le reseau.
-         *
-         * 🔴 LE CACHE DES CONNECTEURS EST INVALIDE des qu on en cree ou supprime un, sinon le geste suivant
-         * chercherait un connecteur dans une photo prise AVANT sa creation, et ne le trouverait pas.
+         * La liste des connecteurs CHEZ META, lue une fois par publication. 🔴 INVALIDEE des qu on en cree
+         * ou supprime un, sinon le geste suivant chercherait le relais dans une photo prise AVANT sa creation.
          */
-        const connecteurs = async (): Promise<Array<{ id: string; name: string }>> => {
-          const vu = ctx.get('connecteurs');
-          if (vu) return vu as Array<{ id: string; name: string }>;
-          const frais = await client.listConnectors(pn);
-          ctx.set('connecteurs', frais);
-          return frais;
-        };
-        // Le connecteur se retrouve par son NOM au moment ou on en a besoin : `connecteur_creer` precede
-        // toujours `outil_creer` dans le plan, donc il existe. Le porter dans le geste obligerait a le
-        // deviner avant sa creation.
-        const idDuConnecteur = async (nomSource: string): Promise<string | null> =>
-          (await connecteurs()).find((c) => c.name === nomSource)?.id ?? null;
-        const sourceParId = async (id: string) => {
-          let liste = ctx.get('sources') as Awaited<ReturnType<typeof agentSources.lister>> | undefined;
-          if (!liste) { liste = await agentSources.lister(tenant); ctx.set('sources', liste); }
-          return liste.find((s) => s.id === id);
+        const idDuRelais = async (): Promise<string | null> => {
+          let vus = ctx.get('connecteurs') as Array<{ id: string; name: string }> | undefined;
+          if (!vus) { vus = await client.listConnectors(pn); ctx.set('connecteurs', vus); }
+          return vus.find((c) => c.name === NOM_CONNECTEUR_RELAIS)?.id ?? null;
         };
 
-        /**
-         * 🔴 LE SECRET VOYAGE AVEC LE CONNECTEUR, PARCE QUE META L EXIGE (mesure du 2026-09-18). Un
-         * `auth_type` autre que `NONE` sans `auth_config` dans le MEME corps rend 400, a la creation comme
-         * a la modification. Il est lu par `pourAppel`, exactement la ou `secret_poser` le lisait deja :
-         * ce n est pas un nouveau chemin pour le secret, c est le meme, quelques lignes plus haut.
-         *
-         * ⚠️ UN SERVEUR MCP N A PAS DE SECRET PUBLIABLE : le MBA n accepte aucune connexion MCP, donc on
-         * ne lit que `kind === 'http'`, comme le faisait `secret_poser`.
-         */
-        const secretDeLaSource = async (sourceId: string): Promise<string | null> => {
-          const brut = await agentSources.pourAppel(tenant, sourceId);
-          return brut && brut.kind === 'http' ? (brut.authSecret ?? null) : null;
-        };
-
+        // 🔴 TOUTE ECRITURE DU CONNECTEUR POSE UNE CLE NEUVE : Meta exige `auth_config` a chaque fois, et
+        // nous ne gardons que l empreinte de l ancienne. L ordre (creer, ecrire, retenir, revoquer) vit dans
+        // `poserCleNeuve` et il est teste la-bas.
         if (geste.type === 'connecteur_creer') {
-          const s = await sourceParId(geste.sourceId);
-          if (s) {
-            const secret = s.authKind === 'none' ? null : await secretDeLaSource(geste.sourceId);
-            await client.createConnector(pn, corpsConnecteurMeta(s, secret));
-            // 🔴 LE SECRET EST POSE PAR LA CREATION ELLE-MEME : on le marque ici, sinon la publication
-            // suivante rejouerait un `secret_poser` pour rien, et la reconciliation ne serait plus stable.
-            if (secret) await agentSources.marquerSecretPublie(tenant, geste.sourceId);
-            ctx.delete('connecteurs'); // il vient d apparaitre : la photo d avant ne le contient pas.
-          }
+          await poserCleNeuve(depsCleRelais, tenant, async (cle) => { await client.createConnector(pn, corpsConnecteurRelais(base, cle)); });
+          ctx.delete('connecteurs');
           return;
         }
         if (geste.type === 'connecteur_modifier') {
-          const s = await sourceParId(geste.sourceId);
-          if (s) {
-            const secret = s.authKind === 'none' ? null : await secretDeLaSource(geste.sourceId);
-            await client.updateConnector(pn, geste.connecteurId, corpsConnecteurMeta(s, secret));
-            if (secret) await agentSources.marquerSecretPublie(tenant, geste.sourceId);
-          }
+          await poserCleNeuve(depsCleRelais, tenant, async (cle) => { await client.updateConnector(pn, geste.connecteurId, corpsConnecteurRelais(base, cle)); });
           return;
         }
         if (geste.type === 'connecteur_supprimer') {
           await client.deleteConnector(pn, geste.connecteurId);
+          // Le relais part parce que plus aucun outil n est expose : sa cle ne doit pas lui survivre.
+          if (geste.oublierCle) await oublierCle(depsCleRelais, tenant);
           ctx.delete('connecteurs');
           return;
         }
-        if (geste.type === 'secret_poser') {
-          const s = await sourceParId(geste.sourceId);
-          const secretBrut = await secretDeLaSource(geste.sourceId);
-          const cid = await idDuConnecteur(geste.nom);
-          if (s && cid && secretBrut) {
-            /**
-             * 🔴 C EST UNE MODIFICATION DU CONNECTEUR, PLUS UN `upsertApiKey` (2026-09-18). Cet appel-la
-             * refusait notre corps (« Invalid api_key_config ») parce que l enveloppe n existe pas : chez
-             * Meta l authentification vit dans le connecteur, sous `auth_config.api_key`. Le geste garde
-             * son nom et sa comptabilite (`secretPublie`), il change ce qu il FAIT.
-             *
-             * ⚠️ LE CORPS EST COMPLET, jamais partiel : un PUT qui ne porte que `auth_type` rend 400
-             * « violated JSON schema constraint required », mesure faite le meme jour.
-             */
-            await client.updateConnector(pn, cid, corpsConnecteurMeta(s, secretBrut));
-            /**
-             * 🔴 MARQUE APRES L ACCUSE DE RECEPTION DE META, jamais avant. Marquer d abord ferait croire un
-             * secret publie alors que l appel a echoue, et la publication suivante ne le reposerait plus :
-             * le connecteur de Meta resterait sur l ancien jeton pour toujours. Un `upsertApiKey` qui jette
-             * remonte au POST, qui s arrete en 409 et dit de relancer.
-             *
-             * ⚠️ La photo des sources memorisee dans `ctx` devient perimee sur ce champ : elle ne sert plus
-             * qu a lire l adresse et le mode d authentification pour les gestes SUIVANTS du meme plan, qui
-             * ne relisent pas `secretPublie` (le plan, lui, a ete calcule avant).
-             */
-            await agentSources.marquerSecretPublie(tenant, geste.sourceId);
-          }
-          return;
-        }
         if (geste.type === 'outil_creer' || geste.type === 'outil_modifier') {
-          const s = await sourceParId(geste.sourceId);
-          if (!s) return;
-          const cid = await idDuConnecteur(s.label);
-          if (!cid) return;
-          const outils = await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn));
-          const o = outils.find((x) => x.id === geste.outilId);
-          if (!o || !o.requestId) return;
-          const req = await agentRequetes.parId(tenant, o.requestId);
-          if (!req) return;
-          // La REQUÊTE entière, pas sa méthode et son chemin recopiés : c'est sur elle que `corpsOutilMeta`
-          // calcule ce que Meta perdrait, et refuse de construire un outil creux.
-          const corps = corpsOutilMeta({ name: o.name, description: o.description, nePasUtiliser: o.nePasUtiliser }, req);
+          const cid = await idDuRelais();
+          /**
+           * ⚠️ ON LEVE AU LIEU DE `return` : l ancien cablage rendait la main en silence sur un outil ou un
+           * connecteur introuvable, et le POST annoncait « Publie » pour un geste qui n avait rien fait. Une
+           * erreur arrete la publication en 409 et le DIT.
+           */
+          if (!cid) throw new Error('le connecteur EngageMe est introuvable chez Meta');
+          const o = (await outilsPourMeta(tenant, pn)).find((x) => x.id === geste.outilId);
+          if (!o) throw new Error(`l outil « ${geste.nom} » n est plus expose`);
+          const corps = corpsOutilMeta(o);
           if (geste.type === 'outil_creer') await client.createConnectorTool(pn, cid, corps);
           else await client.updateConnectorTool(pn, cid, geste.outilMetaId, corps);
           return;
         }
-        if (geste.type === 'outil_supprimer') {
-          const cid = geste.sourceId === ''
-            ? null
-            : await idDuConnecteur((await sourceParId(geste.sourceId))?.label ?? '');
-          // Un outil dont le connecteur part aussi : Meta l emporte avec lui, rien a faire ici.
-          if (cid) await client.deleteConnectorTool(pn, cid, geste.outilMetaId);
-        }
+        if (geste.type === 'outil_supprimer') await client.deleteConnectorTool(pn, geste.connecteurId, geste.outilMetaId);
       },
     },
     // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
