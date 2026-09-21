@@ -4,6 +4,7 @@ import type { SourceStore } from '../sources';
 import type { RequeteStore } from '../requetes';
 import { construireCible, enTetesAuthSource } from '../http-cible';
 import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-privee';
+import { fetchPublic, estRefusAdresseInterne } from '../../lib/connexion-publique';
 import { lireCorpsBorne } from '../../lib/corps-borne';
 import { assemblerAppel } from '../requete-http';
 import { resoudreVariable, type ValeurResolue } from '../variables';
@@ -173,7 +174,8 @@ export interface JournalDAppel {
  * donc par les mêmes gardes, dans le même ordre, avec les mêmes messages.
  */
 export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecteur) => Promise<SortieResolveur> {
-  const appeler = deps.fetchImpl ?? fetch;
+  // Le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding) : `src/lib/connexion-publique.ts`.
+  const appeler = deps.fetchImpl ?? fetchPublic;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
   /**
@@ -343,6 +345,13 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       // SOURCE : c'est ce qui rend un connecteur mort visible dans la console avant qu'un contact ne le
       // découvre. Best-effort : une écriture qui trébuche ne doit pas transformer un échec d'outil en panne
       // de tour.
+      // Refus À LA CONNEXION (le nom a résolu vers l'intérieur entre la vérification ci-dessus et l'appel :
+      // le « DNS rebinding » que `fetchPublic` ferme). Même verdict et même message que la vérification
+      // préalable : pour l'opérateur, c'est la même cause.
+      if (estRefusAdresseInterne(err)) {
+        await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
+        return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: 'connexion_interne' };
+      }
       const redirige = String((err as Error)?.message ?? '').toLowerCase().includes('redirect');
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, redirige ? 'redirection refusée' : 'injoignable').catch(() => {});
       const cle = redirige ? 'redirige' : 'indispo';

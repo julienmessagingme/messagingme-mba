@@ -1,4 +1,5 @@
 import { lireCorpsBorne } from '../lib/corps-borne';
+import { fetchPublic } from '../lib/connexion-publique';
 // ⚠️ LES DEUX VIENNENT DU SERVEUR, ET C'EST DÉLIBÉRÉ : c'est le MÊME produit, qui parle la MÊME révision du
 // protocole des deux côtés. Les recopier ici créerait deux vérités, et le jour où l'une des deux bouge,
 // on parlerait une révision en serveur et une autre en client sans que rien ne le signale. L'alias dit
@@ -236,7 +237,8 @@ export function ouvrirSessionMcp(
   /** `now` est injectée pour que le budget soit reproductible en test, comme ailleurs dans ce dépôt. */
   opts: { fetchImpl?: typeof fetch; now?: () => number } = {},
 ): Promise<SessionMcp | { echec: EchecMcp }> {
-  return ouvrir(cible, opts.fetchImpl ?? fetch, opts.now ?? (() => Date.now()));
+  // Défaut : le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding), `src/lib/connexion-publique.ts`.
+  return ouvrir(cible, opts.fetchImpl ?? fetchPublic, opts.now ?? (() => Date.now()));
 }
 
 async function ouvrir(

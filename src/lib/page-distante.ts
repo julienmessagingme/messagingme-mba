@@ -1,4 +1,5 @@
 import { isSendableButtonUrl } from '../meta/button-url';
+import { fetchPublic } from './connexion-publique';
 import { lireCorpsBorne } from './corps-borne';
 import { resolutionPublique, type VerdictResolution } from './adresse-privee';
 
@@ -52,7 +53,8 @@ export function urlRecuperable(raw: string): boolean {
  */
 export function fetchUrlBorne(
   timeoutMs = 10_000,
-  fetchImpl: typeof fetch = fetch,
+  /** Défaut : le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding), `connexion-publique.ts`. */
+  fetchImpl: typeof fetch = fetchPublic,
   /** Injectée pour tester sans DNS. Défaut : la vraie résolution. */
   verifierResolution: (url: string) => Promise<VerdictResolution> = resolutionPublique,
 ): (url: string) => Promise<PageDistante> {

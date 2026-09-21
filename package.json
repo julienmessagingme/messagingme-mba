@@ -35,6 +35,7 @@
     "quickjs-emscripten": "^0.32.0",
     "secure-json-parse": "^4.1.0",
     "tsx": "^4.19.2",
+    "undici": "^7.29.1",
     "unpdf": "^1.8.1",
     "zod": "^4.4.3"
   },

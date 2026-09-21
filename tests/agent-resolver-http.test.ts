@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { AdresseInterdite } from '../src/lib/connexion-publique';
 import { creerResolveurHttp } from '../src/agent/resolvers/http';
 import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
@@ -457,6 +458,28 @@ describe('résolveur http : où le nom mène vraiment', () => {
     // Et le modèle ne reçoit ni l'adresse, ni le mot « Docker », ni rien qui renseigne sur la topologie.
     const dit = JSON.stringify(res.contenu);
     expect(dit).not.toMatch(/172\.|169\.254|docker|localhost/i);
+  });
+
+  /**
+   * 🔴 LE REFUS À LA CONNEXION (DNS rebinding, 2026-09-21). La vérification préalable a dit « public », puis le
+   * nom a résolu vers l'intérieur au moment de se connecter : `fetchPublic` a refusé la socket. Pour
+   * l'opérateur et pour le modèle, c'est la même cause que ci-dessus, donc le même verdict, et surtout pas un
+   * « le système du client n'a pas répondu » qui l'enverrait chercher une panne chez son client.
+   */
+  it('🔴 un refus d’adresse interne À LA CONNEXION rend le même verdict que la vérification préalable', async () => {
+    const h = harnais({ lance: new TypeError('fetch failed', { cause: new AdresseInterdite() }) });
+    const res = await h.resolveur(h.entree);
+    expect(res.ok).toBe(false);
+    expect(res.erreur).toBe('connexion_interne');
+    expect(h.epreuves.some((e) => e.ok === false && e.erreur === 'adresse interne')).toBe(true);
+    expect(JSON.stringify(res.contenu)).not.toMatch(/172\.|169\.254|docker|localhost|127\./i);
+  });
+
+  it('une panne réseau ORDINAIRE reste « injoignable », pas « adresse interne »', async () => {
+    const h = harnais({ lance: new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }) });
+    const res = await h.resolveur(h.entree);
+    expect(res.erreur).toBe('indispo');
+    expect(h.epreuves.some((e) => e.erreur === 'injoignable')).toBe(true);
   });
 
   it('un nom public laisse l’appel partir normalement', async () => {

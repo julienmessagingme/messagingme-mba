@@ -138,6 +138,7 @@ import type { LigneHistorique } from './reglages/historique';
 import { PgTestRunStore } from './agent/test-runs.pg';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { resolutionPublique } from './lib/adresse-privee';
+import { fetchPublic } from './lib/connexion-publique';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerWabaDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
@@ -1931,7 +1932,8 @@ async function main(): Promise<void> {
         // « ca repond » d une source que les appels ne savent pas authentifier.
         const headers = enTetesAuthSource(src);
         try {
-          const res = await fetch(cible.url, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) });
+          // Le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding) : `src/lib/connexion-publique.ts`.
+          const res = await fetchPublic(cible.url, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) });
           const auth = res.status === 401 || res.status === 403;
           const ok = res.ok;
           await agentSources.marquerEpreuve(tenant, id, ok, auth ? 'authentification refusee' : `HTTP ${res.status}`);

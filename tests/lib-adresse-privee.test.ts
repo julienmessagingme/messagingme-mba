@@ -272,3 +272,39 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     expect(CHEMINS).toHaveLength(4);
   });
 });
+
+/**
+ * 🔴 LA SECONDE GARDE : LE `fetch` VÉRIFIÉ À LA CONNEXION (2026-09-21, DNS rebinding).
+ *
+ * La vérification préalable ci-dessus et la connexion faisaient deux résolutions distinctes ; un DNS hostile
+ * pouvait répondre public à la première et interne à la seconde. `fetchPublic` (`src/lib/connexion-publique.ts`)
+ * vérifie l'adresse à l'ouverture de la socket. Chaque chemin qui appelle une adresse saisie par un client doit
+ * l'utiliser, y compris le CLIENT MCP, venu après l'inventaire ci-dessus et qui n'y figurait pas.
+ *
+ * ⚠️ Même limite que l'inventaire précédent : ce test lit la SOURCE. Et pour les quatre fichiers qui ne font
+ * rien d'autre que ces appels, il interdit en plus un `fetch(` nu, qui contournerait la garde en silence.
+ * `src/index.ts` en est exempté : il appelle aussi Meta, Zadarma et d'autres hôtes fixes et de confiance.
+ */
+describe('inventaire : chaque appel vers une URL client passe par le fetch vérifié à la connexion', () => {
+  const lireSansCommentaires = (fichier: string): string =>
+    readFileSync(new URL(`../${fichier}`, import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/^\s*import .*$/gm, '');
+
+  const CHEMINS = [
+    ['src/agent/resolvers/http.ts', 'le connecteur, en pleine conversation', true],
+    ['src/http/agent-requetes.ts', 'le bouton Test d’une REQUÊTE', true],
+    ['src/lib/page-distante.ts', 'la lecture d’une page distante', true],
+    ['src/mcp/client.ts', 'le client MCP (agent IA et écran des connecteurs MCP)', true],
+    ['src/index.ts', 'le bouton éprouver une SOURCE', false],
+  ] as const;
+
+  for (const [fichier, quoi, sansFetchNu] of CHEMINS) {
+    it(`🔴 ${quoi} utilise fetchPublic`, () => {
+      const src = lireSansCommentaires(fichier);
+      expect(src, `${fichier} doit CÂBLER fetchPublic, pas seulement l'importer`).toMatch(/fetchPublic/);
+      if (sansFetchNu) expect(src, `${fichier} ne doit appeler aucun fetch nu`).not.toMatch(/(?<![\w.])fetch\(/);
+    });
+  }
+});

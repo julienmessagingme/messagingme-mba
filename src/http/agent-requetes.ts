@@ -7,6 +7,7 @@ import { assemblerAppel, cheminsDeLaReponse, estEnTeteReserve, variablesUtilisee
 import { CHAMPS_CONTACT_AUTORISES, CLES_SYSTEME } from '../agent/variables';
 import { scopeTenant, estUuid } from './scope';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
+import { fetchPublic } from '../lib/connexion-publique';
 import { lireCorpsBorne } from '../lib/corps-borne';
 
 /**
@@ -241,7 +242,8 @@ function verifier(r: ARegler, clesDeChamps: readonly string[]): string | null {
 export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/agent-requetes';
-  const appeler = deps.fetchImpl ?? fetch;
+  // Le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding) : `src/lib/connexion-publique.ts`.
+  const appeler = deps.fetchImpl ?? fetchPublic;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
   /** Ce que la console propose : les origines de variable, pour que l'écran ne recopie pas une liste serveur. */
