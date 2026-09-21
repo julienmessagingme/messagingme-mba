@@ -2215,8 +2215,9 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
   un outil, c'est écrire une adresse et un secret, et cela reste un geste d'administrateur. Un nom qui n'est
   pas dans votre bibliothèque est refusé.
   ⚠️ **Brancher n'active pas** : l'outil devient disponible, c'est vous qui l'activez ensuite dans l'onglet
-  Outils, après avoir relu ses mots. Et **débrancher ne supprime rien** : la définition reste dans votre
-  bibliothèque et sur vos autres agents, le diff le dit.
+  Outils, après avoir relu ses mots. Et **débrancher ne retire l'outil qu'à CET agent** : il reste sur vos autres
+  agents ; un outil de connecteur API que plus aucun agent n'utilise est retiré de l'espace (son appel reste dans
+  Connecteurs API, depuis le 2026-09-21). Le diff le dit.
 - ✅ **Ce qu'il n'a pas le droit d'écrire** : la mention légale d'IA, les plafonds, le budget, le modèle, et
   surtout **l'activation d'un outil**. Il peut proposer les mots d'un outil du catalogue ou d'un connecteur
   déjà déclaré, jamais créer un système, une adresse ou un secret.

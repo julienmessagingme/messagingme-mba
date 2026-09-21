@@ -31,12 +31,14 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
   ENCORE APPLIQUÉE (elle ajoute des colonnes que le code écrit : à passer AVANT le déploiement) ; gestes
   « Poser un tag » et « Enregistrer une information » exécutés par le relais ; publication ; onglet « Outils »
   refait d'après le croquis de Julien (e2e 16 cas, mutation vérifiée).
-- 🔴 **Avant le premier déploiement** : la décision de Julien sur les connecteurs orphelins (`todo.md`, section
-  « Outils maison de l'agent de Meta »), puis `/revue-finale`, puis 0162, puis l'essai réel du lot 2 (créer un
-  tag et une information depuis l'onglet, les voir passer « Chez Meta », les déclencher en conversation).
-- ⚠️ **La conversation de Julien est marquée « de test »** (`conversations.is_test`) : le fil n'y revient jamais
-  à l'agent de Meta en fin de scénario. Sans conséquence pour le lot 2 ; à régler (drapeau levé, ou autre
-  numéro) AVANT les essais des lots 3 et 4.
+- ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
+  connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
+  outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.
+- ✅ **Le drapeau « test » de la conversation de Julien est levé** (décision du 2026-09-21, une ligne, relue avant
+  et après) : sa conversation revient à l'agent de Meta en fin de scénario, et compte désormais dans les
+  statistiques et l'analyse.
+- 🔴 **Avant le premier déploiement** : `/revue-finale`, puis 0162, puis l'essai réel du lot 2 (créer un tag et
+  une information depuis l'onglet, les voir passer « Chez Meta », les déclencher en conversation).
 - ⏳ **Lots 3 et 4** : envoyer un bloc, lancer un scénario ; la réponse « à côté » et la réparation du fil bloqué.
 
 ## ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)

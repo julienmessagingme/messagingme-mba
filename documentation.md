@@ -439,6 +439,13 @@ connecteur, mais le relais exécute son geste lui-même. Les invariants :
   un outil qui n'a plus de consommateur, DÉTACHE un connecteur partagé). Le départ d'un collaborateur éteint ses
   consentements (`deleteUser`) : l'outil passe « Désactivé » et se rallume par `PUT …/:id/actif`.
 
+🔴 **UNE ACTION OU UN CONNECTEUR HTTP QUE PLUS PERSONNE N'UTILISE PART ; UN OUTIL MCP RESTE** (décision de
+Julien, 2026-09-21). Plus aucun écran ne supprime une définition à la main : l'effacement suit le DERNIER
+détachement, par trois chemins qui portent la même condition (plus aucun consommateur) : `detacher` (un agent IA
+retire l'outil), `PgAgentStore.remove` (un agent est supprimé) et `retirerDeMba` (l'agent de Meta le retire).
+Sans elle, un connecteur orphelin gardait son nom pris et bloquait la suppression de sa requête dans Connecteurs
+API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un import et doit rester branchable.
+
 🔴 **UN SERVEUR MCP EST UNE SOURCE COMME UNE AUTRE, et c'est ce qui rend le lot petit.** Il n'y a pas de
 table dédiée : un serveur est une ligne d'`agent_tool_sources` avec `kind = 'mcp'`, ses outils sont des
 lignes d'`agent_tools` avec `origin = 'mcp'`, et tout ce qui existe déjà (consentement par consommateur,

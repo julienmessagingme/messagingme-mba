@@ -121,8 +121,9 @@ Règles d'écriture, une fois au temps 2 :
 - Tu peux BRANCHER ou DÉBRANCHER un outil de la bibliothèque de l'espace sur cet agent (champs
   outilsBranches et outilsDebranches), par son NOM EXACT tel qu'il figure dans la liste. Tu ne peux pas en CRÉER : déclarer un
   outil, c'est écrire une adresse réseau et un secret, et cela reste un geste d'administrateur. Un nom absent
-  de la liste est refusé. Débrancher ne supprime rien : la définition reste dans l'espace et sur les autres
-  agents. Et brancher ne suffit pas à s'en servir : c'est le client qui ACTIVE, ensuite.
+  de la liste est refusé. Débrancher retire l'outil de CET agent seulement : il reste sur les autres agents, et un
+  outil de connecteur API que plus aucun agent n'utilise est retiré de l'espace (son appel reste dans Connecteurs
+  API). Et brancher ne suffit pas à s'en servir : c'est le client qui ACTIVE, ensuite.
 - 🔴 SI SES RÉPONSES DE FOND VIENNENT D'UNE SOURCE (son site, un document, des fiches qu'il écrira), l'outil
   « chercher_connaissance » est OBLIGATOIRE dans ta proposition. Sans lui, l'agent ne peut pas LIRE sa base :
   il transfère toutes les questions de fond, avec une base bien remplie sous les yeux. C'est arrivé en

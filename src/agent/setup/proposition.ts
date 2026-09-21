@@ -721,9 +721,10 @@ export function differences(courant: EtatCourant, proposition: Omit<Proposition,
       champ: `outil.${nom}.rattachement`,
       label: `${outil.titre} : débrancher de cet agent`,
       avant: 'branché',
-      // ⚠️ On le DIT : la définition reste dans l'espace et sur les autres agents. Sans cette phrase, le
-      // client croirait supprimer un outil qu'un autre agent utilise peut-être.
-      apres: 'non branché (la définition reste dans votre bibliothèque)',
+      // ⚠️ On le DIT : l'outil reste sur les autres agents. Sans cette phrase, le client croirait supprimer un
+      // outil qu'un autre agent utilise peut-être. Et un connecteur API que plus personne n'utilise part de
+      // l'espace (décision du 2026-09-21), ce que la phrase dit aussi.
+      apres: 'non branché (il reste sur les autres agents ; s’il ne sert plus à personne, il est retiré de l’espace)',
     });
   }
 

@@ -28,20 +28,6 @@ affiche « il ne peut pas partir » pour un message RCS incomplet, mais le bouto
 Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 `docs/superpowers/plans/2026-09-21-outils-maison-mba.md`.
 
-- 🔴 **DÉCISION ATTENDUE (Julien) : un outil de connecteur que plus personne n'utilise n'a plus d'écran pour
-  être supprimé.** Un agent IA qui retire un connecteur ne fait que le DÉTACHER (`PgToolCatalog.detacher`,
-  délibéré le 2026-09-18 : un connecteur appartient à l'espace), et supprimer un agent efface ses consentements
-  sans effacer ses connecteurs. L'ancien onglet Outils du MBA (la bibliothèque de l'espace, « Supprimer de
-  l'espace ») était le dernier écran d'où effacer ces orphelins ; il est parti avec le lot 2. Conséquences :
-  un orphelin garde son nom pris (un outil neuf du même nom rend 409) et BLOQUE la suppression de sa requête
-  dans Connecteurs API (« N outil(s) d'agent utilisent cette requête : retirez-les d'abord », sans écran pour
-  le faire). Mesuré le 2026-09-21 : ZÉRO orphelin en production (un seul outil en tout), donc piège armé et
-  pas panne vivante. Recommandation : un connecteur HTTP qui perd son dernier consommateur est supprimé (même
-  règle que `retirerDeMba`), MCP exclu (ses outils restent rattachables) ; à trancher, parce que ça change le
-  geste « retirer » des agents IA.
-- 🟡 **Code mort si la décision ci-dessus est prise** : `PgToolCatalog.supprimerDefinition` et
-  `detacherConsommateur` n'ont plus d'appelant en production depuis le retrait des routes de la bibliothèque
-  (seuls `tests/integration/agent-catalog.integration.test.ts` et l'interface `ToolAdminStore` les nomment).
 - 🟡 **L'outil `envoyer_bloc` des AGENTS IA accepte n'importe quel bloc quand sa liste est vide**, alors que
   l'écran annonce « aucun » (`src/workflow/executor.ts`, `envoyerBlocDepuisAgent` ; la liste vit dans
   `agent_tools.params`). Relevé en cadrant les outils de l'agent de Meta (spec § 12).

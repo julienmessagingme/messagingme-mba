@@ -145,10 +145,22 @@ export class PgAgentStore implements AgentStore {
     try {
       await client.query('begin');
       const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
-      await client.query(
-        'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
+      const detaches = await client.query<{ tool_id: string }>(
+        'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 returning tool_id',
         [tenantId, consommateurAgent(id)],
       );
+      // 🔴 UN CONNECTEUR HTTP QUE PLUS PERSONNE N'UTILISE PART AVEC SON DERNIER AGENT (décision du 2026-09-21),
+      // même règle que `PgToolCatalog.detacher` : sinon il gardait son nom pris et bloquait la suppression de
+      // sa requête, sans aucun écran pour s'en défaire. Un outil MCP reste, il doit rester branchable ; les
+      // actions de l'agent partent déjà par la cascade de `agent_id`.
+      if (detaches.rows.length > 0) {
+        await client.query(
+          `delete from agent_tools t
+            where t.tenant_id = $1 and t.id = any($2::uuid[]) and t.agent_id is null and t.origin = 'http'
+              and not exists (select 1 from agent_tool_consommateurs c where c.tool_id = t.id and c.tenant_id = t.tenant_id)`,
+          [tenantId, detaches.rows.map((r) => r.tool_id)],
+        );
+      }
       await client.query('commit');
       return (res.rowCount ?? 0) > 0;
     } catch (err) {

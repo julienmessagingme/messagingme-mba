@@ -309,10 +309,12 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
             data-testid={`outil-retirer-${outil.id}`}
             disabled={busy}
             onClick={onRetirer}
-            // ⚠️ « DE CET AGENT », et la précision compte depuis la migration 0127 : la définition reste
-            // dans l'espace et les autres agents qui s'en servent ne sont pas touchés. Sans ces trois mots,
-            // un opérateur croit détruire un outil partagé et n'ose plus cliquer.
-            title={t('Retirer cet outil de cet agent (il reste dans l’espace)', 'Remove this tool from this agent (it stays in the workspace)')}
+            // ⚠️ « DE CET AGENT », et la précision compte depuis la migration 0127 : les autres agents qui s'en
+            // servent ne sont pas touchés. Sans ces mots, un opérateur croit détruire un outil partagé et n'ose
+            // plus cliquer. Depuis le 2026-09-21, un connecteur que plus personne n'utilise part de l'espace, et
+            // l'infobulle le dit aussi.
+            title={t('Retirer cet outil de cet agent (les autres agents le gardent ; s’il ne sert plus à personne, il est retiré de l’espace)',
+              'Remove this tool from this agent (other agents keep it; if nobody uses it anymore, it is removed from the workspace)')}
             className="rounded px-2 py-1 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
           >
             ✕

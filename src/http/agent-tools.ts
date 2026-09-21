@@ -59,7 +59,8 @@ export interface AgentToolsRouteDeps {
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   /**
-   * Retire l'outil de CET agent. La définition reste dans l'espace (migration 0127).
+   * Retire l'outil de CET agent. La définition reste tant qu'un autre consommateur s'en sert ; une action ou
+   * un connecteur HTTP qui perd son dernier consommateur part avec lui, un outil MCP reste (2026-09-21).
    *
    * 🔴 ELLE S'APPELAIT `retirer` ET ELLE SUPPRIMAIT POUR TOUT LE MONDE. Le renommage n'est pas cosmétique :
    * après 0127 les deux gestes existent, et un nom qui ne dit pas lequel il fait finirait par faire le

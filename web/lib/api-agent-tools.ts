@@ -161,12 +161,13 @@ export async function autonomieOutil(tenantId: string, agentId: string, outilId:
 }
 
 /**
- * Retire l'outil de CET agent. La DÉFINITION reste dans l'espace (migration 0127).
+ * Retire l'outil de CET agent. La DÉFINITION reste tant qu'un autre consommateur s'en sert (migration 0127).
  *
  * 🔴 CETTE ROUTE SUPPRIMAIT POUR TOUT LE MONDE JUSQU'AU 2026-09-10. Depuis que la définition appartient à
  * l'espace, la supprimer depuis l'écran d'un seul agent rendrait muets les autres agents qui s'en servent :
- * elle DÉTACHE. La suppression définitive vit dans l'écran « Outils de l'espace », qui refuse tant qu'un
- * agent y est rattaché.
+ * elle DÉTACHE. Depuis le 2026-09-21, une action ou un connecteur HTTP que plus PERSONNE n'utilise part avec
+ * ce détachement (l'écran « Outils de l'espace », qui les supprimait à la main, n'existe plus) ; un outil MCP
+ * reste, pour rester branchable.
  */
 export async function retirerOutil(tenantId: string, agentId: string, outilId: string): Promise<void> {
   await request<void>(`${base(tenantId, agentId)}/${outilId}`, { method: 'DELETE' });

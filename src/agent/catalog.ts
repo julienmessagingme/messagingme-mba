@@ -346,23 +346,15 @@ export interface ToolAdminStore {
   /** Même geste, pour un consommateur qui n'est pas un agent (le MBA). */
   rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean>;
 
-  /** Retire l'outil de CET agent. La définition reste dans l'espace. */
+  /**
+   * Retire l'outil de CET agent. La définition reste tant qu'un autre consommateur s'en sert ; une action ou un
+   * connecteur HTTP qui perd son DERNIER consommateur part avec lui, un outil MCP reste (2026-09-21).
+   */
   detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
-
-  /** Même geste, pour un consommateur qui n'est pas un agent (le MBA). */
-  detacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean>;
 
   /** Active ou désactive pour un consommateur qui n'est pas un agent. */
   activerConsommateur(tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
 
-  /**
-   * Supprime la DÉFINITION, donc pour tout le monde.
-   *
-   * 🔴 REFUSE tant qu'un consommateur y est rattaché (`'rattachee'`), même inactif. La contrainte de la
-   * migration 0127 est en `on delete cascade` : sans ce refus applicatif, supprimer une définition
-   * emporterait EN SILENCE le consentement d'agents qu'on ne regardait pas.
-   */
-  supprimerDefinition(tenantId: string, outilId: string): Promise<'ok' | 'rattachee' | 'introuvable'>;
 
   /** TOUTES les définitions de l'espace, avec qui s'en sert. C'est l'écran Bibliothèque. */
   listCatalogue(tenantId: string): Promise<OutilBibliotheque[]>;

@@ -386,8 +386,9 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    *
    * 🔴 L'OUTIL N'EST RETIRÉ QU'À L'AGENT DE META. Un connecteur partagé avec un agent IA reste à cet agent
    * (`detache`) ; un outil qui n'a plus aucun consommateur part (`supprime`), sinon sa définition resterait
-   * sans écran pour la voir, et son nom resterait pris. `agent_id is null` épargne une action d'agent IA qui
-   * aurait été rattachée au MBA par l'ancienne route.
+   * sans écran pour la voir, et son nom resterait pris : même règle que `detacher`. `agent_id is null` épargne
+   * une action d'agent IA rattachée au MBA par l'ancienne route, et `origin <> 'mcp'` un outil MCP importé,
+   * qui doit rester branchable.
    */
   async retirerDeMba(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'> {
     const consommateur = consommateurMba(phoneNumberId);
@@ -399,7 +400,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       if ((det.rowCount ?? 0) === 0) return 'introuvable';
       const sup = await client.query(
         `delete from agent_tools t
-          where t.tenant_id = $1 and t.id = $2 and t.agent_id is null
+          where t.tenant_id = $1 and t.id = $2 and t.agent_id is null and t.origin <> 'mcp'
             and not exists (select 1 from agent_tool_consommateurs c where c.tool_id = t.id and c.tenant_id = t.tenant_id)`,
         [tenantId, outilId],
       );
@@ -555,7 +556,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   }
 
   /**
-   * 🔴 DÉTACHER UNE ACTION LA SUPPRIME, DÉTACHER UN CONNECTEUR NON (revue finale du 2026-09-18).
+   * 🔴 DÉTACHER LE DERNIER UTILISATEUR D'UNE ACTION OU D'UN CONNECTEUR HTTP LE SUPPRIME ; UN OUTIL MCP RESTE
+   * (revue finale du 2026-09-18 pour l'action, décision de Julien du 2026-09-21 pour le connecteur).
    *
    * Le défaut était une conséquence non vue de 0157, et c'était le cul-de-sac même que ce lot corrigeait,
    * reproduit un cran plus bas. `listCatalogue` exclut désormais les actions d'agent de la bibliothèque de
@@ -564,11 +566,16 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    * montrait, plus aucun geste ne pouvait l'effacer, et son nom restait pris pour cet agent. Recréer le même
    * outil rendait 409, sans issue.
    *
-   * ⚠️ LES DEUX CONDITIONS PORTENT CHACUNE SON POIDS, et il ne faut en retirer aucune. `agent_id = $3`
-   * épargne les CONNECTEURS, qui appartiennent à l'espace et se partagent : les supprimer au premier
-   * détachement les ferait disparaître pour tous les autres agents. Et l'absence de consommateur restant
-   * épargne une définition qu'un second consommateur utiliserait encore, dont la cascade emporterait le
-   * consentement.
+   * 🔴 LE MÊME CUL-DE-SAC EST REVENU POUR LES CONNECTEURS, ET C'EST CE QUE LE 2026-09-21 FERME. Un connecteur
+   * appartient à l'espace et se partage, donc son détachement ne l'effaçait pas ; son dernier écran de
+   * suppression était l'ancien onglet Outils du MBA, parti avec le chantier des outils maison. Un connecteur
+   * orphelin gardait alors son nom pris et BLOQUAIT la suppression de sa requête dans Connecteurs API, sans
+   * écran pour s'en défaire. Décision de Julien : un connecteur HTTP que plus personne n'utilise part.
+   *
+   * ⚠️ LA CONDITION QUI COMPTE EST L'ABSENCE DE CONSOMMATEUR RESTANT : elle épargne une définition qu'un autre
+   * agent (ou l'agent de Meta) utilise encore, dont la cascade emporterait le consentement. `origin = 'http'`
+   * épargne les outils MCP : ils viennent d'un import de serveur et doivent rester branchables depuis la
+   * bibliothèque. Et `agent_id = $3` borne l'effacement d'une action à SON agent.
    *
    * 🔴 UNE TRANSACTION, parce que ce sont DEUX écritures. Entre les deux, la définition est exactement dans
    * l'état orphelin qu'on veut ne jamais laisser derrière soi.
@@ -582,39 +589,13 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
       if ((res.rowCount ?? 0) === 0) return false;
       await client.query(
         `delete from agent_tools t
-          where t.tenant_id = $1 and t.id = $2 and t.agent_id = $3
+          where t.tenant_id = $1 and t.id = $2
+            and (t.agent_id = $3 or (t.agent_id is null and t.origin = 'http'))
             and not exists (select 1 from agent_tool_consommateurs c
                              where c.tool_id = t.id and c.tenant_id = t.tenant_id)`,
         [tenantId, outilId, agentId],
       );
       return true;
-    });
-  }
-
-  async detacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
-    const res = await this.pool.query(
-      'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
-      [tenantId, consommateur, outilId],
-    );
-    return (res.rowCount ?? 0) > 0;
-  }
-
-  async supprimerDefinition(tenantId: string, outilId: string): Promise<'ok' | 'rattachee' | 'introuvable'> {
-    return this.enTransaction(async (client) => {
-      // `for update` sur la définition : sans lui, un rattachement concurrent passerait entre le comptage et
-      // la suppression, et la cascade emporterait le consentement qui vient d'être posé.
-      const exist = await client.query(
-        'select 1 from agent_tools where tenant_id = $1 and id = $2 for update',
-        [tenantId, outilId],
-      );
-      if ((exist.rowCount ?? 0) === 0) return 'introuvable';
-      const rattachee = await client.query(
-        'select 1 from agent_tool_consommateurs where tenant_id = $1 and tool_id = $2 limit 1',
-        [tenantId, outilId],
-      );
-      if ((rattachee.rowCount ?? 0) > 0) return 'rattachee';
-      await client.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, outilId]);
-      return 'ok';
     });
   }
 
@@ -625,14 +606,16 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    * retours, ce que l'audit du 2026-08-25 a déjà eu à corriger ailleurs. Les consommateurs sont agrégés en
    * jsonb dans la même passe.
    *
-   * ⚠️ `left join` SUR LES CONSOMMATEURS : une définition que plus personne n'utilise doit APPARAÎTRE, c'est
-   * même la seule qu'on puisse supprimer. Une jointure interne la cacherait précisément quand elle compte.
+   * ⚠️ `left join` SUR LES CONSOMMATEURS : un outil MCP importé que personne n'a encore branché doit APPARAÎTRE,
+   * c'est précisément celui qu'un agent vient chercher ici. (Un connecteur HTTP sans consommateur n'existe
+   * plus : `detacher` et la suppression d'un agent l'effacent, décision du 2026-09-21.)
    *
    * 🔴 ET C'EST EXACTEMENT POURQUOI `detacher` EFFACE UNE ACTION (revue finale du 2026-09-18). Le filtre
    * `agent_id is null` ci-dessous sort les actions de cet écran, donc du SEUL endroit d'où l'on supprime une
    * définition : détacher une action y laissait un orphelin que rien ne montrait, que rien ne pouvait
-   * effacer, et dont le nom restait pris pour cet agent. L'invariant de ce commentaire (« ce qui ne sert
-   * plus se voit et se supprime ») est tenu des deux côtés, ici pour l'espace, dans `detacher` pour l'agent.
+   * effacer, et dont le nom restait pris pour cet agent. Depuis le 2026-09-21, plus aucun écran ne supprime
+   * une définition à la main : ce qui ne sert plus à personne part avec son dernier détachement (`detacher`,
+   * `PgAgentStore.remove`, `retirerDeMba`), sauf un outil MCP, qui reste branchable.
    */
   async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
     const res = await this.pool.query<{
