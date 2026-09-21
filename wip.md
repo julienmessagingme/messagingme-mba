@@ -7,19 +7,19 @@
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
 > il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## L'ÉTAT EXACT, AU 2026-09-19
+## L'ÉTAT EXACT, AU 2026-09-21
 
 | | |
 |---|---|
 | `origin/main` | la revue finale du 2026-09-16, voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-19 après-midi** avec le chantier Inbox. Le SHA n'est pas recopié ici (`git log` fait foi). Séquence tenue : attestation de revue finale, build de l'image, 0160 vérifiée DANS l'image, `migrate`, relecture en base point par point, `up -d --build` des images, conteneurs sains PUIS rechargement de NPM, contrôle public vert sur les six chemins. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-21** avec le relais du Meta Business Agent (et le correctif RCS `96eebb5a` d'une autre session). Le SHA n'est pas recopié ici (`git log` fait foi). Séquence tenue : attestation, build, 0161 vérifiée DANS l'image, `migrate`, relecture en base point par point, `up -d --build`, conteneurs sains PUIS rechargement de NPM, fumée à 6 sur 6, relais à 401 sans clé. ⚠️ Plus tôt le même jour, `e5b660b` était parti SANS revue finale (`HOTFIX_SANS_REVUE`, décision de Julien) : couvert depuis par la revue du relais. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
-| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le chantier Inbox : TROIS passes à froid (3, 1 et 1 rouges), chacune sur les correctifs de la précédente. Le dernier commit n'a PAS été relu à froid, par décision explicite de Julien (« tu corriges les points mais tu ne lances pas de 4e et tu publies ») ; le rapport `.git/revue-finale-rapport.md` le dit. |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le relais du MBA : TROIS passes à froid (4, 2 et 1 rouges), chacune sur les correctifs de la précédente. Les correctifs de la troisième n'ont PAS été relus, par décision de Julien (même arbitrage que l'Inbox). ⚠️ Le correctif RCS `96eebb5a` d'une autre session est dans le périmètre attesté sans avoir été relu (dépôt partagé) : déployé par `HOTFIX_SANS_REVUE` pour que la prochaine revue finale le relise. Le rapport `.git/revue-finale-rapport.md` dit les deux. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 META BUSINESS AGENT : LE RELAIS (2026-09-21, CODÉ, PAS ENCORE DÉPLOYÉ)
+## 🔴 META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL DÛ)
 
 **Le diagnostic.** `add_tag` (« Le client demande à rajouter une étiquette ») ne s'est pas déclenché, et
 l'agent de Meta a transféré à l'équipe. La publication n'envoyait chez Meta que `{method, path}`, et Meta
@@ -31,9 +31,8 @@ a d'abord empêché les outils creux de partir ; le relais le remplace.
 retrouve le contact par la macro `WHATSAPP_PHONE_NUMBER`, remplit les variables du mini-CRM et fait l'appel
 par `creerAppelConnecteur`. Lots 1 à 3 commités ; la CI fait foi.
 
-🔴 **LE DÉPLOIEMENT (task 10 du plan)** : migration **0161 AVANT** le déploiement (CHECK du journal élargi à
-`mba`, colonne `tenant_settings.mba_relais_cle_id`), relecture en base, `up -d --build`, NPM rechargé, contrôle
-public (`POST /mba/relais/outils/x` sans clé : 401). Puis `CLAUDE.md` : dernière appliquée 0161.
+✅ **DÉPLOYÉ le 2026-09-21** : 0161 appliquée AVANT et relue en base, conteneurs relancés, fumée à 6 sur 6,
+`POST /mba/relais/outils/x` sans clé rend 401. Le compteur est à jour dans `CLAUDE.md`.
 
 🔴 **L'ESSAI RÉEL, PAR JULIEN** (rien n'est clos avant) :
 1. Sur l'appel `testadd`, passer la variable `user` de « décidée par l'agent » à « champ `user_ns` » (elle est

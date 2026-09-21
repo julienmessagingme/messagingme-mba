@@ -1794,7 +1794,7 @@ importez ce qu'il propose.
 
 ### Publier chez Meta
 
-- 🔴 **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, 2026-09-21, codé et testé, pas encore déployé ;
+- 🔴 **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, déployé le 2026-09-21, essai réel à faire ;
   migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
   l'agent de Meta, c'est Engage Me qu'il appelle : Engage Me reconnaît le client par son numéro WhatsApp
   (que WhatsApp lui-même transmet, l'agent ne peut pas l'inventer), remplit les valeurs du **carnet de

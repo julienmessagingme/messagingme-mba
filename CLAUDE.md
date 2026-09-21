@@ -79,8 +79,15 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0160**, le 2026-09-19 après-midi (`inbox_traite_medias_prise`, chantier Inbox).
-**Prochaine libre = 0161.** Elle AJOUTE trois colonnes que le code écrit ou nomme, donc AVANT le déploiement :
+**Dernière appliquée : 0161**, le 2026-09-21 (`relais_mba`, le relais du Meta Business Agent).
+**Prochaine libre = 0162.** 0161 RELÂCHE le CHECK `agent_tool_calls_source_check` (l'appelant `mba` s'ajoute ;
+l'ancien code y survit) et AJOUTE `tenant_settings.mba_relais_cle_id` (la clé posée chez Meta, écrite par la
+publication), donc AVANT le déploiement. 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** : 0161 en tête de
+`schema_migrations`, le CHECK avec `mba`, la colonne `uuid` nullable SANS défaut, sa clé étrangère vers
+`api_keys` en `on delete set null` (`confdeltype = 'n'`), et zéro espace portant une clé retenue.
+
+Avant elle, **0160**, le 2026-09-19 après-midi (`inbox_traite_medias_prise`, chantier Inbox). Elle AJOUTE
+trois colonnes que le code écrit ou nomme, donc AVANT le déploiement :
 `conversations.traitee_le` (le statut « Traité »), `conversation_messages.media_nom` (le nom de fichier d'un
 document reçu, NOMMÉ dans le `select` du fil, donc bloquante pour l'Inbox) et
 `tenant_settings.agents_peuvent_prendre` (`false` par défaut). 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** :
