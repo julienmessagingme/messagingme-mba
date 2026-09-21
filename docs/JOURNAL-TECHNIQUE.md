@@ -5,6 +5,41 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-21 au soir : les outils maison de l'agent de Meta, lot 2 (déployé, éprouvé en conversation réelle)
+
+**Livré, déployé et éprouvé le 2026-09-21 au soir** (migration 0162). Fonctionnel dans
+[features.md](../features.md), invariants dans [documentation.md](../documentation.md), spec et plan dans
+`docs/superpowers/`. Ce qui suit est le récit.
+
+**Ce que c'est** : l'agent de Meta pose une étiquette fixée d'avance et remplit un champ de la fiche du
+mini-CRM, gestes que le relais exécute lui-même au lieu d'appeler un système tiers ; et l'onglet « Outils » est
+refait d'après le croquis de Julien (une liste, un gros bouton « Ajouter », l'état chez Meta ligne par ligne).
+Un outil de connecteur que plus personne n'utilise part désormais de l'espace (décision de Julien), un outil
+MCP reste.
+
+**Trois relectures à froid** : 4 rouges et 16 jaunes, puis celle de la session sécurité, puis 1 rouge et
+11 jaunes. Les rouges : un test d'intégration que la règle des orphelins rendait faux (vu par la CI), l'IP
+d'origine du VPS recopiée dans le plan d'un dépôt public, une note d'écran qui renvoyait vers un outil du
+lot 3, et `.env.example` resté sur l'ancienne valeur d'un plafond (sans effet : `.env.prod` ne la porte pas).
+Un jaune a mené à un vrai défaut de concurrence : les trois chemins qui effacent une définition au dernier
+détachement avaient perdu le verrou de l'ancien `supprimerDefinition`. Le test de course a été poussé SEUL
+d'abord, rouge en CI, puis le verrou.
+
+**L'incident : l'onglet cassé en production pendant plus d'une heure.** Vercel publie la console à chaque
+push ; l'API attendait sa revue finale. Le nouvel écran appelait donc une route absente (404), et disait
+« Aucun outil » à un espace qui en avait. Réparé par le déploiement ; la règle est dans `CLAUDE.md`
+§ Déploiement. En le cherchant, un second trou est apparu : la garde de déploiement ne couvrait PAS ce dépôt,
+faute de `.claude/deploy.json`. Elle bloque maintenant un `compose up` sans attestation.
+
+**Le déploiement** : build, 0162 vue dans l'image, `migrate`, relecture en base point par point, `up -d
+--build`, puis le 502 public habituel, réglé par un rechargement de NPM. Pendant ce chantier, la décision de
+Julien sur l'API publique : une seule opération lourde à la fois, globale au process (voir `src/config.ts` et
+le `/sync` de la session sécurité).
+
+**L'essai réel** : deux outils créés depuis l'onglet, déclenchés sur WhatsApp, trois appels `ok` au journal,
+la fiche modifiée 26 ms après l'appel. Aucun échec, contrairement au relais le matin même : la consigne
+pré-remplie, directive, a fait appeler l'outil du premier coup.
+
 ## 2026-09-21 : l'auto-attaque dérive ses modules du registre, et attaque chaque route selon sa classe
 
 **Le constat.** `scripts/auto-attaque.mts` (qui tourne dans le job `unit` de la CI) montait ses modules depuis une liste

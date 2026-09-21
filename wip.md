@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 11 jaunes**, sur les outils maison (lot 2) et le lot 1 de sécurité : trois relectures à froid (4 rouges puis 1, plus celle de la session sécurité). Le seul rouge de la dernière était l'onglet cassé en production, que le déploiement a réparé. Les 11 jaunes partent en petit lot juste après, avec leur relecture. Rapport : `.git/revue-finale-rapport.md`. |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 DÉPLOYÉ, ESSAI RÉEL DÛ)
+## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 DÉPLOYÉ ET ÉPROUVÉ, LOTS 3 ET 4 À FAIRE)
 
 Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 `docs/superpowers/plans/2026-09-21-outils-maison-mba.md` (4 lots, 20 tâches, deux déploiements).
@@ -41,11 +41,19 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 - ✅ **L'onglet « Outils » a été EN PANNE en production** du push de `b30c3a05` au déploiement (Vercel sert
   la console à chaque push, l'API n'avait pas la route). Réparé par le déploiement ; la règle est dans
   `CLAUDE.md` § Déploiement.
-- 🔴 **À faire maintenant, dans cet ordre** : l'essai réel du lot 2 avec Julien (créer un tag et une
-  information depuis l'onglet, les voir passer « Chez Meta », les déclencher en conversation ; refaire aussi
-  « rajoute une étiquette » sur le connecteur `add_tag`, qui éprouve `fetchPublic` en conditions réelles), puis
-  le petit lot des 11 jaunes de la troisième relecture (verrou de `remove` à remettre dans le bon ordre, textes,
-  tests du verrou), avec sa propre relecture courte.
+- ✅ **ESSAI RÉEL DU LOT 2, FAIT PAR JULIEN LE 2026-09-21 AU SOIR, ET RELU EN BASE.** Deux outils créés depuis
+  l'onglet (`messagingme_is_genial`, étiquette `genial` ; `job_description`, champ `metier`), passés « Chez
+  Meta », puis déclenchés sur WhatsApp : trois lignes de journal, appelant `mba`, toutes `ok` (deux poses à
+  21:20 et 21:22 UTC, l'information à 21:26:46.880), et la fiche porte `genial` et `metier: électricien`,
+  modifiée 26 ms après l'appel. La conversation est rendue à l'agent de Meta.
+- ⏳ **Pas encore rejoué** : « rajoute une étiquette » sur le connecteur `add_tag`, qui éprouverait
+  `fetchPublic` (lot 1 de sécurité) en conditions réelles. Non bloquant.
+- 🔴 **À faire maintenant** : le petit lot des 11 jaunes de la troisième relecture
+  (`.git/revue-finale-rapport.md` : verrou de `remove` à remettre dans le bon ordre, textes, tests du verrou),
+  plus ceux de la relecture de la session sécurité qui sont dans ce périmètre (retraits en attente sans ligne,
+  « Supprimer » pendant un envoi, mention « irréversible », erreur distincte du vide, bornes du formulaire,
+  lectures de Meta en double, parité `EngageMe`, `VARIABLE_VALEUR`, JSDoc). Relecture courte, puis déploiement
+  APRÈS celui du lot 1 bis de la session sécurité.
 - ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
   connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
   outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.
