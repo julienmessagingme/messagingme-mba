@@ -22,11 +22,13 @@ import { registerAgentKnowledge } from './http/agent-knowledge';
 import { registerAgentTools } from './http/agent-tools';
 import { registerAgentCatalogue } from './http/agent-catalogue';
 import { registerMbaPublication } from './http/mba-publication';
+import { registerMbaOutils } from './http/mba-outils';
 import { registerMbaAssistant } from './http/mba-assistant';
 import { registerHistorique } from './http/historique';
 import type { HistoriqueRouteDeps } from './http/historique';
 import type { MbaAssistantDeps } from './http/mba-assistant';
 import type { MbaPublicationDeps } from './http/mba-publication';
+import type { MbaOutilsDeps } from './http/mba-outils';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
 import { registerAgentMcp, type AgentMcpRouteDeps } from './http/agent-mcp';
@@ -179,6 +181,8 @@ export interface ServerDeps {
   agentCatalogue?: AgentCatalogueRouteDeps;
   /** Publication du catalogue d'outils chez Meta : l'aperçu, puis l'exécution. */
   mbaPublication?: MbaPublicationDeps;
+  /** L'onglet « Outils » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 9). */
+  mbaOutils?: MbaOutilsDeps;
   /** L'assistant conversationnel du Meta Business Agent. Absent -> la route n'existe pas. */
   mbaAssistant?: MbaAssistantDeps;
   /** L'historique des réglages, partagé par le MBA et les agents IA. */
@@ -446,6 +450,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('agentTools', 'tenant', deps.agentTools, (app, d, g) => registerAgentTools(app, d, g.admin)),
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
     entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),
+    entree('mbaOutils', 'tenant', deps.mbaOutils, (app, d, g) => registerMbaOutils(app, d, g.admin)),
     // ⚠️ `g.admin` COMME LES ÉCRITURES MBA : la conversation ne doit pas être un chemin plus permissif que
     // le formulaire, sinon elle devient un contournement du contrôle d'accès. La route repose la garde
     // elle-même (`forbidNonAdmin`), les deux étant voulues : celle-ci monte, celle-là explique.

@@ -1780,30 +1780,46 @@ async function main(): Promise<void> {
     // La BIBLIOTHEQUE d outils de l ESPACE (migration 0127) : les definitions, et qui s en sert. Separee des
     // routes d agent parce qu elle ne parle pas du meme objet, et isolee par `scopeTenant` et non par un
     // agent dans l URL : une definition appartient a l espace.
+    // La bibliothèque ne porte plus que la lecture : les routes de l'agent de Meta sont dans `mbaOutils`.
     agentCatalogue: {
       listCatalogue: (tenant) => toolCatalog.listCatalogue(tenant),
-      supprimerDefinition: (tenant, id) => toolCatalog.supprimerDefinition(tenant, id),
-      // Le numero est resolu ICI, cote serveur : le faire porter au navigateur est ce qui a casse le toggle
-      // MBA trois fois le 2026-09-10.
+    },
+    /**
+     * L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9).
+     *
+     * ⚠️ Le numéro est résolu ICI, côté serveur : le faire porter au navigateur est ce qui a cassé le toggle MBA
+     * trois fois le 2026-09-10. Et la REQUÊTE d'un connecteur est LUE, pas crue sur parole : le risque et la
+     * source en dérivent.
+     */
+    mbaOutils: {
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
-      rattacherConsommateur: (tenant, cle, id) => toolCatalog.rattacherConsommateur(tenant, cle, id),
-      detacherConsommateur: (tenant, cle, id) => toolCatalog.detacherConsommateur(tenant, cle, id),
-      activerConsommateur: (tenant, cle, id, actif, par) => toolCatalog.activerConsommateur(tenant, cle, id, actif, par),
-      /**
-       * Creer un outil DIRECTEMENT pour l agent de Meta, sans agent IA (2026-09-15).
-       *
-       * ⚠️ AUCUNE MIGRATION derriere : `agent_tools.agent_id` n existe plus depuis 0128, un outil appartient
-       * a l ESPACE, et seule la ligne de consommateur le rattache a quelqu un. Mesure en base avant de
-       * l ecrire, le plan prevoyait une colonne a rendre nullable qui n etait plus la.
-       */
-      creerPourMba: (tenant, pn, outil) => toolCatalog.ajouterConnecteurPourMba(tenant, pn, outil),
-      // ⚠️ `consommateurMba(pn)` ET PAS UN AGENT : c'est la clé de consentement du Meta Business Agent, et
-      // c'est elle qui borne la correction à un outil que CE consommateur utilise vraiment.
-      patchPourMba: (tenant, pn, outilId, patch) =>
-        toolCatalog.patchConsommateur(tenant, consommateurMba(pn), outilId, patch),
-      // La REQUETE est LUE, pas crue sur parole : le risque plancher et la source en derivent, comme sur la
-      // route jumelle des outils d un agent.
-      requetePourOutil: (tenant, id) => agentRequetes.parId(tenant, id),
+      lister: (tenant, pn) => toolCatalog.listToutesConsommateur(tenant, consommateurMba(pn)),
+      contexte: async (tenant) => {
+        const [requetes, champs, bibliotheque] = await Promise.all([
+          agentRequetes.lister(tenant), fieldStore.list(tenant), toolCatalog.listCatalogue(tenant),
+        ]);
+        return {
+          requetes: new Map(requetes.map((r) => [r.id, { label: r.label }])),
+          champs: new Set(champs.map((f) => f.key)),
+          bibliotheque: new Map(bibliotheque.map((o) => [o.id, o])),
+        };
+      },
+      requete: (tenant, id) => agentRequetes.parId(tenant, id),
+      champs: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
+      creerMaison: (tenant, pn, outil, par) => toolCatalog.ajouterMaisonPourMba(tenant, pn, outil, par),
+      // Deux gestes, comme l'ancienne route : créer, puis activer pour l'agent de Meta au nom de l'administrateur.
+      creerConnecteur: async (tenant, pn, outil, par) => {
+        const cree = await toolCatalog.ajouterConnecteurPourMba(tenant, pn, outil);
+        if (!cree) return null;
+        await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), cree.id, true, par);
+        return { id: cree.id };
+      },
+      modifierMaison: (tenant, pn, id, patch) => toolCatalog.patchMaisonPourMba(tenant, pn, id, patch),
+      // ⚠️ `consommateurMba(pn)` ET PAS UN AGENT : c'est elle qui borne la correction à un outil de CE consommateur.
+      modifierConnecteur: (tenant, pn, id, patch) => toolCatalog.patchConsommateur(tenant, consommateurMba(pn), id, patch),
+      retirer: (tenant, pn, id) => toolCatalog.retirerDeMba(tenant, pn, id),
+      reactiver: async (tenant, pn, id, par) =>
+        (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null,
     },
     /**
      * Publication du catalogue chez Meta (lot 4), traduite en RELAIS le 2026-09-21 (migration 0161).

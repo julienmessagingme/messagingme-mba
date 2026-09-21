@@ -95,6 +95,9 @@ const MODULES = [
   'embeddedSignup', 'mba', 'email', 'webhooksAdmin', 'hubspotImport', 'hubspotPipelines', 'hubspotInstall',
   'rcsMessages', 'rcsChannel', 'rcsMedia', 'agentKnowledge', 'agentTools', 'agentSetup', 'agentTest',
   'workflowReports', 'channelsMe', 'agentSources', 'agentRequetes', 'ops', 'links', 'webhookEntrant',
+  // Les trois modules de l'agent de Meta (bibliothèque, publication, onglet Outils), ajoutés le 2026-09-21 :
+  // cette liste est écrite à la main et d'autres modules du registre y manquent encore (cf. todo.md).
+  'agentCatalogue', 'mbaPublication', 'mbaOutils',
 ] as const;
 
 /**
