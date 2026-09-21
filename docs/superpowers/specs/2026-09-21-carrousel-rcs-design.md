@@ -32,7 +32,8 @@ Conséquence : **pas de migration, pas de déploiement VPS**. Tout part par Verc
 
 **Dedans**
 
-1. Le composeur de carrousel dans Contenu > Messages RCS : créer, modifier, aperçu.
+1. L'écran Contenu > Messages RCS refait sur le dessin de Contenu > Templates, avec le composeur de
+   carrousel : créer, modifier, aperçu.
 2. Le choix d'un carrousel enregistré dans l'assistant de campagne, sur n'importe quel étage RCS.
 3. Deux retouches voisines, parce que la bibliothèque va maintenant CONTENIR des carrousels :
    - le panneau RCS de l'Inbox dessine l'aperçu d'un carrousel, au lieu d'annoncer qu'il ne sait pas ;
@@ -54,34 +55,81 @@ Conséquence : **pas de migration, pas de déploiement VPS**. Tout part par Verc
   hauteur `TALL` chez Google.
 - **La carte à titre** (une carte simple avec titre, créable par l'API seulement) reste non éditable.
 
-## Lot 1 : le composeur, dans Contenu > Messages RCS
+## Lot 1 : l'écran Contenu > Messages RCS, calqué sur Contenu > Templates
 
-### Ce que voit l'utilisateur
+🔴 **DEMANDÉ PAR JULIEN LE 2026-09-21 : « il faut que ça ait vraiment la même gueule que les écrans WhatsApp
+template ».** Les deux bibliothèques de contenu doivent se prendre en main de la même façon. Le relevé
+ci-dessous a été fait sur les deux écrans RENDUS côte à côte le même jour, pas seulement dans le code.
 
-- Tout en haut de l'éditeur, AVANT le nom, un choix **« Message simple | Carrousel »**, sur « Message
-  simple » par défaut. C'est le motif de Contenu > Templates côté WhatsApp (« Template simple | Carousel »
-  au-dessus du formulaire, `web/app/templates/page.tsx`) : les deux bibliothèques se prennent en main de la
-  même façon. « Message simple » est l'écran actuel, inchangé. Les DEUX brouillons vivent côte à côte pendant
-  l'édition : basculer ne perd rien, et seul le format affiché au moment d'enregistrer est écrit. Un message
-  existant s'ouvre sur son format.
+### La liste
+
+- Plus de titre de page ni de colonne centrée : un titre de section **« Messages RCS (N) »**, avec
+  « Rafraîchir » et **« + Créer un message »** à droite, comme « Templates (N) ».
+- Un **tableau** au même dessin (en-têtes en capitales grises) : **Nom** (cliquable, il ouvre l'aperçu dans
+  une fenêtre, comme un template), **Format** (« message », « carte », « carrousel · 3 cartes »), **Texte**
+  (le début du texte, ou celui de la première carte), **Actions** (« Éditer », « Supprimer »). « Éditer » est
+  grisé AVEC SA RAISON sur une carte à titre, comme sur un carousel WhatsApp.
+- Liste vide : le même encadré pointillé, avec sa phrase.
+
+### Créer, modifier
+
+- **Créer** ouvre au-dessus de la liste le même encadré bleu clair : « Nouveau message RCS » et « Fermer »,
+  puis le sélecteur **« Message simple | Carrousel »** (sur « Message simple » par défaut), puis le
+  formulaire dans une carte blanche. La phrase qui dit la différence avec WhatsApp prend la place de la
+  mention Meta : « Aucune validation : un message RCS part tel qu'il est écrit, sous votre agent de marque ».
+- Basculer de format ne perd rien : les deux formulaires restent montés, seul l'affiché compte. C'est une
+  petite amélioration sur l'écran des templates, qui démonte le formulaire quitté.
+- **Modifier** ouvre le même encadré, titré « Modifier « nom » », SANS sélecteur de format : un message
+  s'ouvre dans le formulaire de son format, comme un template. Changer de format, c'est créer un autre
+  message.
 - ⚠️ Deux boutons distincts dans la liste (« + Message simple », « + Carrousel ») ont été écartés : le format
   y serait choisi avant d'avoir commencé et sans retour possible, et l'écran divergerait de celui des
   templates.
-- En mode carrousel, des **onglets « Carte 1, Carte 2, … »** et un onglet **« + Carte »** (2 cartes au
-  départ, 10 au plus). Pour la carte ouverte :
-  - le visuel, par le champ de téléversement partagé (`ChampImageHebergee`) ;
-  - un titre facultatif (200 caractères) ;
-  - le texte, par le composeur à variables partagé (`ChampCorpsVariables`), 2 000 caractères ;
-  - jusqu'à 4 boutons, par l'éditeur partagé (`RcsButtonsEditor`), les six types ;
-  - « Déplacer à gauche », « Déplacer à droite », « Retirer la carte » (impossible sous 2 cartes).
-- **L'aperçu** à droite fait défiler les cartes à l'horizontale : visuel en 16:9, titre, texte, boutons en
-  liste pleine largeur. C'est le rendu d'une carte simple, répété.
-- **Ce qui manque** s'affiche sous le bouton Enregistrer (`ListeManques`) : « Carte 2 : un visuel ou un
-  titre », « Carte 3 : un bouton est incomplet », « Carte 1 : texte trop long ». 🔴 Ici plus qu'ailleurs,
-  parce qu'un défaut peut se cacher derrière un onglet fermé : un bouton grisé sans explication ferait
-  ouvrir les dix cartes une à une.
-- **Dans la liste**, un carrousel s'affiche « Carrousel · 3 cartes » avec le titre ou le texte de sa première
-  carte, et redevient modifiable.
+
+### Le formulaire « Message simple »
+
+Le dessin de `TemplateForm` : le formulaire à gauche (Nom, Image d'en-tête, Message, Boutons), l'**« Aperçu
+RCS »** dans un cadre de téléphone à droite (300 px, collant), la liste **« Il manque : … »** sous le
+formulaire, et un bouton pleine largeur **« Créer le message »** (« Enregistrer les modifications » en
+modification).
+
+⚠️ **CE QU'IL PRODUIT NE CHANGE PAS D'UNE VIRGULE** (`versMessageRcs`), et ses `data-testid` restent ceux
+d'aujourd'hui : les cas de `rcs-messages.spec.ts` doivent passer sans être réécrits. Un test qu'il faudrait
+adapter au nouveau dessin dirait que le dessin a changé ce qui part, et c'est exactement ce qu'on ne veut pas.
+
+🔴 **« Il manque » est NEUF sur ce formulaire**, dont le bouton se grisait jusqu'ici sans rien dire (le nom,
+le texte, un texte trop long, un bouton incomplet). Le bouton est grisé si et seulement si la liste n'est pas
+vide : la même liste décide des deux, sans quoi le bouton se grise pour une raison qu'elle ne nomme pas (le
+défaut que garde `manques-cablage.test.ts` ailleurs).
+
+### Le formulaire « Carrousel »
+
+Le dessin de `CarouselForm` :
+
+- le nom, puis **« Cartes (2/10, 2 minimum) »** en grille de deux colonnes, et la tuile pointillée
+  **« + Ajouter une carte »** à droite (10 au plus) ;
+- chaque carte : « Carte N » et « Retirer » (impossible sous 2 cartes), le visuel dans la zone pointillée
+  « Choisir une image » (le téléversement hébergé du message simple, avec la saisie d'une adresse en
+  dessous), un titre facultatif (200 caractères), le texte avec ses variables `{{champ}}` (2 000 caractères),
+  et ses boutons (4 au plus, les six types, l'éditeur partagé `RcsButtonsEditor`) ;
+- l'**« Aperçu RCS »** en dessous, pleine largeur, où les cartes défilent à l'horizontale ;
+- **« Il manque : … »** (« le visuel ou le titre de la carte 2 », « un bouton incomplet sur la carte 3 »…),
+  puis **« Créer le carrousel »**.
+
+⚠️ **UNE DIFFÉRENCE AVEC WHATSAPP, ET ELLE EST VOULUE : les boutons se règlent CARTE PAR CARTE.** Meta exige
+la même disposition de boutons sur toutes les cartes d'un carousel ; le RCS, non. Recopier la disposition
+commune de `CarouselForm` serait inventer une contrainte que le canal n'a pas.
+
+⚠️ Pas de déplacement de carte (gauche, droite) : `CarouselForm` n'en a pas, et le besoin n'est pas exprimé.
+
+### Le cadre « Aperçu RCS »
+
+Le pendant de `PhoneFrame` : le libellé « Aperçu RCS », un en-tête au NOM DE MARQUE de l'agent RCS
+(`RcsAgent.brandName`, résolu comme `PhoneFrame` résout le nom vérifié WhatsApp : une requête par espace,
+repli « Votre marque »), un fond de conversation clair. Les bulles restent celles de `RcsPreview` (menthe, la
+couleur du RCS dans l'Inbox). Le cadre sert sur cet écran (formulaires et fenêtre d'aperçu) et à l'étage
+carrousel de l'assistant. L'Inbox et le bloc de scénario gardent leur aperçu nu : leurs panneaux sont étroits,
+et les changer n'est pas demandé.
 
 ### Les règles d'une carte
 
@@ -105,16 +153,17 @@ la route, et seul un test peut tenir cet invariant entre deux tsconfig qui ne pa
 - `carrouselVide()` : deux cartes vides.
 - `versCarrouselRcs(brouillon)` : le message envoyable (`kind: 'carousel'`).
 - `versBrouillonCarrousel(contenu)` : l'inverse, ou `null` si ce n'est pas un carrousel.
-- `problemesCarrousel(brouillon)` : la liste des manques, en paires `[fr, en]` (module pur, `useT` y est
-  inappelable ; même convention que `LIBELLE_KIND`). 🔴 **Le bouton Enregistrer est grisé si et seulement si
-  cette liste n'est pas vide** : une seule fonction décide des deux, sans quoi le bouton se grise pour une
-  raison que la liste ne nomme pas (le défaut que garde `manques-cablage.test.ts` ailleurs).
-- `deplacerCarte(brouillon, i, sens)` : l'échange de deux cartes.
+- `manquesCarrousel(brouillon)` : la liste des manques, en paires `[fr, en]` (module pur, `useT` y est
+  inappelable ; même convention que `LIBELLE_KIND`). Le bouton « Créer le carrousel » est grisé si et
+  seulement si elle n'est pas vide.
 - `carrouselDepuis(valeur)` : la relecture STRICTE d'un carrousel venu d'un JSON non validé (cf. lot 2).
 
-Composants : `web/components/ComposeurCarrouselRcs.tsx` (les onglets et la carte ouverte) et
-`web/components/RcsCarrouselPreview.tsx` (l'aperçu, partagé par la bibliothèque, l'assistant et l'Inbox).
-La page `web/app/rcs-messages/page.tsx` ne gagne que le choix de format et l'aiguillage.
+Les manques du message simple suivent la même règle, dans `web/lib/rcs.ts` (`manquesMessageRcs`).
+
+Composants : `RcsMessageForm.tsx` (le formulaire simple, sorti de la page), `RcsCarouselForm.tsx`,
+`RcsCarouselPreview.tsx` (l'aperçu de carrousel, partagé par la bibliothèque, l'assistant et l'Inbox) et
+`RcsPhoneFrame.tsx` (le cadre). La page `web/app/rcs-messages/page.tsx` ne garde que la liste, l'encadré et
+l'aiguillage entre les deux formulaires.
 
 ## Lot 2 : un carrousel dans l'assistant de campagne
 
@@ -122,9 +171,9 @@ La page `web/app/rcs-messages/page.tsx` ne gagne que le choix de format et l'aig
 
 - « Partir d'un message enregistré » propose AUSSI les carrousels, marqués « (carrousel) ».
 - En choisir un pose une **copie figée** du carrousel sur l'étage. Les champs Visuel, Message et Suggestions
-  laissent la place à l'aperçu du carrousel, avec une phrase (« Copié depuis la bibliothèque : pour le
-  modifier, modifiez-le dans Contenu > Messages RCS puis choisissez-le à nouveau ») et un bouton
-  **« Revenir à un message simple »**.
+  laissent la place à l'aperçu du carrousel (dans le cadre « Aperçu RCS »), avec une phrase (« Copié
+  depuis la bibliothèque : pour le modifier, modifiez-le dans Contenu > Messages RCS puis choisissez-le à
+  nouveau ») et un bouton **« Revenir à un message simple »**.
 - Le texte, le visuel et les suggestions saisis AVANT restent en mémoire : retirer le carrousel les rend.
 - Choisir ensuite un message simple dans la même liste retire le carrousel.
 - Les deux formules marchent : « Message seul », et « Message et scénario » (le carrousel part, puis le
@@ -169,13 +218,17 @@ route déjà pour le carousel WhatsApp.
 - **Suite racine** (`tests/web-rcs-carrousel.test.ts`) : `versCarrouselRcs` passe `rcsOutboundSchema` ;
   aller-retour `versBrouillonCarrousel` ; boutons sans libellé écartés ; `postbackData` dérivé ; une carte
   sans visuel ni titre est un manque ; `carrouselDepuis` accepte ce que le serveur accepte et rejette les
-  formes cassées (1 carte, 11 cartes, bouton de type inconnu, lien sans adresse).
+  formes cassées (1 carte, 11 cartes, bouton de type inconnu, lien sans adresse). Et `manquesMessageRcs`
+  nomme chacune des conditions qui grisaient déjà le bouton du message simple.
+- **Les cas de `rcs-messages.spec.ts` passent SANS être réécrits** : c'est la preuve que le nouveau dessin
+  du message simple n'a rien changé à ce qu'il poste.
 - **Suite du front** : `campagne-creation.test.ts` (le carrousel part au rang 1 comme en repli ; le texte
   masqué ne part pas ; retiré, le texte repart ; la garde ne demande pas de texte), `campagne-chaine.test.ts`
   (`etageRenseigne`), `campagne-brouillon.test.ts` (le carrousel survit à l'aller-retour ; mal formé, il est
   jeté).
 - **E2E** : un nouveau `rcs-carrousel.spec.ts` (créer un carrousel et lire le corps POSTÉ ; les manques ;
-  modifier un carrousel existant ; basculer de format sans rien perdre) ; `campagne-assistant-rcs.spec.ts`
+  modifier un carrousel existant, qui s'ouvre sans sélecteur dans le formulaire carrousel ; basculer de
+  format sans rien perdre ; le tableau dit le format ; le nom ouvre l'aperçu) ; `campagne-assistant-rcs.spec.ts`
   RETOURNÉ (le carrousel est désormais proposé, et le corps de création le porte ; « Revenir à un message
   simple » renvoie le texte) ; la garde de largeur à 1 280 px sur le composeur et sur l'étage portant un
   carrousel.
@@ -191,6 +244,10 @@ route déjà pour le carousel WhatsApp.
 
 Chaque lot se ferme par : tests (racine, front, e2e) verts en local, `/revue` avec sa section « rayon de
 souffle », puis la CI lue job par job après le push.
+
+🔴 **« LA MÊME GUEULE » NE SE PROUVE PAS PAR UN TEST, ELLE SE REGARDE.** Le lot 1 se ferme aussi sur des
+captures des deux écrans rendus côte à côte (Templates et Messages RCS, liste et formulaires), montrées à
+Julien avant le push. Un e2e vérifie ce qui part, pas à quoi ressemble ce qu'on voit.
 
 ## L'essai réel qui clôt la feature
 
