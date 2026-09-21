@@ -188,17 +188,20 @@ export const schema = z.object({
    * COMBIEN D'OPÉRATIONS LOURDES DE L'API PUBLIQUE PEUVENT ÊTRE EN VOL EN MÊME TEMPS (lot de contacts,
    * création d'envoi). `0` désactive le plafond.
    *
-   * 🔴 DEUX, ET LE CHIFFRE SE CALCULE : le pool porte `DB_POOL_MAX` = 8 connexions pour TOUT le process, et
-   * un lot de contacts en demande jusqu'à 4 à la fois (`ECRITURES_EN_VOL`). Deux lots en vol saturent donc
-   * exactement le pool ; le troisième obtient un 429 avec `Retry-After` plutôt qu'une attente de huit
-   * secondes suivie d'une erreur d'acquisition, pendant laquelle l'Inbox et le worker se battent pour les
-   * mêmes emplacements.
+   * 🔴 UN, ET LE CHIFFRE SE CALCULE : le pool de l'API porte `DB_POOL_MAX` = 8 connexions pour TOUT le
+   * process, et un lot de contacts en demande jusqu'à 4 à la fois (`ECRITURES_EN_VOL`). Un lot en vol en
+   * prend donc la moitié ; le suivant obtient un 429 avec `Retry-After`.
+   *
+   * 🔴 LA VALEUR A ÉTÉ DEUX JUSQU'AU 2026-09-21, avec pour justification que « deux lots saturent exactement
+   * le pool ». C'était précisément le défaut (contre-audit du 2026-09-14) : saturer le pool de l'API, c'est
+   * faire attendre tout ce qui le partage, la console des clients ET la réception des webhooks de Meta, donc
+   * les messages entrants. Le travail d'un intégrateur ne doit jamais prendre tout le pool.
    *
    * ⚠️ LE LIMITEUR DE DÉBIT NE PROTÈGE PAS DE ÇA : sa fenêtre est FIXE, donc les 60 requêtes d'une minute
    * peuvent tomber dans la même milliseconde. Relever ce nombre demande de refaire l'arithmétique du pool,
-   * pas seulement de changer la variable.
+   * pas seulement de changer la variable ; un banc isolé qui mesure l'attente du pool en est la condition.
    */
-  API_MAX_LOURDES_SIMULTANEES: z.coerce.number().int().min(0).default(2),
+  API_MAX_LOURDES_SIMULTANEES: z.coerce.number().int().min(0).default(1),
   /** Plafond de débit d'UN webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
    *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
   WEBHOOK_IN_RATE_LIMIT_MAX: z.coerce.number().default(120),

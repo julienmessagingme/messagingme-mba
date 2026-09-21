@@ -146,7 +146,7 @@ const normalizeTags = (v: unknown): string[] =>
  * peuvent pas s'interbloquer : au pire elles attendent le même verrou de ligne, ce qui est le cas voulu quand
  * un lot répète le même numéro.
  */
-const ECRITURES_EN_VOL = 4;
+export const ECRITURES_EN_VOL = 4;
 
 export async function upsertContactsFromApi(
   tenantId: string,

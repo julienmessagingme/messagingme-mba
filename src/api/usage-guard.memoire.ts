@@ -41,16 +41,11 @@ export class GardeUsageMemoire implements ApiUsageGuard {
     /**
      * COMBIEN D'OPÉRATIONS LOURDES PEUVENT ÊTRE EN VOL EN MÊME TEMPS. `0` = pas de plafond.
      *
-     * 🔴 DEUX, ET LE CHIFFRE SE CALCULE : le pool porte 8 connexions pour tout le process
-     * (`DB_POOL_MAX`), et un lot de contacts en demande jusqu'à 4 à la fois (`ECRITURES_EN_VOL`). Deux
-     * lots en vol saturent donc exactement le pool ; le troisième obtient un 429 avec `Retry-After`
-     * plutôt qu'une attente de huit secondes suivie d'une erreur d'acquisition, pendant laquelle l'Inbox
-     * et le worker se battent pour les mêmes emplacements.
-     *
-     * ⚠️ RELEVER CE NOMBRE DEMANDE DE REFAIRE CETTE ARITHMÉTIQUE, pas seulement de changer la variable :
-     * c'est la même règle que pour `DB_POOL_MAX` lui-même.
+     * La valeur et son calcul vivent sur `API_MAX_LOURDES_SIMULTANEES` (`src/config.ts`), qui est ce que la
+     * production passe ici ; ce défaut ne sert qu'aux câblages qui ne le passent pas, et il lui est ALIGNÉ.
+     * Le recopier ici avait fait vivre la même justification à deux endroits.
      */
-    private readonly maxLourdesSimultanees = 2,
+    private readonly maxLourdesSimultanees = 1,
   ) {}
 
   /** Combien d'opérations lourdes sont en vol à cet instant. */

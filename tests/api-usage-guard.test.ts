@@ -242,3 +242,25 @@ describe('un refus de PLACE se voit dans les compteurs', () => {
     expect(g.compteurs()[0]).toMatchObject({ appels: 1, unites: 500, refusees: 1 });
   });
 });
+
+/**
+ * 🔴 L'INVARIANT QUI NE VIT DANS AUCUN DES TROIS FICHIERS : LA PART DU POOL QUE L'API PUBLIQUE PEUT PRENDRE.
+ *
+ * Trois constantes de trois fichiers : le nombre d'opérations lourdes simultanées (`src/config.ts`), les
+ * écritures qu'un lot de contacts lance à la fois (`src/api/contacts-upsert.ts`) et la taille du pool de
+ * l'API (`src/config.ts`). Chacune est plausible seule ; c'est leur PRODUIT qui décide si un intégrateur peut
+ * faire attendre la console et la réception des webhooks de Meta. La valeur a été 2 jusqu'au 2026-09-21, et
+ * 2 x 4 = 8 prenait TOUT le pool : ce test l'aurait refusé.
+ */
+describe('la part du pool de l’API que prennent les opérations lourdes', () => {
+  it('🔴 jamais plus de la MOITIÉ du pool, pour laisser la console et les webhooks respirer', async () => {
+    const { config } = await import('../src/config');
+    const { ECRITURES_EN_VOL } = await import('../src/api/contacts-upsert');
+    const pris = config.API_MAX_LOURDES_SIMULTANEES * ECRITURES_EN_VOL;
+    expect(
+      pris,
+      `${config.API_MAX_LOURDES_SIMULTANEES} opération(s) lourde(s) x ${ECRITURES_EN_VOL} écritures = ${pris} connexions sur les ${config.DB_POOL_MAX} du pool de l’API`,
+    ).toBeLessThanOrEqual(config.DB_POOL_MAX / 2);
+    expect(config.API_MAX_LOURDES_SIMULTANEES, 'à 0 le plafond est désactivé, et ce test ne dirait plus rien').toBeGreaterThan(0);
+  });
+});
