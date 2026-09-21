@@ -424,35 +424,50 @@ describe('webhook entrant : alimente une campagne au fil de l eau', () => {
 });
 
 /**
- * LE PLAFOND SE PREND AVANT LA BASE (programme II, après les huit lots).
+ * LE PLAFOND NE COMPTE QUE DES WEBHOOKS QUI EXISTENT (2026-09-21).
  *
- * 🔴 Il était posé APRÈS `getByCode` : une rafale sur une adresse valide coûtait une requête SQL PAR APPEL
- * avant d'être refusée. C'est la seule route publiquement adressable de ce service, donc un levier
- * d'amplification vers Postgres offert à qui connaît une adresse.
+ * 🔴 Le programme II l'avait remonté AVANT `getByCode`, pour qu'un appel refusé ne coûte plus de requête. La
+ * clé devenait alors choisie par l'appelant : des codes inventés en masse remplissaient la table, et le VRAI
+ * code d'un client, dont l'entrée expire à chaque fenêtre, était refusé à la suivante. Même défaut, même
+ * correction que sur les rappels RCS (`tests/rcs-callback.test.ts`).
  */
-describe('webhook entrant : le plafond AVANT la requête SQL', () => {
-  it('🔴 au-delà du plafond, la base n’est PLUS interrogée du tout', async () => {
+describe('webhook entrant : le plafond APRÈS la lecture du code', () => {
+  it('🔴 au-delà du plafond, plus RIEN n’est écrit, et un refus coûte une seule lecture', async () => {
     const { server, cap } = app(HOOK, { limiter: new RateLimiter(3, 60_000) });
     for (let i = 0; i < 3; i += 1) {
       const r = await post(server, CORPS);
       expect(r.statusCode).not.toBe(429);
     }
-    expect(cap.lus).toHaveLength(3);
-    // Les appels refusés ne coûtent plus rien : c'est TOUT l'objet du déplacement.
     for (let i = 0; i < 20; i += 1) {
       const r = await post(server, CORPS);
       expect(r.statusCode).toBe(429);
     }
-    expect(cap.lus).toHaveLength(3);
+    // Ce qu'on protège d'un code qui a fuité : les écritures. Aucun contact, aucun payload enregistré au-delà.
+    expect(cap.ecrits).toHaveLength(3);
+    expect(cap.appels).toHaveLength(3);
+    // Le prix assumé : un appel refusé coûte UNE lecture par le code, comme un code inventé, jamais plus.
+    expect(cap.lus).toHaveLength(23);
     await server.close();
   });
 
-  it('🔴 un robot qui tire des codes au hasard ne fait pas grossir la table indéfiniment', async () => {
-    // Contrepartie du déplacement : la clé est choisie par l'appelant. Sans plafond de CLÉS, chaque code
-    // inventé créerait une entrée qui ne peut pas expirer tant que la fenêtre court.
-    const limiter = new RateLimiter(120, 60_000, undefined, 5);
-    for (let i = 0; i < 5; i += 1) expect(limiter.take(`code-${i}`)).toBe(true);
-    expect(limiter.take('code-neuf')).toBe(false);   // table pleine -> refus
-    expect(limiter.take('code-0')).toBe(true);       // une clé DÉJÀ connue reste servie
+  it('🔴 des codes inventés en masse n’évincent pas le vrai code', async () => {
+    // Une table de DEUX places et cinquante codes bien formés inventés : le vrai doit toujours passer. Avec le
+    // plafond pris avant la base, les deux premiers codes inventés remplissaient la table et le vrai, clé
+    // neuve, recevait 429.
+    const { server, cap } = app(HOOK, { limiter: new RateLimiter(100, 60_000, undefined, 2) });
+    const statuts = new Set<number>();
+    for (let i = 0; i < 50; i += 1) statuts.add((await post(server, CORPS, {}, String(i).padStart(26, 'z'))).statusCode);
+    // Le vrai code d'abord : c'est LUI dont le refus est le symptôme du défaut.
+    expect((await post(server, CORPS)).statusCode, 'le vrai code du client').toBe(200);
+    expect([...statuts], 'un code inventé est inconnu, rien de plus').toEqual([404]);
+    expect(cap.ecrits).toHaveLength(1);
+    await server.close();
+  });
+
+  it('un webhook ÉTEINT n’entre pas dans la table non plus', async () => {
+    // La table est bornée par le nombre de webhooks ACTIFS : un code éteint rend 404 avant le plafond.
+    const { server } = app({ ...HOOK, enabled: false }, { limiter: new RateLimiter(1, 60_000) });
+    for (let i = 0; i < 5; i += 1) expect((await post(server, CORPS)).statusCode).toBe(404);
+    await server.close();
   });
 });

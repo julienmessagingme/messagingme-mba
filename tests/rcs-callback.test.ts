@@ -368,7 +368,8 @@ describe('Route publique des rappels RCS', () => {
 /**
  * 🔴 LE PLAFOND DE REQUÊTES PAR CODE. Cette route est la seule écriture non signée du produit : son code d'URL
  * est sa seule authentification, et une adresse qui fuite (journal, capture, ticket) ne doit pas devenir un
- * robinet ouvert. Le plafond se prend AVANT la base, sur le code, et un refus est un 429, que smsmode REJOUE
+ * robinet ouvert. Le plafond se prend sur le code, APRÈS la lecture (seuls les codes existants entrent dans sa
+ * table, cf. le test des codes inventés ci-dessous), et un refus est un 429, que smsmode REJOUE
  * (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) : un vrai accusé retardé n'est pas perdu.
  */
 describe('Rappels RCS : le plafond par code', () => {
@@ -400,11 +401,15 @@ describe('Rappels RCS : le plafond par code', () => {
    */
   it('🔴 des codes inventés en masse n’évincent pas le vrai code', async () => {
     const { app, dlrs } = monterAvec(100, 2);
+    const statuts = new Set<number>();
     for (let i = 0; i < 50; i += 1) {
       const invente = `rcs-${i.toString(16).padStart(32, 'a')}`;
-      expect((await app.inject(post(`/rcs/callback/${invente}`, DLR_DELIVERED))).statusCode).toBe(404);
+      statuts.add((await app.inject(post(`/rcs/callback/${invente}`, DLR_DELIVERED))).statusCode);
     }
-    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode).toBe(200);
+    // Le vrai code d'abord : c'est LUI dont le refus est le symptôme du défaut. Asserté dans la boucle, le
+    // 404 des codes inventés échouait avant, sur le troisième, et la mutation ne montrait pas ce qu'elle cassait.
+    expect((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode, 'le vrai code du client').toBe(200);
+    expect([...statuts], 'un code inventé est inconnu, rien de plus').toEqual([404]);
     expect(dlrs).toHaveLength(1);
   });
 

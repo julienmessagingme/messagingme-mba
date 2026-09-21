@@ -40,11 +40,18 @@ export class RateLimiter {
      * Nombre maximal de clés VIVANTES. Au-delà, une clé NEUVE est refusée (les clés déjà connues continuent
      * d'être servies normalement). `0` = pas de plafond, comportement d'origine.
      *
-     * 🔴 À poser dès que la clé est choisie par l'APPELANT et non par nous. Le limiteur du webhook entrant est
-     * désormais consulté AVANT la requête en base, donc sur un code qui n'existe peut-être pas : sans plafond,
-     * un robot qui tire des codes au hasard ferait grossir la table indéfiniment pendant toute la fenêtre (la
-     * purge ne retire que les entrées EXPIRÉES, et sous flot rien n'expire). On échange une fuite de mémoire
-     * contre un refus, qui est le bon comportement sous attaque.
+     * 🔴 À poser dès que la clé est choisie par l'APPELANT et non par nous (l'`ip::discriminant` des routes
+     * d'authentification, l'empreinte d'un bearer présenté à `/v1`) : sans plafond, un robot qui tire des clés
+     * au hasard ferait grossir la table pendant toute la fenêtre (la purge ne retire que les entrées EXPIRÉES,
+     * et sous flot rien n'expire). On échange une fuite de mémoire contre un refus.
+     *
+     * 🔴 MAIS CE REFUS FRAPPE AUSSI LES VRAIES CLÉS, et c'est ce qu'il faut peser avant de le poser. L'entrée
+     * d'un appelant légitime expire à chaque fenêtre ; s'il revient pendant que la table est pleine, il est une
+     * clé NEUVE, donc refusé. Des clés inventées en masse suffisent alors à bloquer un vrai client. Quand la clé
+     * est un identifiant qu'on peut VÉRIFIER en base (le code d'un webhook entrant, celui d'un rappel RCS), la
+     * bonne réponse n'est pas ce plafond : c'est de consulter le limiteur APRÈS la lecture, sur des clés qui
+     * existent, dont le nombre borne la table (cf. `registerWebhookEntrant`, `registerRcsCallback`). Ces deux
+     * limiteurs-là ont d'abord été consultés AVANT la base, et c'est exactement le défaut corrigé le 2026-09-21.
      */
     private readonly maxCles = 0,
   ) {}

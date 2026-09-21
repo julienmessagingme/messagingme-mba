@@ -876,7 +876,8 @@ chantier à part, avec `tailwindcss` 4, `typescript` 7, `eslint` 10 et `vitest` 
   `.gitleaksignore` règle ça.
 - **Un webhook entrant SANS secret** est un chemin d'écriture non authentifié (il crée des contacts et
   déclenche des automations, donc des envois facturés). Choix documenté et borné (code non devinable,
-  limiteur avant la base), mais l'UI devrait AVERTIR à la création d'un webhook sans secret.
+  plafond de débit par code, pris après la lecture du code depuis le 2026-09-21), mais l'UI devrait AVERTIR
+  à la création d'un webhook sans secret.
 - **Deux chemins d'upload qui ne se protègent pas pareil** : `src/http/media.ts` fait confiance au type MIME
   déclaré dans la data URL (allowlist par regex), là où `src/rcs/image.ts` lit les octets magiques. Risque
   faible aujourd'hui (Meta valide derrière), mais c'est l'écart qui devient une faille quand quelqu'un

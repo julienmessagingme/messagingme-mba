@@ -90,9 +90,10 @@ interface Compte {
 export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntrantRouteDeps): void {
   // Plafond de débit par WEBHOOK (pas par IP) : c'est le budget d'une intégration, et l'IP d'un Zapier n'a
   // aucune stabilité. Singleton, comme le limiteur de `/v1`.
-  // Plafond de CLÉS vivantes : le limiteur est consulté avant la base, donc sur des codes qui n'existent
-  // peut-être pas. 5 000 codes distincts par minute est très au-dessus de tout parc réel, et borne la table.
-  const limiter = deps.limiter ?? new RateLimiter(120, 60_000, undefined, 5000);
+  // AUCUN plafond de clés, délibérément : le limiteur n'est consulté que sur des webhooks qui existent et sont
+  // actifs, donc sa table est bornée par leur nombre. Un plafond de clés y rouvrirait l'éviction d'un vrai
+  // code par des codes inventés (cf. la prise du plafond, plus bas).
+  const limiter = deps.limiter ?? new RateLimiter(120, 60_000);
 
   app.post('/w/:code', { bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const { code } = req.params as { code: string };
@@ -102,23 +103,31 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     // offrir une requête SQL par essai.
     if (!CODE_RE.test(normalise)) return reply.code(404).send({ error: 'webhook introuvable' });
 
-    // 🔴 LE PLAFOND SE PREND AVANT LA BASE (programme II). Il était posé APRÈS `getByCode` : une rafale sur
-    // une adresse valide coûtait donc une requête SQL PAR APPEL avant d'être refusée, ce qui fait de la seule
-    // route publiquement adressable de ce service un levier d'amplification vers Postgres.
-    //
-    // La clé est le CODE et non l'identifiant du webhook. Les deux sont en correspondance stricte (le code est
-    // unique), donc le comptage est le même ; simplement, le code est déjà là, validé par la regex ci-dessus,
-    // et il n'a rien coûté. Contrepartie assumée et bornée : un robot qui tire des codes au hasard crée une
-    // clé par essai, d'où le plafond de clés du limiteur, qui refuse au lieu de grossir.
-    if (!limiter.take(normalise)) {
-      // La réponse ne révèle ni le plafond ni l'espace : juste « trop d'appels ».
-      return reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
-    }
-
     const hook = await deps.getByCode(normalise);
     // Code inconnu ET webhook désactivé rendent la MÊME chose : un tiers n'a pas à distinguer « ce webhook
     // n'existe pas » de « il existe mais il est éteint ».
     if (!hook || !hook.enabled) return reply.code(404).send({ error: 'webhook introuvable' });
+
+    // 🔴 LE PLAFOND NE COMPTE QUE DES WEBHOOKS QUI EXISTENT, donc APRÈS la base (2026-09-21, même défaut que
+    // celui corrigé sur les rappels RCS). Le programme II l'avait remonté AVANT `getByCode`, pour qu'une rafale
+    // sur une adresse valide ne coûte plus une requête SQL par appel. Mais la clé devenait alors choisie par
+    // l'APPELANT : un robot qui tire des codes inventés bien formés ouvrait une entrée par essai. Avec le
+    // plafond de clés du limiteur par défaut, la table se remplissait et le VRAI code d'un client, dont l'entrée
+    // expire à chaque fenêtre, était refusé à la suivante : la protection devenait un moyen de couper
+    // l'intégration d'un client. Sans ce plafond (le câblage de production n'en posait pas), elle grossissait
+    // sans borne pendant toute la fenêtre.
+    //
+    // Ce que ce placement coûte, dit tel quel : un appel refusé sur un code connu coûte de nouveau une lecture
+    // par l'index unique du code. C'est exactement ce que coûtait DÉJÀ un code inventé, que le plafond placé
+    // avant n'arrêtait pas (chaque code neuf ouvrait son propre quota). Ce qu'on protège d'un code qui a
+    // FUITÉ, ce sont les écritures qui suivent : le contact, le payload enregistré, l'événement d'automation.
+    //
+    // Il reste AVANT la vérification du secret : essayer des secrets en rafale sur un code connu est plafonné
+    // aussi. La clé est le code et non l'identifiant du webhook : les deux sont en correspondance stricte.
+    if (!limiter.take(normalise)) {
+      // La réponse ne révèle ni le plafond ni l'espace : juste « trop d'appels ».
+      return reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
+    }
 
     if (hook.secretHash !== null) {
       const brut = req.headers['x-webhook-secret'];
