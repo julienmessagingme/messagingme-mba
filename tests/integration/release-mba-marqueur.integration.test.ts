@@ -245,4 +245,23 @@ describe.skipIf(!url)('PgInboxStore : le marqueur de remise à l’agent de Meta
     });
     expect(await store.empreinteDuFil('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
   });
+
+  it('🔴 le dernier message REÇU du client : jamais le nôtre ni l’écho de l’agent, isolé par espace', async () => {
+    // Il entre dans la clé de l'anti-rejeu (src/mba/executer-maison.ts, essai réel du 2026-09-22).
+    const waId = '33600000114';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    expect(await store.dernierMessageDuClient(tenantId, waId)).toBeNull();
+    const ecrire = async (direction: string, type: string, decalage: number) => (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+       values ($1, $2, $3, 'x', now() + ($4 || ' seconds')::interval) returning id`,
+      [conv, direction, type, String(decalage)],
+    )).rows[0]!.id;
+    const client = await ecrire('in', 'text', 0);
+    await ecrire('out', 'mba', 1);
+    await ecrire('out', 'text', 2);
+    expect(await store.dernierMessageDuClient(tenantId, waId)).toBe(client);
+    expect(await store.dernierMessageDuClient('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
+  });
 });

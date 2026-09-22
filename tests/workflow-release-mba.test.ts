@@ -201,6 +201,28 @@ describe('la réponse « à côté » est transmise à l’agent de Meta', () =>
     expect(ordre).toEqual(['release 33600000001']);
   });
 
+  it('🔴 une réponse écrite qui suit une flèche LIBRE vers un bloc MUET est transmise (essai du 2026-09-22)', async () => {
+    // « Parfait biloute » sous un bloc à boutons dont la flèche libre menait à une action : la chaîne s'est
+    // terminée sans rien envoyer, et l'agent a repris le fil sans savoir que le client venait d'écrire.
+    const libre = g(
+      [n('n1', 'quick_message', { body: 'bonjour ca va', quickReplies: [{ text: 'Oui' }] }), n('n2', 'tag', { tag: 'ok' }), n('n3', 'tag', { tag: 'libre' })],
+      [['n1', 'n2', 'btn:0'], ['n1', 'n3']],
+    );
+    const { ex, ordre } = executeur(libre, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001 msg1']);
+  });
+
+  it('🔴 une réponse écrite à laquelle la chaîne a RÉPONDU n’est pas transmise : l’agent parlerait par-dessus', async () => {
+    const repond = g(
+      [n('n1', 'quick_message', { body: 'Votre e-mail ?', quickReplies: [] }), n('n2', 'quick_message', { body: 'Merci, noté.', quickReplies: [] })],
+      [['n1', 'n2']],
+    );
+    const { ex, ordre } = executeur(repond, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001']);
+  });
+
   it('MBA éteint : ni release ni transmission', async () => {
     const { ex, ordre } = executeur(question(), { mbaActif: false });
     await ex.advance('t1', '33600000001', 'msg1', 'Hors script');

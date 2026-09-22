@@ -58,7 +58,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
       poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
       ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
       champExiste: async () => true,
-      estBloque: async () => false, antiRejeu: new AntiRejeu(60_000),
+      estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
       envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return true; },
       lancerScenario: async (t, w, id) => { gestes.push(`scenario ${t} ${w} ${id}`); return true; },
     },
@@ -311,7 +311,7 @@ describe('les outils maison de l’agent de Meta', () => {
     const { app } = avec([TAG], {
       maison: {
         poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true,
-        estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), envoyerBloc: async () => true, lancerScenario: async () => true,
+        estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1', envoyerBloc: async () => true, lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
     });
@@ -364,7 +364,7 @@ describe('un bloc et un scénario, par le relais', () => {
         // simultanés se rattrapent. Avec une réponse immédiate, les requêtes arrivent décalées et le test ne
         // prouve rien (mesuré : il passait sur le garde fautif).
         estBloque: () => new Promise((r) => { setTimeout(() => r(false), 20); }),
-        antiRejeu: new AntiRejeu(60_000),
+        antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
         envoyerBloc: async () => true,
         lancerScenario: async (t, w, id) => { lances.push(`scenario ${t} ${w} ${id}`); return true; },
       },
@@ -385,7 +385,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([BLOC], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000),
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
         envoyerBloc: async () => 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir', lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
@@ -400,7 +400,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([BLOC], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000),
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
         envoyerBloc: async () => { throw new Error('Meta API error (HTTP 400)'); }, lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
@@ -416,7 +416,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const envois: string[] = [];
     const { app } = avec([BLOC, SCENARIO], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => true, antiRejeu: new AntiRejeu(60_000),
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => true, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
         envoyerBloc: async () => { envois.push('bloc'); return true; }, lancerScenario: async () => { envois.push('scenario'); return true; },
       },
     });
@@ -433,7 +433,7 @@ describe('un bloc et un scénario, par le relais', () => {
 describe('le délai de réponse d’un envoi', () => {
   const maison = (o: Partial<MbaRelaisDeps['maison']>): MbaRelaisDeps['maison'] => ({
     poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
-    antiRejeu: new AntiRejeu(60_000), envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
+    antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1', envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
   });
   const journal = (clos: Array<Record<string, unknown>>) =>
     ({ ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } }) as unknown as JournalAppels;

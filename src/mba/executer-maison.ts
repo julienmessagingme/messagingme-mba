@@ -30,6 +30,12 @@ export interface DepsMaison {
   lancerScenario(tenantId: string, waId: string, workflowId: string): Promise<true | string>;
   /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
   antiRejeu: Pick<AntiRejeu, 'prendre' | 'oublier'>;
+  /**
+   * L'identifiant du dernier message REÇU du client (`PgInboxStore.dernierMessageDuClient`), ou `null`. Il entre
+   * dans la clé de l'anti-rejeu : un rappel dans le même tour de l'agent partage ce message, une nouvelle demande
+   * du client, non.
+   */
+  dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null>;
 }
 
 export type IssueMaison = { ok: true; reponse: string } | { ok: false; erreur: string };
@@ -57,12 +63,16 @@ export async function executerOutilMaison(
     case 'scenario_fixe': {
       // 🔴 LE BLOCAGE EST LU AVANT TOUT ENVOI : une garde posée après l'effet ne garde rien.
       if (await deps.estBloque(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
-      // 🔴 UN RAPPEL DU MÊME OUTIL POUR LE MÊME CLIENT NE RENVOIE RIEN (essai réel du 2026-09-22 : sept appels
-      // dans le même tour, sept fois le premier message du scénario). Il répond « déjà traitée », ce qui clôt le
-      // tour. La clé se PREND d'un seul geste, APRÈS la dernière attente : sept appels simultanés n'en laissent
-      // partir qu'un. Elle est GARDÉE sur une exception (le message a pu partir) ; seul un refus, qui n'a rien
-      // envoyé, l'oublie.
-      const cle = `${tenantId}:${waId}:${input.outilId}`;
+      // 🔴 UN RAPPEL DU MÊME OUTIL POUR LE MÊME MESSAGE DU CLIENT NE RENVOIE RIEN (essai réel du 2026-09-22 : sept
+      // appels dans le même tour, sept fois le premier message du scénario). Il répond « déjà traitée », ce qui
+      // clôt le tour. La clé se PREND d'un seul geste, APRÈS la dernière attente : sept appels simultanés n'en
+      // laissent partir qu'un. Elle est GARDÉE sur une exception (le message a pu partir) ; seul un refus, qui n'a
+      // rien envoyé, l'oublie.
+      // ⚠️ LE MESSAGE DU CLIENT EST DANS LA CLÉ (second essai du même jour) : « Je peux avoir le statut de ma
+      // commande ? Encore une fois », 55 s après la première demande, était pris pour un rappel et rien ne
+      // repartait. Une NOUVELLE demande du client est un nouveau message, donc une nouvelle clé.
+      const dernier = await deps.dernierMessageDuClient(tenantId, waId);
+      const cle = `${tenantId}:${waId}:${input.outilId}:${dernier ?? '-'}`;
       if (!deps.antiRejeu.prendre(cle)) return { ok: true, reponse: REPONSE_DEJA_TRAITE };
       const issue = cible.handler === 'bloc_fixe'
         ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })

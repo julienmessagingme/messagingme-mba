@@ -1890,7 +1890,15 @@ export class WorkflowExecutor {
     }
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
     // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.
-    if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
+    // 🔴 ET SI LE CLIENT A ÉCRIT SANS QUE RIEN NE LUI RÉPONDE, SON MESSAGE PART CHEZ L'AGENT (essai réel du
+    // 2026-09-22) : une flèche LIBRE sous un bloc à boutons menait à un bloc muet (une action) ; « Parfait
+    // biloute » l'a suivie, la chaîne s'est terminée sans rien envoyer, et l'agent a repris le fil sans savoir que
+    // le client venait d'écrire. Il n'a parlé qu'au message suivant. Même règle que la réponse « à côté » plus haut,
+    // et seulement quand la chaîne n'a RIEN envoyé : si elle a répondu, l'agent répondrait par-dessus.
+    if (rest.status === 'done') {
+      const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && partis === 0;
+      await this.rendreLaMainAMba(tenantId, waId, sansReponse ? { transmettre: messageId } : {});
+    }
     // 🔴 TRANSITION FRAÎCHE vers un bloc agent, à ne pas confondre avec la branche du haut. Là-haut, le run
     // était DÉJÀ sur le bloc agent et le contact répondait pendant la conversation. Ici, sa réponse fait
     // AVANCER le parcours depuis un autre bloc (typiquement un template de campagne) jusqu'au bloc agent, pour

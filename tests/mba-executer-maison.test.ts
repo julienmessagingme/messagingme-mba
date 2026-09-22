@@ -10,6 +10,7 @@ import { AntiRejeu } from '../src/mba/anti-rejeu';
  */
 function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true | string; leve?: boolean } = {}) {
   const gestes: string[] = [];
+  const client = { dernier: 'm1' as string | null };
   const deps: DepsMaison = {
     poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
     ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
@@ -22,8 +23,9 @@ function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true 
       return o.issue ?? true;
     },
     antiRejeu: new AntiRejeu(60_000),
+    dernierMessageDuClient: async () => client.dernier,
   };
-  return { deps, gestes };
+  return { deps, gestes, client };
 }
 
 describe('exécuter un geste de l’agent de Meta', () => {
@@ -149,6 +151,17 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     // restait sans réponse.
     expect(REPONSE_DEJA_TRAITE).toContain('ne rappelle plus cet outil');
     for (const interdit of [/reçu/, /te reviendra/, /n’écris rien/, /répète/]) expect(REPONSE_DEJA_TRAITE).not.toMatch(interdit);
+  });
+
+  it('🔴 une NOUVELLE demande du client (nouveau message) relance, même dans les deux minutes (essai du 2026-09-22)', async () => {
+    // « Je peux avoir le statut de ma commande ? Encore une fois », 55 s après la première demande, était pris
+    // pour un rappel : rien ne repartait, et l'agent lisait « déjà traitée ».
+    const f = faux();
+    await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    f.client.dernier = 'm2';
+    const r = await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    expect(r).toEqual({ ok: true, reponse: expect.stringContaining('C’est fait') });
+    expect(f.gestes).toHaveLength(2);
   });
 
   it('un AUTRE client, ou un AUTRE outil, n’est pas concerné', async () => {

@@ -2553,6 +2553,7 @@ async function main(): Promise<void> {
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
           estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
           antiRejeu: new AntiRejeu(DUREE_ANTI_REJEU_MS),
+          dernierMessageDuClient: (t, waId) => inboxStore.dernierMessageDuClient(t, waId),
           // Les deux gestes qui ENVOIENT : ils rendent le fil sur toute issue ratée, exception comprise
           // (`src/mba/gestes-envoi.ts`, testé ; revue finale du 2026-09-22).
           ...creerGestesEnvoi({

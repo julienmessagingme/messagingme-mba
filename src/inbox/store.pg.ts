@@ -1572,6 +1572,24 @@ export class PgInboxStore implements InboxStore {
       : null;
   }
 
+  /**
+   * L'identifiant du dernier message REÇU du client dans cette conversation, ou `null`. Il entre dans la clé de
+   * l'anti-rejeu des outils de l'agent de Meta (`src/mba/executer-maison.ts`) : une nouvelle demande du client est
+   * un nouveau message. Servie par `conversation_messages_conv_idx` (conversation, date).
+   */
+  async dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select m.id
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'in'
+        order by m.created_at desc, m.id desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   async derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ body: string }>(
       `select m.body
