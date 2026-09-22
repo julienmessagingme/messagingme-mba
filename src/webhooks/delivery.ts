@@ -1,4 +1,5 @@
 import type { WebhookEvent } from './parse';
+import { extraireTarif, type TarifsMetaSink } from './tarif-meta';
 
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
@@ -81,15 +82,37 @@ export interface RemiseMbaSurAccuse {
  *
  * BEST-EFFORT sur la mesure : une panne de compteur ne doit pas empêcher la mise à jour d'une livraison, qui
  * est la donnée métier. L'échec reste visible en console.
+ *
+ * `tarifs` (optionnel ici, OBLIGATOIRE pour toute file qui traite des accusés, cf. `WebhookJobDeps`) garde le
+ * tarif que Meta annonce : c'est lui qui dit qu'un message est gratuit.
  */
 export async function processStatuses(
   events: WebhookEvent[],
   delivery: DeliveryStore,
   nodeEvents?: NodeStatusSink,
   remiseMba?: RemiseMbaSurAccuse,
+  tarifs?: TarifsMetaSink,
 ): Promise<void> {
   for (const ev of events) {
     if (ev.source !== 'statuses') continue;
+    /**
+     * LE TARIF DE META (lot 1 des publicités Click-to-WhatsApp, `./tarif-meta.ts`).
+     *
+     * ⚠️ AVANT la garde de livraison : un statut que la livraison ignore peut porter un tarif.
+     * ⚠️ BEST-EFFORT, comme la remise du fil plus bas : une exception ferait rejouer TOUT le job par pg-boss.
+     * Un tarif manqué laisse le message compté comme payant, c'est-à-dire le comportement d'avant.
+     */
+    if (tarifs && ev.phoneNumberId) {
+      const t = extraireTarif(ev.data);
+      if (t) {
+        try {
+          await tarifs.enregistrer(ev.phoneNumberId, t);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('tarif Meta non enregistré:', err instanceof Error ? err.message : err);
+        }
+      }
+    }
     const d = extractDelivery(ev.data);
     if (!d) continue;
     await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode);
