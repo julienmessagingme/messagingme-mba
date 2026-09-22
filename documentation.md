@@ -1004,7 +1004,9 @@ raison est écrite au-dessus de chaque 502 gardé. ⚠️ La mesure qui fonde ce
 
 🔴 **`req.log` ET `app.log` SONT MUETS** : Fastify tourne en `logger: false`, et son journal est alors une
 fonction vide (mesuré : `app.log.error` vaut `function noop () { }`). Toute trace passe par `journaliser`, et
-`tests/journal-muet.test.ts` refuse un appel au journal de Fastify dans `src/`.
+`tests/journal-muet.test.ts` refuse tout ACCÈS au journal de Fastify dans `src/` : un appel, mais aussi le
+journal passé en valeur ou déstructuré. Il le lit sur l'arbre syntaxique, parce qu'une recherche ligne à ligne
+n'a pas vu `reglagePrise(tenant, acteur, req.log)`.
 
 **Astuce de diagnostic** : comparer l'appel INTERNE (dans le réseau Docker) et l'appel PUBLIC isole la couche
 coupable en une mesure.

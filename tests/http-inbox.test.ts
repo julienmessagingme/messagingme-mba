@@ -7,6 +7,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
 import { MediaExpire } from '../src/inbox/media-entrant';
 import { MediaTropGros } from '../src/meta/media';
+import { capturerJournal } from './journal';
 
 const SECRET = 'test-secret';
 const CONV = '11111111-1111-4111-8111-111111111111';
@@ -1051,17 +1052,28 @@ describe('servir une pièce jointe reçue (2026-09-19)', () => {
     expect(res.json().error).toContain('40 Mo');
   });
 
-  it('une autre panne reste un 422 générique, jamais un 5xx', async () => {
+  it('une autre panne reste un 422 générique, jamais un 5xx, et elle laisse une TRACE', async () => {
     // Cloudflare remplacerait le corps d'un 5xx par sa page, et l'écran n'aurait rien à dire.
     const a = app({ lireMediaMessage: async () => { throw new Error('reseau'); } });
-    expect((await a.inject({ method: 'GET', url, ...auth() })).statusCode).toBe(422);
+    const { resultat, lignes } = await capturerJournal(() => a.inject({ method: 'GET', url, ...auth() }));
+    expect(resultat.statusCode).toBe(422);
+    expect(lignes.find((l) => l.msg === 'media_illisible')).toMatchObject({ lvl: 'error', err: 'reseau', tenant: 't1' });
   });
 
-  it('🔴 la transcription d’un vocal EXPIRÉ rend 410, pas « réessayez »', async () => {
+  it('🔴 la transcription d’un vocal EXPIRÉ rend 410, pas « réessayez », et n’écrit AUCUNE erreur', async () => {
+    // Un cas métier : chaque clic sur un vocal expiré écrivait une ligne `error`, pile comprise.
     const a = app({ transcrireMessage: async () => { throw new MediaExpire(); } });
-    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} });
+    const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} }));
     expect(res.statusCode).toBe(410);
     expect(res.json()).toMatchObject({ code: 'media_expire' });
+    expect(lignes.filter((l) => l.msg === 'transcription_impossible')).toEqual([]);
+  });
+
+  it('une transcription qui casse pour une autre raison rend 422 et laisse une TRACE', async () => {
+    const a = app({ transcrireMessage: async () => { throw new Error('fournisseur en panne'); } });
+    const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} }));
+    expect(res.statusCode).toBe(422);
+    expect(lignes.find((l) => l.msg === 'transcription_impossible')).toMatchObject({ lvl: 'error', err: 'fournisseur en panne', tenant: 't1' });
   });
 });
 
@@ -1141,9 +1153,12 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
     // Sans garde, un échec de cette lecture rendait 500 sur la liste entière, donc l'Inbox vide pour tout le
     // monde, pour un simple bouton.
     const a = app({ agentsPeuventPrendre: async () => { throw new Error('base'); }, prendreSiLibre: async () => true });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.agent) });
+    const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.agent) }));
     expect(res.statusCode).toBe(200);
     expect(res.json().peutPrendre).toBe(false);
+    // 🔴 ET C'EST JOURNALISÉ : la fonction recevait le journal de Fastify EN VALEUR, qui est muet. Une lecture
+    // qui échoue durablement couperait le bouton de tous les agents sans laisser la moindre trace.
+    expect(lignes.find((l) => l.msg === 'reglage_prise_illisible')).toMatchObject({ lvl: 'warn', err: 'base', tenant: 't1' });
   });
 
   it('🔴 un réglage illisible à la PRISE : refus qui dit la vraie raison, et rien d’écrit', async () => {

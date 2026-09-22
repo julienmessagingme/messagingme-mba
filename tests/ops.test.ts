@@ -3,6 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { OpsRouteDeps } from '../src/http/ops';
+import { capturerJournal } from './journal';
 
 const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
 
@@ -345,9 +346,10 @@ describe('/ops : révoquer la clé de modèle', () => {
     // Et pas un 5xx : Cloudflare remplacerait le corps, et l'opérateur croirait à une panne quelconque au
     // lieu de savoir que la clé vit encore et qu'il faut réessayer.
     const srv = app(OPS, { revoquerCleModele: async () => { throw new Error('vercel refuse'); } });
-    const r = await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) });
+    const { resultat: r, lignes } = await capturerJournal(() => srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) }));
     expect(r.statusCode).toBe(422);
     expect(r.json().error).toMatch(/toujours active/);
+    expect(lignes.find((l) => l.msg === 'ops_revocation_impossible')).toMatchObject({ lvl: 'error', err: 'vercel refuse', tenantId: T });
   });
 
   it('sans la dépendance, la route se déclare indisponible', async () => {

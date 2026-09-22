@@ -5,6 +5,7 @@ import type { ContexteTour, DecisionTracee, GatewayBrainDeps } from '../agent/br
 import { AgentIntrouvable, penserTrace } from '../agent/brain.gateway';
 import { TourInterrompu } from '../agent/brain';
 import { direPanneModele } from '../llm/errors';
+import { journaliser } from '../lib/journal';
 import { scopeTenant, estUuid } from './scope';
 import { ESSAIS_AFFICHES, type TestRunStore } from '../agent/test-runs';
 
@@ -166,15 +167,8 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
       // `TourInterrompu` montre `penserTrace`, pas la fonction qui a levé. Une cause qui n'est pas une `Error`
       // (rien ne l'interdit) repart dans son enveloppe, qui en porte au moins le texte.
       if (raison === null) throw cause instanceof Error ? cause : err;
-      // eslint-disable-next-line no-console
-      console.error(JSON.stringify({
-        lvl: 'error',
-        msg: 'agent_test_echec',
-        tenant,
-        agentId,
-        err: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      }));
+      // La CAUSE ici aussi : sa pile, pas celle de l'enveloppe.
+      journaliser('error', 'agent_test_echec', { tenant, agentId, err: cause instanceof Error ? cause : err });
       return reply.code(422).send({ error: `l’essai a échoué : ${raison}` });
     }
 

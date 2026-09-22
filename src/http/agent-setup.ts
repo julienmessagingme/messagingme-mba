@@ -653,7 +653,11 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         }
       } catch (err) {
         // Le tour de synthèse échoue sans faire échouer le tour : on garde la proposition du tour.
-        journaliser('warn', 'agent_setup_synthese_echec', { tenantId: ctx.tenant, agentId: ctx.agentId, err });
+        // ⚠️ Une `SyntaxError` ne se journalise que par son NOM : celle de `JSON.parse` recopie un morceau des
+        // arguments du modèle, donc les mots du client (même règle que le refus de schéma, plus haut).
+        journaliser('warn', 'agent_setup_synthese_echec', {
+          tenantId: ctx.tenant, agentId: ctx.agentId, err: err instanceof SyntaxError ? err.name : err,
+        });
       }
     }
 

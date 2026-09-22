@@ -790,7 +790,7 @@ async function main(): Promise<void> {
           apprendreLangueContact: (t, c, langue) => traductionStore.apprendreLangueContact(t, c, langue),
           // Une ecriture d appoint qui echoue ne prive personne de sa lecture, mais elle fait REPAYER la
           // meme traduction a chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
-          onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi }); },
+          onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi, tenantId: tenant }); },
         }, { tenantId: tenant, conversationId, messages, cible }),
         traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
         traductionDisponible: (tenant: string) => traducteur.disponible(tenant),
@@ -2358,14 +2358,11 @@ async function main(): Promise<void> {
        * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE. Il ferme la console ET l'API publique (`/v1`, `/mcp`) ; il
        * n'arrête PAS les campagnes déjà enfilées, cf. le runbook de `DEPLOY.md`.
        *
-       * ⚠️ LA NOTE EST JOURNALISÉE ICI EN PLUS DE LA ROUTE : c'est la seule trace durable du POURQUOI, et
-       * une écriture d'exploitation sans motif ne se relit pas six mois plus tard.
+       * ⚠️ LA NOTE EST JOURNALISÉE PAR LA ROUTE (`src/http/ops.ts`, `ops_verrou_espace`), et UNE fois : c'est
+       * la seule trace durable du POURQUOI. Ce câblage l'écrivait aussi, par un journal de Fastify qui était
+       * muet ; le rendre audible avait doublé chaque ligne.
        */
-      verrouillerEspace: async (tenantId, verrouille, note) => {
-        const fait = await opsStore.verrouillerEspace(tenantId, verrouille);
-        if (fait) journaliser('warn', 'ops_verrou_espace', { tenantId, verrouille, note });
-        return fait;
-      },
+      verrouillerEspace: (tenantId, verrouille, _note) => opsStore.verrouillerEspace(tenantId, verrouille),
       getTenantOverview: () => opsStore.getTenantOverview(),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),

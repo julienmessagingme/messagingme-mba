@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentsRouteDeps } from '../src/http/agents';
 import { CreditInsuffisantPourCle } from '../src/agent/provisionner-cle';
+import { capturerJournal } from './journal';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
@@ -186,9 +187,11 @@ describe('routes agents : création', () => {
     // Les deux échecs se ressemblent et n'appellent pas la même action : l'un se résout en attendant, l'autre
     // en payant. Un message unique enverrait la moitié des clients réessayer indéfiniment.
     const { srv } = app(async () => { throw new CreditInsuffisantPourCle(0); });
-    const res = await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'A' } });
+    const { resultat: res, lignes } = await capturerJournal(() => srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'A' } }));
     expect(res.statusCode).toBe(422);
     expect(res.json().error).toMatch(/crédit|Rechargez/i);
+    // Journalisé côté serveur en plus, comme le promet la route : ce 422 est la seule trace côté client.
+    expect(lignes.find((l) => l.msg === 'cle_modele_non_provisionnee')).toMatchObject({ lvl: 'error', tenant: 't1' });
   });
 
   it('🔴 dépendance ABSENTE : la création se comporte comme avant', async () => {

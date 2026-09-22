@@ -536,6 +536,12 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
 }
 
 /**
+ * Le corps d'une réponse 5xx : volontairement OPAQUE, rien de l'erreur interne n'en sort. Exporté pour
+ * `tests/corps-opaque-parite.test.ts`, qui le tient égal à ce que la console reconnaît (`web/lib/http.ts`).
+ */
+export const CORPS_OPAQUE_5XX = 'Internal Server Error';
+
+/**
  * Construit l'instance Fastify (le bouclier). La file et les stores sont injectés pour
  * rester testable sans DB. Les routes tenant (import/campaigns) EXIGENT l'auth : le tenant
  * est dérivé du JWT, jamais de l'URL.
@@ -665,7 +671,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         stack: err.stack,
       }));
     }
-    reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });
+    // ⚠️ Ce texte a un LECTEUR : la console le reconnaît et le remplace par une phrase traduite
+    // (`OPAQUE_DU_SERVEUR`, `web/lib/http.ts`). Les deux se tiennent par `tests/corps-opaque-parite.test.ts`.
+    reply.code(code).send({ error: code < 500 ? err.message : CORPS_OPAQUE_5XX });
   });
 
   // LIVENESS : le process répond (event loop non bloqué). Zéro DB, zéro dep -> cible d'un healthcheck/restart.

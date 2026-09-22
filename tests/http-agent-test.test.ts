@@ -315,6 +315,13 @@ describe('bac à sable de l’agent', () => {
         expect(res.statusCode, erreur.message).toBe(attendu);
         expect(res.body, erreur.message).not.toContain(erreur.message);
         expect(cap.debits, erreur.message).toEqual([10]);
+        if (attendu === 422) {
+          // Le chemin 422 journalise lui aussi la CAUSE, pas l'enveloppe : sa pile montre qui a levé.
+          const trace = lignes.map((l) => { try { return JSON.parse(l) as { msg?: string; stack?: string }; } catch { return {}; } })
+            .find((l) => l.msg === 'agent_test_echec');
+          expect(trace?.stack).toBeDefined();
+          expect(trace?.stack).not.toMatch(/^TourInterrompu/);
+        }
         if (attendu === 500) {
           // ⚠️ C'est la CAUSE qui est relancée, pas `TourInterrompu` : la pile journalisée doit montrer la
           // fonction qui a levé, sans quoi le journal ne dirait que « penserTrace ».

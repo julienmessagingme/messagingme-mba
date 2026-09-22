@@ -116,7 +116,7 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       try {
         await deps.recordClick(normalise, lien.tenantId, contactId);
       } catch (err) {
-        journaliser('error', 'clic_non_enregistre', { err, code: normalise });
+        journaliser('error', 'clic_non_enregistre', { err, code: normalise, tenantId: lien.tenantId });
       }
     }
 

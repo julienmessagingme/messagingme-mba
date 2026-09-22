@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import type { LinksRouteDeps } from '../src/http/links';
+import { capturerJournal } from './journal';
 import type { DestinationLien } from '../src/links/tracked-links.pg';
 
 const CODE = 'ab12cd34ef56';
@@ -93,9 +94,11 @@ describe('redirection publique /r/:code', () => {
   it('🔴 un échec d’enregistrement du clic REDIRIGE quand même', async () => {
     // Mieux vaut un clic non compté qu'un destinataire bloqué sur une erreur.
     const { server } = app({ recordClick: async () => { throw new Error('base indisponible'); } });
-    const res = await server.inject({ method: 'GET', url: `/r/${CODE}` });
+    const { resultat: res, lignes } = await capturerJournal(() => server.inject({ method: 'GET', url: `/r/${CODE}` }));
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('https://client.fr/promo');
+    // Le clic perdu se voit au journal, avec l'ESPACE du lien : sans lui, la ligne ne dit pas chez qui chercher.
+    expect(lignes.find((l) => l.msg === 'clic_non_enregistre')).toMatchObject({ lvl: 'error', err: 'base indisponible', code: CODE, tenantId: 't1' });
     await server.close();
   });
 

@@ -369,13 +369,14 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   async function reglagePrise(
     tenant: string,
     acteur: { userId: string | null; role: string | null },
-    log: { warn(o: object, msg: string): void },
   ): Promise<boolean | null> {
     if (!deps.agentsPeuventPrendre || peutAffecter(acteur)) return false;
     try {
       return await deps.agentsPeuventPrendre(tenant);
     } catch (err) {
-      log.warn({ err, tenant }, 'reglage_prise_illisible');
+      // ⚠️ `journaliser`, pas le journal de Fastify : celui-ci est MUET (`logger: false`). Cette fonction le
+      // recevait en paramètre, et la promesse « il est JOURNALISÉ » ci-dessus n'était pas tenue.
+      journaliser('warn', 'reglage_prise_illisible', { err, tenant });
       return null;
     }
   }
@@ -429,7 +430,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * l'écran montre le bouton « Je m'en occupe » sur les lignes non affectées quand ce drapeau est vrai. Deux
      * règles écrites séparément finiraient par proposer un geste que le serveur refuse.
      */
-    const reglage = await reglagePrise(tenant, acteur, req.log);
+    const reglage = await reglagePrise(tenant, acteur);
     return reply.code(200).send({
       conversations: conversations.map((c) => ({ ...c, assignedToMe: moi !== null && c.assignedTo === moi })),
       peutPrendre: deps.prendreSiLibre !== undefined && peutPrendre(acteur, null, reglage === true),
@@ -651,7 +652,6 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       const r = await deps.transcrireMessage(tenant, messageId, conversationId, cible);
       return reply.code(200).send(r);
     } catch (err) {
-      journaliser('error', 'transcription_impossible', { err, tenant, messageId });
       // 🔴 4xx et JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc
       // le message se perdrait exactement quand il sert. Et les trois causes n'appellent pas la même action :
       // rien à transcrire (l'écran n'aurait pas dû proposer le bouton), fichier trop lourd (rien à faire),
@@ -662,6 +662,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       if (err instanceof MediaTropGros) {
         return reply.code(422).send({ error: `vocal trop long pour être transcrit (${Math.round(err.octets / 1024)} Ko, maximum ${Math.round(err.plafond / 1024)} Ko)` });
       }
+      // Journalisé ICI, sous les trois cas métier : un vocal expiré n'est pas une erreur, et chaque clic sur
+      // l'un d'eux écrivait une ligne `error`, pile comprise. Même place que `media_illisible`.
+      journaliser('error', 'transcription_impossible', { err, tenant, messageId });
       return reply.code(422).send({ error: 'la transcription a échoué, réessayez dans un instant' });
     }
   });
@@ -934,7 +937,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const actuel = await deps.getAssignee(tenant, conversationId);
     if (actuel === undefined) return reply.code(404).send({ error: 'conversation inconnue' });
     if (actuel !== null) return reply.code(409).send({ error: 'Un collègue s’occupe déjà de cette conversation.', code: 'deja_prise' });
-    const reglage = await reglagePrise(tenant, acteur, req.log);
+    const reglage = await reglagePrise(tenant, acteur);
     // Illisible : on refuse, mais sans affirmer que l'espace l'interdit, ce qui serait peut-être faux.
     // 409 et pas 5xx : Cloudflare remplacerait le corps, et l'agent n'aurait rien à lire.
     if (reglage === null) {

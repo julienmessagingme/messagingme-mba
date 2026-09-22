@@ -10,6 +10,7 @@ import { AGENDA } from '../src/agent/setup/couverture';
 import type { EntretienComplet, EntretienStore } from '../src/agent/setup/entretien-store';
 import { ficheVide } from '../src/agent/fiche';
 import { LlmApiError } from '../src/llm/errors';
+import { capturerJournal } from './journal';
 
 /**
  * La route de la conversation de construction.
@@ -218,6 +219,23 @@ describe('conversation de construction', () => {
     const { cap, srv } = app({ entretien: ENTRETIEN_FINI });
     await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(cap.appels).toHaveLength(1);
+  });
+
+  it('🔴 une synthèse illisible ne recopie PAS les mots du client dans le journal', async () => {
+    // `JSON.parse` met un morceau du texte fautif dans le message de sa SyntaxError : ce sont les arguments
+    // du modèle, donc ce que le client a dit. Seul le NOM de l'erreur part au journal.
+    const { srv } = app({
+      entretien: ENTRETIEN_PRESQUE_FINI,
+      suite: [
+        reponse(JSON.stringify({ message: 'Parfait.', reponses: [{ point: DERNIER, valeur: 'tutoiement' }], fiche: { ton: 'Tutoiement.' } })),
+        reponse('{"contact": Jean Dupon"}'),
+      ],
+    });
+    const { resultat: res, lignes } = await capturerJournal(() => srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour }));
+    expect(res.statusCode).toBe(200);
+    const trace = lignes.find((l) => l.msg === 'agent_setup_synthese_echec');
+    expect(trace).toMatchObject({ lvl: 'warn', err: 'SyntaxError' });
+    expect(JSON.stringify(lignes)).not.toContain('Dupon');
   });
 
   it('🔴 une synthèse qui ÉCHOUE ne fait pas perdre le tour', async () => {

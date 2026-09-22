@@ -36,8 +36,10 @@ export const BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '') 
  * messages jetés ici remontent partout via `err.message` et s'affichaient en français sur une console en
  * anglais. En cas de doute on retombe sur le français, jamais sur une erreur.
  *
- * ⚠️ Ne traduit QUE les deux replis de ce fichier. Un message d'erreur venu du serveur (`body.error`) passe
- * tel quel : il est rédigé en français côté API. C'est la limite connue, notée dans `todo.md`.
+ * ⚠️ Ne traduit QUE les replis de ce fichier (session expirée, « Erreur N », l'incident d'un 5xx). Un message
+ * d'erreur venu du serveur (`body.error`) passe tel quel, rédigé en français côté API : c'est la limite
+ * connue, notée dans `todo.md`. Seule exception, le corps opaque d'une panne (`OPAQUE_DU_SERVEUR`), remplacé
+ * par la phrase traduite de `messageDErreur`.
  */
 function langue(): Locale {
   if (typeof window === 'undefined') return 'fr';
@@ -162,8 +164,12 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
   return body as T;
 }
 
-/** Ce que le gestionnaire global de l'API écrit sur SA panne (`src/server.ts`) : opaque, et en anglais. */
-const OPAQUE_DU_SERVEUR = 'Internal Server Error';
+/**
+ * Ce que le gestionnaire global de l'API écrit sur SA panne (`CORPS_OPAQUE_5XX`, `src/server.ts`) : opaque, et
+ * en anglais. Recopié ici parce que la frontière de build interdit d'importer le serveur ; la parité est tenue
+ * par `tests/corps-opaque-parite.test.ts`.
+ */
+export const OPAQUE_DU_SERVEUR = 'Internal Server Error';
 
 /**
  * LE TEXTE D'UNE RÉPONSE EN ÉCHEC, tel que l'écran l'affichera.
