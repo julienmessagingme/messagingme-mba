@@ -33,7 +33,7 @@ export interface EmbeddedSignupRouteDeps {
    */
   wabasForToken?(businessToken: string): Promise<string[]>;
   listPhones?(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
-  getPhone(phoneNumberId: string, businessToken: string): Promise<{ displayPhoneNumber: string | null; verifiedName: string | null; status: string | null }>;
+  getPhone(phoneNumberId: string, businessToken: string): Promise<{ displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null }>;
   subscribeApp(wabaId: string, businessToken: string): Promise<void>;
   register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
   link(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
@@ -46,7 +46,8 @@ export interface EmbeddedSignupRouteDeps {
  *  - GET  /embedded-signup/config   : de quoi le front lance la popup (appId + configId publics, pas de secret).
  *  - POST /embedded-signup/complete : reçoit { code, wabaId, phoneNumberId } de la popup (code TTL 30 s !),
  *    échange le code -> business token, rattache WABA + numéro au workspace, abonne les webhooks, register si
- *    numéro neuf (jamais pour un numéro déjà CONNECTED), stocke le token chiffré. Les étapes NON bloquantes qui
+ *    numéro neuf (jamais pour un numéro déjà CONNECTED, jamais pour un numéro NON vérifié : la v4 laisse finir
+ *    le parcours sans vérification, et Meta refuserait), stocke le token chiffré. Les étapes NON bloquantes qui
  *    échouent remontent en `warnings` (jamais de demi-échec silencieux).
  */
 export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard): void {
@@ -131,7 +132,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     //    BLOQUANTS : si l'un échoue, le token ne possède pas l'asset demandé -> 422 et on ne persiste RIEN (ni
     //    rattachement, ni webhooks, ni register, ni token). Sans ça, un tenant pourrait rattacher les assets d'un
     //    autre en forgeant wabaId/phoneNumberId. `getPhone` renvoie aussi le vrai `status` (décide du register).
-    let phone: { displayPhoneNumber: string | null; verifiedName: string | null; status: string | null };
+    let phone: { displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null };
     try {
       await deps.verifyWaba(wabaId, businessToken);
       phone = await deps.getPhone(phoneNumberId, businessToken);
@@ -171,13 +172,33 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
 
     // 5. Register : SEULEMENT si le numéro n'est pas déjà sur la Cloud API (numéro neuf). PIN généré et conservé
     //    (c'est le PIN 2FA du numéro : nécessaire aux re-régistrations).
+    //
+    // 🔴 ET SEULEMENT SI LE NUMÉRO EST VÉRIFIÉ. Depuis la v4 de l'inscription, le client peut terminer le
+    //    parcours Meta avec un numéro NON vérifié (la v2 finissait toujours vérifié) : `register` le refuse
+    //    alors (133006) et chaque tentative consomme une des 10 requêtes permises par numéro sur 72 h, au-delà
+    //    desquelles Meta bloque le numéro pour 72 h (133016). On ne brûle pas un essai pour rien.
+    //    Seul `NOT_VERIFIED` retient le register : `EXPIRED` n'a jamais été mesuré ici, et le refuser sur une
+    //    valeur qu'on n'a jamais vue casserait un embarquement qui marche aujourd'hui.
+    //    Le numéro RESTE rattaché : c'est le bouton « Activer le numéro » de l'Accueil qui finit le travail,
+    //    sans redemander au client de refaire tout le parcours Meta pour un code qu'il peut saisir chez nous.
     let pin: string | null = null;
-    if (phone.status !== 'CONNECTED') {
+    const aActiver = phone.status !== 'CONNECTED' && phone.codeVerificationStatus === 'NOT_VERIFIED';
+    if (aActiver) {
+      // eslint-disable-next-line no-console
+      console.warn(`embedded-signup: numéro non vérifié, register non tenté (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId})`);
+      warnings.push("ce numéro n'a pas encore été vérifié chez Meta : il est rattaché mais ne peut pas encore envoyer. Termine avec « Activer le numéro » sur l'Accueil.");
+    } else if (phone.status !== 'CONNECTED') {
       pin = String(randomInt(100000, 1000000)); // PIN 2FA du numéro : CSPRNG (cohérent avec le reste du repo)
       try {
         await deps.register(phoneNumberId, businessToken, pin);
       } catch (err) {
-        warnings.push(`register du numéro : ${err instanceof Error ? err.message : String(err)}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        // ⚠️ JOURNALISÉ, et pas seulement rendu. Le 2026-09-22 au soir, un register a échoué en silence : la
+        // route ne le mettait que dans `warnings`, que l'écran effaçait en rechargeant le compte. La cause a
+        // failli être perdue, et c'est ce qui a coûté la soirée.
+        // eslint-disable-next-line no-console
+        console.error(`embedded-signup: register refusé (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId}) : ${msg}`);
+        warnings.push(`register du numéro : ${msg}`);
         pin = null; // le pin n'a pas été posé -> ne pas le stocker comme s'il l'était
       }
     }
@@ -196,6 +217,9 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       wabaId,
       phoneNumberId,
       displayPhoneNumber: phone.displayPhoneNumber,
+      // `aActiver` n'est posé QUE dans ce cas : l'écran s'en sert pour envoyer tout de suite vers l'activation,
+      // au lieu de laisser croire que le numéro est prêt à envoyer.
+      ...(aActiver ? { aActiver: true } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
     });
   });

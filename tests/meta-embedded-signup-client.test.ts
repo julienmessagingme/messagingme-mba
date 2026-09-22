@@ -74,3 +74,17 @@ describe('listPhones', () => {
     expect(await client().listPhones('waba-1', 'T')).toEqual([]);
   });
 });
+
+describe('getPhone', () => {
+  it('demande code_verification_status et le rend (la v4 laisse finir avec un numéro NON vérifié)', async () => {
+    const urls = fausseReponse({ id: 'pn-1', display_phone_number: '+33600000000', status: 'PENDING', code_verification_status: 'NOT_VERIFIED' });
+    const phone = await client().getPhone('pn-1', 'TOKEN_CLIENT');
+    expect(urls[0]).toContain('code_verification_status');
+    expect(phone.codeVerificationStatus).toBe('NOT_VERIFIED');
+  });
+
+  it('champ absent -> null, et rien ne sera refusé sur cette base', async () => {
+    fausseReponse({ id: 'pn-1', status: 'CONNECTED' });
+    expect((await client().getPhone('pn-1', 'T')).codeVerificationStatus).toBeNull();
+  });
+});

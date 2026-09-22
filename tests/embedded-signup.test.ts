@@ -294,3 +294,52 @@ describe('aucun refus destiné à l’utilisateur ne part en 5xx (Cloudflare dé
     await server.close();
   });
 });
+
+/**
+ * v4 de l'inscription : on peut y terminer avec un numéro NON vérifié (la v2 imposait un numéro vérifié). Le
+ * register d'un tel numéro échoue (133006), et chaque tentative consomme une des 10 permises par numéro sur
+ * 72 h (au-delà : erreur 133016 et numéro bloqué 72 h). On ne le tente donc pas.
+ *
+ * 🔴 ON RATTACHE QUAND MÊME, et c'est l'arbitrage du 2026-09-22 au soir : refuser le parcours entier obligerait
+ * le client à tout recommencer chez Meta pour un code qu'il peut saisir chez nous. Le numéro est rattaché, dit
+ * « à activer », et le bouton d'activation fait le reste.
+ */
+describe('POST /embedded-signup/complete : numéro non vérifié (v4)', () => {
+  it('NOT_VERIFIED : rattaché et abonné, register JAMAIS tenté, aActiver + avertissement', async () => {
+    const { server, cap } = app({
+      getPhone: async () => ({ displayPhoneNumber: '+33600000000', verifiedName: null, status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }),
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ aActiver?: boolean; warnings?: string[] }>();
+    expect(body.aActiver).toBe(true);
+    expect(body.warnings?.join(' ')).toMatch(/vérifié/);
+    expect(cap.linked).toHaveLength(1);
+    expect(cap.subscribed).toEqual(['waba-1']);
+    expect(cap.registered).toHaveLength(0);
+    expect(cap.saved[0]).toMatchObject({ pin: null }); // aucun PIN posé : rien à conserver
+    await server.close();
+  });
+
+  it('déjà CONNECTED : rattaché sans register quel que soit code_verification_status (le statut prime)', async () => {
+    const { server, cap } = app({
+      getPhone: async () => ({ displayPhoneNumber: '+33600000000', verifiedName: 'X', status: 'CONNECTED', codeVerificationStatus: 'NOT_VERIFIED' }),
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ aActiver?: boolean }>().aActiver).toBeUndefined();
+    expect(cap.linked).toHaveLength(1);
+    expect(cap.registered).toHaveLength(0);
+    await server.close();
+  });
+
+  it('EXPIRED sur un numéro neuf : register TENTÉ comme avant (valeur jamais mesurée, on ne la refuse pas)', async () => {
+    const { server, cap } = app({
+      getPhone: async () => ({ displayPhoneNumber: null, verifiedName: null, status: 'PENDING', codeVerificationStatus: 'EXPIRED' }),
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(200);
+    expect(cap.registered).toHaveLength(1);
+    await server.close();
+  });
+});

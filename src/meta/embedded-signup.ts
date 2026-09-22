@@ -14,6 +14,15 @@ export interface EsPhoneInfo {
   verifiedName: string | null;
   /** Statut du numéro (ex. CONNECTED) : décide si le register est nécessaire. */
   status: string | null;
+  /**
+   * Vérification du numéro par code (`VERIFIED`, `NOT_VERIFIED`, `EXPIRED`). Rendu par `getPhone` seulement,
+   * d'où l'optionnalité : `listPhones` ne sert qu'à retrouver un identifiant et ne le demande pas.
+   *
+   * 🔴 DEPUIS LA v4 DE L'INSCRIPTION, un client peut terminer le parcours avec un numéro NON vérifié (la v2
+   * finissait toujours vérifié). `register` refuse alors le numéro (133006) et chaque tentative consomme une
+   * des 10 requêtes permises par numéro sur 72 h. Mesuré le 2026-09-22 : numéro resté `PENDING`, cause perdue.
+   */
+  codeVerificationStatus?: string | null;
 }
 
 export class MetaEmbeddedSignupClient {
@@ -108,7 +117,7 @@ export class MetaEmbeddedSignupClient {
   /** Infos du numéro onboardé, lues avec le business token (le token global ne voit pas les WABA clients).
    *  Sert AUSSI de preuve d'appartenance du numéro (l'appel échoue si le token ne le possède pas). */
   async getPhone(phoneNumberId: string, businessToken: string): Promise<EsPhoneInfo> {
-    const qs = new URLSearchParams({ fields: 'id,display_phone_number,verified_name,status' });
+    const qs = new URLSearchParams({ fields: 'id,display_phone_number,verified_name,status,code_verification_status' });
     const b = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${businessToken}` },
     });
@@ -117,6 +126,7 @@ export class MetaEmbeddedSignupClient {
       displayPhoneNumber: typeof b['display_phone_number'] === 'string' ? b['display_phone_number'] : null,
       verifiedName: typeof b['verified_name'] === 'string' ? b['verified_name'] : null,
       status: typeof b['status'] === 'string' ? b['status'] : null,
+      codeVerificationStatus: typeof b['code_verification_status'] === 'string' ? b['code_verification_status'] : null,
     };
   }
 
