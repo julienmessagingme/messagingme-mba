@@ -223,9 +223,16 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
    * rendu, et un `useState(urlSuggeree)` la manquerait une fois sur deux.
    *
    * ⚠️ ET ELLE N'ÉCRASE JAMAIS UNE SAISIE : si le client a déjà tapé quelque chose, c'est lui qui a raison.
+   *
+   * 🔴 « A DÉJÀ TAPÉ » NE SUFFISAIT PAS (2026-09-22). Un client qui a cliqué dans le champ et tape au moment où
+   * la suggestion arrive le trouvait encore vide au moment du test : la suggestion s'y posait, et sa saisie
+   * s'ajoutait DERRIÈRE (`https://ganprevoyance.frhttps://autre-site.fr/page`). Attrapé par le e2e en CI,
+   * mesuré ensuite à 4 échecs sur 40. Dès que le champ a reçu le focus, la suggestion ne le remplit plus ;
+   * le bandeau au-dessus continue de la montrer.
    */
+  const touche = useRef(false);
   useEffect(() => {
-    if (urlSuggeree) setUrl((actuel) => (actuel === '' ? urlSuggeree : actuel));
+    if (urlSuggeree) setUrl((actuel) => (actuel === '' && !touche.current ? urlSuggeree : actuel));
   }, [urlSuggeree]);
   const [apercu, setApercu] = useState<ApercuImport | null>(null);
   const [occupe, setOccupe] = useState(false);
@@ -268,6 +275,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
           className={`${inputCls} max-w-md`}
           value={url}
           disabled={busy || occupe}
+          onFocus={() => { touche.current = true; }}
           onChange={(e) => { setUrl(e.target.value); setApercu(null); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && propre !== '') void voir(); }}
           placeholder="https://votre-site.fr/tarifs"
