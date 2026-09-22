@@ -538,6 +538,12 @@ export function registerAgentMcp(
  * s'exécute. Deux calculs séparés finiraient par diverger, et l'aperçu deviendrait une promesse.
  *
  * Rend `null` quand la réponse a déjà été envoyée (refus, 404, échec de connexion).
+ *
+ * 🔴 L'ÉCHEC DU SERVEUR DISTANT SORT EN 422, JAMAIS EN 5xx. La raison (`direEchec`) est écrite pour
+ * l'administrateur, qui doit la LIRE pour réparer son serveur. Cloudflare remplace le corps de tout 5xx par
+ * sa propre page : en 502, il voyait « Erreur 502 » et rien d'autre, pour une cause que nous connaissions.
+ * Même règle que le test d'une boîte SMTP (`src/http/email.ts`). Un 5xx reste réservé à NOTRE panne, celle
+ * qui n'a rien à dire au client (une écriture qui lève, par exemple).
  */
 async function calculer(
   deps: AgentMcpRouteDeps,
@@ -552,7 +558,7 @@ async function calculer(
   if ('echec' in ouverte) {
     const raison = typeof ouverte.echec === 'string' ? ouverte.echec : direEchec(ouverte.echec);
     await deps.marquerEpreuve(tenant, sourceId, false, raison);
-    await reply.code(502).send({ error: raison });
+    await reply.code(422).send({ error: raison });
     return null;
   }
 
@@ -561,7 +567,7 @@ async function calculer(
     if ('echec' in catalogue) {
       const raison = direEchec(catalogue.echec);
       await deps.marquerEpreuve(tenant, sourceId, false, raison);
-      await reply.code(502).send({ error: raison });
+      await reply.code(422).send({ error: raison });
       return null;
     }
     await deps.marquerEpreuve(tenant, sourceId, true);

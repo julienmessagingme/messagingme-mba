@@ -4,7 +4,7 @@ import { registerAgentMcp, type AgentMcpRouteDeps, type EcritureImportMcp } from
 import type { PreHandler } from '../src/auth/middleware';
 import type { OutilExistantMcp } from '../src/agent/mcp/import';
 import type { SourceAppel } from '../src/agent/sources';
-import type { SessionMcp } from '../src/mcp/client';
+import type { EchecMcp, SessionMcp } from '../src/mcp/client';
 
 /**
  * LES ROUTES DES CONNECTEURS MCP.
@@ -54,6 +54,8 @@ function harnais(over: {
   kind?: 'mcp' | 'http';
   /** Les noms DEJA pris dans l espace. L unicite de `agent_tools.name` est par ESPACE depuis 0127. */
   nomsPris?: string[];
+  /** L ouverture de session echoue AVANT tout catalogue (jeton refuse, transport ancien, serveur injoignable). */
+  ouverture?: { echec: EchecMcp };
   /**
    * ⚠️ LE VERDICT, PAS UN BOOLEEN, et c est ce qui rendait l ancien test DECORATIF. Le faux d avant
    * rendait `false` pour dire « il reste des outils actifs » ; le vrai store ne rend JAMAIS `false` pour
@@ -91,7 +93,7 @@ function harnais(over: {
     appliquer: async (_t, _s, e) => { ecrit.push(e); },
     clesDeChamps: async () => over.cles ?? ['email', 'reference'],
     reglerOutil: async (_t, id, patch) => { regles.push({ id, patch }); return over.reglerOk ?? true; },
-    ouvrirSession: async () => session,
+    ouvrirSession: async () => over.ouverture ?? session,
     verifierResolution: async () => over.resolution ?? { ok: true },
   };
   const app = Fastify();
@@ -264,12 +266,40 @@ describe('l apercu et l import', () => {
     expect(h.ecrit[0]!.disparus).toEqual([]);
   });
 
-  it('un catalogue illisible rend 502 et marque la source, il n ecrit pas', async () => {
+  /**
+   * 🔴 422, JAMAIS 5xx, ET C EST LA RAISON QUE L ADMINISTRATEUR DOIT LIRE. L API est servie derriere
+   * Cloudflare, qui remplace le corps de tout 5xx par sa propre page : en 502, la cause que nous
+   * connaissions (« injoignable », « jeton refuse ») n arrivait jamais a l ecran, qui affichait
+   * « Erreur 502 ». Meme regle que le test d une boite SMTP (`src/http/email.ts`).
+   */
+  it('🔴 un catalogue illisible rend 422 AVEC sa raison, marque la source, et n ecrit pas', async () => {
     const h = harnais({ catalogue: { echec: { genre: 'reseau', message: 'coupe' } } });
     const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
-    expect(r.statusCode).toBe(502);
+    expect(r.statusCode).toBe(422);
+    expect(r.json()).toEqual({ error: 'le serveur est injoignable' });
     expect(h.ecrit).toEqual([]);
     expect(h.epreuves).toEqual([{ ok: false }]);
+  });
+
+  it('🔴 un echec AVANT le catalogue rend lui aussi 422 avec sa raison, sur l apercu comme sur l import', async () => {
+    // Deux portes avant `lister` : l adresse qui resout vers l interieur, et la session qui ne s ouvre
+    // pas. Elles passaient par le MEME 502 que le catalogue illisible, et aucun cas ne les tenait.
+    const cas = [
+      [{ resolution: { ok: false, raison: 'adresse privee' } }, 'adresse privee'],
+      [{ ouverture: { echec: { genre: 'refus' as const, code: 401, message: 'le serveur a répondu 401' } } }, 'le serveur a refusé la connexion (401)'],
+      [{ ouverture: { echec: { genre: 'transport_ancien' as const } } }, 'ancien transport HTTP+SSE'],
+    ] as const;
+    for (const route of ['apercu', 'importer']) {
+      for (const [over, attendu] of cas) {
+        const h = harnais(over);
+        const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/${route}` });
+        expect(r.statusCode, `${route} ${attendu}`).toBe(422);
+        expect(r.json().error, `${route} ${attendu}`).toContain(attendu);
+        expect(h.session.lister).not.toHaveBeenCalled();
+        expect(h.ecrit).toEqual([]);
+        expect(h.epreuves).toEqual([{ ok: false }]);
+      }
+    }
   });
 
   it('🔴 un refus d adresse interne et une redirection disent CHACUN leur cause a l administrateur', async () => {
@@ -279,7 +309,7 @@ describe('l apercu et l import', () => {
     ] as const) {
       const h = harnais({ catalogue: { echec } });
       const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/importer` });
-      expect(r.statusCode, echec.genre).toBe(502);
+      expect(r.statusCode, echec.genre).toBe(422);
       expect(r.body, echec.genre).toContain(attendu);
     }
   });

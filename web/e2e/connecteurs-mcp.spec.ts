@@ -35,7 +35,7 @@ const OUTILS = [
   },
 ];
 
-async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean } = {}): Promise<Array<{ method: string; url: string }>> {
+async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean; apercuRefuse?: string } = {}): Promise<Array<{ method: string; url: string }>> {
   const appels: Array<{ method: string; url: string }> = [];
   await page.addInitScript((s) => {
     window.localStorage.setItem('mba.session', JSON.stringify(s));
@@ -53,6 +53,9 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ serveur: SERVEUR }) });
     }
     if (url.endsWith(`/tenants/${TENANT}/mcp`)) return json({ serveurs: over.aucun ? [] : [SERVEUR] });
+    if (url.includes('/apercu') && over.apercuRefuse) {
+      return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.apercuRefuse }) });
+    }
     if (url.includes('/apercu')) {
       return json({
         plan: over.plan ?? [{ type: 'schema_change', nom: 'search', consentementsTombes: 2 }],
@@ -83,6 +86,17 @@ test.describe('Tools > Connecteurs MCP', () => {
     await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toContainText('search');
     await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toContainText('2 agent(s)');
     expect(appels.filter((a) => a.url.includes('/importer'))).toHaveLength(0);
+  });
+
+  test('🔴 un serveur qui refuse l’aperçu : l’écran montre la RAISON du serveur, pas « Erreur 422 »', async ({ page }) => {
+    // 🔴 La route rend 422, jamais 5xx : Cloudflare remplace le corps de tout 5xx, et l'administrateur ne
+    // lisait plus que « Erreur 502 » pour une cause que le serveur connaissait. Ce cas tient l'autre moitié :
+    // un 422 n'est PAS un statut que l'écran ignore, sa raison arrive telle quelle.
+    await mock(page, { apercuRefuse: 'le serveur a refusé la connexion (401)' });
+    await page.goto('/connecteurs-mcp');
+    await page.getByTestId(`mcp-apercu-${SOURCE}`).click();
+    await expect(page.getByTestId('mcp-erreur')).toHaveText('le serveur a refusé la connexion (401)');
+    await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toHaveCount(0);
   });
 
   test('🔴 un catalogue TRONQUÉ prévient que rien ne sera retiré', async ({ page }) => {
