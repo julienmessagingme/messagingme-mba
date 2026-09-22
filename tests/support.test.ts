@@ -141,11 +141,21 @@ describe('routes support', () => {
     await a.close();
   });
 
-  it('erreur d envoi (Resend down) -> 502 propre (pas de 500 nu)', async () => {
-    const a = app({ sendSupport: async () => { throw new Error('resend 403'); } });
-    const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
-    expect(res.statusCode).toBe(502);
-    await a.close();
+  it('erreur d envoi (Resend down) -> 422 LISIBLE, jamais un 5xx dont Cloudflare détruirait le corps', async () => {
+    // L'écran de support affiche ce message tel quel. En 502, Cloudflare le remplaçait par sa page, et la
+    // personne lisait « Erreur 502 » sur la page même où l'on vient quand quelque chose ne marche pas.
+    const spy = console.error;
+    console.error = () => {};
+    try {
+      const a = app({ sendSupport: async () => { throw new Error('resend 403'); } });
+      const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error).toContain('réessaie plus tard');
+      expect(res.json().error).not.toContain('resend'); // la cause interne reste dans le log
+      await a.close();
+    } finally {
+      console.error = spy;
+    }
   });
 
   it('tenant != token -> 403', async () => {
@@ -195,7 +205,7 @@ describe('routes support', () => {
     try {
       const a = app({ sendSupport: async () => { throw new Error('resend 403 domaine non vérifié'); } });
       const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
-      expect(res.statusCode).toBe(502);
+      expect(res.statusCode).toBe(422);
       await a.close();
     } finally {
       console.error = spy;

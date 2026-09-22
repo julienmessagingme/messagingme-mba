@@ -148,6 +148,12 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
         err: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
+      // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT, alors qu'une raison lisible sort ailleurs en 422 (documentation.md, « Aucun
+      // message destiné à l'utilisateur dans un 5xx »). Ce corps n'est lu par PERSONNE : le panneau
+      // (`web/components/BoutonAide.tsx`) affiche son propre texte, traduit, et propose le support. Cloudflare
+      // peut donc le remplacer sans rien faire perdre, et l'échec est bien le NÔTRE (Gateway en panne ou faute
+      // de programmation, ce `catch` ne les distingue pas) : un 5xx le dit honnêtement. Le jour où l'écran
+      // affichera `error`, ce code passe en 422.
       return reply.code(502).send({ error: 'aide indisponible pour le moment' });
     }
   });
@@ -191,6 +197,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
         err: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
+      // ⚠️ 502 GARDÉ, pour la même raison que la question : l'écran pose son propre texte et ne lit pas ce corps.
       return reply.code(502).send({ error: 'récap indisponible pour le moment' });
     }
   });

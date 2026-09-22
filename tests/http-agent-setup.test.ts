@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
@@ -83,6 +83,8 @@ function app(opts: {
   sansFiches?: boolean;
   sansVision?: boolean;
   fiches?: Array<{ titre: string; corps: string }>;
+  /** Une écriture de dépense qui LÈVE : notre panne, jamais celle du fournisseur de modèle. */
+  depensesEchouent?: boolean;
 } = {}) {
   const cap = { appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }> };
   let rang = 0;
@@ -125,6 +127,9 @@ function app(opts: {
     }),
     modele: opts.sansModele ? '' : 'modele-de-construction',
     ...(opts.sansVision ? {} : { modeleVision: 'modele-de-vision' }),
+    ...(opts.depensesEchouent ? {
+      depenses: { lire: async () => 0, ajouter: async () => { throw new Error('connexion au pool perdue'); } },
+    } : {}),
   };
   return { cap, entretiens, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentSetup: deps }) };
 }
@@ -571,16 +576,28 @@ describe('conversation de construction', () => {
   });
 
   it('🔴 un tour qui échoue n’écrit RIEN : l’entretien ne garde pas une question jamais posée', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { entretiens, srv } = app({ reponse: new Error('gateway indisponible') });
     const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
-    expect(res.statusCode).toBe(502);
+    spy.mockRestore();
+    expect(res.statusCode).toBe(422);
     expect(entretiens.ecrits).toEqual([]);
   });
 
-  it('une panne du fournisseur rend 502, pas 500', async () => {
+  /**
+   * 🔴 422 ET JAMAIS UN 5xx : Cloudflare remplace le corps de toute 5xx par sa propre page, et l'écran
+   * n'affichait que « Erreur 502 » pour une cause que le serveur connaissait (documentation.md, « Aucun
+   * message destiné à l'utilisateur dans un 5xx »). Et la raison est JOURNALISÉE : le corps peut se perdre.
+   */
+  it('🔴 une panne du fournisseur rend 422 avec SA raison, et laisse une trace serveur', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await app({ reponse: new Error('gateway indisponible') }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
-    expect(res.statusCode).toBe(502);
+    const lignes = spy.mock.calls.map((c) => String(c[0]));
+    spy.mockRestore();
+    expect(res.statusCode).toBe(422);
     expect(res.json().error).toContain('gateway indisponible');
+    const trace = lignes.find((l) => l.includes('agent_setup_tour_echec'));
+    expect(trace).toContain('gateway indisponible');
   });
 
   it('🔴 sans clé, sans modèle ou sans mémoire d’entretien, la route rend 503 et n’appelle RIEN', async () => {
@@ -713,6 +730,38 @@ describe('conversation de construction', () => {
         method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Guide', dataUrl: dataUrl(document) },
       });
       expect(doc.statusCode).toBe(201);
+    });
+
+    it('🔴 une image que le modèle ne lit pas rend 422 avec SA raison, et rien n’est écrit', async () => {
+      // En 502, Cloudflare remplaçait le corps par sa page : l'administrateur lisait « Erreur 502 ».
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const fiches: Array<{ titre: string; corps: string }> = [];
+      const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
+      const res = await app({ fiches, reponse: new Error('vision indisponible') }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'photo', dataUrl: png },
+      });
+      const lignes = spy.mock.calls.map((c) => String(c[0]));
+      spy.mockRestore();
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error).toContain('l’image n’a pas pu être lue');
+      expect(res.json().error).toContain('vision indisponible');
+      expect(fiches).toEqual([]);
+      expect(lignes.find((l) => l.includes('agent_setup_image_echec'))).toContain('vision indisponible');
+    });
+
+    it('⚠️ une dépense qui ne s’écrit pas n’est PAS annoncée comme une image illisible', async () => {
+      // L'image a été lue : la panne est NOTRE écriture en base, qui n'a rien à dire au client. Elle sort en
+      // 500 opaque, sans le texte de l'erreur, et pas en « l'image n'a pas pu être lue : <erreur SQL> ».
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
+      const res = await app({
+        depensesEchouent: true,
+        reponse: { texte: 'Tarifs : 45 euros par mois pour l abonnement mensuel complet.', appelsOutils: [], finish: 'stop', usage: { tokensIn: 9, tokensOut: 4, tokensCaches: 0, coutDollars: 0.001 }, generationId: 'g' },
+      }).srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Grille', dataUrl: png } });
+      spy.mockRestore();
+      expect(res.statusCode).toBe(500);
+      expect(res.json().error).not.toContain('image');
+      expect(res.json().error).not.toContain('pool');
     });
 
     it('🔴 l’image part au modèle de VISION, pas à celui de l’entretien', async () => {

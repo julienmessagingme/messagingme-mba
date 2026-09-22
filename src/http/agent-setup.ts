@@ -362,13 +362,31 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         // est le seul comportement honnête, et les documents texte, eux, continuent de passer.
         return reply.code(422).send({ error: `${MESSAGE_PLAFOND} Les documents texte, PDF et Word passent quand même.` });
       }
+      /**
+       * 🔴 422 ET PAS 502 : la raison est écrite pour l'administrateur, et Cloudflare remplace le corps de toute
+       * 5xx par sa propre page, donc l'écran n'affichait que « Erreur 502 » (documentation.md, « Aucun message
+       * destiné à l'utilisateur dans un 5xx »). Journalisée en plus : le corps peut se perdre, le log reste.
+       *
+       * ⚠️ LE `try` NE COUVRE QUE L'APPEL AU MODÈLE. Il couvrait aussi `noterDepense` : une écriture en base qui
+       * lève aurait été annoncée « l'image n'a pas pu être lue », avec le texte de l'erreur SQL, alors que
+       * l'image avait été lue. Celle-là est NOTRE panne et n'a rien à dire au client : elle part en 500.
+       */
+      let lu: Awaited<ReturnType<typeof lireImage>>;
       try {
-        const lu = await lireImage(deps, ctx.tenant, vision, parse.data.dataUrl, parse.data.nom);
-        await noterDepense(deps, ctx.tenant, lu.coutDollars);
-        texte = lu.texte;
+        lu = await lireImage(deps, ctx.tenant, vision, parse.data.dataUrl, parse.data.nom);
       } catch (err) {
-        return reply.code(502).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+        // eslint-disable-next-line no-console
+        console.error(JSON.stringify({
+          lvl: 'error',
+          msg: 'agent_setup_image_echec',
+          tenant: ctx.tenant,
+          err: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        }));
+        return reply.code(422).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
       }
+      await noterDepense(deps, ctx.tenant, lu.coutDollars);
+      texte = lu.texte;
     } else {
       texte = await extraireTexte(bytes, reconnu.nature);
     }
@@ -465,7 +483,16 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     } catch (err) {
       // Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console,
       // et un 5xx verrait son corps remplacé par la page d'erreur de Cloudflare.
-      return reply.code(502).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      // 🔴 D'OÙ 422. Ce commentaire le disait déjà, au-dessus d'un 502 : l'écran n'affichait que « Erreur 502 ».
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify({
+        lvl: 'error',
+        msg: 'agent_setup_tour_echec',
+        tenant: ctx.tenant,
+        err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      }));
+      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
     }
 
     // ⚠️ AVANT toute sortie d'erreur : l'appel a eu lieu, donc il est payé, même si sa réponse est

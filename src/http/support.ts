@@ -6,7 +6,7 @@ import { scopeTenant, nonEmpty } from './scope';
 export interface SupportRouteDeps {
   /** false si le support n'est pas configuré (clé Resend ou destinataire manquant) -> 503. */
   enabled: boolean;
-  /** Envoie le message. Lève sur erreur réseau/Resend (mappée en 502 par la route, pas de 500 nu). */
+  /** Envoie le message. Lève sur erreur réseau/Resend (mappée en 422 par la route, pas de 500 nu). */
   sendSupport(input: { tenantId: string; userId: string | null; email: string | null; subject: string; message: string }): Promise<void>;
   /**
    * Email du compte AUTHENTIFIÉ, résolu en base depuis `req.auth.userId`. C'est lui qui sert de reply-to.
@@ -76,7 +76,10 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
         err: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      return reply.code(502).send({ error: 'envoi impossible pour le moment, réessaie plus tard' });
+      // 🔴 422 ET PAS 502 : l'écran de support affiche ce message tel quel, et Cloudflare remplace le corps de
+      // toute 5xx par sa propre page. La personne lisait « Erreur 502 » sur la page même où l'on vient quand
+      // quelque chose ne marche pas (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »).
+      return reply.code(422).send({ error: 'envoi impossible pour le moment, réessaie plus tard' });
     }
   });
 }

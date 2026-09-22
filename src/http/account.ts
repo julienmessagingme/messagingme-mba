@@ -232,6 +232,11 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('disconnectHubspot (connecteur) échoué, reset local NON appliqué (anti-drift):', err instanceof Error ? err.message : err);
+        // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT : c'est NOTRE panne, pas une raison à lire. Le connecteur mm-hubspot est un
+        // service à nous, joint sur le réseau interne et déjà rejoué par `withRetry` ; l'administrateur n'a rien
+        // à y changer. Et l'écran d'accueil ne lit pas ce corps (il annule sa bascule optimiste), donc Cloudflare
+        // peut le remplacer sans rien faire perdre. Le jour où l'écran affichera `error`, ce code passe en 422
+        // (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »).
         return reply.code(502).send({ error: 'échec de la déconnexion côté connecteur HubSpot' });
       }
       await deps.disconnectHubspotTenant(tenant);

@@ -1,5 +1,5 @@
 import { gardeOuverte } from './gardes';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Fastify from 'fastify';
@@ -140,10 +140,16 @@ describe('un tour', () => {
     expect(m.lireFil()?.messages).toHaveLength(2);
   });
 
-  it('⚠️ un inventaire illisible chez Meta rend 502, sans rien écrire', async () => {
+  it('⚠️ un inventaire illisible chez Meta rend 422 avec la raison, sans rien écrire', async () => {
+    // 422 et pas 502 : Cloudflare remplace le corps de toute 5xx, et l'écran affiche ce message.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = monter({ inventaire: async () => null });
     const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
-    expect(r.statusCode).toBe(502);
+    const lignes = spy.mock.calls.map((c) => String(c[0]));
+    spy.mockRestore();
+    expect(r.statusCode).toBe(422);
+    expect(r.json().error).toMatch(/illisible chez Meta/);
+    expect(lignes.some((l) => l.includes('mba_assistant_inventaire_illisible'))).toBe(true);
     expect(m.journal.ecrits).toHaveLength(0);
   });
 });
@@ -242,18 +248,25 @@ describe('le vrai câblage : la route EXISTE', () => {
  * corps de toute 5xx par sa page d'erreur : le client voyait un écran qui n'explique rien.
  */
 describe('quand le fournisseur de modèle lâche', () => {
-  it('🔴 502 avec un message, JAMAIS une exception qui remonte en 500', async () => {
+  it('🔴 422 avec un message, JAMAIS un 5xx dont Cloudflare détruirait le corps', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = monter({ completer: async () => { throw new Error('upstream 503'); } });
     const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
-    expect(r.statusCode).toBe(502);
+    const lignes = spy.mock.calls.map((c) => String(c[0]));
+    spy.mockRestore();
+    expect(r.statusCode).toBe(422);
     expect(r.json().error).toMatch(/n’a pas répondu/);
+    // Journalisé en plus : le corps peut se perdre en route, le log reste.
+    expect(lignes.find((l) => l.includes('mba_assistant_tour_echec'))).toContain('upstream 503');
   });
 
   it('🔴 et le fil n’est PAS écrit : un tour qui n’a pas eu lieu ne laisse rien', async () => {
     // Sinon le message du client resterait dans le fil, sans réponse en face, et le tour suivant
     // repartirait d'une conversation qui a l'air d'avoir été ignorée.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = monter({ completer: async () => { throw new Error('upstream 503'); } });
     await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+    spy.mockRestore();
     expect(m.journal.ecrits).toHaveLength(0);
     expect(m.lireFil()).toBeNull();
   });

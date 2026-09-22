@@ -151,7 +151,18 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
       if (err instanceof TourInterrompu) await debiterEssai(tenant, err.usage.coutMicroEur, deps);
       // Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console,
       // et Cloudflare remplacerait le corps d'une 5xx par sa page d'erreur.
-      return reply.code(502).send({ error: `l’essai a échoué : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      // 🔴 D'OÙ 422. Ce commentaire le disait déjà, au-dessus d'un 502 : l'écran du bac à sable n'affichait
+      // que « Erreur 502 ». Journalisé ici : le corps peut se perdre en route, le log reste.
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify({
+        lvl: 'error',
+        msg: 'agent_test_echec',
+        tenant,
+        agentId,
+        err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      }));
+      return reply.code(422).send({ error: `l’essai a échoué : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
     }
 
     await debiterEssai(tenant, decision.usage?.coutMicroEur ?? 0, deps);

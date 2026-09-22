@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
@@ -174,8 +174,10 @@ describe('bac à sable de l’agent', () => {
     }
   });
 
-  it('🔴 une panne du fournisseur rend 502, jamais 500', async () => {
-    // Cloudflare remplace le corps d'une 5xx par sa page d'erreur : un 500 ne dirait rien au client.
+  it('🔴 une panne du fournisseur rend 422 avec SA raison, jamais un 5xx', async () => {
+    // Cloudflare remplace le corps d'une 5xx par sa page d'erreur : en 502, l'écran du bac à sable
+    // n'affichait que « Erreur 502 », pour une cause que le serveur connaissait.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { srv } = app();
     const casse = buildServer({
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
@@ -189,8 +191,12 @@ describe('bac à sable de l’agent', () => {
       },
     });
     const res = await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
-    expect(res.statusCode).toBe(502);
+    const lignes = spy.mock.calls.map((c) => String(c[0]));
+    spy.mockRestore();
+    expect(res.statusCode).toBe(422);
     expect(res.json().error).toContain('gateway indisponible');
+    // Journalisée en plus : le corps peut se perdre en route, le log reste.
+    expect(lignes.find((l) => l.includes('agent_test_echec'))).toContain('gateway indisponible');
     expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
   });
 
@@ -273,7 +279,10 @@ describe('bac à sable de l’agent', () => {
           },
         },
       });
-      expect((await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(502);
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const statut = (await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode;
+      spy.mockRestore();
+      expect(statut).toBe(422);
       expect(cap.debits).toEqual([10]);
     });
 

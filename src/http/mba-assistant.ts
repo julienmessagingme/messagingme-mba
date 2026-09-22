@@ -150,7 +150,12 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
     }
 
     const inv = await deps.inventaire(ctx.tenant);
-    if (!inv) return reply.code(502).send({ error: 'état de l’agent illisible chez Meta pour l’instant' });
+    if (!inv) {
+      // 422 et pas 502 : l'écran affiche ce message, et Cloudflare remplace le corps de toute 5xx par sa page.
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify({ lvl: 'error', msg: 'mba_assistant_inventaire_illisible', tenant: ctx.tenant }));
+      return reply.code(422).send({ error: 'état de l’agent illisible chez Meta pour l’instant' });
+    }
 
     const avant = (await deps.entretiens.lire(ctx.tenant)) ?? ENTRETIEN_MBA_VIERGE;
     /**
@@ -182,7 +187,16 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
         signal: AbortSignal.timeout(DELAI_MS),
       });
     } catch (err) {
-      return reply.code(502).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      // 🔴 422 ET PAS 502, pour la raison écrite juste au-dessus : en 502, le client ne lisait que « Erreur 502 ».
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify({
+        lvl: 'error',
+        msg: 'mba_assistant_tour_echec',
+        tenant: ctx.tenant,
+        err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      }));
+      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
     }
 
     // ⚠️ LA DÉPENSE EST NOTÉE APRÈS L'APPEL, avec le coût RÉEL : une estimation avant serait fausse, et le

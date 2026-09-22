@@ -1,6 +1,6 @@
 /**
  * Client minimal Resend pour le formulaire de support. Un seul endpoint : POST /emails.
- * `fetchImpl` injectable (tests sans réseau). Ne lève que ResendError (HTTP non-2xx) -> mappé en 502 amont.
+ * `fetchImpl` injectable (tests sans réseau). Ne lève que ResendError (HTTP non-2xx) -> mappé en 422 par la route.
  */
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 

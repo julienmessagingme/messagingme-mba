@@ -93,7 +93,7 @@ describe('POST /embedded-signup/complete', () => {
     await server.close();
   });
 
-  it('échange du code échoue -> 502, RIEN n\'est rattaché', async () => {
+  it('échange du code échoue -> 422, RIEN n\'est rattaché', async () => {
     const { server, cap } = app({ exchangeCode: async () => { throw new Error('Graph 400 (#100) : code expiré'); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(422);
@@ -136,7 +136,7 @@ describe('POST /embedded-signup/complete', () => {
     await server.close();
   });
 
-  it('anti-hijack : le token ne possède PAS le WABA (verifyWaba throw) -> 502, RIEN persisté', async () => {
+  it('anti-hijack : le token ne possède PAS le WABA (verifyWaba throw) -> 422, RIEN persisté', async () => {
     const { server, cap } = app({ verifyWaba: async () => { throw new Error('Graph 403 (#200) : accès refusé au WABA'); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(422);
@@ -146,7 +146,7 @@ describe('POST /embedded-signup/complete', () => {
     await server.close();
   });
 
-  it('anti-hijack : le token ne possède PAS le numéro (getPhone throw) -> 502, RIEN persisté', async () => {
+  it('anti-hijack : le token ne possède PAS le numéro (getPhone throw) -> 422, RIEN persisté', async () => {
     const { server, cap } = app({ getPhone: async () => { throw new Error('Graph 403 (#200) : accès refusé au numéro'); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(422);

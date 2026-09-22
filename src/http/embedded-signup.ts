@@ -128,7 +128,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
 
     // 2. PREUVE D'APPARTENANCE (garde anti-hijack cross-tenant) : le business token est scopé au client qui a
     //    complété l'ES ; il ne peut lire le WABA et le numéro QUE s'ils lui appartiennent. Ces deux appels sont
-    //    BLOQUANTS : si l'un échoue, le token ne possède pas l'asset demandé -> 502 et on ne persiste RIEN (ni
+    //    BLOQUANTS : si l'un échoue, le token ne possède pas l'asset demandé -> 422 et on ne persiste RIEN (ni
     //    rattachement, ni webhooks, ni register, ni token). Sans ça, un tenant pourrait rattacher les assets d'un
     //    autre en forgeant wabaId/phoneNumberId. `getPhone` renvoie aussi le vrai `status` (décide du register).
     let phone: { displayPhoneNumber: string | null; verifiedName: string | null; status: string | null };
