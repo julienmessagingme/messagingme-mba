@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { FIL_CHANGE_PENDANT_ATTENTE, creerGestesEnvoi, type DepsGestesEnvoi } from '../src/mba/gestes-envoi';
+import { FIL_CHANGE_PENDANT_ATTENTE, aChangeDeMain, creerGestesEnvoi, type DepsGestesEnvoi } from '../src/mba/gestes-envoi';
+import type { EmpreinteDuFil } from '../src/inbox/store.pg';
 import { CONTACT_BLOQUE } from '../src/mba/executer-maison';
 import type { WorkflowGraph } from '../src/workflow/graph';
 
@@ -20,11 +21,13 @@ const GRAPHE: WorkflowGraph = { nodes: [texte, suite], edges: [{ id: 'e0', sourc
 function faux(o: {
   graphe?: WorkflowGraph | null; ouverte?: boolean;
   envoi?: () => Promise<true | string>; scenario?: () => Promise<true | string | null>; rendreKo?: boolean;
-  /** Le détenteur lu à chaque appel, dans l'ordre ; le dernier se répète. */
-  detenteurs?: string[]; bloqueApres?: boolean;
+  /** L'empreinte lue AVANT l'attente de fin de tour, puis APRÈS (par défaut, la même). */
+  empreinteAvant?: EmpreinteDuFil; empreinteApres?: EmpreinteDuFil; bloqueApres?: boolean;
 } = {}) {
   const gestes: string[] = [];
-  let lectures = 0;
+  // Selon le MOMENT, pas selon l'ordre des appels : relire « avant » après l'attente doit se voir.
+  let attendu = false;
+  const base: EmpreinteDuFil = { detenteur: 'app_workflow', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: 'm1' };
   const deps: DepsGestesEnvoi = {
     graphePublie: async () => (o.graphe === undefined ? GRAPHE : o.graphe),
     fenetreOuverte: async () => o.ouverte ?? true,
@@ -41,13 +44,8 @@ function faux(o: {
       gestes.push(`rendu ${waId}`);
       if (o.rendreKo) throw new Error('base indisponible');
     },
-    attendreFinDuTour: async (_t, waId) => { gestes.push(`tour ${waId}`); },
-    detenteur: async () => {
-      const suite = o.detenteurs ?? ['mba'];
-      const d = suite[Math.min(lectures, suite.length - 1)]!;
-      lectures += 1;
-      return d;
-    },
+    attendreFinDuTour: async (_t, waId) => { gestes.push(`tour ${waId}`); attendu = true; },
+    empreinteDuFil: async () => (attendu ? (o.empreinteApres ?? o.empreinteAvant ?? base) : (o.empreinteAvant ?? base)),
     estBloque: async () => o.bloqueApres === true,
   };
   return { g: creerGestesEnvoi(deps), gestes };
@@ -86,14 +84,36 @@ describe('envoyer un bloc', () => {
   });
 
   it('🔴 la conversation change de main PENDANT l’attente : rien ne part, et le fil n’est pas rendu (revue du 2026-09-22)', async () => {
-    // Un opérateur a pris la conversation, ou un parcours a démarré : l'envoi passerait par-dessus, puis rendrait
-    // le fil au robot. Et rendre le fil ici relâcherait un parcours lancé entre-temps.
-    const bloc = faux({ detenteurs: ['mba', 'app_human'] });
+    // Un opérateur a pris la conversation : l'envoi passerait par-dessus, puis rendrait le fil au robot. Et rendre
+    // le fil ici relâcherait un parcours lancé entre-temps.
+    const avant: EmpreinteDuFil = { detenteur: 'mba', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: 'm1' };
+    const bloc = faux({ empreinteAvant: avant, empreinteApres: { ...avant, detenteur: 'app_human', changeLe: '2026-09-22T10:00:05.000Z' } });
     expect(await bloc.g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).toBe(FIL_CHANGE_PENDANT_ATTENTE);
     expect(bloc.gestes).toEqual(['tour w1']);
-    const scen = faux({ detenteurs: ['mba', 'app_workflow'] });
+  });
+
+  it('🔴 un parcours lancé PENDANT l’attente réécrit la MÊME valeur, mais il envoie : rien ne part (relecture du 2026-09-22)', async () => {
+    // `app_workflow` avant, `app_workflow` après, même date : seul son premier envoi le trahit. Le détenteur seul
+    // ne le voyait pas, et notre envoi fermait le parcours qu'on venait de lancer.
+    const avant: EmpreinteDuFil = { detenteur: 'app_workflow', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: 'm1' };
+    const scen = faux({ empreinteAvant: avant, empreinteApres: { ...avant, dernierEnvoi: 'm2' } });
     expect(await scen.g.lancerScenario('t1', 'w1', WF)).toBe(FIL_CHANGE_PENDANT_ATTENTE);
     expect(scen.gestes).toEqual(['tour w1']);
+  });
+
+  it('un fil RENDU à l’agent de Meta pendant l’attente (accusé reçu) n’empêche pas l’envoi : c’est à lui qu’on le prend', async () => {
+    const avant: EmpreinteDuFil = { detenteur: 'app_human', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: 'm1' };
+    const f = faux({ empreinteAvant: avant, empreinteApres: { ...avant, detenteur: 'mba', changeLe: '2026-09-22T10:00:03.000Z' } });
+    expect(await f.g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).toBe(true);
+    expect(f.gestes).toEqual(['tour w1', 'envoi n1 1 c1']);
+  });
+
+  it('aChangeDeMain : les cas limites', () => {
+    const e: EmpreinteDuFil = { detenteur: 'mba', changeLe: null, dernierEnvoi: null };
+    expect(aChangeDeMain(null, null)).toBe(false);
+    expect(aChangeDeMain(null, e)).toBe(true);
+    expect(aChangeDeMain(e, e)).toBe(false);
+    expect(aChangeDeMain(e, { ...e, dernierEnvoi: 'm1' })).toBe(true);
   });
 
   it('🔴 un contact bloqué PENDANT l’attente ne reçoit rien', async () => {

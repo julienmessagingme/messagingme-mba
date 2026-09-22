@@ -11,12 +11,17 @@
  * mesure APRÈS échappement, sinon un message plein de guillemets passerait la coupe et serait refusé. Le type et
  * la description sont figés ici : l'agent s'appuie sur eux en langage naturel, et un renommage changerait son
  * comportement sans aucun signal.
+ *
+ * 🔴 LA CONSIGNE DIT « REPRENDS LA CONVERSATION », PAS SEULEMENT « RÉPONDS » (essai réel du 2026-09-22). Au bouton
+ * « Oui » d'un scénario, Julien a écrit « Cool » : le parcours s'est arrêté, le fil est revenu à l'agent, l'événement
+ * est parti sans erreur, et l'agent n'a rien dit, un simple accusé n'appelant pas de réponse. Le client restait
+ * alors sans interlocuteur visible. L'agent doit se manifester tout de suite, même brièvement.
  */
 export interface EvenementAgent { type: string; description: string; payload: string }
 
 export const TYPE_HORS_PARCOURS = 'reponse_hors_parcours';
 export const DESCRIPTION_HORS_PARCOURS =
-  'Le client vient d’écrire en dehors du parcours automatique qu’on lui proposait. Réponds à son message.';
+  'Le client vient d’écrire en dehors du parcours automatique qu’on lui proposait : tu reprends la conversation avec lui. Réponds-lui maintenant, brièvement et naturellement, même si son message n’appelle pas de réponse précise (par exemple en lui proposant ton aide).';
 const PAYLOAD_MAX = 4096;
 
 /** `{ [cle]: texte }` en chaîne JSON d'au plus `PAYLOAD_MAX` caractères, échappement compris. */
@@ -48,6 +53,19 @@ export const DESCRIPTION_ENVOI_ECHOUE =
 
 export function evenementEnvoiEchoue(raison: string): EvenementAgent {
   return { type: TYPE_ENVOI_ECHOUE, description: DESCRIPTION_ENVOI_ECHOUE, payload: payloadBorne('raison', raison) };
+}
+
+/**
+ * La réponse de Meta à un `agent_event`, en une ligne de journal bornée. Elle porte l'identifiant qui permet de lui
+ * demander ensuite ce que l'événement est devenu (`sent`, `skipped` et sa raison, `failed`). Aucune donnée du client
+ * n'y figure : Meta ne renvoie pas le contenu.
+ */
+export function traceReponse(reponse: unknown): string {
+  try {
+    return (JSON.stringify(reponse) ?? String(reponse)).slice(0, 300);
+  } catch {
+    return String(reponse).slice(0, 300);
+  }
 }
 
 /** Le format de `to`, MESURÉ le 2026-09-21 (plan 2026-09-21-outils-maison-mba, Task 1) : E.164 avec « + ». */

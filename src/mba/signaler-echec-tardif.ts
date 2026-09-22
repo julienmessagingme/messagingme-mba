@@ -1,4 +1,4 @@
-import { destinataireAgentEvent, evenementEnvoiEchoue, type EvenementAgent } from './evenement';
+import { traceReponse, destinataireAgentEvent, evenementEnvoiEchoue, type EvenementAgent } from './evenement';
 
 /**
  * DIRE À L'AGENT DE META QU'UN ENVOI A ÉCHOUÉ APRÈS SA RÉPONSE (revue du 2026-09-22).
@@ -28,6 +28,7 @@ export function creerSignalerEchecTardif(deps: DepsSignalerEchec) {
     }
     const pn = await deps.numero(tenantId);
     if (!pn) return;
-    await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementEnvoiEchoue(raison));
+    const reponse = await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementEnvoiEchoue(raison));
+    deps.journal?.(`agent_event d'échec envoyé pour ${waId} : ${traceReponse(reponse)}`);
   };
 }

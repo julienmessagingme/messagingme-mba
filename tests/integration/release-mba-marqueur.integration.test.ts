@@ -223,4 +223,26 @@ describe.skipIf(!url)('PgInboxStore : le marqueur de remise à l’agent de Meta
     );
     expect(await store.demanderReleaseMba(tenantId, waId)).toBe('wamid.P1');
   });
+
+  it('🔴 l’empreinte du fil : détenteur, date du changement, et NOTRE dernier envoi, jamais l’écho de l’agent', async () => {
+    // Relue avant et après l'attente de fin de tour (src/mba/gestes-envoi.ts, relecture du 2026-09-22).
+    const waId = '33600000113';
+    expect(await store.empreinteDuFil(tenantId, waId)).toBeNull();
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, control_owner, control_changed_at)
+       values ($1, $2, 'app_workflow', '2026-09-22T10:00:00Z') returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    const ecrire = async (direction: string, type: string, decalage: number) => (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+       values ($1, $2, $3, 'x', now() + ($4 || ' seconds')::interval) returning id`,
+      [conv, direction, type, String(decalage)],
+    )).rows[0]!.id;
+    const notre = await ecrire('out', 'text', 0);
+    await ecrire('in', 'text', 1);
+    await ecrire('out', 'mba', 2);
+    expect(await store.empreinteDuFil(tenantId, waId)).toEqual({
+      detenteur: 'app_workflow', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: notre,
+    });
+    expect(await store.empreinteDuFil('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
+  });
 });

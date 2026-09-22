@@ -1,5 +1,6 @@
 import { blocSeul } from './outils-maison';
 import { CONTACT_BLOQUE } from './executer-maison';
+import type { EmpreinteDuFil } from '../inbox/store.pg';
 import type { WorkflowGraph } from '../workflow/graph';
 import type { StartOutcome } from '../workflow/executor';
 
@@ -35,8 +36,8 @@ export interface DepsGestesEnvoi {
    * suite, dans le délai de réponse du relais, et l'agent les lit.
    */
   attendreFinDuTour(tenantId: string, waId: string): Promise<unknown>;
-  /** Le détenteur du fil chez nous (`getControlOwner`), relu AVANT et APRÈS l'attente. */
-  detenteur(tenantId: string, waId: string): Promise<string>;
+  /** L'empreinte du fil (`PgInboxStore.empreinteDuFil`), relue AVANT et APRÈS l'attente. */
+  empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null>;
   /** Le contact est-il bloqué dans l'Inbox ? Relu APRÈS l'attente : il a pu l'être pendant. */
   estBloque(tenantId: string, waId: string): Promise<boolean>;
 }
@@ -44,13 +45,29 @@ export interface DepsGestesEnvoi {
 /**
  * Ce que l'agent de Meta lit quand la conversation a changé de main pendant l'attente de fin de tour.
  *
- * 🔴 L'ATTENTE PEUT DURER 15 S (revue du 2026-09-22) : un opérateur a pu prendre la conversation, ou un parcours
- * démarrer. L'envoi part avec `ignoreHumanControl` et le fil serait ensuite rendu au robot : il passerait par-dessus
- * cette décision, et la conversation sortirait d'« À traiter ». On compare AVANT et APRÈS plutôt que de tester une
- * valeur, parce que la colonne peut dire autre chose que `mba` pendant que l'agent de Meta tient réellement le fil.
+ * 🔴 L'ATTENTE PEUT DURER 15 S (revue du 2026-09-22) : un opérateur a pu prendre la conversation ou y répondre, un
+ * parcours démarrer. L'envoi part avec `ignoreHumanControl` et le fil serait ensuite rendu au robot : il passerait
+ * par-dessus cette décision, et la conversation sortirait d'« À traiter ».
  */
 export const FIL_CHANGE_PENDANT_ATTENTE =
   'la conversation a changé de main pendant l’attente (un opérateur ou un parcours l’a prise) : rien n’a été envoyé';
+
+/**
+ * La conversation a-t-elle changé de main entre deux empreintes ?
+ *
+ * 🔴 UN NOUVEL ENVOI DE NOTRE PART, C'EST OUI, quelle que soit la colonne : un parcours lancé pendant l'attente
+ * réécrit `app_workflow` sans rien changer, mais il envoie (relecture du 2026-09-22). Un opérateur qui répond aussi.
+ * ⚠️ UN FIL RENDU À L'AGENT DE META PENDANT L'ATTENTE (accusé reçu, balayage), C'EST NON : c'est à lui qu'on
+ * s'apprêtait à le prendre. Le refuser mentirait à l'agent (« un opérateur l'a prise ») pour un geste attendu.
+ * Limite assumée : un parcours lancé pendant l'attente dont le premier bloc est une attente, sans rien envoyer ni
+ * changer le détenteur, reste invisible.
+ */
+export function aChangeDeMain(avant: EmpreinteDuFil | null, apres: EmpreinteDuFil | null): boolean {
+  if (avant === null || apres === null) return avant !== apres;
+  if (apres.dernierEnvoi !== avant.dernierEnvoi) return true;
+  if (apres.detenteur === avant.detenteur && apres.changeLe === avant.changeLe) return false;
+  return apres.detenteur !== 'mba';
+}
 
 export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
   envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
@@ -78,9 +95,9 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
    * entre-temps serait relâché).
    */
   const attendreEtRevérifier = async (tenantId: string, waId: string): Promise<string | null> => {
-    const avant = await deps.detenteur(tenantId, waId);
+    const avant = await deps.empreinteDuFil(tenantId, waId);
     await deps.attendreFinDuTour(tenantId, waId);
-    if ((await deps.detenteur(tenantId, waId)) !== avant) return FIL_CHANGE_PENDANT_ATTENTE;
+    if (aChangeDeMain(avant, await deps.empreinteDuFil(tenantId, waId))) return FIL_CHANGE_PENDANT_ATTENTE;
     if (await deps.estBloque(tenantId, waId)) return CONTACT_BLOQUE;
     return null;
   };

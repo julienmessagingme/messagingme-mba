@@ -268,6 +268,9 @@ const UNREAD_SQL = `exists (
 const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out' and c.traitee_le is null`;
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
+/** Voir `PgInboxStore.empreinteDuFil`. */
+export interface EmpreinteDuFil { detenteur: string | null; changeLe: string | null; dernierEnvoi: string | null }
+
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
 
@@ -1541,6 +1544,32 @@ export class PgInboxStore implements InboxStore {
       [tenantId, waId],
     );
     return res.rows[0]?.id ?? null;
+  }
+
+  /**
+   * L'EMPREINTE DU FIL, relue avant et après l'attente de fin de tour d'un outil de l'agent de Meta
+   * (`src/mba/gestes-envoi.ts`) : le détenteur, la date de son dernier changement, et NOTRE dernier envoi (l'écho de
+   * l'agent exclu). 🔴 LE DÉTENTEUR SEUL NE SUFFIT PAS (revue du 2026-09-22) : un parcours lancé pendant l'attente
+   * réécrit `app_workflow`, qui est aussi la valeur d'une conversation menée par l'agent depuis le début, et
+   * `setControlOwner` ne touche à rien sur une valeur identique. Ce parcours, lui, ENVOIE : c'est ce que le dernier
+   * envoi voit. Servie par `conversation_messages_origin_idx` (0099). `null` = aucune conversation.
+   */
+  async empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null> {
+    const res = await this.pool.query<{ control_owner: string | null; control_changed_at: Date | null; dernier_envoi: string | null }>(
+      `select c.control_owner, c.control_changed_at,
+              (select m.id
+                 from conversation_messages m
+                where m.conversation_id = c.id and m.direction = 'out' and m.type is distinct from 'mba'
+                order by m.created_at desc, m.id desc
+                limit 1) as dernier_envoi
+         from conversations c
+        where c.tenant_id = $1 and c.wa_id = $2`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r
+      ? { detenteur: r.control_owner, changeLe: r.control_changed_at ? r.control_changed_at.toISOString() : null, dernierEnvoi: r.dernier_envoi }
+      : null;
   }
 
   async derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> {
