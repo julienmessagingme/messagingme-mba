@@ -222,7 +222,9 @@ maintenant un parcours… N'écris rien pour cette demande » : l'agent de Meta 
 fois dans le même tour, et le client a reçu sept fois le premier message. La réponse du tag, qui commence par
 « C'est fait », avait conclu le tour du premier coup. D'où le « C'est fait » et le « Ne rappelle pas cet outil », et
 surtout un garde qui ne dépend pas du modèle : un envoi ne se rejoue pas pour le même client et le même outil
-pendant deux minutes (`src/mba/anti-rejeu.ts`), le rappel reçoit « C'est déjà fait pour cette demande ».
+pendant deux minutes (`src/mba/anti-rejeu.ts`), y compris quand les appels arrivent SIMULTANÉMENT (la clé se
+prend d'un seul geste, sans attente). Le rappel reçoit « Cette demande vient déjà d'être traitée pour ce client :
+ne rappelle plus cet outil », et jamais « le client a reçu », qui serait faux après une panne ou un refus.
 
 ## 8. La publication chez Meta
 

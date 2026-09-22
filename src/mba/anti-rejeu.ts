@@ -14,18 +14,21 @@ export class AntiRejeu {
 
   constructor(private readonly dureeMs: number, private readonly maintenant: () => number = Date.now) {}
 
-  /** Ce geste a-t-il déjà été fait pour cette clé, il y a moins de `dureeMs` ? */
-  dejaFait(cle: string): boolean {
-    const t = this.vus.get(cle);
-    return t !== undefined && this.maintenant() - t < this.dureeMs;
-  }
-
-  /** Retient la clé MAINTENANT, avant l'envoi : deux appels concurrents ne partent pas tous les deux. */
-  retenir(cle: string): void {
+  /**
+   * PREND la clé si personne ne l'a prise il y a moins de `dureeMs`, et le dit : `true` = ce geste peut partir.
+   *
+   * 🔴 VÉRIFIER ET RETENIR D'UN SEUL GESTE, SYNCHRONE (revue finale du 2026-09-22). La première version exposait
+   * « déjà fait ? » et « retenir » séparément, et l'appelant attendait la base entre les deux : sept appels
+   * SIMULTANÉS passaient tous la vérification avant que le premier ne retienne, et partaient tous (7 sur 7,
+   * mesuré). Sans `await` ici, deux appels ne peuvent pas s'intercaler.
+   */
+  prendre(cle: string): boolean {
     const t = this.maintenant();
     // Le ménage se fait ici : sans lui, la table grandirait d'une entrée par client et par outil, pour toujours.
     for (const [k, v] of this.vus) if (t - v >= this.dureeMs) this.vus.delete(k);
+    if (this.vus.has(cle)) return false;
     this.vus.set(cle, t);
+    return true;
   }
 
   /** Oublie la clé : un geste REFUSÉ n'a rien envoyé, et doit pouvoir être redemandé. */

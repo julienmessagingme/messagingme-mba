@@ -117,6 +117,8 @@ describe('la cible d’un bloc et d’un scénario', () => {
       expect(r.startsWith('C’est fait')).toBe(true);
       expect(r).toContain('Ne rappelle pas cet outil');
     }
+    // Le scénario garde sa consigne de silence : la conversation revient à l'agent de Meta à la fin du parcours.
+    expect(REPONSE_MAISON.scenario_fixe).toContain('n’écris rien');
   });
 
   it('rien à remplir pour l’agent de Meta : le bloc et le scénario sont fixés', () => {

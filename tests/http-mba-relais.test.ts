@@ -335,7 +335,7 @@ describe('un bloc et un scénario, par le relais', () => {
     ...over,
   });
 
-  it('🔴 envoie le bloc FIXÉ au contact de l’en-tête, et dit à l’agent de Meta de ne rien ajouter', async () => {
+  it('🔴 envoie le bloc FIXÉ au contact de l’en-tête, et dit à l’agent de Meta de ne pas rappeler l’outil', async () => {
     const { app, appels, gestes } = avec([BLOC]);
     const res = await poster(app, CLE_RELAIS, { code: 'autre' }, '+33612345678', 'o5');
     expect(res.json()).toEqual({ succes: true, reponse: expect.stringContaining('Ne rappelle pas cet outil') });
@@ -348,7 +348,26 @@ describe('un bloc et un scénario, par le relais', () => {
     const reponses: string[] = [];
     for (let i = 0; i < 7; i += 1) reponses.push((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')).json().reponse);
     expect(gestes).toEqual([`scenario t1 33612345678 ${WF}`]);
-    expect(reponses.slice(1).every((r) => r.includes('déjà fait'))).toBe(true);
+    expect(reponses.slice(1).every((r) => r.includes('déjà d’être traitée'))).toBe(true);
+  });
+
+  it('🔴 sept appels SIMULTANÉS par le relais : un seul lancement (revue finale du 2026-09-22)', async () => {
+    const lances: string[] = [];
+    const { app } = avec([SCENARIO], {
+      maison: {
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
+        // Un contrôle du blocage qui PREND DU TEMPS, comme la base : c'est pendant cette attente que des appels
+        // simultanés se rattrapent. Avec une réponse immédiate, les requêtes arrivent décalées et le test ne
+        // prouve rien (mesuré : il passait sur le garde fautif).
+        estBloque: () => new Promise((r) => { setTimeout(() => r(false), 20); }),
+        antiRejeu: new AntiRejeu(60_000),
+        envoyerBloc: async () => true,
+        lancerScenario: async (t, w, id) => { lances.push(`scenario ${t} ${w} ${id}`); return true; },
+      },
+    });
+    const res = await Promise.all(Array.from({ length: 7 }, () => poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')));
+    expect(res.every((r) => r.json().succes === true)).toBe(true);
+    expect(lances).toEqual([`scenario t1 33612345678 ${WF}`]);
   });
 
   it('lance le scénario fixé', async () => {
