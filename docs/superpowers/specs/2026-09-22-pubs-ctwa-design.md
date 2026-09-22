@@ -282,12 +282,14 @@ C'est connu et écrit à l'écran de la pub (« qualifié par un scénario, l'In
 
 - Les accusés de réception (`processStatuses`, file `webhook-status`) lisent leur objet `pricing`, avec un
   `safeParse`, et l'écrivent dans `tarifs_meta`. Isolé : un échec n'annule pas le traitement de l'accusé.
-- Les QUATRE lectures de coût (les deux branches de `envoisTemplateFacturables` pour les modèles,
-  `serviceParMois` et `servicesParCampagne` pour le service) excluent les messages marqués `free_entry_point`,
-  par un fragment SQL unique. Les appelants de `coutMessages` (l'écran du coût des messages et le coût par
-  campagne) en profitent sans changement. ⚠️ Les courbes de VOLUME ne reçoivent PAS l'exclusion : un message
-  gratuit reste un message envoyé. (La spec disait « deux requêtes » : `servicesParCampagne` impute aussi du
-  service aux campagnes, relevé en écrivant le plan du lot 1.)
+- Les CINQ lectures de coût (les deux branches de `envoisTemplateFacturables` et les deux de
+  `envoisDeLaCampagne` pour les modèles, `serviceParMois` et `servicesParCampagne` pour le service) excluent
+  les messages marqués `free_entry_point`, par un fragment SQL unique. Les appelants de `coutMessages` (l'écran
+  du coût des messages et le coût par campagne) en profitent sans changement. ⚠️ Les courbes de VOLUME ne
+  reçoivent PAS l'exclusion : un message gratuit reste un message envoyé. (La spec disait « deux requêtes » :
+  `servicesParCampagne` impute aussi du service aux campagnes, relevé en écrivant le plan du lot 1 ; puis
+  `envoisDeLaCampagne`, la fiche d'une campagne, qui doit compter la même population que le tableau, relevé à
+  l'exécution.)
 
 ## 4. Cas limites et sécurité
 
@@ -373,7 +375,7 @@ doctrine du `standby` qu'on modifie, index partiels).
   Les accusés arrivent par DEUX files (`webhook` et `webhook-status`) : le tarif se câble sur les deux.
 - `purgeMany` (transactionnelle) efface `ctwa_clid` : la migration doit précéder le déploiement, sans quoi
   toute suppression de contact échoue.
-- Les quatre lectures de coût, et les docblocks qui annoncent leur filtre de service « mot pour mot ».
+- Les cinq lectures de coût, et les docblocks qui annoncent leur filtre de service « mot pour mot ».
 - La route de suppression d'un scénario gagne un refus 409.
 - Le job `automation-event` gagne un consommateur (la qualification).
 - Une autre session a livré `67b55166` le 2026-09-22 (l'agent de Meta envoie un bloc, lance un scénario et

@@ -871,6 +871,10 @@ pas perdu pour autant : le corps brut de chaque webhook est conservé intégrale
 juillet, AUCUN ne contient `referral` ni `ctwa_clid` : personne n'a encore pointé de pub sur ce numéro. Le
 code suit la doc et un corps réel capté par un tiers, il n'est pas prouvé par notre propre trafic.
 
+⚠️ **Note du 2026-09-22.** Le piège n°3 (la bascule d'attribution) n'est attesté que par un fournisseur d'API
+non officielle ; la doc Cloud API ne le connaît pas. Et `ctwa_clid` n'est plus perdu : le lot 1 des pubs le
+garde dans `arrivees_pub` (migration 0163).
+
 ## Patterns
 
 - **Idempotence** : dédup par `meta_message_id` avant traitement (les webhooks arrivent en

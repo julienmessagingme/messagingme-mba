@@ -59,7 +59,9 @@ Journal des erreurs**, où sa carte d'agrégat par code Meta vit désormais à c
 **Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte une carte
 « Coûts » à trois lignes dépliables (coût moyen par engagement, coût des messages envoyés, coût de l'IA),
 le nuage « urgence et satisfaction » et les conversations par intention. Le tableau du coût par engagement
-existe toujours, replié sous la première ligne.
+existe toujours, replié sous la première ligne. Le coût des messages ne compte pas ceux que Meta ne facture
+pas : les messages envoyés dans les 72 h qui suivent un clic sur une pub Click-to-WhatsApp, d'après l'accusé
+de Meta.
 
 **Inbox** : **aucune barre de navigation**, ni sur ordinateur ni dans le tiroir mobile. L'écran portera son
 propre menu de dossiers, façon boîte mail.

@@ -66,7 +66,7 @@ dans `wip.md` (Task 8), pour que personne ne la compte comme acquise avant.
 | `src/webhooks/handler.ts` | `WebhookJobDeps` exige `tarifsMeta` avec `delivery` et `arriveesPub` avec `inbox` ; nouvelle étape. |
 | `src/worker.ts` | Construit les deux stores ; câble le tarif sur les DEUX files d'accusés, l'arrivée sur `webhook`. |
 | `src/crm/contact-store.pg.ts` | `purgeMany` efface `ctwa_clid`. |
-| `src/stats/store.pg.ts` | Fragment `horsEntreeGratuite`, posé dans les quatre lectures de coût. |
+| `src/stats/store.pg.ts` | Fragment `horsEntreeGratuite`, posé dans les lectures de coût (cinq à l'exécution, cf. Task 7). |
 | `tests/webhook-fixtures.ts` (neuf) | `aucunTarif` et `aucuneArriveePub`, pour les tests qui n'en parlent pas. |
 | `tests/pubs-tarif-meta.test.ts`, `tests/pubs-arrivees.test.ts` (neufs) | Unitaires. |
 | `tests/integration/pubs-capter.integration.test.ts`, `tests/integration/cout-entree-gratuite.integration.test.ts` (neufs) | Intégration (CI). |
@@ -1217,6 +1217,11 @@ EOF
 ---
 
 ### Task 7 : le coût exclut les 72 h gratuites
+
+> ⚠️ **Écart constaté à l'exécution (2026-09-22)** : une CINQUIÈME lecture de coût, `envoisDeLaCampagne` (la
+> fiche d'une campagne, dont la documentation exige la même population que `getVolumeParCampagne`), reçoit
+> aussi l'exclusion, dans ses deux branches, et le test d'intégration la vérifie. Le code ci-dessous décrit les
+> quatre lectures prévues ; le commit `feat(cout)` porte les cinq.
 
 **Files:**
 - Modify: `src/stats/store.pg.ts`

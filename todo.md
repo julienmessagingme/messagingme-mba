@@ -1513,10 +1513,10 @@ arrive SANS l'image, et c'est le cas embarrassant car rien ne le signalerait.
 
 **2. Le déclencheur « publicité » (CTWA)** (commit `bee7137`). Sur 275 corps de webhook conservés depuis
 juillet, aucun ne contient `referral` ni `ctwa_clid` : personne n'a encore pointé de pub sur ce numéro.
-⚠️ AVANT la première campagne publicitaire, vérifier la bascule d'attribution dans les réglages WhatsApp
-Business : sans elle, Meta n'envoie pas l'objet `referral` du tout, et le déclencheur restera muet sans
-qu'aucune erreur n'apparaisse nulle part. Quand une pub tournera, deux signaux disent que la chaîne est bonne :
-la fiche du contact porte « Pub (identifiant) » et « Pub (titre) », et le scénario part.
+⚠️ Le « réglage d'attribution à activer » côté WhatsApp Business n'est attesté que par un fournisseur d'API
+non officielle (recherche du 2026-09-22) : la doc Cloud API ne le connaît pas. La preuve viendra de l'essai
+réel du lot 3 des pubs (`docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`) : une ligne dans
+`arrivees_pub`, la fiche qui porte « Pub (identifiant) », et le scénario qui part.
 
 ## À faire : renvoyer les conversions publicitaires à Meta (`ctwa_clid`)
 
@@ -1527,10 +1527,9 @@ Conversions API, ce qui laisse l'algorithme optimiser la diffusion de la pub. C'
 concret pour un client qui fait de l'acquisition.
 
 Deux précautions connues : `ctwa_clid` arrive parfois VIDE, et il n'est transmis que sur le premier message.
-Il n'est pas recopié sur la fiche contact aujourd'hui. ⚠️ **Le repli « on le retrouvera dans le payload brut »
-a une DATE DE PÉREMPTION depuis le 2026-08-31** : `webhook_events` est purgée à 30 jours (rétention RGPD,
-migration 0093). Au-delà, le `ctwa_clid` d'un lead est définitivement perdu. Le jour où on referme la boucle
-d'attribution, il faut donc le recopier sur la fiche contact À LA RÉCEPTION.
+Le repli « on le retrouvera dans le payload brut » avait une DATE DE PÉREMPTION (`webhook_events` est purgée à
+30 jours, migration 0093) : ✅ **c'est réglé depuis le lot 1 des pubs**, `arrivees_pub.ctwa_clid` est écrit à la
+réception. Le renvoi attend la mesure du pilote (spec du 2026-09-22, § 6).
 
 ## Étanchéité des canaux : ce que le lot du 2026-08-25 a volontairement laissé
 

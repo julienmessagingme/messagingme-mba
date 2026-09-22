@@ -19,6 +19,21 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le déploiement du 2026-09-22 vers 11 h 25 (rapport `.git/revue-finale-rapport.md`, une relecture à froid par commit). Deux rouges trouvés dans la journée, corrigés avant de partir : un `catch` du bac à sable qui rendait en 422, donc jusqu'au navigateur, le texte brut d'une panne de NOTRE base ; un journal passé en valeur et resté muet. ⚠️ **Règle de Julien du 2026-09-22** : une relecture sans rouge déploie, ses jaunes se corrigent et se poussent après, relus par la revue suivante (`~/.claude/skills/revue-finale/SKILL.md` § 5). |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST REVENU au déploiement de 11 h 25** (pas à celui de 10 h), sur le chemin du WEBHOOK META aussi : NPM tenait l'ancienne IP des conteneurs recréés, et `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi, en une minute. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
+## PUBLICITÉS CLICK-TO-WHATSAPP (LOT 1 « CAPTER » ÉCRIT LE 2026-09-22, PAS ENCORE DÉPLOYÉ)
+
+Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
+`docs/superpowers/plans/2026-09-22-pubs-ctwa-lot1-capter.md`.
+
+- Lot 1 « Capter » : arrivées publicitaires (`arrivees_pub`, `ctwa_clid` compris) et tarifs de Meta
+  (`tarifs_meta`) gardés à la réception, 72 h gratuites exclues des cinq lectures de coût, `ctwa_clid` effacé
+  par la purge RGPD. Migration 0163 à appliquer AVANT le déploiement. ⚠️ La capture des arrivées n'est PAS
+  éprouvée : aucun clic réel n'est encore arrivé. Elle le sera pendant l'essai réel du lot 3 (première
+  campagne MessagingMe créée depuis Engage Me).
+- ⚠️ L'attestation locale (`.git/revue-finale.json`) couvre À TORT les commits de ce lot : une autre session l'a
+  posée sur `HEAD` pendant qu'ils arrivaient. La revue finale de ce déploiement part du dernier commit
+  réellement relu, celui des lots 3 et 4 des outils maison.
+- Lot 2 « Connecter » : attend les prérequis Meta de la spec, § 11.
+
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
 
 Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan

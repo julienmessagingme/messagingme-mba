@@ -238,8 +238,9 @@ Meta -> POST /webhooks/meta (mba-api)
       worker, job `webhook` :
         dédup par meta_message_id (les webhooks arrivent en double)
         auto-création ou mise à jour du contact (isolée : un échec ne casse pas l'inbox)
-        capture du referral CTWA (premier message seulement)
+        capture du referral CTWA (premier message seulement) : champs de la fiche
         enregistrement dans le fil
+        arrivée publicitaire (`arrivees_pub`, ctwa_clid et standby compris), isolée
         puis, DANS CET ORDRE et chacun isolé en try/catch :
           1. mapping de formulaire  (nfm_reply -> champs de la fiche)
           2. jeton de test          (CONSOMME le message, personne d'autre ne le voit)
@@ -263,11 +264,20 @@ message ne déclenche jamais deux choses.
 read) arrivent par rafales : une campagne de 5 000 messages en produit trois par destinataire. Sur la même
 file, une rafale d'accusés retardait la réponse à un vrai client.
 
+🔴 **Les accusés gardent le tarif que Meta annonce** (`tarifs_meta`, migration 0163), sur les DEUX files qui
+voient des accusés : `WebhookJobDeps` rend `tarifsMeta` obligatoire avec `delivery`. Les cinq lectures de COÛT
+excluent les messages `free_entry_point` (les 72 h gratuites qui suivent un clic sur une pub) par un fragment
+unique, `horsEntreeGratuite` ; les courbes de VOLUME les comptent, délibérément. Un message sans ligne de
+tarif reste compté comme payant.
+
 ⚠️ **Le referral d'une publicité Click-to-WhatsApp n'arrive que sur le PREMIER message** après le clic. Ne pas
 le capter à l'arrivée, c'est perdre l'origine du lead définitivement. Il atterrit dans deux champs de contact
 (`pub_id`, `pub_titre`) plutôt que dans une colonne dédiée : l'origine devient ainsi filtrable, utilisable
 comme variable et segmentable en campagne, sans migration. `ctwa_clid` peut arriver VIDE, n'en jamais faire
-une condition.
+une condition. Chaque arrivée garde aussi sa ligne dans `arrivees_pub` (migration 0163), `standby` compris :
+c'est la seule trace de `ctwa_clid`. La purge RGPD efface `ctwa_clid` et garde la ligne (elle anonymise la
+fiche sans la supprimer, donc la cascade ne joue pas). `WebhookJobDeps` rend `arriveesPub` obligatoire avec
+`inbox`.
 
 ### 4.2 Une campagne part
 
