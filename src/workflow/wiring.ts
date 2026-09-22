@@ -606,8 +606,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // poser l affectation que sur l un des deux la ferait marcher sur un chemin (le worker) et pas sur
     // l autre, sans que rien ne le signale. C est le motif « capacite cablee sur un lecteur sur deux » que
     // le depot paie deja deux fois.
+    // 🔴 `escalade: true` DEPUIS LE 2026-09-23 (arbitrage de Julien, les TROIS chemins) : c'est la même
+    // promesse faite au client que celle de l'agent de Meta (« quelqu'un va vous répondre »), donc le même
+    // traitement. Sans lui, la conversation n'entrait dans « À traiter » qu'au message SUIVANT du client, et le
+    // balayage rendait le fil à l'agent au bout de 2 h alors que personne n'avait répondu.
     escalateToHuman: async (tenant, waId, assigneA) => {
-      await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] });
+      await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade: true });
       if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA);
     },
     // 🔴 LE BLOC AGENT. Sans ces deux dépendances, il est traversé comme un PASSE-PLAT : le scénario continue

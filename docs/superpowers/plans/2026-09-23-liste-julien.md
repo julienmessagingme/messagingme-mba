@@ -47,6 +47,12 @@ ne suffit pas, parce que les tests d'écran sont écrits par celui qui a écrit 
   (`accorderLeDetenteur`, `src/webhooks/inbound.ts`) : il ne doit pas écraser une escalade.
 - Essai réel : faire escalader l'agent (« je veux parler à quelqu'un »), voir la conversation dans « À traiter »
   sans pastille, attendre, répondre en opérateur, puis vérifier la reprise après 2 h (réglage d'espace raccourci).
+- 🔴 ÉTENDU AUX TROIS CHEMINS (arbitrage de Julien du 2026-09-23, après la revue finale) : le bloc « passer à un
+  humain » d'un scénario et l'escalade d'un agent IA posent la même escalade (`setControlOwner(..., { escalade:
+  true })`), parce qu'ils font la même promesse au client et souffraient du même symptôme.
+- 🔴 ET LA TRANSMISSION DE LA RÉPONSE « À CÔTÉ » EST BORNÉE (même arbitrage) : si la chaîne a RECUEILLI le
+  message (un bloc traversé qui lit la dernière saisie), il n'est pas transmis à l'agent de Meta, qui
+  commenterait une adresse e-mail hors contexte. On regarde les blocs TRAVERSÉS, pas le graphe entier.
 
 ## Lot 3 : « Relancer automatiquement les échecs » quitte les Paramètres
 

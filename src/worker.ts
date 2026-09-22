@@ -1733,7 +1733,10 @@ async function main(): Promise<void> {
       // tour de savoir que sa garde de détenteur est fausse à cause de LUI. Le jeter ici rendait muette la
       // dernière phrase de l'agent quand l'équipe est fermée : la question à poser à un câblage est
       // « que suppose-t-il du module que je viens de changer ? », et celui-ci en suppose la réponse.
-      escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] }),
+      // 🔴 `escalade: true` DEPUIS LE 2026-09-23 (arbitrage de Julien, les TROIS chemins) : un agent IA qui passe
+      // la main promet la même chose que l'agent de Meta, donc la conversation entre dans « À traiter » tout de
+      // suite et n'est pas rendue tant que personne n'a répondu. Le booléen rendu reste ce qu'il était.
+      escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true }),
     });
 
     // Les VRAIS outils maison. À comparer à `resolvers/simulation.ts`, qui sert le bac à sable : ici chaque

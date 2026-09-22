@@ -68,6 +68,37 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
  * derrière. Trois releases émis deux secondes après un envoi ont échoué, celui émis quatorze minutes après a
  * marché. (Ce texte attribuait à Meta un retard d'accusé de deux minutes : c'était notre file d'accusés.)
  */
+/**
+ * 🔴 LES TROIS CHEMINS D'ESCALADE POSENT LE MÊME DRAPEAU (arbitrage de Julien du 2026-09-23, migration 0164).
+ *
+ * L'agent de Meta, le bloc « passer à un humain » d'un scénario et l'escalade d'un agent IA promettent la même
+ * chose au client. Les deux derniers posaient `app_human` SANS le drapeau : leur dernière phrase étant sortante,
+ * la conversation n'entrait dans « À traiter » qu'au message suivant du client, et le balayage rendait le fil à
+ * l'agent au bout de 2 h sans que personne ait répondu.
+ *
+ * ⚠️ UN CÂBLAGE N'A AUCUN DÉPENDANT : ce test lit la SOURCE, parce qu'un faux magasin accepterait n'importe
+ * quelles options sans rien dire (une flèche à trois paramètres est assignable à un contrat qui en déclare
+ * quatre). Sans lui, retirer `escalade: true` ne faisait rougir aucun test.
+ */
+describe('l’escalade est posée par les DEUX câblages, pas seulement par l’agent de Meta', () => {
+  const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
+  const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
+
+  it('🔴 le bloc « passer à un humain » d’un scénario pose l’escalade', () => {
+    expect(wiring).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade: true })");
+  });
+
+  it('🔴 l’escalade d’un agent IA aussi, et elle REND toujours son verdict', () => {
+    expect(worker).toContain("escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true })");
+  });
+
+  it('🔴 et la passation de l’agent de Meta passe, elle, par `marquerEscalade`', () => {
+    // Elle doit CRÉER la conversation si la passation arrive avant l'écho de l'agent : c'est un upsert, pas
+    // une prise de fil conditionnelle.
+    expect(worker).toContain('marquerEscalade: (t, w) => inboxStore.marquerEscalade(t, w),');
+  });
+});
+
 describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
   // Le geste est une constante NOMMÉE depuis le lot 3 des outils maison : le relais de l'agent de Meta la réutilise.

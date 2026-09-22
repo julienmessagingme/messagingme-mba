@@ -495,7 +495,19 @@ export class PgInboxStore implements InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean; effacerEscalade?: boolean; messageEnvoyeLe?: Date },
+    opts?: {
+      only?: readonly ControlOwner[]; saufEscalade?: boolean; effacerEscalade?: boolean; messageEnvoyeLe?: Date;
+      /**
+       * 🔴 CETTE PRISE DE FIL EST UNE ESCALADE (arbitrage de Julien du 2026-09-23, étendu aux TROIS chemins).
+       *
+       * Le bloc « passer à un humain » d'un scénario et l'escalade d'un agent IA posaient `app_human` comme
+       * l'agent de Meta, avec le même symptôme : leur dernière phrase est SORTANTE, donc la conversation
+       * n'entrait pas dans « À traiter », et le balayage la rendait à l'agent au bout de 2 h sans réponse.
+       * ⚠️ N'écrit que si la bascule a lieu (`control_owner is distinct from` + `only`) : si quelqu'un tenait
+       * déjà le fil, il n'y a pas d'escalade à poser, et le booléen rendu le dit à l'appelant.
+       */
+      escalade?: boolean;
+    },
   ): Promise<boolean> {
     const only = opts?.only;
     // 🔴 RENDRE LE FIL À L'AGENT DE META N'EFFACE L'ESCALADE QUE SI ON LE DEMANDE (revue finale du 2026-09-23).
@@ -516,14 +528,18 @@ export class PgInboxStore implements InboxStore {
     // ⚠️ SANS DATE, LA GARDE RESTE STRICTE : une donnée externe manquante n'ouvre rien.
     const res = await this.pool.query(
       `update conversations set control_owner = $3, control_changed_at = now(),
-              escaladee_le = case when $6::boolean then null else escaladee_le end
+              escaladee_le = case when $6::boolean then null
+                                  when $8::boolean and $3 = 'app_human' then now()
+                                  else escaladee_le end,
+              traitee_le = case when $8::boolean and $3 = 'app_human' then null else traitee_le end,
+              archived_at = case when $8::boolean and $3 = 'app_human' then null else archived_at end
        where tenant_id = $1 and wa_id = $2
          and control_owner is distinct from $3
          and ($4::text[] is null or control_owner = any($4::text[]))
          and (not $5::boolean or escaladee_le is null
               or ($7::timestamptz is not null and $7::timestamptz > escaladee_le))`,
       [tenantId, waId, owner, only ? [...only] : null, opts?.saufEscalade === true, opts?.effacerEscalade === true,
-       opts?.messageEnvoyeLe ?? null],
+       opts?.messageEnvoyeLe ?? null, opts?.escalade === true],
     );
     return (res.rowCount ?? 0) > 0;
   }

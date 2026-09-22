@@ -170,6 +170,26 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     expect(await store.setControlOwner(tenantId, autre, 'mba', { saufEscalade: true })).toBe(true);
   });
 
+  it('🔴 un SCÉNARIO ou un AGENT IA qui passe la main pose la même escalade (arbitrage du 2026-09-23)', async () => {
+    // Leur dernière phrase est sortante elle aussi : sans le drapeau, la conversation n'entrait dans « À traiter »
+    // qu'au message suivant du client, et le balayage rendait le fil à l'agent au bout de 2 h sans réponse.
+    const waId = '33600000215';
+    const id = await conversationMenéeParLAgent(waId);
+    await pool.query(`update conversations set control_owner = 'app_workflow', archived_at = now(), traitee_le = now() where id = $1`, [id]);
+    expect(await store.setControlOwner(tenantId, waId, 'app_human', { only: ['app_workflow'], escalade: true })).toBe(true);
+    const c = await lire(waId);
+    expect(c?.escaladee_le).not.toBeNull();
+    expect(c?.archived_at).toBeNull();
+    expect(c?.traitee_le).toBeNull();
+    expect((await store.listConversations(tenantId, { aTraiter: true })).some((x) => x.waId === waId)).toBe(true);
+    // ⚠️ Si quelqu'un tenait déjà le fil, il n'y a pas d'escalade à poser : la garde `only` refuse, et le
+    // booléen rendu le dit à l'appelant (l'agent IA s'en sert pour savoir s'il peut écrire une dernière phrase).
+    const autre = '33600000216';
+    await pool.query(`insert into conversations (tenant_id, wa_id, control_owner) values ($1, $2, 'app_human')`, [tenantId, autre]);
+    expect(await store.setControlOwner(tenantId, autre, 'app_human', { only: ['app_workflow'], escalade: true })).toBe(false);
+    expect((await lire(autre))?.escaladee_le).toBeNull();
+  });
+
   it('le balayage lit le drapeau d’escalade, et un fil ordinaire le porte à `false`', async () => {
     const waId = '33600000209';
     await pool.query(`insert into conversations (tenant_id, wa_id, control_owner, control_changed_at) values ($1, $2, 'app_human', now())`, [tenantId, waId]);

@@ -1896,7 +1896,17 @@ export class WorkflowExecutor {
     // le client venait d'écrire. Il n'a parlé qu'au message suivant. Même règle que la réponse « à côté » plus haut,
     // et seulement quand la chaîne n'a RIEN envoyé : si elle a répondu, l'agent répondrait par-dessus.
     if (rest.status === 'done') {
-      const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && partis === 0;
+      /**
+       * 🔴 SAUF SI LA CHAÎNE A DÉJÀ RECUEILLI CE MESSAGE (arbitrage de Julien du 2026-09-23). Cas type :
+       * « Votre e-mail ? », flèche libre, action « écrire le champ = dernière saisie », fin sans envoi. Le
+       * message avait bien un destinataire, la chaîne ; le transmettre en plus faisait commenter une adresse
+       * e-mail hors contexte par l'agent de Meta.
+       *
+       * ⚠️ ON REGARDE LES BLOCS RÉELLEMENT TRAVERSÉS (`actions[].nodeId`), jamais le graphe entier : un
+       * scénario qui lit la dernière saisie AILLEURS ne doit pas rendre muet tout le reste de ses chemins.
+       */
+      const aLuLaSaisie = actions.some((a) => graph.nodes.find((n) => n.id === a.nodeId)?.data.valueKind === 'derniere_saisie');
+      const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && partis === 0 && !aLuLaSaisie;
       await this.rendreLaMainAMba(tenantId, waId, sansReponse ? { transmettre: messageId } : {});
     }
     // 🔴 TRANSITION FRAÎCHE vers un bloc agent, à ne pas confondre avec la branche du haut. Là-haut, le run

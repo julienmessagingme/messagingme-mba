@@ -213,6 +213,38 @@ describe('la réponse « à côté » est transmise à l’agent de Meta', () =>
     expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001 msg1']);
   });
 
+  it('🔴 une réponse que la chaîne a RECUEILLIE n’est pas transmise non plus (arbitrage de Julien du 2026-09-23)', async () => {
+    // « Votre e-mail ? », flèche libre, action « écrire le champ = dernière saisie », fin sans envoi : le message
+    // avait bien un destinataire, la chaîne. Le transmettre en plus faisait commenter une adresse e-mail hors
+    // contexte par l'agent de Meta.
+    const recueille = g(
+      [
+        n('n1', 'quick_message', { body: 'Votre e-mail ?', quickReplies: [] }),
+        n('n2', 'field', { key: 'email', valueKind: 'derniere_saisie' }),
+      ],
+      [['n1', 'n2']],
+    );
+    const { ex, ordre } = executeur(recueille, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001']);
+  });
+
+  it('⚠️ mais un bloc qui lit la saisie AILLEURS dans le graphe ne rend pas le reste muet', async () => {
+    // On regarde les blocs réellement TRAVERSÉS, pas le graphe entier : sinon un scénario qui recueille une
+    // donnée sur une de ses branches cesserait de transmettre sur toutes les autres.
+    const ailleurs = g(
+      [
+        n('n1', 'quick_message', { body: 'bonjour', quickReplies: [{ text: 'Oui' }] }),
+        n('n2', 'field', { key: 'email', valueKind: 'derniere_saisie' }),
+        n('n3', 'tag', { tag: 'libre' }),
+      ],
+      [['n1', 'n2', 'btn:0'], ['n1', 'n3']],
+    );
+    const { ex, ordre } = executeur(ailleurs, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001 msg1']);
+  });
+
   it('🔴 une réponse écrite à laquelle la chaîne a RÉPONDU n’est pas transmise : l’agent parlerait par-dessus', async () => {
     const repond = g(
       [n('n1', 'quick_message', { body: 'Votre e-mail ?', quickReplies: [] }), n('n2', 'quick_message', { body: 'Merci, noté.', quickReplies: [] })],
