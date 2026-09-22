@@ -104,4 +104,17 @@ describe('le nom technique et les consignes', () => {
     expect(consigneIncomplete(`Appelle cet outil dès que le client demande un devis.`)).toBe(false);
     expect(TEXTES_PAR_TYPE.tag.quand[0]).toContain(PLACEHOLDER);
   });
+
+  it('🔴 bloc et scénario : l’agent annonce en une phrase, ne passe pas la main, et peut relancer plus tard (essais du 2026-09-22)', () => {
+    for (const type of ['bloc', 'scenario'] as const) {
+      const [fr, en] = TEXTES_PAR_TYPE[type].quand;
+      expect(fr).toContain('en une phrase courte');
+      expect(fr).toContain('Ne passe pas la main');
+      expect(fr).not.toMatch(/n’écris rien (de plus )?au client pour cette demande/);
+      expect(en).toContain('one short sentence');
+      // La borne est le MESSAGE du client : « un parcours vient déjà d'être lancé » a fait escalader l'agent.
+      expect(TEXTES_PAR_TYPE[type].pasQuand[0]).toContain('même message du client');
+    }
+    expect(TEXTES_PAR_TYPE.scenario.quand[0]).toContain('même si tu l’as déjà fait plus tôt');
+  });
 });
