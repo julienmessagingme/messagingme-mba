@@ -1,0 +1,93 @@
+import { describe, it, expect } from 'vitest';
+import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueArrivee } from '../src/webhooks/arrivees-pub';
+
+const referral = {
+  source_url: 'https://fb.me/x', source_id: '120212345678901234', source_type: 'ad',
+  headline: 'Offre de rentrée', body: 'Parlez-nous', ctwa_clid: 'clid-1',
+};
+
+const payload = (messages: unknown[], field = 'messages') => ({
+  entry: [{ changes: [{ field, value: { metadata: { phone_number_id: 'pn1' }, messages } }] }],
+});
+
+const message = (id: string, from: string, ref?: unknown) =>
+  ({ id, from, type: 'text', text: { body: 'Bonjour' }, ...(ref ? { referral: ref } : {}) });
+
+describe('arriveeDepuisMessage', () => {
+  it('traduit le referral en arrivée', () => {
+    expect(arriveeDepuisMessage({
+      messageId: 'wamid.1', field: 'messages',
+      referral: { adId: 'ad1', sourceType: 'ad', titre: 'T', url: 'u', ctwaClid: 'c' },
+    })).toEqual({ messageId: 'wamid.1', adId: 'ad1', sourceType: 'ad', titre: 'T', url: 'u', ctwaClid: 'c', enStandby: false });
+  });
+
+  it('un message en standby donne une arrivée « en standby »', () => {
+    expect(arriveeDepuisMessage({
+      messageId: 'wamid.2', field: 'standby',
+      referral: { adId: 'ad1', sourceType: null, titre: null, url: null, ctwaClid: null },
+    })?.enStandby).toBe(true);
+  });
+
+  it('sans referral, pas d’arrivée', () => {
+    expect(arriveeDepuisMessage({ messageId: 'wamid.3', field: 'messages' })).toBeNull();
+  });
+});
+
+describe('processArriveesPub', () => {
+  const capte = () => {
+    const ecrites: Array<{ tenant: string; waId: string; a: ArriveePub }> = [];
+    return {
+      ecrites,
+      deps: {
+        phoneNumberTenant: async () => 't1',
+        enregistrer: async (tenant: string, waId: string, a: ArriveePub): Promise<IssueArrivee> => {
+          ecrites.push({ tenant, waId, a });
+          return 'ecrite';
+        },
+      },
+    };
+  };
+
+  it('écrit une arrivée par message qui porte un referral, et ignore les autres', async () => {
+    const { ecrites, deps } = capte();
+    await processArriveesPub(payload([message('wamid.a', '33611', referral), message('wamid.b', '33612')]), deps);
+    expect(ecrites).toHaveLength(1);
+    expect(ecrites[0]).toMatchObject({
+      tenant: 't1', waId: '33611',
+      a: { messageId: 'wamid.a', adId: '120212345678901234', ctwaClid: 'clid-1', enStandby: false },
+    });
+  });
+
+  it('🔴 le STANDBY n’est PAS exclu : c’est la mesure que le lot 3 attend', async () => {
+    const { ecrites, deps } = capte();
+    await processArriveesPub(payload([message('wamid.s', '33611', referral)], 'standby'), deps);
+    expect(ecrites).toHaveLength(1);
+    expect(ecrites[0]?.a.enStandby).toBe(true);
+  });
+
+  it('`ctwa_clid` vide chez Meta : gardé à null, et l’arrivée est quand même écrite', async () => {
+    const { ecrites, deps } = capte();
+    await processArriveesPub(payload([message('wamid.v', '33611', { ...referral, ctwa_clid: '' })]), deps);
+    expect(ecrites).toHaveLength(1);
+    expect(ecrites[0]?.a.ctwaClid).toBeNull();
+  });
+
+  it('numéro inconnu : rien n’est écrit', async () => {
+    const { ecrites, deps } = capte();
+    await processArriveesPub(payload([message('wamid.x', '33611', referral)]), { ...deps, phoneNumberTenant: async () => null });
+    expect(ecrites).toHaveLength(0);
+  });
+
+  it('🔴 une erreur sur un message n’empêche pas les autres, et ne lève jamais', async () => {
+    const ok: string[] = [];
+    await expect(processArriveesPub(payload([message('wamid.ko', 'KO', referral), message('wamid.ok', 'OK', referral)]), {
+      phoneNumberTenant: async () => 't1',
+      enregistrer: async (_t, waId) => {
+        if (waId === 'KO') throw new Error('base indisponible');
+        ok.push(waId);
+        return 'ecrite';
+      },
+    })).resolves.toBeUndefined();
+    expect(ok).toEqual(['OK']);
+  });
+});
