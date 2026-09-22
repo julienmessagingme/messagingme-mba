@@ -226,33 +226,47 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     if (source.type === 'manuel') return { retirees: 0, ecrites: 0 };
     const url = source.type === 'page' ? source.url : null;
     const nom = source.type === 'document' ? source.nom : null;
-    const res = await this.pool.query<{ retirees: number; ecrites: number; agent_connu: number }>(
-      `with cible as (select 1 from agents where id = $2 and tenant_id = $1),
-            retirees as (
-              delete from agent_knowledge
-               where tenant_id = $1 and agent_id = $2 and exists (select 1 from cible)
-                 and source_type = $3
-                 and source_url is not distinct from $4
-                 and source_nom is not distinct from $5
-              returning 1
-            ),
-            ecrites as (
-              insert into agent_knowledge
-                     (tenant_id, agent_id, titre, corps, source_type, source_url, source_nom, derniere_lecture_at)
-              select $1, $2, f.titre, f.corps, $3, $4, $5, now()
-                from jsonb_to_recordset($6::jsonb) as f(titre text, corps text)
-               where exists (select 1 from cible)
-              returning 1
-            )
-       select (select count(*) from retirees)::int as retirees,
-              (select count(*) from ecrites)::int as ecrites,
-              (select count(*) from cible)::int as agent_connu`,
-      [tenantId, agentId, source.type, url, nom,
-        JSON.stringify(fiches.map((f) => ({ titre: f.titre, corps: f.corps })))],
-    );
-    const r = res.rows[0];
-    if (!r || r.agent_connu === 0) return null;
-    return { retirees: r.retirees, ecrites: r.ecrites };
+    /**
+     * 🔴 L'AGENT EST VERROUILLÉ D'ABORD, dans une instruction À PART (relecture du 2026-09-22). Sans ce verrou,
+     * l'instruction retirait des fiches, puis prenait l'agent par la clé étrangère de ses insertions, en fin
+     * d'instruction : pendant ce temps, `PgAgentStore.remove` tenait l'agent et sa cascade attendait ces mêmes
+     * fiches (40P01, donc un 500). Avec lui, l'ordre est celui de `remove` : l'agent, puis ce qui en dépend.
+     */
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const agent = await client.query('select 1 from agents where tenant_id = $1 and id = $2 for key share', [tenantId, agentId]);
+      if ((agent.rowCount ?? 0) === 0) { await client.query('rollback'); return null; }
+      const res = await client.query<{ retirees: number; ecrites: number }>(
+        `with retirees as (
+                delete from agent_knowledge
+                 where tenant_id = $1 and agent_id = $2
+                   and source_type = $3
+                   and source_url is not distinct from $4
+                   and source_nom is not distinct from $5
+                returning 1
+              ),
+              ecrites as (
+                insert into agent_knowledge
+                       (tenant_id, agent_id, titre, corps, source_type, source_url, source_nom, derniere_lecture_at)
+                select $1, $2, f.titre, f.corps, $3, $4, $5, now()
+                  from jsonb_to_recordset($6::jsonb) as f(titre text, corps text)
+                returning 1
+              )
+         select (select count(*) from retirees)::int as retirees,
+                (select count(*) from ecrites)::int as ecrites`,
+        [tenantId, agentId, source.type, url, nom,
+          JSON.stringify(fiches.map((f) => ({ titre: f.titre, corps: f.corps })))],
+      );
+      await client.query('commit');
+      const r = res.rows[0]!;
+      return { retirees: r.retirees, ecrites: r.ecrites };
+    } catch (e) {
+      await client.query('rollback').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 }
 

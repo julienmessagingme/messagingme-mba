@@ -44,6 +44,8 @@ interface Monture {
   retenirSuppression?: Promise<void>;
   /** La création d'un outil attend cette promesse : de quoi voir l'écran pendant un enregistrement. */
   retenirCreation?: Promise<void>;
+  /** La création d'un outil est refusée (409), comme sur un nom déjà pris. */
+  creationRefusee?: boolean;
   /** La lecture du plan chez Meta échoue (500) quand cette fonction le dit. */
   apercuEchoue?: () => boolean;
   /** Ces lectures échouent (500) : une lecture ratée n'est pas une liste vide. */
@@ -83,6 +85,7 @@ async function monterOutils(page: Page, m: Monture = {}) {
         ordre.push(method);
         if (method === 'POST') {
           if (m.retenirCreation) await m.retenirCreation;
+          if (m.creationRefusee) { await json({ error: 'Ce nom est déjà pris dans l’espace.' }, 409); return true; }
           await json({ id: 'nouveau' }, 201);
           return true;
         }
@@ -555,7 +558,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
   });
 
-  test('🔴 « Supprimer » est bloqué pendant un enregistrement', async ({ page }) => {
+  test('🔴 « Supprimer » et « Modifier » sont bloqués pendant un enregistrement', async ({ page }) => {
     let liberer: () => void = () => {};
     const retenue = new Promise<void>((ok) => { liberer = ok; });
     await monterOutils(page, {
@@ -570,8 +573,33 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await page.getByTestId('mba-form-quand').fill(CONSIGNE);
     await page.getByTestId('mba-form-enregistrer').click();
     await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeDisabled();
+    // Ouvrir un autre outil démonterait le formulaire en cours : son erreur se perdrait avec la saisie.
+    await expect(page.getByTestId('mba-outil-modifier-o1')).toBeDisabled();
     liberer();
     await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeEnabled();
+    await expect(page.getByTestId('mba-outil-modifier-o1')).toBeEnabled();
+  });
+
+  /**
+   * 🔴 UN ENREGISTREMENT REFUSÉ LIBÈRE L'ÉCRAN (relecture du 2026-09-22). Le cas courant est un nom déjà pris
+   * (409) : si l'écran restait occupé, le formulaire se dirait « suppression ou envoi en cours » et « Supprimer »
+   * resterait grisé jusqu'au rechargement.
+   */
+  test('🔴 un enregistrement refusé libère l’écran, et dit pourquoi', async ({ page }) => {
+    await monterOutils(page, {
+      outils: [OUTIL], tags: [{ tag: 'vip', count: 3 }], creationRefusee: true,
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-tag').click();
+    await page.getByTestId('mba-cible-tag').fill('vip');
+    await page.getByTestId('mba-form-titre').fill('Marquer VIP');
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await page.getByTestId('mba-form-enregistrer').click();
+    await expect(page.getByTestId('mba-form-erreur')).toContainText('déjà pris');
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
+    await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeEnabled();
+    await expect(page.getByTestId('mba-outil-modifier-o1')).toBeEnabled();
   });
 
   /**

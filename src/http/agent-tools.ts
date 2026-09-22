@@ -396,7 +396,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     const fait = parse.data.valeur
       ? await deps.rattacher(ctx.tenant, ctx.agentId, outilId)
       : await deps.detacher(ctx.tenant, ctx.agentId, outilId);
-    if (!fait) return reply.code(404).send({ error: 'outil introuvable' });
+    // « agent OU outil » : un rattachement rend aussi `false` quand l'agent vient d'être supprimé.
+    if (!fait) return reply.code(404).send({ error: 'agent ou outil introuvable' });
     return reply.code(200).send({ rattache: parse.data.valeur });
   });
 }

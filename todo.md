@@ -31,9 +31,14 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 - 🟡 **La suppression d'un agent tient ses connecteurs PARTAGÉS pendant toute sa cascade**, et cette cascade n'a
   pas d'index qui la serve : `agent_tool_calls` n'en a aucun qui commence par `session_id` ni sur `tool_id`,
   `agent_credit_mouvements.session_id` non plus (0086, 0087). Pendant ce temps, les appels d'autres agents et du
-  relais de l'agent de Meta sur ces connecteurs ATTENDENT. Sans effet aujourd'hui (un agent en brouillon), mais
-  le temps n'est pas borné. À faire : mesurer `PgAgentStore.remove` sur un agent chargé, et au besoin un index
-  `agent_tool_calls (session_id)` (migration).
+  relais de l'agent de Meta sur ces connecteurs ATTENDENT. ⚠️ Côté Meta, attendre n'est pas anodin : l'appel du
+  relais a son propre délai, donc une cascade longue fait ÉCHOUER l'outil dans une conversation client. Sans effet
+  aujourd'hui, mesuré en base le 2026-09-22 : un seul agent (en brouillon), zéro session, cinq appels journalisés,
+  tous sans session. Le temps n'est pas borné pour autant, et le verrou ne peut pas être raccourci (le prendre après
+  la cascade était l'interblocage n°3). **Déclencheur** : avant la mise en service du premier agent IA d'un client,
+  ou dès qu'un `remove` mesuré dépasse une seconde. À faire alors : mesurer `PgAgentStore.remove` sur un agent
+  chargé, puis un index `agent_tool_calls (session_id)` (migration hors transaction, et une écriture de plus sur
+  le chemin chaud du journal, à peser).
 - 🟡 **Un nom d'outil déjà pris ne se signale qu'à l'enregistrement** (plan, écart 5) : la route rend 409 et le
   formulaire reste ouvert, mais la spec § 9.4 le voulait à la saisie. Un contrôle exact demande de lire TOUS les
   outils de l'espace sans agent (connecteurs des agents IA compris, `agent_tools_nom_espace_uidx`), pas la seule

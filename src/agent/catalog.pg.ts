@@ -108,10 +108,14 @@ function versOutil(r: Ligne): OutilDefini {
  * l'agent et rend `false`. Instruction À PART : dans un même `where`, l'ordre de deux `exists` n'est pas
  * garanti, et celui-ci doit précéder le verrou de l'outil (l'ordre de `remove` : l'agent, puis l'outil).
  * Rend `false` quand l'agent n'existe plus. Un consommateur qui n'est pas un agent (`mba:`) passe.
+ *
+ * ⚠️ Une clé `agent:` que `FORME_CONSOMMATEUR` refuse (un identifiant en majuscules, que `estUuid` accepte)
+ * rend `false` elle aussi : la laisser passer comme « pas un agent » sautait la garde, et c'est le CHECK de 0127
+ * qui la refusait ensuite, en 500 (relecture du 2026-09-22).
  */
 async function verrouillerAgentDuConsommateur(client: PoolClient, tenantId: string, consommateur: string): Promise<boolean> {
   const agentId = agentDuConsommateur(consommateur);
-  if (agentId === null) return true;
+  if (agentId === null) return !consommateur.startsWith('agent:');
   const r = await client.query('select 1 from agents where tenant_id = $1 and id = $2 for key share', [tenantId, agentId]);
   return (r.rowCount ?? 0) > 0;
 }
@@ -130,8 +134,8 @@ async function verrouillerAgentDuConsommateur(client: PoolClient, tenantId: stri
  * ⚠️ DEUX CONTRAINTES : le verrou précède le `not exists` ; et les chemins des CONSENTEMENTS et du JOURNAL suivent
  * un même ordre, l'agent, ses sessions, les définitions (triées par identifiant), puis ce qui en dépend (lignes de
  * consentement, appels journalisés). Sinon deux chemins s'attendent l'un l'autre (40P01). Le JSDoc de
- * `PgAgentStore.remove` raconte les trois ordres qui ont interbloqué avant celui-là, et nomme les chemins voisins
- * qui ne suivent PAS cet ordre.
+ * `PgAgentStore.remove` raconte les trois ordres qui ont interbloqué avant celui-là, et les chemins voisins (import
+ * et suppression d'un serveur MCP, relecture de la connaissance) qui s'y sont alignés.
  *
  * ⚠️ `order by id` : deux effacements qui verrouillent plusieurs définitions le font dans le même ordre, sinon
  * ils pourraient s'attendre l'un l'autre.

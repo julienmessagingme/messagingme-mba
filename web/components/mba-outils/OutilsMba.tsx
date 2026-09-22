@@ -52,8 +52,9 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   // enregistrement faisait perdre l'envoi à l'un des deux, ou confirmer le retrait en cours comme imprévu.
   const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
   // Les noms supprimés ICI pendant cette visite, et dont le retrait n'est PAS ENCORE PARTI : les seuls que le
-  // bandeau laisse partir sans confirmation. Un nom sort de l'ensemble dès que Meta ne le liste plus (voir
-  // `chargerEtats`) : sinon un outil ajouté plus tard à la main sous ce nom partirait sans être nommé.
+  // bandeau laisse partir sans confirmation. Un nom sort de l'ensemble dès que son retrait est parti (la
+  // publication réussie, dans `envoyer`), et, en filet, dès que Meta ne le liste plus (`chargerEtats`) : sinon un
+  // outil ajouté plus tard à la main sous ce nom partirait sans être nommé.
   const [supprimesIci, setSupprimesIci] = useState<ReadonlySet<string>>(() => new Set());
   const occupe = envoiEnCours || suppressionEnCours || enregistrementEnCours;
 
@@ -278,7 +279,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
 
 function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRetirer, onModifier, onSupprimer, onReactiver }: {
   o: OutilMbaVue; t: Traduire; isAdmin: boolean; etat: EtatChezMeta | 'chargement';
-  /** Un envoi OU une suppression en cours : les boutons attendent. */
+  /** Un envoi, une suppression ou un enregistrement en cours : les boutons attendent. */
   occupe: boolean;
   /** Un envoi seul : c'est lui, et lui seul, qui fait dire « Envoi… ». */
   envoiEnCours: boolean;
@@ -359,10 +360,13 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
       </span>
       {isAdmin && (
         <span className="flex gap-3 text-xs">
-          <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu'} onClick={onModifier}
+          {/* Désactivé pendant un enregistrement : ouvrir un autre outil démontait le formulaire en cours, dont l'erreur
+              se perdait avec la saisie, ou que la fin de l'enregistrement refermait (relecture du 2026-09-22). */}
+          <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu' || occupe} onClick={onModifier}
             className="text-ink-600 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
-          {/* Désactivé pendant un envoi ou une suppression, comme « Enregistrer » et « Réactiver » (spec § 9.2) : sinon le retrait
-              partait pendant qu'un autre envoi lisait encore l'ancien plan, et restait en attente sans le dire. */}
+          {/* Désactivé pendant un envoi, une suppression ou un enregistrement, comme « Enregistrer » et « Réactiver »
+              (spec § 9.2) : sinon le retrait partait pendant qu'un autre envoi lisait encore l'ancien plan, et restait
+              en attente sans le dire. */}
           <button type="button" data-testid={`mba-outil-supprimer-${o.id}`} disabled={occupe} onClick={onSupprimer}
             className="text-coral hover:underline disabled:opacity-40">{t('Supprimer', 'Delete')}</button>
         </span>

@@ -55,11 +55,15 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
   définitions, puis le reste (trois ordres antérieurs interbloquaient chacun avec un chemin voisin, tous rejoués
   contre un Postgres jetable), avec les outils et le connecteur distingués dans `effacementsImprevus` et la
   suppression en cours qui bloque aussi le formulaire.
-- 🔴 **À faire maintenant** : le lot des 9 jaunes de la relecture à froid de cet ordre, poussé : un
-  rattachement qui verrouille son agent (sans quoi un consentement survivait à l'agent supprimé), les
-  changements d'un serveur MCP appliqués dans l'ordre des identifiants, la dispense du bandeau purgée dès la
-  publication, un enregistrement qui bloque « Supprimer », l'ordre des déclencheurs du journal figé par un test,
-  et les textes qui disaient « tous les chemins ». Relecture, attestation et déploiement par cette session.
+- 🔴 **À faire maintenant, deux lots poussés et pas encore déployés.** Le premier corrige les 9 jaunes de la
+  relecture de l'ordre des verrous (un rattachement qui verrouille son agent, la dispense du bandeau purgée dès la
+  publication, un enregistrement qui bloque « Supprimer », l'ordre des déclencheurs du journal figé par un test) ;
+  sa relecture à froid : 0 rouge, 8 jaunes. Le second corrige ces 8 jaunes : les chemins VOISINS de la suppression
+  d'un agent s'alignent sur son ordre (import et suppression d'un serveur MCP, relecture de la connaissance, chacun
+  rejoué contre un Postgres jetable et rouge sur son mutant), la création d'un connecteur tenue par un test, une
+  clé d'agent hors forme refusée en 404, « Modifier » bloqué pendant un enregistrement, un enregistrement refusé
+  qui libère l'écran. Relecture, attestation et déploiement par cette session, avec les suites de la session
+  « 422 ».
 - ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
   connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
   outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.

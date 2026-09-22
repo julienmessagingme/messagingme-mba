@@ -33,6 +33,13 @@ réelles la vérification d'adresse à la connexion du lot 1 de sécurité.
 **La garde de déploiement ne couvrait pas ce dépôt** (aucun `.claude/deploy.json`) : elle est déclarée, et le
 hook global garde désormais aussi la MIGRATION lancée par `ssh` (décision de Julien).
 
+**Puis les chemins VOISINS** : la relecture du lot suivant a trouvé trois autres chemins qui prenaient les mêmes
+lignes dans un autre ordre, et que les textes nommaient comme « exceptions » sans que rien ne les suive : l'import
+d'un serveur MCP (qui ne triait que ses outils modifiés), la suppression d'un serveur MCP (sa cascade suivait le
+parcours de table) et la relecture d'une source de connaissance (qui prenait l'agent en fin d'instruction, après
+ses fiches). Chacun s'aligne désormais sur l'ordre de `remove`, et chacun a son test d'interblocage, rouge sur son
+mutant contre le Postgres jetable. Une exception nommée dans un commentaire n'est pas une dette suivie.
+
 **La leçon** (`brain/LEARNINGS.md`) : dans un domaine où plusieurs chemins verrouillent les mêmes lignes, l'ordre
 se DÉCLARE une fois et chaque chemin s'y aligne ; le corriger chemin par chemin, relecture après relecture, a
 produit trois ordres faux d'affilée. Et un interblocage se prouve en le REJOUANT, jamais en le raisonnant seul.

@@ -158,10 +158,12 @@ export class PgAgentStore implements AgentStore {
    * cascade n'a pas d'index qui la serve (`todo.md`) : ce temps n'est pas borné, il est seulement rare.
    * Plus aucun consentement `agent:` ne se pose pendant la suppression (il attend l'agent, verrouillé en tête) :
    * le `reliquat` n'est plus qu'une défense.
-   * ⚠️ HORS de cet ordre, et c'est écrit pour qu'on ne le croie pas universel : la suppression d'un serveur MCP
-   * efface ses outils par cascade, sans ordre ; `remplacerSource` (connaissance) supprime des fiches avant de
-   * prendre l'agent. L'import MCP, lui, trie ses outils (`appliquer`).
-   * Tenu par trois tests d'intégration, qui rejouent chacun un de ces interblocages.
+   * Les chemins VOISINS qui touchent aux définitions ou à l'agent s'y alignent aussi (relecture du 2026-09-22),
+   * et chacun l'a appris en interbloquant : l'import d'un serveur MCP verrouille d'un bloc, par identifiant, tout
+   * ce qu'il va écrire (`appliquer`) ; la suppression d'un serveur MCP verrouille ses outils par identifiant avant
+   * sa cascade (`supprimerServeur`) ; la relecture d'une source de connaissance prend l'agent avant ses fiches
+   * (`remplacerSource`). Un nouveau chemin qui écrit plusieurs définitions passe par `verrouillerDefinitions`.
+   * Tenu par des tests d'intégration qui rejouent chacun de ces interblocages.
    */
   async remove(tenantId: string, id: string): Promise<boolean> {
     const client = await this.pool.connect();

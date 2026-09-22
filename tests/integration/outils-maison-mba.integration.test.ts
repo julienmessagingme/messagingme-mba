@@ -6,6 +6,10 @@ import { PgToolCatalog } from '../../src/agent/catalog.pg';
 import { PgAgentStore } from '../../src/agent/agent-store.pg';
 import { NomOutilDejaPris } from '../../src/agent/catalog';
 import { consommateurMba, consommateurAgent } from '../../src/agent/consommateur';
+import { PgMcpStore } from '../../src/agent/mcp/store.pg';
+import { PgKnowledgeStore } from '../../src/agent/knowledge.pg';
+import type { OutilAImporter } from '../../src/agent/mcp/import';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Les outils maison de l'agent de Meta, contre une vraie base (migration 0162, spec
@@ -437,5 +441,160 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
     expect(session).toBeGreaterThanOrEqual(0);
     expect(outil).toBeGreaterThanOrEqual(0);
     expect(session).toBeLessThan(outil);
+  });
+
+  const agentSeul = async (label: string): Promise<string> => (await pool.query<{ id: string }>(
+    `insert into agents (tenant_id, label, mention_ia, modele) values ($1, $2, 'IA', 'm') returning id`,
+    [tenantId, label],
+  )).rows[0]!.id;
+
+  /**
+   * 🔴 CRÉER UN CONNECTEUR POUR UN AGENT QU'ON SUPPRIME (relecture du 2026-09-22). Même garde que le rattachement
+   * (`verrouillerAgentDuConsommateur`) : sans elle, la création passait l'`exists` sur l'agent, créait le
+   * connecteur (sans clé étrangère vers l'agent) et posait un consentement `agent:` qui survivait à l'agent.
+   */
+  it('🔴 créer un connecteur pour un agent qu’on supprime rend `null`, sans connecteur ni consommateur fantôme', async () => {
+    const partant = await agentSeul('itest-fantome-creation');
+    const requete = (await pool.query<{ id: string }>(
+      `insert into connector_requests (tenant_id, source_id, label, method, path, output_paths)
+       values ($1, $2, 'itest-creation', 'POST', '/x', '{}'::text[]) returning id`,
+      [tenantId, sourceId],
+    )).rows[0]!.id;
+    await avecConnexion(async (suppression) => {
+      await suppression.query('begin');
+      await suppression.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, partant]);
+      const creation = cat.ajouterConnecteur(tenantId, partant, {
+        sourceId, requestId: requete, name: 'course_creation', title: 'x', description: 'x', nePasUtiliser: 'x',
+        params: [], risk: 'write', nature: 'pousse', outputPaths: [],
+      });
+      creation.catch(() => {});
+      await attendreUnVerrou();
+      await suppression.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, partant]);
+      await suppression.query('commit');
+      expect(await creation).toBeNull();
+    });
+    expect((await pool.query(`select 1 from agent_tools where tenant_id = $1 and name = 'course_creation'`, [tenantId])).rowCount).toBe(0);
+  });
+
+  /**
+   * Une clé `agent:` que la forme de 0127 refuse (un identifiant en majuscules, que `estUuid` accepte) rendait
+   * `true` à la garde de l'agent, puis levait sur le CHECK (23514, donc un 500). Elle rend désormais `false`.
+   */
+  it('une clé d’agent hors forme rend `false`, pas une erreur de contrainte', async () => {
+    const id = await connecteurNeuf('cle_majuscules');
+    expect(await cat.rattacherConsommateur(tenantId, `agent:${agentId.toUpperCase()}`, id)).toBe(false);
+  });
+
+  /** Deux identifiants dont l'ordre est CONNU, quel que soit le tirage : `bas` avant `haut`. */
+  const deuxIdentifiants = (): { bas: string; haut: string } => {
+    const u = randomUUID();
+    return { bas: `0${u.slice(1)}`, haut: `f${u.slice(1)}` };
+  };
+  /**
+   * Un serveur MCP et deux de ses outils, consentis (inactifs) par `agent`. ⚠️ `haut` est inséré AVANT `bas` : une
+   * cascade ou un `update ... any` les prend dans l'ordre du parcours de table, donc `haut` d'abord, à l'inverse
+   * de l'ordre des identifiants. C'est ce qui rend l'interblocage reproductible.
+   */
+  const serveurAvecDeuxOutils = async (label: string, agent: string) => {
+    const source = (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'mcp', $2, 'https://exemple.test/mcp', 'none', 'active') returning id`,
+      [tenantId, label],
+    )).rows[0]!.id;
+    const ids = deuxIdentifiants();
+    for (const [id, suffixe] of [[ids.haut, 'haut'], [ids.bas, 'bas']] as const) {
+      await pool.query(
+        `insert into agent_tools (id, tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, risk, binding)
+         values ($1, $2, 'mcp', $3, 'mcp', $4, 'MCP', 'm', '', 'read', $5::jsonb)`,
+        [id, tenantId, source, `${label}_${suffixe}`, JSON.stringify({ outilDistant: `${label}_${suffixe}` })],
+      );
+      await pool.query(
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        [tenantId, id, consommateurAgent(agent)],
+      );
+    }
+    return { source, ids };
+  };
+
+  /**
+   * `PgAgentStore.remove` REJOUÉ À LA MAIN jusqu'à son verrou des définitions, qui les prend par identifiant :
+   * l'agent, puis `bas`. Le chemin voisin est lancé à ce moment-là ; `remove` demande ensuite `haut`. Un voisin
+   * qui a pris `haut` avant de demander `bas` interbloque (40P01).
+   */
+  const suppressionContre = async (agent: string, ids: { bas: string; haut: string }, voisin: () => Promise<unknown>) =>
+    avecConnexion(async (suppression) => {
+      await suppression.query('begin');
+      await suppression.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, agent]);
+      await suppression.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, ids.bas]);
+      const enCours = voisin();
+      enCours.catch(() => {});
+      await attendreUnVerrou();
+      await suppression.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, ids.haut]);
+      await suppression.query('commit');
+      return await enCours;
+    });
+
+  /**
+   * 🔴 L'IMPORT D'UN SERVEUR MCP (relecture du 2026-09-22). Il ne triait que ses outils MODIFIÉS : un outil modifié
+   * d'identifiant haut, puis un outil REVU d'identifiant bas, verrouillés dans cet ordre, interbloquaient avec la
+   * suppression d'un agent qui les consent tous les deux. Rouge avant `verrouillerDefinitions` dans `appliquer`.
+   */
+  it('🔴 supprimer un agent n’interbloque pas avec l’import de son serveur MCP', async () => {
+    const agent = await agentSeul('itest-partant-import');
+    const { source, ids } = await serveurAvecDeuxOutils('mcp_import', agent);
+    const modifie: OutilAImporter = {
+      nomDistant: 'mcp_import_haut', name: 'mcp_import_haut', title: 'MCP revu', description: 'm', nePasUtiliser: '',
+      params: [], annonce: { name: 'mcp_import_haut', inputSchema: { type: 'object', properties: {} } },
+      nonActivable: null, risk: 'read',
+    };
+    const mcp = new PgMcpStore(pool);
+    await suppressionContre(agent, ids, () =>
+      mcp.appliquer(tenantId, source, { nouveaux: [], changes: [{ id: ids.haut, outil: modifie }], disparus: [], vus: [ids.bas] }));
+    const lu = await pool.query<{ title: string; mcp_vu_le: Date | null }>(
+      'select title, mcp_vu_le from agent_tools where id = any($1::uuid[]) order by id', [[ids.bas, ids.haut]],
+    );
+    expect(lu.rows[0]!.mcp_vu_le).not.toBeNull();
+    expect(lu.rows[1]!.title).toBe('MCP revu');
+  });
+
+  /**
+   * 🔴 LA SUPPRESSION D'UN SERVEUR MCP (relecture du 2026-09-22). Sa cascade effaçait ses outils dans l'ordre du
+   * parcours de table ; un outil rattaché mais inactif est le cas normal, et le refus « outils actifs » ne le
+   * protège pas. Rouge avant le verrou par identifiant de `supprimerServeur`.
+   */
+  it('🔴 supprimer un agent n’interbloque pas avec la suppression de son serveur MCP', async () => {
+    const agent = await agentSeul('itest-partant-serveur');
+    const { source, ids } = await serveurAvecDeuxOutils('mcp_serveur', agent);
+    const mcp = new PgMcpStore(pool);
+    expect(await suppressionContre(agent, ids, () => mcp.supprimerServeur(tenantId, source))).toBe('supprime');
+    expect(await existe(ids.bas)).toBe(false);
+    expect(await existe(ids.haut)).toBe(false);
+  });
+
+  /**
+   * 🔴 LA RELECTURE D'UNE SOURCE DE CONNAISSANCE (relecture du 2026-09-22). Elle retirait les fiches de l'agent,
+   * puis prenait l'agent par la clé étrangère de ses insertions, en fin d'instruction ; `remove` tenait l'agent et
+   * sa cascade attendait ces fiches. Rouge avant le verrou de l'agent en tête de `remplacerSource`.
+   */
+  it('🔴 supprimer un agent n’interbloque pas avec la relecture de sa connaissance', async () => {
+    const agent = await agentSeul('itest-partant-connaissance');
+    await pool.query(
+      `insert into agent_knowledge (tenant_id, agent_id, titre, corps, source_type, source_url)
+       values ($1, $2, 'Avant', 'ancien texte', 'page', 'https://exemple.test/page')`,
+      [tenantId, agent],
+    );
+    const connaissance = new PgKnowledgeStore(pool);
+    await avecConnexion(async (suppression) => {
+      await suppression.query('begin');
+      await suppression.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, agent]);
+      const relecture = connaissance.remplacerSource(tenantId, agent, { type: 'page', url: 'https://exemple.test/page' },
+        [{ titre: 'Après', corps: 'nouveau texte' }]);
+      relecture.catch(() => {});
+      await attendreUnVerrou();
+      await suppression.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, agent]);
+      await suppression.query('commit');
+      expect(await relecture).toBeNull();
+    });
+    expect((await pool.query('select 1 from agent_knowledge where agent_id = $1', [agent])).rowCount).toBe(0);
   });
 });

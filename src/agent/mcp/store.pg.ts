@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import type { RisqueOutil } from '../catalog';
+import { verrouillerDefinitions } from '../catalog.pg';
 import { paramsOutil, type SourceParam } from '../llm/tool-schema';
 import type { OutilExistantMcp } from './import';
 import type { EcritureImportMcp, OutilMcpVue, ServeurMcpVue } from '../../http/agent-mcp';
@@ -194,8 +195,9 @@ export class PgMcpStore {
    * supprimait un connecteur API EN CONTOURNANT la garde `outilsActifs > 0` que sa propre route applique.
    *
    * ⚠️ LA TRANSACTION ACHÈTE L'ATOMICITÉ DE L'ÉCRITURE, PAS LA FERMETURE DE LA COURSE, et ce texte a
-   * d'abord affirmé l'inverse. Elle est en `READ COMMITTED` (aucun `for update`, aucun changement
-   * d'isolation) : le `count(*)` prend son instantané au moment de l'instruction, une activation
+   * d'abord affirmé l'inverse. Elle est en `READ COMMITTED` (aucun verrou sur les consentements, aucun
+   * changement d'isolation ; le verrou des outils, plus bas, ne sert qu'à l'ordre des verrous et ne gêne pas une
+   * activation, qui n'écrit que le consentement) : le `count(*)` prend son instantané au moment de l'instruction, une activation
    * concurrente peut commiter juste après, et le `delete` emporterait alors un outil devenu actif. La
    * fermer demanderait un `select ... for update` ici ET que le chemin d'activation prenne le même verrou
    * (`PgToolCatalog` ne le prend pas), ce qui poserait un verrou d'écriture sur la ligne d'un connecteur à
@@ -222,6 +224,14 @@ export class PgMcpStore {
       );
       if (Number(actifs.rows[0]!.n) > 0) { await client.query('rollback'); return 'outils_actifs'; }
 
+      // 🔴 SES OUTILS SONT VERROUILLÉS PAR IDENTIFIANT AVANT LA CASCADE, l'ordre de `PgAgentStore.remove`
+      // (relecture du 2026-09-22). Un outil rattaché mais inactif est le cas normal, et le refus « outils actifs »
+      // ne le protège pas : sans ce verrou, la cascade les prenait dans l'ordre du parcours de table, et deux
+      // outils consentis par un agent qu'on supprime suffisaient à interbloquer avec `remove`.
+      await client.query(
+        'select 1 from agent_tools where tenant_id = $1 and source_id = $2 order by id for update',
+        [tenantId, id],
+      );
       await client.query(
         "delete from agent_tool_sources where tenant_id = $1 and id = $2 and kind = 'mcp'",
         [tenantId, id],
@@ -260,9 +270,15 @@ export class PgMcpStore {
         );
       }
 
-      // Triés par identifiant, comme `verrouillerDefinitions` : dans l'ordre du plan d'import, deux outils MCP
-      // consentis par un agent qu'on supprime suffisaient à interbloquer avec `PgAgentStore.remove`.
-      for (const c of [...e.changes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+      /**
+       * 🔴 TOUTES LES DÉFINITIONS QUE CET IMPORT VA ÉCRIRE SONT VERROUILLÉES D'ABORD, D'UN BLOC, PAR IDENTIFIANT
+       * (`verrouillerDefinitions`, l'ordre de `PgAgentStore.remove`). Trier la seule boucle des `changes` ne
+       * suffisait pas (relecture du 2026-09-22) : les `disparus` et les `vus` étaient verrouillés ensuite, en
+       * masse et dans l'ordre du parcours de table, donc un outil modifié d'identifiant haut et un outil vu
+       * d'identifiant bas, consentis par un agent qu'on supprime, interbloquaient avec `remove`.
+       */
+      await verrouillerDefinitions(client, tenantId, [...e.changes.map((c) => c.id), ...e.disparus, ...e.vus]);
+      for (const c of e.changes) {
         await client.query(
           `update agent_tools
               set title = $3, description = $4, params = $5::jsonb,
