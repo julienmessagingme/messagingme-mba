@@ -457,8 +457,10 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   définition touche ensuite les appels (`tool_id on delete set null`). D'où `PgAgentStore.remove` : verrouiller
   l'agent et ses sessions, lire ses consentements, verrouiller leurs définitions, et SEULEMENT ENSUITE la cascade
   et le retrait. Les trois autres ordres essayés interbloquaient (40P01, donc un 500) ; le JSDoc de `remove` les
-  nomme. Les chemins VOISINS s'y alignent : l'import d'un serveur MCP verrouille d'un bloc, par identifiant, tout ce
-  qu'il va écrire ; la suppression d'un serveur MCP verrouille ses outils par identifiant avant sa cascade ; la
+  nomme. Les chemins VOISINS s'y alignent : l'import d'un serveur MCP verrouille d'un bloc, par identifiant, les
+  définitions existantes qu'il va écrire, AVANT ses insertions (chacune prend le serveur par sa clé étrangère, et
+  la suppression d'un serveur prend ses outils puis le serveur) ; la suppression d'un serveur MCP verrouille ses
+  outils par identifiant avant sa cascade ; la
   relecture d'une source de connaissance prend l'agent avant ses fiches. Tout nouveau chemin qui écrit plusieurs
   définitions passe par `verrouillerDefinitions` ; `tests/integration/outils-maison-mba.integration.test.ts`
   rejoue chacun de ces interblocages, le consommateur fantôme et le cas inverse.

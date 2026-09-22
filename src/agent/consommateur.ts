@@ -22,8 +22,14 @@
  */
 export const FORME_CONSOMMATEUR = /^(agent:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|mba:[0-9]{1,32})$/;
 
+/**
+ * ⚠️ EN MINUSCULES : `estUuid` accepte un identifiant en majuscules (une adresse tapée à la main), et Postgres le
+ * lit comme le même `uuid`, mais la clé TEXTE, elle, aurait différé. Recopiée telle quelle, elle était refusée par
+ * le CHECK de 0127 (500), ou manquait les consentements existants au retrait d'un agent, qui laissait alors des
+ * consommateurs fantômes (relecture du 2026-09-22).
+ */
 export function consommateurAgent(agentId: string): string {
-  return `agent:${agentId}`;
+  return `agent:${agentId.toLowerCase()}`;
 }
 
 export function consommateurMba(phoneNumberId: string): string {

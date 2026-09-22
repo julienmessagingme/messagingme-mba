@@ -166,7 +166,10 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
           {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer et envoyer à Meta', 'Save and send to Meta')}
         </button>
         {manque !== null && <span className="text-[11px] text-ink-500" data-testid="mba-form-manque">{manque}</span>}
-        <button type="button" data-testid="mba-form-annuler" onClick={onAnnuler} className="text-xs text-ink-500 hover:underline">
+        {/* Grisé pendant l'enregistrement : il démontait le formulaire en cours, dont l'erreur se perdait avec la
+            saisie, et l'outil partait quand même chez Meta (relecture du 2026-09-22). */}
+        <button type="button" data-testid="mba-form-annuler" disabled={busy} onClick={onAnnuler}
+          className="text-xs text-ink-500 hover:underline disabled:opacity-40">
           {t('Annuler', 'Cancel')}
         </button>
       </div>

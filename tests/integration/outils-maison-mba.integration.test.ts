@@ -513,6 +513,12 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
         [tenantId, id, consommateurAgent(agent)],
       );
     }
+    // La PRÉCONDITION du test, vérifiée plutôt que supposée : sans elle, l'ancien code passerait sans rien
+    // prouver (relecture du 2026-09-22).
+    const physique = await pool.query<{ id: string }>(
+      'select id from agent_tools where source_id = $1 order by ctid', [source],
+    );
+    expect(physique.rows.map((r) => r.id)).toEqual([ids.haut, ids.bas]);
     return { source, ids };
   };
 
@@ -562,6 +568,37 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
    * parcours de table ; un outil rattaché mais inactif est le cas normal, et le refus « outils actifs » ne le
    * protège pas. Rouge avant le verrou par identifiant de `supprimerServeur`.
    */
+  /**
+   * 🔴 L'IMPORT CONTRE LA SUPPRESSION DU MÊME SERVEUR (relecture du 2026-09-22). Chaque insertion d'un outil neuf
+   * prend le serveur (`key share`, par sa clé étrangère) : verrouiller les outils existants APRÈS les insertions,
+   * c'était l'ordre inverse de `supprimerServeur` (ses outils, puis le serveur). On rejoue `supprimerServeur` à la
+   * main : il tient l'outil existant, l'import est lancé, puis la suppression demande le serveur.
+   */
+  it('🔴 importer et supprimer un même serveur MCP n’interbloquent pas', async () => {
+    const agent = await agentSeul('itest-import-contre-suppression');
+    const { source, ids } = await serveurAvecDeuxOutils('mcp_duel', agent);
+    const neuf: OutilAImporter = {
+      nomDistant: 'mcp_duel_neuf', name: 'mcp_duel_neuf', title: 'Neuf', description: 'n', nePasUtiliser: '',
+      params: [], annonce: { name: 'mcp_duel_neuf', inputSchema: { type: 'object', properties: {} } },
+      nonActivable: null, risk: 'read',
+    };
+    const mcp = new PgMcpStore(pool);
+    await avecConnexion(async (suppression) => {
+      await suppression.query('begin');
+      await suppression.query(
+        'select 1 from agent_tools where tenant_id = $1 and source_id = $2 order by id for update', [tenantId, source],
+      );
+      const importEnCours = mcp.appliquer(tenantId, source, { nouveaux: [neuf], changes: [], disparus: [], vus: [ids.bas] });
+      importEnCours.catch(() => {});
+      await attendreUnVerrou();
+      await suppression.query('delete from agent_tool_sources where tenant_id = $1 and id = $2', [tenantId, source]);
+      await suppression.query('commit');
+      await importEnCours;
+    });
+    // Le serveur est parti ; l'import, arrivé après, n'a rien écrit (son insertion vérifie que le serveur existe).
+    expect((await pool.query('select 1 from agent_tools where source_id = $1', [source])).rowCount).toBe(0);
+  });
+
   it('🔴 supprimer un agent n’interbloque pas avec la suppression de son serveur MCP', async () => {
     const agent = await agentSeul('itest-partant-serveur');
     const { source, ids } = await serveurAvecDeuxOutils('mcp_serveur', agent);

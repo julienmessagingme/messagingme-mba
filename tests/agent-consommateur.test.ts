@@ -17,6 +17,10 @@ describe('la clé de consommateur', () => {
     expect(consommateurAgent('3f2504e0-4f89-11d3-9a0c-0305e82c3301')).toBe('agent:3f2504e0-4f89-11d3-9a0c-0305e82c3301');
   });
 
+  it('🔴 un identifiant en majuscules donne la MÊME clé (sinon CHECK refusé, ou consentements manqués au retrait)', () => {
+    expect(consommateurAgent('3F2504E0-4F89-11D3-9A0C-0305E82C3301')).toBe('agent:3f2504e0-4f89-11d3-9a0c-0305e82c3301');
+  });
+
   it('le MBA devient « mba:<phone_number_id> »', () => {
     expect(consommateurMba('1234840649713976')).toBe('mba:1234840649713976');
   });

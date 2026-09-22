@@ -360,8 +360,9 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
       </span>
       {isAdmin && (
         <span className="flex gap-3 text-xs">
-          {/* Désactivé pendant un enregistrement : ouvrir un autre outil démontait le formulaire en cours, dont l'erreur
-              se perdait avec la saisie, ou que la fin de l'enregistrement refermait (relecture du 2026-09-22). */}
+          {/* Désactivé pendant un envoi, une suppression ou un enregistrement. Pendant un enregistrement, ouvrir un autre
+              outil démontait le formulaire en cours, dont l'erreur se perdait avec la saisie, ou que la fin de
+              l'enregistrement refermait (relecture du 2026-09-22). */}
           <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu' || occupe} onClick={onModifier}
             className="text-ink-600 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
           {/* Désactivé pendant un envoi, une suppression ou un enregistrement, comme « Enregistrer » et « Réactiver »

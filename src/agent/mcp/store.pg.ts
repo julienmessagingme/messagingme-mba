@@ -199,9 +199,10 @@ export class PgMcpStore {
    * changement d'isolation ; le verrou des outils, plus bas, ne sert qu'à l'ordre des verrous et ne gêne pas une
    * activation, qui n'écrit que le consentement) : le `count(*)` prend son instantané au moment de l'instruction, une activation
    * concurrente peut commiter juste après, et le `delete` emporterait alors un outil devenu actif. La
-   * fermer demanderait un `select ... for update` ici ET que le chemin d'activation prenne le même verrou
-   * (`PgToolCatalog` ne le prend pas), ce qui poserait un verrou d'écriture sur la ligne d'un connecteur à
-   * chaque activation d'outil, pour une course qui exige deux gestes d'administrateur à la seconde près.
+   * fermer demanderait de COMPTER APRÈS le verrou des outils (il est posé après le `count(*)`, pour l'ordre
+   * des verrous et pas pour cette course) ET que le chemin d'activation prenne un verrou incompatible avec lui
+   * sur l'outil (`PgToolCatalog` n'en prend aucun), c'est-à-dire un verrou de plus à chaque activation d'outil,
+   * pour une course qui exige deux gestes d'administrateur à la seconde près.
    * Le résidu est donc ASSUMÉ, et il est nommé ici plutôt que caché derrière une phrase rassurante : une
    * justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
    */
@@ -252,6 +253,19 @@ export class PgMcpStore {
     try {
       await client.query('begin');
 
+      /**
+       * 🔴 LES DÉFINITIONS EXISTANTES QUE CET IMPORT VA ÉCRIRE SONT VERROUILLÉES D'ABORD, D'UN BLOC, PAR IDENTIFIANT
+       * (`verrouillerDefinitions`, l'ordre de `PgAgentStore.remove`), AVANT MÊME LES INSERTIONS. Trier la seule
+       * boucle des `changes` ne suffisait pas (relecture du 2026-09-22) : les `disparus` et les `vus` étaient
+       * verrouillés ensuite, en masse et dans l'ordre du parcours de table, donc un outil modifié d'identifiant
+       * haut et un outil vu d'identifiant bas, consentis par un agent qu'on supprime, interbloquaient avec
+       * `remove`. Et AVANT les insertions, parce que chacune prend le serveur (`key share`, par sa clé
+       * étrangère) : verrouiller les outils après, c'était l'ordre inverse de `supprimerServeur` (ses outils,
+       * puis le serveur), donc un interblocage entre l'import et la suppression d'un même serveur.
+       * ⚠️ Ce verrou est exclusif : pendant l'import, un appel journalisé ou un rattachement sur ces outils attend.
+       */
+      await verrouillerDefinitions(client, tenantId, [...e.changes.map((c) => c.id), ...e.disparus, ...e.vus]);
+
       for (const o of e.nouveaux) {
         await client.query(
           `insert into agent_tools
@@ -270,14 +284,6 @@ export class PgMcpStore {
         );
       }
 
-      /**
-       * 🔴 TOUTES LES DÉFINITIONS QUE CET IMPORT VA ÉCRIRE SONT VERROUILLÉES D'ABORD, D'UN BLOC, PAR IDENTIFIANT
-       * (`verrouillerDefinitions`, l'ordre de `PgAgentStore.remove`). Trier la seule boucle des `changes` ne
-       * suffisait pas (relecture du 2026-09-22) : les `disparus` et les `vus` étaient verrouillés ensuite, en
-       * masse et dans l'ordre du parcours de table, donc un outil modifié d'identifiant haut et un outil vu
-       * d'identifiant bas, consentis par un agent qu'on supprime, interbloquaient avec `remove`.
-       */
-      await verrouillerDefinitions(client, tenantId, [...e.changes.map((c) => c.id), ...e.disparus, ...e.vus]);
       for (const c of e.changes) {
         await client.query(
           `update agent_tools

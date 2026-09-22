@@ -573,8 +573,9 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await page.getByTestId('mba-form-quand').fill(CONSIGNE);
     await page.getByTestId('mba-form-enregistrer').click();
     await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeDisabled();
-    // Ouvrir un autre outil démonterait le formulaire en cours : son erreur se perdrait avec la saisie.
+    // Ouvrir un autre outil, ou annuler, démonterait le formulaire en cours : son erreur se perdrait avec la saisie.
     await expect(page.getByTestId('mba-outil-modifier-o1')).toBeDisabled();
+    await expect(page.getByTestId('mba-form-annuler')).toBeDisabled();
     liberer();
     await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeEnabled();
     await expect(page.getByTestId('mba-outil-modifier-o1')).toBeEnabled();
