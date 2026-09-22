@@ -96,7 +96,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
       let issue: IssueMaison;
       let panne = false;
       try {
-        issue = await executerOutilMaison(deps.maison, { tenantId: tenant, waId, cible, corps: req.body });
+        issue = await executerOutilMaison(deps.maison, { tenantId: tenant, waId, outilId: outil.id, cible, corps: req.body });
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`mba-relais: geste ${outil.name} en échec :`, err instanceof Error ? err.message : err);

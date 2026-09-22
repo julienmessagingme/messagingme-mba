@@ -294,10 +294,24 @@ describe('un bloc et un scénario', () => {
     expect(r.json().error).toContain('vide');
   });
 
-  it('🔴 GET /blocs rend la liste, et refuse sans jeton', async () => {
+  it('🔴 GET /blocs rend les blocs du SEUL scénario demandé, et refuse sans jeton', async () => {
     const bloc = { workflowId: WF, scenario: 'Accueil', code: CODE, nom: 'Brochure', type: 'quick_message', envoyable: true, raison: null };
-    const { app } = monter({ blocs: async () => [bloc] });
-    expect((await app.inject({ method: 'GET', url: `${url}/blocs`, ...h() })).json()).toEqual({ blocs: [bloc] });
-    expect([401, 403]).toContain((await app.inject({ method: 'GET', url: `${url}/blocs` })).statusCode);
+    const demandes: Array<[string, string]> = [];
+    const { app } = monter({ blocs: async (t, id) => { demandes.push([t, id]); return [bloc]; } });
+    expect((await app.inject({ method: 'GET', url: `${url}/blocs?workflowId=${WF}`, ...h() })).json()).toEqual({ blocs: [bloc] });
+    // Le scénario voyage jusqu'au magasin, avec l'espace de l'URL : c'est ce qui borne la liste à un scénario.
+    expect(demandes).toEqual([[TENANT, WF]]);
+    expect([401, 403]).toContain((await app.inject({ method: 'GET', url: `${url}/blocs?workflowId=${WF}` })).statusCode);
+  });
+
+  it('🔴 GET /blocs sans scénario (ou avec un identifiant qui n’en est pas un) rend 400, sans rien lire', async () => {
+    let lus = 0;
+    const { app } = monter({ blocs: async () => { lus += 1; return []; } });
+    for (const q of ['', '?workflowId=', '?workflowId=pas-un-uuid']) {
+      const r = await app.inject({ method: 'GET', url: `${url}/blocs${q}`, ...h() });
+      expect(r.statusCode).toBe(400);
+      expect(r.json().error).toContain('scénario');
+    }
+    expect(lus).toBe(0);
   });
 });

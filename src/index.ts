@@ -148,6 +148,7 @@ import { type OutilAPublier } from './mba/publication';
 import { outilsAPublier } from './mba/outils-a-publier';
 import { blocsProposables } from './mba/outils-maison';
 import { creerGestesEnvoi } from './mba/gestes-envoi';
+import { AntiRejeu, DUREE_ANTI_REJEU_MS } from './mba/anti-rejeu';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -1828,7 +1829,10 @@ async function main(): Promise<void> {
         const w = await workflowStore.getById(id, tenant);
         return w ? { name: w.name, graph: w.graph } : null;
       },
-      blocs: async (tenant) => blocsProposables((await workflowStore.list(tenant)).map((w) => ({ id: w.id, name: w.name, graph: w.graph }))),
+      blocs: async (tenant, id) => {
+        const w = await workflowStore.getById(id, tenant);
+        return w ? blocsProposables([{ id: w.id, name: w.name, graph: w.graph }]) : [];
+      },
       requete: (tenant, id) => agentRequetes.parId(tenant, id),
       champs: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
       creerMaison: (tenant, pn, outil, par) => toolCatalog.ajouterMaisonPourMba(tenant, pn, outil, par),
@@ -2534,6 +2538,7 @@ async function main(): Promise<void> {
           // ne seraient pas d'accord sur ce qui existe.
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
           estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+          antiRejeu: new AntiRejeu(DUREE_ANTI_REJEU_MS),
           // Les deux gestes qui ENVOIENT : ils rendent le fil sur toute issue ratée, exception comprise
           // (`src/mba/gestes-envoi.ts`, testé ; revue finale du 2026-09-22).
           ...creerGestesEnvoi({

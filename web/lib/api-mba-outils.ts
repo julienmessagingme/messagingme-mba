@@ -78,8 +78,9 @@ export async function retirerOutilMba(tenantId: string, id: string): Promise<voi
   await request<void>(`${base(tenantId)}/${id}`, { method: 'DELETE' });
 }
 
-export function listerBlocsMba(tenantId: string): Promise<{ blocs: BlocPropose[] }> {
-  return request(`${base(tenantId)}/blocs`);
+/** Les blocs d'UN scénario : l'écran choisit d'abord le scénario, puis le bloc. */
+export function listerBlocsMba(tenantId: string, workflowId: string): Promise<{ blocs: BlocPropose[] }> {
+  return request(`${base(tenantId)}/blocs?workflowId=${encodeURIComponent(workflowId)}`);
 }
 
 /** Rallumer un outil éteint par le départ de son auteur (plan 2026-09-21-outils-maison-mba, écart 4). */

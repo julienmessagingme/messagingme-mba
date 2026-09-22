@@ -76,8 +76,11 @@ export const RISQUE_MAISON: Record<HandlerMaisonMba, RisqueOutil> = {
 export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
   tag_fixe: 'C’est fait, c’est enregistré sur la fiche du client. Confirme-le-lui sans citer de nom technique.',
   champ_fixe: 'C’est enregistré sur la fiche du client.',
-  bloc_fixe: 'Le client vient de recevoir le message prévu, envoyé par Engage Me. N’ajoute rien pour cette demande.',
-  scenario_fixe: 'Engage Me déroule maintenant un parcours avec le client, il en reçoit déjà les messages. N’écris rien pour cette demande : la conversation te reviendra à la fin.',
+  // 🔴 « C'EST FAIT » ET « NE RAPPELLE PAS CET OUTIL » (essai réel du 2026-09-22). La première version disait
+  // « Engage Me déroule maintenant un parcours… N'écris rien » : l'agent de Meta a rappelé l'outil sept fois dans le
+  // même tour, sans jamais conclure. La réponse du tag, qui dit « c'est fait », avait marché du premier coup.
+  bloc_fixe: 'C’est fait : le client vient de recevoir le message prévu. Ne rappelle pas cet outil pour cette demande, et n’en répète pas le contenu.',
+  scenario_fixe: 'C’est fait : le parcours est lancé et le client en reçoit déjà les messages. Ne rappelle pas cet outil, et n’écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours.',
 };
 
 export const VARIABLE_VALEUR = 'valeur';

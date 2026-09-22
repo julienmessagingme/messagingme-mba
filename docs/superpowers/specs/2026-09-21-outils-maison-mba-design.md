@@ -211,11 +211,18 @@ Même enveloppe que pour un connecteur : `200 {succes, reponse}` ou `200 {succes
 |---|---|
 | Poser un tag | « C'est fait, c'est enregistré sur la fiche du client. Confirme-le-lui sans citer de nom technique. » |
 | Enregistrer une information | « C'est enregistré sur la fiche du client. » |
-| Envoyer un bloc | « Le client vient de recevoir le message prévu, envoyé par Engage Me. N'ajoute rien pour cette demande. » |
-| Lancer un scénario | « Engage Me déroule maintenant un parcours avec le client, il en reçoit déjà les messages. N'écris rien pour cette demande : la conversation te reviendra à la fin. » |
+| Envoyer un bloc | « C'est fait : le client vient de recevoir le message prévu. Ne rappelle pas cet outil pour cette demande, et n'en répète pas le contenu. » |
+| Lancer un scénario | « C'est fait : le parcours est lancé et le client en reçoit déjà les messages. Ne rappelle pas cet outil, et n'écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours. » |
 
 Le nom de l'étiquette ou du champ n'est jamais renvoyé : ce sont des noms internes, que l'agent répéterait au
 client.
+
+🔴 **CORRIGÉ APRÈS L'ESSAI RÉEL DU 2026-09-22.** Les deux dernières lignes disaient d'abord « Engage Me déroule
+maintenant un parcours… N'écris rien pour cette demande » : l'agent de Meta a rappelé « Lancer un scénario » SEPT
+fois dans le même tour, et le client a reçu sept fois le premier message. La réponse du tag, qui commence par
+« C'est fait », avait conclu le tour du premier coup. D'où le « C'est fait » et le « Ne rappelle pas cet outil », et
+surtout un garde qui ne dépend pas du modèle : un envoi ne se rejoue pas pour le même client et le même outil
+pendant deux minutes (`src/mba/anti-rejeu.ts`), le rappel reçoit « C'est déjà fait pour cette demande ».
 
 ## 8. La publication chez Meta
 

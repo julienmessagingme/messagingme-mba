@@ -1,4 +1,5 @@
 import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-maison';
+import type { AntiRejeu } from './anti-rejeu';
 
 /**
  * EXÉCUTER UN GESTE DE L'AGENT DE META pour un contact (spec 2026-09-21-outils-maison-mba, § 3).
@@ -27,6 +28,8 @@ export interface DepsMaison {
   envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
   /** Lance le scénario depuis son début, exactement comme le bouton de l'Inbox. Même contrat de retour. */
   lancerScenario(tenantId: string, waId: string, workflowId: string): Promise<true | string>;
+  /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
+  antiRejeu: Pick<AntiRejeu, 'dejaFait' | 'retenir' | 'oublier'>;
 }
 
 export type IssueMaison = { ok: true; reponse: string } | { ok: false; erreur: string };
@@ -36,7 +39,7 @@ export const CHAMP_DISPARU = "Ce champ n'existe plus sur la fiche du client : l'
 
 export async function executerOutilMaison(
   deps: DepsMaison,
-  input: { tenantId: string; waId: string; cible: CibleMaison; corps: unknown },
+  input: { tenantId: string; waId: string; outilId: string; cible: CibleMaison; corps: unknown },
 ): Promise<IssueMaison> {
   const { tenantId, waId, cible } = input;
   switch (cible.handler) {
@@ -52,15 +55,27 @@ export async function executerOutilMaison(
     }
     case 'bloc_fixe':
     case 'scenario_fixe': {
+      // 🔴 UN RAPPEL DU MÊME OUTIL POUR LE MÊME CLIENT NE RENVOIE RIEN (essai réel du 2026-09-22 : sept appels
+      // dans le même tour, sept fois le premier message du scénario). Il répond « déjà fait », ce qui clôt le tour.
+      const cle = `${tenantId}:${waId}:${input.outilId}`;
+      if (deps.antiRejeu.dejaFait(cle)) return { ok: true, reponse: REPONSE_DEJA_FAIT };
       // 🔴 LE BLOCAGE EST LU AVANT TOUT ENVOI : une garde posée après l'effet ne garde rien.
       if (await deps.estBloque(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
+      // Retenue AVANT l'envoi (deux appels concurrents ne partent pas tous les deux), et GARDÉE sur une exception :
+      // le message a pu partir avant elle. Seul un refus, qui n'a rien envoyé, l'oublie.
+      deps.antiRejeu.retenir(cle);
       const issue = cible.handler === 'bloc_fixe'
         ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })
         : await deps.lancerScenario(tenantId, waId, cible.workflowId);
-      return issue === true ? { ok: true, reponse: REPONSE_MAISON[cible.handler] } : { ok: false, erreur: issue };
+      if (issue === true) return { ok: true, reponse: REPONSE_MAISON[cible.handler] };
+      deps.antiRejeu.oublier(cle);
+      return { ok: false, erreur: issue };
     }
   }
 }
+
+/** Ce que l'agent de Meta lit quand il rappelle un envoi déjà fait pour ce client : de quoi clore son tour. */
+export const REPONSE_DEJA_FAIT = 'C’est déjà fait pour cette demande : le client a bien reçu le message. Ne rappelle plus cet outil.';
 
 /** Ce que l'agent de Meta lit quand le client est bloqué dans l'Inbox. */
 export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';

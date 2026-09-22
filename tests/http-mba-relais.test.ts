@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
+import { AntiRejeu } from '../src/mba/anti-rejeu';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
@@ -56,7 +57,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
       poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
       ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
       champExiste: async () => true,
-      estBloque: async () => false,
+      estBloque: async () => false, antiRejeu: new AntiRejeu(60_000),
       envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return true; },
       lancerScenario: async (t, w, id) => { gestes.push(`scenario ${t} ${w} ${id}`); return true; },
     },
@@ -306,7 +307,7 @@ describe('les outils maison de l’agent de Meta', () => {
     const { app } = avec([TAG], {
       maison: {
         poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true,
-        estBloque: async () => false, envoyerBloc: async () => true, lancerScenario: async () => true,
+        estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), envoyerBloc: async () => true, lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
     });
@@ -337,9 +338,17 @@ describe('un bloc et un scénario, par le relais', () => {
   it('🔴 envoie le bloc FIXÉ au contact de l’en-tête, et dit à l’agent de Meta de ne rien ajouter', async () => {
     const { app, appels, gestes } = avec([BLOC]);
     const res = await poster(app, CLE_RELAIS, { code: 'autre' }, '+33612345678', 'o5');
-    expect(res.json()).toEqual({ succes: true, reponse: expect.stringContaining('N’ajoute rien') });
+    expect(res.json()).toEqual({ succes: true, reponse: expect.stringContaining('Ne rappelle pas cet outil') });
     expect(gestes).toEqual([`bloc t1 33612345678 ${WF} ${CODE_BLOC}`]);
     expect(appels).toHaveLength(0);
+  });
+
+  it('🔴 sept appels du même outil pour le même client : un seul lancement (essai réel du 2026-09-22)', async () => {
+    const { app, gestes } = avec([SCENARIO]);
+    const reponses: string[] = [];
+    for (let i = 0; i < 7; i += 1) reponses.push((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')).json().reponse);
+    expect(gestes).toEqual([`scenario t1 33612345678 ${WF}`]);
+    expect(reponses.slice(1).every((r) => r.includes('déjà fait'))).toBe(true);
   });
 
   it('lance le scénario fixé', async () => {
@@ -353,7 +362,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([BLOC], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000),
         envoyerBloc: async () => 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir', lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
@@ -368,7 +377,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([BLOC], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000),
         envoyerBloc: async () => { throw new Error('Meta API error (HTTP 400)'); }, lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
@@ -384,7 +393,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const envois: string[] = [];
     const { app } = avec([BLOC, SCENARIO], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => true,
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => true, antiRejeu: new AntiRejeu(60_000),
         envoyerBloc: async () => { envois.push('bloc'); return true; }, lancerScenario: async () => { envois.push('scenario'); return true; },
       },
     });
