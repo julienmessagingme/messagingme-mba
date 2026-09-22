@@ -1,6 +1,7 @@
 import { MetaApiError } from '../meta/errors';
 import type { MetaErrorBody } from '../meta/errors';
 import type { FetchLike } from '../meta/templates';
+import type { EvenementAgent } from './evenement';
 
 /**
  * Client de la surface Meta Business Agent (`agent_config/*`) : la base de connaissance de l'agent et ses
@@ -125,7 +126,9 @@ export class MbaClient {
     private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
-  private async appel<T>(methode: string, chemin: string, corps?: unknown, version = VERSION_AGENT_CONFIG): Promise<T> {
+  private async appel<T>(
+    methode: string, chemin: string, corps?: unknown, version = VERSION_AGENT_CONFIG, signal?: AbortSignal,
+  ): Promise<T> {
     const res = await this.fetchImpl(`${BASE}/${chemin}`, {
       method: methode,
       headers: {
@@ -134,6 +137,7 @@ export class MbaClient {
         ...(corps === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(corps === undefined ? {} : { body: JSON.stringify(corps) }),
+      ...(signal ? { signal } : {}),
     });
 
     const txt = await res.text();
@@ -142,6 +146,19 @@ export class MbaClient {
 
     if (!res.ok) throw erreurMba(res.status, json);
     return json as T;
+  }
+
+  // ---------- Événement (agent_event) ----------
+
+  /**
+   * DÉCLENCHE L'AGENT DE META dans la conversation d'un client (spec 2026-09-21-outils-maison-mba, § 5).
+   *
+   * ⚠️ `to` au format MESURÉ le 2026-09-21 (`destinataireAgentEvent`, E.164 avec « + »). La réponse ne porte rien
+   * d'utile : un 200 dit seulement que l'événement est en file (`accepted`). Mesuré dans une conversation que
+   * l'agent tenait : il a écrit au client 11 secondes après, en répondant à la question portée par le `payload`.
+   */
+  async agentEvent(phoneNumberId: string, to: string, event: EvenementAgent, signal?: AbortSignal): Promise<unknown> {
+    return this.appel<unknown>('POST', `${phoneNumberId}/agent_event`, { to, event }, VERSION_AGENT_CONFIG, signal);
   }
 
   // ---------- Informations business (singleton) ----------

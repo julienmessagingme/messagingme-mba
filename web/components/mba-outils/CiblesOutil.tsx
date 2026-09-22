@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { listTags, listUserFields, type TagCount, type UserFieldDef } from '@/lib/api';
+import { estEnLigne, listTags, listUserFields, listWorkflows, type TagCount, type UserFieldDef, type WorkflowSummary } from '@/lib/api';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
+import { listerBlocsMba, type BlocPropose } from '@/lib/api-mba-outils';
 import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
@@ -202,5 +203,122 @@ function ValeursDeLAppel({ requete }: { requete: RequeteApi }) {
         </span>
       )}
     </p>
+  );
+}
+
+/**
+ * LE BLOC À ENVOYER, choisi parmi les blocs des scénarios PUBLIÉS (spec 2026-09-21-outils-maison-mba, § 3.3).
+ *
+ * 🔴 LES BLOCS REFUSÉS RESTENT VISIBLES, grisés, avec leur raison : un bloc à boutons ne part pas seul (il attend
+ * une réponse), et le cacher laisserait croire qu'il a disparu. La raison renvoie vers « Lancer un scénario ».
+ * Même règle que les champs : une lecture ratée n'est pas « aucun bloc ».
+ */
+export function CibleBloc({ tenantId, workflowId, code, onChange }: {
+  tenantId: string; workflowId: string; code: string; onChange: (workflowId: string, code: string, nom: string) => void;
+}) {
+  const t = useT();
+  const [blocs, setBlocs] = useState<BlocPropose[] | null | 'erreur'>(null);
+  const [essai, setEssai] = useState(0);
+  useEffect(() => {
+    let vivant = true;
+    setBlocs(null);
+    listerBlocsMba(tenantId)
+      .then((r) => { if (vivant) setBlocs(Array.isArray(r?.blocs) ? r.blocs : []); })
+      .catch(() => { if (vivant) setBlocs('erreur'); });
+    return () => { vivant = false; };
+  }, [tenantId, essai]);
+  if (blocs === null) return null;
+  if (blocs === 'erreur') {
+    return (
+      <button type="button" data-testid="mba-cible-blocs-illisibles" onClick={() => setEssai((n) => n + 1)}
+        className="self-start text-xs text-coral underline">
+        {t('Lecture des blocs impossible : réessayer', 'Could not read the blocks: retry')}
+      </button>
+    );
+  }
+  const choisi = blocs.find((b) => b.workflowId === workflowId && b.code === code) ?? null;
+  const disparu = code !== '' && choisi === null;
+  if (blocs.length === 0) {
+    return (
+      <p className="text-xs text-ink-500" data-testid="mba-cible-blocs-aucun">
+        {t('Aucun bloc dans vos scénarios publiés.', 'No block in your published scenarios.')}
+      </p>
+    );
+  }
+  const scenarios = [...new Map(blocs.map((b) => [b.workflowId, b.scenario])).entries()];
+  return (
+    <div className="flex flex-col gap-2" data-testid="mba-cible-blocs">
+      <p className="text-xs text-ink-600">
+        {t('Le message part SEUL, sans ce qui le suit dans le scénario.', 'The message is sent ALONE, without what follows it in the scenario.')}
+      </p>
+      {disparu && (
+        <p className="text-[11px] text-coral" data-testid="mba-cible-bloc-disparu">
+          {t('Le bloc choisi n’existe plus dans ses scénarios publiés : choisissez-en un autre, ou supprimez l’outil.',
+            'The chosen block no longer exists in its published scenarios: pick another one, or delete the tool.')}
+        </p>
+      )}
+      {scenarios.map(([id, nom]) => (
+        <fieldset key={id} className="rounded-lg border border-ink-200 p-2">
+          <legend className="px-1 text-xs font-medium text-ink-700">{nom}</legend>
+          {blocs.filter((b) => b.workflowId === id).map((b) => (
+            <label key={b.code} className={`flex items-start gap-2 py-1 text-xs ${b.envoyable ? 'text-ink-800' : 'text-ink-400'}`}>
+              <input type="radio" name="mba-bloc" disabled={!b.envoyable} checked={b.code === code && b.workflowId === workflowId}
+                data-testid={`mba-cible-bloc-${b.code}`} onChange={() => onChange(b.workflowId, b.code, b.nom)} />
+              <span>
+                {b.nom}
+                {b.raison && <span className="block text-[11px]" data-testid={`mba-cible-bloc-raison-${b.code}`}>{b.raison}</span>}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * LE SCÉNARIO À LANCER, depuis son début (spec 2026-09-21-outils-maison-mba, § 3.4). Seuls les scénarios EN LIGNE
+ * sont proposés : un brouillon jamais publié ne ferait rien partir. La conversation revient à l'agent de Meta à
+ * la fin du parcours.
+ */
+export function CibleScenario({ tenantId, workflowId, onChange }: {
+  tenantId: string; workflowId: string; onChange: (workflowId: string, nom: string | null) => void;
+}) {
+  const t = useT();
+  const [scenarios, setScenarios] = useState<WorkflowSummary[] | null | 'erreur'>(null);
+  const [essai, setEssai] = useState(0);
+  useEffect(() => {
+    let vivant = true;
+    setScenarios(null);
+    listWorkflows(tenantId)
+      .then((r) => { if (vivant) setScenarios((Array.isArray(r?.workflows) ? r.workflows : []).filter(estEnLigne)); })
+      .catch(() => { if (vivant) setScenarios('erreur'); });
+    return () => { vivant = false; };
+  }, [tenantId, essai]);
+  const lus = Array.isArray(scenarios) ? scenarios : [];
+  const disparu = Array.isArray(scenarios) && workflowId !== '' && !scenarios.some((w) => w.id === workflowId);
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-xs text-ink-600">
+        {t('Scénario à lancer (depuis son début)', 'Scenario to start (from its beginning)')}
+        <select className={`${inputCls} mt-1`} data-testid="mba-cible-scenario" value={workflowId}
+          onChange={(e) => onChange(e.target.value, lus.find((w) => w.id === e.target.value)?.name ?? null)}>
+          <option value="">{t('Choisir un scénario', 'Pick a scenario')}</option>
+          {disparu && <option value={workflowId}>{t('(scénario supprimé ou dépublié)', '(deleted or unpublished scenario)')}</option>}
+          {workflowId !== '' && !Array.isArray(scenarios) && <option value={workflowId}>{workflowId}</option>}
+          {lus.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </select>
+      </label>
+      {scenarios === 'erreur' && (
+        <button type="button" data-testid="mba-cible-scenarios-illisibles" onClick={() => setEssai((n) => n + 1)}
+          className="self-start text-[11px] text-coral underline">
+          {t('Lecture des scénarios impossible : réessayer', 'Could not read the scenarios: retry')}
+        </button>
+      )}
+      <p className="text-[11px] text-ink-500">
+        {t('Engage Me prend la conversation le temps du parcours, puis la rend à l’agent de Meta.',
+          'Engage Me takes the conversation for the journey, then hands it back to Meta’s agent.')}
+      </p>
+    </div>
   );
 }

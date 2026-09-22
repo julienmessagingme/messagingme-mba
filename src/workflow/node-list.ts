@@ -17,7 +17,7 @@ export interface NodeListItem {
   summary: string;
 }
 
-const NOD_RE = /^nod_[0-9a-z]+_[0-9A-HJKMNP-TV-Z]{26}$/;
+export const CODE_BLOC_RE = /^nod_[0-9a-z]+_[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** Résumé court d'un node selon son type. `data` est opaque : tout est coercé + borné, jamais de throw. */
 export function summarize(type: WorkflowNodeType, data: Record<string, unknown>): string {
@@ -122,7 +122,7 @@ export function collectNodes(workflows: WorkflowRow[], type?: WorkflowNodeType):
       if (type !== undefined && n.type !== type) continue;
       const raw = typeof n.data.code === 'string' ? n.data.code : '';
       out.push({
-        code: NOD_RE.test(raw) ? raw : null,
+        code: CODE_BLOC_RE.test(raw) ? raw : null,
         type: n.type,
         name: String(n.data.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 64),
         workflowId: wf.id,

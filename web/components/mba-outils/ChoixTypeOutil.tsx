@@ -8,8 +8,8 @@ import type { TypeOutilMba } from '@/lib/api-mba-outils';
 import { TEXTES_PAR_TYPE } from '@/lib/mba-outils';
 import { useT } from '@/lib/i18n';
 
-/** Les types proposés, dans l'ordre du croquis de Julien (2026-09-21). Le lot 3 ajoute bloc et scénario. */
-export const TYPES_PROPOSES: readonly TypeOutilMba[] = ['tag', 'champ', 'connecteur'];
+/** Les types proposés, dans l'ordre du croquis de Julien (2026-09-21). */
+export const TYPES_PROPOSES: readonly TypeOutilMba[] = ['tag', 'champ', 'bloc', 'scenario', 'connecteur'];
 
 /**
  * « QUEL OUTIL AJOUTER ? » (spec 2026-09-21-outils-maison-mba, § 9.4).

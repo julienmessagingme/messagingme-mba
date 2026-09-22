@@ -15,7 +15,8 @@ const outil = (over: Partial<OutilComplet>): OutilComplet => ({
   title: 'T', actif: true, activeLe: null, autonomeLe: null, ...over,
 });
 const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
-  requetes: new Map([['rq1', { label: 'Poser une étiquette' }]]), champs: new Set(['ville']), bibliotheque: new Map(), ...over,
+  requetes: new Map([['rq1', { label: 'Poser une étiquette' }]]), champs: new Set(['ville']), bibliotheque: new Map(),
+  workflows: new Map(), ...over,
 });
 
 describe('la ligne d’un outil dans l’onglet', () => {
@@ -61,5 +62,43 @@ describe('la ligne d’un outil dans l’onglet', () => {
 
   it('🔴 un outil désactivé le dit (son auteur a quitté l’espace)', () => {
     expect(vueOutilMba(outil({ binding: { handler: 'tag_fixe', tag: 'vip' }, actif: false }), ctx()).actif).toBe(false);
+  });
+});
+
+const WF = '11111111-1111-4111-8111-111111111111';
+const CODE = `nod_abc_${'A'.repeat(26)}`;
+const noeud = (type: string, data: Record<string, unknown>) =>
+  ({ id: 'n1', type, position: { x: 0, y: 0 }, data: { code: CODE, name: 'Brochure', ...data } }) as never;
+
+describe('les lignes d’un bloc et d’un scénario', () => {
+  it('un bloc envoyable : son scénario et son nom, rien ne manque, et il se dit irréversible', () => {
+    const workflows = new Map([[WF, { name: 'Accueil', graph: { nodes: [noeud('quick_message', { body: 'x', quickReplies: [] })], edges: [] } }]]);
+    expect(vueOutilMba(outil({ binding: { handler: 'bloc_fixe', workflowId: WF, code: CODE }, risk: 'irreversible' }), ctx({ workflows })))
+      .toMatchObject({
+        type: 'bloc', cible: { type: 'bloc', workflowId: WF, code: CODE, scenario: 'Accueil', bloc: 'Brochure' },
+        cibleManquante: null, risque: 'irreversible',
+      });
+  });
+
+  it('🔴 un bloc DEVENU un bloc qui attend une réponse est signalé, avec la raison', () => {
+    const workflows = new Map([[WF, { name: 'Accueil', graph: { nodes: [noeud('quick_message', { body: 'x', quickReplies: ['Oui'] })], edges: [] } }]]);
+    expect(vueOutilMba(outil({ binding: { handler: 'bloc_fixe', workflowId: WF, code: CODE } }), ctx({ workflows })).cibleManquante)
+      .toContain('Lancer un scénario');
+  });
+
+  it('🔴 un bloc supprimé du scénario, ou dont le scénario est supprimé, est signalé', () => {
+    const vide = new Map([[WF, { name: 'Accueil', graph: { nodes: [], edges: [] } }]]);
+    const v = vueOutilMba(outil({ binding: { handler: 'bloc_fixe', workflowId: WF, code: CODE } }), ctx({ workflows: vide }));
+    expect(v.cibleManquante).toContain('n’existe plus');
+    expect(v.cible).toMatchObject({ scenario: 'Accueil', bloc: null });
+    expect(vueOutilMba(outil({ binding: { handler: 'bloc_fixe', workflowId: WF, code: CODE } }), ctx()).cibleManquante)
+      .toContain('le scénario de ce bloc n’existe plus');
+  });
+
+  it('🔴 un scénario supprimé, ou vide, est signalé', () => {
+    expect(vueOutilMba(outil({ binding: { handler: 'scenario_fixe', workflowId: WF } }), ctx()).cibleManquante).toContain('n’existe plus');
+    const vide = new Map([[WF, { name: 'Vide', graph: { nodes: [], edges: [] } }]]);
+    expect(vueOutilMba(outil({ binding: { handler: 'scenario_fixe', workflowId: WF } }), ctx({ workflows: vide })))
+      .toMatchObject({ type: 'scenario', cible: { type: 'scenario', scenario: 'Vide' }, cibleManquante: expect.stringContaining('vide') });
   });
 });

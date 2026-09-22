@@ -401,6 +401,15 @@ export interface WorkflowExecutorDeps {
    */
   releaseToMba?(tenantId: string, waId: string): Promise<void>;
   /**
+   * TRANSMET À L'AGENT DE META le message « à côté » du client, une fois le fil rendu (spec
+   * 2026-09-21-outils-maison-mba, § 5) : sans lui, l'agent ne parlerait qu'au message SUIVANT du client, et la
+   * question qu'il vient de poser resterait sans réponse. Appelée SEULEMENT par la branche « il a écrit » d'`advance` :
+   * une fin normale n'a rien à transmettre, un bouton sans suite va à un humain.
+   *
+   * ABSENT -> rien n'est transmis. Best-effort, comme le release : un échec ne fait jamais échouer un parcours.
+   */
+  transmettreHorsParcours?(tenantId: string, waId: string): Promise<void>;
+  /**
    * Publie « ce tag vient d'être posé » pour les automations. Appelée UNIQUEMENT sur un démarrage unitaire
    * (réponse d'un contact, automation, test), jamais depuis une campagne : voir la note de `apply`.
    * Absente -> aucune publication (rétro-compatible).
@@ -1113,11 +1122,13 @@ export class WorkflowExecutor {
    * le fil à nous : l'agent reste muet sur ce fil, ce qui se voit dans l'Inbox, alors qu'une exception remontée
    * ferait échouer un envoi déjà parti.
    */
-  private async rendreLaMainAMba(tenantId: string, waId: string): Promise<void> {
+  private async rendreLaMainAMba(tenantId: string, waId: string, opts: { transmettre?: boolean } = {}): Promise<void> {
     if (!this.deps.releaseToMba) return;
     if (!(await this.mbaActif(tenantId))) return; // gate : aucun appel Meta si l'agent n'est pas allumé
     try {
       await this.deps.releaseToMba(tenantId, waId);
+      // APRÈS le release, jamais avant : tant que nous tenons le fil, l'agent de Meta n'a pas la parole.
+      if (opts.transmettre === true && this.deps.transmettreHorsParcours) await this.deps.transmettreHorsParcours(tenantId, waId);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`release vers MBA ignoré pour ${waId}:`, err instanceof Error ? err.message : err);
@@ -1845,7 +1856,8 @@ export class WorkflowExecutor {
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
         if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
       } else {
-        await this.rendreLaMainAMba(tenantId, waId);
+        // (a) : son message part aussi chez l'agent de Meta, qui y répond (réponse « à côté »).
+        await this.rendreLaMainAMba(tenantId, waId, { transmettre: true });
       }
       return;
     }

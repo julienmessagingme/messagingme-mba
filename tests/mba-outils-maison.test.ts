@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   HANDLERS_MAISON_MBA, cibleMaisonSchema, lireCibleMaison, typeDeLaCible, variablesPourMeta, lireValeurChamp,
-  REPONSE_MAISON, RISQUE_MAISON, type CibleChamp,
+  REPONSE_MAISON, RISQUE_MAISON, blocSeul, blocsProposables, type CibleChamp,
 } from '../src/mba/outils-maison';
+import type { WorkflowGraph } from '../src/workflow/graph';
 import { OUTILS_MAISON } from '../src/agent/outils-maison';
 
 /**
@@ -81,5 +82,87 @@ describe('le catalogue est complet et fermé', () => {
 
   it('🔴 la réponse d’un tag demande de ne citer aucun nom technique au client', () => {
     expect(REPONSE_MAISON.tag_fixe).toContain('sans citer de nom technique');
+  });
+});
+
+const CODE = (lettre: string) => `nod_abc_${lettre.repeat(26)}`;
+const WF = '11111111-1111-4111-8111-111111111111';
+const noeud = (id: string, type: string, data: Record<string, unknown>) =>
+  ({ id, type, position: { x: 0, y: 0 }, data }) as WorkflowGraph['nodes'][number];
+const g = (nodes: WorkflowGraph['nodes'], edges: Array<[string, string]> = []): WorkflowGraph =>
+  ({ nodes, edges: edges.map(([source, target], i) => ({ id: `e${i}`, source, target })) });
+
+describe('la cible d’un bloc et d’un scénario', () => {
+  it('lit un bloc fixé et un scénario fixé, et dit leur type', () => {
+    const bloc = { handler: 'bloc_fixe', workflowId: WF, code: CODE('A') } as const;
+    expect(lireCibleMaison(bloc)).toEqual(bloc);
+    expect(typeDeLaCible(bloc)).toBe('bloc');
+    expect(typeDeLaCible({ handler: 'scenario_fixe', workflowId: WF })).toBe('scenario');
+  });
+
+  it('🔴 refuse un code qui n’est pas un code de bloc, et un scénario qui n’est pas un identifiant', () => {
+    expect(lireCibleMaison({ handler: 'bloc_fixe', workflowId: WF, code: 'n1' })).toBeNull();
+    expect(lireCibleMaison({ handler: 'scenario_fixe', workflowId: 'accueil' })).toBeNull();
+  });
+
+  it('🔴 un bloc et un scénario sont IRRÉVERSIBLES : un message parti ne se rappelle pas', () => {
+    expect(RISQUE_MAISON.bloc_fixe).toBe('irreversible');
+    expect(RISQUE_MAISON.scenario_fixe).toBe('irreversible');
+  });
+
+  it('🔴 la réponse dit à l’agent de Meta de ne rien ajouter : le message est déjà parti', () => {
+    expect(REPONSE_MAISON.bloc_fixe).toContain('N’ajoute rien');
+    expect(REPONSE_MAISON.scenario_fixe).toContain('N’écris rien');
+  });
+
+  it('rien à remplir pour l’agent de Meta : le bloc et le scénario sont fixés', () => {
+    expect(variablesPourMeta({ handler: 'bloc_fixe', workflowId: WF, code: CODE('A') })).toEqual([]);
+    expect(variablesPourMeta({ handler: 'scenario_fixe', workflowId: WF })).toEqual([]);
+  });
+});
+
+describe('envoyer un bloc SEUL', () => {
+  const texte = noeud('n1', 'quick_message', { code: CODE('A'), name: 'Brochure', body: 'Voici la brochure', quickReplies: [] });
+  const suite = noeud('n2', 'quick_message', { code: CODE('B'), body: 'Et ceci', quickReplies: [] });
+  const question = noeud('n3', 'quick_message', { code: CODE('C'), body: 'Oui ou non ?', quickReplies: ['Oui', 'Non'] });
+
+  it('🔴 le bloc part SANS ce qui le suit dans le scénario', () => {
+    const r = blocSeul(g([texte, suite], [['n1', 'n2']]), CODE('A'));
+    expect(r).toEqual({ ok: true, noeudId: 'n1', graphe: { nodes: [texte], edges: [] }, modele: false });
+  });
+
+  it('🔴 un bloc qui attend une réponse est refusé, en renvoyant vers « Lancer un scénario »', () => {
+    expect(blocSeul(g([question]), CODE('C'))).toEqual({ ok: false, raison: expect.stringContaining('Lancer un scénario') });
+  });
+
+  it('un code inconnu, mal formé ou vide est refusé', () => {
+    expect(blocSeul(g([texte]), CODE('D')).ok).toBe(false);
+    expect(blocSeul(g([texte]), 'n1').ok).toBe(false);
+    expect(blocSeul(g([texte]), '').ok).toBe(false);
+  });
+
+  it('🔴 un bloc qui n’envoie rien (un tag, un message vide) est refusé', () => {
+    expect(blocSeul(g([noeud('n4', 'tag', { code: CODE('D'), tag: 'x' })]), CODE('D'))).toEqual({ ok: false, raison: 'ce bloc n’envoie aucun message' });
+    expect(blocSeul(g([noeud('n5', 'quick_message', { code: CODE('E'), body: '', quickReplies: [] })]), CODE('E')).ok).toBe(false);
+  });
+
+  it('🔴 un modèle sans bouton part aussi hors de la fenêtre de 24 h ; un message rapide, non', () => {
+    const modele = noeud('n6', 'template', { code: CODE('F'), templateName: 'brochure', language: 'fr', templateButtons: [] });
+    expect(blocSeul(g([modele]), CODE('F'))).toMatchObject({ ok: true, modele: true });
+    expect(blocSeul(g([texte]), CODE('A'))).toMatchObject({ ok: true, modele: false });
+  });
+
+  it('un modèle À BOUTONS attend une réponse : refusé', () => {
+    const aBoutons = noeud('n7', 'template', {
+      code: CODE('G'), templateName: 'rdv', language: 'fr', templateButtons: [{ type: 'QUICK_REPLY', text: 'Oui' }],
+    });
+    expect(blocSeul(g([aBoutons]), CODE('G')).ok).toBe(false);
+  });
+
+  it('liste les blocs proposables, les refusés avec leur raison, et nomme le bloc par son nom ou son texte', () => {
+    const l = blocsProposables([{ id: WF, name: 'Accueil', graph: g([texte, question, noeud('n8', 'tag', { tag: 'sans code' })]) }]);
+    expect(l.map((b) => [b.code, b.nom, b.envoyable])).toEqual([[CODE('A'), 'Brochure', true], [CODE('C'), 'Oui ou non ?', false]]);
+    expect(l[1]!.raison).toContain('Lancer un scénario');
+    expect(l[0]).toMatchObject({ workflowId: WF, scenario: 'Accueil', type: 'quick_message', raison: null });
   });
 });

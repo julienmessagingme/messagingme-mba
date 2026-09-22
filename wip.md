@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le déploiement du 2026-09-22 vers 11 h 25 (rapport `.git/revue-finale-rapport.md`, une relecture à froid par commit). Deux rouges trouvés dans la journée, corrigés avant de partir : un `catch` du bac à sable qui rendait en 422, donc jusqu'au navigateur, le texte brut d'une panne de NOTRE base ; un journal passé en valeur et resté muet. ⚠️ **Règle de Julien du 2026-09-22** : une relecture sans rouge déploie, ses jaunes se corrigent et se poussent après, relus par la revue suivante (`~/.claude/skills/revue-finale/SKILL.md` § 5). |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST REVENU au déploiement de 11 h 25** (pas à celui de 10 h), sur le chemin du WEBHOOK META aussi : NPM tenait l'ancienne IP des conteneurs recréés, et `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi, en une minute. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
-## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 DÉPLOYÉ ET ÉPROUVÉ, LOTS 3 ET 4 À FAIRE)
+## 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
 
 Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 `docs/superpowers/plans/2026-09-21-outils-maison-mba.md` (4 lots, 20 tâches, deux déploiements).
@@ -69,7 +69,16 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 - ✅ **Le drapeau « test » de la conversation de Julien est levé** (décision du 2026-09-21, une ligne, relue avant
   et après) : sa conversation revient à l'agent de Meta en fin de scénario, et compte désormais dans les
   statistiques et l'analyse.
-- ⏳ **Lots 3 et 4** : envoyer un bloc, lancer un scénario ; la réponse « à côté » et la réparation du fil bloqué.
+- 🔴 **Lots 3 et 4, ÉCRITS ET PROUVÉS, À RELIRE ET DÉPLOYER** (2026-09-22) : « Envoyer un bloc » (le bloc seul,
+  vérifié à la création et à chaque appel), « Lancer un scénario » (le chemin de l'Inbox), la réponse « à côté »
+  transmise par `agent_event`, et le marqueur de 0149 qui ne se pose plus sur un envoi déjà traité (aucun marqueur
+  en attente en production au moment de l'écrire, mesuré en lecture seule : le défaut se lit dans le code, le
+  balayage l'a toujours rattrapé). Prouvé : unitaires, 7 mutations rouges, intégration sur Postgres jetable (le
+  marqueur : l'ancienne règle fait tomber les 4 cas neufs et eux seuls), e2e de l'onglet 41/41. Pas de migration
+  (0162 porte déjà `accuse_le`). Reste : la revue finale, le déploiement, puis **l'essai réel de Julien** : un bloc
+  déclenché en conversation, un scénario mené au bout (l'agent de Meta reprend la parole), et un second scénario
+  où il répond à côté (l'agent de Meta répond à ce qu'il a écrit). L'inconnue M1 (l'agent de Meta écrit-il après
+  notre prise du fil ?) se lit pendant cet essai.
 
 ## ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)
 

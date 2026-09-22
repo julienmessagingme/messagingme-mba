@@ -56,6 +56,9 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
       poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
       ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
       champExiste: async () => true,
+      estBloque: async () => false,
+      envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return true; },
+      lancerScenario: async (t, w, id) => { gestes.push(`scenario ${t} ${w} ${id}`); return true; },
     },
     ...over,
   };
@@ -301,12 +304,76 @@ describe('les outils maison de l’agent de Meta', () => {
   it('🔴 un geste qui plante est refusé proprement, et journalisé en échec', async () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([TAG], {
-      maison: { poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true },
+      maison: {
+        poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true,
+        estBloque: async () => false, envoyerBloc: async () => true, lancerScenario: async () => true,
+      },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
     });
     const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o2');
     expect(res.statusCode).toBe(200);
     expect(res.json().succes).toBe(false);
     expect(clos).toEqual([expect.objectContaining({ status: 'erreur_outil' })]);
+  });
+});
+
+const WF = '11111111-1111-4111-8111-111111111111';
+const CODE_BLOC = `nod_abc_${'A'.repeat(26)}`;
+const BLOC = {
+  id: 'o5', name: 'envoyer_brochure', origin: 'mba' as const, requestId: null, timeoutMs: 5_000, maxBytes: 16_384,
+  binding: { handler: 'bloc_fixe', workflowId: WF, code: CODE_BLOC },
+};
+const SCENARIO = {
+  id: 'o6', name: 'lancer_accueil', origin: 'mba' as const, requestId: null, timeoutMs: 5_000, maxBytes: 16_384,
+  binding: { handler: 'scenario_fixe', workflowId: WF },
+};
+
+describe('un bloc et un scénario, par le relais', () => {
+  const avec = (outils: unknown[], over: Partial<MbaRelaisDeps> = {}) => monter({
+    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    ...over,
+  });
+
+  it('🔴 envoie le bloc FIXÉ au contact de l’en-tête, et dit à l’agent de Meta de ne rien ajouter', async () => {
+    const { app, appels, gestes } = avec([BLOC]);
+    const res = await poster(app, CLE_RELAIS, { code: 'autre' }, '+33612345678', 'o5');
+    expect(res.json()).toEqual({ succes: true, reponse: expect.stringContaining('N’ajoute rien') });
+    expect(gestes).toEqual([`bloc t1 33612345678 ${WF} ${CODE_BLOC}`]);
+    expect(appels).toHaveLength(0);
+  });
+
+  it('lance le scénario fixé', async () => {
+    const { app, gestes } = avec([SCENARIO]);
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6');
+    expect(res.json().succes).toBe(true);
+    expect(gestes).toEqual([`scenario t1 33612345678 ${WF}`]);
+  });
+
+  it('🔴 un refus est journalisé `refuse` avec sa raison, et rendu à l’agent de Meta en 200', async () => {
+    const clos: Array<Record<string, unknown>> = [];
+    const { app } = avec([BLOC], {
+      maison: {
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
+        envoyerBloc: async () => 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir', lancerScenario: async () => true,
+      },
+      journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
+    });
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ succes: false, erreur: 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir' });
+    expect(clos).toEqual([expect.objectContaining({ status: 'refuse', erreur: expect.stringContaining('24 h') })]);
+  });
+
+  it('🔴 un contact bloqué ne reçoit rien', async () => {
+    const envois: string[] = [];
+    const { app } = avec([BLOC, SCENARIO], {
+      maison: {
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => true,
+        envoyerBloc: async () => { envois.push('bloc'); return true; }, lancerScenario: async () => { envois.push('scenario'); return true; },
+      },
+    });
+    expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5')).json().succes).toBe(false);
+    expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')).json().succes).toBe(false);
+    expect(envois).toEqual([]);
   });
 });

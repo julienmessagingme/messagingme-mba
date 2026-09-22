@@ -4,8 +4,8 @@ import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-mais
  * EXÉCUTER UN GESTE DE L'AGENT DE META pour un contact (spec 2026-09-21-outils-maison-mba, § 3).
  *
  * 🔴 AUCUN GESTE N'EST RÉÉCRIT ICI : chaque dépendance est la fonction qui le fait déjà ailleurs (la pose d'un
- * tag des agents IA, l'écriture de champ du mini-CRM). Ce module ne fait que choisir laquelle, et traduire
- * l'issue en ce que l'agent de Meta lit.
+ * tag des agents IA, l'écriture de champ du mini-CRM, l'envoi à un bloc de l'API publique, le lancement d'un
+ * scénario de l'Inbox). Ce module ne fait que choisir laquelle, et traduire l'issue en ce que l'agent de Meta lit.
  */
 export interface DepsMaison {
   /** `creerPoserTagAgent` : pose, déclaration dans Contenus > Tags, `tag_added` si l'étiquette est nouvelle. */
@@ -17,6 +17,16 @@ export interface DepsMaison {
    * affichait « ce champ n'existe plus ». Même source que cette ligne rouge : la liste des champs de l'espace.
    */
   champExiste(tenantId: string, champ: string): Promise<boolean>;
+  /** Le contact est-il bloqué dans l'Inbox ? Un contact bloqué ne reçoit rien de nous, pas plus d'un outil. */
+  estBloque(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * Envoie le bloc SEUL (`blocSeul`), par le même chemin qu'un envoi à un bloc de l'API publique
+   * (`startFromNode`) : il REPREND le fil à l'agent de Meta, envoie, et le lui rend à l'accusé de l'envoi. Rend
+   * `true`, ou la raison du refus telle que l'agent de Meta la lira.
+   */
+  envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
+  /** Lance le scénario depuis son début, exactement comme le bouton de l'Inbox. Même contrat de retour. */
+  lancerScenario(tenantId: string, waId: string, workflowId: string): Promise<true | string>;
 }
 
 export type IssueMaison = { ok: true; reponse: string } | { ok: false; erreur: string };
@@ -40,5 +50,17 @@ export async function executerOutilMaison(
       await deps.ecrireChamp(tenantId, waId, cible.champ, lu.valeur);
       return { ok: true, reponse: REPONSE_MAISON.champ_fixe };
     }
+    case 'bloc_fixe':
+    case 'scenario_fixe': {
+      // 🔴 LE BLOCAGE EST LU AVANT TOUT ENVOI : une garde posée après l'effet ne garde rien.
+      if (await deps.estBloque(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
+      const issue = cible.handler === 'bloc_fixe'
+        ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })
+        : await deps.lancerScenario(tenantId, waId, cible.workflowId);
+      return issue === true ? { ok: true, reponse: REPONSE_MAISON[cible.handler] } : { ok: false, erreur: issue };
+    }
   }
 }
+
+/** Ce que l'agent de Meta lit quand le client est bloqué dans l'Inbox. */
+export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';

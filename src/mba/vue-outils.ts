@@ -1,5 +1,7 @@
 import type { OutilComplet, OutilBibliotheque, RisqueOutil } from '../agent/catalog';
-import { lireCibleMaison, typeDeLaCible, type TypeOutilMba } from './outils-maison';
+import { entryNode } from '../workflow/engine';
+import type { WorkflowGraph } from '../workflow/graph';
+import { blocSeul, lireCibleMaison, nomDuBlocParCode, typeDeLaCible, type TypeOutilMba } from './outils-maison';
 
 /**
  * LA LIGNE D'UN OUTIL DANS L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9.1).
@@ -17,6 +19,8 @@ import { lireCibleMaison, typeDeLaCible, type TypeOutilMba } from './outils-mais
 export type CibleVue =
   | { type: 'tag'; tag: string }
   | { type: 'champ'; champ: string; valeurs: string[] }
+  | { type: 'bloc'; workflowId: string; code: string; scenario: string | null; bloc: string | null }
+  | { type: 'scenario'; workflowId: string; scenario: string | null }
   | { type: 'connecteur'; requeteId: string; libelle: string | null }
   | { type: 'inconnu' };
 
@@ -51,6 +55,8 @@ export interface ContexteVue {
   requetes: ReadonlyMap<string, { label: string }>;
   champs: ReadonlySet<string>;
   bibliotheque: ReadonlyMap<string, OutilBibliotheque>;
+  /** Les scénarios de l'espace, avec leur graphe PUBLIÉ : c'est lui que le relais joue. */
+  workflows: ReadonlyMap<string, { name: string; graph: WorkflowGraph }>;
 }
 
 export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
@@ -87,5 +93,33 @@ export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
         cibleManquante: ctx.champs.has(cible.champ) ? null : `le champ « ${cible.champ} » n’existe plus dans le mini-CRM`,
         aussiUtilisePar: [], publiable: true,
       };
+    // 🔴 Un bloc ou un scénario MODIFIÉ depuis la création se revérifie ici, comme à chaque appel du relais : un
+    // bloc devenu une question, ou un scénario vidé, refuse à chaque appel, et la ligne rouge le dit. Publiés quand
+    // même, comme un champ supprimé : c'est le relais qui refuse, avec la même raison.
+    case 'bloc_fixe': {
+      const wf = ctx.workflows.get(cible.workflowId) ?? null;
+      const r = wf ? blocSeul(wf.graph, cible.code) : null;
+      return {
+        ...base, type,
+        cible: {
+          type: 'bloc', workflowId: cible.workflowId, code: cible.code, scenario: wf?.name ?? null,
+          bloc: wf ? nomDuBlocParCode(wf.graph, cible.code) : null,
+        },
+        cibleManquante: wf === null ? 'le scénario de ce bloc n’existe plus' : r !== null && !r.ok ? r.raison : null,
+        aussiUtilisePar: [], publiable: true,
+      };
+    }
+    case 'scenario_fixe': {
+      const wf = ctx.workflows.get(cible.workflowId) ?? null;
+      return {
+        ...base, type, cible: { type: 'scenario', workflowId: cible.workflowId, scenario: wf?.name ?? null },
+        cibleManquante: wf === null ? 'ce scénario n’existe plus'
+          : entryNode(wf.graph) === null ? SCENARIO_VIDE : null,
+        aussiUtilisePar: [], publiable: true,
+      };
+    }
   }
 }
+
+/** Un scénario sans bloc publié : rien ne partirait. */
+export const SCENARIO_VIDE = 'ce scénario est vide ou n’est pas publié';

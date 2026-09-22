@@ -6,8 +6,10 @@ import { NomOutilDejaPris, OutilNonActivable } from '../agent/catalog';
 import type { RequeteConnecteur } from '../agent/requetes';
 import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import { scopeTenant, estUuid } from './scope';
-import type { CibleMaison } from '../mba/outils-maison';
-import { vueOutilMba, type ContexteVue } from '../mba/vue-outils';
+import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
+import { vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
+import { entryNode } from '../workflow/engine';
+import type { WorkflowGraph } from '../workflow/graph';
 
 /**
  * L'ONGLET « OUTILS » DE L'AGENT DE META (spec docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md, § 9).
@@ -40,6 +42,10 @@ export interface MbaOutilsDeps {
   retirer(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'>;
   /** Rallumer un outil éteint par le départ de son auteur (plan 2026-09-21-outils-maison-mba, écart 4). */
   reactiver(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<boolean>;
+  /** Un scénario de l'espace, avec son graphe PUBLIÉ (celui que le relais joue), ou `null`. */
+  workflow(tenantId: string, id: string): Promise<{ name: string; graph: WorkflowGraph } | null>;
+  /** Les blocs des scénarios publiés, envoyables seuls ou non, pour le choix de l'écran. */
+  blocs(tenantId: string): Promise<BlocPropose[]>;
 }
 
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au format [a-z0-9_], 64 caractères au plus');
@@ -60,6 +66,8 @@ const cibleSaisieSchema = z.discriminatedUnion('type', [
     champ: z.string().trim().min(1).max(B.champ),
     valeurs: z.array(z.string().trim().min(1).max(B.valeur)).max(B.valeurs).default([]),
   }).strict(),
+  z.object({ type: z.literal('bloc'), workflowId: z.string().uuid(), code: z.string().min(1).max(128) }).strict(),
+  z.object({ type: z.literal('scenario'), workflowId: z.string().uuid() }).strict(),
   z.object({ type: z.literal('connecteur'), requeteId: z.string().uuid() }).strict(),
 ]);
 type CibleSaisie = z.infer<typeof cibleSaisieSchema>;
@@ -83,6 +91,8 @@ function versCibleMaison(c: Exclude<CibleSaisie, { type: 'connecteur' }>): Cible
   switch (c.type) {
     case 'tag': return { handler: 'tag_fixe', tag: c.tag };
     case 'champ': return { handler: 'champ_fixe', champ: c.champ, valeurs: c.valeurs };
+    case 'bloc': return { handler: 'bloc_fixe', workflowId: c.workflowId, code: c.code };
+    case 'scenario': return { handler: 'scenario_fixe', workflowId: c.workflowId };
   }
 }
 
@@ -98,6 +108,18 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   const cibleInvalide = async (tenant: string, c: CibleSaisie): Promise<string | null> => {
     if (c.type === 'champ' && !(await deps.champs(tenant)).includes(c.champ)) {
       return `le champ « ${c.champ} » n’existe pas dans le mini-CRM`;
+    }
+    // 🔴 La même vérification que le relais fait à chaque appel (`blocSeul`) : un bloc à boutons accepté ici
+    // refuserait ensuite chaque appel de l'agent de Meta.
+    if (c.type === 'bloc' || c.type === 'scenario') {
+      const wf = await deps.workflow(tenant, c.workflowId);
+      if (!wf) return 'ce scénario n’existe pas';
+      if (c.type === 'bloc') {
+        const r = blocSeul(wf.graph, c.code);
+        if (!r.ok) return r.raison;
+      } else if (entryNode(wf.graph) === null) {
+        return SCENARIO_VIDE;
+      }
     }
     return null;
   };
@@ -116,6 +138,13 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     const outils = await deps.lister(tenant, pn);
     const ctx = await deps.contexte(tenant, outils);
     return reply.code(200).send({ outils: outils.map((o) => vueOutilMba(o, ctx)), phoneNumberId: pn });
+  });
+
+  // Déclarée avant toute route `/:outilId` en GET (il n'y en a aucune aujourd'hui : seuls PATCH et DELETE en portent).
+  app.get(`${base}/blocs`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    return reply.code(200).send({ blocs: await deps.blocs(tenant) });
   });
 
   app.post(base, opts, async (req, reply) => {

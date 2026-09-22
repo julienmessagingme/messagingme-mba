@@ -176,3 +176,27 @@ describe('modifierSettings : survivre à un champ que Meta ajouterait', () => {
     });
   });
 });
+
+describe('MbaClient : agent_event', () => {
+  it('🔴 POST au bon chemin, version 2.0.0, corps { to, event }, et le signal transmis', async () => {
+    const vus: Array<{ url: string; init: RequestInit }> = [];
+    const impl = async (url: string, init: RequestInit): Promise<Response> => {
+      vus.push({ url, init });
+      return new Response('{"status":"accepted"}', { status: 200 });
+    };
+    const signal = AbortSignal.timeout(1_000);
+    const event = { type: 'reponse_hors_parcours', description: 'd', payload: '{"message":"x"}' };
+    await new MbaClient('tok', impl as unknown as typeof fetch).agentEvent('PN1', '+33600000001', event, signal);
+    expect(vus[0]!.url).toBe('https://api.facebook.com/PN1/agent_event');
+    expect(vus[0]!.init.method).toBe('POST');
+    expect((vus[0]!.init.headers as Record<string, string>)['X-API-Version']).toBe('2.0.0');
+    expect(JSON.parse(String(vus[0]!.init.body))).toEqual({ to: '+33600000001', event });
+    expect(vus[0]!.init.signal).toBe(signal);
+  });
+
+  it('un refus de Meta lève, comme toute la surface MBA', async () => {
+    const impl = async (): Promise<Response> => new Response('{"title":"Bad request","detail":"x"}', { status: 400 });
+    await expect(new MbaClient('tok', impl as unknown as typeof fetch)
+      .agentEvent('PN1', '+33600000001', { type: 't', description: 'd', payload: '{}' })).rejects.toBeDefined();
+  });
+});

@@ -23,6 +23,8 @@ const g = (nodes: WorkflowGraph['nodes'], edges: Array<[string, string, string?]
 /** Exécuteur à dépendances minimales : aucune base, aucun réseau. `releases` enregistre les fils relâchés. */
 function executeur(graph: WorkflowGraph, opts: { mbaActif?: boolean; run?: Record<string, unknown> } = {}) {
   const releases: string[] = [];
+  // L'ORDRE des deux gestes vers l'agent de Meta : le fil d'abord, le message ensuite.
+  const ordre: string[] = [];
   const etats: Array<Record<string, unknown>> = [];
   const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null, ...opts.run };
   const ex = new WorkflowExecutor({
@@ -41,9 +43,10 @@ function executeur(graph: WorkflowGraph, opts: { mbaActif?: boolean; run?: Recor
     sendFlow: async () => {},
     escalateToHuman: async () => {},
     mbaActifPour: async (): Promise<boolean> => opts.mbaActif === true,
-    releaseToMba: async (_t: string, waId: string): Promise<void> => { releases.push(waId); },
+    releaseToMba: async (_t: string, waId: string): Promise<void> => { releases.push(waId); ordre.push(`release ${waId}`); },
+    transmettreHorsParcours: async (_t: string, waId: string): Promise<void> => { ordre.push(`transmis ${waId}`); },
   } as never);
-  return { ex, releases, etats, run };
+  return { ex, releases, etats, run, ordre };
 }
 
 describe('release : quand le parcours se termine', () => {
@@ -151,5 +154,40 @@ describe('release : la minuterie de reprise après un humain', () => {
     expect(await runControlSweep(deps)).toBe(1);
     expect(releases, 'aucun appel Meta sur une fenêtre fermée').toEqual([]);
     expect(rendues.find((r) => r.waId === 'a'), 'la conversation reste telle quelle, donc visible').toBeUndefined();
+  });
+});
+
+/**
+ * 🔴 LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 5). Sans elle, l'agent
+ * reprend le fil mais ne parle qu'au message SUIVANT du client : la question qu'il vient de poser reste sans réponse.
+ */
+describe('la réponse « à côté » est transmise à l’agent de Meta', () => {
+  const question = () => g(
+    [n('n1', 'quick_message', { body: 'Un conseiller ?', quickReplies: [{ text: 'Oui' }] }), n('n2', 'tag', { tag: 'ok' })],
+    [['n1', 'n2', 'Oui']],
+  );
+
+  it('🔴 réponse libre : le fil est rendu PUIS le message transmis', async () => {
+    const { ex, ordre } = executeur(question(), { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', 'Vous êtes ouverts dimanche ?');
+    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001']);
+  });
+
+  it('🔴 un bouton sans suite va à un humain : RIEN n’est transmis', async () => {
+    const { ex, ordre } = executeur(g([n('n1', 'quick_message', { body: 'x', quickReplies: [{ text: 'Oui' }] })]), { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', 'btn:0');
+    expect(ordre).toEqual([]);
+  });
+
+  it('🔴 une fin NORMALE de parcours rend le fil SANS rien transmettre', async () => {
+    const { ex, ordre } = executeur(question(), { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', 'Oui');
+    expect(ordre).toEqual(['release 33600000001']);
+  });
+
+  it('MBA éteint : ni release ni transmission', async () => {
+    const { ex, ordre } = executeur(question(), { mbaActif: false });
+    await ex.advance('t1', '33600000001', 'msg1', 'Hors script');
+    expect(ordre).toEqual([]);
   });
 });

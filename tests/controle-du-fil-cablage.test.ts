@@ -63,14 +63,21 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
 /**
  * 🔴 LA FIN D'UN PARCOURS NE RELÂCHE PLUS LE FIL DANS LA FOULÉE DE SON DERNIER ENVOI (migration 0149).
  *
- * Mesuré en production le 2026-09-15 : Meta acquitte nos envois avec DEUX MINUTES de retard, et sa
- * documentation dit qu'envoyer un message PREND le fil implicitement. Le release partait donc avant que Meta
- * ne traite l'envoi, et l'envoi reprenait le fil juste derrière. Trois releases émis deux secondes après un
- * envoi ont échoué, celui émis quatorze minutes après a marché.
+ * Mesuré en production le 2026-09-15 : la documentation de Meta dit qu'envoyer un message PREND le fil
+ * implicitement. Le release partait donc avant que Meta ne traite l'envoi, et l'envoi reprenait le fil juste
+ * derrière. Trois releases émis deux secondes après un envoi ont échoué, celui émis quatorze minutes après a
+ * marché. (Ce texte attribuait à Meta un retard d'accusé de deux minutes : c'était notre file d'accusés.)
  */
 describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
-  const bloc = wiring.slice(wiring.indexOf('releaseToMba: async (tenant, waId)'), wiring.indexOf('evalContext:'));
+  // Le geste est une constante NOMMÉE depuis le lot 3 des outils maison : le relais de l'agent de Meta la réutilise.
+  const bloc = wiring.slice(wiring.indexOf('const rendreLaMainApresParcours'), wiring.indexOf('const workflowExecutor = new WorkflowExecutor'));
+
+  it('🔴 l’exécuteur rend le fil par CE geste, et le câblage le rend au relais', () => {
+    expect(bloc.length).toBeGreaterThan(0);
+    expect(wiring).toContain('releaseToMba: rendreLaMainApresParcours,');
+    expect(wiring.slice(wiring.lastIndexOf('return {'))).toContain('rendreLaMainApresParcours');
+  });
 
   it('🔴 la fin de parcours MARQUE, elle n’appelle pas Meta', () => {
     expect(bloc).toContain('demanderReleaseMba(tenant, waId)');

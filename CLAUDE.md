@@ -275,6 +275,10 @@ venaient de la file `webhook-status`, qui se vidait à deux accusés par minute.
 
 ⚠️ **LE MARQUEUR RESTE JUSTE, ET C'EST CE QUI COMPTE** : ce qu'on attend n'est pas un délai, c'est la PREUVE
 que Meta a fini de traiter l'envoi. Seul l'accusé la porte, qu'il arrive en une seconde ou en deux minutes.
+🔴 **DEPUIS LE LOT 4 DES OUTILS MAISON (2026-09-22), il ne se pose plus sur une preuve DÉJÀ reçue** : un entrant
+plus récent que notre envoi, un accusé déjà là (`accuse_le`, 0162), ou un envoi de plus de dix minutes. Sans
+ça, la réponse « à côté » et la question expirée gelaient le fil jusqu'au balayage. Détail :
+`PgInboxStore.demanderReleaseMba`.
 La leçon est ailleurs : **un écart mesuré ne dit pas à qui il appartient**, et attribuer le sien à un tiers
 est la façon la plus sûre de ne jamais le corriger.
 

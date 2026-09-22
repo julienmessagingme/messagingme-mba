@@ -47,7 +47,7 @@ function monter(over: Partial<MbaOutilsDeps> = {}, numero: string | null = PN) {
   const deps: MbaOutilsDeps = {
     numeroDuTenant: async () => numero,
     lister: async () => [complet({})],
-    contexte: async () => ({ requetes: new Map(), champs: new Set(['ville']), bibliotheque: new Map() }),
+    contexte: async () => ({ requetes: new Map(), champs: new Set(['ville']), bibliotheque: new Map(), workflows: new Map() }),
     requete: async (_t, id) => (id === REQ ? {
       id: REQ, sourceId: 's1', methode: 'DELETE', variables: [
         { nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true },
@@ -61,6 +61,8 @@ function monter(over: Partial<MbaOutilsDeps> = {}, numero: string | null = PN) {
     modifierConnecteur: async (...args) => { gestes.push({ geste: 'modifierConnecteur', args }); return { id: OUTIL }; },
     retirer: async (...args) => { gestes.push({ geste: 'retirer', args }); return 'supprime'; },
     reactiver: async (...args) => { gestes.push({ geste: 'reactiver', args }); return true; },
+    workflow: async () => null,
+    blocs: async () => [],
     ...over,
   };
   const app = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, mbaOutils: deps });
@@ -254,5 +256,48 @@ describe('modifier, retirer, réactiver', () => {
     const avecNumero = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, phoneNumberId: '999', cible: { type: 'tag', tag: 'vip' } } });
     expect(avecNumero.statusCode).toBe(400);
     expect(gestes.map((g) => g.args[1])).toEqual([PN]);
+  });
+});
+
+describe('un bloc et un scénario', () => {
+  const WF = '11111111-1111-4111-8111-111111111111';
+  const CODE = `nod_abc_${'A'.repeat(26)}`;
+  const graphe = (quickReplies: string[]) => ({
+    nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { code: CODE, body: 'x', quickReplies } }], edges: [],
+  }) as never;
+
+  it('🔴 un bloc envoyable devient `bloc_fixe`, le navigateur ne choisit rien d’autre', async () => {
+    const { app, gestes } = monter({ workflow: async () => ({ name: 'Accueil', graph: graphe([]) }) });
+    const res = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'bloc', workflowId: WF, code: CODE } } });
+    expect(res.statusCode).toBe(201);
+    expect(gestes[0]!.args[2]).toMatchObject({ cible: { handler: 'bloc_fixe', workflowId: WF, code: CODE } });
+  });
+
+  it('🔴 un bloc qui attend une réponse est refusé avec la raison, et rien n’est créé', async () => {
+    const { app, gestes } = monter({ workflow: async () => ({ name: 'Accueil', graph: graphe(['Oui']) }) });
+    const res = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'bloc', workflowId: WF, code: CODE } } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toContain('Lancer un scénario');
+    expect(gestes).toEqual([]);
+  });
+
+  it('un scénario publié devient `scenario_fixe` ; un inconnu ou un vide est refusé', async () => {
+    const ok = monter({ workflow: async () => ({ name: 'Accueil', graph: graphe([]) }) });
+    const res = await ok.app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'scenario', workflowId: WF } } });
+    expect(res.statusCode).toBe(201);
+    expect(ok.gestes[0]!.args[2]).toMatchObject({ cible: { handler: 'scenario_fixe', workflowId: WF } });
+    const inconnu = monter({ workflow: async () => null });
+    expect((await inconnu.app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'scenario', workflowId: WF } } })).statusCode).toBe(422);
+    const vide = monter({ workflow: async () => ({ name: 'Vide', graph: { nodes: [], edges: [] } as never }) });
+    const r = await vide.app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'scenario', workflowId: WF } } });
+    expect(r.statusCode).toBe(422);
+    expect(r.json().error).toContain('vide');
+  });
+
+  it('🔴 GET /blocs rend la liste, et refuse sans jeton', async () => {
+    const bloc = { workflowId: WF, scenario: 'Accueil', code: CODE, nom: 'Brochure', type: 'quick_message', envoyable: true, raison: null };
+    const { app } = monter({ blocs: async () => [bloc] });
+    expect((await app.inject({ method: 'GET', url: `${url}/blocs`, ...h() })).json()).toEqual({ blocs: [bloc] });
+    expect([401, 403]).toContain((await app.inject({ method: 'GET', url: `${url}/blocs` })).statusCode);
   });
 });

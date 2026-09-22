@@ -381,6 +381,12 @@ function libelleCible(o: OutilMbaVue, t: Traduire): string {
   switch (c.type) {
     case 'tag': return t(`Tag : ${c.tag}`, `Tag: ${c.tag}`);
     case 'champ': return t(`Champ : ${c.champ}`, `Field: ${c.champ}`);
+    case 'bloc': {
+      const bloc = c.bloc ?? t('bloc supprimé', 'deleted block');
+      const scenario = c.scenario ?? t('scénario supprimé', 'deleted scenario');
+      return t(`Bloc « ${bloc} » du scénario ${scenario}`, `Block “${bloc}” of scenario ${scenario}`);
+    }
+    case 'scenario': return c.scenario ? t(`Scénario : ${c.scenario}`, `Scenario: ${c.scenario}`) : t('Scénario supprimé', 'Deleted scenario');
     case 'connecteur': return c.libelle ? t(`Appel : ${c.libelle}`, `Call: ${c.libelle}`) : t('Appel supprimé', 'Deleted call');
     case 'inconnu': return t('Format inconnu', 'Unknown format');
   }

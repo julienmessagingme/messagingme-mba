@@ -9,6 +9,8 @@ export type TypeOutilMba = 'tag' | 'champ' | 'bloc' | 'scenario' | 'connecteur';
 export type CibleVue =
   | { type: 'tag'; tag: string }
   | { type: 'champ'; champ: string; valeurs: string[] }
+  | { type: 'bloc'; workflowId: string; code: string; scenario: string | null; bloc: string | null }
+  | { type: 'scenario'; workflowId: string; scenario: string | null }
   | { type: 'connecteur'; requeteId: string; libelle: string | null }
   | { type: 'inconnu' };
 
@@ -38,7 +40,21 @@ export interface OutilMbaVue {
 export type CibleSaisie =
   | { type: 'tag'; tag: string }
   | { type: 'champ'; champ: string; valeurs: string[] }
+  | { type: 'bloc'; workflowId: string; code: string }
+  | { type: 'scenario'; workflowId: string }
   | { type: 'connecteur'; requeteId: string };
+
+/** Un bloc d'un scénario publié, envoyable seul ou non (miroir de `BlocPropose`, `src/mba/outils-maison.ts`). */
+export interface BlocPropose {
+  workflowId: string;
+  scenario: string;
+  code: string;
+  nom: string;
+  type: string;
+  envoyable: boolean;
+  /** Pourquoi il ne peut pas partir seul, ou `null`. Texte du serveur, affiché tel quel. */
+  raison: string | null;
+}
 
 export interface TextesOutil { name: string; title: string; description: string; nePasUtiliser: string }
 
@@ -60,6 +76,10 @@ export function modifierOutilMba(
 
 export async function retirerOutilMba(tenantId: string, id: string): Promise<void> {
   await request<void>(`${base(tenantId)}/${id}`, { method: 'DELETE' });
+}
+
+export function listerBlocsMba(tenantId: string): Promise<{ blocs: BlocPropose[] }> {
+  return request(`${base(tenantId)}/blocs`);
 }
 
 /** Rallumer un outil éteint par le départ de son auteur (plan 2026-09-21-outils-maison-mba, écart 4). */

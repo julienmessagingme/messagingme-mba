@@ -6,6 +6,13 @@ import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 import { MEDIA_EXPIRE_SQL } from './media-entrant';
 
 /**
+ * Au-delà de cet âge, notre dernier envoi n'est plus « en vol » : Meta l'a traité (il acquitte en une seconde), et
+ * rendre le fil ne peut plus faire la course de 0149. Lu par `demanderReleaseMba`. Large exprès : la course se
+ * joue en secondes, et une file d'accusés en retard (vécu : deux accusés par minute) ne doit pas la rouvrir.
+ */
+export const ENVOI_EN_VOL = '10 minutes';
+
+/**
  * Qui détient la conversation, et donc qui répond au client.
  *
  * `app_workflow` est le SEUL état qui autorise un scénario à avancer ou à démarrer. `mba` n'est jamais
@@ -516,17 +523,38 @@ export class PgInboxStore implements InboxStore {
    * branches sautées, un envoi refusé). Il n'y a alors AUCUNE course à éviter, et l'appelant relâche tout de
    * suite. La colonne est laissée à `null` dans ce cas, sans quoi elle attendrait un accusé qui ne viendra
    * jamais.
+   *
+   * 🔴 LE MARQUEUR NE SE POSE PLUS SUR UN ENVOI DÉJÀ TRAITÉ PAR META (spec 2026-09-21-outils-maison-mba, § 5.1).
+   * Deux cas le posaient sur un accusé déjà reçu, donc qui ne reviendrait jamais : la réponse « à côté » (le client
+   * a écrit depuis notre envoi) et le délai d'une question sans sortie (notre question est partie il y a longtemps).
+   * Le fil restait alors en `app_human` jusqu'au balayage, et l'agent de Meta muet. On attend donc SEULEMENT si
+   * notre dernier envoi est aussi le dernier message du fil, n'est pas acquitté, et est RÉCENT :
+   *  - un message ENTRANT plus récent prouve que Meta a traité l'envoi (le client l'a reçu). La règle lit les
+   *    MESSAGES, pas `last_direction`, qui ignore une réaction et vaut `null` avant 0130 ;
+   *  - `accuse_le` (0162) est posé au premier statut reçu (`consommerReleaseMba`) ;
+   *  - ⚠️ ET UN ENVOI DE PLUS DE `ENVOI_EN_VOL` N'EST PLUS EN VOL : Meta acquitte en une seconde, la course de 0149
+   *    se joue dans les secondes qui suivent l'envoi. Cette borne est aussi ce qui traite les envois ANTÉRIEURS au
+   *    lot 4, acquittés sans que personne n'écrive `accuse_le` : pour eux, `null` ne veut pas dire « pas encore
+   *    acquitté », et sans elle la règle reposerait le marqueur sur des fils déjà réglés.
+   * ⚠️ Fenêtre résiduelle assumée : un client qui écrit dans la seconde même de notre envoi. Le balayage reste le filet.
    */
   async demanderReleaseMba(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ release_mba_apres_message: string | null }>(
       `update conversations c
           set release_mba_apres_message = (
-            select m.meta_message_id from conversation_messages m
-             where m.conversation_id = c.id and m.direction = 'out' and m.meta_message_id is not null
-             order by m.created_at desc limit 1)
+            select d.meta_message_id
+              from (select m.meta_message_id, m.accuse_le, m.created_at
+                      from conversation_messages m
+                     where m.conversation_id = c.id and m.direction = 'out' and m.meta_message_id is not null
+                     order by m.created_at desc limit 1) d
+             where d.accuse_le is null
+               and d.created_at > now() - $3::interval
+               and not exists (select 1 from conversation_messages i
+                                where i.conversation_id = c.id and i.direction = 'in'
+                                  and i.created_at > d.created_at))
         where c.tenant_id = $1 and c.wa_id = $2
        returning c.release_mba_apres_message`,
-      [tenantId, waId],
+      [tenantId, waId, ENVOI_EN_VOL],
     );
     return res.rows[0]?.release_mba_apres_message ?? null;
   }
@@ -544,10 +572,18 @@ export class PgInboxStore implements InboxStore {
    * webhook de Meta, qui ne connaît qu'un identifiant de message et aucun espace. C'est justement la colonne
    * `tenant_id` RENDUE qui lui apprend de quel espace il s'agit. L'identifiant est unique dans toute la base
    * (`conversation_messages_wamid_uidx`), donc il ne peut désigner qu'une conversation d'un seul espace.
+   *
+   * ⚠️ ELLE POSE AUSSI L'ACCUSÉ du message (0162), dans la même requête : c'est la preuve que `demanderReleaseMba`
+   * lit pour ne plus attendre ce qui est déjà arrivé. Un seul aller-retour sur ce chemin très chaud, par l'index
+   * unique de `meta_message_id`, et `accuse_le is null` n'écrit qu'au premier statut.
    */
   async consommerReleaseMba(messageId: string): Promise<{ tenantId: string; waId: string } | null> {
     const res = await this.pool.query<{ tenant_id: string; wa_id: string }>(
-      `update conversations c set release_mba_apres_message = null
+      `with accuse as (
+         update conversation_messages set accuse_le = now()
+          where meta_message_id = $1 and accuse_le is null
+       )
+       update conversations c set release_mba_apres_message = null
         where c.release_mba_apres_message = $1
        returning c.tenant_id, c.wa_id`,
       [messageId],

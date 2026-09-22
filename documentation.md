@@ -421,7 +421,7 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
 connecteur, mais le relais exécute son geste lui-même. Les invariants :
 - **Stockage** : une ligne d'`agent_tools` avec `origin = 'mba'`, `agent_id` null et `pour_agent_meta = true`,
   exposée par une ligne de consentement `mba:<numéro>` née active au nom de l'administrateur qui crée. La cible
-  (l'étiquette, le champ) vit dans `binding`, validée à CHAQUE lecture par `cibleMaisonSchema`
+  (l'étiquette, le champ, le bloc, le scénario) vit dans `binding`, validée à CHAQUE lecture par `cibleMaisonSchema`
   (`src/mba/outils-maison.ts`, `.strict()`) : une cible illisible n'est ni publiée ni exécutée.
 - **Les handlers sont À PART de ceux des agents IA** (`tag_fixe`, `champ_fixe`… contre `poser_tag`…), et un test
   tient leur disjonction : un outil de l'agent de Meta qui atteindrait un agent IA serait refusé, pas joué.
@@ -464,6 +464,31 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   relecture d'une source de connaissance prend l'agent avant ses fiches. Tout nouveau chemin qui écrit plusieurs
   définitions passe par `verrouillerDefinitions` ; `tests/integration/outils-maison-mba.integration.test.ts`
   rejoue chacun de ces interblocages, le consommateur fantôme et le cas inverse.
+- 🔴 **UN BLOC PART SEUL** (`blocSeul`, `src/mba/outils-maison.ts`) : le bloc désigné par son CODE public
+  (`nod_…`), dans un graphe RÉDUIT à lui seul, et seulement si ce graphe se termine sans rien attendre (`walk`,
+  `mbaActif: true`). Un bloc à boutons, une question, un formulaire, une attente, un agent IA ou un bloc RCS sont
+  refusés, avec leur raison. Vérifié à la création (route) et à CHAQUE appel du relais : le scénario PUBLIÉ a pu
+  changer. Le relais l'envoie par `startFromNode` (le chemin de l'API publique vers un bloc) : il REPREND le fil à
+  l'agent de Meta, envoie, et le lui rend à l'accusé (0149). Hors fenêtre de 24 h, seul un bloc fait de modèles part.
+- **Lancer un scénario** passe par `lancerScenarioPourContact` (`src/index.ts`), le MÊME chemin que le bouton de
+  l'Inbox (fenêtre ouverte : `startInWindow`, fermée : `start`), et un scénario sans bloc publié est refusé.
+- 🔴 **UN ÉCHEC APRÈS LA REPRISE DU FIL LE REND** : `runFrom` reprend le fil puis peut refuser (désabonné, envoi
+  refusé) ; il rend alors une raison SANS rendre la main, parce que ses autres appelants ont un opérateur. Le
+  relais appelle donc `rendreLaMainApresParcours` (le geste de fin de parcours, nommé dans `wiring.ts` et rendu
+  par `buildWorkflowRuntime`). Si la reprise elle-même a échoué, ce geste ne touche à rien (`only: ['app_workflow']`).
+  Un contact bloqué ne reçoit ni bloc ni scénario (`DepsMaison.estBloque`, lu AVANT tout envoi).
+- 🔴 **LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META** : dans la branche « il a écrit » d'`advance`, le fil est
+  rendu PUIS le message du client lui est transmis par `agent_event` (`transmettreHorsParcours`, `wiring.ts` ;
+  l'événement dans `src/mba/evenement.ts`, `payload` en chaîne JSON bornée à 4 096 caractères APRÈS
+  échappement, `to` en E.164 avec « + », mesuré). Seulement si le fil est vraiment à lui (`mba`) : une
+  conversation de test, un release refusé ou un marqueur en attente laissent un autre détenteur. Rien sur une
+  fin normale de parcours ni sur un bouton sans suite (qui part à un humain).
+- 🔴 **LE MARQUEUR DE 0149 NE SE POSE PLUS SUR UN ENVOI DÉJÀ TRAITÉ PAR META** (`demanderReleaseMba`) : il
+  n'attend que si notre dernier envoi est le dernier message du fil (aucun ENTRANT plus récent), n'est pas acquitté
+  (`conversation_messages.accuse_le`, posé au premier statut par `consommerReleaseMba`, 0162) et a moins de
+  `ENVOI_EN_VOL` (dix minutes : Meta acquitte en une seconde). Sans cela, la réponse « à côté » et la question
+  expirée gelaient le fil en `app_human` jusqu'au balayage. La borne de temps traite aussi les envois ANTÉRIEURS
+  au lot 4, acquittés sans que personne n'écrive `accuse_le`.
 - Le relais REFUSE d'écrire un champ supprimé du mini-CRM (`DepsMaison.champExiste`, même liste que la ligne
   rouge de l'onglet). Un outil « Désactivé » (départ de son auteur) reste LISTÉ chez Meta jusqu'au prochain
   envoi, rien ne republiant à ce départ : la ligne propose de l'en retirer. La vue porte le RISQUE, et l'onglet

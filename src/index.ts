@@ -85,6 +85,7 @@ import { arbitreDeDebit } from './meta/arbitre-debit';
 import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { buildWorkflowRuntime } from './workflow/wiring';
+import type { StartOutcome } from './workflow/executor';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
@@ -145,6 +146,7 @@ import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
 import { outilsAPublier } from './mba/outils-a-publier';
+import { blocSeul, blocsProposables } from './mba/outils-maison';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -449,6 +451,38 @@ async function main(): Promise<void> {
     // ci-dessous), pour que l'invalidation du résolveur à une écriture de compte vaille aussi pour l'exécuteur.
     emailTemplates, emailResolver,
   });
+
+  /**
+   * LANCER UN SCÉNARIO POUR UN CONTACT, exactement comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
+   * « Lancer un scénario » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 3.4). Un seul chemin, pas un
+   * cinquième : la fermeture du parcours en cours, la reprise du fil et la garde de fenêtre vivent dans `runFrom`.
+   *
+   * La fenêtre décide de la porte d'entrée :
+   *  - ouverte -> `startInWindow` : le scénario peut ouvrir par un message rapide ou un formulaire ;
+   *  - fermée  -> `start` : la garde de fenêtre s'applique et REND la raison si le scénario ouvre par un
+   *    message de session, ce que Meta refuserait (131047).
+   *
+   * `ignoreHumanControl` : c'est un geste délibéré (l'opérateur, ou l'agent de Meta à la demande du client), et
+   * celui qui déclenche détient presque toujours le fil. Le refuser à ce titre serait absurde. Même règle qu'au
+   * lancement d'une campagne. `emitEvents` : un lancement unitaire (un contact, ici et maintenant), donc ses tags
+   * publient, comme après une réponse du contact.
+   *
+   * ⚠️ LA FERMETURE DU PARCOURS EN COURS N'EST PLUS ICI, elle est dans `runFrom` (l'exécuteur), et c'est le point
+   * du lot du 2026-09-07 : elle vivait chez l'appelant de l'Inbox, donc sur un chemin sur quatre, et les trois
+   * autres divergeaient. Le comportement pour l'opérateur est inchangé : son scénario remplace celui en cours.
+   */
+  const lancerScenarioPourContact = async (
+    tenant: string, workflowId: string, waId: string, windowOpen: boolean,
+  ): Promise<StartOutcome | null> => {
+    const wf = await workflowStore.getById(workflowId, tenant);
+    if (!wf) return null;
+    const contactId = await contactStore.findIdByWaId(tenant, waId);
+    const contact = { waId, contactId };
+    const opts = { emitEvents: true, ignoreHumanControl: true };
+    return windowOpen
+      ? workflowRuntime.executor.startInWindow(tenant, workflowId, wf.graph, contact, opts)
+      : workflowRuntime.executor.start(tenant, workflowId, wf.graph, contact, undefined, opts);
+  };
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
   const sendAuthEmail = config.RESEND_API_KEY
@@ -951,33 +985,8 @@ async function main(): Promise<void> {
         await inboxStore.setControlOwner(tenant, waId, 'mba');
         return 'mba';
       },
-      /**
-       * Lancement d'un SCÉNARIO depuis l'Inbox. La fenêtre décide de la porte d'entrée :
-       *  - ouverte -> `startInWindow` : le scénario peut ouvrir par un message rapide ou un formulaire ;
-       *  - fermée  -> `start` : la garde de fenêtre s'applique et REND la raison si le scénario ouvre par un
-       *    message de session, ce que Meta refuserait (131047).
-       *
-       * `ignoreHumanControl` : c'est l'opérateur qui déclenche, et il détient presque toujours le fil (il l'a
-       * pris en répondant). Le refuser à ce titre serait absurde. Même règle qu'au lancement d'une campagne.
-       * `emitEvents` : un lancement à la main est unitaire (un contact, ici et maintenant), donc ses tags
-       * publient, comme après une réponse du contact.
-       */
-      startWorkflow: async (tenant, workflowId, waId, windowOpen) => {
-        const wf = await workflowStore.getById(workflowId, tenant);
-        if (!wf) return null;
-        const contactId = await contactStore.findIdByWaId(tenant, waId);
-        const contact = { waId, contactId };
-        // ⚠️ LA FERMETURE DU PARCOURS EN COURS N'EST PLUS ICI, elle est dans `runFrom` (l'exécuteur), et
-        // c'est le point du lot du 2026-09-07 : elle vivait chez cet appelant-ci, donc sur un chemin sur
-        // quatre, et les trois autres divergeaient. La garder en double la ferait s'exécuter deux fois (sans
-        // dégât, mais elle laisserait croire qu'elle est propre à l'Inbox) et surtout elle réapparaîtrait
-        // chez le prochain appelant qui la recopie. Le comportement pour l'opérateur est inchangé : son
-        // scénario remplace toujours celui en cours.
-        const opts = { emitEvents: true, ignoreHumanControl: true };
-        return windowOpen
-          ? workflowRuntime.executor.startInWindow(tenant, workflowId, wf.graph, contact, opts)
-          : workflowRuntime.executor.start(tenant, workflowId, wf.graph, contact, undefined, opts);
-      },
+      /** Lancement d'un SCÉNARIO depuis l'Inbox : le chemin partagé avec l'agent de Meta (`lancerScenarioPourContact`). */
+      startWorkflow: (tenant, workflowId, waId, windowOpen) => lancerScenarioPourContact(tenant, workflowId, waId, windowOpen),
       countUnread: (tenant, acteur) => inboxStore.countUnread(tenant, acteur),
       markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
@@ -1796,16 +1805,29 @@ async function main(): Promise<void> {
     mbaOutils: {
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
       lister: (tenant, pn) => toolCatalog.listToutesConsommateur(tenant, consommateurMba(pn)),
-      contexte: async (tenant) => {
-        const [requetes, champs, bibliotheque] = await Promise.all([
+      contexte: async (tenant, outils) => {
+        // Les scénarios ne se lisent que si une ligne en désigne un : la liste porte les graphes complets.
+        const veutScenarios = outils.some((o) => {
+          const h = (o.binding as { handler?: unknown } | null)?.handler;
+          return h === 'bloc_fixe' || h === 'scenario_fixe';
+        });
+        const [requetes, champs, bibliotheque, workflows] = await Promise.all([
           agentRequetes.lister(tenant), fieldStore.list(tenant), toolCatalog.listCatalogue(tenant),
+          veutScenarios ? workflowStore.list(tenant) : Promise.resolve([]),
         ]);
         return {
           requetes: new Map(requetes.map((r) => [r.id, { label: r.label }])),
           champs: new Set(champs.map((f) => f.key)),
           bibliotheque: new Map(bibliotheque.map((o) => [o.id, o])),
+          workflows: new Map(workflows.map((w) => [w.id, { name: w.name, graph: w.graph }])),
         };
       },
+      // Le graphe PUBLIÉ, celui que le relais joue : jamais le brouillon.
+      workflow: async (tenant, id) => {
+        const w = await workflowStore.getById(id, tenant);
+        return w ? { name: w.name, graph: w.graph } : null;
+      },
+      blocs: async (tenant) => blocsProposables((await workflowStore.list(tenant)).map((w) => ({ id: w.id, name: w.name, graph: w.graph }))),
       requete: (tenant, id) => agentRequetes.parId(tenant, id),
       champs: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
       creerMaison: (tenant, pn, outil, par) => toolCatalog.ajouterMaisonPourMba(tenant, pn, outil, par),
@@ -2510,6 +2532,37 @@ async function main(): Promise<void> {
           // La même liste que la ligne rouge de l'onglet Outils (`mbaOutils.champs`), sinon l'écran et le relais
           // ne seraient pas d'accord sur ce qui existe.
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
+          estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+          /**
+           * 🔴 UN ÉCHEC APRÈS LA REPRISE DU FIL LE REND. `runFrom` reprend le fil (`ignoreHumanControl`) puis peut
+           * refuser (désabonné, envoi refusé) : il rend alors une raison SANS rendre la main, parce que ses autres
+           * appelants (l'Inbox) ont un opérateur. Ici personne : sans ce geste, le fil resterait à nous et l'agent
+           * de Meta muet. Si la reprise elle-même a échoué, le geste ne touche à rien (`only: ['app_workflow']`).
+           */
+          lancerScenario: async (t, waId, workflowId) => {
+            const ouverte = (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true;
+            const issue = await lancerScenarioPourContact(t, workflowId, waId, ouverte);
+            if (issue === true) return true;
+            await workflowRuntime.rendreLaMainApresParcours(t, waId);
+            return issue ?? 'ce scénario n’existe plus';
+          },
+          envoyerBloc: async (t, waId, { workflowId, code }) => {
+            const wf = await workflowStore.getById(workflowId, t);
+            if (!wf) return 'le scénario de ce bloc n’existe plus';
+            // Revérifié à CHAQUE appel : le scénario a pu changer depuis la création de l'outil.
+            const seul = blocSeul(wf.graph, code);
+            if (!seul.ok) return seul.raison;
+            const ouverte = (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true;
+            if (!seul.modele && !ouverte) return 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir';
+            const contactId = await contactStore.findIdByWaId(t, waId);
+            // Le graphe RÉDUIT au bloc : `runFrom` prend le fil, envoie, et rend la main à l'accusé (0149).
+            const issue = await workflowRuntime.executor.startFromNode(
+              t, workflowId, seul.graphe, { waId, contactId }, seul.noeudId, { ignoreHumanControl: true, emitEvents: false },
+            );
+            if (issue === true) return true;
+            await workflowRuntime.rendreLaMainApresParcours(t, waId);
+            return issue;
+          },
         },
       },
       contacts: {

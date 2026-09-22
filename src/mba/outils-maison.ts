@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { VariableDeclaree } from '../agent/requetes';
 import type { RisqueOutil } from '../agent/catalog';
+import { walk } from '../workflow/engine';
+import type { WorkflowGraph, WorkflowNode } from '../workflow/graph';
+import { CODE_BLOC_RE, summarize } from '../workflow/node-list';
 
 /**
  * LES GESTES DE L'AGENT DE META : ce que le relais exécute lui-même, sans système tiers (spec
@@ -13,7 +16,7 @@ import type { RisqueOutil } from '../agent/catalog';
  * 🔴 LA CIBLE EST FIXÉE PAR L'ADMINISTRATEUR, jamais par le modèle (arbitrage de Julien, 2026-09-21 : « fixé
  * d'avance »). L'agent de Meta ne décide que du MOMENT, et pour un champ, de la valeur.
  */
-export const HANDLERS_MAISON_MBA = ['tag_fixe', 'champ_fixe'] as const;
+export const HANDLERS_MAISON_MBA = ['tag_fixe', 'champ_fixe', 'bloc_fixe', 'scenario_fixe'] as const;
 export type HandlerMaisonMba = (typeof HANDLERS_MAISON_MBA)[number];
 
 /** Le type d'un outil tel que l'écran le montre. `connecteur` n'est pas un geste maison : il appelle un tiers. */
@@ -30,6 +33,10 @@ export const cibleMaisonSchema = z.discriminatedUnion('handler', [
     champ: z.string().trim().min(1).max(64),
     valeurs: z.array(z.string().trim().min(1).max(120)).max(50),
   }).strict(),
+  // Un bloc se désigne par son CODE public (`nod_…`), pas par l'identifiant du nœud : c'est le code qui survit à
+  // la réécriture du graphe par l'éditeur, et c'est déjà lui que l'API publique vise (`/v1/sends`).
+  z.object({ handler: z.literal('bloc_fixe'), workflowId: z.string().uuid(), code: z.string().regex(CODE_BLOC_RE) }).strict(),
+  z.object({ handler: z.literal('scenario_fixe'), workflowId: z.string().uuid() }).strict(),
 ]);
 export type CibleMaison = z.infer<typeof cibleMaisonSchema>;
 export type CibleChamp = Extract<CibleMaison, { handler: 'champ_fixe' }>;
@@ -44,13 +51,21 @@ export function typeDeLaCible(c: CibleMaison): Exclude<TypeOutilMba, 'connecteur
   switch (c.handler) {
     case 'tag_fixe': return 'tag';
     case 'champ_fixe': return 'champ';
+    case 'bloc_fixe': return 'bloc';
+    case 'scenario_fixe': return 'scenario';
   }
 }
 
-/** Le risque déclaré en base. Meta n'a aucun réglage d'autonomie : il sert au journal et à la lecture. */
+/**
+ * Le risque déclaré en base. Meta n'a aucun réglage d'autonomie : il sert au journal et à la lecture.
+ * ⚠️ Un bloc et un scénario ENVOIENT au client : un message parti ne se rappelle pas, d'où `irreversible`, que
+ * l'écran signale.
+ */
 export const RISQUE_MAISON: Record<HandlerMaisonMba, RisqueOutil> = {
   tag_fixe: 'write',
   champ_fixe: 'write',
+  bloc_fixe: 'irreversible',
+  scenario_fixe: 'irreversible',
 };
 
 /**
@@ -61,6 +76,8 @@ export const RISQUE_MAISON: Record<HandlerMaisonMba, RisqueOutil> = {
 export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
   tag_fixe: 'C’est fait, c’est enregistré sur la fiche du client. Confirme-le-lui sans citer de nom technique.',
   champ_fixe: 'C’est enregistré sur la fiche du client.',
+  bloc_fixe: 'Le client vient de recevoir le message prévu, envoyé par Engage Me. N’ajoute rien pour cette demande.',
+  scenario_fixe: 'Engage Me déroule maintenant un parcours avec le client, il en reçoit déjà les messages. N’écris rien pour cette demande : la conversation te reviendra à la fin.',
 };
 
 export const VARIABLE_VALEUR = 'valeur';
@@ -96,4 +113,81 @@ export function lireValeurChamp(
     return { ok: false, erreur: `valeur refusée : choisir parmi ${c.valeurs.join(', ')}` };
   }
   return { ok: true, valeur };
+}
+
+/** Les envois WhatsApp qu'un bloc seul peut porter. Un formulaire ou une question attendent toujours. */
+const ENVOIS = new Set(['sendTemplate', 'sendQuickMessage']);
+
+/** Pourquoi un bloc ne peut pas partir seul, selon ce sur quoi le parcours s'arrêterait. */
+const RAISON_REPOS: Record<string, string> = {
+  waiting: 'ce bloc attend une réponse du client : utilisez « Lancer un scénario »',
+  agent_turn: 'ce bloc passe la main à un agent IA : utilisez « Lancer un scénario »',
+  inbox: 'ce bloc remonte la conversation à un humain : utilisez « Lancer un scénario »',
+  sleeping: 'ce bloc contient une attente : utilisez « Lancer un scénario »',
+  rcs_send: 'ce bloc envoie en RCS, l’agent de Meta parle en WhatsApp',
+};
+
+export const BLOC_DISPARU = 'ce bloc n’existe plus dans le scénario';
+
+function noeudDuCode(graph: WorkflowGraph, code: string): WorkflowNode | null {
+  return graph.nodes.find((n) => String(n.data.code ?? '') === code) ?? null;
+}
+
+/** Le nom d'un bloc tel que l'écran le montre : celui donné par l'utilisateur, sinon son résumé. */
+export function nomDuBloc(n: WorkflowNode): string {
+  const libre = typeof n.data.name === 'string' ? n.data.name.trim() : '';
+  return libre !== '' ? libre : summarize(n.type, n.data) || n.type;
+}
+
+/**
+ * LE BLOC SEUL (spec 2026-09-21-outils-maison-mba, § 3.3) : le bloc désigné, SANS ce qui le suit, et seulement
+ * s'il ne demande pas de réponse.
+ *
+ * 🔴 VÉRIFIÉ À LA CRÉATION ET À CHAQUE APPEL : le scénario peut avoir été modifié depuis. Le walk est pur et se
+ * joue sur un graphe RÉDUIT au seul bloc, qui est aussi ce que le relais envoie : ce qui suit le bloc dans le
+ * scénario ne peut donc pas partir. `mbaActif: true` parce que l'agent de Meta est par définition allumé.
+ * `modele` dit si tout ce qui part est un modèle, seul envoi possible hors de la fenêtre de 24 h.
+ */
+export function blocSeul(
+  graph: WorkflowGraph, code: string,
+): { ok: true; noeudId: string; graphe: WorkflowGraph; modele: boolean } | { ok: false; raison: string } {
+  if (!CODE_BLOC_RE.test(code)) return { ok: false, raison: BLOC_DISPARU };
+  const noeud = noeudDuCode(graph, code);
+  if (!noeud) return { ok: false, raison: BLOC_DISPARU };
+  const graphe: WorkflowGraph = { nodes: [noeud], edges: [] };
+  const { actions, rest } = walk(graphe, noeud.id, undefined, { mbaActif: true });
+  if (rest.status !== 'done') return { ok: false, raison: RAISON_REPOS[rest.status] ?? 'ce bloc ne peut pas partir seul' };
+  const envois = actions.filter((a) => ENVOIS.has(a.action.kind));
+  if (envois.length === 0) return { ok: false, raison: 'ce bloc n’envoie aucun message' };
+  return { ok: true, noeudId: noeud.id, graphe, modele: envois.every((a) => a.action.kind === 'sendTemplate') };
+}
+
+/** Le nom du bloc désigné par ce code, ou `null` s'il n'est plus dans le graphe. */
+export function nomDuBlocParCode(graph: WorkflowGraph, code: string): string | null {
+  const n = noeudDuCode(graph, code);
+  return n ? nomDuBloc(n) : null;
+}
+
+export interface BlocPropose {
+  workflowId: string; scenario: string; code: string; nom: string; type: string; envoyable: boolean; raison: string | null;
+}
+
+/**
+ * Les blocs PUBLIÉS de l'espace, pour le choix de l'écran : les refusés restent visibles, avec leur raison, pour
+ * qu'on comprenne pourquoi un bloc à boutons ne se choisit pas (il se lance avec son scénario).
+ */
+export function blocsProposables(workflows: readonly { id: string; name: string; graph: WorkflowGraph }[]): BlocPropose[] {
+  const sortie: BlocPropose[] = [];
+  for (const wf of workflows) {
+    for (const n of wf.graph.nodes) {
+      const code = String(n.data.code ?? '');
+      if (!CODE_BLOC_RE.test(code)) continue;
+      const r = blocSeul(wf.graph, code);
+      sortie.push({
+        workflowId: wf.id, scenario: wf.name, code, nom: nomDuBloc(n), type: n.type,
+        envoyable: r.ok, raison: r.ok ? null : r.raison,
+      });
+    }
+  }
+  return sortie;
 }

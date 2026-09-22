@@ -48,6 +48,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
 import { creerRendreLeFil, creerPrendreLeFil, creerPrendreLeFilAvecUnRejeu } from '../inbox/controle-du-fil';
+import { destinataireAgentEvent, evenementHorsParcours } from '../mba/evenement';
 import { creerNumeroDeLEspace } from '../meta/numero-espace';
 
 /**
@@ -526,6 +527,68 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // construction finissent toujours par diverger sur une option.
   const agentSessions = new PgAgentSessionStore(pool);
 
+  /**
+   * Fin de parcours : DEMANDE que le fil soit rendu à l'agent de Meta, et le rend pour de vrai quand notre
+   * dernier envoi est acquitté (migration 0149).
+   *
+   * 🔴 ON NE RELÂCHE PLUS DANS LA SECONDE QUI SUIT L'ENVOI, ET C'EST LE DÉFAUT QUE ÇA RÉPARE. Sa
+   * documentation dit qu'envoyer un message PREND le fil implicitement : notre release partait donc avant
+   * que l'envoi ne soit traité, et l'envoi reprenait le fil juste derrière. L'agent de Meta restait muet,
+   * le client parlait dans le vide, et rien n'apparaissait dans « À traiter ». Mesuré sur le numéro de
+   * production le 2026-09-15 : trois releases émis deux secondes après un envoi ont échoué, celui émis
+   * quatorze minutes après a marché.
+   *
+   * ⚠️ CE COMMENTAIRE A ATTRIBUÉ CE DÉLAI À META (« DEUX MINUTES DE RETARD »), ET C'ÉTAIT FAUX. Corrigé le
+   * 2026-09-15 au soir : Meta acquitte en une seconde, les deux minutes étaient celles de notre file
+   * d'accusés. Ce qui ne change pas, c'est qu'on attend une PREUVE et non un délai. Détail dans
+   * `PgInboxStore.demanderReleaseMba`.
+   *
+   * 🔴 L'ÉTAT D'ATTENTE EST `app_human`, ET C'EST DÉLIBÉRÉ. Tant que Meta n'a pas confirmé, écrire `mba`
+   * serait mentir (l'écran afficherait la marque du robot sur un fil que nous tenons encore) et laisser
+   * `app_workflow` serait pire : c'est la SEULE valeur que le dossier « À traiter » exclut, donc un client
+   * qui écrit pendant cette fenêtre ne produirait aucune ligne de travail. `app_human` ne se voit pas tant
+   * que le dernier message est SORTANT, et devient une ligne de travail dès que le client répond.
+   *
+   * ⚠️ ET C'EST AUSSI CE QUI ARME LE FILET : le balayage de contrôle reprend les fils `app_human` restés
+   * immobiles et, chez un client qui a l'agent de Meta allumé, les lui rend EN APPELANT META. Un accusé qui
+   * n'arriverait jamais n'enterre donc pas la conversation, il retarde la remise.
+   *
+   * ⚠️ RIEN N'A ÉTÉ ENVOYÉ : on relâche tout de suite. Il n'y a aucune course à éviter, et attendre un
+   * accusé qui ne viendra jamais gèlerait le fil jusqu'au balayage.
+   *
+   * ⚠️ RENDU AUSSI par `buildWorkflowRuntime` : le relais de l'agent de Meta l'appelle quand un bloc ou un scénario
+   * n'a pas pu partir APRÈS la reprise du fil (spec 2026-09-21-outils-maison-mba). Personne d'autre ne le rendrait.
+   */
+  const rendreLaMainApresParcours = async (tenant: string, waId: string): Promise<void> => {
+    if (!(await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }))) return;
+    const attendu = await inboxStore.demanderReleaseMba(tenant, waId);
+    if (attendu) return;
+    await rendreLeFilMaintenant(tenant, waId);
+  };
+
+  /**
+   * LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 5).
+   *
+   * 🔴 SEULEMENT SI LE FIL EST VRAIMENT À LUI (`mba` chez nous) : une conversation de TEST, un release refusé ou un
+   * marqueur en attente laissent un autre détenteur, et l'événement n'aurait personne pour y répondre. Le message
+   * transmis est la dernière saisie du contact, celle qui vient de faire sortir le parcours : elle est enregistrée
+   * AVANT l'avance du parcours (`processInbound` puis `processWorkflowAdvance`, `src/webhooks/handler.ts`).
+   * Best-effort : un échec est journalisé par l'exécuteur, et l'agent répondra au message suivant du client.
+   */
+  const transmettreHorsParcours = async (tenant: string, waId: string): Promise<void> => {
+    if ((await inboxStore.getControlOwner(tenant, waId)) !== 'mba') {
+      // eslint-disable-next-line no-console
+      console.log(`agent_event non envoyé pour ${waId} : le fil n’est pas à l’agent de Meta`);
+      return;
+    }
+    const pn = await numeroDeLEspace(tenant);
+    if (!pn) return;
+    const texte = await inboxStore.derniereSaisieDuContact(tenant, waId);
+    if (texte === null) return;
+    const client = await metaFactory.mbaClientForTenant(tenant);
+    await client.agentEvent(pn, destinataireAgentEvent(waId), evenementHorsParcours(texte), AbortSignal.timeout(10_000));
+  };
+
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
     // Canal RCS du bloc `rcs_message`. `agentIdFor` est scopé tenant : c'est lui qui empêche un scénario
@@ -608,41 +671,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // l'erreur de raisonnement qui a laissé `reclaimControl` n'écrire que notre colonne pendant des
     // semaines : on ne durcit pas un chemin qu'on croit mort.
     mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
-    /**
-     * Fin de parcours : DEMANDE que le fil soit rendu à l'agent de Meta, et le rend pour de vrai quand notre
-     * dernier envoi est acquitté (migration 0149).
-     *
-     * 🔴 ON NE RELÂCHE PLUS DANS LA SECONDE QUI SUIT L'ENVOI, ET C'EST LE DÉFAUT QUE ÇA RÉPARE. Sa
-     * documentation dit qu'envoyer un message PREND le fil implicitement : notre release partait donc avant
-     * que l'envoi ne soit traité, et l'envoi reprenait le fil juste derrière. L'agent de Meta restait muet,
-     * le client parlait dans le vide, et rien n'apparaissait dans « À traiter ». Mesuré sur le numéro de
-     * production le 2026-09-15 : trois releases émis deux secondes après un envoi ont échoué, celui émis
-     * quatorze minutes après a marché.
-     *
-     * ⚠️ CE COMMENTAIRE A ATTRIBUÉ CE DÉLAI À META (« DEUX MINUTES DE RETARD »), ET C'ÉTAIT FAUX. Corrigé le
-     * 2026-09-15 au soir : Meta acquitte en une seconde, les deux minutes étaient celles de notre file
-     * d'accusés. Ce qui ne change pas, c'est qu'on attend une PREUVE et non un délai. Détail dans
-     * `PgInboxStore.demanderReleaseMba`.
-     *
-     * 🔴 L'ÉTAT D'ATTENTE EST `app_human`, ET C'EST DÉLIBÉRÉ. Tant que Meta n'a pas confirmé, écrire `mba`
-     * serait mentir (l'écran afficherait la marque du robot sur un fil que nous tenons encore) et laisser
-     * `app_workflow` serait pire : c'est la SEULE valeur que le dossier « À traiter » exclut, donc un client
-     * qui écrit pendant cette fenêtre ne produirait aucune ligne de travail. `app_human` ne se voit pas tant
-     * que le dernier message est SORTANT, et devient une ligne de travail dès que le client répond.
-     *
-     * ⚠️ ET C'EST AUSSI CE QUI ARME LE FILET : le balayage de contrôle reprend les fils `app_human` restés
-     * immobiles et, chez un client qui a l'agent de Meta allumé, les lui rend EN APPELANT META. Un accusé qui
-     * n'arriverait jamais n'enterre donc pas la conversation, il retarde la remise.
-     *
-     * ⚠️ RIEN N'A ÉTÉ ENVOYÉ : on relâche tout de suite. Il n'y a aucune course à éviter, et attendre un
-     * accusé qui ne viendra jamais gèlerait le fil jusqu'au balayage.
-     */
-    releaseToMba: async (tenant, waId) => {
-      if (!(await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }))) return;
-      const attendu = await inboxStore.demanderReleaseMba(tenant, waId);
-      if (attendu) return;
-      await rendreLeFilMaintenant(tenant, waId);
-    },
+    releaseToMba: rendreLaMainApresParcours,
+    transmettreHorsParcours,
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
     evalContext: buildEvalContext,
@@ -1043,5 +1073,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, rendreLaMainApresParcours, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
 }

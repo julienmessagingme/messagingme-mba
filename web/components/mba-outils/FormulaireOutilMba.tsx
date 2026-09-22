@@ -5,7 +5,7 @@ import {
   creerOutilMba, modifierOutilMba, type CibleSaisie, type OutilMbaVue, type TypeOutilMba,
 } from '@/lib/api-mba-outils';
 import { BORNES_OUTIL, TEXTES_PAR_TYPE, consigneIncomplete, nomTechniqueDepuisTitre } from '@/lib/mba-outils';
-import { CibleChamp, CibleConnecteur, CibleTag } from './CiblesOutil';
+import { CibleBloc, CibleChamp, CibleConnecteur, CibleScenario, CibleTag } from './CiblesOutil';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
 
@@ -15,8 +15,12 @@ function cibleInitiale(type: TypeOutilMba, outil: OutilMbaVue | null): CibleSais
   if (c?.type === 'tag') return { type: 'tag', tag: c.tag };
   if (c?.type === 'champ') return { type: 'champ', champ: c.champ, valeurs: c.valeurs };
   if (c?.type === 'connecteur') return { type: 'connecteur', requeteId: c.requeteId };
+  if (c?.type === 'bloc') return { type: 'bloc', workflowId: c.workflowId, code: c.code };
+  if (c?.type === 'scenario') return { type: 'scenario', workflowId: c.workflowId };
   if (type === 'tag') return { type: 'tag', tag: '' };
   if (type === 'champ') return { type: 'champ', champ: '', valeurs: [] };
+  if (type === 'bloc') return { type: 'bloc', workflowId: '', code: '' };
+  if (type === 'scenario') return { type: 'scenario', workflowId: '' };
   return null;
 }
 
@@ -33,6 +37,8 @@ function cibleComplete(c: CibleSaisie | null): boolean {
   if (c === null) return false;
   if (c.type === 'tag') return c.tag.trim() !== '';
   if (c.type === 'champ') return c.champ !== '';
+  if (c.type === 'bloc') return c.workflowId !== '' && c.code !== '';
+  if (c.type === 'scenario') return c.workflowId !== '';
   return c.requeteId !== '';
 }
 
@@ -129,6 +135,20 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
       {cible?.type === 'champ' && (
         <CibleChamp tenantId={tenantId} champ={cible.champ} valeurs={cible.valeurs}
           onChange={(champ, valeurs) => setCible({ type: 'champ', champ, valeurs })} />
+      )}
+      {cible?.type === 'bloc' && (
+        <CibleBloc tenantId={tenantId} workflowId={cible.workflowId} code={cible.code}
+          onChange={(workflowId, code, nom) => {
+            setCible({ type: 'bloc', workflowId, code });
+            if (title.trim() === '') changerTitre(nom);
+          }} />
+      )}
+      {cible?.type === 'scenario' && (
+        <CibleScenario tenantId={tenantId} workflowId={cible.workflowId}
+          onChange={(workflowId, nom) => {
+            setCible({ type: 'scenario', workflowId });
+            if (title.trim() === '' && nom !== null) changerTitre(nom);
+          }} />
       )}
       {type === 'connecteur' && (
         <CibleConnecteur tenantId={tenantId} requeteId={cible?.type === 'connecteur' ? cible.requeteId : null} fixe={outil !== null}

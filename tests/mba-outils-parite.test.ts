@@ -44,6 +44,9 @@ function champsDInterface(src: string, nom: string): string[] {
   return [...corps.matchAll(/^\s+([a-zA-Z]+)\??:/gm)].map((x) => x[1]!).sort();
 }
 
+const WF = '11111111-1111-4111-8111-111111111111';
+const CODE = `nod_abc_${'A'.repeat(26)}`;
+
 const serveurVue = lire('src/mba/vue-outils.ts');
 const serveurMaison = lire('src/mba/outils-maison.ts');
 const web = lire('web/lib/api-mba-outils.ts');
@@ -77,6 +80,8 @@ describe('les types, des deux côtés', () => {
     const EXEMPLES: Record<HandlerMaisonMba, CibleMaison> = {
       tag_fixe: { handler: 'tag_fixe', tag: 'vip' },
       champ_fixe: { handler: 'champ_fixe', champ: 'ville', valeurs: [] },
+      bloc_fixe: { handler: 'bloc_fixe', workflowId: WF, code: CODE },
+      scenario_fixe: { handler: 'scenario_fixe', workflowId: WF },
     };
     for (const h of HANDLERS_MAISON_MBA) expect(TYPES_SAISISSABLES).toContain(typeDeLaCible(EXEMPLES[h]));
   });
@@ -120,6 +125,10 @@ describe('« ✓ Chez Meta » ne se dit que de ce qui part chez Meta', () => {
   });
   const ctx: ContexteVue = {
     requetes: new Map([['rq1', { label: 'Poser une étiquette' }]]), champs: new Set(['ville']), bibliotheque: new Map(),
+    workflows: new Map([[WF, { name: 'Accueil', graph: {
+      nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { code: CODE, body: 'Brochure', quickReplies: [] } }],
+      edges: [],
+    } }]]),
   };
   const requete = async (id: string) => (ctx.requetes.has(id) ? { variables: [] } : null);
 
@@ -128,6 +137,10 @@ describe('« ✓ Chez Meta » ne se dit que de ce qui part chez Meta', () => {
     ['un champ', outil({ binding: { handler: 'champ_fixe', champ: 'ville', valeurs: [] } })],
     // Publié quand même : le relais refuse l'appel, et la ligne rouge le dit.
     ['un champ supprimé du mini-CRM', outil({ binding: { handler: 'champ_fixe', champ: 'disparu', valeurs: [] } })],
+    ['un bloc', outil({ binding: { handler: 'bloc_fixe', workflowId: WF, code: CODE } })],
+    // Publié quand même, comme un champ supprimé : le relais refuse chaque appel, et la ligne rouge le dit.
+    ['un bloc dont le scénario est supprimé', outil({ binding: { handler: 'bloc_fixe', workflowId: '99999999-9999-4999-8999-999999999999', code: CODE } })],
+    ['un scénario', outil({ binding: { handler: 'scenario_fixe', workflowId: WF } })],
     ['un connecteur', outil({ origin: 'http', requestId: 'rq1' })],
     ['un connecteur dont l’appel est supprimé', outil({ origin: 'http', requestId: 'rq9' })],
     ['un connecteur sans appel', outil({ origin: 'http', requestId: null })],

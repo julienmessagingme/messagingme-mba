@@ -1767,13 +1767,14 @@ importez ce qu'il propose.
 
 Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 § 9). **Déployé et éprouvé en conversation réelle le 2026-09-21 au soir** (migration 0162) : une étiquette et une
-information posées par l'agent de Meta, relues en base.
+information posées par l'agent de Meta, relues en base. **Envoyer un bloc, lancer un scénario et la réponse « à
+côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conversation reste à faire.
 
 - ✅ **Une liste claire des outils de l'agent de Meta, et d'eux seuls** : pour chacun, son titre, ce qu'il vise
   (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
   chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent depuis sa fiche.
 - ✅ **Un gros bouton « + Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
-  information**, **Appeler un connecteur API**. Un type est grisé, avec le lien qui y mène, tant que l'espace
+  information**, **Envoyer un bloc**, **Lancer un scénario**, **Appeler un connecteur API**. Un type est grisé, avec le lien qui y mène, tant que l'espace
   n'a rien à y mettre : aucun appel déclaré (Tools > Connecteurs API), aucun champ déclaré (Contenu >
   Bibliothèque > Champs). Une lecture ratée ne passe pas pour « aucun » : elle le dit, avec « Réessayer ».
 - ✅ **Poser un tag** : l'étiquette est fixée par l'administrateur, l'agent de Meta ne décide que du moment. Elle
@@ -1783,6 +1784,21 @@ information posées par l'agent de Meta, relues en base.
   pas, et il n'est pas rejoué ensuite. L'écran le dit.
 - ✅ **Enregistrer une information** : le champ de la fiche est fixé, l'agent de Meta fournit la valeur, tirée
   de la conversation. En option, une liste de valeurs permises : une autre valeur est refusée, et l'agent le sait.
+- ✅ **Envoyer un bloc** : un message précis d'un de vos scénarios publiés (un message rapide, un modèle), choisi
+  à l'avance. Il part SEUL, sans ce qui le suit dans le scénario, et l'agent de Meta reprend la parole au message
+  suivant du client. 🔴 Un bloc qui attend une réponse (des boutons, une question, un formulaire, une attente, un
+  agent IA) ne se choisit pas : il reste visible, grisé, avec sa raison, qui renvoie vers « Lancer un scénario ».
+  Hors de la fenêtre de 24 h, seul un modèle part. Si le scénario change ensuite (bloc supprimé, devenu une
+  question), la ligne passe en rouge et l'agent de Meta lit pourquoi à chaque appel. C'est irréversible, et
+  l'écran le dit : un message parti ne se rappelle pas.
+- ✅ **Lancer un scénario** : un scénario publié, depuis son début, exactement comme le bouton de l'Inbox. Engage
+  Me prend la conversation le temps du parcours, puis la rend à l'agent de Meta. Un brouillon jamais publié n'est
+  pas proposé. Un client bloqué ne reçoit rien, et l'agent de Meta le sait.
+- ✅ **La réponse « à côté »** : quand un scénario pose une question à boutons et que le client écrit autre chose
+  (« vous êtes ouverts dimanche ? »), le parcours s'arrête, la conversation revient à l'agent de Meta ET son
+  message lui est transmis : il y répond aussitôt, au lieu d'attendre le message suivant du client. Rien n'est
+  transmis sur une fin normale de parcours, ni quand le client tape un bouton qui ne mène nulle part (la
+  conversation part alors à un humain), ni sur une conversation de test.
 - ✅ **Enregistrer, c'est envoyer à Meta.** Créer, modifier ou supprimer un outil le porte chez Meta dans le même
   geste ; il n'y a plus de bouton « Envoyer » à retenir (c'est son oubli qui avait fait rater le premier essai
   du relais). Un envoi qui échoue ne défait pas l'enregistrement : la ligne reste « À envoyer ».
