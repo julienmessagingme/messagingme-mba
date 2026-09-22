@@ -227,7 +227,7 @@ function verifier(r: ARegler, clesDeChamps: readonly string[]): string | null {
 
   // 4. Toute variable UTILISÉE dans un gabarit doit être déclarée. C'est la faute la plus fréquente, et sans
   // cette garde elle ne se voit qu'à l'appel, où elle refuse la requête au milieu d'une conversation.
-  const utilisees = variablesUtilisees(r.corps, r.parametres, r.chemin);
+  const utilisees = variablesUtilisees(r.corps, r.parametres, r.chemin, r.entetes);
   const inconnues = utilisees.filter((n) => !noms.has(n));
   if (inconnues.length > 0) return `variable(s) utilisée(s) mais non déclarée(s) : ${inconnues.join(', ')}`;
 

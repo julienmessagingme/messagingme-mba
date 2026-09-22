@@ -62,6 +62,9 @@ function segments(chemin: string): string[] {
  *  4. un gabarit qui référence un paramètre absent est un REFUS, jamais un chemin à trou : `/commandes/`
  *     appellerait la liste ENTIÈRE des commandes du client, et l'agent la lirait.
  */
+/** `{{ nom }}` (noms à points et tirets, comme dans le corps) ou `{nom}`. Voir l'étape 2 de `construireCible`. */
+export const VARIABLE_DE_CHEMIN = /\{\{\s*([\w.-]+)\s*\}\}|\{([a-zA-Z0-9_]+)\}/g;
+
 export function construireCible(input: {
   baseUrl: string;
   binding: { methode: string; chemin: string };
@@ -86,8 +89,13 @@ export function construireCible(input: {
   if (base.protocol !== 'https:') return { ok: false, raison: 'adresse de base : HTTPS obligatoire' };
 
   // 2. Le gabarit, paramètre par paramètre. Une valeur manquante refuse.
+  // 🔴 LES DEUX FORMES (2026-09-23) : `{nom}`, historique des outils d'agent IA, et `{{nom}}`, celle que la pastille
+  // de l'écran des Connecteurs API insère, comme partout ailleurs dans une requête. Seule la première était
+  // lue : dans `/users/{{id}}`, l'accolade intérieure était remplacée et l'extérieure partait telle quelle,
+  // donc l'appel visait `/users/%7B123%7D`. La forme double se lit EN PREMIER, sinon la simple la mangerait.
   let manquant: string | null = null;
-  const chemin = String(binding.chemin ?? '').trim().replace(/\{([a-zA-Z0-9_]+)\}/g, (_m, nom: string) => {
+  const chemin = String(binding.chemin ?? '').trim().replace(VARIABLE_DE_CHEMIN, (_m, double: string | undefined, simple: string | undefined) => {
+    const nom = (double ?? simple)!;
     const v = valeurDeChemin(args[nom]);
     if (v === null) { manquant = nom; return ''; }
     return encodeURIComponent(v);

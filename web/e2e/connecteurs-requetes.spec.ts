@@ -305,6 +305,30 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     await expect(page.getByTestId(`requete-supprimer-${RQ}`)).toBeDisabled();
   });
 
+  test('🔴 en MODIFIANT un appel rempli, chaque colonne garde son intitulé (Julien, 2026-09-23)', async ({ page }) => {
+    // Les intitulés n'étaient que des `placeholder`, effacés par les valeurs chargées : on ne savait plus quelle
+    // colonne était le nom, la valeur, ou la valeur d'essai.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, {
+      requetes: [{
+        ...REQUETE,
+        parametres: [{ cle: 'ville', valeur: '{{ville}}' }],
+        entetes: [{ nom: 'X-Client', valeur: '42' }],
+      }],
+    });
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    // Les variables s'ouvrent en premier : nom, origine, type, obligatoire, valeur d'essai.
+    await expect(page.getByTestId('var-intitules')).toContainText(/Nom de la donnée|Data name/);
+    await expect(page.getByTestId('var-intitules')).toContainText(/Valeur d’essai|Test value/);
+    await expect(page.getByTestId('var-test-0')).toHaveValue('CMD-1');
+    await page.getByTestId('onglet-url').click();
+    await expect(page.getByTestId('param-intitules')).toContainText(/Nom du paramètre|Parameter name/);
+    await expect(page.getByTestId('param-cle-0')).toHaveValue('ville');
+    await page.getByTestId('onglet-entetes').click();
+    await expect(page.getByTestId('entete-intitules')).toContainText(/Nom de l’en-tête|Header name/);
+    await expect(page.getByTestId('entete-valeur-0')).toHaveValue('42');
+  });
+
   test('l’écran DIT que les en-têtes d’authentification ne se règlent pas ici', async ({ page }) => {
     // Le champ « en-têtes » d'un mini-Postman est l'endroit le plus naturel pour coller un jeton en clair. La
     // route le refuse ; l'écran doit l'annoncer AVANT la saisie, pas après.

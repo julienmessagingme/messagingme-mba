@@ -41,6 +41,18 @@ describe('construireCible : l’adresse de base', () => {
 });
 
 describe('construireCible : le gabarit de chemin', () => {
+  it('🔴 la forme {{nom}} (celle de la pastille de l’écran) est substituée, sans accolade restante (2026-09-23)', () => {
+    // Seul `{nom}` était lu : `/users/{{id}}` visait `/users/%7B123%7D`.
+    for (const chemin of ['/users/{{id}}', '/users/{{ id }}']) {
+      const r = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin }, args: { id: '123' } });
+      expect(url(r)).toBe('https://api.client.fr/v1/users/123');
+    }
+    const pointe = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin: '/c/{{client.ref}}' }, args: { 'client.ref': 'A' } });
+    expect(url(pointe)).toBe('https://api.client.fr/v1/c/A');
+    const manquant = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin: '/users/{{id}}' }, args: {} });
+    expect(manquant).toEqual({ ok: false, raison: 'paramètre « id » manquant' });
+  });
+
   it('remplit les paramètres et rend l’URL finale', () => {
     const r = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin: '/commandes/{ref}' }, args: { ref: 'A-42' } });
     expect(r.ok).toBe(true);
