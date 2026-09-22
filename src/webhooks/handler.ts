@@ -8,6 +8,8 @@ import { processRemiseMbaEntrant, type RemiseMbaEntrantDeps } from './remise-mba
 import { processHandovers } from './handover';
 import { processTriggers } from './triggers';
 import { processTestTokens } from './test-token';
+import { processArriveesPub, type ArriveesPubDeps } from './arrivees-pub';
+import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
 import type { InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
@@ -45,11 +47,9 @@ export interface FlowMappingDeps {
  * Tout est optionnel sauf `store` : une dépendance absente désactive son étape, ce qui est exactement ce dont
  * la file des accusés se sert pour n'exécuter que la livraison.
  */
-export interface WebhookJobDeps {
+interface WebhookJobDepsCommunes {
   /** Le seul obligatoire : l'insertion idempotente des événements bruts. */
   store: EventStore;
-  delivery?: DeliveryStore;
-  inbox?: InboxStore;
   flowMapping?: FlowMappingDeps;
   workflowAdvance?: WorkflowAdvanceDeps;
   /**
@@ -85,10 +85,25 @@ export interface WebhookJobDeps {
   remiseMba?: RemiseMbaSurAccuse;
 }
 
+/**
+ * 🔴 DEUX COUPLES DE DÉPENDANCES OBLIGATOIRES (lot 1 des publicités Click-to-WhatsApp).
+ *
+ * Une file qui traite des ACCUSÉS (`delivery`) doit garder leur tarif (`tarifsMeta`) : c'est la seule source de
+ * « Meta ne facture pas ce message », et les accusés arrivent par DEUX files (`webhook` et `webhook-status`).
+ * Une file qui traite des ENTRANTS (`inbox`) doit garder les arrivées publicitaires (`arriveesPub`) : Meta
+ * n'envoie `ctwa_clid` qu'une fois. Un oubli ne se verrait nulle part, donc c'est le compilateur qui le refuse.
+ * Les tests qui n'en parlent pas passent `aucunTarif` et `aucuneArriveePub` (`tests/webhook-fixtures.ts`), qui
+ * DISENT leur hypothèse, comme `jamaisDesabonne`.
+ */
+export type WebhookJobDeps = WebhookJobDepsCommunes
+  & ({ delivery: DeliveryStore; tarifsMeta: TarifsMetaSink } | { delivery?: undefined; tarifsMeta?: undefined })
+  & ({ inbox: InboxStore; arriveesPub: ArriveesPubDeps } | { inbox?: undefined; arriveesPub?: undefined });
+
 export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
+    tarifsMeta, arriveesPub,
   } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -100,7 +115,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
-  if (delivery) await processStatuses(events, delivery, nodeEvents, remiseMba);
+  if (delivery) await processStatuses(events, delivery, nodeEvents, remiseMba, tarifsMeta);
   // Contacts CRÉÉS par ce webhook (clé `tenant:waId`). Le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert : une fois la fiche créée, plus rien ne le distingue d'un habitué. On le capture
   // donc au vol, pour la durée de CE job (aucun état global, aucune requête supplémentaire).
@@ -118,6 +133,9 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
       }
     : undefined;
   if (inbox) await processInbound(raw, inbox, upsert, inboundOptOut, inboundAssignation);
+  // L'arrivée publicitaire, APRÈS l'upsert du contact qu'elle retrouve par son wa_id. Isolée par message dans
+  // `processArriveesPub` : elle ne fait jamais échouer le job.
+  if (arriveesPub) await processArriveesPub(raw, arriveesPub);
   // Report Flow -> user fields. ISOLÉ : ne doit JAMAIS faire échouer le job (partagé avec les statuts de
   // livraison + l'inbox). Un throw ici rejouerait/DLQ tout le webhook, donc aussi les statuts déjà traités.
   if (flowMapping) {

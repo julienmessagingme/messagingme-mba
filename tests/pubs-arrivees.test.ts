@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueArrivee } from '../src/webhooks/arrivees-pub';
+import { handleWebhookJob } from '../src/webhooks/handler';
 
 const referral = {
   source_url: 'https://fb.me/x', source_id: '120212345678901234', source_type: 'ad',
@@ -89,5 +90,21 @@ describe('processArriveesPub', () => {
       },
     })).resolves.toBeUndefined();
     expect(ok).toEqual(['OK']);
+  });
+});
+
+describe('handleWebhookJob : l’arrivée publicitaire', () => {
+  it('🔴 elle s’écrit APRÈS l’upsert du contact, qu’elle retrouve par son wa_id', async () => {
+    const ordre: string[] = [];
+    await handleWebhookJob(payload([message('wamid.h', '33611', referral)]), {
+      store: { insertEvent: async () => true },
+      inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => {} },
+      inboundContactUpsert: async () => { ordre.push('upsert'); return 'created'; },
+      arriveesPub: {
+        phoneNumberTenant: async () => 't1',
+        enregistrer: async () => { ordre.push('arrivee'); return 'ecrite'; },
+      },
+    });
+    expect(ordre).toEqual(['upsert', 'arrivee']);
   });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extractDelivery, processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus } from '../src/webhooks/delivery';
 import { handleWebhookJob } from '../src/webhooks/handler';
+import { aucunTarif } from './webhook-fixtures';
 import type { EventStore, StoredEvent } from '../src/webhooks/store';
 
 describe('extractDelivery', () => {
@@ -66,6 +67,7 @@ describe('processStatuses via handleWebhookJob', () => {
     await handleWebhookJob(payload, {
       store: events,
       delivery,
+      tarifsMeta: aucunTarif,
     });
     expect(delivery.calls.map((c) => `${c.messageId}:${c.status}`)).toEqual(['wamid.1:sent', 'wamid.1:read']);
     // Les événements (statuts + message entrant) sont tous stockés.

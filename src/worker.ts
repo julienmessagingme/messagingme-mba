@@ -37,6 +37,8 @@ import { plafondDuCanal, plafondLePlusBas, resolveRatePerMinute } from './campai
 import { flagContactUnreachable } from './crm/hubspot-service';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
+import { PgArriveesPubStore } from './pubs/arrivees.pg';
+import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
 import { runHandoffSweep } from './mba/handoff-sweep';
@@ -214,6 +216,9 @@ async function main(): Promise<void> {
   const eventStore = new PgEventStore(pool);
   const recipientStore = new PgRecipientStore(pool);
   const inboxStore = new PgInboxStore(pool);
+  // Lot 1 des publicités Click-to-WhatsApp : ce qui se perd si on ne le garde pas à la réception.
+  const arriveesPubStore = new PgArriveesPubStore(pool);
+  const tarifsMetaStore = new PgTarifsMetaStore(pool);
   // Le journal des erreurs. Le worker n'en LIT jamais : il y écrit les échecs d'avance de scénario, qui
   // n'avaient aucun domicile et disparaissaient dans un `console.error` (lot 4 du plan post-audit).
   const erreursLivraison = new PgErreursLivraisonStore(pool);
@@ -421,6 +426,9 @@ async function main(): Promise<void> {
        * câblée sur un consommateur sur deux », déjà payé plusieurs fois dans ce dépôt.
        */
       remiseMba: remiseMbaSurAccuse,
+      // 🔴 SUR LES DEUX FILES qui voient des accusés, pour la raison écrite juste au-dessus : le tarif est la
+      // seule source de « Meta ne facture pas ce message ».
+      tarifsMeta: tarifsMetaStore,
       /**
        * 🔴 SUR CETTE FILE ET PAS SUR L'AUTRE, contrairement à `remiseMba` juste au-dessus. Un message
        * ENTRANT n'arrive jamais par `webhook-status` : le receveur n'y route que les lots d'accusés purs.
@@ -432,6 +440,11 @@ async function main(): Promise<void> {
         remettre: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
       },
       inbox: inboxStore,
+      // L'arrivée publicitaire (`ctwa_clid` compris) : un message ENTRANT n'arrive que par cette file.
+      arriveesPub: {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        enregistrer: (t, w, a) => arriveesPubStore.enregistrer(t, w, a),
+      },
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
       // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
@@ -595,7 +608,7 @@ async function main(): Promise<void> {
     // Trois dépendances NOMMÉES là où il y avait sept `undefined` d'affilée : ce qui est absent l'est
     // volontairement (aucune conversation, aucune automation, aucun scénario ne se déclenche sur un accusé),
     // et ça se lit maintenant sans compter les virgules.
-    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse });
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse, tarifsMeta: tarifsMetaStore });
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT

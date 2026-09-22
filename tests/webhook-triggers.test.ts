@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { processTriggers } from '../src/webhooks/triggers';
+import { aucuneArriveePub } from './webhook-fixtures';
 import type { AutomationEvent } from '../src/automation/match';
 
 /**
@@ -79,6 +80,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await handleWebhookJob(inboundPayload('33611', 'bonjour'), {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'created',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
     });
@@ -90,6 +92,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await handleWebhookJob(inboundPayload('33611', 'bonjour'), {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
     });
@@ -108,6 +111,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await handleWebhookJob(payload, {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'created',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { flags.push(ev.kind === 'message' && ev.isNewContact); return 1; } },
     });
@@ -119,6 +123,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await expect(handleWebhookJob(inboundPayload('33611', 'rdv'), {
       store: eventStore,
       inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => { inboundRecorded += 1; } },
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => { throw new Error('base indisponible'); }, run: async () => 0 },
     })).resolves.toBeUndefined();
@@ -129,6 +134,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await expect(handleWebhookJob(inboundPayload('33611', 'rdv'), {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'updated',
     })).resolves.toBeUndefined();
   });
@@ -146,6 +152,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await handleWebhookJob(inboundPayload('33611', MOT_TEST), {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
@@ -168,6 +175,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await handleWebhookJob(inboundPayload('33611', 'je veux un rdv'), {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
@@ -207,6 +215,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await handleWebhookJob(inboundPayload('33611', 'test-a7k2m9p3'), {
       store: deja,
       inbox,
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
         phoneNumberTenant: async () => 't1',
@@ -222,6 +231,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     await expect(handleWebhookJob(inboundPayload('33611', 'test-a7k2m9p3'), {
       store: eventStore,
       inbox,
+      arriveesPub: aucuneArriveePub,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
         phoneNumberTenant: async () => { throw new Error('base indisponible'); },
