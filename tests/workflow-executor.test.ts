@@ -163,6 +163,36 @@ describe('WorkflowExecutor', () => {
     expect(drapeaux).toEqual([true]);
   });
 
+  it('🔴 start : un scénario qui ouvre sur « passer à un humain » SANS rien envoyer n escalade PAS', async () => {
+    // Le chemin des CAMPAGNES. Une escalade est collante (le balayage ne rend plus le fil à l'agent de Meta
+    // tant que personne n'a répondu) : un scénario qui ouvre directement sur le bloc en poserait une PAR
+    // DESTINATAIRE, pour des contacts qui n'ont rien reçu et n'attendent donc rien. La conversation passe
+    // quand même à un humain, seul le drapeau tombe.
+    const g: WorkflowGraph = {
+      nodes: [n('t', 'tag', { tag: 'vip' }), n('ib', 'inbox')],
+      edges: [e('e1', 't', 'ib')],
+    };
+    const { ex, escalations, drapeaux, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:vip']); // rien n'est parti chez le contact
+    expect(escalations).toEqual(['33600']);
+    expect(drapeaux).toEqual([false]);
+  });
+
+  it('🔴 start : le même bloc APRÈS un envoi escalade bien (le contact a reçu quelque chose)', async () => {
+    // L'autre sens de la même règle : la campagne a parlé au contact, puis passe la main. Quelqu'un attend
+    // vraiment une réponse, donc le drapeau se pose et le fil reste à l'équipe.
+    const g: WorkflowGraph = {
+      nodes: [n('qm', 'quick_message', { body: 'Un conseiller vous répond' }), n('ib', 'inbox')],
+      edges: [e('e1', 'qm', 'ib')],
+    };
+    const { ex, escalations, drapeaux, calls } = make(g);
+    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['qm:Un conseiller vous répond']);
+    expect(escalations).toEqual(['33600']);
+    expect(drapeaux).toEqual([true]);
+  });
+
   // Garde fenêtre 24 h (Lot 7) : `start` = chemin campagne, HORS fenêtre de service -> un scénario qui OUVRE
   // sur un message de session (quick_message/flow) est refusé en bloc (aucune action, aucun run).
   it('start : quick_message en OUVERTURE -> refusé (fenêtre 24 h), aucune action, aucun run', async () => {
@@ -1093,12 +1123,45 @@ describe('advance : le bloc agent rend la main au tour (tâche 10)', () => {
     const { jobs, over } = deps({
       agentSessions: { byRun: async () => null } as unknown as WorkflowExecutorDeps['agentSessions'],
     });
-    const { ex, runs, escalations } = make(avecAreteLibre, over);
+    const { ex, runs, escalations, drapeaux } = make(avecAreteLibre, over);
     poserRunSurAgent(runs);
     await ex.advance('t1', '33600', 'msg1');
     expect(runs.run).toMatchObject({ currentNode: null, status: 'inbox' });
     expect(escalations).toEqual(['33600']);
+    // AUCUNE session : on ne sait rien de ce qui s'est passé, donc pas de drapeau (le contact vient d'écrire,
+    // « À traiter » le porte déjà par son sens de dernier message).
+    expect(drapeaux).toEqual([false]);
     expect(jobs).toEqual([]);
+    spy.mockRestore();
+  });
+
+  it('🔴 session close en SORTIE : le drapeau se pose (l agent IA a promis un humain)', async () => {
+    // Le cas nominal de cette branche : `src/agent/escalade.ts` clôt la session en `sortie` puis bascule le
+    // fil. Si le processus meurt entre les deux, ce rattrapage est le seul à reposer le drapeau, et sans lui
+    // le balayage rendrait à l'agent de Meta un contact à qui on a promis quelqu'un.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { over } = deps({
+      agentSessions: { byRun: async () => ({ ...SESSION, status: 'sortie' }) } as unknown as WorkflowExecutorDeps['agentSessions'],
+    });
+    const { ex, runs, drapeaux } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(drapeaux).toEqual([true]);
+    spy.mockRestore();
+  });
+
+  it('🔴 session close en ERREUR : PAS de drapeau, c est une panne et personne n a rien promis', async () => {
+    // La même branche attrape un tour bloqué clos par `cloreSessionDuRun`, un plafond ou une inactivité. Y
+    // poser le drapeau rendrait le fil collant pour toujours sur une simple panne.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { over } = deps({
+      agentSessions: { byRun: async () => ({ ...SESSION, status: 'erreur' }) } as unknown as WorkflowExecutorDeps['agentSessions'],
+    });
+    const { ex, runs, escalations, drapeaux } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(escalations).toEqual(['33600']); // la conversation remonte bien à l'équipe
+    expect(drapeaux).toEqual([false]);
     spy.mockRestore();
   });
 });

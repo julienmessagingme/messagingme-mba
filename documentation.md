@@ -683,6 +683,12 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   par son `last_direction` ; poser le drapeau n'ajouterait que la collance, et l'agent de Meta ne reprendrait
   plus jamais ce fil. Le choix se fait au POINT D'APPEL (`escalateToHuman(..., escalade)`), jamais dans le
   câblage, qui le relaie.
+  ⚠️ DEUX POINTS D'APPEL NE RÉPONDENT PAS PAR OUI OU PAR NON, ils LISENT. Au DÉMARRAGE d'un scénario (le
+  chemin des campagnes), le drapeau suit ce que le contact a reçu : un scénario qui ouvre directement sur
+  « passer à un humain » sans rien envoyer poserait une escalade par destinataire, sur des gens à qui on n'a
+  rien promis, et aucune action de masse ne les libère. Et au rattrapage d'un parcours resté sur un bloc
+  d'agent IA sans session vivante, le drapeau suit le STATUT de la session close : `sortie` est une fin
+  délibérée (c'est l'escalade de l'agent), `erreur`, `plafond` et `inactivite` sont des pannes.
 - 🔴 **LES DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
   « Archivé » (`archived_at`), « Traité » (`traitee_le`) et l'affectation (`assigned_to`) sont des ÉTATS
   ÉCRITS ; « À traiter » est DÉRIVÉ (`A_TRAITER_SQL`, `src/inbox/store.pg.ts` : scénario qui ne tient pas le

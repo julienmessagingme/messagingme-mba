@@ -1392,8 +1392,17 @@ export class WorkflowExecutor {
       ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, opts.figerLeGraphe === true ? graph : null)
       : null;
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
+    //
+    // 🔴 `partis > 0`, ET C'EST LE SEUL DÉMARRAGE QUI LE DEMANDE (revue finale du 2026-09-23). Ce chemin sert
+    // les CAMPAGNES : un scénario qui ouvre directement sur « passer à un humain » y escalade un fil PAR
+    // DESTINATAIRE, et une escalade est collante (le balayage ne rend plus le fil à l'agent de Meta tant que
+    // personne n'a répondu). Mille contacts qui n'ont RIEN reçu feraient mille fils qu'aucune action de masse
+    // ne libère. Le critère du drapeau est « quelqu'un attend-il une réponse ? » : quand rien n'est parti, on
+    // n'a rien promis, donc rien n'est attendu. La conversation passe quand même à `app_human`, comme avant.
+    // ⚠️ Une campagne qui ENVOIE puis passe la main garde son escalade : là, le contact a bien reçu un message
+    // et le client a délibérément demandé que l'équipe prenne le relais.
     if (rest.status === 'inbox' && this.deps.escalateToHuman) {
-      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, true);
+      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, partis > 0);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
     // Bloc AGENT en ouverture : la session naît maintenant, le run existe enfin.
@@ -1788,9 +1797,21 @@ export class WorkflowExecutor {
         console.error(`workflow ${run.workflowId}: run ${run.id} sur un bloc agent sans session vivante, remonté en inbox`);
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
         // Remontee a l humain sans qu aucun bloc ne l ait demande : pas d affectataire, le fil part au pot
-        // commun. ESCALADE, et c'est le SEUL cas non deliberé qui la merite : le contact a demande un humain a
-        // l'agent IA, dont la session est morte (cf. `src/agent/escalade.ts`). Personne ne lui a repondu.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, true);
+        // commun.
+        //
+        // 🔴 L'ESCALADE SE LIT SUR LA SESSION CLOSE, ELLE NE SE SUPPOSE PAS (revue finale du 2026-09-23). Cette
+        // branche disait « le contact a demande un humain a l'agent IA », ce qu'elle ne peut pas savoir : elle
+        // se declenche sur « un bloc agent sans session vivante », et la meme absence suit un tour bloque clos
+        // en `erreur` par `cloreSessionDuRun`, un `plafond` ou une `inactivite`, c'est-a-dire une PANNE. Seule
+        // une fin DELIBEREE (`status === 'sortie'`, ce que `src/agent/escalade.ts` ecrit avant de basculer le
+        // fil) porte une promesse faite au contact.
+        // ⚠️ ET LE DRAPEAU EST DEJA POSE DANS LE CAS NOMINAL : l'escalade de l'agent IA appelle elle-meme le
+        // cablage avec `escalade: true` (`src/worker.ts`). Ce rattrapage ne sert que si le processus est mort
+        // entre la cloture de la session et la bascule du fil, fenetre que `escalade.ts` documente. Sur une
+        // panne, poser le drapeau rendrait le fil COLLANT (l'agent de Meta ne le reprendrait plus jamais) pour
+        // rien : le contact vient d'ecrire, donc « A traiter » le porte deja par son `last_direction`.
+        const finDeliberee = session?.status === 'sortie';
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee);
         return;
       }
       // ⚠️ ORDRE : on enfile AVANT de marquer le message consommé, comme partout ailleurs dans ce fichier
