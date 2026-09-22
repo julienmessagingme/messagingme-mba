@@ -65,9 +65,24 @@ export function valeursPermises(texte: string): string[] {
  */
 export const BORNES_OUTIL = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
 
-/** Les effacements chez Meta que le geste en cours n'a pas demandés : eux seuls se font confirmer. */
-export function effacementsImprevus(gestes: readonly GestePublication[], attendus: ReadonlySet<string>): GestePublication[] {
-  return gestes.filter((g) => g.type.endsWith('supprimer') && !attendus.has(g.nom));
+/**
+ * Le connecteur unique d'Engage Me chez Meta. Recopie de `NOM_CONNECTEUR_RELAIS` (`src/mba/publication.ts`),
+ * tenue égale par `tests/mba-outils-parite.test.ts`.
+ */
+export const CONNECTEUR_RELAIS = 'EngageMe';
+
+/**
+ * Les effacements chez Meta que le geste en cours n'a pas demandés : eux seuls se font confirmer.
+ *
+ * 🔴 LES OUTILS ET LES CONNECTEURS NE SE CONFONDENT PAS (relecture du 2026-09-22). `outilsAttendus` ne dispense
+ * que des OUTILS ; seul le connecteur `EngageMe` (le nôtre, qui part quand plus aucun outil n'est exposé) est
+ * toujours attendu. Une seule liste de noms faisait passer sans question un outil ajouté à la main chez Meta
+ * sous le nom `EngageMe`, et tout ancien connecteur qu'on y aurait nommé.
+ */
+export function effacementsImprevus(gestes: readonly GestePublication[], outilsAttendus: ReadonlySet<string>): GestePublication[] {
+  return gestes.filter((g) =>
+    (g.type === 'outil_supprimer' && !outilsAttendus.has(g.nom))
+    || (g.type === 'connecteur_supprimer' && g.nom !== CONNECTEUR_RELAIS));
 }
 
 /** Le nom vu par l'agent de Meta, calculé depuis le titre (même règle que les codes de sortie). */

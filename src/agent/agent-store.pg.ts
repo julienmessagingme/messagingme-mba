@@ -138,31 +138,41 @@ export class PgAgentStore implements AgentStore {
    * (`agent:<uuid>`), choisi pour que le Meta Business Agent puisse être un consommateur sans avoir de fiche
    * d'agent. C'est le prix de ce choix, il se paie ICI, en code, et un test d'intégration le tient.
    *
-   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX DEUX FOIS (revues finales des 21 et 22 septembre). Il est :
-   * (1) la CASCADE de l'agent, qui prend ses sessions ; (2) la lecture de ses consentements ; (3) le VERROU des
-   * définitions (`verrouillerDefinitions`) ; (4) le retrait des consentements ; (5) l'effacement des orphelins.
-   * Deux ordres s'imposent en même temps, et chacun a été violé une fois :
-   * - la SESSION avant l'OUTIL, comme le journal d'un appel (ses clés étrangères, `session_id` puis `tool_id`) :
-   *   le verrou posé en tête, avant la cascade, interbloquait avec un appel de CET agent en cours de
-   *   journalisation, et tenait les connecteurs PARTAGÉS pendant toute la cascade ;
-   * - la DÉFINITION avant la LIGNE DE CONSENTEMENT, comme `detacher`, `retirerDeMba` et
-   *   `rattacherConsommateur` : le verrou posé après le retrait interbloquait avec eux (40P01, donc un 500).
-   * Un consentement posé entre la lecture (2) et le retrait (4) n'est pas couvert par le verrou (3) : ceux-là
-   * sont verrouillés après coup (`reliquat`), le cas est rare et le `not exists` reste juste.
-   * Tenu par deux tests d'intégration qui rejouent chaque interblocage.
+   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX TROIS FOIS (revues des 21 et 22 septembre). Il n'y a qu'UN ordre de
+   * verrous dans ce domaine, et tous les chemins le suivent : l'AGENT, ses SESSIONS, les DÉFINITIONS, puis ce
+   * qui en dépend (lignes de consentement, appels journalisés). Le journal d'un appel prend la session avant
+   * l'outil (ses clés étrangères) ; `detacher`, `retirerDeMba` et `rattacherConsommateur` prennent la
+   * définition avant la ligne de consentement, et l'effacement d'une définition touche ENSUITE les appels
+   * (`tool_id on delete set null`). D'où, ici : verrouiller l'agent et ses sessions, lire ses consentements,
+   * verrouiller leurs définitions, et SEULEMENT ENSUITE la cascade et le retrait.
+   * Les trois ordres essayés avant interbloquaient (40P01, donc un 500) :
+   * - verrou des définitions AVANT les sessions : contre un appel de cet agent en cours de journalisation ;
+   * - retrait des consentements AVANT le verrou : contre un `detacher` ;
+   * - cascade AVANT le verrou : contre un `detacher` qui EFFACE le connecteur, parce que la cascade venait de
+   *   supprimer les appels que son `on delete set null` doit toucher.
+   * ⚠️ Le verrou tient les connecteurs partagés pendant la cascade : les appels d'autres agents sur ces
+   * connecteurs ATTENDENT (ils ne cassent pas), le temps de supprimer un agent, geste rare.
+   * Un consentement posé entre la lecture et le retrait n'est pas couvert : il est verrouillé après coup
+   * (`reliquat`), le cas est rare et le `not exists` reste juste.
+   * Tenu par trois tests d'intégration, qui rejouent chacun un de ces interblocages.
    */
   async remove(tenantId: string, id: string): Promise<boolean> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
-      // L'ordre de ces quatre instructions est l'objet du JSDoc : le changer rouvre un interblocage.
+      // L'ordre de ces instructions est l'objet du JSDoc : le changer rouvre un interblocage.
+      await client.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, id]);
+      await client.query(
+        'select 1 from agent_sessions where tenant_id = $1 and agent_id = $2 order by id for update',
+        [tenantId, id],
+      );
       const lies = await client.query<{ tool_id: string }>(
         'select tool_id from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
         [tenantId, consommateurAgent(id)],
       );
       const verrouilles = new Set(lies.rows.map((r) => r.tool_id));
       await verrouillerDefinitions(client, tenantId, [...verrouilles]);
+      const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
       const detaches = await client.query<{ tool_id: string }>(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 returning tool_id',
         [tenantId, consommateurAgent(id)],

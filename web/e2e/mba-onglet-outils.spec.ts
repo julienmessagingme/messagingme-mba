@@ -38,8 +38,8 @@ interface Monture {
   tags?: unknown[];
   fields?: unknown[];
   retenirPublication?: Promise<void>;
-  /** La publication chez Meta échoue (502), comme quand Meta refuse. */
-  publicationEchoue?: boolean;
+  /** La publication chez Meta échoue (502), comme quand Meta refuse. Une fonction décide appel par appel. */
+  publicationEchoue?: boolean | (() => boolean);
   /** Le DELETE d'un outil attend cette promesse : de quoi voir l'écran pendant une suppression. */
   retenirSuppression?: Promise<void>;
   /** Ces lectures échouent (500) : une lecture ratée n'est pas une liste vide. */
@@ -63,7 +63,8 @@ async function monterOutils(page: Page, m: Monture = {}) {
         publications += 1;
         ordre.push('publication');
         if (m.retenirPublication) await m.retenirPublication;
-        if (m.publicationEchoue) { await json({ error: 'Meta a refusé la publication.' }, 502); return true; }
+        const echoue = typeof m.publicationEchoue === 'function' ? m.publicationEchoue() : m.publicationEchoue;
+        if (echoue) { await json({ error: 'Meta a refusé la publication.' }, 502); return true; }
         await json({ faits: [] });
         return true;
       }
@@ -451,6 +452,103 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     expect(dialogues[2]).toContain('main_levee');
     expect(dialogues[2]).not.toContain('suivi_commande');
     expect(m.publications()).toBe(0);
+  });
+
+  /**
+   * 🔴 LE CHEMIN POSITIF DU BANDEAU : un outil supprimé ICI, dont l'envoi a échoué, part par « Envoyer à Meta »
+   * sans autre confirmation que celle de la suppression elle-même.
+   */
+  test('🔴 un retrait fait ici et resté en attente part par le bandeau, sans confirmation', async ({ page }) => {
+    let supprime = false;
+    let essais = 0;
+    const m = await monterOutils(page, {
+      outils: () => (supprime ? [] : [OUTIL]),
+      gestes: () => (supprime ? [{ type: 'outil_supprimer', nom: 'suivi_commande' }] : []),
+      publicationEchoue: () => { essais += 1; return essais === 1; },
+    });
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => { dialogues.push(d.message()); supprime = true; void d.accept(); });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+    await expect(page.getByTestId('mba-outils-erreur')).toContainText('supprimé ici');
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('suivi_commande');
+    await page.getByTestId('mba-outils-retraits-envoyer').click();
+    await expect.poll(() => m.publications()).toBe(2);
+    // La seule boîte est « Supprimer … ? » : le retrait fait ici n'est pas redemandé.
+    expect(dialogues).toHaveLength(1);
+  });
+
+  /**
+   * 🔴 LA DISPENSE NE SURVIT PAS AU RETRAIT (relecture du 2026-09-22). `suivi_commande` est supprimé ici et son
+   * retrait PART ; plus tard, Meta liste de nouveau un outil de ce nom (ajouté à la main). Le bandeau doit le
+   * NOMMER dans une confirmation : la dispense accordée par nom était sinon valable toute la visite.
+   */
+  test('🔴 un nom supprimé puis RÉAPPARU chez Meta n’est plus dispensé de confirmation', async ({ page }) => {
+    const B = { ...OUTIL, id: 'o2', name: 'autre', title: 'Autre outil' };
+    let supprime1 = false;
+    let supprime2 = false;
+    const SUIVI = { type: 'outil_supprimer', nom: 'suivi_commande' };
+    const AUTRE = { type: 'outil_supprimer', nom: 'autre' };
+    const m = await monterOutils(page, {
+      outils: () => [...(supprime1 ? [] : [OUTIL]), ...(supprime2 ? [] : [B])],
+      gestes: () => {
+        if (!supprime1) return [];
+        if (m.publications() === 0) return [SUIVI];
+        if (!supprime2) return [];
+        return [AUTRE, SUIVI];
+      },
+    });
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => {
+      const texte = d.message();
+      dialogues.push(texte);
+      if (texte.includes('Suivi de commande')) { supprime1 = true; void d.accept(); }
+      else if (texte.includes('Autre outil')) { supprime2 = true; void d.accept(); }
+      else void d.dismiss();
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    // 1. Suppression de suivi_commande : son retrait part.
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+    await expect.poll(() => m.publications()).toBe(1);
+    await expect(page.getByTestId('mba-outils-attente')).toHaveCount(0);
+    // 2. Suppression d'« autre » : Meta liste de nouveau suivi_commande, la confirmation le nomme, refusée.
+    await page.getByTestId('mba-outil-supprimer-o2').click();
+    await expect.poll(() => dialogues.length).toBe(3);
+    expect(dialogues[2]).toContain('suivi_commande');
+    // 3. Le bandeau : « autre » est dispensé, suivi_commande est redemandé.
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('suivi_commande');
+    await page.getByTestId('mba-outils-retraits-envoyer').click();
+    await expect.poll(() => dialogues.length).toBe(4);
+    expect(dialogues[3]).toContain('suivi_commande');
+    expect(dialogues[3]).not.toContain('autre');
+    expect(m.publications()).toBe(1);
+  });
+
+  test('🔴 « Enregistrer » est bloqué pendant une suppression', async ({ page }) => {
+    let liberer: () => void = () => {};
+    const retenue = new Promise<void>((ok) => { liberer = ok; });
+    await monterOutils(page, { outils: [OUTIL], tags: [{ tag: 'vip', count: 3 }], retenirSuppression: retenue });
+    page.on('dialog', (d) => { void d.accept(); });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-tag').click();
+    await page.getByTestId('mba-cible-tag').fill('vip');
+    await page.getByTestId('mba-form-titre').fill('Marquer VIP');
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeDisabled();
+    // Rien ne part pendant la suppression : « Envoi… » ne s'affiche pas.
+    await expect(page.getByTestId('mba-outils-attente')).toHaveCount(0);
+    liberer();
+    await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
+  });
+
+  test('🔴 le bandeau ne s’affiche pas sur une liste qui ne s’est pas lue', async ({ page }) => {
+    await monterOutils(page, { listeEchoue: true, gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }] });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outils-lecture-ratee')).toBeVisible();
+    await expect(page.getByTestId('mba-outils-retraits')).toHaveCount(0);
   });
 
   test('🔴 « Supprimer » est bloqué dès le clic, pas seulement pendant l’envoi', async ({ page }) => {

@@ -16,12 +16,6 @@ type Mode = { vue: 'liste' } | { vue: 'choix' } | { vue: 'form'; type: TypeOutil
 type Traduire = (fr: string, en?: string) => string;
 
 /**
- * Le connecteur unique chez Meta : attendu dans tout effacement qui retire le dernier outil. Recopie de
- * `NOM_CONNECTEUR_RELAIS` (`src/mba/publication.ts`), tenue égale par `tests/mba-outils-parite.test.ts`.
- */
-const CONNECTEUR_RELAIS = 'EngageMe';
-
-/**
  * L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9, d'après le croquis de Julien).
  *
  * Une liste claire (titre, cible, type, état chez Meta), un gros bouton « Ajouter un outil », et enregistrer
@@ -54,14 +48,19 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   // sinon un second retrait lancé entre-temps devenait un effacement « imprévu » du premier envoi.
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
   const suppressionRef = useRef(false);
-  // Les noms supprimés ICI pendant cette visite : les seuls que le bandeau laisse partir sans confirmation.
+  // Les noms supprimés ICI pendant cette visite, et dont le retrait n'est PAS ENCORE PARTI : les seuls que le
+  // bandeau laisse partir sans confirmation. Un nom sort de l'ensemble dès que Meta ne le liste plus (voir
+  // `chargerEtats`) : sinon un outil ajouté plus tard à la main sous ce nom partirait sans être nommé.
   const [supprimesIci, setSupprimesIci] = useState<ReadonlySet<string>>(() => new Set());
   const occupe = envoiEnCours || suppressionEnCours;
 
   const chargerEtats = useCallback(async (): Promise<void> => {
     try {
       const r = await apercuPublicationMba(tenantId);
-      setGestes(Array.isArray(r?.gestes) ? r.gestes : []);
+      const lus = Array.isArray(r?.gestes) ? r.gestes : [];
+      setGestes(lus);
+      const encoreChezMeta = new Set(lus.filter((g) => g.type === 'outil_supprimer').map((g) => g.nom));
+      setSupprimesIci((avant) => new Set([...avant].filter((n) => encoreChezMeta.has(n))));
     } catch {
       setGestes(null);
     } finally {
@@ -88,8 +87,11 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
 
   useEffect(() => { void charger(); }, [charger]);
 
-  /** Envoie chez Meta tout ce qui attend. Seuls les effacements que ce geste n'a pas demandés se confirment. */
-  const envoyer = async (attendus: ReadonlySet<string>): Promise<boolean> => {
+  /**
+   * Envoie chez Meta tout ce qui attend. Seuls les effacements d'OUTILS que ce geste n'a pas demandés se
+   * confirment (`outilsAttendus`) ; notre connecteur `EngageMe` est toujours attendu (`effacementsImprevus`).
+   */
+  const envoyer = async (outilsAttendus: ReadonlySet<string>): Promise<boolean> => {
     if (envoiRef.current) return false;
     envoiRef.current = true;
     setEnvoiEnCours(true);
@@ -97,7 +99,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
     try {
       const plan = (await apercuPublicationMba(tenantId)).gestes ?? [];
       if (plan.length === 0) return true;
-      const imprevus = effacementsImprevus(plan, attendus);
+      const imprevus = effacementsImprevus(plan, outilsAttendus);
       if (imprevus.length > 0) {
         const liste = imprevus.map((g) => `- ${g.nom}`).join('\n');
         const ok = window.confirm(t(
@@ -126,7 +128,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   const apresEnregistrement = async (nomsAttendus: Set<string>): Promise<void> => {
     setMode({ vue: 'liste' });
     await chargerListe();
-    const ok = await envoyer(new Set([...nomsAttendus, CONNECTEUR_RELAIS]));
+    const ok = await envoyer(nomsAttendus);
     if (!ok) {
       setErreur((e) => t(
         `L’outil est enregistré, mais l’envoi chez Meta n’a pas abouti${e ? ` (${e})` : ''} : cliquez sur « À envoyer » pour réessayer.`,
@@ -150,7 +152,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       }
       setSupprimesIci((avant) => new Set([...avant, o.name]));
       await chargerListe();
-      const ok = await envoyer(new Set([o.name, CONNECTEUR_RELAIS]));
+      const ok = await envoyer(new Set([o.name]));
       // 🔴 Un retrait qui n'est pas parti se DIT (spec § 9.3) : l'outil n'a plus de ligne ici, et Meta le liste
       // encore. Le bandeau le laissera partir sans question ; tout AUTRE effacement y sera confirmé en le nommant.
       if (!ok) {
@@ -214,7 +216,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       )}
       {mode.vue === 'form' && (
         <FormulaireOutilMba key={mode.outil?.id ?? `nouveau-${mode.type}`} tenantId={tenantId} type={mode.type} outil={mode.outil}
-          envoiEnCours={envoiEnCours} onEnregistre={apresEnregistrement} onAnnuler={() => setMode({ vue: 'liste' })} />
+          envoiEnCours={occupe} onEnregistre={apresEnregistrement} onAnnuler={() => setMode({ vue: 'liste' })} />
       )}
 
       {sansLigne.length > 0 && (
@@ -225,9 +227,9 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
           </span>
           {isAdmin && (
             <button type="button" data-testid="mba-outils-retraits-envoyer" disabled={occupe}
-              title={t('Ce que vous avez supprimé ici part sans autre question ; tout autre effacement vous est demandé en le nommant.',
-                'What you deleted here goes without further question; any other deletion is asked first, by name.')}
-              onClick={() => { void envoyer(new Set([...sansLigne.filter((n) => supprimesIci.has(n)), CONNECTEUR_RELAIS])); }}
+              title={t('Ce que vous venez de supprimer ici part sans autre question ; tout autre effacement vous est demandé en le nommant.',
+                'What you just deleted here goes without further question; any other deletion is asked first, by name.')}
+              onClick={() => { void envoyer(new Set(sansLigne.filter((n) => supprimesIci.has(n)))); }}
               className="rounded-lg border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
               {envoiEnCours ? t('Envoi…', 'Sending…') : t('Envoyer à Meta', 'Send to Meta')}
             </button>
@@ -252,9 +254,9 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
         <ul className="divide-y divide-ink-100 rounded-2xl border border-ink-200 bg-white">
           {outils.map((o) => (
             <LigneOutil key={o.id} o={o} t={t} isAdmin={isAdmin} etat={etats === null ? 'chargement' : (etats.get(o.id) ?? 'inconnu')}
-              envoiEnCours={occupe}
+              occupe={occupe} envoiEnCours={envoiEnCours}
               onEnvoyer={() => { void envoyer(new Set()); }}
-              onRetirer={() => { void envoyer(new Set([o.name, CONNECTEUR_RELAIS])); }}
+              onRetirer={() => { void envoyer(new Set([o.name])); }}
               onModifier={() => { if (o.type !== 'inconnu') setMode({ vue: 'form', type: o.type, outil: o }); }}
               onSupprimer={() => { void supprimer(o); }}
               onReactiver={() => { void reactiver(o); }} />
@@ -265,8 +267,12 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   );
 }
 
-function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, onModifier, onSupprimer, onReactiver }: {
-  o: OutilMbaVue; t: Traduire; isAdmin: boolean; etat: EtatChezMeta | 'chargement'; envoiEnCours: boolean;
+function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRetirer, onModifier, onSupprimer, onReactiver }: {
+  o: OutilMbaVue; t: Traduire; isAdmin: boolean; etat: EtatChezMeta | 'chargement';
+  /** Un envoi OU une suppression en cours : les boutons attendent. */
+  occupe: boolean;
+  /** Un envoi seul : c'est lui, et lui seul, qui fait dire « Envoi… ». */
+  envoiEnCours: boolean;
   onEnvoyer: () => void; onRetirer: () => void; onModifier: () => void; onSupprimer: () => void; onReactiver: () => void;
 }) {
   const badge = o.type === 'inconnu' ? ['Inconnu', 'Unknown'] as const : TEXTES_PAR_TYPE[o.type].badge;
@@ -316,7 +322,7 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, o
               'The person who added it left the workspace: Meta’s agent can no longer use it.')}>
             {t('Désactivé', 'Disabled')}
             {isAdmin && (
-              <button type="button" data-testid={`mba-outil-reactiver-${o.id}`} disabled={envoiEnCours} onClick={onReactiver}
+              <button type="button" data-testid={`mba-outil-reactiver-${o.id}`} disabled={occupe} onClick={onReactiver}
                 className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50">
                 {t('Réactiver', 'Reactivate')}
               </button>
@@ -324,7 +330,7 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, o
             {/* Rien ne republie au départ d'un collaborateur : Meta le liste encore, et l'agent l'appellerait pour
                 rien. L'envoi l'en retire ; cet effacement-là est demandé, il ne se fait donc pas confirmer. */}
             {etat === 'desactive_a_retirer' && (
-              <button type="button" data-testid={`mba-outil-retirer-${o.id}`} disabled={envoiEnCours || !isAdmin} onClick={onRetirer}
+              <button type="button" data-testid={`mba-outil-retirer-${o.id}`} disabled={occupe || !isAdmin} onClick={onRetirer}
                 title={t('Meta le liste encore : l’envoi l’en retire, avec tout ce qui attend.',
                   'Meta still lists it: sending removes it, along with everything pending.')}
                 className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
@@ -334,7 +340,7 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, o
           </span>
         )}
         {etat === 'a_envoyer' && (
-          <button type="button" data-testid={`mba-outil-envoyer-${o.id}`} disabled={envoiEnCours || !isAdmin}
+          <button type="button" data-testid={`mba-outil-envoyer-${o.id}`} disabled={occupe || !isAdmin}
             title={t('Envoie chez Meta tout ce qui attend, pas seulement cet outil.', 'Sends everything pending to Meta, not only this tool.')}
             onClick={onEnvoyer}
             className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
@@ -346,9 +352,9 @@ function LigneOutil({ o, t, isAdmin, etat, envoiEnCours, onEnvoyer, onRetirer, o
         <span className="flex gap-3 text-xs">
           <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu'} onClick={onModifier}
             className="text-ink-600 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
-          {/* Désactivé pendant un envoi, comme « Enregistrer » et « Réactiver » (spec § 9.2) : sinon le retrait
+          {/* Désactivé pendant un envoi ou une suppression, comme « Enregistrer » et « Réactiver » (spec § 9.2) : sinon le retrait
               partait pendant qu'un autre envoi lisait encore l'ancien plan, et restait en attente sans le dire. */}
-          <button type="button" data-testid={`mba-outil-supprimer-${o.id}`} disabled={envoiEnCours} onClick={onSupprimer}
+          <button type="button" data-testid={`mba-outil-supprimer-${o.id}`} disabled={occupe} onClick={onSupprimer}
             className="text-coral hover:underline disabled:opacity-40">{t('Supprimer', 'Delete')}</button>
         </span>
       )}

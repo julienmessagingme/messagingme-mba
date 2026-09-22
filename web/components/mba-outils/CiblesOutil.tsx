@@ -11,8 +11,10 @@ import { useT } from '@/lib/i18n';
  * LES CIBLES D'UN OUTIL DE L'AGENT DE META : ce que l'administrateur FIXE (spec 2026-09-21-outils-maison-mba,
  * § 9.4). L'agent de Meta ne choisit que le moment, et pour un champ, la valeur.
  *
- * ⚠️ LECTURES DÉFENSIVES : une liste qu'on ne sait pas lire est VIDE, jamais fatale. L'ancien écran l'a appris
- * à ses dépens (une réponse sans `requetes` faisait tomber tout l'onglet).
+ * ⚠️ LECTURES DÉFENSIVES, ET DEUX CAS DISTINCTS. Une réponse MAL FORMÉE compte pour vide, jamais fatale : l'ancien
+ * écran l'a appris à ses dépens (une réponse sans `requetes` faisait tomber tout l'onglet). Une lecture RATÉE,
+ * elle, n'est PAS vide pour les champs et les appels : elle le dit, avec « réessayer », au lieu d'annoncer un
+ * champ disparu ou un appel supprimé (relecture du 2026-09-22). Les étiquettes restent une simple suggestion.
  */
 export function CibleTag({ tenantId, valeur, onChange }: {
   tenantId: string; valeur: string; onChange: (v: string) => void;

@@ -1802,9 +1802,10 @@ information posées par l'agent de Meta, relues en base.
   était partie avec elle, sans arbitrage : elle revient (2026-09-21).
 - ✅ **Ce que Meta liste encore sans outil ici se voit** au-dessus de la liste, « encore chez Meta, sans outil
   ici », avec « Envoyer à Meta » : un outil supprimé ici, mais aussi un outil ajouté À LA MAIN chez Meta ou resté
-  sur un ancien connecteur, que l'envoi effacerait. 🔴 Seul ce que vous avez supprimé ici part sans autre question ;
-  tout autre effacement est demandé en le nommant, parce que Meta ne rend jamais un outil effacé. « Supprimer »
-  est désactivé dès le clic, jusqu'à la fin de l'envoi.
+  sur un ancien connecteur, que l'envoi effacerait. 🔴 Seul ce que vous venez de supprimer ici, pendant cette
+  visite, part sans autre question ; tout autre effacement est demandé en le nommant, y compris votre propre
+  retrait après un rechargement de la page, parce que Meta ne rend jamais un outil effacé. « Supprimer » est
+  désactivé dès le clic, jusqu'à la fin de l'envoi.
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
 - ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses

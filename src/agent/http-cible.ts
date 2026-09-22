@@ -15,7 +15,7 @@ import type { RisqueOutil } from './catalog';
  */
 
 /** Les méthodes du lot. Volontairement fermé : `CONNECT` et `TRACE` n'ont rien à faire sur un connecteur. */
-const METHODES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export const METHODES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export type MethodeConnecteur = (typeof METHODES)[number];
 
 export interface CibleConstruite {

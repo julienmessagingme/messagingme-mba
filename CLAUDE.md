@@ -71,12 +71,13 @@ production pendant plus d'une heure, pour un espace qui avait des outils publié
 « Aucun outil ». La parade : pousser l'écran APRÈS le déploiement de l'API qui porte sa route, ou le faire
 tolérer l'absence de la route ; sinon, dire la fenêtre dans le plan et la réduire (revue finale et
 déploiement dans la foulée). ⚠️ **Ce que la garde de déploiement couvre, exactement** (`.claude/deploy.json`,
-lu par `~/.claude/hooks/deploiement-garde.js`) : un `docker compose up`, un `pm2 restart|reload|start` ou une
-MIGRATION (`npm run migrate`, ajoutée le 2026-09-22 sur décision de Julien : elle change la base de production
-AVANT le `up`), lancés par `ssh` dans une commande qui nomme `/home/ubuntu/mba`, sans revue finale attestée.
-Elle ne couvre NI le `compose build` (rien ne change en production), NI une migration lancée depuis ce poste
-(la garde ne lit que le `ssh`, alors que le `.env` local pointe AUSSI sur la production), NI Vercel
-(`pushDeploie` y est délibérément à `false`).
+lu par `~/.claude/hooks/deploiement-garde.js`) : par `ssh`, dans une commande qui nomme `/home/ubuntu/mba`, un
+`docker compose up`, un `pm2 restart|reload|start`, une MIGRATION (`npm run migrate`, ajoutée le 2026-09-22 sur
+décision de Julien : elle change la base de production AVANT le `up`) ou un script `*deploy*` ; et, depuis ce
+dépôt, un `vercel --prod` (qui exige en outre un arbre propre). Tout cela sans revue finale attestée. Elle ne
+couvre NI le `compose build` (rien ne change en production), NI une migration lancée depuis ce poste (la garde
+ne lit que le `ssh`, alors que le `.env` local pointe AUSSI sur la production), NI le `git push` qui publie la
+console chez Vercel (`pushDeploie` y est délibérément à `false`).
 
 Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).

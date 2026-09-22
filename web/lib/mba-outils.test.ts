@@ -76,7 +76,18 @@ describe('les effacements que personne n’a demandés', () => {
       { type: 'connecteur_supprimer' as const, nom: 'EngageMe' },
       { type: 'outil_creer' as const, nom: 'c' },
     ];
-    expect(effacementsImprevus(g, new Set(['a', 'EngageMe'])).map((x) => x.nom)).toEqual(['main_levee']);
+    expect(effacementsImprevus(g, new Set(['a'])).map((x) => x.nom)).toEqual(['main_levee']);
+  });
+
+  it('🔴 un OUTIL nommé comme notre connecteur n’est pas dispensé, un ANCIEN connecteur non plus', () => {
+    // Une liste de noms unique dispensait l'un et l'autre dès qu'on y mettait « EngageMe ».
+    const g = [
+      { type: 'outil_supprimer' as const, nom: 'EngageMe' },
+      { type: 'connecteur_supprimer' as const, nom: 'testUCHAT' },
+      { type: 'connecteur_supprimer' as const, nom: 'EngageMe' },
+    ];
+    expect(effacementsImprevus(g, new Set()).map((x) => `${x.type}:${x.nom}`))
+      .toEqual(['outil_supprimer:EngageMe', 'connecteur_supprimer:testUCHAT']);
   });
 });
 

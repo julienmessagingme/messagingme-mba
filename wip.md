@@ -12,11 +12,11 @@
 | | |
 |---|---|
 | `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour, déployé le 2026-09-21 au soir** avec le lot 2 des outils maison de l'agent de Meta (migration 0162), le lot 1 de sécurité (appels sortants vérifiés à la connexion, plafonds RCS, `/w/:code` et `/v1`) et leurs corrections. Le SHA n'est pas recopié ici (`git log` et `.git/revue-finale.json` font foi). Séquence : attestation, build, 0162 vérifiée DANS l'image, `migrate`, relecture en base point par point, `up -d --build`, rechargement de NPM (502 revenu), fumée à 6 sur 6. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour au 2026-09-22 au matin** (déployé par la session sécurité) : le lot 2 des outils maison et ses deux lots de corrections, les suites du lot 1 de sécurité, et l'échec MCP en 422. Le SHA n'est pas recopié ici (`git log` et `.git/revue-finale.json` font foi). Pas de migration depuis 0162. ⚠️ Un lot de jaunes des outils maison (l'ordre des verrous de `remove`) suit, avec sa relecture et son déploiement. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
-| Revue finale | ✅ **ATTESTÉE, 0 rouge, 11 jaunes**, sur les outils maison (lot 2) et le lot 1 de sécurité : trois relectures à froid (4 rouges puis 1, plus celle de la session sécurité). Le seul rouge de la dernière était l'onglet cassé en production, que le déploiement a réparé. Les 11 jaunes partent en petit lot juste après, avec leur relecture. Rapport : `.git/revue-finale-rapport.md`. |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le déploiement du 2026-09-22 (rapport `.git/revue-finale-rapport.md`, quatre relectures à froid). Deux rouges y ont été trouvés et corrigés AVANT le déploiement de l'API, mais APRÈS leur publication chez Vercel : le bandeau des retraits effaçait chez Meta sans confirmation un outil ajouté à la main, et une lecture ratée des champs se disait « champ supprimé ». |
 | Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 DÉPLOYÉ ET ÉPROUVÉ, LOTS 3 ET 4 À FAIRE)
@@ -46,14 +46,17 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
   Meta », puis déclenchés sur WhatsApp : trois lignes de journal, appelant `mba`, toutes `ok` (deux poses à
   21:20 et 21:22 UTC, l'information à 21:26:46.880), et la fiche porte `genial` et `metier: électricien`,
   modifiée 26 ms après l'appel. La conversation est rendue à l'agent de Meta.
-- ⏳ **Pas encore rejoué** : « rajoute une étiquette » sur le connecteur `add_tag`, qui éprouverait
-  `fetchPublic` (lot 1 de sécurité) en conditions réelles. Non bloquant.
-- 🔴 **À faire maintenant** : le petit lot des 11 jaunes de la troisième relecture
-  (`.git/revue-finale-rapport.md` : verrou de `remove` à remettre dans le bon ordre, textes, tests du verrou),
-  plus ceux de la relecture de la session sécurité qui sont dans ce périmètre (retraits en attente sans ligne,
-  « Supprimer » pendant un envoi, mention « irréversible », erreur distincte du vide, bornes du formulaire,
-  lectures de Meta en double, parité `EngageMe`, `VARIABLE_VALEUR`, JSDoc). Relecture courte, puis déploiement
-  APRÈS celui du lot 1 bis de la session sécurité.
+- ✅ **SECOND ESSAI RÉEL, FAIT PAR JULIEN LE 2026-09-22 AU MATIN, ET RELU EN BASE** (après le déploiement des
+  corrections) : un outil information modifié depuis l'onglet (renommé `metier_du_client`, l'ancien nom retiré chez
+  Meta dans le même envoi), un outil maison supprimé depuis l'onglet (parti, sans bandeau résiduel), et
+  « rajoute une étiquette » sur le connecteur `add_tag` : journal `ok`, appelant `mba`, HTTP 200 du CRM en 494 ms,
+  ce qui éprouve `fetchPublic` (lot 1 de sécurité) en conditions réelles.
+- 🔴 **À faire maintenant** : le lot des 9 jaunes de la relecture des correctifs (rapport de la session sécurité),
+  prêt : l'ORDRE UNIQUE des verrous de `remove` (l'agent, ses sessions, les définitions, puis le reste : trois
+  ordres antérieurs interbloquaient chacun avec un chemin voisin, tous rejoués contre un Postgres jetable),
+  la dispense du bandeau purgée dès que le retrait est parti, les outils et le connecteur distingués dans
+  `effacementsImprevus`, la suppression en cours qui bloque aussi le formulaire, et quatre e2e. Relecture,
+  attestation et déploiement par cette session.
 - ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
   connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
   outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.

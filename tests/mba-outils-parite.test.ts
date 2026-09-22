@@ -6,7 +6,7 @@ import { outilsAPublier } from '../src/mba/outils-a-publier';
 import { HANDLERS_MAISON_MBA, typeDeLaCible, type CibleMaison, type HandlerMaisonMba } from '../src/mba/outils-maison';
 import { BORNES_OUTIL_MBA, TYPES_SAISISSABLES } from '../src/http/mba-outils';
 import { NOM_CONNECTEUR_RELAIS } from '../src/mba/publication';
-import { risqueSelonMethode, type MethodeConnecteur } from '../src/agent/http-cible';
+import { METHODES, risqueSelonMethode } from '../src/agent/http-cible';
 import type { OutilComplet } from '../src/agent/catalog';
 
 /**
@@ -84,7 +84,6 @@ describe('les types, des deux côtés', () => {
 
 describe('les constantes recopiées dans l’écran', () => {
   const ecranLib = lire('web/lib/mba-outils.ts');
-  const onglet = lire('web/components/mba-outils/OutilsMba.tsx');
 
   it('🔴 les bornes de la saisie sont celles de la route', () => {
     // Plus basses à l'écran, un client ne pourrait pas écrire ce que la route accepte ; plus hautes, il écrirait
@@ -97,7 +96,7 @@ describe('les constantes recopiées dans l’écran', () => {
 
   it('🔴 les méthodes dites « irréversibles » à l’écran sont celles que le serveur range ainsi', () => {
     // Sinon l'écran annoncerait un appel sans danger que le serveur traite comme irréversible, ou l'inverse.
-    const METHODES: MethodeConnecteur[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    // La liste des méthodes est celle du serveur, pas une recopie : une méthode ajoutée y serait vue.
     const serveur = METHODES.filter((m) => risqueSelonMethode(m) === 'irreversible');
     const m = /export const METHODES_IRREVERSIBLES: readonly string\[\] = \[([^\]]*)\]/.exec(ecranLib);
     expect(m).not.toBeNull();
@@ -107,7 +106,7 @@ describe('les constantes recopiées dans l’écran', () => {
   it('🔴 le connecteur attendu dans un effacement est celui que la publication pose chez Meta', () => {
     // Recopié de travers, le dernier retrait déclencherait la confirmation « effacement imprévu » sur notre
     // propre connecteur.
-    const m = /const CONNECTEUR_RELAIS = '([^']+)'/.exec(onglet);
+    const m = /export const CONNECTEUR_RELAIS = '([^']+)'/.exec(ecranLib);
     expect(m?.[1]).toBe(NOM_CONNECTEUR_RELAIS);
   });
 });

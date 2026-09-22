@@ -110,10 +110,10 @@ function versOutil(r: Ligne): OutilDefini {
  * `not exists`, qui s'exécute ensuite dans une nouvelle instruction ; celui qui arrive après attend
  * (`for key share` dans `rattacherConsommateur`) et ne trouve plus rien.
  *
- * ⚠️ DEUX CONTRAINTES, et chacune a été violée une fois : le verrou précède le `not exists` ; et la DÉFINITION
- * se verrouille AVANT la ligne de consentement, dans TOUS les chemins (`detacher`, `retirerDeMba`,
- * `rattacherConsommateur`, `PgAgentStore.remove`), sinon deux chemins s'attendent l'un l'autre (40P01). `remove`
- * le pose en outre APRÈS la cascade de l'agent : son JSDoc dit pourquoi.
+ * ⚠️ DEUX CONTRAINTES : le verrou précède le `not exists` ; et tous les chemins suivent UN SEUL ordre, l'agent,
+ * ses sessions, les définitions, puis ce qui en dépend (lignes de consentement, appels journalisés). Sinon deux
+ * chemins s'attendent l'un l'autre (40P01). Le JSDoc de `PgAgentStore.remove` raconte les trois ordres qui ont
+ * interbloqué avant celui-là.
  *
  * ⚠️ `order by id` : deux effacements qui verrouillent plusieurs définitions le font dans le même ordre, sinon
  * ils pourraient s'attendre l'un l'autre.

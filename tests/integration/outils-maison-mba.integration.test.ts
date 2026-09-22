@@ -356,4 +356,38 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
     expect(await existe(id)).toBe(true);
     expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
   });
+
+  /**
+   * 🔴 L'INTERBLOCAGE AVEC UN `detacher` QUI EFFACE LE CONNECTEUR (relecture du 2026-09-22). L'agent partant en
+   * était le DERNIER utilisateur, et il l'a déjà appelé (une ligne de journal). `detacher` tient la définition,
+   * retire le consentement, puis efface la définition : son `on delete set null` touche les appels journalisés.
+   * Quand `remove` faisait sa cascade AVANT de verrouiller, il venait de supprimer ces appels et attendait la
+   * définition : chacun attendait l'autre. Rouge avec cet ordre-là.
+   */
+  it('🔴 supprimer un agent n’interbloque pas avec un détachement qui EFFACE le connecteur', async () => {
+    const { agent, session } = await agentAvecSession('partant-efface');
+    const id = await connecteurNeuf('course_efface');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toBe(true);
+    await pool.query(
+      `insert into agent_tool_calls (tenant_id, session_id, tool_id, tool_name, origin, status)
+       values ($1, $2, $3, 'course_efface', 'http', 'ok')`,
+      [tenantId, session, id],
+    );
+    const agents = new PgAgentStore(pool);
+    await avecConnexion(async (detachement) => {
+      await detachement.query('begin');
+      await detachement.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, id]);
+      const suppression = agents.remove(tenantId, agent);
+      suppression.catch(() => {});
+      await attendreUnVerrou();
+      await detachement.query(
+        'delete from agent_tool_consommateurs where tenant_id = $1 and tool_id = $2 and consommateur = $3',
+        [tenantId, id, consommateurAgent(agent)],
+      );
+      await detachement.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, id]);
+      await detachement.query('commit');
+      expect(await suppression).toBe(true);
+    });
+    expect(await existe(id)).toBe(false);
+  });
 });
