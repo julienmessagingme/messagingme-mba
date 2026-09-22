@@ -105,6 +105,14 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
         `wam-itest-ev-3`, JSON.stringify({ from: WA_ID, id: 'wam-3', text: { body: 'chez le voisin' } }),
       ],
     );
+
+    // L'ARRIVÉE PUBLICITAIRE (lot 1 des pubs) : `ctwa_clid` est l'identifiant du CLIC, que Meta sait relier à la
+    // personne. Il doit partir ; la ligne doit rester (le compte des leads d'une pub survit, comme le quanti).
+    await pool.query(
+      `insert into arrivees_pub (tenant_id, contact_id, meta_message_id, ad_id, ctwa_clid, en_standby)
+       values ($1, $2, 'wam-itest-arrivee', 'ad-itest', 'clid-itest', false)`,
+      [tenantId, contactId],
+    );
   });
 
   afterAll(async () => {
@@ -168,6 +176,14 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect(restantes.rowCount).toBe(1);
     expect(restantes.rows[0]!.wa_id).toBe('anonyme');
     expect(restantes.rows[0]!.wa_id).not.toContain('600000901');
+  });
+
+  it('🔴 l’arrivée publicitaire RESTE, son ctwa_clid PART (le compte survit, l’identifiant du clic non)', async () => {
+    const r = await pool.query<{ ctwa_clid: string | null }>(
+      'select ctwa_clid from arrivees_pub where tenant_id = $1 and contact_id = $2', [tenantId, contactId],
+    );
+    expect(r.rowCount).toBe(1);
+    expect(r.rows[0]!.ctwa_clid).toBeNull();
   });
 
   /**

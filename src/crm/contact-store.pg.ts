@@ -1157,6 +1157,16 @@ export class PgContactStore implements ContactStore {
         [ids],
       );
 
+      // L'ARRIVÉE PUBLICITAIRE (lot 1 des pubs Click-to-WhatsApp, migration 0163) : `ctwa_clid` est
+      // l'identifiant du CLIC, que Meta sait relier à la personne. La ligne reste, pour que le compte des leads
+      // d'une pub survive à l'effacement comme celui des campagnes juste au-dessus ; l'identifiant part.
+      // ⚠️ La suppression en cascade de la fiche ne joue JAMAIS ici : cette purge ANONYMISE la fiche, elle ne
+      // la supprime pas.
+      await client.query(
+        `update arrivees_pub set ctwa_clid = null where tenant_id = $1 and contact_id = any($2::uuid[])`,
+        [tenantId, ids],
+      );
+
       const res = await client.query(
         `update contacts
             set phone_e164 = 'anon:' || gen_random_uuid(), bsuid = null, profile_name = null,
