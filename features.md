@@ -1766,7 +1766,8 @@ importez ce qu'il propose.
 ## L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
 
 Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
-§ 9). **Déployé le 2026-09-21 au soir** (migration 0162) ; l'essai réel en conversation reste à faire.
+§ 9). **Déployé et éprouvé en conversation réelle le 2026-09-21 au soir** (migration 0162) : une étiquette et une
+information posées par l'agent de Meta, relues en base.
 
 - ✅ **Une liste claire des outils de l'agent de Meta, et d'eux seuls** : pour chacun, son titre, ce qu'il vise
   (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
@@ -1776,7 +1777,7 @@ Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs
   n'a rien à y mettre : aucun appel déclaré (Tools > Connecteurs API), aucun champ déclaré (Contenu >
   Bibliothèque > Champs). Une lecture ratée ne passe pas pour « aucun » : elle le dit, avec « Réessayer ».
 - ✅ **Poser un tag** : l'étiquette est fixée par l'administrateur, l'agent de Meta ne décide que du moment. Elle
-  arrive sur la fiche du mini-CRM (déclarée dans Contenu > Étiquettes si elle est nouvelle).
+  arrive sur la fiche du mini-CRM (déclarée dans Contenu > Bibliothèque > Étiquettes si elle est nouvelle).
   ⚠️ **Ne comptez pas sur les automations « tag ajouté »** : l'agent de Meta tient alors la conversation, et un
   démarrage automatique n'écrit jamais dans une conversation tenue. Le scénario qu'elles lanceraient ne démarre
   pas, et il n'est pas rejoué ensuite. L'écran le dit.
@@ -1799,8 +1800,11 @@ Refait le 2026-09-21 d'après le croquis de Julien (spec `docs/superpowers/specs
 - ✅ **Un appel irréversible le dit** (une méthode `DELETE`) : sur la ligne, et au moment de choisir l'appel, avec
   l'avertissement que l'agent de Meta l'exécute SANS validation humaine. La mention de l'ancienne bibliothèque
   était partie avec elle, sans arbitrage : elle revient (2026-09-21).
-- ✅ **Un retrait qui n'est pas parti se voit** : un outil supprimé ici que Meta liste encore apparaît au-dessus
-  de la liste, avec « Les retirer de chez Meta ». « Supprimer » est désactivé pendant un envoi.
+- ✅ **Ce que Meta liste encore sans outil ici se voit** au-dessus de la liste, « encore chez Meta, sans outil
+  ici », avec « Envoyer à Meta » : un outil supprimé ici, mais aussi un outil ajouté À LA MAIN chez Meta ou resté
+  sur un ancien connecteur, que l'envoi effacerait. 🔴 Seul ce que vous avez supprimé ici part sans autre question ;
+  tout autre effacement est demandé en le nommant, parce que Meta ne rend jamais un outil effacé. « Supprimer »
+  est désactivé dès le clic, jusqu'à la fin de l'envoi.
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
 - ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses

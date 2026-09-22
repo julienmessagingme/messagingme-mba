@@ -6,6 +6,7 @@ import { outilsAPublier } from '../src/mba/outils-a-publier';
 import { HANDLERS_MAISON_MBA, typeDeLaCible, type CibleMaison, type HandlerMaisonMba } from '../src/mba/outils-maison';
 import { BORNES_OUTIL_MBA, TYPES_SAISISSABLES } from '../src/http/mba-outils';
 import { NOM_CONNECTEUR_RELAIS } from '../src/mba/publication';
+import { risqueSelonMethode, type MethodeConnecteur } from '../src/agent/http-cible';
 import type { OutilComplet } from '../src/agent/catalog';
 
 /**
@@ -92,6 +93,15 @@ describe('les constantes recopiées dans l’écran', () => {
     expect(m).not.toBeNull();
     const ecran = Object.fromEntries([...m![1]!.matchAll(/(\w+):\s*(\d+)/g)].map((x) => [x[1]!, Number(x[2])]));
     expect(ecran).toEqual({ ...BORNES_OUTIL_MBA });
+  });
+
+  it('🔴 les méthodes dites « irréversibles » à l’écran sont celles que le serveur range ainsi', () => {
+    // Sinon l'écran annoncerait un appel sans danger que le serveur traite comme irréversible, ou l'inverse.
+    const METHODES: MethodeConnecteur[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    const serveur = METHODES.filter((m) => risqueSelonMethode(m) === 'irreversible');
+    const m = /export const METHODES_IRREVERSIBLES: readonly string\[\] = \[([^\]]*)\]/.exec(ecranLib);
+    expect(m).not.toBeNull();
+    expect([...m![1]!.matchAll(/'([A-Z]+)'/g)].map((x) => x[1]!)).toEqual(serveur);
   });
 
   it('🔴 le connecteur attendu dans un effacement est celui que la publication pose chez Meta', () => {

@@ -6,7 +6,7 @@ import {
   listerOutilsMba, reactiverOutilMba, retirerOutilMba, type OutilMbaVue, type TypeOutilMba,
 } from '@/lib/api-mba-outils';
 import {
-  TEXTES_PAR_TYPE, effacementsImprevus, etatsChezMeta, retraitsSansLigne, type EtatChezMeta,
+  TEXTES_PAR_TYPE, chezMetaSansLigne, effacementsImprevus, etatsChezMeta, type EtatChezMeta,
 } from '@/lib/mba-outils';
 import { ChoixTypeOutil } from './ChoixTypeOutil';
 import { FormulaireOutilMba } from './FormulaireOutilMba';
@@ -25,7 +25,12 @@ const CONNECTEUR_RELAIS = 'EngageMe';
  * L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9, d'après le croquis de Julien).
  *
  * Une liste claire (titre, cible, type, état chez Meta), un gros bouton « Ajouter un outil », et enregistrer
- * envoie chez Meta. Aucun bandeau : ce qui attend s'envoie par le bouton « À envoyer » de la ligne.
+ * envoie chez Meta. Ce qui attend s'envoie par le bouton « À envoyer » de la ligne ; un seul bandeau, pour ce que
+ * Meta liste encore sans outil ici.
+ *
+ * 🔴 UN EFFACEMENT QUE L'UTILISATEUR N'A PAS DEMANDÉ SE FAIT CONFIRMER EN LE NOMMANT, TOUJOURS (spec § 9.2). Seuls
+ * les outils qu'il a supprimés dans cette session partent sans autre question (`supprimesIci`) : Meta ne rend
+ * jamais un outil effacé.
  *
  * 🔴 L'ENVOI EN COURS SE LIT À L'INSTANT (`envoiRef`), PAS AU RENDU DU CLIC (revue finale du 2026-09-21). Et le
  * bouton qui envoie DIT qu'il envoie : un bouton muet sur une opération lente fabrique des doublons chez Meta
@@ -45,6 +50,13 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
   const envoiRef = useRef(false);
+  // Une suppression occupe l'écran DÈS LE CLIC (confirmation, DELETE, relecture), pas seulement pendant l'envoi :
+  // sinon un second retrait lancé entre-temps devenait un effacement « imprévu » du premier envoi.
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false);
+  const suppressionRef = useRef(false);
+  // Les noms supprimés ICI pendant cette visite : les seuls que le bandeau laisse partir sans confirmation.
+  const [supprimesIci, setSupprimesIci] = useState<ReadonlySet<string>>(() => new Set());
+  const occupe = envoiEnCours || suppressionEnCours;
 
   const chargerEtats = useCallback(async (): Promise<void> => {
     try {
@@ -124,22 +136,32 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   };
 
   const supprimer = async (o: OutilMbaVue): Promise<void> => {
-    if (!window.confirm(t(`Supprimer « ${o.title} » ? Il sera retiré chez Meta.`, `Delete “${o.title}”? It will be removed at Meta.`))) return;
-    setErreur(null);
+    if (suppressionRef.current || envoiRef.current) return;
+    suppressionRef.current = true;
+    setSuppressionEnCours(true);
     try {
-      await retirerOutilMba(tenantId, o.id);
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : t('La suppression a échoué.', 'Deletion failed.'));
-      return;
-    }
-    await chargerListe();
-    const ok = await envoyer(new Set([o.name, CONNECTEUR_RELAIS]));
-    // 🔴 Un retrait qui n'est pas parti se DIT (spec § 9.3) : l'outil n'a plus de ligne ici, et Meta le liste encore.
-    if (!ok) {
-      setErreur((e) => t(
-        `L’outil est supprimé ici, mais Meta le liste encore${e ? ` (${e})` : ''} : utilisez « Les retirer de chez Meta » ci-dessous.`,
-        `The tool is deleted here, but Meta still lists it${e ? ` (${e})` : ''}: use “Remove them at Meta” below.`,
-      ));
+      if (!window.confirm(t(`Supprimer « ${o.title} » ? Il sera retiré chez Meta.`, `Delete “${o.title}”? It will be removed at Meta.`))) return;
+      setErreur(null);
+      try {
+        await retirerOutilMba(tenantId, o.id);
+      } catch (e) {
+        setErreur(e instanceof Error ? e.message : t('La suppression a échoué.', 'Deletion failed.'));
+        return;
+      }
+      setSupprimesIci((avant) => new Set([...avant, o.name]));
+      await chargerListe();
+      const ok = await envoyer(new Set([o.name, CONNECTEUR_RELAIS]));
+      // 🔴 Un retrait qui n'est pas parti se DIT (spec § 9.3) : l'outil n'a plus de ligne ici, et Meta le liste
+      // encore. Le bandeau le laissera partir sans question ; tout AUTRE effacement y sera confirmé en le nommant.
+      if (!ok) {
+        setErreur((e) => t(
+          `L’outil est supprimé ici, mais Meta le liste encore${e ? ` (${e})` : ''} : « Envoyer à Meta », au-dessus de la liste, le retirera. Tout autre effacement vous sera demandé.`,
+          `The tool is deleted here, but Meta still lists it${e ? ` (${e})` : ''}: “Send to Meta”, above the list, will remove it. Any other deletion will be asked first.`,
+        ));
+      }
+    } finally {
+      suppressionRef.current = false;
+      setSuppressionEnCours(false);
     }
   };
 
@@ -158,7 +180,8 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   if (outils === null) return null;
   // Tant que Meta n'a pas été lu, AUCUN état : afficher « Chez Meta » par défaut serait affirmer ce qu'on ignore.
   const etats = etatsCharges ? etatsChezMeta(outils, gestes) : null;
-  const retraits = retraitsSansLigne(outils, gestes);
+  // Seulement sur une liste LUE : sans elle, un outil désactivé qui a bien sa ligne passerait pour « sans outil ici ».
+  const sansLigne = etatsCharges && lectureRatee === null ? chezMetaSansLigne(outils, gestes) : [];
 
   return (
     <section data-testid="mba-outils" className="space-y-4">
@@ -194,17 +217,19 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
           envoiEnCours={envoiEnCours} onEnregistre={apresEnregistrement} onAnnuler={() => setMode({ vue: 'liste' })} />
       )}
 
-      {retraits.length > 0 && (
+      {sansLigne.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
           data-testid="mba-outils-retraits">
           <span>
-            {t('Supprimés ici, mais encore chez Meta : ', 'Deleted here, but still at Meta: ')}{retraits.join(', ')}.
+            {t('Encore chez Meta, sans outil ici : ', 'Still at Meta, with no tool here: ')}{sansLigne.join(', ')}.
           </span>
           {isAdmin && (
-            <button type="button" data-testid="mba-outils-retraits-envoyer" disabled={envoiEnCours}
-              onClick={() => { void envoyer(new Set([...retraits, CONNECTEUR_RELAIS])); }}
+            <button type="button" data-testid="mba-outils-retraits-envoyer" disabled={occupe}
+              title={t('Ce que vous avez supprimé ici part sans autre question ; tout autre effacement vous est demandé en le nommant.',
+                'What you deleted here goes without further question; any other deletion is asked first, by name.')}
+              onClick={() => { void envoyer(new Set([...sansLigne.filter((n) => supprimesIci.has(n)), CONNECTEUR_RELAIS])); }}
               className="rounded-lg border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
-              {envoiEnCours ? t('Envoi…', 'Sending…') : t('Les retirer de chez Meta', 'Remove them at Meta')}
+              {envoiEnCours ? t('Envoi…', 'Sending…') : t('Envoyer à Meta', 'Send to Meta')}
             </button>
           )}
         </div>
@@ -227,7 +252,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
         <ul className="divide-y divide-ink-100 rounded-2xl border border-ink-200 bg-white">
           {outils.map((o) => (
             <LigneOutil key={o.id} o={o} t={t} isAdmin={isAdmin} etat={etats === null ? 'chargement' : (etats.get(o.id) ?? 'inconnu')}
-              envoiEnCours={envoiEnCours}
+              envoiEnCours={occupe}
               onEnvoyer={() => { void envoyer(new Set()); }}
               onRetirer={() => { void envoyer(new Set([o.name, CONNECTEUR_RELAIS])); }}
               onModifier={() => { if (o.type !== 'inconnu') setMode({ vue: 'form', type: o.type, outil: o }); }}

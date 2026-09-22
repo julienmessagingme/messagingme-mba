@@ -70,8 +70,13 @@ appelle une route que la production n'a pas. Vécu avec l'onglet « Outils » de
 production pendant plus d'une heure, pour un espace qui avait des outils publiés et à qui l'écran disait
 « Aucun outil ». La parade : pousser l'écran APRÈS le déploiement de l'API qui porte sa route, ou le faire
 tolérer l'absence de la route ; sinon, dire la fenêtre dans le plan et la réduire (revue finale et
-déploiement dans la foulée). ⚠️ La garde de déploiement (`.claude/deploy.json`) couvre le VPS, pas Vercel :
-`pushDeploie` y est délibérément à `false`.
+déploiement dans la foulée). ⚠️ **Ce que la garde de déploiement couvre, exactement** (`.claude/deploy.json`,
+lu par `~/.claude/hooks/deploiement-garde.js`) : un `docker compose up`, un `pm2 restart|reload|start` ou une
+MIGRATION (`npm run migrate`, ajoutée le 2026-09-22 sur décision de Julien : elle change la base de production
+AVANT le `up`), lancés par `ssh` dans une commande qui nomme `/home/ubuntu/mba`, sans revue finale attestée.
+Elle ne couvre NI le `compose build` (rien ne change en production), NI une migration lancée depuis ce poste
+(la garde ne lit que le `ssh`, alors que le `.env` local pointe AUSSI sur la production), NI Vercel
+(`pushDeploie` y est délibérément à `false`).
 
 Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
@@ -91,7 +96,8 @@ cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la li
 **Dernière appliquée : 0162**, le 2026-09-21 au soir (`outils_maison_mba`, les outils maison de l'agent de
 Meta, lot 2). **Prochaine libre = 0163.** 0162 AJOUTE `agent_tools.pour_agent_meta` (écrit par la création
 d'un outil maison) et `conversation_messages.accuse_le` (que PERSONNE n'écrit encore : c'est le lot 4 ; les
-messages acquittés d'ici là garderont `null`), et RELÂCHE `agent_tools_action_par_agent_chk` : l'ancien code y
+messages acquittés d'ici là garderont `null`), RELÂCHE `agent_tools_action_par_agent_chk` et AJOUTE
+`agent_tools_pour_agent_meta_chk` (le drapeau n'existe que sur un outil `mba` sans agent) : l'ancien code y
 survit, donc AVANT le déploiement. 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** : 0162 en tête de
 `schema_migrations`, `pour_agent_meta` en `boolean NOT NULL DEFAULT false`, `accuse_le` en `timestamptz`
 nullable SANS défaut, les deux CHECK avec leur définition exacte (`pg_get_constraintdef`), AUCUN index, et rien

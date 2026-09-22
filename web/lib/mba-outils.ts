@@ -35,16 +35,24 @@ export function etatsChezMeta(
 }
 
 /**
- * Les outils que Meta liste encore et qui n'ont plus de ligne ici : supprimés, mais leur retrait chez Meta n'est
- * pas parti (envoi refusé à la confirmation, envoi en échec). 🔴 Sans cette liste, un retrait en attente ne se
- * voyait nulle part et n'avait aucun bouton : il partait au prochain envoi d'autre chose, après une confirmation
- * qui surprenait (relecture du 2026-09-21).
+ * Les outils que la prochaine publication EFFACERAIT chez Meta et qui n'ont pas de ligne ici. 🔴 Ce ne sont PAS
+ * seulement des outils supprimés ici : `planifierPublication` efface aussi ceux d'un ancien connecteur et ceux
+ * qu'on a ajoutés À LA MAIN chez Meta. L'écran les dit donc « encore chez Meta, sans outil ici », jamais
+ * « supprimés ici », et seul ce qu'on a supprimé dans la session part sans confirmation : tout autre effacement
+ * se fait confirmer en le nommant (spec § 9.2 ; relecture du 2026-09-22, qui a trouvé la version précédente
+ * capable d'effacer sans rien demander un outil que l'utilisateur venait de refuser d'effacer).
  */
-export function retraitsSansLigne(outils: readonly OutilMbaVue[], gestes: readonly GestePublication[] | null): string[] {
+export function chezMetaSansLigne(outils: readonly OutilMbaVue[], gestes: readonly GestePublication[] | null): string[] {
   if (gestes === null) return [];
   const noms = new Set(outils.map((o) => o.name));
   return gestes.filter((g) => g.type === 'outil_supprimer' && !noms.has(g.nom)).map((g) => g.nom);
 }
+
+/**
+ * Les méthodes d'appel que le serveur range en `irreversible` (`risqueSelonMethode`, `src/agent/http-cible.ts`),
+ * tenues égales par `tests/mba-outils-parite.test.ts`.
+ */
+export const METHODES_IRREVERSIBLES: readonly string[] = ['DELETE'];
 
 /** Les valeurs permises saisies une par ligne : les vides et les doublons partent, l'ordre de saisie reste. */
 export function valeursPermises(texte: string): string[] {

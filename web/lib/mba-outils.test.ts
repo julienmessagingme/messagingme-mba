@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   etatsChezMeta, effacementsImprevus, nomTechniqueDepuisTitre, consigneIncomplete, TEXTES_PAR_TYPE, PLACEHOLDER,
-  retraitsSansLigne, valeursPermises,
+  chezMetaSansLigne, valeursPermises,
 } from './mba-outils';
 import type { OutilMbaVue } from './api-mba-outils';
 
@@ -46,19 +46,19 @@ describe('l’état chez Meta, ligne par ligne', () => {
   });
 });
 
-describe('les retraits en attente qui n’ont plus de ligne', () => {
-  it('🔴 un outil supprimé ici et encore chez Meta est remonté ; un outil qui a sa ligne ne l’est pas', () => {
-    // Sans cette liste, le retrait ne se voyait nulle part et n'avait aucun bouton.
+describe('ce que Meta liste encore sans outil ici', () => {
+  it('🔴 un effacement prévu sans ligne ici est remonté ; un outil qui a sa ligne ne l’est pas', () => {
+    // Supprimé ici, ou ajouté à la main chez Meta : l'écran ne sait pas lequel, d'où un texte neutre.
     const g = [
       { type: 'outil_supprimer' as const, nom: 'parti' },
       { type: 'outil_supprimer' as const, nom: 'a' },
       { type: 'outil_modifier' as const, nom: 'b' },
     ];
-    expect(retraitsSansLigne([o('1', 'a', false), o('2', 'b')], g)).toEqual(['parti']);
+    expect(chezMetaSansLigne([o('1', 'a', false), o('2', 'b')], g)).toEqual(['parti']);
   });
 
   it('⚠️ Meta illisible : rien à affirmer', () => {
-    expect(retraitsSansLigne([], null)).toEqual([]);
+    expect(chezMetaSansLigne([], null)).toEqual([]);
   });
 });
 

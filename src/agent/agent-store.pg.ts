@@ -138,28 +138,40 @@ export class PgAgentStore implements AgentStore {
    * (`agent:<uuid>`), choisi pour que le Meta Business Agent puisse être un consommateur sans avoir de fiche
    * d'agent. C'est le prix de ce choix, il se paie ICI, en code, et un test d'intégration le tient.
    *
-   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX UNE FOIS (revue finale du 2026-09-21). Le verrou des définitions
-   * (`verrouillerDefinitions`) se pose APRÈS la cascade de l'agent et APRÈS le retrait de ses consentements,
-   * juste avant l'effacement des orphelins. Posé en tête, il (1) couvrait une liste lue avant lui, donc
-   * ratait un consentement posé entre les deux, (2) tenait les connecteurs PARTAGÉS pendant toute la cascade,
-   * bloquant chaque appel d'outil que d'autres agents journalisaient, et (3) pouvait interbloquer avec un
-   * appel de CET agent en cours de journalisation (qui tient sa session et attend l'outil, quand la cascade
-   * attend la session). La seule exigence de correction est que le verrou précède le `not exists`.
+   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX DEUX FOIS (revues finales des 21 et 22 septembre). Il est :
+   * (1) la CASCADE de l'agent, qui prend ses sessions ; (2) la lecture de ses consentements ; (3) le VERROU des
+   * définitions (`verrouillerDefinitions`) ; (4) le retrait des consentements ; (5) l'effacement des orphelins.
+   * Deux ordres s'imposent en même temps, et chacun a été violé une fois :
+   * - la SESSION avant l'OUTIL, comme le journal d'un appel (ses clés étrangères, `session_id` puis `tool_id`) :
+   *   le verrou posé en tête, avant la cascade, interbloquait avec un appel de CET agent en cours de
+   *   journalisation, et tenait les connecteurs PARTAGÉS pendant toute la cascade ;
+   * - la DÉFINITION avant la LIGNE DE CONSENTEMENT, comme `detacher`, `retirerDeMba` et
+   *   `rattacherConsommateur` : le verrou posé après le retrait interbloquait avec eux (40P01, donc un 500).
+   * Un consentement posé entre la lecture (2) et le retrait (4) n'est pas couvert par le verrou (3) : ceux-là
+   * sont verrouillés après coup (`reliquat`), le cas est rare et le `not exists` reste juste.
+   * Tenu par deux tests d'intégration qui rejouent chaque interblocage.
    */
   async remove(tenantId: string, id: string): Promise<boolean> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
       const res = await client.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, id]);
+      // L'ordre de ces quatre instructions est l'objet du JSDoc : le changer rouvre un interblocage.
+      const lies = await client.query<{ tool_id: string }>(
+        'select tool_id from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2',
+        [tenantId, consommateurAgent(id)],
+      );
+      const verrouilles = new Set(lies.rows.map((r) => r.tool_id));
+      await verrouillerDefinitions(client, tenantId, [...verrouilles]);
       const detaches = await client.query<{ tool_id: string }>(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 returning tool_id',
         [tenantId, consommateurAgent(id)],
       );
       // 🔴 UN CONNECTEUR HTTP QUE PLUS PERSONNE N'UTILISE PART AVEC SON DERNIER AGENT (décision du 2026-09-21),
       // même règle que `PgToolCatalog.detacher` : sinon il gardait son nom pris et bloquait la suppression de
-      // sa requête, sans aucun écran pour s'en défaire. Le verrou se pose ICI, voir le JSDoc.
+      // sa requête, sans aucun écran pour s'en défaire.
       if (detaches.rows.length > 0) {
-        await verrouillerDefinitions(client, tenantId, detaches.rows.map((r) => r.tool_id));
+        await verrouillerDefinitions(client, tenantId, detaches.rows.map((r) => r.tool_id).filter((t) => !verrouilles.has(t)));
         await client.query(
           `delete from agent_tools t
             where t.tenant_id = $1 and t.id = any($2::uuid[]) and t.agent_id is null and t.origin = 'http'

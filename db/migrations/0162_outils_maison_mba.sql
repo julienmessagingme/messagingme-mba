@@ -1,8 +1,11 @@
 -- 0162_outils_maison_mba.sql : les outils maison de l'agent de Meta, et l'accusé de nos envois.
 -- Spec : docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md (§ 5.1 et § 6).
 --
--- AVANT le déploiement : le code neuf écrit `pour_agent_meta` et `accuse_le`. L'ancien code y survit : un CHECK
--- relâché, une colonne à défaut `false` qu'il n'écrit pas, une colonne nullable qu'il ne lit pas.
+-- AVANT le déploiement : le code neuf écrit `pour_agent_meta` ; `accuse_le` ne sera écrit que par le lot 4 (d'ici
+-- là, elle vaut `null` pour tous les messages). L'ancien code y survit : un CHECK relâché, un CHECK neuf qu'il
+-- respecte (il n'écrit pas le drapeau), une colonne à défaut `false`, une colonne nullable qu'il ne lit pas.
+-- ⚠️ Commentaire corrigé APRÈS application (2026-09-22) : le runner suit les migrations par leur NOM, sans
+-- somme de contrôle, donc la base n'en voit rien.
 
 -- Un outil qui appartient à l'agent de Meta de l'espace, et à lui seul (il n'a pas de fiche d'agent).
 alter table agent_tools add column if not exists pour_agent_meta boolean not null default false;

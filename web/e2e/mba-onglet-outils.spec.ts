@@ -32,7 +32,7 @@ const REQ = (id: string, label: string, variables: unknown[] = []) => ({
 const CONSIGNE = 'Appelle cet outil dès que le client demande une étiquette. Ne passe pas la main.';
 
 interface Monture {
-  outils?: unknown[];
+  outils?: unknown[] | (() => unknown[]);
   gestes?: unknown[] | (() => unknown[]);
   requetes?: unknown[];
   tags?: unknown[];
@@ -40,6 +40,8 @@ interface Monture {
   retenirPublication?: Promise<void>;
   /** La publication chez Meta échoue (502), comme quand Meta refuse. */
   publicationEchoue?: boolean;
+  /** Le DELETE d'un outil attend cette promesse : de quoi voir l'écran pendant une suppression. */
+  retenirSuppression?: Promise<void>;
   /** Ces lectures échouent (500) : une lecture ratée n'est pas une liste vide. */
   listeEchoue?: boolean;
   requetesEchouent?: boolean;
@@ -68,13 +70,17 @@ async function monterOutils(page: Page, m: Monture = {}) {
       if (url.includes(`/tenants/${TENANT}/mba-outils`)) {
         if (method === 'GET') {
           if (m.listeEchoue) { await json({ error: 'base indisponible' }, 500); return true; }
-          await json({ outils: m.outils ?? [], phoneNumberId: 'PN1' });
+          await json({ outils: typeof m.outils === 'function' ? m.outils() : (m.outils ?? []), phoneNumberId: 'PN1' });
           return true;
         }
         ecrits.push({ method, url, body });
         ordre.push(method);
         if (method === 'POST') { await json({ id: 'nouveau' }, 201); return true; }
-        if (method === 'DELETE') { await route.fulfill({ status: 204, body: '' }); return true; }
+        if (method === 'DELETE') {
+          if (m.retenirSuppression) await m.retenirSuppression;
+          await route.fulfill({ status: 204, body: '' });
+          return true;
+        }
         await json({ id: 'o1', actif: true });
         return true;
       }
@@ -395,15 +401,99 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-outils-relire')).toBeVisible();
   });
 
-  test('🔴 un retrait en attente sans ligne se voit, et part sans confirmation par son bouton', async ({ page }) => {
-    const m = await monterOutils(page, { outils: [OUTIL], gestes: [{ type: 'outil_supprimer', nom: 'parti_ici' }] });
+  /**
+   * 🔴 CE QUE META LISTE SANS OUTIL ICI N'EST PAS « SUPPRIMÉ ICI » (relecture du 2026-09-22). `main_levee` a été
+   * ajouté À LA MAIN chez Meta : le bandeau le montre, mais son bouton ne l'efface pas sans le NOMMER dans une
+   * confirmation. La version précédente l'effaçait sans rien demander, et Meta ne rend jamais un outil effacé.
+   */
+  test('🔴 un outil ajouté à la main chez Meta n’est jamais effacé sans confirmation qui le nomme', async ({ page }) => {
+    const m = await monterOutils(page, { outils: [OUTIL], gestes: [{ type: 'outil_supprimer', nom: 'main_levee' }] });
     const dialogues: string[] = [];
-    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    page.on('dialog', (d) => { dialogues.push(d.message()); void d.dismiss(); });
     await page.goto('/mba/parametres?tab=outils');
-    await expect(page.getByTestId('mba-outils-retraits')).toContainText('parti_ici');
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('sans outil ici');
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('main_levee');
+    await expect(page.getByTestId('mba-outils-retraits')).not.toContainText('Supprimés ici');
     await page.getByTestId('mba-outils-retraits-envoyer').click();
-    await expect.poll(() => m.publications()).toBe(1);
-    expect(dialogues).toEqual([]);
+    await expect.poll(() => dialogues.length).toBe(1);
+    expect(dialogues[0]).toContain('main_levee');
+    // Refusée : rien ne part.
+    expect(m.publications()).toBe(0);
+  });
+
+  /**
+   * 🔴 LE SCÉNARIO QUE LA RELECTURE A TROUVÉ : supprimer un outil, REFUSER la confirmation qui nomme `main_levee`,
+   * puis suivre le message vers le bandeau. Le bouton ne doit laisser partir sans question QUE l'outil supprimé
+   * ici ; `main_levee` est redemandé.
+   */
+  test('🔴 après un refus, le bandeau ne laisse partir sans question que ce qui a été supprimé ici', async ({ page }) => {
+    let supprime = false;
+    const m = await monterOutils(page, {
+      outils: () => (supprime ? [] : [OUTIL]),
+      gestes: () => (supprime
+        ? [{ type: 'outil_supprimer', nom: 'suivi_commande' }, { type: 'outil_supprimer', nom: 'main_levee' }]
+        : [{ type: 'outil_supprimer', nom: 'main_levee' }]),
+    });
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => {
+      dialogues.push(d.message());
+      // La première (« Supprimer … ? ») est acceptée, les suivantes refusées.
+      if (dialogues.length === 1) { supprime = true; void d.accept(); } else void d.dismiss();
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+    await expect.poll(() => dialogues.length).toBe(2);
+    expect(dialogues[1]).toContain('main_levee');
+    await expect(page.getByTestId('mba-outils-erreur')).toContainText('supprimé ici');
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('suivi_commande');
+    await page.getByTestId('mba-outils-retraits-envoyer').click();
+    await expect.poll(() => dialogues.length).toBe(3);
+    expect(dialogues[2]).toContain('main_levee');
+    expect(dialogues[2]).not.toContain('suivi_commande');
+    expect(m.publications()).toBe(0);
+  });
+
+  test('🔴 « Supprimer » est bloqué dès le clic, pas seulement pendant l’envoi', async ({ page }) => {
+    let liberer: () => void = () => {};
+    const retenue = new Promise<void>((ok) => { liberer = ok; });
+    const B = { ...OUTIL, id: 'o2', name: 'autre' };
+    await monterOutils(page, { outils: [OUTIL, B], retenirSuppression: retenue });
+    page.on('dialog', (d) => { void d.accept(); });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+    await expect(page.getByTestId('mba-outil-supprimer-o2')).toBeDisabled();
+    liberer();
+    await expect(page.getByTestId('mba-outil-supprimer-o2')).toBeEnabled();
+  });
+
+  test('🔴 une lecture ratée des champs n’annonce JAMAIS un champ disparu', async ({ page }) => {
+    const INFO = { ...OUTIL, type: 'champ', cible: { type: 'champ', champ: 'ville', valeurs: [] }, aussiUtilisePar: [] };
+    await monterOutils(page, { outils: [INFO], fieldsEchouent: true });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-modifier-o1').click();
+    await expect(page.getByTestId('mba-cible-champ-illisible')).toBeVisible();
+    await expect(page.getByTestId('mba-cible-champ-disparu')).toHaveCount(0);
+    await expect(page.getByTestId('mba-cible-champ')).toHaveValue('ville');
+  });
+
+  test('🔴 une lecture ratée des appels ne dit pas « Appel supprimé »', async ({ page }) => {
+    await monterOutils(page, { outils: [OUTIL], requetesEchouent: true });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-modifier-o1').click();
+    await expect(page.getByTestId('mba-cible-appels-illisibles')).toBeVisible();
+    await expect(page.getByTestId('mba-form')).not.toContainText('Appel supprimé');
+  });
+
+  test('un champ au nom interne trop long est proposé grisé, avec sa raison', async ({ page }) => {
+    await monterOutils(page, {
+      outils: [], fields: [{ key: 'ville', label: 'Ville', type: 'text' }, { key: 'x'.repeat(70), label: 'Très long', type: 'text' }],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-champ').click();
+    // `toBeDisabled` ne lit pas l'attribut sur un `<option>` : on lit l'attribut lui-même.
+    await expect(page.locator('[data-testid="mba-cible-champ"] option', { hasText: 'Très long' })).toHaveAttribute('disabled', '');
+    await expect(page.locator('[data-testid="mba-cible-champ"] option', { hasText: 'Ville' })).not.toHaveAttribute('disabled', '');
   });
 
   test('🔴 « Supprimer » est désactivé pendant un envoi vers Meta', async ({ page }) => {

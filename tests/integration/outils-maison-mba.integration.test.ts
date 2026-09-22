@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgToolCatalog } from '../../src/agent/catalog.pg';
 import { PgAgentStore } from '../../src/agent/agent-store.pg';
@@ -176,13 +176,15 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
    * n'aurait rien eu à faire, et le test passerait même sans lui. `pg_stat_activity` dit quand une connexion
    * attend VRAIMENT un verrou sur cette table (avec ou sans le correctif, l'effacement finit par y attendre :
    * c'est ce qui se passe APRÈS qui les distingue).
+   * ⚠️ Le filtre porte sur `agent`, pas sur `agent_tool` : `PgAgentStore.remove` attend sur `delete from agents`
+   * (sa cascade). Un filtre plus étroit a fait échouer le test du journal quel que soit l'ordre, à 5 s.
    */
   const attendreUnVerrou = async (): Promise<void> => {
     for (let i = 0; i < 200; i += 1) {
       const r = await pool.query(
         `select 1 from pg_stat_activity
           where wait_event_type = 'Lock' and datname = current_database() and pid <> pg_backend_pid()
-            and query ilike '%agent_tool%'`,
+            and query ilike '%agent%'`,
       );
       if ((r.rowCount ?? 0) > 0) return;
       await new Promise((ok) => setTimeout(ok, 25));
@@ -190,23 +192,36 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
     throw new Error('aucune connexion ne s’est bloquée sur un verrou : le test ne prouverait rien');
   };
 
-  /** Un consentement posé dans une transaction laissée OUVERTE, le temps de lancer l'effacement concurrent. */
-  const rattachementEnCours = async (id: string, consommateur: string, effacement: () => Promise<unknown>) => {
-    const autre = await pool.connect();
+  /**
+   * Une connexion tenue HORS du magasin, le temps de jouer une course. ⚠️ Sur un échec, elle est ANNULÉE avant
+   * d'être rendue au pool : rendue avec sa transaction ouverte, elle garderait ses verrous et `pool.end()`
+   * resterait pendu (relecture du 2026-09-22).
+   */
+  const avecConnexion = async <T>(travail: (c: PoolClient) => Promise<T>): Promise<T> => {
+    const c = await pool.connect();
     try {
+      return await travail(c);
+    } finally {
+      await c.query('rollback').catch(() => {});
+      c.release();
+    }
+  };
+
+  /** Un consentement posé dans une transaction laissée OUVERTE, le temps de lancer l'effacement concurrent. */
+  const rattachementEnCours = async (id: string, consommateur: string, effacement: () => Promise<unknown>) =>
+    avecConnexion(async (autre) => {
       await autre.query('begin');
       await autre.query(
         'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
         [tenantId, id, consommateur],
       );
       const enCours = effacement();
+      // Une promesse lancée et jamais attendue sur un échec deviendrait un rejet non géré.
+      enCours.catch(() => {});
       await attendreUnVerrou();
       await autre.query('commit');
       return await enCours;
-    } finally {
-      autre.release();
-    }
-  };
+    });
   const consommateursDe = async (id: string) =>
     (await pool.query<{ consommateur: string }>(
       'select consommateur from agent_tool_consommateurs where tool_id = $1 order by consommateur', [id],
@@ -252,18 +267,93 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
    */
   it('🔴 un rattachement qui arrive PENDANT un effacement rend `false`, jamais une erreur', async () => {
     const id = await connecteurNeuf('course_inverse');
-    const effaceur = await pool.connect();
-    try {
+    await avecConnexion(async (effaceur) => {
       await effaceur.query('begin');
       await effaceur.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, id]);
       const rattachement = cat.rattacherConsommateur(tenantId, consommateurMba(PN), id);
+      rattachement.catch(() => {});
       await attendreUnVerrou();
       await effaceur.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, id]);
       await effaceur.query('commit');
       expect(await rattachement).toBe(false);
-    } finally {
-      effaceur.release();
-    }
+    });
     expect(await existe(id)).toBe(false);
+  });
+
+  /** Un agent qui a une SESSION : il faut un scénario et un parcours, comme en production. */
+  const agentAvecSession = async (label: string): Promise<{ agent: string; session: string }> => {
+    const agent = (await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, $2, 'IA', 'm') returning id`,
+      [tenantId, label],
+    )).rows[0]!.id;
+    const wf = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name) values ($1, $2) returning id`, [tenantId, `itest-${label}`],
+    )).rows[0]!.id;
+    const run = (await pool.query<{ id: string }>(
+      `insert into workflow_runs (workflow_id, tenant_id, wa_id, current_node, status)
+       values ($1, $2, '33600000009', 'a', 'waiting') returning id`, [wf, tenantId],
+    )).rows[0]!.id;
+    const session = (await pool.query<{ id: string }>(
+      `insert into agent_sessions (tenant_id, run_id, agent_id, node_id, wa_id)
+       values ($1, $2, $3, 'a', '33600000009') returning id`, [tenantId, run, agent],
+    )).rows[0]!.id;
+    return { agent, session };
+  };
+
+  /**
+   * 🔴 L'INTERBLOCAGE AVEC LE JOURNAL (revue finale du 2026-09-21). Un appel de l'agent partant se journalise :
+   * l'insert prend sa SESSION, puis l'OUTIL (l'ordre de ses clés étrangères). Avec le verrou des définitions posé
+   * en TÊTE de `remove`, celui-ci tenait l'outil et attendait la session pour sa cascade, pendant que le journal
+   * tenait la session et attendait l'outil : Postgres en tuait un (40P01). Rouge avec cet ordre-là.
+   */
+  it('🔴 supprimer un agent n’interbloque pas avec un appel qu’il est en train de journaliser', async () => {
+    const { agent, session } = await agentAvecSession('partant-journal');
+    const id = await connecteurNeuf('course_journal');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toBe(true);
+    const agents = new PgAgentStore(pool);
+    await avecConnexion(async (journal) => {
+      await journal.query('begin');
+      await journal.query('select 1 from agent_sessions where id = $1 for key share', [session]);
+      const suppression = agents.remove(tenantId, agent);
+      suppression.catch(() => {});
+      await attendreUnVerrou();
+      await journal.query(
+        `insert into agent_tool_calls (tenant_id, session_id, tool_id, tool_name, origin, status)
+         values ($1, $2, $3, 'course_journal', 'http', 'ok')`,
+        [tenantId, session, id],
+      );
+      await journal.query('commit');
+      expect(await suppression).toBe(true);
+    });
+  });
+
+  /**
+   * 🔴 L'INTERBLOCAGE AVEC `detacher` (relecture du 2026-09-22). `detacher` verrouille la DÉFINITION, puis
+   * retire la ligne de consentement. `remove` faisait l'inverse (il retirait ses consentements, puis
+   * verrouillait) : chacun attendait ce que l'autre tenait. On rejoue `detacher` à la main pour tenir la
+   * définition au bon moment. Rouge avec cet ordre-là.
+   */
+  it('🔴 supprimer un agent n’interbloque pas avec un détachement du même outil', async () => {
+    const { agent } = await agentAvecSession('partant-detacher');
+    const id = await connecteurNeuf('course_ordre');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    const agents = new PgAgentStore(pool);
+    await avecConnexion(async (detachement) => {
+      await detachement.query('begin');
+      await detachement.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, id]);
+      const suppression = agents.remove(tenantId, agent);
+      suppression.catch(() => {});
+      await attendreUnVerrou();
+      await detachement.query(
+        'delete from agent_tool_consommateurs where tenant_id = $1 and tool_id = $2 and consommateur = $3',
+        [tenantId, id, consommateurAgent(agent)],
+      );
+      await detachement.query('commit');
+      expect(await suppression).toBe(true);
+    });
+    // L'agent de Meta s'en sert encore : le connecteur reste.
+    expect(await existe(id)).toBe(true);
+    expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
   });
 });

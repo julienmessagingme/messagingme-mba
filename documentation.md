@@ -449,9 +449,14 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   `src/agent/catalog.pg.ts`) : sans ce verrou, un rattachement concurrent, pas encore validé donc invisible,
   partait dans la cascade. Et tout insert de consentement sur une définition existante prend `for key share`
   (`rattacherConsommateur`) : il attend un effacement en cours et rend `false`, jamais une erreur de clé
-  étrangère. `PgAgentStore.remove` pose le verrou APRÈS la cascade de l'agent (posé en tête, il pouvait
-  interbloquer avec un appel d'outil en cours de journalisation). Tout nouveau chemin d'effacement suit la même
-  règle ; `tests/integration/outils-maison-mba.integration.test.ts` éprouve les trois chemins et le cas inverse.
+  étrangère. 🔴 **L'ORDRE DES VERROUS EST LE MÊME PARTOUT** : la DÉFINITION avant la LIGNE DE CONSENTEMENT
+  (`detacher`, `retirerDeMba`, `rattacherConsommateur`), et, pour un journal d'appel, la SESSION avant l'OUTIL.
+  D'où l'ordre de `PgAgentStore.remove` : la cascade de l'agent (ses sessions), puis la lecture de ses
+  consentements, le verrou, et seulement ensuite leur retrait. Chacun des deux autres ordres essayés interbloquait
+  (40P01, donc un 500) : verrouiller en tête contre un appel en cours de journalisation, retirer avant de
+  verrouiller contre un `detacher`. Tout nouveau chemin d'effacement suit la même règle ;
+  `tests/integration/outils-maison-mba.integration.test.ts` éprouve les trois chemins, le cas inverse, et
+  rejoue chacun des deux interblocages.
 - Le relais REFUSE d'écrire un champ supprimé du mini-CRM (`DepsMaison.champExiste`, même liste que la ligne
   rouge de l'onglet). Un outil « Désactivé » (départ de son auteur) reste LISTÉ chez Meta jusqu'au prochain
   envoi, rien ne republiant à ce départ : la ligne propose de l'en retirer. La vue porte le RISQUE, et l'onglet

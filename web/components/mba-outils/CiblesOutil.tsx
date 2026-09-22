@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { listTags, listUserFields, type TagCount, type UserFieldDef } from '@/lib/api';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
-import { BORNES_OUTIL, valeursPermises } from '@/lib/mba-outils';
+import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
 
@@ -46,19 +46,24 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
   tenantId: string; champ: string; valeurs: string[]; onChange: (champ: string, valeurs: string[]) => void;
 }) {
   const t = useT();
-  const [champs, setChamps] = useState<UserFieldDef[] | null>(null);
+  // `'erreur'` n'est pas `[]` : une lecture RATÉE affichait « ce champ n'existe plus, supprimez l'outil » d'un
+  // outil qui fonctionne (relecture du 2026-09-22).
+  const [champs, setChamps] = useState<UserFieldDef[] | null | 'erreur'>(null);
+  const [essai, setEssai] = useState(0);
   // Le texte brut des valeurs, pour qu'une ligne vide en cours de frappe ne disparaisse pas sous le curseur.
   const [texte, setTexte] = useState(valeurs.join('\n'));
   useEffect(() => {
     let vivant = true;
+    setChamps(null);
     listUserFields(tenantId)
       .then((r) => { if (vivant) setChamps(Array.isArray(r?.fields) ? r.fields : []); })
-      .catch(() => { if (vivant) setChamps([]); });
+      .catch(() => { if (vivant) setChamps('erreur'); });
     return () => { vivant = false; };
-  }, [tenantId]);
+  }, [tenantId, essai]);
+  const lus = Array.isArray(champs) ? champs : [];
   // 🔴 Un champ supprimé du mini-CRM RESTE affiché, et signalé : le select le montrait « Choisir un champ »
   // pendant que l'état gardait l'ancienne clé, donc l'écran et ce qui partait divergeaient.
-  const disparu = champs !== null && champ !== '' && !champs.some((f) => f.key === champ);
+  const disparu = Array.isArray(champs) && champ !== '' && !champs.some((f) => f.key === champ);
   return (
     <div className="flex flex-col gap-2">
       <label className="text-xs text-ink-600">
@@ -67,9 +72,22 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
           onChange={(e) => onChange(e.target.value, valeurs)}>
           <option value="">{t('Choisir un champ', 'Pick a field')}</option>
           {disparu && <option value={champ}>{champ} {t('(supprimé du mini-CRM)', '(deleted from the mini-CRM)')}</option>}
-          {(champs ?? []).map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          {/* Liste pas encore lue, ou illisible : la valeur courante reste affichée, sans rien affirmer d'elle. */}
+          {champ !== '' && !Array.isArray(champs) && <option value={champ}>{champ}</option>}
+          {/* Une clé plus longue que la borne de la route serait refusée en 400 : proposée grisée, avec sa raison. */}
+          {lus.map((f) => (
+            <option key={f.key} value={f.key} disabled={f.key.length > BORNES_OUTIL.champ}>
+              {f.label}{f.key.length > BORNES_OUTIL.champ ? t(' (nom interne trop long)', ' (internal name too long)') : ''}
+            </option>
+          ))}
         </select>
       </label>
+      {champs === 'erreur' && (
+        <button type="button" data-testid="mba-cible-champ-illisible" onClick={() => setEssai((n) => n + 1)}
+          className="self-start text-[11px] text-coral underline">
+          {t('Lecture des champs impossible : réessayer', 'Could not read the fields: retry')}
+        </button>
+      )}
       {disparu && (
         <p className="text-[11px] text-coral" data-testid="mba-cible-champ-disparu">
           {t('Ce champ n’existe plus : l’agent de Meta ne peut plus l’enregistrer. Choisissez-en un autre, ou supprimez l’outil.',
@@ -92,15 +110,26 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
   tenantId: string; requeteId: string | null; fixe: boolean; onChoisir: (r: RequeteApi) => void;
 }) {
   const t = useT();
-  const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
+  // Même règle que les champs : une lecture ratée n'est ni « aucun appel » ni « appel supprimé ».
+  const [requetes, setRequetes] = useState<RequeteApi[] | null | 'erreur'>(null);
+  const [essai, setEssai] = useState(0);
   useEffect(() => {
     let vivant = true;
+    setRequetes(null);
     listRequetes(tenantId)
       .then((r) => { if (vivant) setRequetes(Array.isArray(r?.requetes) ? r.requetes : []); })
-      .catch(() => { if (vivant) setRequetes([]); });
+      .catch(() => { if (vivant) setRequetes('erreur'); });
     return () => { vivant = false; };
-  }, [tenantId]);
+  }, [tenantId, essai]);
   if (requetes === null) return null;
+  if (requetes === 'erreur') {
+    return (
+      <button type="button" data-testid="mba-cible-appels-illisibles" onClick={() => setEssai((n) => n + 1)}
+        className="self-start text-xs text-coral underline">
+        {t('Lecture des appels impossible : réessayer', 'Could not read the calls: retry')}
+      </button>
+    );
+  }
   const choisie = requetes.find((r) => r.id === requeteId) ?? null;
   if (fixe) {
     // Plan, écart 1 : la définition d'un connecteur est partagée avec les agents IA, son appel ne change pas.
@@ -125,7 +154,7 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
             <span className="flex flex-wrap items-baseline gap-2">
               <span className="text-sm text-ink-800">{r.label}</span>
               <code className="text-[11px] text-ink-500">{r.methode} {r.chemin}</code>
-              {r.methode === 'DELETE' && (
+              {METHODES_IRREVERSIBLES.includes(r.methode) && (
                 <span className="rounded bg-amber-50 px-1.5 text-[11px] text-amber-800" data-testid={`mba-cible-appel-irreversible-${r.id}`}>
                   {t('irréversible', 'irreversible')}
                 </span>
@@ -138,7 +167,7 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
           </li>
         ))}
       </ul>
-      {choisie?.methode === 'DELETE' && (
+      {choisie && METHODES_IRREVERSIBLES.includes(choisie.methode) && (
         <p className="text-[11px] text-amber-800" data-testid="mba-cible-appel-avertissement">
           {t('Cet appel est irréversible, et l’agent de Meta l’exécute sans validation humaine. Réservez-le à une demande explicite du client, et dites-le dans « Quand l’appeler ».',
             'This call is irreversible, and Meta’s agent runs it without human approval. Keep it for an explicit customer request, and say so in “When to call it”.')}
