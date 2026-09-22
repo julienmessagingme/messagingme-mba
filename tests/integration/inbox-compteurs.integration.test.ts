@@ -273,7 +273,7 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
       // 2026-09-23 : ZÉRO conversation porte encore un sens nul), et un sens nul ne décrit plus qu'un état
       // NEUF : un fil qu'un opérateur vient d'ouvrir depuis la fiche d'un contact. Personne n'y attend de
       // réponse, donc il n'a rien à faire dans une file de travail.
-      const id = await conv('33610000007', 'app_human', null);
+      const id = await conv('33610000091', 'app_human', null);
       const sens = await pool.query<{ last_direction: string | null }>(
         'select last_direction from conversations where id = $1', [id],
       );
