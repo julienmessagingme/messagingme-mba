@@ -1382,7 +1382,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut) |
 | `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts |
 | `src/lib/cache-court.ts` | le micro-cache du dépôt : durée de vie ET mutualisation des appels en vol |
-| `src/lib/journal.ts` -> `journaliser` | la ligne de journal JSON du dépôt (`{ lvl, msg, ... }`). 🔴 `req.log` et `app.log` sont MUETS (`logger: false`). Une `Error` y garde son message, et sa pile au niveau `error` |
+| `src/lib/journal.ts` -> `journaliser` | la ligne de journal JSON du dépôt (`{ lvl, msg, ... }`). 🔴 `req.log` et `app.log` sont MUETS (`logger: false`). Une `Error` y garde son message, sa CAUSE sur un niveau (un `fetch failed` sans son `ENOTFOUND` ne dit rien) et sa pile au niveau `error` ; un champ illisible est remplacé SEUL, sans emporter ses voisins ; elle ne lève jamais. L'espace s'y écrit `tenantId`, tenu par un test |
 | `src/meta/numero-espace.ts` | le numéro Meta d'un espace, mis en cache. 🔴 Il ne garde QUE les réponses POSITIVES : une réponse nulle devient fausse à l'instant où un client branche son premier numéro, et le cache étant par process, aucune invalidation ne traverse l'API et le worker. C'est ce qui rend acceptable de mettre en cache une décision |
 | `src/lib/http-get.ts` | une lecture GET injectable, testable sans réseau |
 | `src/lib/heures-ouvrees.ts` -> `prochaineOuverture` | « quand est le prochain créneau ouvert ? », pour le bloc Attente et les campagnes |

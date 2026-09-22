@@ -117,6 +117,7 @@ import type { Queue } from './queue/queue';
 import { ENTETES_SECURITE_API } from './http/entetes-securite';
 import type { ApiUsageGuard } from './api/usage-guard';
 import { GardeUsageMemoire } from './api/usage-guard.memoire';
+import { journaliser } from './lib/journal';
 
 export interface ServerDeps {
   /**
@@ -658,18 +659,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // de fuite d'interne), mais l'exception doit laisser une trace exploitable côté serveur : sans ça, une
     // saturation du pool, une erreur SQL ou un bug de sérialisation produisaient un « Internal Server Error »
     // dont il ne restait RIEN nulle part, et on ne pouvait que constater le symptôme depuis le navigateur.
-    // `console.error` et non `req.log` : Fastify est construit en `logger: false`, donc `req.log` est un no-op.
+    // `journaliser` et non `req.log` : Fastify est construit en `logger: false`, donc `req.log` est un no-op.
+    // Et il porte la CAUSE : c'est cette ligne qui voit le 500 d'un `fetch failed`, muet sans son `ENOTFOUND`.
     if (code >= 500) {
-      // eslint-disable-next-line no-console
-      console.error(JSON.stringify({
-        lvl: 'error',
-        msg: 'unhandled_route_error',
-        method: req.method,
-        url: req.url,
-        tenant: req.auth?.tenantId ?? null,
-        err: err.message,
-        stack: err.stack,
-      }));
+      journaliser('error', 'unhandled_route_error', { method: req.method, url: req.url, tenantId: req.auth?.tenantId ?? null, err });
     }
     // ⚠️ Ce texte a un LECTEUR : la console le reconnaît et le remplace par une phrase traduite
     // (`OPAQUE_DU_SERVEUR`, `web/lib/http.ts`). Les deux se tiennent par `tests/corps-opaque-parite.test.ts`.

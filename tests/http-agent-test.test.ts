@@ -13,6 +13,7 @@ import { ESSAIS_AFFICHES, RETENTION_ESSAIS_JOURS, type EssaiAEcrire, type EssaiA
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { LlmApiError } from '../src/llm/errors';
+import { capturerJournal } from './journal';
 
 /**
  * Le bac à sable : parler à son agent depuis la console.
@@ -212,14 +213,19 @@ describe('bac à sable de l’agent', () => {
    * Cloudflare détruisait le corps ; en 422, le texte d'une panne de NOTRE base partait au navigateur.
    */
   it('🔴 une panne de NOTRE base sort en 500 opaque, sans son texte', async () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const casse = serveurQuiCasse({ contexte: async () => { throw new Error('password authentication failed for user "postgres.abcdef"'); } });
-    const res = await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
-    spy.mockRestore();
+    const panne = new Error('password authentication failed for user "postgres.abcdef"', {
+      cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:5432'), { code: 'ECONNREFUSED' }),
+    });
+    const casse = serveurQuiCasse({ contexte: async () => { throw panne; } });
+    const { resultat: res, lignes } = await capturerJournal(() => casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour }));
     expect(res.statusCode).toBe(500);
     expect(res.json().error).toBe('Internal Server Error');
     expect(res.body).not.toContain('password');
     expect(res.body).not.toContain('postgres');
+    // Le texte reste CÔTÉ SERVEUR, avec sa CAUSE : c'est la ligne du gestionnaire global qui voit ces 500.
+    expect(lignes.find((l) => l.msg === 'unhandled_route_error')).toMatchObject({
+      lvl: 'error', tenantId: 't1', err: expect.stringContaining('password'), errCause: 'ECONNREFUSED connect ECONNREFUSED 10.0.0.5:5432',
+    });
   });
 
   it('un agent introuvable, ou un identifiant mal formé, rend 404', async () => {

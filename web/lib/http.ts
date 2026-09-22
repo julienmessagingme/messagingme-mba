@@ -36,10 +36,11 @@ export const BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '') 
  * messages jetés ici remontent partout via `err.message` et s'affichaient en français sur une console en
  * anglais. En cas de doute on retombe sur le français, jamais sur une erreur.
  *
- * ⚠️ Ne traduit QUE les replis de ce fichier (session expirée, « Erreur N », l'incident d'un 5xx). Un message
- * d'erreur venu du serveur (`body.error`) passe tel quel, rédigé en français côté API : c'est la limite
- * connue, notée dans `todo.md`. Seule exception, le corps opaque d'une panne (`OPAQUE_DU_SERVEUR`), remplacé
- * par la phrase traduite de `messageDErreur`.
+ * ⚠️ Ne traduit QUE les replis d'`attempt` (session expirée, « Erreur N », l'incident d'un 5xx) ; ceux de
+ * `requestBlob` (« session expirée », « média indisponible ») restent en français. Un message d'erreur venu du
+ * serveur (`body.error`) passe tel quel, rédigé en français côté API : c'est la limite connue, notée dans
+ * `todo.md`. Seule exception, le corps opaque d'une panne (`OPAQUE_DU_SERVEUR`), remplacé par la phrase
+ * traduite de `messageDErreur`.
  */
 function langue(): Locale {
   if (typeof window === 'undefined') return 'fr';

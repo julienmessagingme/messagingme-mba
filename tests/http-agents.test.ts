@@ -191,7 +191,7 @@ describe('routes agents : création', () => {
     expect(res.statusCode).toBe(422);
     expect(res.json().error).toMatch(/crédit|Rechargez/i);
     // Journalisé côté serveur en plus, comme le promet la route : ce 422 est la seule trace côté client.
-    expect(lignes.find((l) => l.msg === 'cle_modele_non_provisionnee')).toMatchObject({ lvl: 'error', tenant: 't1' });
+    expect(lignes.find((l) => l.msg === 'cle_modele_non_provisionnee')).toMatchObject({ lvl: 'error', tenantId: 't1' });
   });
 
   it('🔴 dépendance ABSENTE : la création se comporte comme avant', async () => {

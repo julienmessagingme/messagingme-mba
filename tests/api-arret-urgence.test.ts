@@ -3,6 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import { cleApiDeTest } from './aide/cle-api';
+import { capturerJournal } from './journal';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 
 /**
@@ -121,9 +122,14 @@ describe('le geste qui pose et retire le verrou', () => {
     const sansNote = await server.inject({ method: 'POST', url: `/ops/verrou/${UUID}`, headers: ops, payload: { verrouille: true } });
     expect(sansNote.statusCode).toBe(400);
 
-    const res = await server.inject({ method: 'POST', url: `/ops/verrou/${UUID}`, headers: ops, payload: { verrouille: true, note: 'impayé de septembre' } });
+    const { resultat: res, lignes } = await capturerJournal(() => server.inject({ method: 'POST', url: `/ops/verrou/${UUID}`, headers: ops, payload: { verrouille: true, note: 'impayé de septembre' } }));
     expect(res.statusCode).toBe(200);
     expect(appels).toEqual([{ tenantId: UUID, verrouille: true, note: 'impayé de septembre' }]);
+    // 🔴 LE POURQUOI N'EXISTE QUE DANS CETTE LIGNE : la dépendance ne conserve pas la note. Une seule ligne
+    // par geste, écrite par la ROUTE (le câblage de `src/index.ts` ne l'écrit plus ; ce faux ne le prouve pas).
+    const verrous = lignes.filter((l) => l.msg === 'ops_verrou_espace');
+    expect(verrous).toHaveLength(1);
+    expect(verrous[0]).toMatchObject({ lvl: 'warn', tenantId: UUID, verrouille: true, note: 'impayé de septembre' });
     await server.close();
   });
 

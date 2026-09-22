@@ -168,7 +168,7 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
       // (rien ne l'interdit) repart dans son enveloppe, qui en porte au moins le texte.
       if (raison === null) throw cause instanceof Error ? cause : err;
       // La CAUSE ici aussi : sa pile, pas celle de l'enveloppe.
-      journaliser('error', 'agent_test_echec', { tenant, agentId, err: cause instanceof Error ? cause : err });
+      journaliser('error', 'agent_test_echec', { tenantId: tenant, agentId, err: cause instanceof Error ? cause : err });
       return reply.code(422).send({ error: `l’essai a échoué : ${raison}` });
     }
 

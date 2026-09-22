@@ -381,14 +381,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       } catch (err) {
         const raison = direPanneModele(err);
         if (raison === null) throw err;
-        // eslint-disable-next-line no-console
-        console.error(JSON.stringify({
-          lvl: 'error',
-          msg: 'agent_setup_image_echec',
-          tenant: ctx.tenant,
-          err: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        }));
+        journaliser('error', 'agent_setup_image_echec', { tenantId: ctx.tenant, err });
         return reply.code(422).send({ error: `l’image n’a pas pu être lue : ${raison}` });
       }
       await noterDepense(deps, ctx.tenant, lu.coutDollars);
@@ -495,14 +488,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       // Et SEULEMENT pour ces trois-là : le reste est notre panne, relancée en 500 opaque (`direPanneModele`).
       const raison = direPanneModele(err);
       if (raison === null) throw err;
-      // eslint-disable-next-line no-console
-      console.error(JSON.stringify({
-        lvl: 'error',
-        msg: 'agent_setup_tour_echec',
-        tenant: ctx.tenant,
-        err: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      }));
+      journaliser('error', 'agent_setup_tour_echec', { tenantId: ctx.tenant, err });
       return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${raison}` });
     }
 

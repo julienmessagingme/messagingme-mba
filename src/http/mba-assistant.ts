@@ -17,6 +17,7 @@ import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../as
 import { microEurosDepuisDollars } from '../agent/devise';
 import type { ChatMessage, GatewayChatClient, OutilExpose, ReponseChat } from '../agent/llm/chat-client';
 import { direPanneModele } from '../llm/errors';
+import { journaliser } from '../lib/journal';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : la conversation qui règle l'agent, et qui le MET À JOUR.
@@ -153,8 +154,7 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
     const inv = await deps.inventaire(ctx.tenant);
     if (!inv) {
       // 422 et pas 502 : l'écran affiche ce message, et Cloudflare remplace le corps de toute 5xx par sa page.
-      // eslint-disable-next-line no-console
-      console.error(JSON.stringify({ lvl: 'error', msg: 'mba_assistant_inventaire_illisible', tenant: ctx.tenant }));
+      journaliser('error', 'mba_assistant_inventaire_illisible', { tenantId: ctx.tenant });
       return reply.code(422).send({ error: 'état de l’agent illisible chez Meta pour l’instant' });
     }
 
@@ -192,14 +192,7 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
       // Et SEULEMENT pour une panne du fournisseur : le reste est notre panne, relancée en 500 opaque.
       const raison = direPanneModele(err);
       if (raison === null) throw err;
-      // eslint-disable-next-line no-console
-      console.error(JSON.stringify({
-        lvl: 'error',
-        msg: 'mba_assistant_tour_echec',
-        tenant: ctx.tenant,
-        err: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      }));
+      journaliser('error', 'mba_assistant_tour_echec', { tenantId: ctx.tenant, err });
       return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${raison}` });
     }
 

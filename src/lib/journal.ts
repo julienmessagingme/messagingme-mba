@@ -8,8 +8,9 @@
  * VALEUR, forme qu'aucune recherche ligne à ligne ne voyait. `tests/journal-muet.test.ts` refuse tout accès
  * au journal de Fastify, lu sur l'arbre syntaxique.
  *
- * Même forme que les lignes écrites à la main ailleurs (`{ lvl, msg, ... }`, `src/server.ts`), pour qu'un
- * seul `grep` les retrouve toutes.
+ * Même forme que les lignes écrites à la main ailleurs (`{ lvl, msg, ... }`), pour qu'un seul `grep` les
+ * retrouve toutes. ⚠️ L'espace s'y écrit `tenantId`, jamais `tenant` : deux clés pour la même chose coupent
+ * en deux toute recherche par espace. `tests/journal-muet.test.ts` le tient pour chaque appel de cette fonction.
  *
  * ⚠️ UNE `Error` NE SE SÉRIALISE PAS : `JSON.stringify(new Error('x'))` rend `{}`. Elle est réduite à son
  * message, sa CAUSE suit sur un niveau (un `fetch failed` ne dit rien sans son `ENOTFOUND`), et sa pile suit
@@ -25,8 +26,16 @@ export function journaliser(niveau: 'info' | 'warn' | 'error', msg: string, cham
     for (const [cle, valeur] of Object.entries(champs)) {
       try {
         if (valeur instanceof Error) {
-          ligne[cle] = valeur.message;
-          if (valeur.cause !== undefined) ligne[`${cle}Cause`] = decrireCause(valeur.cause);
+          // `String` : un message qui n'est pas une chaîne ferait tomber la ligne ENTIÈRE à l'écriture.
+          ligne[cle] = String(valeur.message);
+          // La cause et la pile ont chacune leur `try` : illisibles, elles se perdent SEULES, sans emporter le
+          // message de leur erreur (une cause sans `toString`, ou dont la lecture lève).
+          try {
+            const cause: unknown = valeur.cause;
+            if (cause !== undefined) ligne[`${cle}Cause`] = decrireCause(cause);
+          } catch {
+            ligne[`${cle}Cause`] = '[illisible]';
+          }
           if (niveau === 'error' && ligne.stack === undefined) {
             try { ligne.stack = valeur.stack; } catch { ligne.stack = '[illisible]'; }
           }

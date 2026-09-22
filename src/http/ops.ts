@@ -35,6 +35,9 @@ export interface OpsRouteDeps {
    * session, et écrit par personne. Aucune route, aucun script, aucun écran. Un interrupteur sans bouton.
    *
    * ⚠️ Optionnel : une instance qui ne l'a pas câblé répond 503 plutôt que de laisser croire au geste.
+   *
+   * ⚠️ ELLE NE CONSERVE PAS LA NOTE : seul le statut s'écrit en base. Le POURQUOI d'un verrou vit dans une
+   * seule trace, la ligne `ops_verrou_espace` que la route écrit, et qu'un test lit.
    */
   verrouillerEspace?(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
   /**
@@ -184,8 +187,7 @@ export function registerOps(
 
     const fait = await deps.verrouillerEspace(tenantId, corps.verrouille, note);
     if (!fait) return reply.code(404).send({ error: 'espace inconnu' });
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_verrou_espace', tenantId, verrouille: corps.verrouille, note, at: new Date().toISOString() }));
+    journaliser('warn', 'ops_verrou_espace', { tenantId, verrouille: corps.verrouille, note, at: new Date().toISOString() });
     return reply.code(200).send({ tenantId, verrouille: corps.verrouille });
   });
 

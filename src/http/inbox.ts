@@ -376,7 +376,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     } catch (err) {
       // ⚠️ `journaliser`, pas le journal de Fastify : celui-ci est MUET (`logger: false`). Cette fonction le
       // recevait en paramètre, et la promesse « il est JOURNALISÉ » ci-dessus n'était pas tenue.
-      journaliser('warn', 'reglage_prise_illisible', { err, tenant });
+      journaliser('warn', 'reglage_prise_illisible', { err, tenantId: tenant });
       return null;
     }
   }
@@ -615,7 +615,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
           code: 'media_trop_gros',
         });
       }
-      journaliser('error', 'media_illisible', { err, tenant, messageId });
+      journaliser('error', 'media_illisible', { err, tenantId: tenant, messageId });
       return reply.code(422).send({ error: 'ce média n’a pas pu être récupéré' });
     }
   });
@@ -664,7 +664,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       }
       // Journalisé ICI, sous les trois cas métier : un vocal expiré n'est pas une erreur, et chaque clic sur
       // l'un d'eux écrivait une ligne `error`, pile comprise. Même place que `media_illisible`.
-      journaliser('error', 'transcription_impossible', { err, tenant, messageId });
+      journaliser('error', 'transcription_impossible', { err, tenantId: tenant, messageId });
       return reply.code(422).send({ error: 'la transcription a échoué, réessayez dans un instant' });
     }
   });

@@ -1057,7 +1057,7 @@ describe('servir une pièce jointe reçue (2026-09-19)', () => {
     const a = app({ lireMediaMessage: async () => { throw new Error('reseau'); } });
     const { resultat, lignes } = await capturerJournal(() => a.inject({ method: 'GET', url, ...auth() }));
     expect(resultat.statusCode).toBe(422);
-    expect(lignes.find((l) => l.msg === 'media_illisible')).toMatchObject({ lvl: 'error', err: 'reseau', tenant: 't1' });
+    expect(lignes.find((l) => l.msg === 'media_illisible')).toMatchObject({ lvl: 'error', err: 'reseau', tenantId: 't1' });
   });
 
   it('🔴 la transcription d’un vocal EXPIRÉ rend 410, pas « réessayez », et n’écrit AUCUNE erreur', async () => {
@@ -1073,7 +1073,7 @@ describe('servir une pièce jointe reçue (2026-09-19)', () => {
     const a = app({ transcrireMessage: async () => { throw new Error('fournisseur en panne'); } });
     const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} }));
     expect(res.statusCode).toBe(422);
-    expect(lignes.find((l) => l.msg === 'transcription_impossible')).toMatchObject({ lvl: 'error', err: 'fournisseur en panne', tenant: 't1' });
+    expect(lignes.find((l) => l.msg === 'transcription_impossible')).toMatchObject({ lvl: 'error', err: 'fournisseur en panne', tenantId: 't1' });
   });
 });
 
@@ -1158,7 +1158,7 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
     expect(res.json().peutPrendre).toBe(false);
     // 🔴 ET C'EST JOURNALISÉ : la fonction recevait le journal de Fastify EN VALEUR, qui est muet. Une lecture
     // qui échoue durablement couperait le bouton de tous les agents sans laisser la moindre trace.
-    expect(lignes.find((l) => l.msg === 'reglage_prise_illisible')).toMatchObject({ lvl: 'warn', err: 'base', tenant: 't1' });
+    expect(lignes.find((l) => l.msg === 'reglage_prise_illisible')).toMatchObject({ lvl: 'warn', err: 'base', tenantId: 't1' });
   });
 
   it('🔴 un réglage illisible à la PRISE : refus qui dit la vraie raison, et rien d’écrit', async () => {

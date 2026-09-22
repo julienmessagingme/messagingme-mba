@@ -750,7 +750,7 @@ async function main(): Promise<void> {
           modele: config.TRANSCRIPTION_MODELE,
           tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
           noterCout: (t, m2, cout, secondes) => {
-            journaliser('info', 'transcription_cout', { tenant: t, messageId: m2, coutDollars: cout, secondes });
+            journaliser('info', 'transcription_cout', { tenantId: t, messageId: m2, coutDollars: cout, secondes });
           },
         }, tenant, messageId, conversationId, cible),
       } : {}),
