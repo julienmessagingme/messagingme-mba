@@ -20,12 +20,20 @@ const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('le tarif de Meta est mis en cache court', () => {
-  it('🔴 l appel a Meta passe par le cache, il n est pas fait en direct', () => {
-    expect(sansCommentaires, 'getPricingAnalytics doit etre appele DANS cacheTarifsMeta.lire')
-      .toMatch(/cacheTarifsMeta\.lire\([^)]*,\s*\(\)\s*=>\s*pricingClientT\.getPricingAnalytics\(wabaId, startTs, endTs\)\)/);
-    // Et aucun appel direct ne subsiste a cote : ce serait le cache contourne par la moitie des appelants.
-    const appelsDirects = sansCommentaires.match(/await pricingClientT\.getPricingAnalytics\(/g) ?? [];
-    expect(appelsDirects, 'aucun appel direct hors du cache').toHaveLength(0);
+  it('🔴 TOUS les appels a Meta passent par le cache, aucun n est fait en direct', () => {
+    /**
+     * ⚠️ CETTE GARDE ETAIT UN FAUX NEGATIF, ET C'EST LA LECON (relevee en relecture le 2026-09-23). Elle
+     * cherchait `await pricingClientT.getPricingAnalytics(`, c'est-a-dire un NOM DE VARIABLE local a une
+     * seule fonction. Un CINQUIEME appelant existait, ecrit `pricing.getPricingAnalytics(` : il passait sans
+     * etre vu, et le test affirmait « aucun appel direct » pendant que l'ecran le plus ouvert du produit
+     * repartait chez Meta a chaque montage. Une garde ancree sur un nom de variable ne garde rien.
+     *
+     * On compte donc TOUS les appels, quel que soit le receveur, et on exige que chacun soit enveloppe.
+     */
+    const tous = [...sansCommentaires.matchAll(/(\w+)\.getPricingAnalytics\(/g)];
+    expect(tous.length, 'au moins un appel a Meta existe').toBeGreaterThan(0);
+    const enveloppes = [...sansCommentaires.matchAll(/cacheTarifsMeta\.lire\([^;]*?\(\)\s*=>\s*\w+\.getPricingAnalytics\(/g)];
+    expect(enveloppes.length, 'chaque appel a Meta est enveloppe dans cacheTarifsMeta.lire').toBe(tous.length);
   });
 
   it('🔴 la cle porte l ESPACE et la FENETRE, sinon elle melange deux tarifs', () => {

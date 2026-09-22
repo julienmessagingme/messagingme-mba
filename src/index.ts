@@ -1105,7 +1105,11 @@ async function main(): Promise<void> {
         if (!wabaId) return null;
         const { startTs, endTs } = rangeToUnix(range);
         const pricing = await metaFactory.pricingClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
-        const brut = await pricing.getPricingAnalytics(wabaId, startTs, endTs);
+        // 🔴 LE MEME CACHE QUE `prixFactures`, ET C'EST LE CINQUIEME APPELANT QU'UNE RELECTURE A TROUVE
+        // (2026-09-23). Cette route sert « Detail par template », que l'onglet Campagnes appelle LUI AUSSI a
+        // chaque montage : le cache pose sur l'autre chemin etait donc contourne par la porte d'a cote, et
+        // l'ecran le plus ouvert du produit repartait chez Meta a chaque affichage. Meme cle, meme fenetre.
+        const brut = await cacheTarifsMeta.lire(`${tenant}:${startTs}:${endTs}`, () => pricing.getPricingAnalytics(wabaId, startTs, endTs));
         if (!brut) return brut;
         return pricingFacture(brut, grilleDepuisLigne(ligne));
       },

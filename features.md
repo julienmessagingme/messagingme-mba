@@ -726,8 +726,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   la catégorie : une campagne à scénario qui n'a envoyé aucun modèle facturable, et une campagne RCS,
   affichaient donc un prix de modèle qu'elles n'avaient jamais payé. Désormais il compte ce qui est
   réellement parti, modèles au tarif Meta et RCS à vos deux prix.
-  ⚠️ **« indisponible » n'est pas « gratuit »** : une campagne de plus d'un an, ou au-delà des cinquante que
-  ce calcul rend, garde sa case vide, et le total de la liste dit combien de campagnes il n'a pas su chiffrer.
+  ⚠️ **« indisponible » n'est pas « gratuit »** : une campagne de plus de **90 jours**, ou au-delà des
+  cinquante que ce calcul rend, garde sa case vide, et le total de la liste dit combien de campagnes il n'a
+  pas su chiffrer. Son coût exact reste à un clic, sur sa fiche de résultats.
 
 - ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08, **seule question horaire depuis le
   2026-09-13**) : une case à cocher, à l'étape **Canal** de l'assistant. Elle vaut pour les premiers envois

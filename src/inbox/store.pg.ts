@@ -880,15 +880,20 @@ export class PgInboxStore implements InboxStore {
    * (`src/automation/store.pg.ts` écrit la même expression). C'est la clé unique `(tenant_id, wa_id)` de
    * 0009 qui garantit qu'on ne crée pas un doublon du fil que l'inbound alimentera plus tard.
    *
-   * Rend `null` quand le contact n'existe pas dans cet espace, est supprimé, ou n'a NI numéro NI bsuid :
-   * sans identité, il n'y a aucun fil possible, et en inventer un le rendrait inatteignable.
+   * Rend `null` quand le contact n'existe pas dans cet espace, est supprimé, est BLOQUÉ, ou n'a NI numéro
+   * NI bsuid : sans identité, il n'y a aucun fil possible, et en inventer un le rendrait inatteignable.
+   *
+   * 🔴 LE CONTACT BLOQUÉ EST REFUSÉ ICI, ET PAS LAISSÉ AU HASARD DE L'AFFICHAGE (revue du 2026-09-23). La
+   * liste écarte les contacts bloqués de TOUS les dossiers (« il n'apparaît nulle part », c'est une règle
+   * du produit) : ouvrir son fil aurait donc rendu un identifiant vers un écran qui ne montre rien. On
+   * refuse, et la route le DIT, plutôt que de fabriquer un cul-de-sac silencieux.
    */
   async ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `with cible as (
          select coalesce(nullif(regexp_replace(coalesce(c.phone_e164, ''), '[^0-9]', '', 'g'), ''), c.bsuid) as wa_id
            from contacts c
-          where c.id = $2::uuid and c.tenant_id = $1 and c.deleted_at is null
+          where c.id = $2::uuid and c.tenant_id = $1 and c.deleted_at is null and c.blocked_at is null
        )
        insert into conversations (tenant_id, wa_id, contact_id)
        select $1, cible.wa_id, $2::uuid from cible where cible.wa_id is not null
@@ -934,7 +939,20 @@ export class PgInboxStore implements InboxStore {
     // Les dossiers ordinaires excluent les archivées ; le dossier Archivé ne montre qu'elles. Une conversation
     // archivée n'est donc comptée nulle part ailleurs. ⚠️ « Traité », lui, n'est PAS exclusif : une
     // conversation traitée est aussi dans « Tout » (arbitrage du 2026-09-19), seul Archivé cache.
-    where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
+    /**
+     * 🔴 LE FILTRE D'ARCHIVAGE NE S'APPLIQUE PAS QUAND ON DEMANDE UN FIL PRÉCIS (revue du 2026-09-23).
+     *
+     * Il était poussé inconditionnellement, donc `?id=` d'un fil ARCHIVÉ rendait zéro ligne, et le lien
+     * « Ouvrir la conversation » menait à une Inbox qui ne montre rien : exactement le symptôme que ce
+     * paramètre existe pour réparer. Trois textes promettaient déjà l'inverse, ce qui est la pire forme du
+     * défaut (on croit la doc, on ne relit pas le SQL).
+     *
+     * ⚠️ « Traité » n'a jamais eu le problème : son filtre ne se pose que sur demande. C'est bien un état
+     * ARCHIVÉ, exclu par DÉFAUT de tous les dossiers ordinaires, qui ne pouvait pas être atteint.
+     */
+    if (opts.id === undefined) {
+      where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
+    }
     if (opts.signalees === true) {
       // 🔴 UNION des DEUX sources, et l'ordre des membres compte pour le planificateur : le signalement
       // manuel est indexé (`conversations_signalees_main_idx`) et se teste sans sortir de la ligne, le

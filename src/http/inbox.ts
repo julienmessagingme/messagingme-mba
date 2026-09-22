@@ -580,7 +580,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (!deps.ouvrirConversationDuContact) return reply.code(503).send({ error: 'ouverture de conversation non configuree' });
     const { contactId } = req.params as { contactId: string };
     const id = await deps.ouvrirConversationDuContact(tenant, contactId);
-    if (id === null) return reply.code(404).send({ error: 'contact introuvable ou sans numero' });
+    if (id === null) return reply.code(404).send({ error: 'contact introuvable, supprime, bloque, ou sans numero' });
     return reply.code(200).send({ conversationId: id });
   });
 

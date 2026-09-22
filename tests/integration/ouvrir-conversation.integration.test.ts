@@ -90,6 +90,37 @@ describe.skipIf(!url)('Ouvrir la conversation d un contact (Postgres reel)', () 
     expect(r[0]!.id).toBe(id);
   });
 
+  it('🔴 y compris un fil ARCHIVE, que le filtre par defaut ecartait en silence', async () => {
+    // Le test du dessus s'intitulait « de tout dossier » et n'archivait jamais rien : le filtre d'archivage
+    // etait pousse INCONDITIONNELLEMENT, donc `?id=` d'un fil archive rendait zero ligne et le bouton
+    // « Ouvrir la conversation » menait a une Inbox vide. Trois textes promettaient deja l'inverse, ce qui
+    // est la pire forme du defaut : on croit la doc, on ne relit pas le SQL. Releve en relecture le
+    // 2026-09-23.
+    const id = await store.ouvrirConversationDuContact(tenantId, avecNumero);
+    await pool.query(`update conversations set archived_at = now() where id = $1::uuid`, [id]);
+    try {
+      const r = await store.listConversations(tenantId, { id: id! });
+      expect(r, 'le fil archive se retrouve par son identifiant').toHaveLength(1);
+      // ...et il reste ABSENT des dossiers ordinaires, qui excluent les archivees. Les deux a la fois :
+      // c'est ce qui distingue « demander CE fil » de « elargir un dossier ».
+      const ordinaires = await store.listConversations(tenantId, {});
+      expect(ordinaires.some((c) => c.id === id)).toBe(false);
+    } finally {
+      await pool.query(`update conversations set archived_at = null where id = $1::uuid`, [id]);
+    }
+  });
+
+  it('🔴 un contact BLOQUE n ouvre aucun fil, au lieu d un cul-de-sac silencieux', async () => {
+    // La liste ecarte les contacts bloques de TOUS les dossiers (« il n'apparait nulle part », regle du
+    // produit) : rendre un identifiant aurait envoye l'operateur sur un ecran qui ne montre rien. On refuse,
+    // et la route le DIT.
+    const bloque = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, blocked_at) values ($1, '+33600000603', now()) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    expect(await store.ouvrirConversationDuContact(tenantId, bloque)).toBeNull();
+  });
+
   it('un contact d un bsuid ouvre un fil sur ce bsuid', async () => {
     const id = await store.ouvrirConversationDuContact(tenantId, sansIdentite);
     const { rows } = await pool.query<{ wa_id: string }>(`select wa_id from conversations where id = $1::uuid`, [id]);
