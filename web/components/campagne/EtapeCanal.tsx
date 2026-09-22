@@ -194,7 +194,7 @@ export function EtapeCanal({
               « relancer » coche pour une raison qui n'est pas la bonne. */}
           <Case
             libelle="Réessayer les envois qui échouent"
-            description="Sans chaîne de repli, c'est le seul rattrapage disponible."
+            description="Un envoi bloqué par une limite de Meta est retenté le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable. Sans chaîne de repli, c'est le seul rattrapage disponible."
             coche={etat.reessayer}
             onChange={(v) => onChange({ reessayer: v })}
           />

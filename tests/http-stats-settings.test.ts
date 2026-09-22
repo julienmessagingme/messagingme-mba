@@ -97,7 +97,6 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
-    setAutoRetryEnabled: async () => {},
     setMbaHandoffMode: async () => {},
     setControlHandbackSeconds: async () => {},
     setTimezone: async () => {},
@@ -613,20 +612,12 @@ describe('settings route', () => {
     await bad.close();
   });
 
-  it('PATCH /settings/auto-retry admin -> 200 + persiste ; agent -> 403 ; body invalide -> 400 (F6)', async () => {
-    let saved: [string, boolean] | null = null;
-    const ok = app({ settings: { setAutoRetryEnabled: async (t, e) => { saved = [t, e]; } } });
-    const r1 = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: true } });
-    expect(r1.statusCode).toBe(200);
-    expect(r1.json<{ autoRetryEnabled: boolean }>().autoRetryEnabled).toBe(true);
-    expect(saved).toEqual(['t1', true]);
-    await ok.close();
-    const ag = app();
-    expect((await ag.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(agentTok), payload: { enabled: true } })).statusCode).toBe(403);
-    await ag.close();
-    const bad = app();
-    expect((await bad.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: 'oui' } })).statusCode).toBe(400);
-    await bad.close();
+  it('⚠️ PATCH /settings/auto-retry n’existe plus : la relance obéit à la case de chaque campagne (0165)', async () => {
+    // Remplace le test F6 de la route : le réglage d'espace a quitté l'écran, et une route qui l'écrirait encore
+    // changerait sans écran le sort des campagnes d'avant 0165.
+    const a = app();
+    expect((await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: true } })).statusCode).toBe(404);
+    await a.close();
   });
 
   it('PUT /settings body invalide -> 400', async () => {

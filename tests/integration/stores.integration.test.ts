@@ -901,10 +901,30 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect((await pool.query<{ retry_count: number }>(`select retry_count from campaign_recipients where id=$1`, [rid])).rows[0]!.retry_count).toBe(2);
       expect((await repo.listRetry131026SecondFail()).map((r) => r.id)).not.toContain(rid);
 
-      // Tenant SANS auto_retry_enabled -> jamais listé (même sur un échec de livraison).
-      await pool.query(`update tenant_settings set auto_retry_enabled=false where tenant_id=$1`, [arTenant]);
+      // 🔴 QUI PERMET LA RELANCE (migration 0165). Une campagne créée par `insertCampaign` obéit à SA case.
+      const relancable = async () => (await repo.listRetry131026()).map((r) => r.id).includes(rid);
+      const regler = async (campagne: { parCampagne: boolean; reessayer: boolean }, espace: boolean | null) => {
+        await pool.query(`update campaigns set reessai_par_campagne=$2, reessayer=$3 where id=$1`, [cId, campagne.parCampagne, campagne.reessayer]);
+        if (espace === null) await pool.query(`delete from tenant_settings where tenant_id=$1`, [arTenant]);
+        else await pool.query(`insert into tenant_settings (tenant_id, auto_retry_enabled) values ($1, $2) on conflict (tenant_id) do update set auto_retry_enabled = $2`, [arTenant, espace]);
+      };
+      expect((await pool.query<{ reessai_par_campagne: boolean }>(`select reessai_par_campagne from campaigns where id=$1`, [cId])).rows[0]!.reessai_par_campagne).toBe(true);
       await pool.query(`update campaign_recipients set status='sent', delivery_status='failed', error_code=131026, retry_count=0 where id=$1`, [rid]);
-      expect((await repo.listRetry131026()).map((r) => r.id)).not.toContain(rid);
+      // Campagne NEUVE : sa case décide, celle de l'espace ne compte plus, dans les deux sens.
+      await regler({ parCampagne: true, reessayer: true }, false);
+      expect(await relancable()).toBe(true);
+      await regler({ parCampagne: true, reessayer: false }, true);
+      expect(await relancable()).toBe(false);
+      // ⚠️ Et sans AUCUNE ligne de réglages : un `join` l'écartait, le `left join` la garde.
+      await regler({ parCampagne: true, reessayer: true }, null);
+      expect(await relancable()).toBe(true);
+      // Campagne d'AVANT 0165 : la case de l'espace décide, la sienne est ignorée (le comportement d'avant).
+      await regler({ parCampagne: false, reessayer: true }, false);
+      expect(await relancable()).toBe(false);
+      await regler({ parCampagne: false, reessayer: true }, null);
+      expect(await relancable()).toBe(false);
+      await regler({ parCampagne: false, reessayer: false }, true);
+      expect(await relancable()).toBe(true);
     } finally {
       await pool.query('delete from campaign_recipients where campaign_id in (select id from campaigns where tenant_id=$1)', [arTenant]);
       await pool.query('delete from campaigns where tenant_id=$1', [arTenant]);

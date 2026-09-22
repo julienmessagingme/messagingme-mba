@@ -1324,7 +1324,6 @@ async function main(): Promise<void> {
       rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
-      setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
       // La grille de prix de l'espace. Elle etait posee en base depuis 0154 et AUCUN chemin ne l'ecrivait :
       // la marge negociee n'etait atteignable que par un `UPDATE` a la main. Releve en revue finale.

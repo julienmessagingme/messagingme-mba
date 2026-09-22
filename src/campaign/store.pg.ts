@@ -711,8 +711,8 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Destinataires 131049 (marketing plafonné par Meta) prêts à une auto-relance (F6) : tenant `auto_retry_enabled`,
-   * `failed`, `retry_count=0`, échec il y a plus de 24 h (on relance « plus tard », pas dans la foulée). Le fenêtrage
+   * Destinataires 131049 (marketing plafonné par Meta) prêts à une auto-relance (F6) : relance permise (cf.
+   * `listAutoRetry`), `failed`, `retry_count=0`, échec il y a plus de 24 h (on relance « plus tard », pas dans la foulée). Le fenêtrage
    * « début de journée » est décidé par l'appelant (fuseau), pas ici.
    */
   async listRetry131049(nowMs: number, limit = 500): Promise<AutoRetryRecipient[]> {
@@ -731,10 +731,16 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Fabrique commune : destinataires EN ÉCHEC d'un tenant `auto_retry_enabled` matchant `cond`. « En échec » =
+   * Fabrique commune : destinataires EN ÉCHEC dont la relance est PERMISE, matchant `cond`. « En échec » =
    * `status='failed'` (rejet SYNCHRONE à l'envoi) OU `delivery_status='failed'` (échec ASYNCHRONE signalé par le
    * webhook de livraison, `status` reste 'sent'). 131049/131026 arrivent quasi toujours par le webhook -> on DOIT
    * inclure delivery_status (même définition d'échec que getCampaignDetail/les stats). Scopé par la jointure.
+   *
+   * 🔴 QUI PERMET LA RELANCE (migration 0165, lot 3 de la liste de Julien du 2026-09-23). Une campagne créée
+   * depuis ce lot (`reessai_par_campagne`) obéit à SA case « Réessayer les envois qui échouent » ; une campagne
+   * d'avant garde la règle d'avant, la case de l'espace (`auto_retry_enabled`), qui a quitté l'écran et ne
+   * bouge donc plus. La case de la campagne était offerte et inerte : aucun balayage ne la lisait.
+   * ⚠️ `left join` : une campagne neuve d'un espace SANS ligne de réglages doit être listée, un `join` l'écartait.
    */
   private async listAutoRetry(cond: string, params: unknown[], limit: number): Promise<AutoRetryRecipient[]> {
     const res = await this.pool.query<{
@@ -744,8 +750,9 @@ export class PgCampaignRepo {
       `select r.id, r.campaign_id, c.tenant_id, r.contact_id, r.to_e164, c.rattrapage_hors_horaires
        from campaign_recipients r
          join campaigns c on c.id = r.campaign_id
-         join tenant_settings ts on ts.tenant_id = c.tenant_id
-       where ts.auto_retry_enabled = true and (${RECIPIENT_FAILED_SQL}) and ${cond}
+         left join tenant_settings ts on ts.tenant_id = c.tenant_id
+       where (case when c.reessai_par_campagne then c.reessayer else coalesce(ts.auto_retry_enabled, false) end)
+         and (${RECIPIENT_FAILED_SQL}) and ${cond}
          and ${SANS_REPLI_SQL}
        order by r.id
        limit ${limit}`,
@@ -765,8 +772,9 @@ export class PgCampaignRepo {
    * ferait porter la règle par du SQL, donc hors de portée de `decider` et de ses tests. Un destinataire
    * arrivé au dernier étage remonte donc ici, et c'est `decider` qui répond « plus d'étage disponible ».
    *
-   * 🔴 ELLE N'EST PAS GATÉE PAR `auto_retry_enabled`, CONTRAIREMENT AUX TROIS LISTES DE RELANCE. Ce
-   * drapeau gouverne le RATTRAPAGE AUTOMATIQUE d'un échec ; une chaîne de repli est une configuration
+   * 🔴 ELLE N'EST PAS GATÉE PAR LA PERMISSION DE RELANCE, CONTRAIREMENT AUX TROIS LISTES DE RELANCE (la case
+   * de la campagne, ou celle de l'espace pour une campagne d'avant 0165). Elle gouverne le RATTRAPAGE
+   * AUTOMATIQUE d'un échec ; une chaîne de repli est une configuration
    * explicite de la campagne, que l'opérateur a construite étage par étage. La refuser au motif qu'un
    * réglage d'espace sans rapport est décoché rendrait une chaîne muette sans que rien ne le dise.
    *
@@ -1364,8 +1372,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   const rcsMessage = input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage);
   const res = await q.query<{ id: string }>(
     `insert into campaigns
-       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, reessayer, rattrapage_hors_horaires, assignation, assignation_user_id)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19)
+       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, reessayer, rattrapage_hors_horaires, assignation, assignation_user_id, reessai_par_campagne)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, true)
      returning id`,
     [
       input.tenantId,
@@ -1397,6 +1405,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
        * création qui ne dit rien (l'API publique, un test, un client existant) obtient exactement ce
        * qu'elle obtenait avant.
        */
+      // 🔴 LUE PAR LE BALAYAGE DEPUIS 0165 : toute campagne créée ici obéit à cette case (`reessai_par_campagne`,
+      // écrit en dur à `true` ci-dessus). Avant, seule la case de l'espace comptait.
       input.reessayer ?? true,
       input.rattrapageHorsHoraires ?? false,
       input.assignation ?? null,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT, useLocale } from '@/lib/i18n';
-import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setAutoRetryEnabled as apiSetAutoRetry, setGrillePrix as apiSetGrillePrix, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours, type GrillePrix } from '@/lib/api';
+import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setGrillePrix as apiSetGrillePrix, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours, type GrillePrix } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { enChamps, depuisChamps } from '@/lib/grille-saisie';
@@ -136,11 +136,6 @@ function Parametres({ tenantId }: { tenantId: string }) {
   const [loading, setLoading] = useState(true);
   const [tzStatus, setTzStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [bhStatus, setBhStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  // Relance automatique des échecs de livraison. Elle vivait sur l'Accueil, dans la carte du MBA, où elle
-  // n'avait rien à faire : elle ne dit pas QUI répond au client, elle règle ce qui se passe quand un envoi
-  // échoue. C'est un réglage d'espace, comme le fuseau.
-  const [autoRetry, setAutoRetry] = useState(false);
-  const [arStatus, setArStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   /**
    * CE QUE CET ESPACE FACTURE. `null` = l'instance ne rend pas encore la grille (backend anterieur au
@@ -162,24 +157,12 @@ function Parametres({ tenantId }: { tenantId: string }) {
         if (!alive) return;
         setTz(s.timezone ?? DEFAULT_TIMEZONE);
         setHours(normalize(s.businessHours));
-        setAutoRetry(s.autoRetryEnabled === true);
         setPrix(s.prix ? enChamps(s.prix) : null);
       })
       .catch(() => {})
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [tenantId]);
-
-  const onAutoRetry = useCallback(() => {
-    // Optimiste, comme le fuseau : on bascule tout de suite, et on revient en arrière si le serveur refuse.
-    // Un toggle qui attend l'aller-retour donne l'impression de ne pas répondre.
-    const next = !autoRetry;
-    setAutoRetry(next);
-    setArStatus('saving');
-    apiSetAutoRetry(tenantId, next)
-      .then(() => setArStatus('saved'))
-      .catch(() => { setAutoRetry(!next); setArStatus('error'); });
-  }, [autoRetry, tenantId]);
 
   /**
    * 🔴 LA SAISIE RESTE UNE CHAINE, ET LA PREMIERE VERSION FAISAIT L INVERSE DE CE QUE SON COMMENTAIRE
@@ -308,32 +291,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
             </div>
           </section>
 
-          {/* Relance automatique des échecs de livraison. */}
-          <section className={cardCls} data-testid="param-auto-retry-card">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-ink-900">{t('Relancer automatiquement les échecs', 'Auto-retry failed sends')}</h3>
-                <p className="mt-1 text-sm text-ink-600">
-                  {t(
-                    "Un envoi bloqué par une limite Meta est relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au 2e échec.",
-                    'A send capped by a Meta limit is retried the next morning; an undeliverable number is retried once, then flagged unreachable in HubSpot on the second failure.',
-                  )}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="text-xs text-ink-400">{statusText(arStatus)}</span>
-                {/* Aucune garde de rôle ici : cette section vit dans `Parametres`, que la page ne rend qu'aux
-                    ADMINS. Un manager arrive sur `ParametresEncadrement`, qui ne la contient pas. */}
-                <Toggle
-                  testid="param-auto-retry-toggle"
-                  checked={autoRetry}
-                  onChange={onAutoRetry}
-                  disabled={arStatus === 'saving'}
-                  title={t("Activer/désactiver l'auto-relance des échecs", 'Enable/disable auto-retry of failed sends')}
-                />
-              </div>
-            </div>
-          </section>
+          {/* ⚠️ « Relancer automatiquement les échecs » N'EST PLUS ICI (lot 3 de la liste du 2026-09-23, migration
+              0165) : la relance obéit à la case « Réessayer les envois qui échouent » de chaque campagne. */}
 
           {/* La prise d'une conversation par un agent : la même section que celle du manager. */}
           <SectionPriseAgents tenantId={tenantId} />

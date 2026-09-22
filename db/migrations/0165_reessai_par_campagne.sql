@@ -1,0 +1,21 @@
+-- 0165 : LA RELANCE DES ÉCHECS OBÉIT À LA CAMPAGNE, PLUS À L'ESPACE (liste de Julien du 2026-09-23, lot 3 de
+-- docs/superpowers/plans/2026-09-23-liste-julien.md).
+--
+-- Deux cases disaient la même chose à deux endroits : « Relancer automatiquement les échecs » dans les
+-- Paramètres (`tenant_settings.auto_retry_enabled`) et « Réessayer les envois qui échouent » sur chaque
+-- campagne (`campaigns.reessayer`, 0134). Seule la première était LUE par le balayage de relance : la case de
+-- la campagne était offerte et inerte. La case d'espace quitte l'écran, et le balayage lit la campagne.
+--
+-- 🔴 SEULEMENT POUR LES CAMPAGNES CRÉÉES APRÈS CE LOT (arbitrage de Julien). `reessayer` vaut `true` par défaut
+-- depuis 0134 : basculer toutes les campagnes sur leur case ferait relancer celles d'un espace qui ne
+-- relançait pas. D'où ce drapeau : `false` pour toutes les campagnes existantes (elles gardent la règle de
+-- l'espace), `true` écrit par `insertCampaignRow` pour chaque création.
+--
+-- MESURÉ AVANT D'ÉCRIRE (lecture seule, 2026-09-23) : un seul espace a une ligne de réglages, sans relance ;
+-- 5 campagnes sans repli ont `reessayer = true` et n'ont donc jamais été relancées ; zéro destinataire en
+-- échec 131049/131026 en attente. Rien ne bouge pour personne à l'application.
+--
+-- Le code neuf l'ÉCRIT (création) et la LIT (balayage) : elle passe AVANT le déploiement. L'ancien code
+-- l'ignore, et le défaut `false` le laisse créer des campagnes : il y survit.
+
+alter table campaigns add column if not exists reessai_par_campagne boolean not null default false;

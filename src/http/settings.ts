@@ -22,8 +22,6 @@ export interface SettingsRouteDeps {
   rcsEnabledFor?(tenantId: string): Promise<boolean>;
   setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void>;
-  /** Auto-relance des échecs de livraison (F6). */
-  setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
   /**
@@ -340,16 +338,9 @@ export function registerSettings(
     return reply.code(200).send({ actif });
   });
 
-  // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).
-  app.patch('/tenants/:tenantId/settings/auto-retry', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
-    if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
-    await deps.setAutoRetryEnabled(tenant, enabled);
-    return reply.code(200).send({ autoRetryEnabled: enabled });
-  });
+  // ⚠️ PLUS DE ROUTE `settings/auto-retry` depuis le lot 3 de la liste du 2026-09-23 (migration 0165) : la relance
+  // obéit à la case de chaque campagne. `auto_retry_enabled` reste LU pour les campagnes d'avant, et ne s'écrit
+  // plus : un réglage sans écran ne se change plus par accident.
 
   /**
    * Durée du GEL d'une conversation après qu'un opérateur a pris la main : pendant ce temps, ni le

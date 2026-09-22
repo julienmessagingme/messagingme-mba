@@ -278,15 +278,6 @@ export class PgTenantSettingsStore {
     );
   }
 
-  /** Active/désactive l'auto-relance des échecs (F6). Upsert ciblé : n'écrase aucun autre réglage. */
-  async setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, auto_retry_enabled, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set auto_retry_enabled = excluded.auto_retry_enabled, updated_at = now()`,
-      [tenantId, enabled],
-    );
-  }
-
   async setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> {
     await this.pool.query(
       `insert into tenant_settings (tenant_id, mba_enabled, updated_at) values ($1, $2, now())

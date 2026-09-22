@@ -54,9 +54,17 @@ ne suffit pas, parce que les tests d'écran sont écrits par celui qui a écrit 
   campagnes (`retry-sweep`, listes de `src/campaign/store.pg.ts`). La retirer seule couperait toute relance.
 - Les campagnes ont déjà « Réessayer les envois qui échouent » (`campaigns.reessayer`, défaut vrai). Le balayage
   obéira à la case de la CAMPAGNE, puis la case d'espace disparaîtra de l'écran.
-- ⚠️ À trancher avant de coder : les campagnes existantes ont `reessayer = true` par défaut ; basculer la garde les
-  ferait relancer alors que l'espace ne relançait pas. Proposition : la garde lit la campagne pour les campagnes
-  créées après ce lot, l'ancienne case pour les autres.
+- Tranché par Julien : NOUVELLES CAMPAGNES SEULEMENT. Les campagnes existantes ont `reessayer = true` par défaut ;
+  basculer la garde les ferait relancer alors que l'espace ne relançait pas.
+- Mesuré en lecture seule avant d'écrire : un seul espace a une ligne de réglages, sans relance ; 5 campagnes sans
+  repli ont `reessayer = true`, jamais relancées ; zéro échec 131049/131026 en attente. La case de la campagne
+  était donc offerte et inerte.
+- Migration 0165 : `campaigns.reessai_par_campagne` (`false` pour l'existant, `true` écrit par
+  `insertCampaignRow`). Le balayage (`listAutoRetry`) lit la case de la campagne si le drapeau est posé, celle de
+  l'espace sinon, en `left join` (une campagne neuve d'un espace sans réglages est listée). Avant le déploiement.
+- La section des Paramètres, la route `PATCH settings/auto-retry` et son écriture en magasin disparaissent : un
+  réglage sans écran ne doit plus pouvoir changer le sort des campagnes d'avant. La case de la campagne dit
+  désormais ce qu'elle fait.
 - Essai réel : une campagne avec la case cochée, un destinataire en échec 131049, relancé le lendemain matin.
 
 ## Lot 4 : Performance lab, coût par engagement
