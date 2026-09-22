@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { estimateCostSeries, enumerateDays, estimateCoutParCampagne } from '../src/stats/cost';
+import { GRILLE_DEFAUT } from '../src/stats/prix';
 import type { CategoryRates, VolumeCampagneRow } from '../src/stats/cost';
 import type { CostVolumeRow } from '../src/stats/store.pg';
 
@@ -129,8 +130,14 @@ describe('estimateCoutParCampagne', () => {
   const ligne = (campaignId: string, nom: string, category: string | null, count: number, template: string | null = 'tpl'): VolumeCampagneRow =>
     ({ campaignId, nom, template, canal: 'whatsapp', category, count, envois: count });
 
-  it('🔴 une campagne SANS RIEN DE FACTURABLE a sa ligne, à coût connu ; une campagne RCS, à coût vide (lot 4)', () => {
+  const RCS = (campaignId: string, simple: number, conversationnel: number) =>
+    ({ parCampagne: new Map([[campaignId, { simple, conversationnel }]]), grille: GRILLE_DEFAUT });
+
+  it('🔴 une campagne SANS RIEN DE FACTURABLE a sa ligne, à coût connu ; une campagne RCS NON RATTACHÉE, à coût vide (lot 4)', () => {
     // Seules les campagnes à envoi de MODÈLE facturable apparaissaient : 2 sur 7 dans l'espace d'essai.
+    // ⚠️ Le cas RCS de ce test est celui dont AUCUN envoi n'a pu être rattaché (campagne antérieure à la
+    // migration 0134, envoi sans identifiant) : là, la case reste vide. Une campagne RCS dont les envois sont
+    // connus est chiffrée, c'est le test suivant.
     const scenario: VolumeCampagneRow = { campaignId: 'sc', nom: 'test4', template: null, canal: 'whatsapp', category: null, count: 0, envois: 3 };
     const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 1 };
     const r = estimateCoutParCampagne([scenario, rcs, ligne('tp', 'Promo', 'marketing', 2)], TARIFS, new Map(), new Map([['sc', 1], ['rc', 1], ['tp', 1]]));
@@ -139,6 +146,29 @@ describe('estimateCoutParCampagne', () => {
     expect(par.get('sc')).toMatchObject({ envoyes: 0, envois: 3, cout: 0, nonChiffrables: 0, sansCategorie: 0, coutParEngagement: 0 });
     expect(par.get('rc')).toMatchObject({ envoyes: 0, envois: 1, cout: null, coutParEngagement: null });
     expect(par.get('tp')).toMatchObject({ envoyes: 2, envois: 2, cout: 0.29 });
+  });
+
+  it('🔴 une campagne RCS est CHIFFRÉE, à 6 cts l’envoi simple (Julien, 2026-09-23)', () => {
+    // Le prix RCS est saisi par espace depuis la migration 0154 et la ligne « coût des messages » le compte
+    // déjà. Ce tableau affichait « — » : il disait « on ne sait pas » là où on savait.
+    const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 2 };
+    const r = estimateCoutParCampagne([rcs], TARIFS, new Map(), new Map([['rc', 1]]), undefined, RCS('rc', 2, 0));
+    expect(r.lignes[0]).toMatchObject({ envois: 2, cout: 0.12, coutParEngagement: 0.12 });
+  });
+
+  it('🔴 un échange devenu CONVERSATIONNEL passe à 8 cts, et le mélange des deux s’additionne', () => {
+    // La bascule est tranchée par l'appelant (`basculesRcs`) : elle porte sur l'échange entier sur sept
+    // jours, donc elle a besoin d'envois que cette campagne n'a pas faits. Ici on vérifie le seul tarif.
+    const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 3 };
+    const r = estimateCoutParCampagne([rcs], TARIFS, new Map(), new Map(), undefined, RCS('rc', 1, 2));
+    expect(r.lignes[0]).toMatchObject({ cout: 0.22 }); // 1 x 6 cts + 2 x 8 cts
+  });
+
+  it('🔴 le RCS s’AJOUTE au modèle d’une campagne qui a fait les deux', () => {
+    // Une campagne WhatsApp avec un étage RCS : les deux coûts sont réels, et n'en montrer qu'un mentirait
+    // dans le sens qui flatte.
+    const r = estimateCoutParCampagne([ligne('mx', 'Mixte', 'marketing', 2)], TARIFS, new Map(), new Map(), undefined, RCS('mx', 5, 0));
+    expect(r.lignes[0]).toMatchObject({ cout: 0.59 }); // 2 x 0,1431 arrondi + 5 x 6 cts
   });
 
   it('🔴 « Envoyés » ne descend JAMAIS sous les envois facturables (revue finale du 2026-09-23)', () => {

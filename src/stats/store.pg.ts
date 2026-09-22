@@ -1364,24 +1364,49 @@ export class PgStatsStore {
    *
    * ⚠️ UNE REACTION EST UN ENTRANT SUR LE MEME CANAL. Un contact qui répondrait sur WhatsApp à un RCS ne
    * fait pas basculer l'échange RCS : ce sont deux tuyaux, et Meta comme smsmode facturent le leur.
+   *
+   * 🔴 CHAQUE LIGNE DIT DE QUELLE CAMPAGNE ELLE VIENT, et c'est ce qui permet au tableau « coût par
+   * engagement » de chiffrer une campagne RCS (demande de Julien du 2026-09-23 : « on a justement défini un
+   * coût, 6 cts si pas conversationnel et 8 si conversationnel, donc il faut le compter ici »). Le
+   * groupement est donc (conversation, campagne) et plus (conversation) seule.
+   *
+   * ⚠️ LES ENVOIS SANS CAMPAGNE RESTENT DANS LE LOT, avec `campaignId` à `null`, et ce n'est pas du
+   * remplissage : la bascule porte sur l'ÉCHANGE ENTIER, donc une réaction qui suit un RCS envoyé hors
+   * campagne fait quand même passer à 8 cts les RCS de campagne du même échange. Ne rendre que les envois
+   * rattachés aurait sous-facturé ce cas, sans que rien ne le signale.
+   *
+   * ⚠️ LA CAMPAGNE SE TROUVE EN TROIS COUPS, du plus sûr au plus faible : l'identifiant du message porté par
+   * le destinataire, puis celui porté par l'étage (`campaign_envois`, migration 0134), puis l'ATTRIBUTION,
+   * la même heuristique que les templates de scénario. Les deux premiers sont des égalités exactes ; le
+   * troisième porte les limites écrites sur `ATTRIBUTION`, et les partager est précisément ce qui évite
+   * deux définitions de « cet envoi vient de cette campagne ».
    */
   async envoisEtReactionsRcs(tenantId: string, range: DateRange, fenetreMs: number): Promise<{
-    conversations: { conversationId: string; waId: string; envois: number; instants: string[] }[];
+    conversations: { conversationId: string; campaignId: string | null; waId: string; envois: number; instants: string[] }[];
     reactions: { waId: string; at: string }[];
   }> {
     const { from, to } = range;
     const secondes = Math.round(fenetreMs / 1000);
     const [envois, reactions] = await Promise.all([
-      this.pool.query<{ conversation_id: string; wa_id: string; envois: number; instants: string[] }>(
-        `with ${BOUNDS_CTE}
-         select cv.id::text as conversation_id, cv.wa_id as wa_id, count(*)::int as envois,
-                array_agg(to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-                          order by m.created_at) as instants
-           from conversation_messages m
-           join conversations cv on cv.id = m.conversation_id, bounds b
-          where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'out'
-            and m.created_at >= b.start_ts and m.created_at < b.end_ts
-          group by 1, 2`,
+      this.pool.query<{ conversation_id: string; campaign_id: string | null; wa_id: string; envois: number; instants: string[] }>(
+        `with ${BOUNDS_CTE},
+         envois as (
+           select cv.id::text as conversation_id, cv.wa_id as wa_id, m.created_at as at,
+                  coalesce(
+                    (select r.campaign_id from campaign_recipients r join campaigns c on c.id = r.campaign_id
+                      where c.tenant_id = cv.tenant_id and r.message_id = m.meta_message_id limit 1),
+                    (select e.campaign_id from campaign_envois e join campaigns c on c.id = e.campaign_id
+                      where c.tenant_id = cv.tenant_id and e.message_id = m.meta_message_id limit 1),
+                    ${ATTRIBUTION_CAMPAGNE_SCENARIO}
+                  )::text as campaign_id
+             from conversation_messages m
+             join conversations cv on cv.id = m.conversation_id, bounds b
+            where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'out'
+              and m.created_at >= b.start_ts and m.created_at < b.end_ts
+         )
+         select conversation_id, campaign_id, wa_id, count(*)::int as envois,
+                array_agg(to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') order by at) as instants
+           from envois group by 1, 2, 3`,
         [tenantId, from, to, TZ],
       ),
       this.pool.query<{ wa_id: string; at: string }>(
@@ -1399,6 +1424,7 @@ export class PgStatsStore {
     return {
       conversations: envois.rows.map((r) => ({
         conversationId: r.conversation_id,
+        campaignId: r.campaign_id,
         waId: r.wa_id,
         envois: Number(r.envois),
         instants: Array.isArray(r.instants) ? r.instants : [],

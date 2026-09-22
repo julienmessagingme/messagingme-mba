@@ -1,4 +1,5 @@
 import type { DailyPoint, CostVolumeRow } from './store.pg';
+import { coutRcsEuros, type GrillePrix } from './prix';
 
 /** Coût estimé par jour et catégorie, sur la plage. `hasRates=false` si Meta n'a fourni aucun tarif. */
 export interface CostSeries {
@@ -129,7 +130,15 @@ export interface VolumeCampagneRow {
   nom: string;
   /** Le template de la campagne, `null` pour une campagne à scénario. C'est ce qui décide si un clic existe. */
   template: string | null;
-  /** Le canal de la campagne. Ce tableau ne chiffre que les tarifs Meta : une campagne RCS garde sa case vide. */
+  /**
+   * Le canal de la campagne.
+   *
+   * ⚠️ IL NE DECIDE PLUS D'UNE CASE VIDE, IL DECIDE DE LA SOURCE DU PRIX (2026-09-23). Ce tableau a longtemps
+   * dit « je ne connais que les tarifs Meta, donc une campagne RCS garde sa case vide » ; c'etait faux depuis
+   * la migration 0154, qui porte les deux prix RCS de l'espace. Le canal sert maintenant a savoir quoi faire
+   * quand RIEN n'a ete chiffre : une campagne WhatsApp sans envoi facturable a coute ce que coutent ses
+   * messages de service, une campagne RCS dont aucun envoi n'a pu etre rattache reste inconnue.
+   */
   canal: string;
   category: string | null;
   /**
@@ -277,6 +286,23 @@ export function estimateCoutParCampagne(
    */
   service?: { parCampagne: Map<string, number>; prixUnitaire: number },
   /**
+   * LES ENVOIS RCS IMPUTES A CHAQUE CAMPAGNE, et la grille qui les tarife.
+   *
+   * 🔴 LE RCS A UN PRIX, ET CE DEPOT LE CONNAIT (Julien, 2026-09-23 : « on a justement defini un cout, 6 cts
+   * si pas conversationnel et 8 si conversationnel »). Il est saisi par espace depuis la migration 0154, et
+   * la ligne « cout des messages envoyes » le compte deja. Ne pas le compter ICI laissait une campagne RCS
+   * avec une case vide, c'est-a-dire « on ne sait pas » la ou on savait.
+   *
+   * 🔴 LA BASCULE CONVERSATIONNELLE EST DEJA TRANCHEE PAR L'APPELANT (`basculesRcs`), et ce n'est pas un
+   * detail de cablage : la regle porte sur l'ECHANGE entier sur sept jours, donc elle a besoin d'envois que
+   * cette campagne n'a pas faits. La recalculer ici avec les seules donnees d'une campagne donnerait un
+   * SECOND verdict, plus faible, sur la meme question.
+   *
+   * ⚠️ ABSENT = on n'impute aucun RCS. Ce n'est pas « zero RCS » : c'est une instance qui ne sait pas encore
+   * les rattacher, et la case doit alors rester vide plutot que d'afficher un zero.
+   */
+  rcs?: { parCampagne: Map<string, { simple: number; conversationnel: number }>; grille: GrillePrix },
+  /**
    * ⚠️ IL N Y A PLUS DE PARAMETRE DE MARGE ICI, ET C EST VOLONTAIRE. Elle a vecu a cette place quelques
    * heures, le temps qu une revue montre que deux AUTRES consommateurs des memes tarifs l ignoraient. Elle
    * est desormais posee UNE SEULE FOIS, a la source (`tarifsFactures`), donc `rates` porte deja le prix de
@@ -322,14 +348,24 @@ export function estimateCoutParCampagne(
      * règle des trois cases vides de ce fichier ne se contourne pas par une addition.
      */
     const services = service?.parCampagne.get(l.campaignId) ?? 0;
-    const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0);
+    // Le RCS de cette campagne, deja separe en simple et conversationnel par l'appelant.
+    const envoisRcs = rcs?.parCampagne.get(l.campaignId) ?? { simple: 0, conversationnel: 0 };
+    const nbRcs = envoisRcs.simple + envoisRcs.conversationnel;
+    const prixRcs = rcs ? coutRcsEuros(envoisRcs.simple, envoisRcs.conversationnel, rcs.grille) : 0;
+    const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0) + prixRcs;
     // Aucun envoi chiffré -> la case COÛT est vide, pas à zéro. Un zéro se lirait « cette campagne n'a rien
     // coûté », alors que la vérité est « on ne sait pas ce qu'elle a coûté ».
     // 🔴 SAUF QUAND IL N'Y AVAIT RIEN À CHIFFRER (lot 4) : une campagne WhatsApp sans aucun envoi facturable a
     // un coût CONNU, celui de ses messages de service (souvent nul). Une campagne RCS, elle, garde sa case
     // vide : ce tableau ne connaît que les tarifs Meta, et « 0 » y serait faux.
-    const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && l.canal === 'whatsapp';
-    const cout = l.chiffres > 0 || rienAChiffrer ? Math.round(brut * 100) / 100 : null;
+    // 🔴 ET LE RCS COMPTE COMME UN ENVOI CHIFFRE : son prix vient de la grille de l'espace, pas de Meta.
+    // Une campagne RCS qui a touche quelqu'un a donc un cout, la ou elle affichait « — » (2026-09-23).
+    // ⚠️ MAIS UNE CAMPAGNE RCS SANS AUCUN ENVOI RATTACHE GARDE SA CASE VIDE : ecrire 0 la dirait gratuite,
+    // alors qu'elle a envoye et que c'est le rattachement qui manque (une campagne anterieure a la
+    // migration 0134, un envoi sans identifiant). La doctrine des cases vides de ce fichier tient : zero se
+    // lit « rien coute », vide se lit « on ne sait pas ».
+    const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && nbRcs === 0 && l.canal === 'whatsapp';
+    const cout = l.chiffres > 0 || nbRcs > 0 || rienAChiffrer ? Math.round(brut * 100) / 100 : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.

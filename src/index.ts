@@ -1107,7 +1107,7 @@ async function main(): Promise<void> {
        * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
        */
       getCoutParCampagne: async (tenant, range, opts) => {
-        const [volumes, rates, serviceMois, ligne] = await Promise.all([
+        const [volumes, rates, serviceMois, ligne, rcs] = await Promise.all([
           statsStore.getVolumeParCampagne(tenant, range, opts),
           prixFactures(tenant, range),
           // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
@@ -1115,6 +1115,9 @@ async function main(): Promise<void> {
           // lignes d'écart, et le client comparerait. Voir `estimateCoutParCampagne` pour le prorata.
           statsStore.serviceParMois(tenant, range),
           statsStore.grillePrix(tenant),
+          // 🔴 ET LE MEME LOT DE RCS QUE CETTE LIGNE-LA, par la même lecture et la même règle de bascule.
+          // Une campagne RCS affichait « — » alors que son prix est saisi depuis la migration 0154.
+          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS),
         ]);
         const ids = [...new Set(volumes.map((v) => v.campaignId))];
         // ⚠️ LES TROIS ENSEMBLE, pas l'une après l'autre : ce sont des lectures indépendantes sur la même
@@ -1140,9 +1143,32 @@ async function main(): Promise<void> {
           grilleDepuisLigne(ligne),
         );
         const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
+        /**
+         * LES RCS DE CHAQUE CAMPAGNE, SIMPLES D'UN COTE, CONVERSATIONNELS DE L'AUTRE.
+         *
+         * 🔴 LA BASCULE SE CALCULE SUR TOUS LES ENVOIS DE L'ESPACE, PAS SUR CEUX D'UNE CAMPAGNE, et c'est la
+         * règle elle-même qui l'impose : elle fait passer l'ECHANGE entier à 8 cts dès qu'une réaction suit
+         * l'un de ses envois dans les sept jours. Un RCS envoyé hors campagne peut donc faire basculer les
+         * RCS de campagne du même échange. `basculesRcs` reçoit ainsi la totalité, puis on impute.
+         *
+         * ⚠️ LES LIGNES SANS CAMPAGNE SONT IGNOREES A L'IMPUTATION, mais pas à la bascule (voir ci-dessus).
+         */
+        const envoisRcs = rcs.conversations.flatMap((c) =>
+          c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
+        const bascules = basculesRcs(envoisRcs, rcs.reactions);
+        const rcsParCampagne = new Map<string, { simple: number; conversationnel: number }>();
+        for (const c of rcs.conversations) {
+          if (c.campaignId === null) continue;
+          const acc = rcsParCampagne.get(c.campaignId) ?? { simple: 0, conversationnel: 0 };
+          if (bascules.has(c.conversationId)) acc.conversationnel += c.envois; else acc.simple += c.envois;
+          rcsParCampagne.set(c.campaignId, acc);
+        }
         // La marge est DEJA dans `rates` (cf. `prixFactures`) : la reappliquer ici la compterait deux fois.
+        // ⚠️ La marge ne touche PAS le RCS : elle porte sur le tarif Meta, quand le prix RCS est saisi par
+        // l'espace, donc déjà un prix de vente (migration 0154).
         return estimateCoutParCampagne(volumes, rates, clics, engagements,
-          { parCampagne: services, prixUnitaire });
+          { parCampagne: services, prixUnitaire },
+          { parCampagne: rcsParCampagne, grille: grilleDepuisLigne(ligne) });
       },
       /**
        * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.

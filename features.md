@@ -2602,12 +2602,18 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   fermée : le RCS n'a pas de fenêtre. Ce qui suit le bloc RCS part aussi, à une exception près que l'éditeur
   signale : un **formulaire** WhatsApp placé juste derrière ne partira que si le contact a écrit **sur
   WhatsApp** dans les 24 h, car répondre en RCS ne rouvre pas cette fenêtre.
-- ✅ **Les chiffres ne mélangent plus les deux canaux** (2026-08-25). Trois corrections qui changent ce que
-  disent les écrans : une réponse ou un clic reçu en RCS ne compte plus comme une réponse au **template
-  WhatsApp** d'une campagne (et l'inverse) ; une campagne RCS ne rentre plus dans le **coût estimé**, calculé
-  au tarif de Meta qui ne facture rien sur ce canal, ni dans le détail « par template » ; et les envois RCS
-  sortent de la série « Service » du tableau de bord, dont l'écran affirme que Meta ne les facture pas. Le
-  volume RCS n'a pas encore de série à lui : il vaut mieux ne pas le montrer que le montrer comme gratuit.
+- ✅ **Les chiffres ne mélangent plus les deux canaux** (2026-08-25). Une réponse ou un clic reçu en RCS ne
+  compte plus comme une réponse au **template WhatsApp** d'une campagne (et l'inverse), et les envois RCS
+  sortent de la série « Service » du tableau de bord, puisque Meta ne les facture pas.
+- ✅ **Le RCS a un PRIX, et le coût par engagement le compte** (2026-09-23). Ces écrans ont longtemps dit
+  qu'une campagne RCS n'avait pas de coût « parce que Meta ne facture rien sur ce canal ». C'était vrai du
+  tarif de Meta et faux du prix réel : ce sont **vos** deux prix RCS, saisis dans Vos prix (simple et
+  conversationnel), et le total « coût des messages envoyés » les comptait déjà. Une campagne RCS affiche
+  donc son coût, au tarif **conversationnel** dès que le contact a réagi dans les sept jours, comme partout
+  ailleurs dans le produit.
+- ⚠️ **Une campagne RCS dont aucun envoi n'est retrouvé garde sa case vide**, elle n'affiche pas « 0 € » : le
+  cas existe pour les campagnes antérieures au suivi par étage. Vide se lit « on ne sait pas », zéro se
+  lirait « ça n'a rien coûté ».
 - ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.

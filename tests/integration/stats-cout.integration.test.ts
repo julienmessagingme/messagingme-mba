@@ -508,3 +508,93 @@ describe.skipIf(!url)('Cout : la population du tableau par campagne (Postgres re
     expect(avec.length).toBe(sans.length + 1);
   });
 });
+
+/**
+ * UN ENVOI RCS RETROUVE SA CAMPAGNE (demande de Julien du 2026-09-23 : le RCS a un prix, il faut le compter).
+ *
+ * 🔴 POURQUOI EN INTEGRATION : le rattachement est TOUT ENTIER dans le SQL, et il se fait en trois coups
+ * (l identifiant du message porte par le destinataire, celui porte par l etage, puis l attribution du
+ * scenario). Un faux pool prouverait la forme de la requete, jamais qu elle rattache la bonne ligne. Et un
+ * envoi RCS qui ne retrouve pas sa campagne ne casse rien : il affiche une case vide, donc le defaut est
+ * MUET, ce qui est precisement le mode de panne que ce fichier existe pour fermer.
+ */
+describe.skipIf(!url)('Cout : un envoi RCS retrouve sa campagne (Postgres reel)', () => {
+  let pool: Pool;
+  let store: PgStatsStore;
+  let tenantId: string;
+  let campagneRcs: string;
+
+  const MSG_RCS = 'rbm-itest-rcs-1';
+  const HORS_CAMPAGNE = 'rbm-itest-rcs-2';
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 2 });
+    store = new PgStatsStore(pool);
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-cout-rcs') returning id`)).rows[0]!.id;
+
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000901') returning id`, [tenantId],
+    )).rows[0]!.id;
+    campagneRcs = (await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, name, category, channel) values ($1, 'rcs-cout', 'marketing', 'rcs') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    // Le destinataire porte l identifiant du message RBM : c est le premier des trois coups.
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+       values ($1, $2, '33600000901', '{}'::jsonb, 'sent', $3::date, $4)`,
+      [campagneRcs, contactId, AUJ, MSG_RCS],
+    );
+
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000901', now()) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const convHors = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000902', now()) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const rcsOut = async (convId: string, metaId: string, at: string) => pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel, meta_message_id, created_at)
+       values ($1, 'out', 'text', 'coucou', 'rcs', $2, $3)`,
+      [convId, metaId, at],
+    );
+    await rcsOut(conv, MSG_RCS, `${AUJ}T09:00:00Z`);
+    // Un RCS que RIEN ne rattache : il doit rester dans le lot, avec une campagne nulle.
+    await rcsOut(convHors, HORS_CAMPAGNE, `${AUJ}T09:05:00Z`);
+    // Une reaction du contact, deux heures apres : elle fait basculer l echange en conversationnel.
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel, created_at)
+       values ($1, 'in', 'text', 'oui', 'rcs', $2)`,
+      [conv, `${AUJ}T11:00:00Z`],
+    );
+  });
+
+  afterAll(async () => {
+    if (tenantId) {
+      await pool.query(`delete from conversation_messages where conversation_id in (select id from conversations where tenant_id = $1)`, [tenantId]);
+      await pool.query(`delete from conversations where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from campaign_recipients where campaign_id in (select id from campaigns where tenant_id = $1)`, [tenantId]);
+      await pool.query(`delete from campaigns where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from contacts where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from tenants where id = $1`, [tenantId]);
+    }
+    await pool.end();
+  });
+
+  it('🔴 l envoi RCS porte SA campagne, et celui qu on ne rattache pas reste dans le lot', async () => {
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000);
+    const dela = r.conversations.find((c) => c.campaignId === campagneRcs);
+    expect(dela, 'l envoi rattache a sa campagne').toBeDefined();
+    expect(dela).toMatchObject({ waId: '33600000901', envois: 1 });
+    // ⚠️ L AUTRE N EST PAS FILTRE, et ce n est pas du remplissage : la bascule porte sur l ECHANGE entier,
+    // donc un RCS hors campagne peut faire basculer les RCS de campagne du meme echange. Le filtrer ici
+    // aurait sous-facture ce cas, sans que rien ne le signale.
+    expect(r.conversations.some((c) => c.campaignId === null), 'l envoi sans campagne reste rendu').toBe(true);
+  });
+
+  it('la reaction du contact est rendue, c est elle qui fait basculer au tarif haut', async () => {
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000);
+    expect(r.reactions.some((x) => x.waId === '33600000901')).toBe(true);
+  });
+});
