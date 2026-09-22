@@ -1787,8 +1787,9 @@ export class WorkflowExecutor {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: run ${run.id} sur un bloc agent sans session vivante, remonté en inbox`);
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
-        // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
-        // n a designe d affectataire, le fil part au pot commun. ESCALADE : le contact vient d'ecrire.
+        // Remontee a l humain sans qu aucun bloc ne l ait demande : pas d affectataire, le fil part au pot
+        // commun. ESCALADE, et c'est le SEUL cas non deliberé qui la merite : le contact a demande un humain a
+        // l'agent IA, dont la session est morte (cf. `src/agent/escalade.ts`). Personne ne lui a repondu.
         if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, true);
         return;
       }
@@ -1871,8 +1872,11 @@ export class WorkflowExecutor {
       if (boutonSansSuite) {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
-        // ESCALADE : il a cliqué et n'a RIEN reçu, donc il attend quelque chose de nous.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, true);
+        // ⚠️ PAS D'ESCALADE, ET LE RAISONNEMENT COMPTE (revue finale du 2026-09-23) : le contact vient de
+        // cliquer, donc `last_direction` est ENTRANT et « À traiter » porte déjà cette conversation. Le drapeau
+        // n'ajouterait que la collance (le fil ne repartirait plus jamais chez l'agent de Meta), sans rien
+        // montrer de plus à l'équipe.
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
       } else {
         // (a) : son message part aussi chez l'agent de Meta, qui y répond (réponse « à côté »). 🔴 Seulement un
         // VRAI message WhatsApp : cette branche reçoit aussi une réaction (sa charge porte le message visé) et un
@@ -1894,8 +1898,9 @@ export class WorkflowExecutor {
       if (partis === 0) {
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
         // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
-        // n a designe d affectataire, le fil part au pot commun. ESCALADE : le contact vient d'ecrire.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, true);
+        // n a designe d affectataire, le fil part au pot commun. ⚠️ PAS D'ESCALADE : le contact vient d'ecrire,
+        // donc « A traiter » la porte deja par son `last_direction` entrant (meme raison qu'au bouton sans suite).
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
         return;
       }
     }
@@ -1919,6 +1924,12 @@ export class WorkflowExecutor {
        *
        * ⚠️ ON REGARDE LES BLOCS RÉELLEMENT TRAVERSÉS (`actions[].nodeId`), jamais le graphe entier : un
        * scénario qui lit la dernière saisie AILLEURS ne doit pas rendre muet tout le reste de ses chemins.
+       *
+       * ⚠️ LIMITE CONNUE, ET ELLE PENCHE DU BON CÔTÉ (revue finale du 2026-09-23) : un bloc « Appel HTTP » qui
+       * pousse la saisie vers le système du client la lit par une VARIABLE DE CONNECTEUR
+       * (`origine: systeme/derniere_saisie`, portée par la requête, pas par le bloc), donc cette détection ne la
+       * voit pas et le message part quand même chez l'agent. Une détection incomplète laisse l'agent PARLER,
+       * jamais l'inverse : c'est le sens que Julien a demandé le 2026-09-22.
        */
       const aLuLaSaisie = actions.some((a) => graph.nodes.find((n) => n.id === a.nodeId)?.data.valueKind === 'derniere_saisie');
       const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && partis === 0 && !aLuLaSaisie;

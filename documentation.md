@@ -667,13 +667,22 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 - `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`,
   `escaladee_le`), `conversation_messages` (`media_id`, `media_mime`, `media_nom`).
-- 🔴 **UNE ESCALADE DE L'AGENT DE META EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164).
-  Quand l'agent dit au client qu'un humain va le rappeler, il nous passe le fil (`control_passed`) : la
-  conversation devient `app_human`, entre dans le dossier MÊME si la dernière phrase est sortante (la sienne),
+- 🔴 **UNE ESCALADE EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164), et TROIS chemins la
+  posent : l'agent de Meta qui nous passe le fil (`control_passed`), le bloc « passer à un humain » d'un
+  scénario, et l'escalade d'un agent IA. Les trois font la même promesse au client, et souffraient du même
+  défaut : leur dernière phrase est SORTANTE, donc la conversation n'entrait dans le dossier qu'au message
+  suivant du client. Elle devient `app_human`, entre dans le dossier même si la dernière phrase est sortante,
   et sort d'« Archivé » et de « Traité ». Elle y reste jusqu'à ce que quelqu'un agisse : la PREMIÈRE réponse
-  d'un opérateur, « Traité » ou « Archiver » la clôt, et le balayage de reprise ne rend JAMAIS un fil escaladé
-  à l'agent (arbitrage de Julien : on ne le lui rend qu'après une réponse humaine, puis les 2 h habituelles).
+  d'un opérateur, « Traité », « Archiver » ou le bouton « Rendre la main » la clôt, et le balayage de reprise
+  ne rend JAMAIS un fil escaladé à l'agent (arbitrage de Julien : on ne le lui rend qu'après une réponse
+  humaine, puis les 2 h habituelles).
   ⚠️ Un `standby` de Meta postérieur à l'escalade fait exception : il prouve que l'agent a repris le fil.
+  🔴 CE QUI N'EST PAS UNE ESCALADE, et la nuance décide du sort du fil : un ÉCHEC (fenêtre de 24 h fermée à la
+  reprise d'un parcours, envoi refusé, bouton qui ne mène nulle part) remonte bien la conversation à l'équipe,
+  mais SANS le drapeau. Le contact vient d'écrire dans la plupart de ces cas, donc « À traiter » la porte déjà
+  par son `last_direction` ; poser le drapeau n'ajouterait que la collance, et l'agent de Meta ne reprendrait
+  plus jamais ce fil. Le choix se fait au POINT D'APPEL (`escalateToHuman(..., escalade)`), jamais dans le
+  câblage, qui le relaie.
 - 🔴 **LES DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
   « Archivé » (`archived_at`), « Traité » (`traitee_le`) et l'affectation (`assigned_to`) sont des ÉTATS
   ÉCRITS ; « À traiter » est DÉRIVÉ (`A_TRAITER_SQL`, `src/inbox/store.pg.ts` : scénario qui ne tient pas le

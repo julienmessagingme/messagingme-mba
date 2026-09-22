@@ -1162,6 +1162,9 @@ export class PgStatsStore {
        -- 🔴 LES CAMPAGNES QUI ONT TOUCHÉ QUELQU'UN, FACTURABLE OU NON (lot 4). Seules celles qui avaient un envoi de
        -- MODÈLE facturable apparaissaient : une campagne à scénario (texte dans la fenêtre de service), RCS, ou
        -- envoyée à un numéro de test, disparaissait du tableau. Mesuré : 2 campagnes visibles sur 7.
+       -- ⚠️ ELLE REPARCOURT campaign_recipients, QUE LA BRANCHE 1 DES FACTURABLES PARCOURT DÉJÀ, et aucun index
+       -- ne sert sent_at : deux parcours au lieu d'un, assumés sur un écran d'administration qu'on ouvre pour se
+       -- faire une idée (relevé en revue le 2026-09-23). À dériver du même passage le jour où la table grossit.
        e as (
          select r.campaign_id as campaign_id, count(*)::int as n
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b

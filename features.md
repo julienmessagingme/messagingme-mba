@@ -2198,6 +2198,11 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
 - ✅ **L'agent passe la main quand la demande sort de son périmètre, ou quand le contact le demande.** La
   conversation remonte alors dans « À traiter » dans l'Inbox, la session de l'agent est close, et le parcours
   repart par la sortie 🙋 « Transfert à un humain ».
+- ✅ **Elle y entre TOUT DE SUITE, et elle y reste tant que personne n'a répondu** (2026-09-23). C'est la même
+  règle que pour l'agent de Meta et que pour le bloc « passer à un humain » d'un scénario : la dernière phrase
+  étant la nôtre, la conversation n'apparaissait qu'au message suivant du contact, et le robot reprenait la
+  main au bout de deux heures alors que personne n'avait répondu. La première réponse d'un opérateur,
+  « Traité », « Archiver » ou « Rendre la main » lève la marque, et les deux heures courent ensuite.
 - ✅ **Une fois la main passée, l'agent ne reprend pas la parole tout seul.** C'est la différence avec un
   simple changement d'étiquette : sans cela, l'humain aurait traité, puis l'agent aurait repris la
   conversation qu'on venait de lui retirer.

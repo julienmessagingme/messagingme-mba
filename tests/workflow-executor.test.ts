@@ -291,7 +291,7 @@ describe('WorkflowExecutor', () => {
     // sur-le-champ, aucune trace, aucun signal. Le run se clot toujours, mais la conversation part en
     // « À traiter » au lieu d'être rendue à l'agent : quelqu'un doit voir que ce bouton ne mène nulle part.
     const releases: string[] = [];
-    const { ex, runs, calls, escalations } = make(branched, {
+    const { ex, runs, calls, escalations, drapeaux } = make(branched, {
       mbaActifPour: async () => true,
       releaseToMba: async (_t, w) => { releases.push(w); },
     });
@@ -301,6 +301,10 @@ describe('WorkflowExecutor', () => {
     expect(calls).not.toContain('tag:non');
     expect(runs.run).toMatchObject({ status: 'done', currentNode: null });
     expect(escalations).toEqual(['33600']);
+    // 🔴 MAIS CE N'EST PAS UNE ESCALADE (revue finale du 2026-09-23) : le contact vient de cliquer, donc
+    // `last_direction` est ENTRANT et « À traiter » porte déjà la conversation. Poser le drapeau n'ajouterait
+    // que la collance : le fil ne repartirait plus jamais chez l'agent de Meta, sur un simple trou de montage.
+    expect(drapeaux).toEqual([false]);
     // ... et l'agent NE reprend PAS la parole sur ce cas : sinon le défaut de montage resterait invisible.
     expect(releases).toEqual([]);
   });
