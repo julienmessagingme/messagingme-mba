@@ -1127,8 +1127,10 @@ export class PgStatsStore {
   /**
    * Le VOLUME d'envois facturables de la période, par campagne et par catégorie.
    *
-   * ⚠️ Même population que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) : c'est ce
-   * qui garantit que le total du tableau et le total du graphe disent la même chose. Le coût lui-même ne se
+   * ⚠️ MÊMES VOLUMES FACTURABLES que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) :
+   * c'est ce qui garantit que les deux écrans chiffrent la même chose. La POPULATION, elle, est plus large
+   * depuis le lot 4 : ce tableau porte aussi les campagnes qui ont touché quelqu'un sans rien de facturable,
+   * avec un volume nul. Les totaux de coût restent donc égaux, pas le nombre de lignes. Le coût lui-même ne se
    * calcule pas ici : il se calcule dans `estimateCoutParCampagne`, avec les mêmes règles que la série
    * (une catégorie inconnue ou sans tarif ne produit aucun coût et se COMPTE à part).
    *
@@ -1168,18 +1170,23 @@ export class PgStatsStore {
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by 1
        ),
+       -- Les deux comptes CÔTE À CÔTE : le facturable (qui chiffre) et le touché (que la colonne montre).
        p as (
-         select campaign_id, sum(n)::int as facturables from v group by campaign_id
-         union all
-         select campaign_id, 0 from e where campaign_id not in (select campaign_id from v)
+         select coalesce(f.campaign_id, e.campaign_id) as campaign_id,
+                coalesce(f.facturables, 0) as facturables, coalesce(e.n, 0) as touches
+         from (select campaign_id, sum(n)::int as facturables from v group by campaign_id) f
+         full outer join e on e.campaign_id = f.campaign_id
        ),
        -- Les campagnes qui ont le PLUS envoye, plafonnees. Une de plus que le plafond : c'est ainsi que
        -- l'appelant sait qu'il tronque, et le dit. Le tri final se fait au COUT, que le SQL ne connait pas
        -- encore (il ne voit pas les tarifs Meta) : la ligne ecartee est donc la moins envoyee.
+       -- 🔴 LA COUPE SE FAIT SUR CE QUE LA COLONNE MONTRE (revue finale du 2026-09-23), c'est-à-dire le plus grand
+       -- des deux comptes, et estimateCoutParCampagne rejoue EXACTEMENT ce critère. Trier sur le seul
+       -- facturable mettait toutes les campagnes à scénario à égalité (0), départagées par leur identifiant.
        garde as (
          select p.campaign_id from p join campaigns c on c.id = p.campaign_id and c.tenant_id = $1
          where ($6::boolean or c.archived_at is null)
-         order by p.facturables desc, p.campaign_id asc limit $5
+         order by greatest(p.facturables, p.touches) desc, p.campaign_id asc limit $5
        )
        select g.campaign_id as campaign_id, c.name as nom, c.template_name as template, c.channel as canal,
               v.category as category, coalesce(v.n, 0) as count, coalesce(e.n, 0) as envois

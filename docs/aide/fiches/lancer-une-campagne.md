@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: 7606d9
+source_empreinte: d946e8
 ---
 # Lancer une campagne
 

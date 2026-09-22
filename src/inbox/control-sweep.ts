@@ -25,7 +25,8 @@ export interface ControlSweepDeps {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[] },
+    /** `effacerEscalade` : le drapeau de la migration 0164, périmé dès lors qu'on déplace ce fil (cf. plus bas). */
+    opts?: { only?: readonly ControlOwner[]; effacerEscalade?: boolean },
   ): Promise<boolean>;
   /**
    * Délai d'inactivité par détenteur, en ms. C'est le DÉFAUT du serveur : il s'applique aux clients qui
@@ -198,7 +199,10 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
       }
     }
     const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
-    if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
+    // ⚠️ `effacerEscalade` : arrivé ici, une escalade EN COURS a déjà été sautée (`c.escaladee` plus haut). Un
+    // drapeau qui subsiste est donc périmé, et le laisser sur une conversation qu'on déplace l'armerait pour le
+    // jour où elle redeviendrait `app_human` : le balayage ne la rendrait alors plus jamais.
+    if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner], effacerEscalade: true }))) continue;
     rendues += 1;
   }
   return rendues;

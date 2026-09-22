@@ -162,8 +162,13 @@ export interface LigneCoutCampagne {
   /** Envois facturables de la période, chiffrables ou non. */
   envoyes: number;
   /**
-   * Personnes TOUCHÉES sur la période, facturable ou non : c'est ce que la colonne « Envoyés » affiche. Une
+   * Ce que la colonne « Envoyés » affiche : les personnes TOUCHÉES sur la période, facturable ou non. Une
    * campagne à scénario ou RCS n'a souvent aucun envoi facturable, et « 0 envoyé » se lirait « rien n'est parti ».
+   *
+   * 🔴 JAMAIS MOINS QUE `envoyes` (revue finale du 2026-09-23). Les envois facturables peuvent venir de
+   * l'ATTRIBUTION, qui n'a aucune borne basse : une campagne partie il y a trois semaines dont les modèles
+   * partent cette semaine a des envois facturables et AUCUN destinataire daté de la période. Elle affichait
+   * alors « 0 envoyés » en face d'un coût, c'est-à-dire l'inverse de ce que ce lot cherche.
    */
   envois: number;
   /**
@@ -287,8 +292,9 @@ export function estimateCoutParCampagne(
       envoyes: 0, envois: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
     };
     ligne.envois = Math.max(ligne.envois, r.envois);
-    // 🔴 UNE CAMPAGNE SANS RIEN DE FACTURABLE A SA LIGNE (lot 4) : `count` à 0, aucune catégorie à juger. Sans
-    // cette garde, sa ligne compterait comme un envoi « sans catégorie » qui n'existe pas.
+    // ⚠️ UNE CAMPAGNE SANS RIEN DE FACTURABLE A SA LIGNE (lot 4) : `count` à 0, aucune catégorie à juger. La
+    // garde ÉVITE UN APPEL INUTILE à `chiffrer`, rien de plus : tous les compteurs ci-dessous s'incrémenteraient
+    // de zéro sans elle. Ne pas lui prêter un effet qu'elle n'a pas (relevé en revue le 2026-09-23).
     if (r.count > 0) {
       // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
       // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
@@ -335,7 +341,8 @@ export function estimateCoutParCampagne(
       ? Math.round((cout / nbEngagements) * 10000) / 10000
       : null;
     return {
-      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, envois: l.envois, cout,
+      // `envois` ne descend jamais sous les envois facturables : voir sa documentation, et le cas de l'attribution.
+      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, envois: Math.max(l.envois, l.envoyes), cout,
       nonChiffrables: l.nonChiffrables, sansCategorie: l.sansCategorie, sansTarif: l.sansTarif,
       clics: nbClics, coutParClic, engagements: nbEngagements, coutParEngagement,
     };
@@ -351,11 +358,15 @@ export function estimateCoutParCampagne(
    * On rejoue donc EXACTEMENT le critère du SQL (volume décroissant, identifiant en départage), on coupe,
    * puis on trie au coût pour l'affichage.
    */
+  // 🔴 ET LE CRITÈRE EST CELUI QUE LA COLONNE MONTRE (`envois`, revue finale du 2026-09-23). Trié sur les seuls
+  // envois FACTURABLES, tout ce qui n'a rien de facturable se retrouvait à égalité (0), départagé par
+  // l'identifiant : au-delà de 50 campagnes, une campagne à scénario de 5 000 personnes sortait pendant qu'une
+  // campagne à un seul envoi restait, sous une phrase qui dit « celles qui ont le plus envoyé ».
   const tronque = lignes.length > PLAFOND_CAMPAGNES_SYNTHESE;
   const gardees = tronque
-    ? [...lignes].sort((a, b) => b.envoyes - a.envoyes || a.campaignId.localeCompare(b.campaignId)).slice(0, PLAFOND_CAMPAGNES_SYNTHESE)
+    ? [...lignes].sort((a, b) => b.envois - a.envois || a.campaignId.localeCompare(b.campaignId)).slice(0, PLAFOND_CAMPAGNES_SYNTHESE)
     : lignes;
-  gardees.sort((a, b) => (b.cout ?? -1) - (a.cout ?? -1) || b.envoyes - a.envoyes || a.nom.localeCompare(b.nom));
+  gardees.sort((a, b) => (b.cout ?? -1) - (a.cout ?? -1) || b.envois - a.envois || a.nom.localeCompare(b.nom));
 
   return {
     lignes: gardees,

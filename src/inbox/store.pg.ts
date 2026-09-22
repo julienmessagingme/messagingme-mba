@@ -502,7 +502,10 @@ export class PgInboxStore implements InboxStore {
     // Elle s'effaçait dès qu'une écriture posait `mba`, donc aussi quand la FIN D'UN PARCOURS rendait le fil
     // (`rendreLeFilMaintenant`) : la conversation sortait d'« À traiter » sans que personne ait répondu, ce que
     // l'arbitrage de Julien interdit. Ne le demandent que les DEUX gestes qui disent vraiment « l'agent reprend » :
-    // le bouton « Rendre la main » de l'Inbox, et une passation de Meta vers l'agent.
+    // le bouton « Rendre la main » de l'Inbox (dans ses QUATRE branches : elles n'écrivent pas toutes `mba`, et
+    // trois d'entre elles laissaient le drapeau sur une conversation qui quittait « À traiter », donc un piège
+    // armé pour le jour où elle redeviendrait `app_human`), et le balayage quand il déplace un fil qui n'est
+    // PAS une escalade en cours (il saute les `app_human` escaladées avant d'en arriver là).
     // ⚠️ `saufEscalade` : n'écrit PAS sur une conversation escaladée. Posé par le `standby` d'un entrant
     // (`accorderLeDetenteur`) : une fois le fil passé à l'équipe, Meta nous envoie les messages sur `messages`,
     // donc un `standby` traité après l'escalade est un RETARDATAIRE (traitements en parallèle), et il rendait
@@ -513,7 +516,7 @@ export class PgInboxStore implements InboxStore {
     // ⚠️ SANS DATE, LA GARDE RESTE STRICTE : une donnée externe manquante n'ouvre rien.
     const res = await this.pool.query(
       `update conversations set control_owner = $3, control_changed_at = now(),
-              escaladee_le = case when $3 = 'mba' and $6::boolean then null else escaladee_le end
+              escaladee_le = case when $6::boolean then null else escaladee_le end
        where tenant_id = $1 and wa_id = $2
          and control_owner is distinct from $3
          and ($4::text[] is null or control_owner = any($4::text[]))

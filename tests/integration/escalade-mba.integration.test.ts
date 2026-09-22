@@ -139,6 +139,17 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     expect((await lire(waId))?.escaladee_le).not.toBeNull();
   });
 
+  it('🔴 l’effacement ne dépend PAS de la valeur écrite : le bouton « Rendre la main » pose souvent `app_workflow`', async () => {
+    // Trois de ses quatre branches écrivent `app_workflow` (Meta tient déjà le fil, espace sans agent, aucun
+    // numéro) : la conversation quittait « À traiter » avec son drapeau intact, donc un piège armé pour le jour
+    // où elle redeviendrait `app_human` (revue finale du 2026-09-23).
+    const waId = '33600000214';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    expect(await store.setControlOwner(tenantId, waId, 'app_workflow', { effacerEscalade: true })).toBe(true);
+    expect((await lire(waId))?.escaladee_le).toBeNull();
+  });
+
   it('🔴 le lot du balayage ne se remplit plus d’escalades : elles sortent en SQL', async () => {
     const waId = '33600000213';
     await conversationMenéeParLAgent(waId);

@@ -334,6 +334,17 @@ describe('reprise après un gel humain : une seule règle, sans exception', () =
   });
 });
 
+describe('balayage : le drapeau d’escalade périmé part avec le fil qu’on déplace', () => {
+  it('🔴 la reprise passe `effacerEscalade` : sinon le drapeau attendrait le jour où le fil redevient humain', async () => {
+    // Une escalade EN COURS est sautée plus haut (`c.escaladee`), donc ce qui reste ici est périmé. Le laisser
+    // armerait le balayage contre lui-même : il ne rendrait plus jamais cette conversation.
+    const opts: Array<Record<string, unknown> | undefined> = [];
+    const { deps } = sweepDeps([{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(100 * H), escaladee: false }], { app_human: 2 * H });
+    await runControlSweep({ ...deps, setControlOwner: async (_t, _w, _o, o) => { opts.push(o); return true; } });
+    expect(opts).toEqual([{ only: ['app_human'], effacerEscalade: true }]);
+  });
+});
+
 /**
  * 🔴 UNE ESCALADE DE L'AGENT DE META SANS RÉPONSE NE LUI REVIENT PAS (migration 0164, arbitrage de Julien du
  * 2026-09-23) : le client attend un humain. La première réponse d'un opérateur efface l'escalade, et les 2 h

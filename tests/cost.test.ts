@@ -141,6 +141,29 @@ describe('estimateCoutParCampagne', () => {
     expect(par.get('tp')).toMatchObject({ envoyes: 2, envois: 2, cout: 0.29 });
   });
 
+  it('🔴 « Envoyés » ne descend JAMAIS sous les envois facturables (revue finale du 2026-09-23)', () => {
+    // Les envois facturables viennent parfois de l'ATTRIBUTION, qui n'a pas de borne basse : une campagne partie
+    // il y a trois semaines dont les modèles partent cette semaine n'a AUCUN destinataire daté de la période.
+    // Elle affichait « 0 envoyés » en face d'un coût, c'est-à-dire l'inverse de ce que ce lot cherche.
+    const attribuee: VolumeCampagneRow = { campaignId: 'at', nom: 'scenario ancien', template: null, canal: 'whatsapp', category: 'marketing', count: 12, envois: 0 };
+    const r = estimateCoutParCampagne([attribuee], TARIFS, new Map(), new Map());
+    expect(r.lignes[0]).toMatchObject({ envoyes: 12, envois: 12, cout: 1.72 });
+  });
+
+  it('🔴 la COUPE garde les campagnes au plus grand nombre d’ENVOYÉS, pas au plus grand facturable', () => {
+    // Le SQL coupe sur `greatest(facturables, touches)` et ce tri le rejoue : trié sur le seul facturable, toutes
+    // les campagnes à scénario se retrouvaient à égalité (0), départagées par leur identifiant, et une campagne
+    // de 5 000 personnes sortait pendant qu'une campagne à un envoi restait.
+    const grosse: VolumeCampagneRow = { campaignId: 'zzz-grosse', nom: 'scenario 5000', template: null, canal: 'whatsapp', category: null, count: 0, envois: 5000 };
+    const petites = Array.from({ length: 50 }, (_, i): VolumeCampagneRow => (
+      { campaignId: `c${String(i).padStart(3, '0')}`, nom: `petite ${i}`, template: 'tpl', canal: 'whatsapp', category: 'marketing', count: 1, envois: 1 }
+    ));
+    const r = estimateCoutParCampagne([...petites, grosse], TARIFS, new Map(), new Map());
+    expect(r.tronque).toBe(true);
+    expect(r.lignes).toHaveLength(50);
+    expect(r.lignes.some((l) => l.campaignId === 'zzz-grosse')).toBe(true);
+  });
+
   it('🔴 sans facturable mais avec des messages de SERVICE, le coût est celui du service', () => {
     const scenario: VolumeCampagneRow = { campaignId: 'sc', nom: 'test4', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 };
     const r = estimateCoutParCampagne([scenario], TARIFS, new Map(), new Map([['sc', 1]]), { parCampagne: new Map([['sc', 10]]), prixUnitaire: 0.01 });

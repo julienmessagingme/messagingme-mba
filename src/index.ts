@@ -970,20 +970,23 @@ async function main(): Promise<void> {
          * ⚠️ Ce commentaire a dit « il n'existe aucune action `take` chez Meta ». C'était faux, et c'est ce
          * qui a laissé l'agent de Meta répondre juste après un clic sur « Reprendre la main ».
          */
+        // ⚠️ LES QUATRE BRANCHES CLÔTURENT L'ESCALADE : c'est le même geste délibéré, quelle que soit la valeur
+        // écrite. Trois d'entre elles posent `app_workflow`, que « À traiter » exclut : la conversation
+        // disparaissait avec son drapeau intact, et plus rien ne l'effaçait (revue finale du 2026-09-23).
         if ((await inboxStore.getControlOwner(tenant, waId)) === 'mba') {
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
         const reglages = await settingsStore.get(tenant);
         if (!reglages.mbaEnabled) {
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
         const rendu = await rendreLeFilAuMba(tenant, waId);
         if (!rendu) {
           // Aucun numéro connecté : il n'y a pas de fil à rendre chez Meta, et notre état local reste la
           // seule vérité. Ce n'est pas un échec, c'est un espace sans WhatsApp.
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
         // Geste DÉLIBÉRÉ d'un opérateur (« Rendre la main ») : il clôt l'escalade, elle n'attend plus personne.
