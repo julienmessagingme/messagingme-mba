@@ -97,7 +97,7 @@ test.describe('Inbox : fiche contact', () => {
     await mock(page);
     await page.goto('/inbox');
     await page.getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).click();
-    await expect(page.getByText(/fenêtre 24 h ouverte|24h window open/)).toBeVisible();
+    await expect(page.getByTestId('bouton-envoyer')).toBeVisible();
     // Et la fiche ne s'est PAS ouverte : les deux gestes sont bien distincts.
     await expect(page.getByTestId('inbox-contact-panel')).toHaveCount(0);
   });

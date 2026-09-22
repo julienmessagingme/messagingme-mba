@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell, UNREAD_CHANGED_EVENT } from '@/components/AppShell';
 import { TemplatePreview } from '@/components/TemplatePreview';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
-import { dayKey, dayLabel, hourMin } from '@/lib/day';
+import { dayKey, dayLabel, hourMin, jourHeure } from '@/lib/day';
 import type { ControlOwner } from '@/lib/api';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
@@ -655,7 +655,7 @@ function InboxInner({ session }: { session: Session }) {
                         </span>
                       )}
                     </span>
-                    <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
+                    <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{jourHeure(c.lastMessageAt, locale)}</span>
                   </div>
                   {/* 🔴 PLUS AUCUN BADGE DANS LA LISTE (demande de Julien, 2026-09-11 : « quand un agent a
                       la main, laisse juste le frame en blanc, pas obligé d'écrire Vous avez la main »).
@@ -1657,9 +1657,6 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
                     : t('Passer à l’agent Meta', 'Hand to Meta agent')}
             </button>
           )}
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
-            {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
-          </span>
           {/* 🔴 EFFACER LE CONTENU. Réservé aux administrateurs côté serveur ; on ne montre pas le bouton aux
               autres, mais c'est la garde du serveur qui décide, pas cet affichage.
               La confirmation DIT la conséquence que personne ne devine : effacer les messages ferme la fenêtre

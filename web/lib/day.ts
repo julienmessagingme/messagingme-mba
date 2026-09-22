@@ -37,6 +37,15 @@ export function hourMin(iso: string, locale: Locale): string {
   return new Date(iso).toLocaleTimeString(tag(locale), { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * Jour et heure (fuseau Paris) : « 22/09 17:42 ». Pour la liste des conversations de l'Inbox, où l'heure seule ne
+ * disait pas de quel jour était le dernier message (demande de Julien du 2026-09-23). Le fil, lui, garde l'heure
+ * seule sous chaque bulle : ses séparateurs « Aujourd'hui / Hier / 12 juillet » portent déjà le jour.
+ */
+export function jourHeure(iso: string, locale: Locale): string {
+  return `${formatDate(iso, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(iso, locale)}`;
+}
+
 /** Date courte localisée (fuseau Paris), options Intl optionnelles (ex. { day:'2-digit', month:'2-digit', year:'2-digit' }). */
 export function formatDate(iso: string, locale: Locale, opts?: Intl.DateTimeFormatOptions): string {
   return new Date(iso).toLocaleDateString(tag(locale), { timeZone: TZ, ...opts });
