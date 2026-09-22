@@ -129,7 +129,9 @@ juste après `migrate`. Les numéros se prennent au moment d'écrire, depuis la 
 
 Une ligne par message entrant qui porte un `referral`.
 
-- Lot 1 : espace, contact (clé étrangère, **supprimée avec le contact**), identifiant Meta du message
+- Lot 1 : espace, contact (clé étrangère en cascade pour une suppression réelle de la fiche ; ⚠️ la purge
+  RGPD, elle, ANONYMISE la fiche sans la supprimer, donc c'est `purgeMany` qui efface `ctwa_clid` et garde la
+  ligne pour le compte, relevé en écrivant le plan du lot 1), identifiant Meta du message
   (**unique par espace** : les webhooks arrivent en double), identifiant de la pub (`source_id`),
   `source_type`, titre, lien, `ctwa_clid` (nullable, jamais une condition), **arrivé en `standby` ou
   non**, date de réception.
@@ -280,9 +282,12 @@ C'est connu et écrit à l'écran de la pub (« qualifié par un scénario, l'In
 
 - Les accusés de réception (`processStatuses`, file `webhook-status`) lisent leur objet `pricing`, avec un
   `safeParse`, et l'écrivent dans `tarifs_meta`. Isolé : un échec n'annule pas le traitement de l'accusé.
-- Les deux requêtes du coût (modèles, via `envoisTemplateFacturables` ; service, via `serviceParMois`)
-  excluent les messages marqués `free_entry_point`. Les deux appelants de `coutMessages` (l'écran du coût
-  des messages et le coût par campagne) en profitent donc sans changement.
+- Les QUATRE lectures de coût (les deux branches de `envoisTemplateFacturables` pour les modèles,
+  `serviceParMois` et `servicesParCampagne` pour le service) excluent les messages marqués `free_entry_point`,
+  par un fragment SQL unique. Les appelants de `coutMessages` (l'écran du coût des messages et le coût par
+  campagne) en profitent sans changement. ⚠️ Les courbes de VOLUME ne reçoivent PAS l'exclusion : un message
+  gratuit reste un message envoyé. (La spec disait « deux requêtes » : `servicesParCampagne` impute aussi du
+  service aux campagnes, relevé en écrivant le plan du lot 1.)
 
 ## 4. Cas limites et sécurité
 
@@ -364,8 +369,11 @@ doctrine du `standby` qu'on modifie, index partiels).
   filtre qui masque les automations possédées de l'écran.
 - Le déclencheur « toutes les pubs » existant ne part plus pour une campagne reliée : c'est un changement
   de comportement pour les automations déjà créées, à dire dans la doc et à tenir par un test.
-- `processStatuses` et `processInbound` gagnent chacun une écriture, isolée.
-- Les deux appelants de `coutMessages`.
+- `processStatuses` gagne une écriture isolée, et le job webhook une étape isolée après l'upsert du contact.
+  Les accusés arrivent par DEUX files (`webhook` et `webhook-status`) : le tarif se câble sur les deux.
+- `purgeMany` (transactionnelle) efface `ctwa_clid` : la migration doit précéder le déploiement, sans quoi
+  toute suppression de contact échoue.
+- Les quatre lectures de coût, et les docblocks qui annoncent leur filtre de service « mot pour mot ».
 - La route de suppression d'un scénario gagne un refus 409.
 - Le job `automation-event` gagne un consommateur (la qualification).
 - Une autre session a livré `67b55166` le 2026-09-22 (l'agent de Meta envoie un bloc, lance un scénario et
