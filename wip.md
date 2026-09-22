@@ -25,7 +25,7 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
 `docs/superpowers/plans/2026-09-22-pubs-ctwa-lot1-capter.md`.
 
 - Lot 1 « Capter » : arrivées publicitaires (`arrivees_pub`, `ctwa_clid` compris) et tarifs de Meta
-  (`tarifs_meta`) gardés à la réception, 72 h gratuites exclues des cinq lectures de coût, `ctwa_clid` effacé
+  (`tarifs_meta`) gardés à la réception, 72 h gratuites exclues de toute lecture de coût, `ctwa_clid` effacé
   par la purge RGPD. Migration 0163 à appliquer AVANT le déploiement. ⚠️ La capture des arrivées n'est PAS
   éprouvée : aucun clic réel n'est encore arrivé. Elle le sera pendant l'essai réel du lot 3 (première
   campagne MessagingMe créée depuis Engage Me).

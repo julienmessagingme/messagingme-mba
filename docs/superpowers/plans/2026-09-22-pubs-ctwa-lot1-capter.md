@@ -66,7 +66,7 @@ dans `wip.md` (Task 8), pour que personne ne la compte comme acquise avant.
 | `src/webhooks/handler.ts` | `WebhookJobDeps` exige `tarifsMeta` avec `delivery` et `arriveesPub` avec `inbox` ; nouvelle étape. |
 | `src/worker.ts` | Construit les deux stores ; câble le tarif sur les DEUX files d'accusés, l'arrivée sur `webhook`. |
 | `src/crm/contact-store.pg.ts` | `purgeMany` efface `ctwa_clid`. |
-| `src/stats/store.pg.ts` | Fragment `horsEntreeGratuite`, posé dans les lectures de coût (cinq à l'exécution, cf. Task 7). |
+| `src/stats/store.pg.ts` | Pose `horsEntreeGratuite` dans ses lectures de coût (le fragment a rejoint `src/stats/entree-gratuite.ts` à la revue, cf. Task 7). |
 | `tests/webhook-fixtures.ts` (neuf) | `aucunTarif` et `aucuneArriveePub`, pour les tests qui n'en parlent pas. |
 | `tests/pubs-tarif-meta.test.ts`, `tests/pubs-arrivees.test.ts` (neufs) | Unitaires. |
 | `tests/integration/pubs-capter.integration.test.ts`, `tests/integration/cout-entree-gratuite.integration.test.ts` (neufs) | Intégration (CI). |
@@ -1221,7 +1221,9 @@ EOF
 > ⚠️ **Écart constaté à l'exécution (2026-09-22)** : une CINQUIÈME lecture de coût, `envoisDeLaCampagne` (la
 > fiche d'une campagne, dont la documentation exige la même population que `getVolumeParCampagne`), reçoit
 > aussi l'exclusion, dans ses deux branches, et le test d'intégration la vérifie. Le code ci-dessous décrit les
-> quatre lectures prévues ; le commit `feat(cout)` porte les cinq.
+> quatre lectures prévues ; le commit `feat(cout)` porte les cinq. Puis la relecture indépendante a trouvé une
+> lecture de plus, `bilanContact` (`src/crm/contact-history.pg.ts`), et une branche que le test n'exerçait pas :
+> corrigées par `fix(cout)`, qui déplace aussi le fragment dans `src/stats/entree-gratuite.ts`.
 
 **Files:**
 - Modify: `src/stats/store.pg.ts`

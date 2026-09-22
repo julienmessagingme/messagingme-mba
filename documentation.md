@@ -265,9 +265,10 @@ read) arrivent par rafales : une campagne de 5 000 messages en produit trois par
 file, une rafale d'accusés retardait la réponse à un vrai client.
 
 🔴 **Les accusés gardent le tarif que Meta annonce** (`tarifs_meta`, migration 0163), sur les DEUX files qui
-voient des accusés : `WebhookJobDeps` rend `tarifsMeta` obligatoire avec `delivery`. Les cinq lectures de COÛT
-excluent les messages `free_entry_point` (les 72 h gratuites qui suivent un clic sur une pub) par un fragment
-unique, `horsEntreeGratuite` ; les courbes de VOLUME les comptent, délibérément. Un message sans ligne de
+voient des accusés : `WebhookJobDeps` rend `tarifsMeta` obligatoire avec `delivery`. Toute lecture de COÛT
+exclut les messages `free_entry_point` (les 72 h gratuites qui suivent un clic sur une pub) par un fragment
+unique, `horsEntreeGratuite` (`src/stats/entree-gratuite.ts`) ; les courbes de VOLUME les comptent,
+délibérément. Un message sans ligne de
 tarif reste compté comme payant.
 
 ⚠️ **Le referral d'une publicité Click-to-WhatsApp n'arrive que sur le PREMIER message** après le clic. Ne pas
