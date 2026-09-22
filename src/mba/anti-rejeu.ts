@@ -10,33 +10,50 @@
  * comme les plafonds de débit (`CLAUDE.md`, § Sécurité).
  */
 export class AntiRejeu {
+  /** Clé -> instant (ms) où elle se libère. */
   private readonly vus = new Map<string, number>();
 
   constructor(private readonly dureeMs: number, private readonly maintenant: () => number = Date.now) {}
 
+  /** Une seule clé, à la durée par défaut. Voir `prendreTous`. */
+  prendre(cle: string): boolean {
+    return this.prendreTous([[cle, this.dureeMs]]);
+  }
+
   /**
-   * PREND la clé si personne ne l'a prise il y a moins de `dureeMs`, et le dit : `true` = ce geste peut partir.
+   * PREND toutes ces clés si AUCUNE n'est prise, et le dit : `true` = ce geste peut partir. Chaque clé a sa durée.
    *
    * 🔴 VÉRIFIER ET RETENIR D'UN SEUL GESTE, SYNCHRONE (revue finale du 2026-09-22). La première version exposait
    * « déjà fait ? » et « retenir » séparément, et l'appelant attendait la base entre les deux : sept appels
    * SIMULTANÉS passaient tous la vérification avant que le premier ne retienne, et partaient tous (7 sur 7,
    * mesuré). Sans `await` ici, deux appels ne peuvent pas s'intercaler.
    */
-  prendre(cle: string): boolean {
+  prendreTous(cles: ReadonlyArray<readonly [string, number]>): boolean {
     const t = this.maintenant();
     // Ce ménage EST l'expiration (le `has` qui suit ne lit pas l'heure), et il borne la mémoire : sans lui, une
     // clé ne repartirait jamais, et la table grandirait d'une entrée par client et par outil, pour toujours.
-    for (const [k, v] of this.vus) if (t - v >= this.dureeMs) this.vus.delete(k);
-    if (this.vus.has(cle)) return false;
-    this.vus.set(cle, t);
+    for (const [k, fin] of this.vus) if (t >= fin) this.vus.delete(k);
+    if (cles.some(([k]) => this.vus.has(k))) return false;
+    for (const [k, duree] of cles) this.vus.set(k, t + duree);
     return true;
   }
 
-  /** Oublie la clé : un geste REFUSÉ n'a rien envoyé, et doit pouvoir être redemandé. */
-  oublier(cle: string): void {
-    this.vus.delete(cle);
+  /** Oublie ces clés : un geste REFUSÉ n'a rien envoyé, et doit pouvoir être redemandé. */
+  oublier(...cles: string[]): void {
+    for (const k of cles) this.vus.delete(k);
   }
 }
 
 /** Deux minutes : bien plus qu'un tour de l'agent de Meta (quelques secondes), bien moins qu'une vraie redemande. */
 export const DUREE_ANTI_REJEU_MS = 2 * 60_000;
+
+/**
+ * Le PLANCHER : un même outil, pour un même client, ne repart pas avant 30 s, QUEL QUE SOIT son dernier message.
+ *
+ * 🔴 LA CLÉ PAR MESSAGE NE SUFFIT PAS SEULE (relecture du 2026-09-22) : une réaction 👍, un clic, ou une demande
+ * coupée en deux (« je veux la brochure », puis « svp ») changent le dernier message reçu, et un rappel de l'agent
+ * juste après prenait une clé neuve : le scénario repartait du début. Au-delà du plancher, c'est le message qui
+ * départage, et une vraie redemande relance (celle de l'essai réel arrivait 55 s après). Il doit rester au-dessus
+ * de l'attente de fin de tour et au-dessous de ces 55 s : un test tient les deux bornes.
+ */
+export const PLANCHER_ANTI_REJEU_MS = 30_000;

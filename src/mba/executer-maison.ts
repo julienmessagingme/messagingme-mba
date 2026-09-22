@@ -1,5 +1,5 @@
 import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-maison';
-import type { AntiRejeu } from './anti-rejeu';
+import { DUREE_ANTI_REJEU_MS, PLANCHER_ANTI_REJEU_MS, type AntiRejeu } from './anti-rejeu';
 
 /**
  * EXÉCUTER UN GESTE DE L'AGENT DE META pour un contact (spec 2026-09-21-outils-maison-mba, § 3).
@@ -29,7 +29,7 @@ export interface DepsMaison {
   /** Lance le scénario depuis son début, exactement comme le bouton de l'Inbox. Même contrat de retour. */
   lancerScenario(tenantId: string, waId: string, workflowId: string): Promise<true | string>;
   /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
-  antiRejeu: Pick<AntiRejeu, 'prendre' | 'oublier'>;
+  antiRejeu: Pick<AntiRejeu, 'prendreTous' | 'oublier'>;
   /**
    * L'identifiant du dernier message REÇU du client (`PgInboxStore.dernierMessageDuClient`), ou `null`. Il entre
    * dans la clé de l'anti-rejeu : un rappel dans le même tour de l'agent partage ce message, une nouvelle demande
@@ -71,14 +71,19 @@ export async function executerOutilMaison(
       // ⚠️ LE MESSAGE DU CLIENT EST DANS LA CLÉ (second essai du même jour) : « Je peux avoir le statut de ma
       // commande ? Encore une fois », 55 s après la première demande, était pris pour un rappel et rien ne
       // repartait. Une NOUVELLE demande du client est un nouveau message, donc une nouvelle clé.
+      // ⚠️ ET UN PLANCHER DE 30 S, QUEL QUE SOIT LE MESSAGE (relecture du même jour) : une réaction ou une demande en
+      // deux messages changent aussi le dernier message reçu. Les deux clés se prennent ensemble, ou aucune.
       const dernier = await deps.dernierMessageDuClient(tenantId, waId);
-      const cle = `${tenantId}:${waId}:${input.outilId}:${dernier ?? '-'}`;
-      if (!deps.antiRejeu.prendre(cle)) return { ok: true, reponse: REPONSE_DEJA_TRAITE };
+      const plancher = `${tenantId}:${waId}:${input.outilId}`;
+      const cle = `${plancher}:${dernier ?? '-'}`;
+      if (!deps.antiRejeu.prendreTous([[plancher, PLANCHER_ANTI_REJEU_MS], [cle, DUREE_ANTI_REJEU_MS]])) {
+        return { ok: true, reponse: REPONSE_DEJA_TRAITE };
+      }
       const issue = cible.handler === 'bloc_fixe'
         ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })
         : await deps.lancerScenario(tenantId, waId, cible.workflowId);
       if (issue === true) return { ok: true, reponse: REPONSE_MAISON[cible.handler] };
-      deps.antiRejeu.oublier(cle);
+      deps.antiRejeu.oublier(plancher, cle);
       return { ok: false, erreur: issue };
     }
   }

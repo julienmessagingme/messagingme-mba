@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CHAMP_DISPARU, CONTACT_BLOQUE, REPONSE_DEJA_TRAITE, erreurDePanne, executerOutilMaison, type DepsMaison } from '../src/mba/executer-maison';
-import { AntiRejeu } from '../src/mba/anti-rejeu';
+import { AntiRejeu, PLANCHER_ANTI_REJEU_MS, DUREE_ANTI_REJEU_MS } from '../src/mba/anti-rejeu';
+import { FIN_DE_TOUR_MAX_MS, FIN_DE_TOUR_DEBUT_MS } from '../src/mba/fin-de-tour';
 
 /**
  * Exécuter un geste de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 3).
@@ -11,6 +12,7 @@ import { AntiRejeu } from '../src/mba/anti-rejeu';
 function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true | string; leve?: boolean } = {}) {
   const gestes: string[] = [];
   const client = { dernier: 'm1' as string | null };
+  const horloge = { t: 0 };
   const deps: DepsMaison = {
     poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
     ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
@@ -22,10 +24,10 @@ function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true 
       if (o.leve) throw new Error('panne de base au journal');
       return o.issue ?? true;
     },
-    antiRejeu: new AntiRejeu(60_000),
+    antiRejeu: new AntiRejeu(60_000, () => horloge.t),
     dernierMessageDuClient: async () => client.dernier,
   };
-  return { deps, gestes, client };
+  return { deps, gestes, client, horloge };
 }
 
 describe('exécuter un geste de l’agent de Meta', () => {
@@ -159,9 +161,26 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     const f = faux();
     await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
     f.client.dernier = 'm2';
+    f.horloge.t = 55_000;
     const r = await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
     expect(r).toEqual({ ok: true, reponse: expect.stringContaining('C’est fait') });
     expect(f.gestes).toHaveLength(2);
+  });
+
+  it('🔴 sous le PLANCHER, un nouveau message ne relance pas : réaction, demande en deux messages (relecture du 2026-09-22)', async () => {
+    const f = faux();
+    await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    f.client.dernier = 'm2';
+    f.horloge.t = PLANCHER_ANTI_REJEU_MS - 1;
+    expect(await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} }))
+      .toEqual({ ok: true, reponse: REPONSE_DEJA_TRAITE });
+    expect(f.gestes).toHaveLength(1);
+  });
+
+  it('🔴 le plancher couvre l’attente de fin de tour, et laisse passer la vraie redemande mesurée (55 s)', () => {
+    expect(PLANCHER_ANTI_REJEU_MS).toBeGreaterThan(FIN_DE_TOUR_DEBUT_MS + FIN_DE_TOUR_MAX_MS);
+    expect(PLANCHER_ANTI_REJEU_MS).toBeLessThan(55_000);
+    expect(PLANCHER_ANTI_REJEU_MS).toBeLessThan(DUREE_ANTI_REJEU_MS);
   });
 
   it('un AUTRE client, ou un AUTRE outil, n’est pas concerné', async () => {

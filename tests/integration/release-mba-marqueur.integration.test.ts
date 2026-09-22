@@ -261,6 +261,7 @@ describe.skipIf(!url)('PgInboxStore : le marqueur de remise à l’agent de Meta
     const client = await ecrire('in', 'text', 0);
     await ecrire('out', 'mba', 1);
     await ecrire('out', 'text', 2);
+    await ecrire('in', 'reaction', 3); // une réaction ne demande rien
     expect(await store.dernierMessageDuClient(tenantId, waId)).toBe(client);
     expect(await store.dernierMessageDuClient('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
   });

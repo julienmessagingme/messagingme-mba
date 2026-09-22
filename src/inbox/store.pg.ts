@@ -1575,14 +1575,15 @@ export class PgInboxStore implements InboxStore {
   /**
    * L'identifiant du dernier message REÇU du client dans cette conversation, ou `null`. Il entre dans la clé de
    * l'anti-rejeu des outils de l'agent de Meta (`src/mba/executer-maison.ts`) : une nouvelle demande du client est
-   * un nouveau message. Servie par `conversation_messages_conv_idx` (conversation, date).
+   * un nouveau message. ⚠️ Une RÉACTION n'en est pas une (`recordInbound` l'écrit en `in`, type `reaction`) : elle
+   * ne demande rien. Servie par `conversation_messages_conv_idx` (conversation, date).
    */
   async dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `select m.id
          from conversation_messages m
          join conversations c on c.id = m.conversation_id
-        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'in'
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'in' and m.type is distinct from 'reaction'
         order by m.created_at desc, m.id desc
         limit 1`,
       [tenantId, waId],
