@@ -54,10 +54,13 @@ export class PlafondModeleAtteint extends LlmApiError {
  * de configuration tournent sur NOTRE clé, le bac à sable sur celle de l'espace, et « votre crédit » serait
  * faux pour l'un des deux.
  *
- * ⚠️ UNE ERREUR RÉSEAU N'EN FAIT PAS PARTIE, délibérément : `ECONNREFUSED` est aussi ce que lève une base
- * injoignable, et l'attribuer au fournisseur serait un mensonge. Elle sort en 500, après les rejeux de
- * `withRetry`. Un abandon, lui, se dit « délai dépassé » sans nommer le modèle : dans le bac à sable, l'appel
- * coupé peut être celui d'un outil.
+ * ⚠️ UNE COUPURE RÉSEAU N'EST RECONNUE QUE SOUS LA FORME QUE LUI DONNE `fetch`, et c'est ce qui la rend
+ * attribuable. `fetch` (undici) lève un `TypeError` au message exact « fetch failed », la cause réseau rangée
+ * dessous ; une base injoignable lève une `Error` qui porte `code: 'ECONNREFUSED'`, jamais ce `TypeError`.
+ * Dans les quatre `try` qui appellent cette fonction, le seul `fetch` est l'appel au modèle : l'agent et la
+ * clé de l'espace se lisent par `pg`, et l'exécuteur rattrape lui-même l'erreur ou l'échéance d'un outil
+ * (`src/agent/executor.ts`, qui les rend au modèle). Un abandon qui arrive ici est donc aussi l'échéance de
+ * l'appel au modèle. ⚠️ Un appelant dont le `try` couvrirait un AUTRE `fetch` doit relire ce paragraphe.
  */
 export function direPanneModele(err: unknown): string | null {
   if (err instanceof PlafondModeleAtteint) return 'le crédit du modèle est épuisé';
@@ -66,6 +69,9 @@ export function direPanneModele(err: unknown): string | null {
       ? 'le fournisseur du modèle est indisponible pour le moment, réessayez dans un instant'
       : `le fournisseur du modèle a refusé l’appel (HTTP ${err.status})`;
   }
-  if (err instanceof HttpTimeoutError || estAbandon(err)) return 'délai dépassé, réessayez dans un instant';
+  if (err instanceof HttpTimeoutError || estAbandon(err)) return 'le modèle n’a pas répondu à temps, réessayez dans un instant';
+  if (err instanceof TypeError && err.message === 'fetch failed') {
+    return 'le fournisseur du modèle est injoignable pour le moment, réessayez dans un instant';
+  }
   return null;
 }

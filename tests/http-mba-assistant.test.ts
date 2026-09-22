@@ -7,6 +7,10 @@ import { registerMbaAssistant, type MbaAssistantDeps } from '../src/http/mba-ass
 import { calculerCompletion, type EntreeCompletion } from '../src/mba/completion';
 import { ENTRETIEN_MBA_VIERGE, type EntretienMba } from '../src/mba/assistant/entretien-store';
 import { LlmApiError } from '../src/llm/errors';
+import { buildServer } from '../src/server';
+import { FakeQueue } from '../src/queue/fake';
+import { signSession } from '../src/auth/token';
+import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 
 /**
  * LA ROUTE DE L'ASSISTANT DU MBA.
@@ -70,7 +74,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: opts.role ?? 'admin' };
   });
   registerMbaAssistant(app, deps, gardeOuverte);
-  return { app, journal, lireFil: () => fil };
+  return { app, deps, journal, lireFil: () => fil };
 }
 
 const post = (app: ReturnType<typeof monter>['app'], url: string, payload: Record<string, unknown>) =>
@@ -262,13 +266,23 @@ describe('quand le fournisseur de modèle lâche', () => {
     expect(lignes.find((l) => l.includes('mba_assistant_tour_echec'))).toContain('upstream 503');
   });
 
-  it('🔴 une erreur qui n’est PAS celle du fournisseur est RELANCÉE, pas dite en 422', async () => {
-    // ⚠️ Ce montage n'a pas le gestionnaire global de `buildServer`, qui rend le 500 opaque en production :
-    // on ne prouve ici que la relance. L'opacité est prouvée par les suites montées sur `buildServer`
-    // (`tests/http-agent-setup.test.ts`, `tests/http-agent-test.test.ts`).
-    const m = monter({ completer: async () => { throw new TypeError('Cannot read properties of undefined'); } });
-    const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+  it('🔴 une erreur qui n’est PAS celle du fournisseur sort en 500 OPAQUE, sans son texte', async () => {
+    // ⚠️ Monté sur `buildServer`, pas sur le Fastify nu des autres cas : c'est son gestionnaire global qui rend
+    // le 500 opaque en production. Le gestionnaire par défaut de Fastify, lui, recopie le message dans le
+    // corps : sur un montage nu, ce test aurait prouvé la relance et rien de ce qui compte.
+    const m = monter({ completer: async () => { throw new TypeError('Cannot read properties of undefined (reading \'cle\')'); } });
+    const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
+    const srv = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: 'test-secret' }, mbaAssistant: m.deps });
+    const jeton = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, 'test-secret');
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await srv.inject({
+      method: 'POST', url: '/tenants/t1/mba/assistant', payload: { message: 'bonjour' },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${jeton}` },
+    });
+    spy.mockRestore();
     expect(r.statusCode).toBe(500);
+    expect(r.json().error).toBe('Internal Server Error');
+    expect(r.body).not.toContain('Cannot read');
     expect(m.journal.ecrits).toHaveLength(0);
   });
 

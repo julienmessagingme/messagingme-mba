@@ -35,23 +35,33 @@ describe('direPanneModele', () => {
     }
   });
 
-  it('un délai dépassé se dit sans nommer le modèle, quelle que soit sa forme', () => {
-    // Notre plafond de transport, l'échéance de l'appelant (`AbortSignal.timeout`), un abandon.
+  it('un délai dépassé se dit, quelle que soit sa forme', () => {
+    // Notre plafond de transport, l'échéance de l'appelant (`AbortSignal.timeout`), un abandon. Dans les
+    // routes qui appellent cette fonction, c'est l'appel au modèle : l'exécuteur rattrape ceux des outils.
     const abandon = new Error('This operation was aborted'); abandon.name = 'AbortError';
     const echeance = new Error('The operation was aborted due to timeout'); echeance.name = 'TimeoutError';
     for (const err of [new HttpTimeoutError('https://ai-gateway.vercel.sh/v1/chat', 120_000), abandon, echeance]) {
-      expect(direPanneModele(err), err.name).toBe('délai dépassé, réessayez dans un instant');
+      expect(direPanneModele(err), err.name).toBe('le modèle n’a pas répondu à temps, réessayez dans un instant');
     }
   });
 
+  it('une coupure réseau de `fetch` dit « injoignable », sans sa cause', () => {
+    // La forme exacte d'undici : un TypeError « fetch failed », la cause réseau rangée dessous.
+    const coupure = new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 76.76.21.21:443'), { code: 'ECONNREFUSED' }) });
+    const raison = direPanneModele(coupure);
+    expect(raison).toBe('le fournisseur du modèle est injoignable pour le moment, réessayez dans un instant');
+    expect(raison).not.toContain('76.76');
+  });
+
   it('🔴 TOUT le reste est à nous, et rend null', () => {
-    const reseau = Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:5432'), { code: 'ECONNREFUSED' });
+    // Ce que lève `pg` quand la base est injoignable : une Error avec un code, pas le TypeError de `fetch`.
+    const baseInjoignable = Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:5432'), { code: 'ECONNREFUSED' });
     for (const err of [
       new Error('password authentication failed for user "postgres.abcdef"'),
       new TypeError('Cannot read properties of undefined'),
-      // Une erreur réseau n'est PAS attribuée au fournisseur : une base injoignable lève la même.
-      reseau,
-      new TypeError('fetch failed'),
+      baseInjoignable,
+      // Un TypeError qui n'est PAS celui de `fetch` reste une faute de programmation.
+      new TypeError('fetch failed because of x'),
       'une chaîne',
       undefined,
       null,

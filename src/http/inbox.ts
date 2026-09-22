@@ -7,6 +7,7 @@ import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter, peutPrendre } from '../inbox/assignment';
 import { gardeEtendue } from '../auth/middleware';
 import { cacheCourt } from '../lib/cache-court';
+import { journaliser } from '../lib/journal';
 import { RienATranscrire, MediaTropGros } from '../inbox/transcrire';
 import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -613,7 +614,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
           code: 'media_trop_gros',
         });
       }
-      req.log.error({ err, tenant, messageId }, 'media_illisible');
+      journaliser('error', 'media_illisible', { err, tenant, messageId });
       return reply.code(422).send({ error: 'ce média n’a pas pu être récupéré' });
     }
   });
@@ -650,7 +651,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       const r = await deps.transcrireMessage(tenant, messageId, conversationId, cible);
       return reply.code(200).send(r);
     } catch (err) {
-      req.log.error({ err, tenant, messageId }, 'transcription_impossible');
+      journaliser('error', 'transcription_impossible', { err, tenant, messageId });
       // 🔴 4xx et JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc
       // le message se perdrait exactement quand il sert. Et les trois causes n'appellent pas la même action :
       // rien à transcrire (l'écran n'aurait pas dû proposer le bouton), fichier trop lourd (rien à faire),

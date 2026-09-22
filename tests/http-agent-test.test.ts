@@ -310,10 +310,18 @@ describe('bac à sable de l’agent', () => {
         });
         const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const res = await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+        const lignes = spy.mock.calls.map((c) => String(c[0]));
         spy.mockRestore();
         expect(res.statusCode, erreur.message).toBe(attendu);
         expect(res.body, erreur.message).not.toContain(erreur.message);
         expect(cap.debits, erreur.message).toEqual([10]);
+        if (attendu === 500) {
+          // ⚠️ C'est la CAUSE qui est relancée, pas `TourInterrompu` : la pile journalisée doit montrer la
+          // fonction qui a levé, sans quoi le journal ne dirait que « penserTrace ».
+          const trace = lignes.map((l) => { try { return JSON.parse(l) as { msg?: string; stack?: string }; } catch { return {}; } })
+            .find((l) => l.msg === 'unhandled_route_error');
+          expect(trace?.stack).toMatch(/^Error: connexion au pool perdue/);
+        }
       }
     });
 

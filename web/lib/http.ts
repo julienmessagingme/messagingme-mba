@@ -158,10 +158,32 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
     throw new ApiError(401, langue() === 'en' ? 'Session expired, sign in again.' : 'Session expirée, reconnecte-toi.');
   }
   const body = (await res.json().catch(() => null)) as unknown;
-  if (!res.ok) {
-    const msg = (body as { error?: string } | null)?.error
-      ?? (langue() === 'en' ? `Error ${res.status}` : `Erreur ${res.status}`);
-    throw new ApiError(res.status, msg, body);
-  }
+  if (!res.ok) throw new ApiError(res.status, messageDErreur(res.status, body, langue()), body);
   return body as T;
+}
+
+/** Ce que le gestionnaire global de l'API écrit sur SA panne (`src/server.ts`) : opaque, et en anglais. */
+const OPAQUE_DU_SERVEUR = 'Internal Server Error';
+
+/**
+ * LE TEXTE D'UNE RÉPONSE EN ÉCHEC, tel que l'écran l'affichera.
+ *
+ * 🔴 UN 5xx N'A RIEN À DIRE, ET L'ÉCRAN DOIT QUAND MÊME DIRE QUELQUE CHOSE (2026-09-22). L'API rend
+ * « Internal Server Error » sur sa propre panne, délibérément sans détail, et Cloudflare remplace le corps de
+ * ses 5xx par une page HTML, qui n'est pas du JSON. L'écran affichait donc « Internal Server Error » ou
+ * « Erreur 502 », en anglais pour l'un et sans conduite à tenir pour les deux. Le statut reste dans la phrase :
+ * c'est ce qu'un client recopie quand il nous écrit.
+ *
+ * ⚠️ UNE RAISON QUE LE SERVEUR A VRAIMENT ÉCRITE PASSE TELLE QUELLE, quel que soit le statut : un 503 « non
+ * configuré » dit quelque chose que la phrase générique effacerait.
+ */
+export function messageDErreur(status: number, corps: unknown, lang: Locale): string {
+  const ecrit = (corps as { error?: unknown } | null)?.error;
+  if (typeof ecrit === 'string' && ecrit.trim() !== '' && ecrit !== OPAQUE_DU_SERVEUR) return ecrit;
+  if (status >= 500) {
+    return lang === 'en'
+      ? `Something went wrong on our side (error ${status}). Try again in a moment.`
+      : `Incident de notre côté (erreur ${status}). Réessaie dans un instant.`;
+  }
+  return lang === 'en' ? `Error ${status}` : `Erreur ${status}`;
 }

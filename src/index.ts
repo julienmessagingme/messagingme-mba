@@ -26,6 +26,7 @@ import { rangeToUnix, addDays, todayParis } from './stats/range';
 import type { CompteurClic } from './links/mesures';
 
 import { cacheCourt } from './lib/cache-court';
+import { journaliser } from './lib/journal';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
@@ -274,7 +275,7 @@ async function main(): Promise<void> {
     (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
     // ⚠️ Le repli sur la cle maison est SILENCIEUX par nature : les agents repondent, tout a l'air normal, et
     // la depense de cet espace cesse d'etre attribuee. Sans cette ligne, personne ne l'apprend jamais.
-    (tenantId, err) => { app.log.error({ err, tenantId }, 'cle_gateway_indechiffrable'); },
+    (tenantId, err) => { journaliser('error', 'cle_gateway_indechiffrable', { err, tenantId }); },
   );
   /**
    * ⚠️ `null` quand le jeton Vercel n'est pas configure : le provisionnement est alors ETEINT et la creation
@@ -749,7 +750,7 @@ async function main(): Promise<void> {
           modele: config.TRANSCRIPTION_MODELE,
           tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
           noterCout: (t, m2, cout, secondes) => {
-            app.log.info({ tenant: t, messageId: m2, coutDollars: cout, secondes }, 'transcription_cout');
+            journaliser('info', 'transcription_cout', { tenant: t, messageId: m2, coutDollars: cout, secondes });
           },
         }, tenant, messageId, conversationId, cible),
       } : {}),
@@ -789,7 +790,7 @@ async function main(): Promise<void> {
           apprendreLangueContact: (t, c, langue) => traductionStore.apprendreLangueContact(t, c, langue),
           // Une ecriture d appoint qui echoue ne prive personne de sa lecture, mais elle fait REPAYER la
           // meme traduction a chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
-          onErreur: (err, quoi) => { app.log.error({ err, quoi }, 'traduction_ecriture_impossible'); },
+          onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi }); },
         }, { tenantId: tenant, conversationId, messages, cible }),
         traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
         traductionDisponible: (tenant: string) => traducteur.disponible(tenant),
@@ -2362,7 +2363,7 @@ async function main(): Promise<void> {
        */
       verrouillerEspace: async (tenantId, verrouille, note) => {
         const fait = await opsStore.verrouillerEspace(tenantId, verrouille);
-        if (fait) app.log.warn({ tenantId, verrouille, note }, 'ops_verrou_espace');
+        if (fait) journaliser('warn', 'ops_verrou_espace', { tenantId, verrouille, note });
         return fait;
       },
       getTenantOverview: () => opsStore.getTenantOverview(),
@@ -2422,7 +2423,7 @@ async function main(): Promise<void> {
         // pas faire echouer un paiement. Le plafond rattrapera au mouvement suivant.
         if (provisionCle) {
           await remonterPlafondApresRecharge(provisionCle, tenantId, montant, (msg, err) => {
-            app.log.error({ err, tenantId }, msg);
+            journaliser('error', msg, { err, tenantId });
           });
         }
         return solde;

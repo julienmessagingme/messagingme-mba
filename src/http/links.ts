@@ -3,6 +3,7 @@ import { isSendableButtonUrl } from '../meta/button-url';
 import { estClicAutomatique } from '../links/clic-automatique';
 import { estJeton } from '../links/jeton-contact';
 import type { DestinationLien } from '../links/tracked-links.pg';
+import { journaliser } from '../lib/journal';
 
 /**
  * Redirection publique des liens tracés : `GET /r/:code` -> 302 vers la destination d'origine, après avoir
@@ -115,7 +116,7 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       try {
         await deps.recordClick(normalise, lien.tenantId, contactId);
       } catch (err) {
-        req.log.error({ err, code: normalise }, 'clic non enregistré');
+        journaliser('error', 'clic_non_enregistre', { err, code: normalise });
       }
     }
 

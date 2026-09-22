@@ -989,6 +989,22 @@ console `engageme.`, servie en direct par Vercel, ne l'est pas, et ne porte aucu
 sort donc en **422** (409 pour une ambiguïté, 400 pour une saisie invalide), et il est **journalisé côté
 serveur** en plus : le corps peut être détruit en route, le log reste.
 
+🔴 **UN `catch` LARGE NE RENVOIE JAMAIS `err.message` DANS UN 4xx.** Il attrape aussi NOTRE panne (une lecture
+en base, une clé déchiffrée), et un 4xx traverse Cloudflare : le texte d'une erreur Postgres partirait au
+navigateur. Pour un appel au modèle, seule une panne du FOURNISSEUR se dit, en phrase rédigée par
+`direPanneModele` ; tout le reste est RELANCÉ, et le gestionnaire global rend un 500 opaque qu'il journalise.
+Côté console, `messageDErreur` fait de ce 500 (ou de la page HTML de Cloudflare) une phrase traduite qui garde
+le statut.
+
+⚠️ **Un 5xx reste juste quand l'écran ne lit pas le corps ET que la panne est la nôtre** : l'aide et le récap
+de la console (le panneau pose son propre texte), la déconnexion HubSpot (connecteur interne, déjà rejoué). La
+raison est écrite au-dessus de chaque 502 gardé. ⚠️ La mesure qui fonde cette section a été faite sur un
+**502** : qu'un 503 soit remplacé de la même façon n'a pas été mesuré.
+
+🔴 **`req.log` ET `app.log` SONT MUETS** : Fastify tourne en `logger: false`, et son journal est alors une
+fonction vide (mesuré : `app.log.error` vaut `function noop () { }`). Toute trace passe par `journaliser`, et
+`tests/journal-muet.test.ts` refuse un appel au journal de Fastify dans `src/`.
+
 **Astuce de diagnostic** : comparer l'appel INTERNE (dans le réseau Docker) et l'appel PUBLIC isole la couche
 coupable en une mesure.
 
@@ -1361,6 +1377,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut) |
 | `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts |
 | `src/lib/cache-court.ts` | le micro-cache du dépôt : durée de vie ET mutualisation des appels en vol |
+| `src/lib/journal.ts` -> `journaliser` | la ligne de journal JSON du dépôt (`{ lvl, msg, ... }`). 🔴 `req.log` et `app.log` sont MUETS (`logger: false`). Une `Error` y garde son message, et sa pile au niveau `error` |
 | `src/meta/numero-espace.ts` | le numéro Meta d'un espace, mis en cache. 🔴 Il ne garde QUE les réponses POSITIVES : une réponse nulle devient fausse à l'instant où un client branche son premier numéro, et le cache étant par process, aucune invalidation ne traverse l'API et le worker. C'est ce qui rend acceptable de mettre en cache une décision |
 | `src/lib/http-get.ts` | une lecture GET injectable, testable sans réseau |
 | `src/lib/heures-ouvrees.ts` -> `prochaineOuverture` | « quand est le prochain créneau ouvert ? », pour le bloc Attente et les campagnes |
@@ -1368,6 +1385,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/adresses-publiques.ts` | les adresses que le produit DISTRIBUE (`/r/`, `/m/`, `/w/`) |
 | `src/agent/devise.ts` | dollars du Gateway -> micro-euros, en UN endroit |
 | `src/agent/modeles.ts` | les modèles proposables et leur tarif client : le menu ET la garde d'écriture y lisent |
+| `src/llm/errors.ts` -> `direPanneModele` | ce qu'un échec d'appel au modèle a le droit de dire au client, ou `null` : c'est alors NOTRE panne, que l'appelant RELANCE en 500 opaque. ⚠️ `fetch failed` et un abandon n'y sont attribués au modèle que parce que, dans ses quatre appelants, le seul `fetch` est l'appel au modèle |
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
 | `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
 | `src/agent/poser-tag.ts` | les TROIS effets de « poser un tag » depuis un agent |
@@ -1393,6 +1411,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/inbox-rangement.ts` | les gestes de rangement de l'Inbox : leurs libellés, et les destinations qu'une SÉLECTION peut prendre selon le dossier |
 | `web/components/VariableBodyEditor.tsx` | l'éditeur à chips, partagé par les variables Meta (positionnelles) et RCS (nommées) |
 | `web/lib/session.ts` -> `pageDArrivee` | où atterrit un compte après connexion, selon son rôle |
+| `web/lib/http.ts` -> `messageDErreur` | le texte d'une réponse en échec : la raison écrite par le serveur, sinon, pour un 5xx, une phrase traduite qui garde le statut |
 | `src/agent/devise.ts` | LES DEUX SENS de la conversion dollars/micro-euros : le coût d'un appel, et le plafond d'une clé du Gateway |
 | `src/agent/llm/cles-gateway.ts` | les deux appels Vercel du provisionnement, qui n'ont ni le même hôte ni la même authentification |
 

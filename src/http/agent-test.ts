@@ -160,8 +160,12 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
        * se dit, rédigée par `direPanneModele` ; le reste est relancé et sort en 500 opaque. La cause se lit
        * SOUS `TourInterrompu`, qui enveloppe n'importe quelle erreur survenue après un premier appel payé.
        */
-      const raison = direPanneModele(err instanceof TourInterrompu ? err.erreur : err);
-      if (raison === null) throw err;
+      const cause = err instanceof TourInterrompu ? err.erreur : err;
+      const raison = direPanneModele(cause);
+      // On relance la CAUSE, pas l'enveloppe : le gestionnaire global journalise la pile, et celle de
+      // `TourInterrompu` montre `penserTrace`, pas la fonction qui a levé. Une cause qui n'est pas une `Error`
+      // (rien ne l'interdit) repart dans son enveloppe, qui en porte au moins le texte.
+      if (raison === null) throw cause instanceof Error ? cause : err;
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({
         lvl: 'error',

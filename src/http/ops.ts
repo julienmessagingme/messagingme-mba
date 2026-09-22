@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { makeRequireOps } from '../auth/middleware';
 import type { SurveillanceOps } from '../ops/tentatives';
 import { estUuid } from './scope';
+import { journaliser } from '../lib/journal';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
 
@@ -344,7 +345,7 @@ export function registerOps(
     } catch (err) {
       // 4xx et jamais 5xx : Cloudflare remplacerait le corps, et l'opérateur a besoin de savoir que la clé
       // est TOUJOURS là (donc qu'il faut réessayer) plutôt que de croire à un succès silencieux.
-      req.log.error({ err, tenantId }, 'ops_revocation_impossible');
+      journaliser('error', 'ops_revocation_impossible', { err, tenantId });
       return reply.code(422).send({ error: 'Vercel n’a pas confirmé la suppression ; la clé est toujours active, réessayez' });
     }
   });

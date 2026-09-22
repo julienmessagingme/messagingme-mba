@@ -20,6 +20,7 @@ import { scopeTenant, estUuid } from './scope';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
 import { direPanneModele } from '../llm/errors';
+import { journaliser } from '../lib/journal';
 
 /**
  * La conversation de CONSTRUCTION d'un agent : elle propose, le client corrige.
@@ -534,10 +535,10 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
        * avait été refusé : il a fallu mesurer l'écart entre les deux schémas pour retrouver le coupable. On
        * journalise les CHEMINS et les CODES d'erreur, jamais les valeurs : elles portent les mots du client.
        */
-      req.log.warn({
+      journaliser('warn', 'agent_setup_proposition_hors_schema', {
         tenantId: ctx.tenant, agentId: ctx.agentId,
         champs: propose.error.issues.map((i) => `${i.path.join('.') || '(racine)'}:${i.code}`),
-      }, 'proposition de l’assistant de construction refusée par le schéma');
+      });
       return reply.code(422).send({ error: 'l’assistant a rendu une proposition hors format' });
     }
 
@@ -643,17 +644,16 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
               propositionFinale = proposeSynthese.data;
               message = proposeSynthese.data.message;
             } else {
-              req.log.warn({
+              journaliser('warn', 'agent_setup_synthese_hors_schema', {
                 tenantId: ctx.tenant, agentId: ctx.agentId,
                 champs: proposeSynthese.error.issues.map((i) => `${i.path.join('.') || '(racine)'}:${i.code}`),
-              }, 'tour de synthèse de l’assistant de construction refusé par le schéma');
+              });
             }
           }
         }
       } catch (err) {
-        req.log.warn({
-          tenantId: ctx.tenant, agentId: ctx.agentId, err: err instanceof Error ? err.message : 'inconnue',
-        }, 'tour de synthèse de l’assistant de construction en échec, on garde la proposition du tour');
+        // Le tour de synthèse échoue sans faire échouer le tour : on garde la proposition du tour.
+        journaliser('warn', 'agent_setup_synthese_echec', { tenantId: ctx.tenant, agentId: ctx.agentId, err });
       }
     }
 

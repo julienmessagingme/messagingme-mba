@@ -8,6 +8,7 @@ import { avertissements, manquesAvantActivation, type EtatPourLint } from '../ag
 import { CreditInsuffisantPourCle, PLAFOND_GATEWAY_MIN_DOLLARS } from '../agent/provisionner-cle';
 import { MODELES_CHOISIS, IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
+import { journaliser } from '../lib/journal';
 import type { ConsommationAgent } from '../agent/session-store';
 
 /** La fenetre du suivi de consommation. Trente jours : assez pour voir une tendance, assez court pour que
@@ -189,7 +190,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
         // 🔴 422, JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc
         // un message destiné au client se perdrait exactement quand il est utile. Journalisé côté serveur en
         // plus, parce que ce 422 est la seule trace côté client.
-        req.log.error({ err, tenant }, 'cle_modele_non_provisionnee');
+        journaliser('error', 'cle_modele_non_provisionnee', { err, tenant });
         if (err instanceof CreditInsuffisantPourCle) {
           return reply.code(422).send({
             error: `crédit insuffisant pour créer un agent : il en faut au moins l'équivalent de ${PLAFOND_GATEWAY_MIN_DOLLARS} $. Rechargez le crédit des agents IA, puis réessayez.`,
