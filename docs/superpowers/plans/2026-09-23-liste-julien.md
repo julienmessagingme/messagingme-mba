@@ -12,6 +12,9 @@ reçoivent une relecture du diff et des tests vérifiés par mutation. Aucun wor
 justifie pas. Les lots purement console (0, 1, 5 et 9) partent chez Vercel au `git push` ; aucun n'appelle de route
 neuve avant que l'API qui la porte soit déployée (CLAUDE.md, § Déploiement).
 
+Chaque lot se clôt par l'essai réel écrit dans sa section, fait par Julien sur l'espace d'essai : un test vert
+ne suffit pas, parce que les tests d'écran sont écrits par celui qui a écrit l'écran.
+
 ## Lot 0, livré (bbfc60cf) : Inbox
 
 - Pastille « fenêtre 24 h ouverte / fermée » retirée de l'en-tête ; le bandeau de la zone de saisie reste.
