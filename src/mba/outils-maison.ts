@@ -88,10 +88,11 @@ export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
  *
  * 🔴 META COUPE UN OUTIL VERS TROIS SECONDES (essai réel du 2026-09-22, mesure en conversation) : notre relais a
  * répondu en 3 005 ms, et l'agent de Meta a traité l'appel comme un échec. Il a passé la main à « un membre de
- * l'équipe » six secondes après que le bloc soit bien parti, et le matin même il avait RAPPELÉ sept fois un
- * scénario dont chaque lancement dépassait ce délai. Un envoi prend le fil puis envoie : deux appels à Meta, sa
- * durée n'est pas à nous. Le relais n'attend donc l'envoi que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`),
- * puis répond ceci, et l'envoi continue. Même ton que `REPONSE_MAISON` : il clôt le tour.
+ * l'équipe » six secondes après que le bloc soit bien parti ; c'est très probablement aussi ce qui lui avait fait
+ * RAPPELER sept fois un scénario le matin même. Un envoi prend le fil puis envoie : deux appels à Meta, sa durée
+ * n'est pas à nous. Le relais n'attend donc l'envoi que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`), puis
+ * répond ceci, et l'envoi continue. Même ton que `REPONSE_MAISON` : il clôt le tour. S'il échoue ensuite, l'agent
+ * l'apprend par un événement (`src/mba/signaler-echec-tardif.ts`), ce qui rend son « n'écris rien » sans danger.
  */
 export const REPONSE_EN_COURS: Record<'bloc_fixe' | 'scenario_fixe', string> = {
   bloc_fixe: 'C’est parti : le message prévu est en cours d’envoi au client. Ne rappelle pas cet outil pour cette demande, et n’en répète pas le contenu.',

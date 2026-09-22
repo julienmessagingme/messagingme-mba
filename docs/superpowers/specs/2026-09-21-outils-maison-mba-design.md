@@ -236,6 +236,9 @@ vraie cause des sept rappels du matin, chaque lancement dépassant ce délai. Un
 (prendre le fil, envoyer) : le relais ne l'attend donc que 1,5 s (`DELAI_REPONSE_ENVOI_MS`). S'il a fini, Meta lit
 l'issue réelle, refus compris ; sinon il lit « C'est parti : … » (`REPONSE_EN_COURS`), l'envoi continue, et le
 journal des appels se clôt sur son issue réelle.
+Un envoi qui échoue APRÈS cette réponse (le lancement d'un scénario reprend le fil avant ses autres refus) est dit à
+l'agent de Meta par un événement `envoi_echoue` (`src/mba/signaler-echec-tardif.ts`), seulement si le fil est à
+lui : sans ça, ayant lu « n'écris rien de plus », il se taisait et le client restait sans réponse.
 
 ## 8. La publication chez Meta
 

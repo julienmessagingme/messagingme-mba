@@ -64,6 +64,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     },
     // Par défaut le délai ne s'écoule JAMAIS : chaque test lit l'issue réelle du geste, comme avant le délai.
     attendre: () => new Promise<void>(() => {}),
+    signalerEchecTardif: async () => {},
     ...over,
   };
   const app = buildServer({
@@ -491,6 +492,66 @@ describe('le délai de réponse d’un envoi', () => {
     });
     expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5')).json())
       .toEqual({ succes: false, erreur: 'ce bloc n’existe plus dans le scénario' });
+  });
+
+  it('🔴 un échec APRÈS « c’est parti » est dit à l’agent de Meta, avec sa raison (revue du 2026-09-22)', async () => {
+    // Sans ça, l'agent (qui a lu « n'écris rien de plus » pour un scénario) restait muet, le client sans réponse.
+    for (const fin of ['refus', 'panne'] as const) {
+      let finir: () => void = () => {};
+      const lent = new Promise<void>((r) => { finir = r; });
+      const signales: Array<[string, string, string]> = [];
+      const { app } = avec([SCENARIO], {
+        maison: maison({
+          lancerScenario: async () => {
+            await lent;
+            if (fin === 'panne') throw new Error('Meta API error (HTTP 500)');
+            return 'le contact s’est désabonné';
+          },
+        }),
+        attendre: async () => {},
+        signalerEchecTardif: async (t, w, raison) => { signales.push([t, w, raison]); },
+      });
+      expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')).json()).toEqual({ succes: true, reponse: REPONSE_EN_COURS.scenario_fixe });
+      expect(signales).toEqual([]);
+      finir();
+      await vi.waitFor(() => { expect(signales).toHaveLength(1); });
+      expect(signales[0]!.slice(0, 2)).toEqual(['t1', '33612345678']);
+      expect(signales[0]![2]).toContain(fin === 'panne' ? 'ne relance pas' : 'désabonné');
+    }
+  });
+
+  it('🔴 un envoi lent qui RÉUSSIT, ou un refus lu à temps par Meta, ne signale rien', async () => {
+    const signales: string[] = [];
+    const lent = avec([SCENARIO], {
+      maison: maison({ lancerScenario: () => new Promise<true>((r) => { setTimeout(() => r(true), 20); }) }),
+      attendre: async () => {},
+      signalerEchecTardif: async (_t, _w, raison) => { signales.push(raison); },
+    });
+    await poster(lent.app, CLE_RELAIS, {}, '+33612345678', 'o6');
+    const rapide = avec([BLOC], {
+      maison: maison({ envoyerBloc: async () => 'ce bloc n’existe plus dans le scénario' }),
+      attendre: () => new Promise<void>((r) => { setTimeout(r, 200); }),
+      signalerEchecTardif: async (_t, _w, raison) => { signales.push(raison); },
+    });
+    expect((await poster(rapide.app, CLE_RELAIS, {}, '+33612345678', 'o5')).json().succes).toBe(false);
+    await new Promise((r) => { setTimeout(r, 60); });
+    expect(signales).toEqual([]);
+  });
+
+  it('un signalement qui ÉCHOUE ne fait rien tomber : il est rattrapé, et le journal reste clos', async () => {
+    let finir: () => void = () => {};
+    const lent = new Promise<void>((r) => { finir = r; });
+    const clos: Array<Record<string, unknown>> = [];
+    const { app } = avec([BLOC], {
+      maison: maison({ envoyerBloc: async () => { await lent; return 'la fenêtre de 24 h est fermée'; } }),
+      journal: journal(clos),
+      attendre: async () => {},
+      signalerEchecTardif: async () => { throw new Error('Meta indisponible'); },
+    });
+    expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5')).json().succes).toBe(true);
+    finir();
+    await vi.waitFor(() => { expect(clos).toEqual([expect.objectContaining({ status: 'refuse' })]); });
+    await new Promise((r) => { setTimeout(r, 20); });
   });
 
   it('un tag, écriture locale, n’est PAS borné : il est attendu jusqu’au bout', async () => {

@@ -19,16 +19,35 @@ export const DESCRIPTION_HORS_PARCOURS =
   'Le client vient d’écrire en dehors du parcours automatique qu’on lui proposait. Réponds à son message.';
 const PAYLOAD_MAX = 4096;
 
-export function evenementHorsParcours(message: string): EvenementAgent {
-  let texte = message;
-  let payload = JSON.stringify({ message: texte });
+/** `{ [cle]: texte }` en chaîne JSON d'au plus `PAYLOAD_MAX` caractères, échappement compris. */
+function payloadBorne(cle: string, texteEntier: string): string {
+  let texte = texteEntier;
+  let payload = JSON.stringify({ [cle]: texte });
   // On raccourcit le TEXTE, jamais la chaîne JSON : couper celle-ci au milieu d'un échappement la rendrait
   // illisible. Chaque tour retire au moins l'excédent mesuré, donc la boucle termine.
   while (payload.length > PAYLOAD_MAX && texte.length > 0) {
     texte = texte.slice(0, Math.max(0, texte.length - (payload.length - PAYLOAD_MAX)));
-    payload = JSON.stringify({ message: texte });
+    payload = JSON.stringify({ [cle]: texte });
   }
-  return { type: TYPE_HORS_PARCOURS, description: DESCRIPTION_HORS_PARCOURS, payload };
+  return payload;
+}
+
+export function evenementHorsParcours(message: string): EvenementAgent {
+  return { type: TYPE_HORS_PARCOURS, description: DESCRIPTION_HORS_PARCOURS, payload: payloadBorne('message', message) };
+}
+
+/**
+ * L'ENVOI DEMANDÉ PAR L'AGENT DE META A ÉCHOUÉ APRÈS SA RÉPONSE (revue du 2026-09-22). Le relais n'attend un envoi
+ * que 1,5 s (`DELAI_REPONSE_ENVOI_MS`) ; au-delà, l'agent a lu « C'est parti », et pour un scénario « n'écris rien de
+ * plus ». Un échec tardif le laissait donc muet, et le client sans réponse jusqu'à son message suivant. La raison
+ * part dans le payload : ce sont des textes écrits pour lui (`gestes-envoi.ts`, `erreurDePanne`).
+ */
+export const TYPE_ENVOI_ECHOUE = 'envoi_echoue';
+export const DESCRIPTION_ENVOI_ECHOUE =
+  'L’envoi que tu as demandé pour ce client n’a finalement pas abouti, après ta réponse. Dis-le-lui simplement, sans détail technique, et propose-lui une autre solution.';
+
+export function evenementEnvoiEchoue(raison: string): EvenementAgent {
+  return { type: TYPE_ENVOI_ECHOUE, description: DESCRIPTION_ENVOI_ECHOUE, payload: payloadBorne('raison', raison) };
 }
 
 /** Le format de `to`, MESURÉ le 2026-09-21 (plan 2026-09-21-outils-maison-mba, Task 1) : E.164 avec « + ». */

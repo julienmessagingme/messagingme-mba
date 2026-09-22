@@ -149,6 +149,7 @@ import { outilsAPublier } from './mba/outils-a-publier';
 import { blocsProposables } from './mba/outils-maison';
 import { creerGestesEnvoi } from './mba/gestes-envoi';
 import { AntiRejeu, DUREE_ANTI_REJEU_MS } from './mba/anti-rejeu';
+import { creerSignalerEchecTardif } from './mba/signaler-echec-tardif';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -2533,6 +2534,15 @@ async function main(): Promise<void> {
         // Borne l'attente d'un ENVOI avant de répondre à Meta, qui coupe un outil vers trois secondes
         // (`DELAI_REPONSE_ENVOI_MS`, `src/http/mba-relais.ts`).
         attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+        // Un envoi qui échoue APRÈS « C'est parti » est dit à l'agent de Meta par un événement (les gardes vivent
+        // dans le module, testé), comme la réponse « à côté » du lot 4.
+        signalerEchecTardif: creerSignalerEchecTardif({
+          detenteur: (t, w) => inboxStore.getControlOwner(t, w),
+          numero: (t) => repo.getTenantPhoneNumberId(t),
+          envoyer: async (t, pn, to, event) => (await metaFactory.mbaClientForTenant(t)).agentEvent(pn, to, event, AbortSignal.timeout(10_000)),
+          // eslint-disable-next-line no-console
+          journal: (ligne) => console.log(ligne),
+        }),
         // Les gestes maison : les MÊMES fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,

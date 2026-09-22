@@ -29,7 +29,8 @@ import {
  * (`src/mba/executer-maison.ts`), et se journalise dans la même table sous le même appelant.
  *
  * ⚠️ UN ÉCHEC MÉTIER SORT EN 200 `{ succes: false, erreur }` : le modèle de Meta doit pouvoir dire au client
- * ce qui ne va pas. Un 4xx ou un 5xx risquerait d'être lu comme une panne de transport (non documenté chez
+ * ce qui ne va pas. Un ENVOI qui échoue après `DELAI_REPONSE_ENVOI_MS` ne peut plus sortir ainsi (Meta a déjà sa
+ * réponse) : il lui est dit par un événement (`signalerEchecTardif`). Un 4xx ou un 5xx risquerait d'être lu comme une panne de transport (non documenté chez
  * Meta, à mesurer au premier essai). Ce que la ROUTE décide sort donc toujours en 200, y compris un JSON
  * illisible (`corpsIllisible`). Seule la garde de clé répond AVANT elle : 401, 403 sans le droit, 403
  * `tenant_locked`, 429 au-delà du plafond de la clé. Un corps VIDE passe, et un test le garde.
@@ -57,6 +58,11 @@ export interface MbaRelaisDeps {
    * dormir, et « l'envoi a fini avant » sans course.
    */
   attendre(ms: number): Promise<void>;
+  /**
+   * Dit à l'agent de Meta qu'un envoi a échoué APRÈS qu'il ait lu « C'est parti » (`src/mba/signaler-echec-tardif.ts`).
+   * Requise : sans elle, un lancement de scénario refusé tardivement laissait l'agent muet et le client sans réponse.
+   */
+  signalerEchecTardif(tenantId: string, waId: string, raison: string): Promise<void>;
 }
 
 /**
@@ -65,9 +71,10 @@ export interface MbaRelaisDeps {
  * 🔴 META COUPE UN OUTIL VERS TROIS SECONDES, et c'est mesuré, pas lu (essai réel du 2026-09-22) : un envoi de bloc
  * de 3 005 ms a été traité comme un échec, et l'agent de Meta a annoncé au client qu'un humain reprenait la
  * conversation. Un envoi fait DEUX appels à Meta (prendre le fil, envoyer) : sa durée n'est pas à nous. 1,5 s
- * laisse la marge du trajet et des lectures qui précèdent (outil, clé, journal). Un refus, lui, arrive presque
- * toujours AVANT tout appel à Meta (bloc disparu, fenêtre fermée, contact bloqué) : il tient dans ce délai, et
- * l'agent de Meta le lit.
+ * laisse la marge du trajet et des lectures qui précèdent (outil, clé, journal). Le refus d'un BLOC arrive avant
+ * tout appel à Meta (bloc disparu, fenêtre fermée, contact bloqué) : il tient dans ce délai et l'agent de Meta le
+ * lit. Celui d'un SCÉNARIO, non : `runFrom` reprend le fil AVANT ses autres refus. Un refus tardif est donc dit à
+ * l'agent par un événement (`signalerEchecTardif`), puisqu'il a déjà sa réponse.
  */
 export const DELAI_REPONSE_ENVOI_MS = 1500;
 
@@ -135,7 +142,17 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
       const rendre = (issue: IssueMaison) => (issue.ok ? reply.code(200).send({ succes: true, reponse: issue.reponse }) : refus(issue.erreur));
       if (cible.handler === 'bloc_fixe' || cible.handler === 'scenario_fixe') {
         const premier = await Promise.race([geste, deps.attendre(DELAI_REPONSE_ENVOI_MS).then(() => null)]);
-        return premier === null ? reply.code(200).send({ succes: true, reponse: REPONSE_EN_COURS[cible.handler] }) : rendre(premier);
+        if (premier !== null) return rendre(premier);
+        // 🔴 L'AGENT DE META A DÉJÀ SA RÉPONSE : un échec qui arrive maintenant lui est dit par un événement, sans
+        // quoi il resterait muet (« n'écris rien de plus ») et le client sans réponse. `geste` ne rejette jamais ;
+        // le signalement, lui, peut échouer, et rien ne l'attend : il est rattrapé ici.
+        void geste
+          .then((issue) => (issue.ok ? undefined : deps.signalerEchecTardif(tenant, waId, issue.erreur)))
+          .catch((err: unknown) => {
+            // eslint-disable-next-line no-console
+            console.error(`mba-relais: l'échec tardif de ${outil.name} n'a pas pu être dit à l'agent de Meta :`, err instanceof Error ? err.message : err);
+          });
+        return reply.code(200).send({ succes: true, reponse: REPONSE_EN_COURS[cible.handler] });
       }
       return rendre(await geste);
     }
