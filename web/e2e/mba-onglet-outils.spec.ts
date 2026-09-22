@@ -42,6 +42,10 @@ interface Monture {
   publicationEchoue?: boolean | (() => boolean);
   /** Le DELETE d'un outil attend cette promesse : de quoi voir l'écran pendant une suppression. */
   retenirSuppression?: Promise<void>;
+  /** La création d'un outil attend cette promesse : de quoi voir l'écran pendant un enregistrement. */
+  retenirCreation?: Promise<void>;
+  /** La lecture du plan chez Meta échoue (500) quand cette fonction le dit. */
+  apercuEchoue?: () => boolean;
   /** Ces lectures échouent (500) : une lecture ratée n'est pas une liste vide. */
   listeEchoue?: boolean;
   requetesEchouent?: boolean;
@@ -57,6 +61,7 @@ async function monterOutils(page: Page, m: Monture = {}) {
       const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
       if (url.includes('/mba-publication')) {
         if (method === 'GET') {
+          if (m.apercuEchoue?.()) { await json({ error: 'Meta indisponible' }, 500); return true; }
           await json({ gestes: typeof m.gestes === 'function' ? m.gestes() : (m.gestes ?? []), phoneNumberId: 'PN1' });
           return true;
         }
@@ -76,7 +81,11 @@ async function monterOutils(page: Page, m: Monture = {}) {
         }
         ecrits.push({ method, url, body });
         ordre.push(method);
-        if (method === 'POST') { await json({ id: 'nouveau' }, 201); return true; }
+        if (method === 'POST') {
+          if (m.retenirCreation) await m.retenirCreation;
+          await json({ id: 'nouveau' }, 201);
+          return true;
+        }
         if (method === 'DELETE') {
           if (m.retenirSuppression) await m.retenirSuppression;
           await route.fulfill({ status: 204, body: '' });
@@ -538,10 +547,73 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
     await page.getByTestId('mba-outil-supprimer-o1').click();
     await expect(page.getByTestId('mba-form-enregistrer')).toBeDisabled();
+    // Le formulaire dit ce qui se passe : une suppression, pas un envoi.
+    await expect(page.getByTestId('mba-form-manque')).toContainText('suppression');
     // Rien ne part pendant la suppression : « Envoi… » ne s'affiche pas.
     await expect(page.getByTestId('mba-outils-attente')).toHaveCount(0);
     liberer();
     await expect(page.getByTestId('mba-form-enregistrer')).toBeEnabled();
+  });
+
+  test('🔴 « Supprimer » est bloqué pendant un enregistrement', async ({ page }) => {
+    let liberer: () => void = () => {};
+    const retenue = new Promise<void>((ok) => { liberer = ok; });
+    await monterOutils(page, {
+      outils: [OUTIL], tags: [{ tag: 'vip', count: 3 }], gestes: [{ type: 'outil_creer', nom: 'marquer_vip' }],
+      retenirCreation: retenue,
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-tag').click();
+    await page.getByTestId('mba-cible-tag').fill('vip');
+    await page.getByTestId('mba-form-titre').fill('Marquer VIP');
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await page.getByTestId('mba-form-enregistrer').click();
+    await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeDisabled();
+    liberer();
+    await expect(page.getByTestId('mba-outil-supprimer-o1')).toBeEnabled();
+  });
+
+  /**
+   * 🔴 LA DISPENSE S'ÉTEINT À LA PUBLICATION, PAS À LA RELECTURE (relecture du 2026-09-22). Ici la relecture du
+   * plan qui SUIT le retrait de `suivi_commande` échoue : la dispense doit être tombée quand même, sinon le nom,
+   * réapparu chez Meta, partirait sans être nommé.
+   */
+  test('🔴 la dispense tombe dès la publication, même si la relecture qui suit échoue', async ({ page }) => {
+    const B = { ...OUTIL, id: 'o2', name: 'autre', title: 'Autre outil' };
+    let supprime1 = false;
+    let supprime2 = false;
+    const SUIVI = { type: 'outil_supprimer', nom: 'suivi_commande' };
+    const AUTRE = { type: 'outil_supprimer', nom: 'autre' };
+    const m = await monterOutils(page, {
+      outils: () => [...(supprime1 ? [] : [OUTIL]), ...(supprime2 ? [] : [B])],
+      gestes: () => {
+        if (!supprime1) return [];
+        if (m.publications() === 0) return [SUIVI];
+        return [AUTRE, SUIVI];
+      },
+      // La relecture qui suit la première publication échoue, et seulement elle.
+      apercuEchoue: () => supprime1 && m.publications() === 1 && !supprime2,
+    });
+    const dialogues: string[] = [];
+    page.on('dialog', (d) => {
+      const texte = d.message();
+      dialogues.push(texte);
+      if (texte.includes('Suivi de commande')) { supprime1 = true; void d.accept(); }
+      else if (texte.includes('Autre outil')) { supprime2 = true; void d.accept(); }
+      else void d.dismiss();
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outil-supprimer-o1').click();
+    await expect.poll(() => m.publications()).toBe(1);
+    await expect(page.getByTestId('mba-outils-attente')).toHaveCount(0);
+    await page.getByTestId('mba-outil-supprimer-o2').click();
+    await expect.poll(() => dialogues.length).toBe(3);
+    await expect(page.getByTestId('mba-outils-retraits')).toContainText('suivi_commande');
+    await page.getByTestId('mba-outils-retraits-envoyer').click();
+    await expect.poll(() => dialogues.length).toBe(4);
+    expect(dialogues[3]).toContain('suivi_commande');
+    expect(m.publications()).toBe(1);
   });
 
   test('🔴 le bandeau ne s’affiche pas sur une liste qui ne s’est pas lue', async ({ page }) => {

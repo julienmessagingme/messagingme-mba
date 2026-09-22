@@ -100,6 +100,23 @@ function versOutil(r: Ligne): OutilDefini {
 }
 
 /**
+ * 🔴 UN CONSENTEMENT D'AGENT VERROUILLE SON AGENT, dans une instruction À PART, avant de toucher à l'outil
+ * (relecture du 2026-09-22). Sans ce verrou, un rattachement ne voyait pas qu'on supprimait l'agent : son
+ * consentement survivait à l'agent (un consommateur fantôme, qui empêche à jamais le dernier détachement
+ * d'effacer le connecteur), ou il se glissait entre la lecture et le retrait de `PgAgentStore.remove`, dont
+ * l'ordre de verrous était alors inversé pour lui. Avec lui, il attend la suppression, puis ne trouve plus
+ * l'agent et rend `false`. Instruction À PART : dans un même `where`, l'ordre de deux `exists` n'est pas
+ * garanti, et celui-ci doit précéder le verrou de l'outil (l'ordre de `remove` : l'agent, puis l'outil).
+ * Rend `false` quand l'agent n'existe plus. Un consommateur qui n'est pas un agent (`mba:`) passe.
+ */
+async function verrouillerAgentDuConsommateur(client: PoolClient, tenantId: string, consommateur: string): Promise<boolean> {
+  const agentId = agentDuConsommateur(consommateur);
+  if (agentId === null) return true;
+  const r = await client.query('select 1 from agents where tenant_id = $1 and id = $2 for key share', [tenantId, agentId]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+/**
  * 🔴 VERROUILLER LES DÉFINITIONS AVANT LE `not exists` QUI DÉCIDE DE LES EFFACER (décision du 2026-09-21 :
  * une action ou un connecteur HTTP que plus personne n'utilise part).
  *
@@ -110,10 +127,11 @@ function versOutil(r: Ligne): OutilDefini {
  * `not exists`, qui s'exécute ensuite dans une nouvelle instruction ; celui qui arrive après attend
  * (`for key share` dans `rattacherConsommateur`) et ne trouve plus rien.
  *
- * ⚠️ DEUX CONTRAINTES : le verrou précède le `not exists` ; et tous les chemins suivent UN SEUL ordre, l'agent,
- * ses sessions, les définitions, puis ce qui en dépend (lignes de consentement, appels journalisés). Sinon deux
- * chemins s'attendent l'un l'autre (40P01). Le JSDoc de `PgAgentStore.remove` raconte les trois ordres qui ont
- * interbloqué avant celui-là.
+ * ⚠️ DEUX CONTRAINTES : le verrou précède le `not exists` ; et les chemins des CONSENTEMENTS et du JOURNAL suivent
+ * un même ordre, l'agent, ses sessions, les définitions (triées par identifiant), puis ce qui en dépend (lignes de
+ * consentement, appels journalisés). Sinon deux chemins s'attendent l'un l'autre (40P01). Le JSDoc de
+ * `PgAgentStore.remove` raconte les trois ordres qui ont interbloqué avant celui-là, et nomme les chemins voisins
+ * qui ne suivent PAS cet ordre.
  *
  * ⚠️ `order by id` : deux effacements qui verrouillent plusieurs définitions le font dans le même ordre, sinon
  * ils pourraient s'attendre l'un l'autre.
@@ -261,6 +279,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     params: unknown; risk: RisqueOutil; nature: NatureOutil; outputPaths: readonly string[];
   }): Promise<OutilComplet | null> {
     return this.enTransaction(async (client) => {
+      if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return null;
       const res = await client.query<{ id: string }>(
         /**
          * ⚠️ `binding` RESTE VIDE : l'appel n'est plus décrit ici depuis la migration 0105, la requête le
@@ -575,16 +594,21 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     // ⚠️ `for key share` : si un dernier détachement tient la définition (`verrouillerDefinitions`), on l'ATTEND,
     // puis on ne trouve plus rien et l'on rend `false` (404). Sans lui, l'insertion passait la lecture, butait
     // ensuite sur la clé étrangère de la définition effacée, et le rattachement rendait 500.
-    const res = await this.pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
-       select $1, $2, $3
-        where exists (select 1 from agent_tools
-                       where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%')
-                         for key share)
-       on conflict (tool_id, consommateur) do nothing`,
-      [tenantId, outilId, consommateur],
-    );
-    return (res.rowCount ?? 0) > 0;
+    // 🔴 Et l'AGENT d'abord (`verrouillerAgentDuConsommateur`) : un agent qu'on supprime rend `false`, jamais un
+    // consentement fantôme.
+    return this.enTransaction(async (client) => {
+      if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return false;
+      const res = await client.query(
+        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
+         select $1, $2, $3
+          where exists (select 1 from agent_tools
+                         where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%')
+                           for key share)
+         on conflict (tool_id, consommateur) do nothing`,
+        [tenantId, outilId, consommateur],
+      );
+      return (res.rowCount ?? 0) > 0;
+    });
   }
 
   /**

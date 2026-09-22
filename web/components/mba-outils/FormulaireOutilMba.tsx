@@ -45,11 +45,14 @@ function cibleComplete(c: CibleSaisie | null): boolean {
  * ⚠️ Le formulaire ne se referme que sur un succès : le refermer sur un refus perdrait la saisie (défaut payé
  * deux fois le 2026-09-15).
  */
-export function FormulaireOutilMba({ tenantId, type, outil, envoiEnCours, onEnregistre, onAnnuler }: {
+export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, onEnregistre, onAnnuler }: {
   tenantId: string;
   type: TypeOutilMba;
   outil: OutilMbaVue | null;
-  envoiEnCours: boolean;
+  /** Un envoi vers Meta, une suppression ou cet enregistrement même : l'écran attend. */
+  occupe: boolean;
+  /** Dit au parent qu'un enregistrement est en cours, pour qu'il bloque aussi ses propres gestes. */
+  onOccupe: (enCours: boolean) => void;
   onEnregistre: (nomsAttendus: Set<string>) => Promise<void>;
   onAnnuler: () => void;
 }) {
@@ -83,12 +86,13 @@ export function FormulaireOutilMba({ tenantId, type, outil, envoiEnCours, onEnre
           : description.trim() === '' || consigneIncomplete(description) ? t('Complétez « Quand l’appeler ».', 'Complete “When to call it”.')
             : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
               : busy ? t('Enregistrement en cours…', 'Saving…')
-                : envoiEnCours ? t('Un envoi vers Meta est en cours : attendez qu’il se termine.', 'A send to Meta is running: wait for it to end.')
+                : occupe ? t('Une suppression ou un envoi vers Meta est en cours : attendez qu’il se termine.', 'A deletion or a send to Meta is running: wait for it to end.')
                   : null;
 
   const enregistrer = async (): Promise<void> => {
     if (manque !== null || cible === null) return;
     setBusy(true);
+    onOccupe(true);
     setErreur(null);
     const mots = { name, title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim() };
     try {
@@ -101,11 +105,17 @@ export function FormulaireOutilMba({ tenantId, type, outil, envoiEnCours, onEnre
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t('Enregistrement impossible', 'Saving failed'));
       setBusy(false);
+      onOccupe(false);
       return;
     }
     setBusy(false);
     // L'ancien nom est ATTENDU aussi : renommer efface l'ancien outil chez Meta, et ce n'est pas une surprise.
-    await onEnregistre(new Set([name, ...(outil ? [outil.name] : [])]));
+    // L'écran reste occupé jusqu'à la fin de l'envoi qui suit, que le parent prend alors en charge.
+    try {
+      await onEnregistre(new Set([name, ...(outil ? [outil.name] : [])]));
+    } finally {
+      onOccupe(false);
+    }
   };
 
   return (

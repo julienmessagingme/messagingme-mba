@@ -449,15 +449,18 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   `src/agent/catalog.pg.ts`) : sans ce verrou, un rattachement concurrent, pas encore validé donc invisible,
   partait dans la cascade. Et tout insert de consentement sur une définition existante prend `for key share`
   (`rattacherConsommateur`) : il attend un effacement en cours et rend `false`, jamais une erreur de clé
-  étrangère. 🔴 **UN SEUL ORDRE DE VERROUS, SUIVI PAR TOUS LES CHEMINS** : l'AGENT, ses SESSIONS, les
-  DÉFINITIONS, puis ce qui en dépend (lignes de consentement, appels journalisés). Le journal d'un appel prend la
-  session avant l'outil ; `detacher`, `retirerDeMba` et `rattacherConsommateur` prennent la définition avant la
-  ligne de consentement, et l'effacement d'une définition touche ensuite les appels (`tool_id on delete set
-  null`). D'où `PgAgentStore.remove` : verrouiller l'agent et ses sessions, lire ses consentements, verrouiller
-  leurs définitions, et SEULEMENT ENSUITE la cascade et le retrait. Les trois autres ordres essayés interbloquaient
-  (40P01, donc un 500), chacun avec un chemin voisin ; le JSDoc de `remove` les nomme. Tout nouveau chemin
-  d'effacement suit la même règle ; `tests/integration/outils-maison-mba.integration.test.ts` éprouve les trois
-  chemins, le cas inverse, et rejoue chacun des trois interblocages.
+  étrangère. 🔴 **UN ORDRE DE VERROUS POUR LES CONSENTEMENTS ET LE JOURNAL** : l'AGENT, ses SESSIONS, les
+  DÉFINITIONS (triées par identifiant), puis ce qui en dépend (lignes de consentement, appels journalisés). Le
+  journal d'un appel prend la session avant l'outil (l'ordre de ses déclencheurs de clé étrangère, figé par un
+  test) ; un consentement `agent:` verrouille son agent avant l'outil (`verrouillerAgentDuConsommateur`) ;
+  `detacher` et `retirerDeMba` prennent la définition avant la ligne de consentement, et l'effacement d'une
+  définition touche ensuite les appels (`tool_id on delete set null`). D'où `PgAgentStore.remove` : verrouiller
+  l'agent et ses sessions, lire ses consentements, verrouiller leurs définitions, et SEULEMENT ENSUITE la cascade
+  et le retrait. Les trois autres ordres essayés interbloquaient (40P01, donc un 500) ; le JSDoc de `remove` les
+  nomme, ainsi que les chemins voisins qui ne suivent PAS cet ordre (suppression d'un serveur MCP, connaissance).
+  Tout nouveau chemin de consentement suit la même règle ;
+  `tests/integration/outils-maison-mba.integration.test.ts` rejoue chacun des trois interblocages, le
+  consommateur fantôme et le cas inverse.
 - Le relais REFUSE d'écrire un champ supprimé du mini-CRM (`DepsMaison.champExiste`, même liste que la ligne
   rouge de l'onglet). Un outil « Désactivé » (départ de son auteur) reste LISTÉ chez Meta jusqu'au prochain
   envoi, rien ne republiant à ce départ : la ligne propose de l'en retirer. La vue porte le RISQUE, et l'onglet

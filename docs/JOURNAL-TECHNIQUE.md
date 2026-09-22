@@ -5,6 +5,38 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-22 : les suites du lot 2 des outils maison, et un seul ordre de verrous
+
+**Déployé en deux temps le 2026-09-22** : au matin avec les suites du lot 1 de sécurité (par la session
+sécurité), puis vers 10 h l'ordre unique des verrous, avec les raisons lisibles en 422 d'une autre session.
+Le lot des jaunes de la relecture de cet ordre suit. Ce qui suit est le récit.
+
+**Deux rouges trouvés APRÈS leur publication chez Vercel**, dans le lot des jaunes du lot 2 : le bandeau des
+retraits effaçait chez Meta, sans confirmation, un outil ajouté à la main (la publication efface tout ce qui
+n'est pas à nous, et le bandeau le disait « supprimé ici ») ; une lecture ratée des champs se disait « champ
+supprimé ». Aucune exposition constatée : aucun outil étranger n'était listé chez Meta. La console part à chaque
+push : un défaut d'écran est en production avant sa relecture, pas après.
+
+**Le verrou de la suppression d'un agent a changé d'ordre TROIS fois**, et chaque ordre interbloquait avec un
+chemin voisin : les définitions avant les sessions (le journal d'un appel prend la session puis l'outil), le
+retrait avant le verrou (`detacher`), la cascade avant le verrou (un `detacher` qui EFFACE le connecteur, par
+`on delete set null` des appels que la cascade venait de supprimer). Aucun des trois n'était visible d'un test
+unitaire ni du compilateur. Faute de Postgres sur le poste, chaque interblocage a été REJOUÉ contre un Postgres
+jetable monté sur le VPS, isolé de la base de production : chaque ancien ordre y tombe en « deadlock detected »
+sur son test, le nouveau passe. Puis un rattachement a appris à verrouiller son agent : sans lui, il posait un
+consentement qui survivait à l'agent supprimé, et le connecteur n'était plus jamais effacé.
+
+**Le second essai réel** (Julien, le matin) : un outil information renommé, un outil maison supprimé depuis
+l'onglet, et « rajoute une étiquette » sur le connecteur `add_tag`, en HTTP 200, ce qui éprouve en conditions
+réelles la vérification d'adresse à la connexion du lot 1 de sécurité.
+
+**La garde de déploiement ne couvrait pas ce dépôt** (aucun `.claude/deploy.json`) : elle est déclarée, et le
+hook global garde désormais aussi la MIGRATION lancée par `ssh` (décision de Julien).
+
+**La leçon** (`brain/LEARNINGS.md`) : dans un domaine où plusieurs chemins verrouillent les mêmes lignes, l'ordre
+se DÉCLARE une fois et chaque chemin s'y aligne ; le corriger chemin par chemin, relecture après relecture, a
+produit trois ordres faux d'affilée. Et un interblocage se prouve en le REJOUANT, jamais en le raisonnant seul.
+
 ## 2026-09-21 au soir : les outils maison de l'agent de Meta, lot 2 (déployé, éprouvé en conversation réelle)
 
 **Livré, déployé et éprouvé le 2026-09-21 au soir** (migration 0162). Fonctionnel dans

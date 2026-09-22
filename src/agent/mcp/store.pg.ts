@@ -260,7 +260,9 @@ export class PgMcpStore {
         );
       }
 
-      for (const c of e.changes) {
+      // Triés par identifiant, comme `verrouillerDefinitions` : dans l'ordre du plan d'import, deux outils MCP
+      // consentis par un agent qu'on supprime suffisaient à interbloquer avec `PgAgentStore.remove`.
+      for (const c of [...e.changes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
         await client.query(
           `update agent_tools
               set title = $3, description = $4, params = $5::jsonb,

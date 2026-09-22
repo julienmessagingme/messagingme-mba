@@ -7,17 +7,17 @@
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
 > il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## L'ÉTAT EXACT, AU 2026-09-21
+## L'ÉTAT EXACT, AU 2026-09-22
 
 | | |
 |---|---|
 | `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **à jour au 2026-09-22 au matin** (déployé par la session sécurité) : le lot 2 des outils maison et ses deux lots de corrections, les suites du lot 1 de sécurité, et l'échec MCP en 422. Le SHA n'est pas recopié ici (`git log` et `.git/revue-finale.json` font foi). Pas de migration depuis 0162. ⚠️ Un lot de jaunes des outils maison (l'ordre des verrous de `remove`) suit, avec sa relecture et son déploiement. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **`mba-api` et `mba-worker` à jour au 2026-09-22 vers 10 h** : le lot 2 des outils maison et ses corrections, dont l'ORDRE UNIQUE des verrous de `remove`, les suites du lot 1 de sécurité, et les raisons lisibles en 422 (seule une panne du fournisseur s'y dit, la nôtre sort en 500). Le SHA n'est pas recopié ici (`git log` et `.git/revue-finale.json` font foi). Pas de migration depuis 0162. ⚠️ Le lot des jaunes de la relecture de l'ordre des verrous suit, avec sa relecture et son déploiement. |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
-| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le déploiement du 2026-09-22 (rapport `.git/revue-finale-rapport.md`, quatre relectures à froid). Deux rouges y ont été trouvés et corrigés AVANT le déploiement de l'API, mais APRÈS leur publication chez Vercel : le bandeau des retraits effaçait chez Meta sans confirmation un outil ajouté à la main, et une lecture ratée des champs se disait « champ supprimé ». |
-| Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **LE 502 EST ARRIVÉ, une fois de plus** : NPM tenait l'ancienne IP des conteneurs recréés, et ça touchait le chemin du WEBHOOK META, donc les messages entrants. `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge**, sur le déploiement du 2026-09-22 vers 10 h (rapport `.git/revue-finale-rapport.md`, trois relectures à froid, une par commit). Un rouge y a été trouvé et corrigé avant le déploiement : un `catch` du bac à sable rendait en 422, donc jusqu'au navigateur, le texte brut d'une panne de NOTRE base. Les jaunes ouverts sont soit dans le lot qui suit, soit transmis à la session qui a écrit le code. |
+| Contrôle public | ✅ `node scripts/fumee.mjs` : les six chemins à leur code attendu. ⚠️ **Le 502 n'est pas arrivé cette fois-ci**, mais il est arrivé au déploiement précédent, sur le chemin du WEBHOOK META : NPM tenait l'ancienne IP des conteneurs recréés, et `sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Un conteneur sain ne montre pas ce défaut, seul le contrôle public le voit |
 
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (2026-09-21, LOT 2 DÉPLOYÉ ET ÉPROUVÉ, LOTS 3 ET 4 À FAIRE)
 
@@ -51,12 +51,15 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
   Meta dans le même envoi), un outil maison supprimé depuis l'onglet (parti, sans bandeau résiduel), et
   « rajoute une étiquette » sur le connecteur `add_tag` : journal `ok`, appelant `mba`, HTTP 200 du CRM en 494 ms,
   ce qui éprouve `fetchPublic` (lot 1 de sécurité) en conditions réelles.
-- 🔴 **À faire maintenant** : le lot des 9 jaunes de la relecture des correctifs (rapport de la session sécurité),
-  prêt : l'ORDRE UNIQUE des verrous de `remove` (l'agent, ses sessions, les définitions, puis le reste : trois
-  ordres antérieurs interbloquaient chacun avec un chemin voisin, tous rejoués contre un Postgres jetable),
-  la dispense du bandeau purgée dès que le retrait est parti, les outils et le connecteur distingués dans
-  `effacementsImprevus`, la suppression en cours qui bloque aussi le formulaire, et quatre e2e. Relecture,
-  attestation et déploiement par cette session.
+- ✅ **L'ORDRE UNIQUE des verrous de `remove`, DÉPLOYÉ le 2026-09-22 vers 10 h** : l'agent, ses sessions, les
+  définitions, puis le reste (trois ordres antérieurs interbloquaient chacun avec un chemin voisin, tous rejoués
+  contre un Postgres jetable), avec les outils et le connecteur distingués dans `effacementsImprevus` et la
+  suppression en cours qui bloque aussi le formulaire.
+- 🔴 **À faire maintenant** : le lot des 9 jaunes de la relecture à froid de cet ordre, poussé : un
+  rattachement qui verrouille son agent (sans quoi un consentement survivait à l'agent supprimé), les
+  changements d'un serveur MCP appliqués dans l'ordre des identifiants, la dispense du bandeau purgée dès la
+  publication, un enregistrement qui bloque « Supprimer », l'ordre des déclencheurs du journal figé par un test,
+  et les textes qui disaient « tous les chemins ». Relecture, attestation et déploiement par cette session.
 - ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
   connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
   outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.

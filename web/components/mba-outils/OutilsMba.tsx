@@ -48,11 +48,14 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   // sinon un second retrait lancé entre-temps devenait un effacement « imprévu » du premier envoi.
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
   const suppressionRef = useRef(false);
+  // Un enregistrement du formulaire occupe aussi l'écran : dans l'autre sens, « Supprimer » pendant un
+  // enregistrement faisait perdre l'envoi à l'un des deux, ou confirmer le retrait en cours comme imprévu.
+  const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
   // Les noms supprimés ICI pendant cette visite, et dont le retrait n'est PAS ENCORE PARTI : les seuls que le
   // bandeau laisse partir sans confirmation. Un nom sort de l'ensemble dès que Meta ne le liste plus (voir
   // `chargerEtats`) : sinon un outil ajouté plus tard à la main sous ce nom partirait sans être nommé.
   const [supprimesIci, setSupprimesIci] = useState<ReadonlySet<string>>(() => new Set());
-  const occupe = envoiEnCours || suppressionEnCours;
+  const occupe = envoiEnCours || suppressionEnCours || enregistrementEnCours;
 
   const chargerEtats = useCallback(async (): Promise<void> => {
     try {
@@ -109,6 +112,11 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
         if (!ok) return false;
       }
       await publierChezMeta(tenantId);
+      // 🔴 La dispense s'éteint DÈS que le retrait est parti, sans attendre la relecture du plan : si celle-ci
+      // échouait, le nom restait dispensé, et un outil ajouté plus tard à la main sous ce nom serait parti sans
+      // être nommé (relecture du 2026-09-22).
+      const partis = new Set(plan.filter((g) => g.type === 'outil_supprimer').map((g) => g.nom));
+      setSupprimesIci((avant) => new Set([...avant].filter((n) => !partis.has(n))));
       return true;
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t('L’envoi chez Meta a échoué.', 'Sending to Meta failed.'));
@@ -138,7 +146,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   };
 
   const supprimer = async (o: OutilMbaVue): Promise<void> => {
-    if (suppressionRef.current || envoiRef.current) return;
+    if (suppressionRef.current || envoiRef.current || enregistrementEnCours) return;
     suppressionRef.current = true;
     setSuppressionEnCours(true);
     try {
@@ -216,7 +224,8 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       )}
       {mode.vue === 'form' && (
         <FormulaireOutilMba key={mode.outil?.id ?? `nouveau-${mode.type}`} tenantId={tenantId} type={mode.type} outil={mode.outil}
-          envoiEnCours={occupe} onEnregistre={apresEnregistrement} onAnnuler={() => setMode({ vue: 'liste' })} />
+          occupe={occupe} onOccupe={setEnregistrementEnCours} onEnregistre={apresEnregistrement}
+          onAnnuler={() => setMode({ vue: 'liste' })} />
       )}
 
       {sansLigne.length > 0 && (

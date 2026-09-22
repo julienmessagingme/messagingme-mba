@@ -176,8 +176,9 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
    * n'aurait rien eu à faire, et le test passerait même sans lui. `pg_stat_activity` dit quand une connexion
    * attend VRAIMENT un verrou sur cette table (avec ou sans le correctif, l'effacement finit par y attendre :
    * c'est ce qui se passe APRÈS qui les distingue).
-   * ⚠️ Le filtre porte sur `agent`, pas sur `agent_tool` : `PgAgentStore.remove` attend sur `delete from agents`
-   * (sa cascade). Un filtre plus étroit a fait échouer le test du journal quel que soit l'ordre, à 5 s.
+   * ⚠️ Le filtre porte sur `agent`, pas sur `agent_tool` : selon l'ordre de ses verrous, `PgAgentStore.remove`
+   * attend sur les sessions de l'agent, sur ses définitions, ou (dans un ancien ordre) sur `delete from agents`.
+   * Un filtre plus étroit a fait échouer le test du journal quel que soit l'ordre, à 5 s.
    */
   const attendreUnVerrou = async (): Promise<void> => {
     for (let i = 0; i < 200; i += 1) {
@@ -389,5 +390,52 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       expect(await suppression).toBe(true);
     });
     expect(await existe(id)).toBe(false);
+  });
+
+  /**
+   * 🔴 LE CONSOMMATEUR FANTÔME (relecture du 2026-09-22). Un rattachement ne regardait pas l'agent : pendant sa
+   * suppression, il posait un consentement qui lui survivait, et le connecteur, qui garde alors un consommateur
+   * pour toujours, n'était plus jamais effacé. Il attend désormais l'agent, puis rend `false`.
+   */
+  it('🔴 un rattachement pendant la suppression de son agent rend `false`, sans consommateur fantôme', async () => {
+    const partant = (await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-fantome', 'IA', 'm') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const id = await connecteurNeuf('course_fantome');
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    await avecConnexion(async (suppression) => {
+      await suppression.query('begin');
+      await suppression.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, partant]);
+      const rattachement = cat.rattacherConsommateur(tenantId, consommateurAgent(partant), id);
+      rattachement.catch(() => {});
+      await attendreUnVerrou();
+      await suppression.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, partant]);
+      await suppression.query('commit');
+      expect(await rattachement).toBe(false);
+    });
+    expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
+  });
+
+  /**
+   * 🔴 L'ORDRE DONT DÉPEND `PgAgentStore.remove`, FIGÉ. Le journal d'un appel doit prendre sa SESSION avant son
+   * OUTIL : c'est l'ordre dans lequel se déclenchent les contrôles de ses deux clés étrangères, c'est-à-dire
+   * l'ordre ALPHABÉTIQUE des noms de leurs déclencheurs, qui suit l'ordre de création des contraintes (0086).
+   * Une migration qui recréerait la clé de `session_id` après celle de `tool_id` inverserait cet ordre sans
+   * que rien d'autre ne le signale, et rouvrirait l'interblocage avec le journal.
+   */
+  it('🔴 le journal d’un appel vérifie sa session AVANT son outil', async () => {
+    const r = await pool.query<{ conname: string }>(
+      `select c.conname
+         from pg_trigger t join pg_constraint c on c.oid = t.tgconstraint
+        where t.tgrelid = 'agent_tool_calls'::regclass and t.tgfoid = '"RI_FKey_check_ins"'::regproc
+        order by t.tgname`,
+    );
+    const noms = r.rows.map((x) => x.conname);
+    const session = noms.findIndex((n) => n.includes('session_id'));
+    const outil = noms.findIndex((n) => n.includes('tool_id'));
+    expect(session).toBeGreaterThanOrEqual(0);
+    expect(outil).toBeGreaterThanOrEqual(0);
+    expect(session).toBeLessThan(outil);
   });
 });

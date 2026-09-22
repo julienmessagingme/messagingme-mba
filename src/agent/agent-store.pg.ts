@@ -138,22 +138,29 @@ export class PgAgentStore implements AgentStore {
    * (`agent:<uuid>`), choisi pour que le Meta Business Agent puisse être un consommateur sans avoir de fiche
    * d'agent. C'est le prix de ce choix, il se paie ICI, en code, et un test d'intégration le tient.
    *
-   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX TROIS FOIS (revues des 21 et 22 septembre). Il n'y a qu'UN ordre de
-   * verrous dans ce domaine, et tous les chemins le suivent : l'AGENT, ses SESSIONS, les DÉFINITIONS, puis ce
-   * qui en dépend (lignes de consentement, appels journalisés). Le journal d'un appel prend la session avant
-   * l'outil (ses clés étrangères) ; `detacher`, `retirerDeMba` et `rattacherConsommateur` prennent la
-   * définition avant la ligne de consentement, et l'effacement d'une définition touche ENSUITE les appels
-   * (`tool_id on delete set null`). D'où, ici : verrouiller l'agent et ses sessions, lire ses consentements,
-   * verrouiller leurs définitions, et SEULEMENT ENSUITE la cascade et le retrait.
+   * 🔴 L'ORDRE COMPTE, ET IL A ÉTÉ FAUX TROIS FOIS (revues des 21 et 22 septembre). Les chemins des consentements
+   * et du journal suivent UN ordre de verrous : l'AGENT, ses SESSIONS, les DÉFINITIONS (triées par identifiant),
+   * puis ce qui en dépend (lignes de consentement, appels journalisés). Le journal d'un appel prend la session
+   * avant l'outil : c'est l'ordre de déclenchement de ses deux clés étrangères, fixé par les noms de leurs
+   * déclencheurs, donc par l'ordre de création de 0086 (un test d'intégration le fige). `rattacherConsommateur`
+   * et la création d'un connecteur prennent l'agent (`verrouillerAgentDuConsommateur`) puis l'outil ;
+   * `detacher` et `retirerDeMba` prennent la définition avant la ligne de consentement ; l'effacement d'une
+   * définition touche ENSUITE les appels (`tool_id on delete set null`). D'où, ici : verrouiller l'agent et
+   * ses sessions, lire ses consentements, verrouiller leurs définitions, et SEULEMENT ENSUITE la cascade et le
+   * retrait.
    * Les trois ordres essayés avant interbloquaient (40P01, donc un 500) :
    * - verrou des définitions AVANT les sessions : contre un appel de cet agent en cours de journalisation ;
    * - retrait des consentements AVANT le verrou : contre un `detacher` ;
    * - cascade AVANT le verrou : contre un `detacher` qui EFFACE le connecteur, parce que la cascade venait de
    *   supprimer les appels que son `on delete set null` doit toucher.
-   * ⚠️ Le verrou tient les connecteurs partagés pendant la cascade : les appels d'autres agents sur ces
-   * connecteurs ATTENDENT (ils ne cassent pas), le temps de supprimer un agent, geste rare.
-   * Un consentement posé entre la lecture et le retrait n'est pas couvert : il est verrouillé après coup
-   * (`reliquat`), le cas est rare et le `not exists` reste juste.
+   * ⚠️ Le verrou tient les connecteurs partagés pendant la cascade : les appels d'autres agents ET DU RELAIS DE
+   * L'AGENT DE META sur ces connecteurs ATTENDENT (ils ne cassent pas), le temps de supprimer un agent. La
+   * cascade n'a pas d'index qui la serve (`todo.md`) : ce temps n'est pas borné, il est seulement rare.
+   * Plus aucun consentement `agent:` ne se pose pendant la suppression (il attend l'agent, verrouillé en tête) :
+   * le `reliquat` n'est plus qu'une défense.
+   * ⚠️ HORS de cet ordre, et c'est écrit pour qu'on ne le croie pas universel : la suppression d'un serveur MCP
+   * efface ses outils par cascade, sans ordre ; `remplacerSource` (connaissance) supprime des fiches avant de
+   * prendre l'agent. L'import MCP, lui, trie ses outils (`appliquer`).
    * Tenu par trois tests d'intégration, qui rejouent chacun un de ces interblocages.
    */
   async remove(tenantId: string, id: string): Promise<boolean> {
