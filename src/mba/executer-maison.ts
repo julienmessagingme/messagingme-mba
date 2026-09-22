@@ -94,7 +94,7 @@ export async function executerOutilMaison(
  * l'agent de Meta, et lui ordonner le silence laisserait le client sans réponse. La consigne d'attendre la fin du
  * parcours est portée par la PREMIÈRE réponse (`REPONSE_MAISON.scenario_fixe`), dans le même tour.
  */
-export const REPONSE_DEJA_TRAITE = 'Cette demande vient déjà d’être traitée pour ce client : ne rappelle plus cet outil pour elle.';
+export const REPONSE_DEJA_TRAITE = 'Cette demande vient déjà d’être traitée pour ce message du client : ne rappelle pas cet outil maintenant. Si le client le redemande plus tard, rappelle cet outil.';
 
 /** Ce que l'agent de Meta lit quand le client est bloqué dans l'Inbox. */
 export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';

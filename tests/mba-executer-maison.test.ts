@@ -149,7 +149,7 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     // l'agent de Meta l'aurait répété au client. « N'écris rien, la conversation te reviendra » partait aussi quand
     // AUCUN parcours ne tourne (refus, exception, parcours court déjà fini) : l'agent se taisait, le client
     // restait sans réponse.
-    expect(REPONSE_DEJA_TRAITE).toContain('ne rappelle plus cet outil');
+    expect(REPONSE_DEJA_TRAITE).toContain('ne rappelle pas cet outil maintenant');
     for (const interdit of [/reçu/, /te reviendra/, /n’écris rien/, /répète/]) expect(REPONSE_DEJA_TRAITE).not.toMatch(interdit);
   });
 

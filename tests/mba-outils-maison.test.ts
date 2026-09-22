@@ -1,5 +1,7 @@
+import { REPONSE_DEJA_TRAITE } from '../src/mba/executer-maison';
 import { describe, it, expect } from 'vitest';
 import {
+  REPONSE_EN_COURS,
   HANDLERS_MAISON_MBA, cibleMaisonSchema, lireCibleMaison, typeDeLaCible, variablesPourMeta, lireValeurChamp,
   REPONSE_MAISON, RISQUE_MAISON, blocSeul, blocsProposables, type CibleChamp,
 } from '../src/mba/outils-maison';
@@ -170,5 +172,18 @@ describe('envoyer un bloc SEUL', () => {
     expect(l.map((b) => [b.code, b.nom, b.envoyable])).toEqual([[CODE('A'), 'Brochure', true], [CODE('C'), 'Oui ou non ?', false]]);
     expect(l[1]!.raison).toContain('Lancer un scénario');
     expect(l[0]).toMatchObject({ workflowId: WF, scenario: 'Accueil', type: 'quick_message', raison: null });
+  });
+  it('🔴 aucune réponse d’outil n’interdit l’outil pour la SUITE de la conversation (essais du 2026-09-22)', () => {
+    // « Ne rappelle pas cet outil. », sans borne, valait pour toute la conversation aux yeux de l'agent : il ne
+    // rappelait plus l'outil quand le client redemandait, et escaladait vers un humain.
+    const reponses = [
+      REPONSE_MAISON.bloc_fixe, REPONSE_MAISON.scenario_fixe,
+      REPONSE_EN_COURS.bloc_fixe, REPONSE_EN_COURS.scenario_fixe, REPONSE_DEJA_TRAITE,
+    ];
+    for (const r of reponses) {
+      expect(r).toContain('Si le client le redemande plus tard, rappelle cet outil.');
+      expect(r).not.toMatch(/rappelle pas cet outil\./i);
+      expect(r).not.toMatch(/ne rappelle plus/i);
+    }
   });
 });
