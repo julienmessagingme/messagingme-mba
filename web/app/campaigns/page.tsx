@@ -57,8 +57,15 @@ import { LaunchCounts } from '@/components/LaunchCounts';
  * d'analyse qu'on ouvre pour se faire une idee : c'est l'ecran de travail des campagnes, ouvert en
  * permanence, et chaque montage declenchait l'agregation la plus lourde du produit sur la fenetre la plus
  * large, plus un aller-retour chez Meta. Une campagne plus vieille que 90 jours garde sa case
- * « indisponible », ce qui est la reponse juste (on ne l'a pas lue) et pas un prix invente ; son cout exact
- * reste a un clic, sur sa fiche de resultats.
+ * « indisponible », ce qui est la reponse juste (on ne l'a pas lue) et pas un prix invente.
+ *
+ * ⚠️ ET LA CONTREPARTIE ANNONCEE N'EXISTAIT PAS, ce qui est le vrai defaut que la relecture a trouve : cette
+ * phrase disait « son cout exact reste a un clic, sur sa fiche de resultats ». C'est faux des deux cotes. Le
+ * panneau de detail de CET ecran recoit le meme cout que la liste (`cout={couts?.get(detail.id)}`), donc il
+ * reaffiche « indisponible » ; et « Voir les resultats » mene au Funnel, qui n'affiche aucun cout. Le cout
+ * d'une campagne plus ancienne se lit dans Performance Lab > Couts, en elargissant la periode. Une
+ * justification fausse se recopie : celle-ci l'avait deja ete, du code vers `features.md`, donc vers les
+ * fiches d'aide servies au client.
  *
  * ⚠️ ET LA PLAGE SE CALCULE A CHAQUE CHARGEMENT, PAS AU CHARGEMENT DU MODULE (meme revue). Evaluee une fois
  * pour toutes, un onglet laisse ouvert traverse minuit avec un `to` de la veille ; pire, une page chargee

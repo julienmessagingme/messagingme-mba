@@ -728,7 +728,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   réellement parti, modèles au tarif Meta et RCS à vos deux prix.
   ⚠️ **« indisponible » n'est pas « gratuit »** : une campagne de plus de **90 jours**, ou au-delà des
   cinquante que ce calcul rend, garde sa case vide, et le total de la liste dit combien de campagnes il n'a
-  pas su chiffrer. Son coût exact reste à un clic, sur sa fiche de résultats.
+  pas su chiffrer.
+  ⚠️ **Pour le coût d'une campagne plus ancienne**, passez par **Performance Lab > Coûts** et élargissez la
+  période jusqu'à la couvrir : sa ligne réapparaît alors dans « Ce que coûte un engagement », et sa fiche
+  donne le détail sur toute sa vie. Le panneau de détail de cet onglet-ci, lui, montre le même « indisponible »
+  que la liste : il lit le même calcul.
 
 - ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08, **seule question horaire depuis le
   2026-09-13**) : une case à cocher, à l'étape **Canal** de l'assistant. Elle vaut pour les premiers envois
