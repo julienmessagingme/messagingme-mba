@@ -9,7 +9,7 @@ import type { VolumeCampagneRow } from './cost';
 import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
-import { TYPE_ENTREE_GRATUITE } from '../webhooks/tarif-meta';
+import { horsEntreeGratuite } from './entree-gratuite';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { EnvoisCampagneRow } from './cout-campagne';
 import type { CanalEtage } from '../campaign/etages';
@@ -305,22 +305,6 @@ const ATTRIBUTION_CAMPAGNE_SCENARIO = `(
 
 /** Sans attribution : la colonne existe pour aligner les deux branches du `union all`, et vaut null. */
 const SANS_ATTRIBUTION = 'null::uuid';
-
-/**
- * « META NE FACTURE PAS CE MESSAGE » : il est parti dans les 72 h gratuites qui suivent un clic sur une pub
- * Click-to-WhatsApp (lot 1 des pubs, migration 0163). La seule source est l'accusé de Meta, gardé dans
- * `tarifs_meta` ; un message SANS ligne de tarif reste compté comme payant, c'est-à-dire le comportement
- * d'avant.
- *
- * 🔴 UNE SEULE ÉCRITURE, POUR LES CINQ LECTURES DE COÛT : les deux branches de `envoisTemplateFacturables`,
- * les deux de `envoisDeLaCampagne` (le coût de lancement de la fiche d'une campagne, qui doit compter la MÊME
- * population que `getVolumeParCampagne`), `serviceParMois` et `servicesParCampagne`. ⚠️ Et SEULEMENT elles :
- * les courbes de VOLUME de `getDashboard` comptent des envois, pas des euros, et un message gratuit y reste un
- * message envoyé. L'écart est voulu.
- */
-function horsEntreeGratuite(wamid: string, tenant: string): string {
-  return `not exists (select 1 from tarifs_meta tg where tg.tenant_id = ${tenant} and tg.wamid = ${wamid} and tg.type = '${TYPE_ENTREE_GRATUITE}')`;
-}
 
 const envoisTemplateFacturables = (attribution: string): string => `
   select r.sent_at as sent_at, c.template_name as name, c.category as category, c.id as campaign_id

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { horsEntreeGratuite } from '../stats/entree-gratuite';
 
 /**
  * Historique d'un contact : ce qu'on lui a ENVOYÉ, et ce qu'il a ÉCHANGÉ avec nous.
@@ -315,6 +316,11 @@ export class PgContactHistoryStore {
    * envois a la meme milliseconde produisaient une fenetre VIDE, donc un parcours perdu en silence ; et
    * l entonnoir couvre les `MAX_SENDS` derniers departs, exactement la population de la liste d envois
    * affichee juste en dessous.
+   *
+   * ⚠️ LES ENVOIS DU COÛT excluent les 72 h gratuites qui suivent un clic sur une pub (`horsEntreeGratuite`),
+   * comme toute lecture de coût. Ils ne portent PAS, en revanche, les gardes de livraison des autres lectures
+   * (`status = 'sent'`, livraison non `failed`, canal WhatsApp) : écart antérieur au lot 1 des pubs, relevé
+   * par sa revue et suivi à part, pas corrigé en silence ici.
    */
   async bilanContact(tenantId: string, contactId: string): Promise<{ envois: Array<{ category: string | null; count: number }>; profondeurs: number[] } | null> {
     const owner = await this.pool.query<{ id: string }>(
@@ -328,6 +334,7 @@ export class PgContactHistoryStore {
         `select c.category, count(*)::bigint as count
            from campaign_recipients r join campaigns c on c.id = r.campaign_id
           where r.contact_id = $2 and c.tenant_id = $1 and r.sent_at is not null
+            and ${horsEntreeGratuite('r.message_id', 'c.tenant_id')}
           group by c.category`,
         [tenantId, contactId],
       ),
