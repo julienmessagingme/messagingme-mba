@@ -24,7 +24,8 @@ export class AntiRejeu {
    */
   prendre(cle: string): boolean {
     const t = this.maintenant();
-    // Le ménage se fait ici : sans lui, la table grandirait d'une entrée par client et par outil, pour toujours.
+    // Ce ménage EST l'expiration (le `has` qui suit ne lit pas l'heure), et il borne la mémoire : sans lui, une
+    // clé ne repartirait jamais, et la table grandirait d'une entrée par client et par outil, pour toujours.
     for (const [k, v] of this.vus) if (t - v >= this.dureeMs) this.vus.delete(k);
     if (this.vus.has(cle)) return false;
     this.vus.set(cle, t);

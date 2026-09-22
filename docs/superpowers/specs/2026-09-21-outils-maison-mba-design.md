@@ -224,7 +224,9 @@ fois dans le même tour, et le client a reçu sept fois le premier message. La r
 surtout un garde qui ne dépend pas du modèle : un envoi ne se rejoue pas pour le même client et le même outil
 pendant deux minutes (`src/mba/anti-rejeu.ts`), y compris quand les appels arrivent SIMULTANÉMENT (la clé se
 prend d'un seul geste, sans attente). Le rappel reçoit « Cette demande vient déjà d'être traitée pour ce client :
-ne rappelle plus cet outil », et jamais « le client a reçu », qui serait faux après une panne ou un refus.
+ne rappelle plus cet outil pour elle », et rien de plus : ni « le client a reçu » (faux après une panne ou un
+refus), ni « n'écris rien » (le rappel part aussi quand aucun parcours ne tourne, et le client resterait sans
+réponse).
 
 ## 8. La publication chez Meta
 

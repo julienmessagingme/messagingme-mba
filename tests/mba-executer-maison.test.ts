@@ -121,7 +121,7 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     }
     expect(f.gestes).toEqual([`scenario t1 w ${SCEN.workflowId}`]);
     // Les rappels répondent « déjà traitée », ce qui clôt le tour de l'agent de Meta au lieu d'un refus.
-    expect(issues.slice(1).every((r) => r.ok && r.reponse === REPONSE_DEJA_TRAITE.scenario_fixe)).toBe(true);
+    expect(issues.slice(1).every((r) => r.ok && r.reponse === REPONSE_DEJA_TRAITE)).toBe(true);
   });
 
   it('🔴 sept appels SIMULTANÉS : un seul lancement (revue finale du 2026-09-22)', async () => {
@@ -131,7 +131,7 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     const issues = await Promise.all(Array.from({ length: 7 }, () =>
       executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} })));
     expect(f.gestes).toEqual([`scenario t1 w ${SCEN.workflowId}`]);
-    expect(issues.filter((r) => r.ok && r.reponse === REPONSE_DEJA_TRAITE.scenario_fixe)).toHaveLength(6);
+    expect(issues.filter((r) => r.ok && r.reponse === REPONSE_DEJA_TRAITE)).toHaveLength(6);
   });
 
   it('🔴 une EXCEPTION garde la clé : le message a pu partir, le rappel ne le renvoie pas', async () => {
@@ -139,18 +139,16 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     await expect(executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} })).rejects.toThrow();
     const r = await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
     expect(f.gestes).toHaveLength(1);
-    expect(r).toEqual({ ok: true, reponse: REPONSE_DEJA_TRAITE.scenario_fixe });
+    expect(r).toEqual({ ok: true, reponse: REPONSE_DEJA_TRAITE });
   });
 
-  it('🔴 le rappel n’affirme JAMAIS que le client a reçu : l’agent de Meta le lui répéterait', () => {
-    // Revue finale du 2026-09-22 : « le client a bien reçu le message » était faux après une exception, ou quand
-    // le premier appel finissait en refus. Le rappel dit ce qui est sûr : la demande a déjà été prise en charge.
-    for (const r of Object.values(REPONSE_DEJA_TRAITE)) {
-      expect(r).not.toMatch(/reçu/);
-      expect(r).toContain('ne rappelle plus cet outil');
-    }
-    // Pour un scénario, la consigne qui fait attendre la fin du parcours ne se perd pas au rappel.
-    expect(REPONSE_DEJA_TRAITE.scenario_fixe).toContain('la conversation te reviendra');
+  it('🔴 le rappel n’affirme que « déjà traitée » : ni une réception, ni un parcours en cours', () => {
+    // Revues finales du 2026-09-22. « Le client a bien reçu » était faux après une exception ou un refus, et
+    // l'agent de Meta l'aurait répété au client. « N'écris rien, la conversation te reviendra » partait aussi quand
+    // AUCUN parcours ne tourne (refus, exception, parcours court déjà fini) : l'agent se taisait, le client
+    // restait sans réponse.
+    expect(REPONSE_DEJA_TRAITE).toContain('ne rappelle plus cet outil');
+    for (const interdit of [/reçu/, /te reviendra/, /n’écris rien/, /répète/]) expect(REPONSE_DEJA_TRAITE).not.toMatch(interdit);
   });
 
   it('un AUTRE client, ou un AUTRE outil, n’est pas concerné', async () => {

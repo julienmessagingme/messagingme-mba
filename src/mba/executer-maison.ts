@@ -63,7 +63,7 @@ export async function executerOutilMaison(
       // partir qu'un. Elle est GARDÉE sur une exception (le message a pu partir) ; seul un refus, qui n'a rien
       // envoyé, l'oublie.
       const cle = `${tenantId}:${waId}:${input.outilId}`;
-      if (!deps.antiRejeu.prendre(cle)) return { ok: true, reponse: REPONSE_DEJA_TRAITE[cible.handler] };
+      if (!deps.antiRejeu.prendre(cle)) return { ok: true, reponse: REPONSE_DEJA_TRAITE };
       const issue = cible.handler === 'bloc_fixe'
         ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })
         : await deps.lancerScenario(tenantId, waId, cible.workflowId);
@@ -77,14 +77,14 @@ export async function executerOutilMaison(
 /**
  * Ce que l'agent de Meta lit quand il rappelle un envoi déjà pris en charge pour ce client : de quoi clore son tour.
  *
- * 🔴 JAMAIS « LE CLIENT A REÇU » (revue finale du 2026-09-22) : c'est faux après une exception, ou quand le premier
- * appel finit en refus, et l'agent de Meta le répéterait au client. On dit ce qui est sûr : la demande est déjà
- * prise en charge. Le scénario garde sa consigne d'attendre la fin du parcours.
+ * 🔴 IL N'AFFIRME RIEN DE PLUS QUE « DÉJÀ TRAITÉE » (revues finales du 2026-09-22). Ni « le client a reçu » : faux
+ * après une exception, ou quand le premier appel finit en refus, et l'agent de Meta le répéterait au client. Ni
+ * « n'écris rien, la conversation te reviendra » : ce rappel part aussi quand AUCUN parcours ne tourne (premier
+ * appel refusé, exception, parcours court déjà fini et client qui redemande), le fil est alors déjà revenu à
+ * l'agent de Meta, et lui ordonner le silence laisserait le client sans réponse. La consigne d'attendre la fin du
+ * parcours est portée par la PREMIÈRE réponse (`REPONSE_MAISON.scenario_fixe`), dans le même tour.
  */
-export const REPONSE_DEJA_TRAITE: Record<'bloc_fixe' | 'scenario_fixe', string> = {
-  bloc_fixe: 'Cette demande vient déjà d’être traitée pour ce client : ne rappelle plus cet outil, et n’en répète pas le contenu.',
-  scenario_fixe: 'Cette demande vient déjà d’être traitée pour ce client : ne rappelle plus cet outil, et n’écris rien de plus : la conversation te reviendra à la fin du parcours.',
-};
+export const REPONSE_DEJA_TRAITE = 'Cette demande vient déjà d’être traitée pour ce client : ne rappelle plus cet outil pour elle.';
 
 /** Ce que l'agent de Meta lit quand le client est bloqué dans l'Inbox. */
 export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';
