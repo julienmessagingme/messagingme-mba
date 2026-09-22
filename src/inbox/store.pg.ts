@@ -1519,6 +1519,24 @@ export class PgInboxStore implements InboxStore {
     return res.rows[0]?.body ?? null;
   }
 
+  /**
+   * L'identifiant du DERNIER message de l'agent de Meta dans cette conversation (son écho, `type = 'mba'`), ou
+   * `null`. Lu par `attendreFinDuTour` (`src/mba/fin-de-tour.ts`) : un identifiant qui CHANGE dit que l'agent a
+   * parlé, sans comparer l'horloge de ce serveur à celle de la base.
+   */
+  async dernierMessageDeLAgent(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select m.id
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'out' and m.type = 'mba'
+        order by m.created_at desc, m.id desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   async derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ body: string }>(
       `select m.body

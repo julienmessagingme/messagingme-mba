@@ -167,4 +167,26 @@ describe.skipIf(!url)('PgInboxStore : le marqueur de remise à l’agent de Meta
     // Et un release demandé ensuite n'attend plus rien : l'accusé est déjà là.
     expect(await store.demanderReleaseMba(tenantId, waId)).toBeNull();
   });
+
+  it('🔴 le dernier message de l’agent de Meta : SON écho le plus récent, jamais le nôtre ni celui du client', async () => {
+    // Lu par `attendreFinDuTour` (src/mba/fin-de-tour.ts) : un identifiant qui change dit que l'agent a parlé.
+    const waId = '33600000110';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    expect(await store.dernierMessageDeLAgent(tenantId, waId)).toBeNull();
+    const ecrire = async (direction: string, type: string, decalage: number) => (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+       values ($1, $2, $3, 'x', now() + ($4 || ' seconds')::interval) returning id`,
+      [conv, direction, type, String(decalage)],
+    )).rows[0]!.id;
+    const premier = await ecrire('out', 'mba', 0);
+    await ecrire('out', 'text', 1); // NOTRE envoi
+    await ecrire('in', 'text', 2); // le client
+    expect(await store.dernierMessageDeLAgent(tenantId, waId)).toBe(premier);
+    const second = await ecrire('out', 'mba', 3);
+    expect(await store.dernierMessageDeLAgent(tenantId, waId)).toBe(second);
+    // Isolé par espace : le même numéro dans un autre espace ne voit rien.
+    expect(await store.dernierMessageDeLAgent('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
+  });
 });

@@ -37,6 +37,7 @@ function faux(o: {
       gestes.push(`rendu ${waId}`);
       if (o.rendreKo) throw new Error('base indisponible');
     },
+    attendreFinDuTour: async (_t, waId) => { gestes.push(`tour ${waId}`); },
   };
   return { g: creerGestesEnvoi(deps), gestes };
 }
@@ -45,24 +46,32 @@ describe('envoyer un bloc', () => {
   it('🔴 envoie le bloc SEUL (graphe réduit), et ne rend pas le fil sur un succès : l’accusé s’en charge', async () => {
     const { g, gestes } = faux();
     expect(await g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).toBe(true);
-    expect(gestes).toEqual(['envoi n1 1 c1']);
+    expect(gestes).toEqual(['tour w1', 'envoi n1 1 c1']);
   });
 
   it('🔴 un refus APRÈS la reprise du fil le rend, et la raison remonte', async () => {
     const { g, gestes } = faux({ envoi: async () => 'le contact s’est désabonné' });
     expect(await g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).toBe('le contact s’est désabonné');
-    expect(gestes).toEqual(['envoi n1 1 c1', 'rendu w1']);
+    expect(gestes).toEqual(['tour w1', 'envoi n1 1 c1', 'rendu w1']);
   });
 
   it('🔴 une EXCEPTION après la reprise du fil le rend aussi, et remonte telle quelle', async () => {
     const { g, gestes } = faux({ envoi: async () => { throw new Error('Meta API error (HTTP 400)'); } });
     await expect(g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).rejects.toThrow('HTTP 400');
-    expect(gestes).toEqual(['envoi n1 1 c1', 'rendu w1']);
+    expect(gestes).toEqual(['tour w1', 'envoi n1 1 c1', 'rendu w1']);
   });
 
   it('⚠️ un rendu qui échoue ne masque pas l’exception d’origine', async () => {
     const { g } = faux({ envoi: async () => { throw new Error('Meta API error (HTTP 400)'); }, rendreKo: true });
     await expect(g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).rejects.toThrow('HTTP 400');
+  });
+
+  it('🔴 la fin du tour de l’agent de Meta est attendue JUSTE AVANT la prise du fil, jamais après (essai du 2026-09-22)', async () => {
+    // Prendre le fil pendant que l'agent attend l'outil fait envoyer par Meta « un membre de l'équipe reprendra ».
+    const { g, gestes } = faux();
+    await g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE });
+    await g.lancerScenario('t1', 'w1', WF);
+    expect(gestes).toEqual(['tour w1', 'envoi n1 1 c1', 'tour w1', `scenario ${WF} w1 true`]);
   });
 
   it('un bloc devenu invalide, ou un scénario supprimé, est refusé AVANT toute reprise du fil', async () => {
@@ -89,13 +98,13 @@ describe('lancer un scénario', () => {
   it('lance avec la fenêtre lue, et ne rend rien sur un succès', async () => {
     const { g, gestes } = faux({ ouverte: false });
     expect(await g.lancerScenario('t1', 'w1', WF)).toBe(true);
-    expect(gestes).toEqual([`scenario ${WF} w1 false`]);
+    expect(gestes).toEqual(['tour w1', `scenario ${WF} w1 false`]);
   });
 
   it('🔴 un refus rend le fil ; un scénario inconnu aussi, avec sa raison', async () => {
     const refus = faux({ scenario: async () => 'le scénario ouvre par un message rapide, impossible hors de la fenêtre de 24 h' });
     expect(await refus.g.lancerScenario('t1', 'w1', WF)).toContain('24 h');
-    expect(refus.gestes).toEqual([`scenario ${WF} w1 true`, 'rendu w1']);
+    expect(refus.gestes).toEqual(['tour w1', `scenario ${WF} w1 true`, 'rendu w1']);
     const inconnu = faux({ scenario: async () => null });
     expect(await inconnu.g.lancerScenario('t1', 'w1', WF)).toBe('ce scénario n’existe plus');
   });
@@ -103,6 +112,6 @@ describe('lancer un scénario', () => {
   it('🔴 une EXCEPTION rend le fil et remonte', async () => {
     const { g, gestes } = faux({ scenario: async () => { throw new Error('coupure réseau'); } });
     await expect(g.lancerScenario('t1', 'w1', WF)).rejects.toThrow('coupure réseau');
-    expect(gestes).toEqual([`scenario ${WF} w1 true`, 'rendu w1']);
+    expect(gestes).toEqual(['tour w1', `scenario ${WF} w1 true`, 'rendu w1']);
   });
 });

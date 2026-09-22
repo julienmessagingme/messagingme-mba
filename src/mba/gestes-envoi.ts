@@ -28,6 +28,12 @@ export interface DepsGestesEnvoi {
   lancerScenario(tenantId: string, workflowId: string, waId: string, fenetreOuverte: boolean): Promise<StartOutcome | null>;
   /** `rendreLaMainApresParcours` (`wiring.ts`). */
   rendreLaMain(tenantId: string, waId: string): Promise<void>;
+  /**
+   * Attend que l'agent de Meta ait fini son tour, JUSTE AVANT de lui prendre le fil (`src/mba/fin-de-tour.ts`).
+   * Placé après les refus qui ne demandent rien à Meta (bloc disparu, fenêtre fermée) : ceux-là partent tout de
+   * suite, dans le délai de réponse du relais, et l'agent les lit.
+   */
+  attendreFinDuTour(tenantId: string, waId: string): Promise<unknown>;
 }
 
 export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
@@ -61,6 +67,7 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
         return 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir';
       }
       const contactId = await deps.contactId(tenantId, waId);
+      await deps.attendreFinDuTour(tenantId, waId);
       // Le graphe RÉDUIT au bloc : ce qui le suit dans le scénario ne peut pas partir.
       return enRendantSurEchec(tenantId, waId,
         () => deps.envoyerDepuisBloc(tenantId, workflowId, seul.graphe, { waId, contactId }, seul.noeudId),
@@ -68,6 +75,7 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     },
     async lancerScenario(tenantId, waId, workflowId) {
       const ouverte = await deps.fenetreOuverte(tenantId, waId);
+      await deps.attendreFinDuTour(tenantId, waId);
       return enRendantSurEchec(tenantId, waId,
         () => deps.lancerScenario(tenantId, workflowId, waId, ouverte),
         'ce scénario n’existe plus');

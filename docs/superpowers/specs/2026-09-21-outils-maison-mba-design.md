@@ -240,6 +240,15 @@ Un envoi qui échoue APRÈS cette réponse (le lancement d'un scénario reprend 
 l'agent de Meta par un événement `envoi_echoue` (`src/mba/signaler-echec-tardif.ts`), seulement si le fil est à
 lui : sans ça, ayant lu « n'écris rien de plus », il se taisait et le client restait sans réponse.
 
+🔴 **LE DÉLAI N'ÉTAIT PAS LA CAUSE DE L'AVIS, et c'est mesuré (essai du scénario, 15 h 27).** Le relais a répondu en
+1,5 s et l'avis « un membre de l'équipe reprendra la conversation » est revenu quand même. Ce n'est pas le message
+de passage à un humain réglé sur l'agent (« Je transmets votre demande… ») mais un texte générique de Meta, et il
+n'est apparu que lorsque nous prenions le fil PENDANT que l'agent attendait la réponse de l'outil. L'essai de
+l'Inbox (aucun avis) prenait le fil HORS de son tour, il ne départageait donc pas les deux causes. **Expérience
+décidée par Julien** : le relais répond d'abord et demande à l'agent d'annoncer l'envoi en une phrase ; le geste
+attend ensuite son écho (`src/mba/fin-de-tour.ts`, 15 s au plus) et seulement alors prend le fil et envoie. Le
+journal du serveur dit `fin-de-tour: reponse|delai|illisible` : c'est ce que l'essai suivant doit lire.
+
 ## 8. La publication chez Meta
 
 Un outil maison se publie comme un outil de connecteur, sous le même connecteur `EngageMe` : `POST

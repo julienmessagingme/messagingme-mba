@@ -570,7 +570,11 @@ describe('le délai de réponse d’un envoi', () => {
   });
 
   it('« c’est parti » clôt le tour comme « c’est fait » : il interdit de rappeler l’outil', () => {
-    for (const r of Object.values(REPONSE_EN_COURS)) expect(r).toContain('Ne rappelle pas cet outil');
-    expect(REPONSE_EN_COURS.scenario_fixe).toContain('n’écris rien');
+    for (const r of Object.values(REPONSE_EN_COURS)) {
+      expect(r).toContain('Ne rappelle pas cet outil');
+      // L'agent annonce l'envoi en UNE phrase : c'est cet écho qui clôt son tour (`src/mba/fin-de-tour.ts`).
+      expect(r).toContain('en une phrase courte');
+    }
+    expect(REPONSE_EN_COURS.scenario_fixe).toContain('n’écris plus rien');
   });
 });

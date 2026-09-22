@@ -91,12 +91,16 @@ export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
  * l'équipe » six secondes après que le bloc soit bien parti ; c'est très probablement aussi ce qui lui avait fait
  * RAPPELER sept fois un scénario le matin même. Un envoi prend le fil puis envoie : deux appels à Meta, sa durée
  * n'est pas à nous. Le relais n'attend donc l'envoi que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`), puis
- * répond ceci, et l'envoi continue. Même ton que `REPONSE_MAISON` : il clôt le tour. S'il échoue ensuite, l'agent
- * l'apprend par un événement (`src/mba/signaler-echec-tardif.ts`), ce qui rend son « n'écris rien » sans danger.
+ * répond ceci, et l'envoi continue. S'il échoue ensuite, l'agent l'apprend par un événement
+ * (`src/mba/signaler-echec-tardif.ts`).
+ *
+ * 🔴 ET L'ENVOI N'A LIEU QU'APRÈS SON TOUR (expérience du 2026-09-22, `src/mba/fin-de-tour.ts`) : prendre le fil
+ * pendant que l'agent attend l'outil fait envoyer par Meta « un membre de l'équipe reprendra la conversation ».
+ * L'agent est donc invité à annoncer l'envoi en UNE phrase : c'est son écho qui dit que son tour est fini.
  */
 export const REPONSE_EN_COURS: Record<'bloc_fixe' | 'scenario_fixe', string> = {
-  bloc_fixe: 'C’est parti : le message prévu est en cours d’envoi au client. Ne rappelle pas cet outil pour cette demande, et n’en répète pas le contenu.',
-  scenario_fixe: 'C’est parti : le parcours démarre et le client va en recevoir les messages. Ne rappelle pas cet outil, et n’écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours.',
+  bloc_fixe: 'C’est parti : le message prévu arrive au client dans quelques secondes. Dis-lui seulement, en une phrase courte, que tu le lui envoies, sans en donner le contenu. Ne rappelle pas cet outil pour cette demande.',
+  scenario_fixe: 'C’est parti : le parcours démarre dans quelques secondes. Dis seulement au client, en une phrase courte, que tu lances ça pour lui, puis n’écris plus rien : la conversation te reviendra à la fin du parcours. Ne rappelle pas cet outil.',
 };
 
 export const VARIABLE_VALEUR = 'valeur';

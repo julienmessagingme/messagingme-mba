@@ -150,6 +150,7 @@ import { blocsProposables } from './mba/outils-maison';
 import { creerGestesEnvoi } from './mba/gestes-envoi';
 import { AntiRejeu, DUREE_ANTI_REJEU_MS } from './mba/anti-rejeu';
 import { creerSignalerEchecTardif } from './mba/signaler-echec-tardif';
+import { creerAttendreFinDuTour } from './mba/fin-de-tour';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -2563,6 +2564,14 @@ async function main(): Promise<void> {
             ),
             lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
             rendreLaMain: (t, waId) => workflowRuntime.rendreLaMainApresParcours(t, waId),
+            // Expérience du 2026-09-22 : on ne prend le fil qu'une fois le tour de l'agent de Meta fini.
+            attendreFinDuTour: creerAttendreFinDuTour({
+              dernierMessageDeLAgent: (t, waId) => inboxStore.dernierMessageDeLAgent(t, waId),
+              attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+              maintenant: () => Date.now(),
+              // eslint-disable-next-line no-console
+              journal: (ligne) => console.log(ligne),
+            }),
           }),
         },
       },
