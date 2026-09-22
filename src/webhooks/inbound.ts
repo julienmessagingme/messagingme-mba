@@ -113,7 +113,7 @@ export interface InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[] },
+    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean },
   ): Promise<boolean>;
 }
 
@@ -382,8 +382,9 @@ export async function processInbound(
  *   - un `messaging_handovers` / `control_passed` : il nous passe la main (`src/webhooks/handover.ts`).
  * Le filet, si les deux manquent, est le balayage de reprise (`src/inbox/control-sweep.ts`).
  *
- * ⚠️ `standby` ÉCRASE SANS CONDITION, y compris un `app_human` : Meta a tranché, et un opérateur qui se croit
- * maître du fil se ferait doubler sans comprendre.
+ * ⚠️ `standby` ÉCRASE un `app_human` : Meta a tranché, et un opérateur qui se croit maître du fil se ferait
+ * doubler sans comprendre. SAUF une ESCALADE (0164, 2026-09-23) : une fois le fil passé à l'équipe par l'agent,
+ * Meta nous envoie les messages sur `messages`, donc un `standby` traité après est un retardataire.
  *
  * BEST-EFFORT : un échec ici ne doit pas faire échouer l'enregistrement du message, qui est la donnée
  * métier. Il reste visible en console.
@@ -391,7 +392,9 @@ export async function processInbound(
 async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: InboundMessage): Promise<void> {
   if (!store.setControlOwner || m.field !== 'standby') return;
   try {
-    await store.setControlOwner(tenantId, m.waId, 'mba');
+    // ⚠️ SAUF ESCALADE (0164) : après une passation à l'équipe, un `standby` ne peut être qu'un retardataire
+    // traité en parallèle ; il rendait la conversation à l'agent sous le nez de l'équipe.
+    await store.setControlOwner(tenantId, m.waId, 'mba', { saufEscalade: true });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('processInbound: détenteur du fil non corrigé:', err instanceof Error ? err.message : err);

@@ -20,7 +20,7 @@ export interface ControlSweepDeps {
   listHeldControl(
     limit?: number,
     ageScenarioMs?: number,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null }>>;
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>>;
   setControlOwner(
     tenantId: string,
     waId: string,
@@ -100,6 +100,10 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // seule durée qui relève d'un arbitrage métier (combien de temps on laisse un opérateur travailler).
     const reglageClient = c.owner === 'app_human' ? parTenant.get(c.tenantId) : undefined;
     const ms = reglageClient ?? deps.timeouts[c.owner];
+    // 🔴 UNE ESCALADE SANS RÉPONSE NE REVIENT PAS À L'AGENT (0164, arbitrage de Julien du 2026-09-23) : le client
+    // attend un humain, lui renvoyer le robot serait pire que le silence. La première réponse d'un opérateur
+    // efface l'escalade ; les 2 h habituelles courent ensuite depuis elle.
+    if (c.owner === 'app_human' && c.escaladee) continue;
     // Absent ou 0 = jamais de reprise automatique pour cet état. Un client qui pose 0 garde la main
     // jusqu'à ce qu'un opérateur la rende explicitement, c'est un choix légitime.
     if (ms === undefined || ms <= 0) continue;

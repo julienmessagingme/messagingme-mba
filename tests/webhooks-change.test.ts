@@ -211,6 +211,7 @@ describe('les extracteurs voient enfin le standby', () => {
     await processHandovers(STANDBY_ECHO, {
       phoneNumberTenant: async () => 'tenant-1',
       setControlOwner: async () => true,
+      marquerEscalade: async () => {},
       recordAgentMessage: async (_t, waId, body) => { vus.push({ waId, body }); },
     });
     expect(vus.length).toBe(1);

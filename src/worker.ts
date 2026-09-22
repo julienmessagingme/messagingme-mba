@@ -473,6 +473,7 @@ async function main(): Promise<void> {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
         setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
+        marquerEscalade: (t, w) => inboxStore.marquerEscalade(t, w),
         // `origine: 'mba'` et pas `'ia'` : l'agent de Meta EST une IA, mais garder les deux valeurs
         // distinctes en base coûte zéro et permet de dire un jour laquelle des deux a parlé. Le
         // regroupement en un seul thème « IA » se fait à l'affichage (`THEME_DE_ORIGINE`).

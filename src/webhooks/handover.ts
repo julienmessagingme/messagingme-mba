@@ -48,6 +48,12 @@ export interface HandoverDeps {
   phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /** Pose le détenteur du fil (sans condition : Meta fait autorité sur qui détient quoi). */
   setControlOwner(tenantId: string, waId: string, owner: ControlOwner): Promise<boolean>;
+  /**
+   * L'agent de Meta vient de passer la main à l'ÉQUIPE (`PgInboxStore.marquerEscalade`, migration 0164) : le fil
+   * devient le nôtre ET la conversation entre dans « À traiter » tout de suite. Requise : sans elle, la
+   * passation ne posait que le détenteur, et la conversation n'apparaissait qu'au message suivant du client.
+   */
+  marquerEscalade(tenantId: string, waId: string): Promise<void>;
   /** Journalise dans le fil un message envoyé par l'agent de Meta, pour que l'opérateur le voie. */
   recordAgentMessage?(tenantId: string, waId: string, body: string, messageId: string | null): Promise<void>;
 }
@@ -155,7 +161,9 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
         // 2026-09-10 au soir, et c'est elle qui livrera le SENS INVERSE (une app qui rend le fil à l'agent),
         // que Meta n'a encore jamais envoyé et qu'on refuse donc d'interpréter.
         trace('handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
-        if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
+        // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : c'est une ESCALADE vers l'équipe.
+        if (waId && owner === 'app_human') await deps.marquerEscalade(tenantId, waId);
+        else if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
         continue;
       }
 

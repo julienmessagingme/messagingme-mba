@@ -264,13 +264,18 @@ const UNREAD_SQL = `exists (
  * d'elle-même au message SUIVANT du contact, parce que cette écriture-là efface `traitee_le`
  * (`upsertConversationByWaId`). ⚠️ Sauf une RÉACTION (👍), qui ne retire pas le statut ni ne change qui a
  * parlé en dernier (arbitrage de Julien du 2026-09-19).
+ *
+ * 🔴 ET UNE ESCALADE DE L'AGENT DE META Y ENTRE TOUT DE SUITE (migration 0164, Julien, 2026-09-23). Sa dernière
+ * phrase (« un membre de l'équipe va vous répondre ») est SORTANTE : la conversation n'arrivait ici que si le
+ * client réécrivait, alors qu'il attend justement qu'on lui réponde. `escaladee_le` la fait entrer jusqu'à la
+ * première réponse d'un opérateur.
  */
-const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out' and c.traitee_le is null`;
+const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and (c.last_direction is distinct from 'out' or c.escaladee_le is not null) and c.traitee_le is null`;
 
-/** Store Postgres de la boîte de réception (conversations + messages). */
 /** Voir `PgInboxStore.empreinteDuFil`. */
 export interface EmpreinteDuFil { detenteur: string | null; changeLe: string | null; dernierEnvoi: string | null }
 
+/** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
 
@@ -490,17 +495,43 @@ export class PgInboxStore implements InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[] },
+    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean },
   ): Promise<boolean> {
     const only = opts?.only;
+    // 🔴 RENDRE LE FIL À L'AGENT DE META EFFACE L'ESCALADE (0164) : c'est lui qui répond de nouveau.
+    // ⚠️ `saufEscalade` : n'écrit PAS sur une conversation escaladée. Posé par le `standby` d'un entrant
+    // (`accorderLeDetenteur`) : une fois le fil passé à l'équipe, Meta nous envoie les messages sur `messages`,
+    // donc un `standby` traité après l'escalade est un RETARDATAIRE (traitements en parallèle), et il rendait
+    // la conversation à l'agent sous le nez de l'équipe.
     const res = await this.pool.query(
-      `update conversations set control_owner = $3, control_changed_at = now()
+      `update conversations set control_owner = $3, control_changed_at = now(),
+              escaladee_le = case when $3 = 'mba' then null else escaladee_le end
        where tenant_id = $1 and wa_id = $2
          and control_owner is distinct from $3
-         and ($4::text[] is null or control_owner = any($4::text[]))`,
-      [tenantId, waId, owner, only ? [...only] : null],
+         and ($4::text[] is null or control_owner = any($4::text[]))
+         and (not $5::boolean or escaladee_le is null)`,
+      [tenantId, waId, owner, only ? [...only] : null, opts?.saufEscalade === true],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * L'AGENT DE META A PASSÉ LA MAIN À L'ÉQUIPE (`control_passed`, migration 0164, Julien, 2026-09-23).
+   *
+   * La conversation devient la nôtre (`app_human`), entre dans « À traiter » (`escaladee_le`) même si la dernière
+   * phrase est celle de l'agent, sort d'« Archivées » et de « Traité » : quelqu'un attend une réponse humaine.
+   * 🔴 UPSERT : la passation peut être traitée AVANT l'écho de la phrase de l'agent, qui crée d'habitude la
+   * conversation (traitements en parallèle). Sans la créer ici, l'escalade serait perdue.
+   */
+  async marquerEscalade(tenantId: string, waId: string): Promise<void> {
+    await this.pool.query(
+      `insert into conversations (tenant_id, wa_id, contact_id, control_owner, control_changed_at, escaladee_le)
+       values ($1, $2, (select id from contacts where tenant_id = $1 ${MATCH_BY_WAID_SQL}), 'app_human', now(), now())
+       on conflict (tenant_id, wa_id) do update set
+         control_owner = 'app_human', control_changed_at = now(), escaladee_le = now(),
+         traitee_le = null, archived_at = null`,
+      [tenantId, waId],
+    );
   }
 
   /**
@@ -619,7 +650,7 @@ export class PgInboxStore implements InboxStore {
   async listHeldControl(
     limit = 500,
     ageScenarioMs = 0,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null }>> {
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>> {
     /**
      * 🔴 LES FILS TENUS PAR UN SCÉNARIO ENTRENT ICI DEPUIS LE 2026-09-14, ET SEULEMENT LES VIEUX.
      *
@@ -668,8 +699,8 @@ export class PgInboxStore implements InboxStore {
      * mais SORTANT peut recouvrir une fenêtre fermée. C'est le balayage qui absorbe cette imprécision, en
      * appelant Meta AVANT d'écrire.
      */
-    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; last_message_at: Date | null }>(
-      `select tenant_id, wa_id, control_owner, control_changed_at, last_message_at
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; last_message_at: Date | null; escaladee: boolean }>(
+      `select tenant_id, wa_id, control_owner, control_changed_at, last_message_at, escaladee_le is not null as escaladee
        from conversations
        where control_owner <> 'app_workflow'
           or (
@@ -690,6 +721,7 @@ export class PgInboxStore implements InboxStore {
       owner: r.control_owner,
       changedAt: r.control_changed_at,
       lastMessageAt: r.last_message_at,
+      escaladee: r.escaladee === true,
     }));
   }
 
@@ -1088,7 +1120,9 @@ export class PgInboxStore implements InboxStore {
    */
   async marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean> {
     const res = await this.pool.query(
-      `update conversations set traitee_le = case when $3::boolean then now() else null end
+      // « Traité » clôt aussi une escalade (0164) : l'opérateur a jugé qu'il n'y avait rien à répondre.
+      `update conversations set traitee_le = case when $3::boolean then now() else null end,
+              escaladee_le = case when $3::boolean then null else escaladee_le end
         where id = $1 and tenant_id = $2`,
       [conversationId, tenantId, traitee],
     );
@@ -1658,6 +1692,9 @@ export class PgInboxStore implements InboxStore {
       `update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
          control_changed_at = case when $3::boolean and control_owner = 'app_human'
                                    then now() else control_changed_at end,
+         -- 🔴 LA PREMIÈRE RÉPONSE D'UN HUMAIN CLÔT L'ESCALADE (0164) : le balayage pourra rendre le fil à l'agent
+         -- après les 2 h habituelles de silence, pas avant (arbitrage de Julien du 2026-09-23).
+         escaladee_le = case when $3::boolean then null else escaladee_le end,
          analysis_status = case when analysis_status in ('done', 'failed') then 'pending' else analysis_status end
        where id = $1`,
       [conversationId, body, origine === 'humain'],

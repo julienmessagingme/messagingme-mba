@@ -99,8 +99,8 @@ describe('release : la minuterie de reprise après un humain', () => {
     const releases: string[] = [];
     const deps: ControlSweepDeps = {
       listHeldControl: async () => [
-        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage },
-        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage },
+        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
+        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
       ],
       setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; },
       mbaActifParTenant: async () => new Set(avecMba),

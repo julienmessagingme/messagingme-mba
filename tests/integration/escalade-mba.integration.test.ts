@@ -1,0 +1,126 @@
+import 'dotenv/config';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Pool } from 'pg';
+import { pgSsl } from '../../src/db/ssl';
+import { PgInboxStore } from '../../src/inbox/store.pg';
+
+const url = process.env.DATABASE_URL ?? '';
+
+/**
+ * L'ESCALADE DE L'AGENT DE META, CONTRE UNE VRAIE BASE (migration 0164, lot 2 du plan
+ * docs/superpowers/plans/2026-09-23-liste-julien.md).
+ *
+ * 🔴 POURQUOI EN INTÉGRATION : tout se joue dans du SQL. Le prédicat « À traiter » (`A_TRAITER_SQL`), l'upsert qui
+ * crée la conversation si la passation arrive avant l'écho, les effacements (réponse humaine, « Traité », fil
+ * rendu à l'agent) et la garde du `standby` retardataire. Un faux magasin dirait ce qu'on lui fait dire.
+ */
+describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabase)', () => {
+  let pool: Pool;
+  let tenantId: string;
+  let store: PgInboxStore;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    tenantId = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-escalade-mba') returning id`,
+    )).rows[0]!.id;
+    store = new PgInboxStore(pool);
+  });
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    await pool.end();
+  });
+
+  const lire = async (waId: string) => (await pool.query<{
+    id: string; control_owner: string; escaladee_le: Date | null; traitee_le: Date | null; archived_at: Date | null;
+  }>(`select id, control_owner, escaladee_le, traitee_le, archived_at from conversations where tenant_id = $1 and wa_id = $2`,
+    [tenantId, waId])).rows[0];
+
+  /** Une conversation dont la DERNIÈRE phrase est celle de l'agent de Meta (sortante), comme à une passation. */
+  async function conversationMenéeParLAgent(waId: string): Promise<string> {
+    const id = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, control_owner, last_message_at, last_direction)
+       values ($1, $2, 'mba', now(), 'out') returning id`,
+      [tenantId, waId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'out', 'mba', 'Un membre de l’équipe va vous répondre')`,
+      [id],
+    );
+    return id;
+  }
+
+  it('🔴 la passation fait entrer TOUT DE SUITE dans « À traiter », alors que la dernière phrase est sortante', async () => {
+    const waId = '33600000201';
+    await conversationMenéeParLAgent(waId);
+    const avant = await store.listConversations(tenantId, { aTraiter: true });
+    expect(avant.some((c) => c.waId === waId)).toBe(false); // l'ancien comportement : invisible
+    await store.marquerEscalade(tenantId, waId);
+    const c = await lire(waId);
+    expect(c?.control_owner).toBe('app_human');
+    expect(c?.escaladee_le).not.toBeNull();
+    const apres = await store.listConversations(tenantId, { aTraiter: true });
+    expect(apres.some((x) => x.waId === waId)).toBe(true);
+  });
+
+  it('🔴 la passation CRÉE la conversation si elle arrive avant l’écho de l’agent', async () => {
+    const waId = '33600000202';
+    expect(await lire(waId)).toBeUndefined();
+    await store.marquerEscalade(tenantId, waId);
+    expect((await lire(waId))?.control_owner).toBe('app_human');
+  });
+
+  it('la passation sort la conversation d’« Archivées » et de « Traité » : quelqu’un attend une réponse', async () => {
+    const waId = '33600000203';
+    const id = await conversationMenéeParLAgent(waId);
+    await pool.query(`update conversations set archived_at = now(), traitee_le = now() where id = $1`, [id]);
+    await store.marquerEscalade(tenantId, waId);
+    const c = await lire(waId);
+    expect(c?.archived_at).toBeNull();
+    expect(c?.traitee_le).toBeNull();
+  });
+
+  it('🔴 la première réponse d’un OPÉRATEUR efface l’escalade ; celle d’un automate, non', async () => {
+    const waId = '33600000204';
+    const id = await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    await store.recordOutbound(id, 'relance auto', null, 'scenario');
+    expect((await lire(waId))?.escaladee_le).not.toBeNull();
+    await store.recordOutbound(id, 'Bonjour, je regarde ça', null, 'humain');
+    expect((await lire(waId))?.escaladee_le).toBeNull();
+  });
+
+  it('« Traité » efface l’escalade ; rendre le fil à l’agent aussi', async () => {
+    const a = '33600000205';
+    const idA = await conversationMenéeParLAgent(a);
+    await store.marquerEscalade(tenantId, a);
+    await store.marquerTraitee(tenantId, idA, true);
+    expect((await lire(a))?.escaladee_le).toBeNull();
+
+    const b = '33600000206';
+    await conversationMenéeParLAgent(b);
+    await store.marquerEscalade(tenantId, b);
+    expect(await store.setControlOwner(tenantId, b, 'mba')).toBe(true);
+    expect((await lire(b))?.escaladee_le).toBeNull();
+  });
+
+  it('🔴 un `standby` retardataire ne rend PAS une conversation escaladée à l’agent', async () => {
+    const waId = '33600000207';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true })).toBe(false);
+    expect((await lire(waId))?.control_owner).toBe('app_human');
+    // Sans escalade, le `standby` écrit comme avant.
+    const autre = '33600000208';
+    await pool.query(`insert into conversations (tenant_id, wa_id, control_owner) values ($1, $2, 'app_human')`, [tenantId, autre]);
+    expect(await store.setControlOwner(tenantId, autre, 'mba', { saufEscalade: true })).toBe(true);
+  });
+
+  it('le balayage lit le drapeau d’escalade', async () => {
+    const waId = '33600000209';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    const tenus = await store.listHeldControl(5000);
+    expect(tenus.find((c) => c.tenantId === tenantId && c.waId === waId)?.escaladee).toBe(true);
+  });
+});

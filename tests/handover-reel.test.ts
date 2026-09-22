@@ -71,15 +71,20 @@ describe('waIdFromHandover', () => {
 });
 
 describe('processHandovers sur la bascule réelle', () => {
-  it('🔴 écrit enfin le détenteur, ce qu’il n’a jamais fait', async () => {
+  it('🔴 écrit enfin le détenteur, ce qu’il n’a jamais fait : une ESCALADE vers l’équipe (0164)', async () => {
     // Trois défauts empilés l'en empêchaient, et chacun seul suffisait : le numéro business lu au mauvais
     // endroit, le client lu au mauvais endroit, et le détenteur déduit à l'envers.
+    // Depuis le 2026-09-23, la passation de l'agent pose le détenteur (`app_human`) ET l'escalade, qui fait entrer
+    // la conversation dans « À traiter » tout de suite : `marquerEscalade`, jamais un simple `setControlOwner`.
     const poses: Array<[string, string, string]> = [];
+    const escalades: Array<[string, string]> = [];
     await processHandovers(HANDOVER_REEL, {
       phoneNumberTenant: async (pn) => (pn === '1234840649713976' ? 'tenant-1' : null),
       setControlOwner: async (t, w, o) => { poses.push([t, w, o]); return true; },
+      marquerEscalade: async (t, w) => { escalades.push([t, w]); },
     });
-    expect(poses).toEqual([['tenant-1', '33633921577', 'app_human']]);
+    expect(escalades).toEqual([['tenant-1', '33633921577']]);
+    expect(poses).toEqual([]);
   });
 
   it('🔴 le numéro BUSINESS se lit dans `recipient` quand il n’y a pas de `metadata`', async () => {
@@ -89,6 +94,7 @@ describe('processHandovers sur la bascule réelle', () => {
     await processHandovers(HANDOVER_REEL, {
       phoneNumberTenant: async (pn) => { vu = pn; return null; },
       setControlOwner: async () => true,
+      marquerEscalade: async () => {},
     });
     expect(vu).toBe('1234840649713976');
   });
@@ -98,6 +104,7 @@ describe('processHandovers sur la bascule réelle', () => {
     await processHandovers(HANDOVER_REEL, {
       phoneNumberTenant: async () => null,
       setControlOwner: async (_t, w) => { poses.push(w); return true; },
+      marquerEscalade: async (_t, w) => { poses.push(w); },
     });
     expect(poses).toEqual([]);
   });

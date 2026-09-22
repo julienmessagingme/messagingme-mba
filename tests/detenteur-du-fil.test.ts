@@ -32,12 +32,12 @@ const PAYLOAD = (field: 'messages' | 'standby' | null) => ({
 });
 
 function fauxStore() {
-  const ecrits: Array<{ owner: string; only?: readonly string[] }> = [];
+  const ecrits: Array<{ owner: string; only?: readonly string[]; saufEscalade?: boolean }> = [];
   const store: InboxStore = {
     phoneNumberTenant: async () => 'tenant-1',
     recordInbound: async (_t: string, _m: InboundMessage) => {},
     setControlOwner: async (_t, _w, owner, opts) => {
-      ecrits.push({ owner, ...(opts?.only ? { only: opts.only } : {}) });
+      ecrits.push({ owner, ...(opts?.only ? { only: opts.only } : {}), ...(opts?.saufEscalade ? { saufEscalade: true } : {}) });
       return true;
     },
   };
@@ -45,12 +45,14 @@ function fauxStore() {
 }
 
 describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
-  it('🔴 un `standby` dit que le MBA tient le fil, et il écrase SANS condition', () => {
+  it('🔴 un `standby` dit que le MBA tient le fil, et il écrase un `app_human`, SAUF une escalade (0164)', () => {
     // Meta fait autorité, y compris contre un `app_human` : si son agent répond, un opérateur qui se croit
     // maître du fil se ferait doubler sans comprendre pourquoi.
+    // ⚠️ Sauf une ESCALADE (2026-09-23) : une fois le fil passé à l'équipe, Meta envoie les messages sur
+    // `messages` ; un `standby` traité après est un retardataire, et il rendait la conversation à l'agent.
     const { store, ecrits } = fauxStore();
     return processInbound(PAYLOAD('standby'), store).then(() => {
-      expect(ecrits).toEqual([{ owner: 'mba' }]);
+      expect(ecrits).toEqual([{ owner: 'mba', saufEscalade: true }]);
     });
   });
 
