@@ -431,16 +431,47 @@ function InboxInner({ session }: { session: Session }) {
     }
   }
 
-  // Deep-link ?c=<id> : quand la liste est chargée, pré-sélectionne la conversation correspondante (une seule
-  // fois, pour ne pas ré-écraser un choix manuel aux refresh suivants). Conv absente de la liste -> ignorée.
+  /**
+   * Deep-link `?c=<id>` : pré-sélectionne la conversation visée, UNE seule fois (pour ne pas ré-écraser un
+   * choix manuel aux rafraîchissements suivants).
+   *
+   * 🔴 ET ELLE VA LA CHERCHER QUAND ELLE N'EST PAS DANS LA PAGE (2026-09-23). Ce lien vient désormais du
+   * bouton « Ouvrir la conversation » d'une fiche du mini-CRM, et le fil d'un contact peut dater de
+   * plusieurs mois : hors de la première page, donc invisible de cette liste. Le lien était alors IGNORÉ en
+   * silence, ce qui se lit comme un bouton cassé. On demande le fil par son identifiant, et on l'ajoute en
+   * tête de la liste affichée.
+   *
+   * ⚠️ IL IGNORE LE DOSSIER COURANT, délibérément : on a demandé CE fil-là. Un fil archivé ou déjà traité
+   * n'appartient à aucun dossier ordinaire, et ce sont justement les cas où l'on clique pour aller le relire.
+   *
+   * ⚠️ ÉCHEC SILENCIEUX : une API plus ancienne que le paramètre `id` rend la liste entière, et le fil visé
+   * s'y trouve ou non, exactement comme avant. On ne montre pas d'erreur pour un lien : l'Inbox reste
+   * utilisable, c'est l'essentiel de l'écran.
+   */
   useEffect(() => {
-    if (deepLinkApplied.current || !deepLinkId || conversations.length === 0) return;
+    if (deepLinkApplied.current || !deepLinkId) return;
     const match = conversations.find((c) => c.id === deepLinkId);
     if (match) {
       setSelected(match);
       deepLinkApplied.current = true;
+      return;
     }
-  }, [deepLinkId, conversations]);
+    // ⚠️ ON ATTEND LA FIN DU PREMIER CHARGEMENT, PAS UNE LISTE NON VIDE. La liste peut etre legitimement
+    // VIDE (un espace neuf, un dossier sans rien), et c'est justement le cas ou le fil visé n'y est pas :
+    // se caler sur sa longueur laissait le lien sans effet, exactement le defaut qu'on repare.
+    if (loading) return;
+    deepLinkApplied.current = true;
+    let vivant = true;
+    void listConversations(session.tenantId, { id: deepLinkId, limit: 1 })
+      .then((r) => {
+        const conv = (r.conversations ?? []).find((c) => c.id === deepLinkId);
+        if (!vivant || !conv) return;
+        setConversations((prev) => (prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev]));
+        setSelected(conv);
+      })
+      .catch(() => { /* un lien qui ne mène nulle part ne doit pas casser l'Inbox */ });
+    return () => { vivant = false; };
+  }, [deepLinkId, conversations, loading, session.tenantId]);
 
   // Auto-refresh de la liste (~15 s), seulement quand l'onglet est visible (pas de martèlement en arrière-plan) ;
   // reload immédiat au retour de focus. Réutilise l'endpoint existant, aucun changement backend.

@@ -970,6 +970,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
+- ✅ **« Ouvrir la conversation » depuis la fiche d'un contact** (2026-09-23, menu Contacts). Le bouton est en
+  haut de la fiche du mini-CRM et emmène directement sur le fil de ce contact dans l'Inbox.
+  🔴 **Le fil est CRÉÉ s'il n'existe pas**, et c'est le cas qui compte : un contact qu'on vient d'importer n'a
+  jamais écrit, donc n'a aucune conversation, et c'est précisément là qu'on veut lui parler. Cliquer deux fois
+  n'ouvre pas deux fils.
+  ⚠️ **Un fil qu'on vient d'ouvrir n'entre PAS dans « À traiter »** : ce dossier veut dire « la balle est dans
+  notre camp », et l'ouvrir soi-même ne met la balle dans aucun camp. Il y entrera au premier message du
+  contact. Il est visible dans « Toutes », en tête.
+  ⚠️ **Un fil ANCIEN s'ouvre aussi**, même s'il est trop vieux pour figurer dans la page affichée, ou rangé
+  dans « Archivé » ou « Traité » : on a demandé ce fil-là. Un contact sans numéro ni identifiant WhatsApp,
+  lui, n'a aucun fil possible, et l'écran le dit au lieu de mener nulle part.
+
 - ✅ **LIRE LES MESSAGES REÇUS DANS SA LANGUE** (2026-09-13) : un interrupteur « Traduire les messages
   reçus », dans l'en-tête de la conversation. Allumé, les messages entrants du fil s'affichent dans la
   langue de votre console (celle du menu compte, français ou anglais), quelle que soit celle du client.

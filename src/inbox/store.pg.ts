@@ -96,6 +96,15 @@ export interface CompteursInbox {
 }
 
 export interface ListConversationsOptions {
+  /**
+   * UNE conversation précise, par son identifiant. Sert le lien « Ouvrir la conversation » du mini-CRM :
+   * le fil visé peut être vieux, donc hors de la première page, et l'écran ne saurait pas le montrer.
+   *
+   * ⚠️ IL IGNORE LES DOSSIERS, DÉLIBÉRÉMENT. On demande CE fil-là : le filtrer par dossier rendrait une
+   * liste vide pour une conversation archivée ou déjà traitée, c'est-à-dire exactement les cas où l'on
+   * clique pour aller la relire. La garde d'espace, elle, reste posée comme sur toute autre lecture.
+   */
+  id?: string;
   /** Taille de page. Défaut 100, borné à 200 : la valeur vient d'une query string. */
   limit?: number;
   /**
@@ -249,9 +258,15 @@ const UNREAD_SQL = `exists (
  * exact de ce que le commentaire promettait. Attrapé par le test d'intégration « un fil SANS sens connu reste
  * dans le dossier » : aucun test unitaire ne peut voir ça, la faute est dans le SQL.
  *
- * ⚠️ Une conversation sans valeur connue reste donc dans le dossier, exactement comme avant la migration. Un
- * filtre qui ferait DISPARAÎTRE des fils au déploiement serait la pire façon de l'introduire, personne ne
- * cherchant ce qu'il ne sait pas avoir perdu.
+ * ⚠️ CETTE PHRASE A CHANGÉ DE SENS LE 2026-09-23, ET IL FAUT DIRE LEQUEL. Elle disait : « une conversation
+ * sans valeur connue reste dans le dossier, exactement comme avant la migration », parce qu'en 2026-09-11 un
+ * `last_direction` nul voulait dire « on ne sait pas encore », et faire disparaître ces fils au déploiement
+ * aurait été la pire façon d'introduire le filtre. La reprise de 0130 les a tous renseignés : mesuré en
+ * production le 2026-09-23, ZÉRO conversation porte encore un sens nul, et zéro fil sort du dossier par ce
+ * changement. Un sens nul veut désormais dire AUCUN MESSAGE, ce qui est un état neuf : une conversation
+ * qu'un opérateur vient d'OUVRIR depuis la fiche d'un contact (lot 6). Elle n'entre pas dans « À traiter »,
+ * parce que personne n'y attend de réponse : ce dossier veut dire « la balle est dans notre camp », et
+ * l'ouvrir soi-même ne met la balle dans aucun camp. Elle y entrera au premier message du contact.
  *
  * ⚠️ Fragment PARTAGÉ par les trois lecteurs (la liste, les compteurs du menu, la vieille route de comptage) :
  * les écrire trois fois les ferait diverger au premier ajustement, et le dossier afficherait un nombre que la
@@ -270,7 +285,7 @@ const UNREAD_SQL = `exists (
  * client réécrivait, alors qu'il attend justement qu'on lui réponde. `escaladee_le` la fait entrer jusqu'à la
  * première réponse d'un opérateur.
  */
-const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and (c.last_direction is distinct from 'out' or c.escaladee_le is not null) and c.traitee_le is null`;
+const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction is not null and c.last_direction <> 'out') or c.escaladee_le is not null) and c.traitee_le is null`;
 
 /** Voir `PgInboxStore.empreinteDuFil`. */
 export interface EmpreinteDuFil { detenteur: string | null; changeLe: string | null; dernierEnvoi: string | null }
@@ -845,6 +860,47 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * TROUVE OU CRÉE la conversation d'un contact, et rend son identifiant.
+   *
+   * Demandé par Julien le 2026-09-23 : depuis la fiche d'un contact du mini-CRM, un bouton « Ouvrir la
+   * conversation », qui crée le fil s'il n'existe pas.
+   *
+   * 🔴 ELLE NE FAIT SEMBLANT DE RIEN, et c'est toute la différence avec `upsertConversationByWaId`, juste
+   * au-dessus. Celle-là avance `last_message_at`, écrit un aperçu et pose le SENS du dernier message, parce
+   * qu'un message vient vraiment de partir ou d'arriver. Ici, rien n'a été dit : écrire un sens ferait
+   * entrer le fil dans « À traiter » (ou l'en sortirait) sur la foi d'un geste qui n'a parlé à personne.
+   * Le sens reste donc NUL, et `A_TRAITER_SQL` l'exclut pour cette raison précise.
+   *
+   * ⚠️ `last_message_at` PREND SON DÉFAUT (`now()`, colonne NOT NULL depuis 0009), donc un fil neuf apparaît
+   * en tête de « Toutes » : c'est ce qui permet au lien de le retrouver sans rien chercher. Sur un fil qui
+   * EXISTE DÉJÀ, en revanche, on n'y touche pas : le faire remonter mentirait sur l'activité du contact, et
+   * l'écran sait aller chercher un vieux fil par son identifiant (`ListConversationsOptions.id`).
+   *
+   * ⚠️ LE `wa_id` D'UN CONTACT SE DÉRIVE ICI COMME AILLEURS : les chiffres nus du téléphone, sinon le bsuid
+   * (`src/automation/store.pg.ts` écrit la même expression). C'est la clé unique `(tenant_id, wa_id)` de
+   * 0009 qui garantit qu'on ne crée pas un doublon du fil que l'inbound alimentera plus tard.
+   *
+   * Rend `null` quand le contact n'existe pas dans cet espace, est supprimé, ou n'a NI numéro NI bsuid :
+   * sans identité, il n'y a aucun fil possible, et en inventer un le rendrait inatteignable.
+   */
+  async ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `with cible as (
+         select coalesce(nullif(regexp_replace(coalesce(c.phone_e164, ''), '[^0-9]', '', 'g'), ''), c.bsuid) as wa_id
+           from contacts c
+          where c.id = $2::uuid and c.tenant_id = $1 and c.deleted_at is null
+       )
+       insert into conversations (tenant_id, wa_id, contact_id)
+       select $1, cible.wa_id, $2::uuid from cible where cible.wa_id is not null
+       on conflict (tenant_id, wa_id) do update
+         set contact_id = coalesce(conversations.contact_id, excluded.contact_id)
+       returning id::text as id`,
+      [tenantId, contactId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
+  /**
    * Une page de conversations, de la plus récente à la plus ancienne.
    *
    * Le filtrage et la pagination sont faits en SQL, et c'est le point. L'écran filtrait auparavant en mémoire
@@ -861,6 +917,12 @@ export class PgInboxStore implements InboxStore {
     const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 100), 1), 200);
     const params: unknown[] = [tenantId];
     const where: string[] = ['c.tenant_id = $1'];
+
+    // UNE conversation par son identifiant, avant tout filtre de dossier : voir `ListConversationsOptions.id`.
+    if (typeof opts.id === 'string' && opts.id !== '') {
+      params.push(opts.id);
+      where.push(`c.id = $${params.length}::uuid`);
+    }
 
     if (opts.aTraiter === true) {
       where.push(A_TRAITER_SQL);

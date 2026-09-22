@@ -159,6 +159,7 @@ import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
+import type { PricingSummary } from './meta/pricing';
 
 async function main(): Promise<void> {
   /**
@@ -517,11 +518,38 @@ async function main(): Promise<void> {
    * lue par cle primaire : ce n est pas la lecture qui coute sur ce chemin, c est l aller-retour chez Meta
    * juste au-dessus.
    */
+  /**
+   * Le tarif de Meta, par espace ET par fenetre. Soixante secondes : voir `prixFactures` juste en dessous.
+   *
+   * ⚠️ DECLARE ICI, DANS LE CABLAGE, et pas dans un module : il n'y a qu'un seul processus d'API, et un
+   * cache par process est exactement ce que `cacheCourt` promet. Le sortir dans un module partage le ferait
+   * partager par le worker, qui n'affiche aucun tarif.
+   */
+  const cacheTarifsMeta = cacheCourt<PricingSummary | null>(60_000);
+
   const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
     const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
     const { startTs, endTs } = rangeToUnix(range);
     const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
-    const pricing = pricingClientT && wabaId ? await pricingClientT.getPricingAnalytics(wabaId, startTs, endTs) : null;
+    /**
+     * 🔴 L'ALLER-RETOUR CHEZ META PASSE SOUS MICRO-CACHE (revue finale du 2026-09-23, son seul rouge).
+     *
+     * Cet appel n'en avait AUCUN, et quatre écrans le déclenchent : le graphe de coût, la synthèse de
+     * Performance Lab, le total des messages envoyés, et depuis ce jour l'onglet Campagnes, qu'on ouvre en
+     * permanence. Chaque montage, chaque changement de période et chaque bascule partait donc chez Meta,
+     * pour un TARIF qui ne bouge pas dans la minute. C'est une API tierce à quota : la faire appeler par un
+     * écran de travail était le vrai défaut, pas la taille de la fenêtre demandée.
+     *
+     * ⚠️ LA CLÉ PORTE L'ESPACE ET LA FENÊTRE : deux périodes différentes sont deux tarifs différents, et les
+     * confondre ferait lire à un écran le prix moyen d'une autre plage. L'espace y est pour la raison
+     * habituelle (le filtrage en code est le seul contrôle d'isolation).
+     *
+     * ⚠️ SOIXANTE SECONDES, comme les compteurs de l'Inbox : ce cache convient à ce qui tolère d'être en
+     * retard de quelques secondes, jamais à une décision. Un tarif affiché est exactement de ce genre.
+     */
+    const pricing = pricingClientT && wabaId
+      ? await cacheTarifsMeta.lire(`${tenant}:${startTs}:${endTs}`, () => pricingClientT.getPricingAnalytics(wabaId, startTs, endTs))
+      : null;
     // La transformation elle-meme vit dans `tarifsFactures`, PURE et testee : ce cablage ne fait que lire
     // la grille et la lui passer, pour que le cas « une marge de 150 majore le prix » reste eprouvable.
     return tarifsFactures({
@@ -746,6 +774,8 @@ async function main(): Promise<void> {
     },
     inbox: {
       listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
+      // « Ouvrir la conversation » depuis la fiche d un contact du mini-CRM : trouve le fil, ou le cree.
+      ouvrirConversationDuContact: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
       // Effacer le CONTENU d une conversation. Reserve aux administrateurs par la garde de `server.ts`, et
       // trace au Journal des actions (sans le numero ni le texte : y ecrire ce qu on vient d effacer
       // annulerait l effacement).

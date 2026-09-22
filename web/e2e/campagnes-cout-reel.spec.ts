@@ -39,12 +39,17 @@ const COUT = {
   tronque: false, currency: 'EUR', hasRates: true,
 };
 
+/** Les fenetres que l'ecran a reellement demandees, pour tenir le rouge de la revue du 2026-09-23. */
+const fenetres: string[] = [];
+
 const brancher = async (page: import('@playwright/test').Page, cout: unknown = COUT) => {
+  fenetres.length = 0;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.includes('/stats/cost/campaigns')) {
+      fenetres.push(url);
       if (cout === null) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"indisponible"}' });
       return json(cout);
     }
@@ -93,5 +98,20 @@ test.describe('Campagnes : le coût est celui du serveur', () => {
     await brancher(page, null);
     await expect(page.getByText(/coût estimé indisponible|estimated cost unavailable/i)).toBeVisible();
     await expect(page.getByTestId('campagne-cout-c-rcs')).toHaveText(/indisponible|unavailable/i);
+  });
+
+  test('🔴 l ecran ne demande PAS la fenetre maximale (rouge de la revue finale)', async ({ page }) => {
+    // Cet ecran de travail est ouvert en permanence, et chaque montage declenche l'agregation la plus lourde
+    // du produit plus un aller-retour chez Meta. Demander 366 jours « puisqu'on peut » faisait payer la
+    // fenetre la plus large a l'ecran le plus ouvert. 90 jours couvrent le besoin ; au-dela, la case dit
+    // « indisponible » et le cout exact reste a un clic, sur la fiche de resultats.
+    await brancher(page);
+    await expect(page.getByTestId('campagne-cout-c-tpl')).toBeVisible();
+    expect(fenetres.length, 'la route du cout a bien ete appelee').toBeGreaterThan(0);
+    const u = new URL(fenetres[0]!);
+    const depuis = new Date(`${u.searchParams.get('from')}T00:00:00Z`).getTime();
+    const jusqua = new Date(`${u.searchParams.get('to')}T00:00:00Z`).getTime();
+    const jours = Math.round((jusqua - depuis) / 86_400_000) + 1;
+    expect(jours).toBe(90);
   });
 });

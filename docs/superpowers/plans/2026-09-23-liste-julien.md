@@ -99,10 +99,13 @@ ne suffit pas, parce que les tests d'écran sont écrits par celui qui a écrit 
   jour-là) et remontent à 15 le 21/09. Les deux courbes divergent bien, et la suppression n'a rien réécrit
   avant sa date.
 
-## Lot 6 : Mini-CRM, « Ouvrir la conversation »
+## Lot 6, livré : Mini-CRM, « Ouvrir la conversation »
 
-- Route qui trouve OU CRÉE la conversation du contact (unique par espace et numéro, migration 0058), et l'Inbox
-  qui sait afficher une conversation absente de la page chargée (lien `?c=`).
+- Route qui trouve OU CRÉE la conversation du contact (unique par espace et `wa_id`, migration 0009), et l'Inbox
+  qui sait afficher une conversation absente de la page chargée (lien `?c=`, servi par `?id=` sur la liste).
+- Arbitrage de Julien : un fil SANS message n'entre pas dans « À traiter » (personne n'y attend de réponse).
+  `A_TRAITER_SQL` exige donc un sens de dernier message. Mesuré avant d'y toucher : les 15 conversations de
+  production en portent toutes un, donc zéro fil ne sort du dossier.
 - Essai réel : depuis la fiche d'un contact sans conversation, ouvrir l'Inbox sur son fil vide.
 
 ## Lot 7 : API développeurs, envoyer un simple message

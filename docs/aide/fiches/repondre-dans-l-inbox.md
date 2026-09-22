@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 888648
+source_empreinte: bde81b
 ---
 # Répondre à un client dans l'Inbox
 
@@ -21,6 +21,10 @@ la conversation ouverte à droite.
   avez signalées vous-même.
 - **Archivé** : ce que vous avez rangé. Contrairement à « Traité », une conversation archivée n'apparaît
   plus dans « Tout ».
+
+**Pour ouvrir la conversation d'un contact qui n'a jamais écrit**, passez par sa fiche dans Contacts : le
+bouton « Ouvrir la conversation » crée le fil et vous y emmène. Un fil ouvert ainsi n'apparaît pas dans
+« À traiter », parce que personne n'y attend de réponse ; vous le retrouvez dans « Tout », en haut.
 
 **Pour ranger une conversation**, le menu « Ranger dans… » en haut de la conversation ouverte propose les
 destinations qui auront un effet visible depuis l'endroit où vous êtes. Vous pouvez aussi cocher plusieurs

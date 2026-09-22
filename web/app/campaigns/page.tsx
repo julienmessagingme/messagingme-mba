@@ -7,7 +7,7 @@ import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import { fmtCost, campaignSendLabel } from '@/lib/format';
-import { getCoutParCampagne, type StatsRange } from '@/lib/api/stats';
+import { getCoutParCampagne } from '@/lib/api/stats';
 import { presetRange } from '@/lib/range';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
@@ -52,11 +52,20 @@ import { LaunchCounts } from '@/components/LaunchCounts';
  * campagne plus vieille que la plage lue, une campagne au-dela des cinquante que ce tableau rend, et une
  * campagne dont rien n'a pu etre chiffre. Zero se lirait « ca n'a rien coute ».
  *
- * ⚠️ 366 JOURS, C'EST LE MAXIMUM QUE L'API ACCEPTE (`MAX_SPAN_DAYS`, src/stats/range.ts), et pas un nombre
- * choisi ici : demander plus rend 400. Une campagne plus ancienne garde donc sa case « indisponible », ce
- * qui est la reponse juste (on ne l'a pas lue) et pas un prix invente.
+ * 🔴 QUATRE-VINGT-DIX JOURS, ET C'EST LA CORRECTION DU SEUL ROUGE DE LA REVUE FINALE DU 2026-09-23. Cette
+ * plage valait 366, le maximum que l'API accepte, « puisqu'on peut ». Or cet ecran n'est pas un ecran
+ * d'analyse qu'on ouvre pour se faire une idee : c'est l'ecran de travail des campagnes, ouvert en
+ * permanence, et chaque montage declenchait l'agregation la plus lourde du produit sur la fenetre la plus
+ * large, plus un aller-retour chez Meta. Une campagne plus vieille que 90 jours garde sa case
+ * « indisponible », ce qui est la reponse juste (on ne l'a pas lue) et pas un prix invente ; son cout exact
+ * reste a un clic, sur sa fiche de resultats.
+ *
+ * ⚠️ ET LA PLAGE SE CALCULE A CHAQUE CHARGEMENT, PAS AU CHARGEMENT DU MODULE (meme revue). Evaluee une fois
+ * pour toutes, un onglet laisse ouvert traverse minuit avec un `to` de la veille ; pire, une page chargee
+ * juste apres minuit cote navigateur, alors que le serveur n'a pas encore bascule, prend un 400 « to ne
+ * peut pas etre dans le futur » qui eteint toute la colonne.
  */
-const PLAGE_COUT: StatsRange = presetRange(366);
+const JOURS_COUT = 90;
 
 export default function CampaignsPage() {
   return <AppShell active="campagnes" fullBleed>{(session) => <CampaignsInner session={session} />}</AppShell>;
@@ -148,7 +157,7 @@ function CampaignsInner({ session }: { session: Session }) {
    */
   useEffect(() => {
     let vivant = true;
-    getCoutParCampagne(session.tenantId, PLAGE_COUT, showArchived)
+    getCoutParCampagne(session.tenantId, presetRange(JOURS_COUT), showArchived)
       .then((r) => {
         if (!vivant) return;
         setCouts(new Map((r.lignes ?? []).map((l) => [l.campaignId, l.cout])));

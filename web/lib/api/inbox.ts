@@ -139,7 +139,7 @@ export interface InboxMessage {
  */
 export function listConversations(
   tenantId: string,
-  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean; traitees?: boolean } = {},
+  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean; traitees?: boolean; id?: string } = {},
 ): Promise<{
   conversations: Conversation[];
   /**
@@ -150,6 +150,10 @@ export function listConversations(
   peutPrendre?: boolean;
 }> {
   const p = new URLSearchParams();
+  // UNE conversation par son identifiant : le lien « Ouvrir la conversation » du mini-CRM peut viser un
+  // vieux fil, donc hors de la premiere page. Le serveur ignore ce parametre tant qu'il n'est pas deploye,
+  // et l'ecran retombe alors sur ce qu'il faisait avant : chercher le fil dans la liste chargee.
+  if (opts.id !== undefined) p.set('id', opts.id);
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
   if (opts.aTraiter) p.set('aTraiter', '1');
   if (opts.affectee !== undefined) p.set('affectee', opts.affectee);
@@ -590,4 +594,14 @@ export function transcrireMessage(
     method: 'POST',
     ...(traduire ? { body: JSON.stringify({ traduire }) } : {}),
   });
+}
+
+/**
+ * TROUVE OU CREE la conversation d'un contact, et rend son identifiant.
+ *
+ * Sert le bouton « Ouvrir la conversation » de la fiche du mini-CRM. Idempotente : deux clics rendent le
+ * meme fil, et n'en font pas remonter un ancien.
+ */
+export function ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<{ conversationId: string }> {
+  return request<{ conversationId: string }>(`/tenants/${tenantId}/contacts/${contactId}/conversation`, { method: 'POST' });
 }
