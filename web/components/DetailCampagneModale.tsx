@@ -90,6 +90,9 @@ export function DetailCampagneModale({ tenantId, campaignId, nom, onClose }: {
   return (
     <Modale
       titre={nom}
+      // Le nom mène aux résultats de CETTE campagne (Quantitatif > Funnel), même adresse que le bouton
+      // « Voir les résultats » de l'onglet Campagnes : on lit un coût, on veut voir ce qu'il a produit.
+      titreHref={`/dashboard/funnel?campagne=${encodeURIComponent(campaignId)}`}
       taille="large"
       sousTitre={t(
         'Toute la vie de la campagne, pas la période choisie en haut : un scénario reçoit des réponses pendant des jours.',
