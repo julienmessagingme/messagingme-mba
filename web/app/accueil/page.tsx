@@ -13,7 +13,8 @@ import {
   setHubspotListsEnabled as saveHubspotListsEnabled,
   getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
-  type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
+  demanderCodeNumero, activerNumero,
+  type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig, type CanalCodeNumero,
 } from '@/lib/api';
 import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
 
@@ -57,6 +58,15 @@ function AccueilInner({ session }: { session: Session }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [account, setAccount] = useState<AccountStatusResponse | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
+  /**
+   * Les avertissements rendus par la connexion du numéro, gardés AU NIVEAU DE LA PAGE.
+   *
+   * 🔴 ILS VIVAIENT DANS `ConnectNumberZone`, ET ILS DISPARAISSAIENT À L'INSTANT OÙ ILS ARRIVAIENT. La zone
+   * de connexion ne s'affiche que tant que l'espace n'a pas de numéro : dès que la connexion aboutit, elle
+   * est remplacée par la carte du numéro, et le message part avec elle. Le 2026-09-22 au soir, c'est
+   * exactement comme ça qu'un enregistrement raté est passé inaperçu, et la cause a failli être perdue.
+   */
+  const [avertissementsConnexion, setAvertissementsConnexion] = useState<string[]>([]);
   /**
    * L'etat REEL de l'agent chez Meta, par opposition a `mbaEnabled` qui n'est que NOTRE drapeau.
    *
@@ -433,7 +443,11 @@ function AccueilInner({ session }: { session: Session }) {
               </button>
             </div>
           ) : account && !account.hasNumber ? (
-            <ConnectNumberZone tenantId={session.tenantId} isAdmin={isAdmin} onConnected={() => { setLoading(true); void load(); void loadAccount(); }} />
+            <ConnectNumberZone
+              tenantId={session.tenantId}
+              isAdmin={isAdmin}
+              onConnected={(avertissements) => { setAvertissementsConnexion(avertissements); setLoading(true); void load(); void loadAccount(); }}
+            />
           ) : (
             <div data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
@@ -473,6 +487,25 @@ function AccueilInner({ session }: { session: Session }) {
                 </div>
               </div>
               {account && <p className="mt-1 text-xs text-ink-500">{account.status.reason}</p>}
+              {/* Les avertissements de la connexion, montrés ICI parce que la zone qui les recevait est
+                  démontée au moment où ils arrivent. Sans ça, un enregistrement raté ne laisse aucune trace
+                  à l'écran (2026-09-22). */}
+              {avertissementsConnexion.length > 0 && (
+                <div data-testid="avertissements-connexion" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  {t('Connecté, avec avertissement', 'Connected, with warning')}{avertissementsConnexion.length > 1 ? 's' : ''} : {avertissementsConnexion.join(' · ')}
+                </div>
+              )}
+              {/* ⚠️ `numberStatus !== null` AVANT tout : un statut qu'on n'a pas pu lire n'est pas un numéro
+                  inactif. Affirmer une panne qu'on n'a pas constatée est le défaut que la cascade au-dessus
+                  corrige déjà pour « Aucun numéro ». */}
+              {account?.hasNumber && account.numberStatus !== null && account.numberStatus !== 'CONNECTED' && (
+                <ActiverNumeroZone
+                  tenantId={session.tenantId}
+                  isAdmin={isAdmin}
+                  verifie={account.codeVerificationStatus === 'VERIFIED'}
+                  onActive={() => { setAvertissementsConnexion([]); setLoading(true); void load(); void loadAccount(); }}
+                />
+              )}
               {account?.hasNumber && (
                 <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink-100 pt-3 text-xs">
                   <div>
@@ -781,12 +814,11 @@ function waitFor<T>(get: () => T | undefined, timeoutMs: number): Promise<T | nu
  * On poste les trois au backend qui échange, rattache et abonne. Si META_ES_CONFIG_ID n'est pas posé côté
  * serveur, le bouton reste le placeholder « bientôt disponible ».
  */
-function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: string; isAdmin: boolean; onConnected: () => void }) {
+function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: string; isAdmin: boolean; onConnected: (avertissements: string[]) => void }) {
   const t = useT();
   const [cfg, setCfg] = useState<EsConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
   // waba_id / phone_number_id arrivent par postMessage, PAS par le callback FB.login -> stash dans une ref.
   const idsRef = useRef<{ wabaId: string; phoneNumberId: string } | undefined>(undefined);
 
@@ -844,7 +876,6 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
     if (!cfg?.enabled || busy) return;
     setBusy(true);
     setError(null);
-    setWarnings([]);
     idsRef.current = undefined;
     try {
       await loadFbSdk(cfg.appId, cfg.graphVersion, t);
@@ -865,8 +896,9 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
               // donc le code seul, et le serveur retrouve le compte et le numéro à partir du token.
               const ids = await waitFor(() => idsRef.current, 6000);
               const res = await completeEmbeddedSignup(tenantId, { code, ...(ids ?? {}) });
-              setWarnings(res.warnings ?? []);
-              onConnected();
+              // Les avertissements REMONTENT : cette zone est démontée par `onConnected` (l'espace a désormais
+              // un numéro), donc les garder ici reviendrait à les effacer au moment de les afficher.
+              onConnected(res.warnings ?? []);
             } catch (err) {
               setError(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
             } finally {
@@ -906,11 +938,6 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
         </div>
       </div>
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-      {warnings.length > 0 && (
-        <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          {t('Connecté, avec avertissement', 'Connected, with warning')}{warnings.length > 1 ? 's' : ''} : {warnings.join(' · ')}
-        </div>
-      )}
       <div className="mt-4 flex items-center gap-3 border-t border-ink-200 pt-3">
         {ready ? (
           <button
@@ -935,6 +962,129 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * « Activer le numéro » : finir dans la console ce que la fenêtre Meta a laissé en plan.
+ *
+ * 🔴 POURQUOI CET ÉCRAN EXISTE. Depuis la v4 de l'inscription, un client peut terminer le parcours Meta avec
+ * un numéro NON vérifié. Meta affiche pourtant « Your account is connected », et le numéro reste incapable
+ * d'envoyer. Le 2026-09-22 au soir, il a fallu passer par WhatsApp Manager pour le débloquer : un client,
+ * lui, n'aurait eu aucun recours.
+ *
+ * 🔴 AUCUNE RELANCE AUTOMATIQUE, et ce n'est pas un raccourci (décision de Julien, 2026-09-22). Meta ne
+ * permet que DIX requêtes par numéro sur 72 heures, toutes étapes confondues ; au-delà, le numéro est bloqué
+ * trois jours. Un écran qui réessaierait tout seul brûlerait ce quota sans que personne ne le voie. Tout part
+ * d'un clic, et un échec laisse le numéro « à activer », visible.
+ */
+function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId: string; isAdmin: boolean; verifie: boolean; onActive: () => void }) {
+  const t = useT();
+  const [canal, setCanal] = useState<CanalCodeNumero>('VOICE');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  async function envoyerCode() {
+    if (busy) return;
+    setBusy(true);
+    setErreur(null);
+    setInfo(null);
+    try {
+      await demanderCodeNumero(tenantId, canal);
+      setInfo(canal === 'VOICE'
+        ? t('Meta appelle le numéro et dicte le code. Saisis-le ci-dessous.', 'Meta is calling the number and will read out the code. Enter it below.')
+        : t('Meta envoie le code par SMS. Saisis-le ci-dessous.', 'Meta is sending the code by SMS. Enter it below.'));
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Envoi du code impossible', 'Could not send the code'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function activer() {
+    if (busy) return;
+    setBusy(true);
+    setErreur(null);
+    setInfo(null);
+    try {
+      // Le code n'est envoyé que s'il y en a un : sur un numéro déjà vérifié, il ne reste que l'enregistrement,
+      // et le serveur refuse la vérification que Meta rejetterait.
+      await activerNumero(tenantId, code.trim() === '' ? undefined : code.trim());
+      setCode('');
+      onActive();
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Activation impossible', 'Activation failed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div data-testid="activer-numero" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <div className="text-sm font-semibold text-amber-900">{t('Ce numéro n’est pas encore activé chez Meta', 'This number is not activated at Meta yet')}</div>
+      <p className="mt-0.5 text-xs text-amber-800">
+        {verifie
+          ? t('Le numéro est vérifié : il ne reste qu’à l’activer pour qu’il puisse envoyer.', 'The number is verified: it only needs to be activated before it can send.')
+          : t('Meta n’a pas encore vérifié ce numéro par code. Tant qu’il ne l’est pas, il ne peut pas envoyer.', 'Meta has not verified this number by code yet. Until then, it cannot send.')}
+      </p>
+      {!isAdmin ? (
+        <p className="mt-2 text-xs text-amber-800">{t('Demande à un admin de l’espace de terminer l’activation.', 'Ask a workspace admin to finish the activation.')}</p>
+      ) : (
+        <>
+          {!verifie && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {/* Appel par défaut : Meta déconseille le SMS sur un numéro VoIP, et seul le propriétaire du
+                  numéro sait ce qu'il en est. */}
+              <select
+                aria-label={t('Canal du code', 'Code channel')}
+                value={canal}
+                onChange={(e) => setCanal(e.target.value === 'SMS' ? 'SMS' : 'VOICE')}
+                className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-ink-800"
+              >
+                <option value="VOICE">{t('Par appel', 'By phone call')}</option>
+                <option value="SMS">{t('Par SMS', 'By SMS')}</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => { void envoyerCode(); }}
+                disabled={busy}
+                data-testid="demander-code"
+                className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 transition hover:bg-amber-100 disabled:opacity-60"
+              >
+                {t('Recevoir le code', 'Get the code')}
+              </button>
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                inputMode="numeric"
+                placeholder={t('Code reçu', 'Code received')}
+                aria-label={t('Code reçu', 'Code received')}
+                data-testid="champ-code"
+                className="w-32 rounded-lg border border-amber-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => { void activer(); }}
+              disabled={busy || (!verifie && code.trim() === '')}
+              data-testid="activer-bouton"
+              className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
+            >
+              {busy ? t('En cours…', 'Working…') : t('Activer le numéro', 'Activate the number')}
+            </button>
+            <span className="text-xs text-amber-800">
+              {t('Meta ne permet que dix essais par numéro sur 72 heures : ne relance pas en rafale.', 'Meta allows only ten attempts per number over 72 hours: do not retry in bursts.')}
+            </span>
+          </div>
+        </>
+      )}
+      {info && <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-amber-900">{info}</p>}
+      {erreur && <p data-testid="activer-erreur" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{erreur}</p>}
     </div>
   );
 }

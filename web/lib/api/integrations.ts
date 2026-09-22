@@ -100,6 +100,8 @@ export interface EsCompleteResult {
   wabaId: string;
   phoneNumberId: string;
   displayPhoneNumber: string | null;
+  /** Le numéro est rattaché mais PAS activable : la v4 laisse finir le parcours sans vérification par code. */
+  aActiver?: boolean;
   warnings?: string[];
 }
 /** `wabaId`/`phoneNumberId` FACULTATIFS : la popup ne les annonce pas sur un parcours déjà abouti chez Meta,
@@ -109,6 +111,23 @@ export function completeEmbeddedSignup(
   input: { code: string; wabaId?: string; phoneNumberId?: string },
 ): Promise<EsCompleteResult> {
   return request<EsCompleteResult>(`/tenants/${tenantId}/embedded-signup/complete`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+/**
+ * « Activer le numéro » : finir dans la console ce que la fenêtre Meta a laissé en plan.
+ *
+ * 🔴 AUCUN APPEL AUTOMATIQUE À CES DEUX-LÀ. Meta ne permet que DIX requêtes par numéro sur 72 heures, toutes
+ * étapes confondues ; au-delà, le numéro est bloqué trois jours. Elles se déclenchent sur un clic, jamais sur
+ * un minuteur, un `useEffect` de montage ou une relance après échec.
+ */
+export type CanalCodeNumero = 'VOICE' | 'SMS';
+/** Demande à Meta d'envoyer le code. VOICE (appel) par défaut : Meta déconseille le SMS sur un numéro VoIP. */
+export function demanderCodeNumero(tenantId: string, methode: CanalCodeNumero = 'VOICE'): Promise<{ envoye: boolean; methode: CanalCodeNumero }> {
+  return request(`/tenants/${tenantId}/numero/code`, { method: 'POST', body: JSON.stringify({ methode }) });
+}
+/** Vérifie le code s'il le faut, puis enregistre le numéro sur la Cloud API. `deja` = il l'était déjà. */
+export function activerNumero(tenantId: string, code?: string): Promise<{ actif: boolean; deja?: boolean }> {
+  return request(`/tenants/${tenantId}/numero/activer`, { method: 'POST', body: JSON.stringify(code === undefined ? {} : { code }) });
 }
 
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---

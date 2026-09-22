@@ -1077,6 +1077,17 @@ et un bouton fait le reste dans notre console. Ce qui SURVIT de la tâche 1, int
       qui remplace `ConnectNumberZone` (porteuse du message) par la carte du numéro. Le message remonte au
       niveau de la page.
 
+### 🔴 L'ORDRE DE PUBLICATION, et la fenêtre qu'il ouvre
+
+**Le lot 3 ne se POUSSE pas avant que l'API du lot 2 soit déployée.** Vercel publie la console à chaque
+`git push` ; l'API attend sa revue finale et son `up -d --build`. Entre les deux, le bouton « Activer le
+numéro » appellerait deux routes que la production n'a pas, et rendrait 404 au client (CLAUDE.md, § Déploiement,
+vécu le 2026-09-21 avec l'onglet « Outils »).
+
+⚠️ **La fenêtre est aujourd'hui de rayon NUL, et c'est mesuré** : le bloc ne s'affiche que si le numéro de
+l'espace a un statut LU et différent de `CONNECTED`, or les deux seuls numéros embarqués étaient `CONNECTED` le
+2026-09-22 au soir. Un embarquement neuf pendant la fenêtre la rouvrirait : d'où l'ordre, malgré tout.
+
 ### L'essai réel qui clôt la priorité 1
 
 Un embarquement neuf avec un numéro jamais utilisé, dont l'activation aboutit sans intervention ; puis le bouton

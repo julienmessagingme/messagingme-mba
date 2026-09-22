@@ -46,6 +46,10 @@ export async function mockAccueil(
     numbersCount?: number; mbaStatus?: unknown;
     /** Fait échouer `PUT /mba-activation` en 409 avec ce message : le cas « on n'a pas pu lire chez Meta ». */
     activationRefusee?: string;
+    /** Fait échouer `POST /numero/code` en 422 avec ce message (refus de Meta, quota, numéro déjà vérifié). */
+    codeNumeroRefus?: string;
+    /** Fait échouer `POST /numero/activer` en 422 avec ce message (code faux, register refusé). */
+    activerNumeroRefus?: string;
   } = {},
 ): Promise<void> {
   await page.addInitScript((s) => {
@@ -88,6 +92,17 @@ export async function mockAccueil(
       }
       const b = (route.request().postDataJSON() ?? {}) as { enabled?: boolean };
       return json({ enabled: b.enabled === true, chezMeta: 'applique', phoneNumberId: 'PN1' });
+    }
+    // « Activer le numéro » (2026-09-22). Le mock fait l'ÉCHO du canal reçu, il ne le devine pas : c'est ce
+    // qui permet au test de vérifier que l'écran envoie bien VOICE par défaut.
+    if (url.endsWith('/numero/code')) {
+      if (over.codeNumeroRefus) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.codeNumeroRefus }) });
+      const b = (route.request().postDataJSON() ?? {}) as { methode?: string };
+      return json({ envoye: true, methode: b.methode ?? 'VOICE' });
+    }
+    if (url.endsWith('/numero/activer')) {
+      if (over.activerNumeroRefus) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.activerNumeroRefus }) });
+      return json({ actif: true });
     }
     if (url.includes('/account-status')) return json(account);
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme
