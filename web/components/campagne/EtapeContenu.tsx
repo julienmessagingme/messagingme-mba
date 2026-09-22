@@ -33,10 +33,18 @@ import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesCo
  * éviter. Un empilement n'a pas de seuil : il ne peut pas se réorganiser, donc il ne peut pas se
  * chevaucher. `web/e2e/campagne-assistant-contenu.spec.ts` le mesure, en plus de mesurer le débordement.
  *
- * 🔴 LE DEVENIR DE LA CONVERSATION EST DEMANDÉ UNE SEULE FOIS, POUR TOUTE LA CAMPAGNE. Le poser par étage
- * serait à la fois faux et impossible à tenir : c'est le MÊME fil de conversation quel que soit le canal
- * par lequel le message est parti, et un contact joint au second étage ne doit pas tomber dans un autre
- * traitement que son voisin joint au premier.
+ * 🔴 LE DEVENIR DE LA CONVERSATION SE DEMANDE PAR ÉTAGE DEPUIS LE 2026-09-14, et ce paragraphe affirmait
+ * l'inverse (« demandé une seule fois, pour toute la campagne ») jusqu'au 2026-09-23. La question vit dans
+ * le cadre de CHAQUE étage sans scénario (`BlocDevenirEtage`, plus bas), sur demande de Julien : « qui
+ * s'appliquera alors QUE pour le WhatsApp, et ensuite tu passes à l'étage 2, et pareil ».
+ *
+ * ⚠️ CE QUI RESTE PROPRE À LA CAMPAGNE EST « À QUI » la conversation revient, pas « à quoi » : le tour de
+ * rôle compte sur un rang unique et ne peut pas être réglé deux fois. Cette question-là, elle, n'apparaît
+ * qu'une fois tout le contenu choisi.
+ *
+ * 🔴 ET UNE JUSTIFICATION FAUSSE SE RECOPIE : celle-ci a été lue par quelqu'un qui écrivait la fiche d'aide
+ * de cet écran, et le client a lu pendant neuf jours qu'une « dernière question » lui serait posée pour
+ * toute la campagne. Le commentaire qui dit la vérité existait pourtant 150 lignes plus bas.
  *
  * 🔴 ET ELLE N'EST PAS POSÉE QUAND TOUT PART EN SCÉNARIO (2026-09-14, tranché par Julien) : « la
  * logique qui répond, est-ce un agent IA ou un collab, est gérée dans le scénario ». Ce fichier

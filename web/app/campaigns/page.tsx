@@ -63,7 +63,9 @@ import { LaunchCounts } from '@/components/LaunchCounts';
  * phrase disait « son cout exact reste a un clic, sur sa fiche de resultats ». C'est faux des deux cotes. Le
  * panneau de detail de CET ecran recoit le meme cout que la liste (`cout={couts?.get(detail.id)}`), donc il
  * reaffiche « indisponible » ; et « Voir les resultats » mene au Funnel, qui n'affiche aucun cout. Le cout
- * d'une campagne plus ancienne se lit dans Performance Lab > Couts, en elargissant la periode. Une
+ * d'une campagne plus ancienne se lit dans Performance Lab > SYNTHESE, carte « Couts », en DEPLACANT la
+ * periode (l'elargir bute sur les 366 jours de `MAX_SPAN_DAYS`) ; « Performance Lab > Couts » est un AUTRE
+ * ecran, qui ne porte ni le cout par engagement ni la fiche d'une campagne. Une
  * justification fausse se recopie : celle-ci l'avait deja ete, du code vers `features.md`, donc vers les
  * fiches d'aide servies au client.
  *

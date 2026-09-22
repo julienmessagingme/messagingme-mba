@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: 5e969b
+source_empreinte: d2005c
 ---
 # Lancer une campagne
 
@@ -30,9 +30,13 @@ pas toute seule : utilisez son bouton « Reprendre ».
 modèle approuvé, vous voyez tout de suite un aperçu de ce que le contact recevra, et vous dites d'où vient
 chaque variable du modèle. Si le modèle qu'il vous faut n'existe pas encore, vous le créez sans quitter la
 campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. Tant qu'un
-étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer. Une fois TOUS les étages
-remplis, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
-Meta, ou votre Inbox.
+étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer.
+
+Dans le cadre de chaque étage qui n'ouvre pas un scénario, une question vous est posée : ce qui se passe
+quand un contact répond à CET étage, c'est-à-dire l'agent de Meta, ou votre Inbox. Elle se règle étage par
+étage. Puis, une fois tout le contenu choisi, une dernière question apparaît, mais seulement si au moins un
+étage renvoie vers l'Inbox : à qui la conversation revient, personne en particulier, une personne désignée,
+ou à tour de rôle.
 
 Sur un étage RCS, « Partir d'un message enregistré » propose aussi vos carrousels (plusieurs cartes qui
 défilent, chacune avec son visuel et ses boutons). Le carrousel est copié tel quel sur l'étage et s'affiche en
@@ -45,10 +49,9 @@ Comme pour les modèles, si le scénario qu'il vous faut n'existe pas, vous le c
 campagne : l'éditeur s'ouvre dans une fenêtre, et le scénario publié est choisi tout seul pour cet étage.
 Vous le retrouvez ensuite dans l'onglet Scénario comme les autres.
 
-Quand chaque étage ouvre un scénario, la question de ce qui se passe à la réponse ne vous est pas posée :
-c'est le scénario qui en décide, et l'écran vous le dit à sa place. Il suffit qu'un seul étage envoie un
-message simple pour qu'elle revienne, parce que les contacts joints par celui-là répondront hors de tout
-scénario.
+Sur un étage qui ouvre un scénario, cette question ne vous est pas posée : c'est le scénario qui décide de
+ce qui se passe à la réponse, et l'écran vous le dit à sa place. Elle réapparaît sur tout étage qui envoie
+un message simple, parce que les contacts joints par celui-là répondront hors de tout scénario.
 
 **4. L'audience.** À qui. Le plus courant est de piocher dans votre liste de contacts, avec des filtres que
 vous combinez (un ou plusieurs tags, le consentement marketing, le début ou un morceau du numéro, la valeur

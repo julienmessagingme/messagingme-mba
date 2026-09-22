@@ -722,7 +722,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 ## Campagnes
 
 - ✅ **Le coût estimé d'une campagne est CELUI DU SERVEUR** (2026-09-23), calculé sur ce qui est réellement
-  parti : modèles au tarif Meta, RCS à vos deux prix. Cet écran le calculait lui-même, en multipliant les
+  parti : modèles au tarif Meta, messages de service (franchise déduite) et RCS à vos deux prix. Cet écran
+  le calculait lui-même, en multipliant les
   destinataires par le tarif Meta de la catégorie, si bien qu'une campagne à scénario n'ayant envoyé aucun
   modèle facturable, et une campagne RCS, affichaient un prix de modèle qu'elles n'avaient jamais payé.
   ⚠️ **Ce n'est pas le même chiffre que la fiche** de Performance Lab, et les confondre induirait en erreur :
