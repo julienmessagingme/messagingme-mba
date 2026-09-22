@@ -5,7 +5,7 @@ import type { RequeteConnecteur } from '../agent/requetes';
 import type { AppelConnecteur } from '../agent/resolvers/http';
 import type { SortieResolveur } from '../agent/executor';
 import { consommateurMba } from '../agent/consommateur';
-import { lireCibleMaison } from '../mba/outils-maison';
+import { REPONSE_EN_COURS, lireCibleMaison } from '../mba/outils-maison';
 import { erreurDePanne, executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
 import {
   ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
@@ -51,7 +51,25 @@ export interface MbaRelaisDeps {
   journaliserForme?(forme: string): void;
   /** Les gestes maison (tag, information), exécutés sans système tiers (spec 2026-09-21-outils-maison-mba). */
   maison: DepsMaison;
+  /**
+   * Attendre, en millisecondes : borne l'attente d'un ENVOI avant de répondre à Meta (`DELAI_REPONSE_ENVOI_MS`).
+   * INJECTÉE et requise, comme dans `controle-du-fil.ts` : un test doit pouvoir dire « le délai est écoulé » sans
+   * dormir, et « l'envoi a fini avant » sans course.
+   */
+  attendre(ms: number): Promise<void>;
 }
+
+/**
+ * Combien de temps le relais attend un ENVOI (bloc, scénario) avant de répondre « c'est parti » à Meta.
+ *
+ * 🔴 META COUPE UN OUTIL VERS TROIS SECONDES, et c'est mesuré, pas lu (essai réel du 2026-09-22) : un envoi de bloc
+ * de 3 005 ms a été traité comme un échec, et l'agent de Meta a annoncé au client qu'un humain reprenait la
+ * conversation. Un envoi fait DEUX appels à Meta (prendre le fil, envoyer) : sa durée n'est pas à nous. 1,5 s
+ * laisse la marge du trajet et des lectures qui précèdent (outil, clé, journal). Un refus, lui, arrive presque
+ * toujours AVANT tout appel à Meta (bloc disparu, fenêtre fermée, contact bloqué) : il tient dans ce délai, et
+ * l'agent de Meta le lit.
+ */
+export const DELAI_REPONSE_ENVOI_MS = 1500;
 
 export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, garde: Guard): void {
   app.post<{ Params: { outilId: string } }>(`${CHEMIN_RELAIS}/outils/:outilId`, { preHandler: garde }, async (req, reply) => {
@@ -93,23 +111,33 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
         argsRediges: { geste: cible.handler },
         source: 'mba',
       }).catch(() => null);
-      let issue: IssueMaison;
-      let panne = false;
-      try {
-        issue = await executerOutilMaison(deps.maison, { tenantId: tenant, waId, outilId: outil.id, cible, corps: req.body });
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`mba-relais: geste ${outil.name} en échec :`, err instanceof Error ? err.message : err);
-        panne = true;
-        issue = { ok: false, erreur: erreurDePanne(cible) };
+      // Le geste ENTIER, journal compris : il ne rejette jamais, donc il peut continuer seul après la réponse.
+      const geste: Promise<IssueMaison> = executerOutilMaison(deps.maison, { tenantId: tenant, waId, outilId: outil.id, cible, corps: req.body })
+        .then((issue) => ({ issue, panne: false }), (err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error(`mba-relais: geste ${outil.name} en échec :`, err instanceof Error ? err.message : err);
+          const issue: IssueMaison = { ok: false, erreur: erreurDePanne(cible) };
+          return { issue, panne: true };
+        })
+        .then(async ({ issue, panne }) => {
+          // Clos sur l'issue RÉELLE, même quand Meta a déjà eu sa réponse : c'est la seule trace d'un envoi qui
+          // aurait échoué après le délai.
+          if (ligne !== null) {
+            await deps.journal.clore({
+              tenantId: tenant, id: ligne, status: issue.ok ? 'ok' : panne ? 'erreur_outil' : 'refuse',
+              dureeMs: Date.now() - debut, ...(issue.ok ? {} : { erreur: issue.erreur }),
+            }).catch(() => {});
+          }
+          return issue;
+        });
+      // 🔴 UN ENVOI N'EST ATTENDU QUE `DELAI_REPONSE_ENVOI_MS` : au-delà, Meta coupe l'outil et son agent croit à un
+      // échec. Un tag ou une information, écritures locales, sont attendus jusqu'au bout.
+      const rendre = (issue: IssueMaison) => (issue.ok ? reply.code(200).send({ succes: true, reponse: issue.reponse }) : refus(issue.erreur));
+      if (cible.handler === 'bloc_fixe' || cible.handler === 'scenario_fixe') {
+        const premier = await Promise.race([geste, deps.attendre(DELAI_REPONSE_ENVOI_MS).then(() => null)]);
+        return premier === null ? reply.code(200).send({ succes: true, reponse: REPONSE_EN_COURS[cible.handler] }) : rendre(premier);
       }
-      if (ligne !== null) {
-        await deps.journal.clore({
-          tenantId: tenant, id: ligne, status: issue.ok ? 'ok' : panne ? 'erreur_outil' : 'refuse',
-          dureeMs: Date.now() - debut, ...(issue.ok ? {} : { erreur: issue.erreur }),
-        }).catch(() => {});
-      }
-      return issue.ok ? reply.code(200).send({ succes: true, reponse: issue.reponse }) : refus(issue.erreur);
+      return rendre(await geste);
     }
     if (!outil.requestId) return refus(PAS_PROPOSE);
 

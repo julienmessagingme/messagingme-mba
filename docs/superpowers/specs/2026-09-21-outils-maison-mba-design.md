@@ -228,6 +228,15 @@ ne rappelle plus cet outil pour elle », et rien de plus : ni « le client a re�
 refus), ni « n'écris rien » (le rappel part aussi quand aucun parcours ne tourne, et le client resterait sans
 réponse).
 
+🔴 **META COUPE UN OUTIL VERS TROIS SECONDES (essai réel du 2026-09-22, l'après-midi).** Un envoi de bloc bien
+parti, mais dont le relais a répondu en 3 005 ms, a été traité comme un échec : l'agent de Meta a annoncé au client
+qu'« un membre de l'équipe reprendra la conversation ». Un message d'opérateur envoyé depuis l'Inbox, lui, ne le
+déclenche pas (vérifié par Julien) : c'est bien le délai, pas la prise du fil. C'est aussi, très probablement, la
+vraie cause des sept rappels du matin, chaque lancement dépassant ce délai. Un envoi fait deux appels à Meta
+(prendre le fil, envoyer) : le relais ne l'attend donc que 1,5 s (`DELAI_REPONSE_ENVOI_MS`). S'il a fini, Meta lit
+l'issue réelle, refus compris ; sinon il lit « C'est parti : … » (`REPONSE_EN_COURS`), l'envoi continue, et le
+journal des appels se clôt sur son issue réelle.
+
 ## 8. La publication chez Meta
 
 Un outil maison se publie comme un outil de connecteur, sous le même connecteur `EngageMe` : `POST

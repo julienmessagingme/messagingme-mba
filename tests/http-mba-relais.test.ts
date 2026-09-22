@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { AntiRejeu } from '../src/mba/anti-rejeu';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import type { MbaRelaisDeps } from '../src/http/mba-relais';
+import { DELAI_REPONSE_ENVOI_MS, type MbaRelaisDeps } from '../src/http/mba-relais';
+import { REPONSE_EN_COURS, REPONSE_MAISON } from '../src/mba/outils-maison';
 import type { AppelConnecteur } from '../src/agent/resolvers/http';
 import type { JournalAppels } from '../src/agent/catalog';
 import { cleApiDeTest } from './aide/cle-api';
@@ -61,6 +62,8 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
       envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return true; },
       lancerScenario: async (t, w, id) => { gestes.push(`scenario ${t} ${w} ${id}`); return true; },
     },
+    // Par défaut le délai ne s'écoule JAMAIS : chaque test lit l'issue réelle du geste, comme avant le délai.
+    attendre: () => new Promise<void>(() => {}),
     ...over,
   };
   const app = buildServer({
@@ -419,5 +422,94 @@ describe('un bloc et un scénario, par le relais', () => {
     expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5')).json().succes).toBe(false);
     expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')).json().succes).toBe(false);
     expect(envois).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 UN ENVOI N'EST ATTENDU QUE `DELAI_REPONSE_ENVOI_MS` (essai réel du 2026-09-22) : un envoi de bloc de 3 005 ms a été
+ * traité par Meta comme un échec, et son agent a annoncé au client qu'un humain reprenait la conversation.
+ */
+describe('le délai de réponse d’un envoi', () => {
+  const maison = (o: Partial<MbaRelaisDeps['maison']>): MbaRelaisDeps['maison'] => ({
+    poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
+    antiRejeu: new AntiRejeu(60_000), envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
+  });
+  const journal = (clos: Array<Record<string, unknown>>) =>
+    ({ ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } }) as unknown as JournalAppels;
+  const avec = (outils: unknown[], over: Partial<MbaRelaisDeps>) => monter({
+    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    ...over,
+  });
+
+  it('🔴 un envoi LENT : Meta lit « c’est parti » au délai, l’envoi continue, et le journal dit son issue réelle', async () => {
+    let finir: (v: true | string) => void = () => {};
+    const lent = new Promise<true | string>((r) => { finir = r; });
+    const clos: Array<Record<string, unknown>> = [];
+    const delais: number[] = [];
+    const { app } = avec([SCENARIO], {
+      maison: maison({ lancerScenario: () => lent }),
+      journal: journal(clos),
+      attendre: async (ms) => { delais.push(ms); },
+    });
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6');
+    expect(res.json()).toEqual({ succes: true, reponse: REPONSE_EN_COURS.scenario_fixe });
+    expect(delais).toEqual([DELAI_REPONSE_ENVOI_MS]);
+    // Pas encore clos : l'envoi n'a pas fini. Il se clôt sur son issue RÉELLE, après la réponse à Meta.
+    expect(clos).toEqual([]);
+    finir(true);
+    await vi.waitFor(() => { expect(clos).toEqual([expect.objectContaining({ status: 'ok' })]); });
+  });
+
+  it('🔴 un envoi lent qui finit en REFUS ou qui PLANTE après le délai : journalisé, jamais une promesse perdue', async () => {
+    for (const fin of ['refus', 'panne'] as const) {
+      let finir: () => void = () => {};
+      const lent = new Promise<void>((r) => { finir = r; });
+      const clos: Array<Record<string, unknown>> = [];
+      const { app } = avec([BLOC], {
+        maison: maison({
+          envoyerBloc: async () => {
+            await lent;
+            if (fin === 'panne') throw new Error('Meta API error (HTTP 500)');
+            return 'la fenêtre de 24 h est fermée';
+          },
+        }),
+        journal: journal(clos),
+        attendre: async () => {},
+      });
+      expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5')).json()).toEqual({ succes: true, reponse: REPONSE_EN_COURS.bloc_fixe });
+      finir();
+      await vi.waitFor(() => {
+        expect(clos).toEqual([expect.objectContaining({ status: fin === 'panne' ? 'erreur_outil' : 'refuse' })]);
+      });
+    }
+  });
+
+  it('🔴 un refus RAPIDE (avant tout appel à Meta) arrive dans le délai : l’agent de Meta le lit', async () => {
+    const { app } = avec([BLOC], {
+      maison: maison({ envoyerBloc: async () => 'ce bloc n’existe plus dans le scénario' }),
+      attendre: () => new Promise<void>((r) => { setTimeout(r, 200); }),
+    });
+    expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5')).json())
+      .toEqual({ succes: false, erreur: 'ce bloc n’existe plus dans le scénario' });
+  });
+
+  it('un tag, écriture locale, n’est PAS borné : il est attendu jusqu’au bout', async () => {
+    const delais: number[] = [];
+    const { app } = avec([TAG], {
+      maison: maison({ poserTag: () => new Promise<void>((r) => { setTimeout(r, 30); }) }),
+      attendre: async (ms) => { delais.push(ms); },
+    });
+    expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o2')).json()).toEqual({ succes: true, reponse: REPONSE_MAISON.tag_fixe });
+    expect(delais).toEqual([]);
+  });
+
+  it('🔴 le délai reste nettement sous les trois secondes que Meta accorde (mesuré le 2026-09-22)', () => {
+    // Le reste de la requête (outil, clé, journal, trajet) passe AVANT ce délai : il lui faut sa marge.
+    expect(DELAI_REPONSE_ENVOI_MS).toBeLessThanOrEqual(2000);
+  });
+
+  it('« c’est parti » clôt le tour comme « c’est fait » : il interdit de rappeler l’outil', () => {
+    for (const r of Object.values(REPONSE_EN_COURS)) expect(r).toContain('Ne rappelle pas cet outil');
+    expect(REPONSE_EN_COURS.scenario_fixe).toContain('n’écris rien');
   });
 });

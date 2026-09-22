@@ -83,6 +83,21 @@ export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
   scenario_fixe: 'C’est fait : le parcours est lancé et le client en reçoit déjà les messages. Ne rappelle pas cet outil, et n’écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours.',
 };
 
+/**
+ * Ce que l'agent de Meta lit quand l'envoi n'a pas FINI dans le délai de réponse du relais : il continue sans lui.
+ *
+ * 🔴 META COUPE UN OUTIL VERS TROIS SECONDES (essai réel du 2026-09-22, mesure en conversation) : notre relais a
+ * répondu en 3 005 ms, et l'agent de Meta a traité l'appel comme un échec. Il a passé la main à « un membre de
+ * l'équipe » six secondes après que le bloc soit bien parti, et le matin même il avait RAPPELÉ sept fois un
+ * scénario dont chaque lancement dépassait ce délai. Un envoi prend le fil puis envoie : deux appels à Meta, sa
+ * durée n'est pas à nous. Le relais n'attend donc l'envoi que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`),
+ * puis répond ceci, et l'envoi continue. Même ton que `REPONSE_MAISON` : il clôt le tour.
+ */
+export const REPONSE_EN_COURS: Record<'bloc_fixe' | 'scenario_fixe', string> = {
+  bloc_fixe: 'C’est parti : le message prévu est en cours d’envoi au client. Ne rappelle pas cet outil pour cette demande, et n’en répète pas le contenu.',
+  scenario_fixe: 'C’est parti : le parcours démarre et le client va en recevoir les messages. Ne rappelle pas cet outil, et n’écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours.',
+};
+
 export const VARIABLE_VALEUR = 'valeur';
 
 /**

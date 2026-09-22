@@ -2530,6 +2530,9 @@ async function main(): Promise<void> {
         // 2026-09-21, `wip.md`) : sans lui, une macro que Meta cesserait de remplir serait invisible.
         // eslint-disable-next-line no-console
         journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
+        // Borne l'attente d'un ENVOI avant de répondre à Meta, qui coupe un outil vers trois secondes
+        // (`DELAI_REPONSE_ENVOI_MS`, `src/http/mba-relais.ts`).
+        attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
         // Les gestes maison : les MÊMES fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,
