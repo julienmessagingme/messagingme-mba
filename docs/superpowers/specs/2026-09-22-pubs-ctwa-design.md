@@ -368,9 +368,10 @@ doctrine du `standby` qu'on modifie, index partiels).
 - Les deux appelants de `coutMessages`.
 - La route de suppression d'un scénario gagne un refus 409.
 - Le job `automation-event` gagne un consommateur (la qualification).
-- Quatre fichiers ont des modifications non commitées d'une autre session au 2026-09-22 (`index.ts`,
-  `wiring.ts`, `executor.ts`, `inbox/store.pg.ts`) : les relire au moment d'écrire le plan, et commiter
-  avec `git commit --only`.
+- Une autre session a livré `67b55166` le 2026-09-22 (l'agent de Meta envoie un bloc, lance un scénario et
+  reçoit la réponse à côté), dans `index.ts`, `wiring.ts`, `executor.ts` et `inbox/store.pg.ts` : c'est la
+  même zone que la règle de routage (qui tient la conversation, entre l'agent de Meta et un scénario). Le
+  plan relit ce commit avant d'écrire la reprise à l'arrivée. Toujours commiter avec `git commit --only`.
 
 ## 10. Hors périmètre
 
