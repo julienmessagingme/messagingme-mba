@@ -9,6 +9,7 @@ import type { VolumeCampagneRow } from './cost';
 import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
+import { TYPE_ENTREE_GRATUITE } from '../webhooks/tarif-meta';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { EnvoisCampagneRow } from './cout-campagne';
 import type { CanalEtage } from '../campaign/etages';
@@ -305,6 +306,22 @@ const ATTRIBUTION_CAMPAGNE_SCENARIO = `(
 /** Sans attribution : la colonne existe pour aligner les deux branches du `union all`, et vaut null. */
 const SANS_ATTRIBUTION = 'null::uuid';
 
+/**
+ * « META NE FACTURE PAS CE MESSAGE » : il est parti dans les 72 h gratuites qui suivent un clic sur une pub
+ * Click-to-WhatsApp (lot 1 des pubs, migration 0163). La seule source est l'accusé de Meta, gardé dans
+ * `tarifs_meta` ; un message SANS ligne de tarif reste compté comme payant, c'est-à-dire le comportement
+ * d'avant.
+ *
+ * 🔴 UNE SEULE ÉCRITURE, POUR LES CINQ LECTURES DE COÛT : les deux branches de `envoisTemplateFacturables`,
+ * les deux de `envoisDeLaCampagne` (le coût de lancement de la fiche d'une campagne, qui doit compter la MÊME
+ * population que `getVolumeParCampagne`), `serviceParMois` et `servicesParCampagne`. ⚠️ Et SEULEMENT elles :
+ * les courbes de VOLUME de `getDashboard` comptent des envois, pas des euros, et un message gratuit y reste un
+ * message envoyé. L'écart est voulu.
+ */
+function horsEntreeGratuite(wamid: string, tenant: string): string {
+  return `not exists (select 1 from tarifs_meta tg where tg.tenant_id = ${tenant} and tg.wamid = ${wamid} and tg.type = '${TYPE_ENTREE_GRATUITE}')`;
+}
+
 const envoisTemplateFacturables = (attribution: string): string => `
   select r.sent_at as sent_at, c.template_name as name, c.category as category, c.id as campaign_id
   from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
@@ -312,6 +329,7 @@ const envoisTemplateFacturables = (attribution: string): string => `
     and c.channel = 'whatsapp'
     and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
     and (r.delivery_status is null or r.delivery_status <> 'failed')
+    and ${horsEntreeGratuite('r.message_id', 'c.tenant_id')}
   union all
   select m.created_at as sent_at, m.template_name as name, m.template_category as category,
          ${attribution} as campaign_id
@@ -322,7 +340,8 @@ const envoisTemplateFacturables = (attribution: string): string => `
     and not exists (
       select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
       where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
-    )`;
+    )
+    and ${horsEntreeGratuite('m.meta_message_id', 'cv.tenant_id')}`;
 
 /** Un template envoyé sur la période, avec son volume (pour le dropdown + le prix estimé). */
 export interface TemplateBreakdownRow {
@@ -806,7 +825,8 @@ export class PgStatsStore {
    * (ils grossiraient a chaque relance, sans nouvelle interaction).
    *
    * ⚠️ MEME POPULATION que `getVolumeParCampagne`, aux memes gardes (statut `sent`, livraison non `failed`,
-   * canal WhatsApp, anti-double-compte par `meta_message_id`, attribution des envois de scenario). Deux
+   * canal WhatsApp, anti-double-compte par `meta_message_id`, attribution des envois de scenario, et depuis le
+   * lot 1 des pubs l'exclusion des 72 h gratuites, `horsEntreeGratuite`). Deux
    * definitions de « ce que cette campagne a envoye » donneraient deux couts sur deux ecrans qui s'ouvrent
    * l'un depuis l'autre, et c'est le clic sur la ligne qui les mettrait cote a cote.
    *
@@ -836,6 +856,7 @@ export class PgStatsStore {
           where c.id = $2 and c.tenant_id = $1 and nullif(c.template_name, '') is not null
             and c.channel = 'whatsapp' and r.status = 'sent'
             and (r.delivery_status is null or r.delivery_status <> 'failed')
+            and ${horsEntreeGratuite('r.message_id', 'c.tenant_id')}
          union all
          select m.created_at as at, m.template_category as category, cv.wa_id as wa
            from conversation_messages m
@@ -847,6 +868,7 @@ export class PgStatsStore {
               select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
               where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
             )
+            and ${horsEntreeGratuite('m.meta_message_id', 'cv.tenant_id')}
             and $2::uuid = ${ATTRIBUTION_CAMPAGNE_SCENARIO}
        ),
        rangs as (select category, row_number() over (partition by wa order by at) as rang from envois)
@@ -1065,6 +1087,8 @@ export class PgStatsStore {
    * ⚠️ LE FILTRE DE SERVICE EST CELUI DE `serviceParMois`, MOT POUR MOT : sortant, WhatsApp, hors template,
    * hors fil de test. Il a maintenant QUATRE consommateurs qui doivent rester d'accord ; un filtre qui
    * diverge d'un mot ferait mentir les quatre.
+   * ⚠️ SAUF l'exclusion des 72 h gratuites (`horsEntreeGratuite`), que seules les lectures de COÛT portent,
+   * celle-ci comme `serviceParMois` : un message gratuit reste un message envoyé dans les courbes de volume.
    */
   async servicesParCampagne(tenantId: string, campaignIds: string[], range: DateRange): Promise<Map<string, number>> {
     if (campaignIds.length === 0) return new Map();
@@ -1101,6 +1125,7 @@ export class PgStatsStore {
           where cv.tenant_id = $1 and not cv.is_test and cv.contact_id is not null
             and m.created_at >= b.start_ts and m.created_at < b.end_ts
             and m.direction = 'out' and m.channel = 'whatsapp' and m.type is distinct from 'template'
+            and ${horsEntreeGratuite('m.meta_message_id', 'cv.tenant_id')}
        ),
        impute as (
          -- LA DERNIERE campagne recue avant ce message, et elle seule. Le tri descendant sur sent_at fait
@@ -1279,6 +1304,8 @@ export class PgStatsStore {
    * ⚠️ LE FILTRE EST CELUI DES MESSAGES DE SERVICE, MOT POUR MOT : sortant, WhatsApp, hors template, hors
    * fil de test. Il a déjà DEUX consommateurs qui doivent rester d'accord (la courbe et sa ventilation par
    * origine) ; celui-ci est le troisième. Un filtre qui diverge d'un mot ferait mentir les trois.
+   * ⚠️ SAUF l'exclusion des 72 h gratuites (`horsEntreeGratuite`), que seules les lectures de COÛT portent,
+   * celle-ci comme `servicesParCampagne` : un message gratuit reste un message envoyé dans les courbes de volume.
    */
   async serviceParMois(tenantId: string, range: DateRange): Promise<{ mois: string; avantLaPeriode: number; dansLaPeriode: number }[]> {
     const { from, to } = range;
@@ -1298,6 +1325,7 @@ export class PgStatsStore {
         where cv.tenant_id = $1 and not cv.is_test
           and m.created_at >= c.depuis and m.created_at < c.end_ts
           and m.direction = 'out' and m.channel = 'whatsapp' and m.type is distinct from 'template'
+          and ${horsEntreeGratuite('m.meta_message_id', 'cv.tenant_id')}
         group by 1
         order by 1`,
       [tenantId, from, to, TZ],
