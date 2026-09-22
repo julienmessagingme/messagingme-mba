@@ -908,7 +908,14 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
         if (espace === null) await pool.query(`delete from tenant_settings where tenant_id=$1`, [arTenant]);
         else await pool.query(`insert into tenant_settings (tenant_id, auto_retry_enabled) values ($1, $2) on conflict (tenant_id) do update set auto_retry_enabled = $2`, [arTenant, espace]);
       };
-      expect((await pool.query<{ reessai_par_campagne: boolean }>(`select reessai_par_campagne from campaigns where id=$1`, [cId])).rows[0]!.reessai_par_campagne).toBe(true);
+      // 🔴 LE DRAPEAU NE SE POSE QUE SUR UN CHOIX EXPRIMÉ (revue finale) : une création qui ne dit rien (l'API
+      // publique) garde la règle d'avant ; celle qui coche OU décoche (la console) obéit à sa case.
+      const drapeau = async (id: string) => (await pool.query<{ reessai_par_campagne: boolean }>(`select reessai_par_campagne from campaigns where id=$1`, [id])).rows[0]!.reessai_par_campagne;
+      expect(await drapeau(cId)).toBe(false);
+      for (const reessayer of [true, false]) {
+        const choisie = await repo.insertCampaign({ tenantId: arTenant, phoneNumberId: 'pn-ar', name: `ar-${reessayer}`, category: 'marketing', templateName: 't', templateLanguage: 'fr', paramMapping: [], reessayer });
+        expect(await drapeau(choisie), String(reessayer)).toBe(true);
+      }
       await pool.query(`update campaign_recipients set status='sent', delivery_status='failed', error_code=131026, retry_count=0 where id=$1`, [rid]);
       // Campagne NEUVE : sa case décide, celle de l'espace ne compte plus, dans les deux sens.
       await regler({ parCampagne: true, reessayer: true }, false);

@@ -1373,7 +1373,7 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   const res = await q.query<{ id: string }>(
     `insert into campaigns
        (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, reessayer, rattrapage_hors_horaires, assignation, assignation_user_id, reessai_par_campagne)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, true)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, $20)
      returning id`,
     [
       input.tenantId,
@@ -1405,14 +1405,22 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
        * création qui ne dit rien (l'API publique, un test, un client existant) obtient exactement ce
        * qu'elle obtenait avant.
        */
-      // 🔴 LUE PAR LE BALAYAGE DEPUIS 0165 : toute campagne créée ici obéit à cette case (`reessai_par_campagne`,
-      // écrit en dur à `true` ci-dessus). Avant, seule la case de l'espace comptait.
+      // 🔴 LUE PAR LE BALAYAGE DEPUIS 0165, mais seulement si la création a CHOISI (`reessai_par_campagne`, le
+      // dernier paramètre). Avant, seule la case de l'espace comptait.
       input.reessayer ?? true,
       input.rattrapageHorsHoraires ?? false,
       input.assignation ?? null,
       // ⚠️ L'identifiant ne survit QU'AVEC `personne` : le garder sur un tour de rôle laisserait en base
       // une personne désignée que plus rien ne lit, donc une seconde vérité sur le même réglage.
       input.assignation === 'personne' ? input.assignationUserId ?? null : null,
+      /**
+       * 🔴 LA CAMPAGNE OBÉIT À SA CASE SEULEMENT SI LA CRÉATION L'A EXPRIMÉE (revue finale du 2026-09-23). La
+       * console transmet toujours son choix ; l'API publique (`/v1/sends`) jamais. Écrit à `true` en dur, le
+       * drapeau faisait relancer chaque envoi de l'API sur le défaut `reessayer = true`, donc renvoyer un
+       * 131049 le lendemain et marquer un contact injoignable dans HubSpot sans que personne l'ait choisi, et
+       * doubler les relances d'un intégrateur qui fait les siennes. Sans choix, la règle d'avant (l'espace).
+       */
+      input.reessayer !== undefined,
     ],
   );
   const id = res.rows[0]?.id;

@@ -9,7 +9,8 @@
 -- 🔴 SEULEMENT POUR LES CAMPAGNES CRÉÉES APRÈS CE LOT (arbitrage de Julien). `reessayer` vaut `true` par défaut
 -- depuis 0134 : basculer toutes les campagnes sur leur case ferait relancer celles d'un espace qui ne
 -- relançait pas. D'où ce drapeau : `false` pour toutes les campagnes existantes (elles gardent la règle de
--- l'espace), `true` écrit par `insertCampaignRow` pour chaque création.
+-- l'espace), `true` écrit par `insertCampaignRow` pour chaque création qui EXPRIME un choix (la console, toujours ;
+-- l'API publique, jamais : elle garde la règle d'avant).
 --
 -- MESURÉ AVANT D'ÉCRIRE (lecture seule, 2026-09-23) : un seul espace a une ligne de réglages, sans relance ;
 -- 5 campagnes sans repli ont `reessayer = true` et n'ont donc jamais été relancées ; zéro destinataire en
