@@ -721,18 +721,26 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Campagnes
 
-- ✅ **Le coût estimé d'une campagne est CELUI DU SERVEUR** (2026-09-23), et c'est le même chiffre que sur sa
-  fiche de résultats. Cet écran le calculait lui-même, en multipliant les destinataires par le tarif Meta de
-  la catégorie : une campagne à scénario qui n'a envoyé aucun modèle facturable, et une campagne RCS,
-  affichaient donc un prix de modèle qu'elles n'avaient jamais payé. Désormais il compte ce qui est
-  réellement parti, modèles au tarif Meta et RCS à vos deux prix.
+- ✅ **Le coût estimé d'une campagne est CELUI DU SERVEUR** (2026-09-23), calculé sur ce qui est réellement
+  parti : modèles au tarif Meta, RCS à vos deux prix. Cet écran le calculait lui-même, en multipliant les
+  destinataires par le tarif Meta de la catégorie, si bien qu'une campagne à scénario n'ayant envoyé aucun
+  modèle facturable, et une campagne RCS, affichaient un prix de modèle qu'elles n'avaient jamais payé.
+  ⚠️ **Ce n'est pas le même chiffre que la fiche** de Performance Lab, et les confondre induirait en erreur :
+  cette liste compte les modèles, les messages de service et le RCS sur la période lue, quand la fiche compte
+  les seuls modèles, séparés en lancement et relances, sur toute la vie de la campagne.
   ⚠️ **« indisponible » n'est pas « gratuit »** : une campagne de plus de **90 jours**, ou au-delà des
   cinquante que ce calcul rend, garde sa case vide, et le total de la liste dit combien de campagnes il n'a
   pas su chiffrer.
-  ⚠️ **Pour le coût d'une campagne plus ancienne**, passez par **Performance Lab > Coûts** et élargissez la
-  période jusqu'à la couvrir : sa ligne réapparaît alors dans « Ce que coûte un engagement », et sa fiche
-  donne le détail sur toute sa vie. Le panneau de détail de cet onglet-ci, lui, montre le même « indisponible »
-  que la liste : il lit le même calcul.
+  ⚠️ **Pour le coût d'une campagne plus ancienne**, passez par **Performance Lab > Synthèse**, carte
+  « Coûts », et déplacez la période jusqu'à la couvrir (au-delà d'un an, déplacez plutôt que d'élargir : la
+  plage est bornée à 366 jours). Cliquez alors sa ligne : c'est la FICHE qui porte le détail, la ligne montrant
+  l'engagement. ⚠️ Si la campagne est archivée, cochez « Inclure les campagnes archivées » ; et le tableau ne
+  garde que les cinquante plus grosses de la période, ce qui joue contre une petite campagne ancienne.
+  ⚠️ **Passé la durée de conservation des conversations** (90 jours par défaut, réglable), le coût d'une
+  campagne à SCÉNARIO n'est plus reconstituable : ses envois vivaient dans les conversations, qui ont été
+  purgées. Une campagne à modèle direct, elle, garde son compte.
+  ⚠️ Le panneau de détail de cet onglet-ci, lui, montre le même « indisponible » que la liste : il lit le
+  même calcul.
 
 - ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08, **seule question horaire depuis le
   2026-09-13**) : une case à cocher, à l'étape **Canal** de l'assistant. Elle vaut pour les premiers envois

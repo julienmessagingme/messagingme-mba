@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: c608e8
+source_empreinte: 5e969b
 ---
 # Lancer une campagne
 
@@ -32,7 +32,7 @@ chaque variable du modèle. Si le modèle qu'il vous faut n'existe pas encore, v
 campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. Tant qu'un
 étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer. Une fois TOUS les étages
 remplis, une dernière question apparaît : ce qui se passe quand un contact répond, c'est-à-dire l'agent de
-Meta, un agent IA, ou votre Inbox.
+Meta, ou votre Inbox.
 
 Sur un étage RCS, « Partir d'un message enregistré » propose aussi vos carrousels (plusieurs cartes qui
 défilent, chacune avec son visuel et ses boutons). Le carrousel est copié tel quel sur l'étage et s'affiche en

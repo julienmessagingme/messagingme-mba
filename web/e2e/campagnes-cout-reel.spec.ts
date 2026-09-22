@@ -104,7 +104,9 @@ test.describe('Campagnes : le coût est celui du serveur', () => {
     // Cet ecran de travail est ouvert en permanence, et chaque montage declenche l'agregation la plus lourde
     // du produit plus un aller-retour chez Meta. Demander 366 jours « puisqu'on peut » faisait payer la
     // fenetre la plus large a l'ecran le plus ouvert. 90 jours couvrent le besoin ; au-dela, la case dit
-    // « indisponible » et le cout exact reste a un clic, sur la fiche de resultats.
+    // « indisponible », et le cout se lit dans Performance Lab > Synthese, carte « Couts », en deplacant la
+    // periode. ⚠️ PAS « a un clic sur la fiche de resultats » : cette phrase etait fausse et avait deja
+    // voyage d'ici vers features.md, donc vers les fiches servies au client.
     await brancher(page);
     await expect(page.getByTestId('campagne-cout-c-tpl')).toBeVisible();
     expect(fenetres.length, 'la route du cout a bien ete appelee').toBeGreaterThan(0);
