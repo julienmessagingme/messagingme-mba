@@ -986,7 +986,8 @@ async function main(): Promise<void> {
           await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
           return 'app_workflow';
         }
-        await inboxStore.setControlOwner(tenant, waId, 'mba');
+        // Geste DÉLIBÉRÉ d'un opérateur (« Rendre la main ») : il clôt l'escalade, elle n'attend plus personne.
+        await inboxStore.setControlOwner(tenant, waId, 'mba', { effacerEscalade: true });
         return 'mba';
       },
       /** Lancement d'un SCÉNARIO depuis l'Inbox : le chemin partagé avec l'agent de Meta (`lancerScenarioPourContact`). */

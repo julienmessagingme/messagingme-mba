@@ -90,18 +90,61 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     expect((await lire(waId))?.escaladee_le).toBeNull();
   });
 
-  it('« Traité » efface l’escalade ; rendre le fil à l’agent aussi', async () => {
+  it('« Traité » efface l’escalade ; ARCHIVER aussi', async () => {
     const a = '33600000205';
     const idA = await conversationMenéeParLAgent(a);
     await store.marquerEscalade(tenantId, a);
     await store.marquerTraitee(tenantId, idA, true);
     expect((await lire(a))?.escaladee_le).toBeNull();
 
+    // 🔴 ARCHIVER LA CLÔT AUSSI (revue finale du 2026-09-23) : sans ça, la conversation quitte la liste et plus
+    // rien ne rend jamais le fil à l'agent (le balayage saute les escalades), donc il reste à l'équipe pour
+    // toujours.
     const b = '33600000206';
-    await conversationMenéeParLAgent(b);
+    const idB = await conversationMenéeParLAgent(b);
     await store.marquerEscalade(tenantId, b);
-    expect(await store.setControlOwner(tenantId, b, 'mba')).toBe(true);
+    expect(await store.archiverConversation(tenantId, idB, true)).toBe(true);
     expect((await lire(b))?.escaladee_le).toBeNull();
+  });
+
+  it('🔴 la fin d’un parcours ne clôt PAS l’escalade ; le geste « Rendre la main », si', async () => {
+    // Elle s'effaçait dès qu'une écriture posait `mba`, donc aussi quand un parcours finissait : la conversation
+    // sortait d'« À traiter » sans que personne ait répondu, ce que l'arbitrage de Julien interdit.
+    const waId = '33600000212';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    expect(await store.setControlOwner(tenantId, waId, 'mba')).toBe(true);
+    expect((await lire(waId))?.escaladee_le).not.toBeNull();
+    await store.setControlOwner(tenantId, waId, 'app_human');
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { effacerEscalade: true })).toBe(true);
+    expect((await lire(waId))?.escaladee_le).toBeNull();
+  });
+
+  it('🔴 un `standby` POSTÉRIEUR à l’escalade rend le fil : c’est la preuve que l’agent l’a repris', async () => {
+    // Sans cette porte, l'escalade ne se levait que par un geste humain, donc éventuellement jamais. Meta ne nous
+    // envoie un `standby` que lorsqu'une AUTRE app tient le fil.
+    const waId = '33600000210';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    const escalade = (await lire(waId))!.escaladee_le!;
+    const avant = new Date(escalade.getTime() - 60_000);
+    const apres = new Date(escalade.getTime() + 60_000);
+    // Le retardataire, daté d'AVANT la passation : écarté.
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, messageEnvoyeLe: avant })).toBe(false);
+    expect((await lire(waId))?.control_owner).toBe('app_human');
+    // Celui d'APRÈS : il écrit pour de bon, le fil repart à l'agent.
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, messageEnvoyeLe: apres })).toBe(true);
+    expect((await lire(waId))?.control_owner).toBe('mba');
+    // ⚠️ L'escalade, elle, RESTE posée : personne n'a répondu, la conversation reste « À traiter ».
+    expect((await lire(waId))?.escaladee_le).not.toBeNull();
+  });
+
+  it('🔴 le lot du balayage ne se remplit plus d’escalades : elles sortent en SQL', async () => {
+    const waId = '33600000213';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    const tenus = await store.listHeldControl(5000);
+    expect(tenus.some((c) => c.tenantId === tenantId && c.waId === waId)).toBe(false);
   });
 
   it('🔴 un `standby` retardataire ne rend PAS une conversation escaladée à l’agent', async () => {
@@ -116,11 +159,10 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     expect(await store.setControlOwner(tenantId, autre, 'mba', { saufEscalade: true })).toBe(true);
   });
 
-  it('le balayage lit le drapeau d’escalade', async () => {
+  it('le balayage lit le drapeau d’escalade, et un fil ordinaire le porte à `false`', async () => {
     const waId = '33600000209';
-    await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
+    await pool.query(`insert into conversations (tenant_id, wa_id, control_owner, control_changed_at) values ($1, $2, 'app_human', now())`, [tenantId, waId]);
     const tenus = await store.listHeldControl(5000);
-    expect(tenus.find((c) => c.tenantId === tenantId && c.waId === waId)?.escaladee).toBe(true);
+    expect(tenus.find((c) => c.tenantId === tenantId && c.waId === waId)?.escaladee).toBe(false);
   });
 });

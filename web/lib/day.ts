@@ -32,7 +32,7 @@ export function dayLabel(iso: string, locale: Locale): string {
   return new Date(iso).toLocaleDateString(tag(locale), { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-/** Heure HH:MM (fuseau Paris) d'un message, affichée sous la bulle et dans la liste. */
+/** Heure HH:MM (fuseau Paris) d'un message, affichée sous la bulle. La LISTE, elle, montre jour + heure (`jourHeure`). */
 export function hourMin(iso: string, locale: Locale): string {
   return new Date(iso).toLocaleTimeString(tag(locale), { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 }

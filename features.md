@@ -78,9 +78,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **HubSpot a son propre bloc sur l'Accueil** (2026-08-23), sous celui du Meta Business Agent. Il était
   imbriqué dans la carte du numéro WhatsApp, où il passait inaperçu alors qu'il gouverne une intégration
   entière. Il ne s'affiche que si un numéro est rattaché : sans numéro, il n'y a rien à synchroniser.
-- ✅ **« Relancer automatiquement les échecs » a rejoint Paramètres** (2026-08-23). Ce réglage était sur
-  l'Accueil, dans la carte du Meta Business Agent, où il n'avait rien à faire : il ne dit pas qui répond au
-  client, il règle ce qui se passe quand un envoi échoue. C'est un réglage d'espace, comme le fuseau horaire.
+- 🗑️ **« Relancer automatiquement les échecs » a QUITTÉ les Paramètres** (2026-09-23). Ce n'est plus un réglage
+  d'espace : la relance obéit à la case « Réessayer les envois qui échouent » de chaque campagne, qui existait
+  déjà et que rien ne lisait. Les campagnes créées avant gardent la règle d'espace, figée dans l'état où elle
+  était (voir « Campagnes »).
 - ✅ **Paramètres (menu « Paramètres », admin ; un manager n'y voit que le réglage « Je m'en occupe »)** : le
   **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
@@ -910,7 +911,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   Un mini-formulaire propose les champs concernés : on saisit la bonne valeur, elle est **enregistrée sur la fiche
   du contact** (les autres champs ne sont pas touchés), et le message repart. Si la variable est **toujours** vide,
   le renvoi est refusé avec un message clair plutôt que de rejouer le même échec.
-- ✅ **Auto-relance des échecs de livraison** (réglable sur l'Accueil, désactivée par défaut) : quand un message
+- ✅ **Auto-relance des échecs de livraison** (la case « Réessayer les envois qui échouent » de la campagne,
+  cochée par défaut ; une campagne créée avant le 2026-09-23 suit l'ancien réglage d'espace, et un envoi créé par
+  l'API publique aussi, faute de choix exprimé) : quand un message
   échoue pour une raison connue pour être passagère, la console le **rejoue toute seule une fois**. Les échecs de
   type « pas de fenêtre » repartent au **début de la journée suivante** (entre 8 h et midi, heure de Paris), là où
   le destinataire est le plus susceptible de recevoir. Un numéro qui échoue **deux fois** est signalé
@@ -1471,9 +1474,9 @@ scénario, comment importer des contacts.
 - ✅ **Guide « Configurer HubSpot avec Messaging Me »** (ouvert dans un nouvel onglet depuis l'Accueil et depuis le
   Guide MBA) : connecter son compte HubSpot, **ajouter la carte Messaging Me sur la fiche contact** (Paramètres >
   Objets > Contacts > onglet Personnalisation de la fiche > Ajouter des cartes), et ce que cette carte affiche.
-- ✅ **Relancer automatiquement les échecs** (interrupteur sur la carte MBA) : un envoi bloqué par une limite Meta est
-  relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au
-  2e échec. Désactivable par espace.
+- 🗑️ **Relancer automatiquement les échecs : PLUS D'INTERRUPTEUR D'ESPACE** (2026-09-23). La case de la campagne
+  décide (« Réessayer les envois qui échouent ») : un envoi bloqué par une limite Meta est retenté le lendemain
+  matin ; un numéro non délivrable une fois, puis marqué injoignable dans HubSpot au 2e échec.
 - 🗑️ **« À la reprise, le fil… » : SUPPRIMÉ le 2026-08-18** (voir la section Inbox). Ce réglage d’espace
   n’existe plus, et le sélecteur par conversation non plus.
 - ✅ **Onboarding « Connecter mon compte WhatsApp » (Embedded Signup)** : un espace **sans numéro rattaché** voit un
@@ -1639,7 +1642,10 @@ scénario, comment importer des contacts.
 - ✅ **Mettre au point un APPEL, dans la même page** (2026-09-02), et non plus dans chaque agent. Un appel est
   décrit une fois, éprouvé, puis ouvert aux agents qui en ont besoin. L'écran suit l'ordre du raisonnement :
   quelles données on envoie, où on les envoie, on essaie, on coche ce qu'on garde.
-- ✅ **Choisir la méthode** (GET, POST, PUT, PATCH, DELETE) et le chemin, avec des variables (`/commandes/{ref}`).
+- ✅ **Choisir la méthode** (GET, POST, PUT, PATCH, DELETE) et le chemin, avec des variables
+  (`/commandes/{{ref}}`, insérées par les mêmes pastilles que partout ailleurs). Les **en-têtes** portent eux
+  aussi des variables. ⚠️ Une valeur qui vaut « . » ou « .. » est refusée : elle déplacerait l'appel dans le
+  chemin. Le bouton « Essayer » montre ce qui est PARTI, en-têtes compris, sans jamais le secret de la source.
 - ✅ **Envoyer des données**, ce qui manquait : des **paramètres d'URL**, et surtout un **corps de requête**,
   saisissable de deux façons au choix : une **liste de champs** (aucune accolade à écrire) ou du **JSON brut**
   (collez l'exemple de votre documentation et remplacez les valeurs par des variables). La bascule de la liste

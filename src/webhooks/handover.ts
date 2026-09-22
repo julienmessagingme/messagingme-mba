@@ -163,6 +163,9 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
         trace('handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
         // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : c'est une ESCALADE vers l'équipe.
         if (waId && owner === 'app_human') await deps.marquerEscalade(tenantId, waId);
+        // ⚠️ L'AUTRE SENS N'EXISTE PAS ENCORE : `ownerFromHandover` ne rend que `app_human` ou `null`, donc cette
+        // branche est inatteignable tant que Meta n'enverra pas une passation VERS l'agent. Ce qui lève une
+        // escalade, aujourd'hui, est un `standby` postérieur (`messageEnvoyeLe`, `accorderLeDetenteur`).
         else if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
         continue;
       }

@@ -164,6 +164,22 @@ const brouillonTest = z.object({
 });
 
 /**
+ * CE QUI EST VRAIMENT PARTI, côté en-têtes : ceux de la requête, moins ceux que la source écrase (revue finale
+ * du 2026-09-23).
+ *
+ * 🔴 L'ENVOI FUSIONNE `{ ...appel.entetes, ...source.entetes }`, donc un en-tête de requête qui porte le même nom
+ * qu'un en-tête de la source (son secret, son `accept`) N'EST PAS PARTI. L'afficher quand même montrerait au
+ * client une valeur que son système n'a jamais reçue, exactement sur l'écran qui existe pour lui dire ce qui part.
+ * Les deux jeux sont en minuscules (`assemblerAppel` et `enTetesAuthSource`), la comparaison est donc directe.
+ */
+function sansCeuxDeLaSource(
+  requete: Record<string, string>,
+  source: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(Object.entries(requete).filter(([nom]) => !(nom in source)));
+}
+
+/**
  * Ce dont un essai a besoin, et rien d'autre.
  *
  * ⚠️ `Pick` du BON cote de la regle du depot : ses membres sont CONSOMMES SUR PLACE (`assemblerAppel`,
@@ -453,7 +469,9 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
         // Ce qui est PARTI, pour que le client voie ce que sa configuration produit vraiment.
         // Les en-têtes de la REQUÊTE, variables substituées, jamais ceux de la source (le secret) : ils sont déjà
         // lisibles dans la configuration, et c'est ici seulement qu'on voit ce qu'une variable y a produit.
-        envoye: { url: appel.url, methode: appel.methode, corps: appel.corps, entetes: appel.entetes },
+        // ⚠️ MOINS CEUX QUE LA SOURCE POSE (revue finale du 2026-09-23) : ils sont écrasés à l'envoi (`:403`), donc
+        // les afficher montrerait une valeur qui n'est PAS partie.
+        envoye: { url: appel.url, methode: appel.methode, corps: appel.corps, entetes: sansCeuxDeLaSource(appel.entetes, source.entetes) },
         apercu: brut,
         // Les chemins a cocher, derives de la REPONSE REELLE : c'est ce qui evite d'ecrire `livraison.date`
         // de tete, et donc de decouvrir sa faute de frappe en pleine conversation.

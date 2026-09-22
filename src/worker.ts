@@ -1132,7 +1132,9 @@ async function main(): Promise<void> {
   taches.programmer('tours-agent-bloques', 60_000, toursBloquesSweep);
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
-  // injoignable au 2e échec). Le sweep lui-même ne touche QUE les tenants ayant activé le toggle auto_retry.
+  // injoignable au 2e échec). Le sweep lui-même ne touche QUE ce que la campagne autorise depuis la migration
+  // 0165 (sa case « Réessayer »), ou, pour une campagne créée avant, le réglage d'espace `auto_retry_enabled`,
+  // qui n'a plus d'écran (`listAutoRetry`, `src/campaign/store.pg.ts`).
   //
   // 🔴 IL N'EST PLUS GATÉ PAR HUBSPOT, et c'est une correction, pas un élargissement de confort. Il était monté
   // sous `if (config.HUBSPOT_SERVICE_URL)` parce que le flag injoignable en dépendait : conséquence non voulue,

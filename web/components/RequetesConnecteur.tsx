@@ -546,7 +546,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
           ⚠️ LES LIGNES NE PASSENT PLUS À LA LIGNE, le bloc DÉFILE : une ligne qui se replie décale ses champs sous
           des intitulés qui, eux, ne bougent pas (revue du 2026-09-23). Et les champs portent `inputClsAuto`, pas
           `inputCls` : son `w-full` l'emporte sur `w-32` en Tailwind 3, donc aucune colonne n'avait sa largeur. */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto p-0.5">
       <div className="flex w-max flex-col gap-2">
       {brouillon.variables.length > 0 && (
         <div className="flex gap-2 text-[11px] font-medium text-ink-500" data-testid="var-intitules">
@@ -756,7 +756,7 @@ function Paires({ lignes, onChange, libelles, testidPrefixe, cible }: {
       {/* 🔴 DES INTITULÉS TOUJOURS VISIBLES (Julien, 2026-09-23). Ils n'étaient que des `placeholder`, qui
           disparaissent dès qu'un champ est rempli : en modifiant un appel existant, on ne savait plus quelle
           colonne était le nom et laquelle la valeur. */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto p-0.5">
       <div className="flex w-max flex-col gap-2">
       {lignes.length > 0 && (
         <div className="flex gap-2 text-[11px] font-medium text-ink-500" data-testid={`${testidPrefixe}-intitules`}>

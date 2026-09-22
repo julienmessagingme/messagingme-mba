@@ -63,7 +63,8 @@ function app(
     },
     patch: async (_t, id, p) => { cap.patches.push(p); return id === RQ ? { ...requete, ...p } : null; },
     supprimer: async (_t, id) => { cap.suppressions.push(id); return id === RQ; },
-    sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { authorization: 'Bearer SECRET-42' }, status: 'active' }),
+    // ⚠️ Les clés d'une source sont en MINUSCULES (`enTetesAuthSource`), comme celles d'un appel assemblé.
+    sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { accept: 'application/json', authorization: 'Bearer SECRET-42', 'x-api-key': 'SECRET-42' }, status: 'active' }),
     clesDeChamps: async () => champs,
     ...(fetchImpl ? { fetchImpl } : {}),
     // La garde de RÉSOLUTION est injectée comme `fetch` : sans elle, ces tests partiraient interroger le DNS
@@ -420,6 +421,15 @@ describe('requêtes : le bouton Test', () => {
     const envoye = res.json().envoye;
     expect(envoye.entetes['x-ref']).toBe('ref-CMD-1');
     expect(envoye.entetes).not.toHaveProperty('authorization');
+  });
+
+  it('🔴 un en-tête que le SECRET DE LA SOURCE écrase n’est pas affiché comme parti (revue finale du 2026-09-23)', async () => {
+    // L'envoi fusionne `{ ...appel.entetes, ...source.entetes }` : la valeur de la requête n'est jamais partie.
+    // L'afficher quand même, sur l'écran qui existe pour dire ce qui part, serait la seule chose à ne pas faire.
+    const { srv } = app({ entetes: [{ nom: 'X-Api-Key', valeur: 'celle-de-la-requete' }] }, reponse('{"a":1}'));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    expect(res.json().envoye.entetes).not.toHaveProperty('x-api-key');
+    expect(res.body).not.toContain('celle-de-la-requete');
   });
 
   it('🔴 le secret de la source n’apparaît nulle part dans la réponse du test', async () => {

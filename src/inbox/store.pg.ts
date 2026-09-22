@@ -495,22 +495,32 @@ export class PgInboxStore implements InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean },
+    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean; effacerEscalade?: boolean; messageEnvoyeLe?: Date },
   ): Promise<boolean> {
     const only = opts?.only;
-    // 🔴 RENDRE LE FIL À L'AGENT DE META EFFACE L'ESCALADE (0164) : c'est lui qui répond de nouveau.
+    // 🔴 RENDRE LE FIL À L'AGENT DE META N'EFFACE L'ESCALADE QUE SI ON LE DEMANDE (revue finale du 2026-09-23).
+    // Elle s'effaçait dès qu'une écriture posait `mba`, donc aussi quand la FIN D'UN PARCOURS rendait le fil
+    // (`rendreLeFilMaintenant`) : la conversation sortait d'« À traiter » sans que personne ait répondu, ce que
+    // l'arbitrage de Julien interdit. Ne le demandent que les DEUX gestes qui disent vraiment « l'agent reprend » :
+    // le bouton « Rendre la main » de l'Inbox, et une passation de Meta vers l'agent.
     // ⚠️ `saufEscalade` : n'écrit PAS sur une conversation escaladée. Posé par le `standby` d'un entrant
     // (`accorderLeDetenteur`) : une fois le fil passé à l'équipe, Meta nous envoie les messages sur `messages`,
     // donc un `standby` traité après l'escalade est un RETARDATAIRE (traitements en parallèle), et il rendait
     // la conversation à l'agent sous le nez de l'équipe.
+    // 🔴 SAUF S'IL EST PLUS RÉCENT QUE L'ESCALADE (`messageEnvoyeLe`, revue finale du 2026-09-23) : Meta ne nous
+    // envoie un standby que lorsqu'une AUTRE app tient le fil, donc un standby postérieur prouve que l'agent l'a
+    // repris. Sans cette porte, l'escalade ne se levait que par un geste humain, donc éventuellement jamais.
+    // ⚠️ SANS DATE, LA GARDE RESTE STRICTE : une donnée externe manquante n'ouvre rien.
     const res = await this.pool.query(
       `update conversations set control_owner = $3, control_changed_at = now(),
-              escaladee_le = case when $3 = 'mba' then null else escaladee_le end
+              escaladee_le = case when $3 = 'mba' and $6::boolean then null else escaladee_le end
        where tenant_id = $1 and wa_id = $2
          and control_owner is distinct from $3
          and ($4::text[] is null or control_owner = any($4::text[]))
-         and (not $5::boolean or escaladee_le is null)`,
-      [tenantId, waId, owner, only ? [...only] : null, opts?.saufEscalade === true],
+         and (not $5::boolean or escaladee_le is null
+              or ($7::timestamptz is not null and $7::timestamptz > escaladee_le))`,
+      [tenantId, waId, owner, only ? [...only] : null, opts?.saufEscalade === true, opts?.effacerEscalade === true,
+       opts?.messageEnvoyeLe ?? null],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -698,11 +708,18 @@ export class PgInboxStore implements InboxStore {
      * que lui), donc qu'il n'y a rien à transmettre. L'inverse n'est pas vrai : un dernier message RÉCENT
      * mais SORTANT peut recouvrir une fenêtre fermée. C'est le balayage qui absorbe cette imprécision, en
      * appelant Meta AVANT d'écrire.
+     *
+     * 🔴 LES ESCALADES SORTENT DU LOT EN SQL (revue finale du 2026-09-23). Le lot est plafonné à 500 et trié par
+     * ancienneté : les escalades, qui ne se vident jamais tant que personne n'a répondu, s'y accumulaient en TÊTE
+     * et n'étaient écartées qu'en mémoire, après la coupe. À 500 escalades en attente, tous espaces confondus, le
+     * balayage cessait de rendre le moindre autre fil. La garde de `runControlSweep` reste, elle, pour les
+     * dépôts qui ne filtrent pas (elle est le contrat, ce SQL n'en est qu'une mise en œuvre).
      */
     const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; last_message_at: Date | null; escaladee: boolean }>(
       `select tenant_id, wa_id, control_owner, control_changed_at, last_message_at, escaladee_le is not null as escaladee
        from conversations
-       where control_owner <> 'app_workflow'
+       where (escaladee_le is null or control_owner <> 'app_human')
+         and (control_owner <> 'app_workflow'
           or (
             $2::bigint > 0
             and last_message_at > now() - interval '24 hours'
@@ -710,7 +727,7 @@ export class PgInboxStore implements InboxStore {
               control_changed_at is null
               or control_changed_at < now() - make_interval(secs => $2::bigint / 1000.0)
             )
-          )
+          ))
        order by control_changed_at nulls first
        limit $1`,
       [limit, Math.max(0, Math.floor(ageScenarioMs))],
@@ -1101,7 +1118,11 @@ export class PgInboxStore implements InboxStore {
       // Le drapeau passe en PARAMÈTRE plutôt que d'être concaténé dans la requête. Il vient d'un booléen,
       // donc rien n'était injectable, mais une requête construite par concaténation demande à chaque
       // relecture de vérifier d'où vient le morceau. Celle-ci ne le demande plus.
-      `update conversations set archived_at = case when $3::boolean then now() else null end
+      // 🔴 ARCHIVER CLÔT AUSSI UNE ESCALADE (revue finale du 2026-09-23), exactement comme « Traité » : sinon
+      // la conversation quitte la liste sans que rien ne la rende jamais à l'agent (le balayage saute les
+      // escalades), et le fil reste à l'équipe pour toujours.
+      `update conversations set archived_at = case when $3::boolean then now() else null end,
+              escaladee_le = case when $3::boolean then null else escaladee_le end
         where id = $1 and tenant_id = $2`,
       [conversationId, tenantId, archive],
     );

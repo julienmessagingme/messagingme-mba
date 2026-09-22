@@ -665,13 +665,20 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 **Conversations**
 
-- `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`),
-  `conversation_messages` (`media_id`, `media_mime`, `media_nom`).
+- `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`,
+  `escaladee_le`), `conversation_messages` (`media_id`, `media_mime`, `media_nom`).
+- 🔴 **UNE ESCALADE DE L'AGENT DE META EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164).
+  Quand l'agent dit au client qu'un humain va le rappeler, il nous passe le fil (`control_passed`) : la
+  conversation devient `app_human`, entre dans le dossier MÊME si la dernière phrase est sortante (la sienne),
+  et sort d'« Archivé » et de « Traité ». Elle y reste jusqu'à ce que quelqu'un agisse : la PREMIÈRE réponse
+  d'un opérateur, « Traité » ou « Archiver » la clôt, et le balayage de reprise ne rend JAMAIS un fil escaladé
+  à l'agent (arbitrage de Julien : on ne le lui rend qu'après une réponse humaine, puis les 2 h habituelles).
+  ⚠️ Un `standby` de Meta postérieur à l'escalade fait exception : il prouve que l'agent a repris le fil.
 - 🔴 **LES DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
   « Archivé » (`archived_at`), « Traité » (`traitee_le`) et l'affectation (`assigned_to`) sont des ÉTATS
   ÉCRITS ; « À traiter » est DÉRIVÉ (`A_TRAITER_SQL`, `src/inbox/store.pg.ts` : scénario qui ne tient pas le
-  fil, dernier message qui n'est pas de nous, pas marquée traitée), donc y ranger une conversation veut dire
-  PRENDRE le fil ; et
+  fil, dernier message qui n'est pas de nous OU escalade de l'agent de Meta en cours, pas marquée traitée),
+  donc y ranger une conversation veut dire PRENDRE le fil ; et
   « Signalé » réunit DEUX sources, le constat de l'analyse (`conversation_analysis.abusive`) et un
   signalement humain (`signalee_le`, migration 0123). ⚠️ Les deux sources restent SÉPARÉES : `abusive` est
   recalculé à chaque ré-analyse, un signalement humain écrit dedans disparaîtrait au passage suivant. La
@@ -725,7 +732,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
-| `auto_retry_enabled` | auto-relance des échecs |
+| `auto_retry_enabled` | auto-relance des échecs des campagnes d'AVANT la migration 0165 ; ce réglage n'a plus d'écran et ne s'écrit plus. Une campagne créée depuis obéit à SA case `campaigns.reessayer` (`campaigns.reessai_par_campagne`) |
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
 | `mba_handoff_mode` | `always` \| `business_hours` \| `never` |
 

@@ -23,7 +23,7 @@ const PAYLOAD = (field: 'messages' | 'standby' | null) => ({
       ...(field === null ? {} : { field }),
       value: {
         ...(field === 'standby'
-          ? { standby: { contacts: [{ wa_id: '33633921577' }], messages: [{ id: 'wamid.X', from: '33633921577', type: 'text', text: { body: 'coucou' } }] } }
+          ? { standby: { contacts: [{ wa_id: '33633921577' }], messages: [{ id: 'wamid.X', from: '33633921577', type: 'text', timestamp: '1758585600', text: { body: 'coucou' } }] } }
           : { contacts: [{ wa_id: '33633921577' }], messages: [{ id: 'wamid.X', from: '33633921577', type: 'text', text: { body: 'coucou' } }] }),
         metadata: { phone_number_id: '1234840649713976' },
       },
@@ -32,12 +32,15 @@ const PAYLOAD = (field: 'messages' | 'standby' | null) => ({
 });
 
 function fauxStore() {
-  const ecrits: Array<{ owner: string; only?: readonly string[]; saufEscalade?: boolean }> = [];
+  const ecrits: Array<{ owner: string; only?: readonly string[]; saufEscalade?: boolean; messageEnvoyeLe?: Date }> = [];
   const store: InboxStore = {
     phoneNumberTenant: async () => 'tenant-1',
     recordInbound: async (_t: string, _m: InboundMessage) => {},
     setControlOwner: async (_t, _w, owner, opts) => {
-      ecrits.push({ owner, ...(opts?.only ? { only: opts.only } : {}), ...(opts?.saufEscalade ? { saufEscalade: true } : {}) });
+      ecrits.push({
+        owner, ...(opts?.only ? { only: opts.only } : {}), ...(opts?.saufEscalade ? { saufEscalade: true } : {}),
+        ...(opts?.messageEnvoyeLe ? { messageEnvoyeLe: opts.messageEnvoyeLe } : {}),
+      });
       return true;
     },
   };
@@ -52,7 +55,10 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // `messages` ; un `standby` traité après est un retardataire, et il rendait la conversation à l'agent.
     const { store, ecrits } = fauxStore();
     return processInbound(PAYLOAD('standby'), store).then(() => {
-      expect(ecrits).toEqual([{ owner: 'mba', saufEscalade: true }]);
+      // 🔴 AVEC LA DATE DU MESSAGE (revue finale du 2026-09-23) : c'est elle qui distingue un retardataire d'un
+      // standby postérieur à l'escalade, donc d'un fil que l'agent de Meta a réellement repris. Sans elle, la
+      // garde écartait tout standby pour toujours.
+      expect(ecrits).toEqual([{ owner: 'mba', saufEscalade: true, messageEnvoyeLe: new Date(1758585600 * 1000) }]);
     });
   });
 

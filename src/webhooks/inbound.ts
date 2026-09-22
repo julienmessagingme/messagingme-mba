@@ -50,6 +50,15 @@ export interface InboundMessage {
    * ce corps, comme l'identifiant : sans lui, un PDF reçu se télécharge sous un nom inventé.
    */
   media?: { id: string; mime: string | null; nom?: string | null };
+  /**
+   * QUAND Meta dit que ce message a été envoyé (`messages[].timestamp`, en secondes).
+   *
+   * 🔴 IL SERT À DATER UN `standby` PAR RAPPORT À UNE ESCALADE (revue finale du 2026-09-23) : un standby plus
+   * ANCIEN que la passation est un retardataire traité en parallèle, un standby plus RÉCENT prouve que l'agent
+   * de Meta tient le fil de nouveau. Sans lui, `saufEscalade` écartait tout standby pour toujours.
+   * ⚠️ Absent = on ne sait pas, et la garde reste stricte : une donnée externe manquante ne doit pas ouvrir.
+   */
+  envoyeLe?: Date;
 }
 
 /**
@@ -113,7 +122,7 @@ export interface InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean },
+    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean; messageEnvoyeLe?: Date },
   ): Promise<boolean>;
 }
 
@@ -197,6 +206,9 @@ export function extractInbound(payload: unknown): InboundMessage[] {
         const waId = str(msg['from']) ?? fallbackWaId;
         if (!messageId || !waId) continue;
         const { body, buttonPayload, media } = contentOf(msg);
+        // `timestamp` est une chaîne de SECONDES chez Meta. Illisible ou absent -> on n'invente pas de date.
+        const secondes = Number(str(msg['timestamp']) ?? '');
+        const envoyeLe = Number.isFinite(secondes) && secondes > 0 ? new Date(secondes * 1000) : undefined;
         out.push({
           phoneNumberId,
           waId,
@@ -208,6 +220,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
           field,
           ...(referralOf(msg) ? { referral: referralOf(msg)! } : {}),
           ...(media ? { media } : {}),
+          ...(envoyeLe ? { envoyeLe } : {}),
         });
       }
     }
@@ -392,9 +405,11 @@ export async function processInbound(
 async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: InboundMessage): Promise<void> {
   if (!store.setControlOwner || m.field !== 'standby') return;
   try {
-    // ⚠️ SAUF ESCALADE (0164) : après une passation à l'équipe, un `standby` ne peut être qu'un retardataire
-    // traité en parallèle ; il rendait la conversation à l'agent sous le nez de l'équipe.
-    await store.setControlOwner(tenantId, m.waId, 'mba', { saufEscalade: true });
+    // ⚠️ SAUF ESCALADE (0164), ET LA DATE DU MESSAGE TRANCHE (revue finale du 2026-09-23). Après une passation
+    // à l'équipe, un standby ANTÉRIEUR à l'escalade est un retardataire traité en parallèle : il rendait la
+    // conversation à l'agent sous le nez de l'équipe. Un standby POSTÉRIEUR, lui, prouve que Meta a redonné le
+    // fil à l'agent, et l'écarter laisserait l'escalade durer pour toujours. Sans date, la garde reste stricte.
+    await store.setControlOwner(tenantId, m.waId, 'mba', { saufEscalade: true, ...(m.envoyeLe ? { messageEnvoyeLe: m.envoyeLe } : {}) });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('processInbound: détenteur du fil non corrigé:', err instanceof Error ? err.message : err);
