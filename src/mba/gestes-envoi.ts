@@ -1,4 +1,5 @@
 import { blocSeul } from './outils-maison';
+import { CONTACT_BLOQUE } from './executer-maison';
 import type { WorkflowGraph } from '../workflow/graph';
 import type { StartOutcome } from '../workflow/executor';
 
@@ -34,7 +35,22 @@ export interface DepsGestesEnvoi {
    * suite, dans le délai de réponse du relais, et l'agent les lit.
    */
   attendreFinDuTour(tenantId: string, waId: string): Promise<unknown>;
+  /** Le détenteur du fil chez nous (`getControlOwner`), relu AVANT et APRÈS l'attente. */
+  detenteur(tenantId: string, waId: string): Promise<string>;
+  /** Le contact est-il bloqué dans l'Inbox ? Relu APRÈS l'attente : il a pu l'être pendant. */
+  estBloque(tenantId: string, waId: string): Promise<boolean>;
 }
+
+/**
+ * Ce que l'agent de Meta lit quand la conversation a changé de main pendant l'attente de fin de tour.
+ *
+ * 🔴 L'ATTENTE PEUT DURER 15 S (revue du 2026-09-22) : un opérateur a pu prendre la conversation, ou un parcours
+ * démarrer. L'envoi part avec `ignoreHumanControl` et le fil serait ensuite rendu au robot : il passerait par-dessus
+ * cette décision, et la conversation sortirait d'« À traiter ». On compare AVANT et APRÈS plutôt que de tester une
+ * valeur, parce que la colonne peut dire autre chose que `mba` pendant que l'agent de Meta tient réellement le fil.
+ */
+export const FIL_CHANGE_PENDANT_ATTENTE =
+  'la conversation a changé de main pendant l’attente (un opérateur ou un parcours l’a prise) : rien n’a été envoyé';
 
 export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
   envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
@@ -56,6 +72,19 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     return issue ?? siInconnu;
   };
 
+  /**
+   * Attend la fin du tour de l'agent, puis rend un REFUS si la conversation a changé de main ou si le contact a été
+   * bloqué entre-temps, `null` sinon. Un refus ici n'a rien pris : il ne rend PAS le fil (sinon un parcours lancé
+   * entre-temps serait relâché).
+   */
+  const attendreEtRevérifier = async (tenantId: string, waId: string): Promise<string | null> => {
+    const avant = await deps.detenteur(tenantId, waId);
+    await deps.attendreFinDuTour(tenantId, waId);
+    if ((await deps.detenteur(tenantId, waId)) !== avant) return FIL_CHANGE_PENDANT_ATTENTE;
+    if (await deps.estBloque(tenantId, waId)) return CONTACT_BLOQUE;
+    return null;
+  };
+
   return {
     async envoyerBloc(tenantId, waId, { workflowId, code }) {
       const graphe = await deps.graphePublie(tenantId, workflowId);
@@ -67,7 +96,8 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
         return 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir';
       }
       const contactId = await deps.contactId(tenantId, waId);
-      await deps.attendreFinDuTour(tenantId, waId);
+      const refus = await attendreEtRevérifier(tenantId, waId);
+      if (refus !== null) return refus;
       // Le graphe RÉDUIT au bloc : ce qui le suit dans le scénario ne peut pas partir.
       return enRendantSurEchec(tenantId, waId,
         () => deps.envoyerDepuisBloc(tenantId, workflowId, seul.graphe, { waId, contactId }, seul.noeudId),
@@ -75,7 +105,8 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     },
     async lancerScenario(tenantId, waId, workflowId) {
       const ouverte = await deps.fenetreOuverte(tenantId, waId);
-      await deps.attendreFinDuTour(tenantId, waId);
+      const refus = await attendreEtRevérifier(tenantId, waId);
+      if (refus !== null) return refus;
       return enRendantSurEchec(tenantId, waId,
         () => deps.lancerScenario(tenantId, workflowId, waId, ouverte),
         'ce scénario n’existe plus');

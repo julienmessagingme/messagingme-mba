@@ -537,6 +537,11 @@ export class PgInboxStore implements InboxStore {
    *    lot 4, acquittés sans que personne n'écrive `accuse_le` : pour eux, `null` ne veut pas dire « pas encore
    *    acquitté », et sans elle la règle reposerait le marqueur sur des fils déjà réglés.
    * ⚠️ Fenêtre résiduelle assumée : un client qui écrit dans la seconde même de notre envoi. Le balayage reste le filet.
+   *
+   * 🔴 L'ÉCHO DE L'AGENT DE META N'EST PAS « NOTRE » ENVOI (`type = 'mba'`, revue du 2026-09-22). Depuis que le relais
+   * attend la phrase d'annonce de l'agent avant d'envoyer (`src/mba/fin-de-tour.ts`), cet écho est souvent le dernier
+   * sortant quand un envoi échoue : le marqueur s'y posait, le fil restait en `app_human`, et l'événement qui devait
+   * prévenir l'agent (`signalerEchecTardif`) ne partait jamais.
    */
   async demanderReleaseMba(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ release_mba_apres_message: string | null }>(
@@ -546,6 +551,7 @@ export class PgInboxStore implements InboxStore {
               from (select m.meta_message_id, m.accuse_le, m.created_at
                       from conversation_messages m
                      where m.conversation_id = c.id and m.direction = 'out' and m.meta_message_id is not null
+                       and m.type is distinct from 'mba'
                      order by m.created_at desc limit 1) d
              where d.accuse_le is null
                and d.created_at > now() - $3::interval

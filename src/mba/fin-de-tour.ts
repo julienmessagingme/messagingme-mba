@@ -17,6 +17,13 @@
  */
 export const FIN_DE_TOUR_MAX_MS = 15_000;
 export const FIN_DE_TOUR_PAS_MS = 500;
+/**
+ * On ne relève l'écho « d'avant » qu'APRÈS ce délai, celui où le relais répond à Meta (`DELAI_REPONSE_ENVOI_MS`,
+ * égalité tenue par un test). 🔴 Relevé plus tôt, un texte que l'agent a écrit AVANT d'appeler l'outil, encore en
+ * route vers nous, serait pris pour la fin de son tour : le fil serait pris en plein tour, exactement ce que
+ * l'expérience veut éviter, et le journal dirait `reponse` (revue du 2026-09-22).
+ */
+export const FIN_DE_TOUR_DEBUT_MS = 1500;
 
 export type FinDeTour = 'reponse' | 'delai' | 'illisible';
 
@@ -33,6 +40,7 @@ export function creerAttendreFinDuTour(deps: DepsFinDeTour) {
     const debut = deps.maintenant();
     const fin = await (async (): Promise<FinDeTour> => {
       try {
+        await deps.attendre(FIN_DE_TOUR_DEBUT_MS);
         const avant = await deps.dernierMessageDeLAgent(tenantId, waId);
         while (deps.maintenant() - debut < FIN_DE_TOUR_MAX_MS) {
           await deps.attendre(FIN_DE_TOUR_PAS_MS);

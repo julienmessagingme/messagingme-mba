@@ -189,4 +189,38 @@ describe.skipIf(!url)('PgInboxStore : le marqueur de remise à l’agent de Meta
     // Isolé par espace : le même numéro dans un autre espace ne voit rien.
     expect(await store.dernierMessageDeLAgent('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
   });
+
+  it('🔴 l’écho de l’agent de Meta n’est jamais « notre » envoi : aucun marqueur sur lui (revue du 2026-09-22)', async () => {
+    // Le relais attend la phrase d'annonce de l'agent avant d'envoyer : si l'envoi échoue, cet écho est le dernier
+    // sortant. Le marqueur s'y posait, le fil restait `app_human` et l'agent n'était jamais prévenu.
+    const waId = '33600000111';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    const ecrire = async (direction: string, type: string, wamid: string | null, decalage: number, accuse: boolean) => {
+      await pool.query(
+        `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, created_at, accuse_le)
+         values ($1, $2, $3, 'x', $4, now() + ($5 || ' seconds')::interval, case when $6 then now() else null end)`,
+        [conv, direction, type, wamid, String(decalage), accuse],
+      );
+    };
+    await ecrire('out', 'text', 'wamid.N1', -120, true); // notre envoi ancien, acquitté
+    await ecrire('in', 'text', 'wamid.N2', -60, false); // le client
+    await ecrire('out', 'mba', 'wamid.N3', -5, false); // la phrase d'annonce de l'agent, pas encore acquittée
+    expect(await store.demanderReleaseMba(tenantId, waId)).toBeNull();
+  });
+
+  it('🔴 notre envoi récent et non acquitté reste attendu, même suivi d’un écho de l’agent', async () => {
+    const waId = '33600000112';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, created_at)
+       values ($1, 'out', 'text', 'le bloc', 'wamid.P1', now() - interval '3 seconds'),
+              ($1, 'out', 'mba', 'je vous l’envoie', 'wamid.P2', now() - interval '1 seconds')`,
+      [conv],
+    );
+    expect(await store.demanderReleaseMba(tenantId, waId)).toBe('wamid.P1');
+  });
 });

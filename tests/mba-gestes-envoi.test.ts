@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { creerGestesEnvoi, type DepsGestesEnvoi } from '../src/mba/gestes-envoi';
+import { FIL_CHANGE_PENDANT_ATTENTE, creerGestesEnvoi, type DepsGestesEnvoi } from '../src/mba/gestes-envoi';
+import { CONTACT_BLOQUE } from '../src/mba/executer-maison';
 import type { WorkflowGraph } from '../src/workflow/graph';
 
 /**
@@ -19,8 +20,11 @@ const GRAPHE: WorkflowGraph = { nodes: [texte, suite], edges: [{ id: 'e0', sourc
 function faux(o: {
   graphe?: WorkflowGraph | null; ouverte?: boolean;
   envoi?: () => Promise<true | string>; scenario?: () => Promise<true | string | null>; rendreKo?: boolean;
+  /** Le détenteur lu à chaque appel, dans l'ordre ; le dernier se répète. */
+  detenteurs?: string[]; bloqueApres?: boolean;
 } = {}) {
   const gestes: string[] = [];
+  let lectures = 0;
   const deps: DepsGestesEnvoi = {
     graphePublie: async () => (o.graphe === undefined ? GRAPHE : o.graphe),
     fenetreOuverte: async () => o.ouverte ?? true,
@@ -38,6 +42,13 @@ function faux(o: {
       if (o.rendreKo) throw new Error('base indisponible');
     },
     attendreFinDuTour: async (_t, waId) => { gestes.push(`tour ${waId}`); },
+    detenteur: async () => {
+      const suite = o.detenteurs ?? ['mba'];
+      const d = suite[Math.min(lectures, suite.length - 1)]!;
+      lectures += 1;
+      return d;
+    },
+    estBloque: async () => o.bloqueApres === true,
   };
   return { g: creerGestesEnvoi(deps), gestes };
 }
@@ -72,6 +83,28 @@ describe('envoyer un bloc', () => {
     await g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE });
     await g.lancerScenario('t1', 'w1', WF);
     expect(gestes).toEqual(['tour w1', 'envoi n1 1 c1', 'tour w1', `scenario ${WF} w1 true`]);
+  });
+
+  it('🔴 la conversation change de main PENDANT l’attente : rien ne part, et le fil n’est pas rendu (revue du 2026-09-22)', async () => {
+    // Un opérateur a pris la conversation, ou un parcours a démarré : l'envoi passerait par-dessus, puis rendrait
+    // le fil au robot. Et rendre le fil ici relâcherait un parcours lancé entre-temps.
+    const bloc = faux({ detenteurs: ['mba', 'app_human'] });
+    expect(await bloc.g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).toBe(FIL_CHANGE_PENDANT_ATTENTE);
+    expect(bloc.gestes).toEqual(['tour w1']);
+    const scen = faux({ detenteurs: ['mba', 'app_workflow'] });
+    expect(await scen.g.lancerScenario('t1', 'w1', WF)).toBe(FIL_CHANGE_PENDANT_ATTENTE);
+    expect(scen.gestes).toEqual(['tour w1']);
+  });
+
+  it('🔴 un contact bloqué PENDANT l’attente ne reçoit rien', async () => {
+    for (const geste of ['bloc', 'scenario'] as const) {
+      const f = faux({ bloqueApres: true });
+      const issue = geste === 'bloc'
+        ? await f.g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })
+        : await f.g.lancerScenario('t1', 'w1', WF);
+      expect(issue).toBe(CONTACT_BLOQUE);
+      expect(f.gestes).toEqual(['tour w1']);
+    }
   });
 
   it('un bloc devenu invalide, ou un scénario supprimé, est refusé AVANT toute reprise du fil', async () => {

@@ -2572,6 +2572,8 @@ async function main(): Promise<void> {
               // eslint-disable-next-line no-console
               journal: (ligne) => console.log(ligne),
             }),
+            detenteur: (t, waId) => inboxStore.getControlOwner(t, waId),
+            estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
           }),
         },
       },
