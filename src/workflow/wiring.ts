@@ -610,8 +610,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // promesse faite au client que celle de l'agent de Meta (« quelqu'un va vous répondre »), donc le même
     // traitement. Sans lui, la conversation n'entrait dans « À traiter » qu'au message SUIVANT du client, et le
     // balayage rendait le fil à l'agent au bout de 2 h alors que personne n'avait répondu.
-    escalateToHuman: async (tenant, waId, assigneA) => {
-      await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade: true });
+    escalateToHuman: async (tenant, waId, assigneA, escalade) => {
+      await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade });
       if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA);
     },
     // 🔴 LE BLOC AGENT. Sans ces deux dépendances, il est traversé comme un PASSE-PLAT : le scénario continue

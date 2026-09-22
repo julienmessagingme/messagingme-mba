@@ -84,8 +84,12 @@ describe('l’escalade est posée par les DEUX câblages, pas seulement par l’
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
   const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
 
-  it('🔴 le bloc « passer à un humain » d’un scénario pose l’escalade', () => {
-    expect(wiring).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade: true })");
+  it('🔴 le câblage d’un scénario RELAIE le drapeau, il ne le décide pas', () => {
+    // ⚠️ `escalade` vient de l'APPELANT : un bloc « passer à un humain » le pose, un échec de réveil (fenêtre
+    // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
+    // `escalade: true` ici rendrait tous les fils collants, y compris ceux que personne n'attend.
+    expect(wiring).toContain('escalateToHuman: async (tenant, waId, assigneA, escalade) => {');
+    expect(wiring).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade })");
   });
 
   it('🔴 l’escalade d’un agent IA aussi, et elle REND toujours son verdict', () => {

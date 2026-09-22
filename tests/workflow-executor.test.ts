@@ -41,6 +41,8 @@ function make(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
   const runs = new FakeRuns();
   const calls: string[] = [];
   const escalations: string[] = []; // capture séparée : les assertions `calls` existantes restent inchangées
+  // Le 4e argument : quelqu'un ATTEND-IL une réponse ? (arbitrage de Julien du 2026-09-23, migration 0164)
+  const drapeaux: boolean[] = [];
   const ex = new WorkflowExecutor({
     estDesabonne: jamaisDesabonne,
     runs,
@@ -53,10 +55,10 @@ function make(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
     sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
     sendFlow: async (_t, _w, flowId, body, cta) => { calls.push(`flow:${flowId}:${body}:${cta}`); },
     sendQuestion: async (_t, _w, body, bouton, rows) => { calls.push(`question:${body}:${bouton}:${rows.map((r) => r.title).join('|')}`); },
-    escalateToHuman: async (_t, w) => { escalations.push(w); },
+    escalateToHuman: async (_t, w, _a, escalade) => { escalations.push(w); drapeaux.push(escalade); },
     ...over,
   });
-  return { ex, runs, calls, escalations };
+  return { ex, runs, calls, escalations, drapeaux };
 }
 
 describe('WorkflowExecutor', () => {
@@ -151,11 +153,14 @@ describe('WorkflowExecutor', () => {
   });
 
   it('atteindre le node inbox escalade à un humain (escalateToHuman) ; pas d’escalade tant qu’on n’y est pas', async () => {
-    const { ex, escalations } = make(linear);
+    const { ex, escalations, drapeaux } = make(linear);
     await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     expect(escalations).toEqual([]); // start s'arrête au template (waiting), pas encore inbox
     await ex.advance('t1', '33600', 'msg1'); // le contact répond -> node inbox
     expect(escalations).toEqual(['33600']);
+    // 🔴 LE BLOC « PASSER À UN HUMAIN » EST UNE ESCALADE : quelqu'un attend, donc la conversation entre dans
+    // « À traiter » tout de suite et le balayage ne rend pas le fil à l'agent de Meta (arbitrage du 2026-09-23).
+    expect(drapeaux).toEqual([true]);
   });
 
   // Garde fenêtre 24 h (Lot 7) : `start` = chemin campagne, HORS fenêtre de service -> un scénario qui OUVRE
