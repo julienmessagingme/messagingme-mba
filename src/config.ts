@@ -331,9 +331,16 @@ export const schema = z.object({
    * messages. Un code déjà RÉSOLU par ce process n'y est plus soumis (`ClesResolues`) : une attaque qui épuise
    * ce budget ne coupe donc pas les intégrations en service.
    *
-   * ⚠️ LE PRIX ASSUMÉ : pendant une telle attaque, un vrai code qui n'a pas servi depuis le dernier démarrage
-   * attend la minute suivante (429 avec `Retry-After`, que smsmode rejoue ; un outil d'intégration peut ne pas
-   * le faire). Le défaut laisse passer largement le premier appel de chaque code après un démarrage.
+   * ⚠️ LE PRIX ASSUMÉ, ET IL N'EXISTE PAS QUE SOUS ATTAQUE. Un vrai code qui n'a pas servi depuis le dernier
+   * démarrage consomme ce budget à son premier appel : il attend la minute suivante (429 avec `Retry-After`, que
+   * smsmode rejoue ; un outil d'intégration peut ne pas le faire) quand une attaque l'a épuisé, mais aussi quand
+   * plus de 120 codes réels DIFFÉRENTS se présentent dans la même minute juste après un redémarrage, ou quand des
+   * appels simultanés sur un même code pas encore résolu en consomment chacun une part. Un budget épuisé se
+   * journalise au plus une fois par minute : le relever si ce message apparaît hors attaque.
+   *
+   * ⚠️ `/r/:code` et `/m/:code` N'ONT PAS CE FREIN, délibérément : leurs codes réels sont très nombreux (un par
+   * lien, un par visuel) et cliqués en rafale par des contacts pendant une campagne. Après un redémarrage, un tel
+   * budget refuserait des clics réels.
    */
   CODES_INCONNUS_PAR_MINUTE: z.coerce.number().int().min(0).default(120),
   /**

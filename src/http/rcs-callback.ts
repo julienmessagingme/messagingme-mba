@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { parseRcsDlr, parseRcsMo, estDlr } from '../rcs/callback';
 import type { RcsDlr, RcsMo } from '../rcs/callback';
-import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from '../auth/rate-limit';
+import { ClesResolues, avertissementBorne, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from '../auth/rate-limit';
 
 /** Corps d'un rappel : quelques kilo-octets au plus (un message et son statut). Un corps plus gros n'est pas
  *  un rappel smsmode, on refuse avant de l'avoir en mémoire. */
@@ -54,7 +54,8 @@ export interface RcsCallbackRouteDeps {
  * 24 h), puis abandonne. On répond donc :
  *   - 200 sur un corps qu'on ne sait pas exploiter : le rejouer six fois ne le rendra pas lisible ;
  *   - 404 sur un code inconnu : rien ne le rendra connu non plus, mais l'insistance doit rester visible ;
- *   - 429 au-delà du plafond du code : smsmode rejoue plus tard, un vrai accusé est retardé, pas perdu ;
+ *   - 429 au-delà du plafond du code, ou quand le budget des codes jamais vus est épuisé (un code déjà
+ *     résolu n'y est pas soumis) : smsmode rejoue plus tard, un vrai accusé est retardé, pas perdu ;
  *   - et on LAISSE remonter une panne interne (500) pour qu'ils rejouent, plutôt que d'acquitter un
  *     événement qu'on n'a pas su traiter. Un accusé de livraison perdu, c'est une cascade de repli qui ne
  *     part jamais.
@@ -68,15 +69,35 @@ export function registerRcsCallback(
 ): void {
   // Les codes déjà résolus par ce process : ils échappent au budget des codes jamais vus (`ClesResolues`).
   const connus = new ClesResolues(1000);
+  const avertirBudget = avertissementBorne(
+    'rappels RCS : budget des codes jamais vus épuisé (CODES_INCONNUS_PAR_MINUTE), des codes inconnus reçoivent 429',
+  );
   app.post('/rcs/callback/:code', { bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const { code } = req.params as { code: string };
     const normalise = typeof code === 'string' ? code.trim().toLowerCase() : '';
     if (!CODE_RE.test(normalise)) return reply.code(404).send({ error: 'canal introuvable' });
 
     // 🔴 LE FREIN DES CODES JAMAIS VUS, AVANT LA BASE (décision de Julien du 2026-09-21) : même mécanique que
-    // `/w/:code`. Un code déjà résolu passe toujours ; un refus est un 429, que smsmode rejoue.
-    if (!connus.connait(normalise)
-      && !(await consommerEnSilence(budgetInconnus, 'codes-inconnus', reply, 'trop de rappels, réessayez plus tard'))) return;
+    // `/w/:code`. Un code déjà résolu passe toujours ; un refus est un 429, que smsmode rejoue, et un budget
+    // épuisé se journalise au plus une fois par minute.
+    const connu = connus.connait(normalise);
+    if (!connu && !(await consommerEnSilence(budgetInconnus, 'codes-inconnus', reply, 'trop de rappels, réessayez plus tard'))) {
+      avertirBudget();
+      return;
+    }
+
+    /**
+     * 🔴 LE PLAFOND NE COMPTE QUE DES CODES QUI EXISTENT, et c'est une correction de revue. Posé d'abord AVANT
+     * la lecture pour TOUS les codes, il comptait n'importe quel code bien formé : un robot qui tire plus de
+     * codes inventés par minute que la table n'en retient la remplissait, et le VRAI code d'un client, dont
+     * l'entrée expire à chaque fenêtre, se voyait alors refusé. La protection devenait un moyen de bloquer les
+     * messages RCS entrants. Il se prend donc AVANT la base pour un code déjà RÉSOLU par ce process (un refus
+     * ne coûte plus de lecture), APRÈS pour les autres : la table ne contient que des codes réels, en nombre
+     * borné par celui des agents, aucune éviction possible. Ce qu'on protège d'un code qui a FUITÉ, ce sont les
+     * écritures qui suivent.
+     */
+    const plafond = (): Promise<boolean> => consommerAvecEntetes(limiteur, normalise, reply, 'trop de rappels, réessayez plus tard');
+    if (connu && !(await plafond())) return;
 
     const canal = await deps.parCode(normalise);
     if (!canal) {
@@ -84,17 +105,8 @@ export function registerRcsCallback(
       return reply.code(404).send({ error: 'canal introuvable' });
     }
     connus.retenir(normalise);
-
-    /**
-     * 🔴 LE PLAFOND NE COMPTE QUE DES CODES QUI EXISTENT, donc APRÈS la base, et c'est une correction de revue.
-     * Posé d'abord AVANT la lecture, il comptait n'importe quel code bien formé : un robot qui tire plus de
-     * codes inventés par minute que la table n'en retient la remplissait, et le VRAI code d'un client, dont
-     * l'entrée expire à chaque fenêtre, se voyait alors refusé. La protection devenait un moyen de bloquer
-     * les messages RCS entrants. Ici, la table ne contient que des codes réels, en nombre borné par celui des
-     * agents : aucune éviction possible. Un code inventé coûte une lecture par clé, comme avant ce plafond ;
-     * ce qu'on protège d'un code qui a FUITÉ, ce sont les écritures qui suivent.
-     */
-    if (!(await consommerAvecEntetes(limiteur, normalise, reply, 'trop de rappels, réessayez plus tard'))) return;
+    // Première résolution dans ce process : le plafond se prend ici, sur un code qui existe.
+    if (!connu && !(await plafond())) return;
 
     const payload = req.body;
     // Tracé AVANT d'essayer de le comprendre : c'est ce corps-là qu'on voudra lire le jour où notre lecture

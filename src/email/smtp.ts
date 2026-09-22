@@ -29,13 +29,16 @@ export function buildTransport(
   account: DecryptedEmailAccount,
   ouvrir: (hote: string, port: number) => Promise<Socket> = (hote, port) => ouvrirSocketPublique(hote, port),
 ): Transporter {
+  // Le MÊME nom pour la socket et pour TLS : nettoyé des espaces (le schéma d'entrée ne le fait pas) et des
+  // crochets d'une IPv6. Sinon la socket vérifiée et le SNI porteraient sur deux textes différents.
+  const hote = account.host.trim().replace(/^\[|\]$/g, '');
   return nodemailer.createTransport({
-    host: account.host,
+    host: hote,
     port: account.port,
     secure: account.secure,
     auth: { user: account.username, pass: account.password },
     getSocket: (_options: SMTPTransport.Options, rappel: (err: Error | null, socketOptions: unknown) => void) => {
-      ouvrir(account.host, account.port).then((connection) => rappel(null, { connection }), (err: Error) => rappel(err, null));
+      ouvrir(hote, account.port).then((connection) => rappel(null, { connection }), (err: Error) => rappel(err, null));
     },
   });
 }

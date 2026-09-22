@@ -51,8 +51,10 @@ const CLE_BUDGET_SPECULATIF = 'lookups-speculatifs';
  * tenant (montée indépendamment, comme /ops). Sur succès, pose un `req.auth` SYNTHÉTIQUE avec le rôle
  * dédié `'api'` (JAMAIS 'admin' : les routes /v1 gate par SCOPE via requireScope, pas par rôle) et
  * `req.apiScopes`. Le tenant vient à 100% de la clé résolue (pas d'`:tenantId` dans l'URL /v1).
- * En-têtes x-ratelimit-* sur les réponses COMPTÉES SUR LA CLÉ (succès, et 429 du plafond par clé). Un 401 et
- * le 429 du budget spéculatif commun n'en portent aucun : ce budget n'appartient à personne (`consommerEnSilence`).
+ * En-têtes x-ratelimit-* sur les réponses COMPTÉES SUR LA CLÉ (succès, et 429 du plafond par clé). Le 401 d'une
+ * clé INCONNUE de ce process et le 429 du budget spéculatif commun n'en portent aucun : ce budget n'appartient à
+ * personne (`consommerEnSilence`). ⚠️ Une clé déjà résolue puis révoquée prend encore ses en-têtes sur son 401,
+ * posés avant la lecture qui la découvre révoquée : ce sont ceux de SA clé, rien d'un autre appelant.
  *
  * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'EMPREINTE de la clé et ne
  * compte que des clés qui EXISTENT : il borne le travail qu'un porteur demande, et ce qu'il coûte une fois

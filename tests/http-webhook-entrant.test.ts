@@ -428,13 +428,13 @@ describe('webhook entrant : alimente une campagne au fil de l eau', () => {
 /**
  * LE PLAFOND NE COMPTE QUE DES WEBHOOKS QUI EXISTENT (2026-09-21).
  *
- * 🔴 Le programme II l'avait remonté AVANT `getByCode`, pour qu'un appel refusé ne coûte plus de requête. La
- * clé devenait alors choisie par l'appelant : des codes inventés en masse remplissaient la table, et le VRAI
- * code d'un client, dont l'entrée expire à chaque fenêtre, était refusé à la suivante. Même défaut, même
- * correction que sur les rappels RCS (`tests/rcs-callback.test.ts`).
+ * 🔴 Le programme II l'avait remonté AVANT `getByCode` pour TOUS les codes, pour qu'un appel refusé ne coûte
+ * plus de requête. La clé devenait alors choisie par l'appelant : des codes inventés en masse remplissaient la
+ * table, et le VRAI code d'un client, dont l'entrée expire à chaque fenêtre, était refusé à la suivante. Il se
+ * prend désormais AVANT la base pour un code déjà RÉSOLU (aucun code inventé ne l'est), APRÈS pour les autres.
  */
-describe('webhook entrant : le plafond APRÈS la lecture du code', () => {
-  it('🔴 au-delà du plafond, plus RIEN n’est écrit, et un refus coûte une seule lecture', async () => {
+describe('webhook entrant : le plafond par code, sur des codes qui existent', () => {
+  it('🔴 au-delà du plafond, plus RIEN n’est écrit, et un refus ne coûte plus de lecture', async () => {
     const { server, cap } = app(HOOK, { limiter: new RateLimiter(3, 60_000) });
     for (let i = 0; i < 3; i += 1) {
       const r = await post(server, CORPS);
@@ -447,8 +447,9 @@ describe('webhook entrant : le plafond APRÈS la lecture du code', () => {
     // Ce qu'on protège d'un code qui a fuité : les écritures. Aucun contact, aucun payload enregistré au-delà.
     expect(cap.ecrits).toHaveLength(3);
     expect(cap.appels).toHaveLength(3);
-    // Le prix assumé : un appel refusé coûte UNE lecture par le code, comme un code inventé, jamais plus.
-    expect(cap.lus).toHaveLength(23);
+    // 🔴 Le code est RÉSOLU dès le premier appel : ses refus se prennent avant la base, donc les vingt 429 ne
+    // coûtent aucune lecture (ils en coûtaient une chacun quand le plafond se prenait toujours après).
+    expect(cap.lus).toHaveLength(3);
     await server.close();
   });
 

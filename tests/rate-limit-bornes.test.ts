@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { FastifyReply } from 'fastify';
-import { RateLimiter, consommerAvecEntetes } from '../src/auth/rate-limit';
+import { RateLimiter, avertissementBorne, consommerAvecEntetes } from '../src/auth/rate-limit';
 
 /**
  * LES DEUX BORNES DES LIMITEURS D'AUTHENTIFICATION (audit de surface publique du 2026-09-03).
@@ -111,5 +111,25 @@ describe('limiteurs d’authentification : le câblage', () => {
       .toMatch(/createHash\('sha256'\)\.update\(discriminant\)\.digest\('hex'\)/);
     expect(sansCommentaires, 'la borne doit être une constante nommée, pas un nombre perdu dans le code')
       .toMatch(/discriminant\.length <= MAX_DISCRIMINANT/);
+  });
+});
+
+describe('l’avertissement borné d’un budget épuisé', () => {
+  it('🔴 il journalise au plus une fois par fenêtre, jamais une ligne par requête', () => {
+    let t = 0;
+    const lignes: unknown[] = [];
+    const avant = console.warn;
+    console.warn = (...a: unknown[]) => { lignes.push(a); };
+    try {
+      const avertir = avertissementBorne('budget épuisé', 60_000, () => t);
+      for (let i = 0; i < 100; i += 1) avertir();
+      expect(lignes).toHaveLength(1);
+      t = 59_999; avertir();
+      expect(lignes).toHaveLength(1);
+      t = 60_000; avertir();
+      expect(lignes).toHaveLength(2);
+    } finally {
+      console.warn = avant;
+    }
   });
 });

@@ -16,10 +16,11 @@ import type { FastifyReply } from 'fastify';
  *
  * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :
  * `ip::discriminant` pour les routes d'authentification (`req.ip` seul désignerait le proxy), le CODE pour
- * `/w/:code`, l'EMPREINTE de la clé pour `/v1` (comptée seulement pour une clé résolue : une clé inventée
- * n'y entre jamais, c'est le budget spéculatif de `api-key.ts` qui la freine avant la base), l'`userId` pour
- * le plafond général des routes authentifiées et le `tenantId` pour celui des routes coûteuses. Le choix de clé décide de QUI partage un quota avec qui,
- * et c'est la seule décision qui compte à l'usage.
+ * `/w/:code` et `/rcs/callback/:code` (comptés seulement pour un code résolu), l'EMPREINTE de la clé pour `/v1`
+ * (comptée seulement pour une clé résolue), l'`userId` pour le plafond général des routes authentifiées et le
+ * `tenantId` pour celui des routes coûteuses. Une clé ou un code INVENTÉ n'entre dans aucune de ces tables : ce
+ * sont les budgets COMMUNS, à clé constante (`consommerEnSilence`), qui les freinent avant la base. Le choix de
+ * clé décide de QUI partage un quota avec qui, et c'est la seule décision qui compte à l'usage.
  *
  * 🔴 EXPLICITEMENT LOCAL AU PROCESS (programme II, lot 8). Le plafond annoncé est celui d'UNE instance : avec
  * deux process d'API derrière le même proxy, un attaquant dispose du DOUBLE, et rien ne le signale. Ce n'est
@@ -214,4 +215,20 @@ export class ClesResolues {
     }
     this.vues.add(cle);
   }
+}
+
+/**
+ * Un avertissement journalisé AU PLUS une fois par fenêtre. Un budget commun épuisé doit laisser une TRACE (sinon
+ * un refus massif ne se voit que chez ceux qu'on refuse), mais jamais une ligne par requête hostile : sous
+ * attaque, ce serait amplifier par la journalisation ce qu'on cherche à borner.
+ */
+export function avertissementBorne(message: string, fenetreMs = 60_000, maintenant: () => number = () => Date.now()): () => void {
+  let dernier = Number.NEGATIVE_INFINITY;
+  return () => {
+    const t = maintenant();
+    if (t - dernier < fenetreMs) return;
+    dernier = t;
+    // eslint-disable-next-line no-console
+    console.warn(message);
+  };
 }

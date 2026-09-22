@@ -4,7 +4,7 @@ import { normalizePhone } from '../crm/phone';
 import { waIdOf } from '../crm/identity';
 import { extraireDuPayload } from '../webhook-entrant/mapping';
 import type { WebhookPublic } from '../webhook-entrant/store.pg';
-import { ClesResolues, RateLimiter, consommerEnSilence } from '../auth/rate-limit';
+import { ClesResolues, RateLimiter, avertissementBorne, consommerEnSilence } from '../auth/rate-limit';
 
 /**
  * Route PUBLIQUE des webhooks entrants : `POST /w/:code`. Un outil tiers (Zapier, Make, un CRM, un formulaire
@@ -103,6 +103,9 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
   const limiter = deps.limiter ?? new RateLimiter(120, 60_000);
   // Les codes déjà résolus par ce process : ils échappent au budget des codes jamais vus (`ClesResolues`).
   const connus = new ClesResolues(1000);
+  const avertirBudget = avertissementBorne(
+    'webhook entrant : budget des codes jamais vus épuisé (CODES_INCONNUS_PAR_MINUTE), des codes inconnus reçoivent 429',
+  );
 
   app.post('/w/:code', { bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const { code } = req.params as { code: string };
@@ -114,11 +117,29 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
 
     // 🔴 LE FREIN DES CODES JAMAIS VUS, AVANT LA BASE (décision de Julien du 2026-09-21). Un code inventé bien
     // formé coûtait une lecture en base par essai. Il consomme désormais un budget COMMUN, EN SILENCE (ses
-    // en-têtes n'appartiennent à personne). Un code déjà résolu n'y est plus soumis : une attaque qui épuise le
-    // budget ne coupe pas les intégrations en service. La clé du budget est une CONSTANTE : sa table ne grossit
-    // pas, et aucun code inventé ne peut en évincer un vrai.
-    if (!connus.connait(normalise)
-      && !(await consommerEnSilence(deps.budgetInconnus, 'codes-inconnus', reply, 'trop d’appels, réessayez dans une minute'))) return;
+    // en-têtes n'appartiennent à personne), et un budget épuisé se journalise au plus une fois par minute. Un
+    // code déjà résolu n'y est plus soumis : une attaque qui épuise le budget ne coupe pas les intégrations en
+    // service. La clé du budget est une CONSTANTE : sa table ne grossit pas, et aucun code inventé ne peut en
+    // évincer un vrai.
+    const connu = connus.connait(normalise);
+    if (!connu && !(await consommerEnSilence(deps.budgetInconnus, 'codes-inconnus', reply, 'trop d’appels, réessayez dans une minute'))) {
+      avertirBudget();
+      return;
+    }
+
+    // 🔴 LE PLAFOND PAR WEBHOOK NE COMPTE QUE DES CODES QUI EXISTENT. Il se prend AVANT la base pour un code déjà
+    // résolu par ce process (un refus ne coûte plus de lecture), APRÈS pour les autres, une seule fois par appel.
+    // Le programme II l'avait remonté avant `getByCode` pour TOUS les codes : sa clé devenait alors choisie par
+    // l'APPELANT, des codes inventés remplissaient la table, et le VRAI code d'un client, dont l'entrée expire à
+    // chaque fenêtre, était refusé à la suivante (défaut corrigé le 2026-09-21). Seuls les codes résolus entrent
+    // dans `connus`, donc la table du limiteur reste bornée par le nombre de webhooks qui existent.
+    //
+    // Ce qu'on protège d'un code qui a FUITÉ, ce sont les écritures qui suivent : le contact, le payload
+    // enregistré, l'événement d'automation. Il reste AVANT la vérification du secret : essayer des secrets en
+    // rafale sur un code connu est plafonné aussi. La clé est le code et non l'identifiant du webhook : les deux
+    // sont en correspondance stricte. La réponse ne révèle ni le plafond ni l'espace : juste « trop d'appels ».
+    const tropDAppels = (): unknown => reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
+    if (connu && !limiter.take(normalise)) return tropDAppels();
 
     const hook = await deps.getByCode(normalise);
     // Code inconnu ET webhook désactivé rendent la MÊME chose : un tiers n'a pas à distinguer « ce webhook
@@ -128,27 +149,8 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
       return reply.code(404).send({ error: 'webhook introuvable' });
     }
     connus.retenir(normalise);
-
-    // 🔴 LE PLAFOND NE COMPTE QUE DES WEBHOOKS QUI EXISTENT, donc APRÈS la base (2026-09-21, même défaut que
-    // celui corrigé sur les rappels RCS). Le programme II l'avait remonté AVANT `getByCode`, pour qu'une rafale
-    // sur une adresse valide ne coûte plus une requête SQL par appel. Mais la clé devenait alors choisie par
-    // l'APPELANT : un robot qui tire des codes inventés bien formés ouvrait une entrée par essai. Avec le
-    // plafond de clés du limiteur par défaut, la table se remplissait et le VRAI code d'un client, dont l'entrée
-    // expire à chaque fenêtre, était refusé à la suivante : la protection devenait un moyen de couper
-    // l'intégration d'un client. Sans ce plafond (le câblage de production n'en posait pas), elle grossissait
-    // sans borne pendant toute la fenêtre.
-    //
-    // Ce que ce placement coûte, dit tel quel : un appel refusé sur un code connu coûte de nouveau une lecture
-    // par l'index unique du code. C'est exactement ce que coûtait DÉJÀ un code inventé, que le plafond placé
-    // avant n'arrêtait pas (chaque code neuf ouvrait son propre quota). Ce qu'on protège d'un code qui a
-    // FUITÉ, ce sont les écritures qui suivent : le contact, le payload enregistré, l'événement d'automation.
-    //
-    // Il reste AVANT la vérification du secret : essayer des secrets en rafale sur un code connu est plafonné
-    // aussi. La clé est le code et non l'identifiant du webhook : les deux sont en correspondance stricte.
-    if (!limiter.take(normalise)) {
-      // La réponse ne révèle ni le plafond ni l'espace : juste « trop d'appels ».
-      return reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
-    }
+    // Première résolution dans ce process : le plafond se prend ici, sur un code qui existe.
+    if (!connu && !limiter.take(normalise)) return tropDAppels();
 
     if (hook.secretHash !== null) {
       const brut = req.headers['x-webhook-secret'];

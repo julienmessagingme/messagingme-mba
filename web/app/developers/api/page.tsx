@@ -97,8 +97,8 @@ x-ratelimit-remaining: 57
 x-ratelimit-reset: 1750000000`}</pre>
         <p>
           {t(
-            'Au dépassement : 429 avec un en-tête retry-after (en secondes). Une clé refusée (401) ne porte aucun de ces en-têtes. Le compteur est tenu en mémoire du serveur : il repart à zéro à chaque redéploiement.',
-            'On overflow: 429 with a retry-after header (seconds). A rejected key (401) carries none of these headers. The counter is held in server memory: it resets on every redeploy.',
+            'Au dépassement : 429 avec un en-tête retry-after (en secondes). Une clé inconnue (401) ne porte aucun de ces en-têtes. Le compteur est tenu en mémoire du serveur : il repart à zéro à chaque redéploiement.',
+            'On overflow: 429 with a retry-after header (seconds). An unknown key (401) carries none of these headers. The counter is held in server memory: it resets on every redeploy.',
           )}
         </p>
       </Section>

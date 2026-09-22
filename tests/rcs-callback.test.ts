@@ -393,6 +393,15 @@ describe('Rappels RCS : le plafond par code', () => {
     return { app, dlrs, lectures: () => lectures };
   }
 
+  it('🔴 un refus sur un code déjà résolu ne coûte plus de lecture en base', async () => {
+    const { app, lectures } = monterAvec(2);
+    const codes: number[] = [];
+    for (let i = 0; i < 10; i += 1) codes.push((await app.inject(post(`/rcs/callback/${CODE}`, DLR_DELIVERED))).statusCode);
+    expect(codes).toEqual([200, 200, 429, 429, 429, 429, 429, 429, 429, 429]);
+    // Les deux premiers appels lisent le code (le premier le résout) ; les huit refus se prennent avant la base.
+    expect(lectures()).toBe(2);
+  });
+
   it('🔴 au-delà du plafond : 429, et plus RIEN n’est écrit', async () => {
     const { app, dlrs } = monterAvec(2);
     const codes: number[] = [];

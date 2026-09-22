@@ -71,7 +71,7 @@ export function creerEprouverSource(deps: EprouverSourceDeps): (tenant: string, 
       // Même verdict que le résolveur de connecteur sur la même source.
       if (estRedirectionRefusee(err)) {
         await deps.marquerEpreuve(tenant, id, false, 'redirection refusée');
-        return { ok: false, erreur: 'le systeme repond par une redirection, refusee' };
+        return { ok: false, erreur: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur' };
       }
       // Le message d'exception n'est PAS repassé : il peut porter l'URL complète, donc parfois un jeton en
       // paramètre de requête sur un système mal conçu.

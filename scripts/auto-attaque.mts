@@ -52,6 +52,7 @@ import Fastify from 'fastify';
 import { buildServer, modulesDeRoutes } from '../src/server';
 import type { ClasseDAcces, Gardes, ServerDeps } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
+import { RateLimiter } from '../src/auth/rate-limit';
 import { signSession } from '../src/auth/token';
 import { API_KEY_PREFIX } from '../src/auth/api-key-store.pg';
 import type { PreHandler } from '../src/auth/middleware';
@@ -132,6 +133,20 @@ const inconnu = (nom: string): any => new Proxy(function () { /* noop */ } as un
 });
 
 /**
+ * `inconnu()`, SAUF pour les limiteurs nommés, qui sont de VRAIS limiteurs DÉSACTIVÉS.
+ *
+ * 🔴 SANS CELA, UN LIMITEUR ÉTAIT COMPTÉ COMME UNE INTERROGATION DU MAGASIN (2026-09-21). Le webhook entrant
+ * lit `limiter` et, depuis le frein des codes jamais vus, `budgetInconnus` : sur `inconnu()`, leur `take()`
+ * incrémentait `interrogations` et rendait une promesse, donc une valeur VRAIE. Le frein ne freinait jamais, et
+ * une sonde qui n'aurait touché QUE le limiteur se serait crue arrivée jusqu'au magasin. Désactivés, ils
+ * laissent passer sans rien compter : ce que la sonde attaque est le code de l'adresse, pas le débit.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const inconnuSaufLimiteurs = (nom: string, limiteurs: readonly string[]): any => new Proxy(inconnu(nom), {
+  get: (cible, p) => (typeof p === 'string' && limiteurs.includes(p) ? new RateLimiter(0, 60_000) : Reflect.get(cible, p)),
+});
+
+/**
  * 🔴 TIRÉS AU HASARD À CHAQUE EXÉCUTION, jamais écrits dans le dépôt. Deux raisons, et la seconde est la
  * vraie : un littéral qui ressemble à un secret fait sonner le hook `gitleaks` de tous les commits (il a
  * sonné, c'est ainsi que ces lignes existent), et surtout une valeur de test en dur finit toujours par être
@@ -171,7 +186,7 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   ops: inconnu('ops'),
   // Code dans l'adresse : aucun code ne se résout.
   links: inconnu('links'),
-  webhookEntrant: inconnu('webhookEntrant'),
+  webhookEntrant: inconnuSaufLimiteurs('webhookEntrant', ['limiter', 'budgetInconnus']),
   rcsCallback: inconnu('rcsCallback'),
   // Avant toute session : aucun compte n'existe, et le secret de session est celui des jetons fabriqués ici.
   auth: { users: aucunCompte, secret: SECRET },
