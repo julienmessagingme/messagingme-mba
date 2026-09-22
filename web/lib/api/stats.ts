@@ -18,6 +18,13 @@ export interface DailyPoint {
 }
 export interface DashboardStats {
   contacts: DailyPoint[];
+  /**
+   * Les contacts ENCORE dans le mini-CRM ce jour-la (bascule cumules/actifs, demandee le 2026-09-23).
+   *
+   * ⚠️ OPTIONNEL A LA LECTURE : un backend plus ancien que ce champ ne l'envoie pas, et l'ecran masque alors
+   * la bascule au lieu de tracer une courbe vide qu'on prendrait pour « plus aucun contact ».
+   */
+  contactsActifs?: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
   /** Sortants qui ne sont PAS des templates (inbox, scenario dans la fenetre de 24 h). Sous-ensemble d'`exchanged`. */

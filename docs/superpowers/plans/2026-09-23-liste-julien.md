@@ -89,12 +89,15 @@ ne suffit pas, parce que les tests d'écran sont écrits par celui qui a écrit 
   inatteignable sur une période dont toutes les campagnes sont archivées.
 - Essai réel : les six campagnes terminées de l'espace d'essai visibles, « nouveau test » seulement avec la bascule.
 
-## Lot 5 : Performance lab, contacts cumulés ou actifs
+## Lot 5, livré : Performance lab, contacts cumulés ou actifs
 
 - Arbitrage de Julien : actifs = contacts encore dans le mini-CRM (`deleted_at is null`).
 - Historique reconstructible (la purge date la suppression, elle ne détruit pas la ligne) : actif le jour J = créé
   avant la fin de J et non supprimé à J. Bascule sur la carte « Contacts ».
-- Essai réel : supprimer un contact d'essai, voir la courbe « actifs » baisser d'un et « cumulés » inchangée.
+- Essai réel FAIT, en lecture seule sur la production : sur l'espace d'essai, les cumulés restent à 17 puis
+  passent à 18 le 21/09, tandis que les actifs descendent de 15 à 14 le 17/09 (la suppression réelle de ce
+  jour-là) et remontent à 15 le 21/09. Les deux courbes divergent bien, et la suppression n'a rien réécrit
+  avant sa date.
 
 ## Lot 6 : Mini-CRM, « Ouvrir la conversation »
 

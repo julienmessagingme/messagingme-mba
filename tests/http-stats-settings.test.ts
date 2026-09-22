@@ -26,6 +26,9 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
   const stats: StatsRouteDeps = {
     getDashboard: async () => ({
       contacts: [{ date: '2026-07-09', count: 3 }],
+      // ⚠️ PLUS BAS QUE LES CUMULÉS, DÉLIBÉRÉMENT : une fixture où les deux courbes seraient égales ferait
+      // passer un écran qui affiche la mauvaise, sans que rien ne bronche.
+      contactsActifs: [{ date: '2026-07-09', count: 2 }],
       templates: { utility: [{ date: '2026-07-09', count: 1 }], marketing: [{ date: '2026-07-09', count: 2 }] },
       exchanged: [{ date: '2026-07-09', count: 5 }],
       service: [{ date: '2026-07-09', count: 2 }],

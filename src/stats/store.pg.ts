@@ -167,6 +167,14 @@ export type CostFilter = FiltreCampagneOuTemplate;
 export interface DashboardStats {
   /** CUMULATIF : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
   contacts: DailyPoint[];
+  /**
+   * Les contacts ENCORE dans le mini-CRM ce jour-là (arbitrage de Julien du 2026-09-23).
+   *
+   * ⚠️ DEUX QUESTIONS DIFFERENTES, PAS DEUX VERSIONS DE LA MEME. Les cumulés disent ce qu'on a collecté,
+   * les actifs ce qu'on a encore : une base qu'on nettoie voit les deux courbes diverger, et c'est
+   * précisément l'écart qui est l'information. Rendre les deux d'un coup permet la bascule sans réseau.
+   */
+  contactsActifs: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
   /**
@@ -535,7 +543,22 @@ export class PgStatsStore {
     // 1) Contacts CUMULÉS / jour : total courant = baseline (contacts créés AVANT la plage) +
     //    somme courante des nouveaux/jour. Série DENSE (generate_series de from à to) pour que les jours
     //    sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
-    const contacts = await this.pool.query<{ d: string; count: string }>(
+    //
+    // 🔴 ET LA MEME REQUETE REND LES ACTIFS (demande de Julien du 2026-09-23 : une bascule cumules/actifs).
+    // « Actif » = encore dans le mini-CRM ce jour-là, c'est-à-dire créé avant la fin du jour et pas encore
+    // supprimé. La suppression est DOUCE (`deleted_at`, migration 0049, aucun `delete from contacts` dans le
+    // dépôt), donc l'historique est reconstructible : on ne montre pas une courbe qui commence aujourd'hui.
+    //
+    // 🔴 PAR DIFFERENCE, ET PAS PAR UNE SOUS-REQUETE PAR JOUR. « Combien de contacts vivants au jour J »
+    // s'écrit naturellement en comptant les contacts pour CHAQUE jour de la série : c'est un balayage de la
+    // table des contacts par jour affiché, donc jusqu'à 366 balayages pour une plage d'un an. Les supprimés
+    // se cumulent exactement comme les créés, et actifs(J) = cumulés(J) - supprimés(J). Un contact créé ET
+    // supprimé le même jour entre dans les deux sommes, donc il ne compte pas, ce qui est juste.
+    //
+    // ⚠️ UN CONTACT SUPPRIME APRES LA PLAGE EST ACTIF PENDANT TOUTE LA PLAGE, et c'est ce que la borne haute
+    // de `supprimes_dans` garantit : sans elle, une suppression d'aujourd'hui ferait baisser la courbe d'il
+    // y a trois semaines, c'est-à-dire réécrirait le passé.
+    const contacts = await this.pool.query<{ d: string; count: string; actifs: string }>(
       `with ${BOUNDS_CTE},
        series as (
          select generate_series($2::date, $3::date, interval '1 day')::date as day
@@ -549,10 +572,25 @@ export class PgStatsStore {
          from contacts, bounds b
          where tenant_id = $1 and created_at >= b.start_ts and created_at < b.end_ts
          group by 1
+       ),
+       supprimes_avant as (
+         select count(*)::int as n from contacts
+         where tenant_id = $1 and deleted_at is not null and deleted_at < (select start_ts from bounds)
+       ),
+       supprimes_dans as (
+         select date_trunc('day', deleted_at at time zone $4)::date as day, count(*)::int as n
+         from contacts, bounds b
+         where tenant_id = $1 and deleted_at is not null
+           and deleted_at >= b.start_ts and deleted_at < b.end_ts
+         group by 1
        )
        select to_char(s.day, 'YYYY-MM-DD') as d,
-              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0))::int as count
-       from series s left join daily dl on dl.day = s.day
+              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0))::int as count,
+              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0)
+               - (select n from supprimes_avant) - coalesce(sum(sp.n) over (order by s.day), 0))::int as actifs
+       from series s
+       left join daily dl on dl.day = s.day
+       left join supprimes_dans sp on sp.day = s.day
        order by s.day`,
       [tenantId, from, to, TZ],
     );
@@ -642,6 +680,7 @@ export class PgStatsStore {
 
     return {
       contacts: contacts.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
+      contactsActifs: contacts.rows.map((r) => ({ date: r.d, count: Number(r.actifs) })),
       templates: { utility, marketing },
       exchanged: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
       service: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.sortants) })),

@@ -1237,6 +1237,15 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Analytics (menu Analytics)
 
+- ✅ **Contacts : cumulés ou actifs** (2026-09-23), une bascule sur la carte Contacts de Quantitatif >
+  Messages & contacts. **Cumulés** = tout ce que vous avez collecté depuis le début, la courbe historique,
+  qui ne baisse jamais. **Actifs** = ce qu'il vous reste dans le mini-CRM ce jour-là, donc la même courbe
+  moins les contacts supprimés, à la date de leur suppression. L'écart entre les deux est l'information :
+  une base qu'on nettoie le montre, une seule des deux courbes le cache.
+  ⚠️ **L'historique est reconstruit**, la courbe ne commence pas aujourd'hui : supprimer un contact le range
+  hors du mini-CRM sans effacer sa ligne, donc on sait à quelle date chacun est parti. Et une suppression
+  d'aujourd'hui ne change rien à la courbe d'il y a trois semaines.
+
 - ✅ **Page de synthèse, en tête du Performance Lab** (2026-09-08, remaniée le 2026-09-09) : la première
   page de l'onglet, à l'adresse `/performance`. Elle répond à des questions que les autres écrans ne posent
   pas : où en sont les conversations, et ce que coûte un engagement.

@@ -72,6 +72,7 @@ export function DailyChart({
   subtitle,
   summary = 'sum',
   zonePdf,
+  actions,
 }: {
   title: string;
   series: ChartSeries[];
@@ -87,6 +88,15 @@ export function DailyChart({
    * feuille.
    */
   zonePdf?: string;
+  /**
+   * Commandes posées en haut à droite de la carte, à la place des deux mini-chiffres (pic, moyenne).
+   *
+   * ⚠️ ELLES PRENNENT LEUR PLACE, ELLES NE S'AJOUTENT PAS : l'en-tête n'a qu'un côté droit, et y empiler les
+   * deux ferait déborder la carte à la largeur d'une colonne. Une carte qui offre une bascule montre la
+   * bascule ; le pic et la moyenne restent lisibles sur la courbe elle-même.
+   * ⚠️ Elles portent `sans-impression` d'elles-mêmes, comme le bouton PDF : un export figé n'a pas de bouton.
+   */
+  actions?: React.ReactNode;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -157,7 +167,9 @@ export function DailyChart({
           {subtitle && <p className="mt-1 text-xs text-ink-400">{subtitle}</p>}
         </div>
 
-        {multi ? (
+        {actions ? (
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        ) : multi ? (
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             {data.map((s) => (
               <span key={s.label} className="flex items-center gap-1.5 text-xs text-ink-500">
